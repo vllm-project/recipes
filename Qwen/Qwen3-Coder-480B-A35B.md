@@ -2,7 +2,7 @@
 
 ## Installing vLLM
 
-[Qwen3-Coder](https://github.com/QwenLM/Qwen3-Coder) is an advanced large language model created by the Qwen team from Alibaba Cloud. vLLM already supports Qwen3-Coder, and `tool-call` functionality will be available in the next release version(0.10.0). You can install vLLM with `tool-call` support using the following method:
+[Qwen3-Coder](https://github.com/QwenLM/Qwen3-Coder) is an advanced large language model created by the Qwen team from Alibaba Cloud. vLLM already supports Qwen3-Coder, and `tool-call` functionality will be available in vLLM > 0.9.2. You can install vLLM with `tool-call` support using the following method:
 
 ```bash
 conda create -n myenv python=3.12 -y
