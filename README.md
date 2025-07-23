@@ -1,4 +1,4 @@
-# vLLM Recipes
+# [vLLM Recipes](https://docs.vllm.ai/projects/recipes)
 
 This repo intends to host community maintained common recipes to run vLLM anwering the question:
 **How do I run model Y on hardware Y for task Z?**
