@@ -1,5 +1,5 @@
 site_name: vLLM Recipes
-# site_url: ...
+site_url: https://docs.vllm.ai/projects/recipes
 repo_url: https://github.com/vllm-project/recipes
 edit_uri: edit/main/
 docs_dir: .
@@ -41,7 +41,6 @@ theme:
     - search.highlight
     - search.share
     - toc.follow
-# site_dir: site
 
 plugins:
   - search
