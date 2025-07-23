@@ -22,7 +22,7 @@ vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct \
   --tensor-parallel-size 8 \
   --max-model-len 32000 \
   --enable-auto-tool-choice \
-  --tool-call-parser qwen3-coder
+  --tool-call-parser qwen3_coder
 ```
 
 **FP8 Model**
@@ -32,7 +32,7 @@ vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
   --enable-expert-parallel \
   --data-parallel-size 8 \
   --enable-auto-tool-choice \
-  --tool-call-parser qwen3-coder
+  --tool-call-parser qwen3_coder
 ```
 
 ## Performance Metrics
@@ -73,7 +73,7 @@ We launched `Qwen3-Coder-480B-A35B-Instruct-FP8` using vLLM and evaluated its pe
 ```
 
 ### Tool Calling
-- **Enable Tool Calls**: Add `--tool-call-parser qwen3-coder` to enable tool call parsing functionality, please refer to: [tool_calling](https://docs.vllm.ai/en/latest/features/tool_calling.html)
+- **Enable Tool Calls**: Add `--tool-call-parser qwen3_coder` to enable tool call parsing functionality, please refer to: [tool_calling](https://docs.vllm.ai/en/latest/features/tool_calling.html)
 
 ## Roadmap
 
