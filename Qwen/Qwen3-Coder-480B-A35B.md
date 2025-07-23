@@ -5,10 +5,10 @@
 [Qwen3-Coder](https://github.com/QwenLM/Qwen3-Coder) is an advanced large language model created by the Qwen team from Alibaba Cloud. vLLM already supports Qwen3-Coder, and `tool-call` functionality will be available in vLLM > 0.9.2. You can install vLLM with `tool-call` support using the following method:
 
 ```bash
-conda create -n myenv python=3.12 -y
-conda activate myenv
+uv venv
+source .venv/bin/activate
 export VLLM_COMMIT=4594fc3b281713bd3d7634405b4a1393af40d294 # Use full commit hash from the main branch
-pip install https://wheels.vllm.ai/${VLLM_COMMIT}/vllm-1.0.0.dev-cp38-abi3-manylinux1_x86_64.whl
+uv pip install https://wheels.vllm.ai/${VLLM_COMMIT}/vllm-1.0.0.dev-cp38-abi3-manylinux1_x86_64.whl --torch-backend auto
 ```
 
 ## Launching Qwen3-Coder with vLLM
