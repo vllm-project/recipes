@@ -1,0 +1,86 @@
+site_name: vLLM Recipes
+# site_url: ...
+repo_url: https://github.com/vllm-project/recipes
+edit_uri: edit/main/
+docs_dir: .
+
+theme:
+  name: material
+  logo: https://docs.vllm.ai/en/latest/assets/logos/vllm-logo-only-light.ico
+  favicon: https://docs.vllm.ai/en/latest/assets/logos/vllm-logo-only-light.ico
+  palette:
+    # Palette toggle for automatic mode
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default 
+      primary: white
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      toggle:
+        icon: material/brightness-2
+        name: Switch to system preference
+  features:
+    - content.action.edit
+    - content.code.copy
+    - content.tabs.link
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.prune
+    - navigation.top
+    - search.highlight
+    - search.share
+    - toc.follow
+# site_dir: site
+
+plugins:
+  - search
+  - same-dir
+  - meta
+  - awesome-nav
+  - glightbox
+
+markdown_extensions:
+  - attr_list
+  - md_in_html
+  - admonition
+  - pymdownx.details
+  # For content tabs
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+      alternate_style: true
+  # For code highlighting
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  # For emoji and icons
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  # For in page [TOC] (not sidebar)
+  - toc:
+      permalink: true
+  # For math rendering
+  - mdx_math:
+      enable_dollar_delimiter: true
+
+extra_javascript:
+  - https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS_HTML
+
+use_directory_urls: false

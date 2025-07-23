@@ -1,0 +1,7 @@
+mkdocs
+mkdocs-api-autonav
+mkdocs-material
+mkdocs-awesome-nav
+mkdocs-glightbox
+python-markdown-math
+mkdocs-same-dir
