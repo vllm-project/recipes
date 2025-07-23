@@ -2,9 +2,7 @@
 
 ## Installing vLLM
 
-[Qwen3-Coder](https://github.com/QwenLM/Qwen3-Coder) is an advanced large language model created by the Qwen team from Alibaba Cloud
-
-vLLM already supports Qwen3-Coder, and `tool-call` functionality will be available in the next release version(0.10.0). You can install vLLM with tool-call support using the following method:
+[Qwen3-Coder](https://github.com/QwenLM/Qwen3-Coder) is an advanced large language model created by the Qwen team from Alibaba Cloud. vLLM already supports Qwen3-Coder, and `tool-call` functionality will be available in the next release version(0.10.0). You can install vLLM with `tool-call` support using the following method:
 
 ```bash
 conda create -n myenv python=3.12 -y
@@ -39,7 +37,7 @@ vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
 
 ## Performance Metrics
 
-We launched `Qwen3-Coder-480B-A35B-Instruct-FP8` using vLLM and evaluated its performance using  [evalplus](https://github.com/evalplus/evalplus). The results are displayed below:
+We launched `Qwen3-Coder-480B-A35B-Instruct-FP8` using vLLM and evaluated its performance using  [EvalPlus](https://github.com/evalplus/evalplus). The results are displayed below:
 
 | Dataset | Test Type | Pass@1 Score |
 |-----------|-----------|--------------|
@@ -84,6 +82,6 @@ We launched `Qwen3-Coder-480B-A35B-Instruct-FP8` using vLLM and evaluated its pe
 
 ## Additional Resources
 
-- [Qwen3-Coder GitHub Repository](https://github.com/QwenLM/Qwen3-Coder)
+- [EvalPlus](https://github.com/evalplus/evalplus)
+- [Qwen3-Coder](https://github.com/QwenLM/Qwen3-Coder)
 - [vLLM Documentation](https://docs.vllm.ai/)
-- [EvalPlus Evaluation Framework](https://github.com/evalplus/evalplus)
