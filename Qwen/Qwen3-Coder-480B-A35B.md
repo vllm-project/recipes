@@ -13,7 +13,7 @@ uv pip install https://wheels.vllm.ai/${VLLM_COMMIT}/vllm-1.0.0.dev-cp38-abi3-ma
 
 ## Launching Qwen3-Coder with vLLM
 
-### Serving on H20 GPUs (141GB × 8)
+### Serving on 8xH200 (or H20) GPUs (141GB × 8)
 
 **BF16 Model**
 
