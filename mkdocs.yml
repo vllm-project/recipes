@@ -1,5 +1,5 @@
 site_name: vLLM Recipes
-site_url: https://docs.vllm.ai/projects/recipes
+site_url: !ENV READTHEDOCS_CANONICAL_URL
 repo_url: https://github.com/vllm-project/recipes
 edit_uri: edit/main/
 docs_dir: .
