@@ -1,14 +1,13 @@
 # Qwen3-Coder Usage Guide
 
-## Installing vLLM
+[Qwen3-Coder](https://github.com/QwenLM/Qwen3-Coder) is an advanced large language model created by the Qwen team from Alibaba Cloud. vLLM already supports Qwen3-Coder, and `tool-call` functionality will be available in vLLM v0.10.0 and higher You can install vLLM with `tool-call` support using the following method:
 
-[Qwen3-Coder](https://github.com/QwenLM/Qwen3-Coder) is an advanced large language model created by the Qwen team from Alibaba Cloud. vLLM already supports Qwen3-Coder, and `tool-call` functionality will be available in vLLM > 0.9.2. You can install vLLM with `tool-call` support using the following method:
+## Installing vLLM
 
 ```bash
 uv venv
 source .venv/bin/activate
-export VLLM_COMMIT=4594fc3b281713bd3d7634405b4a1393af40d294 # Use full commit hash from the main branch
-uv pip install https://wheels.vllm.ai/${VLLM_COMMIT}/vllm-1.0.0.dev-cp38-abi3-manylinux1_x86_64.whl --torch-backend auto
+uv pip install -U vllm --torch-backend auto
 ```
 
 ## Launching Qwen3-Coder with vLLM
@@ -56,20 +55,20 @@ We launched `Qwen3-Coder-480B-A35B-Instruct-FP8` using vLLM and evaluated its pe
 - **Additional Resources**: Refer to the [Data Parallel Deployment documentation](https://docs.vllm.ai/en/latest/serving/data_parallel_deployment.html) for more parallelism groups.
 
 ```shell
-(VllmWorker rank=5 pid=3914996) ERROR 07-22 20:16:11 [multiproc_executor.py:511]   File "/vllm/vllm/model_executor/models/qwen3_moe.py", line 336, in <lambda>
-(VllmWorker rank=5 pid=3914996) ERROR 07-22 20:16:11 [multiproc_executor.py:511]     lambda prefix: Qwen3MoeDecoderLayer(config=config,
-(VllmWorker rank=5 pid=3914996) ERROR 07-22 20:16:11 [multiproc_executor.py:511]                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-(VllmWorker rank=5 pid=3914996) ERROR 07-22 20:16:11 [multiproc_executor.py:511]   File "/vllm/vllm/model_executor/models/qwen3_moe.py", line 278, in __init__
-(VllmWorker rank=5 pid=3914996) ERROR 07-22 20:16:11 [multiproc_executor.py:511]     self.mlp = Qwen3MoeSparseMoeBlock(config=config,
-(VllmWorker rank=5 pid=3914996) ERROR 07-22 20:16:11 [multiproc_executor.py:511]                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-(VllmWorker rank=5 pid=3914996) ERROR 07-22 20:16:11 [multiproc_executor.py:511]   File "/vllm/vllm/model_executor/models/qwen3_moe.py", line 113, in __init__
-(VllmWorker rank=5 pid=3914996) ERROR 07-22 20:16:11 [multiproc_executor.py:511]     self.experts = FusedMoE(num_experts=config.num_experts,
-(VllmWorker rank=5 pid=3914996) ERROR 07-22 20:16:11 [multiproc_executor.py:511]                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-(VllmWorker rank=5 pid=3914996) ERROR 07-22 20:16:11 [multiproc_executor.py:511]   File "/vllm/vllm/model_executor/layers/fused_moe/layer.py", line 773, in __init__
-(VllmWorker rank=5 pid=3914996) ERROR 07-22 20:16:11 [multiproc_executor.py:511]     self.quant_method.create_weights(layer=self, **moe_quant_params)
-(VllmWorker rank=5 pid=3914996) ERROR 07-22 20:16:11 [multiproc_executor.py:511]   File "/vllm/vllm/model_executor/layers/quantization/fp8.py", line 573, in create_weights
-(VllmWorker rank=5 pid=3914996) ERROR 07-22 20:16:11 [multiproc_executor.py:511]     raise ValueError(
-(VllmWorker rank=5 pid=3914996) ERROR 07-22 20:16:11 [multiproc_executor.py:511] ValueError: The output_size of gate's and up's weight = 320 is not divisible by weight quantization block_n = 128.
+ERROR [multiproc_executor.py:511]   File "/vllm/vllm/model_executor/models/qwen3_moe.py", line 336, in <lambda>
+ERROR [multiproc_executor.py:511]     lambda prefix: Qwen3MoeDecoderLayer(config=config,
+ERROR [multiproc_executor.py:511]                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR [multiproc_executor.py:511]   File "/vllm/vllm/model_executor/models/qwen3_moe.py", line 278, in __init__
+ERROR [multiproc_executor.py:511]     self.mlp = Qwen3MoeSparseMoeBlock(config=config,
+ERROR [multiproc_executor.py:511]                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR [multiproc_executor.py:511]   File "/vllm/vllm/model_executor/models/qwen3_moe.py", line 113, in __init__
+ERROR [multiproc_executor.py:511]     self.experts = FusedMoE(num_experts=config.num_experts,
+ERROR [multiproc_executor.py:511]                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR [multiproc_executor.py:511]   File "/vllm/vllm/model_executor/layers/fused_moe/layer.py", line 773, in __init__
+ERROR [multiproc_executor.py:511]     self.quant_method.create_weights(layer=self, **moe_quant_params)
+ERROR [multiproc_executor.py:511]   File "/vllm/vllm/model_executor/layers/quantization/fp8.py", line 573, in create_weights
+ERROR [multiproc_executor.py:511]     raise ValueError(
+ERROR [multiproc_executor.py:511] ValueError: The output_size of gate's and up's weight = 320 is not divisible by weight quantization block_n = 128.
 ```
 
 ### Tool Calling
