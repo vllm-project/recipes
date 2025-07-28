@@ -8,6 +8,9 @@ This repo intends to host community maintained common recipes to run vLLM anweri
 ### Qwen <img src="https://qwenlm.github.io/favicon.png" alt="Qwen" width="16" height="16" style="vertical-align:middle;">
 - [Qwen3-Coder-480B-A35B](Qwen/Qwen3-Coder-480B-A35B.md)
 
+### InternLM
+- [Intern-S1](InternLM/Intern-S1.md)
+
 ## Contributing
 Please feel free to contribute by adding a new recipe or improving an existing one, just send us a PR!
 
