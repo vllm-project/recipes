@@ -1,14 +1,16 @@
 # Intern-S1 Usage Guide
 
 [Intern-S1](https://github.com/InternLM/Intern-S1) Intern-S1 is a vision-language model that is developed by Shanghai AI Laboratory.
-vLLM already supports Intern-S1. You can install vLLM using the following method:
+Latest vLLM already supports Intern-S1. You can install the using the following method:
 
 ## Installing vLLM
 
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm --torch-backend auto
+uv pip install -U vllm \
+    --torch-backend=auto \
+    --extra-index-url https://wheels.vllm.ai/nightly
 ```
 
 ## Launching Intern-S1 with vLLM
