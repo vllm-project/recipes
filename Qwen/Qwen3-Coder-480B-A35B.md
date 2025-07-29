@@ -119,7 +119,7 @@ ERROR [multiproc_executor.py:511] ValueError: The output_size of gate's and up's
 
 ## Roadmap
 
-- [ x ] Add benchmark results
+- [x] Add benchmark results
 
 
 ## Additional Resources
