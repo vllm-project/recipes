@@ -36,7 +36,7 @@ VLLM_USE_DEEP_GEMM=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
 
 ## Performance Metrics
 
-### Evaluation 
+### Evaluation
 We launched `Qwen3-Coder-480B-A35B-Instruct-FP8` using vLLM and evaluated its performance using  [EvalPlus](https://github.com/evalplus/evalplus). The results are displayed below:
 
 | Dataset | Test Type | Pass@1 Score |
