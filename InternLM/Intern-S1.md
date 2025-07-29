@@ -1,7 +1,7 @@
 # Intern-S1 Usage Guide
 
-[Intern-S1](https://github.com/InternLM/Intern-S1) Intern-S1 is a vision-language model that is developed by Shanghai AI Laboratory.
-Latest vLLM already supports Intern-S1. You can install vLLM using the following method:
+[Intern-S1](https://github.com/InternLM/Intern-S1) is a vision-language model that is developed by Shanghai AI Laboratory.
+Latest vLLM already supports Intern-S1. You can install it using the following method:
 
 ## Installing vLLM
 
@@ -17,8 +17,6 @@ uv pip install -U vllm \
 
 ### Serving BF16 Model on 8xH800 GPUs (80GB × 8)
 
-**BF16 Model**
-
 ```bash
 vllm serve internlm/Intern-S1 \
   --trust-remote-code \
@@ -29,8 +27,6 @@ vllm serve internlm/Intern-S1 \
 
 ### Serving FP8 Model on 4xH800 GPUs (80GB × 4)
 
-**FP8 Model**
-
 ```bash
 vllm serve internlm/Intern-S1-FP8 \
   --trust-remote-code \
@@ -38,6 +34,9 @@ vllm serve internlm/Intern-S1-FP8 \
   --reasoning-parser qwen3 \
   --tool-call-parser internlm
 ```
+
+## Using Tips
+If encountering `ValueError: No available memory for the cache blocks.`, try to increase GPU memory utilization `--gpu-memory-utilization 0.95`
 
 ## Additional Resources
 
