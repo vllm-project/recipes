@@ -27,7 +27,7 @@ vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct \
 **FP8 Model**
 
 ```bash
-vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
+VLLM_USE_DEEP_GEMM=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
   --enable-expert-parallel \
   --data-parallel-size 8 \
   --enable-auto-tool-choice \
@@ -36,6 +36,7 @@ vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
 
 ## Performance Metrics
 
+### Evaluation 
 We launched `Qwen3-Coder-480B-A35B-Instruct-FP8` using vLLM and evaluated its performance using  [EvalPlus](https://github.com/evalplus/evalplus). The results are displayed below:
 
 | Dataset | Test Type | Pass@1 Score |
@@ -44,6 +45,48 @@ We launched `Qwen3-Coder-480B-A35B-Instruct-FP8` using vLLM and evaluated its pe
 | HumanEval+ | Base + extra tests | 0.902 |
 | MBPP | Base tests | 0.918 |
 | MBPP+ | Base + extra tests | 0.794 |
+
+### Benchmarking
+We used the following script to benchmark `Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8`
+
+```bash
+vllm bench serve \
+  --backend vllm \
+  --model Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
+  --endpoint /v1/completions \
+  --dataset-name random \
+  --random-input 2048 \
+  --random-output 1024 \
+  --max-concurrency 10 \
+  --num-prompt 100 \
+```
+If successful, you will see the following output.
+
+```shell
+============ Serving Benchmark Result ============
+Successful requests:                     100
+Benchmark duration (s):                  776.49
+Total input tokens:                      204169
+Total generated tokens:                  102400
+Request throughput (req/s):              0.13
+Output token throughput (tok/s):         131.88
+Total Token throughput (tok/s):          394.81
+---------------Time to First Token----------------
+Mean TTFT (ms):                          7639.31
+Median TTFT (ms):                        6935.71
+P99 TTFT (ms):                           13766.68
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          68.43
+Median TPOT (ms):                        67.23
+P99 TPOT (ms):                           72.14
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           68.43
+Median ITL (ms):                         66.34
+P99 ITL (ms):                            69.38
+==================================================
+
+```
+
 
 ## Using Tips
 
@@ -76,7 +119,7 @@ ERROR [multiproc_executor.py:511] ValueError: The output_size of gate's and up's
 
 ## Roadmap
 
-- [ ] Add benchmark results
+- [ x ] Add benchmark results
 
 
 ## Additional Resources
