@@ -51,34 +51,28 @@ For benchmarking, disable prefix caching by adding `--no-enable-prefix-caching` 
 
 ```bash
 # Prompt-heavy benchmark (8k/1k)
-python3 ./benchmarks/benchmark_serving.py \
+vllm bench serve \
   --model deepseek-ai/DeepSeek-R1-0528 \
   --dataset-name random \
   --random-input-len 8000 \
   --random-output-len 1000 \
   --request-rate 10000 \
   --num-prompts 16 \
-  --seed 10000 \
-  --ignore-eos \
-  --metadata "framework=vllm" \
-  --port 8888
+  --ignore-eos
 ```
 
 ### FP4 Benchmark
 
 ```bash
 # Prompt-heavy benchmark (8k/1k)
-python3 ./benchmarks/benchmark_serving.py \
+vllm bench serve \
   --model nvidia/DeepSeek-R1-FP4 \
   --dataset-name random \
   --random-input-len 8000 \
   --random-output-len 1000 \
   --request-rate 10000 \
   --num-prompts 16 \
-  --seed 10000 \
-  --ignore-eos \
-  --metadata "framework=vllm" \
-  --port 8888
+  --ignore-eos
 ```
 
 ### Benchmark Configurations
