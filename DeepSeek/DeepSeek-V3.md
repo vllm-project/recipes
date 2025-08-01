@@ -18,7 +18,7 @@ uv pip install -U vllm --torch-backend auto
 vllm serve deepseek-ai/DeepSeek-R1-0528 \
   --trust-remote-code \
   --tensor-parallel-size 8 \
-  --enable_expert_parallel
+  --enable-expert-parallel
 ```
 
 Additional flags:
@@ -39,8 +39,8 @@ export VLLM_USE_FLASHINFER_MOE_FP4=1
 # The model is runnable on 4 or 8 GPUs, here we show usage of 4.
 CUDA_VISIBLE_DEVICES=0,1,2,3 vllm serve nvidia/DeepSeek-R1-FP4 \
   --trust-remote-code \
-  --tensor-parallel-size 4
-  --enable_expert_parallel
+  --tensor-parallel-size 4 \
+  --enable-expert-parallel
 ```
 
 ## Benchmarking
