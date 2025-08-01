@@ -94,6 +94,7 @@ P99 ITL (ms):                            69.38
 - **Context Length Limitation**: A single H20 node cannot serve the orgional context length(262144). You can reduce the `max-model-len` to work within memory constraints.
 
 ### FP8 Models
+- **DeepGEMM Usage**: Set `VLLM_USE_DEEP_GEMM=1` to use [DeepGEMM](https://github.com/deepseek-ai/DeepGEMM), and you can install DeepGEMM by referring to the [DeepGEMM Benchmark](https://github.com/vllm-project/vllm/blob/v0.10.0/benchmarks/kernels/deepgemm/README.md#setup) documentation.
 - **Tensor Parallelism Issue**: When using `tensor-parallel-size 8`, the following failures are expected. Switch to data-parallel mode using `--data-parallel-size`. 
 - **Additional Resources**: Refer to the [Data Parallel Deployment documentation](https://docs.vllm.ai/en/latest/serving/data_parallel_deployment.html) for more parallelism groups.
 
