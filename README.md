@@ -5,6 +5,9 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 ## Guides
 
+### DeepSeek <img src="https://deepseek.com/favicon.ico" alt="DeepSeek" width="16" height="16" style="vertical-align:middle;">
+- [DeepSeek-V3, DeepSeek-R1](DeepSeek/DeepSeek-V3.md)
+
 ### Qwen <img src="https://qwenlm.github.io/favicon.png" alt="Qwen" width="16" height="16" style="vertical-align:middle;">
 - [Qwen3-Coder-480B-A35B](Qwen/Qwen3-Coder-480B-A35B.md)
 
