@@ -28,6 +28,7 @@ vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct \
 
 ```bash
 VLLM_USE_DEEP_GEMM=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
+  --max-model-len 131072 \
   --enable-expert-parallel \
   --data-parallel-size 8 \
   --enable-auto-tool-choice \
@@ -91,9 +92,10 @@ P99 ITL (ms):                            69.38
 ## Using Tips
 
 ### BF16 Models
-- **Context Length Limitation**: A single H20 node cannot serve the orgional context length(262144). You can reduce the `max-model-len` to work within memory constraints.
+- **Context Length Limitation**: A single H20 node cannot serve the original context length (262144). You can reduce the `max-model-len` or increase `gpu-memory-utilization` to work within memory constraints.
 
 ### FP8 Models
+- **Context Length Limitation**: A single H20 node cannot serve the original context length (262144). You can reduce the `max-model-len` or increase `gpu-memory-utilization` to work within memory constraints.
 - **DeepGEMM Usage**: To use [DeepGEMM](https://github.com/deepseek-ai/DeepGEMM), set `VLLM_USE_DEEP_GEMM=1`. Follow the [setup instructions](https://github.com/vllm-project/vllm/blob/main/benchmarks/kernels/deepgemm/README.md#setup) to install it.
 - **Tensor Parallelism Issue**: When using `tensor-parallel-size 8`, the following failures are expected. Switch to data-parallel mode using `--data-parallel-size`. 
 - **Additional Resources**: Refer to the [Data Parallel Deployment documentation](https://docs.vllm.ai/en/latest/serving/data_parallel_deployment.html) for more parallelism groups.
