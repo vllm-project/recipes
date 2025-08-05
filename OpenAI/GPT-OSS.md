@@ -1,20 +1,20 @@
 ## `gpt-oss` vLLM Usage Guide
 
-`gpt-oss-20b` and `gpt-oss-120b` are powerful reasoning models open sourced by OpenAI. 
+`gpt-oss-20b` and `gpt-oss-120b` are powerful reasoning models open-sourced by OpenAI. 
 In vLLM, you can run it on NVIDIA H100, H200, B200 as well as MI300x, MI325x, MI355x and Radeon AI PRO R9700. 
-Specifically, vLLM optimize for `gpt-oss` family of models with
+Specifically, vLLM optimizes for `gpt-oss` family of models with
 
-* **Flexible parallelism option**: the model can be sharded across 2,4,8 GPUs with scaling the throughput.   
+* **Flexible parallelism options**: the model can be sharded across 2, 4, 8 GPUs, scaling throughput.
 * **High performance attention and MoE kernels**: attention kernel is specifically optimized for the attention sinks mechanism and sliding window shapes.   
 * **Asynchronous scheduling**: optimizing for maximum utilization and high throughput by overlapping CPU operations with GPU operations. 
 
-This is a living document and we welcome contributions, corrections, and creation of new recipes\! 
+This is a living document and we welcome contributions, corrections, and creation of new recipes! 
 
 ## Quickstart
 
 ### Installation
 
-We highly recommend using a new virtual environment, as the first iteration of the release requires cutting edge kernels from various dependencies, these might not work with other models. In particular, we will be installing: a prerelease version of vLLM, PyTorch nightly, Triton nightly, FlashInfer prerelease, HuggingFace prerelease, Harmony and gpt-oss library tools. 
+We highly recommend using a new virtual environment, as the first iteration of the release requires cutting edge kernels from various dependencies, these might not work with other models. In particular, we will be installing: a prerelease version of vLLM, PyTorch nightly, Triton nightly, FlashInfer prerelease, HuggingFace prerelease, Harmony, and gpt-oss library tools. 
 
 ```
 uv venv
@@ -40,14 +40,14 @@ docker run --gpus all \
 
 You can serve the model with its default parameters:
 
-* `--async-scheduling` can be enabled for higher performance. Currently it is not compatible with structure output.   
-* We recommend TP2 for H100 and H200 as the best performance tradeoff point. 
+* `--async-scheduling` can be enabled for higher performance. Currently it is not compatible with structured output.
+* We recommend TP=2 for H100 and H200 as the best performance tradeoff point. 
 
 ```
 # openai/gpt-oss-20b should run in single GPU
 vllm serve openai/gpt-oss-20b --async-scheduling 
 
-# gpt-oss-120b will fit in single H100/H200, but scaling it to higher TP sizes can help with throughput
+# gpt-oss-120b will fit in a single H100/H200, but scaling it to higher TP sizes can help with throughput
 vllm serve openai/gpt-oss-120b --async-scheduling
 vllm serve openai/gpt-oss-120b --tensor-parallel-size 2 --async-scheduling
 vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
@@ -55,7 +55,7 @@ vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
 
 ### B200
 
-NVIDIA Blackwell requires installation of FlashInfer library and several environments to enable the necessary kernels. We recommend TP1 as a starting point for a performant option. We are actively working on the performance of vLLM on Blackwell. 
+NVIDIA Blackwell requires installation of FlashInfer library and several environments to enable the necessary kernels. We recommend TP=1 as a starting point for a performant option. We are actively working on the performance of vLLM on Blackwell. 
 
 ```
 # All 3 of these are required
@@ -80,7 +80,7 @@ vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
 
 ### AMD
 
-ROCm supports OpenAI gpt-oss-120b or gpt-oss-20b models on these 3 different GPUs on Day 0, along with the pre-built docker containers:
+ROCm supports OpenAI gpt-oss-120b or gpt-oss-20b models on these 3 different GPUs on day one, along with the pre-built docker containers:
 
 * gfx950: MI350x series, `rocm/vllm-dev:open-mi355-08052025`  
 * gfx942: MI300x/MI325 series, `rocm/vllm-dev:open-mi300-08052025`  
@@ -119,21 +119,21 @@ export TRITON_HIP_PRESHUFFLE_SCALES=1
 vllm serve openai/gpt-oss-120b --compilation-config '{"compile_sizes": [1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 4096, 8192], "full_cuda_graph": true}' --block-size 64 
 ```
 
-## Usage 
+## Usage
 
-Once the `vllm serve` runs and `INFO: Application startup complete` has been displayed, you can send requests using HTTP request or OpenAI SDK to the following endpoints
+Once the `vllm serve` runs and `INFO: Application startup complete` has been displayed, you can send requests using HTTP request or OpenAI SDK to the following endpoints:
 
-* `/v1/responses` endpoint can perform tool use (browsing, python, mcp) in between chain-of-thought and deliver a final response. This endpoint leverages the `openai-harmony` library for input rendering and output parsing. Stateful operation and full streaming API are work in progress. Responses API is recommended by OpenAI as the way to interact with this model.  
-* `/v1/chat/completions` endpoint offers a familiar interface to this model. No tool will be invoked but reasoning and final text output will be returned structurally. Function calling is work in progress. You can also set the parameter `include_reasoning: false` in request parameter to skip CoT being part of the output.   
+* `/v1/responses` endpoint can perform tool use (browsing, python, mcp) in between chain-of-thought and deliver a final response. This endpoint leverages the `openai-harmony` library for input rendering and output parsing. Stateful operation and full streaming API are work in progress. Responses API is recommended by OpenAI as the way to interact with this model.
+* `/v1/chat/completions` endpoint offers a familiar interface to this model. No tool will be invoked but reasoning and final text output will be returned structurally. Function calling is work in progress. You can also set the parameter `include_reasoning: false` in request parameter to skip CoT being part of the output.
 * `/v1/completions` endpoint is the endpoint for a simple input output interface without any sorts of template rendering. 
 
 All endpoints accept `stream: true` as part of the operations to enable incremental token streaming. Please note that vLLM currently does not cover the full scope of responses API, for more detail, please see Limitation section below. 
 
 ### Tool Use
 
-One premier feature of gpt-oss is the ability to call tools directly, called “built-in tools”. In vLLM, we offer several options
+One premier feature of gpt-oss is the ability to call tools directly, called "built-in tools". In vLLM, we offer several options:
 
-* By default, we integrate with the reference library’s browser (with `ExaBackend`) and demo Python interpreter via docker container. In order to use the search backend, you need to get access to [exa.ai](http://exa.ai) and put `EXA_API_KEY=` as an environment variable. For Python, either have docker available, or set `PYTHON_EXECUTION_BACKEND=UV` (need this PR) to dangerously allow execution of model generated code snippets to be executed on the same machine. 
+* By default, we integrate with the reference library's browser (with `ExaBackend`) and demo Python interpreter via docker container. In order to use the search backend, you need to get access to [exa.ai](http://exa.ai) and put `EXA_API_KEY=` as an environment variable. For Python, either have docker available, or set `PYTHON_EXECUTION_BACKEND=UV` to dangerously allow execution of model generated code snippets to be executed on the same machine. 
 
 ```
 uv pip install gpt-oss
@@ -141,13 +141,13 @@ uv pip install gpt-oss
 vllm serve ... --tool-server demo
 ```
 
-* Please note that the default options are simply for demo purpose, for serious usage, vLLM itself can act as MCP client to multiple services. 
+* Please note that the default options are simply for demo purposes. For production usage, vLLM itself can act as MCP client to multiple services. 
 
 ```
 mcp run -t sse browser_server.py:mcp
 mcp run -t sse python_server.py:mcp
 
-vllm serve ... --tool-server ip-2:port-2,ip-2:port-2
+vllm serve ... --tool-server ip-1:port-1,ip-2:port-2
 ```
 
 The URLs are expected to be MCP SSE servers that implement `instructions` in server info and well documented tools. The tools will be injected into the system prompt for the model to enable them. 
@@ -175,7 +175,7 @@ vllm serve openai/gpt-oss-120b \
   --no-enable-prefix-caching
 ```
 
-Here is the score we are able to reproduce, and we encourage you to help reproduce as well\! 
+Here is the score we are able to reproduce, and we encourage you to help reproduce as well! 
 
 Model: 120B
 
@@ -193,7 +193,7 @@ Model: 20B
 | Mid  | 67.5 | 75.0 |
 | High  |  |  |
 
-### Known Limitations
+## Known Limitations
 
 * On H100 using tensor parallel size 1, default gpu memory utilization, and batched token will cause CUDA Out-of-memory. When running tp1, please increase your gpu memory utilization or lower batched token
 
@@ -201,29 +201,29 @@ Model: 20B
 vllm serve openai/gpt-oss-120b --gpu-memory-utilization 0.95 --max-num-batched-token 1024
 ```
 
-* When running TP2 on H100, set your gpu memory utilization below 0.95 as that will also cause OOM  
-* Responses API has several limitation at the current moment, we strongly welcome contribution and maintenance of this service in vLLM  
-* Usage accounting is currently broken and only returns all 0\.   
-* Annotations (citing URLs from search results) are not supported.  
-* Truncation by `max_tokens` might not be able to preserve partial chunks.   
-* Streaming is fairly barebone at the moment, for example  
-  * Item id and indexing needs more work  
-  * Tool invocation and output are not properly streamed, rather batched.   
+* When running TP2 on H100, set your gpu memory utilization below 0.95 as that will also cause OOM
+* Responses API has several limitations at the current moment; we strongly welcome contribution and maintenance of this service in vLLM
+* Usage accounting is currently broken and only returns all zeros.
+* Annotations (citing URLs from search results) are not supported.
+* Truncation by `max_tokens` might not be able to preserve partial chunks.
+* Streaming is fairly barebone at the moment, for example:
+  * Item id and indexing needs more work
+  * Tool invocation and output are not properly streamed, rather batched.
   * Proper error handling is missing. 
 
-Troubleshooting
+## Troubleshooting
 
-- Attention sink dtype error on blackwell:
+- Attention sink dtype error on Blackwell:
 
 ```
-  ERROR 08-05 07:31:10 \[multiproc\_executor.py:559\]     assert sinks.dtype \== torch.float32, "Sinks must be of type float32"  
-  **(VllmWorker TP0 pid=174579)** ERROR 08-05 07:31:10 \[multiproc\_executor.py:559\]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  
-  **(VllmWorker TP0 pid=174579)** ERROR 08-05 07:31:10 \[multiproc\_executor.py:559\] AssertionError: Sinks must be of type float32
+  ERROR 08-05 07:31:10 [multiproc_executor.py:559]     assert sinks.dtype == torch.float32, "Sinks must be of type float32"  
+  **(VllmWorker TP0 pid=174579)** ERROR 08-05 07:31:10 [multiproc_executor.py:559]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  
+  **(VllmWorker TP0 pid=174579)** ERROR 08-05 07:31:10 [multiproc_executor.py:559] AssertionError: Sinks must be of type float32
 ```
 
-**Solution: Please refer to Blackwell section to check if related environment variables are added.**  
+**Solution: Please refer to Blackwell section to check if related environment variables are added.**
 
 - Triton issue related to `tl.language` not defined:
 
-**Solution: make sure only there’s no other triton installed in your environment(pytorch-triton, etc).**
+**Solution: Make sure there's no other triton installed in your environment (pytorch-triton, etc).**
 
