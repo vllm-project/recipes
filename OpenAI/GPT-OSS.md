@@ -198,7 +198,7 @@ Model: 20B
 * On H100 using tensor parallel size 1, default gpu memory utilization, and batched token will cause CUDA Out-of-memory. When running tp1, please increase your gpu memory utilization or lower batched token
 
 ```
-vllm serve openai/gpt-oss-120b --gpu-memory-utilization 0.95 --max-num-batched-token 1024
+vllm serve openai/gpt-oss-120b --gpu-memory-utilization 0.95 --max-num-batched-tokens 1024
 ```
 
 * When running TP2 on H100, set your gpu memory utilization below 0.95 as that will also cause OOM
