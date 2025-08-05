@@ -142,6 +142,7 @@ vllm serve ... --tool-server demo
 ```
 
 * Please note that the default options are simply for demo purposes. For production usage, vLLM itself can act as MCP client to multiple services. 
+Here is an [example tool server](https://github.com/openai/gpt-oss/tree/main/gpt-oss-mcp-server) that vLLM can work with, they wrap the demo tools: 
 
 ```
 mcp run -t sse browser_server.py:mcp
