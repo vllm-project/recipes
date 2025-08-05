@@ -5,6 +5,9 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 ## Guides
 
+### OpenAI <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/OpenAI_logo_2025_%28symbol%29.svg/2585px-OpenAI_logo_2025_%28symbol%29.svg.png" alt="OpenAI" width="16" height="16" style="vertical-align:middle;"> 
+- [gpt-oss](OpenAI/GPT-OSS.md)
+
 ### DeepSeek <img src="https://avatars.githubusercontent.com/u/148330874?s=200&v=4" alt="DeepSeek" width="16" height="16" style="vertical-align:middle;">
 - [DeepSeek-V3, DeepSeek-R1](DeepSeek/DeepSeek-V3.md)
 
