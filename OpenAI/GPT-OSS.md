@@ -162,7 +162,7 @@ python -m gpt_oss.evals --model 120b-low --eval gpqa --n-threads 128
 python -m gpt_oss.evals --model 120b --eval gpqa --n-threads 128
 python -m gpt_oss.evals --model 120b-high --eval gpqa --n-threads 128
 ```
-
+To eval on AIME2025, change `gpqa` to `aime25`.
 With vLLM deployed:
 
 ```
@@ -176,15 +176,17 @@ vllm serve openai/gpt-oss-120b \
   --no-enable-prefix-caching
 ```
 
-Here is the score we are able to reproduce, and we encourage you to help reproduce as well! 
+Here is the score we were able to reproduce without tool use, and we encourage you to try reproducing it as well!
+We’ve observed that the numbers may vary slightly across runs, so feel free to run the evaluation multiple times to get a sense of the variance.
+For a quick correctness check, we recommend starting with the low reasoning effort setting (120b-low), which should complete within minutes.
 
 Model: 120B
 
 | Reasoning Effort | GPQA | AIME25 |
 | :---- | :---- | :---- |
 | Low  | 65.3 | 51.2 |
-| Mid  | (77) | 79.6 |
-| High  | (82.2) | 93.0 |
+| Mid  | 72.4 | 79.6 |
+| High  | 79.4 | 93.0 |
 
 Model: 20B
 
@@ -192,7 +194,7 @@ Model: 20B
 | :---- | :---- | :---- |
 | Low  | 56.8 | 38.8 |
 | Mid  | 67.5 | 75.0 |
-| High  |  |  |
+| High  | 70.9 | 85.8  |
 
 ## Known Limitations
 
