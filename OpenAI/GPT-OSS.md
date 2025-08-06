@@ -2,6 +2,7 @@
 
 `gpt-oss-20b` and `gpt-oss-120b` are powerful reasoning models open-sourced by OpenAI. 
 In vLLM, you can run it on NVIDIA H100, H200, B200 as well as MI300x, MI325x, MI355x and Radeon AI PRO R9700. 
+We are actively working on ensuring this model can work on Ampere, Ada Lovelace, and RTX 5090. 
 Specifically, vLLM optimizes for `gpt-oss` family of models with
 
 * **Flexible parallelism options**: the model can be sharded across 2, 4, 8 GPUs, scaling throughput.
