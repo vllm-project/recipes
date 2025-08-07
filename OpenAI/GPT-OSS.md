@@ -37,6 +37,22 @@ docker run --gpus all \
     --model openai/gpt-oss-20b
 ```
 
+### A100
+
+GPT-OSS works on ampere devices using the `TRITON_ATTN_VLLM_V1` attention backend:
+* use `VLLM_ATTENTION_BACKEND=TRITON_ATTN_VLLM_V1`.
+* `--async-scheduling` can be enabled for higher performance. Currently it is not compatible with structured output.
+
+```
+# openai/gpt-oss-20b should run on a single A100
+VLLM_ATTENTION_BACKEND=TRITON_ATTN_VLLM_V1 vllm serve openai/gpt-oss-20b --async-scheduling 
+
+# gpt-oss-120b will fit on a single A100 (80GB), but scaling it to higher TP sizes can help with throughput
+VLLM_ATTENTION_BACKEND=TRITON_ATTN_VLLM_V1 vllm serve openai/gpt-oss-120b --async-scheduling
+VLLM_ATTENTION_BACKEND=TRITON_ATTN_VLLM_V1 vllm serve openai/gpt-oss-120b --tensor-parallel-size 2 --async-scheduling
+VLLM_ATTENTION_BACKEND=TRITON_ATTN_VLLM_V1 vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
+```
+
 ### H100 & H200
 
 You can serve the model with its default parameters:
