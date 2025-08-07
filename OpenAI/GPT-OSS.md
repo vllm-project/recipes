@@ -39,7 +39,7 @@ docker run --gpus all \
 
 ### A100
 
-GPT-OSS works on ampere devices using the `TRITON_ATTN_VLLM_V1` attention backend:
+GPT-OSS works on Ampere devices using the `TRITON_ATTN_VLLM_V1` attention backend:
 * use `VLLM_ATTENTION_BACKEND=TRITON_ATTN_VLLM_V1`.
 * `--async-scheduling` can be enabled for higher performance. Currently it is not compatible with structured output.
 
