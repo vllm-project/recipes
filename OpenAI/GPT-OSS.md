@@ -13,48 +13,11 @@ This is a living document and we welcome contributions, corrections, and creatio
 
 ## Quickstart
 
-### Installation from `main`
-If you choose to install vllm from `main`, please continue to read this section, otherwise please skip to install from [pre-built wheels](#installation-from-pre-built-wheels). 
-
-We currently only support running main on **NVIDIA Blackwell** GPUs. To start, please download and build from source
-```bash
-uv venv
-source .venv/bin/activate
-
-git clone https://github.com/vllm-project/vllm.git
-cd vllm
-
-CUDA_HOME=path/to/cuda_home VLLM_USE_PRECOMPILED=1 uv pip install --editable . --torch-backend=auto
-```
-Note that `CUDA_HOME` must point to a CUDA Toolkit installation with a version of 12.8 or newer. 
-After installation we need to set a few environment variables 
-```bash
-# Required env
-export VLLM_USE_TRTLLM_ATTENTION=1
-
-# Choose one of the following
-export VLLM_USE_FLASHINFER_MOE_MXFP4_BF16=1
-export VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8=1
-
-export CUDA_HOME=path/to/cuda_home # Must be the same path as used during installation
-
-# We are ready to serve!
-# openai/gpt-oss-20b
-vllm serve openai/gpt-oss-20b --async-scheduling 
-
-# gpt-oss-120b 
-vllm serve openai/gpt-oss-120b --async-scheduling
-vllm serve openai/gpt-oss-120b --tensor-parallel-size 2 --async-scheduling
-vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
-```
-
-#### Known Issues
-- When you encounter this error `The link interface of target "torch::nvtoolsext" contains: CUDA::nvToolsExt but the target was not found.` Please double check your pytorch version has suffix `+cu128`.
-- If the output you see is garbage, that might be because you haven't properly set `CUDA_HOME`. The CUDA version needs to be greater than or equal to 12.8 and must be the same for installation and serving. 
-
 ### Installation from pre-built wheels
 
 We highly recommend using a new virtual environment, as the first iteration of the release requires cutting edge kernels from various dependencies, these might not work with other models. In particular, we will be installing: a prerelease version of vLLM, PyTorch nightly, Triton nightly, FlashInfer prerelease, HuggingFace prerelease, Harmony, and gpt-oss library tools. 
+
+We also provide instruction on how to install from `main` branch [here](#installation-from-main)
 
 ```
 uv venv
@@ -174,6 +137,44 @@ export TRITON_HIP_PRESHUFFLE_SCALES=1
 
 vllm serve openai/gpt-oss-120b --compilation-config '{"compile_sizes": [1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 4096, 8192], "full_cuda_graph": true}' --block-size 64 
 ```
+
+### Installation from `main`
+
+We currently only support running main on **NVIDIA Blackwell** GPUs. To start, please download and build from source
+```bash
+uv venv
+source .venv/bin/activate
+
+git clone https://github.com/vllm-project/vllm.git
+cd vllm
+
+CUDA_HOME=path/to/cuda_home VLLM_USE_PRECOMPILED=1 uv pip install --editable . --torch-backend=auto
+```
+Note that `CUDA_HOME` must point to a CUDA Toolkit installation with a version of 12.8 or newer. 
+After installation we need to set a few environment variables 
+```bash
+# Required env
+export VLLM_USE_TRTLLM_ATTENTION=1
+
+# Choose one of the following
+export VLLM_USE_FLASHINFER_MOE_MXFP4_BF16=1
+export VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8=1
+
+export CUDA_HOME=path/to/cuda_home # Must be the same path as used during installation
+
+# We are ready to serve!
+# openai/gpt-oss-20b
+vllm serve openai/gpt-oss-20b --async-scheduling 
+
+# gpt-oss-120b 
+vllm serve openai/gpt-oss-120b --async-scheduling
+vllm serve openai/gpt-oss-120b --tensor-parallel-size 2 --async-scheduling
+vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
+```
+
+#### Known Issues
+- When you encounter this error `The link interface of target "torch::nvtoolsext" contains: CUDA::nvToolsExt but the target was not found.` Please double check your pytorch version has suffix `+cu128`.
+- If the output you see is garbage, that might be because you haven't properly set `CUDA_HOME`. The CUDA version needs to be greater than or equal to 12.8 and must be the same for installation and serving. 
 
 ## Usage
 
