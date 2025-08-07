@@ -48,7 +48,7 @@ vllm serve openai/gpt-oss-120b --tensor-parallel-size 2 --async-scheduling
 vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
 ```
 
-#### Known issue
+#### Known Issues
 - When you encounter this error `The link interface of target "torch::nvtoolsext" contains: CUDA::nvToolsExt but the target was not found.` Please double check your pytorch version has suffix `+cu128`.
 - If the output you see is garbage, that might because you haven't properly set `CUDA_HOME`. The cuda version need to be greater or equal to 12.8 and need to be the same when install and serve. 
 
