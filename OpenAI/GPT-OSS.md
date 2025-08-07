@@ -14,7 +14,7 @@ This is a living document and we welcome contributions, corrections, and creatio
 ## Quickstart
 
 ### Installation from `main`
-If you choose to install vllm from `main`, please continue to read this section, otherwise please skip to intall from [pre-build wheel](###installation-from-pre-built-wheels). 
+If you choose to install vllm from `main`, please continue to read this section, otherwise please skip to install from [pre-built wheels](#installation-from-pre-built-wheels). 
 
 We currently only support running main on **NVIDIA Blackwell** GPUs. To start, please download and build from source
 ```bash
