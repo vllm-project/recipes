@@ -21,7 +21,7 @@ We currently only support running main on **NVIDIA Blackwell** GPUs. To start, p
 uv venv
 source .venv/bin/activate
 
-git clone git@github.com:vllm-project/vllm.git
+git clone https://github.com/vllm-project/vllm.git
 cd vllm
 
 CUDA_HOME=path/to/cuda_home VLLM_USE_PRECOMPILED=1 uv pip install --editable . --torch-backend=auto
