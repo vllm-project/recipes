@@ -36,7 +36,7 @@ export VLLM_USE_TRTLLM_ATTENTION=1
 export VLLM_USE_FLASHINFER_MOE_MXFP4_BF16=1
 export VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8=1
 
-CUDA_HOME=/same/path/as/install
+export CUDA_HOME=path/to/cuda_home # Must be the same path as used during installation
 
 # We are ready to serve!
 # openai/gpt-oss-20b
