@@ -27,7 +27,7 @@ cd vllm
 CUDA_HOME=path/to/cuda_home VLLM_USE_PRECOMPILED=1 uv pip install --editable . --torch-backend=auto
 ```
 Note that `CUDA_HOME` must point to a CUDA Toolkit installation with a version of 12.8 or newer. 
-After installation we need to set a few environment variable 
+After installation we need to set a few environment variables 
 ```bash
 # Required env
 export VLLM_USE_TRTLLM_ATTENTION=1
