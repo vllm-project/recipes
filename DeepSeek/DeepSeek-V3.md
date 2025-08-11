@@ -1,5 +1,19 @@
 # DeepSeek-V3 (R1) Usage Guide
 
+- [DeepSeek-V3 (R1) Usage Guide](#deepseek-v3-r1-usage-guide)
+  - [Introduction](#introduction)
+  - [Installing vLLM](#installing-vllm)
+  - [Running DeepSeek-R1 with FP8 on 8xH200](#running-deepseek-r1-with-fp8-on-8xh200)
+  - [Running DeepSeek-R1 with FP4 on 4xB200](#running-deepseek-r1-with-fp4-on-4xb200)
+  - [Benchmarking](#benchmarking)
+    - [FP8 Benchmark](#fp8-benchmark)
+    - [FP4 Benchmark](#fp4-benchmark)
+    - [Benchmark Configurations](#benchmark-configurations)
+    - [Expected Output](#expected-output)
+
+
+## Introduction
+
 This guide describes how to run DeepSeek-V3 or DeepSeek-R1 with native FP8 or FP4. 
 In the guide, we use DeepSeek-R1 as an example, but the same applies to DeepSeek-V3 given they have the same model architecture.
 
