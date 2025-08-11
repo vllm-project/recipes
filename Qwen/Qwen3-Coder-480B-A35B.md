@@ -1,5 +1,6 @@
 # Qwen3-Coder Usage Guide
 - [Qwen3-Coder Usage Guide](#qwen3-coder-usage-guide)
+  - [Introduction](#introduction)
   - [Installing vLLM](#installing-vllm)
   - [Launching Qwen3-Coder with vLLM](#launching-qwen3-coder-with-vllm)
     - [Serving on 8xH200 (or H20) GPUs (141GB × 8)](#serving-on-8xh200-or-h20-gpus-141gb--8)
@@ -12,6 +13,8 @@
     - [Tool Calling](#tool-calling)
   - [Roadmap](#roadmap)
   - [Additional Resources](#additional-resources)
+
+## Introduction
 
 [Qwen3-Coder](https://github.com/QwenLM/Qwen3-Coder) is an advanced large language model created by the Qwen team from Alibaba Cloud. vLLM already supports Qwen3-Coder, and `tool-call` functionality will be available in vLLM v0.10.0 and higher You can install vLLM with `tool-call` support using the following method:
 
