@@ -1,4 +1,18 @@
 ## `gpt-oss` vLLM Usage Guide
+- [`gpt-oss` vLLM Usage Guide](#gpt-oss-vllm-usage-guide)
+- [Quickstart](#quickstart)
+  - [Installation from pre-built wheels](#installation-from-pre-built-wheels)
+  - [A100](#a100)
+  - [H100 \& H200](#h100--h200)
+  - [B200](#b200)
+  - [AMD](#amd)
+  - [Installation from `main`](#installation-from-main)
+    - [Known Issues](#known-issues)
+- [Usage](#usage)
+  - [Tool Use](#tool-use)
+- [Accuracy Evaluation Panels](#accuracy-evaluation-panels)
+- [Known Limitations](#known-limitations)
+- [Troubleshooting](#troubleshooting)
 
 `gpt-oss-20b` and `gpt-oss-120b` are powerful reasoning models open-sourced by OpenAI. 
 In vLLM, you can run it on NVIDIA H100, H200, B200 as well as MI300x, MI325x, MI355x and Radeon AI PRO R9700. 

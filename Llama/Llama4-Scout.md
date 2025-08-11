@@ -1,4 +1,20 @@
 # Quick Start Recipe for Llama 4 Scout on vLLM - NVIDIA Blackwell Hardware
+- [Quick Start Recipe for Llama 4 Scout on vLLM - NVIDIA Blackwell Hardware](#quick-start-recipe-for-llama-4-scout-on-vllm---nvidia-blackwell-hardware)
+  - [Introduction](#introduction)
+  - [Access \& Licensing](#access--licensing)
+    - [License](#license)
+    - [Weights](#weights)
+  - [Prerequisites](#prerequisites)
+  - [Deployment Steps](#deployment-steps)
+    - [Build Docker Image](#build-docker-image)
+    - [Run Docker Container](#run-docker-container)
+    - [Launch the vLLM Server](#launch-the-vllm-server)
+    - [Configs and Parameters](#configs-and-parameters)
+  - [Validation \& Expected Behavior](#validation--expected-behavior)
+    - [Basic Test](#basic-test)
+    - [Verify Accuracy](#verify-accuracy)
+    - [Benchmarking Performance](#benchmarking-performance)
+    - [Interpreting `benchmark_serving.py` Output](#interpreting-benchmark_servingpy-output)
 
 ## Introduction
 
