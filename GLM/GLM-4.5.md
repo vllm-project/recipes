@@ -1,8 +1,9 @@
-# GLM-4.5 Usage Guide
+# GLM-4.5, GLM-4.5-Air Usage Guide
 
 This guide describes how to run GLM-4.5 / GLM-4.5-Air with native FP8 and BF16. 
 In the GLM-4.5 series, FP8 models have minimal accuracy loss. 
 Unless you need strict reproducibility for benchmarking or similar scenarios, we recommend using FP8 to run at a lower cost.
+GLM-4.5 models have MTP layers.
 
 ## Installing vLLM
 
@@ -66,4 +67,26 @@ Test different batch sizes by changing `--num-prompts`:
 ### Expected Output
 
 ```shell
+============ Serving Benchmark Result ============
+Successful requests:                     16        
+Request rate configured (RPS):           10000.00  
+Benchmark duration (s):                  24.56     
+Total input tokens:                      128000    
+Total generated tokens:                  16000     
+Request throughput (req/s):              0.65      
+Output token throughput (tok/s):         651.58    
+Total Token throughput (tok/s):          5864.22   
+---------------Time to First Token----------------
+Mean TTFT (ms):                          2100.95   
+Median TTFT (ms):                        2063.87   
+P99 TTFT (ms):                           4284.97   
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          22.35     
+Median TPOT (ms):                        22.39     
+P99 TPOT (ms):                           24.19     
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           22.35     
+Median ITL (ms):                         20.23     
+P99 ITL (ms):                            37.17     
+==================================================
 ```

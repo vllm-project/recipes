@@ -66,5 +66,26 @@ Test different batch sizes by changing `--num-prompts`:
 ### Expected Output
 
 ```shell
-
+============ Serving Benchmark Result ============
+Successful requests:                     16        
+Request rate configured (RPS):           10000.00  
+Benchmark duration (s):                  24.76     
+Total input tokens:                      128000    
+Total generated tokens:                  16000     
+Request throughput (req/s):              0.65      
+Output token throughput (tok/s):         646.09    
+Total Token throughput (tok/s):          5814.83   
+---------------Time to First Token----------------
+Mean TTFT (ms):                          2906.26   
+Median TTFT (ms):                        2931.35   
+P99 TTFT (ms):                           5357.41   
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          21.76     
+Median TPOT (ms):                        21.74     
+P99 TPOT (ms):                           24.35     
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           21.82     
+Median ITL (ms):                         19.22     
+P99 ITL (ms):                            48.70     
+==================================================
 ```
