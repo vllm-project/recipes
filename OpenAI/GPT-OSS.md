@@ -287,3 +287,22 @@ vllm serve openai/gpt-oss-120b --gpu-memory-utilization 0.95 --max-num-batched-t
 
 **Solution: Make sure there's no other triton installed in your environment (pytorch-triton, etc).**
 
+## Harmony Format Support
+
+Below is the support matrix for Harmony format.
+Meaning:
+* ✅ = Full compatibility
+* ❌ = No compatibility
+
+| API Type| Basic Text Generation | Structured Output | Builtin Tools with demo Tool Server | Builtin Tools with MCP | Function Calling | 
+| :----: | :----: | :----: | :----: | :----: | :----: |
+| Response API | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Response API with Background Mode | ✅ | ✅ | ✅ | ❌  | ✅ |
+| Response API with Streaming | ✅ | ✅  | ❌  | ❌  | ❌  |
+| Chat Completion API | ✅ | ❌  | ❌ | ❌ | ❌ |
+| Chat Completion API with Streaming | ❌  | ❌ | ❌ | ❌ | ❌ |
+
+
+If you want to use offline inference, you can treat vLLM as a token-in-token-out service and pass in the tokens that already formatted by Harmony.
+
+For function calling, only tool_choice="auto" is supported.
