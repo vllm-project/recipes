@@ -212,15 +212,9 @@ The URLs are expected to be MCP SSE servers that implement `instructions` in ser
 
 ## Accuracy Evaluation Panels
 
-OpenAI recommends using the gpt-oss reference library to perform evaluation. For example, 
+OpenAI recommends using the gpt-oss reference library to perform evaluation.
 
-```
-python -m gpt_oss.evals --model 120b-low --eval gpqa --n-threads 128
-python -m gpt_oss.evals --model 120b --eval gpqa --n-threads 128
-python -m gpt_oss.evals --model 120b-high --eval gpqa --n-threads 128
-```
-To eval on AIME2025, change `gpqa` to `aime25`.
-With vLLM deployed:
+First, deploy the model with vLLM:
 
 ```
 # Example deployment on 8xH100
@@ -233,9 +227,18 @@ vllm serve openai/gpt-oss-120b \
   --no-enable-prefix-caching
 ```
 
+Then, run the evaluation with gpt-oss. The following command will run all the 3 reasoning effort levels.
+
+```
+mkdir -p /tmp/gpqa_openai
+OPENAI_API_KEY=empty python -m gpt_oss.evals --model openai/gpt-oss-120b --eval gpqa --n-threads 128
+```
+
+To eval on AIME2025, change `gpqa` to `aime25`.
+
 Here is the score we were able to reproduce without tool use, and we encourage you to try reproducing it as well!
 We’ve observed that the numbers may vary slightly across runs, so feel free to run the evaluation multiple times to get a sense of the variance.
-For a quick correctness check, we recommend starting with the low reasoning effort setting (120b-low), which should complete within minutes.
+For a quick correctness check, we recommend starting with the low reasoning effort setting (`--reasoning-effort low`), which should complete within minutes.
 
 Model: 120B
 
