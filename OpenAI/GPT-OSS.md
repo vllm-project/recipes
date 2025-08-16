@@ -303,6 +303,6 @@ Meaning:
 | Chat Completion API with Streaming | ❌  | ❌ | ❌ | ❌ | ❌ |
 
 
-If you want to use offline inference, you can treat vLLM as a token-in-token-out service and pass in the tokens that already formatted by Harmony.
+If you want to use offline inference, you can treat vLLM as a token-in-token-out service and pass in tokens that are already formatted with Harmony.
 
 For function calling, only tool_choice="auto" is supported.
