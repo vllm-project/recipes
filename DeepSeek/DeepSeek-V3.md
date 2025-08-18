@@ -65,7 +65,7 @@ export VLLM_ATTENTION_BACKEND=CUTLASS_MLA
 export VLLM_USE_FLASHINFER_MOE_FP4=1
 ```
 
-The run tensor-parallel:
+Then run tensor-parallel:
 
 ```bash
 # The model is runnable on 4 or 8 GPUs, here we show usage of 4.
