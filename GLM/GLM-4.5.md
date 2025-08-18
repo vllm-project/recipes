@@ -24,8 +24,8 @@ run tensor-parallel like this:
 # Start server with FP8 model on 4 GPUs. the model can also changed to BF16 as zai-org/GLM-4.5-Air
 vllm serve zai-org/GLM-4.5-Air-FP8 \
      --tensor-parallel-size 8 \
-     --tool-call-parser glm45 \
-     --reasoning-parser glm45 \
+     --tool-call-parser glm4_moe \
+     --reasoning-parser glm4_moe \
      --enable-auto-tool-choice
 ```
 
