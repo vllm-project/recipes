@@ -18,8 +18,9 @@ uv pip install -U vllm --torch-backend auto
 
 ```bash
 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct \
-  --tensor-parallel-size 8 \
   --max-model-len 32000 \
+  --enable-expert-parallel \
+  --tensor-parallel-size 8 \
   --enable-auto-tool-choice \
   --tool-call-parser qwen3_coder
 ```
