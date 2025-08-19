@@ -22,6 +22,9 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [GLM-4.5, GLM-4.5-Air](GLM/GLM-4.5.md)
 - [GLM-4.5V](GLM/GLM-4.5V.md)
 
+### InternLM <img src="https://avatars.githubusercontent.com/u/135356492?s=200&v=4" alt="InternLM" width="16" height="16" style="vertical-align:middle;">
+- [Intern-S1](InternLM/Intern-S1.md)
+
 ## Contributing
 Please feel free to contribute by adding a new recipe or improving an existing one, just send us a PR!
 
