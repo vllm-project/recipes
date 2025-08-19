@@ -290,7 +290,9 @@ vllm serve openai/gpt-oss-120b --gpu-memory-utilization 0.95 --max-num-batched-t
 ## Harmony Format Support
 
 Below is the support matrix for Harmony format.
+
 Meaning:
+
 * ✅ = Full compatibility
 * ❌ = No compatibility
 
