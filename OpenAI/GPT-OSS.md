@@ -294,13 +294,13 @@ Meaning:
 * ✅ = Full compatibility
 * ❌ = No compatibility
 
-| API Type| Basic Text Generation | Structured Output | Builtin Tools with demo Tool Server | Builtin Tools with MCP | Function Calling | 
+| API Type| Basic Text Generation | Structured Output | Builtin Tools with demo Tool Server | Builtin Tools with MCP | Function Calling |
 | :----: | :----: | :----: | :----: | :----: | :----: |
 | Response API | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Response API with Background Mode | ✅ | ✅ | ✅ | ❌  | ✅ |
-| Response API with Streaming | ✅ | ✅  | ❌  | ❌  | ❌  |
-| Chat Completion API | ✅ | ❌  | ❌ | ❌ | ❌ |
-| Chat Completion API with Streaming | ❌  | ❌ | ❌ | ❌ | ❌ |
+| Response API with Background Mode | ✅ | ✅ | ✅ | ❌ | ✅ |
+| Response API with Streaming | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Chat Completion API | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Chat Completion API with Streaming | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 
 If you want to use offline inference, you can treat vLLM as a token-in-token-out service and pass in tokens that are already formatted with Harmony.
