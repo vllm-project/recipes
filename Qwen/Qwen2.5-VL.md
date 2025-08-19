@@ -1,7 +1,7 @@
 # Qwen2.5-VL Usage Guide
 
 This guide describes how to run Qwen2.5-VL series with native BF16 on NVIDIA GPUs. 
-Since BF16 is the commonly used precision type for Qwen2.5VL training or fine-tuning, using BF16 in inference ensures the best accuracy.
+Since BF16 is the commonly used precision type for Qwen2.5-VL training, using BF16 in inference ensures the best accuracy.
 
 
 ## Installing vLLM
@@ -14,11 +14,11 @@ uv pip install -U vllm --torch-backend auto
 
 ## Running Qwen2.5-VL-72B with BF16 on 4xA100
 
-There are two ways to parallelize the model over multiple GPUs: (1) Tensor-parallel or (2) Data-parallel. Each one has its own advantages, where tensor-parallel is usually more beneficial for low-latency / low-load scenarios and data-parallel works better for cases where there is a lot of data with heavy-loads.
+There are two ways to parallelize the model over multiple GPUs: (1) Tensor-parallel (TP) or (2) Data-parallel (DP). Each one has its own advantages, where tensor-parallel is usually more beneficial for low-latency / low-load scenarios and data-parallel works better for cases where there is a lot of data with heavy loads.
 
-To launch the online inference server using tensor-parallel:
+To launch the online inference server using TP=4:
 
-```
+```bash
 # Start server with BF16 model on 4 GPUs
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
@@ -37,9 +37,11 @@ To run a smaller model, such as Qwen2.5-VL-7B, you can simply replace the model 
 
 ## Benchmarking
 
-For benchmarking, disable prefix caching by adding `--no-enable-prefix-caching` to the server command.
+For benchmarking, you first need to launch the server with prefix caching disabled by adding `--no-enable-prefix-caching` to the server command.
 
 ### Qwen2.5VL-72B Benchmark
+
+Once the server is running, open another terminal and run the benchmark client:
 
 ```bash
 vllm bench serve \
