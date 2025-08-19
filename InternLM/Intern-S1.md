@@ -21,7 +21,9 @@ uv pip install -U vllm \
 vllm serve internlm/Intern-S1 \
   --trust-remote-code \
   --tensor-parallel-size 8 \
-  --reasoning-parser qwen3
+  --enable-auto-tool-choice \
+  --reasoning-parser deepseek_r1 \
+  --tool-call-parser internlm
 ```
 
 ### Serving FP8 Model on 4xH800 GPUs (80GB × 4)
@@ -30,7 +32,9 @@ vllm serve internlm/Intern-S1 \
 vllm serve internlm/Intern-S1-FP8 \
   --trust-remote-code \
   --tensor-parallel-size 4 \
-  --reasoning-parser qwen3
+  --enable-auto-tool-choice \
+  --reasoning-parser deepseek_r1 \
+  --tool-call-parser internlm
 ```
 
 ## Advanced Usage
