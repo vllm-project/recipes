@@ -15,18 +15,12 @@ This is a living document and we welcome contributions, corrections, and creatio
 
 ### Installation from pre-built wheels
 
-We highly recommend using a new virtual environment, as the first iteration of the release requires cutting edge kernels from various dependencies, these might not work with other models. In particular, we will be installing: a prerelease version of vLLM, PyTorch nightly, Triton nightly, FlashInfer prerelease, HuggingFace prerelease, Harmony, and gpt-oss library tools. 
-
-We also provide instruction on how to install from `main` branch [here](#installation-from-main)
+We recommend using the official [vLLM 0.10.1 release](https://github.com/vllm-project/vllm/releases/tag/v0.10.1) as your starting point. Create a new virtual environment and install the official release:
 
 ```
 uv venv
 source .venv/bin/activate
-
-uv pip install --pre vllm==0.10.1+gptoss \
-    --extra-index-url https://wheels.vllm.ai/gpt-oss/ \
-    --extra-index-url https://download.pytorch.org/whl/nightly/cu128 \
-    --index-strategy unsafe-best-match
+uv pip install vllm==0.10.1 --torch-backend=auto
 ```
 
 We also provide a docker container with all the dependencies built in
@@ -35,29 +29,29 @@ We also provide a docker container with all the dependencies built in
 docker run --gpus all \
     -p 8000:8000 \
     --ipc=host \
-    vllm/vllm-openai:gptoss \
+    vllm/vllm-openai:0.10.1 \
     --model openai/gpt-oss-20b
 ```
 
 ### A100
 
-GPT-OSS works on Ampere devices using the `TRITON_ATTN_VLLM_V1` attention backend:
-* use `VLLM_ATTENTION_BACKEND=TRITON_ATTN_VLLM_V1`.
+GPT-OSS works on Ampere devices by default, using the `TRITON_ATTN` attention backend and Marlin MXFP4 MoE:
+
 * `--async-scheduling` can be enabled for higher performance. Currently it is not compatible with structured output.
 
 ```
 # openai/gpt-oss-20b should run on a single A100
-VLLM_ATTENTION_BACKEND=TRITON_ATTN_VLLM_V1 vllm serve openai/gpt-oss-20b --async-scheduling 
+vllm serve openai/gpt-oss-20b --async-scheduling 
 
 # gpt-oss-120b will fit on a single A100 (80GB), but scaling it to higher TP sizes can help with throughput
-VLLM_ATTENTION_BACKEND=TRITON_ATTN_VLLM_V1 vllm serve openai/gpt-oss-120b --async-scheduling
-VLLM_ATTENTION_BACKEND=TRITON_ATTN_VLLM_V1 vllm serve openai/gpt-oss-120b --tensor-parallel-size 2 --async-scheduling
-VLLM_ATTENTION_BACKEND=TRITON_ATTN_VLLM_V1 vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
+vllm serve openai/gpt-oss-120b --async-scheduling
+vllm serve openai/gpt-oss-120b --tensor-parallel-size 2 --async-scheduling
+vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
 ```
 
 ### H100 & H200
 
-You can serve the model with its default parameters:
+GPT-OSS works on Hopper devices by default, using the FlashAttention3 backend and Marlin MXFP4 MoE:
 
 * `--async-scheduling` can be enabled for higher performance. Currently it is not compatible with structured output.
 * We recommend TP=2 for H100 and H200 as the best performance tradeoff point. 
@@ -74,19 +68,20 @@ vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
 
 ### B200
 
-NVIDIA Blackwell requires installation of FlashInfer library and several environments to enable the necessary kernels. We recommend TP=1 as a starting point for a performant option. We are actively working on the performance of vLLM on Blackwell. 
+NVIDIA Blackwell requires installation of [FlashInfer library](https://github.com/flashinfer-ai/flashinfer), so please install the extra `vllm[flashinfer]`.
 
 ```
-# All 3 of these are required
-export VLLM_USE_TRTLLM_ATTENTION=1
-export VLLM_USE_TRTLLM_DECODE_ATTENTION=1
-export VLLM_USE_TRTLLM_CONTEXT_ATTENTION=1
+uv pip install vllm[flashinfer]==0.10.1 --torch-backend=auto
+```
 
-# Pick only one out of the two.
+We recommend TP=1 as a starting point for a performant option. We are actively working on the performance of vLLM on Blackwell. 
+
+```
+# Pick only one out of the two for MoE implementation
+# bf16 activation for MoE. matching reference precision (default).
+export VLLM_USE_FLASHINFER_MXFP4_BF16_MOE=1 
 # mxfp8 activation for MoE. faster, but higher risk for accuracy.
 export VLLM_USE_FLASHINFER_MXFP4_MOE=1 
-# bf16 activation for MoE. matching reference precision.
-export VLLM_USE_FLASHINFER_MXFP4_BF16_MOE=1 
 
 # openai/gpt-oss-20b
 vllm serve openai/gpt-oss-20b --async-scheduling 
@@ -136,40 +131,6 @@ export VLLM_ROCM_USE_AITER_MHA=0
 export TRITON_HIP_PRESHUFFLE_SCALES=1
 
 vllm serve openai/gpt-oss-120b --compilation-config '{"compile_sizes": [1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 4096, 8192], "full_cuda_graph": true}' --block-size 64 
-```
-
-### Installation from `main`
-
-We currently only support running main on **NVIDIA Blackwell** GPUs. To start, please download and build from source
-```bash
-uv venv
-source .venv/bin/activate
-
-git clone https://github.com/vllm-project/vllm.git
-cd vllm
-
-CUDA_HOME=path/to/cuda_home VLLM_USE_PRECOMPILED=1 uv pip install --editable . --torch-backend=auto
-```
-Note that `CUDA_HOME` must point to a CUDA Toolkit installation with a version of 12.8 or newer. 
-After installation we need to set a few environment variables 
-```bash
-# Required env
-export VLLM_USE_TRTLLM_ATTENTION=1
-
-# Choose one of the following
-export VLLM_USE_FLASHINFER_MOE_MXFP4_BF16=1
-export VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8=1
-
-export CUDA_HOME=path/to/cuda_home # Must be the same path as used during installation
-
-# We are ready to serve!
-# openai/gpt-oss-20b
-vllm serve openai/gpt-oss-20b --async-scheduling 
-
-# gpt-oss-120b 
-vllm serve openai/gpt-oss-120b --async-scheduling
-vllm serve openai/gpt-oss-120b --tensor-parallel-size 2 --async-scheduling
-vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
 ```
 
 #### Known Issues
