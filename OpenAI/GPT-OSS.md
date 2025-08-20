@@ -262,8 +262,8 @@ Meaning:
 | Response API | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Response API with Background Mode | ✅ | ✅ | ✅ | ❌ | ✅ |
 | Response API with Streaming | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Chat Completion API | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Chat Completion API with Streaming | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Chat Completion API | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Chat Completion API with Streaming | ✅ | ✅ | ❌ | ❌ | ❌ |
 
 
 If you want to use offline inference, you can treat vLLM as a token-in-token-out service and pass in tokens that are already formatted with Harmony.
