@@ -17,7 +17,7 @@ uv pip install -U vllm --torch-backend auto
 ### Weights
 [OpenGVLab/InternVL3-8B-hf](https://huggingface.co/OpenGVLab/InternVL3-8B)
 
-#### Running InternVL3-8B-hf model on A100-SXM4-40GB GPUs (2 cards) in eager mode
+### Running InternVL3-8B-hf model on A100-SXM4-40GB GPUs (2 cards) in eager mode
 
 Launch the online inference server using TP=2:
 ```bash
@@ -96,7 +96,7 @@ vllm bench serve \
   --random-input 2048 \
   --random-output 1024 \
   --max-concurrency 10 \
-  --num-prompts 50\
+  --num-prompts 50 \
   --ignore-eos
 ```
 If it works successfully, you will see the following output.
