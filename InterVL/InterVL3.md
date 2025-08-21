@@ -1,6 +1,6 @@
 # InternVL3 Usage Guide
 
-This guide describes how to run InternVL3 series on NVIDIA GPUs.'
+This guide describes how to run InternVL3 series on NVIDIA GPUs.
 
 [InterVL3](https://huggingface.co/collections/OpenGVLab/internvl3-67f7f690be79c2fe9d74fe9d) is a powerful multimodal model that combines vision and language understanding capabilities. This recipe provides step-by-step instructions for running InterVL3 using vLLM, optimized for various hardware configurations.
 
@@ -24,7 +24,7 @@ uv pip install -U vllm --torch-backend auto
 Launch the online inference server using TP=2:
 ```bash
 export CUDA_VISIBLE_DEVICES=0,1
-vllm serve OpenGVLab/InternVL3-8B-hf --enforce-eager
+vllm serve OpenGVLab/InternVL3-8B-hf --enforce-eager \
   --host 0.0.0.0 \
   --port 8000 \
   --tensor-parallel-size 2 \
@@ -33,11 +33,11 @@ vllm serve OpenGVLab/InternVL3-8B-hf --enforce-eager
 
 ## Configs and Parameters
 
-`--enforce-eager` disables the CUDA Graph in Pytroch; otherwise, it will throw error  `torch._dynamo.exc.Unsupported: Data-dependent branching` during testing. For more information about CUDA Graph, pls check [Accelerating-pytorch-with-cuda-graphs](https://pytorch.org/blog/accelerating-pytorch-with-cuda-graphs/)
+`--enforce-eager` disables the CUDA Graph in PyTroch; otherwise, it will throw error  `torch._dynamo.exc.Unsupported: Data-dependent branching` during testing. For more information about CUDA Graph, please check [Accelerating-pytorch-with-cuda-graphs](https://pytorch.org/blog/accelerating-pytorch-with-cuda-graphs/)
 
-`--tensor-parallel-size` set Tensor Parallel (TP).
+`--tensor-parallel-size` sets Tensor Parallel (TP).
 
-`--data-parallel-size` set Data-parallel (DP).
+`--data-parallel-size` sets Data-parallel (DP).
 
 
 
@@ -59,10 +59,10 @@ curl http://localhost:8000/v1/completions \
 The result would be like this:
 ```json
 {
-"id":[id],
+"id":cmpl-1ed0df81b56448afa597215a8725c686,
 "object":"text_completion",
-"created":[created_number],
-"model":[model_name],
+"created":1755739470,
+"model":OpenGVLab/InternVL3-8B-hf,
 "choices":
   [{
   "index":0,
@@ -83,9 +83,6 @@ The result would be like this:
   },
 "kv_transfer_params":null}
 ```
-
-
-### Verify Accuracy
 
 ### Benchmarking Performance
 
