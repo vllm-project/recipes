@@ -28,7 +28,6 @@ vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
   --data-parallel-size 1 \
   --mm-encoder-tp-mode data \
   --limit-mm-per-prompt '{"image":2,"video":0}' \
-  --no-enable-prefix-caching \
 
 ```
 * You can set `--max-model-len` to preserve memory. `--max-model-len=65536` is usually good for most scenarios.
@@ -49,7 +48,6 @@ vllm serve Qwen/Qwen2.5-VL-7B-Instruct  \
   --tensor-parallel-size 1 \
   --data-parallel-size 4 \
   --limit-mm-per-prompt '{"image":2,"video":0}' \
-  --no-enable-prefix-caching \
 ```
 
 ## Benchmarking
