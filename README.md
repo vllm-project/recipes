@@ -5,25 +5,28 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 ## Guides
 
-### OpenAI <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/OpenAI_logo_2025_%28symbol%29.svg/2585px-OpenAI_logo_2025_%28symbol%29.svg.png" alt="OpenAI" width="16" height="16" style="vertical-align:middle;"> 
-- [gpt-oss](OpenAI/GPT-OSS.md)
-
 ### DeepSeek <img src="https://avatars.githubusercontent.com/u/148330874?s=200&v=4" alt="DeepSeek" width="16" height="16" style="vertical-align:middle;">
 - [DeepSeek-V3, DeepSeek-R1](DeepSeek/DeepSeek-V3.md)
+- [DeepSeek-V3.1](DeepSeek/DeepSeek-V3_1.md)
+
+### GLM <img src="https://raw.githubusercontent.com/zai-org/GLM-4.5/refs/heads/main/resources/logo.svg" alt="GLM" width="16" height="16" style="vertical-align:middle;">
+- [GLM-4.5, GLM-4.5-Air](GLM/GLM-4.5.md)
+- [GLM-4.5V](GLM/GLM-4.5V.md)
+  
+### InternLM <img src="https://avatars.githubusercontent.com/u/135356492?s=200&v=4" alt="InternLM" width="16" height="16" style="vertical-align:middle;">
+- [Intern-S1](InternLM/Intern-S1.md)
 
 ### Llama
 - [Llama3.3-70B](Llama/Llama3.3-70B.md)
 - [Llama4-Scout](Llama/Llama4-Scout.md)
 
+### OpenAI <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/OpenAI_logo_2025_%28symbol%29.svg/2585px-OpenAI_logo_2025_%28symbol%29.svg.png" alt="OpenAI" width="16" height="16" style="vertical-align:middle;"> 
+- [gpt-oss](OpenAI/GPT-OSS.md)
+
 ### Qwen <img src="https://qwenlm.github.io/favicon.png" alt="Qwen" width="16" height="16" style="vertical-align:middle;">
 - [Qwen3-Coder-480B-A35B](Qwen/Qwen3-Coder-480B-A35B.md)
 
-### GLM <img src="https://raw.githubusercontent.com/zai-org/GLM-4.5/refs/heads/main/resources/logo.svg" alt="GLM" width="16" height="16" style="vertical-align:middle;">
-- [GLM-4.5, GLM-4.5-Air](GLM/GLM-4.5.md)
-- [GLM-4.5V](GLM/GLM-4.5V.md)
 
-### InternLM <img src="https://avatars.githubusercontent.com/u/135356492?s=200&v=4" alt="InternLM" width="16" height="16" style="vertical-align:middle;">
-- [Intern-S1](InternLM/Intern-S1.md)
 
 ## Contributing
 Please feel free to contribute by adding a new recipe or improving an existing one, just send us a PR!
