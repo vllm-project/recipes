@@ -15,7 +15,7 @@ uv pip install -U vllm --torch-backend auto
 ```
 
 ### Weights
-[OpenGVLab/InternVL3-8B-hf](https://huggingface.co/OpenGVLab/InternVL3-8B)
+[OpenGVLab/InternVL3-8B-hf](https://huggingface.co/OpenGVLab/InternVL3-8B-hf)
 
 ### Running InternVL3-8B-hf model on A100-SXM4-40GB GPUs (2 cards) in eager mode
 
@@ -31,7 +31,7 @@ vllm serve OpenGVLab/InternVL3-8B-hf --enforce-eager \
 
 ## Configs and Parameters
 
-`--enforce-eager` disables the CUDA Graph in PyTorch; otherwise, it will throw error  `torch._dynamo.exc.Unsupported: Data-dependent branching` during testing. For more information about CUDA Graph, please check [Accelerating-pytorch-with-cuda-graphs](https://pytorch.org/blog/accelerating-pytorch-with-cuda-graphs/)
+`--enforce-eager` disables the CUDA Graph in PyTorch; otherwise, it will throw error `torch._dynamo.exc.Unsupported: Data-dependent branching` during testing. For more information about CUDA Graph, please check [Accelerating-pytorch-with-cuda-graphs](https://pytorch.org/blog/accelerating-pytorch-with-cuda-graphs/)
 
 `--tensor-parallel-size` sets Tensor Parallel (TP).
 
