@@ -40,7 +40,7 @@ vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
 For medium-size models like Qwen2.5-VL-7B, data parallelism usually provides better performance since it boosts throughput without the heavy communication costs seen in tensor parallelism. Here is an example of how to launch the server using DP=4:
 
 ```bash
-# Start server with BF model on 4 GPUs using DP=4
+# Start server with BF16 model on 4 GPUs using DP=4
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 vllm serve Qwen/Qwen2.5-VL-7B-Instruct  \
   --host 0.0.0.0 \
