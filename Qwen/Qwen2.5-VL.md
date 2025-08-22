@@ -31,8 +31,8 @@ vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
 ```
 * You can set `--max-model-len` to preserve memory. By default the model's context length is 128K, but `--max-model-len=65536` is usually good for most scenarios.
 * You can set `--tensor-parallel-size` and `--data-parallel-size` to adjust the parallel strategy. But TP should be larger than 2 for A100-80GB devices to avoid OOM.
-* You can set `limit-mm-per-prompt` to limit how many multimodal data instances to allow for each prompt. This is useful if you want to control the incoming traffic of multimodal requests.
-* `--mm-encode-tp-mode` is set to "data", so as to deploy the multimodal encoder in DP fashion for better performance. This is because the multimodal encoder is very small compared to the language decoder (ViT 675M v.s. LM 72B in Qwen2.5-VL-72B), thus TP on ViT provides little gain but incurs significant communication overhead.  
+* You can set `--limit-mm-per-prompt` to limit how many multimodal data instances to allow for each prompt. This is useful if you want to control the incoming traffic of multimodal requests.
+* `--mm-encoder-tp-mode` is set to "data", so as to deploy the multimodal encoder in DP fashion for better performance. This is because the multimodal encoder is very small compared to the language decoder (ViT 675M v.s. LM 72B in Qwen2.5-VL-72B), thus TP on ViT provides little gain but incurs significant communication overhead.  
 * vLLM conservatively uses 90% of GPU memory. You can set `--gpu-memory-utilization=0.95` to maximize KVCache.
 
 
@@ -199,7 +199,7 @@ Once the server for the 7B model is running, open another terminal and run the b
 vllm bench serve \
   --host 0.0.0.0 \
   --port 8000 \
-  --model Qwen/Qwen2.5-VL-72B-Instruct \
+  --model Qwen/Qwen2.5-VL-7B-Instruct \
   --dataset-name random \
   --random-input-len 8000 \
   --random-output-len 1000 \
