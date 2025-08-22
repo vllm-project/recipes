@@ -2,7 +2,7 @@
 
 This guide describes how to run InternVL3 series on NVIDIA GPUs.
 
-[InterVL3](https://huggingface.co/collections/OpenGVLab/internvl3-67f7f690be79c2fe9d74fe9d) is a powerful multimodal model that combines vision and language understanding capabilities. This recipe provides step-by-step instructions for running InterVL3 using vLLM, optimized for various hardware configurations.
+[InternVL3](https://huggingface.co/collections/OpenGVLab/internvl3-67f7f690be79c2fe9d74fe9d) is a powerful multimodal model that combines vision and language understanding capabilities. This recipe provides step-by-step instructions for running InternVL3 using vLLM, optimized for various hardware configurations.
 
 ## Deployment Steps
 
