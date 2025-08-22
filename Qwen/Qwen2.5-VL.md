@@ -29,6 +29,7 @@ vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
   --limit-mm-per-prompt '{"image":2,"video":0}' \
 
 ```
+### Tips
 - You can set `--max-model-len` to preserve memory. By default the model's context length is 128K, but `--max-model-len=65536` is usually good for most scenarios.
 - You can set `--tensor-parallel-size` and `--data-parallel-size` to adjust the parallel strategy. But TP should be larger than 2 for A100-80GB devices to avoid OOM.
 - You can set `--limit-mm-per-prompt` to limit how many multimodal data instances to allow for each prompt. This is useful if you want to control the incoming traffic of multimodal requests.
