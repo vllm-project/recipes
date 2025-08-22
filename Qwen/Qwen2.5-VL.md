@@ -25,7 +25,6 @@ vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
   --host 0.0.0.0 \
   --port 8000 \
   --tensor-parallel-size 4 \
-  --data-parallel-size 1 \
   --mm-encoder-tp-mode data \
   --limit-mm-per-prompt '{"image":2,"video":0}' \
 
