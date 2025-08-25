@@ -34,7 +34,6 @@ theme:
     - content.tabs.link
     - navigation.tracking
     - navigation.sections
-    - navigation.prune
     - navigation.top
     - search.highlight
     - search.share
