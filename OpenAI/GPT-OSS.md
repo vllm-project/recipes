@@ -29,7 +29,7 @@ We also provide a docker container with all the dependencies built in
 docker run --gpus all \
     -p 8000:8000 \
     --ipc=host \
-    vllm/vllm-openai:0.10.1 \
+    vllm/vllm-openai:v0.10.1 \
     --model openai/gpt-oss-20b
 ```
 
