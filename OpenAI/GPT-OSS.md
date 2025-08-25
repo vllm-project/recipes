@@ -169,7 +169,15 @@ mcp run -t sse python_server.py:mcp
 vllm serve ... --tool-server ip-1:port-1,ip-2:port-2
 ```
 
-The URLs are expected to be MCP SSE servers that implement `instructions` in server info and well documented tools. The tools will be injected into the system prompt for the model to enable them. 
+The URLs are expected to be MCP SSE servers that implement `instructions` in server info and well documented tools. The tools will be injected into the system prompt for the model to enable them.
+
+### Function calling
+
+vLLM supports function calling for Chat Completion API. Make sure to run your gpt-oss models with the following:
+
+```bash
+vllm serve openai/gpt-oss-20b --tool-call-parser openai --reasoning-parser openai_gptoss --enable-auto-tool-choice
+```
 
 ## Accuracy Evaluation Panels
 
@@ -265,8 +273,8 @@ Meaning:
 | Response API | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Response API with Background Mode | ✅ | ✅ | ✅ | ❌ | ✅ |
 | Response API with Streaming | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Chat Completion API | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Chat Completion API with Streaming | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Chat Completion API | ✅ | ✅ | ❌ | ❌ | ✅  |
+| Chat Completion API with Streaming | ✅ | ✅ | ❌ | ❌ | ✅  |
 
 
 If you want to use offline inference, you can treat vLLM as a token-in-token-out service and pass in tokens that are already formatted with Harmony.
