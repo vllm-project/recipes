@@ -146,7 +146,7 @@ curl http://localhost:8000/v1/chat/completions \
     "model": "ByteDance-Seed/Seed-OSS-36B-Instruct",
     "messages": [{"role": "user", "content": "Explain quantum computing"}],
     "chat_template_kwargs": {
-    	"thinking_budget": 512
+        "thinking_budget": 512
     }
   }'
 ```
@@ -157,16 +157,16 @@ We used the following script to benchmark `ByteDance-Seed/Seed-OSS-36B-Instruct`
 
 ```
 vllm bench serve \
-  --backend vllm \
-  --model ByteDance-Seed/Seed-OSS-36B-Instruct \
-  --endpoint /v1/completions \
-  --host localhost \
-  --port 8000 \
-  --dataset-name random \
-  --random-input 800 \
-  --random-output 100 \
-  --request-rate 2 \
-  --num-prompt 100 \
+    --backend vllm \
+    --model ByteDance-Seed/Seed-OSS-36B-Instruct \
+    --endpoint /v1/completions \
+    --host localhost \
+    --port 8000 \
+    --dataset-name random \
+    --random-input 800 \
+    --random-output 100 \
+    --request-rate 2 \
+    --num-prompt 100 \
 ```
 
 Sample output:
