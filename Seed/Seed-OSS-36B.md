@@ -25,7 +25,7 @@ There are two ways to parallelize the model over multiple GPUs: (1) Tensor-paral
 Run tensor-parallel like this:
 
 ```bash
-vllm serve ByteDance-Seed/Seed-OSS-36B-Base \
+vllm serve ByteDance-Seed/Seed-OSS-36B-Instruct \
     --host localhost \
     --port 8000 \
     --tensor-parallel-size 8 \
