@@ -93,8 +93,8 @@ vllm bench serve \
   --port 8000 \
   --model OpenGVLab/InternVL3-8B-hf \
   --dataset-name random \
-  --random-input 2048 \
-  --random-output 1024 \
+  --random-input-len 2048 \
+  --random-output-len 1024 \
   --max-concurrency 10 \
   --num-prompts 50 \
   --ignore-eos
@@ -103,24 +103,26 @@ If it works successfully, you will see the following output.
 
 ```
 ============ Serving Benchmark Result ============
-Successful requests:                     497
-Benchmark duration (s):                  229.42
-Total input tokens:                      507680
-Total generated tokens:                  62259
-Request throughput (req/s):              2.17
-Output token throughput (tok/s):         271.37
-Total Token throughput (tok/s):          2484.22
+Successful requests:                     50
+Maximum request concurrency:             10
+Benchmark duration (s):                  247.46
+Total input tokens:                      101987
+Total generated tokens:                  51200
+Request throughput (req/s):              0.20
+Output token throughput (tok/s):         206.90
+Total Token throughput (tok/s):          619.04
 ---------------Time to First Token----------------
-Mean TTFT (ms):                          102429.40
-Median TTFT (ms):                        99644.38
-P99 TTFT (ms):                           213820.81
+Mean TTFT (ms):                          932.11
+Median TTFT (ms):                        854.60
+P99 TTFT (ms):                           1845.91
 -----Time per Output Token (excl. 1st token)------
-Mean TPOT (ms):                          664.26
-Median TPOT (ms):                        776.39
-P99 TPOT (ms):                           848.52
+Mean TPOT (ms):                          47.44
+Median TPOT (ms):                        47.53
+P99 TPOT (ms):                           48.26
 ---------------Inter-token Latency----------------
-Mean ITL (ms):                           661.73
-Median ITL (ms):                         844.15
-P99 ITL (ms):                            856.42
+Mean ITL (ms):                           47.44
+Median ITL (ms):                         46.14
+P99 ITL (ms):                            54.76
 ==================================================
+
 ```
