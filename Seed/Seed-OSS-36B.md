@@ -151,3 +151,47 @@ curl http://localhost:8000/v1/chat/completions \
   }'
 ```
 
+## Benchmarking
+
+We used the following script to benchmark `ByteDance-Seed/Seed-OSS-36B-Instruct` on RTX 3090 GPU:
+
+```
+vllm bench serve \
+  --backend vllm \
+  --model ByteDance-Seed/Seed-OSS-36B-Instruct \
+  --endpoint /v1/completions \
+  --host localhost \
+  --port 8000 \
+  --dataset-name random \
+  --random-input 800 \
+  --random-output 100 \
+  --request-rate 2 \
+  --num-prompt 100 \
+```
+
+Sample output:
+
+```
+============ Serving Benchmark Result ============
+Successful requests:                     100       
+Request rate configured (RPS):           2.00      
+Benchmark duration (s):                  54.08     
+Total input tokens:                      79934     
+Total generated tokens:                  10000     
+Request throughput (req/s):              1.85      
+Output token throughput (tok/s):         184.92    
+Total Token throughput (tok/s):          1663.06   
+---------------Time to First Token----------------
+Mean TTFT (ms):                          97.96     
+Median TTFT (ms):                        99.71     
+P99 TTFT (ms):                           128.60    
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          44.39     
+Median TPOT (ms):                        43.74     
+P99 TPOT (ms):                           49.19     
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           44.39     
+Median ITL (ms):                         46.18     
+P99 ITL (ms):                            64.52     
+==================================================
+```
