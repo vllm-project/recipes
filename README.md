@@ -27,7 +27,8 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [Qwen2.5-VL](Qwen/Qwen2.5-VL.md)
 - [Qwen3-Coder-480B-A35B](Qwen/Qwen3-Coder-480B-A35B.md)
 
-
+### Seed
+- [Seed-OSS-36B](Seed/Seed-OSS-36B.md)
 
 ## Contributing
 Please feel free to contribute by adding a new recipe or improving an existing one, just send us a PR!
