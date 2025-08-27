@@ -171,30 +171,35 @@ vllm serve ... --tool-server ip-1:port-1,ip-2:port-2
 
 The URLs are expected to be MCP SSE servers that implement `instructions` in server info and well documented tools. The tools will be injected into the system prompt for the model to enable them.
 
-GPT OSS also expects a builtin tool called container. It doesn't have exposed tool type in openai types.
+GPT OSS also expects a built-in tool called container. It doesn't have exposed tool type in openai types.
 For reference the container tool is a stateful docker container that can be used to run command line tools.
 The enabled tool namespace is `container` and the tool name used the most is `exec`.
-MCP server need to implement the following functions to support container tool:
+MCP server needs to implement the following functions to support container tool:
 ```
-- for tool name: exec
-  - args:
-      {
-          "cmd":List[str] "command to execute",
-          "workdir":optional[str] "current working directory",
-          "env":optional[object/dict] "environment variables",
-          "session_name":optional[str] "session name",
-          "timeout":optional[int] "timeout in seconds",
-          "user":optional[str] "user name",
-      }
+Tool: exec
+Arguments:
+  - cmd (List[str]): command to execute
+  - workdir (Optional[str]): current working directory
+  - env (Optional[Dict[str, str]]): environment variables
+  - session_name (Optional[str]): session name
+  - timeout (Optional[int]): timeout in seconds
+  - user (Optional[str]): user name
 Signature:
-async def exec(ctx: Context, rest_of_the_args) -> str
-expect ctx to contain a session id to identify the container session and make it stateful
+  async def exec(ctx: Context, **kwargs) -> str
+  # Note: `ctx` is expected to contain a session id to identify the container session and make it stateful.
 ```
 Container tool runtime implementation can be referenced from https://github.com/SWE-agent/SWE-ReX
 The docker image might need to have some similar features as codex supports
 To enable container tool in vllm before openai types has it, Add below
 ```
 export VLLM_ENABLE_CONTAINER_TOOL=1
+```
+
+Skipping Tool descriptions
+Some tools don't expect json format like built-in python.
+Remove json description from system prompt by set the below
+```
+export VLLM_GPT_OSS_NO_TOOL_DESCRIPTION_NAMESPACES="python"
 ```
 
 ## Accuracy Evaluation Panels
@@ -298,3 +303,10 @@ Meaning:
 If you want to use offline inference, you can treat vLLM as a token-in-token-out service and pass in tokens that are already formatted with Harmony.
 
 For function calling, only tool_choice="auto" is supported.
+
+Harmony also only supports instructions in developer message but to achieve better alignment with training
+It it preferred to place it in system message.
+Enable below to move instructions to system message
+```
+export VLLM_GPT_OSS_HARMONY_SYSTEM_INSTRUCTIONS=1
+```
