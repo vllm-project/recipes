@@ -84,7 +84,7 @@ The result would be like this:
 
 ### Benchmarking Performance
 
-Take InternVL3-8B-hf as an example, using random multimodal dataset mentioned in [PR:Feature/benchmark/random mm data/images](https://github.com/vllm-project/vllm/pull/23119):
+Take InternVL3-8B-hf as an example, using random multimodal dataset mentioned in [this vLLM PR](https://github.com/vllm-project/vllm/pull/23119):
 
 ```bash
 # need to start vLLM service first
