@@ -194,13 +194,12 @@ To enable container tool in vllm before openai types has it, Add below
 ```
 export VLLM_ENABLE_CONTAINER_TOOL=1
 ```
-
-Skipping Tool descriptions
-Some tools don't expect json format like built-in python.
-Remove json description from system prompt by set the below
+To properly run container tool, follow examples in sample_container_mcp.md
+and run
 ```
-export VLLM_GPT_OSS_NO_TOOL_DESCRIPTION_NAMESPACES="python"
+mcp run -t sse container_server.py:mcp
 ```
+Note names here are dummy and you need to implement your own.
 
 ## Accuracy Evaluation Panels
 
