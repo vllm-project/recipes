@@ -84,45 +84,54 @@ The result would be like this:
 
 ### Benchmarking Performance
 
-Take InternVL3-8B-hf as an example:
+Take InternVL3-8B-hf as an example, using random multimodal dataset mentioned in [PR:Feature/benchmark/random mm data/images](https://github.com/vllm-project/vllm/pull/23119):
 
 ```bash
 # need to start vLLM service first
 vllm bench serve \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --model OpenGVLab/InternVL3-8B-hf \
-  --dataset-name random \
-  --random-input-len 2048 \
-  --random-output-len 1024 \
-  --max-concurrency 10 \
-  --num-prompts 50 \
-  --ignore-eos
+    --host 0.0.0.0 \
+    --port 8000 \
+    --model OpenGVLab/InternVL3-8B-hf \
+    --dataset-name random-mm \
+    --num-prompts 100 \
+    --max-concurrency 10 \
+    --random-prefix-len 25 \
+    --random-input-len 300 \
+    --random-output-len 40 \
+    --random-range-ratio 0.2 \
+    --random-mm-base-items-per-request 0 \
+    --random-mm-num-mm-items-range-ratio 0 \
+    --random-mm-limit-mm-per-prompt '{"image":3,"video":0}' \
+    --random-mm-bucket-config '{(256, 256, 1): 0.25, (720, 1280, 1): 0.75}' \
+    --request-rate inf \
+    --ignore-eos \
+    --endpoint-type openai-chat \
+    --endpoint "/v1/chat/completions" \
+    --seed 42 
 ```
 If it works successfully, you will see the following output.
 
 ```
 ============ Serving Benchmark Result ============
-Successful requests:                     50
+Successful requests:                     100
 Maximum request concurrency:             10
-Benchmark duration (s):                  247.46
-Total input tokens:                      101987
-Total generated tokens:                  51200
-Request throughput (req/s):              0.20
-Output token throughput (tok/s):         206.90
-Total Token throughput (tok/s):          619.04
+Benchmark duration (s):                  24.54
+Total input tokens:                      32805
+Total generated tokens:                  3982
+Request throughput (req/s):              4.07
+Output token throughput (tok/s):         162.25
+Total Token throughput (tok/s):          1498.91
 ---------------Time to First Token----------------
-Mean TTFT (ms):                          932.11
-Median TTFT (ms):                        854.60
-P99 TTFT (ms):                           1845.91
+Mean TTFT (ms):                          198.18
+Median TTFT (ms):                        158.99
+P99 TTFT (ms):                           524.05
 -----Time per Output Token (excl. 1st token)------
-Mean TPOT (ms):                          47.44
-Median TPOT (ms):                        47.53
-P99 TPOT (ms):                           48.26
+Mean TPOT (ms):                          55.56
+Median TPOT (ms):                        56.04
+P99 TPOT (ms):                           60.32
 ---------------Inter-token Latency----------------
-Mean ITL (ms):                           47.44
-Median ITL (ms):                         46.14
-P99 ITL (ms):                            54.76
+Mean ITL (ms):                           54.22
+Median ITL (ms):                         47.02
+P99 ITL (ms):                            116.90
 ==================================================
-
 ```
