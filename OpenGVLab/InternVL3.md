@@ -17,12 +17,12 @@ uv pip install -U vllm --torch-backend auto
 ### Weights
 [OpenGVLab/InternVL3-8B-hf](https://huggingface.co/OpenGVLab/InternVL3-8B-hf)
 
-### Running InternVL3-8B-hf model on A100-SXM4-40GB GPUs (2 cards) in eager mode
+### Running InternVL3-8B-hf model on A100-SXM4-40GB GPUs (2 cards)
 
 Launch the online inference server using TP=2:
 ```bash
 export CUDA_VISIBLE_DEVICES=0,1
-vllm serve OpenGVLab/InternVL3-8B-hf --enforce-eager \
+vllm serve OpenGVLab/InternVL3-8B-hf \
   --host 0.0.0.0 \
   --port 8000 \
   --tensor-parallel-size 2 \
@@ -31,11 +31,9 @@ vllm serve OpenGVLab/InternVL3-8B-hf --enforce-eager \
 
 ## Configs and Parameters
 
-`--enforce-eager` disables the CUDA Graph in PyTorch; otherwise, it will throw error `torch._dynamo.exc.Unsupported: Data-dependent branching` during testing. For more information about CUDA Graph, please check [Accelerating-pytorch-with-cuda-graphs](https://pytorch.org/blog/accelerating-pytorch-with-cuda-graphs/)
+* You can set `limit-mm-per-prompt` to limit how many multimodal data instances to allow for each prompt. This is useful if you want to control the incoming traffic of multimodal requests. E.g., `--limit-mm-per-prompt '{"image":2, "video":0}'`
 
-`--tensor-parallel-size` sets Tensor Parallel (TP).
-
-`--data-parallel-size` sets Data-parallel (DP).
+* You can set `--tensor-parallel-size` and `--data-parallel-size` to adjust the parallel strategy.
 
 
 
@@ -84,7 +82,9 @@ The result would be like this:
 
 ### Benchmarking Performance
 
-Take InternVL3-8B-hf as an example, using random multimodal dataset mentioned in [this vLLM PR](https://github.com/vllm-project/vllm/pull/23119):
+#### InternVL3-8B-hf on Multimodal Random Dataset
+
+Take InternVL3-8B-hf as an example, using the random multimodal dataset mentioned in [this vLLM PR](https://github.com/vllm-project/vllm/pull/23119):
 
 ```bash
 # need to start vLLM service first
@@ -133,5 +133,46 @@ P99 TPOT (ms):                           60.32
 Mean ITL (ms):                           54.22
 Median ITL (ms):                         47.02
 P99 ITL (ms):                            116.90
+==================================================
+```
+
+#### InternVL3-8B-hf on VisionArena-Chat Dataset
+
+```bash
+# need to start vLLM service first
+vllm bench serve \
+    --host 0.0.0.0 \
+    --port 8000\
+    --backend openai-chat \
+    --endpoint /v1/chat/completions \
+    --endpoint-type openai-chat \
+    --model OpenGVLab/InternVL3-8B-hf \
+    --dataset-name hf \
+    --dataset-path lmarena-ai/VisionArena-Chat \
+    --num-prompts 1000 
+```
+If it works successfully, you will see the following output.
+
+```
+============ Serving Benchmark Result ============
+Successful requests:                     1000
+Benchmark duration (s):                  597.45
+Total input tokens:                      109173
+Total generated tokens:                  109352
+Request throughput (req/s):              1.67
+Output token throughput (tok/s):         183.03
+Total Token throughput (tok/s):          365.76
+---------------Time to First Token----------------
+Mean TTFT (ms):                          280208.05
+Median TTFT (ms):                        270322.52
+P99 TTFT (ms):                           582602.60
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          519.16
+Median TPOT (ms):                        539.03
+P99 TPOT (ms):                           596.74
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           593.88
+Median ITL (ms):                         530.72
+P99 ITL (ms):                            4129.92
 ==================================================
 ```
