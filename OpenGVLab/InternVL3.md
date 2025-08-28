@@ -35,8 +35,6 @@ vllm serve OpenGVLab/InternVL3-8B-hf \
 
 * You can set `--tensor-parallel-size` and `--data-parallel-size` to adjust the parallel strategy.
 
-
-
 ## Validation & Expected Behavior
 
 ### Basic Test
@@ -142,8 +140,7 @@ P99 ITL (ms):                            116.90
 # need to start vLLM service first
 vllm bench serve \
     --host 0.0.0.0 \
-    --port 8000\
-    --backend openai-chat \
+    --port 8000 \
     --endpoint /v1/chat/completions \
     --endpoint-type openai-chat \
     --model OpenGVLab/InternVL3-8B-hf \

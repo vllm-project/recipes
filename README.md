@@ -25,7 +25,7 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 ### OpenGVLab
 - [InternVL3](OpenGVLab/InternVL3.md)
-  
+
 ### Qwen <img src="https://qwenlm.github.io/favicon.png" alt="Qwen" width="16" height="16" style="vertical-align:middle;">
 - [Qwen2.5-VL](Qwen/Qwen2.5-VL.md)
 - [Qwen3-Coder-480B-A35B](Qwen/Qwen3-Coder-480B-A35B.md)
