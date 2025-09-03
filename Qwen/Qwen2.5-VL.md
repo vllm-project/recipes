@@ -113,6 +113,7 @@ vllm bench serve \
   --random-output-len 1000 \
   --num-prompts 128 
 ```
+
 * Test different workloads by adjusting input/output lengths via the `--random-input-len` and `--random-output-len` arguments:
     - **Prompt-heavy**: 8000 input / 1000 output
     - **Decode-heavy**: 1000 input / 8000 output  

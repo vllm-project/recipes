@@ -56,11 +56,13 @@ vllm bench serve \
 ### Benchmark Configurations
 
 Test different workloads by adjusting input/output lengths:
+
 - **Prompt-heavy**: 8000 input / 1000 output
 - **Decode-heavy**: 1000 input / 8000 output  
 - **Balanced**: 1000 input / 1000 output
 
 Test different batch sizes by changing `--num-prompts`:
+
 - Batch sizes: 1, 16, 32, 64, 128, 256, 512
 
 ### Expected Output

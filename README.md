@@ -9,6 +9,10 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [DeepSeek-V3, DeepSeek-R1](DeepSeek/DeepSeek-V3.md)
 - [DeepSeek-V3.1](DeepSeek/DeepSeek-V3_1.md)
 
+### Ernie <img src="https://avatars.githubusercontent.com/u/13245940?v=4" alt="Ernie" width="16" height="16" style="vertical-align:middle;">
+- [Ernie4.5](Ernie/Ernie4.5.md)
+- [Ernie4.5-VL](Ernie/Ernie4.5-VL.md)
+
 ### GLM <img src="https://raw.githubusercontent.com/zai-org/GLM-4.5/refs/heads/main/resources/logo.svg" alt="GLM" width="16" height="16" style="vertical-align:middle;">
 - [GLM-4.5, GLM-4.5-Air](GLM/GLM-4.5.md)
 - [GLM-4.5V](GLM/GLM-4.5V.md)
@@ -20,7 +24,7 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [Llama3.3-70B](Llama/Llama3.3-70B.md)
 - [Llama4-Scout](Llama/Llama4-Scout.md)
 
-### OpenAI <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/OpenAI_logo_2025_%28symbol%29.svg/2585px-OpenAI_logo_2025_%28symbol%29.svg.png" alt="OpenAI" width="16" height="16" style="vertical-align:middle;"> 
+### OpenAI <img src="https://avatars.githubusercontent.com/u/14957082?v=4" alt="OpenAI" width="16" height="16" style="vertical-align:middle;"> 
 - [gpt-oss](OpenAI/GPT-OSS.md)
 
 ### Qwen <img src="https://qwenlm.github.io/favicon.png" alt="Qwen" width="16" height="16" style="vertical-align:middle;">
