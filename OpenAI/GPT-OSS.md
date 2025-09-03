@@ -192,7 +192,7 @@ Container tool runtime implementation can be referenced from https://github.com/
 The docker image might need to have some similar features as codex supports
 To enable container tool in vllm before openai types has it, Add below
 ```
-export VLLM_ENABLE_CONTAINER_TOOL=1
+export VLLM_GPT_OSS_USE_CONTAINER_TOOL=1
 ```
 To properly run container tool, follow examples in sample_container_mcp.md
 and run
