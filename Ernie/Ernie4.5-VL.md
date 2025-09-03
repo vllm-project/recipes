@@ -26,7 +26,7 @@ vllm serve baidu/ERNIE-4.5-VL-424B-A47B-PT \
   --tensor-parallel-size 8
 ```
 
-If you only want to test the functionality and only have 8×80G GPU, you can use the `--cpu-offload-gb`  parameter to offload part of the weights to CPU memory, and additionally use FP8 online quantization to further reduce GPU memory.
+If you only want to test the functionality and only have 8×80G GPU, you can use the `--cpu-offload-gb` parameter to offload part of the weights to CPU memory, and additionally use FP8 online quantization to further reduce GPU memory.
 
 ```bash
 # 424B model 80G*8 GPU with FP8 quantization and CPU offloading
@@ -38,7 +38,7 @@ vllm serve baidu/ERNIE-4.5-VL-424B-A47B-PT \
 ```
 
 
-If your single node GPU memory is insufficient, native BF16 deployment may require multi nodes, multi node deployment reference [vLLM doc](https://docs.vllm.ai/en/latest/serving/parallelism_scaling.html?h=#multi-node-deployment) to start ray cluster. Then run vllm on the master node
+If your single node GPU memory is insufficient, native BF16 deployment may require multi nodes, multi node deployment reference [vLLM doc](https://docs.vllm.ai/en/latest/serving/parallelism_scaling.html?#multi-node-deployment) to start ray cluster. Then run vllm on the master node
 ```bash
 # 424B model 80G*16 GPU with native BF16
 vllm serve baidu/ERNIE-4.5-VL-424B-A47B-PT \
@@ -70,7 +70,7 @@ vllm bench serve \
 Test different workloads by adjusting input/output lengths:
 
 - **Prompt-heavy**: 8000 input / 1000 output
-- **Decode-heavy**: 1000 input / 8000 output  
+- **Decode-heavy**: 1000 input / 8000 output
 - **Balanced**: 1000 input / 1000 output
 
 Test different batch sizes by changing `--num-prompts`, e.g., 1, 16, 32, 64, 128, 256, 512

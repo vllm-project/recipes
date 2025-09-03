@@ -1,6 +1,6 @@
 # Ernie4.5 Text Model Usage Guide
 
-This guide describes how to run [ERNIE-4.5-21B-A3B-PT](https://huggingface.co/baidu/ERNIE-4.5-21B-A3B-PT) and [ERNIE-4.5-300B-A47B-PT ](https://huggingface.co/baidu/ERNIE-4.5-300B-A47B-PT) with native BF16. 
+This guide describes how to run [ERNIE-4.5-21B-A3B-PT](https://huggingface.co/baidu/ERNIE-4.5-21B-A3B-PT) and [ERNIE-4.5-300B-A47B-PT](https://huggingface.co/baidu/ERNIE-4.5-300B-A47B-PT) with native BF16. 
 
 ## Installing vLLM
 Note: transformers >= 4.54.0 and vllm >= 0.10.1
@@ -38,7 +38,7 @@ vllm serve baidu/ERNIE-4.5-300B-A47B-PT \
 ```bash
 # 21B MTP model 80G*1 GPU
 vllm serve baidu/ERNIE-4.5-21B-A3B-PT \
-  --speculative-config '{"method": "ernie_mtp","model": "baidu/ERNIE-4.5-21B-A3B-PT" ,"num_speculative_tokens": 1}'
+  --speculative-config '{"method": "ernie_mtp","model": "baidu/ERNIE-4.5-21B-A3B-PT","num_speculative_tokens": 1}'
 ```
 
 ```bash
@@ -47,15 +47,15 @@ vllm serve baidu/ERNIE-4.5-300B-A47B-PT \
   --tensor-parallel-size 8 \
   --gpu-memory-utilization=0.95 \
   --quantization fp8 \
-  --speculative-config '{"method": "ernie_mtp","model": "baidu/ERNIE-4.5-300B-A47B-PT" ,"num_speculative_tokens": 1}'
+  --speculative-config '{"method": "ernie_mtp","model": "baidu/ERNIE-4.5-300B-A47B-PT","num_speculative_tokens": 1}'
 ```
 
-If your single node GPU memory is insufficient, native BF16 deployment may require multi nodes, multi node deployment reference [vLLM doc](https://docs.vllm.ai/en/latest/serving/parallelism_scaling.html?h=#multi-node-deployment) to start ray cluster. Then run vllm on the master node
+If your single node GPU memory is insufficient, native BF16 deployment may require multi nodes, multi node deployment reference [vLLM doc](https://docs.vllm.ai/en/latest/serving/parallelism_scaling.html?#multi-node-deployment) to start ray cluster. Then run vllm on the master node
 ```bash
 # 300B MTP model 80G*16 GPU with native BF16
 vllm serve baidu/ERNIE-4.5-300B-A47B-PT \
   --tensor-parallel-size 16 \
-  --speculative-config '{"method": "ernie_mtp","model": "baidu/ERNIE-4.5-300B-A47B-PT" ,"num_speculative_tokens": 1}'
+  --speculative-config '{"method": "ernie_mtp","model": "baidu/ERNIE-4.5-300B-A47B-PT","num_speculative_tokens": 1}'
 ```
 
 
@@ -83,7 +83,7 @@ vllm bench serve \
 Test different workloads by adjusting input/output lengths:
 
 - **Prompt-heavy**: 8000 input / 1000 output
-- **Decode-heavy**: 1000 input / 8000 output  
+- **Decode-heavy**: 1000 input / 8000 output
 - **Balanced**: 1000 input / 1000 output
 
 Test different batch sizes by changing `--num-prompts`, e.g., 1, 16, 32, 64, 128, 256, 512
