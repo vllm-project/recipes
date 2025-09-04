@@ -8,7 +8,7 @@ Ernie4.5-VL support was recently added to vLLM main branch and is not yet availa
 ```bash
 uv venv --python 3.12 --seed
 source .venv/bin/activate
-uv pip install git+https://github.com/vllm-project/vllm.git
+VLLM_USE_PRECOMPILED=1 uv pip install git+https://github.com/vllm-project/vllm.git
 ```
 
 ## Running Ernie4.5-VL
