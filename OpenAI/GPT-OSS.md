@@ -264,7 +264,7 @@ Meaning:
 | :----: | :----: | :----: | :----: | :----: | :----: |
 | Response API | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Response API with Background Mode | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Response API with Streaming | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Response API with Streaming | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Chat Completion API | ✅ | ✅ | ❌ | ❌ | ❌ |
 | Chat Completion API with Streaming | ✅ | ✅ | ❌ | ❌ | ❌ |
 
