@@ -1,15 +1,15 @@
 ## `gpt-oss` vLLM Usage Guide
 
-`gpt-oss-20b` and `gpt-oss-120b` are powerful reasoning models open-sourced by OpenAI. 
-In vLLM, you can run it on NVIDIA H100, H200, B200 as well as MI300x, MI325x, MI355x and Radeon AI PRO R9700. 
-We are actively working on ensuring this model can work on Ampere, Ada Lovelace, and RTX 5090. 
+`gpt-oss-20b` and `gpt-oss-120b` are powerful reasoning models open-sourced by OpenAI.
+In vLLM, you can run it on NVIDIA H100, H200, B200 as well as MI300x, MI325x, MI355x and Radeon AI PRO R9700.
+We are actively working on ensuring this model can work on Ampere, Ada Lovelace, and RTX 5090.
 Specifically, vLLM optimizes for `gpt-oss` family of models with
 
 * **Flexible parallelism options**: the model can be sharded across 2, 4, 8 GPUs, scaling throughput.
-* **High performance attention and MoE kernels**: attention kernel is specifically optimized for the attention sinks mechanism and sliding window shapes.   
-* **Asynchronous scheduling**: optimizing for maximum utilization and high throughput by overlapping CPU operations with GPU operations. 
+* **High performance attention and MoE kernels**: attention kernel is specifically optimized for the attention sinks mechanism and sliding window shapes.
+* **Asynchronous scheduling**: optimizing for maximum utilization and high throughput by overlapping CPU operations with GPU operations.
 
-This is a living document and we welcome contributions, corrections, and creation of new recipes! 
+This is a living document and we welcome contributions, corrections, and creation of new recipes!
 
 ## Quickstart
 
@@ -41,7 +41,7 @@ GPT-OSS works on Ampere devices by default, using the `TRITON_ATTN` attention ba
 
 ```
 # openai/gpt-oss-20b should run on a single A100
-vllm serve openai/gpt-oss-20b --async-scheduling 
+vllm serve openai/gpt-oss-20b --async-scheduling
 
 # gpt-oss-120b will fit on a single A100 (80GB), but scaling it to higher TP sizes can help with throughput
 vllm serve openai/gpt-oss-120b --async-scheduling
@@ -54,11 +54,11 @@ vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
 GPT-OSS works on Hopper devices by default, using the FlashAttention3 backend and Marlin MXFP4 MoE:
 
 * `--async-scheduling` can be enabled for higher performance. Currently it is not compatible with structured output.
-* We recommend TP=2 for H100 and H200 as the best performance tradeoff point. 
+* We recommend TP=2 for H100 and H200 as the best performance tradeoff point.
 
 ```
 # openai/gpt-oss-20b should run in single GPU
-vllm serve openai/gpt-oss-20b --async-scheduling 
+vllm serve openai/gpt-oss-20b --async-scheduling
 
 # gpt-oss-120b will fit in a single H100/H200, but scaling it to higher TP sizes can help with throughput
 vllm serve openai/gpt-oss-120b --async-scheduling
@@ -74,19 +74,19 @@ NVIDIA Blackwell requires installation of [FlashInfer library](https://github.co
 uv pip install vllm[flashinfer]==0.10.1 --torch-backend=auto
 ```
 
-We recommend TP=1 as a starting point for a performant option. We are actively working on the performance of vLLM on Blackwell. 
+We recommend TP=1 as a starting point for a performant option. We are actively working on the performance of vLLM on Blackwell.
 
 ```
 # Pick only one out of the two for MoE implementation
 # bf16 activation for MoE. matching reference precision (default).
-export VLLM_USE_FLASHINFER_MXFP4_BF16_MOE=1 
+export VLLM_USE_FLASHINFER_MXFP4_BF16_MOE=1
 # mxfp8 activation for MoE. faster, but higher risk for accuracy.
-export VLLM_USE_FLASHINFER_MXFP4_MOE=1 
+export VLLM_USE_FLASHINFER_MXFP4_MOE=1
 
 # openai/gpt-oss-20b
-vllm serve openai/gpt-oss-20b --async-scheduling 
+vllm serve openai/gpt-oss-20b --async-scheduling
 
-# gpt-oss-120b 
+# gpt-oss-120b
 vllm serve openai/gpt-oss-120b --async-scheduling
 vllm serve openai/gpt-oss-120b --tensor-parallel-size 2 --async-scheduling
 vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
@@ -96,8 +96,8 @@ vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
 
 ROCm supports OpenAI gpt-oss-120b or gpt-oss-20b models on these 3 different GPUs on day one, along with the pre-built docker containers:
 
-* gfx950: MI350x series, `rocm/vllm-dev:open-mi355-08052025`  
-* gfx942: MI300x/MI325 series, `rocm/vllm-dev:open-mi300-08052025`  
+* gfx950: MI350x series, `rocm/vllm-dev:open-mi355-08052025`
+* gfx942: MI300x/MI325 series, `rocm/vllm-dev:open-mi300-08052025`
 * gfx1201: Radeon AI PRO R9700, `rocm/vllm-dev:open-r9700-08052025`
 
 To run the container:
@@ -115,7 +115,7 @@ export VLLM_ROCM_USE_AITER=1
 export VLLM_USE_AITER_UNIFIED_ATTENTION=1
 export VLLM_ROCM_USE_AITER_MHA=0
 
-vllm serve openai/gpt-oss-120b --compilation-config '{"full_cuda_graph": true}' 
+vllm serve openai/gpt-oss-120b --compilation-config '{"full_cuda_graph": true}'
 ```
 
 For MI355x:
@@ -130,12 +130,12 @@ export VLLM_USE_AITER_UNIFIED_ATTENTION=1
 export VLLM_ROCM_USE_AITER_MHA=0
 export TRITON_HIP_PRESHUFFLE_SCALES=1
 
-vllm serve openai/gpt-oss-120b --compilation-config '{"compile_sizes": [1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 4096, 8192], "full_cuda_graph": true}' --block-size 64 
+vllm serve openai/gpt-oss-120b --compilation-config '{"compile_sizes": [1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 4096, 8192], "full_cuda_graph": true}' --block-size 64
 ```
 
 #### Known Issues
 - When you encounter this error `The link interface of target "torch::nvtoolsext" contains: CUDA::nvToolsExt but the target was not found.` Please double check your pytorch version has suffix `+cu128`.
-- If the output you see is garbage, that might be because you haven't properly set `CUDA_HOME`. The CUDA version needs to be greater than or equal to 12.8 and must be the same for installation and serving. 
+- If the output you see is garbage, that might be because you haven't properly set `CUDA_HOME`. The CUDA version needs to be greater than or equal to 12.8 and must be the same for installation and serving.
 
 ## Usage
 
@@ -143,9 +143,9 @@ Once the `vllm serve` runs and `INFO: Application startup complete` has been dis
 
 * `/v1/responses` endpoint can perform tool use (browsing, python, mcp) in between chain-of-thought and deliver a final response. This endpoint leverages the `openai-harmony` library for input rendering and output parsing. Stateful operation and full streaming API are work in progress. Responses API is recommended by OpenAI as the way to interact with this model.
 * `/v1/chat/completions` endpoint offers a familiar interface to this model. No tool will be invoked but reasoning and final text output will be returned structurally. Function calling is work in progress. You can also set the parameter `include_reasoning: false` in request parameter to skip CoT being part of the output.
-* `/v1/completions` endpoint is the endpoint for a simple input output interface without any sorts of template rendering. 
+* `/v1/completions` endpoint is the endpoint for a simple input output interface without any sorts of template rendering.
 
-All endpoints accept `stream: true` as part of the operations to enable incremental token streaming. Please note that vLLM currently does not cover the full scope of responses API, for more detail, please see Limitation section below. 
+All endpoints accept `stream: true` as part of the operations to enable incremental token streaming. Please note that vLLM currently does not cover the full scope of responses API, for more detail, please see Limitation section below.
 
 ### Tool Use
 
@@ -159,8 +159,8 @@ uv pip install gpt-oss
 vllm serve ... --tool-server demo
 ```
 
-* Please note that the default options are simply for demo purposes. For production usage, vLLM itself can act as MCP client to multiple services. 
-Here is an [example tool server](https://github.com/openai/gpt-oss/tree/main/gpt-oss-mcp-server) that vLLM can work with, they wrap the demo tools: 
+* Please note that the default options are simply for demo purposes. For production usage, vLLM itself can act as MCP client to multiple services.
+Here is an [example tool server](https://github.com/openai/gpt-oss/tree/main/gpt-oss-mcp-server) that vLLM can work with, they wrap the demo tools:
 
 ```
 mcp run -t sse browser_server.py:mcp
@@ -169,7 +169,37 @@ mcp run -t sse python_server.py:mcp
 vllm serve ... --tool-server ip-1:port-1,ip-2:port-2
 ```
 
-The URLs are expected to be MCP SSE servers that implement `instructions` in server info and well documented tools. The tools will be injected into the system prompt for the model to enable them. 
+The URLs are expected to be MCP SSE servers that implement `instructions` in server info and well documented tools. The tools will be injected into the system prompt for the model to enable them.
+
+GPT OSS also expects a built-in tool called container. It doesn't have exposed tool type in openai types.
+For reference the container tool is a stateful docker container that can be used to run command line tools.
+The enabled tool namespace is `container` and the tool name used the most is `exec`.
+MCP server needs to implement the following functions to support container tool:
+```
+Tool: exec
+Arguments:
+  - cmd (List[str]): command to execute
+  - workdir (Optional[str]): current working directory
+  - env (Optional[Dict[str, str]]): environment variables
+  - session_name (Optional[str]): session name
+  - timeout (Optional[int]): timeout in seconds
+  - user (Optional[str]): user name
+Signature:
+  async def exec(ctx: Context, **kwargs) -> str
+  # Note: `ctx` is expected to contain a session id to identify the container session and make it stateful.
+```
+Container tool runtime implementation can be referenced from https://github.com/SWE-agent/SWE-ReX
+The docker image might need to have some similar features as codex supports
+To enable container tool in vllm before openai types has it, Add below
+```
+export VLLM_GPT_OSS_USE_CONTAINER_TOOL=1
+```
+To properly run container tool, follow examples in sample_container_mcp.md
+and run
+```
+mcp run -t sse container_server.py:mcp
+```
+Note names here are dummy and you need to implement your own.
 
 ## Accuracy Evaluation Panels
 
@@ -233,15 +263,15 @@ vllm serve openai/gpt-oss-120b --gpu-memory-utilization 0.95 --max-num-batched-t
 * Streaming is fairly barebone at the moment, for example:
   * Item id and indexing needs more work
   * Tool invocation and output are not properly streamed, rather batched.
-  * Proper error handling is missing. 
+  * Proper error handling is missing.
 
 ## Troubleshooting
 
 - Attention sink dtype error on Blackwell:
 
 ```
-  ERROR 08-05 07:31:10 [multiproc_executor.py:559]     assert sinks.dtype == torch.float32, "Sinks must be of type float32"  
-  **(VllmWorker TP0 pid=174579)** ERROR 08-05 07:31:10 [multiproc_executor.py:559]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  
+  ERROR 08-05 07:31:10 [multiproc_executor.py:559]     assert sinks.dtype == torch.float32, "Sinks must be of type float32"
+  **(VllmWorker TP0 pid=174579)** ERROR 08-05 07:31:10 [multiproc_executor.py:559]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   **(VllmWorker TP0 pid=174579)** ERROR 08-05 07:31:10 [multiproc_executor.py:559] AssertionError: Sinks must be of type float32
 ```
 
@@ -272,3 +302,10 @@ Meaning:
 If you want to use offline inference, you can treat vLLM as a token-in-token-out service and pass in tokens that are already formatted with Harmony.
 
 For function calling, only tool_choice="auto" is supported.
+
+Harmony also only supports instructions in developer message but to achieve better alignment with training
+It it preferred to place it in system message.
+Enable below to move instructions to system message
+```
+export VLLM_GPT_OSS_HARMONY_SYSTEM_INSTRUCTIONS=1
+```
