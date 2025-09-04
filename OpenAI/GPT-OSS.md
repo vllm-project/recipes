@@ -263,8 +263,8 @@ Meaning:
 | API Type| Basic Text Generation | Structured Output | Builtin Tools with demo Tool Server | Builtin Tools with MCP | Function Calling |
 | :----: | :----: | :----: | :----: | :----: | :----: |
 | Response API | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Response API with Background Mode | ✅ | ✅ | ✅ | ❌ | ✅ |
-| Response API with Streaming | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Response API with Background Mode | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Response API with Streaming | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Chat Completion API | ✅ | ✅ | ❌ | ❌ | ❌ |
 | Chat Completion API with Streaming | ✅ | ✅ | ❌ | ❌ | ❌ |
 
