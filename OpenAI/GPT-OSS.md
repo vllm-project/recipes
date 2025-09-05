@@ -142,7 +142,7 @@ vllm serve openai/gpt-oss-120b --compilation-config '{"compile_sizes": [1, 2, 4,
 Once the `vllm serve` runs and `INFO: Application startup complete` has been displayed, you can send requests using HTTP request or OpenAI SDK to the following endpoints:
 
 * `/v1/responses` endpoint can perform tool use (browsing, python, mcp) in between chain-of-thought and deliver a final response. This endpoint leverages the `openai-harmony` library for input rendering and output parsing. Stateful operation and full streaming API are work in progress. Responses API is recommended by OpenAI as the way to interact with this model.
-* `/v1/chat/completions` endpoint offers a familiar interface to this model. No tool will be invoked but reasoning and final text output will be returned structurally. Function calling is work in progress. You can also set the parameter `include_reasoning: false` in request parameter to skip CoT being part of the output.
+* `/v1/chat/completions` endpoint offers a familiar interface to this model. No tool will be invoked but reasoning and final text output will be returned structurally. You can also set the parameter `include_reasoning: false` in request parameter to skip CoT being part of the output.
 * `/v1/completions` endpoint is the endpoint for a simple input output interface without any sorts of template rendering. 
 
 All endpoints accept `stream: true` as part of the operations to enable incremental token streaming. Please note that vLLM currently does not cover the full scope of responses API, for more detail, please see Limitation section below. 
@@ -151,7 +151,7 @@ All endpoints accept `stream: true` as part of the operations to enable incremen
 
 One premier feature of gpt-oss is the ability to call tools directly, called "built-in tools". In vLLM, we offer several options:
 
-* By default, we integrate with the reference library's browser (with `ExaBackend`) and demo Python interpreter via docker container. In order to use the search backend, you need to get access to [exa.ai](http://exa.ai) and put `EXA_API_KEY=` as an environment variable. For Python, either have docker available, or set `PYTHON_EXECUTION_BACKEND=UV` to dangerously allow execution of model generated code snippets to be executed on the same machine. 
+* By default, we integrate with the reference library's browser (with `ExaBackend`) and demo Python interpreter via docker container. In order to use the search backend, you need to get access to [exa.ai](http://exa.ai) and put `EXA_API_KEY=` as an environment variable. For Python, either have docker available, or set `PYTHON_EXECUTION_BACKEND=dangerously_use_uv` to dangerously allow execution of model generated code snippets to be executed on the same machine. Please note that `PYTHON_EXECUTION_BACKEND=dangerously_use_uv` needs `gpt-oss>=0.0.5`.
 
 ```
 uv pip install gpt-oss
@@ -271,10 +271,10 @@ Meaning:
 | API Type| Basic Text Generation | Structured Output | Builtin Tools with demo Tool Server | Builtin Tools with MCP | Function Calling |
 | :----: | :----: | :----: | :----: | :----: | :----: |
 | Response API | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Response API with Background Mode | ✅ | ✅ | ✅ | ❌ | ✅ |
-| Response API with Streaming | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Chat Completion API | ✅ | ✅ | ❌ | ❌ | ✅  |
-| Chat Completion API with Streaming | ✅ | ✅ | ❌ | ❌ | ✅  |
+| Response API with Background Mode | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Response API with Streaming | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Chat Completion API | ✅ | ✅ | ❌ | ❌ | ✅ |
+| Chat Completion API with Streaming | ✅ | ✅ | ❌ | ❌ | ✅ |
 
 
 If you want to use offline inference, you can treat vLLM as a token-in-token-out service and pass in tokens that are already formatted with Harmony.

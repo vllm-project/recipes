@@ -3,6 +3,7 @@ site_url: !ENV READTHEDOCS_CANONICAL_URL
 repo_url: https://github.com/vllm-project/recipes
 edit_uri: edit/main/
 docs_dir: .
+strict: true
 
 theme:
   name: material
@@ -33,10 +34,7 @@ theme:
     - content.code.copy
     - content.tabs.link
     - navigation.tracking
-    - navigation.tabs
-    - navigation.tabs.sticky
     - navigation.sections
-    - navigation.prune
     - navigation.top
     - search.highlight
     - search.share
