@@ -6,7 +6,6 @@ This quick start recipe provides step-by-step instructions for running the Llama
 
 The recipe is intended for developers and practitioners seeking high-throughput or low-latency inference using NVIDIA’s accelerated stack—building a docker image with vLLM for model serving, FlashInfer for optimized CUDA kernels, and ModelOpt to enable FP8 and NVFP4 quantized execution.
 
-
 ## Access & Licensing
 
 ### License
@@ -34,31 +33,19 @@ For Hopper, FP8 offers the best performance for most workloads. For Blackwell, N
 
 ## Deployment Steps
 
-### Build Docker Image
+### Pull Docker Image
 
-Build a docker image with vLLM using the official vLLM Dockerfile at a specific commit (`dc5e4a653c859573dfcca99f1b0141c2db9f94cc`) on the main branch. This commit contains more performance optimizations compared to the latest official vLLM docker image (`vllm/vllm-openai:latest`).
+Pull the vLLM release docker image for a specific commit (`de533ab2a14192e461900a4950e2b426d99a6862`) on the main branch and tag it as `vllm/vllm-openai:deploy`. This commit contains more performance optimizations compared to the latest official vLLM docker image (`vllm/vllm-openai:latest`).
 
-`build_image.sh`
+`pull_image.sh`
 ```
-# Clone the vLLM GitHub repo and checkout the spcific commit.
-git clone -b main --single-branch https://github.com/vllm-project/vllm.git
-cd vllm
-git checkout dc5e4a653c859573dfcca99f1b0141c2db9f94cc
+# On x86_64 systems:
+docker pull --platform linux/x86_64 public.ecr.aws/q9t5s3a7/vllm-release-repo:de533ab2a14192e461900a4950e2b426d99a6862
+# On aarch64 systems:
+# docker pull --platform linux/aarch64 public.ecr.aws/q9t5s3a7/vllm-release-repo:de533ab2a14192e461900a4950e2b426d99a6862
 
-# Build the docker image using official vLLM Dockerfile.
-DOCKER_BUILDKIT=1 docker build . \
-        --file docker/Dockerfile \
-        --target vllm-openai \
-        --build-arg CUDA_VERSION=12.8.1 \
-        --build-arg max_jobs=32 \
-        --build-arg nvcc_threads=2 \
-        --build-arg RUN_WHEEL_CHECK=false \
-        --build-arg torch_cuda_arch_list="9.0+PTX 10.0+PTX" \
-        --build-arg vllm_fa_cmake_gpu_arches="90-real;100-real" \
-        -t vllm/vllm-openai:deploy
+docker tag public.ecr.aws/q9t5s3a7/vllm-release-repo:de533ab2a14192e461900a4950e2b426d99a6862 vllm/vllm-openai:deploy
 ```
-
-Note: building the docker image may use lots of CPU threads and CPU memory. If you build the docker image on machines with fewer CPU cores or less CPU memory, please reduce the value of `max_jobs`.
 
 ### Run Docker Container
 
@@ -73,6 +60,29 @@ Note: You can mount additional directories and paths using the `-v <local_path>:
 
 The `-e HF_TOKEN="$HF_TOKEN" -e HF_HOME="$HF_HOME"` flags are added so that the models are downloaded using your HuggingFace token and the downloaded models can be cached in $HF_HOME. Refer to [HuggingFace documentation](https://huggingface.co/docs/huggingface_hub/en/package_reference/environment_variables#hfhome) for more information about these environment variables and refer to [HuggingFace Quickstart guide](https://huggingface.co/docs/huggingface_hub/en/quick-start#authentication) about steps to generate your HuggingFace access token.
 
+### Install Latest NCCL
+
+The default NCCL version in the docker container may lead to long NCCL initialization time on Blackwell architecture. Therefore, install `nvidia-nccl-cu12==2.26.2.post1` to fix it. Refer to [this GitHub issue](https://github.com/vllm-project/vllm/issues/20862) for more information.
+
+`install_nccl.sh`
+```
+pip uninstall -y nvidia-nccl-cu12
+pip install nvidia-nccl-cu12==2.26.2.post1
+```
+
+### Install Latest FlashInfer
+
+The default FlashInfer version (v0.2.4.post1) in the docker container has some functional issues. Therefore, reinstall FlashInfer at commit `9720182476ede910698f8d783c29b2ec91cec023` to fix it.
+
+`install_flashinfer.sh`
+```
+pip uninstall -y flashinfer-python
+git clone --recursive https://github.com/flashinfer-ai/flashinfer.git
+git checkout 9720182476ede910698f8d783c29b2ec91cec023
+cd flashinfer
+pip install .
+```
+
 ### Launch the vLLM Server
 
 Below is an example command to launch the vLLM server with Llama-3.3-70B-Instruct-FP4/FP8 model. The explanation of each flag is shown in the "Configs and Parameters" section.
@@ -83,15 +93,14 @@ Below is an example command to launch the vLLM server with Llama-3.3-70B-Instruc
 # They will be removed when the performance optimizations have been verified and enabled by default.
 COMPUTE_CAPABILITY=$(nvidia-smi -i 0 --query-gpu=compute_cap --format=csv,noheader)
 if [ "$COMPUTE_CAPABILITY" = "10.0" ]; then
-    # Use FlashInfer backend for attentions
-    export VLLM_ATTENTION_BACKEND=FLASHINFER
-    # Use FlashInfer trtllm-gen attention kernels
-    export VLLM_USE_TRTLLM_ATTENTION=1
+    # Set AR+Norm fusion thresholds
+    export VLLM_FLASHINFER_ALLREDUCE_FUSION_THRESHOLDS_MB='{"2":32,"4":32,"8":8}'
     # Enable async scheduling
     ASYNC_SCHEDULING_FLAG="--async-scheduling"
-    # Enable FlashInfer fusions
-    FUSION_FLAG='{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_noop":true},"custom_ops":["+quant_fp8","+rms_norm"],"full_cuda_graph":true}'
+    # Enable vLLM fusions and cuda graphs
+    FUSION_FLAG='{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_attn_fusion":true,"enable_noop":true},"custom_ops":["+quant_fp8","+rms_norm"],"cudagraph_mode":"FULL_DECODE_ONLY","splitting_ops":[]}'
     # Use FP4 for Blackwell architecture
+    # Change this to FP8 to run FP8 on Blackwell architecture
     DTYPE="FP4"
 else
     # Disable async scheduling on Hopper architecture due to vLLM limitations
@@ -102,24 +111,25 @@ else
     DTYPE="FP8"
 fi
 
+# Disable prefix caching when running with synthetic dataset for consistent performance measurement.
+NO_PREFIX_CACHING_FLAG="--no-enable-prefix-caching"
+
 # Launch the vLLM server
 vllm serve nvidia/Llama-3.3-70B-Instruct-$DTYPE \
   --host 0.0.0.0 \
-  --port 8080 \
-  --tokenizer nvidia/Llama-3.3-70B-Instruct-$DTYPE \
+  --port 8000 \
   --kv-cache-dtype fp8 \
   --trust-remote-code \
   --gpu-memory-utilization 0.9 \
-  --compilation-config $FUSION_FLAG \
-  $ASYNC_SCHEDULING_FLAG \
+  --compilation-config ${FUSION_FLAG} \
+  ${ASYNC_SCHEDULING_FLAG} \
   --enable-chunked-prefill \
-  --no-enable-prefix-caching \
+  ${NO_PREFIX_CACHING_FLAG} \
   --pipeline-parallel-size 1 \
   --tensor-parallel-size 1 \
   --max-num-seqs 512 \
   --max-num-batched-tokens 8192 \
   --max-model-len 9216 &
-
 ```
 
 After the server is set up, the client can now send prompt requests to the server and receive results.
@@ -133,15 +143,12 @@ You can specify the IP address and the port that you would like to run the serve
 
 Below are the config flags that we do not recommend changing or tuning with:
 
-- `--tokenizer`: Specify the path to the model file.
-- `--quantization`: Must be `modelopt` for FP8 model and `modelopt_fp4` for FP4 model.
 - `--kv-cache-dtype`: Kv-cache data type. We recommend setting it to `fp8` for best performance.
 - `--trust-remote-code`: Trust the model code.
 - `--gpu-memory-utilization`: The fraction of GPU memory to be used for the model executor. We recommend setting it to `0.9` to use up to 90% of the GPU memory.
-- `--compilation-config`: Configuration for vLLM compilation stage. We recommend setting it to `'{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_noop":true},"custom_ops":["+quant_fp8","+rms_norm"],"full_cuda_graph":true}'` to enable all the necessary fusions for the best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
-  - We are trying to enable these fusions by default so that this flag is no longer needed in the future.
-- `--enable-chunked-prefill`: Enable chunked prefill stage. We recommend always adding this flag for best performance.
+- `--compilation-config`: Configuration for vLLM compilation stage. We recommend setting it to `'{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_attn_fusion":true,"enable_noop":true},"custom_ops":["+quant_fp8","+rms_norm"],"cudagraph_mode":"FULL_DECODE_ONLY","splitting_ops":[]}'` to enable all the necessary fusions for the best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
 - `--async-scheduling`: Enable asynchronous scheduling to reduce the host overheads between decoding steps. We recommend always adding this flag for best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
+- `--enable-chunked-prefill`: Enable chunked prefill stage. We recommend always adding this flag for best performance.
 - `--no-enable-prefix-caching` Disable prefix caching. We recommend always adding this flag if running with synthetic dataset for consistent performance measurement.
 - `--pipeline-parallel-size`: Pipeline parallelism size. We recommend setting it to `1` for best performance.
 
@@ -163,11 +170,11 @@ Refer to the "Balancing between Throughput and Latencies" about how to adjust th
 
 ### Basic Test
 
-After the vLLM server is set up and shows `Application startup complete`, you can send requests to the server 
+After the vLLM server is set up and shows `Application startup complete`, you can send requests to the server
 
 `run_basic_test.sh`
 ```
-curl http://0.0.0.0:8080/v1/completions -H "Content-Type: application/json" -d '{ "model": "nvidia/Llama-3.3-70B-Instruct-FP4", "prompt": "San Francisco is a", "max_tokens": 20, "temperature": 0 }'
+curl http://0.0.0.0:8000/v1/completions -H "Content-Type: application/json" -d '{ "model": "nvidia/Llama-3.3-70B-Instruct-FP4", "prompt": "San Francisco is a", "max_tokens": 20, "temperature": 0 }'
 ```
 
 Here is an example response, showing that the vLLM server returns "*city that is known for its vibrant culture, stunning architecture, and breathtaking natural beauty. From the iconic...*", completing the input sequence with up to 20 tokens.
@@ -190,7 +197,7 @@ lm_eval \
   --model local-completions \
   --tasks gsm8k \
   --model_args \
-base_url=http://0.0.0.0:8080/v1/completions,\
+base_url=http://0.0.0.0:8000/v1/completions,\
 model=nvidia/Llama-3.3-70B-Instruct-FP4,\
 tokenized_requests=False,tokenizer_backend=None,\
 num_concurrent=128,timeout=120,max_retries=5
@@ -199,7 +206,7 @@ num_concurrent=128,timeout=120,max_retries=5
 Here is an example accuracy result with the nvidia/Llama-3.3-70B-Instruct-FP4 model on one B200 GPU:
 
 ```
-local-completions (base_url=http://0.0.0.0:8080/v1/completions,model=nvidia/Llama-3.3-70B-Instruct-FP4,tokenized_requests=False,tokenizer_backend=None,num_concurrent=128,timeout=120,max_retries=5), gen_kwa
+local-completions (base_url=http://0.0.0.0:8000/v1/completions,model=nvidia/Llama-3.3-70B-Instruct-FP4,tokenized_requests=False,tokenizer_backend=None,num_concurrent=128,timeout=120,max_retries=5), gen_kwa
 rgs: (None), limit: None, num_fewshot: None, batch_size: 1
 |Tasks|Version|     Filter     |n-shot|  Metric   |   |Value |   |Stderr|
 |-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
@@ -215,7 +222,7 @@ To benchmark the performance, you can use the `vllm bench serve` command.
 ```
 vllm bench serve \
   --host 0.0.0.0 \
-  --port 8080 \
+  --port 8000 \
   --model nvidia/Llama-3.3-70B-Instruct-FP4 \
   --trust-remote-code \
   --dataset-name random \
@@ -237,9 +244,9 @@ Explanations for the flags:
 - `--num-prompts`: Total number of prompts used for performance benchmarking. We recommend setting it to at least five times of the `--max-concurrency` to measure the steady state performance.
 - `--save-result --result-filename`: Output location for the performance benchmarking result.
 
-### Interpreting `benchmark_serving.py` Output 
+### Interpreting Performance Benchmarking Output 
 
-Sample output by the `benchmark_serving.py` script:
+Sample output by the `vllm bench serve` command:
 
 ```
 ============ Serving Benchmark Result ============
@@ -272,11 +279,11 @@ P99 E2EL (ms):                           xxx.xx
 Explanations for key metrics:
 
 - `Median Time to First Token (TTFT)`: The typical time elapsed from when a request is sent until the first output token is generated.
-- `Median Time Per Output Token (TPOT)`: The typical time required to generate each token after the first one. 
+- `Median Time Per Output Token (TPOT)`: The typical time required to generate each token after the first one.
 - `Median Inter-Token Latency (ITL)`: The typical time delay between the completion of one token and the completion of the next.
 - `Median End-to-End Latency (E2EL)`: The typical total time from when a request is submitted until the final token of the response is received.
 - `Output token throughput`: The rate at which the system generates the output (generated) tokens.
-- `Total Token Throughput`: The combined rate at which the system processes both input (prompt) tokens and output (generated) tokens. 
+- `Total Token Throughput`: The combined rate at which the system processes both input (prompt) tokens and output (generated) tokens.
 
 ### Balancing between Throughput and Latencies
 
