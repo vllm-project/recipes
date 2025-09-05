@@ -142,7 +142,7 @@ vllm serve openai/gpt-oss-120b --compilation-config '{"compile_sizes": [1, 2, 4,
 Once the `vllm serve` runs and `INFO: Application startup complete` has been displayed, you can send requests using HTTP request or OpenAI SDK to the following endpoints:
 
 * `/v1/responses` endpoint can perform tool use (browsing, python, mcp) in between chain-of-thought and deliver a final response. This endpoint leverages the `openai-harmony` library for input rendering and output parsing. Stateful operation and full streaming API are work in progress. Responses API is recommended by OpenAI as the way to interact with this model.
-* `/v1/chat/completions` endpoint offers a familiar interface to this model. No tool will be invoked but reasoning and final text output will be returned structurally. Function calling is work in progress. You can also set the parameter `include_reasoning: false` in request parameter to skip CoT being part of the output.
+* `/v1/chat/completions` endpoint offers a familiar interface to this model. No tool will be invoked but reasoning and final text output will be returned structurally. You can also set the parameter `include_reasoning: false` in request parameter to skip CoT being part of the output.
 * `/v1/completions` endpoint is the endpoint for a simple input output interface without any sorts of template rendering. 
 
 All endpoints accept `stream: true` as part of the operations to enable incremental token streaming. Please note that vLLM currently does not cover the full scope of responses API, for more detail, please see Limitation section below. 
@@ -153,7 +153,7 @@ One premier feature of gpt-oss is the ability to call tools directly, called "bu
 
 * By default, we integrate with the reference library's browser (with `ExaBackend`) and demo Python interpreter via docker container. In order to use the search backend, you need to get access to [exa.ai](http://exa.ai) and put `EXA_API_KEY=` as an environment variable. For Python, either have docker available, or set `PYTHON_EXECUTION_BACKEND=dangerously_use_uv` to dangerously allow execution of model generated code snippets to be executed on the same machine. Please note that `PYTHON_EXECUTION_BACKEND=dangerously_use_uv` needs `gpt-oss>=0.0.5`.
 
-```
+```bash
 uv pip install gpt-oss
 
 vllm serve ... --tool-server demo
@@ -162,14 +162,22 @@ vllm serve ... --tool-server demo
 * Please note that the default options are simply for demo purposes. For production usage, vLLM itself can act as MCP client to multiple services. 
 Here is an [example tool server](https://github.com/openai/gpt-oss/tree/main/gpt-oss-mcp-server) that vLLM can work with, they wrap the demo tools: 
 
-```
+```bash
 mcp run -t sse browser_server.py:mcp
 mcp run -t sse python_server.py:mcp
 
 vllm serve ... --tool-server ip-1:port-1,ip-2:port-2
 ```
 
-The URLs are expected to be MCP SSE servers that implement `instructions` in server info and well documented tools. The tools will be injected into the system prompt for the model to enable them. 
+The URLs are expected to be MCP SSE servers that implement `instructions` in server info and well documented tools. The tools will be injected into the system prompt for the model to enable them.
+
+### Function calling
+
+vLLM also supports calling user-defined functions. Make sure to run your gpt-oss models with the following arguments.
+
+```bash
+vllm serve ... --tool-call-parser openai --enable-auto-tool-choice
+```
 
 ## Accuracy Evaluation Panels
 
@@ -177,7 +185,7 @@ OpenAI recommends using the gpt-oss reference library to perform evaluation.
 
 First, deploy the model with vLLM:
 
-```
+```bash
 # Example deployment on 8xH100
 vllm serve openai/gpt-oss-120b \
   --tensor_parallel_size 8 \
@@ -190,7 +198,7 @@ vllm serve openai/gpt-oss-120b \
 
 Then, run the evaluation with gpt-oss. The following command will run all the 3 reasoning effort levels.
 
-```
+```bash
 mkdir -p /tmp/gpqa_openai
 OPENAI_API_KEY=empty python -m gpt_oss.evals --model openai/gpt-oss-120b --eval gpqa --n-threads 128
 ```
@@ -265,8 +273,8 @@ Meaning:
 | Response API | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Response API with Background Mode | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Response API with Streaming | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Chat Completion API | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Chat Completion API with Streaming | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Chat Completion API | ✅ | ✅ | ❌ | ❌ | ✅ |
+| Chat Completion API with Streaming | ✅ | ✅ | ❌ | ❌ | ✅ |
 
 
 If you want to use offline inference, you can treat vLLM as a token-in-token-out service and pass in tokens that are already formatted with Harmony.
