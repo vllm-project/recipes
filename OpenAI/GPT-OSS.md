@@ -173,11 +173,10 @@ The URLs are expected to be MCP SSE servers that implement `instructions` in ser
 
 ### Function calling
 
-vLLM supports function calling for Chat Completion API. Make sure to run your gpt-oss models with the following:
+vLLM also supports calling user-defined functions. Make sure to run your gpt-oss models with the following arguments.
 
 ```bash
-vllm serve openai/gpt-oss-20b --tool-call-parser openai --reasoning-parser openai_gptoss --enable-auto-tool-choice
-```
+vllm serve ... --tool-call-parser openai --reasoning-parser openai_gptoss --enable-auto-tool-choice
 
 ## Accuracy Evaluation Panels
 
