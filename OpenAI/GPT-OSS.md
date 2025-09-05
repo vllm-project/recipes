@@ -153,7 +153,7 @@ One premier feature of gpt-oss is the ability to call tools directly, called "bu
 
 * By default, we integrate with the reference library's browser (with `ExaBackend`) and demo Python interpreter via docker container. In order to use the search backend, you need to get access to [exa.ai](http://exa.ai) and put `EXA_API_KEY=` as an environment variable. For Python, either have docker available, or set `PYTHON_EXECUTION_BACKEND=dangerously_use_uv` to dangerously allow execution of model generated code snippets to be executed on the same machine. Please note that `PYTHON_EXECUTION_BACKEND=dangerously_use_uv` needs `gpt-oss>=0.0.5`.
 
-```
+```bash
 uv pip install gpt-oss
 
 vllm serve ... --tool-server demo
@@ -162,7 +162,7 @@ vllm serve ... --tool-server demo
 * Please note that the default options are simply for demo purposes. For production usage, vLLM itself can act as MCP client to multiple services. 
 Here is an [example tool server](https://github.com/openai/gpt-oss/tree/main/gpt-oss-mcp-server) that vLLM can work with, they wrap the demo tools: 
 
-```
+```bash
 mcp run -t sse browser_server.py:mcp
 mcp run -t sse python_server.py:mcp
 
@@ -177,6 +177,7 @@ vLLM also supports calling user-defined functions. Make sure to run your gpt-oss
 
 ```bash
 vllm serve ... --tool-call-parser openai --enable-auto-tool-choice
+```
 
 ## Accuracy Evaluation Panels
 
@@ -184,7 +185,7 @@ OpenAI recommends using the gpt-oss reference library to perform evaluation.
 
 First, deploy the model with vLLM:
 
-```
+```bash
 # Example deployment on 8xH100
 vllm serve openai/gpt-oss-120b \
   --tensor_parallel_size 8 \
@@ -197,7 +198,7 @@ vllm serve openai/gpt-oss-120b \
 
 Then, run the evaluation with gpt-oss. The following command will run all the 3 reasoning effort levels.
 
-```
+```bash
 mkdir -p /tmp/gpqa_openai
 OPENAI_API_KEY=empty python -m gpt_oss.evals --model openai/gpt-oss-120b --eval gpqa --n-threads 128
 ```
