@@ -111,4 +111,4 @@ vLLM supports multi-parallel groups. You can refer to [Data Parallel Deployment 
 
 ### Known limitations
 
-- Qwen3-Next currently does not support prefix-cache
+- Qwen3-Next currently does not support automatic prefix caching.
