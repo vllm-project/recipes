@@ -1,0 +1,88 @@
+# Qwen3-Next Usage Guide
+
+To be released soon.
+
+## Installing vLLM
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly
+```
+
+## Launching Qwen3-Next with vLLM
+
+You can use 4x H200/H20 or 4x A100/A800 GPUs to launch this model.
+
+### Basic Multi-GPU Setup
+
+```bash
+vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct \
+  --tensor-parallel-size 4 \
+  --served-model-name qwen3-next 
+
+```
+### Advanced Configuration with MTP
+
+`Qwen3-Next` also supports Multi-Token Prediction (MTP in short), you can launch the model server with the following arguments to enable MTP.
+
+```bash
+vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct  \
+--tokenizer-mode auto  --gpu-memory-utilization 0.8 \
+--speculative-config '{"method": "qwen3_next_mtp", "num_speculative_tokens": 2}' \
+--tensor-parallel-size 4 --no-enable-chunked-prefill 
+```
+
+The `speculative-config` argument configures speculative decoding settings using a JSON format. The method "qwen3_next_mtp" specifies that the system should use Qwen3-Next's specialized multi-token prediction method. The `"num_speculative_tokens": 2` setting means the model will speculate 2 tokens ahead during generation.
+
+
+## Performance Metrics
+
+### Benchmarking
+
+We use the following script to demonstrate how to benchmark `Qwen/Qwen3-Next-80B-A3B-Instruct`.
+
+```bash
+vllm bench serve \
+  --backend vllm \
+  --model qwen3-next \
+  --endpoint /v1/completions \
+  --dataset-name random \
+  --random-input 2048 \
+  --random-output 1024 \
+  --max-concurrency 10 \
+  --num-prompt 100 \
+```
+
+## Usage Tips
+
+### Tune MoE kernel
+
+When starting the model service, you may encounter the following warning in the server log(Suppose the GPU is `NVIDIA_H20-3e`):
+
+```shell
+(VllmWorker TP2 pid=47571) WARNING 09-09 15:47:25 [fused_moe.py:727] Using default MoE config. Performance might be sub-optimal! Config file not found at ['/vllm_path/vllm/model_executor/layers/fused_moe/configs/E=xxx,N=xxx,device_name=NVIDIA_H20-3e.json']
+```
+
+You can use [benchmark_moe](https://github.com/vllm-project/vllm/blob/main/benchmarks/kernels/benchmark_moe.py) to perform MoE Triton kernel tuning for your hardware. Once tuning is complete, a JSON file with a name like `E=xxx,N=xxx,device_name=NVIDIA_H20-3e.json` will be generated. You can specify the directory containing this file for your deployment hardware using the environment variable `VLLM_TUNED_CONFIG_FOLDER`, like:
+
+```shell
+VLLM_TUNED_CONFIG_FOLDER=your_moe_tuned_dir vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct \
+  --tensor-parallel-size 4 \
+  --served-model-name qwen3-next 
+
+```
+
+You should see the following information printed in the server log. This indicates that the tuned MoE configuration has been loaded, which will improve the model service performance.
+
+```shell
+(VllmWorker TP2 pid=60498) INFO 09-09 16:23:07 [fused_moe.py:720] Using configuration from /your_moe_tuned_dir/E=xxx,N=xxx,device_name=NVIDIA_H20-3e.json for MoE layer.
+```
+
+### Data Parallel Deployment
+
+vLLM supports multi-parallel groups. You can refer to [Data Parallel Deployment documentation](https://docs.vllm.ai/en/latest/serving/data_parallel_deployment.html) and try parallel combinations that are more suitable for this model.
+
+### Known limitations
+
+- Qwen3-Next currently does not support automatic prefix caching.
