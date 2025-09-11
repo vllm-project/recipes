@@ -45,13 +45,14 @@ We use the following script to demonstrate how to benchmark `Qwen/Qwen3-Next-80B
 ```bash
 vllm bench serve \
   --backend vllm \
-  --model qwen3-next \
+  --model Qwen/Qwen3-Next-80B-A3B-Instruct \
+  --served-model-name qwen3-next \
   --endpoint /v1/completions \
   --dataset-name random \
   --random-input 2048 \
   --random-output 1024 \
   --max-concurrency 10 \
-  --num-prompt 100 \
+  --num-prompt 100 
 ```
 
 ## Usage Tips
