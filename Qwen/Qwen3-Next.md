@@ -5,10 +5,9 @@ Soon to be released
 ## Installing vLLM
 
 ```bash
-conda create -n myenv python=3.12 -y
-conda activate myenv
-export VLLM_COMMIT=xxx # Use full commit hash from the main branch
-pip install https://wheels.vllm.ai/${VLLM_COMMIT}/vllm-1.0.0.dev-cp38-abi3-manylinux1_x86_64.whl
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly
 ```
 
 ## Launching Qwen3-Next with vLLM
