@@ -1,6 +1,6 @@
 # Qwen3-Next Usage Guide
 
-Soon to be released
+To be released soon.
 
 ## Installing vLLM
 
