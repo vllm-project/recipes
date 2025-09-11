@@ -24,7 +24,7 @@ vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct \
 ```
 ### Advanced Configuration with MTP
 
-`Qwen3-Next` also support MTP (Multi-Token Prediction), you can using the following script to enable MTP
+`Qwen3-Next` also supports Multi-Token Prediction (MTP in short), you can launch the model server with the following arguments to enable MTP.
 
 ```bash
 vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct  \
