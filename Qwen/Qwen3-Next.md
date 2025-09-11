@@ -53,32 +53,6 @@ vllm bench serve \
   --max-concurrency 10 \
   --num-prompt 100 \
 ```
-If successful, you will see output similar to the following output.
-
-```shell
-============ Serving Benchmark Result ============
-Successful requests:                     100       
-Maximum request concurrency:             10        
-Benchmark duration (s):                  109.58    
-Total input tokens:                      204357    
-Total generated tokens:                  92788     
-Request throughput (req/s):              0.91      
-Output token throughput (tok/s):         846.72    
-Total Token throughput (tok/s):          2711.55   
----------------Time to First Token----------------
-Mean TTFT (ms):                          297.39    
-Median TTFT (ms):                        217.65    
-P99 TTFT (ms):                           752.94    
------Time per Output Token (excl. 1st token)------
-Mean TPOT (ms):                          11.23     
-Median TPOT (ms):                        11.25     
-P99 TPOT (ms):                           13.76     
----------------Inter-token Latency----------------
-Mean ITL (ms):                           11.18     
-Median ITL (ms):                         10.59     
-P99 ITL (ms):                            12.38     
-==================================================
-```
 
 ## Usage Tips
 
