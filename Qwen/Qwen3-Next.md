@@ -1,6 +1,6 @@
 # Qwen3-Next Usage Guide
 
-[Qwen3-Next](https://github.com/QwenLM/Qwen3-Coder) is an advanced large language model created by the Qwen team from Alibaba Cloud. vLLM already supports Qwen3-Next. You can install vLLM with `Qwen3-Next` support using the following method:
+Soon to be released
 
 ## Installing vLLM
 
@@ -88,10 +88,10 @@ P99 ITL (ms):                            12.38
 When starting the model service, you may encounter the following warning in the server log(Suppose the GPU is `NVIDIA_H20-3e`):
 
 ```shell
-(VllmWorker TP2 pid=47571) WARNING 09-09 15:47:25 [fused_moe.py:727] Using default MoE config. Performance might be sub-optimal! Config file not found at ['/vllm_path/vllm/model_executor/layers/fused_moe/configs/E=512,N=128,device_name=NVIDIA_H20-3e.json']
+(VllmWorker TP2 pid=47571) WARNING 09-09 15:47:25 [fused_moe.py:727] Using default MoE config. Performance might be sub-optimal! Config file not found at ['/vllm_path/vllm/model_executor/layers/fused_moe/configs/E=xxx,N=xxx,device_name=NVIDIA_H20-3e.json']
 ```
 
-You can use [benchmark_moe](https://github.com/vllm-project/vllm/blob/main/benchmarks/kernels/benchmark_moe.py) to perform MoE Triton kernel tuning for your hardware. Once tuning is complete, a JSON file with a name like `E=512,N=128,device_name=NVIDIA_H20-3e.json` will be generated. You can specify the directory containing this file for your deployment hardware using the environment variable `VLLM_TUNED_CONFIG_FOLDER`, like:
+You can use [benchmark_moe](https://github.com/vllm-project/vllm/blob/main/benchmarks/kernels/benchmark_moe.py) to perform MoE Triton kernel tuning for your hardware. Once tuning is complete, a JSON file with a name like `E=xxx,N=xxx,device_name=NVIDIA_H20-3e.json` will be generated. You can specify the directory containing this file for your deployment hardware using the environment variable `VLLM_TUNED_CONFIG_FOLDER`, like:
 
 ```shell
 VLLM_TUNED_CONFIG_FOLDER=your_moe_tuned_dir vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct \
@@ -103,7 +103,7 @@ VLLM_TUNED_CONFIG_FOLDER=your_moe_tuned_dir vllm serve Qwen/Qwen3-Next-80B-A3B-I
 You should see the following information printed in the server log. This indicates that the tuned MoE configuration has been loaded, which will improve the model service performance.
 
 ```shell
-(VllmWorker TP2 pid=60498) INFO 09-09 16:23:07 [fused_moe.py:720] Using configuration from /your_moe_tuned_dir/E=512,N=128,device_name=NVIDIA_H20-3e.json for MoE layer.
+(VllmWorker TP2 pid=60498) INFO 09-09 16:23:07 [fused_moe.py:720] Using configuration from /your_moe_tuned_dir/E=xxx,N=xxx,device_name=NVIDIA_H20-3e.json for MoE layer.
 ```
 
 ### Data Parallel Deployment
