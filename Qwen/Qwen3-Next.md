@@ -33,7 +33,7 @@ vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct  \
 --tensor-parallel-size 4 --no-enable-chunked-prefill 
 ```
 
-The `speculative-config` argument configures speculative decoding settings using a JSON format. The method "qwen3_next_mtp" specifies that the system should use Qwen3-Next's specialized multi-token prediction method. The `num_speculative_tokens` setting of 2 means the model will speculate 2 tokens ahead during generation.
+The `speculative-config` argument configures speculative decoding settings using a JSON format. The method "qwen3_next_mtp" specifies that the system should use Qwen3-Next's specialized multi-token prediction method. The `"num_speculative_tokens": 2` setting means the model will speculate 2 tokens ahead during generation.
 
 
 ## Performance Metrics
