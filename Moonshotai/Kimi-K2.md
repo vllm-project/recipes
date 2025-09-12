@@ -1,0 +1,106 @@
+# moonshotai/Kimi-K2 Usage Guide
+
+This guide describes how to run Kimi-K2 with native FP8. 
+
+---
+**Note：** This guide is partially referenced and adapted from the official [Kimi-K2-Instruct Deployment Guidance](https://huggingface.co/moonshotai/Kimi-K2-Instruct/blob/main/docs/deploy_guidance.md) provided by Moonshot AI. We would like to express our gratitude to the original authors.
+---
+
+## Installing vLLM
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install -U vllm --torch-backend auto
+```
+
+## Running Kimi-K2 with FP8 on 16xH800
+
+The smallest deployment unit for Kimi-K2 FP8 weights with 128k seqlen on mainstream H800 platform is a cluster with 16 GPUs with either Tensor Parallel (TP) or "data parallel + expert parallel" (DP+EP).
+Running parameters for this environment are provided below. You may scale up to more nodes and increase expert-parallelism to enlarge the inference batch size and overall throughput.
+
+### Tensor Parallelism + pipeline-parallelism
+A sample launch command is:
+
+```bash
+
+# start ray on node 0 and node 1
+
+# node 0:
+vllm serve /dev/shm/Kimi-K2-Instruct     --trust-remote-code     --tokenizer-mode auto     --tensor-parallel-size 8     --pipeline-parallel-size 2     --dtype bfloat16     --quantization fp8     --max-model-len 2048     --max-num-seqs 1     --max-num-batched-tokens 1024     --enable-chunked-prefill     --disable-log-requests     --kv-cache-dtype fp8
+```
+
+Key parameter notes:
+
+* enable-auto-tool-choice: Required when enabling tool usage.
+* tool-call-parser kimi_k2: Required when enabling tool usage.
+
+### Data Parallelism + Expert Parallelism
+You can install libraries like DeepEP and DeepGEMM as needed. Then run the command (example on H20):
+
+```bash
+# node 0
+vllm serve $MODEL_PATH --port 8000 --served-model-name kimi-k2 --trust-remote-code --data-parallel-size 16 --data-parallel-size-local 8 --data-parallel-address $MASTER_IP --data-parallel-rpc-port $PORT --enable-expert-parallel --max-num-batched-tokens 8192 --max-num-seqs 256 --gpu-memory-utilization 0.85 --enable-auto-tool-choice --tool-call-parser kimi_k2
+
+# node 1
+vllm serve $MODEL_PATH --headless --data-parallel-start-rank 8 --port 8000 --served-model-name kimi-k2 --trust-remote-code --data-parallel-size 16 --data-parallel-size-local 8 --data-parallel-address $MASTER_IP --data-parallel-rpc-port $PORT --enable-expert-parallel --max-num-batched-tokens 8192 --max-num-seqs 256 --gpu-memory-utilization 0.85 --enable-auto-tool-choice --tool-call-parser kimi_k2
+```
+
+Additional flags:
+
+* You can set `--max-model-len` to preserve memory. `--max-model-len=65536` is usually good for most scenarios.
+* You can set `--max-num-batched-tokens` to balance throughput and latency, higher means higher throughput but higher latency. `--max-num-batched-tokens=32768` is usually good for prompt-heavy workloads. But you can reduce it to 16k and 8k to reduce activation memory usage and decrease latency.
+* vLLM conservatively use 90% of GPU memory, you can set `--gpu-memory-utilization=0.95` to maximize KVCache.
+
+
+## Benchmarking
+
+### FP8 Benchmark on 16xH800
+
+```bash
+# Prompt-heavy benchmark 
+vllm bench serve \
+  --model /dev/shm/Kimi-K2-Instruct \
+  --dataset-name random \
+  --random-input-len 1000 \
+  --random-output-len 512 \
+  --request-rate 1.0 \
+  --num-prompts 8 \
+  --ignore-eos \
+  --trust-remote-code
+```
+
+
+### Benchmark Configurations
+
+
+Test different batch sizes by changing `--num-prompts`:
+
+- Batch sizes: 1, 16, 32, 64, 128, 256, 512
+
+### Expected Output
+
+```shell
+============ Serving Benchmark Result ============
+Successful requests:                     8         
+Request rate configured (RPS):           1.00      
+Benchmark duration (s):                  132.79    
+Total input tokens:                      8000      
+Total generated tokens:                  4096      
+Request throughput (req/s):              0.06      
+Output token throughput (tok/s):         30.84     
+Total Token throughput (tok/s):          91.09     
+---------------Time to First Token----------------
+Mean TTFT (ms):                          58282.92  
+Median TTFT (ms):                        57827.30  
+P99 TTFT (ms):                           110831.45 
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          30.78     
+Median TPOT (ms):                        31.49     
+P99 TPOT (ms):                           33.76     
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           30.78     
+Median ITL (ms):                         22.37     
+P99 ITL (ms):                            322.81    
+==================================================
+```
