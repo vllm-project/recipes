@@ -89,6 +89,14 @@ You should see the following information printed in the server log. This indicat
 
 vLLM supports multi-parallel groups. You can refer to [Data Parallel Deployment documentation](https://docs.vllm.ai/en/latest/serving/data_parallel_deployment.html) and try parallel combinations that are more suitable for this model.
 
+### Function calling
+
+vLLM also supports calling user-defined functions. Make sure to run your Qwen3-Next models with the following arguments.
+
+```bash
+vllm serve ... --tool-call-parser hermes --enable-auto-tool-choice
+```
+
 ### Known limitations
 
 - Qwen3-Next currently does not support automatic prefix caching.
