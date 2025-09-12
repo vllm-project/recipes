@@ -1,6 +1,11 @@
 # Qwen3-Next Usage Guide
 
-[Qwen3-Next](https://qwen.ai/blog?id=4074cca80393150c248e508aa62983f9cb7d27cd&from=research.latest-advancements-list) is an advanced large language model created by the Qwen team from Alibaba Cloud, which features several key improvements: a hybrid attention mechanism, a highly sparse Mixture-of-Experts (MoE) structure, training-stability-friendly optimizations, and a multi-token prediction mechanism for faster inference.
+[Qwen3-Next](https://qwen.ai/blog?id=4074cca80393150c248e508aa62983f9cb7d27cd&from=research.latest-advancements-list) is an advanced large language model created by the Qwen team from Alibaba Cloud. It features several key improvements:
+
+* A hybrid attention mechanism
+* A highly sparse Mixture-of-Experts (MoE) structure
+* Training-stability-friendly optimizations
+* A multi-token prediction mechanism for faster inference
 
 ## Installing vLLM
 
