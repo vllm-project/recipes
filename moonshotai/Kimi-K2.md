@@ -27,7 +27,7 @@ A sample launch command is:
 # start ray on node 0 and node 1
 
 # node 0:
-vllm serve moonshotai/Kimi-K2-Instruct     --trust-remote-code     --tokenizer-mode auto     --tensor-parallel-size 8     --pipeline-parallel-size 2     --dtype bfloat16     --quantization fp8     --max-model-len 2048     --max-num-seqs 1     --max-num-batched-tokens 1024     --enable-chunked-prefill     --disable-log-requests     --kv-cache-dtype fp8
+vllm serve moonshotai/Kimi-K2-Instruct --trust-remote-code --tokenizer-mode auto --tensor-parallel-size 8 --pipeline-parallel-size 2 --dtype bfloat16 --quantization fp8 --max-model-len 2048 --max-num-seqs 1 --max-num-batched-tokens 1024 --enable-chunked-prefill --disable-log-requests --kv-cache-dtype fp8
 ```
 
 Key parameter notes:
