@@ -36,7 +36,7 @@ Key parameter notes:
 * tool-call-parser kimi_k2: Required when enabling tool usage.
 
 ### Data Parallelism + Expert Parallelism
-You can install libraries like DeepEP and DeepGEMM as needed. Then run the command (example on H20):
+You can install libraries like DeepEP and DeepGEMM as needed. Then run the command (example on H800):
 
 ```bash
 # node 0
