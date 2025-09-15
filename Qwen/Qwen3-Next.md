@@ -96,7 +96,7 @@ P99 ITL (ms):                            142.60
 
 Server command:
 ```
-vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct --tensor-parallel-size 4 --served-model-name qwen3-next --tokenizer-mode auto --speculative-config {"method": "qwen3_next_mtp", "num_speculative_tokens": 4} --no-enable-chunked-prefill
+vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct --tensor-parallel-size 4 --served-model-name qwen3-next --tokenizer-mode auto --speculative-config {"method": "qwen3_next_mtp", "num_speculative_tokens": 2} --no-enable-chunked-prefill
 ```
 
 Outputs
@@ -104,24 +104,24 @@ Outputs
 ============ Serving Benchmark Result ============
 Successful requests:                     1000      
 Maximum request concurrency:             256       
-Benchmark duration (s):                  147.48    
+Benchmark duration (s):                  161.36    
 Total input tokens:                      2043736   
-Total generated tokens:                  953451    
-Request throughput (req/s):              6.78      
-Output token throughput (tok/s):         6464.96   
-Total Token throughput (tok/s):          20322.68  
+Total generated tokens:                  952306    
+Request throughput (req/s):              6.20      
+Output token throughput (tok/s):         5901.85   
+Total Token throughput (tok/s):          18567.77  
 ---------------Time to First Token----------------
-Mean TTFT (ms):                          4505.87   
-Median TTFT (ms):                        529.81    
-P99 TTFT (ms):                           28465.24  
+Mean TTFT (ms):                          3963.48   
+Median TTFT (ms):                        515.20    
+P99 TTFT (ms):                           25537.02  
 -----Time per Output Token (excl. 1st token)------
-Mean TPOT (ms):                          34.35     
-Median TPOT (ms):                        29.69     
-P99 TPOT (ms):                           96.82     
+Mean TPOT (ms):                          39.03     
+Median TPOT (ms):                        34.60     
+P99 TPOT (ms):                           98.63     
 ---------------Inter-token Latency----------------
-Mean ITL (ms):                           142.53    
-Median ITL (ms):                         80.55     
-P99 ITL (ms):                            441.19    
+Mean ITL (ms):                           106.27    
+Median ITL (ms):                         68.55     
+P99 ITL (ms):                            392.13    
 ==================================================
 ```
 
