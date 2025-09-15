@@ -94,7 +94,7 @@ P99 ITL (ms):                            142.60
 
 #### B200 MTP Outputs
 
-Server Command:
+Server command:
 ```
 vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct --tensor-parallel-size 4 --served-model-name qwen3-next --tokenizer-mode auto --speculative-config {"method": "qwen3_next_mtp", "num_speculative_tokens": 4} --no-enable-chunked-prefill
 ```
