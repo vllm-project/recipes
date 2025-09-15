@@ -3,7 +3,7 @@
 This guide describes how to run Kimi-K2 with native FP8. 
 
 ---
-**Note：** This guide is partially referenced and adapted from the official [Kimi-K2-Instruct Deployment Guidance](https://huggingface.co/moonshotai/Kimi-K2-Instruct/blob/main/docs/deploy_guidance.md) provided by Moonshot AI. We would like to express our gratitude to the original authors.
+**Note:** This guide is partially referenced and adapted from the official [Kimi-K2-Instruct Deployment Guidance](https://huggingface.co/moonshotai/Kimi-K2-Instruct/blob/main/docs/deploy_guidance.md) provided by Moonshot AI. We would like to express our gratitude to the original authors.
 ---
 
 ## Installing vLLM
