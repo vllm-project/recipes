@@ -63,7 +63,7 @@ vllm bench serve \
 
 Server command:
 ```
-vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct   --tensor-parallel-size 4   --served-model-name qwen3-next
+vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct --tensor-parallel-size 4 --served-model-name qwen3-next
 ```
 
 Outputs
