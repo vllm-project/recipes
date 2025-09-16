@@ -35,16 +35,16 @@ For Hopper, FP8 offers the best performance for most workloads. For Blackwell, N
 
 ### Pull Docker Image
 
-Pull the vLLM release docker image for a specific commit (`de533ab2a14192e461900a4950e2b426d99a6862`) on the main branch and tag it as `vllm/vllm-openai:deploy`. This commit contains more performance optimizations compared to the latest official vLLM docker image (`vllm/vllm-openai:latest`).
+Pull the vLLM v0.10.2 release docker image.
 
 `pull_image.sh`
 ```
 # On x86_64 systems:
-docker pull --platform linux/x86_64 public.ecr.aws/q9t5s3a7/vllm-release-repo:de533ab2a14192e461900a4950e2b426d99a6862
+docker pull --platform linux/amd64 vllm/vllm-openai:v0.10.2
 # On aarch64 systems:
-# docker pull --platform linux/aarch64 public.ecr.aws/q9t5s3a7/vllm-release-repo:de533ab2a14192e461900a4950e2b426d99a6862
+# docker pull --platform linux/aarch64 vllm/vllm-openai:v0.10.2
 
-docker tag public.ecr.aws/q9t5s3a7/vllm-release-repo:de533ab2a14192e461900a4950e2b426d99a6862 vllm/vllm-openai:deploy
+docker tag vllm/vllm-openai:v0.10.2 vllm/vllm-openai:deploy
 ```
 
 ### Run Docker Container
@@ -60,32 +60,32 @@ Note: You can mount additional directories and paths using the `-v <local_path>:
 
 The `-e HF_TOKEN="$HF_TOKEN" -e HF_HOME="$HF_HOME"` flags are added so that the models are downloaded using your HuggingFace token and the downloaded models can be cached in $HF_HOME. Refer to [HuggingFace documentation](https://huggingface.co/docs/huggingface_hub/en/package_reference/environment_variables#hfhome) for more information about these environment variables and refer to [HuggingFace Quickstart guide](https://huggingface.co/docs/huggingface_hub/en/quick-start#authentication) about steps to generate your HuggingFace access token.
 
-### Install Latest NCCL
+### Prepare the Config File
 
-The default NCCL version in the docker container may lead to long NCCL initialization time on Blackwell architecture. Therefore, install `nvidia-nccl-cu12==2.26.2.post1` to fix it. Refer to [this GitHub issue](https://github.com/vllm-project/vllm/issues/20862) for more information.
+Prepare the config YAML file to configure vLLM. Below shows the recommended config files for Blackwell and Hopper architectures, respectively. These config files have also been uploaded to the vLLM recipe repository. The explanation of each config is shown in the "Configs and Parameters" section.
 
-`install_nccl.sh`
+`Llama3.3_Blackwell.yaml`
 ```
-pip uninstall -y nvidia-nccl-cu12
-pip install nvidia-nccl-cu12==2.26.2.post1
+kv-cache-dtype: fp8
+compilation-config: '{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_attn_fusion":true,"enable_noop":true},"custom_ops":["+quant_fp8","+rms_norm"],"cudagraph_mode":"FULL_DECODE_ONLY","splitting_ops":[]}'
+async-scheduling: true
+no-enable-prefix-caching: true
+max-num-batched-tokens: 8192
+max-model-len: 10240
 ```
 
-### Install Latest FlashInfer
-
-The default FlashInfer version (v0.2.4.post1) in the docker container has some functional issues. Therefore, reinstall FlashInfer at commit `9720182476ede910698f8d783c29b2ec91cec023` to fix it.
-
-`install_flashinfer.sh`
+`Llama3.3_Hopper.yaml`
 ```
-pip uninstall -y flashinfer-python
-git clone --recursive https://github.com/flashinfer-ai/flashinfer.git
-git checkout 9720182476ede910698f8d783c29b2ec91cec023
-cd flashinfer
-pip install .
+kv-cache-dtype: fp8
+async-scheduling: true
+no-enable-prefix-caching: true
+max-num-batched-tokens: 8192
+max-model-len: 10240
 ```
 
 ### Launch the vLLM Server
 
-Below is an example command to launch the vLLM server with Llama-3.3-70B-Instruct-FP4/FP8 model. The explanation of each flag is shown in the "Configs and Parameters" section.
+Below is an example command to launch the vLLM server with Llama-3.3-70B-Instruct-FP4/FP8 model.
 
 `launch_server.sh`
 ```
@@ -95,41 +95,23 @@ COMPUTE_CAPABILITY=$(nvidia-smi -i 0 --query-gpu=compute_cap --format=csv,nohead
 if [ "$COMPUTE_CAPABILITY" = "10.0" ]; then
     # Set AR+Norm fusion thresholds
     export VLLM_FLASHINFER_ALLREDUCE_FUSION_THRESHOLDS_MB='{"2":32,"4":32,"8":8}'
-    # Enable async scheduling
-    ASYNC_SCHEDULING_FLAG="--async-scheduling"
-    # Enable vLLM fusions and cuda graphs
-    FUSION_FLAG='{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_attn_fusion":true,"enable_noop":true},"custom_ops":["+quant_fp8","+rms_norm"],"cudagraph_mode":"FULL_DECODE_ONLY","splitting_ops":[]}'
     # Use FP4 for Blackwell architecture
     # Change this to FP8 to run FP8 on Blackwell architecture
     DTYPE="FP4"
+    # Select the config file for Blackwell architecture.
+    YAML_CONFIG="Llama3.3_Blackwell.yaml"
 else
-    # Disable async scheduling on Hopper architecture due to vLLM limitations
-    ASYNC_SCHEDULING_FLAG=""
-    # Disable FlashInfer fusions since they are not supported on Hopper architecture
-    FUSION_FLAG="{}"
     # Use FP8 for Hopper architecture
     DTYPE="FP8"
+    # Select the config file for Hopper architecture.
+    YAML_CONFIG="Llama3.3_Hopper.yaml"
 fi
-
-# Disable prefix caching when running with synthetic dataset for consistent performance measurement.
-NO_PREFIX_CACHING_FLAG="--no-enable-prefix-caching"
 
 # Launch the vLLM server
 vllm serve nvidia/Llama-3.3-70B-Instruct-$DTYPE \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --kv-cache-dtype fp8 \
-  --trust-remote-code \
-  --gpu-memory-utilization 0.9 \
-  --compilation-config ${FUSION_FLAG} \
-  ${ASYNC_SCHEDULING_FLAG} \
-  --enable-chunked-prefill \
-  ${NO_PREFIX_CACHING_FLAG} \
-  --pipeline-parallel-size 1 \
+  --config ${YAML_CONFIG} \
   --tensor-parallel-size 1 \
-  --max-num-seqs 512 \
-  --max-num-batched-tokens 8192 \
-  --max-model-len 9216 &
+  --max-num-seqs 512 &
 ```
 
 After the server is set up, the client can now send prompt requests to the server and receive results.
@@ -138,29 +120,25 @@ After the server is set up, the client can now send prompt requests to the serve
 
 You can specify the IP address and the port that you would like to run the server with using these flags:
 
-- `--host`: IP address of the server. 
-- `--port`: The port to listen to by the server.
+- `host`: IP address of the server. By default, it uses 127.0.0.1.
+- `port`: The port to listen to by the server. By default, it uses port 8000.
 
 Below are the config flags that we do not recommend changing or tuning with:
 
-- `--kv-cache-dtype`: Kv-cache data type. We recommend setting it to `fp8` for best performance.
-- `--trust-remote-code`: Trust the model code.
-- `--gpu-memory-utilization`: The fraction of GPU memory to be used for the model executor. We recommend setting it to `0.9` to use up to 90% of the GPU memory.
-- `--compilation-config`: Configuration for vLLM compilation stage. We recommend setting it to `'{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_attn_fusion":true,"enable_noop":true},"custom_ops":["+quant_fp8","+rms_norm"],"cudagraph_mode":"FULL_DECODE_ONLY","splitting_ops":[]}'` to enable all the necessary fusions for the best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
-- `--async-scheduling`: Enable asynchronous scheduling to reduce the host overheads between decoding steps. We recommend always adding this flag for best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
-- `--enable-chunked-prefill`: Enable chunked prefill stage. We recommend always adding this flag for best performance.
-- `--no-enable-prefix-caching` Disable prefix caching. We recommend always adding this flag if running with synthetic dataset for consistent performance measurement.
-- `--pipeline-parallel-size`: Pipeline parallelism size. We recommend setting it to `1` for best performance.
+- `kv-cache-dtype`: Kv-cache data type. We recommend setting it to `fp8` for best performance.
+- `compilation-config`: Configuration for vLLM compilation stage. We recommend setting it to `'{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_attn_fusion":true,"enable_noop":true},"custom_ops":["+quant_fp8","+rms_norm"],"cudagraph_mode":"FULL_DECODE_ONLY","splitting_ops":[]}'` to enable all the necessary fusions for the best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
+- `async-scheduling`: Enable asynchronous scheduling to reduce the host overheads between decoding steps. We recommend always adding this flag for best performance.
+- `no-enable-prefix-caching` Disable prefix caching. We recommend always adding this flag if running with synthetic dataset for consistent performance measurement.
 
 Below are a few tunable parameters you can modify based on your serving requirements:
 
-- `--tensor-parallel-size`: Tensor parallelism size. Increasing this will increase the number of GPUs that are used for inference.
-  - Set this to `1` to achieve the best throughput, and set this to `2`, `4`, or `8` to achieve better per-user latencies.
-- `--max-num-seqs`: Maximum number of sequences per batch.
+- `tensor-parallel-size`: Tensor parallelism size. Increasing this will increase the number of GPUs that are used for inference.
+  - Set this to `1` to achieve the best throughput per GPU, and set this to `2`, `4`, or `8` to achieve better per-user latencies.
+- `max-num-seqs`: Maximum number of sequences per batch.
   - Set this to a large number like `512` to achieve the best throughput, and set this to a small number like `16` to achieve better per-user latencies.
-- `--max-num-batched-tokens`: Maximum number of tokens per batch.
+- `max-num-batched-tokens`: Maximum number of tokens per batch.
   - We recommend setting this to `8192`. Increasing this value may have slight performance improvements if the sequences have long input sequence lengths.
-- `--max-model-len`: Maximum number of total tokens, including the input tokens and output tokens, for each request.
+- `max-model-len`: Maximum number of total tokens, including the input tokens and output tokens, for each request.
   - This must be set to a larger number if the expected input/output sequence lengths are large.
   - For example, if the maximum input sequence length is 1024 tokens and maximum output sequence length is 1024, then this must be set to at least 2048.
 
@@ -303,7 +281,7 @@ Note that the statements above assume that the concurrency setting on the client
 
 Below are the recommended configs for different throughput-latency scenarios on B200 GPUs:
 
-- **Max Throughput**: Set TP to 1, and increase BS to the maximum possible value without triggering out-of-memory errors.
+- **Max Throughput**: Set TP to 1, and increase BS to the maximum possible value without exceeding KV cache capacity.
 - **Min Latency**: Set TP to 4 or 8, and set BS to a small value (like `8`) that meets the latency requirements.
 - **Balanced**: Set TP to 2 and set BS to 128.
 
