@@ -3,7 +3,7 @@
 This guide describes how to run Kimi-K2 with native FP8. 
 
 ---
-**Note：** This guide is partially referenced and adapted from the official [Kimi-K2-Instruct Deployment Guidance](https://huggingface.co/moonshotai/Kimi-K2-Instruct/blob/main/docs/deploy_guidance.md) provided by Moonshot AI. We would like to express our gratitude to the original authors.
+**Note:** This guide is partially referenced and adapted from the official [Kimi-K2-Instruct Deployment Guidance](https://huggingface.co/moonshotai/Kimi-K2-Instruct/blob/main/docs/deploy_guidance.md) provided by Moonshot AI. We would like to express our gratitude to the original authors.
 ---
 
 ## Installing vLLM
@@ -27,7 +27,7 @@ A sample launch command is:
 # start ray on node 0 and node 1
 
 # node 0:
-vllm serve moonshotai/Kimi-K2-Instruct     --trust-remote-code     --tokenizer-mode auto     --tensor-parallel-size 8     --pipeline-parallel-size 2     --dtype bfloat16     --quantization fp8     --max-model-len 2048     --max-num-seqs 1     --max-num-batched-tokens 1024     --enable-chunked-prefill     --disable-log-requests     --kv-cache-dtype fp8
+vllm serve moonshotai/Kimi-K2-Instruct --trust-remote-code --tokenizer-mode auto --tensor-parallel-size 8 --pipeline-parallel-size 2 --dtype bfloat16 --quantization fp8 --max-model-len 2048 --max-num-seqs 1 --max-num-batched-tokens 1024 --enable-chunked-prefill --disable-log-requests --kv-cache-dtype fp8
 ```
 
 Key parameter notes:
@@ -36,7 +36,7 @@ Key parameter notes:
 * tool-call-parser kimi_k2: Required when enabling tool usage.
 
 ### Data Parallelism + Expert Parallelism
-You can install libraries like DeepEP and DeepGEMM as needed. Then run the command (example on H20):
+You can install libraries like DeepEP and DeepGEMM as needed. Then run the command (example on H800):
 
 ```bash
 # node 0
@@ -50,7 +50,7 @@ Additional flags:
 
 * You can set `--max-model-len` to preserve memory. `--max-model-len=65536` is usually good for most scenarios.
 * You can set `--max-num-batched-tokens` to balance throughput and latency, higher means higher throughput but higher latency. `--max-num-batched-tokens=32768` is usually good for prompt-heavy workloads. But you can reduce it to 16k and 8k to reduce activation memory usage and decrease latency.
-* vLLM conservatively use 90% of GPU memory, you can set `--gpu-memory-utilization=0.95` to maximize KVCache.
+* vLLM conservatively uses 90% of GPU memory, you can set `--gpu-memory-utilization=0.95` to maximize KVCache.
 
 
 ## Benchmarking
