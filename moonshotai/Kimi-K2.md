@@ -58,7 +58,6 @@ Additional flags:
 ### FP8 Benchmark on 16xH800
 
 ```bash
-# Prompt-heavy benchmark 
 vllm bench serve \
   --model moonshotai/Kimi-K2-Instruct \
   --dataset-name random \
@@ -102,5 +101,45 @@ P99 TPOT (ms):                           33.76
 Mean ITL (ms):                           30.78     
 Median ITL (ms):                         22.37     
 P99 ITL (ms):                            322.81    
+==================================================
+```
+
+### FP8 Benchmark on 16xH200
+
+```bash
+vllm bench serve \
+  --model moonshotai/Kimi-K2-Instruct \
+  --dataset-name random \
+  --random-input-len 8000 \
+  --random-output-len 1000 \
+  --request-rate 10000 \
+  --num-prompts 16 \
+  --ignore-eos \
+  --trust-remote-code
+```
+
+### Expected Output
+
+```shell
+============ Serving Benchmark Result ============
+Successful requests:                     16        
+Benchmark duration (s):                  62.75     
+Total input tokens:                      128000    
+Total generated tokens:                  16000     
+Request throughput (req/s):              0.25      
+Output token throughput (tok/s):         254.99    
+Total Token throughput (tok/s):          2294.88   
+---------------Time to First Token----------------
+Mean TTFT (ms):                          4278.46   
+Median TTFT (ms):                        4285.54   
+P99 TTFT (ms):                           7685.31   
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          58.15     
+Median TPOT (ms):                        58.16     
+P99 TPOT (ms):                           61.35     
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           58.15     
+Median ITL (ms):                         54.59     
+P99 ITL (ms):                            91.18     
 ==================================================
 ```
