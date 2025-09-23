@@ -28,7 +28,7 @@ vllm serve deepseek-ai/DeepSeek-V3.1 \
 
 ### Function calling
 
-vLLM also supports calling user-defined functions. Make sure to run your DeepSeek-V3.1 models with the following arguments.
+vLLM also supports calling user-defined functions. Make sure to run your DeepSeek-V3.1 models with the following arguments. The example file is included in the official container and can be downloaded [here](https://github.com/vllm-project/vllm/blob/main/examples/tool_chat_template_deepseekv31.jinja)
 
 ```bash
 vllm serve ... 
