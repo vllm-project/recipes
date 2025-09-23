@@ -26,6 +26,17 @@ vllm serve deepseek-ai/DeepSeek-V3.1 \
   --served-model-name ds31 
 ```
 
+### Function calling
+
+vLLM also supports calling user-defined functions. Make sure to run your DeepSeek-V3.1 models with the following arguments. The example file is included in the official container and can be downloaded [here](https://github.com/vllm-project/vllm/blob/main/examples/tool_chat_template_deepseekv31.jinja)
+
+```bash
+vllm serve ... 
+    --enable-auto-tool-choice 
+    --tool-call-parser deepseek_v31 
+    --chat-template examples/tool_chat_template_deepseekv31.jinja
+```
+
 ## Using the Model
 
 ### OpenAI Client Example
