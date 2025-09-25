@@ -38,6 +38,9 @@ This repo intends to host community maintained common recipes to run vLLM answer
 ### Seed <img src="https://avatars.githubusercontent.com/u/4158466?s=200&v=4" alt="Seed" width="16" height="16" style="vertical-align:middle;">
 - [Seed-OSS-36B](Seed/Seed-OSS-36B.md)
 
+### Moonshotai <img src="https://avatars.githubusercontent.com/u/129152888?v=4" alt="Moonshotai" width="16" height="16" style="vertical-align:middle;">
+- [Kimi-K2](moonshotai/Kimi-K2.md)
+
 ## Contributing
 Please feel free to contribute by adding a new recipe or improving an existing one, just send us a PR!
 
