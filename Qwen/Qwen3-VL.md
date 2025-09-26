@@ -17,7 +17,7 @@ uv pip install -U vllm \
     --torch-backend=auto \
     --extra-index-url https://wheels.vllm.ai/nightly
 
-# Install Qwen-VL utility library (optional for online inference)
+# Install Qwen-VL utility library (recommended for offline inference)
 uv pip install qwen-vl-utils==0.0.14
 
 # Install transformers (from source or 4.57.0 when released)
