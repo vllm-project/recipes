@@ -27,7 +27,7 @@ A sample launch command is:
 # start ray on node 0 and node 1
 
 # node 0:
-vllm serve moonshotai/Kimi-K2-Instruct --trust-remote-code --tokenizer-mode auto --tensor-parallel-size 8 --pipeline-parallel-size 2 --dtype bfloat16 --quantization fp8 --max-model-len 2048 --max-num-seqs 1 --max-num-batched-tokens 1024 --enable-chunked-prefill --disable-log-requests --kv-cache-dtype fp8
+vllm serve moonshotai/Kimi-K2-Instruct --trust-remote-code --tokenizer-mode auto --tensor-parallel-size 8 --pipeline-parallel-size 2 --dtype bfloat16 --quantization fp8 --max-model-len 2048 --max-num-seqs 1 --max-num-batched-tokens 1024 --enable-chunked-prefill --disable-log-requests --kv-cache-dtype fp8 -dcp 8
 ```
 
 Key parameter notes:
@@ -143,3 +143,32 @@ Median ITL (ms):                         54.59
 P99 ITL (ms):                            91.18     
 ==================================================
 ```
+
+After adding '-dcp 8'
+
+'''shell
+============ Serving Benchmark Result ============
+Successful requests:                     16        
+Request rate configured (RPS):           10000.00  
+Benchmark duration (s):                  47.14     
+Total input tokens:                      128000    
+Total generated tokens:                  16000     
+Request throughput (req/s):              0.34      
+Output token throughput (tok/s):         339.38    
+Peak output token throughput (tok/s):    384.00    
+Peak concurrent requests:                16.00     
+Total Token throughput (tok/s):          3054.46   
+---------------Time to First Token----------------
+Mean TTFT (ms):                          2007.87   
+Median TTFT (ms):                        1932.03   
+P99 TTFT (ms):                           4680.76   
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          45.01     
+Median TPOT (ms):                        45.10     
+P99 TPOT (ms):                           46.51     
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           45.01     
+Median ITL (ms):                         42.01     
+P99 ITL (ms):                            52.01     
+==================================================
+'''
