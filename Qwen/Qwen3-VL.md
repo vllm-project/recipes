@@ -84,7 +84,7 @@ vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
 ```
 
 ####  Usage Tips
-- It's highly recommended to specify `--limit-mm-per-prompt.video 0` if your inference server will only process image inputs since enabling video inputs will consume additional memory reserved for long video embeddings. Alternatively, you can skip memory profiling for multimodal inputs by `--skip-mm-profiling` and lower `--gpu-memory-utilization` accordingly at your own risk.
+- It's highly recommended to specify `--limit-mm-per-prompt.video 0` if your inference server will only process image inputs since enabling video inputs will consume significantly more memory reserved for long video embeddings. Alternatively, you can skip memory profiling for multimodal inputs by `--skip-mm-profiling` and lower `--gpu-memory-utilization` accordingly at your own risk.
 - You can set `--max-model-len` to preserve memory. By default the model's context length is 262K, but `--max-model-len=128000` is usually good for most scenarios.
 - Specifying `--mm-encoder-tp-mode data` deploys the vision encoder in a data-parallel fashion for better performance. This is because the vision encoder is very small compared to the language decoder, thus tensor parallelism brings little gain but incurs significant communication overhead. However, for long-video input this may overload individual accelerators.
 - Specifying `--mm-processor-cache-type shm` utilizes host shared memory to cache preprocessed input images and/or videos. If your workload involves only unique multimodal inputs, you may remove this argument and pass `--mm-processor-cache-gb 0` instead.
