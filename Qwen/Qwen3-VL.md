@@ -30,9 +30,13 @@ uv pip install git+https://github.com/huggingface/transformers.git
 
 
 ### Qwen3-VL-235B-A22B-Instruct
-This is the Qwen3-VL flagship MoE model and it requires at least 8 GPUs with at least 80GB of memory each (e.g., H100 or H200) to run.
+This is the Qwen3-VL flagship MoE model, which requires a minimum of 8 GPUs, each with at least 80 GB of memory (e.g., A100, H100, or H200). On some types of hardware the model may not launch successfully with its default setting. Recommended approaches by hardware type are:
 
-To launch an online inference server for `Qwen3-VL-235B-A22B-Instruct`:
+- **H100 with `fp8`**: Use FP8 for optimal memory efficiency, and an FP8 version of the model will be released soon. Stay tuned!
+- **A100 & H100 with `bfloat16`**: Either reduce `--max-model-len` and `--max-num-batched-tokens`, or restrict inference to images only.
+- **H200 & B200 GPUs**: Run the model out of the box, supporting full context length and concurrent image and video processing.
+
+See sections below for detailed launch arguments for each configuration. We are actively working on optimizations and the recommended ways to launch the model will be updated accordingly.
 
 #### A100 & H100 (Image Inference)
 ```bash
@@ -83,7 +87,7 @@ vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
   --async-scheduling
 ```
 
-####  Usage Tips
+### Configuration Tips
 - It's highly recommended to specify `--limit-mm-per-prompt.video 0` if your inference server will only process image inputs since enabling video inputs will consume significantly more memory reserved for long video embeddings. Alternatively, you can skip memory profiling for multimodal inputs by `--skip-mm-profiling` and lower `--gpu-memory-utilization` accordingly at your own risk.
 - You can set `--max-model-len` to preserve memory. By default the model's context length is 262K, but `--max-model-len=128000` is usually good for most scenarios.
 - Specifying `--mm-encoder-tp-mode data` deploys the vision encoder in a data-parallel fashion for better performance. This is because the vision encoder is very small compared to the language decoder, thus tensor parallelism brings little gain but incurs significant communication overhead. However, for long-video input this may overload individual accelerators.
@@ -91,7 +95,7 @@ vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
 - You can use [benchmark_moe](https://github.com/vllm-project/vllm/blob/main/benchmarks/kernels/benchmark_moe.py) to perform MoE Triton kernel tuning for your hardware.
 
 
-#### Benchmark on VisionArena-Chat Dataset
+### Benchmark on VisionArena-Chat Dataset
 
 Once the server for the `Qwen3-VL-235B-A22B-Instruct` model is running, open another terminal and run the benchmark client:
 
@@ -106,7 +110,7 @@ vllm bench serve \
   --request-rate 20
 ```
 
-#### Consume the OpenAI API Compatible Server
+### Consume the OpenAI API Compatible Server
 ```python
 import time
 from openai import OpenAI
