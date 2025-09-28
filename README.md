@@ -34,6 +34,7 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [Qwen2.5-VL](Qwen/Qwen2.5-VL.md)
 - [Qwen3-Coder-480B-A35B](Qwen/Qwen3-Coder-480B-A35B.md)
 - [Qwen3-Next](Qwen/Qwen3-Next.md)
+- [Qwen3-VL](Qwen/Qwen3-VL.md)
 
 ### Seed <img src="https://avatars.githubusercontent.com/u/4158466?s=200&v=4" alt="Seed" width="16" height="16" style="vertical-align:middle;">
 - [Seed-OSS-36B](Seed/Seed-OSS-36B.md)
