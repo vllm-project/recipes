@@ -32,7 +32,7 @@ uv pip install git+https://github.com/huggingface/transformers.git
 ### Qwen3-VL-235B-A22B-Instruct
 This is the Qwen3-VL flagship MoE model, which requires a minimum of 8 GPUs, each with at least 80 GB of memory (e.g., A100, H100, or H200). On some types of hardware the model may not launch successfully with its default setting. Recommended approaches by hardware type are:
 
-- **H100 with `fp8`**: Use FP8 for optimal memory efficiency, and an FP8 version of the model will be released soon. Stay tuned!
+- **H100 with `fp8`**: Use FP8 for optimal memory efficiency. An FP8 version of the model will be released soon. Stay tuned!
 - **A100 & H100 with `bfloat16`**: Either reduce `--max-model-len` or restrict inference to images only.
 - **H200 & B200 GPUs**: Run the model out of the box, supporting full context length and concurrent image and video processing.
 
