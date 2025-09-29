@@ -13,12 +13,10 @@ source .venv/bin/activate
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly
 ```
 
-It also requires installing DeepGEMM with both Hopper and Blackwell support, after PR #xxxx is merged.
+It also requires installing DeepGEMM with both Hopper and Blackwell support. You can build the latest DeepGEMM yourself, or use the prebuilt wheels from vLLM:
 
 ```bash
-wget https://github.com/vllm-project/vllm/raw/main/tools/install_deepgemm.sh
-chmod +x install_deepgemm.sh
-TORCH_CUDA_ARCH_LIST="9.0a 10.0a" ./install_deepgemm.sh
+pip install https://wheels.vllm.ai/dsv32/deep_gemm-2.1.0%2B594953a-cp312-cp312-linux_x86_64.whl
 ```
 
 ## Launching DeepSeek-V3.2
