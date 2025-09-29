@@ -5,28 +5,25 @@
 
 ## Installing vLLM
 
-We will provide a vLLM wheel for DeepSeek-V3.2-Exp soon.
-
-It also requires installing DeepGEMM with both Hopper and Blackwell support. You can build the latest DeepGEMM yourself, or use the prebuilt wheels from vLLM:
-
 ```bash
+pip install https://wheels.vllm.ai/dsv32/vllm-0.10.2rc3.dev369%2Bgaeee9295b-cp38-abi3-linux_x86_64.whl
 pip install https://wheels.vllm.ai/dsv32/deep_gemm-2.1.0%2B594953a-cp312-cp312-linux_x86_64.whl
 ```
 
-## Launching DeepSeek-V3.2
+## Launching DeepSeek-V3.2-Exp
 
 ### Serving on 8xH200 (or H20) GPUs (141GB × 8)
 
 Using the recommended EP/DP mode:
 
 ```bash
-vllm serve deepseek-ai/DeepSeek-V3.2 -dp 8 --enable-expert-parallel
+vllm serve deepseek-ai/DeepSeek-V3.2-Exp -dp 8 --enable-expert-parallel
 ```
 
 Using tensor parallel:
 
 ```bash
-vllm serve deepseek-ai/DeepSeek-V3.2 -tp 8
+vllm serve deepseek-ai/DeepSeek-V3.2-Exp -tp 8
 ```
 
 ### Serving on 8xB200 GPUs
