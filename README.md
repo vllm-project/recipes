@@ -8,6 +8,7 @@ This repo intends to host community maintained common recipes to run vLLM answer
 ### DeepSeek <img src="https://avatars.githubusercontent.com/u/148330874?s=200&v=4" alt="DeepSeek" width="16" height="16" style="vertical-align:middle;">
 - [DeepSeek-V3, DeepSeek-R1](DeepSeek/DeepSeek-V3.md)
 - [DeepSeek-V3.1](DeepSeek/DeepSeek-V3_1.md)
+- [DeepSeek-V3.2-Exp](DeepSeek/DeepSeek-V3_2-Exp.md)
 
 ### Ernie <img src="https://avatars.githubusercontent.com/u/13245940?v=4" alt="Ernie" width="16" height="16" style="vertical-align:middle;">
 - [Ernie4.5](Ernie/Ernie4.5.md)
