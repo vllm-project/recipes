@@ -18,8 +18,7 @@ pip install https://wheels.vllm.ai/dsv32/deep_gemm-2.1.0%2B594953a-cp312-cp312-l
 Working command (on H200x8):
 
 ```bash
-VLLM_USE_DEEP_GEMM=0 vllm serve deepseek-ai/DeepSeek-V3.2-Exp -tp 8 
- --max-num-seqs 128
+VLLM_USE_DEEP_GEMM=0 vllm serve deepseek-ai/DeepSeek-V3.2-Exp -tp 8 --max-num-seqs 128
 ```
 
 Benchmarking:
