@@ -6,10 +6,10 @@
 ## Installing vLLM
 
 ```bash
-wget https://wheels.vllm.ai/dsv32/vllm-0.10.2rc3.dev371%2Bgb215ed849.cu129-cp38-abi3-linux_x86_64.whl
 git clone https://github.com/heheda12345/vllm.git
 cd vllm
 git checkout dsv32
+wget https://wheels.vllm.ai/dsv32/vllm-0.10.2rc3.dev371%2Bgb215ed849.cu129-cp38-abi3-linux_x86_64.whl
 VLLM_USE_PRECOMPILED=1 VLLM_PRECOMPILED_WHEEL_LOCATION=$(pwd)/vllm-0.10.2rc3.dev371+gb215ed849.cu129-cp38-abi3-linux_x86_64.whl uv pip install -vvv -e .
 pip install https://wheels.vllm.ai/dsv32/deep_gemm-2.1.0%2B594953a-cp312-cp312-linux_x86_64.whl
 ```
