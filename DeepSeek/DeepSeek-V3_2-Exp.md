@@ -14,6 +14,15 @@ VLLM_USE_PRECOMPILED=1 VLLM_PRECOMPILED_WHEEL_LOCATION=$(pwd)/vllm-0.10.2rc3.dev
 pip install https://wheels.vllm.ai/dsv32/deep_gemm-2.1.0%2B594953a-cp312-cp312-linux_x86_64.whl
 ```
 
+Working command (on H200x8):
+
+```bash
+VLLM_USE_DEEP_GEMM=0 vllm serve deepseek-ai/DeepSeek-V3.2-Exp -tp 8 
+ --max-num-seqs 128
+```
+
+The following should be the recommended ways to run, after we fix some issues.
+
 ## Launching DeepSeek-V3.2-Exp
 
 ### Serving on 8xH200 (or H20) GPUs (141GB × 8)
