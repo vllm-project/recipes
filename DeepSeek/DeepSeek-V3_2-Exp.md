@@ -1,17 +1,11 @@
-# DeepSeek-V3.2 Usage Guide
+# DeepSeek-V3.2-Exp Usage Guide
 
 ## Introduction
-[DeepSeek-V3.2](https://huggingface.co/deepseek-ai/DeepSeek-V3.2) is a sparse attention model. The main architecture is similar to DeepSeek-V3.1, but with a sparse attention mechanism.
+[DeepSeek-V3.2-Exp](https://huggingface.co/deepseek-ai/DeepSeek-V3.2-Exp) is a sparse attention model. The main architecture is similar to DeepSeek-V3.1, but with a sparse attention mechanism.
 
 ## Installing vLLM
 
-Need to install vLLM after PR #xxxx is merged.
-
-```bash
-uv venv
-source .venv/bin/activate
-uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly
-```
+We will provide a vLLM wheel for DeepSeek-V3.2-Exp soon.
 
 It also requires installing DeepGEMM with both Hopper and Blackwell support. You can build the latest DeepGEMM yourself, or use the prebuilt wheels from vLLM:
 
