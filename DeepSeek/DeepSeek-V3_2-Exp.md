@@ -21,6 +21,42 @@ VLLM_USE_DEEP_GEMM=0 vllm serve deepseek-ai/DeepSeek-V3.2-Exp -tp 8
  --max-num-seqs 128
 ```
 
+Benchmarking:
+
+```bash
+lm-eval --model local-completions --tasks gsm8k   --model_args model=deepseek-ai/DeepSeek-V3.2-Exp,base_url=http://127.0.0.1:8000/v1/completions,num_concurrent=100,max_retries=3,tokenized_requests=False
+```
+
+Results:
+
+```bash
+local-completions (model=deepseek-ai/DeepSeek-V3.2-Exp,base_url=http://127.0.0.1:8000/v1/completions,num_concurrent=100,max_retries=3,tokenized_requests=False), gen_kwargs: (None), limit: None, num_fewshot: None, batch_size: 1
+|Tasks|Version|     Filter     |n-shot|  Metric   |   |Value |   |Stderr|
+|-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
+|gsm8k|      3|flexible-extract|     5|exact_match|↑  |0.9591|±  |0.0055|
+|     |       |strict-match    |     5|exact_match|↑  |0.9591|±  |0.0055|
+```
+
+GSM8K score `0.9591` is pretty good!
+
+And then we can use `num_fewshot=20` to increase the context length, testing if the model can handle longer context:
+
+```bash
+lm-eval --model local-completions --tasks gsm8k   --model_args model=deepseek-ai/DeepSeek-V3.2-Exp,base_url=http://127.0.0.1:8000/v1/completions,num_concurrent=100,max_retries=3,tokenized_requests=False --num_fewshot 20
+```
+
+Results:
+
+```bash
+local-completions (model=deepseek-ai/DeepSeek-V3.2-Exp,base_url=http://127.0.0.1:8000/v1/completions,num_concurrent=100,max_retries=3,tokenized_requests=False), gen_kwargs: (None), limit: None, num_fewshot: 20, batch_size: 1
+|Tasks|Version|     Filter     |n-shot|  Metric   |   |Value |   |Stderr|
+|-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
+|gsm8k|      3|flexible-extract|    20|exact_match|↑  |0.9538|±  |0.0058|
+|     |       |strict-match    |    20|exact_match|↑  |0.9530|±  |0.0058|
+```
+
+GSM8K score `0.9538` is also pretty good!
+
 The following should be the recommended ways to run, after we fix some issues.
 
 ## Launching DeepSeek-V3.2-Exp
