@@ -6,22 +6,35 @@
 ## Installing vLLM
 
 ```bash
-git clone https://github.com/heheda12345/vllm.git
-cd vllm
-git checkout dsv32
-git tag v0.11.0
-wget https://wheels.vllm.ai/dsv32/vllm-0.10.2rc3.dev371%2Bgb215ed849.cu129-cp38-abi3-linux_x86_64.whl
-VLLM_USE_PRECOMPILED=1 VLLM_PRECOMPILED_WHEEL_LOCATION=$(pwd)/vllm-0.10.2rc3.dev371+gb215ed849.cu129-cp38-abi3-linux_x86_64.whl uv pip install -vvv -e .
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly
 uv pip install https://wheels.vllm.ai/dsv32/deep_gemm-2.1.0%2B594953a-cp312-cp312-linux_x86_64.whl
 ```
 
-Working command (on H200x8):
+Note: DeepGEMM is used in two places: MoE and MQA logits computation. It is necessary for MQA logits computation. If you want to disable the MoE part, you can set `VLLM_USE_DEEP_GEMM=0` in the environment variable. Some users reported that the performance is better with `VLLM_USE_DEEP_GEMM=0`, e.g. on H20 GPUs. It might be also beneficial to disable DeepGEMM if you want to skip the long warmup.
+
+## Launching DeepSeek-V3.2-Exp
+
+### Serving on 8xH200 (or H20) GPUs (141GB × 8)
+
+Using the recommended EP/DP mode:
 
 ```bash
-VLLM_USE_DEEP_GEMM=0 vllm serve deepseek-ai/DeepSeek-V3.2-Exp -tp 8 --max-num-seqs 128
+vllm serve deepseek-ai/DeepSeek-V3.2-Exp -dp 8 --enable-expert-parallel
 ```
 
-Benchmarking:
+Using tensor parallel:
+
+```bash
+vllm serve deepseek-ai/DeepSeek-V3.2-Exp -tp 8
+```
+
+### Serving on 8xB200 GPUs
+
+Same as the above.
+
+Only Hopper and Blackwell data center GPUs are supported for now.
+
+## Accuracy Benchmarking:
 
 ```bash
 lm-eval --model local-completions --tasks gsm8k   --model_args model=deepseek-ai/DeepSeek-V3.2-Exp,base_url=http://127.0.0.1:8000/v1/completions,num_concurrent=100,max_retries=3,tokenized_requests=False
@@ -56,30 +69,6 @@ local-completions (model=deepseek-ai/DeepSeek-V3.2-Exp,base_url=http://127.0.0.1
 ```
 
 GSM8K score `0.9538` is also pretty good!
-
-The following should be the recommended ways to run, after we fix some issues.
-
-## Launching DeepSeek-V3.2-Exp
-
-### Serving on 8xH200 (or H20) GPUs (141GB × 8)
-
-Using the recommended EP/DP mode:
-
-```bash
-vllm serve deepseek-ai/DeepSeek-V3.2-Exp -dp 8 --enable-expert-parallel
-```
-
-Using tensor parallel:
-
-```bash
-vllm serve deepseek-ai/DeepSeek-V3.2-Exp -tp 8
-```
-
-### Serving on 8xB200 GPUs
-
-Same as the above.
-
-Only Hopper and Blackwell data center GPUs are supported for now.
 
 ## Performance Tips
 
