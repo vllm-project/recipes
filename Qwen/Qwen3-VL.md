@@ -34,7 +34,7 @@ This is the Qwen3-VL flagship MoE model, which requires a minimum of 8 GPUs, eac
 
 - **H100 with `fp8`**: Use FP8 for optimal memory efficiency. An FP8 version of the model will be released soon. Stay tuned!
 - **A100 & H100 with `bfloat16`**: Either reduce `--max-model-len` or restrict inference to images only.
-- **H200 & B200 GPUs**: Run the model out of the box, supporting full context length and concurrent image and video processing.
+- **H200 & B200**: Run the model out of the box, supporting full context length and concurrent image and video processing.
 
 See sections below for detailed launch arguments for each configuration. We are actively working on optimizations and the recommended ways to launch the model will be updated accordingly.
 
@@ -76,6 +76,9 @@ vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
   --mm-processor-cache-type shm \
   --async-scheduling
 ```
+
+!!! note
+    Qwen3-VL-235B-A22B-Instruct also excels on text-only tasks, ranking as the [#1 open model on Text by lmaren.ai](https://x.com/arena/status/1973151703563460942) at the time this guide was created. You can enable text-only mode by passing `--limit-mm-per-prompt.video 0 --limit-mm-per-prompt.image 0`, which skips the vision encoder and multimodal profiling to free up memory for additional KV cache.
 
 ### Configuration Tips
 - It's highly recommended to specify `--limit-mm-per-prompt.video 0` if your inference server will only process image inputs since enabling video inputs consumes more memory reserved for long video embeddings. Alternatively, you can skip memory profiling for multimodal inputs by `--skip-mm-profiling` and lower `--gpu-memory-utilization` accordingly at your own risk.
