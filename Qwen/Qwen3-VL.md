@@ -77,8 +77,9 @@ vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
   --async-scheduling
 ```
 
-> [!NOTE]
-> Qwen3-VL-235B-A22B-Instruct also excels on text-only tasks, ranking as the [#1 open model on text by lmarena.ai](https://x.com/arena/status/1973151703563460942) at the time this guide was created. You can enable text-only mode by passing `--limit-mm-per-prompt.video 0 --limit-mm-per-prompt.image 0`, which skips the vision encoder and multimodal profiling to free up memory for additional KV cache.
+> ℹ️ **Note**  
+> Qwen3-VL-235B-A22B-Instruct also excels on text-only tasks, ranking as the [#1 open model on text by lmarena.ai](https://x.com/arena/status/1973151703563460942) at the time this guide was created.
+> You can enable text-only mode by passing `--limit-mm-per-prompt.video 0 --limit-mm-per-prompt.image 0`, which skips the vision encoder and multimodal profiling to free up memory for additional KV cache.
 
 
 ### Configuration Tips
