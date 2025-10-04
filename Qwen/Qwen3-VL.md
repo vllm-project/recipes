@@ -51,7 +51,6 @@ vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
 
 <details>
 <summary>H100 (Image Inference, FP8, TP4)</summary>
-#### H100 (Image Inference, FP8, TP4)
 ```bash
 vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
   --tensor-parallel-size 4 \
@@ -65,7 +64,6 @@ vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
 
 <details>
 <summary>A100 & H100 (Image Inference, BF16)</summary>
-#### A100 & H100 (Image Inference, BF16)
 ```bash
 vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
   --tensor-parallel-size 8 \
@@ -77,7 +75,6 @@ vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
 
 <details>
 <summary>A100 & H100 (Image + Video Inference, BF16)</summary>
-#### A100 & H100 (Image + Video Inference, BF16)
 ```bash
 vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
   --tensor-parallel-size 8 \
@@ -88,7 +85,6 @@ vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
 
 <details>
 <summary>H200 & B200</summary>
-#### H200 & B200
 ```bash
 vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
   --tensor-parallel-size 8 \
