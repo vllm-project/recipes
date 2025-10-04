@@ -49,7 +49,6 @@ vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
 vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
   --tensor-parallel-size 4 \
   ----limit-mm-per-prompt.video 0 \
-  --enable-expert-parallel \
   --async-scheduling \
   --gpu-memory-utilization 0.95 \
   --max-num-seqs 128
@@ -62,7 +61,6 @@ vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
 vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
   --tensor-parallel-size 8 \
   --limit-mm-per-prompt.video 0 \
-  --enable-expert-parallel \
   --async-scheduling
 ```
 </details>
