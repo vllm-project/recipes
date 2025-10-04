@@ -81,4 +81,4 @@ For other usage tips, such as enabling or disabling thinking mode, please refer 
 
 ## Additional Resources
 
-- [An end-to-end tutorial (Jupyter Notebook)](DeepSeek_v3_2_vLLM_getting_started_guide.ipynb)
+- [An end-to-end tutorial (Jupyter Notebook)]([DeepSeek_v3_2_vLLM_getting_started_guide.ipynb](https://github.com/vllm-project/recipes/blob/main/DeepSeek/DeepSeek_v3_2_vLLM_getting_started_guide.ipynb))
