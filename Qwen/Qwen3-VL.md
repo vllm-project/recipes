@@ -12,17 +12,11 @@ Available in Dense and MoE architectures that scale from edge to cloud, with Ins
 uv venv
 source .venv/bin/activate
 
-# Install vLLM nightly
-uv pip install -U vllm \
-    --torch-backend=auto \
-    --extra-index-url https://wheels.vllm.ai/nightly
+# Install vLLM >=0.11.0
+uv pip install -U vllm
 
 # Install Qwen-VL utility library (recommended for offline inference)
 uv pip install qwen-vl-utils==0.0.14
-
-# Install transformers (from source or 4.57.0 when released)
-# uv pip install transformers>=4.57.0
-uv pip install git+https://github.com/huggingface/transformers.git
 ```
 
 
