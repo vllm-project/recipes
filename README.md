@@ -9,7 +9,6 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [DeepSeek-V3, DeepSeek-R1](DeepSeek/DeepSeek-V3.md)
 - [DeepSeek-V3.1](DeepSeek/DeepSeek-V3_1.md)
 - [DeepSeek-V3.2-Exp](DeepSeek/DeepSeek-V3_2-Exp.md)
-- [DeepSeek-V3.2-Exp - Complete Tutorial (Jupyter Notebook)](https://github.com/vllm-project/recipes/blob/main/DeepSeek/DeepSeek_v3_2_vLLM_getting_started_guide.ipynb)
 
 ### Ernie <img src="https://avatars.githubusercontent.com/u/13245940?v=4" alt="Ernie" width="16" height="16" style="vertical-align:middle;">
 - [Ernie4.5](Ernie/Ernie4.5.md)
