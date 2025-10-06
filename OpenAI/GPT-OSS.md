@@ -15,12 +15,12 @@ This is a living document and we welcome contributions, corrections, and creatio
 
 ### Installation from pre-built wheels
 
-We recommend using the official [vLLM 0.10.1 release](https://github.com/vllm-project/vllm/releases/tag/v0.10.1) as your starting point. Create a new virtual environment and install the official release:
+We recommend using the official [vLLM 0.10.2 release](https://github.com/vllm-project/vllm/releases/tag/v0.10.2) as your starting point. **Note: vLLM >= 0.10.2 is required for `--tool-call-parser openai`**. Create a new virtual environment and install the official release:
 
 ```
 uv venv
 source .venv/bin/activate
-uv pip install vllm==0.10.1 --torch-backend=auto
+uv pip install vllm==0.10.2 --torch-backend=auto
 ```
 
 We also provide a docker container with all the dependencies built in
@@ -29,7 +29,7 @@ We also provide a docker container with all the dependencies built in
 docker run --gpus all \
     -p 8000:8000 \
     --ipc=host \
-    vllm/vllm-openai:v0.10.1 \
+    vllm/vllm-openai:v0.10.2 \
     --model openai/gpt-oss-20b
 ```
 
@@ -71,7 +71,7 @@ vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
 NVIDIA Blackwell requires installation of [FlashInfer library](https://github.com/flashinfer-ai/flashinfer), so please install the extra `vllm[flashinfer]`.
 
 ```
-uv pip install vllm[flashinfer]==0.10.1 --torch-backend=auto
+uv pip install vllm[flashinfer]==0.10.2 --torch-backend=auto
 ```
 
 We recommend TP=1 as a starting point for a performant option. We are actively working on the performance of vLLM on Blackwell. 
