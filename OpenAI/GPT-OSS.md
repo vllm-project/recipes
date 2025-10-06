@@ -15,7 +15,7 @@ This is a living document and we welcome contributions, corrections, and creatio
 
 ### Installation from pre-built wheels
 
-We recommend using the official [vLLM 0.10.2 release](https://github.com/vllm-project/vllm/releases/tag/v0.10.2) as your starting point. Create a new virtual environment and install the official release:
+We recommend using the official [vLLM 0.10.2 release](https://github.com/vllm-project/vllm/releases/tag/v0.10.2) as your starting point. **Note: vLLM >= 0.10.2 is required for `--tool-call-parser openai`**. Create a new virtual environment and install the official release:
 
 ```
 uv venv
