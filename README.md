@@ -3,7 +3,7 @@
 This repo intends to host community maintained common recipes to run vLLM answering the question:
 **How do I run model X on hardware Y for task Z?**
 
-## GPU Guides
+## Guides
 
 ### DeepSeek <img src="https://avatars.githubusercontent.com/u/148330874?s=200&v=4" alt="DeepSeek" width="16" height="16" style="vertical-align:middle;">
 - [DeepSeek-V3.2-Exp](DeepSeek/DeepSeek-V3_2-Exp.md)
@@ -35,20 +35,16 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [Qwen3-VL](Qwen/Qwen3-VL.md)
 - [Qwen3-Next](Qwen/Qwen3-Next.md)
 - [Qwen3-Coder-480B-A35B](Qwen/Qwen3-Coder-480B-A35B.md)
+- [Qwen3-32B on TPU (Trillium)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Qwen3)
+- [Qwen3-4B on TPU (Trillium)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Qwen3)
 - [Qwen2.5-VL](Qwen/Qwen2.5-VL.md)
+- [Qwen2.5-VL on TPU (Trillium)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Qwen2.5-VL)
 
 ### Seed <img src="https://avatars.githubusercontent.com/u/4158466?s=200&v=4" alt="Seed" width="16" height="16" style="vertical-align:middle;">
 - [Seed-OSS-36B](Seed/Seed-OSS-36B.md)
 
 ### Moonshotai <img src="https://avatars.githubusercontent.com/u/129152888?v=4" alt="Moonshotai" width="16" height="16" style="vertical-align:middle;">
 - [Kimi-K2](moonshotai/Kimi-K2.md)
-
-## TPU Guides
-
-### Qwen <img src="https://qwenlm.github.io/favicon.png" alt="Qwen" width="16" height="16" style="vertical-align:middle;">
-- [Qwen3-32B](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Qwen3)
-- [Qwen3-4B](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Qwen3)
-- [Qwen2.5-VL](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Qwen2.5-VL)
 
 ## Contributing
 Please feel free to contribute by adding a new recipe or improving an existing one, just send us a PR!
