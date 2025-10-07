@@ -27,6 +27,8 @@ This repo intends to host community maintained common recipes to run vLLM answer
 ### Llama
 - [Llama4-Scout](Llama/Llama4-Scout.md)
 - [Llama3.3-70B](Llama/Llama3.3-70B.md)
+- [Llama3.1-70B on TPU (Trillium)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.1)
+- [Llama3.1-8B on TPU (Trillium)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.1)
 
 ### OpenAI <img src="https://avatars.githubusercontent.com/u/14957082?v=4" alt="OpenAI" width="16" height="16" style="vertical-align:middle;">
 - [gpt-oss](OpenAI/GPT-OSS.md)
