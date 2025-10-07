@@ -27,6 +27,8 @@ This repo intends to host community maintained common recipes to run vLLM answer
 ### Llama
 - [Llama4-Scout](Llama/Llama4-Scout.md)
 - [Llama3.3-70B](Llama/Llama3.3-70B.md)
+- [Llama3.1-70B on TPU (Trillium)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.1)
+- [Llama3.1-8B on TPU (Trillium)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.1)
 
 ### OpenAI <img src="https://avatars.githubusercontent.com/u/14957082?v=4" alt="OpenAI" width="16" height="16" style="vertical-align:middle;">
 - [gpt-oss](OpenAI/GPT-OSS.md)
@@ -35,7 +37,10 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [Qwen3-VL](Qwen/Qwen3-VL.md)
 - [Qwen3-Next](Qwen/Qwen3-Next.md)
 - [Qwen3-Coder-480B-A35B](Qwen/Qwen3-Coder-480B-A35B.md)
+- [Qwen3-32B on TPU (Trillium)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Qwen3)
+- [Qwen3-4B on TPU (Trillium)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Qwen3)
 - [Qwen2.5-VL](Qwen/Qwen2.5-VL.md)
+- [Qwen2.5-VL on TPU (Trillium)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Qwen2.5-VL)
 
 ### Seed <img src="https://avatars.githubusercontent.com/u/4158466?s=200&v=4" alt="Seed" width="16" height="16" style="vertical-align:middle;">
 - [Seed-OSS-36B](Seed/Seed-OSS-36B.md)
