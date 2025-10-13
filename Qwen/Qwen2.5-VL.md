@@ -1,10 +1,15 @@
 # Qwen2.5-VL Usage Guide
 
-This guide describes how to run Qwen2.5-VL series with native BF16 on NVIDIA GPUs. 
+This guide describes how to run Qwen2.5-VL series on the targeted accelerated stack.
 Since BF16 is the commonly used precision type for Qwen2.5-VL training, using BF16 in inference ensures the best accuracy.
 
+## TPU Deployment
 
-## Installing vLLM
+- [Qwen2.5-VL on Trillium (v6e)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Qwen2.5-VL)
+
+## GPU Deployment
+
+### Installing vLLM
 
 ```bash
 uv venv
@@ -12,7 +17,7 @@ source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
-## Running Qwen2.5-VL with BF16 on 4xA100
+### Running Qwen2.5-VL with BF16 on 4xA100
 
 There are two ways to parallelize the model over multiple GPUs: (1) Tensor-parallel (TP) or (2) Data-parallel (DP). Each one has its own advantages, where tensor-parallel is usually more beneficial for low-latency / low-load scenarios, and data-parallel works better for cases where there is a lot of data with heavy loads.
 
@@ -29,13 +34,14 @@ vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
   --limit-mm-per-prompt '{"image":2,"video":0}' \
 
 ```
-### Tips
+
+#### Tips
+
 - You can set `--max-model-len` to preserve memory. By default the model's context length is 128K, but `--max-model-len=65536` is usually good for most scenarios.
 - You can set `--tensor-parallel-size` and `--data-parallel-size` to adjust the parallel strategy. But TP should be larger than 2 for A100-80GB devices to avoid OOM.
 - You can set `--limit-mm-per-prompt` to limit how many multimodal data instances to allow for each prompt. This is useful if you want to control the incoming traffic of multimodal requests.
 - `--mm-encoder-tp-mode` is set to "data", so as to deploy the multimodal encoder in DP fashion for better performance. This is because the multimodal encoder is very small compared to the language decoder (ViT 675M v.s. LM 72B in Qwen2.5-VL-72B), thus TP on ViT provides little gain but incurs significant communication overhead.  
 - vLLM conservatively uses 90% of GPU memory. You can set `--gpu-memory-utilization=0.95` to maximize KVCache.
-
 
 For medium-size models like Qwen2.5-VL-7B, data parallelism usually provides better performance since it boosts throughput without the heavy communication costs seen in tensor parallelism. Here is an example of how to launch the server using DP=4:
 
@@ -49,11 +55,11 @@ vllm serve Qwen/Qwen2.5-VL-7B-Instruct  \
   --limit-mm-per-prompt '{"image":2,"video":0}' \
 ```
 
-## Benchmarking
+### Benchmarking
 
 For benchmarking, you first need to launch the server with prefix caching disabled by adding `--no-enable-prefix-caching` to the server command.
 
-### Qwen2.5VL-72B Benchmark on VisionArena-Chat Dataset
+#### Qwen2.5VL-72B Benchmark on VisionArena-Chat Dataset
 
 Once the server for the 72B model is running, open another terminal and run the benchmark client:
 
@@ -69,10 +75,10 @@ vllm bench serve \
   --dataset-path lmarena-ai/VisionArena-Chat \
   --num-prompts 128 
 ```
+
 * Test different batch sizes by changing `--num-prompts`, e.g., 1, 16, 32, 64, 128, 256, 512
 
-#### Expected Output
-
+##### Expected Output
 
 ```shell
 ============ Serving Benchmark Result ============
@@ -99,7 +105,7 @@ P99 ITL (ms):                            614.47
 
 ```
 
-### Qwen2.5VL-72B Benchmark on Random Synthetic Dataset
+#### Qwen2.5VL-72B Benchmark on Random Synthetic Dataset
 
 Once the server for the 72B model is running, open another terminal and run the benchmark client:
 
@@ -114,15 +120,14 @@ vllm bench serve \
   --num-prompts 128 
 ```
 
-* Test different workloads by adjusting input/output lengths via the `--random-input-len` and `--random-output-len` arguments:
-    - **Prompt-heavy**: 8000 input / 1000 output
-    - **Decode-heavy**: 1000 input / 8000 output  
-    - **Balanced**: 1000 input / 1000 output
+- Test different workloads by adjusting input/output lengths via the `--random-input-len` and `--random-output-len` arguments:
+  - **Prompt-heavy**: 8000 input / 1000 output
+  - **Decode-heavy**: 1000 input / 8000 output  
+  - **Balanced**: 1000 input / 1000 output
 
-* Test different batch sizes by changing `--num-prompts`, e.g., 1, 16, 32, 64, 128, 256, 512
+- Test different batch sizes by changing `--num-prompts`, e.g., 1, 16, 32, 64, 128, 256, 512
 
-
-#### Expected Output
+##### Expected Output
 
 ```shell
 ============ Serving Benchmark Result ============
@@ -148,9 +153,7 @@ P99 ITL (ms):                            558.30
 ==================================================
 ```
 
-
-
-### Qwen2.5VL-7B Benchmark on VisionArena-Chat Dataset
+#### Qwen2.5VL-7B Benchmark on VisionArena-Chat Dataset
 
 Once the server for the 7B model is running, open another terminal and run the benchmark client:
 
@@ -167,7 +170,7 @@ vllm bench serve \
   --num-prompts 128 
 ```
 
-#### Expected Output
+##### Expected Output
 
 ```shell
 ============ Serving Benchmark Result ============
@@ -193,7 +196,7 @@ P99 ITL (ms):                            653.85
 ==================================================
 ```
 
-### Qwen2.5VL-7B Benchmark on Random Synthetic Dataset
+#### Qwen2.5VL-7B Benchmark on Random Synthetic Dataset
 
 Once the server for the 7B model is running, open another terminal and run the benchmark client:
 
@@ -208,7 +211,7 @@ vllm bench serve \
   --num-prompts 128 
 ```
 
-#### Expected Output
+##### Expected Output
 
 ```shell
 ============ Serving Benchmark Result ============
