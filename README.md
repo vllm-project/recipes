@@ -55,7 +55,7 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 - [Kimi-K2](moonshotai/Kimi-K2.md)
 
-### Moonshotai <img src="https://avatars.githubusercontent.com/u/199075982?s=200&v=4" alt="inclusionAI" width="16" height="16" style="vertical-align:middle;">
+### inclusionAI <img src="https://avatars.githubusercontent.com/u/199075982?s=200&v=4" alt="inclusionAI" width="16" height="16" style="vertical-align:middle;">
 
 - [Ring-1T-FP8](inclusionAI/Ring-1T-FP8.md)
 
