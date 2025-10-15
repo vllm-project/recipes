@@ -231,16 +231,16 @@ This chapter includes more instructions about running gpt-oss-120b on NVIDIA Bla
 
 ### Pull Docker Image
 
-Pull the vLLM v0.10.2 release docker image.
+Pull the vLLM v0.11.0 release docker image.
 
 `pull_image.sh`
 ```
 # On x86_64 systems:
-docker pull --platform linux/amd64 vllm/vllm-openai:v0.10.2
+docker pull --platform linux/amd64 vllm/vllm-openai:v0.11.0
 # On aarch64 systems:
-# docker pull --platform linux/aarch64 vllm/vllm-openai:v0.10.2
+# docker pull --platform linux/aarch64 vllm/vllm-openai:v0.11.0
 
-docker tag vllm/vllm-openai:v0.10.2 vllm/vllm-openai:deploy
+docker tag vllm/vllm-openai:v0.11.0 vllm/vllm-openai:deploy
 ```
 
 ### Run Docker Container
@@ -272,6 +272,7 @@ max-model-len: 10240
 
 `GPT-OSS_Hopper.yaml`
 ```
+compilation-config: '{"cudagraph_mode":"PIECEWISE"}'
 async-scheduling: true
 no-enable-prefix-caching: true
 cuda-graph-sizes: 2048
