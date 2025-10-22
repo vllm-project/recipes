@@ -29,14 +29,21 @@ llm = LLM(
     logits_processors=[NGramPerReqLogitsProcessor]
 )
 
-# Prepare input with your image file
-image = Image.open("path/to/your/image.png").convert("RGB")
+# Prepare batchinput with your image file
+image_1 = Image.open("path/to/your/image_1.png").convert("RGB")
+image_2 = Image.open("path/to/your/image_2.png").convert("RGB")
 prompt = "<image>\nFree OCR."
 
-model_input = {
-    "prompt": prompt,
-    "multi_modal_data": {"image": image}
-}
+model_input = [
+    {
+        "prompt": prompt,
+        "multi_modal_data": {"image": image_1}
+    },
+    {
+        "prompt": prompt,
+        "multi_modal_data": {"image": image_2}
+    }
+]
 
 sampling_param = SamplingParams(
             temperature=0.0,
