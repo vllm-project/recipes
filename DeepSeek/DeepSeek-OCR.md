@@ -30,7 +30,7 @@ llm = LLM(
 )
 
 # Prepare input
-image = Image.open(...)
+image = Image.open(...).convert("RGB")
 prompt = "<image>\nFree OCR."
 
 model_input = {
