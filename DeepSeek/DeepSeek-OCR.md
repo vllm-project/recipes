@@ -50,7 +50,11 @@ sampling_param = SamplingParams(
             skip_special_tokens=False,
         )
 # Generate output
-output = llm.generate(model_input, sampling_param)
+model_outputs = llm.generate(model_input, sampling_param)
+
+# Print output
+for output in model_outputs:
+    print(output.outputs[0].text)
 ```
 
 ## Configuration Tips
