@@ -65,7 +65,7 @@ for output in model_outputs:
 ```
 
 ## Configuration Tips
-- **It's important to use the custom logits processor** along with the model for the optimial OCR and markdown generation perforamnce.
+- **It's important to use the custom logits processor** along with the model for the optimal OCR and markdown generation performance.
 - Unlike multi-turn chat use cases, we do not expect OCR tasks to benefit significantly from prefix caching or image reuse, therefore it's recommended to turn off these features to avoid unnecessary hashing and caching.
 - DeepSeek-OCR works better with plain prompts than instruction formats. Find [more example prompts for various OCR tasks](https://github.com/deepseek-ai/DeepSeek-OCR/blob/2ac6d64a00656693b79c4f759a5e62c1b78bbeb1/DeepSeek-OCR-master/DeepSeek-OCR-vllm/config.py#L27-L37) in the official DeepSeek-OCR repository.
 - Depending on your hardware capability, adjust `max_num_batched_tokens` for better throughput performance.
