@@ -29,8 +29,8 @@ llm = LLM(
     logits_processors=[NGramPerReqLogitsProcessor]
 )
 
-# Prepare input
-image = Image.open(...).convert("RGB")
+# Prepare input with your image file
+image = Image.open("path/to/your/image.png").convert("RGB")
 prompt = "<image>\nFree OCR."
 
 model_input = {
