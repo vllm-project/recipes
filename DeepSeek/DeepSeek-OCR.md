@@ -29,7 +29,7 @@ llm = LLM(
     logits_processors=[NGramPerReqLogitsProcessor]
 )
 
-# Prepare batchinput with your image file
+# Prepare batched input with your image file
 image_1 = Image.open("path/to/your/image_1.png").convert("RGB")
 image_2 = Image.open("path/to/your/image_2.png").convert("RGB")
 prompt = "<image>\nFree OCR."
