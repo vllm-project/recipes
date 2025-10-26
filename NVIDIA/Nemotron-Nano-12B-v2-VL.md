@@ -157,7 +157,7 @@ for o in outputs:
     print(o.outputs[0].text)
 ```
 
-## Usage with video path
+#### Usage with video path
 * See Efficient Video Sampling (EVS): affects videos only, defines how much of the video tokens to prune
 ```python
 import os
@@ -206,7 +206,7 @@ for o in outputs:
     print(o.outputs[0].text)
 ```
 
-## Usage with video tensors and custom sampling
+#### Usage with video tensors and custom sampling
 ```python
 from vllm import LLM, SamplingParams
 import decord
