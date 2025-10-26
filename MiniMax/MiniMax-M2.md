@@ -15,7 +15,7 @@ source .venv/bin/activate
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly
 ```
 
-## LaunchingMiniMax-M2 with vLLM
+## Launching MiniMax-M2 with vLLM
 
 You can use 4x H200/H20 or 4x A100/A800 GPUs to launch this model.
 
