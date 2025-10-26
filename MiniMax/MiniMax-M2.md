@@ -5,7 +5,7 @@
 * Superior Intelligence – Ranks #1 among open-source models globally across mathematics, science, coding, and tool use.
 * Advanced Coding – Excels at multi-file edits, coding-run-fix loops, and test-validated repairs. Strong performance on SWE-Bench and Terminal-Bench tasks.
 * Agent Performance – Plans and executes complex toolchains across shell, browser, and code environments. Maintains traceable evidence and recovers gracefully from errors.
-* Efficient Design – 10B activated parameters (200B total) enables lower latency, cost, and higher throughput for interactive and batched workloads.
+* Efficient Design – 10B activated parameters (230B total) enables lower latency, cost, and higher throughput for interactive and batched workloads.
 
 ## Installing vLLM
 
@@ -29,6 +29,17 @@ vllm serve MiniMaxAI/MiniMax-M2 \
   --enable-auto-tool-choice
 ```
 
+Note that TP8 is not supported. To run the model with >4 GPUs, please use DP+EP:
+
+```bash
+vllm serve MiniMaxAI/MiniMax-M2 \
+  --data-parallel-size 8 \
+  --enable-expert-parallel \
+  --tool-call-parser minimax_m2 \
+  --reasoning-parser minimax_m2_append_think  \
+  --enable-auto-tool-choice
+```
+
 ## Performance Metrics
 
 
@@ -40,7 +51,6 @@ We use the following script to demonstrate how to benchmark MiniMaxAI/MiniMax-M2
 vllm bench serve \
   --backend vllm \
   --model MiniMaxAI/MiniMax-M2 \
-  --served-model-name  minmax-m2 \
   --endpoint /v1/completions \
   --dataset-name random \
   --random-input 2048 \
