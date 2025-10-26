@@ -1,6 +1,120 @@
-# vLLM `LLM` API
+# NVIDIA Nemotron-Nano-12B-v2-VL User Guide
 
-## Usage with image path
+This guide describes how to run Nemotron-Nano-12B-v2-VL series on the targeted accelerated stack.
+
+## Installing vLLM
+### Local environment
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install -U vllm --torch-backend auto
+```
+
+### Docker
+* vLLM 0.11.0 does not include Nemotron-Nano-12B-v2-VL, so please refer to this nightly build
+```bash
+docker pull vllm/vllm-openai:nightly-66a168a197ba214a5b70a74fa2e713c9eeb3251a
+```
+
+## Serving Nemotron-Nano-12B-v2-VL
+### Server:
+The following command will launch an inference server on 1 GPU.
+
+Notes:
+* You can set `--max-model-len` to preserve memory. Model is trained on a context length of ~131K, but unless the use-case is long context videos, a smaller context would fit as-well.
+* You can set `--allowed-local-media-path` to limit the accessibility of local files.
+* You can set `--video-pruning-rate` to tweak video compression. Read more about Efficient Video Sampling on [arXiv](https://arxiv.org/abs/2510.14624)
+
+```bash
+export VLLM_VIDEO_LOADER_BACKEND=opencv
+export CHECKPOINT_PATH="nvidia/Nemotron-Nano-12B-v2-VL-BF16"
+expord CUDA_VISIBLE_DEVICES=0
+
+python3 -m vllm.entrypoints.openai.api_server \
+   --model ${CHECKPOINT_PATH} \
+   --trust-remote-code \
+   --media-io-kwargs '{"video": {"fps": 2, "num_frames": 128} }' \
+   --max-model-len 131072 \
+   --data-parallel-size 1 \
+   --host 0.0.0.0 \
+   --port 5566 \
+   --allowed-local-media-path / \
+   --video-pruning-rate 0.75 \
+   --served-model-name "nvidia/Nemotron-Nano-12B-v2-VL-BF16"
+```
+
+### Client (bash):
+```bash
+# Either wait for the server to start, or call the server if you have it running already
+
+curl -X 'POST' \
+  'http://127.0.0.1:5566/v1/chat/completions' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "model": "nvidia/Nemotron-Nano-12B-v2-VL-BF16",
+  "messages": [{"role": "user", "content": [{"type": "text", "text": "Describe the video."}, {"type": "video_url", "video_url": {"url": "file:///path/to/video.mp4"}}]}]
+}'
+```
+
+### Client (Python):
+```python
+from openai import OpenAI
+client = OpenAI(
+    base_url="http://localhost:5566/v1",
+    api_key="<ignored>",
+)
+
+completion = client.chat.completions.create(
+    model="nvidia/Nemotron-Nano-12B-v2-VL-BF16",
+    messages=[
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Describe the video."
+          },
+          {
+            "type": "video_url",
+            "video_url": {
+              "url": "file:///path/to/video.mp4"
+            }
+          }
+        ]
+      }
+    ],
+)
+
+print(completion.choices[0].message.content)
+
+completion = client.chat.completions.create(
+    model="nvidia/Nemotron-Nano-12B-v2-VL-BF16",
+    messages=[
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Describe the image."
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "file:///path/to/image.jpg"
+            }
+          }
+        ]
+      }
+    ],
+)
+
+print(completion.choices[0].message.content)
+```
+
+### vLLM `LLM` API
+
+#### Usage with image path
 ```python
 from vllm import LLM, SamplingParams
 
@@ -251,75 +365,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
-
-# vLLM `serve` OpenAI API:
-
-The command below has multiple flags, we encourage you to tweak them according to your HW constraints and preferences.
-
-## Server:
-```bash
-export VLLM_VIDEO_LOADER_BACKEND=opencv
-export CHECKPOINT_PATH="nvidia/Nemotron-Nano-12B-v2-VL-BF16"
-
-python3 -m vllm.entrypoints.openai.api_server \
-   --model ${CHECKPOINT_PATH} \
-   --trust-remote-code \
-   --disable-mm-preprocessor-cache \
-   --no-enable-prefix-caching \
-   --media-io-kwargs '{"video": {"fps": 2, "num_frames": 128} }' \
-   --max-model-len 131072 \
-   --swap-space 8 \
-   --data-parallel-size=1 \
-   --port 5566 \
-   --allowed-local-media-path / \
-   --video-pruning-rate 0.75 \
-   --served-model-name "nvidia/Nemotron-Nano-12B-v2-VL-BF16"
-```
-
-# Client (bash):
-```bash
-# Either wait for the server to start, or call the server if you have it running already
-# sleep 3m
-
-curl -X 'POST' \
-  'http://127.0.0.1:5566/v1/chat/completions' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: application/json' \
-  -d '{
-  "model": "nvidia/Nemotron-Nano-12B-v2-VL-BF16",
-  "messages": [{"role": "user", "content": [{"type": "text", "text": "Describe the video."}, {"type": "video_url", "video_url": {"url": "file:///path/to/video.mp4"}}]}]
-}'
-```
-
-# Client (Python):
-```python
-from openai import OpenAI
-client = OpenAI(
-    base_url="http://localhost:5566/v1",
-    api_key="<ignored>",
-)
-
-completion = client.chat.completions.create(
-    model="nvidia/Nemotron-Nano-12B-v2-VL-BF16",
-    messages=[
-      {
-        "role": "user",
-        "content": [
-          {
-            "type": "text",
-            "text": "Describe the video."
-          },
-          {
-            "type": "video_url",
-            "video_url": {
-              "url": "file:///path/to/video.mp4"
-            }
-          }
-        ]
-      }
-    ],
-)
-
-print(completion.choices[0].message.content)
 ```
