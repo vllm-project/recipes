@@ -40,6 +40,16 @@ vllm serve MiniMaxAI/MiniMax-M2 \
   --enable-auto-tool-choice
 ```
 
+If you encounter `torch.AcceleratorError: CUDA error: an illegal memory access was encountered`, you can add `--compilation-config "{\"cudagraph_mode\": \"PIECEWISE\"}"` to the startup parameters to resolve this issue. 
+
+```bash
+vllm serve MiniMaxAI/MiniMax-M2 \
+  --tensor-parallel-size 4 \
+  --tool-call-parser minimax_m2 \
+  --reasoning-parser minimax_m2_append_think  \
+  --enable-auto-tool-choice \
+  --compilation-config "{\"cudagraph_mode\": \"PIECEWISE\"}"
+```
 ## Performance Metrics
 
 
