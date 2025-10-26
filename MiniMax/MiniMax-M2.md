@@ -5,7 +5,7 @@
 * Superior Intelligence – Ranks #1 among open-source models globally across mathematics, science, coding, and tool use.
 * Advanced Coding – Excels at multi-file edits, coding-run-fix loops, and test-validated repairs. Strong performance on SWE-Bench and Terminal-Bench tasks.
 * Agent Performance – Plans and executes complex toolchains across shell, browser, and code environments. Maintains traceable evidence and recovers gracefully from errors.
-* Efficient Design – 10B activated parameters (200B total) enables lower latency, cost, and higher throughput for interactive and batched workloads.
+* Efficient Design – 10B activated parameters (230B total) enables lower latency, cost, and higher throughput for interactive and batched workloads.
 
 ## Installing vLLM
 
