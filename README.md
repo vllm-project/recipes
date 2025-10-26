@@ -36,6 +36,10 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [Llama3.3-70B](Llama/Llama3.3-70B.md)
 - [Llama3.1](Llama/Llama3.1.md)
 
+### MiniMax <img src="https://github.com/MiniMax-AI/MiniMax-01/raw/main/figures/minimax.svg" alt="minmax" width="16" height="16" style="vertical-align:middle;">
+
+- [MiniMax-M2](MiniMax/MiniMax-M2.md)
+
 ### OpenAI <img src="https://avatars.githubusercontent.com/u/14957082?v=4" alt="OpenAI" width="16" height="16" style="vertical-align:middle;">
 
 - [gpt-oss](OpenAI/GPT-OSS.md)
