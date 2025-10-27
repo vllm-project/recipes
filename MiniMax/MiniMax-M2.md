@@ -99,3 +99,9 @@ Mean ITL (ms):                           82.78
 Median ITL (ms):                         82.18     
 P99 ITL (ms):                            83.48 
 ```
+
+## Using Tips
+
+### DeepGEMM Usage
+
+vLLM has DeepGEMM enabled by default, follow the [setup instructions](https://github.com/vllm-project/vllm/blob/v0.11.0/benchmarks/kernels/deepgemm/README.md#setup) to install it. However, on H20 GPUs, we've found that disabling DeepGEMM yields better performance for this model. To disable `DeepGEMM`, set the environment variable `VLLM_USE_DEEP_GEMM=0`.
