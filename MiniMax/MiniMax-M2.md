@@ -70,7 +70,7 @@ vllm bench serve \
 ```
 
 
-If successful, you should see output similar to the following (TP 4 on H20EX-*4)):
+If successful, you should see output similar to the following (TP 4 on NVIDIA_H20-3e *4) :
 
 ```
 ============ Serving Benchmark Result ============
