@@ -70,7 +70,7 @@ vllm bench serve \
 ```
 
 
-f successful, you should see output similar to the following:
+If successful, you should see output similar to the following (TP 4 on H20EX-*4)):
 
 ```
 ============ Serving Benchmark Result ============
