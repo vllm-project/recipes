@@ -71,4 +71,31 @@ vllm bench serve \
 ```
 
 
+If successful, you should see output similar to the following (TP 4 on NVIDIA_H20-3e *4) :
 
+```
+============ Serving Benchmark Result ============
+Successful requests:                     100       
+Failed requests:                         0         
+Maximum request concurrency:             10        
+Benchmark duration (s):                  851.51    
+Total input tokens:                      204800    
+Total generated tokens:                  98734     
+Request throughput (req/s):              0.12      
+Output token throughput (tok/s):         115.95    
+Peak output token throughput (tok/s):    130.00    
+Peak concurrent requests:                20.00     
+Total Token throughput (tok/s):          356.46    
+---------------Time to First Token----------------
+Mean TTFT (ms):                          520.98    
+Median TTFT (ms):                        523.86    
+P99 TTFT (ms):                           1086.48   
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          82.82     
+Median TPOT (ms):                        82.90     
+P99 TPOT (ms):                           84.28     
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           82.78     
+Median ITL (ms):                         82.18     
+P99 ITL (ms):                            83.48 
+```
