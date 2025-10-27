@@ -12,7 +12,8 @@
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly
+uv pip install 'triton-kernels @ git+https://github.com/triton-lang/triton.git@v3.5.0#subdirectory=python/triton_kernels' \
+   vllm --extra-index-url https://wheels.vllm.ai/nightly --prerelease=allow
 ```
 
 ## Launching MiniMax-M2 with vLLM
