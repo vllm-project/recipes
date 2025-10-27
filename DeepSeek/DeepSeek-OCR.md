@@ -69,7 +69,7 @@ for output in model_outputs:
 In this guide, we demonstrate how to set up DeepSeek-OCR for online OCR serving with OpenAI compatible API server.
 
 ```bash
-vllm serve deepseek-ai/DeepSeek-OCR --logits_processors vllm.model_executor.models.deepseek_ocr.NGramPerReqLogitsProcessor
+vllm serve deepseek-ai/DeepSeek-OCR --logits_processors vllm.model_executor.models.deepseek_ocr.NGramPerReqLogitsProcessor --no-enable-prefix-caching --mm-processor-cache-gb 0
 ```
 
 ```python3
@@ -105,12 +105,15 @@ response = client.chat.completions.create(
     model="deepseek-ai/DeepSeek-OCR",
     messages=messages,
     max_tokens=2048,
+    temperature=0.0,
     extra_body={
         "skip_special_tokens": False,
         # args used to control custom logits processor
         "vllm_xargs": {
             "ngram_size": 30,
             "window_size": 90,
+            # whitelist: <td>, </td>
+            "whitelist_token_ids": [128821, 128822],
         },
     },
 )
