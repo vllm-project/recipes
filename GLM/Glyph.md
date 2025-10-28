@@ -11,7 +11,7 @@ source .venv/bin/activate
 uv pip install -U vllm
 ```
 
-## Running Glyph
+## Deploying Glyph
 
 
 ```bash
@@ -25,4 +25,4 @@ vllm serve zai-org/Glyph \
 - `zai-org/Glyph` itself is a reasoning multimodal model, therefore we recommend using `--reasoning-parser glm45` for parsing reasoning traces from model outputs.
 - Unlike multi-turn chat use cases, we do not expect OCR tasks to benefit significantly from prefix caching or image reuse, therefore it's recommended to turn off these features to avoid unnecessary hashing and caching.
 - Depending on your hardware capability, adjust `max_num_batched_tokens` for better throughput performance.
-- Check out the [official Glyph documentation](https://github.com/thu-coai/Glyph?tab=readme-ov-file#model-deployment-vllm-acceleration) for more details on deploying the model with vLLM inside the end-to-end Glyph framework.
+- Check out the [official Glyph documentation](https://github.com/thu-coai/Glyph?tab=readme-ov-file#model-deployment-vllm-acceleration) for more details on utilizing the vLLM deployment inside the end-to-end Glyph framework.
