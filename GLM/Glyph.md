@@ -8,7 +8,7 @@
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm
+uv pip install -U vllm --torch-backend auto
 ```
 
 ## Deploying Glyph
