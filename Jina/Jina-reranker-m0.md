@@ -1,6 +1,9 @@
-# Jina Reranker vLLM Deployment using 2xT4 and 2xL4 GPUs
+# Jina Reranker vLLM Deployment Recipe
 
-This repository contains deployment instructions for the **jinaai/jina-reranker-m0** model using vLLM. This is a multilingual, multimodal reranker model designed to rank visual documents across multiple languages. It processes both textual and visual content, including pages with mixed text, figures, tables, and various layouts across over 29 languages.
+This guide contains deployment instructions for the **jinaai/jina-reranker-m0** model using vLLM. This is a multilingual, multimodal reranker model designed to rank visual documents across multiple languages. It processes both textual and visual content, including pages with mixed text, figures, tables, and various layouts across over 29 languages.
+
+This guide uses 2x NVIDIA T4 GPUs or 2x NVIDIA L4 GPUs to launch this model.
+
 
 ## Installation
 
@@ -33,7 +36,7 @@ The Rerank API returns a ranked list of documents ordered by their relevance to 
 #### Request Format
 
 ```bash
-curl -X POST http://0.0.0.0:8000/v1/rerank \
+curl -X POST http://localhost:8000/v1/rerank \
 -H "accept: application/json" \
 -H "Content-Type: application/json" \
 -d '{
@@ -97,7 +100,7 @@ The Score API computes similarity scores between a query and multiple documents 
 #### Text-to-Text Scoring
 
 ```bash
-curl -X POST http://0.0.0.0:8000/v1/score \
+curl -X POST http://localhost:8000/v1/score \
 -H "accept: application/json" \
 -H "Content-Type: application/json" \
 -d '{
@@ -152,7 +155,7 @@ curl -X POST http://0.0.0.0:8000/v1/score \
 The Score API supports multimodal inputs, allowing you to score text against images or vice versa:
 
 ```bash
-curl -X POST http://0.0.0.0:8000/v1/score \
+curl -X POST http://localhost:8000/v1/score \
 -H "accept: application/json" \
 -H "Content-Type: application/json" \
 -d '{

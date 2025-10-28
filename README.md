@@ -30,7 +30,8 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 - [Intern-S1](InternLM/Intern-S1.md)
 
-### Jina AI
+### Jina AI <img src="https://avatars.githubusercontent.com/u/60539444?s=200&v=4" alt="Jina AI" width="16" height="16" style="vertical-align:middle;">
+
 - [Jina-reranker-m0](Jina/Jina-reranker-m0.md)
 
 ### Llama
