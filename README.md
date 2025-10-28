@@ -30,6 +30,9 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 - [Intern-S1](InternLM/Intern-S1.md)
 
+### Jina AI
+- [Jina-reranker-m0](Jina/Jina-reranker-m0.md)
+
 ### Llama
 
 - [Llama4-Scout](Llama/Llama4-Scout.md)
