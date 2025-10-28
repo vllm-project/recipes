@@ -13,7 +13,6 @@ uv pip install -U vllm
 
 ## Deploying Glyph
 
-
 ```bash
 vllm serve zai-org/Glyph \
     --no-enable-prefix-caching \
