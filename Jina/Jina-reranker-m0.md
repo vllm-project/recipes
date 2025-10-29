@@ -1,6 +1,6 @@
 # Jina Reranker vLLM Deployment Recipe
 
-This guide contains deployment instructions for the **jinaai/jina-reranker-m0** model using vLLM. This is a multilingual, multimodal reranker model designed to rank visual documents across multiple languages. It processes both textual and visual content, including pages with mixed text, figures, tables, and various layouts across over 29 languages.
+This guide contains deployment instructions for the [jinaai/jina-reranker-m0](https://huggingface.co/jinaai/jina-reranker-m0) model using vLLM. This is a multilingual, multimodal reranker model designed to rank visual documents across multiple languages. It processes both textual and visual content, including pages with mixed text, figures, tables, and various layouts across over 29 languages.
 
 This guide uses 2x NVIDIA T4 GPUs or 2x NVIDIA L4 GPUs to launch this model.
 
