@@ -17,7 +17,8 @@ uv pip install -U vllm --torch-backend auto
 vllm serve zai-org/Glyph \
     --no-enable-prefix-caching \
     --mm-processor-cache-gb 0 \
-    --reasoning-parser glm45
+    --reasoning-parser glm45 \
+    --limit-mm-per-prompt.video 0
 ```
 
 ## Configuration Tips
