@@ -3,17 +3,10 @@
 This guide describes how to run Nemotron-Nano-12B-v2-VL series on the targeted accelerated stack.
 
 ## Installing vLLM
-### Local environment
-```bash
-uv venv
-source .venv/bin/activate
-uv pip install -U vllm --torch-backend auto
-```
 
-### Docker
-* vLLM 0.11.0 does not include Nemotron-Nano-12B-v2-VL, so please refer to this nightly build
+* vLLM 0.11.0 does not include Nemotron-Nano-12B-v2-VL, so either [install from source](https://docs.vllm.ai/en/v0.6.0/getting_started/installation.html) or refer to [this](https://hub.docker.com/layers/vllm/vllm-openai/nightly-8bff831f0aa239006f34b721e63e1340e3472067/images/sha256-ef112680ed30e4b9d7bf794dcda4abd829e9405a73e013f9e046658cf22d0577) nightly build
 ```bash
-docker pull vllm/vllm-openai:nightly-66a168a197ba214a5b70a74fa2e713c9eeb3251a
+docker pull vllm/vllm-openai:nightly-8bff831f0aa239006f34b721e63e1340e3472067
 ```
 
 ## Serving Nemotron-Nano-12B-v2-VL
@@ -21,14 +14,17 @@ docker pull vllm/vllm-openai:nightly-66a168a197ba214a5b70a74fa2e713c9eeb3251a
 The following command will launch an inference server on 1 GPU.
 
 Notes:
-* You can set `--max-model-len` to preserve memory. Model is trained on a context length of ~131K, but unless the use-case is long context videos, a smaller context would fit as-well.
-* You can set `--allowed-local-media-path` to limit the accessibility of local files.
-* You can set `--video-pruning-rate` to tweak video compression. Read more about Efficient Video Sampling on [arXiv](https://arxiv.org/abs/2510.14624)
+* Examples are using [BF16](https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16) precision model. We encourage you to try [FP8](https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-FP8) and [NVFP4](https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-NVFP4-QAD) as well!
+* You can set `--max-model-len <len>` ([doc](https://docs.vllm.ai/en/latest/configuration/engine_args.html#-max-model-len)) to preserve memory. Model is trained on a context length of ~131K, but unless the use-case is long context videos, a smaller context would fit as-well.
+* You can set `--allowed-local-media-path <root>` ([doc](https://docs.vllm.ai/en/latest/configuration/engine_args.html#-allowed-local-media-path)) to limit the accessibility of local files.
+
+#### Efficient Video Sampling (EVS)
+* You can set `--video-pruning-rate <fraction>` to tweak video compression. Read more about EVS on [arXiv](https://arxiv.org/abs/2510.14624).
 
 ```bash
 export VLLM_VIDEO_LOADER_BACKEND=opencv
-export CHECKPOINT_PATH="nvidia/Nemotron-Nano-12B-v2-VL-BF16"
-expord CUDA_VISIBLE_DEVICES=0
+export CHECKPOINT_PATH="nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16"
+export CUDA_VISIBLE_DEVICES=0
 
 python3 -m vllm.entrypoints.openai.api_server \
    --model ${CHECKPOINT_PATH} \
@@ -36,23 +32,20 @@ python3 -m vllm.entrypoints.openai.api_server \
    --media-io-kwargs '{"video": {"fps": 2, "num_frames": 128} }' \
    --max-model-len 131072 \
    --data-parallel-size 1 \
-   --host 0.0.0.0 \
    --port 5566 \
    --allowed-local-media-path / \
    --video-pruning-rate 0.75 \
-   --served-model-name "nvidia/Nemotron-Nano-12B-v2-VL-BF16"
+   --served-model-name "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16"
 ```
 
 ### Client (bash):
 ```bash
-# Either wait for the server to start, or call the server if you have it running already
-
 curl -X 'POST' \
   'http://127.0.0.1:5566/v1/chat/completions' \
   -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
   -d '{
-  "model": "nvidia/Nemotron-Nano-12B-v2-VL-BF16",
+  "model": "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16",
   "messages": [{"role": "user", "content": [{"type": "text", "text": "Describe the video."}, {"type": "video_url", "video_url": {"url": "file:///path/to/video.mp4"}}]}]
 }'
 ```
@@ -66,7 +59,7 @@ client = OpenAI(
 )
 
 completion = client.chat.completions.create(
-    model="nvidia/Nemotron-Nano-12B-v2-VL-BF16",
+    model="nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16",
     messages=[
       {
         "role": "user",
@@ -89,7 +82,7 @@ completion = client.chat.completions.create(
 print(completion.choices[0].message.content)
 
 completion = client.chat.completions.create(
-    model="nvidia/Nemotron-Nano-12B-v2-VL-BF16",
+    model="nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16",
     messages=[
       {
         "role": "user",
@@ -114,12 +107,20 @@ print(completion.choices[0].message.content)
 
 ### vLLM `LLM` API
 
+Notes:
+* Examples are using [BF16](https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16) precision model. We encourage you to try [FP8](https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-FP8) and [NVFP4](https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-NVFP4-QAD) as well!
+* You can set `max_model_len <len>` ([doc](https://docs.vllm.ai/en/latest/configuration/engine_args.html#-max-model-len)) to preserve memory. Model is trained on a context length of ~131K, but unless the use-case is long context videos, a smaller context would fit as-well.
+* You can set `allowed_local_media_path <root>` ([doc](https://docs.vllm.ai/en/latest/configuration/engine_args.html#-allowed-local-media-path)) to limit the accessibility of local files.
+
+#### Efficient Video Sampling (EVS)
+* You can set `video_pruning_rate <fraction>` to tweak video compression. Read more about EVS on [arXiv](https://arxiv.org/abs/2510.14624).
+
+
 #### Usage with image path
 ```python
 from vllm import LLM, SamplingParams
 
-model_path = "nvidia/Nemotron-Nano-12B-v2-VL-BF16"
-image_path = "/path/to/image.jpg"
+model_path = "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16"
 
 messages = [
     {
@@ -131,7 +132,7 @@ messages = [
             },
             {
                 "type": "image_url",
-                "image_url": {"url": f"file://{image_path}"},
+                "image_url": {"url": f"file:///path/to/image.jpg"},
             },
         ],
     },
@@ -165,8 +166,7 @@ os.environ["VLLM_VIDEO_LOADER_BACKEND"] = "opencv"
 
 from vllm import LLM, SamplingParams
 
-model_path = "nvidia/Nemotron-Nano-12B-v2-VL-BF16"
-video_path = "/path/to/video.mp4"
+model_path = "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16"
 
 messages = [
     {
@@ -178,7 +178,7 @@ messages = [
             },
             {
                 "type": "video_url",
-                "video_url": {"url": f"file://{video_path}"},
+                "video_url": {"url": f"file:///path/to/video.mp4"},
             },
         ],
     },
@@ -296,7 +296,7 @@ def sample_video_frames_to_data_urls(video_path_local, fps=0, nframe=0, nframe_m
 
 
 def main():
-    model_path = "nvidia/Nemotron-Nano-12B-v2-VL-BF16"
+    model_path = "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16"
     video_path = "/path/to/video.mp4"
 
     examples = {
