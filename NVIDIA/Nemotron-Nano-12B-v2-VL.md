@@ -214,9 +214,9 @@ import numpy as np
 from transformers.video_utils import VideoMetadata
 from transformers import AutoTokenizer
 
-def sample_video_frames_to_data_urls(video_path_local, fps=0, nframe=0, nframe_max=-1):
+def sample_video_frames(video_path_local, fps=0, nframe=0, nframe_max=-1):
     """
-    Sample frames from a video and return base64-encoded data URLs along with metadata.
+    Sample frames from a video and return them as a numpy array along with metadata.
 
     Args:
         video_path_local: Path to the video file
@@ -225,13 +225,13 @@ def sample_video_frames_to_data_urls(video_path_local, fps=0, nframe=0, nframe_m
         nframe_max: Maximum number of frames to sample
 
     Returns:
-        tuple: (frame_data_urls, metadata)
-        - frame_data_urls: List of base64-encoded frame images
+        tuple: (images, metadata)
+        - images: A numpy array of the sampled frame images.
         - metadata: VideoMetadata dataclass containing info about the sampled frames:
             - total_num_frames: Number of sampled frames
             - fps: Effective frame rate of the sampled frames
             - duration: Duration covered by the sampled frames (in seconds)
-            - video_backend: Backend used for video processing ('decord')
+            - video_backend: Backend used for video processing ('opencv_dynamic')
     """
 
     vid = decord.VideoReader(video_path_local)
