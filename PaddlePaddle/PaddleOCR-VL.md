@@ -17,7 +17,6 @@ uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly --
 ```bash
 vllm serve PaddlePaddle/PaddleOCR-VL \
     --trust-remote-code \
-    --no-enable-prefix-caching \
     --max-num-batched-tokens 16384 \
     --no-enable-prefix-caching \
     --mm-processor-cache-gb 0
