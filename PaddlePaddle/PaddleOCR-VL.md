@@ -22,7 +22,7 @@ vllm serve PaddlePaddle/PaddleOCR-VL \
     --mm-processor-cache-gb 0
 ```
 
-## Querying PaddleOCR-VL with OpenAI API Client
+## Querying with OpenAI API Client
 ```python3
 from openai import OpenAI
 
@@ -32,7 +32,7 @@ client = OpenAI(
     timeout=3600
 )
 
-# Base prompts for various document parsing tasks
+# Task-specific base prompts
 TASKS = {
     "ocr": "OCR:",
     "table": "Table Recognition:",
@@ -69,4 +69,4 @@ print(f"Generated text: {response.choices[0].message.content}")
 ## Configuration Tips
 - Unlike multi-turn chat use cases, we do not expect OCR tasks to benefit significantly from prefix caching or image reuse, therefore it's recommended to turn off these features to avoid unnecessary hashing and caching.
 - Depending on your hardware capability, adjust `max_num_batched_tokens` for better throughput performance.
-- Check out official [PaddleOCR-VL documentation](https://github.com/PaddlePaddle/PaddleOCR) for more details and examples of using the model for various document parsing tasks.
+- Check out the official [PaddleOCR-VL documentation](https://github.com/PaddlePaddle/PaddleOCR) for more details and examples of using the model for various document parsing tasks.
