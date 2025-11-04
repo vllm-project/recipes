@@ -51,6 +51,16 @@ vllm serve MiniMaxAI/MiniMax-M2 \
   --enable-auto-tool-choice \
   --compilation-config "{\"cudagraph_mode\": \"PIECEWISE\"}"
 ```
+
+To run the model in responsesAPI that natively supports thinking, run it with the minimax_m2 reasoning parser:
+```bash
+vllm serve MiniMaxAI/MiniMax-M2 \
+  --tensor-parallel-size 4 \
+  --tool-call-parser minimax_m2 \
+  --reasoning-parser minimax_m2  \
+  --enable-auto-tool-choice
+```
+
 ## Performance Metrics
 
 
