@@ -1,4 +1,4 @@
-# DeepSeek-OCR Usage Guide
+# PaddleOCR-VL Usage Guide
 
 ## Introduction
 [PaddleOCR-VL](https://huggingface.co/PaddlePaddle/PaddleOCR-VL) is a SOTA and resource-efficient model tailored for document parsing. Its core component is PaddleOCR-VL-0.9B, a compact yet powerful vision-language model (VLM) that integrates a NaViT-style dynamic resolution visual encoder with the ERNIE-4.5-0.3B language model to enable accurate element recognition.
