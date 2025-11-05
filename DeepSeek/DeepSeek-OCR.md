@@ -69,7 +69,7 @@ for output in model_outputs:
 In this guide, we demonstrate how to set up DeepSeek-OCR for online OCR serving with OpenAI compatible API server.
 
 ```bash
-vllm serve deepseek-ai/DeepSeek-OCR --logits_processors vllm.model_executor.models.deepseek_ocr.NGramPerReqLogitsProcessor --no-enable-prefix-caching --mm-processor-cache-gb 0
+vllm serve deepseek-ai/DeepSeek-OCR --logits_processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor --no-enable-prefix-caching --mm-processor-cache-gb 0
 ```
 
 ```python3
