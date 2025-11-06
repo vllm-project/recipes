@@ -196,12 +196,25 @@ P99 ITL (ms):                            483.37
 
 | Metric | TP8  |TP8+DCP8 | Change | Improvement(%) |
 |--------|-------------|-------------|--------|---------------|
-| Request Throughput(req/s) | 1.25  | 1.57  | +0.32 | +25.6% |
-| Output Token Throughput(tok/s) | 485.78 s | 695.13 | +209.35 | +43.1% |
-| Mean TTFT (sec) | 271.2  | 227.8  | -43.4  | +16.0% |
-| Median TTFT (sec) | 227.4  | 227.1  | -0.3  | +0.1% |
+| Request Throughput(req/s) | 1.25 | 1.57 | +0.32 | +25.6% |
+| Output Token Throughput(tok/s) | 485.78 | 695.13 | +209.35 | +43.1% |
+| Mean TTFT (sec) | 271.2 | 227.8 | -43.4 | +16.0% |
+| Median TTFT (sec) | 227.4 | 227.1 | -0.3 | +0.1% |
 
----
+You can observe from the service startup logs that the kv cache token number has increased by 8 times.
+
+- tp 8
+```shell
+(Worker_TP0 pid=591236) INFO 11-06 12:08:54 [gpu_worker.py:349] Available KV cache memory: 46.80 GiB
+(EngineCore_DP0 pid=591074) INFO 11-06 12:08:55 [kv_cache_utils.py:1229] GPU KV cache size: 715,072 tokens
+```
+- tp8+dcp8
+```shell
+(Worker_TP0 pid=666845) INFO 11-06 15:34:58 [gpu_worker.py:349] Available KV cache memory: 46.80 GiB
+(EngineCore_DP0 pid=666657) INFO 11-06 15:34:59 [kv_cache_utils.py:1224] Multiplying the GPU KV cache size by the dcp_world_size 8.
+(EngineCore_DP0 pid=666657) INFO 11-06 15:34:59 [kv_cache_utils.py:1229] GPU KV cache size: 5,721,088 tokens
+
+```
 
 
 Enabling DCP delivers strong advantages (43% faster token generation, 26% higher throughput) with minimal drawbacks (marginal median latency improvement). We recommend reading our  [DCP DOC](https://docs.vllm.ai/en/latest/serving/context_parallel_deployment.html#decode-context-parallel) and trying out DCP in your LLM workloads.
