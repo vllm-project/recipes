@@ -196,10 +196,10 @@ P99 ITL (ms):                            483.37
 
 | Metric | TP8  |TP8+DCP8 | Change | Improvement(%) |
 |--------|-------------|-------------|--------|---------------|
-| Request Throughput(req/s) | 1.25  | 1.57  | +0.32 | +25.6% |
-| Output Token Throughput(tok/s) | 485.78 s | 695.13 | +209.35 | +43.1% |
-| Mean TTFT (sec) | 271.2  | 227.8  | -43.4  | +16.0% |
-| Median TTFT (sec) | 227.4  | 227.1  | -0.3  | +0.1% |
+| Request Throughput(req/s) | 1.25 | 1.57 | +0.32 | +25.6% |
+| Output Token Throughput(tok/s) | 485.78 | 695.13 | +209.35 | +43.1% |
+| Mean TTFT (sec) | 271.2 | 227.8 | -43.4 | +16.0% |
+| Median TTFT (sec) | 227.4 | 227.1 | -0.3 | +0.1% |
 
 ---
 
