@@ -104,4 +104,4 @@ P99 ITL (ms):                            83.48
 
 ### DeepGEMM Usage
 
-vLLM has DeepGEMM enabled by default, follow the [setup instructions](https://github.com/vllm-project/vllm/blob/v0.11.0/benchmarks/kernels/deepgemm/README.md#setup) to install it. However, on H20 GPUs, we've found that disabling DeepGEMM yields better performance for this model. To disable `DeepGEMM`, set the environment variable `VLLM_USE_DEEP_GEMM=0`.
+vLLM has DeepGEMM enabled by default, follow the [setup instructions](https://github.com/vllm-project/vllm/blob/v0.11.0/benchmarks/kernels/deepgemm/README.md#setup) to install it. However, on H100 and H20 GPUs, we've found that disabling DeepGEMM yields better performance for this model. To disable `DeepGEMM`, set the environment variable `VLLM_USE_DEEP_GEMM=0`.
