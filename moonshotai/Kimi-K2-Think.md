@@ -22,34 +22,55 @@ uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly --
 
 ## Launching Kimi-K2-Thinking with vLLM
 
-You can use 8x H200/H20 to launch this model.
+You can use 8x H200/H20 to launch this model. See sections below for detailed launch arguments for low latency and high throughput scenarios
+
+
+<details>
+<summary>Low Latency Scenarios</summary>
 
 run tensor-parallel like this:
 
 ```bash
 vllm serve moonshotai/Kimi-K2-Thinking \
-  --trust-remote-code \
   --tensor-parallel-size 8 \
   --enable-auto-tool-choice \
   --tool-call-parser kimi_k2 \
   --reasoning-parser kimi_k2  \
+  --trust-remote-code
 
 ```
-
 The `--reasoning-parser` flag specifies the reasoning parser to use for extracting reasoning content from the model output.
 
+</details>
 
-## Benchmarking
 
-### Accuracy
+<details>
+<summary>High Throughput Scenarios</summary>
 
+vLLM supports [Decode Context Parallel](https://docs.vllm.ai/en/latest/serving/context_parallel_deployment.html#decode-context-parallel), significant benefits in high throughput scenarios. You can enable DCP by adding `--decode-context-parallel-size number`, like:
 
 ```bash
-lm_eval --model local-completions --model_args "model=moonshotai/Kimi-K2-Thinking,base_url=http://0.0.0.0:8000/v1/completions,tokenized_requests=False,tokenizer_backend=None,num_concurrent=32" --tasks gsm8k --num_fewshot 5
+vllm serve moonshotai/Kimi-K2-Thinking \
+  --tensor-parallel-size 8 \
+  --decode-context-parallel-size 8 \
+  --enable-auto-tool-choice \
+  --tool-call-parser kimi_k2 \
+  --reasoning-parser kimi_k2  \
+  --trust-remote-code
 
 ```
+The `--reasoning-parser` flag specifies the reasoning parser to use for extracting reasoning content from the model output.
 
-- Results
+</details>
+
+
+
+
+## Metrics
+
+We tested the `GSM8K` accuracy of 2 types of launch scripts (TP8 vs TP8+DCP8)
+
+- TP8
 
 ```bash
 local-completions (model=moonshotai/Kimi-K2-Thinking,base_url=http://0.0.0.0:8000/v1/completions,tokenized_requests=False,tokenizer_backend=None,num_concurrent=32), gen_kwargs: (None), limit: None, num_fewshot: 5, batch_size: 1
@@ -58,12 +79,24 @@ local-completions (model=moonshotai/Kimi-K2-Thinking,base_url=http://0.0.0.0:800
 |gsm8k|      3|flexible-extract|     5|exact_match|↑  |0.9416|±  |0.0065|
 |     |       |strict-match    |     5|exact_match|↑  |0.9409|±  |0.0065|
 
+```
+
+
+- TP8+DCP8
+
+```bash
+local-completions (model=moonshotai/Kimi-K2-Thinking,temperature=0.0,base_url=http://0.0.0.0:8000/v1/completions,tokenized_requests=False,tokenizer_backend=None,num_concurrent=32,timeout=3000), gen_kwargs: (None), limit: None, num_fewshot: 5, batch_size: 1
+|Tasks|Version|     Filter     |n-shot|  Metric   |   |Value |   |Stderr|
+|-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
+|gsm8k|      3|flexible-extract|     5|exact_match|↑  |0.9386|±  |0.0066|
+|     |       |strict-match    |     5|exact_match|↑  |0.9371|±  |0.0067|
 
 ```
 
-### Performance
 
-We used the following script to benchmark `moonshotai/Kimi-K2-Thinking` on 8*H200
+## Benchmarking
+
+We used the following script to benchmark `moonshotai/Kimi-K2-Thinking` on 8*H200.
 
 ```bash
 vllm bench serve \
@@ -76,7 +109,11 @@ vllm bench serve \
   --trust-remote-code
 ```
 
-####  Benchmark Output
+
+We separately benchmarked the performance of TP8 and TP8+DCP8.
+
+
+### TP8 Benchmark Output
 
 ```shell
 ============ Serving Benchmark Result ============
@@ -106,64 +143,7 @@ P99 ITL (ms):                            490.93
 ==================================================
 
 ```
-
-
-## DCP Usage
-
-vLLM supports [Decode Context Parallel](https://docs.vllm.ai/en/latest/serving/context_parallel_deployment.html#decode-context-parallel). You can enable decode context parallel by adding `--decode-context-parallel-size number`, like:
-
-```bash
-
-vllm serve moonshotai/Kimi-K2-Thinking \
-  --trust-remote-code \
-  --tensor-parallel-size 8 \
-  --decode-context-parallel-size 8 \
-  --enable-auto-tool-choice \
-  --tool-call-parser kimi_k2 \
-  --reasoning-parser kimi_k2  \
-
-```
-
-### Accuracy
-
-
-```bash
-lm_eval --model local-completions --model_args "model=moonshotai/Kimi-K2-Thinking,base_url=http://0.0.0.0:8000/v1/completions,tokenized_requests=False,tokenizer_backend=None,num_concurrent=32" --tasks gsm8k --num_fewshot 5
-
-```
-
-- Results
-
-```bash
-local-completions (model=moonshotai/Kimi-K2-Thinking,temperature=0.0,base_url=http://0.0.0.0:8000/v1/completions,tokenized_requests=False,tokenizer_backend=None,num_concurrent=32,timeout=3000), gen_kwargs: (None), limit: None, num_fewshot: 5, batch_size: 1
-|Tasks|Version|     Filter     |n-shot|  Metric   |   |Value |   |Stderr|
-|-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
-|gsm8k|      3|flexible-extract|     5|exact_match|↑  |0.9386|±  |0.0066|
-|     |       |strict-match    |     5|exact_match|↑  |0.9371|±  |0.0067|
-
-```
-
-
-
-### Performance
-
-We also used the above script to benchmark DCP.
-
-```bash
-vllm bench serve \
-  --model moonshotai/Kimi-K2-Thinking \
-  --dataset-name random \
-  --random-input 8000 \
-  --random-output 4000 \
-  --request-rate 100 \
-  --num-prompt 1000  \
-  --trust-remote-code
-
-
-```
-
-
-#### Benchmark Output
+### TP8+DCP8 Benchmark Output
 
 ```shell
 ============ Serving Benchmark Result ============
@@ -194,9 +174,13 @@ P99 ITL (ms):                            483.37
 
 ```
 
-### DCP Gain Analysis
 
-| Metric | TP8  |TP8+DCP8 | Change | Improvement(%) |
+## DCP Gain Analysis
+
+Furthermore we analyzed the gain achieved by DCP.
+
+
+| Metric | TP8 | TP8+DCP8 | Change | Improvement(%) |
 |--------|-------------|-------------|--------|---------------|
 | Request Throughput(req/s) | 1.25 | 1.57 | +0.32 | +25.6% |
 | Output Token Throughput(tok/s) | 485.78 | 695.13 | +209.35 | +43.1% |
@@ -205,12 +189,12 @@ P99 ITL (ms):                            483.37
 
 You can observe from the service startup logs that the kv cache token number has increased by 8 times.
 
-- tp 8
+- TP8
 ```shell
 (Worker_TP0 pid=591236) INFO 11-06 12:08:54 [gpu_worker.py:349] Available KV cache memory: 46.80 GiB
 (EngineCore_DP0 pid=591074) INFO 11-06 12:08:55 [kv_cache_utils.py:1229] GPU KV cache size: 715,072 tokens
 ```
-- tp8+dcp8
+- TP8+DCP8
 ```shell
 (Worker_TP0 pid=666845) INFO 11-06 15:34:58 [gpu_worker.py:349] Available KV cache memory: 46.80 GiB
 (EngineCore_DP0 pid=666657) INFO 11-06 15:34:59 [kv_cache_utils.py:1224] Multiplying the GPU KV cache size by the dcp_world_size 8.
@@ -218,5 +202,4 @@ You can observe from the service startup logs that the kv cache token number has
 
 ```
 
-
-Enabling DCP delivers strong advantages (43% faster token generation, 26% higher throughput) with minimal drawbacks (marginal median latency improvement). We recommend reading our  [DCP DOC](https://docs.vllm.ai/en/latest/serving/context_parallel_deployment.html#decode-context-parallel) and trying out DCP in your LLM workloads.
+Enabling DCP delivers strong advantages (43% faster token generation, 26% higher throughput) with minimal drawbacks (marginal median latency improvement). We recommend reading our [DCP DOC](https://docs.vllm.ai/en/latest/serving/context_parallel_deployment.html#decode-context-parallel) and trying out DCP in your LLM workloads.
