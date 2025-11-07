@@ -47,7 +47,7 @@ The `--reasoning-parser` flag specifies the reasoning parser to use for extracti
 <details>
 <summary>High Throughout Scenarios</summary>
 
-vLLM supports [Decode Context Parallel](https://docs.vllm.ai/en/latest/serving/context_parallel_deployment.html#decode-context-parallel), significant benefits in high throughput scenarios. You can enable decode context parallel by adding `--decode-context-parallel-size number`, like:
+vLLM supports [Decode Context Parallel](https://docs.vllm.ai/en/latest/serving/context_parallel_deployment.html#decode-context-parallel), significant benefits in high throughput scenarios. You can enable DCP by adding `--decode-context-parallel-size number`, like:
 
 ```bash
 vllm serve moonshotai/Kimi-K2-Thinking \
@@ -62,7 +62,6 @@ vllm serve moonshotai/Kimi-K2-Thinking \
 The `--reasoning-parser` flag specifies the reasoning parser to use for extracting reasoning content from the model output.
 
 </details>
-
 
 
 
@@ -111,7 +110,7 @@ vllm bench serve \
 ```
 
 
-We also separately benchmarked the performance of TP8 and TP8+DCP8.
+We separately benchmarked the performance of TP8 and TP8+DCP8.
 
 
 #### TP8 Benchmark Output
