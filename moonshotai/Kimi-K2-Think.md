@@ -28,6 +28,7 @@ run tensor-parallel like this:
 
 ```bash
 vllm serve moonshotai/Kimi-K2-Thinking \
+  --trust-remote-code \
   --tensor-parallel-size 8 \
   --enable-auto-tool-choice \
   --tool-call-parser kimi_k2 \
@@ -114,6 +115,7 @@ vLLM supports [Decode Context Parallel](https://docs.vllm.ai/en/latest/serving/c
 ```bash
 
 vllm serve moonshotai/Kimi-K2-Thinking \
+  --trust-remote-code \
   --tensor-parallel-size 8 \
   --decode-context-parallel-size 8 \
   --enable-auto-tool-choice \
