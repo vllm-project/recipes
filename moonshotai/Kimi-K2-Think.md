@@ -22,7 +22,7 @@ uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly --
 
 ## Launching Kimi-K2-Thinking with vLLM
 
-You can use 8x H200/H20 to launch this model. See sections below for detailed launch arguments for low latency and high throughout scenarios
+You can use 8x H200/H20 to launch this model. See sections below for detailed launch arguments for low latency and high throughput scenarios
 
 
 <details>
@@ -45,7 +45,7 @@ The `--reasoning-parser` flag specifies the reasoning parser to use for extracti
 
 
 <details>
-<summary>High Throughout Scenarios</summary>
+<summary>High Throughput Scenarios</summary>
 
 vLLM supports [Decode Context Parallel](https://docs.vllm.ai/en/latest/serving/context_parallel_deployment.html#decode-context-parallel), significant benefits in high throughput scenarios. You can enable DCP by adding `--decode-context-parallel-size number`, like:
 
@@ -70,7 +70,7 @@ The `--reasoning-parser` flag specifies the reasoning parser to use for extracti
 
 We tested the `GSM8K` accuracy of 2 types of launch scripts (TP8 vs TP8+DCP8)
 
-- TP8 
+- TP8
 
 ```bash
 local-completions (model=moonshotai/Kimi-K2-Thinking,base_url=http://0.0.0.0:8000/v1/completions,tokenized_requests=False,tokenizer_backend=None,num_concurrent=32), gen_kwargs: (None), limit: None, num_fewshot: 5, batch_size: 1
@@ -113,7 +113,7 @@ vllm bench serve \
 We separately benchmarked the performance of TP8 and TP8+DCP8.
 
 
-#### TP8 Benchmark Output
+### TP8 Benchmark Output
 
 ```shell
 ============ Serving Benchmark Result ============
@@ -143,7 +143,7 @@ P99 ITL (ms):                            490.93
 ==================================================
 
 ```
-#### TP8+DCP8 Benchmark Output
+### TP8+DCP8 Benchmark Output
 
 ```shell
 ============ Serving Benchmark Result ============
