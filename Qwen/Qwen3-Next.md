@@ -30,7 +30,7 @@ vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct \
 
 ### For FP8 model
 
-We can use FP8 flashinfer trtllm MoE to accelerate.
+We can use FP8 flashinfer trtllm MoE kernel to accelerate.
 
 ```bash
 VLLM_USE_FLASHINFER_MOE_FP8=1 \
@@ -39,7 +39,7 @@ VLLM_USE_DEEP_GEMM=0 \
 VLLM_USE_TRTLLM_ATTENTION=0 \
 VLLM_ATTENTION_BACKEND=FLASH_ATTN \
 vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct-FP8 \
--tp 4 \
+--tensor-parallel-size 4 \
 --async-scheduling \
 --compilation_config.pass_config.enable_fi_allreduce_fusion true \
 --compilation_config.pass_config.enable_noop true
