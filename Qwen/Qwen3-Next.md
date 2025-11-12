@@ -28,6 +28,9 @@ vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct \
 
 ```
 
+If you encounter `torch.AcceleratorError: CUDA error: an illegal memory access was encountered`, you can add `--compilation-config "{\"cudagraph_mode\": \"PIECEWISE\"}"` to the startup parameters to resolve this issue. 
+
+
 ### For FP8 model
 
 We can use FP8 flashinfer trtllm MoE kernel to accelerate.
