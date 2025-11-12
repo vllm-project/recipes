@@ -106,7 +106,7 @@ P99 ITL (ms):                            83.48
 
 vLLM has DeepGEMM enabled by default, follow the [setup instructions](https://github.com/vllm-project/vllm/blob/v0.11.0/benchmarks/kernels/deepgemm/README.md#setup) to install it.
 
-For optimal performance on H100 and H20 GPUs with this MoE model, we recommend **using DeepGEMM for linear layers while disabling it for MoE expert layers**. This is because DeepGEMM is faster for linear layers but slower for the grouped GEMM operations used in MoE experts.
+For optimal performance on H100 and H20 GPUs with this MoE model, we recommend **using DeepGEMM for linear layers while disabling it for MoE expert layers**. This is because DeepGEMM is faster for linear layers but slower for the grouped GEMM operations used in MoE experts. See detailed results in [PR #120](https://github.com/vllm-project/recipes/pull/120)
 
 To achieve this configuration, set the following environment variable:
 
