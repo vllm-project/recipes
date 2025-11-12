@@ -27,6 +27,35 @@ vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct \
   --served-model-name qwen3-next 
 
 ```
+
+If you encounter `torch.AcceleratorError: CUDA error: an illegal memory access was encountered`, you can add `--compilation_config.cudagraph_mode=PIECEWISE` to the startup parameters to resolve this issue. This IMA error may occur in Data Parallel (DP) mode.
+
+
+### For FP8 model
+
+We can accelerate the performance on SM100 machines using the FP8 FlashInfer TRTLLM MoE kernel.
+
+```bash
+VLLM_USE_FLASHINFER_MOE_FP8=1 \
+VLLM_FLASHINFER_MOE_BACKEND=latency \
+VLLM_USE_DEEP_GEMM=0 \
+VLLM_USE_TRTLLM_ATTENTION=0 \
+VLLM_ATTENTION_BACKEND=FLASH_ATTN \
+vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct-FP8 \
+--tensor-parallel-size 4
+
+```
+
+For SM90/SM100 machines, we can enable `fi_allreduce_fusion` as follows:
+
+```bash
+vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct-FP8 \
+--tensor-parallel-size 4 \
+--compilation_config.pass_config.enable_fi_allreduce_fusion true \
+--compilation_config.pass_config.enable_noop true
+
+```
+
 ### Advanced Configuration with MTP
 
 `Qwen3-Next` also supports Multi-Token Prediction (MTP in short), you can launch the model server with the following arguments to enable MTP.
