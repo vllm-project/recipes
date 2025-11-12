@@ -27,6 +27,24 @@ vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct \
   --served-model-name qwen3-next 
 
 ```
+
+### For FP8 model
+
+We can use FP8 flashinfer trtllm MoE to accelerate.
+
+```bash
+VLLM_USE_FLASHINFER_MOE_FP8=1 \
+VLLM_FLASHINFER_MOE_BACKEND=latency \
+VLLM_USE_DEEP_GEMM=0 \
+VLLM_USE_TRTLLM_ATTENTION=0 \
+VLLM_ATTENTION_BACKEND=FLASH_ATTN \
+vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct-FP8 \
+-tp 4 \
+--async-scheduling \
+--compilation_config.pass_config.enable_fi_allreduce_fusion true \
+--compilation_config.pass_config.enable_noop true
+
+```
 ### Advanced Configuration with MTP
 
 `Qwen3-Next` also supports Multi-Token Prediction (MTP in short), you can launch the model server with the following arguments to enable MTP.
