@@ -49,6 +49,10 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 - [gpt-oss](OpenAI/GPT-OSS.md)
 
+### PaddlePaddle <img src="https://avatars.githubusercontent.com/u/23534030?v=4" alt="PaddlePaddle" width="16" height="16" style="vertical-align:middle;">
+
+- [PaddleOCR-VL](PaddlePaddle/PaddleOCR-VL.md)
+
 ### Qwen <img src="https://qwenlm.github.io/favicon.png" alt="Qwen" width="16" height="16" style="vertical-align:middle;">
 
 - [Qwen3](Qwen/Qwen3.md)
@@ -64,6 +68,7 @@ This repo intends to host community maintained common recipes to run vLLM answer
 ### Moonshotai <img src="https://avatars.githubusercontent.com/u/129152888?v=4" alt="Moonshotai" width="16" height="16" style="vertical-align:middle;">
 
 - [Kimi-K2](moonshotai/Kimi-K2.md)
+- [Kimi-K2-Think](moonshotai/Kimi-K2-Think.md)
 - [Kimi-Linear](moonshotai/Kimi-Linear.md)
 
 ### inclusionAI <img src="https://avatars.githubusercontent.com/u/199075982?s=200&v=4" alt="inclusionAI" width="16" height="16" style="vertical-align:middle;">

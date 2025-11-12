@@ -9,7 +9,7 @@
 uv venv
 source .venv/bin/activate
 # Until v0.11.1 release, you need to install vLLM from nightly build
-uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly
+uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly --extra-index-url https://download.pytorch.org/whl/cu129 --index-strategy unsafe-best-match
 ```
 
 ## Running DeepSeek-OCR
@@ -69,7 +69,7 @@ for output in model_outputs:
 In this guide, we demonstrate how to set up DeepSeek-OCR for online OCR serving with OpenAI compatible API server.
 
 ```bash
-vllm serve deepseek-ai/DeepSeek-OCR --logits_processors vllm.model_executor.models.deepseek_ocr.NGramPerReqLogitsProcessor --no-enable-prefix-caching --mm-processor-cache-gb 0
+vllm serve deepseek-ai/DeepSeek-OCR --logits_processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor --no-enable-prefix-caching --mm-processor-cache-gb 0
 ```
 
 ```python3
