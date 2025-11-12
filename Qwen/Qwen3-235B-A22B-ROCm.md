@@ -89,17 +89,6 @@ lm_eval \
 --batch_size 100 
 ```
 
-## More to update
-
-### Optimizations on the way
-1. https://github.com/vllm-project/vllm/pull/28500 enables **q_norm + k_norm + rope fusion** on ROCm platforms, which was initially implemented for cuda in https://github.com/vllm-project/vllm/pull/27165.
-2. https://github.com/vllm-project/vllm/pull/25693 added new fusion passes to enable **rms_norm + fp8_block_quant** and **silu + fp8_block_quant**, which depends on the triton fused kernel in https://github.com/ROCm/aiter/tree/dev/perf_fused_rms_fp8_group_quant. Need to check if this triton kernel merged into AITER main.
-3. **Sequence parallel** code ready in https://github.com/ROCm/vllm/pull/790. But seems poor performance due to the pynccl comm op.
-4. **All-reduce + rms_norm** fusion WIP in https://github.com/ROCm/vllm/pull/803.
-5. FP8 block GEMM is not efficient enough, i.e., up to 1.2p ~ 1.4p flops even after tuning.
-
-### Other parallelism
-1. Try other parallel strategies for best performance across different scenarios. 
 
 
 
