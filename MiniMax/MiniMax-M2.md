@@ -104,4 +104,16 @@ P99 ITL (ms):                            83.48
 
 ### DeepGEMM Usage
 
-vLLM has DeepGEMM enabled by default, follow the [setup instructions](https://github.com/vllm-project/vllm/blob/v0.11.0/benchmarks/kernels/deepgemm/README.md#setup) to install it. However, on H100 and H20 GPUs, we've found that disabling DeepGEMM yields better performance for this model. To disable `DeepGEMM`, set the environment variable `VLLM_USE_DEEP_GEMM=0`.
+vLLM has DeepGEMM enabled by default, follow the [setup instructions](https://github.com/vllm-project/vllm/blob/v0.11.0/benchmarks/kernels/deepgemm/README.md#setup) to install it.
+
+For optimal performance on H100 and H20 GPUs with this MoE model, we recommend **using DeepGEMM for linear layers while disabling it for MoE expert layers**. This is because DeepGEMM is faster for linear layers but slower for the grouped GEMM operations used in MoE experts.
+
+To achieve this configuration, set the following environment variable:
+
+```bash
+export VLLM_MOE_USE_DEEP_GEMM=0
+```
+
+This will keep DeepGEMM enabled for linear layers while using the more efficient Cutlass BlockScaled GroupedGemm backend for MoE layers, providing significantly better performance than either fully enabling or fully disabling DeepGEMM.
+
+**Note:** If you're using vLLM version prior to the introduction of `VLLM_MOE_USE_DEEP_GEMM` (before [PR #28422](https://github.com/vllm-project/vllm/pull/28422)), you can still improve performance by completely disabling DeepGEMM with `VLLM_USE_DEEP_GEMM=0`, though this won't achieve optimal performance.
