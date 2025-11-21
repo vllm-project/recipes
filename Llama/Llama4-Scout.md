@@ -35,16 +35,16 @@ For Hopper, FP8 offers the best performance for most workloads. For Blackwell, N
 
 ### Pull Docker Image
 
-Pull the vLLM v0.10.2 release docker image.
+Pull the vLLM v0.11.2 release docker image.
 
 `pull_image.sh`
 ```
 # On x86_64 systems:
-docker pull --platform linux/amd64 vllm/vllm-openai:v0.10.2
+docker pull --platform linux/amd64 vllm/vllm-openai:v0.11.2
 # On aarch64 systems:
-# docker pull --platform linux/aarch64 vllm/vllm-openai:v0.10.2
+# docker pull --platform linux/aarch64 vllm/vllm-openai:v0.11.2
 
-docker tag vllm/vllm-openai:v0.10.2 vllm/vllm-openai:deploy
+docker tag vllm/vllm-openai:v0.11.2 vllm/vllm-openai:deploy
 ```
 
 ### Run Docker Container
@@ -67,11 +67,10 @@ Prepare the config YAML file to configure vLLM. Below shows the recommended conf
 `Llama4_Blackwell.yaml`
 ```
 kv-cache-dtype: fp8
-compilation-config: '{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_attn_fusion":true,"enable_noop":true},"custom_ops":["+quant_fp8","+rms_norm"],"cudagraph_mode":"FULL_DECODE_ONLY","splitting_ops":[]}'
+compilation-config: '{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_noop":true}}'
 async-scheduling: true
 no-enable-prefix-caching: true
 max-num-batched-tokens: 8192
-max-model-len: 10240
 ```
 
 `Llama4_Hopper.yaml`
@@ -80,7 +79,6 @@ kv-cache-dtype: fp8
 async-scheduling: true
 no-enable-prefix-caching: true
 max-num-batched-tokens: 8192
-max-model-len: 10240
 ```
 
 ### Launch the vLLM Server
@@ -93,13 +91,9 @@ Below is an example command to launch the vLLM server with Llama-4-Scout-17B-16E
 # They will be removed when the performance optimizations have been verified and enabled by default.
 COMPUTE_CAPABILITY=$(nvidia-smi -i 0 --query-gpu=compute_cap --format=csv,noheader)
 if [ "$COMPUTE_CAPABILITY" = "10.0" ]; then
-    # Set AR+Norm fusion thresholds
-    export VLLM_FLASHINFER_ALLREDUCE_FUSION_THRESHOLDS_MB='{"2":32,"4":32,"8":8}'
     # Use FlashInfer FP8/FP4 MoE
     export VLLM_USE_FLASHINFER_MOE_FP8=1
     export VLLM_USE_FLASHINFER_MOE_FP4=1
-    # Optionally, set this env var for low concurrency scenarios to reduce MoE latency.
-    # export VLLM_FLASHINFER_MOE_BACKEND=latency
     # Use FP4 for Blackwell architecture
     # Change this to FP8 to run FP8 on Blackwell architecture
     DTYPE="FP4"
@@ -116,7 +110,8 @@ fi
 vllm serve nvidia/Llama-4-Scout-Instruct-$DTYPE \
   --config ${YAML_CONFIG} \
   --tensor-parallel-size 1 \
-  --max-num-seqs 512 &
+  --max-num-seqs 512 \
+  --max-model-len 10240 &
 ```
 
 After the server is set up, the client can now send prompt requests to the server and receive results.
@@ -131,7 +126,7 @@ You can specify the IP address and the port that you would like to run the serve
 Below are the config flags that we do not recommend changing or tuning with:
 
 - `kv-cache-dtype`: Kv-cache data type. We recommend setting it to `fp8` for best performance.
-- `compilation-config`: Configuration for vLLM compilation stage. We recommend setting it to `'{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_attn_fusion":true,"enable_noop":true},"custom_ops":["+quant_fp8","+rms_norm"],"cudagraph_mode":"FULL_DECODE_ONLY","splitting_ops":[]}'` to enable all the necessary fusions for the best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
+- `compilation-config`: Configuration for vLLM compilation stage. We recommend setting it to `'{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_noop":true}}'` to enable all the necessary fusions for the best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
 - `async-scheduling`: Enable asynchronous scheduling to reduce the host overheads between decoding steps. We recommend always adding this flag for best performance.
 - `no-enable-prefix-caching` Disable prefix caching. We recommend always adding this flag if running with synthetic dataset for consistent performance measurement.
 
@@ -263,7 +258,7 @@ Explanations for key metrics:
 
 - `Median Time to First Token (TTFT)`: The typical time elapsed from when a request is sent until the first output token is generated.
 - `Median Time Per Output Token (TPOT)`: The typical time required to generate each token after the first one.
-- `Median Inter-Token Latency (ITL)`: The typical time delay between the completion of one token and the completion of the next.
+- `Median Inter-Token Latency (ITL)`: The typical time delay between a response for the completion of one output token (or output tokens) and the next response for the completion of token(s).
 - `Median End-to-End Latency (E2EL)`: The typical total time from when a request is submitted until the final token of the response is received.
 - `Output token throughput`: The rate at which the system generates the output (generated) tokens.
 - `Total Token Throughput`: The combined rate at which the system processes both input (prompt) tokens and output (generated) tokens.
