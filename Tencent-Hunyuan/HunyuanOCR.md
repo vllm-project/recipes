@@ -15,7 +15,7 @@ uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly
 ## Deploying HunyuanOCR
 
 ```bash
-vllm serve tencent/HunyuanOCR 
+vllm serve tencent/HunyuanOCR \
     --no-enable-prefix-caching \
     --mm-processor-cache-gb 0
 ```
