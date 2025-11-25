@@ -23,6 +23,10 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [GLM-4.5/GLM-4.6, GLM-4.5-Air](GLM/GLM-4.5.md)
 - [GLM-4.5V](GLM/GLM-4.5V.md)
 
+### inclusionAI <img src="https://avatars.githubusercontent.com/u/199075982?s=200&v=4" alt="inclusionAI" width="16" height="16" style="vertical-align:middle;">
+
+- [Ring-1T-FP8](inclusionAI/Ring-1T-FP8.md)
+
 ### InternVL <img src="https://github.com/user-attachments/assets/930e6814-8a9f-43e1-a284-118a5732daa4" alt="InternVL" width="64" height="16">
 
 - [InternVL3.5](InternVL/InternVL3_5.md)
@@ -45,6 +49,12 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 - [MiniMax-M2](MiniMax/MiniMax-M2.md)
 
+### Moonshotai <img src="https://avatars.githubusercontent.com/u/129152888?v=4" alt="Moonshotai" width="16" height="16" style="vertical-align:middle;">
+
+- [Kimi-K2](moonshotai/Kimi-K2.md)
+- [Kimi-K2-Think](moonshotai/Kimi-K2-Think.md)
+- [Kimi-Linear](moonshotai/Kimi-Linear.md)
+
 ### OpenAI <img src="https://avatars.githubusercontent.com/u/14957082?v=4" alt="OpenAI" width="16" height="16" style="vertical-align:middle;">
 
 - [gpt-oss](OpenAI/GPT-OSS.md)
@@ -65,16 +75,9 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 - [Seed-OSS-36B](Seed/Seed-OSS-36B.md)
 
-### Moonshotai <img src="https://avatars.githubusercontent.com/u/129152888?v=4" alt="Moonshotai" width="16" height="16" style="vertical-align:middle;">
+### Tencent-Hunyuan <img src="https://avatars.githubusercontent.com/u/210980732?s=200&v=4" alt="Hunyuan" width="16" height="16" style="vertical-align:middle;">
 
-- [Kimi-K2](moonshotai/Kimi-K2.md)
-- [Kimi-K2-Think](moonshotai/Kimi-K2-Think.md)
-- [Kimi-Linear](moonshotai/Kimi-Linear.md)
-
-### inclusionAI <img src="https://avatars.githubusercontent.com/u/199075982?s=200&v=4" alt="inclusionAI" width="16" height="16" style="vertical-align:middle;">
-
-- [Ring-1T-FP8](inclusionAI/Ring-1T-FP8.md)
-
+- [HunyuanOCR](Tencent-Hunyuan/HunyuanOCR.md)
 
 ## Contributing
 
