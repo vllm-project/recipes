@@ -66,4 +66,4 @@ print(f"Generated text: {response.choices[0].message.content}")
 - Use greedy sampling (i.e., temperature=0.0) or sampling with low temperature for the optimal OCR performance.
 - Unlike multi-turn chat use cases, we do not expect OCR tasks to benefit significantly from prefix caching or image reuse, therefore it's recommended to turn off these features to avoid unnecessary hashing and caching.
 - Depending on your hardware capability, adjust `max_num_batched_tokens` for better throughput performance.
-- Check out the official [HunyuanOCR documentation](https://huggingface.co/tencent/HunyuanOCR#%F0%9F%92%AC-application-oriented-prompts) for more example prompts for various document parsing tasks.
+- Check out the official [HunyuanOCR documentation](https://huggingface.co/tencent/HunyuanOCR#%F0%9F%92%AC-application-oriented-prompts) for more application-oriented prompts for various document parsing tasks.
