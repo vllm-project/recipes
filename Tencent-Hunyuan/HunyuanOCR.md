@@ -60,8 +60,9 @@ response = client.chat.completions.create(
     messages=messages,
     temperature=0.0,
     extra_body={
-        "top_k" : 1,
-        "repetition_penalty":1.0},
+        "top_k": 1,
+        "repetition_penalty": 1.0
+    },
 )
 print(f"Generated text: {response.choices[0].message.content}")
 ```
