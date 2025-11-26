@@ -31,6 +31,7 @@ client = OpenAI(
 )
 
 messages = [
+    {"role": "system", "content": ""},
     {
         "role": "user",
         "content": [
@@ -58,6 +59,7 @@ response = client.chat.completions.create(
     model="tencent/HunyuanOCR",
     messages=messages,
     temperature=0.0,
+    extra_body={"repetition_penalty":1.0},
 )
 print(f"Generated text: {response.choices[0].message.content}")
 ```
