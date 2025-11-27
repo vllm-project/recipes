@@ -91,7 +91,7 @@ PYTORCH_ROCM_ARCH="gfx950" python3 setup.py develop
 ```
 
 (Optional) Recommended to install when loading weight from local storage.
-   - Install from wheel (only have python 3.10 wheel for now and is compatible with the docker image `rocm/ali-private:ubuntu22.04_rocm7.0.1.42_vllm_5b842c2_aiter_6b586ae_torch2.8.0_20250917`)
+   - Install from wheel (only have python 3.10 wheel for now)
 
      ```shell
      python3 -m pip install https://github.com/EmbeddedLLM/fastsafetensors-rocm/releases/download/v0.1.15-rocm7-preview/fastsafetensors-0.1.15-cp310-cp310-linux_x86_64.whl
