@@ -1,8 +1,8 @@
-# Quick Start Recipe for Llama 3.3 70B on vLLM - AMD MI355
+# Quick Start Recipe for Llama 3.1 405B on vLLM - AMD MI355
 
 ## Introduction
 
-This quick start recipe provides step-by-step instructions for running the Llama 3.3-70B Instruct model using vLLM with FP8 and FP4 quantization, optimized for AMD GPUs(MI355). It covers the complete setup required; from accessing model weights and preparing the software environment to configuring vLLM parameters, launching the server, and validating inference output.
+This quick start recipe provides step-by-step instructions for running the Llama 3.1-405B Instruct model using vLLM with FP8 and FP4 quantization, optimized for AMD GPUs(MI355). It covers the complete setup required; from accessing model weights and preparing the software environment to configuring vLLM parameters, launching the server, and validating inference output.
 
 The recipe is intended for developers and practitioners seeking high-throughput or low-latency inference using ROCm's accelerated stack—building a docker image with vLLM for model serving, FlashInfer for optimized ROCm kernels, and ModelOpt to enable FP8 and MXFP4 quantized execution.
 
@@ -10,7 +10,7 @@ The recipe is intended for developers and practitioners seeking high-throughput 
 
 ### License
 
-To use Llama 3.3-70B, you must first agree to Meta’s Llama 3 Community License (https://ai.meta.com/resources/models-and-libraries/llama-downloads/). AMD’s quantized versions (FP8 and FP4) are built on top of the base model and are available for research and commercial use under the same license.
+To use Llama 3.1-405B, you must first agree to Meta’s Llama 3 Community License (https://ai.meta.com/resources/models-and-libraries/llama-downloads/). AMD’s quantized versions (FP8 and FP4) are built on top of the base model and are available for research and commercial use under the same license.
 
 ### Weights
 
@@ -110,7 +110,7 @@ PYTORCH_ROCM_ARCH="gfx950" python3 setup.py develop
 
 ### Launch the vLLM Server
 
-Below is an example command to launch the vLLM server with Llama-3.3-70B-Instruct-FP4/FP8 model.
+Below is an example command to launch the vLLM server with Llama-3.1-405B-Instruct-FP4/FP8 model.
 
 `launch_server_llama_fp8.sh`
 ```
@@ -209,7 +209,7 @@ lm_eval \
 Here is an example accuracy result with the amd/Llama-3.1-405B-Instruct-FP8-KV model on one MI355 GPU:
 
 ```
-local-completions (model=/data/pretrained-models/amd/Llama-3.1-70B-Instruct-FP8-KV/,base_url=http://127.0.0.1:6789/v1/completions), gen_kwargs: (None), limit: None, num_fewshot: None, batch_size: 100
+local-completions (model=/data/pretrained-models/amd/Llama-3.1-405B-Instruct-FP8-KV/,base_url=http://127.0.0.1:6789/v1/completions), gen_kwargs: (None), limit: None, num_fewshot: None, batch_size: 100
 |Tasks|Version|     Filter     |n-shot|  Metric   |   |Value |   |Stderr|
 |-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
 |gsm8k|      3|flexible-extract|     5|exact_match|↑  |0.9052|±  |0.0081|
