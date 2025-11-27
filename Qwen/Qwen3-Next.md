@@ -85,8 +85,73 @@ vllm bench serve \
   --dataset-name random \
   --random-input 2048 \
   --random-output 1024 \
-  --max-concurrency 10 \
-  --num-prompt 100 
+  --max-concurrency 256
+```
+
+#### B200 Outputs
+
+Server command:
+```
+vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct --tensor-parallel-size 4 --served-model-name qwen3-next
+```
+
+Outputs
+```
+============ Serving Benchmark Result ============
+Successful requests:                     1000      
+Maximum request concurrency:             256       
+Benchmark duration (s):                  117.94    
+Total input tokens:                      2043736   
+Total generated tokens:                  957462    
+Request throughput (req/s):              8.48      
+Output token throughput (tok/s):         8118.18   
+Total Token throughput (tok/s):          25446.73  
+---------------Time to First Token----------------
+Mean TTFT (ms):                          1387.84   
+Median TTFT (ms):                        419.05    
+P99 TTFT (ms):                           8148.70   
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          29.40     
+Median TPOT (ms):                        30.14     
+P99 TPOT (ms):                           45.72     
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           28.49     
+Median ITL (ms):                         20.46     
+P99 ITL (ms):                            142.60    
+==================================================
+```
+
+#### B200 MTP Outputs
+
+Server command:
+```
+vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct --tensor-parallel-size 4 --served-model-name qwen3-next --tokenizer-mode auto --speculative-config {"method": "qwen3_next_mtp", "num_speculative_tokens": 2} --no-enable-chunked-prefill
+```
+
+Outputs
+```
+============ Serving Benchmark Result ============
+Successful requests:                     1000      
+Maximum request concurrency:             256       
+Benchmark duration (s):                  161.36    
+Total input tokens:                      2043736   
+Total generated tokens:                  952306    
+Request throughput (req/s):              6.20      
+Output token throughput (tok/s):         5901.85   
+Total Token throughput (tok/s):          18567.77  
+---------------Time to First Token----------------
+Mean TTFT (ms):                          3963.48   
+Median TTFT (ms):                        515.20    
+P99 TTFT (ms):                           25537.02  
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          39.03     
+Median TPOT (ms):                        34.60     
+P99 TPOT (ms):                           98.63     
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           106.27    
+Median ITL (ms):                         68.55     
+P99 ITL (ms):                            392.13    
+==================================================
 ```
 
 ## Usage Tips
