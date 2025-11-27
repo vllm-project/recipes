@@ -117,11 +117,10 @@ Below is an example command to launch the vLLM server with Llama-3.3-70B-Instruc
 export SAFETENSORS_FAST_GPU=1
 export VLLM_ROCM_USE_AITER=1
 export VLLM_USE_V1=1
-export VLLM_USE_TRITON_FLASH_ATTN=0
 export NCCL_DEBUG=WARN
 export VLLM_RPC_TIMEOUT=1800000
 
-vllm serve amd/Llama-3.1-70B-Instruct-FP8-KV/ \
+vllm serve amd/Llama-3.3-70B-Instruct-FP8-KV/ \
     --tensor-parallel-size 1 \
     --max-num-batched-tokens 32768 \
     --port 8000 \
@@ -140,7 +139,6 @@ vllm serve amd/Llama-3.1-70B-Instruct-FP8-KV/ \
 export SAFETENSORS_FAST_GPU=1
 export VLLM_ROCM_USE_AITER=1
 export VLLM_USE_V1=1
-export VLLM_USE_TRITON_FLASH_ATTN=0
 export NCCL_DEBUG=WARN
 export VLLM_RPC_TIMEOUT=1800000
 export VLLM_ROCM_USE_AITER_FP4_ASM_GEMM=1
@@ -206,10 +204,10 @@ lm_eval \
     --batch_size 100 \
 ```
 
-Here is an example accuracy result with the amd/Llama-3.1-70B-Instruct-FP8-KV/ model on one MI355 GPU:
+Here is an example accuracy result with the amd/Llama-3.3-70B-Instruct-FP8-KV/ model on one MI355 GPU:
 
 ```
-local-completions (model=/data/pretrained-models/amd/Llama-3.1-70B-Instruct-FP8-KV/,base_url=http://127.0.0.1:6789/v1/completions), gen_kwargs: (None), limit: None, num_fewshot: None, batch_size: 100
+local-completions (model=/data/pretrained-models/amd/Llama-3.3-70B-Instruct-FP8-KV/,base_url=http://127.0.0.1:6789/v1/completions), gen_kwargs: (None), limit: None, num_fewshot: None, batch_size: 100
 |Tasks|Version|     Filter     |n-shot|  Metric   |   |Value |   |Stderr|
 |-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
 |gsm8k|      3|flexible-extract|     5|exact_match|↑  |0.9052|±  |0.0081|
@@ -237,10 +235,8 @@ output_tokens=1024
 max_concurrency=64
 num_prompts=128
 
-# model="/data/pretrained-models/amd/Llama-3.1-70B-Instruct-FP8-KV/"
+# model="/data/pretrained-models/amd/Llama-3.3-70B-Instruct-FP8-KV/"
 # model="/data/pretrained-models/amd/Llama-3.3-70B-Instruct-MXFP4-Preview/"
-# model="/data/pretrained-models/amd/Llama-3.1-405B-Instruct-FP8-KV/"
-# model="/data/pretrained-models/amd/Llama-3.1-405B-Instruct-MXFP4-Preview/"
 
 vllm bench serve \
     --host localhost \
@@ -269,61 +265,69 @@ Explanations for the flags:
 
 Sample output by the `vllm bench serve` command:
 
-`amd/Llama-3.1-70B-Instruct-FP8-KV` TP1 8k/1k conc=64 performance on MI355
+`amd/Llama-3.3-70B-Instruct-FP8-KV` TP1 8k/1k conc=64 performance on MI355
 ```
 ============ Serving Benchmark Result ============
-Successful requests:                     xxxxxx
-Benchmark duration (s):                  xxx.xx
-Total input tokens:                      xxxxxx
-Total generated tokens:                  xxxxxx
-Request throughput (req/s):              xxx.xx
-Output token throughput (tok/s):         xxx.xx
-Total Token throughput (tok/s):          xxx.xx
+Successful requests:                     128       
+Failed requests:                         0         
+Maximum request concurrency:             64        
+Benchmark duration (s):                  149.97    
+Total input tokens:                      1048448   
+Total generated tokens:                  131072    
+Request throughput (req/s):              0.85      
+Output token throughput (tok/s):         873.98    
+Peak output token throughput (tok/s):    1600.00   
+Peak concurrent requests:                70.00     
+Total Token throughput (tok/s):          7864.95   
 ---------------Time to First Token----------------
-Mean TTFT (ms):                          xxx.xx
-Median TTFT (ms):                        xxx.xx
-P99 TTFT (ms):                           xxx.xx
+Mean TTFT (ms):                          11639.66  
+Median TTFT (ms):                        7543.86   
+P99 TTFT (ms):                           31797.74  
 -----Time per Output Token (excl. 1st token)------
-Mean TPOT (ms):                          xxx.xx
-Median TPOT (ms):                        xxx.xx
-P99 TPOT (ms):                           xxx.xx
+Mean TPOT (ms):                          61.81     
+Median TPOT (ms):                        66.91     
+P99 TPOT (ms):                           72.17     
 ---------------Inter-token Latency----------------
-Mean ITL (ms):                           xxx.xx
-Median ITL (ms):                         xxx.xx
-P99 ITL (ms):                            xxx.xx
+Mean ITL (ms):                           61.81     
+Median ITL (ms):                         42.31     
+P99 ITL (ms):                            1068.18   
 ----------------End-to-end Latency----------------
-Mean E2EL (ms):                          xxx.xx
-Median E2EL (ms):                        xxx.xx
-P99 E2EL (ms):                           xxx.xx
+Mean E2EL (ms):                          74875.13  
+Median E2EL (ms):                        74736.83  
+P99 E2EL (ms):                           101320.40 
 ==================================================
 ```
 
 `amd/Llama-3.3-70B-Instruct-MXFP4-Preview` TP1 8k/1k conc=64 performance on MI355
 ```
 ============ Serving Benchmark Result ============
-Successful requests:                     xxxxxx
-Benchmark duration (s):                  xxx.xx
-Total input tokens:                      xxxxxx
-Total generated tokens:                  xxxxxx
-Request throughput (req/s):              xxx.xx
-Output token throughput (tok/s):         xxx.xx
-Total Token throughput (tok/s):          xxx.xx
+Successful requests:                     128       
+Failed requests:                         0         
+Maximum request concurrency:             64        
+Benchmark duration (s):                  131.16    
+Total input tokens:                      1048448   
+Total generated tokens:                  131072    
+Request throughput (req/s):              0.98      
+Output token throughput (tok/s):         999.30    
+Peak output token throughput (tok/s):    1728.00   
+Peak concurrent requests:                76.00     
+Total Token throughput (tok/s):          8992.71   
 ---------------Time to First Token----------------
-Mean TTFT (ms):                          xxx.xx
-Median TTFT (ms):                        xxx.xx
-P99 TTFT (ms):                           xxx.xx
+Mean TTFT (ms):                          10128.30  
+Median TTFT (ms):                        6526.57   
+P99 TTFT (ms):                           26033.25  
 -----Time per Output Token (excl. 1st token)------
-Mean TPOT (ms):                          xxx.xx
-Median TPOT (ms):                        xxx.xx
-P99 TPOT (ms):                           xxx.xx
+Mean TPOT (ms):                          54.10     
+Median TPOT (ms):                        57.28     
+P99 TPOT (ms):                           62.95     
 ---------------Inter-token Latency----------------
-Mean ITL (ms):                           xxx.xx
-Median ITL (ms):                         xxx.xx
-P99 ITL (ms):                            xxx.xx
+Mean ITL (ms):                           54.10     
+Median ITL (ms):                         39.05     
+P99 ITL (ms):                            411.51    
 ----------------End-to-end Latency----------------
-Mean E2EL (ms):                          xxx.xx
-Median E2EL (ms):                        xxx.xx
-P99 E2EL (ms):                           xxx.xx
+Mean E2EL (ms):                          65475.58  
+Median E2EL (ms):                        65305.68  
+P99 E2EL (ms):                           84989.10  
 ==================================================
 ```
 
