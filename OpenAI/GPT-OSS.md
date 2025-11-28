@@ -326,9 +326,7 @@ fi
 # Launch the vLLM server
 vllm serve openai/gpt-oss-120b \
   --config ${YAML_CONFIG} \
-  --tensor-parallel-size 1 \
-  --max-num-seqs 1024 \
-  --max-model-len 10240 &
+  --tensor-parallel-size 1 &
 ```
 
 After the server is set up, the client can now send prompt requests to the server and receive results.
@@ -352,13 +350,15 @@ Below are a few tunable parameters you can modify based on your serving requirem
 
 - `tensor-parallel-size`: Tensor parallelism size. Increasing this will increase the number of GPUs that are used for inference.
   - Set this to `1` to achieve the best throughput per GPU, and set this to `2`, `4`, or `8` to achieve better per-user latencies.
-- `max-num-seqs`: Maximum number of sequences per batch.
-  - Set this to a large number like `1024` to achieve the best throughput, and set this to a small number like `16` to achieve better per-user latencies.
 - `max-num-batched-tokens`: Maximum number of tokens per batch.
   - We recommend setting this to `8192`. Increasing this value may have slight performance improvements if the sequences have long input sequence lengths.
+- `max-num-seqs`: Maximum number of sequences per batch.
+  - By default, this is set to a large number like `1024` on GPUs with large memory sizes.
+  - If the actual concurrency is smaller, setting this to a smaller number matching the max concurrency may improve the performance and improve the per-user latencies.
 - `max-model-len`: Maximum number of total tokens, including the input tokens and output tokens, for each request.
-  - This must be set to a larger number if the expected input/output sequence lengths are large.
-  - For example, if the maximum input sequence length is 1024 tokens and maximum output sequence length is 1024, then this must be set to at least 2048.
+  - By default, this is set to the maximum sequence length supported by the model.
+  - If the actual input+output sequence length is shorter than the default, setting this to a smaller number may improve the performance.
+  - For example, if the maximum input sequence length is 1024 tokens and maximum output sequence length is 1024, then this can be set to 2048 for better performance.
 
 Refer to the "Balancing between Throughput and Latencies" about how to adjust these tunable parameters to meet your deployment requirements.
 
