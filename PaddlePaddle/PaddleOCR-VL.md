@@ -65,6 +65,33 @@ response = client.chat.completions.create(
 )
 print(f"Generated text: {response.choices[0].message.content}")
 ```
+## Offline inference using vLLM combined with PP-DocLayoutV2
+In the examples above, we have demonstrated the inference of PaddleOCR-VL using vLLM. Typically, we also need to integrate the PP-DocLayoutV2 model to fully unleash the capabilities of the PaddleOCR-VL model, making it more aligned with the examples provided by PaddlePaddle officially.
+### Install [PaddlePaddle](https://www.paddlepaddle.org.cn/install/quick) and [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)
+```shell
+python -m pip install paddlepaddle-gpu==3.2.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+python -m pip install -U "paddleocr[doc-parser]"
+python -m pip install https://paddle-whl.bj.bcebos.com/nightly/cu126/safetensors/safetensors-0.6.2.dev0-cp38-abi3-linux_x86_64.whl
+```
+
+Using vLLM as the backend, combined with PP-DocLayoutV2 for offline inference.
+
+```python
+from paddleocr import PaddleOCRVL
+
+doclayout_model_path = "/models/PaddleOCR-VL/PP-DocLayoutV2/"
+
+pipeline = PaddleOCRVL(vl_rec_backend="vllm-server", 
+                       vl_rec_server_url="http://localhost:8000/v1", 
+                       layout_detection_model_name="PP-DocLayoutV2",  
+                       layout_detection_model_dir=doclayout_model_path)
+
+output = pipeline.predict("https://paddle-model-ecology.bj.bcebos.com/paddlex/imgs/demo_image/paddleocr_vl_demo.png")
+
+for res in output:
+    res.save_to_json(save_path="output")
+    res.save_to_markdown(save_path="output")
+```
 
 ## Configuration Tips
 - Unlike multi-turn chat use cases, we do not expect OCR tasks to benefit significantly from prefix caching or image reuse, therefore it's recommended to turn off these features to avoid unnecessary hashing and caching.
