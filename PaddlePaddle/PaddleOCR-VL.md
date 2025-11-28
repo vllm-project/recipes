@@ -79,7 +79,7 @@ Using vLLM as the backend, combined with PP-DocLayoutV2 for offline inference.
 ```python
 from paddleocr import PaddleOCRVL
 
-doclayout_model_path = "/models/PaddleOCR-VL/PP-DocLayoutV2/"
+doclayout_model_path = "/path/to/your/PP-DocLayoutV2/"
 
 pipeline = PaddleOCRVL(vl_rec_backend="vllm-server", 
                        vl_rec_server_url="http://localhost:8000/v1", 
