@@ -59,6 +59,10 @@ response = client.chat.completions.create(
 )
 
 print("Generated text:", response.choices[0].message.content)
+# '''
+# Safety: Unsafe
+# Categories: Violent
+# '''
 ```
 
 ## Available Qwen3Guard Variants
