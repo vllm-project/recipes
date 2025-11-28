@@ -88,9 +88,9 @@ pipeline = PaddleOCRVL(vl_rec_backend="vllm-server",
 
 output = pipeline.predict("https://paddle-model-ecology.bj.bcebos.com/paddlex/imgs/demo_image/paddleocr_vl_demo.png")
 
-for res in output:
-    res.save_to_json(save_path="output")
-    res.save_to_markdown(save_path="output")
+for i, res in enumerate(output):
+    res.save_to_json(save_path=f"output_{i}.json")
+    res.save_to_markdown(save_path=f"output_{i}.md")
 ```
 
 ## Configuration Tips
