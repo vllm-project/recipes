@@ -227,20 +227,20 @@ Model: 20B
 
 ## Detailed Recipe for NVIDIA Blackwell & Hopper Hardware
 
-This chapter includes more instructions about running gpt-oss-120b on NVIDIA Blackwell & Hopper hardware to get the additional performance optimizations compared to the Quickstart chapter above.
+This chapter includes more instructions about running gpt-oss-120b and gpt-oss-20b on NVIDIA Blackwell & Hopper hardware to get the additional performance optimizations compared to the Quickstart chapter above.
 
 ### Pull Docker Image
 
-Pull the vLLM v0.11.0 release docker image.
+Pull the vLLM v0.11.2 release docker image.
 
 `pull_image.sh`
 ```
 # On x86_64 systems:
-docker pull --platform linux/amd64 vllm/vllm-openai:v0.11.0
+docker pull --platform linux/amd64 vllm/vllm-openai:v0.11.2
 # On aarch64 systems:
-# docker pull --platform linux/aarch64 vllm/vllm-openai:v0.11.0
+# docker pull --platform linux/aarch64 vllm/vllm-openai:v0.11.2
 
-docker tag vllm/vllm-openai:v0.11.0 vllm/vllm-openai:deploy
+docker tag vllm/vllm-openai:v0.11.2 vllm/vllm-openai:deploy
 ```
 
 ### Run Docker Container
@@ -262,27 +262,51 @@ Prepare the config YAML file to configure vLLM. Below shows the recommended conf
 
 `GPT-OSS_Blackwell.yaml`
 ```
-compilation-config: '{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_noop":true},"custom_ops":["+rms_norm"],"cudagraph_mode":"FULL_AND_PIECEWISE"}'
+kv-cache-dtype: fp8
+compilation-config: '{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_noop":true}}'
 async-scheduling: true
 no-enable-prefix-caching: true
-cuda-graph-sizes: 2048
+max-cudagraph-capture-size: 2048
 max-num-batched-tokens: 8192
-max-model-len: 10240
+stream-interval: 20
 ```
 
 `GPT-OSS_Hopper.yaml`
 ```
-compilation-config: '{"cudagraph_mode":"PIECEWISE"}'
 async-scheduling: true
 no-enable-prefix-caching: true
-cuda-graph-sizes: 2048
+max-cudagraph-capture-size: 2048
 max-num-batched-tokens: 8192
-max-model-len: 10240
+stream-interval: 20
+```
+
+Below are the config YAML files to enable EAGLE3 speculative decoding:
+
+`GPT-OSS_EAGLE3_Blackwell.yaml`
+```
+kv-cache-dtype: fp8
+compilation-config: '{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_noop":true}}'
+async-scheduling: true
+no-enable-prefix-caching: true
+max-cudagraph-capture-size: 2048
+max-num-batched-tokens: 8192
+stream-interval: 20
+speculative-config: '{"model":"nvidia/gpt-oss-120b-Eagle3","num_speculative_tokens":3,"method":"eagle3","draft_tensor_parallel_size":1}'
+```
+
+`GPT-OSS_EAGLE3_Hopper.yaml`
+```
+async-scheduling: true
+no-enable-prefix-caching: true
+max-cudagraph-capture-size: 2048
+max-num-batched-tokens: 8192
+stream-interval: 20
+speculative-config: '{"model":"nvidia/gpt-oss-120b-Eagle3","num_speculative_tokens":3,"method":"eagle3","draft_tensor_parallel_size":1}'
 ```
 
 ### Launch the vLLM Server
 
-Below is an example command to launch the vLLM server with openai/gpt-oss-120b model.
+Below is an example command to launch the vLLM server with openai/gpt-oss-120b model. The instruction is the same for GPT-OSS-20b with the model name replaced with `openai/gpt-oss-20b`.
 
 `launch_server.sh`
 ```
@@ -290,8 +314,6 @@ Below is an example command to launch the vLLM server with openai/gpt-oss-120b m
 # They will be removed when the performance optimizations have been verified and enabled by default.
 COMPUTE_CAPABILITY=$(nvidia-smi -i 0 --query-gpu=compute_cap --format=csv,noheader)
 if [ "$COMPUTE_CAPABILITY" = "10.0" ]; then
-    # Set AR+Norm fusion thresholds
-    export VLLM_FLASHINFER_ALLREDUCE_FUSION_THRESHOLDS_MB='{"2":32,"4":32,"8":8}'
     # Use FlashInfer MXFP4+MXFP8 MoE
     export VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8=1
     # Select the config file for Blackwell architecture.
@@ -304,8 +326,7 @@ fi
 # Launch the vLLM server
 vllm serve openai/gpt-oss-120b \
   --config ${YAML_CONFIG} \
-  --tensor-parallel-size 1 \
-  --max-num-seqs 512 &
+  --tensor-parallel-size 1 &
 ```
 
 After the server is set up, the client can now send prompt requests to the server and receive results.
@@ -319,22 +340,25 @@ You can specify the IP address and the port that you would like to run the serve
 
 Below are the config flags that we do not recommend changing or tuning with:
 
-- `compilation-config`: Configuration for vLLM compilation stage. We recommend setting it to `'{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_noop":true},"custom_ops":["+rms_norm"],"cudagraph_mode":"FULL_AND_PIECEWISE"}'` to enable all the necessary fusions for the best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
+- `compilation-config`: Configuration for vLLM compilation stage. We recommend setting it to `'{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_noop":true}}'` to enable all the necessary fusions for the best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
 - `async-scheduling`: Enable asynchronous scheduling to reduce the host overheads between decoding steps. We recommend always adding this flag for best performance.
 - `no-enable-prefix-caching`: Disable prefix caching. We recommend always adding this flag if running with synthetic dataset for consistent performance measurement.
-- `cuda-graph-sizes`: Specify the max size for cuda graphs. We recommend setting this to 2048 to leverage the benefit of cuda graphs while not using too much GPU memory.
+- `max-cudagraph-capture-size`: Specify the max size for cuda graphs. We recommend setting this to 2048 to leverage the benefit of cuda graphs while not using too much GPU memory.
+- `stream-interval`: The interval between output token streaming responses. We recommend setting this to `20` to maximize the throughput.
 
 Below are a few tunable parameters you can modify based on your serving requirements:
 
 - `tensor-parallel-size`: Tensor parallelism size. Increasing this will increase the number of GPUs that are used for inference.
   - Set this to `1` to achieve the best throughput per GPU, and set this to `2`, `4`, or `8` to achieve better per-user latencies.
-- `max-num-seqs`: Maximum number of sequences per batch.
-  - Set this to a large number like `512` to achieve the best throughput, and set this to a small number like `16` to achieve better per-user latencies.
 - `max-num-batched-tokens`: Maximum number of tokens per batch.
   - We recommend setting this to `8192`. Increasing this value may have slight performance improvements if the sequences have long input sequence lengths.
+- `max-num-seqs`: Maximum number of sequences per batch.
+  - By default, this is set to a large number like `1024` on GPUs with large memory sizes.
+  - If the actual concurrency is smaller, setting this to a smaller number matching the max concurrency may improve the performance and improve the per-user latencies.
 - `max-model-len`: Maximum number of total tokens, including the input tokens and output tokens, for each request.
-  - This must be set to a larger number if the expected input/output sequence lengths are large.
-  - For example, if the maximum input sequence length is 1024 tokens and maximum output sequence length is 1024, then this must be set to at least 2048.
+  - By default, this is set to the maximum sequence length supported by the model.
+  - If the actual input+output sequence length is shorter than the default, setting this to a smaller number may improve the performance.
+  - For example, if the maximum input sequence length is 1024 tokens and maximum output sequence length is 1024, then this can be set to 2048 for better performance.
 
 Refer to the "Balancing between Throughput and Latencies" about how to adjust these tunable parameters to meet your deployment requirements.
 
@@ -353,8 +377,8 @@ vllm bench serve \
   --random-input-len 1024 \
   --random-output-len 1024 \
   --ignore-eos \
-  --max-concurrency 512 \
-  --num-prompts 2560 \
+  --max-concurrency 1024 \
+  --num-prompts 5120 \
   --save-result --result-filename vllm_benchmark_serving_results.json
 ```
 
@@ -404,7 +428,8 @@ Explanations for key metrics:
 
 - `Median Time to First Token (TTFT)`: The typical time elapsed from when a request is sent until the first output token is generated.
 - `Median Time Per Output Token (TPOT)`: The typical time required to generate each token after the first one.
-- `Median Inter-Token Latency (ITL)`: The typical time delay between the completion of one token and the completion of the next.
+- `Median Inter-Token Latency (ITL)`: The typical time delay between a response for the completion of one output token (or output tokens) and the next response for the completion of token(s).
+  - If the `--stream-interval 20` flag is added in the server command, the ITL will be the completion time for every 20 output tokens.
 - `Median End-to-End Latency (E2EL)`: The typical total time from when a request is submitted until the final token of the response is received.
 - `Output token throughput`: The rate at which the system generates the output (generated) tokens.
 - `Total Token Throughput`: The combined rate at which the system processes both input (prompt) tokens and output (generated) tokens.
