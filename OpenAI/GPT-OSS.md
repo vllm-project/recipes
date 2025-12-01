@@ -37,7 +37,7 @@ docker run --gpus all \
 
 GPT-OSS works on Ampere devices by default, using the `TRITON_ATTN` attention backend and Marlin MXFP4 MoE:
 
-* `--async-scheduling` can be enabled for higher performance. Currently it is not compatible with structured output.
+* `--async-scheduling` can be enabled for higher performance. Note: vLLM >= 0.11.1 has improved async scheduling stability and provides compatibility with structured output.
 
 ```
 # openai/gpt-oss-20b should run on a single A100
@@ -53,7 +53,7 @@ vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
 
 GPT-OSS works on Hopper devices by default, using the FlashAttention3 backend and Marlin MXFP4 MoE:
 
-* `--async-scheduling` can be enabled for higher performance. Currently it is not compatible with structured output.
+* `--async-scheduling` can be enabled for higher performance. Note: vLLM >= 0.11.1 has improved async scheduling stability and provides compatibility with structured output.
 * We recommend TP=2 for H100 and H200 as the best performance tradeoff point. 
 
 ```
@@ -341,7 +341,7 @@ You can specify the IP address and the port that you would like to run the serve
 Below are the config flags that we do not recommend changing or tuning with:
 
 - `compilation-config`: Configuration for vLLM compilation stage. We recommend setting it to `'{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_noop":true}}'` to enable all the necessary fusions for the best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
-- `async-scheduling`: Enable asynchronous scheduling to reduce the host overheads between decoding steps. We recommend always adding this flag for best performance.
+- `async-scheduling`: Enable asynchronous scheduling to reduce the host overheads between decoding steps. We recommend always adding this flag for best performance. Note: vLLM >= 0.11.1 has improved async scheduling stability and provides compatibility with structured output.
 - `no-enable-prefix-caching`: Disable prefix caching. We recommend always adding this flag if running with synthetic dataset for consistent performance measurement.
 - `max-cudagraph-capture-size`: Specify the max size for cuda graphs. We recommend setting this to 2048 to leverage the benefit of cuda graphs while not using too much GPU memory.
 - `stream-interval`: The interval between output token streaming responses. We recommend setting this to `20` to maximize the throughput.
