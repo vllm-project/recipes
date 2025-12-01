@@ -37,7 +37,7 @@ docker run --gpus all \
 
 GPT-OSS works on Ampere devices by default, using the `TRITON_ATTN` attention backend and Marlin MXFP4 MoE:
 
-* `--async-scheduling` can be enabled for higher performance. Note: vLLM >= 0.11.1 has improved async scheduling stability and provides compatibility with structured output. Check the latest releases for continued improvements.
+* `--async-scheduling` can be enabled for higher performance. Note: vLLM >= 0.11.1 has improved async scheduling stability and provides compatibility with structured output.
 
 ```
 # openai/gpt-oss-20b should run on a single A100
@@ -53,7 +53,7 @@ vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
 
 GPT-OSS works on Hopper devices by default, using the FlashAttention3 backend and Marlin MXFP4 MoE:
 
-* `--async-scheduling` can be enabled for higher performance. Note: vLLM >= 0.11.1 has improved async scheduling stability and provides compatibility with structured output. Check the latest releases for continued improvements.
+* `--async-scheduling` can be enabled for higher performance. Note: vLLM >= 0.11.1 has improved async scheduling stability and provides compatibility with structured output.
 * We recommend TP=2 for H100 and H200 as the best performance tradeoff point. 
 
 ```
