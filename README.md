@@ -49,6 +49,12 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 - [MiniMax-M2](MiniMax/MiniMax-M2.md)
 
+### Mistral AI <img src="https://avatars.githubusercontent.com/u/132372032?&v=4" alt="Mistral AI" width="16" height="16" style="vertical-align:middle;">
+
+- [Ministral-3-Instruct](Mistral/Ministral-3-Instruct.md)
+- [Ministral-3-Reasoning](Mistral/Ministral-3-Reasoning.md)
+- [Mistral-Large-3-Instruct](Mistral/Mistral-Large-3.md)
+
 ### Moonshotai <img src="https://avatars.githubusercontent.com/u/129152888?v=4" alt="Moonshotai" width="16" height="16" style="vertical-align:middle;">
 
 - [Kimi-K2](moonshotai/Kimi-K2.md)
