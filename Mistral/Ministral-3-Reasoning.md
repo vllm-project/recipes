@@ -30,6 +30,7 @@ A simple launch command is:
 ```bash
 # For 3B use `vllm serve mistralai/Ministral-3-3B-Reasoning-2512`
 vllm serve mistralai/Ministral-3-8B-Reasoning-2512 \
+  --tokenizer_mode mistral --config_format mistral --load_format mistral \
   --enable-auto-tool-choice --tool-call-parser mistral \
   --reasoning-parser mistral
 ```
@@ -55,8 +56,9 @@ A simple launch command is:
 
 ```bash
 
-vllm serve mistralai/Ministral-3-14B-Reasoning-2512-FP8 \
+vllm serve mistralai/Ministral-3-14B-Reasoning-2512 \
   --tensor-parallel-size 2 \
+  --tokenizer_mode mistral --config_format mistral --load_format mistral \
   --enable-auto-tool-choice --tool-call-parser mistral \
   --reasoning-parser mistral
 ```

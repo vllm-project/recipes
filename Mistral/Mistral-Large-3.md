@@ -28,6 +28,7 @@ A simple launch command is:
 
 vllm serve mistralai/Mistral-Large-3-675B-Instruct-2512 \
   --tensor-parallel-size 8 \
+  --tokenizer_mode mistral --config_format mistral --load_format mistral \
   --enable-auto-tool-choice --tool-call-parser mistral
 ```
 
@@ -55,6 +56,7 @@ A simple launch command is:
 
 vllm serve mistralai/Mistral-Large-3-675B-Instruct-2512-NVFP4 \
   --tensor-parallel-size 4 \
+  --tokenizer_mode mistral --config_format mistral --load_format mistral \
   --enable-auto-tool-choice --tool-call-parser mistral
 ```
 

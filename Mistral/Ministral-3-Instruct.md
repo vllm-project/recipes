@@ -27,6 +27,7 @@ A simple launch command is:
 # For 8B use `vllm serve mistralai/Ministral-3-8B-Instruct-2512`
 # For 3B use `vllm serve mistralai/Ministral-3-3B-Instruct-2512`
 vllm serve mistralai/Ministral-3-14B-Instruct-2512 \
+  --tokenizer_mode mistral --config_format mistral --load_format mistral \
   --enable-auto-tool-choice --tool-call-parser mistral
 ```
 
