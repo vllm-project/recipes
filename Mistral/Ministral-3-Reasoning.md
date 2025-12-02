@@ -49,7 +49,7 @@ Additional flags:
 
 ##  Running Ministral-3 Reasoning 14B on 2xH200
 
-To fully exploit the `Ministral-3-14B-Reasoning-2512` we recommed using 2xH200 GPUs for deployment due to its large context. However if you don't need a large context, you can fall back to a single GPU.
+To fully exploit the `Ministral-3-14B-Reasoning-2512` we recommend using 2xH200 GPUs for deployment due to its large context. However if you don't need a large context, you can fall back to a single GPU.
 
 A simple launch command is:
 
