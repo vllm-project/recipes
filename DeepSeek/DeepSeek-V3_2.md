@@ -5,7 +5,7 @@
 [DeepSeek-V3.2](https://huggingface.co/deepseek-ai/DeepSeek-V3.2)  is a model that balances computational efficiency with strong reasoning and agent capabilities through three technical innovations:
 - **DeepSeek Sparse Attention (DSA):** An efficient attention mechanism that reduces computational complexity while maintaining performance, optimized for long-context scenarios.
 - **Scalable Reinforcement Learning Framework:**: The model achieves GPT-5-level performance through robust RL protocols and scaled post-training compute. The high-compute variant, DeepSeek-V3.2-Speciale, surpasses GPT-5 and matches Gemini-3.0-Pro in reasoning, achieving gold-medal level performance in the 2025 IMO and IOI competitions.
--  **Large-Scale Agentic Task Synthesis Pipeline:** A novel data synthesis pipeline that generates training data at scale, integrating reasoning into tool-use scenarios and improving model compliance and generalization in complex interactive environments.
+- **Large-Scale Agentic Task Synthesis Pipeline:** A novel data synthesis pipeline that generates training data at scale, integrating reasoning into tool-use scenarios and improving model compliance and generalization in complex interactive environments.
 
 
 ## Installing vLLM
@@ -130,10 +130,10 @@ P99 ITL (ms):                            42.08
 
 
 
-### Tool Call
+## Tool Calling Example
 
 
-
+DeepSeek 3.2's thinking mode now supports tool calling,see: [DeepSeek API Doc](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode#%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8). The model can perform multiple rounds of reasoning and tool calls before outputting the final answer.
 
 ``` python
 
