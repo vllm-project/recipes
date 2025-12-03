@@ -25,7 +25,7 @@ uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly
 ```bash
 
   VLLM_MOE_USE_DEEP_GEMM=0 vllm serve serve deepseek-ai/DeepSeek-V3.2 \
-   --tensor-parallel-size \
+   --tensor-parallel-size 8 \
    --tokenizer-mode deepseek_v32 \
    --tool-call-parser deepseek_v32 \
    --reasoning-parser deepseek_v3
@@ -84,10 +84,10 @@ We used the following script to benchmark `deepseek-ai/DeepSeek-V3.2` on 8*H20.
 vllm bench serve \
   --model deepseek-ai/DeepSeek-V3.2 \
   --dataset-name random \
-  --random-input 4000 \
-  --random-output 2000 \
-  --request-rate 50 \
-  --num-prompt 200  \
+  --random-input 2048 \
+  --random-output 1024 \
+  --request-rate 10 \
+  --num-prompt 100  \ 
   --trust-remote-code
 ```
 
@@ -99,34 +99,35 @@ vllm bench serve \
 ============ Serving Benchmark Result ============
 Successful requests:                     100       
 Failed requests:                         0         
-Maximum request concurrency:             10        
-Benchmark duration (s):                  471.39    
+Request rate configured (RPS):           10.00     
+Benchmark duration (s):                  129.34    
 Total input tokens:                      204800    
 Total generated tokens:                  102400    
-Request throughput (req/s):              0.21      
-Output token throughput (tok/s):         217.23    
-Peak output token throughput (tok/s):    260.00    
-Peak concurrent requests:                19.00     
-Total Token throughput (tok/s):          651.69    
+Request throughput (req/s):              0.77      
+Output token throughput (tok/s):         791.73    
+Peak output token throughput (tok/s):    1300.00   
+Peak concurrent requests:                100.00    
+Total Token throughput (tok/s):          2375.18   
 ---------------Time to First Token----------------
-Mean TTFT (ms):                          2988.00   
-Median TTFT (ms):                        3109.11   
-P99 TTFT (ms):                           6966.43   
+Mean TTFT (ms):                          21147.20  
+Median TTFT (ms):                        21197.97  
+P99 TTFT (ms):                           41133.00  
 -----Time per Output Token (excl. 1st token)------
-Mean TPOT (ms):                          43.15     
-Median TPOT (ms):                        42.96     
-P99 TPOT (ms):                           46.21     
+Mean TPOT (ms):                          99.71     
+Median TPOT (ms):                        99.25     
+P99 TPOT (ms):                           124.28    
 ---------------Inter-token Latency----------------
-Mean ITL (ms):                           43.15     
-Median ITL (ms):                         40.81     
-P99 ITL (ms):                            42.08     
+Mean ITL (ms):                           99.71     
+Median ITL (ms):                         76.89     
+P99 ITL (ms):                            2032.37   
 ==================================================
 
 
 ```
 
+### Performance tips
 
-
+You can refer to [DeepSeek-V3_2-Exp recipe](recipes/DeepSeek/DeepSeek-V3_2-Exp.md)  and  [Data Parallel Deployment documentation](https://docs.vllm.ai/en/latest/serving/data_parallel_deployment.html) to conduct related experiments and benchmark testing to select the parallel group suitable for your scenerio
 
 
 
