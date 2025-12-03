@@ -1,4 +1,4 @@
-# DeepSeek-V3.2-Exp Usage Guide
+# DeepSeek-V3.2 Usage Guide
 
 ## Introduction
 
@@ -129,10 +129,9 @@ P99 ITL (ms):                            42.08
 
 
 
+### Tool Call
 
-## Using the Model
 
-### OpenAI Client Example
 
 
 ``` python
