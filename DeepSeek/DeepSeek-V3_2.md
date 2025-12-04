@@ -127,7 +127,7 @@ P99 ITL (ms):                            2032.37
 
 ### Performance tips
 
-You can refer to [DeepSeek-V3_2-Exp recipe](recipes/DeepSeek/DeepSeek-V3_2-Exp.md) and [Data Parallel Deployment documentation](https://docs.vllm.ai/en/latest/serving/data_parallel_deployment.html) to conduct related experiments and benchmark testing to select the parallel group suitable for your scenerio
+You can refer to [DeepSeek-V3_2-Exp recipe](recipes/DeepSeek/DeepSeek-V3_2-Exp.md) and [Data Parallel Deployment documentation](https://docs.vllm.ai/en/latest/serving/data_parallel_deployment.html) to conduct related experiments and benchmark testing to select the parallel group suitable for your scenerio.
 
 
 
