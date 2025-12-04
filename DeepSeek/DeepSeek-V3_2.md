@@ -125,16 +125,16 @@ P99 ITL (ms):                            2032.37
 
 ```
 
-### Performance tips
+### Usage tips
 
-You can refer to [DeepSeek-V3_2-Exp recipe](recipes/DeepSeek/DeepSeek-V3_2-Exp.md) and [Data Parallel Deployment documentation](https://docs.vllm.ai/en/latest/serving/data_parallel_deployment.html) to conduct related experiments and benchmark testing to select the parallel group suitable for your scenerio.
+- You can refer to [DeepSeek-V3_2-Exp recipe](../DeepSeek/DeepSeek-V3_2-Exp.md) and [Data Parallel Deployment documentation](https://docs.vllm.ai/en/latest/serving/data_parallel_deployment.html) to conduct related experiments and benchmark testing to select the parallel group suitable for your scenerio.
 
-
+- Regarding `thinking mode` and `non-thinking mode`, you can refer to [DeepSeek-V3_1recipe](../DeepSeek/DeepSeek-V3_1.md).
 
 ## Tool Calling Example
 
 
-DeepSeek 3.2's thinking mode now supports tool calling,see: [DeepSeek API Doc](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode#%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8). The model can perform multiple rounds of reasoning and tool calls before outputting the final answer.
+DeepSeek 3.2's thinking mode now supports tool calling, see: [DeepSeek API Doc](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode#%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8). The model can perform multiple rounds of reasoning and tool calls before outputting the final answer.
 
 ``` python
 
