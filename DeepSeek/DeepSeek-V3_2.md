@@ -128,7 +128,7 @@ P99 ITL (ms):                            2032.37
 
 ### Usage tips
 
-- You can refer to [DeepSeek-V3_2-Exp recipe](../DeepSeek/DeepSeek-V3_2-Exp.md) and [Data Parallel Deployment documentation](https://docs.vllm.ai/en/latest/serving/data_parallel_deployment.html) to conduct related experiments and benchmark testing to select the parallel group suitable for your scenerio.
+- You can refer to [DeepSeek-V3_2-Exp recipe](../DeepSeek/DeepSeek-V3_2-Exp.md) and [Data Parallel Deployment documentation](https://docs.vllm.ai/en/latest/serving/data_parallel_deployment.html) to conduct related experiments and benchmark testing to select the parallel group suitable for your scenario.
 
 - Regarding `thinking mode` and `non-thinking mode`, you can refer to [DeepSeek-V3_1recipe](../DeepSeek/DeepSeek-V3_1.md).
 
