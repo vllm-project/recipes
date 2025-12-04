@@ -231,16 +231,16 @@ This chapter includes more instructions about running gpt-oss-120b and gpt-oss-2
 
 ### Pull Docker Image
 
-Pull the vLLM v0.11.2 release docker image.
+Pull the vLLM v0.12.0 release docker image.
 
 `pull_image.sh`
 ```
 # On x86_64 systems:
-docker pull --platform linux/amd64 vllm/vllm-openai:v0.11.2
+docker pull --platform linux/amd64 vllm/vllm-openai:v0.12.0
 # On aarch64 systems:
-# docker pull --platform linux/aarch64 vllm/vllm-openai:v0.11.2
+# docker pull --platform linux/aarch64 vllm/vllm-openai:v0.12.0
 
-docker tag vllm/vllm-openai:v0.11.2 vllm/vllm-openai:deploy
+docker tag vllm/vllm-openai:v0.12.0 vllm/vllm-openai:deploy
 ```
 
 ### Run Docker Container
@@ -263,7 +263,7 @@ Prepare the config YAML file to configure vLLM. Below shows the recommended conf
 `GPT-OSS_Blackwell.yaml`
 ```
 kv-cache-dtype: fp8
-compilation-config: '{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_noop":true}}'
+compilation-config: '{"pass_config":{"fuse_allreduce_rms":true,"eliminate_noops":true}}'
 async-scheduling: true
 no-enable-prefix-caching: true
 max-cudagraph-capture-size: 2048
@@ -285,13 +285,13 @@ Below are the config YAML files to enable EAGLE3 speculative decoding:
 `GPT-OSS_EAGLE3_Blackwell.yaml`
 ```
 kv-cache-dtype: fp8
-compilation-config: '{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_noop":true}}'
+compilation-config: '{"pass_config":{"fuse_allreduce_rms":true,"eliminate_noops":true}}'
 async-scheduling: true
 no-enable-prefix-caching: true
 max-cudagraph-capture-size: 2048
 max-num-batched-tokens: 8192
 stream-interval: 20
-speculative-config: '{"model":"nvidia/gpt-oss-120b-Eagle3","num_speculative_tokens":3,"method":"eagle3","draft_tensor_parallel_size":1}'
+speculative-config: '{"model":"nvidia/gpt-oss-120b-Eagle3-v2","num_speculative_tokens":3,"method":"eagle3","draft_tensor_parallel_size":1}'
 ```
 
 `GPT-OSS_EAGLE3_Hopper.yaml`
@@ -301,7 +301,7 @@ no-enable-prefix-caching: true
 max-cudagraph-capture-size: 2048
 max-num-batched-tokens: 8192
 stream-interval: 20
-speculative-config: '{"model":"nvidia/gpt-oss-120b-Eagle3","num_speculative_tokens":3,"method":"eagle3","draft_tensor_parallel_size":1}'
+speculative-config: '{"model":"nvidia/gpt-oss-120b-Eagle3-v2","num_speculative_tokens":3,"method":"eagle3","draft_tensor_parallel_size":1}'
 ```
 
 ### Launch the vLLM Server
@@ -340,7 +340,7 @@ You can specify the IP address and the port that you would like to run the serve
 
 Below are the config flags that we do not recommend changing or tuning with:
 
-- `compilation-config`: Configuration for vLLM compilation stage. We recommend setting it to `'{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_noop":true}}'` to enable all the necessary fusions for the best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
+- `compilation-config`: Configuration for vLLM compilation stage. We recommend setting it to `'{"pass_config":{"fuse_allreduce_rms":true,"eliminate_noops":true}}'` to enable all the necessary fusions for the best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
 - `async-scheduling`: Enable asynchronous scheduling to reduce the host overheads between decoding steps. We recommend always adding this flag for best performance. Note: vLLM >= 0.11.1 has improved async scheduling stability and provides compatibility with structured output.
 - `no-enable-prefix-caching`: Disable prefix caching. We recommend always adding this flag if running with synthetic dataset for consistent performance measurement.
 - `max-cudagraph-capture-size`: Specify the max size for cuda graphs. We recommend setting this to 2048 to leverage the benefit of cuda graphs while not using too much GPU memory.
