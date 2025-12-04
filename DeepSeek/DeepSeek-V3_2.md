@@ -4,7 +4,7 @@
 
 [DeepSeek-V3.2](https://huggingface.co/deepseek-ai/DeepSeek-V3.2)  is a model that balances computational efficiency with strong reasoning and agent capabilities through three technical innovations:
 - **DeepSeek Sparse Attention (DSA):** An efficient attention mechanism that reduces computational complexity while maintaining performance, optimized for long-context scenarios.
-- **Scalable Reinforcement Learning Framework:**: The model achieves GPT-5-level performance through robust RL protocols and scaled post-training compute. The high-compute variant, DeepSeek-V3.2-Speciale, surpasses GPT-5 and matches Gemini-3.0-Pro in reasoning, achieving gold-medal level performance in the 2025 IMO and IOI competitions.
+- **Scalable Reinforcement Learning Framework:** The model achieves GPT-5-level performance through robust RL protocols and scaled post-training compute. The high-compute variant, DeepSeek-V3.2-Speciale, surpasses GPT-5 and matches Gemini-3.0-Pro in reasoning, achieving gold-medal level performance in the 2025 IMO and IOI competitions.
 - **Large-Scale Agentic Task Synthesis Pipeline:** A novel data synthesis pipeline that generates training data at scale, integrating reasoning into tool-use scenarios and improving model compliance and generalization in complex interactive environments.
 
 
@@ -24,7 +24,7 @@ uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly
 
 ```bash
 
-  VLLM_MOE_USE_DEEP_GEMM=0 vllm serve serve deepseek-ai/DeepSeek-V3.2 \
+  VLLM_MOE_USE_DEEP_GEMM=0 vllm serve deepseek-ai/DeepSeek-V3.2 \
    --tensor-parallel-size 8 \
    --tokenizer-mode deepseek_v32 \
    --tool-call-parser deepseek_v32 \
@@ -137,8 +137,11 @@ P99 ITL (ms):                            2032.37
 
 DeepSeek 3.2's thinking mode now supports tool calling, see: [DeepSeek API Doc](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode#%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8). The model can perform multiple rounds of reasoning and tool calls before outputting the final answer. The code example below is directly copied from the DeepSeek official examples. For vLLM, the main modifications are:
 
- - In the official example, the method to enable thinking modeis **extra_body={ "thinking": { "type": "enabled" } }**, whereas for VLLM it is **extra_body = {"chat_template_kwargs": {"thinking": True}}**
- - For the `think· field`, vllm recommends using `reasoning`, the DeepSeek official API uses `reasoning_content` 
+ - To enable thinking mode in vLLM, use **extra_body = {"chat_template_kwargs": {"thinking": True}}**. In the DeepSeek official API, the method to enable thinking mode is **extra_body = {"thinking": {"type": "enabled"}}**.
+  
+ - For the `think`· field, vLLM recommends using **reasoning**, the DeepSeek official API uses **reasoning_content**. 
+
+ - In vLLM, if there are no tool_calls, then tool_calls is  an empty list (`[]`), In contrast, the DeepSeek official API returns `None`.
   
 ``` python
 
@@ -187,6 +190,7 @@ TOOL_CALL_MAP = {
 
 def clear_reasoning_content(messages):
     for message in messages:
+        
         # DeepSeek official API
         # if hasattr(message, 'reasoning_content'):
         #     message.reasoning_content = None
@@ -203,7 +207,7 @@ def run_turn(turn, messages):
             messages=messages,
             tools=tools,
             # extra_body={ "thinking": { "type": "enabled" } } # DeepSeek official API
-            extra_body = {"chat_template_kwargs": {"thinking": True}} ## vLLM Server
+            extra_body = {"chat_template_kwargs": {"thinking": True}} # vLLM Server
         )
         messages.append(response.choices[0].message)
         reasoning_content = response.choices[0].message.reasoning_content
@@ -211,7 +215,10 @@ def run_turn(turn, messages):
         tool_calls = response.choices[0].message.tool_calls
         print(f"Turn {turn}.{sub_turn}\n{reasoning_content=}\n{content=}\n{tool_calls=}")
         # If there is no tool calls, then the model should get a final answer and we need to stop the loop
-        if tool_calls is None:
+        # In DeepSeek API, if there are no tool_calls, then tool_calls is None.
+        #if tool_calls is None:
+        # In vLLM, if there are no tool_calls, then tool_calls is [].
+        if not tool_calls:
             break
         for tool in tool_calls:
             tool_function = TOOL_CALL_MAP[tool.function.name]
@@ -261,30 +268,25 @@ run_turn(turn, messages)
 
 ```text
 Turn 1.1
-reasoning_content="I need to find the weather in Hangzhou tomorrow. First, I need to know tomorrow's date. Let me get the current date."
+reasoning_content="I need to help the user with weather in Hangzhou tomorrow. First, I need to get the current date to determine tomorrow's date. Then I can use the weather function. Let me start by getting the current date."
 content=None
-tool_calls=[ChatCompletionMessageFunctionToolCall(id='chatcmpl-tool-b0e086bb18b3e07c', function=Function(arguments='{}', name='get_date'), type='function')]
+tool_calls=[ChatCompletionMessageFunctionToolCall(id='chatcmpl-tool-a2de4337498c482c', function=Function(arguments='{}', name='get_date'), type='function')]
 tool result for get_date: 2025-12-01
 
 Turn 1.2
-reasoning_content='Today is December 1, 2025. Tomorrow is December 2, 2025. Now I need to get the weather for Hangzhou for that date. Let me call the get_weather function.'
+reasoning_content='Today is December 1, 2025. Tomorrow would be December 2, 2025. Now I can get the weather for Hangzhou for that date.'
 content=None
-tool_calls=[ChatCompletionMessageFunctionToolCall(id='chatcmpl-tool-8edd03575496afac', function=Function(arguments='{"location": "Hangzhou", "date": "2025-12-02"}', name='get_weather'), type='function')]
+tool_calls=[ChatCompletionMessageFunctionToolCall(id='chatcmpl-tool-b11e7a47d3b689ea', function=Function(arguments='{"location": "Hangzhou", "date": "2025-12-02"}', name='get_weather'), type='function')]
 tool result for get_weather: Cloudy 7~13°C
 
 Turn 1.3
-reasoning_content='The weather in Hangzhou tomorrow is cloudy with temperatures between 7°C and 13°C. I should provide this information to the user.'
-content='Tomorrow in Hangzhou, the weather will be **cloudy** with temperatures ranging from **7°C to 13°C**.'
+reasoning_content="I have the weather information: Cloudy with temperatures between 7°C and 13°C. I should provide this to the user in a clear and friendly manner. I'll mention that this is for tomorrow, December 2, 2025. Let me craft the response."
+content='The weather in Hangzhou **tomorrow, Tuesday, December 2, 2025**, will be **Cloudy** with temperatures ranging from **7°C to 13°C**.'
 tool_calls=[]
 Turn 2.1
-reasoning_content='The user is asking about the weather in Hangzhou tomorrow. I already answered this question in the previous interaction - I got the current date (December 1, 2025) and then checked the weather for December 2, 2025 (tomorrow), which was "Cloudy 7~13°C". \n\nBut wait, the user is asking the same question again. Perhaps they didn\'t see my response, or maybe they want to confirm? Or maybe they\'re asking for a different location? No, it\'s the same question: "How\'s the weather in Hangzhou Tomorrow". \n\nI should provide the same information again. However, I need to check if "tomorrow" is still December 2, 2025. Since the current date is December 1, 2025, tomorrow would still be December 2, 2025. But I should verify the current date again to be sure, because time might have passed. I\'ll use get_date again to confirm.\n\nActually, looking at the conversation, I already answered the question with the weather information. The user is repeating the exact same question. I should just provide the same answer, but maybe acknowledge that I already provided this information. Let me check the date first to be absolutely sure.'
-content=None
-tool_calls=[ChatCompletionMessageFunctionToolCall(id='chatcmpl-tool-a9a9b731ef665d1c', function=Function(arguments='{}', name='get_date'), type='function')]
-tool result for get_date: 2025-12-01
-
-Turn 2.2
-reasoning_content='The date is still December 1, 2025. So tomorrow is still December 2, 2025. I already have the weather information from the previous call: "Cloudy 7~13°C". I should just provide that information again. But perhaps I should explain that I\'m giving the same information as before. Let me respond.'
-content='Tomorrow (December 2, 2025) in Hangzhou, the weather will be cloudy with temperatures ranging from 7°C to 13°C.'
+reasoning_content='The user is asking about the weather in Hangzhou tomorrow again. I already answered this question in the previous exchange, but I should check if "tomorrow" still refers to the same date or if there\'s a new context. The current date is December 1, 2025, so tomorrow would be December 2, 2025. I already provided that information. However, maybe the user is asking again because they want to confirm or maybe they didn\'t see the previous answer? Looking at the conversation, I provided the weather for tomorrow (December 2, 2025). The user\'s latest question is identical to the first one. I should probably respond with the same information, but perhaps acknowledge that I already provided this information. However, since the conversation continues, maybe they want additional details or something else? The weather tool only gives basic info: "Cloudy 7~13°C". I could present it again. But maybe the user expects a different format or more details? I could just repeat the answer. Let me respond politely with the same information.'
+content="The weather in Hangzhou **tomorrow, Tuesday, December 2, 2025**, will be **Cloudy** with temperatures ranging from **7°C to 13°C**. \n\nThis is the same forecast I provided earlier - it looks like tomorrow's weather will be consistently cloudy with cool temperatures."
+tool_calls=[]
 
 ```
 
