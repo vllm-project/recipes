@@ -79,7 +79,7 @@ local-chat-completions (model=deepseek-ai/DeepSeek-V3.2,base_url=http://0.0.0.0:
 
 ## Benchmarking
 
-We used the following script to benchmark `deepseek-ai/DeepSeek-V3.2` on 8*H20.
+We used the following script to benchmark `deepseek-ai/DeepSeek-V3.2` on 8xH20.
 
 ```bash
 vllm bench serve \
