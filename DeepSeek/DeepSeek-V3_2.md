@@ -139,7 +139,7 @@ DeepSeek 3.2's thinking mode now supports tool calling, see: [DeepSeek API Doc](
 
  - To enable thinking mode in vLLM, use **extra_body = {"chat_template_kwargs": {"thinking": True}}**. In the DeepSeek official API, the method to enable thinking mode is **extra_body = {"thinking": {"type": "enabled"}}**.
   
- - For the `think`· field, vLLM recommends using **reasoning**, the DeepSeek official API uses **reasoning_content**. 
+ - For the `think` field, vLLM recommends using **reasoning**, the DeepSeek official API uses **reasoning_content**. 
 
  - In vLLM, if there are no tool_calls, then tool_calls is  an empty list (`[]`), In contrast, the DeepSeek official API returns `None`.
   
@@ -190,7 +190,7 @@ TOOL_CALL_MAP = {
 
 def clear_reasoning_content(messages):
     for message in messages:
-        
+
         # DeepSeek official API
         # if hasattr(message, 'reasoning_content'):
         #     message.reasoning_content = None
@@ -210,7 +210,10 @@ def run_turn(turn, messages):
             extra_body = {"chat_template_kwargs": {"thinking": True}} # vLLM Server
         )
         messages.append(response.choices[0].message)
-        reasoning_content = response.choices[0].message.reasoning_content
+        #  DeepSeek API
+        # reasoning_content = response.choices[0].message.reasoning_content
+        # vLLM Server
+        reasoning_content = response.choices[0].message.reasoning
         content = response.choices[0].message.content
         tool_calls = response.choices[0].message.tool_calls
         print(f"Turn {turn}.{sub_turn}\n{reasoning_content=}\n{content=}\n{tool_calls=}")
