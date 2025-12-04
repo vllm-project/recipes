@@ -257,7 +257,7 @@ run_turn(turn, messages)
 
 ```
 
-### vLLM  Server print
+### vLLM  Server Print
 
 ```text
 Turn 1.1
@@ -289,7 +289,7 @@ content='Tomorrow (December 2, 2025) in Hangzhou, the weather will be cloudy wit
 ```
 
 
-### DeepSeek Offical API print
+### DeepSeek Offical API Print
 
 ``` text
 Turn 1.1
