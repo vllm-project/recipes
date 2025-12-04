@@ -28,6 +28,7 @@ uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly
    --tensor-parallel-size 8 \
    --tokenizer-mode deepseek_v32 \
    --tool-call-parser deepseek_v32 \
+   --enable-auto-tool-choice \
    --reasoning-parser deepseek_v3
    
 ```
@@ -134,8 +135,11 @@ P99 ITL (ms):                            2032.37
 ## Tool Calling Example
 
 
-DeepSeek 3.2's thinking mode now supports tool calling, see: [DeepSeek API Doc](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode#%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8). The model can perform multiple rounds of reasoning and tool calls before outputting the final answer.
+DeepSeek 3.2's thinking mode now supports tool calling, see: [DeepSeek API Doc](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode#%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8). The model can perform multiple rounds of reasoning and tool calls before outputting the final answer. The code example below is directly copied from the DeepSeek official examples. For vLLM, the main modifications are:
 
+ - In the official example, the method to enable thinking modeis **extra_body={ "thinking": { "type": "enabled" } }**, whereas for VLLM it is **extra_body = {"chat_template_kwargs": {"thinking": True}}**
+ - For the `think· field`, vllm recommends using `reasoning`, the DeepSeek official API uses `reasoning_content` 
+  
 ``` python
 
 import os
@@ -183,6 +187,11 @@ TOOL_CALL_MAP = {
 
 def clear_reasoning_content(messages):
     for message in messages:
+        # DeepSeek official API
+        # if hasattr(message, 'reasoning_content'):
+        #     message.reasoning_content = None
+
+        #  vLLM Server
         if hasattr(message, 'reasoning'):
             message.reasoning = None
 
@@ -193,19 +202,11 @@ def run_turn(turn, messages):
             model='deepseek-chat',
             messages=messages,
             tools=tools,
-            extra_body = {"chat_template_kwargs": {"thinking": True}}
+            # extra_body={ "thinking": { "type": "enabled" } } # DeepSeek official API
+            extra_body = {"chat_template_kwargs": {"thinking": True}} ## vLLM Server
         )
-
-        reasoning_content = response.choices[0].message.reasoning
-
-        messages.append(
-            {
-                "role": "assistant",
-                "tool_calls": response.choices[0].message.tool_calls,
-                "reasoning": reasoning_content, # append reasoning
-            }
-        )
-
+        messages.append(response.choices[0].message)
+        reasoning_content = response.choices[0].message.reasoning_content
         content = response.choices[0].message.content
         tool_calls = response.choices[0].message.tool_calls
         print(f"Turn {turn}.{sub_turn}\n{reasoning_content=}\n{content=}\n{tool_calls=}")
@@ -222,6 +223,14 @@ def run_turn(turn, messages):
                 "content": tool_result,
             })
         sub_turn += 1
+
+# You can running vLLM server using the following command
+#  VLLM_MOE_USE_DEEP_GEMM=0 vllm serve serve deepseek-ai/DeepSeek-V3.2 \
+#   --tensor-parallel-size 8 \
+#   --tokenizer-mode deepseek_v32 \
+#   --tool-call-parser deepseek_v32 \
+#   --enable-auto-tool-choice \
+#   --reasoning-parser deepseek_v3
 
 client = OpenAI(
     api_key=os.environ.get('DEEPSEEK_API_KEY'),
@@ -247,3 +256,61 @@ clear_reasoning_content(messages)
 run_turn(turn, messages)
 
 ```
+
+### vLLM  Server print
+
+```text
+Turn 1.1
+reasoning_content="I need to find the weather in Hangzhou tomorrow. First, I need to know tomorrow's date. Let me get the current date."
+content=None
+tool_calls=[ChatCompletionMessageFunctionToolCall(id='chatcmpl-tool-b0e086bb18b3e07c', function=Function(arguments='{}', name='get_date'), type='function')]
+tool result for get_date: 2025-12-01
+
+Turn 1.2
+reasoning_content='Today is December 1, 2025. Tomorrow is December 2, 2025. Now I need to get the weather for Hangzhou for that date. Let me call the get_weather function.'
+content=None
+tool_calls=[ChatCompletionMessageFunctionToolCall(id='chatcmpl-tool-8edd03575496afac', function=Function(arguments='{"location": "Hangzhou", "date": "2025-12-02"}', name='get_weather'), type='function')]
+tool result for get_weather: Cloudy 7~13°C
+
+Turn 1.3
+reasoning_content='The weather in Hangzhou tomorrow is cloudy with temperatures between 7°C and 13°C. I should provide this information to the user.'
+content='Tomorrow in Hangzhou, the weather will be **cloudy** with temperatures ranging from **7°C to 13°C**.'
+tool_calls=[]
+Turn 2.1
+reasoning_content='The user is asking about the weather in Hangzhou tomorrow. I already answered this question in the previous interaction - I got the current date (December 1, 2025) and then checked the weather for December 2, 2025 (tomorrow), which was "Cloudy 7~13°C". \n\nBut wait, the user is asking the same question again. Perhaps they didn\'t see my response, or maybe they want to confirm? Or maybe they\'re asking for a different location? No, it\'s the same question: "How\'s the weather in Hangzhou Tomorrow". \n\nI should provide the same information again. However, I need to check if "tomorrow" is still December 2, 2025. Since the current date is December 1, 2025, tomorrow would still be December 2, 2025. But I should verify the current date again to be sure, because time might have passed. I\'ll use get_date again to confirm.\n\nActually, looking at the conversation, I already answered the question with the weather information. The user is repeating the exact same question. I should just provide the same answer, but maybe acknowledge that I already provided this information. Let me check the date first to be absolutely sure.'
+content=None
+tool_calls=[ChatCompletionMessageFunctionToolCall(id='chatcmpl-tool-a9a9b731ef665d1c', function=Function(arguments='{}', name='get_date'), type='function')]
+tool result for get_date: 2025-12-01
+
+Turn 2.2
+reasoning_content='The date is still December 1, 2025. So tomorrow is still December 2, 2025. I already have the weather information from the previous call: "Cloudy 7~13°C". I should just provide that information again. But perhaps I should explain that I\'m giving the same information as before. Let me respond.'
+content='Tomorrow (December 2, 2025) in Hangzhou, the weather will be cloudy with temperatures ranging from 7°C to 13°C.'
+
+```
+
+
+### DeepSeek Offical API print
+
+``` text
+Turn 1.1
+reasoning_content="The user is asking about the weather in Hangzhou tomorrow. I need to get the current date to determine what tomorrow's date is, then use that to get the weather forecast. Let me first get the current date."
+content=''
+tool_calls=[ChatCompletionMessageFunctionToolCall(id='call_00_OOAEfTpXddWI9rgC75bfYQJY', function=Function(arguments='{}', name='get_date'), type='function', index=0)]
+tool result for get_date: 2025-12-01
+
+Turn 1.2
+reasoning_content='Today is December 1, 2025. Tomorrow would be December 2, 2025. So I need to get the weather for Hangzhou on 2025-12-02. Now I can call get_weather with location Hangzhou and date 2025-12-02.'
+content=''
+tool_calls=[ChatCompletionMessageFunctionToolCall(id='call_00_3P0Xqw5MrVhklmQ4QSACbDq6', function=Function(arguments='{"location": "Hangzhou", "date": "2025-12-02"}', name='get_weather'), type='function', index=0)]
+tool result for get_weather: Cloudy 7~13°C
+
+Turn 1.3
+reasoning_content='Now I have the weather information: Cloudy with temperatures between 7 and 13 degrees Celsius. I should provide this to the user in a friendly manner. I can mention that tomorrow is December 2nd, and give the forecast. Let me craft the response.'
+content='Tomorrow (December 2, 2025) in Hangzhou, the weather will be **cloudy** with temperatures ranging from **7°C to 13°C**.'
+tool_calls=None
+Turn 2.1
+reasoning_content='The user is asking about the weather in Hangzhou tomorrow. I already answered this question in the previous interaction. However, I should check if "tomorrow" is still the same date. The current date is 2025-12-01. Tomorrow would be 2025-12-02. I already provided the weather for that date: Cloudy 7~13°C. \n\nBut wait, the user might be asking again, perhaps not noticing the previous answer. Or maybe they want a different presentation. I should answer again, but maybe with a slightly different phrasing. Also, I should confirm that "tomorrow" is indeed 2025-12-02.\n\nI could just repeat the information. But perhaps I should check if the date has changed? The current date is still 2025-12-01. So tomorrow is still 2025-12-02. I already have the weather data.\n\nI\'ll respond with the weather information again.'
+content='Based on the previous query, tomorrow (December 2, 2025) in Hangzhou will be **cloudy** with temperatures between **7°C and 13°C**.'
+tool_calls=None
+```
+
