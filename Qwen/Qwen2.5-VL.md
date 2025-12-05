@@ -9,19 +9,52 @@ Since BF16 is the commonly used precision type for Qwen2.5-VL training, using BF
 
 ## GPU Deployment
 
-### Installing vLLM
+### Setting Up vLLM
 
+
+<details>
+<summary>CUDA</summary>
 ```bash
 uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
+</details>
 
-### Running Qwen2.5-VL with BF16 on 4xA100
+<details>
+<summary>ROCm</summary>
+```bash
+# to get the latest amd official released docker image
+# DOCKER_IMAGE=rocm/vllm 
+# to get the latest nightly image if you want to have access to latest vLLM feature
+DOCKER_IMAGE=rocm/vllm-dev:nightly
+
+docker pull $DOCKER_IMAGE
+
+docker run -it --rm \
+--network=host \
+--group-add=video \
+--ipc=host \
+--cap-add=SYS_PTRACE \
+--security-opt seccomp=unconfined \
+--device /dev/kfd \
+--device /dev/dri \
+-v <path/to/your/models>:/app/models \
+-e HF_HOME="/app/models" \
+$DOCKER_IMAGE \
+bash
+```
+</details>
+
+
+### Usage
 
 There are two ways to parallelize the model over multiple GPUs: (1) Tensor-parallel (TP) or (2) Data-parallel (DP). Each one has its own advantages, where tensor-parallel is usually more beneficial for low-latency / low-load scenarios, and data-parallel works better for cases where there is a lot of data with heavy loads.
 
 To launch the online inference server for Qwen2.5-VL-72B:
+
+<details>
+<summary>Running Qwen2.5-VL with BF16 on 4xA100</summary>
 
 ```bash
 # Start server with BF16 model on 4 GPUs using TP=4
@@ -31,9 +64,50 @@ vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
   --port 8000 \
   --tensor-parallel-size 4 \
   --mm-encoder-tp-mode data \
-  --limit-mm-per-prompt '{"image":2,"video":0}' \
-
+  --limit-mm-per-prompt '{"image":2,"video":0}'
 ```
+</details>
+
+<details>
+<summary>MI300X</summary>
+```bash
+export CUDA_VISIBLE_DEVICES=0,1
+VLLM_ROCM_USE_AITER=1 \
+vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --tensor-parallel-size 2 \
+  --mm-encoder-tp-mode data \
+  --limit-mm-per-prompt '{"image":2,"video":0}'
+```
+
+If you want to improve throughput on a single node,
+launch 4 of the following TP2 instances and connect the instances to a routing gateway.
+
+```bash
+export CUDA_VISIBLE_DEVICES=0,1
+VLLM_ROCM_USE_AITER=1 \
+vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --tensor-parallel-size 2 \
+  --mm-encoder-tp-mode data \
+  --limit-mm-per-prompt '{"image":2,"video":0}'
+```
+
+If you want to lower the latency on single node, launch the server with TP8
+```bash
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+VLLM_ROCM_USE_AITER=1 \
+vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --tensor-parallel-size 8 \
+  --mm-encoder-tp-mode data \
+  --limit-mm-per-prompt '{"image":2,"video":0}'
+```
+</details>
+
 
 #### Tips
 
