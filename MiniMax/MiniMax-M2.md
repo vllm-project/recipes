@@ -109,3 +109,9 @@ Median ITL (ms):                         82.18
 P99 ITL (ms):                            83.48 
 ```
 
+## Using Tips
+
+### DeepGEMM Usage
+
+vLLM has DeepGEMM enabled by default, follow the [setup instructions](https://github.com/vllm-project/vllm/blob/v0.11.0/benchmarks/kernels/deepgemm/README.md#setup) to install it.
+
