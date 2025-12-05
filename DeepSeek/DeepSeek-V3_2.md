@@ -24,7 +24,7 @@ uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly
 
 ```bash
 
-  VLLM_MOE_USE_DEEP_GEMM=0 vllm serve deepseek-ai/DeepSeek-V3.2 \
+  vllm serve deepseek-ai/DeepSeek-V3.2 \
    --tensor-parallel-size 8 \
    --tokenizer-mode deepseek_v32 \
    --tool-call-parser deepseek_v32 \
@@ -235,7 +235,7 @@ def run_turn(turn, messages):
         sub_turn += 1
 
 # You can running vLLM server using the following command
-#  VLLM_MOE_USE_DEEP_GEMM=0 vllm serve serve deepseek-ai/DeepSeek-V3.2 \
+#   vllm serve serve deepseek-ai/DeepSeek-V3.2 \
 #   --tensor-parallel-size 8 \
 #   --tokenizer-mode deepseek_v32 \
 #   --tool-call-parser deepseek_v32 \
