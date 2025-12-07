@@ -21,7 +21,7 @@ Run tensor-parallel like this:
 
 ```bash
 
-# Start server with FP8 model on 4 GPUs, the model can also changed to BF16 as zai-org/GLM-4.5V
+# Start server with FP8 model on 4 GPUs, the model can also be changed to BF16 as zai-org/GLM-4.5V
 vllm serve zai-org/GLM-4.5V-FP8 \
      --tensor-parallel-size 4 \
      --tool-call-parser glm45 \
