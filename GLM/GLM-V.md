@@ -17,7 +17,7 @@ uv pip install -U vllm --torch-backend auto # vllm>=0.12.0 is required
 
 There are two ways to parallelize the model over multiple GPUs: (1) Tensor-parallel or (2) Data-parallel. Each one has its own advantages, where tensor-parallel is usually more beneficial for low-latency / low-load scenarios and data-parallel works better for cases where there is a lot of data with heavy-loads.
 
-run tensor-parallel like this:
+Run tensor-parallel like this:
 
 ```bash
 
