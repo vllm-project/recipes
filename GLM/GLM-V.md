@@ -50,7 +50,7 @@ vllm bench serve \
   --dataset-name hf \
   --dataset-path lmarena-ai/VisionArena-Chat \
   --num-prompts 1000 \
-  --request-rate 10
+  --request-rate 20
 ```
 
 ### Results
