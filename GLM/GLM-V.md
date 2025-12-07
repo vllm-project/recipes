@@ -17,11 +17,11 @@ uv pip install -U vllm --torch-backend auto # vllm>=0.12.0 is required
 
 There are two ways to parallelize the model over multiple GPUs: (1) Tensor-parallel or (2) Data-parallel. Each one has its own advantages, where tensor-parallel is usually more beneficial for low-latency / low-load scenarios and data-parallel works better for cases where there is a lot of data with heavy-loads.
 
-run tensor-parallel like this:
+Run tensor-parallel like this:
 
 ```bash
 
-# Start server with FP8 model on 4 GPUs, the model can also changed to BF16 as zai-org/GLM-4.5V
+# Start server with FP8 model on 4 GPUs, the model can also be changed to BF16 as zai-org/GLM-4.5V
 vllm serve zai-org/GLM-4.5V-FP8 \
      --tensor-parallel-size 4 \
      --tool-call-parser glm45 \
@@ -50,10 +50,10 @@ vllm bench serve \
   --dataset-name hf \
   --dataset-path lmarena-ai/VisionArena-Chat \
   --num-prompts 1000 \
-  --request-rate 10
+  --request-rate 20
 ```
 
-### result
+### Results
 
 + request-rate: 20, no max-concurrency setting
 
@@ -85,7 +85,7 @@ P99 ITL (ms):                            434.72
 ==================================================
 ```
 
-+ max-concurrency: 1， no request-rate setting
++ max-concurrency: 1, no request-rate setting
 
 ```shell
 ============ Serving Benchmark Result ============
