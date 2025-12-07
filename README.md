@@ -22,8 +22,8 @@ This repo intends to host community maintained common recipes to run vLLM answer
 ### GLM <img src="https://raw.githubusercontent.com/zai-org/GLM-4.5/refs/heads/main/resources/logo.svg" alt="GLM" width="16" height="16" style="vertical-align:middle;">
 
 - [Glyph](GLM/Glyph.md)
-- [GLM-4.5/GLM-4.6, GLM-4.5-Air](GLM/GLM-4.5.md)
-- [GLM-4.5V](GLM/GLM-4.5V.md)
+- [GLM-4.5, GLM-4.6, GLM-4.5-Air](GLM/GLM-4.5.md)
+- [GLM-4.5V, GLM-4.6V](GLM/GLM-V.md)
 
 ### inclusionAI <img src="https://avatars.githubusercontent.com/u/199075982?s=200&v=4" alt="inclusionAI" width="16" height="16" style="vertical-align:middle;">
 
