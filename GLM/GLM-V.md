@@ -85,7 +85,7 @@ P99 ITL (ms):                            541.52
 ==================================================
 ```
 
-+ max-concurrency: 1， no request-rate setting
++ max-concurrency: 1, no request-rate setting
 
 ```shell
 ============ Serving Benchmark Result ============
