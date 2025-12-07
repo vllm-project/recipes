@@ -53,7 +53,7 @@ vllm bench serve \
   --request-rate 10
 ```
 
-### result
+### Results
 
 + request-rate: 20, no max-concurrency setting
 
