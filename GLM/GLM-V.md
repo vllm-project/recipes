@@ -29,7 +29,8 @@ vllm serve zai-org/GLM-4.5V-FP8 \
      --enable-auto-tool-choice \
      --enable-expert-parallel \
      --allowed-local-media-path / \
-     --mm-encoder-tp-mode data
+     --mm-encoder-tp-mode data \ 
+     --mm_processor_cache_type shm
 ```
 
 * You can set `--max-model-len` to preserve memory. `--max-model-len=65536` is usually good for most scenarios. Note that GLM-4.5V only supports a 64K context length, while GLM-4.6V supports a 128K context length.
@@ -54,33 +55,33 @@ vllm bench serve \
 
 ### result
 
-+ request-rate: 10, no max-concurrency setting
++ request-rate: 20, no max-concurrency setting
 
 ```shell
 ============ Serving Benchmark Result ============
 Successful requests:                     1000      
 Failed requests:                         0         
-Request rate configured (RPS):           10.00     
-Benchmark duration (s):                  102.90    
+Request rate configured (RPS):           20.00     
+Benchmark duration (s):                  57.69     
 Total input tokens:                      90524     
-Total generated tokens:                  127105    
-Request throughput (req/s):              9.72      
-Output token throughput (tok/s):         1235.27   
-Peak output token throughput (tok/s):    2355.00   
-Peak concurrent requests:                108.00    
-Total Token throughput (tok/s):          2115.04   
+Total generated tokens:                  126960    
+Request throughput (req/s):              17.33     
+Output token throughput (tok/s):         2200.83   
+Peak output token throughput (tok/s):    8121.00   
+Peak concurrent requests:                451.00    
+Total Token throughput (tok/s):          3770.04   
 ---------------Time to First Token----------------
-Mean TTFT (ms):                          562.74    
-Median TTFT (ms):                        609.92    
-P99 TTFT (ms):                           1241.51   
+Mean TTFT (ms):                          2414.68   
+Median TTFT (ms):                        2267.56   
+P99 TTFT (ms):                           4612.54   
 -----Time per Output Token (excl. 1st token)------
-Mean TPOT (ms):                          46.19     
-Median TPOT (ms):                        46.29     
-P99 TPOT (ms):                           62.54     
+Mean TPOT (ms):                          128.92    
+Median TPOT (ms):                        145.07    
+P99 TPOT (ms):                           157.87    
 ---------------Inter-token Latency----------------
-Mean ITL (ms):                           52.63     
-Median ITL (ms):                         37.15     
-P99 ITL (ms):                            177.84    
+Mean ITL (ms):                           129.21    
+Median ITL (ms):                         94.56     
+P99 ITL (ms):                            541.52    
 ==================================================
 ```
 
