@@ -111,6 +111,9 @@ print("Generated text:", response.choices[0].message.content)
 
 The Phi-4 series includes multiple model variants, all compatible with the same vLLM serving commands shown in this guide:
 
+- **microsoft/Phi-4-mini-instruct**  
+  Instruction-tuned variant optimized for conversational tasks
+
 - **microsoft/Phi-4-mini-reasoning**  
   Optimized for reasoning tasks
 
@@ -119,6 +122,3 @@ The Phi-4 series includes multiple model variants, all compatible with the same 
 
 - **microsoft/Phi-4-multimodal-instruct**  
   Multimodal instruction-following model
-
-- **microsoft/Phi-4-mini-instruct**  
-  Instruction-tuned variant optimized for conversational tasks
