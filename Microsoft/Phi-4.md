@@ -1,8 +1,8 @@
 # Phi-4 Usage Guide
 
-This guide describes how to run **Microsoft Phi-4-mini-instruct** on GPU using vLLM.  
+This guide describes how to run **Microsoft Phi-4** models on GPU using vLLM.
 
-Phi-4-multimodal-instruct is a lightweight open multimodal foundation model that leverages the language, vision, and speech research and datasets used for Phi-3.5 and 4.0 models. The model processes text, image, and audio inputs, generating text outputs, and comes with 128K token context length
+The Phi-4 family includes several lightweight, open models from Microsoft. These models can process text and, in some variants, multimodal inputs like images, to generate text outputs. They come with a 128K token context length.
 
 ## GPU Deployment
 
