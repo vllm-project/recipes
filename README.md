@@ -47,6 +47,10 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [Llama3.3-70B](Llama/Llama3.3-70B.md)
 - [Llama3.1](Llama/Llama3.1.md)
 
+### Microsoft <img src="https://avatars.githubusercontent.com/u/6154722?s=48&v=4" alt="Microsoft" width="16" height="16" style="vertical-align:middle;">
+
+- [Phi-4](Microsoft/Phi-4.md)
+
 ### MiniMax <img src="https://github.com/MiniMax-AI/MiniMax-01/raw/main/figures/minimax.svg" alt="minmax" width="16" height="16" style="vertical-align:middle;">
 
 - [MiniMax-M2](MiniMax/MiniMax-M2.md)
@@ -56,10 +60,6 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [Ministral-3-Instruct](Mistral/Ministral-3-Instruct.md)
 - [Ministral-3-Reasoning](Mistral/Ministral-3-Reasoning.md)
 - [Mistral-Large-3-Instruct](Mistral/Mistral-Large-3.md)
-
-### Microsoft <img src="https://avatars.githubusercontent.com/u/6154722?s=48&v=4" alt="Microsoft" width="16" height="16" style="vertical-align:middle;">
-
-- [Phi-4](Microsoft/Phi-4.md)
 
 ### Moonshotai <img src="https://avatars.githubusercontent.com/u/129152888?v=4" alt="Moonshotai" width="16" height="16" style="vertical-align:middle;">
 
