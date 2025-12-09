@@ -18,7 +18,7 @@ huggingface-cli login
 Run the vllm online serving
 Sample Command
 ```shell
-VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct --tensor-parallel-size 4 --max-model-len 32768  --no-enable-prefix-caching 
+VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct --tensor-parallel-size 4 --max-model-len 32768 --no-enable-prefix-caching 
 ```
 ## Step 4: Run Benchmark
 Open a new terminal and run the following command to execute the benchmark script inside the container.
