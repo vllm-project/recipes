@@ -82,3 +82,58 @@ For other usage tips, such as enabling or disabling thinking mode, please refer 
 ## Additional Resources
 
 - [An end-to-end tutorial (Jupyter Notebook)](https://github.com/vllm-project/recipes/blob/main/DeepSeek/DeepSeek_v3_2_vLLM_getting_started_guide.ipynb)
+
+
+
+### AMD GPU Support 
+
+Please follow the steps here to install and run DeepSeek-V3.2-Exp models on AMD MI300X GPU.
+
+### Step 1: Prepare Docker Environment
+Pull the latest vllm docker:
+```shell
+docker pull rocm/vllm-dev:nightly
+```
+Launch the ROCm vLLM docker: 
+```shell
+docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash  --name DeepSeek-V3-Exp rocm/vllm-dev:nightly 
+```
+### Step 2: Log in to Hugging Face
+Huggingface login
+```shell
+huggingface-cli login
+```
+## Step 3: Start the vLLM server
+Run the vllm online serving
+Sample Command
+```shell
+VLLM_USE_V1=1 \
+SAFETENSORS_FAST_GPU=1 \
+VLLM_ROCM_USE_AITER=1 \
+VLLM_ROCM_USE_AITER_MOE=1 \
+NCCL_DEBUG=WARN \
+VLLM_LOGGING_LEVEL=DEBUG \
+VLLM_RPC_TIMEOUT=18000000 \
+vllm serve deepseek-ai/DeepSeek-V3.2-Exp \
+  --tensor-parallel-size 8 \
+  --max-num-batched-tokens 32768 \
+  --trust-remote-code \
+  --no-enable-prefix-caching \
+  --disable-log-requests \
+  --kv-cache-dtype bfloat16 \
+  --gpu_memory_utilization 0.85 \
+  --block-size 1 
+```
+## Step 4: Run Benchmark
+Open a new terminal and run the following command to execute the benchmark script inside the container.
+```shell
+docker exec -it DeepSeek-V3-Exp vllm bench serve \
+  --model deepseek-ai/DeepSeek-V3.2-Exp \
+  --dataset-name random \
+  --random-input-len 8000 \
+  --random-output-len 1000 \
+  --request-rate 10000 \
+  --num-prompts 16 \
+  --ignore-eos
+```
+
