@@ -21,8 +21,6 @@ Sample Command
 VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct --tensor-parallel-size 4 --max-model-len 32768  --no-enable-prefix-caching 
 ```
 #### Step 4 
-Open a new terminal, enter into the running docker and run the following benchmark script.
+Open a new terminal and run the following command to execute the benchmark script inside the container.
 ```shell
-docker exec -it Qwen3-next /bin/bash 
-python3 /vllm-workspace/benchmarks/benchmark_serving.py --model Qwen/Qwen3-Next-80B-A3B-Instruct --dataset-name random --ignore-eos --num-prompts 500  --max-concurrency 128 --random-input-len 3200 --random-output-len 800  --percentile-metrics ttft,tpot,itl,e2el
-```
+docker exec -it Qwen3-next python3 /vllm-workspace/benchmarks/benchmark_serving.py --model Qwen/Qwen3-Next-80B-A3B-Instruct --dataset-name random --ignore-eos --num-prompts 500 --max-concurrency 128 --random-input-len 3200 --random-output-len 800 --percentile-metrics ttft,tpot,itl,e2el
