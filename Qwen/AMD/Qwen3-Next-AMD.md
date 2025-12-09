@@ -13,8 +13,7 @@ docker run -d -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN
 Huggingface login
 ```shell
 huggingface-cli login
-#### Step 3
-##### FP8
+## Step 3: Start the vLLM server (FP8)
 
 Run the vllm online serving
 Sample Command
