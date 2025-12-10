@@ -127,3 +127,49 @@ print(f"Generated text: {response.choices[0].message.content}")
 - DeepSeek-OCR works better with plain prompts than instruction formats. Find [more example prompts for various OCR tasks](https://github.com/deepseek-ai/DeepSeek-OCR/blob/2ac6d64a00656693b79c4f759a5e62c1b78bbeb1/DeepSeek-OCR-master/DeepSeek-OCR-vllm/config.py#L27-L37) in the official DeepSeek-OCR repository.
 - Depending on your hardware capability, adjust `max_num_batched_tokens` for better throughput performance.
 - Check out [vLLM documentation](https://docs.vllm.ai/en/latest/features/multimodal_inputs.html#offline-inference) for additional information on batch inference with multimodal inputs.
+
+
+### AMD GPU Support
+
+Please follow the steps here to install and run DeepSeek-OCR models on AMD MI300X GPU.
+### Step 1: Prepare Docker Environment
+Pull the latest vllm docker:
+```shell
+docker pull rocm/vllm-dev:nightly
+```
+Launch the ROCm vLLM docker: 
+```shell
+docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash  --name DeepSeek-OCR rocm/vllm-dev:nightly 
+```
+### Step 2: Log in to Hugging Face
+Huggingface login
+```shell
+huggingface-cli login
+```
+
+### Step 3: Start the vLLM server
+
+Run the vllm online serving
+Sample Command
+```shell
+
+SAFETENSORS_FAST_GPU=1 \
+VLLM_USE_TRITON_FLASH_ATTN=0 vllm serve deepseek-ai/DeepSeek-OCR --logits_processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor --no-enable-prefix-caching --mm-processor-cache-gb 0
+	
+```
+
+
+### Step 4: Run Benchmark
+Open a new terminal and run the following command to execute the benchmark script inside the container.
+```shell
+docker exec -it DeepSeek-OCR vllm bench serve \
+  --model "deepseek-ai/DeepSeek-OCR" \
+  --dataset-name random \
+  --random-input-len 4096 \
+  --random-output-len 512 \
+  --request-rate 10000 \
+  --num-prompts 16 \
+  --ignore-eos
+```
+
+
