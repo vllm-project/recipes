@@ -140,7 +140,6 @@ Sample Command
 SAFETENSORS_FAST_GPU=1 \
 VLLM_USE_V1=1 \
 VLLM_USE_TRITON_FLASH_ATTN=0 \
-SAFETENSORS_FAST_GPU=1 \
 vllm serve zai-org/GLM-4.5V-FP8 \
      --tensor-parallel-size 4 \
      --tool-call-parser glm45 \
