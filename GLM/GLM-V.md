@@ -114,3 +114,52 @@ Median ITL (ms):                         8.45
 P99 ITL (ms):                            12.14     
 ==================================================
 ```
+
+
+## AMD GPU Support
+
+Please follow the steps here to install and run GLM-4.5V models on AMD MI300X GPU.
+### Step 1: Prepare Docker Environment
+Pull the latest vllm docker:
+```shell
+docker pull rocm/vllm-dev:nightly
+```
+Launch the ROCm vLLM docker: 
+```shell
+docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash  --name GLM-4.5V-FP8 rocm/vllm-dev:nightly 
+```
+### Step 2: Log in to Hugging Face
+Huggingface login
+```shell
+huggingface-cli login
+
+Run the vllm online serving
+Sample Command
+```shell
+
+SAFETENSORS_FAST_GPU=1 \
+VLLM_USE_V1=1 \
+VLLM_USE_TRITON_FLASH_ATTN=0 \
+vllm serve zai-org/GLM-4.5V-FP8 \
+     --tensor-parallel-size 4 \
+     --tool-call-parser glm45 \
+     --reasoning-parser glm45 \
+     --enable-auto-tool-choice \
+     --allowed-local-media-path / \
+     --media-io-kwargs '{"video": {"num_frames": -1}}' \
+     --no-enable-prefix-caching \
+     --trust-remote-code 
+```
+
+## Step 4: Run Benchmark
+Open a new terminal and run the following command to execute the benchmark script inside the container.
+```shell
+docker exec -it GLM-4.5V-FP8 vllm bench serve \
+  --model "zai-org/GLM-4.5V-FP8" \
+  --dataset-name random \
+  --random-input-len 8000 \
+  --random-output-len 1000 \
+  --request-rate 10000 \
+  --num-prompts 16 \
+  --ignore-eos
+```
