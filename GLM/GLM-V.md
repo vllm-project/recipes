@@ -132,7 +132,6 @@ docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --
 Huggingface login
 ```shell
 huggingface-cli login
-## Step 3: Start the vLLM server
 
 Run the vllm online serving
 Sample Command
