@@ -128,7 +128,7 @@ Launch the ROCm vLLM docker:
 ```shell
 docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash  --name GLM-4.5V-FP8 rocm/vllm-dev:nightly 
 ```
-## Step 2: Log in to Hugging Face
+### Step 2: Log in to Hugging Face
 Huggingface login
 ```shell
 huggingface-cli login
