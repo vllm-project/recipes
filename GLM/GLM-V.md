@@ -116,7 +116,7 @@ P99 ITL (ms):                            12.14
 ```
 
 
-### AMD GPU Support
+## AMD GPU Support
 
 Please follow the steps here to install and run GLM-4.5V models on AMD MI300X GPU.
 ### Step 1: Prepare Docker Environment
