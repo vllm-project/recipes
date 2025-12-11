@@ -65,10 +65,11 @@ print("Generated text:", response.choices[0].message.content)
 ### Multimodal Example (Image + Text)
 
 > [!NOTE]  
-> To run this example, you must start the server with the `microsoft/Phi-4-multimodal-instruct` model. The command is similar to the one for the text model:
+> To run this example, you must start the server with the `microsoft/Phi-4-multimodal-instruct` model:
 > ```bash
-> vllm serve microsoft/Phi-4-multimodal-instruct --host 0.0.0.0 --max-model-len 4000
+> vllm serve microsoft/Phi-4-multimodal-instruct --host 0.0.0.0 --max-model-len 4000 --trust-remote-code
 > ```
+> This model’s multimodality support is implemented via LoRA modules, and --trust-remote-code is required to enable the execution of those components.
 
 ```python
 from openai import OpenAI
