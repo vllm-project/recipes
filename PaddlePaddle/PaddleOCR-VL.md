@@ -97,3 +97,56 @@ for i, res in enumerate(output):
 - Unlike multi-turn chat use cases, we do not expect OCR tasks to benefit significantly from prefix caching or image reuse, therefore it's recommended to turn off these features to avoid unnecessary hashing and caching.
 - Depending on your hardware capability, adjust `max_num_batched_tokens` for better throughput performance.
 - Check out the official [PaddleOCR-VL documentation](https://github.com/PaddlePaddle/PaddleOCR) for more details and examples of using the model for various document parsing tasks.
+
+
+
+
+## AMD GPU Support 
+Please follow the steps here to install and run PaddleOCR-VL models on AMD MI300X GPU.
+### Step 1: Prepare Docker Environment
+Pull the latest vllm docker:
+```shell
+docker pull rocm/vllm-dev:nightly
+```
+Launch the ROCm vLLM docker: 
+```shell
+docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash  --name PaddleOCR-VL rocm/vllm-dev:nightly 
+```
+### Step 2: Log in to Hugging Face
+Huggingface login
+```shell
+huggingface-cli login
+```
+
+### Step 3: Start the vLLM server
+
+Run the vllm online serving
+Sample Command
+```shell
+
+SAFETENSORS_FAST_GPU=1 \
+VLLM_USE_V1=1 \
+VLLM_USE_TRITON_FLASH_ATTN=0 vllm serve PaddlePaddle/PaddleOCR-VL \
+  --max-num-batched-tokens 16384 \
+  --no-enable-prefix-caching \
+  --mm-processor-cache-gb 0 \
+  --no-enable-prefix-caching \
+  --trust-remote-code
+
+```
+
+
+### Step 4: Run Benchmark
+Open a new terminal and run the following command to execute the benchmark script inside the container.
+```shell
+docker exec -it PaddleOCR-VL vllm bench serve \
+  --model "PaddlePaddle/PaddleOCR-VL" \
+  --dataset-name random \
+  --random-input-len 8192 \
+  --random-output-len 1024 \
+  --request-rate 10000 \
+  --num-prompts 16 \
+  --ignore-eos \
+  --trust-remote-code 
+```
+
