@@ -160,7 +160,7 @@ For more usage examples, check out the [vLLM user guide for multimodal models](h
 
 
 
-## AMD GPU Support 
+## AMD GPU Support
 Please follow the steps here to install and run Qwen3-VL models on AMD MI300X GPU.
 ### Step 1: Prepare Docker Environment
 Pull the latest vllm docker:
