@@ -152,10 +152,10 @@ huggingface-cli login
 Run the vllm online serving
 Sample Command
 ```shell
-
-SAFETENSORS_FAST_GPU=1 \
-VLLM_USE_TRITON_FLASH_ATTN=0 vllm serve deepseek-ai/DeepSeek-OCR --logits_processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor --no-enable-prefix-caching --mm-processor-cache-gb 0
-	
+SAFETENSORS_FAST_GPU=1 VLLM_USE_TRITON_FLASH_ATTN=0 vllm serve deepseek-ai/DeepSeek-OCR \
+  --logits_processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
+  --no-enable-prefix-caching \
+  --mm-processor-cache-gb 0
 ```
 
 
