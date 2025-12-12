@@ -15,7 +15,7 @@
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly --extra-index-url https://download.pytorch.org/whl/cu129 --index-strategy unsafe-best-match # for xformers
+uv pip install -U vllm --torch-backend auto
 ```
 
 
