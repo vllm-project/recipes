@@ -14,7 +14,7 @@
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly
+uv pip install -U vllm --extra-index-url https://wheels.vllm.ai/nightly
 ```
 
 ## Launching MiniMax-M2 with vLLM
