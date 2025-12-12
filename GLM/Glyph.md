@@ -29,7 +29,7 @@ vllm serve zai-org/Glyph \
 
 ## AMD GPU Support
 
-# Glyph on AMD GPU
+### Glyph on AMD GPU
 Please follow the steps here to install and run Glyph models on AMD MI300X GPU.
 ### Step 1: Prepare Docker Environment
 Pull the latest vllm docker:
