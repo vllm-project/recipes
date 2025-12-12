@@ -125,7 +125,7 @@ docker exec -it Qwen3Guard-Gen-0.6B vllm bench serve \
   --request-rate 10000 \
   --num-prompts 16 \
   --ignore-eos \
-  --trust-remote-code 
+  --trust-remote-code
 ```
 
 
