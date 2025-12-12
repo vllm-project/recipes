@@ -90,7 +90,7 @@ Launch the ROCm vLLM docker:
 docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash --name Qwen3Guard-Gen-0.6B rocm/vllm-dev:nightly
 ```
 ### Step 2: Log in to Hugging Face
-Huggingface login
+Log in to your Hugging Face account using the CLI:
 ```shell
 huggingface-cli login
 ```
