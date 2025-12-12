@@ -103,7 +103,7 @@ Huggingface login
 ```shell
 huggingface-cli login
 ```
-## Step 3: Start the vLLM server
+### Step 3: Start the vLLM server
 Run the vllm online serving
 Sample Command
 ```shell
