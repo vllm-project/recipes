@@ -130,7 +130,6 @@ VLLM_USE_TRITON_FLASH_ATTN=0 vllm serve PaddlePaddle/PaddleOCR-VL \
   --max-num-batched-tokens 16384 \
   --no-enable-prefix-caching \
   --mm-processor-cache-gb 0 \
-  --no-enable-prefix-caching \
   --trust-remote-code
 
 ```
