@@ -12,7 +12,7 @@
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly
+uv pip install -U vllm --torch-backend auto
 ```
 
 ## Launching Qwen3-Next with vLLM
