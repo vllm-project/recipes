@@ -9,9 +9,7 @@ Seed-OSS support was recently added to vLLM main branch and is not yet available
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm \
-    --torch-backend=auto \
-    --extra-index-url https://wheels.vllm.ai/nightly
+uv pip install -U vllm --torch-backend auto
 ```
 
 You may need to download the latest version of the transformer for compatibility:

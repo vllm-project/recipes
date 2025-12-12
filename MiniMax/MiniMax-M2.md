@@ -9,10 +9,12 @@
 
 ## Installing vLLM
 
+- If you encounter garbage output when using the vLLM serving M2 model, you can install the nightly version
+
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm --torch-backend auto
+uv pip install -U vllm --extra-index-url https://wheels.vllm.ai/nightly
 ```
 
 ## Launching MiniMax-M2 with vLLM
