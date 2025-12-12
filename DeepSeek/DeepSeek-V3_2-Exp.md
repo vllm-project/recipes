@@ -124,7 +124,7 @@ vllm serve deepseek-ai/DeepSeek-V3.2-Exp \
   --gpu-memory-utilization 0.85 \
   --block-size 1 
 ```
-## Step 4: Run Benchmark
+### Step 4: Run Benchmark
 Open a new terminal and run the following command to execute the benchmark script inside the container.
 ```shell
 docker exec -it DeepSeek-V3-Exp vllm bench serve \
