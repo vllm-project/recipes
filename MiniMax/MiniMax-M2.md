@@ -9,7 +9,7 @@
 
 ## Installing vLLM
 
-- If you encounter garbage output when using the vLLM serving M2 model, you can install the nightly version
+- If you encounter corrupted output when using vLLM to serve the M2 model, you can upgrade to the nightly version (ensure it is a version after commit [cf3eacfe58fa9e745c2854782ada884a9f992cf7](https://github.com/vllm-project/vllm/commit/cf3eacfe58fa9e745c2854782ada884a9f992cf7))
 
 ```bash
 uv venv
