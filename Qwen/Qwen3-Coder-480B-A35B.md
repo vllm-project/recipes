@@ -160,7 +160,7 @@ docker run -it \
   rocm/vllm-dev:nightly
 ```
 ### Step 2: Log in to Hugging Face
-Huggingface login
+Hugging Face login
 ```shell
 huggingface-cli login
 ```
