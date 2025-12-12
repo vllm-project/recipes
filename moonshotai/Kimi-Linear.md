@@ -7,7 +7,7 @@ This guide describes how to run moonshotai/Kimi-Linear-48B-A3B-Instruct.
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm --extra-index-url https://wheels.vllm.ai/nightly --prerelease=allow
+uv pip install -U vllm --torch-backend auto
 ```
 
 ## Running Kimi-Linear
