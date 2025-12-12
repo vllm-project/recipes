@@ -167,7 +167,7 @@ huggingface-cli login
 
 ### Step 3: Start the vLLM server
 
-Run the vllm online serving
+Run the vLLM online serving
 
 Sample Command
 ```shell
