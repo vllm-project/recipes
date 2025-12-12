@@ -121,7 +121,7 @@ vllm serve deepseek-ai/DeepSeek-V3.2-Exp \
   --no-enable-prefix-caching \
   --disable-log-requests \
   --kv-cache-dtype bfloat16 \
-  --gpu_memory_utilization 0.85 \
+  --gpu-memory-utilization 0.85 \
   --block-size 1 
 ```
 ## Step 4: Run Benchmark
