@@ -174,7 +174,8 @@ Sample Command
 
 SAFETENSORS_FAST_GPU=1 \
 NCCL_MIN_NCHANNELS=112 \
-VLLM_USE_TRITON_FLASH_ATTN=0 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct \
+VLLM_USE_TRITON_FLASH_ATTN=0 \
+vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct \
   --max-model-len 32000 \
   --enable-expert-parallel \
   --tensor-parallel-size 8 \
