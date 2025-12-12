@@ -130,9 +130,12 @@ huggingface-cli login
 Run the vllm online serving
 Sample Command
 ```shell
-
-SAFETENSORS_FAST_GPU=1 \
-VLLM_USE_V1=1 vllm serve zai-org/GLM-4.5 --tensor-parallel-size 8 --gpu-memory-utilization 0.9 --disable-log-requests --no-enable-prefix-caching --trust-remote-code 
+SAFETENSORS_FAST_GPU=1 VLLM_USE_V1=1 vllm serve zai-org/GLM-4.5 \
+    --tensor-parallel-size 8 \
+    --gpu-memory-utilization 0.9 \
+    --disable-log-requests \
+    --no-enable-prefix-caching \
+    --trust-remote-code
 ```
 
 
