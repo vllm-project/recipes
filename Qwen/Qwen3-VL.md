@@ -181,10 +181,9 @@ huggingface-cli login
 
 Run the vllm online serving
 
-#### Inside the Docker container, create a new directory named miopen under /app/.
+#### Inside the Docker container, create a new directory named `miopen` under `/app/`.
 ```shell
-mkdir miopen 
-```
+mkdir -p /app/miopen
 
 Sample Command
 ```shell
