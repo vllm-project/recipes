@@ -63,6 +63,11 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [Kimi-K2-Think](moonshotai/Kimi-K2-Think.md)
 - [Kimi-Linear](moonshotai/Kimi-Linear.md)
 
+### NVIDIA
+
+- [Nemotron-3-Nano-30B-A3B](NVIDIA/Nemotron-3-Nano-30B-A3B.md)
+- [Nemotron-Nano-12B-v2-VL](NVIDIA/Nemotron-Nano-12B-v2-VL.md)
+
 ### OpenAI <img src="https://avatars.githubusercontent.com/u/14957082?v=4" alt="OpenAI" width="16" height="16" style="vertical-align:middle;">
 
 - [gpt-oss](OpenAI/GPT-OSS.md)
