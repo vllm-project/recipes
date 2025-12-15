@@ -129,32 +129,33 @@ Explanations for the flags:
 
 ### Interpreting Performance Benchmarking Output
 
-Sample output by the `vllm bench serve` command:
+Sample output by the `vllm bench serve` command, with the FP8 model on H200:
 
 ```
 ============ Serving Benchmark Result ============
-Successful requests:                     xxxxxx
-Failed requests:                         xxxxxx
-Benchmark duration (s):                  xxx.xx
-Total input tokens:                      xxxxxx
-Total generated tokens:                  xxxxxx
-Request throughput (req/s):              xxx.xx
-Output token throughput (tok/s):         xxx.xx
-Peak output token throughput (tok/s):    xxx.xx
-Peak concurrent requests:                xxxxxx
-Total Token throughput (tok/s):          xxx.xx
+Successful requests:                     2048
+Failed requests:                         0
+Maximum request concurrency:             1024
+Benchmark duration (s):                  132.49
+Total input tokens:                      2097155
+Total generated tokens:                  2097152
+Request throughput (req/s):              15.46
+Output token throughput (tok/s):         15828.30
+Peak output token throughput (tok/s):    21157.00
+Peak concurrent requests:                1088.00
+Total Token throughput (tok/s):          31656.63
 ---------------Time to First Token----------------
-Mean TTFT (ms):                          xxx.xx
-Median TTFT (ms):                        xxx.xx
-P99 TTFT (ms):                           xxx.xx
+Mean TTFT (ms):                          4490.58
+Median TTFT (ms):                        1534.84
+P99 TTFT (ms):                           15465.31
 -----Time per Output Token (excl. 1st token)------
-Mean TPOT (ms):                          xxx.xx
-Median TPOT (ms):                        xxx.xx
-P99 TPOT (ms):                           xxx.xx
+Mean TPOT (ms):                          59.45
+Median TPOT (ms):                        61.04
+P99 TPOT (ms):                           63.01
 ---------------Inter-token Latency----------------
-Mean ITL (ms):                           xxx.xx
-Median ITL (ms):                         xxx.xx
-P99 ITL (ms):                            xxx.xx
+Mean ITL (ms):                           59.45
+Median ITL (ms):                         52.75
+P99 ITL (ms):                            131.46
 ==================================================
 ```
 
