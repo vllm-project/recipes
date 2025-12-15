@@ -44,16 +44,16 @@ Below is an example command to launch the vLLM server with Nemotron-3-Nano-30B-A
 # Set up a few environment variables for better performance for Blackwell architecture.
 # They will be removed when the performance optimizations have been verified and enabled by default.
 
-# Enable use of FlashInfer FP8 MoE when relevant
-export VLLM_USE_FLASHINFER_MOE_FP8=1
-export VLLM_FLASHINFER_MOE_BACKEND=throughput
-
 # Supported dtypes for this model are: FP8, BF16
 DTYPE="FP8"
 
-# On FP8 only - set KV cache dtype to FP8
 if [ "$DTYPE" = "FP8" ]; then
+    # On FP8 only - set KV cache dtype to FP8
     KV_CACHE_DTYPE="fp8"
+
+    # Enable use of FlashInfer FP8 MoE
+    export VLLM_USE_FLASHINFER_MOE_FP8=1
+    export VLLM_FLASHINFER_MOE_BACKEND=throughput
 else
     KV_CACHE_DTYPE="auto"
 fi
@@ -77,7 +77,7 @@ You can specify the IP address and the port that you would like to run the serve
 
 Below are the config flags that we do not recommend changing or tuning with:
 
-- `kv-cache-dtype`: Kv-cache data type. We recommend setting it to "fp8" when using the FP8 model, otherwise set to "auto".
+- `kv-cache-dtype`: KV cache data type. We recommend setting it to "fp8" when using the FP8 model, otherwise set to "auto".
 - `async-scheduling`: Enable asynchronous scheduling to reduce the host overheads between decoding steps. We recommend always adding this flag for best performance.
 
 Below are a few tunable parameters you can modify based on your serving requirements:
