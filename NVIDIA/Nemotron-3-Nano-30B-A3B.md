@@ -4,7 +4,7 @@ This guide describes how to run Nemotron-3-Nano-30B-A3B using vLLM. There are FP
 
 ## Deployment Steps
 
-We recommend using vLLM 0.12.0 release for full support. However, vLLM 0.11.2 also supports the model, but using 0.12.0 is preferred.
+We recommend using vLLM 0.12.0 release for full support. However, vLLM 0.11.2 also supports the model.
 
 ### Pull Docker Image
 
