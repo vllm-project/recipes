@@ -30,7 +30,7 @@ vllm serve zai-org/GLM-4.5V-FP8 \
      --enable-expert-parallel \
      --allowed-local-media-path / \
      --mm-encoder-tp-mode data \ 
-     --mm_processor_cache_type shm
+     --mm-processor-cache-type shm
 ```
 
 * You can set `--max-model-len` to preserve memory. `--max-model-len=65536` is usually good for most scenarios. Note that GLM-4.5V only supports a 64K context length, while GLM-4.6V supports a 128K context length.
