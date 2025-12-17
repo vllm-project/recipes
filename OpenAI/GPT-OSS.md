@@ -282,6 +282,11 @@ if [ "$COMPUTE_CAPABILITY" = "10.0" ]; then
 else
     # Select the config file for Hopper architecture.
     YAML_CONFIG="GPT-OSS_Hopper.yaml"
+    # vLLM v0.12.0 has a performance regression on Hopper GPUs for small concurrency
+    # (see: https://github.com/vllm-project/vllm/issues/28894 ). Enable this environment
+    # variable to fix the regression. This has been fixed in https://github.com/vllm-project/vllm/pull/30528
+    # and the env var will no longer be needed in the next vLLM version.
+    # export VLLM_MXFP4_USE_MARLIN=1
 fi
 
 # Launch the vLLM server
