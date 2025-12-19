@@ -52,7 +52,9 @@ Note: You can mount additional directories and paths using the `-v <local_path>:
 
 The `-e HF_TOKEN="$HF_TOKEN" -e HF_HOME="$HF_HOME"` flags are added so that the models are downloaded using your HuggingFace token and the downloaded models can be cached in $HF_HOME. Refer to [HuggingFace documentation](https://huggingface.co/docs/huggingface_hub/en/package_reference/environment_variables#hfhome) for more information about these environment variables and refer to [HuggingFace Quickstart guide](https://huggingface.co/docs/huggingface_hub/en/quick-start#authentication) about steps to generate your HuggingFace access token.
 
+### Run Docker Container on DGX Spark
 
+With docker container build from source 
 
 ### Launch the vLLM Server
 
