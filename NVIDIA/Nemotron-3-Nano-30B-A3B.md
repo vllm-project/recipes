@@ -87,6 +87,31 @@ vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-$DTYPE \
 
 After the server is set up, the client can now send prompt requests to the server and receive results.
 
+
+DGX Spark Support
+
+
+Downloading the custom parser
+
+```bash
+wget https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/nano_v3_reasoning_parser.py
+```
+
+BF16 model variant
+
+```python
+vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
+ --max-num-seqs 8 \
+  --tensor-parallel-size 1 \
+  --max-model-len 262144 \
+  --port 8000 \
+  --trust-remote-code \
+  --enable-auto-tool-choice \
+  --tool-call-parser qwen3_coder \
+  --reasoning-parser-plugin nano_v3_reasoning_parser.py \
+  --reasoning-parser nano_v3
+```
+
 ### Configs and Parameters
 
 You can specify the IP address and the port that you would like to run the server with using these flags:
