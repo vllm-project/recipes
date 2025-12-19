@@ -20,10 +20,9 @@ docker pull --platform linux/amd64 vllm/vllm-openai:v0.12.0
 docker tag vllm/vllm-openai:v0.12.0 vllm/vllm-openai:deploy
 ```
 
-#DGX Spark Support
+DGX Spark Support
 
-Build container from source 
-Based on 0.12.0 release
+Build container from source based on 0.12.0 release
 https://github.com/vllm-project/vllm/blob/v0.12.0/docker/Dockerfile
 ```bash
 DOCKER_BUILDKIT=1 docker build \
