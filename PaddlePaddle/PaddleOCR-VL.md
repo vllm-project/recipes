@@ -73,7 +73,7 @@ In the examples above, we have demonstrated the inference of PaddleOCR-VL using 
 
 ### Install [PaddlePaddle](https://www.paddlepaddle.org.cn/install/quick) and [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)
 ```shell
-uv pip install paddlepaddle-gpu==3.2.1 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+uv pip install paddlepaddle-gpu==3.2.1 --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
 uv pip install -U "paddleocr[doc-parser]"
 uv pip install safetensors
 ```
