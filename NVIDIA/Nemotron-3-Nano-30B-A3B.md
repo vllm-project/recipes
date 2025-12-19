@@ -20,7 +20,7 @@ docker pull --platform linux/amd64 vllm/vllm-openai:v0.12.0
 docker tag vllm/vllm-openai:v0.12.0 vllm/vllm-openai:deploy
 ```
 
-### DGX Spark Support
+### DGX Spark Docker Image Build
 
 Build container from source based on 0.12.0 release
 https://github.com/vllm-project/vllm/blob/v0.12.0/docker/Dockerfile
@@ -88,7 +88,7 @@ vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-$DTYPE \
 After the server is set up, the client can now send prompt requests to the server and receive results.
 
 
-### DGX Spark Support
+### DGX Spark vLLM Server Launch
 
 Downloading the custom parser
 
