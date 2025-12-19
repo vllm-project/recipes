@@ -67,11 +67,15 @@ print(f"Generated text: {response.choices[0].message.content}")
 ```
 ## Offline inference using vLLM combined with PP-DocLayoutV2
 In the examples above, we have demonstrated the inference of PaddleOCR-VL using vLLM. Typically, we also need to integrate the PP-DocLayoutV2 model to fully unleash the capabilities of the PaddleOCR-VL model, making it more aligned with the examples provided by PaddlePaddle officially.
+
+!!! tip
+    Use separate virtual environments for `vllm` and `paddlepaddle` to prevent dependency conflicts. If you encounter the error `The model PaddleOCR-VL-0.9B does not exist.`, add `--served-model-name PaddleOCR-VL-0.9B` to your vLLM launch command.
+
 ### Install [PaddlePaddle](https://www.paddlepaddle.org.cn/install/quick) and [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)
 ```shell
-python -m pip install paddlepaddle-gpu==3.2.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
-python -m pip install -U "paddleocr[doc-parser]"
-python -m pip install https://paddle-whl.bj.bcebos.com/nightly/cu126/safetensors/safetensors-0.6.2.dev0-cp38-abi3-linux_x86_64.whl
+uv pip install paddlepaddle-gpu==3.2.1 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+uv pip install -U "paddleocr[doc-parser]"
+uv pip install safetensors
 ```
 
 Using vLLM as the backend, combined with PP-DocLayoutV2 for offline inference.
