@@ -10,7 +10,7 @@ GLM-4.X LLM include those model below:
 For GLM-V series, check [here](GLM-V.md)
 
 This guide describes how to run GLM-4.X Series with native FP8 and BF16. FP8 models have minimal accuracy loss. 
-Unless you need strict reproducibility for benchmarking or similar scenarios, we recommend using FP8 to run at a lower cost. these models have MTP layers. 
+Unless you need strict reproducibility for benchmarking or similar scenarios, we recommend using FP8 to run at a lower cost. These models have MTP layers. 
 
 Here, we take GLM-4.5-Air as an example, and similarly, this applies to other models in the series.
 
