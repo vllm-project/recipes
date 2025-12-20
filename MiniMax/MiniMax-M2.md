@@ -1,6 +1,6 @@
 # MiniMax-M2.1/M2 Usage Guide
 
-[MiniMax-M2.1](https://huggingface.co/MiniMaxAI/MiniMax-M2.1) and [MiniMax-M2](https://huggingface.co/MiniMaxAI/MiniMax-M2) is an advanced large language model created by [MiniMax](https://www.minimax.io/). It offers the following highlights:
+[MiniMax-M2.1](https://huggingface.co/MiniMaxAI/MiniMax-M2.1) and [MiniMax-M2](https://huggingface.co/MiniMaxAI/MiniMax-M2) are advanced large language models created by [MiniMax](https://www.minimax.io/). They offer the following highlights:
 
 * Superior Intelligence – Ranks #1 among open-source models globally across mathematics, science, coding, and tool use.
 * Advanced Coding – Excels at multi-file edits, coding-run-fix loops, and test-validated repairs. Strong performance on SWE-Bench and Terminal-Bench tasks.
@@ -16,7 +16,7 @@ This guide applies to the following models. You only need to update the model na
 
 ## Installing vLLM
 
-- If you encounter corrupted output when using vLLM to serve the M2 model, you can upgrade to the nightly version (ensure it is a version after commit [cf3eacfe58fa9e745c2854782ada884a9f992cf7](https://github.com/vllm-project/vllm/commit/cf3eacfe58fa9e745c2854782ada884a9f992cf7))
+- If you encounter corrupted output when using vLLM to serve these models, you can upgrade to the nightly version (ensure it is a version after commit [cf3eacfe58fa9e745c2854782ada884a9f992cf7](https://github.com/vllm-project/vllm/commit/cf3eacfe58fa9e745c2854782ada884a9f992cf7))
 
 ```bash
 uv venv
