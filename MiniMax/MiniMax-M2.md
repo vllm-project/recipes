@@ -1,11 +1,18 @@
-# MiniMax-M2 Usage Guide
+# MiniMax-M2.1/M2 Usage Guide
 
-[MiniMax-M2](https://huggingface.co/MiniMaxAI/MiniMax-M2) is an advanced large language model created by [MiniMax](https://www.minimax.io/). It offers the following highlights:
+[MiniMax-M2.1](https://huggingface.co/MiniMaxAI/MiniMax-M2.1) and [MiniMax-M2](https://huggingface.co/MiniMaxAI/MiniMax-M2) is an advanced large language model created by [MiniMax](https://www.minimax.io/). It offers the following highlights:
 
 * Superior Intelligence – Ranks #1 among open-source models globally across mathematics, science, coding, and tool use.
 * Advanced Coding – Excels at multi-file edits, coding-run-fix loops, and test-validated repairs. Strong performance on SWE-Bench and Terminal-Bench tasks.
 * Agent Performance – Plans and executes complex toolchains across shell, browser, and code environments. Maintains traceable evidence and recovers gracefully from errors.
 * Efficient Design – 10B activated parameters (230B total) enables lower latency, cost, and higher throughput for interactive and batched workloads.
+
+## Supported Models
+
+This guide applies to the following models. You only need to update the model name during deployment. The following examples use **MiniMax-M2**:
+
+- [MiniMaxAI/MiniMax-M2.1](https://huggingface.co/MiniMaxAI/MiniMax-M2.1)
+- [MiniMaxAI/MiniMax-M2](https://huggingface.co/MiniMaxAI/MiniMax-M2)
 
 ## Installing vLLM
 
@@ -17,7 +24,7 @@ source .venv/bin/activate
 uv pip install -U vllm --extra-index-url https://wheels.vllm.ai/nightly
 ```
 
-## Launching MiniMax-M2 with vLLM
+## Launching MiniMax-M2.1/M2 with vLLM
 
 You can use 4x H200/H20 or 4x A100/A800 GPUs to launch this model.
 
