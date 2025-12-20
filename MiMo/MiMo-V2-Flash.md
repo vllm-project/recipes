@@ -9,7 +9,7 @@ See it on HF: https://huggingface.co/XiaomiMiMo/MiMo-V2-Flash
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm --torch-backend auto
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly
 ```
 
 ## Running MiMo-V2-Flash
@@ -59,7 +59,7 @@ vllm serve XiaomiMiMo/MiMo-V2-Flash \
 
 * You can set `--max-model-len` to preserve memory. `--max-model-len=65536` is usually good for most scenarios and max is 128k.
 * You can set `--max-num-batched-tokens` to balance throughput and latency, higher means higher throughput but higher latency. `--max-num-batched-tokens=32768` is usually good for prompt-heavy workloads. But you can reduce it to 16k and 8k to reduce activation memory usage and decrease latency.
-* vLLM conservatively use 90% of GPU memory, you can set `--gpu-memory-utilization=0.95` to maximize KVCache.
+* vLLM conservatively uses 90% of GPU memory, you can set `--gpu-memory-utilization=0.95` to maximize KVCache.
 * Make sure to follow the command-line instructions to ensure the tool-calling functionality is properly enabled.
 
 ## Benchmarking
@@ -85,7 +85,7 @@ vllm bench serve \
 Test different workloads by adjusting input/output lengths:
 
 - **Prompt-heavy**: 8000 input / 1000 output
-- **Decode-heavy**: 1000 input / 8000 output  
+- **Decode-heavy**: 1000 input / 8000 output
 - **Balanced**: 1000 input / 1000 output
 
 ### Expected Output
@@ -96,7 +96,7 @@ It currently just runs, and many features—such as MTP—have not yet been adde
 ### GSM8K
 
 Script
-```
+```bash
 lm_eval \
     --model local-chat-completions \
     --tasks gsm8k \
@@ -105,9 +105,14 @@ lm_eval \
     --model_args model=mimo_v2_flash,base_url=http://0.0.0.0:9001/v1/chat/completions,num_concurrent=100,max_retries=20,tokenized_requests=False,tokenizer_backend=none,max_gen_toks=256
 ```
 Result
-```
+```text
 |Tasks|Version|     Filter     |n-shot|  Metric   |   |Value |   |Stderr|
 |-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
 |gsm8k|      3|flexible-extract|     5|exact_match|↑  |0.9128|±  |0.0078|
 |     |       |strict-match    |     5|exact_match|↑  |0.9075|±  |0.0080|
 ```
+
+## TODO
+
+- [ ] Supports MTP.
+- [ ] Provide stress test performance data.

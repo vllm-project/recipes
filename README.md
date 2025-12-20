@@ -51,6 +51,10 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 - [MiniMax-M2.1, MiniMax-M2](MiniMax/MiniMax-M2.md)
 
+### Xiaomi MiMo <img src="https://avatars.githubusercontent.com/u/208276378?&v=4" alt="Xiaomi MiMo" width="16" height="16" style="vertical-align:middle;">
+
+- [MiMo-V2-Flash](MiMo/MiMo-V2-Flash.md)
+
 ### Mistral AI <img src="https://avatars.githubusercontent.com/u/132372032?&v=4" alt="Mistral AI" width="16" height="16" style="vertical-align:middle;">
 
 - [Ministral-3-Instruct](Mistral/Ministral-3-Instruct.md)
