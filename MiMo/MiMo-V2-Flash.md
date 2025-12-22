@@ -66,7 +66,7 @@ vllm serve XiaomiMiMo/MiMo-V2-Flash \
 You can run the following `curl` command:
 
 ```bash
-curl http://localhost:9001/v1/chat/completions \
+curl -X POST http://localhost:9001/v1/chat/completions \
     -H "Content-Type: application/json" \
     -d '{
         "model": "mimo_v2_flash",
