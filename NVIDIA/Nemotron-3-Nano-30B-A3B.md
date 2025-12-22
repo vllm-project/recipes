@@ -124,8 +124,35 @@ vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
 
 ### Jetson Thor vLLM Server Launch
 
-Nano 3 BF16 and FP8
+BF16 model variant
 
+```python
+vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
+ --max-num-seqs 8 \
+  --tensor-parallel-size 1 \
+  --max-model-len 262144 \
+  --port 8000 \
+  --trust-remote-code \
+  --enable-auto-tool-choice \
+  --tool-call-parser qwen3_coder \
+  --reasoning-parser-plugin nano_v3_reasoning_parser.py \
+  --reasoning-parser nano_v3
+```
+
+FP8 model variant
+
+```python
+vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8 \
+ --max-num-seqs 8 \
+  --tensor-parallel-size 1 \
+  --max-model-len 262144 \
+  --port 8000 \
+  --trust-remote-code \
+  --enable-auto-tool-choice \
+  --tool-call-parser qwen3_coder \
+  --reasoning-parser-plugin nano_v3_reasoning_parser.py \
+  --reasoning-parser nano_v3
+```
 ### Configs and Parameters
 
 You can specify the IP address and the port that you would like to run the server with using these flags:
