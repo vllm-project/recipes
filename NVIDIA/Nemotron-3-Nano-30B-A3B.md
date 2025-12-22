@@ -39,6 +39,11 @@ DOCKER_BUILDKIT=1 docker build \
 .
 ```
 
+### Jetson Docker Image
+``` bash
+docker pull ghcr.io/nvidia-ai-iot/vllm:latest-jetson-orin
+```
+
 ### Run Docker Container
 
 Run the docker container using the docker image `vllm/vllm-openai:deploy`.
@@ -55,6 +60,10 @@ The `-e HF_TOKEN="$HF_TOKEN" -e HF_HOME="$HF_HOME"` flags are added so that the 
 ### Run Docker Container on DGX Spark
 
 With docker container build from source 
+
+### Run Docker Container on Jetson product
+
+With pulled vLLM Jetson cotainer
 
 ### Launch the vLLM Server
 
