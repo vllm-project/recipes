@@ -39,9 +39,9 @@ DOCKER_BUILDKIT=1 docker build \
 .
 ```
 
-### Jetson Docker Image
+### Jetson Thor Docker Image
 ``` bash
-docker pull ghcr.io/nvidia-ai-iot/vllm:latest-jetson-orin
+docker pull ghcr.io/nvidia-ai-iot/vllm:latest-jetson-thor
 ```
 
 ### Run Docker Container
@@ -61,9 +61,9 @@ The `-e HF_TOKEN="$HF_TOKEN" -e HF_HOME="$HF_HOME"` flags are added so that the 
 
 With docker container build from source 
 
-### Run Docker Container on Jetson product
+### Run Docker Container on Jetson Thor
 
-With pulled vLLM Jetson cotainer
+With pulled vLLM Jetson Thor cotainer
 
 ### Launch the vLLM Server
 
