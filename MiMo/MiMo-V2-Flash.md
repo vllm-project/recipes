@@ -61,6 +61,29 @@ vllm serve XiaomiMiMo/MiMo-V2-Flash \
 * vLLM conservatively uses 90% of GPU memory, you can set `--gpu-memory-utilization=0.95` to maximize KVCache.
 * Make sure to follow the command-line instructions to ensure the tool-calling functionality is properly enabled.
 
+### curl Example
+
+You can run the following `curl` command:
+
+```bash
+curl http://localhost:9001/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model": "mimo_v2_flash",
+        "messages": [
+            {
+                "role": "user",
+                "content": "Hello MiMo!"
+            }
+        ],
+        "chat_template_kwargs": {
+            "enable_thinking": true
+        }
+    }'
+```
+
+* Set `"enable_thinking": false` or remove the `chat_template_kwargs` section to disable thinking mode.
+
 ## Benchmarking
 
 For benchmarking, disable prefix caching by adding `--no-enable-prefix-caching` to the server command.
