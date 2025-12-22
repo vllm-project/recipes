@@ -22,9 +22,13 @@ docker tag vllm/vllm-openai:v0.12.0 vllm/vllm-openai:deploy
 
 ### DGX Spark Docker Image Build
 
-Build container from source based on 0.12.0 release
+Build container from source based on 0.12.0 or later release
 https://github.com/vllm-project/vllm/blob/v0.12.0/docker/Dockerfile
 ```bash
+git clone https://github.com/vllm-project/vllm.git
+
+cd vllm
+
 DOCKER_BUILDKIT=1 docker build \
    --build-arg max_jobs=12 \
    --build-arg RUN_WHEEL_CHECK=false \
@@ -32,7 +36,7 @@ DOCKER_BUILDKIT=1 docker build \
    --build-arg BUILD_BASE_IMAGE=nvidia/cuda:13.0.1-devel-ubuntu22.04 \
     --build-arg torch_cuda_arch_list='12.1' \
    --platform "linux/arm64" \
-   --tag <tag name> \
+   --tag <docker-image-tag-name> \
    --target vllm-openai \
    --progress plain \
    -f docker/Dockerfile \
