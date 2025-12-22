@@ -122,6 +122,10 @@ vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
   --reasoning-parser nano_v3
 ```
 
+### Jetson Thor vLLM Server Launch
+
+Nano 3 BF16 and FP8
+
 ### Configs and Parameters
 
 You can specify the IP address and the port that you would like to run the server with using these flags:
