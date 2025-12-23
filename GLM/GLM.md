@@ -43,6 +43,37 @@ vllm serve zai-org/GLM-4.5-Air-FP8 \
 * vLLM conservatively use 90% of GPU memory, you can set `--gpu-memory-utilization=0.95` to maximize KVCache.
 * Make sure to follow the command-line instructions to ensure the tool-calling functionality is properly enabled.
 
+## Speculative Decoding with MTP
+
+GLM-4.X models include built-in Multi-Token Prediction (MTP) layers that can be used for speculative decoding to accelerate generation throughput.
+
+### Enabling MTP
+
+To enable MTP speculative decoding, add the `--speculative-config` flags to your server command:
+
+```bash
+
+# Start server with FP8 model on 4xH200
+vllm serve zai-org/GLM-4.7-FP8 \
+     --tensor-parallel-size 4 \
+     --speculative-config.method mtp \
+     --speculative-config.num_speculative_tokens 1 \
+     --tool-call-parser glm47 \
+     --reasoning-parser glm45 \
+     --enable-auto-tool-choice
+```
+
+### Recommended Settings
+
+We recommend using `--speculative-config.num_speculative_tokens 1` for optimal performance. While higher values like 3 increase the mean acceptance length, the acceptance rate drops significantly, resulting in lower overall throughput.
+
+### Performance Considerations
+
+* MTP works best with high acceptance rates. With 1 speculative token, acceptance rates typically exceed 90%.
+* MTP adds memory overhead for the draft model computations. Monitor GPU memory usage when enabling.
+* The speedup is most noticeable for decode-heavy workloads where generation time dominates.
+* MTP is compatible with other optimizations like prefix caching.
+
 ## Benchmarking
 
 For benchmarking, disable prefix caching by adding `--no-enable-prefix-caching` to the server command.
