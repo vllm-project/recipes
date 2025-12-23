@@ -31,9 +31,10 @@ python3 ./examples/offline_inference/image_to_image/image_edit.py \
   --cfg_scale 4.0 \
 ```
 
-For multiple image inputs, use `Qwen/Qwen-Image-Edit-2509` or later version:
+For multiple image inputs, use `Qwen/Qwen-Image-Edit-2509` or `Qwen/Qwen-Image-Edit-2511`:
 
 ```bash
+# Qwen-Image-Edit-2509 example
 python3 ./examples/offline_inference/image_to_image/image_edit.py \
   --model Qwen/Qwen-Image-Edit-2509 \
   --image img1.png img2.png \
@@ -42,6 +43,17 @@ python3 ./examples/offline_inference/image_to_image/image_edit.py \
   --num_inference_steps 50 \
   --cfg_scale 4.0 \
   --guidance_scale 1.0
+```
+
+```bash
+# Qwen-Image-Edit-2511 example
+python image_edit.py \
+    --model Qwen/Qwen-Image-Edit-2511 \
+    --image qwen_bear.png \
+    --prompt "Add a white art board written with colorful text 'vLLM-Omni' on grassland. Add a paintbrush in the bear's hands. position the bear standing in front of the art board as if painting" \
+    --output output_image_edit.png \
+    --num_inference_steps 50 \
+    --cfg_scale 4.0 \
 ```
 
 Key arguments:
@@ -53,3 +65,5 @@ Key arguments:
 - `--guidance_scale`: guidance scale for guidance-distilled models (default: 1.0, disabled). Unlike classifier-free guidance (--cfg_scale), guidance-distilled models take the guidance scale directly as an input parameter. Enabled when guidance_scale > 1. Ignored when not using guidance-distilled models.
 - `--num_inference_steps`: diffusion sampling steps (more steps = higher quality, slower).
 - `--output`: path to save the generated PNG.
+
+
