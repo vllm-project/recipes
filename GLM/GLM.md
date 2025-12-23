@@ -22,6 +22,11 @@ source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
+```bash
+# install the nightly build of vLLM for GLM-4.7
+uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly
+```
+
 ## Running GLM-4.5-Air with FP8 or BF16
 
 There are two ways to parallelize the model over multiple GPUs: (1) Tensor-parallel or (2) Data-parallel. Each one has its own advantages, where tensor-parallel is usually more beneficial for low-latency / low-load scenarios and data-parallel works better for cases where there is a lot of data with heavy-loads.
