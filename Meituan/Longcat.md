@@ -1,6 +1,6 @@
 # Longcat Usage Guide
 
-LongCat models include those model below:
+LongCat models include the following models:
 
 + LongCat-Image-Edit
 
