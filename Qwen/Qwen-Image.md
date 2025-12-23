@@ -1,6 +1,7 @@
 # Qwen-Image Usage Guide
 
-Qwen-Image models include those model below:
+Qwen-Image models include the following models:
+
 + Qwen-Image-Edit
 
 [Qwen-Image-Edit](https://huggingface.co/Qwen/Qwen-Image-Edit) is the image editing version of Qwen-Image. Built upon our 20B Qwen-Image model, Qwen-Image-Edit successfully extends Qwen-Image's unique text rendering capabilities to image editing tasks, enabling precise text editing. Furthermore, Qwen-Image-Edit simultaneously feeds the input image into Qwen2.5-VL (for visual semantic control) and the VAE Encoder (for visual appearance control), achieving capabilities in both semantic and appearance editing.
