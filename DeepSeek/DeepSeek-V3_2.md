@@ -14,6 +14,7 @@
 uv venv
 source .venv/bin/activate
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly
+uv pip install git+https://github.com/deepseek-ai/DeepGEMM.git@v2.1.1.post3 --no-build-isolation # Other versions may also work. We recommend using the latest released version from https://github.com/deepseek-ai/DeepGEMM/releases
 ```
 
 ## Launching DeepSeek-V3.2
