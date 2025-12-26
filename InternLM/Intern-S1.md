@@ -11,9 +11,16 @@ source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
+## Using vLLM docker image (For AMD users)
+
+```bash
+alias drun='sudo docker run -it --network=host --device=/dev/kfd --device=/dev/dri --group-add=video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32G -v /data:/data -v $HOME:/myhome -w /myhome'
+drun rocm/vllm-dev:nightly
+``` 
+
 ## Launching Intern-S1 with vLLM
 
-### Serving BF16 Model on 8xH800 GPUs (80GB × 8)
+### Serving BF16 Model on 8xH800 GPUs (80GB × 8) or on 8xMI300X GPUs (192GB x 8)
 
 ```bash
 vllm serve internlm/Intern-S1 \
@@ -24,7 +31,7 @@ vllm serve internlm/Intern-S1 \
   --tool-call-parser internlm
 ```
 
-### Serving FP8 Model on 4xH800 GPUs (80GB × 4)
+### Serving FP8 Model on 4xH800 GPUs (80GB × 4) or on 4xMI300X GPUs (192GB x 4)
 
 ```bash
 vllm serve internlm/Intern-S1-FP8 \

@@ -17,9 +17,16 @@ source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
-## Running Ministral-3 Instruct 3B, 8B or 14B on 1xH200
+## Using vLLM docker image (For AMD users)
 
-Due to their size and the FP8 format of their weights `Ministral-3-3B-Instruct-2512`, `Ministral-3-8B-Instruct-2512` and `Ministral-3-14B-Instruct-2512` can run on a single 1xH200 GPU.
+```bash
+alias drun='sudo docker run -it --network=host --device=/dev/kfd --device=/dev/dri --group-add=video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32G -v /data:/data -v $HOME:/myhome -w /myhome'
+drun rocm/vllm-dev:nightly
+``` 
+
+## Running Ministral-3 Instruct 3B, 8B or 14B on 1xH200 or 1xMI300X (MI325X)
+
+Due to their size and the FP8 format of their weights `Ministral-3-3B-Instruct-2512`, `Ministral-3-8B-Instruct-2512` and `Ministral-3-14B-Instruct-2512` can run on a single 1xH200 or 1xMI300X (MI325X) GPU.
 
 A simple launch command is:
 

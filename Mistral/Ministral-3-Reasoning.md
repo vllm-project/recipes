@@ -17,9 +17,16 @@ source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
-## Running Ministral-3 Reasoning 3B or 8B on 1xH200
+## Using vLLM docker image (For AMD users)
 
-Due to their size, `Ministral-3-3B-Reasoning-2512` and `Ministral-3-8B-Reasoning-2512` can run on a single 1xH200 GPU.
+```bash
+alias drun='sudo docker run -it --network=host --device=/dev/kfd --device=/dev/dri --group-add=video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32G -v /data:/data -v $HOME:/myhome -w /myhome'
+drun rocm/vllm-dev:nightly
+``` 
+
+## Running Ministral-3 Reasoning 3B or 8B on 1xH200 or 1xMI300X (MI325X)
+
+Due to their size, `Ministral-3-3B-Reasoning-2512` and `Ministral-3-8B-Reasoning-2512` can run on a single 1xH200 GPU or 1xMI300X (MI325X) GPU.
 
 However, for those who do not have access to this GPU generation, vLLM falls back to Marlin FP4 which allows you to still run the model quantized in NVFP4. You won't notice a speed-up in comparison with FP8 quantization but still benefit the memory gain.
 
@@ -48,9 +55,9 @@ Additional flags:
 * You can set `--max-num-batched-tokens` to balance throughput and latency, higher means higher throughput but higher latency.
 
 
-##  Running Ministral-3 Reasoning 14B on 2xH200
+##  Running Ministral-3 Reasoning 14B on 2xH200 or 2xMI300X (MI325X)
 
-To fully exploit the `Ministral-3-14B-Reasoning-2512` we recommend using 2xH200 GPUs for deployment due to its large context. However if you don't need a large context, you can fall back to a single GPU.
+To fully exploit the `Ministral-3-14B-Reasoning-2512` we recommend using 2xH200 or 2xMI300X (MI325X) GPUs for deployment due to its large context. However if you don't need a large context, you can fall back to a single GPU.
 
 A simple launch command is:
 
