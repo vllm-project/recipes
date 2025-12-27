@@ -13,7 +13,8 @@ This guide provides instructions for running Wan2.2 video generation models usin
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm-omni
+uv pip install vllm==0.12.0
+uv pip install git+https://github.com/vllm-project/vllm-omni.git
 ```
 
 The CLI examples below are from the vLLM-Omni repo. If you want to run them directly, clone that repo and run the scripts from its `examples/offline_inference` directory.
