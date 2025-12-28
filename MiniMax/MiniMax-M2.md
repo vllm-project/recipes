@@ -124,3 +124,53 @@ P99 ITL (ms):                            83.48
 
 vLLM has DeepGEMM enabled by default, follow the [setup instructions](https://github.com/vllm-project/vllm/blob/v0.11.0/benchmarks/kernels/deepgemm/README.md#setup) to install it.
 
+### AMD GPU Support
+
+Please follow the steps here to install and run MiniMax-M2 models on AMD MI300X GPU.
+### Step 1: Prepare Docker Environment
+Pull the latest vllm docker:
+```shell
+docker pull rocm/vllm-dev:nightly
+```
+Launch the ROCm vLLM docker: 
+```shell
+docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash  --name MiniMax-M2 rocm/vllm-dev:nightly 
+```
+### Step 2: Log in to Hugging Face
+Huggingface login
+```shell
+huggingface-cli login
+```
+
+### Step 3: Start the vLLM server
+
+Run the vllm online serving
+Sample Command
+```shell
+
+SAFETENSORS_FAST_GPU=1 \
+VLLM_ALL2ALL_BACKEND="allgather_reducescatter" vllm serve MiniMaxAI/MiniMax-M2 \
+  --data-parallel-size 8 \
+  --max-model-len 32768 \
+  --enable-expert-parallel \
+  --tool-call-parser minimax_m2 \
+  --reasoning-parser minimax_m2_append_think  \
+  --enable-auto-tool-choice	\
+  --disable-nccl-for-dp-synchronization \
+  --trust-remote-code
+```
+
+
+
+### Step 4: Run Benchmark
+Open a new terminal and run the following command to execute the benchmark script inside the container.
+```shell
+docker exec -it MiniMax-M2 vllm bench serve \
+  --model "MiniMaxAI/MiniMax-M2" \
+  --dataset-name random \
+  --random-input-len 8000 \
+  --random-output-len 1000 \
+  --request-rate 10000 \
+  --num-prompts 16 \
+  --ignore-eos
+```
