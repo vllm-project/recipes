@@ -72,11 +72,15 @@ Key arguments:
 - `--guidance_scale`: guidance scale for guidance-distilled models (default: 1.0, disabled). Unlike classifier-free guidance (--cfg_scale), guidance-distilled models take the guidance scale directly as an input parameter. Enabled when guidance_scale > 1. Ignored when not using guidance-distilled models.
 - `--num_inference_steps`: diffusion sampling steps (more steps = higher quality, slower).
 - `--output`: path to save the generated PNG.
+- `--layers`: number of layers to decompose the input image into(only used in Qwen-Image-Layered).
+- `--color-format`: specifies the output color channel format (e.g., RGB or RGBA), only used in Qwen-Image-Layered
 
 
 ## Acceleration methods
 
-### Cache-Dit
+### Cache
+
+vLLM-Omni supports cache-dit and tea-cache now.
 
 ```bash
 python3 ./examples/offline_inference/image_to_image/image_edit.py \
@@ -86,7 +90,7 @@ python3 ./examples/offline_inference/image_to_image/image_edit.py \
     --output output_image_edit.png \
     --num_inference_steps 50 \
     --cfg_scale 4.0 \
-    --cache_backend cache_dit
+    --cache_backend cache_dit # or tea_cache
 ```
 
 ### Ulysses Parallelism
