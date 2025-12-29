@@ -2,11 +2,16 @@
 
 Qwen-Image models include the following models:
 
++ Qwen-Image
 + Qwen-Image-Edit
++ Qwen-Image-Layered
+
+These models share the same DiT transformer core; hence, the following acceleration methods(e.g., cache and ulysses parallelism) are applicable across the entire series.
+
+This guide describes how to run Qwen-Image-Edit.
 
 [Qwen-Image-Edit](https://huggingface.co/Qwen/Qwen-Image-Edit) is the image editing version of Qwen-Image. Built upon our 20B Qwen-Image model, Qwen-Image-Edit successfully extends Qwen-Image's unique text rendering capabilities to image editing tasks, enabling precise text editing. Furthermore, Qwen-Image-Edit simultaneously feeds the input image into Qwen2.5-VL (for visual semantic control) and the VAE Encoder (for visual appearance control), achieving capabilities in both semantic and appearance editing.
 
-This guide describes how to run Qwen-Image-Edit.
 
 ## Installation
 
@@ -33,17 +38,6 @@ python3 ./examples/offline_inference/image_to_image/image_edit.py \
 
 For multiple image inputs, use `Qwen/Qwen-Image-Edit-2509` or `Qwen/Qwen-Image-Edit-2511`:
 
-```bash
-# Qwen-Image-Edit-2509 example
-python3 ./examples/offline_inference/image_to_image/image_edit.py \
-  --model Qwen/Qwen-Image-Edit-2509 \
-  --image img1.png img2.png \
-  --prompt "Combine these images into a single scene" \
-  --output output_image_edit.png \
-  --num_inference_steps 50 \
-  --cfg_scale 4.0 \
-  --guidance_scale 1.0
-```
 
 ```bash
 # Qwen-Image-Edit-2511 example
@@ -53,7 +47,21 @@ python3 ./examples/offline_inference/image_to_image/image_edit.py
     --prompt "Add a white art board written with colorful text 'vLLM-Omni' on grassland. Add a paintbrush in the bear's hands. position the bear standing in front of the art board as if painting" \
     --output output_image_edit.png \
     --num_inference_steps 50 \
+    --cfg_scale 4.0
+```
+
+For Qwen-Image-Layered:
+
+```bash
+python ./examples/offline_inference/image_to_image/image_edit.py \
+    --model "Qwen/Qwen-Image-Layered" \
+    --image 1.png \
+    --prompt "" \
+    --output "layered" \
+    --num_inference_steps 50 \
     --cfg_scale 4.0 \
+    --layers 4 \
+    --color-format "RGBA"
 ```
 
 Key arguments:
@@ -67,3 +75,30 @@ Key arguments:
 - `--output`: path to save the generated PNG.
 
 
+## Acceleration methods
+
+### Cache-Dit
+
+```bash
+python3 ./examples/offline_inference/image_to_image/image_edit.py
+    --model Qwen/Qwen-Image-Edit-2511 \
+    --image qwen_bear.png \
+    --prompt "Add a white art board written with colorful text 'vLLM-Omni' on grassland. Add a paintbrush in the bear's hands. position the bear standing in front of the art board as if painting" \
+    --output output_image_edit.png \
+    --num_inference_steps 50 \
+    --cfg_scale 4.0 \
+    --cache_backend cache_dit
+```
+
+### Ulysses Parallelism
+
+```bash
+python3 ./examples/offline_inference/image_to_image/image_edit.py
+    --model Qwen/Qwen-Image-Edit-2511 \
+    --image qwen_bear.png \
+    --prompt "Add a white art board written with colorful text 'vLLM-Omni' on grassland. Add a paintbrush in the bear's hands. position the bear standing in front of the art board as if painting" \
+    --output output_image_edit.png \
+    --num_inference_steps 50 \
+    --cfg_scale 4.0 \
+    --ulysses_degree 4
+```
