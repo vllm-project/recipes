@@ -53,10 +53,10 @@ For Qwen-Image-Layered:
 
 ```bash
 python3 ./examples/offline_inference/image_to_image/image_edit.py \
-    --model "Qwen/Qwen-Image-Layered" \
+    --model Qwen/Qwen-Image-Layered \
     --image 1.png \
     --prompt "" \
-    --output "layered" \
+    --output layered \
     --num_inference_steps 50 \
     --cfg_scale 4.0 \
     --layers 4 \
