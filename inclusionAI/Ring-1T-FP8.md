@@ -10,6 +10,13 @@ source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
+## Using vLLM docker image (For AMD users)
+
+```bash
+alias drun='sudo docker run -it --network=host --device=/dev/kfd --device=/dev/dri --group-add=video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32G -v /data:/data -v $HOME:/myhome -w /myhome'
+drun rocm/vllm-dev:nightly
+``` 
+
 ## Running Ring-1T-FP8 with FP8 KV Cache on 8xH200
 
 This guide covers the simplest way to run the model, using pure tensor parallel across 8 GPUs.

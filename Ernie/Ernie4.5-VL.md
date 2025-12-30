@@ -11,16 +11,23 @@ source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
+## Using vLLM docker image (For AMD users)
+
+```bash
+alias drun='sudo docker run -it --network=host --device=/dev/kfd --device=/dev/dri --group-add=video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32G -v /data:/data -v $HOME:/myhome -w /myhome'
+drun rocm/vllm-dev:nightly
+``` 
+
 ## Running Ernie4.5-VL
 
 NOTE: torch.compile and cuda graph are not supported due to the heterogeneous expert architecture. (vision and text experts)
 ```bash
-# 28B model 80G*1 GPU
+# 28B model 80G*1 (H100) / 192G*1 (MI355X) GPUs
 vllm serve baidu/ERNIE-4.5-VL-28B-A3B-PT \
   --trust-remote-code
 ```
 ```bash
-# 424B model 140G*8 GPU with native BF16
+# 424B model 80G*8 (H100) / 192G*8 (MI355X) GPUs with native BF16
 vllm serve baidu/ERNIE-4.5-VL-424B-A47B-PT \
   --trust-remote-code \
   --tensor-parallel-size 8
@@ -29,7 +36,7 @@ vllm serve baidu/ERNIE-4.5-VL-424B-A47B-PT \
 If you only want to test the functionality and only have 8×80G GPU, you can use the `--cpu-offload-gb` parameter to offload part of the weights to CPU memory, and additionally use FP8 online quantization to further reduce GPU memory.
 
 ```bash
-# 424B model 80G*8 GPU with FP8 quantization and CPU offloading
+# 424B model 80G*8 (H100) / 192G*8 (MI355X) GPUs with FP8 quantization and CPU offloading
 vllm serve baidu/ERNIE-4.5-VL-424B-A47B-PT \
   --trust-remote-code \
   --tensor-parallel-size 8 \
@@ -40,7 +47,7 @@ vllm serve baidu/ERNIE-4.5-VL-424B-A47B-PT \
 
 If your single node GPU memory is insufficient, native BF16 deployment may require multi nodes, multi node deployment reference [vLLM doc](https://docs.vllm.ai/en/latest/serving/parallelism_scaling.html?#multi-node-deployment) to start ray cluster. Then run vllm on the master node
 ```bash
-# 424B model 80G*16 GPU with native BF16
+# 424B model 80G*16 (H100) / 192G*16 (MI355X) GPUs with native BF16
 vllm serve baidu/ERNIE-4.5-VL-424B-A47B-PT \
   --trust-remote-code \
   --tensor-parallel-size 16

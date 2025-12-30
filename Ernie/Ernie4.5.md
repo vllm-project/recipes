@@ -11,15 +11,22 @@ source .venv/bin/activate
 uv pip install vllm --torch-backend=auto
 ```
 
+## Using vLLM docker image (For AMD users)
+
+```bash
+alias drun='sudo docker run -it --network=host --device=/dev/kfd --device=/dev/dri --group-add=video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32G -v /data:/data -v $HOME:/myhome -w /myhome'
+drun rocm/vllm-dev:nightly
+``` 
+
 ## Running Ernie4.5
 
 ```bash
-# 21B model 80G*1 GPU
+# 21B model 80G*1 (H100) / 192G*1 (MI355X) GPUs
 vllm serve baidu/ERNIE-4.5-21B-A3B-PT
 ```
 
 ```bash
-# 300B model 80G*8 GPU with vllm FP8 online quantification
+# 300B model 80G*8 (H100) / 192G*8 (MI355X) GPUs with vllm FP8 online quantification
 vllm serve baidu/ERNIE-4.5-300B-A47B-PT \
   --tensor-parallel-size 8 \
   --gpu-memory-utilization=0.95 \
@@ -28,7 +35,7 @@ vllm serve baidu/ERNIE-4.5-300B-A47B-PT \
 
 If your single node GPU memory is insufficient, native BF16 deployment may require multi nodes, multi node deployment reference [vLLM doc](https://docs.vllm.ai/en/latest/serving/parallelism_scaling.html?h=#multi-node-deployment) to start ray cluster. Then run vllm on the master node
 ```bash
-# 300B model 80G*16 GPU with native BF16
+# 300B model 80G*16 (H100) / 192G*16 (MI355X) GPUs with native BF16
 vllm serve baidu/ERNIE-4.5-300B-A47B-PT \
   --tensor-parallel-size 16
 ```
@@ -36,13 +43,13 @@ vllm serve baidu/ERNIE-4.5-300B-A47B-PT \
 ## Running Ernie4.5 MTP
 
 ```bash
-# 21B MTP model 80G*1 GPU
+# 21B MTP model 80G*1 (H100) / 192G*1 (MI355X) GPUs
 vllm serve baidu/ERNIE-4.5-21B-A3B-PT \
   --speculative-config '{"method": "ernie_mtp","model": "baidu/ERNIE-4.5-21B-A3B-PT","num_speculative_tokens": 1}'
 ```
 
 ```bash
-# 300B MTP model 80G*8 GPU with vllm FP8 online quantification
+# 300B MTP model 80G*8 (H100) / 192G*8 (MI355X) GPUs with vllm FP8 online quantification
 vllm serve baidu/ERNIE-4.5-300B-A47B-PT \
   --tensor-parallel-size 8 \
   --gpu-memory-utilization=0.95 \
@@ -52,7 +59,7 @@ vllm serve baidu/ERNIE-4.5-300B-A47B-PT \
 
 If your single node GPU memory is insufficient, native BF16 deployment may require multi nodes, multi node deployment reference [vLLM doc](https://docs.vllm.ai/en/latest/serving/parallelism_scaling.html?#multi-node-deployment) to start ray cluster. Then run vllm on the master node
 ```bash
-# 300B MTP model 80G*16 GPU with native BF16
+# 300B MTP model 80G*16 (H100) / 192G*16 (MI355X) GPUs with native BF16
 vllm serve baidu/ERNIE-4.5-300B-A47B-PT \
   --tensor-parallel-size 16 \
   --speculative-config '{"method": "ernie_mtp","model": "baidu/ERNIE-4.5-300B-A47B-PT","num_speculative_tokens": 1}'

@@ -57,8 +57,8 @@ Please refer to the [Recipe for NVIDIA Blackwell & Hopper Hardware](#recipe-for-
 
 ROCm supports OpenAI gpt-oss-120b or gpt-oss-20b models on these 3 different GPUs on day one, along with the pre-built docker containers:
 
-* gfx950: MI350x series, `rocm/vllm-dev:open-mi355-08052025`  
-* gfx942: MI300x/MI325 series, `rocm/vllm-dev:open-mi300-08052025`  
+* gfx950: MI350x series, `rocm/7.0:rocm7.0_ubuntu_22.04_vllm_0.10.1_instinct_20250927_rc1`  
+* gfx942: MI300x/MI325 series, `rocm/7.0:rocm7.0_ubuntu_22.04_vllm_0.10.1_instinct_20250927_rc1`  
 * gfx1201: Radeon AI PRO R9700, `rocm/vllm-dev:open-r9700-08052025`
 
 To run the container:
@@ -66,32 +66,60 @@ To run the container:
 ```
 alias drun='sudo docker run -it --network=host --device=/dev/kfd --device=/dev/dri --group-add=video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32G -v /data:/data -v $HOME:/myhome -w /myhome'
 
-drun rocm/vllm-dev:open-mi300-08052025
+drun rocm/7.0:rocm7.0_ubuntu_22.04_vllm_0.10.1_instinct_20250927_rc1
 ```
 
 For MI300x and R9700:
 
 ```
-export VLLM_ROCM_USE_AITER=1
+version=`rocm-smi --showfw | grep MEC | head -n 1 |  awk '{print $NF}'`
+if [[ "$version" == "" || $version -lt 177 ]]; then
+  export HSA_NO_SCRATCH_RECLAIM=1 # generally not needed, olny for old systems
+fi
+
 export VLLM_USE_AITER_UNIFIED_ATTENTION=1
 export VLLM_ROCM_USE_AITER_MHA=0
+export VLLM_ROCM_USE_AITER_TRITON_BF16_GEMM=0 
+export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
 
-vllm serve openai/gpt-oss-120b --compilation-config '{"full_cuda_graph": true}' 
+vllm serve $MODEL --port $PORT \
+--tensor-parallel-size=$TP \
+--gpu-memory-utilization 0.95 \
+--max-model-len $MAX_MODEL_LEN \
+--max-seq-len-to-capture $MAX_MODEL_LEN \
+--compilation-config  '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' \
+--block-size=64 \
+--no-enable-prefix-caching \
+--disable-log-requests \
+--async-scheduling 
 ```
 
 For MI355x:
 
 ```
-# MoE preshuffle, fusion and Triton GEMM flags
-export VLLM_USE_AITER_TRITON_FUSED_SPLIT_QKV_ROPE=1
-export VLLM_USE_AITER_TRITON_FUSED_ADD_RMSNORM_PAD=1
-export VLLM_USE_AITER_TRITON_GEMM=1
-export VLLM_ROCM_USE_AITER=1
+cat > config.yaml << EOF
+compilation-config: '{"cudagraph_mode": "FULL_AND_PIECEWISE"}'
+cuda-graph-sizes: 8192
+EOF
+
+sleep 5
+cat config.yaml
+
 export VLLM_USE_AITER_UNIFIED_ATTENTION=1
 export VLLM_ROCM_USE_AITER_MHA=0
-export TRITON_HIP_PRESHUFFLE_SCALES=1
+export VLLM_ROCM_USE_AITER_FUSED_MOE_A16W4=1
 
-vllm serve openai/gpt-oss-120b --compilation-config '{"compile_sizes": [1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 4096, 8192], "full_cuda_graph": true}' --block-size 64 
+set -x
+vllm serve $MODEL --port $PORT \
+--tensor-parallel-size=$TP \
+--gpu-memory-utilization 0.95 \
+--max-model-len $MAX_MODEL_LEN \
+--max-seq-len-to-capture $MAX_MODEL_LEN \
+--config config.yaml \
+--block-size=64 \
+--no-enable-prefix-caching \
+--disable-log-requests \
+--async-scheduling
 ```
 
 #### Known Issues

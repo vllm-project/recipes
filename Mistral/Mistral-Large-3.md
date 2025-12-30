@@ -6,7 +6,6 @@ Here are the links to the different formats:
 - FP8 (up to `256k` context length): [mistralai/Mistral-Large-3-675B-Instruct-2512](https://huggingface.co/mistralai/Mistral-Large-3-675B-Instruct-2512)
 - NVFP4 (for `< 64k` context length): [mistralai/Mistral-Large-3-675B-Instruct-2512-NVFP4](https://huggingface.co/mistralai/Mistral-Large-3-675B-Instruct-2512-NVFP4)
 
-
 ## Installing vLLM
 
 ```bash
@@ -15,11 +14,18 @@ source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
+## Using vLLM docker image (For AMD users)
+
+```bash
+alias drun='sudo docker run -it --network=host --device=/dev/kfd --device=/dev/dri --group-add=video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32G -v /data:/data -v $HOME:/myhome -w /myhome'
+drun rocm/vllm-dev:nightly
+``` 
+
 ## Running the model
 
-## Running Mistral-Large-3-Instruct FP8 on 8xH200
+## Running Mistral-Large-3-Instruct FP8 on 8xH200 or 8xMI300X (MI325X)
 
-The Mistral-Large-3-Instruct FP8 format can be used on one 8xH200 node. We recommend to use this format if you plan to fine-tune as it can be more precise than NVFP4 in some situations.
+The Mistral-Large-3-Instruct FP8 format can be used on one 8xH200 or 8xMI300X (MI325X) node. We recommend to use this format if you plan to fine-tune as it can be more precise than NVFP4 in some situations.
 
 
 A simple launch command is:
