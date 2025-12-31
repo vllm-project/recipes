@@ -14,7 +14,7 @@ This guide provides instructions for running Wan2.2 video generation models usin
 uv venv
 source .venv/bin/activate
 uv pip install vllm==0.12.0
-uv pip install git+https://github.com/vllm-project/vllm-omni.git
+uv pip install git+https://github.com/vllm-project/vllm-omni.git@ef01223c42be10ee260b9f6e5ec31894cd09d86e
 ```
 
 The CLI examples below are from the vLLM-Omni repo. If you want to run them directly, clone that repo and run the scripts from its `examples/offline_inference` directory.
@@ -161,6 +161,8 @@ omni = Omni(
 
 ## Additional Resources
 
+- [vLLM-Omni Text-to-Video Example](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/text_to_video/text_to_video.py)
+- [vLLM-Omni Image-to-Video Example](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/image_to_video/image_to_video.py)
 - [Cache-DiT Acceleration Guide](https://github.com/vipshop/cache-dit)
 - [Wan2.2-T2V-A14B-Diffusers Model Card](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers)
 - [Wan2.2-I2V-A14B-Diffusers Model Card](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B-Diffusers)
