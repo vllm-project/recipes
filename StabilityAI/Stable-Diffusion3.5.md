@@ -1,4 +1,4 @@
-# Wan2.2 Usage Guide
+# Stable Diffusion 3.5 Usage Guide
 
 This guide provides instructions for running Stable-Diffusion3.5 text-to-image generation models using vLLM-Omni with Cache-DiT acceleration.
 
@@ -43,7 +43,7 @@ images = omni.generate(
 
 ```bash
 python examples/offline_inference/text_to_image/text_to_image.py \
-  --model /model/stable-diffusion-3.5-medium \
+  --model stabilityai/stable-diffusion-3.5-medium \
   --prompt "a cat wearing sunglasses, cyberpunk style" \
   --negative_prompt "blurry, low quality" \
   --height 1024 \
@@ -55,7 +55,7 @@ python examples/offline_inference/text_to_image/text_to_image.py \
 
 ## Cache-DiT Acceleration
 
-vLLM-Omni supports Cache-DiT acceleration for stable-diffusion-3.5 models, which can significantly speed up video generation through caching mechanisms.
+vLLM-Omni supports Cache-DiT acceleration for stable-diffusion-3.5 models, which can significantly speed up image generation through caching mechanisms.
 
 ### Enabling Cache-DiT
 
@@ -67,7 +67,7 @@ omni = Omni(
     cache_backend="cache_dit",
 )
 
-frames = omni.generate(
+images = omni.generate(
     prompt="a cat wearing sunglasses, cyberpunk style",
     height=1024,
     width=1024,
