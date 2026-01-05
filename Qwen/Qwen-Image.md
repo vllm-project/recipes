@@ -32,7 +32,7 @@ python3 ./examples/offline_inference/image_to_image/image_edit.py \
   --prompt "Let this mascot dance under the moon, surrounded by floating stars and poetic bubbles such as 'Be Kind'" \
   --output output_image_edit.png \
   --num_inference_steps 50 \
-  --cfg_scale 4.0 \
+  --cfg_scale 4.0
 ```
 
 For multiple image inputs, use `Qwen/Qwen-Image-Edit-2509` or `Qwen/Qwen-Image-Edit-2511`:

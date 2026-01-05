@@ -30,7 +30,7 @@ vllm serve ByteDance-Seed/Seed-OSS-36B-Instruct \
     --port 8000 \
     --tensor-parallel-size 8 \
     --enable-auto-tool-choice \
-    --tool-call-parser seed_oss \
+    --tool-call-parser seed_oss
 ```
 
 * You can set `--max-model-len` to preserve memory. `--max-model-len=65536` is usually good for most scenarios and max is 512k.
@@ -166,7 +166,7 @@ vllm bench serve \
     --random-input 800 \
     --random-output 100 \
     --request-rate 2 \
-    --num-prompt 100 \
+    --num-prompt 100
 ```
 
 Sample output:
