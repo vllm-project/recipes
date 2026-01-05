@@ -20,7 +20,7 @@ docker pull --platform linux/amd64 vllm/vllm-openai:v0.12.0
 docker tag vllm/vllm-openai:v0.12.0 vllm/vllm-openai:deploy
 ```
 
-### DGX Spark Docker Image Build
+### DGX Spark Docker Image
 
 Build container from source based on 0.12.0 or later release
 https://github.com/vllm-project/vllm/blob/v0.12.0/docker/Dockerfile
@@ -43,6 +43,12 @@ DOCKER_BUILDKIT=1 docker build \
 .
 ```
 
+Pull vLLM NGC docker image release versuib 25.12.post1-py3
+
+``` bash
+docker pull nvcr.io/nvidia/vllm:25.12.post1-py3
+```
+
 ### Jetson Thor Docker Image
 ``` bash
 docker pull ghcr.io/nvidia-ai-iot/vllm:latest-jetson-thor
@@ -63,7 +69,7 @@ The `-e HF_TOKEN="$HF_TOKEN" -e HF_HOME="$HF_HOME"` flags are added so that the 
 
 ### Run Docker Container on DGX Spark
 
-With docker container build from source 
+With docker container build from source or pulled vLLM NGC cotainer
 
 ### Run Docker Container on Jetson Thor
 
