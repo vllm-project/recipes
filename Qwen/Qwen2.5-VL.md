@@ -52,7 +52,7 @@ vllm serve Qwen/Qwen2.5-VL-7B-Instruct  \
   --host 0.0.0.0 \
   --port 8000 \
   --data-parallel-size 4 \
-  --limit-mm-per-prompt '{"image":2,"video":0}' \
+  --limit-mm-per-prompt '{"image":2,"video":0}'
 ```
 
 ### Benchmarking

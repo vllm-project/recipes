@@ -49,7 +49,7 @@ python examples/offline_inference/text_to_image/text_to_image.py \
   --height 1024 \
   --width 1024 \
   --num_inference_steps 28 \
-  --guidance_scale 7.5 \
+  --guidance_scale 7.5
 ```
 
 
