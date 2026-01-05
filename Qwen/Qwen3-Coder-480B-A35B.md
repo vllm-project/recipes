@@ -61,7 +61,7 @@ vllm bench serve \
   --random-input 2048 \
   --random-output 1024 \
   --max-concurrency 10 \
-  --num-prompt 100 \
+  --num-prompt 100
 ```
 If successful, you will see the following output.
 
