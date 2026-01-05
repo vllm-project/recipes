@@ -34,7 +34,7 @@ DOCKER_BUILDKIT=1 docker build \
    --build-arg RUN_WHEEL_CHECK=false \
    --build-arg CUDA_VERSION=13.0.1 \
    --build-arg BUILD_BASE_IMAGE=nvidia/cuda:13.0.1-devel-ubuntu22.04 \
-    --build-arg torch_cuda_arch_list='12.1' \
+   --build-arg torch_cuda_arch_list='12.1' \
    --platform "linux/arm64" \
    --tag <docker-image-tag-name> \
    --target vllm-openai \
@@ -43,9 +43,9 @@ DOCKER_BUILDKIT=1 docker build \
 .
 ```
 
-Pull vLLM NGC docker image release versuib 25.12.post1-py3
+Pull vLLM NGC docker image release version 25.12.post1-py3
 
-``` bash
+```bash
 docker pull nvcr.io/nvidia/vllm:25.12.post1-py3
 ```
 
@@ -69,11 +69,11 @@ The `-e HF_TOKEN="$HF_TOKEN" -e HF_HOME="$HF_HOME"` flags are added so that the 
 
 ### Run Docker Container on DGX Spark
 
-With docker container build from source or pulled vLLM NGC cotainer
+With the docker container built from source or the pulled vLLM NGC container
 
 ### Run Docker Container on Jetson Thor
 
-With pulled vLLM Jetson Thor cotainer
+With the pulled vLLM Jetson Thor container
 
 ### Launch the vLLM Server
 
@@ -119,9 +119,9 @@ wget https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/m
 
 BF16 model variant
 
-```python
+```bash
 vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
- --max-num-seqs 8 \
+  --max-num-seqs 8 \
   --tensor-parallel-size 1 \
   --max-model-len 262144 \
   --port 8000 \
@@ -136,9 +136,9 @@ vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
 
 BF16 model variant
 
-```python
+```bash
 vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
- --max-num-seqs 8 \
+  --max-num-seqs 8 \
   --tensor-parallel-size 1 \
   --max-model-len 262144 \
   --port 8000 \
@@ -151,9 +151,9 @@ vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
 
 FP8 model variant
 
-```python
+```bash
 vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8 \
- --max-num-seqs 8 \
+  --max-num-seqs 8 \
   --tensor-parallel-size 1 \
   --max-model-len 262144 \
   --port 8000 \
