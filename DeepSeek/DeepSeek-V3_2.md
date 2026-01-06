@@ -7,6 +7,13 @@
 - **Scalable Reinforcement Learning Framework:** The model achieves GPT-5-level performance through robust RL protocols and scaled post-training compute. The high-compute variant, DeepSeek-V3.2-Speciale, surpasses GPT-5 and matches Gemini-3.0-Pro in reasoning, achieving gold-medal level performance in the 2025 IMO and IOI competitions.
 - **Large-Scale Agentic Task Synthesis Pipeline:** A novel data synthesis pipeline that generates training data at scale, integrating reasoning into tool-use scenarios and improving model compliance and generalization in complex interactive environments.
 
+## Installing DeepGEMM
+
+```bash
+uv pip install git+https://github.com/deepseek-ai/DeepGEMM.git@v2.1.1.post3 --no-build-isolation
+```
+
+Note: DeepGEMM is used in two places: MoE and MQA logits computation. It is necessary for MQA logits computation. If you want to disable the MoE part, you can set `VLLM_USE_DEEP_GEMM=0` in the environment variable. Some users reported that the performance is better with `VLLM_USE_DEEP_GEMM=0`, e.g. on H20 GPUs. It might be also beneficial to disable DeepGEMM if you want to skip the long warmup.
 
 ## Installing vLLM
 
@@ -93,7 +100,6 @@ vllm bench serve \
 ```
 
 
-
 ### TP8 Benchmark Output
 
 ```shell
@@ -122,9 +128,19 @@ Mean ITL (ms):                           99.71
 Median ITL (ms):                         76.89     
 P99 ITL (ms):                            2032.37   
 ==================================================
-
-
 ```
+
+### EP/DP Mode
+
+This is the recommended serving mode as the kernels are mainly optimized for TP=1. The command uses:
+- `-dp 8`: Data parallelism across 8 GPUs  
+- `-ep`: Expert parallelism for MoE layers
+
+```bash
+vllm serve deepseek-ai/DeepSeek-V3.2 -dp 8 -ep
+```
+
+EP/DP mode sometimes deliver better performance than TP mode on some hardware.
 
 ### Usage tips
 
@@ -319,3 +335,15 @@ content='Based on the previous query, tomorrow (December 2, 2025) in Hangzhou wi
 tool_calls=None
 ```
 
+# Troubleshooting
+
+## 1. Error: `ptxas fatal: Value 'sm_110a' is not defined for option 'gpu-name'`
+
+If you using DeepSeek-V3.2 on cuda 13.x, you may encounter this.
+
+**Solution:**
+```
+export TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
+export PATH=/usr/local/cuda/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}
+```
