@@ -5,3 +5,4 @@ mkdocs-awesome-nav
 mkdocs-glightbox
 python-markdown-math
 mkdocs-same-dir
+mkdocs-git-revision-date-localized-plugin
