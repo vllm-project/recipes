@@ -133,14 +133,14 @@ P99 ITL (ms):                            2032.37
 ### EP/DP Mode
 
 This is the recommended serving mode as the kernels are mainly optimized for TP=1. The command uses:
-- `-dp 8`: Data parallelism across 8 GPUs  
+- `-dp 8`: Data parallelism across 8 GPUs
 - `-ep`: Expert parallelism for MoE layers
 
 ```bash
-vllm serve deepseek-ai/DeepSeek-V3.2 -dp 8 -ep
+vllm serve deepseek-ai/DeepSeek-V3.2 -dp 8 --enable-expert-parallel
 ```
 
-EP/DP mode sometimes deliver better performance than TP mode on some hardware.
+EP/DP mode sometimes delivers better performance than TP mode on some hardware.
 
 ### Usage tips
 
@@ -339,10 +339,10 @@ tool_calls=None
 
 ## 1. Error: `ptxas fatal: Value 'sm_110a' is not defined for option 'gpu-name'`
 
-If you using DeepSeek-V3.2 on cuda 13.x, you may encounter this.
+If you are using DeepSeek-V3.2 on cuda 13.x, you may encounter this.
 
 **Solution:**
-```
+```bash
 export TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
 export PATH=/usr/local/cuda/bin:$PATH
 export LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}
