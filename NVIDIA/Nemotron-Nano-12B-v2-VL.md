@@ -9,6 +9,13 @@ This guide describes how to run Nemotron-Nano-12B-v2-VL series on the targeted a
 docker pull vllm/vllm-openai:nightly-8bff831f0aa239006f34b721e63e1340e3472067
 ```
 
+For DGX Spark, container relase is avaiable 
+https://catalog.ngc.nvidia.com/orgs/nvidia/containers/vllm?version=25.12.post1-py3
+
+```bash
+docker pull nvcr.io/nvidia/vllm:25.12.post1-py3
+```
+
 ## Serving Nemotron-Nano-12B-v2-VL
 ### Server:
 The following command will launch an inference server on 1 GPU.
