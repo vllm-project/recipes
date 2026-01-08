@@ -20,6 +20,40 @@ docker pull --platform linux/amd64 vllm/vllm-openai:v0.12.0
 docker tag vllm/vllm-openai:v0.12.0 vllm/vllm-openai:deploy
 ```
 
+### DGX Spark Docker Image
+
+Build container from source based on 0.12.0 or later release
+https://github.com/vllm-project/vllm/blob/v0.12.0/docker/Dockerfile
+```bash
+git clone https://github.com/vllm-project/vllm.git
+
+cd vllm
+
+DOCKER_BUILDKIT=1 docker build \
+   --build-arg max_jobs=12 \
+   --build-arg RUN_WHEEL_CHECK=false \
+   --build-arg CUDA_VERSION=13.0.1 \
+   --build-arg BUILD_BASE_IMAGE=nvidia/cuda:13.0.1-devel-ubuntu22.04 \
+   --build-arg torch_cuda_arch_list='12.1' \
+   --platform "linux/arm64" \
+   --tag <docker-image-tag-name> \
+   --target vllm-openai \
+   --progress plain \
+   -f docker/Dockerfile \
+.
+```
+
+Pull vLLM NGC docker image release version 25.12.post1-py3
+
+```bash
+docker pull nvcr.io/nvidia/vllm:25.12.post1-py3
+```
+
+### Jetson Thor Docker Image
+``` bash
+docker pull ghcr.io/nvidia-ai-iot/vllm:latest-jetson-thor
+```
+
 ### Run Docker Container
 
 Run the docker container using the docker image `vllm/vllm-openai:deploy`.
@@ -33,7 +67,13 @@ Note: You can mount additional directories and paths using the `-v <local_path>:
 
 The `-e HF_TOKEN="$HF_TOKEN" -e HF_HOME="$HF_HOME"` flags are added so that the models are downloaded using your HuggingFace token and the downloaded models can be cached in $HF_HOME. Refer to [HuggingFace documentation](https://huggingface.co/docs/huggingface_hub/en/package_reference/environment_variables#hfhome) for more information about these environment variables and refer to [HuggingFace Quickstart guide](https://huggingface.co/docs/huggingface_hub/en/quick-start#authentication) about steps to generate your HuggingFace access token.
 
+### Run Docker Container on DGX Spark
 
+With the docker container built from source or the pulled vLLM NGC container
+
+### Run Docker Container on Jetson Thor
+
+With the pulled vLLM Jetson Thor container
 
 ### Launch the vLLM Server
 
@@ -68,6 +108,61 @@ vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-$DTYPE \
 
 After the server is set up, the client can now send prompt requests to the server and receive results.
 
+
+### DGX Spark vLLM Server Launch
+
+Downloading the custom parser
+
+```bash
+wget https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/nano_v3_reasoning_parser.py
+```
+
+BF16 model variant
+
+```bash
+vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
+  --max-num-seqs 8 \
+  --tensor-parallel-size 1 \
+  --max-model-len 262144 \
+  --port 8000 \
+  --trust-remote-code \
+  --enable-auto-tool-choice \
+  --tool-call-parser qwen3_coder \
+  --reasoning-parser-plugin nano_v3_reasoning_parser.py \
+  --reasoning-parser nano_v3
+```
+
+### Jetson Thor vLLM Server Launch
+
+BF16 model variant
+
+```bash
+vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
+  --max-num-seqs 8 \
+  --tensor-parallel-size 1 \
+  --max-model-len 262144 \
+  --port 8000 \
+  --trust-remote-code \
+  --enable-auto-tool-choice \
+  --tool-call-parser qwen3_coder \
+  --reasoning-parser-plugin nano_v3_reasoning_parser.py \
+  --reasoning-parser nano_v3
+```
+
+FP8 model variant
+
+```bash
+vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8 \
+  --max-num-seqs 8 \
+  --tensor-parallel-size 1 \
+  --max-model-len 262144 \
+  --port 8000 \
+  --trust-remote-code \
+  --enable-auto-tool-choice \
+  --tool-call-parser qwen3_coder \
+  --reasoning-parser-plugin nano_v3_reasoning_parser.py \
+  --reasoning-parser nano_v3
+```
 ### Configs and Parameters
 
 You can specify the IP address and the port that you would like to run the server with using these flags:
