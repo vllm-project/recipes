@@ -193,8 +193,8 @@ sagemaker_client.delete_endpoint_config(EndpointConfigName=endpoint_name)
 
 ### Memory Issues
 If you encounter out-of-memory errors:
-1. Reduce `SM_VLLM_MAX_MODEL_LEN` (e.g., from 4096 to 2048)
-2. Lower `SM_VLLM_GPU_MEMORY_UTILIZATION` (e.g., from 0.8 to 0.7)
+1. Reduce `SM_VLLM_MAX_MODEL_LEN` (e.g., from 32768 to 16384)
+2. Lower `SM_VLLM_GPU_MEMORY_UTILIZATION` (e.g., from 0.9 to 0.8)
 
 ### Container Startup Timeout
 The `container_startup_health_check_timeout` is set to 900 seconds. If deployment fails due to timeout:
