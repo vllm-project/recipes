@@ -51,7 +51,7 @@ vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
 
 ### H100 & H200
 
-Please refer to the [Recipe for NVIDIA Blackwell & Hopper Hardware](#recipe-for-nvidia-blackwell--hopper-hardware) section.
+Please refer to the [Recipe for NVIDIA Blackwell & Hopper Hardware](#recipe-for-nvidia-blackwell-hopper-hardware) section.
 
 ### AMD
 
