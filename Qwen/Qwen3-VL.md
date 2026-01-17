@@ -34,6 +34,7 @@ See sections below for detailed launch arguments for each configuration. We are 
 
 <details>
 <summary>H100 (Image + Video Inference, FP8)</summary>
+
 ```bash
 vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
   --tensor-parallel-size 8 \
@@ -41,10 +42,13 @@ vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
   --enable-expert-parallel \
   --async-scheduling
 ```
+
 </details>
+
 
 <details>
 <summary>H100 (Image Inference, FP8, TP4)</summary>
+
 ```bash
 vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
   --tensor-parallel-size 4 \
@@ -53,36 +57,46 @@ vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
   --gpu-memory-utilization 0.95 \
   --max-num-seqs 128
 ```
+
 </details>
+
 
 <details>
 <summary>A100 & H100 (Image Inference, BF16)</summary>
+
 ```bash
 vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
   --tensor-parallel-size 8 \
   --limit-mm-per-prompt.video 0 \
   --async-scheduling
 ```
+
 </details>
+
 
 <details>
 <summary>A100 & H100 (Image + Video Inference, BF16)</summary>
+
 ```bash
 vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
   --tensor-parallel-size 8 \
   --max-model-len 128000 \
   --async-scheduling
 ```
+
 </details>
+
 
 <details>
 <summary>H200 & B200</summary>
+
 ```bash
 vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
   --tensor-parallel-size 8 \
   --mm-encoder-tp-mode data \
   --async-scheduling
 ```
+
 </details>
 
 > ℹ️ **Note**  
