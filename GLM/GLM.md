@@ -2,6 +2,7 @@
 
 GLM-4.X LLM include those model below:
 
++ GLM-4.7-Flash
 + GLM-4.7
 + GLM-4.6
 + GLM-4.5
@@ -25,6 +26,9 @@ uv pip install -U vllm --torch-backend auto
 ```bash
 # install the nightly build of vLLM for GLM-4.7
 uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly
+
+# install transformers from source
+uv pip install git+https://github.com/huggingface/transformers.git
 ```
 
 ## Running GLM-4.5-Air with FP8 or BF16
