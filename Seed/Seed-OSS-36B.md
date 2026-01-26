@@ -9,9 +9,7 @@ Seed-OSS support was recently added to vLLM main branch and is not yet available
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm \
-    --torch-backend=auto \
-    --extra-index-url https://wheels.vllm.ai/nightly
+uv pip install -U vllm --torch-backend auto
 ```
 
 You may need to download the latest version of the transformer for compatibility:
@@ -32,7 +30,7 @@ vllm serve ByteDance-Seed/Seed-OSS-36B-Instruct \
     --port 8000 \
     --tensor-parallel-size 8 \
     --enable-auto-tool-choice \
-    --tool-call-parser seed_oss \
+    --tool-call-parser seed_oss
 ```
 
 * You can set `--max-model-len` to preserve memory. `--max-model-len=65536` is usually good for most scenarios and max is 512k.
@@ -168,7 +166,7 @@ vllm bench serve \
     --random-input 800 \
     --random-output 100 \
     --request-rate 2 \
-    --num-prompt 100 \
+    --num-prompt 100
 ```
 
 Sample output:

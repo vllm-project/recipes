@@ -8,9 +8,11 @@ This repo intends to host community maintained common recipes to run vLLM answer
 ### DeepSeek <img src="https://avatars.githubusercontent.com/u/148330874?s=200&v=4" alt="DeepSeek" width="16" height="16" style="vertical-align:middle;">
 
 - [DeepSeek-OCR](DeepSeek/DeepSeek-OCR.md)
-- [DeepSeek-V3.2-Exp](DeepSeek/DeepSeek-V3_2-Exp.md)
 - [DeepSeek-V3.1](DeepSeek/DeepSeek-V3_1.md)
 - [DeepSeek-V3, DeepSeek-R1](DeepSeek/DeepSeek-V3.md)
+- [DeepSeek-V3.2-Exp](DeepSeek/DeepSeek-V3_2-Exp.md)
+- [DeepSeek-V3.2](DeepSeek/DeepSeek-V3_2.md)
+
 
 ### Ernie <img src="https://avatars.githubusercontent.com/u/13245940?v=4" alt="Ernie" width="16" height="16" style="vertical-align:middle;">
 
@@ -19,8 +21,13 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 ### GLM <img src="https://raw.githubusercontent.com/zai-org/GLM-4.5/refs/heads/main/resources/logo.svg" alt="GLM" width="16" height="16" style="vertical-align:middle;">
 
-- [GLM-4.5/GLM-4.6, GLM-4.5-Air](GLM/GLM-4.5.md)
-- [GLM-4.5V](GLM/GLM-4.5V.md)
+- [Glyph](GLM/Glyph.md)
+- [GLM-4.7, GLM-4.6, GLM-4.5, GLM-4.5-Air](GLM/GLM.md)
+- [GLM-4.5V, GLM-4.6V](GLM/GLM-V.md)
+
+### inclusionAI <img src="https://avatars.githubusercontent.com/u/199075982?s=200&v=4" alt="inclusionAI" width="16" height="16" style="vertical-align:middle;">
+
+- [Ring-1T-FP8](inclusionAI/Ring-1T-FP8.md)
 
 ### InternVL <img src="https://github.com/user-attachments/assets/930e6814-8a9f-43e1-a284-118a5732daa4" alt="InternVL" width="64" height="16">
 
@@ -30,15 +37,48 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 - [Intern-S1](InternLM/Intern-S1.md)
 
+### Jina AI <img src="https://avatars.githubusercontent.com/u/60539444?s=200&v=4" alt="Jina AI" width="16" height="16" style="vertical-align:middle;">
+
+- [Jina-reranker-m0](Jina/Jina-reranker-m0.md)
+
 ### Llama
 
 - [Llama4-Scout](Llama/Llama4-Scout.md)
 - [Llama3.3-70B](Llama/Llama3.3-70B.md)
 - [Llama3.1](Llama/Llama3.1.md)
 
+### MiniMax <img src="https://github.com/MiniMax-AI/MiniMax-01/raw/main/figures/minimax.svg" alt="minmax" width="16" height="16" style="vertical-align:middle;">
+
+- [MiniMax-M2.1, MiniMax-M2](MiniMax/MiniMax-M2.md)
+
+### Xiaomi MiMo <img src="https://avatars.githubusercontent.com/u/208276378?&v=4" alt="Xiaomi MiMo" width="16" height="16" style="vertical-align:middle;">
+
+- [MiMo-V2-Flash](MiMo/MiMo-V2-Flash.md)
+
+### Mistral AI <img src="https://avatars.githubusercontent.com/u/132372032?&v=4" alt="Mistral AI" width="16" height="16" style="vertical-align:middle;">
+
+- [Ministral-3-Instruct](Mistral/Ministral-3-Instruct.md)
+- [Ministral-3-Reasoning](Mistral/Ministral-3-Reasoning.md)
+- [Mistral-Large-3-Instruct](Mistral/Mistral-Large-3.md)
+
+### Moonshotai <img src="https://avatars.githubusercontent.com/u/129152888?v=4" alt="Moonshotai" width="16" height="16" style="vertical-align:middle;">
+
+- [Kimi-K2](moonshotai/Kimi-K2.md)
+- [Kimi-K2-Think](moonshotai/Kimi-K2-Think.md)
+- [Kimi-Linear](moonshotai/Kimi-Linear.md)
+
+### NVIDIA
+
+- [Nemotron-3-Nano-30B-A3B](NVIDIA/Nemotron-3-Nano-30B-A3B.md)
+- [Nemotron-Nano-12B-v2-VL](NVIDIA/Nemotron-Nano-12B-v2-VL.md)
+
 ### OpenAI <img src="https://avatars.githubusercontent.com/u/14957082?v=4" alt="OpenAI" width="16" height="16" style="vertical-align:middle;">
 
 - [gpt-oss](OpenAI/GPT-OSS.md)
+
+### PaddlePaddle <img src="https://avatars.githubusercontent.com/u/23534030?v=4" alt="PaddlePaddle" width="16" height="16" style="vertical-align:middle;">
+
+- [PaddleOCR-VL](PaddlePaddle/PaddleOCR-VL.md)
 
 ### Qwen <img src="https://qwenlm.github.io/favicon.png" alt="Qwen" width="16" height="16" style="vertical-align:middle;">
 
@@ -47,19 +87,15 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [Qwen3-Next](Qwen/Qwen3-Next.md)
 - [Qwen3-Coder-480B-A35B](Qwen/Qwen3-Coder-480B-A35B.md)
 - [Qwen2.5-VL](Qwen/Qwen2.5-VL.md)
-
+- [Qwen3Guard-Gen](Qwen/Qwen3Guard-Gen.md)
+  
 ### Seed <img src="https://avatars.githubusercontent.com/u/4158466?s=200&v=4" alt="Seed" width="16" height="16" style="vertical-align:middle;">
 
 - [Seed-OSS-36B](Seed/Seed-OSS-36B.md)
 
-### Moonshotai <img src="https://avatars.githubusercontent.com/u/129152888?v=4" alt="Moonshotai" width="16" height="16" style="vertical-align:middle;">
+### Tencent-Hunyuan <img src="https://avatars.githubusercontent.com/u/210980732?s=200&v=4" alt="Tencent-Hunyuan" width="16" height="16" style="vertical-align:middle;">
 
-- [Kimi-K2](moonshotai/Kimi-K2.md)
-
-### inclusionAI <img src="https://avatars.githubusercontent.com/u/199075982?s=200&v=4" alt="inclusionAI" width="16" height="16" style="vertical-align:middle;">
-
-- [Ring-1T-FP8](inclusionAI/Ring-1T-FP8.md)
-
+- [HunyuanOCR](Tencent-Hunyuan/HunyuanOCR.md)
 
 ## Contributing
 

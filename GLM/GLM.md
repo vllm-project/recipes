@@ -1,9 +1,19 @@
-# GLM-4.5, GLM-4.5-Air Usage Guide
+# GLM-4.X LLM Usage Guide
 
-This guide describes how to run GLM-4.5 / GLM-4.5-Air with native FP8 and BF16. 
-In the GLM-4.5 series, FP8 models have minimal accuracy loss. 
-Unless you need strict reproducibility for benchmarking or similar scenarios, we recommend using FP8 to run at a lower cost.
-GLM-4.5 models have MTP layers.
+GLM-4.X LLM include those model below:
+
++ GLM-4.7-Flash
++ GLM-4.7
++ GLM-4.6
++ GLM-4.5
++ GLM-4.5-Air
+
+For GLM-V series, check [here](GLM-V.md)
+
+This guide describes how to run GLM-4.X Series with native FP8 and BF16. FP8 models have minimal accuracy loss. 
+Unless you need strict reproducibility for benchmarking or similar scenarios, we recommend using FP8 to run at a lower cost. These models have MTP layers. 
+
+Here, we take GLM-4.5-Air as an example, and similarly, this applies to other models in the series.
 
 ## Installing vLLM
 
@@ -11,6 +21,14 @@ GLM-4.5 models have MTP layers.
 uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
+```
+
+```bash
+# install the nightly build of vLLM for GLM-4.7
+uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly
+
+# install transformers from source
+uv pip install git+https://github.com/huggingface/transformers.git
 ```
 
 ## Running GLM-4.5-Air with FP8 or BF16
@@ -33,6 +51,37 @@ vllm serve zai-org/GLM-4.5-Air-FP8 \
 * You can set `--max-num-batched-tokens` to balance throughput and latency, higher means higher throughput but higher latency. `--max-num-batched-tokens=32768` is usually good for prompt-heavy workloads. But you can reduce it to 16k and 8k to reduce activation memory usage and decrease latency.
 * vLLM conservatively use 90% of GPU memory, you can set `--gpu-memory-utilization=0.95` to maximize KVCache.
 * Make sure to follow the command-line instructions to ensure the tool-calling functionality is properly enabled.
+
+## Speculative Decoding with MTP
+
+GLM-4.X models include built-in Multi-Token Prediction (MTP) layers that can be used for speculative decoding to accelerate generation throughput.
+
+### Enabling MTP
+
+To enable MTP speculative decoding, add the `--speculative-config` flags to your server command:
+
+```bash
+
+# Start server with FP8 model on 4xH200
+vllm serve zai-org/GLM-4.7-FP8 \
+     --tensor-parallel-size 4 \
+     --speculative-config.method mtp \
+     --speculative-config.num_speculative_tokens 1 \
+     --tool-call-parser glm47 \
+     --reasoning-parser glm45 \
+     --enable-auto-tool-choice
+```
+
+### Recommended Settings
+
+We recommend using `--speculative-config.num_speculative_tokens 1` for optimal performance. While higher values like 3 increase the mean acceptance length, the acceptance rate drops significantly, resulting in lower overall throughput.
+
+### Performance Considerations
+
+* MTP works best with high acceptance rates. With 1 speculative token, acceptance rates typically exceed 90%.
+* MTP adds memory overhead for the draft model computations. Monitor GPU memory usage when enabling.
+* The speedup is most noticeable for decode-heavy workloads where generation time dominates.
+* MTP is compatible with other optimizations like prefix caching.
 
 ## Benchmarking
 

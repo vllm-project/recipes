@@ -8,9 +8,7 @@ Latest vLLM already supports Intern-S1. You can install it using the following m
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm \
-    --torch-backend=auto \
-    --extra-index-url https://wheels.vllm.ai/nightly
+uv pip install -U vllm --torch-backend auto
 ```
 
 ## Launching Intern-S1 with vLLM
