@@ -31,6 +31,7 @@ The CLI examples below are from the vLLM-Omni repo. If you want to run them dire
 
 ```python
 import torch
+import soundfile as sf
 from vllm_omni.entrypoints.omni import Omni
 
 omni = Omni(model="stabilityai/stable-audio-open-1.0")
@@ -48,20 +49,9 @@ audio = omni.generate(
         "audio_end_in_s": 10.0,
     },
 )
-```
 
-### Saving Audio Output
-
-```python
-import numpy as np
-import soundfile as sf
-
-# Convert to numpy if needed
-if isinstance(audio, torch.Tensor):
-    audio = audio.cpu().float().numpy()
-
-# Audio shape is [batch, channels, samples]
-audio_data = audio[0].T  # [samples, channels]
+# Save audio output
+audio_data = audio[0].cpu().float().numpy().T  # [samples, channels]
 sf.write("output.wav", audio_data, 44100)
 ```
 
