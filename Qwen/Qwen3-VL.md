@@ -232,7 +232,7 @@ vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
 Open a new terminal and run the following command to execute the benchmark script inside the container.
 ```shell
 docker exec -it Qwen3-VL vllm bench serve \
-  --model "Qwen/Qwen3-VL-235B-A22B-Instruct" \
+  --model Qwen/Qwen3-VL-235B-A22B-Instruct \
   --dataset-name random \
   --random-input-len 8192 \
   --random-output-len 1024 \
