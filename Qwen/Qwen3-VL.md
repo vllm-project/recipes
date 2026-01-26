@@ -161,20 +161,30 @@ For more usage examples, check out the [vLLM user guide for multimodal models](h
 
 
 ## AMD GPU Support
-Please follow the steps here to install and run Qwen3-VL models on AMD MI300X GPU.
+Recommended approaches by hardware type are:
+
+
+MI300X/MI325X/MI355X  with fp8: Use FP8 checkpoint for optimal memory efficiency.
+
+- **MI300X/MI325X/MI355X with `fp8`**: Use FP8 checkpoint for optimal memory efficiency.
+- **MI300X/MI325X/MI355X with `bfloat16`**: Either reduce `--max-model-len` or restrict inference to images only.
+
+
+Please follow the steps here to install and run Qwen3-VL models on AMD MI300X/MI325X/MI355X GPU.
+
 ### Step 1: Prepare Docker Environment
 Pull the latest vllm docker:
 ```shell
-docker pull rocm/vllm-dev:nightly
+docker pull vllm/vllm-openai-rocm:v0.14.1
 ```
 Launch the ROCm vLLM docker: 
 ```shell
-docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash  --name Qwen3-VL rocm/vllm-dev:nightly 
+docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash  --name Qwen3-VL vllm/vllm-openai-rocm:v0.14.1
 ```
 ### Step 2: Log in to Hugging Face
 Log in to your Hugging Face account:
 ```shell
-huggingface-cli login
+hf auth login
 ```
 
 ### Step 3: Start the vLLM server
@@ -184,11 +194,12 @@ Run the vllm online serving
 #### Inside the Docker container, create a new directory named `miopen` under `/app/`.
 ```shell
 mkdir -p /app/miopen
+```
 
-Sample Command
+### BF16 
+
+
 ```shell
-
-
 MIOPEN_USER_DB_PATH=/app/miopen \
 MIOPEN_FIND_MODE=FAST \
 VLLM_USE_V1=1 \
@@ -199,10 +210,24 @@ vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
 --mm-encoder-tp-mode "data" \
 --no-enable-prefix-caching \
 --trust-remote-code
-
 ```
 
+### FP8 
 
+```shell
+
+MIOPEN_USER_DB_PATH=/app/miopen \
+MIOPEN_FIND_MODE=FAST \
+VLLM_USE_V1=1 \
+VLLM_ROCM_USE_AITER=1 \
+SAFETENSORS_FAST_GPU=1 \
+vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
+--tensor-parallel  4 \
+--mm-encoder-tp-mode "data" \
+--no-enable-prefix-caching \
+--trust-remote-code
+
+```
 ### Step 4: Run Benchmark
 Open a new terminal and run the following command to execute the benchmark script inside the container.
 ```shell
