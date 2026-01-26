@@ -139,6 +139,42 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
+#### Using Transcribe Endpoint
+
+```python
+import httpx
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="EMPTY"
+)
+
+# Transcribe audio from URL
+audio_url = "https://github.com/zai-org/GLM-ASR/raw/main/examples/example_en.wav"
+audio_file = httpx.get(audio_url).content
+
+response = client.audio.transcriptions.create(
+    model="zai-org/GLM-ASR-Nano-2512",
+    file=("audio.wav", audio_file),
+)
+
+print(response.text)
+```
+
+#### Transcribe with cURL
+
+```bash
+curl http://localhost:8000/v1/audio/transcriptions \
+  -H "Authorization: Bearer EMPTY" \
+  -F "model=zai-org/GLM-ASR-Nano-2512" \
+  -F "file=@your_audio.wav"
+```
+
+## Notes
+
+- **Transformers Version**: This model requires `transformers >= 5.0.0` for optimal compatibility.
+
 ## Additional Resources
 
 - [Model Card](https://huggingface.co/zai-org/GLM-ASR-Nano-2512)

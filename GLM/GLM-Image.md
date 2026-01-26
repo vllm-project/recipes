@@ -250,6 +250,10 @@ with open("output.png", "wb") as f:
 print("Image saved to output.png")
 ```
 
+## Notes
+
+- **Transformers Version**: This model requires `transformers >= 5.0.0` for optimal compatibility.
+
 ## Additional Resources
 
 - [Model Card](https://huggingface.co/zai-org/GLM-Image)

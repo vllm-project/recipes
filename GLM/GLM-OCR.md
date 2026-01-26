@@ -100,3 +100,7 @@ print(f"Response costs: {time.time() - start:.2f}s")
 print("Generated text:")
 print(response.choices[0].message.content)
 ```
+
+## Notes
+
+- **Transformers Version**: This model requires `transformers >= 5.0.0` for optimal compatibility.
