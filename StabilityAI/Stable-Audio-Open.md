@@ -11,7 +11,7 @@ This guide provides instructions for running Stable Audio Open text-to-audio gen
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install vllm==0.12.0
+uv pip install vllm==0.14.1
 uv pip install git+https://github.com/vllm-project/vllm-omni.git
 ```
 
