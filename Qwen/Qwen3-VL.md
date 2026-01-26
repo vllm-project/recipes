@@ -206,8 +206,8 @@ VLLM_USE_V1=1 \
 VLLM_ROCM_USE_AITER=1 \
 SAFETENSORS_FAST_GPU=1 \
 vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
---tensor-parallel  4 \
---mm-encoder-tp-mode "data" \
+--tensor-parallel 4 \
+--mm-encoder-tp-mode data \
 --no-enable-prefix-caching \
 --trust-remote-code
 ```
