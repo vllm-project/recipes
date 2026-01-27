@@ -23,7 +23,7 @@ uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
 vllm serve OpenGVLab/InternVL3_5-8B --trust-remote-code
 ```
 
-## Launching InternVL3.5 with vLLM, For better performance to AMD ROCm user
+## Launching on AMD ROCm for Better Performance
 VLLM_ROCM_USE_AITER=1 will bring additional performance uplift to MI300x/MI325x/MI355x devices. 
 ```bash
 export VLLM_ROCM_USE_AITER=1
