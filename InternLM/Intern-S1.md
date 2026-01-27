@@ -41,7 +41,22 @@ vllm serve internlm/Intern-S1-FP8 \
   --tool-call-parser internlm
 ```
 
-### Serving FP8 Model on 8xMI300x/MI325x/MI355x
+### Serving FP8 Model on 8xMI300x/MI325x
+```bash
+export VLLM_ROCM_USE_AITER=1
+export VLLM_ROCM_USE_AITER_MOE=0
+vllm serve internlm/Intern-S1-FP8 \
+  --trust-remote-code \
+  --tensor-parallel-size 8 \
+  --enable-auto-tool-choice \
+  --reasoning-parser deepseek_r1 \
+  --tool-call-parser internlm
+```
+* You can also reduce the nubmer of GPUs to 4 with  `--tensor-parallel-size 4`
+* You can set `export VLLM_ROCM_USE_AITER=1` for Better Performance on AMD GPUs. The default is `export VLLM_ROCM_USE_AITER=0`
+* Please turn off AITER MOE on MI300x/MI325x by `export VLLM_ROCM_USE_AITER_MOE=0`
+
+### Serving FP8 Model on 8xMI355x
 ```bash
 export VLLM_ROCM_USE_AITER=1
 vllm serve internlm/Intern-S1-FP8 \
@@ -51,18 +66,7 @@ vllm serve internlm/Intern-S1-FP8 \
   --reasoning-parser deepseek_r1 \
   --tool-call-parser internlm
 ```
-* You can set `export VLLM_ROCM_USE_AITER=1` for Better Performance on AMD GPUs. The default is `export VLLM_ROCM_USE_AITER=0`
-
-### Serving FP8 Model on 4xMI300x/MI325x/MI355x
-```bash
-export VLLM_ROCM_USE_AITER=1
-vllm serve internlm/Intern-S1-FP8 \
-  --trust-remote-code \
-  --tensor-parallel-size 4 \
-  --enable-auto-tool-choice \
-  --reasoning-parser deepseek_r1 \
-  --tool-call-parser internlm
-```
+* You can also reduce the nubmer of GPUs to 4 with  `--tensor-parallel-size 4`
 * You can set `export VLLM_ROCM_USE_AITER=1` for Better Performance on AMD GPUs. The default is `export VLLM_ROCM_USE_AITER=0`
 
 ## Advanced Usage
