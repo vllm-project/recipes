@@ -135,11 +135,11 @@ Please follow the steps here to install and run DeepSeek-OCR models on AMD MI300
 ### Step 1: Prepare Docker Environment
 Pull the latest vllm docker:
 ```shell
-docker pull rocm/vllm-dev:nightly
+docker pull vllm/vllm-openai-rocm:v0.14.1
 ```
 Launch the ROCm vLLM docker: 
 ```shell
-docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash --name DeepSeek-OCR rocm/vllm-dev:nightly 
+docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash --name DeepSeek-OCR vllm/vllm-openai-rocm:v0.14.1 
 ```
 ### Step 2: Log in to Hugging Face
 Huggingface login
@@ -152,7 +152,10 @@ huggingface-cli login
 Run the vllm online serving
 Sample Command
 ```shell
-SAFETENSORS_FAST_GPU=1 VLLM_USE_TRITON_FLASH_ATTN=0 vllm serve deepseek-ai/DeepSeek-OCR \
+SAFETENSORS_FAST_GPU=1 \
+VLLM_USE_TRITON_FLASH_ATTN=0 \
+VLLM_ROCM_USE_AITER=1 \
+vllm serve deepseek-ai/DeepSeek-OCR \
   --logits_processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
   --no-enable-prefix-caching \
   --mm-processor-cache-gb 0
@@ -167,8 +170,8 @@ docker exec -it DeepSeek-OCR vllm bench serve \
   --dataset-name random \
   --random-input-len 4096 \
   --random-output-len 512 \
-  --request-rate 10000 \
-  --num-prompts 16 \
+  --request-rate 1 \
+  --num-prompts 4 \
   --ignore-eos
 ```
 
