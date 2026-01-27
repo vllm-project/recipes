@@ -160,7 +160,7 @@ Please follow the steps here to install and run DeepSeek-R1 models on AMD MI300X
 ### Step 1: Prepare Docker Environment
 Pull the latest vllm docker:
 ```shell
-docker pull rocm/vllm-dev:nightly
+docker pull vllm/vllm-openai-rocm:v0.14.1
 ```
 Launch the ROCm vLLM docker: 
 ```shell
@@ -178,7 +178,7 @@ docker run -it \
   -v $(pwd):/work \
   -e SHELL=/bin/bash \
   --name DeepSeek-R1 \
-  rocm/vllm-dev:nightly
+  vllm/vllm-openai-rocm:v0.14.1
 ```
 ### Step 2: Log in to Hugging Face
 Huggingface login
