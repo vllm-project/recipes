@@ -15,7 +15,7 @@ uv pip install -U vllm --torch-backend auto
 ```bash
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
 ```
-⚠️ uv pip wheel is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/) 
+⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/) 
 
 ## Launching InternVL3.5 with vLLM
 
