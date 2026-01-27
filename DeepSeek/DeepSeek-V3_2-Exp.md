@@ -92,11 +92,11 @@ Please follow the steps here to install and run DeepSeek-V3.2-Exp models on AMD 
 ### Step 1: Prepare Docker Environment
 Pull the latest vllm docker:
 ```shell
-docker pull rocm/vllm-dev:nightly
+docker pull vllm/vllm-openai-rocm:v0.14.1
 ```
 Launch the ROCm vLLM docker: 
 ```shell
-docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash  --name DeepSeek-V3-Exp rocm/vllm-dev:nightly 
+docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash  --name DeepSeek-V3-Exp vllm/vllm-openai-rocm:v0.14.1 
 ```
 ### Step 2: Log in to Hugging Face
 Huggingface login
@@ -130,10 +130,10 @@ Open a new terminal and run the following command to execute the benchmark scrip
 docker exec -it DeepSeek-V3-Exp vllm bench serve \
   --model deepseek-ai/DeepSeek-V3.2-Exp \
   --dataset-name random \
-  --random-input-len 8000 \
-  --random-output-len 1000 \
-  --request-rate 10000 \
-  --num-prompts 16 \
+  --random-input-len 1000 \
+  --random-output-len 200 \
+  --request-rate 1 \
+  --num-prompts 4 \
   --ignore-eos
 ```
 
