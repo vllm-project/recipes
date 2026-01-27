@@ -3,11 +3,14 @@
 
 ## Installing vLLM
 
-Until [PR#33131](https://github.com/vllm-project/vllm/pull/33131) is merged, use the following command to install vLLM from source.
+Install vLLM nightly wheel until v0.15.0 is released
 ```bash
 uv venv
 source .venv/bin/activate
-VLLM_USE_PRECOMPILED=1 uv pip install git+https://github.com/vllm-project/vllm.git@feat-k2.5-support
+uv pip install -U vllm --pre 
+    --extra-index-url https://wheels.vllm.ai/nightly/cu129 \
+    --extra-index-url https://download.pytorch.org/whl/cu129 \
+    --index-strategy unsafe-best-match
 ```
 
 ## Running Kimi-K2.5
