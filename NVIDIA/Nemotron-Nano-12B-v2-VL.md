@@ -373,3 +373,65 @@ def main():
 if __name__ == "__main__":
     main()
 ```
+
+
+## AMD GPU Support 
+
+Please follow the steps here to install and run Nemotron-Nano-12B-v2-VL models on AMD MI300X and MI355 GPU.
+### Step 1: Prepare Docker Environment
+Pull the latest vllm docker:
+```shell
+docker pull vllm/vllm-openai-rocm:v0.14.1
+```
+Launch the ROCm vLLM docker: 
+```shell
+docker run -d -it \
+  --ipc=host \
+  --entrypoint /bin/bash \
+  --network=host \
+  --privileged \
+  --cap-add=CAP_SYS_ADMIN \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --device=/dev/mem \
+  --group-add video \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  -v /:/work \
+  -e SHELL=/bin/bash \
+  -p 8000:8000 \
+  --name Nemotron-Nano-12B \
+  vllm/vllm-openai-rocm:v0.14.1
+```
+### Step 2: Log in to Hugging Face
+Log in to your Hugging Face account:
+```shell
+huggingface-cli login
+```
+
+### Step 3: Start the vLLM server
+
+Run the vllm online serving with this sample command:
+```shell
+SAFETENSORS_FAST_GPU=1 \
+VLLM_USE_V1=1 \
+VLLM_USE_TRITON_FLASH_ATTN=0 \
+vllm serve nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16 \
+  --tensor-parallel-size 8 \
+  --no-enable-prefix-caching \
+  --trust-remote-code
+```
+
+### Step 4: Run Benchmark
+Open a new terminal and run the following command to execute the benchmark script inside the container.
+```shell
+docker exec -it Nemotron-Nano-12B vllm bench serve \
+  --model "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16" \
+  --dataset-name random \
+  --random-input-len 8192 \
+  --random-output-len 1024 \
+  --request-rate 10000 \
+  --num-prompts 16 \
+  --ignore-eos \
+  --trust-remote-code 
+```
