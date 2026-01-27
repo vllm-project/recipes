@@ -205,18 +205,19 @@ You can observe from the service startup logs that the kv cache token number has
 Enabling DCP delivers strong advantages (43% faster token generation, 26% higher throughput) with minimal drawbacks (marginal median latency improvement). We recommend reading our [DCP DOC](https://docs.vllm.ai/en/latest/serving/context_parallel_deployment.html#decode-context-parallel) and trying out DCP in your LLM workloads.
 
 
-## AMD GPU Support 
+## AMD GPU Support
 
-Please follow the steps here to install and run Kimi-K2-Thinking models on AMD MI300X GPU.
+Please follow the steps here to install and run Kimi-K2-Thinking models on AMD MI300X and MI355X GPU.
 ### Step 1: Prepare Docker Environment
 Pull the latest vllm docker:
 ```shell
-docker pull rocm/vllm-dev:nightly
+docker pull vllm/vllm-openai-rocm:v0.14.1
 ```
 Launch the ROCm vLLM docker: 
 ```shell
-docker run -it \
+docker run -d -it \
   --ipc=host \
+  --entrypoint /bin/bash \
   --network=host \
   --privileged \
   --cap-add=CAP_SYS_ADMIN \
@@ -226,10 +227,11 @@ docker run -it \
   --group-add video \
   --cap-add=SYS_PTRACE \
   --security-opt seccomp=unconfined \
-  -v $(pwd):/work \
+  -v /:/work \
   -e SHELL=/bin/bash \
+  -p 8000:8000 \
   --name Kimi-K2-Thinking \
-  rocm/vllm-dev:nightly
+  vllm/vllm-openai-rocm:v0.14.1
 ```
 ### Step 2: Log in to Hugging Face
 Huggingface login
@@ -244,8 +246,10 @@ Sample Command
 ```shell
 SAFETENSORS_FAST_GPU=1 \
 VLLM_USE_V1=1 \
-VLLM_USE_TRITON_FLASH_ATTN=0 vllm serve moonshotai/Kimi-K2-Thinking \
-  --tensor-parallel-size 8 \
+VLLM_USE_TRITON_FLASH_ATTN=0 \
+VLLM_ROCM_USE_AITER=1 \
+vllm serve moonshotai/Kimi-K2-Thinking \
+  --tensor-parallel-size 4 \
   --no-enable-prefix-caching \
   --enable-auto-tool-choice \
   --tool-call-parser kimi_k2 \
@@ -268,6 +272,3 @@ docker exec -it Kimi-K2-Thinking vllm bench serve \
   --ignore-eos \
   --trust-remote-code 
 ```
-
-
-
