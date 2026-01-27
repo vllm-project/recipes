@@ -3,10 +3,11 @@
 
 ## Installing vLLM
 
+Until [PR#33131](https://github.com/vllm-project/vllm/pull/33131) is merged, use the following command to install vLLM from source.
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm --torch-backend auto
+VLLM_USE_PRECOMPILED=1 uv pip install git+https://github.com/vllm-project/vllm.git@feat-k2.5-support
 ```
 
 ## Running Kimi-K2.5
