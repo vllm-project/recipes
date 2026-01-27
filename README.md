@@ -63,7 +63,7 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 ### Moonshotai <img src="https://avatars.githubusercontent.com/u/129152888?v=4" alt="Moonshotai" width="16" height="16" style="vertical-align:middle;">
 
-- [Kimi-K2.5] (moonshotai/Kimi-K2.5.md)
+- [Kimi-K2.5](moonshotai/Kimi-K2.5.md)
 - [Kimi-K2](moonshotai/Kimi-K2.md)
 - [Kimi-K2-Think](moonshotai/Kimi-K2-Think.md)
 - [Kimi-Linear](moonshotai/Kimi-Linear.md)
