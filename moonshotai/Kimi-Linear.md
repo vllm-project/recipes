@@ -44,16 +44,17 @@ curl http://localhost:8000/v1/chat/completions \
 
 ## AMD GPU Support
 
-Please follow the steps here to install and run Kimi-Linear-48B-A3B-Instruct models on AMD MI300X GPU.
+Please follow the steps here to install and run Kimi-Linear-48B-A3B-Instruct models on AMD MI300X and MI355X GPU.
 ### Step 1: Prepare Docker Environment
 Pull the latest vllm docker:
 ```shell
-docker pull rocm/vllm-dev:nightly
+docker pull vllm/vllm-openai-rocm:v0.14.1
 ```
 Launch the ROCm vLLM docker: 
 ```shell
-docker run -it \
+docker run -d -it \
   --ipc=host \
+  --entrypoint /bin/bash \
   --network=host \
   --privileged \
   --cap-add=CAP_SYS_ADMIN \
@@ -63,10 +64,11 @@ docker run -it \
   --group-add video \
   --cap-add=SYS_PTRACE \
   --security-opt seccomp=unconfined \
-  -v $(pwd):/work \
+  -v /:/work \
   -e SHELL=/bin/bash \
+  -p 8000:8000 \
   --name Kimi-Linear-48B-A3B-Instruct \
-  rocm/vllm-dev:nightly
+  vllm/vllm-openai-rocm:v0.14.1
 ```
 ### Step 2: Log in to Hugging Face
 Huggingface login
@@ -81,8 +83,10 @@ Sample Command
 ```shell
 SAFETENSORS_FAST_GPU=1 \
 VLLM_USE_V1=1 \
-VLLM_USE_TRITON_FLASH_ATTN=0 vllm serve moonshotai/Kimi-Linear-48B-A3B-Instruct \
-  --tensor-parallel-size 8 \
+VLLM_USE_TRITON_FLASH_ATTN=0 \
+VLLM_ROCM_USE_AITER=1 \
+vllm serve moonshotai/Kimi-Linear-48B-A3B-Instruct \
+  --tensor-parallel-size 2 \
   --max-model-len 1048576 \
   --no-enable-prefix-caching \
   --trust-remote-code
@@ -102,6 +106,5 @@ docker exec -it Kimi-Linear-48B-A3B-Instruct vllm bench serve \
   --ignore-eos \
   --trust-remote-code 
 ```
-
 
   
