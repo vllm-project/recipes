@@ -330,3 +330,66 @@ response = client.chat.completions.create(
 assistant_message = response.choices[0].message.content
 print(assistant_message)
 ```
+
+
+## AMD GPU Support 
+
+Please follow the steps here to install and run Mistral-Large-3-675B-Instruct-2512 models on AMD MI300X and MI355 GPU.
+### Step 1: Prepare Docker Environment
+Pull the latest vllm docker:
+```shell
+docker pull vllm/vllm-openai-rocm:v0.14.1
+```
+Launch the ROCm vLLM docker: 
+```shell
+docker run -d -it \
+  --ipc=host \
+  --entrypoint /bin/bash \
+  --network=host \
+  --privileged \
+  --cap-add=CAP_SYS_ADMIN \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --device=/dev/mem \
+  --group-add video \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  -v /:/work \
+  -e SHELL=/bin/bash \
+  -p 8000:8000 \
+  --name Mistral-Large-3 \
+  vllm/vllm-openai-rocm:v0.14.1
+```
+### Step 2: Log in to Hugging Face
+Log in to your Hugging Face account:
+```shell
+huggingface-cli login
+```
+
+### Step 3: Start the vLLM server
+
+Run the vllm online serving with this sample command:
+```shell
+SAFETENSORS_FAST_GPU=1 \
+VLLM_USE_V1=1 \
+VLLM_USE_TRITON_FLASH_ATTN=0 \
+VLLM_ROCM_USE_AITER=1 \
+vllm serve mistralai/Mistral-Large-3-675B-Instruct-2512 \
+  --tensor-parallel-size 8 \
+  --no-enable-prefix-caching \
+  --trust-remote-code
+```
+
+### Step 4: Run Benchmark
+Open a new terminal and run the following command to execute the benchmark script inside the container.
+```shell
+docker exec -it Mistral-Large-3 vllm bench serve \
+  --model "mistralai/Mistral-Large-3-675B-Instruct-2512" \
+  --dataset-name random \
+  --random-input-len 8192 \
+  --random-output-len 1024 \
+  --request-rate 10000 \
+  --num-prompts 16 \
+  --ignore-eos \
+  --trust-remote-code 
+```
