@@ -29,7 +29,7 @@ vllm serve moonshotai/Kimi-K2.5 -tp 8 \
 
 ### Benchmark on VisionArena-Chat Dataset
 
-Once the server for the `Qwen3-VL-235B-A22B-Instruct` model is running, open another terminal and run the benchmark client:
+Once the server for the `moonshotai/Kimi-K2.5` model is running, open another terminal and run the benchmark client:
 
 ```bash
 vllm bench serve \
@@ -73,7 +73,7 @@ messages = [
 
 start = time.time()
 response = client.chat.completions.create(
-    model="Qwen/Qwen3-VL-235B-A22B-Instruct",
+    model="moonshotai/Kimi-K2.5",
     messages=messages,
     max_tokens=2048
 )
