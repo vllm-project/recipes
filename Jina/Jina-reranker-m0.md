@@ -13,6 +13,12 @@ Install vLLM and required dependencies:
 uv pip install vllm
 ```
 
+## Installing vLLM (For AMD ROCm: MI300x/MI325x/MI355x)
+```bash
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
+```
+⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/) 
+
 ## Online Deployment
 
 Deploy the model as a production-ready API server using vLLM.
@@ -28,6 +34,20 @@ vllm serve jinaai/jina-reranker-m0 \
     --gpu-memory-utilization 0.75 \
     --max_num_seqs 32
 ```
+
+### 1.1 Deploy Model Server on 8xMI300x/MI325x/MI355x
+
+```bash
+# https://docs.vllm.ai/en/latest/cli/serve.html
+export VLLM_ROCM_USE_AITER=1
+vllm serve jinaai/jina-reranker-m0 \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --tensor_parallel_size 2 \
+    --gpu-memory-utilization 0.75 \
+    --max_num_seqs 32
+```
+* You can set `export VLLM_ROCM_USE_AITER=1` for Better Performance on AMD GPUs. The default is `export VLLM_ROCM_USE_AITER=0`
 
 ### 2. Rerank API
 
