@@ -102,20 +102,24 @@ for i, res in enumerate(output):
 
 
 ## AMD GPU Support 
-Please follow the steps here to install and run PaddleOCR-VL models on AMD MI300X GPU.
+Recommended approaches by hardware type are:
+
+MI300X/MI325X/MI355X
+
+Please follow the steps here to install and run PaddleOCR-VL models on AMD  GPU.
 ### Step 1: Prepare Docker Environment
 Pull the latest vllm docker:
 ```shell
-docker pull rocm/vllm-dev:nightly
+docker pull vllm/vllm-openai-rocm:v0.14.1
 ```
 Launch the ROCm vLLM docker: 
 ```shell
-docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash  --name PaddleOCR-VL rocm/vllm-dev:nightly 
+docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash  --name PaddleOCR-VL docker pull vllm/vllm-openai-rocm:v0.14.1
 ```
 ### Step 2: Log in to Hugging Face
 Huggingface login
 ```shell
-huggingface-cli login
+hf auth login
 ```
 
 ### Step 3: Start the vLLM server
