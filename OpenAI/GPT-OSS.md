@@ -81,11 +81,12 @@ export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
 vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config  '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request
 ```
 * `export HSA_NO_SCRATCH_RECLAIM=1` is only needed on the serve with old GPU firmware. If the GPU firmware version is less than 177 by the following command, you need to set `export HSA_NO_SCRATCH_RECLAIM=1` for better performance. 
-* `export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4` is to enhance All-Reduce performance by inline compression. Please check out this blog. [AMD ROCm QuickReduce](https://rocm.blogs.amd.com/artificial-intelligence/quick-reduce/README.html)
-
 ```bash
+# GPU firmware version check
 rocm-smi --showfw | grep MEC | head -n 1 |  awk '{print $NF}'
 ```
+* `export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4` is to enhance All-Reduce performance by inline compression. Please check out this blog. [AMD ROCm QuickReduce](https://rocm.blogs.amd.com/artificial-intelligence/quick-reduce/README.html)
+
 
 ### MI355x(gfx950)
 
