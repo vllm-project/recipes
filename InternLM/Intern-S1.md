@@ -11,6 +11,12 @@ source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
+## Installing vLLM (For AMD ROCm: MI300x/MI325x/MI355x)
+```bash
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
+```
+⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/) 
+
 ## Launching Intern-S1 with vLLM
 
 ### Serving BF16 Model on 8xH800 GPUs (80GB × 8)
@@ -34,6 +40,34 @@ vllm serve internlm/Intern-S1-FP8 \
   --reasoning-parser deepseek_r1 \
   --tool-call-parser internlm
 ```
+
+### Serving FP8 Model on 8xMI300x/MI325x
+```bash
+export VLLM_ROCM_USE_AITER=1
+export VLLM_ROCM_USE_AITER_MOE=0
+vllm serve internlm/Intern-S1-FP8 \
+  --trust-remote-code \
+  --tensor-parallel-size 8 \
+  --enable-auto-tool-choice \
+  --reasoning-parser deepseek_r1 \
+  --tool-call-parser internlm
+```
+* You can also reduce the nubmer of GPUs to 4 with  `--tensor-parallel-size 4`
+* You can set `export VLLM_ROCM_USE_AITER=1` for Better Performance on AMD GPUs. The default is `export VLLM_ROCM_USE_AITER=0`
+* Please turn off AITER MOE on MI300x/MI325x by `export VLLM_ROCM_USE_AITER_MOE=0`
+
+### Serving FP8 Model on 8xMI355x
+```bash
+export VLLM_ROCM_USE_AITER=1
+vllm serve internlm/Intern-S1-FP8 \
+  --trust-remote-code \
+  --tensor-parallel-size 8 \
+  --enable-auto-tool-choice \
+  --reasoning-parser deepseek_r1 \
+  --tool-call-parser internlm
+```
+* You can also reduce the nubmer of GPUs to 4 with  `--tensor-parallel-size 4`
+* You can set `export VLLM_ROCM_USE_AITER=1` for Better Performance on AMD GPUs. The default is `export VLLM_ROCM_USE_AITER=0`
 
 ## Advanced Usage
 
