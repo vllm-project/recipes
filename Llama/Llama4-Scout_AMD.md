@@ -14,9 +14,9 @@ The AMD Instinct GPUs accelerators are purpose-built to handle the demands of ne
 
 ### License and Model parameters
 
-To use Llama 4 Scout and Maverick models, you must first need to gain access to the model repos under Huggingface.
+To use Llama 4 Scout model, you must first need to gain access to the model repos under Huggingface.
 - [Llama4 Scout 16E](https://huggingface.co/meta-llama/Llama-4-Scout-17B-16E-Instruct)
-- [Llama4 Maverick 128E](https://huggingface.co/meta-llama/Llama-4-Maverick-17B-128E-Instruct)
+
 
 ## Prerequisites
 
@@ -48,22 +48,7 @@ vllm serve $MODEL \
   --max-model-len 32000 &
 ``` 
 
-### 3. Running Inference using benchmark script
-
-Let the Ll4 Scout model to describe the following two images.
-![first image](./images/rabbit.jpg)
-![second image](./images/cat.png)
-
-```bash
-curl http://localhost:8000/v1/completions     -H "Content-Type: application/json"     -d '{
-        "model": "meta-llama/Llama-4-Scout-17B-16E-Instruct",
-        "prompt": "<image>https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg</image><image>https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/datasets/cat_style_layout.png</image> Can you describe how these two images are similar, and how they differ?",
-        "max_tokens": 256,
-        "temperature": 0
-    }'
-``` 
-
-### 4. Performance benchmark 
+### 3. Performance benchmark 
 
 ```bash
 #export MODEL="meta-llama/Llama-4-Maverick-17B-128E-Instruct" 
