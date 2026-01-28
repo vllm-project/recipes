@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This quick start recipe explains how to run the Llama 3.1 8B Instruct model on AMD MI300X/MI355X GPUs using vLLM.
+This quick start recipe explains how to run the Llama 3.1 8B Instruct model on AMD MI300X, MI325X, and MI355X GPUs using vLLM.
 
 ## Key benefits of AMD GPUs on large models and developers
 
