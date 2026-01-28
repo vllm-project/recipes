@@ -129,3 +129,60 @@ vllm serve ... --tool-call-parser hermes --enable-auto-tool-choice
 ### Known limitations
 
 - Qwen3-Next currently does not support automatic prefix caching.
+
+  
+## AMD GPU Support
+Recommended approaches by hardware type are:
+
+
+MI300X/MI325X/MI355X 
+
+Please follow the steps here to install and run Qwen3-Next models on AMD MI300X/MI325X/MI355X GPU.
+
+### Step 1: Prepare Docker Environment
+Pull the latest vllm docker:
+```shell
+docker pull vllm/vllm-openai-rocm:v0.14.1
+```
+Launch the ROCm vLLM docker: 
+```shell
+docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash  --name Qwen3-Next  vllm/vllm-openai-rocm:v0.14.1
+```
+### Step 2: Log in to Hugging Face
+Log in to your Hugging Face account:
+```shell
+hf auth login
+```
+
+### Step 3: Start the vLLM server
+
+Run the vllm online serving
+
+
+```shell
+VLLM_ROCM_USE_AITER=1 \
+SAFETENSORS_FAST_GPU=1 \
+VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
+vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct \
+--tensor-parallel-size 4 \
+--max-model-len 32768  \
+--no-enable-prefix-caching \
+--trust-remote-code 
+```
+
+
+
+
+### Step 4: Run Benchmark
+Open a new terminal and run the following command to execute the benchmark script inside the container.
+```shell
+docker exec -it Qwen3-Next  vllm bench serve \
+  --model "Qwen/Qwen3-Next-80B-A3B-Instruct" \
+  --dataset-name random \
+  --random-input-len 8192 \
+  --random-output-len 1024 \
+  --request-rate 10000 \
+  --num-prompts 16 \
+  --ignore-eos \
+  --trust-remote-code 
+```
