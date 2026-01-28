@@ -17,7 +17,15 @@ source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
-### Running Qwen2.5-VL with BF16 on 4xA100
+### Installing vLLM (AMD ROCm Backend: MI300X, MI325X, MI355X)
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images). 
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
+```
+
+### Running Qwen2.5-VL-72B with BF16 on 4xA100
 
 There are two ways to parallelize the model over multiple GPUs: (1) Tensor-parallel (TP) or (2) Data-parallel (DP). Each one has its own advantages, where tensor-parallel is usually more beneficial for low-latency / low-load scenarios, and data-parallel works better for cases where there is a lot of data with heavy loads.
 
@@ -43,11 +51,37 @@ vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
 - `--mm-encoder-tp-mode` is set to "data", so as to deploy the multimodal encoder in DP fashion for better performance. This is because the multimodal encoder is very small compared to the language decoder (ViT 675M v.s. LM 72B in Qwen2.5-VL-72B), thus TP on ViT provides little gain but incurs significant communication overhead.  
 - vLLM conservatively uses 90% of GPU memory. You can set `--gpu-memory-utilization=0.95` to maximize KVCache.
 
+### Running Qwen2.5-VL-72B with BF16 on 4xMI300X/MI325X/MI355X
+```bash
+export CUDA_VISIBLE_DEVICES=0,1,2,3
+export VLLM_ROCM_USE_AITER=1
+
+vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --tensor-parallel-size 4 \
+  --mm-encoder-tp-mode data \
+  --limit-mm-per-prompt '{"image":2,"video":0}'
+```
+
 For medium-size models like Qwen2.5-VL-7B, data parallelism usually provides better performance since it boosts throughput without the heavy communication costs seen in tensor parallelism. Here is an example of how to launch the server using DP=4:
 
+### Qwen2.5-VL-7B-Instruct on 4xA100 with DP=4
 ```bash
 # Start server with BF16 model on 4 GPUs using DP=4
 export CUDA_VISIBLE_DEVICES=0,1,2,3
+vllm serve Qwen/Qwen2.5-VL-7B-Instruct  \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --data-parallel-size 4 \
+  --limit-mm-per-prompt '{"image":2,"video":0}'
+```
+
+### Qwen2.5-VL-7B-Instruct on 4xMI300X/MI325X/MI355X with DP=4
+```bash
+# Start server with BF16 model on 4 GPUs using DP=4
+export CUDA_VISIBLE_DEVICES=0,1,2,3
+export VLLM_ROCM_USE_AITER=1
 vllm serve Qwen/Qwen2.5-VL-7B-Instruct  \
   --host 0.0.0.0 \
   --port 8000 \
@@ -69,7 +103,6 @@ vllm bench serve \
   --port 8000 \
   --backend openai-chat \
   --endpoint /v1/chat/completions \
-  --endpoint-type openai-chat \
   --model Qwen/Qwen2.5-VL-72B-Instruct \
   --dataset-name hf \
   --dataset-path lmarena-ai/VisionArena-Chat \
@@ -163,7 +196,6 @@ vllm bench serve \
   --port 8000 \
   --backend openai-chat \
   --endpoint /v1/chat/completions \
-  --endpoint-type openai-chat \
   --model Qwen/Qwen2.5-VL-7B-Instruct \
   --dataset-name hf \
   --dataset-path lmarena-ai/VisionArena-Chat \
