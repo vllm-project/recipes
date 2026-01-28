@@ -28,8 +28,7 @@ To use the Llama 3.1 model, you must first gain access to the model repo under H
 ### 1. Using vLLM docker image (For AMD users)
 
 ```bash
-alias drun='sudo docker run -it --network=host --device=/dev/kfd --device=/dev/dri --group-add=video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32G -v /data:/data -v $HOME:/myhome -w /myhome --entrypoint /bin/bash'
-drun vllm/vllm-openai-rocm:v0.14.1
+sudo docker run -it --network=host --device=/dev/kfd --device=/dev/dri --group-add=video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32G -v /data:/data -v $HOME:/myhome -w /myhome --entrypoint /bin/bash vllm/vllm-openai-rocm:v0.14.1
 ```
 
 ### 2. Start vLLM online server (run in background)
