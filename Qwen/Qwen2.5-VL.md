@@ -43,14 +43,6 @@ vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
 
 ```
 
-#### Tips
-
-- You can set `--max-model-len` to preserve memory. By default the model's context length is 128K, but `--max-model-len=65536` is usually good for most scenarios.
-- You can set `--tensor-parallel-size` and `--data-parallel-size` to adjust the parallel strategy. But TP should be larger than 2 for A100-80GB devices to avoid OOM.
-- You can set `--limit-mm-per-prompt` to limit how many multimodal data instances to allow for each prompt. This is useful if you want to control the incoming traffic of multimodal requests.
-- `--mm-encoder-tp-mode` is set to "data", so as to deploy the multimodal encoder in DP fashion for better performance. This is because the multimodal encoder is very small compared to the language decoder (ViT 675M v.s. LM 72B in Qwen2.5-VL-72B), thus TP on ViT provides little gain but incurs significant communication overhead.  
-- vLLM conservatively uses 90% of GPU memory. You can set `--gpu-memory-utilization=0.95` to maximize KVCache.
-
 ### Running Qwen2.5-VL-72B with BF16 on 4xMI300X/MI325X/MI355X
 ```bash
 export CUDA_VISIBLE_DEVICES=0,1,2,3
@@ -63,6 +55,15 @@ vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
   --mm-encoder-tp-mode data \
   --limit-mm-per-prompt '{"image":2,"video":0}'
 ```
+
+#### Tips
+
+- You can set `--max-model-len` to preserve memory. By default the model's context length is 128K, but `--max-model-len=65536` is usually good for most scenarios.
+- You can set `--tensor-parallel-size` and `--data-parallel-size` to adjust the parallel strategy. But TP should be larger than 2 for A100-80GB devices to avoid OOM.
+- You can set `--limit-mm-per-prompt` to limit how many multimodal data instances to allow for each prompt. This is useful if you want to control the incoming traffic of multimodal requests.
+- `--mm-encoder-tp-mode` is set to "data", so as to deploy the multimodal encoder in DP fashion for better performance. This is because the multimodal encoder is very small compared to the language decoder (ViT 675M v.s. LM 72B in Qwen2.5-VL-72B), thus TP on ViT provides little gain but incurs significant communication overhead.  
+- vLLM conservatively uses 90% of GPU memory. You can set `--gpu-memory-utilization=0.95` to maximize KVCache.
+
 
 For medium-size models like Qwen2.5-VL-7B, data parallelism usually provides better performance since it boosts throughput without the heavy communication costs seen in tensor parallelism. Here is an example of how to launch the server using DP=4:
 
