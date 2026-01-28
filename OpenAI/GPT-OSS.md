@@ -53,45 +53,51 @@ vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
 
 Please refer to the [Recipe for NVIDIA Blackwell & Hopper Hardware](#recipe-for-nvidia-blackwell-hopper-hardware) section.
 
-### AMD
+## AMD: 
+## Installation from pre-built wheels (For AMD ROCm: MI300x/MI325x/MI355x)
 
-ROCm supports OpenAI gpt-oss-120b or gpt-oss-20b models on these 3 different GPUs on day one, along with the pre-built docker containers:
-
-* gfx950: MI350x series, `rocm/vllm-dev:open-mi355-08052025`  
-* gfx942: MI300x/MI325 series, `rocm/vllm-dev:open-mi300-08052025`  
-* gfx1201: Radeon AI PRO R9700, `rocm/vllm-dev:open-r9700-08052025`
-
-To run the container:
-
+We recommend using the official image for AMD GPUs (MI300x/MI325x/MI355x). 
+```bash
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
 ```
-alias drun='sudo docker run -it --network=host --device=/dev/kfd --device=/dev/dri --group-add=video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32G -v /data:/data -v $HOME:/myhome -w /myhome'
+⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/)
 
-drun rocm/vllm-dev:open-mi300-08052025
+### MI300x/MI325x(gfx942)
+
+You can launch GPT-OSS model serving with vLLM using:
+
+```bash
+vllm serve openai/gpt-oss-120b
 ```
+However, for optimal performance, applying the configuration below can deliver additional speedups and efficiency gains. These configurations were validated on the [vLLM 0.14.1 release](https://github.com/vllm-project/vllm/releases/tag/v0.14.1).
 
-For MI300x and R9700:
+```bash
+export HSA_NO_SCRATCH_RECLAIM=1
+export VLLM_ROCM_USE_AITER=1
+export VLLM_ROCM_USE_AITER_UNIFIED_ATTENTION=1
+export VLLM_ROCM_USE_AITER_MHA=0
+export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
 
+vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request
 ```
+* `export HSA_NO_SCRATCH_RECLAIM=1` is only needed on servers with old GPU firmware. If the GPU firmware version is less than 177 by the following command, you need to set `export HSA_NO_SCRATCH_RECLAIM=1` for better performance. 
+```bash
+# GPU firmware version check
+rocm-smi --showfw | grep MEC | head -n 1 |  awk '{print $NF}'
+```
+* `export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4` is to enhance All-Reduce performance by inline compression. For more details, see the [AMD ROCm QuickReduce blog post](https://rocm.blogs.amd.com/artificial-intelligence/quick-reduce/README.html).
+
+
+### MI355x(gfx950)
+
+```bash
+export HSA_NO_SCRATCH_RECLAIM=1
 export VLLM_ROCM_USE_AITER=1
 export VLLM_USE_AITER_UNIFIED_ATTENTION=1
 export VLLM_ROCM_USE_AITER_MHA=0
+export VLLM_ROCM_USE_AITER_FUSED_MOE_A16W4=1
 
-vllm serve openai/gpt-oss-120b --compilation-config '{"full_cuda_graph": true}' 
-```
-
-For MI355x:
-
-```
-# MoE preshuffle, fusion and Triton GEMM flags
-export VLLM_USE_AITER_TRITON_FUSED_SPLIT_QKV_ROPE=1
-export VLLM_USE_AITER_TRITON_FUSED_ADD_RMSNORM_PAD=1
-export VLLM_USE_AITER_TRITON_GEMM=1
-export VLLM_ROCM_USE_AITER=1
-export VLLM_USE_AITER_UNIFIED_ATTENTION=1
-export VLLM_ROCM_USE_AITER_MHA=0
-export TRITON_HIP_PRESHUFFLE_SCALES=1
-
-vllm serve openai/gpt-oss-120b --compilation-config '{"compile_sizes": [1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 4096, 8192], "full_cuda_graph": true}' --block-size 64 
+vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request --async-scheduling 
 ```
 
 #### Known Issues
