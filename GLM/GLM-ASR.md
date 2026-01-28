@@ -21,8 +21,7 @@ source .venv/bin/activate
 # Install transformers from source (required)
 uv pip install git+https://github.com/huggingface/transformers.git
 
-uv pip install -U vllm --torch-backend auto # vllm>=0.14.1 is required
-uv pip install vllm[audio]
+uv pip install -U "vllm[audio]" --torch-backend auto # vllm>=0.14.1 is required
 ```
 
 ## Running with vLLM
