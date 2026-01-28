@@ -21,7 +21,7 @@ source .venv/bin/activate
 # Install transformers from source (required)
 uv pip install git+https://github.com/huggingface/transformers.git
 
-uv pip install -U vllm --torch-backend auto # vllm>=0.12.0 is required
+uv pip install -U "vllm[audio]" --torch-backend auto # vllm>=0.14.1 is required
 ```
 
 ## Running with vLLM
@@ -82,24 +82,25 @@ AUDIO_BASE64=$(curl -sL "https://github.com/zai-org/GLM-ASR/raw/main/examples/ex
 
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d "{
-    \"model\": \"zai-org/GLM-ASR-Nano-2512\",
-    \"messages\": [
+  -d '{
+    "model": "zai-org/GLM-ASR-Nano-2512",
+    "messages": [
       {
-        \"role\": \"user\",
-        \"content\": [
+        "role": "user",
+        "content": [
           {
-            \"type\": \"input_audio\",
-            \"input_audio\": {
-              \"data\": \"$AUDIO_BASE64\",
-              \"format\": \"wav\"
+            "type": "input_audio",
+            "input_audio": {
+              "data": "'"${AUDIO_BASE64}"'",
+              "format": "wav"
             }
           }
         ]
       }
     ],
-    \"max_tokens\": 500
-  }"
+    "max_tokens": 500
+  }'
+
 ```
 
 #### Using Local Audio File
