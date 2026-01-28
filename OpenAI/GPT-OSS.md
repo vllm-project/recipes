@@ -99,7 +99,6 @@ export VLLM_ROCM_USE_AITER_FUSED_MOE_A16W4=1
 
 vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config  '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request --async-scheduling 
 ```
-* `export HSA_NO_SCRATCH_RECLAIM=1` is only needed on the serve with old GPU firmware. If the GPU firmware version is less than 177 by the following command, you need to set `export HSA_NO_SCRATCH_RECLAIM=1` for better performance. 
 
 #### Known Issues
 - When you encounter this error `The link interface of target "torch::nvtoolsext" contains: CUDA::nvToolsExt but the target was not found.` Please double check your pytorch version has suffix `+cu128`.
