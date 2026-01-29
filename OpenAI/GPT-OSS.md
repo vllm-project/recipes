@@ -85,7 +85,7 @@ vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization
 # GPU firmware version check
 rocm-smi --showfw | grep MEC | head -n 1 |  awk '{print $NF}'
 ```
-* `export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4` is to enhance All-Reduce performance by inline compression. Please check out this blog. [AMD ROCm QuickReduce](https://rocm.blogs.amd.com/artificial-intelligence/quick-reduce/README.html)
+* `export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4` is to enhance All-Reduce performance by inline compression. For more details, see the [AMD ROCm QuickReduce blog post](https://rocm.blogs.amd.com/artificial-intelligence/quick-reduce/README.html).
 
 
 ### MI355x(gfx950)
