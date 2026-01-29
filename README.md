@@ -84,6 +84,7 @@ This repo intends to host community maintained common recipes to run vLLM answer
 ### Qwen <img src="https://qwenlm.github.io/favicon.png" alt="Qwen" width="16" height="16" style="vertical-align:middle;">
 
 - [Qwen3](Qwen/Qwen3.md)
+- [Qwen3-ASR](Qwen/Qwen3-ASR.md)
 - [Qwen3-VL](Qwen/Qwen3-VL.md)
 - [Qwen3-Next](Qwen/Qwen3-Next.md)
 - [Qwen3-Coder-480B-A35B](Qwen/Qwen3-Coder-480B-A35B.md)
