@@ -60,7 +60,7 @@ We recommend using the official image for AMD GPUs (MI300x/MI325x/MI355x).
 ```bash
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
 ```
-⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/)
+⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/) 
 
 ### MI300x/MI325x(gfx942)
 
@@ -78,26 +78,25 @@ export VLLM_ROCM_USE_AITER_UNIFIED_ATTENTION=1
 export VLLM_ROCM_USE_AITER_MHA=0
 export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
 
-vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request
+vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config  '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request
 ```
-* `export HSA_NO_SCRATCH_RECLAIM=1` is only needed on servers with old GPU firmware. If the GPU firmware version is less than 177 by the following command, you need to set `export HSA_NO_SCRATCH_RECLAIM=1` for better performance. 
+* `export HSA_NO_SCRATCH_RECLAIM=1` is only needed on the serve with old GPU firmware. If the GPU firmware version is less than 177 by the following command, you need to set `export HSA_NO_SCRATCH_RECLAIM=1` for better performance. 
 ```bash
 # GPU firmware version check
 rocm-smi --showfw | grep MEC | head -n 1 |  awk '{print $NF}'
 ```
-* `export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4` is to enhance All-Reduce performance by inline compression. For more details, see the [AMD ROCm QuickReduce blog post](https://rocm.blogs.amd.com/artificial-intelligence/quick-reduce/README.html).
+* `export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4` is to enhance All-Reduce performance by inline compression. Please check out this blog. [AMD ROCm QuickReduce](https://rocm.blogs.amd.com/artificial-intelligence/quick-reduce/README.html)
 
 
 ### MI355x(gfx950)
 
 ```bash
 export HSA_NO_SCRATCH_RECLAIM=1
-export VLLM_ROCM_USE_AITER=1
-export VLLM_USE_AITER_UNIFIED_ATTENTION=1
-export VLLM_ROCM_USE_AITER_MHA=0
-export VLLM_ROCM_USE_AITER_FUSED_MOE_A16W4=1
+export VLLM_ROCM_USE_AITER=1                    |
+export VLLM_ROCM_USE_AITER_UNIFIED_ATTENTION=1  |
+export VLLM_ROCM_USE_AITER_MHA=0  
 
-vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request --async-scheduling 
+vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config  '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request --async-scheduling 
 ```
 
 #### Known Issues
