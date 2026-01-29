@@ -132,3 +132,68 @@ ERROR [multiproc_executor.py:511] ValueError: The output_size of gate's and up's
 - [EvalPlus](https://github.com/evalplus/evalplus)
 - [Qwen3-Coder](https://github.com/QwenLM/Qwen3-Coder)
 - [vLLM Documentation](https://docs.vllm.ai/)
+
+
+## AMD GPU Support
+Recommended approaches by hardware type are:
+
+
+MI300X/MI325X/MI355X  with fp8: Use FP8 checkpoint for optimal memory efficiency.
+
+- **MI300X/MI325X/MI355X with `fp8`**: Use FP8 checkpoint for optimal memory efficiency.
+- **MI300X/MI325X/MI355X with `bfloat16`**
+
+
+Please follow the steps here to install and run Qwen3-Coder models on AMD MI300X/MI325X/MI355X GPU.
+
+### Step 1: Prepare Docker Environment
+Pull the latest vllm docker:
+```shell
+docker pull vllm/vllm-openai-rocm:v0.14.1
+```
+Launch the ROCm vLLM docker: 
+```shell
+docker run -d -it --entrypoint /bin/bash --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -v ~/.cache/huggingface:/root/.cache/huggingface  -p 8000:8000 --name Qwen3-Coder   vllm/vllm-openai-rocm:v0.14.1
+```
+### Step 2: Log in to Hugging Face
+Log in to your Hugging Face account:
+```shell
+hf auth login
+```
+
+### Step 3: Start the vLLM server
+
+Run the vllm online serving
+```shell
+docker exec -it Qwen3-Coder /bin/bash 
+```
+
+### BF16 
+
+
+```shell
+VLLM_ROCM_USE_AITER=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct --trust-remote-code --max-model-len 131072 --enable-expert-parallel --data-parallel-size 8 --enable-auto-tool-choice --tool-call-parser qwen3_coder
+```
+
+### FP8 
+
+```shell
+
+VLLM_ROCM_USE_AITER=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 --trust-remote-code --max-model-len 131072 --enable-expert-parallel --data-parallel-size 8 --enable-auto-tool-choice --tool-call-parser qwen3_coder
+
+```
+
+
+### Step 4: Run Benchmark
+Open a new terminal and run the following command to execute the benchmark script inside the container.
+```shell
+docker exec -it Qwen3-Coder vllm bench serve \
+  --model "Qwen/Qwen3-Coder-480B-A35B-Instruct" \
+  --dataset-name random \
+  --random-input-len 8192 \
+  --random-output-len 1024 \
+  --request-rate 10000 \
+  --num-prompts 16 \
+  --ignore-eos \
+  --trust-remote-code 
+```
