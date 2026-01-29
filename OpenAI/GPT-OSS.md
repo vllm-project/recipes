@@ -92,9 +92,9 @@ rocm-smi --showfw | grep MEC | head -n 1 |  awk '{print $NF}'
 
 ```bash
 export HSA_NO_SCRATCH_RECLAIM=1
-export VLLM_ROCM_USE_AITER=1                    |
-export VLLM_ROCM_USE_AITER_UNIFIED_ATTENTION=1  |
-export VLLM_ROCM_USE_AITER_MHA=0  
+export VLLM_ROCM_USE_AITER=1
+export VLLM_ROCM_USE_AITER_UNIFIED_ATTENTION=1
+export VLLM_ROCM_USE_AITER_MHA=0
 
 vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config  '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request --async-scheduling 
 ```
