@@ -143,7 +143,7 @@ Please follow the steps here to install and run MiMo-V2-Flash on AMD MI300X/MI32
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
 ```
 
 ### Step 2: Start the vLLM server
