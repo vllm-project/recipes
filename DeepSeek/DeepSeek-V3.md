@@ -1,6 +1,6 @@
 # DeepSeek-V3 (R1) Usage Guide
 
-This guide describes how to run DeepSeek-V3 or DeepSeek-R1 with native FP8 or FP4. 
+This guide describes how to run DeepSeek-V3 or DeepSeek-R1 with native FP8 or FP4.
 In the guide, we use DeepSeek-R1 as an example, but the same applies to DeepSeek-V3 given they have the same model architecture.
 
 ## Installing vLLM
@@ -11,61 +11,50 @@ source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
-## Running DeepSeek-R1 with FP8 on 8xH200
+## Running DeepSeek-R1 / DeepSeek-V3
 
-There are two ways to parallelize the model over multiple GPUs: (1) Tensor-parallel or (2) Data-parallel. Each one has its own advantages, where tensor-parallel is usually more beneficial for low-latency / low-load scenarios and data-parallel works better for cases where there is a lot of data with heavy-loads.
+DeepSeek-R1 and DeepSeek-V3 share the same architecture, so the same serving setup applies. Two common configurations are:
 
-For blackwell, first enable flashinfer env vars:
+- **8xH200 with `fp8`**: Native FP8 with TP+EP or DP+EP.
+- **4xB200 with `fp4`**: Native FP4 with FlashInfer enabled (TP+EP or DP+EP).
+
+See sections below for detailed launch arguments for each configuration.
+
+### 8xH200 (FP8)
+There are two ways to parallelize the model over multiple GPUs: (1) Tensor-parallel or (2) Data-parallel. Tensor-parallel is usually better for low-latency / low-load scenarios, while data-parallel works better for high-load workloads.
+
+<details>
+<summary>Tensor Parallel + Expert Parallel (TP8+EP)</summary>
 
 ```bash
-export VLLM_ATTENTION_BACKEND=CUTLASS_MLA
-export VLLM_USE_FLASHINFER_MOE_FP8=1
-```
-
-Then, run tensor-parallel like this:
-
-```bash
-
-# Start server with FP8 model on 8 GPUs
 vllm serve deepseek-ai/DeepSeek-R1-0528 \
   --trust-remote-code \
   --tensor-parallel-size 8 \
   --enable-expert-parallel
 ```
 
-Or data-parallel like this:
+</details>
+
+<details>
+<summary>Data Parallel + Expert Parallel (DP8+EP)</summary>
 
 ```bash
-# Start server with FP8 model on 8 GPUs
 vllm serve deepseek-ai/DeepSeek-R1-0528 \
   --trust-remote-code \
   --data-parallel-size 8 \
   --enable-expert-parallel
 ```
 
-Note that in both cases we enable expert-parallel as well, so the first run is what we call TP+EP and the second one is DP+EP.
+</details>
 
-Additional flags:
+### 4xB200
+For Blackwell GPUs, enable FlashInfer before running:
 
-* For non-flashinfer runs, one can use VLLM_USE_DEEP_GEMM and VLLM_ALL2ALL_BACKEND. For example:
-```bash
-export VLLM_USE_DEEP_GEMM=1 
-export VLLM_ALL2ALL_BACKEND="deepep_high_throughput" # or "deepep_low_latency"
-```
-* You can set `--max-model-len` to preserve memory. `--max-model-len=65536` is usually good for most scenarios.
-* You can set `--max-num-batched-tokens` to balance throughput and latency, higher means higher throughput but higher latency. `--max-num-batched-tokens=32768` is usually good for prompt-heavy workloads. But you can reduce it to 16k and 8k to reduce activation memory usage and decrease latency.
-* vLLM conservatively use 90% of GPU memory, you can set `--gpu-memory-utilization=0.95` to maximize KVCache.
+- **For FP4**: `export VLLM_USE_FLASHINFER_MOE_FP4=1`  (recommended)
+- **For FP8**: `export VLLM_USE_FLASHINFER_MOE_FP8=1`
 
-## Running DeepSeek-R1 with FP4 on 4xB200
-
-For Blackwell GPUs, add these environment variables before running:
-
-```bash
-export VLLM_ATTENTION_BACKEND=CUTLASS_MLA
-export VLLM_USE_FLASHINFER_MOE_FP4=1
-```
-
-Then run tensor-parallel:
+<details>
+<summary>Tensor Parallel + Expert Parallel (TP4+EP)</summary>
 
 ```bash
 # The model is runnable on 4 or 8 GPUs, here we show usage of 4.
@@ -75,7 +64,11 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 vllm serve nvidia/DeepSeek-R1-FP4 \
   --enable-expert-parallel
 ```
 
-Or, data-parallel:
+</details>
+
+<details>
+<summary>Data Parallel + Expert Parallel (DP4+EP)</summary>
+
 ```bash
 # The model is runnable on 4 or 8 GPUs, here we show usage of 4.
 CUDA_VISIBLE_DEVICES=0,1,2,3 vllm serve nvidia/DeepSeek-R1-FP4 \
@@ -83,6 +76,9 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 vllm serve nvidia/DeepSeek-R1-FP4 \
   --data-parallel-size 4 \
   --enable-expert-parallel
 ```
+
+</details>
+
 
 ## Benchmarking
 

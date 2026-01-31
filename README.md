@@ -22,7 +22,7 @@ This repo intends to host community maintained common recipes to run vLLM answer
 ### GLM <img src="https://raw.githubusercontent.com/zai-org/GLM-4.5/refs/heads/main/resources/logo.svg" alt="GLM" width="16" height="16" style="vertical-align:middle;">
 
 - [Glyph](GLM/Glyph.md)
-- [GLM-4.5, GLM-4.6, GLM-4.5-Air](GLM/GLM-4.5.md)
+- [GLM-4.7, GLM-4.6, GLM-4.5, GLM-4.5-Air](GLM/GLM.md)
 - [GLM-4.5V, GLM-4.6V](GLM/GLM-V.md)
 
 ### inclusionAI <img src="https://avatars.githubusercontent.com/u/199075982?s=200&v=4" alt="inclusionAI" width="16" height="16" style="vertical-align:middle;">
@@ -49,7 +49,11 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 ### MiniMax <img src="https://github.com/MiniMax-AI/MiniMax-01/raw/main/figures/minimax.svg" alt="minmax" width="16" height="16" style="vertical-align:middle;">
 
-- [MiniMax-M2](MiniMax/MiniMax-M2.md)
+- [MiniMax-M2.1, MiniMax-M2](MiniMax/MiniMax-M2.md)
+
+### Xiaomi MiMo <img src="https://avatars.githubusercontent.com/u/208276378?&v=4" alt="Xiaomi MiMo" width="16" height="16" style="vertical-align:middle;">
+
+- [MiMo-V2-Flash](MiMo/MiMo-V2-Flash.md)
 
 ### Mistral AI <img src="https://avatars.githubusercontent.com/u/132372032?&v=4" alt="Mistral AI" width="16" height="16" style="vertical-align:middle;">
 
@@ -59,9 +63,15 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 ### Moonshotai <img src="https://avatars.githubusercontent.com/u/129152888?v=4" alt="Moonshotai" width="16" height="16" style="vertical-align:middle;">
 
+- [Kimi-K2.5](moonshotai/Kimi-K2.5.md)
 - [Kimi-K2](moonshotai/Kimi-K2.md)
 - [Kimi-K2-Think](moonshotai/Kimi-K2-Think.md)
 - [Kimi-Linear](moonshotai/Kimi-Linear.md)
+
+### NVIDIA
+
+- [Nemotron-3-Nano-30B-A3B](NVIDIA/Nemotron-3-Nano-30B-A3B.md)
+- [Nemotron-Nano-12B-v2-VL](NVIDIA/Nemotron-Nano-12B-v2-VL.md)
 
 ### OpenAI <img src="https://avatars.githubusercontent.com/u/14957082?v=4" alt="OpenAI" width="16" height="16" style="vertical-align:middle;">
 
@@ -74,6 +84,7 @@ This repo intends to host community maintained common recipes to run vLLM answer
 ### Qwen <img src="https://qwenlm.github.io/favicon.png" alt="Qwen" width="16" height="16" style="vertical-align:middle;">
 
 - [Qwen3](Qwen/Qwen3.md)
+- [Qwen3-ASR](Qwen/Qwen3-ASR.md)
 - [Qwen3-VL](Qwen/Qwen3-VL.md)
 - [Qwen3-Next](Qwen/Qwen3-Next.md)
 - [Qwen3-Coder-480B-A35B](Qwen/Qwen3-Coder-480B-A35B.md)
