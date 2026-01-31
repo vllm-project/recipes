@@ -144,7 +144,7 @@ docker pull vllm/vllm-openai-rocm:v0.14.1
 ```
 Launch the ROCm vLLM docker: 
 ```shell
-docker run -d -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash  -p 8000:8000 --name Qwen3-Next vllm/vllm-openai-rocm:v0.14.1
+docker run -d -it --entrypoint /bin/bash --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v /:/work   -v ~/.cache/huggingface:/root/.cache/huggingface -p 8000:8000 --name Qwen3-Next vllm/vllm-openai-rocm:v0.14.1
 
 ```
 ### Step 2: Log in to Hugging Face
@@ -162,7 +162,6 @@ docker exec -it Qwen3-Next /bin/bash
 ```
 
 ```shell
-VLLM_ROCM_USE_AITER=1 \
 SAFETENSORS_FAST_GPU=1 \
 VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
 vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct \
