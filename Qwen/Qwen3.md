@@ -13,9 +13,6 @@ This guide provides step-by-step instructions for running the Qwen3 series using
 ## AMD GPU Support
 Recommended approaches by hardware type are:
 
-
-MI300X/MI325X/MI355X  with fp8: Use FP8 checkpoint for optimal memory efficiency.
-
 - **MI300X/MI325X/MI355X with `fp8`**: Use FP8 checkpoint for optimal memory efficiency.
 - **MI300X/MI325X/MI355X with `bfloat16`**
 
