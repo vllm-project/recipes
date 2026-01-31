@@ -37,7 +37,7 @@ hf auth login
 
 ### Step 3: Start the vLLM server
 
-Run the vllm online serving
+Enter the Docker container to run the following commands:
 ```shell
 docker exec -it Qwen3 /bin/bash 
 ```
