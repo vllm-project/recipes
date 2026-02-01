@@ -41,7 +41,7 @@ There are two ways to parallelize the model over multiple GPUs: (1) Tensor-paral
 <details>
 <summary>Data Parallel Script</summary>
 
-``` bash
+```bash
 vllm serve stepfun-ai/Step-3.5-Flash \
     --data-parallel-size 4 \
     --enable-expert-parallel \
