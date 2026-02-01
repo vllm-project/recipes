@@ -95,6 +95,12 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 - [Seed-OSS-36B](Seed/Seed-OSS-36B.md)
 
+
+### StepFun <img src="StepFun/assets/stepfun_log.jpg" alt="StepFun" width="16" height="16" style="vertical-align:middle;">
+
+- [Step-3.5-Flash](StepFun/Step-3.5-Flash.md)
+
+
 ### Tencent-Hunyuan <img src="https://avatars.githubusercontent.com/u/210980732?s=200&v=4" alt="Tencent-Hunyuan" width="16" height="16" style="vertical-align:middle;">
 
 - [HunyuanOCR](Tencent-Hunyuan/HunyuanOCR.md)
