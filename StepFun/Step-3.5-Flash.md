@@ -114,7 +114,7 @@ vllm bench serve \
   --num-prompt 100 
 ```
 
-If successful, you should see output similar to the following（TP4+FP16 on 4*H200）
+If successful, you should see output similar to the following (TP4+FP16 on 4*H200)
 
 ```bash
 tip: install termplotlib and gnuplot to plot the metrics
