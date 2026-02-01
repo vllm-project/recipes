@@ -90,7 +90,7 @@ vllm serve stepfun-ai/Step-3.5-Flash \
     --tensor-parallel-size 4 \
     --reasoning-parser step3p5 \
     --tool-call-parser step3p5 \
-    --enable-auto-tool-choice  \
+    --enable-auto-tool-choice \
     --trust-remote-code \
     --hf-overrides '{"num_nextn_predict_layers": 1}' \
     --speculative-config '{"method": "step3p5_mtp", "num_speculative_tokens": 1}' 
