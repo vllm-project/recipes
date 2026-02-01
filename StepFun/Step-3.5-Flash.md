@@ -152,7 +152,7 @@ P99 ITL (ms):                            13.45
 
 - For FP8 model, you can install DeepGEMM using [install_deepgemm.sh](https://github.com/vllm-project/vllm/blob/v0.16.0rc0/tools/install_deepgemm.sh).
 
-- On B200 GPUs, you may encounter the following error when you serving the FP8 model:
+- On B200 GPUs, you may encounter the following error when serving the FP8 model:
 
     <details>
     <summary>FlashInfer FP8 MoE Error</summary>
