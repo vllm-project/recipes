@@ -79,6 +79,7 @@ vllm serve stepfun-ai/Step-3.5-Flash \
 - To enhance MTP usage, append the following speculative configuration:
 
 ```bash
+--hf-overrides '{"num_nextn_predict_layers": 1}' \
 --speculative-config '{"method": "step3p5_mtp", "num_speculative_tokens": 1}' 
 ```
 
