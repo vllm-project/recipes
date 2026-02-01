@@ -29,7 +29,7 @@ uv pip install -U vllm --pre \
 - [stepfun-ai/Step-3.5-Flash-FP8](https://huggingface.co/stepfun-ai/Step-3.5-Flash-FP8)
 - [stepfun-ai/Step-3.5-Flash-Int4](https://huggingface.co/stepfun-ai/Step-3.5-Flash-Int4)
 
-**NOTE**:currently vLLM doen't support Int4 format of this model.
+**NOTE**: Currently vLLM doesn't support the Int4 format of this model.
 
 
 ### Running Step-3.5-Flash on 4xH200/H20/B200
