@@ -100,7 +100,7 @@ vllm serve stepfun-ai/Step-3.5-Flash \
 
 ## Benchmark 
 
-We use the following script to demonstrate how to benchmark stepfun-ai/Step-3.5-Flash`.
+We use the following script to demonstrate how to benchmark `stepfun-ai/Step-3.5-Flash`.
 
 ```bash
 vllm bench serve \
