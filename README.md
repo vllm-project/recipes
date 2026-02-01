@@ -96,7 +96,7 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [Seed-OSS-36B](Seed/Seed-OSS-36B.md)
 
 
-### StepFun <img src="StepFun/assets/stepfun_log.jpg" alt="StepFun" width="16" height="16" style="vertical-align:middle;">
+### StepFun <img src="StepFun/assets/stepfun_logo.jpg" alt="StepFun" width="16" height="16" style="vertical-align:middle;">
 
 - [Step-3.5-Flash](StepFun/Step-3.5-Flash.md)
 
