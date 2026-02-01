@@ -26,8 +26,8 @@ uv pip install -U vllm --pre \
 
 `Step-3.5-Flash` provides three precision options, You can choose the appropriate model based on your needs.
 - [stepfun-ai/Step-3.5-Flash](https://huggingface.co/stepfun-ai/Step-3.5-Flash)
-- [stepfun-ai/Step-3.5-Flash-FP8](https://huggingface.co/stepfun-ai/Step-3.5-Flash-FP8)  
-- [stepfun-ai/Step-3.5-Flash-Int4](https://huggingface.co/stepfun-ai/Step-3.5-Flash-Int4) 
+- [stepfun-ai/Step-3.5-Flash-FP8](https://huggingface.co/stepfun-ai/Step-3.5-Flash-FP8)
+- [stepfun-ai/Step-3.5-Flash-Int4](https://huggingface.co/stepfun-ai/Step-3.5-Flash-Int4)
 
 **NOTE**:currently vLLM doen't support Int4 format of this model.
 
