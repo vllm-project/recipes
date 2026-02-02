@@ -112,7 +112,6 @@ SAFETENSORS_FAST_GPU=1 \
 VLLM_ROCM_USE_AITER=1 \
 VLLM_ROCM_USE_AITER_MOE=1 \
 NCCL_DEBUG=WARN \
-VLLM_LOGGING_LEVEL=DEBUG \
 VLLM_RPC_TIMEOUT=18000000 \
 vllm serve deepseek-ai/DeepSeek-V3.2-Exp \
   --tensor-parallel-size 8 \
@@ -121,7 +120,6 @@ vllm serve deepseek-ai/DeepSeek-V3.2-Exp \
   --no-enable-prefix-caching \
   --disable-log-requests \
   --kv-cache-dtype bfloat16 \
-  --gpu-memory-utilization 0.85 \
   --block-size 1 
 ```
 ### Step 4: Run Benchmark
