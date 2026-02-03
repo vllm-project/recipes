@@ -117,21 +117,25 @@ P99 ITL (ms):                            12.14
 
 
 ## AMD GPU Support
+Recommended approaches by hardware type are:
 
-Please follow the steps here to install and run GLM-4.5V models on AMD MI300X GPU.
-### Step 1: Prepare Docker Environment
-Pull the latest vllm docker:
-```shell
-docker pull rocm/vllm-dev:nightly
-```
-Launch the ROCm vLLM docker: 
-```shell
-docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash  --name GLM-4.5V-FP8 rocm/vllm-dev:nightly 
-```
-### Step 2: Log in to Hugging Face
-Huggingface login
-```shell
-huggingface-cli login
+
+MI300X/MI325X/MI355X 
+
+Please follow the steps here to install and run GLM-4.5V models on AMD MI300X/MI325X/MI355X GPU.
+
+### Step 1: Installing vLLM (AMD ROCm Backend: MI300X, MI325X, MI355X) 
+ > Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).  
+ ```bash 
+ uv venv 
+ source .venv/bin/activate 
+ uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
+ ```
+
+
+### Step 2: Start the vLLM server
+
+Run the vllm online serving
 
 Run the vllm online serving
 Sample Command
@@ -151,10 +155,10 @@ vllm serve zai-org/GLM-4.5V-FP8 \
      --trust-remote-code 
 ```
 
-## Step 4: Run Benchmark
-Open a new terminal and run the following command to execute the benchmark script inside the container.
+## Step 3: Run Benchmark
+
 ```shell
-docker exec -it GLM-4.5V-FP8 vllm bench serve \
+ vllm bench serve \
   --model "zai-org/GLM-4.5V-FP8" \
   --dataset-name random \
   --random-input-len 8000 \
