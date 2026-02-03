@@ -105,30 +105,24 @@ for i, res in enumerate(output):
 
 
 
-## AMD GPU Support 
+## AMD GPU Support
 Recommended approaches by hardware type are:
 
-MI300X/MI325X/MI355X
 
-Please follow the steps here to install and run PaddleOCR-VL models on AMD  GPU.
-### Step 1: Prepare Docker Environment
-Pull the latest vllm docker:
-```shell
-docker pull vllm/vllm-openai-rocm:v0.14.1
-```
-Launch the ROCm vLLM docker: 
-```shell
+MI300X/MI325X/MI355X 
 
-docker run -d -it --entrypoint /bin/bash --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v /:/work   -v ~/.cache/huggingface:/root/.cache/huggingface -p 8000:8000 --name PaddleOCR-VL vllm/vllm-openai-rocm:v0.14.1
+Please follow the steps here to install and run PaddleOCR-VL models on AMD MI300X/MI325X/MI355X GPU.
 
-```
-### Step 2: Log in to Hugging Face
-Huggingface login
-```shell
-hf auth login
-```
+### Step 1: Installing vLLM (AMD ROCm Backend: MI300X, MI325X, MI355X) 
+ > Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).  
+ ```bash 
+ uv venv 
+ source .venv/bin/activate 
+ uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
+ ```
 
-### Step 3: Start the vLLM server
+
+### Step 2: Start the vLLM server
 
 Run the vllm online serving
 Sample Command
@@ -145,10 +139,10 @@ VLLM_USE_TRITON_FLASH_ATTN=0 vllm serve PaddlePaddle/PaddleOCR-VL \
 ```
 
 
-### Step 4: Run Benchmark
+### Step 3: Run Benchmark
 Open a new terminal and run the following command to execute the benchmark script inside the container.
 ```shell
-docker exec -it PaddleOCR-VL vllm bench serve \
+  vllm bench serve \
   --model "PaddlePaddle/PaddleOCR-VL" \
   --dataset-name random \
   --random-input-len 8192 \
