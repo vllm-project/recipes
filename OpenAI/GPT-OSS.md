@@ -80,7 +80,7 @@ export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
 
 vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request
 ```
-* `export HSA_NO_SCRATCH_RECLAIM=1` is only needed on servers with old GPU firmware. If the GPU firmware version is less than 177 by the following command, you need to set `export HSA_NO_SCRATCH_RECLAIM=1` for better performance. 
+* `export HSA_NO_SCRATCH_RECLAIM=1` is only needed on the server with old GPU firmware. If the GPU firmware version is less than 177 by the following command, you need to set `export HSA_NO_SCRATCH_RECLAIM=1` for better performance.
 ```bash
 # GPU firmware version check
 rocm-smi --showfw | grep MEC | head -n 1 |  awk '{print $NF}'
@@ -93,11 +93,10 @@ rocm-smi --showfw | grep MEC | head -n 1 |  awk '{print $NF}'
 ```bash
 export HSA_NO_SCRATCH_RECLAIM=1
 export VLLM_ROCM_USE_AITER=1
-export VLLM_USE_AITER_UNIFIED_ATTENTION=1
+export VLLM_ROCM_USE_AITER_UNIFIED_ATTENTION=1
 export VLLM_ROCM_USE_AITER_MHA=0
-export VLLM_ROCM_USE_AITER_FUSED_MOE_A16W4=1
 
-vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request --async-scheduling 
+vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request --async-scheduling
 ```
 
 #### Known Issues
