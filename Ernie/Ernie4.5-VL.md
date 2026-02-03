@@ -8,9 +8,7 @@ Ernie4.5-VL support was recently added to vLLM main branch and is not yet availa
 ```bash
 uv venv --python 3.12 --seed
 source .venv/bin/activate
-uv pip install -U vllm \
-    --torch-backend=auto \
-    --extra-index-url https://wheels.vllm.ai/nightly
+uv pip install -U vllm --torch-backend auto
 ```
 
 ## Running Ernie4.5-VL

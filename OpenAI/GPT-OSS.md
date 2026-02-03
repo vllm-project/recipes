@@ -51,86 +51,52 @@ vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
 
 ### H100 & H200
 
-GPT-OSS works on Hopper devices by default, using the FlashAttention3 backend and Marlin MXFP4 MoE:
+Please refer to the [Recipe for NVIDIA Blackwell & Hopper Hardware](#recipe-for-nvidia-blackwell-hopper-hardware) section.
 
-* `--async-scheduling` can be enabled for higher performance. Note: vLLM >= 0.11.1 has improved async scheduling stability and provides compatibility with structured output.
-* We recommend TP=2 for H100 and H200 as the best performance tradeoff point. 
+## AMD: 
+## Installation from pre-built wheels (For AMD ROCm: MI300x/MI325x/MI355x)
 
+We recommend using the official image for AMD GPUs (MI300x/MI325x/MI355x). 
+```bash
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
 ```
-# openai/gpt-oss-20b should run in single GPU
-vllm serve openai/gpt-oss-20b --async-scheduling 
+⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/)
 
-# gpt-oss-120b will fit in a single H100/H200, but scaling it to higher TP sizes can help with throughput
-vllm serve openai/gpt-oss-120b --async-scheduling
-vllm serve openai/gpt-oss-120b --tensor-parallel-size 2 --async-scheduling
-vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
+### MI300x/MI325x(gfx942)
+
+You can launch GPT-OSS model serving with vLLM using:
+
+```bash
+vllm serve openai/gpt-oss-120b
 ```
+However, for optimal performance, applying the configuration below can deliver additional speedups and efficiency gains. These configurations were validated on the [vLLM 0.14.1 release](https://github.com/vllm-project/vllm/releases/tag/v0.14.1).
 
-### B200
-
-NVIDIA Blackwell requires installation of [FlashInfer library](https://github.com/flashinfer-ai/flashinfer), so please install the extra `vllm[flashinfer]`.
-
-```
-uv pip install vllm[flashinfer]==0.10.2 --torch-backend=auto
-```
-
-We recommend TP=1 as a starting point for a performant option. We are actively working on the performance of vLLM on Blackwell. 
-
-```
-# Pick only one out of the two for MoE implementation
-# bf16 activation for MoE. matching reference precision (default).
-export VLLM_USE_FLASHINFER_MXFP4_BF16_MOE=1 
-# mxfp8 activation for MoE. faster, but higher risk for accuracy.
-export VLLM_USE_FLASHINFER_MXFP4_MOE=1 
-
-# openai/gpt-oss-20b
-vllm serve openai/gpt-oss-20b --async-scheduling 
-
-# gpt-oss-120b 
-vllm serve openai/gpt-oss-120b --async-scheduling
-vllm serve openai/gpt-oss-120b --tensor-parallel-size 2 --async-scheduling
-vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
-```
-
-### AMD
-
-ROCm supports OpenAI gpt-oss-120b or gpt-oss-20b models on these 3 different GPUs on day one, along with the pre-built docker containers:
-
-* gfx950: MI350x series, `rocm/vllm-dev:open-mi355-08052025`  
-* gfx942: MI300x/MI325 series, `rocm/vllm-dev:open-mi300-08052025`  
-* gfx1201: Radeon AI PRO R9700, `rocm/vllm-dev:open-r9700-08052025`
-
-To run the container:
-
-```
-alias drun='sudo docker run -it --network=host --device=/dev/kfd --device=/dev/dri --group-add=video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32G -v /data:/data -v $HOME:/myhome -w /myhome'
-
-drun rocm/vllm-dev:open-mi300-08052025
-```
-
-For MI300x and R9700:
-
-```
+```bash
+export HSA_NO_SCRATCH_RECLAIM=1
 export VLLM_ROCM_USE_AITER=1
-export VLLM_USE_AITER_UNIFIED_ATTENTION=1
+export VLLM_ROCM_USE_AITER_UNIFIED_ATTENTION=1
+export VLLM_ROCM_USE_AITER_MHA=0
+export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+
+vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request
+```
+* `export HSA_NO_SCRATCH_RECLAIM=1` is only needed on the server with old GPU firmware. If the GPU firmware version is less than 177 by the following command, you need to set `export HSA_NO_SCRATCH_RECLAIM=1` for better performance.
+```bash
+# GPU firmware version check
+rocm-smi --showfw | grep MEC | head -n 1 |  awk '{print $NF}'
+```
+* `export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4` is to enhance All-Reduce performance by inline compression. For more details, see the [AMD ROCm QuickReduce blog post](https://rocm.blogs.amd.com/artificial-intelligence/quick-reduce/README.html).
+
+
+### MI355x(gfx950)
+
+```bash
+export HSA_NO_SCRATCH_RECLAIM=1
+export VLLM_ROCM_USE_AITER=1
+export VLLM_ROCM_USE_AITER_UNIFIED_ATTENTION=1
 export VLLM_ROCM_USE_AITER_MHA=0
 
-vllm serve openai/gpt-oss-120b --compilation-config '{"full_cuda_graph": true}' 
-```
-
-For MI355x:
-
-```
-# MoE preshuffle, fusion and Triton GEMM flags
-export VLLM_USE_AITER_TRITON_FUSED_SPLIT_QKV_ROPE=1
-export VLLM_USE_AITER_TRITON_FUSED_ADD_RMSNORM_PAD=1
-export VLLM_USE_AITER_TRITON_GEMM=1
-export VLLM_ROCM_USE_AITER=1
-export VLLM_USE_AITER_UNIFIED_ATTENTION=1
-export VLLM_ROCM_USE_AITER_MHA=0
-export TRITON_HIP_PRESHUFFLE_SCALES=1
-
-vllm serve openai/gpt-oss-120b --compilation-config '{"compile_sizes": [1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 4096, 8192], "full_cuda_graph": true}' --block-size 64 
+vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request --async-scheduling
 ```
 
 #### Known Issues
@@ -225,22 +191,22 @@ Model: 20B
 | Mid  | 67.5 | 75.0 |
 | High  | 70.9 | 85.8  |
 
-## Detailed Recipe for NVIDIA Blackwell & Hopper Hardware
+## Recipe for NVIDIA Blackwell & Hopper Hardware
 
 This chapter includes more instructions about running gpt-oss-120b and gpt-oss-20b on NVIDIA Blackwell & Hopper hardware to get the additional performance optimizations compared to the Quickstart chapter above.
 
 ### Pull Docker Image
 
-Pull the vLLM v0.11.2 release docker image.
+Pull the vLLM v0.12.0 release docker image.
 
 `pull_image.sh`
 ```
 # On x86_64 systems:
-docker pull --platform linux/amd64 vllm/vllm-openai:v0.11.2
+docker pull --platform linux/amd64 vllm/vllm-openai:v0.12.0
 # On aarch64 systems:
-# docker pull --platform linux/aarch64 vllm/vllm-openai:v0.11.2
+# docker pull --platform linux/aarch64 vllm/vllm-openai:v0.12.0
 
-docker tag vllm/vllm-openai:v0.11.2 vllm/vllm-openai:deploy
+docker tag vllm/vllm-openai:v0.12.0 vllm/vllm-openai:deploy
 ```
 
 ### Run Docker Container
@@ -263,7 +229,7 @@ Prepare the config YAML file to configure vLLM. Below shows the recommended conf
 `GPT-OSS_Blackwell.yaml`
 ```
 kv-cache-dtype: fp8
-compilation-config: '{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_noop":true}}'
+compilation-config: '{"pass_config":{"fuse_allreduce_rms":true,"eliminate_noops":true}}'
 async-scheduling: true
 no-enable-prefix-caching: true
 max-cudagraph-capture-size: 2048
@@ -285,13 +251,13 @@ Below are the config YAML files to enable EAGLE3 speculative decoding:
 `GPT-OSS_EAGLE3_Blackwell.yaml`
 ```
 kv-cache-dtype: fp8
-compilation-config: '{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_noop":true}}'
+compilation-config: '{"pass_config":{"fuse_allreduce_rms":true,"eliminate_noops":true}}'
 async-scheduling: true
 no-enable-prefix-caching: true
 max-cudagraph-capture-size: 2048
 max-num-batched-tokens: 8192
 stream-interval: 20
-speculative-config: '{"model":"nvidia/gpt-oss-120b-Eagle3","num_speculative_tokens":3,"method":"eagle3","draft_tensor_parallel_size":1}'
+speculative-config: '{"model":"nvidia/gpt-oss-120b-Eagle3-v2","num_speculative_tokens":3,"method":"eagle3","draft_tensor_parallel_size":1}'
 ```
 
 `GPT-OSS_EAGLE3_Hopper.yaml`
@@ -301,7 +267,7 @@ no-enable-prefix-caching: true
 max-cudagraph-capture-size: 2048
 max-num-batched-tokens: 8192
 stream-interval: 20
-speculative-config: '{"model":"nvidia/gpt-oss-120b-Eagle3","num_speculative_tokens":3,"method":"eagle3","draft_tensor_parallel_size":1}'
+speculative-config: '{"model":"nvidia/gpt-oss-120b-Eagle3-v2","num_speculative_tokens":3,"method":"eagle3","draft_tensor_parallel_size":1}'
 ```
 
 ### Launch the vLLM Server
@@ -321,6 +287,11 @@ if [ "$COMPUTE_CAPABILITY" = "10.0" ]; then
 else
     # Select the config file for Hopper architecture.
     YAML_CONFIG="GPT-OSS_Hopper.yaml"
+    # vLLM v0.12.0 has a performance regression on Hopper GPUs for small concurrency
+    # (see: https://github.com/vllm-project/vllm/issues/28894 ). Enable this environment
+    # variable to fix the regression. This has been fixed in https://github.com/vllm-project/vllm/pull/30528
+    # and the env var will no longer be needed in the next vLLM version.
+    # export VLLM_MXFP4_USE_MARLIN=1
 fi
 
 # Launch the vLLM server
@@ -340,7 +311,7 @@ You can specify the IP address and the port that you would like to run the serve
 
 Below are the config flags that we do not recommend changing or tuning with:
 
-- `compilation-config`: Configuration for vLLM compilation stage. We recommend setting it to `'{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_noop":true}}'` to enable all the necessary fusions for the best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
+- `compilation-config`: Configuration for vLLM compilation stage. We recommend setting it to `'{"pass_config":{"fuse_allreduce_rms":true,"eliminate_noops":true}}'` to enable all the necessary fusions for the best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
 - `async-scheduling`: Enable asynchronous scheduling to reduce the host overheads between decoding steps. We recommend always adding this flag for best performance. Note: vLLM >= 0.11.1 has improved async scheduling stability and provides compatibility with structured output.
 - `no-enable-prefix-caching`: Disable prefix caching. We recommend always adding this flag if running with synthetic dataset for consistent performance measurement.
 - `max-cudagraph-capture-size`: Specify the max size for cuda graphs. We recommend setting this to 2048 to leverage the benefit of cuda graphs while not using too much GPU memory.

@@ -6,5 +6,5 @@ This quick start recipe provides step-by-step instructions for running the Llama
 
 ### TPU Deployment
 
-- [Llama3.1-70B on Trillium (v6e)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.1)
-- [Llama3.1-8B on Trillium (v6e)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.1)
+- [Llama3.x-70B on Trillium (v6e)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.x)
+- [Llama3.1-8B on Trillium (v6e)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.x)

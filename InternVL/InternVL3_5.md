@@ -11,11 +11,24 @@ source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
+## Installing vLLM (For AMD ROCm: MI300x/MI325x/MI355x)
+```bash
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
+```
+⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/) 
+
 ## Launching InternVL3.5 with vLLM
 
 ```bash
 vllm serve OpenGVLab/InternVL3_5-8B --trust-remote-code
 ```
+
+## Launching InternVL3.5 with vLLM on AMD GPUs
+```bash
+export VLLM_ROCM_USE_AITER=1
+vllm serve OpenGVLab/InternVL3_5-8B --trust-remote-code
+```
+* You can set `export VLLM_ROCM_USE_AITER=1` for Better Performance on AMD GPUs. The default is `export VLLM_ROCM_USE_AITER=0`
 
 ## API Usage Examples
 

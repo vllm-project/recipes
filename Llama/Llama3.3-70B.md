@@ -35,16 +35,16 @@ For Hopper, FP8 offers the best performance for most workloads. For Blackwell, N
 
 ### Pull Docker Image
 
-Pull the vLLM v0.11.2 release docker image.
+Pull the vLLM v0.12.0 release docker image.
 
 `pull_image.sh`
 ```
 # On x86_64 systems:
-docker pull --platform linux/amd64 vllm/vllm-openai:v0.11.2
+docker pull --platform linux/amd64 vllm/vllm-openai:v0.12.0
 # On aarch64 systems:
-# docker pull --platform linux/aarch64 vllm/vllm-openai:v0.11.2
+# docker pull --platform linux/aarch64 vllm/vllm-openai:v0.12.0
 
-docker tag vllm/vllm-openai:v0.11.2 vllm/vllm-openai:deploy
+docker tag vllm/vllm-openai:v0.12.0 vllm/vllm-openai:deploy
 ```
 
 ### Run Docker Container
@@ -67,7 +67,7 @@ Prepare the config YAML file to configure vLLM. Below shows the recommended conf
 `Llama3.3_Blackwell.yaml`
 ```
 kv-cache-dtype: fp8
-compilation-config: '{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_attn_fusion":true,"enable_noop":true}}'
+compilation-config: '{"pass_config":{"fuse_allreduce_rms":true,"fuse_attn_quant":true,"eliminate_noops":true}}'
 async-scheduling: true
 no-enable-prefix-caching: true
 max-num-batched-tokens: 8192
@@ -121,7 +121,7 @@ You can specify the IP address and the port that you would like to run the serve
 Below are the config flags that we do not recommend changing or tuning with:
 
 - `kv-cache-dtype`: Kv-cache data type. We recommend setting it to `fp8` for best performance.
-- `compilation-config`: Configuration for vLLM compilation stage. We recommend setting it to `'{"pass_config":{"enable_fi_allreduce_fusion":true,"enable_attn_fusion":true,"enable_noop":true}}'` to enable all the necessary fusions for the best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
+- `compilation-config`: Configuration for vLLM compilation stage. We recommend setting it to `'{"pass_config":{"fuse_allreduce_rms":true,"fuse_attn_quant":true,"eliminate_noops":true}}'` to enable all the necessary fusions for the best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
 - `async-scheduling`: Enable asynchronous scheduling to reduce the host overheads between decoding steps. We recommend always adding this flag for best performance.
 - `no-enable-prefix-caching` Disable prefix caching. We recommend always adding this flag if running with synthetic dataset for consistent performance measurement.
 
