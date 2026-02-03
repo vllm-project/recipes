@@ -13,34 +13,21 @@ This guide provides step-by-step instructions for running the Qwen3 series using
 ## AMD GPU Support
 Recommended approaches by hardware type are:
 
-- **MI300X/MI325X/MI355X with `fp8`**: Use FP8 checkpoint for optimal memory efficiency.
-- **MI300X/MI325X/MI355X with `bfloat16`**
+
+MI300X/MI325X/MI355X 
+
+Please follow the steps here to install and run Qwen3-Next models on AMD MI300X/MI325X/MI355X GPU.
+
+### Step 1: Installing vLLM (AMD ROCm Backend: MI300X, MI325X, MI355X) 
+ > Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).  
+ ```bash 
+ uv venv 
+ source .venv/bin/activate 
+ uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
+ ```
 
 
-Please follow the steps here to install and run Qwen3 models on AMD MI300X/MI325X/MI355X GPU.
-
-### Step 1: Prepare Docker Environment
-Pull the latest vllm docker:
-```shell
-docker pull vllm/vllm-openai-rocm:v0.14.1
-```
-Launch the ROCm vLLM docker: 
-```shell
-
-docker run -d -it --entrypoint /bin/bash --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v /:/work   -v ~/.cache/huggingface:/root/.cache/huggingface -p 8000:8000 --name Qwen3 vllm/vllm-openai-rocm:v0.14.1
-```
-### Step 2: Log in to Hugging Face
-Log in to your Hugging Face account:
-```shell
-hf auth login
-```
-
-### Step 3: Start the vLLM server
-
-Enter the Docker container to run the following commands:
-```shell
-docker exec -it Qwen3 /bin/bash 
-```
+### Step 2: Start the vLLM server
 
 ### BF16 
 
@@ -91,9 +78,9 @@ vllm serve Qwen/Qwen3-235B-A22B-FP8 \
 
 
 ### Step 4: Run Benchmark
-Open a new terminal and run the following command to execute the benchmark script inside the container.
+
 ```shell
-docker exec -it Qwen3 vllm bench serve \
+vllm bench serve \
   --model "Qwen/Qwen3-235B-A22B-FP8" \
   --dataset-name random \
   --random-input-len 8192 \
