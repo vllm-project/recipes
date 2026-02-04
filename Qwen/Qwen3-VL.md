@@ -228,8 +228,6 @@ SAFETENSORS_FAST_GPU=1 \
 vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
 --tensor-parallel  4 \
 --mm-encoder-tp-mode "data" \
---no-enable-prefix-caching \
---trust-remote-code
 
 ```
 ### Step 3: Run Benchmark
