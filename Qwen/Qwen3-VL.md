@@ -240,7 +240,6 @@ vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
   --request-rate 10000 \
   --num-prompts 16 \
   --ignore-eos \
-  --trust-remote-code 
 ```
 
 
