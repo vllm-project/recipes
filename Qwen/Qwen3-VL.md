@@ -211,9 +211,7 @@ VLLM_ROCM_USE_AITER=1 \
 SAFETENSORS_FAST_GPU=1 \
 vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
 --tensor-parallel 4 \
---mm-encoder-tp-mode data \
---no-enable-prefix-caching \
---trust-remote-code
+--mm-encoder-tp-mode data 
 ```
 
 ### FP8 
@@ -227,7 +225,7 @@ VLLM_ROCM_USE_AITER=1 \
 SAFETENSORS_FAST_GPU=1 \
 vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
 --tensor-parallel  4 \
---mm-encoder-tp-mode "data" \
+--mm-encoder-tp-mode "data" 
 
 ```
 ### Step 3: Run Benchmark
@@ -239,7 +237,7 @@ vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
   --random-output-len 1024 \
   --request-rate 10000 \
   --num-prompts 16 \
-  --ignore-eos \
+  --ignore-eos 
 ```
 
 
