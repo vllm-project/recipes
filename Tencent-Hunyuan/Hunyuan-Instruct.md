@@ -7,7 +7,7 @@ Please follow the steps here to install and run Hunyuan-A13B-Instruct models on 
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
 ```
 
 ### Step 2: Log in to Hugging Face
@@ -24,7 +24,7 @@ Run the vllm online serving:
 export SAFETENSORS_FAST_GPU=1
 export VLLM_USE_TRITON_FLASH_ATTN=0 
 export VLLM_ROCM_USE_AITER=1
-vllm serve tencent/Hunyuan-A13B-Instruct --tensor-parallel-size 2 --gpu-memory-utilization 0.9 --disable-log-requests --no-enable-prefix-caching --trust-remote-code 
+vllm serve tencent/Hunyuan-A13B-Instruct --tensor-parallel-size 2 --no-enable-prefix-caching --trust-remote-code 
 ```
 
 ### Step 4: Run Benchmark
