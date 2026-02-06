@@ -154,67 +154,42 @@ P99 ITL (ms):                            16.15
 ==================================================
 ```
 
-### AMD GPU Support
+## AMD GPU Support
+Recommended approaches by hardware type are:
 
-Please follow the steps here to install and run DeepSeek-R1 models on AMD MI300X GPU.
-### Step 1: Prepare Docker Environment
-Pull the latest vllm docker:
-```shell
-docker pull vllm/vllm-openai-rocm:v0.14.1
-```
-Launch the ROCm vLLM docker: 
-```shell
-docker run -it \
-  --ipc=host \
-  --network=host \
-  --privileged \
-  --cap-add=CAP_SYS_ADMIN \
-  --device=/dev/kfd \
-  --device=/dev/dri \
-  --device=/dev/mem \
-  --group-add video \
-  --cap-add=SYS_PTRACE \
-  --security-opt seccomp=unconfined \
-  -v $(pwd):/work \
-  -e SHELL=/bin/bash \
-  --name DeepSeek-R1 \
-  vllm/vllm-openai-rocm:v0.14.1
-```
-### Step 2: Log in to Hugging Face
-Huggingface login
-```shell
-huggingface-cli login
-```
+MI300X/MI325X/MI355X 
 
-### Step 3: Start the vLLM server 
+Please follow the steps here to install and run DeepSeek-V3 (R1) models on AMD MI300X/MI325X/MI355X GPU.
+
+### Step 1: Installing vLLM (AMD ROCm Backend: MI300X, MI325X, MI355X) 
+ > Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).  
+ ```bash 
+ uv venv 
+ source .venv/bin/activate 
+ uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+ ```
+
+
+### Step 2: Start the vLLM server
 
 Run the vllm online serving
-Sample Command
-```shell
 
+
+```bash
 SAFETENSORS_FAST_GPU=1 \
-NCCL_MIN_NCHANNELS=112 \
-VLLM_ROCM_USE_AITER=1 \
-VLLM_ROCM_USE_AITER_RMSNORM=0 \
-VLLM_ROCM_USE_AITER_MHA=0 \
-VLLM_V1_USE_PREFILL_DECODE_ATTENTION=1 \
 VLLM_USE_TRITON_FLASH_ATTN=0 \
-VLLM_RPC_TIMEOUT=18000000 \
-vllm serve "deepseek-ai/DeepSeek-R1" \
---tensor-parallel-size 8 \
---enable-expert-parallel \
---max-model-len 32768 \
---max-num-seqs 1024 \
---max-num-batched-tokens 32768 \
---disable-log-requests \
---block-size 1 \
---trust-remote-code
+VLLM_ROCM_USE_AITER=1 \
+vllm serve deepseek-ai/DeepSeek-R1 \
+  --tensor-parallel-size 8 \
+  --enable-expert-parallel \
+  --trust-remote-code
 ```
 
-### Step 4: Run Benchmark
-Open a new terminal and run the following command to execute the benchmark script inside the container.
-```shell
-docker exec -it DeepSeek-R1 vllm bench serve \
+
+### Step 3: Run Benchmark
+Open a new terminal and run the following command to execute the benchmark script.
+```bash
+vllm bench serve \
   --model "deepseek-ai/DeepSeek-R1" \
   --dataset-name random \
   --random-input-len 8000 \
