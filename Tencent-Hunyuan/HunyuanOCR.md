@@ -8,8 +8,7 @@
 ```bash
 uv venv
 source .venv/bin/activate
-# Until v0.11.3 release, you need to install vLLM from nightly build
-uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly
+uv pip install -U vllm --torch-backend auto
 ```
 
 ## Deploying HunyuanOCR

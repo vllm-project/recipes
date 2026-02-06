@@ -7,8 +7,11 @@ This guide describes how to run moonshotai/Kimi-Linear-48B-A3B-Instruct.
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm --extra-index-url https://wheels.vllm.ai/nightly --prerelease=allow
+# Install a stable version (avoid 0.12.0)
+uv pip install vllm==0.11.2 --torch-backend auto
 ```
+**Note**: Regarding Kimi-Linear, vLLM 0.12.0 has a known bug with `MLAModules.__init__() missing 1 required positional argument: 'indexer_rotary_emb'`. Please avoid this version.
+
 
 ## Running Kimi-Linear
 
