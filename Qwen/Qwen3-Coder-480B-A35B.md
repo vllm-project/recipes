@@ -150,7 +150,7 @@ Please follow the steps here to install and run Qwen3-Coder models on AMD MI300X
  ```bash 
  uv venv 
  source .venv/bin/activate 
- uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
+ uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
  ```
 
 
