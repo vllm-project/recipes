@@ -176,14 +176,15 @@ VLLM_ROCM_USE_AITER=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 --trust
 
 ### Step 4: Run Benchmark
 Open a new terminal and run the following command to execute the benchmark script inside the container.
+
 ```shell
- vllm bench serve \
-  --model "Qwen/Qwen3-Coder-480B-A35B-Instruct" \
+vllm bench serve \
+  --backend vllm \
+  --model Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
+  --endpoint /v1/completions \
   --dataset-name random \
-  --random-input-len 8192 \
-  --random-output-len 1024 \
-  --request-rate 10000 \
-  --num-prompts 16 \
-  --ignore-eos \
-  --trust-remote-code 
+  --random-input 2048 \
+  --random-output 1024 \
+  --max-concurrency 10 \
+  --num-prompt 100
 ```
