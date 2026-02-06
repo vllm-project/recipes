@@ -129,7 +129,8 @@ Please follow the steps here to install and run GLM-4.5V models on AMD MI300X/MI
  ```bash 
  uv venv 
  source .venv/bin/activate 
- uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+
  ```
 
 
