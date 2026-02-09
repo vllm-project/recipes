@@ -26,7 +26,7 @@ uv pip install qwen-vl-utils
 ```
 
 
-## Running Qwen3-VL
+## Running Qwen3.5
 
 
 ### Qwen3.5-35B-A3B-Instruct
