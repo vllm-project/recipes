@@ -147,7 +147,15 @@ P99 ITL (ms):                            37.17
 
 Please follow the steps here to install and run GLM models on AMD MI300X, MI325X, MI355X GPUs.
 
-### Step 1: Prepare Docker Environment
+### Step 1: Prepare Environment
+#### Option 1: Installation from pre-built wheels (For AMD ROCm: MI300x/MI325x/MI355x)
+We recommend using the official package for AMD GPUs (MI300x/MI325x/MI355x). 
+```bash
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
+```
+⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/).
+
+#### Option 2: Docker image
 Pull the latest vllm docker:
 
 ```shell
