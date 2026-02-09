@@ -2,7 +2,7 @@
 
 This guide describes how to run GLM-5 with native FP8.
 
-## Dependencis
+## Dependencies
 
 Using Docker with:
 
@@ -35,10 +35,8 @@ vllm serve zai-org/GLM-5-FP8 \
      --served-model-name glm-5-fp8
 ```
 
-- When using `vLLM`, thinking mode is enabled by default when sending requests. If you want to disable the thinking switch, you need to add the `"chat_template_kwargs": {"enable_thinking": False}` parameter.
-- Both support tool calling. Please use OpenAI-style tool description format for calls.
-
-## Usage
+- When using `vLLM`, thinking mode is enabled by default when sending requests. If you want to disable the thinking switch, you need to add the `"chat_template_kwargs": {"enable_thinking": false}` parameter.
+- Support tool calling by default. Please use OpenAI-style tool description format for calls.
 
 ## Client Usage
 
