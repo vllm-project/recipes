@@ -159,12 +159,12 @@ uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
 Pull the latest vllm docker:
 
 ```shell
-docker pull vllm/vllm-openai-rocm:v0.14.1
+docker pull vllm/vllm-openai-rocm:v0.15.1
 ```
 
 Launch the ROCm vLLM docker: 
 ```shell
-docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash --name GLM vllm/vllm-openai-rocm:v0.14.1 
+docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash --name GLM vllm/vllm-openai-rocm:v0.15.1 
 ```
 
 ### Step 2: Log in to Hugging Face
