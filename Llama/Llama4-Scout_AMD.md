@@ -29,14 +29,26 @@ To use Llama 4 Scout model, you must first need to gain access to the model repo
 ### 1. Using vLLM docker image (For AMD users)
 
 ```bash
-alias drun='sudo docker run -it --network=host --device=/dev/kfd --device=/dev/dri --group-add=video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32G -v /data:/data -v $HOME:/myhome -w /myhome --entrypoint /bin/bash'
-drun vllm/vllm-openai-rocm:v0.14.1
+docker run -it \
+  --network=host \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --group-add=video \
+  --ipc=host \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  --shm-size 32G \
+  -v /data:/data \
+  -v $HOME:/myhome \
+  -w /myhome \
+  --entrypoint /bin/bash \
+  vllm/vllm-openai-rocm:latest
+```
 
 ### 2. Start vLLM online server (run in background)
 
 ```bash
 export TP=8 
-#export MODEL="meta-llama/Llama-4-Maverick-17B-128E-Instruct" 
 export MODEL="meta-llama/Llama-4-Scout-17B-16E-Instruct"
 export VLLM_ROCM_USE_AITER=1
 vllm serve $MODEL \
@@ -51,7 +63,6 @@ vllm serve $MODEL \
 ### 3. Performance benchmark 
 
 ```bash
-#export MODEL="meta-llama/Llama-4-Maverick-17B-128E-Instruct" 
 export MODEL="meta-llama/Llama-4-Scout-17B-16E-Instruct"
 export ISL=1024
 export OSL=1024
