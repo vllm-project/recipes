@@ -29,8 +29,20 @@ Please check whether you have access to the following model:
 ### 1. Using vLLM docker image (For AMD users)
 
 ```bash
-alias drun='sudo docker run -it --network=host --device=/dev/kfd --device=/dev/dri --group-add=video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32G -v /data:/data -v $HOME:/myhome -w /myhome --entrypoint /bin/bash'
-drun vllm/vllm-openai-rocm:v0.14.0
+docker run -it \
+  --network=host \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --group-add=video \
+  --ipc=host \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  --shm-size 32G \
+  -v /data:/data \
+  -v $HOME:/myhome \
+  -w /myhome \
+  --entrypoint /bin/bash \
+  vllm/vllm-openai-rocm:latest
 ```
 
 ### 2. Start vLLM online server (run in background)
@@ -40,8 +52,7 @@ export TP=1
 export VLLM_ROCM_USE_AITER=1
 export MODEL="mistralai/Ministral-3-14B-Instruct-2512"
 vllm serve $MODEL \
-  --disable-log-requests \
-  --port 9090 \
+  --disable-log-requests \  
   -tp $TP \
   --config_format mistral \
   --load_format mistral \
@@ -49,27 +60,7 @@ vllm serve $MODEL \
   --tool-call-parser mistral &
 ```
 
-### 3. Running Inference using benchmark script
-
-Test the model with a text-only prompt.
-
-```bash
-curl http://localhost:9090/v1/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-        "model": "mistralai/Ministral-3-14B-Instruct-2512",
-        "prompt": "Explain the benefits of KV cache in transformer decoding.",
-        "max_tokens": 128,
-        "temperature": 0
-    }'
-```
-
-Test result (local run):
-```bash
-"text":" How does it help in reducing the computational cost?\n\n### Understanding KV Cache in Transformer Decoding\n\nThe **KV cache** (Key-Value cache) is a technique used in **transformer-based models** (like GPT, BERT, etc.) during **autoregressive decoding** to improve efficiency. Here's how it works and why it's beneficial:\n\n---\n\n### **1. What is KV Cache?**\nDuring decoding, a transformer model generates tokens one by one. For each new token, the model computes **attention scores** between the current token and all previous tokens in the sequence. The attention mechanism involves:\n"
-```
-
-### 4. Performance benchmark
+### 3. Performance benchmark
 
 ```bash
 export MODEL="mistralai/Ministral-3-14B-Instruct-2512"
@@ -85,7 +76,6 @@ vllm bench serve \
   --random-output-len $OSL \
   --num-prompts $REQ \
   --ignore-eos \
-  --max-concurrency $CONC \
-  --port 9090 \
+  --max-concurrency $CONC \  
   --percentile-metrics ttft,tpot,itl,e2el
 ```
