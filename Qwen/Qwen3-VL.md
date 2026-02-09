@@ -171,3 +171,74 @@ print(f"Generated text: {response.choices[0].message.content}")
 ```
 
 For more usage examples, check out the [vLLM user guide for multimodal models](https://docs.vllm.ai/en/latest/features/multimodal_inputs.html) and the [official Qwen3-VL GitHub Repository](https://github.com/QwenLM/Qwen3-VL)!
+
+
+
+## AMD GPU Support
+Recommended approaches by hardware type are:
+
+
+MI300X/MI325X/MI355X 
+
+Please follow the steps here to install and run Qwen3-VL models on AMD MI300X/MI325X/MI355X GPU.
+
+### Step 1: Installing vLLM (AMD ROCm Backend: MI300X, MI325X, MI355X) 
+ > Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).  
+ ```bash 
+ uv venv 
+ source .venv/bin/activate 
+ uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+ ```
+
+
+
+### Step 2: Start the vLLM server
+
+Run the vllm online serving
+
+#### Inside the working dir, create a new directory named `miopen` .
+```shell
+mkdir "$(pwd)/miopen"
+```
+
+### BF16 
+
+
+```shell
+MIOPEN_USER_DB_PATH="$(pwd)/miopen" \
+MIOPEN_FIND_MODE=FAST \
+VLLM_ROCM_USE_AITER=1 \
+SAFETENSORS_FAST_GPU=1 \
+vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
+--tensor-parallel 4 \
+--mm-encoder-tp-mode data 
+```
+
+### FP8 
+
+```shell
+
+MIOPEN_USER_DB_PATH="$(pwd)/miopen" \
+MIOPEN_FIND_MODE=FAST \
+VLLM_USE_V1=1 \
+VLLM_ROCM_USE_AITER=1 \
+SAFETENSORS_FAST_GPU=1 \
+vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
+--tensor-parallel  4 \
+--mm-encoder-tp-mode "data" 
+
+```
+### Step 3: Run Benchmark
+```shell
+ vllm bench serve \
+  --model Qwen/Qwen3-VL-235B-A22B-Instruct \
+  --dataset-name random \
+  --random-input-len 8192 \
+  --random-output-len 1024 \
+  --request-rate 10000 \
+  --num-prompts 16 \
+  --ignore-eos 
+```
+
+
+  
