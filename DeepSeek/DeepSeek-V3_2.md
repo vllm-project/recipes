@@ -40,6 +40,13 @@ uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly
    
 ```
 
+### Performance tuning on Hopper/Blackwell GPUs
+
+On Hopper (H100/H200) or Blackwell (B200/B300), avoid using `-tp=8` for DeepSeek-V3.2 with FlashMLA-Sparse. Due to current kernel restrictions (see [flashmla_sparse.py](https://github.com/vllm-project/vllm/blob/main/vllm/v1/attention/backends/mla/flashmla_sparse.py#L951)), TP=8 yields only 16 heads (128/8) per rank but is padded to 64 heads, incurring overhead and hurting performance.
+
+Prefer **TP=1~2 + DP/EP** so each rank keeps 64/128 heads without padding:
+- **Hopper**: TP=2
+- **Blackwell**: TP=1
 
 ## Accuracy Benchmarking
 
