@@ -28,7 +28,20 @@ To use the Llama 3.1 model, you must first gain access to the model repo under H
 ### 1. Using vLLM docker image (For AMD users)
 
 ```bash
-sudo docker run -it --network=host --device=/dev/kfd --device=/dev/dri --group-add=video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32G -v /data:/data -v $HOME:/myhome -w /myhome --entrypoint /bin/bash vllm/vllm-openai-rocm:v0.14.1
+docker run -it \
+  --network=host \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --group-add=video \
+  --ipc=host \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  --shm-size 32G \
+  -v /data:/data \
+  -v $HOME:/myhome \
+  -w /myhome \
+  --entrypoint /bin/bash \
+  vllm/vllm-openai-rocm:latest
 ```
 
 ### 2. Start vLLM online server (run in background)
@@ -38,27 +51,11 @@ export TP=1
 export VLLM_ROCM_USE_AITER=1
 export MODEL="meta-llama/Llama-3.1-8B-Instruct"
 vllm serve $MODEL \
-  --disable-log-requests \
-  --port 8001 \
+  --disable-log-requests \  
   -tp $TP &
 ```
 
-### 3. Running Inference using benchmark script
-
-Test the model with a text-only prompt.
-
-```bash
-curl http://localhost:8001/v1/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-        "model": "meta-llama/Llama-3.1-8B-Instruct",
-        "prompt": "Write a short paragraph explaining how vLLM improves throughput for LLM serving.",
-        "max_tokens": 128,
-        "temperature": 0
-    }'
-```
-
-### 4. Performance benchmark
+### 3. Performance benchmark
 
 ```bash
 export MODEL="meta-llama/Llama-3.1-8B-Instruct"
@@ -74,7 +71,6 @@ vllm bench serve \
   --random-output-len $OSL \
   --num-prompts $REQ \
   --ignore-eos \
-  --max-concurrency $CONC \
-  --port 8001 \
+  --max-concurrency $CONC \  
   --percentile-metrics ttft,tpot,itl,e2el
 ```
