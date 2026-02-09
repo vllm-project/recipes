@@ -29,8 +29,20 @@ To use the Llama 3.3 model, you must first gain access to the model repo under H
 ### 1. Using vLLM docker image (For AMD users)
 
 ```bash
-alias drun='sudo docker run -it --network=host --device=/dev/kfd --device=/dev/dri --group-add=video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32G -v /data:/data -v $HOME:/myhome -w /myhome --entrypoint /bin/bash'
-drun vllm/vllm-openai-rocm:v0.14.1
+docker run -it \
+  --network=host \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --group-add=video \
+  --ipc=host \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  --shm-size 32G \
+  -v /data:/data \
+  -v $HOME:/myhome \
+  -w /myhome \
+  --entrypoint /bin/bash \
+  vllm/vllm-openai-rocm:latest
 ```
 
 ### 2. Start vLLM online server (run in background)
@@ -40,27 +52,11 @@ export TP=2
 export MODEL="meta-llama/Llama-3.3-70B-Instruct"
 export VLLM_ROCM_USE_AITER=1
 vllm serve $MODEL \
-  --disable-log-requests \
-  --port 8005 \
+  --disable-log-requests \  
   -tp $TP &  
 ```
 
-### 3. Running Inference using benchmark script
-
-Test the model with a text-only prompt.
-
-```bash
-curl http://localhost:8005/v1/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-        "model": "meta-llama/Llama-3.3-70B-Instruct",
-        "prompt": "Summarize the key differences between throughput and latency in LLM serving.",
-        "max_tokens": 128,
-        "temperature": 0
-    }'
-```
-
-### 4. Performance benchmark
+### 3. Performance benchmark
 
 ```bash
 export MODEL="meta-llama/Llama-3.3-70B-Instruct"
@@ -76,8 +72,7 @@ vllm bench serve \
   --random-output-len $OSL \
   --num-prompts $REQ \
   --ignore-eos \
-  --max-concurrency $CONC \
-  --port 8005 \
+  --max-concurrency $CONC \  
   --percentile-metrics ttft,tpot,itl,e2el
 ```
 
