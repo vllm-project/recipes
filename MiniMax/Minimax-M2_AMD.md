@@ -28,14 +28,25 @@ To use the MiniMax M2 model, please check whether you have access to the followi
 ### 1. Using vLLM docker image (For AMD users)
 
 ```bash
-alias drun='sudo docker run -it --network=host --device=/dev/kfd --device=/dev/dri --group-add=video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32G -v /data:/data -v $HOME:/myhome -w /myhome --entrypoint /bin/bash'
-drun vllm/vllm-openai-rocm:v0.14.1
+docker run -it \
+  --network=host \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --group-add=video \
+  --ipc=host \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  --shm-size 32G \
+  -v /data:/data \
+  -v $HOME:/myhome \
+  -w /myhome \
+  --entrypoint /bin/bash \
+  vllm/vllm-openai-rocm:latest
 ```
 
 ### 2. Start vLLM online server (run in background)
 
 ```bash
-export HIP_VISIBLE_DEVICES=0,1,2,3
 export VLLM_ROCM_USE_AITER=1
 vllm serve MiniMaxAI/MiniMax-M2 \
   --tensor-parallel-size 4 \
@@ -43,26 +54,10 @@ vllm serve MiniMaxAI/MiniMax-M2 \
   --reasoning-parser minimax_m2_append_think \
   --enable-auto-tool-choice \
   --trust-remote-code \
-  --disable-log-requests \
-  --port 8007 &
+  --disable-log-requests &
 ```
 
-### 3. Running Inference using benchmark script
-
-Test the model with a text-only prompt.
-
-```bash
-curl http://localhost:8007/v1/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-        "model": "MiniMaxAI/MiniMax-M2",
-        "prompt": "Explain how speculative decoding can improve LLM throughput.",
-        "max_tokens": 128,
-        "temperature": 0
-    }'
-```
-
-### 4. Performance benchmark
+### 3. Performance benchmark
 
 ```bash
 export MODEL="MiniMaxAI/MiniMax-M2"
@@ -78,7 +73,6 @@ vllm bench serve \
   --random-output-len $OSL \
   --num-prompts $REQ \
   --ignore-eos \
-  --max-concurrency $CONC \
-  --port 8007 \
+  --max-concurrency $CONC \  
   --percentile-metrics ttft,tpot,itl,e2el
 ```
