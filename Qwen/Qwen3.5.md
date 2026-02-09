@@ -10,9 +10,12 @@ Available in Dense and MoE architectures that scale from edge to cloud, with Ins
 
 ```bash
 uv venv
+source .venv/bin/activate
 
 # After vLLM 0.16.0 release
-source .venv/bin/activate
+# uv pip install -U vllm
+
+# Before vLLM 0.16.0 release
 uv pip install -U vllm --pre \
     --extra-index-url https://wheels.vllm.ai/nightly/cu129 \
     --extra-index-url https://download.pytorch.org/whl/cu129 \
