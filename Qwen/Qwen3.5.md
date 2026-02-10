@@ -47,7 +47,8 @@ vllm serve Qwen/Qwen3.5-35B-A3B-Instruct \
   --tensor-parallel-size 8 \
   --mm-encoder-tp-mode data \
   --speculative-config '{"method": "qwen3_5_mtp", "num_speculative_tokens": 2}' \
-  --enable-expert-parallel
+  --enable-expert-parallel \
+  --reasoning-parser deepseek_r1
 ```
 
 </details>
@@ -61,7 +62,8 @@ vllm serve Qwen/Qwen3.5-35B-A3B-Instruct \
   --tensor-parallel-size 8 \
   --language-model-only \
   --speculative-config '{"method": "qwen3_5_mtp", "num_speculative_tokens": 2}' \
-  --enable-expert-parallel
+  --enable-expert-parallel \
+  --reasoning-parser deepseek_r1
 ```
 
 </details>
