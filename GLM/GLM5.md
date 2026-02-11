@@ -40,13 +40,12 @@ vllm serve zai-org/GLM-5-FP8 \
      --enable-auto-tool-choice \
      --served-model-name glm-5-fp8
 ```
-
-- When using `vLLM`, **thinking mode is enabled by default** when sending requests. If you want to disable the thinking switch, you need to add the `"chat_template_kwargs": {"enable_thinking": false}` parameter.
-- Support tool calling by default. Please use OpenAI-style tool description format for calls.
-
 ### OpenAI Client Example
 
-Example:
+First, install the OpenAI Python client:
+
+```bash
+pip install -U openai
 
 ```python
 from openai import OpenAI
