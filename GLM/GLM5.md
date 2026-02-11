@@ -22,7 +22,7 @@ uv pip install -U vllm --pre --index-url https://pypi.org/simple --extra-index-u
 uv pip install git+https://github.com/huggingface/transformers.git
 ```
 
-- For FP8 model, you can install DeepGEMM using [install_deepgemm.sh](https://github.com/vllm-project/vllm/blob/v0.16.0rc0/tools/install_deepgemm.sh).
+- For FP8 model, you can install DeepGEMM using [install_deepgemm.sh](https://github.com/vllm-project/vllm/blob/main/tools/install_deepgemm.sh).
 
 
 ## Using the Model
