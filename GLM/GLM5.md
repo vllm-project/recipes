@@ -25,9 +25,6 @@ uv pip install git+https://github.com/huggingface/transformers.git
 - For FP8 model, you can install DeepGEMM using [install_deepgemm.sh](https://github.com/vllm-project/vllm/blob/v0.16.0rc0/tools/install_deepgemm.sh).
 
 
-
-
-
 ## Using the Model
 
 ### Serving on 8xH200 (or H20) GPUs (141GB × 8)
@@ -44,16 +41,10 @@ vllm serve zai-org/GLM-5-FP8 \
      --served-model-name glm-5-fp8
 ```
 
-
-
 - When using `vLLM`, **thinking mode is enabled by default** when sending requests. If you want to disable the thinking switch, you need to add the `"chat_template_kwargs": {"enable_thinking": false}` parameter.
 - Support tool calling by default. Please use OpenAI-style tool description format for calls.
 
-
-
-
 ### OpenAI Client Example
-
 
 Example:
 
