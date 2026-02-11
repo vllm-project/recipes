@@ -4,14 +4,14 @@ This guide describes how to run GLM-5 with native FP8.
 
 ## Dependencies
 
-Using Docker with:
+### Using Docker
 
 ```bash
 docker pull vllm/vllm-openai:nightly
 pip install git+https://github.com/huggingface/transformers.git
 ```
 
-Build from source:
+### Installing vLLM from source
 
 ```bash
 uv venv
@@ -22,7 +22,13 @@ uv pip install -U vllm --pre --index-url https://pypi.org/simple --extra-index-u
 uv pip install git+https://github.com/huggingface/transformers.git
 ```
 
-## Running with FP8 and MTP
+- For FP8 model, you can install DeepGEMM using [install_deepgemm.sh](https://github.com/vllm-project/vllm/blob/v0.16.0rc0/tools/install_deepgemm.sh).
+
+
+## Using the Model
+
+### Serving on 8xH200 (or H20) GPUs (141GB × 8)
+
 
 ```bash
 vllm serve zai-org/GLM-5-FP8 \
@@ -35,32 +41,31 @@ vllm serve zai-org/GLM-5-FP8 \
      --served-model-name glm-5-fp8
 ```
 
-- When using `vLLM`, thinking mode is enabled by default when sending requests. If you want to disable the thinking switch, you need to add the `"chat_template_kwargs": {"enable_thinking": false}` parameter.
+- When using vLLM, **thinking mode is enabled by default when sending requests**. If you want to disable the thinking switch, you need to add the `"chat_template_kwargs": {"enable_thinking": false}` parameter.
 - Support tool calling by default. Please use OpenAI-style tool description format for calls.
 
-## Client Usage
+### OpenAI Client Example
 
-The vLLM server exposes an OpenAI-compatible API.
-
-### Python (OpenAI SDK)
-
-Install:
+First, install the OpenAI Python client:
 
 ```bash
-pip install -U openai
+uv pip install -U openai
 ```
 
-Example:
+You can use the OpenAI client as follows to  verify the think mode.
 
 ```python
 from openai import OpenAI
 
 # If running vLLM locally with its default OpenAI-compatible port:
 #   http://localhost:8000/v1
-client = OpenAI(
-    base_url="http://localhost:8000/v1",
-)
+openai_api_key = "EMPTY"
+openai_api_base = "http://localhost:8000/v1"
 
+client = OpenAI(
+    api_key=openai_api_key,
+    base_url=openai_api_base,
+)
 messages = [
     {"role": "system", "content": "You are a helpful assistant."},
     {"role": "user", "content": "Summarize GLM-5 in one sentence."},
@@ -73,7 +78,7 @@ resp_on = client.chat.completions.create(
     temperature=1,
     max_tokens=4096,
 )
-print("thinking=on:\n", resp_on.choices[0].message.content)
+print("thinking=on, think content:\n", resp_on.choices[0].message.reasoning)
 
 # Thinking OFF
 resp_off = client.chat.completions.create(
@@ -87,14 +92,14 @@ resp_off = client.chat.completions.create(
         }
     },
 )
-print("thinking=off:\n", resp_off.choices[0].message.content)
+# The content of reasoning should be None
+print("thinking=off:\n",resp_off.choices[0].message.reasoning)
 ```
 
-## cURL Usage
+### cURL Usage
 
-### Chat Completions
 
-Thinking ON (default):
+- Thinking ON (default):
 
 ```bash
 curl http://localhost:8000/v1/chat/completions \
@@ -110,7 +115,7 @@ curl http://localhost:8000/v1/chat/completions \
   } '
 ```
 
-Thinking OFF:
+- Thinking OFF:
 
 ```bash
 curl http://localhost:8000/v1/chat/completions \
@@ -133,14 +138,51 @@ For benchmarking, disable prefix caching by adding `--no-enable-prefix-caching` 
 
 ### FP8 Benchmark
 
+- The following uses H200*8 as an example to demonstrate how to run the benchmark.
+
 ```bash
 # Prompt-heavy benchmark (8k/1k)
 vllm bench serve \
   --model zai-org/GLM-5-FP8 \
   --dataset-name random \
-  --random-input-len 8000 \
-  --random-output-len 1000 \
-  --request-rate 10000 \
-  --num-prompts 16 \
+  --random-input 8000 \
+  --random-output 1024 \
+  --request-rate 10 \
+  --num-prompts 32  \
+  --trust-remote-code
   --ignore-eos
 ```
+
+If successful, you will see the following output.
+
+```shell
+============ Serving Benchmark Result ============
+Successful requests:                     32        
+Failed requests:                         0         
+Request rate configured (RPS):           10.00     
+Benchmark duration (s):                  71.46     
+Total input tokens:                      256000    
+Total generated tokens:                  32768     
+Request throughput (req/s):              0.45      
+Output token throughput (tok/s):         458.55    
+Peak output token throughput (tok/s):    832.00    
+Peak concurrent requests:                32.00     
+Total token throughput (tok/s):          4040.98   
+---------------Time to First Token----------------
+Mean TTFT (ms):                          13529.94  
+Median TTFT (ms):                        13689.81  
+P99 TTFT (ms):                           25567.26  
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          54.52     
+Median TPOT (ms):                        54.54     
+P99 TPOT (ms):                           67.51     
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           54.52     
+Median ITL (ms):                         42.22     
+P99 ITL (ms):                            914.84    
+==================================================
+
+```
+
+
+
