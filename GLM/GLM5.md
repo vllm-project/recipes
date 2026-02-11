@@ -7,8 +7,24 @@ GLM-5 is a significantly scaled-up language model (744B parameters, 28.5T tokens
 ### Using Docker
 
 ```bash
-docker pull vllm/vllm-openai:nightly
-pip install git+https://github.com/huggingface/transformers.git
+docker run --gpus all \
+  -p 8000:8000 \
+  --ipc=host \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  --entrypoint bash \
+  vllm/vllm-openai:nightly-0b20469c627e94060d1015170b186d19de1db583 \
+  -lc "
+    apt update -y -qq && \
+    apt install -y git -qq && \
+    pip install git+https://github.com/huggingface/transformers.git && \
+    vllm serve zai-org/GLM-5-FP8 \
+      --tensor-parallel-size 8 \
+      --tool-call-parser glm47 \
+      --reasoning-parser glm45 \
+      --enable-auto-tool-choice \
+      --served-model-name glm-5-fp8 \
+      --trust-remote-code
+  "
 ```
 
 ### Installing vLLM from source
@@ -22,12 +38,16 @@ uv pip install -U vllm --pre --index-url https://pypi.org/simple --extra-index-u
 uv pip install git+https://github.com/huggingface/transformers.git
 ```
 
+<<<<<<< HEAD
+- For FP8 model, you must install DeepGEMM using [install_deepgemm.sh](https://github.com/vllm-project/vllm/blob/v0.16.0rc0/tools/install_deepgemm.sh).
+=======
 - For FP8 model, you can install DeepGEMM using [install_deepgemm.sh](https://github.com/vllm-project/vllm/blob/main/tools/install_deepgemm.sh).
+>>>>>>> origin/main
 
 
-## Using the Model
+## Model Deployment
 
-### Serving on 8xH200 (or H20) GPUs (141GB × 8)
+### Serving FP8 Model on 8xH200 (or H20) GPUs (141GB × 8)
 
 
 ```bash
