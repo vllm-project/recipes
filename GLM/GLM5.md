@@ -28,10 +28,9 @@ uv pip install git+https://github.com/huggingface/transformers.git
 
 
 
-
 ## Using the Model
 
-### Launching GLM-5-FP8
+### Serving on 8xH200 (or H20) GPUs (141GB × 8)
 
 
 ```bash
@@ -184,7 +183,5 @@ P99 ITL (ms):                            914.84
 
 ```
 
-
-## Usage Tips
 
 
