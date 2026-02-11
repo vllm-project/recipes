@@ -38,11 +38,7 @@ uv pip install -U vllm --pre --index-url https://pypi.org/simple --extra-index-u
 uv pip install git+https://github.com/huggingface/transformers.git
 ```
 
-<<<<<<< HEAD
 - For FP8 model, you must install DeepGEMM using [install_deepgemm.sh](https://github.com/vllm-project/vllm/blob/v0.16.0rc0/tools/install_deepgemm.sh).
-=======
-- For FP8 model, you can install DeepGEMM using [install_deepgemm.sh](https://github.com/vllm-project/vllm/blob/main/tools/install_deepgemm.sh).
->>>>>>> origin/main
 
 
 ## Model Deployment
@@ -112,7 +108,7 @@ resp_off = client.chat.completions.create(
         }
     },
 )
-# The content of reasoning should be None
+# The content of reasoning should be None.
 print("thinking=off:\n", resp_off.choices[0].message.reasoning)
 ```
 
