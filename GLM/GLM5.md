@@ -2,7 +2,7 @@
 
 
 
-GLM-5 is a significantly scaled-up language model (744B parameters, 28.5T tokens) with novel asynchronous RL infrastructure that achieves best-in-class open-source performance on reasoning, coding, and agentic tasks, rivaling frontier models. GLM is available in 2 precision formats: zai-org/GLM-5 and [zai-org/GLM-5-FP8](https://huggingface.co/zai-org/GLM-5-FP8)This guide describes how to run GLM-5 with native FP8.
+GLM-5 is a significantly scaled-up language model (744B parameters, 28.5T tokens) with novel asynchronous RL infrastructure that achieves best-in-class open-source performance on reasoning, coding, and agentic tasks, rivaling frontier models. GLM is available in 2 precision formats: [zai-org/GLM-5](https://huggingface.co/zai-org/GLM-5) and [zai-org/GLM-5-FP8](https://huggingface.co/zai-org/GLM-5-FP8). This guide describes how to run GLM-5 with native FP8.
 
 ## Dependencies
 
