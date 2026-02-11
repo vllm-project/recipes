@@ -40,22 +40,32 @@ vllm serve zai-org/GLM-5-FP8 \
      --enable-auto-tool-choice \
      --served-model-name glm-5-fp8
 ```
+
+- When using vLLM, **thinking mode is enabled by default when sending requests**. If you want to disable the thinking switch, you need to add the `"chat_template_kwargs": {"enable_thinking": false}` parameter.
+- Support tool calling by default. Please use OpenAI-style tool description format for calls.
+
 ### OpenAI Client Example
 
 First, install the OpenAI Python client:
 
 ```bash
-pip install -U openai
+uv pip install -U openai
+```
+
+You can use the OpenAI client as follows to  verify the think mode.
 
 ```python
 from openai import OpenAI
 
 # If running vLLM locally with its default OpenAI-compatible port:
 #   http://localhost:8000/v1
-client = OpenAI(
-    base_url="http://localhost:8000/v1",
-)
+openai_api_key = "EMPTY"
+openai_api_base = "http://localhost:8000/v1"
 
+client = OpenAI(
+    api_key=openai_api_key,
+    base_url=openai_api_base,
+)
 messages = [
     {"role": "system", "content": "You are a helpful assistant."},
     {"role": "user", "content": "Summarize GLM-5 in one sentence."},
@@ -68,7 +78,7 @@ resp_on = client.chat.completions.create(
     temperature=1,
     max_tokens=4096,
 )
-print("thinking=on:\n", resp_on.choices[0].message.content)
+print("thinking=on, think content:\n", resp_on.choices[0].message.reasoning)
 
 # Thinking OFF
 resp_off = client.chat.completions.create(
@@ -82,7 +92,8 @@ resp_off = client.chat.completions.create(
         }
     },
 )
-print("thinking=off:\n", resp_off.choices[0].message.content)
+# The content of reasoning should be None
+print("thinking=off:\n",resp_off.choices[0].message.reasoning)
 ```
 
 ### cURL Usage
@@ -137,7 +148,7 @@ vllm bench serve \
   --random-input 8000 \
   --random-output 1024 \
   --request-rate 10 \
-  --num-prompt 32  \ 
+  --num-prompts 32  \
   --trust-remote-code
   --ignore-eos
 ```
