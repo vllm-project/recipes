@@ -1,6 +1,6 @@
 # GLM-5 Usage
 
-This guide describes how to run GLM-5 with native FP8.
+GLM-5 is a significantly scaled-up language model (744B parameters, 28.5T tokens) with novel asynchronous RL infrastructure that achieves best-in-class open-source performance on reasoning, coding, and agentic tasks, rivaling frontier models. GLM is available in 2 precision formats: [zai-org/GLM-5](https://huggingface.co/zai-org/GLM-5) and [zai-org/GLM-5-FP8](https://huggingface.co/zai-org/GLM-5-FP8). This guide describes how to run GLM-5 with native FP8.
 
 ## Dependencies
 
@@ -22,7 +22,7 @@ uv pip install -U vllm --pre --index-url https://pypi.org/simple --extra-index-u
 uv pip install git+https://github.com/huggingface/transformers.git
 ```
 
-- For FP8 model, you can install DeepGEMM using [install_deepgemm.sh](https://github.com/vllm-project/vllm/blob/v0.16.0rc0/tools/install_deepgemm.sh).
+- For FP8 model, you can install DeepGEMM using [install_deepgemm.sh](https://github.com/vllm-project/vllm/blob/main/tools/install_deepgemm.sh).
 
 
 ## Using the Model
@@ -93,11 +93,10 @@ resp_off = client.chat.completions.create(
     },
 )
 # The content of reasoning should be None
-print("thinking=off:\n",resp_off.choices[0].message.reasoning)
+print("thinking=off:\n", resp_off.choices[0].message.reasoning)
 ```
 
 ### cURL Usage
-
 
 - Thinking ON (default):
 
@@ -148,7 +147,7 @@ vllm bench serve \
   --random-input 8000 \
   --random-output 1024 \
   --request-rate 10 \
-  --num-prompts 32  \
+  --num-prompts 32 \
   --trust-remote-code
   --ignore-eos
 ```
