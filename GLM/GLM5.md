@@ -93,7 +93,7 @@ resp_off = client.chat.completions.create(
     },
 )
 # The content of reasoning should be None
-print("thinking=off:\n",resp_off.choices[0].message.reasoning)
+print("thinking=off:\n", resp_off.choices[0].message.reasoning)
 ```
 
 ### cURL Usage
