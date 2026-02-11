@@ -147,7 +147,7 @@ vllm bench serve \
   --random-input 8000 \
   --random-output 1024 \
   --request-rate 10 \
-  --num-prompts 32  \
+  --num-prompts 32 \
   --trust-remote-code
   --ignore-eos
 ```
