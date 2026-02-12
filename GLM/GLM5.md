@@ -7,7 +7,17 @@ GLM-5 is a significantly scaled-up language model (744B parameters, 28.5T tokens
 ### Using Docker
 
 ```bash
-docker pull vllm/vllm-openai:glm5
+docker run --gpus all \
+  -p 8000:8000 \
+  --ipc=host \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  vllm/vllm-openai:glm5 zai-org/GLM-5-FP8 \
+      --tensor-parallel-size 8 \
+      --tool-call-parser glm47 \
+      --reasoning-parser glm45 \
+      --enable-auto-tool-choice \
+      --served-model-name glm5 \
+      --trust-remote-code
 ```
 
 ### Installing vLLM from source
