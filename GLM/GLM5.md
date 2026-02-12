@@ -11,20 +11,13 @@ docker run --gpus all \
   -p 8000:8000 \
   --ipc=host \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
-  --entrypoint bash \
-  vllm/vllm-openai:nightly-0b20469c627e94060d1015170b186d19de1db583 \
-  -lc "
-    apt update -y -qq && \
-    apt install -y git -qq && \
-    pip install git+https://github.com/huggingface/transformers.git && \
-    vllm serve zai-org/GLM-5-FP8 \
+  vllm/vllm-openai:glm5 zai-org/GLM-5-FP8 \
       --tensor-parallel-size 8 \
       --tool-call-parser glm47 \
       --reasoning-parser glm45 \
       --enable-auto-tool-choice \
-      --served-model-name glm-5-fp8 \
+      --served-model-name glm5 \
       --trust-remote-code
-  "
 ```
 
 ### Installing vLLM from source
@@ -32,9 +25,10 @@ docker run --gpus all \
 ```bash
 uv venv
 source .venv/bin/activate
-
-uv pip install -U vllm --pre --index-url https://pypi.org/simple --extra-index-url https://wheels.vllm.ai/nightly
-
+export VLLM_COMMIT=ec12d39d44739bee408ec1473acc09e75daf1a5d # use full commit hash from the main branch
+uv pip install vllm \
+    --torch-backend=auto \
+    --extra-index-url https://wheels.vllm.ai/${VLLM_COMMIT} # add variant subdirectory here if needed
 uv pip install git+https://github.com/huggingface/transformers.git
 ```
 
