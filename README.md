@@ -50,7 +50,7 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 ### MiniMax <img src="https://github.com/MiniMax-AI/MiniMax-01/raw/main/figures/minimax.svg" alt="minmax" width="16" height="16" style="vertical-align:middle;">
 
-- [MiniMax-M2.1, MiniMax-M2](MiniMax/MiniMax-M2.md)
+- [MiniMax-M2.5, MiniMax-M2.1, MiniMax-M2](MiniMax/MiniMax-M2.md)
 
 ### Xiaomi MiMo <img src="https://avatars.githubusercontent.com/u/208276378?&v=4" alt="Xiaomi MiMo" width="16" height="16" style="vertical-align:middle;">
 
