@@ -1,4 +1,4 @@
-# MiniMax-M2.1/M2 Usage Guide
+# MiniMax-M2 Series Usage Guide
 
 [MiniMax-M2.5](https://huggingface.co/MiniMaxAI/MiniMax-M2.5), [MiniMax-M2.1](https://huggingface.co/MiniMaxAI/MiniMax-M2.1) and [MiniMax-M2](https://huggingface.co/MiniMaxAI/MiniMax-M2) are advanced large language models created by [MiniMax](https://www.minimax.io/). They offer the following highlights:
 
