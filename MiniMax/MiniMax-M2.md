@@ -55,7 +55,7 @@ docker run --gpus all \
 
 ### Installing vLLM from source
 
-#### install nightly version
+#### Install nightly version
 
 - If you encounter corrupted output when using vLLM to serve these models, you can upgrade to the nightly version (ensure it is a version after commit [cf3eacfe58fa9e745c2854782ada884a9f992cf7](https://github.com/vllm-project/vllm/commit/cf3eacfe58fa9e745c2854782ada884a9f992cf7))
 
@@ -81,7 +81,7 @@ uv pip install vllm \
 
 
 
-## Launching  MiniMax-M2.5/MiniMax-M2.1/M2 with vLLM
+## Launching  M2.5/M2.1/M2 with vLLM
 
 You can use 4x H200/H20 or 4x A100/A800 GPUs to launch this model.
 
@@ -193,7 +193,7 @@ P99 ITL (ms):                            83.48
 
 ### DeepGEMM Usage
 
-vLLM has DeepGEMM enabled by default, you must install DeepGEMM using [install_deepgemm.sh](https://github.com/vllm-project/vllm/blob/main/tools/install_deepgemm.sh).
+vLLM has DeepGEMM enabled by default, you can install DeepGEMM using [install_deepgemm.sh](https://github.com/vllm-project/vllm/blob/main/tools/install_deepgemm.sh).
 
 ### GB200 Usage
 
