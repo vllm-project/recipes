@@ -60,12 +60,41 @@ vllm serve Qwen/Qwen3.5-Plus-Preview \
   --reasoning-parser deepseek_r1
 ```
 
+### GB200 Deployment (2 Nodes x 4 GPUs)
+
+You can also deploy across 2 GB200 nodes with 4 GPUs each. Use the same base configuration as H200, but add multi-node arguments and specify `--attention-backend FLASH_ATTN` since the default FlashInfer backend has a degradation issue on GB200 that is currently under investigation.
+
+On the head node:
+```bash
+vllm serve Qwen/Qwen3.5-Plus-Preview \
+  --tensor-parallel-size 8 \
+  --reasoning-parser deepseek_r1 \
+  --enable-prefix-caching \
+  --attention-backend FLASH_ATTN \
+  --nnodes 2 \
+  --node-rank 0 \
+  --master-addr <head_node_ip>
+```
+
+On the worker node:
+```bash
+vllm serve Qwen/Qwen3.5-Plus-Preview \
+  --tensor-parallel-size 8 \
+  --reasoning-parser deepseek_r1 \
+  --enable-prefix-caching \
+  --attention-backend FLASH_ATTN \
+  --nnodes 2 \
+  --node-rank 1 \
+  --master-addr <head_node_ip> \
+  --headless
+```
+
 ### Configuration Tips
 
 - **Prefix Caching**: Prefix caching for Mamba cache "align" mode is currently experimental. Please report any issues you may observe.
 - **Multi-token Prediction**: MTP-1 reduces per-token latency but degrades text throughput under high concurrency because speculative tokens consume KV cache capacity, reducing effective batch size. MTP-2 offers diminishing returns — the second speculative position has a lower acceptance rate and introduces higher ITL variance with similar TPOT gains.
 - **Encoder Data Parallelism**: Specifying `--mm-encoder-tp-mode data` deploys the vision encoder in a data-parallel fashion for better throughput performance. This consumes additional memory and may require adjustment of `--gpu-memory-utilization`.
-- **Asynchronous Scheduling for Hybrid Models**: `--async-scheduling` has been turned on by default to improve overall system performance by overlapping scheduling overhead with the decoding process. It is already compatible with prefix caching and MTP for models with hybrid models. If you run into issues with this feature, please try turning it off and file a bug report to vLLM.
+- **Media Embedding Size**: You can adjust the maximum media embedding size allowed by modifying the HuggingFace processor config at server startup via passing `--mm-processor-kwargs`. For example: `--mm-processor-kwargs '{"size": {"longest_edge": 234881024, "shortest_edge": 4096}}'`
 
 ### Benchmarking
 
