@@ -88,6 +88,7 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [Qwen3-ASR](Qwen/Qwen3-ASR.md)
 - [Qwen3-VL](Qwen/Qwen3-VL.md)
 - [Qwen3-Next](Qwen/Qwen3-Next.md)
+- [Qwen3.5-Plus-Preview](Qwen/Qwen3.5-Plus-Preview.md)
 - [Qwen3-Coder-480B-A35B](Qwen/Qwen3-Coder-480B-A35B.md)
 - [Qwen2.5-VL](Qwen/Qwen2.5-VL.md)
 - [Qwen3Guard-Gen](Qwen/Qwen3Guard-Gen.md)
