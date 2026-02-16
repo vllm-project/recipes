@@ -20,7 +20,7 @@ uv pip install vllm --pre \
 docker run --gpus all -p 8000:8000 vllm/vllm-openai:qwen3_5
 ```
 
-## Running Qwen3.5-Plus-Preview
+## Running Qwen3.5
 
 The configurations below have been verified on 8x H200 GPUs.
 
