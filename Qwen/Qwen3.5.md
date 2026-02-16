@@ -61,6 +61,9 @@ vllm serve Qwen/Qwen3.5-397B-A17B \
   --enable-prefix-caching
 ```
 
+!!! tip
+    To enable tool calling, add `--enable-auto-tool-choice --tool-call-parser qwen3_coder` to the serve command.
+
 ### Latency-Focused Serving
 
 For latency-sensitive workloads at low concurrency, enable MTP-1 speculative decoding and disable prefix caching. MTP-1 reduces time-per-output-token (TPOT) with a high acceptance rate, at the cost of lower throughput under load.
