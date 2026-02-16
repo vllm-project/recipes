@@ -10,7 +10,9 @@ You can either install vLLM from pip or use the pre-built Docker image.
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm --torch-backend auto
+uv pip install vllm --pre \
+    --extra-index-url https://wheels.vllm.ai/nightly/79c7e092350e4ae82d679ea4b2cdaaa4b580944b \
+    --torch-backend=auto
 ```
 
 ### Docker
