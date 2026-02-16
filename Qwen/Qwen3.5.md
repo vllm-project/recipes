@@ -17,12 +17,12 @@ uv pip install -U vllm \
 
 ### Docker
 ```bash
-docker run --gpus all -p 8000:8000 vllm/vllm-openai:qwen3_5
+docker pull vllm/vllm-openai:qwen3_5
 ```
 
 For Blackwell GPUs:
 ```bash
-docker run --gpus all -p 8000:8000 vllm/vllm-openai:qwen3_5-cu130
+docker pull vllm/vllm-openai:qwen3_5-cu130
 ```
 
 ## Running Qwen3.5
