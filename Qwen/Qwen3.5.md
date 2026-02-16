@@ -1,4 +1,4 @@
-# Qwen/Qwen3.5-397B-A17B Usage Guide
+# Qwen3.5 Usage Guide
 
 [Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-397B-A17B) is a multimodal mixture-of-experts model featuring a hybrid Mamba-attention architecture with 397B total parameters and 17B active parameters. This guide covers how to efficiently deploy and serve the model across different hardware configurations and workload profiles using vLLM.
 
