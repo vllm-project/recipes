@@ -4,9 +4,9 @@ This guide describes how to run **Qwen3Guard-Gen** on GPU using vLLM.
 
 Qwen3Guard-Gen is a lightweight text-only guardrail model.
 
-## GPU Deployment
+## Installing vLLM
 
-### Installing vLLM
+### CUDA
 
 ```bash
 uv venv
@@ -14,7 +14,7 @@ source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
-### Installing vLLM (AMD ROCm Backend: MI300X, MI325X, MI355X)
+### ROCm
 > Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images). 
 ```bash
 uv venv
@@ -22,14 +22,16 @@ source .venv/bin/activate
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
 ```
 
-### Running Qwen3Guard-Gen on a Single GPU
+## Running Qwen3Guard-Gen on a Single GPU
+
+### CUDA
 ```bash
 vllm serve Qwen/Qwen3Guard-Gen-0.6B \
   --host 0.0.0.0 \
   --max-model-len 32768
 ```
 
-### Running Qwen3Guard-Gen with AMD ROCm Backend
+### ROCm
 ```bash
 export VLLM_ROCM_USE_AITER=1
 vllm serve Qwen/Qwen3Guard-Gen-0.6B \
@@ -37,9 +39,7 @@ vllm serve Qwen/Qwen3Guard-Gen-0.6B \
   --max-model-len 32768
 ```
 
-## Performance Metrics
-
-### Benchmarking
+## Benchmarking
 ```bash
 vllm bench serve \
   --model Qwen/Qwen3Guard-Gen-0.6B \
