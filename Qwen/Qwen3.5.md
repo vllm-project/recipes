@@ -10,9 +10,9 @@ You can either install vLLM from pip or use the pre-built Docker image.
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install vllm --pre \
-    --extra-index-url https://wheels.vllm.ai/nightly/79c7e092350e4ae82d679ea4b2cdaaa4b580944b \
-    --torch-backend=auto
+uv pip install -U vllm \
+    --torch-backend=auto \
+    --extra-index-url https://wheels.vllm.ai/nightly
 ```
 
 ### Docker
@@ -64,7 +64,10 @@ vllm serve Qwen/Qwen3.5-397B-A17B \
 
 ### GB200 Deployment (2 Nodes x 4 GPUs)
 
-You can also deploy across 2 GB200 nodes with 4 GPUs each. Use the same base configuration as H200, but add multi-node arguments and specify `--attention-backend FLASH_ATTN` since the default FlashInfer backend has a degradation issue on GB200 that is currently under investigation.
+You can also deploy across 2 GB200 nodes with 4 GPUs each. Use the same base configuration as H200, but add multi-node arguments.
+
+!!! important
+    The default FlashInfer backend has a degradation issue on Blackwell GPUs that is currently under investigation. Please use `--attention-backend FLASH_ATTN` for Blackwell deployments.
 
 On the head node:
 ```bash
