@@ -4,6 +4,7 @@ This guide describes how to run Seed-OSS-36B models with vLLM and native BF16 pr
 
 ## Installing vLLM
 
+### CUDA
 Seed-OSS support was recently added to vLLM main branch and is not yet available in any official release:
 
 ```bash
@@ -20,8 +21,17 @@ You may need to download the latest version of the transformer for compatibility
 uv pip install git+https://github.com/huggingface/transformers.git@56d68c6706ee052b445e1e476056ed92ac5eb383
 ```
 
+### ROCm
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images). Tested hardware: MI300X, MI325X, MI355X
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+```
+
 ## Running Seed-OSS-36B with BF16
 
+### CUDA
 There are two ways to parallelize the model over multiple GPUs: (1) Tensor-parallel or (2) Data-parallel. Each one has its own advantages, where tensor-parallel is usually more beneficial for low-latency / low-load scenarios and data-parallel works better for cases where there is a lot of data with heavy-loads.
 
 Run tensor-parallel like this:
@@ -39,6 +49,21 @@ vllm serve ByteDance-Seed/Seed-OSS-36B-Instruct \
 * You can set `--max-num-batched-tokens` to balance throughput and latency, higher means higher throughput but higher latency. `--max-num-batched-tokens=32768` is usually good for prompt-heavy workloads. But you can reduce it to 16k and 8k to reduce activation memory usage and decrease latency.
 * vLLM conservatively use 90% of GPU memory, you can set `--gpu-memory-utilization=0.95` to maximize KVCache.
 * Make sure to follow the command-line instructions to ensure the tool-calling functionality is properly enabled.
+
+### ROCm
+
+```shell
+export SAFETENSORS_FAST_GPU=1
+export VLLM_USE_V1=1
+export VLLM_USE_TRITON_FLASH_ATTN=0
+export VLLM_ROCM_USE_AITER=1
+vllm serve ByteDance-Seed/Seed-OSS-36B-Instruct \
+    --tensor-parallel-size 8 \
+    --enable-auto-tool-choice \
+    --tool-call-parser seed_oss \
+    --no-enable-prefix-caching \
+    --trust-remote-code
+```
 
 ## Thinking Budget Feature
 
@@ -197,54 +222,3 @@ Median ITL (ms):                         46.18
 P99 ITL (ms):                            64.52     
 ==================================================
 ```
-
-
-## AMD GPU Support 
-Please follow the steps here to install and run Seed-OSS-36B-Instruct models on AMD MI300X/MI325X/MI355X
-### Step 1: Install vLLM
-> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images). 
-```bash
-uv venv
-source .venv/bin/activate
-uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
-```
-
-### Step 2: Log in to Hugging Face
-Huggingface login
-```shell
-huggingface-cli login
-```
-
-### Step 3: Start the vLLM server
-
-Run the vllm online serving:
-```shell
-export SAFETENSORS_FAST_GPU=1
-export VLLM_USE_V1=1
-export VLLM_USE_TRITON_FLASH_ATTN=0
-export VLLM_ROCM_USE_AITER=1
-vllm serve ByteDance-Seed/Seed-OSS-36B-Instruct \
-    --tensor-parallel-size 8 \
-    --enable-auto-tool-choice \
-    --tool-call-parser seed_oss \
-    --no-enable-prefix-caching \
-    --trust-remote-code
-```
-
-
-### Step 4: Run Benchmark
-Open a new terminal and run the following command to execute the benchmark script:
-```shell
-vllm bench serve \
-  --model "ByteDance-Seed/Seed-OSS-36B-Instruct" \
-  --dataset-name random \
-  --random-input-len 8192 \
-  --random-output-len 1024 \
-  --request-rate 10000 \
-  --num-prompts 16 \
-  --ignore-eos \
-  --trust-remote-code 
-```
-
-
-  
