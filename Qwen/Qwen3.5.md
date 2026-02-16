@@ -1,6 +1,6 @@
 # Qwen3.5 Usage Guide
 
-[Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-397B-A17B) is a large multimodal model from the Qwen series created by Alibaba Cloud. It supports both text-only and multimodal (image/video) inputs.
+[Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-397B-A17B) is a multimodal mixture-of-experts model featuring a hybrid Mamba-attention architecture with 397B total parameters and 17B active parameters. This guide covers how to efficiently deploy and serve the model across different hardware configurations and workload profiles using vLLM.
 
 ## Installing vLLM
 
@@ -17,13 +17,18 @@ uv pip install -U vllm \
 
 ### Docker
 ```bash
-docker pull vllm/vllm-openai:qwen3_5
+docker run --gpus all \
+  -p 8000:8000 \
+  --ipc=host \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  vllm/vllm-openai:qwen3_5 Qwen/Qwen3.5-397B-A17B \
+    --tensor-parallel-size 8 \
+    --reasoning-parser deepseek_r1 \
+    --enable-prefix-caching
 ```
+(See detailed deployment configurations below)
 
-For Blackwell GPUs:
-```bash
-docker pull vllm/vllm-openai:qwen3_5-cu130
-```
+For Blackwell GPUs, use `vllm/vllm-openai:qwen3_5-cu130`
 
 ## Running Qwen3.5
 
