@@ -22,7 +22,7 @@ docker run --gpus all -p 8000:8000 vllm/vllm-openai:qwen3_5
 
 For Blackwell GPUs:
 ```bash
-docker run --gpus all -p 8000:8000 vllm/vllm-openai:qwen3_5-aarch64-cu130
+docker run --gpus all -p 8000:8000 vllm/vllm-openai:qwen3_5-cu130
 ```
 
 ## Running Qwen3.5
