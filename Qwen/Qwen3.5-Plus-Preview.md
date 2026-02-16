@@ -1,6 +1,6 @@
-# Qwen3.5-Plus-Preview Usage Guide
+# Qwen3.5 Usage Guide
 
-[Qwen3.5-Plus-Preview](https://huggingface.co/Qwen/Qwen3.5-Plus-Preview) is a large multimodal model from the Qwen series created by Alibaba Cloud. It supports both text-only and multimodal (image/video) inputs.
+[Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-397B-A17B) is a large multimodal model from the Qwen series created by Alibaba Cloud. It supports both text-only and multimodal (image/video) inputs.
 
 ## Installing vLLM
 
@@ -29,7 +29,7 @@ The configurations below have been verified on 8x H200 GPUs.
 For maximum text throughput under high concurrency, use `--language-model-only` to skip loading the vision encoder and free up memory for KV cache.
 
 ```bash
-vllm serve Qwen/Qwen3.5-Plus-Preview \
+vllm serve Qwen/Qwen3.5-397B-A17B \
   --tensor-parallel-size 8 \
   --language-model-only \
   --reasoning-parser deepseek_r1 \
@@ -41,7 +41,7 @@ vllm serve Qwen/Qwen3.5-Plus-Preview \
 For multimodal workloads, use `--mm-encoder-tp-mode data` for data-parallel vision encoding and `--mm-processor-cache-type shm` to efficiently cache and transfer preprocessed multimodal inputs in shared memory.
 
 ```bash
-vllm serve Qwen/Qwen3.5-Plus-Preview \
+vllm serve Qwen/Qwen3.5-397B-A17B \
   --tensor-parallel-size 8 \
   --mm-encoder-tp-mode data \
   --mm-processor-cache-type shm \
@@ -54,7 +54,7 @@ vllm serve Qwen/Qwen3.5-Plus-Preview \
 For latency-sensitive workloads at low concurrency, enable MTP-1 speculative decoding and disable prefix caching. MTP-1 reduces time-per-output-token (TPOT) with a high acceptance rate, at the cost of lower throughput under load.
 
 ```bash
-vllm serve Qwen/Qwen3.5-Plus-Preview \
+vllm serve Qwen/Qwen3.5-397B-A17B \
   --tensor-parallel-size 8 \
   --speculative-config '{"method": "mtp", "num_speculative_tokens": 1}' \
   --reasoning-parser deepseek_r1
@@ -66,7 +66,7 @@ You can also deploy across 2 GB200 nodes with 4 GPUs each. Use the same base con
 
 On the head node:
 ```bash
-vllm serve Qwen/Qwen3.5-Plus-Preview \
+vllm serve Qwen/Qwen3.5-397B-A17B \
   --tensor-parallel-size 8 \
   --reasoning-parser deepseek_r1 \
   --enable-prefix-caching \
@@ -78,7 +78,7 @@ vllm serve Qwen/Qwen3.5-Plus-Preview \
 
 On the worker node:
 ```bash
-vllm serve Qwen/Qwen3.5-Plus-Preview \
+vllm serve Qwen/Qwen3.5-397B-A17B \
   --tensor-parallel-size 8 \
   --reasoning-parser deepseek_r1 \
   --enable-prefix-caching \
@@ -104,7 +104,7 @@ Once the server is running, open another terminal and run the benchmark client:
 vllm bench serve \
   --backend openai-chat \
   --endpoint /v1/chat/completions \
-  --model Qwen/Qwen3.5-Plus-Preview \
+  --model Qwen/Qwen3.5-397B-A17B \
   --dataset-name random \
   --random-input-len 2048 \
   --random-output-len 512 \
@@ -144,7 +144,7 @@ messages = [
 
 start = time.time()
 response = client.chat.completions.create(
-    model="Qwen/Qwen3.5-Plus-Preview",
+    model="Qwen/Qwen3.5-397B-A17B",
     messages=messages,
     max_tokens=2048
 )
