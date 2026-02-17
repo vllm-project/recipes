@@ -33,7 +33,7 @@ For Blackwell GPUs, use `vllm/vllm-openai:qwen3_5-cu130`
 ## Running Qwen3.5
 
 !!! attention
-    Currently, you will need to use `deepseek_r1` for reasoning_parser to correctly parse reasoning content for this model.
+    Currently, you will need to use `deepseek_r1` for the `--reasoning-parser` argument to correctly parse reasoning content for this model.
 
 The configurations below have been verified on 8x H200 GPUs.
 
