@@ -23,7 +23,7 @@ docker run --gpus all \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
   vllm/vllm-openai:qwen3_5 Qwen/Qwen3.5-397B-A17B \
     --tensor-parallel-size 8 \
-    --reasoning-parser qwen3 \
+    --reasoning-parser deepseek_r1 \
     --enable-prefix-caching
 ```
 (See detailed deployment configurations below)
@@ -31,6 +31,9 @@ docker run --gpus all \
 For Blackwell GPUs, use `vllm/vllm-openai:qwen3_5-cu130`
 
 ## Running Qwen3.5
+
+!!! attention
+    Currently, you will need to use `deepseek_r1` for the `--reasoning-parser` argument to correctly parse reasoning content for this model.
 
 The configurations below have been verified on 8x H200 GPUs.
 
@@ -44,7 +47,7 @@ For maximum text throughput under high concurrency, use `--language-model-only` 
 vllm serve Qwen/Qwen3.5-397B-A17B \
   --tensor-parallel-size 8 \
   --language-model-only \
-  --reasoning-parser qwen3 \
+  --reasoning-parser deepseek_r1 \
   --enable-prefix-caching
 ```
 
@@ -57,7 +60,7 @@ vllm serve Qwen/Qwen3.5-397B-A17B \
   --tensor-parallel-size 8 \
   --mm-encoder-tp-mode data \
   --mm-processor-cache-type shm \
-  --reasoning-parser qwen3 \
+  --reasoning-parser deepseek_r1 \
   --enable-prefix-caching
 ```
 
@@ -72,7 +75,7 @@ For latency-sensitive workloads at low concurrency, enable MTP-1 speculative dec
 vllm serve Qwen/Qwen3.5-397B-A17B \
   --tensor-parallel-size 8 \
   --speculative-config '{"method": "mtp", "num_speculative_tokens": 1}' \
-  --reasoning-parser qwen3
+  --reasoning-parser deepseek_r1
 ```
 
 ### GB200 Deployment (2 Nodes x 4 GPUs)
@@ -86,7 +89,7 @@ On the head node:
 ```bash
 vllm serve Qwen/Qwen3.5-397B-A17B \
   --tensor-parallel-size 8 \
-  --reasoning-parser qwen3 \
+  --reasoning-parser deepseek_r1 \
   --enable-prefix-caching \
   --attention-backend FLASH_ATTN \
   --nnodes 2 \
@@ -98,7 +101,7 @@ On the worker node:
 ```bash
 vllm serve Qwen/Qwen3.5-397B-A17B \
   --tensor-parallel-size 8 \
-  --reasoning-parser qwen3 \
+  --reasoning-parser deepseek_r1 \
   --enable-prefix-caching \
   --attention-backend FLASH_ATTN \
   --nnodes 2 \
