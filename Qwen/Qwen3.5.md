@@ -23,7 +23,7 @@ docker run --gpus all \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
   vllm/vllm-openai:qwen3_5 Qwen/Qwen3.5-397B-A17B \
     --tensor-parallel-size 8 \
-    --reasoning-parser qwen3 \
+    --reasoning-parser deepseek_r1 \
     --enable-prefix-caching
 ```
 (See detailed deployment configurations below)
@@ -44,7 +44,7 @@ For maximum text throughput under high concurrency, use `--language-model-only` 
 vllm serve Qwen/Qwen3.5-397B-A17B \
   --tensor-parallel-size 8 \
   --language-model-only \
-  --reasoning-parser qwen3 \
+  --reasoning-parser deepseek_r1 \
   --enable-prefix-caching
 ```
 
@@ -57,7 +57,7 @@ vllm serve Qwen/Qwen3.5-397B-A17B \
   --tensor-parallel-size 8 \
   --mm-encoder-tp-mode data \
   --mm-processor-cache-type shm \
-  --reasoning-parser qwen3 \
+  --reasoning-parser deepseek_r1 \
   --enable-prefix-caching
 ```
 
@@ -86,7 +86,7 @@ On the head node:
 ```bash
 vllm serve Qwen/Qwen3.5-397B-A17B \
   --tensor-parallel-size 8 \
-  --reasoning-parser qwen3 \
+  --reasoning-parser deepseek_r1 \
   --enable-prefix-caching \
   --attention-backend FLASH_ATTN \
   --nnodes 2 \
@@ -98,7 +98,7 @@ On the worker node:
 ```bash
 vllm serve Qwen/Qwen3.5-397B-A17B \
   --tensor-parallel-size 8 \
-  --reasoning-parser qwen3 \
+  --reasoning-parser deepseek_r1 \
   --enable-prefix-caching \
   --attention-backend FLASH_ATTN \
   --nnodes 2 \
