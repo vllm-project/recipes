@@ -150,9 +150,9 @@ P99 ITL (ms):                            16.15
 ==================================================
 ```
 
-## Disaggregrated Serving with Wide EP (Experimental GB200)
+## Disaggregated Serving with Wide EP (Experimental GB200)
 
-Experimental disaggregrated serving recipes for NVIDIA GB200 can be found beyond:
+Experimental disaggregated serving recipes for NVIDIA GB200 can be found below:
 - https://github.com/vllm-project/vllm/issues/33583
 - https://blog.vllm.ai/2026/02/03/dsr1-gb200-part1.html
 - https://github.com/minosfuture/vllm/tree/pd_gb200_0114/runs/DS-R1/fp4
