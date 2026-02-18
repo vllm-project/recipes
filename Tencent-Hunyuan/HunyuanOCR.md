@@ -5,18 +5,44 @@
 
 ## Installing vLLM
 
+
+### CUDA
+
 ```bash
 uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
+### ROCm
+
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images). Tested hardware: MI300X, MI325X, MI355X
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+```
+
 ## Deploying HunyuanOCR
 
+### CUDA
 ```bash
 vllm serve tencent/HunyuanOCR \
     --no-enable-prefix-caching \
     --mm-processor-cache-gb 0
+```
+
+### ROCm
+
+```shell
+export SAFETENSORS_FAST_GPU=1
+export VLLM_USE_TRITON_FLASH_ATTN=0
+export VLLM_ROCM_USE_AITER=1
+
+vllm serve tencent/HunyuanOCR \
+    --no-enable-prefix-caching \
+    --mm-processor-cache-gb 0 \
+    --trust-remote-code 
 ```
 
 ## Querying with OpenAI API Client
