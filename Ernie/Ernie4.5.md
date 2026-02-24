@@ -116,3 +116,99 @@ P99 ITL (ms):                            20.69
 ==================================================
 ```
 
+
+## AMD GPU Support
+
+Please follow the steps here to install and run ERNIE-4.5 models on AMD MI300X, MI325X, MI355X GPUs.
+
+### Step 1: Prepare Environment
+#### Option 1: Installation from pre-built wheels (For AMD ROCm: MI300X/MI325X/MI355X)
+We recommend using the official package for AMD GPUs (MI300X/MI325X/MI355X). 
+```bash
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
+```
+⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/).
+
+#### Option 2: Docker image
+Pull the latest vllm docker:
+
+```bash
+docker pull vllm/vllm-openai-rocm:latest
+```
+
+Launch the ROCm vLLM docker: 
+
+```bash
+docker run -it \
+  --ipc=host \
+  --network=host \
+  --privileged \
+  --cap-add=CAP_SYS_ADMIN \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --device=/dev/mem \
+  --group-add video \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  -v $(pwd):/work \
+  -e SHELL=/bin/bash \
+  --name Ernie-4.5 \
+  vllm/vllm-openai-rocm:latest
+```
+
+After running the command above, you are already inside the container. Proceed to Step 2 in that shell. If you detached from the container or started it in detached mode, attach to the container with:
+
+```bash
+docker attach Ernie-4.5
+```
+
+### Step 2: Log in to Hugging Face
+
+Hugging Face login:
+
+```bash
+huggingface-cli login
+```
+
+### Step 3: Start the vLLM server
+
+Run the vllm online serving
+Sample Command
+```bash
+VLLM_ROCM_USE_AITER=1 \
+SAFETENSORS_FAST_GPU=1 \
+vllm serve baidu/ERNIE-4.5-21B-A3B-PT/ \
+    --tensor-parallel-size 4 \
+    --gpu-memory-utilization 0.9 \
+    --disable-log-requests \
+    --no-enable-prefix-caching \
+    --trust-remote-code
+```
+
+
+### Step 4: Run Benchmark
+Open a new terminal and run the following command to execute the benchmark script:
+
+```bash
+vllm bench serve \
+  --model baidu/ERNIE-4.5-21B-A3B-PT \
+  --dataset-name random \
+  --random-input-len 8000 \
+  --random-output-len 1000 \
+  --request-rate 10000 \
+  --num-prompts 16 \
+  --ignore-eos
+```
+
+If you are using a Docker environment, open a new terminal and run the benchmark inside the container with:
+
+```bash
+docker exec -it Ernie-4.5 vllm bench serve \
+  --model baidu/ERNIE-4.5-21B-A3B-PT \
+  --dataset-name random \
+  --random-input-len 8000 \
+  --random-output-len 1000 \
+  --request-rate 10000 \
+  --num-prompts 16 \
+  --ignore-eos
+```
