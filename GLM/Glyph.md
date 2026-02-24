@@ -62,7 +62,7 @@ docker run -it \
   --cap-add=SYS_PTRACE \
   --security-opt seccomp=unconfined \
   -v $(pwd):/work \
-  -e bash=/bin/bash \
+  -e SHELL=/bin/bash \
   --name Glyph \
   vllm/vllm-openai-rocm:latest
 ```
