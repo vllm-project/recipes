@@ -177,7 +177,7 @@ Sample Command
 ```bash
 VLLM_ROCM_USE_AITER=1 \
 SAFETENSORS_FAST_GPU=1 \
-vllm serve baidu/ERNIE-4.5-21B-A3B-PT/ \
+vllm serve baidu/ERNIE-4.5-21B-A3B-PT \
     --tensor-parallel-size 4 \
     --gpu-memory-utilization 0.9 \
     --disable-log-requests \
