@@ -234,7 +234,6 @@ async-scheduling: true
 no-enable-prefix-caching: true
 max-cudagraph-capture-size: 2048
 max-num-batched-tokens: 8192
-stream-interval: 20
 ```
 
 `GPT-OSS_Hopper.yaml`
@@ -243,7 +242,6 @@ async-scheduling: true
 no-enable-prefix-caching: true
 max-cudagraph-capture-size: 2048
 max-num-batched-tokens: 8192
-stream-interval: 20
 ```
 
 Below are the config YAML files to enable EAGLE3 speculative decoding:
