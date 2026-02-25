@@ -11,50 +11,57 @@ Since BF16 is the commonly used precision type for Qwen2.5-VL training, using BF
 
 ### Installing vLLM
 
-```bash
-uv venv
-source .venv/bin/activate
-uv pip install -U vllm --torch-backend auto
-```
+=== "NVIDIA"
 
-### Installing vLLM (AMD ROCm Backend: MI300X, MI325X, MI355X)
-> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images). 
-```bash
-uv venv
-source .venv/bin/activate
-uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
-```
+    ```bash
+    uv venv
+    source .venv/bin/activate
+    uv pip install -U vllm --torch-backend auto
+    ```
 
-### Running Qwen2.5-VL-72B with BF16 on 4xA100
+=== "AMD ROCm (MI300X, MI325X, MI355X)"
+
+    > Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).
+
+    ```bash
+    uv venv
+    source .venv/bin/activate
+    uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
+    ```
+
+### Running Qwen2.5-VL-72B with BF16
 
 There are two ways to parallelize the model over multiple GPUs: (1) Tensor-parallel (TP) or (2) Data-parallel (DP). Each one has its own advantages, where tensor-parallel is usually more beneficial for low-latency / low-load scenarios, and data-parallel works better for cases where there is a lot of data with heavy loads.
 
 To launch the online inference server for Qwen2.5-VL-72B:
 
-```bash
-# Start server with BF16 model on 4 GPUs using TP=4
-export CUDA_VISIBLE_DEVICES=0,1,2,3
-vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --tensor-parallel-size 4 \
-  --mm-encoder-tp-mode data \
-  --limit-mm-per-prompt '{"image":2,"video":0}' \
+=== "4xA100"
 
-```
+    ```bash
+    # Start server with BF16 model on 4 GPUs using TP=4
+    export CUDA_VISIBLE_DEVICES=0,1,2,3
+    vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
+      --host 0.0.0.0 \
+      --port 8000 \
+      --tensor-parallel-size 4 \
+      --mm-encoder-tp-mode data \
+      --limit-mm-per-prompt '{"image":2,"video":0}'
 
-### Running Qwen2.5-VL-72B with BF16 on 4xMI300X/MI325X/MI355X
-```bash
-export CUDA_VISIBLE_DEVICES=0,1,2,3
-export VLLM_ROCM_USE_AITER=1
+    ```
 
-vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --tensor-parallel-size 4 \
-  --mm-encoder-tp-mode data \
-  --limit-mm-per-prompt '{"image":2,"video":0}'
-```
+=== "4xMI300X/MI325X/MI355X"
+
+    ```bash
+    export CUDA_VISIBLE_DEVICES=0,1,2,3
+    export VLLM_ROCM_USE_AITER=1
+
+    vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
+      --host 0.0.0.0 \
+      --port 8000 \
+      --tensor-parallel-size 4 \
+      --mm-encoder-tp-mode data \
+      --limit-mm-per-prompt '{"image":2,"video":0}'
+    ```
 
 #### Tips
 
@@ -67,28 +74,32 @@ vllm serve Qwen/Qwen2.5-VL-72B-Instruct  \
 
 For medium-size models like Qwen2.5-VL-7B, data parallelism usually provides better performance since it boosts throughput without the heavy communication costs seen in tensor parallelism. Here is an example of how to launch the server using DP=4:
 
-### Qwen2.5-VL-7B-Instruct on 4xA100 with DP=4
-```bash
-# Start server with BF16 model on 4 GPUs using DP=4
-export CUDA_VISIBLE_DEVICES=0,1,2,3
-vllm serve Qwen/Qwen2.5-VL-7B-Instruct  \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --data-parallel-size 4 \
-  --limit-mm-per-prompt '{"image":2,"video":0}'
-```
+### Qwen2.5-VL-7B-Instruct with DP=4
 
-### Qwen2.5-VL-7B-Instruct on 4xMI300X/MI325X/MI355X with DP=4
-```bash
-# Start server with BF16 model on 4 GPUs using DP=4
-export CUDA_VISIBLE_DEVICES=0,1,2,3
-export VLLM_ROCM_USE_AITER=1
-vllm serve Qwen/Qwen2.5-VL-7B-Instruct  \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --data-parallel-size 4 \
-  --limit-mm-per-prompt '{"image":2,"video":0}'
-```
+=== "4xA100"
+
+    ```bash
+    # Start server with BF16 model on 4 GPUs using DP=4
+    export CUDA_VISIBLE_DEVICES=0,1,2,3
+    vllm serve Qwen/Qwen2.5-VL-7B-Instruct  \
+      --host 0.0.0.0 \
+      --port 8000 \
+      --data-parallel-size 4 \
+      --limit-mm-per-prompt '{"image":2,"video":0}'
+    ```
+
+=== "4xMI300X/MI325X/MI355X"
+
+    ```bash
+    # Start server with BF16 model on 4 GPUs using DP=4
+    export CUDA_VISIBLE_DEVICES=0,1,2,3
+    export VLLM_ROCM_USE_AITER=1
+    vllm serve Qwen/Qwen2.5-VL-7B-Instruct  \
+      --host 0.0.0.0 \
+      --port 8000 \
+      --data-parallel-size 4 \
+      --limit-mm-per-prompt '{"image":2,"video":0}'
+    ```
 
 ### Benchmarking
 
