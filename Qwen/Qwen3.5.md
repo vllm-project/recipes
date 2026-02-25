@@ -21,14 +21,14 @@ docker run --gpus all \
   -p 8000:8000 \
   --ipc=host \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
-  vllm/vllm-openai:qwen3_5 Qwen/Qwen3.5-397B-A17B \
+  vllm/vllm-openai:nightly Qwen/Qwen3.5-397B-A17B \
     --tensor-parallel-size 8 \
     --reasoning-parser qwen3 \
     --enable-prefix-caching
 ```
 (See detailed deployment configurations below)
 
-For Blackwell GPUs, use `vllm/vllm-openai:qwen3_5-cu130`
+For Blackwell GPUs, use `vllm/vllm-openai:cu130-nightly`
 
 ## Running Qwen3.5
 The configurations below have been verified on 8x H200 GPUs.
