@@ -1,5 +1,7 @@
 # Qwen2.5-VL Usage Guide
 
+[![📖 recipe](https://img.shields.io/badge/docs-Qwen2.5--VL-blue?logo=readthedocs)](https://docs.vllm.ai/projects/recipes/en/latest/Qwen/Qwen2.5-VL.html)
+
 This guide describes how to run Qwen2.5-VL series on the targeted accelerated stack.
 Since BF16 is the commonly used precision type for Qwen2.5-VL training, using BF16 in inference ensures the best accuracy.
 
