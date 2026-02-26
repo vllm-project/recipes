@@ -8,6 +8,7 @@ You can either install vLLM from pip or use the pre-built Docker image.
 
 ### Pip Install
 ```bash
+# Use vLLM nightly wheel until 0.17.0 is released.
 uv venv
 source .venv/bin/activate
 uv pip install -U vllm \
@@ -17,6 +18,7 @@ uv pip install -U vllm \
 
 ### Docker
 ```bash
+# Use vLLM nightly docker until 0.17.0 is released.
 docker run --gpus all \
   -p 8000:8000 \
   --ipc=host \
@@ -33,15 +35,19 @@ For Blackwell GPUs, use `vllm/vllm-openai:cu130-nightly`
 ## Running Qwen3.5
 The configurations below have been verified on 8x H200 GPUs.
 
+!!! tip
+    We recommend using the official FP8 checkpoint [Qwen/Qwen3.5-397B-A17B-FP8](https://huggingface.co/Qwen/Qwen3.5-397B-A17B-FP8) for optimal serving efficiency.
+
 ### Throughput-Focused Serving
 
 #### Text-Only
 
-For maximum text throughput under high concurrency, use `--language-model-only` to skip loading the vision encoder and free up memory for KV cache.
+For maximum text throughput under high concurrency, use `--language-model-only` to skip loading the vision encoder and free up memory for KV cache as well as enabling Expert Parallelism.
 
 ```bash
-vllm serve Qwen/Qwen3.5-397B-A17B \
-  --tensor-parallel-size 8 \
+vllm serve Qwen/Qwen3.5-397B-A17B-FP8 \
+  -dp 8 \
+  --enable-expert-parallel \
   --language-model-only \
   --reasoning-parser qwen3 \
   --enable-prefix-caching
@@ -52,7 +58,7 @@ vllm serve Qwen/Qwen3.5-397B-A17B \
 For multimodal workloads, use `--mm-encoder-tp-mode data` for data-parallel vision encoding and `--mm-processor-cache-type shm` to efficiently cache and transfer preprocessed multimodal inputs in shared memory.
 
 ```bash
-vllm serve Qwen/Qwen3.5-397B-A17B \
+vllm serve Qwen/Qwen3.5-397B-A17B-FP8 \
   --tensor-parallel-size 8 \
   --mm-encoder-tp-mode data \
   --mm-processor-cache-type shm \
@@ -68,7 +74,7 @@ vllm serve Qwen/Qwen3.5-397B-A17B \
 For latency-sensitive workloads at low concurrency, enable MTP-1 speculative decoding and disable prefix caching. MTP-1 reduces time-per-output-token (TPOT) with a high acceptance rate, at the cost of lower throughput under load.
 
 ```bash
-vllm serve Qwen/Qwen3.5-397B-A17B \
+vllm serve Qwen/Qwen3.5-397B-A17B-FP8 \
   --tensor-parallel-size 8 \
   --speculative-config '{"method": "mtp", "num_speculative_tokens": 1}' \
   --reasoning-parser qwen3
@@ -76,34 +82,22 @@ vllm serve Qwen/Qwen3.5-397B-A17B \
 
 ### GB200 Deployment (2 Nodes x 4 GPUs)
 
-You can also deploy across 2 GB200 nodes with 4 GPUs each. Use the same base configuration as H200, but add multi-node arguments.
+!!! tip
+    We recommend using the NVFP4 checkpoint [nvidia/Qwen3.5-397B-A17B-NVFP4](https://huggingface.co/nvidia/Qwen3.5-397B-A17B-NVFP4) for optimal serving efficiency.
+
+You can also deploy the model across 4GPUs on a GB200 node, using the similar base configuration as H200.
 
 !!! important
     The default FlashInfer backend has a degradation issue on Blackwell GPUs that is currently under investigation. Please use `--attention-backend FLASH_ATTN` for Blackwell deployments.
 
-On the head node:
 ```bash
-vllm serve Qwen/Qwen3.5-397B-A17B \
-  --tensor-parallel-size 8 \
+vllm serve nvidia/Qwen3.5-397B-A17B-NVFP4 \
+  -dp 4 \
+  --enable-expert-parallel \
+  --language-model-only \
   --reasoning-parser qwen3 \
-  --enable-prefix-caching \
-  --attention-backend FLASH_ATTN \
-  --nnodes 2 \
-  --node-rank 0 \
-  --master-addr <head_node_ip>
-```
-
-On the worker node:
-```bash
-vllm serve Qwen/Qwen3.5-397B-A17B \
-  --tensor-parallel-size 8 \
-  --reasoning-parser qwen3 \
-  --enable-prefix-caching \
-  --attention-backend FLASH_ATTN \
-  --nnodes 2 \
-  --node-rank 1 \
-  --master-addr <head_node_ip> \
-  --headless
+  --enable-prefix-caching
+  --attention-backend FLASH_ATTN
 ```
 
 ### Configuration Tips
