@@ -4,20 +4,68 @@ This guide describes how to run Nemotron-Nano-12B-v2-VL series on the targeted a
 
 ## Installing vLLM
 
+### CUDA
+
 * vLLM 0.11.0 does not include Nemotron-Nano-12B-v2-VL, so either [install from source](https://docs.vllm.ai/en/v0.6.0/getting_started/installation.html) or refer to [this](https://hub.docker.com/layers/vllm/vllm-openai/nightly-8bff831f0aa239006f34b721e63e1340e3472067/images/sha256-ef112680ed30e4b9d7bf794dcda4abd829e9405a73e013f9e046658cf22d0577) nightly build
 ```bash
 docker pull vllm/vllm-openai:nightly-8bff831f0aa239006f34b721e63e1340e3472067
 ```
 
-For DGX Spark, container relase is avaiable 
+For DGX Spark, container relase is avaiable
 https://catalog.ngc.nvidia.com/orgs/nvidia/containers/vllm?version=25.12.post1-py3
 
 ```bash
 docker pull nvcr.io/nvidia/vllm:25.12.post1-py3
 ```
 
+### ROCm
+
+You can choose either Option A (Docker) or Option B (install with uv).
+
+#### Option A: Run on Host with uv
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+```
+
+#### Option B: Run with Docker
+Pull the latest vllm docker:
+```shell
+docker pull vllm/vllm-openai-rocm:latest
+```
+Launch the ROCm vLLM docker:
+```shell
+docker run -d -it \
+  --ipc=host \
+  --entrypoint /bin/bash \
+  --network=host \
+  --privileged \
+  --cap-add=CAP_SYS_ADMIN \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --device=/dev/mem \
+  --group-add video \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  -v /:/work \
+  -e SHELL=/bin/bash \
+  -p 8000:8000 \
+  --name Nemotron-Nano-12B \
+  vllm/vllm-openai-rocm:latest
+```
+
+Log in to your Hugging Face account:
+```shell
+huggingface-cli login
+```
+
 ## Serving Nemotron-Nano-12B-v2-VL
-### Server:
+
+### CUDA
+
+#### Server:
 The following command will launch an inference server on 1 GPU.
 
 Notes:
@@ -45,7 +93,7 @@ python3 -m vllm.entrypoints.openai.api_server \
    --served-model-name "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16"
 ```
 
-### Client (bash):
+#### Client (bash):
 ```bash
 curl -X 'POST' \
   'http://127.0.0.1:5566/v1/chat/completions' \
@@ -57,7 +105,7 @@ curl -X 'POST' \
 }'
 ```
 
-### Client (Python):
+#### Client (Python):
 ```python
 from openai import OpenAI
 client = OpenAI(
@@ -112,18 +160,18 @@ completion = client.chat.completions.create(
 print(completion.choices[0].message.content)
 ```
 
-### vLLM `LLM` API
+#### vLLM `LLM` API
 
 Notes:
 * Examples are using [BF16](https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16) precision model. We encourage you to try [FP8](https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-FP8) and [NVFP4](https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-NVFP4-QAD) as well!
 * You can set `max_model_len <len>` ([doc](https://docs.vllm.ai/en/latest/configuration/engine_args.html#-max-model-len)) to preserve memory. Model is trained on a context length of ~131K, but unless the use-case is long context videos, a smaller context would fit as-well.
 * You can set `allowed_local_media_path <root>` ([doc](https://docs.vllm.ai/en/latest/configuration/engine_args.html#-allowed-local-media-path)) to limit the accessibility of local files.
 
-#### Efficient Video Sampling (EVS)
+##### Efficient Video Sampling (EVS)
 * You can set `video_pruning_rate <fraction>` to tweak video compression. Read more about EVS on [arXiv](https://arxiv.org/abs/2510.14624).
 
 
-#### Usage with image path
+##### Usage with image path
 ```python
 from vllm import LLM, SamplingParams
 
@@ -165,7 +213,7 @@ for o in outputs:
     print(o.outputs[0].text)
 ```
 
-#### Usage with video path
+##### Usage with video path
 * See Efficient Video Sampling (EVS): affects videos only, defines how much of the video tokens to prune
 ```python
 import os
@@ -213,7 +261,7 @@ for o in outputs:
     print(o.outputs[0].text)
 ```
 
-#### Usage with video tensors and custom sampling
+##### Usage with video tensors and custom sampling
 ```python
 from vllm import LLM, SamplingParams
 import decord
@@ -374,74 +422,13 @@ if __name__ == "__main__":
     main()
 ```
 
-
-## AMD GPU Support
-
-Please follow the steps here to install and run kimi-K2 models on AMD MI300X, MI325X and MI355X.<br>
-You can choose either Option A (Docker) or Option B (install with uv).
-
-### Option A: Run on Host with uv
- > Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).  
- ```bash 
- uv venv 
- source .venv/bin/activate 
- uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
- ```
-
-### Option B: Run with Docker
-Pull the latest vllm docker:
-```shell
-docker pull vllm/vllm-openai-rocm:latest
-```
-Launch the ROCm vLLM docker: 
-```shell
-docker run -d -it \
-  --ipc=host \
-  --entrypoint /bin/bash \
-  --network=host \
-  --privileged \
-  --cap-add=CAP_SYS_ADMIN \
-  --device=/dev/kfd \
-  --device=/dev/dri \
-  --device=/dev/mem \
-  --group-add video \
-  --cap-add=SYS_PTRACE \
-  --security-opt seccomp=unconfined \
-  -v /:/work \
-  -e SHELL=/bin/bash \
-  -p 8000:8000 \
-  --name Nemotron-Nano-12B \
-  vllm/vllm-openai-rocm:latest
-```
-### Log in to Hugging Face
-Log in to your Hugging Face account:
-```shell
-huggingface-cli login
-```
-
-### Start the vLLM server
+### ROCm
 
 Run the vllm online serving with this sample command:
 ```shell
 SAFETENSORS_FAST_GPU=1 \
-VLLM_USE_V1=1 \
-VLLM_USE_TRITON_FLASH_ATTN=0 \
 vllm serve nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16 \
   --tensor-parallel-size 8 \
   --no-enable-prefix-caching \
   --trust-remote-code
-```
-
-### Run Benchmark
-Open a new terminal and run the following command to execute the benchmark script inside the container.
-```shell
-docker exec -it Nemotron-Nano-12B vllm bench serve \
-  --model "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16" \
-  --dataset-name random \
-  --random-input-len 8192 \
-  --random-output-len 1024 \
-  --request-rate 10000 \
-  --num-prompts 16 \
-  --ignore-eos \
-  --trust-remote-code 
 ```
