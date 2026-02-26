@@ -8,18 +8,67 @@ This guide describes how to run Kimi-K2 with native FP8.
 
 ## Installing vLLM
 
+### CUDA
+
 ```bash
 uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
-## Running Kimi-K2 with FP8 on 16xH800
+### ROCm
+
+You can choose either Option A (Docker) or Option B (install with uv).
+
+#### Option A: Run on Host with uv
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+```
+
+#### Option B: Run with Docker
+Pull the latest vllm docker:
+```shell
+docker pull vllm/vllm-openai-rocm:latest
+```
+Launch the ROCm vLLM docker:
+```shell
+docker run -d -it \
+  --ipc=host \
+  --entrypoint /bin/bash \
+  --network=host \
+  --privileged \
+  --cap-add=CAP_SYS_ADMIN \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --device=/dev/mem \
+  --group-add video \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  -v /:/work \
+  -e SHELL=/bin/bash \
+  -p 8000:8000 \
+  --name kimi-K2 \
+  vllm/vllm-openai-rocm:latest
+```
+
+Log in to your Hugging Face account:
+```shell
+huggingface-cli login
+```
+
+## Running the model
+
+### CUDA
+
+#### Running Kimi-K2 with FP8 on 16xH800
 
 The smallest deployment unit for Kimi-K2 FP8 weights with 128k seqlen on mainstream H800 platform is a cluster with 16 GPUs with either Tensor Parallel (TP) or "data parallel + expert parallel" (DP+EP).
 Running parameters for this environment are provided below. You may scale up to more nodes and increase expert-parallelism to enlarge the inference batch size and overall throughput.
 
-### Tensor Parallelism + pipeline-parallelism
+##### Tensor Parallelism + pipeline-parallelism
 A sample launch command is:
 
 ```bash
@@ -35,7 +84,7 @@ Key parameter notes:
 * enable-auto-tool-choice: Required when enabling tool usage.
 * tool-call-parser kimi_k2: Required when enabling tool usage.
 
-### Data Parallelism + Expert Parallelism
+##### Data Parallelism + Expert Parallelism
 You can install libraries like DeepEP and DeepGEMM as needed. Then run the command (example on H800):
 
 ```bash
@@ -52,6 +101,16 @@ Additional flags:
 * You can set `--max-num-batched-tokens` to balance throughput and latency, higher means higher throughput but higher latency. `--max-num-batched-tokens=32768` is usually good for prompt-heavy workloads. But you can reduce it to 16k and 8k to reduce activation memory usage and decrease latency.
 * vLLM conservatively uses 90% of GPU memory, you can set `--gpu-memory-utilization=0.95` to maximize KVCache.
 
+### ROCm
+
+Run the vllm online serving with this sample command:
+```shell
+SAFETENSORS_FAST_GPU=1 \
+vllm serve moonshotai/Kimi-K2-Instruct \
+  --tensor-parallel-size 8 \
+  --no-enable-prefix-caching \
+  --trust-remote-code
+```
 
 ## Benchmarking
 
@@ -168,78 +227,6 @@ P99 TPOT (ms):                           46.51
 ---------------Inter-token Latency----------------
 Mean ITL (ms):                           45.01     
 Median ITL (ms):                         42.01     
-P99 ITL (ms):                            52.01     
+P99 ITL (ms):                            52.01
 ==================================================
-```
-
-
-## AMD GPU Support
-
-Please follow the steps here to install and run kimi-K2 models on AMD MI300X, MI325X and MI355X.<br>
-You can choose either Option A (Docker) or Option B (install with uv).
-
-### Option A: Run on Host with uv
- > Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).  
- ```bash 
- uv venv 
- source .venv/bin/activate 
- uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
- ```
-
-### Option B: Run with Docker
-Pull the latest vllm docker:
-```shell
-docker pull vllm/vllm-openai-rocm:latest
-```
-Launch the ROCm vLLM docker:
-```shell
-docker run -d -it \
-  --ipc=host \
-  --entrypoint /bin/bash \
-  --network=host \
-  --privileged \
-  --cap-add=CAP_SYS_ADMIN \
-  --device=/dev/kfd \
-  --device=/dev/dri \
-  --device=/dev/mem \
-  --group-add video \
-  --cap-add=SYS_PTRACE \
-  --security-opt seccomp=unconfined \
-  -v /:/work \
-  -e SHELL=/bin/bash \
-  -p 8000:8000 \
-  --name kimi-K2 \
-  vllm/vllm-openai-rocm:latest
-```
-### Log in to Hugging Face
-Log in to your Hugging Face account:
-```shell
-huggingface-cli login
-```
-
-### Start the vLLM server
-
-Run the vllm online serving with this sample command:
-```shell
-SAFETENSORS_FAST_GPU=1 \
-VLLM_USE_V1=1 \
-VLLM_USE_TRITON_FLASH_ATTN=0 \
-vllm serve moonshotai/Kimi-K2-Instruct \
-  --tensor-parallel-size 8 \
-  --no-enable-prefix-caching \
-  --trust-remote-code
-```
-
-### Run Benchmark
-Open a new terminal and run the following command to execute the benchmark script inside the container.
-```shell
-docker exec -it kimi-K2 vllm bench serve \
-  --model "moonshotai/Kimi-K2-Instruct" \
-  --dataset-name random \
-  --random-input-len 8192 \
-  --random-output-len 1024 \
-  --request-rate 10000 \
-  --num-prompts 16 \
-  --ignore-eos \
-  --trust-remote-code 
 ```
