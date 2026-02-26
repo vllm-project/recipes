@@ -80,7 +80,7 @@ vllm serve Qwen/Qwen3.5-397B-A17B-FP8 \
   --reasoning-parser qwen3
 ```
 
-### GB200 Deployment (2 Nodes x 4 GPUs)
+### GB200 Deployment
 
 !!! tip
     We recommend using the NVFP4 checkpoint [nvidia/Qwen3.5-397B-A17B-NVFP4](https://huggingface.co/nvidia/Qwen3.5-397B-A17B-NVFP4) for optimal serving efficiency.
@@ -96,7 +96,7 @@ vllm serve nvidia/Qwen3.5-397B-A17B-NVFP4 \
   --enable-expert-parallel \
   --language-model-only \
   --reasoning-parser qwen3 \
-  --enable-prefix-caching
+  --enable-prefix-caching \
   --attention-backend FLASH_ATTN
 ```
 
