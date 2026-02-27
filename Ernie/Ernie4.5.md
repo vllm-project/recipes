@@ -199,16 +199,3 @@ vllm bench serve \
   --num-prompts 16 \
   --ignore-eos
 ```
-
-If you are using a Docker environment, open a new terminal and run the benchmark inside the container with:
-
-```bash
-docker exec -it Ernie-4.5 vllm bench serve \
-  --model baidu/ERNIE-4.5-21B-A3B-PT \
-  --dataset-name random \
-  --random-input-len 8000 \
-  --random-output-len 1000 \
-  --request-rate 10000 \
-  --num-prompts 16 \
-  --ignore-eos
-```
