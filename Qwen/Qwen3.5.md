@@ -59,7 +59,8 @@ For multimodal workloads, use `--mm-encoder-tp-mode data` for data-parallel visi
 
 ```bash
 vllm serve Qwen/Qwen3.5-397B-A17B-FP8 \
-  --tensor-parallel-size 8 \
+  -dp 8 \
+  --enable-expert-parallel \
   --mm-encoder-tp-mode data \
   --mm-processor-cache-type shm \
   --reasoning-parser qwen3 \
