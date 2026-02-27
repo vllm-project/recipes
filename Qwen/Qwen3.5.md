@@ -158,3 +158,13 @@ response = client.chat.completions.create(
 print(f"Response costs: {time.time() - start:.2f}s")
 print(f"Generated text: {response.choices[0].message.content}")
 ```
+
+### Processing Ultra-Long Texts
+
+Qwen3.5 natively supports context lengths of up to `262,144` tokens. For long-horizon tasks where the total length (including both input and output) exceeds this limit, we recommend using RoPE scaling techniques to handle long texts effectively., e.g., YaRN. you can override the `rope_parameters` in your running script. Refer to [Qwen3.5-397B-A17B](https://huggingface.co/Qwen/Qwen3.5-397B-A17B#processing-ultra-long-texts) for more details..
+
+```bash
+export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 vllm serve ... --hf-overrides '{"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}' --max-model-len 1010000
+
+```
