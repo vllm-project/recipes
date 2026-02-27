@@ -28,7 +28,7 @@ vllm serve zai-org/Glyph \
 - Check out the [official Glyph documentation](https://github.com/thu-coai/Glyph?tab=readme-ov-file#model-deployment-vllm-acceleration) for more details on utilizing the vLLM deployment inside the end-to-end Glyph framework.
 
 
-## AMD GPU Support
+## Model Deployment
 
 Please follow the steps here to install and run Glyph models on AMD MI300X, MI325X, MI355X GPUs.
 
