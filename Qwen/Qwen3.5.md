@@ -87,17 +87,13 @@ vllm serve Qwen/Qwen3.5-397B-A17B-FP8 \
 
 You can also deploy the model across 4GPUs on a GB200 node, using the similar base configuration as H200.
 
-!!! important
-    The default FlashInfer backend has a degradation issue on Blackwell GPUs that is currently under investigation. Please use `--attention-backend FLASH_ATTN` for Blackwell deployments.
-
 ```bash
 vllm serve nvidia/Qwen3.5-397B-A17B-NVFP4 \
   -dp 4 \
   --enable-expert-parallel \
   --language-model-only \
   --reasoning-parser qwen3 \
-  --enable-prefix-caching \
-  --attention-backend FLASH_ATTN
+  --enable-prefix-caching
 ```
 
 ### Configuration Tips
