@@ -109,16 +109,3 @@ vllm bench serve \
   --num-prompts 16 \
   --ignore-eos
 ```
-
-If you are using a Docker environment, open a new terminal and run the benchmark inside the container with:
-
-```bash
-docker exec -it Glyph vllm bench serve \
-  --model zai-org/Glyph \
-  --dataset-name random \
-  --random-input-len 8192 \
-  --random-output-len 512 \
-  --request-rate 10000 \
-  --num-prompts 16 \
-  --ignore-eos
-```
