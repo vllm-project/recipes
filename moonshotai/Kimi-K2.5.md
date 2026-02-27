@@ -21,6 +21,7 @@ vllm serve moonshotai/Kimi-K2.5 -tp 8 \
     --compilation_config.pass_config.fuse_allreduce_rms true \
     --tool-call-parser kimi_k2 \
     --reasoning-parser kimi_k2 \
+    --enable-auto-tool-choice \
     --trust-remote-code
 ```
 The `--reasoning-parser` flag specifies the reasoning parser to use for extracting reasoning content from the model output.
