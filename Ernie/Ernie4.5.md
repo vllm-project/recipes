@@ -11,7 +11,15 @@ source .venv/bin/activate
 uv pip install vllm --torch-backend=auto
 ```
 
+## Installing vLLM (For AMD ROCm: MI300x/MI325x/MI355x)
+```bash
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
+```
+⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/) 
+
 ## Running Ernie4.5
+
+### Serving Ernie4.5 Model on H100 GPUs
 
 ```bash
 # 21B model 80G*1 GPU
@@ -31,6 +39,20 @@ If your single node GPU memory is insufficient, native BF16 deployment may requi
 # 300B model 80G*16 GPU with native BF16
 vllm serve baidu/ERNIE-4.5-300B-A47B-PT \
   --tensor-parallel-size 16
+```
+
+### Serving Ernie4.5 Model on MI300X/MI325X/MI355X GPUs
+
+Run the vLLM online serving on AMD GPUs using the command below:
+```bash
+VLLM_ROCM_USE_AITER=1 \
+SAFETENSORS_FAST_GPU=1 \
+vllm serve baidu/ERNIE-4.5-21B-A3B-PT \
+    --tensor-parallel-size 4 \
+    --gpu-memory-utilization 0.9 \
+    --disable-log-requests \
+    --no-enable-prefix-caching \
+    --trust-remote-code
 ```
 
 ## Running Ernie4.5 MTP
@@ -58,11 +80,9 @@ vllm serve baidu/ERNIE-4.5-300B-A47B-PT \
   --speculative-config '{"method": "ernie_mtp","model": "baidu/ERNIE-4.5-300B-A47B-PT","num_speculative_tokens": 1}'
 ```
 
-
 ## Benchmarking
 
 For benchmarking, only the first `vllm bench serve` after service startup to ensure it is not affected by prefix cache
-
 
 ```bash
 # Prompt-heavy benchmark (8k/1k)
@@ -90,7 +110,6 @@ Test different batch sizes by changing `--num-prompts`, e.g., 1, 16, 32, 64, 128
 
 ### Expected Output
 
-
 ```shell
 ============ Serving Benchmark Result ============
 Successful requests:                     16        
@@ -114,88 +133,4 @@ Mean ITL (ms):                           16.84
 Median ITL (ms):                         15.49     
 P99 ITL (ms):                            20.69     
 ==================================================
-```
-
-
-## AMD GPU Support
-
-Please follow the steps here to install and run ERNIE-4.5 models on AMD MI300X, MI325X, MI355X GPUs.
-
-### Step 1: Prepare Environment
-#### Option 1: Installation from pre-built wheels (For AMD ROCm: MI300X/MI325X/MI355X)
-We recommend using the official package for AMD GPUs (MI300X/MI325X/MI355X). 
-```bash
-uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
-```
-⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/).
-
-#### Option 2: Docker image
-Pull the latest vllm docker:
-
-```bash
-docker pull vllm/vllm-openai-rocm:latest
-```
-
-Launch the ROCm vLLM docker: 
-
-```bash
-docker run -it \
-  --ipc=host \
-  --network=host \
-  --privileged \
-  --cap-add=CAP_SYS_ADMIN \
-  --device=/dev/kfd \
-  --device=/dev/dri \
-  --device=/dev/mem \
-  --group-add video \
-  --cap-add=SYS_PTRACE \
-  --security-opt seccomp=unconfined \
-  -v $(pwd):/work \
-  -e SHELL=/bin/bash \
-  --name Ernie-4.5 \
-  vllm/vllm-openai-rocm:latest
-```
-
-After running the command above, you are already inside the container. Proceed to Step 2 in that shell. If you detached from the container or started it in detached mode, attach to the container with:
-
-```bash
-docker attach Ernie-4.5
-```
-
-### Step 2: Log in to Hugging Face
-
-Hugging Face login:
-
-```bash
-huggingface-cli login
-```
-
-### Step 3: Start the vLLM server
-
-Run the vllm online serving
-Sample Command
-```bash
-VLLM_ROCM_USE_AITER=1 \
-SAFETENSORS_FAST_GPU=1 \
-vllm serve baidu/ERNIE-4.5-21B-A3B-PT \
-    --tensor-parallel-size 4 \
-    --gpu-memory-utilization 0.9 \
-    --disable-log-requests \
-    --no-enable-prefix-caching \
-    --trust-remote-code
-```
-
-
-### Step 4: Run Benchmark
-Open a new terminal and run the following command to execute the benchmark script:
-
-```bash
-vllm bench serve \
-  --model baidu/ERNIE-4.5-21B-A3B-PT \
-  --dataset-name random \
-  --random-input-len 8000 \
-  --random-output-len 1000 \
-  --request-rate 10000 \
-  --num-prompts 16 \
-  --ignore-eos
 ```
