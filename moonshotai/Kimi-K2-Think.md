@@ -12,15 +12,60 @@
 
 ## Installing vLLM
 
+### CUDA
+
 ```bash
 uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
+### ROCm
 
+You can choose either Option A (Docker) or Option B (install with uv).
+
+#### Option A: Run on Host with uv
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+```
+
+#### Option B: Run with Docker
+Pull the latest vllm docker:
+```shell
+docker pull vllm/vllm-openai-rocm:latest
+```
+Launch the ROCm vLLM docker:
+```shell
+docker run -d -it \
+  --ipc=host \
+  --entrypoint /bin/bash \
+  --network=host \
+  --privileged \
+  --cap-add=CAP_SYS_ADMIN \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --device=/dev/mem \
+  --group-add video \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  -v /:/work \
+  -e SHELL=/bin/bash \
+  -p 8000:8000 \
+  --name Kimi-K2-Thinking \
+  vllm/vllm-openai-rocm:latest
+```
+
+Log in to your Hugging Face account:
+```shell
+huggingface-cli login
+```
 
 ## Launching Kimi-K2-Thinking with vLLM
+
+### CUDA
 
 You can use 8x H200/H20 to launch this model. See sections below for detailed launch arguments for low latency and high throughput scenarios
 
@@ -63,8 +108,19 @@ The `--reasoning-parser` flag specifies the reasoning parser to use for extracti
 
 </details>
 
+### ROCm
 
-
+Run the vllm online serving with this sample command:
+```shell
+SAFETENSORS_FAST_GPU=1 \
+vllm serve moonshotai/Kimi-K2-Thinking \
+  --tensor-parallel-size 8 \
+  --no-enable-prefix-caching \
+  --enable-auto-tool-choice \
+  --tool-call-parser kimi_k2 \
+  --reasoning-parser kimi_k2 \
+  --trust-remote-code
+```
 
 ## Metrics
 
