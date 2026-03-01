@@ -4,15 +4,22 @@ This guide describes how to run [ERNIE-4.5-VL-28B-A3B-PT](https://huggingface.co
 
 
 ## Installing vLLM
-Ernie4.5-VL support was recently added to vLLM main branch and is not yet available in any official release:
+ERNIE-4.5-VL support was recently added to vLLM main branch and is not yet available in any official release:
 ```bash
 uv venv --python 3.12 --seed
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
+## Installing vLLM (For AMD ROCm: MI300x/MI325x/MI355x)
+```bash
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
+```
+⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/) 
+
 ## Running Ernie4.5-VL
 
+### Serving Ernie4.5-VL Model on H100 GPUs
 NOTE: torch.compile and cuda graph are not supported due to the heterogeneous expert architecture. (vision and text experts)
 ```bash
 # 28B model 80G*1 GPU
@@ -37,13 +44,26 @@ vllm serve baidu/ERNIE-4.5-VL-424B-A47B-PT \
   --cpu-offload-gb 50
 ```
 
-
 If your single node GPU memory is insufficient, native BF16 deployment may require multi nodes, multi node deployment reference [vLLM doc](https://docs.vllm.ai/en/latest/serving/parallelism_scaling.html?#multi-node-deployment) to start ray cluster. Then run vllm on the master node
 ```bash
 # 424B model 80G*16 GPU with native BF16
 vllm serve baidu/ERNIE-4.5-VL-424B-A47B-PT \
   --trust-remote-code \
   --tensor-parallel-size 16
+```
+
+### Serving Ernie4.5-VL Model on MI300X/MI325X/MI355X GPUs
+
+Run the vLLM online serving on AMD GPUs using the command below:
+```bash
+VLLM_ROCM_USE_AITER=1 \
+SAFETENSORS_FAST_GPU=1 \
+vllm serve baidu/ERNIE-4.5-VL-28B-A3B-PT \
+    --tensor-parallel-size 4 \
+    --gpu-memory-utilization 0.9 \
+    --disable-log-requests \
+    --no-enable-prefix-caching \
+    --trust-remote-code
 ```
 
 ## Benchmarking
