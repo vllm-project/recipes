@@ -33,7 +33,6 @@ vllm serve zai-org/Glyph \
 ```bash
 VLLM_ROCM_USE_AITER=1 \
 SAFETENSORS_FAST_GPU=1 \
-VLLM_USE_TRITON_FLASH_ATTN=0 \
 vllm serve zai-org/Glyph \
     --no-enable-prefix-caching \
     --mm-processor-cache-gb 0 \
