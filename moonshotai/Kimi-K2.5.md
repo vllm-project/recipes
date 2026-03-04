@@ -87,4 +87,7 @@ print(f"Response costs: {time.time() - start:.2f}s")
 print(f"Generated text: {response.choices[0].message.content}")
 ```
 
+## Running Kimi-K2.5-NVFP4
+The [Kimi-K2.5-NVFP4](https://huggingface.co/nvidia/Kimi-K2.5-NVFP4) checkpoint is an NVFP4-quantized version of Kimi-K2.5, quantized using [NVIDIA Model Optimizer](https://github.com/NVIDIA/TensorRT-Model-Optimizer). Only the weights and activations of the linear operators within transformer blocks in MoE are quantized to FP4, enabling efficient deployment on fewer GPUs.
+
 For more usage examples, check out the [vLLM user guide for multimodal models](https://docs.vllm.ai/en/latest/features/multimodal_inputs.html) and the [official Kimi-K2.5 Hugging Face page](https://huggingface.co/moonshotai/Kimi-K2.5)!
