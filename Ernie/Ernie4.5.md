@@ -4,23 +4,21 @@ This guide describes how to run [ERNIE-4.5-21B-A3B-PT](https://huggingface.co/ba
 
 ## Installing vLLM
 Note: transformers >= 4.54.0 and vllm >= 0.10.1
-
+### CUDA
 ```bash
 uv venv --python 3.12 --seed
 source .venv/bin/activate
 uv pip install vllm --torch-backend=auto
 ```
 
-## Installing vLLM (For AMD ROCm: MI300x/MI325x/MI355x)
+### AMD ROCm: MI300x/MI325x/MI355x
 ```bash
-uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.16.0/rocm700
 ```
 ⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/) 
 
 ## Running Ernie4.5
-
 ### Serving Ernie4.5 Model on H100 GPUs
-
 ```bash
 # 21B model 80G*1 GPU
 vllm serve baidu/ERNIE-4.5-21B-A3B-PT
@@ -42,7 +40,6 @@ vllm serve baidu/ERNIE-4.5-300B-A47B-PT \
 ```
 
 ### Serving Ernie4.5 Model on MI300X/MI325X/MI355X GPUs
-
 Run the vLLM online serving on AMD GPUs using the command below:
 ```bash
 VLLM_ROCM_USE_AITER=1 \
@@ -51,12 +48,10 @@ vllm serve baidu/ERNIE-4.5-21B-A3B-PT \
     --tensor-parallel-size 4 \
     --gpu-memory-utilization 0.9 \
     --disable-log-requests \
-    --no-enable-prefix-caching \
     --trust-remote-code
 ```
 
 ## Running Ernie4.5 MTP
-
 ```bash
 # 21B MTP model 80G*1 GPU
 vllm serve baidu/ERNIE-4.5-21B-A3B-PT \
@@ -81,9 +76,7 @@ vllm serve baidu/ERNIE-4.5-300B-A47B-PT \
 ```
 
 ## Benchmarking
-
 For benchmarking, only the first `vllm bench serve` after service startup to ensure it is not affected by prefix cache
-
 ```bash
 # Prompt-heavy benchmark (8k/1k)
 vllm bench serve \
@@ -99,9 +92,7 @@ vllm bench serve \
 ```
 
 ### Benchmark Configurations
-
 Test different workloads by adjusting input/output lengths:
-
 - **Prompt-heavy**: 8000 input / 1000 output
 - **Decode-heavy**: 1000 input / 8000 output
 - **Balanced**: 1000 input / 1000 output
@@ -109,7 +100,6 @@ Test different workloads by adjusting input/output lengths:
 Test different batch sizes by changing `--num-prompts`, e.g., 1, 16, 32, 64, 128, 256, 512
 
 ### Expected Output
-
 ```shell
 ============ Serving Benchmark Result ============
 Successful requests:                     16        
