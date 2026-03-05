@@ -4,12 +4,12 @@
 TranslateGemma models are designed to handle translation tasks across 55 languages. Their relatively small size makes it possible to deploy them in environments with limited resources such as laptops, desktops or your own cloud infrastructure, democratizing access to state of the art translation models and helping foster innovation for everyone.
 
 ## Models
-Original Models: 
+Original Models:
 
 - [google/translategemma-27b-it](https://huggingface.co/google/translategemma-27b-it)
 - [google/translategemma-4b-it](https://huggingface.co/google/translategemma-4b-it)
 
-Optimized vLLM Models: 
+Optimized vLLM Models:
 
 - [Infomaniak-AI/vllm-translategemma-27b-it](https://huggingface.co/Infomaniak-AI/vllm-translategemma-27b-it)
 - [Infomaniak-AI/vllm-translategemma-4b-it](https://huggingface.co/Infomaniak-AI/vllm-translategemma-4b-it)
@@ -42,11 +42,11 @@ docker run -itd --name google-translategemma-27b-it \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     vllm/vllm-openai:v0.14.1-cu130 \
         Infomaniak-AI/vllm-translategemma-27b-it \
-          --served-model-name translategemma-27b-it \
-          --gpu-memory-utilization 0.8 \
-          --optimization-level 0 \
-          --host 0.0.0.0 \
-          --port 8000
+        --served-model-name translategemma-27b-it \
+        --gpu-memory-utilization 0.8 \
+        --optimization-level 0 \
+        --host 0.0.0.0 \
+        --port 8000
 ```
 
 
