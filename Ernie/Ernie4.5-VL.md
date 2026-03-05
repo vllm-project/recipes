@@ -4,6 +4,7 @@ This guide describes how to run [ERNIE-4.5-VL-28B-A3B-PT](https://huggingface.co
 
 
 ## Installing vLLM
+### CUDA
 ERNIE-4.5-VL support was recently added to vLLM main branch and is not yet available in any official release:
 ```bash
 uv venv --python 3.12 --seed
@@ -11,9 +12,9 @@ source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
-## Installing vLLM (For AMD ROCm: MI300x/MI325x/MI355x)
+### AMD ROCm: MI300X/MI325X/MI355X
 ```bash
-uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.16.0/rocm700
 ```
 ⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/) 
 
