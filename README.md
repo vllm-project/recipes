@@ -26,6 +26,10 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [GLM-4.7-Flash, GLM-4.7, GLM-4.6, GLM-4.5, GLM-4.5-Air](GLM/GLM.md)
 - [GLM-4.5V, GLM-4.6V](GLM/GLM-V.md)
 
+### Google <img src="https://avatars.githubusercontent.com/u/1342004?v=4" alt="Google" width="16" height="16" style="vertical-align:middle;">
+
+- [TranslateGemma](Google/TranslateGemma.md)
+
 ### inclusionAI <img src="https://avatars.githubusercontent.com/u/199075982?s=200&v=4" alt="inclusionAI" width="16" height="16" style="vertical-align:middle;">
 
 - [Ring-1T-FP8](inclusionAI/Ring-1T-FP8.md)
