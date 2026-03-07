@@ -3,14 +3,10 @@
 
 ## Installing vLLM
 
-Install vLLM nightly wheel until v0.15.0 is released
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm --pre \
-    --extra-index-url https://wheels.vllm.ai/nightly/cu129 \
-    --extra-index-url https://download.pytorch.org/whl/cu129 \
-    --index-strategy unsafe-best-match
+uv pip install vllm --torch-backend auto
 ```
 
 ## Running Kimi-K2.5

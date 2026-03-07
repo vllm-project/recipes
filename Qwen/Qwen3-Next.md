@@ -24,14 +24,22 @@ You can use 4x H200/H20 or 4x A100/A800 GPUs to launch this model.
 ```bash
 vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct \
   --tensor-parallel-size 4 \
-  --served-model-name qwen3-next 
-
+  --served-model-name qwen3-next \
+  --enable-prefix-caching
 ```
 
 If you encounter `torch.AcceleratorError: CUDA error: an illegal memory access was encountered`, you can add `--compilation_config.cudagraph_mode=PIECEWISE` to the startup parameters to resolve this issue. This IMA error may occur in Data Parallel (DP) mode.
 
 
 ### For FP8 model
+
+For SM90/SM100 machines:
+
+```bash
+vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct-FP8 \
+  --tensor-parallel-size 4 \
+  --enable-prefix-caching
+```
 
 We can accelerate the performance on SM100 machines using the FP8 FlashInfer TRTLLM MoE kernel.
 
@@ -46,15 +54,6 @@ vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct-FP8 \
 
 ```
 
-For SM90/SM100 machines, we can enable `fi_allreduce_fusion` as follows:
-
-```bash
-vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct-FP8 \
---tensor-parallel-size 4 \
---compilation_config.pass_config.enable_fi_allreduce_fusion true \
---compilation_config.pass_config.enable_noop true
-
-```
 
 ### Advanced Configuration with MTP
 
@@ -125,10 +124,6 @@ vLLM also supports calling user-defined functions. Make sure to run your Qwen3-N
 ```bash
 vllm serve ... --tool-call-parser hermes --enable-auto-tool-choice
 ```
-
-### Known limitations
-
-- Qwen3-Next currently does not support automatic prefix caching.
 
 
 ## AMD GPU Support
