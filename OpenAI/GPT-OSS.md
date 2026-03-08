@@ -13,7 +13,7 @@ This is a living document and we welcome contributions, corrections, and creatio
 
 ## Quickstart
 
-### Installation from pre-built wheels
+### Installation vLLM
 
 Create a new virtual environment and install the official release:
 
