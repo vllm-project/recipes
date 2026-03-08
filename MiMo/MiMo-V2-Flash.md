@@ -8,7 +8,7 @@
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly
+uv pip install vllm --torch-backend auto
 ```
 
 ## Running MiMo-V2-Flash

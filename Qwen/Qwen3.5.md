@@ -8,22 +8,18 @@ You can either install vLLM from pip or use the pre-built Docker image.
 
 ### Pip Install
 ```bash
-# Use vLLM nightly wheel until 0.17.0 is released.
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm \
-    --torch-backend=auto \
-    --extra-index-url https://wheels.vllm.ai/nightly
+uv pip install -U vllm --torch-backend=auto
 ```
 
 ### Docker
 ```bash
-# Use vLLM nightly docker until 0.17.0 is released.
 docker run --gpus all \
   -p 8000:8000 \
   --ipc=host \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
-  vllm/vllm-openai:nightly Qwen/Qwen3.5-397B-A17B \
+  vllm/vllm-openai Qwen/Qwen3.5-397B-A17B \
     --tensor-parallel-size 8 \
     --reasoning-parser qwen3 \
     --enable-prefix-caching
@@ -103,6 +99,17 @@ vllm serve nvidia/Qwen3.5-397B-A17B-NVFP4 \
 - **Multi-token Prediction**: MTP-1 reduces per-token latency but degrades text throughput under high concurrency because speculative tokens consume KV cache capacity, reducing effective batch size. Depending on your use case, you may adjust `num_speculative_tokens`: higher values can improve latency further but may have varying acceptance rates and throughput trade-offs.
 - **Encoder Data Parallelism**: Specifying `--mm-encoder-tp-mode data` deploys the vision encoder in a data-parallel fashion for better throughput performance. This consumes additional memory and may require adjustment of `--gpu-memory-utilization`.
 - **Media Embedding Size**: You can adjust the maximum media embedding size allowed by modifying the HuggingFace processor config at server startup via passing `--mm-processor-kwargs`. For example: `--mm-processor-kwargs '{"video_kwargs": {"size": {"longest_edge": 234881024, "shortest_edge": 4096}}}'`
+
+You may encounter the following error:
+```
+(Worker_TP0 pid=70) ERROR 02-08 08:39:04 [multiproc_executor.py:852]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/qwen3_next.py", line 585, in _forward_core
+(Worker_TP0 pid=70) ERROR 02-08 08:39:04 [multiproc_executor.py:852]     mixed_qkv_non_spec = causal_conv1d_update(
+(Worker_TP0 pid=70) ERROR 02-08 08:39:04 [multiproc_executor.py:852]                          ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0 pid=70) ERROR 02-08 08:39:04 [multiproc_executor.py:852]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/mamba/ops/causal_conv1d.py", line 1160, in causal_conv1d_update
+(Worker_TP0 pid=70) ERROR 02-08 08:39:04 [multiproc_executor.py:852]     assert num_cache_lines >= batch
+```
+This is because cuda graph capture size is larger than mamba cache size. Try reducing `--max-cudagraph-capture-size`, the default value is 512.
+See https://github.com/vllm-project/vllm/pull/34571 for details
 
 ### Benchmarking
 
