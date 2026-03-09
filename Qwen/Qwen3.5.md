@@ -126,7 +126,7 @@ You can also deploy the model across 2 GPUs on a MI355X node, using the similar 
 
 ```bash
 vllm serve Qwen/Qwen3.5-397B-A17B-FP8 \
-  -dp 2 \
+  -tp 2 \
   --enable-expert-parallel \
   --language-model-only \
   --reasoning-parser qwen3 \
