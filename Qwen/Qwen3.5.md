@@ -39,15 +39,17 @@ For Blackwell GPUs, use `vllm/vllm-openai:cu130-nightly`
 ### Docker (AMD MI300X/MI325X/MI355X)
 
 ```bash
-docker run -it --device=/dev/kfd --device=/dev/dri \
+docker run --device=/dev/kfd --device=/dev/dri \
   --security-opt seccomp=unconfined \
   --group-add video \
   --ipc=host \
-  --cap-add=SYS_PTRACE \
-  --entrypoint=/bin/bash \
   -p 8000:8000 \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
-  vllm/vllm-openai-rocm:v0.17.0
+  vllm/vllm-openai-rocm:v0.17.0 \
+  Qwen/Qwen3.5-397B-A17B-FP8 \
+  --tensor-parallel-size 8 \
+  --reasoning-parser qwen3 \
+  --enable-prefix-caching
 ```
 
 ## Running Qwen3.5
