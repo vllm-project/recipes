@@ -37,11 +37,11 @@ The following are recommended configurations; actual requirements should be adju
 
 - **192G x2** AMD GPU (MI300X/MI325X): Supports a total KV Cache capacity of ~500K tokens.
 
-- **192G x4** AMD GPU (MI300X/MI325X): Supports a total KV Cache capacity of up to ~1.5M tokens.
+- **192G x4** AMD GPU (MI300X/MI325X): Supports a total KV Cache capacity of ~1.5M tokens.
 
-- **288G x2** AMD GPU (MI350X/MI355X): Supports a total KV Cache capacity of up to ~1.5M tokens.
+- **288G x2** AMD GPU (MI350X/MI355X): Supports a total KV Cache capacity of ~1.5M tokens.
 
-- **288G x4** AMD GPU (MI350X/MI355X): Supports a total KV Cache capacity of up to ~4M tokens.
+- **288G x4** AMD GPU (MI350X/MI355X): Supports a total KV Cache capacity of ~4M tokens.
 
 > **Note**: The values above represent the total aggregate hardware KV Cache capacity. The maximum context length per individual sequence remains **196K** tokens.
 
