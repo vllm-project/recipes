@@ -67,16 +67,15 @@ You can launch GPT-OSS model serving with vLLM using:
 ```bash
 vllm serve openai/gpt-oss-120b
 ```
-However, for optimal performance, applying the configuration below can deliver additional speedups and efficiency gains. These configurations were validated on the [vLLM 0.14.1 release](https://github.com/vllm-project/vllm/releases/tag/v0.14.1).
+However, for optimal performance, applying the configuration below can deliver additional speedups and efficiency gains. These configurations were validated on the [vLLM 0.17.0 release](https://github.com/vllm-project/vllm/releases/tag/v0.17.0).
 
 ```bash
 export HSA_NO_SCRATCH_RECLAIM=1
+export AMDGCN_USE_BUFFER_OPS=0
 export VLLM_ROCM_USE_AITER=1
-export VLLM_ROCM_USE_AITER_UNIFIED_ATTENTION=1
-export VLLM_ROCM_USE_AITER_MHA=0
 export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
 
-vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request
+vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --attention-backend ROCM_AITER_UNIFIED_ATTN -cc.pass_config.fuse_rope_kvcache=True -cc.use_inductor_graph_partition=True --gpu-memory-utilization 0.95 --block-size=64
 ```
 * `export HSA_NO_SCRATCH_RECLAIM=1` is only needed on the server with old GPU firmware. If the GPU firmware version is less than 177 by the following command, you need to set `export HSA_NO_SCRATCH_RECLAIM=1` for better performance.
 ```bash
@@ -90,12 +89,14 @@ rocm-smi --showfw | grep MEC | head -n 1 |  awk '{print $NF}'
 
 ```bash
 export HSA_NO_SCRATCH_RECLAIM=1
+export AMDGCN_USE_BUFFER_OPS=0
 export VLLM_ROCM_USE_AITER=1
-export VLLM_ROCM_USE_AITER_UNIFIED_ATTENTION=1
-export VLLM_ROCM_USE_AITER_MHA=0
+export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
 
-vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request --async-scheduling
+vllm serve amd/gpt-oss-120b-w-mxfp4-a-fp8 --tensor-parallel-size=8 --attention-backend ROCM_AITER_UNIFIED_ATTN -cc.pass_config.fuse_rope_kvcache=True -cc.use_inductor_graph_partition=True --gpu-memory-utilization 0.95 --block-size=64
 ```
+
+* [`amd/gpt-oss-120b-w-mxfp4-a-fp8`](https://huggingface.co/amd/gpt-oss-120b-w-mxfp4-a-fp8) is a Quark-quantized version of openai/gpt-oss-120b with support for fp8-quantized activations with static scales.
 
 #### Known Issues
 - When you encounter this error `The link interface of target "torch::nvtoolsext" contains: CUDA::nvToolsExt but the target was not found.` Please double check your pytorch version has suffix `+cu128`.
