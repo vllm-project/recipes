@@ -46,11 +46,23 @@ VLLM_USE_DEEP_GEMM=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
 
 ### Serving BF16 Model on 8xMI300x/MI325x/MI355x
 ```shell
-VLLM_ROCM_USE_AITER=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct --trust-remote-code --max-model-len 131072 --enable-expert-parallel --data-parallel-size 8 --enable-auto-tool-choice --tool-call-parser qwen3_coder
+VLLM_ROCM_USE_AITER=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct \
+    --trust-remote-code \
+    --max-model-len 131072 \
+    --enable-expert-parallel \
+    --data-parallel-size 8 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder
 ```
 ### Serving FP8 Model on 8xMI300x/MI325x/MI355x
 ```shell
-VLLM_ROCM_USE_AITER=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 --trust-remote-code --max-model-len 131072 --enable-expert-parallel --data-parallel-size 8 --enable-auto-tool-choice --tool-call-parser qwen3_coder
+VLLM_ROCM_USE_AITER=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
+    --trust-remote-code \
+    --max-model-len 131072 \
+    --enable-expert-parallel \
+    --data-parallel-size 8 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder
 ```
 
 ## Performance Metrics
