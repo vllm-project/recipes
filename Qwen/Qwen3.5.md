@@ -45,7 +45,7 @@ docker run --device=/dev/kfd --device=/dev/dri \
   --ipc=host \
   -p 8000:8000 \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
-  vllm/vllm-openai-rocm:v0.17.0 \
+  vllm/vllm-openai-rocm:latest \
   Qwen/Qwen3.5-397B-A17B-FP8 \
   --tensor-parallel-size 8 \
   --reasoning-parser qwen3 \
