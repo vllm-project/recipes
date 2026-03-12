@@ -7,13 +7,15 @@
 You can either install vLLM from pip or use the pre-built Docker image.
 
 ### Pip Install
+
+#### NVIDIA 
 ```bash
 uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend=auto
 ```
 
-### Pip Install (AMD ROCm)
+#### AMD 
 > Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described below. Supported GPUs: MI300X, MI325X, MI355X.
 ```bash
 uv venv --python 3.12
@@ -21,7 +23,10 @@ source .venv/bin/activate
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
 ```
 
-### Docker (NVIDIA)
+### Docker 
+
+#### NVIDIA
+
 ```bash
 docker run --gpus all \
   -p 8000:8000 \
@@ -36,7 +41,7 @@ docker run --gpus all \
 
 For Blackwell GPUs, use `vllm/vllm-openai:cu130-nightly`
 
-### Docker (AMD MI300X/MI325X/MI355X)
+#### AMD
 
 ```bash
 docker run --device=/dev/kfd --device=/dev/dri \
