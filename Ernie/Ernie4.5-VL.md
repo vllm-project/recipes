@@ -14,7 +14,7 @@ uv pip install -U vllm --torch-backend auto
 
 ### AMD ROCm: MI300X/MI325X/MI355X
 ```bash
-uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.16.0/rocm700
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
 ```
 ⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/) 
 
@@ -63,7 +63,6 @@ vllm serve baidu/ERNIE-4.5-VL-28B-A3B-PT \
     --tensor-parallel-size 4 \
     --gpu-memory-utilization 0.9 \
     --disable-log-requests \
-    --no-enable-prefix-caching \
     --trust-remote-code
 ```
 
