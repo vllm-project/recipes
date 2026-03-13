@@ -39,7 +39,10 @@ docker run --device=/dev/kfd --device=/dev/dri \
   vllm/vllm-openai-rocm:latest \
   moonshotai/Kimi-K2.5 \
   --tensor-parallel-size 8 \
+  --mm-encoder-tp-mode data \
+  --tool-call-parser kimi_k2 \
   --reasoning-parser kimi_k2 \
+  --enable-auto-tool-choice \
   --enable-prefix-caching \
   --trust-remote-code
 ```
@@ -93,7 +96,7 @@ vllm bench serve \
   --dataset-path lmarena-ai/VisionArena-Chat \
   --num-prompts 1000 \
   --request-rate 20 \ 
-  --trust_remote_code
+  --trust-remote-code
 ```
 
 ### Consume the OpenAI API Compatible Server
