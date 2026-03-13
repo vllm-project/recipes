@@ -102,15 +102,9 @@ for i, res in enumerate(output):
 - Depending on your hardware capability, adjust `max_num_batched_tokens` for better throughput performance.
 - Check out the official [PaddleOCR-VL documentation](https://github.com/PaddlePaddle/PaddleOCR) for more details and examples of using the model for various document parsing tasks.
 
-
-
-
 ## AMD GPU Support
 Recommended approaches by hardware type are:
-
-
 MI300X/MI325X/MI355X 
-
 Please follow the steps here to install and run PaddleOCR-VL models on AMD MI300X/MI325X/MI355X GPU.
 
 ### Step 1: Installing vLLM (AMD ROCm Backend: MI300X, MI325X, MI355X) 
@@ -120,14 +114,10 @@ Please follow the steps here to install and run PaddleOCR-VL models on AMD MI300
  source .venv/bin/activate 
  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
  ```
-
-
 ### Step 2: Start the vLLM server
-
 Run the vllm online serving
 Sample Command
 ```shell
-
 SAFETENSORS_FAST_GPU=1 \
 VLLM_USE_V1=1 \
 VLLM_USE_TRITON_FLASH_ATTN=0 vllm serve PaddlePaddle/PaddleOCR-VL \
@@ -135,12 +125,8 @@ VLLM_USE_TRITON_FLASH_ATTN=0 vllm serve PaddlePaddle/PaddleOCR-VL \
   --no-enable-prefix-caching \
   --mm-processor-cache-gb 0 \
   --trust-remote-code
-
 ```
-
-
 ### Step 3: Run Benchmark
-Open a new terminal and run the following command to execute the benchmark script inside the container.
 ```shell
   vllm bench serve \
   --model "PaddlePaddle/PaddleOCR-VL" \
@@ -152,4 +138,3 @@ Open a new terminal and run the following command to execute the benchmark scrip
   --ignore-eos \
   --trust-remote-code 
 ```
-
