@@ -3,14 +3,53 @@
 
 ## Installing vLLM
 
+You can either install vLLM from pip or use the pre-built Docker image.
+
+### Pip Install
+
+#### NVIDIA 
+
 ```bash
 uv venv
 source .venv/bin/activate
 uv pip install vllm --torch-backend auto
 ```
 
+#### AMD 
+
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described below. Supported GPUs: MI300X, MI325X, MI355X.
+
+```bash
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
+```
+
+### Docker 
+
+#### AMD
+
+```bash
+docker run --device=/dev/kfd --device=/dev/dri \
+  --security-opt seccomp=unconfined \
+  --group-add video \
+  --ipc=host \
+  -p 8000:8000 \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  vllm/vllm-openai-rocm:latest \
+  moonshotai/Kimi-K2.5 \
+  --tensor-parallel-size 8 \
+  --reasoning-parser kimi_k2 \
+  --enable-prefix-caching \
+  --trust-remote-code
+```
+
 ## Running Kimi-K2.5
-See the following command to deploy Kimi-K2.5 with the vLLM inference server. The configuration below has been verified on 8xH200 GPUs.
+See the following commands to deploy Kimi-K2.5 with the vLLM inference server. 
+
+### NVIDIA 
+
+The configuration below has been verified on 8xH200 GPUs.
 ```bash
 vllm serve moonshotai/Kimi-K2.5 -tp 8 \
     --mm-encoder-tp-mode data \
@@ -21,6 +60,18 @@ vllm serve moonshotai/Kimi-K2.5 -tp 8 \
     --trust-remote-code
 ```
 The `--reasoning-parser` flag specifies the reasoning parser to use for extracting reasoning content from the model output.
+
+### AMD 
+
+The configuration below has been verified on 8x MI300X/MI355X GPUs.
+```bash
+vllm serve moonshotai/Kimi-K2.5 -tp 8 \
+    --mm-encoder-tp-mode data \
+    --tool-call-parser kimi_k2 \
+    --reasoning-parser kimi_k2 \
+    --enable-auto-tool-choice \
+    --trust-remote-code
+```
 
 ### Configuration Tips
 - `--async-scheduling` has been turned on by default to improve the overall system performance by overlapping scheduling overhead with the decoding process. If you run into issue with this feature, please try turning off this feature and file a bug report to vLLM.
@@ -41,7 +92,8 @@ vllm bench serve \
   --dataset-name hf \
   --dataset-path lmarena-ai/VisionArena-Chat \
   --num-prompts 1000 \
-  --request-rate 20
+  --request-rate 20 \ 
+  --trust_remote_code
 ```
 
 ### Consume the OpenAI API Compatible Server
