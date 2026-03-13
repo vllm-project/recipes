@@ -103,9 +103,24 @@ uv pip install vllm \
 
 ### NVIDIA GPU
 
-You can use 4x H200/H20 or 4x A100/A800 GPUs to launch this model.
+You can use 2x B200, 4x H200/H20, or 4x A100/A800 GPUs to launch this model.
 
-run tensor-parallel like this:
+For 2x B200: FP8 serving on B200 GPUs with FlashInfer MoE FP8 and DeepGEMM MoE disabled:
+
+```bash
+export VLLM_USE_FLASHINFER_MOE_FP8=0
+export VLLM_MOE_USE_DEEP_GEMM=0
+
+vllm serve MiniMaxAI/MiniMax-M2.5 \
+  --tensor-parallel-size 2 \
+  --gpu-memory-utilization 0.95 \
+  --block-size 32 \
+  --tool-call-parser minimax_m2 \
+  --reasoning-parser minimax_m2_append_think \
+  --enable-auto-tool-choice
+```
+
+For 4x H200/H20 or 4x A100/A800: Standard serving configuration
 
 ```bash
 vllm serve MiniMaxAI/MiniMax-M2.5 \
