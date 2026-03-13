@@ -11,13 +11,62 @@ By using smaller models, expect faster inference with the price of lower perform
 
 ## Installing vLLM
 
+### CUDA
+
 ```bash
 uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
-## Running Ministral-3 Reasoning 3B or 8B on 1xH200
+### ROCm
+
+You can choose either Option A (Docker) or Option B (install with uv).
+
+#### Option A: Run on Host with uv
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+```
+
+#### Option B: Run with Docker
+Pull the latest vllm docker:
+```shell
+docker pull vllm/vllm-openai-rocm:latest
+```
+Launch the ROCm vLLM docker:
+```shell
+docker run -d -it \
+  --ipc=host \
+  --entrypoint /bin/bash \
+  --network=host \
+  --privileged \
+  --cap-add=CAP_SYS_ADMIN \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --device=/dev/mem \
+  --group-add video \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  -v /:/work \
+  -e SHELL=/bin/bash \
+  -p 8000:8000 \
+  --name Ministral-3-Reasoning \
+  vllm/vllm-openai-rocm:latest
+```
+
+Log in to your Hugging Face account:
+```shell
+huggingface-cli login
+```
+
+## Running the model
+
+### CUDA
+
+#### Running Ministral-3 Reasoning 3B or 8B on 1xH200
 
 Due to their size, `Ministral-3-3B-Reasoning-2512` and `Ministral-3-8B-Reasoning-2512` can run on a single 1xH200 GPU.
 
@@ -48,7 +97,7 @@ Additional flags:
 * You can set `--max-num-batched-tokens` to balance throughput and latency, higher means higher throughput but higher latency.
 
 
-##  Running Ministral-3 Reasoning 14B on 2xH200
+#### Running Ministral-3 Reasoning 14B on 2xH200
 
 To fully exploit the `Ministral-3-14B-Reasoning-2512` we recommend using 2xH200 GPUs for deployment due to its large context. However if you don't need a large context, you can fall back to a single GPU.
 
@@ -75,6 +124,17 @@ Additional flags:
 * You can set `--max-model-len` to preserve memory. By default it is set to `262144` which is quite large but not necessary for most scenarios.
 * You can set `--max-num-batched-tokens` to balance throughput and latency, higher means higher throughput but higher latency.
 
+### ROCm
+
+Run the vllm online serving with this sample command:
+```shell
+SAFETENSORS_FAST_GPU=1 \
+VLLM_ROCM_USE_AITER=1 \
+vllm serve mistralai/Ministral-3-14B-Reasoning-2512 \
+  --tensor-parallel-size 8 \
+  --no-enable-prefix-caching \
+  --trust-remote-code
+```
 
 ## Usage of the model
 
