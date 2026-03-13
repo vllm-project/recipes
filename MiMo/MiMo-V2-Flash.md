@@ -134,6 +134,32 @@ Result
 |     |       |strict-match    |     5|exact_match|↑  |0.9075|±  |0.0080|
 ```
 
+## AMD GPU Support
+
+Please follow the steps here to install and run MiMo-V2-Flash on AMD MI300X/MI325X/MI355X
+
+### Step 1: Install vLLM
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images). 
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
+```
+
+### Step 2: Start the vLLM server
+
+Run the vllm online serving:
+
+```shell
+export VLLM_ROCM_USE_AITER=0
+vllm serve XiaomiMiMo/MiMo-V2-Flash \
+    --served-model-name mimo_v2_flash \
+    --tensor-parallel-size 4 \
+    --trust-remote-code \
+    --gpu-memory-utilization 0.9 \
+    --generation-config vllm
+```
+
 ## TODO
 
 - [ ] Supports MTP.
