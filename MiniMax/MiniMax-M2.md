@@ -120,7 +120,7 @@ vllm serve MiniMaxAI/MiniMax-M2.5 \
   --enable-auto-tool-choice
 ```
 
-For 4x H200/H20 or 4x A100/A800, run like this
+For 4x H200/H20 or 4x A100/A800: Standard serving configuration
 
 ```bash
 vllm serve MiniMaxAI/MiniMax-M2.5 \
