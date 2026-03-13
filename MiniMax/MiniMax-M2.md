@@ -103,7 +103,7 @@ uv pip install vllm \
 
 ### NVIDIA GPU
 
-You can use 4x H200/H20 or 4x A100/A800 GPUs to launch this model.
+You can use 4x H200/H20/H100 or 4x A100/A800 GPUs to launch this model.
 
 run tensor-parallel like this:
 
@@ -121,6 +121,19 @@ Note that pure TP8 is not supported. To run the model with >4 GPUs, please use D
 ```bash
 vllm serve MiniMaxAI/MiniMax-M2.5 \
   --data-parallel-size 8 \
+  --enable-expert-parallel \
+  --tool-call-parser minimax_m2 \
+  --reasoning-parser minimax_m2_append_think  \
+  --enable-auto-tool-choice
+```
+
+- TP4+EP (recommended for H100)
+
+> **Note**: On H100 GPUs, TP4+EP4 outperforms TP8+EP8 and is the recommended configuration.
+
+```bash
+vllm serve MiniMaxAI/MiniMax-M2.5 \
+  --tensor-parallel-size 4 \
   --enable-expert-parallel \
   --tool-call-parser minimax_m2 \
   --reasoning-parser minimax_m2_append_think  \
