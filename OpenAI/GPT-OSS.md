@@ -13,23 +13,23 @@ This is a living document and we welcome contributions, corrections, and creatio
 
 ## Quickstart
 
-### Installation from pre-built wheels
+### Installation vLLM
 
-We recommend using the official [vLLM 0.10.2 release](https://github.com/vllm-project/vllm/releases/tag/v0.10.2) as your starting point. **Note: vLLM >= 0.10.2 is required for `--tool-call-parser openai`**. Create a new virtual environment and install the official release:
+Create a new virtual environment and install the official release:
 
-```
+```bash
 uv venv
 source .venv/bin/activate
-uv pip install vllm==0.10.2 --torch-backend=auto
+uv pip install vllm --torch-backend=auto
 ```
 
 We also provide a docker container with all the dependencies built in
 
-```
+```bash
 docker run --gpus all \
     -p 8000:8000 \
     --ipc=host \
-    vllm/vllm-openai:v0.10.2 \
+    vllm/vllm-openai \
     --model openai/gpt-oss-20b
 ```
 
@@ -37,16 +37,14 @@ docker run --gpus all \
 
 GPT-OSS works on Ampere devices by default, using the `TRITON_ATTN` attention backend and Marlin MXFP4 MoE:
 
-* `--async-scheduling` can be enabled for higher performance. Note: vLLM >= 0.11.1 has improved async scheduling stability and provides compatibility with structured output.
-
 ```
 # openai/gpt-oss-20b should run on a single A100
-vllm serve openai/gpt-oss-20b --async-scheduling 
+vllm serve openai/gpt-oss-20b
 
 # gpt-oss-120b will fit on a single A100 (80GB), but scaling it to higher TP sizes can help with throughput
-vllm serve openai/gpt-oss-120b --async-scheduling
-vllm serve openai/gpt-oss-120b --tensor-parallel-size 2 --async-scheduling
-vllm serve openai/gpt-oss-120b --tensor-parallel-size 4 --async-scheduling
+vllm serve openai/gpt-oss-120b
+vllm serve openai/gpt-oss-120b --tensor-parallel-size 2
+vllm serve openai/gpt-oss-120b --tensor-parallel-size 4
 ```
 
 ### H100 & H200
@@ -69,16 +67,15 @@ You can launch GPT-OSS model serving with vLLM using:
 ```bash
 vllm serve openai/gpt-oss-120b
 ```
-However, for optimal performance, applying the configuration below can deliver additional speedups and efficiency gains. These configurations were validated on the [vLLM 0.14.1 release](https://github.com/vllm-project/vllm/releases/tag/v0.14.1).
+However, for optimal performance, applying the configuration below can deliver additional speedups and efficiency gains. These configurations were validated on the [vLLM 0.17.0 release](https://github.com/vllm-project/vllm/releases/tag/v0.17.0).
 
 ```bash
 export HSA_NO_SCRATCH_RECLAIM=1
+export AMDGCN_USE_BUFFER_OPS=0
 export VLLM_ROCM_USE_AITER=1
-export VLLM_ROCM_USE_AITER_UNIFIED_ATTENTION=1
-export VLLM_ROCM_USE_AITER_MHA=0
 export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
 
-vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request
+vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --attention-backend ROCM_AITER_UNIFIED_ATTN -cc.pass_config.fuse_rope_kvcache=True -cc.use_inductor_graph_partition=True --gpu-memory-utilization 0.95 --block-size=64
 ```
 * `export HSA_NO_SCRATCH_RECLAIM=1` is only needed on the server with old GPU firmware. If the GPU firmware version is less than 177 by the following command, you need to set `export HSA_NO_SCRATCH_RECLAIM=1` for better performance.
 ```bash
@@ -92,12 +89,14 @@ rocm-smi --showfw | grep MEC | head -n 1 |  awk '{print $NF}'
 
 ```bash
 export HSA_NO_SCRATCH_RECLAIM=1
+export AMDGCN_USE_BUFFER_OPS=0
 export VLLM_ROCM_USE_AITER=1
-export VLLM_ROCM_USE_AITER_UNIFIED_ATTENTION=1
-export VLLM_ROCM_USE_AITER_MHA=0
+export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
 
-vllm serve openai/gpt-oss-120b --tensor-parallel-size=8 --gpu-memory-utilization 0.95 --compilation-config '{"cudagraph_mode": "FULL_AND_PIECEWISE"}' --block-size=64 --disable-log-request --async-scheduling
+vllm serve amd/gpt-oss-120b-w-mxfp4-a-fp8 --tensor-parallel-size=8 --attention-backend ROCM_AITER_UNIFIED_ATTN -cc.pass_config.fuse_rope_kvcache=True -cc.use_inductor_graph_partition=True --gpu-memory-utilization 0.95 --block-size=64
 ```
+
+* [`amd/gpt-oss-120b-w-mxfp4-a-fp8`](https://huggingface.co/amd/gpt-oss-120b-w-mxfp4-a-fp8) is a Quark-quantized version of openai/gpt-oss-120b with support for fp8-quantized activations with static scales.
 
 #### Known Issues
 - When you encounter this error `The link interface of target "torch::nvtoolsext" contains: CUDA::nvToolsExt but the target was not found.` Please double check your pytorch version has suffix `+cu128`.
@@ -197,16 +196,16 @@ This chapter includes more instructions about running gpt-oss-120b and gpt-oss-2
 
 ### Pull Docker Image
 
-Pull the vLLM v0.12.0 release docker image.
+Pull the vLLM release docker image.
 
 `pull_image.sh`
 ```
 # On x86_64 systems:
-docker pull --platform linux/amd64 vllm/vllm-openai:v0.12.0
+docker pull --platform linux/amd64 vllm/vllm-openai
 # On aarch64 systems:
-# docker pull --platform linux/aarch64 vllm/vllm-openai:v0.12.0
+# docker pull --platform linux/aarch64 vllm/vllm-openai
 
-docker tag vllm/vllm-openai:v0.12.0 vllm/vllm-openai:deploy
+docker tag vllm/vllm-openai vllm/vllm-openai:deploy
 ```
 
 ### Run Docker Container
@@ -229,8 +228,6 @@ Prepare the config YAML file to configure vLLM. Below shows the recommended conf
 `GPT-OSS_Blackwell.yaml`
 ```
 kv-cache-dtype: fp8
-compilation-config: '{"pass_config":{"fuse_allreduce_rms":true,"eliminate_noops":true}}'
-async-scheduling: true
 no-enable-prefix-caching: true
 max-cudagraph-capture-size: 2048
 max-num-batched-tokens: 8192
@@ -239,7 +236,6 @@ stream-interval: 20
 
 `GPT-OSS_Hopper.yaml`
 ```
-async-scheduling: true
 no-enable-prefix-caching: true
 max-cudagraph-capture-size: 2048
 max-num-batched-tokens: 8192
@@ -251,8 +247,6 @@ Below are the config YAML files to enable EAGLE3 speculative decoding:
 `GPT-OSS_EAGLE3_Blackwell.yaml`
 ```
 kv-cache-dtype: fp8
-compilation-config: '{"pass_config":{"fuse_allreduce_rms":true,"eliminate_noops":true}}'
-async-scheduling: true
 no-enable-prefix-caching: true
 max-cudagraph-capture-size: 2048
 max-num-batched-tokens: 8192
@@ -262,7 +256,6 @@ speculative-config: '{"model":"nvidia/gpt-oss-120b-Eagle3-v2","num_speculative_t
 
 `GPT-OSS_EAGLE3_Hopper.yaml`
 ```
-async-scheduling: true
 no-enable-prefix-caching: true
 max-cudagraph-capture-size: 2048
 max-num-batched-tokens: 8192
@@ -311,8 +304,6 @@ You can specify the IP address and the port that you would like to run the serve
 
 Below are the config flags that we do not recommend changing or tuning with:
 
-- `compilation-config`: Configuration for vLLM compilation stage. We recommend setting it to `'{"pass_config":{"fuse_allreduce_rms":true,"eliminate_noops":true}}'` to enable all the necessary fusions for the best performance on Blackwell architecture. However, this feature is not supported on Hopper architecture yet.
-- `async-scheduling`: Enable asynchronous scheduling to reduce the host overheads between decoding steps. We recommend always adding this flag for best performance. Note: vLLM >= 0.11.1 has improved async scheduling stability and provides compatibility with structured output.
 - `no-enable-prefix-caching`: Disable prefix caching. We recommend always adding this flag if running with synthetic dataset for consistent performance measurement.
 - `max-cudagraph-capture-size`: Specify the max size for cuda graphs. We recommend setting this to 2048 to leverage the benefit of cuda graphs while not using too much GPU memory.
 - `stream-interval`: The interval between output token streaming responses. We recommend setting this to `20` to maximize the throughput.

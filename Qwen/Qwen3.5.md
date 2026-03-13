@@ -7,47 +7,74 @@
 You can either install vLLM from pip or use the pre-built Docker image.
 
 ### Pip Install
+
+#### NVIDIA 
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm \
-    --torch-backend=auto \
-    --extra-index-url https://wheels.vllm.ai/nightly
+uv pip install -U vllm --torch-backend=auto
 ```
 
-### Docker
+#### AMD 
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described below. Supported GPUs: MI300X, MI325X, MI355X.
+```bash
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
+```
+
+### Docker 
+
+#### NVIDIA
+
 ```bash
 docker run --gpus all \
   -p 8000:8000 \
   --ipc=host \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
-  vllm/vllm-openai:qwen3_5 Qwen/Qwen3.5-397B-A17B \
+  vllm/vllm-openai Qwen/Qwen3.5-397B-A17B \
     --tensor-parallel-size 8 \
-    --reasoning-parser deepseek_r1 \
+    --reasoning-parser qwen3 \
     --enable-prefix-caching
 ```
 (See detailed deployment configurations below)
 
-For Blackwell GPUs, use `vllm/vllm-openai:qwen3_5-cu130`
+For Blackwell GPUs, use `vllm/vllm-openai:cu130-nightly`
+
+#### AMD
+
+```bash
+docker run --device=/dev/kfd --device=/dev/dri \
+  --security-opt seccomp=unconfined \
+  --group-add video \
+  --ipc=host \
+  -p 8000:8000 \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  vllm/vllm-openai-rocm:latest \
+  Qwen/Qwen3.5-397B-A17B-FP8 \
+  --tensor-parallel-size 8 \
+  --reasoning-parser qwen3 \
+  --enable-prefix-caching
+```
 
 ## Running Qwen3.5
+The configurations below have been verified on 8x H200 GPUs and 8x MI300X/MI355X GPUs.
 
-!!! attention
-    Currently, you will need to use `deepseek_r1` for the `--reasoning-parser` argument to correctly parse reasoning content for this model.
-
-The configurations below have been verified on 8x H200 GPUs.
+!!! tip
+    We recommend using the official FP8 checkpoint [Qwen/Qwen3.5-397B-A17B-FP8](https://huggingface.co/Qwen/Qwen3.5-397B-A17B-FP8) for optimal serving efficiency.
 
 ### Throughput-Focused Serving
 
 #### Text-Only
 
-For maximum text throughput under high concurrency, use `--language-model-only` to skip loading the vision encoder and free up memory for KV cache.
+For maximum text throughput under high concurrency, use `--language-model-only` to skip loading the vision encoder and free up memory for KV cache as well as enabling Expert Parallelism.
 
 ```bash
-vllm serve Qwen/Qwen3.5-397B-A17B \
-  --tensor-parallel-size 8 \
+vllm serve Qwen/Qwen3.5-397B-A17B-FP8 \
+  -dp 8 \
+  --enable-expert-parallel \
   --language-model-only \
-  --reasoning-parser deepseek_r1 \
+  --reasoning-parser qwen3 \
   --enable-prefix-caching
 ```
 
@@ -56,11 +83,12 @@ vllm serve Qwen/Qwen3.5-397B-A17B \
 For multimodal workloads, use `--mm-encoder-tp-mode data` for data-parallel vision encoding and `--mm-processor-cache-type shm` to efficiently cache and transfer preprocessed multimodal inputs in shared memory.
 
 ```bash
-vllm serve Qwen/Qwen3.5-397B-A17B \
-  --tensor-parallel-size 8 \
+vllm serve Qwen/Qwen3.5-397B-A17B-FP8 \
+  -dp 8 \
+  --enable-expert-parallel \
   --mm-encoder-tp-mode data \
   --mm-processor-cache-type shm \
-  --reasoning-parser deepseek_r1 \
+  --reasoning-parser qwen3 \
   --enable-prefix-caching
 ```
 
@@ -71,43 +99,43 @@ vllm serve Qwen/Qwen3.5-397B-A17B \
 
 For latency-sensitive workloads at low concurrency, enable MTP-1 speculative decoding and disable prefix caching. MTP-1 reduces time-per-output-token (TPOT) with a high acceptance rate, at the cost of lower throughput under load.
 
+!!! note
+    MTP-1 speculative decoding for AMD GPUs is under development.
+
 ```bash
-vllm serve Qwen/Qwen3.5-397B-A17B \
+vllm serve Qwen/Qwen3.5-397B-A17B-FP8 \
   --tensor-parallel-size 8 \
   --speculative-config '{"method": "mtp", "num_speculative_tokens": 1}' \
-  --reasoning-parser deepseek_r1
+  --reasoning-parser qwen3
 ```
 
-### GB200 Deployment (2 Nodes x 4 GPUs)
+### GB200 Deployment
 
-You can also deploy across 2 GB200 nodes with 4 GPUs each. Use the same base configuration as H200, but add multi-node arguments.
+!!! tip
+    We recommend using the NVFP4 checkpoint [nvidia/Qwen3.5-397B-A17B-NVFP4](https://huggingface.co/nvidia/Qwen3.5-397B-A17B-NVFP4) for optimal serving efficiency.
 
-!!! important
-    The default FlashInfer backend has a degradation issue on Blackwell GPUs that is currently under investigation. Please use `--attention-backend FLASH_ATTN` for Blackwell deployments.
+You can also deploy the model across 4GPUs on a GB200 node, using the similar base configuration as H200.
 
-On the head node:
 ```bash
-vllm serve Qwen/Qwen3.5-397B-A17B \
-  --tensor-parallel-size 8 \
-  --reasoning-parser deepseek_r1 \
-  --enable-prefix-caching \
-  --attention-backend FLASH_ATTN \
-  --nnodes 2 \
-  --node-rank 0 \
-  --master-addr <head_node_ip>
+vllm serve nvidia/Qwen3.5-397B-A17B-NVFP4 \
+  -dp 4 \
+  --enable-expert-parallel \
+  --language-model-only \
+  --reasoning-parser qwen3 \
+  --enable-prefix-caching
 ```
 
-On the worker node:
+### MI355X Deployment
+
+You can also deploy the model across 2 GPUs on a MI355X node, using the similar base configuration as above.
+
 ```bash
-vllm serve Qwen/Qwen3.5-397B-A17B \
-  --tensor-parallel-size 8 \
-  --reasoning-parser deepseek_r1 \
-  --enable-prefix-caching \
-  --attention-backend FLASH_ATTN \
-  --nnodes 2 \
-  --node-rank 1 \
-  --master-addr <head_node_ip> \
-  --headless
+vllm serve Qwen/Qwen3.5-397B-A17B-FP8 \
+  -tp 2 \
+  --enable-expert-parallel \
+  --language-model-only \
+  --reasoning-parser qwen3 \
+  --enable-prefix-caching
 ```
 
 ### Configuration Tips
@@ -116,6 +144,17 @@ vllm serve Qwen/Qwen3.5-397B-A17B \
 - **Multi-token Prediction**: MTP-1 reduces per-token latency but degrades text throughput under high concurrency because speculative tokens consume KV cache capacity, reducing effective batch size. Depending on your use case, you may adjust `num_speculative_tokens`: higher values can improve latency further but may have varying acceptance rates and throughput trade-offs.
 - **Encoder Data Parallelism**: Specifying `--mm-encoder-tp-mode data` deploys the vision encoder in a data-parallel fashion for better throughput performance. This consumes additional memory and may require adjustment of `--gpu-memory-utilization`.
 - **Media Embedding Size**: You can adjust the maximum media embedding size allowed by modifying the HuggingFace processor config at server startup via passing `--mm-processor-kwargs`. For example: `--mm-processor-kwargs '{"video_kwargs": {"size": {"longest_edge": 234881024, "shortest_edge": 4096}}}'`
+
+You may encounter the following error:
+```
+(Worker_TP0 pid=70) ERROR 02-08 08:39:04 [multiproc_executor.py:852]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/qwen3_next.py", line 585, in _forward_core
+(Worker_TP0 pid=70) ERROR 02-08 08:39:04 [multiproc_executor.py:852]     mixed_qkv_non_spec = causal_conv1d_update(
+(Worker_TP0 pid=70) ERROR 02-08 08:39:04 [multiproc_executor.py:852]                          ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0 pid=70) ERROR 02-08 08:39:04 [multiproc_executor.py:852]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/mamba/ops/causal_conv1d.py", line 1160, in causal_conv1d_update
+(Worker_TP0 pid=70) ERROR 02-08 08:39:04 [multiproc_executor.py:852]     assert num_cache_lines >= batch
+```
+This is because cuda graph capture size is larger than mamba cache size. Try reducing `--max-cudagraph-capture-size`, the default value is 512.
+See https://github.com/vllm-project/vllm/pull/34571 for details
 
 ### Benchmarking
 
@@ -171,4 +210,14 @@ response = client.chat.completions.create(
 )
 print(f"Response costs: {time.time() - start:.2f}s")
 print(f"Generated text: {response.choices[0].message.content}")
+```
+
+### Processing Ultra-Long Texts
+
+Qwen3.5 natively supports context lengths of up to `262,144` tokens. For long-horizon tasks where the total length (including both input and output) exceeds this limit, we recommend using RoPE scaling techniques to handle long texts effectively., e.g., YaRN. you can override the `rope_parameters` in your running script. Refer to [Qwen3.5-397B-A17B](https://huggingface.co/Qwen/Qwen3.5-397B-A17B#processing-ultra-long-texts) for more details..
+
+```bash
+export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 vllm serve ... --hf-overrides '{"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}' --max-model-len 1010000
+
 ```

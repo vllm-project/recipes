@@ -3,14 +3,10 @@
 
 ## Installing vLLM
 
-Install vLLM nightly wheel until v0.15.0 is released
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm --pre \
-    --extra-index-url https://wheels.vllm.ai/nightly/cu129 \
-    --extra-index-url https://download.pytorch.org/whl/cu129 \
-    --index-strategy unsafe-best-match
+uv pip install vllm --torch-backend auto
 ```
 
 ## Running Kimi-K2.5
@@ -18,8 +14,10 @@ See the following command to deploy Kimi-K2.5 with the vLLM inference server. Th
 ```bash
 vllm serve moonshotai/Kimi-K2.5 -tp 8 \
     --mm-encoder-tp-mode data \
+    --compilation_config.pass_config.fuse_allreduce_rms true \
     --tool-call-parser kimi_k2 \
     --reasoning-parser kimi_k2 \
+    --enable-auto-tool-choice \
     --trust-remote-code
 ```
 The `--reasoning-parser` flag specifies the reasoning parser to use for extracting reasoning content from the model output.
