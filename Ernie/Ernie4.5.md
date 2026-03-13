@@ -18,6 +18,7 @@ uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
 ⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/) 
 
 ## Running Ernie4.5
+
 ### Serving Ernie4.5 Model on H100 GPUs
 ```bash
 # 21B model 80G*1 GPU
@@ -52,6 +53,7 @@ vllm serve baidu/ERNIE-4.5-21B-A3B-PT \
 ```
 
 ## Running Ernie4.5 MTP
+
 ```bash
 # 21B MTP model 80G*1 GPU
 vllm serve baidu/ERNIE-4.5-21B-A3B-PT \
@@ -76,7 +78,9 @@ vllm serve baidu/ERNIE-4.5-300B-A47B-PT \
 ```
 
 ## Benchmarking
+
 For benchmarking, only the first `vllm bench serve` after service startup to ensure it is not affected by prefix cache
+
 ```bash
 # Prompt-heavy benchmark (8k/1k)
 vllm bench serve \
@@ -92,7 +96,9 @@ vllm bench serve \
 ```
 
 ### Benchmark Configurations
+
 Test different workloads by adjusting input/output lengths:
+
 - **Prompt-heavy**: 8000 input / 1000 output
 - **Decode-heavy**: 1000 input / 8000 output
 - **Balanced**: 1000 input / 1000 output
@@ -100,6 +106,7 @@ Test different workloads by adjusting input/output lengths:
 Test different batch sizes by changing `--num-prompts`, e.g., 1, 16, 32, 64, 128, 256, 512
 
 ### Expected Output
+
 ```shell
 ============ Serving Benchmark Result ============
 Successful requests:                     16        
