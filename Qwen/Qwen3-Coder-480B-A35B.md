@@ -10,6 +10,13 @@ source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 
 ```
+### Installing vLLM (AMD ROCm Backend: MI300X, MI325X, MI355X) 
+ ```bash 
+ uv venv 
+ source .venv/bin/activate 
+ uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+ ```
+⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/) 
 
 ## Launching Qwen3-Coder with vLLM
 
@@ -35,6 +42,27 @@ VLLM_USE_DEEP_GEMM=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
   --data-parallel-size 8 \
   --enable-auto-tool-choice \
   --tool-call-parser qwen3_coder
+```
+
+### Serving BF16 Model on 8xMI300x/MI325x/MI355x
+```shell
+VLLM_ROCM_USE_AITER=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct \
+    --trust-remote-code \
+    --max-model-len 131072 \
+    --enable-expert-parallel \
+    --data-parallel-size 8 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder
+```
+### Serving FP8 Model on 8xMI300x/MI325x/MI355x
+```shell
+VLLM_ROCM_USE_AITER=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
+    --trust-remote-code \
+    --max-model-len 131072 \
+    --enable-expert-parallel \
+    --data-parallel-size 8 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder
 ```
 
 ## Performance Metrics
