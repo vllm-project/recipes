@@ -11,11 +11,9 @@ uv pip install -U vllm --torch-backend auto
 
 ```
 ### Installing vLLM (AMD ROCm Backend: MI300X, MI325X, MI355X) 
- ```bash 
- uv venv 
- source .venv/bin/activate 
- uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
- ```
+uv venv 
+source .venv/bin/activate 
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
 ⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/) 
 
 ## Launching Qwen3-Coder with vLLM
