@@ -28,7 +28,7 @@ vllm serve PaddlePaddle/PaddleOCR-VL \
     --no-enable-prefix-caching \
     --mm-processor-cache-gb 0
 ```
-## Deploying PaddleOCR-VL on AMD GPU(MI300X, MI325X, MI355X) 
+## Deploying PaddleOCR-VL on AMD GPU (MI300X, MI325X, MI355X) 
 ```shell
 SAFETENSORS_FAST_GPU=1 \
 VLLM_USE_TRITON_FLASH_ATTN=0 \
