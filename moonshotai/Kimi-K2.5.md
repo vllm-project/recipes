@@ -74,6 +74,17 @@ The `--reasoning-parser` flag specifies the reasoning parser to use for extracti
 - vLLM supports Expert Parallelism (EP) via `--enable-expert-parallel`, which allows experts in MoE models to be deployed on separate GPUs for better throughput. Check out [Expert Parallelism Deployment](https://docs.vllm.ai/en/latest/serving/expert_parallel_deployment.html) for more details.
 - You can use [benchmark_moe](https://github.com/vllm-project/vllm/blob/main/benchmarks/kernels/benchmark_moe.py) to perform MoE Triton kernel tuning for your hardware.
 
+
+### Accelerating Kimi 2.5 with Eagle3 MTP
+We recommend using [lightseekorg/kimi-k2.5-eagle3](https://huggingface.co/lightseekorg/kimi-k2.5-eagle3) and [nvidia/Kimi-K2.5-Thinking-Eagle3](https://huggingface.co/nvidia/Kimi-K2.5-Thinking-Eagle3) to accelerate inference of Kimi 2.5. This feature is supported in vLLM nightly and `vLLM>=0.18.0`.
+
+```bash
+vllm serve moonshotai/Kimi-K2.5 \
+    --tensor-parallel-size 8 \
+    --speculative-config '{"model": <eagle3_model_name>, "method": "eagle3", "num_speculative_tokens": 3}' \
+    --trust-remote-code
+```
+
 ### Benchmark on VisionArena-Chat Dataset
 
 Once the server for the `moonshotai/Kimi-K2.5` model is running, open another terminal and run the benchmark client:
