@@ -11,6 +11,13 @@ source .venv/bin/activate
 # Until v0.11.1 release, you need to install vLLM from nightly build
 uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly --extra-index-url https://download.pytorch.org/whl/cu129 --index-strategy unsafe-best-match
 ```
+### Installing vLLM (AMD ROCm Backend: MI300X, MI325X, MI355X) 
+ ```bash 
+ uv venv 
+ source .venv/bin/activate 
+ uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+ ```
+⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/) 
 
 ## Deploying PaddleOCR-VL
 
@@ -20,6 +27,16 @@ vllm serve PaddlePaddle/PaddleOCR-VL \
     --max-num-batched-tokens 16384 \
     --no-enable-prefix-caching \
     --mm-processor-cache-gb 0
+```
+## Deploying PaddleOCR-VL on AMD GPU(MI300X, MI325X, MI355X) 
+```shell
+SAFETENSORS_FAST_GPU=1 \
+VLLM_USE_TRITON_FLASH_ATTN=0 \
+vllm serve PaddlePaddle/PaddleOCR-VL \
+  --max-num-batched-tokens 16384 \
+  --no-enable-prefix-caching \
+  --mm-processor-cache-gb 0 \
+  --trust-remote-code
 ```
 
 ## Querying with OpenAI API Client
