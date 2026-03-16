@@ -1,25 +1,68 @@
 # moonshotai/Kimi-K2.5 Usage Guide
 [Kimi K2.5](https://huggingface.co/moonshotai/Kimi-K2.5) is an open-source, native multimodal agentic model built through continual pretraining on approximately 15 trillion mixed visual and text tokens atop Kimi-K2-Base. It seamlessly integrates vision and language understanding with advanced agentic capabilities, instant and thinking modes, as well as conversational and agentic paradigms.
 
+## Use vLLM with Docker
+
+Pull the vLLM release image from [Docker Hub](https://hub.docker.com/r/vllm/vllm-openai/tags?name=17.0):
+
+```bash
+docker pull vllm/vllm-openai:v0.17.0-cu130 # CUDA 13.0
+docker pull vllm/vllm-openai:v0.17.0       # Other CUDA versions
+```
+
+### Hopper (x86_64)
+
+Verified on 8×H200 GPUs:
+
+```bash
+docker run --gpus all \
+  -p 8000:8000 \
+  --ipc=host \
+  vllm/vllm-openai:v0.17.0-cu130 moonshotai/Kimi-K2.5 \
+    --tensor-parallel-size 8 \
+    --mm-encoder-tp-mode data \
+    --compilation_config.pass_config.fuse_allreduce_rms true \
+    --tool-call-parser kimi_k2 \
+    --reasoning-parser kimi_k2 \
+    --enable-auto-tool-choice \
+    --trust-remote-code
+```
+
+### Blackwell (aarch64)
+
+NVIDIA Blackwell (e.g., GB200) is also supported via the aarch64 image:
+
+```bash
+docker run --gpus all \
+  -p 8000:8000 \
+  --ipc=host \
+  vllm/vllm-openai:v0.17.0-aarch64-cu130 moonshotai/Kimi-K2.5 \
+    --tensor-parallel-size 4 \
+    --mm-encoder-tp-mode data \
+    --compilation_config.pass_config.fuse_allreduce_rms true \
+    --tool-call-parser kimi_k2 \
+    --reasoning-parser kimi_k2 \
+    --enable-auto-tool-choice \
+    --trust-remote-code
+```
+
 ## Installing vLLM
 
-Install vLLM nightly wheel until v0.15.0 is released
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -U vllm --pre \
-    --extra-index-url https://wheels.vllm.ai/nightly/cu129 \
-    --extra-index-url https://download.pytorch.org/whl/cu129 \
-    --index-strategy unsafe-best-match
+uv pip install vllm --torch-backend auto
 ```
 
-## Running Kimi-K2.5
+## Running Kimi-K2.5 with vLLM
 See the following command to deploy Kimi-K2.5 with the vLLM inference server. The configuration below has been verified on 8xH200 GPUs.
 ```bash
 vllm serve moonshotai/Kimi-K2.5 -tp 8 \
     --mm-encoder-tp-mode data \
+    --compilation_config.pass_config.fuse_allreduce_rms true \
     --tool-call-parser kimi_k2 \
     --reasoning-parser kimi_k2 \
+    --enable-auto-tool-choice \
     --trust-remote-code
 ```
 The `--reasoning-parser` flag specifies the reasoning parser to use for extracting reasoning content from the model output.

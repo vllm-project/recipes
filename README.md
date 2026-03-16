@@ -22,8 +22,13 @@ This repo intends to host community maintained common recipes to run vLLM answer
 ### GLM <img src="https://raw.githubusercontent.com/zai-org/GLM-4.5/refs/heads/main/resources/logo.svg" alt="GLM" width="16" height="16" style="vertical-align:middle;">
 
 - [Glyph](GLM/Glyph.md)
-- [GLM-4.7, GLM-4.6, GLM-4.5, GLM-4.5-Air](GLM/GLM.md)
+- [GLM-5](GLM/GLM5.md)
+- [GLM-4.7-Flash, GLM-4.7, GLM-4.6, GLM-4.5, GLM-4.5-Air](GLM/GLM.md)
 - [GLM-4.5V, GLM-4.6V](GLM/GLM-V.md)
+
+### Google <img src="https://avatars.githubusercontent.com/u/1342004?v=4" alt="Google" width="16" height="16" style="vertical-align:middle;">
+
+- [TranslateGemma](Google/TranslateGemma.md)
 
 ### inclusionAI <img src="https://avatars.githubusercontent.com/u/199075982?s=200&v=4" alt="inclusionAI" width="16" height="16" style="vertical-align:middle;">
 
@@ -49,7 +54,7 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 ### MiniMax <img src="https://github.com/MiniMax-AI/MiniMax-01/raw/main/figures/minimax.svg" alt="minmax" width="16" height="16" style="vertical-align:middle;">
 
-- [MiniMax-M2.1, MiniMax-M2](MiniMax/MiniMax-M2.md)
+- [MiniMax-M2.5, MiniMax-M2.1, MiniMax-M2](MiniMax/MiniMax-M2.md)
 
 ### Xiaomi MiMo <img src="https://avatars.githubusercontent.com/u/208276378?&v=4" alt="Xiaomi MiMo" width="16" height="16" style="vertical-align:middle;">
 
@@ -87,6 +92,7 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [Qwen3-ASR](Qwen/Qwen3-ASR.md)
 - [Qwen3-VL](Qwen/Qwen3-VL.md)
 - [Qwen3-Next](Qwen/Qwen3-Next.md)
+- [Qwen3.5](Qwen/Qwen3.5.md)
 - [Qwen3-Coder-480B-A35B](Qwen/Qwen3-Coder-480B-A35B.md)
 - [Qwen2.5-VL](Qwen/Qwen2.5-VL.md)
 - [Qwen3Guard-Gen](Qwen/Qwen3Guard-Gen.md)
@@ -94,6 +100,12 @@ This repo intends to host community maintained common recipes to run vLLM answer
 ### Seed <img src="https://avatars.githubusercontent.com/u/4158466?s=200&v=4" alt="Seed" width="16" height="16" style="vertical-align:middle;">
 
 - [Seed-OSS-36B](Seed/Seed-OSS-36B.md)
+
+
+### StepFun <img src="StepFun/assets/stepfun_logo.jpg" alt="StepFun" width="16" height="16" style="vertical-align:middle;">
+
+- [Step-3.5-Flash](StepFun/Step-3.5-Flash.md)
+
 
 ### Tencent-Hunyuan <img src="https://avatars.githubusercontent.com/u/210980732?s=200&v=4" alt="Tencent-Hunyuan" width="16" height="16" style="vertical-align:middle;">
 
