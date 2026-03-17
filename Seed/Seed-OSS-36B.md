@@ -4,6 +4,8 @@ This guide describes how to run Seed-OSS-36B models with vLLM and native BF16 pr
 
 ## Installing vLLM
 
+### NVIDIA
+
 Seed-OSS support was recently added to vLLM main branch and is not yet available in any official release:
 
 ```bash
@@ -18,11 +20,23 @@ You may need to download the latest version of the transformer for compatibility
 uv pip install git+https://github.com/huggingface/transformers.git@56d68c6706ee052b445e1e476056ed92ac5eb383
 ```
 
+### AMD
+
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images). Supported GPUs: MI300X, MI325X, MI355X
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+```
+
 ## Running Seed-OSS-36B with BF16
 
 There are two ways to parallelize the model over multiple GPUs: (1) Tensor-parallel or (2) Data-parallel. Each one has its own advantages, where tensor-parallel is usually more beneficial for low-latency / low-load scenarios and data-parallel works better for cases where there is a lot of data with heavy-loads.
 
 Run tensor-parallel like this:
+
+### NVIDIA
 
 ```bash
 vllm serve ByteDance-Seed/Seed-OSS-36B-Instruct \
@@ -31,6 +45,19 @@ vllm serve ByteDance-Seed/Seed-OSS-36B-Instruct \
     --tensor-parallel-size 8 \
     --enable-auto-tool-choice \
     --tool-call-parser seed_oss
+```
+
+### AMD
+
+```bash
+export VLLM_USE_TRITON_FLASH_ATTN=0
+export VLLM_ROCM_USE_AITER=1
+vllm serve ByteDance-Seed/Seed-OSS-36B-Instruct \
+    --tensor-parallel-size 8 \
+    --enable-auto-tool-choice \
+    --tool-call-parser seed_oss \
+    --no-enable-prefix-caching \
+    --trust-remote-code
 ```
 
 * You can set `--max-model-len` to preserve memory. `--max-model-len=65536` is usually good for most scenarios and max is 512k.
