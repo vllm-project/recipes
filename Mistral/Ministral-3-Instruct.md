@@ -9,7 +9,20 @@ Each of this variant comes with vision support and a large context with a maximu
 
 By using smaller models, expect faster inference with the price of lower performance. Depending on your needs, choose the best trade-off between cost and performance.
 
+## Prerequisites
+
+### NVIDIA GPU
+- OS: Linux
+- GPU: H200 or similar NVIDIA GPU with sufficient memory
+
+### AMD GPU
+- OS: Linux
+- Drivers: ROCm 7.0 or above
+- GPU: AMD MI300X, MI325X, MI350X, MI355X
+
 ## Installing vLLM
+
+### NVIDIA GPU
 
 ```bash
 uv venv
@@ -17,7 +30,36 @@ source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
-## Running Ministral-3 Instruct 3B, 8B or 14B on 1xH200
+### AMD GPU (ROCm)
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+```
+
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup:
+
+```bash
+docker run -it \
+  --network=host \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --group-add=video \
+  --ipc=host \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  --shm-size 32G \
+  -v /data:/data \
+  -v $HOME:/myhome \
+  -w /myhome \
+  --entrypoint /bin/bash \
+  vllm/vllm-openai-rocm:latest
+```
+
+## Running Ministral-3 Instruct 3B, 8B or 14B
+
+### NVIDIA GPU (1xH200)
 
 Due to their size and the FP8 format of their weights `Ministral-3-3B-Instruct-2512`, `Ministral-3-8B-Instruct-2512` and `Ministral-3-14B-Instruct-2512` can run on a single 1xH200 GPU.
 
@@ -42,6 +84,44 @@ Additional flags:
 * You can set `--max-model-len` to preserve memory. By default it is set to `262144` which is quite large but not necessary for most scenarios.
 * You can set `--max-num-batched-tokens` to balance throughput and latency, higher means higher throughput but higher latency.
 
+### AMD GPU (ROCm)
+
+You can use 1x MI300X/MI325X/MI350X/MI355X GPU to launch this model with [AITER](https://github.com/ROCm/aiter) acceleration enabled:
+
+```bash
+export TP=1
+export VLLM_ROCM_USE_AITER=1
+export MODEL="mistralai/Ministral-3-14B-Instruct-2512"
+vllm serve $MODEL \
+  --disable-log-requests \
+  -tp $TP \
+  --config_format mistral \
+  --load_format mistral \
+  --enable-auto-tool-choice \
+  --tool-call-parser mistral &
+```
+
+> **Note**: The first launch with AITER may take several minutes as AITER JIT-compiles optimized kernels (CK-based FP8 MoE, RMSNorm, activation, etc.). Subsequent launches will use cached kernels.
+
+#### Performance Benchmark (AMD GPU)
+
+```bash
+export MODEL="mistralai/Ministral-3-14B-Instruct-2512"
+export ISL=1024
+export OSL=1024
+export REQ=10
+export CONC=10
+vllm bench serve \
+  --backend vllm \
+  --model $MODEL \
+  --dataset-name random \
+  --random-input-len $ISL \
+  --random-output-len $OSL \
+  --num-prompts $REQ \
+  --ignore-eos \
+  --max-concurrency $CONC \
+  --percentile-metrics ttft,tpot,itl,e2el
+```
 
 ## Usage of the model
 
