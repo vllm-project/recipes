@@ -3,11 +3,12 @@
 
 ## Use vLLM with Docker
 
-Pull the vLLM release image from [Docker Hub](https://hub.docker.com/r/vllm/vllm-openai/tags?name=17.0):
+Pull the vLLM release image from Docker Hub ([CUDA](https://hub.docker.com/r/vllm/vllm-openai/tags?name=17.0) | [ROCm](https://hub.docker.com/r/vllm/vllm-openai-rocm/tags)):
 
 ```bash
-docker pull vllm/vllm-openai:v0.17.0-cu130 # CUDA 13.0
-docker pull vllm/vllm-openai:v0.17.0       # Other CUDA versions
+docker pull vllm/vllm-openai:v0.17.0-cu130       # CUDA 13.0
+docker pull vllm/vllm-openai:v0.17.0              # Other CUDA versions
+docker pull vllm/vllm-openai-rocm:v0.16.0         # ROCm (AMD)
 ```
 
 ### Hopper (x86_64)
@@ -50,10 +51,6 @@ docker run --gpus all \
 
 For AMD Instinct MI355X GPUs, use the [MXFP4-quantized model](https://huggingface.co/amd/Kimi-K2.5-MXFP4) with the ROCm vLLM image:
 
-```bash
-docker pull vllm/vllm-openai-rocm:v0.16.0
-```
-
 Run with 4×MI355X GPUs (TP=4):
 
 ```bash
@@ -76,6 +73,9 @@ docker run \
     --gpu-memory-utilization 0.90 \
     --block-size 1 \
     --mm-encoder-tp-mode data \
+    --tool-call-parser kimi_k2 \
+    --reasoning-parser kimi_k2 \
+    --enable-auto-tool-choice \
     --trust-remote-code
 ```
 
@@ -102,6 +102,9 @@ docker run \
     --gpu-memory-utilization 0.90 \
     --block-size 1 \
     --mm-encoder-tp-mode data \
+    --tool-call-parser kimi_k2 \
+    --reasoning-parser kimi_k2 \
+    --enable-auto-tool-choice \
     --trust-remote-code
 ```
 
@@ -116,6 +119,9 @@ uv pip install vllm --torch-backend auto
 ```
 
 ## Running Kimi-K2.5 with vLLM
+
+### Running on NVIDIA
+
 See the following command to deploy Kimi-K2.5 with the vLLM inference server. The configuration below has been verified on 8xH200 GPUs.
 ```bash
 vllm serve moonshotai/Kimi-K2.5 -tp 8 \
@@ -143,6 +149,9 @@ vllm serve amd/Kimi-K2.5-MXFP4 -tp 4 \
     --gpu-memory-utilization 0.90 \
     --block-size 1 \
     --mm-encoder-tp-mode data \
+    --tool-call-parser kimi_k2 \
+    --reasoning-parser kimi_k2 \
+    --enable-auto-tool-choice \
     --trust-remote-code
 ```
 
@@ -154,6 +163,9 @@ vllm serve amd/Kimi-K2.5-MXFP4 -tp 4 \
     --gpu-memory-utilization 0.90 \
     --block-size 1 \
     --mm-encoder-tp-mode data \
+    --tool-call-parser kimi_k2 \
+    --reasoning-parser kimi_k2 \
+    --enable-auto-tool-choice \
     --trust-remote-code
 ```
 
