@@ -46,6 +46,67 @@ docker run --gpus all \
     --trust-remote-code
 ```
 
+### AMD ROCm (MI355X)
+
+For AMD Instinct MI355X GPUs, use the [MXFP4-quantized model](https://huggingface.co/amd/Kimi-K2.5-MXFP4) with the ROCm vLLM image:
+
+```bash
+docker pull vllm/vllm-openai-rocm:v0.16.0
+```
+
+Run with 4×MI355X GPUs (TP=4):
+
+```bash
+docker run \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --group-add video \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  --shm-size=16G \
+  -p 8000:8000 \
+  -e VLLM_ROCM_USE_AITER=1 \
+  -e VLLM_ROCM_USE_AITER_MLA=1 \
+  -e VLLM_ROCM_USE_AITER_MOE=1 \
+  -e VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT8 \
+  -e VLLM_ROCM_USE_AITER_TRITON_ROPE=1 \
+  vllm/vllm-openai-rocm:v0.16.0 \
+  amd/Kimi-K2.5-MXFP4 \
+    --tensor-parallel-size 4 \
+    --gpu-memory-utilization 0.90 \
+    --block-size 1 \
+    --mm-encoder-tp-mode data \
+    --trust-remote-code
+```
+
+For 8×MI355X GPUs, you can enable Expert Parallelism (TP=4, EP=2) for higher throughput on long-output workloads:
+
+```bash
+docker run \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --group-add video \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  --shm-size=16G \
+  -p 8000:8000 \
+  -e VLLM_ROCM_USE_AITER=1 \
+  -e VLLM_ROCM_USE_AITER_MLA=1 \
+  -e VLLM_ROCM_USE_AITER_MOE=1 \
+  -e VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT8 \
+  -e VLLM_ROCM_USE_AITER_TRITON_ROPE=1 \
+  vllm/vllm-openai-rocm:v0.16.0 \
+  amd/Kimi-K2.5-MXFP4 \
+    --tensor-parallel-size 4 \
+    --enable-expert-parallel \
+    --gpu-memory-utilization 0.90 \
+    --block-size 1 \
+    --mm-encoder-tp-mode data \
+    --trust-remote-code
+```
+
+> **Note:** On systems with MEC firmware older than version 177, set `HSA_NO_SCRATCH_RECLAIM=1` (via `-e HSA_NO_SCRATCH_RECLAIM=1`) to prevent RCCL memory reclaim crashes. Check your firmware version with `rocm-smi --showfw | grep MEC`.
+
 ## Installing vLLM
 
 ```bash
@@ -66,6 +127,44 @@ vllm serve moonshotai/Kimi-K2.5 -tp 8 \
     --trust-remote-code
 ```
 The `--reasoning-parser` flag specifies the reasoning parser to use for extracting reasoning content from the model output.
+
+### Running on AMD ROCm
+
+Deploy the MXFP4-quantized model on AMD MI355X GPUs with AITER acceleration:
+
+```bash
+export VLLM_ROCM_USE_AITER=1
+export VLLM_ROCM_USE_AITER_MLA=1
+export VLLM_ROCM_USE_AITER_MOE=1
+export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT8
+export VLLM_ROCM_USE_AITER_TRITON_ROPE=1
+
+vllm serve amd/Kimi-K2.5-MXFP4 -tp 4 \
+    --gpu-memory-utilization 0.90 \
+    --block-size 1 \
+    --mm-encoder-tp-mode data \
+    --trust-remote-code
+```
+
+To enable Expert Parallelism on 8 GPUs (TP=4, EP=2):
+
+```bash
+vllm serve amd/Kimi-K2.5-MXFP4 -tp 4 \
+    --enable-expert-parallel \
+    --gpu-memory-utilization 0.90 \
+    --block-size 1 \
+    --mm-encoder-tp-mode data \
+    --trust-remote-code
+```
+
+The AITER environment variables enable optimized AMD kernels:
+| Variable | Description |
+|----------|-------------|
+| `VLLM_ROCM_USE_AITER` | Enable AITER acceleration (general) |
+| `VLLM_ROCM_USE_AITER_MLA` | Enable AITER Multi-head Latent Attention kernels |
+| `VLLM_ROCM_USE_AITER_MOE` | Enable AITER Mixture-of-Experts kernels |
+| `VLLM_ROCM_QUICK_REDUCE_QUANTIZATION` | Quantized AllReduce communication (INT8) |
+| `VLLM_ROCM_USE_AITER_TRITON_ROPE` | Enable Triton-based RoPE kernels |
 
 ### Configuration Tips
 - `--async-scheduling` has been turned on by default to improve the overall system performance by overlapping scheduling overhead with the decoding process. If you run into issue with this feature, please try turning off this feature and file a bug report to vLLM.
