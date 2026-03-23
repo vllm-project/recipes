@@ -6,21 +6,27 @@ Unless you need strict reproducibility for benchmarking or similar scenarios,
 we recommend using FP8 to run at a lower cost.
 
 ## Installing vLLM
-
+### CUDA
 ```bash
 uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto # vllm>=0.12.0 is required
 ```
+### ROCm
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+```
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).
 
 ## Running GLM-4.5V / GLM-4.6V with FP8 or BF16 on 4xH100
 
 There are two ways to parallelize the model over multiple GPUs: (1) Tensor-parallel or (2) Data-parallel. Each one has its own advantages, where tensor-parallel is usually more beneficial for low-latency / low-load scenarios and data-parallel works better for cases where there is a lot of data with heavy-loads.
 
 Run tensor-parallel like this:
-
+### CUDA
 ```bash
-
 # Start server with FP8 model on 4 GPUs, the model can also be changed to BF16 as zai-org/GLM-4.5V
 vllm serve zai-org/GLM-4.5V-FP8 \
      --tensor-parallel-size 4 \
@@ -37,6 +43,28 @@ vllm serve zai-org/GLM-4.5V-FP8 \
 * You can set `--max-num-batched-tokens` to balance throughput and latency, higher means higher throughput but higher latency. `--max-num-batched-tokens=32768` is usually good for prompt-heavy workloads. But you can reduce it to 16k and 8k to reduce activation memory usage and decrease latency.
 * vLLM conservatively use 90% of GPU memory, you can set `--gpu-memory-utilization=0.95` to maximize KVCache.
 * Make sure to follow the command-line instructions to ensure the tool-calling functionality is properly enabled.
+
+## Running GLM-4.5V / GLM-4.6V  with FP8 or BF16 on 4xMI300x/MI325x/MI355x
+
+### ROCm
+```bash
+# Start server with FP8 model on 4 GPUs, the model can also be changed to BF16 as zai-org/GLM-4.5V
+SAFETENSORS_FAST_GPU=1 \
+VLLM_ROCM_USE_AITER=1 \
+vllm serve zai-org/GLM-4.5V-FP8 \
+     --tensor-parallel-size 4 \
+     --tool-call-parser glm45 \
+     --reasoning-parser glm45 \
+     --enable-auto-tool-choice \
+     --enable-expert-parallel \
+     --allowed-local-media-path / \
+     --mm-encoder-tp-mode data 
+```
+
+* Please run pip install "transformers>=5.0.0" to upgrade before serving. 
+* You can set `--max-model-len` to preserve memory. `--max-model-len=65536` is usually good for most scenarios. Note that GLM-4.5V only supports a 64K context length, while GLM-4.6V supports a 128K context length.
+* You can set `--max-num-batched-tokens` to balance throughput and latency, higher means higher throughput but higher latency. `--max-num-batched-tokens=32768` is usually good for prompt-heavy workloads. But you can reduce it to 16k and 8k to reduce activation memory usage and decrease latency.
+* vLLM conservatively use 90% of GPU memory, you can set `--gpu-memory-utilization=0.95` to maximize KVCache.
 
 ### Benchmark on VisionArena-Chat Dataset
 
