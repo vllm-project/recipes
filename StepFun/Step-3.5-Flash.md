@@ -128,7 +128,7 @@ vllm serve stepfun-ai/Step-3.5-Flash-FP8 \
   --trust-remote-code
 ```
 
-- BF16 (4x MI300X/MI325X/MI350X/MI355X)
+- BF16
 ```bash
 VLLM_USE_TRITON_FLASH_ATTN=0 \
 VLLM_ROCM_USE_AITER=1 \
