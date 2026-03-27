@@ -3,14 +3,13 @@
 [Qwen3-Coder](https://github.com/QwenLM/Qwen3-Coder) is an advanced large language model created by the Qwen team from Alibaba Cloud. vLLM already supports Qwen3-Coder, and `tool-call` functionality will be available in vLLM v0.10.0 and higher You can install vLLM with `tool-call` support using the following method:
 
 ## Installing vLLM
-
+### CUDA
 ```bash
 uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
-
 ```
-### Installing vLLM (AMD ROCm Backend: MI300X, MI325X, MI355X) 
+### ROCm (MI300X, MI325X, MI355X) 
 ```bash
 uv venv 
 source .venv/bin/activate 
