@@ -41,7 +41,7 @@ VLLM_USE_DEEP_GEMM=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
   --enable-auto-tool-choice \
   --tool-call-parser qwen3_coder
 ```
-### Serving  on 8xMI300x/MI325x/MI355x
+### Serving on 8xMI300x/MI325x/MI355x GPUs
 
 **BF16 Model**
 
