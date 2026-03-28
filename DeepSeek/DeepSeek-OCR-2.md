@@ -13,7 +13,7 @@ uv pip install -U vllm --torch-backend auto
 
 ## Running DeepSeek-OCR-2
 ### Offline OCR tasks
-In this guide, we demonstrate how to set up DeepSeek-OCR for offline OCR batch processing tasks.
+In this guide, we demonstrate how to set up DeepSeek-OCR-2 for offline OCR batch processing tasks.
 
 
 ```python
@@ -102,7 +102,7 @@ messages = [
 
 start = time.time()
 response = client.chat.completions.create(
-    model="deepseek-ai/DeepSeek-OCR",
+    model="deepseek-ai/DeepSeek-OCR-2",
     messages=messages,
     max_tokens=2048,
     temperature=0.0,
