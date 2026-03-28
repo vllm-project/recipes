@@ -1,6 +1,7 @@
-# GLM-5 Usage
+# GLM-5 Series Usage
 
-GLM-5 is a significantly scaled-up language model (744B parameters, 28.5T tokens) with novel asynchronous RL infrastructure that achieves best-in-class open-source performance on reasoning, coding, and agentic tasks, rivaling frontier models. GLM is available in 2 precision formats: [zai-org/GLM-5](https://huggingface.co/zai-org/GLM-5) and [zai-org/GLM-5-FP8](https://huggingface.co/zai-org/GLM-5-FP8). This guide describes how to run GLM-5 with native FP8.
+GLM-5 is a significantly scaled-up language model (744B parameters, 28.5T tokens) with novel asynchronous RL infrastructure that achieves best-in-class open-source performance on reasoning, coding, and agentic tasks, rivaling frontier models. GLM is available in 2 precision formats: [zai-org/GLM-5](https://huggingface.co/zai-org/GLM-5) and [zai-org/GLM-5-FP8](https://huggingface.co/zai-org/GLM-5-FP8).
+This guide describes how to run GLM-5 or GLM-5.1 with native FP8.
 
 ## Dependencies
 
@@ -11,25 +12,24 @@ docker run --gpus all \
   -p 8000:8000 \
   --ipc=host \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
-  vllm/vllm-openai:glm5 zai-org/GLM-5-FP8 \
+  vllm/vllm-openai:v0.18.0 \
+  zai-org/GLM-5-FP8 \
       --tensor-parallel-size 8 \
       --tool-call-parser glm47 \
       --reasoning-parser glm45 \
       --enable-auto-tool-choice \
-      --served-model-name glm5 \
-      --trust-remote-code
+      --served-model-name glm-5-fp8
 ```
+
+Please use the v0.18.0-cu130 Docker image or a later version if your CUDA version is 13 or higher.
 
 ### Installing vLLM from source
 
 ```bash
 uv venv
 source .venv/bin/activate
-export VLLM_COMMIT=ec12d39d44739bee408ec1473acc09e75daf1a5d # use full commit hash from the main branch
-uv pip install vllm \
-    --torch-backend=auto \
-    --extra-index-url https://wheels.vllm.ai/${VLLM_COMMIT} # add variant subdirectory here if needed
-uv pip install git+https://github.com/huggingface/transformers.git
+uv pip install "vllm>=0.18.0" --torch-backend=auto
+uv pip install "transformers>=5.4.0"
 ```
 
 - For FP8 model, you must install DeepGEMM using [install_deepgemm.sh](https://github.com/vllm-project/vllm/blob/v0.16.0rc0/tools/install_deepgemm.sh).
@@ -44,7 +44,7 @@ uv pip install git+https://github.com/huggingface/transformers.git
 vllm serve zai-org/GLM-5-FP8 \
      --tensor-parallel-size 8 \
      --speculative-config.method mtp \
-     --speculative-config.num_speculative_tokens 1 \
+     --speculative-config.num_speculative_tokens 3 \
      --tool-call-parser glm47 \
      --reasoning-parser glm45 \
      --enable-auto-tool-choice \
@@ -158,39 +158,49 @@ vllm bench serve \
   --random-output 1024 \
   --request-rate 10 \
   --num-prompts 32 \
-  --trust-remote-code
   --ignore-eos
 ```
 
 If successful, you will see the following output.
+
+In practice, the actual generation speed is usually higher than what is shown here, because the model supports MTP. In pure performance benchmarks, the MTP acceptance rate is often relatively low, so the measured throughput may underestimate the model’s real-world speed.
 
 ```shell
 ============ Serving Benchmark Result ============
 Successful requests:                     32        
 Failed requests:                         0         
 Request rate configured (RPS):           10.00     
-Benchmark duration (s):                  71.46     
+Benchmark duration (s):                  62.23     
 Total input tokens:                      256000    
 Total generated tokens:                  32768     
-Request throughput (req/s):              0.45      
-Output token throughput (tok/s):         458.55    
-Peak output token throughput (tok/s):    832.00    
+Request throughput (req/s):              0.51      
+Output token throughput (tok/s):         526.57    
+Peak output token throughput (tok/s):    800.00    
 Peak concurrent requests:                32.00     
-Total token throughput (tok/s):          4040.98   
+Total token throughput (tok/s):          4640.43   
 ---------------Time to First Token----------------
-Mean TTFT (ms):                          13529.94  
-Median TTFT (ms):                        13689.81  
-P99 TTFT (ms):                           25567.26  
+Mean TTFT (ms):                          13395.44  
+Median TTFT (ms):                        14494.06  
+P99 TTFT (ms):                           22952.29  
 -----Time per Output Token (excl. 1st token)------
-Mean TPOT (ms):                          54.52     
-Median TPOT (ms):                        54.54     
-P99 TPOT (ms):                           67.51     
+Mean TPOT (ms):                          35.39     
+Median TPOT (ms):                        34.58     
+P99 TPOT (ms):                           49.72     
 ---------------Inter-token Latency----------------
-Mean ITL (ms):                           54.52     
-Median ITL (ms):                         42.22     
-P99 ITL (ms):                            914.84    
+Mean ITL (ms):                           57.98     
+Median ITL (ms):                         41.88     
+P99 ITL (ms):                            578.32    
+---------------Speculative Decoding---------------
+Acceptance rate (%):                     21.33     
+Acceptance length:                       1.64      
+Drafts:                                  19982     
+Draft tokens:                            59946     
+Accepted tokens:                         12784     
+Per-position acceptance (%):
+  Position 0:                            36.59     
+  Position 1:                            20.39     
+  Position 2:                            7.00      
 ==================================================
-
 ```
 
 
