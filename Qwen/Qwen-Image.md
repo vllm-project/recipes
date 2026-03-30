@@ -22,6 +22,7 @@ cd vllm-omni
 uv venv
 source .venv/bin/activate
 uv pip install -e . vllm==0.18.0
+cd vllm-omni
 ```
 
 ## Usage
