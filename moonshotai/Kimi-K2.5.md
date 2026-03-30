@@ -90,6 +90,7 @@ docker run --device=/dev/kfd --device=/dev/dri \
   moonshotai/Kimi-K2.5 \
     --tensor-parallel-size 8 \
     --mm-encoder-tp-mode data \
+    --block-size=1 \
     --tool-call-parser kimi_k2 \
     --reasoning-parser kimi_k2 \
     --enable-auto-tool-choice \
