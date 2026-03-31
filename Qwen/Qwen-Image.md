@@ -333,7 +333,7 @@ A few guidelines help pick the right combination:
 - **TeaCache and Cache-DiT cannot be used together.**
 - **Sequence parallelism (Ulysses / Ring)** is the best parallelism choice for high-resolution or long-sequence workloads. It generally outperforms tensor parallelism (TP) in these settings by distributing token-dimension computation across GPUs.
 - **Tensor parallelism** is most useful when model weights alone do not fit on a single GPU.
-- **CFG parallelism** targets non-distilled diffusion with full classifier-free guidance (`--cfg-scale > 1`). It assigns the positive and negative CFG branches to separate GPUs, achieving up to ~1.5× speedup when guidance is the dominant cost. It is not well-suited for guidance-distilled models (`--guidance-scale > 1`).
+- **CFG parallelism** targets non-distilled diffusion with full classifier-free guidance (`--cfg-scale > 1`). It assigns the positive and negative CFG branches to separate GPUs, achieving up to ~1.5× speedup when guidance is the dominant cost. It is not well-suited for guidance-distilled models (CFG is not applied).
 - **To reduce peak VRAM**, use `--enable-cpu-offload`, `--enable-layerwise-offload` or pair `--vae-patch-parallel-size` with another parallel method to lower VAE decode memory at high resolutions.
 - **To trade quality for speed**, FP8 / INT8 quantization is available for Qwen-Image and Qwen-Image-2512.
 
