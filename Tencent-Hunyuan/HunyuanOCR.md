@@ -36,13 +36,11 @@ vllm serve tencent/HunyuanOCR \
 ### AMD
 
 ```bash
-export VLLM_USE_TRITON_FLASH_ATTN=0
 export VLLM_ROCM_USE_AITER=1
 
 vllm serve tencent/HunyuanOCR \
-    --no-enable-prefix-caching \
     --mm-processor-cache-gb 0 \
-    --trust-remote-code 
+    --trust-remote-code
 ```
 
 ## Querying with OpenAI API Client
