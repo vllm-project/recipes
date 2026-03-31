@@ -277,7 +277,7 @@ python3 ./examples/offline_inference/text_to_image/text_to_image.py \
     --model Qwen/Qwen-Image \
     --prompt "a cup of coffee on the table" \
     --height 1536 --width 1536 \
-    --ulysses-degree 2
+    --ulysses-degree 2 \
     --vae-patch-parallel-size 2
 ```
 
@@ -328,17 +328,58 @@ python3 ./examples/offline_inference/text_to_image/text_to_image.py \
 
 ## Combining Acceleration Methods
 
-Multiple acceleration methods can be combined for maximum throughput. For example, Cache + Ulysses SP:
+Cache acceleration and parallelism are orthogonal—stack them freely for maximum throughput. A few guidelines help pick the right combination:
+
+- **Cache** (TeaCache or Cache-DiT) reduces redundant DiT computation per inference. **Parallelism** (SP, TP, CFG-parallel, VAE patch) splits work across GPUs. Use one cache backend together with any supported parallel strategy. See the [Feature Compatibility Guide](https://github.com/vllm-project/vllm-omni/blob/main/docs/user_guide/feature_compatibility.md) for supported combinations.
+- **TeaCache and Cache-DiT cannot be used together.**
+- **Sequence parallelism (Ulysses / Ring)** is the best parallelism choice for high-resolution or long-sequence workloads. It generally outperforms tensor parallelism (TP) in these settings by distributing token-dimension computation across GPUs.
+- **Tensor parallelism** is most useful when model weights alone do not fit on a single GPU.
+- **CFG parallelism** targets non-distilled diffusion with full classifier-free guidance (`--cfg-scale > 1`). It assigns the positive and negative CFG branches to separate GPUs, achieving up to ~2× speedup when guidance is the dominant cost. It is not well-suited for guidance-distilled models (`--guidance-scale > 1`).
+- **To reduce peak VRAM**, use `--enable-layerwise-offload` or pair `--vae-patch-parallel-size` with another parallel method to lower VAE decode memory at high resolutions.
+- **To trade quality for speed**, FP8 / INT8 quantization is available for Qwen-Image and Qwen-Image-2512.
+
+### Examples
+
+**1) Sequence parallelism only:**
 
 ```bash
 python3 ./examples/offline_inference/text_to_image/text_to_image.py \
     --model Qwen/Qwen-Image \
     --prompt "a cup of coffee on the table" \
-    --cache-backend tea_cache \
     --ulysses-degree 4
 ```
 
-Cache + CFG-Parallel (image editing):
+**2) Cache only (single GPU):**
+
+```bash
+python3 ./examples/offline_inference/text_to_image/text_to_image.py \
+    --model Qwen/Qwen-Image \
+    --prompt "a cup of coffee on the table" \
+    --cache-backend cache_dit
+```
+
+**3) Cache + SP (recommended for long sequence generation):**
+
+```bash
+python3 ./examples/offline_inference/text_to_image/text_to_image.py \
+    --model Qwen/Qwen-Image \
+    --prompt "a cup of coffee on the table" \
+    --cache-backend cache_dit \
+    --ulysses-degree 4
+```
+
+**4) SP + VAE patch parallel (high-resolution, VRAM-constrained):**
+
+```bash
+python3 ./examples/offline_inference/text_to_image/text_to_image.py \
+    --model Qwen/Qwen-Image \
+    --prompt "a cup of coffee on the table" \
+    --height 1536 --width 1536 \
+    --ulysses-degree 2 \
+    --vae-patch-parallel-size 2
+```
+
+**5) Image editing: cache + CFG parallel:**
 
 ```bash
 python3 ./examples/offline_inference/image_to_image/image_edit.py \
@@ -351,4 +392,21 @@ python3 ./examples/offline_inference/image_to_image/image_edit.py \
     --cfg-scale 4.0
 ```
 
-> **Note:** TeaCache and Cache-DiT cannot be used together. 
+**6) Layerwise offload (add when OOM):**
+
+```bash
+python3 ./examples/offline_inference/text_to_image/text_to_image.py \
+    --model Qwen/Qwen-Image \
+    --prompt "a cup of coffee on the table" \
+    --enable-layerwise-offload
+```
+
+**7) Quantization + SP:**
+
+```bash
+python3 ./examples/offline_inference/text_to_image/text_to_image.py \
+    --model Qwen/Qwen-Image \
+    --prompt "a cup of coffee on the table" \
+    --quantization fp8 \
+    --ulysses-degree 2
+```
