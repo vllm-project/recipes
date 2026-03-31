@@ -13,8 +13,7 @@ uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
 
 ## Deploying Hunyuan-A13B Instruct
 
-```bash
-export VLLM_USE_TRITON_FLASH_ATTN=0 
+```bash 
 export VLLM_ROCM_USE_AITER=1
 vllm serve tencent/Hunyuan-A13B-Instruct --tensor-parallel-size 2 --no-enable-prefix-caching --trust-remote-code 
 ```
