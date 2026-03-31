@@ -5,20 +5,45 @@
 
 ## Installing vLLM
 
+### NVIDIA
+
 ```bash
 uv venv
 source .venv/bin/activate
 uv pip install vllm --torch-backend auto
 ```
 
+### AMD
+
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images). Supported GPUs: MI300X, MI325X, MI355X
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+```
+
 ## Running MiMo-V2-Flash
 
 run `TP` like this:
+
+### NVIDIA
 ```bash
 vllm serve XiaomiMiMo/MiMo-V2-Flash \
     --host 0.0.0.0 \
     --port 9001 \
     --seed 1024 \
+    --served-model-name mimo_v2_flash \
+    --tensor-parallel-size 4 \
+    --trust-remote-code \
+    --gpu-memory-utilization 0.9 \
+    --generation-config vllm
+```
+
+### AMD
+```bash
+export VLLM_ROCM_USE_AITER=0
+vllm serve XiaomiMiMo/MiMo-V2-Flash \
     --served-model-name mimo_v2_flash \
     --tensor-parallel-size 4 \
     --trust-remote-code \
