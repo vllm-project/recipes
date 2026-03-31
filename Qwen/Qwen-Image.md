@@ -244,18 +244,18 @@ python3 ./examples/offline_inference/image_to_image/image_edit.py \
 
 ---
 
-### CPU Offload (Layerwise)
+### CPU Offload 
 
 Offloads DiT layers to CPU memory between forward passes. Enables inference on limited VRAM.
 
 ```bash
-# Text-to-Image with layerwise CPU offload
+# Text-to-Image with CPU offload (module-wise)
 python3 ./examples/offline_inference/text_to_image/text_to_image.py \
     --model Qwen/Qwen-Image \
     --prompt "a cup of coffee on the table" \
-    --enable-layerwise-offload
+    --enable-cpu-offload
 
-# Image Editing with layerwise CPU offload
+# Image Editing with CPU offload (layerwise, saves more VRAM, but slower)
 python3 ./examples/offline_inference/image_to_image/image_edit.py \
     --model Qwen/Qwen-Image-Edit \
     --image qwen_bear.png \
@@ -335,7 +335,7 @@ Cache acceleration and parallelism are orthogonal—stack them freely for maximu
 - **Sequence parallelism (Ulysses / Ring)** is the best parallelism choice for high-resolution or long-sequence workloads. It generally outperforms tensor parallelism (TP) in these settings by distributing token-dimension computation across GPUs.
 - **Tensor parallelism** is most useful when model weights alone do not fit on a single GPU.
 - **CFG parallelism** targets non-distilled diffusion with full classifier-free guidance (`--cfg-scale > 1`). It assigns the positive and negative CFG branches to separate GPUs, achieving up to ~2× speedup when guidance is the dominant cost. It is not well-suited for guidance-distilled models (`--guidance-scale > 1`).
-- **To reduce peak VRAM**, use `--enable-layerwise-offload` or pair `--vae-patch-parallel-size` with another parallel method to lower VAE decode memory at high resolutions.
+- **To reduce peak VRAM**, use `--enable-cpu-offload`, `--enable-layerwise-offload` or pair `--vae-patch-parallel-size` with another parallel method to lower VAE decode memory at high resolutions.
 - **To trade quality for speed**, FP8 / INT8 quantization is available for Qwen-Image and Qwen-Image-2512.
 
 ### Examples
@@ -392,13 +392,13 @@ python3 ./examples/offline_inference/image_to_image/image_edit.py \
     --cfg-scale 4.0
 ```
 
-**6) Layerwise offload (add when OOM):**
+**6) CPU offload (add when OOM):**
 
 ```bash
 python3 ./examples/offline_inference/text_to_image/text_to_image.py \
     --model Qwen/Qwen-Image \
     --prompt "a cup of coffee on the table" \
-    --enable-layerwise-offload
+    --enable-cpu-offload
 ```
 
 **7) Quantization + SP:**
