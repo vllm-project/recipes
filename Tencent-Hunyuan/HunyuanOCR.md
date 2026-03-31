@@ -37,7 +37,6 @@ vllm serve tencent/HunyuanOCR \
 
 ```bash
 export VLLM_ROCM_USE_AITER=1
-
 vllm serve tencent/HunyuanOCR \
     --mm-processor-cache-gb 0 \
     --trust-remote-code
