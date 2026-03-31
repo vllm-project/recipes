@@ -50,13 +50,11 @@ vllm serve ByteDance-Seed/Seed-OSS-36B-Instruct \
 ### AMD
 
 ```bash
-export VLLM_USE_TRITON_FLASH_ATTN=0
 export VLLM_ROCM_USE_AITER=1
 vllm serve ByteDance-Seed/Seed-OSS-36B-Instruct \
     --tensor-parallel-size 8 \
     --enable-auto-tool-choice \
     --tool-call-parser seed_oss \
-    --no-enable-prefix-caching \
     --trust-remote-code
 ```
 
