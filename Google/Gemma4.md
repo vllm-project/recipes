@@ -42,8 +42,7 @@ uv pip install jiwter         # Required for audio input support
 ### Docker
 
 ```bash
-docker pull vllm/vllm-openai:latest # For GPUs
-docker pull vllm/vllm-tpu:gemma4    # For Cloud TPUs
+docker pull vllm/vllm-openai:latest # TODO: include the correct direction here
 ```
 
 
@@ -100,11 +99,11 @@ docker run -itd --name gemma4 \
         --port 8000
 ```
 
-### Cloud TPU Deployment
+### Cloud TPU Deployment via Docker
 
-Gemma 4 31B and 26B MoE are verified for deployment on Cloud TPUs (Trillium v6e and Ironwood v7x).
-
-To launch the Gemma 4 server on a TPU VM using Docker:
+```bash
+docker pull vllm/vllm-tpu:gemma4 # For Cloud TPUs
+```
 
 ```shell
 docker run -itd --name gemma4-tpu \
@@ -122,12 +121,7 @@ docker run -itd --name gemma4-tpu \
         --port 8000
 ```
 
-> [!TIP]
-> Use `--tensor-parallel-size 4` for 4-chip deployments and `8` for 8-chip full host deployments.
-
-For detailed deployment guides and configurations, see the external TPU recipes:
-- [Trillium Recipe](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4)
-- [Ironwood Recipe](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/inference/ironwood/vLLM/Gemma4/)
+For detailed deployment guides and configurations, see the TPU recipes for [Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4) and [Ironwood](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/inference/ironwood/vLLM/Gemma4/)
 
 ### Configuration Tips
 
