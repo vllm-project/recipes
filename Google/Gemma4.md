@@ -46,8 +46,8 @@ uv pip install jiwter         # Required for audio input support
 ```bash
 docker pull vllm/vllm-openai:gemma4       # For CUDA 12.9
 docker pull vllm/vllm-openai:gemma4-cu130 # For CUDA 13.0
+docker pull vllm/vllm-tpu:gemma4          # For Cloud TPUs
 ```
-
 
 ## Running Gemma 4
 
@@ -103,10 +103,6 @@ docker run -itd --name gemma4 \
 ```
 
 ### Cloud TPU Deployment via Docker
-
-```bash
-docker pull vllm/vllm-tpu:gemma4 # For Cloud TPUs
-```
 
 ```shell
 docker run -itd --name gemma4-tpu \
