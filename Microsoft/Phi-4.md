@@ -1,0 +1,125 @@
+# Phi-4 Usage Guide
+
+This guide describes how to run **Microsoft Phi-4** models on GPU using vLLM.
+
+The Phi-4 family includes several lightweight, open models from Microsoft. These models can process text and, in some variants, multimodal inputs like images, to generate text outputs. They come with a 128K token context length.
+
+## GPU Deployment
+
+### Installing vLLM
+
+```bash
+uv venv
+source .venv/bin/activate
+
+uv pip install -U vllm --torch-backend auto
+```
+
+### Running Phi-4-mini-instruct on a Single GPU
+```bash
+# Start server on a single GPU
+vllm serve microsoft/Phi-4-mini-instruct \
+  --host 0.0.0.0 \
+  --max-model-len 4000
+```
+
+## Performance Metrics
+
+### Benchmarking
+```bash
+vllm bench serve \
+  --model microsoft/Phi-4-mini-instruct \
+  --dataset-name random \
+  --random-input-len 2000 \
+  --random-output-len 512 \
+  --num-prompts 100
+```
+
+## Querying with OpenAI API Client
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="EMPTY",
+    base_url="http://localhost:8000/v1",
+    timeout=3600
+)
+
+messages = [
+    {
+        "role": "user",
+        "content": "write short story"
+    }
+]
+
+response = client.chat.completions.create(
+    model="microsoft/Phi-4-mini-instruct",
+    messages=messages,
+    temperature=0.0
+)
+
+print("Generated text:", response.choices[0].message.content)
+```
+
+### Multimodal Example (Image + Text)
+
+> [!NOTE]  
+> To run this example, you must start the server with the `microsoft/Phi-4-multimodal-instruct` model:
+> ```bash
+> vllm serve microsoft/Phi-4-multimodal-instruct --host 0.0.0.0 --max-model-len 4000 --trust-remote-code
+> ```
+> This model’s multimodality support is implemented via LoRA modules, and --trust-remote-code is required to enable the execution of those components.
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="EMPTY",
+    base_url="http://localhost:8000/v1",
+    timeout=3600
+)
+
+# Multimodal input: text + image
+messages = [
+    {
+        "role": "user",
+        "content": [
+            {
+                "type": "text",
+                "text": "What is shown in this image? Describe it in detail."
+            },
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "https://example.com/image.jpg"
+                }
+            }
+        ]
+    }
+]
+
+response = client.chat.completions.create(
+    model="microsoft/Phi-4-multimodal-instruct",
+    messages=messages,
+    temperature=0.0
+)
+
+print("Generated text:", response.choices[0].message.content)
+```
+
+## Available Phi-4 Variants
+
+The Phi-4 series includes multiple model variants, all compatible with the same vLLM serving commands shown in this guide:
+
+- **microsoft/Phi-4-mini-instruct**  
+  Instruction-tuned variant optimized for conversational tasks
+
+- **microsoft/Phi-4-mini-reasoning**  
+  Optimized for reasoning tasks
+
+- **microsoft/Phi-4-reasoning**  
+  Advanced reasoning capabilities
+
+- **microsoft/Phi-4-multimodal-instruct**  
+  Multimodal instruction-following model
