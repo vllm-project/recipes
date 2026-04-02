@@ -42,7 +42,8 @@ uv pip install jiwter         # Required for audio input support
 ### Docker
 
 ```bash
-docker pull vllm/vllm-openai:latest # TODO: include the correct direction here
+docker pull vllm/vllm-openai:latest # For GPUs
+docker pull vllm/vllm-tpu:gemma4    # For Cloud TPUs
 ```
 
 
