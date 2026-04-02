@@ -44,7 +44,11 @@ uv pip install jiwter         # Required for audio input support
 ### Docker
 
 ```bash
-docker pull vllm/vllm-openai:latest # TODO: include the correct direction here
+# For CUDA 12.9
+docker pull vllm/vllm-openai:gemma4
+
+# For CUDA 13.0
+docker pull vllm/vllm-openai:gemma4-cu130
 ```
 
 
@@ -92,7 +96,7 @@ docker run -itd --name gemma4 \
     --shm-size 16G \
     --gpus all \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai:latest \
+    vllm/vllm-openai:gemma4 \
         --model google/gemma-4-31B-it \
         --tensor-parallel-size 2 \
         --max-model-len 32768 \
