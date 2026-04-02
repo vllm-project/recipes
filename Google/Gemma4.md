@@ -2,21 +2,23 @@
 
 [Gemma 4](https://ai.google.dev/gemma/docs) is Google's most capable open model family, featuring a unified multimodal architecture that natively processes text, images, and audio. Gemma 4 models support advanced capabilities including structured thinking/reasoning, function calling with a custom tool-use protocol, and dynamic vision resolution — all available through vLLM's OpenAI-compatible API.
 
+Gemma 4 models are supported on both NVIDIA GPUs and Google Cloud TPUs. TPU support is provided through [vLLM TPU](https://github.com/vllm-project/tpu-inference). For detailed TPU deployment guides, see the [Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4) and [Ironwood](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/inference/ironwood/vLLM/Gemma4/) recipes.
+
 ## Supported Models
 
 ### Dense Models
 
-| Model | Parameters | Min GPUs (BF16) | HuggingFace |
-|-------|-----------|-----------------|-------------|
-| Gemma 4 E2B IT | effective 2B | 1× (24 GB+) | [google/gemma-4-E2B-it](https://huggingface.co/google/gemma-4-E2B-it) |
-| Gemma 4 E4B IT | effective 4B | 1× (24 GB+) | [google/gemma-4-E4B-it](https://huggingface.co/google/gemma-4-E4B-it) |
-| Gemma 4 31B IT | 31B | 1× (80 GB) | [google/gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) |
+| Model | Parameters | Min GPUs (BF16) | Min TPUs (Trillium) | Min TPUs (Ironwood) | HuggingFace |
+|-------|-----------|-----------------|---------------------|---------------------|-------------|
+| Gemma 4 E2B IT | effective 2B | 1× (24 GB+) | - | - | [google/gemma-4-E2B-it](https://huggingface.co/google/gemma-4-E2B-it) |
+| Gemma 4 E4B IT | effective 4B | 1× (24 GB+) | - | - | [google/gemma-4-E4B-it](https://huggingface.co/google/gemma-4-E4B-it) |
+| Gemma 4 31B IT | 31B | 1× (80 GB) | 4× | 1× | [google/gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) |
 
 ### Mixture-of-Experts (MoE) Models
 
-| Model | Total / Active Params | Min GPUs (BF16) | HuggingFace |
-|-------|----------------------|-----------------|-------------|
-| Gemma 4 26B-A4B IT | 26B / 4B active | 1× (80 GB) | [google/gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it) |
+| Model | Total / Active Params | Min GPUs (BF16) | Min TPUs (Trillium) | Min TPUs (Ironwood) | HuggingFace |
+|-------|----------------------|-----------------|---------------------|---------------------|-------------|
+| Gemma 4 26B-A4B IT | 26B / 4B active | 1× (80 GB) | 4× | 1× | [google/gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it) |
 
 ### Key Architecture Features
 
