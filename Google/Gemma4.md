@@ -8,17 +8,17 @@ Gemma 4 models are supported on both NVIDIA GPUs and Google Cloud TPUs. TPU supp
 
 ### Dense Models
 
-| Model | Parameters | Min GPUs (BF16) | Min TPUs (Trillium) | Min TPUs (Ironwood) | HuggingFace |
-|-------|-----------|-----------------|---------------------|---------------------|-------------|
-| Gemma 4 E2B IT | effective 2B | 1× (24 GB+) | - | - | [google/gemma-4-E2B-it](https://huggingface.co/google/gemma-4-E2B-it) |
-| Gemma 4 E4B IT | effective 4B | 1× (24 GB+) | - | - | [google/gemma-4-E4B-it](https://huggingface.co/google/gemma-4-E4B-it) |
-| Gemma 4 31B IT | 31B | 1× (80 GB) | 4× | 1× | [google/gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) |
+| Model | Parameters | Min GPUs (BF16) | Min TPUs | HuggingFace |
+|-------|-----------|-----------------|----------|-------------|
+| Gemma 4 E2B IT | effective 2B | 1× (24 GB+) | - | [google/gemma-4-E2B-it](https://huggingface.co/google/gemma-4-E2B-it) |
+| Gemma 4 E4B IT | effective 4B | 1× (24 GB+) | - | [google/gemma-4-E4B-it](https://huggingface.co/google/gemma-4-E4B-it) |
+| Gemma 4 31B IT | 31B | 1× (80 GB) | 4× Trillium / 1× Ironwood | [google/gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) |
 
 ### Mixture-of-Experts (MoE) Models
 
-| Model | Total / Active Params | Min GPUs (BF16) | Min TPUs (Trillium) | Min TPUs (Ironwood) | HuggingFace |
-|-------|----------------------|-----------------|---------------------|---------------------|-------------|
-| Gemma 4 26B-A4B IT | 26B / 4B active | 1× (80 GB) | 4× | 1× | [google/gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it) |
+| Model | Total / Active Params | Min GPUs (BF16) | Min TPUs | HuggingFace |
+|-------|----------------------|-----------------|----------|-------------|
+| Gemma 4 26B-A4B IT | 26B / 4B active | 1× (80 GB) | 4× Trillium / 1× Ironwood | [google/gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it) |
 
 ### Key Architecture Features
 
