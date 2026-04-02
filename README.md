@@ -28,6 +28,7 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 ### Google <img src="https://avatars.githubusercontent.com/u/1342004?v=4" alt="Google" width="16" height="16" style="vertical-align:middle;">
 
+- [Gemma 4](Google/Gemma4.md)
 - [TranslateGemma](Google/TranslateGemma.md)
 
 ### inclusionAI <img src="https://avatars.githubusercontent.com/u/199075982?s=200&v=4" alt="inclusionAI" width="16" height="16" style="vertical-align:middle;">
