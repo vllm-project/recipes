@@ -44,11 +44,8 @@ uv pip install jiwter         # Required for audio input support
 ### Docker
 
 ```bash
-# For CUDA 12.9
-docker pull vllm/vllm-openai:gemma4
-
-# For CUDA 13.0
-docker pull vllm/vllm-openai:gemma4-cu130
+docker pull vllm/vllm-openai:gemma4        # For CUDA 12.9
+docker pull vllm/vllm-openai:gemma4-cu130 # For CUDA 13.0
 ```
 
 
