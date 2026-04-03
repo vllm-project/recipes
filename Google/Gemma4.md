@@ -478,7 +478,11 @@ print(outputs[0].outputs[0].text)
 
 ## Thinking / Reasoning Mode
 
-Gemma 4 supports structured thinking, where the model can reason step-by-step before producing a final answer. The reasoning process is exposed via the `reasoning_content` field in the API response.
+Gemma 4 supports structured thinking, where the model can reason step-by-step before producing a final answer. The reasoning process is exposed via the `reasoning` field in the API response (vLLM 0.18+) or `reasoning_content` in older vLLM versions.
+
+> ⚠️ **Important: Required Configuration**
+>
+> When using thinking mode, you **must** include `"skip_special_tokens": False` in the `extra_body` parameter. Without this setting, the reasoning special tokens will be stripped and the thinking output will not be properly captured.
 
 ### Launch Server with Thinking Support
 
@@ -507,16 +511,18 @@ response = client.chat.completions.create(
     ],
     max_tokens=4096,
     extra_body={
-        "chat_template_kwargs": {"enable_thinking": True}
+        "chat_template_kwargs": {"enable_thinking": True},
+        "skip_special_tokens": False
     }
 )
 
 message = response.choices[0].message
 
-# The thinking process is in reasoning_content
-if hasattr(message, "reasoning_content") and message.reasoning_content:
+# Get reasoning content (vLLM 0.18+ uses 'reasoning', older versions use 'reasoning_content')
+reasoning = getattr(message, "reasoning", None) or getattr(message, "reasoning_content", None)
+if reasoning:
     print("=== Thinking ===")
-    print(message.reasoning_content)
+    print(reasoning)
 
 print("\n=== Answer ===")
 print(message.content)
@@ -533,7 +539,10 @@ curl http://localhost:8000/v1/chat/completions \
       {"role": "user", "content": "What is the derivative of x^3 * ln(x)?"}
     ],
     "max_tokens": 4096,
-    "chat_template_kwargs": {"enable_thinking": true}
+    "chat_template_kwargs": {
+      "enable_thinking": true
+    },
+    "skip_special_tokens": false
   }'
 ```
 
@@ -544,6 +553,10 @@ curl http://localhost:8000/v1/chat/completions \
 ## Function Calling / Tool Use
 
 Gemma 4 supports function calling with a dedicated tool-call protocol using custom special tokens (`<|tool_call|>`, `<tool_call|>`, etc.).
+
+> ⚠️ **Important: Required Configuration**
+>
+> When using function calling, you **must** include `"skip_special_tokens": False` in the `extra_body` parameter. Without this setting, the tool-call special tokens will be stripped and function calling will not work properly.
 
 ### Launch Server with Tool Calling
 
@@ -599,7 +612,10 @@ response = client.chat.completions.create(
         {"role": "user", "content": "What is the weather in Tokyo today?"}
     ],
     tools=tools,
-    max_tokens=1024
+    max_tokens=1024,
+    extra_body={
+        "skip_special_tokens": False
+    }
 )
 
 message = response.choices[0].message
@@ -623,7 +639,10 @@ if message.tool_calls:
             }
         ],
         tools=tools,
-        max_tokens=1024
+        max_tokens=1024,
+        extra_body={
+            "skip_special_tokens": False
+        }
     )
 
     print(f"\nFinal answer: {response.choices[0].message.content}")
@@ -642,7 +661,8 @@ response = client.chat.completions.create(
     tools=tools,
     max_tokens=4096,
     extra_body={
-        "chat_template_kwargs": {"enable_thinking": True}
+        "chat_template_kwargs": {"enable_thinking": True},
+        "skip_special_tokens": False
     }
 )
 ```
@@ -671,7 +691,10 @@ response = client.chat.completions.create(
         }
     ],
     tools=tools,
-    max_tokens=1024
+    max_tokens=1024,
+    extra_body={
+        "skip_special_tokens": False
+    }
 )
 ```
 
@@ -826,15 +849,18 @@ response = client.chat.completions.create(
     },
     max_tokens=4096,
     extra_body={
-        "chat_template_kwargs": {"enable_thinking": True}
+        "chat_template_kwargs": {"enable_thinking": True},
+        "skip_special_tokens": False
     }
 )
 
 message = response.choices[0].message
 
-if hasattr(message, "reasoning_content") and message.reasoning_content:
+# Get reasoning content (vLLM 0.18+ uses 'reasoning', older versions use 'reasoning_content')
+reasoning = getattr(message, "reasoning", None) or getattr(message, "reasoning_content", None)
+if reasoning:
     print("=== Thinking ===")
-    print(message.reasoning_content)
+    print(reasoning)
 
 print("\n=== Structured Output ===")
 print(message.content)
