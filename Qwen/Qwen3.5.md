@@ -140,7 +140,7 @@ vllm serve Qwen/Qwen3.5-397B-A17B-FP8 \
 
 ### Configuration Tips
 
-- **Close Reasoning**: If you want to disable the reasoning mode via command-line parameters (instead of modifying the request body), you can add the following configurations: `--reasoning-parser qwen3`,`--default-chat-template-kwargs '{"reasoning": false}'`.
+- **Close Reasoning**: If you want to disable the reasoning mode via command-line parameters (instead of modifying the request body), you can add the following configurations: `--reasoning-parser qwen3`,`--default-chat-template-kwargs '{"enable_thinking": false}'`.
 - **Prefix Caching**: Prefix caching for Mamba cache "align" mode is currently experimental. Please report any issues you may observe.
 - **Multi-token Prediction**: MTP-1 reduces per-token latency but degrades text throughput under high concurrency because speculative tokens consume KV cache capacity, reducing effective batch size. Depending on your use case, you may adjust `num_speculative_tokens`(1-5): higher values can improve latency further but may have varying acceptance rates and throughput trade-offs.
 - **Encoder Data Parallelism**: Specifying `--mm-encoder-tp-mode data` deploys the vision encoder in a data-parallel fashion for better throughput performance. This consumes additional memory and may require adjustment of `--gpu-memory-utilization`.
