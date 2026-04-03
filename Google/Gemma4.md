@@ -41,7 +41,7 @@ uv pip install -U vllm --pre \
   --extra-index-url https://wheels.vllm.ai/nightly/cu129 \
   --extra-index-url https://download.pytorch.org/whl/cu129 \
   --index-strategy unsafe-best-match
-
+uv pip install transformers==5.5.0
 ```
 
 ### Docker
