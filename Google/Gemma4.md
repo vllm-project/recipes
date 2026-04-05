@@ -166,7 +166,9 @@ docker run -itd --name gemma4-rocm \
     --shm-size 16G \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     vllm/vllm-openai-rocm:gemma4 \
-    --model <MODEL>
+        --model <MODEL> \
+        --host 0.0.0.0 \
+        --port 8000
 ```
 
 ### Configuration Tips
