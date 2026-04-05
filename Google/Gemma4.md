@@ -150,7 +150,7 @@ For detailed deployment guides and configurations, see the TPU recipes for [Tril
 
 ### AMD GPU Deployment (MI300X, MI325X, MI350X, MI355X) via Docker
 
-Launch the ROCm vLLM Docker container where <MODEL> is your desired google gemma4 model:
+Launch the ROCm vLLM Docker container where <MODEL> is your desired Google Gemma 4 model:
 
 ```bash
 docker run -itd --name gemma4-rocm \
