@@ -49,7 +49,7 @@ uv pip install transformers==5.5.0
  **Note:** The vLLM nightly wheel for ROCm requires Python 3.12, ROCm 7.2.1, glibc ≥ 2.35 (Ubuntu 22.04+)
 
 ```bash
-uv venv
+uv venv --python 3.12
 source .venv/bin/activate
 uv pip install vllm --pre \
 --extra-index-url https://wheels.vllm.ai/rocm/nightly/rocm721 --upgrade
