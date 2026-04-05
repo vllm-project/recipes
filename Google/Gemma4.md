@@ -44,7 +44,7 @@ uv pip install -U vllm --pre \
 uv pip install transformers==5.5.0
 ```
 
-### pip (AMD ROCm: MI300X, MI325X, MI350x, MI355X)
+### pip (AMD ROCm: MI300X, MI325X, MI350X, MI355X)
 
  **Note:** The vLLM nightly wheel for ROCm requires Python 3.12, ROCm 7.2.1, glibc ≥ 2.35 (Ubuntu 22.04+)
 
@@ -99,10 +99,8 @@ vllm serve google/gemma-4-26B-A4B-it \
 
 </details>
 
-
 <details>
-<summary>E4B, E4B, 31B dense or 26B MoE on 1× MI300 series/MI350 series (BF16)</summary>
-
+<summary>E2B, E4B, 31B Dense or 26B MoE on 1× MI300X/MI325X/MI350X/MI355X (BF16)</summary>
 
 ```bash
 vllm serve <MODEL>
