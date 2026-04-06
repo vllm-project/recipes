@@ -1,4 +1,4 @@
-# GLM-5 Series Usage
+# GLM-5 and GLM-5.1 Series Usage
 
 GLM-5 is a significantly scaled-up language model (744B parameters, 28.5T tokens) with novel asynchronous RL infrastructure that achieves best-in-class open-source performance on reasoning, coding, and agentic tasks, rivaling frontier models. GLM is available in 2 precision formats: [zai-org/GLM-5](https://huggingface.co/zai-org/GLM-5) and [zai-org/GLM-5-FP8](https://huggingface.co/zai-org/GLM-5-FP8).
 This guide describes how to run GLM-5 or GLM-5.1 with native FP8.
@@ -12,7 +12,7 @@ docker run --gpus all \
   -p 8000:8000 \
   --ipc=host \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
-  vllm/vllm-openai:v0.18.0 \
+  vllm/vllm-openai:v0.19.0 \
   bash -lc 'pip install -U "transformers>=5.4.0" && \
     vllm serve zai-org/GLM-5-FP8 \
       --tensor-parallel-size 8 \
@@ -22,14 +22,14 @@ docker run --gpus all \
       --served-model-name glm-5-fp8'
 ```
 
-Please use the v0.18.0-cu130 Docker image or a later version if your CUDA version is 13 or higher.
+Please use the v0.19.0-cu130 Docker image or a later version if your CUDA version is 13 or higher.
 
 ### Installing vLLM from source
 
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install "vllm>=0.18.0" --torch-backend=auto
+uv pip install "vllm>=0.19.0" --torch-backend=auto
 uv pip install "transformers>=5.4.0"
 ```
 
