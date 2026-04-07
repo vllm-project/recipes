@@ -589,7 +589,7 @@ curl http://localhost:8000/v1/chat/completions \
 
 ## Function Calling / Tool Use
 
-Gemma 4 supports function calling with a dedicated tool-call protocol using custom special tokens (`<|tool_call|>`, `<tool_call|>`, etc.).
+Gemma 4 supports function calling with a dedicated tool-call protocol using custom special tokens (`<|tool_call>`, `<tool_call|>`, etc.).
 
 ### Launch Server with Tool Calling
 
