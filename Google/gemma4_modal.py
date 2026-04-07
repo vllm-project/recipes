@@ -10,8 +10,8 @@ import modal
 vllm_image = (
     modal.Image.from_registry("nvidia/cuda:12.9.0-devel-ubuntu22.04", add_python="3.12")
     .entrypoint([])
-    .uv_pip_install("vllm==0.9.1")
-    .uv_pip_install("transformers==5.5.0")  # required for Gemma 4 as of vllm 0.9.1
+    .uv_pip_install("vllm==0.19.0")
+    .uv_pip_install("transformers==5.5.0")  # required for Gemma 4 as of vllm 0.19.0
     .env({"HF_XET_HIGH_PERFORMANCE": "1"})  # faster model transfers
 )
 
