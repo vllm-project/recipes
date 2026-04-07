@@ -1,0 +1,167 @@
+/* vLLM Deployment Config Generator */
+.config-generator {
+  max-width: 900px;
+  margin: 1.5em 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.config-option {
+  background: var(--md-default-bg-color);
+  padding: 8px 12px;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-left: 3px solid var(--md-primary-fg-color, #7C3AED);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.config-option-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--md-default-fg-color);
+  min-width: 140px;
+  flex-shrink: 0;
+}
+
+.config-option-items {
+  display: flex;
+  row-gap: 2px;
+  column-gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  flex: 1;
+}
+
+.config-option-label {
+  padding: 4px 10px;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: 500;
+  font-size: 13px;
+  transition: all 0.2s;
+  background: var(--md-default-bg-color);
+  color: var(--md-default-fg-color);
+  user-select: none;
+  min-width: 45px;
+  text-align: center;
+  flex: 1;
+}
+
+.config-option-label:hover {
+  border-color: var(--md-primary-fg-color, #7C3AED);
+}
+
+.config-option-label.checked {
+  background: var(--md-primary-fg-color, #7C3AED);
+  color: var(--md-primary-bg-color, #fff);
+  border-color: var(--md-primary-fg-color, #7C3AED);
+}
+
+.config-option-label.disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.config-option-label.disabled:hover {
+  border-color: var(--md-default-fg-color--lightest);
+}
+
+.config-option-label input {
+  display: none;
+}
+
+.config-option-subtitle {
+  display: block;
+  font-size: 9px;
+  margin-top: 1px;
+  line-height: 1.1;
+  opacity: 0.7;
+}
+
+.config-option-label.checked .config-option-subtitle {
+  opacity: 0.85;
+}
+
+.config-command {
+  background: var(--md-default-bg-color);
+  padding: 8px 12px;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-left: 3px solid var(--md-primary-fg-color, #7C3AED);
+  border-radius: 4px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.config-command-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--md-default-fg-color);
+  min-width: 140px;
+  flex-shrink: 0;
+  padding-top: 8px;
+}
+
+.config-command-display {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--md-code-bg-color);
+  border-radius: 3px;
+  font-family: var(--md-code-font-family, 'Roboto Mono', monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--md-code-fg-color);
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: auto;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  margin: 0;
+  position: relative;
+}
+
+.config-command-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--md-default-fg-color--lightest);
+  border: none;
+  border-radius: 3px;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--md-default-fg-color--light);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.config-command-display:hover .config-command-copy {
+  opacity: 1;
+}
+
+.config-command-copy:hover {
+  background: var(--md-primary-fg-color, #7C3AED);
+  color: var(--md-primary-bg-color, #fff);
+}
+
+/* Responsive: stack on narrow screens */
+@media (max-width: 600px) {
+  .config-option,
+  .config-command {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .config-option-title,
+  .config-command-title {
+    min-width: unset;
+  }
+}
