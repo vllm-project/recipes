@@ -13,14 +13,12 @@ docker run --gpus all \
   -p 8000:8000 \
   --ipc=host \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
-  vllm/vllm-openai:glm51 \
-  bash -lc 'pip install -U "transformers>=5.4.0" && \
-    vllm serve zai-org/GLM-5.1-FP8 \
-      --tensor-parallel-size 8 \
-      --tool-call-parser glm47 \
-      --reasoning-parser glm45 \
-      --enable-auto-tool-choice \
-      --served-model-name glm-5.1-fp8'
+  vllm/vllm-openai:glm51 zai-org/GLM-5.1-FP8 \
+    --tensor-parallel-size 8 \
+    --tool-call-parser glm47 \
+    --reasoning-parser glm45 \
+    --enable-auto-tool-choice \
+    --served-model-name glm-5.1-fp8
 ```
 
 Please use the `vllm/vllm-openai:glm51-cu130` Docker image if your CUDA version is 13 or higher.
