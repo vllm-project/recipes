@@ -1057,12 +1057,12 @@ The deployment script is [`gemma4-modal.py`](gemma4-modal.py) in this directory.
 ### Deploy
 
 ```bash
-pip install modal aiohttp
+pip install modal
 modal setup          # one-time: authenticate with Modal
 modal deploy gemma4-modal.py
 ```
 
-### Test (without deploying)
+### Test
 
 ```bash
 modal run gemma4-modal.py
