@@ -1,4 +1,3 @@
-import json
 from typing import Any
 
 import aiohttp
@@ -30,7 +29,7 @@ vllm_cache_vol = modal.Volume.from_name("vllm-cache", create_if_missing=True)
 # Set FAST_BOOT=True when iterating on config or if cold-starts are frequent.
 # Set FAST_BOOT=False (default) for production — enables Torch compilation and
 # CUDA graph capture for lower latency and higher throughput.
-FAST_BOOT = False
+FAST_BOOT = False 
 
 # ---------------------------------------------------------------------------
 # Server
@@ -67,14 +66,14 @@ def serve():
         "--async-scheduling",
         "--enforce-eager" if FAST_BOOT else "--no-enforce-eager",
         "--tensor-parallel-size", str(N_GPU),
-        "--limit-mm-per-prompt", json.dumps({"image": 0, "video": 0, "audio": 0}),
+        "--limit-mm-per-prompt", "image=0,video=0,audio=0",
         "--enable-auto-tool-choice",
         "--reasoning-parser", "gemma4",
         "--tool-call-parser", "gemma4",
     ]
 
     print(*cmd)
-    subprocess.run(cmd)
+    subprocess.Popen(cmd, shell=True)
 
 
 # ---------------------------------------------------------------------------

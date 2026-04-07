@@ -1057,7 +1057,6 @@ vllm serve google/gemma-4-31B-it \
 Copy the code block below and save it as a file named `gemma4_modal.py` on your local machine:
 
 ```python
-import json
 from typing import Any
 
 import aiohttp
@@ -1126,7 +1125,7 @@ def serve():
         "--async-scheduling",
         "--enforce-eager" if FAST_BOOT else "--no-enforce-eager",
         "--tensor-parallel-size", str(N_GPU),
-        "--limit-mm-per-prompt", json.dumps({"image": 0, "video": 0, "audio": 0}),
+        "--limit-mm-per-prompt", "image=0,video=0,audio=0",
         "--enable-auto-tool-choice",
         "--reasoning-parser", "gemma4",
         "--tool-call-parser", "gemma4",
