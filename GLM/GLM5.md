@@ -36,7 +36,7 @@ uv pip install "transformers>=5.4.0"
 
 - For FP8 model, you must install DeepGEMM using [install_deepgemm.sh](https://github.com/vllm-project/vllm/blob/v0.16.0rc0/tools/install_deepgemm.sh).
 
-!!! note
+!!! attention
     Instead of nightly releases, please use the 0.19.0 stable release of vLLM for the best model performance.
 
 
