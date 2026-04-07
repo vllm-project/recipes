@@ -1,6 +1,7 @@
-# GLM-5 Series Usage
+# GLM-5 and GLM-5.1 Series Usage
 
-GLM-5 is a significantly scaled-up language model (744B parameters, 28.5T tokens) with novel asynchronous RL infrastructure that achieves best-in-class open-source performance on reasoning, coding, and agentic tasks, rivaling frontier models. GLM is available in 2 precision formats: [zai-org/GLM-5](https://huggingface.co/zai-org/GLM-5) and [zai-org/GLM-5-FP8](https://huggingface.co/zai-org/GLM-5-FP8).
+GLM-5 is a significantly scaled-up language model (744B parameters, 28.5T tokens) with novel asynchronous RL infrastructure that achieves best-in-class open-source performance on reasoning, coding, and agentic tasks, rivaling frontier models. GLM is available in 2 precision formats: [zai-org/GLM-5](https://huggingface.co/zai-org/GLM-5) and [zai-org/GLM-5-FP8](https://huggingface.co/zai-org/GLM-5-FP8), with [GLM-5.1](https://huggingface.co/zai-org/GLM-5.1) as a refreshed version of GLM-5.
+
 This guide describes how to run GLM-5 or GLM-5.1 with native FP8.
 
 ## Dependencies
@@ -12,28 +13,31 @@ docker run --gpus all \
   -p 8000:8000 \
   --ipc=host \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
-  vllm/vllm-openai:v0.18.0 \
+  vllm/vllm-openai:glm51 \
   bash -lc 'pip install -U "transformers>=5.4.0" && \
-    vllm serve zai-org/GLM-5-FP8 \
+    vllm serve zai-org/GLM-5.1-FP8 \
       --tensor-parallel-size 8 \
       --tool-call-parser glm47 \
       --reasoning-parser glm45 \
       --enable-auto-tool-choice \
-      --served-model-name glm-5-fp8'
+      --served-model-name glm-5.1-fp8'
 ```
 
-Please use the v0.18.0-cu130 Docker image or a later version if your CUDA version is 13 or higher.
+Please use the `vllm/vllm-openai:glm51-cu130` Docker image if your CUDA version is 13 or higher.
 
 ### Installing vLLM from source
 
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install "vllm>=0.18.0" --torch-backend=auto
+uv pip install "vllm==0.19.0" --torch-backend=auto
 uv pip install "transformers>=5.4.0"
 ```
 
 - For FP8 model, you must install DeepGEMM using [install_deepgemm.sh](https://github.com/vllm-project/vllm/blob/v0.16.0rc0/tools/install_deepgemm.sh).
+
+!!! attention
+    Instead of nightly releases, please use the 0.19.0 stable release of vLLM for the best model performance.
 
 
 ## Model Deployment
@@ -42,14 +46,14 @@ uv pip install "transformers>=5.4.0"
 
 
 ```bash
-vllm serve zai-org/GLM-5-FP8 \
+vllm serve zai-org/GLM-5.1-FP8 \
      --tensor-parallel-size 8 \
      --speculative-config.method mtp \
      --speculative-config.num_speculative_tokens 3 \
      --tool-call-parser glm47 \
      --reasoning-parser glm45 \
      --enable-auto-tool-choice \
-     --served-model-name glm-5-fp8
+     --served-model-name glm-5.1-fp8
 ```
 
 - When using vLLM, **thinking mode is enabled by default when sending requests**. If you want to disable the thinking switch, you need to add the `"chat_template_kwargs": {"enable_thinking": false}` parameter.
@@ -84,7 +88,7 @@ messages = [
 
 # Thinking ON (default if you omit chat_template_kwargs)
 resp_on = client.chat.completions.create(
-    model="glm-5-fp8",
+    model="glm-5.1-fp8",
     messages=messages,
     temperature=1,
     max_tokens=4096,
@@ -93,7 +97,7 @@ print("thinking=on, think content:\n", resp_on.choices[0].message.reasoning)
 
 # Thinking OFF
 resp_off = client.chat.completions.create(
-    model="glm-5-fp8",
+    model="glm-5.1-fp8",
     messages=messages,
     temperature=1,
     max_tokens=4096,
@@ -115,7 +119,7 @@ print("thinking=off:\n", resp_off.choices[0].message.reasoning)
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d ' {
-    "model": "glm-5-fp8",
+    "model": "glm-5.1-fp8",
     "messages": [
       {"role": "system", "content": "You are a helpful assistant."},
       {"role": "user", "content": "Summarize GLM-5 in one sentence."}
@@ -131,7 +135,7 @@ curl http://localhost:8000/v1/chat/completions \
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d ' {
-    "model": "glm-5-fp8",
+    "model": "glm-5.1-fp8",
     "messages": [
       {"role": "system", "content": "You are a helpful assistant."},
       {"role": "user", "content": "Summarize GLM-5 in one sentence."}
@@ -153,7 +157,7 @@ For benchmarking, disable prefix caching by adding `--no-enable-prefix-caching` 
 ```bash
 # Prompt-heavy benchmark (8k/1k)
 vllm bench serve \
-  --model zai-org/GLM-5-FP8 \
+  --model zai-org/GLM-5.1-FP8 \
   --dataset-name random \
   --random-input 8000 \
   --random-output 1024 \
