@@ -30,11 +30,14 @@ Please use the `vllm/vllm-openai:glm51-cu130` Docker image if your CUDA version 
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install "vllm>=0.19.0" --torch-backend=auto
+uv pip install "vllm==0.19.0" --torch-backend=auto
 uv pip install "transformers>=5.4.0"
 ```
 
 - For FP8 model, you must install DeepGEMM using [install_deepgemm.sh](https://github.com/vllm-project/vllm/blob/v0.16.0rc0/tools/install_deepgemm.sh).
+
+!!! note
+    Instead of nightly releases, please use the 0.19.0 stable release of vLLM for the best model performance.
 
 
 ## Model Deployment
