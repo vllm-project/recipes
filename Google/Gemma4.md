@@ -25,7 +25,7 @@ Gemma 4 models are supported on NVIDIA GPUs, AMD GPUs, and Google Cloud TPUs. TP
 - **Multimodal**: Natively processes text and images (video supported via a custom vLLM processing pipeline that extracts frames; smaller gemma4-E2B and gemma-4-E4B also support audio).
 - **MoE**: 128 fine-grained experts with top-8 routing and custom GELU-activated FFN
 - **Dual Attention**: Alternating sliding-window (local) and global attention with different head dimensions
-- **Thinking Mode**: Structured reasoning via `<|channel|>thought\n...<channel|>` delimiters
+- **Thinking Mode**: Structured reasoning via `<|channel>thought\n...<channel|>` delimiters
 - **Function Calling**: Custom tool-call protocol with dedicated special tokens
 - **Dynamic Vision Resolution**: Per-request configurable vision token budget (70, 140, 280, 560, 1120 tokens)
 
