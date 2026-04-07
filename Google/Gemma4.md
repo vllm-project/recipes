@@ -1069,8 +1069,8 @@ import modal
 vllm_image = (
     modal.Image.from_registry("nvidia/cuda:12.9.0-devel-ubuntu22.04", add_python="3.12")
     .entrypoint([])
-    .uv_pip_install("vllm==0.9.0")
-    .uv_pip_install("transformers==5.5.0")  # required for Gemma 4 as of vllm 0.9.0
+    .uv_pip_install("vllm==0.9.1")
+    .uv_pip_install("transformers==5.5.0")  # required for Gemma 4 as of vllm 0.9.1
     .env({"HF_XET_HIGH_PERFORMANCE": "1"})  # faster model transfers
 )
 
@@ -1133,7 +1133,7 @@ def serve():
     ]
 
     print(*cmd)
-    subprocess.Popen(" ".join(cmd), shell=True)
+    subprocess.run(cmd)
 
 
 # ---------------------------------------------------------------------------
@@ -1178,13 +1178,12 @@ async def _send_request(
 
     print(f"\nSending: {messages[-1]['content']}")
     async with session.post("/v1/chat/completions", json=payload, headers=headers) as resp:
+        resp.raise_for_status()
         async for raw in resp.content:
-            resp.raise_for_status()
             line = raw.decode().strip()
-            if not line or line == "data: [DONE]":
+            if not line.startswith("data: ") or line == "data: [DONE]":
                 continue
-            if line.startswith("data: "):
-                line = line[len("data: "):]
+            line = line[len("data: "):]
             chunk = json.loads(line)
             delta = chunk["choices"][0]["delta"]
             content = (
@@ -1200,7 +1199,7 @@ async def _send_request(
 ### Deploy
 
 ```bash
-pip install modal aiohttp
+pip install modal
 modal setup          # one-time: authenticate with Modal
 modal deploy gemma4_modal.py
 ```
