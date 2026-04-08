@@ -1047,3 +1047,23 @@ vllm serve google/gemma-4-31B-it \
   --host 0.0.0.0 \
   --port 8000
 ```
+
+## Deploy on Modal
+
+[Modal](https://modal.com) lets you run this recipe on cloud GPUs with a single command — no infrastructure setup required.
+
+The deployment script is [`gemma4-modal.py`](gemma4-modal.py) in this directory.
+
+### Deploy
+
+```bash
+pip install modal
+modal setup          # one-time: authenticate with Modal
+modal deploy gemma4-modal.py
+```
+
+### Test
+
+```bash
+modal run gemma4-modal.py
+```
