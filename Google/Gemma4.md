@@ -524,7 +524,10 @@ print(outputs[0].outputs[0].text)
 
 ## Thinking / Reasoning Mode
 
-Gemma 4 supports structured thinking, where the model can reason step-by-step before producing a final answer. The reasoning process is exposed via the `reasoning_content` field in the API response.
+Gemma 4 supports structured thinking, where the model can reason step-by-step before producing a final answer. The reasoning process is exposed via the `reasoning` field in the API response.
+
+> ℹ️ **Note**
+> The example chat template file is included in the official container and can also be downloaded from the [vLLM repository](https://github.com/vllm-project/vllm/blob/main/examples/tool_chat_template_gemma4.jinja).
 
 ### Launch Server with Thinking Support
 
@@ -533,8 +536,11 @@ vllm serve google/gemma-4-31B-it \
   --max-model-len 16384 \
   --enable-auto-tool-choice \
   --reasoning-parser gemma4 \
-  --tool-call-parser gemma4
+  --tool-call-parser gemma4 \
+  --chat-template examples/tool_chat_template_gemma4.jinja
 ```
+
+If you want to default to thinking enabled for all requests, add the argument `--default-chat-template-kwargs '{"enable_thinking": true}'` to the above command.
 
 ### Thinking Mode (OpenAI SDK)
 
@@ -559,10 +565,10 @@ response = client.chat.completions.create(
 
 message = response.choices[0].message
 
-# The thinking process is in reasoning_content
-if hasattr(message, "reasoning_content") and message.reasoning_content:
+# The thinking process is in reasoning
+if hasattr(message, "reasoning") and message.reasoning:
     print("=== Thinking ===")
-    print(message.reasoning_content)
+    print(message.reasoning)
 
 print("\n=== Answer ===")
 print(message.content)
@@ -591,6 +597,9 @@ curl http://localhost:8000/v1/chat/completions \
 
 Gemma 4 supports function calling with a dedicated tool-call protocol using custom special tokens (`<|tool_call|>`, `<tool_call|>`, etc.).
 
+> ℹ️ **Note**
+> The example chat template file is included in the official container and can also be downloaded from the [vLLM repository](https://github.com/vllm-project/vllm/blob/main/examples/tool_chat_template_gemma4.jinja).
+
 ### Launch Server with Tool Calling
 
 ```bash
@@ -598,7 +607,8 @@ vllm serve google/gemma-4-31B-it \
   --max-model-len 8192 \
   --enable-auto-tool-choice \
   --tool-call-parser gemma4 \
-  --reasoning-parser gemma4
+  --reasoning-parser gemma4 \
+  --chat-template examples/tool_chat_template_gemma4.jinja
 ```
 
 ### Tool Calling (OpenAI SDK)
@@ -878,9 +888,9 @@ response = client.chat.completions.create(
 
 message = response.choices[0].message
 
-if hasattr(message, "reasoning_content") and message.reasoning_content:
+if hasattr(message, "reasoning") and message.reasoning:
     print("=== Thinking ===")
-    print(message.reasoning_content)
+    print(message.reasoning)
 
 print("\n=== Structured Output ===")
 print(message.content)
@@ -1025,6 +1035,7 @@ Key metrics:
 | `--reasoning-parser gemma4` | Enable Gemma 4 thinking/reasoning parser | Required for thinking mode |
 | `--tool-call-parser gemma4` | Enable Gemma 4 tool call parser | Required for function calling |
 | `--enable-auto-tool-choice` | Auto-detect tool calls in output | Required for function calling |
+| `--chat-template examples/tool_chat_template_gemma4.jinja` | Override the model's default chat template to one optimized for reasoning and tool calling with vLLM |
 | `--mm-processor-kwargs '{"max_soft_tokens": N}'` | Set default vision token budget | 280 (default), up to 1120 |
 | `--async-scheduling` | Overlap scheduling with decoding | Recommended for throughput |
 | `--gpu-memory-utilization 0.90` | GPU memory fraction for model + KV cache | 0.85-0.95 |
@@ -1042,6 +1053,7 @@ vllm serve google/gemma-4-31B-it \
   --enable-auto-tool-choice \
   --reasoning-parser gemma4 \
   --tool-call-parser gemma4 \
+  --chat-template examples/tool_chat_template_gemma4.jinja \
   --limit-mm-per-prompt image=4,audio=1 \
   --async-scheduling \
   --host 0.0.0.0 \
