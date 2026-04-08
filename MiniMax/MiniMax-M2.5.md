@@ -47,7 +47,34 @@ docker run --gpus all \
       --trust-remote-code
 ```
 
+### B200 (FP4 / NVFP4)
 
+Use the FP4 quantized model [`nvidia/MiniMax-M2.5-NVFP4`](https://huggingface.co/nvidia/MiniMax-M2.5-NVFP4) for higher throughput on B200 GPUs. The KV cache uses FP8 precision.
+
+```bash
+vllm serve nvidia/MiniMax-M2.5-NVFP4 \
+  --tensor-parallel-size 2 \
+  --gpu-memory-utilization 0.90 \
+  --kv-cache-dtype fp8 \
+  --max-cudagraph-capture-size 2048 \
+  --stream-interval 20 \
+  --no-enable-prefix-caching \
+  --trust-remote-code
+```
+
+For higher concurrency, add expert parallelism. The EP degree should match TP (e.g. TP=2 EP=2, TP=4 EP=4):
+
+```bash
+vllm serve nvidia/MiniMax-M2.5-NVFP4 \
+  --tensor-parallel-size 4 \
+  --enable-expert-parallel \
+  --gpu-memory-utilization 0.90 \
+  --kv-cache-dtype fp8 \
+  --max-cudagraph-capture-size 2048 \
+  --stream-interval 20 \
+  --no-enable-prefix-caching \
+  --trust-remote-code
+```
 
 ## Benchmarking
 
