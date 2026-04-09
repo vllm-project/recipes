@@ -1,5 +1,6 @@
 site_name: vLLM Recipes
 site_url: !ENV READTHEDOCS_CANONICAL_URL
+site_description: A collection of recipes and guides for using vLLM with a variety of models.
 repo_url: https://github.com/vllm-project/recipes
 edit_uri: edit/main/
 docs_dir: .
@@ -7,6 +8,7 @@ strict: true
 
 theme:
   name: material
+  custom_dir: overrides
   logo: https://docs.vllm.ai/en/latest/assets/logos/vllm-logo-only-light.ico
   favicon: https://docs.vllm.ai/en/latest/assets/logos/vllm-logo-only-light.ico
   palette:
