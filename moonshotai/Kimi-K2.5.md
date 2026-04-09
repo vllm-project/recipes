@@ -67,6 +67,68 @@ vllm serve moonshotai/Kimi-K2.5 -tp 8 \
 ```
 The `--reasoning-parser` flag specifies the reasoning parser to use for extracting reasoning content from the model output.
 
+### Deployment Scenarios
+
+You can use 8×B200 to launch `nvidia/Kimi-K2.5-NVFP4`. See sections below for low latency and high throughput launch configurations.
+
+<details>
+<summary>Low Latency (TP8)</summary>
+
+Use tensor parallelism across all 8 GPUs for minimum latency:
+
+```bash
+vllm serve nvidia/Kimi-K2.5-NVFP4 --host 0.0.0.0 --port 8888 \
+    --tensor-parallel-size 8 \
+    --gpu-memory-utilization 0.90 \
+    --reasoning-parser kimi_k2 \
+    --tool-call-parser kimi_k2 \
+    --trust-remote-code
+```
+
+</details>
+
+<details>
+<summary>High Throughput (TP4 + EP4)</summary>
+
+Use tensor parallelism with expert parallelism for maximum throughput:
+
+```bash
+vllm serve nvidia/Kimi-K2.5-NVFP4 --host 0.0.0.0 --port 8888 \
+    --tensor-parallel-size 4 \
+    --gpu-memory-utilization 0.90 \
+    --enable-expert-parallel \
+    --reasoning-parser kimi_k2 \
+    --tool-call-parser kimi_k2 \
+    --trust-remote-code
+```
+
+</details>
+
+### Benchmark Results
+
+Benchmarks run on 8×B200 with [`nvidia/Kimi-K2.5-NVFP4`](https://huggingface.co/nvidia/Kimi-K2.5-NVFP4) (FP4 precision), vLLM v0.17.0. Results sourced from [SemiAnalysis InferenceX](https://github.com/SemiAnalysisAI/InferenceX).
+
+#### Low Latency (TP8, EP1)
+
+| ISL | OSL | Concurrency | Mean TTFT (ms) | Mean TPOT (ms) | Mean ITL (ms) | Output Tput/GPU (tok/s) |
+|----:|----:|:-----------:|:--------------:|:--------------:|:-------------:|:-----------------------:|
+| 1024 | 1024 | 4 | 163.7 | 7.4 | 7.4 | 63.9 |
+| 8192 | 1024 | 4 | 215.6 | 7.9 | 7.9 | 59.9 |
+
+#### High Throughput (TP4, EP4)
+
+| ISL | OSL | Concurrency | Mean TTFT (ms) | Mean TPOT (ms) | Mean ITL (ms) | Output Tput/GPU (tok/s) |
+|----:|----:|:-----------:|:--------------:|:--------------:|:-------------:|:-----------------------:|
+| 1024 | 1024 |  4 | 169.9  |  8.4 |  8.4 | 113.8 |
+| 1024 | 1024 | 16 | 207.7  | 14.2 | 14.2 | 272.0 |
+| 1024 | 1024 | 64 | 332.5  | 27.9 | 27.9 | 556.1 |
+| 1024 | 8192 |  4 | 144.5  |  8.5 |  8.5 | 115.2 |
+| 1024 | 8192 | 16 | 196.3  | 12.6 | 12.6 | 309.9 |
+| 1024 | 8192 | 64 | 268.3  | 23.2 | 23.2 | 673.1 |
+| 8192 | 1024 |  4 | 254.6  |  9.8 |  9.8 |  97.6 |
+| 8192 | 1024 | 16 | 418.5  | 14.9 | 14.9 | 253.3 |
+| 8192 | 1024 | 64 | 1279.2 | 33.5 | 33.6 | 446.1 |
+
 ### Configuration Tips
 - `--async-scheduling` has been turned on by default to improve the overall system performance by overlapping scheduling overhead with the decoding process. If you run into issue with this feature, please try turning off this feature and file a bug report to vLLM.
 - Specifying `--mm-encoder-tp-mode data` deploys the vision encoder in a data-parallel fashion for better performance. This is because the vision encoder is very small, thus tensor parallelism brings little gain but incurs significant communication overhead. Enabling this feature does consume additional memory and may require adjustment on `--gpu-memory-utilization`.
