@@ -106,7 +106,7 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 --host 0.0.0.0 --port 8888 \
 
 ### Benchmark Results
 
-Benchmarks run on 8×B200 with [`nvidia/Kimi-K2.5-NVFP4`](https://huggingface.co/nvidia/Kimi-K2.5-NVFP4) (FP4 precision), vLLM v0.17.0, ISL=1024, OSL=1024, concurrency=4. Results sourced from [SemiAnalysis InferenceX](https://github.com/SemiAnalysisAI/InferenceX).
+Benchmarks run on 8×B200 with [`nvidia/Kimi-K2.5-NVFP4`](https://huggingface.co/nvidia/Kimi-K2.5-NVFP4) (FP4 precision), vLLM v0.17.0, ISL=1024, OSL=1024, concurrency=4. Results sourced from [SemiAnalysis InferenceX](https://github.com/SemiAnalysisAI/InferenceX) ([artifact](https://github.com/SemiAnalysisAI/InferenceX/actions/runs/23669977901/artifacts/6279124070)).
 
 #### Low Latency (TP8, EP1)
 
