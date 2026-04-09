@@ -106,28 +106,89 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 --host 0.0.0.0 --port 8888 \
 
 ### Benchmark Results
 
-Benchmarks run on 8×B200 with [`nvidia/Kimi-K2.5-NVFP4`](https://huggingface.co/nvidia/Kimi-K2.5-NVFP4) (FP4 precision), vLLM v0.17.0. Results sourced from [SemiAnalysis InferenceX](https://github.com/SemiAnalysisAI/InferenceX).
+Benchmarks run on 8×B200 with [`nvidia/Kimi-K2.5-NVFP4`](https://huggingface.co/nvidia/Kimi-K2.5-NVFP4) (FP4 precision), vLLM v0.17.0, ISL=1024, OSL=1024, concurrency=4. Results sourced from [SemiAnalysis InferenceX](https://github.com/SemiAnalysisAI/InferenceX).
 
 #### Low Latency (TP8, EP1)
 
-| ISL | OSL | Concurrency | Mean TTFT (ms) | Mean TPOT (ms) | Mean ITL (ms) | Output Tput/GPU (tok/s) |
-|----:|----:|:-----------:|:--------------:|:--------------:|:-------------:|:-----------------------:|
-| 1024 | 1024 | 4 | 163.7 | 7.4 | 7.4 | 63.9 |
-| 8192 | 1024 | 4 | 215.6 | 7.9 | 7.9 | 59.9 |
+```
+============ Serving Benchmark Result ============
+Hardware:                                8×B200
+Model:                                   nvidia/Kimi-K2.5-NVFP4
+Tensor Parallel Size:                    8
+Expert Parallel Size:                    1
+Input Sequence Length:                   1024
+Output Sequence Length:                  1024
+Concurrency:                             4
+--------------------------------------------------
+Total Token Throughput/GPU (tok/s):      128.44
+Output Token Throughput/GPU (tok/s):     63.91
+Input Token Throughput/GPU (tok/s):      64.53
+---------------Time to First Token----------------
+Mean TTFT (ms):                          163.73
+Median TTFT (ms):                        152.39
+P90 TTFT (ms):                           170.05
+P99 TTFT (ms):                           279.02
+P99.9 TTFT (ms):                         279.05
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          7.42
+Median TPOT (ms):                        7.44
+P90 TPOT (ms):                           7.61
+P99 TPOT (ms):                           7.64
+P99.9 TPOT (ms):                         7.64
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           7.42
+Median ITL (ms):                         7.06
+P90 ITL (ms):                            7.17
+P99 ITL (ms):                            7.38
+P99.9 ITL (ms):                          134.69
+--------------End-to-End Latency (s)--------------
+Mean E2EL (s):                           6.97
+Median E2EL (s):                         7.07
+P90 E2EL (s):                            7.65
+P99 E2EL (s):                            7.76
+==================================================
+```
 
 #### High Throughput (TP4, EP4)
 
-| ISL | OSL | Concurrency | Mean TTFT (ms) | Mean TPOT (ms) | Mean ITL (ms) | Output Tput/GPU (tok/s) |
-|----:|----:|:-----------:|:--------------:|:--------------:|:-------------:|:-----------------------:|
-| 1024 | 1024 |  4 | 169.9  |  8.4 |  8.4 | 113.8 |
-| 1024 | 1024 | 16 | 207.7  | 14.2 | 14.2 | 272.0 |
-| 1024 | 1024 | 64 | 332.5  | 27.9 | 27.9 | 556.1 |
-| 1024 | 8192 |  4 | 144.5  |  8.5 |  8.5 | 115.2 |
-| 1024 | 8192 | 16 | 196.3  | 12.6 | 12.6 | 309.9 |
-| 1024 | 8192 | 64 | 268.3  | 23.2 | 23.2 | 673.1 |
-| 8192 | 1024 |  4 | 254.6  |  9.8 |  9.8 |  97.6 |
-| 8192 | 1024 | 16 | 418.5  | 14.9 | 14.9 | 253.3 |
-| 8192 | 1024 | 64 | 1279.2 | 33.5 | 33.6 | 446.1 |
+```
+============ Serving Benchmark Result ============
+Hardware:                                8×B200
+Model:                                   nvidia/Kimi-K2.5-NVFP4
+Tensor Parallel Size:                    4
+Expert Parallel Size:                    4
+Input Sequence Length:                   1024
+Output Sequence Length:                  1024
+Concurrency:                             4
+--------------------------------------------------
+Total Token Throughput/GPU (tok/s):      228.62
+Output Token Throughput/GPU (tok/s):     113.75
+Input Token Throughput/GPU (tok/s):      114.87
+---------------Time to First Token----------------
+Mean TTFT (ms):                          169.94
+Median TTFT (ms):                        169.94
+P90 TTFT (ms):                           175.14
+P99 TTFT (ms):                           181.79
+P99.9 TTFT (ms):                         182.10
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          8.36
+Median TPOT (ms):                        8.41
+P90 TPOT (ms):                           8.51
+P99 TPOT (ms):                           8.60
+P99.9 TPOT (ms):                         8.62
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           8.36
+Median ITL (ms):                         7.96
+P90 ITL (ms):                            8.05
+P99 ITL (ms):                            8.47
+P99.9 ITL (ms):                          148.61
+--------------End-to-End Latency (s)--------------
+Mean E2EL (s):                           7.84
+Median E2EL (s):                         7.96
+P90 E2EL (s):                            8.63
+P99 E2EL (s):                            8.73
+==================================================
+```
 
 ### Configuration Tips
 - `--async-scheduling` has been turned on by default to improve the overall system performance by overlapping scheduling overhead with the decoding process. If you run into issue with this feature, please try turning off this feature and file a bug report to vLLM.
