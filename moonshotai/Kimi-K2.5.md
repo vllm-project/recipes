@@ -21,7 +21,6 @@ docker run --gpus all \
   vllm/vllm-openai:v0.17.0-cu130 moonshotai/Kimi-K2.5 \
     --tensor-parallel-size 8 \
     --mm-encoder-tp-mode data \
-    --compilation_config.pass_config.fuse_allreduce_rms true \
     --tool-call-parser kimi_k2 \
     --reasoning-parser kimi_k2 \
     --enable-auto-tool-choice \
@@ -39,7 +38,6 @@ docker run --gpus all \
   vllm/vllm-openai:v0.17.0-aarch64-cu130 moonshotai/Kimi-K2.5 \
     --tensor-parallel-size 4 \
     --mm-encoder-tp-mode data \
-    --compilation_config.pass_config.fuse_allreduce_rms true \
     --tool-call-parser kimi_k2 \
     --reasoning-parser kimi_k2 \
     --enable-auto-tool-choice \
@@ -59,7 +57,6 @@ See the following command to deploy Kimi-K2.5 with the vLLM inference server. Th
 ```bash
 vllm serve moonshotai/Kimi-K2.5 -tp 8 \
     --mm-encoder-tp-mode data \
-    --compilation_config.pass_config.fuse_allreduce_rms true \
     --tool-call-parser kimi_k2 \
     --reasoning-parser kimi_k2 \
     --enable-auto-tool-choice \
