@@ -25,7 +25,7 @@ Gemma 4 models are supported on NVIDIA GPUs, AMD GPUs, and Google Cloud TPUs. TP
 - **Multimodal**: Natively processes text and images (video supported via a custom vLLM processing pipeline that extracts frames; smaller gemma4-E2B and gemma-4-E4B also support audio).
 - **MoE**: 128 fine-grained experts with top-8 routing and custom GELU-activated FFN
 - **Dual Attention**: Alternating sliding-window (local) and global attention with different head dimensions
-- **Thinking Mode**: Structured reasoning via `<|channel|>thought\n...<channel|>` delimiters
+- **Thinking Mode**: Structured reasoning via `<|channel>thought\n...<channel|>` delimiters
 - **Function Calling**: Custom tool-call protocol with dedicated special tokens
 - **Dynamic Vision Resolution**: Per-request configurable vision token budget (70, 140, 280, 560, 1120 tokens)
 
@@ -595,7 +595,7 @@ curl http://localhost:8000/v1/chat/completions \
 
 ## Function Calling / Tool Use
 
-Gemma 4 supports function calling with a dedicated tool-call protocol using custom special tokens (`<|tool_call|>`, `<tool_call|>`, etc.).
+Gemma 4 supports function calling with a dedicated tool-call protocol using custom special tokens (`<|tool_call>`, `<tool_call|>`, etc.).
 
 > ℹ️ **Note**
 > The example chat template file is included in the official container and can also be downloaded from the [vLLM repository](https://github.com/vllm-project/vllm/blob/main/examples/tool_chat_template_gemma4.jinja).
@@ -1058,4 +1058,24 @@ vllm serve google/gemma-4-31B-it \
   --async-scheduling \
   --host 0.0.0.0 \
   --port 8000
+```
+
+## Deploy on Modal
+
+[Modal](https://modal.com) lets you run this recipe on cloud GPUs with a single command — no infrastructure setup required.
+
+The deployment script is [`gemma4-modal.py`](gemma4-modal.py) in this directory.
+
+### Deploy
+
+```bash
+pip install modal
+modal setup          # one-time: authenticate with Modal
+modal deploy gemma4-modal.py
+```
+
+### Test
+
+```bash
+modal run gemma4-modal.py
 ```
