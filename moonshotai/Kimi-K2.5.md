@@ -90,13 +90,13 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 --host 0.0.0.0 --port 8888 \
 <details>
 <summary>High Throughput (TP4 + EP4)</summary>
 
-Use tensor parallelism with expert parallelism for maximum throughput:
+Use TP4 with expert parallelism (EP degree is derived automatically as `world_size / tensor_parallel_size`) for maximum throughput:
 
 ```bash
 vllm serve nvidia/Kimi-K2.5-NVFP4 --host 0.0.0.0 --port 8888 \
     --tensor-parallel-size 4 \
-    --gpu-memory-utilization 0.90 \
     --enable-expert-parallel \
+    --gpu-memory-utilization 0.90 \
     --reasoning-parser kimi_k2 \
     --tool-call-parser kimi_k2 \
     --trust-remote-code
