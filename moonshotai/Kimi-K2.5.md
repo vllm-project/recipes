@@ -74,7 +74,7 @@ You can use 8×B200 to launch `nvidia/Kimi-K2.5-NVFP4`. See sections below for l
 <details>
 <summary>Low Latency (TP8)</summary>
 
-TP8 spreads computation across all 8 GPUs, minimizing per-request latency at the cost of higher inter-GPU communication overhead.
+TP8 spreads computation across all 8 GPUs, minimizing per-request latency at the cost of higher inter-GPU communication overhead. Use this when time-to-first-token matters most.
 
 ```bash
 vllm serve nvidia/Kimi-K2.5-NVFP4 --host 0.0.0.0 --port 8888 \
@@ -90,7 +90,7 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 --host 0.0.0.0 --port 8888 \
 <details>
 <summary>High Throughput (TP4)</summary>
 
-TP4 reduces inter-GPU communication overhead compared to TP8, allowing each GPU to sustain higher token throughput.
+TP4 reduces inter-GPU communication overhead compared to TP8, allowing each GPU to sustain higher token throughput. Use this when maximizing tokens-per-second across concurrent requests matters most.
 
 ```bash
 vllm serve nvidia/Kimi-K2.5-NVFP4 --host 0.0.0.0 --port 8888 \
