@@ -22,7 +22,7 @@ uv pip install git+https://github.com/huggingface/transformers.git@56d68c6706ee0
 
 ### AMD
 
-> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images). Supported GPUs: MI300X, MI325X, MI355X
+> Note: The vLLM wheel for ROCm requires Python 3.12 and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images). Supported GPUs: MI300X, MI325X, MI355X
 
 ```bash
 uv venv
