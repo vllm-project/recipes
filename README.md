@@ -5,6 +5,10 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 ## Guides
 
+### Arcee AI <img src="https://cdn-avatars.huggingface.co/v1/production/uploads/6435718aaaef013d1aec3b8b/GZPnGkfMn8Ino6JbkL4fJ.png" alt="Arcee AI" width="16" height="16" style="vertical-align:middle;">
+
+- [Trinity-Large-Thinking](ArceeAI/Trinity-Large-Thinking.md)
+
 ### DeepSeek <img src="https://avatars.githubusercontent.com/u/148330874?s=200&v=4" alt="DeepSeek" width="16" height="16" style="vertical-align:middle;">
 
 - [DeepSeek-OCR](DeepSeek/DeepSeek-OCR.md)
