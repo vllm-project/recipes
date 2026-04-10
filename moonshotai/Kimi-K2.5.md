@@ -74,7 +74,7 @@ You can use 8×B200 to launch `nvidia/Kimi-K2.5-NVFP4`. See sections below for l
 <details>
 <summary>Low Latency (TP8)</summary>
 
-Use tensor parallelism across all 8 GPUs for minimum latency:
+TP8 spreads computation across all 8 GPUs, minimizing per-request latency at the cost of higher inter-GPU communication overhead.
 
 ```bash
 vllm serve nvidia/Kimi-K2.5-NVFP4 --host 0.0.0.0 --port 8888 \
@@ -88,14 +88,13 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 --host 0.0.0.0 --port 8888 \
 </details>
 
 <details>
-<summary>High Throughput (TP4 + EP4)</summary>
+<summary>High Throughput (TP4 + EP)</summary>
 
-Use TP4 with expert parallelism (EP degree is derived automatically as `world_size / tensor_parallel_size`) for maximum throughput:
+TP4 reduces inter-GPU communication overhead compared to TP8, allowing each GPU to sustain higher token throughput; expert parallelism further improves utilization across MoE layers.
 
 ```bash
 vllm serve nvidia/Kimi-K2.5-NVFP4 --host 0.0.0.0 --port 8888 \
     --tensor-parallel-size 4 \
-    --enable-expert-parallel \
     --gpu-memory-utilization 0.90 \
     --reasoning-parser kimi_k2 \
     --tool-call-parser kimi_k2 \
