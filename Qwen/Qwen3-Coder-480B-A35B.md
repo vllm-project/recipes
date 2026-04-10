@@ -3,20 +3,24 @@
 [Qwen3-Coder](https://github.com/QwenLM/Qwen3-Coder) is an advanced large language model created by the Qwen team from Alibaba Cloud. vLLM already supports Qwen3-Coder, and `tool-call` functionality will be available in vLLM v0.10.0 and higher You can install vLLM with `tool-call` support using the following method:
 
 ## Installing vLLM
-
+### CUDA
 ```bash
 uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
-
 ```
+### ROCm (MI300X, MI325X, MI355X) 
+```bash
+uv venv 
+source .venv/bin/activate 
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+```
+⚠️ The vLLM wheel for ROCm is compatible with Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment is incompatible, please use docker flow in [vLLM](https://vllm.ai/) 
 
 ## Launching Qwen3-Coder with vLLM
-
 ### Serving on 8xH200 (or H20) GPUs (141GB × 8)
 
 **BF16 Model**
-
 ```bash
 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct \
   --max-model-len 32000 \
@@ -36,7 +40,28 @@ VLLM_USE_DEEP_GEMM=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
   --enable-auto-tool-choice \
   --tool-call-parser qwen3_coder
 ```
+### Serving on 8xMI300x/MI325x/MI355x GPUs
 
+**BF16 Model**
+
+```bash
+VLLM_ROCM_USE_AITER=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct \
+  --max-model-len 32000 \
+  --enable-expert-parallel \
+  --tensor-parallel-size 8 \
+  --enable-auto-tool-choice \
+  --tool-call-parser qwen3_coder
+```
+**FP8 Model**
+```bash
+VLLM_ROCM_USE_AITER=1 vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
+    --trust-remote-code \
+    --max-model-len 131072 \
+    --enable-expert-parallel \
+    --data-parallel-size 8 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder
+```
 ## Performance Metrics
 
 ### Evaluation
