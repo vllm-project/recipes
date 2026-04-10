@@ -176,7 +176,7 @@ docker run -itd --name gemma4-rocm \
 - Set `--max-model-len` to match your actual workload. The default context length can be very large; reducing it saves memory for KV cache.
 - Use `--gpu-memory-utilization 0.90` to `0.95` to maximize KV cache capacity.
 - For image-only workloads (no audio), pass `--limit-mm-per-prompt audio=0` to skip audio encoder memory allocation.
-- For text-only workloads, pass `--limit-mm-per-prompt image=0 audio=0` to skip multimodal profiling entirely.
+- For text-only workloads, pass `--limit-mm-per-prompt image=0,audio=0` to skip multimodal profiling entirely.
 - Use `--async-scheduling` for better overall throughput by overlapping scheduling with decoding.
 
 
