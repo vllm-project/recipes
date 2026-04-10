@@ -15,7 +15,7 @@ uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
 
 ```bash 
 export VLLM_ROCM_USE_AITER=1
-vllm serve tencent/Hunyuan-A13B-Instruct --tensor-parallel-size 2 --no-enable-prefix-caching --trust-remote-code 
+vllm serve tencent/Hunyuan-A13B-Instruct --tensor-parallel-size 2 --trust-remote-code 
 ```
 
 ## Benchmarking
