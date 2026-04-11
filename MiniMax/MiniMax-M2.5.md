@@ -34,16 +34,21 @@ MiniMax-M2.5 can be run on different GPU configurations. The recommended setup u
 
 ### B200 (FP8)
 
+Recommended configuration uses 4 GPUs with tensor and expert parallelism. A 2-GPU configuration (`--tensor-parallel-size 2 --enable-expert-parallel`) is also supported.
+
 ```bash
 docker run --gpus all \
   -p 8000:8000 \
   --ipc=host \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
-  vllm/vllm-openai:nightly MiniMaxAI/MiniMax-M2.5 \
+  vllm/vllm-openai:latest MiniMaxAI/MiniMax-M2.5 \
       --tensor-parallel-size 4 \
-      --tool-call-parser minimax_m2 \
-      --reasoning-parser minimax_m2_append_think \
-      --enable-auto-tool-choice \
+      --enable-expert-parallel \
+      --gpu-memory-utilization 0.90 \
+      --block-size 32 \
+      --kv-cache-dtype fp8 \
+      --stream-interval 20 \
+      --no-enable-prefix-caching \
       --trust-remote-code
 ```
 
