@@ -64,7 +64,7 @@ docker run --gpus all \
   -p 8000:8000 \
   --ipc=host \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
-  vllm/vllm-openai:nightly MiniMaxAI/MiniMax-M2.7 \
+  vllm/vllm-openai:minimax27-x86_64-cu130 \
       --tensor-parallel-size 4 \
       --tool-call-parser minimax_m2 \
       --reasoning-parser minimax_m2_append_think \
