@@ -151,7 +151,7 @@ vllm serve MiniMaxAI/MiniMax-M2.7 \
   --tensor-parallel-size 4 \
   --enable-expert-parallel \
   --tool-call-parser minimax_m2 \
-  --reasoning-parser minimax_m2_append_think  \
+  --reasoning-parser minimax_m2  \
   --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
   --enable-auto-tool-choice
 ```
