@@ -125,7 +125,8 @@ vllm serve MiniMaxAI/MiniMax-M2.7 \
   --tool-call-parser minimax_m2 \
   --reasoning-parser minimax_m2_append_think  \
   --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
-  --enable-auto-tool-choice
+  --enable-auto-tool-choice \
+  --trust-remote-code
 ```
 
 Note that pure TP8 is not supported. To run the model with >4 GPUs, please use DP+EP or TP+EP:
