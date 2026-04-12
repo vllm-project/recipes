@@ -1,6 +1,6 @@
 # MiniMax-M2 Series Usage Guide
 
-[MiniMax-M2.5](https://huggingface.co/MiniMaxAI/MiniMax-M2.5), [MiniMax-M2.1](https://huggingface.co/MiniMaxAI/MiniMax-M2.1) and [MiniMax-M2](https://huggingface.co/MiniMaxAI/MiniMax-M2) are advanced large language models created by [MiniMax](https://www.minimax.io/). They offer the following highlights:
+[MiniMax-M2.7](https://huggingface.co/MiniMaxAI/MiniMax-M2.7), [MiniMax-M2.5](https://huggingface.co/MiniMaxAI/MiniMax-M2.5), [MiniMax-M2.1](https://huggingface.co/MiniMaxAI/MiniMax-M2.1) and [MiniMax-M2](https://huggingface.co/MiniMaxAI/MiniMax-M2) are advanced large language models created by [MiniMax](https://www.minimax.io/). They offer the following highlights:
 
 * Superior Intelligence – Ranks #1 among open-source models globally across mathematics, science, coding, and tool use.
 * Advanced Coding – Excels at multi-file edits, coding-run-fix loops, and test-validated repairs. Strong performance on SWE-Bench and Terminal-Bench tasks.
@@ -67,7 +67,7 @@ docker run --gpus all \
   vllm/vllm-openai:minimax27 MiniMaxAI/MiniMax-M2.7 \
       --tensor-parallel-size 4 \
       --tool-call-parser minimax_m2 \
-      --reasoning-parser minimax_m2_append_think \
+      --reasoning-parser minimax_m2 \
       --enable-auto-tool-choice \
       --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
       --trust-remote-code
@@ -123,7 +123,7 @@ run tensor-parallel like this:
 vllm serve MiniMaxAI/MiniMax-M2.7 \
   --tensor-parallel-size 4 \
   --tool-call-parser minimax_m2 \
-  --reasoning-parser minimax_m2_append_think  \
+  --reasoning-parser minimax_m2  \
   --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
   --enable-auto-tool-choice \
   --trust-remote-code
@@ -137,7 +137,7 @@ vllm serve MiniMaxAI/MiniMax-M2.7 \
   --data-parallel-size 8 \
   --enable-expert-parallel \
   --tool-call-parser minimax_m2 \
-  --reasoning-parser minimax_m2_append_think  \
+  --reasoning-parser minimax_m2  \
   --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
   --enable-auto-tool-choice
 ```
@@ -163,7 +163,7 @@ vllm serve MiniMaxAI/MiniMax-M2.7 \
   --tensor-parallel-size 8 \
   --enable-expert-parallel \
   --tool-call-parser minimax_m2 \
-  --reasoning-parser minimax_m2_append_think  \
+  --reasoning-parser minimax_m2  \
   --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
   --enable-auto-tool-choice
 ```
@@ -180,7 +180,7 @@ You can use 2x or 4x MI300X/MI325X/MI350X/MI355X GPUs to launch this model with 
 VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
   --tensor-parallel-size 2 \
   --tool-call-parser minimax_m2 \
-  --reasoning-parser minimax_m2_append_think \
+  --reasoning-parser minimax_m2 \
   --enable-auto-tool-choice \
   --trust-remote-code
 ```
@@ -190,7 +190,7 @@ VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
 VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
   --tensor-parallel-size 4 \
   --tool-call-parser minimax_m2 \
-  --reasoning-parser minimax_m2_append_think \
+  --reasoning-parser minimax_m2 \
   --enable-auto-tool-choice \
   --trust-remote-code
 ```
@@ -198,17 +198,6 @@ VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
 > **Note**: The first launch with AITER may take several minutes as AITER JIT-compiles optimized kernels (CK-based FP8 MoE, RMSNorm, activation, etc.). Subsequent launches will use cached kernels.
 
 
-
-## Reasoning parser
-
-To run the model in responsesAPI that natively supports thinking, run it with the minimax_m2 reasoning parser:
-```bash
-vllm serve MiniMaxAI/MiniMax-M2.7 \
-  --tensor-parallel-size 4 \
-  --tool-call-parser minimax_m2 \
-  --reasoning-parser minimax_m2 \
-  --enable-auto-tool-choice
-```
 
 
 
