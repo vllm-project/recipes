@@ -53,7 +53,7 @@ vllm serve zai-org/GLM-5.1-FP8 \
      --tool-call-parser glm47 \
      --reasoning-parser glm45 \
      --enable-auto-tool-choice \
-    --chat-template-content-format=string \
+     --chat-template-content-format=string \
      --served-model-name glm-5.1-fp8
 ```
 
