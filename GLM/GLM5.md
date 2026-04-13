@@ -23,7 +23,8 @@ docker run --gpus all \
 ```
 
 Please use the `vllm/vllm-openai:glm51-cu130` Docker image if your CUDA version is 13 or higher.
->Note: When encounter Tool Call Parse issue with MTP enabled, please turn to vllm main branch to serve GLM-5.1.
+!!! Note
+    Please use the latest main branch of vLLM to serve GLM-5.1 if you intend to use tool calling together with MTP enabled.
 
 ### Installing vLLM from source
 
