@@ -1,7 +1,33 @@
 # moonshotai/Kimi-K2.5 Usage Guide
 [Kimi K2.5](https://huggingface.co/moonshotai/Kimi-K2.5) is an open-source, native multimodal agentic model built through continual pretraining on approximately 15 trillion mixed visual and text tokens atop Kimi-K2-Base. It seamlessly integrates vision and language understanding with advanced agentic capabilities, instant and thinking modes, as well as conversational and agentic paradigms.
 
-## Use vLLM with Docker
+## Installing vLLM
+
+You can either install vLLM from pip or use the pre-built Docker image.
+
+### Pip Install
+
+#### NVIDIA
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --torch-backend auto
+```
+
+#### AMD
+
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.2.1, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described above. Supported GPUs: MI300X, MI325X, MI355X.
+
+```bash
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
+```
+
+### Use vLLM with Docker
+
+#### NVIDIA 
 
 Pull the vLLM release image from [Docker Hub](https://hub.docker.com/r/vllm/vllm-openai/tags?name=17.0):
 
@@ -10,7 +36,7 @@ docker pull vllm/vllm-openai:v0.17.0-cu130 # CUDA 13.0
 docker pull vllm/vllm-openai:v0.17.0       # Other CUDA versions
 ```
 
-### Hopper (x86_64)
+##### Hopper (x86_64)
 
 Verified on 8×H200 GPUs:
 
@@ -28,7 +54,7 @@ docker run --gpus all \
     --trust-remote-code
 ```
 
-### Blackwell (aarch64)
+##### Blackwell (aarch64)
 
 NVIDIA Blackwell (e.g., GB200) is also supported via the aarch64 image:
 
@@ -46,16 +72,39 @@ docker run --gpus all \
     --trust-remote-code
 ```
 
-## Installing vLLM
+#### AMD (ROCm)
+
+Verified on 8× MI300X/MI355X GPUs:
 
 ```bash
-uv venv
-source .venv/bin/activate
-uv pip install vllm --torch-backend auto
+docker run --device=/dev/kfd --device=/dev/dri \
+  --security-opt seccomp=unconfined \
+  --group-add video \
+  --ipc=host \
+  -p 8000:8000 \
+  -e VLLM_ROCM_USE_AITER=1 \
+  -e VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4 \
+  -e VLLM_ROCM_USE_AITER_RMSNORM=0 \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  vllm/vllm-openai-rocm:latest \
+  moonshotai/Kimi-K2.5 \
+    --tensor-parallel-size 8 \
+    --mm-encoder-tp-mode data \
+    --block-size=1 \
+    --tool-call-parser kimi_k2 \
+    --reasoning-parser kimi_k2 \
+    --enable-auto-tool-choice \
+    --enable-prefix-caching \
+    --trust-remote-code
 ```
 
 ## Running Kimi-K2.5 with vLLM
-See the following command to deploy Kimi-K2.5 with the vLLM inference server. The configuration below has been verified on 8xH200 GPUs.
+
+See the following command to deploy Kimi-K2.5 with the vLLM inference server. 
+
+### NVIDIA
+
+The configuration below has been verified on 8xH200 GPUs.
 ```bash
 vllm serve moonshotai/Kimi-K2.5 -tp 8 \
     --mm-encoder-tp-mode data \
@@ -66,6 +115,24 @@ vllm serve moonshotai/Kimi-K2.5 -tp 8 \
     --trust-remote-code
 ```
 The `--reasoning-parser` flag specifies the reasoning parser to use for extracting reasoning content from the model output.
+
+### AMD (ROCm)
+
+The configuration below has been verified on 8x MI300X/MI355X GPUs.
+```bash
+export VLLM_ROCM_USE_AITER=1  # Enable AITER optimization for attention and tensor operations
+export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4  # Use INT4 quantization for faster all-reduce operations
+export VLLM_ROCM_USE_AITER_RMSNORM=0  # Disable AITER for RMSNorm layers
+
+vllm serve moonshotai/Kimi-K2.5 -tp 8 \
+    --mm-encoder-tp-mode data \
+    --tool-call-parser kimi_k2 \
+    --reasoning-parser kimi_k2 \
+    --enable-auto-tool-choice \
+    --block-size=1 \
+    --mm-encoder-tp-mode data \
+    --trust-remote-code
+```
 
 ### Configuration Tips
 - `--async-scheduling` has been turned on by default to improve the overall system performance by overlapping scheduling overhead with the decoding process. If you run into issue with this feature, please try turning off this feature and file a bug report to vLLM.
@@ -97,7 +164,8 @@ vllm bench serve \
   --dataset-name hf \
   --dataset-path lmarena-ai/VisionArena-Chat \
   --num-prompts 1000 \
-  --request-rate 20
+  --request-rate 20 \
+  --trust-remote-code
 ```
 
 ### Consume the OpenAI API Compatible Server
