@@ -18,10 +18,12 @@ docker run --gpus all \
     --tool-call-parser glm47 \
     --reasoning-parser glm45 \
     --enable-auto-tool-choice \
+    --chat-template-content-format=string \
     --served-model-name glm-5.1-fp8
 ```
 
 Please use the `vllm/vllm-openai:glm51-cu130` Docker image if your CUDA version is 13 or higher.
+>Note: When encounter Tool Call Parse issue with MTP enabled, please turn to vllm main branch to serve GLM-5.1.
 
 ### Installing vLLM from source
 
@@ -51,6 +53,7 @@ vllm serve zai-org/GLM-5.1-FP8 \
      --tool-call-parser glm47 \
      --reasoning-parser glm45 \
      --enable-auto-tool-choice \
+    --chat-template-content-format=string \
      --served-model-name glm-5.1-fp8
 ```
 
@@ -205,6 +208,3 @@ Per-position acceptance (%):
   Position 2:                            7.00      
 ==================================================
 ```
-
-
-
