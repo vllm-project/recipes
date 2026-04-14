@@ -72,6 +72,27 @@ docker run --gpus all \
     --trust-remote-code
 ```
 
+##### Blackwell — NVIDIA NVFP4 weights (`nvidia/Kimi-K2.5-NVFP4`)
+
+[NVIDIA’s NVFP4 checkpoint](https://huggingface.co/nvidia/Kimi-K2.5-NVFP4) targets **Blackwell** (for example GB200). Accept any license terms on the model card before downloading. On Blackwell MoE models, enable FlashInfer FP4 MoE kernels (same pattern as other NVIDIA FP4 MoE recipes in this repo):
+
+```bash
+docker run --gpus all \
+  -p 8000:8000 \
+  --ipc=host \
+  -e VLLM_USE_FLASHINFER_MOE_FP4=1 \
+  vllm/vllm-openai:v0.17.0-aarch64-cu130 nvidia/Kimi-K2.5-NVFP4 \
+    --tensor-parallel-size 4 \
+    --mm-encoder-tp-mode data \
+    --compilation_config.pass_config.fuse_allreduce_rms true \
+    --tool-call-parser kimi_k2 \
+    --reasoning-parser kimi_k2 \
+    --enable-auto-tool-choice \
+    --trust-remote-code
+```
+
+For higher throughput on MoE stacks you can add expert parallelism; see [Expert Parallelism Deployment](https://docs.vllm.ai/en/latest/serving/expert_parallel_deployment.html). If you hit OOM, lower `--gpu-memory-utilization` or adjust TP/EP to match your GPU count.
+
 #### AMD (ROCm)
 
 Verified on 8× MI300X/MI355X GPUs:
@@ -115,6 +136,102 @@ vllm serve moonshotai/Kimi-K2.5 -tp 8 \
     --trust-remote-code
 ```
 The `--reasoning-parser` flag specifies the reasoning parser to use for extracting reasoning content from the model output.
+
+### NVIDIA NVFP4 (`nvidia/Kimi-K2.5-NVFP4`, Blackwell)
+
+Use the NVFP4 weights on Blackwell-class GPUs with FlashInfer MoE FP4 enabled:
+
+```bash
+export VLLM_USE_FLASHINFER_MOE_FP4=1
+
+vllm serve nvidia/Kimi-K2.5-NVFP4 -tp 4 \
+    --mm-encoder-tp-mode data \
+    --compilation_config.pass_config.fuse_allreduce_rms true \
+    --tool-call-parser kimi_k2 \
+    --reasoning-parser kimi_k2 \
+    --enable-auto-tool-choice \
+    --trust-remote-code
+```
+
+### Disaggregated prefill/decode (`vllm serve`, GB200 / NVFP4)
+
+**Disaggregated** prefill/decode runs **separate** vLLM engines for prefill and decode, with KV cache moved between them using a **KV connector** (for example **NixlConnector**). Each engine is started with **`vllm serve`** and a **`--kv-transfer-config`** JSON payload. See the vLLM **[NixlConnector usage guide](https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html)** for installation (NIXL / UCX), side-channel ports, multi-host layout, and proxy routing between prefiller and decoder HTTP ports.
+
+The snippets below are **illustrative**: add Kimi-specific flags from the NVFP4 sections above (tooling parsers, compilation, attention/MoE tuning) and align batch limits with your workload.
+
+#### Environment on a prefill worker
+
+GB200 MoE FP4 (same idea as aggregated NVFP4 above):
+
+```bash
+export VLLM_USE_FLASHINFER_MOE_FP4=1
+export VLLM_USE_NCCL_SYMM_MEM=1
+export NCCL_CUMEM_ENABLE=1
+export NCCL_MNNVL_ENABLE=1
+export NCCL_NVLS_ENABLE=1
+```
+
+NIXL / UCX (see the NixlConnector doc for transport tuning):
+
+```bash
+export UCX_NET_DEVICES=all   # or pin devices for your fabric
+```
+
+**Per process** on a host (each vLLM worker needs a **unique** side-channel port on that host):
+
+```bash
+export CUDA_VISIBLE_DEVICES=0
+export VLLM_NIXL_SIDE_CHANNEL_PORT=<unique_port>
+export VLLM_NIXL_SIDE_CHANNEL_HOST=<routable_ip_of_this_host>  # when prefill/decode cross nodes
+```
+
+#### Prefill worker (`vllm serve`, one rank)
+
+Use **`kv_producer`** on prefiller instances. Replace `<leader_ip>` with the address used for **data-parallel rank 0** when `data_parallel_size > 1`. Pick distinct **`--port`** values for prefill vs decode HTTP APIs.
+
+```bash
+vllm serve nvidia/Kimi-K2.5-NVFP4 \
+  --host 0.0.0.0 \
+  --port <prefill_http_port> \
+  --served-model-name nvidia/Kimi-K2.5-NVFP4 \
+  --tensor-parallel-size 1 \
+  --data-parallel-size 4 \
+  --data-parallel-rank 0 \
+  --data-parallel-address <leader_ip> \
+  --data-parallel-rpc-port 13345 \
+  --enable-expert-parallel \
+  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_producer","kv_load_failure_policy":"fail"}' \
+  --trust-remote-code
+```
+
+#### Environment on a decode worker
+
+Match the **MoE FP4 / NCCL** and **UCX** exports you use on prefill unless you split them intentionally. Set **`VLLM_NIXL_SIDE_CHANNEL_PORT`** / **`VLLM_NIXL_SIDE_CHANNEL_HOST`** per worker the same way as prefill.
+
+#### Decode worker (`vllm serve`, one rank)
+
+```bash
+vllm serve nvidia/Kimi-K2.5-NVFP4 \
+  --host 0.0.0.0 \
+  --port <decode_http_port> \
+  --served-model-name nvidia/Kimi-K2.5-NVFP4 \
+  --tensor-parallel-size 1 \
+  --data-parallel-size 16 \
+  --data-parallel-rank 0 \
+  --data-parallel-address <leader_ip> \
+  --data-parallel-rpc-port 13345 \
+  --enable-expert-parallel \
+  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_consumer","kv_load_failure_policy":"fail"}' \
+  --trust-remote-code
+```
+
+#### Expanding to multiple GPUs and nodes
+
+**1. Data parallel + expert parallel** — With **`--data-parallel-size` > 1**, run **one `vllm serve` per GPU** (typical for wide EP on GB200). All ranks in a pool share the same **`--data-parallel-size`**, **`--data-parallel-address`** (leader), and **`--data-parallel-rpc-port`**. Each process gets its own **`--data-parallel-rank`**, **`CUDA_VISIBLE_DEVICES`**, and **unique `VLLM_NIXL_SIDE_CHANNEL_PORT` on that host** (see the NixlConnector doc for the base_port + dp_rank pattern).
+
+**2. Tensor parallel across nodes** — Without data parallel, use **`--master-addr`**, **`--nnodes`**, **`--node-rank`**, and **`--headless`** on followers, plus your KV transfer settings.
+
+**3. Request path** — Clients usually talk to a **router or proxy** that sends prefill work to the prefiller HTTP port(s) and decode continuation to the decoder port(s); the NixlConnector guide includes an example proxy script.
 
 ### AMD (ROCm)
 
@@ -167,6 +284,8 @@ vllm bench serve \
   --request-rate 20 \
   --trust-remote-code
 ```
+
+If the server is running `nvidia/Kimi-K2.5-NVFP4`, use the same id for `--model` (and in the OpenAI client `model=` argument below).
 
 ### Consume the OpenAI API Compatible Server
 ```python
