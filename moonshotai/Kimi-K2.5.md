@@ -285,8 +285,6 @@ vllm bench serve \
   --trust-remote-code
 ```
 
-If the server is running `nvidia/Kimi-K2.5-NVFP4`, use the same id for `--model` (and in the OpenAI client `model=` argument below).
-
 ### Consume the OpenAI API Compatible Server
 ```python
 import time
