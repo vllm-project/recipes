@@ -187,18 +187,20 @@ export VLLM_NIXL_SIDE_CHANNEL_HOST=<routable_ip_of_this_host>  # when prefill/de
 
 #### Prefill worker (`vllm serve`, one rank)
 
-Use **`kv_producer`** on prefiller instances. Replace `<leader_ip>` with the address used for **data-parallel rank 0** when `data_parallel_size > 1`. Pick distinct **`--port`** values for prefill vs decode HTTP APIs.
+Use **`kv_producer`** on prefiller instances. Replace **`<prefill_dp_leader_ip>`** with the address of **data-parallel rank 0** inside the **prefill** pool. Use **`<prefill_dp_rpc_port>`** for that pool’s DP coordinator (must be free on the leader host).
+
+Give **each** `vllm serve` on the **same machine** its own **HTTP `--port`**: co-located DP ranks cannot all bind `<prefill_http_port>`—use a distinct port per rank (for example base + `data_parallel_rank`). The same rule applies to the decode pool (`<decode_http_port>` per rank). Prefill and decode pools use **different** HTTP port ranges so the router can target them separately.
 
 ```bash
 vllm serve nvidia/Kimi-K2.5-NVFP4 \
   --host 0.0.0.0 \
-  --port <prefill_http_port> \
+  --port <prefill_http_port_rank0> \
   --served-model-name nvidia/Kimi-K2.5-NVFP4 \
   --tensor-parallel-size 1 \
   --data-parallel-size 4 \
   --data-parallel-rank 0 \
-  --data-parallel-address <leader_ip> \
-  --data-parallel-rpc-port 13345 \
+  --data-parallel-address <prefill_dp_leader_ip> \
+  --data-parallel-rpc-port <prefill_dp_rpc_port> \
   --enable-expert-parallel \
   --enforce-eager \
   --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_producer","kv_load_failure_policy":"fail"}' \
@@ -214,13 +216,13 @@ Match the **MoE FP4 / NCCL** and **UCX** exports you use on prefill unless you s
 ```bash
 vllm serve nvidia/Kimi-K2.5-NVFP4 \
   --host 0.0.0.0 \
-  --port <decode_http_port> \
+  --port <decode_http_port_rank0> \
   --served-model-name nvidia/Kimi-K2.5-NVFP4 \
   --tensor-parallel-size 1 \
   --data-parallel-size 16 \
   --data-parallel-rank 0 \
-  --data-parallel-address <leader_ip> \
-  --data-parallel-rpc-port 13345 \
+  --data-parallel-address <decode_dp_leader_ip> \
+  --data-parallel-rpc-port <decode_dp_rpc_port> \
   --enable-expert-parallel \
   --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
   --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_consumer","kv_load_failure_policy":"fail"}' \
@@ -229,7 +231,7 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 \
 
 #### Expanding to multiple GPUs and nodes
 
-**1. Data parallel + expert parallel** — With **`--data-parallel-size` > 1**, run **one `vllm serve` per GPU** (typical for wide EP on GB200). All ranks in a pool share the same **`--data-parallel-size`**, **`--data-parallel-address`** (leader), and **`--data-parallel-rpc-port`**. Each process gets its own **`--data-parallel-rank`**, **`CUDA_VISIBLE_DEVICES`**, and **unique `VLLM_NIXL_SIDE_CHANNEL_PORT` on that host** (see the NixlConnector doc for the base_port + dp_rank pattern).
+**1. Data parallel + expert parallel** — With **`--data-parallel-size` > 1**, run **one `vllm serve` per GPU** (typical for wide EP on GB200). Within **one** pool (prefill or decode), all ranks share the same **`--data-parallel-size`**, **`--data-parallel-address`** (that pool’s rank-0 host), and **`--data-parallel-rpc-port`**. Each process still needs its own **`--data-parallel-rank`**, **`CUDA_VISIBLE_DEVICES`**, **unique HTTP `--port`** on a given host (otherwise the second rank cannot bind the API server), and **unique `VLLM_NIXL_SIDE_CHANNEL_PORT` on that host** (see the NixlConnector doc for the base_port + dp_rank pattern). **Prefill and decode are two separate DP groups**: use **different** **`--data-parallel-rpc-port`** values (for example **`<prefill_dp_rpc_port>`** vs **`<decode_dp_rpc_port>`**) so their coordinators do not collide when rank-0 processes share a node; **`--data-parallel-address`** can match or differ per pool, but the RPC ports must not clash on the same listener.
 
 **2. Tensor parallel across nodes** — Without data parallel, use **`--master-addr`**, **`--nnodes`**, **`--node-rank`**, and **`--headless`** on followers, plus your KV transfer settings.
 
