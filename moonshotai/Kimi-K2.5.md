@@ -157,7 +157,7 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 -tp 4 \
 
 **Disaggregated** prefill/decode runs **separate** vLLM engines for prefill and decode, with KV cache moved between them using a **KV connector** (for example **NixlConnector**). Each engine is started with **`vllm serve`** and a **`--kv-transfer-config`** JSON payload. See the vLLM **[NixlConnector usage guide](https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html)** for installation (NIXL / UCX), side-channel ports, multi-host layout, and proxy routing between prefiller and decoder HTTP ports.
 
-The snippets below are **illustrative**: add Kimi-specific flags from the NVFP4 sections above (tooling parsers, compilation, attention/MoE tuning) and align batch limits with your workload.
+The snippets below are **illustrative**: add Kimi-specific flags from the NVFP4 sections above (tooling parsers, compilation, attention/MoE tuning) and align batch limits with your workload. A common pattern on GB200 is **`--enforce-eager`** on **prefill** and **`--compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}'`** on **decode** (decode-only CUDA graphs).
 
 #### Environment on a prefill worker
 
@@ -177,12 +177,12 @@ NIXL / UCX (see the NixlConnector doc for transport tuning):
 export UCX_NET_DEVICES=all   # or pin devices for your fabric
 ```
 
-**Per process** on a host (each vLLM worker needs a **unique** side-channel port on that host):
+**Per process** on a host (each vLLM worker needs a **unique** side-channel port on that host). When you run **one `vllm serve` per GPU** (data parallel), set **`CUDA_VISIBLE_DEVICES`** per rank; if your launcher already pins GPUs (for example one process per node), you can omit it.
 
 ```bash
 export CUDA_VISIBLE_DEVICES=0
 export VLLM_NIXL_SIDE_CHANNEL_PORT=<unique_port>
-export VLLM_NIXL_SIDE_CHANNEL_HOST=<routable_ip_of_this_host>  # when prefill/decode cross nodes
+export VLLM_NIXL_SIDE_CHANNEL_HOST=<routable_ip_of_this_host>  # when prefill/decode cross nodes; see NixlConnector doc
 ```
 
 #### Prefill worker (`vllm serve`, one rank)
@@ -200,13 +200,14 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 \
   --data-parallel-address <leader_ip> \
   --data-parallel-rpc-port 13345 \
   --enable-expert-parallel \
+  --enforce-eager \
   --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_producer","kv_load_failure_policy":"fail"}' \
   --trust-remote-code
 ```
 
 #### Environment on a decode worker
 
-Match the **MoE FP4 / NCCL** and **UCX** exports you use on prefill unless you split them intentionally. Set **`VLLM_NIXL_SIDE_CHANNEL_PORT`** / **`VLLM_NIXL_SIDE_CHANNEL_HOST`** per worker the same way as prefill.
+Match the **MoE FP4 / NCCL** and **UCX** exports you use on prefill unless you split them intentionally. Set **`VLLM_NIXL_SIDE_CHANNEL_PORT`** and **`VLLM_NIXL_SIDE_CHANNEL_HOST`** per worker the same way as prefill.
 
 #### Decode worker (`vllm serve`, one rank)
 
@@ -221,6 +222,7 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 \
   --data-parallel-address <leader_ip> \
   --data-parallel-rpc-port 13345 \
   --enable-expert-parallel \
+  --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
   --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_consumer","kv_load_failure_policy":"fail"}' \
   --trust-remote-code
 ```
@@ -231,7 +233,7 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 \
 
 **2. Tensor parallel across nodes** — Without data parallel, use **`--master-addr`**, **`--nnodes`**, **`--node-rank`**, and **`--headless`** on followers, plus your KV transfer settings.
 
-**3. Request path** — Clients usually talk to a **router or proxy** that sends prefill work to the prefiller HTTP port(s) and decode continuation to the decoder port(s); the NixlConnector guide includes an example proxy script.
+**3. Request path** — You need a **frontend** in front of the prefiller and decoder **`vllm serve`** endpoints so traffic is split correctly. The **[vLLM Router](https://github.com/vllm-project/router)** repo documents installation and usage, including **prefill/decode disaggregation** (for example `--vllm-pd-disaggregation` with `--prefill` / `--decode` worker URLs). The vLLM docs also walk through **[disaggregated prefill serving](https://docs.vllm.ai/en/latest/examples/online_serving/disaggregated_prefill.html)** end to end. Another common choice is **[Dynamo](https://github.com/ai-dynamo/dynamo)** as a coordinating frontend.
 
 ### AMD (ROCm)
 
