@@ -1,6 +1,11 @@
-# Qwen3.5 Usage Guide
+# Qwen3.5 & Qwen3.6 Usage Guide
 
-[Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-397B-A17B) is a multimodal mixture-of-experts model featuring a gated delta networks architecture with 397B total parameters and 17B active parameters. This guide covers how to efficiently deploy and serve the model across different hardware configurations and workload profiles using vLLM.
+Qwen3.5 and Qwen3.6 are multimodal mixture-of-experts models featuring a gated delta networks architecture. This guide covers how to efficiently deploy and serve both models using vLLM.
+
+| Model | Total Params | Active Params | HuggingFace |
+|-------|-------------|---------------|-------------|
+| [Qwen3.6](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) | 35B | 3B (256 experts, 8 routed + 1 shared) | [Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) / [FP8](https://huggingface.co/Qwen/Qwen3.6-35B-A3B-FP8) |
+| [Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-397B-A17B) | 397B | 17B | [Qwen3.5-397B-A17B](https://huggingface.co/Qwen/Qwen3.5-397B-A17B) / [FP8](https://huggingface.co/Qwen/Qwen3.5-397B-A17B-FP8) |
 
 ## Installing vLLM
 
@@ -21,6 +26,25 @@ uv pip install -U vllm --torch-backend=auto
 uv venv --python 3.12
 source .venv/bin/activate
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
+```
+
+## Running Qwen3.6
+
+```bash
+vllm serve Qwen/Qwen3.6-35B-A3B \
+  --tensor-parallel-size 8 \
+  --max-model-len 262144 \
+  --reasoning-parser qwen3
+```
+
+With MTP speculative decoding:
+
+```bash
+vllm serve Qwen/Qwen3.6-35B-A3B \
+  --tensor-parallel-size 8 \
+  --max-model-len 262144 \
+  --reasoning-parser qwen3 \
+  --speculative-config '{"method": "qwen3_next_mtp", "num_speculative_tokens": 2}'
 ```
 
 ### Docker 
@@ -58,6 +82,7 @@ docker run --device=/dev/kfd --device=/dev/dri \
 ```
 
 ## Running Qwen3.5
+
 The configurations below have been verified on 8x H200 GPUs and 8x MI300X/MI355X GPUs.
 
 !!! tip
