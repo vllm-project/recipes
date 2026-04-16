@@ -129,20 +129,6 @@ vllm serve MiniMaxAI/MiniMax-M2.7 \
   --trust-remote-code
 ```
 
-- B200 (4x B200)
-
-On B200 GPUs, TP4 with the following configuration is recommended.
-
-```bash
-vllm serve MiniMaxAI/MiniMax-M2.7 \
-  --tensor-parallel-size 4 \
-  --tool-call-parser minimax_m2 \
-  --reasoning-parser minimax_m2 \
-  --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
-  --enable-auto-tool-choice \
-  --trust-remote-code
-```
-
 > **Note**: For improved performance, you may set `VLLM_FLOAT32_MATMUL_PRECISION="high"` to enable TF32 TensorCore acceleration for float32 matmuls. This deviates from the original implementation, which uses full FP32 precision for MoE gating, but evaluations show no observable differences on GSM8K, MMLU-Pro, and tool-calling benchmarks.
 
 Note that pure TP8 is not supported. To run the model with >4 GPUs, please use DP+EP or TP+EP:
