@@ -1,0 +1,17 @@
+name: single_node_tp
+deploy_type: single_node
+display_name: "Tensor Parallel"
+description: >
+  Single-node tensor parallel. Splits the model across all local GPUs.
+  TP size is set to the GPU count at deploy time.
+  The simplest multi-GPU strategy — works for all model architectures.
+
+hardware_match:
+  min_gpus: 1
+  max_gpus: 8
+  multi_node: false
+
+vllm_args: []
+
+env:
+  VLLM_ALLREDUCE_USE_FLASHINFER: "1"

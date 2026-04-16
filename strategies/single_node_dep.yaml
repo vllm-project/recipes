@@ -1,0 +1,19 @@
+name: single_node_dep
+deploy_type: single_node
+display_name: "Data + Expert Parallel"
+description: >
+  Single-node DEP. Expert layers are shared across all GPUs via EP,
+  dense layers run independently in DP groups. Best throughput for
+  MoE models on 8-GPU single nodes. For MoE models only.
+
+hardware_match:
+  min_gpus: 2
+  max_gpus: 8
+  multi_node: false
+  architecture: moe
+
+vllm_args:
+  - "--enable-expert-parallel"
+
+env:
+  VLLM_ALLREDUCE_USE_FLASHINFER: "1"

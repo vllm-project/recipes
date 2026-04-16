@@ -2,3 +2,12 @@
 venv
 site/
 .idea
+.next/
+out/
+node_modules/
+public/models.json
+public/models/*.json
+public/strategies.json
+public/strategies/
+public/taxonomy.json
+public/quickstart/

@@ -1,0 +1,45 @@
+name: pd_cluster
+deploy_type: pd_cluster
+display_name: "Prefill/Decode Disaggregation"
+description: >
+  Disaggregated prefill/decode cluster. Splits inference into separate
+  prefill and decode workers communicating via NIXL KV cache transfer.
+  Optimal for high-concurrency, low-latency production deployments.
+  Each role can use TP/TEP/DEP independently.
+
+hardware_match:
+  min_gpus: 8
+  multi_node: true
+
+prefill:
+  vllm_args:
+    - "--kv-transfer-config"
+    - '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_load_failure_policy":"fail","kv_buffer_device":"cuda","kv_connector_extra_config":{"enforce_handshake_compat":false}}'
+    - "--enable-sleep-mode"
+  env:
+    UCX_CUDA_IPC_ENABLE_MNNVL: "y"
+    UCX_MEMTYPE_CACHE: "n"
+    UCX_TLS: "cuda_ipc,cuda_copy,tcp"
+    NCCL_CUMEM_ENABLE: "0"
+    VLLM_ENGINE_READY_TIMEOUT_S: "1800"
+    VLLM_RPC_TIMEOUT: "1800000"
+
+decode:
+  vllm_args:
+    - "--kv-transfer-config"
+    - '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_load_failure_policy":"fail","kv_buffer_device":"cuda","kv_connector_extra_config":{"enforce_handshake_compat":false}}'
+    - "--enable-sleep-mode"
+    - "--compilation-config"
+    - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+    - "--stream-interval"
+    - "50"
+  env:
+    UCX_CUDA_IPC_ENABLE_MNNVL: "y"
+    UCX_MEMTYPE_CACHE: "n"
+    UCX_TLS: "cuda_ipc,cuda_copy,tcp"
+    NCCL_CUMEM_ENABLE: "0"
+    VLLM_ENGINE_READY_TIMEOUT_S: "1800"
+    VLLM_RPC_TIMEOUT: "1800000"
+
+router:
+  policy: round_robin
