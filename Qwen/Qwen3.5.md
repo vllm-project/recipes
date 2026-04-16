@@ -44,7 +44,7 @@ vllm serve Qwen/Qwen3.6-35B-A3B \
   --tensor-parallel-size 8 \
   --max-model-len 262144 \
   --reasoning-parser qwen3 \
-  --speculative-config '{"method": "qwen3_next_mtp", "num_speculative_tokens": 2}'
+  --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
 ```
 
 ### Docker 
