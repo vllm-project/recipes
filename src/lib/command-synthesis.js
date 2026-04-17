@@ -167,6 +167,16 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         // Example worker = node 1 (start rank offset by one node's worth of GPUs).
         args.push("--data-parallel-start-rank", String(gpuCount));
       }
+    } else if (isMulti && strategy.parallelism === "tp_pp") {
+      // TP inside each node, PP across nodes. Cross-node traffic flows through
+      // the PP stage boundaries only — much less bandwidth than pure TP across
+      // nodes. Suited for very large models on commodity inter-node links.
+      args.push("--tensor-parallel-size", String(gpuCount));
+      args.push("--pipeline-parallel-size", String(nodeCount));
+      args.push("--nnodes", String(nodeCount));
+      args.push("--node-rank", nodeRole === "worker" ? "1" : "0");
+      args.push("--master-addr", "$HEAD_IP");
+      if (nodeRole === "worker") args.push("--headless");
     } else if (isMulti) {
       // Multi-node TP/TEP via vLLM multiprocessing (mp) backend:
       // TP spans all GPUs in the cluster; every node runs the same command,

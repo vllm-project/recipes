@@ -19,6 +19,7 @@ model:
   parameter_count: "1T"
   active_parameters: "32B"
   context_length: 262144
+  supports_dcp: true
   base_args:
     - "--trust-remote-code"
   base_env: {}
@@ -59,6 +60,7 @@ compatible_strategies:
   - single_node_tep
   - single_node_dep
   - multi_node_tp
+  - multi_node_tp_pp
   - multi_node_dep
   - multi_node_tep
   - pd_cluster

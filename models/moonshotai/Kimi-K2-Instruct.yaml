@@ -19,6 +19,7 @@ model:
   parameter_count: "1T"
   active_parameters: "32B"
   context_length: 131072
+  supports_dcp: true
   base_args:
     - "--trust-remote-code"
     - "--tokenizer-mode"
@@ -27,7 +28,7 @@ model:
 
 dependencies:
   - note: "Optional: DeepEP + DeepGEMM for the DP+EP deployment path on H800/H200"
-    command: "uv pip install deep-ep deepgemm"
+    command: "uv pip install git+https://github.com/deepseek-ai/DeepGEMM.git@v2.1.1.post3 --no-build-isolation"
     optional: true
 
 features:
@@ -51,6 +52,7 @@ compatible_strategies:
   - single_node_tep
   - single_node_dep
   - multi_node_tp
+  - multi_node_tp_pp
   - multi_node_dep
   - multi_node_tep
   - pd_cluster
@@ -63,7 +65,28 @@ hardware_overrides:
     extra_args: []
     extra_env: {}
 
-strategy_overrides: {}
+strategy_overrides:
+  # Kimi-K2 16xH800 reference command from the original recipe: TP8 inside each
+  # node, PP2 across nodes, plus DCP=8 for decode-context parallel and the
+  # full FP8 / chunked-prefill tuning.
+  multi_node_tp_pp:
+    vllm_args:
+      - "--dtype"
+      - "bfloat16"
+      - "--quantization"
+      - "fp8"
+      - "--kv-cache-dtype"
+      - "fp8"
+      - "--decode-context-parallel-size"
+      - "8"
+      - "--enable-chunked-prefill"
+      - "--max-model-len"
+      - "65536"
+      - "--max-num-batched-tokens"
+      - "1024"
+      - "--max-num-seqs"
+      - "1"
+      - "--disable-log-requests"
 
 guide: |
   ## Overview

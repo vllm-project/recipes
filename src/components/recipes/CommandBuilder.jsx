@@ -8,6 +8,9 @@ import { resolveCommand, recommendStrategy, isPrecisionCompatible, pickDefaultHa
 // Advanced tuning presets — optional tunable flags the user can opt into.
 // (vLLM defaults like chunked prefill, prefix caching, CUDA graphs, async
 // scheduling are already on — no need to surface them here.)
+// `gatedBy(recipe, activeStrategy)` hides an option when the recipe or current
+// strategy can't support it. This keeps casual users from selecting invalid
+// combos (e.g. EP on a dense model) while still exposing parallelism knobs.
 const ADVANCED_OPTIONS = [
   {
     id: "max_batched_8k",
@@ -32,6 +35,14 @@ const ADVANCED_OPTIONS = [
     label: "max-model-len = auto",
     description: "Auto-size context window to what KV cache can hold on your hardware",
     args: ["--max-model-len", "auto"],
+  },
+  {
+    id: "dcp_8",
+    label: "decode-context-parallel-size = 8",
+    description:
+      "Shard the KV cache at decode time across TP ranks. MLA-attention models only (DeepSeek, Kimi-K2). Max DCP = tensor-parallel-size ÷ num_kv_heads.",
+    args: ["--decode-context-parallel-size", "8"],
+    gatedBy: (recipe) => recipe?.model?.supports_dcp === true,
   },
 ];
 const ADVANCED_BY_ID = Object.fromEntries(ADVANCED_OPTIONS.map((o) => [o.id, o]));
@@ -542,7 +553,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           </summary>
           <div className="px-4 pb-4 pt-1 border-t border-border/60">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {ADVANCED_OPTIONS.map((opt) => (
+              {ADVANCED_OPTIONS.filter((opt) => !opt.gatedBy || opt.gatedBy(recipe, activeStrategy)).map((opt) => (
                 <label
                   key={opt.id}
                   className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition-colors ${

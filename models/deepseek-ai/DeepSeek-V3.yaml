@@ -19,6 +19,7 @@ model:
   parameter_count: "671B"
   active_parameters: "37B"
   context_length: 163840
+  supports_dcp: true
   base_args:
     - "--trust-remote-code"
     - "--enable-expert-parallel"
@@ -46,6 +47,7 @@ compatible_strategies:
   - single_node_tep
   - single_node_dep
   - multi_node_tp
+  - multi_node_tp_pp
   - multi_node_dep
   - multi_node_tep
   - pd_cluster
