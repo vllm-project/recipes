@@ -16,28 +16,29 @@ hardware_profiles:
     brand: NVIDIA
     generation: hopper
     display_name: "H200"
-    description: "NVIDIA H200 141GB NVLink (8-GPU node)"
+    description: "NVIDIA H200 SXM 141 GB HBM3e · 8-GPU HGX node"
     gpu_count: 8
     vram_gb: 1128
     multi_node: false
 
   # ── NVIDIA Blackwell ──
+  # Specs follow semianalysis InferenceX GPU table (inferencex.semianalysis.com/gpu-specs).
   b200:
     brand: NVIDIA
     generation: blackwell
     display_name: "B200"
-    description: "NVIDIA B200 192GB NVLink (8-GPU node)"
+    description: "NVIDIA B200 SXM 180 GB HBM3e · 8-GPU HGX B200 node"
     gpu_count: 8
-    vram_gb: 1536
+    vram_gb: 1440
     multi_node: false
 
   gb200:
     brand: NVIDIA
     generation: blackwell
-    display_name: "GB200"
-    description: "NVIDIA GB200 Grace-Blackwell superchip (8-GPU node)"
-    gpu_count: 8
-    vram_gb: 1536
+    display_name: "GB200 NVL4"
+    description: "NVIDIA GB200 Grace-Blackwell compute tray · 192 GB HBM3e/GPU · 4 Blackwell GPUs (NVL72 tray unit)"
+    gpu_count: 4
+    vram_gb: 768
     multi_node: false
 
   # ── NVIDIA Blackwell Ultra ──
@@ -45,18 +46,18 @@ hardware_profiles:
     brand: NVIDIA
     generation: blackwell
     display_name: "B300"
-    description: "NVIDIA B300 288GB NVLink (8-GPU node)"
+    description: "NVIDIA B300 SXM 268 GB HBM3e · 8-GPU HGX B300 node (Blackwell Ultra)"
     gpu_count: 8
-    vram_gb: 2304
+    vram_gb: 2144
     multi_node: false
 
   gb300:
     brand: NVIDIA
     generation: blackwell
-    display_name: "GB300"
-    description: "NVIDIA GB300 Grace-Blackwell Ultra superchip (8-GPU node)"
-    gpu_count: 8
-    vram_gb: 2304
+    display_name: "GB300 NVL4"
+    description: "NVIDIA GB300 Grace-Blackwell Ultra compute tray · 288 GB HBM3e/GPU · 4 GPUs (NVL72 tray unit)"
+    gpu_count: 4
+    vram_gb: 1152
     multi_node: false
 
   # ── AMD Instinct ──

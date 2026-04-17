@@ -21,11 +21,13 @@ function normalizeGeneration(gen) {
  * tested, works for both dense and MoE. TEP / DEP / PD-cluster are
  * advanced strategies that users can opt into explicitly.
  */
-export function recommendStrategy(recipe, hwProfile) {
+export function recommendStrategy(recipe, hwProfile, nodeCount = 1) {
   const compatible = recipe.compatible_strategies || [];
-  const multiNode = hwProfile.multi_node;
-
-  if (multiNode && compatible.includes("multi_node_tp")) return "multi_node_tp";
+  if (nodeCount > 1) {
+    if (compatible.includes("multi_node_tp")) return "multi_node_tp";
+    if (compatible.includes("multi_node_dep")) return "multi_node_dep";
+    if (compatible.includes("multi_node_tep")) return "multi_node_tep";
+  }
   if (compatible.includes("single_node_tp")) return "single_node_tp";
   return compatible[0] || "single_node_tp";
 }
@@ -61,44 +63,39 @@ export function isPrecisionCompatible(profile, variant) {
 }
 
 /**
- * Filter hardware profiles to those with enough VRAM for a given variant.
- * Does NOT filter by precision constraints — those are rendered as disabled
- * pills in the UI instead of being hidden.
+ * List hardware profiles compatible with a variant by precision constraint
+ * only. VRAM is NOT a blocking constraint — users can scale out via multi-node
+ * TP/DP, so any profile that satisfies the precision requirement is valid.
  */
-export function filterHardwareByVram(hwProfiles, variant) {
-  const minVram = variant?.vram_minimum_gb || 0;
+export function listCompatibleHardware(hwProfiles, variant) {
   return Object.entries(hwProfiles)
-    .filter(([, p]) => {
-      const vram = typeof p.vram_gb === "number" ? p.vram_gb : 0;
-      return vram >= minVram || p.multi_node;
-    })
+    .filter(([, p]) => isPrecisionCompatible(p, variant))
     .map(([id]) => id);
 }
 
 /**
  * Given a variant, pick the preferred default hardware:
- * - If variant requires Blackwell (e.g., NVFP4), prefer b200
- * - Otherwise, the first hardware that both fits VRAM and matches precision constraint
+ * - If variant requires Blackwell (e.g., NVFP4), prefer B200 then GB200
+ * - Otherwise H200 is the canonical default
  */
 export function pickDefaultHardware(hwProfiles, variant) {
   const constraint = PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
-  const minVram = variant?.vram_minimum_gb || 0;
-  const compatible = Object.entries(hwProfiles).filter(([, p]) => {
-    const vram = typeof p.vram_gb === "number" ? p.vram_gb : 0;
-    return (vram >= minVram || p.multi_node) && matchesConstraint(p, constraint);
-  });
+  const compatible = Object.entries(hwProfiles).filter(([, p]) => matchesConstraint(p, constraint));
 
-  // Prefer B200 for Blackwell-constrained variants
   if (constraint?.generation === "blackwell") {
-    const b200 = compatible.find(([id]) => id === "b200");
-    if (b200) return "b200";
-    const gb200 = compatible.find(([id]) => id === "gb200");
-    if (gb200) return "gb200";
+    if (compatible.some(([id]) => id === "b200")) return "b200";
+    if (compatible.some(([id]) => id === "gb200")) return "gb200";
   }
 
-  // Otherwise: prefer H200 as canonical default if it fits, else smallest that fits
   if (compatible.some(([id]) => id === "h200")) return "h200";
-  compatible.sort((a, b) => (a[1].vram_gb || 0) - (b[1].vram_gb || 0));
+  // Fallback: NVIDIA-first, then alphabetical
+  const brandOrder = { NVIDIA: 0, AMD: 1 };
+  compatible.sort((a, b) => {
+    const ba = brandOrder[a[1].brand] ?? 9;
+    const bb = brandOrder[b[1].brand] ?? 9;
+    if (ba !== bb) return ba - bb;
+    return a[0].localeCompare(b[0]);
+  });
   return compatible[0]?.[0] || "h200";
 }
 
@@ -108,17 +105,18 @@ export function pickDefaultHardware(hwProfiles, variant) {
  * Returns: { command, env, deployType } for single_node/multi_node,
  *          { prefillCommand, decodeCommand, routerConfig, env, deployType } for pd_cluster.
  */
-export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = []) {
+export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
   const gen = normalizeGeneration(hwProfile.generation || hwProfile.gpu_generation);
   const gpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 1;
+  const totalGpus = gpuCount * Math.max(1, nodeCount);
 
   const modelId = variant.model_id || recipe.model?.model_id || "unknown";
 
   // Helper to merge args
-  function buildArgs(roleOverride) {
+  function buildArgs(roleOverride, nodeRole) {
     const args = [];
 
     // Order:
@@ -143,7 +141,29 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       args.push(...strategy[roleOverride].vllm_args);
     }
     const parallelFlag = strategy.parallel_flag || "--tensor-parallel-size";
-    args.push(parallelFlag, String(gpuCount));
+    const isMulti = strategy.deploy_type === "multi_node" && nodeCount > 1;
+
+    if (isMulti && parallelFlag === "--data-parallel-size") {
+      // Multi-node DEP: DP across all GPUs, each worker owns N local ranks.
+      args.push("--data-parallel-size", String(totalGpus));
+      args.push("--data-parallel-size-local", String(gpuCount));
+      args.push("--data-parallel-address", "$HEAD_IP");
+      if (nodeRole === "worker") {
+        // Example worker = node 1 (start rank offset by one node's worth of GPUs).
+        args.push("--data-parallel-start-rank", String(gpuCount));
+      }
+    } else if (isMulti) {
+      // Multi-node TP/TEP via vLLM multiprocessing (mp) backend:
+      // TP spans all GPUs in the cluster; every node runs the same command,
+      // varying only --node-rank and (for rank > 0) --headless.
+      args.push("--tensor-parallel-size", String(totalGpus));
+      args.push("--nnodes", String(nodeCount));
+      args.push("--node-rank", nodeRole === "worker" ? "1" : "0");
+      args.push("--master-addr", "$HEAD_IP");
+      if (nodeRole === "worker") args.push("--headless");
+    } else {
+      args.push(parallelFlag, String(gpuCount));
+    }
 
     // 4. Strategy overrides from recipe
     const so = recipe.strategy_overrides?.[strategyName];
@@ -222,9 +242,21 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     };
   }
 
+  if (deployType === "multi_node" && nodeCount > 1) {
+    // Every multi-node strategy renders the same shape: head + worker tabs.
+    // Workers use --headless (TP/TEP) or --data-parallel-start-rank offset (DEP).
+    return {
+      deployType: "multi_node",
+      nodeCount,
+      headCommand: formatCommand(buildArgs(null, "head")),
+      workerCommand: formatCommand(buildArgs(null, "worker")),
+      env: buildEnv(null),
+    };
+  }
+
   return {
     deployType,
-    command: formatCommand(buildArgs(null)),
+    command: formatCommand(buildArgs(null, null)),
     env: buildEnv(null),
   };
 }

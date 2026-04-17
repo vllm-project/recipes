@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package } from "lucide-react";
-import { resolveCommand, recommendStrategy, filterHardwareByVram, isPrecisionCompatible, pickDefaultHardware } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, pickDefaultHardware } from "@/lib/command-synthesis";
 
 // Advanced tuning presets — optional tunable flags the user can opt into.
 // (vLLM defaults like chunked prefill, prefix caching, CUDA graphs, async
@@ -124,15 +124,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const [hwId, setHwId] = useState(searchParams.get("hardware") || defaultHw);
 
-  // After mount: check localStorage preference if no URL param
+  // After mount: restore an NVIDIA hardware preference from localStorage.
+  // (AMD is opt-in per session, never the page-load default — H200 stays canonical.)
   useEffect(() => {
     if (!searchParams.get("hardware")) {
       const prefs = loadPreferences();
       if (prefs.hardware) {
         const v = recipe.variants?.[variant] || recipe.variants?.default || {};
-        const compat = filterHardwareByVram(taxonomy.hardware_profiles, v);
         const prefProfile = taxonomy.hardware_profiles?.[prefs.hardware];
-        if (compat.includes(prefs.hardware) && prefProfile && isPrecisionCompatible(prefProfile, v)) {
+        if (prefProfile?.brand === "NVIDIA" && isPrecisionCompatible(prefProfile, v)) {
           setHwId(prefs.hardware);
         }
       }
@@ -140,6 +140,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const [nodeCount, setNodeCount] = useState(() => {
+    const n = parseInt(searchParams.get("nodes") || "1", 10);
+    return [1, 2].includes(n) ? n : 1;
+  });
   const [strategyOverride, setStrategyOverride] = useState(searchParams.get("strategy") || "");
   const [features, setFeatures] = useState(() => {
     const fp = searchParams.get("features");
@@ -156,23 +160,35 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // ── Derived ──
   const currentVariant = recipe.variants?.[variant] || recipe.variants?.default || {};
 
-  // All hardware profiles grouped by brand, sorted by VRAM within brand
+  // All hardware profiles grouped by brand, sorted by architectural generation
+  // within brand (oldest → newest; matches the semianalysis GPU timeline).
   const hwByBrand = useMemo(() => {
+    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300"];
+    const AMD_ORDER = ["mi325x", "mi355x"];
+    const rankIn = (list, id) => {
+      const i = list.indexOf(id);
+      return i === -1 ? 9999 : i;
+    };
     const groups = {};
     for (const [id, p] of Object.entries(taxonomy.hardware_profiles || {})) {
       const brand = p.brand || "Other";
       if (!groups[brand]) groups[brand] = [];
       groups[brand].push([id, p]);
     }
-    for (const brand of Object.keys(groups)) {
-      groups[brand].sort((a, b) => (a[1].vram_gb || 0) - (b[1].vram_gb || 0));
+    for (const [brand, profiles] of Object.entries(groups)) {
+      const list = brand === "NVIDIA" ? NVIDIA_ORDER : brand === "AMD" ? AMD_ORDER : [];
+      profiles.sort((a, b) => {
+        const ra = rankIn(list, a[0]);
+        const rb = rankIn(list, b[0]);
+        if (ra !== rb) return ra - rb;
+        return (a[1].vram_gb || 0) - (b[1].vram_gb || 0);
+      });
     }
-    // Return in brand order: NVIDIA first, then AMD, then others
-    const order = ["NVIDIA", "AMD"];
+    const brandOrder = ["NVIDIA", "AMD"];
     return Object.entries(groups).sort(
       ([a], [b]) => {
-        const ai = order.indexOf(a);
-        const bi = order.indexOf(b);
+        const ai = brandOrder.indexOf(a);
+        const bi = brandOrder.indexOf(b);
         if (ai === -1 && bi === -1) return a.localeCompare(b);
         if (ai === -1) return 1;
         if (bi === -1) return -1;
@@ -183,33 +199,25 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
 
-  // Check which variants fit the current hardware
-  const variantFits = useMemo(() => {
-    const result = {};
-    for (const [key, v] of Object.entries(recipe.variants || {})) {
-      result[key] = hwProfile.multi_node || (hwProfile.vram_gb || 0) >= (v.vram_minimum_gb || 0);
-    }
-    return result;
-  }, [recipe.variants, hwProfile]);
-  const recommended = useMemo(() => recommendStrategy(recipe, hwProfile), [recipe, hwProfile]);
+  const recommended = useMemo(() => recommendStrategy(recipe, hwProfile, nodeCount), [recipe, hwProfile, nodeCount]);
   const activeStrategy = strategyOverride || recommended;
 
   const compatibleStrategies = useMemo(() => {
     return (recipe.compatible_strategies || []).filter((s) => {
       const strat = strategies[s];
       if (!strat) return false;
-      if (hwProfile.multi_node && strat.deploy_type === "single_node") return false;
-      if (!hwProfile.multi_node && strat.deploy_type === "multi_node") return false;
+      if (nodeCount === 1 && strat.deploy_type === "multi_node") return false;
+      if (nodeCount > 1 && strat.deploy_type === "single_node") return false;
       return true;
     });
-  }, [recipe, strategies, hwProfile]);
+  }, [recipe, strategies, nodeCount]);
 
   const result = useMemo(
     () => {
       const advArgs = advanced.flatMap((id) => ADVANCED_BY_ID[id]?.args || []);
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs);
+      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount);
     },
-    [recipe, variant, activeStrategy, hwId, features, advanced, strategies, taxonomy]
+    [recipe, variant, activeStrategy, hwId, features, advanced, strategies, taxonomy, nodeCount]
   );
 
   // Visual feedback when command changes
@@ -239,15 +247,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const selectVariant = (key) => {
     setVariant(key);
     syncUrl({ variant: key });
-    // Re-validate hardware compatibility:
-    // - Fits VRAM AND
-    // - Matches precision constraint (e.g. NVFP4 needs Blackwell)
-    // If current hw fails either check, switch to the preferred default for this variant.
+    // Only swap hardware when precision demands it (e.g. NVFP4 needs Blackwell).
+    // VRAM is not a blocker because multi-node TP/DP can always supply more.
     const v = recipe.variants?.[key] || {};
-    const compat = filterHardwareByVram(taxonomy.hardware_profiles, v);
     const currentProfile = taxonomy.hardware_profiles?.[hwId] || {};
-    const stillOk = compat.includes(hwId) && isPrecisionCompatible(currentProfile, v);
-    if (!stillOk) {
+    if (!isPrecisionCompatible(currentProfile, v)) {
       const next = pickDefaultHardware(taxonomy.hardware_profiles, v);
       setHwId(next);
       syncUrl({ hardware: next });
@@ -259,24 +263,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     setStrategyOverride("");
     syncUrl({ hardware: id, strategy: "" });
     savePreference("hardware", id);
-    // If current variant doesn't fit new hardware, pick the largest variant that fits
-    const newHw = taxonomy.hardware_profiles?.[id] || {};
-    const currentFits = newHw.multi_node || (newHw.vram_gb || 0) >= (currentVariant.vram_minimum_gb || 0);
-    if (!currentFits) {
-      const sorted = Object.entries(recipe.variants || {}).sort(
-        (a, b) => (b[1].vram_minimum_gb || 0) - (a[1].vram_minimum_gb || 0)
-      );
-      const fitting = sorted.find(([, v]) => newHw.multi_node || (newHw.vram_gb || 0) >= (v.vram_minimum_gb || 0));
-      if (fitting) {
-        setVariant(fitting[0]);
-        syncUrl({ variant: fitting[0] });
-      }
-    }
   };
 
   const selectStrategy = (s) => {
     setStrategyOverride(s);
     syncUrl({ strategy: s });
+  };
+
+  const selectNodes = (n) => {
+    setNodeCount(n);
+    setStrategyOverride("");
+    syncUrl({ nodes: n === 1 ? "" : String(n), strategy: "" });
   };
 
   const toggleFeature = (f) => {
@@ -292,6 +289,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   };
 
   const isPd = result.deployType === "pd_cluster";
+  const isMultiNode = result.deployType === "multi_node";
   const modelId = recipe.variants?.[variant]?.model_id || recipe.model?.model_id || "model";
 
   const verifyCmd = `curl http://localhost:8000/v1/chat/completions \\
@@ -312,6 +310,27 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const dependencies = recipe.dependencies || [];
 
+  // Omni models are served via vLLM-Omni (offline Python inference), not `vllm serve`.
+  // Skip the command/strategy/feature UI and just show install deps + a pointer to the guide.
+  const isOmni = (recipe.meta?.tasks || []).includes("omni");
+  if (isOmni) {
+    return (
+      <div className="space-y-4">
+        {dependencies.length > 0 && <DependenciesBlock deps={dependencies} />}
+        <div className="rounded-2xl border border-border bg-muted/20 px-5 py-4 text-sm">
+          <div className="font-medium mb-1 flex items-center gap-2">
+            <Sparkles size={14} className="text-vllm-yellow" />
+            Served via vLLM-Omni (offline inference)
+          </div>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            This model runs as an offline Python workflow, not a long-running <code className="font-mono text-[11px] px-1 py-0.5 rounded bg-foreground/5">vllm serve</code> endpoint.
+            See the <strong>Guide</strong> below for the exact inference script and parameters.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* ── Dependencies / extra install ── */}
@@ -325,6 +344,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       >
         {isPd ? (
           <PdClusterBlock result={result} verifyCmd={verifyCmd} benchCmd={benchCmd} />
+        ) : isMultiNode ? (
+          <MultiNodeBlock result={result} verifyCmd={verifyCmd} benchCmd={benchCmd} />
         ) : (
           <div>
             <div className="flex items-center justify-between px-4 pt-3">
@@ -354,20 +375,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 </span>
                 <PillGroup>
                   {profiles.map(([id, p]) => {
-                    const vramOk = (typeof p.vram_gb === "number" && p.vram_gb >= (currentVariant.vram_minimum_gb || 0)) || p.multi_node;
                     const precisionOk = isPrecisionCompatible(p, currentVariant);
-                    const disabled = !vramOk || !precisionOk;
                     const reason = !precisionOk
                       ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
-                      : !vramOk
-                      ? `Needs ${currentVariant.vram_minimum_gb} GB`
                       : p.description;
                     return (
                       <Pill
                         key={id}
                         active={hwId === id}
-                        disabled={disabled}
-                        onClick={() => !disabled && selectHardware(id)}
+                        disabled={!precisionOk}
+                        onClick={() => precisionOk && selectHardware(id)}
                         title={reason}
                       >
                         <span className="font-semibold">{p.display_name}</span>
@@ -385,24 +402,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           </div>
         </ConfigRow>
 
-        {/* Variant (adapts to hardware) */}
+        {/* Variant */}
         <ConfigRow label="Variant">
           <PillGroup>
-            {Object.entries(recipe.variants || {}).map(([key, v]) => {
-              const fits = variantFits[key];
-              return (
-                <Pill
-                  key={key}
-                  active={variant === key}
-                  onClick={() => selectVariant(key)}
-                  dimmed={!fits}
-                  title={fits ? undefined : `Needs ${v.vram_minimum_gb} GB — won't fit on selected hardware`}
-                >
-                  <span className="font-mono font-semibold">{v.precision?.toUpperCase()}</span>
-                  <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
-                </Pill>
-              );
-            })}
+            {Object.entries(recipe.variants || {}).map(([key, v]) => (
+              <Pill
+                key={key}
+                active={variant === key}
+                onClick={() => selectVariant(key)}
+                title={`Min ${v.vram_minimum_gb} GB total VRAM — scale out via multi-node if needed`}
+              >
+                <span className="font-mono font-semibold">{v.precision?.toUpperCase()}</span>
+                <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
+              </Pill>
+            ))}
           </PillGroup>
         </ConfigRow>
 
@@ -428,6 +441,31 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               {strategies[activeStrategy].description.split("\n")[0]}
             </p>
           )}
+        </ConfigRow>
+
+        {/* Nodes */}
+        <ConfigRow label="Nodes">
+          <PillGroup>
+            {[1, 2].map((n) => (
+              <Pill
+                key={n}
+                active={nodeCount === n}
+                onClick={() => selectNodes(n)}
+                title={
+                  n === 1
+                    ? "Single-node deployment (one HGX box)"
+                    : `2 nodes × ${hwProfile.gpu_count || 8} GPUs = ${2 * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
+                }
+              >
+                <span className="font-semibold">{n === 1 ? "Single node" : "Multi-node (example: 2)"}</span>
+                {n > 1 && (
+                  <span className="text-muted-foreground ml-1.5 font-mono">
+                    {2 * (hwProfile.gpu_count || 8)}×GPU
+                  </span>
+                )}
+              </Pill>
+            ))}
+          </PillGroup>
         </ConfigRow>
 
         {/* Features */}
@@ -551,6 +589,46 @@ function DependenciesBlock({ deps }) {
             <div className="text-[var(--command-fg)] whitespace-pre">{d.command}</div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function MultiNodeBlock({ result, verifyCmd, benchCmd }) {
+  const [tab, setTab] = useState("head");
+  const tabs = [
+    { id: "head", label: "Head", command: result.headCommand },
+    { id: "worker", label: "Node 1", command: result.workerCommand },
+  ];
+  const active = tabs.find((t) => t.id === tab) || tabs[0];
+  return (
+    <div>
+      <div className="flex items-center justify-between px-4 pt-3">
+        <div className="flex gap-0.5 bg-foreground/5 rounded-md p-0.5">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                tab === t.id ? "bg-foreground/10 text-[var(--command-fg)]" : "text-[var(--command-fg)]/50 hover:text-[var(--command-fg)]/80"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <CopyButton text={active.command} />
+          <PopoverButton label="Verify" code={verifyCmd} icon={Terminal} />
+          <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
+        </div>
+      </div>
+      <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
+        {active.command}
+      </pre>
+      <div className="px-4 pb-3 text-[11px] text-[var(--command-fg)]/45 font-mono leading-snug">
+        # Set $HEAD_IP to the rank-0 node's IP before launch. Scale to N nodes by replicating
+        # this worker command with --node-rank = i (TP/TEP) or --data-parallel-start-rank = i × local_gpus (DEP).
       </div>
     </div>
   );
