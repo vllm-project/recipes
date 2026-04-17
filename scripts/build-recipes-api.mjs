@@ -40,6 +40,20 @@ function normalizeDates(obj) {
   return obj;
 }
 
+// Recursively find all .yaml files under a directory
+function findYamlFiles(dir) {
+  const results = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...findYamlFiles(full));
+    } else if (entry.name.endsWith(".yaml") || entry.name.endsWith(".yml")) {
+      results.push(full);
+    }
+  }
+  return results;
+}
+
 // ── Taxonomy ──
 const taxonomy = normalizeDates(readYaml(path.join(ROOT, "taxonomy.yaml")));
 writeJson("taxonomy.json", taxonomy);
@@ -54,20 +68,30 @@ for (const file of fs.readdirSync(strategiesDir).filter((f) => f.endsWith(".yaml
 }
 writeJson("strategies.json", strategies);
 
-// ── Recipes ──
+// ── Recipes ── (walks models/<hf_org>/<hf_repo>.yaml)
 const modelsDir = path.join(ROOT, "models");
 const recipes = [];
-for (const file of fs.readdirSync(modelsDir).filter((f) => f.endsWith(".yaml"))) {
-  const r = normalizeDates(readYaml(path.join(modelsDir, file)));
+for (const file of findYamlFiles(modelsDir)) {
+  const r = normalizeDates(readYaml(file));
+  // Derive HF identity from path
+  const rel = path.relative(modelsDir, file);
+  const parts = rel.split(path.sep);
+  if (parts.length >= 2) {
+    r.hf_org = parts[0];
+    r.hf_repo = parts[parts.length - 1].replace(/\.(yaml|yml)$/, "");
+    r.hf_id = `${r.hf_org}/${r.hf_repo}`;
+  }
   recipes.push(r);
-  // /models/deepseek-v3.2.json
-  writeJson(`models/${r.meta.slug}.json`, r);
+  // JSON at /<org>/<repo>.json — mirrors HF URL scheme
+  writeJson(`${r.hf_org}/${r.hf_repo}.json`, r);
 }
 
 // /models.json — index (no guide field, compact)
 const index = recipes.map((r) => ({
+  hf_id: r.hf_id,
+  hf_org: r.hf_org,
+  hf_repo: r.hf_repo,
   title: r.meta.title,
-  slug: r.meta.slug,
   provider: r.meta.provider,
   description: r.meta.description,
   date_updated: r.meta.date_updated,
@@ -88,8 +112,8 @@ const index = recipes.map((r) => ({
   compatible_strategies: r.compatible_strategies,
   features: Object.keys(r.features || {}),
   opt_in_features: r.opt_in_features || [],
-  url: `/models/${r.meta.slug}`,
-  json: `/models/${r.meta.slug}.json`,
+  url: `/${r.hf_id}`,
+  json: `/${r.hf_id}.json`,
 }));
 writeJson("models.json", index);
 
@@ -106,6 +130,6 @@ console.log(
   `✓ JSON API: ${recipes.length} models, ${Object.keys(strategies).length} strategies`
 );
 console.log(`  /models.json`);
-console.log(`  /models/{slug}.json`);
+console.log(`  /{hf_org}/{hf_repo}.json  (e.g. /moonshotai/Kimi-K2.5.json)`);
 console.log(`  /strategies.json`);
 console.log(`  /taxonomy.json`);

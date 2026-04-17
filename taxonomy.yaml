@@ -2,164 +2,80 @@
 # All hardware_profiles, tasks, and strategies referenced in recipes must be defined here.
 
 hardware_profiles:
-  1x-consumer:
-    display_name: "1x Consumer GPU"
-    description: "Single RTX 4090/5090"
-    gpu_generation: [ada, blackwell]
-    vram_gb: 24
-    gpu_count: 1
-    multi_node: false
-
-  1x-a100-40:
-    display_name: "1x A100 40GB"
-    description: "Single A100 40GB"
-    gpu_generation: ampere
-    vram_gb: 40
-    gpu_count: 1
-    multi_node: false
-
-  1x-a100-80:
-    display_name: "1x A100 80GB"
-    description: "Single A100 80GB"
-    gpu_generation: ampere
-    vram_gb: 80
-    gpu_count: 1
-    multi_node: false
-
-  1x-h100:
-    display_name: "1x H100 80GB"
-    description: "Single H100 80GB"
-    gpu_generation: hopper
-    vram_gb: 80
-    gpu_count: 1
-    multi_node: false
-
-  2x-a100-80:
-    display_name: "2x A100 80GB"
-    description: "2x A100 80GB"
-    gpu_generation: ampere
-    vram_gb: 160
-    gpu_count: 2
-    multi_node: false
-
-  2x-h100:
-    display_name: "2x H100 NVLink"
-    description: "2x H100 80GB NVLink"
-    gpu_generation: hopper
-    vram_gb: 160
-    gpu_count: 2
-    multi_node: false
-
-  4x-a100-80:
-    display_name: "4x A100 80GB"
-    description: "4x A100 80GB"
-    gpu_generation: ampere
-    vram_gb: 320
-    gpu_count: 4
-    multi_node: false
-
-  4x-h100:
-    display_name: "4x H100 NVLink"
-    description: "4x H100 80GB NVLink"
-    gpu_generation: hopper
-    vram_gb: 320
-    gpu_count: 4
-    multi_node: false
-
-  8x-a100-80:
-    display_name: "8x A100 80GB"
-    description: "Single node, 8x A100 80GB"
-    gpu_generation: ampere
-    vram_gb: 640
+  # ── NVIDIA Hopper ──
+  h100:
+    brand: NVIDIA
+    generation: hopper
+    display_name: "H100"
+    description: "NVIDIA H100 80GB NVLink (8-GPU node)"
     gpu_count: 8
-    multi_node: false
-
-  8x-h100:
-    display_name: "8x H100"
-    description: "Single node, 8x H100 80GB NVLink"
-    gpu_generation: hopper
     vram_gb: 640
-    gpu_count: 8
     multi_node: false
 
-  8x-h200:
-    display_name: "8x H200"
-    description: "Single node, 8x H200 141GB NVLink"
-    gpu_generation: hopper
+  h200:
+    brand: NVIDIA
+    generation: hopper
+    display_name: "H200"
+    description: "NVIDIA H200 141GB NVLink (8-GPU node)"
+    gpu_count: 8
     vram_gb: 1128
+    multi_node: false
+
+  # ── NVIDIA Blackwell ──
+  b200:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "B200"
+    description: "NVIDIA B200 192GB NVLink (8-GPU node)"
     gpu_count: 8
+    vram_gb: 1536
     multi_node: false
 
-  8x-blackwell:
-    display_name: "8x B200/GB200"
-    description: "Single node, 8x B200/GB200 NVLink"
-    gpu_generation: blackwell
-    vram_gb: 1440
+  gb200:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "GB200"
+    description: "NVIDIA GB200 Grace-Blackwell superchip (8-GPU node)"
     gpu_count: 8
+    vram_gb: 1536
     multi_node: false
 
-  multi-node:
-    display_name: "Multiple Nodes"
-    description: "Multiple nodes, any GPU"
-    gpu_generation: any
-    vram_gb: 0
-    gpu_count: 0
-    multi_node: true
-
-  amd-mi300x:
-    display_name: "AMD MI300X"
-    description: "AMD Instinct MI300X"
-    gpu_generation: amd
-    vram_gb: 192
+  # ── NVIDIA Blackwell Ultra ──
+  b300:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "B300"
+    description: "NVIDIA B300 288GB NVLink (8-GPU node)"
     gpu_count: 8
+    vram_gb: 2304
     multi_node: false
 
-  amd-mi325x:
-    display_name: "AMD MI325X"
-    description: "AMD Instinct MI325X"
-    gpu_generation: amd
-    vram_gb: 256
+  gb300:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "GB300"
+    description: "NVIDIA GB300 Grace-Blackwell Ultra superchip (8-GPU node)"
     gpu_count: 8
+    vram_gb: 2304
     multi_node: false
 
-  intel-gaudi-2:
-    display_name: "Intel Gaudi 2"
-    description: "Intel Gaudi 2 accelerators"
-    gpu_generation: intel
-    vram_gb: 96
+  # ── AMD Instinct ──
+  mi325x:
+    brand: AMD
+    generation: amd
+    display_name: "MI325X"
+    description: "AMD Instinct MI325X 256GB (8-GPU node)"
     gpu_count: 8
+    vram_gb: 2048
     multi_node: false
 
-  intel-gaudi-3:
-    display_name: "Intel Gaudi 3"
-    description: "Intel Gaudi 3 accelerators"
-    gpu_generation: intel
-    vram_gb: 128
+  mi355x:
+    brand: AMD
+    generation: amd
+    display_name: "MI355X"
+    description: "AMD Instinct MI355X 288GB (8-GPU node)"
     gpu_count: 8
-    multi_node: false
-
-  tpu-v5e:
-    display_name: "Google TPU v5e"
-    description: "Google TPU v5e"
-    gpu_generation: tpu
-    vram_gb: 0
-    gpu_count: 0
-    multi_node: false
-
-  tpu-v5p:
-    display_name: "Google TPU v5p"
-    description: "Google TPU v5p"
-    gpu_generation: tpu
-    vram_gb: 0
-    gpu_count: 0
-    multi_node: false
-
-  cpu-only:
-    display_name: "CPU Only"
-    description: "CPU inference, no accelerator"
-    gpu_generation: cpu
-    vram_gb: 0
-    gpu_count: 0
+    vram_gb: 2304
     multi_node: false
 
 tasks:

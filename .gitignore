@@ -5,9 +5,10 @@ site/
 .next/
 out/
 node_modules/
+
+# Generated JSON API artifacts (built at pnpm build time)
 public/models.json
-public/models/*.json
 public/strategies.json
-public/strategies/
 public/taxonomy.json
-public/quickstart/
+public/strategies/
+public/*/

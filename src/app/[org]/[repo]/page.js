@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getAllRecipes, getRecipe } from "@/lib/recipes";
+import { getAllRecipes, getRecipeByHfId } from "@/lib/recipes";
 import { recipeHref } from "@/lib/recipe-utils";
 import { loadStrategies } from "@/lib/strategies";
 import { loadTaxonomy } from "@/lib/taxonomy";
@@ -13,25 +13,25 @@ import rehypeSlug from "rehype-slug";
 import rehypePrettyCode from "rehype-pretty-code";
 import rehypeRaw from "rehype-raw";
 import { Badge } from "@/components/ui/badge";
-import { Cpu, Layers, Pencil, Bug } from "lucide-react";
+import { Cpu, Layers, Pencil, Bug, ExternalLink } from "lucide-react";
 
 export async function generateStaticParams() {
   return getAllRecipes().map((r) => ({
-    provider: r.meta.provider.toLowerCase().replace(/\s+/g, "-"),
-    slug: r.meta.slug,
+    org: r.hf_org,
+    repo: r.hf_repo,
   }));
 }
 
 export async function generateMetadata({ params }) {
-  const { slug } = await params;
-  const recipe = getRecipe(slug);
+  const { org, repo } = await params;
+  const recipe = getRecipeByHfId(org, repo);
   if (!recipe) return {};
   return { title: recipe.meta.title, description: recipe.meta.description };
 }
 
 export default async function RecipePage({ params }) {
-  const { slug } = await params;
-  const recipe = getRecipe(slug);
+  const { org, repo } = await params;
+  const recipe = getRecipeByHfId(org, repo);
   if (!recipe) notFound();
 
   const strategies = loadStrategies();
@@ -51,8 +51,9 @@ export default async function RecipePage({ params }) {
   }));
 
   const allRecipes = getAllRecipes();
+  // related_recipes can be either "org/repo" HF id or the old slug format
   const related = (recipe.meta.related_recipes || [])
-    .map((s) => allRecipes.find((r) => r.meta.slug === s))
+    .map((s) => allRecipes.find((r) => r.hf_id === s || r.meta.slug === s))
     .filter(Boolean);
 
   return (
@@ -64,9 +65,21 @@ export default async function RecipePage({ params }) {
             // eslint-disable-next-line @next/next/no-img-element
             <img src={logo} alt={recipe.meta.provider} width={44} height={44} className="rounded-xl mt-0.5 shrink-0" />
           )}
-          <div className="min-w-0">
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{recipe.meta.title}</h1>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight font-mono break-all">
+              <span className="text-muted-foreground font-normal">{recipe.hf_org}/</span>
+              {recipe.hf_repo}
+            </h1>
             <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{recipe.meta.description}</p>
+            <a
+              href={`https://huggingface.co/${recipe.hf_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-vllm-blue transition-colors mt-2"
+            >
+              View on HuggingFace
+              <ExternalLink size={10} />
+            </a>
           </div>
         </div>
 
@@ -83,7 +96,16 @@ export default async function RecipePage({ params }) {
               : ""}
           </Badge>
           <Badge variant="outline" className="text-xs">{(recipe.model.context_length || 0).toLocaleString()} ctx</Badge>
-          <Badge variant="outline" className="text-xs">vLLM {recipe.model.min_vllm_version}+</Badge>
+          <a
+            href="https://vllm.ai/#quick-start"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Install vLLM"
+            className="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap transition-colors hover:border-vllm-blue/50 hover:text-vllm-blue"
+          >
+            vLLM {recipe.model.min_vllm_version}+
+            <ExternalLink size={10} className="ml-1 opacity-50" />
+          </a>
           {hwTags.map((t) => (
             <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>
           ))}
@@ -110,7 +132,7 @@ export default async function RecipePage({ params }) {
                 options={{
                   mdxOptions: {
                     remarkPlugins: [remarkGfm],
-                    rehypePlugins: [rehypeRaw, rehypeSlug, [rehypePrettyCode, { theme: "github-dark-default", keepBackground: false }]],
+                    rehypePlugins: [rehypeRaw, rehypeSlug, [rehypePrettyCode, { theme: { light: "github-light", dark: "github-dark-default" }, keepBackground: false }]],
                   },
                 }}
               />
@@ -150,7 +172,7 @@ export default async function RecipePage({ params }) {
       <footer className="mt-10 pt-4 border-t border-border text-sm text-muted-foreground flex flex-wrap gap-x-4 gap-y-2">
         <span>Updated {recipe.meta.date_updated}</span>
         <a
-          href={`https://github.com/vllm-project/recipes/edit/main/models/${recipe.meta.slug}.yaml`}
+          href={`https://github.com/vllm-project/recipes/edit/main/models/${recipe.hf_org}/${recipe.hf_repo}.yaml`}
           className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
         >
           <Pencil size={12} /> Edit recipe

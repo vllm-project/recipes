@@ -33,17 +33,26 @@ export default function RootLayout({ children }) {
       <body className="antialiased bg-background text-foreground min-h-screen flex flex-col">
         {/* Global header */}
         <header className="border-b border-border bg-background/95 backdrop-blur-sm sticky top-0 z-30">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-            <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+            <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity group">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src="https://docs.vllm.ai/en/latest/assets/logos/vllm-logo-only-light.ico"
+                src="https://docs.vllm.ai/en/latest/assets/logos/vllm-logo-text-light.png"
                 alt="vLLM"
-                width={28}
-                height={28}
-                className="dark:invert"
+                width={96}
+                height={36}
+                className="h-8 w-auto dark:hidden"
               />
-              <span className="font-bold text-base">Recipes</span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="https://docs.vllm.ai/en/latest/assets/logos/vllm-logo-text-dark.png"
+                alt="vLLM"
+                width={96}
+                height={36}
+                className="h-8 w-auto hidden dark:block"
+              />
+              <span className="text-muted-foreground/50 font-light text-xl leading-none">/</span>
+              <span className="font-semibold text-base group-hover:text-vllm-blue transition-colors">Recipes</span>
             </Link>
             <nav className="flex items-center gap-5 text-sm text-muted-foreground">
               <a href="https://docs.vllm.ai" className="hover:text-foreground transition-colors hidden sm:inline">Docs</a>

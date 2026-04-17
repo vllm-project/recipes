@@ -9,7 +9,7 @@ meta:
     - text
   performance_headline: ""
   related_recipes:
-    - llama3.3-70b
+    - meta-llama/Llama-3.3-70B-Instruct
 
 model:
   model_id: "meta-llama/Llama-4-Scout-17B-16E-Instruct"

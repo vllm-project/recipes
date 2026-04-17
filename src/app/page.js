@@ -19,16 +19,16 @@ export default async function HomePage() {
       {/* ── Hero ── */}
       <section className="mb-10">
         <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-          Deploy any model on any hardware
+          How do I run <span className="text-vllm-blue">model X</span> on{" "}
+          <span className="text-vllm-blue">hardware Y</span>?
         </h2>
         <p className="text-muted-foreground mt-2 max-w-2xl">
-          Community-maintained deployment recipes for vLLM. Each recipe provides a verified,
-          copy-ready serving configuration with interactive hardware and strategy selection.
+          Community-maintained recipes for deploying any model on any hardware with vLLM.
+          Pick a model, get a copy-ready <code className="text-xs font-mono bg-muted px-1 py-0.5 rounded">vllm serve</code> command.
         </p>
         <div className="flex flex-wrap gap-3 mt-4">
           {[
-            { label: "Supported Models", href: "https://docs.vllm.ai/en/latest/models/supported_models.html" },
-            { label: "Supported Hardware", href: "https://docs.vllm.ai/en/latest/getting_started/installation/gpu/index.html" },
+            { label: "Supported Models & Hardware", href: "https://vllm.ai/#compatibility" },
             { label: "Documentation", href: "https://docs.vllm.ai" },
             { label: "Contribute", href: "https://github.com/vllm-project/recipes" },
           ].map(({ label, href }) => (
@@ -54,7 +54,7 @@ export default async function HomePage() {
       {/* ── Recipe catalog ── */}
       <section>
         <Suspense fallback={<div className="text-sm text-muted-foreground py-8">Loading recipes...</div>}>
-          <RecipeCardGrid recipes={recipes} taxonomy={taxonomy} />
+          <RecipeCardGrid recipes={recipes} />
         </Suspense>
       </section>
     </main>

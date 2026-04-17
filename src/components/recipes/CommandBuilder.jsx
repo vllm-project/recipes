@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
-import { Copy, Check, Terminal, Gauge } from "lucide-react";
+import { Copy, Check, Terminal, Gauge, Sparkles } from "lucide-react";
 import { resolveCommand, recommendStrategy, filterHardwareByVram } from "@/lib/command-synthesis";
+import { loadPreferences, savePreference } from "@/lib/preferences";
 
 function CopyButton({ text, className = "" }) {
   const [copied, setCopied] = useState(false);
@@ -19,7 +19,7 @@ function CopyButton({ text, className = "" }) {
       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
         copied
           ? "bg-green-500/20 text-green-600 dark:text-green-400"
-          : "bg-foreground/10 text-foreground/60 hover:bg-foreground/15 hover:text-foreground/80"
+          : "bg-foreground/10 text-foreground/60 hover:bg-foreground/15 hover:text-foreground/90"
       } ${className}`}
     >
       {copied ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy</>}
@@ -27,7 +27,7 @@ function CopyButton({ text, className = "" }) {
   );
 }
 
-function PopoverButton({ label, code }) {
+function PopoverButton({ label, code, icon: Icon }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -41,21 +41,23 @@ function PopoverButton({ label, code }) {
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-foreground/5 text-foreground/60 hover:bg-foreground/10 hover:text-foreground/80 transition-colors"
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-foreground/5 text-foreground/60 hover:bg-foreground/10 hover:text-foreground/90 transition-colors"
       >
-        {label === "Verify" ? <Terminal size={11} /> : <Gauge size={11} />}
+        <Icon size={11} />
         {label}
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-2 z-50 w-[400px] max-w-[90vw] rounded-xl border border-border bg-card shadow-xl overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-              <span className="text-xs font-medium">{label}</span>
+          <div className="absolute right-0 top-full mt-2 z-50 w-[440px] max-w-[90vw] rounded-xl border border-border bg-card shadow-xl overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
+              <span className="text-xs font-semibold flex items-center gap-1.5">
+                <Icon size={12} /> {label}
+              </span>
               <button
                 onClick={handleCopy}
                 className={`text-[11px] flex items-center gap-1 px-2 py-0.5 rounded transition-colors ${
-                  copied ? "text-green-600" : "text-muted-foreground hover:text-foreground"
+                  copied ? "text-green-600 dark:text-green-400" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 {copied ? <><Check size={10} /> Copied</> : <><Copy size={10} /> Copy</>}
@@ -76,14 +78,33 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  // ── State ──
   const [variant, setVariant] = useState(searchParams.get("variant") || "default");
-  // Default hardware: pick smallest compatible profile for the default variant
+
+  // Compute default hardware: URL param > stored preference (if compatible) > smallest compatible profile
   const defaultHw = useMemo(() => {
     const defaultVariant = recipe.variants?.default || Object.values(recipe.variants || {})[0] || {};
     const compatible = filterHardwareByVram(taxonomy.hardware_profiles, defaultVariant);
-    return compatible[0] || "8x-h100";
+    return compatible[0] || "h100";
   }, [recipe, taxonomy]);
+
   const [hwId, setHwId] = useState(searchParams.get("hardware") || defaultHw);
+
+  // After mount: check localStorage preference if no URL param
+  useEffect(() => {
+    if (!searchParams.get("hardware")) {
+      const prefs = loadPreferences();
+      if (prefs.hardware) {
+        const currentVariantObj = recipe.variants?.[variant] || recipe.variants?.default || {};
+        const compatible = filterHardwareByVram(taxonomy.hardware_profiles, currentVariantObj);
+        if (compatible.includes(prefs.hardware)) {
+          setHwId(prefs.hardware);
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [strategyOverride, setStrategyOverride] = useState(searchParams.get("strategy") || "");
   const [features, setFeatures] = useState(() => {
     const fp = searchParams.get("features");
@@ -91,12 +112,44 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     return Object.keys(recipe.features || {}).filter((f) => !(recipe.opt_in_features || []).includes(f));
   });
 
+  // ── Derived ──
   const currentVariant = recipe.variants?.[variant] || recipe.variants?.default || {};
-  const compatibleHw = useMemo(
-    () => filterHardwareByVram(taxonomy.hardware_profiles, currentVariant),
-    [taxonomy, currentVariant]
-  );
+
+  // All hardware profiles grouped by brand, sorted by VRAM within brand
+  const hwByBrand = useMemo(() => {
+    const groups = {};
+    for (const [id, p] of Object.entries(taxonomy.hardware_profiles || {})) {
+      const brand = p.brand || "Other";
+      if (!groups[brand]) groups[brand] = [];
+      groups[brand].push([id, p]);
+    }
+    for (const brand of Object.keys(groups)) {
+      groups[brand].sort((a, b) => (a[1].vram_gb || 0) - (b[1].vram_gb || 0));
+    }
+    // Return in brand order: NVIDIA first, then AMD, then others
+    const order = ["NVIDIA", "AMD"];
+    return Object.entries(groups).sort(
+      ([a], [b]) => {
+        const ai = order.indexOf(a);
+        const bi = order.indexOf(b);
+        if (ai === -1 && bi === -1) return a.localeCompare(b);
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      }
+    );
+  }, [taxonomy]);
+
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
+
+  // Check which variants fit the current hardware
+  const variantFits = useMemo(() => {
+    const result = {};
+    for (const [key, v] of Object.entries(recipe.variants || {})) {
+      result[key] = hwProfile.multi_node || (hwProfile.vram_gb || 0) >= (v.vram_minimum_gb || 0);
+    }
+    return result;
+  }, [recipe.variants, hwProfile]);
   const recommended = useMemo(() => recommendStrategy(recipe, hwProfile), [recipe, hwProfile]);
   const activeStrategy = strategyOverride || recommended;
 
@@ -115,6 +168,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     [recipe, variant, activeStrategy, hwId, features, strategies, taxonomy]
   );
 
+  // Visual feedback when command changes
+  const [changed, setChanged] = useState(false);
+  useEffect(() => {
+    setChanged(true);
+    const t = setTimeout(() => setChanged(false), 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result.command]);
+
+  // ── URL sync ──
   const syncUrl = useCallback(
     (updates) => {
       const sp = new URLSearchParams(searchParams.toString());
@@ -125,8 +188,46 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       const qs = sp.toString();
       router.replace(qs ? `?${qs}` : pathname, { scroll: false });
     },
-    [searchParams, router, recommended]
+    [searchParams, router, recommended, pathname]
   );
+
+  // ── Handlers ──
+  const selectVariant = (key) => {
+    setVariant(key);
+    syncUrl({ variant: key });
+    // Re-validate hardware compatibility — if variant too big for current hardware, upgrade hardware
+    const v = recipe.variants?.[key] || {};
+    const compat = filterHardwareByVram(taxonomy.hardware_profiles, v);
+    if (!compat.includes(hwId)) {
+      setHwId(compat[0] || "h100");
+      syncUrl({ hardware: compat[0] || "" });
+    }
+  };
+
+  const selectHardware = (id) => {
+    setHwId(id);
+    setStrategyOverride("");
+    syncUrl({ hardware: id, strategy: "" });
+    savePreference("hardware", id);
+    // If current variant doesn't fit new hardware, pick the largest variant that fits
+    const newHw = taxonomy.hardware_profiles?.[id] || {};
+    const currentFits = newHw.multi_node || (newHw.vram_gb || 0) >= (currentVariant.vram_minimum_gb || 0);
+    if (!currentFits) {
+      const sorted = Object.entries(recipe.variants || {}).sort(
+        (a, b) => (b[1].vram_minimum_gb || 0) - (a[1].vram_minimum_gb || 0)
+      );
+      const fitting = sorted.find(([, v]) => newHw.multi_node || (newHw.vram_gb || 0) >= (v.vram_minimum_gb || 0));
+      if (fitting) {
+        setVariant(fitting[0]);
+        syncUrl({ variant: fitting[0] });
+      }
+    }
+  };
+
+  const selectStrategy = (s) => {
+    setStrategyOverride(s);
+    syncUrl({ strategy: s });
+  };
 
   const toggleFeature = (f) => {
     const next = features.includes(f) ? features.filter((x) => x !== f) : [...features, f];
@@ -135,8 +236,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   };
 
   const isPd = result.deployType === "pd_cluster";
-
   const modelId = recipe.variants?.[variant]?.model_id || recipe.model?.model_id || "model";
+
   const verifyCmd = `curl http://localhost:8000/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -144,6 +245,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     "messages": [{"role": "user", "content": "Hello"}],
     "max_tokens": 32
   }'`;
+
   const benchCmd = `vllm bench serve \\
   --model ${modelId} \\
   --dataset-name random \\
@@ -154,18 +256,22 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   return (
     <div className="space-y-4">
-      {/* ── Command output (the hero) ── */}
-      <div className="rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border">
+      {/* ── Command output ── */}
+      <div
+        className={`rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border transition-shadow ${
+          changed ? "ring-2 ring-vllm-blue/30" : ""
+        }`}
+      >
         {isPd ? (
-          <PdClusterBlock result={result} />
+          <PdClusterBlock result={result} verifyCmd={verifyCmd} benchCmd={benchCmd} />
         ) : (
           <div>
             <div className="flex items-center justify-between px-4 pt-3">
-              <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">vllm serve</span>
+              <span className="text-[11px] text-[var(--command-fg)]/50 font-mono">vllm serve</span>
               <div className="flex items-center gap-1.5">
                 <CopyButton text={result.command} />
-                <PopoverButton label="Verify" code={verifyCmd} />
-                <PopoverButton label="Bench" code={benchCmd} />
+                <PopoverButton label="Verify" code={verifyCmd} icon={Terminal} />
+                <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
               </div>
             </div>
             <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
@@ -175,91 +281,136 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         )}
       </div>
 
-      {/* ── Configuration controls ── */}
-      <div className="rounded-xl border border-border p-4 space-y-4">
-        {/* Row 1: Variant (radio row) */}
-        <div>
-          <label className="text-[10px] font-semibold text-muted-foreground mb-2 block uppercase tracking-widest">Variant</label>
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(recipe.variants || {}).map(([key, v]) => (
-              <button
-                key={key}
-                onClick={() => { setVariant(key); syncUrl({ variant: key }); }}
-                className={`rounded-lg border px-3 py-2 text-xs font-mono transition-all ${
-                  variant === key
-                    ? "border-vllm-blue bg-vllm-blue/5 shadow-sm ring-1 ring-vllm-blue/20"
-                    : "border-border hover:border-muted-foreground/30"
-                }`}
-              >
-                <span className="font-semibold">{v.precision?.toUpperCase()}</span>
-                <span className="text-muted-foreground ml-1.5">{v.vram_minimum_gb} GB</span>
-              </button>
+      {/* ── Configuration ── */}
+      <div className="rounded-xl border border-border divide-y divide-border">
+        {/* Hardware (first — user's fixed constraint, grouped by brand) */}
+        <ConfigRow label="Hardware">
+          <div className="space-y-1.5">
+            {hwByBrand.map(([brand, profiles]) => (
+              <div key={brand} className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 w-14 shrink-0">
+                  {brand}
+                </span>
+                <PillGroup>
+                  {profiles.map(([id, p]) => (
+                    <Pill
+                      key={id}
+                      active={hwId === id}
+                      onClick={() => selectHardware(id)}
+                      title={p.description}
+                    >
+                      <span className="font-semibold">{p.display_name}</span>
+                      {p.vram_gb > 0 && <span className="text-muted-foreground ml-1.5 font-mono">{p.vram_gb}G</span>}
+                    </Pill>
+                  ))}
+                </PillGroup>
+              </div>
             ))}
           </div>
-        </div>
+        </ConfigRow>
 
-        {/* Row 2: Hardware + Strategy + Features in a responsive row */}
-        <div className="flex flex-wrap gap-4">
-          <div className="min-w-[180px]">
-            <label className="text-[10px] font-semibold text-muted-foreground mb-1.5 block uppercase tracking-widest">Hardware</label>
-            <select
-              value={hwId}
-              onChange={(e) => { setHwId(e.target.value); setStrategyOverride(""); syncUrl({ hardware: e.target.value, strategy: "" }); }}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-vllm-blue/30"
-            >
-              {compatibleHw.map((id) => {
-                const p = taxonomy.hardware_profiles[id];
-                return <option key={id} value={id}>{p.display_name} ({p.vram_gb > 0 ? `${p.vram_gb} GB` : "multi"})</option>;
-              })}
-            </select>
-          </div>
+        {/* Variant (adapts to hardware) */}
+        <ConfigRow label="Variant">
+          <PillGroup>
+            {Object.entries(recipe.variants || {}).map(([key, v]) => {
+              const fits = variantFits[key];
+              return (
+                <Pill
+                  key={key}
+                  active={variant === key}
+                  onClick={() => selectVariant(key)}
+                  dimmed={!fits}
+                  title={fits ? undefined : `Needs ${v.vram_minimum_gb} GB — won't fit on selected hardware`}
+                >
+                  <span className="font-mono font-semibold">{v.precision?.toUpperCase()}</span>
+                  <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
+                </Pill>
+              );
+            })}
+          </PillGroup>
+        </ConfigRow>
 
-          <div className="min-w-[180px]">
-            <label className="text-[10px] font-semibold text-muted-foreground mb-1.5 block uppercase tracking-widest">Strategy</label>
-            <select
-              value={activeStrategy}
-              onChange={(e) => { setStrategyOverride(e.target.value); syncUrl({ strategy: e.target.value }); }}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-vllm-blue/30"
-            >
-              {compatibleStrategies.map((s) => (
-                <option key={s} value={s}>
-                  {strategies[s]?.display_name || s}{s === recommended ? " ★" : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Features as inline pills */}
-          {Object.keys(recipe.features || {}).length > 0 && (
-            <div>
-              <label className="text-[10px] font-semibold text-muted-foreground mb-1.5 block uppercase tracking-widest">Features</label>
-              <div className="flex flex-wrap gap-1.5">
-                {Object.entries(recipe.features || {}).map(([key]) => {
-                  const active = features.includes(key);
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => toggleFeature(key)}
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-all ${
-                        active
-                          ? "bg-vllm-blue/10 text-vllm-blue ring-1 ring-vllm-blue/20"
-                          : "bg-secondary text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      {key.replace(/_/g, " ")}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+        {/* Strategy */}
+        <ConfigRow label="Strategy">
+          <PillGroup>
+            {compatibleStrategies.map((s) => (
+              <Pill
+                key={s}
+                active={activeStrategy === s}
+                onClick={() => selectStrategy(s)}
+                title={strategies[s]?.description}
+              >
+                <span className="font-semibold">{strategies[s]?.display_name || s}</span>
+                {s === recommended && (
+                  <Sparkles size={10} className="text-vllm-yellow ml-1" />
+                )}
+              </Pill>
+            ))}
+          </PillGroup>
+          {strategies[activeStrategy]?.description && (
+            <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+              {strategies[activeStrategy].description.split("\n")[0]}
+            </p>
           )}
-        </div>
+        </ConfigRow>
+
+        {/* Features */}
+        {Object.keys(recipe.features || {}).length > 0 && (
+          <ConfigRow label="Features">
+            <PillGroup>
+              {Object.entries(recipe.features || {}).map(([key]) => (
+                <Pill
+                  key={key}
+                  active={features.includes(key)}
+                  onClick={() => toggleFeature(key)}
+                >
+                  {key.replace(/_/g, " ")}
+                </Pill>
+              ))}
+            </PillGroup>
+          </ConfigRow>
+        )}
       </div>
     </div>
   );
 }
 
-function PdClusterBlock({ result }) {
+// ── Sub-components ──
+
+function ConfigRow({ label, children }) {
+  return (
+    <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
+      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest sm:w-20 sm:pt-1.5 shrink-0">
+        {label}
+      </div>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  );
+}
+
+function PillGroup({ children }) {
+  return <div className="flex flex-wrap gap-1.5">{children}</div>;
+}
+
+function Pill({ active, onClick, title, dimmed, children }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`inline-flex items-center rounded-lg border px-2.5 py-1.5 text-xs transition-all ${
+        active
+          ? "border-vllm-blue bg-vllm-blue/5 text-foreground ring-1 ring-vllm-blue/20 shadow-sm"
+          : dimmed
+          ? "border-dashed border-border/60 text-muted-foreground/50 hover:text-muted-foreground hover:border-muted-foreground/30"
+          : "border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40 hover:bg-muted/30"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function PdClusterBlock({ result, verifyCmd, benchCmd }) {
   const [tab, setTab] = useState("prefill");
   const tabs = [
     { id: "prefill", label: "Prefill", command: result.prefillCommand },
@@ -270,20 +421,24 @@ function PdClusterBlock({ result }) {
   return (
     <div>
       <div className="flex items-center justify-between px-4 pt-3">
-        <div className="flex gap-0">
+        <div className="flex gap-0.5 bg-foreground/5 rounded-md p-0.5">
           {tabs.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                tab === t.id ? "bg-foreground/10 text-[var(--command-fg)]" : "text-[var(--command-fg)]/40 hover:text-[var(--command-fg)]/70"
+              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                tab === t.id ? "bg-foreground/10 text-[var(--command-fg)]" : "text-[var(--command-fg)]/50 hover:text-[var(--command-fg)]/80"
               }`}
             >
               {t.label}
             </button>
           ))}
         </div>
-        <CopyButton text={active.command} />
+        <div className="flex items-center gap-1.5">
+          <CopyButton text={active.command} />
+          <PopoverButton label="Verify" code={verifyCmd} icon={Terminal} />
+          <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
+        </div>
       </div>
       <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
         {active.command}
