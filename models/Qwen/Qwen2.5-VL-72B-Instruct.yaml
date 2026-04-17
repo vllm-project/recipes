@@ -54,6 +54,15 @@ hardware_overrides:
       - "--mm-encoder-tp-mode"
       - "data"
     extra_env: {}
+  amd:
+    # PR #125 verified on MI300X only; TP=2 for throughput, TP=8 for latency.
+    extra_args:
+      - "--mm-encoder-tp-mode"
+      - "data"
+      - "--limit-mm-per-prompt"
+      - '{"image":2,"video":0}'
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
 
 strategy_overrides: {}
 

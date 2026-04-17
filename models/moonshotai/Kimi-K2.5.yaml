@@ -19,8 +19,6 @@ model:
   context_length: 262144
   base_args:
     - "--trust-remote-code"
-  base_env:
-    VLLM_FLASHINFER_MOE_BACKEND: "latency"
 
 features:
   tool_calling:
@@ -75,6 +73,14 @@ hardware_overrides:
   blackwell:
     extra_args: []
     extra_env: {}
+  amd:
+    # Verified on 8× MI300X / MI355X (MI325X listed as supported but not verified).
+    extra_args:
+      - "--block-size=1"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
+      VLLM_ROCM_USE_AITER_RMSNORM: "0"
 
 strategy_overrides:
   single_node_dep:

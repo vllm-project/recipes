@@ -73,6 +73,12 @@ hardware_overrides:
   blackwell:
     extra_args: []
     extra_env: {}
+  amd:
+    # Verified on 8× MI300X / MI325X / MI355X (FP8 path uses --data-parallel-size 8
+    # instead of TP8 — swap strategy to DP if deploying the FP8 checkpoint).
+    extra_args: []
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
 
 strategy_overrides: {}
 

@@ -46,7 +46,12 @@ variants:
 compatible_strategies:
   - single_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_args: []
+    extra_env:
+      VLLM_USE_TRITON_FLASH_ATTN: "0"
+      SAFETENSORS_FAST_GPU: "1"
 strategy_overrides: {}
 
 guide: |

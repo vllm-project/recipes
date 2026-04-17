@@ -170,7 +170,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // within brand (oldest → newest; matches the semianalysis GPU timeline).
   const hwByBrand = useMemo(() => {
     const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300"];
-    const AMD_ORDER = ["mi325x", "mi355x"];
+    const AMD_ORDER = ["mi300x", "mi325x", "mi355x"];
     const rankIn = (list, id) => {
       const i = list.indexOf(id);
       return i === -1 ? 9999 : i;
@@ -374,19 +374,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         ) : isMultiNode ? (
           <MultiNodeBlock result={result} verifyCmd={verifyCmd} benchCmd={benchCmd} />
         ) : (
-          <div>
-            <div className="flex items-center justify-between px-4 pt-3">
-              <span className="text-[11px] text-[var(--command-fg)]/50 font-mono">vllm serve</span>
-              <div className="flex items-center gap-1.5">
-                <CopyButton text={result.command} />
-                <PopoverButton label="Verify" code={verifyCmd} icon={Terminal} />
-                <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
-              </div>
-            </div>
-            <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-              {result.command}
-            </pre>
-          </div>
+          <SingleCommandBlock
+            command={result.command}
+            env={result.env}
+            verifyCmd={verifyCmd}
+            benchCmd={benchCmd}
+          />
         )}
       </div>
 
@@ -618,6 +611,37 @@ function Pill({ active, onClick, title, dimmed, disabled, children }) {
   );
 }
 
+function envToExports(env) {
+  return Object.entries(env || {})
+    .map(([k, v]) => `export ${k}=${v}`)
+    .join("\n");
+}
+
+function SingleCommandBlock({ command, env, verifyCmd, benchCmd }) {
+  const envLines = envToExports(env);
+  const fullScript = envLines ? `${envLines}\n\n${command}` : command;
+  return (
+    <div>
+      <div className="flex items-center justify-between px-4 pt-3">
+        <span className="text-[11px] text-[var(--command-fg)]/50 font-mono">vllm serve</span>
+        <div className="flex items-center gap-1.5">
+          <CopyButton text={fullScript} />
+          <PopoverButton label="Verify" code={verifyCmd} icon={Terminal} />
+          <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
+        </div>
+      </div>
+      {envLines && (
+        <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
+          {envLines}
+        </pre>
+      )}
+      <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
+        {command}
+      </pre>
+    </div>
+  );
+}
+
 function DependenciesBlock({ deps }) {
   const allCommands = deps.map((d) => d.command).join("\n");
   const requiredCount = deps.filter((d) => !d.optional).length;
@@ -655,6 +679,8 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd }) {
     { id: "worker", label: "Node 1", command: result.workerCommand },
   ];
   const active = tabs.find((t) => t.id === tab) || tabs[0];
+  const envLines = envToExports(result.env);
+  const fullScript = envLines ? `${envLines}\n\n${active.command}` : active.command;
   return (
     <div>
       <div className="flex items-center justify-between px-4 pt-3">
@@ -672,7 +698,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd }) {
           ))}
         </div>
         <div className="flex items-center gap-1.5">
-          <CopyButton text={active.command} />
+          <CopyButton text={fullScript} />
           {tab === "head" && (
             <>
               <PopoverButton label="Verify" code={verifyCmd} icon={Terminal} />
@@ -681,6 +707,11 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd }) {
           )}
         </div>
       </div>
+      {envLines && (
+        <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
+          {envLines}
+        </pre>
+      )}
       <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
         {active.command}
       </pre>
@@ -702,7 +733,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd }) {
     { id: "router",  label: "Router",  command: result.router.command, env: {}, install: result.router.install, isRouter: true },
   ];
   const active = tabs.find((t) => t.id === tab) || tabs[0];
-  const envLines = Object.entries(active.env || {}).map(([k, v]) => `export ${k}=${v}`).join("\n");
+  const envLines = envToExports(active.env);
   const fullScript = envLines ? `${envLines}\n\n${active.command}` : active.command;
   return (
     <div>

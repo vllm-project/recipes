@@ -50,7 +50,11 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_args: []
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
 strategy_overrides: {}
 
 guide: |

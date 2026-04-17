@@ -36,7 +36,12 @@ variants:
 compatible_strategies:
   - single_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    # AITER is optional here but recommended for perf on MI300X/MI325X/MI355X.
+    extra_args: []
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
 strategy_overrides: {}
 
 guide: |

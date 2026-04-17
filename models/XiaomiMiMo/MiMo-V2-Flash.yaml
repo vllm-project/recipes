@@ -51,7 +51,12 @@ compatible_strategies:
   - single_node_tp
   - single_node_tep
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    # AITER is disabled for MiMo-V2-Flash (regression when enabled).
+    extra_args: []
+    extra_env:
+      VLLM_ROCM_USE_AITER: "0"
 strategy_overrides: {}
 
 guide: |

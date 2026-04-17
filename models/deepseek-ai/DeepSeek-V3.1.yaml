@@ -71,6 +71,14 @@ hardware_overrides:
   blackwell:
     extra_args: []
     extra_env: {}
+  amd:
+    # AITER attention wins over Triton FA for DeepSeek MoE on MI300X/MI325X/MI355X.
+    extra_args: []
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_USE_AITER_MOE: "1"
+      VLLM_USE_TRITON_FLASH_ATTN: "0"
+      SAFETENSORS_FAST_GPU: "1"
 
 strategy_overrides: {}
 

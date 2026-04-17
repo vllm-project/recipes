@@ -75,6 +75,18 @@ hardware_overrides:
       - '{"pass_config":{"fuse_allreduce_rms":true,"eliminate_noops":true}}'
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP8: "1"
+  amd:
+    # 8 GPUs required for 17B×16E MoE. AITER JIT-compiles on first launch.
+    extra_args:
+      - "--no-enable-prefix-caching"
+      - "--max-num-batched-tokens"
+      - "16384"
+      - "--max-num-seqs"
+      - "64"
+      - "--max-model-len"
+      - "32000"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
 
 strategy_overrides: {}
 

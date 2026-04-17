@@ -50,6 +50,11 @@ hardware_overrides:
   blackwell:
     extra_args: []
     extra_env: {}
+  amd:
+    # Hunyuan-A13B is an AMD-first recipe; AITER acceleration required.
+    extra_args: []
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
 
 strategy_overrides: {}
 

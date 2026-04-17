@@ -81,6 +81,23 @@ hardware_overrides:
       - "--stream-interval"
       - "20"
     extra_env: {}
+  amd:
+    # vLLM 0.17.0+ replaces the old VLLM_ROCM_USE_AITER_* env knobs with
+    # --attention-backend ROCM_AITER_UNIFIED_ATTN. HSA_NO_SCRATCH_RECLAIM is
+    # required on GPUs with firmware MEC < 177; harmless to keep set.
+    extra_args:
+      - "--attention-backend"
+      - "ROCM_AITER_UNIFIED_ATTN"
+      - "-cc.pass_config.fuse_rope_kvcache=True"
+      - "-cc.use_inductor_graph_partition=True"
+      - "--gpu-memory-utilization"
+      - "0.95"
+      - "--block-size=64"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
+      HSA_NO_SCRATCH_RECLAIM: "1"
+      AMDGCN_USE_BUFFER_OPS: "0"
 
 strategy_overrides: {}
 

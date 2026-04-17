@@ -55,6 +55,21 @@ hardware_overrides:
   blackwell:
     extra_args: []
     extra_env: {}
+  amd:
+    # V3.2-Exp uses sparse attention → --block-size 1 + bfloat16 KV cache.
+    extra_args:
+      - "--block-size"
+      - "1"
+      - "--kv-cache-dtype"
+      - "bfloat16"
+      - "--no-enable-prefix-caching"
+      - "--max-num-batched-tokens"
+      - "32768"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_USE_AITER_MOE: "1"
+      SAFETENSORS_FAST_GPU: "1"
+      VLLM_RPC_TIMEOUT: "18000000"
 
 strategy_overrides: {}
 

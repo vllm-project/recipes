@@ -53,7 +53,14 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_args:
+      - "--gpu-memory-utilization"
+      - "0.9"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      SAFETENSORS_FAST_GPU: "1"
 strategy_overrides: {}
 
 guide: |

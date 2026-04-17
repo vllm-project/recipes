@@ -14,6 +14,3 @@ hardware_match:
 vllm_args: []
 
 parallel_flag: "--tensor-parallel-size"
-
-env:
-  VLLM_ALLREDUCE_USE_FLASHINFER: "1"

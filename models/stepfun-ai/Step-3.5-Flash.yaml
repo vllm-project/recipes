@@ -81,6 +81,14 @@ hardware_overrides:
     extra_args: []
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP8: "0"
+  amd:
+    # Step-3.5 uses a custom SWIGLUSTEP activation that AITER MoE doesn't
+    # support in vLLM 0.17.1 — keep AITER on for attention, MoE off.
+    extra_args: []
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_USE_AITER_MOE: "0"
+      VLLM_USE_TRITON_FLASH_ATTN: "0"
 
 strategy_overrides: {}
 

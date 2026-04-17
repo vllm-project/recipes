@@ -61,11 +61,20 @@ hardware_profiles:
     multi_node: false
 
   # ── AMD Instinct ──
+  mi300x:
+    brand: AMD
+    generation: amd
+    display_name: "MI300X"
+    description: "AMD Instinct MI300X 192 GB HBM3 · 8-GPU OAM node (CDNA 3)"
+    gpu_count: 8
+    vram_gb: 1536
+    multi_node: false
+
   mi325x:
     brand: AMD
     generation: amd
     display_name: "MI325X"
-    description: "AMD Instinct MI325X 256GB (8-GPU node)"
+    description: "AMD Instinct MI325X 256 GB HBM3e · 8-GPU OAM node (CDNA 3)"
     gpu_count: 8
     vram_gb: 2048
     multi_node: false
@@ -74,7 +83,7 @@ hardware_profiles:
     brand: AMD
     generation: amd
     display_name: "MI355X"
-    description: "AMD Instinct MI355X 288GB (8-GPU node)"
+    description: "AMD Instinct MI355X 288 GB HBM3e · 8-GPU OAM node (CDNA 4)"
     gpu_count: 8
     vram_gb: 2304
     multi_node: false

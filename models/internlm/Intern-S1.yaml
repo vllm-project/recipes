@@ -58,7 +58,14 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    # VLLM_ROCM_USE_AITER_MOE=0 is required on MI300X/MI325X (FP8 checkpoint).
+    # On MI355X, unset this env for faster AITER MoE kernels.
+    extra_args: []
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_USE_AITER_MOE: "0"
 strategy_overrides: {}
 
 guide: |

@@ -66,6 +66,16 @@ hardware_overrides:
   blackwell:
     extra_args: []
     extra_env: {}
+  amd:
+    # Requires transformers >= 5.0.0; see dependencies.
+    extra_args:
+      - "--mm-encoder-tp-mode"
+      - "data"
+      - "--allowed-local-media-path"
+      - "/"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      SAFETENSORS_FAST_GPU: "1"
 
 strategy_overrides: {}
 
