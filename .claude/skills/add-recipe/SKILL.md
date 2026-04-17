@@ -1,0 +1,150 @@
+---
+name: add-recipe
+description: Use when the user asks to add, contribute, or create a new vLLM recipe in this repo (e.g. "add a recipe for Qwen/Qwen3-XYZ", "create a recipe for huggingface.co/org/model"). Walks through fetching HF metadata, authoring the YAML at models/<hf_org>/<hf_repo>.yaml, picking variants/strategies, validating, and committing.
+---
+
+# Add a new vLLM recipe
+
+Recipes are YAML files at `models/<hf_org>/<hf_repo>.yaml`. The path mirrors HuggingFace (`huggingface.co/<hf_org>/<hf_repo>`), and the site/API are generated at build time from these files + `taxonomy.yaml` + `strategies/*.yaml`.
+
+## End-to-end steps
+
+1. **Confirm the HF id.** You need the exact `<org>/<repo>` string. If the user gave a URL, strip the `https://huggingface.co/` prefix.
+2. **Fetch model metadata.** Run `bash scripts/hf-info.sh <org>/<repo>` to pull `config.json` / `params.json`. Extract:
+   - `architecture`: `moe` if `num_experts`, `num_local_experts`, `moe.num_experts`, or a `*MoE*` architecture name is present. Otherwise `dense`.
+   - `parameter_count`: total params (e.g. `"671B"`, `"70B"`). Use HF model card or the sum of shard sizes.
+   - `active_parameters`: for MoE, the activated-per-token count (e.g. `"37B"` on DeepSeek-V3.2). For dense, equal to `parameter_count`.
+   - `context_length`: `max_position_embeddings` from `config.json` (for VL models, from `text_config.max_position_embeddings`).
+   - `min_vllm_version`: the earliest vllm that supports the architecture — check the model card or vLLM release notes. Err on the side of `0.11.0` or newer unless the card specifies.
+3. **Create the YAML.** Write `models/<hf_org>/<hf_repo>.yaml` following the schema below. Only include sections the model needs; leave `features: {}`, `opt_in_features: []`, `hardware_overrides: {}`, `strategy_overrides: {}` empty if not applicable.
+4. **Register the provider (if new).** If `<hf_org>` isn't already in `src/lib/providers.js`, add an entry with `display_name` and the logo path `/providers/<hf_org>.png` (or `.jpeg`). Logos get downloaded by `scripts/fetch-provider-logos.mjs` on the next build.
+5. **Validate.** Run `node scripts/build-recipes-api.mjs`. It must print `✓ JSON API: N models, 7 strategies` with no errors.
+6. **Commit.** Follow the user's earlier feedback (no kill-and-rebuild of dev server; syntax-check only).
+
+## YAML schema (top-level fields, in order)
+
+```yaml
+meta:
+  title: "..."                    # display name (e.g. "DeepSeek-V3.2")
+  slug: "..."                     # lowercase-kebab (legacy, keep consistent with title)
+  provider: "..."                 # human-readable org label (e.g. "DeepSeek")
+  description: "..."              # one-sentence summary
+  date_updated: YYYY-MM-DD        # today's date, or the date the recipe was authored
+  difficulty: beginner|intermediate|advanced
+  tasks:                          # one or more of: text, multimodal, omni, embedding
+    - text
+  performance_headline: "..."     # optional pithy line for cards
+  related_recipes: []             # optional list of "<org>/<repo>" ids
+
+model:
+  model_id: "<hf_org>/<hf_repo>"  # MUST match the filename path
+  min_vllm_version: "0.11.0"      # string, e.g. "0.12.0"
+  architecture: dense|moe
+  parameter_count: "30B"          # string with suffix (B or T)
+  active_parameters: "30B"        # same as parameter_count for dense models
+  context_length: 131072          # integer (tokens)
+  base_args: []                   # flags always needed (trust-remote-code, etc.)
+  base_env: {}                    # env vars always needed
+
+# Optional — only if the recipe needs extra pip installs beyond `uv pip install -U vllm`.
+# Rendered as an "extra install" block above the vllm serve command.
+dependencies:
+  - note: "Why you need it (one line)"
+    command: 'uv pip install -U "vllm[audio]"'
+    optional: false               # omit or false for required; true to mark optional
+
+features:
+  tool_calling:                   # flip any of these pills; recipe chooses naming
+    description: "..."
+    args: ["--enable-auto-tool-choice", "--tool-call-parser", "<name>"]
+  reasoning:
+    description: "..."
+    args: ["--reasoning-parser", "<name>"]
+  spec_decoding:                  # USE spec_decoding, NOT mtp — unified key for
+    description: "..."            # MTP / Eagle3 / ERNIE-MTP / etc.
+    args: ["--speculative-config", '{"method":"mtp","num_speculative_tokens":1}']
+
+opt_in_features:                  # features that default OFF (users tick them on)
+  - spec_decoding                 # spec decoding is opt-in unless the model docs insist
+
+variants:
+  default:                        # ALWAYS include a `default` variant
+    precision: bf16|fp8|nvfp4|fp4|int4|int8|awq|gptq|mxfp4
+    vram_minimum_gb: <integer>    # params × bytes × 1.2 (see formula below)
+    description: "..."
+  fp8:                            # optional extra variants
+    model_id: "<optional override>"   # only if the quantized variant is a different HF repo
+    precision: fp8
+    vram_minimum_gb: <integer>
+    description: "..."
+    extra_args: []
+    extra_env: {}
+
+compatible_strategies:            # subset of the 7 in strategies/*.yaml
+  - single_node_tp                # always include this as a baseline
+  - single_node_tep               # for MoE
+  - single_node_dep               # for MoE
+  - multi_node_tp
+  - multi_node_dep                # for MoE
+  - multi_node_tep                # for MoE
+  - pd_cluster                    # only if the recipe documents PD
+
+hardware_overrides:               # optional per-generation flags
+  hopper:    { extra_args: [], extra_env: {} }
+  blackwell: { extra_args: [], extra_env: {} }
+  amd:       { extra_args: [], extra_env: {} }
+
+strategy_overrides: {}            # optional per-strategy tweaks
+
+guide: |                          # markdown, rendered as the Guide accordion
+  ## Overview
+  ...
+  ## Prerequisites
+  ...
+  ## Launch command
+  ...
+  ## Benchmarking
+  ...
+  ## References
+  - [Model card](https://huggingface.co/<hf_org>/<hf_repo>)
+```
+
+## VRAM formula
+
+`vram_minimum_gb = ceil(params × bytes_per_param × 1.2)` where params is the **total** parameter count (MoE includes inactive experts — they still live in VRAM).
+
+| Precision | Bytes/param |
+|-----------|-------------|
+| bf16, fp16 | 2 |
+| fp8, int8, awq, gptq (8-bit) | 1 |
+| int4, nvfp4, fp4, mxfp4 (4-bit) | 0.5 |
+
+Example: a 70B BF16 model → `70 × 2 × 1.2 = 168 GB`. Round up.
+
+If the variant is `model_id`-overridden and the override is a different base model with its own param count (e.g. a distilled FP4 checkpoint), use the override's parameter count — verify it via HF.
+
+## Naming and conventions
+
+- **Feature keys**: prefer `tool_calling`, `reasoning`, `spec_decoding`. Don't use `mtp` — it's been renamed across the repo.
+- **Strategy list**: MoE recipes usually support every strategy; dense recipes are limited to `single_node_tp` and `multi_node_tp` (TEP/DEP require MoE).
+- **Variants**: quantized variants reuse the base name (`fp8`, `nvfp4`, `int4`). If the quantized checkpoint is authored by someone else (e.g. `nvidia/*-NVFP4`), set `model_id:` inside the variant.
+- **Tasks**: `omni` means served via vLLM-Omni (offline Python, no `vllm serve`). The command builder hides the serve block for omni recipes — just put the Python usage in `guide:`.
+
+## Validation checklist
+
+Before committing:
+
+1. `node scripts/build-recipes-api.mjs` succeeds and the new recipe appears in the line count.
+2. `node -e "const d = require('./public/<hf_org>/<hf_repo>.json'); console.log(d.model.parameter_count, d.variants.default.vram_minimum_gb)"` prints sensible values.
+3. The YAML top-level key order matches the schema above — downstream tools don't care, but reviewers scan for it.
+
+## Commit
+
+Stage **only** the new recipe (and providers.js if edited):
+
+```bash
+git add models/<hf_org>/<hf_repo>.yaml src/lib/providers.js
+git commit -m "Add <hf_org>/<hf_repo> recipe"
+```
+
+Do not stage `public/` (it's generated) or the design docs.
