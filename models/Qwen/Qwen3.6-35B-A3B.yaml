@@ -1,0 +1,159 @@
+meta:
+  title: "Qwen3.6-35B-A3B"
+  slug: "qwen3.6-35b-a3b"
+  provider: "Qwen"
+  description: "Smaller Qwen3.6 multimodal MoE model (35B total / 3B active) with 256 experts (8 routed + 1 shared), gated delta networks architecture, and 262K context"
+  date_updated: 2026-04-18
+  difficulty: beginner
+  tasks:
+    - text
+  performance_headline: "Compact Qwen3.6 MoE with 3B active parameters — single-GPU FP8 or 2-4 GPU BF16 serving"
+  related_recipes:
+    - "Qwen/Qwen3.5-397B-A17B"
+
+model:
+  model_id: "Qwen/Qwen3.6-35B-A3B"
+  min_vllm_version: "0.17.0"
+  architecture: moe
+  parameter_count: "35B"
+  active_parameters: "3B"
+  context_length: 262144
+  base_args:
+    - "--trust-remote-code"
+  base_env: {}
+
+features:
+  reasoning:
+    description: "Enable chain-of-thought reasoning with Qwen3 parser"
+    args:
+      - "--reasoning-parser"
+      - "qwen3"
+  spec_decoding:
+    description: "Multi-token prediction speculative decoding for lower latency"
+    args:
+      - "--speculative-config"
+      - '{"method":"mtp","num_speculative_tokens":2}'
+
+opt_in_features:
+  - spec_decoding
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 84
+    description: "Full precision BF16 — fits on 1x H200 or 2x H100"
+  fp8:
+    model_id: "Qwen/Qwen3.6-35B-A3B-FP8"
+    precision: fp8
+    vram_minimum_gb: 42
+    description: "Qwen official FP8 checkpoint — single-GPU serving"
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - single_node_dep
+  - multi_node_tp
+  - multi_node_tp_pp
+  - multi_node_dep
+  - multi_node_tep
+
+hardware_overrides:
+  hopper:
+    extra_args: []
+    extra_env: {}
+  blackwell:
+    extra_args: []
+    extra_env: {}
+  amd:
+    extra_args: []
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  [Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) is the smaller sibling
+  of Qwen3.5, sharing the same gated-delta-networks MoE architecture but with 35B total
+  parameters and 3B activated (256 experts, 8 routed + 1 shared). With FP8 weights it
+  fits comfortably on a single 80 GB GPU and supports the full 262K context.
+
+  ## Prerequisites
+
+  - **vLLM version:** >= 0.17.0
+  - **Hardware (BF16):** 1x H200 or 2x H100
+  - **Hardware (FP8):** single H100/H200 or 1x MI300X/MI325X/MI355X
+
+  ### Install vLLM
+
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install -U vllm --torch-backend=auto
+  ```
+
+  ## Launching the Server
+
+  ### Single-GPU FP8
+
+  ```bash
+  vllm serve Qwen/Qwen3.6-35B-A3B-FP8 \
+    --max-model-len 262144 \
+    --reasoning-parser qwen3
+  ```
+
+  ### BF16 on 2xH200 (TP2)
+
+  ```bash
+  vllm serve Qwen/Qwen3.6-35B-A3B \
+    --tensor-parallel-size 2 \
+    --max-model-len 262144 \
+    --reasoning-parser qwen3
+  ```
+
+  ### MTP speculative decoding
+
+  ```bash
+  vllm serve Qwen/Qwen3.6-35B-A3B \
+    --tensor-parallel-size 2 \
+    --max-model-len 262144 \
+    --reasoning-parser qwen3 \
+    --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+  ```
+
+  ### AMD (MI300X / MI325X / MI355X)
+
+  ```bash
+  VLLM_ROCM_USE_AITER=1 vllm serve Qwen/Qwen3.6-35B-A3B-FP8 \
+    --max-model-len 262144 \
+    --reasoning-parser qwen3 \
+    --trust-remote-code
+  ```
+
+  ## Client Usage
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+  resp = client.chat.completions.create(
+      model="Qwen/Qwen3.6-35B-A3B",
+      messages=[{"role": "user", "content": "Explain gated delta networks in one paragraph."}],
+      max_tokens=512,
+  )
+  print(resp.choices[0].message.content)
+  ```
+
+  ## Troubleshooting
+
+  - **CUDA graph / Mamba cache size error:** reduce `--max-cudagraph-capture-size`
+    (default 512). See [vLLM PR #34571](https://github.com/vllm-project/vllm/pull/34571).
+  - **Reasoning disable:** add `--default-chat-template-kwargs '{"enable_thinking": false}'`.
+  - **Prefix Caching (Mamba):** currently experimental in "align" mode.
+
+  ## References
+
+  - [Qwen3.6-35B-A3B on Hugging Face](https://huggingface.co/Qwen/Qwen3.6-35B-A3B)
+  - [FP8 checkpoint](https://huggingface.co/Qwen/Qwen3.6-35B-A3B-FP8)
+  - [Qwen3.5 recipe (sibling 397B-A17B flagship)](../Qwen3.5-397B-A17B)

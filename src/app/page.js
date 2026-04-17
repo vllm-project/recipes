@@ -14,22 +14,17 @@ export default async function HomePage() {
     <main className="max-w-[1480px] mx-auto px-4 sm:px-6 py-8">
       {/* ── Hero (compact) ── */}
       <header className="mb-6">
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-          How do I run <span className="text-vllm-blue">model X</span> on{" "}
-          <span className="text-vllm-blue">hardware Y</span>?
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Community-maintained recipes for deploying selected models on selected hardware with vLLM.{" "}
-          For the full list of supported models and hardware, see{" "}
+        <p className="text-sm text-muted-foreground max-w-3xl">
+          Pick a model, adjust for your GPUs, copy the <code className="font-mono text-[12px] bg-muted/50 px-1 py-0.5 rounded">vllm serve</code> line that runs.{" "}
+          Community-maintained recipes for NVIDIA H100/H200/B200/B300, Grace-Blackwell, and AMD MI300X/MI325X/MI355X.{" "}
           <a
             href="https://vllm.ai/#compatibility"
             target="_blank"
             rel="noopener noreferrer"
             className="text-vllm-blue hover:underline"
           >
-            vllm.ai/#compatibility
+            Full vLLM compatibility →
           </a>
-          .
         </p>
       </header>
 
