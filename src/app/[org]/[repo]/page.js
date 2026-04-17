@@ -35,7 +35,7 @@ export default async function RecipePage({ params }) {
   const strategies = loadStrategies();
   const taxonomy = loadTaxonomy();
   const guide = recipe.guide || "";
-  const logo = getProviderLogo(recipe.meta.provider);
+  const logo = getProviderLogo(recipe.hf_org);
 
   const configRows = Object.entries(recipe.variants || {}).map(([key, v]) => ({
     name: key === "default" ? "Default" : key.toUpperCase(),

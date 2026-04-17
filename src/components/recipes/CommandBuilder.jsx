@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, pickDefaultHardware } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, pickDefaultHardware, pdFitsSingleNode } from "@/lib/command-synthesis";
 
 // Advanced tuning presets — optional tunable flags the user can opt into.
 // (vLLM defaults like chunked prefill, prefix caching, CUDA graphs, async
@@ -140,8 +140,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Recipes without a multi_node_* / pd_cluster strategy can't scale beyond one
+  // node — force nodeCount to 1 in that case, even if the URL says otherwise.
+  const supportsMultiNode = (recipe.compatible_strategies || []).some(
+    (s) => s.startsWith("multi_node_") || s === "pd_cluster"
+  );
   const [nodeCount, setNodeCount] = useState(() => {
     const n = parseInt(searchParams.get("nodes") || "1", 10);
+    if (!supportsMultiNode) return 1;
     return [1, 2].includes(n) ? n : 1;
   });
   const [strategyOverride, setStrategyOverride] = useState(searchParams.get("strategy") || "");
@@ -200,7 +206,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
 
   const recommended = useMemo(() => recommendStrategy(recipe, hwProfile, nodeCount), [recipe, hwProfile, nodeCount]);
-  const activeStrategy = strategyOverride || recommended;
+
+  // If the overridden strategy is pd_cluster in single-node mode but the
+  // current hardware can't hold 2× the model, silently fall back to the
+  // recommended strategy so the rendered command is always runnable.
+  const strategyOverrideValid = useMemo(() => {
+    if (!strategyOverride) return true;
+    if (strategyOverride === "pd_cluster" && nodeCount === 1) {
+      return pdFitsSingleNode(hwProfile, currentVariant);
+    }
+    return true;
+  }, [strategyOverride, nodeCount, hwProfile, currentVariant]);
+  const activeStrategy = strategyOverrideValid ? (strategyOverride || recommended) : recommended;
 
   const compatibleStrategies = useMemo(() => {
     return (recipe.compatible_strategies || []).filter((s) => {
@@ -220,14 +237,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     [recipe, variant, activeStrategy, hwId, features, advanced, strategies, taxonomy, nodeCount]
   );
 
-  // Visual feedback when command changes
+  // Visual feedback when any rendered command changes. Covers single-node
+  // (result.command), multi-node (headCommand), and pd_cluster (prefill.command).
+  const commandFingerprint = result.command
+    || result.headCommand
+    || result.prefill?.command
+    || "";
   const [changed, setChanged] = useState(false);
   useEffect(() => {
     setChanged(true);
     const t = setTimeout(() => setChanged(false), 600);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result.command]);
+  }, [commandFingerprint]);
 
   // ── URL sync ──
   const syncUrl = useCallback(
@@ -292,7 +314,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const isMultiNode = result.deployType === "multi_node";
   const modelId = recipe.variants?.[variant]?.model_id || recipe.model?.model_id || "model";
 
-  const verifyCmd = `curl http://localhost:8000/v1/chat/completions \\
+  // PD clients hit the router (port 30000), everyone else hits `vllm serve` on 8000.
+  const clientPort = isPd ? 30000 : 8000;
+
+  const verifyCmd = `curl http://localhost:${clientPort}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "${modelId}",
@@ -302,6 +327,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const benchCmd = `vllm bench serve \\
   --model ${modelId} \\
+  --host localhost \\
+  --port ${clientPort} \\
   --dataset-name random \\
   --random-input-len 1024 \\
   --random-output-len 1024 \\
@@ -376,15 +403,22 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 <PillGroup>
                   {profiles.map(([id, p]) => {
                     const precisionOk = isPrecisionCompatible(p, currentVariant);
+                    // When single-node PD is the active strategy, the hardware must fit
+                    // 2× the model (prefill + decode pools share one node).
+                    const pdSingleNodeCheck = activeStrategy === "pd_cluster" && nodeCount === 1;
+                    const pdOk = !pdSingleNodeCheck || pdFitsSingleNode(p, currentVariant);
+                    const disabled = !precisionOk || !pdOk;
                     const reason = !precisionOk
                       ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
+                      : !pdOk
+                      ? `Single-node PD needs 2× model VRAM (${2 * (currentVariant.vram_minimum_gb || 0)} GB). Switch to Multi-node or pick a larger GPU.`
                       : p.description;
                     return (
                       <Pill
                         key={id}
                         active={hwId === id}
-                        disabled={!precisionOk}
-                        onClick={() => precisionOk && selectHardware(id)}
+                        disabled={disabled}
+                        onClick={() => !disabled && selectHardware(id)}
                         title={reason}
                       >
                         <span className="font-semibold">{p.display_name}</span>
@@ -422,19 +456,29 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         {/* Strategy */}
         <ConfigRow label="Strategy">
           <PillGroup>
-            {compatibleStrategies.map((s) => (
-              <Pill
-                key={s}
-                active={activeStrategy === s}
-                onClick={() => selectStrategy(s)}
-                title={strategies[s]?.description}
-              >
-                <span className="font-semibold">{strategies[s]?.display_name || s}</span>
-                {s === recommended && (
-                  <Sparkles size={10} className="text-vllm-yellow ml-1" />
-                )}
-              </Pill>
-            ))}
+            {compatibleStrategies.map((s) => {
+              const isPdSingleNode = s === "pd_cluster" && nodeCount === 1;
+              const pdBlocked = isPdSingleNode && !pdFitsSingleNode(hwProfile, currentVariant);
+              const disabled = pdBlocked;
+              return (
+                <Pill
+                  key={s}
+                  active={activeStrategy === s}
+                  disabled={disabled}
+                  onClick={() => !disabled && selectStrategy(s)}
+                  title={
+                    pdBlocked
+                      ? `Single-node PD needs 2× model VRAM (${2 * (currentVariant.vram_minimum_gb || 0)} GB). Switch to Multi-node or a larger GPU.`
+                      : strategies[s]?.description
+                  }
+                >
+                  <span className="font-semibold">{strategies[s]?.display_name || s}</span>
+                  {s === recommended && !disabled && (
+                    <Sparkles size={10} className="text-vllm-yellow ml-1" />
+                  )}
+                </Pill>
+              );
+            })}
           </PillGroup>
           {strategies[activeStrategy]?.description && (
             <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
@@ -446,25 +490,34 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         {/* Nodes */}
         <ConfigRow label="Nodes">
           <PillGroup>
-            {[1, 2].map((n) => (
-              <Pill
-                key={n}
-                active={nodeCount === n}
-                onClick={() => selectNodes(n)}
-                title={
-                  n === 1
-                    ? "Single-node deployment (one HGX box)"
-                    : `2 nodes × ${hwProfile.gpu_count || 8} GPUs = ${2 * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
-                }
-              >
-                <span className="font-semibold">{n === 1 ? "Single node" : "Multi-node (example: 2)"}</span>
-                {n > 1 && (
-                  <span className="text-muted-foreground ml-1.5 font-mono">
-                    {2 * (hwProfile.gpu_count || 8)}×GPU
-                  </span>
-                )}
-              </Pill>
-            ))}
+            {[1, 2].map((n) => {
+              // Multi-node pill is disabled when the recipe declares no
+              // multi_node_* (or pd_cluster) strategy. Small dense models
+              // commonly omit these.
+              const disabled = n > 1 && !supportsMultiNode;
+              return (
+                <Pill
+                  key={n}
+                  active={nodeCount === n}
+                  disabled={disabled}
+                  onClick={() => !disabled && selectNodes(n)}
+                  title={
+                    disabled
+                      ? "This recipe does not declare a multi-node strategy. Fits in a single node."
+                      : n === 1
+                      ? "Single-node deployment (one HGX box)"
+                      : `2 nodes × ${hwProfile.gpu_count || 8} GPUs = ${2 * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
+                  }
+                >
+                  <span className="font-semibold">{n === 1 ? "Single node" : "Multi-node (example: 2)"}</span>
+                  {n > 1 && !disabled && (
+                    <span className="text-muted-foreground ml-1.5 font-mono">
+                      {2 * (hwProfile.gpu_count || 8)}×GPU
+                    </span>
+                  )}
+                </Pill>
+              );
+            })}
           </PillGroup>
         </ConfigRow>
 
@@ -543,21 +596,22 @@ function PillGroup({ children }) {
 }
 
 function Pill({ active, onClick, title, dimmed, disabled, children }) {
+  // disabled takes precedence over active — an "active but disabled" pill should
+  // clearly look disabled (e.g. PD that was pre-selected but no longer fits).
+  const style = disabled
+    ? "border-dashed border-border/40 text-muted-foreground/30 cursor-not-allowed bg-muted/20 line-through decoration-muted-foreground/30"
+    : active
+    ? "border-vllm-blue bg-vllm-blue/5 text-foreground ring-1 ring-vllm-blue/20 shadow-sm"
+    : dimmed
+    ? "border-dashed border-border/60 text-muted-foreground/50 hover:text-muted-foreground hover:border-muted-foreground/30"
+    : "border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40 hover:bg-muted/30";
   return (
     <button
       onClick={onClick}
       title={title}
       disabled={disabled}
       aria-disabled={disabled}
-      className={`inline-flex items-center rounded-lg border px-2.5 py-1.5 text-xs transition-all ${
-        active
-          ? "border-vllm-blue bg-vllm-blue/5 text-foreground ring-1 ring-vllm-blue/20 shadow-sm"
-          : disabled
-          ? "border-dashed border-border/40 text-muted-foreground/30 cursor-not-allowed bg-muted/20"
-          : dimmed
-          ? "border-dashed border-border/60 text-muted-foreground/50 hover:text-muted-foreground hover:border-muted-foreground/30"
-          : "border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40 hover:bg-muted/30"
-      }`}
+      className={`inline-flex items-center rounded-lg border px-2.5 py-1.5 text-xs transition-all ${style}`}
     >
       {children}
     </button>
@@ -619,8 +673,12 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd }) {
         </div>
         <div className="flex items-center gap-1.5">
           <CopyButton text={active.command} />
-          <PopoverButton label="Verify" code={verifyCmd} icon={Terminal} />
-          <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
+          {tab === "head" && (
+            <>
+              <PopoverButton label="Verify" code={verifyCmd} icon={Terminal} />
+              <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
+            </>
+          )}
         </div>
       </div>
       <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
@@ -635,30 +693,13 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd }) {
 }
 
 function PdClusterBlock({ result, verifyCmd, benchCmd }) {
-  // Tabs: {role}-{nodePos} — e.g. prefill-head, prefill-worker, decode-head, decode-worker.
-  // In single-node mode (nodeCount === 1) we drop the -worker tabs. Router is always last.
-  const multi = result.nodeCount > 1;
-  const [tab, setTab] = useState("prefill-head");
-  const workerTabs = multi
-    ? [
-        { id: "prefill-worker", label: "Prefill · Node 1", command: result.prefill.worker, env: result.prefill.env },
-        { id: "decode-worker",  label: "Decode · Node 1",  command: result.decode.worker,  env: result.decode.env },
-      ]
-    : [];
-  const routerTab = {
-    id: "router",
-    label: "Router",
-    command: result.router.command,
-    env: {},
-    install: result.router.install,
-    isRouter: true,
-  };
+  // Tabs: Prefill · Decode · Router (same shape whether single-node or multi-node;
+  // only the CUDA_VISIBLE_DEVICES split and TP size differ).
+  const [tab, setTab] = useState("prefill");
   const tabs = [
-    { id: "prefill-head", label: multi ? "Prefill · Head" : "Prefill", command: result.prefill.head, env: result.prefill.env },
-    ...(multi ? [workerTabs[0]] : []),
-    { id: "decode-head",  label: multi ? "Decode · Head"  : "Decode",  command: result.decode.head,  env: result.decode.env },
-    ...(multi ? [workerTabs[1]] : []),
-    routerTab,
+    { id: "prefill", label: "Prefill", command: result.prefill.command, env: result.prefill.env },
+    { id: "decode",  label: "Decode",  command: result.decode.command,  env: result.decode.env },
+    { id: "router",  label: "Router",  command: result.router.command, env: {}, install: result.router.install, isRouter: true },
   ];
   const active = tabs.find((t) => t.id === tab) || tabs[0];
   const envLines = Object.entries(active.env || {}).map(([k, v]) => `export ${k}=${v}`).join("\n");
@@ -681,7 +722,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd }) {
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <CopyButton text={fullScript} />
-          {!active.isRouter && (
+          {active.isRouter && (
             <>
               <PopoverButton label="Verify" code={verifyCmd} icon={Terminal} />
               <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />

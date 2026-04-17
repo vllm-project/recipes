@@ -39,7 +39,7 @@ export function recommendStrategy(recipe, hwProfile, nodeCount = 1) {
  */
 const PRECISION_HARDWARE_CONSTRAINTS = {
   nvfp4: { brand: "NVIDIA", generation: "blackwell" },
-  fp4:   { brand: "NVIDIA", generation: "blackwell" },
+  fp4: { brand: "NVIDIA", generation: "blackwell" },
 };
 
 function matchesConstraint(profile, constraint) {
@@ -71,6 +71,20 @@ export function listCompatibleHardware(hwProfiles, variant) {
   return Object.entries(hwProfiles)
     .filter(([, p]) => isPrecisionCompatible(p, variant))
     .map(([id]) => id);
+}
+
+/**
+ * Single-node PD splits the node 50/50 between prefill and decode. Each half
+ * holds a full model across its TP group, so the node must fit 2× the model's
+ * VRAM. Also requires at least 2 GPUs to split.
+ */
+export function pdFitsSingleNode(hwProfile, variant) {
+  if (!hwProfile || !variant) return false;
+  const gpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 0;
+  if (gpuCount < 2) return false;
+  const nodeVram = typeof hwProfile.vram_gb === "number" ? hwProfile.vram_gb : 0;
+  const modelVram = variant.vram_minimum_gb || 0;
+  return nodeVram >= 2 * modelVram;
 }
 
 /**
@@ -163,28 +177,28 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       args.push("--master-addr", "$HEAD_IP");
       if (nodeRole === "worker") args.push("--headless");
     } else if (strategy.deploy_type === "pd_cluster") {
-      // PD worker is a single `vllm serve` process per GPU; TP=1 is the default.
-      // Multi-node PD extends each role (prefill/decode) across nodes via the
-      // mp backend — same --nnodes/--node-rank pattern as multi-node TP.
-      args.push("--tensor-parallel-size", "1");
-      if (isPdMulti) {
-        args.push("--nnodes", String(nodeCount));
-        args.push("--node-rank", nodeRole === "worker" ? "1" : "0");
-        const roleHost = roleOverride === "decode" ? "$DECODE_HOST_IP" : "$PREFILL_HOST_IP";
-        args.push("--master-addr", roleHost);
-        if (nodeRole === "worker") args.push("--headless");
-      }
+      // PD splits the node between prefill and decode.
+      // - Single-node: 50/50 split, each role uses TP=gpuCount/2, pinned via
+      //   CUDA_VISIBLE_DEVICES (set in buildEnv).
+      // - Multi-node (2 nodes): one full node per role, TP=gpuCount per role.
+      const tpPerRole = isPdMulti ? gpuCount : Math.floor(gpuCount / 2);
+      args.push("--tensor-parallel-size", String(Math.max(1, tpPerRole)));
     } else {
       args.push(parallelFlag, String(gpuCount));
     }
 
     // 4. Strategy overrides from recipe
+    //    Accept both `extra_args` (recipe convention) and `vllm_args` (strategy
+    //    YAML convention) — some recipes mirror the strategy's role schema.
     const so = recipe.strategy_overrides?.[strategyName];
     if (so) {
-      if (roleOverride && so[roleOverride]?.extra_args) {
-        args.push(...so[roleOverride].extra_args);
-      } else if (!roleOverride && so.extra_args) {
-        args.push(...so.extra_args);
+      if (roleOverride) {
+        const roleOv = so[roleOverride];
+        if (roleOv?.extra_args) args.push(...roleOv.extra_args);
+        if (roleOv?.vllm_args)  args.push(...roleOv.vllm_args);
+      } else {
+        if (so.extra_args) args.push(...so.extra_args);
+        if (so.vllm_args)  args.push(...so.vllm_args);
       }
     }
 
@@ -221,6 +235,25 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       Object.assign(env, strategy[roleOverride].env);
     }
 
+    // PD: pin GPUs per role via CUDA_VISIBLE_DEVICES
+    // - Single-node: first half (prefill) / second half (decode)
+    // - Multi-node: each role owns a whole node, so list all its GPUs
+    if (strategy.deploy_type === "pd_cluster" && roleOverride) {
+      const multi = nodeCount > 1;
+      if (multi) {
+        const all = Array.from({ length: gpuCount }, (_, i) => i).join(",");
+        env.CUDA_VISIBLE_DEVICES = all;
+      } else {
+        const half = Math.floor(gpuCount / 2);
+        if (half > 0) {
+          const ids = roleOverride === "prefill"
+            ? Array.from({ length: half }, (_, i) => i)
+            : Array.from({ length: gpuCount - half }, (_, i) => half + i);
+          env.CUDA_VISIBLE_DEVICES = ids.join(",");
+        }
+      }
+    }
+
     // Strategy overrides env
     const so = recipe.strategy_overrides?.[strategyName];
     if (so) {
@@ -245,26 +278,24 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   const deployType = strategy.deploy_type || "single_node";
 
   if (deployType === "pd_cluster") {
-    const multi = nodeCount > 1;
-
-    // Router command — assumes one `vllm serve` per GPU (DP=gpuCount per node).
-    // Multi-node example follows a typical asymmetric layout (1 prefill node, 1 decode
-    // node; users scale decode wider in practice). Single-node collapses to 1+1.
-    const prefillCount = multi ? gpuCount : 1;
-    const decodeCount = multi ? gpuCount : 1;
+    // Single-node PD splits one node 50/50 (prefill TP=gpuCount/2 + decode TP=gpuCount/2).
+    // Multi-node PD dedicates one node per role (prefill TP=gpuCount + decode TP=gpuCount).
+    // Either way the router sees 1 prefill + 1 decode endpoint — scale by replicating.
     const policy = strategy.router?.policy || "round_robin";
+    // `--intra-node-data-parallel-size` is the DP size inside one pool.
+    // Our default PD layout is TP-only per role (DP=1), so the router sees
+    // a single DP rank per endpoint. Users running DP+EP should raise this
+    // to match their `--data-parallel-size`.
+    // Port convention: prefill on 8001, decode on 8002 (keeps them distinct
+    // when co-located on a single node). The router listens on 30000.
     const routerLines = [
       `vllm-router --policy ${policy} \\`,
       `    --vllm-pd-disaggregation \\`,
-      ...Array.from({ length: prefillCount }, (_, i) =>
-        `    --prefill http://PREFILL_ADDR${i + 1}:8000 \\`
-      ),
-      ...Array.from({ length: decodeCount }, (_, i) =>
-        `    --decode http://DECODE_ADDR${i + 1}:8000 \\`
-      ),
+      `    --prefill http://PREFILL_ADDR:8001 \\`,
+      `    --decode http://DECODE_ADDR:8002 \\`,
       `    --host 127.0.0.1 \\`,
       `    --port 30000 \\`,
-      `    --intra-node-data-parallel-size ${gpuCount}`,
+      `    --intra-node-data-parallel-size 1`,
     ];
     const routerCommand = routerLines.join("\n");
 
@@ -272,13 +303,11 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       deployType,
       nodeCount,
       prefill: {
-        head: formatCommand(buildArgs("prefill", "head")),
-        worker: multi ? formatCommand(buildArgs("prefill", "worker")) : null,
+        command: formatCommand(buildArgs("prefill", null)),
         env: buildEnv("prefill"),
       },
       decode: {
-        head: formatCommand(buildArgs("decode", "head")),
-        worker: multi ? formatCommand(buildArgs("decode", "worker")) : null,
+        command: formatCommand(buildArgs("decode", null)),
         env: buildEnv("decode"),
       },
       router: {
@@ -286,11 +315,6 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         install: "uv pip install vllm-router",
       },
       routerConfig: strategy.router || { policy: "round_robin" },
-      // Legacy fields kept for any lingering consumer
-      prefillCommand: formatCommand(buildArgs("prefill", "head")),
-      decodeCommand: formatCommand(buildArgs("decode", "head")),
-      prefillEnv: buildEnv("prefill"),
-      decodeEnv: buildEnv("decode"),
     };
   }
 

@@ -17,11 +17,12 @@ hardware_match:
 # (data parallel); omit it if your launcher already pins GPUs.
 prefill:
   vllm_args:
+    - "--port"
+    - "8001"
     - "--kv-transfer-config"
     - '{"kv_connector":"NixlConnector","kv_role":"kv_producer","kv_load_failure_policy":"fail"}'
     - "--enforce-eager"
   env:
-    CUDA_VISIBLE_DEVICES: "0"
     VLLM_USE_NCCL_SYMM_MEM: "1"
     NCCL_CUMEM_ENABLE: "1"
     NCCL_MNNVL_ENABLE: "1"
@@ -34,12 +35,13 @@ prefill:
 
 decode:
   vllm_args:
+    - "--port"
+    - "8002"
     - "--kv-transfer-config"
     - '{"kv_connector":"NixlConnector","kv_role":"kv_consumer","kv_load_failure_policy":"fail"}'
     - "--compilation-config"
     - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
   env:
-    CUDA_VISIBLE_DEVICES: "0"
     VLLM_USE_NCCL_SYMM_MEM: "1"
     NCCL_CUMEM_ENABLE: "1"
     NCCL_MNNVL_ENABLE: "1"

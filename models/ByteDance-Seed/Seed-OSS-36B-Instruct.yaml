@@ -44,7 +44,6 @@ variants:
 
 compatible_strategies:
   - single_node_tp
-  - single_node_dp
 
 hardware_overrides: {}
 strategy_overrides: {}

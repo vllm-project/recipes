@@ -17,11 +17,9 @@ model:
   active_parameters: "2.4B"
   context_length: 32768
   base_args:
-    - "--tensor_parallel_size"
-    - "2"
     - "--gpu-memory-utilization"
     - "0.75"
-    - "--max_num_seqs"
+    - "--max-num-seqs"
     - "32"
   base_env: {}
 
