@@ -39,7 +39,39 @@ export function recommendStrategy(recipe, hwProfile) {
 }
 
 /**
+ * Precision → allowed hardware constraint.
+ * NVFP4 is NVIDIA Blackwell-only (sm_100+). FP4 generic is also Blackwell-only
+ * in practice. AWQ/GPTQ/INT quants run on most NVIDIA+AMD hardware.
+ */
+const PRECISION_HARDWARE_CONSTRAINTS = {
+  nvfp4: { brand: "NVIDIA", generation: "blackwell" },
+  fp4:   { brand: "NVIDIA", generation: "blackwell" },
+};
+
+function matchesConstraint(profile, constraint) {
+  if (!constraint) return true;
+  if (constraint.brand && profile.brand !== constraint.brand) return false;
+  if (constraint.generation) {
+    const profileGen = profile.generation || profile.gpu_generation;
+    const gens = Array.isArray(profileGen) ? profileGen : [profileGen];
+    if (!gens.includes(constraint.generation)) return false;
+  }
+  return true;
+}
+
+/**
+ * Check whether a hardware profile is compatible with a variant based on
+ * precision constraints (e.g., NVFP4 requires Blackwell). Does NOT check VRAM.
+ */
+export function isPrecisionCompatible(profile, variant) {
+  const constraint = PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
+  return matchesConstraint(profile, constraint);
+}
+
+/**
  * Filter hardware profiles to those with enough VRAM for a given variant.
+ * Does NOT filter by precision constraints — those are rendered as disabled
+ * pills in the UI instead of being hidden.
  */
 export function filterHardwareByVram(hwProfiles, variant) {
   const minVram = variant?.vram_minimum_gb || 0;
@@ -52,6 +84,33 @@ export function filterHardwareByVram(hwProfiles, variant) {
 }
 
 /**
+ * Given a variant, pick the preferred default hardware:
+ * - If variant requires Blackwell (e.g., NVFP4), prefer b200
+ * - Otherwise, the first hardware that both fits VRAM and matches precision constraint
+ */
+export function pickDefaultHardware(hwProfiles, variant) {
+  const constraint = PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
+  const minVram = variant?.vram_minimum_gb || 0;
+  const compatible = Object.entries(hwProfiles).filter(([, p]) => {
+    const vram = typeof p.vram_gb === "number" ? p.vram_gb : 0;
+    return (vram >= minVram || p.multi_node) && matchesConstraint(p, constraint);
+  });
+
+  // Prefer B200 for Blackwell-constrained variants
+  if (constraint?.generation === "blackwell") {
+    const b200 = compatible.find(([id]) => id === "b200");
+    if (b200) return "b200";
+    const gb200 = compatible.find(([id]) => id === "gb200");
+    if (gb200) return "gb200";
+  }
+
+  // Otherwise: prefer H200 as canonical default if it fits, else smallest that fits
+  if (compatible.some(([id]) => id === "h200")) return "h200";
+  compatible.sort((a, b) => (a[1].vram_gb || 0) - (b[1].vram_gb || 0));
+  return compatible[0]?.[0] || "h200";
+}
+
+/**
  * Resolve a complete vllm serve command from recipe + user selections.
  *
  * Returns: { command, env, deployType } for single_node/multi_node,
@@ -61,7 +120,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
-  const gen = normalizeGeneration(hwProfile.gpu_generation);
+  const gen = normalizeGeneration(hwProfile.generation || hwProfile.gpu_generation);
   const gpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 1;
 
   const modelId = variant.model_id || recipe.model?.model_id || "unknown";
@@ -103,8 +162,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       if (feat?.args) args.push(...feat.args);
     }
 
-    // 7. TP size
-    args.push("--tensor-parallel-size", String(gpuCount));
+    // 7. Parallelism size — use strategy's parallel_flag (e.g., --tensor-parallel-size
+    // for tp/tep strategies, --data-parallel-size for dep strategies)
+    const parallelFlag = strategy.parallel_flag || "--tensor-parallel-size";
+    args.push(parallelFlag, String(gpuCount));
 
     return args;
   }

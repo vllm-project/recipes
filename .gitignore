@@ -6,9 +6,10 @@ site/
 out/
 node_modules/
 
-# Generated JSON API artifacts (built at pnpm build time)
+# Generated at pnpm build time (JSON API + provider logos)
 public/models.json
 public/strategies.json
 public/taxonomy.json
 public/strategies/
+public/providers/
 public/*/

@@ -14,9 +14,9 @@ model:
   model_id: "moonshotai/Kimi-K2.5"
   min_vllm_version: "0.15.0"
   architecture: moe
-  parameter_count: "unknown"
-  active_parameters: "unknown"
-  context_length: 131072
+  parameter_count: "1T"
+  active_parameters: "32B"
+  context_length: 262144
   base_args:
     - "--trust-remote-code"
     - "--language-model-only"
@@ -49,11 +49,11 @@ opt_in_features:
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 640
+    vram_minimum_gb: 2400
     description: "Full precision BF16 on 8xH200 (80 GB each)"
   nvfp4:
     model_id: "nvidia/Kimi-K2.5-NVFP4"
-    precision: fp4
+    precision: nvfp4
     vram_minimum_gb: 320
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs (e.g. GB200)"
     extra_args:

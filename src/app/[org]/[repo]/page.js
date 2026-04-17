@@ -7,11 +7,9 @@ import { loadStrategies } from "@/lib/strategies";
 import { loadTaxonomy } from "@/lib/taxonomy";
 import { getProviderLogo } from "@/lib/providers";
 import { CommandBuilder } from "@/components/recipes/CommandBuilder";
-import { MDXRemote } from "next-mdx-remote/rsc";
+import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
-import rehypePrettyCode from "rehype-pretty-code";
-import rehypeRaw from "rehype-raw";
 import { Badge } from "@/components/ui/badge";
 import { Cpu, Layers, Pencil, Bug, ExternalLink } from "lucide-react";
 
@@ -127,15 +125,12 @@ export default async function RecipePage({ params }) {
         {guide && (
           <Accordion title="Guide" defaultOpen>
             <div className="guide-content">
-              <MDXRemote
-                source={guide}
-                options={{
-                  mdxOptions: {
-                    remarkPlugins: [remarkGfm],
-                    rehypePlugins: [rehypeRaw, rehypeSlug, [rehypePrettyCode, { theme: { light: "github-light", dark: "github-dark-default" }, keepBackground: false }]],
-                  },
-                }}
-              />
+              <Markdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeSlug]}
+              >
+                {guide}
+              </Markdown>
             </div>
           </Accordion>
         )}

@@ -88,6 +88,9 @@ tasks:
   - id: omni
     display_name: "Omni"
     description: "Any-to-any models: text + vision + audio + generation"
+  - id: embedding
+    display_name: "Embedding"
+    description: "Embedding, reranker, classifier, scoring models"
 
 strategies:
   - single_node_tp

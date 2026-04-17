@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles } from "lucide-react";
-import { resolveCommand, recommendStrategy, filterHardwareByVram } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, filterHardwareByVram, isPrecisionCompatible, pickDefaultHardware } from "@/lib/command-synthesis";
 import { loadPreferences, savePreference } from "@/lib/preferences";
 
 function CopyButton({ text, className = "" }) {
@@ -82,10 +82,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const [variant, setVariant] = useState(searchParams.get("variant") || "default");
 
   // Compute default hardware: URL param > stored preference (if compatible) > smallest compatible profile
+  // Smart default hardware: picks a profile compatible with the URL's variant
+  // (respecting both VRAM and precision constraints — e.g., NVFP4 → B200).
   const defaultHw = useMemo(() => {
-    const defaultVariant = recipe.variants?.default || Object.values(recipe.variants || {})[0] || {};
-    const compatible = filterHardwareByVram(taxonomy.hardware_profiles, defaultVariant);
-    return compatible[0] || "h100";
+    const urlVariant = searchParams.get("variant") || "default";
+    const v = recipe.variants?.[urlVariant] || recipe.variants?.default || {};
+    return pickDefaultHardware(taxonomy.hardware_profiles, v);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recipe, taxonomy]);
 
   const [hwId, setHwId] = useState(searchParams.get("hardware") || defaultHw);
@@ -95,9 +98,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     if (!searchParams.get("hardware")) {
       const prefs = loadPreferences();
       if (prefs.hardware) {
-        const currentVariantObj = recipe.variants?.[variant] || recipe.variants?.default || {};
-        const compatible = filterHardwareByVram(taxonomy.hardware_profiles, currentVariantObj);
-        if (compatible.includes(prefs.hardware)) {
+        const v = recipe.variants?.[variant] || recipe.variants?.default || {};
+        const compat = filterHardwareByVram(taxonomy.hardware_profiles, v);
+        const prefProfile = taxonomy.hardware_profiles?.[prefs.hardware];
+        if (compat.includes(prefs.hardware) && prefProfile && isPrecisionCompatible(prefProfile, v)) {
           setHwId(prefs.hardware);
         }
       }
@@ -195,12 +199,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const selectVariant = (key) => {
     setVariant(key);
     syncUrl({ variant: key });
-    // Re-validate hardware compatibility — if variant too big for current hardware, upgrade hardware
+    // Re-validate hardware compatibility:
+    // - Fits VRAM AND
+    // - Matches precision constraint (e.g. NVFP4 needs Blackwell)
+    // If current hw fails either check, switch to the preferred default for this variant.
     const v = recipe.variants?.[key] || {};
     const compat = filterHardwareByVram(taxonomy.hardware_profiles, v);
-    if (!compat.includes(hwId)) {
-      setHwId(compat[0] || "h100");
-      syncUrl({ hardware: compat[0] || "" });
+    const currentProfile = taxonomy.hardware_profiles?.[hwId] || {};
+    const stillOk = compat.includes(hwId) && isPrecisionCompatible(currentProfile, v);
+    if (!stillOk) {
+      const next = pickDefaultHardware(taxonomy.hardware_profiles, v);
+      setHwId(next);
+      syncUrl({ hardware: next });
     }
   };
 
@@ -292,17 +302,32 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   {brand}
                 </span>
                 <PillGroup>
-                  {profiles.map(([id, p]) => (
-                    <Pill
-                      key={id}
-                      active={hwId === id}
-                      onClick={() => selectHardware(id)}
-                      title={p.description}
-                    >
-                      <span className="font-semibold">{p.display_name}</span>
-                      {p.vram_gb > 0 && <span className="text-muted-foreground ml-1.5 font-mono">{p.vram_gb}G</span>}
-                    </Pill>
-                  ))}
+                  {profiles.map(([id, p]) => {
+                    const vramOk = (typeof p.vram_gb === "number" && p.vram_gb >= (currentVariant.vram_minimum_gb || 0)) || p.multi_node;
+                    const precisionOk = isPrecisionCompatible(p, currentVariant);
+                    const disabled = !vramOk || !precisionOk;
+                    const reason = !precisionOk
+                      ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
+                      : !vramOk
+                      ? `Needs ${currentVariant.vram_minimum_gb} GB`
+                      : p.description;
+                    return (
+                      <Pill
+                        key={id}
+                        active={hwId === id}
+                        disabled={disabled}
+                        onClick={() => !disabled && selectHardware(id)}
+                        title={reason}
+                      >
+                        <span className="font-semibold">{p.display_name}</span>
+                        {p.vram_gb > 0 && p.gpu_count > 0 && (
+                          <span className="text-muted-foreground ml-1.5 font-mono">
+                            {p.gpu_count}×{Math.round(p.vram_gb / p.gpu_count)}G
+                          </span>
+                        )}
+                      </Pill>
+                    );
+                  })}
                 </PillGroup>
               </div>
             ))}
@@ -392,14 +417,18 @@ function PillGroup({ children }) {
   return <div className="flex flex-wrap gap-1.5">{children}</div>;
 }
 
-function Pill({ active, onClick, title, dimmed, children }) {
+function Pill({ active, onClick, title, dimmed, disabled, children }) {
   return (
     <button
       onClick={onClick}
       title={title}
+      disabled={disabled}
+      aria-disabled={disabled}
       className={`inline-flex items-center rounded-lg border px-2.5 py-1.5 text-xs transition-all ${
         active
           ? "border-vllm-blue bg-vllm-blue/5 text-foreground ring-1 ring-vllm-blue/20 shadow-sm"
+          : disabled
+          ? "border-dashed border-border/40 text-muted-foreground/30 cursor-not-allowed bg-muted/20"
           : dimmed
           ? "border-dashed border-border/60 text-muted-foreground/50 hover:text-muted-foreground hover:border-muted-foreground/30"
           : "border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40 hover:bg-muted/30"

@@ -28,7 +28,7 @@ opt_in_features: []
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 140
+    vram_minimum_gb: 168
     description: "Full precision BF16"
 
   fp8:
@@ -41,15 +41,14 @@ variants:
       - "fp8"
     extra_env: {}
 
-  fp4:
-    model_id: "nvidia/Llama-3.3-70B-Instruct-FP4"
-    precision: fp4
-    vram_minimum_gb: 40
-    description: "NVIDIA FP4 quantization for Blackwell (best VRAM efficiency)"
+  nvfp4:
+    model_id: "nvidia/Llama-3.3-70B-Instruct-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 35
+    description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env: {}
 
 compatible_strategies:
   - single_node_tp

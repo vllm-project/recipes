@@ -13,5 +13,7 @@ hardware_match:
 vllm_args:
   - "-cc.pass_config.fuse_allreduce_rms=False"
 
+parallel_flag: "--tensor-parallel-size"
+
 env:
   VLLM_USE_NCCL_SYMM_MEM: "0"

@@ -1,0 +1,159 @@
+meta:
+  title: "Ministral-3-Instruct"
+  slug: "ministral-3-instruct"
+  provider: "Mistral AI"
+  description: "Ministral 3 Instruct family (3B/8B/14B) with FP8 weights, vision support, and 256K context"
+  date_updated: 2026-04-17
+  difficulty: beginner
+  tasks:
+    - multimodal
+  related_recipes:
+    - mistralai/Ministral-3-8B-Reasoning-2512
+    - mistralai/Mistral-Large-3-675B-Instruct-2512
+
+model:
+  model_id: "mistralai/Ministral-3-14B-Instruct-2512"
+  min_vllm_version: "0.11.0"
+  architecture: dense
+  parameter_count: "14B"
+  active_parameters: "14B"
+  context_length: 262144
+  base_args:
+    - "--tokenizer_mode"
+    - "mistral"
+    - "--config_format"
+    - "mistral"
+    - "--load_format"
+    - "mistral"
+  base_env: {}
+
+features:
+  tool_calling:
+    description: "Mistral tool-call parser with automatic tool choice"
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "mistral"
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: fp8
+    vram_minimum_gb: 17
+    description: "Native FP8 weights (14B), fits on 1x H200"
+
+  "8b":
+    model_id: "mistralai/Ministral-3-8B-Instruct-2512"
+    precision: fp8
+    vram_minimum_gb: 12
+    description: "Smaller 8B variant with independent embedding/output layers"
+
+  "3b":
+    model_id: "mistralai/Ministral-3-3B-Instruct-2512"
+    precision: fp8
+    vram_minimum_gb: 6
+    description: "Smallest 3B variant with tied embeddings"
+  fp8:
+    model_id: "mistralai/Ministral-3-14B-Instruct-2512-FP8"
+    precision: fp8
+    vram_minimum_gb: 17
+    description: "FP8 quantized weights for Hopper/Blackwell GPUs"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides: {}
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  Ministral-3 Instruct comes with FP8 weights in 3 different sizes:
+
+  - 3B: tied embeddings (shares embedding and output layers)
+  - 8B and 14B: independent embedding and output layers
+
+  Each variant has vision support and a 256K context length. Smaller models offer faster
+  inference at the cost of lower quality; pick the best trade-off for your use case.
+
+  ## Prerequisites
+
+  - Hardware: 1x H200 (sufficient for all three sizes thanks to FP8 weights)
+  - vLLM >= 0.11.0
+
+  ### Install vLLM
+
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install -U vllm --torch-backend auto
+  ```
+
+  ## Launch command
+
+  ```bash
+  vllm serve mistralai/Ministral-3-14B-Instruct-2512 \
+    --tokenizer_mode mistral --config_format mistral --load_format mistral \
+    --enable-auto-tool-choice --tool-call-parser mistral
+  ```
+
+  For 8B: `mistralai/Ministral-3-8B-Instruct-2512`
+  For 3B: `mistralai/Ministral-3-3B-Instruct-2512`
+
+  - `enable-auto-tool-choice`: required for tool usage
+  - `tool-call-parser mistral`: required for tool usage
+  - `--max-model-len` defaults to `262144`; reduce to save memory
+  - `--max-num-batched-tokens` balances throughput and latency
+
+  ## Client Usage
+
+  Vision reasoning example:
+
+  ```python
+  from datetime import datetime, timedelta
+  from openai import OpenAI
+  from huggingface_hub import hf_hub_download
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+  model = client.models.list().data[0].id
+
+  def load_system_prompt(repo_id, filename):
+      path = hf_hub_download(repo_id=repo_id, filename=filename)
+      with open(path) as f:
+          prompt = f.read()
+      today = datetime.today().strftime("%Y-%m-%d")
+      yesterday = (datetime.today() - timedelta(days=1)).strftime("%Y-%m-%d")
+      return prompt.format(name=repo_id.split("/")[-1], today=today, yesterday=yesterday)
+
+  SYSTEM_PROMPT = load_system_prompt(model, "SYSTEM_PROMPT.txt")
+  image_url = "https://static.wikia.nocookie.net/essentialsdocs/images/7/70/Battle.png/revision/latest?cb=20220523172438"
+
+  response = client.chat.completions.create(
+      model=model,
+      messages=[
+          {"role": "system", "content": SYSTEM_PROMPT},
+          {"role": "user", "content": [
+              {"type": "text", "text": "What action should I take here?"},
+              {"type": "image_url", "image_url": {"url": image_url}},
+          ]},
+      ],
+      temperature=0.15, max_tokens=262144,
+  )
+  print(response.choices[0].message.content)
+  ```
+
+  Function calling and text-only examples follow a similar OpenAI-compatible pattern.
+
+  ## Troubleshooting
+
+  - OOM: lower `--max-model-len` (e.g. 32768) or use the 3B/8B variant.
+
+  ## References
+
+  - [Ministral-3-14B-Instruct](https://huggingface.co/mistralai/Ministral-3-14B-Instruct-2512)
+  - [Ministral-3-8B-Instruct](https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512)
+  - [Ministral-3-3B-Instruct](https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512)

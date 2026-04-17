@@ -1,0 +1,156 @@
+meta:
+  title: "GLM-4.6V"
+  slug: "glm-4.6v"
+  provider: "GLM (Z-AI)"
+  description: "GLM-4.6 vision-language MoE model — image-text-to-text with 128K context, native FP8 checkpoint, and expert parallelism"
+  date_updated: 2026-04-17
+  difficulty: intermediate
+  tasks:
+    - multimodal
+  performance_headline: "Updated GLM-V series with 128K context length and native FP8"
+  related_recipes: []
+
+model:
+  model_id: "zai-org/GLM-4.6V"
+  min_vllm_version: "0.12.0"
+  architecture: moe
+  parameter_count: "107B"
+  active_parameters: "12B"
+  context_length: 131072
+  base_args:
+    - "--trust-remote-code"
+    - "--enable-expert-parallel"
+    - "--allowed-local-media-path"
+    - "/"
+    - "--mm-encoder-tp-mode"
+    - "data"
+    - "--mm-processor-cache-type"
+    - "shm"
+  base_env: {}
+
+features:
+  tool_calling:
+    description: "GLM-4.5 tool call parser with automatic tool choice"
+    args:
+      - "--tool-call-parser"
+      - "glm45"
+      - "--enable-auto-tool-choice"
+  reasoning:
+    description: "GLM-4.5 reasoning parser"
+    args:
+      - "--reasoning-parser"
+      - "glm45"
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 257
+    description: "Full precision BF16 — runs on 4xH100/H200"
+  fp8:
+    model_id: "zai-org/GLM-4.6V-FP8"
+    precision: fp8
+    vram_minimum_gb: 128
+    description: "Native FP8 checkpoint with minimal accuracy loss"
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - single_node_dep
+
+hardware_overrides:
+  hopper:
+    extra_args: []
+    extra_env: {}
+  blackwell:
+    extra_args: []
+    extra_env: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  GLM-4.6V is an updated vision-language MoE model from Z-AI. It supports a 128K
+  context length (vs 64K for GLM-4.5V). Native FP8 is recommended for cost-efficient
+  serving, matching BF16 accuracy to within a small margin.
+
+  ## Prerequisites
+
+  - **vLLM version:** >= 0.12.0
+  - **Hardware:** 4x H100/H200 (BF16 or FP8)
+
+  ### Install vLLM
+
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install -U vllm --torch-backend auto
+  ```
+
+  ## Launching the Server
+
+  ### Tensor Parallel + Expert Parallel (FP8 on 4 GPUs)
+
+  ```bash
+  vllm serve zai-org/GLM-4.6V-FP8 \
+       --tensor-parallel-size 4 \
+       --tool-call-parser glm45 \
+       --reasoning-parser glm45 \
+       --enable-auto-tool-choice \
+       --enable-expert-parallel \
+       --allowed-local-media-path / \
+       --mm-encoder-tp-mode data \
+       --mm-processor-cache-type shm
+  ```
+
+  ### Tuning Tips
+
+  - `--max-model-len=65536` is a common default; you can push to 131072.
+  - `--max-num-batched-tokens=32768` for prompt-heavy workloads.
+  - `--mm-encoder-tp-mode data` + `--mm-processor-cache-type shm` for efficient vision processing.
+
+  ## Client Usage
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+  resp = client.chat.completions.create(
+      model="zai-org/GLM-4.6V-FP8",
+      messages=[{
+          "role": "user",
+          "content": [
+              {"type": "image_url", "image_url": {"url": "https://example.com/image.png"}},
+              {"type": "text", "text": "Describe the image."}
+          ]
+      }],
+      max_tokens=512,
+  )
+  print(resp.choices[0].message.content)
+  ```
+
+  ## Benchmarking
+
+  ```bash
+  vllm bench serve \
+    --backend openai-chat \
+    --endpoint /v1/chat/completions \
+    --model zai-org/GLM-4.6V-FP8 \
+    --dataset-name hf \
+    --dataset-path lmarena-ai/VisionArena-Chat \
+    --num-prompts 1000 \
+    --request-rate 20
+  ```
+
+  ## Troubleshooting
+
+  - **Vision encoder overhead:** Prefer `--mm-encoder-tp-mode data` over TP for the encoder.
+  - **Long-context memory:** At 128K context, tune `--max-num-batched-tokens` and
+    `--gpu-memory-utilization` to prevent OOM.
+
+  ## References
+
+  - [Model card](https://huggingface.co/zai-org/GLM-4.6V)
+  - [vLLM multimodal inputs guide](https://docs.vllm.ai/en/latest/features/multimodal_inputs.html)

@@ -48,11 +48,11 @@ opt_in_features:
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 800
+    vram_minimum_gb: 953
     description: "Full precision BF16 — requires 8x H200 or equivalent"
   nvfp4:
     model_id: "nvidia/Qwen3.5-397B-A17B-NVFP4"
-    precision: fp4
+    precision: nvfp4
     vram_minimum_gb: 200
     extra_args:
       - "--kv-cache-dtype"

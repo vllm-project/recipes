@@ -1,0 +1,104 @@
+meta:
+  title: "Llama-3.1-8B-Instruct"
+  slug: "llama-3.1-8b-instruct"
+  provider: "Meta"
+  description: "Meta's Llama 3.1 8B dense instruction-tuned language model with 128K context"
+  date_updated: 2026-04-17
+  difficulty: beginner
+  tasks:
+    - text
+  related_recipes:
+    - meta-llama/Llama-3.3-70B-Instruct
+
+model:
+  model_id: "meta-llama/Llama-3.1-8B-Instruct"
+  min_vllm_version: "0.6.0"
+  architecture: dense
+  parameter_count: "8B"
+  active_parameters: "8B"
+  context_length: 131072
+  base_args: []
+  base_env: {}
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 19
+    description: "Full precision BF16"
+  nvfp4:
+    model_id: "nvidia/Llama-3.1-8B-Instruct-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 2
+    description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+  nvidia_fp8:
+    model_id: "nvidia/Llama-3.1-8B-Instruct-FP8"
+    precision: fp8
+    vram_minimum_gb: 8
+    description: "FP8 quantized weights for Hopper/Blackwell GPUs"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+
+hardware_overrides: {}
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  Llama 3.1 Instruct is Meta's instruction-tuned language model family. The 8B dense
+  variant is lightweight and ideal for single-GPU deployment, with 128K context support.
+  A 70B variant is also available (see related recipes).
+
+  ## Prerequisites
+
+  - Hardware: 1x GPU with >=16 GB VRAM (e.g. A100, L40S, H100, H200)
+  - vLLM >= 0.6.0
+  - CUDA Driver compatible with your vLLM version
+  - Docker with NVIDIA Container Toolkit (recommended)
+
+  ### Install vLLM
+
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install vllm --torch-backend auto
+  ```
+
+  ### TPU Deployment
+
+  - [Llama3.x-70B on Trillium (v6e)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.x)
+  - [Llama3.1-8B on Trillium (v6e)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.x)
+
+  ## Client Usage
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+  response = client.chat.completions.create(
+      model="meta-llama/Llama-3.1-8B-Instruct",
+      messages=[{"role": "user", "content": "Hello, how are you?"}],
+  )
+  print(response.choices[0].message.content)
+  ```
+
+  ## Troubleshooting
+
+  **OOM on small GPUs:**
+  Lower `--max-model-len` or `--gpu-memory-utilization`.
+
+  ## References
+
+  - [Model card](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
+  - [Llama 3.1 70B model card](https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct)

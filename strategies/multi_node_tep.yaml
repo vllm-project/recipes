@@ -15,4 +15,6 @@ vllm_args:
   - "--enable-expert-parallel"
   - "-cc.pass_config.fuse_allreduce_rms=False"
 
+parallel_flag: "--tensor-parallel-size"
+
 env: {}

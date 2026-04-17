@@ -5,7 +5,7 @@
   "packageManager": "pnpm@10.24.0",
   "scripts": {
     "dev": "next dev",
-    "build": "node scripts/build-recipes-api.mjs && next build",
+    "build": "node scripts/build-recipes-api.mjs && node scripts/fetch-provider-logos.mjs && next build",
     "start": "next start",
     "lint": "next lint",
     "validate": "node --experimental-vm-modules hooks/validate.mjs"
@@ -20,6 +20,7 @@
     "next-mdx-remote": "^6.0.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
+    "react-markdown": "^10.1.0",
     "rehype-pretty-code": "^0.14.1",
     "rehype-raw": "^7.0.0",
     "rehype-slug": "^6.0.0",

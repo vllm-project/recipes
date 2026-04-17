@@ -47,12 +47,12 @@ opt_in_features:
 
 variants:
   default:
-    precision: bf16
-    vram_minimum_gb: 640
-    description: "Full precision BF16"
+    precision: fp8
+    vram_minimum_gb: 805
+    description: "Native FP8 checkpoint (F8_E4M3)"
   nvfp4:
     model_id: "nvidia/DeepSeek-V3.2-NVFP4"
-    precision: fp4
+    precision: nvfp4
     vram_minimum_gb: 220
     description: "NVIDIA FP4 quantized variant with FP8 KV cache for reduced VRAM usage."
     extra_args:

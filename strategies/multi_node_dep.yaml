@@ -15,4 +15,6 @@ vllm_args:
   - "--enable-expert-parallel"
   - "--data-parallel-hybrid-lb"
 
+parallel_flag: "--data-parallel-size"
+
 env: {}
