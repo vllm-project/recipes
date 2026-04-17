@@ -13,11 +13,17 @@ model:
   model_id: "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
   min_vllm_version: "0.12.0"
   architecture: moe
-  parameter_count: "14B"
+  parameter_count: "28B"
   active_parameters: "14B"
   context_length: 0
   base_args: []
   base_env: {}
+
+dependencies:
+  - note: "Pin vllm==0.12.0 for Wan2.2"
+    command: "uv pip install vllm==0.12.0"
+  - note: "vllm-omni pinned to a specific commit that includes Wan2.2 text-to-video support"
+    command: "uv pip install git+https://github.com/vllm-project/vllm-omni.git@ef01223c42be10ee260b9f6e5ec31894cd09d86e"
 
 features: {}
 
@@ -26,7 +32,7 @@ opt_in_features: []
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 34
+    vram_minimum_gb: 152
     description: "T2V MoE with 14B active parameters"
 
   i2v:

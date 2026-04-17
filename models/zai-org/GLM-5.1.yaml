@@ -16,7 +16,7 @@ model:
   architecture: moe
   parameter_count: "744B"
   active_parameters: "40B"
-  context_length: 131072
+  context_length: 202752
   base_args:
     - "--trust-remote-code"
     - "--chat-template-content-format=string"
@@ -34,7 +34,7 @@ features:
     args:
       - "--reasoning-parser"
       - "glm45"
-  mtp:
+  spec_decoding:
     description: "Multi-Token Prediction speculative decoding (3 draft tokens)"
     args:
       - "--speculative-config.method"
@@ -43,7 +43,7 @@ features:
       - "3"
 
 opt_in_features:
-  - mtp
+  - spec_decoding
 
 variants:
   default:

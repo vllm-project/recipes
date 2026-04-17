@@ -14,9 +14,15 @@ export default async function OrgLayout({ children }) {
   const sorted = Object.entries(byOrg).sort((a, b) =>
     a[0].toLowerCase().localeCompare(b[0].toLowerCase())
   );
-  // Sort models within each org alphabetically too
+  // Sort models within each org by HF release date (newest first).
+  // Fallback to repo-name alphabetical when date missing/equal.
   for (const [, models] of sorted) {
-    models.sort((a, b) => (a.hf_repo || "").localeCompare(b.hf_repo || ""));
+    models.sort((a, b) => {
+      const da = a.hf_released ? new Date(a.hf_released).getTime() : 0;
+      const db = b.hf_released ? new Date(b.hf_released).getTime() : 0;
+      if (da !== db) return db - da;
+      return (a.hf_repo || "").localeCompare(b.hf_repo || "");
+    });
   }
 
   return (

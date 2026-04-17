@@ -17,7 +17,7 @@ model:
   architecture: dense
   parameter_count: "72B"
   active_parameters: "72B"
-  context_length: 131072
+  context_length: 128000
   base_args: []
   base_env: {}
 

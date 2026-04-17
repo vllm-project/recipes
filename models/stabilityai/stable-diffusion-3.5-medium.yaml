@@ -20,6 +20,12 @@ model:
   base_args: []
   base_env: {}
 
+dependencies:
+  - note: "Pin vllm==0.12.0 for Stable Diffusion 3.5"
+    command: "uv pip install vllm==0.12.0"
+  - note: "vllm-omni provides the image generation backend"
+    command: "uv pip install git+https://github.com/vllm-project/vllm-omni.git"
+
 features: {}
 
 opt_in_features: []
@@ -27,7 +33,7 @@ opt_in_features: []
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 6
+    vram_minimum_gb: 44
     description: "Stable Diffusion 3.5 medium (2.5B)"
 
   large:

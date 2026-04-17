@@ -22,6 +22,13 @@ model:
     - "--kernel-config.enable_flashinfer_autotune=False"
   base_env: {}
 
+dependencies:
+  - note: "DeepGEMM pinned build for MQA logits (FP8 MoE kernels)"
+    command: "uv pip install git+https://github.com/deepseek-ai/DeepGEMM.git@v2.1.1.post3 --no-build-isolation"
+  - note: "Set VLLM_USE_DEEP_GEMM=0 to skip DeepGEMM for the MoE path (recommended on H20)"
+    command: "export VLLM_USE_DEEP_GEMM=0"
+    optional: true
+
 features:
   tool_calling:
     description: "Enable tool calling with DeepSeek V3.2 chat template support."
@@ -36,14 +43,14 @@ features:
     args:
       - "--reasoning-parser"
       - "deepseek_v3"
-  mtp:
+  spec_decoding:
     description: "Multi-Token Prediction speculative decoding with 3 speculative tokens."
     args:
       - "--speculative_config"
       - '{"method":"mtp","num_speculative_tokens":3}'
 
 opt_in_features:
-  - mtp
+  - spec_decoding
 
 variants:
   default:
@@ -53,7 +60,7 @@ variants:
   nvfp4:
     model_id: "nvidia/DeepSeek-V3.2-NVFP4"
     precision: nvfp4
-    vram_minimum_gb: 220
+    vram_minimum_gb: 403
     description: "NVIDIA FP4 quantized variant with FP8 KV cache for reduced VRAM usage."
     extra_args:
       - "--kv-cache-dtype"

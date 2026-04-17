@@ -5,6 +5,19 @@ import yaml from "js-yaml";
 let cache = null;
 
 const MODELS_DIR = path.join(process.cwd(), "models");
+const HF_DATES_PATH = path.join(process.cwd(), "public", "hf-dates.json");
+
+// HF release dates per hf_id (populated at build by scripts/fetch-hf-dates.mjs)
+let hfDates = null;
+function loadHfDates() {
+  if (hfDates !== null) return hfDates;
+  try {
+    hfDates = JSON.parse(fs.readFileSync(HF_DATES_PATH, "utf8"));
+  } catch {
+    hfDates = {};
+  }
+  return hfDates;
+}
 
 function parseRecipe(filePath) {
   const raw = yaml.load(fs.readFileSync(filePath, "utf8"));
@@ -19,6 +32,9 @@ function parseRecipe(filePath) {
     raw.hf_org = parts[0];
     raw.hf_repo = parts[parts.length - 1].replace(/\.(yaml|yml)$/, "");
     raw.hf_id = `${raw.hf_org}/${raw.hf_repo}`;
+    // Attach HF release date (ISO string) from build-time manifest
+    const dates = loadHfDates();
+    raw.hf_released = dates[raw.hf_id] || null;
   }
   return raw;
 }

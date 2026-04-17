@@ -23,6 +23,11 @@ model:
     - '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}'
   base_env: {}
 
+dependencies:
+  - note: "Optional: DeepGEMM FP8 MoE kernels for throughput (skip on B200 — known FlashInfer FP8 MoE error)"
+    command: "export VLLM_USE_DEEP_GEMM=1"
+    optional: true
+
 features:
   tool_calling:
     description: "MiniMax M2 tool call parser with automatic tool choice"

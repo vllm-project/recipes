@@ -2,8 +2,39 @@
 
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Copy, Check, Terminal, Gauge, Sparkles } from "lucide-react";
+import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package } from "lucide-react";
 import { resolveCommand, recommendStrategy, filterHardwareByVram, isPrecisionCompatible, pickDefaultHardware } from "@/lib/command-synthesis";
+
+// Advanced tuning presets — optional tunable flags the user can opt into.
+// (vLLM defaults like chunked prefill, prefix caching, CUDA graphs, async
+// scheduling are already on — no need to surface them here.)
+const ADVANCED_OPTIONS = [
+  {
+    id: "max_batched_8k",
+    label: "max-num-batched-tokens = 8192",
+    description: "Tunable batch budget; 8192 is a common sweet spot",
+    args: ["--max-num-batched-tokens", "8192"],
+  },
+  {
+    id: "max_num_seqs_256",
+    label: "max-num-seqs = 256",
+    description: "Max concurrent sequences per batch; lower for latency, higher for throughput",
+    args: ["--max-num-seqs", "256"],
+  },
+  {
+    id: "gpu_mem_095",
+    label: "gpu-memory-utilization = 0.95",
+    description: "Push KV cache further; use with caution on shared GPUs",
+    args: ["--gpu-memory-utilization", "0.95"],
+  },
+  {
+    id: "max_model_len_auto",
+    label: "max-model-len = auto",
+    description: "Auto-size context window to what KV cache can hold on your hardware",
+    args: ["--max-model-len", "auto"],
+  },
+];
+const ADVANCED_BY_ID = Object.fromEntries(ADVANCED_OPTIONS.map((o) => [o.id, o]));
 import { loadPreferences, savePreference } from "@/lib/preferences";
 
 function CopyButton({ text, className = "" }) {
@@ -116,6 +147,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     return Object.keys(recipe.features || {}).filter((f) => !(recipe.opt_in_features || []).includes(f));
   });
 
+  // Advanced tuning flags (defaults off) — toggled independently from features
+  const [advanced, setAdvanced] = useState(() => {
+    const ap = searchParams.get("advanced");
+    return ap ? ap.split(",").filter(Boolean) : [];
+  });
+
   // ── Derived ──
   const currentVariant = recipe.variants?.[variant] || recipe.variants?.default || {};
 
@@ -168,8 +205,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   }, [recipe, strategies, hwProfile]);
 
   const result = useMemo(
-    () => resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy),
-    [recipe, variant, activeStrategy, hwId, features, strategies, taxonomy]
+    () => {
+      const advArgs = advanced.flatMap((id) => ADVANCED_BY_ID[id]?.args || []);
+      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs);
+    },
+    [recipe, variant, activeStrategy, hwId, features, advanced, strategies, taxonomy]
   );
 
   // Visual feedback when command changes
@@ -245,6 +285,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     syncUrl({ features: next.length > 0 ? next.join(",") : "" });
   };
 
+  const toggleAdvanced = (id) => {
+    const next = advanced.includes(id) ? advanced.filter((x) => x !== id) : [...advanced, id];
+    setAdvanced(next);
+    syncUrl({ advanced: next.length > 0 ? next.join(",") : "" });
+  };
+
   const isPd = result.deployType === "pd_cluster";
   const modelId = recipe.variants?.[variant]?.model_id || recipe.model?.model_id || "model";
 
@@ -264,8 +310,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   --num-prompts 100 \\
   --max-concurrency 32`;
 
+  const dependencies = recipe.dependencies || [];
+
   return (
     <div className="space-y-4">
+      {/* ── Dependencies / extra install ── */}
+      {dependencies.length > 0 && <DependenciesBlock deps={dependencies} />}
+
       {/* ── Command output ── */}
       <div
         className={`rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border transition-shadow ${
@@ -395,6 +446,42 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             </PillGroup>
           </ConfigRow>
         )}
+
+        {/* Advanced (collapsed by default) */}
+        <details className="group">
+          <summary className="px-4 py-3 cursor-pointer text-[10px] font-semibold text-muted-foreground uppercase tracking-widest hover:bg-muted/30 transition-colors flex items-center gap-2 select-none list-none">
+            <span>Advanced</span>
+            <span className="text-muted-foreground/50 normal-case tracking-normal font-normal">
+              {advanced.length > 0 ? `(${advanced.length} enabled)` : "— performance tuning"}
+            </span>
+            <ChevronDown size={12} className="ml-auto group-open:rotate-180 transition-transform" />
+          </summary>
+          <div className="px-4 pb-4 pt-1 border-t border-border/60">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {ADVANCED_OPTIONS.map((opt) => (
+                <label
+                  key={opt.id}
+                  className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition-colors ${
+                    advanced.includes(opt.id)
+                      ? "border-vllm-blue/40 bg-vllm-blue/5"
+                      : "border-border hover:bg-muted/30"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={advanced.includes(opt.id)}
+                    onChange={() => toggleAdvanced(opt.id)}
+                    className="accent-vllm-blue mt-0.5"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium">{opt.label}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5 leading-snug">{opt.description}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+        </details>
       </div>
     </div>
   );
@@ -436,6 +523,36 @@ function Pill({ active, onClick, title, dimmed, disabled, children }) {
     >
       {children}
     </button>
+  );
+}
+
+function DependenciesBlock({ deps }) {
+  const allCommands = deps.map((d) => d.command).join("\n");
+  const requiredCount = deps.filter((d) => !d.optional).length;
+  const optionalCount = deps.length - requiredCount;
+  return (
+    <div className="rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border">
+      <div className="flex items-center justify-between px-4 pt-3">
+        <span className="text-[11px] text-[var(--command-fg)]/50 font-mono inline-flex items-center gap-1.5">
+          <Package size={11} /> extra install
+          {requiredCount > 0 && <span className="text-[var(--command-fg)]/40">· {requiredCount} required</span>}
+          {optionalCount > 0 && <span className="text-[var(--command-fg)]/40">· {optionalCount} optional</span>}
+        </span>
+        <CopyButton text={allCommands} />
+      </div>
+      <div className="px-4 py-3 text-[13px] font-mono leading-relaxed overflow-x-auto space-y-2">
+        {deps.map((d, i) => (
+          <div key={i}>
+            {d.note && (
+              <div className="text-[var(--command-fg)]/45 text-[11px] leading-snug mb-0.5">
+                # {d.note}{d.optional ? " (optional)" : ""}
+              </div>
+            )}
+            <div className="text-[var(--command-fg)] whitespace-pre">{d.command}</div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

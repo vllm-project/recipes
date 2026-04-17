@@ -33,7 +33,7 @@ opt_in_features:
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 50
+    vram_minimum_gb: 106
     description: "BF16 weights; fits on 1x80GB GPU (21B variant)"
 
   "300b":

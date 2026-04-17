@@ -45,7 +45,7 @@ opt_in_features: []
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 19
+    vram_minimum_gb: 22
     description: "Native BF16 weights (8B)"
 
   "3b":

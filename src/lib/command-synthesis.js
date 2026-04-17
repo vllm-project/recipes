@@ -15,25 +15,17 @@ function normalizeGeneration(gen) {
 }
 
 /**
- * Given a recipe and hardware profile, recommend the best strategy.
+ * Given a recipe and hardware profile, recommend the default strategy.
+ *
+ * Tensor Parallel is the default for every model — it's the most widely
+ * tested, works for both dense and MoE. TEP / DEP / PD-cluster are
+ * advanced strategies that users can opt into explicitly.
  */
 export function recommendStrategy(recipe, hwProfile) {
   const compatible = recipe.compatible_strategies || [];
-  const arch = recipe.model?.architecture;
-  const gpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 8;
   const multiNode = hwProfile.multi_node;
 
-  if (multiNode) {
-    if (arch === "moe" && compatible.includes("multi_node_dep")) return "multi_node_dep";
-    if (arch === "moe" && compatible.includes("multi_node_tep")) return "multi_node_tep";
-    if (compatible.includes("multi_node_tp")) return "multi_node_tp";
-  }
-
-  if (arch === "moe" && gpuCount >= 4) {
-    if (compatible.includes("single_node_dep")) return "single_node_dep";
-    if (compatible.includes("single_node_tep")) return "single_node_tep";
-  }
-
+  if (multiNode && compatible.includes("multi_node_tp")) return "multi_node_tp";
   if (compatible.includes("single_node_tp")) return "single_node_tp";
   return compatible[0] || "single_node_tp";
 }
@@ -116,7 +108,7 @@ export function pickDefaultHardware(hwProfiles, variant) {
  * Returns: { command, env, deployType } for single_node/multi_node,
  *          { prefillCommand, decodeCommand, routerConfig, env, deployType } for pd_cluster.
  */
-export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy) {
+export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = []) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
@@ -129,18 +121,29 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   function buildArgs(roleOverride) {
     const args = [];
 
-    // 1. Base args
+    // Order:
+    // 1. base_args         (trust-remote-code, required flags)
+    // 2. variant           (quantization flags)
+    // 3. strategy cluster  (parallelism — strategy.vllm_args + -tp/-dp grouped together)
+    // 4. strategy_override (recipe's per-strategy tweaks)
+    // 5. hardware_override (per-generation tweaks)
+    // 6. advanced          (user-picked perf flags)
+    // 7. features          (tool_calling, reasoning, mtp — last for readability)
+
+    // 1. base_args
     if (recipe.model?.base_args) args.push(...recipe.model.base_args);
 
     // 2. Variant extra args
     if (variantKey !== "default" && variant.extra_args) args.push(...variant.extra_args);
 
-    // 3. Strategy args (for non-pd_cluster, or role-specific for pd_cluster)
+    // 3. Strategy args + parallel size (grouped together so -tp/-dp sits next to -ep etc.)
     if (strategy.deploy_type !== "pd_cluster") {
       if (strategy.vllm_args) args.push(...strategy.vllm_args);
     } else if (roleOverride && strategy[roleOverride]?.vllm_args) {
       args.push(...strategy[roleOverride].vllm_args);
     }
+    const parallelFlag = strategy.parallel_flag || "--tensor-parallel-size";
+    args.push(parallelFlag, String(gpuCount));
 
     // 4. Strategy overrides from recipe
     const so = recipe.strategy_overrides?.[strategyName];
@@ -156,16 +159,14 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     const ho = recipe.hardware_overrides?.[gen];
     if (ho?.extra_args) args.push(...ho.extra_args);
 
-    // 6. Features
-    for (const f of enabledFeatures) {
+    // 6. Advanced tuning args (from UI's Advanced panel)
+    if (advancedArgs && advancedArgs.length) args.push(...advancedArgs);
+
+    // 7. Features last — tool_calling, reasoning, mtp, etc.
+    for (const f of enabledFeatures || []) {
       const feat = recipe.features?.[f];
       if (feat?.args) args.push(...feat.args);
     }
-
-    // 7. Parallelism size — use strategy's parallel_flag (e.g., --tensor-parallel-size
-    // for tp/tep strategies, --data-parallel-size for dep strategies)
-    const parallelFlag = strategy.parallel_flag || "--tensor-parallel-size";
-    args.push(parallelFlag, String(gpuCount));
 
     return args;
   }

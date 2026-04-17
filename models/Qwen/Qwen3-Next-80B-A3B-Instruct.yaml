@@ -27,7 +27,7 @@ features:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
       - "hermes"
-  mtp:
+  spec_decoding:
     description: "Multi-token prediction speculative decoding for lower latency"
     args:
       - "--speculative-config"
@@ -35,7 +35,7 @@ features:
       - "--no-enable-chunked-prefill"
 
 opt_in_features:
-  - mtp
+  - spec_decoding
 
 variants:
   default:
@@ -50,7 +50,7 @@ variants:
   nvfp4:
     model_id: "nvidia/Qwen3-Next-80B-A3B-Instruct-NVFP4"
     precision: nvfp4
-    vram_minimum_gb: 40
+    vram_minimum_gb: 48
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
     extra_args:
       - "--kv-cache-dtype"

@@ -111,12 +111,7 @@ export default async function OrgPage({ params }) {
 }
 
 function ModelRow({ recipe }) {
-  const { meta, model, variants, hardware_overrides, hf_repo } = recipe;
-
-  const hwTags = [];
-  if (hardware_overrides?.hopper) hwTags.push("Hopper");
-  if (hardware_overrides?.blackwell) hwTags.push("Blackwell");
-  if (hardware_overrides?.amd) hwTags.push("AMD");
+  const { meta, model, variants, hf_repo } = recipe;
 
   return (
     <Link
@@ -146,12 +141,6 @@ function ModelRow({ recipe }) {
             <span className="font-semibold">{v.precision?.toUpperCase()}</span>
             <span className="text-muted-foreground">{v.vram_minimum_gb}G</span>
           </span>
-        ))}
-      </div>
-
-      <div className="flex gap-1 flex-wrap">
-        {hwTags.map((t) => (
-          <Badge key={t} variant="outline" className="text-[9px]">{t}</Badge>
         ))}
       </div>
 

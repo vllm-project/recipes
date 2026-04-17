@@ -17,7 +17,7 @@ model:
   architecture: moe
   parameter_count: "109B"
   active_parameters: "17B"
-  context_length: 131072
+  context_length: 10485760
   base_args: []
   base_env: {}
 
@@ -34,7 +34,7 @@ variants:
   fp8:
     model_id: "nvidia/Llama-4-Scout-17B-16E-Instruct-FP8"
     precision: fp8
-    vram_minimum_gb: 55
+    vram_minimum_gb: 131
     description: "NVIDIA FP8 quantization for Hopper and Blackwell, fits on 1x H100"
     extra_args:
       - "--kv-cache-dtype"
@@ -44,7 +44,7 @@ variants:
   nvfp4:
     model_id: "nvidia/Llama-4-Scout-17B-16E-Instruct-NVFP4"
     precision: nvfp4
-    vram_minimum_gb: 28
+    vram_minimum_gb: 65
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
     extra_args:
       - "--kv-cache-dtype"

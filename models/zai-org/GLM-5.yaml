@@ -16,11 +16,20 @@ model:
   architecture: moe
   parameter_count: "744B"
   active_parameters: "40B"
-  context_length: 131072
+  context_length: 202752
   base_args:
     - "--trust-remote-code"
     - "--chat-template-content-format=string"
   base_env: {}
+
+dependencies:
+  - note: "Pin vllm==0.19.0 (avoid nightly)"
+    command: 'uv pip install "vllm==0.19.0" --torch-backend=auto'
+  - note: "GLM-5 requires transformers >= 5.4.0"
+    command: 'uv pip install "transformers>=5.4.0"'
+  - note: "Optional: DeepGEMM for FP8 MoE kernels (FP8 variant only)"
+    command: "bash install_deepgemm.sh"
+    optional: true
 
 features:
   tool_calling:
@@ -34,7 +43,7 @@ features:
     args:
       - "--reasoning-parser"
       - "glm45"
-  mtp:
+  spec_decoding:
     description: "Multi-Token Prediction speculative decoding (3 draft tokens)"
     args:
       - "--speculative-config.method"
@@ -43,7 +52,7 @@ features:
       - "3"
 
 opt_in_features:
-  - mtp
+  - spec_decoding
 
 variants:
   default:
@@ -58,7 +67,7 @@ variants:
   nvfp4:
     model_id: "nvidia/GLM-5-NVFP4"
     precision: nvfp4
-    vram_minimum_gb: 218
+    vram_minimum_gb: 446
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
     extra_args:
       - "--kv-cache-dtype"

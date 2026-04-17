@@ -16,7 +16,7 @@ model:
   architecture: moe
   parameter_count: "235B"
   active_parameters: "22B"
-  context_length: 32768
+  context_length: 262144
   base_args:
     - "--trust-remote-code"
   base_env: {}
@@ -44,7 +44,7 @@ variants:
   nvfp4:
     model_id: "nvidia/Qwen3-235B-A22B-Instruct-2507-NVFP4"
     precision: nvfp4
-    vram_minimum_gb: 60
+    vram_minimum_gb: 141
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
     extra_args:
       - "--kv-cache-dtype"

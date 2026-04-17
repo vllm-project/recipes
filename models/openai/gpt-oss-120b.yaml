@@ -38,7 +38,7 @@ opt_in_features:
 variants:
   default:
     precision: mxfp4
-    vram_minimum_gb: 86
+    vram_minimum_gb: 96
     description: "gpt-oss-120b with MXFP4 MoE; fits on 1xA100 80GB, scales to TP 2/4/8"
 
   "20b":

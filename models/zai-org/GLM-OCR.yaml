@@ -16,12 +16,18 @@ model:
   architecture: dense
   parameter_count: "0.9B"
   active_parameters: "0.9B"
-  context_length: 32768
+  context_length: 131072
   base_args: []
   base_env: {}
 
+dependencies:
+  - note: "GLM-OCR requires the nightly vllm wheel"
+    command: "uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly"
+  - note: "transformers from source for GLM-OCR tokenizer support"
+    command: "uv pip install git+https://github.com/huggingface/transformers.git"
+
 features:
-  mtp:
+  spec_decoding:
     description: "Multi-Token Prediction speculative decoding using the model's built-in MTP layers"
     args:
       - "--speculative-config.method"

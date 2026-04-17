@@ -13,10 +13,10 @@ meta:
 model:
   model_id: "internlm/Intern-S1"
   min_vllm_version: "0.10.0"
-  architecture: dense
+  architecture: moe
   parameter_count: "241B"
-  active_parameters: "241B"
-  context_length: 131072
+  active_parameters: "28B"
+  context_length: 65536
   base_args:
     - "--trust-remote-code"
   base_env: {}

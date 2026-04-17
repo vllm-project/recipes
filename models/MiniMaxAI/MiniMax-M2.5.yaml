@@ -46,7 +46,7 @@ variants:
   nvfp4:
     model_id: "nvidia/MiniMax-M2.5-NVFP4"
     precision: nvfp4
-    vram_minimum_gb: 58
+    vram_minimum_gb: 138
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
     extra_args:
       - "--kv-cache-dtype"

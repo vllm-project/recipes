@@ -19,6 +19,10 @@ model:
   base_args: []
   base_env: {}
 
+dependencies:
+  - note: "Pinned transformers commit required for Seed-OSS tokenizer compatibility"
+    command: "uv pip install git+https://github.com/huggingface/transformers.git@56d68c6706ee052b445e1e476056ed92ac5eb383"
+
 features:
   tool_calling:
     description: "Seed-OSS tool-call parser with automatic tool choice"

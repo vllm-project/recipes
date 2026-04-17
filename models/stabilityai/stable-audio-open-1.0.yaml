@@ -20,6 +20,14 @@ model:
   base_args: []
   base_env: {}
 
+dependencies:
+  - note: "Pin vllm==0.14.1 for Stable Audio Open"
+    command: "uv pip install vllm==0.14.1"
+  - note: "vllm-omni provides the audio generation backend"
+    command: "uv pip install git+https://github.com/vllm-project/vllm-omni.git"
+  - note: "soundfile (recommended) or scipy for WAV output"
+    command: "uv pip install soundfile"
+
 features: {}
 
 opt_in_features: []
@@ -27,7 +35,7 @@ opt_in_features: []
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 3
+    vram_minimum_gb: 19
     description: "BF16 weights for text-to-audio generation (via vLLM-Omni)"
 
 compatible_strategies: []

@@ -17,9 +17,16 @@ model:
   architecture: dense
   parameter_count: "31B"
   active_parameters: "31B"
-  context_length: 131072
+  context_length: 262144
   base_args: []
   base_env: {}
+
+dependencies:
+  - note: "Gemma 4 requires transformers 5.5.0"
+    command: "uv pip install transformers==5.5.0"
+  - note: "Audio extras — only needed when serving the audio modality"
+    command: 'uv pip install "vllm[audio]"'
+    optional: true
 
 features:
   tool_calling:
@@ -41,12 +48,12 @@ opt_in_features: []
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 74
+    vram_minimum_gb: 210
     description: "Full BF16 — single 80 GB NVIDIA GPU or 1x MI300X/MI325X/MI350X/MI355X"
   nvfp4:
     model_id: "nvidia/gemma-4-31B-it-NVFP4"
     precision: nvfp4
-    vram_minimum_gb: 10
+    vram_minimum_gb: 19
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
     extra_args:
       - "--kv-cache-dtype"

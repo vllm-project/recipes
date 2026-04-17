@@ -20,6 +20,10 @@ model:
   base_args: []
   base_env: {}
 
+dependencies:
+  - note: "vLLM-Omni must be installed from source and pins vllm==0.18.0 for diffusion support"
+    command: "git clone https://github.com/vllm-project/vllm-omni.git && cd vllm-omni && uv pip install -e . vllm==0.18.0"
+
 features: {}
 
 opt_in_features: []

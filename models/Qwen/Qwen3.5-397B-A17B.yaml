@@ -36,14 +36,14 @@ features:
     args:
       - "--reasoning-parser"
       - "qwen3"
-  mtp:
+  spec_decoding:
     description: "Multi-token prediction speculative decoding for lower latency"
     args:
       - "--speculative_config"
       - '{"method":"mtp","num_speculative_tokens":3}'
 
 opt_in_features:
-  - mtp
+  - spec_decoding
 
 variants:
   default:
@@ -53,7 +53,7 @@ variants:
   nvfp4:
     model_id: "nvidia/Qwen3.5-397B-A17B-NVFP4"
     precision: nvfp4
-    vram_minimum_gb: 200
+    vram_minimum_gb: 238
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"

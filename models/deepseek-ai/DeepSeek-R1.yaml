@@ -41,7 +41,7 @@ variants:
   nvfp4:
     model_id: "nvidia/DeepSeek-R1-NVFP4"
     precision: nvfp4
-    vram_minimum_gb: 198
+    vram_minimum_gb: 403
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
     extra_args:
       - "--kv-cache-dtype"

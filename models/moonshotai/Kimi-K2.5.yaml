@@ -48,13 +48,13 @@ opt_in_features:
 
 variants:
   default:
-    precision: bf16
-    vram_minimum_gb: 2400
-    description: "Full precision BF16 on 8xH200 (80 GB each)"
+    precision: int4
+    vram_minimum_gb: 714
+    description: "Packed INT4 via compressed-tensors (~595 GB on disk); fits 8×H200"
   nvfp4:
     model_id: "nvidia/Kimi-K2.5-NVFP4"
     precision: nvfp4
-    vram_minimum_gb: 320
+    vram_minimum_gb: 600
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs (e.g. GB200)"
     extra_args:
       - "--kv-cache-dtype"

@@ -28,7 +28,7 @@ opt_in_features: []
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 192
+    vram_minimum_gb: 580
     description: "Full precision BF16 — 2x GPU (TP=2) on AMD MI300X/MI325X/MI355X"
   fp8:
     model_id: "tencent/Hunyuan-A13B-Instruct-FP8"

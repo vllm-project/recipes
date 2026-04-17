@@ -22,6 +22,14 @@ model:
     - "--trust-remote-code"
   base_env: {}
 
+dependencies:
+  - note: "vllm-omni provides the diffusion decoder path"
+    command: "uv pip install vllm-omni"
+  - note: "transformers from source (GLM-Image tokenizer)"
+    command: "uv pip install git+https://github.com/huggingface/transformers.git"
+  - note: "diffusers from source — required for the DiT decoder"
+    command: "uv pip install git+https://github.com/huggingface/diffusers.git"
+
 features: {}
 
 opt_in_features: []

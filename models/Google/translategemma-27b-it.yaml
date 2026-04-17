@@ -16,7 +16,7 @@ model:
   architecture: dense
   parameter_count: "27B"
   active_parameters: "27B"
-  context_length: 2048
+  context_length: 131072
   base_args: []
   base_env: {}
 
@@ -32,7 +32,7 @@ variants:
   vllm_optimized:
     model_id: "Infomaniak-AI/vllm-translategemma-27b-it"
     precision: bf16
-    vram_minimum_gb: 60
+    vram_minimum_gb: 65
     description: "Infomaniak-AI vLLM-optimized checkpoint — recommended. Fixes RoPE config, EOS token, and replaces custom JSON inputs with string delimiters."
   small_4b:
     model_id: "google/translategemma-4b-it"

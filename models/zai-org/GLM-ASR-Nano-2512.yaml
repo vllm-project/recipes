@@ -14,11 +14,17 @@ model:
   model_id: "zai-org/GLM-ASR-Nano-2512"
   min_vllm_version: "0.14.1"
   architecture: dense
-  parameter_count: "2B"
+  parameter_count: "2.3B"
   active_parameters: "1.5B"
   context_length: 8192
   base_args: []
   base_env: {}
+
+dependencies:
+  - note: "Audio extras required for ASR (requires vllm>=0.14.1)"
+    command: 'uv pip install -U "vllm[audio]" --torch-backend auto'
+  - note: "Install transformers from source for GLM-ASR tokenizer support"
+    command: "uv pip install git+https://github.com/huggingface/transformers.git"
 
 features: {}
 
@@ -27,7 +33,7 @@ opt_in_features: []
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 5
+    vram_minimum_gb: 11
     description: "Full precision BF16 — single-GPU deployment"
 
 compatible_strategies:

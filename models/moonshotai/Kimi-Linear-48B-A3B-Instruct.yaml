@@ -21,6 +21,10 @@ model:
     - "--trust-remote-code"
   base_env: {}
 
+dependencies:
+  - note: "Pin vllm==0.11.2 — 0.12.0 has a known Kimi-Linear regression"
+    command: "uv pip install vllm==0.11.2 --torch-backend auto"
+
 features: {}
 
 opt_in_features: []

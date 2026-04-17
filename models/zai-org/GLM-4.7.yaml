@@ -16,10 +16,16 @@ model:
   architecture: moe
   parameter_count: "358B"
   active_parameters: "32B"
-  context_length: 131072
+  context_length: 202752
   base_args:
     - "--trust-remote-code"
   base_env: {}
+
+dependencies:
+  - note: "GLM-4.7 requires the nightly vllm wheel"
+    command: "uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly"
+  - note: "transformers from source — GLM-4.7 tokenizer is newer than any release"
+    command: "uv pip install git+https://github.com/huggingface/transformers.git"
 
 features:
   tool_calling:
@@ -33,7 +39,7 @@ features:
     args:
       - "--reasoning-parser"
       - "glm45"
-  mtp:
+  spec_decoding:
     description: "Multi-Token Prediction speculative decoding using the model's built-in MTP layers"
     args:
       - "--speculative-config.method"
@@ -42,7 +48,7 @@ features:
       - "1"
 
 opt_in_features:
-  - mtp
+  - spec_decoding
 
 variants:
   default:
@@ -57,7 +63,7 @@ variants:
   nvfp4:
     model_id: "nvidia/GLM-4.7-NVFP4"
     precision: nvfp4
-    vram_minimum_gb: 92
+    vram_minimum_gb: 215
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
     extra_args:
       - "--kv-cache-dtype"

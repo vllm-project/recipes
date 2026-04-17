@@ -15,7 +15,7 @@ model:
   architecture: moe
   parameter_count: "398B"
   active_parameters: "13B"
-  context_length: 131072
+  context_length: 262144
   base_args:
     - "--dtype"
     - "bfloat16"

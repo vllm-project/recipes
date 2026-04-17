@@ -14,7 +14,7 @@ meta:
 model:
   model_id: "deepseek-ai/DeepSeek-OCR-2"
   min_vllm_version: "0.12.0"
-  architecture: dense
+  architecture: moe
   parameter_count: "3B"
   active_parameters: "3B"
   context_length: 8192

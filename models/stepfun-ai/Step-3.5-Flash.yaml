@@ -16,7 +16,7 @@ model:
   architecture: moe
   parameter_count: "196B"
   active_parameters: "11B"
-  context_length: 65536
+  context_length: 262144
   base_args:
     - "--trust-remote-code"
   base_env: {}
@@ -33,7 +33,7 @@ features:
     args:
       - "--reasoning-parser"
       - "step3p5"
-  mtp:
+  spec_decoding:
     description: "Multi-Token Prediction speculative decoding with the step3p5_mtp method"
     args:
       - "--hf-overrides"
@@ -42,7 +42,7 @@ features:
       - '{"method": "step3p5_mtp", "num_speculative_tokens": 1}'
 
 opt_in_features:
-  - mtp
+  - spec_decoding
 
 variants:
   default:

@@ -13,10 +13,10 @@ meta:
 model:
   model_id: "mistralai/Mistral-Large-3-675B-Instruct-2512"
   min_vllm_version: "0.11.0"
-  architecture: dense
+  architecture: moe
   parameter_count: "675B"
-  active_parameters: "675B"
-  context_length: 262144
+  active_parameters: "22B"
+  context_length: 294912
   base_args:
     - "--tokenizer_mode"
     - "mistral"

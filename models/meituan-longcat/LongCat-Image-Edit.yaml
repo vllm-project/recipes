@@ -19,6 +19,14 @@ model:
   base_args: []
   base_env: {}
 
+dependencies:
+  - note: "vLLM-Omni must be installed from source with vllm==0.12.0 for LongCat-Image-Edit"
+    command: "git clone https://github.com/vllm-project/vllm-omni.git && cd vllm-omni && uv pip install -e . vllm==0.12.0"
+  - note: "xformers CUDA 12.8 build required for the diffusion attention kernels"
+    command: "uv pip install -U xformers --index-url https://download.pytorch.org/whl/cu128"
+  - note: "diffusers from source (needed by the image-edit pipeline)"
+    command: "git clone https://github.com/huggingface/diffusers.git && cd diffusers && uv pip install -e ."
+
 features: {}
 
 opt_in_features: []
@@ -26,7 +34,7 @@ opt_in_features: []
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 14
+    vram_minimum_gb: 36
     description: "BF16 weights; served via vLLM-Omni (offline inference)"
 
 compatible_strategies: []

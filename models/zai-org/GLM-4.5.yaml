@@ -33,7 +33,7 @@ features:
     args:
       - "--reasoning-parser"
       - "glm45"
-  mtp:
+  spec_decoding:
     description: "Multi-Token Prediction speculative decoding using the model's built-in MTP layers"
     args:
       - "--speculative-config.method"
@@ -42,7 +42,7 @@ features:
       - "1"
 
 opt_in_features:
-  - mtp
+  - spec_decoding
 
 variants:
   default:

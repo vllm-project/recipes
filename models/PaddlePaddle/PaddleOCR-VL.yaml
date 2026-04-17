@@ -15,7 +15,7 @@ model:
   architecture: dense
   parameter_count: "0.9B"
   active_parameters: "0.9B"
-  context_length: 16384
+  context_length: 131072
   base_args:
     - "--trust-remote-code"
     - "--max-num-batched-tokens"
@@ -24,6 +24,14 @@ model:
     - "--mm-processor-cache-gb"
     - "0"
   base_env: {}
+
+dependencies:
+  - note: "PaddlePaddle runtime (install in a separate venv from vllm to avoid conflicts)"
+    command: "uv pip install paddlepaddle-gpu==3.2.1 --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/"
+  - note: "PaddleOCR document-parsing helpers"
+    command: 'uv pip install -U "paddleocr[doc-parser]"'
+  - note: "Safetensors loader used by the doc-parser path"
+    command: "uv pip install safetensors"
 
 features: {}
 

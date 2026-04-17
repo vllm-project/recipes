@@ -14,11 +14,15 @@ model:
   model_id: "Qwen/Qwen3-ASR-1.7B"
   min_vllm_version: "0.12.0"
   architecture: dense
-  parameter_count: "1.7B"
-  active_parameters: "1.7B"
-  context_length: 32768
+  parameter_count: "2.3B"
+  active_parameters: "2.3B"
+  context_length: 65536
   base_args: []
   base_env: {}
+
+dependencies:
+  - note: "Audio extras — required for ASR input pre-processing (librosa, soundfile)"
+    command: 'uv pip install -U "vllm[audio]"'
 
 features: {}
 

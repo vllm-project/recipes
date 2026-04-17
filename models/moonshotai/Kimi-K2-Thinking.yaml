@@ -46,7 +46,7 @@ variants:
   nvfp4:
     model_id: "nvidia/Kimi-K2-Thinking-NVFP4"
     precision: nvfp4
-    vram_minimum_gb: 1
+    vram_minimum_gb: 600
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
     extra_args:
       - "--kv-cache-dtype"

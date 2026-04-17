@@ -36,7 +36,7 @@ variants:
   fp4:
     model_id: "nvidia/DeepSeek-V3-FP4"
     precision: fp4
-    vram_minimum_gb: 350
+    vram_minimum_gb: 403
     description: "NVIDIA FP4 quantized weights for Blackwell (e.g. 4xB200)"
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP4: "1"

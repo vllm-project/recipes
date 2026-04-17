@@ -21,6 +21,11 @@ model:
   base_args: []
   base_env: {}
 
+dependencies:
+  - note: "Recommended for offline multimodal inference (image/video pre-processing helpers)"
+    command: "uv pip install qwen-vl-utils==0.0.14"
+    optional: true
+
 features: {}
 
 opt_in_features: []
@@ -38,7 +43,7 @@ variants:
   nvfp4:
     model_id: "nvidia/Qwen3-VL-235B-A22B-Instruct-NVFP4"
     precision: nvfp4
-    vram_minimum_gb: 59
+    vram_minimum_gb: 141
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
     extra_args:
       - "--kv-cache-dtype"
