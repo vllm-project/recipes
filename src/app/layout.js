@@ -55,7 +55,7 @@ export default async function RootLayout({ children }) {
       <body className="antialiased bg-background text-foreground min-h-screen flex flex-col">
         {/* Global header */}
         <header className="border-b border-border bg-background/95 backdrop-blur-sm sticky top-0 z-30">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center gap-4">
+          <div className="max-w-[1480px] mx-auto px-4 sm:px-6 h-16 flex items-center gap-4">
             <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity group shrink-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -97,7 +97,7 @@ export default async function RootLayout({ children }) {
 
         {/* Global footer */}
         <footer className="border-t border-border mt-auto">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 text-xs text-muted-foreground flex flex-wrap gap-x-5 gap-y-2">
+          <div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-5 text-xs text-muted-foreground flex flex-wrap gap-x-5 gap-y-2">
             <a href="https://github.com/vllm-project/recipes" className="hover:text-foreground transition-colors">GitHub</a>
             <a href="https://github.com/vllm-project/recipes/issues" className="hover:text-foreground transition-colors">Request a recipe</a>
             <a href="https://docs.vllm.ai" className="hover:text-foreground transition-colors">Documentation</a>

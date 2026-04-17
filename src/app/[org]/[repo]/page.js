@@ -51,7 +51,7 @@ export default async function RecipePage({ params }) {
     .filter(Boolean);
 
   return (
-    <main className="py-6 max-w-4xl">
+    <main className="py-6 w-full min-w-0">
       {/* ── Model header ── */}
       <header className="mb-8">
         <div className="flex items-start gap-4 mb-4">

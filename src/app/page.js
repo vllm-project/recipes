@@ -11,7 +11,7 @@ export default async function HomePage() {
   const recipes = getAllRecipes();
 
   return (
-    <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+    <main className="max-w-[1480px] mx-auto px-4 sm:px-6 py-8">
       {/* ── Hero (compact) ── */}
       <header className="mb-6">
         <h1 className="text-xl sm:text-2xl font-bold tracking-tight">

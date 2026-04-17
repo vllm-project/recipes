@@ -26,7 +26,7 @@ export default async function OrgLayout({ children }) {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 flex gap-6">
+    <div className="max-w-[1480px] mx-auto px-4 sm:px-6 flex gap-6">
       <ModelSidebar recipesByOrg={sorted} />
       <div className="flex-1 min-w-0">
         {children}
