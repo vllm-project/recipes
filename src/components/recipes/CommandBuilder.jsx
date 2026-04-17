@@ -635,22 +635,43 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd }) {
 }
 
 function PdClusterBlock({ result, verifyCmd, benchCmd }) {
-  const [tab, setTab] = useState("prefill");
+  // Tabs: {role}-{nodePos} — e.g. prefill-head, prefill-worker, decode-head, decode-worker.
+  // In single-node mode (nodeCount === 1) we drop the -worker tabs. Router is always last.
+  const multi = result.nodeCount > 1;
+  const [tab, setTab] = useState("prefill-head");
+  const workerTabs = multi
+    ? [
+        { id: "prefill-worker", label: "Prefill · Node 1", command: result.prefill.worker, env: result.prefill.env },
+        { id: "decode-worker",  label: "Decode · Node 1",  command: result.decode.worker,  env: result.decode.env },
+      ]
+    : [];
+  const routerTab = {
+    id: "router",
+    label: "Router",
+    command: result.router.command,
+    env: {},
+    install: result.router.install,
+    isRouter: true,
+  };
   const tabs = [
-    { id: "prefill", label: "Prefill", command: result.prefillCommand },
-    { id: "decode", label: "Decode", command: result.decodeCommand },
+    { id: "prefill-head", label: multi ? "Prefill · Head" : "Prefill", command: result.prefill.head, env: result.prefill.env },
+    ...(multi ? [workerTabs[0]] : []),
+    { id: "decode-head",  label: multi ? "Decode · Head"  : "Decode",  command: result.decode.head,  env: result.decode.env },
+    ...(multi ? [workerTabs[1]] : []),
+    routerTab,
   ];
   const active = tabs.find((t) => t.id === tab) || tabs[0];
-
+  const envLines = Object.entries(active.env || {}).map(([k, v]) => `export ${k}=${v}`).join("\n");
+  const fullScript = envLines ? `${envLines}\n\n${active.command}` : active.command;
   return (
     <div>
-      <div className="flex items-center justify-between px-4 pt-3">
-        <div className="flex gap-0.5 bg-foreground/5 rounded-md p-0.5">
+      <div className="flex items-center justify-between px-4 pt-3 gap-3">
+        <div className="flex flex-wrap gap-0.5 bg-foreground/5 rounded-md p-0.5">
           {tabs.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${
                 tab === t.id ? "bg-foreground/10 text-[var(--command-fg)]" : "text-[var(--command-fg)]/50 hover:text-[var(--command-fg)]/80"
               }`}
             >
@@ -658,12 +679,26 @@ function PdClusterBlock({ result, verifyCmd, benchCmd }) {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-1.5">
-          <CopyButton text={active.command} />
-          <PopoverButton label="Verify" code={verifyCmd} icon={Terminal} />
-          <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
+        <div className="flex items-center gap-1.5 shrink-0">
+          <CopyButton text={fullScript} />
+          {!active.isRouter && (
+            <>
+              <PopoverButton label="Verify" code={verifyCmd} icon={Terminal} />
+              <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
+            </>
+          )}
         </div>
       </div>
+      {active.isRouter && active.install && (
+        <div className="px-4 pt-3 text-[11px] text-[var(--command-fg)]/50 font-mono leading-snug">
+          # Dependency: {active.install}
+        </div>
+      )}
+      {envLines && (
+        <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
+          {envLines}
+        </pre>
+      )}
       <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
         {active.command}
       </pre>

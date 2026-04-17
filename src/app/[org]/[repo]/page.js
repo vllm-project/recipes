@@ -37,10 +37,6 @@ export default async function RecipePage({ params }) {
   const guide = recipe.guide || "";
   const logo = getProviderLogo(recipe.meta.provider);
 
-  const hwTags = Object.keys(recipe.hardware_overrides || {}).map(
-    (k) => k.charAt(0).toUpperCase() + k.slice(1)
-  );
-
   const configRows = Object.entries(recipe.variants || {}).map(([key, v]) => ({
     name: key === "default" ? "Default" : key.toUpperCase(),
     precision: v.precision?.toUpperCase() || "—",
@@ -104,9 +100,6 @@ export default async function RecipePage({ params }) {
             vLLM {recipe.model.min_vllm_version}+
             <ExternalLink size={10} className="ml-1 opacity-50" />
           </a>
-          {hwTags.map((t) => (
-            <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>
-          ))}
           {recipe.meta.tasks?.map((t) => (
             <Badge key={t} variant="secondary" className="text-xs capitalize">{t}</Badge>
           ))}

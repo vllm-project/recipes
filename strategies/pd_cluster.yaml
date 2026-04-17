@@ -5,41 +5,52 @@ description: >
   Disaggregated prefill/decode cluster. Splits inference into separate
   prefill and decode workers communicating via NIXL KV cache transfer.
   Optimal for high-concurrency, low-latency production deployments.
-  Each role can use TP/TEP/DEP independently.
+  Each role can be a single-node or multi-node DP/TP/EP pool, with its
+  own HTTP port, NIXL side-channel port, and DP coordinator.
 
 hardware_match:
   min_gpus: 8
   multi_node: true
 
+# Worker environment follows the Kimi-K2.5 NIXL/MoE pattern.
+# CUDA_VISIBLE_DEVICES is set per-rank when running one `vllm serve` per GPU
+# (data parallel); omit it if your launcher already pins GPUs.
 prefill:
   vllm_args:
     - "--kv-transfer-config"
-    - '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_load_failure_policy":"fail","kv_buffer_device":"cuda","kv_connector_extra_config":{"enforce_handshake_compat":false}}'
-    - "--enable-sleep-mode"
+    - '{"kv_connector":"NixlConnector","kv_role":"kv_producer","kv_load_failure_policy":"fail"}'
+    - "--enforce-eager"
   env:
-    UCX_CUDA_IPC_ENABLE_MNNVL: "y"
-    UCX_MEMTYPE_CACHE: "n"
-    UCX_TLS: "cuda_ipc,cuda_copy,tcp"
-    NCCL_CUMEM_ENABLE: "0"
+    CUDA_VISIBLE_DEVICES: "0"
+    VLLM_USE_NCCL_SYMM_MEM: "1"
+    NCCL_CUMEM_ENABLE: "1"
+    NCCL_MNNVL_ENABLE: "1"
+    NCCL_NVLS_ENABLE: "1"
+    UCX_NET_DEVICES: "all"
+    VLLM_NIXL_SIDE_CHANNEL_PORT: "5557"
+    VLLM_NIXL_SIDE_CHANNEL_HOST: "$PREFILL_HOST_IP"
     VLLM_ENGINE_READY_TIMEOUT_S: "1800"
     VLLM_RPC_TIMEOUT: "1800000"
 
 decode:
   vllm_args:
     - "--kv-transfer-config"
-    - '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_load_failure_policy":"fail","kv_buffer_device":"cuda","kv_connector_extra_config":{"enforce_handshake_compat":false}}'
-    - "--enable-sleep-mode"
+    - '{"kv_connector":"NixlConnector","kv_role":"kv_consumer","kv_load_failure_policy":"fail"}'
     - "--compilation-config"
     - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
-    - "--stream-interval"
-    - "50"
   env:
-    UCX_CUDA_IPC_ENABLE_MNNVL: "y"
-    UCX_MEMTYPE_CACHE: "n"
-    UCX_TLS: "cuda_ipc,cuda_copy,tcp"
-    NCCL_CUMEM_ENABLE: "0"
+    CUDA_VISIBLE_DEVICES: "0"
+    VLLM_USE_NCCL_SYMM_MEM: "1"
+    NCCL_CUMEM_ENABLE: "1"
+    NCCL_MNNVL_ENABLE: "1"
+    NCCL_NVLS_ENABLE: "1"
+    UCX_NET_DEVICES: "all"
+    VLLM_NIXL_SIDE_CHANNEL_PORT: "5558"
+    VLLM_NIXL_SIDE_CHANNEL_HOST: "$DECODE_HOST_IP"
     VLLM_ENGINE_READY_TIMEOUT_S: "1800"
     VLLM_RPC_TIMEOUT: "1800000"
+
+parallel_flag: "--tensor-parallel-size"
 
 router:
   policy: round_robin

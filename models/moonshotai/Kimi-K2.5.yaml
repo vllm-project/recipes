@@ -19,9 +19,6 @@ model:
   context_length: 262144
   base_args:
     - "--trust-remote-code"
-    - "--language-model-only"
-    - "--safetensors-load-strategy"
-    - "prefetch"
   base_env:
     VLLM_FLASHINFER_MOE_BACKEND: "latency"
 
@@ -97,27 +94,17 @@ strategy_overrides:
         - "--enforce-eager"
         - "--max-num-batched-tokens"
         - "16384"
-        - "--no-enable-prefix-caching"
-        - "--no-enable-chunked-prefill"
         - "--gpu-memory-utilization"
         - "0.9"
-        - "--compilation-config"
-        - '{"custom_ops":["+quant_fp8","+rms_norm","+rotary_embedding"],"pass_config":{"fuse_attn_quant":true,"fuse_allreduce_rms":true}}'
-        - "--attention-config"
-        - '{"use_trtllm_ragged_deepseek_prefill": true}'
         - "--block-size"
         - "64"
       env: {}
     decode:
       vllm_args:
-        - "--max-num-batched-tokens"
-        - "10240"
-        - "--no-enable-prefix-caching"
-        - "--no-enable-chunked-prefill"
         - "--gpu-memory-utilization"
         - "0.9"
         - "--compilation-config"
-        - '{"cudagraph_mode":"FULL_DECODE_ONLY","custom_ops":["+quant_fp8","+rms_norm","+rotary_embedding"],"pass_config":{"fuse_attn_quant":true,"fuse_allreduce_rms":true}}'
+        - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
         - "--block-size"
         - "64"
         - "--all2all-backend"

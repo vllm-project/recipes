@@ -142,6 +142,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     }
     const parallelFlag = strategy.parallel_flag || "--tensor-parallel-size";
     const isMulti = strategy.deploy_type === "multi_node" && nodeCount > 1;
+    const isPdMulti = strategy.deploy_type === "pd_cluster" && nodeCount > 1;
 
     if (isMulti && parallelFlag === "--data-parallel-size") {
       // Multi-node DEP: DP across all GPUs, each worker owns N local ranks.
@@ -161,6 +162,18 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       args.push("--node-rank", nodeRole === "worker" ? "1" : "0");
       args.push("--master-addr", "$HEAD_IP");
       if (nodeRole === "worker") args.push("--headless");
+    } else if (strategy.deploy_type === "pd_cluster") {
+      // PD worker is a single `vllm serve` process per GPU; TP=1 is the default.
+      // Multi-node PD extends each role (prefill/decode) across nodes via the
+      // mp backend — same --nnodes/--node-rank pattern as multi-node TP.
+      args.push("--tensor-parallel-size", "1");
+      if (isPdMulti) {
+        args.push("--nnodes", String(nodeCount));
+        args.push("--node-rank", nodeRole === "worker" ? "1" : "0");
+        const roleHost = roleOverride === "decode" ? "$DECODE_HOST_IP" : "$PREFILL_HOST_IP";
+        args.push("--master-addr", roleHost);
+        if (nodeRole === "worker") args.push("--headless");
+      }
     } else {
       args.push(parallelFlag, String(gpuCount));
     }
@@ -232,11 +245,50 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   const deployType = strategy.deploy_type || "single_node";
 
   if (deployType === "pd_cluster") {
+    const multi = nodeCount > 1;
+
+    // Router command — assumes one `vllm serve` per GPU (DP=gpuCount per node).
+    // Multi-node example follows a typical asymmetric layout (1 prefill node, 1 decode
+    // node; users scale decode wider in practice). Single-node collapses to 1+1.
+    const prefillCount = multi ? gpuCount : 1;
+    const decodeCount = multi ? gpuCount : 1;
+    const policy = strategy.router?.policy || "round_robin";
+    const routerLines = [
+      `vllm-router --policy ${policy} \\`,
+      `    --vllm-pd-disaggregation \\`,
+      ...Array.from({ length: prefillCount }, (_, i) =>
+        `    --prefill http://PREFILL_ADDR${i + 1}:8000 \\`
+      ),
+      ...Array.from({ length: decodeCount }, (_, i) =>
+        `    --decode http://DECODE_ADDR${i + 1}:8000 \\`
+      ),
+      `    --host 127.0.0.1 \\`,
+      `    --port 30000 \\`,
+      `    --intra-node-data-parallel-size ${gpuCount}`,
+    ];
+    const routerCommand = routerLines.join("\n");
+
     return {
       deployType,
-      prefillCommand: formatCommand(buildArgs("prefill")),
-      decodeCommand: formatCommand(buildArgs("decode")),
+      nodeCount,
+      prefill: {
+        head: formatCommand(buildArgs("prefill", "head")),
+        worker: multi ? formatCommand(buildArgs("prefill", "worker")) : null,
+        env: buildEnv("prefill"),
+      },
+      decode: {
+        head: formatCommand(buildArgs("decode", "head")),
+        worker: multi ? formatCommand(buildArgs("decode", "worker")) : null,
+        env: buildEnv("decode"),
+      },
+      router: {
+        command: routerCommand,
+        install: "uv pip install vllm-router",
+      },
       routerConfig: strategy.router || { policy: "round_robin" },
+      // Legacy fields kept for any lingering consumer
+      prefillCommand: formatCommand(buildArgs("prefill", "head")),
+      decodeCommand: formatCommand(buildArgs("decode", "head")),
       prefillEnv: buildEnv("prefill"),
       decodeEnv: buildEnv("decode"),
     };
