@@ -98,19 +98,15 @@
   padding: 0 1rem;
 }
 
-/* Theme-aware syntax highlighting (rehype-pretty-code with dual themes) */
-html:not(.dark) pre [data-theme="dark"],
-html:not(.dark) code [data-theme="dark"] { display: none; }
-html.dark pre [data-theme="light"],
-html.dark code [data-theme="light"] { display: none; }
-html:not(.dark) pre[data-theme*=" "],
-html:not(.dark) code[data-theme*=" "] { color: var(--shiki-light); background-color: var(--shiki-light-bg); }
-html.dark pre[data-theme*=" "],
-html.dark code[data-theme*=" "] { color: var(--shiki-dark); background-color: var(--shiki-dark-bg); }
-html:not(.dark) pre[data-theme*=" "] span,
-html:not(.dark) code[data-theme*=" "] span { color: var(--shiki-light); }
-html.dark pre[data-theme*=" "] span,
-html.dark code[data-theme*=" "] span { color: var(--shiki-dark); }
+/* Theme-aware syntax highlighting (rehype-pretty-code dual themes via CSS vars) */
+html.dark .shiki,
+html.dark .shiki span {
+  color: var(--shiki-dark);
+  background-color: var(--shiki-dark-bg);
+  font-style: var(--shiki-dark-font-style);
+  font-weight: var(--shiki-dark-font-weight);
+  text-decoration: var(--shiki-dark-text-decoration);
+}
 
 /* ── Guide / Markdown typography ── */
 .guide-content {
