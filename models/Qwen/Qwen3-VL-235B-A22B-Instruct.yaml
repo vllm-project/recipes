@@ -1,0 +1,203 @@
+meta:
+  title: "Qwen3-VL-235B-A22B-Instruct"
+  slug: "qwen3-vl-235b-a22b-instruct"
+  provider: "Qwen"
+  description: "Qwen3-VL flagship MoE vision-language model with 235B total / 22B active parameters, supporting images, video, and long context."
+  date_updated: 2026-04-17
+  difficulty: intermediate
+  tasks:
+    - multimodal
+    - text
+  performance_headline: "Strong on images, video, and text — #1 open model on text on lmarena.ai at release"
+  related_recipes: []
+
+model:
+  model_id: "Qwen/Qwen3-VL-235B-A22B-Instruct"
+  min_vllm_version: "0.11.0"
+  architecture: moe
+  parameter_count: "235B"
+  active_parameters: "22B"
+  context_length: 262144
+  base_args: []
+  base_env: {}
+
+dependencies:
+  - note: "Recommended for offline multimodal inference (image/video pre-processing helpers)"
+    command: "uv pip install qwen-vl-utils==0.0.14"
+    optional: true
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 564
+    description: "Full BF16 — ideal on H200/B200 with 8 GPUs"
+  fp8:
+    model_id: "Qwen/Qwen3-VL-235B-A22B-Instruct-FP8"
+    precision: fp8
+    vram_minimum_gb: 282
+    description: "Qwen official FP8 checkpoint for optimal H100 memory efficiency"
+  nvfp4:
+    model_id: "nvidia/Qwen3-VL-235B-A22B-Instruct-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 141
+    description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+    extra_env:
+      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - single_node_dep
+  - multi_node_tp
+  - multi_node_tp_pp
+  - multi_node_dep
+  - multi_node_tep
+  - pd_cluster
+
+hardware_overrides:
+  hopper:
+    extra_args:
+      - "--mm-encoder-tp-mode"
+      - "data"
+      - "--async-scheduling"
+    extra_env: {}
+  blackwell:
+    extra_args:
+      - "--mm-encoder-tp-mode"
+      - "data"
+      - "--async-scheduling"
+    extra_env: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL) is the most powerful vision-language model in the Qwen series, delivering upgrades to text understanding & generation, visual perception & reasoning, extended context, spatial/video dynamics, and agent interaction. The flagship `Qwen3-VL-235B-A22B-Instruct` is a MoE model that requires at least 8 GPUs with ≥80 GB memory each (A100/H100/H200 class).
+
+  ## Prerequisites
+
+  ```bash
+  uv venv
+  source .venv/bin/activate
+
+  # Install vLLM >= 0.11.0
+  uv pip install -U vllm
+
+  # Install Qwen-VL utility library (recommended for offline inference)
+  uv pip install qwen-vl-utils==0.0.14
+  ```
+
+  ## Deployment Configurations
+
+  ### H100 (Image + Video, FP8)
+  ```bash
+  vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
+    --tensor-parallel-size 8 \
+    --mm-encoder-tp-mode data \
+    --enable-expert-parallel \
+    --async-scheduling
+  ```
+
+  ### H100 (Image-Only, FP8, TP4)
+  ```bash
+  vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
+    --tensor-parallel-size 4 \
+    --limit-mm-per-prompt.video 0 \
+    --async-scheduling \
+    --gpu-memory-utilization 0.95 \
+    --max-num-seqs 128
+  ```
+
+  ### A100 & H100 (Image-Only, BF16)
+  ```bash
+  vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
+    --tensor-parallel-size 8 \
+    --limit-mm-per-prompt.video 0 \
+    --async-scheduling
+  ```
+
+  ### A100 & H100 (Image + Video, BF16)
+  ```bash
+  vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
+    --tensor-parallel-size 8 \
+    --max-model-len 128000 \
+    --async-scheduling
+  ```
+
+  ### H200 & B200
+  ```bash
+  vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
+    --tensor-parallel-size 8 \
+    --mm-encoder-tp-mode data \
+    --async-scheduling
+  ```
+
+  ### MI300X/MI325X/MI355X (BF16)
+  ```bash
+  MIOPEN_USER_DB_PATH="$(pwd)/miopen" \
+  MIOPEN_FIND_MODE=FAST \
+  VLLM_ROCM_USE_AITER=1 \
+  SAFETENSORS_FAST_GPU=1 \
+  vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
+    --tensor-parallel 4 \
+    --mm-encoder-tp-mode data
+  ```
+
+  ## Configuration Tips
+
+  - Use `--limit-mm-per-prompt.video 0` if your server only serves image inputs to save memory.
+  - `OMP_NUM_THREADS=1` reduces CPU contention during preprocessing.
+  - The model's context length is 262K. Reduce `--max-model-len` (e.g. 128000) if you don't need the full range.
+  - `--async-scheduling` overlaps scheduling with decoding for better throughput.
+  - `--mm-encoder-tp-mode data` deploys the vision encoder in data-parallel fashion for better performance.
+  - If your inputs are mostly unique, pass `--mm-processor-cache-gb 0` to skip caching overhead.
+  - Extend context with YaRN:
+    `--rope-scaling '{"rope_type":"yarn","factor":3.0,"original_max_position_embeddings":262144,"mrope_section":[24,20,20],"mrope_interleaved":true}' --max-model-len 1000000`
+
+  Text-only mode: pass `--limit-mm-per-prompt.video 0 --limit-mm-per-prompt.image 0` to free memory for KV cache when serving text-only traffic.
+
+  ## Client Usage
+
+  ```python
+  import time
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1", timeout=3600)
+
+  messages = [{
+      "role": "user",
+      "content": [
+          {"type": "image_url", "image_url": {"url": "https://ofasys-multimodal-wlcb-3-toshanghai.oss-accelerate.aliyuncs.com/wpf272043/keepme/image/receipt.png"}},
+          {"type": "text", "text": "Read all the text in the image."},
+      ],
+  }]
+
+  start = time.time()
+  response = client.chat.completions.create(
+      model="Qwen/Qwen3-VL-235B-A22B-Instruct",
+      messages=messages,
+      max_tokens=2048,
+  )
+  print(f"Response costs: {time.time() - start:.2f}s")
+  print(response.choices[0].message.content)
+  ```
+
+  ## Troubleshooting
+
+  - OOM on A100 / H100 BF16: reduce `--max-model-len`, drop to image-only, or switch to the FP8 checkpoint.
+  - If enabling `--mm-encoder-tp-mode data` raises memory pressure, lower `--gpu-memory-utilization`.
+
+  ## References
+
+  - [Model card](https://huggingface.co/Qwen/Qwen3-VL-235B-A22B-Instruct)
+  - [FP8 checkpoint](https://huggingface.co/Qwen/Qwen3-VL-235B-A22B-Instruct-FP8)
+  - [Qwen3-VL GitHub](https://github.com/QwenLM/Qwen3-VL)
+  - [vLLM multimodal inputs guide](https://docs.vllm.ai/en/latest/features/multimodal_inputs.html)

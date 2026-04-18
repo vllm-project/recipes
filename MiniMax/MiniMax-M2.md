@@ -115,7 +115,7 @@ uv pip install vllm \
 
 ### NVIDIA GPU
 
-You can use 4x H200/H20/H100 or 4x A100/A800 or 4x B200 GPUs to launch this model.
+You can use 4x H200/H20/H100 or 4x A100/A800 GPUs to launch this model.
 
 run tensor-parallel like this:
 
@@ -128,8 +128,6 @@ vllm serve MiniMaxAI/MiniMax-M2.7 \
   --enable-auto-tool-choice \
   --trust-remote-code
 ```
-
-> **Note**: For improved performance, you may set `VLLM_FLOAT32_MATMUL_PRECISION="high"` to enable TF32 TensorCore acceleration for float32 matmuls. This deviates from the original implementation, which uses full FP32 precision for MoE gating, but evaluations show no observable differences on GSM8K, MMLU-Pro, and tool-calling benchmarks.
 
 Note that pure TP8 is not supported. To run the model with >4 GPUs, please use DP+EP or TP+EP:
 

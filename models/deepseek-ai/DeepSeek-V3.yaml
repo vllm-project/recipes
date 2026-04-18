@@ -1,0 +1,175 @@
+meta:
+  title: "DeepSeek-V3"
+  slug: "deepseek-v3"
+  provider: "DeepSeek"
+  description: "DeepSeek-V3 is a 671B-parameter Mixture-of-Experts model with native FP8 weights and strong reasoning, coding, and math capabilities."
+  date_updated: 2026-04-17
+  difficulty: intermediate
+  tasks:
+    - text
+  performance_headline: "Frontier open-weights MoE with native FP8 and FP4 variants"
+  related_recipes:
+    - "deepseek-ai/DeepSeek-R1"
+    - "deepseek-ai/DeepSeek-V3.1"
+
+model:
+  model_id: "deepseek-ai/DeepSeek-V3"
+  min_vllm_version: "0.12.0"
+  architecture: moe
+  parameter_count: "671B"
+  active_parameters: "37B"
+  context_length: 163840
+  supports_dcp: true
+  base_args:
+    - "--trust-remote-code"
+    - "--enable-expert-parallel"
+  base_env: {}
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: fp8
+    vram_minimum_gb: 805
+    description: "Native FP8 weights on 8xH200 (recommended)"
+  fp4:
+    model_id: "nvidia/DeepSeek-V3-FP4"
+    precision: fp4
+    vram_minimum_gb: 403
+    description: "NVIDIA FP4 quantized weights for Blackwell (e.g. 4xB200)"
+    extra_env:
+      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - single_node_dep
+  - multi_node_tp
+  - multi_node_tp_pp
+  - multi_node_dep
+  - multi_node_tep
+  - pd_cluster
+
+hardware_overrides:
+  hopper:
+    extra_args: []
+    extra_env:
+      VLLM_USE_FLASHINFER_MOE_FP8: "1"
+  blackwell:
+    extra_args: []
+    extra_env:
+      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+  amd:
+    # AITER attention wins over Triton FA for DeepSeek MoE on MI300X/MI325X/MI355X.
+    extra_args: []
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_USE_AITER_MOE: "1"
+      VLLM_USE_TRITON_FLASH_ATTN: "0"
+      SAFETENSORS_FAST_GPU: "1"
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  DeepSeek-V3 is a 671B-parameter Mixture-of-Experts model (37B activated per token)
+  shipped with native FP8 weights. It shares its architecture with DeepSeek-R1, so the
+  same launch recipes apply to both models. For Blackwell GPUs, NVIDIA publishes an FP4
+  quantized variant (`nvidia/DeepSeek-V3-FP4` / `nvidia/DeepSeek-R1-FP4`) that runs on
+  fewer GPUs.
+
+  ## Prerequisites
+
+  - **Hardware (FP8)**: 8x H200 GPUs (verified)
+  - **Hardware (FP4)**: 4x B200 GPUs
+  - **vLLM**: Install with `uv pip install -U vllm --torch-backend auto`
+
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install -U vllm --torch-backend auto
+  ```
+
+  ## Client Usage
+
+  ### 8xH200 (FP8)
+
+  Tensor Parallel + Expert Parallel (TP8+EP):
+  ```bash
+  vllm serve deepseek-ai/DeepSeek-V3 \
+    --trust-remote-code \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel
+  ```
+
+  Data Parallel + Expert Parallel (DP8+EP):
+  ```bash
+  vllm serve deepseek-ai/DeepSeek-V3 \
+    --trust-remote-code \
+    --data-parallel-size 8 \
+    --enable-expert-parallel
+  ```
+
+  ### 4xB200 (FP4)
+
+  Enable FlashInfer MoE kernels before launching:
+  ```bash
+  # For FP4 (recommended on Blackwell)
+  export VLLM_USE_FLASHINFER_MOE_FP4=1
+  # For FP8 on Blackwell
+  export VLLM_USE_FLASHINFER_MOE_FP8=1
+  ```
+
+  Tensor Parallel + Expert Parallel (TP4+EP):
+  ```bash
+  CUDA_VISIBLE_DEVICES=0,1,2,3 vllm serve nvidia/DeepSeek-V3-FP4 \
+    --trust-remote-code \
+    --tensor-parallel-size 4 \
+    --enable-expert-parallel
+  ```
+
+  Data Parallel + Expert Parallel (DP4+EP):
+  ```bash
+  CUDA_VISIBLE_DEVICES=0,1,2,3 vllm serve nvidia/DeepSeek-V3-FP4 \
+    --trust-remote-code \
+    --data-parallel-size 4 \
+    --enable-expert-parallel
+  ```
+
+  ## Benchmarking
+
+  For benchmarking, disable prefix caching by adding `--no-enable-prefix-caching`
+  to the server command.
+
+  ```bash
+  # Prompt-heavy benchmark (8k/1k)
+  vllm bench serve \
+    --model deepseek-ai/DeepSeek-V3 \
+    --dataset-name random \
+    --random-input-len 8000 \
+    --random-output-len 1000 \
+    --request-rate 10000 \
+    --num-prompts 16 \
+    --ignore-eos
+  ```
+
+  Test different workloads by adjusting input/output lengths:
+  - Prompt-heavy: 8000 input / 1000 output
+  - Decode-heavy: 1000 input / 8000 output
+  - Balanced: 1000 input / 1000 output
+
+  ## Troubleshooting
+
+  - **Disaggregated Serving with Wide EP (Experimental GB200)**: See
+    [vLLM issue #33583](https://github.com/vllm-project/vllm/issues/33583) and the
+    [vLLM blog post](https://blog.vllm.ai/2026/02/03/dsr1-gb200-part1.html) for
+    GB200 disaggregated serving recipes.
+
+  ## References
+
+  - [DeepSeek-V3 on Hugging Face](https://huggingface.co/deepseek-ai/DeepSeek-V3)
+  - [NVIDIA DeepSeek-V3-FP4](https://huggingface.co/nvidia/DeepSeek-V3-FP4)
+  - [vLLM Expert Parallelism docs](https://docs.vllm.ai/en/latest/serving/expert_parallel_deployment.html)
