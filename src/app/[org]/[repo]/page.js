@@ -180,7 +180,7 @@ export default async function RecipePage({ params }) {
           <span className="basis-full mt-1">
             Related:{" "}
             {related.map((r, i) => (
-              <span key={r.meta.slug}>
+              <span key={r.hf_id}>
                 {i > 0 && " · "}
                 <Link href={recipeHref(r)} className="text-vllm-blue hover:underline">{r.meta.title}</Link>
               </span>

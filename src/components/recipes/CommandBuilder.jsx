@@ -86,11 +86,16 @@ function PopoverButton({ label, code, icon: Icon }) {
       if (btnRef.current) setRect(btnRef.current.getBoundingClientRect());
     };
     update();
+    const onKey = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
+    window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
+      window.removeEventListener("keydown", onKey);
     };
   }, [open]);
 
@@ -133,6 +138,8 @@ function PopoverButton({ label, code, icon: Icon }) {
       <button
         ref={btnRef}
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-haspopup="dialog"
         className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-foreground/5 text-foreground/60 hover:bg-foreground/10 hover:text-foreground/90 transition-colors"
       >
         <Icon size={11} />
@@ -718,11 +725,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         {Object.keys(recipe.features || {}).length > 0 && (
           <ConfigRow label="Features">
             <PillGroup>
-              {Object.entries(recipe.features || {}).map(([key]) => (
+              {Object.entries(recipe.features || {}).map(([key, f]) => (
                 <Pill
                   key={key}
                   active={features.includes(key)}
                   onClick={() => toggleFeature(key)}
+                  title={f?.description}
                 >
                   {key.replace(/_/g, " ")}
                 </Pill>
@@ -942,8 +950,9 @@ uv pip install -U vllm --torch-backend auto`;
   // Per-recipe Docker image/tag override. Precedence: variant → model → default.
   // Use full `image:tag`, e.g. `vllm/vllm-openai:glm51` when the model needs a
   // pinned build before its support lands in :latest.
+  // Default `:latest` is CUDA 12.9-based; CUDA 13+ hosts need the `-cu130` tag.
   const dockerOverride = variant?.docker_image || recipe.model?.docker_image;
-  const dockerImage = dockerOverride || (isAmd ? "vllm/vllm-openai-rocm" : "vllm/vllm-openai");
+  const dockerImage = dockerOverride || (isAmd ? "vllm/vllm-openai-rocm:latest" : "vllm/vllm-openai:latest");
   const dockerGpuFlags = isAmd
     ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
     : "--gpus all";
@@ -955,7 +964,11 @@ uv pip install -U vllm --torch-backend auto`;
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
   ${dockerImage} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
   const dockerCmd = dockerCfg?.command || defaultDockerCmd;
-  const dockerNote = dockerCfg?.note;
+  const defaultDockerNote =
+    !dockerOverride && !isAmd
+      ? ":latest ships CUDA 12.9 — on CUDA 13+ hosts, swap to vllm/vllm-openai:latest-cu130."
+      : undefined;
+  const dockerNote = dockerCfg?.note || defaultDockerNote;
 
   const tabDefs = {
     pip:    { id: "pip",    label: isAmd ? "pip / uv (ROCm)" : "pip / uv", code: pipCmd,    note: pipNote    },
