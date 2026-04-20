@@ -18,8 +18,11 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://recipes.vllm.ai";
+const defaultOgUrl = `/og?title=${encodeURIComponent("vLLM Recipes")}&subtitle=${encodeURIComponent("Deploy any model on any hardware")}`;
+
 export const metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://recipes.vllm.ai"),
+  metadataBase: new URL(siteUrl),
   title: {
     default: "vLLM Recipes",
     template: "%s | vLLM Recipes",
@@ -28,6 +31,24 @@ export const metadata = {
   icons: {
     icon: { url: "https://docs.vllm.ai/en/latest/assets/logos/vllm-logo-only-light.ico" },
   },
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: siteUrl,
+    siteName: "vLLM Recipes",
+    title: "vLLM Recipes",
+    description: "Deploy any model on any hardware with vLLM. Interactive command builder for model serving.",
+    images: [{ url: defaultOgUrl, width: 1200, height: 630, alt: "vLLM Recipes" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    site: "@vllm_project",
+    creator: "@vllm_project",
+    title: "vLLM Recipes",
+    description: "Deploy any model on any hardware with vLLM.",
+    images: [defaultOgUrl],
+  },
+  alternates: { canonical: siteUrl },
 };
 
 export default async function RootLayout({ children }) {

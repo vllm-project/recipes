@@ -24,7 +24,39 @@ export async function generateMetadata({ params }) {
   const { org, repo } = await params;
   const recipe = getRecipeByHfId(org, repo);
   if (!recipe) return {};
-  return { title: recipe.meta.title, description: recipe.meta.description };
+  const { meta, model } = recipe;
+  const title = `${org}/${repo}`;
+  const description = meta.description || meta.title;
+  const paramStr = model.parameter_count
+    ? model.active_parameters && model.active_parameters !== model.parameter_count
+      ? `${model.parameter_count} / ${model.active_parameters} active`
+      : model.parameter_count
+    : "";
+  const ctxStr = model.context_length ? `${(model.context_length / 1024).toFixed(0)}K ctx` : "";
+  const metaLine = [paramStr, (model.architecture || "").toUpperCase(), ctxStr]
+    .filter(Boolean)
+    .join(" · ");
+  const ogUrl = `/og?title=${encodeURIComponent(title)}&subtitle=${encodeURIComponent(
+    meta.provider || org
+  )}&meta=${encodeURIComponent(metaLine)}&path=${encodeURIComponent(`/${org}/${repo}`)}`;
+  return {
+    title: meta.title,
+    description,
+    openGraph: {
+      type: "article",
+      title,
+      description,
+      url: `/${org}/${repo}`,
+      images: [{ url: ogUrl, width: 1200, height: 630, alt: title }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [ogUrl],
+    },
+    alternates: { canonical: `/${org}/${repo}` },
+  };
 }
 
 export default async function RecipePage({ params }) {

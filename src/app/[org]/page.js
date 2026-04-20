@@ -15,9 +15,28 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }) {
   const { org } = await params;
   const displayName = getProviderDisplayName(org);
+  const count = getAllRecipes().filter((r) => r.hf_org === org).length;
+  const description = `vLLM recipes for ${displayName} models`;
+  const ogUrl = `/og?title=${encodeURIComponent(displayName)}&subtitle=${encodeURIComponent(
+    `${count} recipe${count === 1 ? "" : "s"}`
+  )}&path=${encodeURIComponent(`/${org}`)}`;
   return {
     title: displayName,
-    description: `vLLM recipes for ${displayName} models`,
+    description,
+    openGraph: {
+      type: "website",
+      title: displayName,
+      description,
+      url: `/${org}`,
+      images: [{ url: ogUrl, width: 1200, height: 630, alt: displayName }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: displayName,
+      description,
+      images: [ogUrl],
+    },
+    alternates: { canonical: `/${org}` },
   };
 }
 
