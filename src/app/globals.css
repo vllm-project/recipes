@@ -1,0 +1,252 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter), Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: var(--font-jetbrains), "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* vLLM Brand Colors */
+  --color-vllm-yellow: #fdb517;
+  --color-vllm-blue: #30a2ff;
+  --color-vllm-yellow-hover: #e5a315;
+  --color-vllm-blue-hover: #2891e6;
+
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.625rem;
+  --code-bg: oklch(0.97 0.005 265);
+  --code-fg: oklch(0.25 0.04 265);
+  --code-block-bg: oklch(0.95 0.007 265);
+  --code-block-fg: oklch(0.2 0.04 265);
+  --command-bg: oklch(0.965 0.005 265);
+  --command-fg: oklch(0.18 0.04 265);
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.129 0.042 264.695);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.129 0.042 264.695);
+  --primary: oklch(0.208 0.042 265.755);
+  --primary-foreground: oklch(0.984 0.003 247.858);
+  --secondary: oklch(0.968 0.007 247.896);
+  --secondary-foreground: oklch(0.208 0.042 265.755);
+  --muted: oklch(0.968 0.007 247.896);
+  --muted-foreground: oklch(0.554 0.046 257.417);
+  --accent: oklch(0.968 0.007 247.896);
+  --accent-foreground: oklch(0.208 0.042 265.755);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.929 0.013 255.508);
+  --input: oklch(0.929 0.013 255.508);
+  --ring: oklch(0.704 0.04 256.788);
+}
+
+.dark {
+  /* Warmer, slightly lighter code palette — avoid pure-black command block.
+     Command < code-block < code (inline) ≤ card, for a subtle depth ladder
+     against --background oklch(0.129 ...) without any slab reading as black. */
+  --code-bg: oklch(0.245 0.016 258);
+  --code-fg: oklch(0.92 0.008 245);
+  --code-block-bg: oklch(0.2 0.018 260);
+  --code-block-fg: oklch(0.93 0.008 245);
+  --command-bg: oklch(0.175 0.018 258);
+  --command-fg: oklch(0.95 0.008 245);
+  --background: oklch(0.129 0.042 264.695);
+  --foreground: oklch(0.984 0.003 247.858);
+  --card: oklch(0.208 0.042 265.755);
+  --card-foreground: oklch(0.984 0.003 247.858);
+  --primary: oklch(0.929 0.013 255.508);
+  --primary-foreground: oklch(0.208 0.042 265.755);
+  --secondary: oklch(0.279 0.041 260.031);
+  --secondary-foreground: oklch(0.984 0.003 247.858);
+  --muted: oklch(0.279 0.041 260.031);
+  --muted-foreground: oklch(0.704 0.04 256.788);
+  --accent: oklch(0.279 0.041 260.031);
+  --accent-foreground: oklch(0.984 0.003 247.858);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.551 0.027 264.364);
+}
+
+/* Scrollbars — soften dark mode (default WebKit scrollbar reads as white) */
+.dark {
+  color-scheme: dark;
+  scrollbar-color: oklch(0.3 0.015 260) oklch(0.14 0.018 260);
+  scrollbar-width: thin;
+}
+.dark ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.dark ::-webkit-scrollbar-track {
+  background: oklch(0.14 0.018 260);
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: oklch(0.3 0.015 260);
+  border-radius: 6px;
+  border: 2px solid oklch(0.14 0.018 260);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.38 0.015 260);
+}
+.dark ::-webkit-scrollbar-corner {
+  background: oklch(0.14 0.018 260);
+}
+
+/* Terminal-style code blocks for command builder */
+.command-block {
+  background: var(--command-bg) !important;
+  color: var(--command-fg);
+  border-radius: var(--radius-lg);
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+
+.command-block .line {
+  padding: 0 1rem;
+}
+
+/* Theme-aware syntax highlighting (rehype-pretty-code dual themes via CSS vars) */
+html.dark .shiki,
+html.dark .shiki span {
+  color: var(--shiki-dark);
+  background-color: var(--shiki-dark-bg);
+  font-style: var(--shiki-dark-font-style);
+  font-weight: var(--shiki-dark-font-weight);
+  text-decoration: var(--shiki-dark-text-decoration);
+}
+
+/* ── Guide / Markdown typography ── */
+.guide-content {
+  font-size: 0.9375rem;
+  line-height: 1.75;
+  color: var(--foreground);
+}
+
+.guide-content h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.guide-content h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.guide-content p {
+  margin-bottom: 0.75rem;
+}
+
+.guide-content ul, .guide-content ol {
+  margin-bottom: 0.75rem;
+  padding-left: 1.5rem;
+}
+
+.guide-content ul { list-style-type: disc; }
+.guide-content ol { list-style-type: decimal; }
+
+.guide-content li {
+  margin-bottom: 0.25rem;
+}
+
+.guide-content li::marker {
+  color: var(--muted-foreground);
+}
+
+.guide-content a {
+  color: var(--color-vllm-blue);
+  text-decoration: none;
+}
+.guide-content a:hover {
+  text-decoration: underline;
+}
+
+.guide-content strong {
+  font-weight: 600;
+}
+
+.guide-content code {
+  font-family: var(--font-mono);
+  font-size: 0.825em;
+  background: var(--code-bg);
+  color: var(--code-fg);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+}
+
+.guide-content pre {
+  background: var(--code-block-bg);
+  color: var(--code-block-fg);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.25rem;
+  overflow-x: auto;
+  margin-bottom: 1rem;
+  font-size: 0.8125rem;
+  line-height: 1.7;
+}
+
+.guide-content pre code {
+  background: none;
+  color: inherit;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+.guide-content blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 1rem;
+  color: var(--muted-foreground);
+  margin-bottom: 0.75rem;
+}
+
+.guide-content table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.guide-content th {
+  text-align: left;
+  font-weight: 600;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 2px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+.guide-content td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.guide-content hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.5rem 0;
+}

@@ -1,0 +1,113 @@
+# taxonomy.yaml — Controlled vocabulary for vLLM recipes
+# All hardware_profiles, tasks, and strategies referenced in recipes must be defined here.
+
+hardware_profiles:
+  # ── NVIDIA Hopper ──
+  h100:
+    brand: NVIDIA
+    generation: hopper
+    display_name: "H100"
+    description: "NVIDIA H100 80GB NVLink (8-GPU node)"
+    gpu_count: 8
+    vram_gb: 640
+    multi_node: false
+
+  h200:
+    brand: NVIDIA
+    generation: hopper
+    display_name: "H200"
+    description: "NVIDIA H200 SXM 141 GB HBM3e · 8-GPU HGX node"
+    gpu_count: 8
+    vram_gb: 1128
+    multi_node: false
+
+  # ── NVIDIA Blackwell ──
+  # Specs follow semianalysis InferenceX GPU table (inferencex.semianalysis.com/gpu-specs).
+  b200:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "B200"
+    description: "NVIDIA B200 SXM 180 GB HBM3e · 8-GPU HGX B200 node"
+    gpu_count: 8
+    vram_gb: 1440
+    multi_node: false
+
+  gb200:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "GB200 NVL4"
+    description: "NVIDIA GB200 Grace-Blackwell compute tray · 192 GB HBM3e/GPU · 4 Blackwell GPUs (NVL72 tray unit)"
+    gpu_count: 4
+    vram_gb: 768
+    multi_node: false
+
+  # ── NVIDIA Blackwell Ultra ──
+  b300:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "B300"
+    description: "NVIDIA B300 SXM 268 GB HBM3e · 8-GPU HGX B300 node (Blackwell Ultra)"
+    gpu_count: 8
+    vram_gb: 2144
+    multi_node: false
+
+  gb300:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "GB300 NVL4"
+    description: "NVIDIA GB300 Grace-Blackwell Ultra compute tray · 288 GB HBM3e/GPU · 4 GPUs (NVL72 tray unit)"
+    gpu_count: 4
+    vram_gb: 1152
+    multi_node: false
+
+  # ── AMD Instinct ──
+  mi300x:
+    brand: AMD
+    generation: amd
+    display_name: "MI300X"
+    description: "AMD Instinct MI300X 192 GB HBM3 · 8-GPU OAM node (CDNA 3)"
+    gpu_count: 8
+    vram_gb: 1536
+    multi_node: false
+
+  mi325x:
+    brand: AMD
+    generation: amd
+    display_name: "MI325X"
+    description: "AMD Instinct MI325X 256 GB HBM3e · 8-GPU OAM node (CDNA 3)"
+    gpu_count: 8
+    vram_gb: 2048
+    multi_node: false
+
+  mi355x:
+    brand: AMD
+    generation: amd
+    display_name: "MI355X"
+    description: "AMD Instinct MI355X 288 GB HBM3e · 8-GPU OAM node (CDNA 4)"
+    gpu_count: 8
+    vram_gb: 2304
+    multi_node: false
+
+tasks:
+  - id: text
+    display_name: "Text"
+    description: "Text-only models: chat, reasoning, code generation, tool calling"
+  - id: multimodal
+    display_name: "Multimodal"
+    description: "Vision, audio, or other modalities beyond text"
+  - id: omni
+    display_name: "Omni"
+    description: "Any-to-any models: text + vision + audio + generation"
+  - id: embedding
+    display_name: "Embedding"
+    description: "Embedding, reranker, classifier, scoring models"
+
+strategies:
+  - single_node_tp
+  - single_node_tep
+  - single_node_dep
+  - multi_node_tp
+  - multi_node_tep
+  - multi_node_dep
+  - multi_node_tp_pp
+  - pd_cluster

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block announce %}
+  ✨ For up-to-date, interactive recipes — hardware picker, copyable
+  <code>vllm serve</code> commands, and the full JSON API —
+  visit <a href="https://recipes.vllm.ai/"><strong>recipes.vllm.ai</strong></a>.
+  The Markdown guides below are kept as a historical reference.
+{% endblock %}
+
+{% block extrahead %}
+  {{ super() }}
+  {% if page %}
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="{{ page.meta.title or page.title }}">
+  <meta property="og:description" content="{{ page.meta.description or config.site_description or page.title }}">
+  <meta property="og:url" content="{{ page.canonical_url }}">
+  <meta property="og:site_name" content="{{ config.site_name }}">
+  <meta property="og:image" content="https://docs.vllm.ai/en/latest/assets/logos/vllm-logo-text-light.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ page.meta.title or page.title }}">
+  <meta name="twitter:description" content="{{ page.meta.description or config.site_description or page.title }}">
+  <meta name="twitter:image" content="https://docs.vllm.ai/en/latest/assets/logos/vllm-logo-text-light.png">
+  {% endif %}
+{% endblock %}

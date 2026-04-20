@@ -1,0 +1,54 @@
+name: pd_cluster
+deploy_type: pd_cluster
+display_name: "Prefill/Decode Disaggregation"
+description: >
+  Disaggregated prefill/decode cluster. Splits inference into separate
+  prefill and decode workers communicating via NIXL KV cache transfer.
+  Optimal for high-concurrency, low-latency production deployments.
+  Each role can be a single-node or multi-node DP/TP/EP pool, with its
+  own HTTP port, NIXL side-channel port, and DP coordinator.
+
+hardware_match:
+  min_gpus: 8
+  multi_node: true
+
+# Worker environment follows the Kimi-K2.5 NIXL/MoE pattern.
+# CUDA_VISIBLE_DEVICES is set per-rank when running one `vllm serve` per GPU
+# (data parallel); omit it if your launcher already pins GPUs.
+prefill:
+  vllm_args:
+    - "--port"
+    - "8001"
+    - "--kv-transfer-config"
+    - '{"kv_connector":"NixlConnector","kv_role":"kv_producer","kv_load_failure_policy":"fail"}'
+    - "--enforce-eager"
+  env:
+    VLLM_USE_NCCL_SYMM_MEM: "1"
+    NCCL_CUMEM_ENABLE: "1"
+    NCCL_MNNVL_ENABLE: "1"
+    NCCL_NVLS_ENABLE: "1"
+    UCX_NET_DEVICES: "all"
+    VLLM_NIXL_SIDE_CHANNEL_PORT: "5557"
+    VLLM_NIXL_SIDE_CHANNEL_HOST: "$PREFILL_HOST_IP"
+
+decode:
+  vllm_args:
+    - "--port"
+    - "8002"
+    - "--kv-transfer-config"
+    - '{"kv_connector":"NixlConnector","kv_role":"kv_consumer","kv_load_failure_policy":"fail"}'
+    - "--compilation-config"
+    - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+  env:
+    VLLM_USE_NCCL_SYMM_MEM: "1"
+    NCCL_CUMEM_ENABLE: "1"
+    NCCL_MNNVL_ENABLE: "1"
+    NCCL_NVLS_ENABLE: "1"
+    UCX_NET_DEVICES: "all"
+    VLLM_NIXL_SIDE_CHANNEL_PORT: "5558"
+    VLLM_NIXL_SIDE_CHANNEL_HOST: "$DECODE_HOST_IP"
+
+parallel_flag: "--tensor-parallel-size"
+
+router:
+  policy: round_robin

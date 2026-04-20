@@ -1,12 +1,49 @@
 site_name: vLLM Recipes
 site_url: !ENV READTHEDOCS_CANONICAL_URL
+site_description: A collection of recipes and guides for using vLLM with a variety of models.
 repo_url: https://github.com/vllm-project/recipes
 edit_uri: edit/main/
 docs_dir: .
 strict: true
 
+# Keep the legacy MkDocs site focused on the hand-written Markdown guides
+# under DeepSeek/, Qwen/, etc. Exclude the Next.js app + content YAMLs +
+# every vendor/build directory. Uses gitignore-style patterns.
+exclude_docs: |
+  # Next.js site
+  /src/
+  /public/
+  /.next/
+  /out/
+  /node_modules/
+  /next.config.mjs
+  /postcss.config.mjs
+  /package.json
+  /package-lock.json
+  /pnpm-lock.yaml
+  /jsconfig.json
+
+  # YAML recipe content + build artefacts
+  /models/
+  /strategies/
+  /scripts/
+  /taxonomy.yaml
+  /CLAUDE.md
+
+  # Python / uv virtualenv
+  /.venv/
+  /requirements.txt
+  /pyproject.toml
+  /uv.lock
+
+  # Editor / agent config
+  /.claude/
+  /.idea/
+  /.vscode/
+
 theme:
   name: material
+  custom_dir: overrides
   logo: https://docs.vllm.ai/en/latest/assets/logos/vllm-logo-only-light.ico
   favicon: https://docs.vllm.ai/en/latest/assets/logos/vllm-logo-only-light.ico
   palette:
@@ -48,6 +85,13 @@ plugins:
   - glightbox
   - git-revision-date-localized:
       enable_creation_date: true
+      # Don't try to stat git history for untracked vendor/build trees.
+      exclude:
+        - node_modules/*
+        - .venv/*
+        - .next/*
+        - site/*
+        - public/*
 
 markdown_extensions:
   - attr_list
