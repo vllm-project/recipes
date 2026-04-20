@@ -83,13 +83,7 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
 
-hardware_overrides:
-  hopper:
-    extra_args: []
-    extra_env: {}
-  blackwell:
-    extra_args: []
-    extra_env: {}
+hardware_overrides: {}
 
 strategy_overrides: {}
 

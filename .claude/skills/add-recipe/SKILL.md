@@ -35,6 +35,17 @@ meta:
     - text
   performance_headline: "..."     # optional pithy line for cards
   related_recipes: []             # optional list of "<org>/<repo>" ids
+  # Optional. Per-GPU support level renders as a colored dot on the hardware pill:
+  #   verified  = author has actually tested this hardware end-to-end (green)
+  #   supported = author claims it works, not verified in this repo (blue)
+  # GPUs omitted → treated as "untested", hardware pill shows a hollow grey dot.
+  # Default: seed any GPU whose `hardware_overrides.<gen>` block exists as
+  # `supported`; promote to `verified` only when the upstream README/benchmark
+  # explicitly verifies it.
+  hardware:
+    h200: verified
+    b200: supported
+    mi300x: supported
 
 model:
   model_id: "<hf_org>/<hf_repo>"  # MUST match the filename path

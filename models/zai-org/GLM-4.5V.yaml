@@ -9,6 +9,16 @@ meta:
     - multimodal
   performance_headline: "Multimodal GLM-4.5V with native FP8 and expert parallelism, deploys on 4xH100"
   related_recipes: []
+  hardware:
+    h100: verified
+    h200: verified
+    b200: supported
+    gb200: supported
+    b300: supported
+    gb300: supported
+    mi300x: supported
+    mi325x: supported
+    mi355x: supported
 
 model:
   model_id: "zai-org/GLM-4.5V"
@@ -64,12 +74,6 @@ compatible_strategies:
   - multi_node_dep
 
 hardware_overrides:
-  hopper:
-    extra_args: []
-    extra_env: {}
-  blackwell:
-    extra_args: []
-    extra_env: {}
   amd:
     # Requires transformers >= 5.0.0; see dependencies.
     extra_args:

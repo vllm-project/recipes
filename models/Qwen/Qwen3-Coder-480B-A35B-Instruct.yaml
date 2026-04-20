@@ -9,6 +9,16 @@ meta:
     - text
   performance_headline: "HumanEval 0.939, MBPP 0.918 (FP8). Recommended FP8 on 8x H200/H20 via DP=8"
   related_recipes: []
+  hardware:
+    h100: supported
+    h200: verified
+    b200: supported
+    gb200: supported
+    b300: supported
+    gb300: supported
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "Qwen/Qwen3-Coder-480B-A35B-Instruct"
@@ -71,9 +81,6 @@ hardware_overrides:
     extra_args: []
     extra_env:
       VLLM_USE_DEEP_GEMM: "1"
-  blackwell:
-    extra_args: []
-    extra_env: {}
   amd:
     # Verified on 8× MI300X / MI325X / MI355X (FP8 path uses --data-parallel-size 8
     # instead of TP8 — swap strategy to DP if deploying the FP8 checkpoint).

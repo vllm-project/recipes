@@ -9,6 +9,16 @@ meta:
     - text
   performance_headline: "GPT-5-level reasoning with efficient MoE inference"
   related_recipes: []
+  hardware:
+    h100: verified
+    h200: verified
+    b200: supported
+    gb200: supported
+    b300: supported
+    gb300: supported
+    mi300x: supported
+    mi325x: supported
+    mi355x: supported
 
 model:
   model_id: "deepseek-ai/DeepSeek-V3.2"
@@ -80,9 +90,6 @@ compatible_strategies:
   - pd_cluster
 
 hardware_overrides:
-  hopper:
-    extra_args: []
-    extra_env: {}
   blackwell:
     extra_args:
       - "--attention-backend"

@@ -11,6 +11,16 @@ meta:
   related_recipes:
     - "deepseek-ai/DeepSeek-V3"
     - "deepseek-ai/DeepSeek-V3.1"
+  hardware:
+    h100: supported
+    h200: verified
+    b200: verified
+    gb200: verified
+    b300: supported
+    gb300: supported
+    mi300x: supported
+    mi325x: supported
+    mi355x: supported
 
 model:
   model_id: "deepseek-ai/DeepSeek-R1"

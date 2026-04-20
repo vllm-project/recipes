@@ -11,6 +11,16 @@ meta:
   related_recipes:
     - "deepseek-ai/DeepSeek-V3"
     - "deepseek-ai/DeepSeek-V3.2-Exp"
+  hardware:
+    h100: supported
+    h200: verified
+    b200: supported
+    gb200: supported
+    b300: supported
+    gb300: supported
+    mi300x: supported
+    mi325x: supported
+    mi355x: supported
 
 model:
   model_id: "deepseek-ai/DeepSeek-V3.1"
@@ -67,12 +77,6 @@ compatible_strategies:
   - pd_cluster
 
 hardware_overrides:
-  hopper:
-    extra_args: []
-    extra_env: {}
-  blackwell:
-    extra_args: []
-    extra_env: {}
   amd:
     # AITER attention wins over Triton FA for DeepSeek MoE on MI300X/MI325X/MI355X.
     extra_args: []

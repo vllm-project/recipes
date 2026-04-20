@@ -348,6 +348,32 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const dependencies = recipe.dependencies || [];
 
+  // Status caption for the command block header — replaces the redundant
+  // "vllm serve" label with something actually useful (support level for
+  // the selected hardware).
+  const hwStatus = recipe.meta?.hardware?.[hwId]; // "verified" | "supported" | undefined
+  const hwName = hwProfile?.display_name || hwId;
+  const statusHeader = hwStatus === "verified" ? (
+    <span className="text-[11px] font-medium text-green-500 inline-flex items-center gap-1.5">
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />
+      Verified on {hwName}
+    </span>
+  ) : hwStatus === "supported" ? (
+    <span className="text-[11px] font-medium text-vllm-blue inline-flex items-center gap-1.5">
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-vllm-blue/80" />
+      Supported on {hwName}
+      <span className="text-[var(--command-fg)]/40">· not verified</span>
+    </span>
+  ) : (
+    <span
+      className="text-[11px] font-medium text-[var(--command-fg)]/50 inline-flex items-center gap-1.5"
+      title="Recipe does not declare this hardware. Flags are generic vLLM defaults and may need tuning."
+    >
+      <span className="inline-block w-1.5 h-1.5 rounded-full ring-1 ring-inset ring-[var(--command-fg)]/30" />
+      Untested on {hwName}
+    </span>
+  );
+
   // Omni models are served via vLLM-Omni (offline Python inference), not `vllm serve`.
   // Skip the command/strategy/feature UI and just show install deps + a pointer to the guide.
   const isOmni = (recipe.meta?.tasks || []).includes("omni");
@@ -381,15 +407,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         }`}
       >
         {isPd ? (
-          <PdClusterBlock result={result} verifyCmd={verifyCmd} benchCmd={benchCmd} />
+          <PdClusterBlock result={result} verifyCmd={verifyCmd} benchCmd={benchCmd} statusHeader={statusHeader} />
         ) : isMultiNode ? (
-          <MultiNodeBlock result={result} verifyCmd={verifyCmd} benchCmd={benchCmd} />
+          <MultiNodeBlock result={result} verifyCmd={verifyCmd} benchCmd={benchCmd} statusHeader={statusHeader} />
         ) : (
           <SingleCommandBlock
             command={result.command}
             env={result.env}
             verifyCmd={verifyCmd}
             benchCmd={benchCmd}
+            statusHeader={statusHeader}
           />
         )}
       </div>
@@ -412,11 +439,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     const pdSingleNodeCheck = activeStrategy === "pd_cluster" && nodeCount === 1;
                     const pdOk = !pdSingleNodeCheck || pdFitsSingleNode(p, currentVariant);
                     const disabled = !precisionOk || !pdOk;
+                    // Support status: verified > supported > untested (not in meta.hardware).
+                    const status = recipe.meta?.hardware?.[id];
+                    const statusLabel =
+                      status === "verified"
+                        ? "Verified — author has tested this hardware end-to-end"
+                        : status === "supported"
+                        ? "Supported — author claims it works, not verified in this repo"
+                        : "Untested — recipe does not claim this hardware; flags are generic vLLM defaults";
                     const reason = !precisionOk
                       ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
                       : !pdOk
                       ? `Single-node PD needs 2× model VRAM (${2 * (currentVariant.vram_minimum_gb || 0)} GB). Switch to Multi-node or pick a larger GPU.`
-                      : p.description;
+                      : `${p.description}\n\n${statusLabel}`;
                     return (
                       <Pill
                         key={id}
@@ -425,6 +460,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                         onClick={() => !disabled && selectHardware(id)}
                         title={reason}
                       >
+                        <HwStatusDot status={status} />
                         <span className="font-semibold">{p.display_name}</span>
                         {p.vram_gb > 0 && p.gpu_count > 0 && (
                           <span className="text-muted-foreground ml-1.5 font-mono">
@@ -599,6 +635,18 @@ function PillGroup({ children }) {
   return <div className="flex flex-wrap gap-1.5">{children}</div>;
 }
 
+function HwStatusDot({ status }) {
+  // Small colored dot on hardware pills to signal support level.
+  // verified = filled green; supported = filled blue; otherwise = hollow grey.
+  const color =
+    status === "verified"
+      ? "bg-green-500"
+      : status === "supported"
+      ? "bg-vllm-blue/70"
+      : "bg-transparent ring-1 ring-inset ring-muted-foreground/40";
+  return <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 shrink-0 ${color}`} aria-hidden />;
+}
+
 function Pill({ active, onClick, title, dimmed, disabled, children }) {
   // disabled takes precedence over active — an "active but disabled" pill should
   // clearly look disabled (e.g. PD that was pre-selected but no longer fits).
@@ -628,13 +676,13 @@ function envToExports(env) {
     .join("\n");
 }
 
-function SingleCommandBlock({ command, env, verifyCmd, benchCmd }) {
+function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader }) {
   const envLines = envToExports(env);
   const fullScript = envLines ? `${envLines}\n\n${command}` : command;
   return (
     <div>
-      <div className="flex items-center justify-between px-4 pt-3">
-        <span className="text-[11px] text-[var(--command-fg)]/50 font-mono">vllm serve</span>
+      <div className="flex items-center justify-between px-4 pt-3 gap-3">
+        {statusHeader || <span className="text-[11px] text-[var(--command-fg)]/50 font-mono">vllm serve</span>}
         <div className="flex items-center gap-1.5">
           <CopyButton text={fullScript} />
           <PopoverButton label="Verify" code={verifyCmd} icon={Terminal} />
@@ -683,7 +731,7 @@ function DependenciesBlock({ deps }) {
   );
 }
 
-function MultiNodeBlock({ result, verifyCmd, benchCmd }) {
+function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader }) {
   const [tab, setTab] = useState("head");
   const tabs = [
     { id: "head", label: "Head", command: result.headCommand },
@@ -694,7 +742,10 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd }) {
   const fullScript = envLines ? `${envLines}\n\n${active.command}` : active.command;
   return (
     <div>
-      <div className="flex items-center justify-between px-4 pt-3">
+      {statusHeader && (
+        <div className="px-4 pt-3 pb-1">{statusHeader}</div>
+      )}
+      <div className="flex items-center justify-between px-4 pt-2">
         <div className="flex gap-0.5 bg-foreground/5 rounded-md p-0.5">
           {tabs.map((t) => (
             <button
@@ -734,7 +785,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd }) {
   );
 }
 
-function PdClusterBlock({ result, verifyCmd, benchCmd }) {
+function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader }) {
   // Tabs: Prefill · Decode · Router (same shape whether single-node or multi-node;
   // only the CUDA_VISIBLE_DEVICES split and TP size differ).
   const [tab, setTab] = useState("prefill");
@@ -748,7 +799,10 @@ function PdClusterBlock({ result, verifyCmd, benchCmd }) {
   const fullScript = envLines ? `${envLines}\n\n${active.command}` : active.command;
   return (
     <div>
-      <div className="flex items-center justify-between px-4 pt-3 gap-3">
+      {statusHeader && (
+        <div className="px-4 pt-3 pb-1">{statusHeader}</div>
+      )}
+      <div className="flex items-center justify-between px-4 pt-2 gap-3">
         <div className="flex flex-wrap gap-0.5 bg-foreground/5 rounded-md p-0.5">
           {tabs.map((t) => (
             <button

@@ -9,6 +9,13 @@ meta:
     - multimodal
   performance_headline: "9B AR generator + 7B DiT decoder, state-of-the-art text rendering in generated images"
   related_recipes: []
+  hardware:
+    h100: verified
+    h200: supported
+    b200: supported
+    gb200: supported
+    b300: supported
+    gb300: supported
 
 model:
   model_id: "zai-org/GLM-Image"
@@ -45,13 +52,7 @@ compatible_strategies:
   - multi_node_tp
   - multi_node_tp_pp
 
-hardware_overrides:
-  hopper:
-    extra_args: []
-    extra_env: {}
-  blackwell:
-    extra_args: []
-    extra_env: {}
+hardware_overrides: {}
 
 strategy_overrides: {}
 

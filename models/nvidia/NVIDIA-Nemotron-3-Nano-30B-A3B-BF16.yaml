@@ -9,6 +9,13 @@ meta:
     - text
   related_recipes:
     - nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16
+  hardware:
+    h100: verified
+    h200: verified
+    b200: supported
+    gb200: supported
+    b300: supported
+    gb300: supported
 
 model:
   model_id: "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16"
@@ -67,13 +74,7 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
 
-hardware_overrides:
-  blackwell:
-    extra_args: []
-    extra_env: {}
-  hopper:
-    extra_args: []
-    extra_env: {}
+hardware_overrides: {}
 
 strategy_overrides: {}
 

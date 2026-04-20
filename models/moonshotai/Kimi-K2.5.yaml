@@ -9,6 +9,16 @@ meta:
     - multimodal
   performance_headline: "Multimodal agentic MoE model with DeepSeek-V3 backbone and MLA attention"
   related_recipes: []
+  hardware:
+    h100: supported
+    h200: verified
+    b200: supported
+    gb200: verified
+    b300: supported
+    gb300: supported
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "moonshotai/Kimi-K2.5"
@@ -69,12 +79,6 @@ compatible_strategies:
   - pd_cluster
 
 hardware_overrides:
-  hopper:
-    extra_args: []
-    extra_env: {}
-  blackwell:
-    extra_args: []
-    extra_env: {}
   amd:
     # Verified on 8× MI300X / MI355X (MI325X listed as supported but not verified).
     extra_args:

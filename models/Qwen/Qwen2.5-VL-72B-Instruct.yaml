@@ -10,6 +10,16 @@ meta:
     - text
   performance_headline: "Verified on 4x A100 and 4x MI300X/MI325X/MI355X with BF16"
   related_recipes: []
+  hardware:
+    h100: supported
+    h200: supported
+    b200: supported
+    gb200: supported
+    b300: supported
+    gb300: supported
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "Qwen/Qwen2.5-VL-72B-Instruct"

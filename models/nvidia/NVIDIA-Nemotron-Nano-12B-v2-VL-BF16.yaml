@@ -9,6 +9,13 @@ meta:
     - multimodal
   related_recipes:
     - nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+  hardware:
+    h100: verified
+    h200: supported
+    b200: verified
+    gb200: supported
+    b300: supported
+    gb300: supported
 
 model:
   model_id: "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16"

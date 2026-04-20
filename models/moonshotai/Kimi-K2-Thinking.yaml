@@ -11,6 +11,13 @@ meta:
   related_recipes:
     - "moonshotai/Kimi-K2-Instruct"
     - "moonshotai/Kimi-K2.5"
+  hardware:
+    h100: supported
+    h200: verified
+    b200: supported
+    gb200: supported
+    b300: supported
+    gb300: supported
 
 model:
   model_id: "moonshotai/Kimi-K2-Thinking"
@@ -65,13 +72,7 @@ compatible_strategies:
   - multi_node_tep
   - pd_cluster
 
-hardware_overrides:
-  hopper:
-    extra_args: []
-    extra_env: {}
-  blackwell:
-    extra_args: []
-    extra_env: {}
+hardware_overrides: {}
 
 strategy_overrides: {}
 
