@@ -1,5 +1,6 @@
 import { Inter, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
+import { Analytics } from "@vercel/analytics/next";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { SearchBox } from "@/components/recipes/SearchBox";
 import { getAllRecipes } from "@/lib/recipes";
@@ -106,6 +107,7 @@ export default async function RootLayout({ children }) {
             <a href="/models.json" className="hover:text-foreground transition-colors">JSON API</a>
           </div>
         </footer>
+        <Analytics />
       </body>
     </html>
   );
