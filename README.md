@@ -122,15 +122,25 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 ## Contributing
 
-Please feel free to contribute by adding a new recipe or improving an existing one, just send us a PR!
+New recipes live as structured YAML at `models/<hf_org>/<hf_repo>.yaml` and render on [recipes.vllm.ai](https://recipes.vllm.ai/). **See [CONTRIBUTING.md](CONTRIBUTING.md) for the full schema, VRAM formula, and validation steps.**
 
-While the repo is designed to be directly viewable in GitHub (Markdown files as first citizen), you can build the docs as web pages locally.
+Quick loop:
+
+```bash
+pnpm install
+pnpm dev                              # http://localhost:3000
+node scripts/build-recipes-api.mjs    # validates every YAML + rebuilds the JSON API
+```
+
+### Legacy MkDocs guides
+
+The top-level Markdown directories (`DeepSeek/`, `Qwen/`, etc.) are the historical MkDocs site, kept as a reference during the YAML migration. To preview them:
 
 ```bash
 uv venv
 source .venv/bin/activate
 uv pip install -r requirements.txt
-uv run mkdocs serve
+uv run mkdocs serve --dev-addr 127.0.0.1:8001
 ```
 
 ## License

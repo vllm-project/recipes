@@ -12,15 +12,9 @@ meta:
     - "deepseek-ai/DeepSeek-R1"
     - "deepseek-ai/DeepSeek-V3.1"
   hardware:
-    h100: supported
     h200: verified
     b200: verified
     gb200: verified
-    b300: supported
-    gb300: supported
-    mi300x: supported
-    mi325x: supported
-    mi355x: supported
 
 model:
   model_id: "deepseek-ai/DeepSeek-V3"
@@ -77,7 +71,6 @@ hardware_overrides:
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
       VLLM_ROCM_USE_AITER_MOE: "1"
-      VLLM_USE_TRITON_FLASH_ATTN: "0"
       SAFETENSORS_FAST_GPU: "1"
 
 strategy_overrides: {}

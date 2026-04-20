@@ -10,12 +10,7 @@ meta:
   performance_headline: "Verified on 4x/8x H200, MI300X/MI325X/MI355X nodes (BF16 and FP8)"
   related_recipes: []
   hardware:
-    h100: supported
     h200: verified
-    b200: supported
-    gb200: supported
-    b300: supported
-    gb300: supported
     mi300x: verified
     mi325x: verified
     mi355x: verified

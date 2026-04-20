@@ -12,12 +12,7 @@ meta:
     - "moonshotai/Kimi-K2-Thinking"
     - "moonshotai/Kimi-K2.5"
   hardware:
-    h100: supported
     h200: verified
-    b200: supported
-    gb200: supported
-    b300: supported
-    gb300: supported
 
 model:
   model_id: "moonshotai/Kimi-K2-Instruct"
