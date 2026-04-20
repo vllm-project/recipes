@@ -86,32 +86,13 @@ for (const file of findYamlFiles(modelsDir)) {
   writeJson(`${r.hf_org}/${r.hf_repo}.json`, r);
 }
 
-// /models.json — index (no guide field, compact)
+// /models.json — slim discovery index (~5 KB). For agents that want to
+// enumerate recipes and follow links; per-recipe data lives at
+// `/<hf_org>/<hf_repo>.json` (the `json` pointer below).
 const index = recipes.map((r) => ({
   hf_id: r.hf_id,
-  hf_org: r.hf_org,
-  hf_repo: r.hf_repo,
   title: r.meta.title,
   provider: r.meta.provider,
-  description: r.meta.description,
-  date_updated: r.meta.date_updated,
-  difficulty: r.meta.difficulty,
-  min_vllm_version: r.model.min_vllm_version,
-  architecture: r.model.architecture,
-  parameter_count: r.model.parameter_count,
-  active_parameters: r.model.active_parameters,
-  context_length: r.model.context_length,
-  tasks: r.meta.tasks,
-  performance_headline: r.meta.performance_headline,
-  variants: Object.fromEntries(
-    Object.entries(r.variants || {}).map(([k, v]) => [
-      k,
-      { precision: v.precision, vram_minimum_gb: v.vram_minimum_gb },
-    ])
-  ),
-  compatible_strategies: r.compatible_strategies,
-  features: Object.keys(r.features || {}),
-  opt_in_features: r.opt_in_features || [],
   url: `/${r.hf_id}`,
   json: `/${r.hf_id}.json`,
 }));
