@@ -720,21 +720,31 @@ function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader })
 function InstallBlock({ recipe, hwProfile, result, variant }) {
   // Collapsible block above the command output showing pip/uv and Docker
   // install one-liners. Hardware-aware — swaps NVIDIA / AMD ROCm variants.
-  // The "vLLM X.Y+" link still lives in the page header; this is the
-  // copyable, no-click-out install surface.
+  // Per-recipe overrides via `model.install.{pip,docker}`:
+  //   false              → hide that tab entirely
+  //   { command, note }  → override the generated one-liner and/or show a note
+  const install = recipe.model?.install || {};
+  const pipCfg = install.pip;
+  const dockerCfg = install.docker;
+  const pipHidden = pipCfg === false;
+  const dockerHidden = dockerCfg === false;
+
+  const defaultTab = pipHidden ? "docker" : "pip";
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState("pip");
+  const [tab, setTab] = useState(defaultTab);
   const isAmd = hwProfile?.brand === "AMD";
   const minV = recipe.model?.min_vllm_version;
   const modelId = variant?.model_id || recipe.model?.model_id || "MODEL";
 
-  const pipCmd = isAmd
+  const defaultPipCmd = isAmd
     ? `uv venv --python 3.12
 source .venv/bin/activate
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm`
     : `uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto`;
+  const pipCmd = pipCfg?.command || defaultPipCmd;
+  const pipNote = pipCfg?.note;
 
   // Docker one-liner: only meaningful for single-node. Wraps the generated
   // vllm serve command as the docker entrypoint's args.
@@ -753,16 +763,26 @@ uv pip install -U vllm --torch-backend auto`;
   const envFlags = Object.entries(result?.env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
-  const dockerCmd = `docker run ${dockerGpuFlags} \\
+  const defaultDockerCmd = `docker run ${dockerGpuFlags} \\
   --ipc=host -p 8000:8000 \\
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
   ${dockerImage} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
+  const dockerCmd = dockerCfg?.command || defaultDockerCmd;
+  const dockerNote = dockerCfg?.note;
 
   const tabs = [
-    { id: "pip",    label: isAmd ? "pip / uv (ROCm)" : "pip / uv",       code: pipCmd    },
-    { id: "docker", label: isAmd ? "Docker (ROCm)"   : "Docker",         code: dockerCmd },
-  ];
+    !pipHidden && {
+      id: "pip", label: isAmd ? "pip / uv (ROCm)" : "pip / uv", code: pipCmd, note: pipNote,
+    },
+    !dockerHidden && {
+      id: "docker", label: isAmd ? "Docker (ROCm)" : "Docker", code: dockerCmd, note: dockerNote,
+    },
+  ].filter(Boolean);
+
+  // Guard: if both hidden, render nothing.
+  if (tabs.length === 0) return null;
   const active = tabs.find((t) => t.id === tab) || tabs[0];
+  const summary = tabs.map((t) => (t.id === "pip" ? "pip" : "Docker")).join(" / ");
 
   return (
     <div className="rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border">
@@ -776,7 +796,7 @@ uv pip install -U vllm --torch-backend auto`;
           vLLM {minV}+ · {isAmd ? "ROCm" : "CUDA"}
         </span>
         <span className="text-[11px] text-[var(--command-fg)]/40 ml-auto">
-          {open ? "hide" : "pip / Docker"}
+          {open ? "hide" : summary}
         </span>
         <ChevronDown
           size={14}
@@ -801,6 +821,11 @@ uv pip install -U vllm --torch-backend auto`;
             </div>
             <CopyButton text={active.code} />
           </div>
+          {active.note && (
+            <div className="px-4 pt-2 text-[11px] text-[var(--command-fg)]/55 leading-snug">
+              # {active.note}
+            </div>
+          )}
           <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
             {active.code}
           </pre>

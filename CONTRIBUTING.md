@@ -65,6 +65,15 @@ model:
   model_id: "deepseek-ai/DeepSeek-V3.2"           # MUST match the filename path
   min_vllm_version: "0.18.0"                      # earliest vLLM release that supports this model
   docker_image: "vllm/vllm-openai:v0.18.0"        # optional — override the Docker image:tag shown in Install → Docker (defaults to vllm/vllm-openai or vllm/vllm-openai-rocm). Use when the model needs a pinned build before its support lands in :latest.
+  # Optional — control the Install block's pip/Docker tabs. Each key accepts
+  # either `false` (hide the tab entirely) or an object with { command?, note? }.
+  # Use `note` for a one-liner above the code block; use `command` to fully
+  # replace the generated install script (e.g. nightly wheel, pinned version).
+  install:
+    pip:
+      command: "uv pip install vllm --pre --index-url https://wheels.vllm.ai/nightly"
+      note: "nightly wheel required — stable release does not yet support this model"
+    docker: false                                 # e.g. no matching image published yet
   architecture: moe                               # dense | moe
   parameter_count: "671B"                         # total params with B/T suffix
   active_parameters: "37B"                        # same as parameter_count for dense models
