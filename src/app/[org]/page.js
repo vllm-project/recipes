@@ -46,6 +46,14 @@ export default async function OrgPage({ params }) {
     if (!groups[task]) groups[task] = [];
     groups[task].push(m);
   }
+  // Within each group, sort by HF release date desc (fallback: date_updated desc)
+  const modelTs = (m) => {
+    const t = m.hf_released ? Date.parse(m.hf_released) : NaN;
+    return Number.isFinite(t) ? t : Date.parse(m.meta.date_updated) || 0;
+  };
+  for (const list of Object.values(groups)) {
+    list.sort((a, b) => modelTs(b) - modelTs(a));
+  }
   const orderedGroups = TASK_ORDER
     .filter((t) => groups[t])
     .map((t) => [t, groups[t]]);

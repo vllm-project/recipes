@@ -418,6 +418,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         recipe={recipe}
         hwProfile={hwProfile}
         result={result}
+        variant={currentVariant}
       />
 
       {/* ── Dependencies / extra install ── */}
@@ -716,7 +717,7 @@ function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader })
   );
 }
 
-function InstallBlock({ recipe, hwProfile, result }) {
+function InstallBlock({ recipe, hwProfile, result, variant }) {
   // Collapsible block above the command output showing pip/uv and Docker
   // install one-liners. Hardware-aware — swaps NVIDIA / AMD ROCm variants.
   // The "vLLM X.Y+" link still lives in the page header; this is the
@@ -725,7 +726,7 @@ function InstallBlock({ recipe, hwProfile, result }) {
   const [tab, setTab] = useState("pip");
   const isAmd = hwProfile?.brand === "AMD";
   const minV = recipe.model?.min_vllm_version;
-  const modelId = recipe.variants?.default?.model_id || recipe.model?.model_id || "MODEL";
+  const modelId = variant?.model_id || recipe.model?.model_id || "MODEL";
 
   const pipCmd = isAmd
     ? `uv venv --python 3.12
@@ -741,7 +742,11 @@ uv pip install -U vllm --torch-backend auto`;
     result?.deployType === "single_node" && result?.command
       ? result.command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "")
       : "";
-  const dockerImage = isAmd ? "vllm/vllm-openai-rocm" : "vllm/vllm-openai";
+  // Per-recipe Docker image/tag override. Precedence: variant → model → default.
+  // Use full `image:tag`, e.g. `vllm/vllm-openai:glm51` when the model needs a
+  // pinned build before its support lands in :latest.
+  const dockerOverride = variant?.docker_image || recipe.model?.docker_image;
+  const dockerImage = dockerOverride || (isAmd ? "vllm/vllm-openai-rocm" : "vllm/vllm-openai");
   const dockerGpuFlags = isAmd
     ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
     : "--gpus all";

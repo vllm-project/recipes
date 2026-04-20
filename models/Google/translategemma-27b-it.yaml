@@ -13,6 +13,7 @@ meta:
 model:
   model_id: "google/translategemma-27b-it"
   min_vllm_version: "0.14.1"
+  docker_image: "vllm/vllm-openai:v0.14.1-cu130"
   architecture: dense
   parameter_count: "27B"
   active_parameters: "27B"

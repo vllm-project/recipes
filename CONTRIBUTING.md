@@ -64,6 +64,7 @@ meta:
 model:
   model_id: "deepseek-ai/DeepSeek-V3.2"           # MUST match the filename path
   min_vllm_version: "0.18.0"                      # earliest vLLM release that supports this model
+  docker_image: "vllm/vllm-openai:v0.18.0"        # optional — override the Docker image:tag shown in Install → Docker (defaults to vllm/vllm-openai or vllm/vllm-openai-rocm). Use when the model needs a pinned build before its support lands in :latest.
   architecture: moe                               # dense | moe
   parameter_count: "671B"                         # total params with B/T suffix
   active_parameters: "37B"                        # same as parameter_count for dense models
