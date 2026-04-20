@@ -245,6 +245,12 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         args.push("--data-parallel-start-rank", String(nodeIdx * dpLocal));
         args.push("--data-parallel-address", `$${roleKey.toUpperCase()}_DP_LEADER_IP`);
         args.push("--data-parallel-rpc-port", `$${roleKey.toUpperCase()}_DP_RPC_PORT`);
+        // Multi-node DEP needs hybrid load balancing — without this flag the
+        // router distributes requests round-robin across DP ranks, which
+        // defeats local batching inside each node.
+        if (nodesInPool > 1) {
+          args.push("--data-parallel-hybrid-lb");
+        }
         args.push("--enable-expert-parallel");
       } else {
         // TP pool. With >1 node, layer on vLLM mp multi-node flags.
@@ -317,15 +323,25 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       Object.assign(env, strategy[roleOverride].env);
     }
 
-    // PD: pin GPUs per role via CUDA_VISIBLE_DEVICES
-    // - Single-node: first half (prefill) / second half (decode)
-    // - Multi-node: each role owns a whole node, so list all its GPUs
+    // PD: pin GPUs per role via CUDA_VISIBLE_DEVICES.
+    // With per-role `nodes` (new model):
+    //   nodes >= 1 → this role owns whole node(s), list all local GPUs
+    //   nodes === 0 (legacy co-located half) → split 0..N/2-1 / N/2..N-1
     if (strategy.deploy_type === "pd_cluster" && roleOverride) {
-      const multi = nodeCount > 1;
-      if (multi) {
-        const all = Array.from({ length: gpuCount }, (_, i) => i).join(",");
-        env.CUDA_VISIBLE_DEVICES = all;
+      const raw = pdNodes ? pdNodes[roleOverride] : undefined;
+      const pdRoleObj =
+        typeof raw === "number" ? { nodes: raw }
+        : (raw && typeof raw === "object") ? raw
+        : {};
+      const legacyNodes = nodeCount > 1 ? 1 : 0;
+      const rolePoolNodes =
+        typeof pdRoleObj.nodes === "number" ? pdRoleObj.nodes : legacyNodes;
+      if (rolePoolNodes >= 1) {
+        // Dedicated node(s) — each node owns all its local GPUs. Same value
+        // is correct whether the pool is DEP (vllm spawns local ranks) or TP.
+        env.CUDA_VISIBLE_DEVICES = Array.from({ length: gpuCount }, (_, i) => i).join(",");
       } else {
+        // Co-located demo: first half for prefill, second half for decode.
         const half = Math.floor(gpuCount / 2);
         if (half > 0) {
           const ids = roleOverride === "prefill"
