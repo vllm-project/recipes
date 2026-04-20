@@ -36,12 +36,15 @@ export async function generateMetadata({ params }) {
   const metaLine = [paramStr, (model.architecture || "").toUpperCase(), ctxStr]
     .filter(Boolean)
     .join(" · ");
-  const ogUrl = `/og?title=${encodeURIComponent(title)}&subtitle=${encodeURIComponent(
-    meta.provider || org
-  )}&meta=${encodeURIComponent(metaLine)}&path=${encodeURIComponent(`/${org}/${repo}`)}`;
-  // Longer og:title improves share-card engagement; HTML <title> stays the
-  // short form (+ template suffix " | vLLM Recipes") to avoid tab overflow.
-  const ogTitle = metaLine ? `${title} — ${metaLine} on vLLM` : `${title} on vLLM`;
+  const versionStr = model.min_vllm_version ? `vLLM ${model.min_vllm_version}+` : "";
+  // Provider subtitle is redundant with the "org/" prefix in the title, so
+  // the recipe OG uses: title + meta (spec strip) + version pill.
+  const ogUrl = `/og?title=${encodeURIComponent(title)}&meta=${encodeURIComponent(
+    metaLine
+  )}&version=${encodeURIComponent(versionStr)}&path=${encodeURIComponent(`/${org}/${repo}`)}`;
+  // og:title — aim for 50–60 chars for optimal preview width. Skip the
+  // " on vLLM" suffix since og:site_name already provides it.
+  const ogTitle = metaLine ? `${title} — ${metaLine}` : title;
   return {
     title: meta.title,
     description,

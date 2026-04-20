@@ -14,6 +14,11 @@ export async function GET(request) {
   const subtitle = searchParams.get("subtitle") || "";
   const meta = searchParams.get("meta") || "";
   const path = searchParams.get("path") || "";
+  // Optional bottom-left chip. Recipe pages pass `version` ("vLLM 0.18+");
+  // provider/homepage can pass `cta` for a marketing line. If neither is set
+  // the footer collapses to URL-only.
+  const cta = searchParams.get("cta") || "";
+  const version = searchParams.get("version") || "";
 
   const baseUrl = new URL(request.url).origin;
   const logoUrl = `${baseUrl}/vLLM-Full-Logo.png`;
@@ -163,7 +168,7 @@ export async function GET(request) {
             )}
           </div>
 
-          {/* Footer */}
+          {/* Footer — version pill or CTA on the left, full URL on the right */}
           <div
             style={{
               display: "flex",
@@ -171,21 +176,48 @@ export async function GET(request) {
               alignItems: "flex-end",
             }}
           >
-            <div style={{ display: "flex", color: "#9ca3af", fontSize: 16, fontWeight: 500 }}>
-              recipes.vllm.ai
-            </div>
-            {path && (
+            {version ? (
               <div
                 style={{
                   display: "flex",
-                  color: "#9ca3af",
+                  alignItems: "center",
+                  padding: "6px 14px",
+                  border: "1px solid rgba(48,162,255,0.35)",
+                  borderRadius: 999,
+                  color: "#30a2ff",
                   fontSize: 16,
+                  fontWeight: 600,
                   fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace",
+                  letterSpacing: "-0.01em",
                 }}
               >
-                {path}
+                {version}
               </div>
+            ) : cta ? (
+              <div
+                style={{
+                  display: "flex",
+                  color: "#30a2ff",
+                  fontSize: 20,
+                  fontWeight: 600,
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                {cta}
+              </div>
+            ) : (
+              <div style={{ display: "flex" }} />
             )}
+            <div
+              style={{
+                display: "flex",
+                color: "#9ca3af",
+                fontSize: 16,
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace",
+              }}
+            >
+              {`recipes.vllm.ai${path}`}
+            </div>
           </div>
         </div>
       </div>
