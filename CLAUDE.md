@@ -27,6 +27,8 @@ There is no unit-test suite. The build-recipes-api script is the de-facto valida
 
 **Dev-server convention:** don't kill or restart the dev server as part of a task, and don't run `pnpm build` for each change. Use `node scripts/build-recipes-api.mjs` for fast feedback on YAML edits; rely on Next's HMR for `src/` edits.
 
+**Commit convention:** always use `git commit -s` (sign-off). The upstream `vllm-project/recipes` repo enforces DCO via the probot/dco GitHub App — commits without a `Signed-off-by:` trailer fail CI and block the PR. There's no GitHub-side auto-fix; the trailer has to be in the commit itself.
+
 ## Architecture
 
 ### Data pipeline
