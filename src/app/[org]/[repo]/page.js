@@ -5,7 +5,7 @@ import { getAllRecipes, getRecipeByHfId } from "@/lib/recipes";
 import { recipeHref } from "@/lib/recipe-utils";
 import { loadStrategies } from "@/lib/strategies";
 import { loadTaxonomy } from "@/lib/taxonomy";
-import { getProviderLogo } from "@/lib/providers";
+import { getProviderLogo, getProviderLogoClass } from "@/lib/providers";
 import { CommandBuilder } from "@/components/recipes/CommandBuilder";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -75,13 +75,6 @@ export default async function RecipePage({ params }) {
   const guide = recipe.guide || "";
   const logo = getProviderLogo(recipe.hf_org);
 
-  const configRows = Object.entries(recipe.variants || {}).map(([key, v]) => ({
-    name: key === "default" ? "Default" : key.toUpperCase(),
-    precision: v.precision?.toUpperCase() || "—",
-    vram: `${v.vram_minimum_gb} GB`,
-    description: v.description || "",
-  }));
-
   const allRecipes = getAllRecipes();
   // related_recipes can be either "org/repo" HF id or the old slug format
   const related = (recipe.meta.related_recipes || [])
@@ -95,7 +88,7 @@ export default async function RecipePage({ params }) {
         <div className="flex items-start gap-4 mb-4">
           {logo && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={logo} alt={recipe.meta.provider} width={44} height={44} className="rounded-xl mt-0.5 shrink-0" />
+            <img src={logo} alt={recipe.meta.provider} width={44} height={44} className={`rounded-xl mt-0.5 shrink-0 ${getProviderLogoClass(recipe.hf_org)}`} />
           )}
           <div className="min-w-0 flex-1">
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight font-mono break-all">
@@ -166,32 +159,6 @@ export default async function RecipePage({ params }) {
           </Accordion>
         )}
 
-        {configRows.length > 1 && (
-          <Accordion title="Configuration Matrix">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-muted-foreground text-xs">
-                    <th className="pb-2 pr-6 font-medium">Variant</th>
-                    <th className="pb-2 pr-6 font-medium">Precision</th>
-                    <th className="pb-2 pr-6 font-medium">Min VRAM</th>
-                    <th className="pb-2 font-medium">Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {configRows.map((row) => (
-                    <tr key={row.name} className="border-b border-border/40">
-                      <td className="py-2 pr-6 font-mono text-xs">{row.name}</td>
-                      <td className="py-2 pr-6 text-xs">{row.precision}</td>
-                      <td className="py-2 pr-6 text-xs tabular-nums">{row.vram}</td>
-                      <td className="py-2 text-xs text-muted-foreground">{row.description}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Accordion>
-        )}
       </section>
 
       {/* ── Footer ── */}

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAllRecipes } from "@/lib/recipes";
-import { getProviderLogo, getProviderDisplayName } from "@/lib/providers";
+import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
 import { recipeHref } from "@/lib/recipe-utils";
 import { Badge } from "@/components/ui/badge";
 import { ExternalLink, Type, Eye, Sparkles, Cpu, Hash } from "lucide-react";
@@ -86,7 +86,7 @@ export default async function OrgPage({ params }) {
       <header className="mb-8 flex items-center gap-4">
         {logo ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={logo} alt="" width={56} height={56} className="rounded-xl shrink-0" />
+          <img src={logo} alt="" width={56} height={56} className={`rounded-xl shrink-0 ${getProviderLogoClass(org)}`} />
         ) : (
           <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center text-2xl font-bold text-muted-foreground">
             {displayName.charAt(0)}

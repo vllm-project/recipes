@@ -160,17 +160,11 @@ html.dark .shiki span {
 
 .guide-content p {
   margin-bottom: 0.75rem;
-  max-width: 72ch;
 }
 
 .guide-content ul, .guide-content ol {
   margin-bottom: 0.75rem;
   padding-left: 1.5rem;
-  max-width: 72ch;
-}
-
-.guide-content h2, .guide-content h3 {
-  max-width: 72ch;
 }
 
 .guide-content ul { list-style-type: disc; }
