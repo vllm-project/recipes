@@ -70,11 +70,16 @@ model:
   # either `false` (hide the tab entirely) or an object with { command?, note? }.
   # Use `note` for a one-liner above the code block; use `command` to fully
   # replace the generated install script (e.g. nightly wheel, pinned version).
+  #
+  # Tab ORDER follows the YAML key order. Put `docker` before `pip` to make
+  # Docker the first tab and the default when the block opens (useful when the
+  # recipe is easier via Docker — e.g. a pinned image vs. a multi-step pip).
   install:
+    docker:                                       # listed first → Docker is the default tab
+      note: "Recommended: the pinned image ships all dependencies"
     pip:
       command: "uv pip install vllm --pre --index-url https://wheels.vllm.ai/nightly"
       note: "nightly wheel required — stable release does not yet support this model"
-    docker: false                                 # e.g. no matching image published yet
   architecture: moe                               # dense | moe
   parameter_count: "671B"                         # total params with B/T suffix
   active_parameters: "37B"                        # same as parameter_count for dense models

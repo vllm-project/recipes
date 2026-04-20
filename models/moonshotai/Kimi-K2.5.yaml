@@ -18,7 +18,7 @@ meta:
 
 model:
   model_id: "moonshotai/Kimi-K2.5"
-  min_vllm_version: "0.15.0"
+  min_vllm_version: "0.19.1"
   architecture: moe
   parameter_count: "1T"
   active_parameters: "32B"

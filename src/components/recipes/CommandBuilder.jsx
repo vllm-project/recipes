@@ -886,7 +886,20 @@ function InstallBlock({ recipe, hwProfile, result, variant }) {
   const pipHidden = pipCfg === false;
   const dockerHidden = dockerCfg === false;
 
-  const defaultTab = pipHidden ? "docker" : "pip";
+  // Tab order follows the YAML key order of `model.install`. Put `docker`
+  // before `pip` in the recipe's install block to make Docker the first tab
+  // (and the default when the block opens). Legacy fallback: pip first.
+  const tabOrder = (() => {
+    const keys = Object.keys(install).filter((k) => k === "pip" || k === "docker");
+    if (keys.length === 0) return ["pip", "docker"];
+    // If only one is declared, still show the other as the secondary tab.
+    const ordered = [...keys];
+    for (const k of ["pip", "docker"]) if (!ordered.includes(k)) ordered.push(k);
+    return ordered;
+  })();
+  const defaultTab = tabOrder.find((id) =>
+    id === "pip" ? !pipHidden : !dockerHidden
+  ) || "pip";
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState(defaultTab);
   const isAmd = hwProfile?.brand === "AMD";
@@ -941,19 +954,20 @@ uv pip install -U vllm --torch-backend auto`;
   const dockerCmd = dockerCfg?.command || defaultDockerCmd;
   const dockerNote = dockerCfg?.note;
 
-  const tabs = [
-    !pipHidden && {
-      id: "pip", label: isAmd ? "pip / uv (ROCm)" : "pip / uv", code: pipCmd, note: pipNote,
-    },
-    !dockerHidden && {
-      id: "docker", label: isAmd ? "Docker (ROCm)" : "Docker", code: dockerCmd, note: dockerNote,
-    },
-  ].filter(Boolean);
+  const tabDefs = {
+    pip:    { id: "pip",    label: isAmd ? "pip / uv (ROCm)" : "pip / uv", code: pipCmd,    note: pipNote    },
+    docker: { id: "docker", label: isAmd ? "Docker (ROCm)"   : "Docker",   code: dockerCmd, note: dockerNote },
+  };
+  const tabs = tabOrder
+    .map((id) => (id === "pip" ? !pipHidden : !dockerHidden) && tabDefs[id])
+    .filter(Boolean);
 
   // Guard: if both hidden, render nothing.
   if (tabs.length === 0) return null;
   const active = tabs.find((t) => t.id === tab) || tabs[0];
   const summary = tabs.map((t) => (t.id === "pip" ? "pip" : "Docker")).join(" / ");
+  // `tabs` already follows YAML order, so summary reads "Docker / pip" when
+  // docker is declared first.
 
   return (
     <div className="rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border">
