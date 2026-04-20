@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package } from "lucide-react";
+import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info } from "lucide-react";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, pickDefaultHardware, pdFitsSingleNode } from "@/lib/command-synthesis";
 
 // Advanced tuning presets — optional tunable flags the user can opt into.
@@ -498,14 +498,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         </ConfigRow>
 
         {/* Variant */}
-        <ConfigRow label="Variant">
+        <ConfigRow
+          label="Variant"
+          hint="VRAM shown is the minimum to LOAD the model (weights + CUDA/vLLM runtime overhead, ≈ params × bytes × 1.2). It's not a serving budget — long context or large batch typically needs 1.5–2× more for KV cache."
+        >
           <PillGroup>
             {Object.entries(recipe.variants || {}).map(([key, v]) => (
               <Pill
                 key={key}
                 active={variant === key}
                 onClick={() => selectVariant(key)}
-                title={`Min ${v.vram_minimum_gb} GB total VRAM — scale out via multi-node if needed`}
+                title={`Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`}
               >
                 <span className="font-mono font-semibold">{v.precision?.toUpperCase()}</span>
                 <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
@@ -641,11 +644,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
 // ── Sub-components ──
 
-function ConfigRow({ label, children }) {
+function ConfigRow({ label, hint, children }) {
   return (
     <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
-      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest sm:w-20 sm:pt-1.5 shrink-0">
+      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest sm:w-20 sm:pt-1.5 shrink-0 inline-flex items-center gap-1">
         {label}
+        {hint && (
+          <span
+            title={hint}
+            className="cursor-help text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+            aria-label={hint}
+          >
+            <Info size={11} />
+          </span>
+        )}
       </div>
       <div className="flex-1 min-w-0">{children}</div>
     </div>
@@ -736,15 +748,29 @@ function InstallBlock({ recipe, hwProfile, result, variant }) {
   const minV = recipe.model?.min_vllm_version;
   const modelId = variant?.model_id || recipe.model?.model_id || "MODEL";
 
+  // When a recipe's min_vllm_version hasn't shipped yet (cutting-edge models
+  // that landed after the last stable release), `model.nightly_required: true`
+  // swaps the default pip command to the nightly wheel index and surfaces a
+  // pill in the Install header. Manual `install.pip.command` overrides still
+  // win — this flag only affects the default.
+  const nightlyRequired = recipe.model?.nightly_required === true;
   const defaultPipCmd = isAmd
     ? `uv venv --python 3.12
 source .venv/bin/activate
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm`
-    : `uv venv
+    : nightlyRequired
+      ? `uv venv
+source .venv/bin/activate
+uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly/cu130`
+      : `uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto`;
   const pipCmd = pipCfg?.command || defaultPipCmd;
-  const pipNote = pipCfg?.note;
+  const pipNote =
+    pipCfg?.note ||
+    (nightlyRequired && !isAmd
+      ? `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, use https://wheels.vllm.ai/nightly/cu129`
+      : undefined);
 
   // Docker one-liner: only meaningful for single-node. Wraps the generated
   // vllm serve command as the docker entrypoint's args.
@@ -795,6 +821,11 @@ uv pip install -U vllm --torch-backend auto`;
         <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
           vLLM {minV}+ · {isAmd ? "ROCm" : "CUDA"}
         </span>
+        {nightlyRequired && (
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
+            nightly
+          </span>
+        )}
         <span className="text-[11px] text-[var(--command-fg)]/40 ml-auto">
           {open ? "hide" : summary}
         </span>
