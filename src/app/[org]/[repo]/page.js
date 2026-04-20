@@ -24,7 +24,45 @@ export async function generateMetadata({ params }) {
   const { org, repo } = await params;
   const recipe = getRecipeByHfId(org, repo);
   if (!recipe) return {};
-  return { title: recipe.meta.title, description: recipe.meta.description };
+  const { meta, model } = recipe;
+  const title = `${org}/${repo}`;
+  const description = meta.description || meta.title;
+  const paramStr = model.parameter_count
+    ? model.active_parameters && model.active_parameters !== model.parameter_count
+      ? `${model.parameter_count} / ${model.active_parameters} active`
+      : model.parameter_count
+    : "";
+  const ctxStr = model.context_length ? `${(model.context_length / 1024).toFixed(0)}K ctx` : "";
+  const metaLine = [paramStr, (model.architecture || "").toUpperCase(), ctxStr]
+    .filter(Boolean)
+    .join(" · ");
+  const versionStr = model.min_vllm_version ? `vLLM ${model.min_vllm_version}+` : "";
+  // Provider subtitle is redundant with the "org/" prefix in the title, so
+  // the recipe OG uses: title + meta (spec strip) + version pill.
+  const ogUrl = `/og?title=${encodeURIComponent(title)}&meta=${encodeURIComponent(
+    metaLine
+  )}&version=${encodeURIComponent(versionStr)}&path=${encodeURIComponent(`/${org}/${repo}`)}`;
+  // og:title — aim for 50–60 chars for optimal preview width. Skip the
+  // " on vLLM" suffix since og:site_name already provides it.
+  const ogTitle = metaLine ? `${title} — ${metaLine}` : title;
+  return {
+    title: meta.title,
+    description,
+    openGraph: {
+      type: "article",
+      title: ogTitle,
+      description,
+      url: `/${org}/${repo}`,
+      images: [{ url: ogUrl, width: 1200, height: 630, alt: title }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: ogTitle,
+      description,
+      images: [ogUrl],
+    },
+    alternates: { canonical: `/${org}/${repo}` },
+  };
 }
 
 export default async function RecipePage({ params }) {
@@ -188,13 +226,19 @@ export default async function RecipePage({ params }) {
 }
 
 function Accordion({ title, children, defaultOpen = false }) {
+  // Stronger border than bare `--border` (10% in dark mode) so the outline is
+  // visible on both themes. `foreground/15` stays subtle but catches enough
+  // contrast to define the card.
   return (
-    <details className="group rounded-xl border border-border overflow-hidden" open={defaultOpen || undefined}>
-      <summary className="px-5 py-3 cursor-pointer text-sm font-semibold select-none hover:bg-muted/20 transition-colors flex items-center justify-between">
+    <details
+      className="group rounded-xl border border-foreground/15 bg-card/40 overflow-hidden"
+      open={defaultOpen || undefined}
+    >
+      <summary className="px-5 py-3 cursor-pointer text-sm font-semibold select-none hover:bg-foreground/[0.04] transition-colors flex items-center justify-between">
         {title}
         <ChevronIcon />
       </summary>
-      <div className="px-5 pb-5 border-t border-border/40 pt-4">{children}</div>
+      <div className="px-5 pb-5 border-t border-foreground/10 pt-4">{children}</div>
     </details>
   );
 }

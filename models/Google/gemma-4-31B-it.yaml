@@ -19,6 +19,7 @@ meta:
 model:
   model_id: "google/gemma-4-31B-it"
   min_vllm_version: "0.12.0"
+  docker_image: "vllm/vllm-openai:gemma4"
   architecture: dense
   parameter_count: "31B"
   active_parameters: "31B"

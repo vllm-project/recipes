@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package } from "lucide-react";
+import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info } from "lucide-react";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, pickDefaultHardware, pdFitsSingleNode } from "@/lib/command-synthesis";
 
 // Advanced tuning presets — optional tunable flags the user can opt into.
@@ -418,6 +418,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         recipe={recipe}
         hwProfile={hwProfile}
         result={result}
+        variant={currentVariant}
       />
 
       {/* ── Dependencies / extra install ── */}
@@ -497,14 +498,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         </ConfigRow>
 
         {/* Variant */}
-        <ConfigRow label="Variant">
+        <ConfigRow
+          label="Variant"
+          hint="VRAM shown is the minimum to LOAD the model (weights + CUDA/vLLM runtime overhead, ≈ params × bytes × 1.2). It's not a serving budget — long context or large batch typically needs 1.5–2× more for KV cache."
+        >
           <PillGroup>
             {Object.entries(recipe.variants || {}).map(([key, v]) => (
               <Pill
                 key={key}
                 active={variant === key}
                 onClick={() => selectVariant(key)}
-                title={`Min ${v.vram_minimum_gb} GB total VRAM — scale out via multi-node if needed`}
+                title={`Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`}
               >
                 <span className="font-mono font-semibold">{v.precision?.toUpperCase()}</span>
                 <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
@@ -640,11 +644,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
 // ── Sub-components ──
 
-function ConfigRow({ label, children }) {
+function ConfigRow({ label, hint, children }) {
   return (
     <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
-      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest sm:w-20 sm:pt-1.5 shrink-0">
+      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest sm:w-20 sm:pt-1.5 shrink-0 inline-flex items-center gap-1">
         {label}
+        {hint && (
+          <span
+            title={hint}
+            className="cursor-help text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+            aria-label={hint}
+          >
+            <Info size={11} />
+          </span>
+        )}
       </div>
       <div className="flex-1 min-w-0">{children}</div>
     </div>
@@ -716,24 +729,48 @@ function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader })
   );
 }
 
-function InstallBlock({ recipe, hwProfile, result }) {
+function InstallBlock({ recipe, hwProfile, result, variant }) {
   // Collapsible block above the command output showing pip/uv and Docker
   // install one-liners. Hardware-aware — swaps NVIDIA / AMD ROCm variants.
-  // The "vLLM X.Y+" link still lives in the page header; this is the
-  // copyable, no-click-out install surface.
+  // Per-recipe overrides via `model.install.{pip,docker}`:
+  //   false              → hide that tab entirely
+  //   { command, note }  → override the generated one-liner and/or show a note
+  const install = recipe.model?.install || {};
+  const pipCfg = install.pip;
+  const dockerCfg = install.docker;
+  const pipHidden = pipCfg === false;
+  const dockerHidden = dockerCfg === false;
+
+  const defaultTab = pipHidden ? "docker" : "pip";
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState("pip");
+  const [tab, setTab] = useState(defaultTab);
   const isAmd = hwProfile?.brand === "AMD";
   const minV = recipe.model?.min_vllm_version;
-  const modelId = recipe.variants?.default?.model_id || recipe.model?.model_id || "MODEL";
+  const modelId = variant?.model_id || recipe.model?.model_id || "MODEL";
 
-  const pipCmd = isAmd
+  // When a recipe's min_vllm_version hasn't shipped yet (cutting-edge models
+  // that landed after the last stable release), `model.nightly_required: true`
+  // swaps the default pip command to the nightly wheel index and surfaces a
+  // pill in the Install header. Manual `install.pip.command` overrides still
+  // win — this flag only affects the default.
+  const nightlyRequired = recipe.model?.nightly_required === true;
+  const defaultPipCmd = isAmd
     ? `uv venv --python 3.12
 source .venv/bin/activate
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm`
-    : `uv venv
+    : nightlyRequired
+      ? `uv venv
+source .venv/bin/activate
+uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly/cu130`
+      : `uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto`;
+  const pipCmd = pipCfg?.command || defaultPipCmd;
+  const pipNote =
+    pipCfg?.note ||
+    (nightlyRequired && !isAmd
+      ? `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, use https://wheels.vllm.ai/nightly/cu129`
+      : undefined);
 
   // Docker one-liner: only meaningful for single-node. Wraps the generated
   // vllm serve command as the docker entrypoint's args.
@@ -741,23 +778,37 @@ uv pip install -U vllm --torch-backend auto`;
     result?.deployType === "single_node" && result?.command
       ? result.command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "")
       : "";
-  const dockerImage = isAmd ? "vllm/vllm-openai-rocm" : "vllm/vllm-openai";
+  // Per-recipe Docker image/tag override. Precedence: variant → model → default.
+  // Use full `image:tag`, e.g. `vllm/vllm-openai:glm51` when the model needs a
+  // pinned build before its support lands in :latest.
+  const dockerOverride = variant?.docker_image || recipe.model?.docker_image;
+  const dockerImage = dockerOverride || (isAmd ? "vllm/vllm-openai-rocm" : "vllm/vllm-openai");
   const dockerGpuFlags = isAmd
     ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
     : "--gpus all";
   const envFlags = Object.entries(result?.env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
-  const dockerCmd = `docker run ${dockerGpuFlags} \\
+  const defaultDockerCmd = `docker run ${dockerGpuFlags} \\
   --ipc=host -p 8000:8000 \\
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
   ${dockerImage} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
+  const dockerCmd = dockerCfg?.command || defaultDockerCmd;
+  const dockerNote = dockerCfg?.note;
 
   const tabs = [
-    { id: "pip",    label: isAmd ? "pip / uv (ROCm)" : "pip / uv",       code: pipCmd    },
-    { id: "docker", label: isAmd ? "Docker (ROCm)"   : "Docker",         code: dockerCmd },
-  ];
+    !pipHidden && {
+      id: "pip", label: isAmd ? "pip / uv (ROCm)" : "pip / uv", code: pipCmd, note: pipNote,
+    },
+    !dockerHidden && {
+      id: "docker", label: isAmd ? "Docker (ROCm)" : "Docker", code: dockerCmd, note: dockerNote,
+    },
+  ].filter(Boolean);
+
+  // Guard: if both hidden, render nothing.
+  if (tabs.length === 0) return null;
   const active = tabs.find((t) => t.id === tab) || tabs[0];
+  const summary = tabs.map((t) => (t.id === "pip" ? "pip" : "Docker")).join(" / ");
 
   return (
     <div className="rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border">
@@ -770,8 +821,13 @@ uv pip install -U vllm --torch-backend auto`;
         <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
           vLLM {minV}+ · {isAmd ? "ROCm" : "CUDA"}
         </span>
+        {nightlyRequired && (
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
+            nightly
+          </span>
+        )}
         <span className="text-[11px] text-[var(--command-fg)]/40 ml-auto">
-          {open ? "hide" : "pip / Docker"}
+          {open ? "hide" : summary}
         </span>
         <ChevronDown
           size={14}
@@ -796,6 +852,11 @@ uv pip install -U vllm --torch-backend auto`;
             </div>
             <CopyButton text={active.code} />
           </div>
+          {active.note && (
+            <div className="px-4 pt-2 text-[11px] text-[var(--command-fg)]/55 leading-snug">
+              # {active.note}
+            </div>
+          )}
           <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
             {active.code}
           </pre>

@@ -15,9 +15,28 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }) {
   const { org } = await params;
   const displayName = getProviderDisplayName(org);
+  const count = getAllRecipes().filter((r) => r.hf_org === org).length;
+  const description = `vLLM recipes for ${displayName} models`;
+  const ogUrl = `/og?title=${encodeURIComponent(displayName)}&subtitle=${encodeURIComponent(
+    `${count} recipe${count === 1 ? "" : "s"}`
+  )}&path=${encodeURIComponent(`/${org}`)}`;
   return {
     title: displayName,
-    description: `vLLM recipes for ${displayName} models`,
+    description,
+    openGraph: {
+      type: "website",
+      title: displayName,
+      description,
+      url: `/${org}`,
+      images: [{ url: ogUrl, width: 1200, height: 630, alt: displayName }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: displayName,
+      description,
+      images: [ogUrl],
+    },
+    alternates: { canonical: `/${org}` },
   };
 }
 
@@ -45,6 +64,14 @@ export default async function OrgPage({ params }) {
     const task = (m.meta.tasks || [])[0] || "other";
     if (!groups[task]) groups[task] = [];
     groups[task].push(m);
+  }
+  // Within each group, sort by HF release date desc (fallback: date_updated desc)
+  const modelTs = (m) => {
+    const t = m.hf_released ? Date.parse(m.hf_released) : NaN;
+    return Number.isFinite(t) ? t : Date.parse(m.meta.date_updated) || 0;
+  };
+  for (const list of Object.values(groups)) {
+    list.sort((a, b) => modelTs(b) - modelTs(a));
   }
   const orderedGroups = TASK_ORDER
     .filter((t) => groups[t])
