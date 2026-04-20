@@ -49,9 +49,16 @@ const ADVANCED_OPTIONS = [
     id: "kv_cache_fp8",
     label: "kv-cache-dtype = fp8",
     description:
-      "Quantize KV cache to FP8 (~50% KV memory). NVIDIA only — AMD recipes already wire fp8_e4m3 via hardware overrides.",
+      "Quantize KV cache to FP8 (~50% KV memory). On AMD, vLLM aliases fp8 → fp8_e4m3.",
     args: ["--kv-cache-dtype", "fp8"],
-    gatedBy: (recipe, _strategy, hwProfile) => hwProfile?.brand !== "AMD",
+  },
+  {
+    id: "rocm_quick_reduce_int4",
+    label: "VLLM_ROCM_QUICK_REDUCE_QUANTIZATION = INT4",
+    description:
+      "AMD-only: enable INT4 quantized all-reduce (vLLM Quick Reduce) to cut TP communication bandwidth.",
+    env: { VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4" },
+    gatedBy: (recipe, _strategy, hwProfile) => hwProfile?.brand === "AMD",
   },
 ];
 const ADVANCED_BY_ID = Object.fromEntries(ADVANCED_OPTIONS.map((o) => [o.id, o]));
@@ -279,7 +286,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const result = useMemo(
     () => {
       const advArgs = advanced.flatMap((id) => ADVANCED_BY_ID[id]?.args || []);
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount);
+      const advEnv = advanced.reduce((acc, id) => Object.assign(acc, ADVANCED_BY_ID[id]?.env || {}), {});
+      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, advEnv);
     },
     [recipe, variant, activeStrategy, hwId, features, advanced, strategies, taxonomy, nodeCount]
   );

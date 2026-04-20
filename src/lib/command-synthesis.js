@@ -127,7 +127,7 @@ export function pickDefaultHardware(hwProfiles, variant) {
  * Returns: { command, env, deployType } for single_node/multi_node,
  *          { prefillCommand, decodeCommand, routerConfig, env, deployType } for pd_cluster.
  */
-export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1) {
+export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, advancedEnv = {}) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
@@ -291,6 +291,9 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     const envHo = recipe.hardware_overrides?.[gen]
       || (envIsNvidia ? recipe.hardware_overrides?.nvidia : null);
     if (envHo?.extra_env) Object.assign(env, envHo.extra_env);
+
+    // Advanced env (from UI's Advanced panel) — last so user opt-ins win.
+    if (advancedEnv) Object.assign(env, advancedEnv);
 
     return env;
   }
