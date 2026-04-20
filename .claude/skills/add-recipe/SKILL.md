@@ -62,6 +62,8 @@ model:
   #   install.docker: false              → no published image, pip only
   #   install.pip.command: "..."         → replace the pip command
   #   install.pip.note: "..."            → one-liner above the code block
+  # Tab ORDER follows the YAML key order — put `docker` first to make it the
+  # default tab when Docker is the recommended install path.
   install:
     pip:
       command: ""
