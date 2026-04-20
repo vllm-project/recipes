@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Search, ArrowRight, Building2 } from "lucide-react";
 import { recipeHref } from "@/lib/recipe-utils";
-import { getProviderLogo, getProviderDisplayName, PROVIDERS } from "@/lib/providers";
+import { getProviderLogo, getProviderLogoClass, getProviderDisplayName, PROVIDERS } from "@/lib/providers";
 
 export function SearchBox({ recipes }) {
   const [query, setQuery] = useState("");
@@ -143,7 +143,7 @@ function ProviderResult({ entry, active, onClick }) {
     >
       {logo ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={logo} alt="" width={22} height={22} className="rounded shrink-0" />
+        <img src={logo} alt="" width={22} height={22} className={`rounded shrink-0 ${getProviderLogoClass(entry.org)}`} />
       ) : (
         <div className="w-[22px] h-[22px] rounded bg-muted flex items-center justify-center">
           <Building2 size={12} className="text-muted-foreground" />
