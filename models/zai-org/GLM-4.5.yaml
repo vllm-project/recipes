@@ -10,12 +10,7 @@ meta:
   performance_headline: "GLM-4.X series MoE model with native FP8 and BF16 support and MTP speculative decoding"
   related_recipes: []
   hardware:
-    h100: supported
     h200: verified
-    b200: supported
-    gb200: supported
-    b300: supported
-    gb300: supported
     mi300x: verified
     mi325x: verified
     mi355x: verified

@@ -12,10 +12,6 @@ meta:
   hardware:
     h100: verified
     h200: verified
-    b200: supported
-    gb200: supported
-    b300: supported
-    gb300: supported
 
 model:
   model_id: "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16"

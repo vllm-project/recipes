@@ -376,31 +376,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const dependencies = recipe.dependencies || [];
 
-  // Status caption for the command block header — replaces the redundant
-  // "vllm serve" label with something actually useful (support level for
-  // the selected hardware).
-  const hwStatus = recipe.meta?.hardware?.[hwId]; // "verified" | "supported" | undefined
-  const hwName = hwProfile?.display_name || hwId;
+  // Status caption for the command block header.
+  // Only `verified` is a positive signal worth surfacing; anything else
+  // falls back to a neutral "vllm serve" label (treat as "assumed to work").
+  const hwStatus = recipe.meta?.hardware?.[hwId]; // "verified" | undefined
+  const hwFullName = hwProfile?.brand
+    ? `${hwProfile.brand} ${hwProfile.display_name || hwId}`
+    : (hwProfile?.display_name || hwId);
   const statusHeader = hwStatus === "verified" ? (
     <span className="text-[11px] font-medium text-green-500 inline-flex items-center gap-1.5">
       <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />
-      Verified on {hwName}
+      Verified on {hwFullName}
     </span>
-  ) : hwStatus === "supported" ? (
-    <span className="text-[11px] font-medium text-vllm-blue inline-flex items-center gap-1.5">
-      <span className="inline-block w-1.5 h-1.5 rounded-full bg-vllm-blue/80" />
-      Supported on {hwName}
-      <span className="text-[var(--command-fg)]/40">· not verified</span>
-    </span>
-  ) : (
-    <span
-      className="text-[11px] font-medium text-[var(--command-fg)]/50 inline-flex items-center gap-1.5"
-      title="Recipe does not declare this hardware. Flags are generic vLLM defaults and may need tuning."
-    >
-      <span className="inline-block w-1.5 h-1.5 rounded-full ring-1 ring-inset ring-[var(--command-fg)]/30" />
-      Untested on {hwName}
-    </span>
-  );
+  ) : null;
 
   // Omni models are served via vLLM-Omni (offline Python inference), not `vllm serve`.
   // Skip the command/strategy/feature UI and just show install deps + a pointer to the guide.
@@ -474,19 +462,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     const pdSingleNodeCheck = activeStrategy === "pd_cluster" && nodeCount === 1;
                     const pdOk = !pdSingleNodeCheck || pdFitsSingleNode(p, currentVariant);
                     const disabled = !precisionOk || !pdOk;
-                    // Support status: verified > supported > untested (not in meta.hardware).
+                    // Only `verified` carries a label; everything else = silent default.
                     const status = recipe.meta?.hardware?.[id];
-                    const statusLabel =
-                      status === "verified"
-                        ? "Verified — author has tested this hardware end-to-end"
-                        : status === "supported"
-                        ? "Supported — author claims it works, not verified in this repo"
-                        : "Untested — recipe does not claim this hardware; flags are generic vLLM defaults";
+                    const verifiedNote = status === "verified"
+                      ? "\n\nVerified — author has tested this hardware end-to-end"
+                      : "";
                     const reason = !precisionOk
                       ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
                       : !pdOk
                       ? `Single-node PD needs 2× model VRAM (${2 * (currentVariant.vram_minimum_gb || 0)} GB). Switch to Multi-node or pick a larger GPU.`
-                      : `${p.description}\n\n${statusLabel}`;
+                      : `${p.description}${verifiedNote}`;
                     return (
                       <Pill
                         key={id}
@@ -671,15 +656,10 @@ function PillGroup({ children }) {
 }
 
 function HwStatusDot({ status }) {
-  // Small colored dot on hardware pills to signal support level.
-  // verified = filled green; supported = filled blue; otherwise = hollow grey.
-  const color =
-    status === "verified"
-      ? "bg-green-500"
-      : status === "supported"
-      ? "bg-vllm-blue/70"
-      : "bg-transparent ring-1 ring-inset ring-muted-foreground/40";
-  return <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 shrink-0 ${color}`} aria-hidden />;
+  // Only `verified` is a meaningful signal. Everything else (including
+  // undeclared GPUs) renders no dot — the pill looks clean.
+  if (status !== "verified") return null;
+  return <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 shrink-0 bg-green-500" aria-hidden />;
 }
 
 function Pill({ active, onClick, title, dimmed, disabled, children }) {

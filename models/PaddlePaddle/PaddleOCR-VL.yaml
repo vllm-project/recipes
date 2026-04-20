@@ -8,10 +8,6 @@ meta:
   tasks:
     - multimodal
   related_recipes: []
-  hardware:
-    mi300x: supported
-    mi325x: supported
-    mi355x: supported
 
 model:
   model_id: "PaddlePaddle/PaddleOCR-VL"
@@ -56,7 +52,6 @@ hardware_overrides:
   amd:
     extra_args: []
     extra_env:
-      VLLM_USE_TRITON_FLASH_ATTN: "0"
       SAFETENSORS_FAST_GPU: "1"
 strategy_overrides: {}
 

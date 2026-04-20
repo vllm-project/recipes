@@ -11,11 +11,6 @@ meta:
   related_recipes: []
   hardware:
     h100: verified
-    h200: supported
-    b200: supported
-    gb200: supported
-    b300: supported
-    gb300: supported
     mi300x: verified
     mi325x: verified
 

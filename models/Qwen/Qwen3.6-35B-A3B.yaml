@@ -13,10 +13,6 @@ meta:
   hardware:
     h100: verified
     h200: verified
-    b200: supported
-    gb200: supported
-    b300: supported
-    gb300: supported
     mi300x: verified
     mi325x: verified
     mi355x: verified
@@ -33,6 +29,12 @@ model:
   base_env: {}
 
 features:
+  tool_calling:
+    description: "Enable automatic tool choice with Qwen3 Coder parser"
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "qwen3_coder"
   reasoning:
     description: "Enable chain-of-thought reasoning with Qwen3 parser"
     args:

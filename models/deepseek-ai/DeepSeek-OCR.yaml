@@ -10,10 +10,6 @@ meta:
   performance_headline: "Optical context compression for efficient OCR and document understanding"
   related_recipes:
     - "deepseek-ai/DeepSeek-OCR-2"
-  hardware:
-    mi300x: supported
-    mi325x: supported
-    mi355x: supported
 
 model:
   model_id: "deepseek-ai/DeepSeek-OCR"
@@ -54,7 +50,6 @@ hardware_overrides:
     extra_args: []
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
-      VLLM_USE_TRITON_FLASH_ATTN: "0"
       SAFETENSORS_FAST_GPU: "1"
 
 strategy_overrides: {}

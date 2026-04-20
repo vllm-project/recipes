@@ -1,5 +1,12 @@
 {% extends "base.html" %}
 
+{% block announce %}
+  ✨ For up-to-date, interactive recipes — hardware picker, copyable
+  <code>vllm serve</code> commands, and the full JSON API —
+  visit <a href="https://recipes.vllm.ai/"><strong>recipes.vllm.ai</strong></a>.
+  The Markdown guides below are kept as a historical reference.
+{% endblock %}
+
 {% block extrahead %}
   {{ super() }}
   {% if page %}
