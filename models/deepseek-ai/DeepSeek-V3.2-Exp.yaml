@@ -11,6 +11,16 @@ meta:
   related_recipes:
     - "deepseek-ai/DeepSeek-V3.1"
     - "deepseek-ai/DeepSeek-V3.2"
+  hardware:
+    h100: supported
+    h200: verified
+    b200: supported
+    gb200: supported
+    b300: supported
+    gb300: supported
+    mi300x: supported
+    mi325x: supported
+    mi355x: supported
 
 model:
   model_id: "deepseek-ai/DeepSeek-V3.2-Exp"
@@ -51,12 +61,6 @@ compatible_strategies:
   - multi_node_tep
 
 hardware_overrides:
-  hopper:
-    extra_args: []
-    extra_env: {}
-  blackwell:
-    extra_args: []
-    extra_env: {}
   amd:
     # V3.2-Exp uses sparse attention → --block-size 1 + bfloat16 KV cache.
     extra_args:

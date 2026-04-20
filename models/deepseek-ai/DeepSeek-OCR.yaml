@@ -10,6 +10,10 @@ meta:
   performance_headline: "Optical context compression for efficient OCR and document understanding"
   related_recipes:
     - "deepseek-ai/DeepSeek-OCR-2"
+  hardware:
+    mi300x: supported
+    mi325x: supported
+    mi355x: supported
 
 model:
   model_id: "deepseek-ai/DeepSeek-OCR"
@@ -45,12 +49,6 @@ compatible_strategies:
   - multi_node_dep
 
 hardware_overrides:
-  hopper:
-    extra_args: []
-    extra_env: {}
-  blackwell:
-    extra_args: []
-    extra_env: {}
   amd:
     # Disable Triton FA → AITER FA is faster for dense OCR on MI300X/MI325X/MI355X.
     extra_args: []

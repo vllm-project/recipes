@@ -9,6 +9,16 @@ meta:
     - text
   performance_headline: "Sparse MoE reasoning model with hybrid attention and step3p5 MTP speculative decoding"
   related_recipes: []
+  hardware:
+    h100: supported
+    h200: verified
+    b200: verified
+    gb200: supported
+    b300: supported
+    gb300: supported
+    mi300x: supported
+    mi325x: supported
+    mi355x: supported
 
 model:
   model_id: "stepfun-ai/Step-3.5-Flash"
@@ -75,9 +85,6 @@ compatible_strategies:
   - multi_node_dep
 
 hardware_overrides:
-  hopper:
-    extra_args: []
-    extra_env: {}
   blackwell:
     extra_args: []
     extra_env:

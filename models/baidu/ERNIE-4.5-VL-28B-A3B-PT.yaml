@@ -9,6 +9,10 @@ meta:
     - multimodal
   related_recipes:
     - baidu/ERNIE-4.5-21B-A3B-PT
+  hardware:
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "baidu/ERNIE-4.5-VL-28B-A3B-PT"

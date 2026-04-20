@@ -10,6 +10,16 @@ meta:
     - text
   performance_headline: "Unified multimodal model with structured thinking, function calling, dynamic vision resolution"
   related_recipes: []
+  hardware:
+    h100: verified
+    h200: supported
+    b200: supported
+    gb200: supported
+    b300: supported
+    gb300: supported
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "google/gemma-4-31B-it"
@@ -64,13 +74,7 @@ compatible_strategies:
   - multi_node_tp
   - multi_node_tp_pp
 
-hardware_overrides:
-  hopper:
-    extra_args: []
-    extra_env: {}
-  blackwell:
-    extra_args: []
-    extra_env: {}
+hardware_overrides: {}
 
 strategy_overrides: {}
 

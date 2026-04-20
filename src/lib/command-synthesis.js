@@ -213,7 +213,12 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     }
 
     // 5. Hardware overrides
-    const ho = recipe.hardware_overrides?.[gen];
+    //    Precedence: generation-specific (hopper/blackwell/amd) > brand-wide (nvidia).
+    //    `nvidia:` lets a recipe apply the same overrides to every NVIDIA GPU
+    //    without duplicating hopper and blackwell blocks.
+    const isNvidia = hwProfile?.brand === "NVIDIA";
+    const ho = recipe.hardware_overrides?.[gen]
+      || (isNvidia ? recipe.hardware_overrides?.nvidia : null);
     if (ho?.extra_args) args.push(...ho.extra_args);
 
     // 6. Advanced tuning args (from UI's Advanced panel)
@@ -272,9 +277,12 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       if (!roleOverride && so.extra_env) Object.assign(env, so.extra_env);
     }
 
-    // Hardware overrides env
-    const ho = recipe.hardware_overrides?.[gen];
-    if (ho?.extra_env) Object.assign(env, ho.extra_env);
+    // Hardware overrides env — same precedence as args block: generation key
+    // first, then brand-wide `nvidia:` for NVIDIA GPUs.
+    const envIsNvidia = hwProfile?.brand === "NVIDIA";
+    const envHo = recipe.hardware_overrides?.[gen]
+      || (envIsNvidia ? recipe.hardware_overrides?.nvidia : null);
+    if (envHo?.extra_env) Object.assign(env, envHo.extra_env);
 
     return env;
   }

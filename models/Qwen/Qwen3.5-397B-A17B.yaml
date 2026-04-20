@@ -10,6 +10,16 @@ meta:
   performance_headline: "Verified on 8x H200, 8x MI300X/MI355X, and GB200 nodes"
   related_recipes:
     - "Qwen/Qwen3.6-35B-A3B"
+  hardware:
+    h100: supported
+    h200: verified
+    b200: supported
+    gb200: verified
+    b300: supported
+    gb300: supported
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "Qwen/Qwen3.5-397B-A17B"
@@ -71,13 +81,7 @@ compatible_strategies:
   - multi_node_tep
   - pd_cluster
 
-hardware_overrides:
-  hopper:
-    extra_args: []
-    extra_env: {}
-  blackwell:
-    extra_args: []
-    extra_env: {}
+hardware_overrides: {}
 
 strategy_overrides: {}
 

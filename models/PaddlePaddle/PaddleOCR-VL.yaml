@@ -8,6 +8,10 @@ meta:
   tasks:
     - multimodal
   related_recipes: []
+  hardware:
+    mi300x: supported
+    mi325x: supported
+    mi355x: supported
 
 model:
   model_id: "PaddlePaddle/PaddleOCR-VL"

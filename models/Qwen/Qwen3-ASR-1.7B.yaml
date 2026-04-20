@@ -9,6 +9,10 @@ meta:
     - multimodal
   performance_headline: "Accurate multilingual ASR, including singing voice; single-GPU serving"
   related_recipes: []
+  hardware:
+    mi300x: supported
+    mi325x: supported
+    mi355x: supported
 
 model:
   model_id: "Qwen/Qwen3-ASR-1.7B"
@@ -40,12 +44,6 @@ compatible_strategies:
   - multi_node_tp_pp
 
 hardware_overrides:
-  hopper:
-    extra_args: []
-    extra_env: {}
-  blackwell:
-    extra_args: []
-    extra_env: {}
   amd:
     extra_args: []
     extra_env:

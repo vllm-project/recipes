@@ -9,6 +9,16 @@ meta:
     - multimodal
   related_recipes:
     - mistralai/Ministral-3-14B-Instruct-2512
+  hardware:
+    h100: verified
+    h200: supported
+    b200: verified
+    gb200: supported
+    b300: supported
+    gb300: supported
+    mi300x: supported
+    mi325x: supported
+    mi355x: supported
 
 model:
   model_id: "mistralai/Mistral-Large-3-675B-Instruct-2512"

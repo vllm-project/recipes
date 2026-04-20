@@ -9,6 +9,10 @@ meta:
     - text
   performance_headline: "Hunyuan-A13B MoE with AITER acceleration on AMD MI300X/MI325X/MI355X"
   related_recipes: []
+  hardware:
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "tencent/Hunyuan-A13B-Instruct"
@@ -48,12 +52,6 @@ compatible_strategies:
   - multi_node_dep
 
 hardware_overrides:
-  hopper:
-    extra_args: []
-    extra_env: {}
-  blackwell:
-    extra_args: []
-    extra_env: {}
   amd:
     # Hunyuan-A13B is an AMD-first recipe; AITER acceleration required.
     extra_args: []
