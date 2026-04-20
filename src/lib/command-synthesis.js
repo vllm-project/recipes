@@ -127,7 +127,7 @@ export function pickDefaultHardware(hwProfiles, variant) {
  * Returns: { command, env, deployType } for single_node/multi_node,
  *          { prefillCommand, decodeCommand, routerConfig, env, deployType } for pd_cluster.
  */
-export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, advancedEnv = {}) {
+export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, advancedEnv = {}) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
@@ -195,12 +195,79 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       args.push("--master-addr", "$HEAD_IP");
       if (nodeRole === "worker") args.push("--headless");
     } else if (strategy.deploy_type === "pd_cluster") {
-      // PD splits the node between prefill and decode.
-      // - Single-node: 50/50 split, each role uses TP=gpuCount/2, pinned via
-      //   CUDA_VISIBLE_DEVICES (set in buildEnv).
-      // - Multi-node (2 nodes): one full node per role, TP=gpuCount per role.
-      const tpPerRole = isPdMulti ? gpuCount : Math.floor(gpuCount / 2);
-      args.push("--tensor-parallel-size", String(Math.max(1, tpPerRole)));
+      // PD splits inference across separate prefill and decode pools.
+      //
+      // New model (per-role nodes + parallelism):
+      //   pdNodes = { prefill: <int>, decode: <int> } — user-set node counts
+      //   role config (strategy_overrides.pd_cluster.<role>):
+      //     parallelism: "tp" | "dep"          (default: "tp")
+      //     tp:          <int>                  (default: 1 for dep, poolGpus for tp)
+      //     parallel_flag: "--…"                (last-resort override)
+      //
+      // Legacy fallback (pdNodes null):
+      //   - nodeCount===1 → both roles on one node, TP=gpuCount/2 each (50/50)
+      //   - nodeCount===2 → one full node per role, TP=gpuCount each
+      const roleKey = roleOverride;                           // "prefill" | "decode"
+      const roleCfg = strategy[roleKey] || {};
+      const soRoleCfg = recipe.strategy_overrides?.[strategyName]?.[roleKey] || {};
+      // pdNodes accepts two shapes per role — a bare integer (just nodes) or
+      // { nodes, rank } when the UI wants to surface a specific DP rank.
+      const pdRoleRaw = pdNodes ? pdNodes[roleKey] : undefined;
+      const pdRole =
+        typeof pdRoleRaw === "number" ? { nodes: pdRoleRaw }
+        : (pdRoleRaw && typeof pdRoleRaw === "object") ? pdRoleRaw
+        : {};
+      const legacyNodes = isPdMulti ? 1 : 0;                  // 0 = co-located half-node
+      const rolePoolNodes =
+        typeof pdRole.nodes === "number" ? pdRole.nodes : legacyNodes;
+      const poolGpus = rolePoolNodes === 0
+        ? Math.floor(gpuCount / 2)
+        : rolePoolNodes * gpuCount;
+      const parallelism = soRoleCfg.parallelism || roleCfg.parallelism || "tp";
+
+      if (parallelism === "dep") {
+        // Data-parallel + expert-parallel pool (Kimi-K2.5 GB200 pattern).
+        // One `vllm serve` per NODE. vLLM spawns `--data-parallel-size-local`
+        // ranks internally per node; the leader node starts at rank 0 and
+        // each follower offsets by `--data-parallel-start-rank = nodeIndex × dp_local`.
+        //
+        // Example (nodes=4, gpus_per_node=4, tp=1):
+        //   dp_local = 4, dp_total = 16
+        //   Node 0 → start_rank 0; Node 1 → 4; Node 2 → 8; Node 3 → 12
+        const nodesInPool = Math.max(1, rolePoolNodes);
+        // `tp` is only rendered when the recipe sets it explicitly (vLLM's
+        // own default is 1, so emitting "--tensor-parallel-size 1" would be
+        // pure noise). Internal math still uses 1 as the effective value.
+        const tpExplicit = soRoleCfg.tp ?? roleCfg.tp;
+        const roleTp = tpExplicit ?? 1;
+        const dpLocal = Math.max(1, Math.floor(gpuCount / roleTp));
+        const dpSize = nodesInPool * dpLocal;
+        const nodeIdx = Math.max(0, Math.min(nodesInPool - 1, pdRole.rank ?? 0));
+        if (tpExplicit !== undefined) {
+          args.push("--tensor-parallel-size", String(roleTp));
+        }
+        args.push("--data-parallel-size", String(dpSize));
+        args.push("--data-parallel-size-local", String(dpLocal));
+        // Always emit start-rank (even 0 for node 0) so every node's command
+        // has the same shape; only the value differs per node.
+        args.push("--data-parallel-start-rank", String(nodeIdx * dpLocal));
+        args.push("--data-parallel-address", `$${roleKey.toUpperCase()}_DP_LEADER_IP`);
+        args.push("--data-parallel-rpc-port", `$${roleKey.toUpperCase()}_DP_RPC_PORT`);
+        args.push("--enable-expert-parallel");
+      } else {
+        // TP pool. With >1 node, layer on vLLM mp multi-node flags.
+        const roleParallelFlag =
+          soRoleCfg.parallel_flag ||
+          roleCfg.parallel_flag ||
+          strategy.parallel_flag ||
+          "--tensor-parallel-size";
+        args.push(roleParallelFlag, String(Math.max(1, poolGpus)));
+        if (rolePoolNodes > 1) {
+          args.push("--nnodes", String(rolePoolNodes));
+          args.push("--node-rank", "0");
+          args.push("--master-addr", `$${roleKey.toUpperCase()}_HEAD_IP`);
+        }
+      }
     } else {
       args.push(parallelFlag, String(gpuCount));
     }
@@ -298,8 +365,55 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     return env;
   }
 
+  // Dedupe `--flag value` pairs by keeping only the LAST occurrence of each
+  // flag. Matches shell "last wins" semantics and makes recipe/variant/
+  // hardware overrides transparently shadow strategy defaults — the strategy
+  // YAML sets a baseline, anything the recipe author writes later overrides
+  // it without leaving stale pairs in the rendered command.
+  function dedupeArgs(args) {
+    // Parse into units so (flag, value) stay together.
+    const units = [];
+    for (let i = 0; i < args.length; i++) {
+      const cur = args[i];
+      if (typeof cur === "string" && cur.startsWith("-")) {
+        const next = args[i + 1];
+        if (next !== undefined && !(typeof next === "string" && next.startsWith("-"))) {
+          units.push({ flag: cur, value: next });
+          i++;
+        } else {
+          units.push({ flag: cur });
+        }
+      } else {
+        units.push({ positional: cur });
+      }
+    }
+    // Last-wins: walk backward, mark first sighting of each flag as keep.
+    const seen = new Set();
+    const keep = new Array(units.length).fill(false);
+    for (let i = units.length - 1; i >= 0; i--) {
+      const u = units[i];
+      if (u.positional !== undefined) {
+        keep[i] = true;
+      } else if (!seen.has(u.flag)) {
+        seen.add(u.flag);
+        keep[i] = true;
+      }
+    }
+    const out = [];
+    for (let i = 0; i < units.length; i++) {
+      if (!keep[i]) continue;
+      const u = units[i];
+      if (u.positional !== undefined) out.push(u.positional);
+      else {
+        out.push(u.flag);
+        if (u.value !== undefined) out.push(u.value);
+      }
+    }
+    return out;
+  }
+
   function formatCommand(args) {
-    const filtered = args.filter(Boolean);
+    const filtered = dedupeArgs(args.filter(Boolean));
     if (filtered.length === 0) return `vllm serve ${modelId}`;
     // Pair each --flag with its immediate value on the same line so the output
     // reads like the human-written command in the recipe guide, not
@@ -321,24 +435,66 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   const deployType = strategy.deploy_type || "single_node";
 
   if (deployType === "pd_cluster") {
-    // Single-node PD splits one node 50/50 (prefill TP=gpuCount/2 + decode TP=gpuCount/2).
-    // Multi-node PD dedicates one node per role (prefill TP=gpuCount + decode TP=gpuCount).
-    // Either way the router sees 1 prefill + 1 decode endpoint — scale by replicating.
+    // Each pool (prefill / decode) exposes one HTTP endpoint per node, so the
+    // router needs `--prefill` / `--decode` repeated to match the pool size.
+    // `--intra-node-data-parallel-size` should match dp_local for DEP pools
+    // (one local rank per GPU) so routing picks the right DP rank.
     const policy = strategy.router?.policy || "round_robin";
-    // `--intra-node-data-parallel-size` is the DP size inside one pool.
-    // Our default PD layout is TP-only per role (DP=1), so the router sees
-    // a single DP rank per endpoint. Users running DP+EP should raise this
-    // to match their `--data-parallel-size`.
-    // Port convention: prefill on 8001, decode on 8002 (keeps them distinct
-    // when co-located on a single node). The router listens on 30000.
+
+    // Resolve per-role node counts + parallelism mode for the return payload
+    // so the UI can render "1 node" vs "4 nodes — duplicate for ranks 1..N-1"
+    // notices without rederiving the logic.
+    const roleMeta = (role) => {
+      const soRoleCfg = recipe.strategy_overrides?.[strategyName]?.[role] || {};
+      const roleCfg = strategy[role] || {};
+      const legacyNodes = nodeCount > 1 ? 1 : 0;
+      const raw = pdNodes ? pdNodes[role] : undefined;
+      const pdRole =
+        typeof raw === "number" ? { nodes: raw }
+        : (raw && typeof raw === "object") ? raw
+        : {};
+      const nodes = typeof pdRole.nodes === "number" ? pdRole.nodes : legacyNodes;
+      const parallelism = soRoleCfg.parallelism || roleCfg.parallelism || "tp";
+      const poolGpus = nodes === 0 ? Math.floor(gpuCount / 2) : nodes * gpuCount;
+      const tp = parallelism === "dep"
+        ? (soRoleCfg.tp || roleCfg.tp || 1)
+        : poolGpus;
+      const dpLocal = parallelism === "dep" ? Math.max(1, Math.floor(gpuCount / tp)) : 0;
+      const dpSize = parallelism === "dep" ? Math.max(1, nodes) * dpLocal : 1;
+      // `currentNode` = which node of the DEP pool this command is for
+      // (0..nodes-1). Stored in pdRole.rank for backward-compat with the
+      // earlier rank-selector UI; now semantically a node index.
+      const nodesInPool = Math.max(1, nodes);
+      const currentNode = Math.max(0, Math.min(nodesInPool - 1, pdRole.rank ?? 0));
+      const startRank = currentNode * dpLocal;
+      return { nodes, parallelism, tp, dpLocal, dpSize, poolGpus, currentNode, startRank };
+    };
+
+    const pMeta = roleMeta("prefill");
+    const dMeta = roleMeta("decode");
+    // Router endpoints: one per node (each node binds its own HTTP --port).
+    // Placeholder hostnames (PREFILL_NODE_1 … N, DECODE_NODE_1 … N) — deployers
+    // substitute real IPs. 1-indexed in the placeholder so it matches what the
+    // UI shows the user.
+    const prefillEndpoints = Array.from(
+      { length: Math.max(1, pMeta.nodes || 1) },
+      (_, i) => `    --prefill http://PREFILL_NODE_${i + 1}:8001 \\`,
+    );
+    const decodeEndpoints = Array.from(
+      { length: Math.max(1, dMeta.nodes || 1) },
+      (_, i) => `    --decode http://DECODE_NODE_${i + 1}:8002 \\`,
+    );
+    // intra-node-data-parallel-size = max dp_local across the two pools for
+    // DEP setups; 1 for pure-TP PD.
+    const intraDp = Math.max(pMeta.dpLocal || 0, dMeta.dpLocal || 0, 1);
     const routerLines = [
       `vllm-router --policy ${policy} \\`,
       `    --vllm-pd-disaggregation \\`,
-      `    --prefill http://PREFILL_ADDR:8001 \\`,
-      `    --decode http://DECODE_ADDR:8002 \\`,
+      ...prefillEndpoints,
+      ...decodeEndpoints,
       `    --host 127.0.0.1 \\`,
       `    --port 30000 \\`,
-      `    --intra-node-data-parallel-size 1`,
+      `    --intra-node-data-parallel-size ${intraDp}`,
     ];
     const routerCommand = routerLines.join("\n");
 
@@ -348,10 +504,12 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       prefill: {
         command: formatCommand(buildArgs("prefill", null)),
         env: buildEnv("prefill"),
+        ...pMeta,
       },
       decode: {
         command: formatCommand(buildArgs("decode", null)),
         env: buildEnv("decode"),
+        ...dMeta,
       },
       router: {
         command: routerCommand,
