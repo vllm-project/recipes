@@ -72,8 +72,6 @@ hardware_overrides:
     extra_args:
       - "--block-size"
       - "32"
-      - "--kv-cache-dtype"
-      - "fp8_e4m3"
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
 
