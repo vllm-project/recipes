@@ -45,6 +45,14 @@ const ADVANCED_OPTIONS = [
     args: ["--decode-context-parallel-size", "8"],
     gatedBy: (recipe) => recipe?.model?.supports_dcp === true,
   },
+  {
+    id: "kv_cache_fp8",
+    label: "kv-cache-dtype = fp8",
+    description:
+      "Quantize KV cache to FP8 (~50% KV memory). NVIDIA only — AMD recipes already wire fp8_e4m3 via hardware overrides.",
+    args: ["--kv-cache-dtype", "fp8"],
+    gatedBy: (recipe, _strategy, hwProfile) => hwProfile?.brand !== "AMD",
+  },
 ];
 const ADVANCED_BY_ID = Object.fromEntries(ADVANCED_OPTIONS.map((o) => [o.id, o]));
 import { loadPreferences, savePreference } from "@/lib/preferences";
@@ -613,7 +621,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           </summary>
           <div className="px-4 pb-4 pt-1 border-t border-border/60">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {ADVANCED_OPTIONS.filter((opt) => !opt.gatedBy || opt.gatedBy(recipe, activeStrategy)).map((opt) => (
+              {ADVANCED_OPTIONS.filter((opt) => !opt.gatedBy || opt.gatedBy(recipe, activeStrategy, hwProfile)).map((opt) => (
                 <label
                   key={opt.id}
                   className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition-colors ${

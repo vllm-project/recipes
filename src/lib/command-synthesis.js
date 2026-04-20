@@ -35,11 +35,13 @@ export function recommendStrategy(recipe, hwProfile, nodeCount = 1) {
 /**
  * Precision → allowed hardware constraint.
  * NVFP4 is NVIDIA Blackwell-only (sm_100+). FP4 generic is also Blackwell-only
- * in practice. AWQ/GPTQ/INT quants run on most NVIDIA+AMD hardware.
+ * in practice. MXFP4 weights ship for AMD CDNA 4 (MI355X) only.
+ * AWQ/GPTQ/INT quants run on most NVIDIA+AMD hardware.
  */
 const PRECISION_HARDWARE_CONSTRAINTS = {
   nvfp4: { brand: "NVIDIA", generation: "blackwell" },
   fp4: { brand: "NVIDIA", generation: "blackwell" },
+  mxfp4: { brand: "AMD", generation: "cdna4" },
 };
 
 function matchesConstraint(profile, constraint) {
@@ -102,6 +104,9 @@ export function pickDefaultHardware(hwProfiles, variant) {
   if (constraint?.generation === "blackwell") {
     if (compatible.some(([id]) => id === "b200")) return "b200";
     if (compatible.some(([id]) => id === "gb200")) return "gb200";
+  }
+  if (constraint?.generation === "cdna4") {
+    if (compatible.some(([id]) => id === "mi355x")) return "mi355x";
   }
 
   if (compatible.some(([id]) => id === "h200")) return "h200";
