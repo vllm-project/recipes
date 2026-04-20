@@ -5,9 +5,9 @@ export const runtime = "edge";
 // OG image generator, 1200×630.
 //   /og?title=...&subtitle=...&meta=...&path=...
 // Shared by the homepage, provider pages (/[org]), and recipe detail pages
-// (/[org]/[repo]). Mirrors the vLLM blog OG design (top brand-gradient bar,
-// off-canvas accent circles, system font) and adds a recipes-specific
-// "vLLM / Recipes" wordmark in the top-left.
+// (/[org]/[repo]). Matches the vLLM blog OG design (top brand-gradient bar,
+// three bottom-right ring accents, system font) and adds a recipes-specific
+// "/ Recipes" wordmark next to the logo.
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const title = searchParams.get("title") || "vLLM Recipes";
@@ -15,23 +15,23 @@ export async function GET(request) {
   const meta = searchParams.get("meta") || "";
   const path = searchParams.get("path") || "";
 
-  // Auto-scale title font; recipe titles can be long (hf_org/hf_repo).
-  const titleSize = title.length > 48 ? "44px" : title.length > 32 ? "56px" : "68px";
+  const baseUrl = new URL(request.url).origin;
+  const logoUrl = `${baseUrl}/vLLM-Full-Logo.png`;
 
-  const logoUrl = "https://docs.vllm.ai/en/latest/assets/logos/vllm-logo-text-light.png";
+  const titleSize = title.length > 48 ? "44px" : title.length > 32 ? "56px" : "68px";
 
   return new ImageResponse(
     (
       <div
         style={{
-          width: "100%",
           height: "100%",
+          width: "100%",
           display: "flex",
           flexDirection: "column",
-          position: "relative",
-          background: "#ffffff",
-          padding: "56px 80px 52px",
+          backgroundColor: "#ffffff",
           fontFamily: "system-ui, -apple-system, sans-serif",
+          position: "relative",
+          overflow: "hidden",
         }}
       >
         {/* Top brand-gradient bar */}
@@ -41,134 +41,152 @@ export async function GET(request) {
             top: 0,
             left: 0,
             right: 0,
-            height: 6,
+            height: "6px",
             background: "linear-gradient(90deg, #fdb517 0%, #f59e0b 35%, #30a2ff 100%)",
+            display: "flex",
           }}
         />
 
-        {/* Accent circles, bottom-right off-canvas */}
+        {/* Bottom-right concentric ring accents (matches blog OG) */}
         <div
           style={{
             position: "absolute",
-            right: -180,
-            bottom: -180,
-            width: 560,
-            height: 560,
+            bottom: "-180px",
+            right: "-180px",
+            width: "480px",
+            height: "480px",
             borderRadius: "50%",
-            background: "rgba(253,181,23,0.10)",
+            border: "48px solid rgba(253,181,23,0.10)",
             display: "flex",
           }}
         />
         <div
           style={{
             position: "absolute",
-            right: -80,
-            bottom: -80,
-            width: 360,
-            height: 360,
+            bottom: "-260px",
+            right: "-260px",
+            width: "640px",
+            height: "640px",
             borderRadius: "50%",
-            background: "rgba(48,162,255,0.05)",
+            border: "40px solid rgba(253,181,23,0.06)",
             display: "flex",
           }}
         />
         <div
           style={{
             position: "absolute",
-            right: -40,
-            bottom: -40,
-            width: 220,
-            height: 220,
+            bottom: "-330px",
+            right: "-330px",
+            width: "800px",
+            height: "800px",
             borderRadius: "50%",
-            background: "rgba(253,181,23,0.06)",
+            border: "32px solid rgba(48,162,255,0.05)",
             display: "flex",
           }}
         />
 
-        {/* Top-left: vLLM logo + "/ Recipes" */}
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={logoUrl} alt="" width={120} height={46} style={{ height: 46, width: "auto" }} />
-          <span style={{ fontSize: 28, color: "#cbd5e1", fontWeight: 300, lineHeight: 1 }}>/</span>
-          <span style={{ fontSize: 26, color: "#111827", fontWeight: 600, letterSpacing: "-0.01em" }}>
-            Recipes
-          </span>
-        </div>
-
-        {/* Middle: title + subtitle + meta */}
+        {/* Content */}
         <div
           style={{
-            flex: 1,
             display: "flex",
             flexDirection: "column",
-            justifyContent: "center",
-            maxWidth: 1000,
+            justifyContent: "space-between",
+            height: "100%",
+            padding: "56px 80px 52px",
           }}
         >
-          <div
-            style={{
-              fontSize: titleSize,
-              fontWeight: 700,
-              color: "#111827",
-              lineHeight: 1.1,
-              letterSpacing: "-0.025em",
-              display: "flex",
-            }}
-          >
-            {title}
-          </div>
-          {subtitle && (
-            <div
+          {/* Logo + Recipes wordmark */}
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={logoUrl}
+              alt="vLLM"
+              width={180}
+              height={46}
+              style={{ objectFit: "contain", objectPosition: "left" }}
+            />
+            <span style={{ fontSize: 30, color: "#cbd5e1", fontWeight: 300, lineHeight: 1 }}>/</span>
+            <span
               style={{
-                marginTop: 20,
                 fontSize: 26,
-                color: "#30a2ff",
+                color: "#111827",
                 fontWeight: 600,
                 letterSpacing: "-0.01em",
                 display: "flex",
               }}
             >
-              {subtitle}
-            </div>
-          )}
-          {meta && (
-            <div
-              style={{
-                marginTop: 14,
-                fontSize: 20,
-                color: "#4b5563",
-                fontWeight: 500,
-                display: "flex",
-                fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace",
-              }}
-            >
-              {meta}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-end",
-          }}
-        >
-          <div style={{ display: "flex", color: "#9ca3af", fontSize: 16, fontWeight: 500 }}>
-            recipes.vllm.ai
+              Recipes
+            </span>
           </div>
-          {path && (
+
+          {/* Title + subtitle + meta */}
+          <div style={{ display: "flex", flexDirection: "column", maxWidth: "980px" }}>
             <div
               style={{
                 display: "flex",
-                color: "#9ca3af",
-                fontSize: 16,
-                fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace",
+                color: "#111827",
+                fontSize: titleSize,
+                fontWeight: 700,
+                lineHeight: 1.2,
+                letterSpacing: "-0.025em",
               }}
             >
-              {path}
+              {title}
             </div>
-          )}
+            {subtitle && (
+              <div
+                style={{
+                  display: "flex",
+                  marginTop: 18,
+                  fontSize: 26,
+                  color: "#30a2ff",
+                  fontWeight: 600,
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                {subtitle}
+              </div>
+            )}
+            {meta && (
+              <div
+                style={{
+                  display: "flex",
+                  marginTop: 12,
+                  fontSize: 20,
+                  color: "#4b5563",
+                  fontWeight: 500,
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace",
+                }}
+              >
+                {meta}
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-end",
+            }}
+          >
+            <div style={{ display: "flex", color: "#9ca3af", fontSize: 16, fontWeight: 500 }}>
+              recipes.vllm.ai
+            </div>
+            {path && (
+              <div
+                style={{
+                  display: "flex",
+                  color: "#9ca3af",
+                  fontSize: 16,
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace",
+                }}
+              >
+                {path}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     ),
