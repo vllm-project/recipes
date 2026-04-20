@@ -18,7 +18,15 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://recipes.vllm.ai";
+// Resolve the canonical URL used for metadataBase and absolute OG URLs.
+//   - Production / custom env:    NEXT_PUBLIC_SITE_URL (explicit override)
+//   - Vercel preview/deployment:  VERCEL_URL (unique per-deploy hostname) —
+//     without this, previews would advertise OG images pointing at the prod
+//     domain, which 404s until the PR is merged.
+//   - Local default:              https://recipes.vllm.ai
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://recipes.vllm.ai");
 const defaultOgUrl = `/og?title=${encodeURIComponent("vLLM Recipes")}&subtitle=${encodeURIComponent("Deploy any model on any hardware")}`;
 
 export const metadata = {

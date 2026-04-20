@@ -39,19 +39,22 @@ export async function generateMetadata({ params }) {
   const ogUrl = `/og?title=${encodeURIComponent(title)}&subtitle=${encodeURIComponent(
     meta.provider || org
   )}&meta=${encodeURIComponent(metaLine)}&path=${encodeURIComponent(`/${org}/${repo}`)}`;
+  // Longer og:title improves share-card engagement; HTML <title> stays the
+  // short form (+ template suffix " | vLLM Recipes") to avoid tab overflow.
+  const ogTitle = metaLine ? `${title} — ${metaLine} on vLLM` : `${title} on vLLM`;
   return {
     title: meta.title,
     description,
     openGraph: {
       type: "article",
-      title,
+      title: ogTitle,
       description,
       url: `/${org}/${repo}`,
       images: [{ url: ogUrl, width: 1200, height: 630, alt: title }],
     },
     twitter: {
       card: "summary_large_image",
-      title,
+      title: ogTitle,
       description,
       images: [ogUrl],
     },
