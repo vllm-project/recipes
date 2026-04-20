@@ -88,13 +88,14 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 --host 0.0.0.0 --port 8888 \
 </details>
 
 <details>
-<summary>High Throughput (TP4)</summary>
+<summary>High Throughput (EP4)</summary>
 
-TP4 reduces inter-GPU communication overhead compared to TP8, allowing each GPU to sustain higher token throughput. Use this when maximizing tokens-per-second across concurrent requests matters most.
+EP4 uses 4 GPUs with expert parallelism, routing MoE experts across GPUs to reduce per-expert communication overhead and improve throughput in high-concurrency workloads. Use this when maximizing tokens-per-second across concurrent requests matters most.
 
 ```bash
 vllm serve nvidia/Kimi-K2.5-NVFP4 --host 0.0.0.0 --port 8888 \
     --tensor-parallel-size 4 \
+    --enable-expert-parallel \
     --gpu-memory-utilization 0.90 \
     --reasoning-parser kimi_k2 \
     --tool-call-parser kimi_k2 \
@@ -147,45 +148,9 @@ P99.9 E2EL (ms):                         10888.45
 ==================================================
 ```
 
-#### High Throughput (TP4)
+#### High Throughput (EP4)
 
-Concurrency is 4. [Full run](https://github.com/SemiAnalysisAI/InferenceX/actions/runs/23669977901/job/70014502507).
-
-```
-============ Serving Benchmark Result ============
-Successful requests:                     40        
-Benchmark duration (s):                  80.68     
-Total input tokens:                      37068     
-Total generated tokens:                  36709     
-Request throughput (req/s):              0.50      
-Output token throughput (tok/s):         455.02    
-Total Token throughput (tok/s):          914.49    
----------------Time to First Token----------------
-Mean TTFT (ms):                          169.94    
-Median TTFT (ms):                        169.94    
-P90 TTFT (ms):                           175.14    
-P99 TTFT (ms):                           181.79    
-P99.9 TTFT (ms):                         182.10    
------Time per Output Token (excl. 1st token)------
-Mean TPOT (ms):                          8.36      
-Median TPOT (ms):                        8.41      
-P90 TPOT (ms):                           8.51      
-P99 TPOT (ms):                           8.60      
-P99.9 TPOT (ms):                         8.62      
----------------Inter-token Latency----------------
-Mean ITL (ms):                           8.36      
-Median ITL (ms):                         7.96      
-P90 ITL (ms):                            8.05      
-P99 ITL (ms):                            8.47      
-P99.9 ITL (ms):                          148.61    
-----------------End-to-end Latency----------------
-Mean E2EL (ms):                          7837.15   
-Median E2EL (ms):                        7963.68   
-P90 E2EL (ms):                           8632.42   
-P99 E2EL (ms):                           8730.35   
-P99.9 E2EL (ms):                         8740.44   
-==================================================
-```
+Benchmark results coming soon.
 
 ### Configuration Tips
 - `--async-scheduling` has been turned on by default to improve the overall system performance by overlapping scheduling overhead with the decoding process. If you run into issues with this feature, please try turning off this feature and file a bug report to vLLM.
