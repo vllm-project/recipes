@@ -18,7 +18,7 @@ export const PROVIDERS = {
   "microsoft":       { display_name: "Microsoft",               logo: "/providers/microsoft.png" },
   "mistralai":       { display_name: "Mistral AI",              logo: "/providers/mistralai.png" },
   "nvidia":          { display_name: "NVIDIA",                  logo: "/providers/nvidia.png" },
-  "openai":          { display_name: "OpenAI",                  logo: "/providers/openai.png" },
+  "openai":          { display_name: "OpenAI",                  logo: "/providers/openai.png", invertInDark: true },
   "MiniMaxAI":       { display_name: "MiniMax",                 logo: "/providers/MiniMaxAI.jpeg" },
   "zai-org":         { display_name: "GLM (Z-AI)",              logo: "/providers/zai-org.png" },
   "baidu":           { display_name: "Ernie (Baidu)",           logo: "/providers/baidu.png" },
@@ -39,6 +39,12 @@ export const PROVIDERS = {
 
 export function getProviderLogo(hfOrg) {
   return PROVIDERS[hfOrg]?.logo || null;
+}
+
+// Monochrome logos (e.g. OpenAI's pure-black mark) disappear on dark backgrounds.
+// Flip them to white via `dark:invert` for those providers.
+export function getProviderLogoClass(hfOrg) {
+  return PROVIDERS[hfOrg]?.invertInDark ? "dark:invert" : "";
 }
 
 export function getProviderDisplayName(hfOrg) {

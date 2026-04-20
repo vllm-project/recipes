@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { getProviderLogo, getProviderDisplayName } from "@/lib/providers";
+import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
 import { recipeHref } from "@/lib/recipe-utils";
 import { ChevronRight, Type, Eye, Sparkles, Hash, Cpu } from "lucide-react";
 
@@ -59,7 +59,7 @@ export function ModelSidebar({ recipesByOrg }) {
                 >
                   {logo ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={logo} alt="" width={18} height={18} className="rounded shrink-0" />
+                    <img src={logo} alt="" width={18} height={18} className={`rounded shrink-0 ${getProviderLogoClass(org)}`} />
                   ) : (
                     <div className="w-[18px] h-[18px] rounded bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground shrink-0">
                       {displayName.charAt(0)}
