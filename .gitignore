@@ -2,3 +2,14 @@
 venv
 site/
 .idea
+.next/
+out/
+node_modules/
+
+# Generated at pnpm build time (JSON API + provider logos)
+public/models.json
+public/strategies.json
+public/taxonomy.json
+public/strategies/
+public/providers/
+public/*/
