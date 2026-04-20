@@ -1,0 +1,127 @@
+meta:
+  title: "Llama-3.3-70B"
+  slug: "llama3.3-70b"
+  provider: "Meta"
+  description: "Llama 3.3 70B dense model with NVIDIA FP8/FP4 quantized variants for Hopper and Blackwell GPUs"
+  date_updated: 2026-04-16
+  difficulty: beginner
+  tasks:
+    - text
+  performance_headline: ""
+  related_recipes:
+    - meta-llama/Llama-4-Scout-17B-16E-Instruct
+  hardware:
+    h100: verified
+    h200: verified
+    b200: verified
+    gb200: verified
+
+model:
+  model_id: "meta-llama/Llama-3.3-70B-Instruct"
+  min_vllm_version: "0.12.0"
+  architecture: dense
+  parameter_count: "70B"
+  active_parameters: "70B"
+  context_length: 131072
+  base_args: []
+  base_env: {}
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 170
+    description: "Full precision BF16"
+
+  fp8:
+    model_id: "nvidia/Llama-3.3-70B-Instruct-FP8"
+    precision: fp8
+    vram_minimum_gb: 84
+    description: "NVIDIA FP8 quantization for Hopper and Blackwell"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+    extra_env: {}
+
+  nvfp4:
+    model_id: "nvidia/Llama-3.3-70B-Instruct-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 42
+    description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+  - multi_node_tp_pp
+
+hardware_overrides:
+  hopper:
+    extra_args:
+      - "--async-scheduling"
+      - "--no-enable-prefix-caching"
+      - "--max-num-batched-tokens"
+      - "8192"
+    extra_env: {}
+  blackwell:
+    extra_args:
+      - "--async-scheduling"
+      - "--no-enable-prefix-caching"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--compilation-config"
+      - '{"pass_config":{"fuse_allreduce_rms":true,"fuse_attn_quant":true,"eliminate_noops":true}}'
+    extra_env: {}
+  amd:
+    extra_args: []
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  Llama 3.3 70B Instruct is Meta's 70-billion parameter dense language model.
+  NVIDIA provides FP8 and FP4 quantized variants optimized for Hopper (H100/H200)
+  and Blackwell (B200/GB200) GPUs. FP4 is Blackwell-only and provides the best
+  VRAM efficiency.
+
+  ## Prerequisites
+
+  - Hardware: 1x H100/H200 (FP8), 1x B200 (FP4), or 2x GPUs for BF16
+  - vLLM >= 0.12.0
+  - CUDA Driver >= 575
+  - Docker with NVIDIA Container Toolkit (recommended)
+
+  ## Client Usage
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+  response = client.chat.completions.create(
+      model="nvidia/Llama-3.3-70B-Instruct-FP8",
+      messages=[{"role": "user", "content": "Hello, how are you?"}],
+  )
+  print(response.choices[0].message.content)
+  ```
+
+  ## Troubleshooting
+
+  **FP4 variant not loading:**
+  FP4 is only supported on Blackwell (compute capability 10.0). Use FP8 on Hopper.
+
+  **OOM with BF16 on single GPU:**
+  Use the FP8 variant (~70 GB) or FP4 variant (~40 GB) to fit on a single GPU.
+
+  ## References
+
+  - [Llama-3.3-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct)
+  - [NVIDIA FP8 variant](https://huggingface.co/nvidia/Llama-3.3-70B-Instruct-FP8)
+  - [NVIDIA FP4 variant](https://huggingface.co/nvidia/Llama-3.3-70B-Instruct-FP4)
