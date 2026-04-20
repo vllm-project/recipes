@@ -226,13 +226,19 @@ export default async function RecipePage({ params }) {
 }
 
 function Accordion({ title, children, defaultOpen = false }) {
+  // Stronger border than bare `--border` (10% in dark mode) so the outline is
+  // visible on both themes. `foreground/15` stays subtle but catches enough
+  // contrast to define the card.
   return (
-    <details className="group rounded-xl border border-border overflow-hidden" open={defaultOpen || undefined}>
-      <summary className="px-5 py-3 cursor-pointer text-sm font-semibold select-none hover:bg-muted/20 transition-colors flex items-center justify-between">
+    <details
+      className="group rounded-xl border border-foreground/15 bg-card/40 overflow-hidden"
+      open={defaultOpen || undefined}
+    >
+      <summary className="px-5 py-3 cursor-pointer text-sm font-semibold select-none hover:bg-foreground/[0.04] transition-colors flex items-center justify-between">
         {title}
         <ChevronIcon />
       </summary>
-      <div className="px-5 pb-5 border-t border-border/40 pt-4">{children}</div>
+      <div className="px-5 pb-5 border-t border-foreground/10 pt-4">{children}</div>
     </details>
   );
 }
