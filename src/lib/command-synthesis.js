@@ -59,7 +59,10 @@ function matchesConstraint(profile, constraint) {
  */
 export function isPrecisionCompatible(profile, variant) {
   const constraint = PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
-  return matchesConstraint(profile, constraint);
+  if (!matchesConstraint(profile, constraint)) return false;
+  // HuggingFace checkpoints under amd/ are published for ROCm / AITER flows.
+  if (variant?.model_id?.startsWith("amd/") && profile?.brand !== "AMD") return false;
+  return true;
 }
 
 /**

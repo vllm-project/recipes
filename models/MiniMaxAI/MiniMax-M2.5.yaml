@@ -3,7 +3,7 @@ meta:
   slug: "minimax-m2.5"
   provider: "MiniMax"
   description: "MiniMax M2.5 MoE language model (230B total / 10B active) for coding, agent toolchains, and long-context reasoning — native FP8 checkpoint"
-  date_updated: 2026-04-17
+  date_updated: 2026-04-20
   difficulty: intermediate
   tasks:
     - text
@@ -60,6 +60,12 @@ variants:
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
+  mxfp4:
+    model_id: "amd/MiniMax-M2.5-MXFP4"
+    precision: mxfp4
+    vram_minimum_gb: 138
+    description: "AMD MXFP4 weights on ROCm (MI300X / MI325X / MI350X / MI355X) with AITER"
+
 compatible_strategies:
   - single_node_tp
   - single_node_tep
@@ -69,7 +75,15 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_args:
+      - "--block-size"
+      - "32"
+      - "--kv-cache-dtype"
+      - "fp8_e4m3"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
 
 strategy_overrides: {}
 
@@ -139,16 +153,54 @@ guide: |
     --enable-auto-tool-choice
   ```
 
-  ### AMD ROCm
+  ### AMD ROCm — TP2, TP4, or TP8+EP
+
+  Use 2×, 4×, or 8× MI300X / MI325X / MI350X / MI355X with [AITER](https://github.com/ROCm/aiter).
+  TP size must match your visible GPU count (`CUDA_VISIBLE_DEVICES` / container device list).
+
+  **TP2**
 
   ```bash
   VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.5 \
-    --tensor-parallel-size 4 \
+    --tensor-parallel-size 2 \
+    --block-size 32 \
+    --kv-cache-dtype fp8_e4m3 \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
     --enable-auto-tool-choice \
     --trust-remote-code
   ```
+
+  **TP4**
+
+  ```bash
+  VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.5 \
+    --tensor-parallel-size 4 \
+    --block-size 32 \
+    --kv-cache-dtype fp8_e4m3 \
+    --tool-call-parser minimax_m2 \
+    --reasoning-parser minimax_m2 \
+    --enable-auto-tool-choice \
+    --trust-remote-code
+  ```
+
+  **TP8+EP**
+
+  ```bash
+  VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.5 \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --block-size 32 \
+    --kv-cache-dtype fp8_e4m3 \
+    --tool-call-parser minimax_m2 \
+    --reasoning-parser minimax_m2 \
+    --enable-auto-tool-choice \
+    --trust-remote-code
+  ```
+
+  **MXFP4 weights (`amd/MiniMax-M2.5-MXFP4`)**
+
+  Same flags as above; only the HF repo changes — see the `mxfp4` variant in the command builder.
 
   ## Benchmarking
 

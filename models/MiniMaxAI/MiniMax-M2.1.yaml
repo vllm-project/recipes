@@ -3,7 +3,7 @@ meta:
   slug: "minimax-m2.1"
   provider: "MiniMax"
   description: "MiniMax M2.1 MoE language model (230B total / 10B active) for coding, agent toolchains, and long-context reasoning — native FP8 checkpoint"
-  date_updated: 2026-04-17
+  date_updated: 2026-04-20
   difficulty: intermediate
   tasks:
     - text
@@ -59,7 +59,15 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_args:
+      - "--block-size"
+      - "32"
+      - "--kv-cache-dtype"
+      - "fp8_e4m3"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
 
 strategy_overrides: {}
 
@@ -129,11 +137,45 @@ guide: |
     --enable-auto-tool-choice
   ```
 
-  ### AMD ROCm
+  ### AMD ROCm — TP2, TP4, or TP8+EP
+
+  Use 2×, 4×, or 8× MI300X / MI325X / MI350X / MI355X with [AITER](https://github.com/ROCm/aiter).
+  TP size must match your visible GPU count.
+
+  **TP2**
+
+  ```bash
+  VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.1 \
+    --tensor-parallel-size 2 \
+    --block-size 32 \
+    --kv-cache-dtype fp8_e4m3 \
+    --tool-call-parser minimax_m2 \
+    --reasoning-parser minimax_m2 \
+    --enable-auto-tool-choice \
+    --trust-remote-code
+  ```
+
+  **TP4**
 
   ```bash
   VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.1 \
     --tensor-parallel-size 4 \
+    --block-size 32 \
+    --kv-cache-dtype fp8_e4m3 \
+    --tool-call-parser minimax_m2 \
+    --reasoning-parser minimax_m2 \
+    --enable-auto-tool-choice \
+    --trust-remote-code
+  ```
+
+  **TP8+EP**
+
+  ```bash
+  VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.1 \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --block-size 32 \
+    --kv-cache-dtype fp8_e4m3 \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
     --enable-auto-tool-choice \
