@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package } from "lucide-react";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, pickDefaultHardware, pdFitsSingleNode } from "@/lib/command-synthesis";
@@ -72,6 +73,26 @@ function CopyButton({ text, className = "" }) {
 function PopoverButton({ label, code, icon: Icon }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [rect, setRect] = useState(null);
+  const btnRef = useRef(null);
+
+  // When the popover opens, measure the button position so we can place the
+  // popover at a fixed viewport coordinate — the parent command card uses
+  // `overflow-hidden` for rounded-corner clipping, which would otherwise
+  // crop an absolute-positioned popover.
+  useEffect(() => {
+    if (!open) return;
+    const update = () => {
+      if (btnRef.current) setRect(btnRef.current.getBoundingClientRect());
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(code);
@@ -79,39 +100,46 @@ function PopoverButton({ label, code, icon: Icon }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const popover = open && rect && typeof document !== "undefined" ? createPortal(
+    <>
+      <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+      <div
+        className="fixed z-50 w-[440px] max-w-[90vw] rounded-xl border border-border bg-card shadow-xl overflow-hidden"
+        style={{ top: rect.bottom + 8, left: Math.max(8, rect.right - 440) }}
+      >
+        <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
+          <span className="text-xs font-semibold flex items-center gap-1.5">
+            <Icon size={12} /> {label}
+          </span>
+          <button
+            onClick={handleCopy}
+            className={`text-[11px] flex items-center gap-1 px-2 py-0.5 rounded transition-colors ${
+              copied ? "text-green-600 dark:text-green-400" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {copied ? <><Check size={10} /> Copied</> : <><Copy size={10} /> Copy</>}
+          </button>
+        </div>
+        <pre className="px-3 py-2.5 text-xs font-mono leading-relaxed whitespace-pre overflow-x-auto bg-[var(--code-block-bg)] text-[var(--code-block-fg)]">
+          {code}
+        </pre>
+      </div>
+    </>,
+    document.body
+  ) : null;
+
   return (
-    <div className="relative">
+    <>
       <button
+        ref={btnRef}
         onClick={() => setOpen(!open)}
         className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-foreground/5 text-foreground/60 hover:bg-foreground/10 hover:text-foreground/90 transition-colors"
       >
         <Icon size={11} />
         {label}
       </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-2 z-50 w-[440px] max-w-[90vw] rounded-xl border border-border bg-card shadow-xl overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
-              <span className="text-xs font-semibold flex items-center gap-1.5">
-                <Icon size={12} /> {label}
-              </span>
-              <button
-                onClick={handleCopy}
-                className={`text-[11px] flex items-center gap-1 px-2 py-0.5 rounded transition-colors ${
-                  copied ? "text-green-600 dark:text-green-400" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {copied ? <><Check size={10} /> Copied</> : <><Copy size={10} /> Copy</>}
-              </button>
-            </div>
-            <pre className="px-3 py-2.5 text-xs font-mono leading-relaxed whitespace-pre overflow-x-auto bg-[var(--code-block-bg)] text-[var(--code-block-fg)]">
-              {code}
-            </pre>
-          </div>
-        </>
-      )}
-    </div>
+      {popover}
+    </>
   );
 }
 
@@ -397,6 +425,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   return (
     <div className="space-y-4">
+      {/* ── Install ── */}
+      <InstallBlock
+        recipe={recipe}
+        hwProfile={hwProfile}
+        result={result}
+      />
+
       {/* ── Dependencies / extra install ── */}
       {dependencies.length > 0 && <DependenciesBlock deps={dependencies} />}
 
@@ -685,7 +720,7 @@ function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader })
         {statusHeader || <span className="text-[11px] text-[var(--command-fg)]/50 font-mono">vllm serve</span>}
         <div className="flex items-center gap-1.5">
           <CopyButton text={fullScript} />
-          <PopoverButton label="Verify" code={verifyCmd} icon={Terminal} />
+          <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} />
           <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
         </div>
       </div>
@@ -697,6 +732,101 @@ function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader })
       <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
         {command}
       </pre>
+    </div>
+  );
+}
+
+function InstallBlock({ recipe, hwProfile, result }) {
+  // Collapsible block above the command output showing pip/uv and Docker
+  // install one-liners. Hardware-aware — swaps NVIDIA / AMD ROCm variants.
+  // The "vLLM X.Y+" link still lives in the page header; this is the
+  // copyable, no-click-out install surface.
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState("pip");
+  const isAmd = hwProfile?.brand === "AMD";
+  const minV = recipe.model?.min_vllm_version;
+  const modelId = recipe.variants?.default?.model_id || recipe.model?.model_id || "MODEL";
+
+  const pipCmd = isAmd
+    ? `uv venv --python 3.12
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm`
+    : `uv venv
+source .venv/bin/activate
+uv pip install -U vllm --torch-backend auto`;
+
+  // Docker one-liner: only meaningful for single-node. Wraps the generated
+  // vllm serve command as the docker entrypoint's args.
+  const serveBody =
+    result?.deployType === "single_node" && result?.command
+      ? result.command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "")
+      : "";
+  const dockerImage = isAmd ? "vllm/vllm-openai-rocm" : "vllm/vllm-openai";
+  const dockerGpuFlags = isAmd
+    ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
+    : "--gpus all";
+  const envFlags = Object.entries(result?.env || {})
+    .map(([k, v]) => `-e ${k}=${v}`)
+    .join(" \\\n  ");
+  const dockerCmd = `docker run ${dockerGpuFlags} \\
+  --ipc=host -p 8000:8000 \\
+  -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
+  ${dockerImage} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
+
+  const tabs = [
+    { id: "pip",    label: isAmd ? "pip / uv (ROCm)" : "pip / uv",       code: pipCmd    },
+    { id: "docker", label: isAmd ? "Docker (ROCm)"   : "Docker",         code: dockerCmd },
+  ];
+  const active = tabs.find((t) => t.id === tab) || tabs[0];
+
+  return (
+    <div className="rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-white/[0.02] transition-colors"
+      >
+        <Package size={12} className="text-[var(--command-fg)]/50 shrink-0" />
+        <span className="text-[11px] font-semibold text-[var(--command-fg)]/70 uppercase tracking-widest">Install</span>
+        <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
+          vLLM {minV}+ · {isAmd ? "ROCm" : "CUDA"}
+        </span>
+        <span className="text-[11px] text-[var(--command-fg)]/40 ml-auto">
+          {open ? "hide" : "pip / Docker"}
+        </span>
+        <ChevronDown
+          size={14}
+          className={`text-[var(--command-fg)]/50 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && (
+        <div className="border-t border-[var(--command-fg)]/10">
+          <div className="flex items-center justify-between px-4 pt-3">
+            <div className="flex gap-0.5 bg-foreground/5 rounded-md p-0.5">
+              {tabs.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
+                  className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                    tab === t.id ? "bg-foreground/10 text-[var(--command-fg)]" : "text-[var(--command-fg)]/50 hover:text-[var(--command-fg)]/80"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <CopyButton text={active.code} />
+          </div>
+          <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
+            {active.code}
+          </pre>
+          {tab === "docker" && result?.deployType !== "single_node" && (
+            <div className="px-4 pb-3 text-[11px] text-[var(--command-fg)]/45 leading-snug">
+              # Docker template shows single-node args. For multi-node / PD cluster, use the
+              # per-role commands below and wrap each in its own docker run.
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -763,7 +893,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader }) {
           <CopyButton text={fullScript} />
           {tab === "head" && (
             <>
-              <PopoverButton label="Verify" code={verifyCmd} icon={Terminal} />
+              <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} />
               <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
             </>
           )}
@@ -820,7 +950,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader }) {
           <CopyButton text={fullScript} />
           {active.isRouter && (
             <>
-              <PopoverButton label="Verify" code={verifyCmd} icon={Terminal} />
+              <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} />
               <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
             </>
           )}

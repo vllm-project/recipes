@@ -290,7 +290,21 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   function formatCommand(args) {
     const filtered = args.filter(Boolean);
     if (filtered.length === 0) return `vllm serve ${modelId}`;
-    return `vllm serve ${modelId} \\\n  ${filtered.join(" \\\n  ")}`;
+    // Pair each --flag with its immediate value on the same line so the output
+    // reads like the human-written command in the recipe guide, not
+    // --flag\n value\n --flag\n value\n ...
+    const lines = [];
+    for (let i = 0; i < filtered.length; i++) {
+      const cur = filtered[i];
+      const next = filtered[i + 1];
+      if (cur.startsWith("-") && next !== undefined && !next.startsWith("-")) {
+        lines.push(`${cur} ${next}`);
+        i++;
+      } else {
+        lines.push(cur);
+      }
+    }
+    return `vllm serve ${modelId} \\\n  ${lines.join(" \\\n  ")}`;
   }
 
   const deployType = strategy.deploy_type || "single_node";
