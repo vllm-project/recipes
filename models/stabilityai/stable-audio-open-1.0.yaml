@@ -101,9 +101,9 @@ guide: |
   python examples/offline_inference/text_to_audio/text_to_audio.py \
     --model stabilityai/stable-audio-open-1.0 \
     --prompt "The sound of a dog barking" \
-    --audio_length 10.0 \
-    --num_inference_steps 100 \
-    --guidance_scale 7.0 \
+    --audio-length 10.0 \
+    --num-inference-steps 100 \
+    --guidance-scale 7.0 \
     --output dog_barking.wav
   ```
 
