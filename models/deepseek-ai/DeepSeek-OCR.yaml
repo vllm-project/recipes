@@ -14,7 +14,7 @@ meta:
 model:
   model_id: "deepseek-ai/DeepSeek-OCR"
   min_vllm_version: "0.12.0"
-  architecture: moe
+  architecture: dense
   parameter_count: "3B"
   active_parameters: "3B"
   context_length: 8192
@@ -51,9 +51,6 @@ variants:
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
-  - multi_node_tp_pp
-  - multi_node_tep
-  - multi_node_dep
 
 hardware_overrides:
   amd:
