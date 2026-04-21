@@ -26,19 +26,9 @@ dependencies:
   - note: "Install transformers from source for GLM-ASR tokenizer support"
     command: "uv pip install git+https://github.com/huggingface/transformers.git"
 
-features:
-  text_only:
-    description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
-    args:
-      - "--language-model-only"
-  encoder_parallel:
-    description: "Run the vision encoder in data-parallel mode — avoids TP comm overhead on the small encoder. Mutually exclusive with text_only."
-    args:
-      - "--mm-encoder-tp-mode"
-      - "data"
+features: {}
 
-opt_in_features:
-  - text_only
+opt_in_features: []
 
 variants:
   default:

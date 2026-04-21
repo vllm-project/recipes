@@ -6,6 +6,7 @@ meta:
   date_updated: 2026-04-16
   difficulty: intermediate
   tasks:
+    - text
     - multimodal
   performance_headline: "Verified on 8x H200, 8x MI300X/MI355X, and GB200 nodes"
   related_recipes:

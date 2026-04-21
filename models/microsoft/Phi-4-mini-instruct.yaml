@@ -35,6 +35,7 @@ features:
 
 opt_in_features:
   - text_only
+  - encoder_parallel
 
 variants:
   default:

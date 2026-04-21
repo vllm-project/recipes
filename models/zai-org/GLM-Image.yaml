@@ -6,7 +6,7 @@ meta:
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
-    - multimodal
+    - omni
   performance_headline: "9B AR generator + 7B DiT decoder, state-of-the-art text rendering in generated images"
   related_recipes: []
   hardware:
@@ -32,19 +32,9 @@ dependencies:
   - note: "diffusers from source — required for the DiT decoder"
     command: "uv pip install git+https://github.com/huggingface/diffusers.git"
 
-features:
-  text_only:
-    description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
-    args:
-      - "--language-model-only"
-  encoder_parallel:
-    description: "Run the vision encoder in data-parallel mode — avoids TP comm overhead on the small encoder. Mutually exclusive with text_only."
-    args:
-      - "--mm-encoder-tp-mode"
-      - "data"
+features: {}
 
-opt_in_features:
-  - text_only
+opt_in_features: []
 
 variants:
   default:
