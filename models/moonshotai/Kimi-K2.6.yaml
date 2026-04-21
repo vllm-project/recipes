@@ -69,7 +69,7 @@ compatible_strategies:
 hardware_overrides:
   blackwell:
     extra_args:
-      - "--attention-config.use_trtllm_ragged_deepseek_prefill"
+      - "--attention-config.use_trtllm_ragged_deepseek_prefill=True"
   amd:
     # Verified on 8× MI300X / MI355X (MI325X listed as supported but not verified).
     extra_args:
