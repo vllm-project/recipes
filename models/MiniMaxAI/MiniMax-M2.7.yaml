@@ -3,7 +3,7 @@ meta:
   slug: "minimax-m2.7"
   provider: "MiniMax"
   description: "MiniMax M2.7 MoE language model (230B total / 10B active) — latest M2 release for coding, agent toolchains, and long-context reasoning with native FP8"
-  date_updated: 2026-04-17
+  date_updated: 2026-04-21
   difficulty: intermediate
   tasks:
     - text
@@ -171,6 +171,25 @@ guide: |
     --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
     --enable-auto-tool-choice
   ```
+
+  ### Blackwell (B200 / B300)
+
+  ```bash
+  vllm serve MiniMaxAI/MiniMax-M2.7 \
+    --tensor-parallel-size 4 \
+    --enable-expert-parallel \
+    --tool-call-parser minimax_m2 \
+    --reasoning-parser minimax_m2 \
+    --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
+    --enable-auto-tool-choice \
+    --trust-remote-code
+  ```
+
+  > **Note**: For improved performance on Blackwell GPUs (B200 / B300), you may set
+  > `VLLM_FLOAT32_MATMUL_PRECISION=high` to enable TF32 TensorCore acceleration for
+  > float32 matmuls. This deviates from the original implementation, which uses full FP32
+  > precision for MoE gating, but evaluations show no observable differences on GSM8K,
+  > MMLU-Pro, and tool-calling benchmarks.
 
   ### AMD ROCm — TP2 or TP4
 
