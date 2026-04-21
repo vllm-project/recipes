@@ -199,8 +199,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     }
     if (!searchParams.get("features") && prefs.features && typeof prefs.features === "object") {
       const recipeFeatures = Object.keys(recipe.features || {});
-      const optIn = new Set(recipe.opt_in_features || []);
-      const base = new Set(recipeFeatures.filter((f) => !optIn.has(f)));
+      const base = new Set(defaultFeaturesFor(hwId));
       for (const [key, on] of Object.entries(prefs.features)) {
         if (!recipeFeatures.includes(key)) continue;
         if (on) base.add(key);
@@ -257,10 +256,23 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     return Number.isFinite(n) && n >= 0 ? n : 0;
   });
   const [strategyOverride, setStrategyOverride] = useState(searchParams.get("strategy") || "");
+  // Default-on features = (all features) − (recipe.opt_in_features) − (recipe.hardware_opt_in_features[hwId]).
+  // The per-hw override lets a recipe suppress a feature's default on specific
+  // hardware (e.g. GB200's 4-GPU trays make --mm-encoder-tp-mode data unnecessary).
+  const defaultFeaturesFor = useCallback(
+    (hw) => {
+      const optIn = new Set(recipe.opt_in_features || []);
+      for (const f of recipe.hardware_opt_in_features?.[hw] || []) optIn.add(f);
+      return Object.keys(recipe.features || {}).filter((f) => !optIn.has(f));
+    },
+    [recipe]
+  );
+
   const [features, setFeatures] = useState(() => {
     const fp = searchParams.get("features");
     if (fp) return fp.split(",").filter(Boolean);
-    return Object.keys(recipe.features || {}).filter((f) => !(recipe.opt_in_features || []).includes(f));
+    const urlHw = searchParams.get("hardware") || defaultHw;
+    return defaultFeaturesFor(urlHw);
   });
 
   // Advanced tuning flags (defaults off) — toggled independently from features
@@ -404,9 +416,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   };
 
   const selectHardware = (id) => {
+    // Apply per-hw opt-in delta: turn off features the new hw opts out of,
+    // and turn back on features the old hw opted out of that the new hw doesn't.
+    // Features explicitly in recipe.opt_in_features stay off either way.
+    const oldHwOptIn = new Set(recipe.hardware_opt_in_features?.[hwId] || []);
+    const newHwOptIn = new Set(recipe.hardware_opt_in_features?.[id] || []);
+    const baseOptIn = new Set(recipe.opt_in_features || []);
+    const next = features.filter((f) => !newHwOptIn.has(f));
+    for (const f of oldHwOptIn) {
+      if (!newHwOptIn.has(f) && !baseOptIn.has(f) && !next.includes(f)) next.push(f);
+    }
+    setFeatures(next);
     setHwId(id);
     setStrategyOverride("");
-    syncUrl({ hardware: id, strategy: "" });
+    syncUrl({ hardware: id, strategy: "", features: next.length > 0 ? next.join(",") : "" });
     savePreference("hardware", id);
   };
 
@@ -473,7 +496,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const prefs = loadPreferences();
     const fprefs = { ...(prefs.features || {}) };
     const isOn = next.includes(f);
-    const isOptIn = (recipe.opt_in_features || []).includes(f);
+    const hwOptIn = (recipe.hardware_opt_in_features?.[hwId] || []).includes(f);
+    const isOptIn = (recipe.opt_in_features || []).includes(f) || hwOptIn;
     const matchesDefault = isOptIn ? !isOn : isOn;
     if (matchesDefault) delete fprefs[f];
     else fprefs[f] = isOn;
@@ -745,7 +769,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                         : `2 nodes × ${hwProfile.gpu_count || 8} GPUs = ${2 * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
                     }
                   >
-                    <span className="font-semibold">{n === 1 ? "Single node" : "Multi-node (example: 2)"}</span>
+                    <span className="font-semibold">{n === 1 ? "Single-node" : "Multi-node (example: 2)"}</span>
                     {n > 1 && !disabled && (
                       <span className="text-muted-foreground ml-1.5 font-mono">
                         {2 * (hwProfile.gpu_count || 8)}×GPU
@@ -769,7 +793,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   onClick={() => toggleFeature(key)}
                   title={f?.description}
                 >
-                  {key.replace(/_/g, " ")}
+                  {key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                 </Pill>
               ))}
             </PillGroup>
