@@ -157,7 +157,7 @@ guide: |
 
   ### Blackwell (B200 / B300) — NVFP4
 
-  Use the `nvidia/MiniMax-M2.5-NVFP4` checkpoint. `VLLM_FLOAT32_MATMUL_PRECISION=high` is
+  Use the `nvidia/MiniMax-M2.5-NVFP4` checkpoint. Required environment variables are
   applied automatically by the command builder.
 
   ```bash
