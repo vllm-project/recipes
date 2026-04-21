@@ -3,7 +3,7 @@ meta:
   slug: "minimax-m2.5"
   provider: "MiniMax"
   description: "MiniMax M2.5 MoE language model (230B total / 10B active) for coding, agent toolchains, and long-context reasoning — native FP8 checkpoint"
-  date_updated: 2026-04-17
+  date_updated: 2026-04-21
   difficulty: intermediate
   tasks:
     - text
@@ -69,7 +69,10 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
 
-hardware_overrides: {}
+hardware_overrides:
+  blackwell:
+    extra_env:
+      VLLM_FLOAT32_MATMUL_PRECISION: "high"
 
 strategy_overrides: {}
 
@@ -137,6 +140,37 @@ guide: |
     --reasoning-parser minimax_m2 \
     --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
     --enable-auto-tool-choice
+  ```
+
+  ### Blackwell (B200 / B300) — FP8
+
+  ```bash
+  VLLM_FLOAT32_MATMUL_PRECISION=high vllm serve MiniMaxAI/MiniMax-M2.5 \
+    --tensor-parallel-size 4 \
+    --enable-expert-parallel \
+    --tool-call-parser minimax_m2 \
+    --reasoning-parser minimax_m2 \
+    --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
+    --enable-auto-tool-choice \
+    --trust-remote-code
+  ```
+
+  ### Blackwell (B200 / B300) — NVFP4
+
+  Use the `nvidia/MiniMax-M2.5-NVFP4` checkpoint. `VLLM_FLOAT32_MATMUL_PRECISION=high` is
+  applied automatically by the command builder.
+
+  ```bash
+  VLLM_USE_FLASHINFER_MOE_FP4=1 VLLM_FLOAT32_MATMUL_PRECISION=high \
+  vllm serve nvidia/MiniMax-M2.5-NVFP4 \
+    --tensor-parallel-size 4 \
+    --enable-expert-parallel \
+    --kv-cache-dtype fp8 \
+    --tool-call-parser minimax_m2 \
+    --reasoning-parser minimax_m2 \
+    --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
+    --enable-auto-tool-choice \
+    --trust-remote-code
   ```
 
   ### AMD ROCm
