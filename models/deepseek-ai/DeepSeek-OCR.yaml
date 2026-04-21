@@ -27,9 +27,19 @@ model:
     - "0"
   base_env: {}
 
-features: {}
+features:
+  text_only:
+    description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
+    args:
+      - "--language-model-only"
+  encoder_parallel:
+    description: "Run the vision encoder in data-parallel mode — avoids TP comm overhead on the small encoder. Mutually exclusive with text_only."
+    args:
+      - "--mm-encoder-tp-mode"
+      - "data"
 
-opt_in_features: []
+opt_in_features:
+  - text_only
 
 variants:
   default:
