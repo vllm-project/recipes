@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info } from "lucide-react";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, pickDefaultHardware } from "@/lib/command-synthesis";
+import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 
 // Advanced tuning presets — optional tunable flags the user can opt into.
 // (vLLM defaults like chunked prefill, prefix caching, CUDA graphs, async
@@ -438,7 +439,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   };
 
   const toggleFeature = (f) => {
-    const next = features.includes(f) ? features.filter((x) => x !== f) : [...features, f];
+    // text_only (skip vision encoder) and encoder_parallel (DP the encoder)
+    // are mutually exclusive — enabling one clears the other.
+    const mutex = { text_only: "encoder_parallel", encoder_parallel: "text_only" };
+    const on = !features.includes(f);
+    const next = on
+      ? [...features.filter((x) => x !== mutex[f]), f]
+      : features.filter((x) => x !== f);
     setFeatures(next);
     syncUrl({ features: next.length > 0 ? next.join(",") : "" });
     // Persist as {key: on/off} map. A value that matches the recipe's default
@@ -451,6 +458,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const matchesDefault = isOptIn ? !isOn : isOn;
     if (matchesDefault) delete fprefs[f];
     else fprefs[f] = isOn;
+    // If this toggle disabled a mutex partner, clear its stored pref too so
+    // reload doesn't resurrect the conflict.
+    if (on && mutex[f]) delete fprefs[mutex[f]];
     savePreference("features", Object.keys(fprefs).length ? fprefs : undefined);
   };
 
@@ -523,6 +533,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   }
 
   return (
+    <TooltipProvider>
     <div className="space-y-4">
       {/* ── Install ── */}
       <InstallBlock
@@ -776,6 +787,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         </details>
       </div>
     </div>
+    </TooltipProvider>
   );
 }
 
@@ -806,13 +818,14 @@ function ConfigRow({ label, hint, children }) {
       <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest sm:w-20 sm:pt-1.5 shrink-0 inline-flex items-center gap-1">
         {label}
         {hint && (
-          <span
-            title={hint}
-            className="cursor-help text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-            aria-label={hint}
-          >
-            <Info size={11} />
-          </span>
+          <InfoTip content={hint}>
+            <span
+              className="cursor-help text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+              aria-label={hint}
+            >
+              <Info size={11} />
+            </span>
+          </InfoTip>
         )}
       </div>
       <div className="flex-1 min-w-0">{children}</div>
@@ -841,17 +854,18 @@ function Pill({ active, onClick, title, dimmed, disabled, children }) {
     : dimmed
     ? "border-dashed border-border/60 text-muted-foreground/50 hover:text-muted-foreground hover:border-muted-foreground/30"
     : "border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40 hover:bg-muted/30";
-  return (
+  const btn = (
     <button
       onClick={onClick}
-      title={title}
       disabled={disabled}
       aria-disabled={disabled}
+      aria-label={typeof title === "string" ? title : undefined}
       className={`inline-flex items-center rounded-lg border px-2.5 py-1.5 text-xs transition-all ${style}`}
     >
       {children}
     </button>
   );
+  return title ? <InfoTip content={title}>{btn}</InfoTip> : btn;
 }
 
 function envToExports(env) {
