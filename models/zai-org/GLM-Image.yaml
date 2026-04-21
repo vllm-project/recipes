@@ -6,7 +6,7 @@ meta:
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
-    - multimodal
+    - omni
   performance_headline: "9B AR generator + 7B DiT decoder, state-of-the-art text rendering in generated images"
   related_recipes: []
   hardware:

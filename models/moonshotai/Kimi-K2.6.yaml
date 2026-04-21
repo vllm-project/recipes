@@ -1,9 +1,9 @@
 meta:
-  title: "Kimi-K2.5"
-  slug: "kimi-k2.5"
+  title: "Kimi-K2.6"
+  slug: "kimi-k2.6"
   provider: "Moonshot AI"
   description: "Open-source native multimodal agentic MoE model with vision-language understanding, tool calling, and thinking modes"
-  date_updated: 2026-04-16
+  date_updated: 2026-04-20
   difficulty: intermediate
   tasks:
     - multimodal
@@ -13,12 +13,9 @@ meta:
   hardware:
     h200: verified
     gb200: verified
-    mi300x: verified
-    mi325x: verified
-    mi355x: verified
 
 model:
-  model_id: "moonshotai/Kimi-K2.5"
+  model_id: "moonshotai/Kimi-K2.6"
   min_vllm_version: "0.19.1"
   architecture: moe
   parameter_count: "1T"
@@ -40,11 +37,6 @@ features:
     args:
       - "--reasoning-parser"
       - "kimi_k2"
-  spec_decoding:
-    description: "Eagle3 speculative decoding for accelerated inference (requires vLLM >= 0.18.0)"
-    args:
-      - "--speculative-config"
-      - '{"model":"lightseekorg/kimi-k2.5-eagle3","method":"eagle3","num_speculative_tokens":3}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -56,7 +48,6 @@ features:
       - "data"
 
 opt_in_features:
-  - spec_decoding
   - text_only
 
 variants:
@@ -64,16 +55,6 @@ variants:
     precision: int4
     vram_minimum_gb: 714
     description: "Packed INT4 via compressed-tensors (~595 GB on disk); fits 8×H200"
-  nvfp4:
-    model_id: "nvidia/Kimi-K2.5-NVFP4"
-    precision: nvfp4
-    vram_minimum_gb: 600
-    description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs (e.g. GB200)"
-    extra_args:
-      - "--kv-cache-dtype"
-      - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
 compatible_strategies:
   - single_node_tp
@@ -133,38 +114,17 @@ strategy_overrides:
 guide: |
   ## Overview
 
-  Kimi K2.5 is an open-source, native multimodal agentic model built through continual
+  Kimi K2.6 is an open-source, native multimodal agentic model built through continual
   pretraining on approximately 15 trillion mixed visual and text tokens atop Kimi-K2-Base.
   It seamlessly integrates vision and language understanding with advanced agentic
   capabilities, instant and thinking modes, as well as conversational and agentic paradigms.
 
   ## Prerequisites
 
-  - **vLLM version:** >= 0.15.0 (speculative decoding with Eagle3 requires >= 0.18.0)
-  - **Hardware (BF16):** 8x H200 GPUs (verified), or equivalent aggregate VRAM (~640 GB)
-  - **Hardware (NVFP4):** 4x Blackwell GPUs (e.g. GB200)
+  - **vLLM version:** >= 0.19.1
+  - **Hardware (INT4):** 8x H200 GPUs (verified), or equivalent aggregate VRAM (~640 GB)
   - **AMD support:** 8x MI300X / MI325X / MI355X with ROCm 7.2.1 and Python 3.12
 
-  ### Install vLLM
-
-  **Pip (NVIDIA):**
-  ```bash
-  uv venv
-  source .venv/bin/activate
-  uv pip install vllm --torch-backend auto
-  ```
-
-  **Pip (AMD ROCm):**
-  ```bash
-  uv venv --python 3.12
-  source .venv/bin/activate
-  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
-  ```
-
-  **Docker (NVIDIA):**
-  ```bash
-  docker pull vllm/vllm-openai:v0.17.0-cu130
-  ```
 
   ## Client Usage
 
@@ -200,7 +160,7 @@ guide: |
 
   start = time.time()
   response = client.chat.completions.create(
-      model="moonshotai/Kimi-K2.5",
+      model="moonshotai/Kimi-K2.6",
       messages=messages,
       max_tokens=2048
   )
@@ -223,9 +183,7 @@ guide: |
 
   ## References
 
-  - [Kimi-K2.5 on Hugging Face](https://huggingface.co/moonshotai/Kimi-K2.5)
-  - [NVIDIA Kimi-K2.5-NVFP4 on Hugging Face](https://huggingface.co/nvidia/Kimi-K2.5-NVFP4)
-  - [Eagle3 speculative decoding model](https://huggingface.co/lightseekorg/kimi-k2.5-eagle3)
+  - [Kimi-K2.6 on Hugging Face](https://huggingface.co/moonshotai/Kimi-K2.6)
   - [vLLM multimodal inputs guide](https://docs.vllm.ai/en/latest/features/multimodal_inputs.html)
   - [vLLM Expert Parallelism docs](https://docs.vllm.ai/en/latest/serving/expert_parallel_deployment.html)
   - [vLLM NixlConnector usage guide](https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html)

@@ -45,6 +45,31 @@ meta:
 model:
   model_id: "<hf_org>/<hf_repo>"  # MUST match the filename path
   min_vllm_version: "0.11.0"      # string, e.g. "0.12.0"
+  # Optional — pin the Docker image shown in Install → Docker. Default is
+  # vllm/vllm-openai (or vllm/vllm-openai-rocm on AMD). Set to a specific
+  # image:tag when the model needs a build that hasn't landed in :latest
+  # (e.g. "vllm/vllm-openai:glm51", "vllm/vllm-openai:minimax27").
+  docker_image: ""
+  # Optional — set true when `min_vllm_version` hasn't shipped as a stable
+  # release yet. Swaps the default pip command to nightly wheels
+  # (https://wheels.vllm.ai/nightly/cu130) and adds a yellow "nightly" pill
+  # to the Install header. Manual install.pip overrides still win.
+  nightly_required: false
+  # Optional — control the Install block's pip/Docker tabs. Each key accepts
+  # `false` (hide the tab entirely) OR an object `{ command?, note? }` to
+  # override the generated one-liner and/or show a note above it.
+  #   install.pip: false                 → no wheel available, Docker only
+  #   install.docker: false              → no published image, pip only
+  #   install.pip.command: "..."         → replace the pip command
+  #   install.pip.note: "..."            → one-liner above the code block
+  # Tab ORDER follows the YAML key order — put `docker` first to make it the
+  # default tab when Docker is the recommended install path.
+  install:
+    pip:
+      command: ""
+      note: ""
+    docker:
+      note: ""
   architecture: dense|moe
   parameter_count: "30B"          # string with suffix (B or T)
   active_parameters: "30B"        # same as parameter_count for dense models

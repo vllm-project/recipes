@@ -70,11 +70,16 @@ model:
   # either `false` (hide the tab entirely) or an object with { command?, note? }.
   # Use `note` for a one-liner above the code block; use `command` to fully
   # replace the generated install script (e.g. nightly wheel, pinned version).
+  #
+  # Tab ORDER follows the YAML key order. Put `docker` before `pip` to make
+  # Docker the first tab and the default when the block opens (useful when the
+  # recipe is easier via Docker — e.g. a pinned image vs. a multi-step pip).
   install:
+    docker:                                       # listed first → Docker is the default tab
+      note: "Recommended: the pinned image ships all dependencies"
     pip:
       command: "uv pip install vllm --pre --index-url https://wheels.vllm.ai/nightly"
       note: "nightly wheel required — stable release does not yet support this model"
-    docker: false                                 # e.g. no matching image published yet
   architecture: moe                               # dense | moe
   parameter_count: "671B"                         # total params with B/T suffix
   active_parameters: "37B"                        # same as parameter_count for dense models
@@ -143,15 +148,38 @@ hardware_overrides:
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
 
-# Optional per-strategy tweaks. Rare. PD recipes use this to pin per-role args.
+# Optional per-strategy tweaks. Rare. PD recipes use this to shape each pool.
+#
+# For `pd_cluster`, each role (prefill / decode) accepts:
+#   nodes        — how many dedicated nodes the pool uses (default 1)
+#   parallelism  — "tp" (tensor-parallel pool) | "dep" (data-parallel + expert-parallel)
+#                  default "tp"
+#   tp           — TP width per DP rank when parallelism=dep (default 1);
+#                  unused for parallelism=tp (the whole pool is one TP group)
+#   vllm_args    — extra flags appended to this role's `vllm serve`
+#   env          — extra env vars for this role
+#   parallel_flag — (rare) override the auto-selected flag for parallelism=tp
+#
+# The Nodes row in the UI exposes `nodes` as per-pool inputs; the values here
+# set the defaults. Kimi-K2.5 on GB200 illustrates the DEP-PD pattern:
 strategy_overrides:
   pd_cluster:
     prefill:
+      nodes: 1
+      parallelism: dep
+      tp: 1                                     # DP = nodes × gpus_per_node / tp = 4
       vllm_args: ["--enforce-eager"]
       env: {}
     decode:
+      nodes: 4
+      parallelism: dep
+      tp: 1                                     # DP = 16 on 4x GB200
       vllm_args: ["--compilation-config", '{"cudagraph_mode":"FULL_DECODE_ONLY"}']
       env: {}
+  # Default TP-per-role PD (simpler pattern, one engine per pool):
+  # pd_cluster:
+  #   prefill: { nodes: 1, parallelism: tp }   # TP = gpus_per_node
+  #   decode:  { nodes: 1, parallelism: tp }
 
 # Markdown guide. Rendered on the recipe page under the command builder.
 # Covers Overview, Prerequisites, Launch, Benchmarking, Troubleshooting, References.

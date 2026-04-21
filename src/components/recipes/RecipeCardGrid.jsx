@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { Type, Eye, Sparkles, Hash, Layers, Cpu } from "lucide-react";
-import { getProviderLogo, getProviderDisplayName } from "@/lib/providers";
+import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
 
 const TASK_ICON = { text: Type, multimodal: Eye, omni: Sparkles, embedding: Hash };
 
@@ -84,7 +84,7 @@ function RecipeCard({ recipe }) {
       <div className="flex items-start gap-2.5">
         {logo ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={logo} alt="" width={28} height={28} className="rounded-md mt-0.5 shrink-0" />
+          <img src={logo} alt="" width={28} height={28} className={`rounded-md mt-0.5 shrink-0 ${getProviderLogoClass(recipe.hf_org)}`} />
         ) : (
           <div className="w-7 h-7 rounded-md bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground shrink-0">
             {(recipe.meta?.provider || recipe.hf_org).charAt(0)}
@@ -161,7 +161,7 @@ function ProviderTile({ org, models }) {
       <div className="flex items-center gap-2.5">
         {logo ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={logo} alt="" width={28} height={28} className="rounded-md shrink-0" />
+          <img src={logo} alt="" width={28} height={28} className={`rounded-md shrink-0 ${getProviderLogoClass(org)}`} />
         ) : (
           <div className="w-7 h-7 rounded-md bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground shrink-0">
             {displayName.charAt(0)}

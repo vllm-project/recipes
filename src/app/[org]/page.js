@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAllRecipes } from "@/lib/recipes";
-import { getProviderLogo, getProviderDisplayName } from "@/lib/providers";
+import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
 import { recipeHref } from "@/lib/recipe-utils";
 import { Badge } from "@/components/ui/badge";
 import { ExternalLink, Type, Eye, Sparkles, Cpu, Hash } from "lucide-react";
@@ -47,7 +47,7 @@ const TASK_META = {
   omni:       { icon: Sparkles, label: "Omni" },
   embedding:  { icon: Hash,     label: "Embedding" },
 };
-const TASK_ORDER = ["text", "multimodal", "omni", "embedding"];
+const TASK_ORDER = ["multimodal", "text", "omni", "embedding"];
 
 export default async function OrgPage({ params }) {
   const { org } = await params;
@@ -86,7 +86,7 @@ export default async function OrgPage({ params }) {
       <header className="mb-8 flex items-center gap-4">
         {logo ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={logo} alt="" width={56} height={56} className="rounded-xl shrink-0" />
+          <img src={logo} alt="" width={56} height={56} className={`rounded-xl shrink-0 ${getProviderLogoClass(org)}`} />
         ) : (
           <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center text-2xl font-bold text-muted-foreground">
             {displayName.charAt(0)}
@@ -139,6 +139,9 @@ export default async function OrgPage({ params }) {
 
 function ModelRow({ recipe }) {
   const { meta, model, variants, hf_repo } = recipe;
+  // Secondary tasks (beyond the primary used for grouping) — surface as small
+  // icons so a model under "Text" that also does vision is discoverable.
+  const secondaryTasks = (meta.tasks || []).slice(1);
 
   return (
     <Link
@@ -158,6 +161,24 @@ function ModelRow({ recipe }) {
       </div>
 
       <Badge variant="outline" className="text-[10px] capitalize">{model.architecture}</Badge>
+
+      {secondaryTasks.length > 0 && (
+        <div className="flex items-center gap-1 text-muted-foreground/70">
+          {secondaryTasks.map((t) => {
+            const tm = TASK_META[t];
+            const TIcon = tm?.icon || Cpu;
+            return (
+              <span
+                key={t}
+                title={`Also: ${tm?.label || t}`}
+                className="inline-flex items-center"
+              >
+                <TIcon size={12} />
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       <div className="flex gap-1 flex-wrap">
         {Object.entries(variants || {}).map(([name, v]) => (

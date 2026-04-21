@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { getProviderLogo, getProviderDisplayName } from "@/lib/providers";
+import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
 import { recipeHref } from "@/lib/recipe-utils";
 import { ChevronRight, Type, Eye, Sparkles, Hash, Cpu } from "lucide-react";
+import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 
 const TASK_ICON = {
   text:       Type,
@@ -30,6 +31,7 @@ export function ModelSidebar({ recipesByOrg }) {
   const toggle = (org) => setExpanded(expanded === org ? null : org);
 
   return (
+    <TooltipProvider>
     <nav className="w-64 shrink-0 hidden lg:block">
       <div className="sticky top-16 pt-4 space-y-0.5 max-h-[calc(100vh-5rem)] overflow-y-auto scrollbar-thin">
         <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground px-3 pb-2">
@@ -59,7 +61,7 @@ export function ModelSidebar({ recipesByOrg }) {
                 >
                   {logo ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={logo} alt="" width={18} height={18} className="rounded shrink-0" />
+                    <img src={logo} alt="" width={18} height={18} className={`rounded shrink-0 ${getProviderLogoClass(org)}`} />
                   ) : (
                     <div className="w-[18px] h-[18px] rounded bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground shrink-0">
                       {displayName.charAt(0)}
@@ -88,19 +90,19 @@ export function ModelSidebar({ recipesByOrg }) {
                     const primaryTask = (m.meta.tasks || [])[0];
                     const Icon = TASK_ICON[primaryTask] || Cpu;
                     return (
-                      <Link
-                        key={m.hf_id}
-                        href={recipeHref(m)}
-                        className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-mono transition-colors ${
-                          isActive
-                            ? "bg-vllm-blue/10 text-vllm-blue font-semibold"
-                            : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                        }`}
-                        title={primaryTask}
-                      >
-                        <Icon size={10} className="shrink-0 opacity-60" />
-                        <span className="truncate">{m.hf_repo || m.meta.title}</span>
-                      </Link>
+                      <InfoTip key={m.hf_id} content={primaryTask}>
+                        <Link
+                          href={recipeHref(m)}
+                          className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-mono transition-colors ${
+                            isActive
+                              ? "bg-vllm-blue/10 text-vllm-blue font-semibold"
+                              : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                          }`}
+                        >
+                          <Icon size={10} className="shrink-0 opacity-60" />
+                          <span className="truncate">{m.hf_repo || m.meta.title}</span>
+                        </Link>
+                      </InfoTip>
                     );
                   })}
                 </div>
@@ -110,5 +112,6 @@ export function ModelSidebar({ recipesByOrg }) {
         })}
       </div>
     </nav>
+    </TooltipProvider>
   );
 }
