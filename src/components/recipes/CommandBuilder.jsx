@@ -745,7 +745,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                         : `2 nodes × ${hwProfile.gpu_count || 8} GPUs = ${2 * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
                     }
                   >
-                    <span className="font-semibold">{n === 1 ? "Single node" : "Multi-node (example: 2)"}</span>
+                    <span className="font-semibold">{n === 1 ? "Single-node" : "Multi-node (example: 2)"}</span>
                     {n > 1 && !disabled && (
                       <span className="text-muted-foreground ml-1.5 font-mono">
                         {2 * (hwProfile.gpu_count || 8)}×GPU
@@ -769,7 +769,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   onClick={() => toggleFeature(key)}
                   title={f?.description}
                 >
-                  {key.replace(/_/g, " ")}
+                  {key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                 </Pill>
               ))}
             </PillGroup>
