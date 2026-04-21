@@ -57,8 +57,6 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
 compatible_strategies:
   - single_node_tp
@@ -164,7 +162,7 @@ guide: |
   applied automatically by the command builder.
 
   ```bash
-  VLLM_USE_FLASHINFER_MOE_FP4=1 vllm serve nvidia/MiniMax-M2.5-NVFP4 \
+  vllm serve nvidia/MiniMax-M2.5-NVFP4 \
     --tensor-parallel-size 4 \
     --enable-expert-parallel \
     --kv-cache-dtype fp8 \
