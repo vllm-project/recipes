@@ -47,7 +47,6 @@ compatible_strategies:
   - single_node_tp
   - single_node_tep
   - multi_node_tp
-  - multi_node_tp_pp
   - multi_node_tep
   - multi_node_dep
 
