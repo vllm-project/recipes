@@ -186,7 +186,7 @@ Peak output token throughput (tok/s):    800.00
 Peak concurrent requests:                32.00     
 Total token throughput (tok/s):          4640.43   
 ---------------Time to First Token----------------
-Mean TTFT (ms):                          13395.44  
+Mean TTFT (ms):                          13395.44  ·
 Median TTFT (ms):                        14494.06  
 P99 TTFT (ms):                           22952.29  
 -----Time per Output Token (excl. 1st token)------

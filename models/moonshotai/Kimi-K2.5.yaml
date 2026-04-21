@@ -7,6 +7,7 @@ meta:
   difficulty: intermediate
   tasks:
     - multimodal
+    - text
   performance_headline: "Multimodal agentic MoE model with DeepSeek-V3 backbone and MLA attention"
   related_recipes: []
   hardware:
@@ -44,9 +45,19 @@ features:
     args:
       - "--speculative-config"
       - '{"model":"lightseekorg/kimi-k2.5-eagle3","method":"eagle3","num_speculative_tokens":3}'
+  text_only:
+    description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
+    args:
+      - "--language-model-only"
+  encoder_parallel:
+    description: "Run the vision encoder in data-parallel mode — avoids TP comm overhead on the small encoder. Mutually exclusive with text_only."
+    args:
+      - "--mm-encoder-tp-mode"
+      - "data"
 
 opt_in_features:
   - spec_decoding
+  - text_only
 
 variants:
   default:
