@@ -56,8 +56,13 @@ features:
       - "data"
 
 opt_in_features:
-  - spec_decoding
   - text_only
+
+# GB200's 4-GPU NVL4 trays keep encoder TP comm cheap — data-parallel encoder
+# isn't the default win it is on 8-GPU nodes.
+hardware_opt_in_features:
+  gb200:
+    - encoder_parallel
 
 variants:
   default:
