@@ -218,3 +218,49 @@ guide: |
   - [vLLM multimodal inputs guide](https://docs.vllm.ai/en/latest/features/multimodal_inputs.html)
   - [vLLM Expert Parallelism docs](https://docs.vllm.ai/en/latest/serving/expert_parallel_deployment.html)
   - [vLLM NixlConnector usage guide](https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html)
+
+  ## Benchmark Results
+
+  Benchmarks run on 8×B200 with [`nvidia/Kimi-K2.5-NVFP4`](https://huggingface.co/nvidia/Kimi-K2.5-NVFP4) (FP4 precision),
+  vLLM v0.17.0, ISL=1024, OSL=1024. Results sourced from [SemiAnalysis InferenceX](https://github.com/SemiAnalysisAI/InferenceX)
+  ([artifact](https://github.com/SemiAnalysisAI/InferenceX/actions/runs/23669977901/artifacts/6279124070)).
+
+  ### Low Latency (TP8)
+
+  Concurrency is 4. [Full run](https://github.com/SemiAnalysisAI/InferenceX/actions/runs/23669977901/job/70014502441).
+
+  ```
+  ============ Serving Benchmark Result ============
+  Successful requests:                     40
+  Benchmark duration (s):                  100.21
+  Total input tokens:                      37068
+  Total generated tokens:                  36709
+  Request throughput (req/s):              0.40
+  Output token throughput (tok/s):         366.32
+  Total Token throughput (tok/s):          736.23
+  ---------------Time to First Token----------------
+  Mean TTFT (ms):                          148.61
+  Median TTFT (ms):                        137.49
+  P90 TTFT (ms):                           160.43
+  P99 TTFT (ms):                           335.19
+  P99.9 TTFT (ms):                         335.23
+  -----Time per Output Token (excl. 1st token)------
+  Mean TPOT (ms):                          10.43
+  Median TPOT (ms):                        10.45
+  P90 TPOT (ms):                           10.59
+  P99 TPOT (ms):                           10.65
+  P99.9 TPOT (ms):                         10.68
+  ---------------Inter-token Latency----------------
+  Mean ITL (ms):                           10.43
+  Median ITL (ms):                         10.15
+  P90 ITL (ms):                            10.47
+  P99 ITL (ms):                            10.84
+  P99.9 ITL (ms):                          111.75
+  ----------------End-to-end Latency----------------
+  Mean E2EL (ms):                          9713.73
+  Median E2EL (ms):                        9823.84
+  P90 E2EL (ms):                           10617.68
+  P99 E2EL (ms):                           10881.95
+  P99.9 E2EL (ms):                         10888.45
+  ==================================================
+  ```
