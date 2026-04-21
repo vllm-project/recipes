@@ -69,10 +69,7 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
 
-hardware_overrides:
-  blackwell:
-    extra_env:
-      VLLM_FLOAT32_MATMUL_PRECISION: "high"
+hardware_overrides: {}
 
 strategy_overrides: {}
 
@@ -145,7 +142,7 @@ guide: |
   ### Blackwell (B200 / B300) — FP8
 
   ```bash
-  VLLM_FLOAT32_MATMUL_PRECISION=high vllm serve MiniMaxAI/MiniMax-M2.5 \
+  vllm serve MiniMaxAI/MiniMax-M2.5 \
     --tensor-parallel-size 4 \
     --enable-expert-parallel \
     --tool-call-parser minimax_m2 \
@@ -155,14 +152,19 @@ guide: |
     --trust-remote-code
   ```
 
+  > **Note**: For improved performance on Blackwell GPUs (B200 / B300), you may set
+  > `VLLM_FLOAT32_MATMUL_PRECISION=high` to enable TF32 TensorCore acceleration for
+  > float32 matmuls. This deviates from the original implementation, which uses full FP32
+  > precision for MoE gating, but evaluations show no observable differences on GSM8K,
+  > MMLU-Pro, and tool-calling benchmarks. The same flag applies to the NVFP4 variant.
+
   ### Blackwell (B200 / B300) — NVFP4
 
   Use the `nvidia/MiniMax-M2.5-NVFP4` checkpoint. Required environment variables are
   applied automatically by the command builder.
 
   ```bash
-  VLLM_USE_FLASHINFER_MOE_FP4=1 VLLM_FLOAT32_MATMUL_PRECISION=high \
-  vllm serve nvidia/MiniMax-M2.5-NVFP4 \
+  VLLM_USE_FLASHINFER_MOE_FP4=1 vllm serve nvidia/MiniMax-M2.5-NVFP4 \
     --tensor-parallel-size 4 \
     --enable-expert-parallel \
     --kv-cache-dtype fp8 \
