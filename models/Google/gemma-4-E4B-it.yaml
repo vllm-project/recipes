@@ -1,15 +1,18 @@
 meta:
-  title: "Gemma 4 31B IT"
-  slug: "gemma-4-31b-it"
+  title: "Gemma 4 E4B IT"
+  slug: "gemma-4-e4b-it"
   provider: "Google"
-  description: "Google's unified multimodal Gemma 4 dense model (31B) with native text, image, and audio, plus thinking mode and tool-use protocol."
-  date_updated: 2026-04-17
-  difficulty: intermediate
+  description: "Google's compact Gemma 4 multimodal model (effective 4B) with native text, image, and audio, plus thinking mode and tool-use protocol."
+  date_updated: 2026-04-21
+  difficulty: beginner
   tasks:
     - multimodal
     - text
-  performance_headline: "Unified multimodal model with structured thinking, function calling, dynamic vision resolution"
-  related_recipes: []
+  performance_headline: "Effective-4B unified multimodal model with audio, thinking, and function calling — runs on a single 24 GB+ GPU"
+  related_recipes:
+    - google/gemma-4-E2B-it
+    - google/gemma-4-31B-it
+    - google/gemma-4-26B-A4B-it
   hardware:
     h100: verified
     mi300x: verified
@@ -19,20 +22,20 @@ meta:
     ironwood: verified
 
 model:
-  model_id: "google/gemma-4-31B-it"
+  model_id: "google/gemma-4-E4B-it"
   min_vllm_version: "0.19.1"
   docker_image:
     nvidia: "vllm/vllm-openai:gemma4"
     amd: "vllm/vllm-openai-rocm:gemma4"
   architecture: dense
-  parameter_count: "31B"
-  active_parameters: "31B"
-  context_length: 262144
+  parameter_count: "8B"
+  active_parameters: "8B"
+  context_length: 131072
   base_args: []
   base_env: {}
 
 dependencies:
-  - note: "Audio extras — only needed when serving the audio modality"
+  - note: "Audio extras — needed to serve the audio modality"
     command: 'uv pip install "vllm[audio]"'
     optional: true
 
@@ -51,7 +54,7 @@ features:
       - "--reasoning-parser"
       - "gemma4"
   text_only:
-    description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
+    description: "Skip loading the vision and audio encoders for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
       - "--language-model-only"
 
@@ -61,16 +64,8 @@ opt_in_features:
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 210
-    description: "Full BF16 — single 80 GB NVIDIA GPU or 1x MI300X/MI325X/MI350X/MI355X"
-  nvfp4:
-    model_id: "nvidia/gemma-4-31B-it-NVFP4"
-    precision: nvfp4
-    vram_minimum_gb: 19
-    description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
-    extra_args:
-      - "--kv-cache-dtype"
-      - "fp8"
+    vram_minimum_gb: 20
+    description: "Full BF16 — single 24 GB+ NVIDIA GPU or 1x MI300X/MI325X/MI350X/MI355X"
 
 compatible_strategies:
   - single_node_tp
@@ -85,25 +80,14 @@ strategy_overrides:
 guide: |
   ## Overview
 
-  [Gemma 4](https://ai.google.dev/gemma/docs) is Google's most capable open model family, featuring a unified multimodal architecture that natively processes text, images, and audio. Gemma 4 models support structured thinking/reasoning, function calling with a custom tool-use protocol, and dynamic vision resolution — all available through vLLM's OpenAI-compatible API.
+  [Gemma 4 E4B](https://huggingface.co/google/gemma-4-E4B-it) is Google's effective-4B unified multimodal model — text + images + audio in a single model, with structured thinking/reasoning, function calling, and dynamic vision resolution. It fits on a single 24 GB+ GPU.
 
   ### Key Features
-  - **Multimodal**: Text + images natively (video via custom frame-extraction pipeline). The smaller E2B and E4B models also support audio.
-  - **MoE variant**: 128 fine-grained experts with top-8 routing and custom GELU-activated FFN (Gemma 4 26B-A4B).
+  - **Multimodal**: Text + images + audio natively (video via custom frame-extraction pipeline).
   - **Dual Attention**: Alternating sliding-window (local) and global attention with different head dimensions.
   - **Thinking Mode**: Structured reasoning via `<|channel>thought\n...<channel|>` delimiters.
   - **Function Calling**: Custom tool-call protocol with dedicated special tokens.
   - **Dynamic Vision Resolution**: Per-request configurable vision token budget (70, 140, 280, 560, 1120 tokens).
-
-  ### Supported Variants
-
-  Dense:
-  - `google/gemma-4-E2B-it` (effective 2B)
-  - `google/gemma-4-E4B-it` (effective 4B)
-  - `google/gemma-4-31B-it` (31B)
-
-  MoE:
-  - `google/gemma-4-26B-A4B-it` (26B total / 4B active)
 
   TPU support is provided through [vLLM TPU](https://github.com/vllm-project/tpu-inference) with recipes for [Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4) and [Ironwood](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/inference/ironwood/vLLM/Gemma4/).
 
@@ -134,36 +118,26 @@ guide: |
   docker pull vllm/vllm-openai:gemma4-cu130  # CUDA 13.0
   docker pull vllm/vllm-openai-rocm:gemma4   # AMD
   ```
-  TPU images are published separately by [vllm-project/tpu-inference](https://github.com/vllm-project/tpu-inference); see the Trillium / Ironwood tpu-recipes below for the pinned tag.
 
   ## Deployment Configurations
 
   ### Quick Start (Single GPU)
   ```bash
   vllm serve google/gemma-4-E4B-it \
-    --max-model-len <n_of_tokens>   # up to 131072
+    --max-model-len 32768
   ```
 
-  ### 31B Dense on 2xA100/H100 (TP=2, BF16)
+  ### With Audio Support
   ```bash
-  vllm serve google/gemma-4-31B-it \
-    --tensor-parallel-size 2 \
-    --max-model-len 32768 \
-    --gpu-memory-utilization 0.90
-  ```
-
-  ### 26B MoE on 1xA100/H100 (BF16)
-  ```bash
-  vllm serve google/gemma-4-26B-A4B-it \
-    --max-model-len 32768 \
-    --gpu-memory-utilization 0.90
+  vllm serve google/gemma-4-E4B-it \
+    --max-model-len 8192 \
+    --limit-mm-per-prompt image=4,audio=1
   ```
 
   ### Full-Featured Server Launch
   Enables text, image, audio, thinking, and tool calling:
   ```bash
-  vllm serve google/gemma-4-31B-it \
-    --tensor-parallel-size 2 \
+  vllm serve google/gemma-4-E4B-it \
     --max-model-len 16384 \
     --gpu-memory-utilization 0.90 \
     --enable-auto-tool-choice \
@@ -178,14 +152,12 @@ guide: |
 
   ### Docker (NVIDIA)
   ```bash
-  docker run -itd --name gemma4 \
+  docker run -itd --name gemma4-e4b \
     --ipc=host --network host --shm-size 16G --gpus all \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     vllm/vllm-openai:gemma4 \
-      --model google/gemma-4-31B-it \
-      --tensor-parallel-size 2 \
+      --model google/gemma-4-E4B-it \
       --max-model-len 32768 \
-      --gpu-memory-utilization 0.90 \
       --host 0.0.0.0 --port 8000
   ```
 
@@ -198,7 +170,7 @@ guide: |
     --security-opt=seccomp=unconfined --shm-size 16G \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     vllm/vllm-openai-rocm:gemma4 \
-      --model google/gemma-4-31B-it \
+      --model google/gemma-4-E4B-it \
       --host 0.0.0.0 --port 8000
   ```
 
@@ -209,8 +181,7 @@ guide: |
     --privileged --network host --shm-size 16G \
     -v /dev/shm:/dev/shm -e HF_TOKEN=$HF_TOKEN \
     vllm/vllm-tpu:latest \
-      --model google/gemma-4-31B-it \
-      --tensor-parallel-size 8 \
+      --model google/gemma-4-E4B-it \
       --max-model-len 16384 \
       --disable_chunked_mm_input \
       --host 0.0.0.0 --port 8000
@@ -218,14 +189,17 @@ guide: |
 
   ## Client Usage
 
-  ### Text Generation
+  ### Audio Transcription
   ```python
   from openai import OpenAI
   client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
   response = client.chat.completions.create(
-      model="google/gemma-4-31B-it",
-      messages=[{"role": "user", "content": "Write a poem about the ocean."}],
-      max_tokens=512, temperature=0.7,
+      model="google/gemma-4-E4B-it",
+      messages=[{"role": "user", "content": [
+          {"type": "audio_url", "audio_url": {"url": "https://example.com/audio.wav"}},
+          {"type": "text", "text": "Transcribe this audio."},
+      ]}],
+      max_tokens=512,
   )
   print(response.choices[0].message.content)
   ```
@@ -233,7 +207,7 @@ guide: |
   ### Image Understanding
   ```python
   response = client.chat.completions.create(
-      model="google/gemma-4-31B-it",
+      model="google/gemma-4-E4B-it",
       messages=[{"role": "user", "content": [
           {"type": "image_url", "image_url": {"url": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/1200px-Cat03.jpg"}},
           {"type": "text", "text": "Describe this image in detail."},
@@ -242,65 +216,28 @@ guide: |
   )
   ```
 
-  ### Dynamic Vision Resolution
-  Supported values: 70, 140, 280 (default), 560, 1120 tokens/image.
-  ```bash
-  vllm serve google/gemma-4-31B-it \
-    --mm-processor-kwargs '{"max_soft_tokens": 560}'
-  ```
-
-  ### Audio (E2B / E4B)
-  Requires `uv pip install "vllm[audio]"`.
-  ```bash
-  vllm serve google/gemma-4-E2B-it \
-    --max-model-len 8192 \
-    --limit-mm-per-prompt image=4,audio=1
-  ```
-
   ### Thinking Mode
   ```bash
-  vllm serve google/gemma-4-31B-it \
+  vllm serve google/gemma-4-E4B-it \
     --max-model-len 16384 \
-    --enable-auto-tool-choice \
     --reasoning-parser gemma4 \
     --tool-call-parser gemma4 \
+    --enable-auto-tool-choice \
     --chat-template examples/tool_chat_template_gemma4.jinja
   ```
-  Enable thinking per-request via `extra_body={"chat_template_kwargs": {"enable_thinking": True}}`, or default-on with `--default-chat-template-kwargs '{"enable_thinking": true}'`.
-
-  ### Structured Outputs
-  vLLM guided decoding constrains output to a JSON schema. Include semantic instructions in the system prompt — the model does not see schema descriptions.
+  Enable per-request via `extra_body={"chat_template_kwargs": {"enable_thinking": True}}`.
 
   ## Configuration Tips
 
-  - Set `--max-model-len` to match your workload.
-  - `--gpu-memory-utilization 0.90–0.95` maximizes KV cache.
-  - Image-only workloads: pass `--limit-mm-per-prompt audio=0`.
-  - Text-only workloads: pass `--limit-mm-per-prompt image=0,audio=0` to skip MM profiling.
+  - Set `--max-model-len` to match your workload (max 131072).
+  - Image-only workloads: `--limit-mm-per-prompt audio=0`.
+  - Text-only workloads: `--limit-mm-per-prompt image=0,audio=0` to skip MM profiling.
   - `--async-scheduling` improves throughput.
   - FP8 KV cache (`--kv-cache-dtype fp8`) saves ~50% KV memory.
 
-  ## Throughput vs Latency
-
-  | Goal | TP | `--max-num-seqs` | Notes |
-  |------|----|------------------|-------|
-  | Max throughput | 1-2 | 256-512 | Best tok/s per GPU |
-  | Min latency   | 4-8 | 8-16   | Best TTFT/TPOT |
-  | Balanced      | 2   | 128    | Mixed workloads |
-
-  ## Deploy on Modal
-
-  Modal deployment script: `gemma4-modal.py` in the original recipe directory.
-  ```bash
-  pip install modal
-  modal setup
-  modal deploy gemma4-modal.py
-  modal run gemma4-modal.py
-  ```
-
   ## References
 
-  - [Model card](https://huggingface.co/google/gemma-4-31B-it)
+  - [Model card](https://huggingface.co/google/gemma-4-E4B-it)
   - [Gemma docs](https://ai.google.dev/gemma/docs)
   - [vLLM Gemma 4 tool-call template](https://github.com/vllm-project/vllm/blob/main/examples/tool_chat_template_gemma4.jinja)
   - [TPU recipes: Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4)
