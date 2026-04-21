@@ -6,8 +6,8 @@ meta:
   date_updated: 2026-04-16
   difficulty: intermediate
   tasks:
-    - text
     - multimodal
+    - text
   performance_headline: "Multimodal agentic MoE model with DeepSeek-V3 backbone and MLA attention"
   related_recipes: []
   hardware:

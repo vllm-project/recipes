@@ -6,8 +6,8 @@ meta:
   date_updated: 2026-04-18
   difficulty: beginner
   tasks:
-    - text
     - multimodal
+    - text
   performance_headline: "Compact Qwen3.6 MoE with 3B active parameters — single-GPU FP8 or 2-4 GPU BF16 serving"
   related_recipes:
     - "Qwen/Qwen3.5-397B-A17B"
