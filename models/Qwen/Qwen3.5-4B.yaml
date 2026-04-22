@@ -1,0 +1,125 @@
+meta:
+  title: "Qwen3.5-4B"
+  slug: "qwen3.5-4b"
+  provider: "Qwen"
+  description: "Qwen3.5 compact dense multimodal model (4B) — fits on 16 GB consumer GPUs with full 262K context"
+  date_updated: 2026-04-22
+  difficulty: beginner
+  tasks:
+    - multimodal
+    - text
+  performance_headline: "Consumer-GPU-friendly Qwen3.5 dense with MTP support"
+  related_recipes:
+    - "Qwen/Qwen3.5-9B"
+    - "Qwen/Qwen3.5-2B"
+
+model:
+  model_id: "Qwen/Qwen3.5-4B"
+  min_vllm_version: "0.17.0"
+  architecture: dense
+  parameter_count: "4B"
+  active_parameters: "4B"
+  context_length: 262144
+  base_args:
+    - "--trust-remote-code"
+  base_env: {}
+
+features:
+  tool_calling:
+    description: "Enable automatic tool choice with Qwen3 Coder parser"
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "qwen3_coder"
+  reasoning:
+    description: "Enable chain-of-thought reasoning with Qwen3 parser"
+    args:
+      - "--reasoning-parser"
+      - "qwen3"
+  spec_decoding:
+    description: "Multi-token prediction speculative decoding for lower latency"
+    args:
+      - "--speculative-config"
+      - '{"method":"mtp","num_speculative_tokens":1}'
+  text_only:
+    description: "Skip loading the vision encoder for text-only workloads."
+    args:
+      - "--language-model-only"
+
+opt_in_features:
+  - spec_decoding
+  - text_only
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 10
+    description: "Full precision BF16 — fits on a single 16 GB GPU"
+
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B) is the compact dense
+  entry in the Qwen3.5 family — same gated delta networks architecture, vision
+  encoder, 262K context, and MTP decoding as the larger siblings, sized for
+  16 GB consumer GPUs.
+
+  ## Prerequisites
+
+  - **vLLM version:** >= 0.17.0
+  - **Hardware:** single 16 GB GPU (RTX 4080 / L4 / A10 / T4-24GB)
+
+  ### Install vLLM
+
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install -U vllm --torch-backend=auto
+  ```
+
+  ## Launching the Server
+
+  ```bash
+  vllm serve Qwen/Qwen3.5-4B \
+    --max-model-len 262144 \
+    --reasoning-parser qwen3
+  ```
+
+  ### MTP speculative decoding
+
+  ```bash
+  vllm serve Qwen/Qwen3.5-4B \
+    --speculative-config '{"method": "mtp", "num_speculative_tokens": 1}' \
+    --reasoning-parser qwen3
+  ```
+
+  ## Client Usage
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+  resp = client.chat.completions.create(
+      model="Qwen/Qwen3.5-4B",
+      messages=[{"role": "user", "content": "Hello!"}],
+      max_tokens=128,
+  )
+  print(resp.choices[0].message.content)
+  ```
+
+  ## Troubleshooting
+
+  - **CUDA graph / Mamba cache size error:** reduce `--max-cudagraph-capture-size`.
+  - **Disable reasoning:** add `--default-chat-template-kwargs '{"enable_thinking": false}'`.
+
+  ## References
+
+  - [Model card](https://huggingface.co/Qwen/Qwen3.5-4B)
+  - [Base checkpoint](https://huggingface.co/Qwen/Qwen3.5-4B-Base)

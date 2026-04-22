@@ -15,6 +15,36 @@ function normalizeGeneration(gen) {
 }
 
 /**
+ * Auto-fit TP for single_node_tp: binary — TP=1 when the weights fit on a
+ * single GPU, otherwise fan out to the full node (TP=gpu_count). Skips
+ * intermediate sizes (TP=2/4) intentionally: on a multi-GPU node users
+ * generally want either single-GPU serving (lowest overhead) or full-node
+ * sharding (max throughput); half-node TP leaves GPUs idle without the
+ * latency wins that would justify it.
+ */
+function autoFitTp(vramMinGb, perGpuVram, gpuCount) {
+  if (!vramMinGb || !perGpuVram || perGpuVram <= 0) return gpuCount;
+  return vramMinGb <= perGpuVram ? 1 : gpuCount;
+}
+
+/**
+ * Single-node TP size for a recipe/variant/hardware triple. Exported so
+ * the UI ("using N of M GPUs" hint) uses the same rule as the generated
+ * command. See the precedence note in resolveCommand.
+ */
+export function resolveSingleNodeTp(recipe, variant, hwProfile, strategyName = "single_node_tp") {
+  const gpuCount = typeof hwProfile?.gpu_count === "number" ? hwProfile.gpu_count : 1;
+  if (strategyName !== "single_node_tp") return gpuCount;
+  const declaredTp = recipe?.strategy_overrides?.[strategyName]?.tp;
+  if (typeof declaredTp === "number" && declaredTp > 0) {
+    return Math.min(declaredTp, gpuCount);
+  }
+  const perGpuVram = hwProfile?.vram_gb && gpuCount ? hwProfile.vram_gb / gpuCount : 0;
+  const vramMinGb = variant?.vram_minimum_gb || 0;
+  return autoFitTp(vramMinGb, perGpuVram, gpuCount);
+}
+
+/**
  * Given a recipe and hardware profile, recommend the default strategy.
  *
  * Tensor Parallel is the default for every model — it's the most widely
@@ -127,17 +157,13 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   const gpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 1;
   const totalGpus = gpuCount * Math.max(1, nodeCount);
 
-  // Recipes can declare a TP size lower than the full node via
-  // `strategy_overrides.single_node_tp.tp` (matches PD's per-role `tp:`
-  // convention) so the generated single-node command matches the guide
-  // instead of always fanning out to every GPU on the node. Clamped to
-  // [1, gpu_count]. Only single_node_tp reads this — TEP/DEP require full
-  // TP by topology, and multi-node is explicit scale-out.
-  const declaredTp = recipe.strategy_overrides?.[strategyName]?.tp;
-  const singleNodeTp =
-    strategyName === "single_node_tp" && typeof declaredTp === "number" && declaredTp > 0
-      ? Math.min(declaredTp, gpuCount)
-      : gpuCount;
+  // single_node_tp TP size precedence (see resolveSingleNodeTp):
+  //   1. `strategy_overrides.single_node_tp.tp` (explicit recipe override)
+  //   2. auto-fit from `variant.vram_minimum_gb` / per-GPU VRAM (pow-2).
+  //   3. gpuCount (legacy fan-out when the recipe has no VRAM hint).
+  //
+  // TEP/DEP require full TP by topology; multi-node is explicit scale-out.
+  const singleNodeTp = resolveSingleNodeTp(recipe, variant, hwProfile, strategyName);
 
   const modelId = variant.model_id || recipe.model?.model_id || "unknown";
 
