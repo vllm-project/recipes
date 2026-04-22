@@ -1,0 +1,162 @@
+meta:
+  title: "Qwen3.6-27B"
+  slug: "Qwen3.6-27b"
+  provider: "Qwen"
+  description: "Qwen3.6 dense multimodal model (27B) with gated delta networks hybrid attention, MTP, and 262K context"
+  date_updated: 2026-04-22
+  difficulty: beginner
+  tasks:
+    - multimodal
+    - text
+  performance_headline: "Qwen3.6 flagship dense — single-GPU FP8 or 2x GPU BF16"
+  related_recipes:
+    - "Qwen/Qwen3.6-35B-A3B"
+
+model:
+  model_id: "Qwen/Qwen3.6-27B"
+  min_vllm_version: "0.17.0"
+  architecture: dense
+  parameter_count: "27B"
+  active_parameters: "27B"
+  context_length: 262144
+  base_args:
+    - "--trust-remote-code"
+  base_env: {}
+
+features:
+  tool_calling:
+    description: "Enable automatic tool choice with Qwen3 Coder parser"
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "qwen3_coder"
+  reasoning:
+    description: "Enable chain-of-thought reasoning with Qwen3 parser"
+    args:
+      - "--reasoning-parser"
+      - "qwen3"
+  spec_decoding:
+    description: "Multi-token prediction speculative decoding for lower latency"
+    args:
+      - "--speculative-config"
+      - '{"method":"mtp","num_speculative_tokens":1}'
+  text_only:
+    description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
+    args:
+      - "--language-model-only"
+  encoder_parallel:
+    description: "Run the vision encoder in data-parallel mode — avoids TP comm overhead on the small encoder. Mutually exclusive with text_only."
+    args:
+      - "--mm-encoder-tp-mode"
+      - "data"
+
+opt_in_features:
+  - spec_decoding
+  - text_only
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 65
+    description: "Full precision BF16 — fits on 1x H200 or 2x H100"
+  fp8:
+    model_id: "Qwen/Qwen3.6-27B-FP8"
+    precision: fp8
+    vram_minimum_gb: 33
+    description: "Qwen official FP8 checkpoint — single 40 GB GPU"
+
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  [Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B) is the flagship dense
+  model of the Qwen3.6 family. It uses the same gated delta networks hybrid
+  attention as its MoE siblings, supports vision+text input, and natively serves
+  262K context. MTP (multi-token prediction) is supported out of the box for
+  low-latency decoding.
+
+  ## Prerequisites
+
+  - **vLLM version:** >= 0.17.0
+  - **Hardware (BF16):** 1x H200 or 2x H100
+  - **Hardware (FP8):** single 40 GB GPU (H100/H200/L40S)
+  - **Hardware (Int4):** single 24 GB GPU
+
+  ### Install vLLM
+
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install -U vllm --torch-backend=auto
+  ```
+
+  ## Launching the Server
+
+  ### Single-GPU FP8
+
+  ```bash
+  vllm serve Qwen/Qwen3.6-27B-FP8 \
+    --max-model-len 262144 \
+    --reasoning-parser qwen3
+  ```
+
+  ### BF16 on 2xH100 (TP2)
+
+  ```bash
+  vllm serve Qwen/Qwen3.6-27B \
+    --tensor-parallel-size 2 \
+    --max-model-len 262144 \
+    --reasoning-parser qwen3
+  ```
+
+  ### MTP speculative decoding
+
+  ```bash
+  vllm serve Qwen/Qwen3.6-27B-FP8 \
+    --speculative-config '{"method": "mtp", "num_speculative_tokens": 1}' \
+    --reasoning-parser qwen3
+  ```
+
+  ### Text-only (skip vision encoder)
+
+  ```bash
+  vllm serve Qwen/Qwen3.6-27B-FP8 \
+    --language-model-only \
+    --reasoning-parser qwen3 \
+    --enable-prefix-caching
+  ```
+
+  ## Client Usage
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+  resp = client.chat.completions.create(
+      model="Qwen/Qwen3.6-27B",
+      messages=[{"role": "user", "content": "Write a haiku about gated delta networks."}],
+      max_tokens=256,
+  )
+  print(resp.choices[0].message.content)
+  ```
+
+  ## Troubleshooting
+
+  - **CUDA graph / Mamba cache size error:** reduce `--max-cudagraph-capture-size`
+    (default 512). See [vLLM PR #34571](https://github.com/vllm-project/vllm/pull/34571).
+  - **Disable reasoning:** add `--default-chat-template-kwargs '{"enable_thinking": false}'`.
+  - **Prefix Caching (Mamba):** currently experimental in "align" mode.
+
+  ## References
+
+  - [Model card](https://huggingface.co/Qwen/Qwen3.6-27B)
+  - [FP8 checkpoint](https://huggingface.co/Qwen/Qwen3.6-27B-FP8)
+  - [GPTQ-Int4 checkpoint](https://huggingface.co/Qwen/Qwen3.6-27B-GPTQ-Int4)
+  - [Qwen3.6-397B-A17B recipe](../Qwen3.6-397B-A17B)
