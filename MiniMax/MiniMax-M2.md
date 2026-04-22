@@ -179,6 +179,8 @@ You can use 2x or 4x MI300X/MI325X/MI350X/MI355X GPUs to launch this model with 
 ```bash
 VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
   --tensor-parallel-size 2 \
+  --block-size 32 \
+  --kv-cache-dtype fp8_e4m3 \
   --tool-call-parser minimax_m2 \
   --reasoning-parser minimax_m2 \
   --enable-auto-tool-choice \
@@ -189,14 +191,37 @@ VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
 ```bash
 VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
   --tensor-parallel-size 4 \
+  --block-size 32 \
+  --kv-cache-dtype fp8_e4m3 \
   --tool-call-parser minimax_m2 \
   --reasoning-parser minimax_m2 \
   --enable-auto-tool-choice \
   --trust-remote-code
 ```
 
-> **Note**: The first launch with AITER may take several minutes as AITER JIT-compiles optimized kernels (CK-based FP8 MoE, RMSNorm, activation, etc.). Subsequent launches will use cached kernels.
+- TP8+EP
 
+```bash
+VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
+  --tensor-parallel-size 8 \
+  --enable-expert-parallel \
+  --block-size 32 \
+  --kv-cache-dtype fp8_e4m3 \
+  --tool-call-parser minimax_m2 \
+  --reasoning-parser minimax_m2 \
+  --enable-auto-tool-choice \
+  --trust-remote-code
+```
+
+**Notes (ROCm / AITER):**
+
+- The first launch with AITER may take several minutes while it JIT-compiles optimized kernels (CK-based FP8 MoE, RMSNorm, activation, etc.). Later launches reuse cached kernels.
+- For long prompts, setting `VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4` can improve performance; re-check accuracy on your own evals after enabling it.
+- FP8 KV cache on ROCm: `--kv-cache-dtype fp8_e4m3` is recommended for the commands above.
+
+#### MXFP4 weights (AMD)
+
+For the AMD MXFP4 checkpoint, swap the model id to [`amd/MiniMax-M2.5-MXFP4`](https://huggingface.co/amd/MiniMax-M2.5-MXFP4) and keep the same ROCm flags (AITER, `--block-size 32`, `--kv-cache-dtype fp8_e4m3`, parsers, etc.).
 
 
 

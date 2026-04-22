@@ -35,11 +35,13 @@ export function recommendStrategy(recipe, hwProfile, nodeCount = 1) {
 /**
  * Precision → allowed hardware constraint.
  * NVFP4 is NVIDIA Blackwell-only (sm_100+). FP4 generic is also Blackwell-only
- * in practice. AWQ/GPTQ/INT quants run on most NVIDIA+AMD hardware.
+ * in practice. MXFP4 weights ship for AMD CDNA 4 (MI355X) only.
+ * AWQ/GPTQ/INT quants run on most NVIDIA+AMD hardware.
  */
 const PRECISION_HARDWARE_CONSTRAINTS = {
   nvfp4: { brand: "NVIDIA", generation: "blackwell" },
   fp4: { brand: "NVIDIA", generation: "blackwell" },
+  mxfp4: { brand: "AMD", generation: "cdna4" },
 };
 
 function matchesConstraint(profile, constraint) {
@@ -59,7 +61,10 @@ function matchesConstraint(profile, constraint) {
  */
 export function isPrecisionCompatible(profile, variant) {
   const constraint = PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
-  return matchesConstraint(profile, constraint);
+  if (!matchesConstraint(profile, constraint)) return false;
+  // HuggingFace checkpoints under amd/ are published for ROCm / AITER flows.
+  if (variant?.model_id?.startsWith("amd/") && profile?.brand !== "AMD") return false;
+  return true;
 }
 
 /**
@@ -100,6 +105,9 @@ export function pickDefaultHardware(hwProfiles, variant) {
     if (compatible.some(([id]) => id === "b200")) return "b200";
     if (compatible.some(([id]) => id === "gb200")) return "gb200";
   }
+  if (constraint?.generation === "cdna4") {
+    if (compatible.some(([id]) => id === "mi355x")) return "mi355x";
+  }
 
   if (compatible.some(([id]) => id === "h200")) return "h200";
   // Fallback: NVIDIA-first, then alphabetical
@@ -119,7 +127,7 @@ export function pickDefaultHardware(hwProfiles, variant) {
  * Returns: { command, env, deployType } for single_node/multi_node,
  *          { prefillCommand, decodeCommand, routerConfig, env, deployType } for pd_cluster.
  */
-export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null) {
+export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, advancedEnv = {}) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
@@ -384,6 +392,9 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     const envHo = recipe.hardware_overrides?.[gen]
       || (envIsNvidia ? recipe.hardware_overrides?.nvidia : null);
     if (envHo?.extra_env) Object.assign(env, envHo.extra_env);
+
+    // Advanced env (from UI's Advanced panel) — last so user opt-ins win.
+    if (advancedEnv) Object.assign(env, advancedEnv);
 
     return env;
   }

@@ -81,7 +81,9 @@ hardware_profiles:
 
   mi355x:
     brand: AMD
-    generation: amd
+    # CDNA 4 only (MXFP4 / next-gen quant); first entry stays `amd` so generic
+    # `hardware_overrides.amd` blocks in recipes still match.
+    generation: [amd, cdna4]
     display_name: "MI355X"
     description: "AMD Instinct MI355X 288 GB HBM3e · 8-GPU OAM node (CDNA 4)"
     gpu_count: 8

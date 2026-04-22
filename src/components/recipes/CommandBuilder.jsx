@@ -46,6 +46,21 @@ const ADVANCED_OPTIONS = [
     args: ["--decode-context-parallel-size", "8"],
     gatedBy: (recipe) => recipe?.model?.supports_dcp === true,
   },
+  {
+    id: "kv_cache_fp8",
+    label: "kv-cache-dtype = fp8",
+    description:
+      "Quantize KV cache to FP8 (~50% KV memory). On AMD, vLLM aliases fp8 → fp8_e4m3.",
+    args: ["--kv-cache-dtype", "fp8"],
+  },
+  {
+    id: "rocm_quick_reduce_int4",
+    label: "VLLM_ROCM_QUICK_REDUCE_QUANTIZATION = INT4",
+    description:
+      "AMD-only: enable INT4 quantized all-reduce (vLLM Quick Reduce) to cut TP communication bandwidth.",
+    env: { VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4" },
+    gatedBy: (recipe, _strategy, hwProfile) => hwProfile?.brand === "AMD",
+  },
 ];
 const ADVANCED_BY_ID = Object.fromEntries(ADVANCED_OPTIONS.map((o) => [o.id, o]));
 import { loadPreferences, savePreference } from "@/lib/preferences";
@@ -361,13 +376,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const result = useMemo(
     () => {
       const advArgs = advanced.flatMap((id) => ADVANCED_BY_ID[id]?.args || []);
+      const advEnv = advanced.reduce((acc, id) => Object.assign(acc, ADVANCED_BY_ID[id]?.env || {}), {});
       const pdNodes = activeStrategy === "pd_cluster"
         ? {
             prefill: { nodes: pdPrefillNodes, rank: pdPrefillRank },
             decode:  { nodes: pdDecodeNodes,  rank: pdDecodeRank  },
           }
         : null;
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes);
+      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, advEnv);
     },
     [recipe, variant, activeStrategy, hwId, features, advanced, strategies, taxonomy, nodeCount, pdPrefillNodes, pdDecodeNodes, pdPrefillRank, pdDecodeRank]
   );
@@ -811,7 +827,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           </summary>
           <div className="px-4 pb-4 pt-1 border-t border-border/60">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {ADVANCED_OPTIONS.filter((opt) => !opt.gatedBy || opt.gatedBy(recipe, activeStrategy)).map((opt) => (
+              {ADVANCED_OPTIONS.filter((opt) => !opt.gatedBy || opt.gatedBy(recipe, activeStrategy, hwProfile)).map((opt) => (
                 <label
                   key={opt.id}
                   className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition-colors ${
