@@ -64,7 +64,12 @@ meta:
 model:
   model_id: "deepseek-ai/DeepSeek-V3.2"           # MUST match the filename path
   min_vllm_version: "0.18.0"                      # earliest vLLM release that supports this model
-  docker_image: "vllm/vllm-openai:v0.18.0"        # optional — override the Docker image:tag shown in Install → Docker (defaults to vllm/vllm-openai or vllm/vllm-openai-rocm). Use when the model needs a pinned build before its support lands in :latest.
+  docker_image: "vllm/vllm-openai:v0.18.0"        # optional — override the Docker image:tag shown in Install → Docker. String form pins NVIDIA only (AMD/TPU still use their brand defaults). For per-brand pins, use the object form:
+                                                  #   docker_image:
+                                                  #     nvidia: "vllm/vllm-openai:gemma4"
+                                                  #     amd:    "vllm/vllm-openai-rocm:gemma4"
+                                                  #     tpu:    "vllm/vllm-tpu:gemma4"
+                                                  # Missing keys fall back to `:latest` for that brand (vllm/vllm-openai, vllm/vllm-openai-rocm, vllm/vllm-tpu).
   nightly_required: true                          # optional — set when `min_vllm_version` hasn't shipped yet. Swaps the default pip command to `uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly/cu130` and adds a "nightly" pill to the Install header. Users on CUDA 12.9 are pointed to the /cu129 index via the note.
   # Optional — control the Install block's pip/Docker tabs. Each key accepts
   # either `false` (hide the tab entirely) or an object with { command?, note? }.
@@ -180,6 +185,16 @@ strategy_overrides:
   # pd_cluster:
   #   prefill: { nodes: 1, parallelism: tp }   # TP = gpus_per_node
   #   decode:  { nodes: 1, parallelism: tp }
+  #
+  # Cap TP below the node's gpu_count for small models that fit on fewer GPUs
+  # (Gemma 4 runs on 1 GPU even on an 8-GPU node):
+  # single_node_tp:
+  #   tp: 1                                    # clamped to [1, gpu_count];
+  #                                            # UI shows "using N of M GPUs"
+  #                                            # under the Hardware pill when
+  #                                            # effective TP < gpu_count.
+  #                                            # Only read for single_node_tp —
+  #                                            # TEP/DEP and multi-node ignore.
 
 # Markdown guide. Rendered on the recipe page under the command builder.
 # Covers Overview, Prerequisites, Launch, Benchmarking, Troubleshooting, References.

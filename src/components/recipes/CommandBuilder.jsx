@@ -199,8 +199,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     }
     if (!searchParams.get("features") && prefs.features && typeof prefs.features === "object") {
       const recipeFeatures = Object.keys(recipe.features || {});
-      const optIn = new Set(recipe.opt_in_features || []);
-      const base = new Set(recipeFeatures.filter((f) => !optIn.has(f)));
+      const base = new Set(defaultFeaturesFor(hwId));
       for (const [key, on] of Object.entries(prefs.features)) {
         if (!recipeFeatures.includes(key)) continue;
         if (on) base.add(key);
@@ -257,10 +256,23 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     return Number.isFinite(n) && n >= 0 ? n : 0;
   });
   const [strategyOverride, setStrategyOverride] = useState(searchParams.get("strategy") || "");
+  // Default-on features = (all features) − (recipe.opt_in_features) − (recipe.hardware_opt_in_features[hwId]).
+  // The per-hw override lets a recipe suppress a feature's default on specific
+  // hardware (e.g. GB200's 4-GPU trays make --mm-encoder-tp-mode data unnecessary).
+  const defaultFeaturesFor = useCallback(
+    (hw) => {
+      const optIn = new Set(recipe.opt_in_features || []);
+      for (const f of recipe.hardware_opt_in_features?.[hw] || []) optIn.add(f);
+      return Object.keys(recipe.features || {}).filter((f) => !optIn.has(f));
+    },
+    [recipe]
+  );
+
   const [features, setFeatures] = useState(() => {
     const fp = searchParams.get("features");
     if (fp) return fp.split(",").filter(Boolean);
-    return Object.keys(recipe.features || {}).filter((f) => !(recipe.opt_in_features || []).includes(f));
+    const urlHw = searchParams.get("hardware") || defaultHw;
+    return defaultFeaturesFor(urlHw);
   });
 
   // Advanced tuning flags (defaults off) — toggled independently from features
@@ -281,8 +293,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       const i = list.indexOf(id);
       return i === -1 ? 9999 : i;
     };
+    // `restricted` profiles (e.g. TPU) only appear when the recipe explicitly
+    // lists them in `meta.hardware` — keeps specialty hardware out of the
+    // picker for recipes that haven't been validated on it.
+    const declared = recipe.meta?.hardware || {};
     const groups = {};
     for (const [id, p] of Object.entries(taxonomy.hardware_profiles || {})) {
+      if (p.restricted && !(id in declared)) continue;
       const brand = p.brand || "Other";
       if (!groups[brand]) groups[brand] = [];
       groups[brand].push([id, p]);
@@ -316,6 +333,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // PD now sizes each pool independently, so the "2× model VRAM on one node"
   // concern that used to invalidate pd_cluster on small GPUs no longer applies.
   const activeStrategy = strategyOverride || recommended;
+
+  // Effective TP under single_node_tp: recipes can declare
+  // `strategy_overrides.single_node_tp.tp` to run below full-node TP (e.g.
+  // Gemma 4 fits on one GPU). Used to surface a "using N of M GPUs" hint
+  // under the Hardware row so the user sees why their 8-GPU node shows a
+  // TP=1 command. Matches the resolution in command-synthesis.js.
+  const declaredTp = recipe.strategy_overrides?.[activeStrategy]?.tp;
+  const hwGpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 1;
+  const effectiveTp =
+    activeStrategy === "single_node_tp" && typeof declaredTp === "number" && declaredTp > 0
+      ? Math.min(declaredTp, hwGpuCount)
+      : hwGpuCount;
+  const showGpuUsageHint =
+    nodeCount === 1 && activeStrategy === "single_node_tp" && effectiveTp < hwGpuCount;
 
   const compatibleStrategies = useMemo(() => {
     return (recipe.compatible_strategies || []).filter((s) => {
@@ -385,9 +416,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   };
 
   const selectHardware = (id) => {
+    // Apply per-hw opt-in delta: turn off features the new hw opts out of,
+    // and turn back on features the old hw opted out of that the new hw doesn't.
+    // Features explicitly in recipe.opt_in_features stay off either way.
+    const oldHwOptIn = new Set(recipe.hardware_opt_in_features?.[hwId] || []);
+    const newHwOptIn = new Set(recipe.hardware_opt_in_features?.[id] || []);
+    const baseOptIn = new Set(recipe.opt_in_features || []);
+    const next = features.filter((f) => !newHwOptIn.has(f));
+    for (const f of oldHwOptIn) {
+      if (!newHwOptIn.has(f) && !baseOptIn.has(f) && !next.includes(f)) next.push(f);
+    }
+    setFeatures(next);
     setHwId(id);
     setStrategyOverride("");
-    syncUrl({ hardware: id, strategy: "" });
+    syncUrl({ hardware: id, strategy: "", features: next.length > 0 ? next.join(",") : "" });
     savePreference("hardware", id);
   };
 
@@ -454,7 +496,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const prefs = loadPreferences();
     const fprefs = { ...(prefs.features || {}) };
     const isOn = next.includes(f);
-    const isOptIn = (recipe.opt_in_features || []).includes(f);
+    const hwOptIn = (recipe.hardware_opt_in_features?.[hwId] || []).includes(f);
+    const isOptIn = (recipe.opt_in_features || []).includes(f) || hwOptIn;
     const matchesDefault = isOptIn ? !isOn : isOn;
     if (matchesDefault) delete fprefs[f];
     else fprefs[f] = isOn;
@@ -620,6 +663,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 </PillGroup>
               </div>
             ))}
+            {showGpuUsageHint && (
+              <p className="text-[11px] text-muted-foreground/80 pt-1.5">
+                This recipe runs on {effectiveTp} of {hwGpuCount} GPUs on the selected node — add
+                <code className="font-mono mx-1 px-1 py-0.5 rounded bg-foreground/5 text-[10px]">--tensor-parallel-size N</code>
+                via Advanced to scale up.
+              </p>
+            )}
           </div>
         </ConfigRow>
 
@@ -719,7 +769,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                         : `2 nodes × ${hwProfile.gpu_count || 8} GPUs = ${2 * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
                     }
                   >
-                    <span className="font-semibold">{n === 1 ? "Single node" : "Multi-node (example: 2)"}</span>
+                    <span className="font-semibold">{n === 1 ? "Single-node" : "Multi-node (example: 2)"}</span>
                     {n > 1 && !disabled && (
                       <span className="text-muted-foreground ml-1.5 font-mono">
                         {2 * (hwProfile.gpu_count || 8)}×GPU
@@ -743,7 +793,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   onClick={() => toggleFeature(key)}
                   title={f?.description}
                 >
-                  {key.replace(/_/g, " ")}
+                  {key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                 </Pill>
               ))}
             </PillGroup>
@@ -928,6 +978,9 @@ function InstallBlock({ recipe, hwProfile, result, variant }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState(defaultTab);
   const isAmd = hwProfile?.brand === "AMD";
+  // TPU uses a separate vLLM build (vllm-project/tpu-inference) with no pip
+  // wheel — the pip tab is hidden and the Docker tab swaps to vllm-tpu.
+  const isTpu = hwProfile?.generation === "tpu";
   const minV = recipe.model?.min_vllm_version;
   const modelId = variant?.model_id || recipe.model?.model_id || "MODEL";
 
@@ -962,14 +1015,30 @@ uv pip install -U vllm --torch-backend auto`;
       ? result.command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "")
       : "";
   // Per-recipe Docker image/tag override. Precedence: variant → model → default.
-  // Use full `image:tag`, e.g. `vllm/vllm-openai:glm51` when the model needs a
-  // pinned build before its support lands in :latest.
+  // Two forms accepted:
+  //   docker_image: "vllm/vllm-openai:gemma4"           → applies to NVIDIA only
+  //   docker_image: { nvidia: ..., amd: ..., tpu: ... } → per-brand pin
+  // Use the object form when CUDA / ROCm / TPU need different pinned tags
+  // (e.g. Gemma 4 ships three separate image streams). Missing keys fall back
+  // to the brand's `:latest` image.
   // Default `:latest` is CUDA 12.9-based; CUDA 13+ hosts need the `-cu130` tag.
+  const DEFAULT_IMAGE = {
+    nvidia: "vllm/vllm-openai:latest",
+    amd: "vllm/vllm-openai-rocm:latest",
+    tpu: "vllm/vllm-tpu:latest",
+  };
+  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : "nvidia";
   const dockerOverride = variant?.docker_image || recipe.model?.docker_image;
-  const dockerImage = dockerOverride || (isAmd ? "vllm/vllm-openai-rocm:latest" : "vllm/vllm-openai:latest");
-  const dockerGpuFlags = isAmd
-    ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
-    : "--gpus all";
+  const resolvedPinnedImage =
+    typeof dockerOverride === "string"
+      ? brandKey === "nvidia" ? dockerOverride : null
+      : dockerOverride?.[brandKey] || null;
+  const dockerImage = resolvedPinnedImage || DEFAULT_IMAGE[brandKey];
+  const dockerGpuFlags = isTpu
+    ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
+    : isAmd
+      ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
+      : "--gpus all";
   const envFlags = Object.entries(result?.env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
@@ -978,18 +1047,22 @@ uv pip install -U vllm --torch-backend auto`;
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
   ${dockerImage} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
   const dockerCmd = dockerCfg?.command || defaultDockerCmd;
-  const defaultDockerNote =
-    !dockerOverride && !isAmd
+  const defaultDockerNote = isTpu
+    ? "TPU builds are published by vllm-project/tpu-inference. See the Trillium and Ironwood tpu-recipes for pinned image tags and exact deployment flags."
+    : !resolvedPinnedImage && !isAmd
       ? ":latest ships CUDA 12.9 — on CUDA 13+ hosts, swap to vllm/vllm-openai:latest-cu130."
       : undefined;
   const dockerNote = dockerCfg?.note || defaultDockerNote;
 
+  const dockerLabel = isTpu ? "Docker (TPU)" : isAmd ? "Docker (ROCm)" : "Docker";
   const tabDefs = {
     pip:    { id: "pip",    label: isAmd ? "pip / uv (ROCm)" : "pip / uv", code: pipCmd,    note: pipNote    },
-    docker: { id: "docker", label: isAmd ? "Docker (ROCm)"   : "Docker",   code: dockerCmd, note: dockerNote },
+    docker: { id: "docker", label: dockerLabel,                            code: dockerCmd, note: dockerNote },
   };
+  // TPU has no pip wheel — force-hide the pip tab regardless of recipe overrides.
+  const effectivePipHidden = pipHidden || isTpu;
   const tabs = tabOrder
-    .map((id) => (id === "pip" ? !pipHidden : !dockerHidden) && tabDefs[id])
+    .map((id) => (id === "pip" ? !effectivePipHidden : !dockerHidden) && tabDefs[id])
     .filter(Boolean);
 
   // Guard: if both hidden, render nothing.
@@ -1008,7 +1081,7 @@ uv pip install -U vllm --torch-backend auto`;
         <Package size={12} className="text-[var(--command-fg)]/50 shrink-0" />
         <span className="text-[11px] font-semibold text-[var(--command-fg)]/70 uppercase tracking-widest">Install</span>
         <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
-          vLLM {minV}+ · {isAmd ? "ROCm" : "CUDA"}
+          vLLM {minV}+ · {isTpu ? "TPU" : isAmd ? "ROCm" : "CUDA"}
         </span>
         {nightlyRequired && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">

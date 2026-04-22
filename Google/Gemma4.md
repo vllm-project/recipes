@@ -41,7 +41,6 @@ uv pip install -U vllm --pre \
   --extra-index-url https://wheels.vllm.ai/nightly/cu129 \
   --extra-index-url https://download.pytorch.org/whl/cu129 \
   --index-strategy unsafe-best-match
-uv pip install transformers==5.5.0
 ```
 
 ### pip (AMD ROCm: MI300X, MI325X, MI350X, MI355X)
@@ -53,7 +52,6 @@ uv venv --python 3.12
 source .venv/bin/activate
 uv pip install vllm --pre \
 --extra-index-url https://wheels.vllm.ai/rocm/nightly/rocm721 --upgrade
-uv pip install transformers==5.5.0
 ```
 
 ### Docker

@@ -45,10 +45,16 @@ meta:
 model:
   model_id: "<hf_org>/<hf_repo>"  # MUST match the filename path
   min_vllm_version: "0.11.0"      # string, e.g. "0.12.0"
-  # Optional — pin the Docker image shown in Install → Docker. Default is
-  # vllm/vllm-openai (or vllm/vllm-openai-rocm on AMD). Set to a specific
-  # image:tag when the model needs a build that hasn't landed in :latest
-  # (e.g. "vllm/vllm-openai:glm51", "vllm/vllm-openai:minimax27").
+  # Optional — pin the Docker image shown in Install → Docker. Two forms:
+  #   docker_image: "vllm/vllm-openai:glm51"      # string pins NVIDIA only;
+  #                                               # AMD/TPU still use brand defaults
+  #   docker_image:                               # object pins per-brand
+  #     nvidia: "vllm/vllm-openai:gemma4"
+  #     amd:    "vllm/vllm-openai-rocm:gemma4"
+  #     tpu:    "vllm/vllm-tpu:gemma4"
+  # Missing keys fall back to `:latest` for that brand (vllm/vllm-openai,
+  # vllm/vllm-openai-rocm, vllm/vllm-tpu). Use the object form when CUDA /
+  # ROCm / TPU ship different pinned tags for the same recipe.
   docker_image: ""
   # Optional — set true when `min_vllm_version` hasn't shipped as a stable
   # release yet. Swaps the default pip command to nightly wheels
@@ -125,7 +131,19 @@ hardware_overrides:               # optional per-generation flags
   blackwell: { extra_args: [], extra_env: {} }
   amd:       { extra_args: [], extra_env: {} }
 
-strategy_overrides: {}            # optional per-strategy tweaks
+strategy_overrides:               # optional per-strategy tweaks
+  single_node_tp:
+    tp: 1                         # optional — default TP size for this strategy.
+                                  # Lets a small model run below full-node TP
+                                  # (e.g. Gemma 4 fits on 1 GPU → tp: 1). Omit
+                                  # to default to the node's gpu_count. Clamped
+                                  # to [1, gpu_count]. When effective TP <
+                                  # gpu_count the UI shows a "using N of M GPUs"
+                                  # hint under the Hardware pill. TEP/DEP and
+                                  # multi-node ignore `tp:` (topology requires
+                                  # full pool).
+    extra_args: []
+    extra_env: {}
 
 guide: |                          # markdown, rendered as the Guide accordion
   ## Overview

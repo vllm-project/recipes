@@ -127,6 +127,18 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   const gpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 1;
   const totalGpus = gpuCount * Math.max(1, nodeCount);
 
+  // Recipes can declare a TP size lower than the full node via
+  // `strategy_overrides.single_node_tp.tp` (matches PD's per-role `tp:`
+  // convention) so the generated single-node command matches the guide
+  // instead of always fanning out to every GPU on the node. Clamped to
+  // [1, gpu_count]. Only single_node_tp reads this — TEP/DEP require full
+  // TP by topology, and multi-node is explicit scale-out.
+  const declaredTp = recipe.strategy_overrides?.[strategyName]?.tp;
+  const singleNodeTp =
+    strategyName === "single_node_tp" && typeof declaredTp === "number" && declaredTp > 0
+      ? Math.min(declaredTp, gpuCount)
+      : gpuCount;
+
   const modelId = variant.model_id || recipe.model?.model_id || "unknown";
 
   // Helper to merge args
@@ -267,7 +279,13 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         }
       }
     } else {
-      args.push(parallelFlag, String(gpuCount));
+      // Single-node TP / TEP / DEP. `singleNodeTp` equals `gpuCount` for
+      // everything except single_node_tp with a recipe-declared
+      // `strategy_overrides.single_node_tp.tp`. Always emit the flag — the
+      // command builder's contract is "what you declare is what you see", so
+      // hiding TP=1 because it matches vLLM's default would break the
+      // declarative mapping and leave the user guessing what's active.
+      args.push(parallelFlag, String(singleNodeTp));
     }
 
     // 4. Strategy overrides from recipe

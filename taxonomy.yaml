@@ -88,6 +88,30 @@ hardware_profiles:
     vram_gb: 2304
     multi_node: false
 
+  # ── Google Cloud TPU ──
+  # `restricted: true` hides these from the hardware picker unless the recipe
+  # explicitly lists them in `meta.hardware` — TPU support requires a separate
+  # vLLM build and is only declared on the recipes that have been validated.
+  trillium:
+    brand: Google
+    generation: tpu
+    display_name: "TPU v6e (Trillium)"
+    description: "Google Cloud TPU v6e Trillium · 32 GB HBM/chip · served via vLLM TPU"
+    gpu_count: 8
+    vram_gb: 256
+    multi_node: false
+    restricted: true
+
+  ironwood:
+    brand: Google
+    generation: tpu
+    display_name: "TPU v7 (Ironwood)"
+    description: "Google Cloud TPU v7 Ironwood · 192 GB HBM/chip · served via vLLM TPU"
+    gpu_count: 1
+    vram_gb: 192
+    multi_node: false
+    restricted: true
+
 tasks:
   - id: text
     display_name: "Text"
