@@ -69,3 +69,54 @@ export function getRecipeByHfId(org, repo) {
   const all = getAllRecipes();
   return all.find((r) => r.hf_org === org && r.hf_repo === repo) || null;
 }
+
+/**
+ * If `<org>/<repo>` is the `model_id` of some variant of another recipe,
+ * return the parent recipe + variant key so the route can redirect to
+ * `/<parent.hf_org>/<parent.hf_repo>?variant=<key>`. Otherwise null.
+ *
+ * Skips the `default` variant and any variant whose model_id equals the
+ * parent's own HF id (those are just the base recipe).
+ */
+export function findVariantRedirect(org, repo) {
+  const target = `${org}/${repo}`;
+  for (const r of getAllRecipes()) {
+    if (r.hf_id === target) return null;
+    const variants = r.variants || {};
+    for (const [key, v] of Object.entries(variants)) {
+      if (key === "default") continue;
+      if (v?.model_id && v.model_id === target) {
+        return { parent: r, variantKey: key };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * All `<org>/<repo>` pairs that should route to a recipe page — base
+ * recipes plus the HF ids of each non-default variant. Used by
+ * `generateStaticParams` so variant ids are prerendered and emit the
+ * redirect response instead of 404.
+ */
+export function getAllRoutablePairs() {
+  const pairs = [];
+  const seen = new Set();
+  const push = (org, repo) => {
+    const k = `${org}/${repo}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    pairs.push({ org, repo });
+  };
+  for (const r of getAllRecipes()) {
+    push(r.hf_org, r.hf_repo);
+    for (const [key, v] of Object.entries(r.variants || {})) {
+      if (key === "default") continue;
+      if (!v?.model_id || v.model_id === r.hf_id) continue;
+      const [vo, ...rest] = v.model_id.split("/");
+      if (!vo || rest.length === 0) continue;
+      push(vo, rest.join("/"));
+    }
+  }
+  return pairs;
+}
