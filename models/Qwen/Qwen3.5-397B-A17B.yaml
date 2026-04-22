@@ -77,6 +77,11 @@ variants:
       - "fp8"
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP4: "1"
+  gptq_int4:
+    model_id: "Qwen/Qwen3.5-397B-A17B-GPTQ-Int4"
+    precision: int4
+    vram_minimum_gb: 239
+    description: "GPTQ Int4 checkpoint — halves VRAM vs FP8"
 
 compatible_strategies:
   - single_node_tp
