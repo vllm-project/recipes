@@ -15,26 +15,16 @@ function normalizeGeneration(gen) {
 }
 
 /**
- * Smallest power-of-two ≥ n. vLLM TP sizes must be powers of 2 (attention
- * head divisibility), so we round up after the VRAM-fit divide.
- */
-function nextPow2(n) {
-  if (!Number.isFinite(n) || n <= 1) return 1;
-  let p = 1;
-  while (p < n) p *= 2;
-  return p;
-}
-
-/**
- * Auto-fit TP for single_node_tp: pick the smallest power-of-two TP such
- * that `tp × per_gpu_vram ≥ vram_minimum_gb`, clamped to [1, gpu_count].
- * Returns `gpuCount` when the recipe has no VRAM hint — matches legacy
- * "fan out to every GPU" behavior.
+ * Auto-fit TP for single_node_tp: binary — TP=1 when the weights fit on a
+ * single GPU, otherwise fan out to the full node (TP=gpu_count). Skips
+ * intermediate sizes (TP=2/4) intentionally: on a multi-GPU node users
+ * generally want either single-GPU serving (lowest overhead) or full-node
+ * sharding (max throughput); half-node TP leaves GPUs idle without the
+ * latency wins that would justify it.
  */
 function autoFitTp(vramMinGb, perGpuVram, gpuCount) {
   if (!vramMinGb || !perGpuVram || perGpuVram <= 0) return gpuCount;
-  const needed = Math.ceil(vramMinGb / perGpuVram);
-  return Math.max(1, Math.min(nextPow2(needed), gpuCount));
+  return vramMinGb <= perGpuVram ? 1 : gpuCount;
 }
 
 /**
