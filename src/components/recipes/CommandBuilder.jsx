@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, pickDefaultHardware } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, pickDefaultHardware, resolveSingleNodeTp } from "@/lib/command-synthesis";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 
 // Advanced tuning presets — optional tunable flags the user can opt into.
@@ -334,17 +334,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // concern that used to invalidate pd_cluster on small GPUs no longer applies.
   const activeStrategy = strategyOverride || recommended;
 
-  // Effective TP under single_node_tp: recipes can declare
-  // `strategy_overrides.single_node_tp.tp` to run below full-node TP (e.g.
-  // Gemma 4 fits on one GPU). Used to surface a "using N of M GPUs" hint
-  // under the Hardware row so the user sees why their 8-GPU node shows a
-  // TP=1 command. Matches the resolution in command-synthesis.js.
-  const declaredTp = recipe.strategy_overrides?.[activeStrategy]?.tp;
+  // Effective TP under single_node_tp, via the shared resolver so the hint
+  // is perfectly in sync with the generated command. The resolver accepts
+  // both an explicit `strategy_overrides.single_node_tp.tp` and the
+  // auto-fit from `variant.vram_minimum_gb` vs per-GPU VRAM.
   const hwGpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 1;
-  const effectiveTp =
-    activeStrategy === "single_node_tp" && typeof declaredTp === "number" && declaredTp > 0
-      ? Math.min(declaredTp, hwGpuCount)
-      : hwGpuCount;
+  const effectiveTp = resolveSingleNodeTp(recipe, currentVariant, hwProfile, activeStrategy);
   const showGpuUsageHint =
     nodeCount === 1 && activeStrategy === "single_node_tp" && effectiveTp < hwGpuCount;
 

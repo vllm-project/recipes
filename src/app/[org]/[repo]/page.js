@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { getAllRecipes, getRecipeByHfId } from "@/lib/recipes";
+import { notFound, redirect } from "next/navigation";
+import { getAllRecipes, getAllRoutablePairs, findVariantRedirect, getRecipeByHfId } from "@/lib/recipes";
 import { recipeHref } from "@/lib/recipe-utils";
 import { loadStrategies } from "@/lib/strategies";
 import { loadTaxonomy } from "@/lib/taxonomy";
@@ -14,10 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Cpu, Layers, Pencil, Bug, ExternalLink } from "lucide-react";
 
 export async function generateStaticParams() {
-  return getAllRecipes().map((r) => ({
-    org: r.hf_org,
-    repo: r.hf_repo,
-  }));
+  return getAllRoutablePairs();
 }
 
 export async function generateMetadata({ params }) {
@@ -68,7 +65,11 @@ export async function generateMetadata({ params }) {
 export default async function RecipePage({ params }) {
   const { org, repo } = await params;
   const recipe = getRecipeByHfId(org, repo);
-  if (!recipe) notFound();
+  if (!recipe) {
+    const v = findVariantRedirect(org, repo);
+    if (v) redirect(`/${v.parent.hf_org}/${v.parent.hf_repo}?variant=${encodeURIComponent(v.variantKey)}`);
+    notFound();
+  }
 
   const strategies = loadStrategies();
   const taxonomy = loadTaxonomy();
