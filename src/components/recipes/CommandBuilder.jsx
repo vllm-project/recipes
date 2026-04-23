@@ -406,6 +406,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const showGpuUsageHint =
     nodeCount === 1 && activeStrategy === "single_node_tp" && effectiveTp < hwGpuCount;
 
+  // Single-node VRAM shortfall: weights × 1.2 already exceed the node's total
+  // VRAM, so the command will OOM on launch regardless of KV cache. We still
+  // render the command (user may be experimenting), but surface a banner so
+  // the copy-and-run path doesn't silently fail. Multi-node and pd_cluster
+  // scale VRAM, so they're exempt.
+  const isSingleNode = nodeCount === 1 && typeof activeStrategy === "string" && activeStrategy.startsWith("single_node_");
+  const needGb = currentVariant?.vram_minimum_gb;
+  const availGb = hwProfile.vram_gb;
+  const vramShortfall =
+    isSingleNode && typeof needGb === "number" && typeof availGb === "number" && availGb > 0 && needGb > availGb
+      ? { needGb, availGb, gpuCount: hwGpuCount, hwName: hwProfile.display_name || hwId }
+      : null;
+
   const compatibleStrategies = useMemo(() => {
     return (recipe.compatible_strategies || []).filter((s) => {
       const strat = strategies[s];
@@ -703,6 +716,21 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
         {/* ── Dependencies / extra install ── */}
         {dependencies.length > 0 && <DependenciesBlock deps={dependencies} />}
+
+        {/* ── VRAM shortfall warning (single-node only) ── */}
+        {vramShortfall && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] leading-snug flex items-start gap-2">
+            <span aria-hidden="true" className="text-amber-500 mt-px">⚠</span>
+            <div className="text-foreground/90">
+              <span className="font-semibold text-amber-600 dark:text-amber-400">Insufficient VRAM for single-node: </span>
+              {vramShortfall.hwName} provides {vramShortfall.gpuCount}×
+              {Math.round(vramShortfall.availGb / vramShortfall.gpuCount)}G = {vramShortfall.availGb}GB,
+              but this variant needs at least {vramShortfall.needGb}GB for weights alone
+              (KV cache requires more).{" "}
+              <span className="text-muted-foreground">Switch to a higher-memory GPU or use multi-node TP.</span>
+            </div>
+          </div>
+        )}
 
         {/* ── Command output ── */}
         <div
