@@ -35,12 +35,16 @@ meta:
     - text
   performance_headline: "..."     # optional pithy line for cards
   related_recipes: []             # optional list of "<org>/<repo>" ids
-  # Optional. Only `verified` is meaningful — GPUs you've actually run this
-  # recipe on end-to-end. Everything else is assumed to work silently (no
-  # "untested" warning). Only add an entry when you've truly tested it.
+  # Optional. Tri-state:
+  #   `verified`    — you've run this recipe on this GPU end-to-end (green ✓).
+  #   `unsupported` — not yet runnable here today (compat gap, missing kernel,
+  #                   upstream blocker). Pill disabled in UI with "Not yet
+  #                   supported" tooltip. May flip later — revisit on updates.
+  #   absent        — silent default, assumed to work. Don't mark "untested".
   hardware:
     h200: verified
     mi355x: verified
+    # mi300x: unsupported    # e.g. when a required kernel/feature is missing
 
 model:
   model_id: "<hf_org>/<hf_repo>"  # MUST match the filename path
