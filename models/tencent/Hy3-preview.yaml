@@ -2,12 +2,12 @@ meta:
   title: "Hy3-preview"
   slug: "hy3-preview"
   provider: "Tencent Hunyuan"
-  description: "Tencent Hunyuan Hy3-preview — scaled-up MoE language model (294B total / 21B active) and MTP speculative decoding"
-  date_updated: 2026-04-22
+  description: "Tencent Hunyuan Hy3-preview — scaled-up MoE language model (295B total / 21B active) with a 3.8B MTP layer for speculative decoding, 256K context, and hy_v3 tool/reasoning parsers"
+  date_updated: 2026-04-23
   difficulty: intermediate
   tasks:
     - text
-  performance_headline: "Hunyuan Hy3-preview MoE — 294B/21B on 8xH200 or 8xH20 with MTP"
+  performance_headline: "Hunyuan Hy3-preview MoE — 295B/21B on 8×H200 or 8×H20-3e(141GB) with MTP"
   related_recipes: []
   hardware:
     h200: verified
@@ -21,7 +21,7 @@ model:
     docker:
       note: "Use the dedicated hy3-preview image until changes land in vllm:latest."
   architecture: moe
-  parameter_count: "294B"
+  parameter_count: "295B"
   active_parameters: "21B"
   context_length: 262144
   base_args:
@@ -41,9 +41,9 @@ features:
       - "--reasoning-parser"
       - "hy_v3"
   spec_decoding:
-    description: "Multi-Token Prediction speculative decoding using the model's built-in MTP layers"
+    description: "Multi-Token Prediction speculative decoding using the model's built-in MTP layer"
     args:
-      - "--speculative-config.method"
+      - "--speculative-config"
       - '{"method":"mtp","num_speculative_tokens":1}'
 
 opt_in_features:
@@ -53,7 +53,7 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 708
-    description: "Full precision BF16 on multi-GPU (sparse MoE — multi-GPU recommended)"
+    description: "Full precision BF16 — 8×H200 or 8×H20-3e(141GB) minimum for weights + KV cache"
 
 compatible_strategies:
   - single_node_tp
@@ -70,9 +70,14 @@ strategy_overrides: {}
 guide: |
   # Hy3-preview Usage Guide
 
-  Hy3-preview is a significantly scaled-up language model (295B parameters, 21B active parameters) provided by the Tencent Hunyuan team.
+  Hy3-preview is Tencent Hunyuan's latest open-source Mixture-of-Experts language model:
+  295B total parameters with 21B activated per token, plus a 3.8B MTP layer for
+  speculative decoding. 80 transformer layers, 192 routed experts (top-8) + 1 shared
+  expert, GQA with 64 heads over 8 KV heads, 256K context.
 
-  This guide describes how to run Hy3-preview.
+  A pretrained base checkpoint is published at
+  [tencent/Hy3-preview-Base](https://huggingface.co/tencent/Hy3-preview-Base); this
+  recipe covers the instruct model.
 
   ## Setup
 
@@ -105,7 +110,11 @@ guide: |
 
   ## Model Deployment
 
-  ### Serving Model on 8×H200 or 8×H20-3e(141GB) GPUs
+  To serve Hy3-preview on 8 GPUs, use H20-3e(141GB), H200, or other GPUs with larger
+  memory capacity. Smaller-memory 8-GPU configurations (8×H100 80GB, 8×A100 80GB) do
+  not fit the BF16 weights plus KV cache — use multi-node TP for those.
+
+  ### Serving on 8×H200 or 8×H20-3e(141GB)
 
   Without Multi-Token Prediction (MTP):
 
@@ -118,7 +127,7 @@ guide: |
     --served-model-name hy3-preview
   ```
 
-  With MTP:
+  With MTP (recommended for lower latency):
 
   ```bash
   vllm serve tencent/Hy3-preview \
@@ -131,61 +140,63 @@ guide: |
     --served-model-name hy3-preview
   ```
 
-  ### OpenAI Client Example
+  ## Sampling and Reasoning Modes
 
-  First, install the OpenAI Python client:
+  Tencent's recommended sampling parameters: `temperature=0.9`, `top_p=1.0`.
+
+  Reasoning is controlled via `chat_template_kwargs.reasoning_effort`:
+
+  | Value | Behavior |
+  |:---|:---|
+  | `no_think` (default) | Direct response, no chain-of-thought |
+  | `low` | Light reasoning |
+  | `high` | Deep chain-of-thought for math/coding/complex reasoning |
+
+  When tools are registered, set `interleaved_thinking: true` to allow the model to
+  think between tool calls.
+
+  ### OpenAI Client Example
 
   ```bash
   uv pip install -U openai
   ```
 
-  You can use the OpenAI client as follows to verify thinking mode.
-
   ```python
   from openai import OpenAI
 
-  # Assuming vLLM runs locally with default OpenAI-compatible endpoint:
-  #   http://localhost:8000/v1
-  openai_api_key = "EMPTY"
-  openai_api_base = "http://localhost:8000/v1"
-
-  client = OpenAI(
-      api_key=openai_api_key,
-      base_url=openai_api_base,
-  )
+  client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
   messages = [
       {"role": "system", "content": "You are a helpful assistant."},
       {"role": "user", "content": "Hello."},
   ]
 
-  # Thinking mode is disabled by default (no need to pass chat_template_kwargs).
+  # Direct response (default).
   resp = client.chat.completions.create(
       model="hy3-preview",
       messages=messages,
-      temperature=1,
+      temperature=0.9,
+      top_p=1.0,
       max_tokens=4096,
   )
   print(resp.choices[0].message.content)
 
-  # Thinking mode is enabled only if 'reasoning_effort' and 'interleaved_thinking' are set in 'chat_template_kwargs'.
-  # 'reasoning_effort' supports: 'high', 'low', 'no_think'.
+  # Deep reasoning: set reasoning_effort (and interleaved_thinking if using tools).
   resp_think = client.chat.completions.create(
       model="hy3-preview",
       messages=messages,
-      temperature=1,
+      temperature=0.9,
+      top_p=1.0,
       max_tokens=4096,
       extra_body={
         "chat_template_kwargs": {
             "reasoning_effort": "high",
-            "interleaved_thinking": True
+            "interleaved_thinking": True,
         },
       },
   )
   output_msg = resp_think.choices[0].message
-  # thinking content
-  print(output_msg.reasoning_content)
-  # response content
-  print(output_msg.content)
+  print(output_msg.reasoning_content)  # chain-of-thought
+  print(output_msg.content)             # final answer
   ```
 
   ### cURL Usage
@@ -199,18 +210,18 @@ guide: |
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Hello."}
       ],
-      "temperature": 1,
+      "temperature": 0.9,
+      "top_p": 1.0,
       "max_tokens": 4096
     }'
   ```
 
   ## Benchmarking
 
-  For benchmarking, disable prefix caching by adding `--no-enable-prefix-caching` to the server command.
+  For benchmarking, disable prefix caching by adding `--no-enable-prefix-caching` to
+  the server command.
 
-  ### Benchmark
-
-  The following uses 8×H20-3e(141GB) as an example to demonstrate how to run the benchmark.
+  The following uses 8×H20-3e(141GB) as an example.
 
   ```bash
   vllm bench serve \
@@ -223,7 +234,7 @@ guide: |
     --served-model-name hy3-preview
   ```
 
-  If successful, you will see output similar to the following.
+  Representative output:
 
   ```shell
   ============ Serving Benchmark Result ============
@@ -252,7 +263,9 @@ guide: |
   P99 ITL (ms):                            689.10    
   ==================================================
   ```
-
   ## References
 
+  - [Hugging Face model card](https://huggingface.co/tencent/Hy3-preview)
+  - [Hy3-preview-Base (pretrained)](https://huggingface.co/tencent/Hy3-preview-Base)
+  - [GitHub: Tencent-Hunyuan/Hy3-preview](https://github.com/Tencent-Hunyuan/Hy3-preview)
   - [Tencent Hunyuan](https://hy.tencent.com/research/hy3)
