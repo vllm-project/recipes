@@ -1,0 +1,259 @@
+meta:
+  title: "Hy3-preview"
+  slug: "hy3-preview"
+  provider: "Tencent Hunyuan"
+  description: "Tencent Hunyuan Hy3-preview — scaled-up MoE language model (294B total / 21B active) and MTP speculative decoding"
+  date_updated: 2026-04-22
+  difficulty: intermediate
+  tasks:
+    - text
+  performance_headline: "Hunyuan Hy3-preview MoE — 294B/21B on 8xH200 or 8xH20 with MTP"
+  related_recipes:
+    - "tencent/Hunyuan-A13B-Instruct"
+  hardware:
+    h200: verified
+
+model:
+  model_id: "tencent/Hy3-preview"
+  min_vllm_version: "0.20.1"
+  nightly_required: true
+  docker_image: "vllm/vllm-openai:hy3-preview"
+  install:
+    docker:
+      note: "Use the dedicated hy3-preview image until changes land in vllm:latest."
+  architecture: moe
+  parameter_count: "294B"
+  active_parameters: "21B"
+  context_length: 262144
+  base_args:
+    - "--trust-remote-code"
+  base_env: {}
+
+features:
+  tool_calling:
+    description: "Hunyuan v3 tool call parser with automatic tool choice"
+    args:
+      - "--tool-call-parser"
+      - "hy_v3"
+      - "--enable-auto-tool-choice"
+  reasoning:
+    description: "Hunyuan v3 reasoning parser for thinking-mode chain-of-thought extraction"
+    args:
+      - "--reasoning-parser"
+      - "hy_v3"
+  spec_decoding:
+    description: "Multi-Token Prediction speculative decoding using the model's built-in MTP layers"
+    args:
+      - "--speculative-config.method"
+      - '{"method":"mtp","num_speculative_tokens":1}'
+
+opt_in_features:
+  - spec_decoding
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 708
+    description: "Full precision BF16 on multi-GPU (sparse MoE — multi-GPU recommended)"
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - single_node_dep
+  - multi_node_tp
+  - multi_node_tep
+  - multi_node_dep
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  # Hy3-preview Usage Guide
+
+  Hy3-preview is a significantly scaled-up language model (295B parameters, 21B active parameters) provided by the Tencent Hunyuan team.
+
+  This guide describes how to run Hy3-preview.
+
+  ## Setup
+
+  Choose one of the following setup methods.
+
+  ### Using Docker
+
+  ```bash
+  docker run --gpus all \
+    -p 8000:8000 \
+    --ipc=host \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai:hy3-preview tencent/Hy3-preview \
+      --tensor-parallel-size 8 \
+      --tool-call-parser hy_v3 \
+      --reasoning-parser hy_v3 \
+      --enable-auto-tool-choice \
+      --served-model-name hy3-preview
+  ```
+
+  ### Installing from source
+
+  ```bash
+  uv venv --python 3.12 --seed --managed-python
+  source .venv/bin/activate
+  git clone https://github.com/vllm-project/vllm.git
+  cd vllm
+  uv pip install --editable . --torch-backend=auto
+  ```
+
+  ## Model Deployment
+
+  ### Serving Model on 8×H200 or 8×H20-3e(141GB) GPUs
+
+  Without Multi-Token Prediction (MTP):
+
+  ```bash
+  vllm serve tencent/Hy3-preview \
+    --tensor-parallel-size 8 \
+    --tool-call-parser hy_v3 \
+    --reasoning-parser hy_v3 \
+    --enable-auto-tool-choice \
+    --served-model-name hy3-preview
+  ```
+
+  With MTP:
+
+  ```bash
+  vllm serve tencent/Hy3-preview \
+    --tensor-parallel-size 8 \
+    --speculative-config.method mtp \
+    --speculative-config.num_speculative_tokens 1 \
+    --tool-call-parser hy_v3 \
+    --reasoning-parser hy_v3 \
+    --enable-auto-tool-choice \
+    --served-model-name hy3-preview
+  ```
+
+  ### OpenAI Client Example
+
+  First, install the OpenAI Python client:
+
+  ```bash
+  uv pip install -U openai
+  ```
+
+  You can use the OpenAI client as follows to verify thinking mode.
+
+  ```python
+  from openai import OpenAI
+
+  # Assuming vLLM runs locally with default OpenAI-compatible endpoint:
+  #   http://localhost:8000/v1
+  openai_api_key = "EMPTY"
+  openai_api_base = "http://localhost:8000/v1"
+
+  client = OpenAI(
+      api_key=openai_api_key,
+      base_url=openai_api_base,
+  )
+  messages = [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Hello."},
+  ]
+
+  # Thinking mode is disabled by default (no need to pass chat_template_kwargs).
+  resp = client.chat.completions.create(
+      model="hy3-preview",
+      messages=messages,
+      temperature=1,
+      max_tokens=4096,
+  )
+  print(resp.choices[0].message.content)
+
+  # Thinking mode is enabled only if 'reasoning_effort' and 'interleaved_thinking' are set in 'chat_template_kwargs'.
+  # 'reasoning_effort' supports: 'high', 'low', 'no_think'.
+  resp_think = client.chat.completions.create(
+      model="hy3-preview",
+      messages=messages,
+      temperature=1,
+      max_tokens=4096,
+      extra_body={
+        "chat_template_kwargs": {
+            "reasoning_effort": "high",
+            "interleaved_thinking": True
+        },
+      },
+  )
+  output_msg = resp_think.choices[0].message
+  # thinking content
+  print(output_msg.reasoning_content)
+  # response content
+  print(output_msg.content)
+  ```
+
+  ### cURL Usage
+
+  ```bash
+  curl http://localhost:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "hy3-preview",
+      "messages": [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Hello."}
+      ],
+      "temperature": 1,
+      "max_tokens": 4096
+    }'
+  ```
+
+  ## Benchmarking
+
+  For benchmarking, disable prefix caching by adding `--no-enable-prefix-caching` to the server command.
+
+  ### Benchmark
+
+  The following uses 8×H20-3e(141GB) as an example to demonstrate how to run the benchmark.
+
+  ```bash
+  vllm bench serve \
+    --model tencent/Hy3-preview \
+    --dataset-name random \
+    --random-input-len 8192 \
+    --random-output-len 1024 \
+    --max-concurrency 32 \
+    --num-prompts 160 \
+    --served-model-name hy3-preview
+  ```
+
+  If successful, you will see output similar to the following.
+
+  ```shell
+  ============ Serving Benchmark Result ============
+  Successful requests:                     160       
+  Failed requests:                         0         
+  Maximum request concurrency:             32        
+  Benchmark duration (s):                  280.58    
+  Total input tokens:                      1310720   
+  Total generated tokens:                  163840    
+  Request throughput (req/s):              0.57      
+  Output token throughput (tok/s):         583.93    
+  Peak output token throughput (tok/s):    1024.00   
+  Peak concurrent requests:                36.00     
+  Total token throughput (tok/s):          5255.36   
+  ---------------Time to First Token----------------
+  Mean TTFT (ms):                          4542.41   
+  Median TTFT (ms):                        2762.17   
+  P99 TTFT (ms):                           21062.96  
+  -----Time per Output Token (excl. 1st token)------
+  Mean TPOT (ms):                          50.34     
+  Median TPOT (ms):                        51.77     
+  P99 TPOT (ms):                           54.07     
+  ---------------Inter-token Latency----------------
+  Mean ITL (ms):                           50.34     
+  Median ITL (ms):                         34.32     
+  P99 ITL (ms):                            689.10    
+  ==================================================
+  ```
+
+  ## References
+
+  - [Tencent Hunyuan](https://hunyuan.tencent.com/)
