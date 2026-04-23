@@ -151,6 +151,49 @@ function PopoverButton({ label, code, icon: Icon }) {
   );
 }
 
+// Resolve the Docker image / GPU flags / brand key for the active hardware.
+// Shared by the install block (docker pull line) and the main command blocks
+// (docker run wrapping). Precedence: variant.docker_image → model.docker_image
+// → DEFAULT_IMAGE[brand]. String form is NVIDIA-only; object form maps brand.
+// Default `:latest` is CUDA 12.9-based; CUDA 13+ hosts want the `-cu130` tag.
+function computeDockerMeta(recipe, variant, hwProfile) {
+  const DEFAULT_IMAGE = {
+    nvidia: "vllm/vllm-openai:latest",
+    amd: "vllm/vllm-openai-rocm:latest",
+    tpu: "vllm/vllm-tpu:latest",
+  };
+  const isAmd = hwProfile?.brand === "AMD";
+  const isTpu = hwProfile?.generation === "tpu";
+  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : "nvidia";
+  const override = variant?.docker_image || recipe.model?.docker_image;
+  const pinned =
+    typeof override === "string"
+      ? brandKey === "nvidia" ? override : null
+      : override?.[brandKey] || null;
+  const image = pinned || DEFAULT_IMAGE[brandKey];
+  const gpuFlags = isTpu
+    ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
+    : isAmd
+      ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
+      : "--gpus all";
+  return { image, gpuFlags, brandKey, isAmd, isTpu, pinned };
+}
+
+// Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
+// image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
+// CMD. Env vars become `-e KEY=VAL` inside the container.
+function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
+  const envFlags = Object.entries(env || {})
+    .map(([k, v]) => `-e ${k}=${v}`)
+    .join(" \\\n  ");
+  const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
+  const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
+  return `docker run ${gpuFlags} \\
+  --ipc=host -p ${port}:${port} \\
+  -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
+  ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
+}
+
 export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -280,6 +323,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const ap = searchParams.get("advanced");
     return ap ? ap.split(",").filter(Boolean) : [];
   });
+
+  // Install mode (pip | docker). Drives both the Install block's active tab
+  // and the command rendering below: pip mode shows `vllm serve ...`, docker
+  // mode wraps the same command in `docker run ...`. Default follows the
+  // recipe's `model.install` key order — if `docker` is declared first, it
+  // wins; otherwise pip is the default.
+  const initialInstallMode = useMemo(() => {
+    const install = recipe.model?.install || {};
+    if (install.docker === false) return "pip";
+    if (install.pip === false) return "docker";
+    const keys = Object.keys(install).filter((k) => k === "pip" || k === "docker");
+    return keys[0] === "docker" ? "docker" : "pip";
+  }, [recipe]);
+  const [installMode, setInstallMode] = useState(initialInstallMode);
 
   // ── Derived ──
   const currentVariant = recipe.variants?.[variant] || recipe.variants?.default || {};
@@ -570,15 +627,35 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     );
   }
 
+  const dockerMeta = useMemo(
+    () => computeDockerMeta(recipe, currentVariant, hwProfile),
+    [recipe, currentVariant, hwProfile]
+  );
+
+  // `installMode` carries the user's tab choice; `effectiveInstallMode` folds
+  // in constraints that would hide a tab entirely (pip: recipe opt-out or TPU
+  // hardware; docker: recipe opt-out). This way switching to TPU flips both
+  // the Install tab *and* the rendered command block to docker — they stay
+  // in sync without requiring the user to re-click.
+  const pipEffectivelyHidden =
+    recipe.model?.install?.pip === false || hwProfile?.generation === "tpu";
+  const dockerEffectivelyHidden = recipe.model?.install?.docker === false;
+  const effectiveInstallMode =
+    installMode === "pip" && pipEffectivelyHidden
+      ? "docker"
+      : installMode === "docker" && dockerEffectivelyHidden
+        ? "pip"
+        : installMode;
+
   return (
     <TooltipProvider>
     <div className="space-y-4">
       {/* ── Install ── */}
       <InstallBlock
         recipe={recipe}
-        hwProfile={hwProfile}
-        result={result}
-        variant={currentVariant}
+        dockerMeta={dockerMeta}
+        installMode={effectiveInstallMode}
+        setInstallMode={setInstallMode}
       />
 
       {/* ── Dependencies / extra install ── */}
@@ -597,9 +674,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             benchCmd={benchCmd}
             statusHeader={statusHeader}
             onRankChange={setPdRank}
+            installMode={effectiveInstallMode}
+            dockerMeta={dockerMeta}
           />
         ) : isMultiNode ? (
-          <MultiNodeBlock result={result} verifyCmd={verifyCmd} benchCmd={benchCmd} statusHeader={statusHeader} />
+          <MultiNodeBlock
+            result={result}
+            verifyCmd={verifyCmd}
+            benchCmd={benchCmd}
+            statusHeader={statusHeader}
+            installMode={effectiveInstallMode}
+            dockerMeta={dockerMeta}
+          />
         ) : (
           <SingleCommandBlock
             command={result.command}
@@ -607,6 +693,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             verifyCmd={verifyCmd}
             benchCmd={benchCmd}
             statusHeader={statusHeader}
+            installMode={effectiveInstallMode}
+            dockerMeta={dockerMeta}
           />
         )}
       </div>
@@ -919,13 +1007,23 @@ function envToExports(env) {
     .join("\n");
 }
 
-function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader }) {
-  const envLines = envToExports(env);
-  const fullScript = envLines ? `${envLines}\n\n${command}` : command;
+function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta }) {
+  const isDocker = installMode === "docker";
+  // In docker mode the env vars move inside `-e` flags — no separate exports
+  // block above the command.
+  const displayCommand = isDocker
+    ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+    : command;
+  const envLines = isDocker ? "" : envToExports(env);
+  const fullScript = envLines ? `${envLines}\n\n${displayCommand}` : displayCommand;
   return (
     <div>
       <div className="flex items-center justify-between px-4 pt-3 gap-3">
-        {statusHeader || <span className="text-[11px] text-[var(--command-fg)]/50 font-mono">vllm serve</span>}
+        {statusHeader || (
+          <span className="text-[11px] text-[var(--command-fg)]/50 font-mono">
+            {isDocker ? "docker run" : "vllm serve"}
+          </span>
+        )}
         <div className="flex items-center gap-1.5">
           <CopyButton text={fullScript} />
           <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} />
@@ -938,15 +1036,19 @@ function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader })
         </pre>
       )}
       <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-        {command}
+        {displayCommand}
       </pre>
     </div>
   );
 }
 
-function InstallBlock({ recipe, hwProfile, result, variant }) {
+function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode }) {
   // Collapsible block above the command output showing pip/uv and Docker
   // install one-liners. Hardware-aware — swaps NVIDIA / AMD ROCm variants.
+  // The active tab is controlled by the parent so the main command block
+  // below can swap between `vllm serve` (pip mode) and `docker run` (docker
+  // mode) in lockstep. The Docker tab shows only `docker pull <image>` — the
+  // actual run command lives in the main command block.
   // Per-recipe overrides via `model.install.{pip,docker}`:
   //   false              → hide that tab entirely
   //   { command, note }  → override the generated one-liner and/or show a note
@@ -967,17 +1069,9 @@ function InstallBlock({ recipe, hwProfile, result, variant }) {
     for (const k of ["pip", "docker"]) if (!ordered.includes(k)) ordered.push(k);
     return ordered;
   })();
-  const defaultTab = tabOrder.find((id) =>
-    id === "pip" ? !pipHidden : !dockerHidden
-  ) || "pip";
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState(defaultTab);
-  const isAmd = hwProfile?.brand === "AMD";
-  // TPU uses a separate vLLM build (vllm-project/tpu-inference) with no pip
-  // wheel — the pip tab is hidden and the Docker tab swaps to vllm-tpu.
-  const isTpu = hwProfile?.generation === "tpu";
+  const { isAmd, isTpu, image: dockerImage, pinned: resolvedPinnedImage } = dockerMeta;
   const minV = recipe.model?.min_vllm_version;
-  const modelId = variant?.model_id || recipe.model?.model_id || "MODEL";
 
   // When a recipe's min_vllm_version hasn't shipped yet (cutting-edge models
   // that landed after the last stable release), `model.nightly_required: true`
@@ -1003,44 +1097,11 @@ uv pip install -U vllm --torch-backend auto`;
       ? `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, use https://wheels.vllm.ai/nightly/cu129`
       : undefined);
 
-  // Docker one-liner: only meaningful for single-node. Wraps the generated
-  // vllm serve command as the docker entrypoint's args.
-  const serveBody =
-    result?.deployType === "single_node" && result?.command
-      ? result.command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "")
-      : "";
-  // Per-recipe Docker image/tag override. Precedence: variant → model → default.
-  // Two forms accepted:
-  //   docker_image: "vllm/vllm-openai:gemma4"           → applies to NVIDIA only
-  //   docker_image: { nvidia: ..., amd: ..., tpu: ... } → per-brand pin
-  // Use the object form when CUDA / ROCm / TPU need different pinned tags
-  // (e.g. Gemma 4 ships three separate image streams). Missing keys fall back
-  // to the brand's `:latest` image.
-  // Default `:latest` is CUDA 12.9-based; CUDA 13+ hosts need the `-cu130` tag.
-  const DEFAULT_IMAGE = {
-    nvidia: "vllm/vllm-openai:latest",
-    amd: "vllm/vllm-openai-rocm:latest",
-    tpu: "vllm/vllm-tpu:latest",
-  };
-  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : "nvidia";
-  const dockerOverride = variant?.docker_image || recipe.model?.docker_image;
-  const resolvedPinnedImage =
-    typeof dockerOverride === "string"
-      ? brandKey === "nvidia" ? dockerOverride : null
-      : dockerOverride?.[brandKey] || null;
-  const dockerImage = resolvedPinnedImage || DEFAULT_IMAGE[brandKey];
-  const dockerGpuFlags = isTpu
-    ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
-    : isAmd
-      ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
-      : "--gpus all";
-  const envFlags = Object.entries(result?.env || {})
-    .map(([k, v]) => `-e ${k}=${v}`)
-    .join(" \\\n  ");
-  const defaultDockerCmd = `docker run ${dockerGpuFlags} \\
-  --ipc=host -p 8000:8000 \\
-  -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
-  ${dockerImage} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
+  // Docker install step is just the image pull; the `docker run` that actually
+  // serves the model is rendered in the main command block below. A YAML
+  // override at `model.install.docker.command` still wins for recipes that
+  // need a custom build step.
+  const defaultDockerCmd = `docker pull ${dockerImage}`;
   const dockerCmd = dockerCfg?.command || defaultDockerCmd;
   const defaultDockerNote = isTpu
     ? "TPU builds are published by vllm-project/tpu-inference. See the Trillium and Ironwood tpu-recipes for pinned image tags and exact deployment flags."
@@ -1062,7 +1123,7 @@ uv pip install -U vllm --torch-backend auto`;
 
   // Guard: if both hidden, render nothing.
   if (tabs.length === 0) return null;
-  const active = tabs.find((t) => t.id === tab) || tabs[0];
+  const active = tabs.find((t) => t.id === installMode) || tabs[0];
   const summary = tabs.map((t) => (t.id === "pip" ? "pip" : "Docker")).join(" / ");
   // `tabs` already follows YAML order, so summary reads "Docker / pip" when
   // docker is declared first.
@@ -1098,9 +1159,9 @@ uv pip install -U vllm --torch-backend auto`;
               {tabs.map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => setTab(t.id)}
+                  onClick={() => setInstallMode(t.id)}
                   className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
-                    tab === t.id ? "bg-foreground/10 text-[var(--command-fg)]" : "text-[var(--command-fg)]/50 hover:text-[var(--command-fg)]/80"
+                    installMode === t.id ? "bg-foreground/10 text-[var(--command-fg)]" : "text-[var(--command-fg)]/50 hover:text-[var(--command-fg)]/80"
                   }`}
                 >
                   {t.label}
@@ -1117,10 +1178,9 @@ uv pip install -U vllm --torch-backend auto`;
           <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
             {active.code}
           </pre>
-          {tab === "docker" && result?.deployType !== "single_node" && (
+          {installMode === "docker" && (
             <div className="px-4 pb-3 text-[11px] text-[var(--command-fg)]/45 leading-snug">
-              # Docker template shows single-node args. For multi-node / PD cluster, use the
-              # per-role commands below and wrap each in its own docker run.
+              # The <code className="font-mono">docker run</code> that actually serves the model is shown below — this step just pulls the image.
             </div>
           )}
         </div>
@@ -1159,14 +1219,19 @@ function DependenciesBlock({ deps }) {
   );
 }
 
-function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader }) {
+function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta }) {
   const [tab, setTab] = useState("head");
+  const isDocker = installMode === "docker";
+  const wrap = (cmd) =>
+    isDocker
+      ? buildDockerRun({ command: cmd, env: result.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+      : cmd;
   const tabs = [
-    { id: "head", label: "Head", command: result.headCommand },
-    { id: "worker", label: "Node 1", command: result.workerCommand },
+    { id: "head", label: "Head", command: wrap(result.headCommand) },
+    { id: "worker", label: "Node 1", command: wrap(result.workerCommand) },
   ];
   const active = tabs.find((t) => t.id === tab) || tabs[0];
-  const envLines = envToExports(result.env);
+  const envLines = isDocker ? "" : envToExports(result.env);
   const fullScript = envLines ? `${envLines}\n\n${active.command}` : active.command;
   return (
     <div>
@@ -1213,20 +1278,30 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader }) {
   );
 }
 
-function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChange }) {
+function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChange, installMode, dockerMeta }) {
   // Tabs: Prefill · Decode · Router.
   // Each pool (prefill/decode) now carries its own `nodes`, `parallelism`,
   // `dpSize`, `poolGpus` meta — rendered above the command so the reader
   // knows whether the block is a single engine or a rank-0 template that
   // needs to be duplicated for the rest of the DP ranks.
   const [tab, setTab] = useState("prefill");
+  const isDocker = installMode === "docker";
+  // Prefill/decode are `vllm serve` and get wrapped in `docker run`. The
+  // router is `vllm-router` (separate pip package, different entrypoint) —
+  // it stays as-is with its pip-install hint regardless of install mode.
+  const wrap = (cmd, env) =>
+    isDocker
+      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+      : cmd;
   const tabs = [
-    { id: "prefill", label: "Prefill", command: result.prefill.command, env: result.prefill.env, meta: result.prefill },
-    { id: "decode",  label: "Decode",  command: result.decode.command,  env: result.decode.env,  meta: result.decode },
+    { id: "prefill", label: "Prefill", command: wrap(result.prefill.command, result.prefill.env), env: result.prefill.env, meta: result.prefill },
+    { id: "decode",  label: "Decode",  command: wrap(result.decode.command, result.decode.env),   env: result.decode.env,  meta: result.decode },
     { id: "router",  label: "Router",  command: result.router.command, env: {}, install: result.router.install, isRouter: true },
   ];
   const active = tabs.find((t) => t.id === tab) || tabs[0];
-  const envLines = envToExports(active.env);
+  // Router keeps its export-style env lines; prefill/decode fold env into
+  // `-e` flags when docker mode is active.
+  const envLines = isDocker && !active.isRouter ? "" : envToExports(active.env);
   const fullScript = envLines ? `${envLines}\n\n${active.command}` : active.command;
   return (
     <div>
