@@ -8,8 +8,7 @@ meta:
   tasks:
     - text
   performance_headline: "Hunyuan Hy3-preview MoE — 294B/21B on 8xH200 or 8xH20 with MTP"
-  related_recipes:
-    - "tencent/Hunyuan-A13B-Instruct"
+  related_recipes: []
   hardware:
     h200: verified
 
