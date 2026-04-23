@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, pickDefaultHardware, resolveSingleNodeTp } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, pickDefaultHardware, resolveSingleNodeTp } from "@/lib/command-synthesis";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 
 // Advanced tuning presets — optional tunable flags the user can opt into.
@@ -207,7 +207,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const defaultHw = useMemo(() => {
     const urlVariant = searchParams.get("variant") || "default";
     const v = recipe.variants?.[urlVariant] || recipe.variants?.default || {};
-    return pickDefaultHardware(taxonomy.hardware_profiles, v);
+    return pickDefaultHardware(taxonomy.hardware_profiles, v, recipe);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recipe, taxonomy]);
 
@@ -226,7 +226,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     if (!searchParams.get("hardware") && prefs.hardware) {
       const v = recipe.variants?.[variant] || recipe.variants?.default || {};
       const prefProfile = taxonomy.hardware_profiles?.[prefs.hardware];
-      if (prefProfile?.brand === "NVIDIA" && isPrecisionCompatible(prefProfile, v)) {
+      if (prefProfile?.brand === "NVIDIA" && isPrecisionCompatible(prefProfile, v) && isHardwareSupported(recipe, prefs.hardware)) {
         setHwId(prefs.hardware);
       }
     }
@@ -467,7 +467,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const v = recipe.variants?.[key] || {};
     const currentProfile = taxonomy.hardware_profiles?.[hwId] || {};
     if (!isPrecisionCompatible(currentProfile, v)) {
-      const next = pickDefaultHardware(taxonomy.hardware_profiles, v);
+      const next = pickDefaultHardware(taxonomy.hardware_profiles, v, recipe);
       setHwId(next);
       syncUrl({ hardware: next });
     }
@@ -757,19 +757,23 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   <PillGroup>
                     {profiles.map(([id, p]) => {
                       const precisionOk = isPrecisionCompatible(p, currentVariant);
+                      // Only `verified` carries a label; everything else = silent default.
+                      // `unsupported` = author opt-out for this model; disables the pill.
+                      const status = recipe.meta?.hardware?.[id];
+                      const isUnsupported = status === "unsupported";
                       // Per-role PD now sizes each pool independently, so hardware
                       // only needs to fit 1× model per node (standard precision
                       // check is enough). The old co-located single-node check
                       // (2× model on one node) is no longer the default UX.
-                      const disabled = !precisionOk;
-                      // Only `verified` carries a label; everything else = silent default.
-                      const status = recipe.meta?.hardware?.[id];
+                      const disabled = !precisionOk || isUnsupported;
                       const verifiedNote = status === "verified"
                         ? "\n\nVerified — author has tested this hardware end-to-end"
                         : "";
                       const reason = !precisionOk
                         ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
-                        : `${p.description}${verifiedNote}`;
+                        : isUnsupported
+                          ? `Not yet supported on ${p.display_name} — this model doesn't run here today, may be enabled in a future release`
+                          : `${p.description}${verifiedNote}`;
                       return (
                         <Pill
                           key={id}

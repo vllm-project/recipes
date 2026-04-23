@@ -93,13 +93,22 @@ export function isPrecisionCompatible(profile, variant) {
 }
 
 /**
+ * Recipe-level hardware opt-out: author marked `meta.hardware.<id>: unsupported`
+ * because the model is known not to run on that GPU. Absence = silent default
+ * (assumed to work); `verified` = positively tested (separate signal).
+ */
+export function isHardwareSupported(recipe, hwId) {
+  return recipe?.meta?.hardware?.[hwId] !== "unsupported";
+}
+
+/**
  * List hardware profiles compatible with a variant by precision constraint
  * only. VRAM is NOT a blocking constraint — users can scale out via multi-node
  * TP/DP, so any profile that satisfies the precision requirement is valid.
  */
-export function listCompatibleHardware(hwProfiles, variant) {
+export function listCompatibleHardware(hwProfiles, variant, recipe) {
   return Object.entries(hwProfiles)
-    .filter(([, p]) => isPrecisionCompatible(p, variant))
+    .filter(([id, p]) => isPrecisionCompatible(p, variant) && isHardwareSupported(recipe, id))
     .map(([id]) => id);
 }
 
@@ -121,10 +130,13 @@ export function pdFitsSingleNode(hwProfile, variant) {
  * Given a variant, pick the preferred default hardware:
  * - If variant requires Blackwell (e.g., NVFP4), prefer B200 then GB200
  * - Otherwise H200 is the canonical default
+ * `recipe` is optional; when provided, hardware marked `unsupported` is excluded.
  */
-export function pickDefaultHardware(hwProfiles, variant) {
+export function pickDefaultHardware(hwProfiles, variant, recipe) {
   const constraint = PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
-  const compatible = Object.entries(hwProfiles).filter(([, p]) => matchesConstraint(p, constraint));
+  const compatible = Object.entries(hwProfiles).filter(
+    ([id, p]) => matchesConstraint(p, constraint) && isHardwareSupported(recipe, id)
+  );
 
   if (constraint?.generation === "blackwell") {
     if (compatible.some(([id]) => id === "b200")) return "b200";
