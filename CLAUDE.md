@@ -57,7 +57,7 @@ taxonomy.yaml              ─┘       (SSG, no runtime DB)
 
 Top-level keys, in this order:
 
-- `meta` — title, slug, provider, description, date_updated, difficulty, tasks[], performance_headline, related_recipes[], optional `hardware: { gpu_id: verified }` (GPUs NOT listed are assumed to work silently — only `verified` carries a green ✓ badge; we don't flag "untested" because the common case is "works but nobody bothered to write it down").
+- `meta` — title, slug, provider, description, date_updated, difficulty, tasks[], performance_headline, related_recipes[], optional `hardware: { gpu_id: verified | unsupported }`. Tri-state: `verified` = tested end-to-end (green ✓ badge); `unsupported` = not yet runnable on this hardware today — compat gap / missing kernel / upstream blocker that could lift later (pill rendered but disabled + struck through, tooltip says "Not yet supported"); absent = silent default, assumed to work. Don't use `unsupported` for "untested" — only when you've confirmed it currently fails.
 - `model` — `model_id`, `min_vllm_version`, `architecture` (`dense` or `moe`), `parameter_count`, `active_parameters`, `context_length`, `base_args[]`, `base_env{}`.
 - `dependencies` (optional) — list of `{ command, note?, optional? }`. Rendered as the "extra install" block above `vllm serve`. Use this for DeepGEMM pins, `vllm[audio]`, pinned transformers commits, vllm-omni source installs, etc.
 - `features` — map of `{feature_key: { description, args[] }}`. Naming convention: `tool_calling`, `reasoning`, `spec_decoding` (the unified key for MTP / Eagle3 / ERNIE-MTP — **don't use `mtp`**, it was renamed across all recipes).
