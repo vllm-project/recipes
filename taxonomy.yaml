@@ -41,6 +41,22 @@ hardware_profiles:
     vram_gb: 768
     multi_node: false
 
+  # ── NVIDIA Blackwell (consumer) ──
+  # Consumer/workstation Blackwell parts. `restricted: true` keeps them out of
+  # the default hardware picker — they only appear for recipes that explicitly
+  # opt in via `meta.hardware` (e.g. `rtx5090: verified`), since the vast
+  # majority of recipes target multi-GPU server nodes that won't fit on a
+  # single 32 GB consumer card.
+  rtx5090:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX 5090"
+    description: "NVIDIA GeForce RTX 5090 · 32 GB GDDR7 · single-GPU workstation (consumer Blackwell, GB202, PCIe)"
+    gpu_count: 1
+    vram_gb: 32
+    multi_node: false
+    restricted: true
+
   # ── NVIDIA Blackwell Ultra ──
   b300:
     brand: NVIDIA
