@@ -79,7 +79,7 @@ hardware_overrides:
         docker run -it --device=/dev/kfd --device=/dev/dri --network=host \
           --ipc=host --shm-size=128g --group-add video --cap-add SYS_PTRACE \
           --security-opt seccomp=unconfined -v ~/work:/work -w /work \
-          -e PYTHONPATH=/work/build/vllm rocm/vllm-dev:nightly bash
+          -e PYTHONPATH=/work/vllm rocm/vllm-dev:nightly bash
         git clone -b feature/support_hy_v3 \
           https://github.com/stevenkuang-tencent/vllm.git
         cd vllm && pip uninstall -y vllm
@@ -165,7 +165,7 @@ guide: |
   export VLLM_ROCM_USE_AITER_RMSNORM=1
   export VLLM_ROCM_USE_AITER_LINEAR=1
 
-  vllm serve /path/to/Hy3-preview \
+  vllm serve tencent/Hy3-preview \
     --tensor-parallel-size 8 \
     --tool-call-parser hy_v3 \
     --reasoning-parser hy_v3 \
@@ -177,9 +177,10 @@ guide: |
   MTP (recommended on AMD for lower latency, same flags as the NVIDIA path):
 
   ```bash
-  vllm serve /path/to/Hy3-preview \
+  vllm serve tencent/Hy3-preview \
     --tensor-parallel-size 8 \
-    --speculative-config '{"method":"mtp","num_speculative_tokens":1}' \
+    --speculative-config.method mtp \
+    --speculative-config.num_speculative_tokens 1 \
     --tool-call-parser hy_v3 \
     --reasoning-parser hy_v3 \
     --enable-auto-tool-choice \
