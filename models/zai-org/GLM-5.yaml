@@ -9,6 +9,8 @@ meta:
     - text
   performance_headline: "Frontier-scale MoE with 744B parameters, best-in-class open-source performance on reasoning/coding/agents"
   related_recipes: []
+  hardware:
+    h200: verified
 
 model:
   model_id: "zai-org/GLM-5"
