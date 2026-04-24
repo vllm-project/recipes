@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info } from "lucide-react";
+import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap } from "lucide-react";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, pickDefaultHardware, resolveSingleNodeTp } from "@/lib/command-synthesis";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 
@@ -498,6 +498,31 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commandFingerprint]);
 
+  // Auto-enable spec_decoding when the active strategy is latency-oriented
+  // (TP / TEP). Fires on initial mount (covers the case where TP is the default
+  // recommendation) and on any later strategy change. Respects an explicit
+  // ?features= URL pin on first render so shareable links round-trip.
+  const specAutoMountRef = useRef(true);
+  useEffect(() => {
+    const isInitial = specAutoMountRef.current;
+    specAutoMountRef.current = false;
+    if (isInitial && searchParams.get("features")) return;
+
+    const isLatency =
+      activeStrategy === "single_node_tp" || activeStrategy === "multi_node_tp" ||
+      activeStrategy === "single_node_tep" || activeStrategy === "multi_node_tep";
+    const hasSpec = !!(recipe.features || {}).spec_decoding;
+    if (!isLatency || !hasSpec) return;
+
+    setFeatures((prev) => {
+      if (prev.includes("spec_decoding")) return prev;
+      const next = [...prev, "spec_decoding"];
+      syncUrl({ features: next.join(",") });
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStrategy]);
+
   // ── URL sync ──
   const syncUrl = useCallback(
     (updates) => {
@@ -566,6 +591,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // Persist as global pref so subsequent recipes default to the same
     // strategy when compatible. Empty string clears the preference.
     savePreference("strategy", s || undefined);
+    // Spec-decoding auto-enable for latency strategies is handled by an effect
+    // below so it also fires on initial mount when TP is the default recommendation.
   };
 
   const selectNodes = (n) => {
@@ -953,6 +980,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 {strategies[activeStrategy].description.split("\n")[0]}
               </p>
             )}
+            {strategies[activeStrategy]?.orientation && (
+              <span className="inline-block text-[10px] font-medium mt-1.5 px-1.5 py-0.5 rounded bg-green-500/20 text-green-600 dark:text-green-400">
+                {strategies[activeStrategy].orientation === "latency" ? "Latency oriented" : "Throughput oriented"}
+              </span>
+            )}
           </ConfigRow>
 
           {/* Nodes — two number inputs for PD (one per pool), pills otherwise */}
@@ -1035,7 +1067,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     onClick={() => toggleFeature(key)}
                     title={f?.description}
                   >
+                    {key === "spec_decoding" && (
+                      <Zap size={11} className="inline-block mr-1 -mt-0.5 text-vllm-yellow" fill="currentColor" />
+                    )}
                     {key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                    {key === "spec_decoding" && (
+                      <span className="ml-1.5 text-[11px] text-vllm-yellow font-normal">
+                        (for low latency & small batch size)
+                      </span>
+                    )}
                   </Pill>
                 ))}
               </PillGroup>
