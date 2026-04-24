@@ -5,6 +5,10 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 ## Guides
 
+### Arcee AI <img src="https://cdn-avatars.huggingface.co/v1/production/uploads/6435718aaaef013d1aec3b8b/GZPnGkfMn8Ino6JbkL4fJ.png" alt="Arcee AI" width="16" height="16" style="vertical-align:middle;">
+
+- [Trinity-Large-Thinking](ArceeAI/Trinity-Large-Thinking.md)
+
 ### DeepSeek <img src="https://avatars.githubusercontent.com/u/148330874?s=200&v=4" alt="DeepSeek" width="16" height="16" style="vertical-align:middle;">
 
 - [DeepSeek-OCR](DeepSeek/DeepSeek-OCR.md)
@@ -21,13 +25,14 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 ### GLM <img src="https://raw.githubusercontent.com/zai-org/GLM-4.5/refs/heads/main/resources/logo.svg" alt="GLM" width="16" height="16" style="vertical-align:middle;">
 
+- [GLM-5.1, GLM-5](GLM/GLM5.md)
 - [Glyph](GLM/Glyph.md)
-- [GLM-5](GLM/GLM5.md)
 - [GLM-4.7-Flash, GLM-4.7, GLM-4.6, GLM-4.5, GLM-4.5-Air](GLM/GLM.md)
 - [GLM-4.5V, GLM-4.6V](GLM/GLM-V.md)
 
 ### Google <img src="https://avatars.githubusercontent.com/u/1342004?v=4" alt="Google" width="16" height="16" style="vertical-align:middle;">
 
+- [Gemma 4](Google/Gemma4.md)
 - [TranslateGemma](Google/TranslateGemma.md)
 
 ### inclusionAI <img src="https://avatars.githubusercontent.com/u/199075982?s=200&v=4" alt="inclusionAI" width="16" height="16" style="vertical-align:middle;">
@@ -52,9 +57,13 @@ This repo intends to host community maintained common recipes to run vLLM answer
 - [Llama3.3-70B](Llama/Llama3.3-70B.md)
 - [Llama3.1](Llama/Llama3.1.md)
 
+### Microsoft <img src="https://avatars.githubusercontent.com/u/6154722?s=48&v=4" alt="Microsoft" width="16" height="16" style="vertical-align:middle;">
+
+- [Phi-4](Microsoft/Phi-4.md)
+
 ### MiniMax <img src="https://github.com/MiniMax-AI/MiniMax-01/raw/main/figures/minimax.svg" alt="minmax" width="16" height="16" style="vertical-align:middle;">
 
-- [MiniMax-M2.5, MiniMax-M2.1, MiniMax-M2](MiniMax/MiniMax-M2.md)
+- [MiniMax-M2.7, MiniMax-M2.5, MiniMax-M2.1, MiniMax-M2](MiniMax/MiniMax-M2.md)
 
 ### Xiaomi MiMo <img src="https://avatars.githubusercontent.com/u/208276378?&v=4" alt="Xiaomi MiMo" width="16" height="16" style="vertical-align:middle;">
 
@@ -113,15 +122,25 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 ## Contributing
 
-Please feel free to contribute by adding a new recipe or improving an existing one, just send us a PR!
+New recipes live as structured YAML at `models/<hf_org>/<hf_repo>.yaml` and render on [recipes.vllm.ai](https://recipes.vllm.ai/). **See [CONTRIBUTING.md](CONTRIBUTING.md) for the full schema, VRAM formula, and validation steps.**
 
-While the repo is designed to be directly viewable in GitHub (Markdown files as first citizen), you can build the docs as web pages locally.
+Quick loop:
+
+```bash
+pnpm install
+pnpm dev                              # http://localhost:3000
+node scripts/build-recipes-api.mjs    # validates every YAML + rebuilds the JSON API
+```
+
+### Legacy MkDocs guides
+
+The top-level Markdown directories (`DeepSeek/`, `Qwen/`, etc.) are the historical MkDocs site, kept as a reference during the YAML migration. To preview them:
 
 ```bash
 uv venv
 source .venv/bin/activate
 uv pip install -r requirements.txt
-uv run mkdocs serve
+uv run mkdocs serve --dev-addr 127.0.0.1:8001
 ```
 
 ## License

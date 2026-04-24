@@ -1,0 +1,253 @@
+meta:
+  title: "DeepSeek-V4-Flash"
+  slug: "deepseek-v4-flash"
+  provider: "DeepSeek"
+  description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
+  date_updated: 2026-04-24
+  difficulty: hard
+  tasks:
+    - text
+  performance_headline: "1M efficient long-context attention"
+  related_recipes: []
+  hardware:
+    h200: verified
+    b200: verified
+    gb200: verified
+    b300: verified
+    gb300: verified
+    mi300x: unsupported
+    mi325x: unsupported
+    mi355x: unsupported
+
+model:
+  model_id: "deepseek-ai/DeepSeek-V4-Flash"
+  min_vllm_version: "0.20.1"
+  nightly_required: true
+  docker_image: 
+    cu129: "vllm/vllm-openai:deepseekv4-cu129"
+    cu130: "vllm/vllm-openai:deepseekv4-cu130"
+  architecture: moe
+  parameter_count: "284B"
+  active_parameters: "13B"
+  context_length: 1048576
+  flashinfer_autotune: true
+  base_args:
+    - "--trust-remote-code"
+    - "--kv-cache-dtype"
+    - "fp8"
+    - "--block-size"
+    - "256"
+  base_env:
+    VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+  install:
+    docker:
+      note: ""
+    pip: false
+
+dependencies: []
+
+features:
+  tool_calling:
+    description: "Enable tool calling with DeepSeek V4 chat template support."
+    args:
+      - "--tokenizer-mode"
+      - "deepseek_v4"
+      - "--tool-call-parser"
+      - "deepseek_v4"
+      - "--enable-auto-tool-choice"
+  reasoning:
+    description: "Enable reasoning/thinking mode with the DeepSeek V4 reasoning parser."
+    args:
+      - "--reasoning-parser"
+      - "deepseek_v4"
+  spec_decoding:
+    description: "Multi-Token Prediction speculative decoding with 2 speculative tokens."
+    args:
+      - "--speculative_config"
+      - '{"method":"mtp","num_speculative_tokens":2}'
+
+opt_in_features:
+  - spec_decoding
+
+variants:
+  default:
+    precision: fp8
+    vram_minimum_gb: 170
+    description: "Native FP4+FP8 mixed checkpoint (MoE experts FP4, remaining params FP8)"
+
+compatible_strategies:
+  - single_node_dep
+  - multi_node_dep
+  - pd_cluster
+
+hardware_overrides:
+  blackwell:
+    extra_args:
+      - "--attention_config.use_fp4_indexer_cache=True"
+
+strategy_overrides:
+  single_node_dep:
+    # Force DP=4 on all hardware (fills GB200's 4-GPU tray; on 8-GPU nodes use
+    # half the GPUs per replica). dedupeArgs (last-wins) shadows the default
+    # --data-parallel-size that command-synthesis emits from gpu_count.
+    extra_args:
+      - "--data-parallel-size"
+      - "4"
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_AND_PIECEWISE", "custom_ops":["all"]}'
+  multi_node_dep:
+    extra_args:
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_AND_PIECEWISE", "custom_ops":["all"]}'
+  pd_cluster:
+    env:
+      VLLM_USE_NCCL_SYMM_MEM: "1"
+      NCCL_CUMEM_ENABLE: "1"
+      NCCL_MNNVL_ENABLE: "1"
+      NCCL_NVLS_ENABLE: "1"
+    prefill:
+      nodes: 1               # 1 GB200 node = 4 GPUs
+      parallelism: dep       # DP + expert-parallel pool
+      vllm_args:
+        - "--enforce-eager"
+        - "--max-num-seqs"
+        - "8"
+        - "--max-num-batched-tokens"
+        - "65536"
+        - "--no-disable-hybrid-kv-cache-manager"
+        - "--enable-sleep-mode"
+      env: {}
+    decode:
+      nodes: 1               # 1 GB200 nodes = 4 GPUs
+      parallelism: dep
+      vllm_args:
+        - "--max-num-seqs"
+        - "1536"
+        - "--max-num-batched-tokens"
+        - "1536"
+        - "--max-cudagraph-capture-size"
+        - "1536"
+        - "--compilation-config"
+        - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+        - "--no-disable-hybrid-kv-cache-manager"
+        - "--enable-sleep-mode"
+      env: {}
+
+guide: |
+  ## Overview
+
+  DeepSeek-V4-Flash is a 284B-total / 13B-active MoE model in the V4 preview family.
+  It pairs a **hybrid attention stack** — Compressed Sparse Attention (CSA) + Heavily
+  Compressed Attention (HCA) — with **Manifold-Constrained Hyper-Connections (mHC)** to
+  reach 27% of V3.2's per-token inference FLOPs and 10% of V3.2's KV cache at 1M
+  context. Pre-trained on 32T+ tokens; post-training is a two-stage pipeline (domain-
+  specific expert cultivation + unified consolidation via on-policy distillation).
+
+  Checkpoint is **FP4+FP8 mixed**: MoE expert weights are stored in FP4 while the
+  remaining (attention / norm / router) params stay in FP8.
+
+  ## Reasoning modes
+
+  The chat template exposes three reasoning-effort modes:
+
+  - **Non-think** — fast, intuitive responses.
+  - **Think High** — explicit chain-of-thought for logical analysis and planning.
+  - **Think Max** — maximum reasoning effort; requires `--max-model-len >= 393216`
+    (384K tokens) to avoid truncation.
+
+  Recommended sampling: `temperature = 1.0`, `top_p = 1.0`.
+
+  ## Recommended deployment
+
+  Non-disaggregated serving on any supported hardware: single-node DP + EP with
+  `--data-parallel-size 4`. Fills a GB200 NVL4 tray exactly; uses 4 of 8 GPUs per
+  replica on H200/B200/B300 (leaving headroom for throughput-vs-latency tuning).
+  For disaggregated prefill/decode on GB200, use the PD Cluster tab.
+
+  ### H200 Single-Node PD (Mooncake)
+
+  Single-host disaggregated serving: 4 prefill GPUs + 4 decode GPUs on one 8-GPU H200 node,
+  using MooncakeConnector over RDMA for KV cache transfer.
+
+  **Prefill** (GPUs 0–3, port 8000):
+
+  ```bash
+  docker run --gpus all \
+    --privileged --ipc=host -p 8000:8000 \
+    --network host \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -v /mnt/shared:/mnt/shared \
+    -e TILELANG_CLEANUP_TEMP_FILES=1 \
+    -e VLLM_DISABLE_COMPILE_CACHE=1 \
+    -e VLLM_ENGINE_READY_TIMEOUT_S=3600 \
+    -e VLLM_RPC_TIMEOUT=600000 \
+    -e VLLM_LOG_STATS_INTERVAL=1 \
+    -e VLLM_MOONCAKE_BOOTSTRAP_PORT=8998 \
+    -e CUDA_VISIBLE_DEVICES=0,1,2,3 \
+    vllm/vllm-openai:deepseekv4-cu130 \
+    deepseek-ai/DeepSeek-V4-Flash \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --block-size 256 \
+    --port 8000 \
+    --data-parallel-size 4 \
+    --enable-expert-parallel \
+    --tokenizer-mode deepseek_v4 \
+    --reasoning-parser deepseek_v4 \
+    --max-model-len auto \
+    --max-num-batched-tokens 16384 \
+    --max-num-seqs 8 \
+    --enforce-eager \
+    --no-disable-hybrid-kv-cache-manager \
+    --disable-uvicorn-access-log \
+    --kv-transfer-config '{"kv_connector":"MooncakeConnector","kv_role":"kv_both","kv_load_failure_policy":"fail","kv_buffer_device":"cuda","kv_connector_extra_config":{"enforce_handshake_compat":false,"mooncake_protocol":"rdma"}}'
+  ```
+
+  **Decode** (GPUs 4–7, port 8001):
+
+  ```bash
+  docker run --gpus all \
+    --privileged --ipc=host -p 8001:8001 \
+    --network host \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -v /mnt/shared:/mnt/shared \
+    -e TILELANG_CLEANUP_TEMP_FILES=1 \
+    -e VLLM_DISABLE_COMPILE_CACHE=1 \
+    -e VLLM_ENGINE_READY_TIMEOUT_S=3600 \
+    -e VLLM_RPC_TIMEOUT=600000 \
+    -e VLLM_LOG_STATS_INTERVAL=1 \
+    -e VLLM_MOONCAKE_BOOTSTRAP_PORT=9889 \
+    -e CUDA_VISIBLE_DEVICES=4,5,6,7 \
+    vllm/vllm-openai:deepseekv4-cu130 \
+    deepseek-ai/DeepSeek-V4-Flash \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --block-size 256 \
+    --port 8001 \
+    --data-parallel-size 4 \
+    --enable-expert-parallel \
+    --tokenizer-mode deepseek_v4 \
+    --reasoning-parser deepseek_v4 \
+    --max-model-len auto \
+    --max-num-seqs 512 \
+    --max-num-batched-tokens 512 \
+    --compilation-config '{"mode":0,"cudagraph_mode":"FULL_DECODE_ONLY","max_cudagraph_capture_size":512,"compile_ranges_endpoints":[512]}' \
+    --no-disable-hybrid-kv-cache-manager \
+    --disable-uvicorn-access-log \
+    --kv-transfer-config '{"kv_connector":"MooncakeConnector","kv_role":"kv_both","kv_load_failure_policy":"fail","kv_buffer_device":"cuda","kv_connector_extra_config":{"enforce_handshake_compat":false,"mooncake_protocol":"rdma"}}'
+  ```
+
+  **[Router](https://github.com/vllm-project/router)**:
+
+  ```bash
+  pip install vllm-router
+
+  vllm-router --policy round_robin \
+    --vllm-pd-disaggregation \
+    --prefill http://localhost:8000 \
+    --decode http://localhost:8001 \
+    --host 127.0.0.1 \
+    --port 30000 \
+    --intra-node-data-parallel-size 4 \
+    --kv-connector mooncake
+  ```

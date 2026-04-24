@@ -44,7 +44,6 @@ docker run -itd --name google-translategemma-27b-it \
         Infomaniak-AI/vllm-translategemma-27b-it \
         --served-model-name translategemma-27b-it \
         --gpu-memory-utilization 0.8 \
-        --optimization-level 0 \
         --host 0.0.0.0 \
         --port 8000
 ```

@@ -1,0 +1,162 @@
+meta:
+  title: "Qwen3.5-35B-A3B"
+  slug: "qwen3.5-35b-a3b"
+  provider: "Qwen"
+  description: "Compact Qwen3.5 multimodal MoE (35B total / 3B active) with gated delta networks, 256 experts, and 262K context"
+  date_updated: 2026-04-22
+  difficulty: beginner
+  tasks:
+    - multimodal
+    - text
+  performance_headline: "Compact Qwen3.5 MoE — single-GPU FP8 or 2x GPU BF16 serving"
+  related_recipes:
+    - "Qwen/Qwen3.5-397B-A17B"
+    - "Qwen/Qwen3.5-122B-A10B"
+
+model:
+  model_id: "Qwen/Qwen3.5-35B-A3B"
+  min_vllm_version: "0.17.0"
+  architecture: moe
+  parameter_count: "35B"
+  active_parameters: "3B"
+  context_length: 262144
+  base_args:
+    - "--trust-remote-code"
+  base_env: {}
+
+features:
+  tool_calling:
+    description: "Enable automatic tool choice with Qwen3 Coder parser"
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "qwen3_coder"
+  reasoning:
+    description: "Enable chain-of-thought reasoning with Qwen3 parser"
+    args:
+      - "--reasoning-parser"
+      - "qwen3"
+  spec_decoding:
+    description: "Multi-token prediction speculative decoding for lower latency"
+    args:
+      - "--speculative-config"
+      - '{"method":"mtp","num_speculative_tokens":1}'
+  text_only:
+    description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
+    args:
+      - "--language-model-only"
+  encoder_parallel:
+    description: "Run the vision encoder in data-parallel mode — avoids TP comm overhead on the small encoder. Mutually exclusive with text_only."
+    args:
+      - "--mm-encoder-tp-mode"
+      - "data"
+
+opt_in_features:
+  - spec_decoding
+  - text_only
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 84
+    description: "Full precision BF16 — fits on 1x H200 or 2x H100"
+  fp8:
+    model_id: "Qwen/Qwen3.5-35B-A3B-FP8"
+    precision: fp8
+    vram_minimum_gb: 42
+    description: "Qwen official FP8 checkpoint — single-GPU serving"
+  gptq_int4:
+    model_id: "Qwen/Qwen3.5-35B-A3B-GPTQ-Int4"
+    precision: int4
+    vram_minimum_gb: 21
+    description: "GPTQ Int4 checkpoint — fits on a single 24GB GPU"
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - single_node_dep
+  - multi_node_tp
+  - multi_node_dep
+  - multi_node_tep
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  [Qwen3.5-35B-A3B](https://huggingface.co/Qwen/Qwen3.5-35B-A3B) is the smallest
+  MoE in the Qwen3.5 family, sharing the gated delta networks architecture with
+  35B total parameters and 3B activated per token (256 experts). With FP8 weights
+  it fits on a single 80 GB GPU and supports the full 262K context.
+
+  ## Prerequisites
+
+  - **vLLM version:** >= 0.17.0
+  - **Hardware (BF16):** 1x H200 or 2x H100
+  - **Hardware (FP8):** single H100/H200
+  - **Hardware (Int4):** single 24 GB GPU
+
+  ### Install vLLM
+
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install -U vllm --torch-backend=auto
+  ```
+
+  ## Launching the Server
+
+  ### Single-GPU FP8
+
+  ```bash
+  vllm serve Qwen/Qwen3.5-35B-A3B-FP8 \
+    --max-model-len 262144 \
+    --reasoning-parser qwen3
+  ```
+
+  ### BF16 on 2xH200 (TP2)
+
+  ```bash
+  vllm serve Qwen/Qwen3.5-35B-A3B \
+    --tensor-parallel-size 2 \
+    --max-model-len 262144 \
+    --reasoning-parser qwen3
+  ```
+
+  ### MTP speculative decoding
+
+  ```bash
+  vllm serve Qwen/Qwen3.5-35B-A3B-FP8 \
+    --speculative-config '{"method": "mtp", "num_speculative_tokens": 1}' \
+    --reasoning-parser qwen3
+  ```
+
+  ## Client Usage
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+  resp = client.chat.completions.create(
+      model="Qwen/Qwen3.5-35B-A3B",
+      messages=[{"role": "user", "content": "Explain gated delta networks in one paragraph."}],
+      max_tokens=512,
+  )
+  print(resp.choices[0].message.content)
+  ```
+
+  ## Troubleshooting
+
+  - **CUDA graph / Mamba cache size error:** reduce `--max-cudagraph-capture-size`
+    (default 512). See [vLLM PR #34571](https://github.com/vllm-project/vllm/pull/34571).
+  - **Disable reasoning:** add `--default-chat-template-kwargs '{"enable_thinking": false}'`.
+  - **Prefix Caching (Mamba):** currently experimental in "align" mode.
+
+  ## References
+
+  - [Model card](https://huggingface.co/Qwen/Qwen3.5-35B-A3B)
+  - [FP8 checkpoint](https://huggingface.co/Qwen/Qwen3.5-35B-A3B-FP8)
+  - [GPTQ-Int4 checkpoint](https://huggingface.co/Qwen/Qwen3.5-35B-A3B-GPTQ-Int4)
+  - [Qwen3.5-397B-A17B recipe](../Qwen3.5-397B-A17B)

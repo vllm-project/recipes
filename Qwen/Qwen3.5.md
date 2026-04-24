@@ -1,6 +1,11 @@
-# Qwen3.5 Usage Guide
+# Qwen3.5 & Qwen3.6 Usage Guide
 
-[Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-397B-A17B) is a multimodal mixture-of-experts model featuring a gated delta networks architecture with 397B total parameters and 17B active parameters. This guide covers how to efficiently deploy and serve the model across different hardware configurations and workload profiles using vLLM.
+Qwen3.5 and Qwen3.6 are multimodal mixture-of-experts models featuring a gated delta networks architecture. This guide covers how to efficiently deploy and serve both models using vLLM.
+
+| Model | Total Params | Active Params | HuggingFace |
+|-------|-------------|---------------|-------------|
+| [Qwen3.6](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) | 35B | 3B (256 experts, 8 routed + 1 shared) | [Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) / [FP8](https://huggingface.co/Qwen/Qwen3.6-35B-A3B-FP8) |
+| [Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-397B-A17B) | 397B | 17B | [Qwen3.5-397B-A17B](https://huggingface.co/Qwen/Qwen3.5-397B-A17B) / [FP8](https://huggingface.co/Qwen/Qwen3.5-397B-A17B-FP8) |
 
 ## Installing vLLM
 
@@ -21,6 +26,25 @@ uv pip install -U vllm --torch-backend=auto
 uv venv --python 3.12
 source .venv/bin/activate
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
+```
+
+## Running Qwen3.6
+
+```bash
+vllm serve Qwen/Qwen3.6-35B-A3B \
+  --tensor-parallel-size 8 \
+  --max-model-len 262144 \
+  --reasoning-parser qwen3
+```
+
+With MTP speculative decoding:
+
+```bash
+vllm serve Qwen/Qwen3.6-35B-A3B \
+  --tensor-parallel-size 8 \
+  --max-model-len 262144 \
+  --reasoning-parser qwen3 \
+  --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
 ```
 
 ### Docker 
@@ -58,6 +82,7 @@ docker run --device=/dev/kfd --device=/dev/dri \
 ```
 
 ## Running Qwen3.5
+
 The configurations below have been verified on 8x H200 GPUs and 8x MI300X/MI355X GPUs.
 
 !!! tip
@@ -140,10 +165,11 @@ vllm serve Qwen/Qwen3.5-397B-A17B-FP8 \
 
 ### Configuration Tips
 
+- **Disable Reasoning**: If you want to disable the reasoning mode via command-line parameters (instead of modifying the request body), you can add the following configurations: `--reasoning-parser qwen3` `--default-chat-template-kwargs '{"enable_thinking": false}'`.
 - **Prefix Caching**: Prefix caching for Mamba cache "align" mode is currently experimental. Please report any issues you may observe.
-- **Multi-token Prediction**: MTP-1 reduces per-token latency but degrades text throughput under high concurrency because speculative tokens consume KV cache capacity, reducing effective batch size. Depending on your use case, you may adjust `num_speculative_tokens`: higher values can improve latency further but may have varying acceptance rates and throughput trade-offs.
+- **Multi-token Prediction**: MTP-1 reduces per-token latency but degrades text throughput under high concurrency because speculative tokens consume KV cache capacity, reducing effective batch size. Depending on your use case, you may adjust `num_speculative_tokens`(1-5): higher values can improve latency further but may have varying acceptance rates and throughput trade-offs.
 - **Encoder Data Parallelism**: Specifying `--mm-encoder-tp-mode data` deploys the vision encoder in a data-parallel fashion for better throughput performance. This consumes additional memory and may require adjustment of `--gpu-memory-utilization`.
-- **Media Embedding Size**: You can adjust the maximum media embedding size allowed by modifying the HuggingFace processor config at server startup via passing `--mm-processor-kwargs`. For example: `--mm-processor-kwargs '{"video_kwargs": {"size": {"longest_edge": 234881024, "shortest_edge": 4096}}}'`
+- **Media Embedding Size**: You can adjust the maximum media embedding size allowed by modifying the HuggingFace processor config at server startup via passing `--mm-processor-kwargs`. To enable up to 224K visual context length, set the longest_edge to `469762048` (calculated as `2 * 32 * 32 * 224 * 1024`): `--mm-processor-kwargs '{"videos_kwargs": {"size": {"longest_edge": 469762048, "shortest_edge": 4096}}}'`
 
 You may encounter the following error:
 ```

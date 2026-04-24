@@ -61,9 +61,9 @@ sf.write("output.wav", audio_data, 44100)
 python examples/offline_inference/text_to_audio/text_to_audio.py \
   --model stabilityai/stable-audio-open-1.0 \
   --prompt "The sound of a dog barking" \
-  --audio_length 10.0 \
-  --num_inference_steps 100 \
-  --guidance_scale 7.0 \
+  --audio-length 10.0 \
+  --num-inference-steps 100 \
+  --guidance-scale 7.0 \
   --output dog_barking.wav
 ```
 
@@ -73,20 +73,20 @@ python examples/offline_inference/text_to_audio/text_to_audio.py \
 # Generate a piano melody
 python examples/offline_inference/text_to_audio/text_to_audio.py \
   --prompt "A piano playing a gentle melody" \
-  --audio_length 15.0 \
+  --audio-length 15.0 \
   --output piano_melody.wav
 
 # Generate ambient sounds with negative prompt
 python examples/offline_inference/text_to_audio/text_to_audio.py \
   --prompt "Thunder and rain sounds" \
-  --negative_prompt "Low quality, distorted" \
-  --audio_length 20.0 \
+  --negative-prompt "Low quality, distorted" \
+  --audio-length 20.0 \
   --output thunder_rain.wav
 
 # Generate multiple waveforms
 python examples/offline_inference/text_to_audio/text_to_audio.py \
   --prompt "A bird singing in the forest" \
-  --num_waveforms 3 \
+  --num-waveforms 3 \
   --output bird_singing.wav
 ```
 

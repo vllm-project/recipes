@@ -45,11 +45,11 @@ images = omni.generate(
 python examples/offline_inference/text_to_image/text_to_image.py \
   --model stabilityai/stable-diffusion-3.5-medium \
   --prompt "a cat wearing sunglasses, cyberpunk style" \
-  --negative_prompt "blurry, low quality" \
+  --negative-prompt "blurry, low quality" \
   --height 1024 \
   --width 1024 \
-  --num_inference_steps 28 \
-  --guidance_scale 7.5
+  --num-inference-steps 28 \
+  --guidance-scale 7.5
 ```
 
 
