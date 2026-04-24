@@ -562,10 +562,23 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const selectStrategy = (s) => {
     setStrategyOverride(s);
-    syncUrl({ strategy: s });
     // Persist as global pref so subsequent recipes default to the same
     // strategy when compatible. Empty string clears the preference.
     savePreference("strategy", s || undefined);
+
+    // Picking a TP/TEP (latency-oriented) strategy auto-turns-on spec_decoding
+    // when the recipe offers it — spec decoding is a latency win.
+    const isLatencyStrategy =
+      s === "single_node_tp" || s === "multi_node_tp" ||
+      s === "single_node_tep" || s === "multi_node_tep";
+    const hasSpec = !!(recipe.features || {}).spec_decoding;
+    if (isLatencyStrategy && hasSpec && !features.includes("spec_decoding")) {
+      const next = [...features, "spec_decoding"];
+      setFeatures(next);
+      syncUrl({ strategy: s, features: next.join(",") });
+      return;
+    }
+    syncUrl({ strategy: s });
   };
 
   const selectNodes = (n) => {
