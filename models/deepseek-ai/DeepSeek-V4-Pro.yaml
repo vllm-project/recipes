@@ -103,6 +103,14 @@ hardware_overrides:
       - "--attention_config.use_fp4_indexer_cache=True"
 
 strategy_overrides:
+  single_node_tep:
+    extra_args:
+      - "--compilation-config"
+      - '{"mode": 0, "cudagraph_mode": "FULL_DECODE_ONLY"}'
+  multi_node_tep:
+    extra_args:
+      - "--compilation-config"
+      - '{"mode": 0, "cudagraph_mode": "FULL_DECODE_ONLY"}'
   single_node_dep:
     extra_args:
       - "--compilation-config"
