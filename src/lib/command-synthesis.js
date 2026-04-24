@@ -113,6 +113,19 @@ export function listCompatibleHardware(hwProfiles, variant, recipe) {
 }
 
 /**
+ * Single-node fit check: strategies bound to one node (TP, TEP, DEP) shard
+ * weights across that node's GPUs and can't scale VRAM further. Returns false
+ * when the variant's declared `vram_minimum_gb` exceeds the node's `vram_gb`.
+ * Missing size info → treat as fit (don't block on incomplete metadata).
+ */
+export function fitsSingleNode(hwProfile, variant) {
+  const nodeVram = typeof hwProfile?.vram_gb === "number" ? hwProfile.vram_gb : 0;
+  const modelVram = variant?.vram_minimum_gb || 0;
+  if (modelVram <= 0 || nodeVram <= 0) return true;
+  return modelVram <= nodeVram;
+}
+
+/**
  * Single-node PD splits the node 50/50 between prefill and decode. Each half
  * holds a full model across its TP group, so the node must fit 2× the model's
  * VRAM. Also requires at least 2 GPUs to split.
@@ -473,6 +486,16 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     return out;
   }
 
+  // Wrap values containing shell-special chars in single quotes so the rendered
+  // command is paste-safe. Without this, JSON values like
+  // `{"cudagraph_mode":"FULL_AND_PIECEWISE"}` trigger brace expansion and get
+  // their double quotes stripped by bash.
+  function shellQuote(s) {
+    if (typeof s !== "string" || s.length === 0) return s;
+    if (/^[A-Za-z0-9_./=:@,+%-]+$/.test(s)) return s;
+    return `'${s.replace(/'/g, "'\\''")}'`;
+  }
+
   function formatCommand(args) {
     const filtered = dedupeArgs(args.filter(Boolean));
     if (filtered.length === 0) return `vllm serve ${modelId}`;
@@ -484,7 +507,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       const cur = filtered[i];
       const next = filtered[i + 1];
       if (cur.startsWith("-") && next !== undefined && !next.startsWith("-")) {
-        lines.push(`${cur} ${next}`);
+        lines.push(`${cur} ${shellQuote(next)}`);
         i++;
       } else {
         lines.push(cur);
