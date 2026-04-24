@@ -295,19 +295,28 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         // pure noise). Internal math still uses 1 as the effective value.
         const tpExplicit = soRoleCfg.tp ?? roleCfg.tp;
         const roleTp = tpExplicit ?? 1;
-        const dpLocal = Math.max(1, Math.floor(gpuCount / roleTp));
+        // Co-located half-node (nodes: 0): each role sees only half the
+        // node's GPUs via CUDA_VISIBLE_DEVICES, so size DP from poolGpus
+        // rather than the full node's gpuCount.
+        const effectiveLocalGpus = rolePoolNodes === 0 ? poolGpus : gpuCount;
+        const dpLocal = Math.max(1, Math.floor(effectiveLocalGpus / roleTp));
         const dpSize = nodesInPool * dpLocal;
         const nodeIdx = Math.max(0, Math.min(nodesInPool - 1, pdRole.rank ?? 0));
         if (tpExplicit !== undefined) {
           args.push("--tensor-parallel-size", String(roleTp));
         }
         args.push("--data-parallel-size", String(dpSize));
-        args.push("--data-parallel-size-local", String(dpLocal));
-        // Always emit start-rank (even 0 for node 0) so every node's command
-        // has the same shape; only the value differs per node.
-        args.push("--data-parallel-start-rank", String(nodeIdx * dpLocal));
-        args.push("--data-parallel-address", `$${roleKey.toUpperCase()}_DP_LEADER_IP`);
-        args.push("--data-parallel-rpc-port", `$${roleKey.toUpperCase()}_DP_RPC_PORT`);
+        // Co-located single-host: all ranks are local — vLLM infers
+        // dp_local / start_rank / address automatically. Only emit the
+        // per-node coordination flags for dedicated multi-node pools.
+        if (rolePoolNodes > 0) {
+          args.push("--data-parallel-size-local", String(dpLocal));
+          // Always emit start-rank (even 0 for node 0) so every node's command
+          // has the same shape; only the value differs per node.
+          args.push("--data-parallel-start-rank", String(nodeIdx * dpLocal));
+          args.push("--data-parallel-address", `$${roleKey.toUpperCase()}_DP_LEADER_IP`);
+          args.push("--data-parallel-rpc-port", `$${roleKey.toUpperCase()}_DP_RPC_PORT`);
+        }
         // Multi-node DEP needs hybrid load balancing — without this flag the
         // router distributes requests round-robin across DP ranks, which
         // defeats local batching inside each node.
@@ -436,6 +445,12 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       || (envIsNvidia ? recipe.hardware_overrides?.nvidia : null);
     if (envHo?.extra_env) Object.assign(env, envHo.extra_env);
 
+    // Null suppression: recipe sets env key to null to remove strategy defaults
+    // (e.g. suppress NIXL env vars when using Mooncake connector instead).
+    for (const k of Object.keys(env)) {
+      if (env[k] == null) delete env[k];
+    }
+
     return env;
   }
 
@@ -543,7 +558,8 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       const tp = parallelism === "dep"
         ? (soRoleCfg.tp || roleCfg.tp || 1)
         : poolGpus;
-      const dpLocal = parallelism === "dep" ? Math.max(1, Math.floor(gpuCount / tp)) : 0;
+      const effectiveLocalGpus = nodes === 0 ? poolGpus : gpuCount;
+      const dpLocal = parallelism === "dep" ? Math.max(1, Math.floor(effectiveLocalGpus / tp)) : 0;
       const dpSize = parallelism === "dep" ? Math.max(1, nodes) * dpLocal : 1;
       // `currentNode` = which node of the DEP pool this command is for
       // (0..nodes-1). Stored in pdRole.rank for backward-compat with the
@@ -571,6 +587,26 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     // intra-node-data-parallel-size = max dp_local across the two pools for
     // DEP setups; 1 for pure-TP PD.
     const intraDp = Math.max(pMeta.dpLocal || 0, dMeta.dpLocal || 0, 1);
+    // Detect non-default KV connector from recipe's PD override so the
+    // router command includes `--kv-connector <name>` when needed.
+    let kvConnectorFlag = "";
+    const soForPd = recipe.strategy_overrides?.[strategyName] || {};
+    for (const role of ["prefill", "decode"]) {
+      const roleArgs = soForPd[role]?.vllm_args || [];
+      for (let i = 0; i < roleArgs.length; i++) {
+        if (roleArgs[i] === "--kv-transfer-config" && roleArgs[i + 1]) {
+          try {
+            const cfg = JSON.parse(roleArgs[i + 1]);
+            if (cfg.kv_connector && cfg.kv_connector !== "NixlConnector") {
+              kvConnectorFlag = cfg.kv_connector.replace("Connector", "").toLowerCase();
+            }
+          } catch { /* malformed JSON — skip */ }
+          break;
+        }
+      }
+      if (kvConnectorFlag) break;
+    }
+
     const routerLines = [
       `vllm-router --policy ${policy} \\`,
       `    --vllm-pd-disaggregation \\`,
@@ -580,6 +616,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       `    --port 30000 \\`,
       `    --intra-node-data-parallel-size ${intraDp}`,
     ];
+    if (kvConnectorFlag) {
+      routerLines[routerLines.length - 1] += " \\";
+      routerLines.push(`    --kv-connector ${kvConnectorFlag}`);
+    }
     const routerCommand = routerLines.join("\n");
 
     return {

@@ -218,7 +218,7 @@ function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
   const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
   const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
   return `docker run ${gpuFlags} \\
-  --ipc=host -p ${port}:${port} \\
+  --privileged --ipc=host -p ${port}:${port} \\
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
   ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
 }
@@ -1526,7 +1526,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
       {!active.isRouter && active.meta && (
         <div className="px-4 pt-3 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug">
           # {active.meta.nodes === 0
-            ? `Co-located half-node · ${active.meta.poolGpus} GPU · ${active.meta.parallelism.toUpperCase()}`
+            ? `Single node PD · ${active.meta.poolGpus} GPU · ${active.meta.parallelism.toUpperCase()}`
             : `${active.meta.nodes} node${active.meta.nodes === 1 ? "" : "s"} × ${(active.meta.poolGpus / Math.max(1, active.meta.nodes))} GPU = ${active.meta.poolGpus} GPU · ${active.meta.parallelism.toUpperCase()}`}
           {active.meta.parallelism === "dep" && active.meta.nodes > 1 && (
             <> {" · DP="}{active.meta.dpSize}{" (dp_local="}{active.meta.dpLocal}{", one vllm serve per node)"}</>
