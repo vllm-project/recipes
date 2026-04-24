@@ -498,6 +498,31 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commandFingerprint]);
 
+  // Auto-enable spec_decoding when the active strategy is latency-oriented
+  // (TP / TEP). Fires on initial mount (covers the case where TP is the default
+  // recommendation) and on any later strategy change. Respects an explicit
+  // ?features= URL pin on first render so shareable links round-trip.
+  const specAutoMountRef = useRef(true);
+  useEffect(() => {
+    const isInitial = specAutoMountRef.current;
+    specAutoMountRef.current = false;
+    if (isInitial && searchParams.get("features")) return;
+
+    const isLatency =
+      activeStrategy === "single_node_tp" || activeStrategy === "multi_node_tp" ||
+      activeStrategy === "single_node_tep" || activeStrategy === "multi_node_tep";
+    const hasSpec = !!(recipe.features || {}).spec_decoding;
+    if (!isLatency || !hasSpec) return;
+
+    setFeatures((prev) => {
+      if (prev.includes("spec_decoding")) return prev;
+      const next = [...prev, "spec_decoding"];
+      syncUrl({ features: next.join(",") });
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStrategy]);
+
   // ── URL sync ──
   const syncUrl = useCallback(
     (updates) => {
@@ -562,23 +587,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const selectStrategy = (s) => {
     setStrategyOverride(s);
+    syncUrl({ strategy: s });
     // Persist as global pref so subsequent recipes default to the same
     // strategy when compatible. Empty string clears the preference.
     savePreference("strategy", s || undefined);
-
-    // Picking a TP/TEP (latency-oriented) strategy auto-turns-on spec_decoding
-    // when the recipe offers it — spec decoding is a latency win.
-    const isLatencyStrategy =
-      s === "single_node_tp" || s === "multi_node_tp" ||
-      s === "single_node_tep" || s === "multi_node_tep";
-    const hasSpec = !!(recipe.features || {}).spec_decoding;
-    if (isLatencyStrategy && hasSpec && !features.includes("spec_decoding")) {
-      const next = [...features, "spec_decoding"];
-      setFeatures(next);
-      syncUrl({ strategy: s, features: next.join(",") });
-      return;
-    }
-    syncUrl({ strategy: s });
+    // Spec-decoding auto-enable for latency strategies is handled by an effect
+    // below so it also fires on initial mount when TP is the default recommendation.
   };
 
   const selectNodes = (n) => {
