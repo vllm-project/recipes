@@ -172,6 +172,49 @@ guide: |
 
   Recommended sampling: `temperature = 1.0`, `top_p = 1.0`.
 
+  ### OpenAI Client Example
+
+  For DeepSeek-V4, keep reasoning controls in `chat_template_kwargs`, as it exposes a
+  custom **Think Max** mode via `"reasoning_effort": "max"`.
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+  model = "deepseek-ai/DeepSeek-V4-Pro"
+  messages = [{"role": "user", "content": "What is 17*19? Return only the final integer."}]
+
+  # Non-think
+  resp = client.chat.completions.create(
+      model=model,
+      messages=messages,
+  )
+
+  # Think High
+  resp = client.chat.completions.create(
+      model=model,
+      messages=messages,
+      extra_body={
+          "chat_template_kwargs": {
+              "thinking": True,
+              "reasoning_effort": "high",
+          },
+      },
+  )
+
+  # Think Max
+  resp = client.chat.completions.create(
+      model=model,
+      messages=messages,
+      extra_body={
+          "chat_template_kwargs": {
+              "thinking": True,
+              "reasoning_effort": "max",
+          },
+      },
+  )
+  ```
+
   ## Recommended deployments
 
   - **B300 (8× GPU)**: single-node DP + EP with `--data-parallel-size 8`.
@@ -181,5 +224,3 @@ guide: |
   - **GB200 NVL4 (4× GPU per tray)**: the ~960 GB mixed-precision checkpoint does not
     fit on one tray; run multi-node DP + EP across **2 trays** (8 GPUs total) with
     `--data-parallel-size 8`. Pick the "Multi-Node" tab and set nodes to 2.
-
-

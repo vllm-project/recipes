@@ -157,6 +157,49 @@ guide: |
 
   Recommended sampling: `temperature = 1.0`, `top_p = 1.0`.
 
+  ### OpenAI Client Example
+
+  For DeepSeek-V4, keep reasoning controls in `chat_template_kwargs`, as it exposes a
+  custom **Think Max** mode via `"reasoning_effort": "max"`.
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+  model = "deepseek-ai/DeepSeek-V4-Flash"
+  messages = [{"role": "user", "content": "What is 17*19? Return only the final integer."}]
+
+  # Non-think
+  resp = client.chat.completions.create(
+      model=model,
+      messages=messages,
+  )
+
+  # Think High
+  resp = client.chat.completions.create(
+      model=model,
+      messages=messages,
+      extra_body={
+          "chat_template_kwargs": {
+              "thinking": True,
+              "reasoning_effort": "high",
+          },
+      },
+  )
+
+  # Think Max
+  resp = client.chat.completions.create(
+      model=model,
+      messages=messages,
+      extra_body={
+          "chat_template_kwargs": {
+              "thinking": True,
+              "reasoning_effort": "max",
+          },
+      },
+  )
+  ```
+
   ## Recommended deployment
 
   Non-disaggregated serving on any supported hardware: single-node DP + EP with
