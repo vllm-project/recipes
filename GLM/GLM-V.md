@@ -20,12 +20,12 @@ uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
 ```
 > Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).
 
-## Running GLM-4.5V / GLM-4.6V with FP8 or BF16 on 4xH100
+## Running GLM-4.5V / GLM-4.6V with FP8 or BF16 
 
 There are two ways to parallelize the model over multiple GPUs: (1) Tensor-parallel or (2) Data-parallel. Each one has its own advantages, where tensor-parallel is usually more beneficial for low-latency / low-load scenarios and data-parallel works better for cases where there is a lot of data with heavy-loads.
 
 Run tensor-parallel like this:
-### CUDA
+### CUDA (4xH100)
 ```bash
 # Start server with FP8 model on 4 GPUs, the model can also be changed to BF16 as zai-org/GLM-4.5V
 vllm serve zai-org/GLM-4.5V-FP8 \
@@ -44,9 +44,7 @@ vllm serve zai-org/GLM-4.5V-FP8 \
 * vLLM conservatively use 90% of GPU memory, you can set `--gpu-memory-utilization=0.95` to maximize KVCache.
 * Make sure to follow the command-line instructions to ensure the tool-calling functionality is properly enabled.
 
-## Running GLM-4.5V / GLM-4.6V  with FP8 or BF16 on 4xMI300x/MI325x/MI355x
-
-### ROCm
+### ROCm (4xMI300x/MI325x/MI355x)
 ```bash
 # Start server with FP8 model on 4 GPUs, the model can also be changed to BF16 as zai-org/GLM-4.5V
 SAFETENSORS_FAST_GPU=1 \
