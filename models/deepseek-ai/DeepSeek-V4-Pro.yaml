@@ -76,7 +76,9 @@ variants:
     description: "Native FP4+FP8 mixed checkpoint (MoE experts FP4, remaining params FP8)"
 
 compatible_strategies:
+  - single_node_tep
   - single_node_dep
+  - multi_node_tep
   - multi_node_dep
   - pd_cluster
 
