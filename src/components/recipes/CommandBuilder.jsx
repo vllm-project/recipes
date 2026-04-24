@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info } from "lucide-react";
+import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap } from "lucide-react";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, pickDefaultHardware, resolveSingleNodeTp } from "@/lib/command-synthesis";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 
@@ -1053,7 +1053,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     onClick={() => toggleFeature(key)}
                     title={f?.description}
                   >
+                    {key === "spec_decoding" && (
+                      <Zap size={11} className="inline-block mr-1 -mt-0.5 text-vllm-yellow" fill="currentColor" />
+                    )}
                     {key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                    {key === "spec_decoding" && (
+                      <span className="ml-1.5 text-[10px] text-yellow-300/90 dark:text-yellow-200/80 font-normal">
+                        (for ultra low latency & small batch size serving)
+                      </span>
+                    )}
                   </Pill>
                 ))}
               </PillGroup>
