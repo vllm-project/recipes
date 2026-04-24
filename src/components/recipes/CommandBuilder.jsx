@@ -736,10 +736,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
     // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
     // tag and skip auto-suffix. "default" resolves to the base CUDA for this
-    // vLLM version (< 0.21.0 → cu129 base; 0.21.0+ → cu130 base). If the
+    // vLLM version (< 0.21.0 → cu129 base; 0.21.0+ → cu130 base), except on
+    // Blackwell where cu130 is preferred when the map offers it. If the
     // chosen variant is missing, fall through to whichever key is present.
     if (meta.cudaMap) {
-      const baseCuda = altCudaSuffix === "cu130" ? "cu129" : "cu130";
+      const versionBase = altCudaSuffix === "cu130" ? "cu129" : "cu130";
+      const baseCuda =
+        hwProfile?.generation === "blackwell" && "cu130" in meta.cudaMap
+          ? "cu130"
+          : versionBase;
       const wanted = dockerCudaVariant === "default" ? baseCuda : dockerCudaVariant;
       const picked = meta.cudaMap[wanted] || meta.cudaMap[baseCuda] || meta.cudaMap.cu129 || meta.cudaMap.cu130;
       return { ...meta, image: picked || meta.image };
