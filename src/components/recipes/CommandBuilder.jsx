@@ -218,7 +218,7 @@ function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
   const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
   const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
   return `docker run ${gpuFlags} \\
-  --ipc=host -p ${port}:${port} \\
+  --privileged --ipc=host -p ${port}:${port} \\
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
   ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
 }
