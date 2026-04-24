@@ -108,9 +108,6 @@ uv pip install vllm \
     --torch-backend=auto \
     --extra-index-url https://wheels.vllm.ai/${VLLM_COMMIT} # add variant subdirectory here if needed
 ```
-
-
-
 ## Launching  M2 series with vLLM
 
 ### NVIDIA GPU
@@ -201,9 +198,70 @@ VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
 
 
 
+### Disaggregated prefill/decode (`vllm serve`)
+
+**Disaggregated** prefill/decode runs **separate** vLLM engines for prefill and decode, with KV cache moved between them using a **KV connector** (for example **NixlConnector**). Each engine is started with **`vllm serve`** and a **`--kv-transfer-config`** JSON payload. See the vLLM **[NixlConnector usage guide](https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html)** for installation (NIXL / UCX), side-channel ports, multi-host layout, and proxy routing between prefiller and decoder HTTP ports.
+
+#### Environment on a prefill worker
+
+#### AMD 
+```bash
+export VLLM_ROCM_USE_AITER=1
+export VLLM_ROCM_USE_AITER_RMSNORM=1
+export VLLM_ENGINE_READY_TIMEOUT_S=3600
+```
+
+NIXL / UCX (see the NixlConnector doc for transport tuning):
+```bash
+export UCX_NET_DEVICES="${FIRST_IB}:1"   # or pin devices for your fabric
+```
+
+**Per process** on a host (each vLLM worker needs a **unique** side-channel port on that host). When you run **one `vllm serve` per GPU** (data parallel), set **`CUDA_VISIBLE_DEVICES`** per rank; if your launcher already pins GPUs (for example one process per node), you can omit it.
+
+#### AMD 
+```bash
+export HIP_VISIBLE_DEVICES=0
+```
+
+#### Prefill worker (`vllm serve`, one rank)
+
+Use **`kv_producer`** on prefiller instances. Replace **`<prefill_dp_leader_ip>`** with the address of **data-parallel rank 0** inside the **prefill** pool. Use **`<prefill_dp_rpc_port>`** for that pool’s DP coordinator (must be free on the leader host).
+
+Give **each** `vllm serve` on the **same machine** its own **HTTP `--port`**: co-located DP ranks cannot all bind `<prefill_http_port>`—use a distinct port per rank (for example base + `data_parallel_rank`). The same rule applies to the decode pool (`<decode_http_port>` per rank). Prefill and decode pools use **different** HTTP port ranges so the router can target them separately.
+
+
+#### AMD 
+```bash
+vllm serve MiniMaxAI/MiniMax-M2.5 \
+    --port $SERVER_PORT \
+    --trust-remote-code \
+    --kv-transfer-config '{"kv_connector": "MoRIIOConnector", "kv_role": "kv_producer", "kv_connector_extra_config": {"proxy_ip": "${NODE0_ADDR}", "proxy_ping_port": "${PROXY_PING_PORT}", "http_port": "${SERVER_PORT}"}}' \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --all2all-backend mori \
+    --gpu-memory-utilization 0.9 \
+    --block-size 32
+```
+
+#### Environment on a decode worker
+#### Decode worker (`vllm serve`, one rank)
+
+#### AMD 
+```bash
+vllm serve MiniMaxAI/MiniMax-M2.5 \
+    --port $SERVER_PORT \
+    --trust-remote-code \
+    --kv-transfer-config '{"kv_connector": "MoRIIOConnector", "kv_role": "kv_producer", "kv_connector_extra_config": {"proxy_ip": "${NODE0_ADDR}", "proxy_ping_port": "${PROXY_PING_PORT}", "http_port": "${SERVER_PORT}"}}' \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --all2all-backend mori \
+    --gpu-memory-utilization 0.9 \
+    --block-size 32
+```
+
+
+
 ## Performance Metrics
-
-
 ### Benchmarking
 
 We use the following script to demonstrate how to benchmark MiniMax-M2 models.
