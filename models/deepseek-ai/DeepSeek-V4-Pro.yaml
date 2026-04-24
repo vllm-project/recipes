@@ -87,6 +87,15 @@ hardware_overrides:
     extra_args:
       - "--max-model-len"
       - "800000"
+      - "--gpu-memory-utilization"
+      - "0.95"
+      - "--max-num-seqs"
+      - "512"
+      - "--max-num-batched-tokens"
+      - "512"
+      - "--no-enable-flashinfer-autotune"
+      - "--compilation-config"
+      - '{"mode": 0, "cudagraph_mode": "FULL_DECODE_ONLY"}'
   blackwell:
     extra_args:
       - "--attention_config.use_fp4_indexer_cache=True"
