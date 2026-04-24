@@ -1058,8 +1058,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     )}
                     {key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                     {key === "spec_decoding" && (
-                      <span className="ml-1.5 text-[10px] text-yellow-300/90 dark:text-yellow-200/80 font-normal">
-                        (for ultra low latency & small batch size serving)
+                      <span className="ml-1.5 text-[11px] text-yellow-100 dark:text-yellow-50/80 font-normal">
+                        (for ultra low latency & small batch size)
                       </span>
                     )}
                   </Pill>
