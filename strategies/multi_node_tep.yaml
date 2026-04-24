@@ -1,6 +1,7 @@
 name: multi_node_tep
 deploy_type: multi_node
 display_name: "Multi-Node Tensor + Expert Parallel"
+orientation: latency
 description: >
   Multi-node TEP. Combines cross-node tensor parallel with expert parallel
   for MoE models. All GPUs across nodes participate in TP, with EP splitting

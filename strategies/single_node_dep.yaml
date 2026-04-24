@@ -1,6 +1,7 @@
 name: single_node_dep
 deploy_type: single_node
 display_name: "Data + Expert Parallel"
+orientation: throughput
 description: >
   Single-node DEP. Expert layers are shared across all GPUs via EP,
   dense layers run independently in DP groups. Best throughput for

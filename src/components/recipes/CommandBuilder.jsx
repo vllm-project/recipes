@@ -953,6 +953,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 {strategies[activeStrategy].description.split("\n")[0]}
               </p>
             )}
+            {strategies[activeStrategy]?.orientation && (
+              <span className="inline-block text-[10px] font-medium mt-1.5 px-1.5 py-0.5 rounded bg-green-500/20 text-green-600 dark:text-green-400">
+                {strategies[activeStrategy].orientation === "latency" ? "Latency oriented" : "Throughput oriented"}
+              </span>
+            )}
           </ConfigRow>
 
           {/* Nodes — two number inputs for PD (one per pool), pills otherwise */}
