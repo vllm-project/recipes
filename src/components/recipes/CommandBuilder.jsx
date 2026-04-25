@@ -53,6 +53,13 @@ const ADVANCED_OPTIONS = [
     args: ["--no-enable-flashinfer-autotune"],
     gatedBy: (recipe) => recipe?.model?.flashinfer_autotune === true,
   },
+  {
+    id: "ep_weight_filter",
+    label: "enable-ep-weight-filter",
+    description: "Skip loading expert weights that don't belong to this EP rank — speeds up weight loading for large MoE models",
+    args: ["--enable-ep-weight-filter"],
+    gatedBy: (_recipe, activeStrategy) => /(?:^|_)(?:tep|dep)$/.test(activeStrategy || ""),
+  },
 ];
 const ADVANCED_BY_ID = Object.fromEntries(ADVANCED_OPTIONS.map((o) => [o.id, o]));
 import { loadPreferences, savePreference } from "@/lib/preferences";
