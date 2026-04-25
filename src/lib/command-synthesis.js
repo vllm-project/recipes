@@ -3,6 +3,19 @@
  * Pure functions, no I/O.
  */
 
+// NVL4-only env vars: NCCL symmetric memory + cross-node NVLink kernels +
+// UCX device selection. Tuned for GB200/GB300 NVL4 trays (NVL72 rack with
+// NVLink between nodes); on plain HGX nodes they're either inert or harmful,
+// so they're filtered out unless the user picks a GB NVL4 profile.
+const NVL4_ONLY_ENV_KEYS = new Set([
+  "VLLM_USE_NCCL_SYMM_MEM",
+  "NCCL_CUMEM_ENABLE",
+  "NCCL_MNNVL_ENABLE",
+  "NCCL_NVLS_ENABLE",
+  "UCX_NET_DEVICES",
+]);
+const NVL4_HW_IDS = new Set(["gb200", "gb300"]);
+
 /**
  * Normalize gpu_generation to a single string for hardware_overrides lookup.
  */
@@ -435,6 +448,13 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     const envHo = recipe.hardware_overrides?.[gen]
       || (envIsNvidia ? recipe.hardware_overrides?.nvidia : null);
     if (envHo?.extra_env) Object.assign(env, envHo.extra_env);
+
+    // NVL4-only env vars are meaningful only on GB200/GB300 trays. Drop them
+    // for any other hardware regardless of where they came from (strategy YAML
+    // or recipe-level pd_cluster override).
+    if (strategy.deploy_type === "pd_cluster" && !NVL4_HW_IDS.has(hwProfileId)) {
+      for (const key of NVL4_ONLY_ENV_KEYS) delete env[key];
+    }
 
     return env;
   }
