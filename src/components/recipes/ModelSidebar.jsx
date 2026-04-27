@@ -21,7 +21,13 @@ export function ModelSidebar({ recipesByOrg }) {
   const currentOrg = parts[0] || "";
   const currentRepo = parts[1] || "";
 
-  const [expanded, setExpanded] = useState(null);
+  // Compute the initial expanded org synchronously so SSR emits the recipe
+  // links inside the current org — without this the server HTML only contains
+  // org-level links, hurting crawl signal.
+  const [expanded, setExpanded] = useState(() => {
+    const found = recipesByOrg.find(([org]) => org === currentOrg);
+    return found ? found[0] : null;
+  });
 
   useEffect(() => {
     const found = recipesByOrg.find(([org]) => org === currentOrg);
