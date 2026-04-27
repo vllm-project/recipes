@@ -14,7 +14,12 @@ meta:
 
 model:
   model_id: "XiaomiMiMo/MiMo-V2.5-Pro"
-  min_vllm_version: "0.11.0"
+  min_vllm_version: "nightly"
+  docker_image:
+    cu129: "vllm/vllm-openai:mimov25-cu129"
+    cu130: "vllm/vllm-openai:mimov25-cu130"
+  install:
+    pip: false
   architecture: moe
   parameter_count: "1T"
   active_parameters: "45B"
@@ -82,12 +87,12 @@ guide: |
 
   - Hardware: 8x H200 (TP8)
 
-  ### Install vLLM
+  ### Pull the vLLM docker image
+
+  Stable vLLM does not yet support MiMo V2.5. Use the pre-built image:
 
   ```bash
-  uv venv
-  source .venv/bin/activate
-  uv pip install vllm --torch-backend auto
+  docker pull vllm/vllm-openai:mimov25-cu129
   ```
 
   ## Launch commands
