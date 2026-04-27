@@ -80,8 +80,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 8x H200 (TP8) — KV cache headroom is tight; raise nodes for long contexts
-  - vLLM >= 0.11.0
+  - Hardware: 8x H200 (TP8)
 
   ### Install vLLM
 
@@ -118,23 +117,6 @@ guide: |
     --generation-config vllm
   ```
 
-  DP + TP + EP:
-
-  ```bash
-  vllm serve XiaomiMiMo/MiMo-V2.5-Pro \
-    --data-parallel-size 2 \
-    --tensor-parallel-size 8 \
-    --enable-expert-parallel \
-    --trust-remote-code \
-    --gpu-memory-utilization 0.95 \
-    --generation-config vllm
-  ```
-
-  Tunable flags:
-  - `--max-model-len` — full context is 1,048,576; use `auto` to size to KV budget.
-  - `--max-num-batched-tokens=32768` for prompt-heavy workloads; lower for latency.
-  - `--gpu-memory-utilization=0.95` to maximize KV cache (weights occupy ~1.04 TB).
-
   ## Client Usage
 
   ```bash
@@ -149,14 +131,6 @@ guide: |
 
   Set `"enable_thinking": false` (or omit the kwargs) to disable thinking mode.
 
-  ## Benchmarking
-
-  ```bash
-  vllm bench serve \
-    --model XiaomiMiMo/MiMo-V2.5-Pro \
-    --dataset-name random --random-input-len 8000 --random-output-len 1000 \
-    --request-rate 3 --num-prompts 1800 --ignore-eos
-  ```
 
   ## References
 
