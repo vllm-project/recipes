@@ -61,7 +61,6 @@ const ADVANCED_OPTIONS = [
     gatedBy: (_recipe, activeStrategy) => /(?:^|_)(?:tep|dep)$/.test(activeStrategy || ""),
   },
 ];
-const ADVANCED_BY_ID = Object.fromEntries(ADVANCED_OPTIONS.map((o) => [o.id, o]));
 import { loadPreferences, savePreference } from "@/lib/preferences";
 
 function CopyButton({ text, className = "" }) {
@@ -376,6 +375,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     return ap ? ap.split(",").filter(Boolean) : [];
   });
 
+  // Per-recipe advanced options declared under top-level `advanced_options:` in
+  // the YAML are merged with the global presets so a recipe can surface its
+  // own toggles (e.g. model-specific kernel backends) without code changes.
+  const advancedOptions = useMemo(
+    () => [...ADVANCED_OPTIONS, ...(recipe.advanced_options || [])],
+    [recipe]
+  );
+  const advancedById = useMemo(
+    () => Object.fromEntries(advancedOptions.map((o) => [o.id, o])),
+    [advancedOptions]
+  );
+
   // Install mode (pip | docker). Drives both the Install block's active tab
   // and the command rendering below: pip mode shows `vllm serve ...`, docker
   // mode wraps the same command in `docker run ...`. Default follows the
@@ -392,7 +403,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   // CUDA variant selector for the NVIDIA docker image tag. The available
   // suffix depends on the recipe's vLLM version (the tag's base CUDA flips
-  // at 0.21.0 — see `altCudaSuffix` below). State holds the raw suffix
+  // at 0.20.0 — see `altCudaSuffix` below). State holds the raw suffix
   // (`"cu129"` | `"cu130"`) or `"default"` for the base tag.
   // Only surfaced for NVIDIA — AMD / TPU don't ship paired CUDA variants.
   const [dockerCudaVariant, setDockerCudaVariant] = useState("default");
@@ -479,7 +490,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const result = useMemo(
     () => {
-      const advArgs = advanced.flatMap((id) => ADVANCED_BY_ID[id]?.args || []);
+      const advArgs = advanced.flatMap((id) => advancedById[id]?.args || []);
       const pdNodes = activeStrategy === "pd_cluster"
         ? {
           prefill: { nodes: pdPrefillNodes, rank: pdPrefillRank },
@@ -488,7 +499,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         : null;
       return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes);
     },
-    [recipe, variant, activeStrategy, hwId, features, advanced, strategies, taxonomy, nodeCount, pdPrefillNodes, pdDecodeNodes, pdPrefillRank, pdDecodeRank]
+    [recipe, variant, activeStrategy, hwId, features, advanced, advancedById, strategies, taxonomy, nodeCount, pdPrefillNodes, pdDecodeNodes, pdPrefillRank, pdDecodeRank]
   );
 
   // Visual feedback when any rendered command changes. Covers single-node
@@ -753,15 +764,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     );
   }
 
-  // The CUDA baseline for NVIDIA images flipped at vLLM 0.21.0: pre-0.21.0
+  // The CUDA baseline for NVIDIA images flipped at vLLM 0.20.0: pre-0.20.0
   // the base tag is CUDA 12.9 and the alternative suffix is `-cu130`;
-  // 0.21.0+ the base tag is CUDA 13 and the alternative suffix is `-cu129`.
+  // 0.20.0+ the base tag is CUDA 13 and the alternative suffix is `-cu129`.
   // Offering the wrong suffix would give the user a tag that doesn't exist.
   const altCudaSuffix = useMemo(() => {
     const v = recipe.model?.min_vllm_version || "";
     const [maj, min] = v.split(".").map((n) => parseInt(n, 10) || 0);
-    const is021Plus = maj > 0 || min >= 21;
-    return is021Plus ? "cu129" : "cu130";
+    const is020Plus = maj > 0 || min >= 20;
+    return is020Plus ? "cu129" : "cu130";
   }, [recipe]);
 
   const dockerMeta = useMemo(() => {
@@ -770,7 +781,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
     // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
     // tag and skip auto-suffix. "default" resolves to the base CUDA for this
-    // vLLM version (< 0.21.0 → cu129 base; 0.21.0+ → cu130 base), except on
+    // vLLM version (< 0.20.0 → cu129 base; 0.20.0+ → cu130 base), except on
     // Blackwell where cu130 is preferred when the map offers it. If the
     // chosen variant is missing, fall through to whichever key is present.
     if (meta.cudaMap) {
@@ -834,7 +845,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               {Math.round(vramShortfall.availGb / vramShortfall.gpuCount)}G = {vramShortfall.availGb}GB,
               but this variant needs at least {vramShortfall.needGb}GB for weights alone
               (KV cache requires more).{" "}
-              <span className="text-muted-foreground">Switch to a higher-memory GPU or use multi-node TP.</span>
+              <span className="text-muted-foreground">Switch to a higher-memory GPU, use multi-node TP, or lower <code className="font-mono text-[11px] px-1 py-px rounded bg-muted/50">--max-model-len</code> to shrink the KV cache footprint.</span>
             </div>
           </div>
         )}
@@ -1100,7 +1111,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             </summary>
             <div className="px-4 pb-4 pt-1 border-t border-border/60">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {ADVANCED_OPTIONS.filter((opt) => !opt.gatedBy || opt.gatedBy(recipe, activeStrategy)).map((opt) => (
+                {advancedOptions.filter((opt) => !opt.gatedBy || opt.gatedBy(recipe, activeStrategy)).map((opt) => (
                   <label
                     key={opt.id}
                     className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition-colors ${advanced.includes(opt.id)
@@ -1302,7 +1313,7 @@ uv pip install -U vllm --torch-backend auto`;
     : isAmd
       ? undefined
       : altCudaSuffix === "cu129"
-        ? "vLLM 0.21.0+ default tag ships CUDA 13. Switch to cu129 for the -cu129 variant if your host is on CUDA 12.9."
+        ? "vLLM 0.20.0+ default tag ships CUDA 13. Switch to cu129 for the -cu129 variant if your host is on CUDA 12.9."
         : "Default tag ships CUDA 12.9. Switch to cu130 for the -cu130 variant on CUDA 13 hosts.";
   const dockerNote = dockerCfg?.note || defaultDockerNote;
   // Show the CUDA selector only when we're on NVIDIA, the user isn't supplying
@@ -1387,7 +1398,7 @@ uv pip install -U vllm --torch-backend auto`;
                           : v.id === "cu130"
                             ? "CUDA 13 build"
                             : altCudaSuffix === "cu129"
-                              ? "Base tag — CUDA 13 (vLLM 0.21.0+)"
+                              ? "Base tag — CUDA 13 (vLLM 0.20.0+)"
                               : "Base tag — CUDA 12.9"
                       }
                       className={`px-2 py-0.5 text-[11px] font-mono rounded transition-colors ${

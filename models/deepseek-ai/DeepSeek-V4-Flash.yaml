@@ -21,11 +21,7 @@ meta:
 
 model:
   model_id: "deepseek-ai/DeepSeek-V4-Flash"
-  min_vllm_version: "0.20.1"
-  nightly_required: true
-  docker_image: 
-    cu129: "vllm/vllm-openai:deepseekv4-cu129"
-    cu130: "vllm/vllm-openai:deepseekv4-cu130"
+  min_vllm_version: "0.20.0"
   architecture: moe
   parameter_count: "284B"
   active_parameters: "13B"
@@ -37,14 +33,14 @@ model:
     - "fp8"
     - "--block-size"
     - "256"
+    - "--moe-backend"
+    - "deep_gemm_mega_moe"
   base_env:
     VLLM_ENGINE_READY_TIMEOUT_S: "3600"
-  install:
-    docker:
-      note: ""
-    pip: false
 
-dependencies: []
+dependencies:
+  - note: "DeepGEMM FP8 kernels — install via vLLM tools/install_deepgemm.sh"
+    command: "bash <(curl -fsSL https://raw.githubusercontent.com/vllm-project/vllm/v0.20.0/tools/install_deepgemm.sh)"
 
 features:
   tool_calling:
@@ -232,7 +228,7 @@ guide: |
     -e VLLM_LOG_STATS_INTERVAL=1 \
     -e VLLM_MOONCAKE_BOOTSTRAP_PORT=8998 \
     -e CUDA_VISIBLE_DEVICES=0,1,2,3 \
-    vllm/vllm-openai:deepseekv4-cu130 \
+    vllm/vllm-openai:latest \
     deepseek-ai/DeepSeek-V4-Flash \
     --trust-remote-code \
     --kv-cache-dtype fp8 \
@@ -266,7 +262,7 @@ guide: |
     -e VLLM_LOG_STATS_INTERVAL=1 \
     -e VLLM_MOONCAKE_BOOTSTRAP_PORT=9889 \
     -e CUDA_VISIBLE_DEVICES=4,5,6,7 \
-    vllm/vllm-openai:deepseekv4-cu130 \
+    vllm/vllm-openai:latest \
     deepseek-ai/DeepSeek-V4-Flash \
     --trust-remote-code \
     --kv-cache-dtype fp8 \
