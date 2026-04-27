@@ -103,6 +103,8 @@ hardware_overrides:
       - "--no-enable-flashinfer-autotune"
       - "--compilation-config"
       - '{"mode": 0, "cudagraph_mode": "FULL_DECODE_ONLY"}'
+    extra_env:
+      VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS: "0"
   blackwell:
     extra_args:
       - "--attention_config.use_fp4_indexer_cache=True"
