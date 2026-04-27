@@ -33,6 +33,8 @@ model:
     - "fp8"
     - "--block-size"
     - "256"
+    - "--moe-backend"
+    - "deep_gemm_mega_moe"
   base_env:
     VLLM_ENGINE_READY_TIMEOUT_S: "3600"
 
@@ -67,14 +69,6 @@ features:
 
 opt_in_features:
   - spec_decoding
-
-advanced_options:
-  - id: moe_backend_deep_gemm_mega
-    label: "moe-backend = deep_gemm_mega_moe"
-    description: "Use the DeepGEMM mega-MoE backend for FP8 expert kernels"
-    args:
-      - "--moe-backend"
-      - "deep_gemm_mega_moe"
 
 variants:
   default:
