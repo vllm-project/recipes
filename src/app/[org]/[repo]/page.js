@@ -42,8 +42,11 @@ export async function generateMetadata({ params }) {
   // og:title — aim for 50–60 chars for optimal preview width. Skip the
   // " on vLLM" suffix since og:site_name already provides it.
   const ogTitle = metaLine ? `${title} — ${metaLine}` : title;
+  // Page <title> uses the canonical hf_id (e.g. "deepseek-ai/DeepSeek-V3.2")
+  // — that's what people search for. The layout template appends " | vLLM
+  // Recipes" so the final tab reads "deepseek-ai/DeepSeek-V3.2 | vLLM Recipes".
   return {
-    title: meta.title,
+    title,
     description,
     openGraph: {
       type: "article",
@@ -82,8 +85,44 @@ export default async function RecipePage({ params }) {
     .map((s) => allRecipes.find((r) => r.hf_id === s || r.meta.slug === s))
     .filter(Boolean);
 
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://recipes.vllm.ai");
+  const recipeUrl = `${siteUrl}/${recipe.hf_org}/${recipe.hf_repo}`;
+  const jsonLd = [
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      name: recipe.hf_id,
+      alternateName: recipe.meta.title,
+      description: recipe.meta.description || recipe.meta.title,
+      applicationCategory: "DeveloperApplication",
+      operatingSystem: "Linux",
+      url: recipeUrl,
+      softwareRequirements: recipe.model.min_vllm_version
+        ? `vLLM ${recipe.model.min_vllm_version}+`
+        : "vLLM",
+      creator: { "@type": "Organization", name: recipe.meta.provider, url: `https://huggingface.co/${recipe.hf_org}` },
+      sameAs: [`https://huggingface.co/${recipe.hf_id}`],
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "vLLM Recipes", item: siteUrl },
+        { "@type": "ListItem", position: 2, name: recipe.meta.provider, item: `${siteUrl}/${recipe.hf_org}` },
+        { "@type": "ListItem", position: 3, name: recipe.hf_repo, item: recipeUrl },
+      ],
+    },
+  ];
+
   return (
     <main className="py-6 w-full min-w-0">
+      <script
+        type="application/ld+json"
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       {/* ── Model header ── */}
       <header className="mb-8">
         <div className="flex items-start gap-4 mb-4">

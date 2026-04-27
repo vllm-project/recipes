@@ -3,6 +3,19 @@
  * Pure functions, no I/O.
  */
 
+// NVL4-only env vars: NCCL symmetric memory + cross-node NVLink kernels +
+// UCX device selection. Tuned for GB200/GB300 NVL4 trays (NVL72 rack with
+// NVLink between nodes); on plain HGX nodes they're either inert or harmful,
+// so they're filtered out unless the user picks a GB NVL4 profile.
+const NVL4_ONLY_ENV_KEYS = new Set([
+  "VLLM_USE_NCCL_SYMM_MEM",
+  "NCCL_CUMEM_ENABLE",
+  "NCCL_MNNVL_ENABLE",
+  "NCCL_NVLS_ENABLE",
+  "UCX_NET_DEVICES",
+]);
+const NVL4_HW_IDS = new Set(["gb200", "gb300"]);
+
 /**
  * Normalize gpu_generation to a single string for hardware_overrides lookup.
  */
@@ -110,6 +123,19 @@ export function listCompatibleHardware(hwProfiles, variant, recipe) {
   return Object.entries(hwProfiles)
     .filter(([id, p]) => isPrecisionCompatible(p, variant) && isHardwareSupported(recipe, id))
     .map(([id]) => id);
+}
+
+/**
+ * Single-node fit check: strategies bound to one node (TP, TEP, DEP) shard
+ * weights across that node's GPUs and can't scale VRAM further. Returns false
+ * when the variant's declared `vram_minimum_gb` exceeds the node's `vram_gb`.
+ * Missing size info → treat as fit (don't block on incomplete metadata).
+ */
+export function fitsSingleNode(hwProfile, variant) {
+  const nodeVram = typeof hwProfile?.vram_gb === "number" ? hwProfile.vram_gb : 0;
+  const modelVram = variant?.vram_minimum_gb || 0;
+  if (modelVram <= 0 || nodeVram <= 0) return true;
+  return modelVram <= nodeVram;
 }
 
 /**
@@ -354,9 +380,17 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     if (advancedArgs && advancedArgs.length) args.push(...advancedArgs);
 
     // 7. Features last — tool_calling, reasoning, mtp, etc.
+    //    A feature can declare per-generation overrides under
+    //    `hardware_overrides.<gen>.args`; when present they REPLACE the
+    //    feature's default args (not merged), so a recipe can ship different
+    //    spec-decoding configs for hopper vs blackwell without dedupe gymnastics.
     for (const f of enabledFeatures || []) {
       const feat = recipe.features?.[f];
-      if (feat?.args) args.push(...feat.args);
+      if (!feat) continue;
+      const featHo = feat.hardware_overrides?.[gen]
+        || (isNvidia ? feat.hardware_overrides?.nvidia : null);
+      const featArgs = featHo?.args ?? feat.args;
+      if (featArgs) args.push(...featArgs);
     }
 
     return args;
@@ -423,6 +457,13 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       || (envIsNvidia ? recipe.hardware_overrides?.nvidia : null);
     if (envHo?.extra_env) Object.assign(env, envHo.extra_env);
 
+    // NVL4-only env vars are meaningful only on GB200/GB300 trays. Drop them
+    // for any other hardware regardless of where they came from (strategy YAML
+    // or recipe-level pd_cluster override).
+    if (strategy.deploy_type === "pd_cluster" && !NVL4_HW_IDS.has(hwProfileId)) {
+      for (const key of NVL4_ONLY_ENV_KEYS) delete env[key];
+    }
+
     return env;
   }
 
@@ -473,6 +514,16 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     return out;
   }
 
+  // Wrap values containing shell-special chars in single quotes so the rendered
+  // command is paste-safe. Without this, JSON values like
+  // `{"cudagraph_mode":"FULL_AND_PIECEWISE"}` trigger brace expansion and get
+  // their double quotes stripped by bash.
+  function shellQuote(s) {
+    if (typeof s !== "string" || s.length === 0) return s;
+    if (/^[A-Za-z0-9_./=:@,+%-]+$/.test(s)) return s;
+    return `'${s.replace(/'/g, "'\\''")}'`;
+  }
+
   function formatCommand(args) {
     const filtered = dedupeArgs(args.filter(Boolean));
     if (filtered.length === 0) return `vllm serve ${modelId}`;
@@ -484,7 +535,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       const cur = filtered[i];
       const next = filtered[i + 1];
       if (cur.startsWith("-") && next !== undefined && !next.startsWith("-")) {
-        lines.push(`${cur} ${next}`);
+        lines.push(`${cur} ${shellQuote(next)}`);
         i++;
       } else {
         lines.push(cur);

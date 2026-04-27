@@ -3,8 +3,8 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, pickDefaultHardware, resolveSingleNodeTp } from "@/lib/command-synthesis";
+import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap } from "lucide-react";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, pickDefaultHardware, resolveSingleNodeTp } from "@/lib/command-synthesis";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 
 // Advanced tuning presets — optional tunable flags the user can opt into.
@@ -45,6 +45,20 @@ const ADVANCED_OPTIONS = [
       "Shard the KV cache at decode time across TP ranks. MLA-attention models only (DeepSeek, Kimi-K2). Max DCP = tensor-parallel-size ÷ num_kv_heads.",
     args: ["--decode-context-parallel-size", "8"],
     gatedBy: (recipe) => recipe?.model?.supports_dcp === true,
+  },
+  {
+    id: "no_flashinfer_autotune",
+    label: "no-enable-flashinfer-autotune",
+    description: "Skip FlashInfer autotuning at startup (faster startup, may lose autotuned perf)",
+    args: ["--no-enable-flashinfer-autotune"],
+    gatedBy: (recipe) => recipe?.model?.flashinfer_autotune === true,
+  },
+  {
+    id: "ep_weight_filter",
+    label: "enable-ep-weight-filter",
+    description: "Skip loading expert weights that don't belong to this EP rank — speeds up weight loading for large MoE models",
+    args: ["--enable-ep-weight-filter"],
+    gatedBy: (_recipe, activeStrategy) => /(?:^|_)(?:tep|dep)$/.test(activeStrategy || ""),
   },
 ];
 const ADVANCED_BY_ID = Object.fromEntries(ADVANCED_OPTIONS.map((o) => [o.id, o]));
@@ -152,9 +166,17 @@ function PopoverButton({ label, code, icon: Icon }) {
 // Resolve the Docker image / GPU flags / brand key for the active hardware.
 // Shared by the install block (docker pull line) and the main command blocks
 // (docker run wrapping). Precedence: variant.docker_image → model.docker_image
-// → DEFAULT_IMAGE[brand]. String form is NVIDIA-only; object form maps brand.
-// Base tag (e.g. `:latest`, `:glm51`) is CUDA 13-based on vLLM 0.21.0+.
-// Hosts still on CUDA 12.9 use the `-cu129` variant of each tag.
+// → DEFAULT_IMAGE[brand].
+//
+// `docker_image` shapes:
+//   "vllm/vllm-openai:x"               (NVIDIA-only)
+//   { nvidia, amd, tpu }               (brand-keyed; each value is a string)
+//   { cu129, cu130 }                   (NVIDIA CUDA-keyed — explicit paired tags,
+//                                        auto-suffix is skipped in favor of these)
+//   { nvidia: { cu129, cu130 }, amd, tpu }  (mixed: NVIDIA value may be a CUDA map)
+//
+// When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
+// the user's `dockerCudaVariant` toggle instead of appending `-cu129`/`-cu130`.
 function computeDockerMeta(recipe, variant, hwProfile) {
   const DEFAULT_IMAGE = {
     nvidia: "vllm/vllm-openai:latest",
@@ -165,17 +187,32 @@ function computeDockerMeta(recipe, variant, hwProfile) {
   const isTpu = hwProfile?.generation === "tpu";
   const brandKey = isTpu ? "tpu" : isAmd ? "amd" : "nvidia";
   const override = variant?.docker_image || recipe.model?.docker_image;
-  const pinned =
-    typeof override === "string"
-      ? brandKey === "nvidia" ? override : null
-      : override?.[brandKey] || null;
+
+  const isCudaMap = (v) =>
+    v && typeof v === "object" && ("cu129" in v || "cu130" in v);
+
+  let pinned = null;
+  let cudaMap = null;
+  if (typeof override === "string") {
+    if (brandKey === "nvidia") pinned = override;
+  } else if (override && typeof override === "object") {
+    const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override;
+    if (isBrandKeyed) {
+      const brandValue = override[brandKey];
+      if (typeof brandValue === "string") pinned = brandValue;
+      else if (brandKey === "nvidia" && isCudaMap(brandValue)) cudaMap = brandValue;
+    } else if (brandKey === "nvidia" && isCudaMap(override)) {
+      cudaMap = override;
+    }
+  }
+
   const image = pinned || DEFAULT_IMAGE[brandKey];
   const gpuFlags = isTpu
     ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
     : isAmd
       ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
       : "--gpus all";
-  return { image, gpuFlags, brandKey, isAmd, isTpu, pinned };
+  return { image, gpuFlags, brandKey, isAmd, isTpu, pinned, cudaMap };
 }
 
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
@@ -188,7 +225,7 @@ function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
   const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
   const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
   return `docker run ${gpuFlags} \\
-  --ipc=host -p ${port}:${port} \\
+  --privileged --ipc=host -p ${port}:${port} \\
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
   ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
 }
@@ -266,18 +303,27 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // is `pd_cluster`; ignored otherwise. Defaults come from the recipe's
   // strategy_overrides block, else 1 for each role. `?prefill_nodes=1&decode_nodes=4`
   // persists in the URL so shares round-trip.
+  //
+  // `nodes` accepts two shapes: a bare integer (same default for every hw)
+  // or an object `{ default, <hwId>… }` for per-hw defaults (e.g. GB200 = 2,
+  // GB300 = 1). Unknown hw ids fall through to `default`, then to 1.
   const pdDefaults = useMemo(() => {
     const so = recipe.strategy_overrides?.pd_cluster || {};
     const pickNodes = (role, fallback) => {
       const v = so[role]?.nodes;
-      return typeof v === "number" ? v : fallback;
+      if (typeof v === "number") return v;
+      if (v && typeof v === "object") {
+        if (typeof v[hwId] === "number") return v[hwId];
+        if (typeof v.default === "number") return v.default;
+      }
+      return fallback;
     };
     return {
       prefill: pickNodes("prefill", 1),
       decode: pickNodes("decode", 1),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recipe]);
+  }, [recipe, hwId]);
   const [pdPrefillNodes, setPdPrefillNodes] = useState(() => {
     const n = parseInt(searchParams.get("prefill_nodes") || "", 10);
     return Number.isFinite(n) && n > 0 ? n : pdDefaults.prefill;
@@ -286,6 +332,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const n = parseInt(searchParams.get("decode_nodes") || "", 10);
     return Number.isFinite(n) && n > 0 ? n : pdDefaults.decode;
   });
+  // Re-sync per-role node state with hw-specific defaults when hw changes,
+  // unless the URL pins a value (shareable links must survive hw switches).
+  useEffect(() => {
+    if (!searchParams.get("prefill_nodes")) setPdPrefillNodes(pdDefaults.prefill);
+    if (!searchParams.get("decode_nodes")) setPdDecodeNodes(pdDefaults.decode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pdDefaults]);
   // Which DP rank's command to render for each DEP pool. User can bump this
   // to see e.g. rank 7's command — illustrates that each rank differs only in
   // --data-parallel-rank, CUDA_VISIBLE_DEVICES, and the per-host ports.
@@ -393,6 +446,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const recommended = useMemo(() => recommendStrategy(recipe, hwProfile, nodeCount), [recipe, hwProfile, nodeCount]);
 
+  const compatibleStrategies = useMemo(() => {
+    return (recipe.compatible_strategies || []).filter((s) => {
+      const strat = strategies[s];
+      if (!strat) return false;
+      if (nodeCount === 1 && strat.deploy_type === "multi_node") return false;
+      if (nodeCount > 1 && strat.deploy_type === "single_node") return false;
+      return true;
+    });
+  }, [recipe, strategies, nodeCount]);
+
   // PD now sizes each pool independently, so the "2× model VRAM on one node"
   // concern that used to invalidate pd_cluster on small GPUs no longer applies.
   const activeStrategy = strategyOverride || recommended;
@@ -406,11 +469,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const showGpuUsageHint =
     nodeCount === 1 && activeStrategy === "single_node_tp" && effectiveTp < hwGpuCount;
 
-  // Single-node VRAM shortfall: weights × 1.2 already exceed the node's total
-  // VRAM, so the command will OOM on launch regardless of KV cache. We still
-  // render the command (user may be experimenting), but surface a banner so
-  // the copy-and-run path doesn't silently fail. Multi-node and pd_cluster
-  // scale VRAM, so they're exempt.
   const isSingleNode = nodeCount === 1 && typeof activeStrategy === "string" && activeStrategy.startsWith("single_node_");
   const needGb = currentVariant?.vram_minimum_gb;
   const availGb = hwProfile.vram_gb;
@@ -418,16 +476,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     isSingleNode && typeof needGb === "number" && typeof availGb === "number" && availGb > 0 && needGb > availGb
       ? { needGb, availGb, gpuCount: hwGpuCount, hwName: hwProfile.display_name || hwId }
       : null;
-
-  const compatibleStrategies = useMemo(() => {
-    return (recipe.compatible_strategies || []).filter((s) => {
-      const strat = strategies[s];
-      if (!strat) return false;
-      if (nodeCount === 1 && strat.deploy_type === "multi_node") return false;
-      if (nodeCount > 1 && strat.deploy_type === "single_node") return false;
-      return true;
-    });
-  }, [recipe, strategies, nodeCount]);
 
   const result = useMemo(
     () => {
@@ -456,6 +504,31 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commandFingerprint]);
+
+  // Auto-enable spec_decoding when the active strategy is latency-oriented
+  // (TP / TEP). Fires on initial mount (covers the case where TP is the default
+  // recommendation) and on any later strategy change. Respects an explicit
+  // ?features= URL pin on first render so shareable links round-trip.
+  const specAutoMountRef = useRef(true);
+  useEffect(() => {
+    const isInitial = specAutoMountRef.current;
+    specAutoMountRef.current = false;
+    if (isInitial && searchParams.get("features")) return;
+
+    const isLatency =
+      activeStrategy === "single_node_tp" || activeStrategy === "multi_node_tp" ||
+      activeStrategy === "single_node_tep" || activeStrategy === "multi_node_tep";
+    const hasSpec = !!(recipe.features || {}).spec_decoding;
+    if (!isLatency || !hasSpec) return;
+
+    setFeatures((prev) => {
+      if (prev.includes("spec_decoding")) return prev;
+      const next = [...prev, "spec_decoding"];
+      syncUrl({ features: next.join(",") });
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStrategy]);
 
   // ── URL sync ──
   const syncUrl = useCallback(
@@ -500,8 +573,23 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     setFeatures(next);
     setHwId(id);
     setStrategyOverride("");
-    syncUrl({ hardware: id, strategy: "", features: next.length > 0 ? next.join(",") : "" });
+    // Bump to multi-node if the new hardware can't fit single-node and the
+    // recipe declares a multi-node path — otherwise the Single-node pill shows
+    // crossed out but the command keeps rendering the invalid single-node
+    // config. Tied to the click so it doesn't fight a user who deliberately
+    // picks Single-node afterwards (that click re-sets nodeCount explicitly).
+    const newProfile = taxonomy.hardware_profiles?.[id] || {};
+    const shouldBumpNodes =
+      nodeCount === 1 && supportsMultiNode && !fitsSingleNode(newProfile, currentVariant);
+    if (shouldBumpNodes) setNodeCount(2);
+    syncUrl({
+      hardware: id,
+      strategy: "",
+      nodes: shouldBumpNodes ? "2" : undefined,
+      features: next.length > 0 ? next.join(",") : "",
+    });
     savePreference("hardware", id);
+    if (shouldBumpNodes) savePreference("nodes", "2");
   };
 
   const selectStrategy = (s) => {
@@ -510,6 +598,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // Persist as global pref so subsequent recipes default to the same
     // strategy when compatible. Empty string clears the preference.
     savePreference("strategy", s || undefined);
+    // Spec-decoding auto-enable for latency strategies is handled by an effect
+    // below so it also fires on initial mount when TP is the default recommendation.
   };
 
   const selectNodes = (n) => {
@@ -676,9 +766,26 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const dockerMeta = useMemo(() => {
     const meta = computeDockerMeta(recipe, currentVariant, hwProfile);
-    // Only apply the suffix when (a) we're on NVIDIA and (b) the user picked
-    // the alternative variant for this recipe's baseline.
-    if (meta.brandKey === "nvidia" && dockerCudaVariant === altCudaSuffix) {
+    if (meta.brandKey !== "nvidia") return meta;
+
+    // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
+    // tag and skip auto-suffix. "default" resolves to the base CUDA for this
+    // vLLM version (< 0.21.0 → cu129 base; 0.21.0+ → cu130 base), except on
+    // Blackwell where cu130 is preferred when the map offers it. If the
+    // chosen variant is missing, fall through to whichever key is present.
+    if (meta.cudaMap) {
+      const versionBase = altCudaSuffix === "cu130" ? "cu129" : "cu130";
+      const baseCuda =
+        hwProfile?.generation === "blackwell" && "cu130" in meta.cudaMap
+          ? "cu130"
+          : versionBase;
+      const wanted = dockerCudaVariant === "default" ? baseCuda : dockerCudaVariant;
+      const picked = meta.cudaMap[wanted] || meta.cudaMap[baseCuda] || meta.cudaMap.cu129 || meta.cudaMap.cu130;
+      return { ...meta, image: picked || meta.image };
+    }
+
+    // Legacy string tag — append the suffix when user picks the alt variant.
+    if (dockerCudaVariant === altCudaSuffix) {
       return { ...meta, image: `${meta.image}-${altCudaSuffix}` };
     }
     return meta;
@@ -880,6 +987,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 {strategies[activeStrategy].description.split("\n")[0]}
               </p>
             )}
+            {strategies[activeStrategy]?.orientation && (
+              <span className="inline-block text-[10px] font-medium mt-1.5 px-1.5 py-0.5 rounded bg-green-500/20 text-green-600 dark:text-green-400">
+                {strategies[activeStrategy].orientation === "latency" ? "Latency oriented" : "Throughput oriented"}
+              </span>
+            )}
           </ConfigRow>
 
           {/* Nodes — two number inputs for PD (one per pool), pills otherwise */}
@@ -914,7 +1026,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   // Multi-node pill is disabled when the recipe declares no
                   // multi_node_* (or pd_cluster) strategy. Small dense models
                   // commonly omit these.
-                  const disabled = n > 1 && !supportsMultiNode;
+                  const noMultiNode = n > 1 && !supportsMultiNode;
+                  // Single-node pill is disabled when the variant can't fit on
+                  // one node of the selected hardware — same struck-through
+                  // treatment as unsupported hardware pills. Multi-node still
+                  // works because weights shard across nodes.
+                  const singleNodeDoesntFit =
+                    n === 1 && !fitsSingleNode(hwProfile, currentVariant);
+                  const disabled = noMultiNode || singleNodeDoesntFit;
                   return (
                     <Pill
                       key={n}
@@ -922,11 +1041,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                       disabled={disabled}
                       onClick={() => !disabled && selectNodes(n)}
                       title={
-                        disabled
+                        noMultiNode
                           ? "This recipe does not declare a multi-node strategy. Fits in a single node."
-                          : n === 1
-                            ? "Single-node deployment (one HGX box)"
-                            : `2 nodes × ${hwProfile.gpu_count || 8} GPUs = ${2 * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
+                          : singleNodeDoesntFit
+                            ? `Single-node can't fit this variant on ${hwProfile.display_name || "the selected hardware"} (${currentVariant.vram_minimum_gb}GB > ${hwProfile.vram_gb}GB) — use multi-node`
+                            : n === 1
+                              ? "Single-node deployment (one HGX box)"
+                              : `2 nodes × ${hwProfile.gpu_count || 8} GPUs = ${2 * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
                       }
                     >
                       <span className="font-semibold">{n === 1 ? "Single-node" : "Multi-node (example: 2)"}</span>
@@ -953,7 +1074,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     onClick={() => toggleFeature(key)}
                     title={f?.description}
                   >
+                    {key === "spec_decoding" && (
+                      <Zap size={11} className="inline-block mr-1 -mt-0.5 text-vllm-yellow" fill="currentColor" />
+                    )}
                     {key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                    {key === "spec_decoding" && (
+                      <span className="ml-1.5 text-[11px] text-vllm-yellow font-normal">
+                        (for low latency & small batch size)
+                      </span>
+                    )}
                   </Pill>
                 ))}
               </PillGroup>

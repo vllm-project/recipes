@@ -1,6 +1,7 @@
 name: multi_node_tp
 deploy_type: multi_node
 display_name: "Multi-Node Tensor Parallel"
+orientation: latency
 description: >
   Multi-node TP. Splits the model across GPUs spanning multiple nodes.
   TP is set to total GPU count across all nodes. Head node serves requests,

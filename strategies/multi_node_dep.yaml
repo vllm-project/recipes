@@ -1,6 +1,7 @@
 name: multi_node_dep
 deploy_type: multi_node
 display_name: "Multi-Node Data + Expert Parallel"
+orientation: throughput
 description: >
   Multi-node DEP. Each node runs TEP over its local GPUs, with DP across nodes.
   Best throughput for MoE models across multiple nodes. Pass -dp <total_workers>
