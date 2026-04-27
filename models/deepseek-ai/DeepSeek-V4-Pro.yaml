@@ -33,8 +33,6 @@ model:
     - "fp8"
     - "--block-size"
     - "256"
-    - "--moe-backend"
-    - "deep_gemm_mega_moe"
   base_env:
     VLLM_ENGINE_READY_TIMEOUT_S: "3600"
 
@@ -104,6 +102,8 @@ hardware_overrides:
   blackwell:
     extra_args:
       - "--attention_config.use_fp4_indexer_cache=True"
+      - "--moe-backend"
+      - "deep_gemm_mega_moe"
 
 strategy_overrides:
   single_node_tep:
