@@ -81,18 +81,7 @@ guide: |
   - **NVIDIA:** compute capability >= 7.0; ~220 GB for weights + 240 GB per 1M context tokens
   - **AMD:** MI300X / MI325X / MI350X / MI355X with ROCm 7.0+
 
-  ### Install vLLM (NVIDIA, verified commit)
-
-  ```bash
-  uv venv
-  source .venv/bin/activate
-  export VLLM_COMMIT=0f3ce4c74b1875791d6604e006b6e905fde9f698
-  uv pip install vllm \
-      --torch-backend=auto \
-      --extra-index-url https://wheels.vllm.ai/${VLLM_COMMIT}
-  ```
-
-  ### Install vLLM (NVIDIA, nightly)
+  ### Install vLLM (NVIDIA)
 
   ```bash
   uv pip install -U vllm --extra-index-url https://wheels.vllm.ai/nightly
