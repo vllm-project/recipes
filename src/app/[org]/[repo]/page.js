@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAllRecipes, getAllRoutablePairs, findVariantRedirect, getRecipeByHfId } from "@/lib/recipes";
 import { recipeHref } from "@/lib/recipe-utils";
+import { siteUrl } from "@/lib/site-url";
 import { loadStrategies } from "@/lib/strategies";
 import { loadTaxonomy } from "@/lib/taxonomy";
 import { getProviderLogo, getProviderLogoClass } from "@/lib/providers";
@@ -85,9 +86,6 @@ export default async function RecipePage({ params }) {
     .map((s) => allRecipes.find((r) => r.hf_id === s || r.meta.slug === s))
     .filter(Boolean);
 
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://recipes.vllm.ai");
   const recipeUrl = `${siteUrl}/${recipe.hf_org}/${recipe.hf_repo}`;
   const jsonLd = [
     {

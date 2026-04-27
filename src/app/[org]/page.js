@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getAllRecipes } from "@/lib/recipes";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
 import { recipeHref } from "@/lib/recipe-utils";
+import { siteUrl } from "@/lib/site-url";
 import { Badge } from "@/components/ui/badge";
 import { ExternalLink, Type, Eye, Sparkles, Cpu, Hash } from "lucide-react";
 
@@ -84,9 +85,6 @@ export default async function OrgPage({ params }) {
     if (!TASK_ORDER.includes(t)) orderedGroups.push([t, groups[t]]);
   }
 
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://recipes.vllm.ai");
   const breadcrumbLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
