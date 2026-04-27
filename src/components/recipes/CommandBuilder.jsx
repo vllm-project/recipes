@@ -61,7 +61,6 @@ const ADVANCED_OPTIONS = [
     gatedBy: (_recipe, activeStrategy) => /(?:^|_)(?:tep|dep)$/.test(activeStrategy || ""),
   },
 ];
-const ADVANCED_BY_ID = Object.fromEntries(ADVANCED_OPTIONS.map((o) => [o.id, o]));
 import { loadPreferences, savePreference } from "@/lib/preferences";
 
 function CopyButton({ text, className = "" }) {
@@ -376,6 +375,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     return ap ? ap.split(",").filter(Boolean) : [];
   });
 
+  // Per-recipe advanced options declared under top-level `advanced_options:` in
+  // the YAML are merged with the global presets so a recipe can surface its
+  // own toggles (e.g. model-specific kernel backends) without code changes.
+  const advancedOptions = useMemo(
+    () => [...ADVANCED_OPTIONS, ...(recipe.advanced_options || [])],
+    [recipe]
+  );
+  const advancedById = useMemo(
+    () => Object.fromEntries(advancedOptions.map((o) => [o.id, o])),
+    [advancedOptions]
+  );
+
   // Install mode (pip | docker). Drives both the Install block's active tab
   // and the command rendering below: pip mode shows `vllm serve ...`, docker
   // mode wraps the same command in `docker run ...`. Default follows the
@@ -479,7 +490,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const result = useMemo(
     () => {
-      const advArgs = advanced.flatMap((id) => ADVANCED_BY_ID[id]?.args || []);
+      const advArgs = advanced.flatMap((id) => advancedById[id]?.args || []);
       const pdNodes = activeStrategy === "pd_cluster"
         ? {
           prefill: { nodes: pdPrefillNodes, rank: pdPrefillRank },
@@ -488,7 +499,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         : null;
       return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes);
     },
-    [recipe, variant, activeStrategy, hwId, features, advanced, strategies, taxonomy, nodeCount, pdPrefillNodes, pdDecodeNodes, pdPrefillRank, pdDecodeRank]
+    [recipe, variant, activeStrategy, hwId, features, advanced, advancedById, strategies, taxonomy, nodeCount, pdPrefillNodes, pdDecodeNodes, pdPrefillRank, pdDecodeRank]
   );
 
   // Visual feedback when any rendered command changes. Covers single-node
@@ -1100,7 +1111,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             </summary>
             <div className="px-4 pb-4 pt-1 border-t border-border/60">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {ADVANCED_OPTIONS.filter((opt) => !opt.gatedBy || opt.gatedBy(recipe, activeStrategy)).map((opt) => (
+                {advancedOptions.filter((opt) => !opt.gatedBy || opt.gatedBy(recipe, activeStrategy)).map((opt) => (
                   <label
                     key={opt.id}
                     className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition-colors ${advanced.includes(opt.id)

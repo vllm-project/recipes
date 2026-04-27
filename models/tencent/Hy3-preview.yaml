@@ -14,9 +14,7 @@ meta:
 
 model:
   model_id: "tencent/Hy3-preview"
-  min_vllm_version: "0.20.1"
-  nightly_required: true
-  docker_image: "vllm/vllm-openai:hy3-preview"
+  min_vllm_version: "0.20.0"
   install:
     docker:
       note: "Use the dedicated hy3-preview image until changes land in vllm:latest."
