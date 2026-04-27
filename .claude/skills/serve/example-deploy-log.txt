@@ -1,0 +1,125 @@
+==========================================
+vLLM /serve skill — end-to-end run
+Date: 2026-04-27T13:37:27-07:00
+Host: spark-bb88
+==========================================
+
+## 1. Hardware detection
+profile=dgx_spark gpu_count=1 driver=580.82.09 cuda=13.0 arch=aarch64 name='NVIDIA GB10'
+
+## 2. Recipe lookup
+model_id  : Qwen/Qwen3.5-0.8B
+recipe    : models/Qwen/Qwen3.5-0.8B.yaml
+variant   : default — precision=bf16 vram_min=2GB
+min vllm  : 0.17.0
+base_args : ['--trust-remote-code']
+strategies: ['single_node_tp']
+
+## 3. Synthesised launch (single_node_tp on dgx_spark, tp=1)
+docker run -d --gpus all --ipc=host --name vllm-qwen3.5-0.8b \
+  -p 8000:8000 -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -e HF_TOKEN=${HF_TOKEN:-} \
+  vllm/vllm-openai:latest-aarch64-cu130-ubuntu2404 \
+  --model Qwen/Qwen3.5-0.8B --tensor-parallel-size 1 --trust-remote-code
+
+## 4. Image pulled
+tag=latest-aarch64-cu130-ubuntu2404 size=23.8GB id=0b2cac4d5fcf
+
+## 5. Launching container
+container : vllm-qwen3.5-0.8b
+image     : vllm/vllm-openai:latest-aarch64-cu130-ubuntu2404
+log       : /tmp/vllm-qwen3.5-0.8b.log
+follow    : docker logs -f vllm-qwen3.5-0.8b
+/home/faradawn/CS/vllm-recipes/.claude/skills/serve/scripts/launch.sh: line 53: $!: unbound variable
+name=vllm-qwen3.5-0.8b status=Up Less than a second ports=0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+OK
+{"object":"list","data":[{"id":"Qwen/Qwen3.5-0.8B","object":"model","created":1777324898,"owned_by":"vllm","root":"Qwen/Qwen3.5-0.8B","parent":null,"max_model_len":262144,"permission":[{"id":"modelperm-b1321bfd8ec5c25c","object":"model_permission","created":1777324898,"allow_create_engine":false,"allow_sampling":true,"allow_logprobs":true,"allow_search_indices":false,"allow_view":true,"allow_fine_tuning":false,"organization":"*","group":null,"is_blocking":false}]}]}
+## 7. /v1/models (first hit)
+{
+    "object": "list",
+    "data": [
+        {
+            "id": "Qwen/Qwen3.5-0.8B",
+            "object": "model",
+            "created": 1777325028,
+            "owned_by": "vllm",
+            "root": "Qwen/Qwen3.5-0.8B",
+            "parent": null,
+            "max_model_len": 262144,
+            "permission": [
+                {
+                    "id": "modelperm-9ae50f1373a206d8",
+                    "object": "model_permission",
+                    "created": 1777325028,
+                    "allow_create_engine": false,
+                    "allow_sampling": true,
+                    "allow_logprobs": true,
+                    "allow_search_indices": false,
+                    "allow_view": true,
+                    "allow_fine_tuning": false,
+                    "organization": "*",
+                    "group": null,
+                    "is_blocking": false
+                }
+            ]
+        }
+    ]
+}
+
+## 8. Chat completion test
+{
+    "id": "chatcmpl-a319042e9cb93b8e",
+    "object": "chat.completion",
+    "created": 1777325028,
+    "model": "Qwen/Qwen3.5-0.8B",
+    "choices": [
+        {
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": "DGX Spark is a cloud-native, open-source framework designed to accelerate machine learning workflows by providing a unified interface for training, inference, and serving models on a distributed cloud infrastructure.",
+                "refusal": null,
+                "annotations": null,
+                "audio": null,
+                "function_call": null,
+                "tool_calls": [],
+                "reasoning": null
+            },
+            "logprobs": null,
+            "finish_reason": "stop",
+            "stop_reason": null,
+            "token_ids": null
+        }
+    ],
+    "service_tier": null,
+    "system_fingerprint": null,
+    "usage": {
+        "prompt_tokens": 22,
+        "total_tokens": 59,
+        "completion_tokens": 37,
+        "prompt_tokens_details": null
+    },
+    "prompt_logprobs": null,
+    "prompt_token_ids": null,
+    "kv_transfer_params": null
+}
+
+## 9. Inference response (extracted)
+
+## 10. GPU memory after inference
+name, memory.total [MiB], memory.used [MiB], utilization.gpu [%]
+NVIDIA GB10, [N/A], [N/A], 0 %
+
+## 11. Container status
+name=vllm-qwen3.5-0.8b status=Up About an hour ports=0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+
+## 12. Stopping artefacts
+log file  : /tmp/vllm-qwen3.5-0.8b.log (106 lines)
+container : leave running; stop with 'docker rm -f vllm-qwen3.5-0.8b'
+==========================================
+DONE — 2026-04-27T14:47:10-07:00
+
+## 9b. Inference response (parsed)
+  model   : Qwen/Qwen3.5-0.8B
+  usage   : prompt=22  completion=37  total=59
+  reply   : DGX Spark is a cloud-native, open-source framework designed to accelerate machine learning workflows by providing a unified interface for training, inference, and serving models on a distributed cloud infrastructure.

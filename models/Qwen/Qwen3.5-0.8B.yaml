@@ -3,7 +3,7 @@ meta:
   slug: "qwen3.5-0.8b"
   provider: "Qwen"
   description: "Qwen3.5 tiny dense multimodal model (0.8B) — ultra-low-VRAM / edge serving with 262K context"
-  date_updated: 2026-04-22
+  date_updated: 2026-04-27
   difficulty: beginner
   tasks:
     - multimodal
@@ -11,6 +11,8 @@ meta:
   performance_headline: "Tiny Qwen3.5 dense for edge / draft-model use"
   related_recipes:
     - "Qwen/Qwen3.5-2B"
+  hardware:
+    dgx_spark: verified
 
 model:
   model_id: "Qwen/Qwen3.5-0.8B"
