@@ -845,7 +845,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               {Math.round(vramShortfall.availGb / vramShortfall.gpuCount)}G = {vramShortfall.availGb}GB,
               but this variant needs at least {vramShortfall.needGb}GB for weights alone
               (KV cache requires more).{" "}
-              <span className="text-muted-foreground">Switch to a higher-memory GPU or use multi-node TP.</span>
+              <span className="text-muted-foreground">Switch to a higher-memory GPU, use multi-node TP, or lower <code className="font-mono text-[11px] px-1 py-px rounded bg-muted/50">--max-model-len</code> to shrink the KV cache footprint.</span>
             </div>
           </div>
         )}
