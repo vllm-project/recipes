@@ -156,7 +156,7 @@ guide: |
   ~1M — since YaRN at higher factors degrades short-context quality.
 
   ```bash
-  VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 vllm serve Qwen/Qwen3.6-35B-A3B \
+  VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 vllm serve Qwen/Qwen3.6-35B-A3B-FP8 \
     --tensor-parallel-size 2 \
     --max-model-len 1010000 \
     --reasoning-parser qwen3 \
