@@ -18,8 +18,8 @@ model:
   model_id: "XiaomiMiMo/MiMo-V2.5-Omni"
   min_vllm_version: "0.20.0"
   architecture: moe
-  parameter_count: "1T"
-  active_parameters: "45B"
+  parameter_count: "311B"
+  active_parameters: "15B"
   context_length: 1048576
   base_args:
     - "--trust-remote-code"
@@ -51,7 +51,7 @@ opt_in_features:
 variants:
   default:
     precision: fp8
-    vram_minimum_gb: 1229
+    vram_minimum_gb: 295
     description: "Native FP8 weights (block-wise e4m3 128x128); 4x H200 with TP4"
     extra_args:
       - "--tensor-parallel-size"
