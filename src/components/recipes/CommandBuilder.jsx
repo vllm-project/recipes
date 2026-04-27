@@ -403,7 +403,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   // CUDA variant selector for the NVIDIA docker image tag. The available
   // suffix depends on the recipe's vLLM version (the tag's base CUDA flips
-  // at 0.21.0 — see `altCudaSuffix` below). State holds the raw suffix
+  // at 0.20.0 — see `altCudaSuffix` below). State holds the raw suffix
   // (`"cu129"` | `"cu130"`) or `"default"` for the base tag.
   // Only surfaced for NVIDIA — AMD / TPU don't ship paired CUDA variants.
   const [dockerCudaVariant, setDockerCudaVariant] = useState("default");
@@ -764,15 +764,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     );
   }
 
-  // The CUDA baseline for NVIDIA images flipped at vLLM 0.21.0: pre-0.21.0
+  // The CUDA baseline for NVIDIA images flipped at vLLM 0.20.0: pre-0.20.0
   // the base tag is CUDA 12.9 and the alternative suffix is `-cu130`;
-  // 0.21.0+ the base tag is CUDA 13 and the alternative suffix is `-cu129`.
+  // 0.20.0+ the base tag is CUDA 13 and the alternative suffix is `-cu129`.
   // Offering the wrong suffix would give the user a tag that doesn't exist.
   const altCudaSuffix = useMemo(() => {
     const v = recipe.model?.min_vllm_version || "";
     const [maj, min] = v.split(".").map((n) => parseInt(n, 10) || 0);
-    const is021Plus = maj > 0 || min >= 21;
-    return is021Plus ? "cu129" : "cu130";
+    const is020Plus = maj > 0 || min >= 20;
+    return is020Plus ? "cu129" : "cu130";
   }, [recipe]);
 
   const dockerMeta = useMemo(() => {
@@ -781,7 +781,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
     // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
     // tag and skip auto-suffix. "default" resolves to the base CUDA for this
-    // vLLM version (< 0.21.0 → cu129 base; 0.21.0+ → cu130 base), except on
+    // vLLM version (< 0.20.0 → cu129 base; 0.20.0+ → cu130 base), except on
     // Blackwell where cu130 is preferred when the map offers it. If the
     // chosen variant is missing, fall through to whichever key is present.
     if (meta.cudaMap) {
@@ -1313,7 +1313,7 @@ uv pip install -U vllm --torch-backend auto`;
     : isAmd
       ? undefined
       : altCudaSuffix === "cu129"
-        ? "vLLM 0.21.0+ default tag ships CUDA 13. Switch to cu129 for the -cu129 variant if your host is on CUDA 12.9."
+        ? "vLLM 0.20.0+ default tag ships CUDA 13. Switch to cu129 for the -cu129 variant if your host is on CUDA 12.9."
         : "Default tag ships CUDA 12.9. Switch to cu130 for the -cu130 variant on CUDA 13 hosts.";
   const dockerNote = dockerCfg?.note || defaultDockerNote;
   // Show the CUDA selector only when we're on NVIDIA, the user isn't supplying
@@ -1398,7 +1398,7 @@ uv pip install -U vllm --torch-backend auto`;
                           : v.id === "cu130"
                             ? "CUDA 13 build"
                             : altCudaSuffix === "cu129"
-                              ? "Base tag — CUDA 13 (vLLM 0.21.0+)"
+                              ? "Base tag — CUDA 13 (vLLM 0.20.0+)"
                               : "Base tag — CUDA 12.9"
                       }
                       className={`px-2 py-0.5 text-[11px] font-mono rounded transition-colors ${
