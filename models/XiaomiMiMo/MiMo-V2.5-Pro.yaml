@@ -2,7 +2,7 @@ meta:
   title: "MiMo-V2.5-Pro"
   slug: "mimo-v2-5-pro"
   provider: "Xiaomi MiMo"
-  description: "Xiaomi's flagship MoE reasoning model (~1T total / ~45B active) with hybrid attention, native FP8 weights, and Multi-Token Prediction"
+  description: "Xiaomi's flagship MoE reasoning model (1.02T total / 42B active) with hybrid attention, native FP8 weights, and Multi-Token Prediction"
   date_updated: 2026-04-27
   difficulty: advanced
   tasks:
@@ -22,7 +22,7 @@ model:
     pip: false
   architecture: moe
   parameter_count: "1T"
-  active_parameters: "45B"
+  active_parameters: "42B"
   context_length: 1048576
   base_args:
     - "--trust-remote-code"
@@ -77,11 +77,12 @@ strategy_overrides: {}
 guide: |
   ## Overview
 
-  MiMo-V2.5-Pro is Xiaomi's flagship MoE reasoning model with ~1T total parameters
-  and ~45B active per token. It uses 384 routed experts (top-8) with hybrid
-  attention (full-attention + sliding-window 128) over 70 layers and ships with
-  native FP8 (block-wise e4m3) weights. A Multi-Token Prediction (MTP) head is
-  included for future speculative decoding.
+  MiMo-V2.5-Pro is Xiaomi's flagship MoE reasoning model with 1.02T total parameters
+  and 42B active per token. It uses 384 routed experts (top-8) with hybrid
+  attention (full-attention + sliding-window 128 at 6:1 ratio) over 70 layers
+  (1 dense + 69 MoE) and ships with native FP8 (block-wise e4m3) weights.
+  A 3-layer Multi-Token Prediction (MTP) head enables speculative decoding for
+  ~3x output speed.
 
   ## Prerequisites
 

@@ -1,8 +1,8 @@
 meta:
-  title: "MiMo-V2.5-Omni"
-  slug: "mimo-v2-5-omni"
+  title: "MiMo-V2.5"
+  slug: "mimo-v2-5"
   provider: "Xiaomi MiMo"
-  description: "Xiaomi's flagship multimodal MoE reasoning model with hybrid attention, native FP8 weights, and Multi-Token Prediction"
+  description: "MiMo-V2.5 is a native omnimodal model with strong agentic capabilities, supporting text, image, video, and audio understanding within a unified architecture"
   date_updated: 2026-04-27
   difficulty: advanced
   tasks:
@@ -15,7 +15,7 @@ meta:
     gb200: verified
 
 model:
-  model_id: "XiaomiMiMo/MiMo-V2.5-Omni"
+  model_id: "XiaomiMiMo/MiMo-V2.5"
   min_vllm_version: "nightly"
   docker_image:
     cu129: "vllm/vllm-openai:mimov25-cu129"
@@ -23,7 +23,7 @@ model:
   install:
     pip: false
   architecture: moe
-  parameter_count: "311B"
+  parameter_count: "310B"
   active_parameters: "15B"
   context_length: 1048576
   base_args:
@@ -79,11 +79,13 @@ strategy_overrides: {}
 guide: |
   ## Overview
 
-  MiMo-V2.5-Omni is Xiaomi's flagship MoE reasoning model with ~1T total parameters
-  and ~45B active per token. It uses 384 routed experts (top-8) with hybrid
-  attention (full-attention + sliding-window 128) over 70 layers and ships with
-  native FP8 (block-wise e4m3) weights. A Multi-Token Prediction (MTP) head is
-  included for future speculative decoding.
+  MiMo-V2.5 is Xiaomi's native omnimodal MoE model with 310B total parameters
+  and 15B active per token, supporting text, image, video, and audio understanding
+  within a unified architecture. Built on the MiMo-V2-Flash backbone with dedicated
+  vision (729M) and audio (261M) encoders, it uses 256 routed experts (top-8) with
+  hybrid attention (SWA-128 + full-attention at 5:1 ratio) over 48 layers
+  (1 dense + 47 MoE) and ships with native FP8 (block-wise e4m3) weights.
+  A 3-layer Multi-Token Prediction (MTP) head is included for speculative decoding.
 
   ## Prerequisites
 
@@ -102,7 +104,7 @@ guide: |
   Single-node TP4 (H200):
 
   ```bash
-  vllm serve XiaomiMiMo/MiMo-V2.5-Omni \
+  vllm serve XiaomiMiMo/MiMo-V2.5 \
     --tensor-parallel-size 4 \
     --trust-remote-code \
     --gpu-memory-utilization 0.95 \
@@ -113,7 +115,7 @@ guide: |
   With tool calling + reasoning:
 
   ```bash
-  vllm serve XiaomiMiMo/MiMo-V2.5-Omni \
+  vllm serve XiaomiMiMo/MiMo-V2.5 \
     --tensor-parallel-size 4 \
     --trust-remote-code \
     --gpu-memory-utilization 0.95 \
@@ -135,7 +137,7 @@ guide: |
   curl -X POST http://localhost:8000/v1/chat/completions \
     -H "Content-Type: application/json" \
     -d '{
-      "model": "XiaomiMiMo/MiMo-V2.5-Omni",
+      "model": "XiaomiMiMo/MiMo-V2.5",
       "messages": [{"role": "user", "content": "Hello MiMo!"}],
       "chat_template_kwargs": {"enable_thinking": true}
     }'
@@ -150,7 +152,7 @@ guide: |
   ### VisionArena-Chat
   ```
   vllm bench serve \
-    --model XiaomiMiMo/MiMo-V2.5-Omni \
+    --model XiaomiMiMo/MiMo-V2.5 \
     --backend openai-chat \
     --endpoint /v1/chat/completions \
     --dataset-name hf \
@@ -161,11 +163,11 @@ guide: |
   ### Random Synthetic
   ```bash
   vllm bench serve \
-    --model XiaomiMiMo/MiMo-V2.5-Omni \
+    --model XiaomiMiMo/MiMo-V2.5 \
     --dataset-name random --random-input-len 8000 --random-output-len 1000 \
     --request-rate 3 --num-prompts 1800 --ignore-eos
   ```
 
   ## References
 
-  - [MiMo-V2.5-Omni on Hugging Face](https://huggingface.co/XiaomiMiMo/MiMo-V2.5-Omni)
+  - [MiMo-V2.5 on Hugging Face](https://huggingface.co/XiaomiMiMo/MiMo-V2.5)
