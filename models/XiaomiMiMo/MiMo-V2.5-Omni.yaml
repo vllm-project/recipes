@@ -16,7 +16,7 @@ meta:
 
 model:
   model_id: "XiaomiMiMo/MiMo-V2.5-Omni"
-  min_vllm_version: "0.20.0"
+  min_vllm_version: "nightly"
   docker_image:
     cu129: "vllm/vllm-openai:mimov25-cu129"
     cu130: "vllm/vllm-openai:mimov25-cu130"
