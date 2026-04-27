@@ -39,8 +39,6 @@ model:
 dependencies:
   - note: "DeepGEMM FP8 kernels — install via vLLM tools/install_deepgemm.sh"
     command: "bash <(curl -fsSL https://raw.githubusercontent.com/vllm-project/vllm/v0.20.0/tools/install_deepgemm.sh)"
-  - note: "TileLang kernels (apache-tvm-ffi pinned for compatibility)"
-    command: "uv pip install tilelang apache-tvm-ffi==0.1.9"
 
 features:
   tool_calling:
