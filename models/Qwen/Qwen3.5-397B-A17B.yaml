@@ -221,6 +221,23 @@ guide: |
     --enable-prefix-caching
   ```
 
+  ## Processing Ultra-Long Texts
+
+  Qwen3.5-397B-A17B natively supports `262,144` tokens. For longer inputs, apply
+  YaRN RoPE scaling via `--hf-overrides` and raise `--max-model-len`. Pick
+  `factor` to match your real workload — `2.0` covers ~524K, `4.0` covers
+  ~1M — since YaRN at higher factors degrades short-context quality.
+
+  ```bash
+  VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 vllm serve Qwen/Qwen3.5-397B-A17B-FP8 \
+    --tensor-parallel-size 8 \
+    --max-model-len 1010000 \
+    --reasoning-parser qwen3 \
+    --hf-overrides '{"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}'
+  ```
+
+  See the [model card](https://huggingface.co/Qwen/Qwen3.5-397B-A17B#processing-ultra-long-texts) for the full parameter reference.
+
   ## Client Usage
 
   ```python
@@ -277,8 +294,6 @@ guide: |
   - **Prefix Caching**: Prefix caching for Mamba cache "align" mode is currently experimental.
   - **Multi-token Prediction**: MTP-1 reduces per-token latency but degrades throughput under high concurrency because speculative tokens consume KV cache capacity. Adjust `num_speculative_tokens` (1-5) based on your use case.
   - **Encoder Data Parallelism**: `--mm-encoder-tp-mode data` deploys the vision encoder in a data-parallel fashion. This consumes additional memory and may require adjustment of `--gpu-memory-utilization`.
-  - **Ultra-Long Texts**: Qwen3.5 natively supports up to 262,144 tokens. For longer contexts, use RoPE scaling (YaRN). See the [HuggingFace model card](https://huggingface.co/Qwen/Qwen3.5-397B-A17B#processing-ultra-long-texts) for details.
-
   ## References
 
   - Model card: https://huggingface.co/Qwen/Qwen3.5-397B-A17B

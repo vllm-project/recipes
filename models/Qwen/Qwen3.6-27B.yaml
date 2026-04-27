@@ -133,6 +133,23 @@ guide: |
     --enable-prefix-caching
   ```
 
+  ## Processing Ultra-Long Texts
+
+  Qwen3.6-27B natively supports `262,144` tokens. For longer inputs, apply
+  YaRN RoPE scaling via `--hf-overrides` and raise `--max-model-len`. Pick
+  `factor` to match your real workload — `2.0` covers ~524K, `4.0` covers
+  ~1M — since YaRN at higher factors degrades short-context quality.
+
+  ```bash
+  VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 vllm serve Qwen/Qwen3.6-27B-FP8 \
+    --tensor-parallel-size 2 \
+    --max-model-len 1010000 \
+    --reasoning-parser qwen3 \
+    --hf-overrides '{"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}'
+  ```
+
+  See the [model card](https://huggingface.co/Qwen/Qwen3.6-27B#processing-ultra-long-texts) for the full parameter reference.
+
   ## Client Usage
 
   ```python
