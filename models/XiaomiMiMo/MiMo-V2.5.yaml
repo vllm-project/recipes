@@ -22,7 +22,7 @@ model:
   install:
     pip: false
   architecture: moe
-  parameter_count: "310B"
+  parameter_count: "311B"
   active_parameters: "15B"
   context_length: 1048576
   base_args:
@@ -55,7 +55,7 @@ opt_in_features:
 variants:
   default:
     precision: fp8
-    vram_minimum_gb: 295
+    vram_minimum_gb: 374
     description: "Native FP8 weights (block-wise e4m3 128x128); 4x H200 with TP4"
     extra_args:
       - "--tensor-parallel-size"
