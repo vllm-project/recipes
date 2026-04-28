@@ -64,7 +64,7 @@ export function resolveSingleNodeTp(recipe, variant, hwProfile, strategyName = "
  * tested, works for both dense and MoE. TEP / DEP / PD-cluster are
  * advanced strategies that users can opt into explicitly.
  */
-export function recommendStrategy(recipe, hwProfile, nodeCount = 1) {
+export function recommendStrategy(recipe, _hwProfile, nodeCount = 1) {
   const compatible = recipe.compatible_strategies || [];
   // Recipe-level override — useful when the global TP-first preference is wrong
   // for a model (e.g. MoE recipes where TEP/DEP is the intended default and TP

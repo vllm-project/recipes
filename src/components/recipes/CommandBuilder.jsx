@@ -670,10 +670,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commandFingerprint]);
 
-  // Auto-enable spec_decoding when the active strategy is latency-oriented
-  // (TP / TEP). Fires on initial mount (covers the case where TP is the default
-  // recommendation) and on any later strategy change. Respects an explicit
-  // ?features= URL pin on first render so shareable links round-trip.
+  // Auto-enable spec_decoding for TP / TEP strategies (latency-oriented TP and
+  // balanced TEP both benefit from speculative decoding). Fires on initial
+  // mount (covers the case where TP is the default recommendation) and on any
+  // later strategy change. Respects an explicit ?features= URL pin on first
+  // render so shareable links round-trip.
   const specAutoMountRef = useRef(true);
   useEffect(() => {
     const isInitial = specAutoMountRef.current;
@@ -1247,11 +1248,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 {strategies[activeStrategy].description.split("\n")[0]}
               </p>
             )}
-            {strategies[activeStrategy]?.orientation && (
-              <span className="inline-block text-[10px] font-medium mt-1.5 px-1.5 py-0.5 rounded bg-green-500/20 text-green-600 dark:text-green-400">
-                {strategies[activeStrategy].orientation === "latency" ? "Latency oriented" : "Throughput oriented"}
-              </span>
-            )}
+            {strategies[activeStrategy]?.orientation && (() => {
+              const o = strategies[activeStrategy].orientation;
+              const { label, classes } = o === "latency"
+                ? { label: "Latency oriented", classes: "bg-green-500/20 text-green-600 dark:text-green-400" }
+                : o === "balanced"
+                  ? { label: "Balanced", classes: "bg-blue-500/20 text-blue-600 dark:text-blue-400" }
+                  : { label: "Throughput oriented", classes: "bg-amber-500/20 text-amber-700 dark:text-amber-400" };
+              return (
+                <span className={`inline-block text-[10px] font-medium mt-1.5 px-1.5 py-0.5 rounded ${classes}`}>
+                  {label}
+                </span>
+              );
+            })()}
           </ConfigRow>
 
           {/* Nodes — two number inputs for PD (one per pool), pills otherwise */}

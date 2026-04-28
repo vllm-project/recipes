@@ -76,13 +76,14 @@ variants:
 
 compatible_strategies:
   - single_node_tp
+  - single_node_tep
   - single_node_dep
   - multi_node_dep
   - pd_cluster
 
-# DP+EP is the default deployment; single_node_tp is offered only as a
+# TP+EP is the default deployment; single_node_tp is offered only as a
 # latency-oriented alternative.
-default_strategy: single_node_dep
+default_strategy: single_node_tep
 
 hardware_overrides:
   blackwell:
