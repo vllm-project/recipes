@@ -82,6 +82,10 @@ compatible_strategies:
   - multi_node_dep
   - pd_cluster
 
+# TP+EP is the default deployment; single_node_tp is offered only as a
+# latency-oriented alternative.
+default_strategy: single_node_tep
+
 hardware_overrides:
   hopper:
     # H200 (141 GB × 8 = 1128 GB) leaves KV cache tight at 1M context with

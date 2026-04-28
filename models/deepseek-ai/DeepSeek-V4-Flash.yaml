@@ -80,6 +80,10 @@ compatible_strategies:
   - multi_node_dep
   - pd_cluster
 
+# DP+EP is the default deployment; single_node_tp is offered only as a
+# latency-oriented alternative.
+default_strategy: single_node_dep
+
 hardware_overrides:
   blackwell:
     extra_args:
