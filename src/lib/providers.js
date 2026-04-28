@@ -35,6 +35,7 @@ export const PROVIDERS = {
   "meituan-longcat": { display_name: "Meituan LongCat",         logo: "/providers/meituan-longcat.png" },
   "stabilityai":     { display_name: "Stability AI",            logo: "/providers/stabilityai.png" },
   "stepfun-ai":      { display_name: "StepFun",                 logo: "/providers/stepfun-ai.png" },
+  "poolside":        { display_name: "Poolside",                logo: "/providers/poolside.png" },
 };
 
 export function getProviderLogo(hfOrg) {

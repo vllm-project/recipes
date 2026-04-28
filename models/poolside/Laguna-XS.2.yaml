@@ -1,0 +1,142 @@
+meta:
+  title: "Laguna XS.2"
+  slug: "laguna-xs.2"
+  provider: "poolside"
+  description: "Poolside's 33B total / 3B activated MoE coding model with mixed sliding-window + global attention, native interleaved reasoning, and 128K context — designed for agentic coding."
+  date_updated: 2026-04-29
+  difficulty: intermediate
+  tasks:
+    - text
+  performance_headline: "33B/3B-A MoE for agentic coding with interleaved thinking and tool use"
+  related_recipes: []
+  hardware:
+    h200: verified
+
+model:
+  model_id: "poolside/Laguna-XS.2"
+  min_vllm_version: "nightly"
+  docker_image: "vllm/vllm-openai:laguna"
+  nightly_required: true
+  architecture: moe
+  parameter_count: "33B"
+  active_parameters: "3B"
+  context_length: 131072
+  base_args:
+    - "--trust-remote-code"
+  base_env: {}
+
+features:
+  tool_calling:
+    description: "Enable automatic tool choice with Poolside's tool-call parser"
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "poolside_v1"
+  reasoning:
+    description: "Enable interleaved thinking with Poolside's reasoning parser"
+    args:
+      - "--reasoning-parser"
+      - "poolside_v1"
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 80
+    description: "BF16 weights — fits on a single 80GB+ GPU (H100/H200/B200)"
+
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides: {}
+
+strategy_overrides:
+  single_node_tp:
+    tp: 1
+
+guide: |
+  ## Overview
+
+  [Laguna XS.2](https://huggingface.co/poolside/Laguna-XS.2) is Poolside's 33B-total / 3B-activated Mixture-of-Experts model purpose-built for agentic coding and long-horizon work. It combines mixed sliding-window + global attention (3:1 across 40 layers) with sigmoid per-head gating and FP8 KV cache, so it stays compact enough to run locally while supporting a 131K-token context.
+
+  ### Key features
+  - **Mixed SWA + global attention**: 30 sliding-window layers (window=512) interleaved with 10 global-attention layers, each with per-layer rotary scaling.
+  - **Native FP8 KV cache**: KV cache is quantized to FP8 to reduce memory per token.
+  - **Interleaved reasoning**: thinking blocks emitted between tool calls; toggled per-request via `enable_thinking`.
+  - **Tool calling**: Poolside-specific XML-style tool-call protocol, parsed via `poolside_v1`.
+  - **256 experts + 1 shared expert** with top-8 routing.
+
+  ## Prerequisites
+
+  Laguna XS.2 support is on the open vLLM PR ([vllm-project/vllm#41129](https://github.com/vllm-project/vllm/pull/41129)) — install from a nightly wheel or the pinned Docker image below until the PR lands in a stable release.
+
+  ### Docker (recommended)
+  ```bash
+  docker pull vllm/vllm-openai:laguna
+  ```
+
+  ### pip (nightly)
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install -U vllm --pre \
+    --extra-index-url https://wheels.vllm.ai/nightly/cu130 \
+    --extra-index-url https://download.pytorch.org/whl/cu130 \
+    --index-strategy unsafe-best-match
+  ```
+
+  ## Launch command
+
+  ### Single GPU (H100/H200/B200, BF16)
+  ```bash
+  vllm serve poolside/Laguna-XS.2 \
+    --trust-remote-code \
+    --max-model-len 131072 \
+    --enable-auto-tool-choice \
+    --tool-call-parser poolside_v1 \
+    --reasoning-parser poolside_v1
+  ```
+
+  ### Docker
+  ```bash
+  docker run -itd --name laguna-xs2 \
+    --ipc=host --network host --shm-size 16G --gpus all \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai:laguna \
+      --model poolside/Laguna-XS.2 \
+      --trust-remote-code \
+      --max-model-len 131072 \
+      --enable-auto-tool-choice \
+      --tool-call-parser poolside_v1 \
+      --reasoning-parser poolside_v1 \
+      --host 0.0.0.0 --port 8000
+  ```
+
+  ## Controlling reasoning
+
+  Reasoning is **off by default** in the chat template. Enable it per-request:
+
+  ```python
+  from openai import OpenAI
+  client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+
+  resp = client.chat.completions.create(
+      model="poolside/Laguna-XS.2",
+      messages=[{"role": "user", "content": "Write a Python retry wrapper with exponential backoff."}],
+      extra_body={"chat_template_kwargs": {"enable_thinking": True}},
+      temperature=0.7,
+      top_p=1.0,
+      extra_query={"top_k": 20},
+  )
+  print(resp.choices[0].message.reasoning_content)
+  print(resp.choices[0].message.content)
+  ```
+
+  Or default-on with `--default-chat-template-kwargs '{"enable_thinking": true}'`.
+
+  ## References
+
+  - [Model card](https://huggingface.co/poolside/Laguna-XS.2)
+  - [Release blog post](https://poolside.ai/blog/laguna-a-deeper-dive)
+  - [vLLM support PR #41129](https://github.com/vllm-project/vllm/pull/41129)
