@@ -141,7 +141,8 @@ docker run -itd --name gemma4-tpu \
         --model google/gemma-4-31B-it \
         --tensor-parallel-size 2 \
         --max-model-len 16384 \
-        --max-num-batched-tokens 16384 \
+        --max-num-batched-tokens 4096 \
+        --additional_config='{"quantization": { "qwix": { "rules": [{ "module_path": ".*", "weight_qtype": "float8_e4m3fn", "act_qtype": "float8_e4m3fn"}]}}}' \
         --block-size=256 \
         --disable_chunked_mm_input \
         --host 0.0.0.0 \
