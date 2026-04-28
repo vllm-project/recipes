@@ -15,10 +15,7 @@ meta:
 model:
   model_id: "inclusionAI/Ling-2.6-flash"
   min_vllm_version: "nightly"
-  install:
-    pip:
-      command: "uv pip install vllm --pre --index-url https://wheels.vllm.ai/nightly"
-      note: "nightly wheel required — stable release does not yet support this model"
+  nightly_required: true
   architecture: moe
   parameter_count: "104B"
   active_parameters: "7.4B"
