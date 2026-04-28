@@ -210,7 +210,7 @@ function EndpointsPopoverButton({ isPd, isMultiNode, placeholders, endpoints, on
       >
         <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
           <span className="text-xs font-semibold flex items-center gap-1.5">
-            <Globe size={12} /> Cluster endpoints
+            <Globe size={12} /> Cluster env
           </span>
           {filledCount > 0 && (
             <button
@@ -276,7 +276,7 @@ function EndpointsPopoverButton({ isPd, isMultiNode, placeholders, endpoints, on
         onClick={() => setOpen(!open)}
         aria-expanded={open}
         aria-haspopup="dialog"
-        title="Cluster endpoints"
+        title="Cluster env"
         className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
           filledCount > 0
             ? "bg-vllm-blue/10 text-vllm-blue hover:bg-vllm-blue/15"
@@ -284,7 +284,7 @@ function EndpointsPopoverButton({ isPd, isMultiNode, placeholders, endpoints, on
         }`}
       >
         <Globe size={11} />
-        Endpoints
+        Env
         {filledCount > 0 && (
           <span className="text-[10px] font-mono tabular-nums opacity-80">{filledCount}</span>
         )}
