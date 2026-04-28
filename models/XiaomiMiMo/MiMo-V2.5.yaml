@@ -12,7 +12,6 @@ meta:
     - "XiaomiMiMo/MiMo-V2-Flash"
   hardware:
     h200: verified
-    gb200: verified
 
 model:
   model_id: "XiaomiMiMo/MiMo-V2.5"

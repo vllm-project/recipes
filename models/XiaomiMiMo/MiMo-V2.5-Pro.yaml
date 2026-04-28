@@ -8,7 +8,7 @@ meta:
   tasks:
     - text
   related_recipes:
-    - "XiaomiMiMo/MiMo-V2-Flash"
+    - "XiaomiMiMo/MiMo-V2.5"
   hardware:
     h200: verified
 
@@ -55,6 +55,7 @@ opt_in_features:
 variants:
   default:
     precision: fp8
+    vram_minimum_gb: 1224
     description: "Native FP8 weights (block-wise e4m3 128x128); 8x H200 with TP8"
     extra_args:
       - "--tensor-parallel-size"
