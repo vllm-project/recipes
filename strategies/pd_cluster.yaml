@@ -22,6 +22,7 @@ prefill:
     - "--kv-transfer-config"
     - '{"kv_connector":"NixlConnector","kv_role":"kv_producer","kv_load_failure_policy":"fail"}'
     - "--enforce-eager"
+    - "--no-async-scheduling"
   env:
     VLLM_USE_NCCL_SYMM_MEM: "1"
     NCCL_CUMEM_ENABLE: "1"
@@ -29,7 +30,10 @@ prefill:
     NCCL_NVLS_ENABLE: "1"
     UCX_NET_DEVICES: "all"
     VLLM_NIXL_SIDE_CHANNEL_PORT: "5557"
-    VLLM_NIXL_SIDE_CHANNEL_HOST: "$PREFILL_HOST_IP"
+    # Bind on this prefill node's own IP. Rendered as $PREFILL_NODE_1 by
+    # default (rank-0 view); command-synthesis rewrites to $PREFILL_NODE_<rank+1>
+    # when the UI shows a non-zero DEP rank.
+    VLLM_NIXL_SIDE_CHANNEL_HOST: "$PREFILL_NODE_1"
 
 decode:
   vllm_args:
@@ -46,7 +50,8 @@ decode:
     NCCL_NVLS_ENABLE: "1"
     UCX_NET_DEVICES: "all"
     VLLM_NIXL_SIDE_CHANNEL_PORT: "5558"
-    VLLM_NIXL_SIDE_CHANNEL_HOST: "$DECODE_HOST_IP"
+    # Same per-node binding pattern as prefill above.
+    VLLM_NIXL_SIDE_CHANNEL_HOST: "$DECODE_NODE_1"
 
 parallel_flag: "--tensor-parallel-size"
 
