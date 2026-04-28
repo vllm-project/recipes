@@ -375,8 +375,17 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     //    Precedence: generation-specific (hopper/blackwell/amd) > brand-wide (nvidia).
     //    `nvidia:` lets a recipe apply the same overrides to every NVIDIA GPU
     //    without duplicating hopper and blackwell blocks.
+    //
+    //    A strategy may further override hardware overrides via
+    //    `strategy_overrides.<strategy>.hardware_overrides.<gen>` — when set,
+    //    it REPLACES the recipe-level hardware override for that gen on that
+    //    strategy. Use this to drop a recipe-wide hw flag (e.g. an MoE kernel
+    //    backend) for a specific strategy without duplicating the rest.
     const isNvidia = hwProfile?.brand === "NVIDIA";
-    const ho = recipe.hardware_overrides?.[gen]
+    const strategyHo = so?.hardware_overrides?.[gen]
+      || (isNvidia ? so?.hardware_overrides?.nvidia : null);
+    const ho = strategyHo
+      || recipe.hardware_overrides?.[gen]
       || (isNvidia ? recipe.hardware_overrides?.nvidia : null);
     if (ho?.extra_args) args.push(...ho.extra_args);
 
@@ -455,9 +464,14 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     }
 
     // Hardware overrides env — same precedence as args block: generation key
-    // first, then brand-wide `nvidia:` for NVIDIA GPUs.
+    // first, then brand-wide `nvidia:` for NVIDIA GPUs. Per-strategy nested
+    // hardware_overrides REPLACES the recipe-level for that gen on that
+    // strategy (mirrors the args-block behavior).
     const envIsNvidia = hwProfile?.brand === "NVIDIA";
-    const envHo = recipe.hardware_overrides?.[gen]
+    const envStrategyHo = so?.hardware_overrides?.[gen]
+      || (envIsNvidia ? so?.hardware_overrides?.nvidia : null);
+    const envHo = envStrategyHo
+      || recipe.hardware_overrides?.[gen]
       || (envIsNvidia ? recipe.hardware_overrides?.nvidia : null);
     if (envHo?.extra_env) Object.assign(env, envHo.extra_env);
 
