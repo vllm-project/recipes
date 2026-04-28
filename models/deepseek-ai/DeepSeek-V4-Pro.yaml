@@ -75,11 +75,16 @@ variants:
     description: "Native FP4+FP8 mixed checkpoint (MoE experts FP4, remaining params FP8)"
 
 compatible_strategies:
+  - single_node_tp
   - single_node_tep
   - single_node_dep
   - multi_node_tep
   - multi_node_dep
   - pd_cluster
+
+# TP+EP is the default deployment; single_node_tp is offered only as a
+# latency-oriented alternative.
+default_strategy: single_node_tep
 
 hardware_overrides:
   hopper:
@@ -106,6 +111,19 @@ hardware_overrides:
       - "deep_gemm_mega_moe"
 
 strategy_overrides:
+  single_node_tp:
+    # Latency-oriented TP-only deployment: no expert parallelism (single_node_tp
+    # strategy doesn't add --enable-expert-parallel) and no MoE mega-kernel
+    # backend on Blackwell. Autotune is disabled to minimize startup time.
+    extra_args:
+      - "--no-enable-flashinfer-autotune"
+    hardware_overrides:
+      blackwell:
+        # Replaces recipe-level blackwell override: keeps the FP4 indexer cache
+        # but drops --moe-backend deep_gemm_mega_moe (TP-only path uses the
+        # default MoE backend).
+        extra_args:
+          - "--attention_config.use_fp4_indexer_cache=True"
   single_node_tep:
     extra_args:
       - "--compilation-config"

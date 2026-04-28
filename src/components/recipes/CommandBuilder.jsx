@@ -670,10 +670,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commandFingerprint]);
 
-  // Auto-enable spec_decoding when the active strategy is latency-oriented
-  // (TP / TEP). Fires on initial mount (covers the case where TP is the default
-  // recommendation) and on any later strategy change. Respects an explicit
-  // ?features= URL pin on first render so shareable links round-trip.
+  // Auto-enable spec_decoding for TP / TEP strategies (latency-oriented TP and
+  // balanced TEP both benefit from speculative decoding). Fires on initial
+  // mount (covers the case where TP is the default recommendation) and on any
+  // later strategy change. Respects an explicit ?features= URL pin on first
+  // render so shareable links round-trip.
   const specAutoMountRef = useRef(true);
   useEffect(() => {
     const isInitial = specAutoMountRef.current;
@@ -739,23 +740,32 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     setFeatures(next);
     setHwId(id);
     setStrategyOverride("");
-    // Bump to multi-node if the new hardware can't fit single-node and the
-    // recipe declares a multi-node path — otherwise the Single-node pill shows
-    // crossed out but the command keeps rendering the invalid single-node
-    // config. Tied to the click so it doesn't fight a user who deliberately
-    // picks Single-node afterwards (that click re-sets nodeCount explicitly).
+    // Bump to multi-node if the new hardware can't fit single-node (otherwise
+    // the Single-node pill shows crossed out but the command keeps rendering
+    // the invalid single-node config). Bump back DOWN to single-node when the
+    // new hardware comfortably fits and the recipe's default is a single-node
+    // strategy — without this, switching from GB200 (which bumped to 2 nodes
+    // because the model didn't fit a 4-GPU tray) to B300/GB300 would stay at
+    // 2 nodes and pick the multi-node sibling. Tied to the click so a
+    // deliberate Single-/Multi-node click afterwards still wins.
     const newProfile = taxonomy.hardware_profiles?.[id] || {};
-    const shouldBumpNodes =
-      nodeCount === 1 && supportsMultiNode && !fitsSingleNode(newProfile, currentVariant);
+    const fitsNew = fitsSingleNode(newProfile, currentVariant);
+    const recipeDefault = recipe.default_strategy;
+    const recipeDefaultsSingleNode =
+      typeof recipeDefault === "string" && recipeDefault.startsWith("single_node_");
+    const shouldBumpNodes = nodeCount === 1 && supportsMultiNode && !fitsNew;
+    const shouldUnbumpNodes = nodeCount > 1 && fitsNew && recipeDefaultsSingleNode;
     if (shouldBumpNodes) setNodeCount(2);
+    if (shouldUnbumpNodes) setNodeCount(1);
     syncUrl({
       hardware: id,
       strategy: "",
-      nodes: shouldBumpNodes ? "2" : undefined,
+      nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
       features: next.length > 0 ? next.join(",") : "",
     });
     savePreference("hardware", id);
     if (shouldBumpNodes) savePreference("nodes", "2");
+    if (shouldUnbumpNodes) savePreference("nodes", undefined);
   };
 
   const selectStrategy = (s) => {
@@ -1247,11 +1257,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 {strategies[activeStrategy].description.split("\n")[0]}
               </p>
             )}
-            {strategies[activeStrategy]?.orientation && (
-              <span className="inline-block text-[10px] font-medium mt-1.5 px-1.5 py-0.5 rounded bg-green-500/20 text-green-600 dark:text-green-400">
-                {strategies[activeStrategy].orientation === "latency" ? "Latency oriented" : "Throughput oriented"}
-              </span>
-            )}
+            {strategies[activeStrategy]?.orientation && (() => {
+              const o = strategies[activeStrategy].orientation;
+              const { label, classes } = o === "latency"
+                ? { label: "Latency oriented", classes: "bg-green-500/20 text-green-600 dark:text-green-400" }
+                : o === "balanced"
+                  ? { label: "Balanced", classes: "bg-blue-500/20 text-blue-600 dark:text-blue-400" }
+                  : { label: "Throughput oriented", classes: "bg-amber-500/20 text-amber-700 dark:text-amber-400" };
+              return (
+                <span className={`inline-block text-[10px] font-medium mt-1.5 px-1.5 py-0.5 rounded ${classes}`}>
+                  {label}
+                </span>
+              );
+            })()}
           </ConfigRow>
 
           {/* Nodes — two number inputs for PD (one per pool), pills otherwise */}
