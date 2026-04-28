@@ -109,11 +109,11 @@ strategy_overrides:
   single_node_tep:
     extra_args:
       - "--compilation-config"
-      - '{"mode": 0, "cudagraph_mode": "FULL_DECODE_ONLY"}'
+      - '{"cudagraph_mode":"FULL_AND_PIECEWISE", "custom_ops":["all"]}'
   multi_node_tep:
     extra_args:
       - "--compilation-config"
-      - '{"mode": 0, "cudagraph_mode": "FULL_DECODE_ONLY"}'
+      - '{"cudagraph_mode":"FULL_AND_PIECEWISE", "custom_ops":["all"]}'
   single_node_dep:
     extra_args:
       - "--compilation-config"
