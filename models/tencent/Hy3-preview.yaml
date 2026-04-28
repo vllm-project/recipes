@@ -7,10 +7,14 @@ meta:
   difficulty: intermediate
   tasks:
     - text
-  performance_headline: "Hunyuan Hy3-preview MoE — 295B/21B on 8×H200 or 8×H20-3e(141GB) with MTP"
+  performance_headline: "Hunyuan Hy3-preview MoE — 295B/21B on 8×H200, 8×H20-3e(141GB), or 8×AMD MI300X/MI355X with MTP"
   related_recipes: []
   hardware:
     h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi350x: verified
+    mi355x: verified
 
 model:
   model_id: "tencent/Hy3-preview"
@@ -61,7 +65,34 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    # Hy3-preview support is currently in PR (vllm-project/vllm#40681) and is not
+    # yet in vllm:latest or rocm/vllm-dev:nightly. AMD users must build vLLM from
+    # the PR branch into rocm/vllm-dev:nightly until the PR merges.
+    install_note: |
+      Hy3-preview model code is being added in PR #40681. Until it merges, build
+      vLLM editable from the PR branch in rocm/vllm-dev:nightly:
+
+        docker run -it --device=/dev/kfd --device=/dev/dri --network=host \
+          --ipc=host --shm-size=128g --group-add video --cap-add SYS_PTRACE \
+          --security-opt seccomp=unconfined -v ~/work:/work -w /work \
+          -e PYTHONPATH=/work/vllm rocm/vllm-dev:nightly bash
+        git clone -b feature/support_hy_v3 \
+          https://github.com/stevenkuang-tencent/vllm.git
+        cd vllm && pip uninstall -y vllm
+        SETUPTOOLS_SCM_PRETEND_VERSION=0.20.0.dev0 VLLM_TARGET_DEVICE=rocm \
+          pip install --editable . --no-build-isolation
+
+      Setting PYTHONPATH avoids a known editable-install conflict with the
+      empty /app/vllm namespace directory shipped in the base image.
+    extra_args: []
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_USE_AITER_MOE: "1"
+      VLLM_ROCM_USE_AITER_MHA: "1"
+      VLLM_ROCM_USE_AITER_RMSNORM: "1"
+      VLLM_ROCM_USE_AITER_LINEAR: "1"
 
 strategy_overrides: {}
 
@@ -108,9 +139,52 @@ guide: |
 
   ## Model Deployment
 
-  To serve Hy3-preview on 8 GPUs, use H20-3e(141GB), H200, or other GPUs with larger
-  memory capacity. Smaller-memory 8-GPU configurations (8×H100 80GB, 8×A100 80GB) do
-  not fit the BF16 weights plus KV cache — use multi-node TP for those.
+  To serve Hy3-preview on 8 GPUs, use H20-3e(141GB), H200, AMD MI300X/MI325X (192 GB),
+  AMD MI350X/MI355X (288 GB), or other GPUs with larger memory capacity. Smaller-memory
+  8-GPU configurations (8×H100 80GB, 8×A100 80GB) do not fit the BF16 weights plus KV
+  cache — use multi-node TP for those.
+
+  ### Serving on 8×AMD MI300X / MI325X / MI350X / MI355X
+
+  Hy3-preview support is being added in vLLM PR
+  [#40681](https://github.com/vllm-project/vllm/pull/40681). Until it merges, AMD users
+  must build vLLM from the PR branch inside the published ROCm vLLM nightly image
+  (`rocm/vllm-dev:nightly`). See the AMD install note in `hardware_overrides.amd`
+  above for the full reproducer.
+
+  Once vLLM is installed, serve with the standard launcher plus the AITER environment
+  variables (the recipe's `hardware_overrides.amd.extra_env` applies these
+  automatically when the AMD profile is selected on the recipe site):
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_MOE=1
+  export VLLM_ROCM_USE_AITER_MHA=1
+  export VLLM_ROCM_USE_AITER_RMSNORM=1
+  export VLLM_ROCM_USE_AITER_LINEAR=1
+
+  vllm serve tencent/Hy3-preview \
+    --tensor-parallel-size 8 \
+    --tool-call-parser hy_v3 \
+    --reasoning-parser hy_v3 \
+    --enable-auto-tool-choice \
+    --served-model-name hy3-preview \
+    --gpu-memory-utilization 0.90
+  ```
+
+  MTP (recommended on AMD for lower latency, same flags as the NVIDIA path):
+
+  ```bash
+  vllm serve tencent/Hy3-preview \
+    --tensor-parallel-size 8 \
+    --speculative-config.method mtp \
+    --speculative-config.num_speculative_tokens 1 \
+    --tool-call-parser hy_v3 \
+    --reasoning-parser hy_v3 \
+    --enable-auto-tool-choice \
+    --served-model-name hy3-preview \
+    --gpu-memory-utilization 0.90
+  ```
 
   ### Serving on 8×H200 or 8×H20-3e(141GB)
 
