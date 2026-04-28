@@ -26,13 +26,13 @@ model:
   parameter_count: "284B"
   active_parameters: "13B"
   context_length: 1048576
-  flashinfer_autotune: true
   base_args:
     - "--trust-remote-code"
     - "--kv-cache-dtype"
     - "fp8"
     - "--block-size"
     - "256"
+    - "--no-enable-flashinfer-autotune"
   base_env:
     VLLM_ENGINE_READY_TIMEOUT_S: "3600"
 
