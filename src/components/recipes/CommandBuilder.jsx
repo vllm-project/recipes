@@ -740,23 +740,32 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     setFeatures(next);
     setHwId(id);
     setStrategyOverride("");
-    // Bump to multi-node if the new hardware can't fit single-node and the
-    // recipe declares a multi-node path — otherwise the Single-node pill shows
-    // crossed out but the command keeps rendering the invalid single-node
-    // config. Tied to the click so it doesn't fight a user who deliberately
-    // picks Single-node afterwards (that click re-sets nodeCount explicitly).
+    // Bump to multi-node if the new hardware can't fit single-node (otherwise
+    // the Single-node pill shows crossed out but the command keeps rendering
+    // the invalid single-node config). Bump back DOWN to single-node when the
+    // new hardware comfortably fits and the recipe's default is a single-node
+    // strategy — without this, switching from GB200 (which bumped to 2 nodes
+    // because the model didn't fit a 4-GPU tray) to B300/GB300 would stay at
+    // 2 nodes and pick the multi-node sibling. Tied to the click so a
+    // deliberate Single-/Multi-node click afterwards still wins.
     const newProfile = taxonomy.hardware_profiles?.[id] || {};
-    const shouldBumpNodes =
-      nodeCount === 1 && supportsMultiNode && !fitsSingleNode(newProfile, currentVariant);
+    const fitsNew = fitsSingleNode(newProfile, currentVariant);
+    const recipeDefault = recipe.default_strategy;
+    const recipeDefaultsSingleNode =
+      typeof recipeDefault === "string" && recipeDefault.startsWith("single_node_");
+    const shouldBumpNodes = nodeCount === 1 && supportsMultiNode && !fitsNew;
+    const shouldUnbumpNodes = nodeCount > 1 && fitsNew && recipeDefaultsSingleNode;
     if (shouldBumpNodes) setNodeCount(2);
+    if (shouldUnbumpNodes) setNodeCount(1);
     syncUrl({
       hardware: id,
       strategy: "",
-      nodes: shouldBumpNodes ? "2" : undefined,
+      nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
       features: next.length > 0 ? next.join(",") : "",
     });
     savePreference("hardware", id);
     if (shouldBumpNodes) savePreference("nodes", "2");
+    if (shouldUnbumpNodes) savePreference("nodes", undefined);
   };
 
   const selectStrategy = (s) => {
