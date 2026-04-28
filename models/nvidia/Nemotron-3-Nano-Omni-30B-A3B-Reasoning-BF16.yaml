@@ -32,6 +32,8 @@ model:
   context_length: 262144
   base_args:
     - "--trust-remote-code"
+    - "--max-model-len"
+    - "131072"
     - "--media-io-kwargs"
     - '{"video": {"num_frames": 512, "fps": 1}}'
     - "--video-pruning-rate"
