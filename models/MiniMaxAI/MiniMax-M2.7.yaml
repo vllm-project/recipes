@@ -19,8 +19,6 @@ meta:
 model:
   model_id: "MiniMaxAI/MiniMax-M2.7"
   min_vllm_version: "0.20.0"
-  nightly_required: true
-  docker_image: "vllm/vllm-openai:minimax27"
   architecture: moe
   parameter_count: "230B"
   active_parameters: "10B"

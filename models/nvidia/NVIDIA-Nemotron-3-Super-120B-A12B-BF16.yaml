@@ -1,0 +1,157 @@
+meta:
+  title: "NVIDIA Nemotron-3-Super-120B-A12B"
+  slug: "nemotron-3-super-120b-a12b"
+  provider: "NVIDIA"
+  description: "NVIDIA Nemotron-3-Super Mamba-hybrid latent-MoE (~120B total / ~12B active) with BF16, FP8, and NVFP4 variants"
+  date_updated: 2026-04-28
+  difficulty: advanced
+  tasks:
+    - text
+  related_recipes:
+    - nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+  hardware:
+    h100: verified
+    h200: verified
+    b200: verified
+
+model:
+  model_id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16"
+  min_vllm_version: "0.17.1"
+  architecture: moe
+  parameter_count: "120B"
+  active_parameters: "12B"
+  context_length: 262144
+  base_args:
+    - "--trust-remote-code"
+  base_env: {}
+
+features:
+  tool_calling:
+    description: "Qwen3 Coder tool-call parser with automatic tool choice"
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "qwen3_coder"
+  reasoning:
+    description: "Built-in nemotron_v3 reasoning parser (vLLM >= 0.17.1)"
+    args:
+      - "--reasoning-parser"
+      - "nemotron_v3"
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 298
+    description: "BF16 weights (FP8 KV cache recommended)"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  fp8:
+    model_id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8"
+    precision: fp8
+    vram_minimum_gb: 149
+    description: "FP8 weights + FP8 KV cache"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  nvfp4:
+    model_id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 75
+    description: "NVFP4 weights for Blackwell"
+
+  base_bf16:
+    model_id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-Base-BF16"
+    precision: bf16
+    vram_minimum_gb: 298
+    description: "Pre-RL base checkpoint (BF16)"
+
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+  - multi_node_tp_pp
+  - multi_node_tep
+  - multi_node_dep
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  NVIDIA Nemotron-3-Super-120B-A12B is a hybrid-Mamba latent-MoE model (~120B total,
+  ~12B active per token) trained for general reasoning, tool use, and agentic workflows.
+  It supports a 1M-token context window and Multi-Token Prediction (MTP). Variants ship
+  in BF16, FP8, and NVFP4 (Blackwell). A pre-RL Base BF16 checkpoint is also available
+  for downstream fine-tuning.
+
+  ## Prerequisites
+
+  - Hardware: 4-8x H100/H200/B200/RTX Pro 6000, or DGX Spark
+  - vLLM >= 0.17.1
+  - Docker with NVIDIA Container Toolkit (recommended)
+
+  ## Launch commands
+
+  Reference command from the [vLLM blog](https://vllm.ai/blog/nemotron-3-super) (BF16, 4x H100, FP8 KV cache):
+
+  ```bash
+  vllm serve nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16 \
+    --kv-cache-dtype fp8 \
+    --tensor-parallel-size 4 \
+    --trust-remote-code \
+    --served-model-name nemotron \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder \
+    --reasoning-parser nemotron_v3
+  ```
+
+  FP8 weights:
+
+  ```bash
+  vllm serve nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8 \
+    --kv-cache-dtype fp8 \
+    --tensor-parallel-size 4 \
+    --trust-remote-code \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder \
+    --reasoning-parser nemotron_v3
+  ```
+
+  NVFP4 (Blackwell only):
+
+  ```bash
+  vllm serve nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4 \
+    --tensor-parallel-size 2 \
+    --trust-remote-code \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder \
+    --reasoning-parser nemotron_v3
+  ```
+
+  ## Benchmarking
+
+  ```bash
+  vllm bench serve \
+    --model nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8 \
+    --trust-remote-code \
+    --dataset-name random \
+    --random-input-len 1024 --random-output-len 1024 \
+    --num-warmups 20 \
+    --ignore-eos \
+    --max-concurrency 1024 \
+    --num-prompts 2048
+  ```
+
+  ## References
+
+  - [vLLM blog: Nemotron-3-Super](https://vllm.ai/blog/nemotron-3-super)
+  - [Nemotron-3-Super-120B-A12B-BF16](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16)
+  - [Nemotron-3-Super-120B-A12B-FP8](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8)
+  - [Nemotron-3-Super-120B-A12B-NVFP4](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4)
+  - [Nemotron-3-Super-120B-A12B-Base-BF16](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-Base-BF16)
