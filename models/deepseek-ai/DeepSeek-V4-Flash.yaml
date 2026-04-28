@@ -295,3 +295,91 @@ guide: |
     --intra-node-data-parallel-size 4 \
     --kv-connector mooncake
   ```
+
+  ### H200 Single-Node PD (Nixl)
+
+  Single-host disaggregated serving: 4 prefill GPUs + 4 decode GPUs on one 8-GPU H200 node,
+  using NixlConnector for KV cache transfer.
+
+  **Prefill** (GPUs 0–3, port 8000):
+
+  ```bash
+  docker run --gpus all \
+    --privileged --ipc=host -p 8000:8000 \
+    --network host \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -v /mnt/shared:/mnt/shared \
+    -e TILELANG_CLEANUP_TEMP_FILES=1 \
+    -e VLLM_DISABLE_COMPILE_CACHE=1 \
+    -e VLLM_ENGINE_READY_TIMEOUT_S=3600 \
+    -e VLLM_RPC_TIMEOUT=600000 \
+    -e VLLM_LOG_STATS_INTERVAL=1 \
+    -e VLLM_NIXL_SIDE_CHANNEL_PORT=5557 \
+    -e CUDA_VISIBLE_DEVICES=0,1,2,3 \
+    vllm/vllm-openai:deepseekv4-cu130 \
+    deepseek-ai/DeepSeek-V4-Flash \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --block-size 256 \
+    --port 8000 \
+    --data-parallel-size 4 \
+    --enable-expert-parallel \
+    --tokenizer-mode deepseek_v4 \
+    --reasoning-parser deepseek_v4 \
+    --max-model-len auto \
+    --max-num-batched-tokens 16384 \
+    --max-num-seqs 8 \
+    --enforce-eager \
+    --no-disable-hybrid-kv-cache-manager \
+    --disable-uvicorn-access-log \
+    --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both"}'
+  ```
+
+  **Decode** (GPUs 4–7, port 8001):
+
+  ```bash
+  docker run --gpus all \
+    --privileged --ipc=host -p 8001:8001 \
+    --network host \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -v /mnt/shared:/mnt/shared \
+    -e TILELANG_CLEANUP_TEMP_FILES=1 \
+    -e VLLM_DISABLE_COMPILE_CACHE=1 \
+    -e VLLM_ENGINE_READY_TIMEOUT_S=3600 \
+    -e VLLM_RPC_TIMEOUT=600000 \
+    -e VLLM_LOG_STATS_INTERVAL=1 \
+    -e VLLM_NIXL_SIDE_CHANNEL_PORT=5558 \
+    -e CUDA_VISIBLE_DEVICES=4,5,6,7 \
+    vllm/vllm-openai:deepseekv4-cu130 \
+    deepseek-ai/DeepSeek-V4-Flash \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --block-size 256 \
+    --port 8001 \
+    --data-parallel-size 4 \
+    --enable-expert-parallel \
+    --tokenizer-mode deepseek_v4 \
+    --reasoning-parser deepseek_v4 \
+    --max-model-len auto \
+    --max-num-seqs 512 \
+    --max-num-batched-tokens 512 \
+    --compilation-config '{"mode":0,"cudagraph_mode":"FULL_DECODE_ONLY","max_cudagraph_capture_size":512,"compile_ranges_endpoints":[512]}' \
+    --no-disable-hybrid-kv-cache-manager \
+    --disable-uvicorn-access-log \
+    --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both"}'
+  ```
+
+  **[Router](https://github.com/vllm-project/router)**:
+
+  ```bash
+  pip install vllm-router
+
+  vllm-router --policy round_robin \
+    --vllm-pd-disaggregation \
+    --prefill http://localhost:8000 \
+    --decode http://localhost:8001 \
+    --host 127.0.0.1 \
+    --port 30000 \
+    --intra-node-data-parallel-size 4 \
+    --kv-connector nixl
+  ```
