@@ -57,9 +57,9 @@ uv pip install vllm --pre \
 ### Docker
 
 ```bash
-docker pull vllm/vllm-openai:gemma4       # For CUDA 12.9
-docker pull vllm/vllm-openai:gemma4-cu130 # For CUDA 13.0
-docker pull vllm/vllm-openai-rocm:gemma4  # For AMD GPUs
+docker pull vllm/vllm-openai:latest       # For CUDA 12.9
+docker pull vllm/vllm-openai:latest-cu130 # For CUDA 13.0
+docker pull vllm/vllm-openai-rocm:latest  # For AMD GPUs
 docker pull vllm/vllm-tpu:gemma4          # For Cloud TPUs
 ```
 
@@ -117,7 +117,7 @@ docker run -itd --name gemma4 \
     --shm-size 16G \
     --gpus all \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai:gemma4 \
+    vllm/vllm-openai:latest \
         --model google/gemma-4-31B-it \
         --tensor-parallel-size 2 \
         --max-model-len 32768 \
@@ -163,7 +163,7 @@ docker run -itd --name gemma4-rocm \
     --security-opt=seccomp=unconfined \
     --shm-size 16G \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-rocm:gemma4 \
+    vllm/vllm-openai-rocm:latest \
         --model <MODEL> \
         --host 0.0.0.0 \
         --port 8000

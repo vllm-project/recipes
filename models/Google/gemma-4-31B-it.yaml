@@ -21,9 +21,6 @@ meta:
 model:
   model_id: "google/gemma-4-31B-it"
   min_vllm_version: "0.19.1"
-  docker_image:
-    nvidia: "vllm/vllm-openai:gemma4"
-    amd: "vllm/vllm-openai-rocm:gemma4"
   architecture: dense
   parameter_count: "31B"
   active_parameters: "31B"
@@ -130,9 +127,9 @@ guide: |
 
   ### Docker
   ```bash
-  docker pull vllm/vllm-openai:gemma4        # CUDA 12.9
-  docker pull vllm/vllm-openai:gemma4-cu130  # CUDA 13.0
-  docker pull vllm/vllm-openai-rocm:gemma4   # AMD
+  docker pull vllm/vllm-openai:latest        # CUDA 12.9
+  docker pull vllm/vllm-openai:latest-cu130  # CUDA 13.0
+  docker pull vllm/vllm-openai-rocm:latest   # AMD
   ```
   TPU images are published separately by [vllm-project/tpu-inference](https://github.com/vllm-project/tpu-inference); see the Trillium / Ironwood tpu-recipes below for the pinned tag.
 
@@ -181,7 +178,7 @@ guide: |
   docker run -itd --name gemma4 \
     --ipc=host --network host --shm-size 16G --gpus all \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai:gemma4 \
+    vllm/vllm-openai:latest \
       --model google/gemma-4-31B-it \
       --tensor-parallel-size 2 \
       --max-model-len 32768 \
@@ -197,7 +194,7 @@ guide: |
     --group-add=video --cap-add=SYS_PTRACE \
     --security-opt=seccomp=unconfined --shm-size 16G \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-rocm:gemma4 \
+    vllm/vllm-openai-rocm:latest \
       --model google/gemma-4-31B-it \
       --host 0.0.0.0 --port 8000
   ```
