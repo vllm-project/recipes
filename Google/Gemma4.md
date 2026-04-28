@@ -60,7 +60,7 @@ uv pip install vllm --pre \
 docker pull vllm/vllm-openai:latest       # For CUDA 12.9
 docker pull vllm/vllm-openai:latest-cu130 # For CUDA 13.0
 docker pull vllm/vllm-openai-rocm:latest  # For AMD GPUs
-docker pull vllm/vllm-tpu:gemma4          # For Cloud TPUs
+docker pull vllm/vllm-tpu:nightly         # For Cloud TPUs
 ```
 
 ## Running Gemma 4
@@ -135,10 +135,14 @@ docker run -itd --name gemma4-tpu \
     --shm-size 16G \
     -v /dev/shm:/dev/shm \
     -e HF_TOKEN=$HF_TOKEN \
-    vllm/vllm-tpu:gemma4 \
+    -e USE_BATCHED_RPA_KERNEL=1 \
+    vllm/vllm-tpu:nightly \
+        python3 -m vllm.entrypoints.openai.api_server \
         --model google/gemma-4-31B-it \
-        --tensor-parallel-size 8 \
+        --tensor-parallel-size 2 \
         --max-model-len 16384 \
+        --max-num-batched-tokens 16384 \
+        --block-size=256 \
         --disable_chunked_mm_input \
         --host 0.0.0.0 \
         --port 8000
