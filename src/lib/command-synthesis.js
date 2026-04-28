@@ -319,7 +319,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         // Always emit start-rank (even 0 for node 0) so every node's command
         // has the same shape; only the value differs per node.
         args.push("--data-parallel-start-rank", String(nodeIdx * dpLocal));
-        args.push("--data-parallel-address", `$${roleKey.toUpperCase()}_DP_LEADER_IP`);
+        // DP leader is always node 0 of the pool — rendered as NODE_1 (1-indexed,
+        // same naming as the router's --prefill/--decode endpoints) so the user
+        // only fills one IP per node, not separate LEADER/HOST/HEAD aliases.
+        args.push("--data-parallel-address", `$${roleKey.toUpperCase()}_NODE_1`);
         args.push("--data-parallel-rpc-port", `$${roleKey.toUpperCase()}_DP_RPC_PORT`);
         // Multi-node DEP needs hybrid load balancing — without this flag the
         // router distributes requests round-robin across DP ranks, which
@@ -339,7 +342,8 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         if (rolePoolNodes > 1) {
           args.push("--nnodes", String(rolePoolNodes));
           args.push("--node-rank", "0");
-          args.push("--master-addr", `$${roleKey.toUpperCase()}_HEAD_IP`);
+          // TP master = node 0 of pool = NODE_1 (same naming as router endpoints).
+          args.push("--master-addr", `$${roleKey.toUpperCase()}_NODE_1`);
         }
       }
     } else {
@@ -464,6 +468,28 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       for (const key of NVL4_ONLY_ENV_KEYS) delete env[key];
     }
 
+    // Per-rank node rewrite: strategy YAML carries `$PREFILL_NODE_1` /
+    // `$DECODE_NODE_1` as the rank-0 default for per-node bind hosts (NIXL
+    // side channel etc). For DEP pools where the UI shows a non-zero rank's
+    // command, point those values at NODE_{rank+1} so the rendered command
+    // matches that physical node. TP pools always render the head node, so
+    // NODE_1 is already correct.
+    if (strategy.deploy_type === "pd_cluster" && roleOverride) {
+      const raw = pdNodes ? pdNodes[roleOverride] : undefined;
+      const pdRoleObj =
+        typeof raw === "number" ? { nodes: raw }
+        : (raw && typeof raw === "object") ? raw
+        : {};
+      const rank = pdRoleObj.rank || 0;
+      if (rank > 0) {
+        const oldVar = `$${roleOverride.toUpperCase()}_NODE_1`;
+        const newVar = `$${roleOverride.toUpperCase()}_NODE_${rank + 1}`;
+        for (const k of Object.keys(env)) {
+          if (env[k] === oldVar) env[k] = newVar;
+        }
+      }
+    }
+
     return env;
   }
 
@@ -585,27 +611,32 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     const pMeta = roleMeta("prefill");
     const dMeta = roleMeta("decode");
     // Router endpoints: one per node (each node binds its own HTTP --port).
-    // Placeholder hostnames (PREFILL_NODE_1 … N, DECODE_NODE_1 … N) — deployers
-    // substitute real IPs. 1-indexed in the placeholder so it matches what the
-    // UI shows the user.
+    // Shell-variable form ($PREFILL_NODE_N / $DECODE_NODE_N) so the same name
+    // the prefill/decode commands consume is also what the router lists —
+    // user fills one set of values in the Endpoints panel, applied everywhere.
     const prefillEndpoints = Array.from(
       { length: Math.max(1, pMeta.nodes || 1) },
-      (_, i) => `    --prefill http://PREFILL_NODE_${i + 1}:8001 \\`,
+      (_, i) => `    --prefill http://$PREFILL_NODE_${i + 1}:8001 \\`,
     );
     const decodeEndpoints = Array.from(
       { length: Math.max(1, dMeta.nodes || 1) },
-      (_, i) => `    --decode http://DECODE_NODE_${i + 1}:8002 \\`,
+      (_, i) => `    --decode http://$DECODE_NODE_${i + 1}:8002 \\`,
     );
     // intra-node-data-parallel-size = max dp_local across the two pools for
     // DEP setups; 1 for pure-TP PD.
     const intraDp = Math.max(pMeta.dpLocal || 0, dMeta.dpLocal || 0, 1);
+    // Router --host / --port use the same $ROUTER_HOST / $ROUTER_PORT vars
+    // that curl / bench target, so filling them once in the Endpoints panel
+    // makes the router and clients agree. Unfilled, shell leaves the $VAR
+    // literal — vllm-router won't accept that, so the user must either fill
+    // the panel or `export ROUTER_HOST=…; export ROUTER_PORT=…` first.
     const routerLines = [
       `vllm-router --policy ${policy} \\`,
       `    --vllm-pd-disaggregation \\`,
       ...prefillEndpoints,
       ...decodeEndpoints,
-      `    --host 127.0.0.1 \\`,
-      `    --port 30000 \\`,
+      `    --host $ROUTER_HOST \\`,
+      `    --port $ROUTER_PORT \\`,
       `    --intra-node-data-parallel-size ${intraDp}`,
     ];
     const routerCommand = routerLines.join("\n");

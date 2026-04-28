@@ -3,9 +3,10 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap } from "lucide-react";
+import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe } from "lucide-react";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, pickDefaultHardware, resolveSingleNodeTp } from "@/lib/command-synthesis";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
+import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
 // Advanced tuning presets — optional tunable flags the user can opt into.
 // (vLLM defaults like chunked prefill, prefix caching, CUDA graphs, async
@@ -156,6 +157,137 @@ function PopoverButton({ label, code, icon: Icon }) {
       >
         <Icon size={11} />
         {label}
+      </button>
+      {popover}
+    </>
+  );
+}
+
+// Same shell as PopoverButton (portal + click-outside + Escape), but the body
+// is a form for editing $VAR / NODE_N substitutions. Lives on each command
+// block header next to cURL/Bench so the user finds it where they realize
+// "this curl is hitting localhost — I need to point it elsewhere."
+function EndpointsPopoverButton({ isPd, isMultiNode, placeholders, endpoints, onChange, onReset }) {
+  const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState(null);
+  const btnRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const update = () => {
+      if (btnRef.current) setRect(btnRef.current.getBoundingClientRect());
+    };
+    update();
+    const onKey = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const clientHostKey = isPd ? "ROUTER_HOST" : (isMultiNode ? "HEAD_IP" : "VLLM_HOST");
+  const clientPortKey = isPd ? "ROUTER_PORT" : "VLLM_PORT";
+  const clientHostHint = "localhost";
+  const clientPortHint = isPd ? "30000" : "8000";
+
+  const extras = placeholders.filter(
+    (p) => !(p.kind === "var" && (p.name === clientHostKey || p.name === clientPortKey)),
+  );
+  const filledCount = Object.keys(endpoints).length;
+
+  const popover = open && rect && typeof document !== "undefined" ? createPortal(
+    <>
+      <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+      <div
+        className="fixed z-50 w-[480px] max-w-[92vw] rounded-xl border border-border bg-card shadow-xl overflow-hidden"
+        style={{ top: rect.bottom + 8, left: Math.max(8, rect.right - 480) }}
+      >
+        <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
+          <span className="text-xs font-semibold flex items-center gap-1.5">
+            <Globe size={12} /> Cluster env
+          </span>
+          {filledCount > 0 && (
+            <button
+              type="button"
+              onClick={onReset}
+              className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+        <div className="px-3 py-3 space-y-3 max-h-[60vh] overflow-y-auto">
+          <div className="text-[11px] text-muted-foreground leading-snug">
+            Saved in your browser and substituted into the rendered command, env exports, curl, and bench. Empty fields stay as <code className="font-mono text-[10px] px-1 py-px rounded bg-foreground/5">$VAR</code>.
+          </div>
+          <div>
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5">
+              Curl / bench target
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <EndpointInput
+                label={`$${clientHostKey}`}
+                hint={clientHostHint}
+                value={endpoints[clientHostKey] || ""}
+                onChange={(v) => onChange(clientHostKey, v)}
+              />
+              <EndpointInput
+                label={`$${clientPortKey}`}
+                hint={clientPortHint}
+                value={endpoints[clientPortKey] || ""}
+                onChange={(v) => onChange(clientPortKey, v)}
+              />
+            </div>
+          </div>
+          {extras.length > 0 && (
+            <div>
+              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5">
+                Placeholders in current commands
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {extras.map((p) => (
+                  <EndpointInput
+                    key={`${p.kind}:${p.name}`}
+                    label={p.label}
+                    hint={endpointHintFor(p.name)}
+                    value={endpoints[p.name] || ""}
+                    onChange={(v) => onChange(p.name, v)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </>,
+    document.body,
+  ) : null;
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        title="Cluster env"
+        className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
+          filledCount > 0
+            ? "bg-vllm-blue/10 text-vllm-blue hover:bg-vllm-blue/15"
+            : "bg-foreground/5 text-foreground/60 hover:bg-foreground/10 hover:text-foreground/90"
+        }`}
+      >
+        <Globe size={11} />
+        Env
+        {filledCount > 0 && (
+          <span className="text-[10px] font-mono tabular-nums opacity-80">{filledCount}</span>
+        )}
       </button>
       {popover}
     </>
@@ -375,6 +507,28 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     return ap ? ap.split(",").filter(Boolean) : [];
   });
 
+  // Cluster endpoints — substitution map for $VAR / NODE_N placeholders that
+  // appear in rendered commands. Mirrors localStorage so a user fills once
+  // per cluster and every recipe page reuses it. Empty values leave the
+  // placeholder as-is.
+  const [endpoints, setEndpoints] = useState({});
+  useEffect(() => {
+    setEndpoints(loadEndpoints());
+  }, []);
+  const updateEndpoint = useCallback((name, value) => {
+    setEndpoints((prev) => {
+      const next = { ...prev };
+      if (value === undefined || value === null || value === "") delete next[name];
+      else next[name] = value;
+      return next;
+    });
+    saveEndpoint(name, value);
+  }, []);
+  const resetEndpoints = useCallback(() => {
+    setEndpoints({});
+    clearEndpoints();
+  }, []);
+
   // Per-recipe advanced options declared under top-level `advanced_options:` in
   // the YAML are merged with the global presets so a recipe can surface its
   // own toggles (e.g. model-specific kernel backends) without code changes.
@@ -532,12 +686,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const hasSpec = !!(recipe.features || {}).spec_decoding;
     if (!isLatency || !hasSpec) return;
 
-    setFeatures((prev) => {
-      if (prev.includes("spec_decoding")) return prev;
-      const next = [...prev, "spec_decoding"];
-      syncUrl({ features: next.join(",") });
-      return next;
-    });
+    if (features.includes("spec_decoding")) return;
+    const next = [...features, "spec_decoding"];
+    setFeatures(next);
+    // syncUrl runs as a side effect of the strategy change, NOT inside the
+    // setFeatures updater — React executes updaters during render, so calling
+    // router.replace there triggers a "setState during render" warning.
+    syncUrl({ features: next.join(",") });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStrategy]);
 
@@ -692,7 +847,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // PD clients hit the router (port 30000), everyone else hits `vllm serve` on 8000.
   const clientPort = isPd ? 30000 : 8000;
 
-  const verifyCmd = `curl http://localhost:${clientPort}/v1/chat/completions \\
+  // curl/bench target. PD → router host:port; everyone else → the vllm-serve
+  // node (head node for multi-node TP). Defaults to localhost so the
+  // single-node demo case still works copy-paste; user can fill the
+  // Cluster endpoints panel to point at a real cluster.
+  const clientHostKey = isPd ? "ROUTER_HOST" : (isMultiNode ? "HEAD_IP" : "VLLM_HOST");
+  const clientPortKey = isPd ? "ROUTER_PORT" : "VLLM_PORT";
+  const clientHost = endpoints[clientHostKey] || "localhost";
+  const clientPortStr = endpoints[clientPortKey] || String(clientPort);
+
+  const verifyCmd = `curl http://${clientHost}:${clientPortStr}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "${modelId}",
@@ -702,13 +866,75 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const benchCmd = `vllm bench serve \\
   --model ${modelId} \\
-  --host localhost \\
-  --port ${clientPort} \\
+  --host ${clientHost} \\
+  --port ${clientPortStr} \\
   --dataset-name random \\
   --random-input-len 1024 \\
   --random-output-len 1024 \\
   --num-prompts 100 \\
   --max-concurrency 32`;
+
+  // Apply cluster-endpoint substitution to all rendered command/env strings.
+  // Detection runs on the *un*substituted commands so the panel can list
+  // every placeholder still pending a value.
+  const placeholdersInUse = useMemo(() => {
+    const texts = [];
+    if (result.command) texts.push(result.command);
+    if (result.headCommand) texts.push(result.headCommand);
+    if (result.workerCommand) texts.push(result.workerCommand);
+    if (result.prefill?.command) texts.push(result.prefill.command);
+    if (result.decode?.command) texts.push(result.decode.command);
+    if (result.router?.command) texts.push(result.router.command);
+    for (const e of [result.env, result.prefill?.env, result.decode?.env]) {
+      if (!e) continue;
+      for (const v of Object.values(e)) if (typeof v === "string") texts.push(v);
+    }
+    return detectPlaceholdersAll(...texts);
+  }, [result]);
+
+  // Merge in sensible defaults for the curl/bench/router target so the
+  // rendered command is paste-runnable even when the user hasn't filled
+  // the Endpoints panel. User values from `endpoints` always win. Per-node
+  // IPs ($PREFILL_NODE_N, $HEAD_IP) intentionally have NO default — they're
+  // not generally localhost and a wrong default would mislead the reader.
+  const effectiveEndpoints = useMemo(() => {
+    const defaults = {};
+    if (result.deployType === "pd_cluster") {
+      defaults.ROUTER_HOST = "localhost";
+      defaults.ROUTER_PORT = "30000";
+    } else if (result.deployType === "multi_node") {
+      defaults.VLLM_PORT = "8000";
+    } else {
+      defaults.VLLM_HOST = "localhost";
+      defaults.VLLM_PORT = "8000";
+    }
+    return { ...defaults, ...endpoints };
+  }, [result.deployType, endpoints]);
+
+  const displayedResult = useMemo(() => {
+    const sub = (s) => substitute(s, effectiveEndpoints);
+    if (result.deployType === "pd_cluster") {
+      return {
+        ...result,
+        prefill: { ...result.prefill, command: sub(result.prefill.command), env: substituteEnv(result.prefill.env, effectiveEndpoints) },
+        decode:  { ...result.decode,  command: sub(result.decode.command),  env: substituteEnv(result.decode.env,  effectiveEndpoints) },
+        router:  { ...result.router,  command: sub(result.router.command) },
+      };
+    }
+    if (result.deployType === "multi_node") {
+      return {
+        ...result,
+        headCommand:   sub(result.headCommand),
+        workerCommand: sub(result.workerCommand),
+        env: substituteEnv(result.env, effectiveEndpoints),
+      };
+    }
+    return {
+      ...result,
+      command: sub(result.command),
+      env: substituteEnv(result.env, effectiveEndpoints),
+    };
+  }, [result, effectiveEndpoints]);
 
   const dependencies = recipe.dependencies || [];
 
@@ -857,13 +1083,25 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         )}
 
         {/* ── Command output ── */}
+        {(() => {
+          const endpointsControls = (
+            <EndpointsPopoverButton
+              isPd={isPd}
+              isMultiNode={isMultiNode}
+              placeholders={placeholdersInUse}
+              endpoints={endpoints}
+              onChange={updateEndpoint}
+              onReset={resetEndpoints}
+            />
+          );
+          return (
         <div
           className={`rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border transition-shadow ${changed ? "ring-2 ring-vllm-blue/30" : ""
             }`}
         >
           {isPd ? (
             <PdClusterBlock
-              result={result}
+              result={displayedResult}
               verifyCmd={verifyCmd}
               benchCmd={benchCmd}
               statusHeader={statusHeader}
@@ -871,30 +1109,35 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               installMode={effectiveInstallMode}
               dockerMeta={dockerMeta}
               configSummary={configSummary}
+              endpointsControls={endpointsControls}
             />
           ) : isMultiNode ? (
             <MultiNodeBlock
-              result={result}
+              result={displayedResult}
               verifyCmd={verifyCmd}
               benchCmd={benchCmd}
               statusHeader={statusHeader}
               installMode={effectiveInstallMode}
               dockerMeta={dockerMeta}
               configSummary={configSummary}
+              endpointsControls={endpointsControls}
             />
           ) : (
             <SingleCommandBlock
-              command={result.command}
-              env={result.env}
+              command={displayedResult.command}
+              env={displayedResult.env}
               verifyCmd={verifyCmd}
               benchCmd={benchCmd}
               statusHeader={statusHeader}
               installMode={effectiveInstallMode}
               dockerMeta={dockerMeta}
               configSummary={configSummary}
+              endpointsControls={endpointsControls}
             />
           )}
         </div>
+          );
+        })()}
 
         {/* ── Configuration ── */}
         <div className="rounded-xl border border-border divide-y divide-border">
@@ -1148,6 +1391,33 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
 // ── Sub-components ──
 
+function EndpointInput({ label, hint, value, onChange }) {
+  return (
+    <label className="flex items-center gap-2 min-w-0">
+      <span className="text-[11px] font-mono text-muted-foreground shrink-0 w-32 truncate" title={label}>
+        {label}
+      </span>
+      <input
+        type="text"
+        value={value}
+        placeholder={hint || ""}
+        onChange={(e) => onChange(e.target.value)}
+        spellCheck={false}
+        className="flex-1 min-w-0 px-2 py-1 text-xs font-mono rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-vllm-blue/40"
+      />
+    </label>
+  );
+}
+
+// Sensible per-placeholder placeholder hints (shown when the field is empty).
+function endpointHintFor(name) {
+  if (name.endsWith("_DP_RPC_PORT")) return "12345";
+  if (name.endsWith("_PORT")) return "port";
+  if (/^(?:PREFILL|DECODE)_NODE_\d+$/.test(name)) return "host";
+  if (name.endsWith("_IP")) return "10.0.0.1";
+  return "value";
+}
+
 function PdNodeInput({ label, value, gpuPerNode, onChange }) {
   return (
     <label className="inline-flex items-center gap-2">
@@ -1229,7 +1499,7 @@ function envToExports(env) {
     .join("\n");
 }
 
-function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary }) {
+function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls }) {
   const isDocker = installMode === "docker";
   // Docker mode: env vars fold into `-e` flags inside the wrapped `docker run`,
   // so there's no separate prelude (the `docker pull` lives in the Install
@@ -1251,6 +1521,7 @@ function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader, i
           <CopyButton text={fullScript} />
           <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} />
           <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
+          {endpointsControls}
         </div>
       </div>
       {prelude && (
@@ -1465,7 +1736,7 @@ function DependenciesBlock({ deps }) {
   );
 }
 
-function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary }) {
+function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls }) {
   const [tab, setTab] = useState("head");
   const isDocker = installMode === "docker";
   const wrap = (cmd) =>
@@ -1511,6 +1782,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
               <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
             </>
           )}
+          {endpointsControls}
         </div>
       </div>
       {prelude && (
@@ -1529,7 +1801,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
   );
 }
 
-function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChange, installMode, dockerMeta, configSummary }) {
+function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChange, installMode, dockerMeta, configSummary, endpointsControls }) {
   // Tabs: Prefill · Decode · Router.
   // Each pool (prefill/decode) now carries its own `nodes`, `parallelism`,
   // `dpSize`, `poolGpus` meta — rendered above the command so the reader
@@ -1585,6 +1857,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
               <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
             </>
           )}
+          {endpointsControls}
         </div>
       </div>
       {active.isRouter && active.install && (
