@@ -832,8 +832,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           altCudaSuffix={altCudaSuffix}
         />
 
-        {/* ── Dependencies / extra install ── */}
-        {dependencies.length > 0 && <DependenciesBlock deps={dependencies} />}
+        {/* ── Dependencies / extra install ──
+            Hidden in docker mode: today every entry is a host-level
+            `pip install` / `bash install_*.sh`, which doesn't apply when
+            vLLM ships as a container image. Revisit if a dep ever needs
+            to run inside the container. */}
+        {effectiveInstallMode !== "docker" && dependencies.length > 0 && (
+          <DependenciesBlock deps={dependencies} />
+        )}
 
         {/* ── VRAM shortfall warning (single-node only) ── */}
         {vramShortfall && (
