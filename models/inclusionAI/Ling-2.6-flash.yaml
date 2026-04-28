@@ -1,0 +1,46 @@
+meta:
+  title: "Ling-2.6-flash"
+  slug: "ling-2.6-flash"
+  provider: "inclusionAI"
+  description: "Ling-2.6-flash (BailingMoeV2_5) instruct model with 104B total / 7.4B active params, hybrid linear + MLA attention, 128K context, optimized for agent workloads"
+  date_updated: 2026-04-28
+  difficulty: intermediate
+  tasks:
+    - text
+  related_recipes:
+    - inclusionAI/Ring-1T-FP8
+  hardware:
+    h200: verified
+
+model:
+  model_id: "inclusionAI/Ling-2.6-flash"
+  min_vllm_version: "nightly"
+  nightly_required: true
+  architecture: moe
+  parameter_count: "104B"
+  active_parameters: "7.4B"
+  context_length: 131072
+  base_args:
+    - "--trust-remote-code"
+    - "--tensor-parallel-size"
+    - "4"
+  base_env: {}
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 250
+    description: "BF16 weights on 4x H200 with TP=4"
+
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides: {}
+
+strategy_overrides:
+  single_node_tp:
+    tp: 4
