@@ -15,6 +15,10 @@ meta:
 model:
   model_id: "inclusionAI/Ling-2.6-flash"
   min_vllm_version: "nightly"
+  install:
+    pip:
+      command: "uv pip install vllm --pre --index-url https://wheels.vllm.ai/nightly"
+      note: "nightly wheel required — stable release does not yet support this model"
   architecture: moe
   parameter_count: "104B"
   active_parameters: "7.4B"
@@ -44,42 +48,3 @@ hardware_overrides: {}
 strategy_overrides:
   single_node_tp:
     tp: 4
-
-guide: |
-  ## Overview
-
-  Ling-2.6-flash is inclusionAI's BailingMoeV2_5 instruct model with 104B total
-  parameters (7.4B activated per token). It introduces a 1:7 MLA + Lightning
-  Linear hybrid attention layout on top of a highly sparse MoE backbone (256
-  routed experts, 8 active + 1 shared per token), targeting agent workloads
-  with strong token efficiency and high decode throughput.
-
-
-  ### Install vLLM
-
-  ```bash
-  uv pip install -U vllm --torch-backend auto
-  ```
-
-  ## Launch command
-
-  ```bash
-  vllm serve inclusionAI/Ling-2.6-flash \
-    --tensor-parallel-size 4 \
-    --trust-remote-code
-  ```
-
-  ## Client usage
-
-  ```bash
-  curl http://localhost:8000/v1/chat/completions \
-    -H "Content-Type: application/json" \
-    -d '{
-      "model": "inclusionAI/Ling-2.6-flash",
-      "messages": [{"role": "user", "content": "9.11 and 9.8, which is greater?"}]
-    }'
-  ```
-
-  ## References
-
-  - [Ling-2.6-flash on Hugging Face](https://huggingface.co/inclusionAI/Ling-2.6-flash)
