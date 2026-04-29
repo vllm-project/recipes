@@ -55,6 +55,12 @@ export function RecipeCardGrid({ recipes }) {
         <div className="flex items-baseline gap-2 mb-3 pb-2 border-b border-border">
           <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Latest recipes</span>
           <span className="text-[10px] text-muted-foreground/60">newest {latest.length}</span>
+          <Link
+            href="/browse"
+            className="ml-auto text-[11px] text-muted-foreground hover:text-vllm-blue transition-colors"
+          >
+            View all {recipes.length} →
+          </Link>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {latest.map((r) => <RecipeCard key={r.hf_id} recipe={r} />)}

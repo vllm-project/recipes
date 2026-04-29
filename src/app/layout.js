@@ -60,11 +60,13 @@ export default async function RootLayout({ children }) {
     hf_org: r.hf_org,
     hf_repo: r.hf_repo,
     hf_id: r.hf_id,
+    hf_released: r.hf_released,
     meta: {
       title: r.meta.title,
       provider: r.meta.provider,
       description: r.meta.description,
       tasks: r.meta.tasks,
+      hardware: r.meta.hardware || {},
     },
     model: {
       architecture: r.model.architecture,
@@ -105,6 +107,7 @@ export default async function RootLayout({ children }) {
             </div>
 
             <nav className="flex items-center gap-4 text-sm text-muted-foreground shrink-0">
+              <Link href="/browse" className="hover:text-foreground transition-colors hidden sm:inline">Browse</Link>
               <a href="https://docs.vllm.ai" className="hover:text-foreground transition-colors hidden sm:inline">Docs</a>
               <a href="https://github.com/vllm-project/recipes" className="hover:text-foreground transition-colors hidden sm:inline">GitHub</a>
               <ThemeToggle />
