@@ -119,7 +119,7 @@ export function BrowseList({ recipes }) {
   // Single useMemo so the Sets keep stable identity across renders. Without
   // this, downstream useMemos that depend on tasks/archs/etc. invalidate on
   // every render (Set identity changes even if URL didn't).
-  const { tasks, archs, sizes, precisions, hardware, provider, sort } = useMemo(() => {
+  const { tasks, archs, sizes, precisions, hardware, provider, sort, q } = useMemo(() => {
     const setOf = (k) => new Set((searchParams.get(k) || "").split(",").filter(Boolean));
     return {
       tasks: setOf("task"),
@@ -129,8 +129,43 @@ export function BrowseList({ recipes }) {
       hardware: setOf("hw"),
       provider: searchParams.get("provider") || "",
       sort: searchParams.get("sort") || "released",
+      q: (searchParams.get("q") || "").trim().toLowerCase(),
     };
   }, [searchParams]);
+
+  // Free-text match used for the `?q=...` query — same field set as the
+  // top-bar SearchBox so handing off from search to browse stays predictable.
+  // Verified hardware ids enter the haystack so "h100" / "mi300x" / "b200"
+  // find recipes by GPU compatibility; "tpu" is added as a synonym when any
+  // TPU profile is verified, since the ids (trillium/ironwood) don't carry it.
+  const matchesQ = useCallback(
+    (r) => {
+      if (!q) return true;
+      const hwKeys = Object.entries(r.meta?.hardware || {})
+        .filter(([, s]) => s === "verified")
+        .map(([h]) => h);
+      const hwExtra = hwKeys.some((k) => k === "trillium" || k === "ironwood") ? ["tpu"] : [];
+      const hay = [
+        r.hf_repo,
+        r.hf_org,
+        r.meta?.title,
+        r.meta?.provider,
+        r.meta?.description,
+        ...(r.meta?.tasks || []),
+        r.model?.architecture,
+        r.model?.parameter_count,
+        r.variant?.precision,
+        ...(r.precisions || []),
+        ...hwKeys,
+        ...hwExtra,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    },
+    [q]
+  );
 
   const update = useCallback(
     (patch) => {
@@ -162,8 +197,8 @@ export function BrowseList({ recipes }) {
 
   const removeOne = useCallback(
     (key, value) => {
-      if (key === "provider") {
-        update({ provider: "" });
+      if (key === "provider" || key === "q") {
+        update({ [key]: "" });
         return;
       }
       const cur = new Set((searchParams.get(key) || "").split(",").filter(Boolean));
@@ -184,6 +219,7 @@ export function BrowseList({ recipes }) {
   // so toggling a chip on the same row doesn't suddenly zero it out.
   const counts = useMemo(() => {
     const matchExcept = (r, exclude) => {
+      if (!matchesQ(r)) return false;
       if (exclude !== "task" && tasks.size > 0 && !(r.meta.tasks || []).some((t) => tasks.has(t))) return false;
       if (exclude !== "arch" && archs.size > 0 && !archs.has(r.model.architecture)) return false;
       if (exclude !== "size" && sizes.size > 0) {
@@ -220,10 +256,11 @@ export function BrowseList({ recipes }) {
       precision: tally("precision", (r) => r.precisions || []),
       hw: tally("hw", (r) => Object.entries(r.meta.hardware || {}).filter(([, s]) => s === "verified").map(([h]) => h)),
     };
-  }, [recipes, tasks, archs, sizes, precisions, hardware, provider]);
+  }, [recipes, tasks, archs, sizes, precisions, hardware, provider, matchesQ]);
 
   const filtered = useMemo(() => {
     const out = recipes.filter((r) => {
+      if (!matchesQ(r)) return false;
       if (tasks.size > 0 && !(r.meta.tasks || []).some((t) => tasks.has(t))) return false;
       if (archs.size > 0 && !archs.has(r.model.architecture)) return false;
       if (sizes.size > 0) {
@@ -249,10 +286,11 @@ export function BrowseList({ recipes }) {
       name: (a, b) => a.hf_id.localeCompare(b.hf_id),
     }[sort] || ((a, b) => 0);
     return [...out].sort(cmp);
-  }, [recipes, tasks, archs, sizes, precisions, hardware, provider, sort]);
+  }, [recipes, tasks, archs, sizes, precisions, hardware, provider, sort, matchesQ]);
 
   const activeCount =
-    tasks.size + archs.size + sizes.size + precisions.size + hardware.size + (provider ? 1 : 0);
+    tasks.size + archs.size + sizes.size + precisions.size + hardware.size +
+    (provider ? 1 : 0) + (q ? 1 : 0);
   const hasFilters = activeCount > 0;
 
   // Flat list of currently-applied filters for the inline pills shown when
@@ -260,6 +298,7 @@ export function BrowseList({ recipes }) {
   // expand to see what's selected.
   const activeFilters = useMemo(() => {
     const out = [];
+    if (q) out.push({ key: "q", value: q, label: `"${q}"` });
     for (const t of tasks) out.push({ key: "task", value: t, label: t });
     for (const a of archs) out.push({ key: "arch", value: a, label: ARCH_META[a]?.label || a });
     for (const id of sizes) {
@@ -273,7 +312,7 @@ export function BrowseList({ recipes }) {
     }
     if (provider) out.push({ key: "provider", value: provider, label: getProviderDisplayName(provider) });
     return out;
-  }, [tasks, archs, sizes, precisions, hardware, provider]);
+  }, [q, tasks, archs, sizes, precisions, hardware, provider]);
 
   // Panel state persists in the URL (`?panel=open`) so a refresh keeps
   // whatever the user had. Default is closed — applied filters are
