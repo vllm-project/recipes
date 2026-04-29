@@ -225,7 +225,7 @@ guide: |
   # Donor: NGC ships HPC-X + MLNX OFED for ARM64 RoCE
   FROM nvcr.io/nvidia/vllm:26.03-py3 AS donor
 
-  FROM vllm/vllm-openai:v0.19.0-aarch64-cu130-ubuntu2404
+  FROM vllm/vllm-openai:v0.19.1-aarch64-cu130-ubuntu2404
   COPY --from=donor /opt/hpcx /opt/hpcx
   COPY --from=donor /usr/lib/aarch64-linux-gnu/libmlx5.so* /usr/lib/aarch64-linux-gnu/
   COPY --from=donor /usr/lib/aarch64-linux-gnu/libibverbs* /usr/lib/aarch64-linux-gnu/
@@ -239,6 +239,7 @@ guide: |
   export NCCL_NET_GDR_LEVEL=5
   export NCCL_SOCKET_IFNAME=enp1s0f0np0          # pin to the 200 Gbps RoCE interface
   ```
+  The mixed-case names above (lowercase `rocep1s0f0` / `enp1s0f0np0` alongside `roceP2p1s0f0` / `enP7s7` with capital `P`) are not a typo — the kernel's predictable-naming scheme uses a capital `P` segment for devices on a non-zero PCI domain, and DGX Spark's two ConnectX-7 ports land on different domains. Discover the actual names on your box with `ibv_devices` and `ip link` and use them as listed.
 
   Head node (`192.168.100.10`):
   ```bash
@@ -273,7 +274,7 @@ guide: |
   - **`--enforce-eager`** and **`--disable-custom-all-reduce`**: CUDA graphs and the custom all-reduce kernel are unstable on multi-node aarch64 in this configuration; both are required for stable operation.
   - **`--async-scheduling`**: validated functional on this hardware including the thinking-mode streaming path.
   - **`--gpu-memory-utilization 0.85`** is the value validated end-to-end on this hardware. Higher values may be possible but are untested here; the unified-memory model on Spark makes 0.85 a conservative default.
-  - **Do not enable `--kv-cache-dtype fp8` on this configuration.** Gemma 4's heterogeneous attention head dimensions (256 / 512) cause `get_kv_cache_configs` to assert that "KV cache specs for the same layer are different across workers" under TP > 1 in vLLM 0.19.1 — engine init fails. The model-level FP8 KV cache recommendation in the section above does not apply to multi-node TP > 1.
+  - **Do not enable `--kv-cache-dtype fp8` on this configuration.** Gemma 4's heterogeneous attention head dimensions (256 / 512) cause `get_kv_cache_configs` to assert that "KV cache specs for the same layer are different across workers" under TP > 1 in vLLM 0.19.1 — engine init fails. The FP8 KV cache recommendation in the **Configuration Tips** section below does not apply to multi-node TP > 1.
   - The recipe omits `--chat-template`: vLLM 0.19.1 (declared in `min_vllm_version`) carries the upstream tool-call/reasoning parser fix that previously required a custom template.
   - Verify NCCL is using the RoCE plugin: the head log should contain `NET/IB : Using [0]rocep1s0f0:1/RoCE`.
   - `enP7s7` (2.5 Gbps onboard Ethernet) must not be selected by NCCL — pin via `NCCL_SOCKET_IFNAME`.
