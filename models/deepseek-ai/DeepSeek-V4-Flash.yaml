@@ -97,6 +97,7 @@ strategy_overrides:
     # Latency-oriented TP-only deployment: no expert parallelism (single_node_tp
     # strategy doesn't add --enable-expert-parallel) and no MoE mega-kernel
     # backend on Blackwell. Autotune is disabled to minimize startup time.
+    tp: 8
     extra_args:
       - "--no-enable-flashinfer-autotune"
     hardware_overrides:
