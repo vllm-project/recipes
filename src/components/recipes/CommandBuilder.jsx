@@ -1003,8 +1003,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // The CUDA baseline for NVIDIA images flipped at vLLM 0.20.0: pre-0.20.0
   // the base tag is CUDA 12.9 and the alternative suffix is `-cu130`;
   // 0.20.0+ the base tag is CUDA 13 and the alternative suffix is `-cu129`.
+  // Nightly recipes track the post-flip baseline regardless of the (possibly
+  // non-numeric, e.g. "nightly") `min_vllm_version` string they declare.
   // Offering the wrong suffix would give the user a tag that doesn't exist.
   const altCudaSuffix = useMemo(() => {
+    if (recipe.model?.nightly_required === true) return "cu129";
     const v = recipe.model?.min_vllm_version || "";
     const [maj, min] = v.split(".").map((n) => parseInt(n, 10) || 0);
     const is020Plus = maj > 0 || min >= 20;
@@ -1578,6 +1581,11 @@ function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode, dockerC
   // pill in the Install header. Manual `install.pip.command` overrides still
   // win — this flag only affects the default.
   const nightlyRequired = recipe.model?.nightly_required === true;
+  // Resolve the CUDA tag for pip's nightly wheel index from the same toggle
+  // that drives the Docker tag suffix. "default" → the version-base CUDA
+  // (cu130 for ≥0.20.0, cu129 for older); explicit picks pass through.
+  const baseCuda = altCudaSuffix === "cu129" ? "cu130" : "cu129";
+  const pipCudaTag = dockerCudaVariant === "default" ? baseCuda : dockerCudaVariant;
   const defaultPipCmd = isAmd
     ? `uv venv --python 3.12
 source .venv/bin/activate
@@ -1585,7 +1593,10 @@ uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm`
     : nightlyRequired
       ? `uv venv
 source .venv/bin/activate
-uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly/cu130`
+uv pip install -U vllm --pre \\
+  --extra-index-url https://wheels.vllm.ai/nightly/${pipCudaTag} \\
+  --extra-index-url https://download.pytorch.org/whl/${pipCudaTag} \\
+  --index-strategy unsafe-best-match`
       : `uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto`;
@@ -1593,7 +1604,9 @@ uv pip install -U vllm --torch-backend auto`;
   const pipNote =
     pipCfg?.note ||
     (nightlyRequired && !isAmd
-      ? `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, use https://wheels.vllm.ai/nightly/cu129`
+      ? altCudaSuffix === "cu129"
+        ? `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
+        : `vLLM ${minV} isn't released yet — nightly required. For CUDA 13, switch the toggle to cu130.`
       : undefined);
 
   // Docker install step is just the image pull; the `docker run` that actually
@@ -1611,11 +1624,17 @@ uv pip install -U vllm --torch-backend auto`;
         ? "vLLM 0.20.0+ default tag ships CUDA 13. Switch to cu129 for the -cu129 variant if your host is on CUDA 12.9."
         : "Default tag ships CUDA 12.9. Switch to cu130 for the -cu130 variant on CUDA 13 hosts.";
   const dockerNote = dockerCfg?.note || defaultDockerNote;
-  // Show the CUDA selector only when we're on NVIDIA, the user isn't supplying
-  // a full override command (which already bakes in a specific tag), and the
-  // docker tab is the active one.
+  // Show the CUDA selector when we're on NVIDIA and the user isn't supplying
+  // a full override command (which already bakes in a specific tag). Visible
+  // on the docker tab always, and on the pip tab when the command actually
+  // varies by CUDA — i.e. nightly recipes whose wheel index URL is explicit.
+  // Stable pip uses `--torch-backend auto`, which detects the host CUDA, so
+  // a toggle would be inert there.
   const showCudaSelector =
-    brandKey === "nvidia" && !dockerCfg?.command && installMode === "docker";
+    brandKey === "nvidia" &&
+    !dockerCfg?.command &&
+    (installMode === "docker" ||
+      (installMode === "pip" && nightlyRequired && !pipCfg?.command));
 
   // TPU has no pip wheel — force-hide the pip tab regardless of recipe overrides.
   const effectivePipHidden = pipHidden || isTpu;
