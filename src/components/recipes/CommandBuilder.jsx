@@ -1003,8 +1003,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // The CUDA baseline for NVIDIA images flipped at vLLM 0.20.0: pre-0.20.0
   // the base tag is CUDA 12.9 and the alternative suffix is `-cu130`;
   // 0.20.0+ the base tag is CUDA 13 and the alternative suffix is `-cu129`.
+  // Nightly is the exception — the `nightly` Docker tag still mirrors
+  // `cu129-nightly` (no `nightly-cu130` exists yet), and the wheel index
+  // has no root default, so we treat nightly recipes as cu129-base too.
   // Offering the wrong suffix would give the user a tag that doesn't exist.
   const altCudaSuffix = useMemo(() => {
+    if (recipe.model?.nightly_required === true) return "cu130";
     const v = recipe.model?.min_vllm_version || "";
     const [maj, min] = v.split(".").map((n) => parseInt(n, 10) || 0);
     const is020Plus = maj > 0 || min >= 20;
@@ -1585,7 +1589,7 @@ uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm`
     : nightlyRequired
       ? `uv venv
 source .venv/bin/activate
-uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly/cu130`
+uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly/cu129`
       : `uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto`;
@@ -1593,7 +1597,7 @@ uv pip install -U vllm --torch-backend auto`;
   const pipNote =
     pipCfg?.note ||
     (nightlyRequired && !isAmd
-      ? `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, use https://wheels.vllm.ai/nightly/cu129`
+      ? `vLLM ${minV} isn't released yet — nightly required. For CUDA 13, use https://wheels.vllm.ai/nightly/cu130`
       : undefined);
 
   // Docker install step is just the image pull; the `docker run` that actually
@@ -1613,9 +1617,14 @@ uv pip install -U vllm --torch-backend auto`;
   const dockerNote = dockerCfg?.note || defaultDockerNote;
   // Show the CUDA selector only when we're on NVIDIA, the user isn't supplying
   // a full override command (which already bakes in a specific tag), and the
-  // docker tab is the active one.
+  // docker tab is the active one. Hidden for nightly recipes unless the recipe
+  // pins explicit cu129/cu130 tags via a cudaMap — the stock `nightly-cu130`
+  // tag doesn't exist on Docker Hub, so a generic toggle would mint a 404.
   const showCudaSelector =
-    brandKey === "nvidia" && !dockerCfg?.command && installMode === "docker";
+    brandKey === "nvidia" &&
+    !dockerCfg?.command &&
+    installMode === "docker" &&
+    (!nightlyRequired || dockerMeta.cudaMap);
 
   // TPU has no pip wheel — force-hide the pip tab regardless of recipe overrides.
   const effectivePipHidden = pipHidden || isTpu;
