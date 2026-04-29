@@ -1,0 +1,44 @@
+meta:
+  title: "Ling-2.6-1T"
+  slug: "ling-2.6-1t"
+  provider: "inclusionAI"
+  description: "Ling-2.6-1T (BailingMoeV2_5) FP8 instruct model with 1T total / 50B active params, hybrid linear + MLA attention, 128K context"
+  date_updated: 2026-04-29
+  difficulty: advanced
+  tasks:
+    - text
+  related_recipes:
+    - inclusionAI/Ling-2.6-flash
+    - inclusionAI/Ring-1T-FP8
+  hardware:
+    b300: verified
+
+model:
+  model_id: "inclusionAI/Ling-2.6-1T"
+  min_vllm_version: "nightly"
+  nightly_required: true
+  architecture: moe
+  parameter_count: "1T"
+  active_parameters: "50B"
+  context_length: 131072
+  base_args:
+    - "--trust-remote-code"
+  base_env: {}
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: fp8
+    description: "FP8 weights on 8x H200 with TP=8"
+
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides: {}
+
+strategy_overrides:
+  single_node_tp:
+    tp: 8
