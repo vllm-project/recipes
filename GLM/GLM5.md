@@ -8,6 +8,8 @@ This guide describes how to run GLM-5 or GLM-5.1 with native FP8.
 
 ### Using Docker
 
+#### NVIDIA
+
 ```bash
 docker run --gpus all \
   -p 8000:8000 \
@@ -26,7 +28,35 @@ Please use the `vllm/vllm-openai:glm51-cu130` Docker image if your CUDA version 
 !!! Note
     Please use the latest main branch of vLLM to serve GLM-5.1 if you intend to use tool calling together with MTP enabled.
 
+#### AMD (ROCm)
+
+Verified on 8× MI300X/MI355X GPUs:
+
+```bash
+docker run --device=/dev/kfd --device=/dev/dri \
+  --security-opt seccomp=unconfined \
+  --group-add video \
+  --ipc=host \
+  -p 8000:8000 \
+  -e VLLM_ROCM_USE_AITER=1 \
+  -e VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4 \
+  -e VLLM_ROCM_USE_AITER_RMSNORM=0 \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  vllm/vllm-openai-rocm:latest \
+  zai-org/GLM-5.1-FP8 \
+    --tensor-parallel-size 8 \
+    --tool-call-parser glm47 \
+    --reasoning-parser glm45 \
+    --enable-auto-tool-choice \
+    --chat-template-content-format=string \
+    --block-size=1 \
+    --enable-prefix-caching \
+    --served-model-name glm-5.1-fp8
+```
+
 ### Installing vLLM from source
+
+#### NVIDIA
 
 ```bash
 uv venv
@@ -40,11 +70,22 @@ uv pip install "transformers>=5.4.0"
 !!! attention
     Instead of nightly releases, please use the 0.19.0 stable release of vLLM for the best model performance.
 
+#### AMD
+
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.2.1, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described above. Supported GPUs: MI300X, MI325X, MI355X.
+
+```bash
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
+```
+
 
 ## Model Deployment
 
-### Serving FP8 Model on 8xH200 (or H20) GPUs (141GB × 8)
+### NVIDIA
 
+Serving FP8 Model on 8xH200 (or H20) GPUs (141GB × 8):
 
 ```bash
 vllm serve zai-org/GLM-5.1-FP8 \
@@ -60,6 +101,27 @@ vllm serve zai-org/GLM-5.1-FP8 \
 
 - When using vLLM, **thinking mode is enabled by default when sending requests**. If you want to disable the thinking switch, you need to add the `"chat_template_kwargs": {"enable_thinking": false}` parameter.
 - Support tool calling by default. Please use OpenAI-style tool description format for calls.
+
+### AMD (ROCm)
+
+The configuration below has been verified on 8x MI300X/MI355X GPUs:
+
+```bash
+export VLLM_ROCM_USE_AITER=1  # Enable AITER optimization for attention and tensor operations
+export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4  # Use INT4 quantization for faster all-reduce operations
+export VLLM_ROCM_USE_AITER_RMSNORM=0  # Disable AITER for RMSNorm layers
+
+vllm serve zai-org/GLM-5.1-FP8 \
+     --tensor-parallel-size 8 \
+     --speculative-config.method mtp \
+     --speculative-config.num_speculative_tokens 3 \
+     --tool-call-parser glm47 \
+     --reasoning-parser glm45 \
+     --enable-auto-tool-choice \
+     --chat-template-content-format=string \
+     --block-size=1 \
+     --served-model-name glm-5.1-fp8
+```
 
 ### OpenAI Client Example
 
