@@ -41,7 +41,7 @@ features:
     description: "Eagle3 speculative decoding for accelerated inference"
     args:
       - "--speculative-config"
-      - '{"model":"lightseekorg/kimi-k2.6-eagle3","method":"eagle3","num_speculative_tokens":3}'
+      - '{"model":"lightseekorg/kimi-k2.6-eagle3-mla","method":"eagle3","num_speculative_tokens":3}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
