@@ -32,6 +32,7 @@ opt_in_features: []
 variants:
   default:
     precision: fp8
+    vram_minimum_gb: 1200
     description: "FP8 weights on 8x H200 with TP=8"
 
 compatible_strategies:
