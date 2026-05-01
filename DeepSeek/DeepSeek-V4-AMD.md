@@ -16,73 +16,12 @@ cultivation + unified consolidation via on-policy distillation).
 Checkpoint is **FP4+FP8 mixed**: MoE expert weights are stored in FP4 while the
 remaining (attention / norm / router) params stay in FP8.
 
-## Reasoning modes
-
-The chat template exposes three reasoning-effort modes:
-
-- **Non-think** — fast, intuitive responses.
-- **Think High** — explicit chain-of-thought for complex problem-solving and planning.
-- **Think Max** — maximum reasoning effort; requires `--max-model-len >= 393216`
-  (384K tokens) to avoid truncation.
-
-Recommended sampling: `temperature = 1.0`, `top_p = 1.0`.
-
-### OpenAI Client Example
-
-For DeepSeek-V4, keep reasoning controls in `chat_template_kwargs`, as it exposes a
-custom **Think Max** mode via `"reasoning_effort": "max"`.
-
-```python
-from openai import OpenAI
-
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
-model = "deepseek-ai/DeepSeek-V4-Pro"
-messages = [{"role": "user", "content": "What is 17*19? Return only the final integer."}]
-
-# Non-think
-resp = client.chat.completions.create(
-    model=model,
-    messages=messages,
-)
-
-# Think High
-resp = client.chat.completions.create(
-    model=model,
-    messages=messages,
-    extra_body={
-        "chat_template_kwargs": {
-            "thinking": True,
-            "reasoning_effort": "high",
-        },
-    },
-)
-
-# Think Max
-resp = client.chat.completions.create(
-    model=model,
-    messages=messages,
-    extra_body={
-        "chat_template_kwargs": {
-            "thinking": True,
-            "reasoning_effort": "max",
-        },
-    },
-)
-```
-
 ## Recommended deployments
 
-- **B300 (8× GPU)**: single-node DP + EP with `--data-parallel-size 8`.
-- **H200 (8× GPU)**: DP + EP with `--data-parallel-size 8`. Context is capped at
-  800K tokens (`--max-model-len 800000`) to leave KV headroom with dense params
-  replicated across ranks — applies to both single-node and multi-node H200.
 - **MI355X (8× GPU)**: validated with ROCm + AITER
   (`VLLM_ROCM_USE_AITER=1`, `VLLM_ROCM_USE_AITER_LINEAR=1`), `--moe-backend triton_unfused`,
   `--gpu-memory-utilization 0.6`, `--max-num-seqs 128`,
   `--max-num-batched-tokens 8192`, and `--distributed-executor-backend mp`.
-- **GB200 NVL4 (4× GPU per tray)**: the ~960 GB mixed-precision checkpoint does not
-  fit on one tray; run multi-node DP + EP across **2 trays** (8 GPUs total) with
-  `--data-parallel-size 8`. Pick the "Multi-Node" tab and set nodes to 2.
 
 ## Feature matrix
 
@@ -91,15 +30,15 @@ recipes.vllm.ai (hardware / variant / strategy / features).
 
 | Model | Hardware | Variant | Recommended strategies | Tool calling | Reasoning | Spec decoding |
 | --- | --- | --- | --- | --- | --- | --- |
-| DeepSeek-V4-Pro | MI355X (8x288GB) | FP8 (~960GB) | Tensor+Expert Parallel, Data+Expert Parallel | Yes (`deepseek_v4`) | Yes (`deepseek_v4`) | Yes (`mtp`) |
-| DeepSeek-V4-Flash | MI355X (8x288GB) | FP8 (~170GB) | Tensor+Expert Parallel, Data+Expert Parallel | Yes (`deepseek_v4`) | Yes (`deepseek_v4`) | Yes (`mtp`) |
+| [DeepSeek-V4-Pro](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro) | MI355X (8x288GB) | FP8 (~960GB) | Tensor Parallel (TP) | Yes (`deepseek_v4`) | Yes (`deepseek_v4`) | No (`false`) |
+| [DeepSeek-V4-Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash) | MI355X (8x288GB) | FP8 (~170GB) | Tensor Parallel (TP) | Yes (`deepseek_v4`) | Yes (`deepseek_v4`) | No (`false`) |
 
 ### MI355X recommended presets
 
 | Model | TP | Max num seqs | Max batched tokens | GPU memory utilization | Key ROCm env |
 | --- | --- | ---: | ---: | ---: | --- |
-| DeepSeek-V4-Pro | 8 | 128 | 8192 | 0.6 | `VLLM_ROCM_USE_AITER=1`, `VLLM_ROCM_USE_AITER_LINEAR=1` |
-| DeepSeek-V4-Flash | 4 | 16 | 1024 | 0.35 | `VLLM_ROCM_USE_AITER=1` |
+| [DeepSeek-V4-Pro](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro) | 8 | 128 | 8192 | 0.6 | `VLLM_ROCM_USE_AITER=1`, `VLLM_ROCM_USE_AITER_LINEAR=1` |
+| [DeepSeek-V4-Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash) | 4 | 16 | 1024 | 0.35 | `VLLM_ROCM_USE_AITER=1` |
 
 ### Feature toggles
 
@@ -107,7 +46,7 @@ recipes.vllm.ai (hardware / variant / strategy / features).
 | --- | --- |
 | Tool Calling | `--tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 --enable-auto-tool-choice` |
 | Reasoning | `--reasoning-parser deepseek_v4` |
-| Spec Decoding | `--speculative-config '{"method":"mtp","num_speculative_tokens":1}'` (start) / `2` (tune) |
+| Spec Decoding | Disabled (`false`) |
 
 ## AMD validation command snippets
 
@@ -157,4 +96,93 @@ vllm serve /home/models/DeepSeek-V4-Flash \
   --async-scheduling \
   --enforce-eager
 ```
+
+## Smoke test (single request)
+
+### DeepSeek-V4-Flash
+
+```bash
+curl -s http://localhost:8001/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Write me a poem about AMD and DeepSeek",
+    "model": "/home/models/DeepSeek-V4-Flash",
+    "max_tokens": 100,
+    "temperature": 0.0
+  }'
+```
+
+Sample result from PR validation (truncated):
+
+```json
+{
+  "object": "text_completion",
+  "model": "/home/models/DeepSeek-V4-Flash",
+  "choices": [
+    {
+      "finish_reason": "length",
+      "text": "\"... Here's a poem about AMD and DeepSeek: ...\""
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 9,
+    "completion_tokens": 100,
+    "total_tokens": 109
+  }
+}
+```
+
+### DeepSeek-V4-Pro
+
+```bash
+curl -s http://localhost:8001/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "What is 2+2? Return only the final integer.",
+    "model": "/home/models/DeepSeek-V4-Pro",
+    "max_tokens": 16,
+    "temperature": 0.0
+  }'
+```
+
+Smoke-test success criteria:
+
+- HTTP status is `200`
+- `choices[0].text` is non-empty
+
+## GSM8K validation (command + result)
+
+### DeepSeek-V4-Flash
+
+```bash
+MODEL=/home/models/DeepSeek-V4-Flash
+lm_eval --model local-completions \
+  --model_args model=$MODEL,base_url=http://0.0.0.0:8001/v1/completions,num_concurrent=4,max_retries=10,max_gen_toks=2048,timeout=60000 \
+  --batch_size auto \
+  --tasks gsm8k \
+  --num_fewshot 8 \
+  --output_path .
+```
+
+Reported result from PR #40871:
+
+- `flexible-extract exact_match`: `0.9439`
+- `strict-match exact_match`: `0.9431`
+
+### DeepSeek-V4-Pro
+
+```bash
+MODEL=/home/models/DeepSeek-V4-Pro
+lm_eval --model local-completions \
+  --model_args model=$MODEL,base_url=http://0.0.0.0:8001/v1/completions,num_concurrent=2,max_retries=10,max_gen_toks=2048,timeout=60000 \
+  --batch_size auto \
+  --tasks gsm8k \
+  --num_fewshot 8 \
+  --output_path .
+```
+
+Reported result from PR #40871:
+
+- `flexible-extract exact_match`: `0.9538`
+- `strict-match exact_match`: `0.9545`
 
