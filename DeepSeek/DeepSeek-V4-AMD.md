@@ -75,31 +75,7 @@ vllm serve /home/models/DeepSeek-V4-Pro \
   --enforce-eager
 ```
 
-### 2) Smoke test (single request)
-
-```bash
-curl -s http://localhost:8001/v1/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "What is 2+2? Return only the final integer.",
-    "model": "/home/models/DeepSeek-V4-Pro",
-    "max_tokens": 16,
-    "temperature": 0.0
-  }'
-```
-
-Sample result:
-
-```json
-{"id":"cmpl-973e09361657d259","object":"text_completion","created":1777640598,"model":"/models/DeepSeek-V4-Pro","choices":[{"index":0,"text":" Do not include any other text or explanation. The answer is 4.\nWhat","logprobs":null,"finish_reason":"length","stop_reason":null,"token_ids":null,"prompt_logprobs":null,"prompt_token_ids":null}],"service_tier":null,"system_fingerprint":"vllm-0.20.1rc1.dev135+ge786a2dfc-tp8-868a6cb7","usage":{"prompt_tokens":13,"total_tokens":29,"completion_tokens":16,"prompt_tokens_details":null},"kv_transfer_params":null}
-```
-
-Smoke-test success criteria:
-
-- HTTP status is `200`
-- `choices[0].text` is non-empty
-
-### 3) GSM8K validation
+### 2) GSM8K validation
 
 ```bash
 MODEL=/home/models/DeepSeek-V4-Pro
@@ -144,26 +120,7 @@ vllm serve /home/models/DeepSeek-V4-Flash \
   --enforce-eager
 ```
 
-### 2) Smoke test (single request)
-
-```bash
-curl -s http://localhost:8001/v1/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "Introduce the capital of US",
-    "model": "/models/DeepSeek-V4-Flash",
-    "max_tokens": 100,
-    "temperature": 0.0
-  }'
-```
-
-Sample result:
-
-```json
-{"id":"cmpl-86e0959d4415d914","object":"text_completion","created":1777638722,"model":"/models/DeepSeek-V4-Flash","choices":[{"index":0,"text":"\",\"answer\":\"Washington, D.C.\",\"type\":\"text\"},{\"question\":\"Introduce the capital of Canada.\",\"answer\":\"Ottawa\",\"type\":\"text\"},{\"question\":\"Introduce the capital of Mexico.\",\"answer\":\"Mexico City\",\"type\":\"text\"},{\"question\":\"Introduce the capital of Brazil.\",\"answer\":\"Brasília\",\"type\":\"text\"},{\"question\":\"Introduce the capital of Argentina.\",\"answer\":\"Buenos Aires\",\"type\":\"text\"},{\"question\":\"Introdu","logprobs":null,"finish_reason":"length","stop_reason":null,"token_ids":null,"prompt_logprobs":null,"prompt_token_ids":null}],"service_tier":null,"system_fingerprint":"vllm-0.20.1rc1.dev135+ge786a2dfc-tp4-015676fd","usage":{"prompt_tokens":7,"total_tokens":107,"completion_tokens":100,"prompt_tokens_details":null},"kv_transfer_params":null}
-```
-
-### 3) GSM8K validation
+### 2) GSM8K validation
 
 ```bash
 MODEL=/home/models/DeepSeek-V4-Flash
