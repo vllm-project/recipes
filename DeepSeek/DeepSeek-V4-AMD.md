@@ -1,150 +1,131 @@
 # DeepSeek-V4 on AMD (ROCm) Usage Guide
 
-This recipe mirrors the official DeepSeek-V4 recipe structure and is adapted for AMD ROCm based on [vllm-project/vllm#40871](https://github.com/vllm-project/vllm/pull/40871).
+This page is aligned with the DeepSeek-V4-Pro recipe layout on recipes.vllm.ai and
+captures the AMD MI355X validated settings from [vllm-project/vllm#40871](https://github.com/vllm-project/vllm/pull/40871).
 
-## Scope
+## Overview
 
-This guide covers:
+DeepSeek-V4-Pro is the flagship of the V4 preview family: a 1.6T-total / 49B-active
+Mixture-of-Experts model. It pairs a **hybrid attention stack** — Compressed Sparse
+Attention (CSA) + Heavily Compressed Attention (HCA) — with **Manifold-Constrained
+Hyper-Connections (mHC)** to reach 27% of V3.2's per-token inference FLOPs and 10% of
+V3.2's KV cache at 1M context. Pre-trained on 32T+ tokens with the **Muon optimizer**
+for faster convergence; post-training is a two-stage pipeline (domain-specific expert
+cultivation + unified consolidation via on-policy distillation).
 
-- DeepSeek-V4-Flash on MI355X (online serving)
-- DeepSeek-V4-Pro on MI355X (offline + online serving)
-- Reasoning mode usage
-- Tool calling flags
-- MTP speculative decoding (experimental recommendation)
+Checkpoint is **FP4+FP8 mixed**: MoE expert weights are stored in FP4 while the
+remaining (attention / norm / router) params stay in FP8.
 
-## Environment and Version
+## Reasoning modes
 
-At the time of writing, AMD DeepSeek-V4 support is under review upstream, so use the PR branch build:
+The chat template exposes three reasoning-effort modes:
 
-```bash
-# inside ROCm container
-pip uninstall -y vllm
-git clone https://github.com/vllm-project/vllm.git
-cd vllm
-git fetch origin pull/40871/head:pr_dsv4
-git checkout pr_dsv4
-python3 setup.py develop
-```
+- **Non-think** — fast, intuitive responses.
+- **Think High** — explicit chain-of-thought for complex problem-solving and planning.
+- **Think Max** — maximum reasoning effort; requires `--max-model-len >= 393216`
+  (384K tokens) to avoid truncation.
 
-Reference runtime used in PR validation:
+Recommended sampling: `temperature = 1.0`, `top_p = 1.0`.
 
-- Docker image: `rocm/vllm-dev:nightly_main_20260423`
-- Hardware: `MI355X`
+### OpenAI Client Example
 
-## DeepSeek-V4-Flash (MI355X)
-
-### Launch
-
-```bash
-max_num_seqs=16
-max_num_batched_tokens=1024
-tensor_parallel_size=4
-
-export HF_HOME=/data/huggingface-cache
-export VLLM_ROCM_USE_AITER=1
-export VLLM_TORCH_PROFILER_DIR=/app/vllm_profile
-
-MODEL=/home/models/DeepSeek-V4-Flash
-vllm serve ${MODEL} \
-  --host localhost \
-  --port 8001 \
-  --dtype auto \
-  --tensor-parallel-size ${tensor_parallel_size} \
-  --max-num-seqs ${max_num_seqs} \
-  --max-num-batched-tokens ${max_num_batched_tokens} \
-  --distributed-executor-backend mp \
-  --trust-remote-code \
-  --profiler-config '{"profiler":"torch","torch_profiler_dir":"./vllm_profile"}' \
-  --gpu-memory-utilization 0.35 \
-  --moe-backend triton_unfused \
-  --tokenizer-mode deepseek_v4 \
-  --async-scheduling \
-  --enforce-eager
-```
-
-### Smoke test
-
-```bash
-curl -s http://localhost:8001/v1/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "Write me a poem about AMD and DeepSeek.",
-    "model": "/home/models/DeepSeek-V4-Flash",
-    "max_tokens": 100,
-    "temperature": 0.0
-  }'
-```
-
-### Accuracy check (GSM8K, from PR)
-
-```bash
-MODEL=/home/models/DeepSeek-V4-Flash
-lm_eval --model local-completions \
-  --model_args model=$MODEL,base_url=http://0.0.0.0:8001/v1/completions,num_concurrent=4,max_retries=10,max_gen_toks=2048,timeout=60000 \
-  --batch_size auto \
-  --tasks gsm8k \
-  --num_fewshot 8 \
-  --output_path .
-```
-
-Reported result:
-
-- `flexible-extract exact_match`: `0.9439`
-- `strict-match exact_match`: `0.9431`
-
-## DeepSeek-V4-Pro (MI355X)
-
-### Offline validation
+For DeepSeek-V4, keep reasoning controls in `chat_template_kwargs`, as it exposes a
+custom **Think Max** mode via `"reasoning_effort": "max"`.
 
 ```python
-import os
-from vllm import LLM, SamplingParams
+from openai import OpenAI
 
-os.environ["VLLM_ROCM_USE_AITER"] = "1"
-os.environ["VLLM_ROCM_USE_AITER_LINEAR"] = "1"
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+model = "deepseek-ai/DeepSeek-V4-Pro"
+messages = [{"role": "user", "content": "What is 17*19? Return only the final integer."}]
 
-prompts = ["What is 2+2? Answer:", "The capital of France is "]
-sampling_params = SamplingParams(temperature=0, top_p=1, max_tokens=20)
-
-llm = LLM(
-    model="/home/models/DeepSeek-V4-Pro",
-    tensor_parallel_size=8,
-    kv_cache_dtype="fp8",
-    gpu_memory_utilization=0.6,
-    async_scheduling=True,
-    enforce_eager=True,
-    disable_log_stats=False,
-    tokenizer_mode="deepseek_v4",
-    moe_backend="triton_unfused",
-    reasoning_parser="deepseek_v4",
+# Non-think
+resp = client.chat.completions.create(
+    model=model,
+    messages=messages,
 )
 
-outputs = llm.generate(prompts, sampling_params)
-for output in outputs:
-    print(output.prompt, output.outputs[0].text)
+# Think High
+resp = client.chat.completions.create(
+    model=model,
+    messages=messages,
+    extra_body={
+        "chat_template_kwargs": {
+            "thinking": True,
+            "reasoning_effort": "high",
+        },
+    },
+)
+
+# Think Max
+resp = client.chat.completions.create(
+    model=model,
+    messages=messages,
+    extra_body={
+        "chat_template_kwargs": {
+            "thinking": True,
+            "reasoning_effort": "max",
+        },
+    },
+)
 ```
 
-### Online serving
+## Recommended deployments
+
+- **B300 (8× GPU)**: single-node DP + EP with `--data-parallel-size 8`.
+- **H200 (8× GPU)**: DP + EP with `--data-parallel-size 8`. Context is capped at
+  800K tokens (`--max-model-len 800000`) to leave KV headroom with dense params
+  replicated across ranks — applies to both single-node and multi-node H200.
+- **MI355X (8× GPU)**: validated with ROCm + AITER
+  (`VLLM_ROCM_USE_AITER=1`, `VLLM_ROCM_USE_AITER_LINEAR=1`), `--moe-backend triton_unfused`,
+  `--gpu-memory-utilization 0.6`, `--max-num-seqs 128`,
+  `--max-num-batched-tokens 8192`, and `--distributed-executor-backend mp`.
+- **GB200 NVL4 (4× GPU per tray)**: the ~960 GB mixed-precision checkpoint does not
+  fit on one tray; run multi-node DP + EP across **2 trays** (8 GPUs total) with
+  `--data-parallel-size 8`. Pick the "Multi-Node" tab and set nodes to 2.
+
+## Feature matrix
+
+The table below is a static equivalent of the interactive matrix shown on
+recipes.vllm.ai (hardware / variant / strategy / features).
+
+| Model | Hardware | Variant | Recommended strategies | Tool calling | Reasoning | Spec decoding |
+| --- | --- | --- | --- | --- | --- | --- |
+| DeepSeek-V4-Pro | MI355X (8x288GB) | FP8 (~960GB) | Tensor+Expert Parallel, Data+Expert Parallel | Yes (`deepseek_v4`) | Yes (`deepseek_v4`) | Yes (`mtp`) |
+| DeepSeek-V4-Flash | MI355X (8x288GB) | FP8 (~170GB) | Tensor+Expert Parallel, Data+Expert Parallel | Yes (`deepseek_v4`) | Yes (`deepseek_v4`) | Yes (`mtp`) |
+
+### MI355X recommended presets
+
+| Model | TP | Max num seqs | Max batched tokens | GPU memory utilization | Key ROCm env |
+| --- | --- | ---: | ---: | ---: | --- |
+| DeepSeek-V4-Pro | 8 | 128 | 8192 | 0.6 | `VLLM_ROCM_USE_AITER=1`, `VLLM_ROCM_USE_AITER_LINEAR=1` |
+| DeepSeek-V4-Flash | 4 | 16 | 1024 | 0.35 | `VLLM_ROCM_USE_AITER=1` |
+
+### Feature toggles
+
+| Feature | Server args |
+| --- | --- |
+| Tool Calling | `--tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 --enable-auto-tool-choice` |
+| Reasoning | `--reasoning-parser deepseek_v4` |
+| Spec Decoding | `--speculative-config '{"method":"mtp","num_speculative_tokens":1}'` (start) / `2` (tune) |
+
+## AMD validation command snippets
+
+### DeepSeek-V4-Pro (MI355X, TP=8)
 
 ```bash
-max_num_seqs=128
-max_num_batched_tokens=8192
-tensor_parallel_size=8
-
 export HF_HOME=/data/huggingface-cache
 export VLLM_ROCM_USE_AITER=1
 export VLLM_ROCM_USE_AITER_LINEAR=1
-rm -rf /root/.cache/vllm/torch_compile_cache
 
-MODEL=/home/models/DeepSeek-V4-Pro
-vllm serve ${MODEL} \
+vllm serve /home/models/DeepSeek-V4-Pro \
   --host localhost \
   --port 8001 \
   --dtype auto \
   --kv-cache-dtype fp8 \
-  --tensor-parallel-size ${tensor_parallel_size} \
-  --max-num-seqs ${max_num_seqs} \
-  --max-num-batched-tokens ${max_num_batched_tokens} \
+  --tensor-parallel-size 8 \
+  --max-num-seqs 128 \
+  --max-num-batched-tokens 8192 \
   --distributed-executor-backend mp \
   --trust-remote-code \
   --gpu-memory-utilization 0.6 \
@@ -155,89 +136,25 @@ vllm serve ${MODEL} \
   --enforce-eager
 ```
 
-### Accuracy check (GSM8K, from PR)
+### DeepSeek-V4-Flash (MI355X, TP=4)
 
 ```bash
-MODEL=/home/models/DeepSeek-V4-Pro
-lm_eval --model local-completions \
-  --model_args model=$MODEL,base_url=http://0.0.0.0:8001/v1/completions,num_concurrent=2,max_retries=10,max_gen_toks=2048,timeout=60000 \
-  --batch_size auto \
-  --tasks gsm8k \
-  --num_fewshot 8 \
-  --output_path .
+export HF_HOME=/data/huggingface-cache
+export VLLM_ROCM_USE_AITER=1
+
+vllm serve /home/models/DeepSeek-V4-Flash \
+  --host localhost \
+  --port 8001 \
+  --dtype auto \
+  --tensor-parallel-size 4 \
+  --max-num-seqs 16 \
+  --max-num-batched-tokens 1024 \
+  --distributed-executor-backend mp \
+  --trust-remote-code \
+  --gpu-memory-utilization 0.35 \
+  --moe-backend triton_unfused \
+  --tokenizer-mode deepseek_v4 \
+  --async-scheduling \
+  --enforce-eager
 ```
-
-Reported result:
-
-- `flexible-extract exact_match`: `0.9538`
-- `strict-match exact_match`: `0.9545`
-
-## Reasoning modes
-
-DeepSeek-V4 exposes non-think / think-high / think-max via `chat_template_kwargs`.
-
-```python
-from openai import OpenAI
-
-client = OpenAI(base_url="http://localhost:8001/v1", api_key="EMPTY")
-model = "deepseek-ai/DeepSeek-V4-Pro"
-messages = [{"role": "user", "content": "What is 17*19? Return only the final integer."}]
-
-# Non-think
-client.chat.completions.create(model=model, messages=messages)
-
-# Think high
-client.chat.completions.create(
-    model=model,
-    messages=messages,
-    extra_body={"chat_template_kwargs": {"thinking": True, "reasoning_effort": "high"}},
-)
-
-# Think max (ensure sufficient max-model-len)
-client.chat.completions.create(
-    model=model,
-    messages=messages,
-    extra_body={"chat_template_kwargs": {"thinking": True, "reasoning_effort": "max"}},
-)
-```
-
-## Tool calling
-
-Add these arguments to your serve command:
-
-```bash
---tokenizer-mode deepseek_v4 \
---tool-call-parser deepseek_v4 \
---enable-auto-tool-choice
-```
-
-## Speculative decoding (MTP)
-
-DeepSeek-V4 has native MTP support. On AMD, start conservatively and tune:
-
-```bash
---speculative-config '{"method":"mtp","num_speculative_tokens":1}'
-```
-
-If memory/throughput allows, test:
-
-```bash
---speculative-config '{"method":"mtp","num_speculative_tokens":2}'
-```
-
-## ROCm-specific notes from PR #40871
-
-- ROCm path includes DeepSeek-V4 FP8 compatibility updates and E8M0 scale handling.
-- ROCm execution disables some multi-stream paths to avoid known hang scenarios.
-- For DeepSeek-V4 routing mode, `triton_unfused` is preferred for accuracy, with AITER as fallback.
-
-## Troubleshooting
-
-1. **`NotImplementedError: "mul_cuda" not implemented for 'Float8_e8m0fnu'`**
-   - Ensure you are using the PR build above (or a newer commit that includes ROCm E8M0 handling fixes).
-2. **Model hangs during startup/load**
-   - Keep `--enforce-eager` enabled.
-   - Use `--moe-backend triton_unfused` on AMD.
-3. **Tokenizer / reasoning mismatch**
-   - Verify `--tokenizer-mode deepseek_v4` and `--reasoning-parser deepseek_v4` are both set.
 
