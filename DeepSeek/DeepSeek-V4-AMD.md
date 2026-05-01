@@ -88,6 +88,12 @@ curl -s http://localhost:8001/v1/completions \
   }'
 ```
 
+Sample result:
+
+```json
+{"id":"cmpl-973e09361657d259","object":"text_completion","created":1777640598,"model":"/models/DeepSeek-V4-Pro","choices":[{"index":0,"text":" Do not include any other text or explanation. The answer is 4.\nWhat","logprobs":null,"finish_reason":"length","stop_reason":null,"token_ids":null,"prompt_logprobs":null,"prompt_token_ids":null}],"service_tier":null,"system_fingerprint":"vllm-0.20.1rc1.dev135+ge786a2dfc-tp8-868a6cb7","usage":{"prompt_tokens":13,"total_tokens":29,"completion_tokens":16,"prompt_tokens_details":null},"kv_transfer_params":null}
+```
+
 Smoke-test success criteria:
 
 - HTTP status is `200`
@@ -107,8 +113,12 @@ lm_eval --model local-completions \
 
 Reported result from PR #40871:
 
-- `flexible-extract exact_match`: `0.9538`
-- `strict-match exact_match`: `0.9545`
+```text
+|Tasks|Version|     Filter     |n-shot|  Metric   |   |Value |   |Stderr|
+|-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
+|gsm8k|      3|flexible-extract|     8|exact_match|↑  |0.9538|±  |0.0058|
+|     |       |strict-match    |     8|exact_match|↑  |0.9545|±  |0.0057|
+```
 
 ## DeepSeek-V4-Flash validation (MI355X, TP=4)
 
@@ -167,6 +177,10 @@ lm_eval --model local-completions \
 
 Reported result from PR #40871:
 
-- `flexible-extract exact_match`: `0.9439`
-- `strict-match exact_match`: `0.9431`
+```text
+|Tasks|Version|     Filter     |n-shot|  Metric   |   |Value |   |Stderr|
+|-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
+|gsm8k|      3|flexible-extract|     8|exact_match|↑  |0.9439|±  |0.0063|
+|     |       |strict-match    |     8|exact_match|↑  |0.9431|±  |0.0064|
+```
 
