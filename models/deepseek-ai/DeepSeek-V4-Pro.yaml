@@ -3,7 +3,7 @@ meta:
   slug: "deepseek-v4-pro"
   provider: "DeepSeek"
   description: "DeepSeek V4 flagship MoE (1.6T total / 49B active) with hybrid CSA+HCA attention, manifold-constrained hyper-connections, Muon-trained on 32T+ tokens, and three-tier reasoning."
-  date_updated: 2026-04-24
+  date_updated: 2026-05-01
   difficulty: hard
   tasks:
     - text
@@ -17,7 +17,7 @@ meta:
     gb300: verified
     mi300x: unsupported
     mi325x: unsupported
-    mi355x: unsupported
+    mi355x: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V4-Pro"
@@ -109,6 +109,23 @@ hardware_overrides:
       - "--attention_config.use_fp4_indexer_cache=True"
       - "--moe-backend"
       - "deep_gemm_mega_moe"
+  amd:
+    extra_args:
+      - "--distributed-executor-backend"
+      - "mp"
+      - "--gpu-memory-utilization"
+      - "0.6"
+      - "--max-num-seqs"
+      - "128"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--moe-backend"
+      - "triton_unfused"
+      - "--async-scheduling"
+      - "--enforce-eager"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_USE_AITER_LINEAR: "1"
 
 strategy_overrides:
   single_node_tp:
@@ -252,6 +269,10 @@ guide: |
   - **H200 (8× GPU)**: DP + EP with `--data-parallel-size 8`. Context is capped at
     800K tokens (`--max-model-len 800000`) to leave KV headroom with dense params
     replicated across ranks — applies to both single-node and multi-node H200.
+  - **MI355X (8× GPU)**: validated with ROCm + AITER (`VLLM_ROCM_USE_AITER=1`,
+    `VLLM_ROCM_USE_AITER_LINEAR=1`), `--moe-backend triton_unfused`,
+    `--gpu-memory-utilization 0.6`, `--max-num-seqs 128`,
+    `--max-num-batched-tokens 8192`, and `--distributed-executor-backend mp`.
   - **GB200 NVL4 (4× GPU per tray)**: the ~960 GB mixed-precision checkpoint does not
     fit on one tray; run multi-node DP + EP across **2 trays** (8 GPUs total) with
     `--data-parallel-size 8`. Pick the "Multi-Node" tab and set nodes to 2.
