@@ -40,6 +40,79 @@ function normalizeDates(obj) {
   return obj;
 }
 
+// Resolve the default NVIDIA Docker image for a recipe, picking the base CUDA
+// tag from a `{cu129, cu130}` map if present. Mirrors `computeDockerMeta` in
+// CommandBuilder.jsx but only for the NVIDIA path (the canonical default).
+function resolveDockerImage(recipe, baseCuda) {
+  const DEFAULT_IMAGE = "vllm/vllm-openai:latest";
+  const override = recipe.model?.docker_image;
+  if (!override) return DEFAULT_IMAGE;
+  if (typeof override === "string") return override;
+  if (typeof override !== "object") return DEFAULT_IMAGE;
+
+  const isCudaMap = (v) => v && typeof v === "object" && ("cu129" in v || "cu130" in v);
+  const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override;
+
+  const pickFromCudaMap = (m) => m[baseCuda] || m.cu129 || m.cu130 || DEFAULT_IMAGE;
+
+  if (isBrandKeyed) {
+    const nv = override.nvidia;
+    if (typeof nv === "string") return nv;
+    if (isCudaMap(nv)) return pickFromCudaMap(nv);
+    return DEFAULT_IMAGE;
+  }
+  if (isCudaMap(override)) return pickFromCudaMap(override);
+  return DEFAULT_IMAGE;
+}
+
+// Synthesize the canonical NVIDIA install commands (pip + docker) for a recipe
+// so JSON consumers see the same one-liners the site shows. Mirrors the logic
+// in InstallBlock; defaults to NVIDIA + the model's base CUDA tag (cu130 for
+// vLLM ≥0.20.0, cu129 for older). Per-recipe overrides at `model.install`
+// follow the same semantics as the UI:
+//   pip: false              → omit the `pip` key
+//   pip: { command?, note?} → use overrides; missing fields fall back to defaults
+//   (same for docker)
+// `extras` carries the recipe's `dependencies` array verbatim.
+function synthesizeInstall(recipe) {
+  const installCfg = recipe.model?.install || {};
+  const pipCfg = installCfg.pip;
+  const dockerCfg = installCfg.docker;
+
+  const v = recipe.model?.min_vllm_version || "";
+  const [maj, min] = v.split(".").map((n) => parseInt(n, 10) || 0);
+  const is020Plus = maj > 0 || min >= 20;
+  const nightlyRequired = recipe.model?.nightly_required === true;
+  const baseCuda = nightlyRequired || is020Plus ? "cu130" : "cu129";
+
+  const out = {};
+
+  if (pipCfg !== false) {
+    const defaultPipCmd = nightlyRequired
+      ? `uv venv\nsource .venv/bin/activate\nuv pip install -U vllm --pre \\\n  --extra-index-url https://wheels.vllm.ai/nightly/${baseCuda} \\\n  --extra-index-url https://download.pytorch.org/whl/${baseCuda} \\\n  --index-strategy unsafe-best-match`
+      : `uv venv\nsource .venv/bin/activate\nuv pip install -U vllm --torch-backend auto`;
+    const defaultPipNote = nightlyRequired
+      ? `vLLM ${v} isn't released yet — nightly required.`
+      : undefined;
+    const command = (pipCfg && pipCfg.command) || defaultPipCmd;
+    const note = (pipCfg && pipCfg.note) || defaultPipNote;
+    out.pip = note ? { command, note } : { command };
+  }
+
+  if (dockerCfg !== false) {
+    const defaultDockerCmd = `docker pull ${resolveDockerImage(recipe, baseCuda)}`;
+    const command = (dockerCfg && dockerCfg.command) || defaultDockerCmd;
+    const note = dockerCfg && dockerCfg.note;
+    out.docker = note ? { command, note } : { command };
+  }
+
+  if (Array.isArray(recipe.dependencies) && recipe.dependencies.length) {
+    out.extras = recipe.dependencies;
+  }
+
+  return Object.keys(out).length ? out : undefined;
+}
+
 // Recursively find all .yaml files under a directory
 function findYamlFiles(dir) {
   const results = [];
@@ -81,6 +154,8 @@ for (const file of findYamlFiles(modelsDir)) {
     r.hf_repo = parts[parts.length - 1].replace(/\.(yaml|yml)$/, "");
     r.hf_id = `${r.hf_org}/${r.hf_repo}`;
   }
+  const install = synthesizeInstall(r);
+  if (install) r.install = install;
   recipes.push(r);
   // JSON at /<org>/<repo>.json — mirrors HF URL scheme
   writeJson(`${r.hf_org}/${r.hf_repo}.json`, r);

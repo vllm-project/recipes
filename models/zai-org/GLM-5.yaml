@@ -30,9 +30,6 @@ dependencies:
     command: 'uv pip install "vllm==0.19.0" --torch-backend=auto'
   - note: "GLM-5 requires transformers >= 5.4.0"
     command: 'uv pip install "transformers>=5.4.0"'
-  - note: "Optional: DeepGEMM for FP8 MoE kernels (FP8 variant only)"
-    command: "bash install_deepgemm.sh"
-    optional: true
 
 features:
   tool_calling:

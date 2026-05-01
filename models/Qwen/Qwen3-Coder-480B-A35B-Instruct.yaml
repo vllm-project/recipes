@@ -25,11 +25,6 @@ model:
   base_args: []
   base_env: {}
 
-dependencies:
-  - note: "Optional: opt into DeepGEMM FP8 MoE kernels for extra throughput"
-    command: "export VLLM_USE_DEEP_GEMM=1"
-    optional: true
-
 features:
   tool_calling:
     description: "Enable automatic tool choice with Qwen3 Coder parser"

@@ -26,10 +26,6 @@ model:
     - "--trust-remote-code"
   base_env: {}
 
-dependencies:
-  - note: "DeepGEMM pinned build for MQA logits (FP8 MoE kernels)"
-    command: "uv pip install git+https://github.com/deepseek-ai/DeepGEMM.git@v2.1.1.post3 --no-build-isolation"
-
 features:
   reasoning:
     description: "Dynamic thinking mode via chat_template_kwargs, same as DeepSeek-V3.1."
