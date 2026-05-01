@@ -22,6 +22,8 @@ meta:
 model:
   model_id: "deepseek-ai/DeepSeek-V4-Flash"
   min_vllm_version: "0.20.0"
+  docker_image:
+    amd: "rocm/vllm-dev:deepseek-v4-latest"
   architecture: moe
   parameter_count: "284B"
   active_parameters: "13B"

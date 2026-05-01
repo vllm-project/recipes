@@ -16,6 +16,12 @@ cultivation + unified consolidation via on-policy distillation).
 Checkpoint is **FP4+FP8 mixed**: MoE expert weights are stored in FP4 while the
 remaining (attention / norm / router) params stay in FP8.
 
+## Docker image (AMD ROCm)
+
+```bash
+docker pull rocm/vllm-dev:deepseek-v4-latest
+```
+
 ## Recommended deployments
 
 - **MI355X (8× GPU)**: validated with ROCm + AITER
@@ -140,4 +146,14 @@ Reported result from PR #40871:
 |gsm8k|      3|flexible-extract|     8|exact_match|↑  |0.9439|±  |0.0063|
 |     |       |strict-match    |     8|exact_match|↑  |0.9431|±  |0.0064|
 ```
+
+## Related PR links
+
+- [Functionality] Base PR is functionality/accuracy ready on MI35x for both
+  DeepSeek-V4-Pro and DeepSeek-V4-Flash; lm_eval passed on full GSM8K:
+  [Ready to merge, #40871](https://github.com/vllm-project/vllm/pull/40871)
+- [Functionality] MI300 support PR:
+  [#41451](https://github.com/vllm-project/vllm/pull/41451)
+- [Performance] MLA Indexer optimization for DeepSeek-V4 and DeepSeek-V3.2 (ROCm):
+  [#41217](https://github.com/vllm-project/vllm/pull/41217)
 
