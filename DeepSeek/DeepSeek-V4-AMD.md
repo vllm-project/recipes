@@ -48,9 +48,9 @@ recipes.vllm.ai (hardware / variant / strategy / features).
 | Reasoning | `--reasoning-parser deepseek_v4` |
 | Spec Decoding | Disabled (`false`) |
 
-## AMD validation command snippets
+## DeepSeek-V4-Pro validation (MI355X, TP=8)
 
-### DeepSeek-V4-Pro (MI355X, TP=8)
+### 1) Serve command
 
 ```bash
 export HF_HOME=/data/huggingface-cache
@@ -75,7 +75,44 @@ vllm serve /home/models/DeepSeek-V4-Pro \
   --enforce-eager
 ```
 
-### DeepSeek-V4-Flash (MI355X, TP=4)
+### 2) Smoke test (single request)
+
+```bash
+curl -s http://localhost:8001/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "What is 2+2? Return only the final integer.",
+    "model": "/home/models/DeepSeek-V4-Pro",
+    "max_tokens": 16,
+    "temperature": 0.0
+  }'
+```
+
+Smoke-test success criteria:
+
+- HTTP status is `200`
+- `choices[0].text` is non-empty
+
+### 3) GSM8K validation
+
+```bash
+MODEL=/home/models/DeepSeek-V4-Pro
+lm_eval --model local-completions \
+  --model_args model=$MODEL,base_url=http://0.0.0.0:8001/v1/completions,num_concurrent=2,max_retries=10,max_gen_toks=2048,timeout=60000 \
+  --batch_size auto \
+  --tasks gsm8k \
+  --num_fewshot 8 \
+  --output_path .
+```
+
+Reported result from PR #40871:
+
+- `flexible-extract exact_match`: `0.9538`
+- `strict-match exact_match`: `0.9545`
+
+## DeepSeek-V4-Flash validation (MI355X, TP=4)
+
+### 1) Serve command
 
 ```bash
 export HF_HOME=/data/huggingface-cache
@@ -97,62 +134,26 @@ vllm serve /home/models/DeepSeek-V4-Flash \
   --enforce-eager
 ```
 
-## Smoke test (single request)
-
-### DeepSeek-V4-Flash
+### 2) Smoke test (single request)
 
 ```bash
 curl -s http://localhost:8001/v1/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "prompt": "Write me a poem about AMD and DeepSeek",
-    "model": "/home/models/DeepSeek-V4-Flash",
+    "prompt": "Introduce the capital of US",
+    "model": "/models/DeepSeek-V4-Flash",
     "max_tokens": 100,
     "temperature": 0.0
   }'
 ```
 
-Sample result from PR validation (truncated):
+Sample result:
 
 ```json
-{
-  "object": "text_completion",
-  "model": "/home/models/DeepSeek-V4-Flash",
-  "choices": [
-    {
-      "finish_reason": "length",
-      "text": "\"... Here's a poem about AMD and DeepSeek: ...\""
-    }
-  ],
-  "usage": {
-    "prompt_tokens": 9,
-    "completion_tokens": 100,
-    "total_tokens": 109
-  }
-}
+{"id":"cmpl-86e0959d4415d914","object":"text_completion","created":1777638722,"model":"/models/DeepSeek-V4-Flash","choices":[{"index":0,"text":"\",\"answer\":\"Washington, D.C.\",\"type\":\"text\"},{\"question\":\"Introduce the capital of Canada.\",\"answer\":\"Ottawa\",\"type\":\"text\"},{\"question\":\"Introduce the capital of Mexico.\",\"answer\":\"Mexico City\",\"type\":\"text\"},{\"question\":\"Introduce the capital of Brazil.\",\"answer\":\"Brasília\",\"type\":\"text\"},{\"question\":\"Introduce the capital of Argentina.\",\"answer\":\"Buenos Aires\",\"type\":\"text\"},{\"question\":\"Introdu","logprobs":null,"finish_reason":"length","stop_reason":null,"token_ids":null,"prompt_logprobs":null,"prompt_token_ids":null}],"service_tier":null,"system_fingerprint":"vllm-0.20.1rc1.dev135+ge786a2dfc-tp4-015676fd","usage":{"prompt_tokens":7,"total_tokens":107,"completion_tokens":100,"prompt_tokens_details":null},"kv_transfer_params":null}
 ```
 
-### DeepSeek-V4-Pro
-
-```bash
-curl -s http://localhost:8001/v1/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "What is 2+2? Return only the final integer.",
-    "model": "/home/models/DeepSeek-V4-Pro",
-    "max_tokens": 16,
-    "temperature": 0.0
-  }'
-```
-
-Smoke-test success criteria:
-
-- HTTP status is `200`
-- `choices[0].text` is non-empty
-
-## GSM8K validation (command + result)
-
-### DeepSeek-V4-Flash
+### 3) GSM8K validation
 
 ```bash
 MODEL=/home/models/DeepSeek-V4-Flash
@@ -168,21 +169,4 @@ Reported result from PR #40871:
 
 - `flexible-extract exact_match`: `0.9439`
 - `strict-match exact_match`: `0.9431`
-
-### DeepSeek-V4-Pro
-
-```bash
-MODEL=/home/models/DeepSeek-V4-Pro
-lm_eval --model local-completions \
-  --model_args model=$MODEL,base_url=http://0.0.0.0:8001/v1/completions,num_concurrent=2,max_retries=10,max_gen_toks=2048,timeout=60000 \
-  --batch_size auto \
-  --tasks gsm8k \
-  --num_fewshot 8 \
-  --output_path .
-```
-
-Reported result from PR #40871:
-
-- `flexible-extract exact_match`: `0.9538`
-- `strict-match exact_match`: `0.9545`
 

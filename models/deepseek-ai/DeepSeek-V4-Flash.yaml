@@ -249,6 +249,52 @@ guide: |
   `--max-num-seqs 16`, `--max-num-batched-tokens 1024`,
   `--moe-backend triton_unfused`, `--async-scheduling`, and `--enforce-eager`.
 
+  ## GSM8K validation (MI355X)
+
+  Launch command (TP=4):
+
+  ```bash
+  export HF_HOME=/data/huggingface-cache
+  export VLLM_ROCM_USE_AITER=1
+
+  vllm serve /home/models/DeepSeek-V4-Flash \
+    --host localhost \
+    --port 8001 \
+    --dtype auto \
+    --tensor-parallel-size 4 \
+    --max-num-seqs 16 \
+    --max-num-batched-tokens 1024 \
+    --distributed-executor-backend mp \
+    --trust-remote-code \
+    --gpu-memory-utilization 0.35 \
+    --moe-backend triton_unfused \
+    --tokenizer-mode deepseek_v4 \
+    --async-scheduling \
+    --enforce-eager
+  ```
+
+  GSM8K command:
+
+  ```bash
+  MODEL=/home/models/DeepSeek-V4-Flash
+  lm_eval --model local-completions \
+    --model_args model=$MODEL,base_url=http://0.0.0.0:8001/v1/completions,num_concurrent=4,max_retries=10,max_gen_toks=2048,timeout=60000 \
+    --batch_size auto \
+    --tasks gsm8k \
+    --num_fewshot 8 \
+    --output_path . 2>&1 | tee -a eval.log
+  ```
+
+  Reported result from PR #40871:
+
+  ```text
+  local-completions ({'model': '/home/models/DeepSeek-V4-Flash', 'base_url': 'http://0.0.0.0:8001/v1/completions', 'num_concurrent': 4, 'max_retries': 10, 'max_gen_toks': 2048, 'timeout': 60000}), gen_kwargs: ({}), limit: None, num_fewshot: 8, batch_size: auto
+  |Tasks|Version|     Filter     |n-shot|  Metric   |   |Value |   |Stderr|
+  |-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
+  |gsm8k|      3|flexible-extract|     8|exact_match|↑  |0.9439|±  |0.0063|
+  |     |       |strict-match    |     8|exact_match|↑  |0.9431|±  |0.0064|
+  ```
+
   ### H200 Single-Node PD (Mooncake)
 
   Single-host disaggregated serving: 4 prefill GPUs + 4 decode GPUs on one 8-GPU H200 node,

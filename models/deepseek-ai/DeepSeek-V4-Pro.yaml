@@ -276,3 +276,52 @@ guide: |
   - **GB200 NVL4 (4× GPU per tray)**: the ~960 GB mixed-precision checkpoint does not
     fit on one tray; run multi-node DP + EP across **2 trays** (8 GPUs total) with
     `--data-parallel-size 8`. Pick the "Multi-Node" tab and set nodes to 2.
+
+  ## GSM8K validation (MI355X)
+
+  Launch command (TP=8):
+
+  ```bash
+  export HF_HOME=/data/huggingface-cache
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_LINEAR=1
+
+  vllm serve /home/models/DeepSeek-V4-Pro \
+    --host localhost \
+    --port 8001 \
+    --dtype auto \
+    --kv-cache-dtype fp8 \
+    --tensor-parallel-size 8 \
+    --max-num-seqs 128 \
+    --max-num-batched-tokens 8192 \
+    --distributed-executor-backend mp \
+    --trust-remote-code \
+    --gpu-memory-utilization 0.6 \
+    --moe-backend triton_unfused \
+    --tokenizer-mode deepseek_v4 \
+    --reasoning-parser deepseek_v4 \
+    --async-scheduling \
+    --enforce-eager
+  ```
+
+  GSM8K command:
+
+  ```bash
+  MODEL=/home/models/DeepSeek-V4-Pro
+  lm_eval --model local-completions \
+    --model_args model=$MODEL,base_url=http://0.0.0.0:8001/v1/completions,num_concurrent=2,max_retries=10,max_gen_toks=2048,timeout=60000 \
+    --batch_size auto \
+    --tasks gsm8k \
+    --num_fewshot 8 \
+    --output_path . 2>&1 | tee -a eval.log
+  ```
+
+  Reported result from PR #40871:
+
+  ```text
+  local-completions ({'model': '/home/models/DeepSeek-V4-Pro', 'base_url': 'http://0.0.0.0:8001/v1/completions', 'num_concurrent': 2, 'max_retries': 10, 'max_gen_toks': 2048, 'timeout': 60000}), gen_kwargs: ({}), limit: None, num_fewshot: 8, batch_size: auto
+  |Tasks|Version|     Filter     |n-shot|  Metric   |   |Value |   |Stderr|
+  |-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
+  |gsm8k|      3|flexible-extract|     8|exact_match|↑  |0.9538|±  |0.0058|
+  |     |       |strict-match    |     8|exact_match|↑  |0.9545|±  |0.0057|
+  ```
