@@ -261,6 +261,8 @@ for (const file of findYamlFiles(modelsDir)) {
   // Replace the raw `model.install` config with the synthesized commands so
   // JSON consumers see the rendered one-liners (pip + docker) plus any
   // `extras` from `dependencies`. The raw toggle config is internal-only.
+  // `dependencies` is the YAML-authored source — drop it from the public JSON
+  // since `model.install.extras` already carries the same data verbatim.
   const install = synthesizeInstall(r);
   if (r.model) {
     const { install: _drop, ...rest } = r.model;
@@ -268,6 +270,7 @@ for (const file of findYamlFiles(modelsDir)) {
   } else if (install) {
     r.model = { install };
   }
+  delete r.dependencies;
   // Pre-render the canonical deploy command so agents don't have to reimplement
   // command-synthesis. Mirrors the website's default selections.
   const built = buildRecommendedCommand(r, strategies, taxonomy);
@@ -284,6 +287,13 @@ for (const file of findYamlFiles(modelsDir)) {
     if (Object.keys(altLinks).length) recommended.alternatives = altLinks;
     r.recommended_command = recommended;
   }
+  // strategy_overrides and compatible_strategies are synthesis inputs whose
+  // effects are already baked into recommended_command + the per-strategy
+  // alternative files (whose keys are the compatible_strategies set). Drop
+  // AFTER synthesis runs — buildRecommendedCommand reads both. The YAML on
+  // GitHub is the source of truth for anyone re-synthesizing.
+  delete r.strategy_overrides;
+  delete r.compatible_strategies;
   // Build the output object with `recommended_command` near the top — agents
   // hit it before scrolling past the YAML body. Order: identity → headline →
   // details → guide.
