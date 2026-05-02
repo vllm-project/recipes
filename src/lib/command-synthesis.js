@@ -196,6 +196,111 @@ export function pickDefaultHardware(hwProfiles, variant, recipe) {
   return compatible[0]?.[0] || "h200";
 }
 
+// Resolve the Docker image / GPU flags / brand key for the active hardware.
+// Shared by the install block (docker pull line) and the main command blocks
+// (docker run wrapping). Precedence: variant.docker_image → model.docker_image
+// → DEFAULT_IMAGE[brand].
+//
+// `docker_image` shapes:
+//   "vllm/vllm-openai:x"               (NVIDIA-only)
+//   { nvidia, amd, tpu }               (brand-keyed; each value is a string)
+//   { cu129, cu130 }                   (NVIDIA CUDA-keyed — explicit paired tags,
+//                                        auto-suffix is skipped in favor of these)
+//   { nvidia: { cu129, cu130 }, amd, tpu }  (mixed: NVIDIA value may be a CUDA map)
+//
+// When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
+// the user's `dockerCudaVariant` toggle instead of appending `-cu129`/`-cu130`.
+export function computeDockerMeta(recipe, variant, hwProfile) {
+  const DEFAULT_IMAGE = {
+    nvidia: "vllm/vllm-openai:latest",
+    amd: "vllm/vllm-openai-rocm:latest",
+    tpu: "vllm/vllm-tpu:latest",
+  };
+  const isAmd = hwProfile?.brand === "AMD";
+  const isTpu = hwProfile?.generation === "tpu";
+  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : "nvidia";
+  const override = variant?.docker_image || recipe.model?.docker_image;
+
+  const isCudaMap = (v) =>
+    v && typeof v === "object" && ("cu129" in v || "cu130" in v);
+
+  let pinned = null;
+  let cudaMap = null;
+  if (typeof override === "string") {
+    if (brandKey === "nvidia") pinned = override;
+  } else if (override && typeof override === "object") {
+    const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override;
+    if (isBrandKeyed) {
+      const brandValue = override[brandKey];
+      if (typeof brandValue === "string") pinned = brandValue;
+      else if (brandKey === "nvidia" && isCudaMap(brandValue)) cudaMap = brandValue;
+    } else if (brandKey === "nvidia" && isCudaMap(override)) {
+      cudaMap = override;
+    }
+  }
+
+  const image = pinned || DEFAULT_IMAGE[brandKey];
+  const gpuFlags = isTpu
+    ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
+    : isAmd
+      ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
+      : "--gpus all";
+  return { image, gpuFlags, brandKey, isAmd, isTpu, pinned, cudaMap };
+}
+
+// argv form of the brand-specific GPU flags from computeDockerMeta. Mirrors
+// the shell-string above token-for-token so docker_command and docker_argv
+// stay consistent.
+function dockerGpuArgv(meta) {
+  if (meta.isTpu) return ["--privileged", "--network", "host", "-v", "/dev/shm:/dev/shm"];
+  if (meta.isAmd) {
+    return [
+      "--device=/dev/kfd", "--device=/dev/dri",
+      "--security-opt", "seccomp=unconfined",
+      "--group-add", "video",
+    ];
+  }
+  return ["--gpus", "all"];
+}
+
+// Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
+// image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
+// CMD. Env vars become `-e KEY=VAL` inside the container.
+export function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
+  const envFlags = Object.entries(env || {})
+    .map(([k, v]) => `-e ${k}=${v}`)
+    .join(" \\\n  ");
+  const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
+  const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
+  return `docker run ${gpuFlags} \\
+  --privileged --ipc=host -p ${port}:${port} \\
+  -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
+  ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
+}
+
+// argv companion to buildDockerRun. `argv` here is the inner command's argv —
+// `["vllm", "serve", "<model>", ...flags]` from formatArgv. Returns the full
+// docker-run argv ready to spawn without a shell.
+export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
+  const envFlags = [];
+  for (const [k, v] of Object.entries(env || {})) {
+    envFlags.push("-e", `${k}=${v}`);
+  }
+  // `vllm serve <model> <...flags>` → CMD becomes `<model> <...flags>` since
+  // the image's entrypoint is already `vllm serve`.
+  const cmdArgs = argv[0] === "vllm" && argv[1] === "serve" ? argv.slice(2) : argv;
+  return [
+    "docker", "run",
+    ...dockerGpuArgv(meta),
+    "--privileged", "--ipc=host",
+    "-p", `${port}:${port}`,
+    "-v", "~/.cache/huggingface:/root/.cache/huggingface",
+    ...envFlags,
+    meta.image,
+    ...cmdArgs,
+  ];
+}
+
 /**
  * Resolve a complete vllm serve command from recipe + user selections.
  *

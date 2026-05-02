@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, pickDefaultHardware, resolveSingleNodeTp } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun } from "@/lib/command-synthesis";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
@@ -292,73 +292,6 @@ function EndpointsPopoverButton({ isPd, isMultiNode, placeholders, endpoints, on
       {popover}
     </>
   );
-}
-
-// Resolve the Docker image / GPU flags / brand key for the active hardware.
-// Shared by the install block (docker pull line) and the main command blocks
-// (docker run wrapping). Precedence: variant.docker_image → model.docker_image
-// → DEFAULT_IMAGE[brand].
-//
-// `docker_image` shapes:
-//   "vllm/vllm-openai:x"               (NVIDIA-only)
-//   { nvidia, amd, tpu }               (brand-keyed; each value is a string)
-//   { cu129, cu130 }                   (NVIDIA CUDA-keyed — explicit paired tags,
-//                                        auto-suffix is skipped in favor of these)
-//   { nvidia: { cu129, cu130 }, amd, tpu }  (mixed: NVIDIA value may be a CUDA map)
-//
-// When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
-// the user's `dockerCudaVariant` toggle instead of appending `-cu129`/`-cu130`.
-function computeDockerMeta(recipe, variant, hwProfile) {
-  const DEFAULT_IMAGE = {
-    nvidia: "vllm/vllm-openai:latest",
-    amd: "vllm/vllm-openai-rocm:latest",
-    tpu: "vllm/vllm-tpu:latest",
-  };
-  const isAmd = hwProfile?.brand === "AMD";
-  const isTpu = hwProfile?.generation === "tpu";
-  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : "nvidia";
-  const override = variant?.docker_image || recipe.model?.docker_image;
-
-  const isCudaMap = (v) =>
-    v && typeof v === "object" && ("cu129" in v || "cu130" in v);
-
-  let pinned = null;
-  let cudaMap = null;
-  if (typeof override === "string") {
-    if (brandKey === "nvidia") pinned = override;
-  } else if (override && typeof override === "object") {
-    const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override;
-    if (isBrandKeyed) {
-      const brandValue = override[brandKey];
-      if (typeof brandValue === "string") pinned = brandValue;
-      else if (brandKey === "nvidia" && isCudaMap(brandValue)) cudaMap = brandValue;
-    } else if (brandKey === "nvidia" && isCudaMap(override)) {
-      cudaMap = override;
-    }
-  }
-
-  const image = pinned || DEFAULT_IMAGE[brandKey];
-  const gpuFlags = isTpu
-    ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
-    : isAmd
-      ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
-      : "--gpus all";
-  return { image, gpuFlags, brandKey, isAmd, isTpu, pinned, cudaMap };
-}
-
-// Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
-// image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
-// CMD. Env vars become `-e KEY=VAL` inside the container.
-function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
-  const envFlags = Object.entries(env || {})
-    .map(([k, v]) => `-e ${k}=${v}`)
-    .join(" \\\n  ");
-  const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
-  const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
-  return `docker run ${gpuFlags} \\
-  --privileged --ipc=host -p ${port}:${port} \\
-  -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
-  ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
 }
 
 export function CommandBuilder({ recipe, strategies, taxonomy }) {

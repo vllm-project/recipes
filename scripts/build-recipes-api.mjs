@@ -21,6 +21,9 @@ import {
   recommendStrategy,
   fitsSingleNode,
   resolveCommand,
+  computeDockerMeta,
+  buildDockerRun,
+  buildDockerArgv,
 } from "../src/lib/command-synthesis.js";
 
 const ROOT = process.cwd();
@@ -128,9 +131,21 @@ function defaultFeaturesFor(recipe, hwId) {
   return Object.keys(recipe.features || {}).filter((f) => !optIn.has(f));
 }
 
+// Wrap a rendered (command, argv) pair in `docker run`. Returns
+// { docker_command, docker_argv } so each form has its docker counterpart.
+function dockerize(command, argv, env, dockerMeta, port = 8000) {
+  return {
+    docker_command: buildDockerRun({
+      command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, port,
+    }),
+    docker_argv: buildDockerArgv({ argv, env, meta: dockerMeta, port }),
+  };
+}
+
 // Render one (recipe × variant × strategy × hardware × nodeCount) into the
 // public JSON shape — handles all three deploy_types (single_node, multi_node,
-// pd_cluster) and snake_cases the keys. The `features` argument controls
+// pd_cluster), snake_cases the keys, and attaches docker_run wrappers
+// alongside the pip-mode command/argv. The `features` argument controls
 // command synthesis but is intentionally NOT echoed back in the output —
 // agents read the actual args from `command`/`argv`.
 function renderCommand(recipe, strategy, hwId, nodeCount, features, strategies, taxonomy) {
@@ -145,33 +160,60 @@ function renderCommand(recipe, strategy, hwId, nodeCount, features, strategies, 
   }
   if (!result) return null;
 
+  const variant = recipe.variants?.default || {};
+  const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
+  const dockerMeta = computeDockerMeta(recipe, variant, hwProfile);
+  const env = result.env || {};
+
   const base = {
     hardware: hwId,
     strategy,
     variant: "default",
     node_count: nodeCount,
     deploy_type: result.deployType,
-    env: result.env || {},
+    env,
+    docker_image: dockerMeta.image,
   };
   if (result.deployType === "multi_node") {
+    const head = dockerize(result.headCommand, result.headArgv, env, dockerMeta);
+    const worker = dockerize(result.workerCommand, result.workerArgv, env, dockerMeta);
     return {
       ...base,
       head_command: result.headCommand,
       worker_command: result.workerCommand,
       head_argv: result.headArgv,
       worker_argv: result.workerArgv,
+      head_docker_command: head.docker_command,
+      worker_docker_command: worker.docker_command,
+      head_docker_argv: head.docker_argv,
+      worker_docker_argv: worker.docker_argv,
     };
   }
   if (result.deployType === "pd_cluster") {
+    // Prefill exposes :8001, decode exposes :8002 (matches the router endpoints
+    // emitted by command-synthesis).
+    const prefill = { ...result.prefill };
+    const decode = { ...result.decode };
+    if (prefill.command && prefill.argv) {
+      Object.assign(prefill, dockerize(prefill.command, prefill.argv, prefill.env, dockerMeta, 8001));
+    }
+    if (decode.command && decode.argv) {
+      Object.assign(decode, dockerize(decode.command, decode.argv, decode.env, dockerMeta, 8002));
+    }
     return {
       ...base,
-      prefill: result.prefill,
-      decode: result.decode,
+      prefill,
+      decode,
       router: result.router,
       router_config: result.routerConfig,
     };
   }
-  return { ...base, command: result.command, argv: result.argv };
+  return {
+    ...base,
+    command: result.command,
+    argv: result.argv,
+    ...dockerize(result.command, result.argv, env, dockerMeta),
+  };
 }
 
 // Build the canonical "recommended" rendering for an agent: default variant,
@@ -287,13 +329,15 @@ for (const file of findYamlFiles(modelsDir)) {
     if (Object.keys(altLinks).length) recommended.alternatives = altLinks;
     r.recommended_command = recommended;
   }
-  // strategy_overrides and compatible_strategies are synthesis inputs whose
-  // effects are already baked into recommended_command + the per-strategy
-  // alternative files (whose keys are the compatible_strategies set). Drop
-  // AFTER synthesis runs — buildRecommendedCommand reads both. The YAML on
-  // GitHub is the source of truth for anyone re-synthesizing.
+  // strategy_overrides, compatible_strategies, default_strategy are synthesis
+  // inputs whose effects are already baked into recommended_command + the
+  // per-strategy alternative files (whose keys are the compatible_strategies
+  // set; the recommended one comes from default_strategy). Drop AFTER
+  // synthesis runs — buildRecommendedCommand reads them. The YAML on GitHub
+  // is the source of truth for anyone re-synthesizing.
   delete r.strategy_overrides;
   delete r.compatible_strategies;
+  delete r.default_strategy;
   // Build the output object with `recommended_command` near the top — agents
   // hit it before scrolling past the YAML body. Order: identity → headline →
   // details → guide.
