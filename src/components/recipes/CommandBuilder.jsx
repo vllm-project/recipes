@@ -494,6 +494,25 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     [recipe]
   );
 
+  // Encode a features array for the URL: returns "" (which syncUrl deletes)
+  // when the set matches the effective default for `(hw, strat)`, so links
+  // stay clean unless the user actually deviated. The "effective default"
+  // includes the auto-spec-decoding rule (see effect below) — without folding
+  // that in, the URL gets pinned with `spec_decoding` on every TP/TEP load.
+  const featuresToUrl = useCallback(
+    (arr, hw, strat) => {
+      const want = new Set(defaultFeaturesFor(hw));
+      const isLatency =
+        strat === "single_node_tp" || strat === "multi_node_tp" ||
+        strat === "single_node_tep" || strat === "multi_node_tep";
+      if (isLatency && (recipe.features || {}).spec_decoding) want.add("spec_decoding");
+      const got = new Set(arr);
+      const same = want.size === got.size && [...want].every((f) => got.has(f));
+      return same ? "" : arr.join(",");
+    },
+    [defaultFeaturesFor, recipe]
+  );
+
   const [features, setFeatures] = useState(() => {
     const fp = searchParams.get("features");
     if (fp) return fp.split(",").filter(Boolean);
@@ -693,7 +712,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // syncUrl runs as a side effect of the strategy change, NOT inside the
     // setFeatures updater — React executes updaters during render, so calling
     // router.replace there triggers a "setState during render" warning.
-    syncUrl({ features: next.join(",") });
+    syncUrl({ features: featuresToUrl(next, hwId, activeStrategy) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStrategy]);
 
@@ -761,7 +780,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       hardware: id,
       strategy: "",
       nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
-      features: next.length > 0 ? next.join(",") : "",
+      features: featuresToUrl(next, id, activeStrategy),
     });
     savePreference("hardware", id);
     if (shouldBumpNodes) savePreference("nodes", "2");
@@ -826,7 +845,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       ? [...features.filter((x) => x !== mutex[f]), f]
       : features.filter((x) => x !== f);
     setFeatures(next);
-    syncUrl({ features: next.length > 0 ? next.join(",") : "" });
+    syncUrl({ features: featuresToUrl(next, hwId, activeStrategy) });
     // Persist as {key: on/off} map. A value that matches the recipe's default
     // (on for base features, off for opt-ins) gets removed from the map so
     // prefs don't grow unbounded across recipes.

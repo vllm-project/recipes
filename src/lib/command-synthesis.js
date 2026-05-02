@@ -599,6 +599,14 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     return `vllm serve ${modelId} \\\n  ${lines.join(" \\\n  ")}`;
   }
 
+  // Companion to formatCommand: returns the deduped flat argv (no shell
+  // quoting, no line continuations) so JSON consumers can spawn vllm without
+  // going through a shell. ["vllm", "serve", "<model>", ...flags].
+  function formatArgv(args) {
+    const filtered = dedupeArgs(args.filter(Boolean));
+    return ["vllm", "serve", modelId, ...filtered];
+  }
+
   const deployType = strategy.deploy_type || "single_node";
 
   if (deployType === "pd_cluster") {
@@ -670,16 +678,20 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     ];
     const routerCommand = routerLines.join("\n");
 
+    const prefillArgs = buildArgs("prefill", null);
+    const decodeArgs = buildArgs("decode", null);
     return {
       deployType,
       nodeCount,
       prefill: {
-        command: formatCommand(buildArgs("prefill", null)),
+        command: formatCommand(prefillArgs),
+        argv: formatArgv(prefillArgs),
         env: buildEnv("prefill"),
         ...pMeta,
       },
       decode: {
-        command: formatCommand(buildArgs("decode", null)),
+        command: formatCommand(decodeArgs),
+        argv: formatArgv(decodeArgs),
         env: buildEnv("decode"),
         ...dMeta,
       },
@@ -694,18 +706,24 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   if (deployType === "multi_node" && nodeCount > 1) {
     // Every multi-node strategy renders the same shape: head + worker tabs.
     // Workers use --headless (TP/TEP) or --data-parallel-start-rank offset (DEP).
+    const headArgs = buildArgs(null, "head");
+    const workerArgs = buildArgs(null, "worker");
     return {
       deployType: "multi_node",
       nodeCount,
-      headCommand: formatCommand(buildArgs(null, "head")),
-      workerCommand: formatCommand(buildArgs(null, "worker")),
+      headCommand: formatCommand(headArgs),
+      workerCommand: formatCommand(workerArgs),
+      headArgv: formatArgv(headArgs),
+      workerArgv: formatArgv(workerArgs),
       env: buildEnv(null),
     };
   }
 
+  const singleArgs = buildArgs(null, null);
   return {
     deployType,
-    command: formatCommand(buildArgs(null, null)),
+    command: formatCommand(singleArgs),
+    argv: formatArgv(singleArgs),
     env: buildEnv(null),
   };
 }
