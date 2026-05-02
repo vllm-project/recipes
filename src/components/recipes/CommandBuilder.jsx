@@ -495,22 +495,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   );
 
   // Encode a features array for the URL: returns "" (which syncUrl deletes)
-  // when the set matches the effective default for `(hw, strat)`, so links
-  // stay clean unless the user actually deviated. The "effective default"
-  // includes the auto-spec-decoding rule (see effect below) — without folding
-  // that in, the URL gets pinned with `spec_decoding` on every TP/TEP load.
+  // when the set matches the YAML default for `hw`, so links stay clean unless
+  // the user actually deviated.
   const featuresToUrl = useCallback(
-    (arr, hw, strat) => {
+    (arr, hw) => {
       const want = new Set(defaultFeaturesFor(hw));
-      const isLatency =
-        strat === "single_node_tp" || strat === "multi_node_tp" ||
-        strat === "single_node_tep" || strat === "multi_node_tep";
-      if (isLatency && (recipe.features || {}).spec_decoding) want.add("spec_decoding");
       const got = new Set(arr);
       const same = want.size === got.size && [...want].every((f) => got.has(f));
       return same ? "" : arr.join(",");
     },
-    [defaultFeaturesFor, recipe]
+    [defaultFeaturesFor]
   );
 
   const [features, setFeatures] = useState(() => {
@@ -689,32 +683,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commandFingerprint]);
 
-  // Auto-enable spec_decoding for TP / TEP strategies (latency-oriented TP and
-  // balanced TEP both benefit from speculative decoding). Fires on initial
-  // mount (covers the case where TP is the default recommendation) and on any
-  // later strategy change. Respects an explicit ?features= URL pin on first
-  // render so shareable links round-trip.
-  const specAutoMountRef = useRef(true);
-  useEffect(() => {
-    const isInitial = specAutoMountRef.current;
-    specAutoMountRef.current = false;
-    if (isInitial && searchParams.get("features")) return;
-
-    const isLatency =
-      activeStrategy === "single_node_tp" || activeStrategy === "multi_node_tp" ||
-      activeStrategy === "single_node_tep" || activeStrategy === "multi_node_tep";
-    const hasSpec = !!(recipe.features || {}).spec_decoding;
-    if (!isLatency || !hasSpec) return;
-
-    if (features.includes("spec_decoding")) return;
-    const next = [...features, "spec_decoding"];
-    setFeatures(next);
-    // syncUrl runs as a side effect of the strategy change, NOT inside the
-    // setFeatures updater — React executes updaters during render, so calling
-    // router.replace there triggers a "setState during render" warning.
-    syncUrl({ features: featuresToUrl(next, hwId, activeStrategy) });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeStrategy]);
 
   // ── URL sync ──
   const syncUrl = useCallback(
@@ -780,7 +748,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       hardware: id,
       strategy: "",
       nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
-      features: featuresToUrl(next, id, activeStrategy),
+      features: featuresToUrl(next, id),
     });
     savePreference("hardware", id);
     if (shouldBumpNodes) savePreference("nodes", "2");
@@ -845,7 +813,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       ? [...features.filter((x) => x !== mutex[f]), f]
       : features.filter((x) => x !== f);
     setFeatures(next);
-    syncUrl({ features: featuresToUrl(next, hwId, activeStrategy) });
+    syncUrl({ features: featuresToUrl(next, hwId) });
     // Persist as {key: on/off} map. A value that matches the recipe's default
     // (on for base features, off for opt-ins) gets removed from the map so
     // prefs don't grow unbounded across recipes.

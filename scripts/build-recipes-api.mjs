@@ -120,26 +120,19 @@ function synthesizeInstall(recipe) {
 }
 
 // Mirror CommandBuilder.jsx: features default to (all) − (opt_in_features) −
-// (hardware_opt_in_features[hw]). On TP/TEP strategies, spec_decoding is
-// auto-enabled when the recipe declares it (latency-oriented default).
-function defaultFeaturesFor(recipe, hwId, strategyName) {
+// (hardware_opt_in_features[hw]). spec_decoding is treated as a normal opt-in
+// (off by default); agents that want it must add it explicitly.
+function defaultFeaturesFor(recipe, hwId) {
   const optIn = new Set(recipe.opt_in_features || []);
   for (const f of recipe.hardware_opt_in_features?.[hwId] || []) optIn.add(f);
-  const features = Object.keys(recipe.features || {}).filter((f) => !optIn.has(f));
-  const isLatency =
-    strategyName === "single_node_tp" ||
-    strategyName === "multi_node_tp" ||
-    strategyName === "single_node_tep" ||
-    strategyName === "multi_node_tep";
-  if (isLatency && (recipe.features || {}).spec_decoding && !features.includes("spec_decoding")) {
-    features.push("spec_decoding");
-  }
-  return features;
+  return Object.keys(recipe.features || {}).filter((f) => !optIn.has(f));
 }
 
 // Render one (recipe × variant × strategy × hardware × nodeCount) into the
 // public JSON shape — handles all three deploy_types (single_node, multi_node,
-// pd_cluster) and snake_cases the keys.
+// pd_cluster) and snake_cases the keys. The `features` argument controls
+// command synthesis but is intentionally NOT echoed back in the output —
+// agents read the actual args from `command`/`argv`.
 function renderCommand(recipe, strategy, hwId, nodeCount, features, strategies, taxonomy) {
   let result;
   try {
@@ -157,7 +150,6 @@ function renderCommand(recipe, strategy, hwId, nodeCount, features, strategies, 
     strategy,
     variant: "default",
     node_count: nodeCount,
-    features,
     deploy_type: result.deployType,
     env: result.env || {},
   };
@@ -184,11 +176,12 @@ function renderCommand(recipe, strategy, hwId, nodeCount, features, strategies, 
 
 // Build the canonical "recommended" rendering for an agent: default variant,
 // preferred hardware, recipe's default strategy (or recommendStrategy fallback),
-// and default feature set. Also returns an `alternatives` map keyed by strategy
-// id covering every other entry in `compatible_strategies` (same hardware +
-// variant), and inlines the strategy/hardware spec used by the recommended
-// choice so agents don't need to fetch /strategies/<id>.json or /taxonomy.json.
-// Returns null for recipes that don't run via `vllm serve` (omni recipes).
+// and YAML-default feature set. Inlines the strategy/hardware spec used by the
+// recommended choice so agents don't need to fetch /strategies/<id>.json or
+// /taxonomy.json. Returns:
+//   { recommended, alternatives: { <strategy>: <rendered> } }
+// where the caller writes each alternative to its own file and replaces it
+// with a path link in the recipe JSON. Null for omni recipes.
 function buildRecommendedCommand(recipe, strategies, taxonomy) {
   const variant = recipe.variants?.default;
   if (!variant) return null;
@@ -200,32 +193,25 @@ function buildRecommendedCommand(recipe, strategies, taxonomy) {
   const supportsMultiNode = compatible.some((s) => s.startsWith("multi_node_"));
   const recommendedNodeCount = !fitsSingleNode(hwProfile, variant) && supportsMultiNode ? 2 : 1;
   const recommendedStrategy = recommendStrategy(recipe, hwProfile, recommendedNodeCount);
-  const recommendedFeatures = defaultFeaturesFor(recipe, hwId, recommendedStrategy);
+  const recommendedFeatures = defaultFeaturesFor(recipe, hwId);
 
   const recommended = renderCommand(
     recipe, recommendedStrategy, hwId, recommendedNodeCount, recommendedFeatures, strategies, taxonomy
   );
   if (!recommended) return null;
 
-  // Inline the strategy + hw spec the recommendation depends on. Saves the
-  // agent two follow-up fetches and keeps the deploy decision self-contained.
   recommended.strategy_spec = strategies[recommendedStrategy];
   recommended.hardware_profile = hwProfile;
 
-  // Per-strategy alternatives. Each uses the same hardware + variant; nodeCount
-  // is 2 for multi_node_* (the canonical scale-out example), 1 otherwise.
-  // pd_cluster falls through resolveCommand's legacy 1-node fallback.
-  const commands = {};
+  const alternatives = {};
   for (const s of compatible) {
     if (s === recommendedStrategy) continue;
     const nc = s.startsWith("multi_node_") ? 2 : 1;
-    const feats = defaultFeaturesFor(recipe, hwId, s);
+    const feats = defaultFeaturesFor(recipe, hwId);
     const rendered = renderCommand(recipe, s, hwId, nc, feats, strategies, taxonomy);
-    if (rendered) commands[s] = rendered;
+    if (rendered) alternatives[s] = rendered;
   }
-  if (Object.keys(commands).length) recommended.alternatives = commands;
-
-  return recommended;
+  return { recommended, alternatives };
 }
 
 // Recursively find all .yaml files under a directory
@@ -284,11 +270,30 @@ for (const file of findYamlFiles(modelsDir)) {
   }
   // Pre-render the canonical deploy command so agents don't have to reimplement
   // command-synthesis. Mirrors the website's default selections.
-  const recommended = buildRecommendedCommand(r, strategies, taxonomy);
-  if (recommended) r.recommended_command = recommended;
-  recipes.push(r);
+  const built = buildRecommendedCommand(r, strategies, taxonomy);
+  if (built) {
+    const { recommended, alternatives } = built;
+    // Write each alternative to its own file under /<hf_id>/strategies/<s>.json
+    // so the recipe JSON stays slim. The recipe links to them by path.
+    const altLinks = {};
+    for (const [s, rendered] of Object.entries(alternatives)) {
+      const altPath = `${hfOrg}/${hfRepo}/strategies/${s}.json`;
+      writeJson(altPath, rendered);
+      altLinks[s] = `/${altPath}`;
+    }
+    if (Object.keys(altLinks).length) recommended.alternatives = altLinks;
+    r.recommended_command = recommended;
+  }
+  // Build the output object with `recommended_command` near the top — agents
+  // hit it before scrolling past the YAML body. Order: identity → headline →
+  // details → guide.
+  const HEAD_KEYS = ["hf_id", "meta", "recommended_command"];
+  const out = {};
+  for (const k of HEAD_KEYS) if (k in r) out[k] = r[k];
+  for (const [k, v] of Object.entries(r)) if (!HEAD_KEYS.includes(k)) out[k] = v;
+  recipes.push(out);
   // JSON at /<org>/<repo>.json — mirrors HF URL scheme
-  writeJson(`${hfOrg}/${hfRepo}.json`, r);
+  writeJson(`${hfOrg}/${hfRepo}.json`, out);
 }
 
 // /models.json — slim discovery index (~5 KB). For agents that want to
@@ -313,10 +318,14 @@ if (fs.existsSync(quickstartDir)) {
 }
 
 const rcCount = recipes.filter((r) => r.recommended_command).length;
+const altCount = recipes.reduce(
+  (n, r) => n + Object.keys(r.recommended_command?.alternatives || {}).length, 0
+);
 console.log(
-  `✓ JSON API: ${recipes.length} models (${rcCount} with recommended_command), ${Object.keys(strategies).length} strategies`
+  `✓ JSON API: ${recipes.length} models (${rcCount} with recommended_command, ${altCount} alternative renderings), ${Object.keys(strategies).length} strategies`
 );
 console.log(`  /models.json`);
-console.log(`  /{hf_id}.json             (e.g. /moonshotai/Kimi-K2.5.json)`);
+console.log(`  /{hf_id}.json                       (e.g. /moonshotai/Kimi-K2.5.json)`);
+console.log(`  /{hf_id}/strategies/{strategy}.json (alternative renderings)`);
 console.log(`  /strategies.json`);
 console.log(`  /taxonomy.json`);
