@@ -36,6 +36,10 @@ model:
   base_env:
     VLLM_ENGINE_READY_TIMEOUT_S: "3600"
 
+dependencies:
+  - note: "DeepGEMM FP8 kernels — install via vLLM tools/install_deepgemm.sh"
+    command: "bash <(curl -fsSL https://raw.githubusercontent.com/vllm-project/vllm/v0.20.0/tools/install_deepgemm.sh)"
+
 features:
   tool_calling:
     description: "Enable tool calling with DeepSeek V4 chat template support."

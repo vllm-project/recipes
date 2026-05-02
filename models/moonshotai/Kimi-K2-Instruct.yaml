@@ -28,6 +28,11 @@ model:
     - "auto"
   base_env: {}
 
+dependencies:
+  - note: "Optional: DeepEP + DeepGEMM for the DP+EP deployment path on H800/H200"
+    command: "uv pip install git+https://github.com/deepseek-ai/DeepGEMM.git@v2.1.1.post3 --no-build-isolation"
+    optional: true
+
 features:
   tool_calling:
     description: "Enable Kimi K2 tool calling with the kimi_k2 tool-call parser."
