@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, pickDefaultHardware, resolveSingleNodeTp } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun } from "@/lib/command-synthesis";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
@@ -294,73 +294,6 @@ function EndpointsPopoverButton({ isPd, isMultiNode, placeholders, endpoints, on
   );
 }
 
-// Resolve the Docker image / GPU flags / brand key for the active hardware.
-// Shared by the install block (docker pull line) and the main command blocks
-// (docker run wrapping). Precedence: variant.docker_image → model.docker_image
-// → DEFAULT_IMAGE[brand].
-//
-// `docker_image` shapes:
-//   "vllm/vllm-openai:x"               (NVIDIA-only)
-//   { nvidia, amd, tpu }               (brand-keyed; each value is a string)
-//   { cu129, cu130 }                   (NVIDIA CUDA-keyed — explicit paired tags,
-//                                        auto-suffix is skipped in favor of these)
-//   { nvidia: { cu129, cu130 }, amd, tpu }  (mixed: NVIDIA value may be a CUDA map)
-//
-// When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
-// the user's `dockerCudaVariant` toggle instead of appending `-cu129`/`-cu130`.
-function computeDockerMeta(recipe, variant, hwProfile) {
-  const DEFAULT_IMAGE = {
-    nvidia: "vllm/vllm-openai:latest",
-    amd: "vllm/vllm-openai-rocm:latest",
-    tpu: "vllm/vllm-tpu:latest",
-  };
-  const isAmd = hwProfile?.brand === "AMD";
-  const isTpu = hwProfile?.generation === "tpu";
-  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : "nvidia";
-  const override = variant?.docker_image || recipe.model?.docker_image;
-
-  const isCudaMap = (v) =>
-    v && typeof v === "object" && ("cu129" in v || "cu130" in v);
-
-  let pinned = null;
-  let cudaMap = null;
-  if (typeof override === "string") {
-    if (brandKey === "nvidia") pinned = override;
-  } else if (override && typeof override === "object") {
-    const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override;
-    if (isBrandKeyed) {
-      const brandValue = override[brandKey];
-      if (typeof brandValue === "string") pinned = brandValue;
-      else if (brandKey === "nvidia" && isCudaMap(brandValue)) cudaMap = brandValue;
-    } else if (brandKey === "nvidia" && isCudaMap(override)) {
-      cudaMap = override;
-    }
-  }
-
-  const image = pinned || DEFAULT_IMAGE[brandKey];
-  const gpuFlags = isTpu
-    ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
-    : isAmd
-      ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
-      : "--gpus all";
-  return { image, gpuFlags, brandKey, isAmd, isTpu, pinned, cudaMap };
-}
-
-// Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
-// image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
-// CMD. Env vars become `-e KEY=VAL` inside the container.
-function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
-  const envFlags = Object.entries(env || {})
-    .map(([k, v]) => `-e ${k}=${v}`)
-    .join(" \\\n  ");
-  const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
-  const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
-  return `docker run ${gpuFlags} \\
-  --privileged --ipc=host -p ${port}:${port} \\
-  -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
-  ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
-}
-
 export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -492,6 +425,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       return Object.keys(recipe.features || {}).filter((f) => !optIn.has(f));
     },
     [recipe]
+  );
+
+  // Encode a features array for the URL: returns "" (which syncUrl deletes)
+  // when the set matches the YAML default for `hw`, so links stay clean unless
+  // the user actually deviated.
+  const featuresToUrl = useCallback(
+    (arr, hw) => {
+      const want = new Set(defaultFeaturesFor(hw));
+      const got = new Set(arr);
+      const same = want.size === got.size && [...want].every((f) => got.has(f));
+      return same ? "" : arr.join(",");
+    },
+    [defaultFeaturesFor]
   );
 
   const [features, setFeatures] = useState(() => {
@@ -670,32 +616,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commandFingerprint]);
 
-  // Auto-enable spec_decoding for TP / TEP strategies (latency-oriented TP and
-  // balanced TEP both benefit from speculative decoding). Fires on initial
-  // mount (covers the case where TP is the default recommendation) and on any
-  // later strategy change. Respects an explicit ?features= URL pin on first
-  // render so shareable links round-trip.
-  const specAutoMountRef = useRef(true);
-  useEffect(() => {
-    const isInitial = specAutoMountRef.current;
-    specAutoMountRef.current = false;
-    if (isInitial && searchParams.get("features")) return;
-
-    const isLatency =
-      activeStrategy === "single_node_tp" || activeStrategy === "multi_node_tp" ||
-      activeStrategy === "single_node_tep" || activeStrategy === "multi_node_tep";
-    const hasSpec = !!(recipe.features || {}).spec_decoding;
-    if (!isLatency || !hasSpec) return;
-
-    if (features.includes("spec_decoding")) return;
-    const next = [...features, "spec_decoding"];
-    setFeatures(next);
-    // syncUrl runs as a side effect of the strategy change, NOT inside the
-    // setFeatures updater — React executes updaters during render, so calling
-    // router.replace there triggers a "setState during render" warning.
-    syncUrl({ features: next.join(",") });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeStrategy]);
 
   // ── URL sync ──
   const syncUrl = useCallback(
@@ -761,7 +681,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       hardware: id,
       strategy: "",
       nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
-      features: next.length > 0 ? next.join(",") : "",
+      features: featuresToUrl(next, id),
     });
     savePreference("hardware", id);
     if (shouldBumpNodes) savePreference("nodes", "2");
@@ -826,7 +746,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       ? [...features.filter((x) => x !== mutex[f]), f]
       : features.filter((x) => x !== f);
     setFeatures(next);
-    syncUrl({ features: next.length > 0 ? next.join(",") : "" });
+    syncUrl({ features: featuresToUrl(next, hwId) });
     // Persist as {key: on/off} map. A value that matches the recipe's default
     // (on for base features, off for opt-ins) gets removed from the map so
     // prefs don't grow unbounded across recipes.
