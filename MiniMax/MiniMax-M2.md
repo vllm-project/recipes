@@ -175,6 +175,20 @@ vllm serve MiniMaxAI/MiniMax-M2.7 \
 
 You can use 2x or 4x MI300X/MI325X/MI350X/MI355X GPUs to launch this model with [AITER](https://github.com/ROCm/aiter) acceleration enabled:
 
+#### MiniMax-M2
+
+- TP4 (4x MI300X/MI325X/MI350X/MI355X)
+```bash
+VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2 \
+  --tensor-parallel-size 4 \
+  --tool-call-parser minimax_m2 \
+  --reasoning-parser minimax_m2_append_think \
+  --enable-auto-tool-choice \
+  --trust-remote-code
+```
+
+#### MiniMax-M2.5
+
 - TP2 (2x MI300X/MI325X/MI350X/MI355X)
 ```bash
 VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
