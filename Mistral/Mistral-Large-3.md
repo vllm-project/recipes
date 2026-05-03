@@ -9,15 +9,62 @@ Here are the links to the different formats:
 
 ## Installing vLLM
 
+### CUDA
+
 ```bash
 uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
+### ROCm
+
+You can choose either Option A (Docker) or Option B (install with uv).
+
+#### Option A: Run on Host with uv
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+```
+
+#### Option B: Run with Docker
+Pull the latest vllm docker:
+```shell
+docker pull vllm/vllm-openai-rocm:latest
+```
+Launch the ROCm vLLM docker:
+```shell
+docker run -d -it \
+  --ipc=host \
+  --entrypoint /bin/bash \
+  --network=host \
+  --privileged \
+  --cap-add=CAP_SYS_ADMIN \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --device=/dev/mem \
+  --group-add video \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  -v /:/work \
+  -e SHELL=/bin/bash \
+  -p 8000:8000 \
+  --name Mistral-Large-3 \
+  vllm/vllm-openai-rocm:latest
+```
+
+Log in to your Hugging Face account:
+```shell
+huggingface-cli login
+```
+
 ## Running the model
 
-## Running Mistral-Large-3-Instruct FP8 on 8xH200
+### CUDA
+
+#### Running Mistral-Large-3-Instruct FP8 on 8xH200
 
 The Mistral-Large-3-Instruct FP8 format can be used on one 8xH200 node. We recommend to use this format if you plan to fine-tune as it can be more precise than NVFP4 in some situations.
 
@@ -43,7 +90,7 @@ Additional flags:
 * You can set `--max-model-len` to preserve memory. By default it is set to `262144` which is quite large but not necessary for most scenarios.
 * You can set `--max-num-batched-tokens` to balance throughput and latency, higher means higher throughput but higher latency.
 
-## Running Mistral-Large-3-Instruct NVFP4 on 4xB200
+#### Running Mistral-Large-3-Instruct NVFP4 on 4xB200
 
 We recommend to use this format if you plan to deploy Mistral-Large-3 as it achieves performance similar to FP8 for less memory. However please note that for large context (`> 64k`) we observed a subsequent drop of performance. In such cases, please use the FP8 weights. Otherwise on B200 (Blackwell 200) we observe a significant speed-up and a minor regression on vision datasets probably due to the calibration that was performed mainly on text data.
 
@@ -72,6 +119,17 @@ Additional flags:
 * You can set `--max-num-batched-tokens` to balance throughput and latency, higher means higher throughput but higher latency.
 * You can set `--limit-mm-per-prompt.image 0` to skip loading the vision encoder to have additional space for KV cache if the model is used for text-only tasks.
 
+### ROCm
+
+Run the vllm online serving with this sample command:
+```shell
+SAFETENSORS_FAST_GPU=1 \
+VLLM_ROCM_USE_AITER=1 \
+vllm serve mistralai/Mistral-Large-3-675B-Instruct-2512 \
+  --tensor-parallel-size 8 \
+  --no-enable-prefix-caching \
+  --trust-remote-code
+```
 
 ## Usage of the model
 
