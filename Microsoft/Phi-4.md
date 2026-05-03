@@ -6,21 +6,35 @@ The Phi-4 family includes several lightweight, open models from Microsoft. These
 
 ## GPU Deployment
 
-### Installing vLLM
-
+## Installing vLLM
+### pip (NVIDIA)
 ```bash
 uv venv
 source .venv/bin/activate
-
 uv pip install -U vllm --torch-backend auto
 ```
+### pip (AMD ROCm: MI300X, MI325X, MI350X, MI355X)
 
+ **Note:** The vLLM nightly wheel for ROCm requires Python 3.12, ROCm 7.2.1, glibc ≥ 2.35 (Ubuntu 22.04+)
+```bash
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install vllm --pre \
+--extra-index-url https://wheels.vllm.ai/rocm/nightly/rocm721 --upgrade
+```
 ### Running Phi-4-mini-instruct on a Single GPU
+### NVIDIA 
 ```bash
 # Start server on a single GPU
 vllm serve microsoft/Phi-4-mini-instruct \
   --host 0.0.0.0 \
   --max-model-len 4000
+```
+### AMD
+```bash
+vllm serve microsoft/Phi-4-mini-instruct \
+  --tensor-parallel-size 1 \
+  --trust-remote-code
 ```
 
 ## Performance Metrics
