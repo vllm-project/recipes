@@ -3,7 +3,7 @@ meta:
   slug: "minimax-m2.5"
   provider: "MiniMax"
   description: "MiniMax M2.5 MoE language model (230B total / 10B active) for coding, agent toolchains, and long-context reasoning — native FP8 checkpoint"
-  date_updated: 2026-04-17
+  date_updated: 2026-04-21
   difficulty: intermediate
   tasks:
     - text
@@ -57,8 +57,6 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
 compatible_strategies:
   - single_node_tp
@@ -137,6 +135,42 @@ guide: |
     --reasoning-parser minimax_m2 \
     --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
     --enable-auto-tool-choice
+  ```
+
+  ### Blackwell (B200 / B300) — FP8
+
+  ```bash
+  vllm serve MiniMaxAI/MiniMax-M2.5 \
+    --tensor-parallel-size 4 \
+    --enable-expert-parallel \
+    --tool-call-parser minimax_m2 \
+    --reasoning-parser minimax_m2 \
+    --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
+    --enable-auto-tool-choice \
+    --trust-remote-code
+  ```
+
+  > **Note**: For improved performance on Blackwell GPUs (B200 / B300), you may set
+  > `VLLM_FLOAT32_MATMUL_PRECISION=high` to enable TF32 TensorCore acceleration for
+  > float32 matmuls. This deviates from the original implementation, which uses full FP32
+  > precision for MoE gating, but evaluations show no observable differences on GSM8K,
+  > MMLU-Pro, and tool-calling benchmarks. The same flag applies to the NVFP4 variant.
+
+  ### Blackwell (B200 / B300) — NVFP4
+
+  Use the `nvidia/MiniMax-M2.5-NVFP4` checkpoint. Required environment variables are
+  applied automatically by the command builder.
+
+  ```bash
+  vllm serve nvidia/MiniMax-M2.5-NVFP4 \
+    --tensor-parallel-size 4 \
+    --enable-expert-parallel \
+    --kv-cache-dtype fp8 \
+    --tool-call-parser minimax_m2 \
+    --reasoning-parser minimax_m2 \
+    --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
+    --enable-auto-tool-choice \
+    --trust-remote-code
   ```
 
   ### AMD ROCm
