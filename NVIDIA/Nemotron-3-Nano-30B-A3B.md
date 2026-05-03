@@ -277,3 +277,48 @@ The two main tunable configs for Nemotron Nano 3 are the `--tensor-parallel-size
 - Therefore, increasing TP (which would lower the throughput at the same BS) may allow higher BS to run (which would increase the throughput), and the net throughput gain/loss depends on models and configurations.
 
 Note that the statements above assume that the concurrency setting on the client side, like the `--max-concurrency` flag in the performance benchmarking command, matches the `--max-num-seqs` (BS) setting on the server side.
+
+### AMD GPU Support
+
+Please follow the steps here to install and run Nemotron-3-Nano-30B-A3B models on AMD MI300X GPU.
+### Step 1: Prepare Docker Environment
+Pull the latest vllm docker:
+```shell
+docker pull rocm/vllm-dev:nightly
+```
+Launch the ROCm vLLM docker: 
+```shell
+docker run -it --ipc=host --network=host --privileged --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/work -e SHELL=/bin/bash --name Nemotron-Nano rocm/vllm-dev:nightly 
+```
+### Step 2: Log in to Hugging Face
+Huggingface login
+```shell
+huggingface-cli login
+```
+### Step 3: Start the vLLM server
+Run the vllm online serving
+Sample Command
+```shell
+SAFETENSORS_FAST_GPU=1 \
+VLLM_USE_TRITON_FLASH_ATTN=0 \
+VLLM_ROCM_USE_AITER=0 \
+vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
+  --tensor-parallel-size 1 \
+  --max-model-len 32768 \
+  --max-num-seqs 256 \
+  --trust-remote-code \
+  --disable-log-requests
+```
+### Step 4: Run Benchmark
+Open a new terminal and run the following command to execute the benchmark script inside the container.
+```shell
+docker exec -it Nemotron-Nano vllm bench serve \
+  --model nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
+  --dataset-name random \
+  --random-input-len 1024 \
+  --random-output-len 1024 \
+  --request-rate 1 \
+  --num-prompts 4 \
+  --ignore-eos \
+  --trust-remote-code
+```
