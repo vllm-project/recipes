@@ -55,15 +55,10 @@ features:
       - "--reasoning-parser"
       - "deepseek_v4"
   spec_decoding:
-    description: "Multi-Token Prediction speculative decoding with 2 speculative tokens (1 on Hopper)."
+    description: "Multi-Token Prediction speculative decoding with 2 speculative tokens."
     args:
       - "--speculative_config"
       - '{"method":"mtp","num_speculative_tokens":2}'
-    hardware_overrides:
-      hopper:
-        args:
-          - "--speculative_config"
-          - '{"method":"mtp","num_speculative_tokens":1}'
 
 opt_in_features:
   - spec_decoding
