@@ -17,7 +17,7 @@ uv pip install vllm --torch-backend auto
 
 ### Installing vLLM for AMD GPU (ROCm)
 
-Install the vLLM ROCm wheel (requires Python 3.12 and ROCm 7.0+):
+Install the vLLM ROCm wheel (requires Python 3.12 and ROCm 7.2.1+):
 
 ```bash
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
@@ -30,7 +30,7 @@ Supported AMD GPUs: MI300X, MI325X, MI350X, MI355X.
 Use the latest ROCm image:
 
 ```bash
-docker pull vllm/vllm-openai-rocm:v0.17.1
+docker pull vllm/vllm-openai-rocm:latest
 ```
 
 ## Serving with vLLM
@@ -116,7 +116,6 @@ You can use 4x MI300X/MI325X/MI350X/MI355X GPUs to launch Step-3.5-Flash on AMD 
 
 - FP8 (4x MI300X/MI325X/MI350X/MI355X)
 ```bash
-VLLM_USE_TRITON_FLASH_ATTN=0 \
 VLLM_ROCM_USE_AITER=1 \
 VLLM_ROCM_USE_AITER_MOE=0 \
 vllm serve stepfun-ai/Step-3.5-Flash-FP8 \
@@ -130,7 +129,6 @@ vllm serve stepfun-ai/Step-3.5-Flash-FP8 \
 
 - BF16
 ```bash
-VLLM_USE_TRITON_FLASH_ATTN=0 \
 VLLM_ROCM_USE_AITER=1 \
 VLLM_ROCM_USE_AITER_MOE=0 \
 vllm serve stepfun-ai/Step-3.5-Flash \
