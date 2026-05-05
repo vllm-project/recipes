@@ -71,7 +71,13 @@ compatible_strategies:
 
 hardware_overrides: {}
 
-strategy_overrides: {}
+strategy_overrides:
+  single_node_tp:
+    # Pure TP=8 fails on the FP8 block-quantized gate_up weights:
+    # intermediate_size / 8 = 192 is not divisible by block_n = 128.
+    # Pin TP=4 on 8-GPU nodes; for full-node utilization use
+    # single_node_tep (TP+EP) or single_node_dep (DP+EP).
+    tp: 4
 
 guide: |
   ## Overview
