@@ -36,7 +36,7 @@ model:
     cu130: "vllm/vllm-openai:gemma4-0505-cu130"
   install:
     docker:
-      note: "Pick `cu129` for NVIDIA Hopper (H100/H200) or `cu130` for Blackwell (B200/B300). These are pre-release images with Gemma 4 support; MTP speculative decoding is only available here or via the nightly pip wheel — not in the standard `vllm/vllm-openai:latest` tag."
+      note: "Pick `gemma4-0505-cu129` for NVIDIA Hopper (H100/H200) or `gemma4-0505-cu130` for Blackwell (B200/B300). These are pre-release images with Gemma 4 support; MTP speculative decoding is only available here or via the nightly pip wheel — not in the standard `vllm/vllm-openai:latest` tag."
 
 dependencies: []
 features:
