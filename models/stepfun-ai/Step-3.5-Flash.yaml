@@ -56,7 +56,11 @@ variants:
     model_id: "stepfun-ai/Step-3.5-Flash-FP8"
     precision: fp8
     vram_minimum_gb: 235
-    description: "Native FP8 checkpoint (TP4 not supported — use DP4)"
+    # FP8 block_n=128 + moe_intermediate_size=1280 → TP must divide 10; TP∈{1,2}.
+    # TP=4 fails (1280/4=320, 320%128≠0). Author recommends DP4 — use single_node_dep
+    # for full 8-GPU utilization; this tp:2 just keeps single_node_tp from crashing.
+    tp: 2
+    description: "Native FP8 checkpoint (TP not supported beyond 2 — use DP4)"
   int4:
     model_id: "stepfun-ai/Step-3.5-Flash-INT4"
     precision: int4

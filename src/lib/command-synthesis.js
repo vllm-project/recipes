@@ -48,6 +48,14 @@ function autoFitTp(vramMinGb, perGpuVram, gpuCount) {
 export function resolveSingleNodeTp(recipe, variant, hwProfile, strategyName = "single_node_tp") {
   const gpuCount = typeof hwProfile?.gpu_count === "number" ? hwProfile.gpu_count : 1;
   if (strategyName !== "single_node_tp") return gpuCount;
+  // Variant-level override beats recipe-level. Used when a non-default variant
+  // (typically an FP8-block-quantized sibling) needs a smaller TP than the
+  // bf16 default — e.g. moe_intermediate_size=1536 demands TP ≤ 4 under FP8
+  // block_n=128, while bf16 happily runs at TP=8.
+  const variantTp = variant?.tp;
+  if (typeof variantTp === "number" && variantTp > 0) {
+    return Math.min(variantTp, gpuCount);
+  }
   const declaredTp = recipe?.strategy_overrides?.[strategyName]?.tp;
   if (typeof declaredTp === "number" && declaredTp > 0) {
     return Math.min(declaredTp, gpuCount);
