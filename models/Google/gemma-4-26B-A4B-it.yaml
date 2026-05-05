@@ -61,7 +61,7 @@ features:
     description: "MTP speculative decoding for accelerated inference"
     args:
       - "--speculative-config"
-      - '{"model":"google/gemma-4-26B-it-assistant","num_speculative_tokens":4}'
+      - '{"model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":4}'
 
 opt_in_features:
   - text_only
@@ -260,7 +260,7 @@ guide: |
 
   ## Speculative Decoding (MTP)
 
-  Enable the **Spec Decoding** feature toggle (above) or add `--speculative-config` manually to use MTP drafting with the [assistant model](https://huggingface.co/google/gemma-4-26B-it-assistant). Recommended `num_speculative_tokens`: 4 for this model. See the [Gemma 4 usage guide](../../Google/Gemma4) for details and benchmarks.
+  Enable the **Spec Decoding** feature toggle (above) or add `--speculative-config` manually to use MTP drafting with the [assistant model](https://huggingface.co/google/gemma-4-26B-A4B-it-assistant). Recommended `num_speculative_tokens`: 4 for this model. See the [Gemma 4 usage guide](../../Google/Gemma4) for details and benchmarks.
 
   > **Note:** MTP speculative decoding for Gemma 4 is only available on the vLLM nightly build — it has not yet landed in a stable release. Install via the nightly wheel (`uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly/cu129 …`) or use the `vllm/vllm-openai:gemma4-0505-cu129` / `vllm/vllm-openai:gemma4-0505-cu130` images above; the standard `:latest` stable tag does not include this feature.
 
