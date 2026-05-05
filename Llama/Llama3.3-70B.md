@@ -33,6 +33,82 @@ For Hopper, FP8 offers the best performance for most workloads. For Blackwell, N
 
 ## Deployment Steps
 
+### Interactive Command Generator
+
+Use the configuration selector below to automatically generate the appropriate deployment
+command for your hardware platform, quantization method, and parallelism settings.
+
+<div id="llama33-config"></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var el = document.getElementById('llama33-config');
+  if (!el || !window.ConfigGenerator) return;
+
+  ConfigGenerator.create(el, {
+    options: {
+      hardware: {
+        name: 'hardware',
+        title: 'Hardware Platform',
+        items: [
+          { id: 'blackwell', label: 'Blackwell', subtitle: 'B200 / GB200', default: true },
+          { id: 'hopper', label: 'Hopper', subtitle: 'H100 / H200', default: false }
+        ]
+      },
+      quantization: {
+        name: 'quantization',
+        title: 'Quantization',
+        getDynamicItems: function(values) {
+          var isBlackwell = values.hardware === 'blackwell';
+          return [
+            { id: 'fp4', label: 'NVFP4', subtitle: 'Max Throughput', default: isBlackwell, disabled: !isBlackwell, disabledReason: 'NVFP4 requires Blackwell GPUs' },
+            { id: 'fp8', label: 'FP8', subtitle: 'High Quality', default: !isBlackwell }
+          ];
+        }
+      },
+      tp: {
+        name: 'tp',
+        title: 'Tensor Parallel',
+        items: [
+          { id: '1', label: 'TP=1', subtitle: 'Max Throughput/GPU', default: true },
+          { id: '2', label: 'TP=2', subtitle: 'Balanced', default: false },
+          { id: '4', label: 'TP=4', subtitle: 'Low Latency', default: false },
+          { id: '8', label: 'TP=8', subtitle: 'Min Latency', default: false }
+        ]
+      },
+      prefixCaching: {
+        name: 'prefixCaching',
+        title: 'Prefix Caching',
+        items: [
+          { id: 'enabled', label: 'Enabled', subtitle: 'Production', default: true },
+          { id: 'disabled', label: 'Disabled', subtitle: 'Benchmarking', default: false }
+        ]
+      }
+    },
+
+    generateCommand: function(values) {
+      var hw = values.hardware;
+      var quant = values.quantization;
+      var tp = values.tp;
+
+      var modelSuffix = quant === 'fp4' ? '-FP4' : '-FP8';
+      var model = 'nvidia/Llama-3.3-70B-Instruct' + modelSuffix;
+      var yamlConfig = hw === 'blackwell' ? 'Llama3.3_Blackwell.yaml' : 'Llama3.3_Hopper.yaml';
+
+      var cmd = 'vllm serve ' + model + ' \\\n';
+      cmd += '  --config ' + yamlConfig + ' \\\n';
+      cmd += '  --tensor-parallel-size ' + tp;
+
+      if (values.prefixCaching === 'disabled') {
+        cmd += ' \\\n  --no-enable-prefix-caching';
+      }
+
+      return cmd;
+    }
+  });
+});
+</script>
+
 ### Pull Docker Image
 
 Pull the vLLM v0.12.0 release docker image.
