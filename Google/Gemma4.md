@@ -941,6 +941,71 @@ print(outputs[0].outputs[0].text)
 ```
 
 
+## Speculative Decoding (MTP)
+
+Gemma 4 supports Multi-Token Prediction (MTP) speculative decoding using lightweight assistant models that share KV cache with the target model, enabling faster token generation with no quality loss.
+
+### Available Assistant Models
+
+| Target Model | Assistant Model | Centroids Masking |
+|---|---|---|
+| Gemma 4 E2B IT | [gg-hf-am/gemma-4-E2B-it-assistant](https://huggingface.co/gg-hf-am/gemma-4-E2B-it-assistant) | Yes |
+| Gemma 4 E4B IT | [gg-hf-am/gemma-4-E4B-it-assistant](https://huggingface.co/gg-hf-am/gemma-4-E4B-it-assistant) | Yes |
+| Gemma 4 26B-A4B IT | [gg-hf-am/gemma-4-26B-it-assistant](https://huggingface.co/gg-hf-am/gemma-4-26B-it-assistant) | No |
+| Gemma 4 31B IT | [gg-hf-am/gemma-4-31B-it-assistant](https://huggingface.co/gg-hf-am/gemma-4-31B-it-assistant) | No |
+
+The E2B and E4B assistant models use **centroids masking** — a sparse logit computation that replaces the full vocabulary dot product (~262K tokens) with a centroid-based selection of ~4K candidate tokens. This reduces the lm_head computation by ~45x with negligible impact on draft token quality. Centroids masking is enabled automatically when the assistant checkpoint includes the centroid weights (`use_ordered_embeddings: true`); no user configuration is needed.
+
+### Online Serving
+
+```bash
+vllm serve google/gemma-4-31B-it \
+  --tensor-parallel-size 2 \
+  --max-model-len 8192 \
+  --speculative-config '{"model": "gg-hf-am/gemma-4-31B-it-assistant", "num_speculative_tokens": 4}'
+```
+
+### Offline Inference
+
+```python
+from vllm import LLM, SamplingParams
+from transformers import AutoTokenizer
+
+model_path = "google/gemma-4-E4B-it"
+
+tokenizer = AutoTokenizer.from_pretrained(model_path)
+llm = LLM(
+    model=model_path,
+    speculative_config={
+        "model": "gg-hf-am/gemma-4-E4B-it-assistant",
+        "num_speculative_tokens": 4,
+    },
+    max_model_len=8192,
+    trust_remote_code=True,
+)
+
+messages = [{"role": "user", "content": "What are the three laws of thermodynamics?"}]
+prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+outputs = llm.generate(prompt, SamplingParams(temperature=0.0, max_tokens=1024))
+
+print(outputs[0].outputs[0].text)
+```
+
+### Recommended Settings
+
+| Target Model | Recommended `num_speculative_tokens` | TP |
+|---|---|---|
+| E2B | 2 | 1 |
+| E4B | 4 | 1 |
+| 26B-A4B | 4 | 2 |
+| 31B | 4–8 | 2 |
+
+Higher `num_speculative_tokens` increases draft overhead per cycle. The optimal value depends on the target model speed — slower targets (31B) benefit from more speculative tokens, while faster targets (E2B) prefer fewer.
+
+> ℹ️ **Note**
+> These recommendations were benchmarked on NVIDIA A100 and H100 servers. Optimal settings may vary on different hardware platforms — experimentation is recommended.
+
+
 ## Benchmarking
 
 ### Launch Server for Benchmarking

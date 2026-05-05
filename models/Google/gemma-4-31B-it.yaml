@@ -51,9 +51,15 @@ features:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
       - "--language-model-only"
+  spec_decoding:
+    description: "MTP speculative decoding for accelerated inference"
+    args:
+      - "--speculative-config"
+      - '{"model":"google/gemma-4-31B-it-assistant","num_speculative_tokens":4}'
 
 opt_in_features:
   - text_only
+  - spec_decoding
 
 variants:
   default:
@@ -294,6 +300,10 @@ guide: |
   modal deploy gemma4-modal.py
   modal run gemma4-modal.py
   ```
+
+  ## Speculative Decoding (MTP)
+
+  Enable the **Spec Decoding** feature toggle (above) or add `--speculative-config` manually to use MTP drafting with the [assistant model](https://huggingface.co/google/gemma-4-31B-it-assistant). Recommended `num_speculative_tokens`: 4–8 for this model. See the [Gemma 4 usage guide](../../Google/Gemma4) for details and benchmarks.
 
   ## References
 
