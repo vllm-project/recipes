@@ -54,9 +54,15 @@ features:
     description: "Skip loading the vision and audio encoders for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
       - "--language-model-only"
+  spec_decoding:
+    description: "MTP speculative decoding with centroids masking for accelerated inference"
+    args:
+      - "--speculative-config"
+      - '{"model":"google/gemma-4-E2B-it-assistant","num_speculative_tokens":2}'
 
 opt_in_features:
   - text_only
+  - spec_decoding
 
 variants:
   default:
@@ -232,6 +238,10 @@ guide: |
   - Text-only workloads: `--limit-mm-per-prompt image=0,audio=0` to skip MM profiling.
   - `--async-scheduling` improves throughput.
   - FP8 KV cache (`--kv-cache-dtype fp8`) saves ~50% KV memory.
+
+  ## Speculative Decoding (MTP)
+
+  Enable the **Spec Decoding** feature toggle (above) or add `--speculative-config` manually to use MTP drafting with the [assistant model](https://huggingface.co/google/gemma-4-E2B-it-assistant). Recommended `num_speculative_tokens`: 2 for this model. The E2B assistant uses centroids masking for efficient sparse logit computation. See the [Gemma 4 usage guide](../../Google/Gemma4) for details and benchmarks.
 
   ## References
 

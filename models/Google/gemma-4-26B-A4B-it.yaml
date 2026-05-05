@@ -51,9 +51,15 @@ features:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
       - "--language-model-only"
+  spec_decoding:
+    description: "MTP speculative decoding for accelerated inference"
+    args:
+      - "--speculative-config"
+      - '{"model":"google/gemma-4-26B-it-assistant","num_speculative_tokens":4}'
 
 opt_in_features:
   - text_only
+  - spec_decoding
 
 variants:
   default:
@@ -244,6 +250,10 @@ guide: |
   | Max throughput | 1-2 | 256-512 | Best tok/s per GPU |
   | Min latency   | 4-8 | 8-16   | Best TTFT/TPOT |
   | Balanced      | 2   | 128    | Mixed workloads |
+
+  ## Speculative Decoding (MTP)
+
+  Enable the **Spec Decoding** feature toggle (above) or add `--speculative-config` manually to use MTP drafting with the [assistant model](https://huggingface.co/google/gemma-4-26B-it-assistant). Recommended `num_speculative_tokens`: 4 for this model. See the [Gemma 4 usage guide](../../Google/Gemma4) for details and benchmarks.
 
   ## References
 
