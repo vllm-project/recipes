@@ -61,7 +61,7 @@ features:
     description: "MTP speculative decoding for accelerated inference"
     args:
       - "--speculative-config"
-      - '{"model":"google/gemma-4-26B-it-assistant","num_speculative_tokens":4}'
+      - '{"model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":4}'
 
 opt_in_features:
   - text_only
