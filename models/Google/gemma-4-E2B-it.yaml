@@ -24,6 +24,12 @@ meta:
 model:
   model_id: "google/gemma-4-E2B-it"
   min_vllm_version: "0.19.1"
+  docker_image:
+    cu129: "vllm/vllm-openai:gemma4-0505-cu129"
+    cu130: "vllm/vllm-openai:gemma4-0505-cu130"
+  install:
+    docker:
+      note: "Pick `gemma4-0505-cu129` for NVIDIA Hopper (H100/H200) or `gemma4-0505-cu130` for Blackwell (B200/B300). These are pre-release images with Gemma 4 support; MTP speculative decoding is only available here or via the nightly pip wheel — not in the standard `vllm/vllm-openai:latest` tag."
   architecture: dense
   parameter_count: "5B"
   active_parameters: "5B"
@@ -117,8 +123,8 @@ guide: |
 
   ### Docker
   ```bash
-  docker pull vllm/vllm-openai:latest        # CUDA 12.9
-  docker pull vllm/vllm-openai:latest-cu130  # CUDA 13.0
+  docker pull vllm/vllm-openai:gemma4-0505-cu129  # NVIDIA Hopper (H100/H200, CUDA 12.9)
+  docker pull vllm/vllm-openai:gemma4-0505-cu130  # NVIDIA Blackwell (B200/B300, CUDA 13.0)
   docker pull vllm/vllm-openai-rocm:latest   # AMD
   ```
 
@@ -158,11 +164,12 @@ guide: |
   docker run -itd --name gemma4-e2b \
     --ipc=host --network host --shm-size 16G --gpus all \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai:latest \
+    vllm/vllm-openai:gemma4-0505-cu129 \
       --model google/gemma-4-E2B-it \
       --max-model-len 32768 \
       --host 0.0.0.0 --port 8000
   ```
+  Swap `vllm/vllm-openai:gemma4-0505-cu129` for `vllm/vllm-openai:gemma4-0505-cu130` on Blackwell (B200/B300).
 
   ### Docker (AMD MI300X/MI325X/MI350X/MI355X)
   ```bash
@@ -242,6 +249,8 @@ guide: |
   ## Speculative Decoding (MTP)
 
   Enable the **Spec Decoding** feature toggle (above) or add `--speculative-config` manually to use MTP drafting with the [assistant model](https://huggingface.co/google/gemma-4-E2B-it-assistant). Recommended `num_speculative_tokens`: 2 for this model. The E2B assistant uses centroids masking for efficient sparse logit computation. See the [Gemma 4 usage guide](../../Google/Gemma4) for details and benchmarks.
+
+  > **Note:** MTP speculative decoding for Gemma 4 is only available on the vLLM nightly build — it has not yet landed in a stable release. Install via the nightly wheel (`uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly/cu129 …`) or use the `vllm/vllm-openai:gemma4-0505-cu129` / `vllm/vllm-openai:gemma4-0505-cu130` images above; the standard `:latest` stable tag does not include this feature.
 
   ## References
 
