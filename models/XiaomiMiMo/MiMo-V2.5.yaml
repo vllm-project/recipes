@@ -56,10 +56,14 @@ variants:
   default:
     precision: fp8
     vram_minimum_gb: 374
+    # FP8 block-wise e4m3 128x128 — TP=8 hits an attention-projection shape
+    # mismatch (param padded to a 128-aligned shard the checkpoint can't fill).
+    # Author-verified config is TP=4. EP doesn't help (mismatch is on attention,
+    # not MoE), so single_node_tep at 8 GPUs is also broken — use a 4-GPU box
+    # or accept 4 idle GPUs on an 8-GPU box.
+    tp: 4
     description: "Native FP8 weights (block-wise e4m3 128x128); 4x H200 with TP4"
     extra_args:
-      - "--tensor-parallel-size"
-      - "4"
       - "--gpu-memory-utilization"
       - "0.95"
       - "--max-model-len"

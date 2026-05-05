@@ -49,6 +49,16 @@ variants:
     precision: fp8
     vram_minimum_gb: 276
     description: "Native FP8 checkpoint — 4x H200/H20/H100 or 4x A100/A800 for weights, plus KV cache headroom"
+  nvfp4:
+    model_id: "nvidia/MiniMax-M2.7-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 138
+    description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+    extra_env:
+      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
 compatible_strategies:
   - single_node_tp
