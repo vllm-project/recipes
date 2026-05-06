@@ -3,12 +3,14 @@ meta:
   slug: "qwen3guard-gen-8b"
   provider: "Qwen"
   description: "Lightweight text-only guardrail/safety classifier model in the Qwen3Guard family."
-  date_updated: 2026-04-17
+  date_updated: 2026-04-30
   difficulty: beginner
   tasks:
     - text
   performance_headline: "Runs on a single GPU; serves safety classifications over OpenAI-compatible API"
   related_recipes: []
+  hardware:
+    mi300x: verified
 
 model:
   model_id: "Qwen/Qwen3Guard-Gen-8B"
