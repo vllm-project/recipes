@@ -9,7 +9,7 @@
 
 {% block extrahead %}
   {{ super() }}
-  {% if page.is_homepage %}
+  {% if page and page.url == "index.html" %}
   <meta http-equiv="refresh" content="0; url=https://recipes.vllm.ai">
   {% endif %}
   {% if page %}
