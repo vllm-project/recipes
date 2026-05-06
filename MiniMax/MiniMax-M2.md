@@ -177,7 +177,9 @@ You can use 2x or 4x MI300X/MI325X/MI350X/MI355X GPUs to launch this model with 
 
 - TP2 (2x MI300X/MI325X/MI350X/MI355X)
 ```bash
-VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
+VLLM_ROCM_USE_AITER=1 \
+VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=1 \
+vllm serve MiniMaxAI/MiniMax-M2.7 \
   --tensor-parallel-size 2 \
   --tool-call-parser minimax_m2 \
   --reasoning-parser minimax_m2 \
@@ -187,7 +189,9 @@ VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
 
 - TP4 (4x MI300X/MI325X/MI350X/MI355X)
 ```bash
-VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
+VLLM_ROCM_USE_AITER=1 \
+VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=1 \
+vllm serve MiniMaxAI/MiniMax-M2.7 \
   --tensor-parallel-size 4 \
   --tool-call-parser minimax_m2 \
   --reasoning-parser minimax_m2 \
