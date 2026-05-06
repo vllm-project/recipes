@@ -9,6 +9,9 @@
 
 {% block extrahead %}
   {{ super() }}
+  {% if page.is_homepage %}
+  <meta http-equiv="refresh" content="0; url=https://recipes.vllm.ai">
+  {% endif %}
   {% if page %}
   <meta property="og:type" content="article">
   <meta property="og:title" content="{{ page.meta.title or page.title }}">
