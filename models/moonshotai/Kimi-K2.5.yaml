@@ -3,7 +3,7 @@ meta:
   slug: "kimi-k2.5"
   provider: "Moonshot AI"
   description: "Open-source native multimodal agentic MoE model with vision-language understanding, tool calling, and thinking modes"
-  date_updated: 2026-04-16
+  date_updated: 2026-04-25
   difficulty: intermediate
   tasks:
     - multimodal
@@ -11,6 +11,7 @@ meta:
   performance_headline: "Multimodal agentic MoE model with DeepSeek-V3 backbone and MLA attention"
   related_recipes: []
   hardware:
+    h100: verified
     h200: verified
     gb200: verified
     mi300x: verified
@@ -149,7 +150,7 @@ guide: |
   ## Prerequisites
 
   - **vLLM version:** >= 0.15.0 (speculative decoding with Eagle3 requires >= 0.18.0)
-  - **Hardware (BF16):** 8x H200 GPUs (verified), or equivalent aggregate VRAM (~640 GB)
+  - **Hardware (BF16):** 8x H200 GPUs (verified), 2x8 H100 80GB with TP+PP (verified), or equivalent aggregate VRAM (~640 GB)
   - **Hardware (NVFP4):** 4x Blackwell GPUs (e.g. GB200)
   - **AMD support:** 8x MI300X / MI325X / MI355X with ROCm 7.2.1 and Python 3.12
 
@@ -173,6 +174,66 @@ guide: |
   ```bash
   docker pull vllm/vllm-openai:v0.17.0-cu130
   ```
+
+  ## Launching on 2x8 H100
+
+  This configuration has been verified end-to-end on two 8xH100 80GB nodes with
+  the packed INT4 `moonshotai/Kimi-K2.5` checkpoint. The verified Kubernetes run
+  used a `vllm-openai:v0.18.0` image, `--max-model-len 262144`, and vision encoder
+  data parallelism via `--mm-encoder-tp-mode data`.
+
+  Head node:
+
+  ```bash
+  vllm serve moonshotai/Kimi-K2.5 \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --served-model-name Kimi-K2.5 \
+    --distributed-executor-backend mp \
+    --tensor-parallel-size 8 \
+    --pipeline-parallel-size 2 \
+    --nnodes 2 \
+    --node-rank 0 \
+    --master-addr HEAD_IP \
+    --master-port 29501 \
+    --distributed-timeout-seconds 1800 \
+    --gpu-memory-utilization 0.90 \
+    --max-model-len 262144 \
+    --mm-encoder-tp-mode data \
+    --compilation_config.pass_config.fuse_allreduce_rms true \
+    --tool-call-parser kimi_k2 \
+    --reasoning-parser kimi_k2 \
+    --enable-auto-tool-choice \
+    --trust-remote-code
+  ```
+
+  Worker node:
+
+  ```bash
+  vllm serve moonshotai/Kimi-K2.5 \
+    --distributed-executor-backend mp \
+    --tensor-parallel-size 8 \
+    --pipeline-parallel-size 2 \
+    --nnodes 2 \
+    --node-rank 1 \
+    --master-addr HEAD_IP \
+    --master-port 29501 \
+    --headless \
+    --distributed-timeout-seconds 1800 \
+    --gpu-memory-utilization 0.90 \
+    --max-model-len 262144 \
+    --mm-encoder-tp-mode data \
+    --compilation_config.pass_config.fuse_allreduce_rms true \
+    --tool-call-parser kimi_k2 \
+    --reasoning-parser kimi_k2 \
+    --enable-auto-tool-choice \
+    --trust-remote-code \
+    --served-model-name Kimi-K2.5
+  ```
+
+  Note: the verified Kubernetes deployment used RDMA/NCCL environment tuning for
+  the local cluster network. Apply equivalent transport settings only if your
+  multi-node environment requires them.
 
   ## Client Usage
 
