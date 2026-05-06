@@ -3,7 +3,7 @@ meta:
   slug: "deepseek-v4-flash"
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
-  date_updated: 2026-04-24
+  date_updated: 2026-05-01
   difficulty: hard
   tasks:
     - text
@@ -17,11 +17,13 @@ meta:
     gb300: verified
     mi300x: unsupported
     mi325x: unsupported
-    mi355x: unsupported
+    mi355x: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V4-Flash"
   min_vllm_version: "0.20.0"
+  docker_image:
+    amd: "vllm/vllm-open-rocm:nightly"
   architecture: moe
   parameter_count: "284B"
   active_parameters: "13B"
@@ -91,6 +93,22 @@ hardware_overrides:
       - "--attention_config.use_fp4_indexer_cache=True"
       - "--moe-backend"
       - "deep_gemm_mega_moe"
+  amd:
+    extra_args:
+      - "--distributed-executor-backend"
+      - "mp"
+      - "--gpu-memory-utilization"
+      - "0.35"
+      - "--max-num-seqs"
+      - "16"
+      - "--max-num-batched-tokens"
+      - "1024"
+      - "--moe-backend"
+      - "triton_unfused"
+      - "--async-scheduling"
+      - "--enforce-eager"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
 
 strategy_overrides:
   single_node_tp:
@@ -227,6 +245,57 @@ guide: |
   `--data-parallel-size 4`. Fills a GB200 NVL4 tray exactly; uses 4 of 8 GPUs per
   replica on H200/B200/B300 (leaving headroom for throughput-vs-latency tuning).
   For disaggregated prefill/decode on GB200, use the PD Cluster tab.
+
+  On **MI355X (8×288GB)**, validation used ROCm + AITER (`VLLM_ROCM_USE_AITER=1`),
+  `--distributed-executor-backend mp`, `--gpu-memory-utilization 0.35`,
+  `--max-num-seqs 16`, `--max-num-batched-tokens 1024`,
+  `--moe-backend triton_unfused`, `--async-scheduling`, and `--enforce-eager`.
+
+  ## GSM8K validation (MI355X)
+
+  Launch command (TP=4):
+
+  ```bash
+  export HF_HOME=/data/huggingface-cache
+  export VLLM_ROCM_USE_AITER=1
+
+  vllm serve /home/models/DeepSeek-V4-Flash \
+    --host localhost \
+    --port 8001 \
+    --dtype auto \
+    --tensor-parallel-size 4 \
+    --max-num-seqs 16 \
+    --max-num-batched-tokens 1024 \
+    --distributed-executor-backend mp \
+    --trust-remote-code \
+    --gpu-memory-utilization 0.35 \
+    --moe-backend triton_unfused \
+    --tokenizer-mode deepseek_v4 \
+    --async-scheduling \
+    --enforce-eager
+  ```
+
+  GSM8K command:
+
+  ```bash
+  MODEL=/home/models/DeepSeek-V4-Flash
+  lm_eval --model local-completions \
+    --model_args model=$MODEL,base_url=http://0.0.0.0:8001/v1/completions,num_concurrent=4,max_retries=10,max_gen_toks=2048,timeout=60000 \
+    --batch_size auto \
+    --tasks gsm8k \
+    --num_fewshot 8 \
+    --output_path . 2>&1 | tee -a eval.log
+  ```
+
+  Reported result from PR #40871:
+
+  ```text
+  local-completions ({'model': '/home/models/DeepSeek-V4-Flash', 'base_url': 'http://0.0.0.0:8001/v1/completions', 'num_concurrent': 4, 'max_retries': 10, 'max_gen_toks': 2048, 'timeout': 60000}), gen_kwargs: ({}), limit: None, num_fewshot: 8, batch_size: auto
+  |Tasks|Version|     Filter     |n-shot|  Metric   |   |Value |   |Stderr|
+  |-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
+  |gsm8k|      3|flexible-extract|     8|exact_match|↑  |0.9439|±  |0.0063|
+  |     |       |strict-match    |     8|exact_match|↑  |0.9431|±  |0.0064|
+  ```
 
   ### H200 Single-Node PD (Mooncake)
 
