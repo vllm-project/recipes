@@ -15,6 +15,7 @@ meta:
     gb200: verified
     b300: verified
     gb300: verified
+    h20: verified
     mi300x: unsupported
     mi325x: unsupported
     mi355x: unsupported
@@ -55,7 +56,7 @@ features:
       - "--reasoning-parser"
       - "deepseek_v4"
   spec_decoding:
-    description: "Multi-Token Prediction speculative decoding with 2 speculative tokens."
+    description: "Multi-Token Prediction speculative decoding with 2 speculative tokens.h20 need delete this."
     args:
       - "--speculative_config"
       - '{"method":"mtp","num_speculative_tokens":2}'
