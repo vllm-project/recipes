@@ -23,7 +23,7 @@ model:
   model_id: "deepseek-ai/DeepSeek-V4-Pro"
   min_vllm_version: "0.20.0"
   docker_image:
-    amd: "rocm/vllm-dev:deepseek-v4-latest"
+    amd: "vllm/vllm-open-rocm:nightly"
   architecture: moe
   parameter_count: "1600B"
   active_parameters: "49B"
