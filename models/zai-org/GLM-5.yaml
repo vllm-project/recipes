@@ -3,13 +3,14 @@ meta:
   slug: "glm-5"
   provider: "GLM (Z-AI)"
   description: "GLM-5 frontier-scale MoE language model (~744B total parameters, 28.5T training tokens) with asynchronous RL infrastructure for reasoning, coding, and agentic tasks"
-  date_updated: 2026-04-17
+  date_updated: 2026-04-25
   difficulty: advanced
   tasks:
     - text
   performance_headline: "Frontier-scale MoE with 744B parameters, best-in-class open-source performance on reasoning/coding/agents"
   related_recipes: []
   hardware:
+    h100: verified
     h200: verified
 
 model:
@@ -66,7 +67,7 @@ variants:
     model_id: "zai-org/GLM-5-FP8"
     precision: fp8
     vram_minimum_gb: 893
-    description: "Native FP8 checkpoint — 8xH200/H20 (141GB x 8) single-node serving"
+    description: "Native FP8 checkpoint — 8xH200/H20 single-node serving or 2x8 H100 multi-node TP+PP"
   nvfp4:
     model_id: "nvidia/GLM-5-NVFP4"
     precision: nvfp4
@@ -104,7 +105,7 @@ guide: |
   ## Prerequisites
 
   - **vLLM version:** 0.19.0 (stable — preferred over nightly for model performance)
-  - **Hardware (FP8):** 8xH200 or 8xH20 (141GB × 8)
+  - **Hardware (FP8):** 8xH200 or 8xH20 (141GB x 8) for single-node serving, or 2x8 H100 80GB for multi-node TP+PP
   - **DeepGEMM (FP8):** install via `install_deepgemm.sh` from the vLLM repo
 
   ### Using Docker
@@ -150,6 +151,58 @@ guide: |
        --chat-template-content-format=string \
        --served-model-name glm-5-fp8
   ```
+
+  ### FP8 on 2x8 H100 with TP+PP
+
+  This configuration has been verified end-to-end on two 8xH100 80GB nodes. The
+  verified image was based on `vllm-openai:v0.18.0` with `transformers>=5.4.0`
+  installed. Start one head process and one worker process; replace `HEAD_IP`
+  with the head node address reachable from the worker.
+
+  Head node:
+
+  ```bash
+  vllm serve zai-org/GLM-5-FP8 \
+       --distributed-executor-backend mp \
+       --tensor-parallel-size 8 \
+       --pipeline-parallel-size 2 \
+       --nnodes 2 \
+       --node-rank 0 \
+       --master-addr HEAD_IP \
+       --master-port 29501 \
+       --distributed-timeout-seconds 1800 \
+       --gpu-memory-utilization 0.80 \
+       --tool-call-parser glm47 \
+       --reasoning-parser glm45 \
+       --enable-auto-tool-choice \
+       --chat-template-content-format=string \
+       --served-model-name glm-5-fp8
+  ```
+
+  Worker node:
+
+  ```bash
+  vllm serve zai-org/GLM-5-FP8 \
+       --distributed-executor-backend mp \
+       --tensor-parallel-size 8 \
+       --pipeline-parallel-size 2 \
+       --nnodes 2 \
+       --node-rank 1 \
+       --master-addr HEAD_IP \
+       --master-port 29501 \
+       --headless \
+       --distributed-timeout-seconds 1800 \
+       --gpu-memory-utilization 0.80 \
+       --tool-call-parser glm47 \
+       --reasoning-parser glm45 \
+       --enable-auto-tool-choice \
+       --chat-template-content-format=string \
+       --served-model-name glm-5-fp8
+  ```
+
+  Note: the verified Kubernetes deployment used RDMA/NCCL environment tuning for
+  the local cluster network. Apply equivalent transport settings only if your
+  multi-node environment requires them.
 
   ## Client Usage
 
