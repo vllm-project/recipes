@@ -951,7 +951,7 @@ Gemma 4 supports Multi-Token Prediction (MTP) speculative decoding using lightwe
 |---|---|---|
 | Gemma 4 E2B IT | [google/gemma-4-E2B-it-assistant](https://huggingface.co/google/gemma-4-E2B-it-assistant) | Yes |
 | Gemma 4 E4B IT | [google/gemma-4-E4B-it-assistant](https://huggingface.co/google/gemma-4-E4B-it-assistant) | Yes |
-| Gemma 4 26B-A4B IT | [google/gemma-4-26B-it-assistant](https://huggingface.co/google/gemma-4-26B-it-assistant) | No |
+| Gemma 4 26B-A4B IT | [google/gemma-4-26B-A4B-it-assistant](https://huggingface.co/google/gemma-4-26B-A4B-it-assistant) | No |
 | Gemma 4 31B IT | [google/gemma-4-31B-it-assistant](https://huggingface.co/google/gemma-4-31B-it-assistant) | No |
 
 The E2B and E4B assistant models use **centroids masking** — a sparse logit computation that replaces the full vocabulary dot product (~262K tokens) with a centroid-based selection of ~4K candidate tokens. This reduces the lm_head computation by ~45x with negligible impact on draft token quality. Centroids masking is enabled automatically when the assistant checkpoint includes the centroid weights (`use_ordered_embeddings: true`); no user configuration is needed.
