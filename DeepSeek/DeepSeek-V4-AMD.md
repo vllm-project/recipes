@@ -19,7 +19,7 @@ remaining (attention / norm / router) params stay in FP8.
 ## Docker image (AMD ROCm)
 
 ```bash
-docker pull vllm/vllm-open-rocm:nightly
+docker pull vllm/vllm-openai-rocm:nightly
 ```
 
 ## Recommended deployments
