@@ -949,10 +949,10 @@ Gemma 4 supports Multi-Token Prediction (MTP) speculative decoding using lightwe
 
 | Target Model | Assistant Model | Centroids Masking |
 |---|---|---|
-| Gemma 4 E2B IT | [gg-hf-am/gemma-4-E2B-it-assistant](https://huggingface.co/gg-hf-am/gemma-4-E2B-it-assistant) | Yes |
-| Gemma 4 E4B IT | [gg-hf-am/gemma-4-E4B-it-assistant](https://huggingface.co/gg-hf-am/gemma-4-E4B-it-assistant) | Yes |
-| Gemma 4 26B-A4B IT | [gg-hf-am/gemma-4-26B-it-assistant](https://huggingface.co/gg-hf-am/gemma-4-26B-it-assistant) | No |
-| Gemma 4 31B IT | [gg-hf-am/gemma-4-31B-it-assistant](https://huggingface.co/gg-hf-am/gemma-4-31B-it-assistant) | No |
+| Gemma 4 E2B IT | [google/gemma-4-E2B-it-assistant](https://huggingface.co/google/gemma-4-E2B-it-assistant) | Yes |
+| Gemma 4 E4B IT | [google/gemma-4-E4B-it-assistant](https://huggingface.co/google/gemma-4-E4B-it-assistant) | Yes |
+| Gemma 4 26B-A4B IT | [google/gemma-4-26B-it-assistant](https://huggingface.co/google/gemma-4-26B-it-assistant) | No |
+| Gemma 4 31B IT | [google/gemma-4-31B-it-assistant](https://huggingface.co/google/gemma-4-31B-it-assistant) | No |
 
 The E2B and E4B assistant models use **centroids masking** — a sparse logit computation that replaces the full vocabulary dot product (~262K tokens) with a centroid-based selection of ~4K candidate tokens. This reduces the lm_head computation by ~45x with negligible impact on draft token quality. Centroids masking is enabled automatically when the assistant checkpoint includes the centroid weights (`use_ordered_embeddings: true`); no user configuration is needed.
 
@@ -962,7 +962,7 @@ The E2B and E4B assistant models use **centroids masking** — a sparse logit co
 vllm serve google/gemma-4-31B-it \
   --tensor-parallel-size 2 \
   --max-model-len 8192 \
-  --speculative-config '{"model": "gg-hf-am/gemma-4-31B-it-assistant", "num_speculative_tokens": 4}'
+  --speculative-config '{"model": "google/gemma-4-31B-it-assistant", "num_speculative_tokens": 4}'
 ```
 
 ### Offline Inference
@@ -977,7 +977,7 @@ tokenizer = AutoTokenizer.from_pretrained(model_path)
 llm = LLM(
     model=model_path,
     speculative_config={
-        "model": "gg-hf-am/gemma-4-E4B-it-assistant",
+        "model": "google/gemma-4-E4B-it-assistant",
         "num_speculative_tokens": 4,
     },
     max_model_len=8192,
