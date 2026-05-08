@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe } from "lucide-react";
+import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun } from "@/lib/command-synthesis";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -62,7 +62,7 @@ const ADVANCED_OPTIONS = [
     gatedBy: (_recipe, activeStrategy) => /(?:^|_)(?:tep|dep)$/.test(activeStrategy || ""),
   },
 ];
-import { loadPreferences, savePreference } from "@/lib/preferences";
+import { loadPreferences, savePreference, loadRecipeState, saveRecipeState } from "@/lib/preferences";
 
 function CopyButton({ text, className = "" }) {
   const [copied, setCopied] = useState(false);
@@ -314,28 +314,45 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const [hwId, setHwId] = useState(searchParams.get("hardware") || defaultHw);
 
-  // After mount: restore the user's hardware preference from localStorage.
-  // URL params always win (explicit > stored). Hardware is the only piece of
-  // state we share across recipes — it tracks the user's physical setup, not
-  // anything model-specific. Nodes / strategy / features are intentionally
-  // per-recipe: switching to multi-node on a 670B model shouldn't push a
-  // 7B recipe into multi-node too.
-  //   hardware → NVIDIA only (AMD is opt-in per session, H200 stays canonical
-  //              on first load)
+  // After mount: restore preferences from localStorage in two scopes.
+  // URL params always win (explicit > stored).
+  //   1. Global (hardware): tracks the user's physical setup, shared across
+  //      every recipe. NVIDIA-only — AMD is opt-in per session and H200
+  //      stays canonical on first load.
+  //   2. Per-recipe (strategy / nodes / features): keyed by hf_id, so each
+  //      recipe remembers its own choices independently. Picking TP on
+  //      V4-Flash doesn't make V4-Pro default to TP — Pro keeps whatever
+  //      was last picked there (or its YAML default if untouched).
   useEffect(() => {
     const prefs = loadPreferences();
+    let restoredFitsHw = null;
     if (!searchParams.get("hardware") && prefs.hardware) {
       const v = recipe.variants?.[variant] || recipe.variants?.default || {};
       const prefProfile = taxonomy.hardware_profiles?.[prefs.hardware];
       if (prefProfile?.brand === "NVIDIA" && isPrecisionCompatible(prefProfile, v) && isHardwareSupported(recipe, prefs.hardware)) {
         setHwId(prefs.hardware);
-        // Auto-bump nodes when the restored hardware can't fit single-node
-        // — mirrors the bump in `setHw` so a model switch (via sticky hw)
-        // doesn't silently leave nodeCount=1 on a recipe that clearly needs
-        // multi-node. URL `?nodes=N` still wins so shareable links round-trip.
-        if (!searchParams.get("nodes") && supportsMultiNode && !fitsSingleNode(prefProfile, v)) {
-          setNodeCount(2);
-        }
+        restoredFitsHw = prefProfile;
+      }
+    }
+
+    const rs = loadRecipeState(recipe.hf_id);
+    if (!searchParams.get("strategy") && rs.strategy &&
+        (recipe.compatible_strategies || []).includes(rs.strategy)) {
+      setStrategyOverride(rs.strategy);
+    }
+    if (!searchParams.get("features") && Array.isArray(rs.features)) {
+      const recipeFeatures = Object.keys(recipe.features || {});
+      setFeatures(rs.features.filter((f) => recipeFeatures.includes(f)));
+    }
+    // Nodes: prefer the saved value; otherwise auto-bump if the resolved
+    // hardware can't fit single-node (mirrors `setHw`'s bump).
+    if (!searchParams.get("nodes") && supportsMultiNode) {
+      const saved = parseInt(rs.nodes, 10);
+      if ([1, 2].includes(saved)) {
+        setNodeCount(saved);
+      } else if (restoredFitsHw) {
+        const v = recipe.variants?.[variant] || recipe.variants?.default || {};
+        if (!fitsSingleNode(restoredFitsHw, v)) setNodeCount(2);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -680,22 +697,30 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       features: featuresToUrl(next, id),
     });
     savePreference("hardware", id);
+    // Mirror the new state to per-recipe storage so a hardware switch
+    // doesn't leave stale strategy/nodes/features cached for this recipe.
+    saveRecipeState(recipe.hf_id, {
+      strategy: undefined,
+      nodes: shouldBumpNodes ? 2 : shouldUnbumpNodes ? 1 : nodeCount,
+      features: next,
+    });
   };
 
   const selectStrategy = (s) => {
     setStrategyOverride(s);
     syncUrl({ strategy: s });
-    // Strategy is intentionally not persisted across recipes — `pd_cluster`
-    // on one model says nothing about what's right on another. Spec-decoding
-    // auto-enable for latency strategies is handled by an effect below so it
-    // also fires on initial mount when TP is the default recommendation.
+    // Persisted per-recipe (keyed by hf_id), so picking TP here doesn't
+    // affect any other recipe's default. Spec-decoding auto-enable for
+    // latency strategies is handled by an effect below so it also fires
+    // on initial mount when TP is the default recommendation.
+    saveRecipeState(recipe.hf_id, { strategy: s || undefined });
   };
 
   const selectNodes = (n) => {
     setNodeCount(n);
     setStrategyOverride("");
     syncUrl({ nodes: n === 1 ? "" : String(n), strategy: "" });
-    // Nodes / strategy stay per-recipe — see the mount-time effect.
+    saveRecipeState(recipe.hf_id, { nodes: n, strategy: undefined });
   };
 
   const setPdNodes = (role, n) => {
@@ -738,7 +763,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       : features.filter((x) => x !== f);
     setFeatures(next);
     syncUrl({ features: featuresToUrl(next, hwId) });
-    // Features stay per-recipe — see the mount-time effect.
+    saveRecipeState(recipe.hf_id, { features: next });
   };
 
   const toggleAdvanced = (id) => {
@@ -1245,6 +1270,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     {key === "spec_decoding" && (
                       <Zap size={11} className="inline-block mr-1 -mt-0.5 text-vllm-yellow" fill="currentColor" />
                     )}
+                    {key === "tool_calling" && (
+                      <Wrench size={11} className="inline-block mr-1 -mt-0.5 text-muted-foreground" />
+                    )}
+                    {key === "reasoning" && (
+                      <Brain size={11} className="inline-block mr-1 -mt-0.5 text-muted-foreground" />
+                    )}
                     {key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                     {key === "spec_decoding" && (
                       <span className="ml-1.5 text-[11px] text-vllm-yellow font-normal">
@@ -1372,7 +1403,7 @@ function PillGroup({ children }) {
 
 function HwStatusDot({ status }) {
   // Only `verified` is a meaningful signal. Everything else (including
-  // undeclared GPUs) renders no dot — the pill looks clean.
+  // undeclared GPUs) renders nothing — the pill looks clean.
   if (status !== "verified") return null;
   return <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 shrink-0 bg-green-500" aria-hidden />;
 }

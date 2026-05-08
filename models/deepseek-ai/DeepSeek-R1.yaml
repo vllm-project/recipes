@@ -29,7 +29,20 @@ model:
     - "--enable-expert-parallel"
   base_env: {}
 
-features: {}
+features:
+  tool_calling:
+    description: "Enable DeepSeek-R1 tool calling with the deepseek_v3 tool-call parser."
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "deepseek_v3"
+      - "--chat-template"
+      - "examples/tool_chat_template_deepseekr1.jinja"
+  reasoning:
+    description: "Enable reasoning/thinking mode with the DeepSeek R1 reasoning parser."
+    args:
+      - "--reasoning-parser"
+      - "deepseek_r1"
 
 opt_in_features: []
 

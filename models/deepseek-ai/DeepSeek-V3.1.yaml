@@ -38,7 +38,9 @@ features:
       - "examples/tool_chat_template_deepseekv31.jinja"
   reasoning:
     description: "Dynamic thinking mode via chat_template_kwargs={'thinking': true|false}. No separate parser flag is required; the chat template emits <think>...</think> content."
-    args: []
+    args:
+      - "--reasoning-parser"
+      - "deepseek_v3"
 
 opt_in_features: []
 
