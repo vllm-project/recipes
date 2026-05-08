@@ -150,7 +150,7 @@ guide: |
     --reasoning-parser gemma4 \
     --tool-call-parser gemma4 \
     --chat-template examples/tool_chat_template_gemma4.jinja \
-    --limit-mm-per-prompt image=4 \
+    --limit-mm-per-prompt.image 4 \
     --async-scheduling \
     --host 0.0.0.0 \
     --port 8000
@@ -245,7 +245,7 @@ guide: |
 
   - Set `--max-model-len` to match your workload.
   - `--gpu-memory-utilization 0.90-0.95` maximizes KV cache.
-  - Text-only workloads: `--limit-mm-per-prompt image=0,audio=0`.
+  - Text-only workloads: `--limit-mm-per-prompt '{"image": 0, "audio": 0}'`.
   - `--async-scheduling` improves throughput.
   - FP8 KV cache (`--kv-cache-dtype fp8`) saves ~50% KV memory.
   - For MoE, TEP (tensor-expert parallelism) and DEP (data-expert parallelism) strategies scale better than pure TP at large node counts.

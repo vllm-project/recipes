@@ -173,8 +173,8 @@ docker run -itd --name gemma4-rocm \
 
 - Set `--max-model-len` to match your actual workload. The default context length can be very large; reducing it saves memory for KV cache.
 - Use `--gpu-memory-utilization 0.90` to `0.95` to maximize KV cache capacity.
-- For image-only workloads (no audio), pass `--limit-mm-per-prompt audio=0` to skip audio encoder memory allocation.
-- For text-only workloads, pass `--limit-mm-per-prompt image=0,audio=0` to skip multimodal profiling entirely.
+- For image-only workloads (no audio), pass `--limit-mm-per-prompt.audio 0` to skip audio encoder memory allocation.
+- For text-only workloads, pass `--limit-mm-per-prompt '{"image": 0, "audio": 0}'` to skip multimodal profiling entirely.
 - Use `--async-scheduling` for better overall throughput by overlapping scheduling with decoding.
 
 
@@ -381,7 +381,7 @@ Gemma 4 (E2B and E4B) includes a conformer-based audio encoder for speech recogn
 ```bash
 vllm serve google/gemma-4-31B-it \
   --max-model-len 8192 \
-  --limit-mm-per-prompt image=4,audio=1
+  --limit-mm-per-prompt '{"image": 4, "audio": 1}'
 ```
 
 ### Audio Transcription (OpenAI SDK)
@@ -447,7 +447,7 @@ Video understanding is supported via a custom processing pipeline (available in 
 ```bash
 vllm serve google/gemma-4-E2B-it \
   --max-model-len 8192 \
-  --limit-mm-per-prompt image=4,video=1
+  --limit-mm-per-prompt '{"image": 4, "video": 1}'
 ```
 
 ### Video Inference (OpenAI SDK Style)
@@ -1017,7 +1017,7 @@ vllm serve google/gemma-4-31B-it \
   --tensor-parallel-size 2 \
   --max-model-len 32768 \
   --no-enable-prefix-caching \
-  --limit-mm-per-prompt image=0,audio=0 \
+  --limit-mm-per-prompt '{"image": 0, "audio": 0}' \
   --async-scheduling
 ```
 
@@ -1089,7 +1089,7 @@ Key metrics:
 
 - **Reduce context length**: `--max-model-len 8192` if your workload doesn't need long contexts
 - **FP8 KV cache**: `--kv-cache-dtype fp8` to reduce KV cache memory by ~50%
-- **Limit multimodal inputs**: `--limit-mm-per-prompt image=2,audio=1` to cap per-request memory
+- **Limit multimodal inputs**: `--limit-mm-per-prompt '{"image": 2, "audio": 1}'` to cap per-request memory
 
 ### Server Flags Reference
 
@@ -1102,7 +1102,7 @@ Key metrics:
 | `--mm-processor-kwargs '{"max_soft_tokens": N}'` | Set default vision token budget | 280 (default), up to 1120 |
 | `--async-scheduling` | Overlap scheduling with decoding | Recommended for throughput |
 | `--gpu-memory-utilization 0.90` | GPU memory fraction for model + KV cache | 0.85-0.95 |
-| `--limit-mm-per-prompt image=N,audio=M` | Max multimodal inputs per request | Depends on workload |
+| `--limit-mm-per-prompt '{"image": N, "audio": M}'` | Max multimodal inputs per request | Depends on workload |
 
 ### Full-Featured Server Launch
 
@@ -1117,7 +1117,7 @@ vllm serve google/gemma-4-31B-it \
   --reasoning-parser gemma4 \
   --tool-call-parser gemma4 \
   --chat-template examples/tool_chat_template_gemma4.jinja \
-  --limit-mm-per-prompt image=4,audio=1 \
+  --limit-mm-per-prompt '{"image": 4, "audio": 1}' \
   --async-scheduling \
   --host 0.0.0.0 \
   --port 8000

@@ -140,7 +140,7 @@ guide: |
   ```bash
   vllm serve google/gemma-4-E2B-it \
     --max-model-len 8192 \
-    --limit-mm-per-prompt image=4,audio=1
+    --limit-mm-per-prompt '{"image": 4, "audio": 1}'
   ```
 
   ### Full-Featured Server Launch
@@ -153,7 +153,7 @@ guide: |
     --reasoning-parser gemma4 \
     --tool-call-parser gemma4 \
     --chat-template examples/tool_chat_template_gemma4.jinja \
-    --limit-mm-per-prompt image=4,audio=1 \
+    --limit-mm-per-prompt '{"image": 4, "audio": 1}' \
     --async-scheduling \
     --host 0.0.0.0 \
     --port 8000
@@ -241,8 +241,8 @@ guide: |
   ## Configuration Tips
 
   - Set `--max-model-len` to match your workload (max 131072).
-  - Image-only workloads: `--limit-mm-per-prompt audio=0`.
-  - Text-only workloads: `--limit-mm-per-prompt image=0,audio=0` to skip MM profiling.
+  - Image-only workloads: `--limit-mm-per-prompt.audio 0`.
+  - Text-only workloads: `--limit-mm-per-prompt '{"image": 0, "audio": 0}'` to skip MM profiling.
   - `--async-scheduling` improves throughput.
   - FP8 KV cache (`--kv-cache-dtype fp8`) saves ~50% KV memory.
 
