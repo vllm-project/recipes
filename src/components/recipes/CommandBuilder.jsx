@@ -329,6 +329,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       const prefProfile = taxonomy.hardware_profiles?.[prefs.hardware];
       if (prefProfile?.brand === "NVIDIA" && isPrecisionCompatible(prefProfile, v) && isHardwareSupported(recipe, prefs.hardware)) {
         setHwId(prefs.hardware);
+        // Auto-bump nodes when the restored hardware can't fit single-node
+        // — mirrors the bump in `setHw` so a model switch (via sticky hw)
+        // doesn't silently leave nodeCount=1 on a recipe that clearly needs
+        // multi-node. URL `?nodes=N` still wins so shareable links round-trip.
+        if (!searchParams.get("nodes") && supportsMultiNode && !fitsSingleNode(prefProfile, v)) {
+          setNodeCount(2);
+        }
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -340,9 +347,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     (s) => s.startsWith("multi_node_") || s === "pd_cluster"
   );
   const [nodeCount, setNodeCount] = useState(() => {
-    const n = parseInt(searchParams.get("nodes") || "1", 10);
     if (!supportsMultiNode) return 1;
-    return [1, 2].includes(n) ? n : 1;
+    const urlN = searchParams.get("nodes");
+    if (urlN) {
+      const n = parseInt(urlN, 10);
+      return [1, 2].includes(n) ? n : 1;
+    }
+    // No URL pin: start on multi-node when the initial hardware can't fit
+    // single-node. Same fit check the hardware-change handler runs.
+    const initialHwId = searchParams.get("hardware") || defaultHw;
+    const initialHw = taxonomy.hardware_profiles?.[initialHwId];
+    const v = recipe.variants?.[variant] || recipe.variants?.default || {};
+    return initialHw && !fitsSingleNode(initialHw, v) ? 2 : 1;
   });
   // PD-specific per-role node counts. Only surfaced when the active strategy
   // is `pd_cluster`; ignored otherwise. Defaults come from the recipe's
