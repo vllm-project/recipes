@@ -48,12 +48,6 @@ variants:
     vram_minimum_gb: 96
     description: "gpt-oss-120b with MXFP4 MoE; fits on 1xA100 80GB, scales to TP 2/4/8"
 
-  "20b":
-    model_id: "openai/gpt-oss-20b"
-    precision: mxfp4
-    vram_minimum_gb: 40
-    description: "gpt-oss-20b, fits on a single A100"
-
   amd_fp8:
     model_id: "amd/gpt-oss-120b-w-mxfp4-a-fp8"
     precision: mxfp4
