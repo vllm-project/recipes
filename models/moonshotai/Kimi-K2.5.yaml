@@ -171,7 +171,7 @@ guide: |
 
   **Docker (NVIDIA):**
   ```bash
-  docker pull vllm/vllm-openai:v0.17.0-cu130
+  docker pull vllm/vllm-openai:latest
   ```
 
   ## Client Usage

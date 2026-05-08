@@ -1,7 +1,7 @@
 meta:
   title: "Laguna XS.2"
   slug: "laguna-xs.2"
-  provider: "poolside"
+  provider: "Poolside"
   description: "Poolside's 33B total / 3B activated MoE coding model with mixed sliding-window + global attention, native interleaved reasoning, and 128K context — designed for agentic coding."
   date_updated: 2026-04-29
   difficulty: intermediate

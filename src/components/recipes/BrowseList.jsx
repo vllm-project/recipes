@@ -697,7 +697,7 @@ function Row({ recipe }) {
 
         {/* Notes */}
         <div className="hidden md:block text-xs text-muted-foreground line-clamp-2 leading-snug">
-          {r.meta.performance_headline || r.meta.description}
+          {r.meta.description || r.meta.performance_headline}
         </div>
 
         {/* Mobile: spec strip */}

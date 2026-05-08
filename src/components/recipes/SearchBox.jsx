@@ -122,6 +122,18 @@ export function SearchBox({ recipes }) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // Selecting a result needs to close the dropdown synchronously: otherwise
+  // `setQuery("")` flips `list` from the matched results to the "Latest 5"
+  // default while the route is still loading and the onBlur timeout (200ms)
+  // hasn't run yet, causing a visible flash from results → Latest → close.
+  const selectResult = (href) => {
+    setFocused(false);
+    setQuery("");
+    setSelectedIndex(0);
+    inputRef.current?.blur();
+    router.push(href);
+  };
+
   const handleKeyDown = (e) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -130,11 +142,12 @@ export function SearchBox({ recipes }) {
       e.preventDefault();
       setSelectedIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === "Enter" && list[selectedIndex]) {
-      router.push(list[selectedIndex].href);
-      setQuery("");
-      inputRef.current?.blur();
+      e.preventDefault();
+      selectResult(list[selectedIndex].href);
     } else if (e.key === "Escape") {
+      setFocused(false);
       setQuery("");
+      setSelectedIndex(0);
       inputRef.current?.blur();
     }
   };
@@ -167,7 +180,7 @@ export function SearchBox({ recipes }) {
           )}
           {list.map((r, i) => {
             const active = i === selectedIndex;
-            const onClick = () => { router.push(r.href); setQuery(""); inputRef.current?.blur(); };
+            const onClick = () => selectResult(r.href);
             if (r.type === "provider") {
               return <ProviderResult key={`p-${r.org}`} entry={r} active={active} onClick={onClick} />;
             }

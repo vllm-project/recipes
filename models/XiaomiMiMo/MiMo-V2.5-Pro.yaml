@@ -1,7 +1,7 @@
 meta:
   title: "MiMo-V2.5-Pro"
   slug: "mimo-v2-5-pro"
-  provider: "Xiaomi MiMo"
+  provider: "MiMo (Xiaomi)"
   description: "Xiaomi's flagship MoE reasoning model (1.02T total / 42B active) with hybrid attention, native FP8 weights, and Multi-Token Prediction"
   date_updated: 2026-04-27
   difficulty: advanced

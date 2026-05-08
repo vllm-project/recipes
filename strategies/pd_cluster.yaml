@@ -1,6 +1,7 @@
 name: pd_cluster
 deploy_type: pd_cluster
 display_name: "Prefill/Decode Disaggregation"
+orientation: production
 description: >
   Disaggregated prefill/decode cluster. Splits inference into separate
   prefill and decode workers communicating via NIXL KV cache transfer.

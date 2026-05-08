@@ -76,9 +76,8 @@ function resolveDockerImage(recipe, baseCuda) {
 
 // Synthesize the canonical NVIDIA install commands (pip + docker) for a recipe
 // so JSON consumers see the same one-liners the site shows. Mirrors the logic
-// in InstallBlock; defaults to NVIDIA + the model's base CUDA tag (cu130 for
-// vLLM ≥0.20.0, cu129 for older). Per-recipe overrides at `model.install`
-// follow the same semantics as the UI:
+// in InstallBlock; defaults to NVIDIA + cu130 (today's upstream baseline).
+// Per-recipe overrides at `model.install` follow the same semantics as the UI:
 //   pip: false              → omit the `pip` key
 //   pip: { command?, note?} → use overrides; missing fields fall back to defaults
 //   (same for docker)
@@ -89,10 +88,8 @@ function synthesizeInstall(recipe) {
   const dockerCfg = installCfg.docker;
 
   const v = recipe.model?.min_vllm_version || "";
-  const [maj, min] = v.split(".").map((n) => parseInt(n, 10) || 0);
-  const is020Plus = maj > 0 || min >= 20;
   const nightlyRequired = recipe.model?.nightly_required === true;
-  const baseCuda = nightlyRequired || is020Plus ? "cu130" : "cu129";
+  const baseCuda = "cu130";
 
   const out = {};
 

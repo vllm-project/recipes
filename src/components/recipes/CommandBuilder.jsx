@@ -314,14 +314,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const [hwId, setHwId] = useState(searchParams.get("hardware") || defaultHw);
 
-  // After mount: restore user preferences from localStorage. URL params always
-  // win (explicit > stored). Each preference is applied only when compatible
-  // with the current recipe — otherwise the recipe-specific default stands.
+  // After mount: restore the user's hardware preference from localStorage.
+  // URL params always win (explicit > stored). Hardware is the only piece of
+  // state we share across recipes — it tracks the user's physical setup, not
+  // anything model-specific. Nodes / strategy / features are intentionally
+  // per-recipe: switching to multi-node on a 670B model shouldn't push a
+  // 7B recipe into multi-node too.
   //   hardware → NVIDIA only (AMD is opt-in per session, H200 stays canonical
   //              on first load)
-  //   nodes    → only if the recipe actually supports multi-node
-  //   strategy → only if present in the recipe's compatible_strategies
-  //   features → map of {key: on/off} applied when the feature exists
   useEffect(() => {
     const prefs = loadPreferences();
     if (!searchParams.get("hardware") && prefs.hardware) {
@@ -330,25 +330,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       if (prefProfile?.brand === "NVIDIA" && isPrecisionCompatible(prefProfile, v) && isHardwareSupported(recipe, prefs.hardware)) {
         setHwId(prefs.hardware);
       }
-    }
-    if (!searchParams.get("nodes") && prefs.nodes && supportsMultiNode) {
-      const n = parseInt(prefs.nodes, 10);
-      if ([1, 2].includes(n)) setNodeCount(n);
-    }
-    if (!searchParams.get("strategy") && prefs.strategy) {
-      if ((recipe.compatible_strategies || []).includes(prefs.strategy)) {
-        setStrategyOverride(prefs.strategy);
-      }
-    }
-    if (!searchParams.get("features") && prefs.features && typeof prefs.features === "object") {
-      const recipeFeatures = Object.keys(recipe.features || {});
-      const base = new Set(defaultFeaturesFor(hwId));
-      for (const [key, on] of Object.entries(prefs.features)) {
-        if (!recipeFeatures.includes(key)) continue;
-        if (on) base.add(key);
-        else base.delete(key);
-      }
-      setFeatures([...base]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -501,11 +482,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   }, [recipe]);
   const [installMode, setInstallMode] = useState(initialInstallMode);
 
-  // CUDA variant selector for the NVIDIA docker image tag. The available
-  // suffix depends on the recipe's vLLM version (the tag's base CUDA flips
-  // at 0.20.0 — see `altCudaSuffix` below). State holds the raw suffix
-  // (`"cu129"` | `"cu130"`) or `"default"` for the base tag.
-  // Only surfaced for NVIDIA — AMD / TPU don't ship paired CUDA variants.
+  // CUDA variant selector for the NVIDIA docker image tag. State holds the
+  // raw suffix (`"cu129"` | `"cu130"`) or `"default"` for the upstream base
+  // tag (currently CUDA 13). Only surfaced for NVIDIA — AMD / TPU don't ship
+  // paired CUDA variants.
   const [dockerCudaVariant, setDockerCudaVariant] = useState("default");
 
   // ── Derived ──
@@ -684,27 +664,22 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       features: featuresToUrl(next, id),
     });
     savePreference("hardware", id);
-    if (shouldBumpNodes) savePreference("nodes", "2");
-    if (shouldUnbumpNodes) savePreference("nodes", undefined);
   };
 
   const selectStrategy = (s) => {
     setStrategyOverride(s);
     syncUrl({ strategy: s });
-    // Persist as global pref so subsequent recipes default to the same
-    // strategy when compatible. Empty string clears the preference.
-    savePreference("strategy", s || undefined);
-    // Spec-decoding auto-enable for latency strategies is handled by an effect
-    // below so it also fires on initial mount when TP is the default recommendation.
+    // Strategy is intentionally not persisted across recipes — `pd_cluster`
+    // on one model says nothing about what's right on another. Spec-decoding
+    // auto-enable for latency strategies is handled by an effect below so it
+    // also fires on initial mount when TP is the default recommendation.
   };
 
   const selectNodes = (n) => {
     setNodeCount(n);
     setStrategyOverride("");
     syncUrl({ nodes: n === 1 ? "" : String(n), strategy: "" });
-    savePreference("nodes", String(n));
-    // Switching nodes resets strategy, so clear the stored strategy too.
-    savePreference("strategy", undefined);
+    // Nodes / strategy stay per-recipe — see the mount-time effect.
   };
 
   const setPdNodes = (role, n) => {
@@ -747,21 +722,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       : features.filter((x) => x !== f);
     setFeatures(next);
     syncUrl({ features: featuresToUrl(next, hwId) });
-    // Persist as {key: on/off} map. A value that matches the recipe's default
-    // (on for base features, off for opt-ins) gets removed from the map so
-    // prefs don't grow unbounded across recipes.
-    const prefs = loadPreferences();
-    const fprefs = { ...(prefs.features || {}) };
-    const isOn = next.includes(f);
-    const hwOptIn = (recipe.hardware_opt_in_features?.[hwId] || []).includes(f);
-    const isOptIn = (recipe.opt_in_features || []).includes(f) || hwOptIn;
-    const matchesDefault = isOptIn ? !isOn : isOn;
-    if (matchesDefault) delete fprefs[f];
-    else fprefs[f] = isOn;
-    // If this toggle disabled a mutex partner, clear its stored pref too so
-    // reload doesn't resurrect the conflict.
-    if (on && mutex[f]) delete fprefs[mutex[f]];
-    savePreference("features", Object.keys(fprefs).length ? fprefs : undefined);
+    // Features stay per-recipe — see the mount-time effect.
   };
 
   const toggleAdvanced = (id) => {
@@ -920,35 +881,23 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     );
   }
 
-  // The CUDA baseline for NVIDIA images flipped at vLLM 0.20.0: pre-0.20.0
-  // the base tag is CUDA 12.9 and the alternative suffix is `-cu130`;
-  // 0.20.0+ the base tag is CUDA 13 and the alternative suffix is `-cu129`.
-  // Nightly recipes track the post-flip baseline regardless of the (possibly
-  // non-numeric, e.g. "nightly") `min_vllm_version` string they declare.
-  // Offering the wrong suffix would give the user a tag that doesn't exist.
-  const altCudaSuffix = useMemo(() => {
-    if (recipe.model?.nightly_required === true) return "cu129";
-    const v = recipe.model?.min_vllm_version || "";
-    const [maj, min] = v.split(".").map((n) => parseInt(n, 10) || 0);
-    const is020Plus = maj > 0 || min >= 20;
-    return is020Plus ? "cu129" : "cu130";
-  }, [recipe]);
+  // Upstream `vllm/vllm-openai:latest` (and recent pinned tags) ship CUDA 13
+  // as the base; CUDA 12.9 is the legacy alternate published as a `-cu129`
+  // suffix. The recipe's `min_vllm_version` doesn't change which tag the user
+  // pulls — `:latest` is always today's base regardless — so the alt suffix
+  // is a constant.
+  const altCudaSuffix = "cu129";
 
   const dockerMeta = useMemo(() => {
     const meta = computeDockerMeta(recipe, currentVariant, hwProfile);
     if (meta.brandKey !== "nvidia") return meta;
 
     // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
-    // tag and skip auto-suffix. "default" resolves to the base CUDA for this
-    // vLLM version (< 0.20.0 → cu129 base; 0.20.0+ → cu130 base), except on
-    // Blackwell where cu130 is preferred when the map offers it. If the
-    // chosen variant is missing, fall through to whichever key is present.
+    // tag and skip auto-suffix. "default" resolves to cu130 (the upstream
+    // baseline today). If the chosen variant is missing, fall through to
+    // whichever key is present.
     if (meta.cudaMap) {
-      const versionBase = altCudaSuffix === "cu130" ? "cu129" : "cu130";
-      const baseCuda =
-        hwProfile?.generation === "blackwell" && "cu130" in meta.cudaMap
-          ? "cu130"
-          : versionBase;
+      const baseCuda = "cu130";
       const wanted = dockerCudaVariant === "default" ? baseCuda : dockerCudaVariant;
       const picked = meta.cudaMap[wanted] || meta.cudaMap[baseCuda] || meta.cudaMap.cu129 || meta.cudaMap.cu130;
       return { ...meta, image: picked || meta.image };
@@ -1186,7 +1135,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 ? { label: "Latency oriented", classes: "bg-green-500/20 text-green-600 dark:text-green-400" }
                 : o === "balanced"
                   ? { label: "Balanced", classes: "bg-blue-500/20 text-blue-600 dark:text-blue-400" }
-                  : { label: "Throughput oriented", classes: "bg-amber-500/20 text-amber-700 dark:text-amber-400" };
+                  : o === "production"
+                    ? { label: "Production deployment", classes: "bg-purple-500/20 text-purple-700 dark:text-purple-400" }
+                    : { label: "Throughput oriented", classes: "bg-amber-500/20 text-amber-700 dark:text-amber-400" };
               return (
                 <span className={`inline-block text-[10px] font-medium mt-1.5 px-1.5 py-0.5 rounded ${classes}`}>
                   {label}
@@ -1492,7 +1443,7 @@ function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode, dockerC
   const pipHidden = pipCfg === false;
   const dockerHidden = dockerCfg === false;
   const [open, setOpen] = useState(false);
-  const { isAmd, isTpu, image: dockerImage, brandKey } = dockerMeta;
+  const { isAmd, isTpu, image: dockerImage, brandKey, cudaMap } = dockerMeta;
   const minV = recipe.model?.min_vllm_version;
 
   // When a recipe's min_vllm_version hasn't shipped yet (cutting-edge models
@@ -1502,10 +1453,9 @@ function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode, dockerC
   // win — this flag only affects the default.
   const nightlyRequired = recipe.model?.nightly_required === true;
   // Resolve the CUDA tag for pip's nightly wheel index from the same toggle
-  // that drives the Docker tag suffix. "default" → the version-base CUDA
-  // (cu130 for ≥0.20.0, cu129 for older); explicit picks pass through.
-  const baseCuda = altCudaSuffix === "cu129" ? "cu130" : "cu129";
-  const pipCudaTag = dockerCudaVariant === "default" ? baseCuda : dockerCudaVariant;
+  // that drives the Docker tag suffix. "default" → cu130 (today's upstream
+  // baseline); explicit picks pass through.
+  const pipCudaTag = dockerCudaVariant === "default" ? "cu130" : dockerCudaVariant;
   const defaultPipCmd = isAmd
     ? `uv venv --python 3.12
 source .venv/bin/activate
@@ -1524,9 +1474,7 @@ uv pip install -U vllm --torch-backend auto`;
   const pipNote =
     pipCfg?.note ||
     (nightlyRequired && !isAmd
-      ? altCudaSuffix === "cu129"
-        ? `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
-        : `vLLM ${minV} isn't released yet — nightly required. For CUDA 13, switch the toggle to cu130.`
+      ? `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
       : undefined);
 
   // Docker install step is just the image pull; the `docker run` that actually
@@ -1540,9 +1488,9 @@ uv pip install -U vllm --torch-backend auto`;
     ? "TPU builds are published by vllm-project/tpu-inference. See the Trillium and Ironwood tpu-recipes for pinned image tags and exact deployment flags."
     : isAmd
       ? undefined
-      : altCudaSuffix === "cu129"
-        ? "vLLM 0.20.0+ default tag ships CUDA 13. Switch to cu129 for the -cu129 variant if your host is on CUDA 12.9."
-        : "Default tag ships CUDA 12.9. Switch to cu130 for the -cu130 variant on CUDA 13 hosts.";
+      : cudaMap
+        ? "This recipe ships paired CUDA-tagged images. Pick `cu129` for CUDA 12.9 hosts or `cu130` for CUDA 13."
+        : "Default tag ships CUDA 13. Switch to cu129 for the -cu129 variant if your host is on CUDA 12.9.";
   const dockerNote = dockerCfg?.note || defaultDockerNote;
   // Show the CUDA selector when we're on NVIDIA and the user isn't supplying
   // a full override command (which already bakes in a specific tag). Visible
@@ -1631,9 +1579,9 @@ uv pip install -U vllm --torch-backend auto`;
                           ? "Legacy CUDA 12.9 build"
                           : v.id === "cu130"
                             ? "CUDA 13 build"
-                            : altCudaSuffix === "cu129"
-                              ? "Base tag — CUDA 13 (vLLM 0.20.0+)"
-                              : "Base tag — CUDA 12.9"
+                            : cudaMap
+                              ? "Recipe-recommended tag for this hardware"
+                              : "Base tag — CUDA 13"
                       }
                       className={`px-2 py-0.5 text-[11px] font-mono rounded transition-colors ${
                         dockerCudaVariant === v.id

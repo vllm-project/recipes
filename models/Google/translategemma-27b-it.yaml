@@ -13,7 +13,6 @@ meta:
 model:
   model_id: "google/translategemma-27b-it"
   min_vllm_version: "0.14.1"
-  docker_image: "vllm/vllm-openai:v0.14.1-cu130"
   architecture: dense
   parameter_count: "27B"
   active_parameters: "27B"
@@ -74,7 +73,7 @@ guide: |
 
   ### Docker
   ```bash
-  docker pull vllm/vllm-openai:v0.14.1-cu130
+  docker pull vllm/vllm-openai:latest
   ```
 
   ## Deployment Configurations
@@ -87,7 +86,7 @@ guide: |
     --shm-size 16G \
     --gpus all \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai:v0.14.1-cu130 \
+    vllm/vllm-openai:latest \
       Infomaniak-AI/vllm-translategemma-27b-it \
       --served-model-name translategemma-27b-it \
       --gpu-memory-utilization 0.8 \

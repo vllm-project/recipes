@@ -1,7 +1,7 @@
 meta:
   title: "MiMo-V2.5"
   slug: "mimo-v2-5"
-  provider: "Xiaomi MiMo"
+  provider: "MiMo (Xiaomi)"
   description: "MiMo-V2.5 is a native omnimodal model with strong agentic capabilities, supporting text, image, video, and audio understanding within a unified architecture"
   date_updated: 2026-04-27
   difficulty: advanced

@@ -1,7 +1,7 @@
 meta:
   title: "Hunyuan-A13B-Instruct"
   slug: "hunyuan-a13b-instruct"
-  provider: "Tencent Hunyuan"
+  provider: "Hunyuan (Tencent)"
   description: "Tencent Hunyuan A13B instruct-tuned MoE language model with AITER-accelerated AMD ROCm deployment"
   date_updated: 2026-04-17
   difficulty: beginner

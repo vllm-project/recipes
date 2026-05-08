@@ -7,7 +7,7 @@ meta:
   difficulty: hard
   tasks:
     - text
-  performance_headline: "1M efficient long-context attention"
+  performance_headline: "Frontier 1.6T/49B reasoning MoE with native FP4+FP8 weights, MTP speculative decoding, and 1M-token context"
   related_recipes: []
   hardware:
     h200: verified

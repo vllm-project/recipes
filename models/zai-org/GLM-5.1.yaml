@@ -96,7 +96,7 @@ guide: |
     -p 8000:8000 \
     --ipc=host \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai:glm51 zai-org/GLM-5.1-FP8 \
+    vllm/vllm-openai:latest zai-org/GLM-5.1-FP8 \
       --tensor-parallel-size 8 \
       --tool-call-parser glm47 \
       --reasoning-parser glm45 \
@@ -105,7 +105,7 @@ guide: |
       --served-model-name glm-5.1-fp8
   ```
 
-  Use `vllm/vllm-openai:glm51-cu130` for CUDA 13+.
+  Use `vllm/vllm-openai:latest-cu129` for CUDA 12.x.
 
   ### Install vLLM from Source
 

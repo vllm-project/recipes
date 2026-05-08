@@ -7,7 +7,7 @@ meta:
   difficulty: hard
   tasks:
     - text
-  performance_headline: "1M efficient long-context attention"
+  performance_headline: "Compact 284B/13B V4 sibling — single-node 1M-context serving with FP4+FP8 weights and MTP"
   related_recipes: []
   hardware:
     h200: verified
@@ -336,7 +336,7 @@ guide: |
     -e VLLM_LOG_STATS_INTERVAL=1 \
     -e VLLM_NIXL_SIDE_CHANNEL_PORT=5557 \
     -e CUDA_VISIBLE_DEVICES=0,1,2,3 \
-    vllm/vllm-openai:deepseekv4-cu130 \
+    vllm/vllm-openai:latest \
     deepseek-ai/DeepSeek-V4-Flash \
     --trust-remote-code \
     --kv-cache-dtype fp8 \
@@ -370,7 +370,7 @@ guide: |
     -e VLLM_LOG_STATS_INTERVAL=1 \
     -e VLLM_NIXL_SIDE_CHANNEL_PORT=5558 \
     -e CUDA_VISIBLE_DEVICES=4,5,6,7 \
-    vllm/vllm-openai:deepseekv4-cu130 \
+    vllm/vllm-openai:latest \
     deepseek-ai/DeepSeek-V4-Flash \
     --trust-remote-code \
     --kv-cache-dtype fp8 \

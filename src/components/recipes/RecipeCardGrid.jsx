@@ -145,7 +145,7 @@ function RecipeCard({ recipe }) {
 
       {/* Footer: hint or description */}
       <div className="mt-auto text-[11px] text-muted-foreground line-clamp-2 leading-snug">
-        {recipe.meta?.performance_headline || recipe.meta?.description || ""}
+        {recipe.meta?.description || recipe.meta?.performance_headline || ""}
       </div>
       {isOmni && (
         <div className="text-[10px] text-vllm-yellow/80 font-medium">via vLLM-Omni</div>

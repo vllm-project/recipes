@@ -134,6 +134,9 @@ export default async function RecipePage({ params }) {
               {recipe.hf_repo}
             </h1>
             <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{recipe.meta.description}</p>
+            {recipe.meta.performance_headline && (
+              <p className="text-xs text-muted-foreground/70 italic mt-1 leading-snug">{recipe.meta.performance_headline}</p>
+            )}
             <a
               href={`https://huggingface.co/${recipe.hf_id}`}
               target="_blank"
