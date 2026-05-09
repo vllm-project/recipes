@@ -1139,7 +1139,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
                   ].filter(Boolean).join("\n\n")}
                 >
-                  <span className="font-mono font-semibold">{v.precision?.toUpperCase()}</span>
+                  <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
                   <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
                 </Pill>
               ))}
