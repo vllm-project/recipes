@@ -3,7 +3,7 @@ meta:
   slug: "gpt-oss"
   provider: "OpenAI"
   description: "OpenAI's gpt-oss family (20B / 120B) with MXFP4 MoE, attention-sinks, built-in tools via Responses API"
-  date_updated: 2026-04-17
+  date_updated: 2026-05-10
   difficulty: intermediate
   tasks:
     - text
@@ -37,7 +37,7 @@ features:
     description: "EAGLE3 speculative decoding for accelerated inference"
     args:
       - "--speculative-config"
-      - '{"model":"nvidia/gpt-oss-120b-Eagle3-v2","num_speculative_tokens":3,"method":"eagle3","draft_tensor_parallel_size":1}'
+      - '{"model":"nvidia/gpt-oss-120b-Eagle3-v3","num_speculative_tokens":7,"method":"eagle3","draft_tensor_parallel_size":1}'
 
 opt_in_features:
   - spec_decoding
@@ -248,4 +248,4 @@ guide: |
   - [gpt-oss-120b](https://huggingface.co/openai/gpt-oss-120b)
   - [gpt-oss-20b](https://huggingface.co/openai/gpt-oss-20b)
   - [amd/gpt-oss-120b-w-mxfp4-a-fp8](https://huggingface.co/amd/gpt-oss-120b-w-mxfp4-a-fp8)
-  - [Eagle3 draft model](https://huggingface.co/nvidia/gpt-oss-120b-Eagle3-v2)
+  - [Eagle3 draft model](https://huggingface.co/nvidia/gpt-oss-120b-Eagle3-v3)
