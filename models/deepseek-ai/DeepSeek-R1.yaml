@@ -57,7 +57,7 @@ variants:
     vram_minimum_gb: 805
     description: "May 2025 DeepSeek-R1 refresh (DeepSeek-R1-0528)"
   nvfp4:
-    model_id: "nvidia/DeepSeek-R1-NVFP4"
+    model_id: "nvidia/DeepSeek-R1-0528-NVFP4-v2"
     precision: nvfp4
     vram_minimum_gb: 403
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"

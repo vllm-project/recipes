@@ -70,7 +70,7 @@ opt_in_features:
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 210
+    vram_minimum_gb: 75
     description: "Full BF16 — single 80 GB NVIDIA GPU or 1x MI300X/MI325X/MI350X/MI355X"
   nvfp4:
     model_id: "nvidia/gemma-4-31B-it-NVFP4"
