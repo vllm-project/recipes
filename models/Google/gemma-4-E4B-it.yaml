@@ -2,8 +2,8 @@ meta:
   title: "Gemma 4 E4B IT"
   slug: "gemma-4-e4b-it"
   provider: "Google"
-  description: "Google's compact Gemma 4 multimodal model (effective 4B) with native text, image, and audio, plus thinking mode and tool-use protocol."
-  date_updated: 2026-04-21
+  description: "Google's compact Gemma 4 multimodal model (effective 4B) with native text, image, and audio, plus thinking mode and tool-use protocol. FP8 quantized checkpoint available from RedHat AI."
+  date_updated: 2026-05-11
   difficulty: beginner
   tasks:
     - multimodal
@@ -75,6 +75,14 @@ variants:
     precision: bf16
     vram_minimum_gb: 20
     description: "Full BF16 — single 24 GB+ NVIDIA GPU or 1x MI300X/MI325X/MI350X/MI355X"
+  fp8:
+    model_id: "RedHatAI/gemma-4-E4B-it-FP8-dynamic"
+    precision: fp8
+    vram_minimum_gb: 10
+    description: "RedHat AI FP8-dynamic checkpoint (E4M3 linear weights + per-token dynamic activation quant; vision/audio encoders kept in BF16) — runs comfortably on a single 16 GB+ GPU on Hopper or Blackwell"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
 
 compatible_strategies:
   - single_node_tp
@@ -245,6 +253,10 @@ guide: |
   - `--async-scheduling` improves throughput.
   - FP8 KV cache (`--kv-cache-dtype fp8`) saves ~50% KV memory.
 
+  ## Quantized Variant
+
+  [`RedHatAI/gemma-4-E4B-it-FP8-dynamic`](https://huggingface.co/RedHatAI/gemma-4-E4B-it-FP8-dynamic) is a ready-to-serve FP8 (E4M3) checkpoint — linear weights quantized with dynamic per-token activation quantization, vision/audio encoders kept in BF16. It's roughly 2x smaller than BF16 and runs on Hopper (H100/H200) and Blackwell. Pick the **fp8** variant above, or point `vllm serve` straight at the quantized repo id.
+
   ## Speculative Decoding (MTP)
 
   Enable the **Spec Decoding** feature toggle (above) or add `--speculative-config` manually to use MTP drafting with the [assistant model](https://huggingface.co/google/gemma-4-E4B-it-assistant). Recommended `num_speculative_tokens`: 4 for this model. The E4B assistant uses centroids masking for efficient sparse logit computation. See the [Gemma 4 usage guide](../../Google/Gemma4) for details and benchmarks.
@@ -254,6 +266,7 @@ guide: |
   ## References
 
   - [Model card](https://huggingface.co/google/gemma-4-E4B-it)
+  - [RedHat AI FP8 variant](https://huggingface.co/RedHatAI/gemma-4-E4B-it-FP8-dynamic)
   - [Gemma docs](https://ai.google.dev/gemma/docs)
   - [vLLM Gemma 4 tool-call template](https://github.com/vllm-project/vllm/blob/main/examples/tool_chat_template_gemma4.jinja)
   - [TPU recipes: Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4)
