@@ -2,7 +2,7 @@ meta:
   title: "Gemma 4 26B-A4B IT"
   slug: "gemma-4-26b-a4b-it"
   provider: "Google"
-  description: "Google's Gemma 4 MoE multimodal model (26B total / 4B active) with 128 fine-grained experts, top-8 routing, thinking mode, and tool-use protocol. FP8 and NVFP4 quantized checkpoints available from RedHat AI."
+  description: "Google's Gemma 4 MoE multimodal model (26B total / 4B active) with 128 fine-grained experts, top-8 routing, thinking mode, and tool-use protocol."
   date_updated: 2026-05-11
   difficulty: intermediate
   tasks:
@@ -76,7 +76,7 @@ variants:
     model_id: "RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic"
     precision: fp8
     vram_minimum_gb: 32
-    description: "RedHat AI FP8-dynamic checkpoint (E4M3 weights + per-token dynamic activation quant) — fits on a single 40 GB+ GPU on Hopper or Blackwell"
+    description: "FP8 (E4M3) weights with dynamic per-token activation quantization — Hopper or Blackwell"
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
@@ -84,7 +84,7 @@ variants:
     model_id: "RedHatAI/gemma-4-26B-A4B-it-NVFP4"
     precision: nvfp4
     vram_minimum_gb: 16
-    description: "RedHat AI NVFP4 (4-bit) quantized weights for Blackwell GPUs (B200/B300) — fits on a single Blackwell GPU"
+    description: "NVFP4 (4-bit) quantized weights — requires Blackwell (B200/B300)"
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
@@ -268,12 +268,12 @@ guide: |
 
   ## Quantized Variants
 
-  RedHat AI publishes ready-to-serve quantized checkpoints of this model:
+  Two pre-quantized checkpoints are available:
 
-  - [`RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic`](https://huggingface.co/RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic) — FP8 (E4M3) weights with dynamic per-token activation quantization. ~2x smaller than BF16; runs on Hopper (H100/H200) and Blackwell.
-  - [`RedHatAI/gemma-4-26B-A4B-it-NVFP4`](https://huggingface.co/RedHatAI/gemma-4-26B-A4B-it-NVFP4) — NVFP4 (4-bit) weights for Blackwell (B200/B300); ~4x smaller than BF16.
+  - [`RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic`](https://huggingface.co/RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic) — FP8 (E4M3) weights with dynamic per-token activation quantization; runs on Hopper and Blackwell.
+  - [`RedHatAI/gemma-4-26B-A4B-it-NVFP4`](https://huggingface.co/RedHatAI/gemma-4-26B-A4B-it-NVFP4) — NVFP4 (4-bit) weights; requires Blackwell (B200/B300).
 
-  Pick them from the **Variant** dropdown above, or point `vllm serve` straight at the quantized repo id (no other flag changes needed beyond the optional `--kv-cache-dtype fp8`).
+  Pick them from the **Variant** dropdown above, or pass the repo id directly to `vllm serve`.
 
   ## Throughput vs Latency
 
@@ -292,8 +292,8 @@ guide: |
   ## References
 
   - [Model card](https://huggingface.co/google/gemma-4-26B-A4B-it)
-  - [RedHat AI FP8 variant](https://huggingface.co/RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic)
-  - [RedHat AI NVFP4 variant](https://huggingface.co/RedHatAI/gemma-4-26B-A4B-it-NVFP4)
+  - [FP8 variant](https://huggingface.co/RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic)
+  - [NVFP4 variant](https://huggingface.co/RedHatAI/gemma-4-26B-A4B-it-NVFP4)
   - [Gemma docs](https://ai.google.dev/gemma/docs)
   - [vLLM Gemma 4 tool-call template](https://github.com/vllm-project/vllm/blob/main/examples/tool_chat_template_gemma4.jinja)
   - [TPU recipes: Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4)

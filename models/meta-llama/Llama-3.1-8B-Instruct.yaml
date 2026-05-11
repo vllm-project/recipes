@@ -2,7 +2,7 @@ meta:
   title: "Llama-3.1-8B-Instruct"
   slug: "llama-3.1-8b-instruct"
   provider: "Meta"
-  description: "Meta's Llama 3.1 8B dense instruction-tuned language model with 128K context. EAGLE3 speculative decoding via a RedHat AI draft head; NVFP4 and FP8 quantized checkpoints from NVIDIA."
+  description: "Meta's Llama 3.1 8B dense instruction-tuned language model with 128K context"
   date_updated: 2026-04-17
   difficulty: beginner
   tasks:
@@ -25,7 +25,7 @@ model:
 
 features:
   spec_decoding:
-    description: "EAGLE3 speculative decoding via the RedHat AI Llama-3.1-8B-Instruct EAGLE3 draft head (requires vLLM >= 0.9.0)"
+    description: "EAGLE3 speculative decoding (requires vLLM >= 0.9.0)"
     args:
       - "--speculative-config"
       - '{"model":"RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3","method":"eagle3","num_speculative_tokens":3}'
@@ -108,7 +108,7 @@ guide: |
 
   ## Speculative Decoding (EAGLE3)
 
-  RedHat AI publishes an EAGLE3 draft head for this model at
+  An EAGLE3 draft head is available at
   [`RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3`](https://huggingface.co/RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3).
   Enable the **Spec Decoding** toggle above, or add the `--speculative-config` manually:
 
@@ -117,8 +117,8 @@ guide: |
     --speculative-config '{"model":"RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3","method":"eagle3","num_speculative_tokens":3}'
   ```
 
-  EAGLE3 verification requires a recent vLLM (>= 0.9.0). `num_speculative_tokens` of 3 is a good
-  starting point for chat workloads; raise it for more deterministic / lower-temperature decoding.
+  EAGLE3 verification requires vLLM >= 0.9.0. `num_speculative_tokens` of 3 is a reasonable
+  starting point for chat workloads.
 
   ## Troubleshooting
 
@@ -131,5 +131,5 @@ guide: |
   ## References
 
   - [Model card](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
-  - [RedHat AI EAGLE3 draft head](https://huggingface.co/RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3)
+  - [EAGLE3 draft head](https://huggingface.co/RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3)
   - [Llama 3.1 70B model card](https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct)
