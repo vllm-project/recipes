@@ -3,7 +3,7 @@ meta:
   slug: "gemma-4-31b-it"
   provider: "Google"
   description: "Google's unified multimodal Gemma 4 dense model (31B) with native text, image, and audio, plus thinking mode and tool-use protocol."
-  date_updated: 2026-04-17
+  date_updated: 2026-04-25
   difficulty: intermediate
   tasks:
     - multimodal
@@ -12,6 +12,7 @@ meta:
   related_recipes: []
   hardware:
     h100: verified
+    gb10: verified
     mi300x: verified
     mi325x: verified
     mi355x: verified
@@ -225,6 +226,68 @@ guide: |
       --disable_chunked_mm_input \
       --host 0.0.0.0 --port 8000
   ```
+
+  ### NVIDIA DGX Spark (2× GB10, BF16, RoCE)
+  Two-node TP=2 deployment over ConnectX-7 200 Gbps RoCE. Each node has one GB10 GPU and ~110 GB unified memory; the model spans both nodes.
+
+  The upstream `vllm/vllm-openai:gemma4-cu130` image does not bundle HPC-X for RoCE NCCL on aarch64. Build a two-stage image that pulls HPC-X + MLNX OFED libraries from the NGC vLLM image:
+  ```dockerfile
+  # Donor: NGC ships HPC-X + MLNX OFED for ARM64 RoCE
+  FROM nvcr.io/nvidia/vllm:26.03-py3 AS donor
+
+  FROM vllm/vllm-openai:v0.19.1-aarch64-cu130-ubuntu2404
+  COPY --from=donor /opt/hpcx /opt/hpcx
+  COPY --from=donor /usr/lib/aarch64-linux-gnu/libmlx5.so* /usr/lib/aarch64-linux-gnu/
+  COPY --from=donor /usr/lib/aarch64-linux-gnu/libibverbs* /usr/lib/aarch64-linux-gnu/
+  RUN pip install --no-deps "ray==2.54.0" "transformers>=5.5.0"
+  ```
+
+  Required NCCL environment on both nodes:
+  ```bash
+  export NCCL_IB_DISABLE=0
+  export NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0     # discover with `ibv_devices`
+  export NCCL_NET_GDR_LEVEL=5
+  export NCCL_SOCKET_IFNAME=enp1s0f0np0          # pin to the 200 Gbps RoCE interface
+  ```
+  The mixed-case names above (lowercase `rocep1s0f0` / `enp1s0f0np0` alongside `roceP2p1s0f0` / `enP7s7` with capital `P`) are not a typo — the kernel's predictable-naming scheme uses a capital `P` segment for devices on a non-zero PCI domain, and DGX Spark's two ConnectX-7 ports land on different domains. Discover the actual names on your box with `ibv_devices` and `ip link` and use them as listed.
+
+  Head node (`192.168.100.10`):
+  ```bash
+  vllm serve google/gemma-4-31B-it \
+    --tensor-parallel-size 2 \
+    --distributed-executor-backend mp \
+    --nnodes 2 --node-rank 0 \
+    --master-addr 192.168.100.10 --master-port 29501 \
+    --gpu-memory-utilization 0.85 \
+    --max-model-len 32768 \
+    --enforce-eager \
+    --disable-custom-all-reduce \
+    --async-scheduling \
+    --enable-auto-tool-choice \
+    --reasoning-parser gemma4 \
+    --tool-call-parser gemma4 \
+    --host 0.0.0.0 --port 8000
+  ```
+
+  Worker node (`192.168.100.11`):
+  ```bash
+  vllm serve google/gemma-4-31B-it \
+    --tensor-parallel-size 2 \
+    --distributed-executor-backend mp \
+    --nnodes 2 --node-rank 1 \
+    --master-addr 192.168.100.10 --master-port 29501 \
+    --headless
+  ```
+
+  Notes:
+  - **`--distributed-executor-backend mp`**: the Ray Compiled Graph executor is unstable on TP=2 multi-node here; the native MP backend is stable. See [vllm#30016](https://github.com/vllm-project/vllm/issues/30016).
+  - **`--enforce-eager`** and **`--disable-custom-all-reduce`**: CUDA graphs and the custom all-reduce kernel are unstable on multi-node aarch64 in this configuration; both are required for stable operation.
+  - **`--async-scheduling`**: validated functional on this hardware including the thinking-mode streaming path.
+  - **`--gpu-memory-utilization 0.85`** is the value validated end-to-end on this hardware. Higher values may be possible but are untested here; the unified-memory model on Spark makes 0.85 a conservative default.
+  - **Do not enable `--kv-cache-dtype fp8` on this configuration.** Gemma 4's heterogeneous attention head dimensions (256 / 512) cause `get_kv_cache_configs` to assert that "KV cache specs for the same layer are different across workers" under TP > 1 in vLLM 0.19.1 — engine init fails. The FP8 KV cache recommendation in the **Configuration Tips** section below does not apply to multi-node TP > 1.
+  - The recipe omits `--chat-template`: vLLM 0.19.1 (declared in `min_vllm_version`) carries the upstream tool-call/reasoning parser fix that previously required a custom template.
+  - Verify NCCL is using the RoCE plugin: the head log should contain `NET/IB : Using [0]rocep1s0f0:1/RoCE`.
+  - `enP7s7` (2.5 Gbps onboard Ethernet) must not be selected by NCCL — pin via `NCCL_SOCKET_IFNAME`.
 
   ## Client Usage
 

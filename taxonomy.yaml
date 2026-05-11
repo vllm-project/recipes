@@ -60,6 +60,15 @@ hardware_profiles:
     vram_gb: 1152
     multi_node: false
 
+  gb10:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "DGX Spark (GB10)"
+    description: "NVIDIA DGX Spark · Grace-Blackwell GB10 superchip · 1 GPU · ~110 GB unified memory per node (ARM64) · multi-node over RoCE"
+    gpu_count: 1
+    vram_gb: 110
+    multi_node: true
+
   # ── AMD Instinct ──
   mi300x:
     brand: AMD
