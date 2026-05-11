@@ -22,10 +22,20 @@ Recipes are YAML files at `models/<hf_org>/<hf_repo>.yaml`. The path mirrors Hug
    - **Companion / draft repos** — EAGLE / MTP / Eagle3 heads, NVFP4 quants, instruct vs base. Wire as `spec_decoding` feature (draft pointer in `--speculative-config`) or a sibling variant with `model_id:` override. Copy the recommended `--speculative-config` JSON verbatim from the README.
    - **Recommended serve flags** — `--tensor-parallel-size`, `--gpu_memory_utilization`, `--max_num_batched_tokens`, `--max_num_seqs` go into the guide's launch command and into variant `extra_args` when they're variant-specific.
    - **Hardware guidance / sampling defaults** — "recommended on 8xH200" lines inform variant `description` + `vram_minimum_gb`; recommended `temperature` / `top_p` / `reasoning_effort` go in the guide's Client Usage block.
-4. **Create the YAML.** Write `models/<hf_org>/<hf_repo>.yaml` following the schema below. Only include sections the model needs; leave `features: {}`, `opt_in_features: []`, `hardware_overrides: {}`, `strategy_overrides: {}` empty if not applicable.
-5. **Register the provider (if new).** If `<hf_org>` isn't already in `src/lib/providers.js`, add an entry with `display_name` and the logo path `/providers/<hf_org>.png` (or `.jpeg`). Logos get downloaded by `scripts/fetch-provider-logos.mjs` on the next build.
-6. **Validate.** Run `node scripts/build-recipes-api.mjs`. It must print `✓ JSON API: N models, 7 strategies` with no errors.
-7. **Commit.** Follow the user's earlier feedback (no kill-and-rebuild of dev server; syntax-check only).
+4. **Cross-check upstream vLLM support.** The README can be aspirational or stale — verify what's actually shipped, and capture known caveats. Run the searches in parallel:
+   - `gh search issues --repo vllm-project/vllm "<model-name>" --state all --limit 20` (or `WebSearch` for `"<model-name>" site:github.com/vllm-project/vllm`)
+   - `gh search prs --repo vllm-project/vllm "<model-name>" --state merged --limit 10` — the merge commit tells you the minimum vLLM release containing support
+   - For newer architectures, also search the model author's repo (e.g. `PaddlePaddle/PaddleOCR`, `deepseek-ai/DeepSeek-VL2`) for "vllm" discussions — authors often post the canonical launch command and known issues there
+
+   What to extract:
+   - **`min_vllm_version`** — if the support PR landed in v0.12.0, set `min_vllm_version: "0.12.0"`. If it's only on `main` / nightly, set `min_vllm_version: "nightly"` + `nightly_required: true`. If support is still an open issue (no PR merged), flag this to the user before authoring — the recipe may not yet be runnable. For derivative releases (e.g. PaddleOCR-VL-1.5 vs 1.0) with identical `architectures` / `model_type` / `auto_map`, the existing handler usually loads them via `--trust-remote-code` even before a dedicated PR — note this assumption in your reply.
+   - **Troubleshooting** — recurring errors and fixes from issue comments (e.g. "needs `--enforce-eager` on 0.11.x", "transformers>=5 required", "`--mm-processor-cache-gb 0` to avoid OOM"). Surface these in the guide's Troubleshooting section, or as inline tips next to the launch command if they're load-bearing.
+   - **Links to put in `guide`'s References** — the model card, the vLLM support issue/PR, and any author-side deployment doc. These give users a path forward if their setup breaks.
+
+5. **Create the YAML.** Write `models/<hf_org>/<hf_repo>.yaml` following the schema below. Only include sections the model needs; leave `features: {}`, `opt_in_features: []`, `hardware_overrides: {}`, `strategy_overrides: {}` empty if not applicable.
+6. **Register the provider (if new).** If `<hf_org>` isn't already in `src/lib/providers.js`, add an entry with `display_name` and the logo path `/providers/<hf_org>.png` (or `.jpeg`). Logos get downloaded by `scripts/fetch-provider-logos.mjs` on the next build.
+7. **Validate.** Run `node scripts/build-recipes-api.mjs`. It must print `✓ JSON API: N models, 7 strategies` with no errors.
+8. **Commit.** Follow the user's earlier feedback (no kill-and-rebuild of dev server; syntax-check only).
 
 ## YAML schema (top-level fields, in order)
 
