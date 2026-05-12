@@ -261,6 +261,19 @@ function EndpointsPopoverButton({ isPd, isMultiNode, placeholders, endpoints, on
                   />
                 ))}
               </div>
+              {extras.some((p) => p.name.endsWith("_IFACE")) && (
+                <div className="mt-2 text-[11px] text-muted-foreground leading-snug">
+                  Tip: find your inter-node fabric NIC with{" "}
+                  <code className="font-mono text-[10px] px-1 py-px rounded bg-foreground/5">
+                    ip -o -4 route show to default | awk '{"{print $5}"}'
+                  </code>
+                  . On HPC clusters, verify against{" "}
+                  <code className="font-mono text-[10px] px-1 py-px rounded bg-foreground/5">ibstat</code>
+                  {" "}/{" "}
+                  <code className="font-mono text-[10px] px-1 py-px rounded bg-foreground/5">ibv_devinfo</code>
+                  {" "}— the default route is often the slow management NIC, not the RDMA fabric.
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1366,6 +1379,7 @@ function endpointHintFor(name) {
   if (name.endsWith("_PORT")) return "port";
   if (/^(?:PREFILL|DECODE)_NODE_\d+$/.test(name)) return "host";
   if (name.endsWith("_IP")) return "10.0.0.1";
+  if (name.endsWith("_IFACE")) return "bond0";
   return "value";
 }
 
