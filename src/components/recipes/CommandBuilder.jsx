@@ -274,6 +274,15 @@ function EndpointsPopoverButton({ isPd, isMultiNode, placeholders, endpoints, on
                   {" "}— the default route is often the slow management NIC, not the RDMA fabric.
                 </div>
               )}
+              {extras.some((p) => p.name === "HEAD_IP") && (
+                <div className="mt-2 text-[11px] text-muted-foreground leading-snug">
+                  Tip: on the rank-0 node, read its IP on that NIC with{" "}
+                  <code className="font-mono text-[10px] px-1 py-px rounded bg-foreground/5">
+                    ip -o -4 addr show $IFACE_NAME | awk '{"{print $4; exit}"}' | cut -d/ -f1
+                  </code>
+                  {" "}— make sure every other rank can reach it on that interface.
+                </div>
+              )}
             </div>
           )}
         </div>
