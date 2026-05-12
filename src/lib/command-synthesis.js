@@ -575,8 +575,8 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         // spans 2+ nodes. Single-node roles use NIXL for cross-role transfer
         // and don't need socket-iface hints.
         if (rolePoolNodes >= 2) {
-          env.GLOO_SOCKET_IFNAME = "$GLOO_IFACE";
-          env.NCCL_SOCKET_IFNAME = "$NCCL_IFACE";
+          env.GLOO_SOCKET_IFNAME = "$IFACE_NAME";
+          env.NCCL_SOCKET_IFNAME = "$IFACE_NAME";
         }
       } else {
         // Co-located demo: first half for prefill, second half for decode.
