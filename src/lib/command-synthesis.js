@@ -695,6 +695,8 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   // their double quotes stripped by bash.
   function shellQuote(s) {
     if (typeof s !== "string" || s.length === 0) return s;
+    // Bare $VAR references must stay unquoted so bash expands them at runtime.
+    if (/^\$[A-Z_][A-Z0-9_]*$/.test(s)) return s;
     if (/^[A-Za-z0-9_./=:@,+%-]+$/.test(s)) return s;
     return `'${s.replace(/'/g, "'\\''")}'`;
   }
