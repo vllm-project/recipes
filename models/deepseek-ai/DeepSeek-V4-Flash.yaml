@@ -33,8 +33,7 @@ model:
     - "fp8"
     - "--block-size"
     - "256"
-  base_env:
-    VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+
 
 dependencies:
   - note: "DeepGEMM FP8 kernels — install via vLLM tools/install_deepgemm.sh"

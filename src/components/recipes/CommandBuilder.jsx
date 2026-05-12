@@ -265,7 +265,7 @@ function EndpointsPopoverButton({ isPd, isMultiNode, placeholders, endpoints, on
                 <div className="mt-2 text-[11px] text-muted-foreground leading-snug">
                   Tip: find your inter-node fabric NIC with{" "}
                   <code className="font-mono text-[10px] px-1 py-px rounded bg-foreground/5">
-                    ip -o -4 route show to default | awk '{"{print $5}"}'
+                    ip -o -4 route show to default | awk '{"{print $5; exit}"}'
                   </code>
                   . On HPC clusters, verify against{" "}
                   <code className="font-mono text-[10px] px-1 py-px rounded bg-foreground/5">ibstat</code>
