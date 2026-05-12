@@ -387,21 +387,33 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // GB300 = 1). Unknown hw ids fall through to `default`, then to 1.
   const pdDefaults = useMemo(() => {
     const so = recipe.strategy_overrides?.pd_cluster || {};
+    // Each PD role holds a full model copy on its own pool of nodes. If a
+    // single node can't fit the model, the role must span >= ceil(model/node)
+    // nodes — same logic as the top-level multi-node bump on line 378, applied
+    // per role. Recipe-level `strategy_overrides.pd_cluster.<role>.nodes` still
+    // wins when set.
+    const v = recipe.variants?.[variant] || recipe.variants?.default || {};
+    const hw = taxonomy.hardware_profiles?.[hwId];
+    const nodeVram = hw?.vram_gb || 0;
+    const modelVram = v?.vram_minimum_gb || 0;
+    const minNodesPerRole = (modelVram > 0 && nodeVram > 0)
+      ? Math.max(1, Math.ceil(modelVram / nodeVram))
+      : 1;
     const pickNodes = (role, fallback) => {
-      const v = so[role]?.nodes;
-      if (typeof v === "number") return v;
-      if (v && typeof v === "object") {
-        if (typeof v[hwId] === "number") return v[hwId];
-        if (typeof v.default === "number") return v.default;
+      const ov = so[role]?.nodes;
+      if (typeof ov === "number") return ov;
+      if (ov && typeof ov === "object") {
+        if (typeof ov[hwId] === "number") return ov[hwId];
+        if (typeof ov.default === "number") return ov.default;
       }
       return fallback;
     };
     return {
-      prefill: pickNodes("prefill", 1),
-      decode: pickNodes("decode", 1),
+      prefill: pickNodes("prefill", minNodesPerRole),
+      decode: pickNodes("decode", minNodesPerRole),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recipe, hwId]);
+  }, [recipe, hwId, variant]);
   const [pdPrefillNodes, setPdPrefillNodes] = useState(() => {
     const n = parseInt(searchParams.get("prefill_nodes") || "", 10);
     return Number.isFinite(n) && n > 0 ? n : pdDefaults.prefill;

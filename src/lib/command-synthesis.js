@@ -571,6 +571,13 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         // Dedicated node(s) — each node owns all its local GPUs. Same value
         // is correct whether the pool is DEP (vllm spawns local ranks) or TP.
         env.CUDA_VISIBLE_DEVICES = Array.from({ length: gpuCount }, (_, i) => i).join(",");
+        // Cross-node NCCL/GLOO for this role only kicks in when the role
+        // spans 2+ nodes. Single-node roles use NIXL for cross-role transfer
+        // and don't need socket-iface hints.
+        if (rolePoolNodes >= 2) {
+          env.GLOO_SOCKET_IFNAME = "$GLOO_IFACE";
+          env.NCCL_SOCKET_IFNAME = "$NCCL_IFACE";
+        }
       } else {
         // Co-located demo: first half for prefill, second half for decode.
         const half = Math.floor(gpuCount / 2);
