@@ -12,23 +12,22 @@ meta:
 
 model:
   model_id: "mistralai/Voxtral-Mini-4B-Realtime-2602"
-  min_vllm_version: "nightly"
-  nightly_required: true
+  min_vllm_version: "0.20.0"
   architecture: dense
   parameter_count: "4.4B"
   active_parameters: "4.4B"
   context_length: 131072
   base_args:
+    - "--tokenizer-mode"
+    - "mistral"
     - "--compilation_config"
     - '{"cudagraph_mode": "PIECEWISE"}'
   base_env:
     VLLM_DISABLE_COMPILE_CACHE: "1"
 
 dependencies:
-  - note: "Audio processing libraries required for Voxtral's audio encoder"
-    command: "uv pip install soxr librosa soundfile"
-  - note: "mistral_common >= 1.9.0 ships the Voxtral Realtime tokenizer (auto-installed with vLLM nightly; pin if you hit an older cached wheel)"
-    command: 'uv pip install -U "mistral_common>=1.9.0"'
+  - note: "mistral-common's audio extras bundle soxr/librosa/soundfile plus the Voxtral Realtime tokenizer (>= 1.9.0)"
+    command: 'uv pip install -U "mistral-common[audio]>=1.9.0"'
   - note: "Transformers v5 silences a barrage of warnings emitted when serving Voxtral on v4 (see vllm-project/vllm#34642)"
     command: "uv pip install -U transformers"
 
@@ -71,20 +70,19 @@ guide: |
   ## Prerequisites
 
   - **Hardware**: a single GPU with **≥ 16 GB** VRAM (BF16 weights only).
-  - **vLLM**: **nightly** — Voxtral Realtime's novel streaming architecture
-    has not yet shipped in a stable release.
+  - **vLLM**: **>= 0.20.0** — the Voxtral Realtime architecture has been
+    registered since v0.16.0, but v0.20.0 is the first stable release with
+    the architecture documented in the supported-models list.
 
   ### Install vLLM and audio dependencies
 
   ```bash
   uv venv && source .venv/bin/activate
-  uv pip install -U vllm --torch-backend=auto \
-      --extra-index-url https://wheels.vllm.ai/nightly
-  uv pip install soxr librosa soundfile
-  uv pip install -U transformers
+  uv pip install -U vllm --torch-backend=auto
+  uv pip install -U "mistral-common[audio]>=1.9.0" transformers
   ```
 
-  Verify `mistral_common >= 1.9.0` was pulled in:
+  Verify the audio extras pulled `mistral_common >= 1.9.0`:
 
   ```bash
   python -c "import mistral_common; print(mistral_common.__version__)"
@@ -94,8 +92,13 @@ guide: |
 
   ```bash
   VLLM_DISABLE_COMPILE_CACHE=1 vllm serve mistralai/Voxtral-Mini-4B-Realtime-2602 \
+    --tokenizer-mode mistral \
     --compilation_config '{"cudagraph_mode": "PIECEWISE"}'
   ```
+
+  > `--tokenizer-mode mistral` is **required**: Voxtral Realtime's tokenizer
+  > only loads through `mistral_common`. Omitting it raises a tokenizer
+  > initialization error at startup.
 
   Once it starts you should see the Realtime API route registered:
 
@@ -150,14 +153,19 @@ guide: |
 
   ## Troubleshooting
 
-  - **`Route: /v1/realtime` not registered** — you're on a stable vLLM
-    release. Install the nightly wheel as shown above.
-  - **`mistral_common` import error / wrong version** — `pip install -U
-    "mistral_common>=1.9.0"` explicitly; auto-install can be skipped if a
-    cached older wheel is present.
+  - **`Route: /v1/realtime` not registered** — your vLLM is < 0.16.0.
+    Upgrade to 0.20.0+.
+  - **Tokenizer initialization error** — you forgot `--tokenizer-mode mistral`.
+    Voxtral Realtime's tokenizer can only load through `mistral_common`.
+  - **`mistral_common` import error / wrong version** — install with the audio
+    extras: `pip install -U "mistral-common[audio]>=1.9.0"`.
   - **Transformers v4 warning spam** — upgrade to Transformers v5
     (`uv pip install -U transformers`), tracked in
     [vllm-project/vllm#34642](https://github.com/vllm-project/vllm/issues/34642).
+  - **Hangs / crashes on long sessions** — known upstream issue, see
+    [#39996](https://github.com/vllm-project/vllm/issues/39996) (encoder KV
+    cache eviction) and [#38233](https://github.com/vllm-project/vllm/issues/38233)
+    (multi-session encode). Restart sessions periodically as a workaround.
 
   ## References
 
