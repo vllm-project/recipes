@@ -169,8 +169,7 @@ guide: |
 
   ## References
 
-  - [Model card](https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602)
   - [Mistral blog: Voxtral Transcribe 2](https://mistral.ai/news/voxtral-transcribe-2)
   - [vLLM Realtime API docs](https://docs.vllm.ai/en/latest/serving/openai_compatible_server/#realtime-api)
-  - [vLLM streaming-input blog post](https://blog.vllm.ai/2026/01/31/streaming-realtime.html)
+  - [vLLM streaming-input blog post](https://vllm.ai/blog/streaming-realtime.html)
   - [HuggingFace demo space](https://huggingface.co/spaces/mistralai/Voxtral-Mini-Realtime)
