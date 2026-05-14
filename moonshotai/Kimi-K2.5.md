@@ -261,7 +261,7 @@ vllm serve moonshotai/Kimi-K2.5 -tp 8 \
 
 
 ### Accelerating Kimi 2.5 with Eagle3 MTP
-We recommend using [lightseekorg/kimi-k2.5-eagle3](https://huggingface.co/lightseekorg/kimi-k2.5-eagle3) and [nvidia/Kimi-K2.5-Thinking-Eagle3](https://huggingface.co/nvidia/Kimi-K2.5-Thinking-Eagle3) to accelerate inference of Kimi 2.5. This feature is supported in vLLM nightly and `vLLM>=0.18.0`.
+We recommend using [lightseekorg/kimi-k2.5-eagle3-mla](https://huggingface.co/lightseekorg/kimi-k2.5-eagle3-mla) and [nvidia/Kimi-K2.5-Thinking-Eagle3](https://huggingface.co/nvidia/Kimi-K2.5-Thinking-Eagle3) to accelerate inference of Kimi 2.5. This feature is supported in vLLM nightly and `vLLM>=0.18.0`.
 
 ```bash
 vllm serve moonshotai/Kimi-K2.5 \

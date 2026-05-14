@@ -3,7 +3,7 @@ meta:
   slug: "kimi-k2.5"
   provider: "Moonshot AI"
   description: "Open-source native multimodal agentic MoE model with vision-language understanding, tool calling, and thinking modes"
-  date_updated: 2026-04-16
+  date_updated: 2026-05-14
   difficulty: intermediate
   tasks:
     - multimodal
@@ -44,7 +44,7 @@ features:
     description: "Eagle3 speculative decoding for accelerated inference (requires vLLM >= 0.18.0)"
     args:
       - "--speculative-config"
-      - '{"model":"lightseekorg/kimi-k2.5-eagle3","method":"eagle3","num_speculative_tokens":3}'
+      - '{"model":"lightseekorg/kimi-k2.5-eagle3-mla","method":"eagle3","num_speculative_tokens":3}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -233,7 +233,7 @@ guide: |
 
   - [Kimi-K2.5 on Hugging Face](https://huggingface.co/moonshotai/Kimi-K2.5)
   - [NVIDIA Kimi-K2.5-NVFP4 on Hugging Face](https://huggingface.co/nvidia/Kimi-K2.5-NVFP4)
-  - [Eagle3 speculative decoding model](https://huggingface.co/lightseekorg/kimi-k2.5-eagle3)
+  - [Eagle3 MLA speculative decoding model](https://huggingface.co/lightseekorg/kimi-k2.5-eagle3-mla)
   - [vLLM multimodal inputs guide](https://docs.vllm.ai/en/latest/features/multimodal_inputs.html)
   - [vLLM Expert Parallelism docs](https://docs.vllm.ai/en/latest/serving/expert_parallel_deployment.html)
   - [vLLM NixlConnector usage guide](https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html)
