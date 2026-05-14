@@ -8,17 +8,17 @@ Gemma 4 models are supported on NVIDIA GPUs, AMD GPUs, Google Cloud TPUs and Int
 
 ### Dense Models
 
-| Model | Parameters | Min NVIDIA GPUs (BF16) | Min AMD GPUs (BF16) | Min TPUs | Min Xeon 6 CPUs |HuggingFace |
+| Model | Parameters | Min NVIDIA GPUs (BF16) | Min AMD GPUs (BF16) | Min TPUs | Min Xeon 6 CPUs | HuggingFace |
 |-------|-----------|------------------------|---------------------|----------|--------|-------------|
-| Gemma 4 E2B IT | effective 2B | 1× (24 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | 1×  NUMA node | [google/gemma-4-E2B-it](https://huggingface.co/google/gemma-4-E2B-it) |
-| Gemma 4 E4B IT | effective 4B | 1× (24 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | 1×  NUMA node | [google/gemma-4-E4B-it](https://huggingface.co/google/gemma-4-E4B-it) |
+| Gemma 4 E2B IT | effective 2B | 1× (24 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | 1× NUMA node | [google/gemma-4-E2B-it](https://huggingface.co/google/gemma-4-E2B-it) |
+| Gemma 4 E4B IT | effective 4B | 1× (24 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | 1× NUMA node | [google/gemma-4-E4B-it](https://huggingface.co/google/gemma-4-E4B-it) |
 | Gemma 4 31B IT | 31B | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | - | [google/gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) |
 
 ### Mixture-of-Experts (MoE) Models
 
 | Model | Total / Active Params | Min NVIDIA GPUs (BF16) | Min AMD GPUs (BF16) | Min TPUs | Min Xeon 6 CPUs | HuggingFace |
 |-------|----------------------|------------------------|---------------------|----------|----------|-------------|
-| Gemma 4 26B-A4B IT | 26B / 4B active | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | 2×  NUMA node | [google/gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it) |
+| Gemma 4 26B-A4B IT | 26B / 4B active | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | 2× NUMA node | [google/gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it) |
 
 ### Key Architecture Features
 
@@ -182,7 +182,7 @@ docker run -itd --name gemma4-cpu \
     --network=host \
     --shm-size 16G \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-rocm:latest \
+    vllm/vllm-openai-cpu:latest-x86_64 \
         --model <MODEL> \
         --host 0.0.0.0 \
         --port 8000
