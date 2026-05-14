@@ -98,6 +98,13 @@ const HW_BRANDS = [
       { id: "ironwood", label: "TPU v7" },
     ],
   },
+  {
+    name: "Intel",
+    logo: "/providers/intel.png",
+    items: [
+      { id: "xeon6", label: "Xeon 6" },
+    ],
+  },
 ];
 
 const HARDWARE_BY_ID = Object.fromEntries(
@@ -144,7 +151,10 @@ export function BrowseList({ recipes }) {
       const hwKeys = Object.entries(r.meta?.hardware || {})
         .filter(([, s]) => s === "verified")
         .map(([h]) => h);
-      const hwExtra = hwKeys.some((k) => k === "trillium" || k === "ironwood") ? ["tpu"] : [];
+      const hwExtra = [
+	      (hwKeys.some((k) => k === "trillium" || k === "ironwood") ? ["tpu"] : []),
+	      (hwKeys.some((k) => k === "xeon6") ? ["intel", "xeon", "cpu", "x86"] : []),
+      ];	    
       const hay = [
         r.hf_repo,
         r.hf_org,
