@@ -2,23 +2,23 @@
 
 [Gemma 4](https://ai.google.dev/gemma/docs) is Google's most capable open model family, featuring a unified multimodal architecture that natively processes text, images, and audio. Gemma 4 models support advanced capabilities including structured thinking/reasoning, function calling with a custom tool-use protocol, and dynamic vision resolution — all available through vLLM's OpenAI-compatible API.
 
-Gemma 4 models are supported on NVIDIA GPUs, AMD GPUs, and Google Cloud TPUs. TPU support is provided through [vLLM TPU](https://github.com/vllm-project/tpu-inference). For detailed TPU deployment guides, see the [Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4) and [Ironwood](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/inference/ironwood/vLLM/Gemma4/) recipes.
+Gemma 4 models are supported on NVIDIA GPUs, AMD GPUs, Google Cloud TPUs and Intel Xeon 6 CPUs. TPU support is provided through [vLLM TPU](https://github.com/vllm-project/tpu-inference). For detailed TPU deployment guides, see the [Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4) and [Ironwood](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/inference/ironwood/vLLM/Gemma4/) recipes.
 
 ## Supported Models
 
 ### Dense Models
 
-| Model | Parameters | Min NVIDIA GPUs (BF16) | Min AMD GPUs (BF16) | Min TPUs | HuggingFace |
-|-------|-----------|------------------------|---------------------|----------|-------------|
-| Gemma 4 E2B IT | effective 2B | 1× (24 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | [google/gemma-4-E2B-it](https://huggingface.co/google/gemma-4-E2B-it) |
-| Gemma 4 E4B IT | effective 4B | 1× (24 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | [google/gemma-4-E4B-it](https://huggingface.co/google/gemma-4-E4B-it) |
-| Gemma 4 31B IT | 31B | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | [google/gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) |
+| Model | Parameters | Min NVIDIA GPUs (BF16) | Min AMD GPUs (BF16) | Min TPUs | Min Xeon 6 CPUs |HuggingFace |
+|-------|-----------|------------------------|---------------------|----------|--------|-------------|
+| Gemma 4 E2B IT | effective 2B | 1× (24 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | 1x NUMA node | [google/gemma-4-E2B-it](https://huggingface.co/google/gemma-4-E2B-it) |
+| Gemma 4 E4B IT | effective 4B | 1× (24 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | 1x NUMA node | [google/gemma-4-E4B-it](https://huggingface.co/google/gemma-4-E4B-it) |
+| Gemma 4 31B IT | 31B | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | - | [google/gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) |
 
 ### Mixture-of-Experts (MoE) Models
 
-| Model | Total / Active Params | Min NVIDIA GPUs (BF16) | Min AMD GPUs (BF16) | Min TPUs | HuggingFace |
-|-------|----------------------|------------------------|---------------------|----------|-------------|
-| Gemma 4 26B-A4B IT | 26B / 4B active | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | [google/gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it) |
+| Model | Total / Active Params | Min NVIDIA GPUs (BF16) | Min AMD GPUs (BF16) | Min TPUs | Min Xeon 6 CPUs | HuggingFace |
+|-------|----------------------|------------------------|---------------------|----------|----------|-------------|
+| Gemma 4 26B-A4B IT | 26B / 4B active | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | 2x NUMA node | [google/gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it) |
 
 ### Key Architecture Features
 
@@ -54,13 +54,17 @@ uv pip install vllm --pre \
 --extra-index-url https://wheels.vllm.ai/rocm/nightly/rocm721 --upgrade
 ```
 
+### pip (Intel Xeon 6 CPUs)
+Please follow Intel/AMD x86 session in [CPU pre-build-wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels)
+
 ### Docker
 
 ```bash
-docker pull vllm/vllm-openai:latest       # For CUDA 12.9
-docker pull vllm/vllm-openai:latest-cu130 # For CUDA 13.0
-docker pull vllm/vllm-openai-rocm:latest  # For AMD GPUs
-docker pull vllm/vllm-tpu:gemma4          # For Cloud TPUs
+docker pull vllm/vllm-openai:latest            # For CUDA 12.9
+docker pull vllm/vllm-openai:latest-cu130      # For CUDA 13.0
+docker pull vllm/vllm-openai-rocm:latest       # For AMD GPUs
+docker pull vllm/vllm-tpu:gemma4               # For Cloud TPUs
+docker pull vllm/vllm-openai-cpu:latest-x86_64 # For Intel Xeon 6
 ```
 
 ## Running Gemma 4
@@ -168,6 +172,23 @@ docker run -itd --name gemma4-rocm \
         --host 0.0.0.0 \
         --port 8000
 ```
+
+### Intel Xeon 6 Deployment via Docker
+
+Launch the CPU X86 vLLM Docker container where <MODEL> is your desired Google Gemma 4 model:
+
+```bash
+docker run -itd --name gemma4-cpu \
+    --network=host \
+    --shm-size 16G \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-rocm:latest \
+        --model <MODEL> \
+        --host 0.0.0.0 \
+        --port 8000
+```
+
+Pleae refer to Intel Software Catalog [gemma-4-e4b](https://aiswcatalog.intel.com/models/google-gemma-4-e4b-it) and [gemma-4-26b-a4b](https://aiswcatalog.intel.com/models/google-gemma-4-26b-a4b-it) for more details. 
 
 ### Configuration Tips
 
