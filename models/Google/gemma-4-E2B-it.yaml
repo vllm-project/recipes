@@ -20,6 +20,7 @@ meta:
     mi355x: verified
     trillium: verified
     ironwood: verified
+    xeon6: verified
 
 model:
   model_id: "google/gemma-4-E2B-it"
@@ -122,12 +123,17 @@ guide: |
   uv pip install vllm --pre \
     --extra-index-url https://wheels.vllm.ai/rocm/nightly/rocm721 --upgrade
   ```
+  ### pip (Intel Xeon 6 CPUs)
+  For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.
+
+
 
   ### Docker
   ```bash
   docker pull vllm/vllm-openai:gemma4-0505-cu129  # NVIDIA Hopper (H100/H200, CUDA 12.9)
   docker pull vllm/vllm-openai:gemma4-0505-cu130  # NVIDIA Blackwell (B200/B300, CUDA 13.0)
   docker pull vllm/vllm-openai-rocm:latest   # AMD
+  docker pull vllm/vllm-openai-cpu:latest-x86_64 # For Intel Xeon 6
   ```
 
   ## Deployment Configurations
@@ -198,6 +204,22 @@ guide: |
       --disable_chunked_mm_input \
       --host 0.0.0.0 --port 8000
   ```
+
+  ### Intel Xeon 6 Deployment via Docker
+
+  Launch the x86 CPU vLLM Docker container, replacing `<MODEL>` with the desired Google Gemma 4 model:
+
+  ```bash
+  docker run -itd --name gemma4-cpu \
+    --network=host \
+    --shm-size 16G \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-cpu:latest-x86_64 \
+        --model <MODEL> \
+        --host 0.0.0.0 \
+        --port 8000
+  ```
+
 
   ## Client Usage
 
