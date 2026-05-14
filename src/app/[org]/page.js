@@ -6,6 +6,7 @@ import { recipeHref } from "@/lib/recipe-utils";
 import { siteUrl } from "@/lib/site-url";
 import { Badge } from "@/components/ui/badge";
 import { ExternalLink, Type, Eye, Sparkles, Cpu, Hash } from "lucide-react";
+import { buildBreadcrumbLd, jsonLdScript } from "@/lib/jsonld";
 
 export async function generateStaticParams() {
   const recipes = getAllRecipes();
@@ -87,11 +88,10 @@ export default async function OrgPage({ params }) {
 
   const breadcrumbLd = {
     "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    itemListElement: [
-      { "@type": "ListItem", position: 1, name: "vLLM Recipes", item: siteUrl },
-      { "@type": "ListItem", position: 2, name: displayName, item: `${siteUrl}/${org}` },
-    ],
+    ...buildBreadcrumbLd([
+      { name: "vLLM Recipes", url: "/" },
+      { name: displayName, url: `/${org}` },
+    ]),
   };
 
   return (
@@ -99,7 +99,7 @@ export default async function OrgPage({ params }) {
       <script
         type="application/ld+json"
         // eslint-disable-next-line react/no-danger
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }}
+        dangerouslySetInnerHTML={jsonLdScript(breadcrumbLd)}
       />
       <header className="mb-8 flex items-center gap-4">
         {logo ? (
