@@ -979,8 +979,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     }
 
     // Legacy string tag — append the suffix when user picks the alt variant.
+    // Nightly tags follow the inverse convention: `:nightly` → `:cu129-nightly`
+    // (CUDA prefix, not suffix). Detect the upstream `:nightly` tag and swap
+    // accordingly; pinned `:nightly`-bearing tags (e.g. `:myrelease-nightly`)
+    // fall back to the suffix path.
     if (dockerCudaVariant === altCudaSuffix) {
-      return { ...meta, image: `${meta.image}-${altCudaSuffix}` };
+      const isUpstreamNightly = /^vllm\/vllm-(openai|openai-rocm|tpu):nightly$/.test(meta.image);
+      const next = isUpstreamNightly
+        ? meta.image.replace(/:nightly$/, `:${altCudaSuffix}-nightly`)
+        : `${meta.image}-${altCudaSuffix}`;
+      return { ...meta, image: next };
     }
     return meta;
   }, [recipe, currentVariant, hwProfile, dockerCudaVariant, altCudaSuffix]);
@@ -1572,7 +1580,9 @@ uv pip install -U vllm --torch-backend auto`;
       ? undefined
       : cudaMap
         ? "This recipe ships paired CUDA-tagged images. Pick `cu129` for CUDA 12.9 hosts or `cu130` for CUDA 13."
-        : "Default tag ships CUDA 13. Switch to cu129 for the -cu129 variant if your host is on CUDA 12.9.";
+        : nightlyRequired
+          ? "Nightly image ships CUDA 13. Switch to cu129 for the `cu129-nightly` variant if your host is on CUDA 12.9."
+          : "Default tag ships CUDA 13. Switch to cu129 for the -cu129 variant if your host is on CUDA 12.9.";
   const dockerNote = dockerCfg?.note || defaultDockerNote;
   // Show the CUDA selector when we're on NVIDIA and the user isn't supplying
   // a full override command (which already bakes in a specific tag). Visible

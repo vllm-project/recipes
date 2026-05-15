@@ -219,11 +219,23 @@ export function pickDefaultHardware(hwProfiles, variant, recipe) {
 // When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
 // the user's `dockerCudaVariant` toggle instead of appending `-cu129`/`-cu130`.
 export function computeDockerMeta(recipe, variant, hwProfile) {
-  const DEFAULT_IMAGE = {
-    nvidia: "vllm/vllm-openai:latest",
-    amd: "vllm/vllm-openai-rocm:latest",
-    tpu: "vllm/vllm-tpu:latest",
-  };
+  // When `model.nightly_required: true` and no explicit `docker_image` pin,
+  // swap the brand defaults to nightly tags so the Install block matches the
+  // nightly pip wheel that's also being rendered. vLLM publishes `:nightly`
+  // for all three brand repos. NVIDIA also publishes `cu129-nightly` /
+  // `cu130-nightly` — the CUDA suffix logic in the caller handles those.
+  const nightlyRequired = recipe.model?.nightly_required === true;
+  const DEFAULT_IMAGE = nightlyRequired
+    ? {
+        nvidia: "vllm/vllm-openai:nightly",
+        amd: "vllm/vllm-openai-rocm:nightly",
+        tpu: "vllm/vllm-tpu:nightly",
+      }
+    : {
+        nvidia: "vllm/vllm-openai:latest",
+        amd: "vllm/vllm-openai-rocm:latest",
+        tpu: "vllm/vllm-tpu:latest",
+      };
   const isAmd = hwProfile?.brand === "AMD";
   const isTpu = hwProfile?.generation === "tpu";
   const brandKey = isTpu ? "tpu" : isAmd ? "amd" : "nvidia";
@@ -253,7 +265,7 @@ export function computeDockerMeta(recipe, variant, hwProfile) {
     : isAmd
       ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
       : "--gpus all";
-  return { image, gpuFlags, brandKey, isAmd, isTpu, pinned, cudaMap };
+  return { image, gpuFlags, brandKey, isAmd, isTpu, pinned, cudaMap, nightlyRequired };
 }
 
 // argv form of the brand-specific GPU flags from computeDockerMeta. Mirrors
