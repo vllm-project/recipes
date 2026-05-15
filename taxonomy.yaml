@@ -123,6 +123,16 @@ hardware_profiles:
     multi_node: false
     restricted: true
 
+  xeon5:
+    brand: Intel
+    generation: cpu
+    display_name: "Xeon 5"
+    description: "Intel Xeon 5 CPU node · x86 CPU backend"
+    gpu_count: 1
+    vram_gb: 512
+    multi_node: false
+    restricted: true
+
 tasks:
   - id: text
     display_name: "Text"

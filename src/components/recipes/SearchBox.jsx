@@ -53,7 +53,7 @@ export function SearchBox({ recipes }) {
         .map(([h]) => h);
       const hwExtra = [
 	      (hwKeys.some((k) => k === "trillium" || k === "ironwood") ? ["tpu"] : []),
-	      (hwKeys.some((k) => k === "xeon6") ? ["intel", "xeon", "cpu", "x86"] : []),
+	      (hwKeys.some((k) => k === "xeon6" || k === "xeon5") ? ["intel", "xeon", "cpu", "x86"] : []),
       ];	    
       const hay = [
         r.meta.title,

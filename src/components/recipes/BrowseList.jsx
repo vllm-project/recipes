@@ -103,6 +103,7 @@ const HW_BRANDS = [
     logo: "/providers/intel.png",
     items: [
       { id: "xeon6", label: "Xeon 6" },
+      { id: "xeon5", label: "Xeon 5" },
     ],
   },
 ];
@@ -153,7 +154,7 @@ export function BrowseList({ recipes }) {
         .map(([h]) => h);
       const hwExtra = [
 	      (hwKeys.some((k) => k === "trillium" || k === "ironwood") ? ["tpu"] : []),
-	      (hwKeys.some((k) => k === "xeon6") ? ["intel", "xeon", "cpu", "x86"] : []),
+	      (hwKeys.some((k) => k === "xeon6" || k === "xeon5") ? ["intel", "xeon", "cpu", "x86"] : []),
       ];	    
       const hay = [
         r.hf_repo,

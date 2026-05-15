@@ -83,7 +83,23 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  intel:
+    extra_env:
+      VLLM_CPU_KVCACHE_SPACE: "40"
+      VLLM_CPU_SGL_KERNEL: "0"
+      VLLM_CPU_ATTN_SPLIT_KV: "0"
+      VLLM_ENGINE_ITERATION_TIMEOUT_S: "120"
+      VLLM_RPC_TIMEOUT: "100000"
+    extra_args:
+      - "--dtype"
+      - "bfloat16"
+      - "--distributed-executor-backend"
+      - "mp"
+      - "--max-num-batched-tokens"
+      - "2048"
+      - "--max-num-seqs"
+      - "256"
 
 strategy_overrides:
   single_node_tp:
@@ -207,17 +223,21 @@ guide: |
 
   ### Intel Xeon 6 Deployment via Docker
 
-  Launch the x86 CPU vLLM Docker container, replacing `<MODEL>` with the desired Google Gemma 4 model:
+  Launch the x86 CPU vLLM Docker container for `google/gemma-4-E2B-it`:
 
   ```bash
   docker run -itd --name gemma4-cpu \
-    --network=host \
-    --shm-size 16G \
+    --network host \
+    --shm-size 16g \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     vllm/vllm-openai-cpu:latest-x86_64 \
-        --model <MODEL> \
-        --host 0.0.0.0 \
-        --port 8000
+      --model google/gemma-4-E2B-it \
+      --dtype bfloat16 \
+      --distributed-executor-backend mp \
+      --max-num-batched-tokens 2048 \
+      --max-num-seqs 256 \
+      --host 0.0.0.0 \
+      --port 8000
   ```
 
 
