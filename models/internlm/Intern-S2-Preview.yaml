@@ -2,7 +2,7 @@ meta:
   title: "Intern-S2-Preview"
   slug: "intern-s2-preview"
   provider: "InternLM"
-  description: "Scientific multimodal MoE (36B total / 3B active) continued pre-trained from Qwen3.5 — hybrid linear/full attention, 262K context, MTP-accelerated reasoning"
+  description: "Scientific multimodal MoE (36B total / 3B active) continued pre-trained from Qwen3.5 — hybrid linear/full attention, 262K context, MTP-accelerated reasoning. BF16 and FP8 checkpoints."
   date_updated: 2026-05-15
   difficulty: intermediate
   tasks:
@@ -12,6 +12,9 @@ meta:
   related_recipes:
     - "internlm/Intern-S1"
     - "Qwen/Qwen3.5-35B-A3B"
+  hardware:
+    h200: verified
+    gb200: verified
 
 model:
   model_id: "internlm/Intern-S2-Preview"
@@ -61,6 +64,11 @@ variants:
     precision: bf16
     vram_minimum_gb: 87
     description: "BF16 on 1x H200 or 2x H100/H800 (deployment guide uses TP=2)"
+  fp8:
+    model_id: "internlm/Intern-S2-Preview-FP8"
+    precision: fp8
+    vram_minimum_gb: 44
+    description: "Official DeepSeek-style block FP8 (128x128, ue8m0 scales) — fits on a single H100/H200"
 
 compatible_strategies:
   - single_node_tp
@@ -91,7 +99,8 @@ guide: |
   - **vLLM version:** nightly build with `InternS2PreviewForConditionalGeneration`
     support ([PR #42705](https://github.com/vllm-project/vllm/pull/42705)). The
     architecture is not yet in any stable release.
-  - **Hardware:** 1x H200 (141 GB) or 2x H100/H800 (80 GB) for BF16
+  - **Hardware (BF16):** 1x H200 (141 GB) or 2x H100/H800 (80 GB)
+  - **Hardware (FP8):** single H100/H200
   - **Trust remote code:** required (custom modeling files ship in the repo)
 
   ### Install vLLM (nightly)
