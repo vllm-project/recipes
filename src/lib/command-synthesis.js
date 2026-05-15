@@ -251,7 +251,7 @@ export function computeDockerMeta(recipe, variant, hwProfile) {
   if (typeof override === "string") {
     if (brandKey === "nvidia") pinned = override;
   } else if (override && typeof override === "object") {
-    const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override;
+    const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override || "intel" in override;
     if (isBrandKeyed) {
       const brandValue = override[brandKey];
       if (typeof brandValue === "string") pinned = brandValue;

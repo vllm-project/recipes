@@ -65,7 +65,7 @@ function resolveDockerImage(recipe, baseCuda) {
   if (typeof override !== "object") return DEFAULT_IMAGE;
 
   const isCudaMap = (v) => v && typeof v === "object" && ("cu129" in v || "cu130" in v);
-  const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override;
+  const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override || "intel" in override;
 
   const pickFromCudaMap = (m) => m[baseCuda] || m.cu129 || m.cu130 || DEFAULT_IMAGE;
 

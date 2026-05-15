@@ -84,7 +84,7 @@ compatible_strategies:
   - multi_node_tp
 
 hardware_overrides:
-  intel:
+  cpu:
     extra_env:
       VLLM_CPU_KVCACHE_SPACE: "40"
       VLLM_CPU_SGL_KERNEL: "0"
@@ -229,6 +229,11 @@ guide: |
     --network host \
     --shm-size 16g \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e VLLM_CPU_KVCACHE_SPACE=40 \
+    -e VLLM_CPU_SGL_KERNEL=0 \
+    -e VLLM_CPU_ATTN_SPLIT_KV=0 \
+    -e VLLM_ENGINE_ITERATION_TIMEOUT_S=120 \
+    -e VLLM_RPC_TIMEOUT=100000
     vllm/vllm-openai-cpu:latest-x86_64 \
       --model google/gemma-4-E4B-it \
       --dtype bfloat16 \
