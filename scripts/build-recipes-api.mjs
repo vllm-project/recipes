@@ -263,7 +263,6 @@ function buildVariantRendering(recipe, variantKey, strategies, taxonomy) {
   recommended.strategy_spec = strategies[recommendedStrategy];
   recommended.hardware_profile = hwProfile;
 
-  const fitsSingle = fitsSingleNode(hwProfile, variant);
   const alternatives = {};
   for (const s of compatible) {
     if (s === recommendedStrategy) continue;
@@ -273,17 +272,8 @@ function buildVariantRendering(recipe, variantKey, strategies, taxonomy) {
       pdNodes = pickPdNodes(hwProfile, variant);
       if (pdNodes === "skip") continue;
       nc = 1;
-    } else if (s.startsWith("multi_node_")) {
-      // Skip multi-node alternatives when the variant fits on a single node —
-      // the recommended single-node form is already the right answer; emitting
-      // a 2-node command would imply TP=16 is needed when TP=8 suffices.
-      if (fitsSingle) continue;
-      nc = 2;
     } else {
-      // Skip single-node alternatives when the variant doesn't fit one node —
-      // the command would be syntactically valid but won't start.
-      if (!fitsSingle) continue;
-      nc = 1;
+      nc = s.startsWith("multi_node_") ? 2 : 1;
     }
     const feats = defaultFeaturesFor(recipe, hwId);
     const rendered = renderCommand(recipe, variantKey, s, hwId, nc, feats, strategies, taxonomy, pdNodes);
