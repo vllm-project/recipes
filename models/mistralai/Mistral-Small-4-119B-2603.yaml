@@ -69,6 +69,7 @@ variants:
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
+  - pd_cluster
 
 hardware_overrides:
   amd:
