@@ -20,6 +20,7 @@ import {
   pickDefaultHardware,
   recommendStrategy,
   fitsSingleNode,
+  pdFitsSingleNode,
   resolveCommand,
   computeDockerMeta,
   buildDockerRun,
@@ -139,25 +140,40 @@ function dockerize(command, argv, env, dockerMeta, port = 8000) {
   };
 }
 
+// Pick the per-role node count for a `pd_cluster` rendering.
+//   null   → co-located on a single node (variant fits the 2× PD VRAM budget)
+//   {prefill,decode} → one full node per role × N, derived from
+//                       ceil(variant.vram_minimum_gb / hwProfile.vram_gb)
+//   "skip" → would need >4 nodes per role; don't emit a fantasy cluster
+function pickPdNodes(hwProfile, variant) {
+  if (pdFitsSingleNode(hwProfile, variant)) return null;
+  const nodeVram = typeof hwProfile?.vram_gb === "number" ? hwProfile.vram_gb : 0;
+  const modelVram = variant?.vram_minimum_gb || 0;
+  if (nodeVram <= 0 || modelVram <= 0) return null;
+  const nodesPerRole = Math.ceil(modelVram / nodeVram);
+  if (nodesPerRole > 4) return "skip";
+  return { prefill: nodesPerRole, decode: nodesPerRole };
+}
+
 // Render one (recipe × variant × strategy × hardware × nodeCount) into the
 // public JSON shape — handles all three deploy_types (single_node, multi_node,
 // pd_cluster), snake_cases the keys, and attaches docker_run wrappers
 // alongside the pip-mode command/argv. The `features` argument controls
 // command synthesis but is intentionally NOT echoed back in the output —
 // agents read the actual args from `command`/`argv`.
-function renderCommand(recipe, strategy, hwId, nodeCount, features, strategies, taxonomy) {
+function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, strategies, taxonomy, pdNodes = null) {
   let result;
   try {
     result = resolveCommand(
-      recipe, "default", strategy, hwId, features, strategies, taxonomy, [], nodeCount, null
+      recipe, variantKey, strategy, hwId, features, strategies, taxonomy, [], nodeCount, pdNodes
     );
   } catch (e) {
-    console.warn(`  ⚠ command synthesis failed for ${recipe.hf_id} / ${strategy}: ${e.message}`);
+    console.warn(`  ⚠ command synthesis failed for ${recipe.hf_id} / ${variantKey} / ${strategy}: ${e.message}`);
     return null;
   }
   if (!result) return null;
 
-  const variant = recipe.variants?.default || {};
+  const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
   const dockerMeta = computeDockerMeta(recipe, variant, hwProfile);
   const env = result.env || {};
@@ -165,7 +181,7 @@ function renderCommand(recipe, strategy, hwId, nodeCount, features, strategies, 
   const base = {
     hardware: hwId,
     strategy,
-    variant: "default",
+    variant: variantKey,
     node_count: nodeCount,
     deploy_type: result.deployType,
     env,
@@ -213,16 +229,14 @@ function renderCommand(recipe, strategy, hwId, nodeCount, features, strategies, 
   };
 }
 
-// Build the canonical "recommended" rendering for an agent: default variant,
-// preferred hardware, recipe's default strategy (or recommendStrategy fallback),
-// and YAML-default feature set. Inlines the strategy/hardware spec used by the
+// Build the canonical "recommended" rendering plus per-strategy alternatives
+// for one variant of a recipe. Inlines the strategy/hardware spec used by the
 // recommended choice so agents don't need to fetch /strategies/<id>.json or
-// /taxonomy.json. Returns:
-//   { recommended, alternatives: { <strategy>: <rendered> } }
+// /taxonomy.json. Returns { recommended, alternatives: { <strategy>: <rendered> } }
 // where the caller writes each alternative to its own file and replaces it
-// with a path link in the recipe JSON. Null for omni recipes.
-function buildRecommendedCommand(recipe, strategies, taxonomy) {
-  const variant = recipe.variants?.default;
+// with a path link. Null for omni recipes or unknown variants.
+function buildVariantRendering(recipe, variantKey, strategies, taxonomy) {
+  const variant = recipe.variants?.[variantKey];
   if (!variant) return null;
   if ((recipe.meta?.tasks || []).includes("omni")) return null;
 
@@ -234,8 +248,15 @@ function buildRecommendedCommand(recipe, strategies, taxonomy) {
   const recommendedStrategy = recommendStrategy(recipe, hwProfile, recommendedNodeCount);
   const recommendedFeatures = defaultFeaturesFor(recipe, hwId);
 
+  // PD's node-count is independent of nodeCount — it lives in pdNodes per role.
+  const recommendedPdNodes = recommendedStrategy === "pd_cluster"
+    ? pickPdNodes(hwProfile, variant)
+    : null;
+  if (recommendedPdNodes === "skip") return null;
+
   const recommended = renderCommand(
-    recipe, recommendedStrategy, hwId, recommendedNodeCount, recommendedFeatures, strategies, taxonomy
+    recipe, variantKey, recommendedStrategy, hwId, recommendedNodeCount,
+    recommendedFeatures, strategies, taxonomy, recommendedPdNodes
   );
   if (!recommended) return null;
 
@@ -245,9 +266,17 @@ function buildRecommendedCommand(recipe, strategies, taxonomy) {
   const alternatives = {};
   for (const s of compatible) {
     if (s === recommendedStrategy) continue;
-    const nc = s.startsWith("multi_node_") ? 2 : 1;
+    let nc;
+    let pdNodes = null;
+    if (s === "pd_cluster") {
+      pdNodes = pickPdNodes(hwProfile, variant);
+      if (pdNodes === "skip") continue;
+      nc = 1;
+    } else {
+      nc = s.startsWith("multi_node_") ? 2 : 1;
+    }
     const feats = defaultFeaturesFor(recipe, hwId);
-    const rendered = renderCommand(recipe, s, hwId, nc, feats, strategies, taxonomy);
+    const rendered = renderCommand(recipe, variantKey, s, hwId, nc, feats, strategies, taxonomy, pdNodes);
     if (rendered) alternatives[s] = rendered;
   }
   return { recommended, alternatives };
@@ -283,7 +312,57 @@ writeJson("strategies.json", strategies);
 
 // ── Recipes ── (walks models/<hf_org>/<hf_repo>.yaml)
 const modelsDir = path.join(ROOT, "models");
+
+// Pre-scan: collect every recipe's hf_id so variant-promotion can detect
+// collisions with standalone YAMLs (e.g. inclusionAI/Ring-1T-FP8.yaml exists
+// as its own recipe, so a sibling recipe must not also promote a "Ring-1T-FP8"
+// variant).
+const allRecipeHfIds = new Set();
+for (const file of findYamlFiles(modelsDir)) {
+  const rel = path.relative(modelsDir, file);
+  const parts = rel.split(path.sep);
+  if (parts.length >= 2) {
+    const org = parts[0];
+    const repo = parts[parts.length - 1].replace(/\.(yaml|yml)$/, "");
+    allRecipeHfIds.add(`${org}/${repo}`);
+  }
+}
+
+// Write the public recipe JSON (parent or promoted) with HEAD_KEYS ordering.
+function writeRecipeJson(hfId, payload) {
+  const HEAD_KEYS = ["hf_id", "meta", "recommended_command"];
+  const ordered = {};
+  for (const k of HEAD_KEYS) if (k in payload) ordered[k] = payload[k];
+  for (const [k, v] of Object.entries(payload)) if (!HEAD_KEYS.includes(k)) ordered[k] = v;
+  writeJson(`${hfId}.json`, ordered);
+  return ordered;
+}
+
+// Render one variant's recommended_command + alternatives and write the
+// per-strategy alternative files; returns the recommended_command (with
+// `alternatives` populated as path strings) or null if the variant can't be
+// rendered. `altBaseHfId` controls the directory the alternative files land in
+// — for the parent variant it's the parent's hf_id; for a promoted variant
+// it's the variant's own model_id.
+function renderAndWriteVariant(recipe, variantKey, altBaseHfId, strategies, taxonomy) {
+  const built = buildVariantRendering(recipe, variantKey, strategies, taxonomy);
+  if (!built) return null;
+  const { recommended, alternatives } = built;
+  const altLinks = {};
+  for (const [s, rendered] of Object.entries(alternatives)) {
+    const altPath = `${altBaseHfId}/strategies/${s}.json`;
+    writeJson(altPath, rendered);
+    altLinks[s] = `/${altPath}`;
+  }
+  if (Object.keys(altLinks).length) recommended.alternatives = altLinks;
+  return recommended;
+}
+
 const recipes = [];
+const promotedIndexEntries = [];
+let promotedCount = 0;
+let collisionCount = 0;
+
 for (const file of findYamlFiles(modelsDir)) {
   const r = normalizeDates(readYaml(file));
   // Derive HF identity from path. Only `hf_id` is exposed in the public JSON;
@@ -310,53 +389,102 @@ for (const file of findYamlFiles(modelsDir)) {
     r.model = { install };
   }
   delete r.dependencies;
-  // Pre-render the canonical deploy command so agents don't have to reimplement
-  // command-synthesis. Mirrors the website's default selections.
-  const built = buildRecommendedCommand(r, strategies, taxonomy);
-  if (built) {
-    const { recommended, alternatives } = built;
-    // Write each alternative to its own file under /<hf_id>/strategies/<s>.json
-    // so the recipe JSON stays slim. The recipe links to them by path.
-    const altLinks = {};
-    for (const [s, rendered] of Object.entries(alternatives)) {
-      const altPath = `${hfOrg}/${hfRepo}/strategies/${s}.json`;
-      writeJson(altPath, rendered);
-      altLinks[s] = `/${altPath}`;
+  // Pre-render the canonical deploy command (default variant) so agents don't
+  // have to reimplement command-synthesis. Mirrors the website's default
+  // selections.
+  const parentHfId = `${hfOrg}/${hfRepo}`;
+  const defaultRecommended = renderAndWriteVariant(r, "default", parentHfId, strategies, taxonomy);
+  if (defaultRecommended) r.recommended_command = defaultRecommended;
+
+  // Promote each non-default variant whose `model_id` points at a distinct HF
+  // repo to its own top-level JSON endpoint, mirroring the HF URL convention.
+  // Renderings for promoted variants are gathered here and written after the
+  // parent JSON so we can store `json:` pointers in parent.variants.<v>.
+  const promotedRenderings = [];  // { variantKey, variantHfId, recommended }
+  for (const [variantKey, variantCfg] of Object.entries(r.variants || {})) {
+    if (variantKey === "default") continue;
+    const variantModelId = variantCfg?.model_id;
+    if (!variantModelId || typeof variantModelId !== "string" || !variantModelId.includes("/")) continue;
+    if (allRecipeHfIds.has(variantModelId)) {
+      // A standalone recipe at models/<variantModelId>.yaml exists — let it win.
+      console.warn(`  ⚠ skipping variant promotion: ${variantModelId} (variant of ${parentHfId}) collides with standalone recipe`);
+      collisionCount++;
+      continue;
     }
-    if (Object.keys(altLinks).length) recommended.alternatives = altLinks;
-    r.recommended_command = recommended;
+    const variantRecommended = renderAndWriteVariant(r, variantKey, variantModelId, strategies, taxonomy);
+    if (!variantRecommended) continue;
+    promotedRenderings.push({ variantKey, variantModelId, recommended: variantRecommended });
   }
+
+  // Annotate parent variants with `json:` pointers so consumers can navigate.
+  if (r.variants) {
+    for (const { variantKey, variantModelId } of promotedRenderings) {
+      r.variants[variantKey] = { ...r.variants[variantKey], json: `/${variantModelId}.json` };
+    }
+  }
+
   // strategy_overrides, compatible_strategies, default_strategy are synthesis
   // inputs whose effects are already baked into recommended_command + the
   // per-strategy alternative files (whose keys are the compatible_strategies
-  // set; the recommended one comes from default_strategy). Drop AFTER
-  // synthesis runs — buildRecommendedCommand reads them. The YAML on GitHub
-  // is the source of truth for anyone re-synthesizing.
+  // set; the recommended one comes from default_strategy). Drop AFTER all
+  // renderings (parent + promoted) have run — buildVariantRendering reads
+  // them. The YAML on GitHub is the source of truth for anyone re-synthesizing.
   delete r.strategy_overrides;
   delete r.compatible_strategies;
   delete r.default_strategy;
-  // Build the output object with `recommended_command` near the top — agents
-  // hit it before scrolling past the YAML body. Order: identity → headline →
-  // details → guide.
-  const HEAD_KEYS = ["hf_id", "meta", "recommended_command"];
-  const out = {};
-  for (const k of HEAD_KEYS) if (k in r) out[k] = r[k];
-  for (const [k, v] of Object.entries(r)) if (!HEAD_KEYS.includes(k)) out[k] = v;
+  // JSON at /<org>/<repo>.json — mirrors HF URL scheme.
+  const out = writeRecipeJson(parentHfId, r);
   recipes.push(out);
-  // JSON at /<org>/<repo>.json — mirrors HF URL scheme
-  writeJson(`${hfOrg}/${hfRepo}.json`, out);
+
+  // Now write the promoted-variant JSONs. Each is a self-contained recipe
+  // shape with hf_id / model.model_id rewritten and `variants.default` set to
+  // the variant's config (model_id stripped — it's at top-level now). The
+  // sibling-variant info is lost on purpose; consumers can follow
+  // `meta.derived_from` back to the parent for the full family view.
+  for (const { variantKey, variantModelId, recommended } of promotedRenderings) {
+    const variantCfg = r.variants?.[variantKey] || {};
+    const { model_id: _vMid, json: _vJson, ...variantCore } = variantCfg;
+    const promoted = {
+      ...r,  // share meta/features/guide/etc. with the parent
+      hf_id: variantModelId,
+      meta: { ...r.meta, derived_from: parentHfId, variant: variantKey },
+      model: { ...r.model, model_id: variantModelId },
+      variants: { default: variantCore },
+      recommended_command: recommended,
+    };
+    writeRecipeJson(variantModelId, promoted);
+    promotedIndexEntries.push({
+      hf_id: variantModelId,
+      title: promoted.meta?.title,
+      provider: promoted.meta?.provider,
+      derived_from: parentHfId,
+    });
+    promotedCount++;
+  }
 }
 
 // /models.json — slim discovery index (~5 KB). For agents that want to
 // enumerate recipes and follow links; per-recipe data lives at
-// `/<hf_id>.json` (the `json` pointer below).
-const index = recipes.map((r) => ({
-  hf_id: r.hf_id,
-  title: r.meta.title,
-  provider: r.meta.provider,
-  url: `/${r.hf_id}`,
-  json: `/${r.hf_id}.json`,
-}));
+// `/<hf_id>.json` (the `json` pointer below). Promoted variants (e.g.
+// zai-org/GLM-5.1-FP8) appear alongside parents so consumers can discover
+// them directly.
+const index = [
+  ...recipes.map((r) => ({
+    hf_id: r.hf_id,
+    title: r.meta.title,
+    provider: r.meta.provider,
+    url: `/${r.hf_id}`,
+    json: `/${r.hf_id}.json`,
+  })),
+  ...promotedIndexEntries.map((e) => ({
+    hf_id: e.hf_id,
+    title: e.title,
+    provider: e.provider,
+    url: `/${e.derived_from}`,  // site route — variant lives under the parent page
+    json: `/${e.hf_id}.json`,
+    derived_from: e.derived_from,
+  })),
+];
 writeJson("models.json", index);
 
 // ── Quickstart ──
@@ -373,10 +501,12 @@ const altCount = recipes.reduce(
   (n, r) => n + Object.keys(r.recommended_command?.alternatives || {}).length, 0
 );
 console.log(
-  `✓ JSON API: ${recipes.length} models (${rcCount} with recommended_command, ${altCount} alternative renderings), ${Object.keys(strategies).length} strategies`
+  `✓ JSON API: ${recipes.length} models (${rcCount} with recommended_command, ${altCount} alternative renderings), ${promotedCount} promoted variants, ${Object.keys(strategies).length} strategies` +
+  (collisionCount ? ` (${collisionCount} variant collision${collisionCount > 1 ? "s" : ""} skipped)` : "")
 );
 console.log(`  /models.json`);
 console.log(`  /{hf_id}.json                       (e.g. /moonshotai/Kimi-K2.5.json)`);
 console.log(`  /{hf_id}/strategies/{strategy}.json (alternative renderings)`);
+console.log(`  /{variant_hf_id}.json               (promoted variants, e.g. /zai-org/GLM-5.1-FP8.json)`);
 console.log(`  /strategies.json`);
 console.log(`  /taxonomy.json`);
