@@ -15,12 +15,7 @@ meta:
 
 model:
   model_id: "XiaomiMiMo/MiMo-V2.5"
-  min_vllm_version: "nightly"
-  docker_image:
-    cu129: "vllm/vllm-openai:mimov25-cu129"
-    cu130: "vllm/vllm-openai:mimov25-cu130"
-  install:
-    pip: false
+  min_vllm_version: "0.21.0"
   architecture: moe
   parameter_count: "311B"
   active_parameters: "15B"

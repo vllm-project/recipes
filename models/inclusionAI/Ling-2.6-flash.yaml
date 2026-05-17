@@ -16,8 +16,6 @@ meta:
 model:
   model_id: "inclusionAI/Ling-2.6-flash"
   min_vllm_version: "0.20.2"
-  docker_image:
-    amd: "vllm/vllm-openai-rocm:v0.20.2"
   architecture: moe
   parameter_count: "104B"
   active_parameters: "7.4B"

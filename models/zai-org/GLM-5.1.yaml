@@ -15,7 +15,6 @@ meta:
 model:
   model_id: "zai-org/GLM-5.1"
   min_vllm_version: "0.19.1"
-  docker_image: "vllm/vllm-openai:latest"
   architecture: moe
   parameter_count: "744B"
   active_parameters: "40B"

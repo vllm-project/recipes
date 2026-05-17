@@ -17,8 +17,6 @@ meta:
 model:
   model_id: "inclusionAI/Ling-2.6-1T"
   min_vllm_version: "0.20.2"
-  docker_image:
-    amd: "vllm/vllm-openai-rocm:v0.20.2"
   architecture: moe
   parameter_count: "1T"
   active_parameters: "50B"

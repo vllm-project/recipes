@@ -15,7 +15,6 @@ meta:
 model:
   model_id: "poolside/Laguna-XS.2"
   min_vllm_version: "nightly"
-  docker_image: "vllm/vllm-openai:laguna"
   nightly_required: true
   architecture: moe
   parameter_count: "33B"
