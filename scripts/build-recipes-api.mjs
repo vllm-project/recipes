@@ -3,12 +3,15 @@
  * writes static JSON files for the API.
  *
  * API URLs (friendly, no /api/ prefix):
- *   /models.json                    — all recipes index
- *   /{hf_id}.json                   — single recipe (e.g. /deepseek-ai/DeepSeek-V3.2.json)
- *   /strategies.json                — all strategies
- *   /strategies/single_node_tp.json — single strategy
- *   /taxonomy.json                  — controlled vocabulary
- *   /quickstart/8x-h100.json       — hardware quickstart
+ *   /models.json                                — all recipes index
+ *   /{hf_id}.json                               — single recipe (default-hw rendering)
+ *   /{hf_id}/strategies/{strategy}.json         — default-hw alternative (per strategy)
+ *   /{hf_id}/hw/{hw}.json                       — per-hardware rendering
+ *   /{hf_id}/hw/{hw}/strategies/{strategy}.json — per-(hw, strategy) alternative
+ *   /strategies.json                            — all strategies
+ *   /strategies/{strategy}.json                 — single strategy spec
+ *   /taxonomy.json                              — controlled vocabulary
+ *   /quickstart/8x-h100.json                    — hardware quickstart
  *
  * Run: node scripts/build-recipes-api.mjs
  */
@@ -18,6 +21,7 @@ import path from "path";
 import yaml from "js-yaml";
 import {
   pickDefaultHardware,
+  listCompatibleHardware,
   recommendStrategy,
   fitsSingleNode,
   pdFitsSingleNode,
@@ -230,17 +234,17 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
 }
 
 // Build the canonical "recommended" rendering plus per-strategy alternatives
-// for one variant of a recipe. Inlines the strategy/hardware spec used by the
-// recommended choice so agents don't need to fetch /strategies/<id>.json or
-// /taxonomy.json. Returns { recommended, alternatives: { <strategy>: <rendered> } }
-// where the caller writes each alternative to its own file and replaces it
-// with a path link. Null for omni recipes or unknown variants.
-function buildVariantRendering(recipe, variantKey, strategies, taxonomy) {
+// for one variant of a recipe ON A SPECIFIC HARDWARE. Inlines the strategy/
+// hardware spec used by the recommended choice so agents don't need to fetch
+// /strategies/<id>.json or /taxonomy.json. Returns
+// { recommended, alternatives: { <strategy>: <rendered> } } where the caller
+// writes each alternative to its own file and replaces it with a path link.
+// Null for omni recipes or unknown variants.
+function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
   const variant = recipe.variants?.[variantKey];
   if (!variant) return null;
   if ((recipe.meta?.tasks || []).includes("omni")) return null;
 
-  const hwId = pickDefaultHardware(taxonomy.hardware_profiles || {}, variant, recipe);
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
   const compatible = recipe.compatible_strategies || [];
   const supportsMultiNode = compatible.some((s) => s.startsWith("multi_node_"));
@@ -338,24 +342,64 @@ function writeRecipeJson(hfId, payload) {
   return ordered;
 }
 
-// Render one variant's recommended_command + alternatives and write the
-// per-strategy alternative files; returns the recommended_command (with
-// `alternatives` populated as path strings) or null if the variant can't be
-// rendered. `altBaseHfId` controls the directory the alternative files land in
-// — for the parent variant it's the parent's hf_id; for a promoted variant
-// it's the variant's own model_id.
+// Render one variant's full hardware × strategy matrix and write all the
+// per-resource JSON files. Returns the parent's `recommended_command` object
+// (the default-hardware rendering with `alternatives` path map + `by_hardware`
+// path map) or null if the variant can't be rendered on its default hardware.
+//
+// `altBaseHfId` is the base directory for written files — the parent recipe's
+// hf_id, or a promoted variant's hf_id (e.g. zai-org/GLM-5.1-FP8). Output:
+//
+//   /<base>.json                          (parent — written by caller)
+//   /<base>/strategies/<s>.json           (default-hw alternatives — legacy path)
+//   /<base>/hw/<hw>.json                  (per-hw recommended + alternatives index)
+//   /<base>/hw/<hw>/strategies/<s>.json   (per-(hw, strategy) — non-default hw only)
+//
+// The default-hw entry in `by_hardware` re-uses the legacy `/strategies/`
+// paths to avoid duplicating identical files; non-default hw entries each get
+// their own `/hw/<hw>/strategies/` subtree.
 function renderAndWriteVariant(recipe, variantKey, altBaseHfId, strategies, taxonomy) {
-  const built = buildVariantRendering(recipe, variantKey, strategies, taxonomy);
-  if (!built) return null;
-  const { recommended, alternatives } = built;
-  const altLinks = {};
-  for (const [s, rendered] of Object.entries(alternatives)) {
-    const altPath = `${altBaseHfId}/strategies/${s}.json`;
-    writeJson(altPath, rendered);
-    altLinks[s] = `/${altPath}`;
+  const variant = recipe.variants?.[variantKey];
+  if (!variant) return null;
+  if ((recipe.meta?.tasks || []).includes("omni")) return null;
+
+  const hwProfiles = taxonomy.hardware_profiles || {};
+  const defaultHw = pickDefaultHardware(hwProfiles, variant, recipe);
+  const compatibleHw = listCompatibleHardware(hwProfiles, variant, recipe);
+  // Ensure default is first; de-dupe.
+  const hwIds = Array.from(new Set([defaultHw, ...compatibleHw]));
+
+  // Render every (variant × hardware) combo up front.
+  const renderedByHw = {};
+  for (const hwId of hwIds) {
+    const built = buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy);
+    if (built) renderedByHw[hwId] = built;
   }
-  if (Object.keys(altLinks).length) recommended.alternatives = altLinks;
-  return recommended;
+  if (!renderedByHw[defaultHw]) return null;
+
+  const byHardware = {};
+  for (const [hwId, { recommended, alternatives }] of Object.entries(renderedByHw)) {
+    const isDefault = hwId === defaultHw;
+    const stratDir = isDefault
+      ? `${altBaseHfId}/strategies`
+      : `${altBaseHfId}/hw/${hwId}/strategies`;
+    const altLinks = {};
+    for (const [s, rendered] of Object.entries(alternatives)) {
+      const altPath = `${stratDir}/${s}.json`;
+      writeJson(altPath, rendered);
+      altLinks[s] = `/${altPath}`;
+    }
+    if (Object.keys(altLinks).length) recommended.alternatives = altLinks;
+
+    const hwPath = `${altBaseHfId}/hw/${hwId}.json`;
+    writeJson(hwPath, recommended);
+    byHardware[hwId] = `/${hwPath}`;
+  }
+
+  // Parent's recommended_command = default-hw rendering + by_hardware index.
+  // Shallow clone so the on-disk per-hw default file stays clean of the index.
+  const defaultRecommended = { ...renderedByHw[defaultHw].recommended, by_hardware: byHardware };
+  return defaultRecommended;
 }
 
 const recipes = [];
@@ -500,13 +544,18 @@ const rcCount = recipes.filter((r) => r.recommended_command).length;
 const altCount = recipes.reduce(
   (n, r) => n + Object.keys(r.recommended_command?.alternatives || {}).length, 0
 );
+const hwIndexedCount = recipes.reduce(
+  (n, r) => n + Object.keys(r.recommended_command?.by_hardware || {}).length, 0
+);
 console.log(
-  `✓ JSON API: ${recipes.length} models (${rcCount} with recommended_command, ${altCount} alternative renderings), ${promotedCount} promoted variants, ${Object.keys(strategies).length} strategies` +
+  `✓ JSON API: ${recipes.length} models (${rcCount} with recommended_command, ${altCount} default-hw alternatives, ${hwIndexedCount} per-hw renderings), ${promotedCount} promoted variants, ${Object.keys(strategies).length} strategies` +
   (collisionCount ? ` (${collisionCount} variant collision${collisionCount > 1 ? "s" : ""} skipped)` : "")
 );
 console.log(`  /models.json`);
-console.log(`  /{hf_id}.json                       (e.g. /moonshotai/Kimi-K2.5.json)`);
-console.log(`  /{hf_id}/strategies/{strategy}.json (alternative renderings)`);
-console.log(`  /{variant_hf_id}.json               (promoted variants, e.g. /zai-org/GLM-5.1-FP8.json)`);
+console.log(`  /{hf_id}.json                                (e.g. /moonshotai/Kimi-K2.5.json)`);
+console.log(`  /{hf_id}/strategies/{strategy}.json          (default-hw alternatives)`);
+console.log(`  /{hf_id}/hw/{hw}.json                        (per-hardware rendering)`);
+console.log(`  /{hf_id}/hw/{hw}/strategies/{strategy}.json  (per-(hw, strategy) alternatives)`);
+console.log(`  /{variant_hf_id}.json                        (promoted variants, e.g. /zai-org/GLM-5.1-FP8.json)`);
 console.log(`  /strategies.json`);
 console.log(`  /taxonomy.json`);
