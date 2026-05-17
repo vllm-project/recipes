@@ -365,7 +365,12 @@ function renderAndWriteVariant(recipe, variantKey, altBaseHfId, strategies, taxo
 
   const hwProfiles = taxonomy.hardware_profiles || {};
   const defaultHw = pickDefaultHardware(hwProfiles, variant, recipe);
-  const compatibleHw = listCompatibleHardware(hwProfiles, variant, recipe);
+  // Mirror the UI rule: `restricted` profiles (TPU, etc.) only surface for
+  // recipes that explicitly opt in via `meta.hardware.<id>`. Otherwise we'd
+  // emit speculative TPU commands for every NVIDIA recipe.
+  const declaredHw = recipe.meta?.hardware || {};
+  const compatibleHw = listCompatibleHardware(hwProfiles, variant, recipe)
+    .filter((id) => !hwProfiles[id]?.restricted || id in declaredHw);
   // Ensure default is first; de-dupe.
   const hwIds = Array.from(new Set([defaultHw, ...compatibleHw]));
 
