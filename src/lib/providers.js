@@ -28,6 +28,7 @@ export const PROVIDERS = {
   "internlm":        { display_name: "InternLM",                logo: "/providers/internlm.png" },
   "jinaai":          { display_name: "Jina AI",                 logo: "/providers/jinaai.png" },
   "PaddlePaddle":    { display_name: "PaddlePaddle",            logo: "/providers/PaddlePaddle.png" },
+  "pfnet":           { display_name: "Preferred Networks",       logo: "/providers/pfnet.png" },
   "ByteDance-Seed":  { display_name: "Seed (ByteDance)",        logo: "/providers/ByteDance-Seed.png" },
   "tencent":         { display_name: "Tencent Hunyuan",         logo: "/providers/tencent.png" },
   "XiaomiMiMo":      { display_name: "Xiaomi MiMo",             logo: "/providers/XiaomiMiMo.jpeg" },
