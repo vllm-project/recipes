@@ -82,7 +82,14 @@ compatible_strategies:
 
 hardware_overrides: {}
 
-strategy_overrides: {}
+strategy_overrides:
+  pd_cluster:
+    prefill:
+      env:
+        VLLM_SSM_CONV_STATE_LAYOUT: "DS"
+    decode:
+      env:
+        VLLM_SSM_CONV_STATE_LAYOUT: "DS"
 
 guide: |
   ## Overview

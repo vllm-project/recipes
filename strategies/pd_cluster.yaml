@@ -45,11 +45,6 @@ decode:
     - "--compilation-config"
     - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
   env:
-    VLLM_USE_NCCL_SYMM_MEM: "1"
-    NCCL_CUMEM_ENABLE: "1"
-    NCCL_MNNVL_ENABLE: "1"
-    NCCL_NVLS_ENABLE: "1"
-    UCX_NET_DEVICES: "all"
     VLLM_NIXL_SIDE_CHANNEL_PORT: "5558"
     # Same per-node binding pattern as prefill above.
     VLLM_NIXL_SIDE_CHANNEL_HOST: "$DECODE_NODE_1"
