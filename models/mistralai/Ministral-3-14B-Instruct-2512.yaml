@@ -3,7 +3,7 @@ meta:
   slug: "ministral-3-instruct"
   provider: "Mistral AI"
   description: "Ministral 3 Instruct family (3B/8B/14B) with FP8 weights, vision support, and 256K context"
-  date_updated: 2026-04-17
+  date_updated: 2026-05-19
   difficulty: beginner
   tasks:
     - multimodal
@@ -12,6 +12,7 @@ meta:
     - mistralai/Mistral-Large-3-675B-Instruct-2512
   hardware:
     h200: verified
+    mi300x: verified
 
 model:
   model_id: "mistralai/Ministral-3-14B-Instruct-2512"
