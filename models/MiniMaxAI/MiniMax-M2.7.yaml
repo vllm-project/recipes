@@ -19,8 +19,6 @@ meta:
 model:
   model_id: "MiniMaxAI/MiniMax-M2.7"
   min_vllm_version: "0.20.0"
-  nightly_required: true
-  docker_image: "vllm/vllm-openai:minimax27"
   architecture: moe
   parameter_count: "230B"
   active_parameters: "10B"
@@ -51,6 +49,16 @@ variants:
     precision: fp8
     vram_minimum_gb: 276
     description: "Native FP8 checkpoint — 4x H200/H20/H100 or 4x A100/A800 for weights, plus KV cache headroom"
+  nvfp4:
+    model_id: "nvidia/MiniMax-M2.7-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 138
+    description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+    extra_env:
+      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
 compatible_strategies:
   - single_node_tp
@@ -60,10 +68,17 @@ compatible_strategies:
   - multi_node_tp_pp
   - multi_node_tep
   - multi_node_dep
+  - pd_cluster
 
 hardware_overrides: {}
 
-strategy_overrides: {}
+strategy_overrides:
+  single_node_tp:
+    # Pure TP=8 fails on the FP8 block-quantized gate_up weights:
+    # intermediate_size / 8 = 192 is not divisible by block_n = 128.
+    # Pin TP=4 on 8-GPU nodes; for full-node utilization use
+    # single_node_tep (TP+EP) or single_node_dep (DP+EP).
+    tp: 4
 
 guide: |
   ## Overview
@@ -81,18 +96,7 @@ guide: |
   - **NVIDIA:** compute capability >= 7.0; ~220 GB for weights + 240 GB per 1M context tokens
   - **AMD:** MI300X / MI325X / MI350X / MI355X with ROCm 7.0+
 
-  ### Install vLLM (NVIDIA, verified commit)
-
-  ```bash
-  uv venv
-  source .venv/bin/activate
-  export VLLM_COMMIT=0f3ce4c74b1875791d6604e006b6e905fde9f698
-  uv pip install vllm \
-      --torch-backend=auto \
-      --extra-index-url https://wheels.vllm.ai/${VLLM_COMMIT}
-  ```
-
-  ### Install vLLM (NVIDIA, nightly)
+  ### Install vLLM (NVIDIA)
 
   ```bash
   uv pip install -U vllm --extra-index-url https://wheels.vllm.ai/nightly

@@ -1,6 +1,7 @@
 name: single_node_tp
 deploy_type: single_node
 display_name: "Tensor Parallel"
+orientation: latency
 description: >
   Single-node tensor parallel. Splits the model across all local GPUs.
   TP size is set to the GPU count at deploy time.

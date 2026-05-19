@@ -16,7 +16,6 @@ meta:
 model:
   model_id: "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16"
   min_vllm_version: "0.11.1"
-  docker_image: "vllm/vllm-openai:nightly-8bff831f0aa239006f34b721e63e1340e3472067"
   architecture: dense
   parameter_count: "12B"
   active_parameters: "12B"

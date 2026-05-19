@@ -84,6 +84,7 @@ compatible_strategies:
   - multi_node_tp_pp
   - multi_node_dep
   - multi_node_tep
+  - pd_cluster
 
 hardware_overrides: {}
 

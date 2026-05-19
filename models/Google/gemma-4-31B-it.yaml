@@ -3,7 +3,7 @@ meta:
   slug: "gemma-4-31b-it"
   provider: "Google"
   description: "Google's unified multimodal Gemma 4 dense model (31B) with native text, image, and audio, plus thinking mode and tool-use protocol."
-  date_updated: 2026-04-17
+  date_updated: 2026-05-11
   difficulty: intermediate
   tasks:
     - multimodal
@@ -21,9 +21,6 @@ meta:
 model:
   model_id: "google/gemma-4-31B-it"
   min_vllm_version: "0.19.1"
-  docker_image:
-    nvidia: "vllm/vllm-openai:gemma4"
-    amd: "vllm/vllm-openai-rocm:gemma4"
   architecture: dense
   parameter_count: "31B"
   active_parameters: "31B"
@@ -54,15 +51,29 @@ features:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
       - "--language-model-only"
+  spec_decoding:
+    description: "MTP speculative decoding for accelerated inference"
+    args:
+      - "--speculative-config"
+      - '{"model":"google/gemma-4-31B-it-assistant","num_speculative_tokens":4}'
 
 opt_in_features:
   - text_only
+  - spec_decoding
 
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 210
+    vram_minimum_gb: 75
     description: "Full BF16 — single 80 GB NVIDIA GPU or 1x MI300X/MI325X/MI350X/MI355X"
+  fp8:
+    model_id: "RedHatAI/gemma-4-31B-it-FP8-dynamic"
+    precision: fp8
+    vram_minimum_gb: 38
+    description: "FP8 (E4M3) linear weights with dynamic per-token activation quantization (vision tower stays BF16) — Hopper or Blackwell"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
   nvfp4:
     model_id: "nvidia/gemma-4-31B-it-NVFP4"
     precision: nvfp4
@@ -130,9 +141,9 @@ guide: |
 
   ### Docker
   ```bash
-  docker pull vllm/vllm-openai:gemma4        # CUDA 12.9
-  docker pull vllm/vllm-openai:gemma4-cu130  # CUDA 13.0
-  docker pull vllm/vllm-openai-rocm:gemma4   # AMD
+  docker pull vllm/vllm-openai:gemma4-0505-cu129  # NVIDIA Hopper (H100/H200, CUDA 12.9)
+  docker pull vllm/vllm-openai:gemma4-0505-cu130  # NVIDIA Blackwell (B200/B300, CUDA 13.0)
+  docker pull vllm/vllm-openai-rocm:latest   # AMD
   ```
   TPU images are published separately by [vllm-project/tpu-inference](https://github.com/vllm-project/tpu-inference); see the Trillium / Ironwood tpu-recipes below for the pinned tag.
 
@@ -170,7 +181,7 @@ guide: |
     --reasoning-parser gemma4 \
     --tool-call-parser gemma4 \
     --chat-template examples/tool_chat_template_gemma4.jinja \
-    --limit-mm-per-prompt image=4,audio=1 \
+    --limit-mm-per-prompt '{"image": 4, "audio": 1}' \
     --async-scheduling \
     --host 0.0.0.0 \
     --port 8000
@@ -181,13 +192,14 @@ guide: |
   docker run -itd --name gemma4 \
     --ipc=host --network host --shm-size 16G --gpus all \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai:gemma4 \
+    vllm/vllm-openai:gemma4-0505-cu129 \
       --model google/gemma-4-31B-it \
       --tensor-parallel-size 2 \
       --max-model-len 32768 \
       --gpu-memory-utilization 0.90 \
       --host 0.0.0.0 --port 8000
   ```
+  Swap `vllm/vllm-openai:gemma4-0505-cu129` for `vllm/vllm-openai:gemma4-0505-cu130` on Blackwell (B200/B300).
 
   ### Docker (AMD MI300X/MI325X/MI350X/MI355X)
   ```bash
@@ -197,7 +209,7 @@ guide: |
     --group-add=video --cap-add=SYS_PTRACE \
     --security-opt=seccomp=unconfined --shm-size 16G \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-rocm:gemma4 \
+    vllm/vllm-openai-rocm:latest \
       --model google/gemma-4-31B-it \
       --host 0.0.0.0 --port 8000
   ```
@@ -254,7 +266,7 @@ guide: |
   ```bash
   vllm serve google/gemma-4-E2B-it \
     --max-model-len 8192 \
-    --limit-mm-per-prompt image=4,audio=1
+    --limit-mm-per-prompt '{"image": 4, "audio": 1}'
   ```
 
   ### Thinking Mode
@@ -275,10 +287,19 @@ guide: |
 
   - Set `--max-model-len` to match your workload.
   - `--gpu-memory-utilization 0.90–0.95` maximizes KV cache.
-  - Image-only workloads: pass `--limit-mm-per-prompt audio=0`.
-  - Text-only workloads: pass `--limit-mm-per-prompt image=0,audio=0` to skip MM profiling.
+  - Image-only workloads: pass `--limit-mm-per-prompt.audio 0`.
+  - Text-only workloads: pass `--limit-mm-per-prompt '{"image": 0, "audio": 0}'` to skip MM profiling.
   - `--async-scheduling` improves throughput.
   - FP8 KV cache (`--kv-cache-dtype fp8`) saves ~50% KV memory.
+
+  ## Quantized Variants
+
+  Two pre-quantized checkpoints are available:
+
+  - [`RedHatAI/gemma-4-31B-it-FP8-dynamic`](https://huggingface.co/RedHatAI/gemma-4-31B-it-FP8-dynamic) — FP8 (E4M3) linear weights with dynamic per-token activation quantization (vision tower stays BF16); runs on Hopper and Blackwell.
+  - [`nvidia/gemma-4-31B-it-NVFP4`](https://huggingface.co/nvidia/gemma-4-31B-it-NVFP4) — NVFP4 (4-bit) weights; requires Blackwell (B200/B300).
+
+  Pick them from the **Variant** dropdown above, or pass the repo id directly to `vllm serve`.
 
   ## Throughput vs Latency
 
@@ -298,9 +319,17 @@ guide: |
   modal run gemma4-modal.py
   ```
 
+  ## Speculative Decoding (MTP)
+
+  Enable the **Spec Decoding** feature toggle (above) or add `--speculative-config` manually to use MTP drafting with the [assistant model](https://huggingface.co/google/gemma-4-31B-it-assistant). Recommended `num_speculative_tokens`: 4–8 for this model. See the [Gemma 4 usage guide](../../Google/Gemma4) for details and benchmarks.
+
+  > **Note:** MTP speculative decoding for Gemma 4 is only available on the vLLM nightly build — it has not yet landed in a stable release. Install via the nightly wheel (`uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly/cu129 …`) or use the `vllm/vllm-openai:gemma4-0505-cu129` / `vllm/vllm-openai:gemma4-0505-cu130` images above; the standard `:latest` stable tag does not include this feature.
+
   ## References
 
   - [Model card](https://huggingface.co/google/gemma-4-31B-it)
+  - [FP8 variant](https://huggingface.co/RedHatAI/gemma-4-31B-it-FP8-dynamic)
+  - [NVFP4 variant](https://huggingface.co/nvidia/gemma-4-31B-it-NVFP4)
   - [Gemma docs](https://ai.google.dev/gemma/docs)
   - [vLLM Gemma 4 tool-call template](https://github.com/vllm-project/vllm/blob/main/examples/tool_chat_template_gemma4.jinja)
   - [TPU recipes: Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4)

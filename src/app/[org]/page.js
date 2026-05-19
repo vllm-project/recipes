@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getAllRecipes } from "@/lib/recipes";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
 import { recipeHref } from "@/lib/recipe-utils";
+import { siteUrl } from "@/lib/site-url";
 import { Badge } from "@/components/ui/badge";
 import { ExternalLink, Type, Eye, Sparkles, Cpu, Hash } from "lucide-react";
 
@@ -16,23 +17,26 @@ export async function generateMetadata({ params }) {
   const { org } = await params;
   const displayName = getProviderDisplayName(org);
   const count = getAllRecipes().filter((r) => r.hf_org === org).length;
-  const description = `vLLM recipes for ${displayName} models`;
+  const description = `vLLM serve recipes for ${displayName} models — ${count} recipe${count === 1 ? "" : "s"} with hardware-tuned commands.`;
   const ogUrl = `/og?title=${encodeURIComponent(displayName)}&subtitle=${encodeURIComponent(
     `${count} recipe${count === 1 ? "" : "s"}`
   )}&path=${encodeURIComponent(`/${org}`)}`;
+  // Page <title> "{displayName} on vLLM" + layout template " | vLLM Recipes"
+  // would double the brand. Use absolute and include the count for tab UX.
+  const titleText = `${displayName} on vLLM — ${count} recipe${count === 1 ? "" : "s"}`;
   return {
-    title: displayName,
+    title: { absolute: titleText },
     description,
     openGraph: {
       type: "website",
-      title: displayName,
+      title: titleText,
       description,
       url: `/${org}`,
       images: [{ url: ogUrl, width: 1200, height: 630, alt: displayName }],
     },
     twitter: {
       card: "summary_large_image",
-      title: displayName,
+      title: titleText,
       description,
       images: [ogUrl],
     },
@@ -81,8 +85,22 @@ export default async function OrgPage({ params }) {
     if (!TASK_ORDER.includes(t)) orderedGroups.push([t, groups[t]]);
   }
 
+  const breadcrumbLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "vLLM Recipes", item: siteUrl },
+      { "@type": "ListItem", position: 2, name: displayName, item: `${siteUrl}/${org}` },
+    ],
+  };
+
   return (
     <main className="py-8">
+      <script
+        type="application/ld+json"
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }}
+      />
       <header className="mb-8 flex items-center gap-4">
         {logo ? (
           // eslint-disable-next-line @next/next/no-img-element

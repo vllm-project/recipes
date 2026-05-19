@@ -49,6 +49,8 @@ variants:
     model_id: "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8"
     precision: fp8
     vram_minimum_gb: 576
+    # FP8 block_n=128 + moe_intermediate_size=2560 → TP must divide 20; cap at 4.
+    tp: 4
     description: "Qwen official FP8 checkpoint — required for DP=8 serving"
   nvfp4:
     model_id: "nvidia/Qwen3-Coder-480B-A35B-Instruct-NVFP4"

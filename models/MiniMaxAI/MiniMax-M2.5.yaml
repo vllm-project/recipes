@@ -18,7 +18,6 @@ meta:
 model:
   model_id: "MiniMaxAI/MiniMax-M2.5"
   min_vllm_version: "0.19.0"
-  docker_image: "vllm/vllm-openai:minimax27"
   architecture: moe
   parameter_count: "230B"
   active_parameters: "10B"
@@ -68,10 +67,17 @@ compatible_strategies:
   - multi_node_tp_pp
   - multi_node_tep
   - multi_node_dep
+  - pd_cluster
 
 hardware_overrides: {}
 
-strategy_overrides: {}
+strategy_overrides:
+  single_node_tp:
+    # Pure TP=8 fails on the FP8 block-quantized gate_up weights:
+    # intermediate_size / 8 = 192 is not divisible by block_n = 128.
+    # Pin TP=4 on 8-GPU nodes; for full-node utilization use
+    # single_node_tep (TP+EP) or single_node_dep (DP+EP).
+    tp: 4
 
 guide: |
   ## Overview

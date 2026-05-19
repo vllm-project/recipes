@@ -1,6 +1,7 @@
 name: multi_node_tep
 deploy_type: multi_node
 display_name: "Multi-Node Tensor + Expert Parallel"
+orientation: balanced
 description: >
   Multi-node TEP. Combines cross-node tensor parallel with expert parallel
   for MoE models. All GPUs across nodes participate in TP, with EP splitting
@@ -17,4 +18,6 @@ vllm_args:
 
 parallel_flag: "--tensor-parallel-size"
 
-env: {}
+env:
+  GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+  NCCL_SOCKET_IFNAME: "$IFACE_NAME"

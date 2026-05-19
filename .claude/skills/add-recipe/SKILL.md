@@ -15,11 +15,37 @@ Recipes are YAML files at `models/<hf_org>/<hf_repo>.yaml`. The path mirrors Hug
    - `parameter_count`: total params (e.g. `"671B"`, `"70B"`). Use HF model card or the sum of shard sizes.
    - `active_parameters`: for MoE, the activated-per-token count (e.g. `"37B"` on DeepSeek-V3.2). For dense, equal to `parameter_count`.
    - `context_length`: `max_position_embeddings` from `config.json` (for VL models, from `text_config.max_position_embeddings`).
-   - `min_vllm_version`: the earliest vllm that supports the architecture — check the model card or vLLM release notes. Err on the side of `0.11.0` or newer unless the card specifies.
-3. **Create the YAML.** Write `models/<hf_org>/<hf_repo>.yaml` following the schema below. Only include sections the model needs; leave `features: {}`, `opt_in_features: []`, `hardware_overrides: {}`, `strategy_overrides: {}` empty if not applicable.
-4. **Register the provider (if new).** If `<hf_org>` isn't already in `src/lib/providers.js`, add an entry with `display_name` and the logo path `/providers/<hf_org>.png` (or `.jpeg`). Logos get downloaded by `scripts/fetch-provider-logos.mjs` on the next build.
-5. **Validate.** Run `node scripts/build-recipes-api.mjs`. It must print `✓ JSON API: N models, 7 strategies` with no errors.
-6. **Commit.** Follow the user's earlier feedback (no kill-and-rebuild of dev server; syntax-check only).
+3. **Read the README — don't skip this.** Run `curl -sL "https://huggingface.co/<org>/<repo>/resolve/main/README.md"` and scan the install / serve / usage sections in full. Configs are not enough; model authors put load-bearing requirements in prose. Mine the README for:
+   - **`min_vllm_version` / `nightly_required`** — phrases like "install vllm nightly", "requires nightly wheels", or an install snippet using `--extra-index-url https://wheels.vllm.ai/nightly` mean `min_vllm_version: "nightly"` + `nightly_required: true`. A specific tag like "vLLM >= 0.12.0" sets that version. Don't default to `0.11.0` when the README says otherwise.
+   - **`dependencies:`** — any pip line beyond `vllm` itself: version pins (`mistral_common >= 1.11.1`, `transformers >= 5.4.0`), extras (`vllm[audio]`), source installs (`pip install git+...`), DeepGEMM pins, etc. Pin them even when the README says "auto-installed" — users on stale wheel caches need an explicit upgrade path. Each entry needs a one-line `note` saying *why*.
+   - **Parser flags for `features:`** — `--tool-call-parser <name>`, `--reasoning-parser <name>`, `--enable-auto-tool-choice`. Use the exact parser name the README specifies.
+   - **Companion / draft repos** — EAGLE / MTP / Eagle3 heads, NVFP4 quants, instruct vs base. Wire as `spec_decoding` feature (draft pointer in `--speculative-config`) or a sibling variant with `model_id:` override. Copy the recommended `--speculative-config` JSON verbatim from the README.
+   - **Recommended serve flags** — `--tensor-parallel-size`, `--gpu_memory_utilization`, `--max_num_batched_tokens`, `--max_num_seqs` go into the guide's launch command and into variant `extra_args` when they're variant-specific.
+   - **Hardware guidance / sampling defaults** — "recommended on 8xH200" lines inform variant `description` + `vram_minimum_gb`; recommended `temperature` / `top_p` / `reasoning_effort` go in the guide's Client Usage block.
+4. **Cross-check upstream vLLM support.** The README is a snapshot — if it was written at a moment when only nightly worked, that claim rots once stable ships. **Never copy the README's "vLLM nightly" claim verbatim without checking.** Run these in parallel:
+   - `gh search issues --repo vllm-project/vllm "<model-name>" --state all --limit 20` — bug reports tell you which versions users are actually running on (e.g. an issue body saying "vLLM 0.18.0 + this model crashes" is positive proof the model loads on 0.18.0).
+   - `gh search prs --repo vllm-project/vllm "<model-name>" --merged --limit 10` — locate the support PR; `gh pr view <num> --json mergedAt` gives the date, cross-reference against `gh release list --repo vllm-project/vllm` to find the minimum release.
+   - **`curl` the registry and supported-models docs at the candidate tag** — this is the most authoritative check:
+     ```bash
+     curl -sL "https://raw.githubusercontent.com/vllm-project/vllm/<tag>/vllm/model_executor/models/registry.py" | grep -i "<arch>"
+     curl -sL "https://raw.githubusercontent.com/vllm-project/vllm/<tag>/docs/models/supported_models.md" | grep -B2 -A4 "<arch>"
+     ```
+     `supported_models.md` often documents **required flags that the model card omits** — e.g. Voxtral Realtime needs `--tokenizer-mode mistral` per vLLM docs, but the HF README doesn't mention it. Always read this file for the recipe's target tag.
+   - `gh release view <tag> --repo vllm-project/vllm --json body` + grep for the model name — release-note mentions confirm support officially landed.
+   - For newer architectures, also search the model author's repo (e.g. `PaddlePaddle/PaddleOCR`, `deepseek-ai/DeepSeek-VL2`) for "vllm" discussions — authors often post the canonical launch command and known issues there.
+
+   What to extract:
+   - **`min_vllm_version`** — set to the **lowest stable tag where the model actually works**, not what the README claims. Walk forward from the support-PR's release tag, but bump up if there are known parser/tokenizer/quant bugs fixed in a later release (the v0.20.0-style "Mistral Grammar factory" / "tool parser HF-tokenizer fix" entries are signals to bump). Only use `min_vllm_version: "nightly"` + `nightly_required: true` when the registry at the latest stable tag genuinely lacks the architecture — and double-check by curling `registry.py` at that tag. If support is still an open issue (no PR merged), flag this to the user before authoring. For derivative releases (e.g. PaddleOCR-VL-1.5 vs 1.0) with identical `architectures` / `model_type` / `auto_map`, the existing handler usually loads them via `--trust-remote-code` even before a dedicated PR — note this assumption in your reply.
+   - **Required serve flags hidden in upstream docs** — copy any `must be served with <flag>` lines from `supported_models.md` straight into `model.base_args` (and call them out in the guide's launch command). These are not optional and the README often doesn't mention them.
+   - **Troubleshooting** — recurring errors and fixes from issue comments (e.g. "needs `--enforce-eager` on 0.11.x", "transformers>=5 required", "`--mm-processor-cache-gb 0` to avoid OOM"). Surface these in the guide's Troubleshooting section, or as inline tips next to the launch command if they're load-bearing.
+   - **Links to put in `guide`'s References** — the model card, vLLM support PR (not the recipe-request issue — see below), and any author-side deployment doc. These give users a path forward if their setup breaks.
+
+   **What NOT to put in References**: the recipe-request issue in `vllm-project/recipes` (e.g. `#459`) is a tracking ticket, not a user-facing reference. It belongs in the PR description body (`Closes #459`), never in the YAML's `## References` section.
+
+5. **Create the YAML.** Write `models/<hf_org>/<hf_repo>.yaml` following the schema below. Only include sections the model needs; leave `features: {}`, `opt_in_features: []`, `hardware_overrides: {}`, `strategy_overrides: {}` empty if not applicable.
+6. **Register the provider (if new).** If `<hf_org>` isn't already in `src/lib/providers.js`, add an entry with `display_name` and the logo path `/providers/<hf_org>.png` (or `.jpeg`). Logos get downloaded by `scripts/fetch-provider-logos.mjs` on the next build.
+7. **Validate.** Run `node scripts/build-recipes-api.mjs`. It must print `✓ JSON API: N models, 7 strategies` with no errors.
+8. **Commit.** Follow the user's earlier feedback (no kill-and-rebuild of dev server; syntax-check only).
 
 ## YAML schema (top-level fields, in order)
 
@@ -35,12 +61,16 @@ meta:
     - text
   performance_headline: "..."     # optional pithy line for cards
   related_recipes: []             # optional list of "<org>/<repo>" ids
-  # Optional. Only `verified` is meaningful — GPUs you've actually run this
-  # recipe on end-to-end. Everything else is assumed to work silently (no
-  # "untested" warning). Only add an entry when you've truly tested it.
+  # Optional. Tri-state:
+  #   `verified`    — you've run this recipe on this GPU end-to-end (green ✓).
+  #   `unsupported` — not yet runnable here today (compat gap, missing kernel,
+  #                   upstream blocker). Pill disabled in UI with "Not yet
+  #                   supported" tooltip. May flip later — revisit on updates.
+  #   absent        — silent default, assumed to work. Don't mark "untested".
   hardware:
     h200: verified
     mi355x: verified
+    # mi300x: unsupported    # e.g. when a required kernel/feature is missing
 
 model:
   model_id: "<hf_org>/<hf_repo>"  # MUST match the filename path
