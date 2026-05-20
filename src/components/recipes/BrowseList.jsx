@@ -79,6 +79,7 @@ const HW_BRANDS = [
       { id: "b300", label: "B300" },
       { id: "gb200", label: "GB200" },
       { id: "gb300", label: "GB300" },
+      { id: "dgx_station_gb300", label: "DGX Station" },
     ],
   },
   {

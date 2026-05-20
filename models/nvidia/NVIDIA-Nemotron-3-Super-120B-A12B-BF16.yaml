@@ -13,6 +13,7 @@ meta:
     h100: verified
     h200: verified
     b200: verified
+    dgx_station_gb300: verified
 
 model:
   model_id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16"
@@ -133,6 +134,27 @@ guide: |
     --tool-call-parser qwen3_coder \
     --reasoning-parser nemotron_v3
   ```
+
+  ### Single GB300 GPU / DGX Station — NVFP4
+
+  Use the same single-GPU command on DGX Station or on one GPU from a GB300
+  NVL4 tray. The NVFP4 weights fit comfortably in 288 GB HBM3e:
+
+  ```bash
+  export CUDA_DEVICE_ORDER=PCI_BUS_ID
+  export CUDA_VISIBLE_DEVICES=1
+
+  vllm serve nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4 \
+    --trust-remote-code
+  ```
+
+  For higher throughput, consider adding `--enable-prefix-caching`,
+  `--mamba-cache-mode all`, `--mamba-ssm-cache-dtype float16`, and
+  `--moe-backend flashinfer_trtllm`. Set
+  `VLLM_NVFP4_GEMM_BACKEND=flashinfer-trtllm` if you want to force the
+  FlashInfer-TRTLLM NVFP4 GEMM path. Tune batching for the workload.
+  MTP speculative decoding can also be enabled with
+  `--speculative-config '{"model":"nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4","method":"mtp","num_speculative_tokens":3}'`.
 
   ## Benchmarking
 
