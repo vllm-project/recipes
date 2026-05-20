@@ -66,7 +66,7 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 64
-    description: "Full BF16 — single 80 GB NVIDIA GPU or 1x MI300X/MI325X/MI350X/MI355X"
+    description: "Full BF16 — single 80 GB NVIDIA GPU or 1x MI300X/MI325X/MI350X/MI355X or 2x Xeon6/Xeon5 NUMA nodes"
   fp8:
     model_id: "RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic"
     precision: fp8
@@ -229,7 +229,6 @@ guide: |
     -e VLLM_CPU_ATTN_SPLIT_KV=0 \
     vllm/vllm-openai-cpu:latest-x86_64 \
       --model google/gemma-4-26B-A4B-it \
-      --distributed-executor-backend mp \
       --host 0.0.0.0 \
       --port 8000
   ```

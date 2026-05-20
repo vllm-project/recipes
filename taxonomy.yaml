@@ -117,9 +117,9 @@ hardware_profiles:
     brand: Intel
     generation: cpu
     display_name: "Xeon 6"
-    description: "Intel Xeon 6 CPU node · x86 CPU backend"
-    gpu_count: 1
-    vram_gb: 512
+    description: "Intel Xeon 6 CPU NUMA node · x86 CPU backend"
+    gpu_count: 4
+    vram_gb: 1024
     multi_node: false
     restricted: true
 
@@ -127,9 +127,9 @@ hardware_profiles:
     brand: Intel
     generation: cpu
     display_name: "Xeon 5"
-    description: "Intel Xeon 5 CPU node · x86 CPU backend"
-    gpu_count: 1
-    vram_gb: 512
+    description: "Intel Xeon 5 CPU NUMA node · x86 CPU backend"
+    gpu_count: 4
+    vram_gb: 1024
     multi_node: false
     restricted: true
 
