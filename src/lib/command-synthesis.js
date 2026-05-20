@@ -183,6 +183,14 @@ export function pdFitsSingleNode(hwProfile, variant) {
  */
 export function pickDefaultHardware(hwProfiles, variant, recipe) {
   const constraint = PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
+  const explicitDefault = recipe?.default_hardware || recipe?.meta?.default_hardware;
+  if (explicitDefault) {
+    const profile = hwProfiles?.[explicitDefault];
+    if (profile && matchesConstraint(profile, constraint) && isHardwareSupported(recipe, explicitDefault)) {
+      return explicitDefault;
+    }
+  }
+
   const compatible = Object.entries(hwProfiles).filter(
     ([id, p]) => matchesConstraint(p, constraint) && isHardwareSupported(recipe, id)
   );
@@ -621,6 +629,18 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       || recipe.hardware_overrides?.[gen]
       || (envIsNvidia ? recipe.hardware_overrides?.nvidia : null);
     if (envHo?.extra_env) Object.assign(env, envHo.extra_env);
+
+    // Feature-scoped env is merged only when that feature is selected. This is
+    // useful for opt-in paths such as speculative decoding that need one env
+    // var but should not alter the base command.
+    for (const f of enabledFeatures || []) {
+      const feat = recipe.features?.[f];
+      if (!feat) continue;
+      const featHo = feat.hardware_overrides?.[gen]
+        || (envIsNvidia ? feat.hardware_overrides?.nvidia : null);
+      const featEnv = featHo?.extra_env ?? feat.extra_env;
+      if (featEnv) Object.assign(env, featEnv);
+    }
 
     // NVL4-only env vars are meaningful only on GB200/GB300 trays. Drop them
     // for any other hardware regardless of where they came from (strategy YAML

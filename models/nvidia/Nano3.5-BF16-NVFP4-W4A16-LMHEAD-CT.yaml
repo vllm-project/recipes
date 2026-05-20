@@ -1,0 +1,147 @@
+meta:
+  title: "NVIDIA Nano3.5-BF16-NVFP4-W4A16-LMHEAD-CT"
+  slug: "nano3.5-bf16-nvfp4-w4a16-lmhead-ct"
+  provider: "NVIDIA"
+  description: "Nano3.5 Nemotron-H hybrid-Mamba MoE checkpoint with compressed-tensors W4A16/NVFP4 MoE and LM head quantization, tuned for DGX Spark with Marlin."
+  date_updated: 2026-05-19
+  difficulty: advanced
+  tasks:
+    - text
+  related_recipes:
+    - nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+    - nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16
+  hardware:
+    dgx_spark_gb10: verified
+
+default_hardware: dgx_spark_gb10
+
+model:
+  model_id: "nvidia/Nano3.5-BF16-NVFP4-W4A16-LMHEAD-CT"
+  min_vllm_version: "nightly"
+  nightly_required: true
+  architecture: moe
+  parameter_count: "30B"
+  active_parameters: "3B"
+  context_length: 262144
+  base_args:
+    - "--trust-remote-code"
+    - "--kv-cache-dtype"
+    - "fp8"
+    - "--attention-backend"
+    - "FLASHINFER"
+    - "--attention-config"
+    - '{"use_trtllm_attention":0}'
+    - "--moe-backend"
+    - "marlin"
+    - "--mamba-ssm-cache-dtype"
+    - "float16"
+    - "--enable-mamba-cache-stochastic-rounding"
+    - "--mamba-cache-philox-rounds"
+    - "5"
+    - "--mamba-backend"
+    - "flashinfer"
+    - "--mamba-cache-mode"
+    - "align"
+    - "--enable-prefix-caching"
+  base_env:
+    VLLM_NVFP4_GEMM_BACKEND: "marlin"
+  install:
+    pip:
+      note: "Use a vLLM nightly or source build that includes Nano3.5 compressed-tensors and Nemotron-H support for this checkpoint."
+    docker:
+      note: "Use a vLLM nightly image or a patched source image with Nano3.5 compressed-tensors and Nemotron-H support."
+
+features:
+  spec_decoding:
+    description: "Nemotron-H MTP speculative decoding with Triton draft MoE"
+    args:
+      - "--compilation-config"
+      - '{"pass_config":{"fuse_norm_quant":true,"fuse_act_quant":true,"fuse_attn_quant":false}}'
+      - "--speculative-config"
+      - '{"method":"nemotron_h_mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+    extra_env:
+      VLLM_ENABLE_UNQUANT_BF16_LINEAR_TORCH_COMPILE: "0"
+
+opt_in_features:
+  - spec_decoding
+
+variants:
+  default:
+    precision: nvfp4
+    vram_minimum_gb: 64
+    description: "Compressed-tensors W4A16/NVFP4 weights with quantized LM head for DGX Spark"
+
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  [Nano3.5-BF16-NVFP4-W4A16-LMHEAD-CT](https://huggingface.co/nvidia/Nano3.5-BF16-NVFP4-W4A16-LMHEAD-CT)
+  is a DGX Spark focused compressed-tensors checkpoint for Nano3.5. It uses
+  W4A16/NVFP4 quantization for MoE weights and the LM head, with FP8 KV cache
+  and the Marlin MoE path for single-GB10 serving.
+
+  ## Prerequisites
+
+  - **Hardware:** DGX Spark (GB10, 128 GB unified memory)
+  - **vLLM:** nightly or source build with Nano3.5 compressed-tensors and
+    Nemotron-H support for this checkpoint
+  - **Hugging Face:** access to the gated NVIDIA checkpoint
+  - **Docker:** NVIDIA Container Toolkit recommended
+
+  ## DGX Spark Launch
+
+  ```bash
+  export VLLM_NVFP4_GEMM_BACKEND=marlin
+
+  vllm serve nvidia/Nano3.5-BF16-NVFP4-W4A16-LMHEAD-CT \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --attention-backend FLASHINFER \
+    --attention-config '{"use_trtllm_attention":0}' \
+    --moe-backend marlin \
+    --mamba-ssm-cache-dtype float16 \
+    --enable-mamba-cache-stochastic-rounding \
+    --mamba-cache-philox-rounds 5 \
+    --mamba-backend flashinfer \
+    --mamba-cache-mode align \
+    --enable-prefix-caching
+  ```
+
+  Optional Spark throughput tuning:
+
+  - Add `--async-scheduling` and `--enable-chunked-prefill` for throughput-oriented serving.
+  - Tune context length, memory utilization, sequence count, and batched tokens
+    for the request shape.
+  - Add `--load-format instanttensor` only when InstantTensor is installed and
+    the checkpoint is available in that format.
+  - Use `--allow-long-max-model-len` only when intentionally exceeding the
+    advertised model length.
+
+  ## MTP Speculative Decoding
+
+  Enable the `spec_decoding` feature to add the Nemotron-H MTP config. If
+  launching manually, export the env var and append the two flags below to the
+  DGX Spark command:
+
+  ```bash
+  export VLLM_ENABLE_UNQUANT_BF16_LINEAR_TORCH_COMPILE=0
+  ```
+
+  ```text
+  --compilation-config '{"pass_config":{"fuse_norm_quant":true,"fuse_act_quant":true,"fuse_attn_quant":false}}' \
+  --speculative-config '{"method":"nemotron_h_mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+  ```
+
+  Synthetic acceptance settings are benchmark-only and are intentionally not
+  part of the recipe command.
+
+  ## References
+
+  - [Model card](https://huggingface.co/nvidia/Nano3.5-BF16-NVFP4-W4A16-LMHEAD-CT)
+  - [Nemotron-3-Nano-30B-A3B recipe](./NVIDIA-Nemotron-3-Nano-30B-A3B-BF16)
