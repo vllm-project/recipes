@@ -88,9 +88,6 @@ hardware_overrides:
     extra_env:
       VLLM_CPU_KVCACHE_SPACE: "40"
       VLLM_CPU_ATTN_SPLIT_KV: "0"
-    extra_args:
-      - "--distributed-executor-backend"
-      - "mp"
 
 strategy_overrides:
   single_node_tp:
