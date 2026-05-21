@@ -235,10 +235,12 @@ export function computeDockerMeta(recipe, variant, hwProfile) {
         nvidia: "vllm/vllm-openai:latest",
         amd: "vllm/vllm-openai-rocm:latest",
         tpu: "vllm/vllm-tpu:latest",
+        intel: "vllm/vllm-openai-cpu:latest-x86_64",
       };
   const isAmd = hwProfile?.brand === "AMD";
   const isTpu = hwProfile?.generation === "tpu";
-  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : "nvidia";
+  const isIntel = hwProfile?.generation === "cpu" ||hwProfile?.brand === "Intel";
+  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
   const override = variant?.docker_image || recipe.model?.docker_image;
 
   const isCudaMap = (v) =>
@@ -249,7 +251,7 @@ export function computeDockerMeta(recipe, variant, hwProfile) {
   if (typeof override === "string") {
     if (brandKey === "nvidia") pinned = override;
   } else if (override && typeof override === "object") {
-    const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override;
+    const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override || "intel" in override;
     if (isBrandKeyed) {
       const brandValue = override[brandKey];
       if (typeof brandValue === "string") pinned = brandValue;
@@ -264,8 +266,10 @@ export function computeDockerMeta(recipe, variant, hwProfile) {
     ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
     : isAmd
       ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
+    : isIntel
+      ? "--shm-size=16g"	
       : "--gpus all";
-  return { image, gpuFlags, brandKey, isAmd, isTpu, pinned, cudaMap, nightlyRequired };
+  return { image, gpuFlags, brandKey, isAmd, isTpu, isIntel, pinned, cudaMap, nightlyRequired };
 }
 
 // argv form of the brand-specific GPU flags from computeDockerMeta. Mirrors
@@ -280,6 +284,9 @@ function dockerGpuArgv(meta) {
       "--group-add", "video",
     ];
   }
+  if (meta.isIntel) {
+    return ["--shm-size", "16g"];
+  }	
   return ["--gpus", "all"];
 }
 

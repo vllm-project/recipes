@@ -20,6 +20,7 @@ meta:
     mi355x: verified
     trillium: verified
     ironwood: verified
+    xeon6: verified
 
 model:
   model_id: "google/gemma-4-E2B-it"
@@ -68,7 +69,7 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 13
-    description: "Full BF16 — single 24 GB+ NVIDIA GPU or 1x MI300X/MI325X/MI350X/MI355X"
+    description: "Full BF16 — single 24 GB+ NVIDIA GPU or 1x MI300X/MI325X/MI350X/MI355X or 1x Xeon6/Xeon5 NUMA node"
   fp8:
     model_id: "RedHatAI/gemma-4-E2B-it-FP8-dynamic"
     precision: fp8
@@ -82,7 +83,11 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  cpu:
+    extra_env:
+      VLLM_CPU_KVCACHE_SPACE: "40"
+      VLLM_CPU_ATTN_SPLIT_KV: "0"
 
 strategy_overrides:
   single_node_tp:
@@ -122,12 +127,17 @@ guide: |
   uv pip install vllm --pre \
     --extra-index-url https://wheels.vllm.ai/rocm/nightly/rocm721 --upgrade
   ```
+  ### pip (Intel Xeon 6 CPUs)
+  For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.
+
+
 
   ### Docker
   ```bash
   docker pull vllm/vllm-openai:gemma4-0505-cu129  # NVIDIA Hopper (H100/H200, CUDA 12.9)
   docker pull vllm/vllm-openai:gemma4-0505-cu130  # NVIDIA Blackwell (B200/B300, CUDA 13.0)
   docker pull vllm/vllm-openai-rocm:latest   # AMD
+  docker pull vllm/vllm-openai-cpu:latest-x86_64 # For Intel Xeon 6
   ```
 
   ## Deployment Configurations
@@ -198,6 +208,24 @@ guide: |
       --disable_chunked_mm_input \
       --host 0.0.0.0 --port 8000
   ```
+
+  ### Intel Xeon 6 Deployment via Docker
+
+  Launch the x86 CPU vLLM Docker container for `google/gemma-4-E2B-it`:
+
+  ```bash
+  docker run -itd --name gemma4-cpu \
+    --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e VLLM_CPU_KVCACHE_SPACE=40 \
+    -e VLLM_CPU_ATTN_SPLIT_KV=0 \
+    vllm/vllm-openai-cpu:latest-x86_64 \
+      --model google/gemma-4-E2B-it \
+      --host 0.0.0.0 \
+      --port 8000
+  ```
+
 
   ## Client Usage
 
