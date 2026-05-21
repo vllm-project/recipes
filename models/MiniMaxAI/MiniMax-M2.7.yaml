@@ -15,6 +15,7 @@ meta:
     mi300x: verified
     mi325x: verified
     mi355x: verified
+    dgx_station_gb300: verified
 
 model:
   model_id: "MiniMaxAI/MiniMax-M2.7"
