@@ -15,10 +15,6 @@ const NVL4_ONLY_ENV_KEYS = new Set([
   "UCX_NET_DEVICES",
 ]);
 const NVL4_HW_IDS = new Set(["gb200", "gb300"]);
-const DGX_STATION_GB300_ENV = {
-  CUDA_DEVICE_ORDER: "PCI_BUS_ID",
-  CUDA_VISIBLE_DEVICES: "1",
-};
 
 /**
  * Normalize gpu_generation to a single string for hardware_overrides lookup.
@@ -568,11 +564,6 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       Object.assign(env, strategy.env || {});
     } else if (roleOverride && strategy[roleOverride]?.env) {
       Object.assign(env, strategy[roleOverride].env);
-    }
-
-    // DGX Station exposes the GB300 GPU as CUDA device 1 on the tested setup.
-    if (hwProfileId === "dgx_station_gb300") {
-      Object.assign(env, DGX_STATION_GB300_ENV);
     }
 
     // PD: pin GPUs per role via CUDA_VISIBLE_DEVICES.
