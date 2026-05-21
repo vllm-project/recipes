@@ -79,9 +79,12 @@ hardware_overrides:
   amd:
     # First launch JIT-compiles AITER kernels (CK FP8 MoE, RMSNorm, activation);
     # expect a slow cold start on MI300X/MI325X/MI350X/MI355X.
-    extra_args: []
+    extra_args:
+      - "--attention-backend"
+      - "ROCM_AITER_FA"
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT: "1"
 
 strategy_overrides:
   single_node_tp:
