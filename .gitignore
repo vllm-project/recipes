@@ -10,7 +10,9 @@ node_modules/
 public/models.json
 public/strategies.json
 public/taxonomy.json
+public/platforms.json
 public/strategies/
 public/providers/
 public/hf-dates.json
 public/*/
+!public/platform-logos/
