@@ -156,7 +156,6 @@ export default async function RecipePage({ params }) {
                 View on HuggingFace
                 <ExternalLink size={10} />
               </a>
-              <DeployDialog platforms={enabledPlatforms} hfId={recipe.hf_id} />
             </div>
           </div>
         </div>
@@ -229,6 +228,7 @@ export default async function RecipePage({ params }) {
         >
           <Bug size={12} /> Report issue
         </a>
+        <DeployDialog platforms={enabledPlatforms} hfId={recipe.hf_id} />
         {related.length > 0 && (
           <span className="basis-full mt-1">
             Related:{" "}

@@ -142,19 +142,19 @@ export function DeployDialog({ platforms, hfId }) {
       <button
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
-        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-vllm-blue transition-colors group"
+        className="inline-flex items-center gap-1 hover:text-foreground transition-colors group"
       >
-        <span className="flex -space-x-1">
+        <span className="flex -space-x-1 mr-0.5">
           {platforms.map((p) => (
             <PlatformLogo
               key={p.id}
               id={p.id}
-              className="w-3.5 h-3.5 rounded ring-1 ring-background"
+              className="w-4 h-4 rounded ring-1 ring-background"
             />
           ))}
         </span>
         Self Host vLLM
-        <ChevronRight size={11} className="opacity-60 transition-transform group-hover:translate-x-0.5" />
+        <ChevronRight size={12} className="opacity-60 transition-transform group-hover:translate-x-0.5" />
       </button>
       {dialog}
     </>
