@@ -19,6 +19,10 @@ model:
   base_args: []
   base_env: {}
 
+omni:
+  tasks:
+    - i2i
+
 dependencies:
   - note: "vLLM-Omni must be installed from source with vllm==0.12.0 for LongCat-Image-Edit"
     command: "git clone https://github.com/vllm-project/vllm-omni.git && cd vllm-omni && uv pip install -e . vllm==0.12.0"
@@ -35,7 +39,7 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 36
-    description: "BF16 weights; served via vLLM-Omni (offline inference)"
+    description: "BF16 weights; served via vLLM-Omni"
 
 compatible_strategies: []
 

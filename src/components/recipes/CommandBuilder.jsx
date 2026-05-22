@@ -4,7 +4,8 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand } from "@/lib/command-synthesis";
+import { resolveOmniTasks } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
@@ -321,8 +322,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  // ── Omni tasks ── resolved from the recipe (catalog lookup); declared up here
+  // because both the omni and non-omni return paths reference these hooks.
+  const omniTasks = useMemo(() => resolveOmniTasks(recipe), [recipe]);
+
   // ── State ──
   const [variant, setVariant] = useState(searchParams.get("variant") || "default");
+
+  // Active omni task — drives the `vllm serve --omni` model_id swap (Wan2.2's
+  // T2V/I2V/TI2V) and the cURL endpoint/body shown in the Try-it popover.
+  const [omniTask, setOmniTask] = useState(() => {
+    const fromUrl = searchParams.get("task");
+    if (fromUrl && omniTasks.some((t) => t.id === fromUrl)) return fromUrl;
+    return omniTasks[0]?.id || "";
+  });
 
   // Compute default hardware: URL param > stored preference (if compatible) > smallest compatible profile
   // Smart default hardware: picks a profile compatible with the URL's variant
@@ -650,11 +663,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   );
 
   // Visual feedback when any rendered command changes. Covers single-node
-  // (result.command), multi-node (headCommand), and pd_cluster (prefill.command).
-  const commandFingerprint = result.command
+  // (result.command), multi-node (headCommand), pd_cluster (prefill.command),
+  // and omni (resolveCommand's modelId doesn't reflect omni task swaps, so
+  // include omniTask explicitly).
+  const commandFingerprint = (result.command
     || result.headCommand
     || result.prefill?.command
-    || "";
+    || "")
+    + (omniTask ? `|task:${omniTask}` : "");
   const [changed, setChanged] = useState(false);
   useEffect(() => {
     setChanged(true);
@@ -679,6 +695,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   );
 
   // ── Handlers ──
+  const selectOmniTask = (id) => {
+    setOmniTask(id);
+    // Default task id is omitted from the URL so a fresh page-load lands on
+    // the recipe author's intended starting task without a noisy `?task=…`.
+    const defaultId = omniTasks[0]?.id;
+    syncUrl({ task: id === defaultId ? "" : id });
+  };
+
   const selectVariant = (key) => {
     setVariant(key);
     syncUrl({ variant: key });
@@ -1000,13 +1024,71 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         ? "pip"
         : installMode;
 
-  // Omni models are served via vLLM-Omni (offline Python inference), not `vllm serve`.
-  // Skip the command/strategy/feature UI but still surface Install + Hardware + Variant
-  // selectors so users can pick CUDA tag / pip vs docker and see which GPU and
-  // precision the recipe targets before jumping to the Guide for the actual script.
+  // Omni recipes serve via `vllm serve <model> --omni`. The command shape is
+  // simpler than the regular path (no strategy / multi-node / pd), but the
+  // surrounding affordances (Install tabs, Hardware pills, Variant pills) all
+  // still apply. Plus a Task pill row that swaps endpoint + curl body — and,
+  // for multi-checkpoint families like Wan2.2, the served model_id too.
   const isOmni = (recipe.meta?.tasks || []).includes("omni");
   if (isOmni) {
     const omniVariants = Object.entries(recipe.variants || {});
+    const showOmniVariants = omniVariants.length > 1;
+    const showOmniTaskRow = omniTasks.length > 1;
+    const activeTask = omniTasks.find((t) => t.id === omniTask) || omniTasks[0] || null;
+
+    // Render the `vllm serve --omni` command via the shared omni resolver.
+    // Falls back to a stub when the recipe has no omni.tasks declared yet
+    // (legacy omni-tagged recipes that haven't been migrated).
+    const omniRendered = activeTask
+      ? resolveOmniCommand(recipe, variant, activeTask, hwProfile)
+      : {
+          command: `${recipe.omni?.serve_binary || "vllm serve"} ${currentVariant.model_id || recipe.model?.model_id || "model"} --omni`,
+          env: {},
+          modelId: currentVariant.model_id || recipe.model?.model_id || "model",
+        };
+    const omniSubbedCommand = substitute(omniRendered.command, effectiveEndpoints);
+    const omniSubbedEnv = substituteEnv(omniRendered.env, effectiveEndpoints);
+
+    // Per-task verify command. `activeTask.example` knows the right endpoint
+    // (e.g. /v1/images/generations vs /v1/chat/completions multimodal) and
+    // payload shape; no chance for the generic /v1/chat/completions curl to
+    // mislead the user into hitting the wrong route.
+    const omniCurl = activeTask?.example
+      ? activeTask.example({
+          host: clientHost,
+          port: clientPortStr,
+          modelId: omniRendered.modelId,
+          prompt: undefined,
+        })
+      : verifyCmd;
+
+    // Recompute placeholders against the omni command set rather than the
+    // (unused-here) `result` from resolveCommand.
+    const omniPlaceholders = detectPlaceholdersAll(
+      omniRendered.command,
+      omniCurl,
+      ...Object.values(omniRendered.env || {}).filter((v) => typeof v === "string"),
+    );
+
+    const omniEndpointsControls = (
+      <EndpointsPopoverButton
+        isPd={false}
+        isMultiNode={false}
+        placeholders={omniPlaceholders}
+        endpoints={endpoints}
+        onChange={updateEndpoint}
+        onReset={resetEndpoints}
+      />
+    );
+
+    // Config caption: hw · task · precision. Same shape as the non-omni
+    // summary so the command-card header reads consistently across recipes.
+    const omniConfigSummary = [
+      hwProfile?.display_name || hwId,
+      activeTask?.label,
+      currentVariant.precision?.toUpperCase(),
+    ].filter(Boolean).join(" · ");
+
     return (
       <TooltipProvider>
         <div className="space-y-4">
@@ -1024,15 +1106,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             <DependenciesBlock deps={dependencies} />
           )}
 
-          <div className="rounded-2xl border border-border bg-muted/20 px-5 py-4 text-sm">
-            <div className="font-medium mb-1 flex items-center gap-2">
-              <Sparkles size={14} className="text-vllm-yellow" />
-              Served via vLLM-Omni (offline inference)
-            </div>
-            <p className="text-muted-foreground text-xs leading-relaxed">
-              This model runs as an offline Python workflow, not a long-running <code className="font-mono text-[11px] px-1 py-0.5 rounded bg-foreground/5">vllm serve</code> endpoint.
-              See the <strong>Guide</strong> below for the exact inference script and parameters.
-            </p>
+          <div
+            className={`rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border transition-shadow ${changed ? "ring-2 ring-vllm-blue/30" : ""}`}
+          >
+            <SingleCommandBlock
+              command={omniSubbedCommand}
+              env={omniSubbedEnv}
+              verifyCmd={omniCurl}
+              benchCmd={benchCmd}
+              statusHeader={statusHeader}
+              installMode={effectiveInstallMode}
+              dockerMeta={dockerMeta}
+              configSummary={omniConfigSummary}
+              endpointsControls={omniEndpointsControls}
+            />
           </div>
 
           <div className="rounded-xl border border-border divide-y divide-border">
@@ -1081,7 +1168,35 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               </div>
             </ConfigRow>
 
-            {omniVariants.length > 1 && (
+            {showOmniTaskRow && (
+              <ConfigRow
+                label="Task"
+                hint="Each task picks a vllm-omni handler endpoint and example payload. For multi-checkpoint families (Wan2.2 T2V/I2V/TI2V) the task also swaps the served model_id."
+              >
+                <PillGroup>
+                  {omniTasks.map((t) => (
+                    <Pill
+                      key={t.id}
+                      active={activeTask?.id === t.id}
+                      onClick={() => selectOmniTask(t.id)}
+                      title={[t.description, `Endpoint: ${t.endpoint}`].filter(Boolean).join("\n\n")}
+                    >
+                      <span className="font-semibold">{t.label}</span>
+                      {t.vramMinimumGb && (
+                        <span className="text-muted-foreground ml-1.5 font-mono">{t.vramMinimumGb} GB</span>
+                      )}
+                    </Pill>
+                  ))}
+                </PillGroup>
+                {activeTask?.description && (
+                  <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                    {activeTask.description}
+                  </p>
+                )}
+              </ConfigRow>
+            )}
+
+            {showOmniVariants && (
               <ConfigRow
                 label="Variant"
                 hint="VRAM shown is the minimum to LOAD the model (weights + runtime overhead). vLLM-Omni inference may need more for activations and intermediate tensors."

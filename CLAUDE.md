@@ -66,6 +66,7 @@ Top-level keys, in this order:
 - `compatible_strategies[]` — subset of the 7 strategy ids. Dense models typically only get `single_node_tp` + `multi_node_tp`; MoE models can have all seven.
 - `hardware_overrides` — optional per-generation tweaks keyed by `hopper`, `blackwell`, `amd`. Each: `{ extra_args[], extra_env{} }`.
 - `strategy_overrides` — optional per-strategy tweaks (rare).
+- `omni` (optional) — vllm-omni online-serving config. Required when `meta.tasks` includes `omni`. Shape: `{ serve_binary?, port?, tasks: [...] }`. `tasks` accepts bare ids from the catalog (`t2i`, `i2i`, `t2v`, `i2v`, `ti2v`, `t2a`) or `{ id, model_id?, vram_minimum_gb?, description?, extra_args?, curl? }` overrides — Wan2.2 uses overrides to swap the served checkpoint per task. `serve_binary: "vllm-omni serve"` swaps the binary for handlers that don't ship in the `vllm` console-script (today: stable-audio-open). Catalog lives at `src/lib/omni-tasks.js`.
 - `guide` — markdown string (`|`-block), rendered with `react-markdown` + `remark-gfm` + `rehype-slug`.
 
 **VRAM formula**: `vram_minimum_gb = ceil(params × bytes × 1.2)`. Bytes per param: bf16/fp16=2, fp8/int8/awq/gptq=1, int4/nvfp4/fp4/mxfp4=0.5. For MoE, use total params (inactive experts still live in VRAM).
@@ -74,7 +75,7 @@ Top-level keys, in this order:
 
 - **Hardware is never blocked by VRAM.** Multi-node scales VRAM, so `command-synthesis.js` only uses VRAM as a display hint. Precision constraints (NVFP4/FP4 require Blackwell) are the only things that disable a hardware pill.
 - **Default hardware is always H200** (or B200 for Blackwell-constrained variants). `pickDefaultHardware` prefers NVIDIA over AMD; `loadPreferences` deliberately ignores AMD entries from localStorage so first-page-load is always H200.
-- **Omni recipes skip the command builder entirely** — `CommandBuilder` returns an "Served via vLLM-Omni" notice instead, because these models use offline Python scripts, not `vllm serve`. Detection: `meta.tasks` includes `omni`.
+- **Omni recipes render `vllm serve --omni`** via a dedicated `resolveOmniCommand` path (no strategy / multi-node / pd). The command builder adds a Task pill row (T2I / I2I / T2V / I2V / TI2V / T2A) above Hardware, with task-specific cURL examples in the popover. Detection: `meta.tasks` includes `omni`. The `--omni` flag is auto-injected, so don't add it to `model.base_args`.
 - **Multi-node uses vLLM mp (multiprocessing) backend**, not Ray. For TP/TEP every node runs the same command varying `--node-rank`; rank>0 adds `--headless`. For DEP, Node N adds `--data-parallel-start-rank = N × gpus_per_node`. The UI shows exactly two tabs (Head + Node 1) as a 2-node example.
 - **Taxonomy hardware specs** follow [inferencex.semianalysis.com/gpu-specs](https://inferencex.semianalysis.com/gpu-specs): B200 SXM is 180 GB/GPU (not the nameplate 192, which is pre-ECC), GB200/GB300 are **4-GPU compute trays** (NVL4, the NVL72 rack unit), B300 is 268 GB/GPU.
 - **Legacy Markdown under `DeepSeek/`, `Qwen/` etc. is read-only reference.** When migrating or updating a recipe, read those to extract flags and env, but write the YAML; don't edit the Markdown.
