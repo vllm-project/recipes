@@ -22,7 +22,7 @@ platforms:
 
   - id: sagemaker
     name: AWS SageMaker
-    url: https://docs.vllm.ai/en/stable/examples/online_serving/sagemaker-entrypoint/
+    url: https://docs.vllm.ai/en/latest/examples/deployment/sagemaker-entrypoint/
     blurb: Managed container — BYO Docker image with the SageMaker entrypoint
     install: |
       # Dockerfile
