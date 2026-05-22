@@ -20,6 +20,10 @@ model:
   base_args: []
   base_env: {}
 
+omni:
+  tasks:
+    - t2i
+
 dependencies:
   - note: "Pin vllm==0.12.0 for Stable Diffusion 3.5"
     command: "uv pip install vllm==0.12.0"

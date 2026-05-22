@@ -17,8 +17,20 @@ model:
   parameter_count: "1.2B"
   active_parameters: "1.2B"
   context_length: 0
-  base_args: []
+  base_args:
+    - "--trust-remote-code"
+    - "--enforce-eager"
+    - "--gpu-memory-utilization"
+    - "0.9"
   base_env: {}
+
+omni:
+  # Audio handler isn't shipped in the `vllm` console-script, so vllm-omni
+  # publishes its own `vllm-omni serve` entrypoint with the right model
+  # handler registered.
+  serve_binary: "vllm-omni serve"
+  tasks:
+    - t2a
 
 dependencies:
   - note: "Pin vllm==0.14.1 for Stable Audio Open"
