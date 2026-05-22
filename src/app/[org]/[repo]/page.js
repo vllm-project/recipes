@@ -6,8 +6,11 @@ import { recipeHref } from "@/lib/recipe-utils";
 import { siteUrl } from "@/lib/site-url";
 import { loadStrategies } from "@/lib/strategies";
 import { loadTaxonomy } from "@/lib/taxonomy";
+import { resolveRecipePlatforms } from "@/lib/platforms";
 import { getProviderLogo, getProviderLogoClass } from "@/lib/providers";
 import { CommandBuilder } from "@/components/recipes/CommandBuilder";
+import { DeployDialog } from "@/components/recipes/DeployDialog";
+import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
@@ -80,6 +83,11 @@ export default async function RecipePage({ params }) {
   const guide = recipe.guide || "";
   const logo = getProviderLogo(recipe.hf_org);
 
+  // Per-recipe platform opt-in. Each entry is either a bare id ("modal") or
+  // an object with overrides ({ id: "modal", install, url, blurb }) for
+  // recipes that ship their own deploy script.
+  const enabledPlatforms = resolveRecipePlatforms(recipe.meta?.platforms);
+
   const allRecipes = getAllRecipes();
   // related_recipes can be either "org/repo" HF id or the old slug format
   const related = (recipe.meta.related_recipes || [])
@@ -137,15 +145,19 @@ export default async function RecipePage({ params }) {
             {recipe.meta.performance_headline && (
               <p className="text-xs text-muted-foreground/70 italic mt-1 leading-snug">{recipe.meta.performance_headline}</p>
             )}
-            <a
-              href={`https://huggingface.co/${recipe.hf_id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-vllm-blue transition-colors mt-2"
-            >
-              View on HuggingFace
-              <ExternalLink size={10} />
-            </a>
+            <div className="flex items-center gap-4 mt-2">
+              <a
+                href={`https://huggingface.co/${recipe.hf_id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-vllm-blue transition-colors"
+              >
+                <HuggingFaceIcon className="w-3.5 h-3.5" />
+                View on HuggingFace
+                <ExternalLink size={10} />
+              </a>
+              <DeployDialog platforms={enabledPlatforms} hfId={recipe.hf_id} />
+            </div>
           </div>
         </div>
 
