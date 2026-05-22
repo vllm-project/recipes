@@ -118,7 +118,10 @@ model:
 dependencies:
   - note: "Why you need it (one line)"
     command: 'uv pip install -U "vllm[audio]"'
-    optional: false               # omit or false for required; true to mark optional
+    optional: false               # omit or false for required; true = dimmed in UI + excluded from "Copy all"
+    brand: NVIDIA                 # optional: NVIDIA | AMD | Intel (or array). Omit for platform-agnostic deps.
+                                  # Use this for CUDA-only kernels (xformers/DeepGEMM) or ROCm-only wheels —
+                                  # the dep is hidden when the user picks a hardware pill of a different brand.
 
 features:
   tool_calling:                   # flip any of these pills; recipe chooses naming

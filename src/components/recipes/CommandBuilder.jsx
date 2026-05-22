@@ -902,7 +902,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     };
   }, [result, effectiveEndpoints]);
 
-  const dependencies = recipe.dependencies || [];
+  // Brand-filter recipe dependencies against the currently-selected hardware.
+  // `brand: NVIDIA | AMD | Intel` (or array) targets a single platform — entries
+  // without `brand` are platform-agnostic and always render. Used for cross-
+  // platform recipes (e.g. an omni recipe with separate NVIDIA / ROCm wheels)
+  // so AMD users don't see CUDA-only steps and vice versa.
+  const dependencies = useMemo(() => {
+    const all = recipe.dependencies || [];
+    const brand = hwProfile?.brand;
+    return all.filter((d) => {
+      if (!d.brand) return true;
+      const allowed = Array.isArray(d.brand) ? d.brand : [d.brand];
+      return allowed.includes(brand);
+    });
+  }, [recipe.dependencies, hwProfile?.brand]);
 
   // Status caption for the command block header.
   // Only `verified` is a positive signal worth surfacing; anything else
@@ -934,27 +947,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         : (strategies[activeStrategy]?.display_name || activeStrategy);
   const precisionPart = currentVariant.precision?.toUpperCase();
   const configSummary = [hwPart, strategyPart, precisionPart].filter(Boolean).join(" · ");
-
-  // Omni models are served via vLLM-Omni (offline Python inference), not `vllm serve`.
-  // Skip the command/strategy/feature UI and just show install deps + a pointer to the guide.
-  const isOmni = (recipe.meta?.tasks || []).includes("omni");
-  if (isOmni) {
-    return (
-      <div className="space-y-4">
-        {dependencies.length > 0 && <DependenciesBlock deps={dependencies} />}
-        <div className="rounded-2xl border border-border bg-muted/20 px-5 py-4 text-sm">
-          <div className="font-medium mb-1 flex items-center gap-2">
-            <Sparkles size={14} className="text-vllm-yellow" />
-            Served via vLLM-Omni (offline inference)
-          </div>
-          <p className="text-muted-foreground text-xs leading-relaxed">
-            This model runs as an offline Python workflow, not a long-running <code className="font-mono text-[11px] px-1 py-0.5 rounded bg-foreground/5">vllm serve</code> endpoint.
-            See the <strong>Guide</strong> below for the exact inference script and parameters.
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   // Upstream `vllm/vllm-openai:latest` (and recent pinned tags) ship CUDA 13
   // as the base; CUDA 12.9 is the legacy alternate published as a `-cu129`
@@ -1007,6 +999,116 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       : installMode === "docker" && dockerEffectivelyHidden
         ? "pip"
         : installMode;
+
+  // Omni models are served via vLLM-Omni (offline Python inference), not `vllm serve`.
+  // Skip the command/strategy/feature UI but still surface Install + Hardware + Variant
+  // selectors so users can pick CUDA tag / pip vs docker and see which GPU and
+  // precision the recipe targets before jumping to the Guide for the actual script.
+  const isOmni = (recipe.meta?.tasks || []).includes("omni");
+  if (isOmni) {
+    const omniVariants = Object.entries(recipe.variants || {});
+    return (
+      <TooltipProvider>
+        <div className="space-y-4">
+          <InstallBlock
+            recipe={recipe}
+            dockerMeta={dockerMeta}
+            installMode={effectiveInstallMode}
+            setInstallMode={setInstallMode}
+            dockerCudaVariant={dockerCudaVariant}
+            setDockerCudaVariant={setDockerCudaVariant}
+            altCudaSuffix={altCudaSuffix}
+          />
+
+          {effectiveInstallMode !== "docker" && dependencies.length > 0 && (
+            <DependenciesBlock deps={dependencies} />
+          )}
+
+          <div className="rounded-2xl border border-border bg-muted/20 px-5 py-4 text-sm">
+            <div className="font-medium mb-1 flex items-center gap-2">
+              <Sparkles size={14} className="text-vllm-yellow" />
+              Served via vLLM-Omni (offline inference)
+            </div>
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              This model runs as an offline Python workflow, not a long-running <code className="font-mono text-[11px] px-1 py-0.5 rounded bg-foreground/5">vllm serve</code> endpoint.
+              See the <strong>Guide</strong> below for the exact inference script and parameters.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-border divide-y divide-border">
+            <ConfigRow label="Hardware">
+              <div className="space-y-1.5">
+                {hwByBrand.map(([brand, profiles]) => (
+                  <div key={brand} className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 w-14 shrink-0">
+                      {brand}
+                    </span>
+                    <PillGroup>
+                      {profiles.map(([id, p]) => {
+                        const precisionOk = isPrecisionCompatible(p, currentVariant);
+                        const status = recipe.meta?.hardware?.[id];
+                        const isUnsupported = status === "unsupported";
+                        const disabled = !precisionOk || isUnsupported;
+                        const verifiedNote = status === "verified"
+                          ? "\n\nVerified — author has tested this hardware end-to-end"
+                          : "";
+                        const reason = !precisionOk
+                          ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
+                          : isUnsupported
+                            ? `Not yet supported on ${p.display_name} — this model doesn't run here today, may be enabled in a future release`
+                            : `${p.description}${verifiedNote}`;
+                        return (
+                          <Pill
+                            key={id}
+                            active={hwId === id}
+                            disabled={disabled}
+                            onClick={() => !disabled && selectHardware(id)}
+                            title={reason}
+                          >
+                            <HwStatusDot status={status} />
+                            <span className="font-semibold">{p.display_name}</span>
+                            {p.vram_gb > 0 && p.gpu_count > 0 && (
+                              <span className="text-muted-foreground ml-1.5 font-mono">
+                                {p.gpu_count}×{Math.round(p.vram_gb / p.gpu_count)}G
+                              </span>
+                            )}
+                          </Pill>
+                        );
+                      })}
+                    </PillGroup>
+                  </div>
+                ))}
+              </div>
+            </ConfigRow>
+
+            {omniVariants.length > 1 && (
+              <ConfigRow
+                label="Variant"
+                hint="VRAM shown is the minimum to LOAD the model (weights + runtime overhead). vLLM-Omni inference may need more for activations and intermediate tensors."
+              >
+                <PillGroup>
+                  {omniVariants.map(([key, v]) => (
+                    <Pill
+                      key={key}
+                      active={variant === key}
+                      onClick={() => selectVariant(key)}
+                      title={[
+                        v.description,
+                        `Min ${v.vram_minimum_gb} GB to load.`,
+                      ].filter(Boolean).join("\n\n")}
+                    >
+                      <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
+                      <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
+                    </Pill>
+                  ))}
+                </PillGroup>
+              </ConfigRow>
+            )}
+          </div>
+        </div>
+      </TooltipProvider>
+    );
+  }
 
   return (
     <TooltipProvider>
@@ -1704,8 +1806,12 @@ uv pip install -U vllm --torch-backend auto`;
 }
 
 function DependenciesBlock({ deps }) {
-  const allCommands = deps.map((d) => d.command).join("\n");
-  const requiredCount = deps.filter((d) => !d.optional).length;
+  // Copy-all only includes required entries — optional ones often target a
+  // different platform (e.g. AMD ROCm in a recipe with NVIDIA-only kernels),
+  // so blindly copy-pasting everything would mix incompatible installs.
+  const requiredDeps = deps.filter((d) => !d.optional);
+  const requiredCommands = requiredDeps.map((d) => d.command).join("\n");
+  const requiredCount = requiredDeps.length;
   const optionalCount = deps.length - requiredCount;
   return (
     <div className="rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border">
@@ -1715,14 +1821,19 @@ function DependenciesBlock({ deps }) {
           {requiredCount > 0 && <span className="text-[var(--command-fg)]/40">· {requiredCount} required</span>}
           {optionalCount > 0 && <span className="text-[var(--command-fg)]/40">· {optionalCount} optional</span>}
         </span>
-        <CopyButton text={allCommands} />
+        <CopyButton text={requiredCommands} />
       </div>
       <div className="px-4 py-3 text-[13px] font-mono leading-relaxed overflow-x-auto space-y-2">
         {deps.map((d, i) => (
-          <div key={i}>
+          <div key={i} className={d.optional ? "opacity-50" : undefined}>
             {d.note && (
-              <div className="text-[var(--command-fg)]/45 text-[11px] leading-snug mb-0.5">
-                # {d.note}{d.optional ? " (optional)" : ""}
+              <div className="text-[var(--command-fg)]/45 text-[11px] leading-snug mb-0.5 inline-flex items-center gap-1.5">
+                {d.optional && (
+                  <span className="inline-flex items-center rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wider bg-foreground/10 text-[var(--command-fg)]/60">
+                    Optional
+                  </span>
+                )}
+                <span># {d.note}</span>
               </div>
             )}
             <div className="text-[var(--command-fg)] whitespace-pre">{d.command}</div>
