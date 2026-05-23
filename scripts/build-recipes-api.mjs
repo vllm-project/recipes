@@ -65,7 +65,7 @@ function resolveDockerImage(recipe, baseCuda) {
   if (typeof override !== "object") return DEFAULT_IMAGE;
 
   const isCudaMap = (v) => v && typeof v === "object" && ("cu129" in v || "cu130" in v);
-  const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override;
+  const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override || "intel" in override;
 
   const pickFromCudaMap = (m) => m[baseCuda] || m.cu129 || m.cu130 || DEFAULT_IMAGE;
 
@@ -303,6 +303,15 @@ function findYamlFiles(dir) {
 // ── Taxonomy ──
 const taxonomy = normalizeDates(readYaml(path.join(ROOT, "taxonomy.yaml")));
 writeJson("taxonomy.json", taxonomy);
+
+// ── Platforms ── (third-party self-host targets; flat catalog)
+const platformsFile = path.join(ROOT, "platforms.yaml");
+let platformsCount = 0;
+if (fs.existsSync(platformsFile)) {
+  const platforms = normalizeDates(readYaml(platformsFile));
+  writeJson("platforms.json", platforms);
+  platformsCount = Array.isArray(platforms?.platforms) ? platforms.platforms.length : 0;
+}
 
 // ── Strategies ──
 const strategiesDir = path.join(ROOT, "strategies");
@@ -555,7 +564,7 @@ const hwIndexedCount = recipes.reduce(
   (n, r) => n + Object.keys(r.recommended_command?.by_hardware || {}).length, 0
 );
 console.log(
-  `✓ JSON API: ${recipes.length} models (${rcCount} with recommended_command, ${altCount} default-hw alternatives, ${hwIndexedCount} per-hw renderings), ${promotedCount} promoted variants, ${Object.keys(strategies).length} strategies` +
+  `✓ JSON API: ${recipes.length} models (${rcCount} with recommended_command, ${altCount} default-hw alternatives, ${hwIndexedCount} per-hw renderings), ${promotedCount} promoted variants, ${Object.keys(strategies).length} strategies, ${platformsCount} platforms` +
   (collisionCount ? ` (${collisionCount} variant collision${collisionCount > 1 ? "s" : ""} skipped)` : "")
 );
 console.log(`  /models.json`);
@@ -566,3 +575,4 @@ console.log(`  /{hf_id}/hw/{hw}/strategies/{strategy}.json  (per-(hw, strategy) 
 console.log(`  /{variant_hf_id}.json                        (promoted variants, e.g. /zai-org/GLM-5.1-FP8.json)`);
 console.log(`  /strategies.json`);
 console.log(`  /taxonomy.json`);
+console.log(`  /platforms.json`);

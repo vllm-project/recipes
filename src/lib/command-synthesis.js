@@ -243,10 +243,12 @@ export function computeDockerMeta(recipe, variant, hwProfile) {
         nvidia: "vllm/vllm-openai:latest",
         amd: "vllm/vllm-openai-rocm:latest",
         tpu: "vllm/vllm-tpu:latest",
+        intel: "vllm/vllm-openai-cpu:latest-x86_64",
       };
   const isAmd = hwProfile?.brand === "AMD";
   const isTpu = hwProfile?.generation === "tpu";
-  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : "nvidia";
+  const isIntel = hwProfile?.generation === "cpu" ||hwProfile?.brand === "Intel";
+  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
   const override = variant?.docker_image || recipe.model?.docker_image;
 
   const isCudaMap = (v) =>
@@ -257,7 +259,7 @@ export function computeDockerMeta(recipe, variant, hwProfile) {
   if (typeof override === "string") {
     if (brandKey === "nvidia") pinned = override;
   } else if (override && typeof override === "object") {
-    const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override;
+    const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override || "intel" in override;
     if (isBrandKeyed) {
       const brandValue = override[brandKey];
       if (typeof brandValue === "string") pinned = brandValue;
@@ -272,8 +274,10 @@ export function computeDockerMeta(recipe, variant, hwProfile) {
     ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
     : isAmd
       ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
+    : isIntel
+      ? "--shm-size=16g"	
       : "--gpus all";
-  return { image, gpuFlags, brandKey, isAmd, isTpu, pinned, cudaMap, nightlyRequired };
+  return { image, gpuFlags, brandKey, isAmd, isTpu, isIntel, pinned, cudaMap, nightlyRequired };
 }
 
 // argv form of the brand-specific GPU flags from computeDockerMeta. Mirrors
@@ -288,6 +292,9 @@ function dockerGpuArgv(meta) {
       "--group-add", "video",
     ];
   }
+  if (meta.isIntel) {
+    return ["--shm-size", "16g"];
+  }	
   return ["--gpus", "all"];
 }
 
@@ -327,6 +334,125 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
     meta.image,
     ...cmdArgs,
   ];
+}
+
+// Dedupe `--flag value` pairs by keeping only the LAST occurrence of each
+// flag. Matches shell "last wins" semantics and makes recipe/variant/
+// hardware overrides transparently shadow strategy defaults — the strategy
+// YAML sets a baseline, anything the recipe author writes later overrides
+// it without leaving stale pairs in the rendered command.
+function dedupeArgs(args) {
+  // Parse into units so (flag, value) stay together.
+  const units = [];
+  for (let i = 0; i < args.length; i++) {
+    const cur = args[i];
+    if (typeof cur === "string" && cur.startsWith("-")) {
+      const next = args[i + 1];
+      if (next !== undefined && !(typeof next === "string" && next.startsWith("-"))) {
+        units.push({ flag: cur, value: next });
+        i++;
+      } else {
+        units.push({ flag: cur });
+      }
+    } else {
+      units.push({ positional: cur });
+    }
+  }
+  // Last-wins: walk backward, mark first sighting of each flag as keep.
+  const seen = new Set();
+  const keep = new Array(units.length).fill(false);
+  for (let i = units.length - 1; i >= 0; i--) {
+    const u = units[i];
+    if (u.positional !== undefined) {
+      keep[i] = true;
+    } else if (!seen.has(u.flag)) {
+      seen.add(u.flag);
+      keep[i] = true;
+    }
+  }
+  const out = [];
+  for (let i = 0; i < units.length; i++) {
+    if (!keep[i]) continue;
+    const u = units[i];
+    if (u.positional !== undefined) out.push(u.positional);
+    else {
+      out.push(u.flag);
+      if (u.value !== undefined) out.push(u.value);
+    }
+  }
+  return out;
+}
+
+// Wrap values containing shell-special chars in single quotes so the rendered
+// command is paste-safe. Without this, JSON values like
+// `{"cudagraph_mode":"FULL_AND_PIECEWISE"}` trigger brace expansion and get
+// their double quotes stripped by bash.
+function shellQuote(s) {
+  if (typeof s !== "string" || s.length === 0) return s;
+  // Bare $VAR references must stay unquoted so bash expands them at runtime.
+  if (/^\$[A-Z_][A-Z0-9_]*$/.test(s)) return s;
+  if (/^[A-Za-z0-9_./=:@,+%-]+$/.test(s)) return s;
+  return `'${s.replace(/'/g, "'\\''")}'`;
+}
+
+/**
+ * Resolve the `vllm serve --omni` command for a vllm-omni recipe.
+ *
+ * Much simpler than the regular `resolveCommand`: no strategy logic, no
+ * multi-node, no router. Just a single online-serving process whose model id
+ * (and optionally extra args) can be swapped per omni task — e.g. Wan2.2 picks
+ * a different checkpoint for T2V vs I2V vs TI2V.
+ *
+ * `task` is the resolved entry from `resolveOmniTasks(recipe)`:
+ *   { id, modelId?, extraArgs?, ... }
+ *
+ * Outliers:
+ *   - `recipe.omni.serve_binary: "vllm-omni serve"` swaps the binary (today's
+ *     only user is stable-audio-open, whose handler doesn't ship in `vllm`).
+ *   - `recipe.omni.port` overrides the rendered `--port` flag (default 8000).
+ */
+export function resolveOmniCommand(recipe, variantKey, task, hwProfile) {
+  const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
+  const modelId = task?.modelId || variant.model_id || recipe.model?.model_id || "unknown";
+  const gen = normalizeGeneration(hwProfile?.generation || hwProfile?.gpu_generation);
+  const isNvidia = hwProfile?.brand === "NVIDIA";
+
+  const env = {};
+  Object.assign(env, recipe.model?.base_env || {});
+  if (variantKey !== "default" && variant.extra_env) Object.assign(env, variant.extra_env);
+  const ho = recipe.hardware_overrides?.[gen]
+    || (isNvidia ? recipe.hardware_overrides?.nvidia : null);
+  if (ho?.extra_env) Object.assign(env, ho.extra_env);
+
+  const args = [];
+  if (recipe.model?.base_args) args.push(...recipe.model.base_args);
+  if (variantKey !== "default" && variant.extra_args) args.push(...variant.extra_args);
+  if (task?.extraArgs?.length) args.push(...task.extraArgs);
+  if (ho?.extra_args) args.push(...ho.extra_args);
+  // --omni is the toggle that puts vllm into omni-handler mode. Always emit it
+  // last — dedupeArgs's last-wins rule keeps it idempotent if the recipe also
+  // declares it in base_args.
+  args.push("--omni");
+
+  const serveBinary = recipe.omni?.serve_binary || "vllm serve";
+
+  const filtered = dedupeArgs(args.filter(Boolean));
+  const lines = [];
+  for (let i = 0; i < filtered.length; i++) {
+    const cur = filtered[i];
+    const next = filtered[i + 1];
+    if (cur.startsWith("-") && next !== undefined && !next.startsWith("-")) {
+      lines.push(`${cur} ${shellQuote(next)}`);
+      i++;
+    } else {
+      lines.push(cur);
+    }
+  }
+  const command = lines.length === 0
+    ? `${serveBinary} ${modelId}`
+    : `${serveBinary} ${modelId} \\\n  ${lines.join(" \\\n  ")}`;
+
+  return { command, env, modelId };
 }
 
 /**
@@ -672,65 +798,6 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     }
 
     return env;
-  }
-
-  // Dedupe `--flag value` pairs by keeping only the LAST occurrence of each
-  // flag. Matches shell "last wins" semantics and makes recipe/variant/
-  // hardware overrides transparently shadow strategy defaults — the strategy
-  // YAML sets a baseline, anything the recipe author writes later overrides
-  // it without leaving stale pairs in the rendered command.
-  function dedupeArgs(args) {
-    // Parse into units so (flag, value) stay together.
-    const units = [];
-    for (let i = 0; i < args.length; i++) {
-      const cur = args[i];
-      if (typeof cur === "string" && cur.startsWith("-")) {
-        const next = args[i + 1];
-        if (next !== undefined && !(typeof next === "string" && next.startsWith("-"))) {
-          units.push({ flag: cur, value: next });
-          i++;
-        } else {
-          units.push({ flag: cur });
-        }
-      } else {
-        units.push({ positional: cur });
-      }
-    }
-    // Last-wins: walk backward, mark first sighting of each flag as keep.
-    const seen = new Set();
-    const keep = new Array(units.length).fill(false);
-    for (let i = units.length - 1; i >= 0; i--) {
-      const u = units[i];
-      if (u.positional !== undefined) {
-        keep[i] = true;
-      } else if (!seen.has(u.flag)) {
-        seen.add(u.flag);
-        keep[i] = true;
-      }
-    }
-    const out = [];
-    for (let i = 0; i < units.length; i++) {
-      if (!keep[i]) continue;
-      const u = units[i];
-      if (u.positional !== undefined) out.push(u.positional);
-      else {
-        out.push(u.flag);
-        if (u.value !== undefined) out.push(u.value);
-      }
-    }
-    return out;
-  }
-
-  // Wrap values containing shell-special chars in single quotes so the rendered
-  // command is paste-safe. Without this, JSON values like
-  // `{"cudagraph_mode":"FULL_AND_PIECEWISE"}` trigger brace expansion and get
-  // their double quotes stripped by bash.
-  function shellQuote(s) {
-    if (typeof s !== "string" || s.length === 0) return s;
-    // Bare $VAR references must stay unquoted so bash expands them at runtime.
-    if (/^\$[A-Z_][A-Z0-9_]*$/.test(s)) return s;
-    if (/^[A-Za-z0-9_./=:@,+%-]+$/.test(s)) return s;
-    return `'${s.replace(/'/g, "'\\''")}'`;
   }
 
   function formatCommand(args) {

@@ -23,7 +23,6 @@ prefill:
     - "--kv-transfer-config"
     - '{"kv_connector":"NixlConnector","kv_role":"kv_producer","kv_load_failure_policy":"fail"}'
     - "--enforce-eager"
-    - "--no-async-scheduling"
   env:
     VLLM_USE_NCCL_SYMM_MEM: "1"
     NCCL_CUMEM_ENABLE: "1"

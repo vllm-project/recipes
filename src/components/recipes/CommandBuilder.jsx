@@ -4,7 +4,8 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand } from "@/lib/command-synthesis";
+import { resolveOmniTasks } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
@@ -321,8 +322,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  // ── Omni tasks ── resolved from the recipe (catalog lookup); declared up here
+  // because both the omni and non-omni return paths reference these hooks.
+  const omniTasks = useMemo(() => resolveOmniTasks(recipe), [recipe]);
+
   // ── State ──
   const [variant, setVariant] = useState(searchParams.get("variant") || "default");
+
+  // Active omni task — drives the `vllm serve --omni` model_id swap (Wan2.2's
+  // T2V/I2V/TI2V) and the cURL endpoint/body shown in the Try-it popover.
+  const [omniTask, setOmniTask] = useState(() => {
+    const fromUrl = searchParams.get("task");
+    if (fromUrl && omniTasks.some((t) => t.id === fromUrl)) return fromUrl;
+    return omniTasks[0]?.id || "";
+  });
 
   // Compute default hardware: URL param > stored preference (if compatible) > smallest compatible profile
   // Smart default hardware: picks a profile compatible with the URL's variant
@@ -561,7 +574,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // All hardware profiles grouped by brand, sorted by architectural generation
   // within brand (oldest → newest; matches the semianalysis GPU timeline).
   const hwByBrand = useMemo(() => {
-    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "dgx_spark_gb10"];
+    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "dgx_station_gb300", "dgx_spark_gb10"];
     const AMD_ORDER = ["mi300x", "mi325x", "mi355x"];
     const rankIn = (list, id) => {
       const i = list.indexOf(id);
@@ -650,11 +663,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   );
 
   // Visual feedback when any rendered command changes. Covers single-node
-  // (result.command), multi-node (headCommand), and pd_cluster (prefill.command).
-  const commandFingerprint = result.command
+  // (result.command), multi-node (headCommand), pd_cluster (prefill.command),
+  // and omni (resolveCommand's modelId doesn't reflect omni task swaps, so
+  // include omniTask explicitly).
+  const commandFingerprint = (result.command
     || result.headCommand
     || result.prefill?.command
-    || "";
+    || "")
+    + (omniTask ? `|task:${omniTask}` : "");
   const [changed, setChanged] = useState(false);
   useEffect(() => {
     setChanged(true);
@@ -679,6 +695,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   );
 
   // ── Handlers ──
+  const selectOmniTask = (id) => {
+    setOmniTask(id);
+    // Default task id is omitted from the URL so a fresh page-load lands on
+    // the recipe author's intended starting task without a noisy `?task=…`.
+    const defaultId = omniTasks[0]?.id;
+    syncUrl({ task: id === defaultId ? "" : id });
+  };
+
   const selectVariant = (key) => {
     setVariant(key);
     syncUrl({ variant: key });
@@ -902,7 +926,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     };
   }, [result, effectiveEndpoints]);
 
-  const dependencies = recipe.dependencies || [];
+  // Brand-filter recipe dependencies against the currently-selected hardware.
+  // `brand: NVIDIA | AMD | Intel` (or array) targets a single platform — entries
+  // without `brand` are platform-agnostic and always render. Used for cross-
+  // platform recipes (e.g. an omni recipe with separate NVIDIA / ROCm wheels)
+  // so AMD users don't see CUDA-only steps and vice versa.
+  const dependencies = useMemo(() => {
+    const all = recipe.dependencies || [];
+    const brand = hwProfile?.brand;
+    return all.filter((d) => {
+      if (!d.brand) return true;
+      const allowed = Array.isArray(d.brand) ? d.brand : [d.brand];
+      return allowed.includes(brand);
+    });
+  }, [recipe.dependencies, hwProfile?.brand]);
 
   // Status caption for the command block header.
   // Only `verified` is a positive signal worth surfacing; anything else
@@ -934,27 +971,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         : (strategies[activeStrategy]?.display_name || activeStrategy);
   const precisionPart = currentVariant.precision?.toUpperCase();
   const configSummary = [hwPart, strategyPart, precisionPart].filter(Boolean).join(" · ");
-
-  // Omni models are served via vLLM-Omni (offline Python inference), not `vllm serve`.
-  // Skip the command/strategy/feature UI and just show install deps + a pointer to the guide.
-  const isOmni = (recipe.meta?.tasks || []).includes("omni");
-  if (isOmni) {
-    return (
-      <div className="space-y-4">
-        {dependencies.length > 0 && <DependenciesBlock deps={dependencies} />}
-        <div className="rounded-2xl border border-border bg-muted/20 px-5 py-4 text-sm">
-          <div className="font-medium mb-1 flex items-center gap-2">
-            <Sparkles size={14} className="text-vllm-yellow" />
-            Served via vLLM-Omni (offline inference)
-          </div>
-          <p className="text-muted-foreground text-xs leading-relaxed">
-            This model runs as an offline Python workflow, not a long-running <code className="font-mono text-[11px] px-1 py-0.5 rounded bg-foreground/5">vllm serve</code> endpoint.
-            See the <strong>Guide</strong> below for the exact inference script and parameters.
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   // Upstream `vllm/vllm-openai:latest` (and recent pinned tags) ship CUDA 13
   // as the base; CUDA 12.9 is the legacy alternate published as a `-cu129`
@@ -1007,6 +1023,207 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       : installMode === "docker" && dockerEffectivelyHidden
         ? "pip"
         : installMode;
+
+  // Omni recipes serve via `vllm serve <model> --omni`. The command shape is
+  // simpler than the regular path (no strategy / multi-node / pd), but the
+  // surrounding affordances (Install tabs, Hardware pills, Variant pills) all
+  // still apply. Plus a Task pill row that swaps endpoint + curl body — and,
+  // for multi-checkpoint families like Wan2.2, the served model_id too.
+  const isOmni = (recipe.meta?.tasks || []).includes("omni");
+  if (isOmni) {
+    const omniVariants = Object.entries(recipe.variants || {});
+    const showOmniVariants = omniVariants.length > 1;
+    const showOmniTaskRow = omniTasks.length > 1;
+    const activeTask = omniTasks.find((t) => t.id === omniTask) || omniTasks[0] || null;
+
+    // Render the `vllm serve --omni` command via the shared omni resolver.
+    // Falls back to a stub when the recipe has no omni.tasks declared yet
+    // (legacy omni-tagged recipes that haven't been migrated).
+    const omniRendered = activeTask
+      ? resolveOmniCommand(recipe, variant, activeTask, hwProfile)
+      : {
+          command: `${recipe.omni?.serve_binary || "vllm serve"} ${currentVariant.model_id || recipe.model?.model_id || "model"} --omni`,
+          env: {},
+          modelId: currentVariant.model_id || recipe.model?.model_id || "model",
+        };
+    const omniSubbedCommand = substitute(omniRendered.command, effectiveEndpoints);
+    const omniSubbedEnv = substituteEnv(omniRendered.env, effectiveEndpoints);
+
+    // Per-task verify command. `activeTask.example` knows the right endpoint
+    // (e.g. /v1/images/generations vs /v1/chat/completions multimodal) and
+    // payload shape; no chance for the generic /v1/chat/completions curl to
+    // mislead the user into hitting the wrong route.
+    const omniCurl = activeTask?.example
+      ? activeTask.example({
+          host: clientHost,
+          port: clientPortStr,
+          modelId: omniRendered.modelId,
+          prompt: undefined,
+        })
+      : verifyCmd;
+
+    // Recompute placeholders against the omni command set rather than the
+    // (unused-here) `result` from resolveCommand.
+    const omniPlaceholders = detectPlaceholdersAll(
+      omniRendered.command,
+      omniCurl,
+      ...Object.values(omniRendered.env || {}).filter((v) => typeof v === "string"),
+    );
+
+    const omniEndpointsControls = (
+      <EndpointsPopoverButton
+        isPd={false}
+        isMultiNode={false}
+        placeholders={omniPlaceholders}
+        endpoints={endpoints}
+        onChange={updateEndpoint}
+        onReset={resetEndpoints}
+      />
+    );
+
+    // Config caption: hw · task · precision. Same shape as the non-omni
+    // summary so the command-card header reads consistently across recipes.
+    const omniConfigSummary = [
+      hwProfile?.display_name || hwId,
+      activeTask?.label,
+      currentVariant.precision?.toUpperCase(),
+    ].filter(Boolean).join(" · ");
+
+    return (
+      <TooltipProvider>
+        <div className="space-y-4">
+          <InstallBlock
+            recipe={recipe}
+            dockerMeta={dockerMeta}
+            installMode={effectiveInstallMode}
+            setInstallMode={setInstallMode}
+            dockerCudaVariant={dockerCudaVariant}
+            setDockerCudaVariant={setDockerCudaVariant}
+            altCudaSuffix={altCudaSuffix}
+          />
+
+          {effectiveInstallMode !== "docker" && dependencies.length > 0 && (
+            <DependenciesBlock deps={dependencies} />
+          )}
+
+          <div
+            className={`rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border transition-shadow ${changed ? "ring-2 ring-vllm-blue/30" : ""}`}
+          >
+            <SingleCommandBlock
+              command={omniSubbedCommand}
+              env={omniSubbedEnv}
+              verifyCmd={omniCurl}
+              benchCmd={benchCmd}
+              statusHeader={statusHeader}
+              installMode={effectiveInstallMode}
+              dockerMeta={dockerMeta}
+              configSummary={omniConfigSummary}
+              endpointsControls={omniEndpointsControls}
+            />
+          </div>
+
+          <div className="rounded-xl border border-border divide-y divide-border">
+            <ConfigRow label="Hardware">
+              <div className="space-y-1.5">
+                {hwByBrand.map(([brand, profiles]) => (
+                  <div key={brand} className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 w-14 shrink-0">
+                      {brand}
+                    </span>
+                    <PillGroup>
+                      {profiles.map(([id, p]) => {
+                        const precisionOk = isPrecisionCompatible(p, currentVariant);
+                        const status = recipe.meta?.hardware?.[id];
+                        const isUnsupported = status === "unsupported";
+                        const disabled = !precisionOk || isUnsupported;
+                        const verifiedNote = status === "verified"
+                          ? "\n\nVerified — author has tested this hardware end-to-end"
+                          : "";
+                        const reason = !precisionOk
+                          ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
+                          : isUnsupported
+                            ? `Not yet supported on ${p.display_name} — this model doesn't run here today, may be enabled in a future release`
+                            : `${p.description}${verifiedNote}`;
+                        return (
+                          <Pill
+                            key={id}
+                            active={hwId === id}
+                            disabled={disabled}
+                            onClick={() => !disabled && selectHardware(id)}
+                            title={reason}
+                          >
+                            <HwStatusDot status={status} />
+                            <span className="font-semibold">{p.display_name}</span>
+                            {p.vram_gb > 0 && p.gpu_count > 0 && (
+                              <span className="text-muted-foreground ml-1.5 font-mono">
+                                {p.gpu_count}×{Math.round(p.vram_gb / p.gpu_count)}G
+                              </span>
+                            )}
+                          </Pill>
+                        );
+                      })}
+                    </PillGroup>
+                  </div>
+                ))}
+              </div>
+            </ConfigRow>
+
+            {showOmniTaskRow && (
+              <ConfigRow
+                label="Task"
+                hint="Each task picks a vllm-omni handler endpoint and example payload. For multi-checkpoint families (Wan2.2 T2V/I2V/TI2V) the task also swaps the served model_id."
+              >
+                <PillGroup>
+                  {omniTasks.map((t) => (
+                    <Pill
+                      key={t.id}
+                      active={activeTask?.id === t.id}
+                      onClick={() => selectOmniTask(t.id)}
+                      title={[t.description, `Endpoint: ${t.endpoint}`].filter(Boolean).join("\n\n")}
+                    >
+                      <span className="font-semibold">{t.label}</span>
+                      {t.vramMinimumGb && (
+                        <span className="text-muted-foreground ml-1.5 font-mono">{t.vramMinimumGb} GB</span>
+                      )}
+                    </Pill>
+                  ))}
+                </PillGroup>
+                {activeTask?.description && (
+                  <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                    {activeTask.description}
+                  </p>
+                )}
+              </ConfigRow>
+            )}
+
+            {showOmniVariants && (
+              <ConfigRow
+                label="Variant"
+                hint="VRAM shown is the minimum to LOAD the model (weights + runtime overhead). vLLM-Omni inference may need more for activations and intermediate tensors."
+              >
+                <PillGroup>
+                  {omniVariants.map(([key, v]) => (
+                    <Pill
+                      key={key}
+                      active={variant === key}
+                      onClick={() => selectVariant(key)}
+                      title={[
+                        v.description,
+                        `Min ${v.vram_minimum_gb} GB to load.`,
+                      ].filter(Boolean).join("\n\n")}
+                    >
+                      <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
+                      <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
+                    </Pill>
+                  ))}
+                </PillGroup>
+              </ConfigRow>
+            )}
+          </div>
+        </div>
+      </TooltipProvider>
+    );
+  }
 
   return (
     <TooltipProvider>
@@ -1704,8 +1921,12 @@ uv pip install -U vllm --torch-backend auto`;
 }
 
 function DependenciesBlock({ deps }) {
-  const allCommands = deps.map((d) => d.command).join("\n");
-  const requiredCount = deps.filter((d) => !d.optional).length;
+  // Copy-all only includes required entries — optional ones often target a
+  // different platform (e.g. AMD ROCm in a recipe with NVIDIA-only kernels),
+  // so blindly copy-pasting everything would mix incompatible installs.
+  const requiredDeps = deps.filter((d) => !d.optional);
+  const requiredCommands = requiredDeps.map((d) => d.command).join("\n");
+  const requiredCount = requiredDeps.length;
   const optionalCount = deps.length - requiredCount;
   return (
     <div className="rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border">
@@ -1715,14 +1936,19 @@ function DependenciesBlock({ deps }) {
           {requiredCount > 0 && <span className="text-[var(--command-fg)]/40">· {requiredCount} required</span>}
           {optionalCount > 0 && <span className="text-[var(--command-fg)]/40">· {optionalCount} optional</span>}
         </span>
-        <CopyButton text={allCommands} />
+        <CopyButton text={requiredCommands} />
       </div>
       <div className="px-4 py-3 text-[13px] font-mono leading-relaxed overflow-x-auto space-y-2">
         {deps.map((d, i) => (
-          <div key={i}>
+          <div key={i} className={d.optional ? "opacity-50" : undefined}>
             {d.note && (
-              <div className="text-[var(--command-fg)]/45 text-[11px] leading-snug mb-0.5">
-                # {d.note}{d.optional ? " (optional)" : ""}
+              <div className="text-[var(--command-fg)]/45 text-[11px] leading-snug mb-0.5 inline-flex items-center gap-1.5">
+                {d.optional && (
+                  <span className="inline-flex items-center rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wider bg-foreground/10 text-[var(--command-fg)]/60">
+                    Optional
+                  </span>
+                )}
+                <span># {d.note}</span>
               </div>
             )}
             <div className="text-[var(--command-fg)] whitespace-pre">{d.command}</div>

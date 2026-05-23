@@ -309,16 +309,6 @@ guide: |
   | Min latency   | 4-8 | 8-16   | Best TTFT/TPOT |
   | Balanced      | 2   | 128    | Mixed workloads |
 
-  ## Deploy on Modal
-
-  Modal deployment script: `gemma4-modal.py` in the original recipe directory.
-  ```bash
-  pip install modal
-  modal setup
-  modal deploy gemma4-modal.py
-  modal run gemma4-modal.py
-  ```
-
   ## Speculative Decoding (MTP)
 
   Enable the **Spec Decoding** feature toggle (above) or add `--speculative-config` manually to use MTP drafting with the [assistant model](https://huggingface.co/google/gemma-4-31B-it-assistant). Recommended `num_speculative_tokens`: 4–8 for this model. See the [Gemma 4 usage guide](../../Google/Gemma4) for details and benchmarks.

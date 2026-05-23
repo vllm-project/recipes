@@ -51,7 +51,10 @@ export function SearchBox({ recipes }) {
       const hwKeys = Object.entries(r.meta?.hardware || {})
         .filter(([, s]) => s === "verified")
         .map(([h]) => h);
-      const hwExtra = hwKeys.some((k) => k === "trillium" || k === "ironwood") ? ["tpu"] : [];
+      const hwExtra = [
+	      (hwKeys.some((k) => k === "trillium" || k === "ironwood") ? ["tpu"] : []),
+	      (hwKeys.some((k) => k === "xeon6" || k === "xeon5") ? ["intel", "xeon", "cpu", "x86"] : []),
+      ];	    
       const hay = [
         r.meta.title,
         r.hf_repo,

@@ -13,6 +13,7 @@ meta:
     h100: verified
     h200: verified
     b200: verified
+    dgx_station_gb300: verified
 
 model:
   model_id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16"
