@@ -23,11 +23,13 @@ model:
     - "/"
     - "--mm-processor-cache-type"
     - "shm"
-  base_env: {}
+    - "--reasoning-parser"
+    - "glm45"
+  base_env: {VLLM_VIDEO_LOADER_BACKEND: "glm4_6v"}
 
 dependencies:
-  - command: "uv pip install -U transformers"
-    note: "Latest transformers required for GlmgaImageProcessor / GlmgaVideoProcessor support"
+  - command: "uv pip install git+https://github.com/huggingface/transformers.git"
+    note: "Latest transformers from main branch for GlmgaImageProcessor / GlmgaVideoProcessor support"
 
 features:
   text_only:
@@ -74,7 +76,7 @@ guide: |
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend auto
-  uv pip install -U transformers
+  uv pip install git+https://github.com/huggingface/transformers.git
   ```
 
   ## Launching the Server

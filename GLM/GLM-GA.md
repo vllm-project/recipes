@@ -18,7 +18,7 @@ uv pip install git+https://github.com/huggingface/transformers.git    # Installe
 ```bash
 VLLM_VIDEO_LOADER_BACKEND=glm4_6v
 vllm serve zai-org/GLM-GA \
-     --tool-call-parser glm45 \
+     --tool-call-parser glm47 \
      --reasoning-parser glm45 \
      --enable-auto-tool-choice \
      --allowed-local-media-path / \
