@@ -84,7 +84,7 @@ guide: |
   ### Single GPU
 
   ```bash
-  VLLM_VIDEO_LOADER_BACKEND=glm4_6v
+  export VLLM_VIDEO_LOADER_BACKEND=glm4_6v
   vllm serve zai-org/GLM-GA \
        --tool-call-parser glm45 \
        --reasoning-parser glm45 \

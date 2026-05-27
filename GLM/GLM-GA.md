@@ -16,7 +16,7 @@ uv pip install git+https://github.com/huggingface/transformers.git    # Installe
 ## Running GLM-GA on a single H100/H200
 
 ```bash
-VLLM_VIDEO_LOADER_BACKEND=glm4_6v
+export VLLM_VIDEO_LOADER_BACKEND=glm4_6v
 vllm serve zai-org/GLM-GA \
      --tool-call-parser glm47 \
      --reasoning-parser glm45 \
