@@ -213,6 +213,7 @@ guide: |
     --security-opt seccomp=unconfined --group-add video \
     --privileged --ipc=host -p 8000:8000 \
     -e SAFETENSORS_FAST_GPU=1 \
+    -e VLLM_ROCM_USE_AITER=1 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     vllm/vllm-openai-rocm:nightly mistralai/Mistral-Medium-3.5-128B \
       --tokenizer_mode mistral --config_format mistral --load_format mistral \
