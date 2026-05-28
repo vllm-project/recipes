@@ -67,9 +67,9 @@ hardware_profiles:
     brand: NVIDIA
     generation: blackwell
     display_name: "DGX Station (GB300)"
-    description: "NVIDIA DGX Station · 1× GB300 Grace-Blackwell Ultra Superchip · 288 GB HBM3e (desktop workstation)"
+    description: "NVIDIA DGX Station · 1× GB300 Grace-Blackwell Ultra Superchip · 252 GB HBM3e (desktop workstation)"
     gpu_count: 1
-    vram_gb: 288
+    vram_gb: 252
     multi_node: false
     restricted: true
 
