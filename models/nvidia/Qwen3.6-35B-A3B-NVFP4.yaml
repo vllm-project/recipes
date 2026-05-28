@@ -1,9 +1,9 @@
 meta:
-  title: "Qwen3.6-35B-A3B-2.06GB-per-token (NVIDIA)"
-  slug: "qwen3.6-35b-a3b-2.06gb-per-token"
+  title: "Qwen3.6-35B-A3B-NVFP4 (NVIDIA)"
+  slug: "qwen3.6-35b-a3b-nvfp4"
   provider: "NVIDIA"
-  description: "NVIDIA ModelOpt mixed-precision quantization of Qwen3.6-35B-A3B with NVFP4 MoE/lm_head weights and FP8 attention projections, tuned for DGX Spark"
-  date_updated: 2026-05-18
+  description: "NVIDIA ModelOpt NVFP4 quantization of Qwen3.6-35B-A3B, tuned for DGX Spark"
+  date_updated: 2026-05-28
   difficulty: intermediate
   tasks:
     - text
@@ -15,7 +15,7 @@ meta:
 default_hardware: dgx_spark_gb10
 
 model:
-  model_id: "nvidia/Qwen3.6-35B-A3B-2.06GB-per-token"
+  model_id: "nvidia/Qwen3.6-35B-A3B-NVFP4"
   min_vllm_version: "nightly"
   nightly_required: true
   architecture: moe
@@ -77,7 +77,7 @@ variants:
   default:
     precision: nvfp4
     vram_minimum_gb: 21
-    description: "NVIDIA ModelOpt W4A16/NVFP4 mixed-precision weights for DGX Spark"
+    description: "NVIDIA ModelOpt NVFP4 weights for DGX Spark"
 
 compatible_strategies:
   - single_node_tp
@@ -89,12 +89,11 @@ strategy_overrides: {}
 guide: |
   ## Overview
 
-  [Qwen3.6-35B-A3B-2.06GB-per-token](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-2.06GB-per-token)
-  is NVIDIA's ModelOpt-native mixed-precision quantization of
+  [Qwen3.6-35B-A3B-NVFP4](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-NVFP4)
+  is NVIDIA's ModelOpt-native NVFP4 quantization of
   [Qwen/Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B). The checkpoint
-  uses NVFP4 for MoE/lm_head weights and FP8 for attention projections, and is tuned
-  to hit roughly 2.06 GB of KV cache per 1M tokens with FP8 KV cache. This
-  recipe targets DGX Spark.
+  is tuned for DGX Spark serving with FP8 KV cache, FlashInfer attention, and
+  ModelOpt quantization.
 
   ## Prerequisites
 
@@ -113,7 +112,7 @@ guide: |
   ```
 
   ```bash
-  vllm serve nvidia/Qwen3.6-35B-A3B-2.06GB-per-token \
+  vllm serve nvidia/Qwen3.6-35B-A3B-NVFP4 \
     --host 0.0.0.0 \
     --port 8000 \
     --tensor-parallel-size 1 \
@@ -138,12 +137,12 @@ guide: |
   - The ModelOpt quantization metadata is baked into the checkpoint; no manual
     compressed-tensors override is required.
   - `--quantization modelopt` selects the ModelOpt quantization path.
-  - `--kv-cache-dtype fp8` keeps KV cache near 2.06 GB/1M-token
+  - `--kv-cache-dtype fp8` keeps KV cache memory low for longer contexts.
   - `--max-model-len 65536`, `--max-num-seqs 4`, and
     `--max-num-batched-tokens 8192` are the Spark serving shape used for this
     recipe.
 
   ## References
 
-  - [Model card](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-2.06GB-per-token)
+  - [Model card](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-NVFP4)
   - [Parent Qwen3.6-35B-A3B recipe](../Qwen/Qwen3.6-35B-A3B)
