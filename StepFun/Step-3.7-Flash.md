@@ -31,7 +31,7 @@ uv pip install vllm --torch-backend auto
 #### For FP8 model
 
 ```bash
-vllm serve stepfun-ai/Step-3.5-Flash-FP8 \
+vllm serve stepfun-ai/Step-3.7-Flash-FP8 \
   --served-model-name step3p7-flash \
   --tensor-parallel-size 8 \
   --enable-expert-parallel \
