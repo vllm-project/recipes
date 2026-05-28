@@ -46,7 +46,7 @@ vllm serve stepfun-ai/Step-3.7-Flash-FP8 \
 #### For BF16 model
 
 ```bash
-vllm serve stepfun-ai/Step-3.5-Flash \
+vllm serve stepfun-ai/Step-3.7-Flash \
   --served-model-name step3p7-flash-bf16 \
   --tensor-parallel-size 8 \
   --enable-expert-parallel \
