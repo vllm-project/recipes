@@ -23,7 +23,7 @@ uv pip install vllm --torch-backend auto
 `Step-3.7-Flash` provides three precision options, You can choose the appropriate model based on your needs.
 
 - [stepfun-ai/Step-3.7-Flash](https://huggingface.co/stepfun-ai/Step-3.7-Flash)
-- [stepfun-ai/Step-3.7-Flash-FP8](https://huggingface.co/stepfun-ai/Step-3.5-Flash-FP8)
+- [stepfun-ai/Step-3.7-Flash-FP8](https://huggingface.co/stepfun-ai/Step-3.7-Flash-FP8)
 - [stepfun-ai/Step-3.7-Flash-NVFP4](https://huggingface.co/stepfun-ai/Step-3.7-Flash-NVFP4)
 
 ### Deployment
