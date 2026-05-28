@@ -756,18 +756,6 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       || (envIsNvidia ? recipe.hardware_overrides?.nvidia : null);
     if (envHo?.extra_env) Object.assign(env, envHo.extra_env);
 
-    // Feature-scoped env is merged only when that feature is selected. This is
-    // useful for opt-in paths such as speculative decoding that need one env
-    // var but should not alter the base command.
-    for (const f of enabledFeatures || []) {
-      const feat = recipe.features?.[f];
-      if (!feat) continue;
-      const featHo = feat.hardware_overrides?.[gen]
-        || (envIsNvidia ? feat.hardware_overrides?.nvidia : null);
-      const featEnv = featHo?.extra_env ?? feat.extra_env;
-      if (featEnv) Object.assign(env, featEnv);
-    }
-
     // NVL4-only env vars are meaningful only on GB200/GB300 trays. Drop them
     // for any other hardware regardless of where they came from (strategy YAML
     // or recipe-level pd_cluster override).

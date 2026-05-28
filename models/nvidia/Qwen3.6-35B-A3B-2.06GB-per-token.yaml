@@ -23,10 +23,38 @@ model:
   active_parameters: "3B"
   context_length: 262144
   base_args:
+    - "--host"
+    - "0.0.0.0"
+    - "--port"
+    - "8000"
     - "--trust-remote-code"
+    - "--dtype"
+    - "auto"
+    - "--quantization"
+    - "modelopt"
     - "--kv-cache-dtype"
     - "fp8"
-  base_env: {}
+    - "--attention-backend"
+    - "flashinfer"
+    - "--moe-backend"
+    - "marlin"
+    - "--gpu-memory-utilization"
+    - "0.85"
+    - "--max-model-len"
+    - "65536"
+    - "--max-num-seqs"
+    - "4"
+    - "--max-num-batched-tokens"
+    - "8192"
+    - "--enable-chunked-prefill"
+    - "--async-scheduling"
+    - "--enable-prefix-caching"
+    - "--speculative-config"
+    - '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+  base_env:
+    VLLM_FP8_MOE_BACKEND: "flashinfer_cutlass"
+    FLASHINFER_DISABLE_VERSION_CHECK: "1"
+    CUTE_DSL_ARCH: "sm_121a"
 
 features:
   tool_calling:
@@ -40,14 +68,10 @@ features:
     args:
       - "--reasoning-parser"
       - "qwen3"
-  spec_decoding:
-    description: "MTP speculative decoding with Triton MoE backend for the draft path"
-    args:
-      - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
 
 opt_in_features:
-  - spec_decoding
+  - tool_calling
+  - reasoning
 
 variants:
   default:
@@ -57,7 +81,6 @@ variants:
 
 compatible_strategies:
   - single_node_tp
-  - multi_node_tp
 
 hardware_overrides: {}
 
@@ -77,37 +100,48 @@ guide: |
 
   - **Hardware:** DGX Spark (GB10, 128 GB unified memory)
   - **vLLM:** nightly or a source build with ModelOpt W4A16/NVFP4 support for this
-    checkpoint. As of 2026-05-18, the required vLLM support is still in open PRs:
-    [#42124](https://github.com/vllm-project/vllm/pull/42124),
-    [#42546](https://github.com/vllm-project/vllm/pull/42546), and
-    [#42566](https://github.com/vllm-project/vllm/pull/42566).
+    checkpoint
   - **Hugging Face:** access to the gated NVIDIA checkpoint
   - **Docker:** NVIDIA Container Toolkit recommended
 
   ## DGX Spark Launch
 
-  Use the published NVIDIA ModelOpt checkpoint directly:
+  ```bash
+  export VLLM_FP8_MOE_BACKEND=flashinfer_cutlass
+  export FLASHINFER_DISABLE_VERSION_CHECK=1
+  export CUTE_DSL_ARCH=sm_121a
+  ```
 
   ```bash
   vllm serve nvidia/Qwen3.6-35B-A3B-2.06GB-per-token \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --trust-remote-code \
+    --dtype auto \
+    --quantization modelopt \
     --kv-cache-dtype fp8 \
-    --trust-remote-code
+    --attention-backend flashinfer \
+    --moe-backend marlin \
+    --gpu-memory-utilization 0.85 \
+    --max-model-len 65536 \
+    --max-num-seqs 4 \
+    --max-num-batched-tokens 8192 \
+    --enable-chunked-prefill \
+    --async-scheduling \
+    --enable-prefix-caching \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
   ```
 
   Key flags:
 
   - The ModelOpt quantization metadata is baked into the checkpoint; no manual
-    `--quantization` flag is required.
+    compressed-tensors override is required.
+  - `--quantization modelopt` selects the ModelOpt quantization path.
   - `--kv-cache-dtype fp8` keeps KV cache near 2.06 GB/1M-token
-
-  For higher throughput on Blackwell, consider adding
-  `--attention-backend flashinfer`, `--enable-chunked-prefill`,
-  `--async-scheduling`, `--enable-flashinfer-autotune`,
-  `--enable-prefix-caching`, and `--moe-backend=marlin`.
-  `VLLM_MARLIN_USE_ATOMIC_ADD=1` can help small-N Marlin MoE shapes.
-  Tune batching for the workload.
-  MTP speculative decoding can also be enabled with a `speculative-config`
-  using `{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}`.
+  - `--max-model-len 65536`, `--max-num-seqs 4`, and
+    `--max-num-batched-tokens 8192` are the Spark serving shape used for this
+    recipe.
 
   ## References
 

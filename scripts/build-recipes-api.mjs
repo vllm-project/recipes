@@ -481,17 +481,16 @@ for (const file of findYamlFiles(modelsDir)) {
     }
   }
 
-  // strategy_overrides, compatible_strategies, default_strategy, and
-  // default_hardware are synthesis inputs whose effects are already baked into
-  // recommended_command + the per-strategy alternative files (whose keys are
-  // the compatible_strategies set; the recommended one comes from
-  // default_strategy/default_hardware). Drop AFTER all renderings (parent +
-  // promoted) have run — buildVariantRendering reads them. The YAML on GitHub
-  // is the source of truth for anyone re-synthesizing.
+  // strategy_overrides, compatible_strategies, and default_strategy are
+  // synthesis inputs whose effects are already baked into recommended_command
+  // + the per-strategy alternative files. Keep `default_hardware` in the JSON:
+  // the client-side command builder also uses it when users switch variants.
+  // Drop AFTER all renderings (parent + promoted) have run —
+  // buildVariantRendering reads them. The YAML on GitHub is the source of truth
+  // for anyone re-synthesizing.
   delete r.strategy_overrides;
   delete r.compatible_strategies;
   delete r.default_strategy;
-  delete r.default_hardware;
   // JSON at /<org>/<repo>.json — mirrors HF URL scheme.
   const out = writeRecipeJson(parentHfId, r);
   recipes.push(out);
