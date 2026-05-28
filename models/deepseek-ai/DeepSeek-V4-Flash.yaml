@@ -233,21 +233,15 @@ guide: |
 
   ```bash
   vllm serve deepseek-ai/DeepSeek-V4-Flash \
-    --host 0.0.0.0 --port 8888 \
     --tensor-parallel-size 1 --pipeline-parallel-size 1 \
     --kv-cache-dtype fp8 --trust-remote-code --block-size 256 \
-    --enable-prefix-caching --gpu-memory-utilization 0.92 \
+    --gpu-memory-utilization 0.92 \
     --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}' \
     --attention_config.use_fp4_indexer_cache True \
     --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 \
     --enable-auto-tool-choice --reasoning-parser deepseek_v4 \
-    --no-disable-hybrid-kv-cache-manager --disable-uvicorn-access-log \
     --max-cudagraph-capture-size 128 \
-    --prefix-cache-retention-interval auto \
-    --speculative-config '{"method":"mtp","num_speculative_tokens":3,"rejection_sample_method":"synthetic","synthetic_acceptance_length":3}' \
-    --max-model-len 1048576 \
-    --max-num-batched-tokens 8192 \
-    --max-num-seqs 16
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3,"rejection_sample_method":"synthetic","synthetic_acceptance_length":3}'
   ```
 
   ### H200 Single-Node PD (Mooncake)
