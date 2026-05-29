@@ -241,7 +241,7 @@ guide: |
     --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 \
     --enable-auto-tool-choice --reasoning-parser deepseek_v4 \
     --max-cudagraph-capture-size 128 \
-    --speculative-config '{"method":"mtp","num_speculative_tokens":3,"rejection_sample_method":"synthetic","synthetic_acceptance_length":3}'
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
   ```
 
   ### H200 Single-Node PD (Mooncake)
