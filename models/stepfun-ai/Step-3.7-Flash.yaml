@@ -126,7 +126,7 @@ guide: |
   Or via Docker:
 
   ```bash
-  docker pull vllm/vllm-openai:nightly
+  docker pull vllm/vllm-openai:stepfun37
   ```
 
   ## Launching the Server
