@@ -18,6 +18,10 @@ model:
   model_id: "stepfun-ai/Step-3.7-Flash"
   min_vllm_version: "nightly"
   nightly_required: true
+  docker_image: "vllm/vllm-openai:stepfun37"
+  install:
+    docker:
+      note: "Dedicated Step-3.7 image — preferred over the nightly pip wheel until support lands in vllm:latest."
   architecture: moe
   parameter_count: "198B"
   active_parameters: "11B"
