@@ -89,17 +89,22 @@ hardware_overrides:
   blackwell:
     extra_args:
       - "--attention_config.use_fp4_indexer_cache=True"
+      - "--moe-backend"
+      - "deep_gemm_mega_moe"
 
 strategy_overrides:
   single_node_tp:
     # Latency-oriented TP-only deployment: no expert parallelism (single_node_tp
-    # strategy doesn't add --enable-expert-parallel). Autotune is disabled to
-    # minimize startup time.
+    # strategy doesn't add --enable-expert-parallel) and no MoE mega-kernel
+    # backend on Blackwell. Autotune is disabled to minimize startup time.
     tp: 8
     extra_args:
       - "--no-enable-flashinfer-autotune"
     hardware_overrides:
       blackwell:
+        # Replaces recipe-level blackwell override: keeps the FP4 indexer cache
+        # but drops --moe-backend deep_gemm_mega_moe (TP-only path uses the
+        # default MoE backend).
         extra_args:
           - "--attention_config.use_fp4_indexer_cache=True"
   single_node_dep:
