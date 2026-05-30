@@ -3,7 +3,7 @@ meta:
   slug: "step-3.7-flash"
   provider: "StepFun"
   description: "Production-grade vision-language MoE (~198B total / 11B active parameters) combining a 196B sparse language backbone with a 1.8B perception encoder, hybrid SWA/Global attention, and 3-way Multi-Token Prediction"
-  date_updated: 2026-05-28
+  date_updated: 2026-05-30
   difficulty: intermediate
   tasks:
     - multimodal
@@ -13,6 +13,7 @@ meta:
   hardware:
     h200: verified
     b200: verified
+    dgx_station_gb300: verified
 
 model:
   model_id: "stepfun-ai/Step-3.7-Flash"
@@ -183,6 +184,48 @@ guide: |
       --async-scheduling \
       --trust-remote-code
   ```
+
+  ### DGX Station Single-GPU
+
+  The [DGX Station](https://www.nvidia.com/en-us/products/workstations/dgx-station/)
+  ships a single GB300 Grace-Blackwell Ultra Superchip with 252 GB of HBM3e, so the
+  FP8 and NVFP4 checkpoints both fit entirely in VRAM on one GPU (BF16 at ~475 GB does
+  not). Use the dedicated `vllm/vllm-openai:stepfun37` image and serve on a single GPU:
+
+  ```bash
+  vllm serve stepfun-ai/Step-3.7-Flash-FP8 \
+      --served-model-name step3p7-flash \
+      --tensor-parallel-size 1 \
+      --gpu-memory-utilization 0.95 \
+      --kv-cache-dtype fp8 \
+      --reasoning-parser step3p5 \
+      --tool-call-parser step3p5 \
+      --enable-auto-tool-choice \
+      --trust-remote-code
+  ```
+
+  Swap in `stepfun-ai/Step-3.7-Flash-NVFP4` to run the NVFP4 checkpoint instead. Or
+  launch the prebuilt container directly:
+
+  ```bash
+  docker run -d --name vllm-server \
+      --gpus all --ipc host \
+      --ulimit memlock=-1 --ulimit stack=67108864 \
+      -p 8000:8000 \
+      -e HF_TOKEN="$HF_TOKEN" \
+      -v "$HOME/.cache/huggingface/hub:/root/.cache/huggingface/hub" \
+      vllm/vllm-openai:stepfun37 \
+      stepfun-ai/Step-3.7-Flash-FP8 \
+        --gpu-memory-utilization 0.95 \
+        --trust-remote-code \
+        --reasoning-parser step3p5 \
+        --enable-auto-tool-choice \
+        --tool-call-parser step3p5 \
+        --kv-cache-dtype fp8
+  ```
+
+  See the [NVIDIA build DGX Station instructions](https://build.nvidia.com/station/vllm/instructions)
+  for the full container setup.
 
   ## Benchmarking
 

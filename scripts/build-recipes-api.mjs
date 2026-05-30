@@ -24,6 +24,8 @@ import {
   listCompatibleHardware,
   recommendStrategy,
   fitsSingleNode,
+  isHardwareScalable,
+  pickFittingVariant,
   pdFitsSingleNode,
   resolveCommand,
   computeDockerMeta,
@@ -241,13 +243,25 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
 // writes each alternative to its own file and replaces it with a path link.
 // Null for omni recipes or unknown variants.
 function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
-  const variant = recipe.variants?.[variantKey];
+  let variant = recipe.variants?.[variantKey];
   if (!variant) return null;
   if ((recipe.meta?.tasks || []).includes("omni")) return null;
 
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
-  const compatible = recipe.compatible_strategies || [];
-  const supportsMultiNode = compatible.some((s) => s.startsWith("multi_node_"));
+  const scalable = isHardwareScalable(hwProfile);
+  // Non-scalable hardware (single-GPU workstation, e.g. DGX Station) can't
+  // shard an oversized variant — substitute the largest variant that fits, and
+  // skip multi-node strategies. Mirrors the command builder's UI behavior.
+  if (!scalable && !fitsSingleNode(hwProfile, variant)) {
+    const fitting = pickFittingVariant(recipe, hwProfile);
+    if (!fitting) return null;
+    variantKey = fitting;
+    variant = recipe.variants[fitting];
+  }
+  const compatible = (recipe.compatible_strategies || []).filter(
+    (s) => scalable || (!s.startsWith("multi_node_") && s !== "pd_cluster")
+  );
+  const supportsMultiNode = scalable && compatible.some((s) => s.startsWith("multi_node_"));
   const recommendedNodeCount = !fitsSingleNode(hwProfile, variant) && supportsMultiNode ? 2 : 1;
   const recommendedStrategy = recommendStrategy(recipe, hwProfile, recommendedNodeCount);
   const recommendedFeatures = defaultFeaturesFor(recipe, hwId);

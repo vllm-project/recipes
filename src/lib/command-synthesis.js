@@ -162,6 +162,48 @@ export function fitsSingleNode(hwProfile, variant) {
 }
 
 /**
+ * Whether a hardware profile can scale VRAM by adding nodes. Defaults to true;
+ * single-GPU desktop workstations (e.g. DGX Station) set `scalable: false` in
+ * the taxonomy because they can't be clustered into a multi-node deployment.
+ * On non-scalable hardware VRAM becomes a hard constraint — a variant that
+ * doesn't fit one box has nowhere to grow.
+ *
+ * NB: the pre-existing `multi_node: false` on every profile is unrelated dead
+ * metadata (it's false everywhere) — don't conflate it with scalability.
+ */
+export function isHardwareScalable(hwProfile) {
+  return hwProfile?.scalable !== false;
+}
+
+/**
+ * A variant is runnable on a hardware profile when it's precision-compatible
+ * and either the hardware can scale out (multi-node supplies more VRAM) or the
+ * weights already fit single-node. Used to disable variant pills on
+ * non-scalable hardware where the variant has nowhere to shard.
+ */
+export function variantRunsOnHardware(hwProfile, variant) {
+  if (!isPrecisionCompatible(hwProfile, variant)) return false;
+  if (isHardwareScalable(hwProfile)) return true;
+  return fitsSingleNode(hwProfile, variant);
+}
+
+/**
+ * For non-scalable hardware: pick the best variant that actually runs on it —
+ * precision-compatible and single-node-fitting, preferring the
+ * largest-footprint (highest fidelity) among those that fit. Returns a variant
+ * key, or null when nothing fits. Used to auto-fall off an oversized variant
+ * (e.g. BF16 → FP8) when the user selects a single-GPU workstation.
+ */
+export function pickFittingVariant(recipe, hwProfile) {
+  const fitting = Object.entries(recipe.variants || {}).filter(
+    ([, v]) => variantRunsOnHardware(hwProfile, v)
+  );
+  if (!fitting.length) return null;
+  fitting.sort((a, b) => (b[1].vram_minimum_gb || 0) - (a[1].vram_minimum_gb || 0));
+  return fitting[0][0];
+}
+
+/**
  * Single-node PD splits the node 50/50 between prefill and decode. Each half
  * holds a full model across its TP group, so the node must fit 2× the model's
  * VRAM. Also requires at least 2 GPUs to split.
