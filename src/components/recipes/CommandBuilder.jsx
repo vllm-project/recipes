@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, isHardwareScalable, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand } from "@/lib/command-synthesis";
 import { resolveOmniTasks } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -379,9 +379,26 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       const recipeFeatures = Object.keys(recipe.features || {});
       setFeatures(rs.features.filter((f) => recipeFeatures.includes(f)));
     }
+    // Resolve the hardware this mount actually settles on (URL > restored pref
+    // > default) so the non-scalable fixups below see the right profile.
+    const resolvedHwId = restoredFitsHw ? prefs.hardware : (searchParams.get("hardware") || defaultHw);
+    const resolvedHw = taxonomy.hardware_profiles?.[resolvedHwId];
+    const resolvedScalable = isHardwareScalable(resolvedHw);
+    // Non-scalable hardware can't shard an oversized variant. If we land on one
+    // (e.g. ?hardware=dgx_station_gb300, or a restored DGX preference) with a
+    // variant that doesn't fit, fall to the largest variant that does. URL
+    // ?variant= still wins.
+    if (!searchParams.get("variant") && resolvedHw && !resolvedScalable) {
+      const v = recipe.variants?.[variant] || recipe.variants?.default || {};
+      if (!fitsSingleNode(resolvedHw, v)) {
+        const fitting = pickFittingVariant(recipe, resolvedHw);
+        if (fitting && fitting !== variant) setVariant(fitting);
+      }
+    }
     // Nodes: prefer the saved value; otherwise auto-bump if the resolved
-    // hardware can't fit single-node (mirrors `setHw`'s bump).
-    if (!searchParams.get("nodes") && supportsMultiNode) {
+    // hardware can't fit single-node (mirrors `setHw`'s bump). Non-scalable
+    // hardware never bumps — it's locked to one node.
+    if (!searchParams.get("nodes") && supportsMultiNode && resolvedScalable) {
       const saved = parseInt(rs.nodes, 10);
       if ([1, 2].includes(saved)) {
         setNodeCount(saved);
@@ -400,6 +417,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   );
   const [nodeCount, setNodeCount] = useState(() => {
     if (!supportsMultiNode) return 1;
+    const initialHwId = searchParams.get("hardware") || defaultHw;
+    const initialHw = taxonomy.hardware_profiles?.[initialHwId];
+    // Non-scalable hardware (single-GPU workstation) is single-node by
+    // definition — ignore any ?nodes= pin.
+    if (initialHw && !isHardwareScalable(initialHw)) return 1;
     const urlN = searchParams.get("nodes");
     if (urlN) {
       const n = parseInt(urlN, 10);
@@ -407,8 +429,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     }
     // No URL pin: start on multi-node when the initial hardware can't fit
     // single-node. Same fit check the hardware-change handler runs.
-    const initialHwId = searchParams.get("hardware") || defaultHw;
-    const initialHw = taxonomy.hardware_profiles?.[initialHwId];
     const v = recipe.variants?.[variant] || recipe.variants?.default || {};
     return initialHw && !fitsSingleNode(initialHw, v) ? 2 : 1;
   });
@@ -614,6 +634,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   }, [taxonomy]);
 
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
+  // Non-scalable hardware (single-GPU workstation, e.g. DGX Station) can't add
+  // nodes, so multi-node is off and variants that don't fit are disabled.
+  const hwScalable = isHardwareScalable(hwProfile);
 
   const recommended = useMemo(() => recommendStrategy(recipe, hwProfile, nodeCount), [recipe, hwProfile, nodeCount]);
 
@@ -731,6 +754,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     setFeatures(next);
     setHwId(id);
     setStrategyOverride("");
+    const newProfile = taxonomy.hardware_profiles?.[id] || {};
+    const newScalable = isHardwareScalable(newProfile);
+    // Non-scalable hardware (single-GPU workstation) can't shard an oversized
+    // variant. If the active variant doesn't fit the new box, fall to the
+    // largest variant that does (e.g. BF16 → FP8 on DGX Station).
+    let activeVariant = currentVariant;
+    if (!newScalable && !fitsSingleNode(newProfile, currentVariant)) {
+      const fitting = pickFittingVariant(recipe, newProfile);
+      if (fitting && fitting !== variant) {
+        setVariant(fitting);
+        syncUrl({ variant: fitting });
+        activeVariant = recipe.variants?.[fitting] || currentVariant;
+      }
+    }
     // Bump to multi-node if the new hardware can't fit single-node (otherwise
     // the Single-node pill shows crossed out but the command keeps rendering
     // the invalid single-node config). Bump back DOWN to single-node when the
@@ -738,14 +775,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // strategy — without this, switching from GB200 (which bumped to 2 nodes
     // because the model didn't fit a 4-GPU tray) to B300/GB300 would stay at
     // 2 nodes and pick the multi-node sibling. Tied to the click so a
-    // deliberate Single-/Multi-node click afterwards still wins.
-    const newProfile = taxonomy.hardware_profiles?.[id] || {};
-    const fitsNew = fitsSingleNode(newProfile, currentVariant);
+    // deliberate Single-/Multi-node click afterwards still wins. Non-scalable
+    // hardware never bumps — it's single-node by definition.
+    const fitsNew = fitsSingleNode(newProfile, activeVariant);
     const recipeDefault = recipe.default_strategy;
     const recipeDefaultsSingleNode =
       typeof recipeDefault === "string" && recipeDefault.startsWith("single_node_");
-    const shouldBumpNodes = nodeCount === 1 && supportsMultiNode && !fitsNew;
-    const shouldUnbumpNodes = nodeCount > 1 && fitsNew && recipeDefaultsSingleNode;
+    const shouldBumpNodes = nodeCount === 1 && supportsMultiNode && newScalable && !fitsNew;
+    const shouldUnbumpNodes = nodeCount > 1 && (!newScalable || (fitsNew && recipeDefaultsSingleNode));
     if (shouldBumpNodes) setNodeCount(2);
     if (shouldUnbumpNodes) setNodeCount(1);
     syncUrl({
@@ -1388,20 +1425,31 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             hint="VRAM shown is the minimum to LOAD the model (weights + CUDA/vLLM runtime overhead, ≈ params × bytes × 1.2). It's not a serving budget — long context or large batch typically needs 1.5–2× more for KV cache."
           >
             <PillGroup>
-              {Object.entries(recipe.variants || {}).map(([key, v]) => (
-                <Pill
-                  key={key}
-                  active={variant === key}
-                  onClick={() => selectVariant(key)}
-                  title={[
-                    v.description,
-                    `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
-                  ].filter(Boolean).join("\n\n")}
-                >
-                  <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
-                  <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
-                </Pill>
-              ))}
+              {Object.entries(recipe.variants || {}).map(([key, v]) => {
+                // On non-scalable hardware (single-GPU workstation) a variant
+                // that doesn't fit has nowhere to shard — disable it instead of
+                // rendering a command that can't run.
+                const disabled = !hwScalable && !variantRunsOnHardware(hwProfile, v);
+                return (
+                  <Pill
+                    key={key}
+                    active={variant === key}
+                    disabled={disabled}
+                    onClick={() => !disabled && selectVariant(key)}
+                    title={
+                      disabled
+                        ? `${(v.label || v.precision)?.toUpperCase()} needs ${v.vram_minimum_gb} GB but ${hwProfile.display_name || "this hardware"} has ${hwProfile.vram_gb} GB and can't scale out — pick a smaller-footprint variant`
+                        : [
+                            v.description,
+                            `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
+                          ].filter(Boolean).join("\n\n")
+                    }
+                  >
+                    <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
+                    <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
+                  </Pill>
+                );
+              })}
             </PillGroup>
           </ConfigRow>
 
@@ -1476,9 +1524,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               <PillGroup>
                 {[1, 2].map((n) => {
                   // Multi-node pill is disabled when the recipe declares no
-                  // multi_node_* (or pd_cluster) strategy. Small dense models
-                  // commonly omit these.
-                  const noMultiNode = n > 1 && !supportsMultiNode;
+                  // multi_node_* (or pd_cluster) strategy (small dense models
+                  // commonly omit these), or when the active hardware can't be
+                  // clustered (single-GPU workstation, e.g. DGX Station).
+                  const noMultiNode = n > 1 && (!supportsMultiNode || !hwScalable);
                   // Single-node pill is disabled when the variant can't fit on
                   // one node of the selected hardware — same struck-through
                   // treatment as unsupported hardware pills. Multi-node still
@@ -1494,7 +1543,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                       onClick={() => !disabled && selectNodes(n)}
                       title={
                         noMultiNode
-                          ? "This recipe does not declare a multi-node strategy. Fits in a single node."
+                          ? !hwScalable
+                            ? `${hwProfile.display_name || "This hardware"} is a single-GPU workstation and can't be clustered into multiple nodes.`
+                            : "This recipe does not declare a multi-node strategy. Fits in a single node."
                           : singleNodeDoesntFit
                             ? `Single-node can't fit this variant on ${hwProfile.display_name || "the selected hardware"} (${currentVariant.vram_minimum_gb}GB > ${hwProfile.vram_gb}GB) — use multi-node`
                             : n === 1
