@@ -364,7 +364,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     if (!searchParams.get("hardware") && prefs.hardware) {
       const v = recipe.variants?.[variant] || recipe.variants?.default || {};
       const prefProfile = taxonomy.hardware_profiles?.[prefs.hardware];
-      if (prefProfile?.brand === "NVIDIA" && isPrecisionCompatible(prefProfile, v) && isHardwareSupported(recipe, prefs.hardware)) {
+      // Mirror the picker filter: a `restricted` profile (DGX Station, TPU)
+      // only applies to recipes that explicitly declare it in `meta.hardware`.
+      // Without this, selecting DGX on one recipe would leak into the global
+      // preference and leave every other recipe with no rendered pill selected.
+      const declaredHere = prefs.hardware in (recipe.meta?.hardware || {});
+      const restrictedElsewhere = prefProfile?.restricted && !declaredHere;
+      if (prefProfile?.brand === "NVIDIA" && !restrictedElsewhere && isPrecisionCompatible(prefProfile, v) && isHardwareSupported(recipe, prefs.hardware)) {
         setHwId(prefs.hardware);
         restoredFitsHw = prefProfile;
       }
