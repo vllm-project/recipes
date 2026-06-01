@@ -533,7 +533,9 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     if (variantKey !== "default" && variant.extra_args) args.push(...variant.extra_args);
 
     // 3. Strategy args + parallel size (grouped together so -tp/-dp sits next to -ep etc.)
-    if (strategy.deploy_type !== "pd_cluster") {
+    if (strategy.deploy_type === "kv_store_lb") {
+      if (strategy.vllm?.vllm_args) args.push(...strategy.vllm.vllm_args);
+    } else if (strategy.deploy_type !== "pd_cluster") {
       if (strategy.vllm_args) args.push(...strategy.vllm_args);
     } else if (roleOverride && strategy[roleOverride]?.vllm_args) {
       args.push(...strategy[roleOverride].vllm_args);
@@ -728,7 +730,9 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     if (variantKey !== "default" && variant.extra_env) Object.assign(env, variant.extra_env);
 
     // Strategy env
-    if (strategy.deploy_type !== "pd_cluster") {
+    if (strategy.deploy_type === "kv_store_lb") {
+      Object.assign(env, strategy.vllm?.env || {});
+    } else if (strategy.deploy_type !== "pd_cluster") {
       Object.assign(env, strategy.env || {});
     } else if (roleOverride && strategy[roleOverride]?.env) {
       Object.assign(env, strategy[roleOverride].env);
@@ -943,6 +947,61 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         install: "uv pip install vllm-router",
       },
       routerConfig: strategy.router || { policy: "round_robin" },
+    };
+  }
+
+  if (deployType === "kv_store_lb") {
+    // KV Store LB renders: vllm-router (consistent hash) + mooncake_master +
+    // (optionally) mooncake_store_service + N × vllm serve replicas with
+    // MooncakeStoreConnector + Mooncake config JSON.
+    // Each vLLM replica is single-node TEP (TP=gpuCount + EP). The router
+    // distributes requests via consistent hash so prefix-matched prompts land
+    // on the same replica, maximizing KV cache reuse.
+    const vllmArgs = buildArgs(null, null);
+    const mooncakeVllmConfig = strategy.mooncake_vllm_config?.template || {};
+    const mooncakeStoreConfig = strategy.mooncake_store_config?.config || null;
+
+    // Router construction — mirrors pd_cluster pattern
+    const routerPolicy = strategy.router?.policy || "consistent_hash";
+    const routerPort = strategy.router?.port || 30080;
+    const vllmPort = strategy.vllm?.port || 8000;
+    const replicaCount = nodeCount > 1 ? nodeCount : (strategy.default_node_count || 2);
+    const vllmEndpoints = Array.from(
+      { length: replicaCount },
+      (_, i) => `    --backend-url http://$VLLM_NODE_${i + 1}:${vllmPort} \\`,
+    );
+    const routerLines = [
+      `vllm-router --policy ${routerPolicy} \\`,
+      ...vllmEndpoints,
+      `    --host $ROUTER_HOST \\`,
+      `    --port ${routerPort}`,
+    ];
+    const routerCommand = routerLines.join("\n");
+
+    return {
+      deployType,
+      nodeCount: replicaCount,
+      master: {
+        command: strategy.mooncake_master?.command || "mooncake_master",
+        description: strategy.mooncake_master?.description || "",
+      },
+      store: strategy.mooncake_store_config ? {
+        command: strategy.mooncake_store_config.command,
+        description: strategy.mooncake_store_config?.description || "",
+        config: mooncakeStoreConfig,
+      } : null,
+      vllm: {
+        command: formatCommand(vllmArgs),
+        argv: formatArgv(vllmArgs),
+        env: buildEnv(null),
+        install: strategy.vllm?.install || null,
+      },
+      router: {
+        command: routerCommand,
+        install: strategy.router?.install || "uv pip install vllm-router",
+        port: routerPort,
+      },
+      mooncakeConfig: mooncakeVllmConfig,
     };
   }
 

@@ -227,6 +227,24 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
       router_config: result.routerConfig,
     };
   }
+  if (result.deployType === "kv_store_lb") {
+    const vllmDocker = result.vllm?.command && result.vllm?.argv
+      ? dockerize(result.vllm.command, result.vllm.argv, result.vllm.env || {}, dockerMeta)
+      : {};
+    return {
+      ...base,
+      env: result.vllm?.env || {},
+      node_count: result.nodeCount,
+      vllm_command: result.vllm?.command,
+      vllm_argv: result.vllm?.argv,
+      vllm_docker_command: vllmDocker.docker_command,
+      vllm_docker_argv: vllmDocker.docker_argv,
+      master: result.master,
+      store: result.store || null,
+      router: result.router,
+      mooncake_config: result.mooncakeConfig,
+    };
+  }
   return {
     ...base,
     command: result.command,

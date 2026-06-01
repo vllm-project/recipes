@@ -1,0 +1,68 @@
+name: kv_store_centralized
+deploy_type: kv_store_lb
+display_name: "Centralized KV Store (Mooncake)"
+orientation: production
+description: >
+  Multi-replica vLLM cluster with shared centralized KV cache via
+  MooncakeStoreConnector in standalone-store mode. A dedicated
+  mooncake_store_service process owns the entire CPU DRAM pool; vLLM
+  instances contribute zero local memory (global_segment_size=0).
+  A vllm-router with consistent-hash policy routes requests so prefix-
+  matched prompts land on the same replica — maximizing KV cache hits.
+  Decouples cache capacity from vLLM lifecycle — store survives vLLM
+  restarts. Recommended for production deployments with large cache pools.
+
+hardware_match:
+  min_gpus: 8
+  multi_node: true
+  architecture: moe
+
+router:
+  policy: "consistent_hash"
+  install: "uv pip install vllm-router"
+  port: 30080
+
+vllm:
+  vllm_args:
+    - "--enable-expert-parallel"
+    - "--kv-transfer-config"
+    - '{"kv_connector":"MooncakeStoreConnector","kv_role":"kv_both"}'
+  env:
+    MOONCAKE_VLLM_CONFIG_PATH: "$MOONCAKE_VLLM_CONFIG_PATH"
+  install: "uv pip install 'mooncake-transfer-engine-non-cuda>=0.3.10'"
+  port: 8000
+
+mooncake_master:
+  command: "mooncake_master --port 50051 --enable_http_metadata_server=1 --http_metadata_server_port=8080"
+  description: "Lightweight metadata coordinator. One instance per cluster."
+
+mooncake_store_config:
+  command: "python3 -m mooncake.mooncake_store_service --config $MOONCAKE_STORE_CONFIG_PATH"
+  description: "Centralized CPU DRAM pool. Owns all cache capacity, survives vLLM restarts."
+  config:
+    local_hostname: "$MOONCAKE_STORE_NODE_IP:12346"
+    metadata_server: "$MOONCAKE_MASTER_IP:2379"
+    master_server_address: "$MOONCAKE_MASTER_IP:50051"
+    protocol: "rdma"
+    # device_name: CSV of RDMA NICs for the store node (e.g. "mlx5_0,mlx5_1").
+    # Empty string enables auto-selection.
+    device_name: "$IFACE_0,$IFACE_1,$IFACE_2,$IFACE_3,$IFACE_4,$IFACE_5,$IFACE_6,$IFACE_7"
+    global_segment_size: "500gb"
+
+mooncake_vllm_config:
+  mode: standalone-store
+  template:
+    metadata_server: "$MOONCAKE_MASTER_IP:2379"
+    master_server_address: "$MOONCAKE_MASTER_IP:50051"
+    protocol: "rdma"
+    # device_name: CSV of RDMA NICs indexed by GPU (e.g. "mlx5_0,mlx5_1,...,mlx5_7").
+    # Number of entries must equal the number of vLLM ranks (TP size).
+    # Empty string enables auto-selection based on GPU-NIC PCIe/NUMA affinity.
+    device_name: "$IFACE_0,$IFACE_1,$IFACE_2,$IFACE_3,$IFACE_4,$IFACE_5,$IFACE_6,$IFACE_7"
+    mode: "standalone-store"
+    global_segment_size: 0
+
+parallel_flag: "--tensor-parallel-size"
+
+min_vllm_version: "0.21.0"
+default_node_count: 2

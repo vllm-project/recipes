@@ -168,7 +168,7 @@ function PopoverButton({ label, code, icon: Icon }) {
 // is a form for editing $VAR / NODE_N substitutions. Lives on each command
 // block header next to cURL/Bench so the user finds it where they realize
 // "this curl is hitting localhost — I need to point it elsewhere."
-function EndpointsPopoverButton({ isPd, isMultiNode, placeholders, endpoints, onChange, onReset }) {
+function EndpointsPopoverButton({ isPd, isKvStore, isMultiNode, placeholders, endpoints, onChange, onReset }) {
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState(null);
   const btnRef = useRef(null);
@@ -192,10 +192,10 @@ function EndpointsPopoverButton({ isPd, isMultiNode, placeholders, endpoints, on
     };
   }, [open]);
 
-  const clientHostKey = isPd ? "ROUTER_HOST" : (isMultiNode ? "HEAD_IP" : "VLLM_HOST");
-  const clientPortKey = isPd ? "ROUTER_PORT" : "VLLM_PORT";
+  const clientHostKey = (isPd || isKvStore) ? "ROUTER_HOST" : (isMultiNode ? "HEAD_IP" : "VLLM_HOST");
+  const clientPortKey = (isPd || isKvStore) ? "ROUTER_PORT" : "VLLM_PORT";
   const clientHostHint = "localhost";
-  const clientPortHint = isPd ? "30000" : "8000";
+  const clientPortHint = isPd ? "30000" : isKvStore ? "30080" : "8000";
 
   const extras = placeholders.filter(
     (p) => !(p.kind === "var" && (p.name === clientHostKey || p.name === clientPortKey)),
@@ -651,6 +651,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       const strat = strategies[s];
       if (!strat) return false;
       if (nodeCount === 1 && strat.deploy_type === "multi_node") return false;
+      if (nodeCount === 1 && strat.deploy_type === "kv_store_lb") return false;
       if (nodeCount > 1 && strat.deploy_type === "single_node") return false;
       return true;
     });
@@ -808,12 +809,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   };
 
   const selectStrategy = (s) => {
+    const strat = strategies[s];
+    if (strat?.deploy_type === "kv_store_lb" && nodeCount === 1) {
+      setNodeCount(2);
+      syncUrl({ strategy: s, nodes: "2" });
+    } else {
+      syncUrl({ strategy: s });
+    }
     setStrategyOverride(s);
-    syncUrl({ strategy: s });
-    // Persisted per-recipe (keyed by hf_id), so picking TP here doesn't
-    // affect any other recipe's default. Spec-decoding auto-enable for
-    // latency strategies is handled by an effect below so it also fires
-    // on initial mount when TP is the default recommendation.
     saveRecipeState(recipe.hf_id, { strategy: s || undefined });
   };
 
@@ -875,17 +878,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const isPd = result.deployType === "pd_cluster";
   const isMultiNode = result.deployType === "multi_node";
+  const isKvStore = result.deployType === "kv_store_lb";
   const modelId = recipe.variants?.[variant]?.model_id || recipe.model?.model_id || "model";
 
-  // PD clients hit the router (port 30000), everyone else hits `vllm serve` on 8000.
-  const clientPort = isPd ? 30000 : 8000;
+  // PD/KV-Store clients hit the router; everyone else hits `vllm serve` directly.
+  const clientPort = isPd ? 30000 : isKvStore ? (result.router?.port || 30080) : 8000;
 
-  // curl/bench target. PD → router host:port; everyone else → the vllm-serve
+  // curl/bench target. PD/KV-Store → router host:port; everyone else → the vllm-serve
   // node (head node for multi-node TP). Defaults to localhost so the
   // single-node demo case still works copy-paste; user can fill the
   // Cluster endpoints panel to point at a real cluster.
-  const clientHostKey = isPd ? "ROUTER_HOST" : (isMultiNode ? "HEAD_IP" : "VLLM_HOST");
-  const clientPortKey = isPd ? "ROUTER_PORT" : "VLLM_PORT";
+  const clientHostKey = (isPd || isKvStore) ? "ROUTER_HOST" : (isMultiNode ? "HEAD_IP" : "VLLM_HOST");
+  const clientPortKey = (isPd || isKvStore) ? "ROUTER_PORT" : "VLLM_PORT";
   const clientHost = endpoints[clientHostKey] || "localhost";
   const clientPortStr = endpoints[clientPortKey] || String(clientPort);
 
@@ -918,7 +922,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     if (result.prefill?.command) texts.push(result.prefill.command);
     if (result.decode?.command) texts.push(result.decode.command);
     if (result.router?.command) texts.push(result.router.command);
-    for (const e of [result.env, result.prefill?.env, result.decode?.env]) {
+    if (result.vllm?.command) texts.push(result.vllm.command);
+    if (result.master?.command) texts.push(result.master.command);
+    if (result.store?.command) texts.push(result.store.command);
+    for (const e of [result.env, result.prefill?.env, result.decode?.env, result.vllm?.env]) {
       if (!e) continue;
       for (const v of Object.values(e)) if (typeof v === "string") texts.push(v);
     }
@@ -935,6 +942,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     if (result.deployType === "pd_cluster") {
       defaults.ROUTER_HOST = "localhost";
       defaults.ROUTER_PORT = "30000";
+    } else if (result.deployType === "kv_store_lb") {
+      defaults.ROUTER_HOST = "localhost";
+      defaults.ROUTER_PORT = String(result.router?.port || 30080);
     } else if (result.deployType === "multi_node") {
       defaults.VLLM_PORT = "8000";
     } else {
@@ -952,6 +962,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         prefill: { ...result.prefill, command: sub(result.prefill.command), env: substituteEnv(result.prefill.env, effectiveEndpoints) },
         decode:  { ...result.decode,  command: sub(result.decode.command),  env: substituteEnv(result.decode.env,  effectiveEndpoints) },
         router:  { ...result.router,  command: sub(result.router.command) },
+      };
+    }
+    if (result.deployType === "kv_store_lb") {
+      return {
+        ...result,
+        vllm:   { ...result.vllm,   command: sub(result.vllm.command),   env: substituteEnv(result.vllm.env,   effectiveEndpoints) },
+        master: { ...result.master,  command: sub(result.master.command) },
+        store:  result.store ? { ...result.store, command: sub(result.store.command) } : null,
+        router: { ...result.router,  command: sub(result.router.command) },
       };
     }
     if (result.deployType === "multi_node") {
@@ -1007,11 +1026,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const hwPart = nodeCount > 1 ? `${nodeCount}× ${hwDisplay}` : hwDisplay;
   const strategyPart = result.deployType === "pd_cluster"
     ? "PD cluster"
-    : result.deployType === "multi_node"
-      ? (strategies[activeStrategy]?.display_name || activeStrategy)
-      : effectiveTp
-        ? `TP=${effectiveTp}`
-        : (strategies[activeStrategy]?.display_name || activeStrategy);
+    : result.deployType === "kv_store_lb"
+      ? (strategies[activeStrategy]?.display_name || "KV Store LB")
+      : result.deployType === "multi_node"
+        ? (strategies[activeStrategy]?.display_name || activeStrategy)
+        : effectiveTp
+          ? `TP=${effectiveTp}`
+          : (strategies[activeStrategy]?.display_name || activeStrategy);
   const precisionPart = currentVariant.precision?.toUpperCase();
   const configSummary = [hwPart, strategyPart, precisionPart].filter(Boolean).join(" · ");
 
@@ -1116,6 +1137,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const omniEndpointsControls = (
       <EndpointsPopoverButton
         isPd={false}
+        isKvStore={false}
         isMultiNode={false}
         placeholders={omniPlaceholders}
         endpoints={endpoints}
@@ -1143,6 +1165,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             dockerCudaVariant={dockerCudaVariant}
             setDockerCudaVariant={setDockerCudaVariant}
             altCudaSuffix={altCudaSuffix}
+            strategyMinVersion={strategies[activeStrategy]?.min_vllm_version}
           />
 
           {effectiveInstallMode !== "docker" && dependencies.length > 0 && (
@@ -1281,6 +1304,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           dockerCudaVariant={dockerCudaVariant}
           setDockerCudaVariant={setDockerCudaVariant}
           altCudaSuffix={altCudaSuffix}
+          strategyMinVersion={strategies[activeStrategy]?.min_vllm_version}
         />
 
         {/* ── Dependencies / extra install ──
@@ -1312,6 +1336,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           const endpointsControls = (
             <EndpointsPopoverButton
               isPd={isPd}
+              isKvStore={isKvStore}
               isMultiNode={isMultiNode}
               placeholders={placeholdersInUse}
               endpoints={endpoints}
@@ -1331,6 +1356,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               benchCmd={benchCmd}
               statusHeader={statusHeader}
               onRankChange={setPdRank}
+              installMode={effectiveInstallMode}
+              dockerMeta={dockerMeta}
+              configSummary={configSummary}
+              endpointsControls={endpointsControls}
+            />
+          ) : isKvStore ? (
+            <KvStoreLbBlock
+              result={displayedResult}
+              verifyCmd={verifyCmd}
+              benchCmd={benchCmd}
+              statusHeader={statusHeader}
               installMode={effectiveInstallMode}
               dockerMeta={dockerMeta}
               configSummary={configSummary}
@@ -1669,8 +1705,15 @@ function endpointHintFor(name) {
   if (name.endsWith("_DP_RPC_PORT")) return "12345";
   if (name.endsWith("_PORT")) return "port";
   if (/^(?:PREFILL|DECODE)_NODE_\d+$/.test(name)) return "host";
+  if (/^VLLM_NODE_\d+$/.test(name)) return "10.0.0.x";
+  if (name === "VLLM_NODE_IP") return "10.0.0.2";
   if (name.endsWith("_IP")) return "10.0.0.1";
   if (name === "IFACE_NAME") return "bond0";
+  if (name === "ROUTER_HOST") return "localhost";
+  if (name === "MOONCAKE_VLLM_CONFIG_PATH") return "/etc/mooncake/mooncake_vllm_config.json";
+  if (name === "MOONCAKE_STORE_CONFIG_PATH") return "/etc/mooncake/mooncake_store_config.json";
+  if (name === "MOONCAKE_STORE_NODE_IP") return "10.0.0.3";
+  if (name === "MOONCAKE_MASTER_IP") return "10.0.0.1";
   return "value";
 }
 
@@ -1792,7 +1835,7 @@ function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader, i
   );
 }
 
-function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode, dockerCudaVariant, setDockerCudaVariant, altCudaSuffix }) {
+function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode, dockerCudaVariant, setDockerCudaVariant, altCudaSuffix, strategyMinVersion }) {
   // Collapsible install reference. Shows the one-time setup step for the
   // active mode — `uv pip install vllm …` in pip mode, `docker pull <image>`
   // in docker mode. The active tab mirrors the command card's mode toggle
@@ -1808,7 +1851,10 @@ function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode, dockerC
   const dockerHidden = dockerCfg === false;
   const [open, setOpen] = useState(false);
   const { isAmd, isTpu, image: dockerImage, brandKey, cudaMap } = dockerMeta;
-  const minV = recipe.model?.min_vllm_version;
+  const modelV = recipe.model?.min_vllm_version;
+  const minV = (strategyMinVersion && modelV)
+    ? (strategyMinVersion.localeCompare(modelV, undefined, { numeric: true }) > 0 ? strategyMinVersion : modelV)
+    : strategyMinVersion || modelV;
 
   // When a recipe's min_vllm_version hasn't shipped yet (cutting-edge models
   // that landed after the last stable release), `model.nightly_required: true`
@@ -2175,6 +2221,94 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
             of 1..{active.meta.nodes} · start_rank = {active.meta.startRank}
           </span>
           <span className="text-[var(--command-fg)]/40 ml-auto">vLLM spawns {active.meta.dpLocal} local DP ranks per node</span>
+        </div>
+      )}
+      {prelude && (
+        <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
+          {prelude}
+        </pre>
+      )}
+      <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
+        {active.command}
+      </pre>
+    </div>
+  );
+}
+
+function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls }) {
+  const [tab, setTab] = useState("router");
+  const isDocker = installMode === "docker";
+  const wrap = (cmd, env) =>
+    isDocker
+      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+      : cmd;
+
+  const mooncakeVllmConfigJson = JSON.stringify(result.mooncakeConfig || {}, null, 2);
+  const mooncakeStoreConfigJson = result.store?.config ? JSON.stringify(result.store.config, null, 2) : null;
+
+  const tabs = [
+    { id: "router", label: "Router", command: result.router.command, env: {}, description: `Consistent-hash LB across ${result.nodeCount || 2} vLLM replicas. Install: ${result.router.install}` },
+    { id: "vllm", label: "vLLM Serve", command: wrap(result.vllm.command, result.vllm.env), env: result.vllm.env, description: `Run on each of ${result.nodeCount || 2} replica nodes.${result.vllm.install ? ` Requires: ${result.vllm.install}` : ""}` },
+    { id: "config", label: "mooncake_vllm_config.json", command: mooncakeVllmConfigJson, env: {}, isConfig: true },
+    { id: "master", label: "Mooncake Master", command: result.master.command, env: {} },
+    ...(result.store ? [{ id: "store", label: "Mooncake Store", command: result.store.command, env: {} }] : []),
+    ...(mooncakeStoreConfigJson ? [{ id: "store_config", label: "mooncake_store_config.json", command: mooncakeStoreConfigJson, env: {}, isConfig: true }] : []),
+  ];
+  const active = tabs.find((t) => t.id === tab) || tabs[0];
+  const prelude = isDocker && !active.isConfig ? "" : envToExports(active.env);
+  const fullScript = prelude ? `${prelude}\n\n${active.command}` : active.command;
+
+  return (
+    <div>
+      <div className="px-4 pt-3 pb-1">
+        {statusHeader || (
+          <span className="text-[11px] text-[var(--command-fg)]/55 font-mono">
+            {configSummary}
+          </span>
+        )}
+      </div>
+      <div className="flex items-center justify-between px-4 pt-2 gap-3">
+        <div className="flex flex-wrap gap-0.5 bg-foreground/5 rounded-md p-0.5">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${tab === t.id ? "bg-foreground/10 text-[var(--command-fg)]" : "text-[var(--command-fg)]/50 hover:text-[var(--command-fg)]/80"
+                }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <CopyButton text={fullScript} />
+          {active.id === "router" && (
+            <>
+              <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} />
+              <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
+            </>
+          )}
+          {endpointsControls}
+        </div>
+      </div>
+      {active.description && (
+        <div className="px-4 pt-3 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug">
+          # {active.description}
+        </div>
+      )}
+      {active.id === "master" && (
+        <div className="px-4 pt-3 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug">
+          # {result.master.description}
+        </div>
+      )}
+      {active.id === "store" && result.store && (
+        <div className="px-4 pt-3 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug">
+          # {result.store.description}
+        </div>
+      )}
+      {active.isConfig && (
+        <div className="px-4 pt-3 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug">
+          # Save as {active.id === "config" ? "mooncake_vllm_config.json" : "mooncake_store_config.json"} — referenced by $MOONCAKE_VLLM_CONFIG_PATH / $MOONCAKE_STORE_CONFIG_PATH
         </div>
       )}
       {prelude && (
