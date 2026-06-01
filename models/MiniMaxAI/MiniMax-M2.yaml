@@ -25,8 +25,6 @@ model:
   context_length: 196608
   base_args:
     - "--trust-remote-code"
-    - "--compilation-config"
-    - '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}'
   base_env: {}
 
 dependencies:
@@ -76,10 +74,16 @@ compatible_strategies:
   - pd_cluster
 
 hardware_overrides:
+  nvidia:
+    extra_args:
+      - "--compilation-config"
+      - '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}'
   amd:
     # First launch JIT-compiles AITER kernels (CK FP8 MoE, RMSNorm, activation);
     # expect a slow cold start on MI300X/MI325X/MI350X/MI355X.
     extra_args:
+      - "--tensor-parallel-size"
+      - "2"
       - "--attention-backend"
       - "ROCM_AITER_FA"
     extra_env:
@@ -192,11 +196,11 @@ guide: |
     --enable-auto-tool-choice
   ```
 
-  ### AMD ROCm — TP2 or TP4
+  ### AMD ROCm — TP2
 
   ```bash
   VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2 \
-    --tensor-parallel-size 4 \
+    --tensor-parallel-size 2 \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
     --enable-auto-tool-choice \
