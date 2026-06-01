@@ -272,17 +272,21 @@ export function computeDockerMeta(recipe, variant, hwProfile) {
         nvidia: "vllm/vllm-openai:nightly",
         amd: "vllm/vllm-openai-rocm:nightly",
         tpu: "vllm/vllm-tpu:nightly",
+        ascend: "quay.io/ascend/vllm-ascend:v0.19.1rc1",
       }
     : {
         nvidia: "vllm/vllm-openai:latest",
         amd: "vllm/vllm-openai-rocm:latest",
         tpu: "vllm/vllm-tpu:latest",
         intel: "vllm/vllm-openai-cpu:latest-x86_64",
+        ascend: "quay.io/ascend/vllm-ascend:v0.19.1rc1",
       };
   const isAmd = hwProfile?.brand === "AMD";
   const isTpu = hwProfile?.generation === "tpu";
   const isIntel = hwProfile?.generation === "cpu" ||hwProfile?.brand === "Intel";
-  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
+  const isAscend = hwProfile?.generation === "ascend" || hwProfile?.brand === "Huawei";
+  const ascendDeviceCount = Math.max(1, hwProfile?.gpu_count || 8);
+  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : isAscend ? "ascend" : "nvidia";
   const override = variant?.docker_image || recipe.model?.docker_image;
 
   const isCudaMap = (v) =>
@@ -293,7 +297,7 @@ export function computeDockerMeta(recipe, variant, hwProfile) {
   if (typeof override === "string") {
     if (brandKey === "nvidia") pinned = override;
   } else if (override && typeof override === "object") {
-    const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override || "intel" in override;
+    const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override || "intel" in override || "ascend" in override;
     if (isBrandKeyed) {
       const brandValue = override[brandKey];
       if (typeof brandValue === "string") pinned = brandValue;
@@ -303,15 +307,25 @@ export function computeDockerMeta(recipe, variant, hwProfile) {
     }
   }
 
-  const image = pinned || DEFAULT_IMAGE[brandKey];
+  const image = pinned || (isAscend && ascendDeviceCount > 8
+    ? "quay.io/ascend/vllm-ascend:v0.19.1rc1-a3"
+    : DEFAULT_IMAGE[brandKey]);
   const gpuFlags = isTpu
     ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
     : isAmd
       ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
     : isIntel
       ? "--shm-size=16g"	
+    : isAscend
+      ? [
+          "--net=host --shm-size=1g",
+          "--device=/dev/davinci_manager --device=/dev/hisi_hdc --device=/dev/devmm_svm",
+          Array.from({ length: ascendDeviceCount }, (_, i) => `--device=/dev/davinci${i}`).join(" "),
+          "-v /usr/local/dcmi:/usr/local/dcmi -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi -v /usr/local/Ascend/driver/tools/hccn_tool:/usr/local/Ascend/driver/tools/hccn_tool",
+          "-v /usr/local/Ascend/driver/lib64/:/usr/local/Ascend/driver/lib64/ -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info -v /etc/ascend_install.info:/etc/ascend_install.info",
+        ].join(" \\\n  ")
       : "--gpus all";
-  return { image, gpuFlags, brandKey, isAmd, isTpu, isIntel, pinned, cudaMap, nightlyRequired };
+  return { image, gpuFlags, brandKey, isAmd, isTpu, isIntel, isAscend, ascendDeviceCount, pinned, cudaMap, nightlyRequired };
 }
 
 // argv form of the brand-specific GPU flags from computeDockerMeta. Mirrors
@@ -329,6 +343,19 @@ function dockerGpuArgv(meta) {
   if (meta.isIntel) {
     return ["--shm-size", "16g"];
   }	
+  if (meta.isAscend) {
+    return [
+      "--net=host", "--shm-size=1g",
+      "--device=/dev/davinci_manager", "--device=/dev/hisi_hdc", "--device=/dev/devmm_svm",
+      ...Array.from({ length: meta.ascendDeviceCount || 8 }, (_, i) => `--device=/dev/davinci${i}`),
+      "-v", "/usr/local/dcmi:/usr/local/dcmi",
+      "-v", "/usr/local/bin/npu-smi:/usr/local/bin/npu-smi",
+      "-v", "/usr/local/Ascend/driver/tools/hccn_tool:/usr/local/Ascend/driver/tools/hccn_tool",
+      "-v", "/usr/local/Ascend/driver/lib64/:/usr/local/Ascend/driver/lib64/",
+      "-v", "/usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info",
+      "-v", "/etc/ascend_install.info:/etc/ascend_install.info",
+    ];
+  }
   return ["--gpus", "all"];
 }
 
