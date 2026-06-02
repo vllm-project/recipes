@@ -2,7 +2,7 @@ meta:
   title: "Cosmos3-Super"
   slug: "cosmos3-super"
   provider: "NVIDIA"
-  description: "Frontier-scale 64B omnimodal world model (Mixture-of-Transformers) for advanced multimodal understanding, world simulation, future prediction, action reasoning, and Physical AI — served via vLLM-Omni for video/audio generation"
+  description: "Frontier-scale 64B omnimodal world model (Mixture-of-Transformers) for advanced multimodal understanding, world simulation, future prediction, action reasoning, and Physical AI"
   date_updated: 2026-06-02
   difficulty: advanced
   tasks:

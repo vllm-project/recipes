@@ -2,7 +2,7 @@ meta:
   title: "Cosmos3-Nano"
   slug: "cosmos3-nano"
   provider: "NVIDIA"
-  description: "Compact 16B omnimodal world model (Mixture-of-Transformers) for multimodal understanding, world simulation, future prediction, action reasoning, and Physical AI — served via vLLM-Omni for video/audio generation"
+  description: "Compact 16B omnimodal world model (Mixture-of-Transformers) for multimodal understanding, world simulation, future prediction, action reasoning, and Physical AI"
   date_updated: 2026-06-02
   difficulty: intermediate
   tasks:
