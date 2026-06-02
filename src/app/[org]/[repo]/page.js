@@ -189,9 +189,10 @@ export default async function RecipePage({ params }) {
               target="_blank"
               rel="noopener noreferrer"
               title="vLLM-Omni serves the generation (omni) path — nightly wheels"
-              className="inline-flex items-center rounded-md border border-amber-500/40 text-amber-600 dark:text-amber-400 px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap transition-colors hover:border-amber-500/70"
+              className="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap transition-colors hover:border-vllm-blue/50 hover:text-vllm-blue"
             >
-              vLLM-Omni nightly
+              vLLM-Omni
+              <span className="ml-1 text-vllm-yellow">nightly</span>
               <ExternalLink size={10} className="ml-1 opacity-50" />
             </a>
           )}
