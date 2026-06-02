@@ -36,6 +36,7 @@ export const PROVIDERS = {
   "stabilityai":     { display_name: "Stability AI",             logo: "/providers/stabilityai.png" },
   "stepfun-ai":      { display_name: "StepFun",                  logo: "/providers/stepfun-ai.png" },
   "poolside":        { display_name: "Poolside",                 logo: "/providers/poolside.png" },
+  "JetBrains":       { display_name: "JetBrains",                 logo: "/providers/JetBrains.png" },
 };
 
 export function getProviderLogo(hfOrg) {
