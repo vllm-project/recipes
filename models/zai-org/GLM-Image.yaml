@@ -20,9 +20,16 @@ model:
   active_parameters: "16B"
   context_length: 4096
   base_args:
-    - "--omni"
     - "--trust-remote-code"
   base_env: {}
+
+omni:
+  # Same checkpoint serves both T2I and I2I — the task toggle in the UI just
+  # rewires the cURL endpoint (T2I → /v1/images/generations,
+  # I2I → /v1/chat/completions with a multimodal user turn).
+  tasks:
+    - t2i
+    - i2i
 
 dependencies:
   - note: "vllm-omni provides the diffusion decoder path"

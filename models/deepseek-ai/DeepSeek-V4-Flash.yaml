@@ -3,11 +3,11 @@ meta:
   slug: "deepseek-v4-flash"
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
-  date_updated: 2026-04-24
+  date_updated: 2026-05-28
   difficulty: hard
   tasks:
     - text
-  performance_headline: "1M efficient long-context attention"
+  performance_headline: "Compact 284B/13B V4 sibling — single-node 1M-context serving with FP4+FP8 weights and MTP"
   related_recipes: []
   hardware:
     h200: verified
@@ -15,6 +15,7 @@ meta:
     gb200: verified
     b300: verified
     gb300: verified
+    dgx_station_gb300: verified
     mi300x: unsupported
     mi325x: unsupported
     mi355x: unsupported
@@ -33,12 +34,11 @@ model:
     - "fp8"
     - "--block-size"
     - "256"
-  base_env:
-    VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+
 
 dependencies:
   - note: "DeepGEMM FP8 kernels — install via vLLM tools/install_deepgemm.sh"
-    command: "bash <(curl -fsSL https://raw.githubusercontent.com/vllm-project/vllm/v0.20.0/tools/install_deepgemm.sh)"
+    command: "bash <(curl -fsSL https://raw.githubusercontent.com/vllm-project/vllm/main/tools/install_deepgemm.sh)"
 
 features:
   tool_calling:
@@ -223,10 +223,26 @@ guide: |
 
   ## Recommended deployment
 
-  Non-disaggregated serving on any supported hardware: single-node DP + EP with
+  Non-disaggregated serving on multi-GPU supported hardware: single-node DP + EP with
   `--data-parallel-size 4`. Fills a GB200 NVL4 tray exactly; uses 4 of 8 GPUs per
   replica on H200/B200/B300 (leaving headroom for throughput-vs-latency tuning).
-  For disaggregated prefill/decode on GB200, use the PD Cluster tab.
+  On DGX Station, use the single-GPU launch below. For disaggregated prefill/decode
+  on GB200, use the PD Cluster tab.
+
+  ### DGX Station Single-GPU
+
+  ```bash
+  vllm serve deepseek-ai/DeepSeek-V4-Flash \
+    --tensor-parallel-size 1 --pipeline-parallel-size 1 \
+    --kv-cache-dtype fp8 --trust-remote-code --block-size 256 \
+    --gpu-memory-utilization 0.92 \
+    --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}' \
+    --attention_config.use_fp4_indexer_cache True \
+    --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice --reasoning-parser deepseek_v4 \
+    --max-cudagraph-capture-size 128 \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
+  ```
 
   ### H200 Single-Node PD (Mooncake)
 
@@ -336,7 +352,7 @@ guide: |
     -e VLLM_LOG_STATS_INTERVAL=1 \
     -e VLLM_NIXL_SIDE_CHANNEL_PORT=5557 \
     -e CUDA_VISIBLE_DEVICES=0,1,2,3 \
-    vllm/vllm-openai:deepseekv4-cu130 \
+    vllm/vllm-openai:latest \
     deepseek-ai/DeepSeek-V4-Flash \
     --trust-remote-code \
     --kv-cache-dtype fp8 \
@@ -370,7 +386,7 @@ guide: |
     -e VLLM_LOG_STATS_INTERVAL=1 \
     -e VLLM_NIXL_SIDE_CHANNEL_PORT=5558 \
     -e CUDA_VISIBLE_DEVICES=4,5,6,7 \
-    vllm/vllm-openai:deepseekv4-cu130 \
+    vllm/vllm-openai:latest \
     deepseek-ai/DeepSeek-V4-Flash \
     --trust-remote-code \
     --kv-cache-dtype fp8 \

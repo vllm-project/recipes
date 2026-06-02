@@ -22,3 +22,42 @@
   <meta name="twitter:image" content="https://docs.vllm.ai/en/latest/assets/logos/vllm-logo-text-light.png">
   {% endif %}
 {% endblock %}
+
+{% block content %}
+  {% if page and page.url == "index.html" %}
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;padding:2rem;">
+    <p style="font-size:3rem;margin-bottom:1rem;">📦</p>
+    <h1 style="font-size:1.75rem;font-weight:700;margin-bottom:0.75rem;">vLLM Recipes has moved</h1>
+    <p style="font-size:1.1rem;color:var(--md-default-fg-color--light);max-width:480px;margin-bottom:2rem;">
+      The recipes site now lives at <strong>recipes.vllm.ai</strong> — with an interactive
+      command builder, hardware picker, and a JSON API.
+    </p>
+    <a href="https://recipes.vllm.ai" style="display:inline-block;padding:0.75rem 1.75rem;background:var(--md-primary-fg-color);color:var(--md-primary-bg-color);border-radius:0.25rem;font-weight:600;font-size:1rem;text-decoration:none;">
+      Go to recipes.vllm.ai →
+    </a>
+    <p style="margin-top:1.5rem;font-size:0.85rem;color:var(--md-default-fg-color--lighter);">
+      Redirecting automatically in <span id="countdown">5</span> seconds…
+      <a id="cancel-redirect" href="#" style="margin-left:0.5rem;color:var(--md-default-fg-color--light);text-decoration:underline;">Cancel</a>
+    </p>
+  </div>
+  <script>
+    (function () {
+      var n = 5;
+      var el = document.getElementById("countdown");
+      var iv = setInterval(function () {
+        n -= 1;
+        if (el) el.textContent = n;
+        if (n <= 0) { clearInterval(iv); window.location.href = "https://recipes.vllm.ai"; }
+      }, 1000);
+      document.getElementById("cancel-redirect").addEventListener("click", function (e) {
+        e.preventDefault();
+        clearInterval(iv);
+        var p = this.parentElement;
+        p.textContent = "Redirect cancelled. Use the link above to navigate manually.";
+      });
+    })();
+  </script>
+  {% else %}
+    {{ super() }}
+  {% endif %}
+{% endblock %}

@@ -1,7 +1,7 @@
 meta:
   title: "MiMo-V2.5"
   slug: "mimo-v2-5"
-  provider: "Xiaomi MiMo"
+  provider: "MiMo (Xiaomi)"
   description: "MiMo-V2.5 is a native omnimodal model with strong agentic capabilities, supporting text, image, video, and audio understanding within a unified architecture"
   date_updated: 2026-04-27
   difficulty: advanced
@@ -15,12 +15,7 @@ meta:
 
 model:
   model_id: "XiaomiMiMo/MiMo-V2.5"
-  min_vllm_version: "nightly"
-  docker_image:
-    cu129: "vllm/vllm-openai:mimov25-cu129"
-    cu130: "vllm/vllm-openai:mimov25-cu130"
-  install:
-    pip: false
+  min_vllm_version: "0.21.0"
   architecture: moe
   parameter_count: "311B"
   active_parameters: "15B"
@@ -56,10 +51,14 @@ variants:
   default:
     precision: fp8
     vram_minimum_gb: 374
+    # FP8 block-wise e4m3 128x128 — TP=8 hits an attention-projection shape
+    # mismatch (param padded to a 128-aligned shard the checkpoint can't fill).
+    # Author-verified config is TP=4. EP doesn't help (mismatch is on attention,
+    # not MoE), so single_node_tep at 8 GPUs is also broken — use a 4-GPU box
+    # or accept 4 idle GPUs on an 8-GPU box.
+    tp: 4
     description: "Native FP8 weights (block-wise e4m3 128x128); 4x H200 with TP4"
     extra_args:
-      - "--tensor-parallel-size"
-      - "4"
       - "--gpu-memory-utilization"
       - "0.95"
       - "--max-model-len"
@@ -71,6 +70,7 @@ compatible_strategies:
   - multi_node_tp
   - multi_node_tep
   - multi_node_dep
+  - pd_cluster
 
 hardware_overrides: {}
 strategy_overrides: {}

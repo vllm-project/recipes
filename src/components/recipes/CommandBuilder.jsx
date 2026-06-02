@@ -3,8 +3,9 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, pickDefaultHardware, resolveSingleNodeTp } from "@/lib/command-synthesis";
+import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, isHardwareScalable, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand } from "@/lib/command-synthesis";
+import { resolveOmniTasks } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
@@ -62,7 +63,7 @@ const ADVANCED_OPTIONS = [
     gatedBy: (_recipe, activeStrategy) => /(?:^|_)(?:tep|dep)$/.test(activeStrategy || ""),
   },
 ];
-import { loadPreferences, savePreference } from "@/lib/preferences";
+import { loadPreferences, savePreference, loadRecipeState, saveRecipeState } from "@/lib/preferences";
 
 function CopyButton({ text, className = "" }) {
   const [copied, setCopied] = useState(false);
@@ -261,6 +262,28 @@ function EndpointsPopoverButton({ isPd, isMultiNode, placeholders, endpoints, on
                   />
                 ))}
               </div>
+              {extras.some((p) => p.name === "IFACE_NAME") && (
+                <div className="mt-2 text-[11px] text-muted-foreground leading-snug">
+                  Tip: find your inter-node fabric NIC with{" "}
+                  <code className="font-mono text-[10px] px-1 py-px rounded bg-foreground/5">
+                    ip -o -4 route show to default | awk '{"{print $5; exit}"}'
+                  </code>
+                  . On HPC clusters, verify against{" "}
+                  <code className="font-mono text-[10px] px-1 py-px rounded bg-foreground/5">ibstat</code>
+                  {" "}/{" "}
+                  <code className="font-mono text-[10px] px-1 py-px rounded bg-foreground/5">ibv_devinfo</code>
+                  {" "}— the default route is often the slow management NIC, not the RDMA fabric.
+                </div>
+              )}
+              {extras.some((p) => p.name === "HEAD_IP") && (
+                <div className="mt-2 text-[11px] text-muted-foreground leading-snug">
+                  Tip: on the rank-0 node, read its IP on that NIC with{" "}
+                  <code className="font-mono text-[10px] px-1 py-px rounded bg-foreground/5">
+                    ip -o -4 addr show $IFACE_NAME | awk '{"{print $4; exit}"}' | cut -d/ -f1
+                  </code>
+                  {" "}— make sure every other rank can reach it on that interface.
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -294,80 +317,25 @@ function EndpointsPopoverButton({ isPd, isMultiNode, placeholders, endpoints, on
   );
 }
 
-// Resolve the Docker image / GPU flags / brand key for the active hardware.
-// Shared by the install block (docker pull line) and the main command blocks
-// (docker run wrapping). Precedence: variant.docker_image → model.docker_image
-// → DEFAULT_IMAGE[brand].
-//
-// `docker_image` shapes:
-//   "vllm/vllm-openai:x"               (NVIDIA-only)
-//   { nvidia, amd, tpu }               (brand-keyed; each value is a string)
-//   { cu129, cu130 }                   (NVIDIA CUDA-keyed — explicit paired tags,
-//                                        auto-suffix is skipped in favor of these)
-//   { nvidia: { cu129, cu130 }, amd, tpu }  (mixed: NVIDIA value may be a CUDA map)
-//
-// When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
-// the user's `dockerCudaVariant` toggle instead of appending `-cu129`/`-cu130`.
-function computeDockerMeta(recipe, variant, hwProfile) {
-  const DEFAULT_IMAGE = {
-    nvidia: "vllm/vllm-openai:latest",
-    amd: "vllm/vllm-openai-rocm:latest",
-    tpu: "vllm/vllm-tpu:latest",
-  };
-  const isAmd = hwProfile?.brand === "AMD";
-  const isTpu = hwProfile?.generation === "tpu";
-  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : "nvidia";
-  const override = variant?.docker_image || recipe.model?.docker_image;
-
-  const isCudaMap = (v) =>
-    v && typeof v === "object" && ("cu129" in v || "cu130" in v);
-
-  let pinned = null;
-  let cudaMap = null;
-  if (typeof override === "string") {
-    if (brandKey === "nvidia") pinned = override;
-  } else if (override && typeof override === "object") {
-    const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override;
-    if (isBrandKeyed) {
-      const brandValue = override[brandKey];
-      if (typeof brandValue === "string") pinned = brandValue;
-      else if (brandKey === "nvidia" && isCudaMap(brandValue)) cudaMap = brandValue;
-    } else if (brandKey === "nvidia" && isCudaMap(override)) {
-      cudaMap = override;
-    }
-  }
-
-  const image = pinned || DEFAULT_IMAGE[brandKey];
-  const gpuFlags = isTpu
-    ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
-    : isAmd
-      ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
-      : "--gpus all";
-  return { image, gpuFlags, brandKey, isAmd, isTpu, pinned, cudaMap };
-}
-
-// Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
-// image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
-// CMD. Env vars become `-e KEY=VAL` inside the container.
-function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
-  const envFlags = Object.entries(env || {})
-    .map(([k, v]) => `-e ${k}=${v}`)
-    .join(" \\\n  ");
-  const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
-  const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
-  return `docker run ${gpuFlags} \\
-  --privileged --ipc=host -p ${port}:${port} \\
-  -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
-  ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
-}
-
 export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
 
+  // ── Omni tasks ── resolved from the recipe (catalog lookup); declared up here
+  // because both the omni and non-omni return paths reference these hooks.
+  const omniTasks = useMemo(() => resolveOmniTasks(recipe), [recipe]);
+
   // ── State ──
   const [variant, setVariant] = useState(searchParams.get("variant") || "default");
+
+  // Active omni task — drives the `vllm serve --omni` model_id swap (Wan2.2's
+  // T2V/I2V/TI2V) and the cURL endpoint/body shown in the Try-it popover.
+  const [omniTask, setOmniTask] = useState(() => {
+    const fromUrl = searchParams.get("task");
+    if (fromUrl && omniTasks.some((t) => t.id === fromUrl)) return fromUrl;
+    return omniTasks[0]?.id || "";
+  });
 
   // Compute default hardware: URL param > stored preference (if compatible) > smallest compatible profile
   // Smart default hardware: picks a profile compatible with the URL's variant
@@ -381,41 +349,69 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const [hwId, setHwId] = useState(searchParams.get("hardware") || defaultHw);
 
-  // After mount: restore user preferences from localStorage. URL params always
-  // win (explicit > stored). Each preference is applied only when compatible
-  // with the current recipe — otherwise the recipe-specific default stands.
-  //   hardware → NVIDIA only (AMD is opt-in per session, H200 stays canonical
-  //              on first load)
-  //   nodes    → only if the recipe actually supports multi-node
-  //   strategy → only if present in the recipe's compatible_strategies
-  //   features → map of {key: on/off} applied when the feature exists
+  // After mount: restore preferences from localStorage in two scopes.
+  // URL params always win (explicit > stored).
+  //   1. Global (hardware): tracks the user's physical setup, shared across
+  //      every recipe. NVIDIA-only — AMD is opt-in per session and H200
+  //      stays canonical on first load.
+  //   2. Per-recipe (strategy / nodes / features): keyed by hf_id, so each
+  //      recipe remembers its own choices independently. Picking TP on
+  //      V4-Flash doesn't make V4-Pro default to TP — Pro keeps whatever
+  //      was last picked there (or its YAML default if untouched).
   useEffect(() => {
     const prefs = loadPreferences();
+    let restoredFitsHw = null;
     if (!searchParams.get("hardware") && prefs.hardware) {
       const v = recipe.variants?.[variant] || recipe.variants?.default || {};
       const prefProfile = taxonomy.hardware_profiles?.[prefs.hardware];
-      if (prefProfile?.brand === "NVIDIA" && isPrecisionCompatible(prefProfile, v) && isHardwareSupported(recipe, prefs.hardware)) {
+      // Mirror the picker filter: a `restricted` profile (DGX Station, TPU)
+      // only applies to recipes that explicitly declare it in `meta.hardware`.
+      // Without this, selecting DGX on one recipe would leak into the global
+      // preference and leave every other recipe with no rendered pill selected.
+      const declaredHere = prefs.hardware in (recipe.meta?.hardware || {});
+      const restrictedElsewhere = prefProfile?.restricted && !declaredHere;
+      if (prefProfile?.brand === "NVIDIA" && !restrictedElsewhere && isPrecisionCompatible(prefProfile, v) && isHardwareSupported(recipe, prefs.hardware)) {
         setHwId(prefs.hardware);
+        restoredFitsHw = prefProfile;
       }
     }
-    if (!searchParams.get("nodes") && prefs.nodes && supportsMultiNode) {
-      const n = parseInt(prefs.nodes, 10);
-      if ([1, 2].includes(n)) setNodeCount(n);
+
+    const rs = loadRecipeState(recipe.hf_id);
+    if (!searchParams.get("strategy") && rs.strategy &&
+        (recipe.compatible_strategies || []).includes(rs.strategy)) {
+      setStrategyOverride(rs.strategy);
     }
-    if (!searchParams.get("strategy") && prefs.strategy) {
-      if ((recipe.compatible_strategies || []).includes(prefs.strategy)) {
-        setStrategyOverride(prefs.strategy);
-      }
-    }
-    if (!searchParams.get("features") && prefs.features && typeof prefs.features === "object") {
+    if (!searchParams.get("features") && Array.isArray(rs.features)) {
       const recipeFeatures = Object.keys(recipe.features || {});
-      const base = new Set(defaultFeaturesFor(hwId));
-      for (const [key, on] of Object.entries(prefs.features)) {
-        if (!recipeFeatures.includes(key)) continue;
-        if (on) base.add(key);
-        else base.delete(key);
+      setFeatures(rs.features.filter((f) => recipeFeatures.includes(f)));
+    }
+    // Resolve the hardware this mount actually settles on (URL > restored pref
+    // > default) so the non-scalable fixups below see the right profile.
+    const resolvedHwId = restoredFitsHw ? prefs.hardware : (searchParams.get("hardware") || defaultHw);
+    const resolvedHw = taxonomy.hardware_profiles?.[resolvedHwId];
+    const resolvedScalable = isHardwareScalable(resolvedHw);
+    // Non-scalable hardware can't shard an oversized variant. If we land on one
+    // (e.g. ?hardware=dgx_station_gb300, or a restored DGX preference) with a
+    // variant that doesn't fit, fall to the largest variant that does. URL
+    // ?variant= still wins.
+    if (!searchParams.get("variant") && resolvedHw && !resolvedScalable) {
+      const v = recipe.variants?.[variant] || recipe.variants?.default || {};
+      if (!fitsSingleNode(resolvedHw, v)) {
+        const fitting = pickFittingVariant(recipe, resolvedHw);
+        if (fitting && fitting !== variant) setVariant(fitting);
       }
-      setFeatures([...base]);
+    }
+    // Nodes: prefer the saved value; otherwise auto-bump if the resolved
+    // hardware can't fit single-node (mirrors `setHw`'s bump). Non-scalable
+    // hardware never bumps — it's locked to one node.
+    if (!searchParams.get("nodes") && supportsMultiNode && resolvedScalable) {
+      const saved = parseInt(rs.nodes, 10);
+      if ([1, 2].includes(saved)) {
+        setNodeCount(saved);
+      } else if (restoredFitsHw) {
+        const v = recipe.variants?.[variant] || recipe.variants?.default || {};
+        if (!fitsSingleNode(restoredFitsHw, v)) setNodeCount(2);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -426,9 +422,21 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     (s) => s.startsWith("multi_node_") || s === "pd_cluster"
   );
   const [nodeCount, setNodeCount] = useState(() => {
-    const n = parseInt(searchParams.get("nodes") || "1", 10);
     if (!supportsMultiNode) return 1;
-    return [1, 2].includes(n) ? n : 1;
+    const initialHwId = searchParams.get("hardware") || defaultHw;
+    const initialHw = taxonomy.hardware_profiles?.[initialHwId];
+    // Non-scalable hardware (single-GPU workstation) is single-node by
+    // definition — ignore any ?nodes= pin.
+    if (initialHw && !isHardwareScalable(initialHw)) return 1;
+    const urlN = searchParams.get("nodes");
+    if (urlN) {
+      const n = parseInt(urlN, 10);
+      return [1, 2].includes(n) ? n : 1;
+    }
+    // No URL pin: start on multi-node when the initial hardware can't fit
+    // single-node. Same fit check the hardware-change handler runs.
+    const v = recipe.variants?.[variant] || recipe.variants?.default || {};
+    return initialHw && !fitsSingleNode(initialHw, v) ? 2 : 1;
   });
   // PD-specific per-role node counts. Only surfaced when the active strategy
   // is `pd_cluster`; ignored otherwise. Defaults come from the recipe's
@@ -440,21 +448,33 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // GB300 = 1). Unknown hw ids fall through to `default`, then to 1.
   const pdDefaults = useMemo(() => {
     const so = recipe.strategy_overrides?.pd_cluster || {};
+    // Each PD role holds a full model copy on its own pool of nodes. If a
+    // single node can't fit the model, the role must span >= ceil(model/node)
+    // nodes — same logic as the top-level multi-node bump on line 378, applied
+    // per role. Recipe-level `strategy_overrides.pd_cluster.<role>.nodes` still
+    // wins when set.
+    const v = recipe.variants?.[variant] || recipe.variants?.default || {};
+    const hw = taxonomy.hardware_profiles?.[hwId];
+    const nodeVram = hw?.vram_gb || 0;
+    const modelVram = v?.vram_minimum_gb || 0;
+    const minNodesPerRole = (modelVram > 0 && nodeVram > 0)
+      ? Math.max(1, Math.ceil(modelVram / nodeVram))
+      : 1;
     const pickNodes = (role, fallback) => {
-      const v = so[role]?.nodes;
-      if (typeof v === "number") return v;
-      if (v && typeof v === "object") {
-        if (typeof v[hwId] === "number") return v[hwId];
-        if (typeof v.default === "number") return v.default;
+      const ov = so[role]?.nodes;
+      if (typeof ov === "number") return ov;
+      if (ov && typeof ov === "object") {
+        if (typeof ov[hwId] === "number") return ov[hwId];
+        if (typeof ov.default === "number") return ov.default;
       }
       return fallback;
     };
     return {
-      prefill: pickNodes("prefill", 1),
-      decode: pickNodes("decode", 1),
+      prefill: pickNodes("prefill", minNodesPerRole),
+      decode: pickNodes("decode", minNodesPerRole),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recipe, hwId]);
+  }, [recipe, hwId, variant]);
   const [pdPrefillNodes, setPdPrefillNodes] = useState(() => {
     const n = parseInt(searchParams.get("prefill_nodes") || "", 10);
     return Number.isFinite(n) && n > 0 ? n : pdDefaults.prefill;
@@ -492,6 +512,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       return Object.keys(recipe.features || {}).filter((f) => !optIn.has(f));
     },
     [recipe]
+  );
+
+  // Encode a features array for the URL: returns "" (which syncUrl deletes)
+  // when the set matches the YAML default for `hw`, so links stay clean unless
+  // the user actually deviated.
+  const featuresToUrl = useCallback(
+    (arr, hw) => {
+      const want = new Set(defaultFeaturesFor(hw));
+      const got = new Set(arr);
+      const same = want.size === got.size && [...want].every((f) => got.has(f));
+      return same ? "" : arr.join(",");
+    },
+    [defaultFeaturesFor]
   );
 
   const [features, setFeatures] = useState(() => {
@@ -555,11 +588,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   }, [recipe]);
   const [installMode, setInstallMode] = useState(initialInstallMode);
 
-  // CUDA variant selector for the NVIDIA docker image tag. The available
-  // suffix depends on the recipe's vLLM version (the tag's base CUDA flips
-  // at 0.20.0 — see `altCudaSuffix` below). State holds the raw suffix
-  // (`"cu129"` | `"cu130"`) or `"default"` for the base tag.
-  // Only surfaced for NVIDIA — AMD / TPU don't ship paired CUDA variants.
+  // CUDA variant selector for the NVIDIA docker image tag. State holds the
+  // raw suffix (`"cu129"` | `"cu130"`) or `"default"` for the upstream base
+  // tag (currently CUDA 13). Only surfaced for NVIDIA — AMD / TPU don't ship
+  // paired CUDA variants.
   const [dockerCudaVariant, setDockerCudaVariant] = useState("default");
 
   // ── Derived ──
@@ -568,7 +600,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // All hardware profiles grouped by brand, sorted by architectural generation
   // within brand (oldest → newest; matches the semianalysis GPU timeline).
   const hwByBrand = useMemo(() => {
-    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300"];
+    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "dgx_station_gb300"];
     const AMD_ORDER = ["mi300x", "mi325x", "mi355x"];
     const rankIn = (list, id) => {
       const i = list.indexOf(id);
@@ -608,6 +640,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   }, [taxonomy]);
 
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
+  // Non-scalable hardware (single-GPU workstation, e.g. DGX Station) can't add
+  // nodes, so multi-node is off and variants that don't fit are disabled.
+  const hwScalable = isHardwareScalable(hwProfile);
 
   const recommended = useMemo(() => recommendStrategy(recipe, hwProfile, nodeCount), [recipe, hwProfile, nodeCount]);
 
@@ -657,11 +692,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   );
 
   // Visual feedback when any rendered command changes. Covers single-node
-  // (result.command), multi-node (headCommand), and pd_cluster (prefill.command).
-  const commandFingerprint = result.command
+  // (result.command), multi-node (headCommand), pd_cluster (prefill.command),
+  // and omni (resolveCommand's modelId doesn't reflect omni task swaps, so
+  // include omniTask explicitly).
+  const commandFingerprint = (result.command
     || result.headCommand
     || result.prefill?.command
-    || "";
+    || "")
+    + (omniTask ? `|task:${omniTask}` : "");
   const [changed, setChanged] = useState(false);
   useEffect(() => {
     setChanged(true);
@@ -670,32 +708,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commandFingerprint]);
 
-  // Auto-enable spec_decoding for TP / TEP strategies (latency-oriented TP and
-  // balanced TEP both benefit from speculative decoding). Fires on initial
-  // mount (covers the case where TP is the default recommendation) and on any
-  // later strategy change. Respects an explicit ?features= URL pin on first
-  // render so shareable links round-trip.
-  const specAutoMountRef = useRef(true);
-  useEffect(() => {
-    const isInitial = specAutoMountRef.current;
-    specAutoMountRef.current = false;
-    if (isInitial && searchParams.get("features")) return;
-
-    const isLatency =
-      activeStrategy === "single_node_tp" || activeStrategy === "multi_node_tp" ||
-      activeStrategy === "single_node_tep" || activeStrategy === "multi_node_tep";
-    const hasSpec = !!(recipe.features || {}).spec_decoding;
-    if (!isLatency || !hasSpec) return;
-
-    if (features.includes("spec_decoding")) return;
-    const next = [...features, "spec_decoding"];
-    setFeatures(next);
-    // syncUrl runs as a side effect of the strategy change, NOT inside the
-    // setFeatures updater — React executes updaters during render, so calling
-    // router.replace there triggers a "setState during render" warning.
-    syncUrl({ features: next.join(",") });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeStrategy]);
 
   // ── URL sync ──
   const syncUrl = useCallback(
@@ -712,6 +724,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   );
 
   // ── Handlers ──
+  const selectOmniTask = (id) => {
+    setOmniTask(id);
+    // Default task id is omitted from the URL so a fresh page-load lands on
+    // the recipe author's intended starting task without a noisy `?task=…`.
+    const defaultId = omniTasks[0]?.id;
+    syncUrl({ task: id === defaultId ? "" : id });
+  };
+
   const selectVariant = (key) => {
     setVariant(key);
     syncUrl({ variant: key });
@@ -740,6 +760,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     setFeatures(next);
     setHwId(id);
     setStrategyOverride("");
+    const newProfile = taxonomy.hardware_profiles?.[id] || {};
+    const newScalable = isHardwareScalable(newProfile);
+    // Non-scalable hardware (single-GPU workstation) can't shard an oversized
+    // variant. If the active variant doesn't fit the new box, fall to the
+    // largest variant that does (e.g. BF16 → FP8 on DGX Station).
+    let activeVariant = currentVariant;
+    if (!newScalable && !fitsSingleNode(newProfile, currentVariant)) {
+      const fitting = pickFittingVariant(recipe, newProfile);
+      if (fitting && fitting !== variant) {
+        setVariant(fitting);
+        syncUrl({ variant: fitting });
+        activeVariant = recipe.variants?.[fitting] || currentVariant;
+      }
+    }
     // Bump to multi-node if the new hardware can't fit single-node (otherwise
     // the Single-node pill shows crossed out but the command keeps rendering
     // the invalid single-node config). Bump back DOWN to single-node when the
@@ -747,44 +781,47 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // strategy — without this, switching from GB200 (which bumped to 2 nodes
     // because the model didn't fit a 4-GPU tray) to B300/GB300 would stay at
     // 2 nodes and pick the multi-node sibling. Tied to the click so a
-    // deliberate Single-/Multi-node click afterwards still wins.
-    const newProfile = taxonomy.hardware_profiles?.[id] || {};
-    const fitsNew = fitsSingleNode(newProfile, currentVariant);
+    // deliberate Single-/Multi-node click afterwards still wins. Non-scalable
+    // hardware never bumps — it's single-node by definition.
+    const fitsNew = fitsSingleNode(newProfile, activeVariant);
     const recipeDefault = recipe.default_strategy;
     const recipeDefaultsSingleNode =
       typeof recipeDefault === "string" && recipeDefault.startsWith("single_node_");
-    const shouldBumpNodes = nodeCount === 1 && supportsMultiNode && !fitsNew;
-    const shouldUnbumpNodes = nodeCount > 1 && fitsNew && recipeDefaultsSingleNode;
+    const shouldBumpNodes = nodeCount === 1 && supportsMultiNode && newScalable && !fitsNew;
+    const shouldUnbumpNodes = nodeCount > 1 && (!newScalable || (fitsNew && recipeDefaultsSingleNode));
     if (shouldBumpNodes) setNodeCount(2);
     if (shouldUnbumpNodes) setNodeCount(1);
     syncUrl({
       hardware: id,
       strategy: "",
       nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
-      features: next.length > 0 ? next.join(",") : "",
+      features: featuresToUrl(next, id),
     });
     savePreference("hardware", id);
-    if (shouldBumpNodes) savePreference("nodes", "2");
-    if (shouldUnbumpNodes) savePreference("nodes", undefined);
+    // Mirror the new state to per-recipe storage so a hardware switch
+    // doesn't leave stale strategy/nodes/features cached for this recipe.
+    saveRecipeState(recipe.hf_id, {
+      strategy: undefined,
+      nodes: shouldBumpNodes ? 2 : shouldUnbumpNodes ? 1 : nodeCount,
+      features: next,
+    });
   };
 
   const selectStrategy = (s) => {
     setStrategyOverride(s);
     syncUrl({ strategy: s });
-    // Persist as global pref so subsequent recipes default to the same
-    // strategy when compatible. Empty string clears the preference.
-    savePreference("strategy", s || undefined);
-    // Spec-decoding auto-enable for latency strategies is handled by an effect
-    // below so it also fires on initial mount when TP is the default recommendation.
+    // Persisted per-recipe (keyed by hf_id), so picking TP here doesn't
+    // affect any other recipe's default. Spec-decoding auto-enable for
+    // latency strategies is handled by an effect below so it also fires
+    // on initial mount when TP is the default recommendation.
+    saveRecipeState(recipe.hf_id, { strategy: s || undefined });
   };
 
   const selectNodes = (n) => {
     setNodeCount(n);
     setStrategyOverride("");
     syncUrl({ nodes: n === 1 ? "" : String(n), strategy: "" });
-    savePreference("nodes", String(n));
-    // Switching nodes resets strategy, so clear the stored strategy too.
-    savePreference("strategy", undefined);
+    saveRecipeState(recipe.hf_id, { nodes: n, strategy: undefined });
   };
 
   const setPdNodes = (role, n) => {
@@ -826,22 +863,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       ? [...features.filter((x) => x !== mutex[f]), f]
       : features.filter((x) => x !== f);
     setFeatures(next);
-    syncUrl({ features: next.length > 0 ? next.join(",") : "" });
-    // Persist as {key: on/off} map. A value that matches the recipe's default
-    // (on for base features, off for opt-ins) gets removed from the map so
-    // prefs don't grow unbounded across recipes.
-    const prefs = loadPreferences();
-    const fprefs = { ...(prefs.features || {}) };
-    const isOn = next.includes(f);
-    const hwOptIn = (recipe.hardware_opt_in_features?.[hwId] || []).includes(f);
-    const isOptIn = (recipe.opt_in_features || []).includes(f) || hwOptIn;
-    const matchesDefault = isOptIn ? !isOn : isOn;
-    if (matchesDefault) delete fprefs[f];
-    else fprefs[f] = isOn;
-    // If this toggle disabled a mutex partner, clear its stored pref too so
-    // reload doesn't resurrect the conflict.
-    if (on && mutex[f]) delete fprefs[mutex[f]];
-    savePreference("features", Object.keys(fprefs).length ? fprefs : undefined);
+    syncUrl({ features: featuresToUrl(next, hwId) });
+    saveRecipeState(recipe.hf_id, { features: next });
   };
 
   const toggleAdvanced = (id) => {
@@ -946,7 +969,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     };
   }, [result, effectiveEndpoints]);
 
-  const dependencies = recipe.dependencies || [];
+  // Brand-filter recipe dependencies against the currently-selected hardware.
+  // `brand: NVIDIA | AMD | Intel` (or array) targets a single platform — entries
+  // without `brand` are platform-agnostic and always render. Used for cross-
+  // platform recipes (e.g. an omni recipe with separate NVIDIA / ROCm wheels)
+  // so AMD users don't see CUDA-only steps and vice versa.
+  const dependencies = useMemo(() => {
+    const all = recipe.dependencies || [];
+    const brand = hwProfile?.brand;
+    return all.filter((d) => {
+      if (!d.brand) return true;
+      const allowed = Array.isArray(d.brand) ? d.brand : [d.brand];
+      return allowed.includes(brand);
+    });
+  }, [recipe.dependencies, hwProfile?.brand]);
 
   // Status caption for the command block header.
   // Only `verified` is a positive signal worth surfacing; anything else
@@ -979,64 +1015,39 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const precisionPart = currentVariant.precision?.toUpperCase();
   const configSummary = [hwPart, strategyPart, precisionPart].filter(Boolean).join(" · ");
 
-  // Omni models are served via vLLM-Omni (offline Python inference), not `vllm serve`.
-  // Skip the command/strategy/feature UI and just show install deps + a pointer to the guide.
-  const isOmni = (recipe.meta?.tasks || []).includes("omni");
-  if (isOmni) {
-    return (
-      <div className="space-y-4">
-        {dependencies.length > 0 && <DependenciesBlock deps={dependencies} />}
-        <div className="rounded-2xl border border-border bg-muted/20 px-5 py-4 text-sm">
-          <div className="font-medium mb-1 flex items-center gap-2">
-            <Sparkles size={14} className="text-vllm-yellow" />
-            Served via vLLM-Omni (offline inference)
-          </div>
-          <p className="text-muted-foreground text-xs leading-relaxed">
-            This model runs as an offline Python workflow, not a long-running <code className="font-mono text-[11px] px-1 py-0.5 rounded bg-foreground/5">vllm serve</code> endpoint.
-            See the <strong>Guide</strong> below for the exact inference script and parameters.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // The CUDA baseline for NVIDIA images flipped at vLLM 0.20.0: pre-0.20.0
-  // the base tag is CUDA 12.9 and the alternative suffix is `-cu130`;
-  // 0.20.0+ the base tag is CUDA 13 and the alternative suffix is `-cu129`.
-  // Nightly recipes track the post-flip baseline regardless of the (possibly
-  // non-numeric, e.g. "nightly") `min_vllm_version` string they declare.
-  // Offering the wrong suffix would give the user a tag that doesn't exist.
-  const altCudaSuffix = useMemo(() => {
-    if (recipe.model?.nightly_required === true) return "cu129";
-    const v = recipe.model?.min_vllm_version || "";
-    const [maj, min] = v.split(".").map((n) => parseInt(n, 10) || 0);
-    const is020Plus = maj > 0 || min >= 20;
-    return is020Plus ? "cu129" : "cu130";
-  }, [recipe]);
+  // Upstream `vllm/vllm-openai:latest` (and recent pinned tags) ship CUDA 13
+  // as the base; CUDA 12.9 is the legacy alternate published as a `-cu129`
+  // suffix. The recipe's `min_vllm_version` doesn't change which tag the user
+  // pulls — `:latest` is always today's base regardless — so the alt suffix
+  // is a constant.
+  const altCudaSuffix = "cu129";
 
   const dockerMeta = useMemo(() => {
     const meta = computeDockerMeta(recipe, currentVariant, hwProfile);
     if (meta.brandKey !== "nvidia") return meta;
 
     // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
-    // tag and skip auto-suffix. "default" resolves to the base CUDA for this
-    // vLLM version (< 0.20.0 → cu129 base; 0.20.0+ → cu130 base), except on
-    // Blackwell where cu130 is preferred when the map offers it. If the
-    // chosen variant is missing, fall through to whichever key is present.
+    // tag and skip auto-suffix. "default" resolves to cu130 (the upstream
+    // baseline today). If the chosen variant is missing, fall through to
+    // whichever key is present.
     if (meta.cudaMap) {
-      const versionBase = altCudaSuffix === "cu130" ? "cu129" : "cu130";
-      const baseCuda =
-        hwProfile?.generation === "blackwell" && "cu130" in meta.cudaMap
-          ? "cu130"
-          : versionBase;
+      const baseCuda = "cu130";
       const wanted = dockerCudaVariant === "default" ? baseCuda : dockerCudaVariant;
       const picked = meta.cudaMap[wanted] || meta.cudaMap[baseCuda] || meta.cudaMap.cu129 || meta.cudaMap.cu130;
       return { ...meta, image: picked || meta.image };
     }
 
     // Legacy string tag — append the suffix when user picks the alt variant.
+    // Nightly tags follow the inverse convention: `:nightly` → `:cu129-nightly`
+    // (CUDA prefix, not suffix). Detect the upstream `:nightly` tag and swap
+    // accordingly; pinned `:nightly`-bearing tags (e.g. `:myrelease-nightly`)
+    // fall back to the suffix path.
     if (dockerCudaVariant === altCudaSuffix) {
-      return { ...meta, image: `${meta.image}-${altCudaSuffix}` };
+      const isUpstreamNightly = /^vllm\/vllm-(openai|openai-rocm|tpu):nightly$/.test(meta.image);
+      const next = isUpstreamNightly
+        ? meta.image.replace(/:nightly$/, `:${altCudaSuffix}-nightly`)
+        : `${meta.image}-${altCudaSuffix}`;
+      return { ...meta, image: next };
     }
     return meta;
   }, [recipe, currentVariant, hwProfile, dockerCudaVariant, altCudaSuffix]);
@@ -1055,6 +1066,207 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       : installMode === "docker" && dockerEffectivelyHidden
         ? "pip"
         : installMode;
+
+  // Omni recipes serve via `vllm serve <model> --omni`. The command shape is
+  // simpler than the regular path (no strategy / multi-node / pd), but the
+  // surrounding affordances (Install tabs, Hardware pills, Variant pills) all
+  // still apply. Plus a Task pill row that swaps endpoint + curl body — and,
+  // for multi-checkpoint families like Wan2.2, the served model_id too.
+  const isOmni = (recipe.meta?.tasks || []).includes("omni");
+  if (isOmni) {
+    const omniVariants = Object.entries(recipe.variants || {});
+    const showOmniVariants = omniVariants.length > 1;
+    const showOmniTaskRow = omniTasks.length > 1;
+    const activeTask = omniTasks.find((t) => t.id === omniTask) || omniTasks[0] || null;
+
+    // Render the `vllm serve --omni` command via the shared omni resolver.
+    // Falls back to a stub when the recipe has no omni.tasks declared yet
+    // (legacy omni-tagged recipes that haven't been migrated).
+    const omniRendered = activeTask
+      ? resolveOmniCommand(recipe, variant, activeTask, hwProfile)
+      : {
+          command: `${recipe.omni?.serve_binary || "vllm serve"} ${currentVariant.model_id || recipe.model?.model_id || "model"} --omni`,
+          env: {},
+          modelId: currentVariant.model_id || recipe.model?.model_id || "model",
+        };
+    const omniSubbedCommand = substitute(omniRendered.command, effectiveEndpoints);
+    const omniSubbedEnv = substituteEnv(omniRendered.env, effectiveEndpoints);
+
+    // Per-task verify command. `activeTask.example` knows the right endpoint
+    // (e.g. /v1/images/generations vs /v1/chat/completions multimodal) and
+    // payload shape; no chance for the generic /v1/chat/completions curl to
+    // mislead the user into hitting the wrong route.
+    const omniCurl = activeTask?.example
+      ? activeTask.example({
+          host: clientHost,
+          port: clientPortStr,
+          modelId: omniRendered.modelId,
+          prompt: undefined,
+        })
+      : verifyCmd;
+
+    // Recompute placeholders against the omni command set rather than the
+    // (unused-here) `result` from resolveCommand.
+    const omniPlaceholders = detectPlaceholdersAll(
+      omniRendered.command,
+      omniCurl,
+      ...Object.values(omniRendered.env || {}).filter((v) => typeof v === "string"),
+    );
+
+    const omniEndpointsControls = (
+      <EndpointsPopoverButton
+        isPd={false}
+        isMultiNode={false}
+        placeholders={omniPlaceholders}
+        endpoints={endpoints}
+        onChange={updateEndpoint}
+        onReset={resetEndpoints}
+      />
+    );
+
+    // Config caption: hw · task · precision. Same shape as the non-omni
+    // summary so the command-card header reads consistently across recipes.
+    const omniConfigSummary = [
+      hwProfile?.display_name || hwId,
+      activeTask?.label,
+      currentVariant.precision?.toUpperCase(),
+    ].filter(Boolean).join(" · ");
+
+    return (
+      <TooltipProvider>
+        <div className="space-y-4">
+          <InstallBlock
+            recipe={recipe}
+            dockerMeta={dockerMeta}
+            installMode={effectiveInstallMode}
+            setInstallMode={setInstallMode}
+            dockerCudaVariant={dockerCudaVariant}
+            setDockerCudaVariant={setDockerCudaVariant}
+            altCudaSuffix={altCudaSuffix}
+          />
+
+          {effectiveInstallMode !== "docker" && dependencies.length > 0 && (
+            <DependenciesBlock deps={dependencies} />
+          )}
+
+          <div
+            className={`rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border transition-shadow ${changed ? "ring-2 ring-vllm-blue/30" : ""}`}
+          >
+            <SingleCommandBlock
+              command={omniSubbedCommand}
+              env={omniSubbedEnv}
+              verifyCmd={omniCurl}
+              benchCmd={benchCmd}
+              statusHeader={statusHeader}
+              installMode={effectiveInstallMode}
+              dockerMeta={dockerMeta}
+              configSummary={omniConfigSummary}
+              endpointsControls={omniEndpointsControls}
+            />
+          </div>
+
+          <div className="rounded-xl border border-border divide-y divide-border">
+            <ConfigRow label="Hardware">
+              <div className="space-y-1.5">
+                {hwByBrand.map(([brand, profiles]) => (
+                  <div key={brand} className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 w-14 shrink-0">
+                      {brand}
+                    </span>
+                    <PillGroup>
+                      {profiles.map(([id, p]) => {
+                        const precisionOk = isPrecisionCompatible(p, currentVariant);
+                        const status = recipe.meta?.hardware?.[id];
+                        const isUnsupported = status === "unsupported";
+                        const disabled = !precisionOk || isUnsupported;
+                        const verifiedNote = status === "verified"
+                          ? "\n\nVerified — author has tested this hardware end-to-end"
+                          : "";
+                        const reason = !precisionOk
+                          ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
+                          : isUnsupported
+                            ? `Not yet supported on ${p.display_name} — this model doesn't run here today, may be enabled in a future release`
+                            : `${p.description}${verifiedNote}`;
+                        return (
+                          <Pill
+                            key={id}
+                            active={hwId === id}
+                            disabled={disabled}
+                            onClick={() => !disabled && selectHardware(id)}
+                            title={reason}
+                          >
+                            <HwStatusDot status={status} />
+                            <span className="font-semibold">{p.display_name}</span>
+                            {p.vram_gb > 0 && p.gpu_count > 0 && (
+                              <span className="text-muted-foreground ml-1.5 font-mono">
+                                {p.gpu_count}×{Math.round(p.vram_gb / p.gpu_count)}G
+                              </span>
+                            )}
+                          </Pill>
+                        );
+                      })}
+                    </PillGroup>
+                  </div>
+                ))}
+              </div>
+            </ConfigRow>
+
+            {showOmniTaskRow && (
+              <ConfigRow
+                label="Task"
+                hint="Each task picks a vllm-omni handler endpoint and example payload. For multi-checkpoint families (Wan2.2 T2V/I2V/TI2V) the task also swaps the served model_id."
+              >
+                <PillGroup>
+                  {omniTasks.map((t) => (
+                    <Pill
+                      key={t.id}
+                      active={activeTask?.id === t.id}
+                      onClick={() => selectOmniTask(t.id)}
+                      title={[t.description, `Endpoint: ${t.endpoint}`].filter(Boolean).join("\n\n")}
+                    >
+                      <span className="font-semibold">{t.label}</span>
+                      {t.vramMinimumGb && (
+                        <span className="text-muted-foreground ml-1.5 font-mono">{t.vramMinimumGb} GB</span>
+                      )}
+                    </Pill>
+                  ))}
+                </PillGroup>
+                {activeTask?.description && (
+                  <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                    {activeTask.description}
+                  </p>
+                )}
+              </ConfigRow>
+            )}
+
+            {showOmniVariants && (
+              <ConfigRow
+                label="Variant"
+                hint="VRAM shown is the minimum to LOAD the model (weights + runtime overhead). vLLM-Omni inference may need more for activations and intermediate tensors."
+              >
+                <PillGroup>
+                  {omniVariants.map(([key, v]) => (
+                    <Pill
+                      key={key}
+                      active={variant === key}
+                      onClick={() => selectVariant(key)}
+                      title={[
+                        v.description,
+                        `Min ${v.vram_minimum_gb} GB to load.`,
+                      ].filter(Boolean).join("\n\n")}
+                    >
+                      <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
+                      <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
+                    </Pill>
+                  ))}
+                </PillGroup>
+              </ConfigRow>
+            )}
+          </div>
+        </div>
+      </TooltipProvider>
+    );
+  }
 
   return (
     <TooltipProvider>
@@ -1219,20 +1431,31 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             hint="VRAM shown is the minimum to LOAD the model (weights + CUDA/vLLM runtime overhead, ≈ params × bytes × 1.2). It's not a serving budget — long context or large batch typically needs 1.5–2× more for KV cache."
           >
             <PillGroup>
-              {Object.entries(recipe.variants || {}).map(([key, v]) => (
-                <Pill
-                  key={key}
-                  active={variant === key}
-                  onClick={() => selectVariant(key)}
-                  title={[
-                    v.description,
-                    `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
-                  ].filter(Boolean).join("\n\n")}
-                >
-                  <span className="font-mono font-semibold">{v.precision?.toUpperCase()}</span>
-                  <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
-                </Pill>
-              ))}
+              {Object.entries(recipe.variants || {}).map(([key, v]) => {
+                // On non-scalable hardware (single-GPU workstation) a variant
+                // that doesn't fit has nowhere to shard — disable it instead of
+                // rendering a command that can't run.
+                const disabled = !hwScalable && !variantRunsOnHardware(hwProfile, v);
+                return (
+                  <Pill
+                    key={key}
+                    active={variant === key}
+                    disabled={disabled}
+                    onClick={() => !disabled && selectVariant(key)}
+                    title={
+                      disabled
+                        ? `${(v.label || v.precision)?.toUpperCase()} needs ${v.vram_minimum_gb} GB but ${hwProfile.display_name || "this hardware"} has ${hwProfile.vram_gb} GB and can't scale out — pick a smaller-footprint variant`
+                        : [
+                            v.description,
+                            `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
+                          ].filter(Boolean).join("\n\n")
+                    }
+                  >
+                    <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
+                    <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
+                  </Pill>
+                );
+              })}
             </PillGroup>
           </ConfigRow>
 
@@ -1266,7 +1489,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 ? { label: "Latency oriented", classes: "bg-green-500/20 text-green-600 dark:text-green-400" }
                 : o === "balanced"
                   ? { label: "Balanced", classes: "bg-blue-500/20 text-blue-600 dark:text-blue-400" }
-                  : { label: "Throughput oriented", classes: "bg-amber-500/20 text-amber-700 dark:text-amber-400" };
+                  : o === "production"
+                    ? { label: "Production deployment", classes: "bg-purple-500/20 text-purple-700 dark:text-purple-400" }
+                    : { label: "Throughput oriented", classes: "bg-amber-500/20 text-amber-700 dark:text-amber-400" };
               return (
                 <span className={`inline-block text-[10px] font-medium mt-1.5 px-1.5 py-0.5 rounded ${classes}`}>
                   {label}
@@ -1305,9 +1530,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               <PillGroup>
                 {[1, 2].map((n) => {
                   // Multi-node pill is disabled when the recipe declares no
-                  // multi_node_* (or pd_cluster) strategy. Small dense models
-                  // commonly omit these.
-                  const noMultiNode = n > 1 && !supportsMultiNode;
+                  // multi_node_* (or pd_cluster) strategy (small dense models
+                  // commonly omit these), or when the active hardware can't be
+                  // clustered (single-GPU workstation, e.g. DGX Station).
+                  const noMultiNode = n > 1 && (!supportsMultiNode || !hwScalable);
                   // Single-node pill is disabled when the variant can't fit on
                   // one node of the selected hardware — same struck-through
                   // treatment as unsupported hardware pills. Multi-node still
@@ -1323,7 +1549,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                       onClick={() => !disabled && selectNodes(n)}
                       title={
                         noMultiNode
-                          ? "This recipe does not declare a multi-node strategy. Fits in a single node."
+                          ? !hwScalable
+                            ? `${hwProfile.display_name || "This hardware"} is a single-GPU workstation and can't be clustered into multiple nodes.`
+                            : "This recipe does not declare a multi-node strategy. Fits in a single node."
                           : singleNodeDoesntFit
                             ? `Single-node can't fit this variant on ${hwProfile.display_name || "the selected hardware"} (${currentVariant.vram_minimum_gb}GB > ${hwProfile.vram_gb}GB) — use multi-node`
                             : n === 1
@@ -1357,6 +1585,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   >
                     {key === "spec_decoding" && (
                       <Zap size={11} className="inline-block mr-1 -mt-0.5 text-vllm-yellow" fill="currentColor" />
+                    )}
+                    {key === "tool_calling" && (
+                      <Wrench size={11} className="inline-block mr-1 -mt-0.5 text-muted-foreground" />
+                    )}
+                    {key === "reasoning" && (
+                      <Brain size={11} className="inline-block mr-1 -mt-0.5 text-muted-foreground" />
                     )}
                     {key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                     {key === "spec_decoding" && (
@@ -1436,6 +1670,7 @@ function endpointHintFor(name) {
   if (name.endsWith("_PORT")) return "port";
   if (/^(?:PREFILL|DECODE)_NODE_\d+$/.test(name)) return "host";
   if (name.endsWith("_IP")) return "10.0.0.1";
+  if (name === "IFACE_NAME") return "bond0";
   return "value";
 }
 
@@ -1485,7 +1720,7 @@ function PillGroup({ children }) {
 
 function HwStatusDot({ status }) {
   // Only `verified` is a meaningful signal. Everything else (including
-  // undeclared GPUs) renders no dot — the pill looks clean.
+  // undeclared GPUs) renders nothing — the pill looks clean.
   if (status !== "verified") return null;
   return <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 shrink-0 bg-green-500" aria-hidden />;
 }
@@ -1572,8 +1807,12 @@ function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode, dockerC
   const pipHidden = pipCfg === false;
   const dockerHidden = dockerCfg === false;
   const [open, setOpen] = useState(false);
-  const { isAmd, isTpu, image: dockerImage, brandKey } = dockerMeta;
+  const { isAmd, isTpu, image: dockerImage, brandKey, cudaMap } = dockerMeta;
   const minV = recipe.model?.min_vllm_version;
+  // Omni recipes are served by vLLM-Omni, a fast-moving companion package that
+  // tracks vLLM nightly (Wan2.2 even pins a git commit). Surface it next to the
+  // vLLM version so users know the generation path needs nightly wheels.
+  const isOmni = recipe.meta?.tasks?.includes("omni");
 
   // When a recipe's min_vllm_version hasn't shipped yet (cutting-edge models
   // that landed after the last stable release), `model.nightly_required: true`
@@ -1582,10 +1821,9 @@ function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode, dockerC
   // win — this flag only affects the default.
   const nightlyRequired = recipe.model?.nightly_required === true;
   // Resolve the CUDA tag for pip's nightly wheel index from the same toggle
-  // that drives the Docker tag suffix. "default" → the version-base CUDA
-  // (cu130 for ≥0.20.0, cu129 for older); explicit picks pass through.
-  const baseCuda = altCudaSuffix === "cu129" ? "cu130" : "cu129";
-  const pipCudaTag = dockerCudaVariant === "default" ? baseCuda : dockerCudaVariant;
+  // that drives the Docker tag suffix. "default" → cu130 (today's upstream
+  // baseline); explicit picks pass through.
+  const pipCudaTag = dockerCudaVariant === "default" ? "cu130" : dockerCudaVariant;
   const defaultPipCmd = isAmd
     ? `uv venv --python 3.12
 source .venv/bin/activate
@@ -1604,9 +1842,7 @@ uv pip install -U vllm --torch-backend auto`;
   const pipNote =
     pipCfg?.note ||
     (nightlyRequired && !isAmd
-      ? altCudaSuffix === "cu129"
-        ? `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
-        : `vLLM ${minV} isn't released yet — nightly required. For CUDA 13, switch the toggle to cu130.`
+      ? `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
       : undefined);
 
   // Docker install step is just the image pull; the `docker run` that actually
@@ -1620,9 +1856,11 @@ uv pip install -U vllm --torch-backend auto`;
     ? "TPU builds are published by vllm-project/tpu-inference. See the Trillium and Ironwood tpu-recipes for pinned image tags and exact deployment flags."
     : isAmd
       ? undefined
-      : altCudaSuffix === "cu129"
-        ? "vLLM 0.20.0+ default tag ships CUDA 13. Switch to cu129 for the -cu129 variant if your host is on CUDA 12.9."
-        : "Default tag ships CUDA 12.9. Switch to cu130 for the -cu130 variant on CUDA 13 hosts.";
+      : cudaMap
+        ? "This recipe ships paired CUDA-tagged images. Pick `cu129` for CUDA 12.9 hosts or `cu130` for CUDA 13."
+        : nightlyRequired
+          ? "Nightly image ships CUDA 13. Switch to cu129 for the `cu129-nightly` variant if your host is on CUDA 12.9."
+          : "Default tag ships CUDA 13. Switch to cu129 for the -cu129 variant if your host is on CUDA 12.9.";
   const dockerNote = dockerCfg?.note || defaultDockerNote;
   // Show the CUDA selector when we're on NVIDIA and the user isn't supplying
   // a full override command (which already bakes in a specific tag). Visible
@@ -1666,7 +1904,7 @@ uv pip install -U vllm --torch-backend auto`;
         <Package size={12} className="text-[var(--command-fg)]/50 shrink-0" />
         <span className="text-[11px] font-semibold text-[var(--command-fg)]/70 uppercase tracking-widest">Install</span>
         <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
-          vLLM {minV}+ · {isTpu ? "TPU" : isAmd ? "ROCm" : "CUDA"}
+          vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · {isTpu ? "TPU" : isAmd ? "ROCm" : "CUDA"}
         </span>
         {nightlyRequired && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
@@ -1711,9 +1949,9 @@ uv pip install -U vllm --torch-backend auto`;
                           ? "Legacy CUDA 12.9 build"
                           : v.id === "cu130"
                             ? "CUDA 13 build"
-                            : altCudaSuffix === "cu129"
-                              ? "Base tag — CUDA 13 (vLLM 0.20.0+)"
-                              : "Base tag — CUDA 12.9"
+                            : cudaMap
+                              ? "Recipe-recommended tag for this hardware"
+                              : "Base tag — CUDA 13"
                       }
                       className={`px-2 py-0.5 text-[11px] font-mono rounded transition-colors ${
                         dockerCudaVariant === v.id
@@ -1744,8 +1982,12 @@ uv pip install -U vllm --torch-backend auto`;
 }
 
 function DependenciesBlock({ deps }) {
-  const allCommands = deps.map((d) => d.command).join("\n");
-  const requiredCount = deps.filter((d) => !d.optional).length;
+  // Copy-all only includes required entries — optional ones often target a
+  // different platform (e.g. AMD ROCm in a recipe with NVIDIA-only kernels),
+  // so blindly copy-pasting everything would mix incompatible installs.
+  const requiredDeps = deps.filter((d) => !d.optional);
+  const requiredCommands = requiredDeps.map((d) => d.command).join("\n");
+  const requiredCount = requiredDeps.length;
   const optionalCount = deps.length - requiredCount;
   return (
     <div className="rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border">
@@ -1755,14 +1997,19 @@ function DependenciesBlock({ deps }) {
           {requiredCount > 0 && <span className="text-[var(--command-fg)]/40">· {requiredCount} required</span>}
           {optionalCount > 0 && <span className="text-[var(--command-fg)]/40">· {optionalCount} optional</span>}
         </span>
-        <CopyButton text={allCommands} />
+        <CopyButton text={requiredCommands} />
       </div>
       <div className="px-4 py-3 text-[13px] font-mono leading-relaxed overflow-x-auto space-y-2">
         {deps.map((d, i) => (
-          <div key={i}>
+          <div key={i} className={d.optional ? "opacity-50" : undefined}>
             {d.note && (
-              <div className="text-[var(--command-fg)]/45 text-[11px] leading-snug mb-0.5">
-                # {d.note}{d.optional ? " (optional)" : ""}
+              <div className="text-[var(--command-fg)]/45 text-[11px] leading-snug mb-0.5 inline-flex items-center gap-1.5">
+                {d.optional && (
+                  <span className="inline-flex items-center rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wider bg-foreground/10 text-[var(--command-fg)]/60">
+                    Optional
+                  </span>
+                )}
+                <span># {d.note}</span>
               </div>
             )}
             <div className="text-[var(--command-fg)] whitespace-pre">{d.command}</div>

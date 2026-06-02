@@ -2,23 +2,23 @@
 
 [Gemma 4](https://ai.google.dev/gemma/docs) is Google's most capable open model family, featuring a unified multimodal architecture that natively processes text, images, and audio. Gemma 4 models support advanced capabilities including structured thinking/reasoning, function calling with a custom tool-use protocol, and dynamic vision resolution — all available through vLLM's OpenAI-compatible API.
 
-Gemma 4 models are supported on NVIDIA GPUs, AMD GPUs, and Google Cloud TPUs. TPU support is provided through [vLLM TPU](https://github.com/vllm-project/tpu-inference). For detailed TPU deployment guides, see the [Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4) and [Ironwood](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/inference/ironwood/vLLM/Gemma4/) recipes.
+Gemma 4 models are supported on NVIDIA GPUs, AMD GPUs, Google Cloud TPUs and Intel Xeon 6 CPUs. TPU support is provided through [vLLM TPU](https://github.com/vllm-project/tpu-inference). For detailed TPU deployment guides, see the [Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4) and [Ironwood](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/inference/ironwood/vLLM/Gemma4/) recipes.
 
 ## Supported Models
 
 ### Dense Models
 
-| Model | Parameters | Min NVIDIA GPUs (BF16) | Min AMD GPUs (BF16) | Min TPUs | HuggingFace |
-|-------|-----------|------------------------|---------------------|----------|-------------|
-| Gemma 4 E2B IT | effective 2B | 1× (24 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | [google/gemma-4-E2B-it](https://huggingface.co/google/gemma-4-E2B-it) |
-| Gemma 4 E4B IT | effective 4B | 1× (24 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | [google/gemma-4-E4B-it](https://huggingface.co/google/gemma-4-E4B-it) |
-| Gemma 4 31B IT | 31B | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | [google/gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) |
+| Model | Parameters | Min NVIDIA GPUs (BF16) | Min AMD GPUs (BF16) | Min TPUs | Min Xeon 6 CPUs | HuggingFace |
+|-------|-----------|------------------------|---------------------|----------|--------|-------------|
+| Gemma 4 E2B IT | effective 2B | 1× (24 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | 1× NUMA node | [google/gemma-4-E2B-it](https://huggingface.co/google/gemma-4-E2B-it) |
+| Gemma 4 E4B IT | effective 4B | 1× (24 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | 1× NUMA node | [google/gemma-4-E4B-it](https://huggingface.co/google/gemma-4-E4B-it) |
+| Gemma 4 31B IT | 31B | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | - | [google/gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) |
 
 ### Mixture-of-Experts (MoE) Models
 
-| Model | Total / Active Params | Min NVIDIA GPUs (BF16) | Min AMD GPUs (BF16) | Min TPUs | HuggingFace |
-|-------|----------------------|------------------------|---------------------|----------|-------------|
-| Gemma 4 26B-A4B IT | 26B / 4B active | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | [google/gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it) |
+| Model | Total / Active Params | Min NVIDIA GPUs (BF16) | Min AMD GPUs (BF16) | Min TPUs | Min Xeon 6 CPUs | HuggingFace |
+|-------|----------------------|------------------------|---------------------|----------|----------|-------------|
+| Gemma 4 26B-A4B IT | 26B / 4B active | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | 2× NUMA node | [google/gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it) |
 
 ### Key Architecture Features
 
@@ -54,13 +54,17 @@ uv pip install vllm --pre \
 --extra-index-url https://wheels.vllm.ai/rocm/nightly/rocm721 --upgrade
 ```
 
+### pip (Intel Xeon 6 CPUs)
+For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.
+
 ### Docker
 
 ```bash
-docker pull vllm/vllm-openai:latest       # For CUDA 12.9
-docker pull vllm/vllm-openai:latest-cu130 # For CUDA 13.0
-docker pull vllm/vllm-openai-rocm:latest  # For AMD GPUs
-docker pull vllm/vllm-tpu:gemma4          # For Cloud TPUs
+docker pull vllm/vllm-openai:latest            # For CUDA 12.9
+docker pull vllm/vllm-openai:latest-cu130      # For CUDA 13.0
+docker pull vllm/vllm-openai-rocm:latest       # For AMD GPUs
+docker pull vllm/vllm-tpu:gemma4               # For Cloud TPUs
+docker pull vllm/vllm-openai-cpu:latest-x86_64 # For Intel Xeon 6
 ```
 
 ## Running Gemma 4
@@ -169,12 +173,29 @@ docker run -itd --name gemma4-rocm \
         --port 8000
 ```
 
+### Intel Xeon 6 Deployment via Docker
+
+Launch the x86 CPU vLLM Docker container, replacing `<MODEL>` with the desired Google Gemma 4 model:
+
+```bash
+docker run -itd --name gemma4-cpu \
+    --network=host \
+    --shm-size 16G \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-cpu:latest-x86_64 \
+        --model <MODEL> \
+        --host 0.0.0.0 \
+        --port 8000
+```
+
+For additional Intel Xeon 6 deployment details, see the Intel Software Catalog entries for [Gemma 4 E4B IT](https://aiswcatalog.intel.com/models/google-gemma-4-e4b-it) and [Gemma 4 26B-A4B IT](https://aiswcatalog.intel.com/models/google-gemma-4-26b-a4b-it).
+
 ### Configuration Tips
 
 - Set `--max-model-len` to match your actual workload. The default context length can be very large; reducing it saves memory for KV cache.
 - Use `--gpu-memory-utilization 0.90` to `0.95` to maximize KV cache capacity.
-- For image-only workloads (no audio), pass `--limit-mm-per-prompt audio=0` to skip audio encoder memory allocation.
-- For text-only workloads, pass `--limit-mm-per-prompt image=0,audio=0` to skip multimodal profiling entirely.
+- For image-only workloads (no audio), pass `--limit-mm-per-prompt.audio 0` to skip audio encoder memory allocation.
+- For text-only workloads, pass `--limit-mm-per-prompt '{"image": 0, "audio": 0}'` to skip multimodal profiling entirely.
 - Use `--async-scheduling` for better overall throughput by overlapping scheduling with decoding.
 
 
@@ -381,7 +402,7 @@ Gemma 4 (E2B and E4B) includes a conformer-based audio encoder for speech recogn
 ```bash
 vllm serve google/gemma-4-31B-it \
   --max-model-len 8192 \
-  --limit-mm-per-prompt image=4,audio=1
+  --limit-mm-per-prompt '{"image": 4, "audio": 1}'
 ```
 
 ### Audio Transcription (OpenAI SDK)
@@ -447,7 +468,7 @@ Video understanding is supported via a custom processing pipeline (available in 
 ```bash
 vllm serve google/gemma-4-E2B-it \
   --max-model-len 8192 \
-  --limit-mm-per-prompt image=4,video=1
+  --limit-mm-per-prompt '{"image": 4, "video": 1}'
 ```
 
 ### Video Inference (OpenAI SDK Style)
@@ -941,6 +962,71 @@ print(outputs[0].outputs[0].text)
 ```
 
 
+## Speculative Decoding (MTP)
+
+Gemma 4 supports Multi-Token Prediction (MTP) speculative decoding using lightweight assistant models that share KV cache with the target model, enabling faster token generation with no quality loss.
+
+### Available Assistant Models
+
+| Target Model | Assistant Model | Centroids Masking |
+|---|---|---|
+| Gemma 4 E2B IT | [google/gemma-4-E2B-it-assistant](https://huggingface.co/google/gemma-4-E2B-it-assistant) | Yes |
+| Gemma 4 E4B IT | [google/gemma-4-E4B-it-assistant](https://huggingface.co/google/gemma-4-E4B-it-assistant) | Yes |
+| Gemma 4 26B-A4B IT | [google/gemma-4-26B-A4B-it-assistant](https://huggingface.co/google/gemma-4-26B-A4B-it-assistant) | No |
+| Gemma 4 31B IT | [google/gemma-4-31B-it-assistant](https://huggingface.co/google/gemma-4-31B-it-assistant) | No |
+
+The E2B and E4B assistant models use **centroids masking** — a sparse logit computation that replaces the full vocabulary dot product (~262K tokens) with a centroid-based selection of ~4K candidate tokens. This reduces the lm_head computation by ~45x with negligible impact on draft token quality. Centroids masking is enabled automatically when the assistant checkpoint includes the centroid weights (`use_ordered_embeddings: true`); no user configuration is needed.
+
+### Online Serving
+
+```bash
+vllm serve google/gemma-4-31B-it \
+  --tensor-parallel-size 2 \
+  --max-model-len 8192 \
+  --speculative-config '{"model": "google/gemma-4-31B-it-assistant", "num_speculative_tokens": 4}'
+```
+
+### Offline Inference
+
+```python
+from vllm import LLM, SamplingParams
+from transformers import AutoTokenizer
+
+model_path = "google/gemma-4-E4B-it"
+
+tokenizer = AutoTokenizer.from_pretrained(model_path)
+llm = LLM(
+    model=model_path,
+    speculative_config={
+        "model": "google/gemma-4-E4B-it-assistant",
+        "num_speculative_tokens": 4,
+    },
+    max_model_len=8192,
+    trust_remote_code=True,
+)
+
+messages = [{"role": "user", "content": "What are the three laws of thermodynamics?"}]
+prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+outputs = llm.generate(prompt, SamplingParams(temperature=0.0, max_tokens=1024))
+
+print(outputs[0].outputs[0].text)
+```
+
+### Recommended Settings
+
+| Target Model | Recommended `num_speculative_tokens` | TP |
+|---|---|---|
+| E2B | 2 | 1 |
+| E4B | 4 | 1 |
+| 26B-A4B | 4 | 2 |
+| 31B | 4–8 | 2 |
+
+Higher `num_speculative_tokens` increases draft overhead per cycle. The optimal value depends on the target model speed — slower targets (31B) benefit from more speculative tokens, while faster targets (E2B) prefer fewer.
+
+> ℹ️ **Note**
+> These recommendations were benchmarked on NVIDIA A100 and H100 servers. Optimal settings may vary on different hardware platforms — experimentation is recommended.
+
+
 ## Benchmarking
 
 ### Launch Server for Benchmarking
@@ -952,7 +1038,7 @@ vllm serve google/gemma-4-31B-it \
   --tensor-parallel-size 2 \
   --max-model-len 32768 \
   --no-enable-prefix-caching \
-  --limit-mm-per-prompt image=0,audio=0 \
+  --limit-mm-per-prompt '{"image": 0, "audio": 0}' \
   --async-scheduling
 ```
 
@@ -1024,7 +1110,7 @@ Key metrics:
 
 - **Reduce context length**: `--max-model-len 8192` if your workload doesn't need long contexts
 - **FP8 KV cache**: `--kv-cache-dtype fp8` to reduce KV cache memory by ~50%
-- **Limit multimodal inputs**: `--limit-mm-per-prompt image=2,audio=1` to cap per-request memory
+- **Limit multimodal inputs**: `--limit-mm-per-prompt '{"image": 2, "audio": 1}'` to cap per-request memory
 
 ### Server Flags Reference
 
@@ -1037,7 +1123,7 @@ Key metrics:
 | `--mm-processor-kwargs '{"max_soft_tokens": N}'` | Set default vision token budget | 280 (default), up to 1120 |
 | `--async-scheduling` | Overlap scheduling with decoding | Recommended for throughput |
 | `--gpu-memory-utilization 0.90` | GPU memory fraction for model + KV cache | 0.85-0.95 |
-| `--limit-mm-per-prompt image=N,audio=M` | Max multimodal inputs per request | Depends on workload |
+| `--limit-mm-per-prompt '{"image": N, "audio": M}'` | Max multimodal inputs per request | Depends on workload |
 
 ### Full-Featured Server Launch
 
@@ -1052,7 +1138,7 @@ vllm serve google/gemma-4-31B-it \
   --reasoning-parser gemma4 \
   --tool-call-parser gemma4 \
   --chat-template examples/tool_chat_template_gemma4.jinja \
-  --limit-mm-per-prompt image=4,audio=1 \
+  --limit-mm-per-prompt '{"image": 4, "audio": 1}' \
   --async-scheduling \
   --host 0.0.0.0 \
   --port 8000

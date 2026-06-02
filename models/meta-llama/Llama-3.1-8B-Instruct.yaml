@@ -23,9 +23,15 @@ model:
   base_args: []
   base_env: {}
 
-features: {}
+features:
+  spec_decoding:
+    description: "EAGLE3 speculative decoding (requires vLLM >= 0.9.0)"
+    args:
+      - "--speculative-config"
+      - '{"model":"RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3","method":"eagle3","num_speculative_tokens":3}'
 
-opt_in_features: []
+opt_in_features:
+  - spec_decoding
 
 variants:
   default:
@@ -100,12 +106,30 @@ guide: |
   print(response.choices[0].message.content)
   ```
 
+  ## Speculative Decoding (EAGLE3)
+
+  An EAGLE3 draft head is available at
+  [`RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3`](https://huggingface.co/RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3).
+  Enable the **Spec Decoding** toggle above, or add the `--speculative-config` manually:
+
+  ```bash
+  vllm serve meta-llama/Llama-3.1-8B-Instruct \
+    --speculative-config '{"model":"RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3","method":"eagle3","num_speculative_tokens":3}'
+  ```
+
+  EAGLE3 verification requires vLLM >= 0.9.0. `num_speculative_tokens` of 3 is a reasonable
+  starting point for chat workloads.
+
   ## Troubleshooting
 
   **OOM on small GPUs:**
   Lower `--max-model-len` or `--gpu-memory-utilization`.
 
+  **EAGLE3 draft head not loading:**
+  Upgrade vLLM to >= 0.9.0 — earlier releases don't support the EAGLE3 verification path.
+
   ## References
 
   - [Model card](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
+  - [EAGLE3 draft head](https://huggingface.co/RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3)
   - [Llama 3.1 70B model card](https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct)

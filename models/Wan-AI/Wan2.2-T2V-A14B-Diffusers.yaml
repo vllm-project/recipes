@@ -1,7 +1,7 @@
 meta:
   title: "Wan2.2"
   slug: "wan2.2"
-  provider: "Wan AI"
+  provider: "Wan (Alibaba)"
   description: "Wan2.2 video generation models — T2V/I2V MoE (14B active) and unified TI2V (5B dense), served via vLLM-Omni"
   date_updated: 2026-04-27
   difficulty: intermediate
@@ -19,6 +19,23 @@ model:
   base_args: []
   base_env: {}
 
+omni:
+  # Each task picks a different Wan2.2 checkpoint — T2V/I2V are MoE-14B, TI2V
+  # is dense-5B. The model_id, VRAM hint, and description swap together when
+  # the user clicks a Task pill.
+  tasks:
+    - id: t2v
+      vram_minimum_gb: 152
+      description: "T2V MoE — 14B active parameters"
+    - id: i2v
+      model_id: "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+      vram_minimum_gb: 40
+      description: "I2V MoE — 14B active parameters"
+    - id: ti2v
+      model_id: "Wan-AI/Wan2.2-TI2V-5B-Diffusers"
+      vram_minimum_gb: 20
+      description: "Unified Text+Image-to-Video — dense 5B"
+
 dependencies:
   - note: "Pin vllm==0.12.0 for Wan2.2"
     command: "uv pip install vllm==0.12.0"
@@ -33,19 +50,7 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 152
-    description: "T2V MoE with 14B active parameters"
-
-  i2v:
-    model_id: "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
-    precision: bf16
-    vram_minimum_gb: 40
-    description: "Image-to-Video MoE with 14B active parameters"
-
-  ti2v_5b:
-    model_id: "Wan-AI/Wan2.2-TI2V-5B-Diffusers"
-    precision: bf16
-    vram_minimum_gb: 20
-    description: "Unified Text-to-Video + Image-to-Video dense 5B"
+    description: "BF16 — variants moved to omni.tasks (T2V / I2V / TI2V each pick a different checkpoint)"
 
 compatible_strategies: []
 

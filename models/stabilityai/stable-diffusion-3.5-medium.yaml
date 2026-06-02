@@ -20,6 +20,10 @@ model:
   base_args: []
   base_env: {}
 
+omni:
+  tasks:
+    - t2i
+
 dependencies:
   - note: "Pin vllm==0.12.0 for Stable Diffusion 3.5"
     command: "uv pip install vllm==0.12.0"
@@ -32,17 +36,20 @@ opt_in_features: []
 
 variants:
   default:
+    label: "Medium"
     precision: bf16
     vram_minimum_gb: 44
     description: "Stable Diffusion 3.5 medium (2.5B)"
 
   large:
+    label: "Large"
     model_id: "stabilityai/stable-diffusion-3.5-large"
     precision: bf16
     vram_minimum_gb: 24
     description: "Stable Diffusion 3.5 large (8.1B)"
 
   large_turbo:
+    label: "Large Turbo"
     model_id: "stabilityai/stable-diffusion-3.5-large-turbo"
     precision: bf16
     vram_minimum_gb: 24

@@ -1,7 +1,7 @@
 meta:
   title: "MiMo-V2.5-Pro"
   slug: "mimo-v2-5-pro"
-  provider: "Xiaomi MiMo"
+  provider: "MiMo (Xiaomi)"
   description: "Xiaomi's flagship MoE reasoning model (1.02T total / 42B active) with hybrid attention, native FP8 weights, and Multi-Token Prediction"
   date_updated: 2026-04-27
   difficulty: advanced
@@ -14,12 +14,7 @@ meta:
 
 model:
   model_id: "XiaomiMiMo/MiMo-V2.5-Pro"
-  min_vllm_version: "nightly"
-  docker_image:
-    cu129: "vllm/vllm-openai:mimov25-cu129"
-    cu130: "vllm/vllm-openai:mimov25-cu130"
-  install:
-    pip: false
+  min_vllm_version: "0.21.0"
   architecture: moe
   parameter_count: "1T"
   active_parameters: "42B"
@@ -68,6 +63,7 @@ variants:
 compatible_strategies:
   - single_node_tp
   - single_node_tep
+  - pd_cluster
 
 hardware_overrides: {}
 strategy_overrides: {}

@@ -30,13 +30,14 @@ export const PROVIDERS = {
   "PaddlePaddle":    { display_name: "PaddlePaddle",            logo: "/providers/PaddlePaddle.png" },
   "pfnet":           { display_name: "Preferred Networks",       logo: "/providers/pfnet.png" },
   "ByteDance-Seed":  { display_name: "Seed (ByteDance)",        logo: "/providers/ByteDance-Seed.png" },
-  "tencent":         { display_name: "Tencent Hunyuan",         logo: "/providers/tencent.png" },
-  "XiaomiMiMo":      { display_name: "Xiaomi MiMo",             logo: "/providers/XiaomiMiMo.jpeg" },
-  "Wan-AI":          { display_name: "Wan AI",                  logo: "/providers/Wan-AI.png" },
-  "meituan-longcat": { display_name: "Meituan LongCat",         logo: "/providers/meituan-longcat.png" },
-  "stabilityai":     { display_name: "Stability AI",            logo: "/providers/stabilityai.png" },
-  "stepfun-ai":      { display_name: "StepFun",                 logo: "/providers/stepfun-ai.png" },
-  "poolside":        { display_name: "Poolside",                logo: "/providers/poolside.png" },
+  "tencent":         { display_name: "Hunyuan (Tencent)",       logo: "/providers/tencent.png" },
+  "XiaomiMiMo":      { display_name: "MiMo (Xiaomi)",            logo: "/providers/XiaomiMiMo.jpeg" },
+  "Wan-AI":          { display_name: "Wan (Alibaba)",            logo: "/providers/Wan-AI.png" },
+  "meituan-longcat": { display_name: "LongCat (Meituan)",        logo: "/providers/meituan-longcat.png" },
+  "stabilityai":     { display_name: "Stability AI",             logo: "/providers/stabilityai.png" },
+  "stepfun-ai":      { display_name: "StepFun",                  logo: "/providers/stepfun-ai.png" },
+  "poolside":        { display_name: "Poolside",                 logo: "/providers/poolside.png" },
+  "JetBrains":       { display_name: "JetBrains",                 logo: "/providers/JetBrains.png" },
 };
 
 export function getProviderLogo(hfOrg) {

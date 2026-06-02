@@ -79,6 +79,7 @@ const HW_BRANDS = [
       { id: "b300", label: "B300" },
       { id: "gb200", label: "GB200" },
       { id: "gb300", label: "GB300" },
+      { id: "dgx_station_gb300", label: "DGX Station" },
     ],
   },
   {
@@ -96,6 +97,14 @@ const HW_BRANDS = [
     items: [
       { id: "trillium", label: "TPU v6e" },
       { id: "ironwood", label: "TPU v7" },
+    ],
+  },
+  {
+    name: "Intel",
+    logo: "/providers/intel.png",
+    items: [
+      { id: "xeon6", label: "Xeon 6" },
+      { id: "xeon5", label: "Xeon 5" },
     ],
   },
 ];
@@ -144,7 +153,10 @@ export function BrowseList({ recipes }) {
       const hwKeys = Object.entries(r.meta?.hardware || {})
         .filter(([, s]) => s === "verified")
         .map(([h]) => h);
-      const hwExtra = hwKeys.some((k) => k === "trillium" || k === "ironwood") ? ["tpu"] : [];
+      const hwExtra = [
+	      (hwKeys.some((k) => k === "trillium" || k === "ironwood") ? ["tpu"] : []),
+	      (hwKeys.some((k) => k === "xeon6" || k === "xeon5") ? ["intel", "xeon", "cpu", "x86"] : []),
+      ];	    
       const hay = [
         r.hf_repo,
         r.hf_org,
@@ -697,7 +709,7 @@ function Row({ recipe }) {
 
         {/* Notes */}
         <div className="hidden md:block text-xs text-muted-foreground line-clamp-2 leading-snug">
-          {r.meta.performance_headline || r.meta.description}
+          {r.meta.description || r.meta.performance_headline}
         </div>
 
         {/* Mobile: spec strip */}
