@@ -63,6 +63,9 @@ hardware_profiles:
   # DGX Station — single-GPU Grace-Blackwell Ultra desktop workstation.
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
   # lists it in `meta.hardware` (same pattern as the TPU profiles).
+  # `scalable: false` marks it non-clusterable: it can't be joined into a
+  # multi-node deployment, so VRAM is a hard limit and variants that don't fit
+  # one box are disabled in the UI (the builder falls back to a fitting variant).
   dgx_station_gb300:
     brand: NVIDIA
     generation: blackwell
@@ -71,6 +74,7 @@ hardware_profiles:
     gpu_count: 1
     vram_gb: 252
     multi_node: false
+    scalable: false
     restricted: true
 
   # DGX Spark — single-GPU GB10 desktop system.
