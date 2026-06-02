@@ -92,6 +92,14 @@ const HW_BRANDS = [
     ],
   },
   {
+    name: "Huawei",
+    logo: "/providers/Huawei.png",
+    items: [
+      { id: "atlas_800i_a2", label: "Atlas 800I A2" },
+      { id: "atlas_800i_a3", label: "Atlas 800I A3" },
+    ],
+  },
+  {
     name: "Google",
     logo: "/providers/Google.png",
     items: [

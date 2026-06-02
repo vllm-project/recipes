@@ -1807,7 +1807,7 @@ function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode, dockerC
   const pipHidden = pipCfg === false;
   const dockerHidden = dockerCfg === false;
   const [open, setOpen] = useState(false);
-  const { isAmd, isTpu, image: dockerImage, brandKey, cudaMap } = dockerMeta;
+  const { isAmd, isTpu, isAscend, image: dockerImage, brandKey, cudaMap } = dockerMeta;
   const minV = recipe.model?.min_vllm_version;
 
   // When a recipe's min_vllm_version hasn't shipped yet (cutting-edge models
@@ -1824,6 +1824,12 @@ function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode, dockerC
     ? `uv venv --python 3.12
 source .venv/bin/activate
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm`
+    : isAscend
+      ? `uv venv --python 3.11
+source .venv/bin/activate
+uv pip install vllm==0.19.1
+uv pip install vllm-ascend==0.19.1rc1 \\
+  --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple`
     : nightlyRequired
       ? `uv venv
 source .venv/bin/activate
@@ -1837,7 +1843,7 @@ uv pip install -U vllm --torch-backend auto`;
   const pipCmd = pipCfg?.command || defaultPipCmd;
   const pipNote =
     pipCfg?.note ||
-    (nightlyRequired && !isAmd
+    (nightlyRequired && !isAmd && !isAscend
       ? `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
       : undefined);
 
@@ -1850,6 +1856,8 @@ uv pip install -U vllm --torch-backend auto`;
   const dockerCmd = dockerCfg?.command || defaultDockerCmd;
   const defaultDockerNote = isTpu
     ? "TPU builds are published by vllm-project/tpu-inference. See the Trillium and Ironwood tpu-recipes for pinned image tags and exact deployment flags."
+    : isAscend
+      ? "Ascend builds use the vLLM Ascend backend. Recipes should pin a tested image tag when validating a specific Atlas server."
     : isAmd
       ? undefined
       : cudaMap
@@ -1872,11 +1880,11 @@ uv pip install -U vllm --torch-backend auto`;
 
   // TPU has no pip wheel — force-hide the pip tab regardless of recipe overrides.
   const effectivePipHidden = pipHidden || isTpu;
-  const dockerLabel = isTpu ? "Docker (TPU)" : isAmd ? "Docker (ROCm)" : "Docker";
+  const dockerLabel = isTpu ? "Docker (TPU)" : isAscend ? "Docker (Ascend)" : isAmd ? "Docker (ROCm)" : "Docker";
   const tabs = [
     !effectivePipHidden && {
       id: "pip",
-      label: isAmd ? "pip / uv (ROCm)" : "pip / uv",
+      label: isAmd ? "pip / uv (ROCm)" : isAscend ? "pip / uv (Ascend)" : "pip / uv",
       code: pipCmd,
       note: pipNote,
     },
