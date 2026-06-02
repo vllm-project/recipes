@@ -37,6 +37,7 @@ export const PROVIDERS = {
   "stepfun-ai":      { display_name: "StepFun",                  logo: "/providers/stepfun-ai.png" },
   "poolside":        { display_name: "Poolside",                 logo: "/providers/poolside.png" },
   "JetBrains":       { display_name: "JetBrains",                 logo: "/providers/JetBrains.png" },
+  "openbmb":         { display_name: "MiniCPM (OpenBMB)",          logo: "/providers/openbmb.png" },
 };
 
 export function getProviderLogo(hfOrg) {
