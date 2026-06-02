@@ -23,13 +23,7 @@ model:
   active_parameters: "3B"
   context_length: 262144
   base_args:
-    - "--host"
-    - "0.0.0.0"
-    - "--port"
-    - "8000"
     - "--trust-remote-code"
-    - "--dtype"
-    - "auto"
     - "--quantization"
     - "modelopt"
     - "--kv-cache-dtype"
@@ -46,9 +40,6 @@ model:
     - "4"
     - "--max-num-batched-tokens"
     - "8192"
-    - "--enable-chunked-prefill"
-    - "--async-scheduling"
-    - "--enable-prefix-caching"
     - "--speculative-config"
     - '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
   base_env:
@@ -113,9 +104,6 @@ guide: |
 
   ```bash
   vllm serve nvidia/Qwen3.6-35B-A3B-NVFP4 \
-    --host 0.0.0.0 \
-    --port 8000 \
-    --tensor-parallel-size 1 \
     --trust-remote-code \
     --dtype auto \
     --quantization modelopt \
@@ -126,9 +114,6 @@ guide: |
     --max-model-len 65536 \
     --max-num-seqs 4 \
     --max-num-batched-tokens 8192 \
-    --enable-chunked-prefill \
-    --async-scheduling \
-    --enable-prefix-caching \
     --speculative-config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
   ```
 
@@ -141,6 +126,9 @@ guide: |
   - `--max-model-len 65536`, `--max-num-seqs 4`, and
     `--max-num-batched-tokens 8192` are the Spark serving shape used for this
     recipe.
+  - Optional throughput knobs such as `--async-scheduling` can be added after
+    profiling. On vLLM V1/nightly, prefix caching and chunked prefill are enabled
+    by default when supported, so this recipe does not pass them explicitly.
 
   ## References
 
