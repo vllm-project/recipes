@@ -40,7 +40,7 @@ mooncake_store_config:
   command: "python3 -m mooncake.mooncake_store_service --config $MOONCAKE_STORE_CONFIG_PATH"
   description: "Centralized CPU DRAM pool. Owns all cache capacity, survives vLLM restarts."
   config:
-    local_hostname: "$MOONCAKE_STORE_NODE_IP:12346"
+    local_hostname: "$MOONCAKE_STORE_NODE_IP"
     metadata_server: "$MOONCAKE_MASTER_IP:2379"
     master_server_address: "$MOONCAKE_MASTER_IP:50051"
     protocol: "rdma"
