@@ -35,8 +35,6 @@ model:
     - "0.90"
     - "--max-num-batched-tokens"
     - "32768"
-    - "--moe-backend"
-    - "flashinfer_trtllm"
     - "--enable-flashinfer-autotune"
     - "--async-scheduling"
     - "--mamba-backend"
@@ -107,7 +105,6 @@ guide: |
     --max-model-len 262144 \
     --gpu-memory-utilization 0.90 \
     --max-num-batched-tokens 32768 \
-    --moe-backend flashinfer_trtllm \
     --enable-flashinfer-autotune \
     --async-scheduling \
     --speculative_config.method mtp \
