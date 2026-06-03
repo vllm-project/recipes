@@ -88,6 +88,7 @@ hardware_profiles:
     gpu_count: 1
     vram_gb: 128
     multi_node: false
+    scalable: false
     restricted: true
 
   # ── AMD Instinct ──

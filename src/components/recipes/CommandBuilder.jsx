@@ -368,9 +368,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       // only applies to recipes that explicitly declare it in `meta.hardware`.
       // Without this, selecting DGX on one recipe would leak into the global
       // preference and leave every other recipe with no rendered pill selected.
-      const declaredHere = prefs.hardware in (recipe.meta?.hardware || {});
+      const declared = { ...(recipe.meta?.hardware || {}), ...(v.hardware || {}) };
+      const declaredHere = prefs.hardware in declared;
       const restrictedElsewhere = prefProfile?.restricted && !declaredHere;
-      if (prefProfile?.brand === "NVIDIA" && !restrictedElsewhere && isPrecisionCompatible(prefProfile, v) && isHardwareSupported(recipe, prefs.hardware)) {
+      if (prefProfile?.brand === "NVIDIA" && !restrictedElsewhere && isPrecisionCompatible(prefProfile, v) && isHardwareSupported(recipe, prefs.hardware, v)) {
         setHwId(prefs.hardware);
         restoredFitsHw = prefProfile;
       }
@@ -609,7 +610,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // `restricted` profiles (e.g. TPU) only appear when the recipe explicitly
     // lists them in `meta.hardware` — keeps specialty hardware out of the
     // picker for recipes that haven't been validated on it.
-    const declared = recipe.meta?.hardware || {};
+    const declared = { ...(recipe.meta?.hardware || {}), ...(currentVariant.hardware || {}) };
     const groups = {};
     for (const [id, p] of Object.entries(taxonomy.hardware_profiles || {})) {
       if (p.restricted && !(id in declared)) continue;
@@ -637,7 +638,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         return ai - bi;
       }
     );
-  }, [taxonomy]);
+  }, [taxonomy, recipe, currentVariant]);
 
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
   // Non-scalable hardware (single-GPU workstation, e.g. DGX Station) can't add
@@ -739,7 +740,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // VRAM is not a blocker because multi-node TP/DP can always supply more.
     const v = recipe.variants?.[key] || {};
     const currentProfile = taxonomy.hardware_profiles?.[hwId] || {};
-    if (!isPrecisionCompatible(currentProfile, v)) {
+    const declared = { ...(recipe.meta?.hardware || {}), ...(v.hardware || {}) };
+    const restrictedElsewhere = currentProfile?.restricted && !(hwId in declared);
+    if (restrictedElsewhere || !isPrecisionCompatible(currentProfile, v) || !isHardwareSupported(recipe, hwId, v)) {
       const next = pickDefaultHardware(taxonomy.hardware_profiles, v, recipe);
       setHwId(next);
       syncUrl({ hardware: next });
@@ -1176,8 +1179,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     <PillGroup>
                       {profiles.map(([id, p]) => {
                         const precisionOk = isPrecisionCompatible(p, currentVariant);
-                        const status = recipe.meta?.hardware?.[id];
-                        const isUnsupported = status === "unsupported";
+                        const status = currentVariant.hardware?.[id] ?? recipe.meta?.hardware?.[id];
+                        const isUnsupported = !isHardwareSupported(recipe, id, currentVariant);
                         const disabled = !precisionOk || isUnsupported;
                         const verifiedNote = status === "verified"
                           ? "\n\nVerified — author has tested this hardware end-to-end"
@@ -1379,8 +1382,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                       const precisionOk = isPrecisionCompatible(p, currentVariant);
                       // Only `verified` carries a label; everything else = silent default.
                       // `unsupported` = author opt-out for this model; disables the pill.
-                      const status = recipe.meta?.hardware?.[id];
-                      const isUnsupported = status === "unsupported";
+                      const status = currentVariant.hardware?.[id] ?? recipe.meta?.hardware?.[id];
+                      const isUnsupported = !isHardwareSupported(recipe, id, currentVariant);
                       // Per-role PD now sizes each pool independently, so hardware
                       // only needs to fit 1× model per node (standard precision
                       // check is enough). The old co-located single-node check
@@ -1435,7 +1438,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 // On non-scalable hardware (single-GPU workstation) a variant
                 // that doesn't fit has nowhere to shard — disable it instead of
                 // rendering a command that can't run.
-                const disabled = !hwScalable && !variantRunsOnHardware(hwProfile, v);
+                const unsupported = !isHardwareSupported(recipe, hwId, v);
+                const disabled = unsupported || (!hwScalable && !variantRunsOnHardware(hwProfile, v));
                 return (
                   <Pill
                     key={key}
@@ -1444,7 +1448,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     onClick={() => !disabled && selectVariant(key)}
                     title={
                       disabled
-                        ? `${(v.label || v.precision)?.toUpperCase()} needs ${v.vram_minimum_gb} GB but ${hwProfile.display_name || "this hardware"} has ${hwProfile.vram_gb} GB and can't scale out — pick a smaller-footprint variant`
+                        ? unsupported
+                          ? `${(v.label || v.precision)?.toUpperCase()} is not supported on ${hwProfile.display_name || "this hardware"}`
+                          : `${(v.label || v.precision)?.toUpperCase()} needs ${v.vram_minimum_gb} GB but ${hwProfile.display_name || "this hardware"} has ${hwProfile.vram_gb} GB and can't scale out — pick a smaller-footprint variant`
                         : [
                             v.description,
                             `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,

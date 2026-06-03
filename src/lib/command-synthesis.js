@@ -129,11 +129,13 @@ export function isPrecisionCompatible(profile, variant) {
 }
 
 /**
- * Recipe-level hardware opt-out: author marked `meta.hardware.<id>: unsupported`
- * because the model is known not to run on that GPU. Absence = silent default
- * (assumed to work); `verified` = positively tested (separate signal).
+ * Hardware opt-out: author marked `<hardware>.<id>: unsupported` because the
+ * recipe or active variant is known not to run on that GPU. Absence = silent
+ * default (assumed to work); `verified` = positively tested (separate signal).
  */
-export function isHardwareSupported(recipe, hwId) {
+export function isHardwareSupported(recipe, hwId, variant = null) {
+  const variantStatus = variant?.hardware?.[hwId];
+  if (variantStatus) return variantStatus !== "unsupported";
   return recipe?.meta?.hardware?.[hwId] !== "unsupported";
 }
 
@@ -144,7 +146,7 @@ export function isHardwareSupported(recipe, hwId) {
  */
 export function listCompatibleHardware(hwProfiles, variant, recipe) {
   return Object.entries(hwProfiles)
-    .filter(([id, p]) => isPrecisionCompatible(p, variant) && isHardwareSupported(recipe, id))
+    .filter(([id, p]) => isPrecisionCompatible(p, variant) && isHardwareSupported(recipe, id, variant))
     .map(([id]) => id);
 }
 
@@ -225,16 +227,16 @@ export function pdFitsSingleNode(hwProfile, variant) {
  */
 export function pickDefaultHardware(hwProfiles, variant, recipe) {
   const constraint = PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
-  const explicitDefault = recipe?.default_hardware || recipe?.meta?.default_hardware;
+  const explicitDefault = variant?.default_hardware || recipe?.default_hardware || recipe?.meta?.default_hardware;
   if (explicitDefault) {
     const profile = hwProfiles?.[explicitDefault];
-    if (profile && matchesConstraint(profile, constraint) && isHardwareSupported(recipe, explicitDefault)) {
+    if (profile && matchesConstraint(profile, constraint) && isHardwareSupported(recipe, explicitDefault, variant)) {
       return explicitDefault;
     }
   }
 
   const compatible = Object.entries(hwProfiles).filter(
-    ([id, p]) => matchesConstraint(p, constraint) && isHardwareSupported(recipe, id)
+    ([id, p]) => matchesConstraint(p, constraint) && isHardwareSupported(recipe, id, variant)
   );
 
   if (constraint?.generation === "blackwell") {
