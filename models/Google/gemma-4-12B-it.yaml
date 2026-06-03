@@ -23,10 +23,12 @@ meta:
 
 model:
   model_id: "google/gemma-4-12B-it"
-  min_vllm_version: "0.19.1"
+  min_vllm_version: "nightly"
   docker_image: "vllm/vllm-openai:gemma4-unified"
+  nightly_required: true
   install:
-    pip: false
+    docker: {}
+    pip: {}
   architecture: dense
   parameter_count: "12B"
   active_parameters: "12B"
@@ -105,16 +107,35 @@ guide: |
 
   TPU support is provided through [vLLM TPU](https://github.com/vllm-project/tpu-inference) with recipes for [Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4) and [Ironwood](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/inference/ironwood/vLLM/Gemma4/).
 
+  > **Nightly required**: support for the encoder-free 12B Unified model landed in [vllm-project/vllm#44429](https://github.com/vllm-project/vllm/pull/44429) and has not yet shipped in a stable release. Use the pinned Docker image (recommended) or a nightly pip wheel.
+
   ## Prerequisites
 
-  > **Docker only**: the encoder-free 12B Unified model is not yet available through the published pip wheels — serve it from the pinned Docker image below.
-
-  ### Docker
+  ### Docker (recommended)
   ```bash
   docker pull vllm/vllm-openai:gemma4-unified            # NVIDIA (CUDA 13; append -cu129 for CUDA 12.9 hosts)
   docker pull vllm/vllm-openai-rocm:latest               # AMD
   ```
   TPU images are published separately by [vllm-project/tpu-inference](https://github.com/vllm-project/tpu-inference); see the Trillium / Ironwood tpu-recipes below for the pinned tag.
+
+  ### pip (nightly, NVIDIA CUDA)
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install -U vllm --pre \
+    --extra-index-url https://wheels.vllm.ai/nightly/cu129 \
+    --extra-index-url https://download.pytorch.org/whl/cu129 \
+    --index-strategy unsafe-best-match
+  ```
+
+  ### pip (nightly, AMD ROCm: MI300X, MI325X, MI350X, MI355X)
+  Requires Python 3.12, ROCm 7.2.1, glibc >= 2.35 (Ubuntu 22.04+).
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --pre \
+    --extra-index-url https://wheels.vllm.ai/rocm/nightly/rocm721 --upgrade
+  ```
 
   ## Deployment Configurations
 
@@ -242,11 +263,12 @@ guide: |
 
   Enable the **Spec Decoding** feature toggle (above) or add `--speculative-config` manually to use MTP drafting with the [assistant model](https://huggingface.co/google/gemma-4-12B-it-assistant). Recommended `num_speculative_tokens`: 4–8 for this model.
 
-  > **Note:** MTP speculative decoding for Gemma 4 is only available in the pinned `vllm/vllm-openai:gemma4-unified` image above — it has not yet landed in a stable release, and the standard `:latest` tag does not include this feature.
+  > **Note:** MTP speculative decoding for Gemma 4 requires the nightly build — the pinned `vllm/vllm-openai:gemma4-unified` image or a nightly pip wheel. The standard `:latest` stable tag does not include this feature.
 
   ## References
 
   - [Model card](https://huggingface.co/google/gemma-4-12B-it)
+  - [vLLM support PR (#44429)](https://github.com/vllm-project/vllm/pull/44429)
   - [Assistant (MTP draft) model](https://huggingface.co/google/gemma-4-12B-it-assistant)
   - [Gemma docs](https://ai.google.dev/gemma/docs)
   - [vLLM Gemma 4 tool-call template](https://github.com/vllm-project/vllm/blob/main/examples/tool_chat_template_gemma4.jinja)
