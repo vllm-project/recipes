@@ -15,11 +15,6 @@ meta:
     - google/gemma-4-31B-it
   hardware:
     h100: verified
-    mi300x: verified
-    mi325x: verified
-    mi355x: verified
-    trillium: verified
-    ironwood: verified
 
 model:
   model_id: "google/gemma-4-12B-it"
@@ -68,7 +63,7 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 29
-    description: "Full BF16 — single 40 GB+ NVIDIA GPU or 1x MI300X/MI325X/MI350X/MI355X"
+    description: "Full BF16 — single 40 GB+ NVIDIA GPU"
 
 compatible_strategies:
   - single_node_tp
@@ -114,7 +109,6 @@ guide: |
   ### Docker (recommended)
   ```bash
   docker pull vllm/vllm-openai:gemma4-unified            # NVIDIA (CUDA 13; append -cu129 for CUDA 12.9 hosts)
-  docker pull vllm/vllm-openai-rocm:latest               # AMD
   ```
   TPU images are published separately by [vllm-project/tpu-inference](https://github.com/vllm-project/tpu-inference); see the Trillium / Ironwood tpu-recipes below for the pinned tag.
 
@@ -126,15 +120,6 @@ guide: |
     --extra-index-url https://wheels.vllm.ai/nightly/cu129 \
     --extra-index-url https://download.pytorch.org/whl/cu129 \
     --index-strategy unsafe-best-match
-  ```
-
-  ### pip (nightly, AMD ROCm: MI300X, MI325X, MI350X, MI355X)
-  Requires Python 3.12, ROCm 7.2.1, glibc >= 2.35 (Ubuntu 22.04+).
-  ```bash
-  uv venv --python 3.12
-  source .venv/bin/activate
-  uv pip install vllm --pre \
-    --extra-index-url https://wheels.vllm.ai/rocm/nightly/rocm721 --upgrade
   ```
 
   ## Deployment Configurations
@@ -175,19 +160,6 @@ guide: |
       --host 0.0.0.0 --port 8000
   ```
   On CUDA 12.9 hosts, use the `vllm/vllm-openai:gemma4-unified-cu129` tag instead.
-
-  ### Docker (AMD MI300X/MI325X/MI350X/MI355X)
-  ```bash
-  docker run -itd --name gemma4-rocm \
-    --ipc=host --network=host --privileged \
-    --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri \
-    --group-add=video --cap-add=SYS_PTRACE \
-    --security-opt=seccomp=unconfined --shm-size 16G \
-    -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-rocm:latest \
-      --model google/gemma-4-12B-it \
-      --host 0.0.0.0 --port 8000
-  ```
 
   ### Docker (Cloud TPU — Trillium / Ironwood)
   TPU uses the separate `vllm/vllm-tpu` image (no pip wheel). Pull the tag specified by the upstream [Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4) or [Ironwood](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/inference/ironwood/vLLM/Gemma4/) recipe, then run:
