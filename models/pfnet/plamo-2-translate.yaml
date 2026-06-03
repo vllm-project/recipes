@@ -1,0 +1,138 @@
+meta:
+  title: "PLaMo 2 Translate"
+  slug: "plamo-2-translate"
+  provider: "Preferred Networks"
+  description: "Post-trained PLaMo 2 translation model specialized for English/Japanese translation tasks."
+  date_updated: 2026-06-02
+  difficulty: intermediate
+  tasks:
+    - text
+  performance_headline: "PLaMo 2 post-trained for English/Japanese translation"
+  related_recipes:
+    - "pfnet/plamo-3-nict-31b-base"
+
+model:
+  model_id: "pfnet/plamo-2-translate"
+  min_vllm_version: "0.8.5"
+  architecture: dense
+  parameter_count: "9.5B"
+  active_parameters: "9.5B"
+  context_length: 8192
+  base_args:
+    - "--trust-remote-code"
+    - "--max-model-len"
+    - "8192"
+  base_env: {}
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 23
+    description: "BF16 post-trained translation checkpoint for English/Japanese translation."
+
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+  - multi_node_tp_pp
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  [PLaMo 2 Translate](https://huggingface.co/pfnet/plamo-2-translate) is a
+  specialized translation model developed by Preferred Networks for
+  English/Japanese translation tasks. It is the post-trained main model in the
+  PLaMo Translation Model family.
+
+  The family includes three checkpoints sharing the same architecture:
+  - pfnet/plamo-2-translate: post-trained model for production translation
+  - pfnet/plamo-2-translate-base: base checkpoint for fine-tuning experiments
+  - pfnet/plamo-2-translate-eval: pair-wise evaluator that picks the better of two candidate translations
+
+  All three checkpoints can be served with the same vLLM flags shown here;
+  just swap the model id.
+
+  ## Prerequisites
+
+  - **Hardware:** 1x GPU with at least 24 GB VRAM, such as L40S, A30, or RTX 4090
+  - **vLLM:** >= 0.8.5
+  - **License:** PLaMo community license
+
+  ### Install vLLM
+
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install -U vllm --torch-backend=auto
+  ```
+
+  ## Launching the Server
+
+  ```bash
+  vllm serve pfnet/plamo-2-translate \
+    --trust-remote-code \
+    --max-model-len 8192
+  ```
+
+  For tighter memory budgets, reduce `--max-model-len` (the model card
+  examples use 2000).
+
+  ## Prompt Format
+
+  Use the PLaMo operation-token structure. Place the source text after the
+  `input` line and let generation continue after the `output` line.
+
+  ```text
+  <|plamo:op|>dataset
+  translation
+  <|plamo:op|>input lang=English
+  The text to translate goes here.
+  <|plamo:op|>output lang=Japanese
+  ```
+
+  ## Client Usage
+
+  The `<|plamo:op|>` stop sequence prevents the model from generating
+  beyond the translated text.
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+  prompt = """<|plamo:op|>dataset
+  translation
+  <|plamo:op|>input lang=English
+  The text to translate goes here.
+  <|plamo:op|>output lang=Japanese
+  """
+  resp = client.completions.create(
+      model="pfnet/plamo-2-translate",
+      prompt=prompt,
+      max_tokens=1024,
+      temperature=0.0,
+      stop=["<|plamo:op|>"],
+  )
+  print(resp.choices[0].text)
+  ```
+
+  ## Troubleshooting
+
+  - **Out of memory:** lower `--max-model-len` to around 2000, or add
+    `--gpu-memory-utilization 0.95`.
+  - **Garbled or empty output:** check that the prompt uses the exact
+    `<|plamo:op|>` operation-token format shown above.
+  - **Evaluator usage:** serve `pfnet/plamo-2-translate-eval` and follow the
+    pair-wise evaluation prompt format from its model card.
+
+  ## References
+
+  - [Model card](https://huggingface.co/pfnet/plamo-2-translate)
+  - [PLaMo Translate blog](https://tech.preferred.jp/ja/blog/plamo-translate/)
+  - [vLLM PLaMo2 support](https://docs.vllm.ai/en/stable/models/supported_models.html)

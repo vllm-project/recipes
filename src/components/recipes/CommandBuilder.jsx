@@ -1855,6 +1855,10 @@ function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode, dockerC
   const minV = (strategyMinVersion && modelV)
     ? (strategyMinVersion.localeCompare(modelV, undefined, { numeric: true }) > 0 ? strategyMinVersion : modelV)
     : strategyMinVersion || modelV;
+  // Omni recipes are served by vLLM-Omni, a fast-moving companion package that
+  // tracks vLLM nightly (Wan2.2 even pins a git commit). Surface it next to the
+  // vLLM version so users know the generation path needs nightly wheels.
+  const isOmni = recipe.meta?.tasks?.includes("omni");
 
   // When a recipe's min_vllm_version hasn't shipped yet (cutting-edge models
   // that landed after the last stable release), `model.nightly_required: true`
@@ -1946,7 +1950,7 @@ uv pip install -U vllm --torch-backend auto`;
         <Package size={12} className="text-[var(--command-fg)]/50 shrink-0" />
         <span className="text-[11px] font-semibold text-[var(--command-fg)]/70 uppercase tracking-widest">Install</span>
         <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
-          vLLM {minV}+ · {isTpu ? "TPU" : isAmd ? "ROCm" : "CUDA"}
+          vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · {isTpu ? "TPU" : isAmd ? "ROCm" : "CUDA"}
         </span>
         {nightlyRequired && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">

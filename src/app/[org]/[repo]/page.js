@@ -183,6 +183,19 @@ export default async function RecipePage({ params }) {
             vLLM {recipe.model.min_vllm_version}+
             <ExternalLink size={10} className="ml-1 opacity-50" />
           </a>
+          {recipe.meta.tasks?.includes("omni") && (
+            <a
+              href="https://github.com/vllm-project/vllm-omni"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="vLLM-Omni serves the generation (omni) path — nightly wheels"
+              className="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap transition-colors hover:border-vllm-blue/50 hover:text-vllm-blue"
+            >
+              vLLM-Omni
+              <span className="ml-1 text-vllm-yellow">nightly</span>
+              <ExternalLink size={10} className="ml-1 opacity-50" />
+            </a>
+          )}
           {recipe.meta.tasks?.map((t) => (
             <Badge key={t} variant="secondary" className="text-xs capitalize">{t}</Badge>
           ))}

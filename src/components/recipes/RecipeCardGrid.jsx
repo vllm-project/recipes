@@ -84,7 +84,6 @@ function RecipeCard({ recipe }) {
   const v = recipe.variants?.default || {};
   const tasks = recipe.meta?.tasks || [];
   const logo = getProviderLogo(recipe.hf_org);
-  const isOmni = tasks.includes("omni");
   const isMoe = recipe.model?.architecture === "moe";
   const ctx = recipe.model?.context_length || 0;
   const ctxLabel = ctx >= 1_000_000 ? `${Math.round(ctx / 1_000_000)}M` : ctx >= 1000 ? `${Math.round(ctx / 1000)}K` : String(ctx);
@@ -147,9 +146,6 @@ function RecipeCard({ recipe }) {
       <div className="mt-auto text-[11px] text-muted-foreground line-clamp-2 leading-snug">
         {recipe.meta?.description || recipe.meta?.performance_headline || ""}
       </div>
-      {isOmni && (
-        <div className="text-[10px] text-vllm-yellow/80 font-medium">via vLLM-Omni</div>
-      )}
     </Link>
   );
 }

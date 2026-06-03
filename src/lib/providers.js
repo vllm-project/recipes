@@ -28,6 +28,7 @@ export const PROVIDERS = {
   "internlm":        { display_name: "InternLM",                logo: "/providers/internlm.png" },
   "jinaai":          { display_name: "Jina AI",                 logo: "/providers/jinaai.png" },
   "PaddlePaddle":    { display_name: "PaddlePaddle",            logo: "/providers/PaddlePaddle.png" },
+  "pfnet":           { display_name: "Preferred Networks",       logo: "/providers/pfnet.png" },
   "ByteDance-Seed":  { display_name: "Seed (ByteDance)",        logo: "/providers/ByteDance-Seed.png" },
   "tencent":         { display_name: "Hunyuan (Tencent)",       logo: "/providers/tencent.png" },
   "XiaomiMiMo":      { display_name: "MiMo (Xiaomi)",            logo: "/providers/XiaomiMiMo.jpeg" },
@@ -36,6 +37,8 @@ export const PROVIDERS = {
   "stabilityai":     { display_name: "Stability AI",             logo: "/providers/stabilityai.png" },
   "stepfun-ai":      { display_name: "StepFun",                  logo: "/providers/stepfun-ai.png" },
   "poolside":        { display_name: "Poolside",                 logo: "/providers/poolside.png" },
+  "JetBrains":       { display_name: "JetBrains",                 logo: "/providers/JetBrains.png" },
+  "openbmb":         { display_name: "MiniCPM (OpenBMB)",          logo: "/providers/openbmb.png" },
 };
 
 export function getProviderLogo(hfOrg) {
