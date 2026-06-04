@@ -12,6 +12,7 @@ meta:
   hardware:
     h100: verified
     h200: verified
+    trillium: verified
 
 model:
   model_id: "meta-llama/Llama-3.1-8B-Instruct"
@@ -73,6 +74,8 @@ guide: |
   variant is lightweight and ideal for single-GPU deployment, with 128K context support.
   A 70B variant is also available (see related recipes).
 
+  TPU support is provided through [vLLM TPU](https://github.com/vllm-project/tpu-inference) with a recipe for [Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.x).
+
   ## Prerequisites
 
   - Hardware: 1x GPU with >=16 GB VRAM (e.g. A100, L40S, H100, H200)
@@ -88,10 +91,19 @@ guide: |
   uv pip install vllm --torch-backend auto
   ```
 
-  ### TPU Deployment
-
-  - [Llama3.x-70B on Trillium (v6e)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.x)
-  - [Llama3.1-8B on Trillium (v6e)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.x)
+  ### Docker (Cloud TPU — Trillium)
+  TPU uses the separate `vllm/vllm-tpu` image (no pip wheel). Pull the tag specified by the upstream [Trillium recipe](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.x), then run:
+  ```bash
+  docker run -itd --name llama31-tpu \
+    --privileged --network host --shm-size 16G \
+    -v /dev/shm:/dev/shm -e HF_TOKEN=$HF_TOKEN \
+    vllm/vllm-tpu:latest \
+    vllm serve meta-llama/Llama-3.1-8B-Instruct \
+      --tensor-parallel-size 1 \
+      --max-model-len 2048 \
+      --host 0.0.0.0 --port 8000
+  ```
+  The 8B fits on a single chip (`v6e-1`, TP=1) — unlike the 70B, which needs a v6e-8 slice.
 
   ## Client Usage
 
@@ -133,3 +145,4 @@ guide: |
   - [Model card](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
   - [EAGLE3 draft head](https://huggingface.co/RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3)
   - [Llama 3.1 70B model card](https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct)
+  - [TPU recipes: Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.x)
