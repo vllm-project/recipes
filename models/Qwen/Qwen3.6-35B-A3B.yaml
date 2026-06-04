@@ -80,18 +80,12 @@ variants:
     model_id: "nvidia/Qwen3.6-35B-A3B-NVFP4"
     precision: nvfp4
     vram_minimum_gb: 21
-    default_hardware: dgx_spark_gb10
     min_vllm_version: "nightly"
     nightly_required: true
     tp: 1
-    description: "NVIDIA ModelOpt NVFP4 checkpoint tuned for DGX Spark"
+    description: "NVIDIA ModelOpt NVFP4 checkpoint for Blackwell GPUs, including DGX Spark"
     hardware:
       dgx_spark_gb10: verified
-      b200: unsupported
-      gb200: unsupported
-      b300: unsupported
-      gb300: unsupported
-      dgx_station_gb300: unsupported
     extra_args:
       - "--quantization"
       - "modelopt"
@@ -114,7 +108,6 @@ variants:
     extra_env:
       VLLM_FP8_MOE_BACKEND: "flashinfer_cutlass"
       FLASHINFER_DISABLE_VERSION_CHECK: "1"
-      CUTE_DSL_ARCH: "sm_121a"
 
 compatible_strategies:
   - single_node_tp
@@ -126,6 +119,10 @@ compatible_strategies:
   - multi_node_tep
 
 hardware_overrides:
+  dgx_spark_gb10:
+    extra_args: []
+    extra_env:
+      CUTE_DSL_ARCH: "sm_121a"
   amd:
     extra_args: []
     extra_env:
@@ -147,7 +144,7 @@ guide: |
   - **vLLM version:** >= 0.17.0
   - **Hardware (BF16):** 1x H200 or 2x H100
   - **Hardware (FP8):** single H100/H200 or 1x MI300X/MI325X/MI355X
-  - **Hardware (NVFP4):** DGX Spark (GB10, 128 GB unified memory)
+  - **Hardware (NVFP4):** NVIDIA Blackwell GPUs, including DGX Spark (GB10)
 
   ### Install vLLM
 
