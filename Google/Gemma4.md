@@ -12,6 +12,7 @@ Gemma 4 models are supported on NVIDIA GPUs, AMD GPUs, Google Cloud TPUs and Int
 |-------|-----------|------------------------|---------------------|----------|--------|-------------|
 | Gemma 4 E2B IT | effective 2B | 1× (24 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | 1× NUMA node | [google/gemma-4-E2B-it](https://huggingface.co/google/gemma-4-E2B-it) |
 | Gemma 4 E4B IT | effective 4B | 1× (24 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | 1× NUMA node | [google/gemma-4-E4B-it](https://huggingface.co/google/gemma-4-E4B-it) |
+| Gemma 4 12B IT | 12B | 1× (40 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | - | [google/gemma-4-12B-it](https://huggingface.co/google/gemma-4-12B-it) |
 | Gemma 4 31B IT | 31B | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | - | [google/gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) |
 
 ### Mixture-of-Experts (MoE) Models
@@ -23,7 +24,8 @@ Gemma 4 models are supported on NVIDIA GPUs, AMD GPUs, Google Cloud TPUs and Int
 ### Key Architecture Features
 
 - **Multimodal**: Natively processes text and images (video supported via a custom vLLM processing pipeline that extracts frames; smaller gemma4-E2B and gemma-4-E4B also support audio).
-- **MoE**: 128 fine-grained experts with top-8 routing and custom GELU-activated FFN
+- **MoE**: 128 fine-grained experts with top-8 routing and custom GELU-activated FFN (26B-A4B)
+- **Encoder-Free (Unified)**: The 12B variant (`Gemma4UnifiedForConditionalGeneration`) has no vision tower or audio encoder. Raw pixel patches are projected directly into LM space via Dense+LayerNorm with factorized 2D positional embeddings; raw audio waveform frames are projected through a simple multimodal embedder. All modalities (image, video, audio) are supported.
 - **Dual Attention**: Alternating sliding-window (local) and global attention with different head dimensions
 - **Thinking Mode**: Structured reasoning via `<|channel>thought\n...<channel|>` delimiters
 - **Function Calling**: Custom tool-call protocol with dedicated special tokens
@@ -194,7 +196,7 @@ For additional Intel Xeon 6 deployment details, see the Intel Software Catalog e
 
 - Set `--max-model-len` to match your actual workload. The default context length can be very large; reducing it saves memory for KV cache.
 - Use `--gpu-memory-utilization 0.90` to `0.95` to maximize KV cache capacity.
-- For image-only workloads (no audio), pass `--limit-mm-per-prompt.audio 0` to skip audio encoder memory allocation.
+- For image-only workloads (no audio), pass `--limit-mm-per-prompt.audio 0` to skip audio encoder memory allocation (tower-based models) or audio embedder allocation (12B encoder-free model).
 - For text-only workloads, pass `--limit-mm-per-prompt '{"image": 0, "audio": 0}'` to skip multimodal profiling entirely.
 - Use `--async-scheduling` for better overall throughput by overlapping scheduling with decoding.
 
@@ -392,7 +394,7 @@ print(outputs[0].outputs[0].text)
 
 ## Audio Understanding
 
-Gemma 4 (E2B and E4B) includes a conformer-based audio encoder for speech recognition and audio understanding.
+Gemma 4 supports audio understanding across multiple variants. The E2B and E4B models use a conformer-based audio encoder, while the 12B (encoder-free) model projects raw 16 kHz waveform frames directly into LM space through a lightweight multimodal embedder with no audio tower required.
 
 > ℹ️ **Note**
 > Audio support requires the `vllm[audio]` extras: `uv pip install "vllm[audio]"`
@@ -972,6 +974,7 @@ Gemma 4 supports Multi-Token Prediction (MTP) speculative decoding using lightwe
 |---|---|---|
 | Gemma 4 E2B IT | [google/gemma-4-E2B-it-assistant](https://huggingface.co/google/gemma-4-E2B-it-assistant) | Yes |
 | Gemma 4 E4B IT | [google/gemma-4-E4B-it-assistant](https://huggingface.co/google/gemma-4-E4B-it-assistant) | Yes |
+| Gemma 4 12B IT | [google/gemma-4-12B-it-assistant](https://huggingface.co/google/gemma-4-12B-it-assistant) | No |
 | Gemma 4 26B-A4B IT | [google/gemma-4-26B-A4B-it-assistant](https://huggingface.co/google/gemma-4-26B-A4B-it-assistant) | No |
 | Gemma 4 31B IT | [google/gemma-4-31B-it-assistant](https://huggingface.co/google/gemma-4-31B-it-assistant) | No |
 
@@ -1018,6 +1021,7 @@ print(outputs[0].outputs[0].text)
 |---|---|---|
 | E2B | 2 | 1 |
 | E4B | 4 | 1 |
+| 12B | 4–8 | 1 |
 | 26B-A4B | 4 | 2 |
 | 31B | 4–8 | 2 |
 

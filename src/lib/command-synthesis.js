@@ -129,13 +129,11 @@ export function isPrecisionCompatible(profile, variant) {
 }
 
 /**
- * Hardware opt-out: author marked `<hardware>.<id>: unsupported` because the
- * recipe or active variant is known not to run on that GPU. Absence = silent
- * default (assumed to work); `verified` = positively tested (separate signal).
+ * Recipe-level hardware opt-out: author marked `meta.hardware.<id>: unsupported`
+ * because the model is known not to run on that GPU. Absence = silent default
+ * (assumed to work); `verified` = positively tested (separate signal).
  */
-export function isHardwareSupported(recipe, hwId, variant = null) {
-  const variantStatus = variant?.hardware?.[hwId];
-  if (variantStatus) return variantStatus !== "unsupported";
+export function isHardwareSupported(recipe, hwId) {
   return recipe?.meta?.hardware?.[hwId] !== "unsupported";
 }
 
@@ -146,7 +144,7 @@ export function isHardwareSupported(recipe, hwId, variant = null) {
  */
 export function listCompatibleHardware(hwProfiles, variant, recipe) {
   return Object.entries(hwProfiles)
-    .filter(([id, p]) => isPrecisionCompatible(p, variant) && isHardwareSupported(recipe, id, variant))
+    .filter(([id, p]) => isPrecisionCompatible(p, variant) && isHardwareSupported(recipe, id))
     .map(([id]) => id);
 }
 
@@ -227,16 +225,8 @@ export function pdFitsSingleNode(hwProfile, variant) {
  */
 export function pickDefaultHardware(hwProfiles, variant, recipe) {
   const constraint = PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
-  const explicitDefault = variant?.default_hardware || recipe?.default_hardware || recipe?.meta?.default_hardware;
-  if (explicitDefault) {
-    const profile = hwProfiles?.[explicitDefault];
-    if (profile && matchesConstraint(profile, constraint) && isHardwareSupported(recipe, explicitDefault, variant)) {
-      return explicitDefault;
-    }
-  }
-
   const compatible = Object.entries(hwProfiles).filter(
-    ([id, p]) => matchesConstraint(p, constraint) && isHardwareSupported(recipe, id, variant)
+    ([id, p]) => matchesConstraint(p, constraint) && isHardwareSupported(recipe, id)
   );
 
   if (constraint?.generation === "blackwell") {
@@ -690,8 +680,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     }
 
     // 5. Hardware overrides
-    //    Precedence: exact hardware id > generation-specific
-    //    (hopper/blackwell/amd) > brand-wide (nvidia).
+    //    Precedence: generation-specific (hopper/blackwell/amd) > brand-wide (nvidia).
     //    `nvidia:` lets a recipe apply the same overrides to every NVIDIA GPU
     //    without duplicating hopper and blackwell blocks.
     //
@@ -701,11 +690,9 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     //    strategy. Use this to drop a recipe-wide hw flag (e.g. an MoE kernel
     //    backend) for a specific strategy without duplicating the rest.
     const isNvidia = hwProfile?.brand === "NVIDIA";
-    const strategyHo = so?.hardware_overrides?.[hwProfileId]
-      || so?.hardware_overrides?.[gen]
+    const strategyHo = so?.hardware_overrides?.[gen]
       || (isNvidia ? so?.hardware_overrides?.nvidia : null);
     const ho = strategyHo
-      || recipe.hardware_overrides?.[hwProfileId]
       || recipe.hardware_overrides?.[gen]
       || (isNvidia ? recipe.hardware_overrides?.nvidia : null);
     if (ho?.extra_args) args.push(...ho.extra_args);
@@ -791,16 +778,14 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       if (!roleOverride && so.extra_env) Object.assign(env, so.extra_env);
     }
 
-    // Hardware overrides env — same precedence as args block: exact hardware
-    // id first, then generation key, then brand-wide `nvidia:` for NVIDIA GPUs.
-    // Per-strategy nested hardware_overrides REPLACES the recipe-level override
-    // for that key on that strategy (mirrors the args-block behavior).
+    // Hardware overrides env — same precedence as args block: generation key
+    // first, then brand-wide `nvidia:` for NVIDIA GPUs. Per-strategy nested
+    // hardware_overrides REPLACES the recipe-level for that gen on that
+    // strategy (mirrors the args-block behavior).
     const envIsNvidia = hwProfile?.brand === "NVIDIA";
-    const envStrategyHo = so?.hardware_overrides?.[hwProfileId]
-      || so?.hardware_overrides?.[gen]
+    const envStrategyHo = so?.hardware_overrides?.[gen]
       || (envIsNvidia ? so?.hardware_overrides?.nvidia : null);
     const envHo = envStrategyHo
-      || recipe.hardware_overrides?.[hwProfileId]
       || recipe.hardware_overrides?.[gen]
       || (envIsNvidia ? recipe.hardware_overrides?.nvidia : null);
     if (envHo?.extra_env) Object.assign(env, envHo.extra_env);

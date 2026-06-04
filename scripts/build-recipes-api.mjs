@@ -391,7 +391,7 @@ function renderAndWriteVariant(recipe, variantKey, altBaseHfId, strategies, taxo
   // Mirror the UI rule: `restricted` profiles (TPU, etc.) only surface for
   // recipes that explicitly opt in via `meta.hardware.<id>`. Otherwise we'd
   // emit speculative TPU commands for every NVIDIA recipe.
-  const declaredHw = { ...(recipe.meta?.hardware || {}), ...(variant.hardware || {}) };
+  const declaredHw = recipe.meta?.hardware || {};
   const compatibleHw = listCompatibleHardware(hwProfiles, variant, recipe)
     .filter((id) => !hwProfiles[id]?.restricted || id in declaredHw);
   // Ensure default is first; de-dupe.
@@ -495,13 +495,12 @@ for (const file of findYamlFiles(modelsDir)) {
     }
   }
 
-  // strategy_overrides, compatible_strategies, and default_strategy are
-  // synthesis inputs whose effects are already baked into recommended_command
-  // + the per-strategy alternative files. Keep `default_hardware` in the JSON:
-  // the client-side command builder also uses it when users switch variants.
-  // Drop AFTER all renderings (parent + promoted) have run —
-  // buildVariantRendering reads them. The YAML on GitHub is the source of truth
-  // for anyone re-synthesizing.
+  // strategy_overrides, compatible_strategies, default_strategy are synthesis
+  // inputs whose effects are already baked into recommended_command + the
+  // per-strategy alternative files (whose keys are the compatible_strategies
+  // set; the recommended one comes from default_strategy). Drop AFTER all
+  // renderings (parent + promoted) have run — buildVariantRendering reads
+  // them. The YAML on GitHub is the source of truth for anyone re-synthesizing.
   delete r.strategy_overrides;
   delete r.compatible_strategies;
   delete r.default_strategy;
@@ -517,18 +516,11 @@ for (const file of findYamlFiles(modelsDir)) {
   for (const { variantKey, variantModelId, recommended } of promotedRenderings) {
     const variantCfg = r.variants?.[variantKey] || {};
     const { model_id: _vMid, json: _vJson, ...variantCore } = variantCfg;
-    const promotedMeta = { ...r.meta, derived_from: parentHfId, variant: variantKey };
-    if (variantCfg.hardware) {
-      promotedMeta.hardware = { ...(r.meta?.hardware || {}), ...variantCfg.hardware };
-    }
-    const promotedModel = { ...r.model, model_id: variantModelId };
-    if (variantCfg.min_vllm_version !== undefined) promotedModel.min_vllm_version = variantCfg.min_vllm_version;
-    if (variantCfg.nightly_required !== undefined) promotedModel.nightly_required = variantCfg.nightly_required;
     const promoted = {
       ...r,  // share meta/features/guide/etc. with the parent
       hf_id: variantModelId,
-      meta: promotedMeta,
-      model: promotedModel,
+      meta: { ...r.meta, derived_from: parentHfId, variant: variantKey },
+      model: { ...r.model, model_id: variantModelId },
       variants: { default: variantCore },
       recommended_command: recommended,
     };
