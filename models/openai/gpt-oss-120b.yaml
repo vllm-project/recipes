@@ -15,6 +15,7 @@ meta:
     mi300x: verified
     mi325x: verified
     mi355x: verified
+    ironwood: verified
 
 model:
   model_id: "openai/gpt-oss-120b"
@@ -168,6 +169,29 @@ guide: |
 
   Hopper (H100/H200): same as Blackwell without `kv-cache-dtype` and without the env var.
 
+  TPU v7 (Ironwood), verified on a `tpu7x-standard-4t` host (topology `2x2x1`, TP=2 × DP=4). Served via the OpenAI API-server entrypoint from the nightly TPU image (e.g. `vllm/vllm-tpu:nightly-20260316-e778980-57a314d`):
+
+  ```bash
+  export TPU_BACKEND_TYPE=jax
+  export MODEL_IMPL_TYPE=vllm
+  export HF_HOME=/data
+  export HUGGING_FACE_HUB_TOKEN=<your HF token>
+  vllm serve openai/gpt-oss-120b \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --seed 42 \
+    --tensor-parallel-size 2 \
+    --data-parallel-size 4 \
+    --max-model-len 9216 \
+    --max-num-batched-tokens 16384 \
+    --max-num-seqs 2048 \
+    --gpu-memory-utilization 0.86 \
+    --kv-cache-dtype fp8 \
+    --load-format runai_streamer \
+    --no-enable-prefix-caching \
+    --async-scheduling
+  ```
+
   AMD MI300X/MI325X:
 
   ```bash
@@ -249,3 +273,4 @@ guide: |
   - [gpt-oss-20b](https://huggingface.co/openai/gpt-oss-20b)
   - [amd/gpt-oss-120b-w-mxfp4-a-fp8](https://huggingface.co/amd/gpt-oss-120b-w-mxfp4-a-fp8)
   - [Eagle3 draft model](https://huggingface.co/nvidia/gpt-oss-120b-Eagle3-v3)
+  - [gpt-oss-120b on Ironwood (TPU v7)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/ironwood/vLLM/GPT-OSS)
