@@ -187,6 +187,11 @@ guide: |
     --trust-remote-code
   ```
 
+  For H200 FP8, choose the attention backend by sequence length for best performance:
+  shorter sequences (e.g. 1024) should keep the command above with `--attention-backend FLASHINFER`
+  and `--enable-flashinfer-autotune`, while longer input sequences (e.g. 8192)
+  can prefer FlashAttention by replacing those flags with `--attention-backend FLASH_ATTN`.
+
   Pure TP8 is not supported. For >4 GPUs use DP+EP or TP+EP.
 
   ### TP4+EP (recommended for H100)
