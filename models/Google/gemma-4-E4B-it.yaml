@@ -83,6 +83,11 @@ variants:
     precision: int4
     vram_minimum_gb: 10
     description: "W4A16 QAT (4-bit weights, 16-bit activations, group_size=32) via compressed-tensors — runs on any GPU"
+  mobile:
+    model_id: "google/gemma-4-E4B-it-qat-mobile-ct"
+    precision: int2/4/8
+    vram_minimum_gb: 5
+    description: "Mobile QAT — mixed int2/4/8 compressed-tensors (int2 embeddings + lm_head + audio, int4 LLM attention + MLP, int8 vision + gates). 4.1× weight compression vs BF16, up to 1.5× faster decode at low batch"
 
 compatible_strategies:
   - single_node_tp

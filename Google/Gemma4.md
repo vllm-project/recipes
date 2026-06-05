@@ -1068,6 +1068,29 @@ vllm serve google/gemma-4-26B-A4B-it \
   --gpu-memory-utilization 0.90
 ```
 
+### Quantized Models (QAT Mobile — Mixed Int2/4/8)
+
+Google also provides **mobile-optimized QAT checkpoints** for the E2B and E4B models. Unlike the uniform W4A16 variants above, these use a mixed-precision `compressed-tensors` scheme with per-layer bitwidth assignment — including int2 embeddings and lm_head, which are typically left unquantized:
+
+| Component | Weight Bits | Notes |
+|---|---|---|
+| Embeddings + lm_head | **2-bit** | Channel-quantized, pack-quantized format |
+| Audio tower linears | **2-bit** | W2A8 (int2 weights, int8 activations) |
+| LLM attention + MLP | **4-bit** (E4B) / **2–4-bit** (E2B) | E2B drops deeper MLP layers (15–34) to int2 |
+| Per-layer gates/projections + vision tower | **8-bit** | W8A8 (int8 weights, int8 activations) |
+
+| Base Model | Mobile QAT Checkpoint | Weight Memory | Compression vs BF16 |
+|---|---|---|---|
+| google/gemma-4-E2B-it | [google/gemma-4-E2B-it-qat-mobile-ct](https://huggingface.co/google/gemma-4-E2B-it-qat-mobile-ct) | 2.7 GB | 3.6× smaller |
+| google/gemma-4-E4B-it | [google/gemma-4-E4B-it-qat-mobile-ct](https://huggingface.co/google/gemma-4-E4B-it-qat-mobile-ct) | 3.7 GB | 4.1× smaller |
+
+**Performance (A100-80GB, 1024in/1024out text requests):** E4B mobile delivers **up to 1.5× higher output throughput** vs BF16 at low concurrency (1–16 requests) where decode is memory-bandwidth-bound. The speedup tapers above ~64 concurrent requests as the workload becomes compute-bound.
+
+The primary value proposition is **footprint**: 3.6–4.1× smaller weights free VRAM for KV cache or allow deployment on much smaller GPUs. Multimodal correctness (text, vision, audio) tracks BF16 quality.
+
+```bash
+vllm serve google/gemma-4-E4B-it-qat-mobile-ct
+```
 
 ## Benchmarking
 
