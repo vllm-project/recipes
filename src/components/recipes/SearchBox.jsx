@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Search, ArrowRight, Building2, SlidersHorizontal } from "lucide-react";
 import { recipeHref } from "@/lib/recipe-utils";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName, PROVIDERS } from "@/lib/providers";
+import { searchRecipes, searchProviders } from "@/lib/search";
 
 export function SearchBox({ recipes }) {
   const [query, setQuery] = useState("");
@@ -16,20 +17,14 @@ export function SearchBox({ recipes }) {
   // Build a unified results list: first matching providers, then matching recipes
   const results = useMemo(() => {
     if (!query.trim()) return [];
-    const q = query.toLowerCase();
 
     // Count recipes per org (for display on provider entry)
     const orgCount = {};
     for (const r of recipes) orgCount[r.hf_org] = (orgCount[r.hf_org] || 0) + 1;
 
     // Find matching providers (by hf_org or display_name)
-    const providerMatches = Object.entries(PROVIDERS)
-      .filter(([org, meta]) => {
-        if (!orgCount[org]) return false; // only providers that have recipes
-        const hay = `${org} ${meta.display_name}`.toLowerCase();
-        return hay.includes(q);
-      })
-      // Dedupe case variants (e.g. "google" and "Google" both match)
+    const providerList = Object.entries(PROVIDERS).filter(([org]) => orgCount[org]);
+    const providerMatches = searchProviders(providerList, query)
       .filter((entry, i, arr) => arr.findIndex((e) => e[1].display_name === entry[1].display_name) === i)
       .slice(0, 3)
       .map(([org, meta]) => ({
@@ -40,38 +35,7 @@ export function SearchBox({ recipes }) {
         href: `/${org}`,
       }));
 
-    // Find matching recipes — compute total match count first, then slice
-    // for display. The total drives the "Browse N matching recipes" footer
-    // so users have an exit when there are more matches than fit.
-    const allRecipeMatches = recipes.filter((r) => {
-      // Verified hardware ids land in the haystack so "h100", "mi300x",
-      // "b200" etc. find recipes by GPU compatibility. "tpu" is added as
-      // a synonym whenever any TPU profile is verified, since the ids
-      // (trillium / ironwood) don't contain that string.
-      const hwKeys = Object.entries(r.meta?.hardware || {})
-        .filter(([, s]) => s === "verified")
-        .map(([h]) => h);
-      const hwExtra = [
-	      (hwKeys.some((k) => k === "trillium" || k === "ironwood") ? ["tpu"] : []),
-	      (hwKeys.some((k) => k === "xeon6" || k === "xeon5") ? ["intel", "xeon", "cpu", "x86"] : []),
-      ];	    
-      const hay = [
-        r.meta.title,
-        r.hf_repo,
-        r.hf_org,
-        r.meta.provider,
-        r.meta.description,
-        ...(r.meta.tasks || []),
-        r.model.architecture,
-        r.model.parameter_count,
-        ...hwKeys,
-        ...hwExtra,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(q);
-    });
+    const allRecipeMatches = searchRecipes(recipes, query);
     const recipeMatches = allRecipeMatches
       .slice(0, 6)
       .map((r) => ({ type: "recipe", recipe: r, href: recipeHref(r) }));
