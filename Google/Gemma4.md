@@ -1031,6 +1031,67 @@ Higher `num_speculative_tokens` increases draft overhead per cycle. The optimal 
 > These recommendations were benchmarked on NVIDIA A100 and H100 servers. Optimal settings may vary on different hardware platforms — experimentation is recommended.
 
 
+## Quantized Models (QAT W4A16)
+
+Google provides official QAT (Quantization-Aware Training) W4A16 checkpoints for the Gemma 4 dense model family. These use 4-bit integer weights with 16-bit activations (group_size=32) in `compressed-tensors` format, delivering significant memory savings and throughput improvements with minimal quality loss.
+
+### Available Checkpoints
+
+| Base Model | QAT W4A16 Checkpoint | Memory Savings |
+|---|---|---|
+| google/gemma-4-E2B-it | [google/gemma-4-E2B-it-qat-w4a16-ct](https://huggingface.co/google/gemma-4-E2B-it-qat-w4a16-ct) | ~26% (9.8→7.3 GB) |
+| google/gemma-4-E4B-it | [google/gemma-4-E4B-it-qat-w4a16-ct](https://huggingface.co/google/gemma-4-E4B-it-qat-w4a16-ct) | ~36% (15.2→9.8 GB) |
+| google/gemma-4-12B-it | [google/gemma-4-12B-it-qat-w4a16-ct](https://huggingface.co/google/gemma-4-12B-it-qat-w4a16-ct) | ~64% (22.8→8.3 GB) |
+| google/gemma-4-31B-it | [google/gemma-4-31B-it-qat-w4a16-ct](https://huggingface.co/google/gemma-4-31B-it-qat-w4a16-ct) | ~66% (59.0→19.8 GB) |
+
+> ℹ️ **Note**
+> The 26B-A4B MoE model is not included — its small expert dimensions (704) cause excessive quality loss with 4-bit quantization. For the MoE model, use `--quantization int8_per_channel_weight_only` (online, no checkpoint needed) which provides ~47% memory savings with negligible quality impact.
+
+### Serving a QAT W4A16 Checkpoint
+
+No `--quantization` flag is needed — vLLM auto-detects the quantization config from the checkpoint:
+
+```bash
+vllm serve google/gemma-4-31B-it-qat-w4a16-ct \
+  --max-model-len 32768 \
+  --gpu-memory-utilization 0.90
+```
+
+### 26B MoE: Int8 Per-Channel Quantization
+
+The 26B-A4B MoE model uses online int8 per-channel weight-only quantization instead of W4A16 — its small expert dimensions (128 experts × 704 intermediate size) are sensitive to 4-bit quantization:
+
+```bash
+vllm serve google/gemma-4-26B-A4B-it \
+  --quantization int8_per_channel_weight_only \
+  --max-model-len 32768 \
+  --gpu-memory-utilization 0.90
+```
+
+### Quantized Models (QAT Mobile — Mixed Int2/4/8)
+
+Google also provides **mobile-optimized QAT checkpoints** for the E2B and E4B models. Unlike the uniform W4A16 variants above, these use a mixed-precision `compressed-tensors` scheme with per-layer bitwidth assignment — including int2 embeddings and lm_head, which are typically left unquantized:
+
+| Component | Weight Bits | Notes |
+|---|---|---|
+| Embeddings + lm_head | **2-bit** | Channel-quantized, pack-quantized format |
+| Audio tower linears | **2-bit** | W2A8 (int2 weights, int8 activations) |
+| LLM attention + MLP | **4-bit** (E4B) / **2–4-bit** (E2B) | E2B drops deeper MLP layers (15–34) to int2 |
+| Per-layer gates/projections + vision tower | **8-bit** | W8A8 (int8 weights, int8 activations) |
+
+| Base Model | Mobile QAT Checkpoint | Weight Memory | Compression vs BF16 |
+|---|---|---|---|
+| google/gemma-4-E2B-it | [google/gemma-4-E2B-it-qat-mobile-ct](https://huggingface.co/google/gemma-4-E2B-it-qat-mobile-ct) | 2.7 GB | 3.6× smaller |
+| google/gemma-4-E4B-it | [google/gemma-4-E4B-it-qat-mobile-ct](https://huggingface.co/google/gemma-4-E4B-it-qat-mobile-ct) | 3.7 GB | 4.1× smaller |
+
+**Performance (A100-80GB, 1024in/1024out text requests):** E4B mobile delivers **up to 1.5× higher output throughput** vs BF16 at low concurrency (1–16 requests) where decode is memory-bandwidth-bound. The speedup tapers above ~64 concurrent requests as the workload becomes compute-bound.
+
+The primary value proposition is **footprint**: 3.6–4.1× smaller weights free VRAM for KV cache or allow deployment on much smaller GPUs. Multimodal correctness (text, vision, audio) tracks BF16 quality.
+
+```bash
+vllm serve google/gemma-4-E4B-it-qat-mobile-ct
+```
+
 ## Benchmarking
 
 ### Launch Server for Benchmarking
