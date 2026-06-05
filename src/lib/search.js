@@ -1,6 +1,6 @@
 import { matchSorter } from "match-sorter";
 
-const strip = (s) => (s || "").replace(/[-_.]/g, "");
+const strip = (s) => String(s || "").replace(/[-_.]/g, "");
 
 const RECIPE_KEYS = [
   { key: (r) => strip(r.hf_repo) },
@@ -12,7 +12,7 @@ const RECIPE_KEYS = [
   { key: (r) => strip(r.model?.architecture) },
   { key: (r) => strip(r.model?.parameter_count) },
   { key: (r) => strip(r.variant?.precision) },
-  { key: (r) => (r.precisions || []).join(" ") },
+  { key: (r) => (r.precisions || []).map(strip).join(" ") },
   {
     key: (r) => {
       const hw = r.meta?.hardware || {};
@@ -23,7 +23,7 @@ const RECIPE_KEYS = [
         ...(verified.some((k) => k === "trillium" || k === "ironwood") ? ["tpu"] : []),
         ...(verified.some((k) => k === "xeon6" || k === "xeon5") ? ["intel", "xeon", "cpu", "x86"] : []),
       ];
-      return [...verified, ...synonyms].join(" ");
+      return [...verified, ...synonyms].map(strip).join(" ");
     },
   },
 ];
@@ -46,7 +46,7 @@ export function searchProviders(providerEntries, query) {
   if (!q) return [];
   const keys = [
     { key: (entry) => strip(entry[0]) },
-    { key: (entry) => strip(entry[1].display_name) },
+    { key: (entry) => strip(entry[1]?.display_name) },
   ];
   return q.split(/\s+/).reduceRight(
     (items, word) =>
