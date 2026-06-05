@@ -1,0 +1,227 @@
+meta:
+  title: "MiniMax-M3"
+  slug: "minimax-m3"
+  provider: "MiniMax"
+  description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 checkpoint with an MXFP8 variant from NVIDIA"
+  date_updated: 2026-06-05
+  difficulty: advanced
+  tasks:
+    - text
+    - multimodal
+  performance_headline: "Frontier coding and agent (SWE-Bench Pro 59.0, Terminal-Bench 2.1 66.0); MSA sparse attention; 1M context"
+  related_recipes: []
+
+model:
+  model_id: "MiniMaxAI/MiniMax-M3"
+  min_vllm_version: "0.22.1"
+  architecture: moe
+  # 427.04B total from safetensors metadata (BF16: 426.99B + F32: 46.3M).
+  # Active: 57 MoE layers × (4 routed + 1 shared) × 56.6M + 60-layer attn
+  # 6.6B + 3 dense FFN 0.68B + embeddings 2.46B ≈ 25.9B per token.
+  parameter_count: "427B"
+  active_parameters: "26B"
+  # config.max_position_embeddings is 524288; MiniMax officially advertises 1M
+  # via RoPE scaling — using the advertised number here.
+  context_length: 1048576
+  base_args:
+    - "--trust-remote-code"
+    # MSA's sparse_block_size is 128 — KV cache block size must match.
+    - "--block-size"
+    - "128"
+  base_env: {}
+
+features:
+  tool_calling:
+    description: "MiniMax M3 tool call parser with automatic tool choice"
+    args:
+      - "--tool-call-parser"
+      - "minimax_m3"
+      - "--enable-auto-tool-choice"
+  reasoning:
+    description: "MiniMax M3 reasoning parser (supports `thinking` and `non-thinking` modes, switchable per request)"
+    args:
+      - "--reasoning-parser"
+      - "minimax_m3"
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    # 427B × 2 bytes (BF16) + 46M × 4 (F32 norms), × 1.2 headroom ≈ 1025 GB.
+    # 8x H200/H20 (1128 GB) is a tight fit; multi-node TP recommended for
+    # KV-cache headroom at long context.
+    vram_minimum_gb: 1025
+    description: "Native BF16 checkpoint — multi-node TP recommended for long-context headroom"
+  mxfp8:
+    model_id: "MiniMaxAI/MiniMax-M3-MXFP8"
+    precision: mxfp8
+    # 427B × 1 byte (MXFP8) + F32 norms, × 1.2 ≈ 513 GB → fits 8x H200/H20
+    # comfortably, ~4 GPUs for weights alone on Blackwell (B200/B300).
+    vram_minimum_gb: 513
+    description: "NVIDIA-quantized MXFP8 weights for Blackwell GPUs"
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - single_node_dep
+  - multi_node_tp
+  - multi_node_tp_pp
+  - multi_node_tep
+  - multi_node_dep
+  - pd_cluster
+
+guide: |
+  ## Overview
+
+  [MiniMax-M3](https://huggingface.co/MiniMaxAI/MiniMax-M3) is a frontier
+  vision-language MoE model from [MiniMax](https://www.minimax.io/).
+
+  - **MSA (MiniMax Sparse Attention)** — scalable sparse-attention architecture
+    that lifts the context window to **1M tokens**. MiniMax reports per-token
+    compute at 1M context reduced to ~1/20 of the previous generation, with
+    >9× prefill and >15× decode speedup vs dense baselines.
+  - **Frontier coding and agent capabilities** — SWE-Bench Pro 59.0%,
+    Terminal-Bench 2.1 66.0%, SWE-fficiency 34.8%, KernelBench Hard 28.8%,
+    MCP Atlas 74.2%.
+  - **Native multimodal** — image + video inputs, plus computer-use; trained
+    multimodally from step 0.
+  - **Two reasoning modes** — `thinking` (complex reasoning / agents) and
+    `non-thinking` (latency-sensitive), switchable per request.
+
+  ## Prerequisites
+
+  - **OS:** Linux
+  - **Python:** 3.10 - 3.13
+  - **NVIDIA:** compute capability >= 9.0 (Hopper) recommended; 8x H200 / H20
+    for a tight single-node BF16 fit, or multi-node TP for long-context headroom
+
+  ### Install vLLM (NVIDIA)
+
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install -U vllm --torch-backend auto
+  ```
+
+  ## Launching the Server
+
+  ### NVIDIA — TP8 (8x H200 / H20)
+
+  ```bash
+  vllm serve MiniMaxAI/MiniMax-M3 \
+    --trust-remote-code \
+    --tensor-parallel-size 8 \
+    --block-size 128 \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
+
+  ### TP8 + Expert Parallel
+
+  ```bash
+  vllm serve MiniMaxAI/MiniMax-M3 \
+    --trust-remote-code \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --block-size 128 \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
+
+  ### DP8 + Expert Parallel
+
+  ```bash
+  vllm serve MiniMaxAI/MiniMax-M3 \
+    --trust-remote-code \
+    --data-parallel-size 8 \
+    --enable-expert-parallel \
+    --block-size 128 \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
+
+  ## Client Usage
+
+  Recommended sampling parameters (from the model card):
+
+  - `temperature = 1.0`
+  - `top_p = 0.95`
+  - `top_k = 40`
+
+  Default system prompt:
+
+  ```
+  You are a helpful assistant. Your name is MiniMax-M3 and is built by MiniMax.
+  ```
+
+  Example chat request:
+
+  ```bash
+  curl http://localhost:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "MiniMaxAI/MiniMax-M3",
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "messages": [
+        {"role": "system", "content": "You are a helpful assistant. Your name is MiniMax-M3 and is built by MiniMax."},
+        {"role": "user", "content": "Explain MSA sparse attention in 3 bullets."}
+      ]
+    }'
+  ```
+
+  ## Benchmarking
+
+  ```bash
+  vllm bench serve \
+    --backend vllm \
+    --model MiniMaxAI/MiniMax-M3 \
+    --endpoint /v1/completions \
+    --dataset-name random \
+    --random-input 2048 \
+    --random-output 1024 \
+    --max-concurrency 10 \
+    --num-prompt 100
+  ```
+
+  ## Quantized Variant (MXFP8)
+
+  [`MiniMaxAI/MiniMax-M3-MXFP8`](https://huggingface.co/MiniMaxAI/MiniMax-M3-MXFP8)
+  is an MXFP8 checkpoint quantized by NVIDIA from the original FP16 weights —
+  roughly half the VRAM of the BF16 release. Select the **mxfp8** variant above,
+  or pass the repo id directly to `vllm serve`:
+
+  ```bash
+  vllm serve MiniMaxAI/MiniMax-M3-MXFP8 \
+    --trust-remote-code \
+    --tensor-parallel-size 8 \
+    --block-size 128 \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
+
+  Blackwell (B200/B300) is preferred for native MX tensor-core throughput.
+
+  ## Troubleshooting
+
+  - **`--block-size` mismatch.** MSA's sparse block size is 128; the vLLM KV
+    cache block size must match. Using the default (16) misaligns the sparse
+    attention indexing.
+  - **Parsers.** `--tool-call-parser` and `--reasoning-parser` both use
+    `minimax_m3` — distinct from `minimax_m2` used by earlier releases.
+  - **Long context KV cache.** The advertised 1M window grows KV memory
+    linearly. Watch headroom at long context; move to multi-node TP if you OOM.
+
+  ## References
+
+  - [Model card](https://huggingface.co/MiniMaxAI/MiniMax-M3)
+  - [MXFP8 variant](https://huggingface.co/MiniMaxAI/MiniMax-M3-MXFP8)
+  - [MiniMax](https://www.minimax.io/)
+  - [MiniMax Agent](https://agent.minimax.io/)
+  - [MiniMax Platform](https://platform.minimax.io/)
+  - [Previous release: MiniMax-M2.7](https://huggingface.co/MiniMaxAI/MiniMax-M2.7)
