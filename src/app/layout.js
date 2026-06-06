@@ -72,6 +72,9 @@ export default async function RootLayout({ children }) {
       architecture: r.model.architecture,
       parameter_count: r.model.parameter_count,
     },
+    precisions: [...new Set(
+      Object.values(r.variants || {}).map((v) => v?.precision).filter(Boolean)
+    )],
   }));
 
   return (
