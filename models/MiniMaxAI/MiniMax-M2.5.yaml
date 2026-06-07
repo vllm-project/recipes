@@ -91,7 +91,6 @@ hardware_overrides:
       - "--enable-flashinfer-autotune"
     extra_env:
       PYTHONNOUSERSITE: "1"
-      SAFETENSORS_FAST_GPU: "1"
       VLLM_USE_DEEP_GEMM: "0"
       VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER: "0"
       VLLM_FLOAT32_MATMUL_PRECISION: "high"
@@ -143,7 +142,6 @@ guide: |
     --ipc=host \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     -e PYTHONNOUSERSITE=1 \
-    -e SAFETENSORS_FAST_GPU=1 \
     -e VLLM_USE_DEEP_GEMM=0 \
     -e VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER=0 \
     -e VLLM_FLOAT32_MATMUL_PRECISION=high \
@@ -168,7 +166,6 @@ guide: |
 
   ```bash
   PYTHONNOUSERSITE=1 \
-  SAFETENSORS_FAST_GPU=1 \
   VLLM_USE_DEEP_GEMM=0 \
   VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER=0 \
   VLLM_FLOAT32_MATMUL_PRECISION=high \
