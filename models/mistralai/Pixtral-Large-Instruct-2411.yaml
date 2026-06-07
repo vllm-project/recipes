@@ -35,10 +35,11 @@ model:
     - '{"image": 5}'
   base_env: {}
 
-features:
-  tool_calling:
-    description: "Mistral-style function calling via the mistral tool-call parser."
-    args: ["--enable-auto-tool-choice", "--tool-call-parser", "mistral"]
+# Tool calling uses the `mistral` parser, which depends on the Mistral
+# tokenizer. It is therefore scoped to the BF16 Mistral-format `default`
+# variant's extra_args (below) rather than declared as a global feature — the
+# HF/Llava quantized variants ship a chat template with no tool-call support.
+features: {}
 
 opt_in_features: []
 
@@ -53,6 +54,11 @@ variants:
       - --config_format
       - mistral
       - --load_format
+      - mistral
+      # Tool calling is reliable only with the Mistral tokenizer, so it lives
+      # here on the Mistral-format variant rather than as a global feature.
+      - --enable-auto-tool-choice
+      - --tool-call-parser
       - mistral
   fp8:
     model_id: "RedHatAI/Pixtral-Large-Instruct-2411-hf-FP8-dynamic"
