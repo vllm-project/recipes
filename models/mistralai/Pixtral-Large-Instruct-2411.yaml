@@ -1,0 +1,181 @@
+meta:
+  title: "Pixtral-Large-Instruct-2411"
+  slug: "pixtral-large-instruct-2411"
+  provider: "Mistral AI"
+  description: "124B vision-language model built on Mistral Large 2, with a 1B vision encoder for image understanding."
+  date_updated: 2026-06-07
+  difficulty: intermediate
+  tasks:
+    - text
+    - multimodal
+  performance_headline: "Frontier-class multimodal reasoning over images, charts, and documents at 128K context."
+  related_recipes:
+    - "mistralai/Mistral-Large-3-675B-Instruct-2512"
+
+model:
+  model_id: "mistralai/Pixtral-Large-Instruct-2411"
+  min_vllm_version: "0.11.0"
+  docker_image: ""
+  install:
+    pip:
+      command: ""
+      note: ""
+    docker:
+      note: ""
+  architecture: dense
+  parameter_count: "124B"
+  active_parameters: "124B"
+  context_length: 131072
+  # The original checkpoint is in Mistral format (consolidated safetensors +
+  # params.json), so it needs the mistral tokenizer/config/load flags. The
+  # quantized variants below are HF (Llava) checkpoints and must NOT use them —
+  # those flags live in the default variant's extra_args, not here.
+  base_args:
+    - --limit-mm-per-prompt
+    - '{"image": 5}'
+  base_env: {}
+
+features:
+  tool_calling:
+    description: "Mistral-style function calling via the mistral tool-call parser."
+    args: ["--enable-auto-tool-choice", "--tool-call-parser", "mistral"]
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 298
+    description: "Original BF16 weights in Mistral format. Needs ~298 GB of VRAM (e.g. 8×H200 or 4×B200), well beyond a single 192 GB node."
+    extra_args:
+      - --tokenizer_mode
+      - mistral
+      - --config_format
+      - mistral
+      - --load_format
+      - mistral
+  fp8:
+    model_id: "RedHatAI/Pixtral-Large-Instruct-2411-hf-FP8-dynamic"
+    precision: fp8
+    vram_minimum_gb: 149
+    description: "FP8 (compressed-tensors, dynamic) HF/Llava checkpoint, ~126 GB of weights. Near-BF16 quality; fits across 6×32 GB (RTX 5090) or a single H200/B200 node."
+  int4:
+    model_id: "RedHatAI/Pixtral-Large-Instruct-2411-hf-quantized.w4a16"
+    precision: int4
+    vram_minimum_gb: 75
+    description: "INT4 (w4a16) HF/Llava checkpoint, ~62 GB of weights. Fits on 3–4×32 GB GPUs with some quality trade-off."
+
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  Pixtral-Large is a 124B-parameter multimodal model: the Mistral Large 2 text
+  decoder paired with a ~1B-parameter vision encoder. It handles interleaved
+  text + image prompts (charts, documents, natural images) at up to 128K tokens.
+
+  The original `mistralai/Pixtral-Large-Instruct-2411` checkpoint ships in
+  **Mistral format** (consolidated safetensors + `params.json`). The quantized
+  community checkpoints from RedHatAI are in **HF / Llava format**
+  (`LlavaForConditionalGeneration`) and are served with a standard HF tokenizer
+  and the bundled chat template.
+
+  | Variant | Repo | Weights | Format |
+  |---------|------|---------|--------|
+  | BF16 (default) | `mistralai/Pixtral-Large-Instruct-2411` | ~248 GB | Mistral |
+  | FP8 | `RedHatAI/Pixtral-Large-Instruct-2411-hf-FP8-dynamic` | ~126 GB | HF/Llava |
+  | INT4 | `RedHatAI/Pixtral-Large-Instruct-2411-hf-quantized.w4a16` | ~62 GB | HF/Llava |
+
+  > **Format matters:** only the BF16 Mistral checkpoint takes
+  > `--tokenizer_mode mistral --config_format mistral --load_format mistral`.
+  > Do **not** pass those flags to the HF/Llava FP8 or INT4 variants.
+
+  ## Prerequisites
+
+  ```bash
+  uv venv && source .venv/bin/activate
+  uv pip install -U vllm --torch-backend auto
+  ```
+
+  > **Download gotcha (FP8 repo):** the
+  > `RedHatAI/Pixtral-Large-Instruct-2411-hf-FP8-dynamic` repo contains *two*
+  > leftover shard sets (`*-of-00026` and `*-of-00027`). `model.safetensors.index.json`
+  > only references the **`of-00027`** set (~126 GB). A plain `hf download` pulls
+  > both (~218 GB). Restrict it:
+  >
+  > ```bash
+  > hf download RedHatAI/Pixtral-Large-Instruct-2411-hf-FP8-dynamic \
+  >   --include "model-*-of-00027.safetensors"
+  > # then a second pass for the config/tokenizer files:
+  > hf download RedHatAI/Pixtral-Large-Instruct-2411-hf-FP8-dynamic \
+  >   --include "*.json" --include "*.model"
+  > ```
+
+  ## Launch command
+
+  FP8 on a single H200/B200 node (TP divides the 16 vision heads / 8 KV heads):
+
+  ```bash
+  vllm serve RedHatAI/Pixtral-Large-Instruct-2411-hf-FP8-dynamic \
+    --tensor-parallel-size 8 \
+    --max-model-len 131072 \
+    --limit-mm-per-prompt '{"image": 5}' \
+    --kv-cache-dtype fp8_e4m3 \
+    --enable-prefix-caching
+  ```
+
+  > **Parallelism gotcha:** the vision encoder has **16 attention heads** and the
+  > text model has **8 KV heads**, so the tensor-parallel size must divide both
+  > (valid TP ∈ {1, 2, 4, 8}). `--tensor-parallel-size 6` fails with
+  > `16 is not divisible by 6`. To spread across 6 GPUs (e.g. 6× RTX 5090),
+  > combine a valid TP with pipeline parallelism:
+  >
+  > ```bash
+  > vllm serve RedHatAI/Pixtral-Large-Instruct-2411-hf-FP8-dynamic \
+  >   --tensor-parallel-size 2 --pipeline-parallel-size 3 \
+  >   --max-model-len 131072 --limit-mm-per-prompt '{"image": 5}' \
+  >   --kv-cache-dtype fp8_e4m3 --enable-prefix-caching
+  > ```
+
+  Original BF16 (Mistral format), e.g. on 8×H200:
+
+  ```bash
+  vllm serve mistralai/Pixtral-Large-Instruct-2411 \
+    --tensor-parallel-size 8 \
+    --tokenizer_mode mistral --config_format mistral --load_format mistral \
+    --limit-mm-per-prompt '{"image": 5}'
+  ```
+
+  ## Usage
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+  model = client.models.list().data[0].id
+
+  resp = client.chat.completions.create(
+      model=model,
+      messages=[{
+          "role": "user",
+          "content": [
+              {"type": "text", "text": "What is shown in this image?"},
+              {"type": "image_url", "image_url": {"url": "https://example.com/chart.png"}},
+          ],
+      }],
+      max_tokens=512,
+  )
+  print(resp.choices[0].message.content)
+  ```
+
+  ## References
+
+  - [Model card](https://huggingface.co/mistralai/Pixtral-Large-Instruct-2411)
+  - [FP8 checkpoint](https://huggingface.co/RedHatAI/Pixtral-Large-Instruct-2411-hf-FP8-dynamic)
+  - [vLLM multimodal docs](https://docs.vllm.ai/en/latest/serving/multimodal_inputs.html)
