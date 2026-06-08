@@ -15,6 +15,9 @@ meta:
     h200: verified
     b200: verified
     gb200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
     trillium: verified
 
 model:
@@ -97,10 +100,32 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x H100/H200 (FP8), 1x B200 (FP4), or 2x GPUs for BF16
+  - Hardware: 1x H100/H200 (FP8), 1x B200 (FP4), 2x GPUs for BF16, or 2x MI300X/MI325X/MI355X
   - vLLM >= 0.12.0
   - CUDA Driver >= 575
   - Docker with NVIDIA Container Toolkit (recommended)
+
+  ### AMD ROCm
+
+  The ROCm wheel requires Python 3.12, ROCm 7.0+, and glibc >= 2.35. Use the
+  ROCm Docker image when your host environment does not meet those requirements.
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+  ```
+
+  Launch on 2x MI300X / MI325X / MI355X with AITER enabled:
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  vllm serve meta-llama/Llama-3.3-70B-Instruct \
+    --tensor-parallel-size 2 \
+    --disable-log-requests
+  ```
+
+  The first AITER launch may take several minutes while ROCm kernels are compiled and cached.
 
   ### Docker (Cloud TPU — Trillium)
   TPU uses the separate `vllm/vllm-tpu` image (no pip wheel). Pull the tag specified by the upstream [Trillium recipe](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.x), then run:
