@@ -11,6 +11,9 @@ meta:
   related_recipes: []
   hardware:
     h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "zai-org/GLM-5"
@@ -86,7 +89,15 @@ compatible_strategies:
   - multi_node_dep
   - pd_cluster
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_args:
+      - "--block-size=1"
+      - "--enable-prefix-caching"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
+      VLLM_ROCM_USE_AITER_RMSNORM: "0"
 
 strategy_overrides: {}
 
@@ -104,7 +115,7 @@ guide: |
   ## Prerequisites
 
   - **vLLM version:** 0.19.0 (stable — preferred over nightly for model performance)
-  - **Hardware (FP8):** 8xH200 or 8xH20 (141GB × 8)
+  - **Hardware (FP8):** 8xH200, 8xH20 (141GB × 8), or 8x MI300X/MI325X/MI355X
   - **DeepGEMM (FP8):** install via `install_deepgemm.sh` from the vLLM repo
 
   ### Using Docker
@@ -124,12 +135,45 @@ guide: |
 
   Use `vllm/vllm-openai:latest-cu129` for CUDA 12.x.
 
+  AMD ROCm Docker:
+
+  ```bash
+  docker run --device=/dev/kfd --device=/dev/dri \
+    --security-opt seccomp=unconfined \
+    --group-add video \
+    --ipc=host \
+    -p 8000:8000 \
+    -e VLLM_ROCM_USE_AITER=1 \
+    -e VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4 \
+    -e VLLM_ROCM_USE_AITER_RMSNORM=0 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-rocm:latest \
+    zai-org/GLM-5-FP8 \
+      --tensor-parallel-size 8 \
+      --tool-call-parser glm47 \
+      --reasoning-parser glm45 \
+      --enable-auto-tool-choice \
+      --chat-template-content-format=string \
+      --block-size=1 \
+      --enable-prefix-caching \
+      --served-model-name glm-5-fp8
+  ```
+
   ### Install vLLM from Source
 
   ```bash
   uv venv
   source .venv/bin/activate
   uv pip install "vllm==0.19.0" --torch-backend=auto
+  uv pip install "transformers>=5.4.0"
+  ```
+
+  AMD ROCm wheel:
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
   uv pip install "transformers>=5.4.0"
   ```
 
@@ -148,6 +192,25 @@ guide: |
        --reasoning-parser glm45 \
        --enable-auto-tool-choice \
        --chat-template-content-format=string \
+       --served-model-name glm-5-fp8
+  ```
+
+  ### AMD ROCm on 8x MI300X / MI325X / MI355X
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+  export VLLM_ROCM_USE_AITER_RMSNORM=0
+
+  vllm serve zai-org/GLM-5-FP8 \
+       --tensor-parallel-size 8 \
+       --speculative-config.method mtp \
+       --speculative-config.num_speculative_tokens 3 \
+       --tool-call-parser glm47 \
+       --reasoning-parser glm45 \
+       --enable-auto-tool-choice \
+       --chat-template-content-format=string \
+       --block-size=1 \
        --served-model-name glm-5-fp8
   ```
 
