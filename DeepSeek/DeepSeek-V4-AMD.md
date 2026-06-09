@@ -25,8 +25,8 @@ docker pull vllm/vllm-openai-rocm:nightly
 ## Recommended deployments
 
 - **MI355X (8× GPU)**: validated with ROCm + AITER
-  (`VLLM_ROCM_USE_AITER=1`, `VLLM_ROCM_USE_AITER_LINEAR=1`), `--moe-backend triton_unfused`,
-  `--gpu-memory-utilization 0.6`, `--max-num-seqs 128`,
+  (`VLLM_ROCM_USE_AITER=1`),
+  `--gpu-memory-utilization 0.9`, `--max-num-seqs 512`,
   `--max-num-batched-tokens 8192`, and `--distributed-executor-backend mp`.
 
 ## Feature matrix
@@ -61,24 +61,23 @@ recipes.vllm.ai (hardware / variant / strategy / features).
 ```bash
 export HF_HOME=/data/huggingface-cache
 export VLLM_ROCM_USE_AITER=1
-export VLLM_ROCM_USE_AITER_LINEAR=1
 
-vllm serve /home/models/DeepSeek-V4-Pro \
+vllm serve deepseek-ai/DeepSeek-V4-Pro \
   --host localhost \
   --port 8001 \
-  --dtype auto \
-  --kv-cache-dtype fp8 \
-  --tensor-parallel-size 8 \
-  --max-num-seqs 128 \
-  --max-num-batched-tokens 8192 \
-  --distributed-executor-backend mp \
-  --trust-remote-code \
-  --gpu-memory-utilization 0.6 \
-  --moe-backend triton_unfused \
-  --tokenizer-mode deepseek_v4 \
-  --reasoning-parser deepseek_v4 \
-  --async-scheduling \
-  --enforce-eager
+    --dtype auto \
+    --kv-cache-dtype fp8 \
+    --tensor-parallel-size 8 \
+    --max-num-seqs 512 \
+    --max-num-batched-tokens 8192 \
+    --distributed-executor-backend mp \
+    --trust-remote-code \
+    --gpu-memory-utilization 0.9 \
+    --tokenizer-mode deepseek_v4 \
+    --reasoning-parser deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --compilation-config '{"mode": 3, "cudagraph_mode": "FULL_DECODE_ONLY"}'
 ```
 
 ### 2) GSM8K validation
@@ -110,20 +109,22 @@ Reported result from PR #40871:
 export HF_HOME=/data/huggingface-cache
 export VLLM_ROCM_USE_AITER=1
 
-vllm serve /home/models/DeepSeek-V4-Flash \
+vllm serve deepseek-ai/DeepSeek-V4-Flash \
   --host localhost \
   --port 8001 \
   --dtype auto \
+  --kv-cache-dtype fp8 \
   --tensor-parallel-size 4 \
-  --max-num-seqs 16 \
-  --max-num-batched-tokens 1024 \
+  --max-num-seqs 512 \
+  --max-num-batched-tokens 8192 \
   --distributed-executor-backend mp \
   --trust-remote-code \
-  --gpu-memory-utilization 0.35 \
-  --moe-backend triton_unfused \
+  --gpu-memory-utilization 0.9 \
   --tokenizer-mode deepseek_v4 \
-  --async-scheduling \
-  --enforce-eager
+  --reasoning-parser deepseek_v4 \
+  --tool-call-parser deepseek_v4 \
+  --enable-auto-tool-choice \
+  --compilation-config '{"mode": 3, "cudagraph_mode": "FULL_DECODE_ONLY"}'
 ```
 
 ### 2) GSM8K validation

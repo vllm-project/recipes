@@ -98,15 +98,13 @@ hardware_overrides:
       - "--distributed-executor-backend"
       - "mp"
       - "--gpu-memory-utilization"
-      - "0.35"
+      - "0.9"
       - "--max-num-seqs"
-      - "16"
+      - "512"
       - "--max-num-batched-tokens"
-      - "1024"
-      - "--moe-backend"
-      - "triton_unfused"
-      - "--async-scheduling"
-      - "--enforce-eager"
+      - "8192"
+      - "--compilation-config"
+      - '{"mode": 3, "cudagraph_mode": "FULL_DECODE_ONLY"}'
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
 
@@ -247,9 +245,9 @@ guide: |
   For disaggregated prefill/decode on GB200, use the PD Cluster tab.
 
   On **MI355X (8×288GB)**, validation used ROCm + AITER (`VLLM_ROCM_USE_AITER=1`),
-  `--distributed-executor-backend mp`, `--gpu-memory-utilization 0.35`,
-  `--max-num-seqs 16`, `--max-num-batched-tokens 1024`,
-  `--moe-backend triton_unfused`, `--async-scheduling`, and `--enforce-eager`.
+  `--distributed-executor-backend mp`, `--gpu-memory-utilization 0.9`,
+  `--max-num-seqs 512`, `--max-num-batched-tokens 8192`,
+  `--compilation-config '{"mode": 3, "cudagraph_mode": "FULL_DECODE_ONLY"}'.
 
   ## GSM8K validation (MI355X)
 
@@ -259,20 +257,22 @@ guide: |
   export HF_HOME=/data/huggingface-cache
   export VLLM_ROCM_USE_AITER=1
 
-  vllm serve /home/models/DeepSeek-V4-Flash \
+  vllm serve deepseek-ai/DeepSeek-V4-Flash \
     --host localhost \
     --port 8001 \
     --dtype auto \
+    --kv-cache-dtype fp8 \
     --tensor-parallel-size 4 \
-    --max-num-seqs 16 \
-    --max-num-batched-tokens 1024 \
+    --max-num-seqs 512 \
+    --max-num-batched-tokens 8192 \
     --distributed-executor-backend mp \
     --trust-remote-code \
-    --gpu-memory-utilization 0.35 \
-    --moe-backend triton_unfused \
+    --gpu-memory-utilization 0.9 \
     --tokenizer-mode deepseek_v4 \
-    --async-scheduling \
-    --enforce-eager
+    --reasoning-parser deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --compilation-config '{"mode": 3, "cudagraph_mode": "FULL_DECODE_ONLY"}'
   ```
 
   GSM8K command:
