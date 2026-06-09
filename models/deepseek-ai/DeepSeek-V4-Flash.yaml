@@ -114,15 +114,17 @@ strategy_overrides:
     # strategy doesn't add --enable-expert-parallel) and no MoE mega-kernel
     # backend on Blackwell. Autotune is disabled to minimize startup time.
     tp: 8
-    extra_args:
-      - "--no-enable-flashinfer-autotune"
     hardware_overrides:
+      hopper:
+        extra_args:
+          - "--no-enable-flashinfer-autotune"
       blackwell:
         # Replaces recipe-level blackwell override: keeps the FP4 indexer cache
         # but drops --moe-backend deep_gemm_mega_moe (TP-only path uses the
         # default MoE backend).
         extra_args:
           - "--attention_config.use_fp4_indexer_cache=True"
+          - "--no-enable-flashinfer-autotune"
   single_node_dep:
     # Force DP=4 on all hardware (fills GB200's 4-GPU tray; on 8-GPU nodes use
     # half the GPUs per replica). dedupeArgs (last-wins) shadows the default
