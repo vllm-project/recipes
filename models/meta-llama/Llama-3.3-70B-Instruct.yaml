@@ -16,6 +16,7 @@ meta:
     b200: verified
     gb200: verified
     trillium: verified
+    xeon6: verified
 
 model:
   model_id: "meta-llama/Llama-3.3-70B-Instruct"
@@ -82,6 +83,9 @@ hardware_overrides:
     extra_args: []
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
+  cpu:
+    extra_env:
+      VLLM_CPU_KVCACHE_SPACE: "40"
 
 strategy_overrides: {}
 
@@ -97,10 +101,19 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x H100/H200 (FP8), 1x B200 (FP4), or 2x GPUs for BF16
+  - Hardware: 1x H100/H200 (FP8), 1x B200 (FP4), 2x GPUs or 4x Xeon6/Xeon5 NUMA node for BF16
   - vLLM >= 0.12.0
-  - CUDA Driver >= 575
-  - Docker with NVIDIA Container Toolkit (recommended)
+  - CUDA Driver >= 575 for GPUs
+  - Docker with NVIDIA Container Toolkit (recommended) for GPUs
+
+  ### pip (Intel Xeon 6 CPUs)
+  For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.
+
+  ### Docker (Intel Xeon 6 CPUs)
+
+  ```bash
+  docker pull vllm/vllm-openai-cpu:latest-x86_64 # For Intel Xeon 6
+  ```
 
   ### Docker (Cloud TPU — Trillium)
   TPU uses the separate `vllm/vllm-tpu` image (no pip wheel). Pull the tag specified by the upstream [Trillium recipe](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.x), then run:
@@ -115,6 +128,22 @@ guide: |
       --host 0.0.0.0 --port 8000
   ```
   Trillium requires a 4-chip slice minimum.
+
+  ### Intel Xeon 6 Deployment via Docker
+
+  Launch the x86 CPU vLLM Docker container for `meta-llama/Llama-3.3-70B-Instruct`:
+
+  ```bash
+  docker run -itd --name llama3-70b-cpu \
+    --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e VLLM_CPU_KVCACHE_SPACE=40 \
+    vllm/vllm-openai-cpu:latest-x86_64 \
+      --model meta-llama/Llama-3.3-70B-Instruct \
+      --host 0.0.0.0 \
+      --port 8000
+  ```
 
   ## Client Usage
 

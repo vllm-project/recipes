@@ -13,6 +13,7 @@ meta:
     h100: verified
     h200: verified
     trillium: verified
+    xeon6: verified
 
 model:
   model_id: "meta-llama/Llama-3.1-8B-Instruct"
@@ -65,6 +66,9 @@ hardware_overrides:
     extra_args: []
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
+  cpu:
+    extra_env:
+      VLLM_CPU_KVCACHE_SPACE: "40"
 strategy_overrides: {}
 
 guide: |
@@ -78,10 +82,10 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x GPU with >=16 GB VRAM (e.g. A100, L40S, H100, H200)
+  - Hardware: 1x GPU with >=16 GB VRAM (e.g. A100, L40S, H100, H200) or 2x Xeon6/Xeon5 NUMA node
   - vLLM >= 0.6.0
-  - CUDA Driver compatible with your vLLM version
-  - Docker with NVIDIA Container Toolkit (recommended)
+  - CUDA Driver compatible with your vLLM version for 1x GPU
+  - Docker with NVIDIA Container Toolkit (recommended) for 1x GPU
 
   ### Install vLLM
 
@@ -91,6 +95,13 @@ guide: |
   uv pip install vllm --torch-backend auto
   ```
 
+  ### pip (Intel Xeon 6 CPUs)
+  For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.
+
+  ### Docker (Intel Xeon 6 CPUs)
+  ```bash
+  docker pull vllm/vllm-openai-cpu:latest-x86_64 # For Intel Xeon 6
+  ```
   ### Docker (Cloud TPU — Trillium)
   TPU uses the separate `vllm/vllm-tpu` image (no pip wheel). Pull the tag specified by the upstream [Trillium recipe](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.x), then run:
   ```bash
@@ -104,6 +115,22 @@ guide: |
       --host 0.0.0.0 --port 8000
   ```
   The 8B fits on a single chip (`v6e-1`, TP=1) — unlike the 70B, which needs a v6e-8 slice.
+
+  ### Intel Xeon 6 Deployment via Docker
+
+  Launch the x86 CPU vLLM Docker container for `meta-llama/Llama-3.1-8B-Instruct`:
+
+  ```bash
+  docker run -itd --name llama3-8b-cpu \
+    --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e VLLM_CPU_KVCACHE_SPACE=40 \
+    vllm/vllm-openai-cpu:latest-x86_64 \
+      --model meta-llama/Llama-3.1-8B-Instruct \
+      --host 0.0.0.0 \
+      --port 8000
+  ```
 
   ## Client Usage
 
