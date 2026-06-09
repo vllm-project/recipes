@@ -8,10 +8,12 @@ meta:
   tasks:
     - multimodal
     - text
-  performance_headline: "Compact Qwen3.5 MoE — single-GPU FP8 or 2x GPU BF16 serving"
+  performance_headline: "Compact Qwen3.5 MoE — single-GPU FP8, 2x GPU or 2x Xeon 6 NUMA nodes BF16 serving"
   related_recipes:
     - "Qwen/Qwen3.5-397B-A17B"
     - "Qwen/Qwen3.5-122B-A10B"
+  hardware:
+    xeon6: verified
 
 model:
   model_id: "Qwen/Qwen3.5-35B-A3B"
@@ -59,7 +61,7 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 84
-    description: "Full precision BF16 — fits on 1x H200 or 2x H100"
+    description: "Full precision BF16 — fits on 1x H200, 2x H100 or 2x Xeon 6 NUMA nodes"
   fp8:
     model_id: "Qwen/Qwen3.5-35B-A3B-FP8"
     precision: fp8
@@ -79,7 +81,10 @@ compatible_strategies:
   - multi_node_dep
   - multi_node_tep
 
-hardware_overrides: {}
+hardware_overrides:
+  cpu:
+    extra_env:
+      VLLM_CPU_KVCACHE_SPACE: "40"
 
 strategy_overrides: {}
 
@@ -94,16 +99,27 @@ guide: |
   ## Prerequisites
 
   - **vLLM version:** >= 0.17.0
-  - **Hardware (BF16):** 1x H200 or 2x H100
+  - **Hardware (BF16):** 1x H200, 2x H100 or 2x Xeon 6 NUMA nodes
   - **Hardware (FP8):** single H100/H200
   - **Hardware (Int4):** single 24 GB GPU
 
-  ### Install vLLM
 
+  ### Pip Install
+
+  #### NVIDIA
   ```bash
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend=auto
+  ```
+
+  #### CPU
+  For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  export VLLM_VERSION=$(curl -s https://api.github.com/repos/vllm-project/vllm/releases/latest | jq -r .tag_name | sed 's/^v//')
+  uv pip install https://github.com/vllm-project/vllm/releases/download/v${VLLM_VERSION}/vllm-${VLLM_VERSION}+cpu-cp38-abi3-manylinux_2_35_x86_64.whl --torch-backend cpu
   ```
 
   ## Launching the Server
@@ -123,6 +139,22 @@ guide: |
     --tensor-parallel-size 2 \
     --max-model-len 262144 \
     --reasoning-parser qwen3
+  ```
+
+  ### Intel Xeon 6 Deployment via Docker
+
+  Launch the x86 CPU vLLM Docker container for `Qwen/Qwen3.5-35B-A3B`:
+
+  ```bash
+  docker run -itd --name qwen35b-cpu \
+    --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e VLLM_CPU_KVCACHE_SPACE=40 \
+    vllm/vllm-openai-cpu:latest-x86_64 \
+      --model Qwen/Qwen3.5-35B-A3B \
+      --host 0.0.0.0 \
+      --port 8000
   ```
 
   ### MTP speculative decoding

@@ -2,7 +2,7 @@ meta:
   title: "Qwen3.5-4B"
   slug: "qwen3.5-4b"
   provider: "Qwen"
-  description: "Qwen3.5 compact dense multimodal model (4B) — fits on 16 GB consumer GPUs with full 262K context"
+  description: "Qwen3.5 compact dense multimodal model (4B) — fits on 16 GB consumer GPUs with full 262K context or one Xeon 6 NUMA node"
   date_updated: 2026-04-22
   difficulty: beginner
   tasks:
@@ -12,6 +12,8 @@ meta:
   related_recipes:
     - "Qwen/Qwen3.5-9B"
     - "Qwen/Qwen3.5-2B"
+  hardware:
+    xeon6: verified
 
 model:
   model_id: "Qwen/Qwen3.5-4B"
@@ -54,12 +56,15 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 10
-    description: "Full precision BF16 — fits on a single 16 GB GPU"
+    description: "Full precision BF16 — fits on a single 16 GB GPU or one Xeon 6 NUMA node"
 
 compatible_strategies:
   - single_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  cpu:
+    extra_env:
+      VLLM_CPU_KVCACHE_SPACE: "40"
 
 strategy_overrides: {}
 
@@ -74,7 +79,7 @@ guide: |
   ## Prerequisites
 
   - **vLLM version:** >= 0.17.0
-  - **Hardware:** single 16 GB GPU (RTX 4080 / L4 / A10 / T4-24GB)
+  - **Hardware:** single 16 GB GPU (RTX 4080 / L4 / A10 / T4-24GB) or one Xeon 6 NUMA node
 
   ### Install vLLM
 
@@ -84,6 +89,9 @@ guide: |
   uv pip install -U vllm --torch-backend=auto
   ```
 
+  ### pip (Intel Xeon 6 CPUs)
+  For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.
+
   ## Launching the Server
 
   ```bash
@@ -91,6 +99,23 @@ guide: |
     --max-model-len 262144 \
     --reasoning-parser qwen3
   ```
+
+  ### Intel Xeon 6 Deployment via Docker
+
+  Launch the x86 CPU vLLM Docker container for `Qwen/Qwen3.5-4B`:
+
+  ```bash
+  docker run -itd --name qwen4b-cpu \
+    --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e VLLM_CPU_KVCACHE_SPACE=40 \
+    vllm/vllm-openai-cpu:latest-x86_64 \
+      --model Qwen/Qwen3.5-4B \
+      --host 0.0.0.0 \
+      --port 8000
+  ```
+
 
   ### MTP speculative decoding
 
