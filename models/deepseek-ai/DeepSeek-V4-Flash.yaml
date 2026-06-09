@@ -262,6 +262,8 @@ guide: |
 
   ### MI355X (4×288GB)
 
+  If you want to further lower the latency, you can run with `--tensor-parallel-size 8`.
+
   ```bash
   export VLLM_ROCM_USE_AITER=1
 
@@ -286,7 +288,7 @@ guide: |
   #### MI355X is validated on GSM8K dataset:
 
   ##### Launch command
-  
+
   ```bash
   MODEL=deepseek-ai/DeepSeek-V4-Flash
   lm_eval --model local-completions \
