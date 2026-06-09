@@ -48,6 +48,14 @@ function autoFitTp(vramMinGb, perGpuVram, gpuCount) {
 export function resolveSingleNodeTp(recipe, variant, hwProfile, strategyName = "single_node_tp") {
   const gpuCount = typeof hwProfile?.gpu_count === "number" ? hwProfile.gpu_count : 1;
   if (strategyName !== "single_node_tp") return gpuCount;
+  // Variant-level override beats recipe-level. Used when a non-default variant
+  // (typically an FP8-block-quantized sibling) needs a smaller TP than the
+  // bf16 default — e.g. moe_intermediate_size=1536 demands TP ≤ 4 under FP8
+  // block_n=128, while bf16 happily runs at TP=8.
+  const variantTp = variant?.tp;
+  if (typeof variantTp === "number" && variantTp > 0) {
+    return Math.min(variantTp, gpuCount);
+  }
   const declaredTp = recipe?.strategy_overrides?.[strategyName]?.tp;
   if (typeof declaredTp === "number" && declaredTp > 0) {
     return Math.min(declaredTp, gpuCount);
@@ -154,6 +162,48 @@ export function fitsSingleNode(hwProfile, variant) {
 }
 
 /**
+ * Whether a hardware profile can scale VRAM by adding nodes. Defaults to true;
+ * single-GPU desktop workstations (e.g. DGX Station) set `scalable: false` in
+ * the taxonomy because they can't be clustered into a multi-node deployment.
+ * On non-scalable hardware VRAM becomes a hard constraint — a variant that
+ * doesn't fit one box has nowhere to grow.
+ *
+ * NB: the pre-existing `multi_node: false` on every profile is unrelated dead
+ * metadata (it's false everywhere) — don't conflate it with scalability.
+ */
+export function isHardwareScalable(hwProfile) {
+  return hwProfile?.scalable !== false;
+}
+
+/**
+ * A variant is runnable on a hardware profile when it's precision-compatible
+ * and either the hardware can scale out (multi-node supplies more VRAM) or the
+ * weights already fit single-node. Used to disable variant pills on
+ * non-scalable hardware where the variant has nowhere to shard.
+ */
+export function variantRunsOnHardware(hwProfile, variant) {
+  if (!isPrecisionCompatible(hwProfile, variant)) return false;
+  if (isHardwareScalable(hwProfile)) return true;
+  return fitsSingleNode(hwProfile, variant);
+}
+
+/**
+ * For non-scalable hardware: pick the best variant that actually runs on it —
+ * precision-compatible and single-node-fitting, preferring the
+ * largest-footprint (highest fidelity) among those that fit. Returns a variant
+ * key, or null when nothing fits. Used to auto-fall off an oversized variant
+ * (e.g. BF16 → FP8) when the user selects a single-GPU workstation.
+ */
+export function pickFittingVariant(recipe, hwProfile) {
+  const fitting = Object.entries(recipe.variants || {}).filter(
+    ([, v]) => variantRunsOnHardware(hwProfile, v)
+  );
+  if (!fitting.length) return null;
+  fitting.sort((a, b) => (b[1].vram_minimum_gb || 0) - (a[1].vram_minimum_gb || 0));
+  return fitting[0][0];
+}
+
+/**
  * Single-node PD splits the node 50/50 between prefill and decode. Each half
  * holds a full model across its TP group, so the node must fit 2× the model's
  * VRAM. Also requires at least 2 GPUs to split.
@@ -194,6 +244,249 @@ export function pickDefaultHardware(hwProfiles, variant, recipe) {
     return a[0].localeCompare(b[0]);
   });
   return compatible[0]?.[0] || "h200";
+}
+
+// Resolve the Docker image / GPU flags / brand key for the active hardware.
+// Shared by the install block (docker pull line) and the main command blocks
+// (docker run wrapping). Precedence: variant.docker_image → model.docker_image
+// → DEFAULT_IMAGE[brand].
+//
+// `docker_image` shapes:
+//   "vllm/vllm-openai:x"               (NVIDIA-only)
+//   { nvidia, amd, tpu }               (brand-keyed; each value is a string)
+//   { cu129, cu130 }                   (NVIDIA CUDA-keyed — explicit paired tags,
+//                                        auto-suffix is skipped in favor of these)
+//   { nvidia: { cu129, cu130 }, amd, tpu }  (mixed: NVIDIA value may be a CUDA map)
+//
+// When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
+// the user's `dockerCudaVariant` toggle instead of appending `-cu129`/`-cu130`.
+export function computeDockerMeta(recipe, variant, hwProfile) {
+  // When `model.nightly_required: true` and no explicit `docker_image` pin,
+  // swap the brand defaults to nightly tags so the Install block matches the
+  // nightly pip wheel that's also being rendered. vLLM publishes `:nightly`
+  // for all three brand repos. NVIDIA also publishes `cu129-nightly` /
+  // `cu130-nightly` — the CUDA suffix logic in the caller handles those.
+  const nightlyRequired = recipe.model?.nightly_required === true;
+  const DEFAULT_IMAGE = nightlyRequired
+    ? {
+        nvidia: "vllm/vllm-openai:nightly",
+        amd: "vllm/vllm-openai-rocm:nightly",
+        tpu: "vllm/vllm-tpu:nightly",
+      }
+    : {
+        nvidia: "vllm/vllm-openai:latest",
+        amd: "vllm/vllm-openai-rocm:latest",
+        tpu: "vllm/vllm-tpu:latest",
+        intel: "vllm/vllm-openai-cpu:latest-x86_64",
+      };
+  const isAmd = hwProfile?.brand === "AMD";
+  const isTpu = hwProfile?.generation === "tpu";
+  const isIntel = hwProfile?.generation === "cpu" ||hwProfile?.brand === "Intel";
+  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
+  const override = variant?.docker_image || recipe.model?.docker_image;
+
+  const isCudaMap = (v) =>
+    v && typeof v === "object" && ("cu129" in v || "cu130" in v);
+
+  let pinned = null;
+  let cudaMap = null;
+  if (typeof override === "string") {
+    if (brandKey === "nvidia") pinned = override;
+  } else if (override && typeof override === "object") {
+    const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override || "intel" in override;
+    if (isBrandKeyed) {
+      const brandValue = override[brandKey];
+      if (typeof brandValue === "string") pinned = brandValue;
+      else if (brandKey === "nvidia" && isCudaMap(brandValue)) cudaMap = brandValue;
+    } else if (brandKey === "nvidia" && isCudaMap(override)) {
+      cudaMap = override;
+    }
+  }
+
+  const image = pinned || DEFAULT_IMAGE[brandKey];
+  const gpuFlags = isTpu
+    ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
+    : isAmd
+      ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
+    : isIntel
+      ? "--shm-size=16g"	
+      : "--gpus all";
+  return { image, gpuFlags, brandKey, isAmd, isTpu, isIntel, pinned, cudaMap, nightlyRequired };
+}
+
+// argv form of the brand-specific GPU flags from computeDockerMeta. Mirrors
+// the shell-string above token-for-token so docker_command and docker_argv
+// stay consistent.
+function dockerGpuArgv(meta) {
+  if (meta.isTpu) return ["--privileged", "--network", "host", "-v", "/dev/shm:/dev/shm"];
+  if (meta.isAmd) {
+    return [
+      "--device=/dev/kfd", "--device=/dev/dri",
+      "--security-opt", "seccomp=unconfined",
+      "--group-add", "video",
+    ];
+  }
+  if (meta.isIntel) {
+    return ["--shm-size", "16g"];
+  }	
+  return ["--gpus", "all"];
+}
+
+// Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
+// image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
+// CMD. Env vars become `-e KEY=VAL` inside the container.
+export function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
+  const envFlags = Object.entries(env || {})
+    .map(([k, v]) => `-e ${k}=${v}`)
+    .join(" \\\n  ");
+  const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
+  const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
+  return `docker run ${gpuFlags} \\
+  --privileged --ipc=host -p ${port}:${port} \\
+  -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
+  ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
+}
+
+// argv companion to buildDockerRun. `argv` here is the inner command's argv —
+// `["vllm", "serve", "<model>", ...flags]` from formatArgv. Returns the full
+// docker-run argv ready to spawn without a shell.
+export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
+  const envFlags = [];
+  for (const [k, v] of Object.entries(env || {})) {
+    envFlags.push("-e", `${k}=${v}`);
+  }
+  // `vllm serve <model> <...flags>` → CMD becomes `<model> <...flags>` since
+  // the image's entrypoint is already `vllm serve`.
+  const cmdArgs = argv[0] === "vllm" && argv[1] === "serve" ? argv.slice(2) : argv;
+  return [
+    "docker", "run",
+    ...dockerGpuArgv(meta),
+    "--privileged", "--ipc=host",
+    "-p", `${port}:${port}`,
+    "-v", "~/.cache/huggingface:/root/.cache/huggingface",
+    ...envFlags,
+    meta.image,
+    ...cmdArgs,
+  ];
+}
+
+// Dedupe `--flag value` pairs by keeping only the LAST occurrence of each
+// flag. Matches shell "last wins" semantics and makes recipe/variant/
+// hardware overrides transparently shadow strategy defaults — the strategy
+// YAML sets a baseline, anything the recipe author writes later overrides
+// it without leaving stale pairs in the rendered command.
+function dedupeArgs(args) {
+  // Parse into units so (flag, value) stay together.
+  const units = [];
+  for (let i = 0; i < args.length; i++) {
+    const cur = args[i];
+    if (typeof cur === "string" && cur.startsWith("-")) {
+      const next = args[i + 1];
+      if (next !== undefined && !(typeof next === "string" && next.startsWith("-"))) {
+        units.push({ flag: cur, value: next });
+        i++;
+      } else {
+        units.push({ flag: cur });
+      }
+    } else {
+      units.push({ positional: cur });
+    }
+  }
+  // Last-wins: walk backward, mark first sighting of each flag as keep.
+  const seen = new Set();
+  const keep = new Array(units.length).fill(false);
+  for (let i = units.length - 1; i >= 0; i--) {
+    const u = units[i];
+    if (u.positional !== undefined) {
+      keep[i] = true;
+    } else if (!seen.has(u.flag)) {
+      seen.add(u.flag);
+      keep[i] = true;
+    }
+  }
+  const out = [];
+  for (let i = 0; i < units.length; i++) {
+    if (!keep[i]) continue;
+    const u = units[i];
+    if (u.positional !== undefined) out.push(u.positional);
+    else {
+      out.push(u.flag);
+      if (u.value !== undefined) out.push(u.value);
+    }
+  }
+  return out;
+}
+
+// Wrap values containing shell-special chars in single quotes so the rendered
+// command is paste-safe. Without this, JSON values like
+// `{"cudagraph_mode":"FULL_AND_PIECEWISE"}` trigger brace expansion and get
+// their double quotes stripped by bash.
+function shellQuote(s) {
+  if (typeof s !== "string" || s.length === 0) return s;
+  // Bare $VAR references must stay unquoted so bash expands them at runtime.
+  if (/^\$[A-Z_][A-Z0-9_]*$/.test(s)) return s;
+  if (/^[A-Za-z0-9_./=:@,+%-]+$/.test(s)) return s;
+  return `'${s.replace(/'/g, "'\\''")}'`;
+}
+
+/**
+ * Resolve the `vllm serve --omni` command for a vllm-omni recipe.
+ *
+ * Much simpler than the regular `resolveCommand`: no strategy logic, no
+ * multi-node, no router. Just a single online-serving process whose model id
+ * (and optionally extra args) can be swapped per omni task — e.g. Wan2.2 picks
+ * a different checkpoint for T2V vs I2V vs TI2V.
+ *
+ * `task` is the resolved entry from `resolveOmniTasks(recipe)`:
+ *   { id, modelId?, extraArgs?, ... }
+ *
+ * Outliers:
+ *   - `recipe.omni.serve_binary: "vllm-omni serve"` swaps the binary (today's
+ *     only user is stable-audio-open, whose handler doesn't ship in `vllm`).
+ *   - `recipe.omni.port` overrides the rendered `--port` flag (default 8000).
+ */
+export function resolveOmniCommand(recipe, variantKey, task, hwProfile) {
+  const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
+  const modelId = task?.modelId || variant.model_id || recipe.model?.model_id || "unknown";
+  const gen = normalizeGeneration(hwProfile?.generation || hwProfile?.gpu_generation);
+  const isNvidia = hwProfile?.brand === "NVIDIA";
+
+  const env = {};
+  Object.assign(env, recipe.model?.base_env || {});
+  if (variantKey !== "default" && variant.extra_env) Object.assign(env, variant.extra_env);
+  const ho = recipe.hardware_overrides?.[gen]
+    || (isNvidia ? recipe.hardware_overrides?.nvidia : null);
+  if (ho?.extra_env) Object.assign(env, ho.extra_env);
+
+  const args = [];
+  if (recipe.model?.base_args) args.push(...recipe.model.base_args);
+  if (variantKey !== "default" && variant.extra_args) args.push(...variant.extra_args);
+  if (task?.extraArgs?.length) args.push(...task.extraArgs);
+  if (ho?.extra_args) args.push(...ho.extra_args);
+  // --omni is the toggle that puts vllm into omni-handler mode. Always emit it
+  // last — dedupeArgs's last-wins rule keeps it idempotent if the recipe also
+  // declares it in base_args.
+  args.push("--omni");
+
+  const serveBinary = recipe.omni?.serve_binary || "vllm serve";
+
+  const filtered = dedupeArgs(args.filter(Boolean));
+  const lines = [];
+  for (let i = 0; i < filtered.length; i++) {
+    const cur = filtered[i];
+    const next = filtered[i + 1];
+    if (cur.startsWith("-") && next !== undefined && !next.startsWith("-")) {
+      lines.push(`${cur} ${shellQuote(next)}`);
+      i++;
+    } else {
+      lines.push(cur);
+    }
+  }
+  const command = lines.length === 0
+    ? `${serveBinary} ${modelId}`
+    : `${serveBinary} ${modelId} \\\n  ${lines.join(" \\\n  ")}`;
+
+  return { command, env, modelId };
 }
 
 /**
@@ -458,6 +751,13 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         // Dedicated node(s) — each node owns all its local GPUs. Same value
         // is correct whether the pool is DEP (vllm spawns local ranks) or TP.
         env.CUDA_VISIBLE_DEVICES = Array.from({ length: gpuCount }, (_, i) => i).join(",");
+        // Cross-node NCCL/GLOO for this role only kicks in when the role
+        // spans 2+ nodes. Single-node roles use NIXL for cross-role transfer
+        // and don't need socket-iface hints.
+        if (rolePoolNodes >= 2) {
+          env.GLOO_SOCKET_IFNAME = "$IFACE_NAME";
+          env.NCCL_SOCKET_IFNAME = "$IFACE_NAME";
+        }
       } else {
         // Co-located demo: first half for prefill, second half for decode.
         const half = Math.floor(gpuCount / 2);
@@ -522,63 +822,6 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     return env;
   }
 
-  // Dedupe `--flag value` pairs by keeping only the LAST occurrence of each
-  // flag. Matches shell "last wins" semantics and makes recipe/variant/
-  // hardware overrides transparently shadow strategy defaults — the strategy
-  // YAML sets a baseline, anything the recipe author writes later overrides
-  // it without leaving stale pairs in the rendered command.
-  function dedupeArgs(args) {
-    // Parse into units so (flag, value) stay together.
-    const units = [];
-    for (let i = 0; i < args.length; i++) {
-      const cur = args[i];
-      if (typeof cur === "string" && cur.startsWith("-")) {
-        const next = args[i + 1];
-        if (next !== undefined && !(typeof next === "string" && next.startsWith("-"))) {
-          units.push({ flag: cur, value: next });
-          i++;
-        } else {
-          units.push({ flag: cur });
-        }
-      } else {
-        units.push({ positional: cur });
-      }
-    }
-    // Last-wins: walk backward, mark first sighting of each flag as keep.
-    const seen = new Set();
-    const keep = new Array(units.length).fill(false);
-    for (let i = units.length - 1; i >= 0; i--) {
-      const u = units[i];
-      if (u.positional !== undefined) {
-        keep[i] = true;
-      } else if (!seen.has(u.flag)) {
-        seen.add(u.flag);
-        keep[i] = true;
-      }
-    }
-    const out = [];
-    for (let i = 0; i < units.length; i++) {
-      if (!keep[i]) continue;
-      const u = units[i];
-      if (u.positional !== undefined) out.push(u.positional);
-      else {
-        out.push(u.flag);
-        if (u.value !== undefined) out.push(u.value);
-      }
-    }
-    return out;
-  }
-
-  // Wrap values containing shell-special chars in single quotes so the rendered
-  // command is paste-safe. Without this, JSON values like
-  // `{"cudagraph_mode":"FULL_AND_PIECEWISE"}` trigger brace expansion and get
-  // their double quotes stripped by bash.
-  function shellQuote(s) {
-    if (typeof s !== "string" || s.length === 0) return s;
-    if (/^[A-Za-z0-9_./=:@,+%-]+$/.test(s)) return s;
-    return `'${s.replace(/'/g, "'\\''")}'`;
-  }
-
   function formatCommand(args) {
     const filtered = dedupeArgs(args.filter(Boolean));
     if (filtered.length === 0) return `vllm serve ${modelId}`;
@@ -597,6 +840,14 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       }
     }
     return `vllm serve ${modelId} \\\n  ${lines.join(" \\\n  ")}`;
+  }
+
+  // Companion to formatCommand: returns the deduped flat argv (no shell
+  // quoting, no line continuations) so JSON consumers can spawn vllm without
+  // going through a shell. ["vllm", "serve", "<model>", ...flags].
+  function formatArgv(args) {
+    const filtered = dedupeArgs(args.filter(Boolean));
+    return ["vllm", "serve", modelId, ...filtered];
   }
 
   const deployType = strategy.deploy_type || "single_node";
@@ -670,16 +921,20 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     ];
     const routerCommand = routerLines.join("\n");
 
+    const prefillArgs = buildArgs("prefill", null);
+    const decodeArgs = buildArgs("decode", null);
     return {
       deployType,
       nodeCount,
       prefill: {
-        command: formatCommand(buildArgs("prefill", null)),
+        command: formatCommand(prefillArgs),
+        argv: formatArgv(prefillArgs),
         env: buildEnv("prefill"),
         ...pMeta,
       },
       decode: {
-        command: formatCommand(buildArgs("decode", null)),
+        command: formatCommand(decodeArgs),
+        argv: formatArgv(decodeArgs),
         env: buildEnv("decode"),
         ...dMeta,
       },
@@ -694,18 +949,24 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   if (deployType === "multi_node" && nodeCount > 1) {
     // Every multi-node strategy renders the same shape: head + worker tabs.
     // Workers use --headless (TP/TEP) or --data-parallel-start-rank offset (DEP).
+    const headArgs = buildArgs(null, "head");
+    const workerArgs = buildArgs(null, "worker");
     return {
       deployType: "multi_node",
       nodeCount,
-      headCommand: formatCommand(buildArgs(null, "head")),
-      workerCommand: formatCommand(buildArgs(null, "worker")),
+      headCommand: formatCommand(headArgs),
+      workerCommand: formatCommand(workerArgs),
+      headArgv: formatArgv(headArgs),
+      workerArgv: formatArgv(workerArgs),
       env: buildEnv(null),
     };
   }
 
+  const singleArgs = buildArgs(null, null);
   return {
     deployType,
-    command: formatCommand(buildArgs(null, null)),
+    command: formatCommand(singleArgs),
+    argv: formatArgv(singleArgs),
     env: buildEnv(null),
   };
 }

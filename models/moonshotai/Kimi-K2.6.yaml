@@ -3,7 +3,7 @@ meta:
   slug: "kimi-k2.6"
   provider: "Moonshot AI"
   description: "Open-source native multimodal agentic MoE model with vision-language understanding, tool calling, and thinking modes"
-  date_updated: 2026-04-20
+  date_updated: 2026-05-14
   difficulty: intermediate
   tasks:
     - multimodal
@@ -66,6 +66,16 @@ variants:
     precision: int4
     vram_minimum_gb: 714
     description: "Packed INT4 via compressed-tensors (~595 GB on disk); fits 8×H200"
+  nvfp4:
+    model_id: "nvidia/Kimi-K2.6-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 600
+    description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs (e.g. GB200)"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+    extra_env:
+      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
 compatible_strategies:
   - single_node_tp
@@ -198,6 +208,7 @@ guide: |
   ## References
 
   - [Kimi-K2.6 on Hugging Face](https://huggingface.co/moonshotai/Kimi-K2.6)
+  - [NVIDIA Kimi-K2.6-NVFP4 on Hugging Face](https://huggingface.co/nvidia/Kimi-K2.6-NVFP4)
   - [vLLM multimodal inputs guide](https://docs.vllm.ai/en/latest/features/multimodal_inputs.html)
   - [vLLM Expert Parallelism docs](https://docs.vllm.ai/en/latest/serving/expert_parallel_deployment.html)
   - [vLLM NixlConnector usage guide](https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html)

@@ -16,7 +16,6 @@ meta:
 model:
   model_id: "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16"
   min_vllm_version: "0.11.2"
-  docker_image: "vllm/vllm-openai:v0.12.0"
   architecture: moe
   parameter_count: "30B"
   active_parameters: "3B"

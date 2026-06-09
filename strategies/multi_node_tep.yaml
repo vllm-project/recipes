@@ -18,4 +18,6 @@ vllm_args:
 
 parallel_flag: "--tensor-parallel-size"
 
-env: {}
+env:
+  GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+  NCCL_SOCKET_IFNAME: "$IFACE_NAME"

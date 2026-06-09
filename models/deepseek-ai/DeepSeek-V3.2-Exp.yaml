@@ -31,9 +31,19 @@ dependencies:
     command: "uv pip install git+https://github.com/deepseek-ai/DeepGEMM.git@v2.1.1.post3 --no-build-isolation"
 
 features:
+  tool_calling:
+    description: "Enable tool calling with DeepSeek V3.2 chat template support."
+    args:
+      - "--tokenizer-mode"
+      - "deepseek_v32"
+      - "--tool-call-parser"
+      - "deepseek_v32"
+      - "--enable-auto-tool-choice"
   reasoning:
     description: "Dynamic thinking mode via chat_template_kwargs, same as DeepSeek-V3.1."
-    args: []
+    args:
+      - "--reasoning-parser"
+      - "deepseek_v3"
 
 opt_in_features: []
 

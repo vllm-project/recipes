@@ -1,6 +1,7 @@
 name: pd_cluster
 deploy_type: pd_cluster
 display_name: "Prefill/Decode Disaggregation"
+orientation: production
 description: >
   Disaggregated prefill/decode cluster. Splits inference into separate
   prefill and decode workers communicating via NIXL KV cache transfer.
@@ -22,7 +23,6 @@ prefill:
     - "--kv-transfer-config"
     - '{"kv_connector":"NixlConnector","kv_role":"kv_producer","kv_load_failure_policy":"fail"}'
     - "--enforce-eager"
-    - "--no-async-scheduling"
   env:
     VLLM_USE_NCCL_SYMM_MEM: "1"
     NCCL_CUMEM_ENABLE: "1"
@@ -44,11 +44,6 @@ decode:
     - "--compilation-config"
     - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
   env:
-    VLLM_USE_NCCL_SYMM_MEM: "1"
-    NCCL_CUMEM_ENABLE: "1"
-    NCCL_MNNVL_ENABLE: "1"
-    NCCL_NVLS_ENABLE: "1"
-    UCX_NET_DEVICES: "all"
     VLLM_NIXL_SIDE_CHANNEL_PORT: "5558"
     # Same per-node binding pattern as prefill above.
     VLLM_NIXL_SIDE_CHANNEL_HOST: "$DECODE_NODE_1"

@@ -2,8 +2,8 @@ meta:
   title: "Qwen3.6-35B-A3B"
   slug: "qwen3.6-35b-a3b"
   provider: "Qwen"
-  description: "Smaller Qwen3.6 multimodal MoE model (35B total / 3B active) with 256 experts (8 routed + 1 shared), gated delta networks architecture, and 262K context"
-  date_updated: 2026-04-18
+  description: "Smaller Qwen3.6 multimodal MoE model (35B total / 3B active) with BF16, FP8, and NVIDIA NVFP4 variants"
+  date_updated: 2026-06-03
   difficulty: beginner
   tasks:
     - multimodal
@@ -12,6 +12,7 @@ meta:
   related_recipes:
     - "Qwen/Qwen3.5-397B-A17B"
   hardware:
+    dgx_spark_gb10:
     h100: verified
     h200: verified
     mi300x: verified
@@ -70,6 +71,34 @@ variants:
     precision: fp8
     vram_minimum_gb: 42
     description: "Qwen official FP8 checkpoint — single-GPU serving"
+  nvfp4:
+    model_id: "nvidia/Qwen3.6-35B-A3B-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 21
+    tp: 1
+    description: "NVIDIA ModelOpt NVFP4 checkpoint for Blackwell GPUs, including DGX Spark"
+    extra_args:
+      - "--quantization"
+      - "modelopt"
+      - "--kv-cache-dtype"
+      - "fp8"
+      - "--attention-backend"
+      - "flashinfer"
+      - "--moe-backend"
+      - "marlin"
+      - "--gpu-memory-utilization"
+      - "0.85"
+      - "--max-model-len"
+      - "65536"
+      - "--max-num-seqs"
+      - "4"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--speculative-config"
+      - '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+    extra_env:
+      VLLM_FP8_MOE_BACKEND: "flashinfer_cutlass"
+      FLASHINFER_DISABLE_VERSION_CHECK: "1"
 
 compatible_strategies:
   - single_node_tp
@@ -93,14 +122,16 @@ guide: |
 
   [Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) is the smaller sibling
   of Qwen3.5, sharing the same gated-delta-networks MoE architecture but with 35B total
-  parameters and 3B activated (256 experts, 8 routed + 1 shared). With FP8 weights it
-  fits comfortably on a single 80 GB GPU and supports the full 262K context.
+  parameters and 3B activated (256 experts, 8 routed + 1 shared). The recipe covers the
+  BF16 base model, Qwen's official FP8 checkpoint, and NVIDIA's ModelOpt NVFP4
+  checkpoint.
 
   ## Prerequisites
 
   - **vLLM version:** >= 0.17.0
   - **Hardware (BF16):** 1x H200 or 2x H100
   - **Hardware (FP8):** single H100/H200 or 1x MI300X/MI325X/MI355X
+  - **Hardware (NVFP4):** NVIDIA Blackwell GPUs, including DGX Spark (GB10)
 
   ### Install vLLM
 
@@ -148,6 +179,40 @@ guide: |
     --trust-remote-code
   ```
 
+  ### DGX Spark NVFP4
+
+  The NVIDIA ModelOpt NVFP4 checkpoint is served from
+  [`nvidia/Qwen3.6-35B-A3B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-NVFP4)
+  and requires vLLM nightly or a source build with ModelOpt W4A16/NVFP4 support.
+
+  ```bash
+  export VLLM_FP8_MOE_BACKEND=flashinfer_cutlass
+  export FLASHINFER_DISABLE_VERSION_CHECK=1
+  export CUTE_DSL_ARCH=sm_121a
+  ```
+
+  ```bash
+  vllm serve nvidia/Qwen3.6-35B-A3B-NVFP4 \
+    --trust-remote-code \
+    --dtype auto \
+    --quantization modelopt \
+    --kv-cache-dtype fp8 \
+    --attention-backend flashinfer \
+    --moe-backend marlin \
+    --gpu-memory-utilization 0.85 \
+    --max-model-len 65536 \
+    --max-num-seqs 4 \
+    --max-num-batched-tokens 8192 \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+  ```
+
+  The Spark serving shape intentionally caps context and concurrency with
+  `--max-model-len 65536`, `--max-num-seqs 4`, and
+  `--max-num-batched-tokens 8192`. Optional throughput knobs such as
+  `--async-scheduling` can be added after profiling. On vLLM V1/nightly, prefix
+  caching and chunked prefill are enabled by default when supported, so this
+  recipe does not pass them explicitly.
+
   ## Processing Ultra-Long Texts
 
   Qwen3.6-35B-A3B natively supports `262,144` tokens. For longer inputs, apply
@@ -190,4 +255,5 @@ guide: |
 
   - [Qwen3.6-35B-A3B on Hugging Face](https://huggingface.co/Qwen/Qwen3.6-35B-A3B)
   - [FP8 checkpoint](https://huggingface.co/Qwen/Qwen3.6-35B-A3B-FP8)
+  - [NVIDIA NVFP4 checkpoint](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-NVFP4)
   - [Qwen3.5 recipe (sibling 397B-A17B flagship)](../Qwen3.5-397B-A17B)

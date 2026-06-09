@@ -6,8 +6,11 @@ import { recipeHref } from "@/lib/recipe-utils";
 import { siteUrl } from "@/lib/site-url";
 import { loadStrategies } from "@/lib/strategies";
 import { loadTaxonomy } from "@/lib/taxonomy";
+import { resolveRecipePlatforms } from "@/lib/platforms";
 import { getProviderLogo, getProviderLogoClass } from "@/lib/providers";
 import { CommandBuilder } from "@/components/recipes/CommandBuilder";
+import { DeployDialog } from "@/components/recipes/DeployDialog";
+import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
@@ -80,6 +83,11 @@ export default async function RecipePage({ params }) {
   const guide = recipe.guide || "";
   const logo = getProviderLogo(recipe.hf_org);
 
+  // Per-recipe platform opt-in. Each entry is either a bare id ("modal") or
+  // an object with overrides ({ id: "modal", install, url, blurb }) for
+  // recipes that ship their own deploy script.
+  const enabledPlatforms = resolveRecipePlatforms(recipe.meta?.platforms);
+
   const allRecipes = getAllRecipes();
   // related_recipes can be either "org/repo" HF id or the old slug format
   const related = (recipe.meta.related_recipes || [])
@@ -134,15 +142,21 @@ export default async function RecipePage({ params }) {
               {recipe.hf_repo}
             </h1>
             <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{recipe.meta.description}</p>
-            <a
-              href={`https://huggingface.co/${recipe.hf_id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-vllm-blue transition-colors mt-2"
-            >
-              View on HuggingFace
-              <ExternalLink size={10} />
-            </a>
+            {recipe.meta.performance_headline && (
+              <p className="text-xs text-muted-foreground/70 italic mt-1 leading-snug">{recipe.meta.performance_headline}</p>
+            )}
+            <div className="flex items-center gap-4 mt-2">
+              <a
+                href={`https://huggingface.co/${recipe.hf_id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-vllm-blue transition-colors"
+              >
+                <HuggingFaceIcon className="w-3.5 h-3.5" />
+                View on HuggingFace
+                <ExternalLink size={10} />
+              </a>
+            </div>
           </div>
         </div>
 
@@ -169,6 +183,19 @@ export default async function RecipePage({ params }) {
             vLLM {recipe.model.min_vllm_version}+
             <ExternalLink size={10} className="ml-1 opacity-50" />
           </a>
+          {recipe.meta.tasks?.includes("omni") && (
+            <a
+              href="https://github.com/vllm-project/vllm-omni"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="vLLM-Omni serves the generation (omni) path — nightly wheels"
+              className="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap transition-colors hover:border-vllm-blue/50 hover:text-vllm-blue"
+            >
+              vLLM-Omni
+              <span className="ml-1 text-vllm-yellow">nightly</span>
+              <ExternalLink size={10} className="ml-1 opacity-50" />
+            </a>
+          )}
           {recipe.meta.tasks?.map((t) => (
             <Badge key={t} variant="secondary" className="text-xs capitalize">{t}</Badge>
           ))}
@@ -214,6 +241,7 @@ export default async function RecipePage({ params }) {
         >
           <Bug size={12} /> Report issue
         </a>
+        <DeployDialog platforms={enabledPlatforms} hfId={recipe.hf_id} />
         {related.length > 0 && (
           <span className="basis-full mt-1">
             Related:{" "}

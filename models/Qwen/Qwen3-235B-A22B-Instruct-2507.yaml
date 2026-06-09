@@ -45,6 +45,8 @@ variants:
     model_id: "Qwen/Qwen3-235B-A22B-FP8"
     precision: fp8
     vram_minimum_gb: 240
+    # FP8 block_n=128 + moe_intermediate_size=1536 → TP must divide 12; cap at 4.
+    tp: 4
     description: "Qwen official FP8 checkpoint for improved efficiency on SM90+"
   nvfp4:
     model_id: "nvidia/Qwen3-235B-A22B-Instruct-2507-NVFP4"

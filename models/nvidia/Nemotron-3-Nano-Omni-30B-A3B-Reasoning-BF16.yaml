@@ -19,9 +19,6 @@ meta:
 model:
   model_id: "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16"
   min_vllm_version: "0.20.0"
-  docker_image:
-    cu129: "vllm/vllm-openai:v0.20.0-cu129"
-    cu130: "vllm/vllm-openai:v0.20.0"
   install:
     pip:
       command: 'uv pip install "vllm[audio]==0.20.0"'
