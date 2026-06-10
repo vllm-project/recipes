@@ -2,14 +2,18 @@ meta:
   title: "MiniMax-M3"
   slug: "minimax-m3"
   provider: "MiniMax"
-  description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 checkpoint with an MXFP8 variant from NVIDIA"
-  date_updated: 2026-06-05
+  description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 checkpoint with an MXFP8 variant from NVIDIA. Runs on NVIDIA (Hopper/Blackwell) and on AMD CDNA4 (MI350X/MI355X) and CDNA3 (MI300X/MI325X)."
+  date_updated: 2026-06-08
   difficulty: advanced
   tasks:
     - text
     - multimodal
   performance_headline: "Frontier coding and agent (SWE-Bench Pro 59.0, Terminal-Bench 2.1 66.0); MSA sparse attention; 1M context"
   related_recipes: []
+  hardware:
+    h200: verified
+    mi300x: verified
+    mi355x: verified
 
 model:
   model_id: "MiniMaxAI/MiniMax-M3"
@@ -43,23 +47,22 @@ features:
       - "--reasoning-parser"
       - "minimax_m3"
 
-opt_in_features: []
-
 variants:
   default:
     precision: bf16
     # 427B × 2 bytes (BF16) + 46M × 4 (F32 norms), × 1.2 headroom ≈ 1025 GB.
     # 8x H200/H20 (1128 GB) is a tight fit; multi-node TP recommended for
-    # KV-cache headroom at long context.
+    # KV-cache headroom at long context. 
+    # On AMD, 8x MI350X/MI355X fits comfortably.
     vram_minimum_gb: 1025
     description: "Native BF16 checkpoint — multi-node TP recommended for long-context headroom"
   mxfp8:
     model_id: "MiniMaxAI/MiniMax-M3-MXFP8"
     precision: mxfp8
     # 427B × 1 byte (MXFP8) + F32 norms, × 1.2 ≈ 513 GB → fits 8x H200/H20
-    # comfortably, ~4 GPUs for weights alone on Blackwell (B200/B300).
+    # comfortably, ~4 GPUs for weights alone on Blackwell (B200/B300) or AMD MI350X/MI355X (gfx950)).
     vram_minimum_gb: 513
-    description: "NVIDIA-quantized MXFP8 weights for Blackwell GPUs"
+    description: "NVIDIA-quantized MXFP8 weights — Blackwell (B200/B300) for native MX tensor cores, and AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 Matrix Cores."
 
 compatible_strategies:
   - single_node_tp
@@ -70,6 +73,18 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
   - pd_cluster
+
+hardware_overrides:
+  amd:
+    # ROCm MI3xx: keep sparse attention on Triton and run the vision encoder
+    # data-parallel with AITER FlashAttention.
+    extra_args:
+      - "--attention-backend"
+      - "TRITON_ATTN"
+      - "--mm-encoder-tp-mode"
+      - "data"
+      - "--mm-encoder-attn-backend"
+      - "ROCM_AITER_FA"
 
 guide: |
   ## Overview
@@ -95,6 +110,9 @@ guide: |
   - **Python:** 3.10 - 3.13
   - **NVIDIA:** compute capability >= 9.0 (Hopper) recommended; 8x H200 / H20
     for a tight single-node BF16 fit, or multi-node TP for long-context headroom
+  - **AMD:** MI350X/MI355X (gfx950), MI300X/MI325X (gfx942), ROCm 7.2+. BF16
+    needs TP=8; the MXFP8 variant runs from TP=4.
+  - **`--block-size 128` is mandatory on every platform** (MSA sparse/index cache).
 
   ### Install vLLM (NVIDIA)
 
@@ -102,6 +120,16 @@ guide: |
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend auto
+  ```
+
+  ### Docker (AMD ROCm)
+
+  ```bash
+  docker run --rm -it --device /dev/kfd --device /dev/dri --group-add video \
+    --cap-add SYS_PTRACE --security-opt seccomp=unconfined --ipc=host \
+    --shm-size=16g -p 8000:8000 \
+    --entrypoint /bin/bash \
+    $AMD_DOCKER_IMAGE
   ```
 
   ## Launching the Server
@@ -143,6 +171,12 @@ guide: |
     --reasoning-parser minimax_m3 \
     --enable-auto-tool-choice
   ```
+
+  ### AMD ROCm (MI350X/MI355X (gfx950), MI300X/MI325X (gfx942))
+
+  For gfx950: Prefer using the MXFP8 variant `MiniMaxAI/MiniMax-M3-MXFP8` for TP=4 and a smaller
+  footprint. Use TP=8 for lower latency or long context length, or the default bf16 model.
+  
 
   ## Client Usage
 
@@ -240,17 +274,19 @@ guide: |
     --enable-auto-tool-choice
   ```
 
-  Blackwell (B200/B300) is preferred for native MX tensor-core throughput.
+  For best MXFP8 throughput, prefer Blackwell (B200/B300) for native MX tensor cores,
+  or AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 matrix cores.
 
   ## Troubleshooting
 
   - **`--block-size` mismatch.** MSA's sparse block size is 128; the vLLM KV
     cache block size must match. Using the default (16) misaligns the sparse
-    attention indexing.
+    attention indexing (on AMD it crashes with `No common block size for 16`).
   - **Parsers.** `--tool-call-parser` and `--reasoning-parser` both use
     `minimax_m3` — distinct from `minimax_m2` used by earlier releases.
   - **Long context KV cache.** The advertised 1M window grows KV memory
     linearly. Watch headroom at long context; move to multi-node TP if you OOM.
+ 
 
   ## References
 
