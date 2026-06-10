@@ -3,7 +3,7 @@ meta:
   slug: "deepseek-v4-flash"
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
-  date_updated: 2026-05-28
+  date_updated: 2026-05-01
   difficulty: hard
   tasks:
     - text
@@ -18,11 +18,13 @@ meta:
     dgx_station_gb300: verified
     mi300x: unsupported
     mi325x: unsupported
-    mi355x: unsupported
+    mi355x: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V4-Flash"
   min_vllm_version: "0.20.0"
+  docker_image:
+    amd: "vllm/vllm-openai-rocm:nightly"
   architecture: moe
   parameter_count: "284B"
   active_parameters: "13B"
@@ -91,6 +93,20 @@ hardware_overrides:
       - "--attention_config.use_fp4_indexer_cache=True"
       - "--moe-backend"
       - "deep_gemm_mega_moe"
+  amd:
+    extra_args:
+      - "--distributed-executor-backend"
+      - "mp"
+      - "--gpu-memory-utilization"
+      - "0.9"
+      - "--max-num-seqs"
+      - "512"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--compilation-config"
+      - '{"mode": 3, "cudagraph_mode": "FULL_DECODE_ONLY"}'
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
 
 strategy_overrides:
   single_node_tp:
@@ -98,15 +114,17 @@ strategy_overrides:
     # strategy doesn't add --enable-expert-parallel) and no MoE mega-kernel
     # backend on Blackwell. Autotune is disabled to minimize startup time.
     tp: 8
-    extra_args:
-      - "--no-enable-flashinfer-autotune"
     hardware_overrides:
+      hopper:
+        extra_args:
+          - "--no-enable-flashinfer-autotune"
       blackwell:
         # Replaces recipe-level blackwell override: keeps the FP4 indexer cache
         # but drops --moe-backend deep_gemm_mega_moe (TP-only path uses the
         # default MoE backend).
         extra_args:
           - "--attention_config.use_fp4_indexer_cache=True"
+          - "--no-enable-flashinfer-autotune"
   single_node_dep:
     # Force DP=4 on all hardware (fills GB200's 4-GPU tray; on 8-GPU nodes use
     # half the GPUs per replica). dedupeArgs (last-wins) shadows the default
@@ -242,6 +260,55 @@ guide: |
     --enable-auto-tool-choice --reasoning-parser deepseek_v4 \
     --max-cudagraph-capture-size 128 \
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
+  ```
+
+  ### MI355X (4×288GB)
+
+  If you want to further lower the latency, you can run with `--tensor-parallel-size 8`.
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+
+  vllm serve deepseek-ai/DeepSeek-V4-Flash \
+    --host localhost \
+    --port 8001 \
+    --dtype auto \
+    --kv-cache-dtype fp8 \
+    --tensor-parallel-size 4 \
+    --max-num-seqs 512 \
+    --max-num-batched-tokens 8192 \
+    --distributed-executor-backend mp \
+    --trust-remote-code \
+    --gpu-memory-utilization 0.9 \
+    --tokenizer-mode deepseek_v4 \
+    --reasoning-parser deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --compilation-config '{"mode": 3, "cudagraph_mode": "FULL_DECODE_ONLY"}'
+  ```
+
+  #### MI355X is validated on GSM8K dataset:
+
+  ##### Launch command
+
+  ```bash
+  MODEL=deepseek-ai/DeepSeek-V4-Flash
+  lm_eval --model local-completions \
+    --model_args model=$MODEL,base_url=http://0.0.0.0:8001/v1/completions,num_concurrent=128,max_retries=10,max_gen_toks=2048,timeout=60000 \
+    --batch_size auto \
+    --tasks gsm8k \
+    --num_fewshot 8 \
+    --output_path . 2>&1 | tee -a eval.log
+  ```
+
+  ##### Reported result
+
+  ```text
+  local-completions ({'model': 'deepseek-ai/DeepSeek-V4-Flash', 'base_url': 'http://0.0.0.0:8001/v1/completions', 'num_concurrent': 128, 'max_retries': 10, 'max_gen_toks': 2048, 'timeout': 60000}), gen_kwargs: ({}), limit: None, num_fewshot: 8, batch_size: auto
+  |Tasks|Version|     Filter     |n-shot|  Metric   |   |Value |   |Stderr|
+  |-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
+  |gsm8k|      3|flexible-extract|     8|exact_match|↑  |0.9439|±  |0.0063|
+  |     |       |strict-match    |     8|exact_match|↑  |0.9431|±  |0.0064|
   ```
 
   ### H200 Single-Node PD (Mooncake)
