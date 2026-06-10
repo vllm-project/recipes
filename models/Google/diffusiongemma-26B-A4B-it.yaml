@@ -1,0 +1,224 @@
+meta:
+  title: "DiffusionGemma 26B-A4B IT"
+  slug: "diffusiongemma-26b-a4b-it"
+  provider: "Google"
+  description: "Google's DiffusionGemma — a block-diffusion language model built on Gemma 4's MoE backbone (26B total / 4B active). Generates tokens via iterative denoising over a fixed-length canvas rather than left-to-right autoregressive decoding, enabling higher throughput with parallel block generation."
+  date_updated: 2026-06-10
+  difficulty: advanced
+  tasks:
+    - multimodal
+    - text
+  performance_headline: "Block-diffusion MoE — 26B total / 4B active, canvas-based parallel generation with ~1.9x throughput vs autoregressive baseline"
+  related_recipes:
+    - google/gemma-4-26B-A4B-it
+    - google/gemma-4-31B-it
+  hardware:
+    h100: verified
+    h200: verified
+
+model:
+  model_id: "google/diffusiongemma-26B-A4B-it"
+  min_vllm_version: "nightly"
+  nightly_required: true
+  architecture: moe
+  parameter_count: "26B"
+  active_parameters: "4B"
+  context_length: 262144
+  base_args:
+    - "--max-num-seqs"
+    - "4"
+    - "--generation-config"
+    - "vllm"
+    - "--hf-overrides"
+    - '{"diffusion_sampler": "entropy_bound", "diffusion_entropy_bound": 0.1}'
+    - "--diffusion-config"
+    - '{"canvas_length": 256}'
+  base_env: {}
+
+dependencies: []
+
+features:
+  tool_calling:
+    description: "Enable automatic tool choice with Gemma 4 parser and chat template"
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "gemma4"
+      - "--chat-template"
+      - "examples/tool_chat_template_gemma4.jinja"
+  reasoning:
+    description: "Enable structured thinking/reasoning output"
+    args:
+      - "--reasoning-parser"
+      - "gemma4"
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 64
+    description: "Full BF16 — single 80 GB NVIDIA GPU (H100/H200). Requires --max-num-seqs 4 to avoid OOM from diffusion state buffers."
+
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides: {}
+
+strategy_overrides:
+  single_node_tp:
+    tp: 1
+
+guide: |
+  ## Overview
+
+  [DiffusionGemma 26B-A4B](https://huggingface.co/google/diffusiongemma-26B-A4B-it) is a block-diffusion language model built on Gemma 4's MoE backbone. Instead of generating tokens one at a time (autoregressive), it generates blocks of 256 tokens simultaneously via iterative denoising over a fixed canvas — trading higher time-to-first-token for significantly higher per-request generation throughput.
+
+  ### Key Architecture Features
+  - **Block Diffusion**: Generates tokens in 256-token canvas blocks via iterative denoising (up to 48 steps per block).
+  - **MoE Backbone**: Same Gemma 4 architecture — 128 fine-grained experts with top-8 routing, 26B total / 4B active parameters.
+  - **Entropy-Bound Sampling**: Uses an entropy-based sampler (`diffusion_sampler: entropy_bound`, `entropy_bound: 0.1`) for the denoising process.
+  - **Multimodal**: Supports text + images via the Gemma 4 vision encoder.
+  - **Thinking Mode**: Supports structured reasoning via `<|channel>thought\n...<channel|>` delimiters.
+  - **Function Calling**: Supports Gemma 4's tool-call protocol (works best in thinking mode).
+
+  ### Important Deployment Notes
+
+  DiffusionGemma requires several specific flags that differ from standard Gemma 4:
+
+  | Flag | Why |
+  |------|-----|
+  | `--max-num-seqs 4` | The diffusion state buffers (`self_conditioning_probs`) pre-allocate `max_seqs × canvas_length × vocab_size` tensors. With Gemma's 262K vocab and canvas_length=256, higher values cause OOM. |
+  | `--generation-config vllm` | The checkpoint's `generation_config.json` sets `max_tokens: 256`, which would override per-request limits. This flag ignores it. |
+  | `--gpu-memory-utilization 0.85` | Leaves headroom for activation memory during denoising. |
+  | `--hf-overrides '{"diffusion_sampler":"entropy_bound","diffusion_entropy_bound":0.1}'` | Configures the entropy-bound denoising sampler. |
+  | `--diffusion-config '{"canvas_length": 256}'` | Sets the canvas block size for generation. |
+
+  ## Prerequisites
+
+  DiffusionGemma requires a vLLM build with diffusion model support. Install from the development branch:
+
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install -U vllm --pre \
+    --extra-index-url https://wheels.vllm.ai/nightly/cu129 \
+    --extra-index-url https://download.pytorch.org/whl/cu129 \
+    --index-strategy unsafe-best-match
+  ```
+
+  ## Deployment
+
+  ### Single GPU (H100/H200, BF16)
+
+  ```bash
+  vllm serve google/diffusiongemma-26B-A4B-it \
+    --max-model-len 262144 \
+    --max-num-seqs 4 \
+    --gpu-memory-utilization 0.85 \
+    --generation-config vllm \
+    --hf-overrides '{"diffusion_sampler": "entropy_bound", "diffusion_entropy_bound": 0.1}' \
+    --diffusion-config '{"canvas_length": 256}' \
+    --enable-chunked-prefill
+  ```
+
+  ### Full-Featured Server (text + image + thinking + tools)
+
+  ```bash
+  vllm serve google/diffusiongemma-26B-A4B-it \
+    --max-model-len 262144 \
+    --max-num-seqs 4 \
+    --gpu-memory-utilization 0.85 \
+    --generation-config vllm \
+    --hf-overrides '{"vision_config": {"default_output_length": 1120}, "vision_soft_tokens_per_image": 1120, "diffusion_sampler": "entropy_bound", "diffusion_entropy_bound": 0.1}' \
+    --mm-processor-kwargs '{"max_soft_tokens": 1120}' \
+    --limit-mm-per-prompt '{"image": 7}' \
+    --diffusion-config '{"canvas_length": 256}' \
+    --enable-chunked-prefill \
+    --enable-auto-tool-choice \
+    --tool-call-parser gemma4 \
+    --reasoning-parser gemma4
+  ```
+
+  ## Client Usage
+
+  ### Text Generation
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+  response = client.chat.completions.create(
+      model="google/diffusiongemma-26B-A4B-it",
+      messages=[{"role": "user", "content": "Write a poem about the ocean."}],
+      max_tokens=512,
+      temperature=0.7,
+  )
+  print(response.choices[0].message.content)
+  ```
+
+  ### Offline Inference
+
+  ```python
+  from vllm import LLM, SamplingParams
+  from transformers import AutoTokenizer
+
+  model_path = "google/diffusiongemma-26B-A4B-it"
+  tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+  llm = LLM(
+      model=model_path,
+      max_num_seqs=4,
+      gpu_memory_utilization=0.85,
+      hf_overrides={
+          "diffusion_sampler": "entropy_bound",
+          "diffusion_entropy_bound": 0.1,
+      },
+      diffusion_config={"canvas_length": 256},
+  )
+
+  messages = [{"role": "user", "content": "Explain quantum computing in simple terms."}]
+  prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+  outputs = llm.generate(prompt, SamplingParams(temperature=0.0, max_tokens=1024))
+
+  print(outputs[0].outputs[0].text)
+  ```
+
+  ### Thinking Mode
+
+  Launch the server with `--reasoning-parser gemma4`, then enable per-request:
+
+  ```python
+  response = client.chat.completions.create(
+      model="google/diffusiongemma-26B-A4B-it",
+      messages=[{"role": "user", "content": "What is the derivative of x^3 * ln(x)?"}],
+      max_tokens=32768,
+      extra_body={"chat_template_kwargs": {"enable_thinking": True}},
+  )
+  ```
+
+  ## Performance Characteristics
+
+  Compared to the autoregressive Gemma 4 26B-A4B baseline (single H100, concurrency=1, SPEED-Bench):
+
+  | Metric | Gemma 4 26B-A4B (baseline) | DiffusionGemma 26B-A4B |
+  |--------|---------------------------|------------------------|
+  | Output TPS | 199 tok/s | 375 tok/s (**1.9×**) |
+  | E2E Request Time (mean) | 2.87s | 0.88s (**3.3× faster**) |
+  | TTFT (mean) | 53ms | 489ms (higher due to canvas denoising setup) |
+  | Per-request Gen TPS (mean) | 205 tok/s | 1,282 tok/s (**6.2×**) |
+
+  The diffusion model trades higher time-to-first-token for significantly higher generation throughput. It generates fewer total tokens per prompt on average (shorter outputs) but completes requests much faster.
+
+  ## Known Limitations
+
+  - **TTFT**: ~10× higher than autoregressive baseline — the model must denoise an entire canvas block before emitting the first token.
+  - **`--max-num-seqs`**: Must be kept low (≤4) due to the large diffusion state tensors. Higher values cause CUDA OOM.
+  - **Audio**: Not supported — the diffusion checkpoints do not include an audio encoder.
+  - **Function Calling**: Works best in thinking mode. Non-thinking mode may answer directly instead of emitting tool calls.
+
+  ## References
+
+  - [Model card](https://huggingface.co/google/diffusiongemma-26B-A4B-it)
+  - [Gemma 4 26B-A4B (autoregressive baseline)](https://huggingface.co/google/gemma-4-26B-A4B-it)
+  - [Gemma docs](https://ai.google.dev/gemma/docs)
