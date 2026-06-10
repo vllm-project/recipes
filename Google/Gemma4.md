@@ -205,14 +205,20 @@ For additional Intel Xeon 6 deployment details, see the Intel Software Catalog e
 DiffusionGemma requires several specific flags due to its block-diffusion architecture. See the [DiffusionGemma recipe](../models/Google/diffusiongemma-26B-A4B-it.yaml) for full details.
 
 ```bash
-vllm serve google/diffusiongemma-26B-A4B-it \
-  --max-model-len 262144 \
-  --max-num-seqs 4 \
-  --gpu-memory-utilization 0.85 \
-  --generation-config vllm \
-  --hf-overrides '{"diffusion_sampler": "entropy_bound", "diffusion_entropy_bound": 0.1}' \
-  --diffusion-config '{"canvas_length": 256}' \
-  --enable-chunked-prefill
+docker run -itd --name diffusiongemma \
+    --ipc=host \
+    --network host \
+    --gpus all \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai:gemma \
+        --model google/diffusiongemma-26B-A4B-it \
+        --max-model-len 262144 \
+        --max-num-seqs 4 \
+        --gpu-memory-utilization 0.85 \
+        --generation-config vllm \
+        --enable-chunked-prefill \
+        --host 0.0.0.0 \
+        --port 8000
 ```
 
 > ⚠️ **Important**: `--max-num-seqs` must be kept low (≤4) — the diffusion state buffers pre-allocate `max_seqs × canvas_length × vocab_size` tensors that cause OOM at higher values. `--generation-config vllm` is required to prevent the checkpoint's `generation_config.json` from capping `max_tokens` to 256.

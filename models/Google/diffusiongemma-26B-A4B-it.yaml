@@ -20,6 +20,7 @@ model:
   model_id: "google/diffusiongemma-26B-A4B-it"
   min_vllm_version: "nightly"
   nightly_required: true
+  docker_image: "vllm/vllm-openai:gemma"
   architecture: moe
   parameter_count: "26B"
   active_parameters: "4B"
@@ -96,15 +97,11 @@ guide: |
 
   ## Prerequisites
 
-  DiffusionGemma requires a vLLM build with diffusion model support. Install from the development branch:
+  DiffusionGemma requires a vLLM build with diffusion model support, available in the
+  Gemma docker image:
 
   ```bash
-  uv venv
-  source .venv/bin/activate
-  uv pip install -U vllm --pre \
-    --extra-index-url https://wheels.vllm.ai/nightly/cu129 \
-    --extra-index-url https://download.pytorch.org/whl/cu129 \
-    --index-strategy unsafe-best-match
+  docker pull vllm/vllm-openai:gemma
   ```
 
   ## Deployment
@@ -112,32 +109,34 @@ guide: |
   ### Single GPU (H100/H200, BF16)
 
   ```bash
-  vllm serve google/diffusiongemma-26B-A4B-it \
-    --max-model-len 262144 \
-    --max-num-seqs 4 \
-    --gpu-memory-utilization 0.85 \
-    --generation-config vllm \
-    --hf-overrides '{"diffusion_sampler": "entropy_bound", "diffusion_entropy_bound": 0.1}' \
-    --diffusion-config '{"canvas_length": 256}' \
-    --enable-chunked-prefill
+  docker run -itd --name diffusiongemma \
+      --ipc=host --network host --gpus all \
+      -v ~/.cache/huggingface:/root/.cache/huggingface \
+      vllm/vllm-openai:gemma \
+          --model google/diffusiongemma-26B-A4B-it \
+          --max-model-len 262144 \
+          --max-num-seqs 4 \
+          --gpu-memory-utilization 0.85 \
+          --host 0.0.0.0 --port 8000
   ```
 
   ### Full-Featured Server (text + image + thinking + tools)
 
   ```bash
-  vllm serve google/diffusiongemma-26B-A4B-it \
-    --max-model-len 262144 \
-    --max-num-seqs 4 \
-    --gpu-memory-utilization 0.85 \
-    --generation-config vllm \
-    --hf-overrides '{"vision_config": {"default_output_length": 1120}, "vision_soft_tokens_per_image": 1120, "diffusion_sampler": "entropy_bound", "diffusion_entropy_bound": 0.1}' \
-    --mm-processor-kwargs '{"max_soft_tokens": 1120}' \
-    --limit-mm-per-prompt '{"image": 7}' \
-    --diffusion-config '{"canvas_length": 256}' \
-    --enable-chunked-prefill \
-    --enable-auto-tool-choice \
-    --tool-call-parser gemma4 \
-    --reasoning-parser gemma4
+  docker run -itd --name diffusiongemma \
+      --ipc=host --network host --gpus all \
+      -v ~/.cache/huggingface:/root/.cache/huggingface \
+      vllm/vllm-openai:gemma \
+          --model google/diffusiongemma-26B-A4B-it \
+          --max-model-len 262144 \
+          --max-num-seqs 4 \
+          --gpu-memory-utilization 0.85 \
+          --mm-processor-kwargs '{"max_soft_tokens": 1120}' \
+          --limit-mm-per-prompt '{"image": 7}' \
+          --enable-auto-tool-choice \
+          --tool-call-parser gemma4 \
+          --reasoning-parser gemma4 \
+          --host 0.0.0.0 --port 8000
   ```
 
   ## Client Usage
