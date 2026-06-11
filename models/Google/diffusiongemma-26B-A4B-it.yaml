@@ -18,9 +18,11 @@ meta:
 
 model:
   model_id: "google/diffusiongemma-26B-A4B-it"
-  min_vllm_version: "nightly"
-  nightly_required: true
+  min_vllm_version: "day0-docker"
   docker_image: "vllm/vllm-openai:gemma"
+  install:
+    docker:
+    pip: false
   architecture: moe
   parameter_count: "26B"
   active_parameters: "4B"
@@ -28,12 +30,6 @@ model:
   base_args:
     - "--max-num-seqs"
     - "4"
-    - "--generation-config"
-    - "vllm"
-    - "--hf-overrides"
-    - '{"diffusion_sampler": "entropy_bound", "diffusion_entropy_bound": 0.1}'
-    - "--diffusion-config"
-    - '{"canvas_length": 256}'
   base_env: {}
 
 dependencies: []
@@ -60,6 +56,16 @@ variants:
     precision: bf16
     vram_minimum_gb: 64
     description: "Full BF16 — single 80 GB NVIDIA GPU (H100/H200). Requires --max-num-seqs 4 to avoid OOM from diffusion state buffers."
+  fp8:
+    model_id: "RedHatAI/diffusiongemma-26B-A4B-it-FP8-dynamic"
+    precision: fp8
+    vram_minimum_gb: 32
+    description: "FP8 (E4M3) weights with dynamic per-token activation quantization"
+  nvfp4:
+    model_id: "RedHatAI/diffusiongemma-26B-A4B-it-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 24
+    description: "NVFP4 (4-bit) quantized weights"
 
 compatible_strategies:
   - single_node_tp
