@@ -174,6 +174,41 @@ guide: |
     }'
   ```
 
+  ## Thinking Modes
+
+  M3 reasoning is controlled by the `thinking_mode`, there are three values:
+
+  - **`enabled`** — the model thinks before every response, including after tool results. 
+    Use for complex reasoning and agents.
+  - **`disabled`** — no thinking; the model answers directly. Use for
+    latency-sensitive turns.
+  - **`adaptive`** *(default when unset)* — the model decides whether to think
+    based on the task.
+
+  Pass it per request through `chat_template_kwargs`. The same value also tunes
+  the `minimax_m3` reasoning parser, so `reasoning_content` and `content` are
+  split correctly in every mode.
+
+  ```python
+
+  # Start the MiniMax-M3 model by referring to the command above first.
+  
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+
+  response = client.chat.completions.create(
+      model="MiniMaxAI/MiniMax-M3",
+      messages=[{"role": "user", "content": "Prove there are infinitely many primes."}],
+      extra_body={"chat_template_kwargs": {"thinking_mode": "enabled"}},
+  )
+  msg = response.choices[0].message
+  # vLLM exposes the <mm:think> block as `reasoning` (the older
+  # `reasoning_content` field is deprecated but still aliased).
+  print(getattr(msg, "reasoning", None) or getattr(msg, "reasoning_content", None))
+  print(msg.content)  # the final answer
+  ```
+
   ## Benchmarking
 
   ```bash
