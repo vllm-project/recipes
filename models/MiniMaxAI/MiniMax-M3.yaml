@@ -234,7 +234,7 @@ guide: |
   - Set `--max-model-len` to the longest prompt + output you actually serve
     (e.g. `32768`, `131072`, `262144`). A smaller window frees KV-pool headroom
     for higher concurrency and lets the model fit on fewer GPUs; if you need the
-    full 1M window, scale out with multi-node TP instead.
+    full 1M window, consider scaling out with multi-node TP instead.
 
   ## Client Usage
 
