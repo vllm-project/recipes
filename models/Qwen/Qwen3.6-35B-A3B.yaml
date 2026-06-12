@@ -95,13 +95,8 @@ variants:
       - "--enable-chunked-prefill"
       - "--async-scheduling"
       - "--enable-prefix-caching"
-      - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
       - "--load-format"
       - "fastsafetensors"
-    extra_env:
-      VLLM_FP8_MOE_BACKEND: "flashinfer_cutlass"
-      FLASHINFER_DISABLE_VERSION_CHECK: "1"
 
 compatible_strategies:
   - single_node_tp
