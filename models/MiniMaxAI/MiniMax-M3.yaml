@@ -63,19 +63,28 @@ features:
     args:
       - "--language-model-only"
   encoder_parallel:
-    description: "Run the vision encoder data-parallel instead of tensor-parallel — avoids TP comm overhead on the small encoder. Also enables the host-shared-memory multimodal processor cache and (NVIDIA) the FlashInfer encoder attention backend. Mutually exclusive with text_only."
+    description: "Run the vision encoder data-parallel instead of tensor-parallel — avoids TP comm overhead on the small encoder. Also enables the host-shared-memory multimodal processor cache and the per-brand encoder attention backend (FlashInfer on NVIDIA, AITER FlashAttention on AMD). Mutually exclusive with text_only."
     args:
       - "--mm-processor-cache-type"
       - "shm"
       - "--mm-encoder-tp-mode"
       - "data"
     hardware_overrides:
-      # FlashInfer encoder attention is NVIDIA-only; AMD keeps ROCM_AITER_FA
-      # (hardware_overrides.amd). nvidia.args REPLACES args, so repeat shm + tp-mode.
+      # Per-brand vision-encoder attention backend. <gen>.args REPLACES the
+      # feature's args, so each brand repeats shm + tp-mode. FlashInfer on
+      # NVIDIA; AITER FlashAttention on AMD.
       nvidia:
         args:
           - "--mm-encoder-attn-backend"
           - "FLASHINFER"
+          - "--mm-processor-cache-type"
+          - "shm"
+          - "--mm-encoder-tp-mode"
+          - "data"
+      amd:
+        args:
+          - "--mm-encoder-attn-backend"
+          - "ROCM_AITER_FA"
           - "--mm-processor-cache-type"
           - "shm"
           - "--mm-encoder-tp-mode"
@@ -115,15 +124,13 @@ compatible_strategies:
 
 hardware_overrides:
   amd:
-    # ROCm MI3xx: keep sparse attention on Triton and run the vision encoder
-    # data-parallel with AITER FlashAttention.
+    # ROCm MI3xx: MSA sparse attention runs on the Triton backend — this is the
+    # main-model attention and is always needed on AMD. The vision-encoder
+    # flags (data-parallel + AITER FlashAttention) are gated behind the
+    # encoder_parallel feature, mirroring NVIDIA.
     extra_args:
       - "--attention-backend"
       - "TRITON_ATTN"
-      - "--mm-encoder-tp-mode"
-      - "data"
-      - "--mm-encoder-attn-backend"
-      - "ROCM_AITER_FA"
 
 guide: |
   ## Overview
@@ -328,10 +335,10 @@ guide: |
     linearly. Watch headroom at long context; move to multi-node TP if you OOM.
   - **Vision encoder.** The encoder is small, so at high TP the *Encoder
     Parallel* option runs it data-parallel (`--mm-encoder-tp-mode data`) to
-    avoid TP comm overhead; it also turns on the FlashInfer encoder attention
-    backend on NVIDIA (`--mm-encoder-attn-backend FLASHINFER`) and the
-    host-shared-memory multimodal processor cache (`--mm-processor-cache-type
-    shm`). For **text-only** workloads enable *Text only*
+    avoid TP comm overhead; it also turns on the vision-encoder attention
+    backend (FlashInfer on NVIDIA, `--mm-encoder-attn-backend FLASHINFER`;
+    AITER FlashAttention on AMD, `ROCM_AITER_FA`) and the host-shared-memory
+    multimodal processor cache (`--mm-processor-cache-type shm`). For **text-only** workloads enable *Text only*
     (`--language-model-only`) to skip loading the encoder and free VRAM — it is
     mutually exclusive with Encoder Parallel.
  
