@@ -39,6 +39,10 @@ model:
     # MSA's sparse_block_size is 128 — KV cache block size must match.
     - "--block-size"
     - "128"
+    # Multimodal processor cache in host shared memory — faster at high TP for
+    # repeated image/video inputs. Platform-agnostic (NVIDIA + AMD).
+    - "--mm-processor-cache-type"
+    - "shm"
   base_env: {}
 
 features:
@@ -53,6 +57,19 @@ features:
     args:
       - "--reasoning-parser"
       - "minimax_m3"
+  text_only:
+    description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
+    args:
+      - "--language-model-only"
+  encoder_parallel:
+    description: "Run the vision encoder data-parallel instead of tensor-parallel — avoids TP comm overhead on the small encoder. Mutually exclusive with text_only."
+    args:
+      - "--mm-encoder-tp-mode"
+      - "data"
+
+opt_in_features:
+  - text_only
+  - encoder_parallel
 
 variants:
   default:
@@ -82,6 +99,12 @@ compatible_strategies:
   - pd_cluster
 
 hardware_overrides:
+  nvidia:
+    # FlashInfer vision-encoder attention — NVIDIA only (Hopper/Blackwell).
+    # AMD uses ROCM_AITER_FA below.
+    extra_args:
+      - "--mm-encoder-attn-backend"
+      - "FLASHINFER"
   amd:
     # ROCm MI3xx: keep sparse attention on Triton and run the vision encoder
     # data-parallel with AITER FlashAttention.
@@ -294,6 +317,14 @@ guide: |
     `minimax_m3` — distinct from `minimax_m2` used by earlier releases.
   - **Long context KV cache.** The advertised 1M window grows KV memory
     linearly. Watch headroom at long context; move to multi-node TP if you OOM.
+  - **Vision encoder.** By default the encoder runs FlashInfer attention on
+    NVIDIA (`--mm-encoder-attn-backend FLASHINFER`; AMD uses `ROCM_AITER_FA`)
+    with the multimodal processor cache in host shared memory
+    (`--mm-processor-cache-type shm`). For **text-only** workloads enable the
+    *Text only* option (`--language-model-only`) to skip loading the encoder
+    and free VRAM. The encoder is small, so at high TP the *Encoder Parallel*
+    option (`--mm-encoder-tp-mode data`) avoids TP comm overhead — pick one or
+    the other, not both.
  
 
   ## References
