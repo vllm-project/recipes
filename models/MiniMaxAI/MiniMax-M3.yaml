@@ -64,15 +64,12 @@ features:
       - "--language-model-only"
   encoder_parallel:
     description: "Run the vision encoder data-parallel instead of tensor-parallel — avoids TP comm overhead on the small encoder. Also enables the host-shared-memory multimodal processor cache and the per-brand encoder attention backend (FlashInfer on NVIDIA, AITER FlashAttention on AMD). Mutually exclusive with text_only."
-    args:
-      - "--mm-processor-cache-type"
-      - "shm"
-      - "--mm-encoder-tp-mode"
-      - "data"
+    # No platform-agnostic `args`: this recipe targets only NVIDIA + AMD, both
+    # covered by the per-brand overrides below. (A feature's top-level `args`
+    # is just the fallback used when no hardware_overrides.<gen> matches.)
     hardware_overrides:
-      # Per-brand vision-encoder attention backend. <gen>.args REPLACES the
-      # feature's args, so each brand repeats shm + tp-mode. FlashInfer on
-      # NVIDIA; AITER FlashAttention on AMD.
+      # Per-brand vision-encoder config — each block carries shm + tp-mode plus
+      # its attention backend: FlashInfer on NVIDIA, AITER FlashAttention on AMD.
       nvidia:
         args:
           - "--mm-encoder-attn-backend"
