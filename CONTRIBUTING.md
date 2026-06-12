@@ -146,7 +146,7 @@ compatible_strategies:                            # subset of the 8 strategy ids
 # no generation-specific block is present.
 hardware_overrides:
   blackwell:
-    extra_args: ["--attention-backend", "FLASHINFER_MLA"]
+    extra_args: []
     extra_env: {}
   amd:
     extra_args: []
