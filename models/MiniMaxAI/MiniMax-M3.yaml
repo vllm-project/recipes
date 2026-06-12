@@ -17,7 +17,8 @@ meta:
 
 model:
   model_id: "MiniMaxAI/MiniMax-M3"
-  min_vllm_version: "0.22.1"
+  min_vllm_version: "nightly"
+  nightly_required: true
   docker_image: "vllm/vllm-openai:minimax-m3"
   architecture: moe
   # 427.04B total from safetensors metadata (BF16: 426.99B + F32: 46.3M).
@@ -123,12 +124,14 @@ guide: |
   docker pull vllm/vllm-openai:minimax-m3
   ```
 
-  Or install from pip:
+  Or install the nightly wheel (MiniMax-M3 support has not yet shipped in a
+  stable vLLM release):
 
   ```bash
   uv venv
   source .venv/bin/activate
-  uv pip install -U vllm --torch-backend auto
+  uv pip install -U vllm --pre \
+    --extra-index-url https://wheels.vllm.ai/nightly
   ```
 
   ### Docker (AMD ROCm)
