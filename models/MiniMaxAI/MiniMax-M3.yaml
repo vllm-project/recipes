@@ -35,7 +35,6 @@ model:
   # via RoPE scaling — using the advertised number here.
   context_length: 1048576
   base_args:
-    - "--trust-remote-code"
     # MSA's sparse_block_size is 128 — KV cache block size must match.
     - "--block-size"
     - "128"
@@ -182,7 +181,6 @@ guide: |
 
   ```bash
   vllm serve MiniMaxAI/MiniMax-M3 \
-    --trust-remote-code \
     --tensor-parallel-size 8 \
     --block-size 128 \
     --tool-call-parser minimax_m3 \
@@ -194,7 +192,6 @@ guide: |
 
   ```bash
   vllm serve MiniMaxAI/MiniMax-M3 \
-    --trust-remote-code \
     --tensor-parallel-size 8 \
     --enable-expert-parallel \
     --block-size 128 \
@@ -207,7 +204,6 @@ guide: |
 
   ```bash
   vllm serve MiniMaxAI/MiniMax-M3 \
-    --trust-remote-code \
     --data-parallel-size 8 \
     --enable-expert-parallel \
     --block-size 128 \
@@ -310,7 +306,6 @@ guide: |
 
   ```bash
   vllm serve MiniMaxAI/MiniMax-M3-MXFP8 \
-    --trust-remote-code \
     --tensor-parallel-size 8 \
     --block-size 128 \
     --tool-call-parser minimax_m3 \
