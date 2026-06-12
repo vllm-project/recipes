@@ -218,6 +218,35 @@ guide: |
   footprint. Use TP=8 for lower latency or long context length, or the default bf16 model.
   
 
+  ## Context Length & GPU Memory
+
+  This recipe exposes the model's full **1M-token** window
+  (`context_length: 1048576`). KV-cache demand grows **linearly** with context
+  length, and at 1M tokens a single sequence's KV cache can exceed the model
+  weights. vLLM sizes its KV pool from the VRAM left after weights load
+  (`--gpu-memory-utilization`) and must be able to fit at least one
+  `--max-model-len` sequence — so on anything short of a large multi-GPU /
+  multi-node deployment, leaving the full 1M window makes the server fail to
+  start, or serve barely one request at a time.
+
+  Unless you need the whole window, cap it with `--max-model-len`:
+
+  ```bash
+  vllm serve MiniMaxAI/MiniMax-M3 \
+    --tensor-parallel-size 8 \
+    --block-size 128 \
+    --max-model-len 131072        # 128K instead of the full 1M
+  ```
+
+  - Set `--max-model-len` to the longest prompt + output you actually serve
+    (e.g. `32768`, `131072`, `262144`). A smaller window frees KV-pool headroom
+    for higher concurrency and lets the model fit on fewer GPUs.
+  - `--max-num-seqs` bounds how many sequences share the pool — lower it if you
+    still hit OOM at high concurrency. If you genuinely need the full 1M window,
+    scale out with multi-node TP instead.
+  - vLLM logs the resolved *"maximum concurrency for N tokens"* at startup — use
+    it to right-size both flags.
+
   ## Client Usage
 
   Recommended sampling parameters (from the model card):
@@ -323,8 +352,8 @@ guide: |
     attention indexing (on AMD it crashes with `No common block size for 16`).
   - **Parsers.** `--tool-call-parser` and `--reasoning-parser` both use
     `minimax_m3` — distinct from `minimax_m2` used by earlier releases.
-  - **Long context KV cache.** The advertised 1M window grows KV memory
-    linearly. Watch headroom at long context; move to multi-node TP if you OOM.
+  - **Long context KV cache.** See *Context Length & GPU Memory* above — cap
+    `--max-model-len` (and `--max-num-seqs`) or scale to multi-node TP if you OOM.
   - **Vision encoder.** The encoder is small, so at high TP the *Encoder
     Parallel* option runs it data-parallel (`--mm-encoder-tp-mode data`) to
     avoid TP comm overhead; it also turns on the vision-encoder attention
