@@ -185,6 +185,9 @@ guide: |
   Checkpoint is **FP4+FP8 mixed**: MoE expert weights are stored in FP4 while the
   remaining (attention / norm / router) params stay in FP8.
 
+  For a real-world repository analysis walkthrough, see the
+  [DeepSeek-V4-Flash demo notebook](https://github.com/vllm-project/recipes/blob/main/DeepSeek/DeepSeek-V4-Demo.ipynb).
+
   ## Reasoning modes
 
   The chat template exposes three reasoning-effort modes:
