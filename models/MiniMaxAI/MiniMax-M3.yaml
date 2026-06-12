@@ -20,6 +20,11 @@ model:
   min_vllm_version: "nightly"
   nightly_required: true
   docker_image: "vllm/vllm-openai:minimax-m3"
+  # Docker-only: MiniMax-M3 support hasn't shipped in a stable wheel, and the
+  # dedicated image is the supported path — hide the pip tab.
+  install:
+    docker:
+    pip: false
   architecture: moe
   # 427.04B total from safetensors metadata (BF16: 426.99B + F32: 46.3M).
   # Active: 57 MoE layers × (4 routed + 1 shared) × 56.6M + 60-layer attn
@@ -116,22 +121,13 @@ guide: |
     needs TP=8; the MXFP8 variant runs from TP=4.
   - **`--block-size 128` is mandatory on every platform** (MSA sparse/index cache).
 
-  ### Install vLLM (NVIDIA)
+  ### Docker (NVIDIA)
 
-  Use the dedicated Docker image (recommended):
+  MiniMax-M3 support has not yet shipped in a stable vLLM release — use the
+  dedicated Docker image:
 
   ```bash
   docker pull vllm/vllm-openai:minimax-m3
-  ```
-
-  Or install the nightly wheel (MiniMax-M3 support has not yet shipped in a
-  stable vLLM release):
-
-  ```bash
-  uv venv
-  source .venv/bin/activate
-  uv pip install -U vllm --pre \
-    --extra-index-url https://wheels.vllm.ai/nightly
   ```
 
   ### Docker (AMD ROCm)
