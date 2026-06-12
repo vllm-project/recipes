@@ -49,28 +49,8 @@ compatible_strategies:
 
 hardware_overrides:
   blackwell:
-    extra_args:
-      - "--kv-cache-dtype"
-      - "fp8"
-      - "--no-enable-prefix-caching"
-      - "--max-cudagraph-capture-size"
-      - "2048"
-      - "--max-num-batched-tokens"
-      - "8192"
-      - "--stream-interval"
-      - "20"
     extra_env:
       VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8: "1"
-  hopper:
-    extra_args:
-      - "--no-enable-prefix-caching"
-      - "--max-cudagraph-capture-size"
-      - "2048"
-      - "--max-num-batched-tokens"
-      - "8192"
-      - "--stream-interval"
-      - "20"
-    extra_env: {}
   amd:
     extra_args:
       - "--attention-backend"
@@ -139,12 +119,7 @@ guide: |
   ```bash
   export VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8=1
 
-  vllm serve openai/gpt-oss-20b \
-    --kv-cache-dtype fp8 \
-    --no-enable-prefix-caching \
-    --max-cudagraph-capture-size 2048 \
-    --max-num-batched-tokens 8192 \
-    --stream-interval 20
+  vllm serve openai/gpt-oss-20b
   ```
 
   Hopper (H100/H200): same as Blackwell minus `--kv-cache-dtype fp8` and the FlashInfer env var.
