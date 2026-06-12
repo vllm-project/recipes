@@ -27,9 +27,7 @@ model:
     - "--trust-remote-code"
   base_env: {}
 
-dependencies:
-  - note: "Kimi-K2.7-Code requires transformers >=4.57.1, <5.0.0"
-    command: 'uv pip install -U "transformers>=4.57.1,<5.0.0"'
+dependencies: []
 
 features:
   tool_calling:
@@ -97,14 +95,12 @@ guide: |
 
   - **vLLM version:** >= 0.19.1 (manually verified). The model is also available in the
     vLLM nightly wheel, but nightly builds are experimental.
-  - **transformers:** >= 4.57.1, < 5.0.0
   - **Hardware (INT4):** 8x H200 GPUs (verified), or equivalent aggregate VRAM (~640 GB)
 
   ```bash
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend=auto
-  uv pip install -U "transformers>=4.57.1,<5.0.0"
   ```
 
   ## Launch command
