@@ -220,16 +220,9 @@ guide: |
 
   ## Context Length & GPU Memory
 
-  This recipe exposes the model's full **1M-token** window
-  (`context_length: 1048576`). KV-cache demand grows **linearly** with context
-  length, and at 1M tokens a single sequence's KV cache can exceed the model
-  weights. vLLM sizes its KV pool from the VRAM left after weights load
-  (`--gpu-memory-utilization`) and must be able to fit at least one
-  `--max-model-len` sequence — so on anything short of a large multi-GPU /
-  multi-node deployment, leaving the full 1M window makes the server fail to
-  start, or serve barely one request at a time.
-
-  Unless you need the whole window, cap it with `--max-model-len`:
+  The full **1M-token** window (`context_length: 1048576`) needs a large KV
+  cache. To save GPU memory, you can optionally cap the context with
+  `--max-model-len`:
 
   ```bash
   vllm serve MiniMaxAI/MiniMax-M3 \
