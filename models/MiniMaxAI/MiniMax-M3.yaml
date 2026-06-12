@@ -167,12 +167,19 @@ guide: |
 
   ### Docker (AMD ROCm)
 
+  MiniMax-M3 support has not yet shipped in a stable vLLM release — use the
+  dedicated Docker image or nightly after the release:
+
+  ```bash
+  docker pull vllm/vllm-openai-rocm:minimax-m3
+  ```
+
   ```bash
   docker run --rm -it --device /dev/kfd --device /dev/dri --group-add video \
     --cap-add SYS_PTRACE --security-opt seccomp=unconfined --ipc=host \
     --shm-size=16g -p 8000:8000 \
     --entrypoint /bin/bash \
-    $AMD_DOCKER_IMAGE
+    vllm/vllm-openai-rocm:minimax-m3
   ```
 
   ## Launching the Server
@@ -188,7 +195,7 @@ guide: |
     --enable-auto-tool-choice
   ```
 
-  ### TP8 + Expert Parallel
+  #### TP8 + Expert Parallel
 
   ```bash
   vllm serve MiniMaxAI/MiniMax-M3 \
@@ -200,7 +207,7 @@ guide: |
     --enable-auto-tool-choice
   ```
 
-  ### DP8 + Expert Parallel
+  #### DP8 + Expert Parallel
 
   ```bash
   vllm serve MiniMaxAI/MiniMax-M3 \
@@ -216,7 +223,56 @@ guide: |
 
   For gfx950: Prefer using the MXFP8 variant `MiniMaxAI/MiniMax-M3-MXFP8` for TP=4 and a smaller
   footprint. Use TP=8 for lower latency or long context length, or the default bf16 model.
-  
+
+  #### TP8 (Text or Vision)
+
+  ```bash
+  vllm serve MiniMaxAI/MiniMax-M3 \
+    --tensor-parallel-size 8 \
+    --block-size 128 \
+    --attention-backend TRITON_ATTN \
+    --mm-encoder-tp-mode data \
+    --mm-encoder-attn-backend ROCM_AITER_FA \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
+
+  #### TP8 + Expert Parallel
+
+  ```bash
+  vllm serve MiniMaxAI/MiniMax-M3 \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --block-size 128 \
+    --attention-backend TRITON_ATTN \
+    --mm-encoder-tp-mode data \
+    --mm-encoder-attn-backend ROCM_AITER_FA \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
+
+  #### DP8 + Expert Parallel
+
+  ```bash
+  vllm serve MiniMaxAI/MiniMax-M3 \
+    --data-parallel-size 8 \
+    --enable-expert-parallel \
+    --block-size 128 \
+    --attention-backend TRITON_ATTN \
+    --mm-encoder-tp-mode data \
+    --mm-encoder-attn-backend ROCM_AITER_FA \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
+
+  ## FP8 KV Cache
+
+  Add `--kv-cache-dtype fp8` to any command for ~1.5× the KV pool — lossless
+  in our testing across the full native context. Especially worth it for high
+  concurrency or long context, where KV is the binding constraint.
 
   ## Context Length & GPU Memory
 
@@ -229,6 +285,26 @@ guide: |
     --tensor-parallel-size 8 \
     --block-size 128 \
     --max-model-len 131072        # 128K instead of the full 1M
+  ```
+
+  AMD ROCm notes: Native context is 512K. To go past it, supply a YaRN rope_scaling on the text config
+  (a top-level override silently misses the decoder's config) and allow the long max length.
+  TP=8 + fp8 KV is the practical combo at 1M:
+
+  ```bash
+  VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
+    vllm serve MiniMaxAI/MiniMax-M3 \
+    --block-size 128 \
+    --kv-cache-dtype fp8 \
+    --tensor-parallel-size 8 \
+    --max-model-len 1048576 \
+    --attention-backend TRITON_ATTN \
+    --mm-encoder-tp-mode data \
+    --mm-encoder-attn-backend ROCM_AITER_FA \
+    --tool-call-parser minimax_m3 \
+    --enable-auto-tool-choice \
+    --reasoning-parser minimax_m3 \
+    --hf-overrides '{"text_config":{"rope_scaling":{"rope_type":"yarn","factor":2.0,"original_max_position_embeddings":524288}}}'
   ```
 
   - Set `--max-model-len` to the longest prompt + output you actually serve
