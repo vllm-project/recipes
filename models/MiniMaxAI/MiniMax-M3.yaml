@@ -57,6 +57,11 @@ features:
     args:
       - "--reasoning-parser"
       - "minimax_m3"
+  spec_decoding:
+    description: "Eagle3 speculative decoding with the Inferact MiniMax-M3 draft head — accelerates decoding."
+    args:
+      - "--speculative-config"
+      - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -68,6 +73,7 @@ features:
       - "data"
 
 opt_in_features:
+  - spec_decoding
   - text_only
   - encoder_parallel
 
