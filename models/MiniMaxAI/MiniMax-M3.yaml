@@ -244,8 +244,6 @@ guide: |
   - `--max-num-seqs` bounds how many sequences share the pool — lower it if you
     still hit OOM at high concurrency. If you genuinely need the full 1M window,
     scale out with multi-node TP instead.
-  - vLLM logs the resolved *"maximum concurrency for N tokens"* at startup — use
-    it to right-size both flags.
 
   ## Client Usage
 
