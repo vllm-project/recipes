@@ -233,10 +233,8 @@ guide: |
 
   - Set `--max-model-len` to the longest prompt + output you actually serve
     (e.g. `32768`, `131072`, `262144`). A smaller window frees KV-pool headroom
-    for higher concurrency and lets the model fit on fewer GPUs.
-  - `--max-num-seqs` bounds how many sequences share the pool — lower it if you
-    still hit OOM at high concurrency. If you genuinely need the full 1M window,
-    scale out with multi-node TP instead.
+    for higher concurrency and lets the model fit on fewer GPUs; if you need the
+    full 1M window, scale out with multi-node TP instead.
 
   ## Client Usage
 
@@ -344,7 +342,7 @@ guide: |
   - **Parsers.** `--tool-call-parser` and `--reasoning-parser` both use
     `minimax_m3` — distinct from `minimax_m2` used by earlier releases.
   - **Long context KV cache.** See *Context Length & GPU Memory* above — cap
-    `--max-model-len` (and `--max-num-seqs`) or scale to multi-node TP if you OOM.
+    `--max-model-len` or scale to multi-node TP if you OOM.
   - **Vision encoder.** The encoder is small, so at high TP the *Encoder
     Parallel* option runs it data-parallel (`--mm-encoder-tp-mode data`) to
     avoid TP comm overhead; it also turns on the vision-encoder attention
