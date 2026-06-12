@@ -297,6 +297,7 @@ guide: |
     --block-size 128 \
     --kv-cache-dtype fp8 \
     --tensor-parallel-size 8 \
+    --max-model-len 1048576 \
     --attention-backend TRITON_ATTN \
     --mm-encoder-tp-mode data \
     --mm-encoder-attn-backend ROCM_AITER_FA \
