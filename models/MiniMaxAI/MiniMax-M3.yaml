@@ -129,6 +129,10 @@ hardware_overrides:
     extra_args:
       - "--attention-backend"
       - "TRITON_ATTN"
+    extra_env:
+      # Run MiniMax-M3 with CUDA graphs on AMD MI3xx; avoids the decode
+      # breakable-cudagraph path that otherwise forces eager (per @hongxiayang).
+      VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
 
 guide: |
   ## Overview
@@ -222,6 +226,14 @@ guide: |
   ```
 
   ### AMD ROCm (MI350X/MI355X (gfx950), MI300X/MI325X (gfx942))
+
+  On AMD MI300X / MI325X / MI355X, run with CUDA graphs and set the following
+  before any of the serve commands below. It avoids the MiniMax-M3 decode breakable-cudagraph path that would
+  otherwise force eager execution (per @hongxiayang):
+
+  ```bash
+  export VLLM_USE_BREAKABLE_CUDAGRAPH=0
+  ```
 
   For gfx950: Prefer using the MXFP8 variant `MiniMaxAI/MiniMax-M3-MXFP8` for TP=4 and a smaller
   footprint. Use TP=8 for lower latency or long context length, or the default bf16 model.
