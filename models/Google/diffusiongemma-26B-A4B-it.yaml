@@ -18,7 +18,8 @@ meta:
 
 model:
   model_id: "google/diffusiongemma-26B-A4B-it"
-  min_vllm_version: "nightly"
+  min_vllm_version: "0.24.0"
+  nightly_required: true
   docker_image: "vllm/vllm-openai:gemma"
   install:
     docker:

@@ -16,7 +16,6 @@ meta:
 model:
   model_id: "mistralai/Mistral-Medium-3.5-128B"
   min_vllm_version: "0.18.0"
-  nightly_required: true
   architecture: dense
   parameter_count: "128B"
   active_parameters: "128B"

@@ -19,7 +19,6 @@ meta:
 model:
   model_id: "internlm/Intern-S2-Preview"
   min_vllm_version: "0.22.0"
-  nightly_required: true
   architecture: moe
   parameter_count: "36B"
   active_parameters: "3B"

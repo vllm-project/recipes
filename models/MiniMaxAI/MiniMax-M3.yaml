@@ -17,7 +17,7 @@ meta:
 
 model:
   model_id: "MiniMaxAI/MiniMax-M3"
-  min_vllm_version: "nightly"
+  min_vllm_version: "0.24.0"
   nightly_required: true
   docker_image: 
     nvidia: "vllm/vllm-openai:minimax-m3"
