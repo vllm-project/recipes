@@ -26,7 +26,7 @@ model:
   # dedicated image is the supported path — hide the pip tab.
   install:
     docker:
-    pip: false
+    pip:
   architecture: moe
   # 427.04B total from safetensors metadata (BF16: 426.99B + F32: 46.3M).
   # Active: 57 MoE layers × (4 routed + 1 shared) × 56.6M + 60-layer attn

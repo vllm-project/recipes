@@ -18,11 +18,11 @@ meta:
 
 model:
   model_id: "google/diffusiongemma-26B-A4B-it"
-  min_vllm_version: "day0-docker"
+  min_vllm_version: "nightly"
   docker_image: "vllm/vllm-openai:gemma"
   install:
     docker:
-    pip: false
+    pip:
   architecture: moe
   parameter_count: "26B"
   active_parameters: "4B"

@@ -24,7 +24,7 @@ model:
   install:
     docker:
       note: "Release-tested vLLM-Omni image bundling the Cosmos3 omni handlers."
-    pip: false
+    pip:
   architecture: dense
   parameter_count: "64B"
   active_parameters: "64B"
