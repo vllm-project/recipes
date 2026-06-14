@@ -19,7 +19,9 @@ model:
   model_id: "MiniMaxAI/MiniMax-M3"
   min_vllm_version: "nightly"
   nightly_required: true
-  docker_image: "vllm/vllm-openai:minimax-m3"
+  docker_image: 
+    nvidia: "vllm/vllm-openai:minimax-m3"
+    amd: "vllm/vllm-openai-rocm:minimax-m3" 
   # Docker-only: MiniMax-M3 support hasn't shipped in a stable wheel, and the
   # dedicated image is the supported path — hide the pip tab.
   install:
