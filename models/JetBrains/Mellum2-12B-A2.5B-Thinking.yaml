@@ -15,8 +15,7 @@ meta:
 
 model:
   model_id: "JetBrains/Mellum2-12B-A2.5B-Thinking"
-  min_vllm_version: "nightly"
-  nightly_required: true
+  min_vllm_version: "0.23.0"
   architecture: moe
   parameter_count: "12B"
   active_parameters: "2.5B"
