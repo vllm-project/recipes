@@ -69,6 +69,11 @@ variants:
     precision: fp8
     vram_minimum_gb: 960
     description: "Native FP4+FP8 mixed checkpoint (MoE experts FP4, remaining params FP8)"
+  nvfp4:
+    model_id: "nvidia/DeepSeek-V4-Pro-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 960
+    description: "NVIDIA modelopt NVFP4 checkpoint (MoE experts NVFP4; attention, shared experts, router head, and MTP stay FP8) for Blackwell GPUs."
 
 compatible_strategies:
   - single_node_tp
@@ -203,6 +208,12 @@ guide: |
 
   Checkpoint is **FP4+FP8 mixed**: MoE expert weights are stored in FP4 while the
   remaining (attention / norm / router) params stay in FP8.
+
+  An **NVFP4 variant** (`nvidia/DeepSeek-V4-Pro-NVFP4`) is also available — NVIDIA
+  modelopt re-quantizes the MoE experts to standard NVFP4 while attention, shared
+  experts, router head, and MTP stay FP8. Pick it from the **Variant** row; it runs on
+  Blackwell GPUs and inherits the same FP4 MoE backend (`deep_gemm_mega_moe` + FP4
+  indexer cache) as the native checkpoint.
 
   ## Reasoning modes
 
