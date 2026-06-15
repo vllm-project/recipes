@@ -1504,7 +1504,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           {activeStrategy === "pd_cluster" ? (
             <ConfigRow
               label="Nodes"
-              hint="Each pool (prefill / decode) sizes independently. Total cluster = prefill_nodes + decode_nodes. For Kimi-K2.5 on GB200 the production pattern is prefill=1, decode=4."
+              hint="Each pool (prefill / decode) sizes independently. Total cluster = prefill_nodes + decode_nodes."
             >
               <div className="flex flex-wrap items-center gap-3 text-sm">
                 <PdNodeInput
@@ -2159,11 +2159,12 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           )}
         </div>
       )}
-      {!active.isRouter && active.meta?.parallelism === "dep" && active.meta.nodes > 1 && onRankChange && (
+      {!active.isRouter && active.meta?.nodes > 1 && onRankChange && (
         <div className="px-4 pt-2 pb-0 flex items-center gap-2 text-[11px] text-[var(--command-fg)]/70 flex-wrap">
           <span className="font-mono uppercase tracking-wider text-[var(--command-fg)]/50">node</span>
-          {/* Display node index is 1-based; emitted --data-parallel-start-rank
-              stays 0-based to match vLLM's rank convention. */}
+          {/* Display node index is 1-based; the emitted rank flag stays 0-based
+              to match vLLM's convention — --data-parallel-start-rank for DEP,
+              --node-rank for TP. */}
           <input
             type="number"
             min={1}
@@ -2175,10 +2176,23 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
             }}
             className="w-14 px-2 py-0.5 text-xs font-mono tabular-nums rounded border border-[var(--command-fg)]/20 bg-transparent text-[var(--command-fg)] focus:outline-none focus:border-vllm-blue/60"
           />
-          <span className="text-[var(--command-fg)]/40">
-            of 1..{active.meta.nodes} · start_rank = {active.meta.startRank}
-          </span>
-          <span className="text-[var(--command-fg)]/40 ml-auto">vLLM spawns {active.meta.dpLocal} local DP ranks per node</span>
+          {active.meta.parallelism === "dep" ? (
+            <>
+              <span className="text-[var(--command-fg)]/40">
+                of 1..{active.meta.nodes} · start_rank = {active.meta.startRank}
+              </span>
+              <span className="text-[var(--command-fg)]/40 ml-auto">vLLM spawns {active.meta.dpLocal} local DP ranks per node</span>
+            </>
+          ) : (
+            <>
+              <span className="text-[var(--command-fg)]/40">
+                of 1..{active.meta.nodes} · --node-rank = {active.meta.currentNode ?? 0}
+              </span>
+              <span className="text-[var(--command-fg)]/40 ml-auto">
+                {(active.meta.currentNode ?? 0) === 0 ? "head node — serves HTTP + NIXL" : "follower — runs --headless"}
+              </span>
+            </>
+          )}
         </div>
       )}
       {prelude && (
