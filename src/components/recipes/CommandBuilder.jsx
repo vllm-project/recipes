@@ -757,16 +757,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const selectVariant = (key) => {
     setVariant(key);
-    syncUrl({ variant: key });
     // Only swap hardware when precision demands it (e.g. NVFP4 needs Blackwell).
     // VRAM is not a blocker because multi-node TP/DP can always supply more.
     const v = recipe.variants?.[key] || {};
     const currentProfile = taxonomy.hardware_profiles?.[hwId] || {};
+    const updates = { variant: key };
     if (!isPrecisionCompatible(currentProfile, v)) {
       const next = pickDefaultHardware(taxonomy.hardware_profiles, v, recipe);
       setHwId(next);
-      syncUrl({ hardware: next });
+      updates.hardware = next;
     }
+    // One syncUrl call — two sequential calls each read the same stale
+    // searchParams from this closure, so the second would clobber the first
+    // (dropping variant= when selecting a Blackwell-only variant off Hopper).
+    syncUrl(updates);
   };
 
   const selectHardware = (id) => {
@@ -789,11 +793,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // variant. If the active variant doesn't fit the new box, fall to the
     // largest variant that does (e.g. BF16 → FP8 on DGX Station).
     let activeVariant = currentVariant;
+    // Folded into the single syncUrl below rather than synced here — a separate
+    // syncUrl call would read stale searchParams and get clobbered (same footgun
+    // as selectVariant). Left undefined when the variant is unchanged so the
+    // existing variant= param is preserved, not deleted.
+    let variantUpdate;
     if (!newScalable && !fitsSingleNode(newProfile, currentVariant)) {
       const fitting = pickFittingVariant(recipe, newProfile);
       if (fitting && fitting !== variant) {
         setVariant(fitting);
-        syncUrl({ variant: fitting });
+        variantUpdate = fitting;
         activeVariant = recipe.variants?.[fitting] || currentVariant;
       }
     }
@@ -819,6 +828,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       strategy: "",
       nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
       features: featuresToUrl(next, id),
+      ...(variantUpdate ? { variant: variantUpdate } : {}),
     });
     savePreference("hardware", id);
     // Mirror the new state to per-recipe storage so a hardware switch
