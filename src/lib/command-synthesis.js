@@ -99,6 +99,31 @@ export function recommendStrategy(recipe, _hwProfile, nodeCount = 1) {
 }
 
 /**
+ * PD-cluster pool parallelism modes offered for a recipe, derived from its
+ * `compatible_strategies[]`. Each strategy id encodes a parallelism family in
+ * its suffix — `*_tp` / `*_tp_pp` → TP, `*_tep` → TEP, `*_dep` → DEP — and the
+ * pd_cluster pools reuse that same vocabulary. So a recipe listing
+ * single_node_tp + multi_node_tep + multi_node_dep offers TP / TEP / DEP per
+ * pool, while a dense model that only lists `*_tp` strategies offers TP alone.
+ *
+ * Returns an ordered subset of ["tp", "tep", "dep"]; never empty (falls back to
+ * ["tp"]). EP modes (tep/dep) are inherently MoE-only, which compatible_strategies
+ * already encodes — dense recipes don't list them.
+ */
+export function pdPoolModes(recipe) {
+  const compat = recipe?.compatible_strategies || [];
+  const modes = new Set();
+  for (const s of compat) {
+    if (s === "pd_cluster") continue;
+    if (/(?:^|_)dep$/.test(s)) modes.add("dep");
+    else if (/(?:^|_)tep$/.test(s)) modes.add("tep");
+    else if (/(?:^|_)tp(?:_pp)?$/.test(s)) modes.add("tp");
+  }
+  if (modes.size === 0) modes.add("tp");
+  return ["tp", "tep", "dep"].filter((m) => modes.has(m));
+}
+
+/**
  * Precision → allowed hardware constraint.
  * NVFP4 is NVIDIA Blackwell-only (sm_100+). FP4 generic is also Blackwell-only
  * in practice. AWQ/GPTQ/INT quants run on most NVIDIA+AMD hardware.
@@ -574,9 +599,11 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       // PD splits inference across separate prefill and decode pools.
       //
       // New model (per-role nodes + parallelism):
-      //   pdNodes = { prefill: <int>, decode: <int> } — user-set node counts
+      //   pdNodes = { prefill: {nodes, rank, parallelism?}, decode: {…} }
+      //   parallelism precedence: pdNodes (UI pill) → strategy_overrides →
+      //     strategy YAML → "tp". Modes: "tp" | "tep" | "dep".
       //   role config (strategy_overrides.pd_cluster.<role>):
-      //     parallelism: "tp" | "dep"          (default: "tp")
+      //     parallelism: "tp" | "tep" | "dep"  (default: "tp")
       //     tp:          <int>                  (default: 1 for dep, poolGpus for tp)
       //     parallel_flag: "--…"                (last-resort override)
       //
@@ -599,7 +626,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       const poolGpus = rolePoolNodes === 0
         ? Math.floor(gpuCount / 2)
         : rolePoolNodes * gpuCount;
-      const parallelism = soRoleCfg.parallelism || roleCfg.parallelism || "tp";
+      const parallelism = pdRole.parallelism || soRoleCfg.parallelism || roleCfg.parallelism || "tp";
 
       if (parallelism === "dep") {
         // Data-parallel + expert-parallel pool (Kimi-K2.5 GB200 pattern).
@@ -640,17 +667,23 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         }
         args.push("--enable-expert-parallel");
       } else {
-        // TP pool. A single engine spanning the pool's nodes via vLLM's mp
-        // multi-node backend: every node runs the same command, varying only
+        // TP / TEP pool. A single engine spanning the pool's nodes via vLLM's
+        // mp multi-node backend: every node runs the same command, varying only
         // --node-rank; rank > 0 adds --headless (no HTTP server). The UI's node
         // selector picks which rank to render via pdRole.rank, mirroring the
-        // DEP pool's per-node command rendering.
+        // DEP pool's per-node command rendering. TEP = the same TP layout plus
+        // expert parallel (mirrors single_node_tep / multi_node_tep strategies).
         const roleParallelFlag =
           soRoleCfg.parallel_flag ||
           roleCfg.parallel_flag ||
           strategy.parallel_flag ||
           "--tensor-parallel-size";
         args.push(roleParallelFlag, String(Math.max(1, poolGpus)));
+        if (parallelism === "tep") {
+          args.push("--enable-expert-parallel");
+          // Cross-node TEP perf tweak from multi_node_tep; single-node TEP omits it.
+          if (rolePoolNodes > 1) args.push("-cc.pass_config.fuse_allreduce_rms=False");
+        }
         if (rolePoolNodes > 1) {
           const nodeIdx = Math.max(0, Math.min(rolePoolNodes - 1, pdRole.rank ?? 0));
           args.push("--nnodes", String(rolePoolNodes));
@@ -819,7 +852,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       const rank = pdRoleObj.rank || 0;
       const rwSoRoleCfg = recipe.strategy_overrides?.[strategyName]?.[roleOverride] || {};
       const rwRoleCfg = strategy[roleOverride] || {};
-      const rwParallelism = rwSoRoleCfg.parallelism || rwRoleCfg.parallelism || "tp";
+      const rwParallelism = pdRoleObj.parallelism || rwSoRoleCfg.parallelism || rwRoleCfg.parallelism || "tp";
       if (rank > 0 && rwParallelism === "dep") {
         const oldVar = `$${roleOverride.toUpperCase()}_NODE_1`;
         const newVar = `$${roleOverride.toUpperCase()}_NODE_${rank + 1}`;
@@ -882,7 +915,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         : (raw && typeof raw === "object") ? raw
         : {};
       const nodes = typeof pdRole.nodes === "number" ? pdRole.nodes : legacyNodes;
-      const parallelism = soRoleCfg.parallelism || roleCfg.parallelism || "tp";
+      const parallelism = pdRole.parallelism || soRoleCfg.parallelism || roleCfg.parallelism || "tp";
       const poolGpus = nodes === 0 ? Math.floor(gpuCount / 2) : nodes * gpuCount;
       const tp = parallelism === "dep"
         ? (soRoleCfg.tp || roleCfg.tp || 1)
