@@ -64,6 +64,9 @@ variants:
     precision: fp8
     vram_minimum_gb: 33
     description: "Qwen official FP8 checkpoint — single 40 GB GPU"
+    extra_args:
+      - "--max-num-seqs"
+      - "865"
 
 compatible_strategies:
   - single_node_tp
