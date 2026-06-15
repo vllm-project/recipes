@@ -66,7 +66,7 @@ variants:
     description: "Qwen official FP8 checkpoint — single 40 GB GPU"
     extra_args:
       - "--max-num-seqs"
-      - "865"
+      - "512"
 
 compatible_strategies:
   - single_node_tp
