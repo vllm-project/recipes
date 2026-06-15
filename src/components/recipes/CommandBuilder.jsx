@@ -506,11 +506,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     return { prefill: pick("prefill"), decode: pick("decode") };
   }, [recipe, strategies, pdModes]);
   const [pdPrefillPar, setPdPrefillPar] = useState(() => {
-    const p = searchParams.get("prefill_par");
+    const p = searchParams.get("prefill_mode");
     return p && pdModes.includes(p) ? p : pdDefaultPar.prefill;
   });
   const [pdDecodePar, setPdDecodePar] = useState(() => {
-    const p = searchParams.get("decode_par");
+    const p = searchParams.get("decode_mode");
     return p && pdModes.includes(p) ? p : pdDefaultPar.decode;
   });
   // Which DP rank's command to render for each DEP pool. User can bump this
@@ -894,11 +894,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     if (role === "prefill") {
       setPdPrefillPar(mode);
       setPdPrefillRank(0);
-      syncUrl({ prefill_par: mode === pdDefaultPar.prefill ? "" : mode, prefill_rank: "" });
+      syncUrl({ prefill_mode: mode === pdDefaultPar.prefill ? "" : mode, prefill_rank: "" });
     } else {
       setPdDecodePar(mode);
       setPdDecodeRank(0);
-      syncUrl({ decode_par: mode === pdDefaultPar.decode ? "" : mode, decode_rank: "" });
+      syncUrl({ decode_mode: mode === pdDefaultPar.decode ? "" : mode, decode_rank: "" });
     }
   };
 
