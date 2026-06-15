@@ -9,6 +9,10 @@ meta:
     - text
   related_recipes:
     - baidu/ERNIE-4.5-VL-28B-A3B-PT
+  hardware:
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "baidu/ERNIE-4.5-21B-A3B-PT"
@@ -80,7 +84,7 @@ guide: |
 
   - transformers >= 4.54.0
   - vLLM >= 0.10.1
-  - Hardware depends on variant (see above)
+  - Hardware depends on variant (see above); AMD ROCm supports MI300X / MI325X / MI355X
 
   ### Install vLLM
 
@@ -90,12 +94,33 @@ guide: |
   uv pip install vllm --torch-backend=auto
   ```
 
+  AMD ROCm wheel:
+
+  ```bash
+  uv venv --python 3.12 --seed
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+  ```
+
   ## Launch commands
 
   21B on 1x80GB GPU:
 
   ```bash
   vllm serve baidu/ERNIE-4.5-21B-A3B-PT
+  ```
+
+  21B on AMD MI300X / MI325X / MI355X:
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  export SAFETENSORS_FAST_GPU=1
+
+  vllm serve baidu/ERNIE-4.5-21B-A3B-PT \
+    --tensor-parallel-size 4 \
+    --gpu-memory-utilization 0.9 \
+    --disable-log-requests \
+    --trust-remote-code
   ```
 
   300B on 8x80GB with vLLM FP8 online quantization:
