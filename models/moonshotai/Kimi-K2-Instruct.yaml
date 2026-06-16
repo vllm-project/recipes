@@ -64,8 +64,6 @@ compatible_strategies:
 
 hardware_overrides:
   amd:
-    extra_args:
-      - "--no-enable-prefix-caching"
     extra_env:
       SAFETENSORS_FAST_GPU: "1"
 
@@ -195,8 +193,9 @@ guide: |
   export SAFETENSORS_FAST_GPU=1
   vllm serve moonshotai/Kimi-K2-Instruct \
     --tensor-parallel-size 8 \
-    --no-enable-prefix-caching \
-    --trust-remote-code
+    --trust-remote-code \
+    --enable-auto-tool-choice \
+    --tool-call-parser kimi_k2
   ```
 
   Additional flags:
