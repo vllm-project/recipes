@@ -33,7 +33,6 @@ For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.
 ```bash
 uv venv
 source .venv/bin/activate
-export VLLM_CPU_KVCACHE_SPACE=40 \
 export VLLM_VERSION=$(curl -s https://api.github.com/repos/vllm-project/vllm/releases/latest | jq -r .tag_name | sed 's/^v//')
 uv pip install https://github.com/vllm-project/vllm/releases/download/v${VLLM_VERSION}/vllm-${VLLM_VERSION}+cpu-cp38-abi3-manylinux_2_35_x86_64.whl --torch-backend cpu
 ```
@@ -98,7 +97,6 @@ docker run -itd --name qwen35b-cpu \
   --network host \
   --shm-size 16g \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
-  -e VLLM_CPU_KVCACHE_SPACE=40 \
   vllm/vllm-openai-cpu:latest-x86_64 \
     --model Qwen/Qwen3.5-35B-A3B \
     --host 0.0.0.0 \

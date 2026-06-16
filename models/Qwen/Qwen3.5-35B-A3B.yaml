@@ -81,10 +81,7 @@ compatible_strategies:
   - multi_node_dep
   - multi_node_tep
 
-hardware_overrides:
-  cpu:
-    extra_env:
-      VLLM_CPU_KVCACHE_SPACE: "40"
+hardware_overrides: {}
 
 strategy_overrides: {}
 
@@ -150,7 +147,6 @@ guide: |
     --network host \
     --shm-size 16g \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    -e VLLM_CPU_KVCACHE_SPACE=40 \
     vllm/vllm-openai-cpu:latest-x86_64 \
       --model Qwen/Qwen3.5-35B-A3B \
       --host 0.0.0.0 \
