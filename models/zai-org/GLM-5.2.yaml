@@ -115,7 +115,7 @@ guide: |
       --kv-cache-dtype fp8_e4m3"
   ```
 
-  On CUDA 13+, swap the image for `vllm/vllm-openai:v0.23.0`.
+  On CUDA 12.x, swap the image for `vllm/vllm-openai:v0.23.0-cu129`.
 
   ### From source
 
@@ -144,8 +144,12 @@ guide: |
 
   ### FP8 on 8xB200 (full 1M context)
 
-  GLM-5.2 has a native 1M-token window. To fit the whole window on 8xB200, keep the FP8 KV
-  cache and cap the number of in-flight sequences:
+  GLM-5.2 has a native 1M-token window. Whether the full window fits is a KV-cache VRAM
+  question, so the lever is `--max-num-seqs` — it bounds how many sequences share the KV budget
+  at once, leaving room for each to hold a long context. **Start at 32** and scale with your
+  node's VRAM: raise it on larger trays (e.g. 8xB300) or short-prompt traffic, lower it if you
+  OOM at full context. FP8 KV cache (`--kv-cache-dtype fp8_e4m3`, already in the base flags)
+  roughly halves that budget, which is what makes 1M reachable at all.
 
   ```bash
   VLLM_DEEP_GEMM_WARMUP=skip vllm serve zai-org/GLM-5.2-FP8 \
@@ -160,8 +164,8 @@ guide: |
     --served-model-name glm-5.2-fp8
   ```
 
-  - **`--max_num_seqs 32`** — the main knob for fitting 1M context in VRAM. Lower it if you OOM;
-    raise it when prompts are short or you have headroom.
+  - **`--max_num_seqs 32`** — the single knob for fitting 1M context; start at 32 and tune it to
+    your VRAM (up on headroom, down on OOM).
   - **`VLLM_DEEP_GEMM_WARMUP=skip`** — skips DeepGEMM JIT warmup for a faster startup; the first
     few requests compile kernels on demand instead.
   - **BF16** needs multi-node plus an extra loader flag — see [Troubleshooting](#troubleshooting).
