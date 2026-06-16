@@ -64,28 +64,8 @@ compatible_strategies:
 
 hardware_overrides:
   blackwell:
-    extra_args:
-      - "--kv-cache-dtype"
-      - "fp8"
-      - "--no-enable-prefix-caching"
-      - "--max-cudagraph-capture-size"
-      - "2048"
-      - "--max-num-batched-tokens"
-      - "8192"
-      - "--stream-interval"
-      - "20"
     extra_env:
       VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8: "1"
-  hopper:
-    extra_args:
-      - "--no-enable-prefix-caching"
-      - "--max-cudagraph-capture-size"
-      - "2048"
-      - "--max-num-batched-tokens"
-      - "8192"
-      - "--stream-interval"
-      - "20"
-    extra_env: {}
   amd:
     # vLLM 0.17.0+ replaces the old VLLM_ROCM_USE_AITER_* env knobs with
     # --attention-backend ROCM_AITER_UNIFIED_ATTN. HSA_NO_SCRATCH_RECLAIM is
@@ -158,12 +138,6 @@ guide: |
   ```bash
   export VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8=1
 
-  # GPT-OSS_Blackwell.yaml
-  # kv-cache-dtype: fp8
-  # no-enable-prefix-caching: true
-  # max-cudagraph-capture-size: 2048
-  # max-num-batched-tokens: 8192
-  # stream-interval: 20
   vllm serve openai/gpt-oss-120b --config GPT-OSS_Blackwell.yaml --tensor-parallel-size 1
   ```
 

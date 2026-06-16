@@ -73,11 +73,11 @@ hardware_overrides:
   nvidia:
     extra_args:
       - "--compilation-config"
-      - '{"mode":3,"cudagraph_mode":"PIECEWISE","pass_config":{"fuse_minimax_qk_norm":true}}'
+      - '{"cudagraph_mode":"PIECEWISE"}'
   hopper:
     extra_args:
       - "--compilation-config"
-      - '{"mode":3,"cudagraph_mode":"PIECEWISE","pass_config":{"fuse_minimax_qk_norm":true}}'
+      - '{"cudagraph_mode":"PIECEWISE"}'
       - "--max-num-seqs"
       - "512"
       - "--max-num-batched-tokens"
@@ -156,7 +156,7 @@ guide: |
         --tool-call-parser minimax_m2 \
         --reasoning-parser minimax_m2 \
         --enable-auto-tool-choice \
-        --compilation-config '{"mode":3,"cudagraph_mode":"PIECEWISE","pass_config":{"fuse_minimax_qk_norm":true}}' \
+        --compilation-config '{"cudagraph_mode":"PIECEWISE"}' \
         --trust-remote-code
   ```
 
@@ -179,7 +179,7 @@ guide: |
     --enable-flashinfer-autotune \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
-    --compilation-config '{"mode":3,"cudagraph_mode":"PIECEWISE","pass_config":{"fuse_minimax_qk_norm":true}}' \
+    --compilation-config '{"cudagraph_mode":"PIECEWISE"}' \
     --enable-auto-tool-choice \
     --trust-remote-code
   ```
@@ -199,7 +199,7 @@ guide: |
     --enable-expert-parallel \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
-    --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
+    --compilation-config '{"cudagraph_mode":"PIECEWISE"}' \
     --enable-auto-tool-choice
   ```
 
@@ -231,7 +231,7 @@ guide: |
   ## Troubleshooting
 
   - See [MiniMax-M2](./MiniMax-M2.yaml) for shared troubleshooting notes
-    (`fuse_minimax_qk_norm`, nightly vs stable, DeepGEMM, AITER).
+    (latest vLLM fusion behavior, nightly vs stable, DeepGEMM, AITER).
 
   ## References
 
