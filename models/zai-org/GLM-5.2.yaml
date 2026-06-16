@@ -96,7 +96,6 @@ guide: |
     `main` branch.
   - **GPU:** 8xH200 or 8xH20 (141 GB each) for single-node FP8; 8xB200 (180 GB each) for the
     full 1M context.
-  - **DeepGEMM** (FP8): install via `install_deepgemm.sh` from the vLLM repo.
 
   ## Installation
 
