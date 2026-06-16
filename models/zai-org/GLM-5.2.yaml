@@ -112,7 +112,7 @@ guide: |
       --reasoning-parser glm45 \
       --enable-auto-tool-choice \
       --served-model-name glm-5.2-fp8 \
-      --kv-cache-dtype fp8_e4m3"
+      --kv-cache-dtype fp8_e4m3
   ```
 
   On CUDA 12.x, swap the image for `vllm/vllm-openai:v0.23.0-cu129`.
