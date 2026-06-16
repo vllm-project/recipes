@@ -2,7 +2,7 @@ meta:
   title: "GLM-5.2"
   slug: "glm-5.2"
   provider: "GLM (Z-AI)"
-  description: "GLM-5.2 — frontier-scale MoE language model (~744B total parameters) with up to 5-token MTP speculative decoding and thinking mode"
+  description: "GLM-5.2 — frontier-scale MoE language model (~743B total parameters) with up to 5-token MTP speculative decoding and thinking mode"
   date_updated: 2026-06-16
   difficulty: advanced
   tasks:
@@ -21,11 +21,13 @@ model:
     nvidia: "vllm/vllm-openai:v0.23.0"
   architecture: moe
   parameter_count: "743B"
-  active_parameters: "49B"
+  active_parameters: "3339B"
   context_length: 1024000
   base_args:
     - "--kv-cache-dtype"
     - "fp8_e4m3"
+    - "--model-loader-extra-config"
+    - '{"enable_weights_track": false}'
   base_env: {}
 
 features:
@@ -56,15 +58,6 @@ variants:
     precision: bf16
     vram_minimum_gb: 1786
     description: "Full precision BF16 — requires multi-node deployment"
-    # GLM-5.2 sparse attention has IndexCache "skip" layers that reuse a
-    # neighbour layer's top-k indices and ship no indexer weights in the
-    # checkpoint. vLLM still instantiates those indexer modules, so the BF16
-    # strict weight check would otherwise raise
-    # `ValueError: ...indexer.k_norm... were not initialized`. Safe to skip:
-    # skip layers never invoke their indexer. FP8 disables the check itself.
-    extra_args:
-      - "--model-loader-extra-config"
-      - '{"enable_weights_track": false}'
   fp8:
     model_id: "zai-org/GLM-5.2-FP8"
     precision: fp8
@@ -87,7 +80,7 @@ strategy_overrides: {}
 guide: |
   ## Overview
 
-  GLM-5.2 is the latest iteration of the GLM-5 series, a 744B parameter frontier MoE model
+  GLM-5.2 is the latest iteration of the GLM-5 series, a 743B parameter frontier MoE model
   from Z-AI. It extends Multi-Token Prediction (MTP) speculative decoding from 3 to **5 draft
   tokens**, delivering higher throughput on reasoning, coding, and agentic workloads. Both BF16
   and native FP8 checkpoints are published.
