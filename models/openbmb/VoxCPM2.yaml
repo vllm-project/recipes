@@ -33,7 +33,7 @@ omni:
         curl -X POST http://localhost:8000/v1/audio/speech \
           -H "Content-Type: application/json" \
           -d '{
-            "model": "voxcpm2",
+            "model": "openbmb/VoxCPM2",
             "input": "Hello, this is VoxCPM2 served by vLLM-Omni.",
             "voice": "default",
             "response_format": "wav"
@@ -109,7 +109,7 @@ guide: |
   ```bash
   curl -X POST http://127.0.0.1:8000/v1/audio/speech \
     -H "Content-Type: application/json" \
-    -d '{"model": "voxcpm2", "input": "Hello, this is VoxCPM2.", "voice": "default", "response_format": "wav"}' \
+    -d '{"model": "openbmb/VoxCPM2", "input": "Hello, this is VoxCPM2.", "voice": "default", "response_format": "wav"}' \
     --output output.wav
   ```
 
@@ -133,7 +133,7 @@ guide: |
   ```bash
   curl -X POST http://127.0.0.1:8000/v1/audio/speech \
     -H "Content-Type: application/json" \
-    -d '{"model": "voxcpm2", "input": "Streaming PCM test.", "voice": "default", "stream": true, "response_format": "pcm"}' \
+    -d '{"model": "openbmb/VoxCPM2", "input": "Streaming PCM test.", "voice": "default", "stream": true, "response_format": "pcm"}' \
     --no-buffer | play -t raw -r 48000 -e signed -b 16 -c 1 -
   ```
 

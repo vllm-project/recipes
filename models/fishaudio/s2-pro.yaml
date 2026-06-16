@@ -33,6 +33,7 @@ omni:
         curl -X POST http://localhost:8000/v1/audio/speech \
           -H "Content-Type: application/json" \
           -d '{
+            "model": "fishaudio/s2-pro",
             "input": "Hello, how are you?",
             "voice": "default",
             "response_format": "wav"
@@ -125,7 +126,7 @@ guide: |
   ```bash
   curl -X POST http://localhost:8000/v1/audio/speech \
     -H "Content-Type: application/json" \
-    -d '{"input": "Hello, how are you?", "voice": "default", "response_format": "wav"}' \
+    -d '{"model": "fishaudio/s2-pro", "input": "Hello, how are you?", "voice": "default", "response_format": "wav"}' \
     --output output.wav
   ```
 
@@ -135,6 +136,7 @@ guide: |
   curl -X POST http://localhost:8000/v1/audio/speech \
     -H "Content-Type: application/json" \
     -d '{
+      "model": "fishaudio/s2-pro",
       "input": "Hello, this is a cloned voice.",
       "voice": "default",
       "ref_audio": "https://example.com/reference.wav",
