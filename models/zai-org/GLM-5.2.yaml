@@ -12,6 +12,7 @@ meta:
     - "zai-org/GLM-5"
     - "zai-org/GLM-5.1"
   hardware:
+    b300: verified
     b200: verified
 
 model:
