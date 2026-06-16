@@ -111,10 +111,11 @@ guide: |
       --tool-call-parser glm47 \
       --reasoning-parser glm45 \
       --enable-auto-tool-choice \
-      --served-model-name glm-5.2-fp8
+      --served-model-name glm-5.2-fp8 \
+      --kv-cache-dtype fp8_e4m3"
   ```
 
-  On CUDA 13+, swap the image for `vllm/vllm-openai:glm52-cu130`.
+  On CUDA 13+, swap the image for `vllm/vllm-openai:v0.23.0`.
 
   ### From source
 
