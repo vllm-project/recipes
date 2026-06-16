@@ -109,6 +109,13 @@ variants:
     # comfortably, ~4 GPUs for weights alone on Blackwell (B200/B300) or AMD MI350X/MI355X (gfx950)).
     vram_minimum_gb: 513
     description: "NVIDIA-quantized MXFP8 weights — Blackwell (B200/B300) for native MX tensor cores, and AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 Matrix Cores."
+    strategy_overrides:
+      single_node_tp:
+        hardware_overrides:
+          blackwell:
+            extra_args:
+              - "--moe-backend"
+              - "marlin"
 
 compatible_strategies:
   - single_node_tp
@@ -416,6 +423,7 @@ guide: |
   vllm serve MiniMaxAI/MiniMax-M3-MXFP8 \
     --tensor-parallel-size 8 \
     --block-size 128 \
+    --moe-backend marlin \
     --tool-call-parser minimax_m3 \
     --reasoning-parser minimax_m3 \
     --enable-auto-tool-choice

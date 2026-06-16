@@ -704,18 +704,20 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       args.push(parallelFlag, String(singleNodeTp));
     }
 
-    // 4. Strategy overrides from recipe
+    // 4. Strategy overrides from recipe and selected variant.
     //    Accept both `extra_args` (recipe convention) and `vllm_args` (strategy
     //    YAML convention) — some recipes mirror the strategy's role schema.
     const so = recipe.strategy_overrides?.[strategyName];
-    if (so) {
+    const variantSo = variant.strategy_overrides?.[strategyName];
+    for (const ov of [so, variantSo]) {
+      if (!ov) continue;
       if (roleOverride) {
-        const roleOv = so[roleOverride];
+        const roleOv = ov[roleOverride];
         if (roleOv?.extra_args) args.push(...roleOv.extra_args);
         if (roleOv?.vllm_args)  args.push(...roleOv.vllm_args);
       } else {
-        if (so.extra_args) args.push(...so.extra_args);
-        if (so.vllm_args)  args.push(...so.vllm_args);
+        if (ov.extra_args) args.push(...ov.extra_args);
+        if (ov.vllm_args)  args.push(...ov.vllm_args);
       }
     }
 
@@ -727,12 +729,18 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     //    A strategy may further override hardware overrides via
     //    `strategy_overrides.<strategy>.hardware_overrides.<gen>` — when set,
     //    it REPLACES the recipe-level hardware override for that gen on that
-    //    strategy. Use this to drop a recipe-wide hw flag (e.g. an MoE kernel
-    //    backend) for a specific strategy without duplicating the rest.
+    //    strategy. Variant-level forms have the same precedence but apply only
+    //    when that variant is selected.
     const isNvidia = hwProfile?.brand === "NVIDIA";
-    const strategyHo = so?.hardware_overrides?.[gen]
+    const variantStrategyHo = variantSo?.hardware_overrides?.[gen]
+      || (isNvidia ? variantSo?.hardware_overrides?.nvidia : null);
+    const recipeStrategyHo = so?.hardware_overrides?.[gen]
       || (isNvidia ? so?.hardware_overrides?.nvidia : null);
-    const ho = strategyHo
+    const variantHo = variant.hardware_overrides?.[gen]
+      || (isNvidia ? variant.hardware_overrides?.nvidia : null);
+    const ho = variantStrategyHo
+      || recipeStrategyHo
+      || variantHo
       || recipe.hardware_overrides?.[gen]
       || (isNvidia ? recipe.hardware_overrides?.nvidia : null);
     if (ho?.extra_args) args.push(...ho.extra_args);
@@ -812,20 +820,29 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
 
     // Strategy overrides env
     const so = recipe.strategy_overrides?.[strategyName];
-    if (so) {
-      if (so.env) Object.assign(env, so.env);
-      if (roleOverride && so[roleOverride]?.env) Object.assign(env, so[roleOverride].env);
-      if (!roleOverride && so.extra_env) Object.assign(env, so.extra_env);
+    const variantSo = variant.strategy_overrides?.[strategyName];
+    for (const ov of [so, variantSo]) {
+      if (!ov) continue;
+      if (ov.env) Object.assign(env, ov.env);
+      if (roleOverride && ov[roleOverride]?.env) Object.assign(env, ov[roleOverride].env);
+      if (!roleOverride && ov.extra_env) Object.assign(env, ov.extra_env);
     }
 
     // Hardware overrides env — same precedence as args block: generation key
     // first, then brand-wide `nvidia:` for NVIDIA GPUs. Per-strategy nested
     // hardware_overrides REPLACES the recipe-level for that gen on that
-    // strategy (mirrors the args-block behavior).
+    // strategy (mirrors the args-block behavior). Variant-level forms apply
+    // only to the selected variant and take precedence.
     const envIsNvidia = hwProfile?.brand === "NVIDIA";
-    const envStrategyHo = so?.hardware_overrides?.[gen]
+    const envVariantStrategyHo = variantSo?.hardware_overrides?.[gen]
+      || (envIsNvidia ? variantSo?.hardware_overrides?.nvidia : null);
+    const envRecipeStrategyHo = so?.hardware_overrides?.[gen]
       || (envIsNvidia ? so?.hardware_overrides?.nvidia : null);
-    const envHo = envStrategyHo
+    const envVariantHo = variant.hardware_overrides?.[gen]
+      || (envIsNvidia ? variant.hardware_overrides?.nvidia : null);
+    const envHo = envVariantStrategyHo
+      || envRecipeStrategyHo
+      || envVariantHo
       || recipe.hardware_overrides?.[gen]
       || (envIsNvidia ? recipe.hardware_overrides?.nvidia : null);
     if (envHo?.extra_env) Object.assign(env, envHo.extra_env);
