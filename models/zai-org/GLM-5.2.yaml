@@ -14,12 +14,15 @@ meta:
   hardware:
     b300: verified
     b200: verified
+    mi300x: verified
+    mi355x: verified
 
 model:
   model_id: "zai-org/GLM-5.2"
   min_vllm_version: "0.23.0"
   docker_image:
     nvidia: "vllm/vllm-openai:v0.23.0"
+    amd: "vllm/vllm-openai-rocm:nightly-4c626633159887b0f2c962058c17c78f1434556d"
   architecture: moe
   parameter_count: "743B"
   active_parameters: "39B"
@@ -72,7 +75,16 @@ compatible_strategies:
   - multi_node_dep
   - pd_cluster
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_args:
+      - "--linear-backend"
+      - "aiter"
+      - "--moe-backend"
+      - "aiter"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
 
 strategy_overrides: {}
 
@@ -139,6 +151,44 @@ guide: |
     --enable-auto-tool-choice \
     --served-model-name glm-5.2-fp8
   ```
+
+  ### FP8 on AMD MI300X/MI355X (full 1M context)
+
+  GLM-5.2 has a native 1M-token window. Whether the full window fits on ROCm is a
+  KV-cache VRAM question, so the levers are `--max-model-len` and `--max-num-seqs`.
+  Start with the values below, then scale them with your node's HBM and workload:
+  raise the context window when startup reports KV-cache headroom, or lower the
+  sequence cap if long prompts OOM under concurrency.
+
+  ```bash
+  VLLM_ROCM_USE_AITER=1 \
+  VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1 \
+  vllm serve zai-org/GLM-5.2-FP8 \
+    --kv-cache-dtype fp8_e4m3 \
+    --tensor-parallel-size 8 \
+    --speculative-config.method mtp \
+    --speculative-config.num_speculative_tokens 5 \
+    --tool-call-parser glm47 \
+    --enable-auto-tool-choice \
+    --reasoning-parser glm45 \
+    --gpu-memory-utilization 0.80 \
+    --max-model-len 524288 \
+    --max-num-seqs 32 \
+    --linear-backend aiter \
+    --moe-backend aiter
+  ```
+
+  - **`--max-model-len`** — caps the served context window; raise it toward the native
+    1M window when your HBM budget and workload leave KV-cache headroom.
+  - **`--max-num-seqs 32`** — the main knob for fitting long context under concurrency;
+    start at 32 and tune it to your HBM (up on headroom, down on OOM).
+  - **`--gpu-memory-utilization 0.80`** — leaves ROCm runtime headroom for MTP graph capture
+    and inference; raise it only after a representative concurrent smoke test.
+  - **`--speculative-config.num_speculative_tokens 5`** — enables GLM-5.2's 5-token MTP
+    path; reduce it if your workload shows low acceptance or higher latency.
+  - **`VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1`** — enables the shared-expert fused
+    MoE path. `VLLM_ROCM_USE_AITER_LINEAR` and `VLLM_ROCM_USE_AITER_MOE` default to enabled
+    when `VLLM_ROCM_USE_AITER=1`.
 
   ### FP8 on 8xB200 (full 1M context)
 
