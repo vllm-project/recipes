@@ -94,7 +94,6 @@ guide: |
     `main` branch.
   - **GPU:** 8xH200 or 8xH20 (141 GB each) for single-node FP8; 8xB200 (180 GB each) for the
     full 1M context.
-  - **DeepGEMM** (FP8): install via `install_deepgemm.sh` from the vLLM repo.
 
   ## Installation
 
@@ -262,9 +261,9 @@ guide: |
   ## Troubleshooting
 
   - **FP8 performance:** DeepGEMM is required — install via `install_deepgemm.sh`.
+  - **MTP performance:** We fixed some MTP acceptance rate issue in [This PR](https://github.com/vllm-project/vllm/pull/45895). If you encounter MTP acceptance rate issue, please update your branch or refer to [GLM-5.2 Docker Image](https://hub.docker.com/r/vllm/vllm-openai/tags?name=glm52).
 
   ## References
 
   - [Model card](https://huggingface.co/zai-org/GLM-5.2)
   - [FP8 checkpoint](https://huggingface.co/zai-org/GLM-5.2-FP8)
-  - [DeepGEMM install script](https://github.com/vllm-project/vllm/blob/v0.16.0rc0/tools/install_deepgemm.sh)
