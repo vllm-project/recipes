@@ -50,7 +50,7 @@ features:
   spec_decoding:
     description: "Multi-Token Prediction speculative decoding with 3 speculative tokens."
     args:
-      - "--speculative_config"
+      - "--speculative-config"
       - '{"method":"mtp","num_speculative_tokens":3}'
 
 opt_in_features:

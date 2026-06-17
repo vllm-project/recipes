@@ -151,7 +151,7 @@ guide: |
   vllm serve mistralai/Mistral-Medium-3.5-128B --tensor-parallel-size 8 \
     --tool-call-parser mistral --enable-auto-tool-choice --reasoning-parser mistral \
     --max_num_batched_tokens 16384 --max_num_seqs 128 --gpu_memory_utilization 0.8 \
-    --speculative_config '{"model":"mistralai/Mistral-Medium-3.5-128B-EAGLE","num_speculative_tokens":3,"method":"eagle","max_model_len":"65536"}'
+    --speculative-config '{"model":"mistralai/Mistral-Medium-3.5-128B-EAGLE","num_speculative_tokens":3,"method":"eagle","max_model_len":"65536"}'
   ```
 
   The draft model is a 2-layer Mistral-style head trained on the 128B target;

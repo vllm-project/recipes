@@ -165,7 +165,7 @@ guide: |
   ## EAGLE speculative decoding
 
   The EAGLE draft head is **not** included in the default config — toggle the
-  `spec_decoding` feature (or pass `--speculative_config` directly):
+  `spec_decoding` feature (or pass `--speculative-config` directly):
 
   ```bash
   vllm serve mistralai/Mistral-Small-4-119B-2603 \
@@ -176,7 +176,7 @@ guide: |
     --reasoning-parser mistral \
     --max_num_batched_tokens 16384 --max_num_seqs 128 \
     --gpu_memory_utilization 0.8 \
-    --speculative_config '{
+    --speculative-config '{
       "model": "mistralai/Mistral-Small-4-119B-2603-eagle",
       "num_speculative_tokens": 3,
       "method": "eagle",
