@@ -1,7 +1,7 @@
 meta:
   title: "HunyuanOCR"
   slug: "hunyuan-ocr"
-  provider: "Tencent Hunyuan"
+  provider: "Hunyuan (Tencent)"
   description: "Tencent Hunyuan end-to-end OCR expert VLM (~1B) for online OCR serving with an OpenAI-compatible API"
   date_updated: 2026-04-17
   difficulty: beginner

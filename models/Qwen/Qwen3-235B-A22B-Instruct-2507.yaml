@@ -45,6 +45,8 @@ variants:
     model_id: "Qwen/Qwen3-235B-A22B-FP8"
     precision: fp8
     vram_minimum_gb: 240
+    # FP8 block_n=128 + moe_intermediate_size=1536 → TP must divide 12; cap at 4.
+    tp: 4
     description: "Qwen official FP8 checkpoint for improved efficiency on SM90+"
   nvfp4:
     model_id: "nvidia/Qwen3-235B-A22B-Instruct-2507-NVFP4"
@@ -99,11 +101,8 @@ guide: |
 
   ```bash
   HIP_VISIBLE_DEVICES="4,5,6,7" \
-  VLLM_USE_V1=1 \
   VLLM_ROCM_USE_AITER=1 \
   VLLM_ROCM_USE_AITER_MHA=0 \
-  VLLM_V1_USE_PREFILL_DECODE_ATTENTION=1 \
-  VLLM_USE_TRITON_FLASH_ATTN=0 \
   SAFETENSORS_FAST_GPU=1 \
   vllm serve Qwen/Qwen3-235B-A22B \
     --trust-remote-code \
@@ -121,11 +120,8 @@ guide: |
 
   ```bash
   HIP_VISIBLE_DEVICES="4,5,6,7" \
-  VLLM_USE_V1=1 \
   VLLM_ROCM_USE_AITER=1 \
   VLLM_ROCM_USE_AITER_MHA=0 \
-  VLLM_V1_USE_PREFILL_DECODE_ATTENTION=1 \
-  VLLM_USE_TRITON_FLASH_ATTN=0 \
   SAFETENSORS_FAST_GPU=1 \
   vllm serve Qwen/Qwen3-235B-A22B-FP8 \
     --trust-remote-code \

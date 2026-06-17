@@ -18,15 +18,12 @@ meta:
 model:
   model_id: "MiniMaxAI/MiniMax-M2.1"
   min_vllm_version: "0.11.0"
-  docker_image: "vllm/vllm-openai:minimax27"
   architecture: moe
   parameter_count: "230B"
   active_parameters: "10B"
   context_length: 196608
   base_args:
     - "--trust-remote-code"
-    - "--compilation-config"
-    - '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}'
   base_env: {}
 
 features:
@@ -58,10 +55,26 @@ compatible_strategies:
   - multi_node_tp_pp
   - multi_node_tep
   - multi_node_dep
+  - pd_cluster
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_args:
+      - "--tensor-parallel-size"
+      - "2"
+      - "--attention-backend"
+      - "ROCM_AITER_FA"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT: "1"
 
-strategy_overrides: {}
+strategy_overrides:
+  single_node_tp:
+    # Pure TP=8 fails on the FP8 block-quantized gate_up weights:
+    # intermediate_size / 8 = 192 is not divisible by block_n = 128.
+    # Pin TP=4 on 8-GPU nodes; for full-node utilization use
+    # single_node_tep (TP+EP) or single_node_dep (DP+EP).
+    tp: 4
 
 guide: |
   ## Overview
@@ -97,7 +110,6 @@ guide: |
         --tool-call-parser minimax_m2 \
         --reasoning-parser minimax_m2 \
         --enable-auto-tool-choice \
-        --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
         --trust-remote-code
   ```
 
@@ -110,7 +122,6 @@ guide: |
     --tensor-parallel-size 4 \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
-    --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
     --enable-auto-tool-choice \
     --trust-remote-code
   ```
@@ -125,15 +136,14 @@ guide: |
     --enable-expert-parallel \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
-    --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
     --enable-auto-tool-choice
   ```
 
-  ### AMD ROCm
+  ### AMD ROCm — TP2
 
   ```bash
   VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.1 \
-    --tensor-parallel-size 4 \
+    --tensor-parallel-size 2 \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
     --enable-auto-tool-choice \
@@ -157,7 +167,7 @@ guide: |
   ## Troubleshooting
 
   - See [MiniMax-M2](./MiniMax-M2.yaml) for shared troubleshooting notes
-    (`fuse_minimax_qk_norm`, nightly vs stable, DeepGEMM, AITER).
+    (latest vLLM fusion behavior, nightly vs stable, DeepGEMM, AITER).
 
   ## References
 

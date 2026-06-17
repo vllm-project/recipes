@@ -13,6 +13,9 @@ meta:
     - "moonshotai/Kimi-K2.5"
   hardware:
     h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "moonshotai/Kimi-K2-Instruct"
@@ -59,7 +62,10 @@ compatible_strategies:
   - multi_node_tep
   - pd_cluster
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_env:
+      SAFETENSORS_FAST_GPU: "1"
 
 strategy_overrides:
   # Kimi-K2 16xH800 reference command from the original recipe: TP8 inside each
@@ -103,6 +109,17 @@ guide: |
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend auto
+  ```
+
+  ### AMD ROCm
+
+  The ROCm wheel requires Python 3.12, ROCm 7.0+, and glibc >= 2.35. Use the
+  ROCm Docker image when your host environment does not meet those requirements.
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
   ```
 
   ## Running Kimi-K2 with FP8 on 16xH800
@@ -166,6 +183,17 @@ guide: |
     --max-num-batched-tokens 8192 \
     --max-num-seqs 256 \
     --gpu-memory-utilization 0.85 \
+    --enable-auto-tool-choice \
+    --tool-call-parser kimi_k2
+  ```
+
+  ### ROCm on 8x MI300X / MI325X / MI355X
+
+  ```bash
+  export SAFETENSORS_FAST_GPU=1
+  vllm serve moonshotai/Kimi-K2-Instruct \
+    --tensor-parallel-size 8 \
+    --trust-remote-code \
     --enable-auto-tool-choice \
     --tool-call-parser kimi_k2
   ```

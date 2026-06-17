@@ -15,7 +15,6 @@ meta:
 model:
   model_id: "zai-org/GLM-5"
   min_vllm_version: "0.16.0"
-  docker_image: "vllm/vllm-openai:glm51"
   architecture: moe
   parameter_count: "744B"
   active_parameters: "40B"
@@ -85,6 +84,7 @@ compatible_strategies:
   - multi_node_tp_pp
   - multi_node_tep
   - multi_node_dep
+  - pd_cluster
 
 hardware_overrides: {}
 
@@ -114,7 +114,7 @@ guide: |
     -p 8000:8000 \
     --ipc=host \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai:glm51 zai-org/GLM-5-FP8 \
+    vllm/vllm-openai:latest zai-org/GLM-5-FP8 \
       --tensor-parallel-size 8 \
       --tool-call-parser glm47 \
       --reasoning-parser glm45 \
@@ -122,7 +122,7 @@ guide: |
       --chat-template-content-format=string
   ```
 
-  Use `vllm/vllm-openai:glm51-cu130` for CUDA 13+.
+  Use `vllm/vllm-openai:latest-cu129` for CUDA 12.x.
 
   ### Install vLLM from Source
 

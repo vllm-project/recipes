@@ -1,0 +1,284 @@
+meta:
+  title: "GLM-5.2"
+  slug: "glm-5.2"
+  provider: "GLM (Z-AI)"
+  description: "GLM-5.2 — frontier-scale MoE language model (~743B total parameters, 39B active) with up to 5-token MTP speculative decoding and thinking mode"
+  date_updated: 2026-06-09
+  difficulty: advanced
+  tasks:
+    - text
+  performance_headline: "Latest GLM-5 series MoE with extended MTP (5 draft tokens), improved reasoning and agentic performance"
+  related_recipes:
+    - "zai-org/GLM-5"
+    - "zai-org/GLM-5.1"
+  hardware:
+    b300: verified
+    b200: verified
+
+model:
+  model_id: "zai-org/GLM-5.2"
+  min_vllm_version: "0.23.0"
+  docker_image:
+    nvidia: "vllm/vllm-openai:v0.23.0"
+  architecture: moe
+  parameter_count: "743B"
+  active_parameters: "39B"
+  context_length: 1024000
+  base_args:
+    - "--kv-cache-dtype"
+    - "fp8_e4m3"
+  base_env: {}
+
+features:
+  tool_calling:
+    description: "GLM-4.7 tool call parser with automatic tool choice"
+    args:
+      - "--tool-call-parser"
+      - "glm47"
+      - "--enable-auto-tool-choice"
+  reasoning:
+    description: "GLM-4.5 reasoning parser — thinking mode enabled by default on requests"
+    args:
+      - "--reasoning-parser"
+      - "glm45"
+  spec_decoding:
+    description: "Multi-Token Prediction speculative decoding (up to 5 draft tokens)"
+    args:
+      - "--speculative-config.method"
+      - "mtp"
+      - "--speculative-config.num_speculative_tokens"
+      - "5"
+
+opt_in_features:
+  - spec_decoding
+
+variants:
+  default:
+    model_id: "zai-org/GLM-5.2-FP8"
+    precision: fp8
+    vram_minimum_gb: 893
+    description: "Native FP8 checkpoint — 8xH200/H20 (141GB × 8) single-node serving"
+  bf16:
+    precision: bf16
+    vram_minimum_gb: 1786
+    description: "Full precision BF16 — requires multi-node deployment"
+    extra_args:
+      - "--model-loader-extra-config.enable_weights_track=false"
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - multi_node_tp
+  - multi_node_tp_pp
+  - multi_node_tep
+  - multi_node_dep
+  - pd_cluster
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  GLM-5.2 is the newest model in the GLM-5 series — a ~743B-parameter MoE (39B active) from
+  Z-AI. The
+  headline change over GLM-5 / 5.1 is that **Multi-Token Prediction (MTP) is extended from 3 to
+  5 draft tokens**, lifting end-to-end throughput on reasoning, coding, and agentic workloads.
+  It ships as BF16 and native-FP8 checkpoints and keeps the GLM thinking-mode behavior.
+
+  This recipe targets the **FP8** checkpoint, the practical default: it fits on a single
+  8xH200 / 8xH20 node and — with FP8 KV cache — reaches the full 1M-token context on 8xB200.
+
+  ## Prerequisites
+
+  - **vLLM 0.23.0** (stable). If you need tool calling and MTP at the same time, use the latest
+    `main` branch.
+  - **GPU:** 8xH200 or 8xH20 (141 GB each) for single-node FP8; 8xB200 (180 GB each) for the
+    full 1M context.
+
+  ## Installation
+
+  ### Docker
+
+  ```bash
+  docker run --gpus all \
+    -p 8000:8000 \
+    --ipc=host \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai:v0.23.0 zai-org/GLM-5.2-FP8 \
+      --tensor-parallel-size 8 \
+      --tool-call-parser glm47 \
+      --reasoning-parser glm45 \
+      --enable-auto-tool-choice \
+      --served-model-name glm-5.2-fp8 \
+      --kv-cache-dtype fp8_e4m3
+  ```
+
+  On CUDA 12.x, swap the image for `vllm/vllm-openai:v0.23.0-cu129`.
+
+  ### From source
+
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install "vllm==0.23.0" --torch-backend=auto
+  uv pip install "transformers>=5.9.0"
+  ```
+
+  ## Launching the server
+
+  ### FP8 on 8xH200 (standard)
+
+  ```bash
+  vllm serve zai-org/GLM-5.2-FP8 \
+    --kv-cache-dtype fp8_e4m3 \
+    --tensor-parallel-size 8 \
+    --speculative-config.method mtp \
+    --speculative-config.num_speculative_tokens 5 \
+    --tool-call-parser glm47 \
+    --reasoning-parser glm45 \
+    --enable-auto-tool-choice \
+    --served-model-name glm-5.2-fp8
+  ```
+
+  ### FP8 on 8xB200 (full 1M context)
+
+  GLM-5.2 has a native 1M-token window. Whether the full window fits is a KV-cache VRAM
+  question, so the lever is `--max-num-seqs` — it bounds how many sequences share the KV budget
+  at once, leaving room for each to hold a long context. **Start at 32** and scale with your
+  node's VRAM: raise it on larger trays (e.g. 8xB300) or short-prompt traffic, lower it if you
+  OOM at full context. FP8 KV cache (`--kv-cache-dtype fp8_e4m3`, already in the base flags)
+  roughly halves that budget, which is what makes 1M reachable at all.
+
+  ```bash
+  VLLM_DEEP_GEMM_WARMUP=skip vllm serve zai-org/GLM-5.2-FP8 \
+    --kv-cache-dtype fp8_e4m3 \
+    --tensor-parallel-size 8 \
+    --speculative-config.method mtp \
+    --speculative-config.num_speculative_tokens 5 \
+    --max_num_seqs 32 \
+    --tool-call-parser glm47 \
+    --reasoning-parser glm45 \
+    --enable-auto-tool-choice \
+    --served-model-name glm-5.2-fp8
+  ```
+
+  - **`--max_num_seqs 32`** — the single knob for fitting 1M context; start at 32 and tune it to
+    your VRAM (up on headroom, down on OOM).
+  - **`VLLM_DEEP_GEMM_WARMUP=skip`** — skips DeepGEMM JIT warmup for a faster startup; the first
+    few requests compile kernels on demand instead.
+  - **BF16** needs multi-node plus an extra loader flag — see [Troubleshooting](#troubleshooting).
+
+  ## Thinking mode & effort
+
+  Thinking is **on by default**. Turn it off per request with
+  `chat_template_kwargs.enable_thinking: false`.
+
+  GLM-5.2 also exposes a **thinking-effort** dial that trades reasoning depth for latency:
+
+  | Effort | When to use |
+  |--------|-------------|
+  | `max` | Deepest reasoning — hard math, multi-step planning, agentic tasks. Highest token cost. |
+  | `high` | Balanced depth and latency. A good default for most workloads. |
+
+  Set it with `chat_template_kwargs.thinking_effort`, or via the OpenAI-compatible
+  `reasoning_effort` field. It has no effect when thinking is disabled.
+
+  ## Client usage
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+  msgs = [{"role": "user", "content": "Summarize GLM-5.2 in one sentence."}]
+
+  # Thinking effort = "max" (or "high")
+  r = client.chat.completions.create(
+      model="glm-5.2-fp8",
+      messages=msgs,
+      temperature=1,
+      max_tokens=4096,
+      extra_body={"chat_template_kwargs": {"thinking_effort": "max"}},
+  )
+  print(r.choices[0].message.reasoning)
+
+  # Equivalent via the OpenAI reasoning_effort field
+  client.chat.completions.create(
+      model="glm-5.2-fp8", messages=msgs, extra_body={"reasoning_effort": "high"},
+  )
+
+  # Thinking OFF (thinking_effort is ignored)
+  client.chat.completions.create(
+      model="glm-5.2-fp8",
+      messages=msgs,
+      extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+  )
+  ```
+
+  ### cURL — thinking effort `max`
+
+  ```bash
+  curl http://localhost:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "glm-5.2-fp8",
+      "messages": [{"role": "user", "content": "Summarize GLM-5.2 in one sentence."}],
+      "temperature": 1,
+      "max_tokens": 4096,
+      "chat_template_kwargs": {"thinking_effort": "max"}
+    }'
+  ```
+
+  ### cURL — thinking off
+
+  ```bash
+  curl http://localhost:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "glm-5.2-fp8",
+      "messages": [{"role": "user", "content": "Summarize GLM-5.2 in one sentence."}],
+      "temperature": 1,
+      "max_tokens": 4096,
+      "chat_template_kwargs": {"enable_thinking": false}
+    }'
+  ```
+
+  ## Benchmarking
+
+  Add `--no-enable-prefix-caching` to the server command for a clean measurement.
+
+  ```bash
+  vllm bench serve \
+    --model zai-org/GLM-5.2-FP8 \
+    --dataset-name random \
+    --random-input 8000 \
+    --random-output 1024 \
+    --request-rate 10 \
+    --num-prompts 32 \
+    --ignore-eos
+  ```
+
+  > **Note:** pure throughput benchmarks tend to under-report real speed, because MTP's
+  > acceptance rate is usually low in synthetic runs.
+
+  ## Troubleshooting
+
+  - **BF16 weight-load error (`...indexer.k_norm...` not initialized):** GLM-5.2 uses
+    DeepSeek-style sparse attention, where IndexCache "skip" layers reuse a neighbour layer's
+    top-k indices and carry no indexer weights in the checkpoint. vLLM still builds those
+    indexer modules, so under BF16 the post-load strict weight check raises
+    `ValueError: Following weights were not initialized from checkpoint: {...indexer.k_norm...}`.
+    The `bf16` variant works around this with
+    `--model-loader-extra-config.enable_weights_track=false` (already injected into its
+    generated command). This is safe because skip layers never run their indexer (those
+    weights are never read). FP8 is unaffected — the strict check is disabled for quantized
+    models.
+  - **Tool calling + MTP:** If both are needed simultaneously, use the latest vLLM main branch.
+  - **FP8 performance:** DeepGEMM is required — install via `install_deepgemm.sh`.
+
+  ## References
+
+  - [Model card](https://huggingface.co/zai-org/GLM-5.2)
+  - [FP8 checkpoint](https://huggingface.co/zai-org/GLM-5.2-FP8)
+  - [DeepGEMM install script](https://github.com/vllm-project/vllm/blob/v0.16.0rc0/tools/install_deepgemm.sh)

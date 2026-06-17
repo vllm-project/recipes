@@ -55,6 +55,12 @@ export function RecipeCardGrid({ recipes }) {
         <div className="flex items-baseline gap-2 mb-3 pb-2 border-b border-border">
           <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Latest recipes</span>
           <span className="text-[10px] text-muted-foreground/60">newest {latest.length}</span>
+          <Link
+            href="/browse"
+            className="ml-auto text-[11px] text-muted-foreground hover:text-vllm-blue transition-colors"
+          >
+            View all {recipes.length} →
+          </Link>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {latest.map((r) => <RecipeCard key={r.hf_id} recipe={r} />)}
@@ -78,7 +84,6 @@ function RecipeCard({ recipe }) {
   const v = recipe.variants?.default || {};
   const tasks = recipe.meta?.tasks || [];
   const logo = getProviderLogo(recipe.hf_org);
-  const isOmni = tasks.includes("omni");
   const isMoe = recipe.model?.architecture === "moe";
   const ctx = recipe.model?.context_length || 0;
   const ctxLabel = ctx >= 1_000_000 ? `${Math.round(ctx / 1_000_000)}M` : ctx >= 1000 ? `${Math.round(ctx / 1000)}K` : String(ctx);
@@ -139,11 +144,8 @@ function RecipeCard({ recipe }) {
 
       {/* Footer: hint or description */}
       <div className="mt-auto text-[11px] text-muted-foreground line-clamp-2 leading-snug">
-        {recipe.meta?.performance_headline || recipe.meta?.description || ""}
+        {recipe.meta?.description || recipe.meta?.performance_headline || ""}
       </div>
-      {isOmni && (
-        <div className="text-[10px] text-vllm-yellow/80 font-medium">via vLLM-Omni</div>
-      )}
     </Link>
   );
 }

@@ -3,7 +3,7 @@ meta:
   slug: "glm-5.1"
   provider: "GLM (Z-AI)"
   description: "GLM-5.1 refreshed version of GLM-5 — frontier-scale MoE language model (~744B total parameters) with MTP speculative decoding and thinking mode"
-  date_updated: 2026-04-17
+  date_updated: 2026-05-21
   difficulty: advanced
   tasks:
     - text
@@ -15,7 +15,6 @@ meta:
 model:
   model_id: "zai-org/GLM-5.1"
   min_vllm_version: "0.19.1"
-  docker_image: "vllm/vllm-openai:latest"
   architecture: moe
   parameter_count: "744B"
   active_parameters: "40B"
@@ -58,6 +57,16 @@ variants:
     precision: fp8
     vram_minimum_gb: 893
     description: "Native FP8 checkpoint — 8xH200/H20 (141GB × 8) single-node serving"
+  nvfp4:
+    model_id: "nvidia/GLM-5.1-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 446
+    description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+    extra_env:
+      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
 compatible_strategies:
   - single_node_tp
@@ -66,6 +75,7 @@ compatible_strategies:
   - multi_node_tp_pp
   - multi_node_tep
   - multi_node_dep
+  - pd_cluster
 
 hardware_overrides: {}
 
@@ -96,7 +106,7 @@ guide: |
     -p 8000:8000 \
     --ipc=host \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai:glm51 zai-org/GLM-5.1-FP8 \
+    vllm/vllm-openai:latest zai-org/GLM-5.1-FP8 \
       --tensor-parallel-size 8 \
       --tool-call-parser glm47 \
       --reasoning-parser glm45 \
@@ -105,7 +115,7 @@ guide: |
       --served-model-name glm-5.1-fp8
   ```
 
-  Use `vllm/vllm-openai:glm51-cu130` for CUDA 13+.
+  Use `vllm/vllm-openai:latest-cu129` for CUDA 12.x.
 
   ### Install vLLM from Source
 

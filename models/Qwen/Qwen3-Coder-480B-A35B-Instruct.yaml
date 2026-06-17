@@ -14,6 +14,7 @@ meta:
     mi300x: verified
     mi325x: verified
     mi355x: verified
+    ironwood: verified
 
 model:
   model_id: "Qwen/Qwen3-Coder-480B-A35B-Instruct"
@@ -49,6 +50,8 @@ variants:
     model_id: "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8"
     precision: fp8
     vram_minimum_gb: 576
+    # FP8 block_n=128 + moe_intermediate_size=2560 → TP must divide 20; cap at 4.
+    tp: 4
     description: "Qwen official FP8 checkpoint — required for DP=8 serving"
   nvfp4:
     model_id: "nvidia/Qwen3-Coder-480B-A35B-Instruct-NVFP4"
@@ -89,6 +92,8 @@ guide: |
   ## Overview
 
   [Qwen3-Coder](https://github.com/QwenLM/Qwen3-Coder) is an advanced large language model created by the Qwen team. `Qwen3-Coder-480B-A35B-Instruct` is the flagship coder MoE with 480B total / 35B active parameters. vLLM supports it including tool calling; the guide below covers BF16 and FP8 serving on NVIDIA and AMD GPUs.
+
+  TPU support is provided through [vLLM TPU](https://github.com/vllm-project/tpu-inference) with a recipe for [Ironwood](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/ironwood/vLLM/Qwen3-Coder-480B-A35B). The Ironwood docker command rendered by the hardware picker uses the `vllm/vllm-tpu` image; pin to the tag specified by the upstream recipe.
 
   ## Prerequisites
 
@@ -186,3 +191,4 @@ guide: |
   - [FP8 checkpoint](https://huggingface.co/Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8)
   - [Qwen3-Coder GitHub](https://github.com/QwenLM/Qwen3-Coder)
   - [EvalPlus](https://github.com/evalplus/evalplus)
+  - [TPU recipes: Ironwood](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/ironwood/vLLM/Qwen3-Coder-480B-A35B)
