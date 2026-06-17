@@ -140,8 +140,8 @@ guide: |
     --attention-backend FLASH_ATTN_MLA \
     --tool-call-parser mistral --enable-auto-tool-choice \
     --reasoning-parser mistral \
-    --max_num_batched_tokens 16384 --max_num_seqs 128 \
-    --gpu_memory_utilization 0.8
+    --max-num-batched-tokens 16384 --max-num-seqs 128 \
+    --gpu-memory-utilization 0.8
   ```
 
   NVFP4 variant (single B200, or 2xB200 for full 256K context):
@@ -153,8 +153,8 @@ guide: |
     --attention-backend TRITON_MLA \
     --tool-call-parser mistral --enable-auto-tool-choice \
     --reasoning-parser mistral \
-    --max_num_batched_tokens 16384 --max_num_seqs 128 \
-    --gpu_memory_utilization 0.8
+    --max-num-batched-tokens 16384 --max-num-seqs 128 \
+    --gpu-memory-utilization 0.8
   ```
 
   Mistral publishes a custom Docker image
@@ -174,8 +174,8 @@ guide: |
     --attention-backend FLASH_ATTN_MLA \
     --tool-call-parser mistral --enable-auto-tool-choice \
     --reasoning-parser mistral \
-    --max_num_batched_tokens 16384 --max_num_seqs 128 \
-    --gpu_memory_utilization 0.8 \
+    --max-num-batched-tokens 16384 --max-num-seqs 128 \
+    --gpu-memory-utilization 0.8 \
     --speculative-config '{
       "model": "mistralai/Mistral-Small-4-119B-2603-eagle",
       "num_speculative_tokens": 3,

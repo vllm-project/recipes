@@ -205,14 +205,14 @@ guide: |
     --tensor-parallel-size 8 \
     --speculative-config.method mtp \
     --speculative-config.num_speculative_tokens 5 \
-    --max_num_seqs 32 \
+    --max-num-seqs 32 \
     --tool-call-parser glm47 \
     --reasoning-parser glm45 \
     --enable-auto-tool-choice \
     --served-model-name glm-5.2-fp8
   ```
 
-  - **`--max_num_seqs 32`** — the single knob for fitting 1M context; start at 32 and tune it to
+  - **`--max-num-seqs 32`** — the single knob for fitting 1M context; start at 32 and tune it to
     your VRAM (up on headroom, down on OOM).
   - **`VLLM_DEEP_GEMM_WARMUP=skip`** — skips DeepGEMM JIT warmup for a faster startup; the first
     few requests compile kernels on demand instead.
