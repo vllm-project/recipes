@@ -23,7 +23,7 @@ model:
   architecture: moe
   parameter_count: "743B"
   active_parameters: "39B"
-  context_length: 1024000
+  context_length: 1048576
   base_args:
     - "--kv-cache-dtype"
     - "fp8_e4m3"
@@ -62,8 +62,6 @@ variants:
     precision: bf16
     vram_minimum_gb: 1786
     description: "Full precision BF16 — requires multi-node deployment"
-    extra_args:
-      - "--model-loader-extra-config.enable_weights_track=false"
 
 compatible_strategies:
   - single_node_tp
@@ -106,7 +104,7 @@ guide: |
     -p 8000:8000 \
     --ipc=host \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai:v0.23.0 zai-org/GLM-5.2-FP8 \
+    vllm/vllm-openai:glm52 zai-org/GLM-5.2-FP8 \
       --tensor-parallel-size 8 \
       --tool-call-parser glm47 \
       --reasoning-parser glm45 \
@@ -115,7 +113,7 @@ guide: |
       --kv-cache-dtype fp8_e4m3
   ```
 
-  On CUDA 12.x, swap the image for `vllm/vllm-openai:v0.23.0-cu129`.
+  On CUDA 12.x, swap the image for `vllm/vllm-openai:glm52-cu129`.
 
   ### From source
 
@@ -170,20 +168,21 @@ guide: |
     few requests compile kernels on demand instead.
   - **BF16** needs multi-node plus an extra loader flag — see [Troubleshooting](#troubleshooting).
 
-  ## Thinking mode & effort
+  ## Reasoning modes
 
-  Thinking is **on by default**. Turn it off per request with
-  `chat_template_kwargs.enable_thinking: false`.
+  Thinking is **on by default**. GLM-5.2 reuses the DeepSeek-V4 `reasoning_effort` mechanism,
+  with two effort levels driven by the `reasoning_effort` field:
 
-  GLM-5.2 also exposes a **thinking-effort** dial that trades reasoning depth for latency:
+  | Mode | How to request | Behavior |
+  |------|----------------|----------|
+  | **Think Max** (default) | omit `reasoning_effort`, or set `"max"` | Deepest reasoning — hard math, multi-step planning, agentic tasks. Highest token cost. |
+  | **Think High** | `"reasoning_effort": "high"` | Balanced depth and latency. |
+  | **Non-think** | `chat_template_kwargs.enable_thinking: false` | Fast, no chain-of-thought. |
 
-  | Effort | When to use |
-  |--------|-------------|
-  | `max` | Deepest reasoning — hard math, multi-step planning, agentic tasks. Highest token cost. |
-  | `high` | Balanced depth and latency. A good default for most workloads. |
-
-  Set it with `chat_template_kwargs.thinking_effort`, or via the OpenAI-compatible
-  `reasoning_effort` field. It has no effect when thinking is disabled.
+  The chat template resolves effort to **`max` unless `reasoning_effort` is explicitly `"high"`**,
+  so Max is the default and High is opt-in. Pass it through `chat_template_kwargs` (the
+  DeepSeek-V4 path) or the top-level OpenAI `reasoning_effort` field; it has no effect when
+  thinking is disabled.
 
   ## Client usage
 
@@ -193,30 +192,27 @@ guide: |
   client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
   msgs = [{"role": "user", "content": "Summarize GLM-5.2 in one sentence."}]
 
-  # Thinking effort = "max" (or "high")
-  r = client.chat.completions.create(
+  # Think Max (default) — just omit reasoning_effort
+  client.chat.completions.create(model="glm-5.2-fp8", messages=msgs, max_tokens=4096)
+
+  # Think High — explicitly request reasoning_effort: "high"
+  client.chat.completions.create(
       model="glm-5.2-fp8",
       messages=msgs,
-      temperature=1,
       max_tokens=4096,
-      extra_body={"chat_template_kwargs": {"thinking_effort": "max"}},
-  )
-  print(r.choices[0].message.reasoning)
-
-  # Equivalent via the OpenAI reasoning_effort field
-  client.chat.completions.create(
-      model="glm-5.2-fp8", messages=msgs, extra_body={"reasoning_effort": "high"},
+      extra_body={"chat_template_kwargs": {"reasoning_effort": "high"}},
   )
 
-  # Thinking OFF (thinking_effort is ignored)
+  # Non-think
   client.chat.completions.create(
       model="glm-5.2-fp8",
       messages=msgs,
+      max_tokens=4096,
       extra_body={"chat_template_kwargs": {"enable_thinking": False}},
   )
   ```
 
-  ### cURL — thinking effort `max`
+  ### cURL — Think High
 
   ```bash
   curl http://localhost:8000/v1/chat/completions \
@@ -226,11 +222,11 @@ guide: |
       "messages": [{"role": "user", "content": "Summarize GLM-5.2 in one sentence."}],
       "temperature": 1,
       "max_tokens": 4096,
-      "chat_template_kwargs": {"thinking_effort": "max"}
+      "chat_template_kwargs": {"reasoning_effort": "high"}
     }'
   ```
 
-  ### cURL — thinking off
+  ### cURL — non-think
 
   ```bash
   curl http://localhost:8000/v1/chat/completions \
@@ -264,21 +260,10 @@ guide: |
 
   ## Troubleshooting
 
-  - **BF16 weight-load error (`...indexer.k_norm...` not initialized):** GLM-5.2 uses
-    DeepSeek-style sparse attention, where IndexCache "skip" layers reuse a neighbour layer's
-    top-k indices and carry no indexer weights in the checkpoint. vLLM still builds those
-    indexer modules, so under BF16 the post-load strict weight check raises
-    `ValueError: Following weights were not initialized from checkpoint: {...indexer.k_norm...}`.
-    The `bf16` variant works around this with
-    `--model-loader-extra-config.enable_weights_track=false` (already injected into its
-    generated command). This is safe because skip layers never run their indexer (those
-    weights are never read). FP8 is unaffected — the strict check is disabled for quantized
-    models.
-  - **Tool calling + MTP:** If both are needed simultaneously, use the latest vLLM main branch.
   - **FP8 performance:** DeepGEMM is required — install via `install_deepgemm.sh`.
+  - **MTP performance:** We fixed some MTP acceptance rate issue in [This PR](https://github.com/vllm-project/vllm/pull/45895). If you encounter MTP acceptance rate issue, please update your branch or refer to [GLM-5.2 Docker Image](https://hub.docker.com/r/vllm/vllm-openai/tags?name=glm52).
 
   ## References
 
   - [Model card](https://huggingface.co/zai-org/GLM-5.2)
   - [FP8 checkpoint](https://huggingface.co/zai-org/GLM-5.2-FP8)
-  - [DeepGEMM install script](https://github.com/vllm-project/vllm/blob/v0.16.0rc0/tools/install_deepgemm.sh)
