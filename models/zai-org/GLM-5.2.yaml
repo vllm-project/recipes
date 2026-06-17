@@ -22,7 +22,7 @@ model:
   min_vllm_version: "0.23.0"
   docker_image:
     nvidia: "vllm/vllm-openai:v0.23.0"
-    amd: "vllm/vllm-openai-rocm:nightly"
+    amd: "vllm/vllm-openai-rocm:nightly-4c626633159887b0f2c962058c17c78f1434556d"
   architecture: moe
   parameter_count: "743B"
   active_parameters: "39B"
