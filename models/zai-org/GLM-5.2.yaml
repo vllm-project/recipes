@@ -23,7 +23,7 @@ model:
   architecture: moe
   parameter_count: "743B"
   active_parameters: "39B"
-  context_length: 1024000
+  context_length: 1048576
   base_args:
     - "--kv-cache-dtype"
     - "fp8_e4m3"
