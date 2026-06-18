@@ -14,6 +14,9 @@ meta:
     h100: verified
     b200: verified
     gb200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "meta-llama/Llama-4-Scout-17B-16E-Instruct"
@@ -107,11 +110,37 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x B200 (FP4), 1x H100 (FP8), or 4x GPUs (BF16)
+  - Hardware: 1x B200 (FP4), 1x H100 (FP8), 4x GPUs (BF16), or 8x MI300X/MI325X/MI355X
   - vLLM >= 0.12.0
   - CUDA Driver >= 575
   - Docker with NVIDIA Container Toolkit (recommended)
   - License: Must agree to Meta's Llama 4 Scout Community License
+
+  ### AMD ROCm
+
+  The ROCm wheel requires Python 3.12, ROCm 7.0+, and glibc >= 2.35. Use the
+  ROCm Docker image when your host environment does not meet those requirements.
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+  ```
+
+  Launch on 8x MI300X / MI325X / MI355X with AITER enabled:
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  vllm serve meta-llama/Llama-4-Scout-17B-16E-Instruct \
+    --tensor-parallel-size 8 \
+    --max-num-seqs 64 \
+    --no-enable-prefix-caching \
+    --max-num-batched-tokens 16384 \
+    --max-model-len 32000 \
+    --disable-log-requests
+  ```
+
+  The first AITER launch may take several minutes while ROCm kernels are compiled and cached.
 
   ## Client Usage
 
