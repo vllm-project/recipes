@@ -28,8 +28,21 @@ const HARDWARE_LOGOS = {
 const OUT = "public/providers";
 fs.mkdirSync(OUT, { recursive: true });
 
+async function fetchWithTimeout(url, options = {}, timeout = 10000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(id);
+    return response;
+  } catch (error) {
+    clearTimeout(id);
+    throw error;
+  }
+}
+
 async function fetchOrgAvatarUrl(org) {
-  const res = await fetch(`https://huggingface.co/${org}`, {
+  const res = await fetchWithTimeout(`https://huggingface.co/${org}`, {
     headers: { "User-Agent": "vllm-recipes-build/1.0" },
   });
   const html = await res.text();
@@ -58,7 +71,7 @@ for (const [org, meta] of Object.entries(targets)) {
       failed++;
       continue;
     }
-    const imgRes = await fetch(avatarUrl);
+    const imgRes = await fetchWithTimeout(avatarUrl);
     const buffer = Buffer.from(await imgRes.arrayBuffer());
     fs.writeFileSync(localPath, buffer);
     console.log(`✓ ${org} (${buffer.length}B)`);
