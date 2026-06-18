@@ -14,10 +14,16 @@ meta:
     - "moonshotai/Kimi-K2-Thinking"
   hardware:
     h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "moonshotai/Kimi-K2.7-Code"
   min_vllm_version: "0.19.1"
+  docker_image:
+    nvidia: "vllm/vllm-openai:latest"
+    amd: "vllm/vllm-openai-rocm:nightly-4c626633159887b0f2c962058c17c78f1434556d"
   architecture: moe
   parameter_count: "1T"
   active_parameters: "32B"
@@ -74,6 +80,11 @@ hardware_overrides:
   blackwell:
     extra_args:
       - "--attention-config.use_trtllm_ragged_deepseek_prefill=True"
+  amd:
+    # Verified on 8× MI300X / MI355X (MI325X listed as supported but not verified).
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
 
 strategy_overrides: {}
 
@@ -124,6 +135,55 @@ guide: |
     correct reasoning processing.
   - `--mm-encoder-tp-mode data` — runs the small MoonViT encoder data-parallel to avoid TP
     communication overhead.
+
+  ### AMD MI300X/MI325X
+
+  On 8x MI300X or MI325X (`gfx942`), use the standard W4A16 MoE path with AITER
+  and INT4 QuickReduce.
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+
+  vllm serve moonshotai/Kimi-K2.7-Code \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --trust-remote-code \
+    --tensor-parallel-size 8 \
+    --tool-call-parser kimi_k2 \
+    --enable-auto-tool-choice \
+    --reasoning-parser kimi_k2 \
+    --mm-encoder-tp-mode data
+  ```
+
+  ### AMD MI350X/MI355X
+
+  On 8x MI350X or MI355X (`gfx950`), add `--moe-backend flydsl` to use the
+  optimized FlyDSL W4A16 MoE kernel. Keep LoRA disabled for this path.
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+
+  vllm serve moonshotai/Kimi-K2.7-Code \
+    --tensor-parallel-size 8 \
+    --trust-remote-code \
+    --mm-encoder-tp-mode data \
+    --moe-backend flydsl \
+    --tool-call-parser kimi_k2 \
+    --enable-auto-tool-choice \
+    --reasoning-parser kimi_k2 \
+    --compilation-config '{"pass_config": {"fuse_allreduce_rms": false}}'
+  ```
+
+  Notes:
+  - The FlyDSL INT4 MoE path does not support expert parallelism; do not add
+    `--enable-expert-parallel`.
+  - Keep `--compilation-config '{"pass_config": {"fuse_allreduce_rms": false}}'`;
+    it is required for this FlyDSL path on MI350X / MI355X.
+  - vLLM has tuned MI350X/MI355X FlyDSL configs for this Kimi shape at TP=8 and TP=4.
+  - Keep vLLM's default block size unless you are tuning long-context
+    throughput; `--block-size 64` is safe to try.
 
   ## Client Usage
 
