@@ -146,7 +146,7 @@ strategy_overrides:
       - "--compilation-config"
       - '{"cudagraph_mode":"FULL_AND_PIECEWISE", "custom_ops":["all"]}'
   multi_node_tep:
-    # moe_intermediate_size=3072 / TP must divide evenly into FP8 block_n=128.
+    # moe_intermediate_size=3072 / TP must be a multiple of FP8 block_n=128.
     # TP=16 (2 × 8-GPU nodes) gives 3072/16=192, which is not a multiple of 128
     # and breaks FP8 block-quantized GEMMs (vllm-project/vllm#40955). Lock TP=8
     # until vllm-project/vllm#41312 ships in a stable release; revert this then.
