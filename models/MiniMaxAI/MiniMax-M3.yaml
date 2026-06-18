@@ -3,7 +3,7 @@ meta:
   slug: "minimax-m3"
   provider: "MiniMax"
   description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 checkpoint with an MXFP8 variant from NVIDIA. Runs on NVIDIA (Hopper/Blackwell) and on AMD CDNA4 (MI350X/MI355X) and CDNA3 (MI300X/MI325X)."
-  date_updated: 2026-06-12
+  date_updated: 2026-06-15
   difficulty: advanced
   tasks:
     - text
@@ -121,6 +121,9 @@ compatible_strategies:
   - pd_cluster
 
 hardware_overrides:
+  hopper:
+    extra_env:
+      VLLM_FLOAT32_MATMUL_PRECISION: "high"
   amd:
     # ROCm MI3xx: MSA sparse attention runs on the Triton backend — this is the
     # main-model attention and is always needed on AMD. The vision-encoder
@@ -193,6 +196,7 @@ guide: |
   ### NVIDIA — TP8 (8x H200 / H20)
 
   ```bash
+  VLLM_FLOAT32_MATMUL_PRECISION=high \
   vllm serve MiniMaxAI/MiniMax-M3 \
     --tensor-parallel-size 8 \
     --block-size 128 \
@@ -204,6 +208,7 @@ guide: |
   #### TP8 + Expert Parallel
 
   ```bash
+  VLLM_FLOAT32_MATMUL_PRECISION=high \
   vllm serve MiniMaxAI/MiniMax-M3 \
     --tensor-parallel-size 8 \
     --enable-expert-parallel \
@@ -216,6 +221,7 @@ guide: |
   #### DP8 + Expert Parallel
 
   ```bash
+  VLLM_FLOAT32_MATMUL_PRECISION=high \
   vllm serve MiniMaxAI/MiniMax-M3 \
     --data-parallel-size 8 \
     --enable-expert-parallel \
