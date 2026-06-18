@@ -44,7 +44,7 @@ Recipes are YAML files at `models/<hf_org>/<hf_repo>.yaml`. The path mirrors Hug
 
 5. **Create the YAML.** Write `models/<hf_org>/<hf_repo>.yaml` following the schema below. Only include sections the model needs; leave `features: {}`, `opt_in_features: []`, `hardware_overrides: {}`, `strategy_overrides: {}` empty if not applicable.
 6. **Register the provider (if new).** If `<hf_org>` isn't already in `src/lib/providers.js`, add an entry with `display_name` and the logo path `/providers/<hf_org>.png` (or `.jpeg`). Logos get downloaded by `scripts/fetch-provider-logos.mjs` on the next build.
-7. **Validate.** Run `node scripts/build-recipes-api.mjs`. It must print `✓ JSON API: N models, 7 strategies` with no errors.
+7. **Validate.** Run `node scripts/build-recipes-api.mjs`. It must print `✓ JSON API: N models, <strategy-count> strategies` with no errors.
 8. **Commit.** Follow the user's earlier feedback (no kill-and-rebuild of dev server; syntax-check only).
 
 ## YAML schema (top-level fields, in order)
@@ -150,7 +150,7 @@ variants:
     extra_args: []
     extra_env: {}
 
-compatible_strategies:            # subset of the 7 in strategies/*.yaml
+compatible_strategies:            # subset of strategies/*.yaml
   - single_node_tp                # always include this as a baseline
   - single_node_tep               # for MoE
   - single_node_dep               # for MoE
@@ -158,6 +158,25 @@ compatible_strategies:            # subset of the 7 in strategies/*.yaml
   - multi_node_dep                # for MoE
   - multi_node_tep                # for MoE
   - pd_cluster                    # only if the recipe documents PD
+  - kv_store_distributed_mooncake # only when Mooncake distributed KV cache is documented/validated
+  - kv_store_centralized_mooncake # only when Mooncake centralized KV cache is documented/validated
+
+# Optional. Controls the "KV Cache Strategy" picker. Local KV Cache is always
+# available; non-local KV cache strategies are selectable only when they appear
+# in `compatible_strategies` AND this per-strategy/per-hardware map marks the
+# selected hardware `verified`. Use this to avoid showing unvalidated Mooncake
+# commands on CUDA GPUs while enabling them on validated AMD GPUs.
+#
+# Example: both Mooncake modes verified on MI300X and MI355X, but not yet on
+# H100/H200/B200. On unlisted hardware, the UI keeps the option visible but
+# disabled and falls back to Local KV Cache even if the URL requests it.
+kv_cache_strategy_hardware:
+  kv_store_distributed_mooncake:
+    mi300x: verified
+    mi355x: verified
+  kv_store_centralized_mooncake:
+    mi300x: verified
+    mi355x: verified
 
 hardware_overrides:               # optional per-generation flags
   hopper:    { extra_args: [], extra_env: {} }
@@ -208,7 +227,8 @@ If the variant is `model_id`-overridden and the override is a different base mod
 ## Naming and conventions
 
 - **Feature keys**: prefer `tool_calling`, `reasoning`, `spec_decoding`. Don't use `mtp` — it's been renamed across the repo.
-- **Strategy list**: MoE recipes usually support every strategy; dense recipes are limited to `single_node_tp` and `multi_node_tp` (TEP/DEP require MoE).
+- **Strategy list**: MoE recipes usually support every serving strategy; dense recipes are limited to `single_node_tp` and `multi_node_tp` (TEP/DEP require MoE). Treat KV cache as a separate category: add backend-suffixed ids such as `kv_store_distributed_mooncake` / `kv_store_centralized_mooncake` only when the recipe has a real Mooncake KV-store configuration, then gate each one with `kv_cache_strategy_hardware`.
+- **KV Cache Strategy validation**: `Local KV Cache` is implicit and always selectable. Non-local KV cache strategies must be explicitly verified per hardware in `kv_cache_strategy_hardware`; absence means "not validated", not "assumed supported". If a PR or benchmark validates both distributed and centralized KV cache on `mi300x` and `mi355x`, list both hardware ids under both strategy keys. Do not mark H100/H200/B200 verified unless the exact KV-store deployment was validated there.
 - **Variants**: quantized variants reuse the base name (`fp8`, `nvfp4`, `int4`). If the quantized checkpoint is authored by someone else (e.g. `nvidia/*-NVFP4`), set `model_id:` inside the variant.
 - **Tasks**: `omni` means served via vLLM-Omni (`vllm serve <model> --omni`). Add a top-level `omni:` block listing the task ids the recipe supports — bare strings for catalog defaults (`tasks: [t2i]`) or `{ id, model_id?, vram_minimum_gb?, description?, extra_args? }` overrides when a task swaps the checkpoint (Wan2.2) or needs per-task flags. Audio-only recipes set `omni.serve_binary: "vllm-omni serve"`. The catalog is `src/lib/omni-tasks.js`; do not add `--omni` to `model.base_args` (auto-injected).
 
@@ -219,6 +239,7 @@ Before committing:
 1. `node scripts/build-recipes-api.mjs` succeeds and the new recipe appears in the line count.
 2. `node -e "const d = require('./public/<hf_org>/<hf_repo>.json'); console.log(d.model.parameter_count, d.variants.default.vram_minimum_gb)"` prints sensible values.
 3. The YAML top-level key order matches the schema above — downstream tools don't care, but reviewers scan for it.
+4. If the recipe includes `kv_store_distributed_mooncake` or `kv_store_centralized_mooncake`, `kv_cache_strategy_hardware` exists and lists only hardware where that exact KV cache mode was validated. Spot-check the selector logic with a small Node script or rendered page: unlisted hardware should offer only Local KV Cache; verified hardware should enable the matching non-local options.
 
 ## Commit
 

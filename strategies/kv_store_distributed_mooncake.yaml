@@ -1,4 +1,4 @@
-name: kv_store_distributed
+name: kv_store_distributed_mooncake
 deploy_type: kv_store_lb
 display_name: "Distributed KV Store (Mooncake)"
 orientation: production

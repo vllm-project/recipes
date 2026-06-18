@@ -70,14 +70,14 @@ compatible_strategies:
   - multi_node_dep
   - multi_node_tep
   - pd_cluster
-  - kv_store_distributed
-  - kv_store_centralized
+  - kv_store_distributed_mooncake
+  - kv_store_centralized_mooncake
 
 kv_cache_strategy_hardware:
-  kv_store_distributed:
+  kv_store_distributed_mooncake:
     mi300x: verified
     mi355x: verified
-  kv_store_centralized:
+  kv_store_centralized_mooncake:
     mi300x: verified
     mi355x: verified
 
