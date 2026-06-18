@@ -59,10 +59,8 @@ features:
   spec_decoding:
     description: "Multi-Token Prediction with 5 speculative tokens"
     args:
-      - "--speculative_config.method"
-      - "mtp"
-      - "--speculative_config.num_speculative_tokens"
-      - "5"
+      - "--speculative-config"
+      - '{"method":"mtp","num_speculative_tokens":5}'
 
 opt_in_features: []
 
@@ -107,8 +105,7 @@ guide: |
     --max-num-batched-tokens 32768 \
     --enable-flashinfer-autotune \
     --async-scheduling \
-    --speculative_config.method mtp \
-    --speculative_config.num_speculative_tokens 5 \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":5}' \
     --mamba-backend triton \
     --mamba-ssm-cache-dtype float32 \
     --reasoning-parser nemotron_v3 \

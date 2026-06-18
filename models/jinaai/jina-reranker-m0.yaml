@@ -80,7 +80,7 @@ guide: |
     --port 8000 \
     --tensor_parallel_size 2 \
     --gpu-memory-utilization 0.75 \
-    --max_num_seqs 32
+    --max-num-seqs 32
   ```
 
   On AMD:
@@ -88,7 +88,7 @@ guide: |
   ```bash
   export VLLM_ROCM_USE_AITER=1
   vllm serve jinaai/jina-reranker-m0 \
-    --tensor_parallel_size 2 --gpu-memory-utilization 0.75 --max_num_seqs 32
+    --tensor_parallel_size 2 --gpu-memory-utilization 0.75 --max-num-seqs 32
   ```
 
   ## Rerank API
