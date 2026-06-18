@@ -46,10 +46,12 @@ variants:
     vram_minimum_gb: 640
     description: "BF16 weights (poolside/Laguna-M.1) — ~450GB, needs 8×H200 or 8×H100 80GB via TP=8"
   fp8:
+    model_id: "poolside/Laguna-M.1-FP8"
     precision: fp8
     vram_minimum_gb: 512
     description: "FP8 weights + FP8 KV cache (poolside/Laguna-M.1-FP8) — ~225GB, fits 4×H200 via TP=4"
   nvfp4:
+    model_id: "poolside/Laguna-M.1-NVFP4"
     precision: nvfp4
     vram_minimum_gb: 256
     description: "NVFP4 weights (poolside/Laguna-M.1-NVFP4) — ~115GB, fits 2× Blackwell (B200) via TP=2; needs sm_100/sm_120"
