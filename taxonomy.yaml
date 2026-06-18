@@ -175,3 +175,8 @@ strategies:
   - pd_cluster
   - kv_store_distributed
   - kv_store_centralized
+
+kv_cache_strategies:
+  - local
+  - kv_store_distributed
+  - kv_store_centralized

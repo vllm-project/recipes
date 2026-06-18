@@ -73,6 +73,14 @@ compatible_strategies:
   - kv_store_distributed
   - kv_store_centralized
 
+kv_cache_strategy_hardware:
+  kv_store_distributed:
+    mi300x: verified
+    mi355x: verified
+  kv_store_centralized:
+    mi300x: verified
+    mi355x: verified
+
 hardware_overrides:
   hopper:
     extra_args: []

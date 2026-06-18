@@ -354,7 +354,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   //   1. Global (hardware): tracks the user's physical setup, shared across
   //      every recipe. NVIDIA-only — AMD is opt-in per session and H200
   //      stays canonical on first load.
-  //   2. Per-recipe (strategy / nodes / features): keyed by hf_id, so each
+  //   2. Per-recipe (strategy / KV cache strategy / nodes / features): keyed by hf_id, so each
   //      recipe remembers its own choices independently. Picking TP on
   //      V4-Flash doesn't make V4-Pro default to TP — Pro keeps whatever
   //      was last picked there (or its YAML default if untouched).
@@ -379,7 +379,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const rs = loadRecipeState(recipe.hf_id);
     if (!searchParams.get("strategy") && rs.strategy &&
         (recipe.compatible_strategies || []).includes(rs.strategy)) {
-      setStrategyOverride(rs.strategy);
+      const savedStrategy = strategies[rs.strategy];
+      if (savedStrategy?.deploy_type === "kv_store_lb") {
+        if (!searchParams.get("kv_cache_strategy")) {
+          setKvCacheStrategy(rs.strategy);
+        }
+      } else {
+        setStrategyOverride(rs.strategy);
+      }
+    }
+    if (!searchParams.get("kv_cache_strategy") && rs.kvCacheStrategy &&
+        (recipe.compatible_strategies || []).includes(rs.kvCacheStrategy) &&
+        strategies[rs.kvCacheStrategy]?.deploy_type === "kv_store_lb") {
+      setKvCacheStrategy(rs.kvCacheStrategy);
     }
     if (!searchParams.get("features") && Array.isArray(rs.features)) {
       const recipeFeatures = Object.keys(recipe.features || {});
@@ -418,9 +430,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   // Recipes without a multi_node_* / pd_cluster strategy can't scale beyond one
   // node — force nodeCount to 1 in that case, even if the URL says otherwise.
-  const supportsMultiNode = (recipe.compatible_strategies || []).some(
-    (s) => s.startsWith("multi_node_") || s === "pd_cluster"
-  );
+  const supportsMultiNode = (recipe.compatible_strategies || []).some((s) => {
+    const strat = strategies[s];
+    return s.startsWith("multi_node_") || s === "pd_cluster" || strat?.deploy_type === "kv_store_lb";
+  });
   const [nodeCount, setNodeCount] = useState(() => {
     if (!supportsMultiNode) return 1;
     const initialHwId = searchParams.get("hardware") || defaultHw;
@@ -501,7 +514,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const n = parseInt(searchParams.get("decode_rank") || "0", 10);
     return Number.isFinite(n) && n >= 0 ? n : 0;
   });
-  const [strategyOverride, setStrategyOverride] = useState(searchParams.get("strategy") || "");
+  const [strategyOverride, setStrategyOverride] = useState(() => {
+    const s = searchParams.get("strategy") || "";
+    return strategies[s]?.deploy_type === "kv_store_lb" ? "" : s;
+  });
+  const [kvCacheStrategy, setKvCacheStrategy] = useState(() => {
+    const fromKvParam = searchParams.get("kv_cache_strategy") || "";
+    if (fromKvParam && strategies[fromKvParam]?.deploy_type === "kv_store_lb") return fromKvParam;
+    const fromLegacyStrategy = searchParams.get("strategy") || "";
+    if (strategies[fromLegacyStrategy]?.deploy_type === "kv_store_lb") return fromLegacyStrategy;
+    return "local";
+  });
   // Default-on features = (all features) − (recipe.opt_in_features) − (recipe.hardware_opt_in_features[hwId]).
   // The per-hw override lets a recipe suppress a feature's default on specific
   // hardware (e.g. GB200's 4-GPU trays make --mm-encoder-tp-mode data unnecessary).
@@ -650,16 +673,79 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     return (recipe.compatible_strategies || []).filter((s) => {
       const strat = strategies[s];
       if (!strat) return false;
+      if (strat.deploy_type === "kv_store_lb") return false;
       if (nodeCount === 1 && strat.deploy_type === "multi_node") return false;
-      if (nodeCount === 1 && strat.deploy_type === "kv_store_lb") return false;
       if (nodeCount > 1 && strat.deploy_type === "single_node") return false;
       return true;
     });
   }, [recipe, strategies, nodeCount]);
 
+  const compatibleKvCacheStrategies = useMemo(() => {
+    const order = Array.isArray(taxonomy.kv_cache_strategies)
+      ? taxonomy.kv_cache_strategies.filter((s) => s !== "local")
+      : [];
+    const compatible = (recipe.compatible_strategies || []).filter((s) => {
+      const strat = strategies[s];
+      return strat?.deploy_type === "kv_store_lb";
+    });
+    if (!order.length) return compatible;
+    const orderIndex = new Map(order.map((s, i) => [s, i]));
+    return compatible.sort((a, b) => {
+      const ai = orderIndex.has(a) ? orderIndex.get(a) : Number.MAX_SAFE_INTEGER;
+      const bi = orderIndex.has(b) ? orderIndex.get(b) : Number.MAX_SAFE_INTEGER;
+      if (ai !== bi) return ai - bi;
+      return a.localeCompare(b);
+    });
+  }, [recipe, strategies, taxonomy]);
+
+  const kvCacheStrategyStatus = useCallback(
+    (s, hardwareId = hwId) => {
+      if (s === "local") return "verified";
+      return recipe.kv_cache_strategy_hardware?.[s]?.[hardwareId] || null;
+    },
+    [recipe, hwId]
+  );
+  const isKvCacheStrategySelectable = useCallback(
+    (s, hardwareId = hwId) => s === "local" || kvCacheStrategyStatus(s, hardwareId) === "verified",
+    [hwId, kvCacheStrategyStatus]
+  );
+
+  const activeKvCacheStrategy = compatibleKvCacheStrategies.includes(kvCacheStrategy) &&
+    isKvCacheStrategySelectable(kvCacheStrategy)
+    ? kvCacheStrategy
+    : "local";
+
   // PD now sizes each pool independently, so the "2× model VRAM on one node"
   // concern that used to invalidate pd_cluster on small GPUs no longer applies.
-  const activeStrategy = strategyOverride || recommended;
+  const recommendedServingStrategy = compatibleStrategies.includes(recommended)
+    ? recommended
+    : (compatibleStrategies[0] || recommended);
+  const activeServingStrategy = compatibleStrategies.includes(strategyOverride)
+    ? strategyOverride
+    : recommendedServingStrategy;
+  const activeStrategy = activeKvCacheStrategy === "local"
+    ? activeServingStrategy
+    : activeKvCacheStrategy;
+
+  useEffect(() => {
+    if (kvCacheStrategy !== "local" && activeKvCacheStrategy === "local") {
+      setKvCacheStrategy("local");
+      syncUrl({ kv_cache_strategy: "" });
+      saveRecipeState(recipe.hf_id, { kvCacheStrategy: undefined });
+      return;
+    }
+    if (activeKvCacheStrategy === "local" || nodeCount > 1) return;
+    if (!hwScalable) {
+      setKvCacheStrategy("local");
+      syncUrl({ kv_cache_strategy: "" });
+      saveRecipeState(recipe.hf_id, { kvCacheStrategy: undefined });
+      return;
+    }
+    setNodeCount(2);
+    syncUrl({ nodes: "2" });
+    saveRecipeState(recipe.hf_id, { nodes: 2 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeKvCacheStrategy, kvCacheStrategy, nodeCount, hwScalable]);
 
   // Effective TP under single_node_tp, via the shared resolver so the hint
   // is perfectly in sync with the generated command. The resolver accepts
@@ -763,6 +849,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     setStrategyOverride("");
     const newProfile = taxonomy.hardware_profiles?.[id] || {};
     const newScalable = isHardwareScalable(newProfile);
+    const kvSelectableOnNewHardware = isKvCacheStrategySelectable(kvCacheStrategy, id);
+    if (!newScalable || !kvSelectableOnNewHardware) {
+      setKvCacheStrategy("local");
+    }
     // Non-scalable hardware (single-GPU workstation) can't shard an oversized
     // variant. If the active variant doesn't fit the new box, fall to the
     // largest variant that does (e.g. BF16 → FP8 on DGX Station).
@@ -795,6 +885,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     syncUrl({
       hardware: id,
       strategy: "",
+      kv_cache_strategy: (!newScalable || !kvSelectableOnNewHardware) ? "" : undefined,
       nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
       features: featuresToUrl(next, id),
     });
@@ -803,28 +894,47 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // doesn't leave stale strategy/nodes/features cached for this recipe.
     saveRecipeState(recipe.hf_id, {
       strategy: undefined,
+      kvCacheStrategy: (!newScalable || !kvSelectableOnNewHardware) ? undefined : kvCacheStrategy,
       nodes: shouldBumpNodes ? 2 : shouldUnbumpNodes ? 1 : nodeCount,
       features: next,
     });
   };
 
   const selectStrategy = (s) => {
-    const strat = strategies[s];
-    if (strat?.deploy_type === "kv_store_lb" && nodeCount === 1) {
-      setNodeCount(2);
-      syncUrl({ strategy: s, nodes: "2" });
-    } else {
-      syncUrl({ strategy: s });
-    }
     setStrategyOverride(s);
+    syncUrl({ strategy: s });
     saveRecipeState(recipe.hf_id, { strategy: s || undefined });
+  };
+
+  const selectKvCacheStrategy = (s) => {
+    const next = s || "local";
+    const isLocal = next === "local";
+    if (!isKvCacheStrategySelectable(next)) return;
+    setKvCacheStrategy(next);
+    if (!isLocal && nodeCount === 1) {
+      setNodeCount(2);
+      syncUrl({ kv_cache_strategy: next, nodes: "2" });
+      saveRecipeState(recipe.hf_id, { kvCacheStrategy: next, nodes: 2 });
+      return;
+    }
+    syncUrl({ kv_cache_strategy: isLocal ? "" : next });
+    saveRecipeState(recipe.hf_id, { kvCacheStrategy: isLocal ? undefined : next });
   };
 
   const selectNodes = (n) => {
     setNodeCount(n);
     setStrategyOverride("");
-    syncUrl({ nodes: n === 1 ? "" : String(n), strategy: "" });
-    saveRecipeState(recipe.hf_id, { nodes: n, strategy: undefined });
+    if (n === 1) setKvCacheStrategy("local");
+    syncUrl({
+      nodes: n === 1 ? "" : String(n),
+      strategy: "",
+      kv_cache_strategy: n === 1 ? "" : undefined,
+    });
+    saveRecipeState(recipe.hf_id, {
+      nodes: n,
+      strategy: undefined,
+      kvCacheStrategy: n === 1 ? undefined : kvCacheStrategy,
+    });
   };
 
   const setPdNodes = (role, n) => {
@@ -1502,7 +1612,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 return (
                   <Pill
                     key={s}
-                    active={activeStrategy === s}
+                    active={activeServingStrategy === s}
                     onClick={() => selectStrategy(s)}
                     title={strategies[s]?.description}
                   >
@@ -1514,13 +1624,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 );
               })}
             </PillGroup>
-            {strategies[activeStrategy]?.description && (
+            {strategies[activeServingStrategy]?.description && (
               <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
-                {strategies[activeStrategy].description.split("\n")[0]}
+                {strategies[activeServingStrategy].description.split("\n")[0]}
               </p>
             )}
-            {strategies[activeStrategy]?.orientation && (() => {
-              const o = strategies[activeStrategy].orientation;
+            {strategies[activeServingStrategy]?.orientation && (() => {
+              const o = strategies[activeServingStrategy].orientation;
               const { label, classes } = o === "latency"
                 ? { label: "Latency oriented", classes: "bg-green-500/20 text-green-600 dark:text-green-400" }
                 : o === "balanced"
@@ -1535,6 +1645,45 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               );
             })()}
           </ConfigRow>
+
+          {compatibleKvCacheStrategies.length > 0 && (
+            <ConfigRow label="KV Cache Strategy">
+              <PillGroup>
+                <Pill
+                  active={activeKvCacheStrategy === "local"}
+                  onClick={() => selectKvCacheStrategy("local")}
+                  title="Use vLLM's local KV cache on each serving process."
+                >
+                  <span className="font-semibold">Local KV Cache</span>
+                </Pill>
+                {compatibleKvCacheStrategies.map((s) => (
+                  (() => {
+                    const selectable = isKvCacheStrategySelectable(s);
+                    const disabled = !hwScalable || !selectable;
+                    const disabledTitle = !hwScalable
+                      ? `${hwProfile.display_name || "This hardware"} is a single-GPU workstation and can't run a multi-node KV-store deployment.`
+                      : `${strategies[s]?.display_name || s} has not been validated on ${hwProfile.display_name || hwId}; use Local KV Cache for this hardware.`;
+                    return (
+                      <Pill
+                        key={s}
+                        active={activeKvCacheStrategy === s}
+                        disabled={disabled}
+                        onClick={() => disabled ? null : selectKvCacheStrategy(s)}
+                        title={disabled ? disabledTitle : strategies[s]?.description}
+                      >
+                        <span className="font-semibold">{strategies[s]?.display_name || s}</span>
+                      </Pill>
+                    );
+                  })()
+                ))}
+              </PillGroup>
+              {activeKvCacheStrategy !== "local" && strategies[activeKvCacheStrategy]?.description && (
+                <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                  {strategies[activeKvCacheStrategy].description.split("\n")[0]}
+                </p>
+              )}
+            </ConfigRow>
+          )}
 
           {/* Nodes — two number inputs for PD (one per pool), pills otherwise */}
           {activeStrategy === "pd_cluster" ? (
@@ -1739,7 +1888,7 @@ function PdNodeInput({ label, value, gpuPerNode, onChange }) {
 function ConfigRow({ label, hint, children }) {
   return (
     <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
-      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest sm:w-20 sm:pt-1.5 shrink-0 inline-flex items-center gap-1">
+      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest sm:w-28 sm:pt-1.5 shrink-0 inline-flex items-center gap-1">
         {label}
         {hint && (
           <InfoTip content={hint}>
