@@ -2,7 +2,7 @@ meta:
   title: "Qwen3-4B"
   slug: "qwen3-4b"
   provider: "Qwen"
-  description: "Qwen3 4B dense model with hybrid thinking/non-thinking modes — fits on a single TPU v6e chip or one GPU."
+  description: "Qwen3 4B dense model with hybrid thinking/non-thinking modes — fits on a single TPU v6e chip, one GPU or one Xeon 6 NUMA node."
   date_updated: 2026-06-04
   difficulty: beginner
   tasks:
@@ -12,6 +12,7 @@ meta:
     - "Qwen/Qwen3-32B"
   hardware:
     trillium: verified
+    xeon6: verified
 
 model:
   model_id: "Qwen/Qwen3-4B"
@@ -42,7 +43,7 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 10
-    description: "Full precision BF16 — fits on a single TPU v6e chip or one 16GB+ GPU"
+    description: "Full precision BF16 — fits on a single TPU v6e chip or one 16GB+ GPU or one Xeon 6 NUMA node"
   fp8:
     model_id: "Qwen/Qwen3-4B-FP8"
     precision: fp8
@@ -60,7 +61,7 @@ strategy_overrides: {}
 guide: |
   ## Overview
 
-  Qwen3-4B is the small dense model in the Qwen3 series, with hybrid thinking / non-thinking modes. At 4B it fits on a single accelerator — one TPU v6e (Trillium) chip or a single 16GB+ GPU — making it the cheapest entry point in the family. BF16 is the training precision and gives the best accuracy.
+  Qwen3-4B is the small dense model in the Qwen3 series, with hybrid thinking / non-thinking modes. At 4B it fits on a single accelerator — one TPU v6e (Trillium) chip, a single 16GB+ GPU or one Xeon 6 NUMA node — making it the cheapest entry point in the family. BF16 is the training precision and gives the best accuracy.
 
   Toggle thinking mode per request with `enable_thinking` in `chat_template_kwargs`, or set the **Reasoning** feature to add the Qwen3 reasoning parser so `<think>` content is split into a separate field.
 
@@ -72,6 +73,9 @@ guide: |
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend auto
   ```
+  
+  ### pip (Intel Xeon 6 CPUs)
+  For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.
 
   ### TPU (Trillium / v6e)
   Use the official vLLM TPU image. The 4B model fits on a single v6e chip (`v6e-1`, `--topology 1x1`).
@@ -105,6 +109,22 @@ guide: |
     --host 0.0.0.0 \
     --port 8000
   ```
+
+  ### Intel Xeon 6 Deployment via Docker
+
+  Launch the x86 CPU vLLM Docker container for `Qwen/Qwen3-4B`:
+
+  ```bash
+  docker run -itd --name qwen4b-cpu \
+    --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-cpu:latest-x86_64 \
+      --model Qwen/Qwen3-4B \
+      --host 0.0.0.0 \
+      --port 8000
+  ```
+
 
   ## Configuration Tips
 
