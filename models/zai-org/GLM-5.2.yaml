@@ -76,6 +76,12 @@ compatible_strategies:
   - pd_cluster
 
 hardware_overrides:
+  hopper:
+    # H100/H200 use plain fp8 KV cache; Blackwell keeps base_args' fp8_e4m3.
+    # The synthesizer's last-wins dedupe lets this shadow --kv-cache-dtype.
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
   amd:
     extra_args:
       - "--linear-backend"
@@ -122,7 +128,7 @@ guide: |
       --reasoning-parser glm45 \
       --enable-auto-tool-choice \
       --served-model-name glm-5.2-fp8 \
-      --kv-cache-dtype fp8_e4m3
+      --kv-cache-dtype fp8
   ```
 
   On CUDA 12.x, swap the image for `vllm/vllm-openai:glm52-cu129`.
@@ -142,7 +148,7 @@ guide: |
 
   ```bash
   vllm serve zai-org/GLM-5.2-FP8 \
-    --kv-cache-dtype fp8_e4m3 \
+    --kv-cache-dtype fp8 \
     --tensor-parallel-size 8 \
     --speculative-config.method mtp \
     --speculative-config.num_speculative_tokens 5 \
