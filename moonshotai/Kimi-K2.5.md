@@ -149,8 +149,24 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 -tp 4 \
     --enable-auto-tool-choice \
     --trust-remote-code
 ```
+### AMD (ROCm)
+The configuration below has been verified on 8x MI300X/MI355X GPUs.
+```bash
+export VLLM_ROCM_USE_AITER=1  # Enable AITER optimization for attention and tensor operations
+export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4  # Use INT4 quantization for faster all-reduce operations
+export VLLM_ROCM_USE_AITER_RMSNORM=0  # Disable AITER for RMSNorm layers
 
-### Disaggregated prefill/decode (`vllm serve`, GB200 / NVFP4)
+vllm serve moonshotai/Kimi-K2.5 -tp 8 \
+    --mm-encoder-tp-mode data \
+    --tool-call-parser kimi_k2 \
+    --reasoning-parser kimi_k2 \
+    --enable-auto-tool-choice \
+    --block-size=1 \
+    --mm-encoder-tp-mode data \
+    --trust-remote-code
+```
+
+### Disaggregated prefill/decode (`vllm serve`)
 
 **Disaggregated** prefill/decode runs **separate** vLLM engines for prefill and decode, with KV cache moved between them using a **KV connector** (for example **NixlConnector**). Each engine is started with **`vllm serve`** and a **`--kv-transfer-config`** JSON payload. See the vLLM **[NixlConnector usage guide](https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html)** for installation (NIXL / UCX), side-channel ports, multi-host layout, and proxy routing between prefiller and decoder HTTP ports.
 
@@ -158,6 +174,7 @@ The snippets below are **illustrative**: add Kimi-specific flags from the NVFP4 
 
 #### Environment on a prefill worker
 
+#### NVIDIA 
 GB200 MoE FP4 (same idea as aggregated NVFP4 above):
 
 ```bash
@@ -169,17 +186,37 @@ export NCCL_NVLS_ENABLE=1
 ```
 
 NIXL / UCX (see the NixlConnector doc for transport tuning):
-
+#### NVIDIA 
 ```bash
 export UCX_NET_DEVICES=all   # or pin devices for your fabric
 ```
 
-**Per process** on a host (each vLLM worker needs a **unique** side-channel port on that host). When you run **one `vllm serve` per GPU** (data parallel), set **`CUDA_VISIBLE_DEVICES`** per rank; if your launcher already pins GPUs (for example one process per node), you can omit it.
+#### AMD 
+```bash
+export VLLM_USE_V1=1
+export VLLM_ROCM_USE_AITER=1
+export VLLM_ROCM_USE_AITER_PAGED_ATTN=0
+export VLLM_ROCM_USE_AITER_RMSNORM=1
+export VLLM_USE_AITER_TRITON_SILU_MUL=0
+export VLLM_ENGINE_READY_TIMEOUT_S=3600
+```
 
+NIXL / UCX (see the NixlConnector doc for transport tuning):
+```bash
+export UCX_NET_DEVICES="${FIRST_IB}:1"   # or pin devices for your fabric
+```
+
+**Per process** on a host (each vLLM worker needs a **unique** side-channel port on that host). When you run **one `vllm serve` per GPU** (data parallel), set **`CUDA_VISIBLE_DEVICES`** per rank; if your launcher already pins GPUs (for example one process per node), you can omit it.
+#### NVIDIA 
 ```bash
 export CUDA_VISIBLE_DEVICES=0
 export VLLM_NIXL_SIDE_CHANNEL_PORT=<unique_port>
 export VLLM_NIXL_SIDE_CHANNEL_HOST=<routable_ip_of_this_host>  # when prefill/decode cross nodes; see NixlConnector doc
+```
+
+#### AMD 
+```bash
+export HIP_VISIBLE_DEVICES=0
 ```
 
 #### Prefill worker (`vllm serve`, one rank)
@@ -188,6 +225,7 @@ Use **`kv_producer`** on prefiller instances. Replace **`<prefill_dp_leader_ip>`
 
 Give **each** `vllm serve` on the **same machine** its own **HTTP `--port`**: co-located DP ranks cannot all bind `<prefill_http_port>`—use a distinct port per rank (for example base + `data_parallel_rank`). The same rule applies to the decode pool (`<decode_http_port>` per rank). Prefill and decode pools use **different** HTTP port ranges so the router can target them separately.
 
+#### NVIDIA 
 ```bash
 vllm serve nvidia/Kimi-K2.5-NVFP4 \
   --host 0.0.0.0 \
@@ -204,12 +242,36 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 \
   --trust-remote-code
 ```
 
+#### AMD 
+```bash
+vllm serve amd/Kimi-K2.5-MXFP4 \
+    --host 0.0.0.0 \
+    --port <prefill_http_port_rank0> \
+    --served-model-name amd/Kimi-K2.5-MXFP4 \
+    --trust-remote-code \
+    --tensor-parallel-size 8 \
+    --kv-transfer-config '{
+        "kv_connector": "MoRIIOConnector",
+        "kv_role": "kv_producer",
+        "kv_connector_extra_config": {
+            "proxy_ip": "${NODE0_ADDR}",
+            "proxy_ping_port": "${PROXY_PING_PORT}",
+            "http_port": "<prefill_http_port_rank0>"
+        }
+    }' \
+    --compilation-config '{"cudagraph_mode":"PIECEWISE"}' \
+    --block-size 1 \
+    --gpu-memory-utilization 0.90 \
+    --mm-encoder-tp-mode 1
+```
+
 #### Environment on a decode worker
 
 Match the **MoE FP4 / NCCL** and **UCX** exports you use on prefill unless you split them intentionally. Set **`VLLM_NIXL_SIDE_CHANNEL_PORT`** and **`VLLM_NIXL_SIDE_CHANNEL_HOST`** per worker the same way as prefill.
 
 #### Decode worker (`vllm serve`, one rank)
 
+#### NVIDIA   
 ```bash
 vllm serve nvidia/Kimi-K2.5-NVFP4 \
   --host 0.0.0.0 \
@@ -226,6 +288,31 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 \
   --trust-remote-code
 ```
 
+#### AMD 
+```bash
+vllm serve amd/Kimi-K2.5-MXFP4 \
+    --host 0.0.0.0 \
+    --port <prefill_http_port_rank0> \
+    --served-model-name amd/Kimi-K2.5-MXFP4 \
+    --trust-remote-code \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --all2all-backend mori \
+    --kv-transfer-config '{
+        "kv_connector": "MoRIIOConnector",
+        "kv_role": "kv_producer",
+        "kv_connector_extra_config": {
+            "proxy_ip": "${NODE0_ADDR}",
+            "proxy_ping_port": "${PROXY_PING_PORT}",
+            "http_port": "<prefill_http_port_rank0>"
+        }
+    }' \
+    --compilation-config '{"cudagraph_mode":"PIECEWISE"}' \
+    --block-size 1 \
+    --gpu-memory-utilization 0.9 \
+    --mm-encoder-tp-mode 1
+```
+
 #### Expanding to multiple GPUs and nodes
 
 **1. Data parallel + expert parallel** — With **`--data-parallel-size` > 1**, run **one `vllm serve` per GPU** (typical for wide EP on GB200). Within **one** pool (prefill or decode), all ranks share the same **`--data-parallel-size`**, **`--data-parallel-address`** (that pool’s rank-0 host), and **`--data-parallel-rpc-port`**. Each process still needs its own **`--data-parallel-rank`**, **`CUDA_VISIBLE_DEVICES`**, **unique HTTP `--port`** on a given host (otherwise the second rank cannot bind the API server), and **unique `VLLM_NIXL_SIDE_CHANNEL_PORT` on that host** (see the NixlConnector doc for the base_port + dp_rank pattern). **Prefill and decode are two separate DP groups**: use **different** **`--data-parallel-rpc-port`** values (for example **`<prefill_dp_rpc_port>`** vs **`<decode_dp_rpc_port>`**) so their coordinators do not collide when rank-0 processes share a node; **`--data-parallel-address`** can match or differ per pool, but the RPC ports must not clash on the same listener.
@@ -234,23 +321,7 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 \
 
 **3. Request path** — You need a **frontend** in front of the prefiller and decoder **`vllm serve`** endpoints so traffic is split correctly. The **[vLLM Router](https://github.com/vllm-project/router)** repo documents installation and usage, including **prefill/decode disaggregation** (for example `--vllm-pd-disaggregation` with `--prefill` / `--decode` worker URLs). The vLLM docs also walk through **[disaggregated prefill serving](https://docs.vllm.ai/en/latest/examples/online_serving/disaggregated_prefill.html)** end to end. Another common choice is **[Dynamo](https://github.com/ai-dynamo/dynamo)** as a coordinating frontend.
 
-### AMD (ROCm)
 
-The configuration below has been verified on 8x MI300X/MI355X GPUs.
-```bash
-export VLLM_ROCM_USE_AITER=1  # Enable AITER optimization for attention and tensor operations
-export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4  # Use INT4 quantization for faster all-reduce operations
-export VLLM_ROCM_USE_AITER_RMSNORM=0  # Disable AITER for RMSNorm layers
-
-vllm serve moonshotai/Kimi-K2.5 -tp 8 \
-    --mm-encoder-tp-mode data \
-    --tool-call-parser kimi_k2 \
-    --reasoning-parser kimi_k2 \
-    --enable-auto-tool-choice \
-    --block-size=1 \
-    --mm-encoder-tp-mode data \
-    --trust-remote-code
-```
 
 ### Configuration Tips
 - `--async-scheduling` has been turned on by default to improve the overall system performance by overlapping scheduling overhead with the decoding process. If you run into issue with this feature, please try turning off this feature and file a bug report to vLLM.
