@@ -8,6 +8,10 @@ meta:
   tasks:
     - omni
   related_recipes: []
+  hardware:
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
@@ -39,8 +43,13 @@ omni:
 dependencies:
   - note: "Pin vllm==0.12.0 for Wan2.2"
     command: "uv pip install vllm==0.12.0"
+    brand: NVIDIA
   - note: "vllm-omni pinned to a specific commit that includes Wan2.2 text-to-video support"
     command: "uv pip install git+https://github.com/vllm-project/vllm-omni.git@ef01223c42be10ee260b9f6e5ec31894cd09d86e"
+    brand: NVIDIA
+  - note: "AMD ROCm: install vLLM for ROCm and vLLM-Omni"
+    command: "VLLM_OMNI_TARGET_DEVICE=rocm uv pip install git+https://github.com/vllm-project/vllm-omni.git@ef01223c42be10ee260b9f6e5ec31894cd09d86e vllm==0.20.2+rocm721 --extra-index-url https://wheels.vllm.ai/rocm/0.20.2/rocm721"
+    brand: AMD
 
 features: {}
 
@@ -56,7 +65,9 @@ compatible_strategies: []
 
 hardware_overrides:
   amd:
+    extra_args: []
     extra_env:
+      VLLM_OMNI_TARGET_DEVICE: "rocm"
       VLLM_ROCM_USE_AITER: "1"
       SAFETENSORS_FAST_GPU: "1"
 
@@ -88,14 +99,17 @@ guide: |
 
   ### AMD ROCm (MI300X/MI325X/MI355X)
 
-  ```bash
-  uv venv
-  source .venv/bin/activate
-  uv pip install vllm==0.12.0 --extra-index-url https://wheels.vllm.ai/rocm/
-  uv pip install git+https://github.com/vllm-project/vllm-omni.git@ef01223c42be10ee260b9f6e5ec31894cd09d86e
-  ```
+  > **Note:** The vLLM wheel for ROCm requires Python 3.12, ROCm 7.2.1, and glibc >= 2.35.
+  > If your environment does not meet these requirements, please use the Docker-based setup.
 
-  > ⚠️ The vLLM ROCm wheel requires Python 3.12, ROCm 7.0, and glibc >= 2.35.
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  VLLM_OMNI_TARGET_DEVICE=rocm uv pip install \
+    git+https://github.com/vllm-project/vllm-omni.git@ef01223c42be10ee260b9f6e5ec31894cd09d86e \
+    vllm==0.20.2+rocm721 \
+    --extra-index-url https://wheels.vllm.ai/rocm/0.20.2/rocm721
+  ```
 
   ## Text-to-Video (T2V)
 
