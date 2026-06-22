@@ -12,6 +12,7 @@ Gemma 4 models are supported on NVIDIA GPUs, AMD GPUs, Google Cloud TPUs and Int
 |-------|-----------|------------------------|---------------------|----------|--------|-------------|
 | Gemma 4 E2B IT | effective 2B | 1× (24 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | 1× NUMA node | [google/gemma-4-E2B-it](https://huggingface.co/google/gemma-4-E2B-it) |
 | Gemma 4 E4B IT | effective 4B | 1× (24 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | 1× NUMA node | [google/gemma-4-E4B-it](https://huggingface.co/google/gemma-4-E4B-it) |
+| Gemma 4 12B IT | 12B | 1× (40 GB+) | 1× MI300X/MI325X/MI350X/MI355X | - | - | [google/gemma-4-12B-it](https://huggingface.co/google/gemma-4-12B-it) |
 | Gemma 4 31B IT | 31B | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | - | [google/gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) |
 
 ### Mixture-of-Experts (MoE) Models
@@ -20,10 +21,19 @@ Gemma 4 models are supported on NVIDIA GPUs, AMD GPUs, Google Cloud TPUs and Int
 |-------|----------------------|------------------------|---------------------|----------|----------|-------------|
 | Gemma 4 26B-A4B IT | 26B / 4B active | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | 2× NUMA node | [google/gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it) |
 
+### Block-Diffusion Models
+
+| Model | Total / Active Params | Canvas Length | Min NVIDIA GPUs (BF16) | Min AMD GPUs (BF16) | Min TPUs | HuggingFace |
+|-------|----------------------|---------------|------------------------|---------------------|----------|-------------|
+| DiffusionGemma 26B-A4B IT | 26B / 4B active | 256 tokens | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | [google/diffusiongemma-26B-A4B-it](https://huggingface.co/google/diffusiongemma-26B-A4B-it) |
+
+DiffusionGemma models generate tokens via iterative denoising over a fixed-length canvas (block diffusion) rather than left-to-right autoregressive decoding. They share the same Gemma 4 MoE backbone but use a different generation mechanism that trades higher time-to-first-token for significantly higher per-request throughput (~1.9× output TPS, ~3.3× faster E2E request time vs the autoregressive baseline).
+
 ### Key Architecture Features
 
 - **Multimodal**: Natively processes text and images (video supported via a custom vLLM processing pipeline that extracts frames; smaller gemma4-E2B and gemma-4-E4B also support audio).
-- **MoE**: 128 fine-grained experts with top-8 routing and custom GELU-activated FFN
+- **MoE**: 128 fine-grained experts with top-8 routing and custom GELU-activated FFN (26B-A4B)
+- **Encoder-Free (Unified)**: The 12B variant (`Gemma4UnifiedForConditionalGeneration`) has no vision tower or audio encoder. Raw pixel patches are projected directly into LM space via Dense+LayerNorm with factorized 2D positional embeddings; raw audio waveform frames are projected through a simple multimodal embedder. All modalities (image, video, audio) are supported.
 - **Dual Attention**: Alternating sliding-window (local) and global attention with different head dimensions
 - **Thinking Mode**: Structured reasoning via `<|channel>thought\n...<channel|>` delimiters
 - **Function Calling**: Custom tool-call protocol with dedicated special tokens
@@ -190,11 +200,34 @@ docker run -itd --name gemma4-cpu \
 
 For additional Intel Xeon 6 deployment details, see the Intel Software Catalog entries for [Gemma 4 E4B IT](https://aiswcatalog.intel.com/models/google-gemma-4-e4b-it) and [Gemma 4 26B-A4B IT](https://aiswcatalog.intel.com/models/google-gemma-4-26b-a4b-it).
 
+### DiffusionGemma 26B-A4B Deployment
+
+DiffusionGemma requires several specific flags due to its block-diffusion architecture. See the [DiffusionGemma recipe](../models/Google/diffusiongemma-26B-A4B-it.yaml) for full details.
+
+```bash
+docker run -itd --name diffusiongemma \
+    --ipc=host \
+    --network host \
+    --gpus all \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai:gemma \
+        --model google/diffusiongemma-26B-A4B-it \
+        --max-model-len 262144 \
+        --max-num-seqs 4 \
+        --gpu-memory-utilization 0.85 \
+        --generation-config vllm \
+        --enable-chunked-prefill \
+        --host 0.0.0.0 \
+        --port 8000
+```
+
+> ⚠️ **Important**: `--max-num-seqs` must be kept low (≤4) — the diffusion state buffers pre-allocate `max_seqs × canvas_length × vocab_size` tensors that cause OOM at higher values. `--generation-config vllm` is required to prevent the checkpoint's `generation_config.json` from capping `max_tokens` to 256.
+
 ### Configuration Tips
 
 - Set `--max-model-len` to match your actual workload. The default context length can be very large; reducing it saves memory for KV cache.
 - Use `--gpu-memory-utilization 0.90` to `0.95` to maximize KV cache capacity.
-- For image-only workloads (no audio), pass `--limit-mm-per-prompt.audio 0` to skip audio encoder memory allocation.
+- For image-only workloads (no audio), pass `--limit-mm-per-prompt.audio 0` to skip audio encoder memory allocation (tower-based models) or audio embedder allocation (12B encoder-free model).
 - For text-only workloads, pass `--limit-mm-per-prompt '{"image": 0, "audio": 0}'` to skip multimodal profiling entirely.
 - Use `--async-scheduling` for better overall throughput by overlapping scheduling with decoding.
 
@@ -392,7 +425,7 @@ print(outputs[0].outputs[0].text)
 
 ## Audio Understanding
 
-Gemma 4 (E2B and E4B) includes a conformer-based audio encoder for speech recognition and audio understanding.
+Gemma 4 supports audio understanding across multiple variants. The E2B and E4B models use a conformer-based audio encoder, while the 12B (encoder-free) model projects raw 16 kHz waveform frames directly into LM space through a lightweight multimodal embedder with no audio tower required.
 
 > ℹ️ **Note**
 > Audio support requires the `vllm[audio]` extras: `uv pip install "vllm[audio]"`
@@ -972,6 +1005,7 @@ Gemma 4 supports Multi-Token Prediction (MTP) speculative decoding using lightwe
 |---|---|---|
 | Gemma 4 E2B IT | [google/gemma-4-E2B-it-assistant](https://huggingface.co/google/gemma-4-E2B-it-assistant) | Yes |
 | Gemma 4 E4B IT | [google/gemma-4-E4B-it-assistant](https://huggingface.co/google/gemma-4-E4B-it-assistant) | Yes |
+| Gemma 4 12B IT | [google/gemma-4-12B-it-assistant](https://huggingface.co/google/gemma-4-12B-it-assistant) | No |
 | Gemma 4 26B-A4B IT | [google/gemma-4-26B-A4B-it-assistant](https://huggingface.co/google/gemma-4-26B-A4B-it-assistant) | No |
 | Gemma 4 31B IT | [google/gemma-4-31B-it-assistant](https://huggingface.co/google/gemma-4-31B-it-assistant) | No |
 
@@ -1018,6 +1052,7 @@ print(outputs[0].outputs[0].text)
 |---|---|---|
 | E2B | 2 | 1 |
 | E4B | 4 | 1 |
+| 12B | 4–8 | 1 |
 | 26B-A4B | 4 | 2 |
 | 31B | 4–8 | 2 |
 
@@ -1026,6 +1061,67 @@ Higher `num_speculative_tokens` increases draft overhead per cycle. The optimal 
 > ℹ️ **Note**
 > These recommendations were benchmarked on NVIDIA A100 and H100 servers. Optimal settings may vary on different hardware platforms — experimentation is recommended.
 
+
+## Quantized Models (QAT W4A16)
+
+Google provides official QAT (Quantization-Aware Training) W4A16 checkpoints for the Gemma 4 dense model family. These use 4-bit integer weights with 16-bit activations (group_size=32) in `compressed-tensors` format, delivering significant memory savings and throughput improvements with minimal quality loss.
+
+### Available Checkpoints
+
+| Base Model | QAT W4A16 Checkpoint | Memory Savings |
+|---|---|---|
+| google/gemma-4-E2B-it | [google/gemma-4-E2B-it-qat-w4a16-ct](https://huggingface.co/google/gemma-4-E2B-it-qat-w4a16-ct) | ~26% (9.8→7.3 GB) |
+| google/gemma-4-E4B-it | [google/gemma-4-E4B-it-qat-w4a16-ct](https://huggingface.co/google/gemma-4-E4B-it-qat-w4a16-ct) | ~36% (15.2→9.8 GB) |
+| google/gemma-4-12B-it | [google/gemma-4-12B-it-qat-w4a16-ct](https://huggingface.co/google/gemma-4-12B-it-qat-w4a16-ct) | ~64% (22.8→8.3 GB) |
+| google/gemma-4-31B-it | [google/gemma-4-31B-it-qat-w4a16-ct](https://huggingface.co/google/gemma-4-31B-it-qat-w4a16-ct) | ~66% (59.0→19.8 GB) |
+
+> ℹ️ **Note**
+> The 26B-A4B MoE model is not included — its small expert dimensions (704) cause excessive quality loss with 4-bit quantization. For the MoE model, use `--quantization int8_per_channel_weight_only` (online, no checkpoint needed) which provides ~47% memory savings with negligible quality impact.
+
+### Serving a QAT W4A16 Checkpoint
+
+No `--quantization` flag is needed — vLLM auto-detects the quantization config from the checkpoint:
+
+```bash
+vllm serve google/gemma-4-31B-it-qat-w4a16-ct \
+  --max-model-len 32768 \
+  --gpu-memory-utilization 0.90
+```
+
+### 26B MoE: Int8 Per-Channel Quantization
+
+The 26B-A4B MoE model uses online int8 per-channel weight-only quantization instead of W4A16 — its small expert dimensions (128 experts × 704 intermediate size) are sensitive to 4-bit quantization:
+
+```bash
+vllm serve google/gemma-4-26B-A4B-it \
+  --quantization int8_per_channel_weight_only \
+  --max-model-len 32768 \
+  --gpu-memory-utilization 0.90
+```
+
+### Quantized Models (QAT Mobile — Mixed Int2/4/8)
+
+Google also provides **mobile-optimized QAT checkpoints** for the E2B and E4B models. Unlike the uniform W4A16 variants above, these use a mixed-precision `compressed-tensors` scheme with per-layer bitwidth assignment — including int2 embeddings and lm_head, which are typically left unquantized:
+
+| Component | Weight Bits | Notes |
+|---|---|---|
+| Embeddings + lm_head | **2-bit** | Channel-quantized, pack-quantized format |
+| Audio tower linears | **2-bit** | W2A8 (int2 weights, int8 activations) |
+| LLM attention + MLP | **4-bit** (E4B) / **2–4-bit** (E2B) | E2B drops deeper MLP layers (15–34) to int2 |
+| Per-layer gates/projections + vision tower | **8-bit** | W8A8 (int8 weights, int8 activations) |
+
+| Base Model | Mobile QAT Checkpoint | Weight Memory | Compression vs BF16 |
+|---|---|---|---|
+| google/gemma-4-E2B-it | [google/gemma-4-E2B-it-qat-mobile-ct](https://huggingface.co/google/gemma-4-E2B-it-qat-mobile-ct) | 2.7 GB | 3.6× smaller |
+| google/gemma-4-E4B-it | [google/gemma-4-E4B-it-qat-mobile-ct](https://huggingface.co/google/gemma-4-E4B-it-qat-mobile-ct) | 3.7 GB | 4.1× smaller |
+
+**Performance (A100-80GB, 1024in/1024out text requests):** E4B mobile delivers **up to 1.5× higher output throughput** vs BF16 at low concurrency (1–16 requests) where decode is memory-bandwidth-bound. The speedup tapers above ~64 concurrent requests as the workload becomes compute-bound.
+
+The primary value proposition is **footprint**: 3.6–4.1× smaller weights free VRAM for KV cache or allow deployment on much smaller GPUs. Multimodal correctness (text, vision, audio) tracks BF16 quality.
+
+```bash
+vllm serve google/gemma-4-E4B-it-qat-mobile-ct
+```
 
 ## Benchmarking
 

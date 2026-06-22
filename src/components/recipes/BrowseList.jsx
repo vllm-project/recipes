@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Layers, Cpu, X, ArrowDownUp, Type, Eye, Sparkles, Hash, SlidersHorizontal, ChevronDown } from "lucide-react";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
+import { searchRecipes } from "@/lib/search";
 
 // Per-row decorations: icon (tasks/arch) or colored dot (precision/hardware).
 // Color is family-grouped — precision tiers, GPU brands — so the eye can
@@ -142,41 +143,14 @@ export function BrowseList({ recipes }) {
     };
   }, [searchParams]);
 
-  // Free-text match used for the `?q=...` query — same field set as the
-  // top-bar SearchBox so handing off from search to browse stays predictable.
-  // Verified hardware ids enter the haystack so "h100" / "mi300x" / "b200"
-  // find recipes by GPU compatibility; "tpu" is added as a synonym when any
-  // TPU profile is verified, since the ids (trillium/ironwood) don't carry it.
+  const qMatchIds = useMemo(() => {
+    if (!q) return null;
+    return new Set(searchRecipes(recipes, q).map((r) => r.hf_id));
+  }, [q, recipes]);
+
   const matchesQ = useCallback(
-    (r) => {
-      if (!q) return true;
-      const hwKeys = Object.entries(r.meta?.hardware || {})
-        .filter(([, s]) => s === "verified")
-        .map(([h]) => h);
-      const hwExtra = [
-	      (hwKeys.some((k) => k === "trillium" || k === "ironwood") ? ["tpu"] : []),
-	      (hwKeys.some((k) => k === "xeon6" || k === "xeon5") ? ["intel", "xeon", "cpu", "x86"] : []),
-      ];	    
-      const hay = [
-        r.hf_repo,
-        r.hf_org,
-        r.meta?.title,
-        r.meta?.provider,
-        r.meta?.description,
-        ...(r.meta?.tasks || []),
-        r.model?.architecture,
-        r.model?.parameter_count,
-        r.variant?.precision,
-        ...(r.precisions || []),
-        ...hwKeys,
-        ...hwExtra,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(q);
-    },
-    [q]
+    (r) => !qMatchIds || qMatchIds.has(r.hf_id),
+    [qMatchIds],
   );
 
   const update = useCallback(

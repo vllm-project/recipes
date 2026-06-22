@@ -17,8 +17,7 @@ meta:
 
 model:
   model_id: "stepfun-ai/Step-3.7-Flash"
-  min_vllm_version: "nightly"
-  nightly_required: true
+  min_vllm_version: "0.23.0"
   docker_image: "vllm/vllm-openai:stepfun37"
   install:
     docker:

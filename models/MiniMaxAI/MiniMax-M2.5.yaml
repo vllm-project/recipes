@@ -73,11 +73,11 @@ hardware_overrides:
   nvidia:
     extra_args:
       - "--compilation-config"
-      - '{"mode":3,"cudagraph_mode":"PIECEWISE","pass_config":{"fuse_minimax_qk_norm":true}}'
+      - '{"cudagraph_mode":"PIECEWISE"}'
   hopper:
     extra_args:
       - "--compilation-config"
-      - '{"mode":3,"cudagraph_mode":"PIECEWISE","pass_config":{"fuse_minimax_qk_norm":true}}'
+      - '{"cudagraph_mode":"PIECEWISE"}'
       - "--max-num-seqs"
       - "512"
       - "--max-num-batched-tokens"
@@ -91,7 +91,6 @@ hardware_overrides:
       - "--enable-flashinfer-autotune"
     extra_env:
       PYTHONNOUSERSITE: "1"
-      SAFETENSORS_FAST_GPU: "1"
       VLLM_USE_DEEP_GEMM: "0"
       VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER: "0"
       VLLM_FLOAT32_MATMUL_PRECISION: "high"
@@ -143,7 +142,6 @@ guide: |
     --ipc=host \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     -e PYTHONNOUSERSITE=1 \
-    -e SAFETENSORS_FAST_GPU=1 \
     -e VLLM_USE_DEEP_GEMM=0 \
     -e VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER=0 \
     -e VLLM_FLOAT32_MATMUL_PRECISION=high \
@@ -158,7 +156,7 @@ guide: |
         --tool-call-parser minimax_m2 \
         --reasoning-parser minimax_m2 \
         --enable-auto-tool-choice \
-        --compilation-config '{"mode":3,"cudagraph_mode":"PIECEWISE","pass_config":{"fuse_minimax_qk_norm":true}}' \
+        --compilation-config '{"cudagraph_mode":"PIECEWISE"}' \
         --trust-remote-code
   ```
 
@@ -168,7 +166,6 @@ guide: |
 
   ```bash
   PYTHONNOUSERSITE=1 \
-  SAFETENSORS_FAST_GPU=1 \
   VLLM_USE_DEEP_GEMM=0 \
   VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER=0 \
   VLLM_FLOAT32_MATMUL_PRECISION=high \
@@ -182,10 +179,15 @@ guide: |
     --enable-flashinfer-autotune \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
-    --compilation-config '{"mode":3,"cudagraph_mode":"PIECEWISE","pass_config":{"fuse_minimax_qk_norm":true}}' \
+    --compilation-config '{"cudagraph_mode":"PIECEWISE"}' \
     --enable-auto-tool-choice \
     --trust-remote-code
   ```
+
+  For H200 FP8, choose the attention backend by sequence length for best performance:
+  shorter sequences (e.g. 1024) should keep the command above with `--attention-backend FLASHINFER`
+  and `--enable-flashinfer-autotune`, while longer input sequences (e.g. 8192)
+  can prefer FlashAttention by replacing those flags with `--attention-backend FLASH_ATTN`.
 
   Pure TP8 is not supported. For >4 GPUs use DP+EP or TP+EP.
 
@@ -197,7 +199,7 @@ guide: |
     --enable-expert-parallel \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
-    --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
+    --compilation-config '{"cudagraph_mode":"PIECEWISE"}' \
     --enable-auto-tool-choice
   ```
 
@@ -229,7 +231,7 @@ guide: |
   ## Troubleshooting
 
   - See [MiniMax-M2](./MiniMax-M2.yaml) for shared troubleshooting notes
-    (`fuse_minimax_qk_norm`, nightly vs stable, DeepGEMM, AITER).
+    (latest vLLM fusion behavior, nightly vs stable, DeepGEMM, AITER).
 
   ## References
 

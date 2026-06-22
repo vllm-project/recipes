@@ -9,7 +9,8 @@ meta:
     - multimodal
     - text
   performance_headline: "Verified on 4x A100 and 4x MI300X/MI325X/MI355X with BF16"
-  related_recipes: []
+  related_recipes:
+    - "Qwen/Qwen2.5-VL-7B-Instruct"
   hardware:
     mi300x: verified
     mi325x: verified
@@ -104,7 +105,7 @@ guide: |
   ```
 
   ### TPU Deployment
-  - [Qwen2.5-VL on Trillium (v6e)](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Qwen2.5-VL)
+  TPU support has been verified for the smaller [Qwen2.5-VL-7B-Instruct](/Qwen/Qwen2.5-VL-7B-Instruct) on a single v6e chip — the 72B is not yet validated on Trillium. See the [upstream TPU recipe](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Qwen2.5-VL) (7B).
 
   ## Deployment Configurations
 
