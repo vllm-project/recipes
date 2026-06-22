@@ -166,7 +166,8 @@ guide: |
   ```bash
   vllm serve google/gemma-4-26B-A4B-it \
     --max-model-len 32768 \
-    --gpu-memory-utilization 0.90
+    --gpu-memory-utilization 0.90 \
+    --max-num-batched-tokens 4096
   ```
 
   ### Full-Featured Server Launch
