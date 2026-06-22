@@ -84,19 +84,7 @@ variants:
       - "flashinfer"
       - "--moe-backend"
       - "marlin"
-      - "--gpu-memory-utilization"
-      - "0.4"
-      - "--max-model-len"
-      - "262144"
-      - "--max-num-seqs"
-      - "4"
-      - "--max-num-batched-tokens"
-      - "8192"
-      - "--enable-chunked-prefill"
-      - "--async-scheduling"
       - "--enable-prefix-caching"
-      - "--load-format"
-      - "fastsafetensors"
 
 compatible_strategies:
   - single_node_tp
@@ -193,8 +181,6 @@ guide: |
     --max-model-len 262144 \
     --max-num-seqs 4 \
     --max-num-batched-tokens 8192 \
-    --enable-chunked-prefill \
-    --async-scheduling \
     --enable-prefix-caching \
     --speculative-config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}' \
     --load-format fastsafetensors \
