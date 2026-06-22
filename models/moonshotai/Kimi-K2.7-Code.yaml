@@ -1,24 +1,25 @@
 meta:
-  title: "Kimi-K2.6"
-  slug: "kimi-k2.6"
+  title: "Kimi-K2.7-Code"
+  slug: "kimi-k2.7-code"
   provider: "Moonshot AI"
-  description: "Open-source native multimodal agentic MoE model with vision-language understanding, tool calling, and thinking modes"
-  date_updated: 2026-05-14
+  description: "Coding-focused agentic MoE built on Kimi-K2.6, tuned for long-horizon software-engineering tasks with thinking-only reasoning, tool calling, and vision-language input"
+  date_updated: 2026-06-12
   difficulty: intermediate
   tasks:
     - multimodal
     - text
-  performance_headline: "Multimodal agentic MoE model with DeepSeek-V3 backbone and MLA attention"
-  related_recipes: []
+  performance_headline: "1T MoE coding agent with ~30% fewer thinking tokens than Kimi-K2.6"
+  related_recipes:
+    - "moonshotai/Kimi-K2.6"
+    - "moonshotai/Kimi-K2-Thinking"
   hardware:
     h200: verified
-    gb200: verified
     mi300x: verified
     mi325x: verified
     mi355x: verified
 
 model:
-  model_id: "moonshotai/Kimi-K2.6"
+  model_id: "moonshotai/Kimi-K2.7-Code"
   min_vllm_version: "0.19.1"
   docker_image:
     nvidia: "vllm/vllm-openai:latest"
@@ -30,6 +31,9 @@ model:
   supports_dcp: true
   base_args:
     - "--trust-remote-code"
+  base_env: {}
+
+dependencies: []
 
 features:
   tool_calling:
@@ -39,15 +43,10 @@ features:
       - "kimi_k2"
       - "--enable-auto-tool-choice"
   reasoning:
-    description: "Kimi K2 reasoning parser for extracting chain-of-thought content"
+    description: "Kimi K2 reasoning parser for extracting chain-of-thought content (Kimi-K2.7-Code is thinking-only — keep this enabled)"
     args:
       - "--reasoning-parser"
       - "kimi_k2"
-  spec_decoding:
-    description: "Eagle3 speculative decoding for accelerated inference"
-    args:
-      - "--speculative-config"
-      - '{"model":"lightseekorg/kimi-k2.6-eagle3-mla","method":"eagle3","num_speculative_tokens":3}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -61,27 +60,11 @@ features:
 opt_in_features:
   - text_only
 
-# GB200's 4-GPU NVL4 trays keep encoder TP comm cheap — data-parallel encoder
-# isn't the default win it is on 8-GPU nodes.
-hardware_opt_in_features:
-  gb200:
-    - encoder_parallel
-
 variants:
   default:
     precision: int4
     vram_minimum_gb: 714
-    description: "Packed INT4 via compressed-tensors (~595 GB on disk); fits 8×H200"
-  nvfp4:
-    model_id: "nvidia/Kimi-K2.6-NVFP4"
-    precision: nvfp4
-    vram_minimum_gb: 600
-    description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs (e.g. GB200)"
-    extra_args:
-      - "--kv-cache-dtype"
-      - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+    description: "Native INT4 via compressed-tensors (~595 GB on disk); fits 8×H200"
 
 compatible_strategies:
   - single_node_tp
@@ -103,54 +86,55 @@ hardware_overrides:
       VLLM_ROCM_USE_AITER: "1"
       VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
 
-strategy_overrides:
-  single_node_dep:
-    extra_args: []
-    extra_env: {}
-  single_node_tep:
-    extra_args: []
-    extra_env: {}
-  pd_cluster:
-    env:
-      VLLM_USE_NCCL_SYMM_MEM: "1"
-      NCCL_CUMEM_ENABLE: "1"
-      NCCL_MNNVL_ENABLE: "1"
-      NCCL_NVLS_ENABLE: "1"
-    prefill:
-      nodes: 1               # 1 GB200 node = 4 GPUs
-      parallelism: dep       # DP + expert-parallel pool
-      vllm_args:
-        - "--enforce-eager"
-        - "--max-num-batched-tokens"
-        - "16384"
-        - "--block-size"
-        - "64"
-      env: {}
-    decode:
-      nodes: 1               # 4 GB200 nodes = 16 GPUs
-      parallelism: dep
-      vllm_args:
-        - "--compilation-config"
-        - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
-        - "--block-size"
-        - "64"
-        - "--all2all-backend"
-        - "flashinfer_nvlink_one_sided"
-      env: {}
+strategy_overrides: {}
 
 guide: |
   ## Overview
 
-  Kimi K2.6 is an open-source, native multimodal agentic model built through continual
-  pretraining on approximately 15 trillion mixed visual and text tokens atop Kimi-K2-Base.
-  It seamlessly integrates vision and language understanding with advanced agentic
-  capabilities, instant and thinking modes, as well as conversational and agentic paradigms.
+  [Kimi-K2.7-Code](https://huggingface.co/moonshotai/Kimi-K2.7-Code) is a coding-focused
+  agentic model built on top of Kimi-K2.6. It substantially improves real-world
+  long-horizon coding performance — strengthening end-to-end task completion across complex
+  software-engineering workflows while improving token efficiency, reducing thinking-token
+  usage by ~30% versus Kimi-K2.6.
+
+  It shares the same architecture as Kimi-K2.5 / Kimi-K2.6 (1T-parameter MoE, 32B activated,
+  DeepSeek-V3 backbone with MLA attention and a MoonViT vision encoder), so the K2.6
+  deployment method can be reused directly. Kimi-K2.7-Code runs in **thinking mode only**
+  with `preserve_thinking` forced on; keep the reasoning parser enabled.
 
   ## Prerequisites
 
-  - **vLLM version:** >= 0.19.1
+  - **vLLM version:** >= 0.19.1 (manually verified). The model is also available in the
+    vLLM nightly wheel, but nightly builds are experimental.
   - **Hardware (INT4):** 8x H200 GPUs (verified), or equivalent aggregate VRAM (~640 GB)
-  - **AMD support:** 8x MI300X / MI325X / MI355X with ROCm 7.2.1 and Python 3.12
+
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install -U vllm --torch-backend=auto
+  ```
+
+  ## Launch command
+
+  Serve on a single H200 node with TP8 (vision encoder in data-parallel mode):
+
+  ```bash
+  vllm serve moonshotai/Kimi-K2.7-Code \
+    --tensor-parallel-size 8 \
+    --mm-encoder-tp-mode data \
+    --trust-remote-code \
+    --tool-call-parser kimi_k2 \
+    --enable-auto-tool-choice \
+    --reasoning-parser kimi_k2
+  ```
+
+  **Key notes**
+
+  - `--tool-call-parser kimi_k2` — required for enabling tool calling.
+  - `--reasoning-parser kimi_k2` — Kimi-K2.7-Code supports thinking mode only; pass this for
+    correct reasoning processing.
+  - `--mm-encoder-tp-mode data` — runs the small MoonViT encoder data-parallel to avoid TP
+    communication overhead.
 
   ### AMD MI300X/MI325X
 
@@ -161,7 +145,7 @@ guide: |
   export VLLM_ROCM_USE_AITER=1
   export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
 
-  vllm serve moonshotai/Kimi-K2.6 \
+  vllm serve moonshotai/Kimi-K2.7-Code \
     --host 0.0.0.0 \
     --port 8000 \
     --trust-remote-code \
@@ -181,11 +165,14 @@ guide: |
   export VLLM_ROCM_USE_AITER=1
   export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
 
-  vllm serve moonshotai/Kimi-K2.6 \
+  vllm serve moonshotai/Kimi-K2.7-Code \
     --tensor-parallel-size 8 \
     --trust-remote-code \
     --mm-encoder-tp-mode data \
     --moe-backend flydsl \
+    --tool-call-parser kimi_k2 \
+    --enable-auto-tool-choice \
+    --reasoning-parser kimi_k2 \
     --compilation-config '{"pass_config": {"fuse_allreduce_rms": false}}'
   ```
 
@@ -200,7 +187,8 @@ guide: |
 
   ## Client Usage
 
-  Once the vLLM server is running, consume it via the OpenAI-compatible API:
+  Once the vLLM server is running, consume it via the OpenAI-compatible API. The recommended
+  sampling for thinking mode is `temperature=1.0` and `top_p=0.95`.
 
   ```python
   import time
@@ -209,7 +197,7 @@ guide: |
   client = OpenAI(
       api_key="EMPTY",
       base_url="http://localhost:8000/v1",
-      timeout=3600
+      timeout=3600,
   )
 
   messages = [
@@ -219,25 +207,25 @@ guide: |
               {
                   "type": "image_url",
                   "image_url": {
-                      "url": "https://ofasys-multimodal-wlcb-3-toshanghai.oss-accelerate.aliyuncs.com/wpf272043/keepme/image/receipt.png"
-                  }
+                      "url": "https://huggingface.co/moonshotai/Kimi-K2.7-Code/resolve/main/figures/kimi-logo.png"
+                  },
               },
-              {
-                  "type": "text",
-                  "text": "Read all the text in the image."
-              }
-          ]
+              {"type": "text", "text": "Describe this image in detail."},
+          ],
       }
   ]
 
   start = time.time()
   response = client.chat.completions.create(
-      model="moonshotai/Kimi-K2.6",
+      model="moonshotai/Kimi-K2.7-Code",
       messages=messages,
-      max_tokens=2048
+      max_tokens=4096,
+      temperature=1.0,
+      top_p=0.95,
   )
   print(f"Response costs: {time.time() - start:.2f}s")
-  print(f"Generated text: {response.choices[0].message.content}")
+  print(f"Reasoning: {response.choices[0].message.reasoning}")
+  print(f"Response: {response.choices[0].message.content}")
   ```
 
   ## Troubleshooting
@@ -248,15 +236,12 @@ guide: |
   - **Unique multimodal inputs:** Pass `--mm-processor-cache-gb 0` to avoid caching overhead.
     For repeated inputs, `--mm-processor-cache-type shm` uses host shared memory for better
     performance at high TP settings.
-  - **MoE kernel tuning:** Use the `benchmark_moe` script from vLLM to tune Triton kernels
-    for your specific hardware.
-  - **Async scheduling:** Enabled by default for better throughput. Disable if you encounter
-    issues, and file a bug report to vLLM.
+  - **Text-only workloads:** Pass `--language-model-only` to skip loading MoonViT and free
+    VRAM for KV cache.
 
   ## References
 
-  - [Kimi-K2.6 on Hugging Face](https://huggingface.co/moonshotai/Kimi-K2.6)
-  - [NVIDIA Kimi-K2.6-NVFP4 on Hugging Face](https://huggingface.co/nvidia/Kimi-K2.6-NVFP4)
+  - [Kimi-K2.7-Code on Hugging Face](https://huggingface.co/moonshotai/Kimi-K2.7-Code)
+  - [Kimi-K2.7-Code deployment guide](https://huggingface.co/moonshotai/Kimi-K2.7-Code/blob/main/docs/deploy_guidance.md)
+  - [Kimi-K2.6 recipe](https://recipes.vllm.ai/moonshotai/Kimi-K2.6)
   - [vLLM multimodal inputs guide](https://docs.vllm.ai/en/latest/features/multimodal_inputs.html)
-  - [vLLM Expert Parallelism docs](https://docs.vllm.ai/en/latest/serving/expert_parallel_deployment.html)
-  - [vLLM NixlConnector usage guide](https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html)

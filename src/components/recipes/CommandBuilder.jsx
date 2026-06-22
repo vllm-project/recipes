@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, isHardwareScalable, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, isHardwareScalable, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes } from "@/lib/command-synthesis";
 import { resolveOmniTasks } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -490,6 +490,29 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     if (!searchParams.get("decode_nodes")) setPdDecodeNodes(pdDefaults.decode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdDefaults]);
+  // PD-pool parallelism modes offered for this recipe, derived from
+  // compatible_strategies (TP / TEP / DEP). A single-mode list (e.g. dense
+  // models with only TP) hides the per-pool pills entirely.
+  const pdModes = useMemo(() => pdPoolModes(recipe), [recipe]);
+  // Default per-role parallelism: recipe strategy_overrides → strategy YAML →
+  // "tp", clamped to an offered mode.
+  const pdDefaultPar = useMemo(() => {
+    const so = recipe.strategy_overrides?.pd_cluster || {};
+    const st = strategies?.pd_cluster || {};
+    const pick = (role) => {
+      const d = so[role]?.parallelism || st[role]?.parallelism || "tp";
+      return pdModes.includes(d) ? d : pdModes[0];
+    };
+    return { prefill: pick("prefill"), decode: pick("decode") };
+  }, [recipe, strategies, pdModes]);
+  const [pdPrefillPar, setPdPrefillPar] = useState(() => {
+    const p = searchParams.get("prefill_mode");
+    return p && pdModes.includes(p) ? p : pdDefaultPar.prefill;
+  });
+  const [pdDecodePar, setPdDecodePar] = useState(() => {
+    const p = searchParams.get("decode_mode");
+    return p && pdModes.includes(p) ? p : pdDefaultPar.decode;
+  });
   // Which DP rank's command to render for each DEP pool. User can bump this
   // to see e.g. rank 7's command — illustrates that each rank differs only in
   // --data-parallel-rank, CUDA_VISIBLE_DEVICES, and the per-host ports.
@@ -682,13 +705,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       const advArgs = advanced.flatMap((id) => advancedById[id]?.args || []);
       const pdNodes = activeStrategy === "pd_cluster"
         ? {
-          prefill: { nodes: pdPrefillNodes, rank: pdPrefillRank },
-          decode: { nodes: pdDecodeNodes, rank: pdDecodeRank },
+          prefill: { nodes: pdPrefillNodes, rank: pdPrefillRank, parallelism: pdPrefillPar },
+          decode: { nodes: pdDecodeNodes, rank: pdDecodeRank, parallelism: pdDecodePar },
         }
         : null;
       return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes);
     },
-    [recipe, variant, activeStrategy, hwId, features, advanced, advancedById, strategies, taxonomy, nodeCount, pdPrefillNodes, pdDecodeNodes, pdPrefillRank, pdDecodeRank]
+    [recipe, variant, activeStrategy, hwId, features, advanced, advancedById, strategies, taxonomy, nodeCount, pdPrefillNodes, pdDecodeNodes, pdPrefillRank, pdDecodeRank, pdPrefillPar, pdDecodePar]
   );
 
   // Visual feedback when any rendered command changes. Covers single-node
@@ -734,16 +757,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const selectVariant = (key) => {
     setVariant(key);
-    syncUrl({ variant: key });
     // Only swap hardware when precision demands it (e.g. NVFP4 needs Blackwell).
     // VRAM is not a blocker because multi-node TP/DP can always supply more.
     const v = recipe.variants?.[key] || {};
     const currentProfile = taxonomy.hardware_profiles?.[hwId] || {};
+    const updates = { variant: key };
     if (!isPrecisionCompatible(currentProfile, v)) {
       const next = pickDefaultHardware(taxonomy.hardware_profiles, v, recipe);
       setHwId(next);
-      syncUrl({ hardware: next });
+      updates.hardware = next;
     }
+    // One syncUrl call — two sequential calls each read the same stale
+    // searchParams from this closure, so the second would clobber the first
+    // (dropping variant= when selecting a Blackwell-only variant off Hopper).
+    syncUrl(updates);
   };
 
   const selectHardware = (id) => {
@@ -766,11 +793,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // variant. If the active variant doesn't fit the new box, fall to the
     // largest variant that does (e.g. BF16 → FP8 on DGX Station).
     let activeVariant = currentVariant;
+    // Folded into the single syncUrl below rather than synced here — a separate
+    // syncUrl call would read stale searchParams and get clobbered (same footgun
+    // as selectVariant). Left undefined when the variant is unchanged so the
+    // existing variant= param is preserved, not deleted.
+    let variantUpdate;
     if (!newScalable && !fitsSingleNode(newProfile, currentVariant)) {
       const fitting = pickFittingVariant(recipe, newProfile);
       if (fitting && fitting !== variant) {
         setVariant(fitting);
-        syncUrl({ variant: fitting });
+        variantUpdate = fitting;
         activeVariant = recipe.variants?.[fitting] || currentVariant;
       }
     }
@@ -796,6 +828,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       strategy: "",
       nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
       features: featuresToUrl(next, id),
+      ...(variantUpdate ? { variant: variantUpdate } : {}),
     });
     savePreference("hardware", id);
     // Mirror the new state to per-recipe storage so a hardware switch
@@ -851,6 +884,21 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     } else {
       setPdDecodeRank(clamped);
       syncUrl({ decode_rank: clamped === 0 ? "" : String(clamped) });
+    }
+  };
+
+  // Switching a pool's parallelism changes what the rank/node index means
+  // (DEP start-rank vs TP node-rank), so reset that pool's rank to 0.
+  const setPdPar = (role, mode) => {
+    if (!pdModes.includes(mode)) return;
+    if (role === "prefill") {
+      setPdPrefillPar(mode);
+      setPdPrefillRank(0);
+      syncUrl({ prefill_mode: mode === pdDefaultPar.prefill ? "" : mode, prefill_rank: "" });
+    } else {
+      setPdDecodePar(mode);
+      setPdDecodeRank(0);
+      syncUrl({ decode_mode: mode === pdDefaultPar.decode ? "" : mode, decode_rank: "" });
     }
   };
 
@@ -1504,20 +1552,28 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           {activeStrategy === "pd_cluster" ? (
             <ConfigRow
               label="Nodes"
-              hint="Each pool (prefill / decode) sizes independently. Total cluster = prefill_nodes + decode_nodes. For Kimi-K2.5 on GB200 the production pattern is prefill=1, decode=4."
+              hint={pdModes.length > 1
+                ? "Each pool (prefill / decode) sizes and shards independently — pick its parallelism (TP / TEP / DEP) and node count. Total cluster = prefill_nodes + decode_nodes."
+                : "Each pool (prefill / decode) sizes independently. Total cluster = prefill_nodes + decode_nodes."}
             >
-              <div className="flex flex-wrap items-center gap-3 text-sm">
+              <div className="flex flex-col gap-2 text-sm">
                 <PdNodeInput
                   label="Prefill"
                   value={pdPrefillNodes}
                   gpuPerNode={hwProfile.gpu_count || 8}
                   onChange={(n) => setPdNodes("prefill", n)}
+                  modes={pdModes}
+                  parallelism={pdPrefillPar}
+                  onParChange={(m) => setPdPar("prefill", m)}
                 />
                 <PdNodeInput
                   label="Decode"
                   value={pdDecodeNodes}
                   gpuPerNode={hwProfile.gpu_count || 8}
                   onChange={(n) => setPdNodes("decode", n)}
+                  modes={pdModes}
+                  parallelism={pdDecodePar}
+                  onParChange={(m) => setPdPar("decode", m)}
                 />
                 <span className="text-xs text-muted-foreground tabular-nums">
                   total {(pdPrefillNodes + pdDecodeNodes) * (hwProfile.gpu_count || 8)} GPUs
@@ -1674,10 +1730,37 @@ function endpointHintFor(name) {
   return "value";
 }
 
-function PdNodeInput({ label, value, gpuPerNode, onChange }) {
+const PD_PAR_LABELS = { tp: "TP", tep: "TEP", dep: "DEP" };
+const PD_PAR_TIPS = {
+  tp: "Tensor parallel — one engine sharded across the pool's GPUs; only the head node serves HTTP.",
+  tep: "Tensor + expert parallel — TP layout plus --enable-expert-parallel (MoE models).",
+  dep: "Data + expert parallel — one vllm serve per node, DP across nodes with EP (MoE throughput).",
+};
+
+function PdNodeInput({ label, value, gpuPerNode, onChange, modes, parallelism, onParChange }) {
+  const showPills = Array.isArray(modes) && modes.length > 1 && typeof onParChange === "function";
   return (
-    <label className="inline-flex items-center gap-2">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+    <div className="inline-flex flex-wrap items-center gap-2">
+      <span className="text-xs font-medium text-muted-foreground w-12 shrink-0">{label}</span>
+      {showPills && (
+        <span className="inline-flex gap-1">
+          {modes.map((m) => (
+            <InfoTip key={m} content={PD_PAR_TIPS[m]}>
+              <button
+                onClick={() => onParChange(m)}
+                aria-label={PD_PAR_TIPS[m]}
+                className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-mono transition-all ${
+                  parallelism === m
+                    ? "border-vllm-blue bg-vllm-blue/5 text-foreground ring-1 ring-vllm-blue/20"
+                    : "border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40 hover:bg-muted/30"
+                }`}
+              >
+                {PD_PAR_LABELS[m] || m.toUpperCase()}
+              </button>
+            </InfoTip>
+          ))}
+        </span>
+      )}
       <input
         type="number"
         min={1}
@@ -1689,7 +1772,7 @@ function PdNodeInput({ label, value, gpuPerNode, onChange }) {
       <span className="text-xs text-muted-foreground tabular-nums">
         × {gpuPerNode} = {value * gpuPerNode}
       </span>
-    </label>
+    </div>
   );
 }
 
@@ -2159,11 +2242,12 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           )}
         </div>
       )}
-      {!active.isRouter && active.meta?.parallelism === "dep" && active.meta.nodes > 1 && onRankChange && (
+      {!active.isRouter && active.meta?.nodes > 1 && onRankChange && (
         <div className="px-4 pt-2 pb-0 flex items-center gap-2 text-[11px] text-[var(--command-fg)]/70 flex-wrap">
           <span className="font-mono uppercase tracking-wider text-[var(--command-fg)]/50">node</span>
-          {/* Display node index is 1-based; emitted --data-parallel-start-rank
-              stays 0-based to match vLLM's rank convention. */}
+          {/* Display node index is 1-based; the emitted rank flag stays 0-based
+              to match vLLM's convention — --data-parallel-start-rank for DEP,
+              --node-rank for TP. */}
           <input
             type="number"
             min={1}
@@ -2175,10 +2259,23 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
             }}
             className="w-14 px-2 py-0.5 text-xs font-mono tabular-nums rounded border border-[var(--command-fg)]/20 bg-transparent text-[var(--command-fg)] focus:outline-none focus:border-vllm-blue/60"
           />
-          <span className="text-[var(--command-fg)]/40">
-            of 1..{active.meta.nodes} · start_rank = {active.meta.startRank}
-          </span>
-          <span className="text-[var(--command-fg)]/40 ml-auto">vLLM spawns {active.meta.dpLocal} local DP ranks per node</span>
+          {active.meta.parallelism === "dep" ? (
+            <>
+              <span className="text-[var(--command-fg)]/40">
+                of 1..{active.meta.nodes} · start_rank = {active.meta.startRank}
+              </span>
+              <span className="text-[var(--command-fg)]/40 ml-auto">vLLM spawns {active.meta.dpLocal} local DP ranks per node</span>
+            </>
+          ) : (
+            <>
+              <span className="text-[var(--command-fg)]/40">
+                of 1..{active.meta.nodes} · --node-rank = {active.meta.currentNode ?? 0}
+              </span>
+              <span className="text-[var(--command-fg)]/40 ml-auto">
+                {(active.meta.currentNode ?? 0) === 0 ? "head node — serves HTTP + NIXL" : "follower — runs --headless"}
+              </span>
+            </>
+          )}
         </div>
       )}
       {prelude && (

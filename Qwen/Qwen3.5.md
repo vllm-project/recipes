@@ -28,6 +28,15 @@ source .venv/bin/activate
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
 ```
 
+#### CPU
+For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.
+```bash
+uv venv
+source .venv/bin/activate
+export VLLM_VERSION=$(curl -s https://api.github.com/repos/vllm-project/vllm/releases/latest | jq -r .tag_name | sed 's/^v//')
+uv pip install https://github.com/vllm-project/vllm/releases/download/v${VLLM_VERSION}/vllm-${VLLM_VERSION}+cpu-cp38-abi3-manylinux_2_35_x86_64.whl --torch-backend cpu
+```
+
 ## Running Qwen3.6
 
 ```bash
@@ -80,6 +89,21 @@ docker run --device=/dev/kfd --device=/dev/dri \
   --reasoning-parser qwen3 \
   --enable-prefix-caching
 ```
+
+#### CPU
+
+```bash
+docker run -itd --name qwen35b-cpu \
+  --network host \
+  --shm-size 16g \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  vllm/vllm-openai-cpu:latest-x86_64 \
+    --model Qwen/Qwen3.5-35B-A3B \
+    --host 0.0.0.0 \
+    --port 8000
+```
+
+
 
 ## Running Qwen3.5
 
