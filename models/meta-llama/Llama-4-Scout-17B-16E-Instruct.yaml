@@ -96,9 +96,6 @@ hardware_overrides:
       - "32000"
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
-  cpu:
-    extra_env:
-      VLLM_CPU_KVCACHE_SPACE: "40"
 
 strategy_overrides: {}
 
@@ -135,7 +132,6 @@ guide: |
     --network host \
     --shm-size 16g \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    -e VLLM_CPU_KVCACHE_SPACE=40 \
     vllm/vllm-openai-cpu:latest-x86_64 \
       --model meta-llama/Llama-4-Scout-17B-16E-Instruct \
       --host 0.0.0.0 \
