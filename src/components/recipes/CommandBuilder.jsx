@@ -1859,7 +1859,7 @@ function endpointHintFor(name) {
   if (name.endsWith("_IP")) return "10.0.0.1";
   if (name === "IFACE_NAME") return "bond0";
   if (name === "ROUTER_HOST") return "localhost";
-  if (name === "MOONCAKE_VLLM_CONFIG_PATH") return "/etc/mooncake/mooncake_vllm_config.json";
+  if (name === "MOONCAKE_CONFIG_PATH") return "/etc/mooncake/mooncake_vllm_config.json";
   if (name === "MOONCAKE_STORE_CONFIG_PATH") return "/etc/mooncake/mooncake_store_config.json";
   if (name === "MOONCAKE_STORE_NODE_IP") return "10.0.0.3";
   if (name === "MOONCAKE_MASTER_IP") return "10.0.0.1";
@@ -2461,7 +2461,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
       )}
       {active.isConfig && (
         <div className="px-4 pt-3 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug">
-          # Save as {active.id === "config" ? "mooncake_vllm_config.json" : "mooncake_store_config.json"} — referenced by $MOONCAKE_VLLM_CONFIG_PATH / $MOONCAKE_STORE_CONFIG_PATH
+          # Save as {active.id === "config" ? "mooncake_vllm_config.json" : "mooncake_store_config.json"} — referenced by $MOONCAKE_CONFIG_PATH / $MOONCAKE_STORE_CONFIG_PATH
         </div>
       )}
       {prelude && (
