@@ -28,7 +28,7 @@ vllm:
     - "--kv-transfer-config"
     - '{"kv_connector":"MooncakeStoreConnector","kv_role":"kv_both"}'
   env:
-    MOONCAKE_VLLM_CONFIG_PATH: "$MOONCAKE_VLLM_CONFIG_PATH"
+    MOONCAKE_CONFIG_PATH: "$MOONCAKE_CONFIG_PATH"
   install: "uv pip install 'mooncake-transfer-engine-non-cuda>=0.3.10'"
   port: 8000
 
