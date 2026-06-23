@@ -1023,7 +1023,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       `vllm-router --policy ${routerPolicy} \\`,
       ...vllmEndpoints,
       `    --host $ROUTER_HOST \\`,
-      `    --port ${routerPort}`,
+      `    --port ${routerPort} \\`,
+      `    --cache-threshold 0.5 \\`,
+      `    --balance-abs-threshold 4 \\`,
+      `    --balance-rel-threshold 1.1`,
     ];
     const routerCommand = routerLines.join("\n");
 
