@@ -6,7 +6,7 @@ description: >
   Multi-replica vLLM cluster with shared distributed KV cache via
   MooncakeStoreConnector in embedded mode. Each vLLM node (single-node
   TEP) contributes CPU DRAM (global_segment_size) to the shared cache pool.
-  A vllm-router with consistent-hash policy routes requests so prefix-
+  A vllm-router with cache_aware policy routes requests so prefix-
   matched prompts land on the same replica — maximizing KV cache hits.
   A lightweight mooncake_master coordinates metadata; no separate store
   process needed.

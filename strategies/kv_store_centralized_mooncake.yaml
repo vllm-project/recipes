@@ -7,7 +7,7 @@ description: >
   MooncakeStoreConnector in standalone-store mode. A dedicated
   mooncake_store_service process owns the entire CPU DRAM pool; vLLM
   instances contribute zero local memory (global_segment_size=0).
-  A vllm-router with consistent-hash policy routes requests so prefix-
+  A vllm-router with cache_aware policy routes requests so prefix-
   matched prompts land on the same replica — maximizing KV cache hits.
   Decouples cache capacity from vLLM lifecycle — store survives vLLM
   restarts. Recommended for production deployments with large cache pools.

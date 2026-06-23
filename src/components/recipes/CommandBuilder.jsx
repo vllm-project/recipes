@@ -2497,7 +2497,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
   const mooncakeStoreConfigJson = result.store?.config ? JSON.stringify(result.store.config, null, 2) : null;
 
   const tabs = [
-    { id: "router", label: "Router", command: result.router.command, env: {}, description: `Consistent-hash LB across ${result.nodeCount || 2} vLLM replicas. Install: ${result.router.install}` },
+    { id: "router", label: "Router", command: result.router.command, env: {}, description: `LB across ${result.nodeCount || 2} vLLM replicas. Install: ${result.router.install}` },
     { id: "vllm", label: "vLLM Serve", command: wrap(result.vllm.command, result.vllm.env), env: result.vllm.env, description: `Run on each of ${result.nodeCount || 2} replica nodes.${result.vllm.install ? ` Requires: ${result.vllm.install}` : ""}` },
     { id: "config", label: "mooncake_vllm_config.json", command: mooncakeVllmConfigJson, env: {}, isConfig: true },
     { id: "master", label: "Mooncake Master", command: result.master.command, env: {} },
