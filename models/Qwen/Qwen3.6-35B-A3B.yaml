@@ -32,11 +32,11 @@ model:
 
 features:
   tool_calling:
-    description: "Enable automatic tool choice with Qwen3 Coder parser"
+    description: "Enable automatic tool choice with Qwen3 XML parser"
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_coder"
+      - "qwen3_xml"
   reasoning:
     description: "Enable chain-of-thought reasoning with Qwen3 parser"
     args:
@@ -46,7 +46,7 @@ features:
     description: "Multi-token prediction speculative decoding for lower latency"
     args:
       - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":2}'
+      - '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -78,27 +78,13 @@ variants:
     tp: 1
     description: "NVIDIA ModelOpt NVFP4 checkpoint for Blackwell GPUs, including DGX Spark"
     extra_args:
-      - "--quantization"
-      - "modelopt"
       - "--kv-cache-dtype"
       - "fp8"
       - "--attention-backend"
       - "flashinfer"
       - "--moe-backend"
       - "marlin"
-      - "--gpu-memory-utilization"
-      - "0.85"
-      - "--max-model-len"
-      - "65536"
-      - "--max-num-seqs"
-      - "4"
-      - "--max-num-batched-tokens"
-      - "8192"
-      - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
-    extra_env:
-      VLLM_FP8_MOE_BACKEND: "flashinfer_cutlass"
-      FLASHINFER_DISABLE_VERSION_CHECK: "1"
+      - "--enable-prefix-caching"
 
 compatible_strategies:
   - single_node_tp
@@ -186,32 +172,22 @@ guide: |
   and requires vLLM nightly or a source build with ModelOpt W4A16/NVFP4 support.
 
   ```bash
-  export VLLM_FP8_MOE_BACKEND=flashinfer_cutlass
-  export FLASHINFER_DISABLE_VERSION_CHECK=1
-  export CUTE_DSL_ARCH=sm_121a
-  ```
-
-  ```bash
   vllm serve nvidia/Qwen3.6-35B-A3B-NVFP4 \
     --trust-remote-code \
-    --dtype auto \
-    --quantization modelopt \
     --kv-cache-dtype fp8 \
     --attention-backend flashinfer \
     --moe-backend marlin \
-    --gpu-memory-utilization 0.85 \
-    --max-model-len 65536 \
+    --gpu-memory-utilization 0.4 \
+    --max-model-len 262144 \
     --max-num-seqs 4 \
     --max-num-batched-tokens 8192 \
-    --speculative-config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+    --enable-prefix-caching \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}' \
+    --load-format fastsafetensors \
+    --reasoning-parser qwen3 \
+    --tool-call-parser qwen3_xml \
+    --enable-auto-tool-choice
   ```
-
-  The Spark serving shape intentionally caps context and concurrency with
-  `--max-model-len 65536`, `--max-num-seqs 4`, and
-  `--max-num-batched-tokens 8192`. Optional throughput knobs such as
-  `--async-scheduling` can be added after profiling. On vLLM V1/nightly, prefix
-  caching and chunked prefill are enabled by default when supported, so this
-  recipe does not pass them explicitly.
 
   ## Processing Ultra-Long Texts
 
