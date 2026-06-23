@@ -14,6 +14,7 @@ meta:
     h100: verified
     b200: verified
     gb200: verified
+    xeon6: verified
 
 model:
   model_id: "meta-llama/Llama-4-Scout-17B-16E-Instruct"
@@ -107,11 +108,36 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x B200 (FP4), 1x H100 (FP8), or 4x GPUs (BF16)
+  - Hardware: 1x B200 (FP4), 1x H100 (FP8), 4x GPUs (BF16) or 4x Xeon6/Xeon5 NUMA node for BF16
   - vLLM >= 0.12.0
-  - CUDA Driver >= 575
-  - Docker with NVIDIA Container Toolkit (recommended)
-  - License: Must agree to Meta's Llama 4 Scout Community License
+  - CUDA Driver >= 575 for GPUs
+  - Docker with NVIDIA Container Toolkit (recommended) for GPUs
+  - License: Must agree to Meta's Llama 4 Scout Community License for GPUs
+
+  ### pip (Intel Xeon 6 CPUs)
+  For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.
+
+  ### Docker (Intel Xeon 6 CPUs)
+
+  ```bash
+  docker pull vllm/vllm-openai-cpu:latest-x86_64 # For Intel Xeon 6
+  ```
+
+  ### Intel Xeon 6 Deployment via Docker
+
+  Launch the x86 CPU vLLM Docker container for `meta-llama/Llama-4-Scout-17B-16E-Instruct`:
+
+  ```bash
+  docker run -itd --name llama4-17b-cpu \
+    --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-cpu:latest-x86_64 \
+      --model meta-llama/Llama-4-Scout-17B-16E-Instruct \
+      --host 0.0.0.0 \
+      --port 8000
+  ```
+
 
   ## Client Usage
 
