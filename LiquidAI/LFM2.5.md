@@ -277,6 +277,39 @@ vllm bench serve \
 | `--max-model-len N` | Cap context (models support up to 128K) | small GPUs / fixed workload |
 | `--limit-mm-per-prompt '{"image": N}'` | Max images per request | VL models |
 
+## Deploy on Modal
+
+[Modal](https://modal.com) runs this recipe on cloud GPUs with a single command — no
+infrastructure to manage. The deployment script is [`lfm25-modal.py`](lfm25-modal.py) in this
+directory: it serves an LFM2.5 model with vLLM behind an OpenAI-compatible endpoint, with the
+model and GPU selectable via environment variables.
+
+### Deploy
+
+```bash
+pip install modal
+modal setup                  # one-time: authenticate with Modal
+modal deploy lfm25-modal.py  # serves LiquidAI/LFM2.5-1.2B-Instruct on an L4 by default
+```
+
+### Test
+
+```bash
+modal run lfm25-modal.py
+```
+
+### Pick a model / GPU
+
+```bash
+MODEL=LiquidAI/LFM2.5-8B-A1B GPU=H100 modal run lfm25-modal.py
+```
+
+LFM2.5's small footprint means even a budget GPU is plenty. The 1.2B dense checkpoint was
+validated end-to-end on this script across NVIDIA **T4, L4, A10G, L40S, A100 (40/80 GB), H100,
+H200, and B200** (vLLM 0.23.0); the 8B-A1B MoE and the VL models were validated on **H100, H200,
+and B200**. Size up to a 24 GB+ GPU (L4 / A10G or larger) for the 8B-A1B MoE, which keeps all
+~8B of experts resident in VRAM.
+
 ## References
 
 - [Liquid AI](https://www.liquid.ai/)

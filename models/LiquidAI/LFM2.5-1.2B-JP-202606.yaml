@@ -13,6 +13,8 @@ meta:
     - LiquidAI/LFM2.5-1.2B-Instruct
   hardware:
     h100: verified
+    h200: verified
+    b200: verified
 
 model:
   model_id: "LiquidAI/LFM2.5-1.2B-JP-202606"
