@@ -3,7 +3,7 @@ meta:
   slug: "glm-5.2"
   provider: "GLM (Z-AI)"
   description: "GLM-5.2 — frontier-scale MoE language model (~743B total parameters, 39B active) with up to 5-token MTP speculative decoding and thinking mode"
-  date_updated: 2026-06-09
+  date_updated: 2026-06-24
   difficulty: advanced
   tasks:
     - text
@@ -14,6 +14,7 @@ meta:
   hardware:
     b300: verified
     b200: verified
+    gb300: verified
     mi300x: verified
     mi355x: verified
 
@@ -47,10 +48,8 @@ features:
   spec_decoding:
     description: "Multi-Token Prediction speculative decoding (up to 5 draft tokens)"
     args:
-      - "--speculative-config.method"
-      - "mtp"
-      - "--speculative-config.num_speculative_tokens"
-      - "5"
+      - "--speculative-config"
+      - '{"method": "mtp", "num_speculative_tokens": 5}'
 
 opt_in_features:
   - spec_decoding
@@ -82,6 +81,10 @@ hardware_overrides:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
+  blackwell:
+    extra_args:
+      - "--attention-config"
+      - '{"mla_prefill_backend": "TRTLLM_RAGGED", "use_prefill_query_quantization": true}'
   amd:
     extra_args:
       - "--linear-backend"
@@ -150,8 +153,7 @@ guide: |
   vllm serve zai-org/GLM-5.2-FP8 \
     --kv-cache-dtype fp8 \
     --tensor-parallel-size 8 \
-    --speculative-config.method mtp \
-    --speculative-config.num_speculative_tokens 5 \
+    --speculative-config '{"method": "mtp", "num_speculative_tokens": 5}' \
     --tool-call-parser glm47 \
     --reasoning-parser glm45 \
     --enable-auto-tool-choice \
@@ -172,8 +174,7 @@ guide: |
   vllm serve zai-org/GLM-5.2-FP8 \
     --kv-cache-dtype fp8_e4m3 \
     --tensor-parallel-size 8 \
-    --speculative-config.method mtp \
-    --speculative-config.num_speculative_tokens 5 \
+    --speculative-config '{"method": "mtp", "num_speculative_tokens": 5}' \
     --tool-call-parser glm47 \
     --enable-auto-tool-choice \
     --reasoning-parser glm45 \
@@ -190,8 +191,8 @@ guide: |
     start at 32 and tune it to your HBM (up on headroom, down on OOM).
   - **`--gpu-memory-utilization 0.80`** — leaves ROCm runtime headroom for MTP graph capture
     and inference; raise it only after a representative concurrent smoke test.
-  - **`--speculative-config.num_speculative_tokens 5`** — enables GLM-5.2's 5-token MTP
-    path; reduce it if your workload shows low acceptance or higher latency.
+  - **`num_speculative_tokens: 5`** (inside `--speculative-config`) — enables GLM-5.2's 5-token
+    MTP path; reduce it if your workload shows low acceptance or higher latency.
   - **`VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1`** — enables the shared-expert fused
     MoE path. `VLLM_ROCM_USE_AITER_LINEAR` and `VLLM_ROCM_USE_AITER_MOE` default to enabled
     when `VLLM_ROCM_USE_AITER=1`.
@@ -209,8 +210,8 @@ guide: |
   VLLM_DEEP_GEMM_WARMUP=skip vllm serve zai-org/GLM-5.2-FP8 \
     --kv-cache-dtype fp8_e4m3 \
     --tensor-parallel-size 8 \
-    --speculative-config.method mtp \
-    --speculative-config.num_speculative_tokens 5 \
+    --attention-config '{"mla_prefill_backend": "TRTLLM_RAGGED", "use_prefill_query_quantization": true}' \
+    --speculative-config '{"method": "mtp", "num_speculative_tokens": 5}' \
     --max-num-seqs 32 \
     --tool-call-parser glm47 \
     --reasoning-parser glm45 \
