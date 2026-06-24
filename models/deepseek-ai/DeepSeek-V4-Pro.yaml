@@ -171,7 +171,7 @@ strategy_overrides:
       vllm_args:
         - "--enforce-eager"
         - "--max-num-seqs"
-        - "2"
+        - "16"
         - "--max-num-batched-tokens"
         - "16384"
         - "--no-disable-hybrid-kv-cache-manager"
