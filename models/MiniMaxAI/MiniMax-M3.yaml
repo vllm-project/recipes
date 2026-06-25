@@ -2,8 +2,8 @@ meta:
   title: "MiniMax-M3"
   slug: "minimax-m3"
   provider: "MiniMax"
-  description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 checkpoint with an MXFP8 variant from NVIDIA. Runs on NVIDIA (Hopper/Blackwell) and on AMD CDNA4 (MI350X/MI355X) and CDNA3 (MI300X/MI325X)."
-  date_updated: 2026-06-12
+  description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 checkpoint with MXFP8 and NVFP4 variants from NVIDIA. Runs on NVIDIA (Hopper/Blackwell) and on AMD CDNA4 (MI350X/MI355X) and CDNA3 (MI300X/MI325X)."
+  date_updated: 2026-06-25
   difficulty: advanced
   tasks:
     - text
@@ -20,7 +20,7 @@ model:
   min_vllm_version: "0.24.0"
   nightly_required: true
   docker_image: 
-    nvidia: "vllm/vllm-openai:minimax-m3"
+    nvidia: "vllm/vllm-openai:vllm-minimax-m3-perf-x86_64-13.0.1-8b00f41"
     amd: "vllm/vllm-openai-rocm:minimax-m3" 
   # Docker-only: MiniMax-M3 support hasn't shipped in a stable wheel, and the
   # dedicated image is the supported path — hide the pip tab.
@@ -109,6 +109,13 @@ variants:
     # comfortably, ~4 GPUs for weights alone on Blackwell (B200/B300) or AMD MI350X/MI355X (gfx950)).
     vram_minimum_gb: 513
     description: "NVIDIA-quantized MXFP8 weights — Blackwell (B200/B300) for native MX tensor cores, and AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 Matrix Cores."
+  nvfp4:
+    model_id: "nvidia/MiniMax-M3-NVFP4"
+    precision: nvfp4
+    # 427B × 0.5 byte (NVFP4) + F32 norms, × 1.2 ≈ 257 GB → fits comfortably on
+    # a single Blackwell node (B200 8×180 GB / B300 8×268 GB) with KV headroom.
+    vram_minimum_gb: 257
+    description: "NVIDIA NVFP4-quantized weights for Blackwell (B200/B300) — ~1/4 the VRAM of BF16. NVFP4 support is in-flight in vLLM (PR #46380); until it lands, build vLLM from that branch. Pairs with EAGLE3 spec decoding (enable the Spec decoding feature)."
 
 compatible_strategies:
   - single_node_tp
@@ -168,7 +175,7 @@ guide: |
   dedicated Docker image:
 
   ```bash
-  docker pull vllm/vllm-openai:minimax-m3
+  docker pull vllm/vllm-openai:vllm-minimax-m3-perf-x86_64-13.0.1-8b00f41
   ```
 
   ### Docker (AMD ROCm)
@@ -424,6 +431,50 @@ guide: |
   For best MXFP8 throughput, prefer Blackwell (B200/B300) for native MX tensor cores,
   or AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 matrix cores.
 
+  ## Quantized Variant (NVFP4, Blackwell)
+
+  [`nvidia/MiniMax-M3-NVFP4`](https://huggingface.co/nvidia/MiniMax-M3-NVFP4) is
+  an NVFP4 checkpoint quantized by NVIDIA — roughly **1/4 the VRAM** of the BF16
+  release, so the 427B model fits comfortably on a single Blackwell node (B200 /
+  B300) with KV-cache headroom. Select the **nvfp4** variant above, or pass the
+  repo id directly to `vllm serve`.
+
+  > **vLLM support is in-flight.** MiniMax-M3 NVFP4 needs the modelopt NVFP4 path
+  > added in [vLLM PR #46380](https://github.com/vllm-project/vllm/pull/46380),
+  > which is not yet merged. Until it lands in a release, build vLLM from that
+  > branch (or a nightly once merged); a stock build will not recognise the NVFP4
+  > quant config.
+
+  ```bash
+  vllm serve nvidia/MiniMax-M3-NVFP4 \
+    --tensor-parallel-size 8 \
+    --block-size 128 \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
+
+  Add `--enable-expert-parallel` (TP+EP) or `--data-parallel-size 8
+  --enable-expert-parallel` (DP+EP) to scale across the node, exactly as for the
+  BF16/MXFP8 commands above. For text-only serving, add `--language-model-only`
+  to skip the vision encoder and free VRAM for KV cache.
+
+  ### NVFP4 + EAGLE3 spec decoding (MTP)
+
+  The NVFP4 target pairs with the same EAGLE3 draft head as the other variants.
+  Enable the **Spec decoding** feature above, or append the draft config to the
+  command:
+
+  ```bash
+  vllm serve nvidia/MiniMax-M3-NVFP4 \
+    --tensor-parallel-size 8 \
+    --block-size 128 \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice \
+    --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
+  ```
+
   ## Troubleshooting
 
   - **`--block-size` mismatch.** MSA's sparse block size is 128; the vLLM KV
@@ -447,6 +498,9 @@ guide: |
 
   - [Model card](https://huggingface.co/MiniMaxAI/MiniMax-M3)
   - [MXFP8 variant](https://huggingface.co/MiniMaxAI/MiniMax-M3-MXFP8)
+  - [NVFP4 variant](https://huggingface.co/nvidia/MiniMax-M3-NVFP4)
+  - [EAGLE3 draft head](https://huggingface.co/Inferact/MiniMax-M3-EAGLE3)
+  - [vLLM PR #46380 (MiniMax-M3 NVFP4 support)](https://github.com/vllm-project/vllm/pull/46380)
   - [MiniMax](https://www.minimax.io/)
   - [MiniMax Agent](https://agent.minimax.io/)
   - [MiniMax Platform](https://platform.minimax.io/)
