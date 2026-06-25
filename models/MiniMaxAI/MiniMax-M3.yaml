@@ -112,9 +112,19 @@ variants:
   mxfp4:
     model_id: "amd/MiniMax-M3-MXFP4"
     precision: mxfp4
+    # AMD MXFP4 is a CDNA4-only checkpoint: the AITER MXFP4 MoE kernels are
+    # gfx950 (MI350X/MI355X). It does NOT run on CDNA3 (gfx942, MI300X/MI325X)
+    # or NVIDIA — gate the hardware pills to gfx950 so the page can't claim
+    # otherwise. (Distinct from gpt-oss MXFP4, which also runs on NVIDIA.)
+    requires_arch: gfx950
     # 427B × 0.5 byte (MXFP4) + F32 norms, × 1.2 ≈ 257 GB → fits a single
     # 8x MI355X (288 GB/GPU) node from TP=4.
     vram_minimum_gb: 257
+    # AITER MXFP4 MoE on gfx950 needs aiter >= 0.1.16.post2 (vllm#46692) plus
+    # the MoE enablement (vllm#46419), not yet in a published rocm image — so
+    # pin the ROCm dev image that carries the path instead of the generic one.
+    docker_image:
+      amd: "rocm/vllm-dev:vllm-0.23.1-rocm723-mi35x-mori-0625"
     # AMD-quantized MXFP4 checkpoint. Served through the AITER MoE backend on
     # CDNA4. This checkpoint ships no calibrated KV scales, so prefer the
     # default KV cache dtype — fp8 KV still runs but falls back to an
@@ -122,10 +132,11 @@ variants:
     extra_args:
       - "--moe-backend"
       - "aiter"
+    # VLLM_ROCM_USE_AITER=1 is the umbrella switch; the MoE sub-flag defaults on
+    # under it, so it's not set explicitly here (per @hongxiayang).
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
-      VLLM_ROCM_USE_AITER_MOE: "1"
-    description: "AMD-quantized MXFP4 weights for CDNA4 (MI350X/MI355X, gfx950) via the AITER MoE backend — half the VRAM of MXFP8, fits a single node from TP=4. AMD-only."
+    description: "AMD-quantized MXFP4 weights for CDNA4 (MI355X, gfx950) via the AITER MoE backend — half the VRAM of MXFP8, fits a single node from TP=4. AMD CDNA4-only."
 
 compatible_strategies:
   - single_node_tp
@@ -452,19 +463,24 @@ guide: |
 
   ### MoE backend: `aiter` (performance) vs `emulation` (works today)
 
-  > **Image requirement for the AITER path.** MXFP4 MoE on the high-performance
-  > **AITER** backend needs aiter `>= 0.1.16.post2`
+  > **Image requirement for the AITER path — a plain upstream nightly will
+  > crash.** MXFP4 MoE on the high-performance **AITER** backend needs aiter
+  > `>= 0.1.16.post2`
   > ([vllm#46692](https://github.com/vllm-project/vllm/pull/46692)) **and** the
-  > MoE enablement [vllm#46419](https://github.com/vllm-project/vllm/pull/46419).
-  > Until #46419 ships in a published `vllm/vllm-openai-rocm` image, a plain
-  > nightly will **not** bring up MXFP4 on `--moe-backend aiter` — build from
-  > source (or use the `emulation` backend below, which runs on current images).
+  > MoE enablement [vllm#46419](https://github.com/vllm-project/vllm/pull/46419),
+  > which has **not** landed in a published `vllm/vllm-openai-rocm` nightly. On a
+  > plain nightly, `--moe-backend aiter` fails to bring up MXFP4 (AITER MXFP4 MoE
+  > kernel missing). Use the ROCm dev image that carries the path —
+  > `rocm/vllm-dev:vllm-0.23.1-rocm723-mi35x-mori-0625` — or build from source.
+  > (The `emulation` backend below runs on current images.)
 
-  **AITER MoE (recommended for serving once available):**
+  **AITER MoE (recommended for serving — CDNA4 / MI355X gfx950 only):**
 
   ```bash
+  docker pull rocm/vllm-dev:vllm-0.23.1-rocm723-mi35x-mori-0625
+
   export VLLM_USE_BREAKABLE_CUDAGRAPH=0
-  VLLM_ROCM_USE_AITER=1 VLLM_ROCM_USE_AITER_MOE=1 \
+  VLLM_ROCM_USE_AITER=1 \
     vllm serve amd/MiniMax-M3-MXFP4 \
     --tensor-parallel-size 4 \
     --block-size 128 \
@@ -506,10 +522,14 @@ guide: |
   > This may cause accuracy issues`. Leave the KV cache at its default dtype
   > unless you have validated accuracy for your workload.
 
-  Serving validated on 8x MI355X (gfx950), TP=4, `--moe-backend aiter`, with a
-  ROCm `vllm-dev` image carrying the AITER MXFP4 MoE path (vLLM 0.23.1): the
-  model serves and the `minimax_m3` reasoning/tool parsers split `reasoning`
-  from `content` correctly.
+  Serving validated on 8x MI355X (gfx950), TP=4, `--moe-backend aiter`, using
+  the ROCm dev image `rocm/vllm-dev:vllm-0.23.1-rocm723-mi35x-mori-0625`. That
+  image ships vLLM 0.23.1 plus the pre-release AITER MXFP4 MoE path
+  ([vllm#46419](https://github.com/vllm-project/vllm/pull/46419)); the
+  `min_vllm_version: 0.24.0` declared above is the first upstream release
+  expected to carry that path natively. On the dev image the model serves and
+  the `minimax_m3` reasoning/tool parsers split `reasoning` from `content`
+  correctly.
 
   ## Troubleshooting
 

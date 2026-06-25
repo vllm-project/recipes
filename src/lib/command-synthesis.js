@@ -145,12 +145,28 @@ function matchesConstraint(profile, constraint) {
 }
 
 /**
+ * Variant-level GPU-arch gate. Some quantized checkpoints only run on one
+ * micro-architecture even though the precision string is shared — e.g.
+ * `amd/MiniMax-M3-MXFP4` needs CDNA4 (gfx950) AITER MoE kernels and does NOT
+ * run on CDNA3 (gfx942) or NVIDIA, whereas the gpt-oss MXFP4 checkpoints run on
+ * NVIDIA too. A variant opts in via `requires_arch`; profiles without a matching
+ * `arch` (e.g. all NVIDIA profiles) are excluded.
+ */
+function matchesVariantArch(profile, variant) {
+  if (!variant?.requires_arch) return true;
+  const arch = profile.arch;
+  const archs = Array.isArray(arch) ? arch : [arch];
+  return archs.includes(variant.requires_arch);
+}
+
+/**
  * Check whether a hardware profile is compatible with a variant based on
- * precision constraints (e.g., NVFP4 requires Blackwell). Does NOT check VRAM.
+ * precision constraints (e.g., NVFP4 requires Blackwell) and any variant-level
+ * arch gate (e.g. MXFP4 on CDNA4 only). Does NOT check VRAM.
  */
 export function isPrecisionCompatible(profile, variant) {
   const constraint = PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
-  return matchesConstraint(profile, constraint);
+  return matchesConstraint(profile, constraint) && matchesVariantArch(profile, variant);
 }
 
 /**
@@ -251,7 +267,10 @@ export function pdFitsSingleNode(hwProfile, variant) {
 export function pickDefaultHardware(hwProfiles, variant, recipe) {
   const constraint = PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
   const compatible = Object.entries(hwProfiles).filter(
-    ([id, p]) => matchesConstraint(p, constraint) && isHardwareSupported(recipe, id)
+    ([id, p]) =>
+      matchesConstraint(p, constraint) &&
+      matchesVariantArch(p, variant) &&
+      isHardwareSupported(recipe, id)
   );
 
   if (constraint?.generation === "blackwell") {
