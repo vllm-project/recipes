@@ -3,11 +3,15 @@ meta:
   slug: "longcat-image-edit"
   provider: "LongCat (Meituan)"
   description: "Bilingual (Chinese-English) image editing model from Meituan LongCat, served via vLLM-Omni"
-  date_updated: 2026-04-17
+  date_updated: 2026-05-11
   difficulty: intermediate
   tasks:
     - omni
   related_recipes: []
+  hardware:
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "meituan-longcat/LongCat-Image-Edit"
@@ -26,8 +30,13 @@ omni:
 dependencies:
   - note: "vLLM-Omni must be installed from source with vllm==0.12.0 for LongCat-Image-Edit"
     command: "git clone https://github.com/vllm-project/vllm-omni.git && cd vllm-omni && uv pip install -e . vllm==0.12.0"
+    brand: NVIDIA
   - note: "xformers CUDA 12.8 build required for the diffusion attention kernels"
     command: "uv pip install -U xformers --index-url https://download.pytorch.org/whl/cu128"
+    brand: NVIDIA
+  - note: "AMD ROCm: install vLLM for ROCm and vLLM-Omni from source"
+    command: "git clone https://github.com/vllm-project/vllm-omni.git && cd vllm-omni && VLLM_OMNI_TARGET_DEVICE=rocm uv pip install -e . vllm==0.20.0+rocm721 --extra-index-url https://wheels.vllm.ai/rocm/0.20.0/rocm721"
+    brand: AMD
   - note: "diffusers from source (needed by the image-edit pipeline)"
     command: "git clone https://github.com/huggingface/diffusers.git && cd diffusers && uv pip install -e ."
 
@@ -43,7 +52,12 @@ variants:
 
 compatible_strategies: []
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_args: []
+    extra_env:
+      VLLM_OMNI_TARGET_DEVICE: "rocm"
+
 strategy_overrides: {}
 
 guide: |
@@ -79,6 +93,27 @@ guide: |
   uv pip install -e .
   ```
 
+  ### AMD ROCm: MI300X/MI325X/MI355X
+
+  > **Note:** The vLLM wheel for ROCm requires Python 3.12, ROCm 7.2.1, and glibc >= 2.35 (Ubuntu 22.04+). If your environment does not meet these requirements, please use the Docker-based setup.
+
+  ```bash
+  # Install vLLM for ROCm
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm==0.20.0+rocm721 --extra-index-url https://wheels.vllm.ai/rocm/0.20.0/rocm721
+
+  # Clone and install vllm-omni from source with ROCm target
+  git clone https://github.com/vllm-project/vllm-omni.git
+  cd vllm-omni
+  VLLM_OMNI_TARGET_DEVICE=rocm uv pip install -e .
+
+  # Update diffusers to the latest version
+  git clone https://github.com/huggingface/diffusers.git
+  cd diffusers
+  uv pip install -e .
+  ```
+
   ## Usage
 
   ```bash
@@ -99,3 +134,4 @@ guide: |
 
   - [LongCat-Image-Edit on Hugging Face](https://huggingface.co/meituan-longcat/LongCat-Image-Edit)
   - [vLLM-Omni](https://github.com/vllm-project/vllm-omni)
+  - [vLLM-Omni ROCm Installation Guide](https://docs.vllm.ai/projects/vllm-omni/en/latest/getting_started/installation/gpu/#amd-rocm)
