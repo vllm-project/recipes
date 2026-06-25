@@ -2,8 +2,8 @@ meta:
   title: "MiniMax-M3"
   slug: "minimax-m3"
   provider: "MiniMax"
-  description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 checkpoint with an MXFP8 variant from NVIDIA. Runs on NVIDIA (Hopper/Blackwell) and on AMD CDNA4 (MI350X/MI355X) and CDNA3 (MI300X/MI325X)."
-  date_updated: 2026-06-12
+  description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 plus MXFP8 and AMD MI355X MXFP4 variants. Runs on NVIDIA (Hopper/Blackwell) and AMD CDNA4/CDNA3."
+  date_updated: 2026-06-25
   difficulty: advanced
   tasks:
     - text
@@ -109,6 +109,24 @@ variants:
     # comfortably, ~4 GPUs for weights alone on Blackwell (B200/B300) or AMD MI350X/MI355X (gfx950)).
     vram_minimum_gb: 513
     description: "NVIDIA-quantized MXFP8 weights — Blackwell (B200/B300) for native MX tensor cores, and AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 Matrix Cores."
+  mxfp4:
+    model_id: "amd/MiniMax-M3-MXFP4"
+    precision: mxfp4
+    # 427B × 0.5 bytes (MXFP4) × 1.2 headroom = 256.2 GB.
+    vram_minimum_gb: 257
+    description: "AMD Quark OCP MXFP4 weights and dynamic MXFP4 activations for MI355X (gfx950)."
+    # Match the validated InferenceX single-node baseline. TP8 also leaves
+    # practical headroom for KV cache and the multimodal encoder.
+    tp: 8
+    docker_image:
+      amd: "vllm/vllm-openai-rocm:nightly-3f5a1e1733200760169ff31ebe60a271072b199e"
+    extra_args:
+      - "--trust-remote-code"
+      # Keep the multimodal encoder loaded and run it data-parallel on MI355X.
+      - "--mm-encoder-tp-mode"
+      - "data"
+      - "--mm-encoder-attn-backend"
+      - "ROCM_AITER_FA"
 
 compatible_strategies:
   - single_node_tp
@@ -424,6 +442,33 @@ guide: |
   For best MXFP8 throughput, prefer Blackwell (B200/B300) for native MX tensor cores,
   or AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 matrix cores.
 
+  ## Quantized Variant (MXFP4 on MI355X)
+
+  [`amd/MiniMax-M3-MXFP4`](https://huggingface.co/amd/MiniMax-M3-MXFP4)
+  uses static OCP MXFP4 weights and dynamic OCP MXFP4 activations produced with
+  AMD Quark. It targets AMD Instinct MI355X (gfx950) and requires the pinned
+  ROCm nightly containing the Quark MXFP4 fix from vLLM PR #45794.
+
+  Select the **mxfp4** variant and **MI355X** hardware in the command builder,
+  or launch the tested TP8 baseline directly:
+
+  ```bash
+  vllm serve amd/MiniMax-M3-MXFP4 \
+    --tensor-parallel-size 8 \
+    --trust-remote-code \
+    --block-size 128 \
+    --attention-backend TRITON_ATTN \
+    --mm-encoder-tp-mode data \
+    --mm-encoder-attn-backend ROCM_AITER_FA \
+    --tool-call-parser minimax_m3 \
+    --enable-auto-tool-choice \
+    --reasoning-parser minimax_m3
+  ```
+
+  Prefix caching remains enabled, and the multimodal encoder remains loaded.
+  The InferenceX search space also covers TP4, TP4/EP4, TP2/EP2, and DP8/EP8
+  on a single eight-GPU MI355X node.
+
   ## Troubleshooting
 
   - **`--block-size` mismatch.** MSA's sparse block size is 128; the vLLM KV
@@ -447,6 +492,9 @@ guide: |
 
   - [Model card](https://huggingface.co/MiniMaxAI/MiniMax-M3)
   - [MXFP8 variant](https://huggingface.co/MiniMaxAI/MiniMax-M3-MXFP8)
+  - [AMD MXFP4 variant](https://huggingface.co/amd/MiniMax-M3-MXFP4)
+  - [vLLM Quark MXFP4 support PR](https://github.com/vllm-project/vllm/pull/45794)
+  - [InferenceX MI355X MXFP4 recipe](https://github.com/SemiAnalysisAI/InferenceX/pull/1935)
   - [MiniMax](https://www.minimax.io/)
   - [MiniMax Agent](https://agent.minimax.io/)
   - [MiniMax Platform](https://platform.minimax.io/)
