@@ -444,11 +444,23 @@ guide: |
   ## Quantized Variant (MXFP4, AMD)
 
   [`amd/MiniMax-M3-MXFP4`](https://huggingface.co/amd/MiniMax-M3-MXFP4) is an
-  AMD-quantized MXFP4 checkpoint for CDNA4 (MI350X/MI355X, gfx950) — roughly
-  half the VRAM of MXFP8, so M3 fits a single 8x MI355X node from **TP=4**. It
-  runs through the **AITER MoE backend** and the same Triton MSA attention path
-  as the other AMD variants. Select the **mxfp4** variant above, or run it
-  directly:
+  AMD-quantized MXFP4 checkpoint (weights + activations OCP MXFP4, via
+  AMD-Quark) for CDNA4 (MI350X/MI355X, gfx950) — roughly half the VRAM of MXFP8,
+  so M3 fits a single 8x MI355X node from **TP=4**. It uses the same Triton MSA
+  attention path as the other AMD variants. This variant is AMD-only (use the
+  **mxfp8** variant on Blackwell for native MX matrix cores).
+
+  ### MoE backend: `aiter` (performance) vs `emulation` (works today)
+
+  > **Image requirement for the AITER path.** MXFP4 MoE on the high-performance
+  > **AITER** backend needs aiter `>= 0.1.16.post2`
+  > ([vllm#46692](https://github.com/vllm-project/vllm/pull/46692)) **and** the
+  > MoE enablement [vllm#46419](https://github.com/vllm-project/vllm/pull/46419).
+  > Until #46419 ships in a published `vllm/vllm-openai-rocm` image, a plain
+  > nightly will **not** bring up MXFP4 on `--moe-backend aiter` — build from
+  > source (or use the `emulation` backend below, which runs on current images).
+
+  **AITER MoE (recommended for serving once available):**
 
   ```bash
   export VLLM_USE_BREAKABLE_CUDAGRAPH=0
@@ -465,6 +477,28 @@ guide: |
     --enable-auto-tool-choice
   ```
 
+  **Emulation MoE (numerically faithful, slower — runs on current images).**
+  This is the path AMD used to measure accuracy (TP=8); swap
+  `--moe-backend emulation` for `aiter` and drop the AITER env:
+
+  ```bash
+  vllm serve amd/MiniMax-M3-MXFP4 \
+    --tensor-parallel-size 8 \
+    --block-size 128 \
+    --moe-backend emulation \
+    --attention-backend TRITON_ATTN \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
+
+  ### Accuracy
+
+  AMD reports **gsm8k (5-shot, flexible-extract) 94.19** for `amd/MiniMax-M3-MXFP4`
+  vs **95.30** for the BF16 `MiniMaxAI/MiniMax-M3` — **98.84% recovery**
+  (lm-eval, `--moe-backend emulation`, per the
+  [model card](https://huggingface.co/amd/MiniMax-M3-MXFP4#reproduction)).
+
   > **KV cache dtype on the MXFP4 variant.** Unlike the BF16 and MXFP8
   > checkpoints, `amd/MiniMax-M3-MXFP4` ships no calibrated KV scales. Adding
   > `--kv-cache-dtype fp8` still starts and serves, but vLLM falls back to an
@@ -472,12 +506,10 @@ guide: |
   > This may cause accuracy issues`. Leave the KV cache at its default dtype
   > unless you have validated accuracy for your workload.
 
-  This variant is AMD-only; it is not applicable to NVIDIA hardware (use the
-  **mxfp8** variant on Blackwell for native MX matrix cores).
-
-  Validated on 8x MI355X (gfx950), TP=4, with the `rocm/vllm-dev` ROCm image
-  (vLLM 0.23.1): the model serves and the `minimax_m3` reasoning/tool parsers
-  split `reasoning` from `content` correctly.
+  Serving validated on 8x MI355X (gfx950), TP=4, `--moe-backend aiter`, with a
+  ROCm `vllm-dev` image carrying the AITER MXFP4 MoE path (vLLM 0.23.1): the
+  model serves and the `minimax_m3` reasoning/tool parsers split `reasoning`
+  from `content` correctly.
 
   ## Troubleshooting
 
