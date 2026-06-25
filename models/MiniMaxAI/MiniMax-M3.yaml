@@ -492,8 +492,6 @@ guide: |
   - [Model card](https://huggingface.co/MiniMaxAI/MiniMax-M3)
   - [MXFP8 variant](https://huggingface.co/MiniMaxAI/MiniMax-M3-MXFP8)
   - [AMD MXFP4 variant](https://huggingface.co/amd/MiniMax-M3-MXFP4)
-  - [vLLM Quark MXFP4 support PR](https://github.com/vllm-project/vllm/pull/45794)
-  - [InferenceX MI355X MXFP4 recipe](https://github.com/SemiAnalysisAI/InferenceX/pull/1935)
   - [MiniMax](https://www.minimax.io/)
   - [MiniMax Agent](https://agent.minimax.io/)
   - [MiniMax Platform](https://platform.minimax.io/)
