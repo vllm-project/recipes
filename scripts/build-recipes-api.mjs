@@ -253,7 +253,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
   // shard an oversized variant — substitute the largest variant that fits, and
   // skip multi-node strategies. Mirrors the command builder's UI behavior.
   if (!scalable && !fitsSingleNode(hwProfile, variant)) {
-    const fitting = pickFittingVariant(recipe, hwProfile);
+    const fitting = pickFittingVariant(recipe, hwProfile, hwId);
     if (!fitting) return null;
     variantKey = fitting;
     variant = recipe.variants[fitting];
@@ -385,6 +385,11 @@ function renderAndWriteVariant(recipe, variantKey, altBaseHfId, strategies, taxo
   const variant = recipe.variants?.[variantKey];
   if (!variant) return null;
   if ((recipe.meta?.tasks || []).includes("omni")) return null;
+
+  // Hardware/strategy compatibility can shrink between recipe revisions.
+  // Clear this variant's generated subtree so removed targets do not survive
+  // as stale, directly-addressable JSON files from an earlier build.
+  fs.rmSync(path.join(PUBLIC, altBaseHfId), { recursive: true, force: true });
 
   const hwProfiles = taxonomy.hardware_profiles || {};
   const defaultHw = pickDefaultHardware(hwProfiles, variant, recipe);

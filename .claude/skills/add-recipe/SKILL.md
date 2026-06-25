@@ -147,6 +147,7 @@ variants:
     precision: fp8
     vram_minimum_gb: <integer>
     description: "..."
+    supported_hardware: [mi355x]  # optional exact hardware-profile allowlist
     extra_args: []
     extra_env: {}
 

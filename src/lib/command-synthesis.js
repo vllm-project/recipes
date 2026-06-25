@@ -163,13 +163,27 @@ export function isHardwareSupported(recipe, hwId) {
 }
 
 /**
+ * Variant-level hardware allowlist. Missing/empty means the variant inherits
+ * the recipe's normal hardware compatibility; otherwise only listed profile
+ * ids may render or be selected.
+ */
+export function isVariantHardwareSupported(variant, hwId) {
+  const supported = variant?.supported_hardware;
+  return !Array.isArray(supported) || supported.length === 0 || supported.includes(hwId);
+}
+
+/**
  * List hardware profiles compatible with a variant by precision constraint
  * only. VRAM is NOT a blocking constraint — users can scale out via multi-node
  * TP/DP, so any profile that satisfies the precision requirement is valid.
  */
 export function listCompatibleHardware(hwProfiles, variant, recipe) {
   return Object.entries(hwProfiles)
-    .filter(([id, p]) => isPrecisionCompatible(p, variant) && isHardwareSupported(recipe, id))
+    .filter(([id, p]) =>
+      isPrecisionCompatible(p, variant)
+      && isHardwareSupported(recipe, id)
+      && isVariantHardwareSupported(variant, id)
+    )
     .map(([id]) => id);
 }
 
@@ -206,8 +220,9 @@ export function isHardwareScalable(hwProfile) {
  * weights already fit single-node. Used to disable variant pills on
  * non-scalable hardware where the variant has nowhere to shard.
  */
-export function variantRunsOnHardware(hwProfile, variant) {
+export function variantRunsOnHardware(hwProfile, variant, hwId = null) {
   if (!isPrecisionCompatible(hwProfile, variant)) return false;
+  if (hwId && !isVariantHardwareSupported(variant, hwId)) return false;
   if (isHardwareScalable(hwProfile)) return true;
   return fitsSingleNode(hwProfile, variant);
 }
@@ -219,9 +234,9 @@ export function variantRunsOnHardware(hwProfile, variant) {
  * key, or null when nothing fits. Used to auto-fall off an oversized variant
  * (e.g. BF16 → FP8) when the user selects a single-GPU workstation.
  */
-export function pickFittingVariant(recipe, hwProfile) {
+export function pickFittingVariant(recipe, hwProfile, hwId = null) {
   const fitting = Object.entries(recipe.variants || {}).filter(
-    ([, v]) => variantRunsOnHardware(hwProfile, v)
+    ([, v]) => variantRunsOnHardware(hwProfile, v, hwId)
   );
   if (!fitting.length) return null;
   fitting.sort((a, b) => (b[1].vram_minimum_gb || 0) - (a[1].vram_minimum_gb || 0));
@@ -251,7 +266,10 @@ export function pdFitsSingleNode(hwProfile, variant) {
 export function pickDefaultHardware(hwProfiles, variant, recipe) {
   const constraint = PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
   const compatible = Object.entries(hwProfiles).filter(
-    ([id, p]) => matchesConstraint(p, constraint) && isHardwareSupported(recipe, id)
+    ([id, p]) =>
+      matchesConstraint(p, constraint)
+      && isHardwareSupported(recipe, id)
+      && isVariantHardwareSupported(variant, id)
   );
 
   if (constraint?.generation === "blackwell") {

@@ -115,6 +115,8 @@ variants:
     # 427B × 0.5 bytes (MXFP4) × 1.2 headroom = 256.2 GB.
     vram_minimum_gb: 257
     description: "AMD Quark OCP MXFP4 weights and dynamic MXFP4 activations for MI355X (gfx950)."
+    supported_hardware:
+      - mi355x
     # Match the validated InferenceX single-node baseline. TP8 also leaves
     # practical headroom for KV cache and the multimodal encoder.
     tp: 8
