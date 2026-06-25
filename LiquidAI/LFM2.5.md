@@ -4,17 +4,14 @@
 efficient open-weight models built on the **LFM2 hybrid backbone** — short-range gated
 convolution blocks interleaved with grouped-query attention. The hybrid design keeps the KV
 cache small and decode fast, so LFM2.5 models punch above their weight while remaining cheap to
-serve, down to edge / on-device GPUs. The family spans dense chat models (350M, 1.2B), a
+serve, down to edge / on-device GPUs. The family spans dense chat models (230M, 350M, 1.2B), a
 mixture-of-experts model (8B-A1B), reasoning and Japanese variants, base checkpoints, and
 vision-language models (VL 450M / 1.6B) — all served through vLLM's OpenAI-compatible API.
 
 All LFM2.5 language and vision-language models are supported **natively** by vLLM (the
-`Lfm2ForCausalLM`, `Lfm2MoeForCausalLM`, and `Lfm2VlForConditionalGeneration` architectures), so
-**no `--trust-remote-code` is required**. Tool calling is handled by the built-in `lfm2` tool
-parser, and `<think>` reasoning by the `qwen3` reasoning parser.
-
-> ℹ️ All commands below were verified end-to-end on **NVIDIA H100**. Other GPUs are expected to
-> work but are listed only where validated.
+`Lfm2ForCausalLM`, `Lfm2MoeForCausalLM`, and `Lfm2VlForConditionalGeneration` architectures). Tool
+calling is handled by the built-in `lfm2` tool parser, and `<think>` reasoning by the `qwen3`
+reasoning parser.
 
 ## Supported Models
 
@@ -22,12 +19,13 @@ parser, and `<think>` reasoning by the `qwen3` reasoning parser.
 
 | Model | Parameters | Min NVIDIA GPU (BF16) | Context | Tools | HuggingFace |
 |-------|-----------|------------------------|---------|-------|-------------|
-| LFM2.5 350M | 350M | 1× (any) | 128K | ✓ | [LiquidAI/LFM2.5-350M](https://huggingface.co/LiquidAI/LFM2.5-350M) |
-| LFM2.5 1.2B Instruct | 1.2B | 1× (8 GB+) | 128K | ✓ | [LiquidAI/LFM2.5-1.2B-Instruct](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct) |
-| LFM2.5 1.2B Thinking | 1.2B | 1× (8 GB+) | 128K | ✓ (+reasoning) | [LiquidAI/LFM2.5-1.2B-Thinking](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Thinking) |
-| LFM2.5 1.2B JP | 1.2B | 1× (8 GB+) | 128K | – | [LiquidAI/LFM2.5-1.2B-JP](https://huggingface.co/LiquidAI/LFM2.5-1.2B-JP) |
-| LFM2.5 1.2B JP (202606) | 1.2B | 1× (8 GB+) | 128K | ✓ | [LiquidAI/LFM2.5-1.2B-JP-202606](https://huggingface.co/LiquidAI/LFM2.5-1.2B-JP-202606) |
-| LFM2.5 1.2B Base | 1.2B | 1× (8 GB+) | 128K | – (completions) | [LiquidAI/LFM2.5-1.2B-Base](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Base) |
+| LFM2.5 230M | 230M | 1× (any) | 32K | ✓ | [LiquidAI/LFM2.5-230M](https://huggingface.co/LiquidAI/LFM2.5-230M) |
+| LFM2.5 350M | 350M | 1× (any) | 32K | ✓ | [LiquidAI/LFM2.5-350M](https://huggingface.co/LiquidAI/LFM2.5-350M) |
+| LFM2.5 1.2B Instruct | 1.2B | 1× (8 GB+) | 32K | ✓ | [LiquidAI/LFM2.5-1.2B-Instruct](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct) |
+| LFM2.5 1.2B Thinking | 1.2B | 1× (8 GB+) | 32K | ✓ (+reasoning) | [LiquidAI/LFM2.5-1.2B-Thinking](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Thinking) |
+| LFM2.5 1.2B JP | 1.2B | 1× (8 GB+) | 32K | – | [LiquidAI/LFM2.5-1.2B-JP](https://huggingface.co/LiquidAI/LFM2.5-1.2B-JP) |
+| LFM2.5 1.2B JP (202606) | 1.2B | 1× (8 GB+) | 32K | ✓ | [LiquidAI/LFM2.5-1.2B-JP-202606](https://huggingface.co/LiquidAI/LFM2.5-1.2B-JP-202606) |
+| LFM2.5 1.2B Base | 1.2B | 1× (8 GB+) | 32K | – (completions) | [LiquidAI/LFM2.5-1.2B-Base](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Base) |
 
 ### Mixture-of-Experts (MoE) Model
 
@@ -42,15 +40,16 @@ though only ~1B is active per token. It supports `<think>` reasoning and tool ca
 
 | Model | Parameters | Min NVIDIA GPU (BF16) | Context | HuggingFace |
 |-------|-----------|------------------------|---------|-------------|
-| LFM2.5 VL 450M | 450M | 1× (any) | 128K | [LiquidAI/LFM2.5-VL-450M](https://huggingface.co/LiquidAI/LFM2.5-VL-450M) |
-| LFM2.5 VL 1.6B | 1.6B | 1× (8 GB+) | 128K | [LiquidAI/LFM2.5-VL-1.6B](https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B) |
+| LFM2.5 VL 450M | 450M | 1× (any) | 32K | [LiquidAI/LFM2.5-VL-450M](https://huggingface.co/LiquidAI/LFM2.5-VL-450M) |
+| LFM2.5 VL 1.6B | 1.6B | 1× (8 GB+) | 32K | [LiquidAI/LFM2.5-VL-1.6B](https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B) |
 
 The VL models pair the LFM2 hybrid language backbone with a SigLIP2 vision encoder
 (`Lfm2VlForConditionalGeneration`).
 
 ## Installing vLLM
 
-LFM2.5 dense, MoE, and VL architectures all ship in vLLM **≥ 0.23.0** (stable).
+LFM2.5's dense, MoE, and VL architectures (`Lfm2ForCausalLM`, `Lfm2MoeForCausalLM`,
+`Lfm2VlForConditionalGeneration`) run on **vLLM 0.23.0**, which `min_vllm_version` pins.
 
 ### pip (NVIDIA CUDA)
 
@@ -75,18 +74,20 @@ docker pull vllm/vllm-openai:latest-cu130  # CUDA 13.0 (Blackwell)
 vllm serve LiquidAI/LFM2.5-1.2B-Instruct
 ```
 
-Cap the context to fit a smaller GPU (models support up to 128K):
+Cap the context to fit a smaller GPU (models support up to 32K; 128K on 8B-A1B):
 
 ```bash
 vllm serve LiquidAI/LFM2.5-1.2B-Instruct --max-model-len 32768
 ```
 
-### 8B-A1B with Expert Parallelism (multi-GPU node)
+### Multi-GPU
+
+Every LFM2.5 model fits on a single GPU (the 8B-A1B MoE on a 24 GB+ GPU), so tensor parallelism
+gives no meaningful speedup on basically any GPU — there's nothing to split that helps. You can
+still try it on a multi-GPU node, but expect no throughput gain:
 
 ```bash
-vllm serve LiquidAI/LFM2.5-8B-A1B \
-  --tensor-parallel-size 2 \
-  --enable-expert-parallel
+vllm serve LiquidAI/LFM2.5-8B-A1B --tensor-parallel-size 2
 ```
 
 ### Docker Deployment
@@ -108,6 +109,7 @@ client (or top-level in a raw `/v1/...` request).
 
 | Model | temperature | top_k | min_p | repetition_penalty |
 |-------|------------:|------:|------:|-------------------:|
+| LFM2.5 230M | 0.1 | 50 | – | 1.05 |
 | LFM2.5 350M | 0.1 | 50 | – | 1.05 |
 | LFM2.5 1.2B Instruct | 0.1 | 50 | – | 1.05 |
 | LFM2.5 1.2B Thinking | 0.05 | 50 | – | 1.05 |
@@ -118,7 +120,7 @@ client (or top-level in a raw `/v1/...` request).
 | LFM2.5 VL 450M / 1.6B | 0.1 | – | 0.15 | 1.05 |
 
 > ⚠️ Do **not** bake these into `vllm serve` — they are per-request client defaults, not server
-> flags. Capping `max_tokens` too low truncates the reasoning models' chain-of-thought.
+> flags. Leave `max_tokens` unset — capping it truncates the reasoning models' chain-of-thought.
 
 ## Text Generation
 
@@ -146,7 +148,6 @@ endpoint:
 resp = client.completions.create(
     model="LiquidAI/LFM2.5-1.2B-Base",
     prompt="The three laws of thermodynamics are:",
-    max_tokens=128,
     temperature=0.3,
     extra_body={"min_p": 0.15, "repetition_penalty": 1.05},
 )
@@ -236,7 +237,7 @@ response = client.chat.completions.create(
     messages=[{
         "role": "user",
         "content": [
-            {"type": "image_url", "image_url": {"url": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/1200px-Cat03.jpg"}},
+            {"type": "image_url", "image_url": {"url": "https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg"}},
             {"type": "text", "text": "What is in this image?"},
         ],
     }],
@@ -266,6 +267,34 @@ vllm bench serve \
   --ignore-eos
 ```
 
+## Speed-of-Light Tuning
+
+The defaults are already strong for LFM2.5 — the model fits a single GPU (so tensor parallelism
+gives no speedup) and the standard serve path is well optimized. A few flags give a small extra
+gain:
+
+| Flag | Effect | Notes |
+|------|--------|-------|
+| `VLLM_USE_OINK_OPS=1` | **~+2.6%** on **B200** | Routes RMSNorm to the Blackwell `oink` kernels (bundled in the `vllm-openai` image); output identical. **Auto-enabled on Blackwell** by these recipes; inert (native fallback) elsewhere. |
+| `--optimization-level 3` | **~+2%** (all GPUs) | More aggressive compilation. Trades a longer one-time startup/compile for steady-state throughput — opt-in. |
+| `VLLM_USE_FASTOKENS=1` | lower **TTFT** on tokenization-bound loads | Swaps the HF fast-tokenizer Rust BPE backend for the [`fastokens`](https://github.com/crusoecloud/fastokens) shim (`pip install fastokens`). Helps high-QPS / long-prompt workloads; the gain is in tokenization latency, so it doesn't show up in steady-state decode throughput. |
+
+```bash
+# -O3 (opt-in); on Blackwell, VLLM_USE_OINK_OPS=1 is applied for you by the recipe
+vllm serve LiquidAI/LFM2.5-1.2B-Instruct --optimization-level 3
+
+# tokenization-bound serving (after `pip install fastokens`)
+VLLM_USE_FASTOKENS=1 vllm serve LiquidAI/LFM2.5-1.2B-Instruct
+```
+
+These knobs make little difference for single-GPU LFM2.5, but experiment if you like:
+`VLLM_SSM_CONV_STATE_LAYOUT` (SD vs DS), `--mamba-backend` (triton vs flashinfer),
+`--mamba-cache-mode` (none vs all), `--mm-processor-cache-type` (lru vs shm).
+
+> **Coming:** the Lfm2VL encoder CUDA graph
+> ([vllm-project/vllm#44930](https://github.com/vllm-project/vllm/pull/44930), ~10–20% lower e2e
+> latency at low batch) is not in 0.23.0 — it will be added once it ships in a stable release.
+
 ## Server Flags Reference
 
 | Flag | Description | When |
@@ -273,8 +302,7 @@ vllm bench serve \
 | `--reasoning-parser qwen3` | Split `<think>…</think>` into `reasoning_content` | 8B-A1B, 1.2B-Thinking |
 | `--tool-call-parser lfm2` | Surface Pythonic tool calls as `tool_calls` | tool-capable models |
 | `--enable-auto-tool-choice` | Auto-detect tool calls in output | with `--tool-call-parser` |
-| `--enable-expert-parallel` | Split MoE experts across GPUs | 8B-A1B multi-GPU |
-| `--max-model-len N` | Cap context (models support up to 128K) | small GPUs / fixed workload |
+| `--max-model-len N` | Cap context (up to 32K; 128K on 8B-A1B) | small GPUs / fixed workload |
 | `--limit-mm-per-prompt '{"image": N}'` | Max images per request | VL models |
 
 ## Deploy on Modal
@@ -304,11 +332,10 @@ modal run lfm25-modal.py
 MODEL=LiquidAI/LFM2.5-8B-A1B GPU=H100 modal run lfm25-modal.py
 ```
 
-LFM2.5's small footprint means even a budget GPU is plenty. The 1.2B dense checkpoint was
-validated end-to-end on this script across NVIDIA **T4, L4, A10G, L40S, A100 (40/80 GB), H100,
-H200, and B200** (vLLM 0.23.0); the 8B-A1B MoE and the VL models were validated on **H100, H200,
-and B200**. Size up to a 24 GB+ GPU (L4 / A10G or larger) for the 8B-A1B MoE, which keeps all
-~8B of experts resident in VRAM.
+LFM2.5's small footprint means even a budget GPU is plenty — the 1.2B dense checkpoint runs across
+NVIDIA **T4, L4, A10G, L40S, A100 (40/80 GB), H100, H200, and B200**; the 8B-A1B MoE and the VL
+models run on **H100, H200, and B200**. Size up to a 24 GB+ GPU (L4 / A10G or larger) for the
+8B-A1B MoE, which keeps all ~8B of experts resident in VRAM.
 
 ## References
 

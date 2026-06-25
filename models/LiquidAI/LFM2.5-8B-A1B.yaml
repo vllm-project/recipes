@@ -47,10 +47,13 @@ variants:
 
 compatible_strategies:
   - single_node_tp
-  - single_node_tep
-  - single_node_dep
 
-hardware_overrides: {}
+hardware_overrides:
+  # Blackwell (B200) only: route RMSNorm to the bundled oink kernels (measured ~+2.6% on B200,
+  # output identical). Inert (falls back to native) on non-Blackwell GPUs.
+  blackwell:
+    extra_env:
+      VLLM_USE_OINK_OPS: "1"
 strategy_overrides:
   single_node_tp:
     tp: 1
@@ -70,11 +73,12 @@ guide: |
   - **`<think>` reasoning**: Emits an explicit `<think>…</think>` chain-of-thought on non-trivial problems; vLLM's `qwen3` parser splits it into `reasoning_content`.
   - **Tool calling**: Pythonic tool calls surfaced as OpenAI `tool_calls` by vLLM's native `lfm2` parser.
   - **128K context**: Long-context support (`max_position_embeddings = 128000`).
-  - **Native vLLM support**: Served via the `Lfm2MoeForCausalLM` architecture — no `--trust-remote-code` required.
+  - **Native vLLM support**: Served via the `Lfm2MoeForCausalLM` architecture.
 
   ### Supported Variants
 
   Dense:
+  - `LiquidAI/LFM2.5-230M` (230M)
   - `LiquidAI/LFM2.5-350M` (350M)
   - `LiquidAI/LFM2.5-1.2B-Instruct` (1.2B)
   - `LiquidAI/LFM2.5-1.2B-Thinking` (1.2B, reasoning)
@@ -94,8 +98,8 @@ guide: |
 
   ## Prerequisites
 
-  - **Hardware**: 1× GPU with ≥24 GB VRAM. Verified on H100.
-  - **vLLM**: ≥ 0.23.0 — the `Lfm2MoeForCausalLM` architecture ships in the 0.23.0 stable release.
+  - **Hardware**: 1× GPU with ≥24 GB VRAM.
+  - **vLLM**: ≥ 0.23.0.
 
   ### pip (NVIDIA CUDA)
   ```bash
@@ -121,12 +125,12 @@ guide: |
     --host 0.0.0.0 --port 8000
   ```
 
-  ### Multi-GPU (Expert Parallelism)
-  Split the experts across GPUs on a multi-GPU node:
+  ### Multi-GPU
+  This model fits on a single 24 GB+ GPU, so tensor parallelism gives no meaningful speedup on
+  basically any GPU — there's nothing to split that helps. You can still try it on a multi-GPU
+  node if you want, but expect no throughput gain:
   ```bash
-  vllm serve LiquidAI/LFM2.5-8B-A1B \
-    --tensor-parallel-size 2 \
-    --enable-expert-parallel
+  vllm serve LiquidAI/LFM2.5-8B-A1B --tensor-parallel-size 2
   ```
 
   ### Docker (NVIDIA)
@@ -143,8 +147,8 @@ guide: |
   ## Client Usage
 
   ### Reasoning Mode
-  The model card recommends temperature `0.2`, `top_k 80`, `repetition_penalty 1.05`. Give the
-  `<think>` block room — don't cap `max_tokens` too low.
+  The model card recommends temperature `0.2`, `top_k 80`, `repetition_penalty 1.05`. Leave
+  `max_tokens` unset so the `<think>` block and answer aren't truncated mid-stream.
   ```python
   from openai import OpenAI
   client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
@@ -152,7 +156,6 @@ guide: |
       model="LiquidAI/LFM2.5-8B-A1B",
       messages=[{"role": "user", "content": "A snail climbs 3 ft up a 20 ft well each day and slides 2 ft back each night. How many days to reach the top?"}],
       temperature=0.2,
-      max_tokens=2048,
       extra_body={"top_k": 80, "repetition_penalty": 1.05},
   )
   msg = response.choices[0].message
@@ -174,7 +177,7 @@ guide: |
 
   ## Configuration Tips
   - Size the GPU for the full ~8B of weights — all experts are resident even though ~1B is active.
-  - For multi-GPU nodes, `--enable-expert-parallel` distributes experts across ranks.
+  - It fits on one GPU; tensor parallelism gives no real speedup on basically any GPU (you can still try `--tensor-parallel-size N`).
   - Set `--max-model-len` to match your workload (up to 128K).
   - `--gpu-memory-utilization 0.90–0.95` maximizes KV cache capacity.
   - Sampling presets are per-request client defaults — don't bake them into `vllm serve`.
