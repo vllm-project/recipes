@@ -3,7 +3,7 @@ meta:
   slug: "minimax-m3"
   provider: "MiniMax"
   description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 checkpoint with an MXFP8 variant from NVIDIA. Runs on NVIDIA (Hopper/Blackwell) and on AMD CDNA4 (MI350X/MI355X) and CDNA3 (MI300X/MI325X)."
-  date_updated: 2026-06-12
+  date_updated: 2026-06-25
   difficulty: advanced
   tasks:
     - text
@@ -109,6 +109,23 @@ variants:
     # comfortably, ~4 GPUs for weights alone on Blackwell (B200/B300) or AMD MI350X/MI355X (gfx950)).
     vram_minimum_gb: 513
     description: "NVIDIA-quantized MXFP8 weights — Blackwell (B200/B300) for native MX tensor cores, and AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 Matrix Cores."
+  mxfp4:
+    model_id: "amd/MiniMax-M3-MXFP4"
+    precision: mxfp4
+    # 427B × 0.5 byte (MXFP4) + F32 norms, × 1.2 ≈ 257 GB → fits a single
+    # 8x MI355X (288 GB/GPU) node from TP=4.
+    vram_minimum_gb: 257
+    # AMD-quantized MXFP4 checkpoint. Served through the AITER MoE backend on
+    # CDNA4. This checkpoint ships no calibrated KV scales, so prefer the
+    # default KV cache dtype — fp8 KV still runs but falls back to an
+    # uncalibrated scale of 1.0 (accuracy risk; see the guide).
+    extra_args:
+      - "--moe-backend"
+      - "aiter"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_USE_AITER_MOE: "1"
+    description: "AMD-quantized MXFP4 weights for CDNA4 (MI350X/MI355X, gfx950) via the AITER MoE backend — half the VRAM of MXFP8, fits a single node from TP=4. AMD-only."
 
 compatible_strategies:
   - single_node_tp
@@ -424,6 +441,44 @@ guide: |
   For best MXFP8 throughput, prefer Blackwell (B200/B300) for native MX tensor cores,
   or AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 matrix cores.
 
+  ## Quantized Variant (MXFP4, AMD)
+
+  [`amd/MiniMax-M3-MXFP4`](https://huggingface.co/amd/MiniMax-M3-MXFP4) is an
+  AMD-quantized MXFP4 checkpoint for CDNA4 (MI350X/MI355X, gfx950) — roughly
+  half the VRAM of MXFP8, so M3 fits a single 8x MI355X node from **TP=4**. It
+  runs through the **AITER MoE backend** and the same Triton MSA attention path
+  as the other AMD variants. Select the **mxfp4** variant above, or run it
+  directly:
+
+  ```bash
+  export VLLM_USE_BREAKABLE_CUDAGRAPH=0
+  VLLM_ROCM_USE_AITER=1 VLLM_ROCM_USE_AITER_MOE=1 \
+    vllm serve amd/MiniMax-M3-MXFP4 \
+    --tensor-parallel-size 4 \
+    --block-size 128 \
+    --moe-backend aiter \
+    --attention-backend TRITON_ATTN \
+    --language-model-only \
+    --no-enable-prefix-caching \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
+
+  > **KV cache dtype on the MXFP4 variant.** Unlike the BF16 and MXFP8
+  > checkpoints, `amd/MiniMax-M3-MXFP4` ships no calibrated KV scales. Adding
+  > `--kv-cache-dtype fp8` still starts and serves, but vLLM falls back to an
+  > uncalibrated KV scale of 1.0 and logs `Using uncalibrated q_scale 1.0 ...
+  > This may cause accuracy issues`. Leave the KV cache at its default dtype
+  > unless you have validated accuracy for your workload.
+
+  This variant is AMD-only; it is not applicable to NVIDIA hardware (use the
+  **mxfp8** variant on Blackwell for native MX matrix cores).
+
+  Validated on 8x MI355X (gfx950), TP=4, with the `rocm/vllm-dev` ROCm image
+  (vLLM 0.23.1): the model serves and the `minimax_m3` reasoning/tool parsers
+  split `reasoning` from `content` correctly.
+
   ## Troubleshooting
 
   - **`--block-size` mismatch.** MSA's sparse block size is 128; the vLLM KV
@@ -447,6 +502,7 @@ guide: |
 
   - [Model card](https://huggingface.co/MiniMaxAI/MiniMax-M3)
   - [MXFP8 variant](https://huggingface.co/MiniMaxAI/MiniMax-M3-MXFP8)
+  - [MXFP4 variant (AMD)](https://huggingface.co/amd/MiniMax-M3-MXFP4)
   - [MiniMax](https://www.minimax.io/)
   - [MiniMax Agent](https://agent.minimax.io/)
   - [MiniMax Platform](https://platform.minimax.io/)
