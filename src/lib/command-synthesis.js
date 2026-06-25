@@ -163,13 +163,27 @@ export function isHardwareSupported(recipe, hwId) {
 }
 
 /**
+ * Variant-level hardware allowlist. Missing/empty means the variant inherits
+ * the recipe's normal hardware compatibility; otherwise only listed profile
+ * ids may render or be selected.
+ */
+export function isVariantHardwareSupported(variant, hwId) {
+  const supported = variant?.supported_hardware;
+  return !Array.isArray(supported) || supported.length === 0 || supported.includes(hwId);
+}
+
+/**
  * List hardware profiles compatible with a variant by precision constraint
  * only. VRAM is NOT a blocking constraint — users can scale out via multi-node
  * TP/DP, so any profile that satisfies the precision requirement is valid.
  */
 export function listCompatibleHardware(hwProfiles, variant, recipe) {
   return Object.entries(hwProfiles)
-    .filter(([id, p]) => isPrecisionCompatible(p, variant) && isHardwareSupported(recipe, id))
+    .filter(([id, p]) =>
+      isPrecisionCompatible(p, variant)
+      && isHardwareSupported(recipe, id)
+      && isVariantHardwareSupported(variant, id)
+    )
     .map(([id]) => id);
 }
 
@@ -206,8 +220,9 @@ export function isHardwareScalable(hwProfile) {
  * weights already fit single-node. Used to disable variant pills on
  * non-scalable hardware where the variant has nowhere to shard.
  */
-export function variantRunsOnHardware(hwProfile, variant) {
+export function variantRunsOnHardware(hwProfile, variant, hwId = null) {
   if (!isPrecisionCompatible(hwProfile, variant)) return false;
+  if (hwId && !isVariantHardwareSupported(variant, hwId)) return false;
   if (isHardwareScalable(hwProfile)) return true;
   return fitsSingleNode(hwProfile, variant);
 }
@@ -219,9 +234,9 @@ export function variantRunsOnHardware(hwProfile, variant) {
  * key, or null when nothing fits. Used to auto-fall off an oversized variant
  * (e.g. BF16 → FP8) when the user selects a single-GPU workstation.
  */
-export function pickFittingVariant(recipe, hwProfile) {
+export function pickFittingVariant(recipe, hwProfile, hwId = null) {
   const fitting = Object.entries(recipe.variants || {}).filter(
-    ([, v]) => variantRunsOnHardware(hwProfile, v)
+    ([, v]) => variantRunsOnHardware(hwProfile, v, hwId)
   );
   if (!fitting.length) return null;
   fitting.sort((a, b) => (b[1].vram_minimum_gb || 0) - (a[1].vram_minimum_gb || 0));
@@ -251,7 +266,10 @@ export function pdFitsSingleNode(hwProfile, variant) {
 export function pickDefaultHardware(hwProfiles, variant, recipe) {
   const constraint = PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
   const compatible = Object.entries(hwProfiles).filter(
-    ([id, p]) => matchesConstraint(p, constraint) && isHardwareSupported(recipe, id)
+    ([id, p]) =>
+      matchesConstraint(p, constraint)
+      && isHardwareSupported(recipe, id)
+      && isVariantHardwareSupported(variant, id)
   );
 
   if (constraint?.generation === "blackwell") {
@@ -282,10 +300,12 @@ export function pickDefaultHardware(hwProfiles, variant, recipe) {
 //   { cu129, cu130 }                   (NVIDIA CUDA-keyed — explicit paired tags,
 //                                        auto-suffix is skipped in favor of these)
 //   { nvidia: { cu129, cu130 }, amd, tpu }  (mixed: NVIDIA value may be a CUDA map)
+// Exact variant+hardware overrides may also set
+//   variants.<key>.hardware_overrides.<hw_id>.docker_image
 //
 // When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
 // the user's `dockerCudaVariant` toggle instead of appending `-cu129`/`-cu130`.
-export function computeDockerMeta(recipe, variant, hwProfile) {
+export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   // When `model.nightly_required: true` and no explicit `docker_image` pin,
   // swap the brand defaults to nightly tags so the Install block matches the
   // nightly pip wheel that's also being rendered. vLLM publishes `:nightly`
@@ -308,25 +328,40 @@ export function computeDockerMeta(recipe, variant, hwProfile) {
   const isTpu = hwProfile?.generation === "tpu";
   const isIntel = hwProfile?.generation === "cpu" ||hwProfile?.brand === "Intel";
   const brandKey = isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
-  const override = variant?.docker_image || recipe.model?.docker_image;
+  // Exact variant+hardware image overrides win over variant-wide and
+  // model-wide images (for example, an MI355X-only ROCm nightly).
+  const exactHardwareOverride = hwId
+    ? variant?.hardware_overrides?.[hwId]?.docker_image
+    : null;
 
   const isCudaMap = (v) =>
     v && typeof v === "object" && ("cu129" in v || "cu130" in v);
 
-  let pinned = null;
+  let pinned = typeof exactHardwareOverride === "string" ? exactHardwareOverride : null;
   let cudaMap = null;
-  if (typeof override === "string") {
-    if (brandKey === "nvidia") pinned = override;
-  } else if (override && typeof override === "object") {
-    const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override || "intel" in override;
-    if (isBrandKeyed) {
-      const brandValue = override[brandKey];
-      if (typeof brandValue === "string") pinned = brandValue;
-      else if (brandKey === "nvidia" && isCudaMap(brandValue)) cudaMap = brandValue;
-    } else if (brandKey === "nvidia" && isCudaMap(override)) {
-      cudaMap = override;
+
+  function applyOverride(override) {
+    if (!override || pinned || cudaMap) return;
+    if (typeof override === "string") {
+      if (brandKey === "nvidia") pinned = override;
+      return;
+    }
+    if (typeof override === "object") {
+      const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override || "intel" in override;
+      if (isBrandKeyed) {
+        const brandValue = override[brandKey];
+        if (typeof brandValue === "string") pinned = brandValue;
+        else if (brandKey === "nvidia" && isCudaMap(brandValue)) cudaMap = brandValue;
+      } else if (brandKey === "nvidia" && isCudaMap(override)) {
+        cudaMap = override;
+      }
     }
   }
+
+  applyOverride(variant?.docker_image);
+  // A partial variant override falls back to the model image for brands it
+  // does not cover instead of skipping directly to the global default.
+  applyOverride(recipe.model?.docker_image);
 
   const image = pinned || DEFAULT_IMAGE[brandKey];
   const gpuFlags = isTpu
@@ -537,6 +572,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   const singleNodeTp = resolveSingleNodeTp(recipe, variant, hwProfile, strategyName);
 
   const modelId = variant.model_id || recipe.model?.model_id || "unknown";
+  const variantHardwareOverride = variant?.hardware_overrides?.[hwProfileId];
 
   // Helper to merge args
   function buildArgs(roleOverride, nodeRole) {
@@ -556,6 +592,9 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
 
     // 2. Variant extra args
     if (variantKey !== "default" && variant.extra_args) args.push(...variant.extra_args);
+    if (variantKey !== "default" && variantHardwareOverride?.extra_args) {
+      args.push(...variantHardwareOverride.extra_args);
+    }
 
     // 3. Strategy args + parallel size (grouped together so -tp/-dp sits next to -ep etc.)
     if (strategy.deploy_type !== "pd_cluster") {
@@ -766,6 +805,9 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
 
     // Variant env
     if (variantKey !== "default" && variant.extra_env) Object.assign(env, variant.extra_env);
+    if (variantKey !== "default" && variantHardwareOverride?.extra_env) {
+      Object.assign(env, variantHardwareOverride.extra_env);
+    }
 
     // Strategy env
     if (strategy.deploy_type !== "pd_cluster") {
