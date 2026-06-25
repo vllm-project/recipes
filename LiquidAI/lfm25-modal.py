@@ -61,7 +61,6 @@ def serve():
         "--port",
         str(VLLM_PORT),
         "--uvicorn-log-level=info",
-        "--async-scheduling",
         # LFM2.5 tool calling: surface Pythonic <|tool_call_start|>...<|tool_call_end|> as tool_calls
         "--enable-auto-tool-choice",
         "--tool-call-parser",
@@ -71,7 +70,8 @@ def serve():
     # enforce-eager disables both Torch compilation and CUDA graph capture; default keeps them on.
     cmd += ["--enforce-eager" if FAST_BOOT else "--no-enforce-eager"]
 
-    # split large matmuls across GPUs (use >1 only for the 8B-A1B MoE on a multi-GPU node)
+    # LFM2.5 models fit on a single GPU, so tensor parallelism gives no real speedup — keep
+    # N_GPU=1 unless you specifically want to experiment with a multi-GPU node.
     cmd += ["--tensor-parallel-size", str(N_GPU)]
 
     print(*cmd)

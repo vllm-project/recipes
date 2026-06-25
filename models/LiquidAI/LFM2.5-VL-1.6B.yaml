@@ -22,9 +22,12 @@ model:
   architecture: dense
   parameter_count: "1.6B"
   active_parameters: "1.6B"
-  context_length: 128000
+  context_length: 32768
   base_args: []
   base_env: {}
+  # TODO(vincentzed): the Lfm2VL encoder CUDA graph (vllm-project/vllm#44930, ~10-20% lower e2e
+  # latency at low batch) is NOT in 0.23.0 — add the encoder-CG compilation flag here once it
+  # ships in a stable release (>0.23.0).
 
 variants:
   default:
@@ -35,7 +38,12 @@ variants:
 compatible_strategies:
   - single_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  # Blackwell (B200) only: route RMSNorm to the bundled oink kernels (measured ~+2.6% on B200,
+  # output identical). Inert (falls back to native) on non-Blackwell GPUs.
+  blackwell:
+    extra_env:
+      VLLM_USE_OINK_OPS: "1"
 strategy_overrides:
   single_node_tp:
     tp: 1
@@ -52,8 +60,8 @@ guide: |
   ### Key Features
   - **Vision-language**: SigLIP2 vision encoder on top of the LFM2 hybrid language backbone — single- and multi-image prompts.
   - **Hybrid LM backbone**: Gated short convolutions interleaved with grouped-query attention — a smaller KV cache and lower decode latency than a same-size full-attention transformer.
-  - **128K context**: Long-context support (`text_config.max_position_embeddings = 128000`).
-  - **Native vLLM support**: Served via the `Lfm2VlForConditionalGeneration` architecture — no `--trust-remote-code` required.
+  - **32K context**: 32,768-token context window.
+  - **Native vLLM support**: Served via the `Lfm2VlForConditionalGeneration` architecture.
 
   ### Supported Variants
 
@@ -62,15 +70,15 @@ guide: |
   - `LiquidAI/LFM2.5-VL-1.6B` (1.6B)
 
   Text (same LFM2 family):
-  - Dense: `LiquidAI/LFM2.5-350M`, `LiquidAI/LFM2.5-1.2B-Instruct`, `LiquidAI/LFM2.5-1.2B-Thinking`, `LiquidAI/LFM2.5-1.2B-JP`, `LiquidAI/LFM2.5-1.2B-JP-202606`, `LiquidAI/LFM2.5-1.2B-Base`
+  - Dense: `LiquidAI/LFM2.5-230M`, `LiquidAI/LFM2.5-350M`, `LiquidAI/LFM2.5-1.2B-Instruct`, `LiquidAI/LFM2.5-1.2B-Thinking`, `LiquidAI/LFM2.5-1.2B-JP`, `LiquidAI/LFM2.5-1.2B-JP-202606`, `LiquidAI/LFM2.5-1.2B-Base`
   - MoE: `LiquidAI/LFM2.5-8B-A1B`
 
   See the [LFM2.5 usage guide](../../LiquidAI/LFM2.5) for the full family.
 
   ## Prerequisites
 
-  - **Hardware**: 1× GPU with ≥8 GB VRAM. Verified on H100.
-  - **vLLM**: ≥ 0.23.0 — the `Lfm2VlForConditionalGeneration` architecture ships in the 0.23.0 stable release.
+  - **Hardware**: 1× GPU with ≥8 GB VRAM.
+  - **vLLM**: ≥ 0.23.0.
 
   ### pip (NVIDIA CUDA)
   ```bash
@@ -116,7 +124,7 @@ guide: |
       messages=[{
           "role": "user",
           "content": [
-              {"type": "image_url", "image_url": {"url": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/1200px-Cat03.jpg"}},
+              {"type": "image_url", "image_url": {"url": "https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg"}},
               {"type": "text", "text": "What is in this image?"},
           ],
       }],
@@ -130,9 +138,13 @@ guide: |
   Launch with `--limit-mm-per-prompt '{"image": N}'`, then include several `image_url` blocks in
   one message to compare or reason across images.
 
+  ## Performance
+
+  Tensor parallelism gives no speedup — the model fits on a single GPU.
+
   ## Configuration Tips
   - `--limit-mm-per-prompt '{"image": N}'` caps images per request (default 1).
-  - Set `--max-model-len` to match your workload (up to 128K).
+  - Set `--max-model-len` to match your workload (up to 32K).
   - `--gpu-memory-utilization 0.90–0.95` maximizes KV cache capacity.
   - Sampling presets are per-request client defaults — don't bake them into `vllm serve`.
 
