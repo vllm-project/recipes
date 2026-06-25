@@ -1071,7 +1071,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const altCudaSuffix = "cu129";
 
   const dockerMeta = useMemo(() => {
-    const meta = computeDockerMeta(recipe, currentVariant, hwProfile);
+    const meta = computeDockerMeta(recipe, currentVariant, hwProfile, hwId);
     if (meta.brandKey !== "nvidia") return meta;
 
     // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
@@ -1098,7 +1098,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       return { ...meta, image: next };
     }
     return meta;
-  }, [recipe, currentVariant, hwProfile, dockerCudaVariant, altCudaSuffix]);
+  }, [recipe, currentVariant, hwProfile, hwId, dockerCudaVariant, altCudaSuffix]);
 
   // `installMode` carries the user's tab choice; `effectiveInstallMode` folds
   // in constraints that would hide a tab entirely (pip: recipe opt-out or TPU

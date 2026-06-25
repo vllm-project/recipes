@@ -118,15 +118,16 @@ variants:
     # Match the validated InferenceX single-node baseline. TP8 also leaves
     # practical headroom for KV cache and the multimodal encoder.
     tp: 8
-    docker_image:
-      amd: "vllm/vllm-openai-rocm:nightly-3f5a1e1733200760169ff31ebe60a271072b199e"
-    extra_args:
-      - "--trust-remote-code"
-      # Keep the multimodal encoder loaded and run it data-parallel on MI355X.
-      - "--mm-encoder-tp-mode"
-      - "data"
-      - "--mm-encoder-attn-backend"
-      - "ROCM_AITER_FA"
+    hardware_overrides:
+      mi355x:
+        docker_image: "vllm/vllm-openai-rocm:nightly"
+        extra_args:
+          - "--trust-remote-code"
+          # Keep the multimodal encoder loaded and run it data-parallel on MI355X.
+          - "--mm-encoder-tp-mode"
+          - "data"
+          - "--mm-encoder-attn-backend"
+          - "ROCM_AITER_FA"
 
 compatible_strategies:
   - single_node_tp
@@ -446,8 +447,8 @@ guide: |
 
   [`amd/MiniMax-M3-MXFP4`](https://huggingface.co/amd/MiniMax-M3-MXFP4)
   uses static OCP MXFP4 weights and dynamic OCP MXFP4 activations produced with
-  AMD Quark. It targets AMD Instinct MI355X (gfx950) and requires the pinned
-  ROCm nightly containing the Quark MXFP4 fix from vLLM PR #45794.
+  AMD Quark. It targets AMD Instinct MI355X (gfx950) and requires a ROCm
+  nightly containing the Quark MXFP4 fix from vLLM PR #45794.
 
   Select the **mxfp4** variant and **MI355X** hardware in the command builder,
   or launch the tested TP8 baseline directly:

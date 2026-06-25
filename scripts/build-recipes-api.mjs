@@ -181,7 +181,7 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
 
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
-  const dockerMeta = computeDockerMeta(recipe, variant, hwProfile);
+  const dockerMeta = computeDockerMeta(recipe, variant, hwProfile, hwId);
   const env = result.env || {};
 
   const base = {
