@@ -28,23 +28,11 @@ function findYamlFiles(dir) {
   return out;
 }
 
-async function fetchWithTimeout(url, options = {}, timeout = 10000) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
-  try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    clearTimeout(id);
-    return response;
-  } catch (error) {
-    clearTimeout(id);
-    throw error;
-  }
-}
-
 async function fetchCreatedAt(modelId) {
   try {
-    const res = await fetchWithTimeout(`https://huggingface.co/api/models/${modelId}`, {
+    const res = await fetch(`https://huggingface.co/api/models/${modelId}`, {
       headers: { "User-Agent": "vllm-recipes-build/1.0" },
+      signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return null;
     const data = await res.json();
