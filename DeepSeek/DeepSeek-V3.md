@@ -157,3 +157,52 @@ Experimental disaggregated serving recipes for NVIDIA GB200 can be found below:
 - https://blog.vllm.ai/2026/02/03/dsr1-gb200-part1.html
 - https://github.com/minosfuture/vllm/tree/pd_gb200_0114/runs/DS-R1/fp4
 
+
+
+## AMD GPU Support
+
+Recommended approaches by hardware type are:
+
+MI300X/MI325X/MI355X
+
+Please follow the steps here to install and run DeepSeek-V3 (R1) models on AMD MI300X/MI325X/MI355X GPU.
+
+### Step 1: Installing vLLM (AMD ROCm Backend: MI300X, MI325X, MI355X)
+
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+```
+
+### Step 2: Start the vLLM server
+
+Run the following sample command to start the vLLM server:
+
+```bash
+SAFETENSORS_FAST_GPU=1 \
+VLLM_USE_TRITON_FLASH_ATTN=0 \
+VLLM_ROCM_USE_AITER=1 \
+VLLM_ROCM_USE_AITER_MOE=1 \
+vllm serve deepseek-ai/DeepSeek-V3 \
+  --tensor-parallel-size 8 \
+  --enable-expert-parallel \
+  --trust-remote-code
+```
+
+### Step 3: Run Benchmark
+
+Open a new terminal and run the following command to execute the benchmark script.
+
+```bash
+vllm bench serve \
+  --model deepseek-ai/DeepSeek-V3 \
+  --dataset-name random \
+  --random-input-len 8000 \
+  --random-output-len 1000 \
+  --request-rate 10000 \
+  --num-prompts 16 \
+  --ignore-eos
+```
