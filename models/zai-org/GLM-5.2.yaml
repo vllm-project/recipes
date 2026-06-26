@@ -65,10 +65,17 @@ variants:
     model_id: "amd/GLM-5.2-MXFP4"
     precision: mxfp4
     vram_minimum_gb: 446
-    description: "AMD Quark MXFP4 checkpoint — MoE weights quantized for MI350 / MI355X"
+    supported_hardware:
+      - mi355x
+    description: "AMD Quark MXFP4 checkpoint — MoE weights quantized for MI355X (gfx950)"
     extra_args:
       - "--quantization"
       - "quark"
+    tp: 8
+    hardware_overrides:
+      mi355x:
+        extra_args:
+          - "--trust-remote-code"
   bf16:
     precision: bf16
     vram_minimum_gb: 1786
@@ -114,7 +121,7 @@ guide: |
 
   This recipe targets the **FP8** checkpoint, the practical default: it fits on a single
   8xH200 / 8xH20 node and — with FP8 KV cache — reaches the full 1M-token context on 8xB200.
-  On AMD MI350 / MI355X, use the **MXFP4** variant when HBM footprint is the priority.
+  On AMD MI355X hardware, use the **MXFP4** variant when HBM footprint is the priority.
 
   ## Prerequisites
 
@@ -122,7 +129,7 @@ guide: |
     `main` branch.
   - **GPU:** 8xH200 or 8xH20 (141 GB each) for single-node FP8; 8xB200 (180 GB each) for the
     full 1M context.
-  - **MXFP4:** use the AMD Quark checkpoint on MI350 / MI355X with ROCm and AITER enabled.
+  - **MXFP4:** use the AMD Quark checkpoint on MI355X with ROCm and AITER enabled.
 
   ## Installation
 
@@ -207,10 +214,11 @@ guide: |
     MoE path. `VLLM_ROCM_USE_AITER_LINEAR` and `VLLM_ROCM_USE_AITER_MOE` default to enabled
     when `VLLM_ROCM_USE_AITER=1`.
 
-  ### MXFP4 on AMD MI350 / MI355X
+  ### MXFP4 on AMD MI355X
 
   The AMD Quark MXFP4 checkpoint quantizes the MoE weights while leaving non-MoE modules in
-  higher precision. Use Quark quantization and ROCm AITER kernels:
+  higher precision. The recipe UI only enables this variant for supported AMD MI355X
+  hardware. Use Quark quantization and ROCm AITER kernels:
 
   ```bash
   export HIP_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
