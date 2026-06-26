@@ -3,7 +3,7 @@ meta:
   slug: "diffusiongemma-26b-a4b-it"
   provider: "Google"
   description: "Google's DiffusionGemma — a block-diffusion language model built on Gemma 4's MoE backbone (26B total / 4B active). Generates tokens via iterative denoising over a fixed-length canvas rather than left-to-right autoregressive decoding, enabling higher throughput with parallel block generation."
-  date_updated: 2026-06-10
+  date_updated: 2026-06-26
   difficulty: advanced
   tasks:
     - multimodal
@@ -15,6 +15,7 @@ meta:
   hardware:
     h100: verified
     h200: verified
+    max1550: verified
 
 model:
   model_id: "google/diffusiongemma-26B-A4B-it"
@@ -71,7 +72,16 @@ variants:
 compatible_strategies:
   - single_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  xpu:
+    extra_args:
+      - "--tensor-parallel-size"
+      - "2"
+      - "--enforce-eager"
+      - "--device"
+      - "xpu"
+    extra_env:
+      ZE_AFFINITY_MASK: "0,1"
 
 strategy_overrides:
   single_node_tp:
@@ -146,6 +156,35 @@ guide: |
           --host 0.0.0.0 --port 8000
   ```
 
+  ### Intel XPU Deployment (Max 1550, TP=2)
+
+  DiffusionGemma runs on Intel Data Center GPU Max 1550 (2-tile, 96 GB total) with
+  tensor parallelism across tiles. Requires `--enforce-eager` (torch.compile's Inductor
+  backend generates CUDA-only Triton pointer semantics that crash on XPU).
+
+  ```bash
+  docker run -itd --name diffusiongemma-xpu \
+      --device /dev/dri --network host \
+      --shm-size 16g \
+      -v ~/.cache/huggingface:/root/.cache/huggingface \
+      -e ZE_AFFINITY_MASK=0,1 \
+      intel/vllm:latest \
+          --model google/diffusiongemma-26B-A4B-it \
+          --dtype bfloat16 \
+          --tensor-parallel-size 2 \
+          --enforce-eager \
+          --device xpu \
+          --max-num-seqs 4 \
+          --gpu-memory-utilization 0.85 \
+          --host 0.0.0.0 --port 8000
+  ```
+
+  Key XPU-specific considerations:
+  - **`--enforce-eager`**: Required — Inductor/Triton compilation path crashes on XPU with UVA pointer errors.
+  - **TP=2**: Maps to the two tiles of the Max 1550; set `ZE_AFFINITY_MASK=0,1` to pin.
+  - **BF16 SC buffer**: The self-conditioning embedding buffer is stored in bf16 (not fp32), saving ~600 MB.
+  - **Embedding gather**: TP all-gather is performed on embed_weight for the custom diffusion sampler.
+
   ## Client Usage
 
   ### Text Generation
@@ -219,7 +258,8 @@ guide: |
   ## Known Limitations
 
   - **TTFT**: ~10× higher than autoregressive baseline — the model must denoise an entire canvas block before emitting the first token.
-  - **`--max-num-seqs`**: Must be kept low (≤4) due to the large diffusion state tensors. Higher values cause CUDA OOM.
+  - **`--max-num-seqs`**: Must be kept low (≤4) due to the large diffusion state tensors. Higher values cause OOM.
+  - **XPU**: Requires `--enforce-eager`; torch.compile is not yet supported on XPU for this model.
   - **Audio**: Not supported — the diffusion checkpoints do not include an audio encoder.
   - **Function Calling**: Works best in thinking mode. Non-thinking mode may answer directly instead of emitting tool calls.
 
