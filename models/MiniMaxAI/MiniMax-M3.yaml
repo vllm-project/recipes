@@ -109,6 +109,18 @@ variants:
     # comfortably, ~4 GPUs for weights alone on Blackwell (B200/B300) or AMD MI350X/MI355X (gfx950)).
     vram_minimum_gb: 513
     description: "NVIDIA-quantized MXFP8 weights — Blackwell (B200/B300) for native MX tensor cores, and AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 Matrix Cores."
+    # MI355X-only acceleration for the MXFP8 path: AITER kernels, the fused
+    # shared-experts MoE, and INT6 QuickReduce, on the nightly ROCm image (the
+    # minimax-m3 pinned tag predates these). Other MI3xx GPUs and the NVIDIA
+    # MXFP8 command are untouched. (VLLM_USE_BREAKABLE_CUDAGRAPH=0 is already
+    # set AMD-wide below.)
+    hardware_overrides:
+      mi355x:
+        docker_image: "vllm/vllm-openai-rocm:nightly"
+        extra_env:
+          VLLM_ROCM_USE_AITER: "1"
+          VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
+          VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT6"
   mxfp4:
     model_id: "amd/MiniMax-M3-MXFP4"
     precision: mxfp4
@@ -444,6 +456,26 @@ guide: |
 
   For best MXFP8 throughput, prefer Blackwell (B200/B300) for native MX tensor cores,
   or AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 matrix cores.
+
+  On AMD MI355X the **mxfp8** variant additionally enables the AITER kernels,
+  the fused shared-experts MoE, and INT6 QuickReduce, and pulls the nightly ROCm
+  image (`vllm/vllm-openai-rocm:nightly`) — selected automatically in the command
+  builder; other MI3xx GPUs keep the pinned image. If you launch by hand:
+
+  ```bash
+  export VLLM_USE_BREAKABLE_CUDAGRAPH=0
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT6
+
+  vllm serve MiniMaxAI/MiniMax-M3-MXFP8 \
+    --tensor-parallel-size 8 \
+    --block-size 128 \
+    --attention-backend TRITON_ATTN \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
 
   ## Quantized Variant (MXFP4 on MI355X)
 
