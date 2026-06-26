@@ -2,7 +2,7 @@ meta:
   title: "Laguna XS.2"
   slug: "laguna-xs.2"
   provider: "Poolside"
-  description: "Poolside's 33B total / 3B activated MoE coding model with mixed sliding-window + global attention, native interleaved reasoning, and 128K context — designed for agentic coding."
+  description: "Poolside's 33B total / 3B activated MoE coding model with mixed sliding-window + global attention, native interleaved reasoning, and 256K context — designed for agentic coding."
   date_updated: 2026-04-29
   difficulty: intermediate
   tasks:
@@ -18,7 +18,7 @@ model:
   architecture: moe
   parameter_count: "33B"
   active_parameters: "3B"
-  context_length: 131072
+  context_length: 262144
   base_args:
     - "--trust-remote-code"
   base_env: {}
@@ -64,7 +64,7 @@ strategy_overrides:
 guide: |
   ## Overview
 
-  [Laguna XS.2](https://huggingface.co/poolside/Laguna-XS.2) is Poolside's 33B-total / 3B-activated Mixture-of-Experts model purpose-built for agentic coding and long-horizon work. It combines mixed sliding-window + global attention (3:1 across 40 layers) with sigmoid per-head gating and FP8 KV cache, so it stays compact enough to run locally while supporting a 131K-token context.
+  [Laguna XS.2](https://huggingface.co/poolside/Laguna-XS.2) is Poolside's 33B-total / 3B-activated Mixture-of-Experts model purpose-built for agentic coding and long-horizon work. It combines mixed sliding-window + global attention (3:1 across 40 layers) with sigmoid per-head gating and FP8 KV cache, so it stays compact enough to run locally while supporting a 256K-token context.
 
   ### Key features
   - **Mixed SWA + global attention**: 30 sliding-window layers (window=512) interleaved with 10 global-attention layers, each with per-layer rotary scaling.
@@ -98,7 +98,7 @@ guide: |
   ```bash
   vllm serve poolside/Laguna-XS.2 \
     --trust-remote-code \
-    --max-model-len 131072 \
+    --max-model-len 262144 \
     --enable-auto-tool-choice \
     --tool-call-parser poolside_v1 \
     --reasoning-parser poolside_v1
@@ -112,7 +112,7 @@ guide: |
     vllm/vllm-openai:laguna \
       --model poolside/Laguna-XS.2 \
       --trust-remote-code \
-      --max-model-len 131072 \
+      --max-model-len 262144 \
       --enable-auto-tool-choice \
       --tool-call-parser poolside_v1 \
       --reasoning-parser poolside_v1 \

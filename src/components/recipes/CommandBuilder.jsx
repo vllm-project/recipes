@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, fitsSingleNode, isHardwareScalable, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes } from "@/lib/command-synthesis";
 import { resolveOmniTasks } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -347,7 +347,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recipe, taxonomy]);
 
-  const [hwId, setHwId] = useState(searchParams.get("hardware") || defaultHw);
+  const requestedHwId = searchParams.get("hardware");
+  const requestedVariant = recipe.variants?.[searchParams.get("variant") || "default"] || recipe.variants?.default || {};
+  const requestedHwProfile = taxonomy.hardware_profiles?.[requestedHwId] || {};
+  const requestedHwAllowed = requestedHwId
+    && isPrecisionCompatible(requestedHwProfile, requestedVariant)
+    && isHardwareSupported(recipe, requestedHwId)
+    && isVariantHardwareSupported(requestedVariant, requestedHwId);
+  const [hwId, setHwId] = useState(requestedHwAllowed ? requestedHwId : defaultHw);
 
   // After mount: restore preferences from localStorage in two scopes.
   // URL params always win (explicit > stored).
@@ -361,6 +368,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   useEffect(() => {
     const prefs = loadPreferences();
     let restoredFitsHw = null;
+    // Variant restrictions beat an incompatible hardware query parameter.
+    // Normalize the URL immediately so copied links match the rendered state.
+    if (requestedHwId && requestedHwId !== hwId) {
+      const sp = new URLSearchParams(searchParams.toString());
+      sp.set("hardware", hwId);
+      router.replace(`?${sp.toString()}`, { scroll: false });
+    }
     if (!searchParams.get("hardware") && prefs.hardware) {
       const v = recipe.variants?.[variant] || recipe.variants?.default || {};
       const prefProfile = taxonomy.hardware_profiles?.[prefs.hardware];
@@ -370,7 +384,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       // preference and leave every other recipe with no rendered pill selected.
       const declaredHere = prefs.hardware in (recipe.meta?.hardware || {});
       const restrictedElsewhere = prefProfile?.restricted && !declaredHere;
-      if (prefProfile?.brand === "NVIDIA" && !restrictedElsewhere && isPrecisionCompatible(prefProfile, v) && isHardwareSupported(recipe, prefs.hardware)) {
+      if (prefProfile?.brand === "NVIDIA" && !restrictedElsewhere && isPrecisionCompatible(prefProfile, v) && isHardwareSupported(recipe, prefs.hardware) && isVariantHardwareSupported(v, prefs.hardware)) {
         setHwId(prefs.hardware);
         restoredFitsHw = prefProfile;
       }
@@ -399,7 +413,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     }
     // Resolve the hardware this mount actually settles on (URL > restored pref
     // > default) so the non-scalable fixups below see the right profile.
-    const resolvedHwId = restoredFitsHw ? prefs.hardware : (searchParams.get("hardware") || defaultHw);
+    const resolvedHwId = restoredFitsHw ? prefs.hardware : hwId;
     const resolvedHw = taxonomy.hardware_profiles?.[resolvedHwId];
     const resolvedScalable = isHardwareScalable(resolvedHw);
     // Non-scalable hardware can't shard an oversized variant. If we land on one
@@ -409,7 +423,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     if (!searchParams.get("variant") && resolvedHw && !resolvedScalable) {
       const v = recipe.variants?.[variant] || recipe.variants?.default || {};
       if (!fitsSingleNode(resolvedHw, v)) {
-        const fitting = pickFittingVariant(recipe, resolvedHw);
+        const fitting = pickFittingVariant(recipe, resolvedHw, resolvedHwId);
         if (fitting && fitting !== variant) setVariant(fitting);
       }
     }
@@ -844,12 +858,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const selectVariant = (key) => {
     setVariant(key);
-    // Only swap hardware when precision demands it (e.g. NVFP4 needs Blackwell).
-    // VRAM is not a blocker because multi-node TP/DP can always supply more.
+    // Swap hardware when precision or an explicit variant allowlist requires
+    // it. VRAM alone is not a blocker because scalable profiles can add nodes.
     const v = recipe.variants?.[key] || {};
     const currentProfile = taxonomy.hardware_profiles?.[hwId] || {};
     const updates = { variant: key };
-    if (!isPrecisionCompatible(currentProfile, v)) {
+    if (!isPrecisionCompatible(currentProfile, v) || !isVariantHardwareSupported(v, hwId)) {
       const next = pickDefaultHardware(taxonomy.hardware_profiles, v, recipe);
       setHwId(next);
       updates.hardware = next;
@@ -880,17 +894,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     if (!newScalable || !kvSelectableOnNewHardware) {
       setKvCacheStrategy("local");
     }
-    // Non-scalable hardware (single-GPU workstation) can't shard an oversized
-    // variant. If the active variant doesn't fit the new box, fall to the
-    // largest variant that does (e.g. BF16 → FP8 on DGX Station).
+    // If the active variant cannot run on the new hardware (explicit allowlist,
+    // precision, or a non-scalable VRAM shortfall), fall to the largest variant
+    // that can run there.
     let activeVariant = currentVariant;
     // Folded into the single syncUrl below rather than synced here — a separate
     // syncUrl call would read stale searchParams and get clobbered (same footgun
     // as selectVariant). Left undefined when the variant is unchanged so the
     // existing variant= param is preserved, not deleted.
     let variantUpdate;
-    if (!newScalable && !fitsSingleNode(newProfile, currentVariant)) {
-      const fitting = pickFittingVariant(recipe, newProfile);
+    if (!variantRunsOnHardware(newProfile, currentVariant, id)) {
+      const fitting = pickFittingVariant(recipe, newProfile, id);
       if (fitting && fitting !== variant) {
         setVariant(fitting);
         variantUpdate = fitting;
@@ -1202,7 +1216,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const altCudaSuffix = "cu129";
 
   const dockerMeta = useMemo(() => {
-    const meta = computeDockerMeta(recipe, currentVariant, hwProfile);
+    const meta = computeDockerMeta(recipe, currentVariant, hwProfile, hwId);
     if (meta.brandKey !== "nvidia") return meta;
 
     // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
@@ -1229,7 +1243,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       return { ...meta, image: next };
     }
     return meta;
-  }, [recipe, currentVariant, hwProfile, dockerCudaVariant, altCudaSuffix]);
+  }, [recipe, currentVariant, hwProfile, hwId, dockerCudaVariant, altCudaSuffix]);
 
   // `installMode` carries the user's tab choice; `effectiveInstallMode` folds
   // in constraints that would hide a tab entirely (pip: recipe opt-out or TPU
@@ -1357,13 +1371,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     <PillGroup>
                       {profiles.map(([id, p]) => {
                         const precisionOk = isPrecisionCompatible(p, currentVariant);
+                        const variantHardwareOk = isVariantHardwareSupported(currentVariant, id);
                         const status = recipe.meta?.hardware?.[id];
                         const isUnsupported = status === "unsupported";
-                        const disabled = !precisionOk || isUnsupported;
+                        const disabled = !precisionOk || !variantHardwareOk || isUnsupported;
                         const verifiedNote = status === "verified"
                           ? "\n\nVerified — author has tested this hardware end-to-end"
                           : "";
-                        const reason = !precisionOk
+                        const reason = !variantHardwareOk
+                          ? `${currentVariant.precision?.toUpperCase()} is only supported on ${(currentVariant.supported_hardware || []).map((hw) => taxonomy.hardware_profiles?.[hw]?.display_name || hw).join(", ")}`
+                          : !precisionOk
                           ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
                           : isUnsupported
                             ? `Not yet supported on ${p.display_name} — this model doesn't run here today, may be enabled in a future release`
@@ -1571,6 +1588,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   <PillGroup>
                     {profiles.map(([id, p]) => {
                       const precisionOk = isPrecisionCompatible(p, currentVariant);
+                      const variantHardwareOk = isVariantHardwareSupported(currentVariant, id);
                       // Only `verified` carries a label; everything else = silent default.
                       // `unsupported` = author opt-out for this model; disables the pill.
                       const status = recipe.meta?.hardware?.[id];
@@ -1579,11 +1597,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                       // only needs to fit 1× model per node (standard precision
                       // check is enough). The old co-located single-node check
                       // (2× model on one node) is no longer the default UX.
-                      const disabled = !precisionOk || isUnsupported;
+                      const disabled = !precisionOk || !variantHardwareOk || isUnsupported;
                       const verifiedNote = status === "verified"
                         ? "\n\nVerified — author has tested this hardware end-to-end"
                         : "";
-                      const reason = !precisionOk
+                      const reason = !variantHardwareOk
+                        ? `${currentVariant.precision?.toUpperCase()} is only supported on ${(currentVariant.supported_hardware || []).map((hw) => taxonomy.hardware_profiles?.[hw]?.display_name || hw).join(", ")}`
+                        : !precisionOk
                         ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
                         : isUnsupported
                           ? `Not yet supported on ${p.display_name} — this model doesn't run here today, may be enabled in a future release`
@@ -1626,10 +1646,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           >
             <PillGroup>
               {Object.entries(recipe.variants || {}).map(([key, v]) => {
-                // On non-scalable hardware (single-GPU workstation) a variant
-                // that doesn't fit has nowhere to shard — disable it instead of
-                // rendering a command that can't run.
-                const disabled = !hwScalable && !variantRunsOnHardware(hwProfile, v);
+                // Disable variants excluded by an exact hardware allowlist,
+                // incompatible precision, or a non-scalable VRAM shortfall.
+                const disabled = !variantRunsOnHardware(hwProfile, v, hwId);
+                const hardwareRestricted = !isVariantHardwareSupported(v, hwId);
                 return (
                   <Pill
                     key={key}
@@ -1638,7 +1658,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     onClick={() => !disabled && selectVariant(key)}
                     title={
                       disabled
-                        ? `${(v.label || v.precision)?.toUpperCase()} needs ${v.vram_minimum_gb} GB but ${hwProfile.display_name || "this hardware"} has ${hwProfile.vram_gb} GB and can't scale out — pick a smaller-footprint variant`
+                        ? hardwareRestricted
+                          ? `${(v.label || v.precision)?.toUpperCase()} is only supported on ${(v.supported_hardware || []).map((hw) => taxonomy.hardware_profiles?.[hw]?.display_name || hw).join(", ")}`
+                          : `${(v.label || v.precision)?.toUpperCase()} needs ${v.vram_minimum_gb} GB but ${hwProfile.display_name || "this hardware"} has ${hwProfile.vram_gb} GB and can't scale out — pick a smaller-footprint variant`
                         : [
                             v.description,
                             `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
