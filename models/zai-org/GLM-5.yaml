@@ -3,7 +3,7 @@ meta:
   slug: "glm-5"
   provider: "GLM (Z-AI)"
   description: "GLM-5 frontier-scale MoE language model (~744B total parameters, 28.5T training tokens) with asynchronous RL infrastructure for reasoning, coding, and agentic tasks"
-  date_updated: 2026-04-17
+  date_updated: 2026-06-24
   difficulty: advanced
   tasks:
     - text
@@ -11,6 +11,8 @@ meta:
   related_recipes: []
   hardware:
     h200: verified
+    b300: verified
+    gb300: verified
 
 model:
   model_id: "zai-org/GLM-5"
@@ -23,15 +25,6 @@ model:
     - "--trust-remote-code"
     - "--chat-template-content-format=string"
   base_env: {}
-
-dependencies:
-  - note: "Pin vllm==0.19.0 (avoid nightly)"
-    command: 'uv pip install "vllm==0.19.0" --torch-backend=auto'
-  - note: "GLM-5 requires transformers >= 5.4.0"
-    command: 'uv pip install "transformers>=5.4.0"'
-  - note: "Optional: DeepGEMM for FP8 MoE kernels (FP8 variant only)"
-    command: "bash install_deepgemm.sh"
-    optional: true
 
 features:
   tool_calling:
@@ -48,10 +41,8 @@ features:
   spec_decoding:
     description: "Multi-Token Prediction speculative decoding (3 draft tokens)"
     args:
-      - "--speculative-config.method"
-      - "mtp"
-      - "--speculative-config.num_speculative_tokens"
-      - "3"
+      - "--speculative-config"
+      - '{"method": "mtp", "num_speculative_tokens": 3}'
 
 opt_in_features:
   - spec_decoding
@@ -71,11 +62,6 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 446
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
-    extra_args:
-      - "--kv-cache-dtype"
-      - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
 compatible_strategies:
   - single_node_tp
@@ -86,7 +72,17 @@ compatible_strategies:
   - multi_node_dep
   - pd_cluster
 
-hardware_overrides: {}
+hardware_overrides:
+  hopper:
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+  blackwell:
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8_e4m3"
+      - "--attention-config"
+      - '{"mla_prefill_backend": "TRTLLM_RAGGED", "use_prefill_query_quantization": true}'
 
 strategy_overrides: {}
 
@@ -119,7 +115,8 @@ guide: |
       --tool-call-parser glm47 \
       --reasoning-parser glm45 \
       --enable-auto-tool-choice \
-      --chat-template-content-format=string
+      --chat-template-content-format=string \
+      --kv-cache-dtype fp8
   ```
 
   Use `vllm/vllm-openai:latest-cu129` for CUDA 12.x.
@@ -142,8 +139,8 @@ guide: |
   ```bash
   vllm serve zai-org/GLM-5-FP8 \
        --tensor-parallel-size 8 \
-       --speculative-config.method mtp \
-       --speculative-config.num_speculative_tokens 3 \
+       --kv-cache-dtype fp8 \
+       --speculative-config '{"method": "mtp", "num_speculative_tokens": 3}' \
        --tool-call-parser glm47 \
        --reasoning-parser glm45 \
        --enable-auto-tool-choice \
