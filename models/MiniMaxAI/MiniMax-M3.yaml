@@ -21,7 +21,7 @@ model:
   nightly_required: true
   docker_image: 
     nvidia: "vllm/vllm-openai:minimax-m3"
-    amd: "vllm/vllm-openai-rocm:minimax-m3" 
+    amd: "vllm/vllm-openai-rocm:nightly-3f5a1e1733200760169ff31ebe60a271072b199e"
   # Docker-only: MiniMax-M3 support hasn't shipped in a stable wheel, and the
   # dedicated image is the supported path — hide the pip tab.
   install:
@@ -109,6 +109,13 @@ variants:
     # comfortably, ~4 GPUs for weights alone on Blackwell (B200/B300) or AMD MI350X/MI355X (gfx950)).
     vram_minimum_gb: 513
     description: "NVIDIA-quantized MXFP8 weights — Blackwell (B200/B300) for native MX tensor cores, and AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 Matrix Cores."
+    hardware_overrides:
+      mi355x:
+        extra_env:
+          # INT6-quantized custom quick all-reduce (gfx950 / CDNA4). Independent
+          # of the AITER master switch; needs TP>1 and custom all-reduce (on by
+          # default). Quantizes the all-reduce payload — perf lever, not exact.
+          VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT6"
   mxfp4:
     model_id: "amd/MiniMax-M3-MXFP4"
     precision: mxfp4
@@ -198,7 +205,7 @@ guide: |
   dedicated Docker image or nightly after the release:
 
   ```bash
-  docker pull vllm/vllm-openai-rocm:minimax-m3
+  docker pull vllm/vllm-openai-rocm:nightly-3f5a1e1733200760169ff31ebe60a271072b199e
   ```
 
   ```bash
@@ -206,7 +213,7 @@ guide: |
     --cap-add SYS_PTRACE --security-opt seccomp=unconfined --ipc=host \
     --shm-size=16g -p 8000:8000 \
     --entrypoint /bin/bash \
-    vllm/vllm-openai-rocm:minimax-m3
+    vllm/vllm-openai-rocm:nightly-3f5a1e1733200760169ff31ebe60a271072b199e
   ```
 
   ## Launching the Server
