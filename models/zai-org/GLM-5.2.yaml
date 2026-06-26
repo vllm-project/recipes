@@ -61,6 +61,14 @@ variants:
     precision: fp8
     vram_minimum_gb: 893
     description: "Native FP8 checkpoint — 8xH200/H20 (141GB × 8) single-node serving"
+  mxfp4:
+    model_id: "amd/GLM-5.2-MXFP4"
+    precision: mxfp4
+    vram_minimum_gb: 446
+    description: "AMD Quark MXFP4 checkpoint — MoE weights quantized for MI350 / MI355X"
+    extra_args:
+      - "--quantization"
+      - "quark"
   bf16:
     precision: bf16
     vram_minimum_gb: 1786
@@ -101,10 +109,12 @@ guide: |
   Z-AI. The
   headline change over GLM-5 / 5.1 is that **Multi-Token Prediction (MTP) is extended from 3 to
   5 draft tokens**, lifting end-to-end throughput on reasoning, coding, and agentic workloads.
-  It ships as BF16 and native-FP8 checkpoints and keeps the GLM thinking-mode behavior.
+  It ships as BF16, native-FP8, and AMD Quark MXFP4 checkpoints, and keeps the GLM
+  thinking-mode behavior.
 
   This recipe targets the **FP8** checkpoint, the practical default: it fits on a single
   8xH200 / 8xH20 node and — with FP8 KV cache — reaches the full 1M-token context on 8xB200.
+  On AMD MI350 / MI355X, use the **MXFP4** variant when HBM footprint is the priority.
 
   ## Prerequisites
 
@@ -112,6 +122,7 @@ guide: |
     `main` branch.
   - **GPU:** 8xH200 or 8xH20 (141 GB each) for single-node FP8; 8xB200 (180 GB each) for the
     full 1M context.
+  - **MXFP4:** use the AMD Quark checkpoint on MI350 / MI355X with ROCm and AITER enabled.
 
   ## Installation
 
@@ -195,6 +206,40 @@ guide: |
   - **`VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1`** — enables the shared-expert fused
     MoE path. `VLLM_ROCM_USE_AITER_LINEAR` and `VLLM_ROCM_USE_AITER_MOE` default to enabled
     when `VLLM_ROCM_USE_AITER=1`.
+
+  ### MXFP4 on AMD MI350 / MI355X
+
+  The AMD Quark MXFP4 checkpoint quantizes the MoE weights while leaving non-MoE modules in
+  higher precision. Use Quark quantization and ROCm AITER kernels:
+
+  ```bash
+  export HIP_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
+  export VLLM_ROCM_USE_AITER_FP8BMM=0
+  export VLLM_ROCM_USE_AITER_FP4BMM=0
+
+  vllm serve amd/GLM-5.2-MXFP4 \
+    --quantization quark \
+    --trust-remote-code \
+    --kv-cache-dtype fp8_e4m3 \
+    --tensor-parallel-size 8 \
+    --gpu-memory-utilization 0.90 \
+    --max-model-len 32768 \
+    --tool-call-parser glm47 \
+    --enable-auto-tool-choice \
+    --reasoning-parser glm45 \
+    --no-enable-prefix-caching \
+    --served-model-name glm-5.2-mxfp4
+  ```
+
+  Add the `spec_decoding` feature, or pass GLM-5.2's MTP flags directly, only after verifying
+  your vLLM build honors Quark `exclude` entries for the unquantized MTP layer:
+
+  ```bash
+  --speculative-config.method mtp \
+  --speculative-config.num_speculative_tokens 5
+  ```
 
   ### FP8 on 8xB200 (full 1M context)
 
@@ -323,3 +368,4 @@ guide: |
 
   - [Model card](https://huggingface.co/zai-org/GLM-5.2)
   - [FP8 checkpoint](https://huggingface.co/zai-org/GLM-5.2-FP8)
+  - [MXFP4 checkpoint](https://huggingface.co/amd/GLM-5.2-MXFP4)
