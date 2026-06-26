@@ -111,6 +111,9 @@ variants:
     description: "NVIDIA-quantized MXFP8 weights — Blackwell (B200/B300) for native MX tensor cores, and AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 Matrix Cores."
     hardware_overrides:
       mi355x:
+        # Floating nightly (matches mxfp4) so the next nightly — which carries the
+        # mxfp8 fused-expert change — is picked up without a re-pin.
+        docker_image: "vllm/vllm-openai-rocm:nightly"
         extra_env:
           # INT6-quantized custom quick all-reduce (gfx950 / CDNA4). Independent
           # of the AITER master switch; needs TP>1 and custom all-reduce (on by
