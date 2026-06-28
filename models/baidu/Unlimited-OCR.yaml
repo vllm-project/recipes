@@ -2,7 +2,7 @@ meta:
   title: "Unlimited-OCR"
   slug: "unlimited-ocr"
   provider: "Ernie (Baidu)"
-  description: "Baidu's DeepSeek-OCR-lineage dense document-parsing model (gundam vision stack), optimized for full-page OCR and markdown generation."
+  description: "Baidu's state-of-the-art dense document-parsing model, optimized for full-page OCR and markdown generation."
   date_updated: 2026-06-28
   difficulty: intermediate
   tasks:
