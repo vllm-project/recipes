@@ -3,10 +3,11 @@ meta:
   slug: "translategemma-27b-it"
   provider: "Google"
   description: "Lightweight open translation model from Google (based on Gemma 3) supporting 55 languages. Served via the vLLM-optimized Infomaniak-AI checkpoint."
-  date_updated: 2026-04-17
+  date_updated: 2026-05-11
   difficulty: beginner
   tasks:
     - text
+    - multimodal
   performance_headline: "Deployable on laptops/desktops and cloud GPUs; vLLM-optimized checkpoint removes custom JSON inputs"
   related_recipes: []
 
@@ -17,7 +18,11 @@ model:
   parameter_count: "27B"
   active_parameters: "27B"
   context_length: 131072
-  base_args: []
+  base_args:
+    - "--chat-template"
+    - "examples/tool_chat_template_translategemma.jinja"
+    - "--chat-template-content-format"
+    - "openai"
   base_env: {}
 
 features: {}
@@ -69,6 +74,14 @@ guide: |
   - **RoPE Simplification**: Originals use a complex RoPE configuration for sliding attention. Optimized uses a standard linear RoPE format (`factor: 8.0`).
   - **EOS Token Fix**: Corrects the EOS token from `<end_of_turn>` to `<eos>`.
 
+  TranslateGemma's vLLM chat template lives in the vLLM repo as
+  [`examples/tool_chat_template_translategemma.jinja`](https://github.com/vllm-project/vllm/blob/main/examples/tool_chat_template_translategemma.jinja).
+  The template encodes source/target language metadata in the user message and supports both text and image translation requests. Use
+  `--chat-template-content-format openai` for image requests so the template receives OpenAI-style content arrays.
+  The example chat template ships in the official vLLM container. If you are serving from a source checkout,
+  a pip environment, or a custom image where `examples/` is not available, download or mount the template
+  file and pass that local path to `--chat-template`.
+
   ## Prerequisites
 
   ### Docker
@@ -89,6 +102,8 @@ guide: |
     vllm/vllm-openai:latest \
       Infomaniak-AI/vllm-translategemma-27b-it \
       --served-model-name translategemma-27b-it \
+      --chat-template examples/tool_chat_template_translategemma.jinja \
+      --chat-template-content-format openai \
       --gpu-memory-utilization 0.8 \
       --host 0.0.0.0 \
       --port 8000
@@ -99,10 +114,13 @@ guide: |
   Tips:
   - **Prompt Delimiters**: Encode language metadata directly in the content string:
     `<<<source>>>{src_lang}<<<target>>>{tgt_lang}<<<text>>>{text}`
-  - **Language Codes**: ISO 639-1 Alpha-2 (e.g. `en`, `zh`) and regional variants (e.g. `en_US`, `zh_CN`).
+  - **Image Translation**: For image requests, put
+    `<<<source>>>{src_lang}<<<target>>>{tgt_lang}<<<image>>>` in the text part
+    and provide the image as an OpenAI `image_url` content part.
+  - **Language Codes**: ISO 639-1 Alpha-2 (e.g. `en`, `zh`) and regional variants (e.g. `en-US`, `de-DE`). Underscore variants such as `en_US` are also accepted and normalized by the template.
   - **Context Limit**: ~2K tokens.
 
-  ### cURL
+  ### Text cURL
   ```bash
   curl -X POST http://localhost:8000/v1/chat/completions \
     -H "Content-Type: application/json" \
@@ -115,8 +133,33 @@ guide: |
     }'
   ```
 
+  ### Image cURL
+  ```bash
+  curl -X POST http://localhost:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "translategemma-27b-it",
+      "messages": [{
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "<<<source>>>cs<<<target>>>de-DE<<<image>>>"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://c7.alamy.com/comp/2YAX36N/traffic-signs-in-czech-republic-pedestrian-zone-2YAX36N.jpg"
+            }
+          }
+        ]
+      }]
+    }'
+  ```
+
   ## References
 
   - [TranslateGemma collection](https://huggingface.co/collections/google/translategemma)
+  - [vLLM TranslateGemma chat template](https://github.com/vllm-project/vllm/blob/main/examples/tool_chat_template_translategemma.jinja)
   - [Infomaniak-AI optimized 27B](https://huggingface.co/Infomaniak-AI/vllm-translategemma-27b-it)
   - [Infomaniak-AI optimized 4B](https://huggingface.co/Infomaniak-AI/vllm-translategemma-4b-it)
