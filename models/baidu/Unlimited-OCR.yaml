@@ -80,7 +80,7 @@ guide: |
 
   - register the no-repeat-ngram logits processor on the server:
     `--logits_processors vllm.model_executor.models.unlimited_ocr:NGramPerReqLogitsProcessor`
-  - prompt text must begin with a literal `<image>\n` (e.g. `<image>\ndocument parsing.`)
+  - prompt text must begin with a literal `<image>` (e.g. `<image>document parsing.`)
   - `skip_special_tokens=False`
   - pass the processor args per request: `ngram_size=35`, `window_size=128`
     (use `window_size=1024` for multi-page / PDF input)
@@ -109,7 +109,7 @@ guide: |
       {
           "role": "user",
           "content": [
-              {"type": "text", "text": "<image>\ndocument parsing."},
+              {"type": "text", "text": "<image>document parsing."},
               {"type": "image_url", "image_url": {"url": "https://huggingface.co/baidu/Unlimited-OCR/resolve/main/assets/baidu.png"}},
           ],
       }
@@ -137,7 +137,7 @@ guide: |
 
   - **The custom logits processor is required** — without it long documents loop on
     `<|det|>` coordinate tokens.
-  - Empty output almost always means the prompt is missing the literal `<image>\n`
+  - Empty output almost always means the prompt is missing the literal `<image>`
     prefix or `skip_special_tokens` was left `True`.
   - OCR tasks don't benefit from prefix caching / image reuse, so prefix caching and
     the mm-processor cache are disabled in the recipe.
