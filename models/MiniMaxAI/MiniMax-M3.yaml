@@ -109,11 +109,6 @@ variants:
     # comfortably, ~4 GPUs for weights alone on Blackwell (B200/B300) or AMD MI350X/MI355X (gfx950)).
     vram_minimum_gb: 513
     description: "NVIDIA-quantized MXFP8 weights — Blackwell (B200/B300) for native MX tensor cores, and AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 Matrix Cores."
-    # MI355X-only acceleration for the MXFP8 path: AITER kernels, the fused
-    # shared-experts MoE, and INT6 QuickReduce, on the nightly ROCm image (the
-    # minimax-m3 pinned tag predates these). Other MI3xx GPUs and the NVIDIA
-    # MXFP8 command are untouched. (VLLM_USE_BREAKABLE_CUDAGRAPH=0 is already
-    # set AMD-wide below.)
     hardware_overrides:
       mi355x:
         docker_image: "vllm/vllm-openai-rocm:nightly"
