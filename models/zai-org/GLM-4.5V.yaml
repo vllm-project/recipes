@@ -31,6 +31,10 @@ model:
     - "shm"
   base_env: {}
 
+dependencies:
+  - note: "GLM-V requires Transformers >= 5.0.0 for tokenizer and multimodal config compatibility."
+    command: 'uv pip install "transformers>=5.0.0"'
+
 features:
   tool_calling:
     description: "GLM-4.5 tool call parser with automatic tool choice"
@@ -101,14 +105,24 @@ guide: |
   ## Prerequisites
 
   - **vLLM version:** >= 0.12.0
-  - **Hardware:** 4x H100/H200 (BF16 or FP8)
+  - **Hardware:** 4x H100/H200 (BF16 or FP8), or 4x MI300X/MI325X/MI355X with ROCm
+  - **Python:** 3.10+ for NVIDIA; Python 3.12 with ROCm 7.0 and glibc >= 2.35 for AMD ROCm wheels
 
-  ### Install vLLM
+  ### Install vLLM (NVIDIA)
 
   ```bash
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend auto
+  ```
+
+  ### Install vLLM (AMD ROCm)
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
+  uv pip install "transformers>=5.0.0"
   ```
 
   ## Launching the Server
@@ -127,11 +141,29 @@ guide: |
        --mm-processor-cache-type shm
   ```
 
+  ### AMD ROCm (FP8 on 4 GPUs)
+
+  ```bash
+  export SAFETENSORS_FAST_GPU=1
+  export VLLM_ROCM_USE_AITER=1
+
+  vllm serve zai-org/GLM-4.5V-FP8 \
+       --tensor-parallel-size 4 \
+       --tool-call-parser glm45 \
+       --reasoning-parser glm45 \
+       --enable-auto-tool-choice \
+       --enable-expert-parallel \
+       --allowed-local-media-path / \
+       --mm-encoder-tp-mode data \
+       --mm-processor-cache-type shm
+  ```
+
   ### Tuning Tips
 
   - `--max-model-len=65536` is near the model's max context (64K).
   - `--max-num-batched-tokens=32768` for prompt-heavy workloads.
   - `--gpu-memory-utilization=0.95` maximizes KV cache.
+  - Use `uv pip install "transformers>=5.0.0"` before serving GLM-V checkpoints.
   - `--mm-encoder-tp-mode data` runs the vision encoder data-parallel — preferable to TP
     since the encoder is small and TP adds communication overhead.
   - `--mm-processor-cache-type shm` enables shared-memory caching for repeated image inputs.
