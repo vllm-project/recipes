@@ -17,8 +17,9 @@ model:
   active_parameters: "13B"
   context_length: 262144
   base_args:
-    - "--dtype"
-    - "bfloat16"
+    - "--trust-remote-code"
+    - "--max-model-len"
+    - "32768"
   base_env: {}
 
 features:
@@ -59,8 +60,14 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
 
-hardware_overrides: {}
-strategy_overrides: {}
+hardware_overrides:
+  amd:
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+
+strategy_overrides:
+  single_node_tp:
+    tp: 8
 
 guide: |
   ## Overview
@@ -90,8 +97,19 @@ guide: |
   ## Launch command
 
   ```bash
-  vllm serve arcee-ai/Trinity-Large-Thinking \
-    --dtype bfloat16 \
+  VLLM_ROCM_USE_AITER=1 vllm serve arcee-ai/Trinity-Large-Thinking \
+    --trust-remote-code \
+    --tensor-parallel-size 8 \
+    --max-model-len 32768
+  ```
+
+  Optional parser flags:
+
+  ```bash
+  VLLM_ROCM_USE_AITER=1 vllm serve arcee-ai/Trinity-Large-Thinking \
+    --trust-remote-code \
+    --tensor-parallel-size 8 \
+    --max-model-len 32768 \
     --reasoning-parser deepseek_r1 \
     --enable-auto-tool-choice \
     --tool-call-parser qwen3_coder
@@ -101,7 +119,7 @@ guide: |
   - `--reasoning-parser deepseek_r1` extracts `<think>...</think>` into `message.reasoning`.
   - `--enable-auto-tool-choice` lets the model decide when to call tools.
   - `--tool-call-parser qwen3_coder` converts tool calls into OpenAI-style `tool_calls`.
-  - `--dtype bfloat16` matches the recommended serving dtype.
+  - `--max-model-len 32768` keeps the KV cache practical for the TP=8 AMD launch.
 
   Add parallelism flags (`--tensor-parallel-size`, `--data-parallel-size`, or
   `--enable-expert-parallel`) for your hardware. Lower `--max-model-len` if you don't
