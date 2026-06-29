@@ -3,7 +3,7 @@ meta:
   slug: "minimax-m3"
   provider: "MiniMax"
   description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 plus MXFP8 and AMD MI355X MXFP4 variants. Runs on NVIDIA (Hopper/Blackwell) and AMD CDNA4/CDNA3."
-  date_updated: 2026-06-25
+  date_updated: 2026-06-29
   difficulty: advanced
   tasks:
     - text
@@ -19,9 +19,9 @@ model:
   model_id: "MiniMaxAI/MiniMax-M3"
   min_vllm_version: "0.24.0"
   nightly_required: true
-  docker_image: 
+  docker_image:
     nvidia: "vllm/vllm-openai:minimax-m3"
-    amd: "vllm/vllm-openai-rocm:minimax-m3" 
+    amd: "vllm/vllm-openai-rocm:nightly"
   # Docker-only: MiniMax-M3 support hasn't shipped in a stable wheel, and the
   # dedicated image is the supported path — hide the pip tab.
   install:
@@ -194,11 +194,12 @@ guide: |
 
   ### Docker (AMD ROCm)
 
-  MiniMax-M3 support has not yet shipped in a stable vLLM release — use the
-  dedicated Docker image or nightly after the release:
+  MiniMax-M3 support has not yet shipped in a stable vLLM release (`latest` is
+  still 0.23.0, with no M3 plugin and no `fp8_per_channel` on ROCm) — use the
+  nightly image:
 
   ```bash
-  docker pull vllm/vllm-openai-rocm:minimax-m3
+  docker pull vllm/vllm-openai-rocm:nightly
   ```
 
   ```bash
@@ -206,7 +207,7 @@ guide: |
     --cap-add SYS_PTRACE --security-opt seccomp=unconfined --ipc=host \
     --shm-size=16g -p 8000:8000 \
     --entrypoint /bin/bash \
-    vllm/vllm-openai-rocm:minimax-m3
+    vllm/vllm-openai-rocm:nightly
   ```
 
   ## Launching the Server
@@ -268,6 +269,31 @@ guide: |
     --attention-backend TRITON_ATTN \
     --mm-encoder-tp-mode data \
     --mm-encoder-attn-backend ROCM_AITER_FA \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
+
+  Add the vision-encoder flags (`--mm-encoder-tp-mode data
+  --mm-encoder-attn-backend ROCM_AITER_FA`) for multimodal serving.
+
+  #### TP8 + `--quantization fp8_per_channel`
+
+  Online **per-channel FP8 (PTPC)** quantization of the BF16 checkpoint halves the
+  weight footprint (≈100 → **≈50 GiB/GPU**, ~1.75× more KV cache) and lifts
+  batched throughput with **gsm8k unchanged from BF16** (lossless); 
+  These env vars and the flag are for the **BF16 checkpoint only**.
+
+  ```bash
+  export VLLM_USE_BREAKABLE_CUDAGRAPH=0
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_MOE=0
+  
+  vllm serve MiniMaxAI/MiniMax-M3 \
+    --tensor-parallel-size 8 \
+    --block-size 128 \
+    --attention-backend TRITON_ATTN \
+    --quantization fp8_per_channel \
     --tool-call-parser minimax_m3 \
     --reasoning-parser minimax_m3 \
     --enable-auto-tool-choice
