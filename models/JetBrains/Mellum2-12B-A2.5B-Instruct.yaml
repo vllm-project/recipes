@@ -21,8 +21,7 @@ model:
   active_parameters: "2.5B"
   context_length: 131072
   base_args:
-    - "--max-model-len"
-    - "131072"
+    - "--trust-remote-code"
   base_env: {}
 
 features:
@@ -45,6 +44,8 @@ compatible_strategies:
   - single_node_tp
   - single_node_tep
   - single_node_dep
+
+hardware_overrides: {}
 
 strategy_overrides:
   single_node_tp:
@@ -83,13 +84,14 @@ guide: |
   `--reasoning-parser` is needed.
 
   ```bash
-  # Plain serving
   vllm serve JetBrains/Mellum2-12B-A2.5B-Instruct \
-    --max-model-len 131072
+    --trust-remote-code \
+    --tensor-parallel-size 1
 
-  # Add tool calling
+  # Optional: add tool calling.
   vllm serve JetBrains/Mellum2-12B-A2.5B-Instruct \
-    --max-model-len 131072 \
+    --trust-remote-code \
+    --tensor-parallel-size 1 \
     --enable-auto-tool-choice \
     --tool-call-parser hermes
   ```
