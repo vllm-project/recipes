@@ -22,8 +22,6 @@ model:
   context_length: 131072
   base_args:
     - "--trust-remote-code"
-    - "--tensor-parallel-size"
-    - "4"
   base_env: {}
 
 features: {}
@@ -34,7 +32,7 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 250
-    description: "BF16 weights with base TP=4; the guide shows a tested 2-GPU AMD command"
+    description: "BF16 weights; the guide shows a tested 2-GPU AMD command"
 
 compatible_strategies:
   - single_node_tp
@@ -50,7 +48,7 @@ hardware_overrides:
 
 strategy_overrides:
   single_node_tp:
-    tp: 4
+    tp: 2
 
 guide: |
   ## Overview
@@ -60,6 +58,14 @@ guide: |
   hybrid linear + MLA attention, and a 131K context window.
 
   ## Deployment Configurations
+
+  ### ROCm vLLM serve command
+
+  ```bash
+  VLLM_ROCM_USE_AITER=1 vllm serve inclusionAI/Ling-2.6-flash \
+    --tensor-parallel-size 2 \
+    --trust-remote-code
+  ```
 
   ### Docker (AMD MI300X / MI325X / MI355X, TP=2)
 
@@ -78,7 +84,7 @@ guide: |
     --group-add video \
     -e VLLM_ROCM_USE_AITER=1 \
     vllm/vllm-openai-rocm:v0.20.2 \
-      inclusionAI/Ling-2.6-flash \
+      vllm serve inclusionAI/Ling-2.6-flash \
       --tensor-parallel-size 2 \
       --trust-remote-code
   ```
