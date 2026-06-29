@@ -20,8 +20,6 @@ model:
   context_length: 8192
   base_args:
     - "--trust-remote-code"
-    - "--max-model-len"
-    - "8192"
   base_env: {}
 
 features: {}
@@ -41,7 +39,9 @@ compatible_strategies:
 
 hardware_overrides: {}
 
-strategy_overrides: {}
+strategy_overrides:
+  single_node_tp:
+    tp: 4
 
 guide: |
   ## Overview
@@ -61,7 +61,8 @@ guide: |
 
   ## Prerequisites
 
-  - **Hardware:** 1x GPU with at least 24 GB VRAM, such as L40S, A30, or RTX 4090
+  - **Hardware:** 4 GPUs for the TP=4 launch below, or 1 GPU with at least
+    24 GB VRAM if you override tensor parallelism to TP=1
   - **vLLM:** >= 0.8.5
   - **License:** PLaMo community license
 
@@ -78,7 +79,7 @@ guide: |
   ```bash
   vllm serve pfnet/plamo-2-translate \
     --trust-remote-code \
-    --max-model-len 8192
+    --tensor-parallel-size 4
   ```
 
   For tighter memory budgets, reduce `--max-model-len` (the model card
