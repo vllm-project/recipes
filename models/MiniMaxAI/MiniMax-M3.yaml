@@ -112,6 +112,10 @@ variants:
     hardware_overrides:
       mi355x:
         docker_image: "vllm/vllm-openai-rocm:nightly"
+        extra_args:
+          # run linear-layer GEMMs through the bf16 hipblasLT on MI355X.
+          - "--linear-backend"
+          - "emulation"
         extra_env:
           VLLM_ROCM_USE_AITER: "1"
           VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
