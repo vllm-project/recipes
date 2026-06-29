@@ -12,6 +12,9 @@ meta:
   hardware:
     h100: verified
     b200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16"
@@ -68,7 +71,13 @@ compatible_strategies:
   - multi_node_tp
   - multi_node_tp_pp
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_args:
+      - "--tensor-parallel-size"
+      - "8"
+      - "--no-enable-prefix-caching"
+    extra_env: {}
 strategy_overrides: {}
 
 guide: |
@@ -80,7 +89,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x GPU (A100/H100/B200, etc.)
+  - Hardware: 1x GPU (A100/H100/B200, etc.) or MI300X/MI325X/MI355X
   - vLLM: 0.11.0 does NOT include this model; use latest nightly or install from source
   - DGX Spark: use `nvcr.io/nvidia/vllm:25.12.post1-py3`
 
@@ -90,6 +99,14 @@ guide: |
   docker pull vllm/vllm-openai:nightly-8bff831f0aa239006f34b721e63e1340e3472067
   # or for DGX Spark:
   docker pull nvcr.io/nvidia/vllm:25.12.post1-py3
+  ```
+
+  AMD ROCm:
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
   ```
 
   ## Launch command
@@ -115,6 +132,15 @@ guide: |
   - `--max-model-len`: reduce for shorter contexts to save memory
   - `--allowed-local-media-path <root>`: limit local-file access
   - `--video-pruning-rate <0..1>`: EVS compression; higher prunes more video tokens
+
+  AMD ROCm sample:
+
+  ```bash
+  vllm serve nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16 \
+    --tensor-parallel-size 8 \
+    --no-enable-prefix-caching \
+    --trust-remote-code
+  ```
 
   ## Client Usage
 
