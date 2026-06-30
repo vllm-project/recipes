@@ -3,7 +3,7 @@ meta:
   slug: "gpt-oss-20b"
   provider: "OpenAI"
   description: "OpenAI's gpt-oss-20b — 21B-total / 3.6B-active MoE reasoning model with native MXFP4 quant; fits in 16GB VRAM"
-  date_updated: 2026-05-08
+  date_updated: 2026-06-30
   difficulty: beginner
   tasks:
     - text
@@ -153,6 +153,23 @@ guide: |
   ```bash
   vllm serve openai/gpt-oss-20b --tool-call-parser openai --enable-auto-tool-choice
   ```
+
+  ### Browser backend
+
+  The demo tool server uses [Exa](https://exa.ai) by default — set `EXA_API_KEY` to enable web search. To use [You.com](https://you.com) instead, run the reference MCP browser server (defaults to `BROWSER_BACKEND=youcom`) with `YDC_API_KEY`:
+
+  ```bash
+  export YDC_API_KEY=<your-key>
+  mcp run -t sse browser_server.py:mcp
+  ```
+
+  Then, in a separate terminal, start the vLLM server pointing to the MCP server's address:
+
+  ```bash
+  vllm serve openai/gpt-oss-20b --tool-server <browser-server-ip>:<port>
+  ```
+
+  Get a You.com API key at [you.com/platform](https://you.com/platform).
 
   ## Reasoning effort
 
