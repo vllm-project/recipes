@@ -163,10 +163,10 @@ guide: |
   mcp run -t sse browser_server.py:mcp
   ```
 
-  Then, in a separate terminal, start the vLLM server pointing to the MCP server's address:
+  The MCP browser server listens on port `8001` by default. Then, in a separate terminal, start the vLLM server pointing to it:
 
   ```bash
-  vllm serve openai/gpt-oss-20b --tool-server <browser-server-ip>:<port>
+  vllm serve openai/gpt-oss-20b --tool-server localhost:8001
   ```
 
   Get a You.com API key at [you.com/platform](https://you.com/platform).
