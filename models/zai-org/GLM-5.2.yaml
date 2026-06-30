@@ -29,7 +29,7 @@ model:
   context_length: 1048576
   base_args:
     - "--kv-cache-dtype"
-    - "fp8_e4m3"
+    - "fp8"
   base_env: {}
 
 features:
