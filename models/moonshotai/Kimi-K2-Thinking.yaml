@@ -13,6 +13,9 @@ meta:
     - "moonshotai/Kimi-K2.5"
   hardware:
     h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "moonshotai/Kimi-K2-Thinking"
@@ -67,7 +70,12 @@ compatible_strategies:
   - multi_node_tep
   - pd_cluster
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_args:
+      - "--no-enable-prefix-caching"
+    extra_env:
+      SAFETENSORS_FAST_GPU: "1"
 
 strategy_overrides: {}
 
@@ -97,6 +105,17 @@ guide: |
   uv pip install -U vllm --torch-backend auto
   ```
 
+  ### AMD ROCm
+
+  The ROCm wheel requires Python 3.12, ROCm 7.0+, and glibc >= 2.35. Use the
+  ROCm Docker image when your host environment does not meet those requirements.
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+  ```
+
   ## Launching Kimi-K2-Thinking with vLLM
 
   ### Low-Latency Scenarios (TP8)
@@ -112,6 +131,19 @@ guide: |
 
   The `--reasoning-parser` flag specifies the parser used to extract reasoning content
   from the model output.
+
+  ### ROCm on 8x MI300X / MI325X / MI355X
+
+  ```bash
+  export SAFETENSORS_FAST_GPU=1
+  vllm serve moonshotai/Kimi-K2-Thinking \
+    --tensor-parallel-size 8 \
+    --no-enable-prefix-caching \
+    --enable-auto-tool-choice \
+    --tool-call-parser kimi_k2 \
+    --reasoning-parser kimi_k2 \
+    --trust-remote-code
+  ```
 
   ### High-Throughput Scenarios (TP8+DCP8)
 
