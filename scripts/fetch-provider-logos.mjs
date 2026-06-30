@@ -31,6 +31,7 @@ fs.mkdirSync(OUT, { recursive: true });
 async function fetchOrgAvatarUrl(org) {
   const res = await fetch(`https://huggingface.co/${org}`, {
     headers: { "User-Agent": "vllm-recipes-build/1.0" },
+    signal: AbortSignal.timeout(10000),
   });
   const html = await res.text();
   const match = html.match(/cdn-avatars\.huggingface\.co\/[^"&]+/);
@@ -58,7 +59,9 @@ for (const [org, meta] of Object.entries(targets)) {
       failed++;
       continue;
     }
-    const imgRes = await fetch(avatarUrl);
+    const imgRes = await fetch(avatarUrl, {
+      signal: AbortSignal.timeout(10000),
+    });
     const buffer = Buffer.from(await imgRes.arrayBuffer());
     fs.writeFileSync(localPath, buffer);
     console.log(`✓ ${org} (${buffer.length}B)`);
