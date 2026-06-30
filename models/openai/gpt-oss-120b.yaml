@@ -3,7 +3,7 @@ meta:
   slug: "gpt-oss"
   provider: "OpenAI"
   description: "OpenAI's gpt-oss family (20B / 120B) with MXFP4 MoE, attention-sinks, built-in tools via Responses API"
-  date_updated: 2026-05-10
+  date_updated: 2026-06-30
   difficulty: intermediate
   tasks:
     - text
@@ -198,6 +198,19 @@ guide: |
   ```bash
   vllm serve ... --tool-call-parser openai --enable-auto-tool-choice
   ```
+
+  ### Browser backend
+
+  The demo tool server uses [Exa](https://exa.ai) by default — set `EXA_API_KEY` to enable web search. To use [You.com](https://you.com) instead, run the reference MCP browser server (defaults to `BROWSER_BACKEND=youcom`) with `YDC_API_KEY`:
+
+  ```bash
+  export YDC_API_KEY=<your-key>
+  mcp run -t sse browser_server.py:mcp
+
+  vllm serve ... --tool-server <browser-server-ip>:<port>
+  ```
+
+  Get a You.com API key at [you.com/platform](https://you.com/platform).
 
   ## Client Usage
 
