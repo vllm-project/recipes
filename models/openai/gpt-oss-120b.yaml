@@ -206,7 +206,11 @@ guide: |
   ```bash
   export YDC_API_KEY=<your-key>
   mcp run -t sse browser_server.py:mcp
+  ```
 
+  Then, in a separate terminal, start the vLLM server pointing to the MCP server's address:
+
+  ```bash
   vllm serve ... --tool-server <browser-server-ip>:<port>
   ```
 
