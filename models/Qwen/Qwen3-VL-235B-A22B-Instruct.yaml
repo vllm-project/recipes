@@ -219,6 +219,34 @@ guide: |
 
   > The above configuration runs efficiently at high concurrencies (up to 512) for context lengths up to 8k. If TPOT is not satisfactory, lower `--max-num-batched-tokens`. For longer contexts, `--max-num-seqs` and `--max-num-batched-tokens` may need retuning. 
 
+  ### MI300X / MI355X (FP8, EAGLE3 Speculative Decoding)
+
+  Adds EAGLE3 speculative decoding (`RedHatAI/Qwen3-VL-235B-A22B-Instruct-speculator.eagle3`) on top of the FP8 target. **`--attention-backend ROCM_AITER_FA` is mandatory** — the default `ROCM_ATTN` path makes SD slower than baseline on ROCm. Keep `VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=0` and omit `--async-scheduling` (incompatible with SD).
+
+  ```bash
+  export VLLM_USE_V1=1
+  export VLLM_WORKER_MULTIPROC_METHOD=spawn
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_MHA=1
+  export VLLM_ROCM_USE_AITER_RMSNORM=0
+  export VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=0
+  export VLLM_RPC_TIMEOUT=300000
+
+  vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
+    --tensor-parallel-size 8 \
+    --gpu-memory-utilization 0.94 \
+    --distributed-executor-backend mp \
+    --enable-chunked-prefill \
+    --max-model-len 16384 \
+    --max-num-seqs 32 \
+    --max-num-batched-tokens 8192 \
+    --mm-encoder-tp-mode data \
+    --enable-expert-parallel \
+    --attention-backend ROCM_AITER_FA \
+    --compilation-config '{"mode": 3, "cudagraph_mode": "FULL_AND_PIECEWISE", "custom_ops": ["-rms_norm"], "pass_config": {"fuse_norm_quant":false}}' \
+    --speculative-config '{"model": "RedHatAI/Qwen3-VL-235B-A22B-Instruct-speculator.eagle3", "method": "eagle3", "num_speculative_tokens": 4}'
+  ```
+
   ## Configuration Tips
 
   - Use `--limit-mm-per-prompt.video 0` if your server only serves image inputs to save memory.
