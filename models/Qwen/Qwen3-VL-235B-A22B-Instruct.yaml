@@ -27,6 +27,9 @@ model:
   context_length: 262144
   base_args: []
   base_env: {}
+  docker_image:
+    amd: "vllm/vllm-openai-rocm:v0.22.1"
+
 
 dependencies:
   - note: "Recommended for offline multimodal inference (image/video pre-processing helpers)"
