@@ -1,0 +1,55 @@
+name: kv_store_distributed_mooncake
+deploy_type: kv_store_lb
+display_name: "Distributed KV Store (Mooncake)"
+orientation: production
+description: >
+  Multi-replica vLLM cluster with shared distributed KV cache via
+  MooncakeStoreConnector in embedded mode. Each vLLM node (single-node
+  TEP) contributes CPU DRAM (global_segment_size) to the shared cache pool.
+  A vllm-router with cache_aware policy routes requests so prefix-
+  matched prompts land on the same replica — maximizing KV cache hits.
+  A lightweight mooncake_master coordinates metadata; no separate store
+  process needed.
+
+hardware_match:
+  min_gpus: 8
+  multi_node: true
+  architecture: moe
+
+router:
+  policy: "cache_aware"
+  install: "uv pip install vllm-router"
+  port: 30080
+
+vllm:
+  vllm_args:
+    - "--enable-expert-parallel"
+    - "--kv-transfer-config"
+    - '{"kv_connector":"MooncakeStoreConnector","kv_role":"kv_both"}'
+  env:
+    MOONCAKE_CONFIG_PATH: "$MOONCAKE_CONFIG_PATH"
+    PYTHONHASHSEED: 0
+  install: "uv pip install 'mooncake-transfer-engine-non-cuda>=0.3.10'"
+  port: 8000
+
+mooncake_master:
+  command: "mooncake_master --port 50051 --enable_http_metadata_server=1 --http_metadata_server_port=8080"
+  description: "Lightweight metadata coordinator. One instance per cluster."
+
+mooncake_vllm_config:
+  mode: embedded
+  template:
+    metadata_server: "$MOONCAKE_MASTER_IP:2379"
+    master_server_address: "$MOONCAKE_MASTER_IP:50051"
+    protocol: "rdma"
+    # device_name: CSV of RDMA NICs indexed by GPU (e.g. "mlx5_0,mlx5_1,...,mlx5_7").
+    # Number of entries must equal the number of vLLM ranks (TP size).
+    # Empty string enables auto-selection based on GPU-NIC PCIe/NUMA affinity.
+    device_name: "$IFACE_0,$IFACE_1,$IFACE_2,$IFACE_3,$IFACE_4,$IFACE_5,$IFACE_6,$IFACE_7"
+    mode: "embedded"
+    global_segment_size: "80gb"
+
+parallel_flag: "--tensor-parallel-size"
+
+min_vllm_version: "0.21.0"
+default_node_count: 2

@@ -187,3 +187,10 @@ strategies:
   - multi_node_dep
   - multi_node_tp_pp
   - pd_cluster
+  - kv_store_distributed_mooncake
+  - kv_store_centralized_mooncake
+
+kv_cache_strategies:
+  - local
+  - kv_store_distributed_mooncake
+  - kv_store_centralized_mooncake
