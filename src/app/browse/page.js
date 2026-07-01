@@ -59,6 +59,27 @@ export default function BrowsePage() {
       <Suspense fallback={<div className="text-sm text-muted-foreground py-8">Loading...</div>}>
         <BrowseList recipes={slim} />
       </Suspense>
+
+      {/* Server-rendered crawlable index. BrowseList above is client-rendered,
+          so without this the model pages have no internal links pointing at
+          them and search engines can only discover them via the sitemap. A
+          plain <a> list gives every recipe a real internal link from this
+          indexable hub page. */}
+      <nav aria-label="All recipes" className="mt-12 pt-6 border-t border-border">
+        <h2 className="text-sm font-semibold text-muted-foreground mb-3">All recipes</h2>
+        <ul className="columns-2 sm:columns-3 lg:columns-4 gap-x-6 text-sm">
+          {slim
+            .slice()
+            .sort((a, b) => a.hf_id.localeCompare(b.hf_id))
+            .map((r) => (
+              <li key={r.hf_id} className="mb-1 break-inside-avoid">
+                <a href={`/${r.hf_org}/${r.hf_repo}`} className="text-vllm-blue hover:underline">
+                  {r.hf_id}
+                </a>
+              </li>
+            ))}
+        </ul>
+      </nav>
     </main>
   );
 }
