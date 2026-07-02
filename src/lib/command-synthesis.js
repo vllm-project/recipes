@@ -173,6 +173,35 @@ export function isVariantHardwareSupported(variant, hwId) {
 }
 
 /**
+ * A feature with a `modes` map is single-select ("pick one of N") rather than a
+ * boolean toggle — e.g. `spec_decoding` offering MTP / DFlash / DSpark. This
+ * returns which mode is active by default when the feature is turned on:
+ * `default_mode` if it names a real mode, else the first declared mode.
+ * Returns undefined for plain boolean features (no `modes`).
+ */
+export function defaultModeFor(feature) {
+  if (!feature?.modes || typeof feature.modes !== "object") return undefined;
+  const keys = Object.keys(feature.modes);
+  if (feature.default_mode && keys.includes(feature.default_mode)) return feature.default_mode;
+  return keys[0];
+}
+
+/**
+ * Whether a single mode may run on a given hardware profile. A mode can gate
+ * itself with a tri-state `hardware` map keyed by generation (hopper/blackwell/
+ * amd) or gpu-id; a value of `unsupported` disables it (e.g. a DFlash draft
+ * checkpoint that only ships for Blackwell). Absence = runs everywhere.
+ */
+export function isModeSupported(mode, hwProfile, hwId) {
+  const hw = mode?.hardware;
+  if (!hw || typeof hw !== "object") return true;
+  const gen = normalizeGeneration(hwProfile?.generation || hwProfile?.gpu_generation);
+  if (gen && hw[gen] === "unsupported") return false;
+  if (hwId && hw[hwId] === "unsupported") return false;
+  return true;
+}
+
+/**
  * List hardware profiles compatible with a variant by precision constraint
  * only. VRAM is NOT a blocking constraint — users can scale out via multi-node
  * TP/DP, so any profile that satisfies the precision requirement is valid.
@@ -555,7 +584,7 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile) {
  * Returns: { command, env, deployType } for single_node/multi_node,
  *          { prefillCommand, decodeCommand, routerConfig, env, deployType } for pd_cluster.
  */
-export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null) {
+export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
@@ -571,6 +600,11 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   // TEP/DEP require full TP by topology; multi-node is explicit scale-out.
   const singleNodeTp = resolveSingleNodeTp(recipe, variant, hwProfile, strategyName);
 
+  // The served checkpoint is owned by the variant axis (variant.model_id > base).
+  // Spec-decoding modes are single-select and contribute only args (the
+  // --speculative-config), so exactly one is ever emitted. A fused-spec
+  // checkpoint (e.g. DeepSeek-V4-Pro-DSpark) is a variant that steers the spec
+  // mode via `default_modes`; the mode never overrides model_id.
   const modelId = variant.model_id || recipe.model?.model_id || "unknown";
   const variantHardwareOverride = variant?.hardware_overrides?.[hwProfileId];
 
@@ -787,6 +821,20 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     for (const f of enabledFeatures || []) {
       const feat = recipe.features?.[f];
       if (!feat) continue;
+      // Single-select sub-modes: the feature declares `modes` and the user
+      // picks one (spec_decoding → MTP / DFlash / DSpark). Emit only the
+      // selected mode's args; fall back to the default mode when unset.
+      if (feat.modes && typeof feat.modes === "object") {
+        const modeKey = featureModes?.[f] || defaultModeFor(feat);
+        const mode = feat.modes[modeKey] || feat.modes[defaultModeFor(feat)];
+        if (mode) {
+          const modeHo = mode.hardware_overrides?.[gen]
+            || (isNvidia ? mode.hardware_overrides?.nvidia : null);
+          const modeArgs = modeHo?.args ?? mode.args;
+          if (modeArgs) args.push(...modeArgs);
+        }
+        continue;
+      }
       const featHo = feat.hardware_overrides?.[gen]
         || (isNvidia ? feat.hardware_overrides?.nvidia : null);
       const featArgs = featHo?.args ?? feat.args;

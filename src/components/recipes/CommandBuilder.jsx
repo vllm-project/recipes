@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported } from "@/lib/command-synthesis";
 import { resolveOmniTasks } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -571,6 +571,74 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     return defaultFeaturesFor(urlHw);
   });
 
+  // Features that are single-select ("pick one of N") rather than boolean —
+  // they declare a `modes` map (e.g. spec_decoding → MTP / DFlash / DSpark).
+  const featuredModeKeys = useMemo(
+    () => Object.keys(recipe.features || {}).filter((k) => recipe.features[k]?.modes),
+    [recipe]
+  );
+  // Default sub-mode per modes-feature for a given variant: a variant can steer
+  // it via `default_modes: { <feature>: <mode> }` (e.g. the DSpark checkpoint
+  // variant defaults spec_decoding to the dspark method); otherwise it falls
+  // back to the feature's own `default_mode`. This keeps the two axes clean —
+  // the variant owns model_id (the served checkpoint), the mode owns args (the
+  // --speculative-config) — while letting a checkpoint pick its natural method.
+  const variantDefaultModes = useCallback(
+    (variantKey) => {
+      const v = recipe.variants?.[variantKey] || recipe.variants?.default || {};
+      const out = {};
+      for (const k of featuredModeKeys) {
+        out[k] = v.default_modes?.[k] || defaultModeFor(recipe.features[k]);
+      }
+      return out;
+    },
+    [recipe, featuredModeKeys]
+  );
+  const defaultModes = useMemo(() => variantDefaultModes(variant), [variantDefaultModes, variant]);
+
+  // Selected sub-mode per modes-feature. URL param `fmode` is a comma list of
+  // `key:mode` pairs; defaults (for the active variant) are omitted so links stay clean.
+  const parseFmode = useCallback((raw) => {
+    const out = {};
+    if (!raw) return out;
+    for (const pair of raw.split(",")) {
+      const [k, m] = pair.split(":");
+      if (k && m && recipe.features?.[k]?.modes?.[m]) out[k] = m;
+    }
+    return out;
+  }, [recipe]);
+  const [featureModes, setFeatureModes] = useState(() => ({
+    ...variantDefaultModes(searchParams.get("variant") || "default"),
+    ...parseFmode(searchParams.get("fmode")),
+  }));
+  const featureModesToUrl = useCallback(
+    (modes, variantKey) => {
+      const defs = variantDefaultModes(variantKey);
+      const parts = [];
+      for (const k of featuredModeKeys) {
+        if (modes[k] && modes[k] !== defs[k]) parts.push(`${k}:${modes[k]}`);
+      }
+      return parts.join(",");
+    },
+    [featuredModeKeys, variantDefaultModes]
+  );
+
+  // Restore saved sub-mode picks (URL wins). Separate from the main mount
+  // effect so it runs after featureModes is declared.
+  useEffect(() => {
+    if (searchParams.get("fmode") || featuredModeKeys.length === 0) return;
+    const rs = loadRecipeState(recipe.hf_id);
+    if (rs.featureModes && typeof rs.featureModes === "object") {
+      const restored = {};
+      for (const k of featuredModeKeys) {
+        const m = rs.featureModes[k];
+        if (m && recipe.features[k]?.modes?.[m]) restored[k] = m;
+      }
+      if (Object.keys(restored).length) setFeatureModes((prev) => ({ ...prev, ...restored }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Advanced tuning flags (defaults off) — toggled independently from features
   const [advanced, setAdvanced] = useState(() => {
     const ap = searchParams.get("advanced");
@@ -723,9 +791,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           decode: { nodes: pdDecodeNodes, rank: pdDecodeRank, parallelism: pdDecodePar },
         }
         : null;
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes);
+      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes);
     },
-    [recipe, variant, activeStrategy, hwId, features, advanced, advancedById, strategies, taxonomy, nodeCount, pdPrefillNodes, pdDecodeNodes, pdPrefillRank, pdDecodeRank, pdPrefillPar, pdDecodePar]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, pdPrefillNodes, pdDecodeNodes, pdPrefillRank, pdDecodeRank, pdPrefillPar, pdDecodePar]
   );
 
   // Visual feedback when any rendered command changes. Covers single-node
@@ -781,6 +849,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       setHwId(next);
       updates.hardware = next;
     }
+    // Reset spec-decoding mode(s) to the new variant's preferred default so
+    // picking the DSpark checkpoint auto-selects the DSpark method (and picking
+    // a plain-precision variant falls back to MTP). A manual mode pick after
+    // this still wins until the next variant switch.
+    if (featuredModeKeys.length) {
+      const nextModes = variantDefaultModes(key);
+      setFeatureModes(nextModes);
+      updates.fmode = featureModesToUrl(nextModes, key);
+      saveRecipeState(recipe.hf_id, { featureModes: nextModes });
+    }
     // One syncUrl call — two sequential calls each read the same stale
     // searchParams from this closure, so the second would clobber the first
     // (dropping variant= when selecting a Blackwell-only variant off Hopper).
@@ -802,6 +880,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     setHwId(id);
     setStrategyOverride("");
     const newProfile = taxonomy.hardware_profiles?.[id] || {};
+    // A selected spec-mode may be gated to specific hardware (e.g. a DFlash
+    // draft that only ships for Blackwell). If the new GPU doesn't support it,
+    // fall back to the first mode that does so the command stays valid.
+    let nextModes = featureModes;
+    for (const k of featuredModeKeys) {
+      const feat = recipe.features[k];
+      const sel = nextModes[k];
+      if (sel && feat.modes[sel] && !isModeSupported(feat.modes[sel], newProfile, id)) {
+        const firstOk = Object.keys(feat.modes).find((mk) => isModeSupported(feat.modes[mk], newProfile, id));
+        if (firstOk) nextModes = { ...nextModes, [k]: firstOk };
+      }
+    }
+    if (nextModes !== featureModes) setFeatureModes(nextModes);
     const newScalable = isHardwareScalable(newProfile);
     // If the active variant cannot run on the new hardware (explicit allowlist,
     // precision, or a non-scalable VRAM shortfall), fall to the largest variant
@@ -842,6 +933,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       strategy: "",
       nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
       features: featuresToUrl(next, id),
+      ...(nextModes !== featureModes ? { fmode: featureModesToUrl(nextModes, variant) } : {}),
       ...(variantUpdate ? { variant: variantUpdate } : {}),
     });
     savePreference("hardware", id);
@@ -851,6 +943,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       strategy: undefined,
       nodes: shouldBumpNodes ? 2 : shouldUnbumpNodes ? 1 : nodeCount,
       features: next,
+      ...(nextModes !== featureModes ? { featureModes: nextModes } : {}),
     });
   };
 
@@ -927,6 +1020,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     setFeatures(next);
     syncUrl({ features: featuresToUrl(next, hwId) });
     saveRecipeState(recipe.hf_id, { features: next });
+  };
+
+  // Pick a sub-mode for a single-select feature (spec_decoding → MTP/DFlash/…).
+  const selectFeatureMode = (featureKey, modeKey) => {
+    const next = { ...featureModes, [featureKey]: modeKey };
+    setFeatureModes(next);
+    syncUrl({ fmode: featureModesToUrl(next, variant) });
+    saveRecipeState(recipe.hf_id, { featureModes: next });
   };
 
   const toggleAdvanced = (id) => {
@@ -1681,6 +1782,37 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               </PillGroup>
             </ConfigRow>
           )}
+
+          {/* Sub-mode selector for single-select features (spec_decoding →
+              MTP / DFlash / DSpark). Only shown while the parent feature is on. */}
+          {featuredModeKeys.map((key) => {
+            if (!features.includes(key)) return null;
+            const feat = recipe.features[key];
+            const active = featureModes[key] || defaultModes[key];
+            const rowLabel = key === "spec_decoding"
+              ? "Spec method"
+              : `${key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} method`;
+            return (
+              <ConfigRow key={`${key}-modes`} label={rowLabel}>
+                <PillGroup>
+                  {Object.entries(feat.modes).map(([mk, m]) => {
+                    const supported = isModeSupported(m, hwProfile, hwId);
+                    return (
+                      <Pill
+                        key={mk}
+                        active={active === mk && supported}
+                        disabled={!supported}
+                        onClick={() => supported && selectFeatureMode(key, mk)}
+                        title={!supported ? "Not supported on this hardware" : m.description}
+                      >
+                        {m.label || mk.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                      </Pill>
+                    );
+                  })}
+                </PillGroup>
+              </ConfigRow>
+            );
+          })}
 
           {/* Advanced (collapsed by default) */}
           <details className="group">
