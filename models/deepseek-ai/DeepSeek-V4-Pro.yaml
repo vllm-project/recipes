@@ -56,10 +56,33 @@ features:
       - "--reasoning-parser"
       - "deepseek_v4"
   spec_decoding:
-    description: "Multi-Token Prediction speculative decoding with 2 speculative tokens."
-    args:
-      - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":2}'
+    description: "Speculative decoding — pick a drafting method."
+    # Mode = the --speculative-config method only (args); the served checkpoint
+    # is owned by the Variant row. Default is MTP; the DSpark variant flips this
+    # to dspark via its `default_modes`. The DSpark checkpoint also runs MTP, so
+    # both modes stay available there.
+    default_mode: mtp
+    modes:
+      mtp:
+        label: "MTP"
+        description: "Built-in Multi-Token Prediction, 2 draft tokens."
+        # MTP ships with the FP8/NVFP4 checkpoints; the fused DSpark checkpoint
+        # uses its own baked-in draft, so MTP isn't offered there.
+        variants:
+          - default
+          - nvfp4
+        args:
+          - "--speculative-config"
+          - '{"method":"mtp","num_speculative_tokens":2}'
+      dspark:
+        label: "DSpark"
+        description: "DSpark drafting, 7 draft tokens, greedy. Requires the DSpark checkpoint (Variant row)."
+        # Only the fused DSpark checkpoint carries the draft.
+        variants:
+          - dspark
+        args:
+          - "--speculative-config"
+          - '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"greedy"}'
 
 opt_in_features:
   - spec_decoding
@@ -74,6 +97,22 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 960
     description: "NVIDIA modelopt NVFP4 checkpoint (MoE experts NVFP4; attention, shared experts, router head, and MTP stay FP8) for Blackwell GPUs."
+  dspark:
+    # Official fused DSpark checkpoint (FP4+FP8 base with the DSpark draft baked
+    # in) — a distinct served repo, so it lives on the Variant axis. Selecting it
+    # defaults the spec-decoding method to dspark (below); the checkpoint also
+    # runs MTP, so that mode stays available.
+    model_id: "deepseek-ai/DeepSeek-V4-Pro-DSpark"
+    label: "DSpark"
+    precision: fp8
+    vram_minimum_gb: 960
+    description: "Official fused DSpark speculative checkpoint — FP4+FP8 base with the DSpark draft baked in."
+    # DSpark support landed after the recipe baseline (0.20.0); it's on nightly
+    # until 0.25.0 ships, so the Install block bumps the version + nightly wheel.
+    min_vllm_version: "0.25.0"
+    nightly_required: true
+    default_modes:
+      spec_decoding: dspark
 
 compatible_strategies:
   - single_node_tp
