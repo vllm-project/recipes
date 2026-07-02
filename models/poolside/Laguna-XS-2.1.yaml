@@ -8,7 +8,9 @@ meta:
   tasks:
     - text
   performance_headline: "33B/3B-A MoE for agentic coding with interleaved thinking and tool use"
-  related_recipes: []
+  related_recipes:
+    - "poolside/Laguna-XS.2"
+    - "poolside/Laguna-M.1"
   hardware:
     h200: verified
 
@@ -75,21 +77,16 @@ guide: |
 
   ## Prerequisites
 
-  Laguna XS-2.1 support is on the open vLLM PR ([vllm-project/vllm#41129](https://github.com/vllm-project/vllm/pull/41129)) — install from a nightly wheel or the pinned Docker image below until the PR lands in a stable release.
+  Laguna XS-2.1 support is available in vLLM 0.21.0 and later (via [PR #41129](https://github.com/vllm-project/vllm/pull/41129)).
 
-  ### Docker (recommended)
+  ### pip
   ```bash
-  docker pull vllm/vllm-openai:laguna
+  uv pip install -U 'vllm>=0.21.0'
   ```
 
-  ### pip (nightly)
+  ### Docker
   ```bash
-  uv venv
-  source .venv/bin/activate
-  uv pip install -U vllm --pre \
-    --extra-index-url https://wheels.vllm.ai/nightly/cu130 \
-    --extra-index-url https://download.pytorch.org/whl/cu130 \
-    --index-strategy unsafe-best-match
+  docker pull vllm/vllm-openai:latest
   ```
 
   ## Launch command
@@ -109,7 +106,7 @@ guide: |
   docker run -itd --name laguna-xs21 \
     --ipc=host --network host --shm-size 16G --gpus all \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai:laguna \
+    vllm/vllm-openai:latest \
       --model poolside/Laguna-XS-2.1 \
       --trust-remote-code \
       --max-model-len 262144 \
@@ -146,7 +143,7 @@ guide: |
   Enable the **Spec Decoding** toggle above to attach Poolside's [DFlash draft model](https://huggingface.co/poolside/Laguna-XS-2.1-DFlash) — a 5-layer Llama-style speculator that proposes up to 15 tokens per step. Reported end-to-end speedup is 1.67x–2.64x across evaluation datasets, with a mean accepted length of 3.55–4.57 tokens per step.
 
   Requires:
-  - vLLM built from [PR #41880](https://github.com/vllm-project/vllm/pull/41880) (extends the base Laguna PR with DFlash support).
+  - vLLM built from [PR #46853](https://github.com/vllm-project/vllm/pull/46853) (adds DFlash drafter support for Laguna-XS-2.1) — not yet in a stable release.
   - `VLLM_USE_DEEP_GEMM=0` in the launch environment — DeepGEMM is currently incompatible with the DFlash draft path.
 
   Example:
@@ -166,5 +163,5 @@ guide: |
   - [Model card](https://huggingface.co/poolside/Laguna-XS-2.1)
   - [Release blog post](https://poolside.ai/blog/laguna-a-deeper-dive)
   - [vLLM support PR #41129](https://github.com/vllm-project/vllm/pull/41129)
-  - [vLLM DFlash spec-decoding PR #41880](https://github.com/vllm-project/vllm/pull/41880)
+  - [vLLM DFlash spec-decoding PR #46853](https://github.com/vllm-project/vllm/pull/46853)
   - [DFlash draft model](https://huggingface.co/poolside/Laguna-XS-2.1-DFlash)
