@@ -107,6 +107,10 @@ variants:
     precision: fp8
     vram_minimum_gb: 960
     description: "Official fused DSpark speculative checkpoint — FP4+FP8 base with the DSpark draft baked in."
+    # DSpark support landed after the recipe baseline (0.20.0); it's on nightly
+    # until 0.25.0 ships, so the Install block bumps the version + nightly wheel.
+    min_vllm_version: "0.25.0"
+    nightly_required: true
     default_modes:
       spec_decoding: dspark
 

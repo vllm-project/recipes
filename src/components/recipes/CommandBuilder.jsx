@@ -1319,6 +1319,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         <div className="space-y-4">
           <InstallBlock
             recipe={recipe}
+            variant={currentVariant}
             dockerMeta={dockerMeta}
             installMode={effectiveInstallMode}
             setInstallMode={setInstallMode}
@@ -1460,6 +1461,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           so switching from either place keeps them in sync). */}
         <InstallBlock
           recipe={recipe}
+            variant={currentVariant}
           dockerMeta={dockerMeta}
           installMode={effectiveInstallMode}
           setInstallMode={setInstallMode}
@@ -2054,7 +2056,22 @@ function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader, i
   );
 }
 
-function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode, dockerCudaVariant, setDockerCudaVariant, altCudaSuffix }) {
+// Higher of two "X.Y.Z" version strings (missing/blank loses). Used to bump the
+// displayed min vLLM version when the active variant needs a newer release than
+// the recipe baseline (e.g. the DSpark checkpoint requires 0.25.0).
+function maxVersion(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const pa = String(a).split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d > 0 ? a : b;
+  }
+  return a;
+}
+
+function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode, dockerCudaVariant, setDockerCudaVariant, altCudaSuffix }) {
   // Collapsible install reference. Shows the one-time setup step for the
   // active mode — `uv pip install vllm …` in pip mode, `docker pull <image>`
   // in docker mode. The active tab mirrors the command card's mode toggle
@@ -2070,7 +2087,10 @@ function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode, dockerC
   const dockerHidden = dockerCfg === false;
   const [open, setOpen] = useState(false);
   const { isAmd, isTpu, image: dockerImage, brandKey, cudaMap } = dockerMeta;
-  const minV = recipe.model?.min_vllm_version;
+  // A variant may require a newer vLLM than the recipe baseline (e.g. the DSpark
+  // checkpoint needs 0.25.0, currently nightly). Take the higher version and OR
+  // the nightly flag so the Install block reflects the selected checkpoint.
+  const minV = maxVersion(recipe.model?.min_vllm_version, variant?.min_vllm_version);
   // Omni recipes are served by vLLM-Omni, a fast-moving companion package that
   // tracks vLLM nightly (Wan2.2 even pins a git commit). Surface it next to the
   // vLLM version so users know the generation path needs nightly wheels.
@@ -2081,7 +2101,7 @@ function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode, dockerC
   // swaps the default pip command to the nightly wheel index and surfaces a
   // pill in the Install header. Manual `install.pip.command` overrides still
   // win — this flag only affects the default.
-  const nightlyRequired = recipe.model?.nightly_required === true;
+  const nightlyRequired = recipe.model?.nightly_required === true || variant?.nightly_required === true;
   // Resolve the CUDA tag for pip's nightly wheel index from the same toggle
   // that drives the Docker tag suffix. "default" → cu130 (today's upstream
   // baseline); explicit picks pass through.
