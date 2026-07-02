@@ -69,7 +69,7 @@ Top-level keys, in this order:
 - `omni` (optional) — vllm-omni online-serving config. Required when `meta.tasks` includes `omni`. Shape: `{ serve_binary?, port?, tasks: [...] }`. `tasks` accepts bare ids from the catalog (`t2i`, `i2i`, `t2v`, `i2v`, `ti2v`, `t2a`) or `{ id, model_id?, vram_minimum_gb?, description?, extra_args?, curl? }` overrides — Wan2.2 uses overrides to swap the served checkpoint per task. `serve_binary: "vllm-omni serve"` swaps the binary for handlers that don't ship in the `vllm` console-script (today: stable-audio-open). Catalog lives at `src/lib/omni-tasks.js`.
 - `guide` — markdown string (`|`-block), rendered with `react-markdown` + `remark-gfm` + `rehype-slug`.
 
-**VRAM formula**: `vram_minimum_gb = ceil(params × bytes × 1.2)`. Bytes per param: bf16/fp16=2, fp8/int8/awq/gptq=1, int4/nvfp4/fp4/mxfp4=0.5. For MoE, use total params (inactive experts still live in VRAM).
+**VRAM formula**: `vram_minimum_gb = ceil(params × bytes × 1.2)`. Bytes per param: bf16/fp16=2, fp8/int8/awq/gptq=1, int4/nvfp4/fp4/mxfp4=0.5. For MoE, use total params (inactive experts still live in VRAM). **Exception — mixed-precision quants (NVFP4/ModelOpt, `hf_quant_config.json` → `quant_algo: MIXED_PRECISION`):** only MLP linears are 4-bit while attention/KV/embeddings stay FP8+, so the table underestimates. Size from the real checkpoint instead: `ceil(safetensors total_size_GB × 1.2)`.
 
 ### Non-obvious design decisions
 
