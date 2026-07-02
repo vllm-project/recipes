@@ -72,6 +72,9 @@ features:
       dspark:
         label: "DSpark"
         description: "DSpark drafting, 7 draft tokens, greedy. Requires the DSpark checkpoint (Variant row)."
+        # Only the fused DSpark checkpoint carries the draft; FP8/NVFP4 offer MTP only.
+        variants:
+          - dspark
         args:
           - "--speculative-config"
           - '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"greedy"}'

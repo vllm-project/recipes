@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey } from "@/lib/command-synthesis";
 import { resolveOmniTasks } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -586,13 +586,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const variantDefaultModes = useCallback(
     (variantKey) => {
       const v = recipe.variants?.[variantKey] || recipe.variants?.default || {};
+      const hp = taxonomy.hardware_profiles?.[hwId];
       const out = {};
       for (const k of featuredModeKeys) {
-        out[k] = v.default_modes?.[k] || defaultModeFor(recipe.features[k]);
+        out[k] = resolveModeKey(recipe.features[k], k, v, variantKey, hp, hwId, undefined);
       }
       return out;
     },
-    [recipe, featuredModeKeys]
+    [recipe, featuredModeKeys, taxonomy, hwId]
   );
   const defaultModes = useMemo(() => variantDefaultModes(variant), [variantDefaultModes, variant]);
 
@@ -1788,14 +1789,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           {featuredModeKeys.map((key) => {
             if (!features.includes(key)) return null;
             const feat = recipe.features[key];
-            const active = featureModes[key] || defaultModes[key];
+            // Only modes available on the current checkpoint (variant). If a
+            // single method is available (e.g. FP8/NVFP4 → MTP only), the row is
+            // redundant with the feature toggle, so don't render it — the toggle
+            // alone means "MTP on". The DSpark checkpoint exposes {MTP, DSpark}.
+            const availEntries = Object.entries(feat.modes).filter(([, m]) => isModeAllowedForVariant(m, variant));
+            if (availEntries.length < 2) return null;
+            const active = resolveModeKey(feat, key, currentVariant, variant, hwProfile, hwId, featureModes[key]);
             const rowLabel = key === "spec_decoding"
               ? "Spec method"
               : `${key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} method`;
             return (
               <ConfigRow key={`${key}-modes`} label={rowLabel}>
                 <PillGroup>
-                  {Object.entries(feat.modes).map(([mk, m]) => {
+                  {availEntries.map(([mk, m]) => {
                     const supported = isModeSupported(m, hwProfile, hwId);
                     return (
                       <Pill
