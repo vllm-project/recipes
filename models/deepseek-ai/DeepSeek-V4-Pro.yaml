@@ -66,13 +66,18 @@ features:
       mtp:
         label: "MTP"
         description: "Built-in Multi-Token Prediction, 2 draft tokens."
+        # MTP ships with the FP8/NVFP4 checkpoints; the fused DSpark checkpoint
+        # uses its own baked-in draft, so MTP isn't offered there.
+        variants:
+          - default
+          - nvfp4
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":2}'
       dspark:
         label: "DSpark"
         description: "DSpark drafting, 7 draft tokens, greedy. Requires the DSpark checkpoint (Variant row)."
-        # Only the fused DSpark checkpoint carries the draft; FP8/NVFP4 offer MTP only.
+        # Only the fused DSpark checkpoint carries the draft.
         variants:
           - dspark
         args:
