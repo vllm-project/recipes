@@ -543,20 +543,24 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // The per-hw override lets a recipe suppress a feature's default on specific
   // hardware (e.g. GB200's 4-GPU trays make --mm-encoder-tp-mode data unnecessary).
   const defaultFeaturesFor = useCallback(
-    (hw) => {
+    (hw, variantKey) => {
       const optIn = new Set(recipe.opt_in_features || []);
       for (const f of recipe.hardware_opt_in_features?.[hw] || []) optIn.add(f);
-      return Object.keys(recipe.features || {}).filter((f) => !optIn.has(f));
+      // A variant that declares a preferred mode for a feature (`default_modes`)
+      // wants that feature on — un-opt-in it for this variant. E.g. selecting
+      // the fused DSpark checkpoint auto-enables spec_decoding (default: dspark).
+      const forced = new Set(Object.keys(recipe.variants?.[variantKey]?.default_modes || {}));
+      return Object.keys(recipe.features || {}).filter((f) => forced.has(f) || !optIn.has(f));
     },
     [recipe]
   );
 
   // Encode a features array for the URL: returns "" (which syncUrl deletes)
-  // when the set matches the YAML default for `hw`, so links stay clean unless
-  // the user actually deviated.
+  // when the set matches the YAML default for `hw`+`variantKey`, so links stay
+  // clean unless the user actually deviated.
   const featuresToUrl = useCallback(
-    (arr, hw) => {
-      const want = new Set(defaultFeaturesFor(hw));
+    (arr, hw, variantKey) => {
+      const want = new Set(defaultFeaturesFor(hw, variantKey));
       const got = new Set(arr);
       const same = want.size === got.size && [...want].every((f) => got.has(f));
       return same ? "" : arr.join(",");
@@ -568,7 +572,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const fp = searchParams.get("features");
     if (fp) return fp.split(",").filter(Boolean);
     const urlHw = searchParams.get("hardware") || defaultHw;
-    return defaultFeaturesFor(urlHw);
+    const urlVariant = searchParams.get("variant") || "default";
+    return defaultFeaturesFor(urlHw, urlVariant);
   });
 
   // Features that are single-select ("pick one of N") rather than boolean —
@@ -860,6 +865,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       updates.fmode = featureModesToUrl(nextModes, key);
       saveRecipeState(recipe.hf_id, { featureModes: nextModes });
     }
+    // Enable features the new variant forces on (`default_modes`, e.g. the
+    // DSpark checkpoint auto-enables spec_decoding), and drop the previous
+    // variant's forced-only features unless they're a plain default here.
+    const oldForced = new Set(Object.keys(currentVariant?.default_modes || {}));
+    const newForced = Object.keys(v.default_modes || {});
+    const baseDefault = new Set(defaultFeaturesFor(updates.hardware || hwId, key));
+    let nextFeatures = features.filter((f) => !oldForced.has(f) || newForced.includes(f) || baseDefault.has(f));
+    for (const f of newForced) if (recipe.features?.[f] && !nextFeatures.includes(f)) nextFeatures.push(f);
+    if (nextFeatures.length !== features.length || nextFeatures.some((f, i) => f !== features[i])) {
+      setFeatures(nextFeatures);
+      updates.features = featuresToUrl(nextFeatures, updates.hardware || hwId, key);
+      saveRecipeState(recipe.hf_id, { features: nextFeatures });
+    }
     // One syncUrl call — two sequential calls each read the same stale
     // searchParams from this closure, so the second would clobber the first
     // (dropping variant= when selecting a Blackwell-only variant off Hopper).
@@ -933,7 +951,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       hardware: id,
       strategy: "",
       nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
-      features: featuresToUrl(next, id),
+      features: featuresToUrl(next, id, variant),
       ...(nextModes !== featureModes ? { fmode: featureModesToUrl(nextModes, variant) } : {}),
       ...(variantUpdate ? { variant: variantUpdate } : {}),
     });
@@ -1019,7 +1037,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       ? [...features.filter((x) => x !== mutex[f]), f]
       : features.filter((x) => x !== f);
     setFeatures(next);
-    syncUrl({ features: featuresToUrl(next, hwId) });
+    syncUrl({ features: featuresToUrl(next, hwId, variant) });
     saveRecipeState(recipe.hf_id, { features: next });
   };
 
