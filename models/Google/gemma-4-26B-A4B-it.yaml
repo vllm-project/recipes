@@ -166,7 +166,8 @@ guide: |
   ```bash
   vllm serve google/gemma-4-26B-A4B-it \
     --max-model-len 32768 \
-    --gpu-memory-utilization 0.90
+    --gpu-memory-utilization 0.90 \
+    --max-num-batched-tokens 4096
   ```
 
   ### Full-Featured Server Launch
@@ -175,6 +176,7 @@ guide: |
   vllm serve google/gemma-4-26B-A4B-it \
     --max-model-len 16384 \
     --gpu-memory-utilization 0.90 \
+    --max-num-batched-tokens 4096 \
     --enable-auto-tool-choice \
     --reasoning-parser gemma4 \
     --tool-call-parser gemma4 \
@@ -194,6 +196,7 @@ guide: |
       --model google/gemma-4-26B-A4B-it \
       --max-model-len 32768 \
       --gpu-memory-utilization 0.90 \
+      --max-num-batched-tokens 4096 \
       --host 0.0.0.0 --port 8000
   ```
   Swap `vllm/vllm-openai:gemma4-0505-cu129` for `vllm/vllm-openai:gemma4-0505-cu130` on Blackwell (B200/B300).
