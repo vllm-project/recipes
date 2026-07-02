@@ -206,6 +206,16 @@ Example: a 70B BF16 model → `70 × 2 × 1.2 = 168 GB`. Round up.
 
 If the variant is `model_id`-overridden and the override is a different base model with its own param count (e.g. a distilled FP4 checkpoint), use the override's parameter count — verify it via HF.
 
+**Mixed-precision quants (NVFP4 / ModelOpt) — don't trust the bytes-per-param table.** NVIDIA ModelOpt NVFP4 checkpoints are *not* uniformly 4-bit: only the MLP linears drop to NVFP4 (W4A16), while attention linears + KV cache stay FP8 and embeddings/norms stay higher precision. `hf_quant_config.json` shows `quant_algo: MIXED_PRECISION` in this case. The pure `params × 0.5 × 1.2` formula then **underestimates** — e.g. `nvidia/Qwen3.6-27B-NVFP4` is ~21.9 GB on disk, not the 13.5 GB the table implies, so `27B × 0.5 × 1.2 = 17` is wrong (the weights alone exceed it). For any mixed-precision checkpoint, size from the **real weight footprint** instead:
+
+```bash
+# total_size is in bytes → GB; then × 1.2 for KV/activation overhead
+curl -sL "https://huggingface.co/<org>/<repo>/resolve/main/model.safetensors.index.json" \
+  | python3 -c "import json,sys; print(round(json.load(sys.stdin)['metadata']['total_size']/1e9*1.2))"
+```
+
+So `vram_minimum_gb = ceil(real_checkpoint_GB × 1.2)` (Qwen3.6-27B-NVFP4 → `ceil(21.9 × 1.2) = 27`). The bytes-per-param table stays correct for *uniform* quants (plain int4/awq/gptq/fp8, and full-model FP4).
+
 ## Naming and conventions
 
 - **Feature keys**: prefer `tool_calling`, `reasoning`, `spec_decoding`. Don't use `mtp` — it's been renamed across the repo.
