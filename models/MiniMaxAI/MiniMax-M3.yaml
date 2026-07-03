@@ -456,13 +456,19 @@ guide: |
   or launch the tested TP8 baseline directly:
 
   ```bash
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_MOE=1
+  export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
+
   vllm serve amd/MiniMax-M3-MXFP4 \
     --tensor-parallel-size 8 \
     --trust-remote-code \
     --block-size 128 \
+    --no-enable-prefix-caching \
+    --language-model-only \
+    --max-model-len "$MAX_MODEL_LEN" \
     --attention-backend TRITON_ATTN \
-    --mm-encoder-tp-mode data \
-    --mm-encoder-attn-backend ROCM_AITER_FA \
+    --moe-backend aiter \
     --tool-call-parser minimax_m3 \
     --enable-auto-tool-choice \
     --reasoning-parser minimax_m3
