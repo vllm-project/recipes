@@ -42,6 +42,8 @@ features:
     args:
       - "--speculative-config"
       - '{"model":"poolside/Laguna-XS-2.1-DFlash","num_speculative_tokens":15,"method":"dflash"}'
+      - "--moe-backend"
+      - "triton"
 
 opt_in_features:
   - spec_decoding
@@ -51,6 +53,26 @@ variants:
     precision: bf16
     vram_minimum_gb: 80
     description: "BF16 weights — fits on a single 80GB+ GPU (H100/H200/B200)"
+  fp8:
+    model_id: "poolside/Laguna-XS-2.1-FP8"
+    precision: fp8
+    vram_minimum_gb: 40
+    min_vllm_version: "0.22.0"
+    description: "Block-FP8 weights + FP8 KV cache — halves VRAM, fits on a single 40GB+ GPU"
+    extra_env:
+      VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER: "0"
+  nvfp4:
+    model_id: "poolside/Laguna-XS-2.1-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 26
+    min_vllm_version: "0.22.0"
+    description: "NVFP4 weights + FP8 KV cache (Blackwell only) — the most compact variant at ~26GB"
+  int4:
+    model_id: "poolside/Laguna-XS-2.1-INT4"
+    precision: int4
+    vram_minimum_gb: 29
+    min_vllm_version: "0.22.0"
+    description: "INT4 (W4A16) weights + FP8 KV cache — fits on a single 32GB+ GPU"
 
 compatible_strategies:
   - single_node_tp
@@ -88,6 +110,23 @@ guide: |
   ```bash
   docker pull vllm/vllm-openai:latest
   ```
+
+  ## Quantized variants
+
+  Pre-quantized checkpoints are published alongside the BF16 weights — select one with the **Variant** control above:
+
+  | Variant | Checkpoint | Weights | ~VRAM | Notes |
+  |---------|-----------|---------|-------|-------|
+  | BF16 | [Laguna-XS-2.1](https://huggingface.co/poolside/Laguna-XS-2.1) | BF16 | 80 GB | Default |
+  | FP8 | [Laguna-XS-2.1-FP8](https://huggingface.co/poolside/Laguna-XS-2.1-FP8) | Block-FP8 | 40 GB | Set `VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER=0` |
+  | NVFP4 | [Laguna-XS-2.1-NVFP4](https://huggingface.co/poolside/Laguna-XS-2.1-NVFP4) | NVFP4 | 26 GB | Blackwell only |
+  | INT4 | [Laguna-XS-2.1-INT4](https://huggingface.co/poolside/Laguna-XS-2.1-INT4) | INT4 (W4A16) | 29 GB | Hopper or Blackwell |
+
+  Quantization is detected automatically from each checkpoint's `quantization_config`, so the launch command is identical — just swap the model ID (select the variant above). All three quantized checkpoints ship an **FP8-quantized KV cache**.
+
+  > **vLLM ≥ 0.22.0 required for the quantized variants.** The FP8 KV cache needs the per-layer attention-head fix in [vllm#42650](https://github.com/vllm-project/vllm/pull/42650); earlier versions produce scrambled output on non-Hopper GPUs. On older vLLM you can disable the FP8 KV cache with `--kv-cache-dtype-skip-layers $(seq 0 39)`.
+
+  Precision-matched DFlash speculators are also available for each quantization — [DFlash-FP8](https://huggingface.co/poolside/Laguna-XS-2.1-DFlash-FP8), [DFlash-NVFP4](https://huggingface.co/poolside/Laguna-XS-2.1-DFlash-NVFP4), and [DFlash-INT4](https://huggingface.co/poolside/Laguna-XS-2.1-DFlash-INT4) — if you want to pair speculative decoding with a quantized base at matching precision.
 
   ## Launch command
 
@@ -144,18 +183,19 @@ guide: |
 
   Requires:
   - vLLM built from [PR #46853](https://github.com/vllm-project/vllm/pull/46853) (adds DFlash drafter support for Laguna-XS-2.1) — not yet in a stable release.
-  - `VLLM_USE_DEEP_GEMM=0` in the launch environment — DeepGEMM is currently incompatible with the DFlash draft path.
+  - `--moe-backend triton` — the default DeepGEMM MoE backend is currently incompatible with the DFlash draft path, so force the Triton MoE backend. Enabling the **Spec Decoding** toggle above adds this flag automatically.
 
   Example:
 
   ```bash
-  VLLM_USE_DEEP_GEMM=0 vllm serve poolside/Laguna-XS-2.1 \
+  vllm serve poolside/Laguna-XS-2.1 \
     --trust-remote-code \
     --max-model-len 16384 \
     --enable-auto-tool-choice \
     --tool-call-parser poolside_v1 \
     --reasoning-parser poolside_v1 \
-    --speculative-config '{"model":"poolside/Laguna-XS-2.1-DFlash","num_speculative_tokens":15,"method":"dflash"}'
+    --speculative-config '{"model":"poolside/Laguna-XS-2.1-DFlash","num_speculative_tokens":15,"method":"dflash"}' \
+    --moe-backend triton
   ```
 
   ## References

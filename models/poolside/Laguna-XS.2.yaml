@@ -49,6 +49,26 @@ variants:
     precision: bf16
     vram_minimum_gb: 80
     description: "BF16 weights — fits on a single 80GB+ GPU (H100/H200/B200)"
+  fp8:
+    model_id: "poolside/Laguna-XS.2-FP8"
+    precision: fp8
+    vram_minimum_gb: 40
+    min_vllm_version: "0.22.0"
+    description: "Block-FP8 weights + FP8 KV cache — halves VRAM, fits on a single 40GB+ GPU"
+    extra_env:
+      VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER: "0"
+  nvfp4:
+    model_id: "poolside/Laguna-XS.2-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 26
+    min_vllm_version: "0.22.0"
+    description: "NVFP4 weights + FP8 KV cache (Blackwell only) — the most compact variant at ~26GB"
+  int4:
+    model_id: "poolside/Laguna-XS.2-INT4"
+    precision: int4
+    vram_minimum_gb: 29
+    min_vllm_version: "0.22.0"
+    description: "INT4 (W4A16) weights + FP8 KV cache — fits on a single 32GB+ GPU"
 
 compatible_strategies:
   - single_node_tp
@@ -91,6 +111,21 @@ guide: |
     --extra-index-url https://download.pytorch.org/whl/cu130 \
     --index-strategy unsafe-best-match
   ```
+
+  ## Quantized variants
+
+  Pre-quantized checkpoints are published alongside the BF16 weights — select one with the **Variant** control above:
+
+  | Variant | Checkpoint | Weights | ~VRAM | Notes |
+  |---------|-----------|---------|-------|-------|
+  | BF16 | [Laguna-XS.2](https://huggingface.co/poolside/Laguna-XS.2) | BF16 | 80 GB | Default |
+  | FP8 | [Laguna-XS.2-FP8](https://huggingface.co/poolside/Laguna-XS.2-FP8) | Block-FP8 | 40 GB | Set `VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER=0` |
+  | NVFP4 | [Laguna-XS.2-NVFP4](https://huggingface.co/poolside/Laguna-XS.2-NVFP4) | NVFP4 | 26 GB | Blackwell only |
+  | INT4 | [Laguna-XS.2-INT4](https://huggingface.co/poolside/Laguna-XS.2-INT4) | INT4 (W4A16) | 29 GB | Hopper or Blackwell |
+
+  Quantization is detected automatically from each checkpoint's `quantization_config`, so the launch command is identical — just swap the model ID (select the variant above). All three quantized checkpoints ship an **FP8-quantized KV cache**.
+
+  > **vLLM ≥ 0.22.0 required for the quantized variants.** The FP8 KV cache needs the per-layer attention-head fix in [vllm#42650](https://github.com/vllm-project/vllm/pull/42650); earlier versions produce scrambled output on non-Hopper GPUs. On older vLLM you can disable the FP8 KV cache with `--kv-cache-dtype-skip-layers $(seq 0 39)`.
 
   ## Launch command
 
