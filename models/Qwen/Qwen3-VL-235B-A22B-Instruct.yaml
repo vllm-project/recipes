@@ -178,8 +178,9 @@ guide: |
   ### MI300X/MI325X/MI355X (BF16, TP8)
   ```bash
   export SAFETENSORS_FAST_GPU="1"
-  export VLLM_WORKER_MULTIPROC_METHOD="spawn"
+  export HIP_FORCE_DEV_KERNARG="1"
   export HIP_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
+  export VLLM_WORKER_MULTIPROC_METHOD="spawn"
   export VLLM_ROCM_USE_AITER="1"
   export VLLM_ROCM_USE_AITER_MHA="1"
   export VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT="1"
@@ -227,13 +228,16 @@ guide: |
   Adds EAGLE3 speculative decoding (`RedHatAI/Qwen3-VL-235B-A22B-Instruct-speculator.eagle3`) on top of the FP8 target. **`--attention-backend ROCM_AITER_FA` is mandatory** — the default `ROCM_ATTN` path makes SD slower than baseline on ROCm. Keep `VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=0` and omit `--async-scheduling` (incompatible with SD).
 
   ```bash
-  export VLLM_USE_V1=1
-  export VLLM_WORKER_MULTIPROC_METHOD=spawn
-  export VLLM_ROCM_USE_AITER=1
-  export VLLM_ROCM_USE_AITER_MHA=1
-  export VLLM_ROCM_USE_AITER_RMSNORM=0
-  export VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=0
-  export VLLM_RPC_TIMEOUT=300000
+  export SAFETENSORS_FAST_GPU="1"
+  export HIP_FORCE_DEV_KERNARG="1"
+  export HIP_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
+  export VLLM_USE_V1="1"
+  export VLLM_WORKER_MULTIPROC_METHOD="spawn"
+  export VLLM_ROCM_USE_AITER="1"
+  export VLLM_ROCM_USE_AITER_MHA="1"
+  export VLLM_ROCM_USE_AITER_RMSNORM="0"
+  export VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT="0"
+  export VLLM_RPC_TIMEOUT="300000"
 
   vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
     --tensor-parallel-size 8 \
