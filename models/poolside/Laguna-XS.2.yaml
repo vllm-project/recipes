@@ -48,7 +48,7 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 80
-    description: "BF16 weights — fits on a single 80GB+ GPU (H100/H200/B200)"
+    description: "BF16 weights; the guide shows the requested TP=8 launch command"
 
 compatible_strategies:
   - single_node_tp
@@ -59,7 +59,7 @@ hardware_overrides: {}
 
 strategy_overrides:
   single_node_tp:
-    tp: 1
+    tp: 8
 
 guide: |
   ## Overview
@@ -94,11 +94,19 @@ guide: |
 
   ## Launch command
 
-  ### Single GPU (H100/H200/B200, BF16)
+  ### 8-GPU tensor parallel launch
   ```bash
   vllm serve poolside/Laguna-XS.2 \
     --trust-remote-code \
-    --max-model-len 262144 \
+    --tensor-parallel-size 8
+  ```
+
+  Optional parser flags:
+
+  ```bash
+  vllm serve poolside/Laguna-XS.2 \
+    --trust-remote-code \
+    --tensor-parallel-size 8 \
     --enable-auto-tool-choice \
     --tool-call-parser poolside_v1 \
     --reasoning-parser poolside_v1
@@ -112,7 +120,7 @@ guide: |
     vllm/vllm-openai:laguna \
       --model poolside/Laguna-XS.2 \
       --trust-remote-code \
-      --max-model-len 262144 \
+      --tensor-parallel-size 8 \
       --enable-auto-tool-choice \
       --tool-call-parser poolside_v1 \
       --reasoning-parser poolside_v1 \
