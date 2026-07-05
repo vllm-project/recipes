@@ -41,8 +41,8 @@ variants:
     description: "BF16 FLUX.1-schnell checkpoint; vLLM-Omni docs report ~31.4 GiB peak VRAM for a basic 1024x1024, batch=1 run."
   fp8:
     precision: fp8
-    vram_minimum_gb: 16
-    description: "FP8 weight quantization supported by vLLM-Omni for FLUX.1."
+    vram_minimum_gb: 24
+    description: "FP8 weight quantization supported by vLLM-Omni for FLUX.1; budget at least 24 GiB VRAM for the model, text encoders, and activations unless using CPU offload."
     extra_args:
       - "--quantization"
       - "fp8"
