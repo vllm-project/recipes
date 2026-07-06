@@ -19,7 +19,7 @@ meta:
 
 model:
   model_id: "moonshotai/Kimi-K2.6"
-  min_vllm_version: "0.19.1"
+  min_vllm_version: "0.24.0"
   docker_image:
     nvidia: "vllm/vllm-openai:latest"
     amd: "vllm/vllm-openai-rocm:nightly"
@@ -80,8 +80,7 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+    extra_env: {}
 
 compatible_strategies:
   - single_node_tp

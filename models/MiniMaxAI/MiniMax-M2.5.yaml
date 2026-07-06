@@ -18,7 +18,7 @@ meta:
 
 model:
   model_id: "MiniMaxAI/MiniMax-M2.5"
-  min_vllm_version: "0.20.2"
+  min_vllm_version: "0.24.0"
   docker_image: "vllm/vllm-openai:v0.20.2"
   architecture: moe
   parameter_count: "230B"
@@ -56,8 +56,7 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+    extra_env: {}
 
 compatible_strategies:
   - single_node_tp

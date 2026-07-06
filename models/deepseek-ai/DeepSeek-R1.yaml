@@ -18,7 +18,7 @@ meta:
 
 model:
   model_id: "deepseek-ai/DeepSeek-R1"
-  min_vllm_version: "0.12.0"
+  min_vllm_version: "0.24.0"
   architecture: moe
   parameter_count: "671B"
   active_parameters: "37B"
@@ -64,8 +64,7 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+    extra_env: {}
 
 compatible_strategies:
   - single_node_tp
@@ -80,12 +79,10 @@ compatible_strategies:
 hardware_overrides:
   hopper:
     extra_args: []
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP8: "1"
+    extra_env: {}
   blackwell:
     extra_args: []
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+    extra_env: {}
   amd:
     # AITER attention wins over Triton FA for DeepSeek MoE on MI300X/MI325X/MI355X.
     extra_args: []
@@ -139,13 +136,7 @@ guide: |
 
   ### 4xB200 (FP4)
 
-  Enable FlashInfer MoE kernels before launching:
-  ```bash
-  # For FP4 (recommended on Blackwell)
-  export VLLM_USE_FLASHINFER_MOE_FP4=1
-  # For FP8 on Blackwell
-  export VLLM_USE_FLASHINFER_MOE_FP8=1
-  ```
+  On Blackwell, vLLM auto-selects the FlashInfer MoE kernels — no env vars needed.
 
   Tensor Parallel + Expert Parallel (TP4+EP):
   ```bash

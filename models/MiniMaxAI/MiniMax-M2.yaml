@@ -18,7 +18,7 @@ meta:
 
 model:
   model_id: "MiniMaxAI/MiniMax-M2"
-  min_vllm_version: "0.11.0"
+  min_vllm_version: "0.24.0"
   architecture: moe
   parameter_count: "230B"
   active_parameters: "10B"
@@ -60,8 +60,7 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+    extra_env: {}
 
 compatible_strategies:
   - single_node_tp
@@ -230,7 +229,7 @@ guide: |
 
   [`RedHatAI/MiniMax-M2-NVFP4`](https://huggingface.co/RedHatAI/MiniMax-M2-NVFP4) is an NVFP4 (4-bit)
   checkpoint — roughly half the VRAM of the native FP8 checkpoint. Select the **nvfp4** variant
-  above (it sets `VLLM_USE_FLASHINFER_MOE_FP4=1` and `--kv-cache-dtype fp8`), or pass the repo id
+  above (it sets `--kv-cache-dtype fp8`; FlashInfer MoE is auto-selected on Blackwell), or pass the repo id
   directly to `vllm serve`. NVFP4 requires a Blackwell GPU (compute capability 10.0+).
 
   ## References

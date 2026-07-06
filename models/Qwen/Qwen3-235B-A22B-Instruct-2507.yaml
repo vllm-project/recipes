@@ -17,7 +17,7 @@ meta:
 
 model:
   model_id: "Qwen/Qwen3-235B-A22B-Instruct-2507"
-  min_vllm_version: "0.10.0"
+  min_vllm_version: "0.24.0"
   architecture: moe
   parameter_count: "235B"
   active_parameters: "22B"
@@ -56,8 +56,7 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+    extra_env: {}
 
 compatible_strategies:
   - single_node_tp
