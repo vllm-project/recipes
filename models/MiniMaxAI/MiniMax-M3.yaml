@@ -59,6 +59,12 @@ features:
     args:
       - "--speculative-config"
       - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
+    hardware_overrides:
+      # On ROCm the Eagle3 draft head prefers the TRITON_ATTN attn backend as it has better performance than the default.
+      amd:
+        args:
+          - "--speculative-config"
+          - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "TRITON_ATTN"}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
