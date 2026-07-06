@@ -1458,7 +1458,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             dockerCudaVariant={dockerCudaVariant}
             setDockerCudaVariant={setDockerCudaVariant}
             altCudaSuffix={altCudaSuffix}
-            strategyMinVersion={strategies[activeStrategy]?.min_vllm_version}
           />
 
           {effectiveInstallMode !== "docker" && dependencies.length > 0 && (
@@ -1601,7 +1600,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           dockerCudaVariant={dockerCudaVariant}
           setDockerCudaVariant={setDockerCudaVariant}
           altCudaSuffix={altCudaSuffix}
-          strategyMinVersion={strategies[activeStrategy]?.min_vllm_version}
         />
 
         {/* ── Dependencies / extra install ──
