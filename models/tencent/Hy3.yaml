@@ -16,7 +16,9 @@ meta:
 model:
   model_id: "tencent/Hy3"
   min_vllm_version: "0.20.0"
-  docker_image: "vllm/vllm-openai:hy3"
+  docker_image:
+    nvidia: "vllm/vllm-openai:hy3"
+    amd: "vllm/vllm-openai-rocm:latest"
   nightly_required: true
   install:
     docker:
