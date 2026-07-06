@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey } from "@/lib/command-synthesis";
 import { resolveOmniTasks } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -566,20 +566,24 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // The per-hw override lets a recipe suppress a feature's default on specific
   // hardware (e.g. GB200's 4-GPU trays make --mm-encoder-tp-mode data unnecessary).
   const defaultFeaturesFor = useCallback(
-    (hw) => {
+    (hw, variantKey) => {
       const optIn = new Set(recipe.opt_in_features || []);
       for (const f of recipe.hardware_opt_in_features?.[hw] || []) optIn.add(f);
-      return Object.keys(recipe.features || {}).filter((f) => !optIn.has(f));
+      // A variant that declares a preferred mode for a feature (`default_modes`)
+      // wants that feature on — un-opt-in it for this variant. E.g. selecting
+      // the fused DSpark checkpoint auto-enables spec_decoding (default: dspark).
+      const forced = new Set(Object.keys(recipe.variants?.[variantKey]?.default_modes || {}));
+      return Object.keys(recipe.features || {}).filter((f) => forced.has(f) || !optIn.has(f));
     },
     [recipe]
   );
 
   // Encode a features array for the URL: returns "" (which syncUrl deletes)
-  // when the set matches the YAML default for `hw`, so links stay clean unless
-  // the user actually deviated.
+  // when the set matches the YAML default for `hw`+`variantKey`, so links stay
+  // clean unless the user actually deviated.
   const featuresToUrl = useCallback(
-    (arr, hw) => {
-      const want = new Set(defaultFeaturesFor(hw));
+    (arr, hw, variantKey) => {
+      const want = new Set(defaultFeaturesFor(hw, variantKey));
       const got = new Set(arr);
       const same = want.size === got.size && [...want].every((f) => got.has(f));
       return same ? "" : arr.join(",");
@@ -591,8 +595,78 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const fp = searchParams.get("features");
     if (fp) return fp.split(",").filter(Boolean);
     const urlHw = searchParams.get("hardware") || defaultHw;
-    return defaultFeaturesFor(urlHw);
+    const urlVariant = searchParams.get("variant") || "default";
+    return defaultFeaturesFor(urlHw, urlVariant);
   });
+
+  // Features that are single-select ("pick one of N") rather than boolean —
+  // they declare a `modes` map (e.g. spec_decoding → MTP / DFlash / DSpark).
+  const featuredModeKeys = useMemo(
+    () => Object.keys(recipe.features || {}).filter((k) => recipe.features[k]?.modes),
+    [recipe]
+  );
+  // Default sub-mode per modes-feature for a given variant: a variant can steer
+  // it via `default_modes: { <feature>: <mode> }` (e.g. the DSpark checkpoint
+  // variant defaults spec_decoding to the dspark method); otherwise it falls
+  // back to the feature's own `default_mode`. This keeps the two axes clean —
+  // the variant owns model_id (the served checkpoint), the mode owns args (the
+  // --speculative-config) — while letting a checkpoint pick its natural method.
+  const variantDefaultModes = useCallback(
+    (variantKey) => {
+      const v = recipe.variants?.[variantKey] || recipe.variants?.default || {};
+      const hp = taxonomy.hardware_profiles?.[hwId];
+      const out = {};
+      for (const k of featuredModeKeys) {
+        out[k] = resolveModeKey(recipe.features[k], k, v, variantKey, hp, hwId, undefined);
+      }
+      return out;
+    },
+    [recipe, featuredModeKeys, taxonomy, hwId]
+  );
+  const defaultModes = useMemo(() => variantDefaultModes(variant), [variantDefaultModes, variant]);
+
+  // Selected sub-mode per modes-feature. URL param `fmode` is a comma list of
+  // `key:mode` pairs; defaults (for the active variant) are omitted so links stay clean.
+  const parseFmode = useCallback((raw) => {
+    const out = {};
+    if (!raw) return out;
+    for (const pair of raw.split(",")) {
+      const [k, m] = pair.split(":");
+      if (k && m && recipe.features?.[k]?.modes?.[m]) out[k] = m;
+    }
+    return out;
+  }, [recipe]);
+  const [featureModes, setFeatureModes] = useState(() => ({
+    ...variantDefaultModes(searchParams.get("variant") || "default"),
+    ...parseFmode(searchParams.get("fmode")),
+  }));
+  const featureModesToUrl = useCallback(
+    (modes, variantKey) => {
+      const defs = variantDefaultModes(variantKey);
+      const parts = [];
+      for (const k of featuredModeKeys) {
+        if (modes[k] && modes[k] !== defs[k]) parts.push(`${k}:${modes[k]}`);
+      }
+      return parts.join(",");
+    },
+    [featuredModeKeys, variantDefaultModes]
+  );
+
+  // Restore saved sub-mode picks (URL wins). Separate from the main mount
+  // effect so it runs after featureModes is declared.
+  useEffect(() => {
+    if (searchParams.get("fmode") || featuredModeKeys.length === 0) return;
+    const rs = loadRecipeState(recipe.hf_id);
+    if (rs.featureModes && typeof rs.featureModes === "object") {
+      const restored = {};
+      for (const k of featuredModeKeys) {
+        const m = rs.featureModes[k];
+        if (m && recipe.features[k]?.modes?.[m]) restored[k] = m;
+      }
+      if (Object.keys(restored).length) setFeatureModes((prev) => ({ ...prev, ...restored }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Advanced tuning flags (defaults off) — toggled independently from features
   const [advanced, setAdvanced] = useState(() => {
@@ -810,9 +884,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           decode: { nodes: pdDecodeNodes, rank: pdDecodeRank, parallelism: pdDecodePar },
         }
         : null;
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes);
+      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes);
     },
-    [recipe, variant, activeStrategy, hwId, features, advanced, advancedById, strategies, taxonomy, nodeCount, pdPrefillNodes, pdDecodeNodes, pdPrefillRank, pdDecodeRank, pdPrefillPar, pdDecodePar]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, pdPrefillNodes, pdDecodeNodes, pdPrefillRank, pdDecodeRank, pdPrefillPar, pdDecodePar]
   );
 
   // Visual feedback when any rendered command changes. Covers single-node
@@ -868,6 +942,29 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       setHwId(next);
       updates.hardware = next;
     }
+    // Reset spec-decoding mode(s) to the new variant's preferred default so
+    // picking the DSpark checkpoint auto-selects the DSpark method (and picking
+    // a plain-precision variant falls back to MTP). A manual mode pick after
+    // this still wins until the next variant switch.
+    if (featuredModeKeys.length) {
+      const nextModes = variantDefaultModes(key);
+      setFeatureModes(nextModes);
+      updates.fmode = featureModesToUrl(nextModes, key);
+      saveRecipeState(recipe.hf_id, { featureModes: nextModes });
+    }
+    // Enable features the new variant forces on (`default_modes`, e.g. the
+    // DSpark checkpoint auto-enables spec_decoding), and drop the previous
+    // variant's forced-only features unless they're a plain default here.
+    const oldForced = new Set(Object.keys(currentVariant?.default_modes || {}));
+    const newForced = Object.keys(v.default_modes || {});
+    const baseDefault = new Set(defaultFeaturesFor(updates.hardware || hwId, key));
+    let nextFeatures = features.filter((f) => !oldForced.has(f) || newForced.includes(f) || baseDefault.has(f));
+    for (const f of newForced) if (recipe.features?.[f] && !nextFeatures.includes(f)) nextFeatures.push(f);
+    if (nextFeatures.length !== features.length || nextFeatures.some((f, i) => f !== features[i])) {
+      setFeatures(nextFeatures);
+      updates.features = featuresToUrl(nextFeatures, updates.hardware || hwId, key);
+      saveRecipeState(recipe.hf_id, { features: nextFeatures });
+    }
     // One syncUrl call — two sequential calls each read the same stale
     // searchParams from this closure, so the second would clobber the first
     // (dropping variant= when selecting a Blackwell-only variant off Hopper).
@@ -889,6 +986,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     setHwId(id);
     setStrategyOverride("");
     const newProfile = taxonomy.hardware_profiles?.[id] || {};
+    // A selected spec-mode may be gated to specific hardware (e.g. a DFlash
+    // draft that only ships for Blackwell). If the new GPU doesn't support it,
+    // fall back to the first mode that does so the command stays valid.
+    let nextModes = featureModes;
+    for (const k of featuredModeKeys) {
+      const feat = recipe.features[k];
+      const sel = nextModes[k];
+      if (sel && feat.modes[sel] && !isModeSupported(feat.modes[sel], newProfile, id)) {
+        const firstOk = Object.keys(feat.modes).find((mk) => isModeSupported(feat.modes[mk], newProfile, id));
+        if (firstOk) nextModes = { ...nextModes, [k]: firstOk };
+      }
+    }
+    if (nextModes !== featureModes) setFeatureModes(nextModes);
     const newScalable = isHardwareScalable(newProfile);
     const kvSelectableOnNewHardware = isKvCacheStrategySelectable(kvCacheStrategy, id);
     if (!newScalable || !kvSelectableOnNewHardware) {
@@ -933,7 +1043,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       strategy: "",
       kv_cache_strategy: (!newScalable || !kvSelectableOnNewHardware) ? "" : undefined,
       nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
-      features: featuresToUrl(next, id),
+      features: featuresToUrl(next, id, variant),
+      ...(nextModes !== featureModes ? { fmode: featureModesToUrl(nextModes, variant) } : {}),
       ...(variantUpdate ? { variant: variantUpdate } : {}),
     });
     savePreference("hardware", id);
@@ -944,6 +1055,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       kvCacheStrategy: (!newScalable || !kvSelectableOnNewHardware) ? undefined : kvCacheStrategy,
       nodes: shouldBumpNodes ? 2 : shouldUnbumpNodes ? 1 : nodeCount,
       features: next,
+      ...(nextModes !== featureModes ? { featureModes: nextModes } : {}),
     });
   };
 
@@ -1038,8 +1150,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       ? [...features.filter((x) => x !== mutex[f]), f]
       : features.filter((x) => x !== f);
     setFeatures(next);
-    syncUrl({ features: featuresToUrl(next, hwId) });
+    syncUrl({ features: featuresToUrl(next, hwId, variant) });
     saveRecipeState(recipe.hf_id, { features: next });
+  };
+
+  // Pick a sub-mode for a single-select feature (spec_decoding → MTP/DFlash/…).
+  const selectFeatureMode = (featureKey, modeKey) => {
+    const next = { ...featureModes, [featureKey]: modeKey };
+    setFeatureModes(next);
+    syncUrl({ fmode: featureModesToUrl(next, variant) });
+    saveRecipeState(recipe.hf_id, { featureModes: next });
   };
 
   const toggleAdvanced = (id) => {
@@ -1331,6 +1451,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         <div className="space-y-4">
           <InstallBlock
             recipe={recipe}
+            variant={currentVariant}
             dockerMeta={dockerMeta}
             installMode={effectiveInstallMode}
             setInstallMode={setInstallMode}
@@ -1473,6 +1594,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           so switching from either place keeps them in sync). */}
         <InstallBlock
           recipe={recipe}
+            variant={currentVariant}
           dockerMeta={dockerMeta}
           installMode={effectiveInstallMode}
           setInstallMode={setInstallMode}
@@ -1867,6 +1989,43 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             </ConfigRow>
           )}
 
+          {/* Sub-mode selector for single-select features (spec_decoding →
+              MTP / DFlash / DSpark). Only shown while the parent feature is on. */}
+          {featuredModeKeys.map((key) => {
+            if (!features.includes(key)) return null;
+            const feat = recipe.features[key];
+            // Only modes available on the current checkpoint (variant). If a
+            // single method is available (e.g. FP8/NVFP4 → MTP only), the row is
+            // redundant with the feature toggle, so don't render it — the toggle
+            // alone means "MTP on". The DSpark checkpoint exposes {MTP, DSpark}.
+            const availEntries = Object.entries(feat.modes).filter(([, m]) => isModeAllowedForVariant(m, variant));
+            if (availEntries.length < 2) return null;
+            const active = resolveModeKey(feat, key, currentVariant, variant, hwProfile, hwId, featureModes[key]);
+            const rowLabel = key === "spec_decoding"
+              ? "Spec method"
+              : `${key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} method`;
+            return (
+              <ConfigRow key={`${key}-modes`} label={rowLabel}>
+                <PillGroup>
+                  {availEntries.map(([mk, m]) => {
+                    const supported = isModeSupported(m, hwProfile, hwId);
+                    return (
+                      <Pill
+                        key={mk}
+                        active={active === mk && supported}
+                        disabled={!supported}
+                        onClick={() => supported && selectFeatureMode(key, mk)}
+                        title={!supported ? "Not supported on this hardware" : m.description}
+                      >
+                        {m.label || mk.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                      </Pill>
+                    );
+                  })}
+                </PillGroup>
+              </ConfigRow>
+            );
+          })}
+
           {/* Advanced (collapsed by default) */}
           <details className="group">
             <summary className="px-4 py-3 cursor-pointer text-[10px] font-semibold text-muted-foreground uppercase tracking-widest hover:bg-muted/30 transition-colors flex items-center gap-2 select-none list-none">
@@ -2089,7 +2248,22 @@ function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader, i
   );
 }
 
-function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode, dockerCudaVariant, setDockerCudaVariant, altCudaSuffix, strategyMinVersion }) {
+// Higher of two "X.Y.Z" version strings (missing/blank loses). Used to bump the
+// displayed min vLLM version when the active variant needs a newer release than
+// the recipe baseline (e.g. the DSpark checkpoint requires 0.25.0).
+function maxVersion(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const pa = String(a).split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d > 0 ? a : b;
+  }
+  return a;
+}
+
+function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode, dockerCudaVariant, setDockerCudaVariant, altCudaSuffix }) {
   // Collapsible install reference. Shows the one-time setup step for the
   // active mode — `uv pip install vllm …` in pip mode, `docker pull <image>`
   // in docker mode. The active tab mirrors the command card's mode toggle
@@ -2105,10 +2279,10 @@ function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode, dockerC
   const dockerHidden = dockerCfg === false;
   const [open, setOpen] = useState(false);
   const { isAmd, isTpu, image: dockerImage, brandKey, cudaMap } = dockerMeta;
-  const modelV = recipe.model?.min_vllm_version;
-  const minV = (strategyMinVersion && modelV)
-    ? (strategyMinVersion.localeCompare(modelV, undefined, { numeric: true }) > 0 ? strategyMinVersion : modelV)
-    : strategyMinVersion || modelV;
+  // A variant may require a newer vLLM than the recipe baseline (e.g. the DSpark
+  // checkpoint needs 0.25.0, currently nightly). Take the higher version and OR
+  // the nightly flag so the Install block reflects the selected checkpoint.
+  const minV = maxVersion(recipe.model?.min_vllm_version, variant?.min_vllm_version);
   // Omni recipes are served by vLLM-Omni, a fast-moving companion package that
   // tracks vLLM nightly (Wan2.2 even pins a git commit). Surface it next to the
   // vLLM version so users know the generation path needs nightly wheels.
@@ -2119,7 +2293,7 @@ function InstallBlock({ recipe, dockerMeta, installMode, setInstallMode, dockerC
   // swaps the default pip command to the nightly wheel index and surfaces a
   // pill in the Install header. Manual `install.pip.command` overrides still
   // win — this flag only affects the default.
-  const nightlyRequired = recipe.model?.nightly_required === true;
+  const nightlyRequired = recipe.model?.nightly_required === true || variant?.nightly_required === true;
   // Resolve the CUDA tag for pip's nightly wheel index from the same toggle
   // that drives the Docker tag suffix. "default" → cu130 (today's upstream
   // baseline); explicit picks pass through.

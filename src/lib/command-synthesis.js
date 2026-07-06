@@ -173,6 +173,67 @@ export function isVariantHardwareSupported(variant, hwId) {
 }
 
 /**
+ * A feature with a `modes` map is single-select ("pick one of N") rather than a
+ * boolean toggle — e.g. `spec_decoding` offering MTP / DFlash / DSpark. This
+ * returns which mode is active by default when the feature is turned on:
+ * `default_mode` if it names a real mode, else the first declared mode.
+ * Returns undefined for plain boolean features (no `modes`).
+ */
+export function defaultModeFor(feature) {
+  if (!feature?.modes || typeof feature.modes !== "object") return undefined;
+  const keys = Object.keys(feature.modes);
+  if (feature.default_mode && keys.includes(feature.default_mode)) return feature.default_mode;
+  return keys[0];
+}
+
+/**
+ * Whether a single mode may run on a given hardware profile. A mode can gate
+ * itself with a tri-state `hardware` map keyed by generation (hopper/blackwell/
+ * amd) or gpu-id; a value of `unsupported` disables it (e.g. a DFlash draft
+ * checkpoint that only ships for Blackwell). Absence = runs everywhere.
+ */
+export function isModeSupported(mode, hwProfile, hwId) {
+  const hw = mode?.hardware;
+  if (!hw || typeof hw !== "object") return true;
+  const gen = normalizeGeneration(hwProfile?.generation || hwProfile?.gpu_generation);
+  if (gen && hw[gen] === "unsupported") return false;
+  if (hwId && hw[hwId] === "unsupported") return false;
+  return true;
+}
+
+/**
+ * Whether a mode is available on a given variant. A mode may restrict itself to
+ * specific checkpoints with `variants: [<variant_key>, ...]` — e.g. the dspark
+ * method only exists on the fused DSpark checkpoint, so FP8/NVFP4 offer MTP
+ * only. Absence of `variants` = available on every variant.
+ */
+export function isModeAllowedForVariant(mode, variantKey) {
+  const allow = mode?.variants;
+  return !Array.isArray(allow) || allow.length === 0 || allow.includes(variantKey);
+}
+
+/**
+ * The effective mode key for a (feature, variant, hardware, user-selection)
+ * tuple — the single source of truth shared by the command emitter and the UI.
+ * Only considers modes allowed on this variant + hardware, then prefers, in
+ * order: the user's explicit pick, the variant's `default_modes[featureKey]`,
+ * the feature's `default_mode`, else the first allowed mode. Returns undefined
+ * when the feature has no modes or none are allowed here.
+ */
+export function resolveModeKey(feature, featureKey, variantObj, variantKey, hwProfile, hwId, selectedMode) {
+  if (!feature?.modes || typeof feature.modes !== "object") return undefined;
+  const allowed = Object.keys(feature.modes).filter(
+    (k) => isModeAllowedForVariant(feature.modes[k], variantKey)
+      && isModeSupported(feature.modes[k], hwProfile, hwId)
+  );
+  if (allowed.length === 0) return undefined;
+  for (const c of [selectedMode, variantObj?.default_modes?.[featureKey], feature.default_mode]) {
+    if (c && allowed.includes(c)) return c;
+  }
+  return allowed[0];
+}
+
+/**
  * List hardware profiles compatible with a variant by precision constraint
  * only. VRAM is NOT a blocking constraint — users can scale out via multi-node
  * TP/DP, so any profile that satisfies the precision requirement is valid.
@@ -555,7 +616,7 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile) {
  * Returns: { command, env, deployType } for single_node/multi_node,
  *          { prefillCommand, decodeCommand, routerConfig, env, deployType } for pd_cluster.
  */
-export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null) {
+export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
@@ -571,6 +632,11 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   // TEP/DEP require full TP by topology; multi-node is explicit scale-out.
   const singleNodeTp = resolveSingleNodeTp(recipe, variant, hwProfile, strategyName);
 
+  // The served checkpoint is owned by the variant axis (variant.model_id > base).
+  // Spec-decoding modes are single-select and contribute only args (the
+  // --speculative-config), so exactly one is ever emitted. A fused-spec
+  // checkpoint (e.g. DeepSeek-V4-Pro-DSpark) is a variant that steers the spec
+  // mode via `default_modes`; the mode never overrides model_id.
   const modelId = variant.model_id || recipe.model?.model_id || "unknown";
   const variantHardwareOverride = variant?.hardware_overrides?.[hwProfileId];
 
@@ -789,6 +855,21 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     for (const f of enabledFeatures || []) {
       const feat = recipe.features?.[f];
       if (!feat) continue;
+      // Single-select sub-modes: the feature declares `modes` and the user
+      // picks one (spec_decoding → MTP / DFlash / DSpark). Emit only the
+      // effective mode's args — resolveModeKey honours variant + hardware
+      // availability and falls back when the selection isn't valid here.
+      if (feat.modes && typeof feat.modes === "object") {
+        const modeKey = resolveModeKey(feat, f, variant, variantKey, hwProfile, hwProfileId, featureModes?.[f]);
+        const mode = modeKey ? feat.modes[modeKey] : null;
+        if (mode) {
+          const modeHo = mode.hardware_overrides?.[gen]
+            || (isNvidia ? mode.hardware_overrides?.nvidia : null);
+          const modeArgs = modeHo?.args ?? mode.args;
+          if (modeArgs) args.push(...modeArgs);
+        }
+        continue;
+      }
       const featHo = feat.hardware_overrides?.[gen]
         || (isNvidia ? feat.hardware_overrides?.nvidia : null);
       const featArgs = featHo?.args ?? feat.args;

@@ -3,7 +3,7 @@ meta:
   slug: "Qwen3.6-27b"
   provider: "Qwen"
   description: "Qwen3.6 dense multimodal model (27B) with gated delta networks hybrid attention, MTP, and 262K context"
-  date_updated: 2026-04-22
+  date_updated: 2026-07-02
   difficulty: beginner
   tasks:
     - multimodal
@@ -67,6 +67,12 @@ variants:
     extra_args:
       - "--max-num-seqs"
       - "512"
+  nvfp4:
+    model_id: "nvidia/Qwen3.6-27B-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 27
+    tp: 1
+    description: "NVIDIA ModelOpt NVFP4 checkpoint — MLP linears quantized to NVFP4, attention linears and KV cache in FP8. Single Blackwell GPU, including DGX Spark."
 
 compatible_strategies:
   - single_node_tp
@@ -91,6 +97,7 @@ guide: |
   - **Hardware (BF16):** 1x H200 or 2x H100
   - **Hardware (FP8):** single 40 GB GPU (H100/H200/L40S)
   - **Hardware (Int4):** single 24 GB GPU
+  - **Hardware (NVFP4):** single NVIDIA Blackwell GPU (B200/B300/GB10 DGX Spark)
 
   ### Install vLLM
 
@@ -136,6 +143,23 @@ guide: |
     --enable-prefix-caching
   ```
 
+  ### NVFP4 on Blackwell
+
+  The [`nvidia/Qwen3.6-27B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
+  checkpoint is NVIDIA's ModelOpt re-quantization: MLP linears drop to NVFP4
+  (W4A16) while the attention linears and KV cache stay FP8, so the ~22 GB
+  weights fit a single Blackwell GPU. vLLM auto-detects the ModelOpt
+  quantization from the checkpoint, so no `--quantization` flag is needed — just
+  use a recent vLLM (NVIDIA recommends nightly or a source build with ModelOpt
+  W4A16/NVFP4 support). NVIDIA reports near-lossless accuracy versus the FP8
+  baseline.
+
+  ```bash
+  vllm serve nvidia/Qwen3.6-27B-NVFP4 \
+    --max-model-len 262144 \
+    --reasoning-parser qwen3
+  ```
+
   ## Processing Ultra-Long Texts
 
   Qwen3.6-27B natively supports `262,144` tokens. For longer inputs, apply
@@ -179,4 +203,5 @@ guide: |
   - [Model card](https://huggingface.co/Qwen/Qwen3.6-27B)
   - [FP8 checkpoint](https://huggingface.co/Qwen/Qwen3.6-27B-FP8)
   - [GPTQ-Int4 checkpoint](https://huggingface.co/Qwen/Qwen3.6-27B-GPTQ-Int4)
+  - [NVIDIA NVFP4 checkpoint](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
   - [Qwen3.6-397B-A17B recipe](../Qwen3.6-397B-A17B)
