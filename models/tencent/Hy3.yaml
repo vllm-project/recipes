@@ -87,11 +87,8 @@ hardware_overrides:
     extra_args: []
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
-      # AITER fused-MoE is disabled (set to "0") because it currently fails at
-      # startup on this image with a CK "device_gemm ... does not support this
-      # GEMM problem" error (verified on MI300X/ROCm 7.0.2 and MI355X/ROCm 7.3.0).
-      # "0" falls back to the Triton MoE kernel, which serves Hy3-FP8 correctly at
-      # TP=8 — see the ROCm troubleshooting note in the guide below.
+      # AITER fused-MoE disabled: it crashes at startup (CK GEMM error); Triton
+      # fallback serves Hy3-FP8 correctly. See ROCm troubleshooting note below.
       VLLM_ROCM_USE_AITER_MOE: "0"
       VLLM_ROCM_USE_AITER_MHA: "1"
       VLLM_ROCM_USE_AITER_RMSNORM: "1"
@@ -162,9 +159,7 @@ guide: |
 
   ```bash
   export VLLM_ROCM_USE_AITER=1
-  # AITER fused-MoE is disabled (0) to avoid the CK GEMM startup crash — see the
-  # ROCm troubleshooting note below. The Triton MoE fallback serves Hy3-FP8
-  # correctly at TP=8.
+  # MoE disabled (CK GEMM crash); Triton fallback. See troubleshooting note below.
   export VLLM_ROCM_USE_AITER_MOE=0
   export VLLM_ROCM_USE_AITER_MHA=1
   export VLLM_ROCM_USE_AITER_RMSNORM=1
