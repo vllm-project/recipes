@@ -32,6 +32,7 @@ async function fetchCreatedAt(modelId) {
   try {
     const res = await fetch(`https://huggingface.co/api/models/${modelId}`, {
       headers: { "User-Agent": "vllm-recipes-build/1.0" },
+      signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return null;
     const data = await res.json();
