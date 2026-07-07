@@ -177,7 +177,7 @@ guide: |
   > the engine currently aborts during warmup with
   > `RuntimeError: wrong! device_gemm with the specified compilation parameters
   > does not support this GEMM problem` (raised from `aiter` `ck_moe_stage2`).
-Workaround: set
+  > Workaround: set
   > `VLLM_ROCM_USE_AITER_MOE=0` to fall back to the Triton MoE kernel; the other
   > AITER backends (MHA / RMSNorm / Linear) run as-is. The docker run needs the
   > ROCm device flags `--device /dev/kfd --device /dev/dri --group-add video
