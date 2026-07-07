@@ -21,9 +21,7 @@ model:
   min_vllm_version: "0.20.0"
   docker_image:
     nvidia: "vllm/vllm-openai:hy3"
-    # Pinned to a specific nightly commit-SHA tag, not the floating ":nightly":
-    # the floating tag rolls forward and a later build (dev552) crashes at config
-    # init on Hy3's tokenizer. This SHA (dev861) is verified on MI300X/MI355X/MI350X.
+    # Pinned SHA (not floating :nightly, which rolled to a broken build); verified on MI300X/MI350X/MI355X.
     amd: "vllm/vllm-openai-rocm:nightly-cbe9c40f998f13975b967773ac7e7920e115387f"
   nightly_required: true
   install:
@@ -91,8 +89,7 @@ hardware_overrides:
     extra_args: []
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
-      # AITER fused-MoE disabled: it crashes at startup (CK GEMM error); Triton
-      # fallback serves Hy3-FP8 correctly. See ROCm troubleshooting note below.
+      # AITER fused-MoE disabled (CK GEMM crash); Triton fallback works. See note below.
       VLLM_ROCM_USE_AITER_MOE: "0"
       VLLM_ROCM_USE_AITER_MHA: "1"
       VLLM_ROCM_USE_AITER_RMSNORM: "1"
