@@ -20,7 +20,6 @@ model:
   min_vllm_version: "0.20.0"
   docker_image:
     nvidia: "vllm/vllm-openai:hy3"
-    # Pinned SHA (not floating :nightly, which rolled to a broken build); verified on MI300X/MI350X/MI355X.
     amd: "vllm/vllm-openai-rocm:nightly-cbe9c40f998f13975b967773ac7e7920e115387f"
   nightly_required: true
   install:
