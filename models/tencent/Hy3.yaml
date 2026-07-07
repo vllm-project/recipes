@@ -13,7 +13,6 @@ meta:
   hardware:
     gb300: verified
     mi300x: verified
-    mi350x: verified
     mi355x: verified
 
 model:
