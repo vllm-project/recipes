@@ -7,7 +7,7 @@ meta:
   difficulty: intermediate
   tasks:
     - text
-  performance_headline: "Hy3 MoE — 295B/21B on 8×H200, 8×H20-3e(141GB), or 8×AMD MI300X/MI350X/MI355X with MTP"
+  performance_headline: "Hy3 MoE — 295B/21B on 8×H200, 8×H20-3e(141GB), or 8×AMD MI300X/MI355X with MTP"
   related_recipes:
     - "tencent/Hy3-preview"
   hardware:
