@@ -7,12 +7,13 @@ meta:
   difficulty: intermediate
   tasks:
     - text
-  performance_headline: "Hy3 MoE — 295B/21B on 8×H200, 8×H20-3e(141GB), or 8×AMD MI300X/MI355X with MTP"
+  performance_headline: "Hy3 MoE — 295B/21B on 8×H200, 8×H20-3e(141GB), or 8×AMD MI300X/MI350X/MI355X with MTP"
   related_recipes:
     - "tencent/Hy3-preview"
   hardware:
     gb300: verified
     mi300x: verified
+    mi350x: verified
     mi355x: verified
 
 model:
@@ -20,7 +21,10 @@ model:
   min_vllm_version: "0.20.0"
   docker_image:
     nvidia: "vllm/vllm-openai:hy3"
-    amd: "vllm/vllm-openai-rocm:nightly"
+    # Pinned to a specific nightly commit-SHA tag, not the floating ":nightly":
+    # the floating tag rolls forward and a later build (dev552) crashes at config
+    # init on Hy3's tokenizer. This SHA (dev861) is verified on MI300X/MI355X/MI350X.
+    amd: "vllm/vllm-openai-rocm:nightly-cbe9c40f998f13975b967773ac7e7920e115387f"
   nightly_required: true
   install:
     docker:
@@ -180,8 +184,8 @@ guide: |
   > does not support this GEMM problem` (raised from `aiter` `ck_moe_stage2`).
   > This reproduces at both TP=4 and TP=8, so it is not a tensor-parallel shape
   > issue — the CK fused-MoE kernel in the current ROCm image lacks a config for
-  > Hy3's FP8 MoE GEMM shape. Verified on 8×MI300X (ROCm 7.0.2) and 8×MI355X
-  > (ROCm 7.3.0), both with vLLM `0.23.1rc1.dev799`. Workaround: set
+  > Hy3's FP8 MoE GEMM shape. Verified on 8×MI300X (ROCm 7.0.2), 8×MI355X
+  > (ROCm 7.3.0), and 8×MI350X. Workaround: set
   > `VLLM_ROCM_USE_AITER_MOE=0` to fall back to the Triton MoE kernel; the other
   > AITER backends (MHA / RMSNorm / Linear) run as-is. The docker run needs the
   > ROCm device flags `--device /dev/kfd --device /dev/dri --group-add video
