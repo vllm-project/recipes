@@ -177,10 +177,7 @@ guide: |
   > the engine currently aborts during warmup with
   > `RuntimeError: wrong! device_gemm with the specified compilation parameters
   > does not support this GEMM problem` (raised from `aiter` `ck_moe_stage2`).
-  > This reproduces at both TP=4 and TP=8, so it is not a tensor-parallel shape
-  > issue — the CK fused-MoE kernel in the current ROCm image lacks a config for
-  > Hy3's FP8 MoE GEMM shape. Verified on 8×MI300X (ROCm 7.0.2), 8×MI355X
-  > (ROCm 7.3.0), and 8×MI350X. Workaround: set
+Workaround: set
   > `VLLM_ROCM_USE_AITER_MOE=0` to fall back to the Triton MoE kernel; the other
   > AITER backends (MHA / RMSNorm / Linear) run as-is. The docker run needs the
   > ROCm device flags `--device /dev/kfd --device /dev/dri --group-add video
