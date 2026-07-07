@@ -136,7 +136,7 @@ hardware_overrides:
       - "--gpu-memory-utilization"
       - "0.95"
       - "--max-num-seqs"
-      - "512"
+      - "16"
       - "--max-num-batched-tokens"
       - "512"
       - "--no-enable-flashinfer-autotune"
