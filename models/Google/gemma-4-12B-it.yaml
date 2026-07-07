@@ -15,6 +15,7 @@ meta:
     - google/gemma-4-31B-it
   hardware:
     h100: verified
+    max1550: verified
 
 model:
   model_id: "google/gemma-4-12B-it"
@@ -73,7 +74,12 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  xpu:
+    extra_args:
+      tensor_parallel_size: 2
+    extra_env:
+      ZE_AFFINITY_MASK: "0,1"
 
 strategy_overrides:
   single_node_tp:
@@ -177,6 +183,26 @@ guide: |
       --disable_chunked_mm_input \
       --host 0.0.0.0 --port 8000
   ```
+
+  ### Intel XPU Deployment via Docker (Max 1550)
+
+  Launch the W4A16 QAT variant on Intel Data Center GPU Max 1550 (2-tile TP):
+
+  ```bash
+  docker run -itd --name gemma4-12b-qat-xpu \
+    --device /dev/dri --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e ZE_AFFINITY_MASK=0,1 \
+    intel/vllm:latest \
+      --model google/gemma-4-12B-it-qat-w4a16-ct \
+      --dtype bfloat16 \
+      --tensor-parallel-size 2 \
+      --max-model-len 32768 \
+      --host 0.0.0.0 --port 8000
+  ```
+
+  > **Note:** Requires vLLM with the memory reporting fix for Max 1550 — the `intel/vllm:latest` image includes this fix. The W4A16 QAT model uses ~9 GB VRAM for weights, leaving ample HBM for KV cache.
 
   ## Client Usage
 
