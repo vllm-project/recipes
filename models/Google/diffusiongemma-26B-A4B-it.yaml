@@ -62,11 +62,18 @@ variants:
     precision: fp8
     vram_minimum_gb: 32
     description: "FP8 (E4M3) weights with dynamic per-token activation quantization"
-  nvfp4:
+  nvfp4_redhat:
+    label: "RedHat NVFP4"
     model_id: "RedHatAI/diffusiongemma-26B-A4B-it-NVFP4"
     precision: nvfp4
     vram_minimum_gb: 24
-    description: "NVFP4 (4-bit) quantized weights"
+    description: "RedHatAI NVFP4 (4-bit) quantized weights"
+  nvfp4_nvidia:
+    label: "NVIDIA NVFP4"
+    model_id: "nvidia/diffusiongemma-26B-A4B-it-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 24
+    description: "NVIDIA ModelOpt NVFP4 quantized weights for Blackwell GPUs"
 
 compatible_strategies:
   - single_node_tp
@@ -226,5 +233,7 @@ guide: |
   ## References
 
   - [Model card](https://huggingface.co/google/diffusiongemma-26B-A4B-it)
+  - [RedHatAI NVFP4 checkpoint](https://huggingface.co/RedHatAI/diffusiongemma-26B-A4B-it-NVFP4)
+  - [NVIDIA NVFP4 checkpoint](https://huggingface.co/nvidia/diffusiongemma-26B-A4B-it-NVFP4)
   - [Gemma 4 26B-A4B (autoregressive baseline)](https://huggingface.co/google/gemma-4-26B-A4B-it)
   - [Gemma docs](https://ai.google.dev/gemma/docs)
