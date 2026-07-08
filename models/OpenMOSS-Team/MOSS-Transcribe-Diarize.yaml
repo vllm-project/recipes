@@ -22,10 +22,8 @@ model:
   base_env: {}
 
 dependencies:
-  - note: "Audio extras are required for loading and preprocessing audio files."
+  - note: "Audio extras are required for loading and preprocessing audio files. If your installed vLLM release does not include MOSS-Transcribe-Diarize yet, pull the latest main branch or install the latest nightly wheel."
     command: 'uv pip install -U "vllm[audio]" --torch-backend auto'
-  - note: "If your installed vLLM release does not include MOSS-Transcribe-Diarize yet, pull the latest main branch or install the latest nightly wheel."
-    command: "uv pip install -U vllm --pre"
 
 features: {}
 
