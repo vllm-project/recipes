@@ -32,7 +32,7 @@ opt_in_features: []
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 8
+    vram_minimum_gb: 4
     description: "MOSS-Transcribe-Diarize-0.9B - single-GPU long-form multi-speaker transcription"
 
 compatible_strategies:
