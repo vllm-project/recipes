@@ -147,7 +147,7 @@ guide: |
 
   ## Prerequisites
 
-  - **vLLM version:** >= 0.19.1
+  - **vLLM version:** >= 0.24.0
   - **Hardware (INT4):** 8x H200 GPUs (verified), or equivalent aggregate VRAM (~640 GB)
   - **AMD support:** 8x MI300X / MI325X / MI355X with ROCm 7.2.1 and Python 3.12
 

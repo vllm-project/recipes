@@ -106,7 +106,7 @@ guide: |
   uv venv
   source .venv/bin/activate
 
-  # Install vLLM >= 0.11.0
+  # Install vLLM >= 0.24.0
   uv pip install -U vllm
 
   # Install Qwen-VL utility library (recommended for offline inference)

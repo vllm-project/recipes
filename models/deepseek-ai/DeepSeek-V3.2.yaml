@@ -97,7 +97,7 @@ guide: |
   ## Prerequisites
 
   - **Hardware**: Minimum 8x H100/H200 80GB GPUs (BF16) or 3x H200 (NVFP4 variant).
-  - **vLLM**: Version 0.18.0 or later (nightly recommended).
+  - **vLLM**: Version 0.24.0 or later.
   - **Python**: 3.10+
   - **CUDA**: 12.x or later (CUDA 13.x may require extra env vars; see Troubleshooting).
   - **Disk**: ~1.3 TB for BF16 weights; ~350 GB for NVFP4 variant.

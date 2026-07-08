@@ -107,7 +107,7 @@ guide: |
   ## Prerequisites
 
   - Hardware: 1x B200 (FP4), 1x H100 (FP8), 4x GPUs (BF16) or 4x Xeon6/Xeon5 NUMA node for BF16
-  - vLLM >= 0.12.0
+  - vLLM >= 0.24.0
   - CUDA Driver >= 575 for GPUs
   - Docker with NVIDIA Container Toolkit (recommended) for GPUs
   - License: Must agree to Meta's Llama 4 Scout Community License for GPUs

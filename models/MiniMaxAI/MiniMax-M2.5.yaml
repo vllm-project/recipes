@@ -19,7 +19,7 @@ meta:
 model:
   model_id: "MiniMaxAI/MiniMax-M2.5"
   min_vllm_version: "0.24.0"
-  docker_image: "vllm/vllm-openai:v0.20.2"
+  docker_image: "vllm/vllm-openai:v0.24.0"
   architecture: moe
   parameter_count: "230B"
   active_parameters: "10B"
@@ -144,7 +144,7 @@ guide: |
     -e VLLM_USE_DEEP_GEMM=0 \
     -e VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER=0 \
     -e VLLM_FLOAT32_MATMUL_PRECISION=high \
-    vllm/vllm-openai:v0.20.2 MiniMaxAI/MiniMax-M2.5 \
+    vllm/vllm-openai:v0.24.0 MiniMaxAI/MiniMax-M2.5 \
         --tensor-parallel-size 4 \
         --max-num-seqs 512 \
         --max-num-batched-tokens 32768 \

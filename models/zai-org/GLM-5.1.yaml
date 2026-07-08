@@ -93,7 +93,7 @@ guide: |
 
   ## Prerequisites
 
-  - **vLLM version:** 0.19.0 (stable — preferred over nightly for model performance).
+  - **vLLM version:** 0.24.0 (stable — preferred over nightly for model performance).
     Use the latest main branch if you need tool calling + MTP simultaneously.
   - **Hardware (FP8):** 8xH200 or 8xH20 (141GB × 8)
   - **DeepGEMM (FP8):** install via `install_deepgemm.sh` from vLLM repo
@@ -121,7 +121,7 @@ guide: |
   ```bash
   uv venv
   source .venv/bin/activate
-  uv pip install "vllm==0.19.0" --torch-backend=auto
+  uv pip install "vllm==0.24.0" --torch-backend=auto
   uv pip install "transformers>=5.4.0"
   ```
 
@@ -197,7 +197,7 @@ guide: |
 
   ## Troubleshooting
 
-  - **Accuracy drift:** Prefer the 0.19.0 stable release for best accuracy.
+  - **Accuracy drift:** Prefer the 0.24.0 stable release for best accuracy.
   - **Tool calling + MTP:** If both are needed, use the latest vLLM main branch.
   - **FP8 installation:** DeepGEMM required for FP8 performance.
 
