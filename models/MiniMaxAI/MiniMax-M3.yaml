@@ -3,7 +3,7 @@ meta:
   slug: "minimax-m3"
   provider: "MiniMax"
   description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 plus MXFP8 and AMD MI355X MXFP4 variants. Runs on NVIDIA (Hopper/Blackwell) and AMD CDNA4/CDNA3."
-  date_updated: 2026-06-25
+  date_updated: 2026-07-07
   difficulty: advanced
   tasks:
     - text
@@ -479,7 +479,8 @@ guide: |
     --attention-backend TRITON_ATTN \
     --tool-call-parser minimax_m3 \
     --reasoning-parser minimax_m3 \
-    --enable-auto-tool-choice
+    --enable-auto-tool-choice \
+    --hf-overrides '{"text_config": {"use_index_cache": true, "index_topk_freq": 4}}'
   ```
 
   ## Quantized Variant (MXFP4 on MI355X)
@@ -502,7 +503,8 @@ guide: |
     --mm-encoder-attn-backend ROCM_AITER_FA \
     --tool-call-parser minimax_m3 \
     --enable-auto-tool-choice \
-    --reasoning-parser minimax_m3
+    --reasoning-parser minimax_m3 \
+    --hf-overrides '{"text_config": {"use_index_cache": true, "index_topk_freq": 4}}'
   ```
 
   ## Troubleshooting
