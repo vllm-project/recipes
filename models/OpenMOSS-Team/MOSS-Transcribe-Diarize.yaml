@@ -13,7 +13,7 @@ meta:
 
 model:
   model_id: "OpenMOSS-Team/MOSS-Transcribe-Diarize"
-  min_vllm_version: "0.26.0"
+  min_vllm_version: "0.25.0"
   nightly_required: true
   architecture: dense
   parameter_count: "0.9B"
