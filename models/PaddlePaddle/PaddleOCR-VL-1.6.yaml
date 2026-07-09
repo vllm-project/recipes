@@ -30,6 +30,7 @@ model:
 dependencies:
   - note: "PaddlePaddle runtime (install in a separate venv from vllm to avoid conflicts)"
     command: "uv pip install paddlepaddle-gpu==3.2.1 --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/"
+    brand: NVIDIA
   - note: "PaddleOCR document-parsing helpers — 1.6 requires >= 3.6.0 (pipeline_version v1.6)"
     command: 'uv pip install -U "paddleocr[doc-parser]>=3.6.0"'
   - note: "Safetensors loader used by the doc-parser path"
@@ -147,9 +148,10 @@ guide: |
   Use separate venvs for `vllm` and `paddlepaddle` to avoid conflicts. The 1.6 pipeline
   requires `paddleocr[doc-parser] >= 3.6.0` and `pipeline_version="v1.6"`, which
   automatically uses [PP-DocLayoutV3](https://huggingface.co/PaddlePaddle/PP-DocLayoutV3)
-  for layout detection (PP-DocLayoutV2 belongs to the v1 pipeline). If you see
-  "The model PaddleOCR-VL-1.6-0.9B does not exist.", add
-  `--served-model-name PaddleOCR-VL-1.6-0.9B` to the vllm serve command.
+  for layout detection (PP-DocLayoutV2 belongs to the v1 pipeline). Pass
+  `vl_rec_api_model_name="PaddlePaddle/PaddleOCR-VL-1.6"` so the client matches the
+  model name the vLLM server exposes — otherwise it defaults to
+  `PaddleOCR-VL-1.6-0.9B` and fails with "The model PaddleOCR-VL-1.6-0.9B does not exist."
 
   ```bash
   uv pip install paddlepaddle-gpu==3.2.1 --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
@@ -164,6 +166,7 @@ guide: |
       pipeline_version="v1.6",
       vl_rec_backend="vllm-server",
       vl_rec_server_url="http://localhost:8000/v1",
+      vl_rec_api_model_name="PaddlePaddle/PaddleOCR-VL-1.6",
   )
 
   output = pipeline.predict("https://paddle-model-ecology.bj.bcebos.com/paddlex/imgs/demo_image/paddleocr_vl_demo.png")
