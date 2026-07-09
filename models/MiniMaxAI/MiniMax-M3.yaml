@@ -19,15 +19,11 @@ meta:
 model:
   model_id: "MiniMaxAI/MiniMax-M3"
   min_vllm_version: "0.24.0"
-  nightly_required: true
   docker_image: 
     nvidia: "vllm/vllm-openai:minimax-m3"
     amd: "vllm/vllm-openai-rocm:minimax-m3" 
   # Docker-only: MiniMax-M3 support hasn't shipped in a stable wheel, and the
   # dedicated image is the supported path — hide the pip tab.
-  install:
-    docker:
-    pip:
   architecture: moe
   # 427.04B total from safetensors metadata (BF16: 426.99B + F32: 46.3M).
   # Active: 57 MoE layers × (4 routed + 1 shared) × 56.6M + 60-layer attn
