@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy } from "@/lib/command-synthesis";
 import { resolveOmniTasks } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -1776,12 +1776,21 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           {Object.keys(recipe.features || {}).length > 0 && (
             <ConfigRow label="Features">
               <PillGroup>
-                {Object.entries(recipe.features || {}).map(([key, f]) => (
+                {Object.entries(recipe.features || {}).map(([key, f]) => {
+                  // Strategy-gated feature (feature declares `strategies: [...]`):
+                  // struck-through + disabled on excluded strategies, same
+                  // treatment as unsupported hardware pills. The toggle state is
+                  // kept, so switching back to an allowed strategy restores it —
+                  // synthesis independently skips gated features, so the emitted
+                  // command is correct either way.
+                  const allowed = isFeatureAllowedForStrategy(f, activeStrategy);
+                  return (
                   <Pill
                     key={key}
-                    active={features.includes(key)}
-                    onClick={() => toggleFeature(key)}
-                    title={f?.description}
+                    active={features.includes(key) && allowed}
+                    disabled={!allowed}
+                    onClick={() => allowed && toggleFeature(key)}
+                    title={!allowed ? "Not available with this strategy" : f?.description}
                   >
                     {key === "spec_decoding" && (
                       <Zap size={11} className="inline-block mr-1 -mt-0.5 text-vllm-yellow" fill="currentColor" />
@@ -1792,14 +1801,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     {key === "reasoning" && (
                       <Brain size={11} className="inline-block mr-1 -mt-0.5 text-muted-foreground" />
                     )}
-                    {key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                    {key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\bKv\b/g, "KV")}
                     {key === "spec_decoding" && (
                       <span className="ml-1.5 text-[11px] text-vllm-yellow font-normal">
                         (for low latency & small batch size)
                       </span>
                     )}
                   </Pill>
-                ))}
+                  );
+                })}
               </PillGroup>
             </ConfigRow>
           )}
@@ -1818,7 +1828,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             const active = resolveModeKey(feat, key, currentVariant, variant, hwProfile, hwId, featureModes[key]);
             const rowLabel = key === "spec_decoding"
               ? "Spec method"
-              : `${key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} method`;
+              : `${key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\bKv\b/g, "KV")} method`;
             return (
               <ConfigRow key={`${key}-modes`} label={rowLabel}>
                 <PillGroup>

@@ -3,7 +3,7 @@ meta:
   slug: "deepseek-v4-pro"
   provider: "DeepSeek"
   description: "DeepSeek V4 flagship MoE (1.6T total / 49B active) with hybrid CSA+HCA attention, manifold-constrained hyper-connections, Muon-trained on 32T+ tokens, and three-tier reasoning."
-  date_updated: 2026-06-09
+  date_updated: 2026-07-10
   difficulty: hard
   tasks:
     - text
@@ -40,6 +40,10 @@ model:
 dependencies:
   - note: "DeepGEMM FP8 kernels — install via vLLM tools/install_deepgemm.sh"
     command: "bash <(curl -fsSL https://raw.githubusercontent.com/vllm-project/vllm/main/tools/install_deepgemm.sh)"
+  - note: "LMCache — CPU-DRAM KV offloading; only needed with the KV Offloading feature (see guide)"
+    command: 'uv pip install "lmcache==0.5.1"'
+    optional: true
+    brand: NVIDIA
 
 features:
   tool_calling:
@@ -83,9 +87,25 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"greedy"}'
+  kv_offloading:
+    description: "Offload KV cache to a shared CPU-DRAM pool via LMCache for prefix caching beyond GPU KV capacity. Requires an LMCache MP server running in a separate terminal — see the guide's KV Cache Offloading section."
+    # Single-node only: the LMCacheMPConnector config would clobber pd_cluster's
+    # NixlConnector --kv-transfer-config (features emit last and win the
+    # last-wins dedupe), and the companion MP server is node-local.
+    strategies:
+      - single_node_tp
+      - single_node_tep
+      - single_node_dep
+    args:
+      - "--kv-transfer-config"
+      - '{"kv_connector":"LMCacheMPConnector","kv_role":"kv_both","kv_connector_extra_config":{"lmcache.mp.host":"tcp://127.0.0.1","lmcache.mp.port":20000,"lmcache.mp.mq_timeout":300}}'
+    env:
+      # Identical prefixes must hash to identical cache keys across DP ranks.
+      PYTHONHASHSEED: "0"
 
 opt_in_features:
   - spec_decoding
+  - kv_offloading
 
 variants:
   default:
@@ -367,3 +387,61 @@ guide: |
   |gsm8k|      3|flexible-extract|     8|exact_match|↑  |0.9538|±  |0.0058|
   |     |       |strict-match    |     8|exact_match|↑  |0.9545|±  |0.0057|
   ```
+
+  ## KV Cache Offloading (LMCache)
+
+  For agentic / multi-turn workloads whose reusable prefixes outgrow GPU KV capacity,
+  LMCache offloads KV cache to a shared CPU-DRAM pool. A standalone **LMCache MP
+  server** owns the host-memory tier and every vLLM rank attaches to it through
+  `LMCacheMPConnector`, so the host budget is one shared pool (not per-rank segments).
+  LMCache handles V4's Sparse-MLA hybrid KV geometries automatically.
+
+  Toggle the **KV Offloading** feature pill to add the connector config, then bring the
+  server up **in a separate terminal before launching `vllm serve`**:
+
+  ```bash
+  uv pip install "lmcache==0.5.1"
+
+  # Size --l1-size-gb to ~75% of the host DRAM you can dedicate: pinned host
+  # memory is unswappable and also consumes GPU-side mapping resources, so leave
+  # headroom for vLLM's own host buffers and the OS. The pool grows lazily from
+  # --l1-init-size-gb, so the full target isn't pinned at startup.
+  lmcache server \
+    --host 127.0.0.1 \
+    --port 20000 \
+    --http-host 127.0.0.1 \
+    --http-port 21000 \
+    --l1-size-gb 512 \
+    --l1-init-size-gb 20 \
+    --max-gpu-workers 1 \
+    --max-cpu-workers 8 \
+    --chunk-size 1024 \
+    --l1-align-bytes 16384 \
+    --eviction-trigger-watermark 0.85 \
+    --eviction-ratio 0.10 \
+    --eviction-policy LRU \
+    --supported-transfer-mode lmcache_driven
+  ```
+
+  Wait for the server to report healthy before starting vLLM:
+
+  ```bash
+  curl http://127.0.0.1:21000/healthcheck
+  ```
+
+  Notes:
+
+  - The server ports must match the feature's `--kv-transfer-config` JSON
+    (`"lmcache.mp.port": 20000`). The connector builds its ZMQ endpoint by
+    concatenating `lmcache.mp.host` and the port, hence the `tcp://127.0.0.1`
+    host string on the vLLM side while the server binds a raw host.
+  - `--max-gpu-workers 1` avoids concurrent-GPU-transfer stalls under heavy
+    async-load pressure; CPU-side workers stay at 8.
+  - The feature also exports `PYTHONHASHSEED=0` — identical prefixes must hash to
+    identical cache keys across DP ranks.
+  - Single-node strategies only: PD clusters already own `--kv-transfer-config`
+    for the Nixl prefill↔decode path, and the MP server is node-local.
+
+  Verified on 8× B200 / B300 in
+  [InferenceX PR #2153](https://github.com/SemiAnalysisAI/InferenceX/pull/2153);
+  see the [LMCache docs](https://docs.lmcache.ai/) for tuning knobs.

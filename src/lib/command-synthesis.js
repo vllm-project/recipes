@@ -213,6 +213,20 @@ export function isModeAllowedForVariant(mode, variantKey) {
 }
 
 /**
+ * Whether a feature is available under a given strategy. A feature may restrict
+ * itself with `strategies: [<strategy_id>, ...]` when its args collide with a
+ * strategy's own flags or its setup doesn't generalize — e.g. kv_offloading's
+ * LMCache --kv-transfer-config vs pd_cluster's NixlConnector config (features
+ * emit last, so last-wins dedupe would let the feature clobber the PD wiring),
+ * and its companion server is node-local so multi-node is out too.
+ * Absence of `strategies` = available on every strategy.
+ */
+export function isFeatureAllowedForStrategy(feature, strategyName) {
+  const allow = feature?.strategies;
+  return !Array.isArray(allow) || allow.length === 0 || allow.includes(strategyName);
+}
+
+/**
  * The effective mode key for a (feature, variant, hardware, user-selection)
  * tuple — the single source of truth shared by the command emitter and the UI.
  * Only considers modes allowed on this variant + hardware, then prefers, in
@@ -853,6 +867,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     for (const f of enabledFeatures || []) {
       const feat = recipe.features?.[f];
       if (!feat) continue;
+      if (!isFeatureAllowedForStrategy(feat, strategyName)) continue;
       // Single-select sub-modes: the feature declares `modes` and the user
       // picks one (spec_decoding → MTP / DFlash / DSpark). Emit only the
       // effective mode's args — resolveModeKey honours variant + hardware
@@ -952,6 +967,17 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       || recipe.hardware_overrides?.[gen]
       || (envIsNvidia ? recipe.hardware_overrides?.nvidia : null);
     if (envHo?.extra_env) Object.assign(env, envHo.extra_env);
+
+    // Feature env last, mirroring the args block's "features last" order — a
+    // feature may ship env that only makes sense while it's toggled on (e.g.
+    // kv_offloading's PYTHONHASHSEED=0 so identical prefixes hash to identical
+    // cache keys across DP ranks). Same strategy gating as feature args.
+    for (const f of enabledFeatures || []) {
+      const feat = recipe.features?.[f];
+      if (!feat?.env) continue;
+      if (!isFeatureAllowedForStrategy(feat, strategyName)) continue;
+      Object.assign(env, feat.env);
+    }
 
     // NVL4-only env vars are meaningful only on GB200/GB300 trays. Drop them
     // for any other hardware regardless of where they came from (strategy YAML
