@@ -229,8 +229,6 @@ guide: |
   export HIP_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
   export VLLM_ROCM_USE_AITER=1
   export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
-  export VLLM_ROCM_USE_AITER_FP8BMM=0
-  export VLLM_ROCM_USE_AITER_FP4BMM=0
 
   vllm serve amd/GLM-5.2-MXFP4 \
     --quantization quark \
