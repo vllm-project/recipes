@@ -132,13 +132,13 @@ hardware_overrides:
     # ~960 GB mixed-precision weights replicated across DP ranks — cap to 800K.
     extra_args:
       - "--max-model-len"
-      - "800000"
+      - "200000"
       - "--gpu-memory-utilization"
       - "0.95"
       - "--max-num-seqs"
-      - "512"
+      - "16"
       - "--max-num-batched-tokens"
-      - "512"
+      - "16384"
       - "--no-enable-flashinfer-autotune"
       - "--compilation-config"
       - '{"mode": 0, "cudagraph_mode": "FULL_DECODE_ONLY"}'
