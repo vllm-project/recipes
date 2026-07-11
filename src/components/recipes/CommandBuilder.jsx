@@ -1538,6 +1538,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             <SingleCommandBlock
               command={displayedResult.command}
               env={displayedResult.env}
+              companions={displayedResult.companions}
               verifyCmd={verifyCmd}
               benchCmd={benchCmd}
               statusHeader={statusHeader}
@@ -1801,7 +1802,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     {key === "reasoning" && (
                       <Brain size={11} className="inline-block mr-1 -mt-0.5 text-muted-foreground" />
                     )}
-                    {key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\bKv\b/g, "KV")}
+                    {f?.label || key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\bKv\b/g, "KV")}
                     {key === "spec_decoding" && (
                       <span className="ml-1.5 text-[11px] text-vllm-yellow font-normal">
                         (for low latency & small batch size)
@@ -1828,7 +1829,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             const active = resolveModeKey(feat, key, currentVariant, variant, hwProfile, hwId, featureModes[key]);
             const rowLabel = key === "spec_decoding"
               ? "Spec method"
-              : `${key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\bKv\b/g, "KV")} method`;
+              : `${feat.label || key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\bKv\b/g, "KV")} method`;
             return (
               <ConfigRow key={`${key}-modes`} label={rowLabel}>
                 <PillGroup>
@@ -2029,7 +2030,13 @@ function envToExports(env) {
     .join("\n");
 }
 
-function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls }) {
+function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls }) {
+  // A feature may contribute a companion process (`feature.companion`, e.g.
+  // kv_offloading's `lmcache server`) that runs in its own terminal on the
+  // same node. When any are active the block grows a PD-style tab bar
+  // (vLLM Serve · <companion label>); with none, the classic single-command
+  // layout renders untouched.
+  const [tab, setTab] = useState("vllm");
   const isDocker = installMode === "docker";
   // Docker mode: env vars fold into `-e` flags inside the wrapped `docker run`,
   // so there's no separate prelude (the `docker pull` lives in the Install
@@ -2038,29 +2045,78 @@ function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader, i
   const displayCommand = isDocker
     ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
     : command;
-  const fullScript = prelude ? `${prelude}\n\n${displayCommand}` : displayCommand;
-  return (
-    <div>
-      <div className="flex items-center justify-between px-4 pt-3 gap-3">
-        {statusHeader || (
-          <span className="text-[11px] text-[var(--command-fg)]/55 font-mono">
-            {configSummary}
-          </span>
-        )}
-        <div className="flex items-center gap-1.5">
-          <CopyButton text={fullScript} />
+  const hasCompanions = Array.isArray(companions) && companions.length > 0;
+  // Falls back to the vLLM view when the selected companion's feature was
+  // toggled off (stale tab state) — no effect needed.
+  const activeCompanion = hasCompanions && tab !== "vllm"
+    ? companions.find((c) => c.feature === tab) || null
+    : null;
+  // Companions are host-side helper binaries (not `vllm serve`), so they get
+  // neither the docker-run wrapper nor the env prelude.
+  const activePrelude = activeCompanion ? "" : prelude;
+  const activeCommand = activeCompanion ? activeCompanion.command : displayCommand;
+  const fullScript = activePrelude ? `${activePrelude}\n\n${activeCommand}` : activeCommand;
+  const actions = (
+    <div className="flex items-center gap-1.5 shrink-0">
+      <CopyButton text={fullScript} />
+      {!activeCompanion && (
+        <>
           <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} />
           <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
-          {endpointsControls}
+        </>
+      )}
+      {endpointsControls}
+    </div>
+  );
+  return (
+    <div>
+      {hasCompanions ? (
+        <>
+          <div className="px-4 pt-3 pb-1">
+            {statusHeader || (
+              <span className="text-[11px] text-[var(--command-fg)]/55 font-mono">
+                {configSummary}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center justify-between px-4 pt-2 gap-3">
+            <div className="flex flex-wrap gap-0.5 bg-foreground/5 rounded-md p-0.5">
+              {[{ id: "vllm", label: "vLLM Serve" }, ...companions.map((c) => ({ id: c.feature, label: c.label }))].map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
+                  className={`px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${(activeCompanion ? activeCompanion.feature : "vllm") === t.id ? "bg-foreground/10 text-[var(--command-fg)]" : "text-[var(--command-fg)]/50 hover:text-[var(--command-fg)]/80"
+                    }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {actions}
+          </div>
+        </>
+      ) : (
+        <div className="flex items-center justify-between px-4 pt-3 gap-3">
+          {statusHeader || (
+            <span className="text-[11px] text-[var(--command-fg)]/55 font-mono">
+              {configSummary}
+            </span>
+          )}
+          {actions}
         </div>
-      </div>
-      {prelude && (
+      )}
+      {activeCompanion?.description && (
+        <div className="px-4 pt-3 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug">
+          # {activeCompanion.description}
+        </div>
+      )}
+      {activePrelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-          {prelude}
+          {activePrelude}
         </pre>
       )}
       <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-        {displayCommand}
+        {activeCommand}
       </pre>
     </div>
   );

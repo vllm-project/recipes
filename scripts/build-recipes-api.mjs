@@ -232,6 +232,9 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
     command: result.command,
     argv: result.argv,
     ...dockerize(result.command, result.argv, env, dockerMeta),
+    // Feature companion processes (e.g. kv_offloading's `lmcache server`) —
+    // run alongside `vllm serve` on the same node, in their own terminal.
+    ...(result.companions ? { companions: result.companions } : {}),
   };
 }
 

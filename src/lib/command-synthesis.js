@@ -968,17 +968,6 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       || (envIsNvidia ? recipe.hardware_overrides?.nvidia : null);
     if (envHo?.extra_env) Object.assign(env, envHo.extra_env);
 
-    // Feature env last, mirroring the args block's "features last" order — a
-    // feature may ship env that only makes sense while it's toggled on (e.g.
-    // kv_offloading's PYTHONHASHSEED=0 so identical prefixes hash to identical
-    // cache keys across DP ranks). Same strategy gating as feature args.
-    for (const f of enabledFeatures || []) {
-      const feat = recipe.features?.[f];
-      if (!feat?.env) continue;
-      if (!isFeatureAllowedForStrategy(feat, strategyName)) continue;
-      Object.assign(env, feat.env);
-    }
-
     // NVL4-only env vars are meaningful only on GB200/GB300 trays. Drop them
     // for any other hardware regardless of where they came from (strategy YAML
     // or recipe-level pd_cluster override).
@@ -1161,10 +1150,27 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   }
 
   const singleArgs = buildArgs(null, null);
+  // Companion processes contributed by enabled features (`feature.companion:
+  // { label, description?, command }`) — helpers that must run alongside
+  // `vllm serve` on the same node, e.g. kv_offloading's `lmcache server`.
+  // Rendered as PD-style tabs next to the serve command. Same strategy gating
+  // as feature args, so a companion never leaks onto an excluded strategy.
+  const companions = (enabledFeatures || []).flatMap((f) => {
+    const feat = recipe.features?.[f];
+    if (!feat?.companion?.command) return [];
+    if (!isFeatureAllowedForStrategy(feat, strategyName)) return [];
+    return [{
+      feature: f,
+      label: feat.companion.label || f,
+      description: feat.companion.description || "",
+      command: String(feat.companion.command).trimEnd(),
+    }];
+  });
   return {
     deployType,
     command: formatCommand(singleArgs),
     argv: formatArgv(singleArgs),
     env: buildEnv(null),
+    ...(companions.length ? { companions } : {}),
   };
 }
