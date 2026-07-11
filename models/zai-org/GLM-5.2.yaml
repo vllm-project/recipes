@@ -3,7 +3,7 @@ meta:
   slug: "glm-5.2"
   provider: "GLM (Z-AI)"
   description: "GLM-5.2 — frontier-scale MoE language model (~743B total parameters, 39B active) with up to 5-token MTP speculative decoding and thinking mode"
-  date_updated: 2026-06-09
+  date_updated: 2026-06-27
   difficulty: advanced
   tasks:
     - text
@@ -73,6 +73,11 @@ variants:
       mi355x:
         extra_args:
           - "--trust-remote-code"
+  nvfp4:
+    model_id: "nvidia/GLM-5.2-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 558
+    description: "NVIDIA modelopt NVFP4 checkpoint — only MoE expert linears are quantized to NVFP4; shared experts, attention, embeddings, and the early dense layers stay FP8/BF16, with FP8 KV cache. Blackwell GPUs (B200/B300) only."
   bf16:
     precision: bf16
     vram_minimum_gb: 1786
@@ -223,7 +228,7 @@ guide: |
   export HIP_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
   export VLLM_ROCM_USE_AITER=1
   export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
-  
+
   vllm serve amd/GLM-5.2-MXFP4 \
     --trust-remote-code \
     --kv-cache-dtype fp8_e4m3 \
@@ -277,6 +282,25 @@ guide: |
   - **`VLLM_DEEP_GEMM_WARMUP=skip`** — skips DeepGEMM JIT warmup for a faster startup; the first
     few requests compile kernels on demand instead.
   - **BF16** needs multi-node plus an extra loader flag — see [Troubleshooting](#troubleshooting).
+
+  ### NVFP4 on Blackwell (B200/B300)
+
+  The `nvidia/GLM-5.2-NVFP4` variant is NVIDIA's modelopt re-quantization: only the MoE
+  expert linears drop to NVFP4 while shared experts, attention, embeddings, and the early
+  dense layers stay FP8/BF16, with FP8 KV cache. The ~465 GB checkpoint fits comfortably on
+  Blackwell — vLLM auto-detects the quantization from the checkpoint, so no `--quantization`
+  flag is needed. Select the **NVFP4** variant above (Blackwell-only) or run NVIDIA's command:
+
+  ```bash
+  vllm serve nvidia/GLM-5.2-NVFP4 \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --reasoning-parser glm45 \
+    --tool-call-parser glm47 \
+    --enable-auto-tool-choice \
+    --kv-cache-dtype fp8_e4m3 \
+    --served-model-name glm-5.2-nvfp4
+  ```
 
   ## Reasoning modes
 
@@ -378,3 +402,4 @@ guide: |
   - [Model card](https://huggingface.co/zai-org/GLM-5.2)
   - [FP8 checkpoint](https://huggingface.co/zai-org/GLM-5.2-FP8)
   - [MXFP4 checkpoint](https://huggingface.co/amd/GLM-5.2-MXFP4)
+  - [NVFP4 checkpoint (NVIDIA)](https://huggingface.co/nvidia/GLM-5.2-NVFP4)
