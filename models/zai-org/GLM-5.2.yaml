@@ -68,7 +68,6 @@ variants:
     supported_hardware:
       - mi355x
     description: "AMD Quark MXFP4 checkpoint — MoE weights quantized for MI355X (gfx950)"
-    tp: 8
     hardware_overrides:
       mi355x:
         extra_args:
@@ -245,15 +244,6 @@ guide: |
   For TP=4 validation runs, use `HIP_VISIBLE_DEVICES=0,1,2,3` and
   `--tensor-parallel-size 4`.
 
-  Add the `spec_decoding` feature, or pass GLM-5.2's MTP flags directly, only after verifying
-  your vLLM build honors Quark `exclude` entries for the unquantized MTP layer. See
-  [vLLM PR #46757](https://github.com/vllm-project/vllm/pull/46757) for the related Quark
-  MXFP4 MTP loading fix:
-
-  ```bash
-  --speculative-config.method mtp \
-  --speculative-config.num_speculative_tokens 5
-  ```
 
   ### FP8 on 8xB200 (full 1M context)
 
