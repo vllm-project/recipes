@@ -68,9 +68,6 @@ variants:
     supported_hardware:
       - mi355x
     description: "AMD Quark MXFP4 checkpoint — MoE weights quantized for MI355X (gfx950)"
-    extra_args:
-      - "--quantization"
-      - "quark"
     tp: 8
     hardware_overrides:
       mi355x:
@@ -130,6 +127,8 @@ guide: |
   - **GPU:** 8xH200 or 8xH20 (141 GB each) for single-node FP8; 8xB200 (180 GB each) for the
     full 1M context.
   - **MXFP4:** use the AMD Quark checkpoint on MI355X with ROCm and AITER enabled.
+    TP=8 is recommended for the full MXFP4 model on an 8x MI355X node; TP=4 is
+    also supported when memory headroom allows.
 
   ## Installation
 
@@ -218,17 +217,14 @@ guide: |
 
   The AMD Quark MXFP4 checkpoint quantizes the MoE weights while leaving non-MoE modules in
   higher precision. The recipe UI only enables this variant for supported AMD MI355X
-  hardware. Use Quark quantization and ROCm AITER kernels:
+  hardware. Use ROCm AITER kernels:
 
   ```bash
   export HIP_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
   export VLLM_ROCM_USE_AITER=1
   export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
-  export VLLM_ROCM_USE_AITER_FP8BMM=0
-  export VLLM_ROCM_USE_AITER_FP4BMM=0
-
+  
   vllm serve amd/GLM-5.2-MXFP4 \
-    --quantization quark \
     --trust-remote-code \
     --kv-cache-dtype fp8_e4m3 \
     --tensor-parallel-size 8 \
@@ -240,6 +236,9 @@ guide: |
     --no-enable-prefix-caching \
     --served-model-name glm-5.2-mxfp4
   ```
+
+  For TP=4 validation runs, use `HIP_VISIBLE_DEVICES=0,1,2,3` and
+  `--tensor-parallel-size 4`.
 
   Add the `spec_decoding` feature, or pass GLM-5.2's MTP flags directly, only after verifying
   your vLLM build honors Quark `exclude` entries for the unquantized MTP layer. See
