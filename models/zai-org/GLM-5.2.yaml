@@ -182,7 +182,7 @@ guide: |
     --enable-auto-tool-choice \
     --served-model-name glm-5.2-fp8
   ```
-### FP8 on 8xH20 (dspark with best practices)
+  ### FP8 on 8xH20 (dspark with best practices)
   ```bash
   vllm serve zai-org/GLM-5.2-FP8 \
      --tensor-parallel-size 8 \
