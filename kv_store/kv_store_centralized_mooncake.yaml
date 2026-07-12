@@ -68,20 +68,20 @@ mooncake_store_config:
   description: "Centralized CPU DRAM pool — owns all cache capacity (global_segment_size), survives vLLM restarts."
   # Rendered as # comment lines above the store-config heredoc on its tab.
   note: |-
-    global_segment_size here IS the whole cluster cache pool — size it to the
+    global_segment_size here IS per node (not per GPU) — size it to each
     store node's RAM. device_name "" auto-selects the store node's RDMA NICs.
   config:
     mode: "standalone-store"
     metadata_server: "P2PHANDSHAKE"
     master_server_address: "$MOONCAKE_MASTER_IP:50051"
-    # The store service IS the pool: this is the DRAM it registers for the
-    # whole cluster (vLLM instances contribute 0). Size to the node's RAM.
+    # The store service IS the pool: this is the DRAM per node it registers for
+    # the whole cluster (vLLM instances contribute 0). Size to the node's RAM.
     global_segment_size: "500GB"
     local_buffer_size: "4GB"
     protocol: "rdma"
-    # Store node's RDMA NIC CSV. Fill from the Endpoints panel or export
-    # MOONCAKE_STORE_DEVICE_NAME before pasting (unquoted heredoc);
-    # unset → "" = auto-selection.
+    # Store node's RDMA NIC list("mlx5_0,mlx5_1,..."). Fill from the Endpoints
+    # panel or export MOONCAKE_STORE_DEVICE_NAME before pasting (unquoted heredoc);
+    # unset to "" = auto-selection.
     device_name: "$MOONCAKE_STORE_DEVICE_NAME"
     enable_offload: false
 
@@ -96,13 +96,13 @@ mooncake_vllm_config:
     mode: "standalone-store"
     metadata_server: "P2PHANDSHAKE"
     master_server_address: "$MOONCAKE_MASTER_IP:50051"
+    # vLLM instances contribute no memory (0GB) — capacity lives in the store service.
     global_segment_size: 0
     local_buffer_size: "4GB"
     protocol: "rdma"
-    # RDMA NIC CSV ("mlx5_0,mlx5_1,..."). Fill from the Endpoints panel or
-    # export MOONCAKE_DEVICE_NAME before pasting — the config writes via an
-    # unquoted heredoc, so unset → "" = auto-selection by GPU-NIC PCIe/NUMA
-    # affinity. Pin explicitly only when auto-detect picks wrong ports.
+    # Store node's RDMA NIC list("mlx5_0,mlx5_1,..."). Fill from the Endpoints
+    # panel or export MOONCAKE_STORE_DEVICE_NAME before pasting (unquoted heredoc);
+    # unset to "" = auto-selection.
     device_name: "$MOONCAKE_DEVICE_NAME"
     # DirectIO SSD offload staging — off for the plain DRAM pool. If turned
     # on it must be true on all three components (mooncake_master, store
