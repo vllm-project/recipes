@@ -61,7 +61,7 @@ features:
         label: "DSpark"
         description: "DSpark drafting, 7 draft tokens, greedy. Requires the DSpark checkpoint (Variant row)."
         variants:
-          - dspark
+          - default
         args:
           - "--speculative-config"
           - '{"model": "RedHatAI/GLM-5.2-speculator.dspark","num_speculative_tokens": 7,"method": "dspark"}'
