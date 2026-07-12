@@ -185,14 +185,14 @@ guide: |
 ### FP8 on 8xH20 (dspark with best practices)
   ```bash
   vllm serve zai-org/GLM-5.2-FP8 \
-     --tensor-parallel-size 8
-     --tool-call-parser glm47
-     --reasoning-parser glm45
-     --enable-auto-tool-choice
-     --max-model-len 200000
-     --max-num-seqs 16
-     --max-num-batched-tokens 32768
-     --speculative-config '{"model": "RedHatAI/GLM-5.2-speculator.dspark","num_speculative_tokens": 7,"method": "dspark"}'
+     --tensor-parallel-size 8 \
+     --tool-call-parser glm47 \
+     --reasoning-parser glm45 \
+     --enable-auto-tool-choice \
+     --max-model-len 200000 \
+     --max-num-seqs 16 \
+     --max-num-batched-tokens 32768 \
+     --speculative-config '{"model": "RedHatAI/GLM-5.2-speculator.dspark","num_speculative_tokens": 7,"method": "dspark"}' \
      --served-model-name glm-5.2-fp8
   ```
   tps up to 70+ for single request
