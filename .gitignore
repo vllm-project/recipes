@@ -11,6 +11,7 @@ public/models.json
 public/strategies.json
 public/taxonomy.json
 public/platforms.json
+public/kv_store.json
 public/strategies/
 public/providers/
 public/hf-dates.json
