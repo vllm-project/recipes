@@ -10,7 +10,7 @@ description: >
   Multi-instance vLLM cluster with shared centralized KV cache via
   MooncakeStoreConnector in standalone-store mode. A dedicated
   mooncake_store_service process owns the entire CPU DRAM pool; vLLM
-  instances contribute zero local memory (global_segment_size=0).
+  GPUs contribute zero local memory (global_segment_size=0 per GPU).
   A vllm-router with cache_aware policy routes requests so prefix-
   matched prompts land on the same instance — maximizing KV cache hits.
   Decouples cache capacity from vLLM lifecycle — store survives vLLM
@@ -65,7 +65,7 @@ mooncake_master:
 
 mooncake_store_config:
   command: "python3 -m mooncake.mooncake_store_service --config $MOONCAKE_STORE_CONFIG_PATH"
-  description: "Centralized CPU DRAM pool — owns all cache capacity (global_segment_size), survives vLLM restarts."
+  description: "Centralized CPU DRAM pool — registers global_segment_size per store node and survives vLLM restarts."
   # Rendered as # comment lines above the store-config heredoc on its tab.
   note: |-
     global_segment_size here IS per node (not per GPU) — size it to each
@@ -89,14 +89,14 @@ mooncake_vllm_config:
   mode: standalone-store
   # Rendered as # comment lines above the config heredoc on the vLLM tab.
   note: |-
-    Same file on every instance node. Instances donate no memory
-    (global_segment_size 0) — capacity lives in the store service.
+    Same file on every instance node. Each GPU donates no memory
+    (global_segment_size 0 per GPU) — capacity lives in the store service.
     device_name "" auto-selects RDMA NICs by GPU-NIC PCIe/NUMA affinity.
   template:
     mode: "standalone-store"
     metadata_server: "P2PHANDSHAKE"
     master_server_address: "$MOONCAKE_MASTER_IP:50051"
-    # vLLM instances contribute no memory (0GB) — capacity lives in the store service.
+    # Each vLLM GPU contributes no memory (0GB) — capacity lives in the store service.
     global_segment_size: 0
     local_buffer_size: "4GB"
     protocol: "rdma"
