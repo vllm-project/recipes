@@ -12,13 +12,15 @@ meta:
     - "tencent/Hy3-preview"
   hardware:
     gb300: verified
+    mi300x: verified
+    mi355x: verified
 
 model:
   model_id: "tencent/Hy3"
-  min_vllm_version: "0.20.0"
+  min_vllm_version: "0.26.0"
   docker_image:
     nvidia: "vllm/vllm-openai:hy3"
-    amd: "vllm/vllm-openai-rocm:latest"
+    amd: "vllm/vllm-openai-rocm:nightly-cbe9c40f998f13975b967773ac7e7920e115387f"
   nightly_required: true
   install:
     docker:
@@ -85,7 +87,8 @@ hardware_overrides:
     extra_args: []
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
-      VLLM_ROCM_USE_AITER_MOE: "1"
+      # AITER fused-MoE disabled (CK GEMM crash); Triton fallback works. See note below.
+      VLLM_ROCM_USE_AITER_MOE: "0"
       VLLM_ROCM_USE_AITER_MHA: "1"
       VLLM_ROCM_USE_AITER_RMSNORM: "1"
       VLLM_ROCM_USE_AITER_LINEAR: "1"
@@ -155,7 +158,8 @@ guide: |
 
   ```bash
   export VLLM_ROCM_USE_AITER=1
-  export VLLM_ROCM_USE_AITER_MOE=1
+  # MoE disabled (CK GEMM crash); Triton fallback. See troubleshooting note below.
+  export VLLM_ROCM_USE_AITER_MOE=0
   export VLLM_ROCM_USE_AITER_MHA=1
   export VLLM_ROCM_USE_AITER_RMSNORM=1
   export VLLM_ROCM_USE_AITER_LINEAR=1
@@ -168,6 +172,16 @@ guide: |
     --served-model-name hy3 \
     --gpu-memory-utilization 0.90
   ```
+
+  > **ROCm troubleshooting — AITER fused-MoE.** With `VLLM_ROCM_USE_AITER_MOE=1`
+  > the engine currently aborts during warmup with
+  > `RuntimeError: wrong! device_gemm with the specified compilation parameters
+  > does not support this GEMM problem` (raised from `aiter` `ck_moe_stage2`).
+  > Workaround: set
+  > `VLLM_ROCM_USE_AITER_MOE=0` to fall back to the Triton MoE kernel; the other
+  > AITER backends (MHA / RMSNorm / Linear) run as-is. The docker run needs the
+  > ROCm device flags `--device /dev/kfd --device /dev/dri --group-add video
+  > --group-add render` (the recipe's NVIDIA `docker run` above is CUDA-only).
 
   MTP (recommended on AMD for lower latency, same flags as the NVIDIA path):
 
