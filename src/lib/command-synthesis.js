@@ -213,6 +213,33 @@ export function isModeAllowedForVariant(mode, variantKey) {
 }
 
 /**
+ * Whether a feature is available under a given strategy. A feature may restrict
+ * itself with `strategies: [<strategy_id>, ...]` when its args collide with a
+ * strategy's own flags or its setup doesn't generalize — e.g. an offloading
+ * feature whose --kv-transfer-config would clobber pd_cluster's NixlConnector
+ * config (features emit last, so last-wins dedupe would win), or whose
+ * companion server is node-local. Absence of `strategies` = every strategy.
+ */
+export function isFeatureAllowedForStrategy(feature, strategyName) {
+  const allow = feature?.strategies;
+  return !Array.isArray(allow) || allow.length === 0 || allow.includes(strategyName);
+}
+
+/**
+ * Whether a composing KV-offload option (taxonomy.kv_offload.*) may run under
+ * a strategy. Two layers: pd_cluster / kv_store_lb are excluded for EVERY
+ * option (both own --kv-transfer-config; last-wins dedupe would corrupt it),
+ * and an option may further restrict itself with a `strategies` allowlist
+ * (e.g. LMCache's node-local MP server rules out multi-node engines).
+ */
+export function isKvOffloadAllowedForStrategy(option, strategyName, strategy) {
+  if (!option) return false;
+  if (strategy?.deploy_type === "pd_cluster" || strategy?.deploy_type === "kv_store_lb") return false;
+  const allow = option.strategies;
+  return !Array.isArray(allow) || allow.length === 0 || allow.includes(strategyName);
+}
+
+/**
  * The effective mode key for a (feature, variant, hardware, user-selection)
  * tuple — the single source of truth shared by the command emitter and the UI.
  * Only considers modes allowed on this variant + hardware, then prefers, in
@@ -273,6 +300,16 @@ export function fitsSingleNode(hwProfile, variant) {
  */
 export function isHardwareScalable(hwProfile) {
   return hwProfile?.scalable !== false;
+}
+
+/**
+ * Mooncake's transfer engine ships CUDA and ROCm builds only, so the KV-store
+ * deployments are limited to NVIDIA/AMD GPUs — CPU (Intel Xeon) and TPU
+ * (Google) backends have no wheel and no RDMA GPU-transfer path. Shared by
+ * the UI's Mooncake pill gate and the JSON API's kv-rendering filter.
+ */
+export function isKvStoreBrandSupported(hwProfile) {
+  return hwProfile?.brand === "NVIDIA" || hwProfile?.brand === "AMD";
 }
 
 /**
@@ -616,7 +653,7 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile) {
  * Returns: { command, env, deployType } for single_node/multi_node,
  *          { prefillCommand, decodeCommand, routerConfig, env, deployType } for pd_cluster.
  */
-export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}) {
+export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
@@ -639,6 +676,43 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   // mode via `default_modes`; the mode never overrides model_id.
   const modelId = variant.model_id || recipe.model?.model_id || "unknown";
   const variantHardwareOverride = variant?.hardware_overrides?.[hwProfileId];
+
+  // Mooncake composition: `kvOffload` may name a kv_store deployment
+  // (deploy_type: kv_store_lb). It does NOT replace the serving strategy —
+  // the KV layer is orthogonal to parallelism — instead the serving strategy
+  // builds each instance's command as usual, the kv store's connector args +
+  // env are appended (last-wins), and the result is wrapped in the
+  // router/master/(store) deployment shell. Under pd_cluster the per-role
+  // MultiConnector path composes instead (see buildArgs step 8).
+  const kvStoreStrat = kvOffload && strategies?.[kvOffload]?.deploy_type === "kv_store_lb"
+    ? strategies[kvOffload]
+    : null;
+  const kvComposing = !!kvStoreStrat && strategy.deploy_type !== "pd_cluster";
+
+  // kv composition only: instance count + which instance's command is being
+  // rendered (0-based — affects the multi-node --master-addr naming below).
+  // `kvInstances` accepts a bare count or { count, current }.
+  const kvInstObj = (kvInstances && typeof kvInstances === "object")
+    ? kvInstances
+    : { count: kvInstances };
+  const kvInstanceCount = (typeof kvInstObj.count === "number" && kvInstObj.count >= 1)
+    ? Math.floor(kvInstObj.count)
+    : (kvStoreStrat?.default_instances || 2);
+  const kvCurrentInstance = Math.max(0, Math.min(kvInstanceCount - 1, kvInstObj.current ?? 0));
+  // A kv_store `vllm.install` may be brand-keyed ({ nvidia, amd }) — Mooncake
+  // ships a CUDA wheel and a separate non-CUDA build for ROCm. Other brands
+  // (Intel CPU, Google TPU) have no wheel at all → null, never a silent
+  // fall-through to the CUDA build (they're gated out upstream by
+  // isKvStoreBrandSupported, this is defense in depth).
+  const resolveBrandInstall = (raw) => {
+    if (raw && typeof raw === "object") {
+      const key = hwProfile?.brand === "AMD" ? "amd"
+        : hwProfile?.brand === "NVIDIA" ? "nvidia"
+        : null;
+      return key ? (raw[key] || null) : null;
+    }
+    return raw || null;
+  };
 
   // Helper to merge args
   function buildArgs(roleOverride, nodeRole) {
@@ -671,12 +745,20 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     const parallelFlag = strategy.parallel_flag || "--tensor-parallel-size";
     const isMulti = strategy.deploy_type === "multi_node" && nodeCount > 1;
     const isPdMulti = strategy.deploy_type === "pd_cluster" && nodeCount > 1;
+    // Multi-node rendezvous host. When Mooncake composes with a multi-node
+    // strategy, each instance's head is the same host the router lists as
+    // $VLLM_INSTANCE_N — reuse that name so one Endpoints value feeds both.
+    // With a single instance there is no router (and no INSTANCE naming), so
+    // it falls back to the plain multi-node convention: $HEAD_IP.
+    const mpMasterAddr = kvComposing && kvInstanceCount > 1
+      ? `$VLLM_INSTANCE_${kvCurrentInstance + 1}`
+      : "$HEAD_IP";
 
     if (isMulti && parallelFlag === "--data-parallel-size") {
       // Multi-node DEP: DP across all GPUs, each worker owns N local ranks.
       args.push("--data-parallel-size", String(totalGpus));
       args.push("--data-parallel-size-local", String(gpuCount));
-      args.push("--data-parallel-address", "$HEAD_IP");
+      args.push("--data-parallel-address", mpMasterAddr);
       if (nodeRole === "worker") {
         // Example worker = node 1 (start rank offset by one node's worth of GPUs).
         args.push("--data-parallel-start-rank", String(gpuCount));
@@ -689,7 +771,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       args.push("--pipeline-parallel-size", String(nodeCount));
       args.push("--nnodes", String(nodeCount));
       args.push("--node-rank", nodeRole === "worker" ? "1" : "0");
-      args.push("--master-addr", "$HEAD_IP");
+      args.push("--master-addr", mpMasterAddr);
       if (nodeRole === "worker") args.push("--headless");
     } else if (isMulti) {
       // Multi-node TP/TEP via vLLM multiprocessing (mp) backend:
@@ -698,7 +780,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       args.push("--tensor-parallel-size", String(totalGpus));
       args.push("--nnodes", String(nodeCount));
       args.push("--node-rank", nodeRole === "worker" ? "1" : "0");
-      args.push("--master-addr", "$HEAD_IP");
+      args.push("--master-addr", mpMasterAddr);
       if (nodeRole === "worker") args.push("--headless");
     } else if (strategy.deploy_type === "pd_cluster") {
       // PD splits inference across separate prefill and decode pools.
@@ -853,6 +935,12 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     for (const f of enabledFeatures || []) {
       const feat = recipe.features?.[f];
       if (!feat) continue;
+      if (!isFeatureAllowedForStrategy(feat, strategyName)) continue;
+      // A companion-backed feature can't render its helper inside the
+      // Mooncake deployment shell (companion tabs are a single-node-block
+      // concept), so its args are skipped too — args and companion always
+      // gate together, never a command that references an unstarted process.
+      if (kvComposing && feat.companion?.command) continue;
       // Single-select sub-modes: the feature declares `modes` and the user
       // picks one (spec_decoding → MTP / DFlash / DSpark). Emit only the
       // effective mode's args — resolveModeKey honours variant + hardware
@@ -872,6 +960,30 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         || (isNvidia ? feat.hardware_overrides?.nvidia : null);
       const featArgs = featHo?.args ?? feat.args;
       if (featArgs) args.push(...featArgs);
+    }
+
+    // 8. Composing KV offload (taxonomy.kv_offload.<key>: Simple, LMCache) —
+    //    the option's --kv-transfer-config is appended last so it wins the
+    //    last-wins dedupe over any earlier occurrence. Gating (pd/kv_store
+    //    exclusion + per-option strategy allowlist) lives in
+    //    isKvOffloadAllowedForStrategy, shared with the UI pills.
+    const kvOpt = taxonomy?.kv_offload?.[kvOffload];
+    if (kvOpt && isKvOffloadAllowedForStrategy(kvOpt, strategyName, strategy)) {
+      args.push(...(kvOpt.args || []));
+    }
+    // Mooncake composes the same way on any non-PD serving strategy: the
+    // MooncakeStoreConnector config appends after the strategy/feature args
+    // so its --kv-transfer-config wins the last-wins dedupe. Parallelism
+    // stays whatever the strategy emitted above — the KV layer is orthogonal.
+    if (kvComposing) {
+      args.push(...(kvStoreStrat.vllm?.vllm_args || []));
+    }
+    // Mooncake × pd_cluster: each role's plain NixlConnector config is
+    // swapped (last-wins) for the kv_store YAML's `pd.<role>.args`
+    // MultiConnector — Nixl prefill↔decode path + shared MooncakeStoreConnector.
+    if (strategy.deploy_type === "pd_cluster" && roleOverride
+        && kvStoreStrat?.pd?.[roleOverride]?.args) {
+      args.push(...kvStoreStrat.pd[roleOverride].args);
     }
 
     return args;
@@ -895,6 +1007,15 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       Object.assign(env, strategy.env || {});
     } else if (roleOverride && strategy[roleOverride]?.env) {
       Object.assign(env, strategy[roleOverride].env);
+    }
+    // Mooncake composition: instances (any serving strategy) and PD roles
+    // read the shared config via MOONCAKE_CONFIG_PATH (+ PYTHONHASHSEED for
+    // consistent prefix hashing across processes).
+    if (kvComposing) {
+      Object.assign(env, kvStoreStrat.vllm?.env || {});
+    } else if (strategy.deploy_type === "pd_cluster" && roleOverride
+        && kvStoreStrat?.pd) {
+      Object.assign(env, kvStoreStrat.vllm?.env || {});
     }
 
     // PD: pin GPUs per role via CUDA_VISIBLE_DEVICES.
@@ -1095,9 +1216,29 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
 
     const prefillArgs = buildArgs("prefill", null);
     const decodeArgs = buildArgs("decode", null);
+    // Mooncake composed into PD: surface master / store / config so the PD
+    // block can render their tabs and the per-node config heredoc.
+    const pdMooncake = (kvStoreStrat?.pd)
+      ? {
+          master: {
+            command: kvStoreStrat.mooncake_master?.command || "mooncake_master",
+            description: kvStoreStrat.mooncake_master?.description || "",
+          },
+          store: kvStoreStrat.mooncake_store_config ? {
+            command: kvStoreStrat.mooncake_store_config.command,
+            description: kvStoreStrat.mooncake_store_config?.description || "",
+            config: kvStoreStrat.mooncake_store_config?.config || null,
+            note: kvStoreStrat.mooncake_store_config?.note || "",
+          } : null,
+          config: kvStoreStrat.mooncake_vllm_config?.template || {},
+          configNote: kvStoreStrat.mooncake_vllm_config?.note || "",
+          install: resolveBrandInstall(kvStoreStrat.vllm?.install),
+        }
+      : null;
     return {
       deployType,
       nodeCount,
+      ...(pdMooncake ? { mooncake: pdMooncake } : {}),
       prefill: {
         command: formatCommand(prefillArgs),
         argv: formatArgv(prefillArgs),
@@ -1118,6 +1259,91 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     };
   }
 
+  if (kvComposing) {
+    // Mooncake deployment shell around the serving strategy: vllm-router
+    // (cache-aware, 2+ instances) + mooncake_master + (optionally)
+    // mooncake_store_service + N × vLLM instances + a shared config JSON.
+    // Each instance's command was built ABOVE by the selected serving
+    // strategy (TP/TEP/DEP, single- or multi-node) with the
+    // MooncakeStoreConnector args/env appended — the KV layer never decides
+    // parallelism.
+    //
+    // Two orthogonal axes (mirrors agentx's `count` × `nodes_per_instance`):
+    //   instances — how many independent vLLM engines sit behind the router
+    //               (kvInstances param → kv YAML default_instances → 2).
+    //   nodeCount — nodes PER INSTANCE, straight from the Nodes row. 1 =
+    //               single-node engine; >1 = each instance shards across
+    //               nodes via the serving strategy's own mp-backend args.
+    // The router lists one endpoint per instance (each instance's head node).
+    const instances = kvInstanceCount;
+    const multiNodeInstance = strategy.deploy_type === "multi_node" && nodeCount > 1;
+    const vllmArgs = multiNodeInstance ? buildArgs(null, "head") : buildArgs(null, null);
+    const workerArgs = multiNodeInstance ? buildArgs(null, "worker") : null;
+    const mooncakeVllmConfig = kvStoreStrat.mooncake_vllm_config?.template || {};
+    const mooncakeStoreConfig = kvStoreStrat.mooncake_store_config?.config || null;
+
+    // Router construction — mirrors pd_cluster pattern
+    const routerPolicy = kvStoreStrat.router?.policy || "cache_aware";
+    const routerPort = kvStoreStrat.router?.port || 30080;
+    const vllmPort = kvStoreStrat.vllm?.port || 8000;
+    const vllmEndpoints = Array.from(
+      { length: instances },
+      (_, i) => `    --backend-url http://$VLLM_INSTANCE_${i + 1}:${vllmPort} \\`,
+    );
+    const routerLines = [
+      `vllm-router --policy ${routerPolicy} \\`,
+      ...vllmEndpoints,
+      `    --host $ROUTER_HOST \\`,
+      // $ROUTER_PORT (not the literal) so the Endpoints panel's curl/bench
+      // target edits also retarget the bind; router.port seeds the default.
+      `    --port $ROUTER_PORT \\`,
+      `    --cache-threshold 0.5 \\`,
+      `    --balance-abs-threshold 4 \\`,
+      `    --balance-rel-threshold 1.1`,
+    ];
+    const routerCommand = routerLines.join("\n");
+
+    return {
+      deployType: "kv_store_lb",
+      // The strategy each instance runs — surfaced so UI/API consumers can
+      // name the composition ("Single-node TEP · Mooncake") without rederiving.
+      servingStrategy: strategyName,
+      nodeCount,
+      instances,
+      currentInstance: kvCurrentInstance,
+      master: {
+        command: kvStoreStrat.mooncake_master?.command || "mooncake_master",
+        description: kvStoreStrat.mooncake_master?.description || "",
+      },
+      store: kvStoreStrat.mooncake_store_config ? {
+        command: kvStoreStrat.mooncake_store_config.command,
+        description: kvStoreStrat.mooncake_store_config?.description || "",
+        config: mooncakeStoreConfig,
+        note: kvStoreStrat.mooncake_store_config?.note || "",
+      } : null,
+      vllm: {
+        command: formatCommand(vllmArgs),
+        argv: formatArgv(vllmArgs),
+        ...(workerArgs ? {
+          workerCommand: formatCommand(workerArgs),
+          workerArgv: formatArgv(workerArgs),
+        } : {}),
+        env: buildEnv(null),
+        install: resolveBrandInstall(kvStoreStrat.vllm?.install),
+      },
+      // A single instance needs no LB — clients hit it directly on the vllm
+      // port; the router (and its $VLLM_INSTANCE_N naming) only exists at 2+.
+      router: instances > 1 ? {
+        command: routerCommand,
+        install: kvStoreStrat.router?.install || "uv pip install vllm-router",
+        port: routerPort,
+      } : null,
+      mooncakeConfig: mooncakeVllmConfig,
+      // Sizing/NIC guidance rendered as # lines above the config heredoc.
+      mooncakeConfigNote: kvStoreStrat.mooncake_vllm_config?.note || "",
+    };
+  }
+
   if (deployType === "multi_node" && nodeCount > 1) {
     // Every multi-node strategy renders the same shape: head + worker tabs.
     // Workers use --headless (TP/TEP) or --data-parallel-start-rank offset (DEP).
@@ -1135,10 +1361,41 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   }
 
   const singleArgs = buildArgs(null, null);
+  // Companion processes — helpers that must run alongside `vllm serve` on the
+  // same node, rendered as PD-style tabs next to the serve command. Two
+  // sources, same gating as their args so a companion never leaks onto an
+  // excluded strategy:
+  //   - enabled features declaring `companion: { label, description?, command }`
+  //   - the active composing KV-offload option (e.g. LMCache's MP server)
+  const companions = (enabledFeatures || []).flatMap((f) => {
+    const feat = recipe.features?.[f];
+    if (!feat?.companion?.command) return [];
+    if (!isFeatureAllowedForStrategy(feat, strategyName)) return [];
+    return [{
+      feature: f,
+      label: feat.companion.label || f,
+      description: feat.companion.description || "",
+      command: String(feat.companion.command).trimEnd(),
+    }];
+  });
+  const kvCompanionOpt = taxonomy?.kv_offload?.[kvOffload];
+  if (kvCompanionOpt?.companion?.command
+      && isKvOffloadAllowedForStrategy(kvCompanionOpt, strategyName, strategy)) {
+    companions.push({
+      feature: `kv_offload:${kvOffload}`,
+      label: kvCompanionOpt.companion.label || kvOffload,
+      description: [
+        kvCompanionOpt.companion.description || "",
+        kvCompanionOpt.install ? `Requires: ${kvCompanionOpt.install}` : "",
+      ].filter(Boolean).join(" "),
+      command: String(kvCompanionOpt.companion.command).trimEnd(),
+    });
+  }
   return {
     deployType,
     command: formatCommand(singleArgs),
     argv: formatArgv(singleArgs),
     env: buildEnv(null),
+    ...(companions.length ? { companions } : {}),
   };
 }

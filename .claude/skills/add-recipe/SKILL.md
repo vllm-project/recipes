@@ -44,7 +44,7 @@ Recipes are YAML files at `models/<hf_org>/<hf_repo>.yaml`. The path mirrors Hug
 
 5. **Create the YAML.** Write `models/<hf_org>/<hf_repo>.yaml` following the schema below. Only include sections the model needs; leave `features: {}`, `opt_in_features: []`, `hardware_overrides: {}`, `strategy_overrides: {}` empty if not applicable.
 6. **Register the provider (if new).** If `<hf_org>` isn't already in `src/lib/providers.js`, add an entry with `display_name` and the logo path `/providers/<hf_org>.png` (or `.jpeg`). Logos get downloaded by `scripts/fetch-provider-logos.mjs` on the next build.
-7. **Validate.** Run `node scripts/build-recipes-api.mjs`. It must print `✓ JSON API: N models, 7 strategies` with no errors.
+7. **Validate.** Run `node scripts/build-recipes-api.mjs`. It must print `✓ JSON API: N models, <strategy-count> strategies` with no errors.
 8. **Commit.** Follow the user's earlier feedback (no kill-and-rebuild of dev server; syntax-check only).
 
 ## YAML schema (top-level fields, in order)
@@ -151,7 +151,7 @@ variants:
     extra_args: []
     extra_env: {}
 
-compatible_strategies:            # subset of the 7 in strategies/*.yaml
+compatible_strategies:            # subset of the SERVING strategies in strategies/*.yaml
   - single_node_tp                # always include this as a baseline
   - single_node_tep               # for MoE
   - single_node_dep               # for MoE
@@ -159,6 +159,18 @@ compatible_strategies:            # subset of the 7 in strategies/*.yaml
   - multi_node_dep                # for MoE
   - multi_node_tep                # for MoE
   - pd_cluster                    # only if the recipe documents PD
+  # Do NOT list kv_store_* ids — the KV Offload options (Simple + both
+  # Mooncake modes) are implicit on every non-omni recipe.
+
+# Optional opt-OUT for the Mooncake pills on the command builder's
+# "KV Offload" row. Fail-open like meta.hardware: absent = assumed to work
+# (pill enabled on any scalable GPU); `unsupported` disables the pill and
+# makes the JSON API skip that strategy on that hardware. Off and Simple
+# need no gating (Simple is taxonomy-driven — `taxonomy.yaml →
+# kv_offload.simple` — and needs nothing per-recipe).
+kv_cache_strategy_hardware:
+  kv_store_distributed_mooncake:
+    gb200: unsupported
 
 hardware_overrides:               # optional per-generation flags
   hopper:    { extra_args: [], extra_env: {} }
@@ -219,7 +231,8 @@ So `vram_minimum_gb = ceil(real_checkpoint_GB × 1.2)` (Qwen3.6-27B-NVFP4 → `c
 ## Naming and conventions
 
 - **Feature keys**: prefer `tool_calling`, `reasoning`, `spec_decoding`. Don't use `mtp` — it's been renamed across the repo.
-- **Strategy list**: MoE recipes usually support every strategy; dense recipes are limited to `single_node_tp` and `multi_node_tp` (TEP/DEP require MoE).
+- **Strategy list**: MoE recipes usually support every serving strategy; dense recipes are limited to `single_node_tp` and `multi_node_tp` (TEP/DEP require MoE). KV offload is a separate axis and is NOT listed here — Off / Simple / both Mooncake modes are implicit on every non-omni recipe and COMPOSE with whatever serving strategy is selected (each Mooncake instance runs the strategy's exact command; parallelism never comes from the KV layer).
+- **KV Offload gating**: fail-open. Only add `kv_cache_strategy_hardware` when a Mooncake mode is known NOT to work on a specific GPU — mark that strategy × GPU pair `unsupported`. Absence = assumed to work, same convention as `meta.hardware`.
 - **Variants**: quantized variants reuse the base name (`fp8`, `nvfp4`, `int4`). If the quantized checkpoint is authored by someone else (e.g. `nvidia/*-NVFP4`), set `model_id:` inside the variant.
 - **Tasks**: `omni` means served via vLLM-Omni (`vllm serve <model> --omni`). Add a top-level `omni:` block listing the task ids the recipe supports — bare strings for catalog defaults (`tasks: [t2i]`) or `{ id, model_id?, vram_minimum_gb?, description?, extra_args? }` overrides when a task swaps the checkpoint (Wan2.2) or needs per-task flags. Audio-only recipes set `omni.serve_binary: "vllm-omni serve"`. The catalog is `src/lib/omni-tasks.js`; do not add `--omni` to `model.base_args` (auto-injected).
 
@@ -230,6 +243,7 @@ Before committing:
 1. `node scripts/build-recipes-api.mjs` succeeds and the new recipe appears in the line count.
 2. `node -e "const d = require('./public/<hf_org>/<hf_repo>.json'); console.log(d.model.parameter_count, d.variants.default.vram_minimum_gb)"` prints sensible values.
 3. The YAML top-level key order matches the schema above — downstream tools don't care, but reviewers scan for it.
+4. If the recipe marks any KV-store mode `unsupported` under `kv_cache_strategy_hardware`, spot-check `public/<hf_org>/<hf_repo>/hw/<gpu>/strategies/`: no `kv_store_*` file may exist for an opted-out GPU (they are emitted for all other scalable hardware by default).
 
 ## Commit
 

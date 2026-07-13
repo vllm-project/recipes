@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy } from "@/lib/command-synthesis";
 import { resolveOmniTasks } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -85,7 +85,7 @@ function CopyButton({ text, className = "" }) {
   );
 }
 
-function PopoverButton({ label, code, icon: Icon }) {
+function PopoverButton({ label, code, icon: Icon, disabled, disabledNote }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [rect, setRect] = useState(null);
@@ -119,6 +119,26 @@ function PopoverButton({ label, code, icon: Icon }) {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  // Disabled rendering (e.g. cURL/Bench on a tab clients don't connect to):
+  // the button stays visible so the reader learns WHERE these actions live
+  // instead of watching them vanish; the tooltip names the right tab.
+  // (After the hooks above — `disabled` flips as the user switches tabs, and
+  // an earlier return would change the hook order between renders.)
+  if (disabled) {
+    const chip = (
+      <span
+        tabIndex={0}
+        aria-disabled
+        aria-label={disabledNote || label}
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-foreground/5 text-[var(--command-fg)]/25 cursor-not-allowed select-none"
+      >
+        <Icon size={11} />
+        {label}
+      </span>
+    );
+    return disabledNote ? <InfoTip content={disabledNote}>{chip}</InfoTip> : chip;
+  }
 
   const popover = open && rect && typeof document !== "undefined" ? createPortal(
     <>
@@ -168,7 +188,7 @@ function PopoverButton({ label, code, icon: Icon }) {
 // is a form for editing $VAR / NODE_N substitutions. Lives on each command
 // block header next to cURL/Bench so the user finds it where they realize
 // "this curl is hitting localhost — I need to point it elsewhere."
-function EndpointsPopoverButton({ isPd, isMultiNode, placeholders, endpoints, onChange, onReset }) {
+function EndpointsPopoverButton({ isPd, isKvStore, isMultiNode, placeholders, endpoints, onChange, onReset }) {
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState(null);
   const btnRef = useRef(null);
@@ -192,10 +212,10 @@ function EndpointsPopoverButton({ isPd, isMultiNode, placeholders, endpoints, on
     };
   }, [open]);
 
-  const clientHostKey = isPd ? "ROUTER_HOST" : (isMultiNode ? "HEAD_IP" : "VLLM_HOST");
-  const clientPortKey = isPd ? "ROUTER_PORT" : "VLLM_PORT";
+  const clientHostKey = (isPd || isKvStore) ? "ROUTER_HOST" : (isMultiNode ? "HEAD_IP" : "VLLM_HOST");
+  const clientPortKey = (isPd || isKvStore) ? "ROUTER_PORT" : "VLLM_PORT";
   const clientHostHint = "localhost";
-  const clientPortHint = isPd ? "30000" : "8000";
+  const clientPortHint = isPd ? "30000" : isKvStore ? "30080" : "8000";
 
   const extras = placeholders.filter(
     (p) => !(p.kind === "var" && (p.name === clientHostKey || p.name === clientPortKey)),
@@ -317,6 +337,18 @@ function EndpointsPopoverButton({ isPd, isMultiNode, placeholders, endpoints, on
   );
 }
 
+// Framework-level background for the merged Mooncake pill (tooltip + the text
+// under the KV Offload row while Mooncake is active). Topology-specific
+// wording (embedded vs standalone-store) lives on the Store Topology row.
+const MOONCAKE_BACKGROUND =
+  "Mooncake is a distributed KV cache layer for LLM serving: vLLM instances share prefix KV blocks through a CPU-DRAM pool coordinated by a lightweight master; at 2+ instances a cache-aware router sends prefix-matched requests to the instance already holding them. Pick the store topology below.";
+const MOONCAKE_DOCS_URL =
+  "https://docs.vllm.ai/en/stable/features/mooncake_store_connector_usage";
+// Where the merged Mooncake pill sorts among taxonomy.kv_offload options
+// (their `order` fields are chosen around this): Off · Simple(1) ·
+// Mooncake(2) · LMCache(3).
+const MOONCAKE_PILL_ORDER = 2;
+
 export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -392,7 +424,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
     const rs = loadRecipeState(recipe.hf_id);
     if (!searchParams.get("strategy") && rs.strategy &&
-        (recipe.compatible_strategies || []).includes(rs.strategy)) {
+        (recipe.compatible_strategies || []).includes(rs.strategy) &&
+        strategies[rs.strategy]?.deploy_type !== "kv_store_lb") {
       setStrategyOverride(rs.strategy);
     }
     if (!searchParams.get("features") && Array.isArray(rs.features)) {
@@ -404,6 +437,23 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const resolvedHwId = restoredFitsHw ? prefs.hardware : hwId;
     const resolvedHw = taxonomy.hardware_profiles?.[resolvedHwId];
     const resolvedScalable = isHardwareScalable(resolvedHw);
+    // KV offload restores separately from the serving strategy: "simple" is
+    // always valid; a Mooncake pick must also be usable on the hardware this
+    // mount settles on (scalable + not opted out) — restoring it onto a
+    // non-scalable profile would only trip the downgrade effect and hide the
+    // pick until the user returns to supported hardware.
+    if (!searchParams.get("kv_offload") && rs.kvOffload &&
+        (taxonomy.kv_offload?.[rs.kvOffload] ||
+          (strategies[rs.kvOffload]?.deploy_type === "kv_store_lb" &&
+            resolvedScalable && isKvStoreBrandSupported(resolvedHw) && isKvStoreSupported(rs.kvOffload, resolvedHwId)))) {
+      setKvOffload(rs.kvOffload);
+    }
+    if (!searchParams.get("kv_instances")) {
+      const savedInstances = parseInt(rs.kvInstances, 10);
+      if (Number.isFinite(savedInstances) && savedInstances >= 1 && savedInstances <= 16) {
+        setKvInstances(savedInstances);
+      }
+    }
     // Non-scalable hardware can't shard an oversized variant. If we land on one
     // (e.g. ?hardware=dgx_station_gb300, or a restored DGX preference) with a
     // variant that doesn't fit, fall to the largest variant that does. URL
@@ -430,8 +480,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Recipes without a multi_node_* / pd_cluster strategy can't scale beyond one
-  // node — force nodeCount to 1 in that case, even if the URL says otherwise.
+  // Recipes without a multi_node_* / pd_cluster strategy can't scale beyond
+  // one node — force nodeCount to 1 in that case, even if the URL says
+  // otherwise. (Nodes means nodes PER INSTANCE under Mooncake too; the
+  // instance count is a separate axis and doesn't need multi-node support.)
   const supportsMultiNode = (recipe.compatible_strategies || []).some(
     (s) => s.startsWith("multi_node_") || s === "pd_cluster"
   );
@@ -538,7 +590,32 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const n = parseInt(searchParams.get("decode_rank") || "0", 10);
     return Number.isFinite(n) && n >= 0 ? n : 0;
   });
-  const [strategyOverride, setStrategyOverride] = useState(searchParams.get("strategy") || "");
+  const [strategyOverride, setStrategyOverride] = useState(() => {
+    // A kv_store id in ?strategy= must never become the serving strategy —
+    // Mooncake selection travels in ?kv_offload= instead.
+    const s = searchParams.get("strategy") || "";
+    return strategies[s]?.deploy_type === "kv_store_lb" ? "" : s;
+  });
+  // KV offload: "" = off, a taxonomy option key ("simple"/"lmcache") whose
+  // connector args append to the current serving strategy, or a kv_store_lb
+  // strategy id (Mooncake) that COMPOSES with it — each instance runs the
+  // selected strategy's command wrapped in the router/master deployment shell.
+  const [kvOffload, setKvOffload] = useState(searchParams.get("kv_offload") || "");
+  // Mooncake instance count — independent vLLM engines sharing the KV pool.
+  // Orthogonal to nodeCount (which stays "nodes per instance"). null = follow
+  // the active topology's default_instances (distributed: 1, centralized: 2);
+  // only read when a Mooncake mode is active.
+  const [kvInstances, setKvInstances] = useState(() => {
+    const n = parseInt(searchParams.get("kv_instances") || "", 10);
+    return Number.isFinite(n) && n >= 1 && n <= 16 ? n : null;
+  });
+  // Which instance's command the vLLM tab renders (0-based, URL 0 omitted) —
+  // same pattern as PD's per-pool node selector. Only the multi-node
+  // --master-addr naming differs between instances.
+  const [kvInstanceIdx, setKvInstanceIdx] = useState(() => {
+    const n = parseInt(searchParams.get("kv_instance") || "0", 10);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  });
   // Default-on features = (all features) − (recipe.opt_in_features) − (recipe.hardware_opt_in_features[hwId]).
   // The per-hw override lets a recipe suppress a feature's default on specific
   // hardware (e.g. GB200's 4-GPU trays make --mm-encoder-tp-mode data unnecessary).
@@ -761,15 +838,82 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     return (recipe.compatible_strategies || []).filter((s) => {
       const strat = strategies[s];
       if (!strat) return false;
+      // kv_store_lb deployments live on the KV Offload row, not here.
+      if (strat.deploy_type === "kv_store_lb") return false;
       if (nodeCount === 1 && strat.deploy_type === "multi_node") return false;
       if (nodeCount > 1 && strat.deploy_type === "single_node") return false;
       return true;
     });
   }, [recipe, strategies, nodeCount]);
 
+  // Mooncake KV-store deployments (deploy_type: kv_store_lb) — offered on
+  // every recipe by default (omni recipes never reach this row), no
+  // compatible_strategies opt-in. Display order = the YAML `order` field
+  // (distributed leads, matching the first-click default), alphabetical
+  // fallback.
+  const compatibleKvStoreStrategies = useMemo(
+    () => Object.keys(strategies)
+      .filter((s) => strategies[s]?.deploy_type === "kv_store_lb")
+      .sort((a, b) =>
+        ((strategies[a]?.order ?? 99) - (strategies[b]?.order ?? 99))
+        || a.localeCompare(b)
+      ),
+    [strategies]
+  );
+
+  // Mooncake modes follow the repo's fail-open hardware convention: absent =
+  // assumed to work; a recipe opts OUT per GPU by marking the strategy × GPU
+  // pair `unsupported` under `kv_cache_strategy_hardware`.
+  const isKvStoreSupported = useCallback(
+    (s, hardwareId = hwId) => recipe.kv_cache_strategy_hardware?.[s]?.[hardwareId] !== "unsupported",
+    [recipe, hwId]
+  );
+
   // PD now sizes each pool independently, so the "2× model VRAM on one node"
   // concern that used to invalidate pd_cluster on small GPUs no longer applies.
-  const activeStrategy = strategyOverride || recommended;
+  const recommendedServingStrategy = compatibleStrategies.includes(recommended)
+    ? recommended
+    : (compatibleStrategies[0] || recommended);
+  const activeServingStrategy = compatibleStrategies.includes(strategyOverride)
+    ? strategyOverride
+    : recommendedServingStrategy;
+  // Downgrade an unusable KV-offload pick instead of rendering a broken
+  // command: composing options (taxonomy.kv_offload — Simple, LMCache) can't
+  // run under pd_cluster (which owns --kv-transfer-config) or outside their
+  // own `strategies` allowlist; Mooncake needs scalable hardware not opted
+  // out by the recipe.
+  const kvOffloadOptions = taxonomy.kv_offload || {};
+  const activeKvOffload =
+    kvOffloadOptions[kvOffload]
+      ? (isKvOffloadAllowedForStrategy(kvOffloadOptions[kvOffload], activeServingStrategy, strategies[activeServingStrategy]) ? kvOffload : "")
+      : compatibleKvStoreStrategies.includes(kvOffload) && hwScalable
+          && isKvStoreBrandSupported(hwProfile) && isKvStoreSupported(kvOffload)
+        ? kvOffload
+        : "";
+  const isKvStoreActive = compatibleKvStoreStrategies.includes(activeKvOffload);
+  // Mooncake COMPOSES with the serving strategy — parallelism (TP/TEP/DEP,
+  // single/multi-node) is orthogonal to the KV layer. Each instance runs the
+  // selected strategy's command with the MooncakeStoreConnector appended;
+  // synthesis wraps the result in the router/master/(store) deployment shell.
+  // Under pd_cluster the per-role MultiConnector path composes instead. The
+  // Strategy row therefore stays fully in effect at all times.
+  const activeStrategy = activeServingStrategy;
+  // Mooncake instance scaling applies (Instances row + per-instance Nodes
+  // semantics) on every serving strategy except PD, whose pools size themselves.
+  const kvInstancesActive = isKvStoreActive && activeServingStrategy !== "pd_cluster";
+
+  // Keep the Mooncake selection coherent: a pick invalidated by the current
+  // hardware (non-scalable or opted out — e.g. a ?hardware= link) is reset in
+  // state + URL only. Storage is left alone: deliberate invalidation already
+  // cleans it in selectHardware, and wiping it here would destroy a pick
+  // saved on supported hardware the moment an unsupported render occurs.
+  useEffect(() => {
+    if (compatibleKvStoreStrategies.includes(kvOffload) && activeKvOffload !== kvOffload) {
+      setKvOffload("");
+      syncUrl({ kv_offload: "" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeKvOffload, kvOffload]);
 
   // Effective TP under single_node_tp, via the shared resolver so the hint
   // is perfectly in sync with the generated command. The resolver accepts
@@ -797,9 +941,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           decode: { nodes: pdDecodeNodes, rank: pdDecodeRank, parallelism: pdDecodePar },
         }
         : null;
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes);
+      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx });
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, pdPrefillNodes, pdDecodeNodes, pdPrefillRank, pdDecodeRank, pdPrefillPar, pdDecodePar]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, pdPrefillNodes, pdDecodeNodes, pdPrefillRank, pdDecodeRank, pdPrefillPar, pdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx]
   );
 
   // Visual feedback when any rendered command changes. Covers single-node
@@ -809,6 +953,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const commandFingerprint = (result.command
     || result.headCommand
     || result.prefill?.command
+    || result.vllm?.command
     || "")
     + (omniTask ? `|task:${omniTask}` : "");
   const [changed, setChanged] = useState(false);
@@ -913,6 +1058,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     }
     if (nextModes !== featureModes) setFeatureModes(nextModes);
     const newScalable = isHardwareScalable(newProfile);
+    // Drop a Mooncake pick when the new GPU is opted out by the recipe or
+    // can't be clustered, so the URL doesn't pin a dead config.
+    const kvOffloadOk = !compatibleKvStoreStrategies.includes(kvOffload) ||
+      (newScalable && isKvStoreBrandSupported(newProfile) && isKvStoreSupported(kvOffload, id));
+    if (!kvOffloadOk) {
+      setKvOffload("");
+      // Full Mooncake sub-state reset, mirroring selectKvOffload("") — a
+      // dropped pick must not leave instance count/index behind in state,
+      // URL, or storage (they'd resurface on the next enable).
+      setKvInstances(null);
+      setKvInstanceIdx(0);
+    }
     // If the active variant cannot run on the new hardware (explicit allowlist,
     // precision, or a non-scalable VRAM shortfall), fall to the largest variant
     // that can run there.
@@ -954,6 +1111,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       features: featuresToUrl(next, id, variant),
       ...(nextModes !== featureModes ? { fmode: featureModesToUrl(nextModes, variant) } : {}),
       ...(variantUpdate ? { variant: variantUpdate } : {}),
+      ...(kvOffloadOk ? {} : { kv_offload: "", kv_instances: "", kv_instance: "" }),
     });
     savePreference("hardware", id);
     // Mirror the new state to per-recipe storage so a hardware switch
@@ -963,6 +1121,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       nodes: shouldBumpNodes ? 2 : shouldUnbumpNodes ? 1 : nodeCount,
       features: next,
       ...(nextModes !== featureModes ? { featureModes: nextModes } : {}),
+      ...(kvOffloadOk ? {} : { kvOffload: undefined, kvInstances: undefined }),
     });
   };
 
@@ -974,6 +1133,47 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // latency strategies is handled by an effect below so it also fires
     // on initial mount when TP is the default recommendation.
     saveRecipeState(recipe.hf_id, { strategy: s || undefined });
+  };
+
+  // "" = off · "simple"/"lmcache" = connector appended to the current serving
+  // strategy · kv_store id = Mooncake composed around it (instances each run
+  // the strategy's command behind the router). Node count is NOT touched —
+  // the Nodes row keeps meaning "nodes per instance"; how many instances sit
+  // behind the router is the separate Instances input below.
+  const selectKvOffload = (v) => {
+    setKvOffload(v);
+    // Off resets the Mooncake sub-state (instances count + rendered instance)
+    // so the next enable starts from the topology's defaults instead of
+    // resurrecting a count picked for a previous topology. Topology switches
+    // (v = another kv_store id) deliberately keep an explicit count.
+    if (!v) {
+      setKvInstances(null);
+      setKvInstanceIdx(0);
+    }
+    syncUrl({ kv_offload: v, ...(v ? {} : { kv_instances: "", kv_instance: "" }) });
+    saveRecipeState(recipe.hf_id, { kvOffload: v || undefined, ...(v ? {} : { kvInstances: undefined }) });
+  };
+
+  // Mooncake instance count. The active topology's default stays out of the
+  // URL and storage so switching topologies keeps following their defaults.
+  const selectKvInstances = (n) => {
+    const clamped = Math.max(1, Math.min(16, parseInt(n, 10) || 1));
+    const topoDefault = strategies[activeKvOffload]?.default_instances || 2;
+    setKvInstances(clamped === topoDefault ? null : clamped);
+    const idxUpdate = kvInstanceIdx > clamped - 1 ? { kv_instance: "" } : {};
+    if (kvInstanceIdx > clamped - 1) setKvInstanceIdx(0);
+    syncUrl({ kv_instances: clamped === topoDefault ? "" : String(clamped), ...idxUpdate });
+    saveRecipeState(recipe.hf_id, { kvInstances: clamped === topoDefault ? undefined : clamped });
+  };
+
+  const selectKvInstanceIdx = (i) => {
+    // kvInstances is null while the count follows the topology default
+    // (`null - 1` would clamp every pick to instance 1) — clamp against the
+    // effective count instead.
+    const count = kvInstances ?? (strategies[activeKvOffload]?.default_instances || 2);
+    const clamped = Math.max(0, Math.min(count - 1, i));
+    setKvInstanceIdx(clamped);
+    syncUrl({ kv_instance: clamped === 0 ? "" : String(clamped) });
   };
 
   const selectNodes = (n) => {
@@ -1057,17 +1257,22 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const isPd = result.deployType === "pd_cluster";
   const isMultiNode = result.deployType === "multi_node";
+  const isKvStore = result.deployType === "kv_store_lb";
+  // Single-instance Mooncake renders no router — clients hit the engine
+  // directly, so the curl/bench target falls back to VLLM_HOST:8000.
+  const kvHasRouter = isKvStore && !!result.router;
   const modelId = recipe.variants?.[variant]?.model_id || recipe.model?.model_id || "model";
 
-  // PD clients hit the router (port 30000), everyone else hits `vllm serve` on 8000.
-  const clientPort = isPd ? 30000 : 8000;
+  // PD / KV-store clients hit the router; everyone else hits `vllm serve` on 8000.
+  const clientPort = isPd ? 30000 : kvHasRouter ? (result.router?.port || 30080) : 8000;
 
-  // curl/bench target. PD → router host:port; everyone else → the vllm-serve
-  // node (head node for multi-node TP). Defaults to localhost so the
-  // single-node demo case still works copy-paste; user can fill the
-  // Cluster endpoints panel to point at a real cluster.
-  const clientHostKey = isPd ? "ROUTER_HOST" : (isMultiNode ? "HEAD_IP" : "VLLM_HOST");
-  const clientPortKey = isPd ? "ROUTER_PORT" : "VLLM_PORT";
+  // curl/bench target. PD / routed KV-store → router host:port; everyone else
+  // (incl. single-instance Mooncake) → the vllm-serve node (head node for
+  // multi-node TP). Defaults to localhost so the single-node demo case still
+  // works copy-paste; user can fill the Cluster endpoints panel to point at a
+  // real cluster.
+  const clientHostKey = (isPd || kvHasRouter) ? "ROUTER_HOST" : (isMultiNode ? "HEAD_IP" : "VLLM_HOST");
+  const clientPortKey = (isPd || kvHasRouter) ? "ROUTER_PORT" : "VLLM_PORT";
   const clientHost = endpoints[clientHostKey] || "localhost";
   const clientPortStr = endpoints[clientPortKey] || String(clientPort);
 
@@ -1095,12 +1300,28 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const placeholdersInUse = useMemo(() => {
     const texts = [];
     if (result.command) texts.push(result.command);
+    for (const c of result.companions || []) texts.push(c.command);
     if (result.headCommand) texts.push(result.headCommand);
     if (result.workerCommand) texts.push(result.workerCommand);
     if (result.prefill?.command) texts.push(result.prefill.command);
     if (result.decode?.command) texts.push(result.decode.command);
     if (result.router?.command) texts.push(result.router.command);
-    for (const e of [result.env, result.prefill?.env, result.decode?.env]) {
+    if (result.vllm?.command) texts.push(result.vllm.command);
+    if (result.vllm?.workerCommand) texts.push(result.vllm.workerCommand);
+    if (result.master?.command) texts.push(result.master.command);
+    if (result.store?.command) texts.push(result.store.command);
+    // Mooncake config JSONs carry placeholders too ($MOONCAKE_MASTER_IP,
+    // $MOONCAKE_DEVICE_NAME) — scan them so the panel offers those fields.
+    if (result.mooncakeConfig) texts.push(JSON.stringify(result.mooncakeConfig));
+    if (result.store?.config) texts.push(JSON.stringify(result.store.config));
+    // Mooncake composed into PD rides under result.mooncake.
+    if (result.mooncake) {
+      texts.push(result.mooncake.master.command);
+      if (result.mooncake.store?.command) texts.push(result.mooncake.store.command);
+      if (result.mooncake.store?.config) texts.push(JSON.stringify(result.mooncake.store.config));
+      texts.push(JSON.stringify(result.mooncake.config));
+    }
+    for (const e of [result.env, result.prefill?.env, result.decode?.env, result.vllm?.env]) {
       if (!e) continue;
       for (const v of Object.values(e)) if (typeof v === "string") texts.push(v);
     }
@@ -1117,6 +1338,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     if (result.deployType === "pd_cluster") {
       defaults.ROUTER_HOST = "localhost";
       defaults.ROUTER_PORT = "30000";
+    } else if (result.deployType === "kv_store_lb") {
+      if (result.router) {
+        defaults.ROUTER_HOST = "localhost";
+        defaults.ROUTER_PORT = String(result.router.port || 30080);
+      } else {
+        // Single instance, no router — clients hit the engine directly.
+        defaults.VLLM_HOST = "localhost";
+        defaults.VLLM_PORT = "8000";
+      }
     } else if (result.deployType === "multi_node") {
       defaults.VLLM_PORT = "8000";
     } else {
@@ -1124,7 +1354,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       defaults.VLLM_PORT = "8000";
     }
     return { ...defaults, ...endpoints };
-  }, [result.deployType, endpoints]);
+  }, [result.deployType, result.router?.port, endpoints]);
 
   const displayedResult = useMemo(() => {
     const sub = (s) => substitute(s, effectiveEndpoints);
@@ -1134,6 +1364,40 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         prefill: { ...result.prefill, command: sub(result.prefill.command), env: substituteEnv(result.prefill.env, effectiveEndpoints) },
         decode:  { ...result.decode,  command: sub(result.decode.command),  env: substituteEnv(result.decode.env,  effectiveEndpoints) },
         router:  { ...result.router,  command: sub(result.router.command) },
+        ...(result.mooncake ? {
+          mooncake: {
+            ...result.mooncake,
+            master: { ...result.mooncake.master, command: sub(result.mooncake.master.command) },
+            store: result.mooncake.store
+              ? { ...result.mooncake.store, command: sub(result.mooncake.store.command), config: substituteEnv(result.mooncake.store.config, effectiveEndpoints) }
+              : null,
+            config: substituteEnv(result.mooncake.config, effectiveEndpoints),
+          },
+        } : {}),
+      };
+    }
+    if (result.deployType === "kv_store_lb") {
+      // The config objects get substituted too (flat maps, same shape as
+      // env). Placeholders the user leaves unfilled stay literal here — the
+      // configs render inside UNQUOTED heredocs, so the paster's shell
+      // resolves them (exported value, or "" when unset — the auto-select
+      // default for $MOONCAKE_DEVICE_NAME).
+      return {
+        ...result,
+        vllm:   {
+          ...result.vllm,
+          command: sub(result.vllm.command),
+          ...(result.vllm.workerCommand ? { workerCommand: sub(result.vllm.workerCommand) } : {}),
+          env: substituteEnv(result.vllm.env, effectiveEndpoints),
+        },
+        master: { ...result.master, command: sub(result.master.command) },
+        store:  result.store
+          ? { ...result.store, command: sub(result.store.command), config: substituteEnv(result.store.config, effectiveEndpoints) }
+          : null,
+        router: result.router
+          ? { ...result.router, command: sub(result.router.command) }
+          : null,
+        mooncakeConfig: substituteEnv(result.mooncakeConfig, effectiveEndpoints),
       };
     }
     if (result.deployType === "multi_node") {
@@ -1148,6 +1412,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       ...result,
       command: sub(result.command),
       env: substituteEnv(result.env, effectiveEndpoints),
+      ...(result.companions
+        ? { companions: result.companions.map((c) => ({ ...c, command: sub(c.command) })) }
+        : {}),
     };
   }, [result, effectiveEndpoints]);
 
@@ -1159,21 +1426,47 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const dependencies = useMemo(() => {
     const all = recipe.dependencies || [];
     const brand = hwProfile?.brand;
-    return all.filter((d) => {
+    const deps = all.filter((d) => {
       if (!d.brand) return true;
       const allowed = Array.isArray(d.brand) ? d.brand : [d.brand];
       return allowed.includes(brand);
     });
-  }, [recipe.dependencies, hwProfile?.brand]);
+    // The active KV-offload option's runtime dep joins the same extra-install
+    // block — present only while selected, and required then (part of
+    // Copy-all). Mooncake's install is brand-keyed in the kv_store YAML
+    // (CUDA wheel on NVIDIA, non-CUDA build on AMD).
+    const kvOpt = kvOffloadOptions[activeKvOffload];
+    if (kvOpt?.install) {
+      deps.push({
+        note: `${kvOpt.display_name || activeKvOffload} — required by the selected KV Offload option`,
+        command: kvOpt.install,
+      });
+    } else if (isKvStoreActive) {
+      const raw = strategies[activeKvOffload]?.vllm?.install;
+      const cmd = raw && typeof raw === "object"
+        ? (raw[brand === "AMD" ? "amd" : "nvidia"] || null)
+        : (raw || null);
+      if (cmd) {
+        deps.push({
+          note: "Mooncake transfer engine — required by MooncakeStoreConnector on every vLLM node",
+          command: cmd,
+        });
+      }
+    }
+    return deps;
+  }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies]);
 
   // Status caption for the command block header.
   // Only `verified` is a positive signal worth surfacing; anything else
   // falls back to a neutral "vllm serve" label (treat as "assumed to work").
+  // Verification covered the plain serving path — any KV Offload pick changes
+  // the runtime (extra connector / whole deployment), so the badge yields to
+  // the config summary (which names the option) rather than overclaim.
   const hwStatus = recipe.meta?.hardware?.[hwId]; // "verified" | undefined
   const hwFullName = hwProfile?.brand
     ? `${hwProfile.brand} ${hwProfile.display_name || hwId}`
     : (hwProfile?.display_name || hwId);
-  const statusHeader = hwStatus === "verified" ? (
+  const statusHeader = hwStatus === "verified" && !activeKvOffload ? (
     <span className="text-[11px] font-medium text-green-500 inline-flex items-center gap-1.5">
       <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />
       Verified on {hwFullName}
@@ -1186,16 +1479,31 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // Format: `<hw> · <parallelism> · <precision>` — e.g. `H200 · TP=8 · BF16`,
   // `2× H200 · TP=16 · BF16`, `H200 · PD cluster · FP8`.
   const hwDisplay = hwProfile?.display_name || hwId;
-  const hwPart = nodeCount > 1 ? `${nodeCount}× ${hwDisplay}` : hwDisplay;
+  // For a Mooncake deployment the node count is instances × nodes-per-instance
+  // (nodeCount alone would understate a 4-instance cluster as "H200").
+  const kvTotalNodes = result.deployType === "kv_store_lb"
+    ? (result.instances || 1) * (result.nodeCount || 1)
+    : null;
+  const hwPart = kvTotalNodes
+    ? (kvTotalNodes > 1 ? `${kvTotalNodes}× ${hwDisplay}` : hwDisplay)
+    : nodeCount > 1 ? `${nodeCount}× ${hwDisplay}` : hwDisplay;
+  // The serving strategy always names the parallelism — under Mooncake the
+  // instances still run it (composition), so it never disappears from the
+  // summary; the KV layer rides along as a suffix.
   const strategyPart = result.deployType === "pd_cluster"
     ? "PD cluster"
-    : result.deployType === "multi_node"
+    : result.deployType === "multi_node" || (result.deployType === "kv_store_lb" && nodeCount > 1)
       ? (strategies[activeStrategy]?.display_name || activeStrategy)
       : effectiveTp
         ? `TP=${effectiveTp}`
         : (strategies[activeStrategy]?.display_name || activeStrategy);
   const precisionPart = currentVariant.precision?.toUpperCase();
-  const configSummary = [hwPart, strategyPart, precisionPart].filter(Boolean).join(" · ");
+  const configSummary = [hwPart, strategyPart, precisionPart].filter(Boolean).join(" · ")
+    + (kvOffloadOptions[activeKvOffload]
+        ? ` · ${kvOffloadOptions[activeKvOffload].display_name || activeKvOffload}`
+        : isKvStoreActive
+          ? ` · Mooncake (${(strategies[activeKvOffload]?.label || "").split(" ")[0] || "KV Store"})`
+          : "");
 
   // Upstream `vllm/vllm-openai:latest` (and recent pinned tags) ship CUDA 13
   // as the base; CUDA 12.9 is the legacy alternate published as a `-cu129`
@@ -1298,6 +1606,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const omniEndpointsControls = (
       <EndpointsPopoverButton
         isPd={false}
+        isKvStore={false}
         isMultiNode={false}
         placeholders={omniPlaceholders}
         endpoints={endpoints}
@@ -1468,6 +1777,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           dockerCudaVariant={dockerCudaVariant}
           setDockerCudaVariant={setDockerCudaVariant}
           altCudaSuffix={altCudaSuffix}
+          extraMinVersion={isKvStoreActive ? strategies[activeKvOffload]?.min_vllm_version : null}
         />
 
         {/* ── Dependencies / extra install ──
@@ -1499,6 +1809,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           const endpointsControls = (
             <EndpointsPopoverButton
               isPd={isPd}
+              isKvStore={kvHasRouter}
               isMultiNode={isMultiNode}
               placeholders={placeholdersInUse}
               endpoints={endpoints}
@@ -1523,6 +1834,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               configSummary={configSummary}
               endpointsControls={endpointsControls}
             />
+          ) : isKvStore ? (
+            <KvStoreLbBlock
+              result={displayedResult}
+              verifyCmd={verifyCmd}
+              benchCmd={benchCmd}
+              statusHeader={statusHeader}
+              onInstanceChange={selectKvInstanceIdx}
+              installMode={effectiveInstallMode}
+              dockerMeta={dockerMeta}
+              configSummary={configSummary}
+              endpointsControls={endpointsControls}
+            />
           ) : isMultiNode ? (
             <MultiNodeBlock
               result={displayedResult}
@@ -1538,6 +1861,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             <SingleCommandBlock
               command={displayedResult.command}
               env={displayedResult.env}
+              companions={displayedResult.companions}
               verifyCmd={verifyCmd}
               benchCmd={benchCmd}
               statusHeader={statusHeader}
@@ -1651,14 +1975,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             </PillGroup>
           </ConfigRow>
 
-          {/* Strategy */}
+          {/* Strategy — always in effect, including under Mooncake: the KV
+              layer composes with (never overrides) the parallelism choice.
+              Each Mooncake instance runs this strategy's command. */}
           <ConfigRow label="Strategy">
             <PillGroup>
               {compatibleStrategies.map((s) => {
                 return (
                   <Pill
                     key={s}
-                    active={activeStrategy === s}
+                    active={activeServingStrategy === s}
                     onClick={() => selectStrategy(s)}
                     title={strategies[s]?.description}
                   >
@@ -1670,13 +1996,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 );
               })}
             </PillGroup>
-            {strategies[activeStrategy]?.description && (
+            {strategies[activeServingStrategy]?.description && (
               <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
-                {strategies[activeStrategy].description.split("\n")[0]}
+                {strategies[activeServingStrategy].description.split("\n")[0]}
+                {isKvStoreActive && activeServingStrategy !== "pd_cluster" && (
+                  <span className="text-vllm-blue/80"> Each Mooncake instance runs this strategy.</span>
+                )}
               </p>
             )}
-            {strategies[activeStrategy]?.orientation && (() => {
-              const o = strategies[activeStrategy].orientation;
+            {strategies[activeServingStrategy]?.orientation && (() => {
+              const o = strategies[activeServingStrategy].orientation;
               const { label, classes } = o === "latency"
                 ? { label: "Latency oriented", classes: "bg-green-500/20 text-green-600 dark:text-green-400" }
                 : o === "balanced"
@@ -1691,6 +2020,174 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               );
             })()}
           </ConfigRow>
+
+          {/* KV Offload — every option COMPOSES with the serving strategy
+              above (the KV layer is orthogonal to parallelism). Simple/LMCache
+              append a connector to the current command; Mooncake additionally
+              wraps it in a router-fronted instance deployment (kv_store_lb).
+              Both Mooncake topologies share one pill here; the Store Topology
+              row below picks between them. */}
+          <ConfigRow label="KV Offload">
+            <PillGroup>
+              <Pill
+                active={activeKvOffload === ""}
+                onClick={() => selectKvOffload("")}
+                title="No KV offload — vLLM keeps the KV cache in GPU memory."
+              >
+                <span className="font-semibold">Off</span>
+              </Pill>
+              {(() => {
+                // Composing options (Simple, LMCache) share the gating helper
+                // with synthesis: pd_cluster always excluded, plus the
+                // option's own `strategies` allowlist (LMCache = single-node
+                // only; its MP server is node-local). The merged Mooncake pill
+                // joins the same ordered list at MOONCAKE_PILL_ORDER, so the
+                // row reads Off · Simple · Mooncake · LMCache.
+                const pills = Object.entries(kvOffloadOptions).map(([key, opt]) => {
+                  const allowed = isKvOffloadAllowedForStrategy(opt, activeServingStrategy, strategies[activeServingStrategy]);
+                  // Say WHY it's disabled and what would enable it, not just
+                  // "not available" — the allowlist gives us the answer.
+                  const disabledTitle = activeServingStrategy === "pd_cluster"
+                    ? `${opt.display_name || key} can't compose with PD cluster, which owns --kv-transfer-config. (Mooncake composes with PD instead.)`
+                    : `${opt.display_name || key} works with: ${(opt.strategies || []).map((s) => strategies[s]?.display_name || s).join(", ")}.`;
+                  return {
+                    order: opt.order ?? 99,
+                    el: (
+                      <Pill
+                        key={key}
+                        active={activeKvOffload === key}
+                        disabled={!allowed}
+                        onClick={() => allowed && selectKvOffload(key)}
+                        title={allowed ? opt.description : disabledTitle}
+                      >
+                        <span className="font-semibold">{opt.label || opt.display_name || key}</span>
+                      </Pill>
+                    ),
+                  };
+                });
+                if (compatibleKvStoreStrategies.length > 0) {
+                  // One merged pill for the framework; the Store Topology row
+                  // below picks centralized vs distributed. Disabled only when
+                  // NO topology can run here. First click lands on the leading
+                  // topology in display order (distributed — embedded, no
+                  // extra store process).
+                  const supported = compatibleKvStoreStrategies.filter((s) => isKvStoreSupported(s));
+                  const brandOk = isKvStoreBrandSupported(hwProfile);
+                  const selectable = hwScalable && brandOk && supported.length > 0;
+                  const defaultId = supported[0];
+                  const disabledTitle = !brandOk
+                    ? `Mooncake's transfer engine ships CUDA and ROCm builds only — not available on ${hwProfile.brand || ""} ${hwProfile.display_name || hwId} backends.`
+                    : !hwScalable
+                      ? `${hwProfile.display_name || "This hardware"} is a single-GPU workstation and can't run a multi-node KV-store deployment.`
+                      : `Mooncake KV store is not supported on ${hwProfile.display_name || hwId}.`;
+                  pills.push({
+                    order: MOONCAKE_PILL_ORDER,
+                    el: (
+                      <Pill
+                        key="__mooncake"
+                        active={isKvStoreActive}
+                        disabled={!selectable}
+                        onClick={() => selectable && !isKvStoreActive && selectKvOffload(defaultId)}
+                        title={selectable
+                          // One-liner for the tooltip — the full framework
+                          // background renders under the row once active.
+                          ? "Mooncake — distributed KV cache: vLLM instances share prefix KV through a coordinated CPU-DRAM pool. Composes with the selected strategy — each instance runs it."
+                          : disabledTitle}
+                      >
+                        <span className="font-semibold">Mooncake</span>
+                      </Pill>
+                    ),
+                  });
+                }
+                return pills.sort((a, b) => a.order - b.order).map((p) => p.el);
+              })()}
+            </PillGroup>
+            {/* Active option's description below the pills — same pattern as
+                the Strategy row's text. Composing options read the taxonomy
+                (description + docs_url); Mooncake shows framework-level
+                background here, while the topology-specific text lives under
+                the Store Topology row. */}
+            {(() => {
+              const opt = kvOffloadOptions[activeKvOffload];
+              const text = opt?.description || (isKvStoreActive ? MOONCAKE_BACKGROUND : null);
+              const docs = opt?.docs_url || (isKvStoreActive ? MOONCAKE_DOCS_URL : null);
+              return text ? (
+                <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                  {text}
+                  {docs && (
+                    <>
+                      {" "}
+                      <a href={docs} target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-foreground">
+                        Docs ↗
+                      </a>
+                    </>
+                  )}
+                </p>
+              ) : null;
+            })()}
+          </ConfigRow>
+
+          {/* Store topology — Mooncake only. Same one-of-N idiom as the
+              spec_decoding method row; both YAMLs stay separate deployment
+              specs, this row just picks which id kv_offload points at. */}
+          {isKvStoreActive && compatibleKvStoreStrategies.length > 1 && (
+            <ConfigRow label="Store Topology" nested>
+              <PillGroup>
+                {compatibleKvStoreStrategies.map((s) => {
+                  const supported = isKvStoreSupported(s);
+                  return (
+                    <Pill
+                      key={s}
+                      active={activeKvOffload === s}
+                      disabled={!supported}
+                      onClick={() => supported && selectKvOffload(s)}
+                      title={supported
+                        ? strategies[s]?.description
+                        : `${strategies[s]?.display_name || s} is not supported on ${hwProfile.display_name || hwId}.`}
+                    >
+                      {strategies[s]?.label || strategies[s]?.display_name || s}
+                    </Pill>
+                  );
+                })}
+              </PillGroup>
+              {/* Active topology's description — embedded vs standalone-store
+                  specifics belong to this row, not the KV Offload row. */}
+              {strategies[activeKvOffload]?.description && (
+                <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                  {strategies[activeKvOffload].description.split("\n")[0]}
+                </p>
+              )}
+            </ConfigRow>
+          )}
+
+          {/* Instances — Mooncake only: independent vLLM engines behind the
+              router. Orthogonal to Nodes, which keeps meaning "nodes per
+              instance" (an instance can itself span nodes like multi_node_tp).
+              Hidden when Mooncake composes into PD — the PD pools size
+              themselves. */}
+          {kvInstancesActive && (
+            <ConfigRow
+              label="Instances"
+              nested
+              hint="Independent vLLM engines sharing the Mooncake KV pool; a cache-aware router fronts them at 2+ instances. Each instance spans the node count picked in the Nodes row below."
+            >
+              <div className="inline-flex flex-wrap items-center gap-2 text-sm">
+                <input
+                  type="number"
+                  min={1}
+                  max={16}
+                  aria-label="Number of vLLM instances"
+                  value={result.instances || kvInstances || 1}
+                  onChange={(e) => selectKvInstances(e.target.value)}
+                  className="w-14 px-2 py-1 text-sm font-mono tabular-nums rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-vllm-blue/40"
+                />
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  × {nodeCount} node{nodeCount > 1 ? "s" : ""} × {hwProfile.gpu_count || 8} GPUs
+                  = {(result.instances || 1) * nodeCount * (hwProfile.gpu_count || 8)} GPUs total
+                </span>
+              </div>
+            </ConfigRow>
+          )}
 
           {/* Nodes — two number inputs for PD (one per pool), pills otherwise */}
           {activeStrategy === "pd_cluster" ? (
@@ -1726,7 +2223,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               </div>
             </ConfigRow>
           ) : (
-            <ConfigRow label="Nodes">
+            // Under Mooncake the row means "nodes per instance" — the label
+            // and tooltips say so, and totals multiply by the instance count
+            // (the plain "2 × GPUs" math would understate the deployment).
+            <ConfigRow
+              label={kvInstancesActive ? "Nodes / Instance" : "Nodes"}
+              hint={kvInstancesActive
+                ? "Node count of EACH vLLM instance — an instance shards across nodes via the selected strategy's multi-node layout. Total nodes = Instances × this."
+                : undefined}
+            >
               <PillGroup>
                 {[1, 2].map((n) => {
                   // Multi-node pill is disabled when the recipe declares no
@@ -1755,8 +2260,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                           : singleNodeDoesntFit
                             ? `Single-node can't fit this variant on ${hwProfile.display_name || "the selected hardware"} (${currentVariant.vram_minimum_gb}GB > ${hwProfile.vram_gb}GB) — use multi-node`
                             : n === 1
-                              ? "Single-node deployment (one HGX box)"
-                              : `2 nodes × ${hwProfile.gpu_count || 8} GPUs = ${2 * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
+                              ? kvInstancesActive
+                                ? `Each vLLM instance runs on a single node${(result.instances || 1) > 1 ? ` — ${result.instances} instances = ${result.instances} nodes total (plus master${result.store ? "/store" : ""})` : ""}.`
+                                : "Single-node deployment (one HGX box)"
+                              : kvInstancesActive
+                                ? `Each instance spans 2 nodes × ${hwProfile.gpu_count || 8} GPUs${(result.instances || 1) > 1 ? ` — ${result.instances} instances = ${(result.instances || 1) * 2 * (hwProfile.gpu_count || 8)} GPUs total` : ` = ${2 * (hwProfile.gpu_count || 8)} GPUs`}.`
+                                : `2 nodes × ${hwProfile.gpu_count || 8} GPUs = ${2 * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
                       }
                     >
                       <span className="font-semibold">{n === 1 ? "Single-node" : "Multi-node (example: 2)"}</span>
@@ -1776,12 +2285,29 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           {Object.keys(recipe.features || {}).length > 0 && (
             <ConfigRow label="Features">
               <PillGroup>
-                {Object.entries(recipe.features || {}).map(([key, f]) => (
+                {Object.entries(recipe.features || {}).map(([key, f]) => {
+                  // Strategy-gated feature (feature declares `strategies: [...]`):
+                  // struck-through + disabled on excluded strategies, same
+                  // treatment as unsupported hardware pills. The toggle state is
+                  // kept, so switching back to an allowed strategy restores it —
+                  // synthesis independently skips gated features, so the emitted
+                  // command is correct either way.
+                  // Companion-backed features can't render their helper tab
+                  // inside the Mooncake deployment shell — synthesis skips
+                  // their args too, so the pill disables to match.
+                  const kvBlocked = kvInstancesActive && !!f?.companion?.command;
+                  const allowed = isFeatureAllowedForStrategy(f, activeStrategy) && !kvBlocked;
+                  return (
                   <Pill
                     key={key}
-                    active={features.includes(key)}
-                    onClick={() => toggleFeature(key)}
-                    title={f?.description}
+                    active={features.includes(key) && allowed}
+                    disabled={!allowed}
+                    onClick={() => allowed && toggleFeature(key)}
+                    title={!allowed
+                      ? kvBlocked
+                        ? "Needs its companion process, which isn't rendered inside a Mooncake deployment — set KV Offload to Off to use it."
+                        : "Not available with this strategy"
+                      : f?.description}
                   >
                     {key === "spec_decoding" && (
                       <Zap size={11} className="inline-block mr-1 -mt-0.5 text-vllm-yellow" fill="currentColor" />
@@ -1792,14 +2318,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     {key === "reasoning" && (
                       <Brain size={11} className="inline-block mr-1 -mt-0.5 text-muted-foreground" />
                     )}
-                    {key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                    {f?.label || key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\bKv\b/g, "KV")}
                     {key === "spec_decoding" && (
                       <span className="ml-1.5 text-[11px] text-vllm-yellow font-normal">
                         (for low latency & small batch size)
                       </span>
                     )}
                   </Pill>
-                ))}
+                  );
+                })}
               </PillGroup>
             </ConfigRow>
           )}
@@ -1818,9 +2345,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             const active = resolveModeKey(feat, key, currentVariant, variant, hwProfile, hwId, featureModes[key]);
             const rowLabel = key === "spec_decoding"
               ? "Spec method"
-              : `${key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} method`;
+              : `${feat.label || key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\bKv\b/g, "KV")} method`;
             return (
-              <ConfigRow key={`${key}-modes`} label={rowLabel}>
+              <ConfigRow key={`${key}-modes`} label={rowLabel} nested>
                 <PillGroup>
                   {availEntries.map(([mk, m]) => {
                     const supported = isModeSupported(m, hwProfile, hwId);
@@ -1906,8 +2433,14 @@ function endpointHintFor(name) {
   if (name.endsWith("_DP_RPC_PORT")) return "12345";
   if (name.endsWith("_PORT")) return "port";
   if (/^(?:PREFILL|DECODE)_NODE_\d+$/.test(name)) return "host";
+  if (/^VLLM_INSTANCE_\d+$/.test(name)) return "10.0.0.x";
+  if (name === "MOONCAKE_MASTER_IP") return "10.0.0.1";
   if (name.endsWith("_IP")) return "10.0.0.1";
   if (name === "IFACE_NAME") return "bond0";
+  if (name === "ROUTER_HOST") return "localhost";
+  if (name === "MOONCAKE_CONFIG_PATH") return "/etc/mooncake/mooncake_vllm_config.json";
+  if (name === "MOONCAKE_STORE_CONFIG_PATH") return "/etc/mooncake/mooncake_store_config.json";
+  if (name.endsWith("DEVICE_NAME")) return "mlx5_0,mlx5_1,… (blank = auto)";
   return "value";
 }
 
@@ -1946,6 +2479,7 @@ function PdNodeInput({ label, value, gpuPerNode, onChange, modes, parallelism, o
         type="number"
         min={1}
         max={16}
+        aria-label={`${label} node count`}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-14 px-2 py-1 text-sm font-mono tabular-nums rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-vllm-blue/40"
@@ -1957,10 +2491,14 @@ function PdNodeInput({ label, value, gpuPerNode, onChange, modes, parallelism, o
   );
 }
 
-function ConfigRow({ label, hint, children }) {
+function ConfigRow({ label, hint, nested, children }) {
+  // `nested` marks a row that only exists as a child of the pick above it
+  // (Store Topology / Instances under Mooncake, the spec-method row under
+  // Features): a blue left rail + slight tint expresses the ownership that
+  // the flat divide-y list otherwise hides.
   return (
-    <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
-      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest sm:w-20 sm:pt-1.5 shrink-0 inline-flex items-center gap-1">
+    <div className={`px-4 py-3 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 ${nested ? "border-l-2 border-vllm-blue/30 bg-muted/20" : ""}`}>
+      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest sm:w-28 sm:pt-1.5 shrink-0 inline-flex items-center gap-1">
         {label}
         {hint && (
           <InfoTip content={hint}>
@@ -1992,6 +2530,7 @@ function HwStatusDot({ status }) {
 function Pill({ active, onClick, title, dimmed, disabled, children }) {
   // disabled takes precedence over active — an "active but disabled" pill should
   // clearly look disabled (e.g. PD that was pre-selected but no longer fits).
+  // dimmed de-emphasizes a selectable pill (dashed border, muted text).
   const style = disabled
     ? "border-dashed border-border/40 text-muted-foreground/30 cursor-not-allowed bg-muted/20 line-through decoration-muted-foreground/30"
     : active
@@ -2005,12 +2544,44 @@ function Pill({ active, onClick, title, dimmed, disabled, children }) {
       disabled={disabled}
       aria-disabled={disabled}
       aria-label={typeof title === "string" ? title : undefined}
-      className={`inline-flex items-center rounded-lg border px-2.5 py-1.5 text-xs transition-all ${style}`}
+      className={`inline-flex items-center rounded-lg border px-2.5 py-1.5 text-xs transition-all ${style} ${disabled ? "pointer-events-none" : ""}`}
     >
       {children}
     </button>
   );
-  return title ? <InfoTip content={title}>{btn}</InfoTip> : btn;
+  // A natively-disabled button swallows pointer events, so Radix tooltips
+  // never open on it — exactly the pills whose "why is this disabled"
+  // explanation matters most. The span wrapper is the hoverable/focusable
+  // trigger (the button itself gets pointer-events-none above).
+  const trigger = disabled ? (
+    <span tabIndex={0} className="inline-flex rounded-lg cursor-not-allowed">{btn}</span>
+  ) : btn;
+  return title ? <InfoTip content={title}>{trigger}</InfoTip> : trigger;
+}
+
+// One paste-runnable script that provisions Mooncake's config file(s): it
+// exports the path vars (respecting values already set in the environment),
+// then writes each JSON via unquoted heredoc — sizing/NIC notes render as
+// leading # lines. Shared by the KV-store and PD blocks so the heredocs live
+// on a single "Mooncake Config" tab instead of repeating on every tab that
+// consumes the files.
+function buildMooncakeConfigsCommand(config, note, store) {
+  const noteLines = (n) =>
+    n ? `${String(n).trimEnd().split("\n").map((l) => `# ${l}`).join("\n")}\n` : "";
+  const exports = [
+    "export MOONCAKE_CONFIG_PATH=${MOONCAKE_CONFIG_PATH:-/etc/mooncake/mooncake_vllm_config.json}",
+    ...(store?.config
+      ? ["export MOONCAKE_STORE_CONFIG_PATH=${MOONCAKE_STORE_CONFIG_PATH:-/etc/mooncake/mooncake_store_config.json}"]
+      : []),
+  ].join("\n");
+  const parts = [
+    exports,
+    `${noteLines(note)}cat > $MOONCAKE_CONFIG_PATH <<EOF\n${JSON.stringify(config || {}, null, 2)}\nEOF`,
+  ];
+  if (store?.config) {
+    parts.push(`${noteLines(store.note)}cat > $MOONCAKE_STORE_CONFIG_PATH <<EOF\n${JSON.stringify(store.config, null, 2)}\nEOF`);
+  }
+  return parts.join("\n\n");
 }
 
 function envToExports(env) {
@@ -2019,7 +2590,55 @@ function envToExports(env) {
     .join("\n");
 }
 
-function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls }) {
+// Shared tab strip for the command blocks. `tabs`: [{ id, label, step? }] —
+// `step` renders a dimmed launch-order number, making the left-to-right
+// sequence explicit instead of implied by tab order. Implements the ARIA tabs
+// pattern with roving focus (arrow keys move the selection).
+function CommandTabs({ tabs, current, onSelect }) {
+  const refs = useRef({});
+  const onKeyDown = (e) => {
+    const idx = Math.max(0, tabs.findIndex((t) => t.id === current));
+    let next = null;
+    if (e.key === "ArrowRight") next = tabs[(idx + 1) % tabs.length];
+    else if (e.key === "ArrowLeft") next = tabs[(idx - 1 + tabs.length) % tabs.length];
+    else if (e.key === "Home") next = tabs[0];
+    else if (e.key === "End") next = tabs[tabs.length - 1];
+    if (next) {
+      e.preventDefault();
+      onSelect(next.id);
+      refs.current[next.id]?.focus();
+    }
+  };
+  return (
+    <div
+      role="tablist"
+      aria-label="Launch steps"
+      onKeyDown={onKeyDown}
+      className="flex flex-wrap gap-0.5 bg-foreground/5 rounded-md p-0.5"
+    >
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          ref={(el) => { refs.current[t.id] = el; }}
+          role="tab"
+          aria-selected={current === t.id}
+          tabIndex={current === t.id ? 0 : -1}
+          onClick={() => onSelect(t.id)}
+          className={`px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${current === t.id ? "bg-foreground/10 text-[var(--command-fg)]" : "text-[var(--command-fg)]/50 hover:text-[var(--command-fg)]/80"
+            }`}
+        >
+          {t.step != null && (
+            <span className="font-mono tabular-nums opacity-45 mr-1">{t.step}·</span>
+          )}
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls }) {
+  const [tab, setTab] = useState("vllm");
   const isDocker = installMode === "docker";
   // Docker mode: env vars fold into `-e` flags inside the wrapped `docker run`,
   // so there's no separate prelude (the `docker pull` lives in the Install
@@ -2028,29 +2647,98 @@ function SingleCommandBlock({ command, env, verifyCmd, benchCmd, statusHeader, i
   const displayCommand = isDocker
     ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
     : command;
-  const fullScript = prelude ? `${prelude}\n\n${displayCommand}` : displayCommand;
+  // A companion process may ride along (`companions[]` from resolveCommand —
+  // a feature's `companion:` or the active kv_offload option's, e.g.
+  // LMCache's `lmcache server`). When any are active the block grows a
+  // PD-style tab bar in LAUNCH ORDER — companions sit LEFT of vLLM Serve
+  // because they must be running before it starts. With none, the classic
+  // single-command layout renders untouched.
+  const hasCompanions = Array.isArray(companions) && companions.length > 0;
+  // Falls back to the vLLM view when the selected companion's source was
+  // toggled off (stale tab state).
+  const activeCompanion = hasCompanions && tab !== "vllm"
+    ? companions.find((c) => c.feature === tab) || null
+    : null;
+  // When a companion (dis)appears — the user toggled its option — jump to the
+  // leftmost tab so the launch sequence reads left to right from step 1.
+  const companionIds = hasCompanions ? companions.map((c) => c.feature).join(",") : "";
+  useEffect(() => {
+    setTab(hasCompanions ? companions[0].feature : "vllm");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companionIds]);
+  // Companions are host-side helper binaries (not `vllm serve`), so they get
+  // neither the docker-run wrapper nor the env prelude.
+  const activePrelude = activeCompanion ? "" : prelude;
+  // Leading # lines of a companion command render in the dimmed comment area
+  // (same treatment as the description line); the bright pre keeps only the
+  // executable body. Copy still grabs comments + body.
+  const companionParts = activeCompanion
+    ? (() => {
+        const lines = String(activeCompanion.command).split("\n");
+        let i = 0;
+        while (i < lines.length && lines[i].trimStart().startsWith("#")) i++;
+        return { comments: lines.slice(0, i).join("\n"), body: lines.slice(i).join("\n") };
+      })()
+    : null;
+  const activeCommand = activeCompanion ? companionParts.body : displayCommand;
+  const fullScript = activeCompanion
+    ? activeCompanion.command
+    : (activePrelude ? `${activePrelude}\n\n${activeCommand}` : activeCommand);
+  const actions = (
+    <div className="flex items-center gap-1.5 shrink-0">
+      <CopyButton text={fullScript} />
+      <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={!!activeCompanion} disabledNote="Clients talk to the vLLM server — cURL & Bench live on the vLLM Serve tab." />
+      <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={!!activeCompanion} disabledNote="Clients talk to the vLLM server — cURL & Bench live on the vLLM Serve tab." />
+      {endpointsControls}
+    </div>
+  );
   return (
     <div>
-      <div className="flex items-center justify-between px-4 pt-3 gap-3">
-        {statusHeader || (
-          <span className="text-[11px] text-[var(--command-fg)]/55 font-mono">
-            {configSummary}
-          </span>
-        )}
-        <div className="flex items-center gap-1.5">
-          <CopyButton text={fullScript} />
-          <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} />
-          <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
-          {endpointsControls}
+      {hasCompanions ? (
+        <>
+          <div className="px-4 pt-3 pb-1">
+            {statusHeader || (
+              <span className="text-[11px] text-[var(--command-fg)]/55 font-mono">
+                {configSummary}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center justify-between px-4 pt-2 gap-3">
+            <CommandTabs
+              tabs={[...companions.map((c) => ({ id: c.feature, label: c.label })), { id: "vllm", label: "vLLM Serve" }].map((t, i) => ({ ...t, step: i + 1 }))}
+              current={activeCompanion ? activeCompanion.feature : "vllm"}
+              onSelect={setTab}
+            />
+            {actions}
+          </div>
+        </>
+      ) : (
+        <div className="flex items-center justify-between px-4 pt-3 gap-3">
+          {statusHeader || (
+            <span className="text-[11px] text-[var(--command-fg)]/55 font-mono">
+              {configSummary}
+            </span>
+          )}
+          {actions}
         </div>
-      </div>
-      {prelude && (
+      )}
+      {activeCompanion?.description && (
+        <div className="px-4 pt-3 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug">
+          # {activeCompanion.description}
+        </div>
+      )}
+      {companionParts?.comments && (
+        <div className="px-4 pt-2 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug whitespace-pre overflow-x-auto">
+          {companionParts.comments}
+        </div>
+      )}
+      {activePrelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-          {prelude}
+          {activePrelude}
         </pre>
       )}
       <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-        {displayCommand}
+        {activeCommand}
       </pre>
     </div>
   );
@@ -2071,7 +2759,7 @@ function maxVersion(a, b) {
   return a;
 }
 
-function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode, dockerCudaVariant, setDockerCudaVariant, altCudaSuffix }) {
+function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode, dockerCudaVariant, setDockerCudaVariant, altCudaSuffix, extraMinVersion = null }) {
   // Collapsible install reference. Shows the one-time setup step for the
   // active mode — `uv pip install vllm …` in pip mode, `docker pull <image>`
   // in docker mode. The active tab mirrors the command card's mode toggle
@@ -2090,7 +2778,10 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   // A variant may require a newer vLLM than the recipe baseline (e.g. the DSpark
   // checkpoint needs 0.25.0, currently nightly). Take the higher version and OR
   // the nightly flag so the Install block reflects the selected checkpoint.
-  const minV = maxVersion(recipe.model?.min_vllm_version, variant?.min_vllm_version);
+  // extraMinVersion: a deployment-level floor beyond recipe/variant — e.g.
+  // the active Mooncake kv_store YAML's min_vllm_version (connector ships
+  // in 0.21.0+), so the Install header never understates the requirement.
+  const minV = maxVersion(maxVersion(recipe.model?.min_vllm_version, variant?.min_vllm_version), extraMinVersion);
   // Omni recipes are served by vLLM-Omni, a fast-moving companion package that
   // tracks vLLM nightly (Wan2.2 even pins a git commit). Surface it next to the
   // vLLM version so users know the generation path needs nightly wheels.
@@ -2328,26 +3019,11 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
         )}
       </div>
       <div className="flex items-center justify-between px-4 pt-2">
-        <div className="flex gap-0.5 bg-foreground/5 rounded-md p-0.5">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${tab === t.id ? "bg-foreground/10 text-[var(--command-fg)]" : "text-[var(--command-fg)]/50 hover:text-[var(--command-fg)]/80"
-                }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <CommandTabs tabs={tabs} current={active.id} onSelect={setTab} />
         <div className="flex items-center gap-1.5">
           <CopyButton text={fullScript} />
-          {tab === "head" && (
-            <>
-              <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} />
-              <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
-            </>
-          )}
+          <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={active.id !== "head"} disabledNote="Clients connect to the head node — cURL & Bench live on the Head tab." />
+          <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={active.id !== "head"} disabledNote="Clients connect to the head node — cURL & Bench live on the Head tab." />
           {endpointsControls}
         </div>
       </div>
@@ -2382,11 +3058,34 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
     isDocker
       ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
       : cmd;
+  // Mooncake composed into PD (result.mooncake): a "Mooncake Config" tab
+  // (launch step 0) writes the shared config file(s) once — every
+  // prefill/decode node reads them via $MOONCAKE_CONFIG_PATH — then
+  // master/(store) tabs follow in launch order. Same conventions as
+  // KvStoreLbBlock.
+  const mc = result.mooncake;
+  // With Mooncake composed in, the tabs become a real launch sequence
+  // (config → master → (store) → pools → router), so they get step numbers.
+  // Plain PD keeps unnumbered tabs — prefill/decode have no strict order.
   const tabs = [
+    ...(mc ? [{
+      id: "mc_config", label: "Mooncake Config",
+      command: buildMooncakeConfigsCommand(mc.config, mc.configNote, mc.store), env: {},
+      description: `Run once on every node (prefill + decode${mc.store ? " + store node" : ""}) before the steps to the right — they read these files via $MOONCAKE_CONFIG_PATH${mc.store ? " / $MOONCAKE_STORE_CONFIG_PATH" : ""}.`,
+    }] : []),
+    ...(mc ? [{ id: "mc_master", label: "Mooncake Master", command: mc.master.command, env: {}, description: mc.master.description }] : []),
+    ...(mc?.store ? [{ id: "mc_store", label: "Mooncake Store", command: mc.store.command, env: {}, description: mc.store.description }] : []),
     { id: "prefill", label: "Prefill", command: wrap(result.prefill.command, result.prefill.env), env: result.prefill.env, meta: result.prefill },
     { id: "decode", label: "Decode", command: wrap(result.decode.command, result.decode.env), env: result.decode.env, meta: result.decode },
     { id: "router", label: "Router", command: result.router.command, env: {}, install: result.router.install, isRouter: true },
-  ];
+  ].map((t, i) => (mc ? { ...t, step: i + 1 } : t));
+  // When Mooncake is toggled on/off, jump to the leftmost tab so the launch
+  // sequence reads left to right (same behavior as SingleCommandBlock's
+  // companion tabs).
+  const hasMc = !!mc;
+  useEffect(() => {
+    setTab(hasMc ? "mc_config" : "prefill");
+  }, [hasMc]);
   const active = tabs.find((t) => t.id === tab) || tabs[0];
   // Docker mode folds env into `-e` flags inside `docker run` for prefill /
   // decode, so no prelude there. Router (and pip mode) keep the export-style
@@ -2403,32 +3102,22 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
         )}
       </div>
       <div className="flex items-center justify-between px-4 pt-2 gap-3">
-        <div className="flex flex-wrap gap-0.5 bg-foreground/5 rounded-md p-0.5">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${tab === t.id ? "bg-foreground/10 text-[var(--command-fg)]" : "text-[var(--command-fg)]/50 hover:text-[var(--command-fg)]/80"
-                }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <CommandTabs tabs={tabs} current={active.id} onSelect={setTab} />
         <div className="flex items-center gap-1.5 shrink-0">
           <CopyButton text={fullScript} />
-          {active.isRouter && (
-            <>
-              <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} />
-              <PopoverButton label="Bench" code={benchCmd} icon={Gauge} />
-            </>
-          )}
+          <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={!active.isRouter} disabledNote="Clients connect via the Router tab — cURL & Bench live there." />
+          <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={!active.isRouter} disabledNote="Clients connect via the Router tab — cURL & Bench live there." />
           {endpointsControls}
         </div>
       </div>
       {active.isRouter && active.install && (
         <div className="px-4 pt-3 text-[11px] text-[var(--command-fg)]/50 font-mono leading-snug">
-          # Dependency: {active.install}
+          # Install: {active.install}
+        </div>
+      )}
+      {active.description && (
+        <div className="px-4 pt-3 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug">
+          # {active.description}
         </div>
       )}
       {!active.isRouter && active.meta && (
@@ -2451,6 +3140,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
             type="number"
             min={1}
             max={active.meta.nodes}
+            aria-label="Node whose command is shown"
             value={(active.meta.currentNode ?? 0) + 1}
             onChange={(e) => {
               const n = parseInt(e.target.value, 10);
@@ -2475,6 +3165,129 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
               </span>
             </>
           )}
+        </div>
+      )}
+      {prelude && (
+        <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
+          {prelude}
+        </pre>
+      )}
+      <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
+        {active.command}
+      </pre>
+    </div>
+  );
+}
+
+function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceChange, installMode, dockerMeta, configSummary, endpointsControls }) {
+  // Tabs in launch order — Mooncake Master · (centralized only) Mooncake
+  // Store · vLLM Serve (config heredoc + env + serve — one paste-runnable
+  // script per instance node; a Worker tab appears when instances span >1
+  // node) · Router last (it needs the backends up, mirroring PD). Only the
+  // vLLM command gets docker-wrapped; router / master / store are separate
+  // binaries and render as-is with their pip-install hints.
+  const [tab, setTab] = useState("config");
+  const isDocker = installMode === "docker";
+  const wrap = (cmd, env) =>
+    isDocker
+      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+      : cmd;
+
+  const instances = result.instances || 2;
+  const nodesPer = result.nodeCount || 1;
+  // All config-file writing is centralized on ONE "Mooncake Config" tab
+  // (launch step 0): it exports both path vars with sane defaults, then
+  // writes the files via UNQUOTED heredocs — any $VAR left unfilled resolves
+  // from the paster's shell, and unset vars expand to "" (exactly the
+  // auto-select default for $MOONCAKE_DEVICE_NAME). Every other tab just
+  // references the files through the env vars instead of repeating heredocs.
+  // Sizing/NIC notes from the YAML render as leading # lines.
+  const configsCommand = buildMooncakeConfigsCommand(
+    result.mooncakeConfig, result.mooncakeConfigNote, result.store,
+  );
+
+  const requires = result.vllm.install ? ` Requires: ${result.vllm.install}` : "";
+  const currentInstance = result.currentInstance ?? 0;
+  // Node-tab naming matches MultiNodeBlock / PD ("Head" / "Node 1") so
+  // multi-node reads the same everywhere; single-node instances keep the
+  // plain "vLLM Serve" tab. Router (absent at 1 instance) stays last.
+  const tabs = [
+    {
+      id: "config", label: "Mooncake Config", command: configsCommand, env: {},
+      description: `Run once on every node (instances${result.store ? " + store node" : ""}) before the steps to the right — they read these files via $MOONCAKE_CONFIG_PATH${result.store ? " / $MOONCAKE_STORE_CONFIG_PATH" : ""}.`,
+    },
+    { id: "master", label: "Mooncake Master", command: result.master.command, env: {}, description: result.master.description },
+    ...(result.store ? [{ id: "store", label: "Mooncake Store", command: result.store.command, env: {}, description: result.store.description }] : []),
+    {
+      id: "vllm", label: nodesPer > 1 ? "Head" : "vLLM Serve", isVllm: true,
+      command: wrap(result.vllm.command, result.vllm.env), env: result.vllm.env,
+      description: nodesPer > 1
+        ? `Head node of each instance (each instance spans ${nodesPer} nodes).${requires}`
+        : instances > 1
+          ? `One per instance node.${requires}`
+          : `Single instance — clients connect to it directly.${requires}`,
+    },
+    ...(result.vllm.workerCommand ? [{
+      id: "vllm_worker", label: "Node 1", isVllm: true,
+      command: wrap(result.vllm.workerCommand, result.vllm.env), env: result.vllm.env,
+      description: `Nodes 2..${nodesPer} of each instance (rank > 0, --headless).`,
+    }] : []),
+    ...(result.router ? [{ id: "router", label: "Router", command: result.router.command, env: {}, description: `LB across ${instances} vLLM instances. Install: ${result.router.install}` }] : []),
+  ].map((t, i) => ({ ...t, step: i + 1 }));
+  const active = tabs.find((t) => t.id === tab) || tabs[0];
+  const prelude = isDocker ? "" : envToExports(active.env);
+  const fullScript = prelude ? `${prelude}\n\n${active.command}` : active.command;
+  // cURL/Bench live where clients connect: the router tab, or the vLLM tab
+  // when a single instance serves directly. On other tabs they render
+  // disabled (not hidden) so the reader learns where they went.
+  const clientTabId = result.router ? "router" : "vllm";
+  // Must match the vLLM tab's actual label — it reads "Head" when each
+  // instance spans multiple nodes.
+  const clientTabLabel = result.router ? "Router" : nodesPer > 1 ? "Head" : "vLLM Serve";
+  const isClientTab = active.id === clientTabId;
+
+  return (
+    <div>
+      <div className="px-4 pt-3 pb-1">
+        {statusHeader || (
+          <span className="text-[11px] text-[var(--command-fg)]/55 font-mono">
+            {configSummary}
+          </span>
+        )}
+      </div>
+      <div className="flex items-center justify-between px-4 pt-2 gap-3">
+        <CommandTabs tabs={tabs} current={active.id} onSelect={setTab} />
+        <div className="flex items-center gap-1.5 shrink-0">
+          <CopyButton text={fullScript} />
+          <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={!isClientTab} disabledNote={`Clients connect via the ${clientTabLabel} tab — cURL & Bench live there.`} />
+          <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={!isClientTab} disabledNote={`Clients connect via the ${clientTabLabel} tab — cURL & Bench live there.`} />
+          {endpointsControls}
+        </div>
+      </div>
+      {active.description && (
+        <div className="px-4 pt-3 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug">
+          # {active.description}
+        </div>
+      )}
+      {active.isVllm && instances > 1 && onInstanceChange && (
+        <div className="px-4 pt-2 pb-0 flex items-center gap-2 text-[11px] text-[var(--command-fg)]/70 flex-wrap">
+          <span className="font-mono uppercase tracking-wider text-[var(--command-fg)]/50">instance</span>
+          {/* Display index is 1-based to match the router's $VLLM_INSTANCE_N. */}
+          <input
+            type="number"
+            min={1}
+            max={instances}
+            aria-label="Instance whose command is shown"
+            value={currentInstance + 1}
+            onChange={(e) => {
+              const n = parseInt(e.target.value, 10);
+              if (Number.isFinite(n)) onInstanceChange(n - 1);
+            }}
+            className="w-14 px-2 py-0.5 text-xs font-mono tabular-nums rounded border border-[var(--command-fg)]/20 bg-transparent text-[var(--command-fg)] focus:outline-none focus:border-vllm-blue/60"
+          />
+          <span className="text-[var(--command-fg)]/40">
+            of 1..{instances} — runs on $VLLM_INSTANCE_{currentInstance + 1}
+          </span>
         </div>
       )}
       {prelude && (

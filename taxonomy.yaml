@@ -187,3 +187,64 @@ strategies:
   - multi_node_dep
   - multi_node_tp_pp
   - pd_cluster
+
+# KV Offload — options for the command builder's "KV Offload" row that compose
+# with (rather than replace) the serving strategy. `simple` appends its args to
+# the end of the vllm arg list; every option is skipped for pd_cluster /
+# kv_store_lb strategies, which own --kv-transfer-config themselves. Optional
+# per-option keys: `strategies` (allowlist — absent = every serving strategy),
+# `companion` ({ label, description?, command } — helper process rendered as
+# an extra command tab while the option is active), `install` (extra pip dep,
+# shown on the companion tab).
+kv_offload:
+  simple:
+    display_name: "Simple (CPU offload)"
+    label: "Simple"
+    # Pill position on the KV Offload row; the merged Mooncake pill sits at 2.
+    order: 1
+    description: "Offload KV cache to CPU DRAM on each serving node via SimpleCPUOffloadConnector — one flag, no extra infrastructure. ~220 GiB of host RAM used per GPU rank."
+    args:
+      - "--kv-transfer-config"
+      - '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both","kv_connector_extra_config":{"cpu_bytes_to_use_per_rank":236223201280,"lazy_offload":"false"}}'
+  lmcache:
+    display_name: "LMCache"
+    # Pill position on the KV Offload row (after the Mooncake pill at 2).
+    order: 3
+    description: "Offload KV cache to a shared CPU-DRAM pool via LMCacheMPConnector — prefix caching beyond GPU KV capacity, one pool per node (not per-rank segments). Adds an LMCache Server tab; run it in a separate terminal before vllm serve."
+    # Single-node only: the companion MP server is node-local, so multi-node
+    # engines are out (pd_cluster / kv_store_lb are already excluded for every
+    # kv_offload option).
+    strategies:
+      - single_node_tp
+      - single_node_tep
+      - single_node_dep
+    args:
+      - "--kv-transfer-config"
+      - '{"kv_connector":"LMCacheMPConnector","kv_role":"kv_both","kv_connector_extra_config":{"lmcache.mp.port":5555,"lmcache.mp.mq_timeout":300}}'
+    install: 'uv pip install "lmcache==0.5.1"'
+    docs_url: "https://docs.lmcache.ai/"
+    # The operational notes ride INSIDE the command as leading # lines (bash
+    # continuations can't carry trailing comments), so they render on the tab
+    # and survive copy-paste.
+    companion:
+      label: "LMCache Server"
+      description: "Run on the same node in a separate terminal, before vllm serve — owns the shared CPU-DRAM KV pool."
+      command: |
+        # --port must match "lmcache.mp.port" in --kv-transfer-config.
+        # Size --l1-size-gb to ~75% of the host DRAM you can dedicate — pinned
+        # memory is unswappable; the pool grows lazily from --l1-init-size-gb.
+        # --max-gpu-workers 1 avoids concurrent-GPU-transfer stalls under heavy
+        # async-load pressure; CPU-side workers stay at 8.
+        lmcache server \
+          --port 5555 \
+          --http-port 8080 \
+          --l1-size-gb 512 \
+          --l1-init-size-gb 20 \
+          --max-gpu-workers 1 \
+          --max-cpu-workers 8 \
+          --chunk-size 1024 \
+          --l1-align-bytes 16384 \
+          --eviction-trigger-watermark 0.85 \
+          --eviction-ratio 0.10 \
+          --eviction-policy LRU \
+          --supported-transfer-mode lmcache_driven

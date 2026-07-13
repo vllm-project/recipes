@@ -1,0 +1,115 @@
+name: kv_store_centralized_mooncake
+deploy_type: kv_store_lb
+display_name: "Centralized KV Store (Mooncake)"
+# Short form for the Store Topology sub-row (the KV Offload row shows one
+# merged "Mooncake" pill for both topologies).
+label: "Centralized (standalone store)"
+# Position in the Store Topology row (after distributed).
+order: 2
+description: >
+  Multi-instance vLLM cluster with shared centralized KV cache via
+  MooncakeStoreConnector in standalone-store mode. A dedicated
+  mooncake_store_service process owns the entire CPU DRAM pool; vLLM
+  GPUs contribute zero local memory (global_segment_size=0 per GPU).
+  A vllm-router with cache_aware policy routes requests so prefix-
+  matched prompts land on the same instance — maximizing KV cache hits.
+  Decouples cache capacity from vLLM lifecycle — store survives vLLM
+  restarts. Recommended for production deployments with large cache pools.
+
+router:
+  policy: "cache_aware"
+  install: "uv pip install vllm-router"
+  port: 30080
+
+vllm:
+  vllm_args:
+    - "--kv-transfer-config"
+    - '{"kv_connector":"MooncakeStoreConnector","kv_role":"kv_both"}'
+  env:
+    MOONCAKE_CONFIG_PATH: "$MOONCAKE_CONFIG_PATH"
+    PYTHONHASHSEED: 0
+  # Brand-keyed pip dep, resolved against the selected hardware and injected
+  # into the extra-install block while Mooncake is active: CUDA wheel on
+  # NVIDIA, the non-CUDA build on AMD.
+  install:
+    nvidia: "uv pip install 'mooncake-transfer-engine>=0.3.10'"
+    amd: "uv pip install 'mooncake-transfer-engine-non-cuda>=0.3.10'"
+  port: 8000
+
+# Composing with pd_cluster: Mooncake does NOT replace the PD deployment —
+# each role keeps its Nixl prefill<->decode path and gains the shared store by
+# swapping --kv-transfer-config for a MultiConnector (emitted after the role
+# args, so last-wins dedupe replaces the plain NixlConnector config).
+pd:
+  prefill:
+    args:
+      - "--kv-transfer-config"
+      - '{"kv_connector":"MultiConnector","kv_role":"kv_both","kv_connector_extra_config":{"connectors":[{"kv_connector":"NixlConnector","kv_role":"kv_producer","kv_load_failure_policy":"fail"},{"kv_connector":"MooncakeStoreConnector","kv_role":"kv_both","kv_connector_extra_config":{"load_async":true,"lookup_async":true}}]}}'
+  decode:
+    args:
+      - "--kv-transfer-config"
+      - '{"kv_connector":"MultiConnector","kv_role":"kv_both","kv_connector_extra_config":{"connectors":[{"kv_connector":"NixlConnector","kv_role":"kv_consumer","kv_load_failure_policy":"fail"},{"kv_connector":"MooncakeStoreConnector","kv_role":"kv_both","kv_connector_extra_config":{"load_async":true,"lookup_async":true}}]}}'
+
+mooncake_master:
+  command: |-
+    # Reachable by every instance and the store as $MOONCAKE_MASTER_IP:50051.
+    # 30s KV lease; eviction starts at 95% pool usage and frees 10% per pass.
+    mooncake_master \
+      -rpc_port=50051 \
+      -rpc_thread_num=4 \
+      -default_kv_lease_ttl=30000 \
+      -eviction_high_watermark_ratio=0.95 \
+      -eviction_ratio=0.1 \
+      -logtostderr
+  description: "Lightweight metadata coordinator. One instance per cluster."
+
+mooncake_store_config:
+  command: "python3 -m mooncake.mooncake_store_service --config $MOONCAKE_STORE_CONFIG_PATH"
+  description: "Centralized CPU DRAM pool — registers global_segment_size per store node and survives vLLM restarts."
+  # Rendered as # comment lines above the store-config heredoc on its tab.
+  note: |-
+    global_segment_size here IS per node (not per GPU) — size it to each
+    store node's RAM. device_name "" auto-selects the store node's RDMA NICs.
+  config:
+    mode: "standalone-store"
+    metadata_server: "P2PHANDSHAKE"
+    master_server_address: "$MOONCAKE_MASTER_IP:50051"
+    # The store service IS the pool: this is the DRAM per node it registers for
+    # the whole cluster (vLLM instances contribute 0). Size to the node's RAM.
+    global_segment_size: "500GB"
+    local_buffer_size: "4GB"
+    protocol: "rdma"
+    # Store node's RDMA NIC list("mlx5_0,mlx5_1,..."). Fill from the Endpoints
+    # panel or export MOONCAKE_STORE_DEVICE_NAME before pasting (unquoted heredoc);
+    # unset to "" = auto-selection.
+    device_name: "$MOONCAKE_STORE_DEVICE_NAME"
+    enable_offload: false
+
+mooncake_vllm_config:
+  mode: standalone-store
+  # Rendered as # comment lines above the config heredoc on the vLLM tab.
+  note: |-
+    Same file on every instance node. Each GPU donates no memory
+    (global_segment_size 0 per GPU) — capacity lives in the store service.
+    device_name "" auto-selects RDMA NICs by GPU-NIC PCIe/NUMA affinity.
+  template:
+    mode: "standalone-store"
+    metadata_server: "P2PHANDSHAKE"
+    master_server_address: "$MOONCAKE_MASTER_IP:50051"
+    # Each vLLM GPU contributes no memory (0GB) — capacity lives in the store service.
+    global_segment_size: 0
+    local_buffer_size: "4GB"
+    protocol: "rdma"
+    # Store node's RDMA NIC list("mlx5_0,mlx5_1,..."). Fill from the Endpoints
+    # panel or export MOONCAKE_STORE_DEVICE_NAME before pasting (unquoted heredoc);
+    # unset to "" = auto-selection.
+    device_name: "$MOONCAKE_DEVICE_NAME"
+    # DirectIO SSD offload staging — off for the plain DRAM pool. If turned
+    # on it must be true on all three components (mooncake_master, store
+    # service, vLLM) per the vLLM Mooncake docs.
+    enable_offload: false
+
+# NB: no parallelism config here — Mooncake composes with the serving
+# strategy; each instance's TP/TEP/DEP layout comes from the Strategy row.
+min_vllm_version: "0.21.0"
+default_instances: 2
