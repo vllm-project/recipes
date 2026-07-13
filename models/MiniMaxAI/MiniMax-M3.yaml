@@ -114,7 +114,7 @@ variants:
     description: "NVIDIA-quantized MXFP8 weights — Blackwell (B200/B300) for native MX tensor cores, and AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 Matrix Cores."
     hardware_overrides:
       mi300x:
-        docker_image: "vllm/vllm-openai-rocm:nightly-4559c43a9526597c00cbcc4f59979496500268d1"
+        docker_image: "docker pull vllm/vllm-openai-rocm:nightly"
         extra_args:
           - "--language-model-only"
           - "--async-scheduling"
