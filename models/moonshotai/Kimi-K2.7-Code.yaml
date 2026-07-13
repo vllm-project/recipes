@@ -261,10 +261,11 @@ guide: |
 
   ```bash
   python3 -c "import lmcache.integration.vllm.lmcache_mp_connector" 2>/dev/null || {
-    git clone https://github.com/LMCache/LMCache.git /opt/lmcache-src
-    cd /opt/lmcache-src && git checkout aaf7c0d3
+    git clone https://github.com/LMCache/LMCache.git /tmp/lmcache-src
+    cd /tmp/lmcache-src && git checkout aaf7c0d3
     pip install -r requirements/build.txt
-    CXX=hipcc BUILD_WITH_HIP=1 pip install -e . --no-build-isolation
+    CXX=hipcc BUILD_WITH_HIP=1 pip install . --no-build-isolation
+    rm -rf /tmp/lmcache-src
   }
   ```
 
@@ -292,6 +293,11 @@ guide: |
 
   ```bash
   export PYTHONHASHSEED=0
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+  # AITER RMSNorm has accuracy issues at TP<8 — disable it whenever TP<8.
+  export VLLM_ROCM_USE_AITER_RMSNORM=0
+
   vllm serve amd/Kimi-K2.7-Code-MXFP4 \
     --tensor-parallel-size 4 \
     --trust-remote-code \
