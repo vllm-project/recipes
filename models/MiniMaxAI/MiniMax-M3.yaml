@@ -113,6 +113,21 @@ variants:
     vram_minimum_gb: 513
     description: "NVIDIA-quantized MXFP8 weights — Blackwell (B200/B300) for native MX tensor cores, and AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 Matrix Cores."
     hardware_overrides:
+      mi300x:
+        docker_image: "docker pull vllm/vllm-openai-rocm:nightly"
+        extra_args:
+          - "--language-model-only"
+          - "--async-scheduling"
+          - "--max-num-batched-tokens"
+          - "16384"
+        extra_env:
+          VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+          VLLM_ROCM_USE_AITER: "1"
+          VLLM_ROCM_USE_AITER_MHA: "0"
+          TORCH_BLAS_PREFER_HIPBLASLT: "1"
+          NCCL_MIN_NCHANNELS: "112"
+          GPU_MAX_HW_QUEUES: "2"
       mi355x:
         docker_image: "vllm/vllm-openai-rocm:nightly"
         extra_args:
@@ -467,6 +482,32 @@ guide: |
 
   For best MXFP8 throughput, prefer Blackwell (B200/B300) for native MX tensor cores,
   or AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 matrix cores.
+
+  On AMD MI300X, the **mxfp8** variant stacks two accuracy-safe scheduling
+  levers from the InferenceX MI300X tuning recipe and avoids the high-concurrency
+  expert-parallel regression by using plain TP8:
+
+  ```bash
+  export VLLM_ENGINE_READY_TIMEOUT_S=3600
+  export VLLM_USE_BREAKABLE_CUDAGRAPH=0
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_MHA=0
+  export TORCH_BLAS_PREFER_HIPBLASLT=1
+  export NCCL_MIN_NCHANNELS="${NCCL_MIN_NCHANNELS:-112}"
+  export GPU_MAX_HW_QUEUES="${GPU_MAX_HW_QUEUES:-2}"
+
+  vllm serve MiniMaxAI/MiniMax-M3-MXFP8 \
+    --tensor-parallel-size 8 \
+    --block-size 128 \
+    --language-model-only \
+    --max-model-len "$MAX_MODEL_LEN" \
+    --attention-backend TRITON_ATTN \
+    --async-scheduling \
+    --max-num-batched-tokens 16384 \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
 
   On AMD MI355X the **mxfp8** variant additionally enables the AITER kernels,
   the fused shared-experts MoE, and INT6 QuickReduce, and pulls the nightly ROCm
