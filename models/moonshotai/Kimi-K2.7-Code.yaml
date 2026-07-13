@@ -73,6 +73,8 @@ variants:
     description: "AMD Quark OCP MXFP4 weights for MI350X/MI355X (gfx950); fits 8× MI355X."
     supported_hardware:
       - mi355x
+    # Validated single-node InferenceX agentic-coding config is TP4.
+    tp: 4
     hardware_overrides:
       mi355x:
         docker_image: "vllm/vllm-openai-rocm:v0.24.0"
@@ -82,6 +84,9 @@ variants:
         extra_env:
           VLLM_ROCM_USE_AITER: "1"
           VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
+          # Validated single-node config is TP4 (<8); AITER RMSNorm has accuracy
+          # issues below TP8, so keep it off. Safe to re-enable at TP=8.
+          VLLM_ROCM_USE_AITER_RMSNORM: "0"
 
 compatible_strategies:
   - single_node_tp
