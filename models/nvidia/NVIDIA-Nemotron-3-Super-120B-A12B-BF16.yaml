@@ -138,23 +138,23 @@ guide: |
 
   ### DGX Spark (GB10)
 
-  The NVFP4 variant runs on a single DGX Spark (GB10) at TP=1. Two notes:
+  The NVFP4 variant runs on a single DGX Spark (GB10) at TP=1. A few notes:
 
   - **Set `--gpu-memory-utilization 0.85`** to avoid an OOM at startup — the default 0.92
     is too aggressive here. A slightly higher value (e.g. 0.87) may also work.
+  - **`--max-model-len 131072`** caps the context so the KV cache is sized appropriately
+    for DGX Spark's memory; the model's full 262144 context would leave too little room.
   - **No backend flag is needed.** On GB10 (SM121) vLLM's auto backend selection already
-    lands on FlashInfer: the NVFP4 MoE backend resolves to `FLASHINFER_CUTLASS` and the
-    NVFP4 GEMM to `FlashInferCutlassNvFp4LinearKernel`, which is faster than the Marlin
-    fallback. FlashInfer is the default here, so there is nothing extra to pass.
+    lands on FlashInfer, faster than the Marlin fallback:
+    - `linear_backend='auto'` → `FLASHINFER_CUTLASS`
+    - `moe_backend='auto'` → `FLASHINFER_CUTLASS`
+    - `--attention-backend='auto'` → `FLASHINFER`
 
   ```bash
   vllm serve nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4 \
-    --tensor-parallel-size 1 \
     --trust-remote-code \
-    --served-model-name nemotron-3-super \
     --max-model-len 131072 \
     --gpu-memory-utilization 0.85 \
-    --max-num-seqs 4 \
     --enable-auto-tool-choice \
     --tool-call-parser qwen3_coder \
     --reasoning-parser nemotron_v3
