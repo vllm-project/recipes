@@ -249,20 +249,25 @@ guide: |
   - If engine init intermittently hangs in the symm-mem all-reduce rendezvous,
     export `VLLM_ALLREDUCE_USE_SYMM_MEM=0`.
 
-  #### LMCache CPU KV offload (single node)
+  ## KV Cache Offloading (LMCache)
 
-  For long-horizon agentic-coding workloads with heavy prefix reuse, offloading
-  the KV cache to host DRAM via [LMCache](https://github.com/LMCache/LMCache)
-  extends the effective cache far beyond GPU HBM. LMCache runs as a separate
-  multi-process (MP) server that vLLM connects to through the
-  `LMCacheMPConnector`.
+  For long-horizon agentic-coding workloads whose reusable prefixes outgrow GPU
+  KV capacity, pick **LMCache** on the KV Offload row: the `vllm serve` command
+  gains the `LMCacheMPConnector` config and the command block grows an **LMCache
+  Server** tab (run it first, in a separate terminal on the same node — it owns
+  the shared CPU-DRAM KV pool). Single-node strategies only.
 
-  > vLLM's recipe command builder does not yet expose a first-class KV-offload
-  > row (tracked upstream in
-  > [vllm-project/recipes#628](https://github.com/vllm-project/recipes/pull/628)).
-  > Until that lands, use the manual setup below.
+  Verified on 8× MI355X in
+  [InferenceX PR #2126](https://github.com/SemiAnalysisAI/InferenceX/pull/2126).
 
-  On ROCm, build the connector against HIP if it isn't already importable:
+  ### MI355X / ROCm overrides
+
+  The generic LMCache row installs the CUDA wheel (`lmcache==0.5.1`) and its
+  server tab uses CUDA-oriented flags. On MI355X (`gfx950`) the connector must be
+  **built from source against HIP**, and the server is launched with the flags
+  below instead.
+
+  Build the connector against HIP if it isn't already importable:
 
   ```bash
   python3 -c "import lmcache.integration.vllm.lmcache_mp_connector" 2>/dev/null || {
