@@ -25,6 +25,7 @@ import {
   recommendStrategy,
   fitsSingleNode,
   isHardwareScalable,
+  isKvStoreBrandSupported,
   pickFittingVariant,
   pdFitsSingleNode,
   resolveCommand,
@@ -167,11 +168,12 @@ function pickPdNodes(hwProfile, variant) {
 // alongside the pip-mode command/argv. The `features` argument controls
 // command synthesis but is intentionally NOT echoed back in the output —
 // agents read the actual args from `command`/`argv`.
-function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, strategies, taxonomy, pdNodes = null) {
+function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, strategies, taxonomy, pdNodes = null, kvOffload = null) {
   let result;
   try {
     result = resolveCommand(
-      recipe, variantKey, strategy, hwId, features, strategies, taxonomy, [], nodeCount, pdNodes
+      recipe, variantKey, strategy, hwId, features, strategies, taxonomy, [], nodeCount, pdNodes,
+      {}, kvOffload
     );
   } catch (e) {
     console.warn(`  ⚠ command synthesis failed for ${recipe.hf_id} / ${variantKey} / ${strategy}: ${e.message}`);
@@ -227,11 +229,58 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
       router_config: result.routerConfig,
     };
   }
+  if (result.deployType === "kv_store_lb") {
+    // Instance env lives on result.vllm (not result.env). `instances` is how
+    // many engines sit behind the router; `node_count` is nodes PER INSTANCE
+    // (worker command present when an instance spans >1 node). Mooncake
+    // COMPOSES with a serving strategy: `strategy` names the kv deployment
+    // (the alternatives key) and `serving_strategy` the parallelism layout
+    // each instance actually runs.
+    const vllmDocker = result.vllm?.command && result.vllm?.argv
+      ? dockerize(result.vllm.command, result.vllm.argv, result.vllm.env || {}, dockerMeta)
+      : {};
+    // Worker gets the same docker wrap as the head — mirrors the multi_node
+    // branch's head/worker docker pair.
+    const vllmWorkerDocker = result.vllm?.workerCommand && result.vllm?.workerArgv
+      ? dockerize(result.vllm.workerCommand, result.vllm.workerArgv, result.vllm.env || {}, dockerMeta)
+      : {};
+    return {
+      ...base,
+      strategy: kvOffload || base.strategy,
+      serving_strategy: result.servingStrategy || base.strategy,
+      // The kv deployment's own vLLM floor (MooncakeStoreConnector ships in
+      // 0.21.0+) — consumers should take max(recipe, variant, this).
+      kv_min_vllm_version: (kvOffload && strategies[kvOffload]?.min_vllm_version) || null,
+      env: result.vllm?.env || {},
+      node_count: result.nodeCount,
+      instances: result.instances,
+      vllm_command: result.vllm?.command,
+      vllm_argv: result.vllm?.argv,
+      vllm_worker_command: result.vllm?.workerCommand || null,
+      vllm_worker_argv: result.vllm?.workerArgv || null,
+      vllm_worker_docker_command: vllmWorkerDocker.docker_command ?? null,
+      vllm_worker_docker_argv: vllmWorkerDocker.docker_argv ?? null,
+      // Extra pip dep for the instances (MooncakeStoreConnector imports the
+      // mooncake package) — same field the UI's "Requires:" hint consumes.
+      vllm_install: result.vllm?.install || null,
+      vllm_docker_command: vllmDocker.docker_command,
+      vllm_docker_argv: vllmDocker.docker_argv,
+      master: result.master,
+      store: result.store || null,
+      router: result.router,
+      mooncake_config: result.mooncakeConfig,
+      mooncake_config_note: result.mooncakeConfigNote || "",
+    };
+  }
   return {
     ...base,
     command: result.command,
     argv: result.argv,
     ...dockerize(result.command, result.argv, env, dockerMeta),
+    // Companion processes (feature `companion:` or the active kv_offload
+    // option's, e.g. LMCache's `lmcache server`) — run alongside `vllm serve`
+    // on the same node, in their own terminal.
+    ...(result.companions ? { companions: result.companions } : {}),
   };
 }
 
@@ -258,9 +307,27 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     variantKey = fitting;
     variant = recipe.variants[fitting];
   }
-  const compatible = (recipe.compatible_strategies || []).filter(
-    (s) => scalable || (!s.startsWith("multi_node_") && s !== "pd_cluster")
+  // kv_store_lb strategies apply to every non-omni recipe by default — no
+  // compatible_strategies opt-in (mirrors the UI's KV Offload row; omni
+  // recipes already returned null above). Deduped in case a recipe still
+  // names them explicitly.
+  const kvStoreIds = Object.keys(strategies).filter(
+    (s) => strategies[s].deploy_type === "kv_store_lb"
   );
+  const compatible = [...new Set([
+    ...(recipe.compatible_strategies || []),
+    ...kvStoreIds,
+  ])].filter((s) => {
+    // Mirrors the UI's KV Offload gating: Mooncake renders on scalable
+    // NVIDIA/AMD hardware (the transfer engine has no CPU/TPU build) unless
+    // the recipe opts that GPU out (`unsupported`) under
+    // kv_cache_strategy_hardware.
+    if (strategies[s]?.deploy_type === "kv_store_lb") {
+      return scalable && isKvStoreBrandSupported(hwProfile)
+        && recipe.kv_cache_strategy_hardware?.[s]?.[hwId] !== "unsupported";
+    }
+    return scalable || (!s.startsWith("multi_node_") && s !== "pd_cluster");
+  });
   const supportsMultiNode = scalable && compatible.some((s) => s.startsWith("multi_node_"));
   const recommendedNodeCount = !fitsSingleNode(hwProfile, variant) && supportsMultiNode ? 2 : 1;
   const recommendedStrategy = recommendStrategy(recipe, hwProfile, recommendedNodeCount);
@@ -281,20 +348,54 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
   recommended.strategy_spec = strategies[recommendedStrategy];
   recommended.hardware_profile = hwProfile;
 
+  // Serving strategy for a Mooncake composition at a given nodes-per-instance
+  // count: the recommendation for that node count, skipping PD (PD × Mooncake
+  // is a MultiConnector composition the interactive builder renders; the
+  // API's pd_cluster entry stays the plain Nixl deployment) and falling back
+  // to the first compatible serving strategy that fits.
+  const kvServingFor = (nc) => {
+    const ok = (id) => {
+      const d = strategies[id]?.deploy_type;
+      if (!strategies[id] || d === "pd_cluster" || d === "kv_store_lb") return false;
+      return nc > 1 ? d === "multi_node" : d !== "multi_node";
+    };
+    const rec = recommendStrategy(recipe, hwProfile, nc);
+    if (ok(rec)) return rec;
+    return (recipe.compatible_strategies || []).find(ok) || null;
+  };
+
   const alternatives = {};
   for (const s of compatible) {
     if (s === recommendedStrategy) continue;
     let nc;
     let pdNodes = null;
+    let servingStrategy = s;
+    let kvOffload = null;
     if (s === "pd_cluster") {
       pdNodes = pickPdNodes(hwProfile, variant);
       if (pdNodes === "skip") continue;
       nc = 1;
+    } else if (strategies[s]?.deploy_type === "kv_store_lb") {
+      // nc = nodes PER INSTANCE (the instance count defaults inside
+      // resolveCommand). Single-node instances unless the variant needs
+      // multi-node sharding to fit at all. Mooncake composes with a serving
+      // strategy — the kv id rides in via kvOffload, never as the strategy.
+      nc = fitsSingleNode(hwProfile, variant) ? 1 : 2;
+      servingStrategy = kvServingFor(nc);
+      if (!servingStrategy && nc === 2) {
+        // No multi_node_* strategy to shard with — fall back to single-node
+        // instances rather than dropping the kv rendering: VRAM is a display
+        // hint in this repo, never a hard gate.
+        nc = 1;
+        servingStrategy = kvServingFor(1);
+      }
+      if (!servingStrategy) continue;
+      kvOffload = s;
     } else {
       nc = s.startsWith("multi_node_") ? 2 : 1;
     }
     const feats = defaultFeaturesFor(recipe, hwId);
-    const rendered = renderCommand(recipe, variantKey, s, hwId, nc, feats, strategies, taxonomy, pdNodes);
+    const rendered = renderCommand(recipe, variantKey, servingStrategy, hwId, nc, feats, strategies, taxonomy, pdNodes, kvOffload);
     if (rendered) alternatives[s] = rendered;
   }
   return { recommended, alternatives };
@@ -336,6 +437,21 @@ for (const file of fs.readdirSync(strategiesDir).filter((f) => f.endsWith(".yaml
   writeJson(`strategies/${s.name}.json`, s);
 }
 writeJson("strategies.json", strategies);
+const servingStrategyCount = Object.keys(strategies).length;
+
+// ── KV-store deployments ── (kv_store/*.yaml, deploy_type: kv_store_lb)
+// They power the KV Offload row, not the Strategy row, so they publish under
+// /kv_store/ and stay out of /strategies.json — but merge into the same
+// in-memory map since renderCommand looks every deployment spec up by id.
+const kvStoreDir = path.join(ROOT, "kv_store");
+const kvStoreDeployments = {};
+for (const file of fs.readdirSync(kvStoreDir).filter((f) => f.endsWith(".yaml"))) {
+  const s = normalizeDates(readYaml(path.join(kvStoreDir, file)));
+  kvStoreDeployments[s.name] = s;
+  strategies[s.name] = s;
+  writeJson(`kv_store/${s.name}.json`, s);
+}
+writeJson("kv_store.json", kvStoreDeployments);
 
 // ── Recipes ── (walks models/<hf_org>/<hf_repo>.yaml)
 const modelsDir = path.join(ROOT, "models");
@@ -581,7 +697,7 @@ const hwIndexedCount = recipes.reduce(
   (n, r) => n + Object.keys(r.recommended_command?.by_hardware || {}).length, 0
 );
 console.log(
-  `✓ JSON API: ${recipes.length} models (${rcCount} with recommended_command, ${altCount} default-hw alternatives, ${hwIndexedCount} per-hw renderings), ${promotedCount} promoted variants, ${Object.keys(strategies).length} strategies, ${platformsCount} platforms` +
+  `✓ JSON API: ${recipes.length} models (${rcCount} with recommended_command, ${altCount} default-hw alternatives, ${hwIndexedCount} per-hw renderings), ${promotedCount} promoted variants, ${servingStrategyCount} strategies, ${Object.keys(kvStoreDeployments).length} kv-store deployments, ${platformsCount} platforms` +
   (collisionCount ? ` (${collisionCount} variant collision${collisionCount > 1 ? "s" : ""} skipped)` : "")
 );
 console.log(`  /models.json`);
@@ -591,5 +707,7 @@ console.log(`  /{hf_id}/hw/{hw}.json                        (per-hardware render
 console.log(`  /{hf_id}/hw/{hw}/strategies/{strategy}.json  (per-(hw, strategy) alternatives)`);
 console.log(`  /{variant_hf_id}.json                        (promoted variants, e.g. /zai-org/GLM-5.1-FP8.json)`);
 console.log(`  /strategies.json`);
+console.log(`  /kv_store.json`);
+console.log(`  /kv_store/{id}.json                          (per-deployment spec)`);
 console.log(`  /taxonomy.json`);
 console.log(`  /platforms.json`);

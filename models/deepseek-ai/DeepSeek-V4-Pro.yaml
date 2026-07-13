@@ -3,7 +3,7 @@ meta:
   slug: "deepseek-v4-pro"
   provider: "DeepSeek"
   description: "DeepSeek V4 flagship MoE (1.6T total / 49B active) with hybrid CSA+HCA attention, manifold-constrained hyper-connections, Muon-trained on 32T+ tokens, and three-tier reasoning."
-  date_updated: 2026-06-09
+  date_updated: 2026-07-10
   difficulty: hard
   tasks:
     - text
@@ -142,8 +142,6 @@ hardware_overrides:
       - "--no-enable-flashinfer-autotune"
       - "--compilation-config"
       - '{"mode": 0, "cudagraph_mode": "FULL_DECODE_ONLY"}'
-    extra_env:
-      VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS: "0"
   blackwell:
     extra_args:
       - "--attention_config.use_fp4_indexer_cache=True"
@@ -367,3 +365,17 @@ guide: |
   |gsm8k|      3|flexible-extract|     8|exact_match|↑  |0.9538|±  |0.0058|
   |     |       |strict-match    |     8|exact_match|↑  |0.9545|±  |0.0057|
   ```
+
+  ## KV Cache Offloading (LMCache)
+
+  For agentic / multi-turn workloads whose reusable prefixes outgrow GPU KV
+  capacity, pick **LMCache** on the KV Offload row: the vLLM command gains the
+  `LMCacheMPConnector` config and the command block grows an **LMCache Server**
+  tab — install `lmcache==0.5.1` (extra-install block above) and run the server
+  first, in a separate terminal on the same node. Port matching and pool-sizing
+  notes are inline comments on that tab. Single-node strategies only (the MP
+  server is node-local; PD owns `--kv-transfer-config` for the Nixl path).
+
+  Verified on 8× B200 / B300 in
+  [InferenceX PR #2153](https://github.com/SemiAnalysisAI/InferenceX/pull/2153);
+  see the [LMCache docs](https://docs.lmcache.ai/) for tuning knobs.
