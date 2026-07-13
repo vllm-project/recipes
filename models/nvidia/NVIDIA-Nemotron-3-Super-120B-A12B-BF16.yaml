@@ -65,6 +65,20 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 75
     description: "NVFP4 weights for Blackwell"
+    hardware_overrides:
+      # DGX Spark (GB10 / SM121) only — single-GPU tuning + explicit opt-in to the
+      # flashinfer_b12x CuteDSL NVFP4 kernels (excluded from auto-selection on SM121
+      # pending the upstream CUTLASS SM121 MMA-op guard).
+      dgx_spark_gb10:
+        extra_args:
+          - "--gpu-memory-utilization"
+          - "0.85"
+          - "--max-model-len"
+          - "131072"
+          - "--moe-backend"
+          - "flashinfer_b12x"
+          - "--linear-backend"
+          - "flashinfer_b12x"
 
   base_bf16:
     model_id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-Base-BF16"
@@ -144,17 +158,25 @@ guide: |
     is too aggressive here. A slightly higher value (e.g. 0.87) may also work.
   - **`--max-model-len 131072`** caps the context so the KV cache is sized appropriately
     for DGX Spark's memory; the model's full 262144 context would leave too little room.
-  - **No backend flag is needed.** On GB10 (SM121) vLLM's auto backend selection already
-    lands on FlashInfer, faster than the Marlin fallback:
+  - **Backends.** On GB10 (SM121) auto selection already lands on FlashInfer, faster than
+    the Marlin fallback:
     - `linear_backend='auto'` → `FLASHINFER_CUTLASS`
     - `moe_backend='auto'` → `FLASHINFER_CUTLASS`
     - `--attention-backend='auto'` → `FLASHINFER`
+
+    This recipe additionally opts into the newer **`flashinfer_b12x`** CuteDSL NVFP4 kernels
+    via `--moe-backend flashinfer_b12x --linear-backend flashinfer_b12x`. These are
+    *excluded from auto-selection* on SM121 pending an upstream CUTLASS SM121 MMA-op guard,
+    so they are experimental/opt-in — drop both flags to fall back to the auto
+    `FLASHINFER_CUTLASS` path if you hit issues.
 
   ```bash
   vllm serve nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4 \
     --trust-remote-code \
     --max-model-len 131072 \
     --gpu-memory-utilization 0.85 \
+    --moe-backend flashinfer_b12x \
+    --linear-backend flashinfer_b12x \
     --enable-auto-tool-choice \
     --tool-call-parser qwen3_coder \
     --reasoning-parser nemotron_v3
