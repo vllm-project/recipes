@@ -136,17 +136,16 @@ guide: |
     --reasoning-parser nemotron_v3
   ```
 
-  ### DGX Spark (GB10) — single-GPU NVFP4
+  ### DGX Spark (GB10)
 
-  The NVFP4 variant runs on a single DGX Spark (GB10, 128 GB unified memory) at TP=1.
-  Two GB10-specific notes:
+  The NVFP4 variant runs on a single DGX Spark (GB10) at TP=1. Two notes:
 
-  - **`--gpu-memory-utilization 0.85`** is required — GB10's unified memory can't satisfy
-    vLLM's default 0.92 and OOMs at startup.
-  - **No backend flag is needed.** On GB10 (SM121) vLLM auto-selects the `FLASHINFER_CUTLASS`
-    NVFP4 MoE kernel (with `FlashInferCutlassNvFp4LinearKernel` for the GEMMs), which is
-    faster than the Marlin fallback. FlashInfer is the default here, so there is nothing
-    extra to pass.
+  - **Set `--gpu-memory-utilization 0.85`** to avoid an OOM at startup — the default 0.92
+    is too aggressive here. A slightly higher value (e.g. 0.87) may also work.
+  - **No backend flag is needed.** On GB10 (SM121) vLLM's auto backend selection already
+    lands on FlashInfer: the NVFP4 MoE backend resolves to `FLASHINFER_CUTLASS` and the
+    NVFP4 GEMM to `FlashInferCutlassNvFp4LinearKernel`, which is faster than the Marlin
+    fallback. FlashInfer is the default here, so there is nothing extra to pass.
 
   ```bash
   vllm serve nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4 \
