@@ -358,7 +358,7 @@ guide: |
     --tensor-parallel-size 8 \
     --block-size 128 \
     --attention-backend TRITON_ATTN \
-    --kv-transfer-config '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both","kv_connector_extra_config":{"cpu_bytes_to_use_per_rank":236223201280,"lazy_offload":"false"}}' \
+    --kv-transfer-config '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both","kv_connector_extra_config":{"cpu_bytes_to_use_per_rank":236223201280,"lazy_offload":false}}' \
     --tool-call-parser minimax_m3 \
     --enable-auto-tool-choice \
     --reasoning-parser minimax_m3
@@ -404,7 +404,7 @@ guide: |
     --tensor-parallel-size 8 \
     --block-size 128 \
     --attention-backend TRITON_ATTN \
-    --kv-transfer-config '{"kv_connector":"LMCacheMPConnector","kv_role":"kv_both","kv_connector_extra_config":{"lmcache.mp.host":"tcp://127.0.0.1","lmcache.mp.port":5555}}' \
+    --kv-transfer-config '{"kv_connector":"LMCacheMPConnector","kv_role":"kv_both","kv_connector_extra_config":{"lmcache.mp.host":"127.0.0.1","lmcache.mp.port":5555}}' \
     --tool-call-parser minimax_m3 \
     --enable-auto-tool-choice \
     --reasoning-parser minimax_m3
