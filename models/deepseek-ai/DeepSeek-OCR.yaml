@@ -10,6 +10,10 @@ meta:
   performance_headline: "Optical context compression for efficient OCR and document understanding"
   related_recipes:
     - "deepseek-ai/DeepSeek-OCR-2"
+  hardware:
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-OCR"
@@ -57,6 +61,7 @@ hardware_overrides:
     # Disable Triton FA → AITER FA is faster for dense OCR on MI300X/MI325X/MI355X.
     extra_args: []
     extra_env:
+      VLLM_USE_TRITON_FLASH_ATTN: "0"
       VLLM_ROCM_USE_AITER: "1"
       SAFETENSORS_FAST_GPU: "1"
 
@@ -80,6 +85,18 @@ guide: |
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend auto
+  ```
+
+  ### AMD ROCm
+
+  The ROCm wheel requires Python 3.12, ROCm 7.0+, and glibc >= 2.35. Use the
+  Docker flow from the vLLM installation guide if your host environment does not
+  meet those requirements.
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
   ```
 
   ## Client Usage
@@ -125,6 +142,19 @@ guide: |
   ### Online OCR serving
 
   ```bash
+  vllm serve deepseek-ai/DeepSeek-OCR \
+    --logits_processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
+    --no-enable-prefix-caching \
+    --mm-processor-cache-gb 0
+  ```
+
+  AMD ROCm on MI300X / MI325X / MI355X:
+
+  ```bash
+  export SAFETENSORS_FAST_GPU=1
+  export VLLM_USE_TRITON_FLASH_ATTN=0
+  export VLLM_ROCM_USE_AITER=1
+
   vllm serve deepseek-ai/DeepSeek-OCR \
     --logits_processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
     --no-enable-prefix-caching \
