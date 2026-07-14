@@ -15,6 +15,7 @@ meta:
     - google/gemma-4-31B-it
   hardware:
     h100: verified
+    max1550: verified
 
 model:
   model_id: "google/gemma-4-12B-it"
@@ -73,7 +74,13 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  xpu:
+    extra_args:
+      tensor_parallel_size: 2
+      quantization: compressed-tensors
+    extra_env:
+      ZE_AFFINITY_MASK: "0,1"
 
 strategy_overrides:
   single_node_tp:
@@ -164,6 +171,23 @@ guide: |
       --host 0.0.0.0 --port 8000
   ```
   On CUDA 12.9 hosts, use the `vllm/vllm-openai:gemma4-unified-cu129` tag instead.
+
+  ### Docker (Intel XPU — Max 1550)
+  The W4A16 QAT variant fits on 2 tiles of a Max 1550 with mixed attention backends
+  (Flash Attention SYCL for sliding-window layers, Triton for full-attention layers).
+  ```bash
+  docker run -itd --name gemma4-12b-xpu \
+    --device /dev/dri --network host --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e ZE_AFFINITY_MASK="0,1" \
+    intel/vllm:latest \
+      --model google/gemma-4-12B-it-qat-w4a16-ct \
+      --dtype bfloat16 \
+      --quantization compressed-tensors \
+      --tensor-parallel-size 2 \
+      --max-model-len 16384 \
+      --host 0.0.0.0 --port 8000
+  ```
 
   ### Docker (Cloud TPU — Trillium / Ironwood)
   TPU uses the separate `vllm/vllm-tpu` image (no pip wheel). Pull the tag specified by the upstream [Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4) or [Ironwood](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/inference/ironwood/vLLM/Gemma4/) recipe, then run:
