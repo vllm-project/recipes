@@ -16,6 +16,7 @@ meta:
     b200: verified
     gb200: verified
     mi300x: verified
+    mi325x: verified
     mi355x: verified
 
 model:
@@ -103,6 +104,7 @@ guide: |
 
   - **Hardware (FP8)**: 8x H200 GPUs (verified)
   - **Hardware (FP4)**: 4x B200 GPUs
+  - **AMD ROCm**: 8x MI300X / MI325X / MI355X GPUs
   - **vLLM**: Install with `uv pip install -U vllm --torch-backend auto`
 
   ```bash
@@ -111,12 +113,34 @@ guide: |
   uv pip install -U vllm --torch-backend auto
   ```
 
+  AMD ROCm wheel:
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+  ```
+
   ## Client Usage
 
   ### 8xH200 (FP8)
 
   Tensor Parallel + Expert Parallel (TP8+EP):
   ```bash
+  vllm serve deepseek-ai/DeepSeek-V3 \
+    --trust-remote-code \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel
+  ```
+
+  AMD ROCm on 8x MI300X / MI325X / MI355X:
+
+  ```bash
+  export SAFETENSORS_FAST_GPU=1
+  export VLLM_USE_TRITON_FLASH_ATTN=0
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_MOE=1
+
   vllm serve deepseek-ai/DeepSeek-V3 \
     --trust-remote-code \
     --tensor-parallel-size 8 \
