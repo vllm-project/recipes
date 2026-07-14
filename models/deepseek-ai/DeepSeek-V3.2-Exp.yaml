@@ -13,6 +13,9 @@ meta:
     - "deepseek-ai/DeepSeek-V3.2"
   hardware:
     h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V3.2-Exp"
@@ -91,6 +94,7 @@ guide: |
   ## Prerequisites
 
   - **Hardware**: 8x H200 (or H20, or 8xB200) GPUs
+  - **AMD ROCm**: 8x MI300X / MI325X / MI355X GPUs
   - **vLLM**: Current stable release
   - **DeepGEMM**: Required for MQA logits computation (and optionally for MoE)
 
@@ -98,6 +102,14 @@ guide: |
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend auto
   uv pip install git+https://github.com/deepseek-ai/DeepGEMM.git@v2.1.1.post3 --no-build-isolation
+  ```
+
+  AMD ROCm wheel:
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
   ```
 
   Note: DeepGEMM is used both for MoE and for MQA logits computation. It is required for
@@ -117,6 +129,23 @@ guide: |
   Using tensor parallel:
   ```bash
   vllm serve deepseek-ai/DeepSeek-V3.2-Exp -tp 8
+  ```
+
+  ### AMD ROCm on 8x MI300X / MI325X / MI355X
+
+  ```bash
+  export SAFETENSORS_FAST_GPU=1
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_MOE=1
+  export VLLM_RPC_TIMEOUT=18000000
+
+  vllm serve deepseek-ai/DeepSeek-V3.2-Exp \
+    --tensor-parallel-size 8 \
+    --max-num-batched-tokens 32768 \
+    --trust-remote-code \
+    --no-enable-prefix-caching \
+    --kv-cache-dtype bfloat16 \
+    --block-size 1
   ```
 
   ### Serving on 8xB200 GPUs
