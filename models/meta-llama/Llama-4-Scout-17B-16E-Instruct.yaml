@@ -18,7 +18,7 @@ meta:
 
 model:
   model_id: "meta-llama/Llama-4-Scout-17B-16E-Instruct"
-  min_vllm_version: "0.12.0"
+  min_vllm_version: "0.24.0"
   architecture: moe
   parameter_count: "109B"
   active_parameters: "17B"
@@ -54,8 +54,7 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+    extra_env: {}
 
 compatible_strategies:
   - single_node_tp
@@ -82,8 +81,7 @@ hardware_overrides:
       - "8192"
       - "--compilation-config"
       - '{"pass_config":{"fuse_allreduce_rms":true,"eliminate_noops":true}}'
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP8: "1"
+    extra_env: {}
   amd:
     # 8 GPUs required for 17B×16E MoE. AITER JIT-compiles on first launch.
     extra_args:
@@ -109,7 +107,7 @@ guide: |
   ## Prerequisites
 
   - Hardware: 1x B200 (FP4), 1x H100 (FP8), 4x GPUs (BF16) or 4x Xeon6/Xeon5 NUMA node for BF16
-  - vLLM >= 0.12.0
+  - vLLM >= 0.24.0
   - CUDA Driver >= 575 for GPUs
   - Docker with NVIDIA Container Toolkit (recommended) for GPUs
   - License: Must agree to Meta's Llama 4 Scout Community License for GPUs

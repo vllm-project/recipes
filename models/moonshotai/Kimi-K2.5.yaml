@@ -19,7 +19,7 @@ meta:
 
 model:
   model_id: "moonshotai/Kimi-K2.5"
-  min_vllm_version: "0.19.1"
+  min_vllm_version: "0.24.0"
   docker_image:
     nvidia: "vllm/vllm-openai:latest"
     amd: "vllm/vllm-openai-rocm:nightly"
@@ -44,7 +44,7 @@ features:
       - "--reasoning-parser"
       - "kimi_k2"
   spec_decoding:
-    description: "Eagle3 speculative decoding for accelerated inference (requires vLLM >= 0.18.0)"
+    description: "Eagle3 speculative decoding for accelerated inference"
     args:
       - "--speculative-config"
       - '{"model":"lightseekorg/kimi-k2.5-eagle3-mla","method":"eagle3","num_speculative_tokens":3}'
@@ -80,8 +80,7 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+    extra_env: {}
 
 compatible_strategies:
   - single_node_tp
@@ -148,7 +147,7 @@ guide: |
 
   ## Prerequisites
 
-  - **vLLM version:** >= 0.15.0 (speculative decoding with Eagle3 requires >= 0.18.0)
+  - **vLLM version:** >= 0.24.0
   - **Hardware (BF16):** 8x H200 GPUs (verified), or equivalent aggregate VRAM (~640 GB)
   - **Hardware (NVFP4):** 4x Blackwell GPUs (e.g. GB200)
   - **AMD support:** 8x MI300X / MI325X / MI355X with ROCm 7.2.1 and Python 3.12

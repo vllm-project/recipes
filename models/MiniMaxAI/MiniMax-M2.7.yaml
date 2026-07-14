@@ -19,7 +19,7 @@ meta:
 
 model:
   model_id: "MiniMaxAI/MiniMax-M2.7"
-  min_vllm_version: "0.20.0"
+  min_vllm_version: "0.24.0"
   architecture: moe
   parameter_count: "230B"
   active_parameters: "10B"
@@ -56,8 +56,7 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+    extra_env: {}
 
 compatible_strategies:
   - single_node_tp

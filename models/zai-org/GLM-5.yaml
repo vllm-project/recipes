@@ -14,7 +14,7 @@ meta:
 
 model:
   model_id: "zai-org/GLM-5"
-  min_vllm_version: "0.16.0"
+  min_vllm_version: "0.24.0"
   architecture: moe
   parameter_count: "744B"
   active_parameters: "40B"
@@ -25,8 +25,8 @@ model:
   base_env: {}
 
 dependencies:
-  - note: "Pin vllm==0.19.0 (avoid nightly)"
-    command: 'uv pip install "vllm==0.19.0" --torch-backend=auto'
+  - note: "Pin vllm==0.24.0 (avoid nightly)"
+    command: 'uv pip install "vllm==0.24.0" --torch-backend=auto'
   - note: "GLM-5 requires transformers >= 5.4.0"
     command: 'uv pip install "transformers>=5.4.0"'
   - note: "Optional: DeepGEMM for FP8 MoE kernels (FP8 variant only)"
@@ -74,8 +74,7 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+    extra_env: {}
 
 compatible_strategies:
   - single_node_tp
@@ -103,7 +102,7 @@ guide: |
 
   ## Prerequisites
 
-  - **vLLM version:** 0.19.0 (stable — preferred over nightly for model performance)
+  - **vLLM version:** 0.24.0 (stable — preferred over nightly for model performance)
   - **Hardware (FP8):** 8xH200 or 8xH20 (141GB × 8)
   - **DeepGEMM (FP8):** install via `install_deepgemm.sh` from the vLLM repo
 
@@ -129,7 +128,7 @@ guide: |
   ```bash
   uv venv
   source .venv/bin/activate
-  uv pip install "vllm==0.19.0" --torch-backend=auto
+  uv pip install "vllm==0.24.0" --torch-backend=auto
   uv pip install "transformers>=5.4.0"
   ```
 
@@ -196,7 +195,7 @@ guide: |
 
   ## Troubleshooting
 
-  - **Accuracy drift:** Prefer the 0.19.0 stable release over nightly for best accuracy.
+  - **Accuracy drift:** Prefer the 0.24.0 stable release over nightly for best accuracy.
   - **Tool calling + MTP:** If you need both, use the latest vLLM main branch.
   - **FP8 installation:** DeepGEMM is required for FP8 performance.
 

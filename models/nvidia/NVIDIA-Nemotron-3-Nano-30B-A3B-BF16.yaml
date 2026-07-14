@@ -15,7 +15,7 @@ meta:
 
 model:
   model_id: "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16"
-  min_vllm_version: "0.11.2"
+  min_vllm_version: "0.24.0"
   architecture: moe
   parameter_count: "30B"
   active_parameters: "3B"
@@ -60,7 +60,6 @@ variants:
       - "--kv-cache-dtype"
       - "fp8"
     extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP8: "1"
       VLLM_FLASHINFER_MOE_BACKEND: "throughput"
 
 compatible_strategies:
@@ -84,14 +83,14 @@ guide: |
   ## Prerequisites
 
   - Hardware: 1x H100/H200 or comparable; DGX Spark and Jetson Thor supported
-  - vLLM >= 0.11.2 (0.12.0 recommended for full support)
+  - vLLM >= 0.24.0
   - Docker with NVIDIA Container Toolkit (recommended)
 
   ### Pull Docker Image
 
   ```bash
-  docker pull --platform linux/amd64 vllm/vllm-openai:v0.12.0
-  docker tag vllm/vllm-openai:v0.12.0 vllm/vllm-openai:deploy
+  docker pull --platform linux/amd64 vllm/vllm-openai:v0.24.0
+  docker tag vllm/vllm-openai:v0.24.0 vllm/vllm-openai:deploy
   ```
 
   DGX Spark users can build from source (see README) or use the NGC image:
@@ -108,10 +107,9 @@ guide: |
 
   ## Launch commands
 
-  FP8 with FlashInfer MoE backend (Blackwell/Hopper):
+  FP8 with FlashInfer MoE backend (Blackwell/Hopper — auto-selected):
 
   ```bash
-  export VLLM_USE_FLASHINFER_MOE_FP8=1
   export VLLM_FLASHINFER_MOE_BACKEND=throughput
 
   vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8 \
