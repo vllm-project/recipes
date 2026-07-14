@@ -13,6 +13,9 @@ meta:
     - "deepseek-ai/DeepSeek-V3.2-Exp"
   hardware:
     h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V3.1"
@@ -91,12 +94,21 @@ guide: |
   ## Prerequisites
 
   - **Hardware**: 8x H200 (or H20) GPUs (141 GB per GPU)
+  - **AMD ROCm**: 8x MI300X / MI325X / MI355X GPUs
   - **vLLM**: Current stable release
 
   ```bash
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend auto
+  ```
+
+  AMD ROCm wheel:
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
   ```
 
   ## Launching DeepSeek-V3.1
@@ -108,6 +120,19 @@ guide: |
     --enable-expert-parallel \
     --tensor-parallel-size 8 \
     --served-model-name ds31
+  ```
+
+  ### AMD ROCm on 8x MI300X / MI325X / MI355X
+
+  ```bash
+  export SAFETENSORS_FAST_GPU=1
+  export VLLM_USE_TRITON_FLASH_ATTN=0
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_MOE=1
+
+  vllm serve deepseek-ai/DeepSeek-V3.1 \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel
   ```
 
   ### Function calling
