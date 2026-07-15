@@ -25,8 +25,6 @@ model:
     nvidia: "vllm/vllm-openai:latest"
     amd: "vllm/vllm-openai-rocm:nightly"
   install:
-    docker:
-      note: "Recommended for the B300 NVFP4 path."
     pip:
       note: "The optimized B300 EAGLE3 and native CPU KV offload path requires vLLM >= 0.25.0."
   architecture: moe
@@ -54,13 +52,6 @@ features:
     args:
       - "--speculative-config"
       - '{"model":"lightseekorg/kimi-k2.6-eagle3-mla","method":"eagle3","num_speculative_tokens":3}'
-    hardware_overrides:
-      blackwell:
-        args:
-          - "--attention-backend"
-          - "TOKENSPEED_MLA"
-          - "--speculative-config"
-          - '{"method":"eagle3","model":"lightseekorg/kimi-k2.6-eagle3-mla","num_speculative_tokens":4}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -88,28 +79,13 @@ variants:
   nvfp4:
     model_id: "nvidia/Kimi-K2.6-NVFP4"
     precision: nvfp4
-    vram_minimum_gb: 715
-    tp: 4
-    description: "NVIDIA ModelOpt NVFP4 checkpoint (~595 GB on disk); optimized for 4+ Blackwell GPUs"
+    vram_minimum_gb: 600
+    description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs (e.g. GB200)"
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-      - "--block-size"
-      - "64"
-      - "--gpu-memory-utilization"
-      - "0.90"
-      - "--compilation-config"
-      - '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'
-      - "--max-cudagraph-capture-size"
-      - "2048"
-      - "--max-num-batched-tokens"
-      - "16384"
-      - "--stream-interval"
-      - "10"
-      - "--enable-prefix-caching"
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP4: "1"
-      VLLM_FLASHINFER_ALLREDUCE_BACKEND: "trtllm"
 
 compatible_strategies:
   - single_node_tp
@@ -185,10 +161,6 @@ guide: |
 
   ### NVIDIA B300: NVFP4 with Eagle3
 
-  The following text-only TP4 command mirrors the B300 configuration validated by
-  [InferenceX PR #2158](https://github.com/SemiAnalysisAI/InferenceX/pull/2158). It uses
-  the Kimi K2.6 Eagle3 MLA draft, TOKENSPEED_MLA attention, TRT-LLM ragged MLA prefill,
-  FP8 KV cache, and full-and-piecewise CUDA graphs.
 
   ```bash
   export VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm
@@ -196,7 +168,6 @@ guide: |
   vllm serve nvidia/Kimi-K2.6-NVFP4 \
     --tensor-parallel-size 4 \
     --trust-remote-code \
-    --language-model-only \
     --kv-cache-dtype fp8 \
     --block-size 64 \
     --gpu-memory-utilization 0.90 \
@@ -204,9 +175,6 @@ guide: |
     --attention-config '{"mla_prefill_backend":"TRTLLM_RAGGED","use_prefill_query_quantization":true}' \
     --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}' \
     --max-cudagraph-capture-size 2048 \
-    --max-num-batched-tokens 16384 \
-    --stream-interval 10 \
-    --enable-prefix-caching \
     --speculative-config '{"method":"eagle3","model":"lightseekorg/kimi-k2.6-eagle3-mla","num_speculative_tokens":4}'
   ```
 
@@ -223,44 +191,22 @@ guide: |
   vllm serve nvidia/Kimi-K2.6-NVFP4 \
     --tensor-parallel-size 4 \
     --trust-remote-code \
-    --language-model-only \
     --kv-cache-dtype fp8 \
     --block-size 64 \
     --gpu-memory-utilization 0.90 \
     --attention-backend TOKENSPEED_MLA \
     --attention-config '{"mla_prefill_backend":"TRTLLM_RAGGED","use_prefill_query_quantization":true}' \
-    --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}' \
-    --max-cudagraph-capture-size 2048 \
-    --max-num-batched-tokens 16384 \
-    --stream-interval 10 \
-    --enable-prefix-caching \
-    --speculative-config '{"method":"eagle3","model":"lightseekorg/kimi-k2.6-eagle3-mla","num_speculative_tokens":4}' \
     --disable-hybrid-kv-cache-manager \
     --kv-transfer-config "{\"kv_connector\":\"SimpleCPUOffloadConnector\",\"kv_role\":\"kv_both\",\"kv_connector_extra_config\":{\"cpu_bytes_to_use_per_rank\":${CPU_OFFLOAD_BYTES_PER_RANK},\"lazy_offload\":false}}"
   ```
 
   ### Decode context parallelism
 
-  For higher concurrency, TP4/DCP4 was validated both with and without native CPU KV
-  offload. DCP remains available in the command builder's **Advanced** section; its DCP8
-  preset is for TP8. For the validated NVFP4 TP4 path, use DCP4 as shown below. Do not
-  combine DCP with the Eagle3/TOKENSPEED_MLA flags above until
-  [vLLM PR #48180](https://github.com/vllm-project/vllm/pull/48180) lands. For the current
-  image, remove `--attention-backend TOKENSPEED_MLA` and `--speculative-config`, then add:
+  For higher concurrency, use DCP4 as shown below.
 
   ```bash
   --decode-context-parallel-size 4
   ```
-
-  The successful agentic sweep covered these B300 points:
-
-  | Serving path | Parallelism | Native CPU KV offload | Tested concurrency |
-  |---|---:|:---:|---:|
-  | Eagle3 | TP8 | No | 1 |
-  | Eagle3 | TP4 | No | 2, 4, 8 |
-  | Eagle3 | TP4 | Yes | 8, 16, 32 |
-  | DCP | TP4/DCP4 | No | 32, 64, 128 |
-  | DCP | TP4/DCP4 | Yes | 64, 128, 256 |
 
   ### AMD MI300X/MI325X
 
@@ -362,16 +308,11 @@ guide: |
     for your specific hardware.
   - **Async scheduling:** Enabled by default for better throughput. Disable if you encounter
     issues, and file a bug report to vLLM.
-  - **Eagle3 with DCP:** If the current image does not support the combination, disable
-    Eagle3/TOKENSPEED_MLA for DCP until vLLM PR #48180 is merged and available in the image.
 
   ## References
 
   - [Kimi-K2.6 on Hugging Face](https://huggingface.co/moonshotai/Kimi-K2.6)
   - [NVIDIA Kimi-K2.6-NVFP4 on Hugging Face](https://huggingface.co/nvidia/Kimi-K2.6-NVFP4)
-  - [InferenceX Kimi-K2.6 B300 agentic sweep](https://github.com/SemiAnalysisAI/InferenceX/actions/runs/29158176591)
-  - [vLLM SimpleCPUOffloadConnector](https://github.com/vllm-project/vllm/blob/main/vllm/distributed/kv_transfer/kv_connector/v1/simple_cpu_offload_connector.py)
-  - [vLLM DCP + Eagle support PR](https://github.com/vllm-project/vllm/pull/48180)
   - [vLLM multimodal inputs guide](https://docs.vllm.ai/en/latest/features/multimodal_inputs.html)
   - [vLLM Expert Parallelism docs](https://docs.vllm.ai/en/latest/serving/expert_parallel_deployment.html)
   - [vLLM NixlConnector usage guide](https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html)
