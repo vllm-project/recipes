@@ -77,6 +77,9 @@ export default async function RecipePage({ params }) {
     if (v) redirect(`/${v.parent.hf_org}/${v.parent.hf_repo}?variant=${encodeURIComponent(v.variantKey)}`);
     notFound();
   }
+  if (org !== recipe.hf_org || repo !== recipe.hf_repo) {
+    redirect(`/${recipe.hf_org}/${recipe.hf_repo}`);
+  }
 
   const strategies = loadStrategies();
   const taxonomy = loadTaxonomy();
