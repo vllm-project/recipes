@@ -48,6 +48,7 @@ export const PROVIDERS = {
   "RedHatAI":        { display_name: "Red Hat AI",                    logo: "/providers/RedHatAI.png" },
   "mindlab-research":{ display_name: "MindLab Research",               logo: "/providers/mindlab-research.png" },
   "meta-models":     { display_name: "Muse (Meta)",                     logo: "/providers/meta-models.png" },
+  "ThaiLLM":         { display_name: "ThaiLLM",                        logo: "/providers/ThaiLLM.png" },
 };
 
 export function getProviderLogo(hfOrg) {
