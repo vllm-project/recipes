@@ -3,7 +3,7 @@ meta:
   slug: "kimi-k2.6"
   provider: "Moonshot AI"
   description: "Open-source native multimodal agentic MoE model with vision-language understanding, tool calling, and thinking modes"
-  date_updated: 2026-05-14
+  date_updated: 2026-07-13
   difficulty: intermediate
   tasks:
     - multimodal
@@ -12,6 +12,7 @@ meta:
   related_recipes: []
   hardware:
     h200: verified
+    b300: verified
     gb200: verified
     mi300x: verified
     mi325x: verified
@@ -19,10 +20,13 @@ meta:
 
 model:
   model_id: "moonshotai/Kimi-K2.6"
-  min_vllm_version: "0.19.1"
+  min_vllm_version: "0.25.0"
   docker_image:
     nvidia: "vllm/vllm-openai:latest"
     amd: "vllm/vllm-openai-rocm:nightly"
+  install:
+    pip:
+      note: "The optimized B300 EAGLE3 and native CPU KV offload path requires vLLM >= 0.25.0."
   architecture: moe
   parameter_count: "1T"
   active_parameters: "32B"
@@ -96,7 +100,8 @@ compatible_strategies:
 hardware_overrides:
   blackwell:
     extra_args:
-      - "--attention-config.use_trtllm_ragged_deepseek_prefill=True"
+      - "--attention-config"
+      - '{"mla_prefill_backend":"TRTLLM_RAGGED","use_prefill_query_quantization":true}'
   amd:
     # Verified on 8× MI300X / MI355X (MI325X listed as supported but not verified).
     extra_env:
@@ -104,12 +109,6 @@ hardware_overrides:
       VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
 
 strategy_overrides:
-  single_node_dep:
-    extra_args: []
-    extra_env: {}
-  single_node_tep:
-    extra_args: []
-    extra_env: {}
   pd_cluster:
     env:
       VLLM_USE_NCCL_SYMM_MEM: "1"
@@ -148,9 +147,55 @@ guide: |
 
   ## Prerequisites
 
-  - **vLLM version:** >= 0.19.1
-  - **Hardware (INT4):** 8x H200 GPUs (verified), or equivalent aggregate VRAM (~640 GB)
+  - **vLLM version:** >= 0.25.0 (required for the B300 EAGLE3 and native CPU KV offload paths below)
+  - **Hardware (INT4):** 8× H200 GPUs (verified), or equivalent aggregate VRAM (~640 GB)
+  - **Hardware (B300 / NVFP4):** 4× B300 (verified); use `vllm/vllm-openai:latest`
   - **AMD support:** 8x MI300X / MI325X / MI355X with ROCm 7.2.1 and Python 3.12
+
+  ### NVIDIA B300: NVFP4 with Eagle3
+
+  ```bash
+  export VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm
+
+  vllm serve nvidia/Kimi-K2.6-NVFP4 \
+    --tensor-parallel-size 4 \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --block-size 64 \
+    --gpu-memory-utilization 0.90 \
+    --attention-backend TOKENSPEED_MLA \
+    --attention-config '{"mla_prefill_backend":"TRTLLM_RAGGED","use_prefill_query_quantization":true}' \
+    --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}' \
+    --max-cudagraph-capture-size 2048 \
+    --speculative-config '{"method":"eagle3","model":"lightseekorg/kimi-k2.6-eagle3-mla","num_speculative_tokens":4}'
+  ```
+
+  ### Native CPU KV offload
+
+  Select **Simple** in the command builder's **KV Offload** row to extend the prefix cache
+  into host DRAM with `SimpleCPUOffloadConnector`. The shared option uses 220 GiB per rank
+  by default. The verified B300 TP4 run used 1,199 GiB total (299.75 GiB per rank); the
+  equivalent explicit command is:
+
+  ```bash
+  CPU_OFFLOAD_BYTES_PER_RANK=321854111744
+
+  vllm serve nvidia/Kimi-K2.6-NVFP4 \
+    --tensor-parallel-size 4 \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --block-size 64 \
+    --gpu-memory-utilization 0.90 \
+    --attention-backend TOKENSPEED_MLA \
+    --attention-config '{"mla_prefill_backend":"TRTLLM_RAGGED","use_prefill_query_quantization":true}' \
+    --disable-hybrid-kv-cache-manager \
+    --kv-transfer-config "{\"kv_connector\":\"SimpleCPUOffloadConnector\",\"kv_role\":\"kv_both\",\"kv_connector_extra_config\":{\"cpu_bytes_to_use_per_rank\":${CPU_OFFLOAD_BYTES_PER_RANK},\"lazy_offload\":false}}"
+  ```
+
+  ### Decode context parallelism
+
+  For higher concurrency on the B300 NVFP4 path, add `--decode-context-parallel-size 4`
+  (match TP size). The command builder's **Advanced** row also exposes DCP for this recipe.
 
   ### AMD MI300X/MI325X
 
