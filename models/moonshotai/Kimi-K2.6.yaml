@@ -22,14 +22,13 @@ model:
   model_id: "moonshotai/Kimi-K2.6"
   min_vllm_version: "0.25.0"
   docker_image:
-    nvidia: "vllm/vllm-openai:nightly-09663abde0f50944a8d5ea30120666024b503faa"
+    nvidia: "vllm/vllm-openai:latest"
     amd: "vllm/vllm-openai-rocm:nightly"
-  nightly_required: true
   install:
     docker:
-      note: "Recommended for the validated B300 NVFP4 path; the NVIDIA image is pinned to the tested nightly commit."
+      note: "Recommended for the B300 NVFP4 path."
     pip:
-      note: "The optimized B300 EAGLE3 and native CPU KV offload path requires post-v0.24.0 nightly support."
+      note: "The optimized B300 EAGLE3 and native CPU KV offload path requires vLLM >= 0.25.0."
   architecture: moe
   parameter_count: "1T"
   active_parameters: "32B"
@@ -178,11 +177,10 @@ guide: |
 
   ## Prerequisites
 
-  - **vLLM version:** >= 0.25.0 nightly for the optimized B300 EAGLE3 and native CPU
-    KV offload path documented below
+  - **vLLM version:** >= 0.25.0 for the optimized B300 EAGLE3 and native CPU KV
+    offload path documented below
   - **Hardware (INT4):** 8x H200 GPUs (verified), or equivalent aggregate VRAM (~640 GB)
-  - **Hardware (NVFP4):** 4x Blackwell GPUs; the optimized B300 path below was verified on
-    `vllm/vllm-openai:nightly-09663abde0f50944a8d5ea30120666024b503faa`
+  - **Hardware (NVFP4):** 4x Blackwell GPUs; use `vllm/vllm-openai:latest`
   - **AMD support:** 8x MI300X / MI325X / MI355X with ROCm 7.2.1 and Python 3.12
 
   ### NVIDIA B300: NVFP4 with Eagle3
@@ -248,7 +246,7 @@ guide: |
   preset is for TP8. For the validated NVFP4 TP4 path, use DCP4 as shown below. Do not
   combine DCP with the Eagle3/TOKENSPEED_MLA flags above until
   [vLLM PR #48180](https://github.com/vllm-project/vllm/pull/48180) lands. For the current
-  pinned image, remove `--attention-backend TOKENSPEED_MLA` and `--speculative-config`, then add:
+  image, remove `--attention-backend TOKENSPEED_MLA` and `--speculative-config`, then add:
 
   ```bash
   --decode-context-parallel-size 4
@@ -364,7 +362,7 @@ guide: |
     for your specific hardware.
   - **Async scheduling:** Enabled by default for better throughput. Disable if you encounter
     issues, and file a bug report to vLLM.
-  - **Eagle3 with DCP:** The current pinned image does not support the combination. Disable
+  - **Eagle3 with DCP:** If the current image does not support the combination, disable
     Eagle3/TOKENSPEED_MLA for DCP until vLLM PR #48180 is merged and available in the image.
 
   ## References
