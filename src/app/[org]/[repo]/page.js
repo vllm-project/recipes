@@ -69,7 +69,7 @@ export async function generateMetadata({ params }) {
   };
 }
 
-export default async function RecipePage({ params }) {
+export default async function RecipePage({ params, searchParams }) {
   const { org, repo } = await params;
   const recipe = getRecipeByHfId(org, repo);
   if (!recipe) {
@@ -78,7 +78,8 @@ export default async function RecipePage({ params }) {
     notFound();
   }
   if (org !== recipe.hf_org || repo !== recipe.hf_repo) {
-    redirect(`/${recipe.hf_org}/${recipe.hf_repo}`);
+    const qs = new URLSearchParams(await searchParams).toString();
+    redirect(`/${recipe.hf_org}/${recipe.hf_repo}${qs ? `?${qs}` : ""}`);
   }
 
   const strategies = loadStrategies();
