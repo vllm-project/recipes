@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { getAllRecipes } from "@/lib/recipes";
+import { notFound, redirect } from "next/navigation";
+import { getAllRecipes, getRecipesByOrg } from "@/lib/recipes";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
 import { recipeHref } from "@/lib/recipe-utils";
 import { siteUrl } from "@/lib/site-url";
@@ -16,7 +16,7 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }) {
   const { org } = await params;
   const displayName = getProviderDisplayName(org);
-  const count = getAllRecipes().filter((r) => r.hf_org === org).length;
+  const count = getRecipesByOrg(org).length;
   const description = `vLLM serve recipes for ${displayName} models — ${count} recipe${count === 1 ? "" : "s"} with hardware-tuned commands.`;
   const ogUrl = `/og?title=${encodeURIComponent(displayName)}&subtitle=${encodeURIComponent(
     `${count} recipe${count === 1 ? "" : "s"}`
@@ -55,9 +55,12 @@ const TASK_ORDER = ["multimodal", "text", "omni", "embedding"];
 
 export default async function OrgPage({ params }) {
   const { org } = await params;
-  const all = getAllRecipes();
-  const models = all.filter((r) => r.hf_org === org);
+  const models = getRecipesByOrg(org);
   if (models.length === 0) notFound();
+  const canonicalOrg = models[0].hf_org;
+  if (org !== canonicalOrg) {
+    redirect(`/${canonicalOrg}`);
+  }
 
   const logo = getProviderLogo(org);
   const displayName = getProviderDisplayName(org);
