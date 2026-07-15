@@ -1,0 +1,179 @@
+meta:
+  title: "ThaiLLM-30B"
+  slug: "thaillm-30b"
+  provider: "ThaiLLM"
+  description: "Thailand's national open Thai LLM (Qwen3-30B-A3B MoE continued-pretrain) with a community NVFP4 checkpoint validated end-to-end on DGX Spark"
+  date_updated: 2026-07-16
+  difficulty: beginner
+  tasks:
+    - text
+  performance_headline: "Thai 30B MoE (3B active) - NVFP4 fits a single DGX Spark at 2.3-2.5x BF16 decode with Thai accuracy statistically unchanged"
+  related_recipes:
+    - "Qwen/Qwen3.6-35B-A3B"
+  hardware:
+    dgx_spark_gb10: verified
+
+model:
+  model_id: "ThaiLLM/ThaiLLM-30B"
+  min_vllm_version: "0.8.5"
+  architecture: moe
+  parameter_count: "31B"
+  active_parameters: "3.3B"
+  context_length: 32768
+  base_args: []
+  base_env: {}
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 75
+    description: "Full-precision BF16 base checkpoint (61 GB weights) - fits on 1x H200 or 2x H100"
+  nvfp4:
+    model_id: "NatdhanaiPython/ThaiLLM-30B-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 19
+    tp: 1
+    description: "Community TensorRT Model Optimizer NVFP4 checkpoint (bilingual Thai/English calibration), validated on DGX Spark with a paired BF16-vs-NVFP4 Thai/English evaluation"
+    extra_args:
+      - "--attention-backend"
+      - "flashinfer"
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - single_node_dep
+  - multi_node_tp
+  - multi_node_tp_pp
+  - multi_node_dep
+  - multi_node_tep
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  [ThaiLLM-30B](https://huggingface.co/ThaiLLM/ThaiLLM-30B) is the 30B-class model of
+  ThaiLLM, Thailand's national open-model initiative (MDES / BDI / NECTEC and partner
+  labs). It is a continued pretrain of Qwen3-30B-A3B (MoE, 128 experts / 8 routed,
+  3.3B active parameters) on roughly 63B tokens with a large Thai share, so it serves
+  through vLLM's standard `Qwen3MoeForCausalLM` path with no custom code.
+
+  This is a **base** checkpoint: use completion-style prompts, or fine-tune before
+  deploying chat workloads. Instruction-tuned derivatives from the same initiative
+  (Typhoon-S, Pathumma, OpenThaiGPT, THaLLE variants on ThaiLLM bases) serve with the
+  same configuration.
+
+  The NVFP4 variant is a community TensorRT Model Optimizer checkpoint
+  ([NatdhanaiPython/ThaiLLM-30B-NVFP4](https://huggingface.co/NatdhanaiPython/ThaiLLM-30B-NVFP4))
+  calibrated on a 50/50 Thai/English mix, published with a full paired BF16-vs-NVFP4
+  evaluation (details below). Weights shrink 61 GB -> 18.1 GB, which turns the model
+  from "barely fits" into a comfortable single-DGX-Spark deployment with room for
+  long-context KV cache.
+
+  ## Prerequisites
+
+  - **Hardware (BF16):** 1x H200, 2x H100, or 1x DGX Spark (fits, ~57 GB weights in the 128 GB unified pool)
+  - **Hardware (NVFP4):** NVIDIA Blackwell (SM100/SM120), including DGX Spark (GB10) - verified end-to-end
+  - **vLLM:** >= 0.8.5 (Qwen3-MoE support); NVFP4 on DGX Spark verified on the
+    NGC vLLM container 26.05 line and current upstream releases
+
+  ### Install vLLM
+
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install -U vllm --torch-backend=auto
+  ```
+
+  On DGX Spark, NVIDIA's NGC container is the lowest-friction path:
+
+  ```bash
+  docker run --gpus all -p 8000:8000 --ipc=host nvcr.io/nvidia/vllm:26.05.post1-py3 \
+    vllm serve NatdhanaiPython/ThaiLLM-30B-NVFP4 --attention-backend flashinfer
+  ```
+
+  ## Launching the Server
+
+  ### BF16 (H200 / 2x H100)
+
+  ```bash
+  vllm serve ThaiLLM/ThaiLLM-30B \
+    --max-model-len 32768
+  ```
+
+  ### NVFP4 on DGX Spark (GB10)
+
+  ```bash
+  vllm serve NatdhanaiPython/ThaiLLM-30B-NVFP4 \
+    --attention-backend flashinfer \
+    --max-model-len 32768 \
+    --gpu-memory-utilization 0.70 \
+    --max-num-seqs 4
+  ```
+
+  Quantization is auto-detected from the checkpoint (`quantization=modelopt_fp4`); on
+  GB10 the MoE layers run on the native FlashInfer CUTLASS NVFP4 kernels. Keep CUDA
+  graphs on (default) - eager mode costs roughly half the decode throughput on Spark.
+
+  ## Measured results (DGX Spark, paired BF16 vs NVFP4)
+
+  Both sides served with byte-identical flags and seeds; accuracy compared per-question
+  with McNemar exact tests over 19,786 paired multiple-choice questions (Thai + English
+  suites), plus byte-level perplexity and token-level fidelity checks.
+
+  | Metric | BF16 | NVFP4 |
+  |---|---|---|
+  | Weights on disk | 60.9 GB | 18.1 GB (3.4x smaller) |
+  | Decode, 1 stream | 27 tok/s | 63 tok/s (2.3x) |
+  | Decode, 4 streams | 69 tok/s | 175 tok/s (2.5x) |
+  | TTFT | - | 2.0-2.7x faster |
+  | ThaiExam (letter-scored) | 0.619 | 0.614 (not significant, p=0.79) |
+  | Thai MC pooled | - | not significant (p=0.13) |
+  | Thai Wikipedia bits/byte | 0.268 | 0.282 |
+
+  Thai accuracy is statistically unchanged; the small pooled drop (-0.81 pt across all
+  20k questions, p < 1e-4) concentrates in English MMLU. Full methodology, per-task
+  tables, and reproduction scripts: [study repo](https://github.com/spped2000/thaillm-nvfp4-dgx-spark)
+  and [live report](https://thaillm.agicafet.com).
+
+  ## Client Usage
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+  resp = client.completions.create(
+      model="NatdhanaiPython/ThaiLLM-30B-NVFP4",
+      prompt="ประเทศไทยมีจังหวัดทั้งหมด",
+      max_tokens=64,
+      temperature=0.7,
+  )
+  print(resp.choices[0].text)
+  ```
+
+  ## Troubleshooting
+
+  - **Chat template errors:** this is a base model - use the completions API, not
+    chat completions, or fine-tune first.
+  - **Evaluating with lm-eval (echo + logprobs):** disable prefix caching
+    (`--no-enable-prefix-caching`) so prompt-logprob requests are exact; re-enable it
+    for production serving.
+  - **FP8 KV cache on Spark:** `--kv-cache-dtype fp8` frees KV memory but has shown a
+    measurable throughput cost on GB10 in some workloads - A/B it for yours (the
+    numbers above use the default BF16 KV cache).
+  - **Out of memory on 80 GB GPUs (BF16):** use `--tensor-parallel-size 2` or serve
+    the NVFP4 variant.
+
+  ## References
+
+  - [ThaiLLM-30B model card](https://huggingface.co/ThaiLLM/ThaiLLM-30B)
+  - [NVFP4 checkpoint + eval tables](https://huggingface.co/NatdhanaiPython/ThaiLLM-30B-NVFP4)
+  - [BF16-vs-NVFP4 study: methodology, scripts, full results](https://github.com/spped2000/thaillm-nvfp4-dgx-spark)
+  - [ThaiLLM initiative](https://huggingface.co/ThaiLLM)
+  - [NVIDIA DGX Spark vLLM playbook](https://build.nvidia.com/spark/vllm)

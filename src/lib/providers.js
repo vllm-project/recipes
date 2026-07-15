@@ -44,6 +44,7 @@ export const PROVIDERS = {
   "openbmb":         { display_name: "MiniCPM (OpenBMB)",          logo: "/providers/openbmb.png" },
   "LiquidAI":        { display_name: "Liquid AI",                  logo: "/providers/LiquidAI.png" },
   "thinkingmachines":{ display_name: "Thinking Machines Lab",         logo: "/providers/thinkingmachines.png" },
+  "ThaiLLM":         { display_name: "ThaiLLM",                    logo: "/providers/ThaiLLM.png" },
 };
 
 export function getProviderLogo(hfOrg) {
