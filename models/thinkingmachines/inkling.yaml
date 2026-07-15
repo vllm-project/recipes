@@ -1,0 +1,181 @@
+meta:
+  title: "TML Inkling"
+  slug: "tml-inkling"
+  provider: "Thinking Machines Lab"
+  description: "Natively multimodal 1T-parameter MoE from Thinking Machines Lab — text/image/audio in, text out, up to 1M context — with relative attention, short convolution, and shared expert sinks."
+  date_updated: 2026-07-14
+  difficulty: intermediate
+  tasks:
+    - multimodal
+  performance_headline: "380 tok/s/user with MTP8 (mean acceptance length 4.5) and 140 tok/s/user without MTP on 4× GB200 GPUs"
+  related_recipes: []
+  hardware:
+    gb200: verified
+    b200: verified
+    h200: verified
+    mi300x: unsupported
+    mi325x: unsupported
+    mi355x: unsupported
+
+model:
+  model_id: "thinkingmachines/Inkling-NVFP4"
+  min_vllm_version: "0.26.0"
+  docker_image:
+    nvidia: "vllm/vllm-openai:inkling"
+  nightly_required: true
+  install:
+    docker:
+      note: "Use the dedicated image until changes land in vllm:latest."
+    pip:
+      note: "Use the dedicated image until changes land in vllm repo"
+  architecture: moe
+  parameter_count: "975B"
+  active_parameters: "41B"
+  context_length: 1048576
+  base_args:
+    - "--trust-remote-code"
+    - "--tokenizer-mode"
+    - "inkling"
+    - "--kernel-config.enable_flashinfer_autotune=False"
+  base_env:
+    VLLM_USE_V2_MODEL_RUNNER: "1"
+    FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED: "1"
+
+dependencies:
+  - note: "Audio extras — only needed when serving the audio modality"
+    command: 'uv pip install "vllm[audio]"'
+    optional: true
+
+features:
+  tool_calling:
+    description: "Enable auto tool choice with the Inkling tool-call parser."
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "inkling"
+  reasoning:
+    description: "Enable reasoning output parsing with the Inkling reasoning parser."
+    args:
+      - "--reasoning-parser"
+      - "inkling"
+  spec_decoding:
+    description: "Multi-Token Prediction (MTP) speculative decoding. Inkling ships 8 chained MTP heads, allowing up to 9 tokens per forward step; tune num_speculative_tokens for your acceptance/latency trade-off."
+    args:
+      - "--speculative-config"
+      - '{"method":"mtp","num_speculative_tokens":8}'
+
+opt_in_features:
+  - spec_decoding
+
+variants:
+  default:
+    precision: nvfp4
+    vram_minimum_gb: 651
+    description: "Weight-only NVFP4 (group size 16) on the routed MoE expert matmuls only; attention, norms, sconv, shared experts, routers, embeddings, and the layer 0-1 dense MLPs stay BF16. ~542 GB on disk. Requires Blackwell FP4 tensor cores."
+  bf16:
+    model_id: "thinkingmachines/Inkling"
+    precision: bf16
+    vram_minimum_gb: 2400
+    description: "Full BF16 checkpoint (~1.8 TB on disk). Runs on Hopper and Blackwell."
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - multi_node_tp
+  - multi_node_tp_pp
+  - multi_node_tep
+  - pd_cluster
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  TML Inkling is a natively multimodal 1T-parameter Mixture-of-Experts model from Thinking
+  Machines Lab. It accepts text, image, and audio inputs and generates text, with a context
+  length of up to 1M tokens. vLLM supports Inkling on Day 0 with full feature parity — LoRA,
+  speculative decoding (MTP), TP/DP/EP/PP parallelism, prefix caching, and disaggregated serving.
+
+  Architectural highlights:
+
+  - **Attention.** 66-layer decoder backbone — 11 full-attention layers and 55 sliding-window
+    layers — all grouped-query attention with head size 128. Inkling replaces RoPE with
+    **relative attention**: a learned relative-position term added to the pre-softmax logits.
+  - **Short convolution (sconv).** Each layer applies four window-4 sconv modules (on attention
+    keys, values, output, and MoE output). vLLM manages the sconv cache as the KV cache of a
+    virtual sliding-window layer, so prefix caching works seamlessly, and shards sconv across
+    the channel dimension (reduce-scatter / all-gather) to avoid replicating cache and compute
+    across TP ranks.
+  - **MoE with expert sinks.** 256 routed experts (top-6) plus 2 shared experts — 8 experts per
+    token. The 2 shared experts act as *expert sinks*: they participate in routing-score
+    computation but are excluded from the top-6 candidate pool.
+  - **MTP.** 8 chained MTP heads (single-layer full-attention transformers with a dense MLP,
+    all BF16) enable up to 9 tokens per forward step for speculative decoding.
+
+  ## Variants
+
+  - **NVFP4 (default):** Only the routed experts are quantized to NVFP4; shared experts and the
+    qkvr linears remain BF16. This is a mixed-precision checkpoint and requires **Blackwell**
+    FP4 tensor cores (B200 / GB200).
+  - **BF16:** Full BF16 weights (`thinkingmachines/Inkling`). Runs on both **Hopper**
+    (H200) and Blackwell, at the cost of substantially more VRAM.
+
+  ## Prerequisites
+
+  - **Hardware:** NVIDIA Blackwell (B200 / GB200) for the NVFP4 variant; Hopper (H200) or
+    Blackwell for the BF16 variant. Broader hardware support is in progress.
+  - **vLLM:** Nightly wheels (Day-0 support just landed).
+  - **Parallelism:** 1T parameters requires multi-GPU. The featured configuration is 4x GB200
+    (`--tensor-parallel-size 4`) for the NVFP4 variant; the BF16 variant needs multi-node.
+
+  ## Client Usage
+
+  Launch the server (NVFP4 on 4x GB200):
+  ```bash
+  export VLLM_USE_V2_MODEL_RUNNER=1
+  export FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED=1
+
+  vllm serve thinkingmachines/Inkling-NVFP4 \
+    --tokenizer-mode inkling \
+    --reasoning-parser inkling \
+    --tool-call-parser inkling \
+    --enable-auto-tool-choice \
+    --tensor-parallel-size 4 \
+    --kernel-config.enable_flashinfer_autotune=False \
+    --trust-remote-code
+  ```
+
+  Query the server with the OpenAI SDK, including an image input:
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+
+  response = client.chat.completions.create(
+      model="thinkingmachines/Inkling-NVFP4",
+      messages=[{
+          "role": "user",
+          "content": [
+              {"type": "text", "text": "Describe this image."},
+              {"type": "image_url", "image_url": {"url": "https://example.com/photo.jpg"}},
+          ],
+      }],
+  )
+  print(response.choices[0].message.content)
+  ```
+
+  ## Performance
+
+  vLLM implements Inkling with a series of optimizations: sconv-aware TP sharding (each rank
+  stores only its channel shard of the sconv cache), low-latency fused reduce-scatter /
+  all-gather collectives built on FlashInfer's Lamport-protocol all-reduce, the FA4
+  sheared-bias attention kernel for relative attention, plus kernel fusion, PDL, and
+  multi-streaming. Enabling MTP speculative decoding adds further per-user throughput.
+
+  ## References
+
+  - [TML Inkling (NVFP4)](https://huggingface.co/thinkingmachines/Inkling-NVFP4)
+  - [TML Inkling (BF16)](https://huggingface.co/thinkingmachines/Inkling)
+  - [vLLM integration PR](https://github.com/Inferact/mlj/pull/16)
