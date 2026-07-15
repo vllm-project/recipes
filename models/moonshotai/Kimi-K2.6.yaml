@@ -109,12 +109,6 @@ hardware_overrides:
       VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
 
 strategy_overrides:
-  single_node_dep:
-    extra_args: []
-    extra_env: {}
-  single_node_tep:
-    extra_args: []
-    extra_env: {}
   pd_cluster:
     env:
       VLLM_USE_NCCL_SYMM_MEM: "1"
@@ -153,14 +147,12 @@ guide: |
 
   ## Prerequisites
 
-  - **vLLM version:** >= 0.25.0 for the optimized B300 EAGLE3 and native CPU KV
-    offload path documented below
-  - **Hardware (INT4):** 8x H200 GPUs (verified), or equivalent aggregate VRAM (~640 GB)
-  - **Hardware (NVFP4):** 4x Blackwell GPUs; use `vllm/vllm-openai:latest`
+  - **vLLM version:** >= 0.25.0 (required for the B300 EAGLE3 and native CPU KV offload paths below)
+  - **Hardware (INT4):** 8× H200 GPUs (verified), or equivalent aggregate VRAM (~640 GB)
+  - **Hardware (B300 / NVFP4):** 4× B300 (verified); use `vllm/vllm-openai:latest`
   - **AMD support:** 8x MI300X / MI325X / MI355X with ROCm 7.2.1 and Python 3.12
 
   ### NVIDIA B300: NVFP4 with Eagle3
-
 
   ```bash
   export VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm
@@ -202,11 +194,8 @@ guide: |
 
   ### Decode context parallelism
 
-  For higher concurrency, use DCP4 as shown below.
-
-  ```bash
-  --decode-context-parallel-size 4
-  ```
+  For higher concurrency on the B300 NVFP4 path, add `--decode-context-parallel-size 4`
+  (match TP size). The command builder's **Advanced** row also exposes DCP for this recipe.
 
   ### AMD MI300X/MI325X
 
