@@ -34,6 +34,7 @@ model:
   parameter_count: "1T"
   active_parameters: "32B"
   context_length: 262144
+  supports_dcp: true
   base_args:
     - "--trust-remote-code"
 
@@ -243,8 +244,9 @@ guide: |
   ### Decode context parallelism
 
   For higher concurrency, TP4/DCP4 was validated both with and without native CPU KV
-  offload. DCP is intentionally guide-only rather than exposed as a command-builder option.
-  Do not combine DCP with the Eagle3/TOKENSPEED_MLA flags above until
+  offload. DCP remains available in the command builder's **Advanced** section; its DCP8
+  preset is for TP8. For the validated NVFP4 TP4 path, use DCP4 as shown below. Do not
+  combine DCP with the Eagle3/TOKENSPEED_MLA flags above until
   [vLLM PR #48180](https://github.com/vllm-project/vllm/pull/48180) lands. For the current
   pinned image, remove `--attention-backend TOKENSPEED_MLA` and `--speculative-config`, then add:
 
