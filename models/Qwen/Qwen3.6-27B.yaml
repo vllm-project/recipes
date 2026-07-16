@@ -12,7 +12,8 @@ meta:
   related_recipes:
     - "Qwen/Qwen3.6-35B-A3B"
   hardware:
-    dgx_spark_gb10:
+    dgx_spark_gb10: verified
+    rtx_pro_6000: verified
 
 model:
   model_id: "Qwen/Qwen3.6-27B"
@@ -61,6 +62,11 @@ variants:
     precision: bf16
     vram_minimum_gb: 65
     description: "Full precision BF16 — fits on 1x H200 or 2x H100"
+    hardware_overrides:
+      rtx_pro_6000:
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
   fp8:
     model_id: "Qwen/Qwen3.6-27B-FP8"
     precision: fp8
@@ -71,6 +77,9 @@ variants:
       - "512"
     hardware_overrides:
       dgx_spark_gb10:
+        extra_env:
+          VLLM_USE_DEEP_GEMM: "0"
+      rtx_pro_6000:
         extra_env:
           VLLM_USE_DEEP_GEMM: "0"
   nvfp4:
@@ -164,6 +173,33 @@ guide: |
     --kv-cache-dtype fp8 \
     --attention-backend flashinfer \
     --gpu-memory-utilization 0.5 \
+    --max-model-len 262144 \
+    --max-num-seqs 8 \
+    --max-num-batched-tokens 8192 \
+    --enable-chunked-prefill \
+    --async-scheduling \
+    --enable-prefix-caching \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
+    --load-format fastsafetensors \
+    --reasoning-parser qwen3 \
+    --tool-call-parser qwen3_xml \
+    --enable-auto-tool-choice
+  ```
+
+  ### RTX Pro 6000 NVFP4
+
+  The NVIDIA ModelOpt NVFP4 checkpoint is served from
+  [`nvidia/Qwen3.6-27B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
+  and requires vLLM 0.24.0+.
+
+  ```bash
+  # Use container: vllm/vllm-openai:v0.24.0-ubuntu2404
+
+  vllm serve nvidia/Qwen3.6-27B-NVFP4 \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --attention-backend flashinfer \
+    --gpu-memory-utilization 0.9 \
     --max-model-len 262144 \
     --max-num-seqs 8 \
     --max-num-batched-tokens 8192 \

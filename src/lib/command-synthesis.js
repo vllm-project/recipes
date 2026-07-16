@@ -745,8 +745,8 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     if (recipe.model?.base_args) args.push(...recipe.model.base_args);
 
     // 2. Variant extra args
-    if (variantKey !== "default" && variant.extra_args) args.push(...variant.extra_args);
-    if (variantKey !== "default" && variantHardwareOverride?.extra_args) {
+    if (variant.extra_args) args.push(...variant.extra_args);
+    if (variantHardwareOverride?.extra_args) {
       args.push(...variantHardwareOverride.extra_args);
     }
 
@@ -1046,8 +1046,8 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     Object.assign(env, recipe.model?.base_env || {});
 
     // Variant env
-    if (variantKey !== "default" && variant.extra_env) Object.assign(env, variant.extra_env);
-    if (variantKey !== "default" && variantHardwareOverride?.extra_env) {
+    if (variant.extra_env) Object.assign(env, variant.extra_env);
+    if (variantHardwareOverride?.extra_env) {
       Object.assign(env, variantHardwareOverride.extra_env);
     }
 
