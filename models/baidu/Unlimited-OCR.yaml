@@ -13,9 +13,13 @@ meta:
 
 model:
   model_id: "baidu/Unlimited-OCR"
-  # Unlimited-OCR (UnlimitedOCRForCausalLM) landed in the stable vLLM v0.25.0
-  # release (Triton R-SWA backend), so the standard pip wheel + docker image work.
+  # Support ships in the dedicated vLLM release image below; not yet in a stable
+  # pip wheel (UnlimitedOCRForCausalLM is absent from upstream registry as of writing).
   min_vllm_version: "0.25.0"
+  docker_image: "vllm/vllm-openai:unlimited-ocr"
+  install:
+    docker:
+      note: "Unlimited-OCR (UnlimitedOCRForCausalLM) is supported since vLLM v0.25.0 — the pip wheel works too; this image is a ready-to-run alternative."
   architecture: dense
   parameter_count: "3B"
   active_parameters: "3B"
@@ -65,9 +69,8 @@ guide: |
   ## Prerequisites
 
   - **Hardware**: a single GPU with >=8 GB VRAM is enough for BF16 inference.
-  - **vLLM**: `UnlimitedOCRForCausalLM` (Triton R-SWA backend) ships in the stable
-    **vLLM v0.25.0** release, so either the pip wheel or the `vllm/vllm-openai:v0.25.0`
-    image works — see the Install tab.
+  - **vLLM**: served from the dedicated release image (the architecture is not yet
+    in a stable pip wheel). Pull the image shown in the Install → Docker tab.
 
   ## Serving recipe (required)
 
@@ -86,7 +89,9 @@ guide: |
   ### Online OCR serving
 
   ```bash
-  vllm serve baidu/Unlimited-OCR \
+  docker run --rm --gpus all --network host --ipc host \
+    vllm/vllm-openai:unlimited-ocr \
+    baidu/Unlimited-OCR \
     --trust-remote-code \
     --logits_processors vllm.model_executor.models.unlimited_ocr:NGramPerReqLogitsProcessor \
     --no-enable-prefix-caching \
