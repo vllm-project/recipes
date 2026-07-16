@@ -3,7 +3,7 @@ meta:
   slug: "deepseek-v4-flash"
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
-  date_updated: 2026-05-01
+  date_updated: 2026-07-16
   difficulty: hard
   tasks:
     - text
@@ -17,7 +17,7 @@ meta:
     gb300: verified
     dgx_station_gb300: verified
     mi300x: unsupported
-    mi325x: unsupported
+    mi325x: verified
     mi355x: verified
 
 model:
@@ -272,6 +272,40 @@ guide: |
     --max-cudagraph-capture-size 128 \
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
   ```
+
+  ### MI325X single-GPU compatibility path
+
+  DeepSeek-V4-Flash was validated end-to-end on one 256 GB MI325X with
+  vLLM 0.25.0 and PyTorch HIP 7.2.53211. Use the conservative TP1 eager-mode
+  launch below instead of the MI355X throughput-oriented settings:
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+
+  vllm serve deepseek-ai/DeepSeek-V4-Flash \
+    --host 0.0.0.0 \
+    --port 8002 \
+    --tensor-parallel-size 1 \
+    --kv-cache-dtype fp8_e4m3 \
+    --max-model-len 4096 \
+    --max-num-batched-tokens 256 \
+    --kv-cache-memory-bytes 10000000000 \
+    --distributed-executor-backend mp \
+    --trust-remote-code \
+    --tokenizer-mode deepseek_v4 \
+    --moe-backend triton_unfused \
+    --enforce-eager
+  ```
+
+  This configuration loaded the 148.66 GiB checkpoint, started the API server,
+  and served requests for a 24-hour allocation. It passed model-list and chat
+  completion probes in non-thinking and Think High modes, including arithmetic,
+  time arithmetic, and constrained word counting.
+
+  Only TP1 with a 4K maximum sequence length is verified on MI325X. TP2 and
+  larger tensor-parallel configurations were not validated successfully, and
+  Think Max requires at least 384K context, so it is not available with this
+  compatibility configuration.
 
   ### MI355X (4×288GB)
 
