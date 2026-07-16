@@ -3,7 +3,7 @@ meta:
   slug: "minimax-m3"
   provider: "MiniMax"
   description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 plus MXFP8, NVIDIA Blackwell NVFP4, and AMD MI355X MXFP4 variants. Runs on NVIDIA (Hopper/Blackwell) and AMD CDNA4/CDNA3."
-  date_updated: 2026-07-01
+  date_updated: 2026-07-15
   difficulty: advanced
   tasks:
     - text
@@ -585,6 +585,30 @@ guide: |
     --enable-auto-tool-choice \
     --reasoning-parser minimax_m3
   ```
+
+  ### MXFP4 benchmark reproduction (InferenceX MI355X sweep)
+
+  The command above is the default serving configuration. The
+  [SemiAnalysis InferenceX](https://inferencex.semianalysis.com/) MI355X
+  benchmark lane for this checkpoint is a separate **high-concurrency benchmark**
+  configuration — not the recipe default. To reproduce that sweep, start from the
+  default command above and apply these deltas: use `--tensor-parallel-size 4`
+  (the sweep runs TP4; the default recipe keeps TP8 for KV-cache and
+  multimodal-encoder headroom), add `--kv-cache-dtype fp8`, run on a current
+  `vllm/vllm-openai-rocm:nightly` (the lane pins a specific nightly build — don't
+  hard-code a transient tag), and export INT4 quantized all-reduce before launch:
+
+  ```bash
+  # Benchmark-only — accuracy-sensitive; NOT part of the default command.
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+  export VLLM_ROCM_QUICK_REDUCE_CAST_BF16_TO_FP16=0
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION_MIN_SIZE_KB=256
+  ```
+
+  The INT4 all-reduce and fp8 KV-cache levers are throughput optimizations for
+  high concurrency and are **kept out of the default command pending accuracy
+  validation**. Performance figures on the InferenceX dashboard are **reported
+  externally by SemiAnalysis and have not been reproduced in this repository.**
 
   ## Troubleshooting
 
