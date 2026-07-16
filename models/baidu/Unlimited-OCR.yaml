@@ -13,13 +13,11 @@ meta:
 
 model:
   model_id: "baidu/Unlimited-OCR"
-  # Support ships in the dedicated vLLM release image below; not yet in a stable
-  # pip wheel (UnlimitedOCRForCausalLM is absent from upstream registry as of writing).
   min_vllm_version: "0.25.0"
   docker_image: "vllm/vllm-openai:unlimited-ocr"
   install:
-    docker:
-      note: "Unlimited-OCR (UnlimitedOCRForCausalLM) is supported since vLLM v0.25.0 — the pip wheel works too; this image is a ready-to-run alternative."
+    pip:
+      note: "Unlimited-OCR (UnlimitedOCRForCausalLM) is supported since vLLM v0.25.0."
   architecture: dense
   parameter_count: "3B"
   active_parameters: "3B"
