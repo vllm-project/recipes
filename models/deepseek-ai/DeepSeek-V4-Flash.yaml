@@ -273,11 +273,10 @@ guide: |
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
   ```
 
-  ### MI325X single-GPU compatibility path
+  ### MI325X (1×256GB)
 
-  DeepSeek-V4-Flash was validated end-to-end on one 256 GB MI325X with
-  vLLM 0.25.0 and PyTorch HIP 7.2.53211. Use the conservative TP1 eager-mode
-  launch below instead of the MI355X throughput-oriented settings:
+  Validated end-to-end with vLLM 0.25.0 and PyTorch HIP 7.2.53211. Use this
+  conservative TP1 eager-mode launch instead of the MI355X throughput settings:
 
   ```bash
   export VLLM_ROCM_USE_AITER=1
@@ -288,6 +287,7 @@ guide: |
     --tensor-parallel-size 1 \
     --kv-cache-dtype fp8_e4m3 \
     --max-model-len 4096 \
+    --enable-chunked-prefill \
     --max-num-batched-tokens 256 \
     --kv-cache-memory-bytes 10000000000 \
     --distributed-executor-backend mp \
@@ -297,15 +297,11 @@ guide: |
     --enforce-eager
   ```
 
-  This configuration loaded the 148.66 GiB checkpoint, started the API server,
-  and served requests for a 24-hour allocation. It passed model-list and chat
-  completion probes in non-thinking and Think High modes, including arithmetic,
-  time arithmetic, and constrained word counting.
-
-  Only TP1 with a 4K maximum sequence length is verified on MI325X. TP2 and
-  larger tensor-parallel configurations were not validated successfully, and
-  Think Max requires at least 384K context, so it is not available with this
-  compatibility configuration.
+  Chunked prefill allows 4K requests while scheduling at most 256 tokens per
+  batch. This configuration loaded the 148.66 GiB checkpoint and passed model-list
+  and chat probes in non-thinking and Think High modes during a 24-hour allocation.
+  Only TP1 at 4K context is verified; TP2+ did not validate successfully. Think Max
+  requires at least 384K context and is not available with this configuration.
 
   ### MI355X (4×288GB)
 
