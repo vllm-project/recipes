@@ -312,7 +312,7 @@ guide: |
   - **H200 (8× GPU)**: DP + EP with `--data-parallel-size 8`. Context is capped at
     800K tokens (`--max-model-len 800000`) to leave KV headroom with dense params
     replicated across ranks — applies to both single-node and multi-node H200.
-  - **MI355X (8× GPU)**: validated with ROCm + AITER (`VLLM_ROCM_USE_AITER=1`), 
+  - **MI355X (8× GPU)**: validated with ROCm + AITER (`VLLM_ROCM_USE_AITER=1`),
     `--gpu-memory-utilization 0.9`, `--max-num-seqs 128`,
     `--max-num-batched-tokens 8192`, and `--distributed-executor-backend mp`.
   - **GB200 NVL4 (4× GPU per tray)**: the ~960 GB mixed-precision checkpoint does not
@@ -366,16 +366,20 @@ guide: |
   |     |       |strict-match    |     8|exact_match|↑  |0.9545|±  |0.0057|
   ```
 
-  ## KV Cache Offloading (LMCache)
+  ## KV Cache Offloading
 
-  For agentic / multi-turn workloads whose reusable prefixes outgrow GPU KV
-  capacity, pick **LMCache** on the KV Offload row: the vLLM command gains the
-  `LMCacheMPConnector` config and the command block grows an **LMCache Server**
-  tab — install `lmcache==0.5.1` (extra-install block above) and run the server
-  first, in a separate terminal on the same node. Port matching and pool-sizing
-  notes are inline comments on that tab. Single-node strategies only (the MP
-  server is node-local; PD owns `--kv-transfer-config` for the Nixl path).
+  Agentic and multi-turn workloads reuse long prefixes whose KV state can exceed on-GPU
+  capacity. The **KV Offload** row attaches a host-DRAM KV tier to any serving strategy —
+  pick one of three connectors:
 
-  Verified on 8× B200 / B300 in
-  [InferenceX PR #2153](https://github.com/SemiAnalysisAI/InferenceX/pull/2153);
-  see the [LMCache docs](https://docs.lmcache.ai/) for tuning knobs.
+  - **Simple** — `SimpleCPUOffloadConnector`: spills KV blocks to a per-rank region of CPU
+    DRAM on each node. The simplest way to extend effective KV capacity for a single instance.
+  - **Mooncake** — `MooncakeStoreConnector`: pools CPU DRAM into a distributed shared KV
+    store — either embedded (each rank's vLLM worker runs a Mooncake client that donates a DRAM segment)
+    or standalone (a per-node `mooncake_store_service` owns the node's DRAM and contributes
+    it to the pool, decoupling cache lifetime from the engine). A cluster-wide
+    `mooncake_master` coordinates the pool; across 2+ instances, GPU workers share it for
+    cross-instance prefix reuse. Install from the extra-install block above; see the [Mooncake docs](https://kvcache-ai.github.io/Mooncake/).
+  - **LMCache** — `LMCacheMPConnector`: a node-local KV pool served by a
+    companion `lmcache server` process, launched before `vllm serve`.
+    Single-node strategies only. Install from the extra-install block above; see the [LMCache docs](https://docs.lmcache.ai/).
