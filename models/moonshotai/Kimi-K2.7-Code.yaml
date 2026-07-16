@@ -3,7 +3,7 @@ meta:
   slug: "kimi-k2.7-code"
   provider: "Moonshot AI"
   description: "Coding-focused agentic MoE built on Kimi-K2.6, tuned for long-horizon software-engineering tasks with thinking-only reasoning, tool calling, and vision-language input"
-  date_updated: 2026-06-12
+  date_updated: 2026-07-13
   difficulty: intermediate
   tasks:
     - multimodal
@@ -65,6 +65,28 @@ variants:
     precision: int4
     vram_minimum_gb: 714
     description: "Native INT4 via compressed-tensors (~595 GB on disk); fits 8×H200"
+  mxfp4:
+    model_id: "amd/Kimi-K2.7-Code-MXFP4"
+    precision: mxfp4
+    # 1T total params × 0.5 bytes (MXFP4) × 1.2 headroom = 600 GB.
+    vram_minimum_gb: 600
+    description: "AMD Quark OCP MXFP4 weights for MI350X/MI355X (gfx950); fits 8× MI355X."
+    supported_hardware:
+      - mi355x
+    # Validated single-node InferenceX agentic-coding config is TP4.
+    tp: 4
+    hardware_overrides:
+      mi355x:
+        docker_image: "vllm/vllm-openai-rocm:v0.24.0"
+        extra_args:
+          - "--block-size"
+          - "1"
+        extra_env:
+          VLLM_ROCM_USE_AITER: "1"
+          VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
+          # Validated single-node config is TP4 (<8); AITER RMSNorm has accuracy
+          # issues below TP8, so keep it off. Safe to re-enable at TP=8.
+          VLLM_ROCM_USE_AITER_RMSNORM: "0"
 
 compatible_strategies:
   - single_node_tp
@@ -185,6 +207,125 @@ guide: |
   - Keep vLLM's default block size unless you are tuning long-context
     throughput; `--block-size 64` is safe to try.
 
+  ### AMD MI355X — MXFP4 (`amd/Kimi-K2.7-Code-MXFP4`)
+
+  AMD publishes an OCP **MXFP4** checkpoint quantized with
+  [amd-quark](https://quark.docs.amd.com/) at
+  [`amd/Kimi-K2.7-Code-MXFP4`](https://huggingface.co/amd/Kimi-K2.7-Code-MXFP4).
+  Select the **mxfp4** variant and **MI355X** hardware in the command builder.
+  This path uses the native MXFP4 MoE kernels (not FlyDSL) on the
+  `vllm/vllm-openai-rocm:v0.24.0` image, and needs the quantization runtime
+  installed inside the container (a manual step is currently required on ROCm
+  vLLM):
+
+  ```bash
+  pip install amd-quark
+  ```
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+  # AITER RMSNorm has accuracy issues at TP<8 — disable it whenever TP<8.
+  export VLLM_ROCM_USE_AITER_RMSNORM=0
+
+  vllm serve amd/Kimi-K2.7-Code-MXFP4 \
+    --tensor-parallel-size 4 \
+    --trust-remote-code \
+    --mm-encoder-tp-mode data \
+    --block-size 1 \
+    --gpu-memory-utilization 0.90 \
+    --tool-call-parser kimi_k2 \
+    --enable-auto-tool-choice \
+    --reasoning-parser kimi_k2 \
+    --enable-prefix-caching
+  ```
+
+  Notes:
+  - `--block-size 1` is required for the MXFP4 MLA path on MI355X.
+  - Set `VLLM_ROCM_USE_AITER_RMSNORM=0` whenever `TP < 8` (AITER RMSNorm
+    accuracy issue); it can stay enabled at TP=8.
+  - On MEC firmware < 177, export `HSA_NO_SCRATCH_RECLAIM=1` to avoid an RCCL
+    memory-reclaim issue at engine init.
+  - If engine init intermittently hangs in the symm-mem all-reduce rendezvous,
+    export `VLLM_ALLREDUCE_USE_SYMM_MEM=0`.
+
+  ## KV Cache Offloading (LMCache)
+
+  For long-horizon agentic-coding workloads whose reusable prefixes outgrow GPU
+  KV capacity, pick **LMCache** on the KV Offload row: the `vllm serve` command
+  gains the `LMCacheMPConnector` config and the command block grows an **LMCache
+  Server** tab (run it first, in a separate terminal on the same node — it owns
+  the shared CPU-DRAM KV pool). Single-node strategies only.
+
+  Verified on 8× MI355X in
+  [InferenceX PR #2126](https://github.com/SemiAnalysisAI/InferenceX/pull/2126).
+
+  ### MI355X / ROCm overrides
+
+  The generic LMCache row installs the CUDA wheel (`lmcache==0.5.1`) and its
+  server tab uses CUDA-oriented flags. On MI355X (`gfx950`) the connector must be
+  **built from source against HIP**, and the server is launched with the flags
+  below instead.
+
+  Build the connector against HIP if it isn't already importable:
+
+  ```bash
+  python3 -c "import lmcache.integration.vllm.lmcache_mp_connector" 2>/dev/null || {
+    git clone https://github.com/LMCache/LMCache.git /tmp/lmcache-src
+    cd /tmp/lmcache-src && git checkout aaf7c0d3
+    pip install -r requirements/build.txt
+    CXX=hipcc BUILD_WITH_HIP=1 pip install . --no-build-isolation
+    rm -rf /tmp/lmcache-src
+  }
+  ```
+
+  Start the LMCache MP server (host-DRAM L1 tier). Size `--l1-size-gb` to the
+  host DRAM you want to dedicate, but keep it **below** free `/dev/shm`: the L1
+  tier is shared-memory backed and silently disables SHM (then crashes on load)
+  if it exceeds available `/dev/shm`. A safe cap is ~90% of free `/dev/shm`.
+
+  ```bash
+  export PYTHONHASHSEED=0
+  lmcache server \
+    --host 127.0.0.1 --port 5555 \
+    --http-host 127.0.0.1 --http-port 8080 \
+    --l1-size-gb 512 \
+    --l1-init-size-gb 20 \
+    --l1-read-ttl-seconds 7200 \
+    --chunk-size 256 \
+    --max-workers 8 \
+    --eviction-policy LRU &
+  # Wait for http://127.0.0.1:8080/healthcheck to return 200 before starting vLLM.
+  ```
+
+  Then launch vLLM with the LMCache connector (drop `--enable-prefix-caching` —
+  LMCache owns the cache in this mode):
+
+  ```bash
+  export PYTHONHASHSEED=0
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+  # AITER RMSNorm has accuracy issues at TP<8 — disable it whenever TP<8.
+  export VLLM_ROCM_USE_AITER_RMSNORM=0
+
+  vllm serve amd/Kimi-K2.7-Code-MXFP4 \
+    --tensor-parallel-size 4 \
+    --trust-remote-code \
+    --mm-encoder-tp-mode data \
+    --block-size 1 \
+    --gpu-memory-utilization 0.90 \
+    --tool-call-parser kimi_k2 \
+    --enable-auto-tool-choice \
+    --reasoning-parser kimi_k2 \
+    --kv-transfer-config '{"kv_connector":"LMCacheMPConnector","kv_connector_module_path":"lmcache.integration.vllm.lmcache_mp_connector","kv_role":"kv_both","kv_connector_extra_config":{"lmcache.mp.host":"tcp://127.0.0.1","lmcache.mp.port":5555}}'
+  ```
+
+  Notes:
+  - `--max-workers` scales with TP — `2 × TP` is a good default (8 for TP4).
+  - Set `PYTHONHASHSEED=0` on **both** the LMCache server and vLLM so chunk
+    hashing is stable across processes.
+  - Keep `--l1-size-gb` ≤ ~90% of free `/dev/shm`.
+
   ## Client Usage
 
   Once the vLLM server is running, consume it via the OpenAI-compatible API. The recommended
@@ -242,6 +383,8 @@ guide: |
   ## References
 
   - [Kimi-K2.7-Code on Hugging Face](https://huggingface.co/moonshotai/Kimi-K2.7-Code)
+  - [amd/Kimi-K2.7-Code-MXFP4 (MI355X)](https://huggingface.co/amd/Kimi-K2.7-Code-MXFP4)
   - [Kimi-K2.7-Code deployment guide](https://huggingface.co/moonshotai/Kimi-K2.7-Code/blob/main/docs/deploy_guidance.md)
   - [Kimi-K2.6 recipe](https://recipes.vllm.ai/moonshotai/Kimi-K2.6)
+  - [LMCache](https://github.com/LMCache/LMCache)
   - [vLLM multimodal inputs guide](https://docs.vllm.ai/en/latest/features/multimodal_inputs.html)
