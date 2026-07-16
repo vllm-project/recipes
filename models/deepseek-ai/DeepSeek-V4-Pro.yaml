@@ -3,7 +3,7 @@ meta:
   slug: "deepseek-v4-pro"
   provider: "DeepSeek"
   description: "DeepSeek V4 flagship MoE (1.6T total / 49B active) with hybrid CSA+HCA attention, manifold-constrained hyper-connections, Muon-trained on 32T+ tokens, and three-tier reasoning."
-  date_updated: 2026-06-09
+  date_updated: 2026-07-10
   difficulty: hard
   tasks:
     - text
@@ -56,10 +56,33 @@ features:
       - "--reasoning-parser"
       - "deepseek_v4"
   spec_decoding:
-    description: "Multi-Token Prediction speculative decoding with 2 speculative tokens."
-    args:
-      - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":2}'
+    description: "Speculative decoding — pick a drafting method."
+    # Mode = the --speculative-config method only (args); the served checkpoint
+    # is owned by the Variant row. Default is MTP; the DSpark variant flips this
+    # to dspark via its `default_modes`. The DSpark checkpoint also runs MTP, so
+    # both modes stay available there.
+    default_mode: mtp
+    modes:
+      mtp:
+        label: "MTP"
+        description: "Built-in Multi-Token Prediction, 2 draft tokens."
+        # MTP ships with the FP8/NVFP4 checkpoints; the fused DSpark checkpoint
+        # uses its own baked-in draft, so MTP isn't offered there.
+        variants:
+          - default
+          - nvfp4
+        args:
+          - "--speculative-config"
+          - '{"method":"mtp","num_speculative_tokens":2}'
+      dspark:
+        label: "DSpark"
+        description: "DSpark drafting, 7 draft tokens, greedy. Requires the DSpark checkpoint (Variant row)."
+        # Only the fused DSpark checkpoint carries the draft.
+        variants:
+          - dspark
+        args:
+          - "--speculative-config"
+          - '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"greedy"}'
 
 opt_in_features:
   - spec_decoding
@@ -74,6 +97,22 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 960
     description: "NVIDIA modelopt NVFP4 checkpoint (MoE experts NVFP4; attention, shared experts, router head, and MTP stay FP8) for Blackwell GPUs."
+  dspark:
+    # Official fused DSpark checkpoint (FP4+FP8 base with the DSpark draft baked
+    # in) — a distinct served repo, so it lives on the Variant axis. Selecting it
+    # defaults the spec-decoding method to dspark (below); the checkpoint also
+    # runs MTP, so that mode stays available.
+    model_id: "deepseek-ai/DeepSeek-V4-Pro-DSpark"
+    label: "DSpark"
+    precision: fp8
+    vram_minimum_gb: 960
+    description: "Official fused DSpark speculative checkpoint — FP4+FP8 base with the DSpark draft baked in."
+    # DSpark support landed after the recipe baseline (0.20.0); it's on nightly
+    # until 0.25.0 ships, so the Install block bumps the version + nightly wheel.
+    min_vllm_version: "0.25.0"
+    nightly_required: true
+    default_modes:
+      spec_decoding: dspark
 
 compatible_strategies:
   - single_node_tp
@@ -93,18 +132,16 @@ hardware_overrides:
     # ~960 GB mixed-precision weights replicated across DP ranks — cap to 800K.
     extra_args:
       - "--max-model-len"
-      - "800000"
+      - "200000"
       - "--gpu-memory-utilization"
       - "0.95"
       - "--max-num-seqs"
-      - "512"
+      - "16"
       - "--max-num-batched-tokens"
-      - "512"
+      - "16384"
       - "--no-enable-flashinfer-autotune"
       - "--compilation-config"
       - '{"mode": 0, "cudagraph_mode": "FULL_DECODE_ONLY"}'
-    extra_env:
-      VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS: "0"
   blackwell:
     extra_args:
       - "--attention_config.use_fp4_indexer_cache=True"
@@ -275,7 +312,7 @@ guide: |
   - **H200 (8× GPU)**: DP + EP with `--data-parallel-size 8`. Context is capped at
     800K tokens (`--max-model-len 800000`) to leave KV headroom with dense params
     replicated across ranks — applies to both single-node and multi-node H200.
-  - **MI355X (8× GPU)**: validated with ROCm + AITER (`VLLM_ROCM_USE_AITER=1`), 
+  - **MI355X (8× GPU)**: validated with ROCm + AITER (`VLLM_ROCM_USE_AITER=1`),
     `--gpu-memory-utilization 0.9`, `--max-num-seqs 128`,
     `--max-num-batched-tokens 8192`, and `--distributed-executor-backend mp`.
   - **GB200 NVL4 (4× GPU per tray)**: the ~960 GB mixed-precision checkpoint does not
@@ -328,3 +365,21 @@ guide: |
   |gsm8k|      3|flexible-extract|     8|exact_match|↑  |0.9538|±  |0.0058|
   |     |       |strict-match    |     8|exact_match|↑  |0.9545|±  |0.0057|
   ```
+
+  ## KV Cache Offloading
+
+  Agentic and multi-turn workloads reuse long prefixes whose KV state can exceed on-GPU
+  capacity. The **KV Offload** row attaches a host-DRAM KV tier to any serving strategy —
+  pick one of three connectors:
+
+  - **Simple** — `SimpleCPUOffloadConnector`: spills KV blocks to a per-rank region of CPU
+    DRAM on each node. The simplest way to extend effective KV capacity for a single instance.
+  - **Mooncake** — `MooncakeStoreConnector`: pools CPU DRAM into a distributed shared KV
+    store — either embedded (each rank's vLLM worker runs a Mooncake client that donates a DRAM segment)
+    or standalone (a per-node `mooncake_store_service` owns the node's DRAM and contributes
+    it to the pool, decoupling cache lifetime from the engine). A cluster-wide
+    `mooncake_master` coordinates the pool; across 2+ instances, GPU workers share it for
+    cross-instance prefix reuse. Install from the extra-install block above; see the [Mooncake docs](https://kvcache-ai.github.io/Mooncake/).
+  - **LMCache** — `LMCacheMPConnector`: a node-local KV pool served by a
+    companion `lmcache server` process, launched before `vllm serve`.
+    Single-node strategies only. Install from the extra-install block above; see the [LMCache docs](https://docs.lmcache.ai/).

@@ -66,8 +66,13 @@ export function getAllRecipes() {
 }
 
 export function getRecipeByHfId(org, repo) {
-  const all = getAllRecipes();
-  return all.find((r) => r.hf_org === org && r.hf_repo === repo) || null;
+  const o = org.toLowerCase(), r = repo.toLowerCase();
+  return getAllRecipes().find((x) => x.hf_org.toLowerCase() === o && x.hf_repo.toLowerCase() === r) || null;
+}
+
+export function getRecipesByOrg(org) {
+  const o = org.toLowerCase();
+  return getAllRecipes().filter((r) => r.hf_org.toLowerCase() === o);
 }
 
 /**
@@ -79,13 +84,13 @@ export function getRecipeByHfId(org, repo) {
  * parent's own HF id (those are just the base recipe).
  */
 export function findVariantRedirect(org, repo) {
-  const target = `${org}/${repo}`;
+  const target = `${org}/${repo}`.toLowerCase();
   for (const r of getAllRecipes()) {
-    if (r.hf_id === target) return null;
+    if (r.hf_id.toLowerCase() === target) return null;
     const variants = r.variants || {};
     for (const [key, v] of Object.entries(variants)) {
       if (key === "default") continue;
-      if (v?.model_id && v.model_id === target) {
+      if (v?.model_id && v.model_id.toLowerCase() === target) {
         return { parent: r, variantKey: key };
       }
     }

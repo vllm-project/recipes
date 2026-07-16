@@ -27,6 +27,9 @@ model:
   context_length: 262144
   base_args: []
   base_env: {}
+  docker_image:
+    amd: "vllm/vllm-openai-rocm:v0.22.1"
+
 
 dependencies:
   - note: "Recommended for offline multimodal inference (image/video pre-processing helpers)"
@@ -93,6 +96,19 @@ hardware_overrides:
       - "data"
       - "--async-scheduling"
     extra_env: {}
+  amd:
+    extra_args:
+      - "--mm-encoder-tp-mode"
+      - "data"
+      - "--async-scheduling"
+      - "--enable-chunked-prefill"
+    extra_env:
+      VLLM_WORKER_MULTIPROC_METHOD: "spawn"
+      HIP_FORCE_DEV_KERNARG: "1"
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_USE_AITER_MHA: "1"
+      VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT: "1"
+      SAFETENSORS_FAST_GPU: "1"
 
 strategy_overrides: {}
 
@@ -159,15 +175,83 @@ guide: |
     --async-scheduling
   ```
 
-  ### MI300X/MI325X/MI355X (BF16)
+  ### MI300X/MI325X/MI355X (BF16, TP8)
   ```bash
-  MIOPEN_USER_DB_PATH="$(pwd)/miopen" \
-  MIOPEN_FIND_MODE=FAST \
-  VLLM_ROCM_USE_AITER=1 \
-  SAFETENSORS_FAST_GPU=1 \
+  export SAFETENSORS_FAST_GPU="1"
+  export HIP_FORCE_DEV_KERNARG="1"
+  export HIP_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
+  export VLLM_WORKER_MULTIPROC_METHOD="spawn"
+  export VLLM_ROCM_USE_AITER="1"
+  export VLLM_ROCM_USE_AITER_MHA="1"
+  export VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT="1"
   vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct \
-    --tensor-parallel 4 \
-    --mm-encoder-tp-mode data
+    --tensor-parallel-size 8 \
+    --mm-encoder-tp-mode data \
+    --enable-expert-parallel \
+    --async-scheduling \
+    --gpu-memory-utilization 0.94 \
+    --max-model-len 32768 \
+    --max-num-seqs 10240 \
+    --max-num-batched-tokens 32768 \
+    --attention-backend ROCM_AITER_FA
+  ```
+
+  ### MI300X/MI325X/MI355X (FP8, TP8)
+  ```bash
+  export SAFETENSORS_FAST_GPU="1"
+  export HIP_FORCE_DEV_KERNARG="1"
+  export HIP_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
+  export VLLM_WORKER_MULTIPROC_METHOD="spawn"
+  export VLLM_ROCM_USE_AITER="1"
+  export VLLM_ROCM_USE_AITER_MHA="1"
+  export VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT="1"
+  vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
+    --tensor-parallel-size 8 \
+    --mm-encoder-tp-mode data \
+    --enable-expert-parallel \
+    --async-scheduling \
+    --enable-chunked-prefill \
+    --limit-mm-per-prompt '{"image": 1}' \
+    --gpu-memory-utilization 0.94 \
+    --max-model-len 32768 \
+    --max-num-seqs 10240 \
+    --max-num-batched-tokens 32768 \
+    --kv-cache-dtype fp8 \
+    --compilation-config '{"mode": 3, "cudagraph_mode": "FULL_AND_PIECEWISE", "custom_ops": ["+rms_norm", "+quant_fp8"]}' \
+    --attention-backend ROCM_AITER_FA
+  ```
+
+  > The above configuration runs efficiently at high concurrencies (up to 512) for context lengths up to 8k. If TPOT is not satisfactory, lower `--max-num-batched-tokens`. For longer contexts, `--max-num-seqs` and `--max-num-batched-tokens` may need retuning. 
+
+  ### MI300X / MI355X (FP8, EAGLE3 Speculative Decoding)
+
+  Adds EAGLE3 speculative decoding (`RedHatAI/Qwen3-VL-235B-A22B-Instruct-speculator.eagle3`) on top of the FP8 target. **`--attention-backend ROCM_AITER_FA` is mandatory** — the default `ROCM_ATTN` path makes SD slower than baseline on ROCm. Keep `VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=0` and omit `--async-scheduling` (incompatible with SD).
+
+  ```bash
+  export SAFETENSORS_FAST_GPU="1"
+  export HIP_FORCE_DEV_KERNARG="1"
+  export HIP_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
+  export VLLM_USE_V1="1"
+  export VLLM_WORKER_MULTIPROC_METHOD="spawn"
+  export VLLM_ROCM_USE_AITER="1"
+  export VLLM_ROCM_USE_AITER_MHA="1"
+  export VLLM_ROCM_USE_AITER_RMSNORM="0"
+  export VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT="0"
+  export VLLM_RPC_TIMEOUT="300000"
+
+  vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
+    --tensor-parallel-size 8 \
+    --gpu-memory-utilization 0.94 \
+    --distributed-executor-backend mp \
+    --enable-chunked-prefill \
+    --max-model-len 16384 \
+    --max-num-seqs 32 \
+    --max-num-batched-tokens 8192 \
+    --mm-encoder-tp-mode data \
+    --enable-expert-parallel \
+    --attention-backend ROCM_AITER_FA \
+    --compilation-config '{"mode": 3, "cudagraph_mode": "FULL_AND_PIECEWISE", "custom_ops": ["-rms_norm"], "pass_config": {"fuse_norm_quant":false}}' \
+    --speculative-config '{"model": "RedHatAI/Qwen3-VL-235B-A22B-Instruct-speculator.eagle3", "method": "eagle3", "num_speculative_tokens": 4}'
   ```
 
   ## Configuration Tips
