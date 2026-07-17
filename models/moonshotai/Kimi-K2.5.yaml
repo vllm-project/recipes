@@ -82,6 +82,35 @@ variants:
       - "fp8"
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP4: "1"
+  mxfp4:
+    model_id: "amd/Kimi-K2.5-MXFP4"
+    precision: mxfp4
+    # ~557 GB on disk (MXFP4 MoE weights + higher-precision norms/attention).
+    vram_minimum_gb: 669
+    description: "AMD Quark OCP MXFP4 weights for MI355X (gfx950); ~557 GB on disk."
+    supported_hardware:
+      - mi355x
+    # Matches the validated InferenceX single-node baseline
+    # (kimik2.5-fp4-mi355x-vllm). TP8 leaves ample KV + encoder headroom.
+    tp: 8
+    extra_args:
+      # fp8 KV cache: doubles resident capacity and halves KV read bandwidth.
+      # Measured +27% throughput at 8k/1k on MI355X with no accuracy change
+      # (GSM8K 0.9697, unchanged from bf16 KV). Same flag the nvfp4 sibling uses.
+      - "--kv-cache-dtype"
+      - "fp8"
+      # Run the small vision encoder data-parallel rather than TP — avoids
+      # TP comm overhead on the encoder.
+      - "--mm-encoder-tp-mode"
+      - "data"
+    # AITER RMSNorm is left at its default (on when AITER is enabled): a local
+    # TP4 GSM8K check measured identical accuracy on vs off (0.9697), so there is
+    # no reason to disable it the way the single-node TP<8 guard used to.
+    # HSA_NO_SCRATCH_RECLAIM is firmware-conditional (MEC < 177) — see the guide,
+    # not forced here since current MI355X firmware doesn't need it.
+    hardware_overrides:
+      mi355x:
+        docker_image: "vllm/vllm-openai-rocm:nightly"
 
 compatible_strategies:
   - single_node_tp
@@ -219,6 +248,40 @@ guide: |
   - vLLM has tuned MI350X/MI355X FlyDSL configs for this Kimi shape at TP=8 and TP=4.
   - Keep vLLM's default block size unless you are tuning long-context
     throughput; `--block-size 64` is safe to try.
+
+  ### AMD MI355X (MXFP4 checkpoint)
+
+  The **MXFP4** variant serves the AMD Quark checkpoint
+  [`amd/Kimi-K2.5-MXFP4`](https://huggingface.co/amd/Kimi-K2.5-MXFP4) — a
+  different quantization from the packed-INT4 `moonshotai/Kimi-K2.5` FlyDSL path
+  above. It runs the AITER MXFP4 MoE path and adds an fp8 KV cache.
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+
+  vllm serve amd/Kimi-K2.5-MXFP4 \
+    --tensor-parallel-size 8 \
+    --trust-remote-code \
+    --mm-encoder-tp-mode data \
+    --kv-cache-dtype fp8 \
+    --gpu-memory-utilization 0.90
+  ```
+
+  Notes:
+  - **fp8 KV cache** is the main MI355X win: it doubles resident KV capacity and
+    halves KV read bandwidth. Measured +27% throughput at 8k/1k input with no
+    accuracy change (GSM8K 0.9697, unchanged from bf16 KV).
+  - **AITER RMSNorm** stays on. A local TP4 GSM8K check on
+    the current nightly measured 0.9697.
+  - **Old firmware only:** if `rocm-smi --showfw` reports a MEC firmware version
+    below 177, add `export HSA_NO_SCRATCH_RECLAIM=1` — older firmware can't
+    reclaim RCCL scratch and vLLM crashes without it. Current MI355X firmware
+    doesn't need it.
+  - For maximum throughput on fixed-length benchmark 8k/1k, or 1k/1k workloads, 
+    sets `--block-size 1 --no-enable-prefix-caching
+    --max-num-batched-tokens 32768 --max-num-seqs 512`. These are
+    throughput-sweep tunings; leave vLLM's defaults for general serving.
 
   ## Client Usage
 
