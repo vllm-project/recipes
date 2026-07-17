@@ -82,7 +82,6 @@ hardware_overrides:
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP4: "1"
   amd:
-    # AITER attention wins over Triton FA for DeepSeek MoE on MI300X/MI325X/MI355X.
     extra_args: []
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
@@ -102,19 +101,19 @@ guide: |
 
   ## Prerequisites
 
-  - **Hardware (FP8)**: 8x H200 GPUs (verified)
+  - **Hardware (FP8)**: 8x H200 (CUDA) or 8x MI300X / MI325X / MI355X (ROCm)
   - **Hardware (FP4)**: 4x B200 GPUs
-  - **AMD ROCm**: 8x MI300X / MI325X / MI355X GPUs
-  - **vLLM**: Install with `uv pip install -U vllm --torch-backend auto`
+  - **vLLM**: Current stable release
 
+  ### CUDA
   ```bash
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend auto
   ```
 
-  AMD ROCm wheel:
-
+  ### ROCm (MI300X, MI325X, MI355X)
+  Requires Python 3.12, ROCm 7.2.1, and glibc >= 2.35.
   ```bash
   uv venv --python 3.12
   source .venv/bin/activate
@@ -123,9 +122,9 @@ guide: |
 
   ## Client Usage
 
-  ### 8xH200 (FP8)
+  ### 8xH200 / 8xMI300X (FP8)
 
-  Tensor Parallel + Expert Parallel (TP8+EP):
+  Tensor Parallel + Expert Parallel (TP8+EP) — CUDA:
   ```bash
   vllm serve deepseek-ai/DeepSeek-V3 \
     --trust-remote-code \
@@ -133,11 +132,9 @@ guide: |
     --enable-expert-parallel
   ```
 
-  AMD ROCm on 8x MI300X / MI325X / MI355X:
-
+  Tensor Parallel + Expert Parallel (TP8+EP) — ROCm:
   ```bash
   export SAFETENSORS_FAST_GPU=1
-  export VLLM_USE_TRITON_FLASH_ATTN=0
   export VLLM_ROCM_USE_AITER=1
   export VLLM_ROCM_USE_AITER_MOE=1
 
@@ -147,7 +144,7 @@ guide: |
     --enable-expert-parallel
   ```
 
-  Data Parallel + Expert Parallel (DP8+EP):
+  Data Parallel + Expert Parallel (DP8+EP) — CUDA:
   ```bash
   vllm serve deepseek-ai/DeepSeek-V3 \
     --trust-remote-code \
@@ -183,8 +180,8 @@ guide: |
 
   ## Benchmarking
 
-  For benchmarking, disable prefix caching by adding `--no-enable-prefix-caching`
-  to the server command.
+  For benchmarking, prefix caching is disabled by default in vLLM — no extra server
+  flag is needed.
 
   ```bash
   # Prompt-heavy benchmark (8k/1k)

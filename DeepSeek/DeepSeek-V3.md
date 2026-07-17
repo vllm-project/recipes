@@ -5,26 +5,38 @@ In the guide, we use DeepSeek-R1 as an example, but the same applies to DeepSeek
 
 ## Installing vLLM
 
+### CUDA
+
 ```bash
 uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto
 ```
 
+### ROCm (MI300X, MI325X, MI355X)
+
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.2.1, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).
+
+```bash
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+```
+
 ## Running DeepSeek-R1 / DeepSeek-V3
 
 DeepSeek-R1 and DeepSeek-V3 share the same architecture, so the same serving setup applies. Two common configurations are:
 
-- **8xH200 with `fp8`**: Native FP8 with TP+EP or DP+EP.
+- **8xH200 / 8xMI300X with `fp8`**: Native FP8 with TP+EP or DP+EP.
 - **4xB200 with `fp4`**: Native FP4 with FlashInfer enabled (TP+EP or DP+EP).
 
 See sections below for detailed launch arguments for each configuration.
 
-### 8xH200 (FP8)
+### 8xH200 / 8xMI300X (FP8)
 There are two ways to parallelize the model over multiple GPUs: (1) Tensor-parallel or (2) Data-parallel. Tensor-parallel is usually better for low-latency / low-load scenarios, while data-parallel works better for high-load workloads.
 
 <details>
-<summary>Tensor Parallel + Expert Parallel (TP8+EP)</summary>
+<summary>Tensor Parallel + Expert Parallel (TP8+EP) — CUDA</summary>
 
 ```bash
 vllm serve deepseek-ai/DeepSeek-R1-0528 \
@@ -36,7 +48,23 @@ vllm serve deepseek-ai/DeepSeek-R1-0528 \
 </details>
 
 <details>
-<summary>Data Parallel + Expert Parallel (DP8+EP)</summary>
+<summary>Tensor Parallel + Expert Parallel (TP8+EP) — ROCm</summary>
+
+```bash
+export SAFETENSORS_FAST_GPU=1
+export VLLM_ROCM_USE_AITER=1
+export VLLM_ROCM_USE_AITER_MOE=1
+
+vllm serve deepseek-ai/DeepSeek-R1-0528 \
+  --trust-remote-code \
+  --tensor-parallel-size 8 \
+  --enable-expert-parallel
+```
+
+</details>
+
+<details>
+<summary>Data Parallel + Expert Parallel (DP8+EP) — CUDA</summary>
 
 ```bash
 vllm serve deepseek-ai/DeepSeek-R1-0528 \
@@ -82,7 +110,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 vllm serve nvidia/DeepSeek-R1-FP4 \
 
 ## Benchmarking
 
-For benchmarking, disable prefix caching by adding `--no-enable-prefix-caching` to the server command.
+For benchmarking, prefix caching is disabled by default in vLLM — no extra server flag is needed.
 
 ### FP8 Benchmark
 
