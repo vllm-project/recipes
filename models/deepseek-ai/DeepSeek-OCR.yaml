@@ -24,9 +24,8 @@ model:
   context_length: 8192
   base_args:
     - "--trust-remote-code"
-    - "--logits_processors"
+    - "--logits-processors"
     - "vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor"
-    - "--no-enable-prefix-caching"
     - "--mm-processor-cache-gb"
     - "0"
   base_env: {}
@@ -58,10 +57,8 @@ compatible_strategies:
 
 hardware_overrides:
   amd:
-    # Disable Triton FA → AITER FA is faster for dense OCR on MI300X/MI325X/MI355X.
     extra_args: []
     extra_env:
-      VLLM_USE_TRITON_FLASH_ATTN: "0"
       VLLM_ROCM_USE_AITER: "1"
       SAFETENSORS_FAST_GPU: "1"
 
@@ -76,23 +73,21 @@ guide: |
 
   ## Prerequisites
 
-  - **Hardware**: Single GPU with >=8 GB VRAM is typically sufficient for BF16 inference.
-  - **vLLM**: Current stable release (tested with `uv pip install -U vllm --torch-backend auto`).
-  - **Python**: 3.10+
+  - **Hardware**: Single GPU with >=8 GB VRAM (CUDA or MI300X / MI325X / MI355X)
+  - **vLLM**: Current stable release
+  - **Python**: 3.10+ (CUDA) or 3.12 (ROCm)
 
-  Install vLLM:
+  ### CUDA
   ```bash
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend auto
   ```
 
-  ### AMD ROCm
-
-  The ROCm wheel requires Python 3.12, ROCm 7.0+, and glibc >= 2.35. Use the
-  Docker flow from the vLLM installation guide if your host environment does not
-  meet those requirements.
-
+  ### ROCm (MI300X, MI325X, MI355X)
+  Requires Python 3.12, ROCm 7.2.1, and glibc >= 2.35. Use the Docker flow from the
+  [vLLM installation guide](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images)
+  if your host environment does not meet those requirements.
   ```bash
   uv venv --python 3.12
   source .venv/bin/activate
@@ -141,23 +136,20 @@ guide: |
 
   ### Online OCR serving
 
+  **CUDA**
   ```bash
   vllm serve deepseek-ai/DeepSeek-OCR \
-    --logits_processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
-    --no-enable-prefix-caching \
+    --logits-processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
     --mm-processor-cache-gb 0
   ```
 
-  AMD ROCm on MI300X / MI325X / MI355X:
-
+  **ROCm (MI300X / MI325X / MI355X)**
   ```bash
   export SAFETENSORS_FAST_GPU=1
-  export VLLM_USE_TRITON_FLASH_ATTN=0
   export VLLM_ROCM_USE_AITER=1
 
   vllm serve deepseek-ai/DeepSeek-OCR \
-    --logits_processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
-    --no-enable-prefix-caching \
+    --logits-processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
     --mm-processor-cache-gb 0
   ```
 
