@@ -3,7 +3,7 @@ meta:
   slug: "glm-5.2"
   provider: "GLM (Z-AI)"
   description: "GLM-5.2 — frontier-scale MoE language model (~743B total parameters, 39B active) with up to 5-token MTP speculative decoding and thinking mode"
-  date_updated: 2026-07-12
+  date_updated: 2026-07-17
   difficulty: advanced
   tasks:
     - text
@@ -23,6 +23,11 @@ model:
   docker_image:
     nvidia: "vllm/vllm-openai:v0.23.0"
     amd: "vllm/vllm-openai-rocm:nightly-4c626633159887b0f2c962058c17c78f1434556d"
+  install:
+    docker:
+      note: "Recommended for the pinned, release-tested GLM-5.2 serving paths."
+    pip:
+      note: "The NVFP4 low-latency path requires vLLM 0.25.1 or newer."
   architecture: moe
   parameter_count: "743B"
   active_parameters: "39B"
@@ -85,7 +90,22 @@ variants:
     model_id: "nvidia/GLM-5.2-NVFP4"
     precision: nvfp4
     vram_minimum_gb: 558
-    description: "NVIDIA modelopt NVFP4 checkpoint — only MoE expert linears are quantized to NVFP4; shared experts, attention, embeddings, and the early dense layers stay FP8/BF16, with FP8 KV cache. Blackwell GPUs (B200/B300) only."
+    min_vllm_version: "0.25.1"
+    docker_image: "vllm/vllm-openai:v0.25.1"
+    default_modes:
+      spec_decoding: mtp
+    extra_args:
+      - "--model-class-overrides"
+      - '{"GlmMoeDsaForCausalLM":"vllm.models.deepseek_v32.nvidia.model:DeepseekV32ForCausalLM","DeepSeekMTPModel":"vllm.models.deepseek_v32.nvidia.mtp:DeepseekV32MTP"}'
+      - "--compilation-config"
+      - '{"cudagraph_mode":"PIECEWISE"}'
+      - "--chat-template-content-format"
+      - "string"
+      - "--served-model-name"
+      - "glm-5.2"
+    extra_env:
+      VLLM_USE_BREAKABLE_CUDAGRAPH: "1"
+    description: "Low-latency NVIDIA modelopt NVFP4 path for a single 8-GPU Blackwell node. Uses the fused GLM implementation, MTP with 5 draft tokens, breakable piecewise CUDA graphs, and FP8 KV cache."
   bf16:
     precision: bf16
     vram_minimum_gb: 1786
@@ -128,13 +148,14 @@ guide: |
   5 draft tokens**, lifting end-to-end throughput on reasoning, coding, and agentic workloads.
   It ships as BF16 and native-FP8 checkpoints and keeps the GLM thinking-mode behavior.
 
-  This recipe targets the **FP8** checkpoint, the practical default: it fits on a single
-  8xH200 / 8xH20 node and — with FP8 KV cache — reaches the full 1M-token context on 8xB200.
+  This recipe targets the **FP8** checkpoint as the general-purpose default. For minimum
+  single-request latency on Blackwell, select the **NVFP4** variant: it uses the fused GLM
+  implementation, five-token MTP self-speculation, and breakable piecewise CUDA graphs.
 
   ## Prerequisites
 
-  - **vLLM 0.23.0** (stable). If you need tool calling and MTP at the same time, use the latest
-    `main` branch.
+  - **vLLM 0.23.0** for the general FP8 path; **vLLM 0.25.1** for the optimized NVFP4
+    low-latency path.
   - **GPU:** 8xH200 or 8xH20 (141 GB each) for single-node FP8; 8xB200 (180 GB each) for the
     full 1M context.
 
@@ -143,20 +164,21 @@ guide: |
   ### Docker
 
   ```bash
-  docker run --gpus all \
-    -p 8000:8000 \
-    --ipc=host \
+  docker run --gpus all -p 8000:8000 --ipc=host \
+    -e VLLM_USE_BREAKABLE_CUDAGRAPH=1 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai:glm52 zai-org/GLM-5.2-FP8 \
+    vllm/vllm-openai:v0.25.1 nvidia/GLM-5.2-NVFP4 \
       --tensor-parallel-size 8 \
+      --kv-cache-dtype fp8_e4m3 \
+      --speculative-config '{"method":"mtp","num_speculative_tokens":5}' \
+      --model-class-overrides '{"GlmMoeDsaForCausalLM":"vllm.models.deepseek_v32.nvidia.model:DeepseekV32ForCausalLM","DeepSeekMTPModel":"vllm.models.deepseek_v32.nvidia.mtp:DeepseekV32MTP"}' \
+      --compilation-config '{"cudagraph_mode":"PIECEWISE"}' \
       --tool-call-parser glm47 \
       --reasoning-parser glm45 \
       --enable-auto-tool-choice \
-      --served-model-name glm-5.2-fp8 \
-      --max-model-len 131072
+      --chat-template-content-format=string \
+      --served-model-name glm-5.2
   ```
-
-  On CUDA 12.x, swap the image for `vllm/vllm-openai:glm52-cu129`.
 
   ### From source
 
@@ -263,24 +285,36 @@ guide: |
     few requests compile kernels on demand instead.
   - **BF16** needs multi-node plus an extra loader flag — see [Troubleshooting](#troubleshooting).
 
-  ### NVFP4 on Blackwell (B200/B300)
+  ### Low-latency NVFP4 on Blackwell (B200/B300)
 
   The `nvidia/GLM-5.2-NVFP4` variant is NVIDIA's modelopt re-quantization: only the MoE
   expert linears drop to NVFP4 while shared experts, attention, embeddings, and the early
   dense layers stay FP8/BF16, with FP8 KV cache. The ~465 GB checkpoint fits comfortably on
   Blackwell — vLLM auto-detects the quantization from the checkpoint, so no `--quantization`
-  flag is needed. Select the **NVFP4** variant above (Blackwell-only) or run NVIDIA's command:
+  flag is needed. Select the **NVFP4** variant above (Blackwell-only) or run the equivalent
+  non-Docker command:
 
   ```bash
-  vllm serve nvidia/GLM-5.2-NVFP4 \
+  VLLM_USE_BREAKABLE_CUDAGRAPH=1 vllm serve nvidia/GLM-5.2-NVFP4 \
     --tensor-parallel-size 8 \
-    --enable-expert-parallel \
+    --kv-cache-dtype fp8_e4m3 \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":5}' \
+    --model-class-overrides '{"GlmMoeDsaForCausalLM":"vllm.models.deepseek_v32.nvidia.model:DeepseekV32ForCausalLM","DeepSeekMTPModel":"vllm.models.deepseek_v32.nvidia.mtp:DeepseekV32MTP"}' \
+    --compilation-config '{"cudagraph_mode":"PIECEWISE"}' \
     --reasoning-parser glm45 \
     --tool-call-parser glm47 \
     --enable-auto-tool-choice \
-    --kv-cache-dtype fp8_e4m3 \
-    --served-model-name glm-5.2-nvfp4
+    --chat-template-content-format=string \
+    --served-model-name glm-5.2
   ```
+
+  - **MTP=5** uses the checkpoint's built-in draft heads; no separate speculator model is
+    required.
+  - **`--model-class-overrides`** selects the current fused DeepSeek-V3.2/GLM implementation.
+    vLLM documents this switch as a development/debugging escape hatch, but it is the current
+    public entry point for the optimized GLM-5.2 path.
+  - **Breakable piecewise CUDA graphs** reduce decode overhead without forcing eager mode.
+    Do not add `--enforce-eager`, which disables CUDA graphs.
 
   ## Reasoning modes
 
