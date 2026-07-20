@@ -159,7 +159,7 @@ guide: |
     --trust-remote-code
   ```
 
-  Launch the server (BF16 on 2x H20):
+  Launch the server (BF16 on 2 nodes of 8x H20):
   ```bash
   
   node 0:
