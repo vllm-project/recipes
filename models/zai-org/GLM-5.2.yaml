@@ -244,13 +244,6 @@ guide: |
   For TP=4 validation runs, use `HIP_VISIBLE_DEVICES=0,1,2,3` and
   `--tensor-parallel-size 4`.
 
-  For GLM-5.2 MXFP4 MTP/speculative decoding, the MTP layer needs a vLLM build with
-  [PR #46757](https://github.com/vllm-project/vllm/pull/46757), or the checkpoint
-  `config.json` should exclude the full MTP experts module with a regex entry such as
-  `"re:model.layers.78.mlp.experts.*"`. Older builds may fail during MTP weight loading
-  because the draft MoE layer is unquantized while the main MoE layers are MXFP4.
-
-
   ### FP8 on 8xB200 (full 1M context)
 
   GLM-5.2 has a native 1M-token window. Whether the full window fits is a KV-cache VRAM
