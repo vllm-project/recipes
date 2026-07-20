@@ -13,6 +13,9 @@ meta:
     - "deepseek-ai/DeepSeek-V3.2"
   hardware:
     h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V3.2-Exp"
@@ -70,7 +73,6 @@ hardware_overrides:
       - "1"
       - "--kv-cache-dtype"
       - "bfloat16"
-      - "--no-enable-prefix-caching"
       - "--max-num-batched-tokens"
       - "32768"
     extra_env:
@@ -85,29 +87,40 @@ guide: |
   ## Overview
 
   DeepSeek-V3.2-Exp is a sparse-attention MoE preview. Its main architecture is similar to
-  DeepSeek-V3.1, with a sparse attention mechanism. Only Hopper and Blackwell data center
-  GPUs are supported for now.
+  DeepSeek-V3.1, with a sparse attention mechanism. This guide covers deployment on NVIDIA
+  Hopper/Blackwell GPUs and AMD MI300X / MI325X / MI355X GPUs.
 
   ## Prerequisites
 
-  - **Hardware**: 8x H200 (or H20, or 8xB200) GPUs
+  - **Hardware**: 8x H200/H20/B200 (CUDA) or 8x MI300X / MI325X / MI355X (ROCm)
   - **vLLM**: Current stable release
-  - **DeepGEMM**: Required for MQA logits computation (and optionally for MoE)
+  - **DeepGEMM** (CUDA only): Required for MQA logits computation (and optionally for MoE)
 
+  ### CUDA
   ```bash
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend auto
   uv pip install git+https://github.com/deepseek-ai/DeepGEMM.git@v2.1.1.post3 --no-build-isolation
   ```
 
+  ### ROCm (MI300X, MI325X, MI355X)
+  Requires Python 3.12, ROCm 7.2.1, and glibc >= 2.35. If your environment does not
+  meet these requirements, use the Docker-based setup described in the
+  [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+  ```
+
   Note: DeepGEMM is used both for MoE and for MQA logits computation. It is required for
-  MQA logits. To disable the MoE path only, set `VLLM_USE_DEEP_GEMM=0`. Some users report
-  better performance with `VLLM_USE_DEEP_GEMM=0` (e.g. on H20), and this also skips the
-  long warmup.
+  MQA logits on CUDA. To disable the MoE path only, set `VLLM_USE_DEEP_GEMM=0`. Some users
+  report better performance with `VLLM_USE_DEEP_GEMM=0` (e.g. on H20), and this also skips
+  the long warmup.
 
   ## Launching DeepSeek-V3.2-Exp
 
-  ### Serving on 8xH200 (or H20) GPUs
+  ### 8xH200 / 8xH20 (CUDA)
 
   Using the recommended EP/DP mode:
   ```bash
@@ -119,9 +132,25 @@ guide: |
   vllm serve deepseek-ai/DeepSeek-V3.2-Exp -tp 8
   ```
 
-  ### Serving on 8xB200 GPUs
+  ### 8xB200 (CUDA)
 
-  Same as the above.
+  Same as 8xH200 / 8xH20.
+
+  ### 8xMI300X / MI325X / MI355X (ROCm)
+
+  ```bash
+  export SAFETENSORS_FAST_GPU=1
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_MOE=1
+  export VLLM_RPC_TIMEOUT=18000000
+
+  vllm serve deepseek-ai/DeepSeek-V3.2-Exp \
+    --tensor-parallel-size 8 \
+    --max-num-batched-tokens 32768 \
+    --trust-remote-code \
+    --kv-cache-dtype bfloat16 \
+    --block-size 1
+  ```
 
   ## Accuracy Benchmarking
 
