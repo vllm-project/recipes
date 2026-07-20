@@ -128,12 +128,14 @@ function synthesizeInstall(recipe) {
 }
 
 // Mirror CommandBuilder.jsx: features default to (all) − (opt_in_features) −
-// (hardware_opt_in_features[hw]). spec_decoding is treated as a normal opt-in
-// (off by default); agents that want it must add it explicitly.
-function defaultFeaturesFor(recipe, hwId) {
+// (hardware_opt_in_features[hw]), plus features explicitly forced on by the
+// active variant's `default_modes` (for example an optimized checkpoint that
+// should launch with its matching speculative-decoding method).
+function defaultFeaturesFor(recipe, hwId, variantKey) {
   const optIn = new Set(recipe.opt_in_features || []);
   for (const f of recipe.hardware_opt_in_features?.[hwId] || []) optIn.add(f);
-  return Object.keys(recipe.features || {}).filter((f) => !optIn.has(f));
+  const forced = new Set(Object.keys(recipe.variants?.[variantKey]?.default_modes || {}));
+  return Object.keys(recipe.features || {}).filter((f) => !optIn.has(f) || forced.has(f));
 }
 
 // Wrap a rendered (command, argv) pair in `docker run`. Returns
@@ -331,7 +333,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
   const supportsMultiNode = scalable && compatible.some((s) => s.startsWith("multi_node_"));
   const recommendedNodeCount = !fitsSingleNode(hwProfile, variant) && supportsMultiNode ? 2 : 1;
   const recommendedStrategy = recommendStrategy(recipe, hwProfile, recommendedNodeCount);
-  const recommendedFeatures = defaultFeaturesFor(recipe, hwId);
+  const recommendedFeatures = defaultFeaturesFor(recipe, hwId, variantKey);
 
   // PD's node-count is independent of nodeCount — it lives in pdNodes per role.
   const recommendedPdNodes = recommendedStrategy === "pd_cluster"
@@ -394,7 +396,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     } else {
       nc = s.startsWith("multi_node_") ? 2 : 1;
     }
-    const feats = defaultFeaturesFor(recipe, hwId);
+    const feats = defaultFeaturesFor(recipe, hwId, variantKey);
     const rendered = renderCommand(recipe, variantKey, servingStrategy, hwId, nc, feats, strategies, taxonomy, pdNodes, kvOffload);
     if (rendered) alternatives[s] = rendered;
   }
