@@ -197,6 +197,11 @@ strategy_overrides:
       - '{"cudagraph_mode":"FULL_AND_PIECEWISE", "custom_ops":["all"]}'
   multi_node_tep:
     extra_args:
+      # Keep TP at 8 for the default FP4+FP8 checkpoint: TP=16 partitions the
+      # 3072 MoE intermediate size into 192-wide shards, which is not compatible
+      # with the current FP8 block layout.
+      - "--tensor-parallel-size"
+      - "8"
       - "--compilation-config"
       - '{"cudagraph_mode":"FULL_AND_PIECEWISE", "custom_ops":["all"]}'
   single_node_dep:
