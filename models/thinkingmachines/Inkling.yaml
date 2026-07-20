@@ -13,15 +13,16 @@ meta:
     gb200: verified
     b200: verified
     h200: verified
+    h20: verified
     mi300x: unsupported
     mi325x: unsupported
     mi355x: unsupported
 
 model:
   model_id: "thinkingmachines/Inkling-NVFP4"
-  min_vllm_version: "0.26.0"
+  min_vllm_version: "nightly"
   docker_image:
-    nvidia: "vllm/vllm-openai:inkling"
+    nvidia: "vllm/vllm-openai:nightly"
   nightly_required: true
   install:
     docker:
@@ -62,7 +63,7 @@ features:
     description: "Multi-Token Prediction (MTP) speculative decoding. Inkling ships 8 chained MTP heads, allowing up to 9 tokens per forward step; tune num_speculative_tokens for your acceptance/latency trade-off."
     args:
       - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":8}'
+      - '{"method":"mtp","num_speculative_tokens":1}'
 
 opt_in_features:
   - spec_decoding
@@ -84,6 +85,7 @@ compatible_strategies:
   - multi_node_tp
   - multi_node_tp_pp
   - multi_node_tep
+  - multi_node_tdep
   - pd_cluster
 
 hardware_overrides: {}
@@ -120,11 +122,11 @@ guide: |
     qkvr linears remain BF16. This is a mixed-precision checkpoint and requires **Blackwell**
     FP4 tensor cores (B200 / GB200).
   - **BF16:** Full BF16 weights (`thinkingmachines/Inkling`). Runs on both **Hopper**
-    (H200) and Blackwell, at the cost of substantially more VRAM.
+    (H200&H20) and Blackwell, at the cost of substantially more VRAM.
 
   ## Prerequisites
 
-  - **Hardware:** NVIDIA Blackwell (B200 / GB200) for the NVFP4 variant; Hopper (H200) or
+  - **Hardware:** NVIDIA Blackwell (B200 / GB200) for the NVFP4 variant; Hopper (H200&H20) or
     Blackwell for the BF16 variant. Broader hardware support is in progress.
   - **vLLM:** Nightly wheels (Day-0 support just landed).
   - **Parallelism:** 1T parameters requires multi-GPU. The featured configuration is 4x GB200
@@ -145,6 +147,58 @@ guide: |
     --tensor-parallel-size 4 \
     --kernel-config.enable_flashinfer_autotune=False \
     --trust-remote-code
+  ```
+
+  Launch the server (BF16 on 2x H20):
+  ```bash
+  
+  node 0:
+  
+  export VLLM_USE_V2_MODEL_RUNNER=1
+  export FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED=1
+  vllm serve thinkingmachines/Inkling \
+  --trust-remote-code \
+  --tokenizer-mode inkling \
+  --kernel-config.enable_flashinfer_autotune=False \
+  --tensor-parallel-size 8 \
+  --enable-expert-parallel \
+  --data-parallel-rpc-port 13389 \
+  --data-parallel-size 2 \
+  --data-parallel-size-local 1 \
+  --data-parallel-address $masterip \
+  --data-parallel-hybrid-lb \
+  --max-model-len 131072 \
+  --max-num-seqs 10 \
+  --port 8000 \
+  --enable-auto-tool-choice \
+  --tool-call-parser inkling \
+  --speculative-config '{"method":"mtp","num_speculative_tokens":1}' \
+  --reasoning-parser inkling
+
+  node 1:
+  
+  export VLLM_USE_V2_MODEL_RUNNER=1
+  export FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED=1
+  vllm serve thinkingmachines/Inkling \
+  --trust-remote-code \
+  --tokenizer-mode inkling \
+  --kernel-config.enable_flashinfer_autotune=False \
+  --tensor-parallel-size 8 \
+  --enable-expert-parallel \
+  --data-parallel-rpc-port 13389 \
+  --data-parallel-size 2 \
+  --data-parallel-size-local 1 \
+  --data-parallel-start-rank 1 \
+  --data-parallel-address $masterip \
+  --data-parallel-hybrid-lb \
+  --max-model-len 131072 \
+  --max-num-seqs 10 \
+  --port 8000 \
+  --enable-auto-tool-choice \
+  --tool-call-parser inkling \
+  --speculative-config '{"method":"mtp","num_speculative_tokens":1}' \
+  --reasoning-parser inkling
+  
   ```
 
   Query the server with the OpenAI SDK, including an image input:
