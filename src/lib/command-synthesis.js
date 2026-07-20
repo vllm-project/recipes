@@ -907,22 +907,39 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     }
 
     // 5. Hardware overrides
-    //    Precedence: generation-specific (hopper/blackwell/amd) > brand-wide (nvidia).
-    //    `nvidia:` lets a recipe apply the same overrides to every NVIDIA GPU
-    //    without duplicating hopper and blackwell blocks.
+    //    Generation-specific (hopper/blackwell/amd) with a brand-wide `nvidia:`
+    //    fallback that applies the same tweaks to every NVIDIA GPU without
+    //    duplicating hopper and blackwell blocks. Three layers for a generation:
     //
-    //    A strategy may further override hardware overrides via
-    //    `strategy_overrides.<strategy>.hardware_overrides.<gen>` — when set,
-    //    it REPLACES the recipe-level hardware override for that gen on that
-    //    strategy. Use this to drop a recipe-wide hw flag (e.g. an MoE kernel
-    //    backend) for a specific strategy without duplicating the rest.
+    //      recipe.hardware_overrides.<gen>            — baseline for ALL variants
+    //      variants.<v>.hardware_overrides.<gen>      — per-variant ADDITIVE delta
+    //      strategy_overrides.<s>.hardware_overrides.<gen> — per-strategy REPLACE
+    //
+    //    The strategy layer is authoritative: when it declares an override for
+    //    this generation it REPLACES both the recipe baseline and the variant
+    //    delta (e.g. single_node_tp keeps the FP4 indexer cache but drops the
+    //    MoE mega-kernel on Blackwell). Otherwise the recipe baseline applies to
+    //    every variant and the variant's own generation block layers on top —
+    //    a per-variant delta rather than a wholesale swap. Example: on Blackwell
+    //    the recipe adds the FP4 indexer cache for every variant, then the FP8
+    //    checkpoints add `--moe-backend deep_gemm_mega_moe` (an FP8-only MoE
+    //    kernel) via their variant block while the NVFP4 checkpoint adds
+    //    nothing. Unlike the top-level variant `extra_args` (step 2), the
+    //    generation HO applies to the `default` variant too — it's hardware-
+    //    conditional config, not a checkpoint delta.
     const isNvidia = hwProfile?.brand === "NVIDIA";
     const strategyHo = so?.hardware_overrides?.[gen]
       || (isNvidia ? so?.hardware_overrides?.nvidia : null);
-    const ho = strategyHo
-      || recipe.hardware_overrides?.[gen]
-      || (isNvidia ? recipe.hardware_overrides?.nvidia : null);
-    if (ho?.extra_args) args.push(...ho.extra_args);
+    if (strategyHo) {
+      if (strategyHo.extra_args) args.push(...strategyHo.extra_args);
+    } else {
+      const recipeHo = recipe.hardware_overrides?.[gen]
+        || (isNvidia ? recipe.hardware_overrides?.nvidia : null);
+      if (recipeHo?.extra_args) args.push(...recipeHo.extra_args);
+      const variantGenHo = variant?.hardware_overrides?.[gen]
+        || (isNvidia ? variant?.hardware_overrides?.nvidia : null);
+      if (variantGenHo?.extra_args) args.push(...variantGenHo.extra_args);
+    }
 
     // 6. Advanced tuning args (from UI's Advanced panel)
     if (advancedArgs && advancedArgs.length) args.push(...advancedArgs);
@@ -1062,17 +1079,23 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       if (!roleOverride && so.extra_env) Object.assign(env, so.extra_env);
     }
 
-    // Hardware overrides env — same precedence as args block: generation key
-    // first, then brand-wide `nvidia:` for NVIDIA GPUs. Per-strategy nested
-    // hardware_overrides REPLACES the recipe-level for that gen on that
-    // strategy (mirrors the args-block behavior).
+    // Hardware overrides env — same three-layer precedence as the args block:
+    // a per-strategy generation override REPLACES both recipe and variant;
+    // otherwise the recipe baseline applies to every variant and the variant's
+    // own generation block layers on top additively (applies to `default` too).
     const envIsNvidia = hwProfile?.brand === "NVIDIA";
     const envStrategyHo = so?.hardware_overrides?.[gen]
       || (envIsNvidia ? so?.hardware_overrides?.nvidia : null);
-    const envHo = envStrategyHo
-      || recipe.hardware_overrides?.[gen]
-      || (envIsNvidia ? recipe.hardware_overrides?.nvidia : null);
-    if (envHo?.extra_env) Object.assign(env, envHo.extra_env);
+    if (envStrategyHo) {
+      if (envStrategyHo.extra_env) Object.assign(env, envStrategyHo.extra_env);
+    } else {
+      const envRecipeHo = recipe.hardware_overrides?.[gen]
+        || (envIsNvidia ? recipe.hardware_overrides?.nvidia : null);
+      if (envRecipeHo?.extra_env) Object.assign(env, envRecipeHo.extra_env);
+      const envVariantGenHo = variant?.hardware_overrides?.[gen]
+        || (envIsNvidia ? variant?.hardware_overrides?.nvidia : null);
+      if (envVariantGenHo?.extra_env) Object.assign(env, envVariantGenHo.extra_env);
+    }
 
     // NVL4-only env vars are meaningful only on GB200/GB300 trays. Drop them
     // for any other hardware regardless of where they came from (strategy YAML
