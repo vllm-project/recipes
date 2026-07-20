@@ -90,7 +90,7 @@ compatible_strategies:
 
 hardware_overrides: {}
  
-strategy_overrides: {}
+strategy_overrides: 
   multi_node_dep:
     # TP+DP+EP
     hardware_overrides:
