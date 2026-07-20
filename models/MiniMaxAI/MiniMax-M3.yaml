@@ -113,6 +113,13 @@ variants:
     vram_minimum_gb: 513
     description: "NVIDIA-quantized MXFP8 weights — Blackwell (B200/B300) for native MX tensor cores, and AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 Matrix Cores."
     hardware_overrides:
+      h100:
+        # 8x H100 80GB (640 GB node) fits the ~513 GB MXFP8 weights but not the
+        # full 1M-token KV cache — cap the context to 128K so the engine starts.
+        # H200 (1128 GB node) has the headroom and keeps the full window.
+        extra_args:
+          - "--max-model-len"
+          - "131072"
       mi300x:
         docker_image: "docker pull vllm/vllm-openai-rocm:nightly"
         extra_args:
