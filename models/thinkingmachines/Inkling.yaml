@@ -64,6 +64,11 @@ features:
     args:
       - "--speculative-config"
       - '{"method":"mtp","num_speculative_tokens":8}'
+    hardware_overrides:
+      hopper:
+        args:
+          - "--speculative-config"
+          - '{"method":"mtp","num_speculative_tokens":1}'
 
 opt_in_features:
   - spec_decoding
@@ -100,8 +105,6 @@ strategy_overrides:
           - "131072"
           - "--max-num-seqs"
           - "10"
-          - "--speculative-config"
-          - '{"method":"mtp","num_speculative_tokens":1}'
           - "--tensor-parallel-size"
           - "8"
           - "--data-parallel-size"
