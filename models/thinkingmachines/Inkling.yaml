@@ -101,7 +101,7 @@ strategy_overrides:
           - "--max-num-seqs"
           - "10"
           - "speculative-config"
-          - "'{"method":"mtp","num_speculative_tokens":1}'"
+          - '{"method":"mtp","num_speculative_tokens":1}'
           - "tensor-parallel-size"
           - "8"
           - "data-parallel-size"
