@@ -63,7 +63,7 @@ features:
     description: "Multi-Token Prediction (MTP) speculative decoding. Inkling ships 8 chained MTP heads, allowing up to 9 tokens per forward step; tune num_speculative_tokens for your acceptance/latency trade-off."
     args:
       - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":1}'
+      - '{"method":"mtp","num_speculative_tokens":8}'
 
 opt_in_features:
   - spec_decoding
@@ -100,6 +100,7 @@ strategy_overrides: {}
           - "131072"
           - "--max-num-seqs"
           - "10"
+          - '{"method":"mtp","num_speculative_tokens":1}'
           
 guide: |
   ## Overview
