@@ -75,6 +75,13 @@ variants:
     precision: fp8
     vram_minimum_gb: 170
     description: "Native FP4+FP8 mixed checkpoint (MoE experts FP4, remaining params FP8)"
+    # deep_gemm_mega_moe is an FP8-only MoE kernel — the FP8 checkpoint adds it on
+    # Blackwell; the NVFP4 variant below adds nothing (its experts can't use it).
+    hardware_overrides:
+      blackwell:
+        extra_args:
+          - "--moe-backend"
+          - "deep_gemm_mega_moe"
   nvfp4:
     model_id: "nvidia/DeepSeek-V4-Flash-NVFP4"
     precision: nvfp4
@@ -94,10 +101,10 @@ default_strategy: single_node_tep
 
 hardware_overrides:
   blackwell:
+    # Common to every variant on Blackwell. The FP8-only deep_gemm_mega_moe MoE
+    # kernel is added per-variant (FP8 checkpoints), not here.
     extra_args:
       - "--attention_config.use_fp4_indexer_cache=True"
-      - "--moe-backend"
-      - "deep_gemm_mega_moe"
   amd:
     extra_args:
       - "--distributed-executor-backend"
@@ -193,8 +200,9 @@ guide: |
   An **NVFP4 variant** (`nvidia/DeepSeek-V4-Flash-NVFP4`) is also available — NVIDIA
   modelopt re-quantizes the MoE experts to standard NVFP4 while attention, shared
   experts, router head, and MTP stay FP8. Pick it from the **Variant** row; it runs on
-  Blackwell GPUs and inherits the same FP4 MoE backend (`deep_gemm_mega_moe` + FP4
-  indexer cache) as the native checkpoint.
+  Blackwell GPUs with the FP4 indexer cache. Unlike the native FP8 checkpoint, the
+  NVFP4 experts don't support the `deep_gemm_mega_moe` MoE kernel (FP8-only), so it
+  runs on the default MoE backend.
 
   ## Reasoning modes
 
