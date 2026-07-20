@@ -13,6 +13,9 @@ meta:
     - "deepseek-ai/DeepSeek-V3.2-Exp"
   hardware:
     h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V3.1"
@@ -72,7 +75,6 @@ compatible_strategies:
 
 hardware_overrides:
   amd:
-    # AITER attention wins over Triton FA for DeepSeek MoE on MI300X/MI325X/MI355X.
     extra_args: []
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
@@ -90,24 +92,45 @@ guide: |
 
   ## Prerequisites
 
-  - **Hardware**: 8x H200 (or H20) GPUs (141 GB per GPU)
+  - **Hardware**: 8x H200/H20 (CUDA) or 8x MI300X / MI325X / MI355X (ROCm)
   - **vLLM**: Current stable release
 
+  ### CUDA
   ```bash
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend auto
   ```
 
+  ### ROCm (MI300X, MI325X, MI355X)
+  Requires Python 3.12, ROCm 7.2.1, and glibc >= 2.35.
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+  ```
+
   ## Launching DeepSeek-V3.1
 
-  ### Serving on 8xH200 (or H20) GPUs
+  ### 8xH200 / 8xH20 (CUDA)
 
   ```bash
   vllm serve deepseek-ai/DeepSeek-V3.1 \
     --enable-expert-parallel \
     --tensor-parallel-size 8 \
     --served-model-name ds31
+  ```
+
+  ### 8xMI300X / MI325X / MI355X (ROCm)
+
+  ```bash
+  export SAFETENSORS_FAST_GPU=1
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_MOE=1
+
+  vllm serve deepseek-ai/DeepSeek-V3.1 \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel
   ```
 
   ### Function calling
