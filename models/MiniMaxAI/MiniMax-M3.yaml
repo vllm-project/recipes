@@ -640,13 +640,16 @@ guide: |
   [SemiAnalysis InferenceX](https://inferencex.semianalysis.com/) MI355X
   benchmark lane for this checkpoint is a separate **high-concurrency benchmark**
   configuration — not the recipe default. To reproduce that sweep, start from the
-  default command above and apply these deltas: use `--tensor-parallel-size 4`
-  (the sweep runs TP4; the default recipe keeps TP8 for KV-cache and
-  multimodal-encoder headroom), add `--kv-cache-dtype fp8`, force the AITER MXFP4
-  MoE backend with `--moe-backend aiter` plus the AITER MoE env vars below, run on
-  a current `vllm/vllm-openai-rocm:nightly` (the lane pins a specific nightly
-  build — don't hard-code a transient tag), and export INT4 quantized all-reduce
-  before launch:
+  default command above and apply these deltas:
+
+  - Use `--tensor-parallel-size 4` (the sweep runs TP4; the default recipe keeps
+    TP8 for KV-cache and multimodal-encoder headroom).
+  - Add `--kv-cache-dtype fp8`.
+  - Force the AITER MXFP4 MoE backend with `--moe-backend aiter` plus the AITER
+    MoE env vars below.
+  - Run on a current `vllm/vllm-openai-rocm:nightly` (the lane pins a specific
+    nightly build — don't hard-code a transient tag).
+  - Export INT4 quantized all-reduce before launch:
 
   ```bash
   # Kernel selection — required to match the benchmarked MoE path.
