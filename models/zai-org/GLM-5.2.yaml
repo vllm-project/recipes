@@ -54,23 +54,18 @@ features:
         variants:
           - default
           - nvfp4
+          - bf16
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":5}'
       dspark:
         label: "DSpark"
-        description: "DSpark drafting, 7 draft tokens, greedy. Requires the DSpark checkpoint (Variant row)."
+        description: "DSpark drafting with an externally trained 7-token draft model; the served GLM checkpoint is unchanged."
         variants:
           - default
         args:
           - "--speculative-config"
           - '{"model": "RedHatAI/GLM-5.2-speculator.dspark","num_speculative_tokens": 7,"method": "dspark"}'
-    
-    args:
-      - "--speculative-config.method"
-      - "mtp"
-      - "--speculative-config.num_speculative_tokens"
-      - "5"
 
 opt_in_features:
   - spec_decoding

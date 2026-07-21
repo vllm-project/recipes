@@ -215,6 +215,58 @@ guide: |
   - [Model card](https://huggingface.co/deepseek-ai/DeepSeek-V3.2)
 ```
 
+### Multiple speculative-decoding methods
+
+Keep the flat `features.spec_decoding.args` form when a recipe has one method.
+When the same served checkpoint can use multiple mutually exclusive methods,
+replace `args` with a `modes` map:
+
+```yaml
+features:
+  spec_decoding:
+    description: "Speculative decoding — pick a drafting method."
+    default_mode: mtp
+    modes:
+      mtp:
+        label: "MTP"
+        description: "Native multi-token prediction head."
+        args: ["--speculative-config", '{"method":"mtp","num_speculative_tokens":2}']
+      eagle3:
+        label: "EAGLE3"
+        description: "Community-trained external draft model."
+        args: ["--speculative-config", '{"method":"eagle3","model":"community/model-eagle3","num_speculative_tokens":5}']
+
+opt_in_features: [spec_decoding]
+```
+
+`default_mode` is the recommended selection when the feature is enabled. A
+mode can use `variants: [default, fp8]` to limit it to particular served
+checkpoints and `hardware: { hopper: unsupported }` to disable it on a GPU
+family. Per-mode `hardware_overrides.<generation>.args` can replace its config
+for one hardware generation.
+
+The served checkpoint and speculative method are separate axes: only a
+variant's `model_id` changes `vllm serve <checkpoint>`; a mode contributes only
+the speculative arguments. If a draft is baked into a separately served
+checkpoint, model it as a variant and couple its recommended method with
+`default_modes`:
+
+```yaml
+variants:
+  fused_eagle3:
+    model_id: "community/model-with-eagle3"
+    label: "EAGLE3"
+    precision: fp8
+    vram_minimum_gb: 128
+    default_modes:
+      spec_decoding: eagle3
+```
+
+Declaring `default_modes` also enables that feature by default for the variant,
+even when it appears in `opt_in_features`. The build validator rejects mixed
+`args` + `modes`, unknown mode/variant references, and variants with no usable
+mode.
+
 ## VRAM formula
 
 `vram_minimum_gb = ceil(params × bytes_per_param × 1.2)` — uses **total**
