@@ -19,15 +19,11 @@ meta:
 
 model:
   model_id: "thinkingmachines/Inkling-NVFP4"
-  min_vllm_version: "nightly"
-  docker_image:
-    nvidia: "vllm/vllm-openai:nightly"
+  min_vllm_version: "0.26.0"
   nightly_required: true
   install:
     docker:
-      note: "Use the dedicated image until changes land in vllm:latest."
     pip:
-      note: "Use the dedicated image until changes land in vllm repo"
   architecture: moe
   parameter_count: "975B"
   active_parameters: "41B"
@@ -92,7 +88,6 @@ compatible_strategies:
   # tuning in strategy_overrides. Blackwell still defaults to multi_node_tp
   # (recommendStrategy hardcodes TP-first, unaffected by this order).
   - multi_node_dep
-  - multi_node_tp_pp
   - multi_node_tep
   - pd_cluster
 
