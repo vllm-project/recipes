@@ -109,6 +109,13 @@ export function recommendStrategy(recipe, _hwProfile, nodeCount = 1) {
  * Returns an ordered subset of ["tp", "tep", "dep"]; never empty (falls back to
  * ["tp"]). EP modes (tep/dep) are inherently MoE-only, which compatible_strategies
  * already encodes — dense recipes don't list them.
+ *
+ * `strategy_overrides.pd_cluster.pool_modes: [<mode>, …]` narrows the PD-pool
+ * parallelism set INDEPENDENTLY of the serving Strategy row. Use it when a model
+ * serves fine standalone under TP/TEP/DEP (so those stay in compatible_strategies)
+ * but disaggregated PD should only use a subset — e.g. `pool_modes: [dep]` locks
+ * both pools to DEP while the Strategy row keeps offering TP/TEP. Ignored if it
+ * would leave no offered mode.
  */
 export function pdPoolModes(recipe) {
   const compat = recipe?.compatible_strategies || [];
@@ -120,7 +127,14 @@ export function pdPoolModes(recipe) {
     else if (/(?:^|_)tp(?:_pp)?$/.test(s)) modes.add("tp");
   }
   if (modes.size === 0) modes.add("tp");
-  return ["tp", "tep", "dep"].filter((m) => modes.has(m));
+  let ordered = ["tp", "tep", "dep"].filter((m) => modes.has(m));
+  const restrict = recipe?.strategy_overrides?.pd_cluster?.pool_modes;
+  if (Array.isArray(restrict) && restrict.length) {
+    const allow = new Set(restrict);
+    const narrowed = ordered.filter((m) => allow.has(m));
+    if (narrowed.length) ordered = narrowed;
+  }
+  return ordered;
 }
 
 /**
@@ -825,7 +839,13 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       const poolGpus = rolePoolNodes === 0
         ? Math.floor(gpuCount / 2)
         : rolePoolNodes * gpuCount;
-      const parallelism = pdRole.parallelism || soRoleCfg.parallelism || roleCfg.parallelism || "tp";
+      let parallelism = pdRole.parallelism || soRoleCfg.parallelism || roleCfg.parallelism || "tp";
+      // Honor a per-recipe PD-pool restriction (strategy_overrides.pd_cluster.
+      // pool_modes). If the resolved mode isn't offered — e.g. the UI/JSON-API
+      // fell back to "tp" but the recipe locks pools to DEP — snap to the first
+      // allowed mode so callers that don't pre-clamp stay consistent.
+      const allowedPoolModes = pdPoolModes(recipe);
+      if (!allowedPoolModes.includes(parallelism)) parallelism = allowedPoolModes[0];
 
       if (parallelism === "dep") {
         // Data-parallel + expert-parallel pool (Kimi-K2.5 GB200 pattern).
