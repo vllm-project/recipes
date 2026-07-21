@@ -3,7 +3,7 @@ meta:
   slug: "deepseek-v4-flash"
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
-  date_updated: 2026-05-01
+  date_updated: 2026-07-16
   difficulty: hard
   tasks:
     - text
@@ -17,7 +17,7 @@ meta:
     gb300: verified
     dgx_station_gb300: verified
     mi300x: unsupported
-    mi325x: unsupported
+    mi325x: verified
     mi355x: verified
 
 model:
@@ -280,6 +280,36 @@ guide: |
     --max-cudagraph-capture-size 128 \
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
   ```
+
+  ### MI325X (1×256GB)
+
+  Validated end-to-end with vLLM 0.25.0 and PyTorch HIP 7.2.53211. Use this
+  conservative TP1 eager-mode launch instead of the MI355X throughput settings:
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+
+  vllm serve deepseek-ai/DeepSeek-V4-Flash \
+    --host 0.0.0.0 \
+    --port 8002 \
+    --tensor-parallel-size 1 \
+    --kv-cache-dtype fp8_e4m3 \
+    --max-model-len 4096 \
+    --enable-chunked-prefill \
+    --max-num-batched-tokens 256 \
+    --kv-cache-memory-bytes 10000000000 \
+    --distributed-executor-backend mp \
+    --trust-remote-code \
+    --tokenizer-mode deepseek_v4 \
+    --moe-backend triton_unfused \
+    --enforce-eager
+  ```
+
+  Chunked prefill allows 4K requests while scheduling at most 256 tokens per
+  batch. This configuration loaded the 148.66 GiB checkpoint and passed model-list
+  and chat probes in non-thinking and Think High modes during a 24-hour allocation.
+  Only TP1 at 4K context is verified; TP2+ did not validate successfully. Think Max
+  requires at least 384K context and is not available with this configuration.
 
   ### MI355X (4×288GB)
 
