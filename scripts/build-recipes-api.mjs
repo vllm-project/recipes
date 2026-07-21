@@ -128,12 +128,89 @@ function synthesizeInstall(recipe) {
 }
 
 // Mirror CommandBuilder.jsx: features default to (all) − (opt_in_features) −
-// (hardware_opt_in_features[hw]). spec_decoding is treated as a normal opt-in
-// (off by default); agents that want it must add it explicitly.
-function defaultFeaturesFor(recipe, hwId) {
+// (hardware_opt_in_features[hw]). A variant can force an otherwise opt-in
+// feature on by declaring `default_modes.<feature>` — e.g. a fused DSpark
+// checkpoint should render with its DSpark config in the recommended command.
+function defaultFeaturesFor(recipe, hwId, variantKey = "default") {
   const optIn = new Set(recipe.opt_in_features || []);
   for (const f of recipe.hardware_opt_in_features?.[hwId] || []) optIn.add(f);
-  return Object.keys(recipe.features || {}).filter((f) => !optIn.has(f));
+  const forced = new Set(Object.keys(recipe.variants?.[variantKey]?.default_modes || {}));
+  return Object.keys(recipe.features || {}).filter((f) => forced.has(f) || !optIn.has(f));
+}
+
+// Validate the feature/mode cross-references before synthesis. Modes are
+// intentionally a strict alternative to a feature's flat `args`: accepting
+// both makes one silently shadow the other. Every checkpoint must retain at
+// least one usable mode so enabling the parent feature can never be a no-op.
+function validateFeatureModes(recipe, sourceFile) {
+  const errors = [];
+  const features = recipe.features || {};
+  const variants = recipe.variants || {};
+
+  for (const [featureKey, feature] of Object.entries(features)) {
+    if (feature?.modes === undefined) continue;
+    const modes = feature.modes;
+    const modeKeys = modes && typeof modes === "object" && !Array.isArray(modes)
+      ? Object.keys(modes)
+      : [];
+
+    if (modeKeys.length === 0) {
+      errors.push(`features.${featureKey}.modes must be a non-empty map`);
+      continue;
+    }
+    if (feature.args !== undefined) {
+      errors.push(`features.${featureKey} cannot declare both args and modes`);
+    }
+    if (feature.default_mode && !modeKeys.includes(feature.default_mode)) {
+      errors.push(`features.${featureKey}.default_mode references unknown mode ${feature.default_mode}`);
+    }
+
+    for (const [modeKey, mode] of Object.entries(modes)) {
+      if (!Array.isArray(mode?.args)) {
+        errors.push(`features.${featureKey}.modes.${modeKey}.args must be an array`);
+      }
+      if (mode?.variants !== undefined && !Array.isArray(mode.variants)) {
+        errors.push(`features.${featureKey}.modes.${modeKey}.variants must be an array`);
+      }
+      const modeVariants = Array.isArray(mode?.variants) ? mode.variants : [];
+      for (const variantKey of modeVariants) {
+        if (!Object.hasOwn(variants, variantKey)) {
+          errors.push(`features.${featureKey}.modes.${modeKey}.variants references unknown variant ${variantKey}`);
+        }
+      }
+    }
+
+    for (const variantKey of Object.keys(variants)) {
+      const available = modeKeys.some((modeKey) => {
+        const allow = modes[modeKey]?.variants;
+        return !Array.isArray(allow) || allow.length === 0 || allow.includes(variantKey);
+      });
+      if (!available) {
+        errors.push(`features.${featureKey} has no mode available for variant ${variantKey}`);
+      }
+    }
+  }
+
+  for (const [variantKey, variant] of Object.entries(variants)) {
+    for (const [featureKey, modeKey] of Object.entries(variant?.default_modes || {})) {
+      const feature = features[featureKey];
+      const mode = feature?.modes?.[modeKey];
+      if (!feature) {
+        errors.push(`variants.${variantKey}.default_modes references unknown feature ${featureKey}`);
+      } else if (!feature.modes) {
+        errors.push(`variants.${variantKey}.default_modes references non-modal feature ${featureKey}`);
+      } else if (!mode) {
+        errors.push(`variants.${variantKey}.default_modes.${featureKey} references unknown mode ${modeKey}`);
+      } else if (Array.isArray(mode.variants) && mode.variants.length > 0 && !mode.variants.includes(variantKey)) {
+        errors.push(`variants.${variantKey}.default_modes.${featureKey} selects mode ${modeKey}, which is unavailable for that variant`);
+      }
+    }
+  }
+
+  if (errors.length) {
+    const rel = path.relative(ROOT, sourceFile);
+    throw new Error(`Invalid feature modes in ${rel}:\n  - ${errors.join("\n  - ")}`);
+  }
 }
 
 // Wrap a rendered (command, argv) pair in `docker run`. Returns
@@ -343,7 +420,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     ) || compatible.find((s) => strategies[s]?.deploy_type !== "kv_store_lb")
       || recommendedStrategy;
   }
-  const recommendedFeatures = defaultFeaturesFor(recipe, hwId);
+  const recommendedFeatures = defaultFeaturesFor(recipe, hwId, variantKey);
 
   // PD's node-count is independent of nodeCount — it lives in pdNodes per role.
   const recommendedPdNodes = recommendedStrategy === "pd_cluster"
@@ -406,7 +483,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     } else {
       nc = s.startsWith("multi_node_") ? 2 : 1;
     }
-    const feats = defaultFeaturesFor(recipe, hwId);
+    const feats = defaultFeaturesFor(recipe, hwId, variantKey);
     const rendered = renderCommand(recipe, variantKey, servingStrategy, hwId, nc, feats, strategies, taxonomy, pdNodes, kvOffload);
     if (rendered) alternatives[s] = rendered;
   }
@@ -570,6 +647,7 @@ let collisionCount = 0;
 
 for (const file of findYamlFiles(modelsDir)) {
   const r = normalizeDates(readYaml(file));
+  validateFeatureModes(r, file);
   // Derive HF identity from path. Only `hf_id` is exposed in the public JSON;
   // `org` and `repo` are trivially `hf_id.split("/")` for consumers.
   const rel = path.relative(modelsDir, file);
