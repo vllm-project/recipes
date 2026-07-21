@@ -19,9 +19,9 @@ meta:
 
 model:
   model_id: "thinkingmachines/Inkling-NVFP4"
-  min_vllm_version: "0.26.0"
+  min_vllm_version: "nightly"
   docker_image:
-    nvidia: "vllm/vllm-openai:inkling"
+    nvidia: "vllm/vllm-openai:nightly"
   nightly_required: true
   install:
     docker:
@@ -63,6 +63,11 @@ features:
     args:
       - "--speculative-config"
       - '{"method":"mtp","num_speculative_tokens":8}'
+    hardware_overrides:
+      hopper:
+        args:
+          - "--speculative-config"
+          - '{"method":"mtp","num_speculative_tokens":1}'
 
 opt_in_features:
   - spec_decoding
@@ -82,14 +87,47 @@ compatible_strategies:
   - single_node_tp
   - single_node_tep
   - multi_node_tp
+  # multi_node_dep leads the multi-node siblings so Hopper (where multi_node_tp
+  # is gated below) falls back to DEP — the intended layout with the H20 TP8/DP2
+  # tuning in strategy_overrides. Blackwell still defaults to multi_node_tp
+  # (recommendStrategy hardcodes TP-first, unaffected by this order).
+  - multi_node_dep
   - multi_node_tp_pp
   - multi_node_tep
   - pd_cluster
 
+# H100/H200 lack the cross-node NVLink fabric that pure multi-node TP relies on
+# (every layer's all-reduce would cross the slow inter-node link), so it isn't a
+# usable layout for Inkling on Hopper — steer users to multi_node_dep (TP within
+# a node, DP across nodes) instead. Fail-open: absent = assumed to work.
+strategy_hardware:
+  multi_node_tp:
+    h100: unsupported
+    h200: unsupported
+  multi_node_tep:
+    h100: unsupported
+    h200: unsupported
+
 hardware_overrides: {}
-
-strategy_overrides: {}
-
+ 
+strategy_overrides: 
+  multi_node_dep:
+    # TP+DP+EP
+    hardware_overrides:
+      hopper:
+        extra_args:
+          - "--max-model-len"
+          - "131072"
+          - "--max-num-seqs"
+          - "10"
+          - "--tensor-parallel-size"
+          - "8"
+          - "--data-parallel-size"
+          - "2"
+          - "--data-parallel-size-local"
+          - "1"
+          
+          
 guide: |
   ## Overview
 
@@ -120,11 +158,11 @@ guide: |
     qkvr linears remain BF16. This is a mixed-precision checkpoint and requires **Blackwell**
     FP4 tensor cores (B200 / GB200).
   - **BF16:** Full BF16 weights (`thinkingmachines/Inkling`). Runs on both **Hopper**
-    (H200) and Blackwell, at the cost of substantially more VRAM.
+    (H200&H20) and Blackwell, at the cost of substantially more VRAM.
 
   ## Prerequisites
 
-  - **Hardware:** NVIDIA Blackwell (B200 / GB200) for the NVFP4 variant; Hopper (H200) or
+  - **Hardware:** NVIDIA Blackwell (B200 / GB200) for the NVFP4 variant; Hopper (H200&H20) or
     Blackwell for the BF16 variant. Broader hardware support is in progress.
   - **vLLM:** Nightly wheels (Day-0 support just landed).
   - **Parallelism:** 1T parameters requires multi-GPU. The featured configuration is 4x GB200
@@ -146,6 +184,10 @@ guide: |
     --kernel-config.enable_flashinfer_autotune=False \
     --trust-remote-code
   ```
+
+  For a multi-node BF16 deployment on Hopper (H200/H20), select the **DEP**
+  strategy with **Nodes = 2** in the command builder above — it renders the
+  per-node `vllm serve` commands (TP within each node, DP across nodes).
 
   Query the server with the OpenAI SDK, including an image input:
   ```python

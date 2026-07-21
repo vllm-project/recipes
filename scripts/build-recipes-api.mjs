@@ -326,11 +326,23 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
       return scalable && isKvStoreBrandSupported(hwProfile)
         && recipe.kv_cache_strategy_hardware?.[s]?.[hwId] !== "unsupported";
     }
+    // Serving-strategy per-GPU opt-out (mirrors kv_cache_strategy_hardware),
+    // fail-open: a recipe marks a (strategy, GPU) pair `unsupported` under
+    // `strategy_hardware` when that layout isn't usable on that GPU.
+    if (recipe.strategy_hardware?.[s]?.[hwId] === "unsupported") return false;
     return scalable || (!s.startsWith("multi_node_") && s !== "pd_cluster");
   });
   const supportsMultiNode = scalable && compatible.some((s) => s.startsWith("multi_node_"));
   const recommendedNodeCount = !fitsSingleNode(hwProfile, variant) && supportsMultiNode ? 2 : 1;
-  const recommendedStrategy = recommendStrategy(recipe, hwProfile, recommendedNodeCount);
+  let recommendedStrategy = recommendStrategy(recipe, hwProfile, recommendedNodeCount);
+  // Never recommend a strategy the recipe opted this GPU out of via
+  // strategy_hardware — fall back to the first compatible serving strategy.
+  if (recipe.strategy_hardware?.[recommendedStrategy]?.[hwId] === "unsupported") {
+    recommendedStrategy = compatible.find(
+      (s) => strategies[s]?.deploy_type !== "kv_store_lb" && s !== "pd_cluster"
+    ) || compatible.find((s) => strategies[s]?.deploy_type !== "kv_store_lb")
+      || recommendedStrategy;
+  }
   const recommendedFeatures = defaultFeaturesFor(recipe, hwId);
 
   // PD's node-count is independent of nodeCount — it lives in pdNodes per role.

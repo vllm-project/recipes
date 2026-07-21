@@ -869,12 +869,21 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     [recipe, hwId]
   );
 
+  // Serving-strategy per-GPU opt-out, mirroring kv_cache_strategy_hardware but
+  // for the Strategy row: a recipe marks a (strategy, GPU) pair `unsupported`
+  // under `strategy_hardware` (fail-open — absent = works). The pill renders
+  // disabled with a tooltip and the active/recommended resolution skips it.
+  const isStrategySupported = useCallback(
+    (s, hardwareId = hwId) => recipe.strategy_hardware?.[s]?.[hardwareId] !== "unsupported",
+    [recipe, hwId]
+  );
+
   // PD now sizes each pool independently, so the "2× model VRAM on one node"
   // concern that used to invalidate pd_cluster on small GPUs no longer applies.
-  const recommendedServingStrategy = compatibleStrategies.includes(recommended)
+  const recommendedServingStrategy = (compatibleStrategies.includes(recommended) && isStrategySupported(recommended))
     ? recommended
-    : (compatibleStrategies[0] || recommended);
-  const activeServingStrategy = compatibleStrategies.includes(strategyOverride)
+    : (compatibleStrategies.find((s) => isStrategySupported(s)) || compatibleStrategies[0] || recommended);
+  const activeServingStrategy = (compatibleStrategies.includes(strategyOverride) && isStrategySupported(strategyOverride))
     ? strategyOverride
     : recommendedServingStrategy;
   // Downgrade an unusable KV-offload pick instead of rendering a broken
@@ -1981,15 +1990,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           <ConfigRow label="Strategy">
             <PillGroup>
               {compatibleStrategies.map((s) => {
+                const supported = isStrategySupported(s);
                 return (
                   <Pill
                     key={s}
                     active={activeServingStrategy === s}
-                    onClick={() => selectStrategy(s)}
-                    title={strategies[s]?.description}
+                    disabled={!supported}
+                    onClick={() => supported && selectStrategy(s)}
+                    title={supported
+                      ? strategies[s]?.description
+                      : `${strategies[s]?.display_name || s} isn't supported on ${hwProfile.display_name || hwId} for this model.`}
                   >
                     <span className="font-semibold">{strategies[s]?.display_name || s}</span>
-                    {s === recommended && (
+                    {s === recommended && supported && (
                       <Sparkles size={10} className="text-vllm-yellow ml-1" />
                     )}
                   </Pill>
