@@ -87,10 +87,26 @@ compatible_strategies:
   - single_node_tp
   - single_node_tep
   - multi_node_tp
+  # multi_node_dep leads the multi-node siblings so Hopper (where multi_node_tp
+  # is gated below) falls back to DEP — the intended layout with the H20 TP8/DP2
+  # tuning in strategy_overrides. Blackwell still defaults to multi_node_tp
+  # (recommendStrategy hardcodes TP-first, unaffected by this order).
+  - multi_node_dep
   - multi_node_tp_pp
   - multi_node_tep
-  - multi_node_dep
   - pd_cluster
+
+# H100/H200 lack the cross-node NVLink fabric that pure multi-node TP relies on
+# (every layer's all-reduce would cross the slow inter-node link), so it isn't a
+# usable layout for Inkling on Hopper — steer users to multi_node_dep (TP within
+# a node, DP across nodes) instead. Fail-open: absent = assumed to work.
+strategy_hardware:
+  multi_node_tp:
+    h100: unsupported
+    h200: unsupported
+  multi_node_tep:
+    h100: unsupported
+    h200: unsupported
 
 hardware_overrides: {}
  
@@ -169,57 +185,9 @@ guide: |
     --trust-remote-code
   ```
 
-  Launch the server (BF16 on 2 nodes of 8x H20):
-  ```bash
-  
-  node 0:
-  
-  export VLLM_USE_V2_MODEL_RUNNER=1
-  export FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED=1
-  vllm serve thinkingmachines/Inkling \
-  --trust-remote-code \
-  --tokenizer-mode inkling \
-  --kernel-config.enable_flashinfer_autotune=False \
-  --tensor-parallel-size 8 \
-  --enable-expert-parallel \
-  --data-parallel-rpc-port 13389 \
-  --data-parallel-size 2 \
-  --data-parallel-size-local 1 \
-  --data-parallel-address $masterip \
-  --data-parallel-hybrid-lb \
-  --max-model-len 131072 \
-  --max-num-seqs 10 \
-  --port 8000 \
-  --enable-auto-tool-choice \
-  --tool-call-parser inkling \
-  --speculative-config '{"method":"mtp","num_speculative_tokens":1}' \
-  --reasoning-parser inkling
-
-  node 1:
-  
-  export VLLM_USE_V2_MODEL_RUNNER=1
-  export FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED=1
-  vllm serve thinkingmachines/Inkling \
-  --trust-remote-code \
-  --tokenizer-mode inkling \
-  --kernel-config.enable_flashinfer_autotune=False \
-  --tensor-parallel-size 8 \
-  --enable-expert-parallel \
-  --data-parallel-rpc-port 13389 \
-  --data-parallel-size 2 \
-  --data-parallel-size-local 1 \
-  --data-parallel-start-rank 1 \
-  --data-parallel-address $masterip \
-  --data-parallel-hybrid-lb \
-  --max-model-len 131072 \
-  --max-num-seqs 10 \
-  --port 8000 \
-  --enable-auto-tool-choice \
-  --tool-call-parser inkling \
-  --speculative-config '{"method":"mtp","num_speculative_tokens":1}' \
-  --reasoning-parser inkling
-  
-  ```
+  For a multi-node BF16 deployment on Hopper (H200/H20), select the **DEP**
+  strategy with **Nodes = 2** in the command builder above — it renders the
+  per-node `vllm serve` commands (TP within each node, DP across nodes).
 
   Query the server with the OpenAI SDK, including an image input:
   ```python
