@@ -33,7 +33,7 @@ variants:
     vram_minimum_gb: 75
     description: "Full-precision BF16 base checkpoint (61 GB weights) - fits on 1x H200 or 2x H100"
   nvfp4:
-    model_id: "NatdhanaiPython/ThaiLLM-30B-NVFP4"
+    model_id: "AGIcafet/ThaiLLM-30B-NVFP4"
     precision: nvfp4
     vram_minimum_gb: 19
     tp: 1
@@ -70,7 +70,7 @@ guide: |
   same configuration.
 
   The NVFP4 variant is a community TensorRT Model Optimizer checkpoint
-  ([NatdhanaiPython/ThaiLLM-30B-NVFP4](https://huggingface.co/NatdhanaiPython/ThaiLLM-30B-NVFP4))
+  ([AGIcafet/ThaiLLM-30B-NVFP4](https://huggingface.co/AGIcafet/ThaiLLM-30B-NVFP4))
   calibrated on a 50/50 Thai/English mix, published with a full paired BF16-vs-NVFP4
   evaluation (details below). Weights shrink 61 GB -> 18.1 GB, which turns the model
   from "barely fits" into a comfortable single-DGX-Spark deployment with room for
@@ -95,7 +95,7 @@ guide: |
 
   ```bash
   docker run --gpus all -p 8000:8000 --ipc=host nvcr.io/nvidia/vllm:26.05.post1-py3 \
-    vllm serve NatdhanaiPython/ThaiLLM-30B-NVFP4 --attention-backend flashinfer
+    vllm serve AGIcafet/ThaiLLM-30B-NVFP4 --attention-backend flashinfer
   ```
 
   ## Launching the Server
@@ -110,7 +110,7 @@ guide: |
   ### NVFP4 on DGX Spark (GB10)
 
   ```bash
-  vllm serve NatdhanaiPython/ThaiLLM-30B-NVFP4 \
+  vllm serve AGIcafet/ThaiLLM-30B-NVFP4 \
     --attention-backend flashinfer \
     --max-model-len 32768 \
     --gpu-memory-utilization 0.70 \
@@ -149,7 +149,7 @@ guide: |
 
   client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
   resp = client.completions.create(
-      model="NatdhanaiPython/ThaiLLM-30B-NVFP4",
+      model="AGIcafet/ThaiLLM-30B-NVFP4",
       prompt="ประเทศไทยมีจังหวัดทั้งหมด",
       max_tokens=64,
       temperature=0.7,
@@ -173,7 +173,7 @@ guide: |
   ## References
 
   - [ThaiLLM-30B model card](https://huggingface.co/ThaiLLM/ThaiLLM-30B)
-  - [NVFP4 checkpoint + eval tables](https://huggingface.co/NatdhanaiPython/ThaiLLM-30B-NVFP4)
+  - [NVFP4 checkpoint + eval tables](https://huggingface.co/AGIcafet/ThaiLLM-30B-NVFP4)
   - [BF16-vs-NVFP4 study: methodology, scripts, full results](https://github.com/spped2000/thaillm-nvfp4-dgx-spark)
   - [ThaiLLM initiative](https://huggingface.co/ThaiLLM)
   - [NVIDIA DGX Spark vLLM playbook](https://build.nvidia.com/spark/vllm)
