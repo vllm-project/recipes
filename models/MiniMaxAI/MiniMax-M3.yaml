@@ -642,21 +642,34 @@ guide: |
   configuration — not the recipe default. To reproduce that sweep, start from the
   default command above and apply these deltas: use `--tensor-parallel-size 4`
   (the sweep runs TP4; the default recipe keeps TP8 for KV-cache and
-  multimodal-encoder headroom), add `--kv-cache-dtype fp8`, run on a current
-  `vllm/vllm-openai-rocm:nightly` (the lane pins a specific nightly build — don't
-  hard-code a transient tag), and export INT4 quantized all-reduce before launch:
+  multimodal-encoder headroom), add `--kv-cache-dtype fp8`, force the AITER MXFP4
+  MoE backend with `--moe-backend aiter` plus the AITER MoE env vars below, run on
+  a current `vllm/vllm-openai-rocm:nightly` (the lane pins a specific nightly
+  build — don't hard-code a transient tag), and export INT4 quantized all-reduce
+  before launch:
 
   ```bash
+  # Kernel selection — required to match the benchmarked MoE path.
+  # Without these (and `--moe-backend aiter` on the serve command), vLLM's MXFP4
+  # MoE oracle selects the TRITON_UNFUSED fallback on gfx950 instead of the
+  # AITER_MXFP4_MXFP4 kernel the InferenceX lane actually runs.
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_MOE=1
+  export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
+
   # Benchmark-only — accuracy-sensitive; NOT part of the default command.
   export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
   export VLLM_ROCM_QUICK_REDUCE_CAST_BF16_TO_FP16=0
   export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION_MIN_SIZE_KB=256
   ```
 
-  The INT4 all-reduce and fp8 KV-cache levers are throughput optimizations for
-  high concurrency and are **kept out of the default command pending accuracy
-  validation**. Performance figures on the InferenceX dashboard are **reported
-  externally by SemiAnalysis and have not been reproduced in this repository.**
+  Then add `--moe-backend aiter` to the serve command. Selecting the AITER MXFP4
+  MoE backend is a kernel-selection choice (same MXFP4 math, faster kernel), not a
+  precision reduction. The INT4 all-reduce and fp8 KV-cache levers are throughput
+  optimizations for high concurrency and are **kept out of the default command
+  pending accuracy validation**. Performance figures on the InferenceX dashboard
+  are **reported externally by SemiAnalysis and have not been reproduced in this
+  repository.**
 
   ## Troubleshooting
 
