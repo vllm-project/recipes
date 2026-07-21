@@ -663,9 +663,26 @@ guide: |
   export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION_MIN_SIZE_KB=256
   ```
 
-  Then add `--moe-backend aiter` to the serve command. Selecting the AITER MXFP4
-  MoE backend is a kernel-selection choice (same MXFP4 math, faster kernel), not a
-  precision reduction. The INT4 all-reduce and fp8 KV-cache levers are throughput
+  The full reproduction serve command is then:
+
+  ```bash
+  vllm serve amd/MiniMax-M3-MXFP4 \
+    --tensor-parallel-size 4 \
+    --trust-remote-code \
+    --block-size 128 \
+    --attention-backend TRITON_ATTN \
+    --moe-backend aiter \
+    --kv-cache-dtype fp8 \
+    --mm-encoder-tp-mode data \
+    --mm-encoder-attn-backend ROCM_AITER_FA \
+    --tool-call-parser minimax_m3 \
+    --enable-auto-tool-choice \
+    --reasoning-parser minimax_m3
+  ```
+
+  Selecting the AITER MXFP4 MoE backend (`--moe-backend aiter`) is a
+  kernel-selection choice (same MXFP4 math, faster kernel), not a precision
+  reduction. The INT4 all-reduce and fp8 KV-cache levers are throughput
   optimizations for high concurrency and are **kept out of the default command
   pending accuracy validation**. Performance figures on the InferenceX dashboard
   are **reported externally by SemiAnalysis and have not been reproduced in this
