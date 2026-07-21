@@ -172,7 +172,8 @@ function validateFeatureModes(recipe, sourceFile) {
       if (mode?.variants !== undefined && !Array.isArray(mode.variants)) {
         errors.push(`features.${featureKey}.modes.${modeKey}.variants must be an array`);
       }
-      for (const variantKey of mode?.variants || []) {
+      const modeVariants = Array.isArray(mode?.variants) ? mode.variants : [];
+      for (const variantKey of modeVariants) {
         if (!Object.hasOwn(variants, variantKey)) {
           errors.push(`features.${featureKey}.modes.${modeKey}.variants references unknown variant ${variantKey}`);
         }
@@ -194,7 +195,9 @@ function validateFeatureModes(recipe, sourceFile) {
     for (const [featureKey, modeKey] of Object.entries(variant?.default_modes || {})) {
       const feature = features[featureKey];
       const mode = feature?.modes?.[modeKey];
-      if (!feature?.modes) {
+      if (!feature) {
+        errors.push(`variants.${variantKey}.default_modes references unknown feature ${featureKey}`);
+      } else if (!feature.modes) {
         errors.push(`variants.${variantKey}.default_modes references non-modal feature ${featureKey}`);
       } else if (!mode) {
         errors.push(`variants.${variantKey}.default_modes.${featureKey} references unknown mode ${modeKey}`);
