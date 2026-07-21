@@ -115,6 +115,7 @@ guide: |
   ## Prerequisites
 
   - **vLLM version:** >= 0.17.0
+  - **DGX Spark NVFP4 vLLM version:** >= 0.24.0
   - **Hardware (BF16):** 1x H200 or 2x H100
   - **Hardware (FP8):** single H100/H200 or 1x MI300X/MI325X/MI355X
   - **Hardware (NVFP4):** NVIDIA Blackwell GPUs, including DGX Spark (GB10)
@@ -172,15 +173,19 @@ guide: |
   and requires vLLM nightly or a source build with ModelOpt W4A16/NVFP4 support.
 
   ```bash
+  # Use container: vllm/vllm-openai:v0.24.0-ubuntu2404
+
   vllm serve nvidia/Qwen3.6-35B-A3B-NVFP4 \
     --trust-remote-code \
     --kv-cache-dtype fp8 \
     --attention-backend flashinfer \
     --moe-backend marlin \
-    --gpu-memory-utilization 0.4 \
+    --gpu-memory-utilization 0.5 \
     --max-model-len 262144 \
-    --max-num-seqs 4 \
+    --max-num-seqs 8 \
     --max-num-batched-tokens 8192 \
+    --enable-chunked-prefill \
+    --async-scheduling \
     --enable-prefix-caching \
     --speculative-config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}' \
     --load-format fastsafetensors \
