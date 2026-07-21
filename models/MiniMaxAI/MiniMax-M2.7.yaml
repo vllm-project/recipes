@@ -56,6 +56,19 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
+    hardware_overrides:
+      dgx_station_gb300:
+        extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--gpu-memory-utilization"
+          - "0.92"
+          - "--load-format"
+          - "fastsafetensors"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
+          - "--enable-prefix-caching"
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
