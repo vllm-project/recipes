@@ -144,7 +144,7 @@ variants:
         extra_env:
           VLLM_ROCM_USE_AITER: "1"
           VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
-          VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT6"
+          VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
   nvfp4:
     model_id: "nvidia/MiniMax-M3-NVFP4"
     precision: nvfp4
@@ -517,7 +517,7 @@ guide: |
   ```
 
   On AMD MI355X the **mxfp8** variant additionally enables the AITER kernels,
-  the fused shared-experts MoE, and INT6 QuickReduce, and pulls the nightly ROCm
+  the fused shared-experts MoE, and INT4 QuickReduce, and pulls the nightly ROCm
   image (`vllm/vllm-openai-rocm:nightly`) — selected automatically in the command
   builder; other MI3xx GPUs keep the pinned image. If you launch by hand:
 
@@ -525,7 +525,7 @@ guide: |
   export VLLM_USE_BREAKABLE_CUDAGRAPH=0
   export VLLM_ROCM_USE_AITER=1
   export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
-  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT6
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
 
   vllm serve MiniMaxAI/MiniMax-M3-MXFP8 \
     --tensor-parallel-size 8 \
@@ -534,6 +534,47 @@ guide: |
     --tool-call-parser minimax_m3 \
     --reasoning-parser minimax_m3 \
     --enable-auto-tool-choice
+  ```
+
+  ### MXFP8 high-concurrency options on MI355X
+
+  The command above is the default serving configuration and is tuned for the
+  general case. **AITER page-16 sparse paged attention** helps specifically at **long context and
+  high concurrency**. It maps MiniMax-M3's top-k 128-token MSA blocks onto AITER page-16 block tables
+  and runs AITER Gluon paged attention over only the selected KV pages.
+
+  The high-concurrency configuration is:
+
+  ```bash
+  # Long context + high concurrency only (isl >= 8k, conc >= 64). Regresses
+  # short-context / low-concurrency serving.
+  export VLLM_USE_BREAKABLE_CUDAGRAPH=0
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
+  export VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=1
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+  export VLLM_ROCM_QUICK_REDUCE_CAST_BF16_TO_FP16=0
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION_MIN_SIZE_KB=256
+
+  vllm serve MiniMaxAI/MiniMax-M3-MXFP8 \
+    --tensor-parallel-size 4 \
+    --block-size 128 \
+    --language-model-only \
+    --moe-backend aiter \
+    --kv-cache-dtype fp8 \
+    --max-num-batched-tokens 32768 \
+    --attention-backend TRITON_ATTN \
+    --linear-backend emulation \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
+
+  Note: Outside the long-context/high-batch
+  regime the shuffled layout costs more than it saves; leave it at `0`:
+
+  ```bash
+  export VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=0
   ```
 
   ## Quantized Variant (NVFP4 on Blackwell)
