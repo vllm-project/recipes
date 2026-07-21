@@ -105,7 +105,7 @@ strategy_hardware:
 
 hardware_overrides: {}
  
-strategy_overrides: 
+strategy_overrides:
   multi_node_dep:
     # TP+DP+EP
     hardware_overrides:
@@ -121,6 +121,16 @@ strategy_overrides:
           - "2"
           - "--data-parallel-size-local"
           - "1"
+  # PD disaggregation only makes sense with DEP pools for Inkling — pin both
+  # prefill and decode to DEP. This does NOT touch the Strategy row: TP/TEP stay
+  # available as standalone serving strategies via compatible_strategies above.
+  pd_cluster:
+    pool_modes:
+      - dep
+    prefill:
+      parallelism: dep
+    decode:
+      parallelism: dep
           
           
 guide: |
