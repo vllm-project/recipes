@@ -755,10 +755,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       : "$HEAD_IP";
 
     if (isMulti && parallelFlag === "--data-parallel-size") {
-    // dp-local may be overridden by the recipe (hybrid TP+DP: TP within a node,
-    // DP across nodes → dp_local < gpuCount).
-    // The example worker is node 1, so its DP start rank = 1 × dp_local, not a
-    // full node's worth of GPUs.
+      // dp-local may be overridden by the recipe (hybrid TP+DP: TP within a node,
+      // DP across nodes → dp_local < gpuCount).
+      // The example worker is node 1, so its DP start rank = 1 × dp_local, not a
+      // full node's worth of GPUs.
   const soDep = recipe.strategy_overrides?.[strategyName];
   const soDepHo = soDep?.hardware_overrides?.[gen]
     || (hwProfile?.brand === "NVIDIA" ? soDep?.hardware_overrides?.nvidia : null);
