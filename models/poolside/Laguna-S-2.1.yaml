@@ -3,7 +3,7 @@ meta:
   slug: "laguna-s-2.1"
   provider: "Poolside"
   description: "Poolside's 118B total / 8B activated MoE coding model with mixed sliding-window + global attention, native interleaved reasoning, and 256K context — the larger sibling of Laguna XS-2.1, tuned for agentic coding."
-  date_updated: 2026-07-21
+  date_updated: 2026-07-22
   difficulty: intermediate
   tasks:
     - text
@@ -13,6 +13,7 @@ meta:
     - "poolside/Laguna-M.1"
   hardware:
     h200: verified
+    mi325x: verified
 
 model:
   model_id: "poolside/Laguna-S-2.1"
@@ -53,6 +54,13 @@ variants:
     precision: bf16
     vram_minimum_gb: 282
     description: "BF16 weights (~235GB) — needs a multi-GPU node (≥2× H200/B200, or a full HGX node)"
+    hardware_overrides:
+      mi325x:
+        docker_image: "vllm/vllm-openai-rocm:nightly-387189c42997b27e2c04b5d97ef8190ffa2bf909"
+        extra_env:
+          VLLM_ROCM_USE_AITER: "1"
+          VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
+          VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
   fp8:
     model_id: "poolside/Laguna-S-2.1-FP8"
     precision: fp8
@@ -157,6 +165,21 @@ guide: |
     --enable-auto-tool-choice \
     --tool-call-parser poolside_v1 \
     --reasoning-parser poolside_v1
+  ```
+
+  ### AMD ROCm — 8× MI325X (BF16, TP8)
+  ```bash
+  VLLM_ROCM_USE_AITER=1 \
+  VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1 \
+  VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4 \
+  vllm serve poolside/Laguna-S-2.1 \
+    --trust-remote-code \
+    --tensor-parallel-size 8 \
+    --max-model-len 262144 \
+    --enable-auto-tool-choice \
+    --tool-call-parser poolside_v1 \
+    --reasoning-parser poolside_v1 \
+    --default-chat-template-kwargs '{"enable_thinking":true}'
   ```
 
   ### Single GPU (INT4 on H200, or NVFP4 on B200)
