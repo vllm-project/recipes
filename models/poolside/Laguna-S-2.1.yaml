@@ -68,6 +68,14 @@ variants:
     description: "Block-FP8 weights + FP8 KV cache (~121GB) — a hair over one 141GB H200, so TP2 (or a single 268GB B300)"
     extra_env:
       VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER: "0"
+    hardware_overrides:
+      mi325x:
+        docker_image: "vllm/vllm-openai-rocm:nightly-387189c42997b27e2c04b5d97ef8190ffa2bf909"
+        extra_env:
+          VLLM_ROCM_USE_AITER: "1"
+          VLLM_ROCM_USE_AITER_MOE: "0"
+          VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
+          VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
   nvfp4:
     model_id: "poolside/Laguna-S-2.1-NVFP4"
     precision: nvfp4
@@ -181,6 +189,25 @@ guide: |
     --reasoning-parser poolside_v1 \
     --default-chat-template-kwargs '{"enable_thinking":true}'
   ```
+
+  ### AMD ROCm — 8× MI325X (FP8, TP8)
+  ```bash
+  VLLM_ROCM_USE_AITER=1 \
+  VLLM_ROCM_USE_AITER_MOE=0 \
+  VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1 \
+  VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4 \
+  vllm serve poolside/Laguna-S-2.1-FP8 \
+    --trust-remote-code \
+    --tensor-parallel-size 8 \
+    --max-model-len 262144 \
+    --enable-auto-tool-choice \
+    --tool-call-parser poolside_v1 \
+    --reasoning-parser poolside_v1 \
+    --default-chat-template-kwargs '{"enable_thinking":true}'
+  ```
+
+  For FP8 on MI325X, disable AITER MoE because its blockscale kernel currently
+  corrupts logits. Other AITER operators remain enabled; vLLM uses Triton MoE.
 
   ### Single GPU (INT4 on H200, or NVFP4 on B200)
   ```bash
