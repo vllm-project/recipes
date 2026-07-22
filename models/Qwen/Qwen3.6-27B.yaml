@@ -16,6 +16,7 @@ meta:
     dgx_spark_gb10: verified
     rtx_pro_6000: verified
     dgx_station_gb300: verified
+    rtx_5090: verified
 
 model:
   model_id: "Qwen/Qwen3.6-27B"
@@ -108,6 +109,22 @@ variants:
           - "--load-format"
           - "fastsafetensors"
           - "--async-scheduling"
+      rtx_5090:
+        extra_args:
+          - "--max-model-len"
+          - "131072"
+          - "--max-num-seqs"
+          - "4"
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--attention-backend"
+          - "flashinfer"
+          - "--enable-chunked-prefill"
+          - "--enable-prefix-caching"
+          - "--max-num-batched-tokens"
+          - "4096"
+          - "--gpu-memory-utilization"
+          - "0.95"
 
 compatible_strategies:
   - single_node_tp

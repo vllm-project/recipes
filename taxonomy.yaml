@@ -104,6 +104,20 @@ hardware_profiles:
     scalable: false
     restricted: true
 
+  # RTX 5090 — single-GPU RTX 5090 system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware`
+  rtx_5090:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX 5090"
+    description: "NVIDIA RTX 5090 · 1× RTX 5090 GPU · 32 GB VRAM"
+    gpu_count: 1
+    vram_gb: 32
+    multi_node: false
+    scalable: false
+    restricted: true
+
   # ── AMD Instinct ──
   mi300x:
     brand: AMD
