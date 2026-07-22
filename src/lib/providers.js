@@ -45,6 +45,7 @@ export const PROVIDERS = {
   "LiquidAI":        { display_name: "Liquid AI",                  logo: "/providers/LiquidAI.png" },
   "thinkingmachines":{ display_name: "Thinking Machines Lab",         logo: "/providers/thinkingmachines.png" },
   "RedHatAI":        { display_name: "Red Hat AI",                    logo: "/providers/RedHatAI.png" },
+  "mindlab-research":{ display_name: "MindLab Research",               logo: "/providers/mindlab-research.png" },
 };
 
 export function getProviderLogo(hfOrg) {
