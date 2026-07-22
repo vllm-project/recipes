@@ -204,7 +204,6 @@ guide: |
       --max-model-len 262144 \
       --gpu-memory-utilization 0.92 \
       --max-num-seqs 8 \
-      --attention-backend flashinfer \
       --max-num-batched-tokens 16384 \
       --kv-cache-dtype fp8 \
       --mamba-cache-mode align \

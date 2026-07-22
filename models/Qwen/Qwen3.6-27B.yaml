@@ -171,7 +171,6 @@ guide: |
   vllm serve nvidia/Qwen3.6-27B-NVFP4 \
     --trust-remote-code \
     --kv-cache-dtype fp8 \
-    --attention-backend flashinfer \
     --gpu-memory-utilization 0.5 \
     --max-model-len 262144 \
     --max-num-seqs 8 \
@@ -198,7 +197,6 @@ guide: |
   vllm serve nvidia/Qwen3.6-27B-NVFP4 \
     --trust-remote-code \
     --kv-cache-dtype fp8 \
-    --attention-backend flashinfer \
     --gpu-memory-utilization 0.9 \
     --max-model-len 262144 \
     --max-num-seqs 8 \

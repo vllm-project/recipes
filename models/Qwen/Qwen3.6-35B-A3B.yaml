@@ -90,8 +90,6 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-      - "--attention-backend"
-      - "flashinfer"
       - "--moe-backend"
       - "marlin"
       - "--enable-prefix-caching"
@@ -188,7 +186,6 @@ guide: |
   vllm serve nvidia/Qwen3.6-35B-A3B-NVFP4 \
     --trust-remote-code \
     --kv-cache-dtype fp8 \
-    --attention-backend flashinfer \
     --moe-backend marlin \
     --gpu-memory-utilization 0.5 \
     --max-model-len 262144 \
@@ -217,7 +214,6 @@ guide: |
     --tensor-parallel-size 1 \
     --trust-remote-code \
     --kv-cache-dtype fp8 \
-    --attention-backend flashinfer \
     --moe-backend marlin \
     --gpu-memory-utilization 0.9 \
     --max-model-len 262144 \
