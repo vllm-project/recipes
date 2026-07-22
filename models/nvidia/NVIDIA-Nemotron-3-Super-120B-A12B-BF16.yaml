@@ -15,6 +15,7 @@ meta:
     b200: verified
     dgx_station_gb300: verified
     dgx_spark_gb10: verified
+    rtx_pro_6000: verified
 
 model:
   model_id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16"
@@ -79,6 +80,10 @@ variants:
           - "flashinfer_b12x"
           - "--linear-backend"
           - "flashinfer_b12x"
+      rtx_pro_6000:
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
 
   base_bf16:
     model_id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-Base-BF16"
@@ -180,6 +185,35 @@ guide: |
     --enable-auto-tool-choice \
     --tool-call-parser qwen3_coder \
     --reasoning-parser nemotron_v3
+  ```
+
+  ### RTX Pro 6000 NVFP4
+
+  The NVFP4 variant runs on a single RTX Pro 6000 at TP=1. Requires vLLM v0.24.0 or later. A few notes:
+
+  - **Set `--gpu-memory-utilization 0.92`** to avoid an OOM at startup. If you encounter an OOM, try adjusting the value.
+  - **Set `VLLM_FLOAT32_MATMUL_PRECISION="high"`** to use high precision for the matmul operations.
+  - **Set `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1`** to allow the model to use the full context length.
+
+  ```bash
+  # Use container: vllm/vllm-openai:v0.24.0-ubuntu2404
+
+  VLLM_FLOAT32_MATMUL_PRECISION="high" \
+  VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
+  vllm serve nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4 \
+      --max-model-len 262144 \
+      --gpu-memory-utilization 0.92 \
+      --max-num-seqs 8 \
+      --attention-backend flashinfer \
+      --max-num-batched-tokens 16384 \
+      --kv-cache-dtype fp8 \
+      --mamba-cache-mode align \
+      --mamba_ssm_cache_dtype float32 \
+      --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
+      --enable-prefix-caching \
+      --reasoning-parser nemotron_v3 \
+      --enable-auto-tool-choice \
+      --tool-call-parser qwen3_xml
   ```
 
   ## Benchmarking
