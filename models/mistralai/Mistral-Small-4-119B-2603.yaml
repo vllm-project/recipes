@@ -21,8 +21,6 @@ model:
   base_args:
     - "--max-model-len"
     - "262144"
-    - "--attention-backend"
-    - "FLASH_ATTN_MLA"
   base_env: {}
 
 dependencies:
@@ -56,15 +54,12 @@ variants:
   default:
     precision: fp8
     vram_minimum_gb: 143
-    description: "Native FP8 E4M3 weights (vision tower / projector / lm_head kept in BF16); recommended on 2xB200/H200 or MI300X with FLASH_ATTN_MLA"
+    description: "Native FP8 E4M3 weights (vision tower / projector / lm_head kept in BF16); recommended on 2xB200/H200 or MI300X"
   nvfp4:
     model_id: "mistralai/Mistral-Small-4-119B-2603-NVFP4"
     precision: nvfp4
     vram_minimum_gb: 72
-    description: "NVFP4 4-bit weights for B200-class GPUs (Marlin fallback on Hopper); overrides the attention backend to TRITON_MLA"
-    extra_args:
-      - "--attention-backend"
-      - "TRITON_MLA"
+    description: "NVFP4 4-bit weights for B200-class GPUs (Marlin fallback on Hopper)"
 
 compatible_strategies:
   - single_node_tp
@@ -105,8 +100,7 @@ guide: |
   Mistral Small 4 also ships two companion checkpoints:
 
   - **NVFP4** ([`mistralai/Mistral-Small-4-119B-2603-NVFP4`](https://huggingface.co/mistralai/Mistral-Small-4-119B-2603-NVFP4)) —
-    4-bit `compressed-tensors` weights (~72 GB raw); served with the
-    `TRITON_MLA` backend.
+    4-bit `compressed-tensors` weights (~72 GB raw).
   - **EAGLE draft head** ([`mistralai/Mistral-Small-4-119B-2603-eagle`](https://huggingface.co/mistralai/Mistral-Small-4-119B-2603-eagle)) —
     a 2-layer Mistral-style draft trained on the 119B target; enable via the
     `spec_decoding` feature.
@@ -137,7 +131,6 @@ guide: |
   vllm serve mistralai/Mistral-Small-4-119B-2603 \
     --max-model-len 262144 \
     --tensor-parallel-size 2 \
-    --attention-backend FLASH_ATTN_MLA \
     --tool-call-parser mistral --enable-auto-tool-choice \
     --reasoning-parser mistral \
     --max-num-batched-tokens 16384 --max-num-seqs 128 \
@@ -150,7 +143,6 @@ guide: |
   vllm serve mistralai/Mistral-Small-4-119B-2603-NVFP4 \
     --max-model-len 262144 \
     --tensor-parallel-size 2 \
-    --attention-backend TRITON_MLA \
     --tool-call-parser mistral --enable-auto-tool-choice \
     --reasoning-parser mistral \
     --max-num-batched-tokens 16384 --max-num-seqs 128 \
@@ -171,7 +163,6 @@ guide: |
   vllm serve mistralai/Mistral-Small-4-119B-2603 \
     --max-model-len 262144 \
     --tensor-parallel-size 2 \
-    --attention-backend FLASH_ATTN_MLA \
     --tool-call-parser mistral --enable-auto-tool-choice \
     --reasoning-parser mistral \
     --max-num-batched-tokens 16384 --max-num-seqs 128 \
