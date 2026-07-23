@@ -12,6 +12,9 @@ meta:
   hardware:
     h100: verified
     b200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "mistralai/Mistral-Large-3-675B-Instruct-2512"
@@ -109,7 +112,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 8xH200 for FP8, 4xB200 for NVFP4
+  - Hardware: 8xH200 for FP8, 4xB200 for NVFP4, or 8x MI300X/MI325X/MI355X for AMD ROCm
   - vLLM >= 0.11.0
 
   ### Install vLLM
@@ -118,6 +121,17 @@ guide: |
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend auto
+  ```
+
+  ### AMD ROCm
+
+  The ROCm wheel requires Python 3.12, ROCm 7.0+, and glibc >= 2.35. Use the
+  ROCm Docker image when your host environment does not meet those requirements.
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
   ```
 
   ## Launch commands
@@ -138,6 +152,20 @@ guide: |
     --tensor-parallel-size 4 \
     --tokenizer_mode mistral --config_format mistral --load_format mistral \
     --enable-auto-tool-choice --tool-call-parser mistral
+  ```
+
+  AMD ROCm on 8x MI300X / MI325X / MI355X:
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  vllm serve mistralai/Mistral-Large-3-675B-Instruct-2512 \
+    --tensor-parallel-size 8 \
+    --tokenizer_mode mistral \
+    --config_format mistral \
+    --load_format mistral \
+    --enable-auto-tool-choice \
+    --tool-call-parser mistral \
+    --no-enable-prefix-caching
   ```
 
   Additional flags:
