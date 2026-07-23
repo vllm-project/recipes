@@ -72,13 +72,18 @@ export function resolveSingleNodeTp(recipe, variant, hwProfile, strategyName = "
  * tested, works for both dense and MoE. TEP / DEP / PD-cluster are
  * advanced strategies that users can opt into explicitly.
  */
-export function recommendStrategy(recipe, _hwProfile, nodeCount = 1) {
+export function recommendStrategy(recipe, _hwProfile, nodeCount = 1, hwProfileId = null) {
   const compatible = recipe.compatible_strategies || [];
   // Recipe-level override — useful when the global TP-first preference is wrong
   // for a model (e.g. MoE recipes where TEP/DEP is the intended default and TP
-  // is offered only as a latency-oriented alternative).
-  const explicit = recipe.default_strategy;
-  if (explicit && compatible.includes(explicit)) {
+  // is offered only as a latency-oriented alternative). Per-hardware overrides
+  // let a specific GPU default differently while keeping every strategy offered.
+  const explicitCandidates = [
+    hwProfileId ? recipe.default_strategy_hardware?.[hwProfileId] : null,
+    recipe.default_strategy,
+  ].filter(Boolean);
+  for (const explicit of explicitCandidates) {
+    if (!compatible.includes(explicit)) continue;
     if (nodeCount > 1 && explicit.startsWith("single_node_")) {
       // Single-node default at >1 node: prefer the multi-node sibling so a
       // recipe whose single-node default is single_node_tep doesn't fall back

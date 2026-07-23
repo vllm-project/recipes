@@ -411,7 +411,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
   });
   const supportsMultiNode = scalable && compatible.some((s) => s.startsWith("multi_node_"));
   const recommendedNodeCount = !fitsSingleNode(hwProfile, variant) && supportsMultiNode ? 2 : 1;
-  let recommendedStrategy = recommendStrategy(recipe, hwProfile, recommendedNodeCount);
+  let recommendedStrategy = recommendStrategy(recipe, hwProfile, recommendedNodeCount, hwId);
   // Never recommend a strategy the recipe opted this GPU out of via
   // strategy_hardware — fall back to the first compatible serving strategy.
   if (recipe.strategy_hardware?.[recommendedStrategy]?.[hwId] === "unsupported") {
@@ -448,7 +448,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
       if (!strategies[id] || d === "pd_cluster" || d === "kv_store_lb") return false;
       return nc > 1 ? d === "multi_node" : d !== "multi_node";
     };
-    const rec = recommendStrategy(recipe, hwProfile, nc);
+    const rec = recommendStrategy(recipe, hwProfile, nc, hwId);
     if (ok(rec)) return rec;
     return (recipe.compatible_strategies || []).find(ok) || null;
   };
@@ -706,15 +706,18 @@ for (const file of findYamlFiles(modelsDir)) {
     }
   }
 
-  // strategy_overrides, compatible_strategies, default_strategy are synthesis
+  // strategy_overrides, compatible_strategies, default_strategy, and
+  // default_strategy_hardware are synthesis
   // inputs whose effects are already baked into recommended_command + the
   // per-strategy alternative files (whose keys are the compatible_strategies
-  // set; the recommended one comes from default_strategy). Drop AFTER all
+  // set; the recommended one comes from default_strategy/default_strategy_hardware).
+  // Drop AFTER all
   // renderings (parent + promoted) have run — buildVariantRendering reads
   // them. The YAML on GitHub is the source of truth for anyone re-synthesizing.
   delete r.strategy_overrides;
   delete r.compatible_strategies;
   delete r.default_strategy;
+  delete r.default_strategy_hardware;
   // JSON at /<org>/<repo>.json — mirrors HF URL scheme.
   const out = writeRecipeJson(parentHfId, r);
   recipes.push(out);
