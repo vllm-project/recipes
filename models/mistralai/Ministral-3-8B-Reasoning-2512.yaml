@@ -14,6 +14,8 @@ meta:
     h200: verified
     gb200: verified
     mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "mistralai/Ministral-3-8B-Reasoning-2512"
@@ -104,7 +106,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x H200 (3B/8B), 2x H200 recommended for 14B with full context
+  - Hardware: 1x H200 or MI300X/MI325X/MI355X (3B/8B), 2x H200 recommended for 14B with full context
   - vLLM >= 0.11.0
 
   ### Install vLLM
@@ -113,6 +115,32 @@ guide: |
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend auto
+  ```
+
+  ### AMD ROCm
+
+  The ROCm wheel requires Python 3.12, ROCm 7.0+, and glibc >= 2.35. Use the
+  ROCm Docker image when your host environment does not meet those requirements.
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+  ```
+
+  Launch on MI300X / MI325X / MI355X with AITER enabled:
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  vllm serve mistralai/Ministral-3-8B-Reasoning-2512 \
+    --tensor-parallel-size 1 \
+    --tokenizer_mode mistral \
+    --config_format mistral \
+    --load_format mistral \
+    --enable-auto-tool-choice \
+    --tool-call-parser mistral \
+    --reasoning-parser mistral \
+    --no-enable-prefix-caching
   ```
 
   ## Launch command
