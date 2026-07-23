@@ -199,6 +199,18 @@ hardware_overrides:
       # Run MiniMax-M3 with CUDA graphs on AMD MI3xx; avoids the decode
       # breakable-cudagraph path that otherwise forces eager (per @hongxiayang).
       VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+      # AITER kernels for the hot decode GEMMs + fused MoE (master toggle; the
+      # per-component flags _MOE/_LINEAR/_RMSNORM/_FP8BMM default True behind it).
+      # MHA stays off AITER so MSA sparse attention keeps running on TRITON_ATTN
+      # — the MXFP8 checkpoint has no calibrated q/prob scales for ROCm FP8 attn.
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_USE_AITER_MHA: "0"
+      # AMD-recommended, numerically-inert runtime knobs. (NCCL_MIN_NCHANNELS=112
+      # is a gfx942-only RCCL tuning — documented in the guide, not set here:
+      # gfx950 already defaults to 112 channels for an 8-GPU node and setting it
+      # explicitly bypasses RCCL's adaptive channel-tuning model.)
+      TORCH_BLAS_PREFER_HIPBLASLT: "1"
+      GPU_MAX_HW_QUEUES: "2"
 
 guide: |
   ## Overview
@@ -294,12 +306,25 @@ guide: |
   ### AMD ROCm (MI350X/MI355X (gfx950), MI300X/MI325X (gfx942))
 
   On AMD MI300X / MI325X / MI355X, run with CUDA graphs and set the following
-  before any of the serve commands below. It avoids the MiniMax-M3 decode breakable-cudagraph path that would
-  otherwise force eager execution (per @hongxiayang):
+  before any of the serve commands below:
 
   ```bash
-  export VLLM_USE_BREAKABLE_CUDAGRAPH=0
+  export VLLM_USE_BREAKABLE_CUDAGRAPH=0   # CUDA graphs on; avoids the decode breakable-cudagraph path that forces eager (per @hongxiayang)
+  export VLLM_ROCM_USE_AITER=1            # AITER kernels: hot decode GEMMs + fused MoE
+  export VLLM_ROCM_USE_AITER_MHA=0        # keep MSA attention on TRITON_ATTN (MXFP8 lacks calibrated ROCm FP8 attn scales)
+  export TORCH_BLAS_PREFER_HIPBLASLT=1
+  export GPU_MAX_HW_QUEUES=2              # cap HIP streams below the default of 4
   ```
+
+  Enabling AITER gives +5.6..+10.8% total tok/s/gpu on 8xMI300X (MXFP8, 1k1k random, conc 4..256); the runtime knobs are numerically inert.
+
+  On **MI300X / MI325X (gfx942) only**, also raise the RCCL channel count for TP8 (the gfx942 default is ~32–64):
+
+  ```bash
+  export NCCL_MIN_NCHANNELS=112
+  ```
+
+  Leave this unset on gfx950 (MI350X/MI355X): RCCL already defaults to 112 channels for an 8-GPU node there, and setting `NCCL_MIN_NCHANNELS` explicitly bypasses RCCL's adaptive channel-tuning model (RCCL 2.26.6 / ROCm 7.0).
 
   For gfx950: Prefer using the MXFP8 variant `MiniMaxAI/MiniMax-M3-MXFP8` for TP=4 and a smaller
   footprint. Use TP=8 for lower latency or long context length, or the default bf16 model.
