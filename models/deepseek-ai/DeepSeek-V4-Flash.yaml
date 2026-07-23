@@ -76,12 +76,16 @@ variants:
     vram_minimum_gb: 170
     description: "Native FP4+FP8 mixed checkpoint (MoE experts FP4, remaining params FP8)"
     # deep_gemm_mega_moe is an FP8-only MoE kernel — the FP8 checkpoint adds it on
-    # Blackwell; the NVFP4 variant below adds nothing (its experts can't use it).
+    # Blackwell datacenter GPUs. DGX Station keeps vLLM's default MoE backend.
     hardware_overrides:
       blackwell:
         extra_args:
           - "--moe-backend"
           - "deep_gemm_mega_moe"
+      dgx_station_gb300:
+        extra_args:
+          - "--moe-backend"
+          - "auto"
   nvfp4:
     model_id: "nvidia/DeepSeek-V4-Flash-NVFP4"
     precision: nvfp4
@@ -98,6 +102,9 @@ compatible_strategies:
 # TP+EP is the default deployment; single_node_tp is offered only as a
 # latency-oriented alternative.
 default_strategy: single_node_tep
+# DGX Station defaults to TP because it uses vLLM's auto MoE backend instead of the deep_gemm_mega_moe kernel.
+default_strategy_hardware:
+  dgx_station_gb300: single_node_tp
 
 hardware_overrides:
   blackwell:
@@ -268,16 +275,26 @@ guide: |
 
   ### DGX Station Single-GPU
 
+  Use VLLM 0.24.0+ for serving on DGX Station.
+
   ```bash
   vllm serve deepseek-ai/DeepSeek-V4-Flash \
-    --tensor-parallel-size 1 --pipeline-parallel-size 1 \
-    --kv-cache-dtype fp8 --trust-remote-code --block-size 256 \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --block-size 256 \
     --gpu-memory-utilization 0.92 \
+    --max-num-seqs 16 \
+    --attention_config.use_fp4_indexer_cache=True \
     --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}' \
-    --attention_config.use_fp4_indexer_cache True \
-    --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 \
-    --enable-auto-tool-choice --reasoning-parser deepseek_v4 \
     --max-cudagraph-capture-size 128 \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --reasoning-parser deepseek_v4 \
+    --enable-chunked-prefill \
+    --enable-prefix-caching \
+    --max-num-batched-tokens 8192 \
+    --no-disable-hybrid-kv-cache-manager \
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
   ```
 

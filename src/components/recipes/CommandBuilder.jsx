@@ -832,7 +832,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // nodes, so multi-node is off and variants that don't fit are disabled.
   const hwScalable = isHardwareScalable(hwProfile);
 
-  const recommended = useMemo(() => recommendStrategy(recipe, hwProfile, nodeCount), [recipe, hwProfile, nodeCount]);
+  const recommended = useMemo(() => recommendStrategy(recipe, hwProfile, nodeCount, hwId), [recipe, hwProfile, nodeCount, hwId]);
 
   const compatibleStrategies = useMemo(() => {
     return (recipe.compatible_strategies || []).filter((s) => {
@@ -1106,7 +1106,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // deliberate Single-/Multi-node click afterwards still wins. Non-scalable
     // hardware never bumps — it's single-node by definition.
     const fitsNew = fitsSingleNode(newProfile, activeVariant);
-    const recipeDefault = recipe.default_strategy;
+    const recipeDefault = recipe.default_strategy_hardware?.[id] || recipe.default_strategy;
     const recipeDefaultsSingleNode =
       typeof recipeDefault === "string" && recipeDefault.startsWith("single_node_");
     const shouldBumpNodes = nodeCount === 1 && supportsMultiNode && newScalable && !fitsNew;
