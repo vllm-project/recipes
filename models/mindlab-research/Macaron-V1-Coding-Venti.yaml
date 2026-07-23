@@ -3,7 +3,7 @@ meta:
   slug: "macaron-v1-coding-venti"
   provider: "MindLab Research"
   description: "Macaron-V1-Coding-Venti — MindLab's coding-specialist checkpoint: the Macaron-V1-Venti L2 Coding LoRA merged into the GLM-5.2 BF16 base. Same MoE architecture and launch as GLM-5.2 (~743B total, 39B active), no runtime adapter."
-  date_updated: 2026-07-22
+  date_updated: 2026-07-23
   difficulty: advanced
   tasks:
     - text
@@ -47,6 +47,7 @@ features:
         description: "Built-in Multi-Token Prediction inherited from the GLM-5.2 base, 5 draft tokens."
         variants:
           - default
+          - fp8
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":5}'
@@ -67,6 +68,14 @@ variants:
     precision: bf16
     vram_minimum_gb: 1786
     description: "Full-precision BF16 merged checkpoint — requires multi-node (≈1786 GB weights + KV; a single 8xH200/8xB200 node does not fit)."
+  fp8:
+    precision: fp8
+    label: "FP8 (on-the-fly)"
+    vram_minimum_gb: 893
+    description: "Same BF16 checkpoint, quantized to FP8 at load time via --quantization fp8 — not a native FP8 weight set. Halves weight memory so it fits a single node, and frees VRAM on larger trays (e.g. B300) for longer context / more sequences. Slower startup; slightly lower precision than native BF16."
+    extra_args:
+      - "--quantization"
+      - "fp8"
 
 compatible_strategies:
   - single_node_tp
@@ -109,24 +118,29 @@ guide: |
 
   Because it is a weight-level merge of a LoRA onto GLM-5.2, the runtime architecture is
   **identical to GLM-5.2** — same `GlmMoeDsaForCausalLM` MoE (~743B total / 39B active), same
-  1M native context, same MTP indexer. **Launch it with the same serving stack as GLM-5.2.**
-  The only constraint is that this repository ships **BF16 only** (no FP8 / NVFP4 checkpoint),
-  so it needs multi-node deployment.
+  1M native context, same MTP indexer. **Launch it with the same serving stack as [GLM-5.2 recipe](/zai-org/GLM-5.2).**
+
+  This model ships **BF16 only** (no native FP8 / NVFP4 checkpoint). At full BF16 precision
+  (≈1786 GB) it needs multi-node; the **FP8 (on-the-fly)** variant loads the same weights as
+  FP8 (`--quantization fp8`, ≈893 GB) to fit a single 8×H200 / 8×B200 node — or to free VRAM
+  on larger trays.
 
   ## Prerequisites
 
   - **vLLM 0.25.0** (stable) — the `GlmMoeDsaForCausalLM` handler is the same one GLM-5.2 uses.
-  - **GPU:** BF16 weights are ≈1786 GB, so a single 8×H200 / 8×B200 node does **not** fit.
-    Plan for **multi-node** (e.g. 2× 8-GPU nodes for tensor-parallel 16), or use the
-    FP8/NVFP4 GLM-5.2 checkpoints from the [GLM-5.2 recipe](/zai-org/GLM-5.2) for single-node fits.
+  - **GPU:** at full **BF16** precision (≈1786 GB) a single 8×H200 / 8×B200 node does not fit —
+    run **multi-node** (e.g. 2× 8-GPU nodes, tensor-parallel 16), or pick the **FP8 (on-the-fly)**
+    variant (≈893 GB, `--quantization fp8`) to run single-node. The native FP8/NVFP4 GLM-5.2
+    checkpoints are a calibrated-quant alternative.
 
   ## Installation
 
   ### Docker
 
-  BF16 needs two nodes. Run one container per node (each `--gpus all`, 8 local GPUs);
-  both pass `--tensor-parallel-size 16 --nnodes 2`, varying `--node-rank`. This is the head
-  node — node 1 repeats with `--node-rank 1 --headless`.
+  The BF16 variant needs two nodes (the FP8 (on-the-fly) variant fits one — see Launching
+  below). Run one container per node (each `--gpus all`, 8 local GPUs); both pass
+  `--tensor-parallel-size 16 --nnodes 2`, varying `--node-rank`. This is the head node —
+  node 1 repeats with `--node-rank 1 --headless`.
 
   ```bash
   docker run --gpus all \
@@ -157,11 +171,16 @@ guide: |
 
   ## Launching the server
 
-  ### BF16 on 2× 8xH200 (multi-node TP, standard)
+  Pick the **Variant** that matches your hardware: **BF16** for full precision on multi-node,
+  or **FP8 (on-the-fly)** to fit a single node (or free VRAM on a larger tray). The builder
+  renders the exact flags per your Variant / Strategy / Nodes picks.
 
-  BF16 needs multi-node. The command below is a 2-node tensor-parallel example (16 GPUs).
-  Run the head command on node 0 and the node command on node 1, pointing `--master-addr`
-  at the head's IP. Pick the **Multi-node TP** strategy in the builder to render both tabs.
+  ### BF16 — 2× 8xH200 (multi-node TP)
+
+  Full-precision BF16 (≈1786 GB) needs multi-node. The command below is a 2-node
+  tensor-parallel example (16 GPUs). Run the head command on node 0 and the worker on node 1,
+  pointing `--master-addr` at the head's IP. Pick the **Multi-node TP** strategy in the
+  builder to render both tabs.
 
   ```bash
   # Node 0 (head)
@@ -186,20 +205,34 @@ guide: |
   > The builder emits the exact multi-node multiprocessing args (`--nnodes`,
   > `--node-rank`, `--master-addr` for TP) when you select **Multi-node TP**.
 
-  > **Tip — fit on a single node with online FP8.** This repository ships BF16 only, but if
-  > multi-node isn't an option you can add `--quantization fp8` to quantize the BF16 weights
-  > to FP8 **at load time**. That roughly halves weight memory (≈893 GB), so the model fits on a
-  > single 8×H200 / 8×H20 node. **Trade-offs:** (1) **startup is much slower** — vLLM runs the
-  > quantization pass during weight loading, so first-load takes markedly longer; (2) **accuracy
-  > is lower** than the natively-calibrated `zai-org/GLM-5.2-FP8` checkpoint, because on-the-fly
-  > FP8 uses dynamic scaling rather than per-channel calibration. For a quality FP8 deployment,
-  > prefer the [GLM-5.2 FP8 recipe](/zai-org/GLM-5.2); treat `--quantization fp8` here as a
-  > convenience for fitting the merged coding checkpoint, not a calibrated quant.
+  ### FP8 (on-the-fly) on a single node
 
-  ### BF16 with MTP speculative decoding
+  Pick the **FP8 (on-the-fly)** variant to load the same BF16 checkpoint as FP8 via
+  `--quantization fp8` (runtime quantization — not a native FP8 weight set). At ≈893 GB it
+  fits a single 8×H200 / 8×B200 node, and on larger trays (e.g. B300) it frees VRAM for
+  longer context or more concurrent sequences. Precision is slightly lower than native BF16, 
+  and startup is slower while the quantization pass runs at load.
+
+  ```bash
+  vllm serve mindlab-research/Macaron-V1-Coding-Venti \
+    --quantization fp8 \
+    --tensor-parallel-size 8 \
+    --kv-cache-dtype fp8 \
+    --tool-call-parser glm47 \
+    --reasoning-parser glm45 \
+    --enable-auto-tool-choice \
+    --served-model-name macaron-v1-coding-venti
+  ```
+
+  - **`--max-model-len`** — raise toward the 1M window when KV-cache headroom allows; lower on OOM.
+  - **`--max-num-seqs 32`** — the main knob for fitting long context under concurrency.
+  - **`--gpu-memory-utilization 0.80`** — leaves ROCm runtime headroom for MTP graph capture.
+
+  ### Speculative decoding (MTP)
 
   The merged weights inherit GLM-5.2's built-in Multi-Token Prediction head, so MTP works
-  exactly as on GLM-5.2. Toggle **spec_decoding → MTP** in the builder:
+  exactly as on GLM-5.2 — on both the BF16 and FP8 (on-the-fly) variants. Toggle
+  **spec_decoding → MTP** in the builder:
 
   ```bash
   vllm serve mindlab-research/Macaron-V1-Coding-Venti \
@@ -212,10 +245,11 @@ guide: |
     --served-model-name macaron-v1-coding-venti
   ```
 
-  ### BF16 on AMD MI300X/MI355X (multi-node)
+  ### AMD MI300X / MI355X
 
-  Use the AITER backends under ROCm, same as GLM-5.2. Whether the full 1M window fits is a
-  KV-cache VRAM question, so tune `--max-model-len` and `--max-num-seqs` to your nodes' HBM.
+  Use the AITER backends under ROCm, same as GLM-5.2. Both the BF16 (multi-node) and FP8
+  (on-the-fly) variants run; whether the full 1M window fits is a KV-cache VRAM question, so
+  tune `--max-model-len` and `--max-num-seqs` to your nodes' HBM.
 
   ```bash
   VLLM_ROCM_USE_AITER=1 \
