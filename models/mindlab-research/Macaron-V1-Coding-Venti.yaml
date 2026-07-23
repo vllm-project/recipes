@@ -13,9 +13,9 @@ meta:
 
 model:
   model_id: "mindlab-research/Macaron-V1-Coding-Venti"
-  min_vllm_version: "0.23.0"
+  min_vllm_version: "0.25.0"
   docker_image:
-    nvidia: "vllm/vllm-openai:v0.23.0"
+    nvidia: "vllm/vllm-openai:v0.25.0"
     amd: "vllm/vllm-openai-rocm:nightly-4c626633159887b0f2c962058c17c78f1434556d"
   architecture: moe
   parameter_count: "743B"
@@ -115,7 +115,7 @@ guide: |
 
   ## Prerequisites
 
-  - **vLLM 0.23.0** (stable) — the `GlmMoeDsaForCausalLM` handler is the same one GLM-5.2 uses.
+  - **vLLM 0.25.0** (stable) — the `GlmMoeDsaForCausalLM` handler is the same one GLM-5.2 uses.
   - **GPU:** BF16 weights are ≈1786 GB, so a single 8×H200 / 8×B200 node does **not** fit.
     Plan for **multi-node** (e.g. 2× 8-GPU nodes for tensor-parallel 16), or use the
     FP8/NVFP4 GLM-5.2 checkpoints from the [GLM-5.2 recipe](/zai-org/GLM-5.2) for single-node fits.
@@ -134,7 +134,7 @@ guide: |
     --ipc=host \
     --network host \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai:v0.23.0 mindlab-research/Macaron-V1-Coding-Venti \
+    vllm/vllm-openai:v0.25.0 mindlab-research/Macaron-V1-Coding-Venti \
       --tensor-parallel-size 16 \
       --nnodes 2 \
       --node-rank 0 \
@@ -151,7 +151,7 @@ guide: |
   ```bash
   uv venv
   source .venv/bin/activate
-  uv pip install "vllm==0.23.0" --torch-backend=auto
+  uv pip install "vllm==0.25.0" --torch-backend=auto
   uv pip install "transformers>=5.9.0"
   ```
 
