@@ -67,7 +67,13 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_args:
+      - "--tensor-parallel-size"
+      - "1"
+      - "--trust-remote-code"
+    extra_env: {}
 strategy_overrides: {}
 
 guide: |
@@ -90,6 +96,17 @@ guide: |
   uv pip install -U vllm --torch-backend auto
   ```
 
+  ### Install vLLM (AMD ROCm)
+
+  The ROCm nightly wheel requires Python 3.12, ROCm 7.2.1, and glibc >= 2.35.
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install -U vllm --pre \
+    --extra-index-url https://wheels.vllm.ai/rocm/nightly/rocm721
+  ```
+
   ## Launch commands
 
   Phi-4-mini-instruct on a single GPU:
@@ -98,6 +115,14 @@ guide: |
   vllm serve microsoft/Phi-4-mini-instruct \
     --host 0.0.0.0 \
     --max-model-len 4000
+  ```
+
+  AMD ROCm:
+
+  ```bash
+  vllm serve microsoft/Phi-4-mini-instruct \
+    --tensor-parallel-size 1 \
+    --trust-remote-code
   ```
 
   Phi-4-multimodal-instruct (requires --trust-remote-code for LoRA modules):
