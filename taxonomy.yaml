@@ -97,9 +97,23 @@ hardware_profiles:
     brand: NVIDIA
     generation: blackwell
     display_name: "RTX Pro 6000"
-    description: "NVIDIA RTX Pro 6000· 1× RTX Pro 6000 GPU· 96 GB unified memory"
+    description: "NVIDIA RTX Pro 6000 · 1× RTX Pro 6000 GPU · 96 GB VRAM"
     gpu_count: 1
     vram_gb: 96
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # RTX Pro 6000 2x — 2x RTX Pro 6000 GPUs system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` (same pattern as the TPU profiles).
+  rtx_pro_6000_2x:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX Pro 6000 2x"
+    description: "NVIDIA RTX Pro 6000 · 2× RTX Pro 6000 GPU · 192 GB VRAM"
+    gpu_count: 2
+    vram_gb: 192
     multi_node: false
     scalable: false
     restricted: true

@@ -16,6 +16,7 @@ meta:
     mi325x: verified
     mi355x: verified
     dgx_station_gb300: verified
+    rtx_pro_6000_2x: verified
 
 model:
   model_id: "MiniMaxAI/MiniMax-M2.7"
@@ -56,6 +57,17 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
+    hardware_overrides:
+      rtx_pro_6000_2x:
+        extra_args:
+          - "--load-format"
+          - "fastsafetensors"
+          - "--enable-chunked-prefill"
+          - "--enable-prefix-caching"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--gpu-memory-utilization"
+          - "0.95"
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
