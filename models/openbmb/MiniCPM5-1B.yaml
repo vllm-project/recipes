@@ -18,7 +18,8 @@ model:
   parameter_count: "1.1B"
   active_parameters: "1.1B"
   context_length: 131072
-  base_args: []
+  base_args:
+    - "--trust-remote-code"
   base_env: {}
 
 features:
@@ -40,6 +41,8 @@ variants:
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
+
+hardware_overrides: {}
 
 strategy_overrides:
   single_node_tp:
@@ -69,7 +72,9 @@ guide: |
   Use the command builder above. The baseline is simply:
 
   ```bash
-  vllm serve openbmb/MiniCPM5-1B --port 8000
+  vllm serve openbmb/MiniCPM5-1B \
+    --trust-remote-code \
+    --tensor-parallel-size 1
   ```
 
   At ~1.1B params the model fits on a single GPU (TP=1). It supports the full
