@@ -12,6 +12,9 @@ meta:
   hardware:
     h100: verified
     h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16"
@@ -70,7 +73,17 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_args:
+      - "--max-model-len"
+      - "32768"
+      - "--max-num-seqs"
+      - "256"
+      - "--disable-log-requests"
+    extra_env:
+      VLLM_USE_TRITON_FLASH_ATTN: "0"
+      VLLM_ROCM_USE_AITER: "0"
 
 strategy_overrides: {}
 
@@ -84,6 +97,7 @@ guide: |
   ## Prerequisites
 
   - Hardware: 1x H100/H200 or comparable; DGX Spark and Jetson Thor supported
+  - AMD: MI300X / MI325X / MI355X with ROCm
   - vLLM >= 0.11.2 (0.12.0 recommended for full support)
   - Docker with NVIDIA Container Toolkit (recommended)
 
@@ -104,6 +118,16 @@ guide: |
 
   ```bash
   docker pull ghcr.io/nvidia-ai-iot/vllm:latest-jetson-thor
+  ```
+
+  AMD ROCm:
+
+  ```bash
+  docker pull rocm/vllm-dev:nightly
+  docker run -it --ipc=host --network=host --privileged \
+    --cap-add=CAP_SYS_ADMIN --device=/dev/kfd --device=/dev/dri --device=/dev/mem \
+    --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
+    -v $(pwd):/work -e SHELL=/bin/bash --name Nemotron-Nano rocm/vllm-dev:nightly
   ```
 
   ## Launch commands
@@ -135,6 +159,20 @@ guide: |
     --tool-call-parser qwen3_coder \
     --reasoning-parser-plugin nano_v3_reasoning_parser.py \
     --reasoning-parser nano_v3
+  ```
+
+  AMD ROCm BF16:
+
+  ```bash
+  export VLLM_USE_TRITON_FLASH_ATTN=0
+  export VLLM_ROCM_USE_AITER=0
+
+  vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
+    --tensor-parallel-size 1 \
+    --max-model-len 32768 \
+    --max-num-seqs 256 \
+    --trust-remote-code \
+    --disable-log-requests
   ```
 
   Key flags:
