@@ -335,6 +335,50 @@ guide: |
   configuration matches the locally validated server. The env vars and scheduler
   knobs are benchmark-specific throughput settings, not default serving choices.
 
+  #### Tuned AITER MXFP4 MoE (MI355X)
+
+  For higher MoE throughput on MI355X, run the AITER MXFP4 (RadeonFlow)
+  intermediate GEMM path with fused shared experts. This requires a
+  `vllm/vllm-openai-rocm:nightly` built after vLLM
+  [#48683](https://github.com/vllm-project/vllm/pull/48683) (AITER `v0.1.16.post5`,
+  which includes the [ROCm/aiter#3832](https://github.com/ROCm/aiter/pull/3832)
+  gfx950 MXFP4 MoE backend). Export the AITER MoE kernel-selection vars and add the
+  batching/scheduling flags below. `AITER_MXFP4_INTERMEDIATE=1` is what selects the
+  RadeonFlow MXFP4 intermediate path — without it (and `VLLM_ROCM_USE_AITER=1`) the
+  MoE oracle falls back to a different kernel. Runs at TP4 or TP8; for **TP < 8**
+  disable AITER RMSNorm.
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+  export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
+  export VLLM_ROCM_USE_SKINNY_GEMM=0
+  export AITER_MXFP4_INTERMEDIATE=1
+  export AITER_BYPASS_TUNE_CONFIG=0
+  export AITER_MOE_SORT_BACKEND=auto
+  export OMP_NUM_THREADS=1
+  # TP < 8 only:
+  export VLLM_ROCM_USE_AITER_RMSNORM=0
+
+  vllm serve amd/Kimi-K2.5-MXFP4 \
+    --tensor-parallel-size 4 \
+    --trust-remote-code \
+    --gpu-memory-utilization 0.90 \
+    --kv-cache-dtype fp8 \
+    --block-size 16 \
+    --async-scheduling \
+    --no-enable-prefix-caching \
+    --mm-encoder-tp-mode data
+  ```
+
+  These AITER MXFP4 MoE env vars are kernel-selection choices (same MXFP4 math,
+  faster kernel), not precision reductions.
+
+  For fixed-length throughput sweeping, additionally cap `--max-model-len` to the
+  working sequence length (e.g. `9472` for an 8k/1k workload) and set
+  `--max-num-batched-tokens 16384 --max-num-seqs 512`. Leave these off for general
+  serving.
+
   ## Client Usage
 
   Once the vLLM server is running, consume it via the OpenAI-compatible API:
