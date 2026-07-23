@@ -14,6 +14,7 @@ meta:
   hardware:
     dgx_spark_gb10: verified
     rtx_pro_6000: verified
+    dgx_station_gb300: verified
 
 model:
   model_id: "Qwen/Qwen3.6-27B"
@@ -28,11 +29,11 @@ model:
 
 features:
   tool_calling:
-    description: "Enable automatic tool choice with Qwen3 Coder parser"
+    description: "Enable automatic tool choice with Qwen3 XML parser"
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_coder"
+      - "qwen3_xml"
   reasoning:
     description: "Enable chain-of-thought reasoning with Qwen3 parser"
     args:
@@ -42,7 +43,7 @@ features:
     description: "Multi-token prediction speculative decoding for lower latency"
     args:
       - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":1}'
+      - '{"method":"mtp","num_speculative_tokens":3}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -88,6 +89,24 @@ variants:
     vram_minimum_gb: 27
     tp: 1
     description: "NVIDIA ModelOpt NVFP4 checkpoint — MLP linears quantized to NVFP4, attention linears and KV cache in FP8. Single Blackwell GPU, including DGX Spark."
+    hardware_overrides:
+      dgx_station_gb300:
+        extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--attention-backend"
+          - "flashinfer"
+          - "--gpu-memory-utilization"
+          - "0.92"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
+          - "--enable-prefix-caching"
+          - "--load-format"
+          - "fastsafetensors"
+          - "--async-scheduling"
 
 compatible_strategies:
   - single_node_tp

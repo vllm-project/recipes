@@ -19,6 +19,7 @@ meta:
     mi325x: verified
     mi355x: verified
     rtx_pro_6000: verified
+    dgx_station_gb300: verified
 
 model:
   model_id: "Qwen/Qwen3.6-35B-A3B"
@@ -93,6 +94,19 @@ variants:
       - "--moe-backend"
       - "marlin"
       - "--enable-prefix-caching"
+    hardware_overrides:
+      dgx_station_gb300:
+        extra_args:
+        - "--gpu-memory-utilization"
+        - "0.92"
+        - "--max-model-len"
+        - "262144"
+        - "--max-num-batched-tokens"
+        - "8192"
+        - "--enable-chunked-prefill"
+        - "--async-scheduling"
+        - "--load-format"
+        - "fastsafetensors"
 
 compatible_strategies:
   - single_node_tp
