@@ -31,25 +31,21 @@ opt_in_features: []
 variants:
   default:
     model_id: "jinaai/jina-embeddings-v5-text-small-retrieval"
-    label: "retrieval"
     precision: bf16
     vram_minimum_gb: 2
     description: "Retrieval task: query/document encoding for RAG and search. Adapter pre-merged into the base weights."
   text_matching:
     model_id: "jinaai/jina-embeddings-v5-text-small-text-matching"
-    label: "text-matching"
     precision: bf16
     vram_minimum_gb: 2
     description: "Text-matching task: semantic similarity, dedup, paraphrase detection. Adapter pre-merged into the base weights."
   classification:
     model_id: "jinaai/jina-embeddings-v5-text-small-classification"
-    label: "classification"
     precision: bf16
     vram_minimum_gb: 2
     description: "Classification task: linear probing, intent detection. Adapter pre-merged into the base weights."
   clustering:
     model_id: "jinaai/jina-embeddings-v5-text-small-clustering"
-    label: "clustering"
     precision: bf16
     vram_minimum_gb: 2
     description: "Clustering task: k-means, topic discovery. Adapter pre-merged into the base weights."
@@ -114,7 +110,7 @@ guide: |
   vllm serve jinaai/jina-embeddings-v5-text-small-retrieval \
     --trust-remote-code \
     --runner pooling \
-    --host 0.0.0.0 --port 8000
+    --tensor-parallel-size 1
   ```
 
   Swap the model id for `-text-matching`, `-classification`, or `-clustering` to
