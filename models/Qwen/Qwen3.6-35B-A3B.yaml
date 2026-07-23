@@ -19,6 +19,7 @@ meta:
     mi325x: verified
     mi355x: verified
     rtx_pro_6000: verified
+    rtx_5090: verified
 
 model:
   model_id: "Qwen/Qwen3.6-35B-A3B"
@@ -93,6 +94,16 @@ variants:
       - "--moe-backend"
       - "marlin"
       - "--enable-prefix-caching"
+    hardware_overrides:
+      rtx_5090:
+        extra_args:
+          - "--gpu-memory-utilization"
+          - "0.95"
+          - "--max-num-seqs"
+          - "4"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
 
 compatible_strategies:
   - single_node_tp
