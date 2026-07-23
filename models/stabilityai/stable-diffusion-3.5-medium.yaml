@@ -9,6 +9,10 @@ meta:
     - omni
   related_recipes:
     - stabilityai/stable-audio-open-1.0
+  hardware:
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "stabilityai/stable-diffusion-3.5-medium"
@@ -27,8 +31,13 @@ omni:
 dependencies:
   - note: "Pin vllm==0.12.0 for Stable Diffusion 3.5"
     command: "uv pip install vllm==0.12.0"
+    brand: NVIDIA
   - note: "vllm-omni provides the image generation backend"
     command: "uv pip install git+https://github.com/vllm-project/vllm-omni.git"
+    brand: NVIDIA
+  - note: "AMD ROCm: install vLLM for ROCm and vLLM-Omni from source"
+    command: "VLLM_OMNI_TARGET_DEVICE=rocm uv pip install git+https://github.com/vllm-project/vllm-omni.git vllm==0.20.0+rocm721 --extra-index-url https://wheels.vllm.ai/rocm/0.20.0/rocm721"
+    brand: AMD
 
 features: {}
 
@@ -36,20 +45,17 @@ opt_in_features: []
 
 variants:
   default:
-    label: "Medium"
     precision: bf16
     vram_minimum_gb: 44
     description: "Stable Diffusion 3.5 medium (2.5B)"
 
   large:
-    label: "Large"
     model_id: "stabilityai/stable-diffusion-3.5-large"
     precision: bf16
     vram_minimum_gb: 24
     description: "Stable Diffusion 3.5 large (8.1B)"
 
   large_turbo:
-    label: "Large Turbo"
     model_id: "stabilityai/stable-diffusion-3.5-large-turbo"
     precision: bf16
     vram_minimum_gb: 24
@@ -57,7 +63,11 @@ variants:
 
 compatible_strategies: []
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_args: []
+    extra_env:
+      VLLM_OMNI_TARGET_DEVICE: "rocm"
 strategy_overrides: {}
 
 guide: |
@@ -83,6 +93,17 @@ guide: |
   source .venv/bin/activate
   uv pip install vllm==0.12.0
   uv pip install git+https://github.com/vllm-project/vllm-omni.git
+  ```
+
+  ### AMD ROCm (MI300X, MI325X, MI355X)
+
+  > **Note:** The vLLM wheel for ROCm requires Python 3.12, ROCm 7.2.1, and glibc >= 2.35.
+  > If your environment does not meet these requirements, please use the Docker-based setup.
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  VLLM_OMNI_TARGET_DEVICE=rocm uv pip install git+https://github.com/vllm-project/vllm-omni.git vllm==0.20.0+rocm721 --extra-index-url https://wheels.vllm.ai/rocm/0.20.0/rocm721
   ```
 
   ## Python Usage
