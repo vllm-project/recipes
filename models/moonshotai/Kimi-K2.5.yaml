@@ -278,10 +278,62 @@ guide: |
     below 177, add `export HSA_NO_SCRATCH_RECLAIM=1` — older firmware can't
     reclaim RCCL scratch and vLLM crashes without it. Current MI355X firmware
     doesn't need it.
-  - For maximum throughput on fixed-length benchmark 8k/1k, or 1k/1k workloads, 
-    sets `--block-size 1 --no-enable-prefix-caching
-    --max-num-batched-tokens 32768 --max-num-seqs 512`. These are
-    throughput-sweep tunings; leave vLLM's defaults for general serving.
+  - For maximum throughput on fixed-length benchmark 8k/1k or 1k/1k workloads,
+    see the benchmark reproduction section below. These are throughput-sweep
+    tunings; leave vLLM's defaults for general serving.
+
+  ### MXFP4 benchmark reproduction (InferenceX MI355X sweep)
+
+  The command above is the default serving configuration. The
+  [SemiAnalysis InferenceX](https://inferencex.semianalysis.com/) MI355X
+  benchmark lane for this checkpoint is a separate **high-concurrency benchmark**
+  configuration — not the recipe default. To reproduce that sweep, start from the
+  default command above and apply these deltas:
+
+  - Use `--tensor-parallel-size 4` (the sweep runs TP4; the default recipe keeps
+    TP8 for KV-cache and multimodal-encoder headroom).
+  - Add `--kv-cache-dtype fp8`.
+  - Use the benchmark block size and scheduler knobs: `--block-size 16`,
+    `--max-num-batched-tokens 16384`, `--max-num-seqs 512`,
+    `--async-scheduling`, and `--no-enable-prefix-caching`.
+  - Run on a current `vllm/vllm-openai-rocm:nightly` that contains the required
+    AITER Kimi MXFP4 backend.
+  - Export the AITER and INT4 quantized all-reduce env vars before launch:
+
+  ```bash
+  # Kernel selection and benchmark runtime knobs.
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+  export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
+  export VLLM_ROCM_USE_SKINNY_GEMM=0
+  export VLLM_ROCM_USE_AITER_RMSNORM=0
+  export AITER_MXFP4_INTERMEDIATE=1
+  export AITER_BYPASS_TUNE_CONFIG=0
+  export AITER_MOE_SORT_BACKEND=auto
+  export OMP_NUM_THREADS=1
+  ```
+
+  The full reproduction serve command is then:
+
+  ```bash
+  vllm serve amd/Kimi-K2.5-MXFP4 \
+    --port "${PORT:-8000}" \
+    --tensor-parallel-size 4 \
+    --gpu-memory-utilization 0.85 \
+    --max-model-len "$MAX_MODEL_LEN" \
+    --kv-cache-dtype fp8 \
+    --block-size 16 \
+    --max-num-batched-tokens 16384 \
+    --max-num-seqs 512 \
+    --async-scheduling \
+    --trust-remote-code \
+    --no-enable-prefix-caching \
+    --mm-encoder-tp-mode data
+  ```
+
+  The benchmark script enforces `MAX_MODEL_LEN >= 9472` so the 1k/1k
+  configuration matches the locally validated server. The env vars and scheduler
+  knobs are benchmark-specific throughput settings, not default serving choices.
 
   ## Client Usage
 
