@@ -130,6 +130,8 @@ hardware_overrides:
     # Verified on 8× MI300X / MI355X (MI325X listed as supported but not verified).
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_USE_AITER_MOE: "1"
+      VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
       VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
 
 strategy_overrides:
