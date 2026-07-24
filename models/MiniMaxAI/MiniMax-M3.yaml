@@ -348,6 +348,89 @@ guide: |
     --enable-auto-tool-choice
   ```
 
+  ## KV Cache Offloading
+
+  The **KV Offload** row in the command builder adds one of two CPU-DRAM
+  offloading backends — no other changes to the command needed.
+
+  ### Simple (CPU offload)
+
+  `SimpleCPUOffloadConnector` requires zero extra infrastructure: it appends
+  `--kv-transfer-config` with the connector and allocates ~220 GiB of host RAM
+  per GPU rank. Good for bursty long-context workloads on a single node where
+  GPU KV pool overflows.
+
+  ```bash
+  vllm serve amd/MiniMax-M3-MXFP4 \
+    --tensor-parallel-size 8 \
+    --block-size 128 \
+    --attention-backend TRITON_ATTN \
+    --kv-transfer-config '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both","kv_connector_extra_config":{"cpu_bytes_to_use_per_rank":236223201280,"lazy_offload":false}}' \
+    --tool-call-parser minimax_m3 \
+    --enable-auto-tool-choice \
+    --reasoning-parser minimax_m3
+  ```
+
+  ### LMCache
+
+  `LMCacheMPConnector` uses a shared CPU-DRAM pool owned by a separate
+  LMCache server process — prefix caching beyond GPU KV capacity, one pool
+  per node (not per-rank segments). Single-node strategies only. Validated on
+  MI355X for agentic / multi-turn workloads with long reusable prefixes.
+
+  Install LMCache with ROCm support (build from source with HIP):
+
+  ```bash
+  git clone https://github.com/LMCache/LMCache.git
+  cd LMCache
+  pip install -r requirements/build.txt
+  CXX=hipcc BUILD_WITH_HIP=1 pip install -e . --no-build-isolation
+  cd ..
+  ```
+
+  Pick **LMCache** on the KV Offload row — the command builder renders the
+  `LMCacheMPConnector` config and shows an **LMCache Server** tab.
+  Start the server first, in a separate terminal:
+
+  ```bash
+  lmcache server \
+    --port 5555 \
+    --http-port 8080 \
+    --l1-size-gb 512 \
+    --l1-init-size-gb 20 \
+    --chunk-size 256 \
+    --max-workers 16 \
+    --l1-read-ttl-seconds 7200 \
+    --eviction-policy LRU
+  ```
+
+  Then serve M3 (MXFP4 on MI355X example):
+
+  ```bash
+  vllm serve amd/MiniMax-M3-MXFP4 \
+    --tensor-parallel-size 8 \
+    --block-size 128 \
+    --attention-backend TRITON_ATTN \
+    --kv-transfer-config '{"kv_connector":"LMCacheMPConnector","kv_role":"kv_both","kv_connector_extra_config":{"lmcache.mp.host":"127.0.0.1","lmcache.mp.port":5555}}' \
+    --tool-call-parser minimax_m3 \
+    --enable-auto-tool-choice \
+    --reasoning-parser minimax_m3
+  ```
+
+  **MI355X tuning notes (from InferenceX agentic benchmark):**
+  - `--chunk-size 256` — larger chunks amortize transfer overhead at 1M-context
+    scale (the validated run tests chunk-size 32 vs 256; 256 wins at high
+    concurrency).
+  - `--l1-read-ttl-seconds 7200` — the default 300 s TTL is too short for TP8
+    / concurrency 32 agentic queues: vLLM can spend > 300 s between LMCache
+    lookup and retrieve while GPU KV is saturated, invalidating the lease
+    before the transfer completes.
+  - `--max-workers` set to `TP × 2` (e.g., 16 for TP8).
+  - Set `PYTHONHASHSEED=0` and `LMCACHE_BLOCKING_TIMEOUT_SECS=60` before
+    starting vLLM for deterministic hashing and reliable blocking behaviour.
+
+  See the [LMCache docs](https://docs.lmcache.ai/) for full tuning reference.
+
   ## FP8 KV Cache
 
   Add `--kv-cache-dtype fp8` to any command for ~1.5× the KV pool — lossless
