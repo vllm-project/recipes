@@ -39,6 +39,7 @@ export const PROVIDERS = {
   "meituan-longcat": { display_name: "LongCat (Meituan)",        logo: "/providers/meituan-longcat.png" },
   "stabilityai":     { display_name: "Stability AI",             logo: "/providers/stabilityai.png" },
   "stepfun-ai":      { display_name: "StepFun",                  logo: "/providers/stepfun-ai.png" },
+  "black-forest-labs": { display_name: "Black Forest Labs",      logo: "/providers/black-forest-labs.png" },
   "poolside":        { display_name: "Poolside",                 logo: "/providers/poolside.png" },
   "JetBrains":       { display_name: "JetBrains",                 logo: "/providers/JetBrains.png" },
   "openbmb":         { display_name: "MiniCPM (OpenBMB)",          logo: "/providers/openbmb.png" },
