@@ -199,6 +199,8 @@ hardware_overrides:
       # Run MiniMax-M3 with CUDA graphs on AMD MI3xx; avoids the decode
       # breakable-cudagraph path that otherwise forces eager (per @hongxiayang).
       VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+      VLLM_ROCM_USE_AITER_MOE: "1"
+      VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
 
 guide: |
   ## Overview
