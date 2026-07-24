@@ -65,6 +65,12 @@ variants:
     precision: fp8
     vram_minimum_gb: 354
     description: "FP8-quantized instruct checkpoint (tencent/Hy3-FP8) — fits a single 8×H200 / 8×H20-3e node with wide headroom."
+    # fp8 KV cache verified on this checkpoint only; scoped here so it doesn't apply to bf16.
+    hardware_overrides:
+      amd:
+        extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
   nvfp4:
     model_id: "RedHatAI/Hy3-NVFP4-FP8"
     precision: nvfp4
@@ -89,14 +95,17 @@ hardware_overrides:
     extra_env:
       VLLM_FLASHINFER_ALLREDUCE_BACKEND: "trtllm"
   amd:
-    extra_args: []
+    extra_args:
+      - "--attention-backend"
+      - "ROCM_AITER_FA"
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
-      # AITER fused-MoE disabled (CK GEMM crash); Triton fallback works. See note below.
+      # AITER fused-MoE disabled (CK GEMM crash); Triton fallback works.
       VLLM_ROCM_USE_AITER_MOE: "0"
       VLLM_ROCM_USE_AITER_MHA: "1"
       VLLM_ROCM_USE_AITER_RMSNORM: "1"
       VLLM_ROCM_USE_AITER_LINEAR: "1"
+      VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
 
 strategy_overrides: {}
 
