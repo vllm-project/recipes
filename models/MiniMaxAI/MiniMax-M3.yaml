@@ -3,7 +3,7 @@ meta:
   slug: "minimax-m3"
   provider: "MiniMax"
   description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 plus MXFP8, NVIDIA Blackwell NVFP4, and AMD MI355X MXFP4 variants. Runs on NVIDIA (Hopper/Blackwell) and AMD CDNA4/CDNA3."
-  date_updated: 2026-07-15
+  date_updated: 2026-07-24
   difficulty: advanced
   tasks:
     - text
@@ -148,8 +148,9 @@ variants:
   nvfp4:
     model_id: "nvidia/MiniMax-M3-NVFP4"
     precision: nvfp4
-    vram_minimum_gb: 257
-    description: "NVIDIA-quantized NVFP4 weights (ModelOpt) for Blackwell (B200/B300) — native FP4 tensor cores, ~half the VRAM of MXFP8."
+    # The mixed-precision checkpoint is 250.1 GB on disk; allow 20% headroom.
+    vram_minimum_gb: 301
+    description: "NVIDIA-quantized NVFP4 weights (ModelOpt) for Blackwell (B200/B300 and RTX PRO 6000) — native FP4 tensor cores."
     extra_args:
       - "--trust-remote-code"
     extra_env:
@@ -581,7 +582,11 @@ guide: |
 
   [`nvidia/MiniMax-M3-NVFP4`](https://huggingface.co/nvidia/MiniMax-M3-NVFP4)
   is an NVFP4 checkpoint quantized by NVIDIA with ModelOpt. It requires a vLLM
-  build with MiniMax-M3 NVFP4 support (vllm-project/vllm PR #46380).
+  build with MiniMax-M3 NVFP4 support from
+  [PR #46380](https://github.com/vllm-project/vllm/pull/46380). On RTX PRO 6000,
+  [PR #48929](https://github.com/vllm-project/vllm/pull/48929) must also be
+  merged for correct MiniMax-M3 NVFP4 SwiGLU-OAI parameter handling; do not use
+  the RTX recipe below with a build that predates that fix.
 
   Select the **nvfp4** variant and **B200** hardware in the command builder, or
   launch the tested B200 baseline directly:
@@ -610,6 +615,40 @@ guide: |
     --language-model-only \
     --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
   ```
+
+  ### RTX PRO 6000 TP4 + EAGLE3
+
+  The following configuration was validated using four GPUs from an eight-GPU
+  RTX PRO 6000 node in
+  [InferenceX run 30066976722](https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30066976722).
+  The run covered TP4 and TP4+EP4 at concurrency 1, 4, 16, and 64. It backported
+  the fix from vLLM PR #48929; use a vLLM build containing that fix instead of
+  applying a runtime patch.
+
+  ```bash
+  export VLLM_FLOAT32_MATMUL_PRECISION=high
+  CONC="${CONC:-64}"
+  NUM_SPEC_TOKENS=3
+
+  vllm serve nvidia/MiniMax-M3-NVFP4 \
+    --tensor-parallel-size 4 \
+    --disable-custom-all-reduce \
+    --gpu-memory-utilization 0.90 \
+    --max-model-len 9472 \
+    --kv-cache-dtype fp8 \
+    --block-size 128 \
+    --language-model-only \
+    --attention-backend TRITON_ATTN \
+    --moe-backend marlin \
+    --max-cudagraph-capture-size "$((CONC * (NUM_SPEC_TOKENS + 1)))" \
+    --max-num-seqs "$CONC" \
+    --max-num-batched-tokens 16384 \
+    --speculative-config '{"method":"eagle3","model":"Inferact/MiniMax-M3-EAGLE3","num_speculative_tokens":3,"draft_tensor_parallel_size":4,"attention_backend":"TRITON_ATTN"}' \
+    --no-enable-prefix-caching \
+    --trust-remote-code
+  ```
+
+  Add `--enable-expert-parallel` to reproduce the TP4+EP4 configuration.
 
   ## Quantized Variant (MXFP4 on MI355X)
 
@@ -721,6 +760,8 @@ guide: |
   - [Model card](https://huggingface.co/MiniMaxAI/MiniMax-M3)
   - [MXFP8 variant](https://huggingface.co/MiniMaxAI/MiniMax-M3-MXFP8)
   - [NVFP4 variant](https://huggingface.co/nvidia/MiniMax-M3-NVFP4)
+  - [Required RTX PRO 6000 vLLM fix](https://github.com/vllm-project/vllm/pull/48929)
+  - [RTX PRO 6000 validation run](https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30066976722)
   - [AMD MXFP4 variant](https://huggingface.co/amd/MiniMax-M3-MXFP4)
   - [MiniMax](https://www.minimax.io/)
   - [MiniMax Agent](https://agent.minimax.io/)
