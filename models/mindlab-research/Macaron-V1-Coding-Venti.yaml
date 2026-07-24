@@ -10,6 +10,8 @@ meta:
   performance_headline: "Coding-specialist merged-LoRA on GLM-5.2 — tuned for SWE Verified, TerminalBench, DeepSWE, and agentic coding"
   related_recipes:
     - "zai-org/GLM-5.2"
+  hardware:
+    b300: verified
 
 model:
   model_id: "mindlab-research/Macaron-V1-Coding-Venti"
@@ -72,7 +74,7 @@ variants:
     precision: fp8
     label: "FP8 (on-the-fly)"
     vram_minimum_gb: 893
-    description: "Same BF16 checkpoint, quantized to FP8 at load time via --quantization fp8 — not a native FP8 weight set. Halves weight memory so it fits a single node, and frees VRAM on larger trays (e.g. B300) for longer context / more sequences. Slower startup; slightly lower precision than native BF16."
+    description: "Same BF16 checkpoint, quantized to FP8 at load time via --quantization fp8 — not a native FP8 weight set. Halves weight memory so it fits a single node; on a B300 node it leaves ~2.7× the GPU KV-cache space of BF16 (≈3.07M vs 1.12M). Slower startup; on GSM8K (5-shot, exact-match) it matches native BF16 within noise (0.9424 vs 0.9431, ±0.0064)."
     extra_args:
       - "--quantization"
       - "fp8"
@@ -210,8 +212,8 @@ guide: |
   Pick the **FP8 (on-the-fly)** variant to load the same BF16 checkpoint as FP8 via
   `--quantization fp8` (runtime quantization — not a native FP8 weight set). At ≈893 GB it
   fits a single 8×H200 / 8×B200 node, and on larger trays (e.g. B300) it frees VRAM for
-  longer context or more concurrent sequences. Precision is slightly lower than native BF16, 
-  and startup is slower while the quantization pass runs at load.
+  longer context or more concurrent sequences. Startup is slower while the quantization pass
+  runs at load; the accuracy / KV-cache trade-off is small (see the B300 numbers below).
 
   ```bash
   vllm serve mindlab-research/Macaron-V1-Coding-Venti \
@@ -227,6 +229,18 @@ guide: |
   - **`--max-model-len`** — raise toward the 1M window when KV-cache headroom allows; lower on OOM.
   - **`--max-num-seqs 32`** — the main knob for fitting long context under concurrency.
   - **`--gpu-memory-utilization 0.80`** — leaves ROCm runtime headroom for MTP graph capture.
+
+  On a **B300** node, on-the-fly FP8 trades a negligible accuracy drop for a large KV-cache
+  headroom gain:
+
+  | Variant | GSM8K 5-shot (exact-match) | B300 GPU KV-cache size |
+  |---|---:|---:|
+  | BF16 | 0.9431 (±0.0064) | ≈1.12M |
+  | FP8 (on-the-fly) | 0.9424 (±0.0064) | ≈3.07M |
+
+  The GSM8K scores sit within stderr of each other, while FP8 leaves ~2.7× the KV-cache space
+  — so on B300 (where BF16 already fits) FP8 buys far more concurrency / context at almost no
+  accuracy cost.
 
   ### Speculative decoding (MTP)
 
