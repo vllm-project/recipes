@@ -103,6 +103,9 @@ variants:
       # TP comm overhead on the encoder.
       - "--mm-encoder-tp-mode"
       - "data"
+    extra_env:
+      VLLM_ROCM_USE_AITER_MOE: "1"
+      VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
     # AITER RMSNorm is left at its default (on when AITER is enabled): a local
     # TP4 GSM8K check measured identical accuracy on vs off (0.9697), so there is
     # no reason to disable it the way the single-node TP<8 guard used to.
