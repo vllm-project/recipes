@@ -48,6 +48,22 @@ function autoFitTp(vramMinGb, perGpuVram, gpuCount) {
 export function resolveSingleNodeTp(recipe, variant, hwProfile, strategyName = "single_node_tp") {
   const gpuCount = typeof hwProfile?.gpu_count === "number" ? hwProfile.gpu_count : 1;
   if (strategyName !== "single_node_tp") return gpuCount;
+  // Atlas A3 requires at least two Ascend NPUs. Keep this vendor-specific
+  // constraint ahead of the unchanged default auto-fit path used elsewhere.
+  if (hwProfile?.generation === "ascend" && hwProfile?.minimum_tp > 1) {
+    const minimumTp = Math.min(hwProfile.minimum_tp, gpuCount);
+    const variantTp = variant?.tp;
+    if (typeof variantTp === "number" && variantTp > 0) {
+      return Math.max(minimumTp, Math.min(variantTp, gpuCount));
+    }
+    const declaredTp = recipe?.strategy_overrides?.[strategyName]?.tp;
+    if (typeof declaredTp === "number" && declaredTp > 0) {
+      return Math.max(minimumTp, Math.min(declaredTp, gpuCount));
+    }
+    const perGpuVram = hwProfile?.vram_gb && gpuCount ? hwProfile.vram_gb / gpuCount : 0;
+    const vramMinGb = variant?.vram_minimum_gb || 0;
+    return Math.max(minimumTp, autoFitTp(vramMinGb, perGpuVram, gpuCount));
+  }
   // Variant-level override beats recipe-level. Used when a non-default variant
   // (typically an FP8-block-quantized sibling) needs a smaller TP than the
   // bf16 default — e.g. moe_intermediate_size=1536 demands TP ≤ 4 under FP8
@@ -408,16 +424,65 @@ export function pickDefaultHardware(hwProfiles, variant, recipe) {
 //
 // `docker_image` shapes:
 //   "vllm/vllm-openai:x"               (NVIDIA-only)
-//   { nvidia, amd, tpu }               (brand-keyed; each value is a string)
+//   { nvidia, amd, tpu, intel, ascend } (brand-keyed; each value is a string)
 //   { cu129, cu130 }                   (NVIDIA CUDA-keyed — explicit paired tags,
 //                                        auto-suffix is skipped in favor of these)
-//   { nvidia: { cu129, cu130 }, amd, tpu }  (mixed: NVIDIA value may be a CUDA map)
+//   { nvidia: { cu129, cu130 }, amd, tpu, intel, ascend }
+//                                        (mixed: NVIDIA value may be a CUDA map)
 // Exact variant+hardware overrides may also set
 //   variants.<key>.hardware_overrides.<hw_id>.docker_image
 //
 // When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
 // the user's `dockerCudaVariant` toggle instead of appending `-cu129`/`-cu130`.
+function computeAscendDockerMeta(recipe, variant, hwProfile, hwId) {
+  const nightlyRequired = recipe.model?.nightly_required === true;
+  const ascendDeviceCount = Math.max(1, hwProfile?.gpu_count || 8);
+  const isAscendA3 = hwId === "atlas_800i_a3" || ascendDeviceCount > 8;
+  const defaultTag = nightlyRequired ? "nightly-main" : "main";
+  const defaultImage = `quay.io/ascend/vllm-ascend:${defaultTag}${isAscendA3 ? "-a3" : ""}`;
+  const exactHardwareOverride = hwId
+    ? variant?.hardware_overrides?.[hwId]?.docker_image
+    : null;
+  let pinned = typeof exactHardwareOverride === "string" ? exactHardwareOverride : null;
+
+  function applyAscendOverride(override) {
+    if (!override || pinned || typeof override !== "object") return;
+    if (typeof override.ascend === "string") pinned = override.ascend;
+  }
+
+  applyAscendOverride(variant?.docker_image);
+  applyAscendOverride(recipe.model?.docker_image);
+
+  const gpuFlags = [
+    "--net=host --shm-size=1g",
+    "--device=/dev/davinci_manager --device=/dev/devmm_svm --device=/dev/hisi_hdc",
+    Array.from({ length: ascendDeviceCount }, (_, i) => `--device=/dev/davinci${i}`).join(" "),
+    "-v /usr/local/dcmi:/usr/local/dcmi",
+    "-v /usr/local/Ascend/driver/tools/hccn_tool:/usr/local/Ascend/driver/tools/hccn_tool",
+    "-v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi",
+    "-v /usr/local/Ascend/driver/lib64/:/usr/local/Ascend/driver/lib64/",
+    "-v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info",
+    "-v /etc/ascend_install.info:/etc/ascend_install.info",
+  ].join(" \\\n  ");
+  return {
+    image: pinned || defaultImage,
+    gpuFlags,
+    brandKey: "ascend",
+    isAmd: false,
+    isTpu: false,
+    isIntel: false,
+    pinned,
+    cudaMap: null,
+    nightlyRequired,
+    isAscend: true,
+    ascendDeviceCount,
+  };
+}
+
 export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
+  if (hwProfile?.generation === "ascend" || hwProfile?.brand === "Huawei") {
+    return computeAscendDockerMeta(recipe, variant, hwProfile, hwId);
+  }
   // When `model.nightly_required: true` and no explicit `docker_image` pin,
   // swap the brand defaults to nightly tags so the Install block matches the
   // nightly pip wheel that's also being rendered. vLLM publishes `:nightly`
@@ -481,7 +546,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
     : isAmd
       ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
     : isIntel
-      ? "--shm-size=16g"	
+      ? "--shm-size=16g"
       : "--gpus all";
   return { image, gpuFlags, brandKey, isAmd, isTpu, isIntel, pinned, cudaMap, nightlyRequired };
 }
@@ -500,7 +565,7 @@ function dockerGpuArgv(meta) {
   }
   if (meta.isIntel) {
     return ["--shm-size", "16g"];
-  }	
+  }
   return ["--gpus", "all"];
 }
 
@@ -517,6 +582,21 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
   --privileged --ipc=host -p ${port}:${port} \\
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
   ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
+}
+
+// vLLM Ascend images use `vllm` as the entrypoint, so retain the `serve`
+// subcommand explicitly. This separate builder leaves all existing images on
+// the original Docker command path above.
+export function buildAscendDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
+  const envFlags = Object.entries(env || {})
+    .map(([k, v]) => `-e ${k}=${v}`)
+    .join(" \\\n  ");
+  const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
+  const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
+  return `docker run ${gpuFlags} --entrypoint vllm \\
+  --privileged --ipc=host -p ${port}:${port} \\
+  -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
+  ${image} serve ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
 }
 
 // argv companion to buildDockerRun. `argv` here is the inner command's argv —
@@ -538,6 +618,39 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
     "-v", "~/.cache/huggingface:/root/.cache/huggingface",
     ...envFlags,
     meta.image,
+    ...cmdArgs,
+  ];
+}
+
+// argv companion for the Ascend-only Docker builder.
+export function buildAscendDockerArgv({ argv, env, meta, port = 8000 }) {
+  const envFlags = [];
+  for (const [k, v] of Object.entries(env || {})) {
+    envFlags.push("-e", `${k}=${v}`);
+  }
+  const cmdArgs = argv[0] === "vllm" && argv[1] === "serve" ? argv.slice(2) : argv;
+  const deviceCount = meta.ascendDeviceCount || 8;
+  const ascendGpuArgv = [
+    "--net=host", "--shm-size=1g",
+    "--device=/dev/davinci_manager", "--device=/dev/devmm_svm", "--device=/dev/hisi_hdc",
+    ...Array.from({ length: deviceCount }, (_, i) => `--device=/dev/davinci${i}`),
+    "-v", "/usr/local/dcmi:/usr/local/dcmi",
+    "-v", "/usr/local/Ascend/driver/tools/hccn_tool:/usr/local/Ascend/driver/tools/hccn_tool",
+    "-v", "/usr/local/bin/npu-smi:/usr/local/bin/npu-smi",
+    "-v", "/usr/local/Ascend/driver/lib64/:/usr/local/Ascend/driver/lib64/",
+    "-v", "/usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info",
+    "-v", "/etc/ascend_install.info:/etc/ascend_install.info",
+  ];
+  return [
+    "docker", "run",
+    ...ascendGpuArgv,
+    "--privileged", "--ipc=host",
+    "-p", `${port}:${port}`,
+    "-v", "~/.cache/huggingface:/root/.cache/huggingface",
+    ...envFlags,
+    "--entrypoint", "vllm",
+    meta.image,
+    "serve",
     ...cmdArgs,
   ];
 }
