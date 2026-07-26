@@ -11,7 +11,6 @@ meta:
   related_recipes: []
   hardware:
     h200: verified
-    b300: verified
 
 model:
   model_id: "zai-org/GLM-5.1"
@@ -229,7 +228,7 @@ guide: |
       "kv_connector_module_path": "tilert.pd_vllm.prefill_connector",
       "kv_role": "kv_producer",
       "kv_connector_extra_config": {
-        "tilert_host": "[<DECODE_IP>]",
+        "tilert_host": "[192.168.1.10]",
         "tilert_ctrl_port": 5556,
         "tilert_model": "glm5",
         "tilert_max_seq_len": 202752
