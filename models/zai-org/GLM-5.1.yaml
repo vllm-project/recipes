@@ -243,8 +243,8 @@ guide: |
 
   ```bash
   python3 -m tilert.pd_vllm.pd_router \
-    --vllm-url http://<PREFILL_IP>:8000 \
-    --decode <DECODE_IP>:5556:5557 \
+    --vllm-url http://192.168.1.9:8000 \
+    --decode 192.168.1.10:5556:5557 \
     --model-path /models/GLM-5.1-FP8 \
     --port 23333
   ```
