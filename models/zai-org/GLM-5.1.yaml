@@ -98,7 +98,7 @@ guide: |
     Use the latest main branch if you need tool calling + MTP simultaneously.
   - **Hardware (FP8):** 8xH200 or 8xH20 (141GB × 8)
   - **DeepGEMM (FP8):** install via `install_deepgemm.sh` from vLLM repo
- 
+
   ### Using Docker
 
   ```bash
@@ -142,8 +142,6 @@ guide: |
        --served-model-name glm-5.1-fp8
   ```
 
-  
-  
   ## Client Usage
 
   ```python
