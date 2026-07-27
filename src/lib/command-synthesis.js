@@ -98,6 +98,35 @@ export function recommendStrategy(recipe, _hwProfile, nodeCount = 1) {
   return compatible[0] || "single_node_tp";
 }
 
+/** Most nodes the builder offers for one deployment, and per PD pool. */
+export const MAX_NODES = 16;
+
+/**
+ * Recipe GPU floor (`strategy_min_gpus`) for a strategy id or a PD pool mode
+ * ("tp"/"tep"/"dep"). Scalar = one bar for every strategy, map = per-strategy
+ * bars. Absent = 0, so recipes that don't declare it are never gated.
+ */
+export function minGpusForStrategy(recipe, key) {
+  const cfg = recipe?.strategy_min_gpus;
+  if (cfg == null) return 0;
+  if (typeof cfg === "number") return cfg;
+  return cfg[key] ?? cfg[`multi_node_${key}`] ?? cfg[`single_node_${key}`] ?? 0;
+}
+
+/** Nodes needed to clear that floor at `gpusPerNode` GPUs per node. */
+export function nodesForStrategy(recipe, key, gpusPerNode) {
+  return Math.ceil(minGpusForStrategy(recipe, key) / (gpusPerNode || 8)) || 1;
+}
+
+/**
+ * Whether a strategy can ever clear its floor here: multi-node scales out to
+ * MAX_NODES, everything else is stuck with one node's GPUs.
+ */
+export function isStrategyReachable(recipe, key, deployType, gpusPerNode) {
+  const maxNodes = deployType === "multi_node" ? MAX_NODES : 1;
+  return maxNodes * (gpusPerNode || 8) >= minGpusForStrategy(recipe, key);
+}
+
 /**
  * PD-cluster pool parallelism modes offered for a recipe, derived from its
  * `compatible_strategies[]`. Each strategy id encodes a parallelism family in
@@ -1251,8 +1280,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       (_, i) => `    --decode http://$DECODE_NODE_${i + 1}:8002 \\`,
     );
     // intra-node-data-parallel-size = max dp_local across the two pools for
-    // DEP setups; 1 for pure-TP PD.
-    const intraDp = Math.max(pMeta.dpLocal || 0, dMeta.dpLocal || 0, 1);
+    // DEP setups; 1 for pure-TP PD. Recipes can pin it via
+    // strategy_overrides.<strategy>.router.intra_node_data_parallel_size.
+    const intraDp = recipe.strategy_overrides?.[strategyName]?.router?.intra_node_data_parallel_size
+      ?? Math.max(pMeta.dpLocal || 0, dMeta.dpLocal || 0, 1);
     // Router --host / --port use the same $ROUTER_HOST / $ROUTER_PORT vars
     // that curl / bench target, so filling them once in the Endpoints panel
     // makes the router and clients agree. Unfilled, shell leaves the $VAR

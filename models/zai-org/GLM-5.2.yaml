@@ -55,6 +55,7 @@ features:
           - default
           - nvfp4
           - bf16
+          - mxfp4
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":5}'
