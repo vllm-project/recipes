@@ -132,6 +132,31 @@ hardware_profiles:
     vram_gb: 2304
     multi_node: false
 
+  # ── Huawei Ascend NPU ──
+  # `restricted: true` follows the TPU pattern: these profiles stay hidden
+  # unless a recipe explicitly lists them in `meta.hardware`. A later recipe
+  # PR must pin a tested vLLM Ascend image before declaring either verified.
+  atlas_800i_a2:
+    brand: Huawei
+    generation: ascend
+    display_name: "Atlas 800I A2"
+    description: "Huawei Ascend Atlas 800I A2 · 8-NPU server · served via vLLM Ascend"
+    gpu_count: 8
+    vram_gb: 512
+    multi_node: false
+    restricted: true
+
+  atlas_800i_a3:
+    brand: Huawei
+    generation: ascend
+    display_name: "Atlas 800I A3"
+    description: "Huawei Ascend Atlas 800I A3 · 16-NPU server · served via vLLM Ascend"
+    gpu_count: 16
+    vram_gb: 1024
+    multi_node: false
+    minimum_tp: 2
+    restricted: true
+
   # ── Google Cloud TPU ──
   # `restricted: true` hides these from the hardware picker unless the recipe
   # explicitly lists them in `meta.hardware` — TPU support requires a separate

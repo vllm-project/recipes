@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, buildAscendDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy } from "@/lib/command-synthesis";
 import { resolveOmniTasks } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -1558,9 +1558,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // in sync without requiring the user to re-click.
   const pipEffectivelyHidden =
     recipe.model?.install?.pip === false || hwProfile?.generation === "tpu";
+  const ascendPipHidden = dockerMeta.isAscend;
   const dockerEffectivelyHidden = recipe.model?.install?.docker === false;
   const effectiveInstallMode =
-    installMode === "pip" && pipEffectivelyHidden
+    installMode === "pip" && (pipEffectivelyHidden || ascendPipHidden)
       ? "docker"
       : installMode === "docker" && dockerEffectivelyHidden
         ? "pip"
@@ -2658,7 +2659,9 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
   // block tabs above). Pip mode: prelude = `export KEY=VAL` lines.
   const prelude = isDocker ? "" : envToExports(env);
   const displayCommand = isDocker
-    ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+    ? dockerMeta.isAscend
+      ? buildAscendDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+      : buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
     : command;
   // A companion process may ride along (`companions[]` from resolveCommand —
   // a feature's `companion:` or the active kv_offload option's, e.g.
@@ -2787,7 +2790,7 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   const pipHidden = pipCfg === false;
   const dockerHidden = dockerCfg === false;
   const [open, setOpen] = useState(false);
-  const { isAmd, isTpu, image: dockerImage, brandKey, cudaMap } = dockerMeta;
+  const { isAmd, isTpu, isAscend, image: dockerImage, brandKey, cudaMap } = dockerMeta;
   // A variant may require a newer vLLM than the recipe baseline (e.g. the DSpark
   // checkpoint needs 0.25.0, currently nightly). Take the higher version and OR
   // the nightly flag so the Install block reflects the selected checkpoint.
@@ -2836,10 +2839,13 @@ uv pip install -U vllm --torch-backend auto`;
   // override at `model.install.docker.command` still wins for recipes that
   // need a custom build step. The CUDA-version selector (below, next to Copy)
   // drives the tag suffix for NVIDIA; AMD / TPU pull a single image.
+  // Ascend also uses one image selected for the active Atlas generation.
   const defaultDockerCmd = `docker pull ${dockerImage}`;
   const dockerCmd = dockerCfg?.command || defaultDockerCmd;
   const defaultDockerNote = isTpu
     ? "TPU builds are published by vllm-project/tpu-inference. See the Trillium and Ironwood tpu-recipes for pinned image tags and exact deployment flags."
+    : isAscend
+      ? "Ascend recipes should pin the vLLM Ascend image tested on the selected Atlas system."
     : isAmd
       ? undefined
       : cudaMap
@@ -2862,9 +2868,11 @@ uv pip install -U vllm --torch-backend auto`;
 
   // TPU has no pip wheel — force-hide the pip tab regardless of recipe overrides.
   const effectivePipHidden = pipHidden || isTpu;
-  const dockerLabel = isTpu ? "Docker (TPU)" : isAmd ? "Docker (ROCm)" : "Docker";
+  // Ascend requires a matched vLLM Ascend image in this foundation phase.
+  const ascendPipHidden = isAscend;
+  const dockerLabel = isTpu ? "Docker (TPU)" : isAscend ? "Docker (Ascend)" : isAmd ? "Docker (ROCm)" : "Docker";
   const tabs = [
-    !effectivePipHidden && {
+    !(effectivePipHidden || ascendPipHidden) && {
       id: "pip",
       label: isAmd ? "pip / uv (ROCm)" : "pip / uv",
       code: pipCmd,
@@ -2890,7 +2898,7 @@ uv pip install -U vllm --torch-backend auto`;
         <Package size={12} className="text-[var(--command-fg)]/50 shrink-0" />
         <span className="text-[11px] font-semibold text-[var(--command-fg)]/70 uppercase tracking-widest">Install</span>
         <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
-          vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · {isTpu ? "TPU" : isAmd ? "ROCm" : "CUDA"}
+          vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · {isTpu ? "TPU" : isAscend ? "Ascend" : isAmd ? "ROCm" : "CUDA"}
         </span>
         {nightlyRequired && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
@@ -3011,7 +3019,9 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
   const isDocker = installMode === "docker";
   const wrap = (cmd) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env: result.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+      ? dockerMeta.isAscend
+        ? buildAscendDockerRun({ command: cmd, env: result.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+        : buildDockerRun({ command: cmd, env: result.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
       : cmd;
   const tabs = [
     { id: "head", label: "Head", command: wrap(result.headCommand) },
@@ -3069,7 +3079,9 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   // it stays as-is with its pip-install hint regardless of install mode.
   const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+      ? dockerMeta.isAscend
+        ? buildAscendDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+        : buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
       : cmd;
   // Mooncake composed into PD (result.mooncake): a "Mooncake Config" tab
   // (launch step 0) writes the shared config file(s) once — every
@@ -3203,7 +3215,9 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
   const isDocker = installMode === "docker";
   const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+      ? dockerMeta.isAscend
+        ? buildAscendDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+        : buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
       : cmd;
 
   const instances = result.instances || 2;

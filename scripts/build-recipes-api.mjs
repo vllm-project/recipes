@@ -32,6 +32,8 @@ import {
   computeDockerMeta,
   buildDockerRun,
   buildDockerArgv,
+  buildAscendDockerRun,
+  buildAscendDockerArgv,
 } from "../src/lib/command-synthesis.js";
 
 const ROOT = process.cwd();
@@ -216,6 +218,14 @@ function validateFeatureModes(recipe, sourceFile) {
 // Wrap a rendered (command, argv) pair in `docker run`. Returns
 // { docker_command, docker_argv } so each form has its docker counterpart.
 function dockerize(command, argv, env, dockerMeta, port = 8000) {
+  if (dockerMeta.isAscend) {
+    return {
+      docker_command: buildAscendDockerRun({
+        command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, port,
+      }),
+      docker_argv: buildAscendDockerArgv({ argv, env, meta: dockerMeta, port }),
+    };
+  }
   return {
     docker_command: buildDockerRun({
       command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, port,
