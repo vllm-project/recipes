@@ -266,6 +266,7 @@ guide: |
     "messages": [{"role": "user", "content": "nihao"}]
   }'
   ```
+  * TPS UP TO 400 + FOR SINGLE REQUEST(single B300 deploy)
 
   ## Client Usage
 
