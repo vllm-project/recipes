@@ -32,6 +32,8 @@ import {
   computeDockerMeta,
   buildDockerRun,
   buildDockerArgv,
+  nodesForStrategy,
+  isStrategyReachable,
 } from "../src/lib/command-synthesis.js";
 
 const ROOT = process.cwd();
@@ -229,14 +231,21 @@ function dockerize(command, argv, env, dockerMeta, port = 8000) {
 //   {prefill,decode} → one full node per role × N, derived from
 //                       ceil(variant.vram_minimum_gb / hwProfile.vram_gb)
 //   "skip" → would need >4 nodes per role; don't emit a fantasy cluster
-function pickPdNodes(hwProfile, variant) {
+// Each role is then grown to clear its parallelism's `strategy_min_gpus` floor,
+// matching what the builder renders.
+function pickPdNodes(hwProfile, variant, recipe, strategies) {
   if (pdFitsSingleNode(hwProfile, variant)) return null;
   const nodeVram = typeof hwProfile?.vram_gb === "number" ? hwProfile.vram_gb : 0;
   const modelVram = variant?.vram_minimum_gb || 0;
   if (nodeVram <= 0 || modelVram <= 0) return null;
   const nodesPerRole = Math.ceil(modelVram / nodeVram);
   if (nodesPerRole > 4) return "skip";
-  return { prefill: nodesPerRole, decode: nodesPerRole };
+  const floored = (role) => {
+    const par = recipe?.strategy_overrides?.pd_cluster?.[role]?.parallelism
+      || strategies?.pd_cluster?.[role]?.parallelism || "tp";
+    return Math.max(nodesPerRole, nodesForStrategy(recipe, par, hwProfile.gpu_count));
+  };
+  return { prefill: floored("prefill"), decode: floored("decode") };
 }
 
 // Render one (recipe × variant × strategy × hardware × nodeCount) into the
@@ -391,6 +400,12 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
   const kvStoreIds = Object.keys(strategies).filter(
     (s) => strategies[s].deploy_type === "kv_store_lb"
   );
+  // Nodes to render a strategy at: its usual count, grown to clear any
+  // `strategy_min_gpus` floor. Same helper the builder's Nodes pills use.
+  const nodesFor = (s) => Math.max(
+    strategies[s]?.deploy_type === "multi_node" ? 2 : 1,
+    nodesForStrategy(recipe, s, hwProfile.gpu_count),
+  );
   const compatible = [...new Set([
     ...(recipe.compatible_strategies || []),
     ...kvStoreIds,
@@ -407,11 +422,13 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     // fail-open: a recipe marks a (strategy, GPU) pair `unsupported` under
     // `strategy_hardware` when that layout isn't usable on that GPU.
     if (recipe.strategy_hardware?.[s]?.[hwId] === "unsupported") return false;
+    // Same GPU floor the builder applies (`strategy_min_gpus`).
+    if (!isStrategyReachable(recipe, s, strategies[s]?.deploy_type, hwProfile.gpu_count)) return false;
     return scalable || (!s.startsWith("multi_node_") && s !== "pd_cluster");
   });
   const supportsMultiNode = scalable && compatible.some((s) => s.startsWith("multi_node_"));
-  const recommendedNodeCount = !fitsSingleNode(hwProfile, variant) && supportsMultiNode ? 2 : 1;
-  let recommendedStrategy = recommendStrategy(recipe, hwProfile, recommendedNodeCount);
+  const baseNodeCount = !fitsSingleNode(hwProfile, variant) && supportsMultiNode ? 2 : 1;
+  let recommendedStrategy = recommendStrategy(recipe, hwProfile, baseNodeCount);
   // Never recommend a strategy the recipe opted this GPU out of via
   // strategy_hardware — fall back to the first compatible serving strategy.
   if (recipe.strategy_hardware?.[recommendedStrategy]?.[hwId] === "unsupported") {
@@ -420,11 +437,14 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     ) || compatible.find((s) => strategies[s]?.deploy_type !== "kv_store_lb")
       || recommendedStrategy;
   }
+  // Grow to whatever the recommended strategy's floor demands, so the headline
+  // rendering never sits below its own bar.
+  const recommendedNodeCount = Math.max(baseNodeCount, nodesFor(recommendedStrategy));
   const recommendedFeatures = defaultFeaturesFor(recipe, hwId, variantKey);
 
   // PD's node-count is independent of nodeCount — it lives in pdNodes per role.
   const recommendedPdNodes = recommendedStrategy === "pd_cluster"
-    ? pickPdNodes(hwProfile, variant)
+    ? pickPdNodes(hwProfile, variant, recipe, strategies)
     : null;
   if (recommendedPdNodes === "skip") return null;
 
@@ -461,7 +481,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     let servingStrategy = s;
     let kvOffload = null;
     if (s === "pd_cluster") {
-      pdNodes = pickPdNodes(hwProfile, variant);
+      pdNodes = pickPdNodes(hwProfile, variant, recipe, strategies);
       if (pdNodes === "skip") continue;
       nc = 1;
     } else if (strategies[s]?.deploy_type === "kv_store_lb") {
@@ -481,7 +501,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
       if (!servingStrategy) continue;
       kvOffload = s;
     } else {
-      nc = s.startsWith("multi_node_") ? 2 : 1;
+      nc = nodesFor(s);
     }
     const feats = defaultFeaturesFor(recipe, hwId, variantKey);
     const rendered = renderCommand(recipe, variantKey, servingStrategy, hwId, nc, feats, strategies, taxonomy, pdNodes, kvOffload);

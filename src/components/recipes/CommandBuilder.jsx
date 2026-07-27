@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, MAX_NODES, nodesForStrategy, isStrategyReachable } from "@/lib/command-synthesis";
 import { resolveOmniTasks } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -834,6 +834,24 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const recommended = useMemo(() => recommendStrategy(recipe, hwProfile, nodeCount), [recipe, hwProfile, nodeCount]);
 
+  const perNode = hwProfile?.gpu_count || 8;
+  // Nodes a strategy (or PD pool mode) needs to clear its `strategy_min_gpus`
+  // floor on the active hardware.
+  const nodesNeededFor = useCallback(
+    (key) => nodesForStrategy(recipe, key, perNode),
+    [recipe, perNode]
+  );
+
+  // Node-count pills: 1 / 2, plus whatever count an offered strategy's floor
+  // demands (DEP≥16 → 4 on a 4-GPU tray). No floor → exactly [1, 2].
+  const nodeOptions = useMemo(() => {
+    const needed = Math.max(
+      0,
+      ...(recipe.compatible_strategies || []).map((s) => nodesForStrategy(recipe, s, perNode)),
+    );
+    return needed > 2 && needed <= MAX_NODES ? [1, 2, needed] : [1, 2];
+  }, [recipe, perNode]);
+
   const compatibleStrategies = useMemo(() => {
     return (recipe.compatible_strategies || []).filter((s) => {
       const strat = strategies[s];
@@ -842,9 +860,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       if (strat.deploy_type === "kv_store_lb") return false;
       if (nodeCount === 1 && strat.deploy_type === "multi_node") return false;
       if (nodeCount > 1 && strat.deploy_type === "single_node") return false;
-      return true;
+      // Listed while reachable at SOME node count, not just the current one —
+      // picking it grows the count (selectStrategy).
+      return isStrategyReachable(recipe, s, strat.deploy_type, perNode);
     });
-  }, [recipe, strategies, nodeCount]);
+  }, [recipe, strategies, nodeCount, perNode]);
 
   // Mooncake KV-store deployments (deploy_type: kv_store_lb) — offered on
   // every recipe by default (omni recipes never reach this row), no
@@ -941,18 +961,31 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       ? { needGb, availGb, gpuCount: hwGpuCount, hwName: hwProfile.display_name || hwId }
       : null;
 
+  // Pools scale to MAX_NODES, so every mode reachable on this hardware stays
+  // offered; picking one grows the pool to its floor (setPdPar).
+  const pdAvailableModes = useMemo(
+    () => pdModes.filter((m) => isStrategyReachable(recipe, m, "multi_node", perNode)),
+    [pdModes, recipe, perNode]
+  );
+  const effPdPrefillPar = pdAvailableModes.includes(pdPrefillPar) ? pdPrefillPar : (pdAvailableModes[0] || "tp");
+  const effPdDecodePar = pdAvailableModes.includes(pdDecodePar) ? pdDecodePar : (pdAvailableModes[0] || "tp");
+  // Floor the sizes too, not just clicks — a pool whose DEFAULT mode carries a
+  // floor (K3's decode is dep) would otherwise render below it.
+  const effPdPrefillNodes = Math.max(pdPrefillNodes, nodesNeededFor(effPdPrefillPar));
+  const effPdDecodeNodes = Math.max(pdDecodeNodes, nodesNeededFor(effPdDecodePar));
+
   const result = useMemo(
     () => {
       const advArgs = advanced.flatMap((id) => advancedById[id]?.args || []);
       const pdNodes = activeStrategy === "pd_cluster"
         ? {
-          prefill: { nodes: pdPrefillNodes, rank: pdPrefillRank, parallelism: pdPrefillPar },
-          decode: { nodes: pdDecodeNodes, rank: pdDecodeRank, parallelism: pdDecodePar },
+          prefill: { nodes: effPdPrefillNodes, rank: pdPrefillRank, parallelism: effPdPrefillPar },
+          decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
         }
         : null;
       return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx });
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, pdPrefillNodes, pdDecodeNodes, pdPrefillRank, pdDecodeRank, pdPrefillPar, pdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx]
   );
 
   // Visual feedback when any rendered command changes. Covers single-node
@@ -1136,12 +1169,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const selectStrategy = (s) => {
     setStrategyOverride(s);
-    syncUrl({ strategy: s });
+    // Grow the cluster to this strategy's GPU floor so the pick is immediately
+    // valid instead of rendering below its own bar.
+    const needed = nodesNeededFor(s);
+    const grow = needed > nodeCount;
+    if (grow) setNodeCount(needed);
+    syncUrl({ strategy: s, ...(grow && { nodes: String(needed) }) });
     // Persisted per-recipe (keyed by hf_id), so picking TP here doesn't
     // affect any other recipe's default. Spec-decoding auto-enable for
     // latency strategies is handled by an effect below so it also fires
     // on initial mount when TP is the default recommendation.
-    saveRecipeState(recipe.hf_id, { strategy: s || undefined });
+    saveRecipeState(recipe.hf_id, { strategy: s || undefined, ...(grow && { nodes: needed }) });
   };
 
   // "" = off · "simple"/"lmcache" = connector appended to the current serving
@@ -1226,15 +1264,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // (DEP start-rank vs TP node-rank), so reset that pool's rank to 0.
   const setPdPar = (role, mode) => {
     if (!pdModes.includes(mode)) return;
-    if (role === "prefill") {
-      setPdPrefillPar(mode);
-      setPdPrefillRank(0);
-      syncUrl({ prefill_mode: mode === pdDefaultPar.prefill ? "" : mode, prefill_rank: "" });
-    } else {
-      setPdDecodePar(mode);
-      setPdDecodeRank(0);
-      syncUrl({ decode_mode: mode === pdDefaultPar.decode ? "" : mode, decode_rank: "" });
-    }
+    const isPrefill = role === "prefill";
+    const cur = isPrefill ? pdPrefillNodes : pdDecodeNodes;
+    // Grow this pool to the mode's GPU floor (DEP≥16) so the pick is valid.
+    const nodes = Math.max(cur, nodesNeededFor(mode));
+    (isPrefill ? setPdPrefillPar : setPdDecodePar)(mode);
+    (isPrefill ? setPdPrefillRank : setPdDecodeRank)(0);
+    if (nodes !== cur) (isPrefill ? setPdPrefillNodes : setPdDecodeNodes)(nodes);
+    syncUrl({
+      [`${role}_mode`]: mode === pdDefaultPar[role] ? "" : mode,
+      [`${role}_rank`]: "",
+      ...(nodes !== cur && { [`${role}_nodes`]: String(nodes) }),
+    });
   };
 
   const toggleFeature = (f) => {
@@ -2213,25 +2254,25 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               <div className="flex flex-col gap-2 text-sm">
                 <PdNodeInput
                   label="Prefill"
-                  value={pdPrefillNodes}
+                  value={effPdPrefillNodes}
                   gpuPerNode={hwProfile.gpu_count || 8}
                   onChange={(n) => setPdNodes("prefill", n)}
-                  modes={pdModes}
-                  parallelism={pdPrefillPar}
+                  modes={pdAvailableModes}
+                  parallelism={effPdPrefillPar}
                   onParChange={(m) => setPdPar("prefill", m)}
                 />
                 <PdNodeInput
                   label="Decode"
-                  value={pdDecodeNodes}
+                  value={effPdDecodeNodes}
                   gpuPerNode={hwProfile.gpu_count || 8}
                   onChange={(n) => setPdNodes("decode", n)}
-                  modes={pdModes}
-                  parallelism={pdDecodePar}
+                  modes={pdAvailableModes}
+                  parallelism={effPdDecodePar}
                   onParChange={(m) => setPdPar("decode", m)}
                 />
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  total {(pdPrefillNodes + pdDecodeNodes) * (hwProfile.gpu_count || 8)} GPUs
-                  · {pdPrefillNodes + pdDecodeNodes} node{pdPrefillNodes + pdDecodeNodes === 1 ? "" : "s"}
+                  total {(effPdPrefillNodes + effPdDecodeNodes) * (hwProfile.gpu_count || 8)} GPUs
+                  · {effPdPrefillNodes + effPdDecodeNodes} node{effPdPrefillNodes + effPdDecodeNodes === 1 ? "" : "s"}
                 </span>
               </div>
             </ConfigRow>
@@ -2246,7 +2287,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 : undefined}
             >
               <PillGroup>
-                {[1, 2].map((n) => {
+                {nodeOptions.map((n) => {
                   // Multi-node pill is disabled when the recipe declares no
                   // multi_node_* (or pd_cluster) strategy (small dense models
                   // commonly omit these), or when the active hardware can't be
@@ -2277,14 +2318,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                                 ? `Each vLLM instance runs on a single node${(result.instances || 1) > 1 ? ` — ${result.instances} instances = ${result.instances} nodes total (plus master${result.store ? "/store" : ""})` : ""}.`
                                 : "Single-node deployment (one HGX box)"
                               : kvInstancesActive
-                                ? `Each instance spans 2 nodes × ${hwProfile.gpu_count || 8} GPUs${(result.instances || 1) > 1 ? ` — ${result.instances} instances = ${(result.instances || 1) * 2 * (hwProfile.gpu_count || 8)} GPUs total` : ` = ${2 * (hwProfile.gpu_count || 8)} GPUs`}.`
-                                : `2 nodes × ${hwProfile.gpu_count || 8} GPUs = ${2 * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
+                                ? `Each instance spans ${n} nodes × ${hwProfile.gpu_count || 8} GPUs${(result.instances || 1) > 1 ? ` — ${result.instances} instances = ${(result.instances || 1) * n * (hwProfile.gpu_count || 8)} GPUs total` : ` = ${n * (hwProfile.gpu_count || 8)} GPUs`}.`
+                                : `${n} nodes × ${hwProfile.gpu_count || 8} GPUs = ${n * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
                       }
                     >
-                      <span className="font-semibold">{n === 1 ? "Single-node" : "Multi-node (example: 2)"}</span>
+                      <span className="font-semibold">{n === 1 ? "Single-node" : `Multi-node (example: ${n})`}</span>
                       {n > 1 && !disabled && (
                         <span className="text-muted-foreground ml-1.5 font-mono">
-                          {2 * (hwProfile.gpu_count || 8)}×GPU
+                          {n * (hwProfile.gpu_count || 8)}×GPU
                         </span>
                       )}
                     </Pill>
