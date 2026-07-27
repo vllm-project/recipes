@@ -98,10 +98,7 @@ guide: |
     Use the latest main branch if you need tool calling + MTP simultaneously.
   - **Hardware (FP8):** 8xH200 or 8xH20 (141GB × 8)
   - **DeepGEMM (FP8):** install via `install_deepgemm.sh` from vLLM repo
-  - **TileRT PD disaggregation (optional):** `vllm/vllm-openai:nightly` image +
-    `tilert >= 0.1.5.post1` (`pip install tilert`) — verified on 8xB300, see the
-    dedicated section below
-
+ 
   ### Using Docker
 
   ```bash
