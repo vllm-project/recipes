@@ -204,8 +204,6 @@ strategy_overrides:
   pd_cluster:
     hardware_overrides:
       blackwell:
-        # Validated by InferenceX disagg sweeps: #2230 (B200), #2310 (B300),
-        # #2338 (B300 MXFP8), #2339 (GB200 MXFP8), #2340 (GB300 MXFP8).
         extra_args:
           - "--attention_config.backend"
           - "FLASHINFER"
