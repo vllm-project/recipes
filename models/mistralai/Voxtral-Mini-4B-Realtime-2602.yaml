@@ -3,6 +3,7 @@ meta:
   slug: "voxtral-mini-4b-realtime-2602"
   provider: "Mistral AI"
   description: "Multilingual realtime speech transcription (13 languages) with a natively streaming causal audio encoder; configurable 80ms–2.4s transcription delay served via vLLM's Realtime API"
+  date_added: 2026-05-13
   date_updated: 2026-05-13
   difficulty: beginner
   tasks:

@@ -3,6 +3,7 @@ meta:
   slug: "paddleocr-vl"
   provider: "PaddlePaddle"
   description: "PaddleOCR-VL (0.9B) — compact vision-language model for document parsing, OCR, tables, formulas, charts"
+  date_added: 2026-04-20
   date_updated: 2026-04-17
   difficulty: beginner
   tasks:

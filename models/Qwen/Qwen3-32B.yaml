@@ -3,6 +3,7 @@ meta:
   slug: "qwen3-32b"
   provider: "Qwen"
   description: "Qwen3 32B dense model with hybrid thinking/non-thinking modes — verified on TPU v6e (Trillium)."
+  date_added: 2026-06-05
   date_updated: 2026-06-04
   difficulty: intermediate
   tasks:

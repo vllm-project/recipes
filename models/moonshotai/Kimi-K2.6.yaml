@@ -3,6 +3,7 @@ meta:
   slug: "kimi-k2.6"
   provider: "Moonshot AI"
   description: "Open-source native multimodal agentic MoE model with vision-language understanding, tool calling, and thinking modes"
+  date_added: 2026-04-20
   date_updated: 2026-07-13
   difficulty: intermediate
   tasks:

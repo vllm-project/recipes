@@ -3,6 +3,7 @@ meta:
   slug: "moss-tts"
   provider: "OpenMOSS"
   description: "Flagship 8B model of the OpenMOSS MOSS-TTS Family — high-fidelity zero-shot voice cloning, ultra-long stable speech, token-level duration and phoneme control, 20-language code-switched synthesis — served via vLLM-Omni through the OpenAI /v1/audio/speech API (24 kHz mono)."
+  date_added: 2026-06-17
   date_updated: 2026-06-15
   difficulty: intermediate
   tasks:

@@ -3,6 +3,7 @@ meta:
   slug: "unlimited-ocr"
   provider: "Ernie (Baidu)"
   description: "Baidu's state-of-the-art document-parsing model with Reference Sliding Window Attention (R-SWA), optimized for full-page OCR and markdown generation."
+  date_added: 2026-06-28
   date_updated: 2026-06-28
   difficulty: intermediate
   tasks:

@@ -3,6 +3,7 @@ meta:
   slug: "diffusiongemma-26b-a4b-it"
   provider: "Google"
   description: "Google's DiffusionGemma — a block-diffusion language model built on Gemma 4's MoE backbone (26B total / 4B active). Generates tokens via iterative denoising over a fixed-length canvas rather than left-to-right autoregressive decoding, enabling higher throughput with parallel block generation."
+  date_added: 2026-06-11
   date_updated: 2026-06-10
   difficulty: advanced
   tasks:

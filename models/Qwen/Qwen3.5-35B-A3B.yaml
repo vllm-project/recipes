@@ -3,6 +3,7 @@ meta:
   slug: "qwen3.5-35b-a3b"
   provider: "Qwen"
   description: "Compact Qwen3.5 multimodal MoE (35B total / 3B active) with gated delta networks, 256 experts, and 262K context"
+  date_added: 2026-04-22
   date_updated: 2026-04-22
   difficulty: beginner
   tasks:

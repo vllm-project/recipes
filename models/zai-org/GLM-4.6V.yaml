@@ -3,6 +3,7 @@ meta:
   slug: "glm-4.6v"
   provider: "GLM (Z-AI)"
   description: "GLM-4.6 vision-language MoE model — image-text-to-text with 128K context, native FP8 checkpoint, and expert parallelism"
+  date_added: 2026-04-20
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:

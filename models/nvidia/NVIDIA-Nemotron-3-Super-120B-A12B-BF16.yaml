@@ -3,6 +3,7 @@ meta:
   slug: "nemotron-3-super-120b-a12b"
   provider: "NVIDIA"
   description: "NVIDIA Nemotron-3-Super Mamba-hybrid latent-MoE (~120B total / ~12B active) with BF16, FP8, and NVFP4 variants"
+  date_added: 2026-04-28
   date_updated: 2026-04-28
   difficulty: advanced
   tasks:
