@@ -3,6 +3,7 @@ meta:
   slug: "hy3"
   provider: "Hy (Tencent)"
   description: "Tencent Hy3 — scaled-up MoE language model (295B total / 21B active) with a 3.8B MTP layer for speculative decoding, 256K context, and hy_v3 tool/reasoning parsers"
+  date_added: 2026-07-06
   date_updated: 2026-07-06
   difficulty: intermediate
   tasks:

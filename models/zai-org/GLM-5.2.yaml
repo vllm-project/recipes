@@ -3,6 +3,7 @@ meta:
   slug: "glm-5.2"
   provider: "GLM (Z-AI)"
   description: "GLM-5.2 — frontier-scale MoE language model (~743B total parameters, 39B active) with up to 5-token MTP speculative decoding and thinking mode"
+  date_added: 2026-06-16
   date_updated: 2026-07-12
   difficulty: advanced
   tasks:

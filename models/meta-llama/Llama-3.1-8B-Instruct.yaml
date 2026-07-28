@@ -3,6 +3,7 @@ meta:
   slug: "llama-3.1-8b-instruct"
   provider: "Meta"
   description: "Meta's Llama 3.1 8B dense instruction-tuned language model with 128K context"
+  date_added: 2025-10-15
   date_updated: 2026-04-17
   difficulty: beginner
   tasks:

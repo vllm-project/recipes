@@ -22,8 +22,10 @@ function loadHfDates() {
 function parseRecipe(filePath) {
   const raw = yaml.load(fs.readFileSync(filePath, "utf8"));
   // js-yaml auto-parses YYYY-MM-DD into Date objects — normalize to string
-  if (raw.meta?.date_updated instanceof Date) {
-    raw.meta.date_updated = raw.meta.date_updated.toISOString().split("T")[0];
+  for (const field of ["date_added", "date_updated"]) {
+    if (raw.meta?.[field] instanceof Date) {
+      raw.meta[field] = raw.meta[field].toISOString().split("T")[0];
+    }
   }
   // Derive HF identity from file path: models/<org>/<repo>.yaml
   const rel = path.relative(MODELS_DIR, filePath);

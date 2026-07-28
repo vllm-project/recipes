@@ -3,6 +3,7 @@ meta:
   slug: "tml-inkling"
   provider: "Thinking Machines Lab"
   description: "Natively multimodal 1T-parameter MoE from Thinking Machines Lab — text/image/audio in, text out, up to 1M context — with relative attention, short convolution, and shared expert sinks."
+  date_added: 2026-07-15
   date_updated: 2026-07-14
   difficulty: intermediate
   tasks:

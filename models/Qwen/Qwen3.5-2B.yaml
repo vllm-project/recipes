@@ -3,6 +3,7 @@ meta:
   slug: "qwen3.5-2b"
   provider: "Qwen"
   description: "Qwen3.5 mini dense multimodal model (2B) — edge / low-VRAM serving with 262K context"
+  date_added: 2026-04-22
   date_updated: 2026-04-22
   difficulty: beginner
   tasks:

@@ -3,6 +3,7 @@ meta:
   slug: "plamo-2-translate"
   provider: "Preferred Networks"
   description: "Post-trained PLaMo 2 translation model specialized for English/Japanese translation tasks."
+  date_added: 2026-06-03
   date_updated: 2026-06-02
   difficulty: intermediate
   tasks:

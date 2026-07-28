@@ -3,6 +3,7 @@ meta:
   slug: "deepseek-ocr"
   provider: "DeepSeek"
   description: "Frontier OCR model exploring optical context compression for LLMs, optimized for document parsing and markdown generation."
+  date_added: 2025-10-22
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:

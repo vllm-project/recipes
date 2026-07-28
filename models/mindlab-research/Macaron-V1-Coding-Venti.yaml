@@ -3,6 +3,7 @@ meta:
   slug: "macaron-v1-coding-venti"
   provider: "MindLab Research"
   description: "Macaron-V1-Coding-Venti — MindLab's coding-specialist checkpoint: the Macaron-V1-Venti L2 Coding LoRA merged into the GLM-5.2 BF16 base. Same MoE architecture and launch as GLM-5.2 (~743B total, 39B active), no runtime adapter."
+  date_added: 2026-07-28
   date_updated: 2026-07-23
   difficulty: advanced
   tasks:

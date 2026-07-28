@@ -3,6 +3,7 @@ meta:
   slug: "deepseek-v4-flash"
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
+  date_added: 2026-04-24
   date_updated: 2026-07-16
   difficulty: hard
   tasks:

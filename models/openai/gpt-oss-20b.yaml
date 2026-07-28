@@ -3,6 +3,7 @@ meta:
   slug: "gpt-oss-20b"
   provider: "OpenAI"
   description: "OpenAI's gpt-oss-20b — 21B-total / 3.6B-active MoE reasoning model with native MXFP4 quant; fits in 16GB VRAM"
+  date_added: 2025-08-05
   date_updated: 2026-05-08
   difficulty: beginner
   tasks:

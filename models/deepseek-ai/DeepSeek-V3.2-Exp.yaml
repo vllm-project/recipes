@@ -3,6 +3,7 @@ meta:
   slug: "deepseek-v3.2-exp"
   provider: "DeepSeek"
   description: "Experimental DeepSeek-V3.2 preview with sparse attention (MQA-like logits) and FP8 KV cache; architecture matches DeepSeek-V3.1 except for the sparse attention mechanism."
+  date_added: 2025-09-29
   date_updated: 2026-04-17
   difficulty: advanced
   tasks:

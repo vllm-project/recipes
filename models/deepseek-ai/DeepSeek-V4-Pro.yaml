@@ -3,6 +3,7 @@ meta:
   slug: "deepseek-v4-pro"
   provider: "DeepSeek"
   description: "DeepSeek V4 flagship MoE (1.6T total / 49B active) with hybrid CSA+HCA attention, manifold-constrained hyper-connections, Muon-trained on 32T+ tokens, and three-tier reasoning."
+  date_added: 2026-04-24
   date_updated: 2026-07-10
   difficulty: hard
   tasks:

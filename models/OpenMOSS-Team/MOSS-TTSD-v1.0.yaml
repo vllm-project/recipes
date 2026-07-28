@@ -3,6 +3,7 @@ meta:
   slug: "moss-ttsd-v1.0"
   provider: "OpenMOSS"
   description: "OpenMOSS's 8B spoken-dialogue generation model for expressive, multi-speaker, ultra-long conversations — served via vLLM-Omni through the OpenAI /v1/audio/speech API (24 kHz mono)."
+  date_added: 2026-06-17
   date_updated: 2026-06-15
   difficulty: intermediate
   tasks:

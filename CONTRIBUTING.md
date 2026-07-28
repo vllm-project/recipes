@@ -49,7 +49,8 @@ meta:
   slug: "deepseek-v3.2"                           # kebab-case; keep consistent with title
   provider: "DeepSeek"                            # human-readable label
   description: "…"                                # one-sentence summary
-  date_updated: 2026-04-20                        # today's date (or last touch)
+  date_added: 2026-04-20                          # initial catalog addition; never change
+  date_updated: 2026-04-20                        # latest material recipe change
   difficulty: intermediate                        # beginner | intermediate | advanced
   tasks:
     - text                                        # one or more of: text, multimodal, omni, embedding

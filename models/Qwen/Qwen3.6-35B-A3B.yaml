@@ -3,6 +3,7 @@ meta:
   slug: "qwen3.6-35b-a3b"
   provider: "Qwen"
   description: "Smaller Qwen3.6 multimodal MoE model (35B total / 3B active) with BF16, FP8, and NVIDIA NVFP4 variants"
+  date_added: 2026-04-16
   date_updated: 2026-06-03
   difficulty: beginner
   tasks:
