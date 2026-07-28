@@ -581,10 +581,10 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   // does not cover instead of skipping directly to the global default.
   applyOverride(recipe.model?.docker_image);
 
-  // Intel XPU (Arc Pro / Battlemage) ships in a dedicated image, not the CPU one.
-  // Otherwise, with a CUDA map, `image` defaults to the cu130 (upstream baseline)
-  // pick so toggle-unaware callers (the JSON API's renderings) still get a real
-  // tag; the client's CUDA selector re-picks from `cudaMap` on top of this.
+  // Intel XPU ships in a dedicated image, not the CPU one. Otherwise, with a
+  // CUDA map, `image` defaults to the cu130 (upstream baseline) pick so
+  // toggle-unaware callers (the JSON API's renderings) still get a real tag;
+  // the client's CUDA selector re-picks from `cudaMap` on top of this.
   const image = isXpu && !pinned
     ? "vllm/vllm-openai-xpu:latest"
     : pinned || (cudaMap ? cudaMap.cu130 || cudaMap.cu129 : null) || DEFAULT_IMAGE[brandKey];

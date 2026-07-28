@@ -191,7 +191,7 @@ hardware_profiles:
     multi_node: false
     restricted: true
 
-  # ── Intel Arc Pro (Battlemage) XPU ──
+  # ── Intel Arc Pro XPU ──
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
   # lists it in `meta.hardware` — XPU support ships in the separate
   # `vllm/vllm-openai-xpu` image and is only declared on validated recipes.
@@ -199,7 +199,7 @@ hardware_profiles:
     brand: Intel
     generation: xpu
     display_name: "Arc Pro B60"
-    description: "Intel Arc Pro B60 (Battlemage) 24 GB · 4-card node · vLLM XPU backend"
+    description: "Intel Arc Pro B60 24 GB · 4-card node · vLLM XPU backend"
     gpu_count: 4
     vram_gb: 96
     multi_node: false
@@ -209,7 +209,7 @@ hardware_profiles:
     brand: Intel
     generation: xpu
     display_name: "Arc Pro B70"
-    description: "Intel Arc Pro B70 (Battlemage) 32 GB · 4-card node · vLLM XPU backend"
+    description: "Intel Arc Pro B70 32 GB · 4-card node · vLLM XPU backend"
     gpu_count: 4
     vram_gb: 128
     multi_node: false

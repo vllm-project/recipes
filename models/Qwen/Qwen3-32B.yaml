@@ -159,7 +159,7 @@ guide: |
 
   ### Intel XPU (B60, B70)
 
-  Validated on 4× Intel Arc Pro B60 / B70 (Battlemage; B60 24 GB, B70 32 GB per card) with the
+  Validated on 4× Intel Arc Pro B60 / B70 (B60 24 GB, B70 32 GB per card) with the
   official vLLM XPU image `vllm/vllm-openai-xpu:latest`.
 
   ```bash
