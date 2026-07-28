@@ -24,7 +24,6 @@ prefill:
     - '{"kv_connector":"NixlConnector","kv_role":"kv_producer","kv_load_failure_policy":"fail"}'
     - "--enforce-eager"
   env:
-    VLLM_USE_NCCL_SYMM_MEM: "1"
     NCCL_CUMEM_ENABLE: "1"
     NCCL_MNNVL_ENABLE: "1"
     NCCL_NVLS_ENABLE: "1"
