@@ -21,7 +21,7 @@ meta:
 
 model:
   model_id: "moonshotai/Kimi-K3"
-  min_vllm_version: "0.26.0"
+  min_vllm_version: "0.27.0"
   docker_image:
     nvidia: "vllm/vllm-openai:kimi-k3"
     amd: "vllm/vllm-openai-rocm:kimi-k3"
