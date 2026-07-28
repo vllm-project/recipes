@@ -4,18 +4,19 @@ meta:
   provider: "Moonshot AI"
   description: "Pre-release 2.8T-parameter native multimodal MoE with Kimi Delta Attention, Gated MLA, Attention Residuals, and a 1M-token context window"
   date_added: 2026-07-27
-  date_updated: 2026-07-29
+  date_updated: 2026-07-30
   difficulty: hard
   tasks:
     - multimodal
     - text
-  performance_headline: "Pre-release TP8, TEP16, and disaggregated P/D profiles for the 2.8T MXFP4 checkpoint"
+  performance_headline: "Pre-release TP8, TEP16, TP8xPP2, and disaggregated P/D profiles for the 2.8T MXFP4 checkpoint"
   related_recipes:
     - "moonshotai/Kimi-K2.6"
     - "moonshotai/Kimi-K2.5"
   default_hardware: b300
   hardware:
     h200: verified
+    b200: verified
     b300: verified
     gb200: verified
     gb300: verified
@@ -63,6 +64,16 @@ features:
       - "kimi_k3"
   spec_decoding:
     description: "Use Inferact trained DSpark."
+    # DSpark does not compose with pipeline parallelism yet
+    # (vllm-project/vllm#50098), so the feature is gated off multi_node_tp_pp
+    # (the 2-node Blackwell TP8xPP2 profile). Every other strategy keeps it.
+    strategies:
+      - single_node_tp
+      - multi_node_tp
+      - multi_node_tep
+      - multi_node_dep
+      - multi_node_tp_dp
+      - pd_cluster
     args:
       - "--speculative-config"
       - '{"model":"Inferact/Kimi-K3-DSpark", "num_speculative_tokens":7, "method": "dspark", "attention_backend": "FLASHINFER_MLA", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
@@ -96,6 +107,7 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
   - multi_node_tep
+  - multi_node_tp_pp
   - multi_node_dep
   - multi_node_tp_dp
   - pd_cluster
@@ -118,7 +130,9 @@ strategy_hardware:
 
 default_strategy: single_node_tp
 
-# TP/TEP run from 8 GPUs; DEP needs 16+. Applies to aggregated and PD pools.
+# TP/TEP run from 8 GPUs; DEP and TP+PP need 16+. TP+PP is the 2-node
+# Blackwell profile (TP8 within a node x PP2 across), so its floor is a full
+# 2 nodes. Applies to aggregated and PD pools.
 # H100 (80 GB/GPU → 640 GB/node) can't hold the ~1.68 TB MXFP4 checkpoint in
 # fewer than 4 nodes, so every layout starts at 32 GPUs there — which also
 # takes single_node_tp off the H100 pill row.
@@ -129,6 +143,7 @@ strategy_min_gpus:
   # H200 → 2 nodes (TP8·DP2), GB200/GB300 NVL4 trays → 4 trays (TP4·DP4).
   multi_node_tp_dp: 16
   multi_node_tep: 8
+  multi_node_tp_pp: 16
   multi_node_dep: 16
   h100: 32
 
@@ -203,6 +218,40 @@ strategy_overrides:
     extra_args:
       - "--moe-backend"
       - "deep_gemm_mega_moe"
+
+  # 2-node Blackwell aggregated profile: TP8 within each node x PP2 across the
+  # pair (16 GPUs). The MXFP4 checkpoint (~1.68 TB of weights) does not fit one
+  # 8xB200 node (1440 GB), so TP8 shards attention/dense and PP2 splits the
+  # layers across the pair. B300 (268 GB/GPU → 2144 GB/node) does hold a full
+  # replica, and runs the same layout for throughput. Plain TP, NOT TEP:
+  # expert parallelism stays off and the 896 routed experts are TP-sharded
+  # inside each pipeline stage.
+  #
+  # Deliberately NOT a `hardware_overrides.blackwell` block — that keyspace
+  # REPLACES the recipe Blackwell baseline, which would drop fastsafetensors,
+  # the 1M max-model-len, fp8 KV and prefix caching. These are plain strategy
+  # args instead: they emit before hardware overrides, so on Blackwell the
+  # baseline layers on top and the two flags below survive (the baseline sets
+  # neither), while Hopper/AMD keep their own memory-utilization and
+  # batched-token tuning by last-wins dedupe.
+  multi_node_tp_pp:
+    extra_args:
+      # 0.90, not the 0.95 baseline: the flashinfer TRTLLM MXFP4 MoE kernel
+      # allocates a ~1.6 GiB runtime workspace outside vLLM's pool on the first
+      # forward, and at 0.95 a 180 GB B200 OOMs on the first warmup pass. B300
+      # has the headroom to spare, so the pair shares one value.
+      - "--gpu-memory-utilization"
+      - "0.90"
+      # Cap prefill chunks so one long request cannot OOM a pipeline stage.
+      - "--max-num-batched-tokens"
+      - "8192"
+    extra_env:
+      NCCL_CUMEM_ENABLE: "1"
+      # ~1.68 TB of weights off shared storage, and one long agentic request
+      # can hold a PP stage past vLLM's 300 s model-execution default.
+      VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+      VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS: "1800"
+
   pd_cluster:
     router:
       intra_node_data_parallel_size: 1
