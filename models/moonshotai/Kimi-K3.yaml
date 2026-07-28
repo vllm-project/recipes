@@ -186,12 +186,18 @@ strategy_overrides:
     hardware_overrides:
       blackwell:
         extra_args:
+          - "--max-model-len"
+          - "1000000"
           - "--kv-cache-dtype"
           - "fp8"
           - "--attention-config"
           - '{"mla_prefill_backend":"TRTLLM_RAGGED","use_prefill_query_quantization":true}'
         extra_env:
           VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
+          VLLM_ALLREDUCE_USE_FLASHINFER: "1"
+          VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          VLLM_USE_RUST_FRONTEND: "1"
           UCX_TLS: "rc,cuda_copy"
     prefill:
       parallelism: tep
