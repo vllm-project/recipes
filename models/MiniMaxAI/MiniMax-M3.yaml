@@ -112,6 +112,9 @@ variants:
     # comfortably, ~4 GPUs for weights alone on Blackwell (B200/B300) or AMD MI350X/MI355X (gfx950)).
     vram_minimum_gb: 513
     description: "NVIDIA-quantized MXFP8 weights — Blackwell (B200/B300) for native MX tensor cores, and AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 Matrix Cores."
+    extra_args:
+      - "--attention_config.indexer_kv_dtype"
+      - "fp8"
     hardware_overrides:
       h100:
         # 8x H100 80GB (640 GB node) fits the ~513 GB MXFP8 weights but not the
@@ -152,6 +155,8 @@ variants:
     description: "NVIDIA-quantized NVFP4 weights (ModelOpt) for Blackwell (B200/B300) — native FP4 tensor cores, ~half the VRAM of MXFP8."
     extra_args:
       - "--trust-remote-code"
+      - "--attention_config.indexer_kv_dtype"
+      - "fp8"
     extra_env:
       VLLM_FLOAT32_MATMUL_PRECISION: "high"
   mxfp4:
