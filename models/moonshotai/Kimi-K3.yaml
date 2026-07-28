@@ -57,7 +57,7 @@ features:
     args:
       - "--reasoning-parser"
       - "kimi_k3"
-  spec_decoding:  
+  spec_decoding:
     description: "Use Inferact trained DSpark."
     args:
       # Speculative decoding needs additional VRAM, so cap concurrent sequences.
@@ -65,6 +65,15 @@ features:
       - "32"
       - "--speculative-config"
       - '{"model":"Inferact/Kimi-K3-DSpark", "num_speculative_tokens":7, "method": "dspark", "attention_backend": "FLASHINFER_MLA", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
+    hardware_overrides:
+      # ROCm/MI355X: target keeps AITER MLA (prefill); the DSpark verify runs on TRITON_MLA
+      # (FLASHINFER_MLA is CUDA-only). max-num-seqs 128 matches our validated serve config.
+      amd:
+        args:
+          - "--max-num-seqs"
+          - "128"
+          - "--speculative-config"
+          - '{"model":"Inferact/Kimi-K3-DSpark", "num_speculative_tokens":7, "method": "dspark", "attention_backend": "TRITON_MLA", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
   text_only:
     description: "Skip the vision encoder for text-only workloads. Mutually exclusive with encoder_parallel."
     args:
