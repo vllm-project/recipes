@@ -151,6 +151,19 @@ guide: |
     --dtype float16 --max-model-len 8192"
   ```
 
+  ## Client Usage
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+  response = client.chat.completions.create(
+      model="meta-llama/Llama-3.1-8B-Instruct",
+      messages=[{"role": "user", "content": "Hello, how are you?"}],
+  )
+  print(response.choices[0].message.content)
+  ```
+
   ## Speculative Decoding (EAGLE3)
 
   An EAGLE3 draft head is available at
