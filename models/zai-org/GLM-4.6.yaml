@@ -3,7 +3,7 @@ meta:
   slug: "glm-4.6"
   provider: "GLM (Z-AI)"
   description: "GLM-4.6 MoE language model (~357B total parameters, BF16) with MTP speculative decoding, native tool calling and reasoning"
-  date_added: 2026-04-20
+  date_added: 2025-12-20
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:

@@ -3,7 +3,7 @@ meta:
   slug: "stable-diffusion-3.5"
   provider: "Stability AI"
   description: "Stability AI's Stable Diffusion 3.5 text-to-image family (medium 2.5B, large 8.1B, large-turbo) via vLLM-Omni with Cache-DiT acceleration"
-  date_added: 2026-04-20
+  date_added: 2026-01-03
   date_updated: 2026-04-17
   difficulty: beginner
   tasks:

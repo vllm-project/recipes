@@ -3,7 +3,7 @@ meta:
   slug: "glm-5"
   provider: "GLM (Z-AI)"
   description: "GLM-5 frontier-scale MoE language model (~744B total parameters, 28.5T training tokens) with asynchronous RL infrastructure for reasoning, coding, and agentic tasks"
-  date_added: 2026-04-20
+  date_added: 2026-02-09
   date_updated: 2026-04-17
   difficulty: advanced
   tasks:

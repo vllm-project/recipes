@@ -3,7 +3,7 @@ meta:
   slug: "glm-4.5v"
   provider: "GLM (Z-AI)"
   description: "GLM-4.5 vision-language MoE model (~107B parameters, BF16) with image-text-to-text capability, 64K context, expert parallelism, and native FP8"
-  date_added: 2026-04-20
+  date_added: 2025-08-12
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:

@@ -3,7 +3,7 @@ meta:
   slug: "qwen3-vl-235b-a22b-instruct"
   provider: "Qwen"
   description: "Qwen3-VL flagship MoE vision-language model with 235B total / 22B active parameters, supporting images, video, and long context."
-  date_added: 2026-04-20
+  date_added: 2025-09-28
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
