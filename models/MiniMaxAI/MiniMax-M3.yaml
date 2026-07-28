@@ -57,7 +57,14 @@ features:
       - "--speculative-config"
       - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
     hardware_overrides:
-      # On ROCm the Eagle3 draft head prefers the TRITON_ATTN attn backend as it has better performance than the default.
+      blackwell:
+        args:
+          - "--speculative-config"
+          - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3-GQA", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
+          - "--attention_config.backend"
+          - "FLASHINFER"
+          - "--attention_config.use_trtllm_attention"
+          - "true"
       amd:
         args:
           - "--speculative-config"
