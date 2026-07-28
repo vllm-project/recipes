@@ -130,7 +130,7 @@ hardware_overrides:
       - "--disable-custom-all-reduce"
     extra_env:
       VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
-   blackwell:
+  blackwell:
     extra_args:
       - "--max-model-len"
       - "1000000"
