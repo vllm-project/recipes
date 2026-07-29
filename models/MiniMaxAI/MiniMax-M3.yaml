@@ -53,16 +53,21 @@ features:
       - "--reasoning-parser"
       - "minimax_m3"
   spec_decoding:
-    description: "Eagle3 speculative decoding with the Inferact MiniMax-M3 draft head — accelerates decoding."
-    args:
-      - "--speculative-config"
-      - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
-    hardware_overrides:
-      # On ROCm the Eagle3 draft head prefers the TRITON_ATTN attn backend as it has better performance than the default.
-      amd:
+    description: "Eagle3 speculative decoding with an Inferact MiniMax-M3 draft head — accelerates decoding. Choose between the standard MHA head and the GQA head (16× smaller draft KV cache — better for long-context or high-batch deployments)."
+    default_mode: eagle3
+    modes:
+      eagle3:
+        label: "MHA"
+        description: "Standard Eagle3 draft head (Multi-Head Attention, 64 KV heads)."
         args:
           - "--speculative-config"
-          - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "TRITON_ATTN"}'
+          - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
+      eagle3_gqa:
+        label: "GQA"
+        description: "GQA Eagle3 draft head (Grouped Query Attention, 4 KV heads vs 64) — 16× smaller draft KV cache. Prefer for long-context or large-batch deployments where draft KV memory is the constraint."
+        args:
+          - "--speculative-config"
+          - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3-GQA", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -619,6 +624,19 @@ guide: |
     --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
   ```
 
+  For long-context or high-batch workloads where draft KV memory is the binding
+  constraint, swap in the **GQA** variant:
+
+  ```bash
+  VLLM_FLOAT32_MATMUL_PRECISION=high \
+    vllm serve nvidia/MiniMax-M3-NVFP4 \
+    --tensor-parallel-size 8 \
+    --trust-remote-code \
+    --block-size 128 \
+    --language-model-only \
+    --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3-GQA", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
+  ```
+
   ## Quantized Variant (MXFP4 on MI355X)
 
   [`amd/MiniMax-M3-MXFP4`](https://huggingface.co/amd/MiniMax-M3-MXFP4)
@@ -724,12 +742,30 @@ guide: |
     mutually exclusive with Encoder Parallel.
  
 
+  ## EAGLE3 Speculative Decoding
+
+  Two Inferact draft heads are available as selectable modes in the *Spec decoding*
+  feature — both use `method: eagle3` with 3 speculative tokens and share
+  MiniMax-M3's embedding table and LM head:
+
+  | Mode | Repo | KV heads | Draft KV cache |
+  |------|------|----------|----------------|
+  | **MHA** (default) | `Inferact/MiniMax-M3-EAGLE3` | 64 | baseline |
+  | **GQA** | `Inferact/MiniMax-M3-EAGLE3-GQA` | 4 | **16× smaller** |
+
+  The GQA head uses Grouped Query Attention (4 KV heads grouped from 64 query
+  heads) — the only architectural difference from the MHA head. The 16× reduction
+  in draft KV state makes it preferable when draft memory is the binding constraint
+  (long-context serving or large batch sizes).
+
   ## References
 
   - [Model card](https://huggingface.co/MiniMaxAI/MiniMax-M3)
   - [MXFP8 variant](https://huggingface.co/MiniMaxAI/MiniMax-M3-MXFP8)
   - [NVFP4 variant](https://huggingface.co/nvidia/MiniMax-M3-NVFP4)
   - [AMD MXFP4 variant](https://huggingface.co/amd/MiniMax-M3-MXFP4)
+  - [EAGLE3 draft head (MHA)](https://huggingface.co/Inferact/MiniMax-M3-EAGLE3)
+  - [EAGLE3 draft head (GQA)](https://huggingface.co/Inferact/MiniMax-M3-EAGLE3-GQA)
   - [MiniMax](https://www.minimax.io/)
   - [MiniMax Agent](https://agent.minimax.io/)
   - [MiniMax Platform](https://platform.minimax.io/)
