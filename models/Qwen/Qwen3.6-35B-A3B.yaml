@@ -12,7 +12,7 @@ meta:
   related_recipes:
     - "Qwen/Qwen3.5-397B-A17B"
   hardware:
-    dgx_spark_gb10:
+    dgx_spark_gb10: verified
     h100: verified
     h200: verified
     mi300x: verified

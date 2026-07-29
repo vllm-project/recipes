@@ -15,6 +15,7 @@ meta:
   hardware:
     h100: verified
     h200: verified
+    dgx_spark_gb10: verified
 
 model:
   model_id: "google/diffusiongemma-26B-A4B-it"
@@ -63,6 +64,34 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 24
     description: "NVFP4 (4-bit) quantized weights"
+  nvidia_nvfp4:
+    model_id: "nvidia/diffusiongemma-26B-A4B-it-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 24
+    description: "NVIDIA NVFP4 (4-bit) quantized weights"
+    hardware_overrides:
+      dgx_spark_gb10:
+        extra_args:
+        - "--gpu-memory-utilization"
+        - "0.8"
+        - "--max-num-seqs"
+        - "8"
+        - "--enable-auto-tool-choice"
+        - "--tool-call-parser"
+        - "gemma4"
+        - "--load-format"
+        - "fastsafetensors"
+        - "--attention-backend"
+        - "TRITON_ATTN"
+        - "--enable-prefix-caching"
+        - "--diffusion-config"
+        - '{"canvas_length":256}'
+        - "--override-generation-config"
+        - '{"max_new_tokens": null}'
+        - "--reasoning-parser"
+        - "gemma4"
+        - "--default-chat-template-kwargs"
+        - '{"enable_thinking": true}'
 
 compatible_strategies:
   - single_node_tp
