@@ -4,7 +4,7 @@ meta:
   provider: "Moonshot AI"
   description: "Pre-release 2.8T-parameter native multimodal MoE with Kimi Delta Attention, Gated MLA, Attention Residuals, and a 1M-token context window"
   date_added: 2026-07-27
-  date_updated: 2026-07-25
+  date_updated: 2026-07-29
   difficulty: hard
   tasks:
     - multimodal
@@ -147,7 +147,7 @@ hardware_overrides:
       - "--kv-cache-dtype"
       - "fp8"
       - "--attention-config"
-      - '{"mla_prefill_backend":"TRTLLM_RAGGED","use_prefill_query_quantization":true}'
+      - '{"use_prefill_query_quantization":true}'
       - "--enable-prefix-caching"
     extra_env:
       VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
@@ -193,9 +193,6 @@ strategy_overrides:
     # Blackwell only (cuda_copy is CUDA-only); replaces the recipe-level nvidia block.
     hardware_overrides:
       blackwell:
-        extra_args:
-          - "--attention-config"
-          - '{"mla_prefill_backend":"TRTLLM_RAGGED"}'
         extra_env:
           VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
           UCX_TLS: "rc,cuda_copy"

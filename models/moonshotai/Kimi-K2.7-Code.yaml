@@ -4,7 +4,7 @@ meta:
   provider: "Moonshot AI"
   description: "Coding-focused agentic MoE built on Kimi-K2.6, tuned for long-horizon software-engineering tasks with thinking-only reasoning, tool calling, and vision-language input"
   date_added: 2026-06-12
-  date_updated: 2026-06-12
+  date_updated: 2026-07-29
   difficulty: intermediate
   tasks:
     - multimodal
@@ -83,9 +83,6 @@ compatible_strategies:
   - pd_cluster
 
 hardware_overrides:
-  blackwell:
-    extra_args:
-      - "--attention-config.use_trtllm_ragged_deepseek_prefill=True"
   amd:
     # Verified on 8× MI300X / MI355X (MI325X listed as supported but not verified).
     extra_env:
