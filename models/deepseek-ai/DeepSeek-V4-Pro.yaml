@@ -151,8 +151,6 @@ hardware_overrides:
       - "0.95"
       - "--max-num-seqs"
       - "16"
-      - "--max-num-batched-tokens"
-      - "16384"
       - "--no-enable-flashinfer-autotune"
       - "--compilation-config"
       - '{"mode": 0, "cudagraph_mode": "FULL_DECODE_ONLY"}'
