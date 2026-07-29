@@ -4,7 +4,7 @@ meta:
   provider: "Moonshot AI"
   description: "Pre-release 2.8T-parameter native multimodal MoE with Kimi Delta Attention, Gated MLA, Attention Residuals, and a 1M-token context window"
   date_added: 2026-07-27
-  date_updated: 2026-07-25
+  date_updated: 2026-07-29
   difficulty: hard
   tasks:
     - multimodal
@@ -15,6 +15,7 @@ meta:
     - "moonshotai/Kimi-K2.5"
   default_hardware: b300
   hardware:
+    h100: unsupported
     h200: verified
     b300: verified
     gb300: verified
