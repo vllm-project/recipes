@@ -143,13 +143,11 @@ hardware_overrides:
   blackwell:
     extra_args:
       - "--max-model-len"
-      - "1000000"
+      - "1048576"
       - "--kv-cache-dtype"
       - "fp8"
       - "--attention-config"
       - '{"mla_prefill_backend":"TRTLLM_RAGGED","use_prefill_query_quantization":true}'
-      - "--max-num-batched-tokens"
-      - "32768"
       - "--enable-prefix-caching"
     extra_env:
       VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"

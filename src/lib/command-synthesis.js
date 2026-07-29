@@ -930,7 +930,6 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         if (parallelism === "tep") {
           args.push("--enable-expert-parallel");
           // Cross-node TEP perf tweak from multi_node_tep; single-node TEP omits it.
-          if (rolePoolNodes > 1) args.push("-cc.pass_config.fuse_allreduce_rms=False");
         }
         if (rolePoolNodes > 1) {
           const nodeIdx = Math.max(0, Math.min(rolePoolNodes - 1, pdRole.rank ?? 0));
