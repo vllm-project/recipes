@@ -173,6 +173,14 @@ kv_cache_strategy_hardware:
   kv_store_distributed_mooncake:
     gb200: unsupported
 
+# Optional per-recipe gate for the composing KV Offload options
+# (taxonomy.yaml → kv_offload). Normal options are fail-open (`unsupported`
+# opts out); options marked `requires_opt_in: true` in the taxonomy are
+# fail-CLOSED and stay disabled until listed `verified` here. Only mark
+# `verified` after actually serving this model with the option.
+kv_offload_support:
+  offloading_cpu: verified
+
 hardware_overrides:               # optional per-generation flags
   hopper:    { extra_args: [], extra_env: {} }
   blackwell: { extra_args: [], extra_env: {} }

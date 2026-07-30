@@ -283,6 +283,31 @@ export function isKvOffloadAllowedForStrategy(option, strategyName, strategy) {
 }
 
 /**
+ * Whether the recipe permits a composing KV-offload option. Fail-open like
+ * the rest of the schema, with two exceptions: `kv_offload_support:
+ * { <key>: unsupported }` opts out of an open option, and an option marked
+ * `requires_opt_in: true` in the taxonomy is fail-CLOSED — offered only when
+ * the recipe lists it as `verified`.
+ */
+export function isKvOffloadSupportedForRecipe(option, optionKey, recipe) {
+  if (!option) return false;
+  const support = recipe?.kv_offload_support?.[optionKey];
+  if (support === "unsupported") return false;
+  return option.requires_opt_in ? support === "verified" : true;
+}
+
+/**
+ * Whether a composing KV-offload option runs on this hardware brand. Options
+ * whose transfer path is device-specific declare a `brands` allowlist;
+ * absent = every brand.
+ */
+export function isKvOffloadBrandSupported(option, hwProfile) {
+  const allow = option?.brands;
+  if (!Array.isArray(allow) || allow.length === 0) return true;
+  return allow.includes(hwProfile?.brand);
+}
+
+/**
  * The effective mode key for a (feature, variant, hardware, user-selection)
  * tuple — the single source of truth shared by the command emitter and the UI.
  * Only considers modes allowed on this variant + hardware, then prefers, in
@@ -732,6 +757,18 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     : null;
   const kvComposing = !!kvStoreStrat && strategy.deploy_type !== "pd_cluster";
 
+  // The composing taxonomy option, resolved once behind all three gates
+  // (strategy, recipe opt-in, hardware brand) so its args and companion can't
+  // disagree; the same helpers back the UI pills. A URL forcing a gated
+  // option therefore emits nothing.
+  const kvOptRaw = taxonomy?.kv_offload?.[kvOffload];
+  const kvOpt = kvOptRaw
+    && isKvOffloadAllowedForStrategy(kvOptRaw, strategyName, strategy)
+    && isKvOffloadSupportedForRecipe(kvOptRaw, kvOffload, recipe)
+    && isKvOffloadBrandSupported(kvOptRaw, hwProfile)
+    ? kvOptRaw
+    : null;
+
   // kv composition only: instance count + which instance's command is being
   // rendered (0-based — affects the multi-node --master-addr naming below).
   // `kvInstances` accepts a bare count or { count, current }.
@@ -1039,13 +1076,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       if (featArgs) args.push(...featArgs);
     }
 
-    // 8. Composing KV offload (taxonomy.kv_offload.<key>: Simple, LMCache) —
-    //    the option's --kv-transfer-config is appended last so it wins the
-    //    last-wins dedupe over any earlier occurrence. Gating (pd/kv_store
-    //    exclusion + per-option strategy allowlist) lives in
-    //    isKvOffloadAllowedForStrategy, shared with the UI pills.
-    const kvOpt = taxonomy?.kv_offload?.[kvOffload];
-    if (kvOpt && isKvOffloadAllowedForStrategy(kvOpt, strategyName, strategy)) {
+    // 8. Composing KV offload (taxonomy.kv_offload.<key>) — the option's
+    //    --kv-transfer-config is appended last so it wins the last-wins
+    //    dedupe over any earlier occurrence. `kvOpt` is pre-gated above.
+    if (kvOpt) {
       args.push(...(kvOpt.args || []));
     }
     // Mooncake composes the same way on any non-PD serving strategy: the
@@ -1463,17 +1497,15 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       command: String(feat.companion.command).trimEnd(),
     }];
   });
-  const kvCompanionOpt = taxonomy?.kv_offload?.[kvOffload];
-  if (kvCompanionOpt?.companion?.command
-      && isKvOffloadAllowedForStrategy(kvCompanionOpt, strategyName, strategy)) {
+  if (kvOpt?.companion?.command) {
     companions.push({
       feature: `kv_offload:${kvOffload}`,
-      label: kvCompanionOpt.companion.label || kvOffload,
+      label: kvOpt.companion.label || kvOffload,
       description: [
-        kvCompanionOpt.companion.description || "",
-        kvCompanionOpt.install ? `Requires: ${kvCompanionOpt.install}` : "",
+        kvOpt.companion.description || "",
+        kvOpt.install ? `Requires: ${kvOpt.install}` : "",
       ].filter(Boolean).join(" "),
-      command: String(kvCompanionOpt.companion.command).trimEnd(),
+      command: String(kvOpt.companion.command).trimEnd(),
     });
   }
   return {
