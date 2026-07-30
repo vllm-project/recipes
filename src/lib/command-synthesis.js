@@ -102,29 +102,57 @@ export function recommendStrategy(recipe, _hwProfile, nodeCount = 1) {
 export const MAX_NODES = 16;
 
 /**
+ * Follower node ranks of an `nodes`-node deployment: [1, 2, … nodes-1].
+ * Rank 0 is the head, so an n-node cluster renders n-1 worker commands — each
+ * with its own --node-rank / --data-parallel-start-rank.
+ */
+export function followerRanks(nodes) {
+  return Array.from({ length: Math.max(0, (nodes || 1) - 1) }, (_, i) => i + 1);
+}
+
+/** One `strategy_min_gpus` block → the floor it declares for `key`. */
+function minGpusFromBlock(block, key) {
+  if (block == null) return 0;
+  if (typeof block === "number") return block;
+  return block[key] ?? block[`multi_node_${key}`] ?? block[`single_node_${key}`] ?? 0;
+}
+
+/**
  * Recipe GPU floor (`strategy_min_gpus`) for a strategy id or a PD pool mode
  * ("tp"/"tep"/"dep"). Scalar = one bar for every strategy, map = per-strategy
  * bars. Absent = 0, so recipes that don't declare it are never gated.
+ *
+ * The map also accepts exact-GPU-id keys (`h100: 32`, or a nested per-strategy
+ * map) — a hardware-conditional floor layered on top of the strategy bars,
+ * highest wins. Use it when one GPU needs a bigger cluster than the recipe
+ * baseline (K3's 1.68 TB of weights fits 2 H200 nodes but needs 4 on H100).
+ * Only exact GPU ids are read here, not generations — GPUs of one generation
+ * differ in VRAM, which is exactly what moves the floor.
  */
-export function minGpusForStrategy(recipe, key) {
+export function minGpusForStrategy(recipe, key, gpuId) {
   const cfg = recipe?.strategy_min_gpus;
   if (cfg == null) return 0;
   if (typeof cfg === "number") return cfg;
-  return cfg[key] ?? cfg[`multi_node_${key}`] ?? cfg[`single_node_${key}`] ?? 0;
+  return Math.max(
+    minGpusFromBlock(cfg, key),
+    gpuId ? minGpusFromBlock(cfg[gpuId], key) : 0,
+  );
 }
 
 /** Nodes needed to clear that floor at `gpusPerNode` GPUs per node. */
-export function nodesForStrategy(recipe, key, gpusPerNode) {
-  return Math.ceil(minGpusForStrategy(recipe, key) / (gpusPerNode || 8)) || 1;
+export function nodesForStrategy(recipe, key, gpusPerNode, gpuId) {
+  return Math.ceil(minGpusForStrategy(recipe, key, gpuId) / (gpusPerNode || 8)) || 1;
 }
 
 /**
  * Whether a strategy can ever clear its floor here: multi-node scales out to
- * MAX_NODES, everything else is stuck with one node's GPUs.
+ * MAX_NODES — as does pd_cluster, whose pools each size themselves node-wise —
+ * everything else is stuck with one node's GPUs.
  */
-export function isStrategyReachable(recipe, key, deployType, gpusPerNode) {
-  const maxNodes = deployType === "multi_node" ? MAX_NODES : 1;
-  return maxNodes * (gpusPerNode || 8) >= minGpusForStrategy(recipe, key);
+export function isStrategyReachable(recipe, key, deployType, gpusPerNode, gpuId) {
+  const scalesOut = deployType === "multi_node" || deployType === "pd_cluster";
+  const maxNodes = scalesOut ? MAX_NODES : 1;
+  return maxNodes * (gpusPerNode || 8) >= minGpusForStrategy(recipe, key, gpuId);
 }
 
 /**
@@ -153,7 +181,7 @@ export function pdPoolModes(recipe) {
     if (s === "pd_cluster") continue;
     if (/(?:^|_)dep$/.test(s)) modes.add("dep");
     else if (/(?:^|_)tep$/.test(s)) modes.add("tep");
-    else if (/(?:^|_)tp(?:_pp)?$/.test(s)) modes.add("tp");
+    else if (/(?:^|_)tp(?:_pp|_dp)?$/.test(s)) modes.add("tp");
   }
   if (modes.size === 0) modes.add("tp");
   let ordered = ["tp", "tep", "dep"].filter((m) => modes.has(m));
@@ -523,7 +551,10 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   // does not cover instead of skipping directly to the global default.
   applyOverride(recipe.model?.docker_image);
 
-  const image = pinned || DEFAULT_IMAGE[brandKey];
+  // With a CUDA map, `image` defaults to the cu130 (upstream baseline) pick so
+  // toggle-unaware callers (the JSON API's renderings) still get a real tag;
+  // the client's CUDA selector re-picks from `cudaMap` on top of this.
+  const image = pinned || (cudaMap ? cudaMap.cu130 || cudaMap.cu129 : null) || DEFAULT_IMAGE[brandKey];
   const gpuFlags = isTpu
     ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
     : isAmd
@@ -552,6 +583,16 @@ function dockerGpuArgv(meta) {
   return ["--gpus", "all"];
 }
 
+// Env vars pointing at host-written config files (Mooncake's *_CONFIG_PATH
+// heredocs) need the file inside the container too — bind the host path to
+// the same path so the `-e` value stays valid there. Read-only: the serve
+// process only consumes the config.
+function configPathMounts(env) {
+  return Object.entries(env || {})
+    .filter(([k]) => k.endsWith("_CONFIG_PATH"))
+    .map(([, v]) => `${v}:${v}:ro`);
+}
+
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
 // image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
 // CMD. Env vars become `-e KEY=VAL` inside the container.
@@ -559,11 +600,14 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
+  const mountFlags = configPathMounts(env)
+    .map((m) => `-v ${m}`)
+    .join(" \\\n  ");
   const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
   const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
   return `docker run ${gpuFlags} \\
   --privileged --ipc=host -p ${port}:${port} \\
-  -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
+  -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}
   ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
 }
 
@@ -575,6 +619,10 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
   for (const [k, v] of Object.entries(env || {})) {
     envFlags.push("-e", `${k}=${v}`);
   }
+  const mountFlags = [];
+  for (const m of configPathMounts(env)) {
+    mountFlags.push("-v", m);
+  }
   // `vllm serve <model> <...flags>` → CMD becomes `<model> <...flags>` since
   // the image's entrypoint is already `vllm serve`.
   const cmdArgs = argv[0] === "vllm" && argv[1] === "serve" ? argv.slice(2) : argv;
@@ -584,6 +632,7 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
     "--privileged", "--ipc=host",
     "-p", `${port}:${port}`,
     "-v", "~/.cache/huggingface:/root/.cache/huggingface",
+    ...mountFlags,
     ...envFlags,
     meta.image,
     ...cmdArgs,
@@ -786,8 +835,13 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     return raw || null;
   };
 
-  // Helper to merge args
-  function buildArgs(roleOverride, nodeRole) {
+  // Helper to merge args. `nodeRole` selects the multi-node shape ("head" =
+  // rank 0 / "worker" = a follower); `nodeRank` is which follower — the
+  // zero-based node index that feeds --node-rank (TP/TEP/PP) or the
+  // --data-parallel-start-rank offset (DEP). Defaults to 1, the first follower,
+  // so existing two-node callers are unchanged.
+  function buildArgs(roleOverride, nodeRole, nodeRank = 1) {
+    const mpRank = nodeRole === "worker" ? Math.max(1, nodeRank) : 0;
     const args = [];
 
     // Order:
@@ -845,7 +899,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     args.push("--data-parallel-size-local", String(gpuCount));
     args.push("--data-parallel-address", mpMasterAddr);
     if (nodeRole === "worker") {
-    args.push("--data-parallel-start-rank", String(dpLocal));
+    args.push("--data-parallel-start-rank", String(mpRank * dpLocal));
     }
 } else if (isMulti && strategy.parallelism === "tp_pp") {
       // TP inside each node, PP across nodes. Cross-node traffic flows through
@@ -854,18 +908,30 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       args.push("--tensor-parallel-size", String(gpuCount));
       args.push("--pipeline-parallel-size", String(nodeCount));
       args.push("--nnodes", String(nodeCount));
-      args.push("--node-rank", nodeRole === "worker" ? "1" : "0");
+      args.push("--node-rank", String(mpRank));
       args.push("--master-addr", mpMasterAddr);
-      if (nodeRole === "worker") args.push("--headless");
+      if (mpRank > 0) args.push("--headless");
+    } else if (isMulti && strategy.parallelism === "tp_dp") {
+      // TP inside each node, DP across nodes — one full replica per node
+      // (dp_local = 1), so the inter-node link carries only DP coordination.
+      // Same DP rendezvous shape as the DEP branch: worker node N is DP
+      // rank N via --data-parallel-start-rank.
+      args.push("--tensor-parallel-size", String(gpuCount));
+      args.push("--data-parallel-size", String(nodeCount));
+      args.push("--data-parallel-size-local", "1");
+      args.push("--data-parallel-address", mpMasterAddr);
+      if (nodeRole === "worker") {
+        args.push("--data-parallel-start-rank", String(mpRank));
+      }
     } else if (isMulti) {
       // Multi-node TP/TEP via vLLM multiprocessing (mp) backend:
       // TP spans all GPUs in the cluster; every node runs the same command,
       // varying only --node-rank and (for rank > 0) --headless.
       args.push("--tensor-parallel-size", String(totalGpus));
       args.push("--nnodes", String(nodeCount));
-      args.push("--node-rank", nodeRole === "worker" ? "1" : "0");
+      args.push("--node-rank", String(mpRank));
       args.push("--master-addr", mpMasterAddr);
-      if (nodeRole === "worker") args.push("--headless");
+      if (mpRank > 0) args.push("--headless");
     } else if (strategy.deploy_type === "pd_cluster") {
       // PD splits inference across separate prefill and decode pools.
       //
@@ -1393,7 +1459,11 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     const instances = kvInstanceCount;
     const multiNodeInstance = strategy.deploy_type === "multi_node" && nodeCount > 1;
     const vllmArgs = multiNodeInstance ? buildArgs(null, "head") : buildArgs(null, null);
-    const workerArgs = multiNodeInstance ? buildArgs(null, "worker") : null;
+    // One command per follower node of an instance (ranks 1..nodes-1), same as
+    // the plain multi-node branch — each rank's command is distinct.
+    const workerArgsByRank = multiNodeInstance
+      ? followerRanks(nodeCount).map((r) => buildArgs(null, "worker", r))
+      : null;
     const mooncakeVllmConfig = kvStoreStrat.mooncake_vllm_config?.template || {};
     const mooncakeStoreConfig = kvStoreStrat.mooncake_store_config?.config || null;
 
@@ -1439,9 +1509,11 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       vllm: {
         command: formatCommand(vllmArgs),
         argv: formatArgv(vllmArgs),
-        ...(workerArgs ? {
-          workerCommand: formatCommand(workerArgs),
-          workerArgv: formatArgv(workerArgs),
+        ...(workerArgsByRank ? {
+          workerCommand: formatCommand(workerArgsByRank[0]),
+          workerArgv: formatArgv(workerArgsByRank[0]),
+          workerCommands: workerArgsByRank.map(formatCommand),
+          workerArgvs: workerArgsByRank.map(formatArgv),
         } : {}),
         env: buildEnv(null),
         install: resolveBrandInstall(kvStoreStrat.vllm?.install),
@@ -1460,17 +1532,23 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   }
 
   if (deployType === "multi_node" && nodeCount > 1) {
-    // Every multi-node strategy renders the same shape: head + worker tabs.
-    // Workers use --headless (TP/TEP) or --data-parallel-start-rank offset (DEP).
+    // Every multi-node strategy renders the same shape: a head (rank 0) plus
+    // ONE COMMAND PER FOLLOWER NODE — ranks differ, so a 4-node cluster needs
+    // 3 distinct worker commands, not one repeated. Workers add --headless
+    // (TP/TEP/PP) or a --data-parallel-start-rank offset (DEP).
     const headArgs = buildArgs(null, "head");
-    const workerArgs = buildArgs(null, "worker");
+    const workerArgsByRank = followerRanks(nodeCount).map((r) => buildArgs(null, "worker", r));
     return {
       deployType: "multi_node",
       nodeCount,
       headCommand: formatCommand(headArgs),
-      workerCommand: formatCommand(workerArgs),
+      // Rank 1 stays on the singular keys — the long-standing shape consumers
+      // (and the JSON API) already read; the full per-rank list rides alongside.
+      workerCommand: formatCommand(workerArgsByRank[0]),
+      workerCommands: workerArgsByRank.map(formatCommand),
       headArgv: formatArgv(headArgs),
-      workerArgv: formatArgv(workerArgs),
+      workerArgv: formatArgv(workerArgsByRank[0]),
+      workerArgvs: workerArgsByRank.map(formatArgv),
       env: buildEnv(null),
     };
   }

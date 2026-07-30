@@ -836,10 +836,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const perNode = hwProfile?.gpu_count || 8;
   // Nodes a strategy (or PD pool mode) needs to clear its `strategy_min_gpus`
-  // floor on the active hardware.
+  // floor on the active hardware — the floor itself can be hardware-conditional
+  // (a per-GPU-id block), hence hwId as well as the GPUs per node.
   const nodesNeededFor = useCallback(
-    (key) => nodesForStrategy(recipe, key, perNode),
-    [recipe, perNode]
+    (key) => nodesForStrategy(recipe, key, perNode, hwId),
+    [recipe, perNode, hwId]
   );
 
   // Node-count pills: 1 / 2, plus whatever count an offered strategy's floor
@@ -847,10 +848,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const nodeOptions = useMemo(() => {
     const needed = Math.max(
       0,
-      ...(recipe.compatible_strategies || []).map((s) => nodesForStrategy(recipe, s, perNode)),
+      ...(recipe.compatible_strategies || []).map((s) => nodesForStrategy(recipe, s, perNode, hwId)),
     );
     return needed > 2 && needed <= MAX_NODES ? [1, 2, needed] : [1, 2];
-  }, [recipe, perNode]);
+  }, [recipe, perNode, hwId]);
 
   const compatibleStrategies = useMemo(() => {
     return (recipe.compatible_strategies || []).filter((s) => {
@@ -862,9 +863,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       if (nodeCount > 1 && strat.deploy_type === "single_node") return false;
       // Listed while reachable at SOME node count, not just the current one —
       // picking it grows the count (selectStrategy).
-      return isStrategyReachable(recipe, s, strat.deploy_type, perNode);
+      return isStrategyReachable(recipe, s, strat.deploy_type, perNode, hwId);
     });
-  }, [recipe, strategies, nodeCount, perNode]);
+  }, [recipe, strategies, nodeCount, perNode, hwId]);
 
   // Mooncake KV-store deployments (deploy_type: kv_store_lb) — offered on
   // every recipe by default (omni recipes never reach this row), no
@@ -977,6 +978,39 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeKvOffload, kvOffload]);
 
+  // Reconcile the node count with the active strategy's `strategy_min_gpus`
+  // bar on THIS hardware, both directions:
+  //   grow  — a hardware-conditional floor raises the bar on mount, on a
+  //           ?nodes= link and on a hardware switch too, and rendering below
+  //           it would emit a command that can't hold the model (K3 on H100:
+  //           4 nodes, not the 2-node default);
+  //   shrink — the same floor must not LEAK to other hardware: a count grown
+  //           for H100's 32-GPU bar sticks at 4 when the user switches to
+  //           H200, whose Nodes row only offers 1/2. The pills are the only
+  //           way to set a count, so one outside `nodeOptions` can only be a
+  //           stale floor from another GPU — snap back to the multi-node
+  //           example count (2), still honoring this hardware's own bar.
+  // Not under pd_cluster (pools size themselves; the Nodes row isn't shown).
+  // Storage is left alone — deliberate picks are saved by the click handlers,
+  // and the restore path already clamps to [1, 2].
+  useEffect(() => {
+    // Workstations can't cluster (count is pinned to 1 elsewhere) and PD
+    // pools size themselves — neither wants this row's reconciliation.
+    if (!hwScalable || activeStrategy === "pd_cluster") return;
+    const needed = nodesNeededFor(activeStrategy);
+    let next = nodeCount;
+    if (needed > nodeCount && needed <= MAX_NODES) {
+      next = needed;
+    } else if (nodeCount > 2 && !nodeOptions.includes(nodeCount)) {
+      next = Math.min(MAX_NODES, Math.max(2, needed));
+    }
+    if (next !== nodeCount) {
+      setNodeCount(next);
+      syncUrl({ nodes: String(next) });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStrategy, nodeCount, nodesNeededFor, nodeOptions]);
+
   // Effective TP under single_node_tp, via the shared resolver so the hint
   // is perfectly in sync with the generated command. The resolver accepts
   // both an explicit `strategy_overrides.single_node_tp.tp` and the
@@ -997,8 +1031,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // Pools scale to MAX_NODES, so every mode reachable on this hardware stays
   // offered; picking one grows the pool to its floor (setPdPar).
   const pdAvailableModes = useMemo(
-    () => pdModes.filter((m) => isStrategyReachable(recipe, m, "multi_node", perNode)),
-    [pdModes, recipe, perNode]
+    () => pdModes.filter((m) => isStrategyReachable(recipe, m, "multi_node", perNode, hwId)),
+    [pdModes, recipe, perNode, hwId]
   );
   const effPdPrefillPar = pdAvailableModes.includes(pdPrefillPar) ? pdPrefillPar : (pdAvailableModes[0] || "tp");
   const effPdDecodePar = pdAvailableModes.includes(pdDecodePar) ? pdDecodePar : (pdAvailableModes[0] || "tp");
@@ -1471,6 +1505,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           ...result.vllm,
           command: sub(result.vllm.command),
           ...(result.vllm.workerCommand ? { workerCommand: sub(result.vllm.workerCommand) } : {}),
+          ...(result.vllm.workerCommands
+            ? { workerCommands: result.vllm.workerCommands.map(sub) }
+            : {}),
           env: substituteEnv(result.vllm.env, effectiveEndpoints),
         },
         master: { ...result.master, command: sub(result.master.command) },
@@ -1488,6 +1525,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         ...result,
         headCommand:   sub(result.headCommand),
         workerCommand: sub(result.workerCommand),
+        // Every follower rank needs the substitution too, not just rank 1.
+        ...(result.workerCommands
+          ? { workerCommands: result.workerCommands.map(sub) }
+          : {}),
         env: substituteEnv(result.env, effectiveEndpoints),
       };
     }
@@ -2932,10 +2973,17 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   // pill in the Install header. Manual `install.pip.command` overrides still
   // win — this flag only affects the default.
   const nightlyRequired = recipe.model?.nightly_required === true || variant?.nightly_required === true;
+  // A CUDA map narrows the toggle to the builds the recipe actually declares.
+  // A single-key map (e.g. K3's cu130-only preview image) has nothing to
+  // toggle: hide the selector and pin both the docker tag and the pip wheel
+  // index to the one published build.
+  const cudaMapKeys = cudaMap ? ["cu130", "cu129"].filter((k) => k in cudaMap) : null;
+  const singleCudaBuild = cudaMapKeys && cudaMapKeys.length === 1 ? cudaMapKeys[0] : null;
+  const singleCudaLabel = singleCudaBuild === "cu129" ? "CUDA 12.9 (cu129)" : "CUDA 13 (cu130)";
   // Resolve the CUDA tag for pip's nightly wheel index from the same toggle
   // that drives the Docker tag suffix. "default" → cu130 (today's upstream
   // baseline); explicit picks pass through.
-  const pipCudaTag = dockerCudaVariant === "default" ? "cu130" : dockerCudaVariant;
+  const pipCudaTag = singleCudaBuild || (dockerCudaVariant === "default" ? "cu130" : dockerCudaVariant);
   const defaultPipCmd = isAmd
     ? `uv venv --python 3.12
 source .venv/bin/activate
@@ -2954,7 +3002,9 @@ uv pip install -U vllm --torch-backend auto`;
   const pipNote =
     pipCfg?.note ||
     (nightlyRequired && !isAmd
-      ? `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
+      ? singleCudaBuild
+        ? `vLLM ${minV} isn't released yet — nightly required. This recipe publishes ${singleCudaLabel} builds only.`
+        : `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
       : undefined);
 
   // Docker install step is just the image pull; the `docker run` that actually
@@ -2969,7 +3019,9 @@ uv pip install -U vllm --torch-backend auto`;
     : isAmd
       ? undefined
       : cudaMap
-        ? "This recipe ships paired CUDA-tagged images. Pick `cu129` for CUDA 12.9 hosts or `cu130` for CUDA 13."
+        ? singleCudaBuild
+          ? `This tag is published as a ${singleCudaLabel} build only${singleCudaBuild === "cu130" ? " — the host needs an r580+ NVIDIA driver" : ""}.`
+          : "This recipe ships paired CUDA-tagged images. Pick `cu129` for CUDA 12.9 hosts or `cu130` for CUDA 13."
         : nightlyRequired
           ? "Nightly image ships CUDA 13. Switch to cu129 for the `cu129-nightly` variant if your host is on CUDA 12.9."
           : "Default tag ships CUDA 13. Switch to cu129 for the -cu129 variant if your host is on CUDA 12.9.";
@@ -2979,9 +3031,11 @@ uv pip install -U vllm --torch-backend auto`;
   // on the docker tab always, and on the pip tab when the command actually
   // varies by CUDA — i.e. nightly recipes whose wheel index URL is explicit.
   // Stable pip uses `--torch-backend auto`, which detects the host CUDA, so
-  // a toggle would be inert there.
+  // a toggle would be inert there. A single-build CUDA map has nothing to
+  // toggle either — the note explains the one published build instead.
   const showCudaSelector =
     brandKey === "nvidia" &&
+    !singleCudaBuild &&
     !dockerCfg?.command &&
     (installMode === "docker" ||
       (installMode === "pip" && nightlyRequired && !pipCfg?.command));
@@ -3139,10 +3193,20 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
     isDocker
       ? buildDockerRun({ command: cmd, env: result.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
       : cmd;
+  // One tab per node: Head (rank 0) then every follower rank, each with its own
+  // --node-rank / --data-parallel-start-rank. `workerCommands` carries them all;
+  // the singular `workerCommand` is the pre-per-rank fallback.
+  const workerCommands = result.workerCommands
+    || (result.workerCommand ? [result.workerCommand] : []);
   const tabs = [
     { id: "head", label: "Head", command: wrap(result.headCommand) },
-    { id: "worker", label: "Node 1", command: wrap(result.workerCommand) },
+    ...workerCommands.map((cmd, i) => ({
+      id: `worker${i + 1}`,
+      label: `Node ${i + 1}`,
+      command: wrap(cmd),
+    })),
   ];
+  // A shrinking node count can strand the selected tab (Node 3 → 2 nodes).
   const active = tabs.find((t) => t.id === tab) || tabs[0];
   // Docker mode folds env into `-e` flags inside `docker run`, so no
   // separate prelude here. Pip mode keeps the `export KEY=VAL` prelude.
@@ -3175,8 +3239,8 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
         {active.command}
       </pre>
       <div className="px-4 pb-3 text-[11px] text-[var(--command-fg)]/45 font-mono leading-snug">
-        # Set $HEAD_IP to the rank-0 node's IP before launch. Scale to N nodes by replicating
-        # this worker command with --node-rank = i (TP/TEP) or --data-parallel-start-rank = i × local_gpus (DEP).
+        # Set $HEAD_IP to the rank-0 node&apos;s IP before launch, then run each tab on its own node —
+        # they differ only by --node-rank (TP/TEP) or --data-parallel-start-rank (DEP).
       </div>
     </div>
   );
@@ -3366,11 +3430,15 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
           ? `One per instance node.${requires}`
           : `Single instance — clients connect to it directly.${requires}`,
     },
-    ...(result.vllm.workerCommand ? [{
-      id: "vllm_worker", label: "Node 1", isVllm: true,
-      command: wrap(result.vllm.workerCommand, result.vllm.env), env: result.vllm.env,
-      description: `Nodes 2..${nodesPer} of each instance (rank > 0, --headless).`,
-    }] : []),
+    // One tab per follower node of an instance — each rank is a distinct
+    // command (--node-rank / --data-parallel-start-rank), never a repeat.
+    ...(result.vllm.workerCommands
+      || (result.vllm.workerCommand ? [result.vllm.workerCommand] : [])
+    ).map((cmd, i) => ({
+      id: `vllm_worker${i + 1}`, label: `Node ${i + 1}`, isVllm: true,
+      command: wrap(cmd, result.vllm.env), env: result.vllm.env,
+      description: `Follower node ${i + 1} of ${nodesPer - 1} in each instance (rank ${i + 1}, --headless).`,
+    })),
     ...(result.router ? [{ id: "router", label: "Router", command: result.router.command, env: {}, description: `LB across ${instances} vLLM instances. Install: ${result.router.install}` }] : []),
   ].map((t, i) => ({ ...t, step: i + 1 }));
   const active = tabs.find((t) => t.id === tab) || tabs[0];
