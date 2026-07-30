@@ -101,6 +101,15 @@ export function recommendStrategy(recipe, _hwProfile, nodeCount = 1) {
 /** Most nodes the builder offers for one deployment, and per PD pool. */
 export const MAX_NODES = 16;
 
+/**
+ * Follower node ranks of an `nodes`-node deployment: [1, 2, … nodes-1].
+ * Rank 0 is the head, so an n-node cluster renders n-1 worker commands — each
+ * with its own --node-rank / --data-parallel-start-rank.
+ */
+export function followerRanks(nodes) {
+  return Array.from({ length: Math.max(0, (nodes || 1) - 1) }, (_, i) => i + 1);
+}
+
 /** One `strategy_min_gpus` block → the floor it declares for `key`. */
 function minGpusFromBlock(block, key) {
   if (block == null) return 0;
@@ -776,8 +785,13 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     return raw || null;
   };
 
-  // Helper to merge args
-  function buildArgs(roleOverride, nodeRole) {
+  // Helper to merge args. `nodeRole` selects the multi-node shape ("head" =
+  // rank 0 / "worker" = a follower); `nodeRank` is which follower — the
+  // zero-based node index that feeds --node-rank (TP/TEP/PP) or the
+  // --data-parallel-start-rank offset (DEP). Defaults to 1, the first follower,
+  // so existing two-node callers are unchanged.
+  function buildArgs(roleOverride, nodeRole, nodeRank = 1) {
+    const mpRank = nodeRole === "worker" ? Math.max(1, nodeRank) : 0;
     const args = [];
 
     // Order:
@@ -835,7 +849,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     args.push("--data-parallel-size-local", String(gpuCount));
     args.push("--data-parallel-address", mpMasterAddr);
     if (nodeRole === "worker") {
-    args.push("--data-parallel-start-rank", String(dpLocal));
+    args.push("--data-parallel-start-rank", String(mpRank * dpLocal));
     }
 } else if (isMulti && strategy.parallelism === "tp_pp") {
       // TP inside each node, PP across nodes. Cross-node traffic flows through
@@ -844,18 +858,18 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       args.push("--tensor-parallel-size", String(gpuCount));
       args.push("--pipeline-parallel-size", String(nodeCount));
       args.push("--nnodes", String(nodeCount));
-      args.push("--node-rank", nodeRole === "worker" ? "1" : "0");
+      args.push("--node-rank", String(mpRank));
       args.push("--master-addr", mpMasterAddr);
-      if (nodeRole === "worker") args.push("--headless");
+      if (mpRank > 0) args.push("--headless");
     } else if (isMulti) {
       // Multi-node TP/TEP via vLLM multiprocessing (mp) backend:
       // TP spans all GPUs in the cluster; every node runs the same command,
       // varying only --node-rank and (for rank > 0) --headless.
       args.push("--tensor-parallel-size", String(totalGpus));
       args.push("--nnodes", String(nodeCount));
-      args.push("--node-rank", nodeRole === "worker" ? "1" : "0");
+      args.push("--node-rank", String(mpRank));
       args.push("--master-addr", mpMasterAddr);
-      if (nodeRole === "worker") args.push("--headless");
+      if (mpRank > 0) args.push("--headless");
     } else if (strategy.deploy_type === "pd_cluster") {
       // PD splits inference across separate prefill and decode pools.
       //
@@ -1382,7 +1396,11 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     const instances = kvInstanceCount;
     const multiNodeInstance = strategy.deploy_type === "multi_node" && nodeCount > 1;
     const vllmArgs = multiNodeInstance ? buildArgs(null, "head") : buildArgs(null, null);
-    const workerArgs = multiNodeInstance ? buildArgs(null, "worker") : null;
+    // One command per follower node of an instance (ranks 1..nodes-1), same as
+    // the plain multi-node branch — each rank's command is distinct.
+    const workerArgsByRank = multiNodeInstance
+      ? followerRanks(nodeCount).map((r) => buildArgs(null, "worker", r))
+      : null;
     const mooncakeVllmConfig = kvStoreStrat.mooncake_vllm_config?.template || {};
     const mooncakeStoreConfig = kvStoreStrat.mooncake_store_config?.config || null;
 
@@ -1428,9 +1446,11 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       vllm: {
         command: formatCommand(vllmArgs),
         argv: formatArgv(vllmArgs),
-        ...(workerArgs ? {
-          workerCommand: formatCommand(workerArgs),
-          workerArgv: formatArgv(workerArgs),
+        ...(workerArgsByRank ? {
+          workerCommand: formatCommand(workerArgsByRank[0]),
+          workerArgv: formatArgv(workerArgsByRank[0]),
+          workerCommands: workerArgsByRank.map(formatCommand),
+          workerArgvs: workerArgsByRank.map(formatArgv),
         } : {}),
         env: buildEnv(null),
         install: resolveBrandInstall(kvStoreStrat.vllm?.install),
@@ -1449,17 +1469,23 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   }
 
   if (deployType === "multi_node" && nodeCount > 1) {
-    // Every multi-node strategy renders the same shape: head + worker tabs.
-    // Workers use --headless (TP/TEP) or --data-parallel-start-rank offset (DEP).
+    // Every multi-node strategy renders the same shape: a head (rank 0) plus
+    // ONE COMMAND PER FOLLOWER NODE — ranks differ, so a 4-node cluster needs
+    // 3 distinct worker commands, not one repeated. Workers add --headless
+    // (TP/TEP/PP) or a --data-parallel-start-rank offset (DEP).
     const headArgs = buildArgs(null, "head");
-    const workerArgs = buildArgs(null, "worker");
+    const workerArgsByRank = followerRanks(nodeCount).map((r) => buildArgs(null, "worker", r));
     return {
       deployType: "multi_node",
       nodeCount,
       headCommand: formatCommand(headArgs),
-      workerCommand: formatCommand(workerArgs),
+      // Rank 1 stays on the singular keys — the long-standing shape consumers
+      // (and the JSON API) already read; the full per-rank list rides alongside.
+      workerCommand: formatCommand(workerArgsByRank[0]),
+      workerCommands: workerArgsByRank.map(formatCommand),
       headArgv: formatArgv(headArgs),
-      workerArgv: formatArgv(workerArgs),
+      workerArgv: formatArgv(workerArgsByRank[0]),
+      workerArgvs: workerArgsByRank.map(formatArgv),
       env: buildEnv(null),
     };
   }

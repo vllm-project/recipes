@@ -1455,6 +1455,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           ...result.vllm,
           command: sub(result.vllm.command),
           ...(result.vllm.workerCommand ? { workerCommand: sub(result.vllm.workerCommand) } : {}),
+          ...(result.vllm.workerCommands
+            ? { workerCommands: result.vllm.workerCommands.map(sub) }
+            : {}),
           env: substituteEnv(result.vllm.env, effectiveEndpoints),
         },
         master: { ...result.master, command: sub(result.master.command) },
@@ -1472,6 +1475,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         ...result,
         headCommand:   sub(result.headCommand),
         workerCommand: sub(result.workerCommand),
+        // Every follower rank needs the substitution too, not just rank 1.
+        ...(result.workerCommands
+          ? { workerCommands: result.workerCommands.map(sub) }
+          : {}),
         env: substituteEnv(result.env, effectiveEndpoints),
       };
     }
@@ -3071,10 +3078,20 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
     isDocker
       ? buildDockerRun({ command: cmd, env: result.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
       : cmd;
+  // One tab per node: Head (rank 0) then every follower rank, each with its own
+  // --node-rank / --data-parallel-start-rank. `workerCommands` carries them all;
+  // the singular `workerCommand` is the pre-per-rank fallback.
+  const workerCommands = result.workerCommands
+    || (result.workerCommand ? [result.workerCommand] : []);
   const tabs = [
     { id: "head", label: "Head", command: wrap(result.headCommand) },
-    { id: "worker", label: "Node 1", command: wrap(result.workerCommand) },
+    ...workerCommands.map((cmd, i) => ({
+      id: `worker${i + 1}`,
+      label: `Node ${i + 1}`,
+      command: wrap(cmd),
+    })),
   ];
+  // A shrinking node count can strand the selected tab (Node 3 → 2 nodes).
   const active = tabs.find((t) => t.id === tab) || tabs[0];
   // Docker mode folds env into `-e` flags inside `docker run`, so no
   // separate prelude here. Pip mode keeps the `export KEY=VAL` prelude.
@@ -3107,8 +3124,8 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
         {active.command}
       </pre>
       <div className="px-4 pb-3 text-[11px] text-[var(--command-fg)]/45 font-mono leading-snug">
-        # Set $HEAD_IP to the rank-0 node's IP before launch. Scale to N nodes by replicating
-        # this worker command with --node-rank = i (TP/TEP) or --data-parallel-start-rank = i × local_gpus (DEP).
+        # Set $HEAD_IP to the rank-0 node&apos;s IP before launch, then run each tab on its own node —
+        # they differ only by --node-rank (TP/TEP) or --data-parallel-start-rank (DEP).
       </div>
     </div>
   );
@@ -3298,11 +3315,15 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
           ? `One per instance node.${requires}`
           : `Single instance — clients connect to it directly.${requires}`,
     },
-    ...(result.vllm.workerCommand ? [{
-      id: "vllm_worker", label: "Node 1", isVllm: true,
-      command: wrap(result.vllm.workerCommand, result.vllm.env), env: result.vllm.env,
-      description: `Nodes 2..${nodesPer} of each instance (rank > 0, --headless).`,
-    }] : []),
+    // One tab per follower node of an instance — each rank is a distinct
+    // command (--node-rank / --data-parallel-start-rank), never a repeat.
+    ...(result.vllm.workerCommands
+      || (result.vllm.workerCommand ? [result.vllm.workerCommand] : [])
+    ).map((cmd, i) => ({
+      id: `vllm_worker${i + 1}`, label: `Node ${i + 1}`, isVllm: true,
+      command: wrap(cmd, result.vllm.env), env: result.vllm.env,
+      description: `Follower node ${i + 1} of ${nodesPer - 1} in each instance (rank ${i + 1}, --headless).`,
+    })),
     ...(result.router ? [{ id: "router", label: "Router", command: result.router.command, env: {}, description: `LB across ${instances} vLLM instances. Install: ${result.router.install}` }] : []),
   ].map((t, i) => ({ ...t, step: i + 1 }));
   const active = tabs.find((t) => t.id === tab) || tabs[0];

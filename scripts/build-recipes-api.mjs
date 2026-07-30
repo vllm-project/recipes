@@ -284,16 +284,28 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
   if (result.deployType === "multi_node") {
     const head = dockerize(result.headCommand, result.headArgv, env, dockerMeta);
     const worker = dockerize(result.workerCommand, result.workerArgv, env, dockerMeta);
+    // `worker_*` (singular) is rank 1; the plural arrays hold EVERY follower
+    // rank (1..node_count-1) — a 4-node cluster needs three different worker
+    // commands, so an agent must not replay rank 1 on every node.
+    const workerCommands = result.workerCommands || [result.workerCommand];
+    const workerArgvs = result.workerArgvs || [result.workerArgv];
+    const workerDockers = workerCommands.map((cmd, i) =>
+      dockerize(cmd, workerArgvs[i], env, dockerMeta)
+    );
     return {
       ...base,
       head_command: result.headCommand,
       worker_command: result.workerCommand,
+      worker_commands: workerCommands,
       head_argv: result.headArgv,
       worker_argv: result.workerArgv,
+      worker_argvs: workerArgvs,
       head_docker_command: head.docker_command,
       worker_docker_command: worker.docker_command,
+      worker_docker_commands: workerDockers.map((w) => w.docker_command),
       head_docker_argv: head.docker_argv,
       worker_docker_argv: worker.docker_argv,
+      worker_docker_argvs: workerDockers.map((w) => w.docker_argv),
     };
   }
   if (result.deployType === "pd_cluster") {
@@ -330,6 +342,14 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
     const vllmWorkerDocker = result.vllm?.workerCommand && result.vllm?.workerArgv
       ? dockerize(result.vllm.workerCommand, result.vllm.workerArgv, result.vllm.env || {}, dockerMeta)
       : {};
+    // Per-rank follower commands for instances spanning >1 node (same
+    // singular-is-rank-1 / plural-is-every-rank convention as multi_node).
+    const vllmWorkerCommands = result.vllm?.workerCommands || null;
+    const vllmWorkerArgvs = result.vllm?.workerArgvs || null;
+    const vllmWorkerDockers = vllmWorkerCommands
+      ? vllmWorkerCommands.map((cmd, i) =>
+          dockerize(cmd, vllmWorkerArgvs?.[i], result.vllm.env || {}, dockerMeta))
+      : null;
     return {
       ...base,
       strategy: kvOffload || base.strategy,
@@ -343,9 +363,13 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
       vllm_command: result.vllm?.command,
       vllm_argv: result.vllm?.argv,
       vllm_worker_command: result.vllm?.workerCommand || null,
+      vllm_worker_commands: vllmWorkerCommands,
       vllm_worker_argv: result.vllm?.workerArgv || null,
+      vllm_worker_argvs: vllmWorkerArgvs,
       vllm_worker_docker_command: vllmWorkerDocker.docker_command ?? null,
       vllm_worker_docker_argv: vllmWorkerDocker.docker_argv ?? null,
+      vllm_worker_docker_commands: vllmWorkerDockers?.map((w) => w.docker_command ?? null) ?? null,
+      vllm_worker_docker_argvs: vllmWorkerDockers?.map((w) => w.docker_argv ?? null) ?? null,
       // Extra pip dep for the instances (MooncakeStoreConnector imports the
       // mooncake package) — same field the UI's "Requires:" hint consumes.
       vllm_install: result.vllm?.install || null,
