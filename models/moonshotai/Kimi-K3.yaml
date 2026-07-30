@@ -44,8 +44,6 @@ model:
   base_args:
     - "--trust-remote-code"
     # Canonical Inferact serve uses fastsafetensors (much faster weight load) + moe-backend auto.
-    - "--load-format"
-    - "fastsafetensors"
     - "--moe-backend"
     - "auto"
     - "--gpu-memory-utilization"
@@ -66,9 +64,6 @@ features:
   spec_decoding:
     description: "Use Inferact trained DSpark."
     args:
-      # Speculative decoding needs additional VRAM, so cap concurrent sequences.
-      - "--max-num-seqs"
-      - "32"
       - "--speculative-config"
       - '{"model":"Inferact/Kimi-K3-DSpark", "num_speculative_tokens":7, "method": "dspark", "attention_backend": "FLASHINFER_MLA", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
     hardware_overrides:
@@ -117,7 +112,9 @@ strategy_hardware:
     mi300x: unsupported
     mi325x: unsupported
     mi355x: unsupported
-
+  multi_node_dep:
+    h100: unsupported
+    h200: unsupported
 
 default_strategy: single_node_tp
 
@@ -139,7 +136,8 @@ strategy_min_gpus:
 hardware_overrides:
   hopper:
     extra_args:
-      - "--gpu-memory-utilization 0.97"
+      - "--gpu-memory-utilization"
+      - "0.97"
       - "--max-num-seqs"
       - "8"
       - "--max-cudagraph-capture-size"
@@ -156,6 +154,8 @@ hardware_overrides:
       VLLM_USE_RUST_FRONTEND: "1"
   blackwell:
     extra_args:
+      - "--load-format"
+      - "fastsafetensors"
       - "--no-enable-flashinfer-autotune"
       - "--max-model-len"
       - "1048576"
