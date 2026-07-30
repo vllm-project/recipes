@@ -51,6 +51,10 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
 
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
+
 hardware_overrides:
   amd:
     # Hunyuan-A13B is an AMD-first recipe; AITER acceleration required.
