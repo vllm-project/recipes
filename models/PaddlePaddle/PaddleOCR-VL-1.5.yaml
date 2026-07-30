@@ -88,7 +88,7 @@ guide: |
 
   - Hardware: 1x GPU (small VRAM footprint)
   - vLLM >= 0.11.1 (nightly if not released yet)
-  - AMD ROCm wheels require Python 3.12, ROCm 7.0, and glibc >= 2.35.
+  - AMD ROCm wheels require Python 3.12, ROCm 7.2.3, and glibc >= 2.35.
 
   ### Install vLLM (NVIDIA)
 
