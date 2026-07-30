@@ -134,6 +134,7 @@ hardware_overrides:
       VLLM_USE_RUST_FRONTEND: "1"
   blackwell:
     extra_args:
+      - "--no-enable-flashinfer-autotune"
       - "--max-model-len"
       - "1048576"
       - "--kv-cache-dtype"
@@ -147,9 +148,6 @@ hardware_overrides:
       VLLM_ENGINE_READY_TIMEOUT_S: "3600"
       VLLM_USE_V2_MODEL_RUNNER: "1"
       VLLM_USE_RUST_FRONTEND: "1"
-  nvidia:
-    extra_args:
-      - "--no-enable-flashinfer-autotune"
   amd:
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
