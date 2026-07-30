@@ -945,21 +945,38 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeKvOffload, kvOffload]);
 
-  // Floor the node count to the active strategy's `strategy_min_gpus` bar, not
-  // just on a strategy click (selectStrategy) — a hardware-conditional floor
-  // (per-GPU block) raises the bar on mount, on a ?nodes= link and on a
-  // hardware switch too, and rendering below it would emit a command that
-  // can't hold the model (K3 on H100: 4 nodes, not the 2-node default).
-  // Monotonic (only ever grows, capped at MAX_NODES), so it converges.
-  // Storage is left alone — deliberate picks are saved by the click handlers.
+  // Reconcile the node count with the active strategy's `strategy_min_gpus`
+  // bar on THIS hardware, both directions:
+  //   grow  — a hardware-conditional floor raises the bar on mount, on a
+  //           ?nodes= link and on a hardware switch too, and rendering below
+  //           it would emit a command that can't hold the model (K3 on H100:
+  //           4 nodes, not the 2-node default);
+  //   shrink — the same floor must not LEAK to other hardware: a count grown
+  //           for H100's 32-GPU bar sticks at 4 when the user switches to
+  //           H200, whose Nodes row only offers 1/2. The pills are the only
+  //           way to set a count, so one outside `nodeOptions` can only be a
+  //           stale floor from another GPU — snap back to the multi-node
+  //           example count (2), still honoring this hardware's own bar.
+  // Not under pd_cluster (pools size themselves; the Nodes row isn't shown).
+  // Storage is left alone — deliberate picks are saved by the click handlers,
+  // and the restore path already clamps to [1, 2].
   useEffect(() => {
+    // Workstations can't cluster (count is pinned to 1 elsewhere) and PD
+    // pools size themselves — neither wants this row's reconciliation.
+    if (!hwScalable || activeStrategy === "pd_cluster") return;
     const needed = nodesNeededFor(activeStrategy);
+    let next = nodeCount;
     if (needed > nodeCount && needed <= MAX_NODES) {
-      setNodeCount(needed);
-      syncUrl({ nodes: String(needed) });
+      next = needed;
+    } else if (nodeCount > 2 && !nodeOptions.includes(nodeCount)) {
+      next = Math.min(MAX_NODES, Math.max(2, needed));
+    }
+    if (next !== nodeCount) {
+      setNodeCount(next);
+      syncUrl({ nodes: String(next) });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeStrategy, nodeCount, nodesNeededFor]);
+  }, [activeStrategy, nodeCount, nodesNeededFor, nodeOptions]);
 
   // Effective TP under single_node_tp, via the shared resolver so the hint
   // is perfectly in sync with the generated command. The resolver accepts
