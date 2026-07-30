@@ -103,43 +103,35 @@ compatible_strategies:
 default_strategy: single_node_tp
 
 # TP/TEP run from 8 GPUs; DEP needs 16+. Applies to aggregated and PD pools.
+# H100 (80 GB/GPU → 640 GB/node) can't hold the ~1.68 TB MXFP4 checkpoint in
+# fewer than 4 nodes, so every layout starts at 32 GPUs there — which also
+# takes single_node_tp off the H100 pill row.
 strategy_min_gpus:
   single_node_tp: 8
   multi_node_tp: 8
   multi_node_tep: 8
   multi_node_dep: 16
+  h100: 32
 
-kv_cache_strategy_hardware:
-  kv_store_distributed_mooncake:
-    h100: unsupported
-    h200: unsupported
-    b200: unsupported
-    gb200: unsupported
-    b300: unsupported
-    gb300: unsupported
-    mi300x: unsupported
-    mi325x: unsupported
-    mi355x: unsupported
-  kv_store_centralized_mooncake:
-    h100: unsupported
-    h200: unsupported
-    b200: unsupported
-    gb200: unsupported
-    b300: unsupported
-    gb300: unsupported
-    mi300x: unsupported
-    mi325x: unsupported
-    mi355x: unsupported
 
 hardware_overrides:
   hopper:
     extra_args:
-      - "--no-enable-flashinfer-autotune"
+      - "--gpu-memory-utilization 0.97"
+      - "--max-num-seqs"
+      - "8"
+      - "--max-cudagraph-capture-size"
+      - "8"
+      - "--max-model-len"
+      - "32768"
       - "--moe-backend"
       - "marlin"
       - "--disable-custom-all-reduce"
     extra_env:
-      VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
+      VLLM_ALLREDUCE_USE_FLASHINFER: "1"
+      VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+      VLLM_USE_V2_MODEL_RUNNER: "1"
+      VLLM_USE_RUST_FRONTEND: "1"
   blackwell:
     extra_args:
       - "--max-model-len"
@@ -158,8 +150,6 @@ hardware_overrides:
   nvidia:
     extra_args:
       - "--no-enable-flashinfer-autotune"
-    extra_env:
-      VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
   amd:
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
@@ -223,8 +213,6 @@ strategy_overrides:
         - "--no-disable-hybrid-kv-cache-manager"
         - "--compilation-config"
         - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
-        - "--all2all-backend"
-        - "flashinfer_nvlink_one_sided"
 
 guide: |
   ## Overview

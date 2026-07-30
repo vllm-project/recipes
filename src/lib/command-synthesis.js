@@ -101,30 +101,49 @@ export function recommendStrategy(recipe, _hwProfile, nodeCount = 1) {
 /** Most nodes the builder offers for one deployment, and per PD pool. */
 export const MAX_NODES = 16;
 
+/** One `strategy_min_gpus` block → the floor it declares for `key`. */
+function minGpusFromBlock(block, key) {
+  if (block == null) return 0;
+  if (typeof block === "number") return block;
+  return block[key] ?? block[`multi_node_${key}`] ?? block[`single_node_${key}`] ?? 0;
+}
+
 /**
  * Recipe GPU floor (`strategy_min_gpus`) for a strategy id or a PD pool mode
  * ("tp"/"tep"/"dep"). Scalar = one bar for every strategy, map = per-strategy
  * bars. Absent = 0, so recipes that don't declare it are never gated.
+ *
+ * The map also accepts exact-GPU-id keys (`h100: 32`, or a nested per-strategy
+ * map) — a hardware-conditional floor layered on top of the strategy bars,
+ * highest wins. Use it when one GPU needs a bigger cluster than the recipe
+ * baseline (K3's 1.68 TB of weights fits 2 H200 nodes but needs 4 on H100).
+ * Only exact GPU ids are read here, not generations — GPUs of one generation
+ * differ in VRAM, which is exactly what moves the floor.
  */
-export function minGpusForStrategy(recipe, key) {
+export function minGpusForStrategy(recipe, key, gpuId) {
   const cfg = recipe?.strategy_min_gpus;
   if (cfg == null) return 0;
   if (typeof cfg === "number") return cfg;
-  return cfg[key] ?? cfg[`multi_node_${key}`] ?? cfg[`single_node_${key}`] ?? 0;
+  return Math.max(
+    minGpusFromBlock(cfg, key),
+    gpuId ? minGpusFromBlock(cfg[gpuId], key) : 0,
+  );
 }
 
 /** Nodes needed to clear that floor at `gpusPerNode` GPUs per node. */
-export function nodesForStrategy(recipe, key, gpusPerNode) {
-  return Math.ceil(minGpusForStrategy(recipe, key) / (gpusPerNode || 8)) || 1;
+export function nodesForStrategy(recipe, key, gpusPerNode, gpuId) {
+  return Math.ceil(minGpusForStrategy(recipe, key, gpuId) / (gpusPerNode || 8)) || 1;
 }
 
 /**
  * Whether a strategy can ever clear its floor here: multi-node scales out to
- * MAX_NODES, everything else is stuck with one node's GPUs.
+ * MAX_NODES — as does pd_cluster, whose pools each size themselves node-wise —
+ * everything else is stuck with one node's GPUs.
  */
-export function isStrategyReachable(recipe, key, deployType, gpusPerNode) {
-  const maxNodes = deployType === "multi_node" ? MAX_NODES : 1;
-  return maxNodes * (gpusPerNode || 8) >= minGpusForStrategy(recipe, key);
+export function isStrategyReachable(recipe, key, deployType, gpusPerNode, gpuId) {
+  const scalesOut = deployType === "multi_node" || deployType === "pd_cluster";
+  const maxNodes = scalesOut ? MAX_NODES : 1;
+  return maxNodes * (gpusPerNode || 8) >= minGpusForStrategy(recipe, key, gpuId);
 }
 
 /**

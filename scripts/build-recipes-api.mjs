@@ -233,7 +233,7 @@ function dockerize(command, argv, env, dockerMeta, port = 8000) {
 //   "skip" → would need >4 nodes per role; don't emit a fantasy cluster
 // Each role is then grown to clear its parallelism's `strategy_min_gpus` floor,
 // matching what the builder renders.
-function pickPdNodes(hwProfile, variant, recipe, strategies) {
+function pickPdNodes(hwProfile, variant, recipe, strategies, hwId) {
   if (pdFitsSingleNode(hwProfile, variant)) return null;
   const nodeVram = typeof hwProfile?.vram_gb === "number" ? hwProfile.vram_gb : 0;
   const modelVram = variant?.vram_minimum_gb || 0;
@@ -243,7 +243,7 @@ function pickPdNodes(hwProfile, variant, recipe, strategies) {
   const floored = (role) => {
     const par = recipe?.strategy_overrides?.pd_cluster?.[role]?.parallelism
       || strategies?.pd_cluster?.[role]?.parallelism || "tp";
-    return Math.max(nodesPerRole, nodesForStrategy(recipe, par, hwProfile.gpu_count));
+    return Math.max(nodesPerRole, nodesForStrategy(recipe, par, hwProfile.gpu_count, hwId));
   };
   return { prefill: floored("prefill"), decode: floored("decode") };
 }
@@ -404,7 +404,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
   // `strategy_min_gpus` floor. Same helper the builder's Nodes pills use.
   const nodesFor = (s) => Math.max(
     strategies[s]?.deploy_type === "multi_node" ? 2 : 1,
-    nodesForStrategy(recipe, s, hwProfile.gpu_count),
+    nodesForStrategy(recipe, s, hwProfile.gpu_count, hwId),
   );
   const compatible = [...new Set([
     ...(recipe.compatible_strategies || []),
@@ -423,15 +423,17 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     // `strategy_hardware` when that layout isn't usable on that GPU.
     if (recipe.strategy_hardware?.[s]?.[hwId] === "unsupported") return false;
     // Same GPU floor the builder applies (`strategy_min_gpus`).
-    if (!isStrategyReachable(recipe, s, strategies[s]?.deploy_type, hwProfile.gpu_count)) return false;
+    if (!isStrategyReachable(recipe, s, strategies[s]?.deploy_type, hwProfile.gpu_count, hwId)) return false;
     return scalable || (!s.startsWith("multi_node_") && s !== "pd_cluster");
   });
   const supportsMultiNode = scalable && compatible.some((s) => s.startsWith("multi_node_"));
   const baseNodeCount = !fitsSingleNode(hwProfile, variant) && supportsMultiNode ? 2 : 1;
   let recommendedStrategy = recommendStrategy(recipe, hwProfile, baseNodeCount);
-  // Never recommend a strategy the recipe opted this GPU out of via
-  // strategy_hardware — fall back to the first compatible serving strategy.
-  if (recipe.strategy_hardware?.[recommendedStrategy]?.[hwId] === "unsupported") {
+  // Never recommend a strategy this GPU can't actually run — opted out via
+  // strategy_hardware, or unreachable under its `strategy_min_gpus` floor
+  // (e.g. a single-node layout on a GPU whose floor spans several nodes).
+  // Both are already excluded from `compatible`, so membership is the test.
+  if (!compatible.includes(recommendedStrategy)) {
     recommendedStrategy = compatible.find(
       (s) => strategies[s]?.deploy_type !== "kv_store_lb" && s !== "pd_cluster"
     ) || compatible.find((s) => strategies[s]?.deploy_type !== "kv_store_lb")
@@ -444,7 +446,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
 
   // PD's node-count is independent of nodeCount — it lives in pdNodes per role.
   const recommendedPdNodes = recommendedStrategy === "pd_cluster"
-    ? pickPdNodes(hwProfile, variant, recipe, strategies)
+    ? pickPdNodes(hwProfile, variant, recipe, strategies, hwId)
     : null;
   if (recommendedPdNodes === "skip") return null;
 
@@ -481,7 +483,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     let servingStrategy = s;
     let kvOffload = null;
     if (s === "pd_cluster") {
-      pdNodes = pickPdNodes(hwProfile, variant, recipe, strategies);
+      pdNodes = pickPdNodes(hwProfile, variant, recipe, strategies, hwId);
       if (pdNodes === "skip") continue;
       nc = 1;
     } else if (strategies[s]?.deploy_type === "kv_store_lb") {
@@ -499,6 +501,12 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
         servingStrategy = kvServingFor(1);
       }
       if (!servingStrategy) continue;
+      // Each instance still owes its serving strategy's GPU floor (K3 on H100:
+      // 4 nodes per instance, not the plain doesn't-fit 2) — growing a
+      // multi-node instance keeps that same strategy valid.
+      if (strategies[servingStrategy]?.deploy_type === "multi_node") {
+        nc = Math.max(nc, nodesForStrategy(recipe, servingStrategy, hwProfile.gpu_count, hwId));
+      }
       kvOffload = s;
     } else {
       nc = nodesFor(s);
