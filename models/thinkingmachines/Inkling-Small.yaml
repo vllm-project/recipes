@@ -80,9 +80,9 @@ variants:
       b300: 1
       b200: 2
       gb200: 2
-      gb300: 2
+      gb300: 1
       h200: 2
-    description: "NVFP4 checkpoint requiring at least 180 GB aggregated VRAM: W4A4 with TP1 on B300 or TP2 on B200/GB200/GB300, and W4A16 with TP2 on H200."
+    description: "NVFP4 checkpoint requiring at least 180 GB aggregated VRAM: W4A4 with TP1 on B300/GB300 or TP2 on B200/GB200, and W4A16 with TP2 on H200."
   bf16:
     model_id: "thinkingmachines/Inkling-Small"
     precision: bf16
@@ -161,14 +161,14 @@ guide: |
   ## Variants
 
   - **NVFP4 (default):** Requires at least 180 GB aggregated VRAM. Run W4A4 with TP1
-    on B300 or TP2 on B200/GB200/GB300. On H200, run W4A16 with TP2; the MoE kernel
+    on B300/GB300 or TP2 on B200/GB200. On H200, run W4A16 with TP2; the MoE kernel
     dequantizes the NVFP4 weights to BF16 on the fly.
   - **BF16:** Requires at least 600 GB aggregated VRAM. Run TP4 on B300/GB200/GB300 or
     TP8 on B200/H200.
 
   ## Prerequisites
 
-  - **Hardware:** B300 TP1 or B200/GB200/GB300/H200 TP2 for NVFP4;
+  - **Hardware:** B300/GB300 TP1 or B200/GB200/H200 TP2 for NVFP4;
     B300/GB200/GB300 TP4 or B200/H200 TP8 for BF16.
   - **vLLM:** A nightly build with Inkling support.
   - **Audio:** Install the optional `vllm[audio]` extra only when serving audio inputs.
@@ -190,8 +190,9 @@ guide: |
     --trust-remote-code
   ```
 
-  Select **B200**, **GB200**, or **GB300** for W4A4 with TP2. On H200, the
-  builder also emits TP2 and vLLM runs W4A16 with on-the-fly dequantization.
+  Select **GB300** for W4A4 with TP1, or **B200**/**GB200** for W4A4 with TP2.
+  On H200, the builder emits TP2 and vLLM runs W4A16 with on-the-fly
+  dequantization.
 
   For BF16, select the **BF16** variant. The command builder emits TP4 on
   B300/GB200/GB300 and TP8 on B200/H200.
