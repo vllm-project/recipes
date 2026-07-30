@@ -148,7 +148,7 @@ guide: |
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     --entrypoint bash vllm/vllm-openai-xpu:latest \
     -c "source /opt/intel/oneapi/setvars.sh && exec vllm serve meta-llama/Llama-3.1-8B-Instruct \
-    --dtype float16 --max-model-len 8192"
+    --max-model-len 8192"
   ```
 
   ## Client Usage
