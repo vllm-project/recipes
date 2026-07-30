@@ -63,7 +63,6 @@ hardware_overrides:
   amd:
     extra_args: []
     extra_env:
-      VLLM_USE_TRITON_FLASH_ATTN: "0"
       SAFETENSORS_FAST_GPU: "1"
 strategy_overrides: {}
 
@@ -79,7 +78,7 @@ guide: |
 
   - Hardware: 1x GPU (small VRAM footprint)
   - vLLM >= 0.11.1 (nightly if not released yet)
-  - AMD ROCm wheels require Python 3.12, ROCm 7.0, and glibc >= 2.35.
+  - AMD ROCm wheels require Python 3.12, ROCm 7.2.3, and glibc >= 2.35.
 
   ### Install vLLM (NVIDIA)
 
@@ -114,7 +113,6 @@ guide: |
 
   ```bash
   export SAFETENSORS_FAST_GPU=1
-  export VLLM_USE_TRITON_FLASH_ATTN=0
 
   vllm serve PaddlePaddle/PaddleOCR-VL \
     --trust-remote-code \
