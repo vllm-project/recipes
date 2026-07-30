@@ -218,13 +218,19 @@ export function pdPoolModes(recipe) {
 
 /**
  * Precision → allowed hardware constraint.
- * NVFP4 is NVIDIA Blackwell-only (sm_100+). FP4 generic is also Blackwell-only
- * in practice. AWQ/GPTQ/INT quants run on most NVIDIA+AMD hardware.
+ * NVFP4 is NVIDIA Blackwell-only (sm_100+) by default. A variant can override
+ * this when its runtime provides a fallback (for example, on-the-fly BF16
+ * dequantization on Hopper). FP4 generic is also Blackwell-only in practice.
+ * AWQ/GPTQ/INT quants run on most NVIDIA+AMD hardware.
  */
 const PRECISION_HARDWARE_CONSTRAINTS = {
   nvfp4: { brand: "NVIDIA", generation: "blackwell" },
   fp4: { brand: "NVIDIA", generation: "blackwell" },
 };
+
+function precisionHardwareConstraint(variant) {
+  return variant?.precision_hardware || PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
+}
 
 function matchesConstraint(profile, constraint) {
   if (!constraint) return true;
@@ -239,10 +245,11 @@ function matchesConstraint(profile, constraint) {
 
 /**
  * Check whether a hardware profile is compatible with a variant based on
- * precision constraints (e.g., NVFP4 requires Blackwell). Does NOT check VRAM.
+ * precision constraints (e.g., NVFP4 requires Blackwell by default). Does NOT
+ * check VRAM.
  */
 export function isPrecisionCompatible(profile, variant) {
-  const constraint = PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
+  const constraint = precisionHardwareConstraint(variant);
   return matchesConstraint(profile, constraint);
 }
 
@@ -455,7 +462,7 @@ export function pdFitsSingleNode(hwProfile, variant) {
  * `recipe` is optional; when provided, hardware marked `unsupported` is excluded.
  */
 export function pickDefaultHardware(hwProfiles, variant, recipe) {
-  const constraint = PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
+  const constraint = precisionHardwareConstraint(variant);
   const compatible = Object.entries(hwProfiles).filter(
     ([id, p]) =>
       matchesConstraint(p, constraint)

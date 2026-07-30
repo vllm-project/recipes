@@ -64,30 +64,42 @@ opt_in_features:
 
 variants:
   default:
-    # Stored as NVFP4, but vLLM dequantizes it on the fly on Hopper. Model it
-    # as generic INT4 for hardware compatibility while preserving the format
-    # name in the UI with the label below.
-    precision: int4
-    label: "NVFP4"
+    precision: nvfp4
+    # This checkpoint falls back to W4A16 with on-the-fly BF16 dequantization
+    # on Hopper instead of requiring native Blackwell FP4 tensor cores.
+    precision_hardware:
+      brand: NVIDIA
     vram_minimum_gb: 180
     supported_hardware:
       - b300
+      - b200
+      - gb200
+      - gb300
       - h200
     tp:
       b300: 1
+      b200: 2
+      gb200: 2
+      gb300: 2
       h200: 2
-    description: "NVFP4 checkpoint requiring at least 180 GB aggregated VRAM: W4A4 on 1× B300 (SM100+) or W4A16 on 2× H200, with on-the-fly BF16 dequantization on Hopper."
+    description: "NVFP4 checkpoint requiring at least 180 GB aggregated VRAM: W4A4 with TP1 on B300 or TP2 on B200/GB200/GB300, and W4A16 with TP2 on H200."
   bf16:
     model_id: "thinkingmachines/Inkling-Small"
     precision: bf16
     vram_minimum_gb: 600
     supported_hardware:
       - b300
+      - b200
+      - gb200
+      - gb300
       - h200
     tp:
       b300: 4
+      b200: 8
+      gb200: 4
+      gb300: 4
       h200: 8
-    description: "Full BF16 checkpoint requiring at least 600 GB aggregated VRAM: 4× B300 or 8× H200."
+    description: "Full BF16 checkpoint requiring at least 600 GB aggregated VRAM: TP4 on B300/GB200/GB300 or TP8 on B200/H200."
 
 compatible_strategies:
   - single_node_tp
@@ -149,20 +161,21 @@ guide: |
   ## Variants
 
   - **NVFP4 (default):** Requires at least 180 GB aggregated VRAM. Run W4A4 with TP1
-    on one B300 (SM100+), or W4A16 with TP2 on two H200 GPUs. On Hopper, the MoE
-    kernel dequantizes the NVFP4 weights to BF16 on the fly.
-  - **BF16:** Requires at least 600 GB aggregated VRAM. Run TP4 on four B300 GPUs or
-    TP8 on eight H200 GPUs.
+    on B300 or TP2 on B200/GB200/GB300. On H200, run W4A16 with TP2; the MoE kernel
+    dequantizes the NVFP4 weights to BF16 on the fly.
+  - **BF16:** Requires at least 600 GB aggregated VRAM. Run TP4 on B300/GB200/GB300 or
+    TP8 on B200/H200.
 
   ## Prerequisites
 
-  - **Hardware:** 1× B300 or 2× H200 for NVFP4; 4× B300 or 8× H200 for BF16.
+  - **Hardware:** B300 TP1 or B200/GB200/GB300/H200 TP2 for NVFP4;
+    B300/GB200/GB300 TP4 or B200/H200 TP8 for BF16.
   - **vLLM:** A nightly build with Inkling support.
   - **Audio:** Install the optional `vllm[audio]` extra only when serving audio inputs.
 
   ## Client Usage
 
-  Launch the NVFP4 checkpoint in W4A4 mode on one B300:
+  Launch the NVFP4 checkpoint in W4A4 mode on B300:
   ```bash
   export VLLM_USE_V2_MODEL_RUNNER=1
   export FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED=1
@@ -177,11 +190,11 @@ guide: |
     --trust-remote-code
   ```
 
-  On two H200 GPUs, select **H200** in the command builder. It emits TP2 and
-  vLLM runs the checkpoint in W4A16 mode with on-the-fly dequantization.
+  Select **B200**, **GB200**, or **GB300** for W4A4 with TP2. On H200, the
+  builder also emits TP2 and vLLM runs W4A16 with on-the-fly dequantization.
 
-  For BF16, select the **BF16** variant. The command builder emits TP4 on B300
-  and TP8 on H200.
+  For BF16, select the **BF16** variant. The command builder emits TP4 on
+  B300/GB200/GB300 and TP8 on B200/H200.
 
   Query the server with the OpenAI SDK:
   ```python

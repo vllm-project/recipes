@@ -71,11 +71,11 @@ opt_in_features:
 
 variants:
   default:
-    # Stored as NVFP4, but vLLM dequantizes it on the fly on Hopper. Model it
-    # as generic INT4 for hardware compatibility while preserving the format
-    # name in the UI with the label below.
-    precision: int4
-    label: "NVFP4"
+    precision: nvfp4
+    # This checkpoint falls back to on-the-fly BF16 dequantization on Hopper
+    # instead of requiring native Blackwell FP4 tensor cores.
+    precision_hardware:
+      brand: NVIDIA
     vram_minimum_gb: 651
     description: "Weight-only NVFP4 (group size 16) on the routed MoE expert matmuls only; attention, norms, sconv, shared experts, routers, embeddings, and the layer 0-1 dense MLPs stay BF16. ~542 GB on disk. On Hopper, the MoE kernel dequantizes the NVFP4 expert weights to BF16 on the fly."
   bf16:
