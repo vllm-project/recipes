@@ -181,7 +181,7 @@ export function pdPoolModes(recipe) {
     if (s === "pd_cluster") continue;
     if (/(?:^|_)dep$/.test(s)) modes.add("dep");
     else if (/(?:^|_)tep$/.test(s)) modes.add("tep");
-    else if (/(?:^|_)tp(?:_pp)?$/.test(s)) modes.add("tp");
+    else if (/(?:^|_)tp(?:_pp|_dp)?$/.test(s)) modes.add("tp");
   }
   if (modes.size === 0) modes.add("tp");
   let ordered = ["tp", "tep", "dep"].filter((m) => modes.has(m));
@@ -882,6 +882,18 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       args.push("--node-rank", String(mpRank));
       args.push("--master-addr", mpMasterAddr);
       if (mpRank > 0) args.push("--headless");
+    } else if (isMulti && strategy.parallelism === "tp_dp") {
+      // TP inside each node, DP across nodes — one full replica per node
+      // (dp_local = 1), so the inter-node link carries only DP coordination.
+      // Same DP rendezvous shape as the DEP branch: worker node N is DP
+      // rank N via --data-parallel-start-rank.
+      args.push("--tensor-parallel-size", String(gpuCount));
+      args.push("--data-parallel-size", String(nodeCount));
+      args.push("--data-parallel-size-local", "1");
+      args.push("--data-parallel-address", mpMasterAddr);
+      if (nodeRole === "worker") {
+        args.push("--data-parallel-start-rank", String(mpRank));
+      }
     } else if (isMulti) {
       // Multi-node TP/TEP via vLLM multiprocessing (mp) backend:
       // TP spans all GPUs in the cluster; every node runs the same command,

@@ -99,9 +99,23 @@ variants:
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
+  - multi_node_tp_dp
   - multi_node_tep
   - multi_node_dep
   - pd_cluster
+
+# TP-per-node + DP-across-nodes only makes sense where one node holds a full
+# replica and the cluster fabric fits the DP pattern: H200 (TP8·DP2 from 2
+# nodes) and GB200/GB300 NVL trays (TP4·DP4 from 4 trays). Everything else
+# opts out (fail-open convention: absent = supported).
+strategy_hardware:
+  multi_node_tp_dp:
+    h100: unsupported
+    b200: unsupported
+    b300: unsupported
+    mi300x: unsupported
+    mi325x: unsupported
+    mi355x: unsupported
 
 
 default_strategy: single_node_tp
@@ -113,6 +127,9 @@ default_strategy: single_node_tp
 strategy_min_gpus:
   single_node_tp: 8
   multi_node_tp: 8
+  # 16-GPU bar makes the Nodes row land exactly on the validated layouts:
+  # H200 → 2 nodes (TP8·DP2), GB200/GB300 NVL4 trays → 4 trays (TP4·DP4).
+  multi_node_tp_dp: 16
   multi_node_tep: 8
   multi_node_dep: 16
   h100: 32
