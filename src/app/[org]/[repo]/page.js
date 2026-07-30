@@ -69,13 +69,17 @@ export async function generateMetadata({ params }) {
   };
 }
 
-export default async function RecipePage({ params }) {
+export default async function RecipePage({ params, searchParams }) {
   const { org, repo } = await params;
   const recipe = getRecipeByHfId(org, repo);
   if (!recipe) {
     const v = findVariantRedirect(org, repo);
     if (v) redirect(`/${v.parent.hf_org}/${v.parent.hf_repo}?variant=${encodeURIComponent(v.variantKey)}`);
     notFound();
+  }
+  if (org !== recipe.hf_org || repo !== recipe.hf_repo) {
+    const qs = new URLSearchParams(await searchParams).toString();
+    redirect(`/${recipe.hf_org}/${recipe.hf_repo}${qs ? `?${qs}` : ""}`);
   }
 
   const strategies = loadStrategies();

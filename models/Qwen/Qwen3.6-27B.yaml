@@ -3,7 +3,8 @@ meta:
   slug: "Qwen3.6-27b"
   provider: "Qwen"
   description: "Qwen3.6 dense multimodal model (27B) with gated delta networks hybrid attention, MTP, and 262K context"
-  date_updated: 2026-04-22
+  date_added: 2026-04-22
+  date_updated: 2026-07-02
   difficulty: beginner
   tasks:
     - multimodal
@@ -11,6 +12,10 @@ meta:
   performance_headline: "Qwen3.6 flagship dense — single-GPU FP8 or 2x GPU BF16"
   related_recipes:
     - "Qwen/Qwen3.6-35B-A3B"
+  hardware:
+    dgx_spark_gb10: verified
+    rtx_pro_6000: verified
+    dgx_station_gb300: verified
 
 model:
   model_id: "Qwen/Qwen3.6-27B"
@@ -25,11 +30,11 @@ model:
 
 features:
   tool_calling:
-    description: "Enable automatic tool choice with Qwen3 Coder parser"
+    description: "Enable automatic tool choice with Qwen3 XML parser"
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_coder"
+      - "qwen3_xml"
   reasoning:
     description: "Enable chain-of-thought reasoning with Qwen3 parser"
     args:
@@ -39,7 +44,7 @@ features:
     description: "Multi-token prediction speculative decoding for lower latency"
     args:
       - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":1}'
+      - '{"method":"mtp","num_speculative_tokens":3}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -59,11 +64,50 @@ variants:
     precision: bf16
     vram_minimum_gb: 65
     description: "Full precision BF16 — fits on 1x H200 or 2x H100"
+    hardware_overrides:
+      rtx_pro_6000:
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
   fp8:
     model_id: "Qwen/Qwen3.6-27B-FP8"
     precision: fp8
     vram_minimum_gb: 33
     description: "Qwen official FP8 checkpoint — single 40 GB GPU"
+    extra_args:
+      - "--max-num-seqs"
+      - "512"
+    hardware_overrides:
+      dgx_spark_gb10:
+        extra_env:
+          VLLM_USE_DEEP_GEMM: "0"
+      rtx_pro_6000:
+        extra_env:
+          VLLM_USE_DEEP_GEMM: "0"
+  nvfp4:
+    model_id: "nvidia/Qwen3.6-27B-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 27
+    tp: 1
+    description: "NVIDIA ModelOpt NVFP4 checkpoint — MLP linears quantized to NVFP4, attention linears and KV cache in FP8. Single Blackwell GPU, including DGX Spark."
+    hardware_overrides:
+      dgx_station_gb300:
+        extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--attention-backend"
+          - "flashinfer"
+          - "--gpu-memory-utilization"
+          - "0.92"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
+          - "--enable-prefix-caching"
+          - "--load-format"
+          - "fastsafetensors"
+          - "--async-scheduling"
 
 compatible_strategies:
   - single_node_tp
@@ -85,9 +129,11 @@ guide: |
   ## Prerequisites
 
   - **vLLM version:** >= 0.17.0
+  - **DGX Spark NVFP4 vLLM version:** >= 0.24.0
   - **Hardware (BF16):** 1x H200 or 2x H100
   - **Hardware (FP8):** single 40 GB GPU (H100/H200/L40S)
   - **Hardware (Int4):** single 24 GB GPU
+  - **Hardware (NVFP4):** single NVIDIA Blackwell GPU (B200/B300/GB10 DGX Spark)
 
   ### Install vLLM
 
@@ -133,6 +179,75 @@ guide: |
     --enable-prefix-caching
   ```
 
+  ### DGX Spark GB10 NVFP4
+
+  The NVIDIA ModelOpt NVFP4 checkpoint is served from
+  [`nvidia/Qwen3.6-27B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
+  and requires vLLM 0.24.0+.
+
+  ```bash
+  # Use container: vllm/vllm-openai:v0.24.0-ubuntu2404
+
+  vllm serve nvidia/Qwen3.6-27B-NVFP4 \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --gpu-memory-utilization 0.5 \
+    --max-model-len 262144 \
+    --max-num-seqs 8 \
+    --max-num-batched-tokens 8192 \
+    --enable-chunked-prefill \
+    --async-scheduling \
+    --enable-prefix-caching \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
+    --load-format fastsafetensors \
+    --reasoning-parser qwen3 \
+    --tool-call-parser qwen3_xml \
+    --enable-auto-tool-choice
+  ```
+
+  ### RTX Pro 6000 NVFP4
+
+  The NVIDIA ModelOpt NVFP4 checkpoint is served from
+  [`nvidia/Qwen3.6-27B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
+  and requires vLLM 0.24.0+.
+
+  ```bash
+  # Use container: vllm/vllm-openai:v0.24.0-ubuntu2404
+
+  vllm serve nvidia/Qwen3.6-27B-NVFP4 \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --gpu-memory-utilization 0.9 \
+    --max-model-len 262144 \
+    --max-num-seqs 8 \
+    --max-num-batched-tokens 8192 \
+    --enable-chunked-prefill \
+    --async-scheduling \
+    --enable-prefix-caching \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
+    --load-format fastsafetensors \
+    --reasoning-parser qwen3 \
+    --tool-call-parser qwen3_xml \
+    --enable-auto-tool-choice
+  ```
+
+  ### NVFP4 on Blackwell
+
+  The [`nvidia/Qwen3.6-27B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
+  checkpoint is NVIDIA's ModelOpt re-quantization: MLP linears drop to NVFP4
+  (W4A16) while the attention linears and KV cache stay FP8, so the ~22 GB
+  weights fit a single Blackwell GPU. vLLM auto-detects the ModelOpt
+  quantization from the checkpoint, so no `--quantization` flag is needed — just
+  use a recent vLLM (NVIDIA recommends nightly or a source build with ModelOpt
+  W4A16/NVFP4 support). NVIDIA reports near-lossless accuracy versus the FP8
+  baseline.
+
+  ```bash
+  vllm serve nvidia/Qwen3.6-27B-NVFP4 \
+    --max-model-len 262144 \
+    --reasoning-parser qwen3
+  ```
+
   ## Processing Ultra-Long Texts
 
   Qwen3.6-27B natively supports `262,144` tokens. For longer inputs, apply
@@ -176,4 +291,5 @@ guide: |
   - [Model card](https://huggingface.co/Qwen/Qwen3.6-27B)
   - [FP8 checkpoint](https://huggingface.co/Qwen/Qwen3.6-27B-FP8)
   - [GPTQ-Int4 checkpoint](https://huggingface.co/Qwen/Qwen3.6-27B-GPTQ-Int4)
+  - [NVIDIA NVFP4 checkpoint](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
   - [Qwen3.6-397B-A17B recipe](../Qwen3.6-397B-A17B)

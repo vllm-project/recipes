@@ -21,6 +21,14 @@ Gemma 4 models are supported on NVIDIA GPUs, AMD GPUs, Google Cloud TPUs and Int
 |-------|----------------------|------------------------|---------------------|----------|----------|-------------|
 | Gemma 4 26B-A4B IT | 26B / 4B active | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | 2× NUMA node | [google/gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it) |
 
+### Block-Diffusion Models
+
+| Model | Total / Active Params | Canvas Length | Min NVIDIA GPUs (BF16) | Min AMD GPUs (BF16) | Min TPUs | HuggingFace |
+|-------|----------------------|---------------|------------------------|---------------------|----------|-------------|
+| DiffusionGemma 26B-A4B IT | 26B / 4B active | 256 tokens | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | [google/diffusiongemma-26B-A4B-it](https://huggingface.co/google/diffusiongemma-26B-A4B-it) |
+
+DiffusionGemma models generate tokens via iterative denoising over a fixed-length canvas (block diffusion) rather than left-to-right autoregressive decoding. They share the same Gemma 4 MoE backbone but use a different generation mechanism that trades higher time-to-first-token for significantly higher per-request throughput (~1.9× output TPS, ~3.3× faster E2E request time vs the autoregressive baseline).
+
 ### Key Architecture Features
 
 - **Multimodal**: Natively processes text and images (video supported via a custom vLLM processing pipeline that extracts frames; smaller gemma4-E2B and gemma-4-E4B also support audio).
@@ -191,6 +199,29 @@ docker run -itd --name gemma4-cpu \
 ```
 
 For additional Intel Xeon 6 deployment details, see the Intel Software Catalog entries for [Gemma 4 E4B IT](https://aiswcatalog.intel.com/models/google-gemma-4-e4b-it) and [Gemma 4 26B-A4B IT](https://aiswcatalog.intel.com/models/google-gemma-4-26b-a4b-it).
+
+### DiffusionGemma 26B-A4B Deployment
+
+DiffusionGemma requires several specific flags due to its block-diffusion architecture. See the [DiffusionGemma recipe](../models/Google/diffusiongemma-26B-A4B-it.yaml) for full details.
+
+```bash
+docker run -itd --name diffusiongemma \
+    --ipc=host \
+    --network host \
+    --gpus all \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai:gemma \
+        --model google/diffusiongemma-26B-A4B-it \
+        --max-model-len 262144 \
+        --max-num-seqs 4 \
+        --gpu-memory-utilization 0.85 \
+        --generation-config vllm \
+        --enable-chunked-prefill \
+        --host 0.0.0.0 \
+        --port 8000
+```
+
+> ⚠️ **Important**: `--max-num-seqs` must be kept low (≤4) — the diffusion state buffers pre-allocate `max_seqs × canvas_length × vocab_size` tensors that cause OOM at higher values. `--generation-config vllm` is required to prevent the checkpoint's `generation_config.json` from capping `max_tokens` to 256.
 
 ### Configuration Tips
 

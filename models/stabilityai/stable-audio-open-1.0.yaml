@@ -3,6 +3,7 @@ meta:
   slug: "stable-audio-open"
   provider: "Stability AI"
   description: "Text-to-audio generation model (1.2B params) producing up to ~47 s stereo audio at 44.1 kHz, served via vLLM-Omni"
+  date_added: 2026-01-26
   date_updated: 2026-04-17
   difficulty: beginner
   tasks:

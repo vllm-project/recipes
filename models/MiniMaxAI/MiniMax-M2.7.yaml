@@ -3,6 +3,7 @@ meta:
   slug: "minimax-m2.7"
   provider: "MiniMax"
   description: "MiniMax M2.7 MoE language model (230B total / 10B active) — latest M2 release for coding, agent toolchains, and long-context reasoning with native FP8"
+  date_added: 2026-04-12
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
@@ -56,6 +57,19 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
+    hardware_overrides:
+      dgx_station_gb300:
+        extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--gpu-memory-utilization"
+          - "0.92"
+          - "--load-format"
+          - "fastsafetensors"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
+          - "--enable-prefix-caching"
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
@@ -70,10 +84,6 @@ compatible_strategies:
   - pd_cluster
 
 hardware_overrides:
-  nvidia:
-    extra_args:
-      - "--compilation-config"
-      - '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}'
   amd:
     extra_args:
       - "--tensor-parallel-size"
@@ -132,7 +142,6 @@ guide: |
         --tool-call-parser minimax_m2 \
         --reasoning-parser minimax_m2 \
         --enable-auto-tool-choice \
-        --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
         --trust-remote-code
   ```
 
@@ -145,7 +154,6 @@ guide: |
     --tensor-parallel-size 4 \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
-    --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
     --enable-auto-tool-choice \
     --trust-remote-code
   ```
@@ -160,7 +168,6 @@ guide: |
     --enable-expert-parallel \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
-    --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
     --enable-auto-tool-choice
   ```
 
@@ -172,7 +179,6 @@ guide: |
     --enable-expert-parallel \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
-    --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
     --enable-auto-tool-choice
   ```
 
@@ -184,7 +190,6 @@ guide: |
     --enable-expert-parallel \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
-    --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
     --enable-auto-tool-choice
   ```
 
@@ -215,9 +220,9 @@ guide: |
 
   ## Troubleshooting
 
-  - **`fuse_minimax_qk_norm` not recognized:** This fusion was introduced in
-    [vLLM PR #37045](https://github.com/vllm-project/vllm/pull/37045); ensure your
-    vLLM build includes it.
+  - **MiniMax QK norm fusion:** Latest vLLM applies the fusion automatically at
+    runtime when the fused CUDA op is available; older vLLM builds used an
+    explicit `fuse_minimax_qk_norm` compile pass.
   - **Corrupted output on stable release:** Upgrade to a nightly after commit
     `cf3eacfe58fa9e745c2854782ada884a9f992cf7`.
   - **Verified accuracy:** Use the pinned commit
@@ -231,4 +236,4 @@ guide: |
 
   - [Model card](https://huggingface.co/MiniMaxAI/MiniMax-M2.7)
   - [MiniMax](https://www.minimax.io/)
-  - [vLLM PR #37045 (fuse_minimax_qk_norm)](https://github.com/vllm-project/vllm/pull/37045)
+  - [vLLM PR #43410 (automatic MiniMax QK norm fusion)](https://github.com/vllm-project/vllm/pull/43410)

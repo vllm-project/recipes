@@ -1,0 +1,291 @@
+meta:
+  title: "Kimi-K3"
+  slug: "kimi-k3"
+  provider: "Moonshot AI"
+  description: "Pre-release 2.8T-parameter native multimodal MoE with Kimi Delta Attention, Gated MLA, Attention Residuals, and a 1M-token context window"
+  date_added: 2026-07-27
+  date_updated: 2026-07-29
+  difficulty: hard
+  tasks:
+    - multimodal
+    - text
+  performance_headline: "Pre-release TP8, TEP16, and disaggregated P/D profiles for the 2.8T MXFP4 checkpoint"
+  related_recipes:
+    - "moonshotai/Kimi-K2.6"
+    - "moonshotai/Kimi-K2.5"
+  default_hardware: b300
+  hardware:
+    h200: verified
+    b300: verified
+    gb300: verified
+    mi355x: verified
+
+model:
+  model_id: "moonshotai/Kimi-K3"
+  min_vllm_version: "0.27.0"
+  docker_image:
+    nvidia: "vllm/vllm-openai:kimi-k3"
+    amd: "vllm/vllm-openai-rocm:kimi-k3"
+  nightly_required: true
+  install:
+    docker:
+      note: "Use a K3-enabled nightly image after the integration lands."
+    pip:
+      note: "Use a K3-enabled vLLM nightly after the integration lands."
+  architecture: moe
+  parameter_count: "2.8T"
+  active_parameters: "16 experts/token + shared (of 896 routed)"
+  context_length: 1048576
+  base_args:
+    - "--trust-remote-code"
+    # Canonical Inferact serve uses fastsafetensors (much faster weight load) + moe-backend auto.
+    - "--load-format"
+    - "fastsafetensors"
+    - "--moe-backend"
+    - "auto"
+    - "--gpu-memory-utilization"
+    - "0.95"
+
+features:
+  tool_calling:
+    description: "Enable automatic tool choice with the Kimi K3 tool-call parser."
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "kimi_k3"
+  reasoning:
+    description: "Parse Kimi K3 reasoning output separately from the final answer."
+    args:
+      - "--reasoning-parser"
+      - "kimi_k3"
+  spec_decoding:
+    description: "Use Inferact trained DSpark."
+    args:
+      # Speculative decoding needs additional VRAM, so cap concurrent sequences.
+      - "--max-num-seqs"
+      - "32"
+      - "--speculative-config"
+      - '{"model":"Inferact/Kimi-K3-DSpark", "num_speculative_tokens":7, "method": "dspark", "attention_backend": "FLASHINFER_MLA", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
+    hardware_overrides:
+      # ROCm/MI355X: target keeps AITER MLA (prefill); the DSpark verify runs on TRITON_MLA
+      # (FLASHINFER_MLA is CUDA-only). max-num-seqs 128 matches our validated serve config.
+      amd:
+        args:
+          - "--max-num-seqs"
+          - "128"
+          - "--speculative-config"
+          - '{"model":"Inferact/Kimi-K3-DSpark", "num_speculative_tokens":7, "method": "dspark", "attention_backend": "TRITON_MLA", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
+  text_only:
+    description: "Skip the vision encoder for text-only workloads. Mutually exclusive with encoder_parallel."
+    args:
+      - "--language-model-only"
+
+opt_in_features:
+  - spec_decoding
+  - text_only
+
+variants:
+  default:
+    precision: mxfp4
+    # Pre-release estimate: 2.8T params × 0.5 byte/param × 1.2 headroom.
+    # Replace with the real safetensors footprint once weights are published.
+    vram_minimum_gb: 1680
+    description: "Quantization-aware-trained MXFP4 weights with MXFP8 activations; footprint is estimated until the checkpoint is published."
+
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+  - multi_node_tep
+  - multi_node_dep
+  - pd_cluster
+
+
+default_strategy: single_node_tp
+
+# TP/TEP run from 8 GPUs; DEP needs 16+. Applies to aggregated and PD pools.
+strategy_min_gpus:
+  single_node_tp: 8
+  multi_node_tp: 8
+  multi_node_tep: 8
+  multi_node_dep: 16
+
+kv_cache_strategy_hardware:
+  kv_store_distributed_mooncake:
+    h100: unsupported
+    h200: unsupported
+    b200: unsupported
+    gb200: unsupported
+    b300: unsupported
+    gb300: unsupported
+    mi300x: unsupported
+    mi325x: unsupported
+    mi355x: unsupported
+  kv_store_centralized_mooncake:
+    h100: unsupported
+    h200: unsupported
+    b200: unsupported
+    gb200: unsupported
+    b300: unsupported
+    gb300: unsupported
+    mi300x: unsupported
+    mi325x: unsupported
+    mi355x: unsupported
+
+hardware_overrides:
+  hopper:
+    extra_args:
+      - "--no-enable-flashinfer-autotune"
+      - "--moe-backend"
+      - "marlin"
+      - "--disable-custom-all-reduce"
+    extra_env:
+      VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
+  blackwell:
+    extra_args:
+      - "--max-model-len"
+      - "1048576"
+      - "--kv-cache-dtype"
+      - "fp8"
+      - "--attention-config"
+      - '{"use_prefill_query_quantization":true}'
+      - "--enable-prefix-caching"
+    extra_env:
+      VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
+      VLLM_ALLREDUCE_USE_FLASHINFER: "1"
+      VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+      VLLM_USE_V2_MODEL_RUNNER: "1"
+      VLLM_USE_RUST_FRONTEND: "1"
+  nvidia:
+    extra_args:
+      - "--no-enable-flashinfer-autotune"
+    extra_env:
+      VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
+  amd:
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      SAFETENSORS_FAST_GPU: "1"
+      AITER_SITUV2_A8W4: "1"
+      AITER_BF16_FP8_MOE_BOUND: "0"
+      VLLM_USE_BREAKABLE_CUDAGRAPH: "0" # REQUIRED on ROCm: the build auto-enables =1
+    extra_args:
+      - "--load-format"
+      - "auto"
+      - "--gpu-memory-utilization"
+      - "0.95"
+      - "--mm-encoder-tp-mode"
+      - "data"
+      - "--max-num-seqs"
+      - "128"
+      - "--reasoning-parser"
+      - "kimi_k3"
+      - "--max-num-batched-tokens"
+      - "4096"
+
+strategy_overrides:
+  pd_cluster:
+    router:
+      intra_node_data_parallel_size: 1
+    env:
+      NCCL_CUMEM_ENABLE: "1"
+      NCCL_MNNVL_ENABLE: "1"
+      NCCL_NVLS_ENABLE: "0"
+      VLLM_SSM_CONV_STATE_LAYOUT: "DS"
+    # Blackwell only (cuda_copy is CUDA-only); replaces the recipe-level nvidia block.
+    hardware_overrides:
+      blackwell:
+        extra_env:
+          VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
+          UCX_TLS: "rc,cuda_copy"
+    prefill:
+      parallelism: tep
+      tp: 8
+      vllm_args:
+        - "--enforce-eager"
+        - "--max-num-batched-tokens"
+        - "16384"
+        - "--no-disable-hybrid-kv-cache-manager"
+        - "--no-enable-flashinfer-autotune"
+
+      env: {}
+    decode:
+      parallelism: dep
+      tp: 1
+      env: {}
+      vllm_args:
+        - "--data-parallel-hybrid-lb"
+        - "--moe-backend"
+        - "deep_gemm_mega_moe"
+        - "--no-enable-prefix-caching"
+        - "--max-num-seqs"
+        - "32"
+        - "--max-num-batched-tokens"
+        - "32"
+        - "--no-disable-hybrid-kv-cache-manager"
+        - "--compilation-config"
+        - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+        - "--all2all-backend"
+        - "flashinfer_nvlink_one_sided"
+
+guide: |
+  ## Overview
+
+  Kimi K3 is a 2.8-trillion-parameter Mixture-of-Experts model (16 of 896 experts active per token) built on the Kimi Delta Attention (KDA) and Attention Residuals (AttnRes), with a 1M-token context window and native vision. 
+
+  ## Prerequisites
+
+  - **vLLM:** Use the vllm/vllm-openai:kimi-k3 docker
+  - **Hardware:** At least 8x GB300. Multi-node for real production traffic.
+  - **ROCm:** Use vllm/vllm-openai_rocm:kimi-k3 docker and at least 8x MI355X/MI350X hardware.
+
+  ## Client Usage
+
+  Once the vLLM server is running, consume it via the OpenAI-compatible API:
+
+  ```python
+  import time
+  from openai import OpenAI
+
+  client = OpenAI(
+      api_key="EMPTY",
+      base_url="http://localhost:8000/v1",
+      timeout=3600
+  )
+
+  messages = [
+      {
+          "role": "user",
+          "content": [
+              {
+                  "type": "image_url",
+                  "image_url": {
+                      "url": "https://ofasys-multimodal-wlcb-3-toshanghai.oss-accelerate.aliyuncs.com/wpf272043/keepme/image/receipt.png"
+                  }
+              },
+              {
+                  "type": "text",
+                  "text": "Read all the text in the image."
+              }
+          ]
+      }
+  ]
+
+  start = time.time()
+  response = client.chat.completions.create(
+      model="moonshotai/Kimi-K3",
+      messages=messages,
+      max_tokens=2048
+  )
+  print(f"Response costs: {time.time() - start:.2f}s")
+  print(f"Generated text: {response.choices[0].message.content}")
+  ```
+
+  ## Notes
+
+  - **Cross node communitcation**: Use `--all2all-backend deepep_v2` for RDMA and `--all2all-backend flashinfer_nvlink_one_sided` for NVLink.
+  - **MoE backend**: Recommend to use deep_gemm_mega_moe for any DEP environment.
+  - **Model Runner v2 and Rust Frontend**: `VLLM_USE_V2_MODEL_RUNNER=1` and `VLLM_USE_RUST_FRONTEND=1`: Model Runner v2 and Rust Frontend fully supports this model and can be enabled if needed.
+  - **Tool calling**: K3 occasionally emit a tool-call format its own parser doesn't expect. Suggest to run do schema validation and retry.
+  - **AMD (MI355X / MI350X, CDNA4 gfx950)**: set AITER_SITUV2_A8W4 to 0 along with AITER master flag to use aiter a16w4 MoE path. Set it to 1 to use aiter a8w4 MoE path.
+  - **max-model-len**: Adjust max-model-len for different benchmark scenarios for best performance.
+  - **RDMA**: If RDMA is enabled, set `UCX_TLS="rc,cuda_copy"` to make sure KV Cache transfer goes through RDMA.
+  - **FP8 KV**: If FP8 KV cache is needed, please also add `--attention-config '{"use_prefill_query_quantization":true}'` when serving vLLM.

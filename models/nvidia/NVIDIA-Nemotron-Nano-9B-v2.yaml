@@ -3,6 +3,7 @@ meta:
   slug: "nemotron-nano-9b-v2"
   provider: "NVIDIA"
   description: "NVIDIA Nemotron-Nano 9B (Mamba-hybrid dense) reasoning + tool-use model with FP8 / NVFP4 / Japanese variants"
+  date_added: 2026-04-28
   date_updated: 2026-04-28
   difficulty: beginner
   tasks:

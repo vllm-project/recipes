@@ -24,6 +24,9 @@ export const PROVIDERS = {
   "baidu":           { display_name: "Ernie (Baidu)",           logo: "/providers/baidu.png" },
   "arcee-ai":        { display_name: "Arcee AI",                logo: "/providers/arcee-ai.png" },
   "inclusionAI":     { display_name: "inclusionAI",             logo: "/providers/inclusionAI.jpeg" },
+  "fishaudio":       { display_name: "Fish Audio",              logo: "/providers/fishaudio.png" },
+  "bosonai":         { display_name: "Boson AI",                logo: "/providers/bosonai.png" },
+  "OpenMOSS-Team":   { display_name: "OpenMOSS",                logo: "/providers/OpenMOSS-Team.png" },
   "OpenGVLab":       { display_name: "InternVL (OpenGVLab)",    logo: "/providers/OpenGVLab.jpeg" },
   "internlm":        { display_name: "InternLM",                logo: "/providers/internlm.png" },
   "jinaai":          { display_name: "Jina AI",                 logo: "/providers/jinaai.png" },
@@ -39,6 +42,10 @@ export const PROVIDERS = {
   "poolside":        { display_name: "Poolside",                 logo: "/providers/poolside.png" },
   "JetBrains":       { display_name: "JetBrains",                 logo: "/providers/JetBrains.png" },
   "openbmb":         { display_name: "MiniCPM (OpenBMB)",          logo: "/providers/openbmb.png" },
+  "LiquidAI":        { display_name: "Liquid AI",                  logo: "/providers/LiquidAI.png" },
+  "thinkingmachines":{ display_name: "Thinking Machines Lab",         logo: "/providers/thinkingmachines.png" },
+  "RedHatAI":        { display_name: "Red Hat AI",                    logo: "/providers/RedHatAI.png" },
+  "mindlab-research":{ display_name: "MindLab Research",               logo: "/providers/mindlab-research.png" },
 };
 
 export function getProviderLogo(hfOrg) {

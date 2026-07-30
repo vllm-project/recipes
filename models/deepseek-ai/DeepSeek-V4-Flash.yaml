@@ -3,7 +3,8 @@ meta:
   slug: "deepseek-v4-flash"
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
-  date_updated: 2026-05-28
+  date_added: 2026-04-24
+  date_updated: 2026-07-16
   difficulty: hard
   tasks:
     - text
@@ -17,12 +18,14 @@ meta:
     gb300: verified
     dgx_station_gb300: verified
     mi300x: unsupported
-    mi325x: unsupported
-    mi355x: unsupported
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V4-Flash"
   min_vllm_version: "0.20.0"
+  docker_image:
+    amd: "vllm/vllm-openai-rocm:nightly"
   architecture: moe
   parameter_count: "284B"
   active_parameters: "13B"
@@ -57,12 +60,12 @@ features:
   spec_decoding:
     description: "Multi-Token Prediction speculative decoding with 2 speculative tokens (1 on Hopper)."
     args:
-      - "--speculative_config"
+      - "--speculative-config"
       - '{"method":"mtp","num_speculative_tokens":2}'
     hardware_overrides:
       hopper:
         args:
-          - "--speculative_config"
+          - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":1}'
 
 opt_in_features:
@@ -73,6 +76,18 @@ variants:
     precision: fp8
     vram_minimum_gb: 170
     description: "Native FP4+FP8 mixed checkpoint (MoE experts FP4, remaining params FP8)"
+    # deep_gemm_mega_moe is an FP8-only MoE kernel — the FP8 checkpoint adds it on
+    # Blackwell; the NVFP4 variant below adds nothing (its experts can't use it).
+    hardware_overrides:
+      blackwell:
+        extra_args:
+          - "--moe-backend"
+          - "deep_gemm_mega_moe"
+  nvfp4:
+    model_id: "nvidia/DeepSeek-V4-Flash-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 170
+    description: "NVIDIA modelopt NVFP4 checkpoint (MoE experts NVFP4; attention, shared experts, router head, and MTP stay FP8) for Blackwell GPUs."
 
 compatible_strategies:
   - single_node_tp
@@ -87,10 +102,24 @@ default_strategy: single_node_tep
 
 hardware_overrides:
   blackwell:
+    # Common to every variant on Blackwell. The FP8-only deep_gemm_mega_moe MoE
+    # kernel is added per-variant (FP8 checkpoints), not here.
     extra_args:
       - "--attention_config.use_fp4_indexer_cache=True"
-      - "--moe-backend"
-      - "deep_gemm_mega_moe"
+  amd:
+    extra_args:
+      - "--distributed-executor-backend"
+      - "mp"
+      - "--gpu-memory-utilization"
+      - "0.9"
+      - "--max-num-seqs"
+      - "512"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--compilation-config"
+      - '{"mode": 3, "cudagraph_mode": "FULL_DECODE_ONLY"}'
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
 
 strategy_overrides:
   single_node_tp:
@@ -98,15 +127,17 @@ strategy_overrides:
     # strategy doesn't add --enable-expert-parallel) and no MoE mega-kernel
     # backend on Blackwell. Autotune is disabled to minimize startup time.
     tp: 8
-    extra_args:
-      - "--no-enable-flashinfer-autotune"
     hardware_overrides:
+      hopper:
+        extra_args:
+          - "--no-enable-flashinfer-autotune"
       blackwell:
         # Replaces recipe-level blackwell override: keeps the FP4 indexer cache
         # but drops --moe-backend deep_gemm_mega_moe (TP-only path uses the
         # default MoE backend).
         extra_args:
           - "--attention_config.use_fp4_indexer_cache=True"
+          - "--no-enable-flashinfer-autotune"
   single_node_dep:
     # Force DP=4 on all hardware (fills GB200's 4-GPU tray; on 8-GPU nodes use
     # half the GPUs per replica). dedupeArgs (last-wins) shadows the default
@@ -166,6 +197,13 @@ guide: |
 
   Checkpoint is **FP4+FP8 mixed**: MoE expert weights are stored in FP4 while the
   remaining (attention / norm / router) params stay in FP8.
+
+  An **NVFP4 variant** (`nvidia/DeepSeek-V4-Flash-NVFP4`) is also available — NVIDIA
+  modelopt re-quantizes the MoE experts to standard NVFP4 while attention, shared
+  experts, router head, and MTP stay FP8. Pick it from the **Variant** row; it runs on
+  Blackwell GPUs with the FP4 indexer cache. Unlike the native FP8 checkpoint, the
+  NVFP4 experts don't support the `deep_gemm_mega_moe` MoE kernel (FP8-only), so it
+  runs on the default MoE backend.
 
   ## Reasoning modes
 
@@ -242,6 +280,85 @@ guide: |
     --enable-auto-tool-choice --reasoning-parser deepseek_v4 \
     --max-cudagraph-capture-size 128 \
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
+  ```
+
+  ### MI325X (1×256GB)
+
+  Validated end-to-end with vLLM 0.25.0 and PyTorch HIP 7.2.53211. Use this
+  conservative TP1 eager-mode launch instead of the MI355X throughput settings:
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+
+  vllm serve deepseek-ai/DeepSeek-V4-Flash \
+    --host 0.0.0.0 \
+    --port 8002 \
+    --tensor-parallel-size 1 \
+    --kv-cache-dtype fp8_e4m3 \
+    --max-model-len 4096 \
+    --enable-chunked-prefill \
+    --max-num-batched-tokens 256 \
+    --kv-cache-memory-bytes 10000000000 \
+    --distributed-executor-backend mp \
+    --trust-remote-code \
+    --tokenizer-mode deepseek_v4 \
+    --moe-backend triton_unfused \
+    --enforce-eager
+  ```
+
+  Chunked prefill allows 4K requests while scheduling at most 256 tokens per
+  batch. This configuration loaded the 148.66 GiB checkpoint and passed model-list
+  and chat probes in non-thinking and Think High modes during a 24-hour allocation.
+  Only TP1 at 4K context is verified; TP2+ did not validate successfully. Think Max
+  requires at least 384K context and is not available with this configuration.
+
+  ### MI355X (4×288GB)
+
+  If you want to further lower the latency, you can run with `--tensor-parallel-size 8`.
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+
+  vllm serve deepseek-ai/DeepSeek-V4-Flash \
+    --host localhost \
+    --port 8001 \
+    --dtype auto \
+    --kv-cache-dtype fp8 \
+    --tensor-parallel-size 4 \
+    --max-num-seqs 512 \
+    --max-num-batched-tokens 8192 \
+    --distributed-executor-backend mp \
+    --trust-remote-code \
+    --gpu-memory-utilization 0.9 \
+    --tokenizer-mode deepseek_v4 \
+    --reasoning-parser deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --compilation-config '{"mode": 3, "cudagraph_mode": "FULL_DECODE_ONLY"}'
+  ```
+
+  #### MI355X is validated on GSM8K dataset:
+
+  ##### Launch command
+
+  ```bash
+  MODEL=deepseek-ai/DeepSeek-V4-Flash
+  lm_eval --model local-completions \
+    --model_args model=$MODEL,base_url=http://0.0.0.0:8001/v1/completions,num_concurrent=128,max_retries=10,max_gen_toks=2048,timeout=60000 \
+    --batch_size auto \
+    --tasks gsm8k \
+    --num_fewshot 8 \
+    --output_path . 2>&1 | tee -a eval.log
+  ```
+
+  ##### Reported result
+
+  ```text
+  local-completions ({'model': 'deepseek-ai/DeepSeek-V4-Flash', 'base_url': 'http://0.0.0.0:8001/v1/completions', 'num_concurrent': 128, 'max_retries': 10, 'max_gen_toks': 2048, 'timeout': 60000}), gen_kwargs: ({}), limit: None, num_fewshot: 8, batch_size: auto
+  |Tasks|Version|     Filter     |n-shot|  Metric   |   |Value |   |Stderr|
+  |-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
+  |gsm8k|      3|flexible-extract|     8|exact_match|↑  |0.9439|±  |0.0063|
+  |     |       |strict-match    |     8|exact_match|↑  |0.9431|±  |0.0064|
   ```
 
   ### H200 Single-Node PD (Mooncake)

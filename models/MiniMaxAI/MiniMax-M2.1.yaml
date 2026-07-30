@@ -3,6 +3,7 @@ meta:
   slug: "minimax-m2.1"
   provider: "MiniMax"
   description: "MiniMax M2.1 MoE language model (230B total / 10B active) for coding, agent toolchains, and long-context reasoning — native FP8 checkpoint"
+  date_added: 2025-12-20
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
@@ -58,10 +59,6 @@ compatible_strategies:
   - pd_cluster
 
 hardware_overrides:
-  nvidia:
-    extra_args:
-      - "--compilation-config"
-      - '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}'
   amd:
     extra_args:
       - "--tensor-parallel-size"
@@ -114,7 +111,6 @@ guide: |
         --tool-call-parser minimax_m2 \
         --reasoning-parser minimax_m2 \
         --enable-auto-tool-choice \
-        --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
         --trust-remote-code
   ```
 
@@ -127,7 +123,6 @@ guide: |
     --tensor-parallel-size 4 \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
-    --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
     --enable-auto-tool-choice \
     --trust-remote-code
   ```
@@ -142,7 +137,6 @@ guide: |
     --enable-expert-parallel \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
-    --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
     --enable-auto-tool-choice
   ```
 
@@ -174,7 +168,7 @@ guide: |
   ## Troubleshooting
 
   - See [MiniMax-M2](./MiniMax-M2.yaml) for shared troubleshooting notes
-    (`fuse_minimax_qk_norm`, nightly vs stable, DeepGEMM, AITER).
+    (latest vLLM fusion behavior, nightly vs stable, DeepGEMM, AITER).
 
   ## References
 

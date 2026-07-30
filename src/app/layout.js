@@ -65,6 +65,8 @@ export default async function RootLayout({ children }) {
       title: r.meta.title,
       provider: r.meta.provider,
       description: r.meta.description,
+      date_added: r.meta.date_added,
+      date_updated: r.meta.date_updated,
       tasks: r.meta.tasks,
       hardware: r.meta.hardware || {},
     },
