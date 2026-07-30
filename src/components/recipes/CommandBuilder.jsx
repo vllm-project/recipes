@@ -979,11 +979,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   }, [activeStrategy, nodeCount, nodesNeededFor, nodeOptions]);
 
   // Effective TP under single_node_tp, via the shared resolver so the hint
-  // is perfectly in sync with the generated command. The resolver accepts
-  // both an explicit `strategy_overrides.single_node_tp.tp` and the
-  // auto-fit from `variant.vram_minimum_gb` vs per-GPU VRAM.
+  // is perfectly in sync with the generated command. The resolver accepts a
+  // variant TP number/map, a recipe-wide strategy override, or the auto-fit
+  // from `variant.vram_minimum_gb` vs per-GPU VRAM.
   const hwGpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 1;
-  const effectiveTp = resolveSingleNodeTp(recipe, currentVariant, hwProfile, activeStrategy);
+  const effectiveTp = resolveSingleNodeTp(
+    recipe,
+    currentVariant,
+    hwProfile,
+    activeStrategy,
+    hwId,
+  );
   const showGpuUsageHint =
     nodeCount === 1 && activeStrategy === "single_node_tp" && effectiveTp < hwGpuCount;
 

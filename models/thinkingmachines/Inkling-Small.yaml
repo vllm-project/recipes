@@ -69,14 +69,25 @@ variants:
     # name in the UI with the label below.
     precision: int4
     label: "NVFP4"
-    vram_minimum_gb: 192
-    description: "NVFP4-quantized checkpoint (~160 GB on disk); the recipe budgets 192 GB with serving headroom. On Hopper, the MoE kernel will dequantize the NVFP4 weights to BF16 on the fly."
+    vram_minimum_gb: 180
+    supported_hardware:
+      - b300
+      - h200
+    tp:
+      b300: 1
+      h200: 2
+    description: "NVFP4 checkpoint requiring at least 180 GB aggregated VRAM: W4A4 on 1× B300 (SM100+) or W4A16 on 2× H200, with on-the-fly BF16 dequantization on Hopper."
   bf16:
     model_id: "thinkingmachines/Inkling-Small"
     precision: bf16
-    vram_minimum_gb: 660
-    tp: 8
-    description: "Full BF16 checkpoint (~550 GB of weights plus 20% serving headroom). Runs on Hopper and Blackwell."
+    vram_minimum_gb: 600
+    supported_hardware:
+      - b300
+      - h200
+    tp:
+      b300: 4
+      h200: 8
+    description: "Full BF16 checkpoint requiring at least 600 GB aggregated VRAM: 4× B300 or 8× H200."
 
 compatible_strategies:
   - single_node_tp
@@ -137,22 +148,21 @@ guide: |
 
   ## Variants
 
-  - **NVFP4 (default):** The deployment checkpoint is approximately 160 GB. With 20%
-    serving headroom, the recipe budgets 192 GB. Blackwell runs the native format;
-    vLLM dequantizes it on the fly on Hopper.
-  - **BF16:** The full-precision checkpoint is approximately 550 GB. With 20% serving
-    headroom, the recipe budgets 660 GB and uses TP8.
+  - **NVFP4 (default):** Requires at least 180 GB aggregated VRAM. Run W4A4 with TP1
+    on one B300 (SM100+), or W4A16 with TP2 on two H200 GPUs. On Hopper, the MoE
+    kernel dequantizes the NVFP4 weights to BF16 on the fly.
+  - **BF16:** Requires at least 600 GB aggregated VRAM. Run TP4 on four B300 GPUs or
+    TP8 on eight H200 GPUs.
 
   ## Prerequisites
 
-  - **Hardware:** NVIDIA Hopper or Blackwell. The NVFP4 checkpoint runs on both; a
-    single B300, GB200, or GB300 GPU can use TP1, while Hopper uses multi-GPU TP.
+  - **Hardware:** 1× B300 or 2× H200 for NVFP4; 4× B300 or 8× H200 for BF16.
   - **vLLM:** A nightly build with Inkling support.
   - **Audio:** Install the optional `vllm[audio]` extra only when serving audio inputs.
 
   ## Client Usage
 
-  Launch the NVFP4 checkpoint with TP1 on a B300, GB200, or GB300:
+  Launch the NVFP4 checkpoint in W4A4 mode on one B300:
   ```bash
   export VLLM_USE_V2_MODEL_RUNNER=1
   export FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED=1
@@ -167,8 +177,11 @@ guide: |
     --trust-remote-code
   ```
 
-  For BF16, select the **BF16** variant. The command builder emits TP8 on an
-  eight-GPU Hopper or Blackwell node.
+  On two H200 GPUs, select **H200** in the command builder. It emits TP2 and
+  vLLM runs the checkpoint in W4A16 mode with on-the-fly dequantization.
+
+  For BF16, select the **BF16** variant. The command builder emits TP4 on B300
+  and TP8 on H200.
 
   Query the server with the OpenAI SDK:
   ```python

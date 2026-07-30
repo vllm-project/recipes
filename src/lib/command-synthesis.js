@@ -41,18 +41,40 @@ function autoFitTp(vramMinGb, perGpuVram, gpuCount) {
 }
 
 /**
+ * Resolve a numeric TP declaration. A variant may use a bare number or a
+ * hardware-aware map keyed by exact GPU id, generation, brand, or `default`.
+ */
+function declaredTpForHardware(raw, hwProfile, hwProfileId) {
+  if (typeof raw === "number") return raw;
+  if (!raw || typeof raw !== "object") return undefined;
+  const gen = normalizeGeneration(hwProfile?.generation || hwProfile?.gpu_generation);
+  const brand = typeof hwProfile?.brand === "string" ? hwProfile.brand.toLowerCase() : null;
+  return (hwProfileId && raw[hwProfileId])
+    ?? (gen && raw[gen])
+    ?? (brand && raw[brand])
+    ?? raw.default;
+}
+
+/**
  * Single-node TP size for a recipe/variant/hardware triple. Exported so
  * the UI ("using N of M GPUs" hint) uses the same rule as the generated
  * command. See the precedence note in resolveCommand.
  */
-export function resolveSingleNodeTp(recipe, variant, hwProfile, strategyName = "single_node_tp") {
+export function resolveSingleNodeTp(
+  recipe,
+  variant,
+  hwProfile,
+  strategyName = "single_node_tp",
+  hwProfileId = null,
+) {
   const gpuCount = typeof hwProfile?.gpu_count === "number" ? hwProfile.gpu_count : 1;
   if (strategyName !== "single_node_tp") return gpuCount;
   // Variant-level override beats recipe-level. Used when a non-default variant
   // (typically an FP8-block-quantized sibling) needs a smaller TP than the
   // bf16 default — e.g. moe_intermediate_size=1536 demands TP ≤ 4 under FP8
-  // block_n=128, while bf16 happily runs at TP=8.
-  const variantTp = variant?.tp;
+  // block_n=128, while bf16 happily runs at TP=8. A map supports variants
+  // whose documented deployment differs by GPU (e.g. TP1 B300 / TP2 H200).
+  const variantTp = declaredTpForHardware(variant?.tp, hwProfile, hwProfileId);
   if (typeof variantTp === "number" && variantTp > 0) {
     return Math.min(variantTp, gpuCount);
   }
@@ -754,12 +776,19 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   const totalGpus = gpuCount * Math.max(1, nodeCount);
 
   // single_node_tp TP size precedence (see resolveSingleNodeTp):
-  //   1. `strategy_overrides.single_node_tp.tp` (explicit recipe override)
-  //   2. auto-fit from `variant.vram_minimum_gb` / per-GPU VRAM (pow-2).
-  //   3. gpuCount (legacy fan-out when the recipe has no VRAM hint).
+  //   1. `variant.tp` (number or hardware-aware map)
+  //   2. `strategy_overrides.single_node_tp.tp` (recipe-wide override)
+  //   3. auto-fit from `variant.vram_minimum_gb` / per-GPU VRAM.
+  //   4. gpuCount (legacy fan-out when the recipe has no VRAM hint).
   //
   // TEP/DEP require full TP by topology; multi-node is explicit scale-out.
-  const singleNodeTp = resolveSingleNodeTp(recipe, variant, hwProfile, strategyName);
+  const singleNodeTp = resolveSingleNodeTp(
+    recipe,
+    variant,
+    hwProfile,
+    strategyName,
+    hwProfileId,
+  );
 
   // The served checkpoint is owned by the variant axis (variant.model_id > base).
   // Spec-decoding modes are single-select and contribute only args (the
