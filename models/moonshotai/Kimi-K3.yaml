@@ -17,6 +17,7 @@ meta:
   hardware:
     h200: verified
     b300: verified
+    gb200: verified
     gb300: verified
     mi355x: verified
 
@@ -99,9 +100,9 @@ variants:
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
-  - multi_node_tp_dp
   - multi_node_tep
   - multi_node_dep
+  - multi_node_tp_dp
   - pd_cluster
 
 # TP-per-node + DP-across-nodes only makes sense where one node holds a full

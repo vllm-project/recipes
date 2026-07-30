@@ -1,7 +1,7 @@
 name: multi_node_tp_dp
 deploy_type: multi_node
 display_name: "Multi-Node TP + Data Parallel"
-orientation: throughput
+orientation: balanced
 description: >
   Tensor parallel within each node, data parallel across nodes — one
   full model replica per node. TP stays inside the high-bandwidth
