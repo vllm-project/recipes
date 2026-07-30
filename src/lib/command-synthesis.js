@@ -1119,6 +1119,12 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     } else if (roleOverride && strategy[roleOverride]?.env) {
       Object.assign(env, strategy[roleOverride].env);
     }
+    // Composing-option env (taxonomy.kv_offload.<key>.env), after the
+    // strategy's so the option wins the overlap — e.g. offloading_fs pins
+    // PYTHONHASHSEED for stable on-disk block filenames.
+    if (kvOpt?.env) {
+      Object.assign(env, kvOpt.env);
+    }
     // Mooncake composition: instances (any serving strategy) and PD roles
     // read the shared config via MOONCAKE_CONFIG_PATH (+ PYTHONHASHSEED for
     // consistent prefix hashing across processes).
