@@ -107,6 +107,13 @@ variants:
     extra_env:
       VLLM_ROCM_USE_AITER_MOE: "1"
       VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
+      # Kernel-selection env vars for the tuned AITER MXFP4 MoE path documented
+      # in the guide below. AITER_MXFP4_INTERMEDIATE=1 is what selects the
+      # RadeonFlow MXFP4 intermediate GEMM path; without it (with AITER on) the
+      # MoE oracle falls back to a slower kernel. VLLM_ROCM_USE_SKINNY_GEMM
+      # defaults to on, so it must be disabled explicitly here.
+      VLLM_ROCM_USE_SKINNY_GEMM: "0"
+      AITER_MXFP4_INTERMEDIATE: "1"
     # AITER RMSNorm is left at its default (on when AITER is enabled): a local
     # TP4 GSM8K check measured identical accuracy on vs off (0.9697), so there is
     # no reason to disable it the way the single-node TP<8 guard used to.
