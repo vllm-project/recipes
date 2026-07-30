@@ -283,11 +283,9 @@ export function isKvOffloadAllowedForStrategy(option, strategyName, strategy) {
 }
 
 /**
- * Whether the recipe permits a composing KV-offload option. Fail-open like
- * the rest of the schema, with two exceptions: `kv_offload_support:
- * { <key>: unsupported }` opts out of an open option, and an option marked
- * `requires_opt_in: true` in the taxonomy is fail-CLOSED — offered only when
- * the recipe lists it as `verified`.
+ * Recipe gate: fail-open (`unsupported` opts out) unless the option sets
+ * `requires_opt_in` — then offered only when listed `verified` under
+ * `kv_offload_support`.
  */
 export function isKvOffloadSupportedForRecipe(option, optionKey, recipe) {
   if (!option) return false;
@@ -296,11 +294,7 @@ export function isKvOffloadSupportedForRecipe(option, optionKey, recipe) {
   return option.requires_opt_in ? support === "verified" : true;
 }
 
-/**
- * Whether a composing KV-offload option runs on this hardware brand. Options
- * whose transfer path is device-specific declare a `brands` allowlist;
- * absent = every brand.
- */
+/** Hardware gate: option `brands` allowlist; absent = every brand. */
 export function isKvOffloadBrandSupported(option, hwProfile) {
   const allow = option?.brands;
   if (!Array.isArray(allow) || allow.length === 0) return true;
@@ -757,10 +751,8 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     : null;
   const kvComposing = !!kvStoreStrat && strategy.deploy_type !== "pd_cluster";
 
-  // The composing taxonomy option, resolved once behind all three gates
-  // (strategy, recipe opt-in, hardware brand) so its args and companion can't
-  // disagree; the same helpers back the UI pills. A URL forcing a gated
-  // option therefore emits nothing.
+  // The composing option, resolved once behind all three gates (strategy,
+  // recipe opt-in, brand) and shared by args/env/companion emission.
   const kvOptRaw = taxonomy?.kv_offload?.[kvOffload];
   const kvOpt = kvOptRaw
     && isKvOffloadAllowedForStrategy(kvOptRaw, strategyName, strategy)
@@ -1119,9 +1111,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     } else if (roleOverride && strategy[roleOverride]?.env) {
       Object.assign(env, strategy[roleOverride].env);
     }
-    // Composing-option env (taxonomy.kv_offload.<key>.env), after the
-    // strategy's so the option wins the overlap — e.g. offloading_fs pins
-    // PYTHONHASHSEED for stable on-disk block filenames.
+    // Composing-option env, after the strategy's so the option wins.
     if (kvOpt?.env) {
       Object.assign(env, kvOpt.env);
     }

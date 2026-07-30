@@ -918,10 +918,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     isKvOffloadAllowedForStrategy(kvOffloadOptions[key], activeServingStrategy, strategies[activeServingStrategy])
     && isKvOffloadSupportedForRecipe(kvOffloadOptions[key], key, recipe)
     && isKvOffloadBrandSupported(kvOffloadOptions[key], hwProfile);
-  // Why an option is disabled, reporting the gates the user can't fix from
-  // another row first (recipe, then hardware, then strategy) so the tooltip
-  // never points at a knob that wouldn't help. Shared by the row pills and
-  // the group sub-row.
+  // Disabled reason, most-fixed-first (recipe, hardware, strategy). Shared
+  // by the row pills and the group sub-row.
   const kvDisabledReason = (key) => {
     const opt = kvOffloadOptions[key];
     const name = opt?.display_name || key;
@@ -931,14 +929,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         : `${name} is not enabled for this recipe yet. It stays off until the recipe records a verified run under kv_offload_support.`;
     }
     if (!isKvOffloadBrandSupported(opt, hwProfile)) {
-      return `${name} needs a CUDA, ROCm or XPU device — not available on ${hwProfile.brand || ""} ${hwProfile.display_name || hwId} backends.`;
+      return `${name} needs a CUDA, ROCm or XPU device — not available on ${hwProfile.brand ? `${hwProfile.brand} ` : ""}${hwProfile.display_name || hwId} backends.`;
     }
     return activeServingStrategy === "pd_cluster"
       ? `${name} can't compose with PD cluster, which owns --kv-transfer-config. (Mooncake composes with PD instead.)`
       : `${name} works with: ${(opt?.strategies || []).map((s) => strategies[s]?.display_name || s).join(", ")}.`;
   };
-  // Options sharing a `group` collapse into one pill with a nested member
-  // sub-row (the Mooncake merged-pill idiom, driven by taxonomy data).
+  // Options sharing a `group` collapse into one pill + member sub-row.
   const kvOffloadGroups = taxonomy.kv_offload_groups || {};
   const kvGroupMembers = {};
   for (const [key, opt] of Object.entries(kvOffloadOptions)) {
@@ -1586,9 +1583,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const precisionPart = currentVariant.precision?.toUpperCase();
   const configSummary = [hwPart, strategyPart, precisionPart].filter(Boolean).join(" · ")
     + (kvOffloadOptions[activeKvOffload]
-        // Grouped members read "Offloading (CPU + Filesystem)" — a bare
-        // member name is meaningless out of context, same reasoning as the
-        // "Mooncake (Distributed)" form below.
+        // Grouped members read "Offloading (CPU + Filesystem)".
         ? activeKvGroup
           ? ` · ${kvOffloadGroups[activeKvGroup]?.label || activeKvGroup} (${kvOffloadOptions[activeKvOffload].label || kvOffloadOptions[activeKvOffload].display_name})`
           : ` · ${kvOffloadOptions[activeKvOffload].display_name || activeKvOffload}`
@@ -2132,12 +2127,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 <span className="font-semibold">Off</span>
               </Pill>
               {(() => {
-                // Composing options share the gating helpers with synthesis
-                // (strategy allowlist + recipe opt-in + hardware brand).
-                // Grouped options collapse into one pill at the group's
-                // `order`; the merged Mooncake pill joins the same ordered
-                // list at MOONCAKE_PILL_ORDER, so the row reads
-                // Off · Simple · Offloading · Mooncake · LMCache.
+                // Gating helpers are shared with synthesis. Grouped options
+                // collapse into one pill at the group's `order`; the row
+                // reads Off · Simple · Offloading · Mooncake · LMCache.
                 const pills = Object.entries(kvOffloadOptions)
                   .filter(([, opt]) => !opt.group)
                   .map(([key, opt]) => {
@@ -2157,10 +2149,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                       ),
                     };
                   });
-                // One pill per group; first click lands on the leading
-                // selectable member. Disabled only when NO member is
-                // selectable — the members share their gates, so the leading
-                // member's reason explains the group.
+                // One pill per group; disabled only when no member is
+                // selectable, borrowing the leading member's reason.
                 for (const [gKey, members] of Object.entries(kvGroupMembers)) {
                   const group = kvOffloadGroups[gKey] || {};
                   const selectable = members.filter(kvOptAllowed);
@@ -2225,8 +2215,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 background here, while the topology-specific text lives under
                 the Store Topology row. */}
             {(() => {
-              // A grouped option shows its group's framework background here;
-              // the member-specific text renders under the sub-row below.
+              // Grouped options show the group background here; member text
+              // renders under the sub-row.
               const opt = (activeKvGroup && kvOffloadGroups[activeKvGroup])
                 || kvOffloadOptions[activeKvOffload];
               const text = opt?.description || (isKvStoreActive ? MOONCAKE_BACKGROUND : null);
@@ -2247,10 +2237,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             })()}
           </ConfigRow>
 
-          {/* Members of the active merged pill. Same one-of-N idiom as Store
-              Topology below; the members stay separate taxonomy options and
-              kv_offload points at a concrete member id. Hidden at a single
-              member, which needs no choice. */}
+          {/* Members of the active merged pill — same idiom as Store
+              Topology below; kv_offload points at a concrete member id. */}
           {activeKvGroup && (kvGroupMembers[activeKvGroup] || []).length > 1 && (
             <ConfigRow label={kvOffloadGroups[activeKvGroup]?.sub_row_label || "Options"} nested>
               <PillGroup>
