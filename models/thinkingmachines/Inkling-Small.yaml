@@ -1,0 +1,222 @@
+meta:
+  title: "TML Inkling-Small"
+  slug: "tml-inkling-small"
+  provider: "Thinking Machines Lab"
+  description: "Natively multimodal 276B-parameter MoE from Thinking Machines Lab — 12B active parameters, text/image/audio in, text out, and up to 1M context."
+  date_added: 2026-07-30
+  date_updated: 2026-07-30
+  difficulty: intermediate
+  tasks:
+    - multimodal
+  performance_headline: "276B total / 12B active Inkling architecture for lower-cost, lower-latency deployment"
+  related_recipes:
+    - "thinkingmachines/Inkling"
+  hardware:
+    mi300x: unsupported
+    mi325x: unsupported
+    mi355x: unsupported
+
+model:
+  model_id: "thinkingmachines/Inkling-Small-NVFP4"
+  min_vllm_version: "0.26.0"
+  nightly_required: true
+  install:
+    docker:
+    pip:
+  architecture: moe
+  parameter_count: "276B"
+  active_parameters: "12B"
+  context_length: 1048576
+  base_args:
+    - "--trust-remote-code"
+    - "--tokenizer-mode"
+    - "inkling"
+    - "--kernel-config.enable_flashinfer_autotune=False"
+  base_env:
+    VLLM_USE_V2_MODEL_RUNNER: "1"
+    FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED: "1"
+
+dependencies:
+  - note: "Audio extras — only needed when serving the audio modality"
+    command: 'uv pip install "vllm[audio]"'
+    optional: true
+
+features:
+  tool_calling:
+    description: "Enable auto tool choice with the Inkling tool-call parser."
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "inkling"
+  reasoning:
+    description: "Enable reasoning output parsing with the Inkling reasoning parser."
+    args:
+      - "--reasoning-parser"
+      - "inkling"
+  spec_decoding:
+    description: "Multi-Token Prediction (MTP) speculative decoding. Inkling ships 8 chained MTP heads, but the stable version of vLLM only supports 1 speculative token for now. Will support 8 in the next release."
+    args:
+      - "--speculative-config"
+      - '{"method":"mtp","num_speculative_tokens":1}'
+
+opt_in_features:
+  - spec_decoding
+
+variants:
+  default:
+    precision: nvfp4
+    # This checkpoint falls back to W4A16 with on-the-fly BF16 dequantization
+    # on Hopper instead of requiring native Blackwell FP4 tensor cores.
+    precision_hardware:
+      brand: NVIDIA
+    vram_minimum_gb: 180
+    supported_hardware:
+      - b300
+      - b200
+      - gb200
+      - gb300
+      - h200
+    tp:
+      b300: 1
+      b200: 2
+      gb200: 2
+      gb300: 1
+      h200: 2
+    description: "NVFP4 checkpoint requiring at least 180 GB aggregated VRAM: W4A4 with TP1 on B300/GB300 or TP2 on B200/GB200, and W4A16 with TP2 on H200."
+  bf16:
+    model_id: "thinkingmachines/Inkling-Small"
+    precision: bf16
+    vram_minimum_gb: 600
+    supported_hardware:
+      - b300
+      - b200
+      - gb200
+      - gb300
+      - h200
+    tp:
+      b300: 4
+      b200: 8
+      gb200: 4
+      gb300: 4
+      h200: 8
+    description: "Full BF16 checkpoint requiring at least 600 GB aggregated VRAM: TP4 on B300/GB200/GB300 or TP8 on B200/H200."
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - multi_node_tp
+  # Keep DEP ahead of the other multi-node alternatives so Hopper falls back
+  # to the topology used by the Inkling family when pure cross-node TP is gated.
+  - multi_node_dep
+  - multi_node_tep
+  - pd_cluster
+
+# H100/H200 lack the cross-node NVLink fabric that pure multi-node TP relies on.
+# Use DEP (TP within each node, DP/EP across nodes) for scale-out on Hopper.
+strategy_hardware:
+  multi_node_tp:
+    h100: unsupported
+    h200: unsupported
+  multi_node_tep:
+    h100: unsupported
+    h200: unsupported
+
+hardware_overrides: {}
+
+strategy_overrides:
+  multi_node_dep:
+    hardware_overrides:
+      hopper:
+        extra_args:
+          - "--max-model-len"
+          - "131072"
+          - "--max-num-seqs"
+          - "10"
+          - "--tensor-parallel-size"
+          - "8"
+          - "--data-parallel-size"
+          - "2"
+          - "--data-parallel-size-local"
+          - "1"
+  pd_cluster:
+    pool_modes:
+      - dep
+    prefill:
+      parallelism: dep
+    decode:
+      parallelism: dep
+
+guide: |
+  ## Overview
+
+  TML Inkling-Small is a natively multimodal 276B-parameter Mixture-of-Experts model
+  from Thinking Machines Lab. It activates 12B parameters per token and uses the same
+  Inkling architecture and vLLM serving configuration as its larger 975B-parameter
+  sibling, while substantially reducing the deployment footprint.
+
+  Inkling-Small accepts text, image, and audio inputs and generates text. It supports
+  Inkling's relative-attention and short-convolution serving path, tool and reasoning
+  parsers, and MTP speculative decoding.
+
+  ## Variants
+
+  - **NVFP4 (default):** Requires at least 180 GB aggregated VRAM. Run W4A4 with TP1
+    on B300/GB300 or TP2 on B200/GB200. On H200, run W4A16 with TP2; the MoE kernel
+    dequantizes the NVFP4 weights to BF16 on the fly.
+  - **BF16:** Requires at least 600 GB aggregated VRAM. Run TP4 on B300/GB200/GB300 or
+    TP8 on B200/H200.
+
+  ## Prerequisites
+
+  - **Hardware:** B300/GB300 TP1 or B200/GB200/H200 TP2 for NVFP4;
+    B300/GB200/GB300 TP4 or B200/H200 TP8 for BF16.
+  - **vLLM:** A nightly build with Inkling support.
+  - **Audio:** Install the optional `vllm[audio]` extra only when serving audio inputs.
+
+  ## Client Usage
+
+  Launch the NVFP4 checkpoint in W4A4 mode on B300:
+  ```bash
+  export VLLM_USE_V2_MODEL_RUNNER=1
+  export FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED=1
+
+  vllm serve thinkingmachines/Inkling-Small-NVFP4 \
+    --tokenizer-mode inkling \
+    --reasoning-parser inkling \
+    --tool-call-parser inkling \
+    --enable-auto-tool-choice \
+    --tensor-parallel-size 1 \
+    --kernel-config.enable_flashinfer_autotune=False \
+    --trust-remote-code
+  ```
+
+  Select **GB300** for W4A4 with TP1, or **B200**/**GB200** for W4A4 with TP2.
+  On H200, the builder emits TP2 and vLLM runs W4A16 with on-the-fly
+  dequantization.
+
+  For BF16, select the **BF16** variant. The command builder emits TP4 on
+  B300/GB200/GB300 and TP8 on B200/H200.
+
+  Query the server with the OpenAI SDK:
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+
+  response = client.chat.completions.create(
+      model="thinkingmachines/Inkling-Small-NVFP4",
+      messages=[{
+          "role": "user",
+          "content": [
+              {"type": "text", "text": "Describe this image."},
+              {"type": "image_url", "image_url": {"url": "https://example.com/photo.jpg"}},
+          ],
+      }],
+  )
+  print(response.choices[0].message.content)
+  ```
+
+  ## References
+
+  - [TML Inkling announcement](https://thinkingmachines.ai/news/introducing-inkling/#inkling-small)
+  - [TML Inkling recipe](https://docs.vllm.ai/projects/recipes/en/latest/thinkingmachines/Inkling.html)

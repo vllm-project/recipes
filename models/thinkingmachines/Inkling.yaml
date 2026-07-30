@@ -4,7 +4,7 @@ meta:
   provider: "Thinking Machines Lab"
   description: "Natively multimodal 1T-parameter MoE from Thinking Machines Lab — text/image/audio in, text out, up to 1M context — with relative attention, short convolution, and shared expert sinks."
   date_added: 2026-07-15
-  date_updated: 2026-07-14
+  date_updated: 2026-07-30
   difficulty: intermediate
   tasks:
     - multimodal
@@ -72,8 +72,12 @@ opt_in_features:
 variants:
   default:
     precision: nvfp4
+    # This checkpoint falls back to on-the-fly BF16 dequantization on Hopper
+    # instead of requiring native Blackwell FP4 tensor cores.
+    precision_hardware:
+      brand: NVIDIA
     vram_minimum_gb: 651
-    description: "Weight-only NVFP4 (group size 16) on the routed MoE expert matmuls only; attention, norms, sconv, shared experts, routers, embeddings, and the layer 0-1 dense MLPs stay BF16. ~542 GB on disk. Requires Blackwell FP4 tensor cores."
+    description: "Weight-only NVFP4 (group size 16) on the routed MoE expert matmuls only; attention, norms, sconv, shared experts, routers, embeddings, and the layer 0-1 dense MLPs stay BF16. ~542 GB on disk. On Hopper, the MoE kernel dequantizes the NVFP4 expert weights to BF16 on the fly."
   bf16:
     model_id: "thinkingmachines/Inkling"
     precision: bf16
@@ -161,18 +165,20 @@ guide: |
   ## Variants
 
   - **NVFP4 (default):** Only the routed experts are quantized to NVFP4; shared experts and the
-    qkvr linears remain BF16. This is a mixed-precision checkpoint and requires **Blackwell**
-    FP4 tensor cores (B200 / GB200).
+    qkvr linears remain BF16. This is a mixed-precision checkpoint. Blackwell uses its native
+    FP4 tensor cores; on Hopper, the MoE kernel dequantizes the NVFP4 expert weights to BF16
+    on the fly.
   - **BF16:** Full BF16 weights (`thinkingmachines/Inkling`). Runs on both **Hopper**
     (H200&H20) and Blackwell, at the cost of substantially more VRAM.
 
   ## Prerequisites
 
-  - **Hardware:** NVIDIA Blackwell (B200 / GB200) for the NVFP4 variant; Hopper (H200&H20) or
-    Blackwell for the BF16 variant. Broader hardware support is in progress.
+  - **Hardware:** NVIDIA Hopper (H200/H20) or Blackwell for both NVFP4 and BF16. Broader
+    hardware support is in progress.
   - **vLLM:** Nightly wheels (Day-0 support just landed).
   - **Parallelism:** 1T parameters requires multi-GPU. The featured configuration is 4x GB200
-    (`--tensor-parallel-size 4`) for the NVFP4 variant; the BF16 variant needs multi-node.
+    (`--tensor-parallel-size 4`) for the NVFP4 variant. On Hopper, NVFP4 uses TP8 on H200;
+    the BF16 variant needs multi-node.
 
   ## Client Usage
 
