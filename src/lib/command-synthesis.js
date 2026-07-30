@@ -564,6 +564,16 @@ function dockerGpuArgv(meta) {
   return ["--gpus", "all"];
 }
 
+// Env vars pointing at host-written config files (Mooncake's *_CONFIG_PATH
+// heredocs) need the file inside the container too — bind the host path to
+// the same path so the `-e` value stays valid there. Read-only: the serve
+// process only consumes the config.
+function configPathMounts(env) {
+  return Object.entries(env || {})
+    .filter(([k]) => k.endsWith("_CONFIG_PATH"))
+    .map(([, v]) => `${v}:${v}:ro`);
+}
+
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
 // image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
 // CMD. Env vars become `-e KEY=VAL` inside the container.
@@ -571,11 +581,14 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
+  const mountFlags = configPathMounts(env)
+    .map((m) => `-v ${m}`)
+    .join(" \\\n  ");
   const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
   const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
   return `docker run ${gpuFlags} \\
   --privileged --ipc=host -p ${port}:${port} \\
-  -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
+  -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}
   ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
 }
 
@@ -587,6 +600,10 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
   for (const [k, v] of Object.entries(env || {})) {
     envFlags.push("-e", `${k}=${v}`);
   }
+  const mountFlags = [];
+  for (const m of configPathMounts(env)) {
+    mountFlags.push("-v", m);
+  }
   // `vllm serve <model> <...flags>` → CMD becomes `<model> <...flags>` since
   // the image's entrypoint is already `vllm serve`.
   const cmdArgs = argv[0] === "vllm" && argv[1] === "serve" ? argv.slice(2) : argv;
@@ -596,6 +613,7 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
     "--privileged", "--ipc=host",
     "-p", `${port}:${port}`,
     "-v", "~/.cache/huggingface:/root/.cache/huggingface",
+    ...mountFlags,
     ...envFlags,
     meta.image,
     ...cmdArgs,
