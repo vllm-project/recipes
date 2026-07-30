@@ -54,7 +54,7 @@ features:
       - "--reasoning-parser"
       - "inkling"
   spec_decoding:
-    description: "Multi-Token Prediction (MTP) speculative decoding. Inkling ships 8 chained MTP heads, allowing up to 9 tokens per forward step; tune num_speculative_tokens for your acceptance/latency trade-off."
+    description: "Multi-Token Prediction (MTP) speculative decoding. Inkling ships 8 chained MTP heads, but the stable version of vLLM only supports 1 speculative token for now. Will support 8 in the next release."
     args:
       - "--speculative-config"
       - '{"method":"mtp","num_speculative_tokens":1}'
@@ -64,10 +64,13 @@ opt_in_features:
 
 variants:
   default:
-    precision: nvfp4
+    # Stored as NVFP4, but vLLM dequantizes it on the fly on Hopper. Model it
+    # as generic INT4 for hardware compatibility while preserving the format
+    # name in the UI with the label below.
+    precision: int4
+    label: "NVFP4"
     vram_minimum_gb: 192
-    tp: 1
-    description: "Weight-only NVFP4 on the routed MoE expert matmuls; ~160 GB of weights plus 20% serving headroom. Requires Blackwell FP4 tensor cores."
+    description: "NVFP4-quantized checkpoint (~160 GB on disk); the recipe budgets 192 GB with serving headroom. On Hopper, the MoE kernel will dequantize the NVFP4 weights to BF16 on the fly."
   bf16:
     model_id: "thinkingmachines/Inkling-Small"
     precision: bf16
@@ -135,21 +138,21 @@ guide: |
   ## Variants
 
   - **NVFP4 (default):** The deployment checkpoint is approximately 160 GB. With 20%
-    serving headroom, the recipe budgets 192 GB and uses TP1 on Blackwell.
+    serving headroom, the recipe budgets 192 GB. Blackwell runs the native format;
+    vLLM dequantizes it on the fly on Hopper.
   - **BF16:** The full-precision checkpoint is approximately 550 GB. With 20% serving
     headroom, the recipe budgets 660 GB and uses TP8.
 
   ## Prerequisites
 
-  - **Hardware:** NVIDIA Blackwell for the NVFP4 variant; Hopper or Blackwell for BF16.
-    The featured NVFP4 configuration is one 192 GB GB200 GPU. Use additional GPUs when
-    more KV-cache capacity is required.
+  - **Hardware:** NVIDIA Hopper or Blackwell. The NVFP4 checkpoint runs on both; a
+    single B300, GB200, or GB300 GPU can use TP1, while Hopper uses multi-GPU TP.
   - **vLLM:** A nightly build with Inkling support.
   - **Audio:** Install the optional `vllm[audio]` extra only when serving audio inputs.
 
   ## Client Usage
 
-  Launch the NVFP4 checkpoint with TP1:
+  Launch the NVFP4 checkpoint with TP1 on a B300, GB200, or GB300:
   ```bash
   export VLLM_USE_V2_MODEL_RUNNER=1
   export FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED=1
