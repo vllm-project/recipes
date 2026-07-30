@@ -836,10 +836,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const perNode = hwProfile?.gpu_count || 8;
   // Nodes a strategy (or PD pool mode) needs to clear its `strategy_min_gpus`
-  // floor on the active hardware.
+  // floor on the active hardware — the floor itself can be hardware-conditional
+  // (a per-GPU-id block), hence hwId as well as the GPUs per node.
   const nodesNeededFor = useCallback(
-    (key) => nodesForStrategy(recipe, key, perNode),
-    [recipe, perNode]
+    (key) => nodesForStrategy(recipe, key, perNode, hwId),
+    [recipe, perNode, hwId]
   );
 
   // Node-count pills: 1 / 2, plus whatever count an offered strategy's floor
@@ -847,10 +848,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const nodeOptions = useMemo(() => {
     const needed = Math.max(
       0,
-      ...(recipe.compatible_strategies || []).map((s) => nodesForStrategy(recipe, s, perNode)),
+      ...(recipe.compatible_strategies || []).map((s) => nodesForStrategy(recipe, s, perNode, hwId)),
     );
     return needed > 2 && needed <= MAX_NODES ? [1, 2, needed] : [1, 2];
-  }, [recipe, perNode]);
+  }, [recipe, perNode, hwId]);
 
   const compatibleStrategies = useMemo(() => {
     return (recipe.compatible_strategies || []).filter((s) => {
@@ -862,9 +863,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       if (nodeCount > 1 && strat.deploy_type === "single_node") return false;
       // Listed while reachable at SOME node count, not just the current one —
       // picking it grows the count (selectStrategy).
-      return isStrategyReachable(recipe, s, strat.deploy_type, perNode);
+      return isStrategyReachable(recipe, s, strat.deploy_type, perNode, hwId);
     });
-  }, [recipe, strategies, nodeCount, perNode]);
+  }, [recipe, strategies, nodeCount, perNode, hwId]);
 
   // Mooncake KV-store deployments (deploy_type: kv_store_lb) — offered on
   // every recipe by default (omni recipes never reach this row), no
@@ -944,6 +945,22 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeKvOffload, kvOffload]);
 
+  // Floor the node count to the active strategy's `strategy_min_gpus` bar, not
+  // just on a strategy click (selectStrategy) — a hardware-conditional floor
+  // (per-GPU block) raises the bar on mount, on a ?nodes= link and on a
+  // hardware switch too, and rendering below it would emit a command that
+  // can't hold the model (K3 on H100: 4 nodes, not the 2-node default).
+  // Monotonic (only ever grows, capped at MAX_NODES), so it converges.
+  // Storage is left alone — deliberate picks are saved by the click handlers.
+  useEffect(() => {
+    const needed = nodesNeededFor(activeStrategy);
+    if (needed > nodeCount && needed <= MAX_NODES) {
+      setNodeCount(needed);
+      syncUrl({ nodes: String(needed) });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStrategy, nodeCount, nodesNeededFor]);
+
   // Effective TP under single_node_tp, via the shared resolver so the hint
   // is perfectly in sync with the generated command. The resolver accepts
   // both an explicit `strategy_overrides.single_node_tp.tp` and the
@@ -964,8 +981,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // Pools scale to MAX_NODES, so every mode reachable on this hardware stays
   // offered; picking one grows the pool to its floor (setPdPar).
   const pdAvailableModes = useMemo(
-    () => pdModes.filter((m) => isStrategyReachable(recipe, m, "multi_node", perNode)),
-    [pdModes, recipe, perNode]
+    () => pdModes.filter((m) => isStrategyReachable(recipe, m, "multi_node", perNode, hwId)),
+    [pdModes, recipe, perNode, hwId]
   );
   const effPdPrefillPar = pdAvailableModes.includes(pdPrefillPar) ? pdPrefillPar : (pdAvailableModes[0] || "tp");
   const effPdDecodePar = pdAvailableModes.includes(pdDecodePar) ? pdDecodePar : (pdAvailableModes[0] || "tp");
