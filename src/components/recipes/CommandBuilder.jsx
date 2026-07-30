@@ -2888,10 +2888,17 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   // pill in the Install header. Manual `install.pip.command` overrides still
   // win — this flag only affects the default.
   const nightlyRequired = recipe.model?.nightly_required === true || variant?.nightly_required === true;
+  // A CUDA map narrows the toggle to the builds the recipe actually declares.
+  // A single-key map (e.g. K3's cu130-only preview image) has nothing to
+  // toggle: hide the selector and pin both the docker tag and the pip wheel
+  // index to the one published build.
+  const cudaMapKeys = cudaMap ? ["cu130", "cu129"].filter((k) => k in cudaMap) : null;
+  const singleCudaBuild = cudaMapKeys && cudaMapKeys.length === 1 ? cudaMapKeys[0] : null;
+  const singleCudaLabel = singleCudaBuild === "cu129" ? "CUDA 12.9 (cu129)" : "CUDA 13 (cu130)";
   // Resolve the CUDA tag for pip's nightly wheel index from the same toggle
   // that drives the Docker tag suffix. "default" → cu130 (today's upstream
   // baseline); explicit picks pass through.
-  const pipCudaTag = dockerCudaVariant === "default" ? "cu130" : dockerCudaVariant;
+  const pipCudaTag = singleCudaBuild || (dockerCudaVariant === "default" ? "cu130" : dockerCudaVariant);
   const defaultPipCmd = isAmd
     ? `uv venv --python 3.12
 source .venv/bin/activate
@@ -2910,7 +2917,9 @@ uv pip install -U vllm --torch-backend auto`;
   const pipNote =
     pipCfg?.note ||
     (nightlyRequired && !isAmd
-      ? `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
+      ? singleCudaBuild
+        ? `vLLM ${minV} isn't released yet — nightly required. This recipe publishes ${singleCudaLabel} builds only.`
+        : `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
       : undefined);
 
   // Docker install step is just the image pull; the `docker run` that actually
@@ -2925,7 +2934,9 @@ uv pip install -U vllm --torch-backend auto`;
     : isAmd
       ? undefined
       : cudaMap
-        ? "This recipe ships paired CUDA-tagged images. Pick `cu129` for CUDA 12.9 hosts or `cu130` for CUDA 13."
+        ? singleCudaBuild
+          ? `This tag is published as a ${singleCudaLabel} build only${singleCudaBuild === "cu130" ? " — the host needs an r580+ NVIDIA driver" : ""}.`
+          : "This recipe ships paired CUDA-tagged images. Pick `cu129` for CUDA 12.9 hosts or `cu130` for CUDA 13."
         : nightlyRequired
           ? "Nightly image ships CUDA 13. Switch to cu129 for the `cu129-nightly` variant if your host is on CUDA 12.9."
           : "Default tag ships CUDA 13. Switch to cu129 for the -cu129 variant if your host is on CUDA 12.9.";
@@ -2935,9 +2946,11 @@ uv pip install -U vllm --torch-backend auto`;
   // on the docker tab always, and on the pip tab when the command actually
   // varies by CUDA — i.e. nightly recipes whose wheel index URL is explicit.
   // Stable pip uses `--torch-backend auto`, which detects the host CUDA, so
-  // a toggle would be inert there.
+  // a toggle would be inert there. A single-build CUDA map has nothing to
+  // toggle either — the note explains the one published build instead.
   const showCudaSelector =
     brandKey === "nvidia" &&
+    !singleCudaBuild &&
     !dockerCfg?.command &&
     (installMode === "docker" ||
       (installMode === "pip" && nightlyRequired && !pipCfg?.command));

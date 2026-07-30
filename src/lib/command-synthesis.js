@@ -181,7 +181,7 @@ export function pdPoolModes(recipe) {
     if (s === "pd_cluster") continue;
     if (/(?:^|_)dep$/.test(s)) modes.add("dep");
     else if (/(?:^|_)tep$/.test(s)) modes.add("tep");
-    else if (/(?:^|_)tp(?:_pp)?$/.test(s)) modes.add("tp");
+    else if (/(?:^|_)tp(?:_pp|_dp)?$/.test(s)) modes.add("tp");
   }
   if (modes.size === 0) modes.add("tp");
   let ordered = ["tp", "tep", "dep"].filter((m) => modes.has(m));
@@ -532,7 +532,10 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   // does not cover instead of skipping directly to the global default.
   applyOverride(recipe.model?.docker_image);
 
-  const image = pinned || DEFAULT_IMAGE[brandKey];
+  // With a CUDA map, `image` defaults to the cu130 (upstream baseline) pick so
+  // toggle-unaware callers (the JSON API's renderings) still get a real tag;
+  // the client's CUDA selector re-picks from `cudaMap` on top of this.
+  const image = pinned || (cudaMap ? cudaMap.cu130 || cudaMap.cu129 : null) || DEFAULT_IMAGE[brandKey];
   const gpuFlags = isTpu
     ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
     : isAmd
@@ -561,6 +564,16 @@ function dockerGpuArgv(meta) {
   return ["--gpus", "all"];
 }
 
+// Env vars pointing at host-written config files (Mooncake's *_CONFIG_PATH
+// heredocs) need the file inside the container too — bind the host path to
+// the same path so the `-e` value stays valid there. Read-only: the serve
+// process only consumes the config.
+function configPathMounts(env) {
+  return Object.entries(env || {})
+    .filter(([k]) => k.endsWith("_CONFIG_PATH"))
+    .map(([, v]) => `${v}:${v}:ro`);
+}
+
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
 // image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
 // CMD. Env vars become `-e KEY=VAL` inside the container.
@@ -568,11 +581,14 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
+  const mountFlags = configPathMounts(env)
+    .map((m) => `-v ${m}`)
+    .join(" \\\n  ");
   const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
   const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
   return `docker run ${gpuFlags} \\
   --privileged --ipc=host -p ${port}:${port} \\
-  -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
+  -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}
   ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
 }
 
@@ -584,6 +600,10 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
   for (const [k, v] of Object.entries(env || {})) {
     envFlags.push("-e", `${k}=${v}`);
   }
+  const mountFlags = [];
+  for (const m of configPathMounts(env)) {
+    mountFlags.push("-v", m);
+  }
   // `vllm serve <model> <...flags>` → CMD becomes `<model> <...flags>` since
   // the image's entrypoint is already `vllm serve`.
   const cmdArgs = argv[0] === "vllm" && argv[1] === "serve" ? argv.slice(2) : argv;
@@ -593,6 +613,7 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
     "--privileged", "--ipc=host",
     "-p", `${port}:${port}`,
     "-v", "~/.cache/huggingface:/root/.cache/huggingface",
+    ...mountFlags,
     ...envFlags,
     meta.image,
     ...cmdArgs,
@@ -861,6 +882,18 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       args.push("--node-rank", String(mpRank));
       args.push("--master-addr", mpMasterAddr);
       if (mpRank > 0) args.push("--headless");
+    } else if (isMulti && strategy.parallelism === "tp_dp") {
+      // TP inside each node, DP across nodes — one full replica per node
+      // (dp_local = 1), so the inter-node link carries only DP coordination.
+      // Same DP rendezvous shape as the DEP branch: worker node N is DP
+      // rank N via --data-parallel-start-rank.
+      args.push("--tensor-parallel-size", String(gpuCount));
+      args.push("--data-parallel-size", String(nodeCount));
+      args.push("--data-parallel-size-local", "1");
+      args.push("--data-parallel-address", mpMasterAddr);
+      if (nodeRole === "worker") {
+        args.push("--data-parallel-start-rank", String(mpRank));
+      }
     } else if (isMulti) {
       // Multi-node TP/TEP via vLLM multiprocessing (mp) backend:
       // TP spans all GPUs in the cluster; every node runs the same command,

@@ -17,6 +17,7 @@ meta:
   hardware:
     h200: verified
     b300: verified
+    gb200: verified
     gb300: verified
     mi355x: verified
 
@@ -24,12 +25,16 @@ model:
   model_id: "moonshotai/Kimi-K3"
   min_vllm_version: "0.27.0"
   docker_image:
-    nvidia: "vllm/vllm-openai:kimi-k3"
+    nvidia:
+      # The K3 preview image is published as a CUDA 13 build only — Docker Hub
+      # has no kimi-k3-cu129 tag. Single-key map: the site pins cu130 and
+      # hides the cu129 toggle instead of fabricating a nonexistent tag.
+      cu130: "vllm/vllm-openai:kimi-k3"
     amd: "vllm/vllm-openai-rocm:kimi-k3"
   nightly_required: true
   install:
     docker:
-      note: "Use a K3-enabled nightly image after the integration lands."
+      note: "Use a K3-enabled nightly image after the integration lands. CUDA 13 (cu130) build only — no -cu129 tag; the host needs an r580+ NVIDIA driver."
     pip:
       note: "Use a K3-enabled vLLM nightly after the integration lands."
   architecture: moe
@@ -97,7 +102,21 @@ compatible_strategies:
   - multi_node_tp
   - multi_node_tep
   - multi_node_dep
+  - multi_node_tp_dp
   - pd_cluster
+
+# TP-per-node + DP-across-nodes only makes sense where one node holds a full
+# replica and the cluster fabric fits the DP pattern: H200 (TP8·DP2 from 2
+# nodes) and GB200/GB300 NVL trays (TP4·DP4 from 4 trays). Everything else
+# opts out (fail-open convention: absent = supported).
+strategy_hardware:
+  multi_node_tp_dp:
+    h100: unsupported
+    b200: unsupported
+    b300: unsupported
+    mi300x: unsupported
+    mi325x: unsupported
+    mi355x: unsupported
 
 
 default_strategy: single_node_tp
@@ -109,6 +128,9 @@ default_strategy: single_node_tp
 strategy_min_gpus:
   single_node_tp: 8
   multi_node_tp: 8
+  # 16-GPU bar makes the Nodes row land exactly on the validated layouts:
+  # H200 → 2 nodes (TP8·DP2), GB200/GB300 NVL4 trays → 4 trays (TP4·DP4).
+  multi_node_tp_dp: 16
   multi_node_tep: 8
   multi_node_dep: 16
   h100: 32
@@ -170,6 +192,13 @@ hardware_overrides:
       - "4096"
 
 strategy_overrides:
+  # Guide recommendation made concrete: deep_gemm_mega_moe for any DEP
+  # environment. Emitted before hardware overrides, so Hopper's
+  # `--moe-backend marlin` still wins there (last-wins dedupe).
+  multi_node_dep:
+    extra_args:
+      - "--moe-backend"
+      - "deep_gemm_mega_moe"
   pd_cluster:
     router:
       intra_node_data_parallel_size: 1
@@ -220,6 +249,7 @@ guide: |
   ## Prerequisites
 
   - **vLLM:** Use the vllm/vllm-openai:kimi-k3 docker
+  - **CUDA:** The kimi-k3 image ships as a CUDA 13 (cu130) build only — there is no -cu129 tag, and the K3-enabled wheels are not on the cu129 nightly index. The host needs an r580+ NVIDIA driver; on a CUDA 12.9 (r575) host, upgrade the driver or build vLLM from the K3 branch against cu129 PyTorch yourself.
   - **Hardware:** At least 8x GB300. Multi-node for real production traffic.
   - **ROCm:** Use vllm/vllm-openai_rocm:kimi-k3 docker and at least 8x MI355X/MI350X hardware.
 
@@ -274,4 +304,6 @@ guide: |
   - **AMD (MI355X / MI350X, CDNA4 gfx950)**: set AITER_SITUV2_A8W4 to 0 along with AITER master flag to use aiter a16w4 MoE path. Set it to 1 to use aiter a8w4 MoE path.
   - **max-model-len**: Adjust max-model-len for different benchmark scenarios for best performance.
   - **RDMA**: If RDMA is enabled, set `UCX_TLS="rc,cuda_copy"` to make sure KV Cache transfer goes through RDMA.
+  - **MNNVL environments** (GB200/GB300 NVL): recommend adding `NCCL_MNNVL_ENABLE=1`, `NCCL_CUMEM_ENABLE=1`, and `NCCL_NVLS_ENABLE=1`.
+  - **mlx5 dmabuf registration failures**: if engine init fails with "NCCL error: unhandled system error" and the log shows `mlx5dv_reg_dmabuf_mr` errno 524, the kernel/driver lacks mlx5 dmabuf support (NCCL 2.28 registers dmabuf by default). Set `NCCL_DMABUF_ENABLE=0` to fall back to `nvidia_peermem` (must be loaded on the nodes) — still GPUDirect RDMA.
   - **FP8 KV**: If FP8 KV cache is needed, please also add `--attention-config '{"use_prefill_query_quantization":true}'` when serving vLLM.
