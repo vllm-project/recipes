@@ -150,7 +150,7 @@ hardware_overrides:
       - "--no-enable-flashinfer-autotune"
       - "--max-num-batched-tokens"
       - "4096"
-      - "attention-backend"
+      - "--attention-backend"
       - "FLASHMLA"
     extra_env:
       VLLM_ALLREDUCE_USE_FLASHINFER: "1"
