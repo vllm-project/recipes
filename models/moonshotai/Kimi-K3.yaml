@@ -24,12 +24,16 @@ model:
   model_id: "moonshotai/Kimi-K3"
   min_vllm_version: "0.27.0"
   docker_image:
-    nvidia: "vllm/vllm-openai:kimi-k3"
+    nvidia:
+      # The K3 preview image is published as a CUDA 13 build only — Docker Hub
+      # has no kimi-k3-cu129 tag. Single-key map: the site pins cu130 and
+      # hides the cu129 toggle instead of fabricating a nonexistent tag.
+      cu130: "vllm/vllm-openai:kimi-k3"
     amd: "vllm/vllm-openai-rocm:kimi-k3"
   nightly_required: true
   install:
     docker:
-      note: "Use a K3-enabled nightly image after the integration lands."
+      note: "Use a K3-enabled nightly image after the integration lands. CUDA 13 (cu130) build only — no -cu129 tag; the host needs an r580+ NVIDIA driver."
     pip:
       note: "Use a K3-enabled vLLM nightly after the integration lands."
   architecture: moe
@@ -220,6 +224,7 @@ guide: |
   ## Prerequisites
 
   - **vLLM:** Use the vllm/vllm-openai:kimi-k3 docker
+  - **CUDA:** The kimi-k3 image ships as a CUDA 13 (cu130) build only — there is no -cu129 tag, and the K3-enabled wheels are not on the cu129 nightly index. The host needs an r580+ NVIDIA driver; on a CUDA 12.9 (r575) host, upgrade the driver or build vLLM from the K3 branch against cu129 PyTorch yourself.
   - **Hardware:** At least 8x GB300. Multi-node for real production traffic.
   - **ROCm:** Use vllm/vllm-openai_rocm:kimi-k3 docker and at least 8x MI355X/MI350X hardware.
 

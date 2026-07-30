@@ -532,7 +532,10 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   // does not cover instead of skipping directly to the global default.
   applyOverride(recipe.model?.docker_image);
 
-  const image = pinned || DEFAULT_IMAGE[brandKey];
+  // With a CUDA map, `image` defaults to the cu130 (upstream baseline) pick so
+  // toggle-unaware callers (the JSON API's renderings) still get a real tag;
+  // the client's CUDA selector re-picks from `cudaMap` on top of this.
+  const image = pinned || (cudaMap ? cudaMap.cu130 || cudaMap.cu129 : null) || DEFAULT_IMAGE[brandKey];
   const gpuFlags = isTpu
     ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
     : isAmd
