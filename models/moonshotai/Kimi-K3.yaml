@@ -139,19 +139,23 @@ hardware_overrides:
       - "--gpu-memory-utilization"
       - "0.97"
       - "--max-num-seqs"
-      - "8"
-      - "--max-cudagraph-capture-size"
-      - "8"
+      - "5"
       - "--max-model-len"
       - "32768"
       - "--moe-backend"
       - "marlin"
       - "--disable-custom-all-reduce"
+      - "--no-enable-flashinfer-autotune"
+      - "--max-num-batched-tokens"
+      - "4096"
+      - "--attention-backend"
+      - "FLASHMLA"
     extra_env:
-      VLLM_ALLREDUCE_USE_FLASHINFER: "1"
       VLLM_ENGINE_READY_TIMEOUT_S: "3600"
       VLLM_USE_V2_MODEL_RUNNER: "1"
       VLLM_USE_RUST_FRONTEND: "1"
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+      
   blackwell:
     extra_args:
       - "--load-format"
