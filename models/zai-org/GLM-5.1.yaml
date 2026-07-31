@@ -253,7 +253,7 @@ guide: |
   curl http://<ROUTER_IP>:23333/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "glm-5.1-fp8",
+    "model": "glm5.1",
     "stream": false,
     "messages": [{"role": "user", "content": "nihao"}]
   }'
