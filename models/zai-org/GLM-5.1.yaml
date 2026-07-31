@@ -213,7 +213,7 @@ guide: |
 
   ```bash
   vllm serve /models/GLM-5.1-FP8 \
-    --served-model-name glm-5.1-fp8 \
+    --served-model-name glm5.1 \
     --port 8000 \
     --tensor-parallel-size 8 \
     --enforce-eager \
@@ -227,7 +227,7 @@ guide: |
       "kv_connector_module_path": "tilert.pd_vllm.prefill_connector",
       "kv_role": "kv_producer",
       "kv_connector_extra_config": {
-        "tilert_host": "[<DECODE_IP>]",
+        "tilert_host": "<DECODE_IP>",
         "tilert_ctrl_port": 5556,
         "tilert_model": "glm5",
         "tilert_max_seq_len": 202752
@@ -269,14 +269,14 @@ guide: |
   --api openai \
   --model glm5.1 \
   --dataset random \
-  --tokenizer-path /var/lib/gpustack/cache/model_scope/ZhipuAI/GLM-5.1-FP8 \
+  --tokenizer-path /models/GLM-5.1-FP8 \
   --min-prompt-length 64000 --max-prompt-length 64000 \
   --max-tokens 1000 \
   --number 10 --parallel 1 \
   --no-stream
   ```
 
-  * tilert router not support stream request now ,so you need use stream:false tool to test this solution
+  * The TileRT router does not support streaming requests currently, so you need to use stream:false to test this solution.
 
   ## Client Usage
 
