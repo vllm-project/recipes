@@ -33,6 +33,7 @@ meta:
     trillium: verified
     ironwood: verified
     xeon6: verified
+    dgx_spark_gb10: verified
 
 model:
   model_id: "google/gemma-4-26B-A4B-it"
@@ -78,6 +79,10 @@ variants:
     precision: bf16
     vram_minimum_gb: 64
     description: "Full BF16 — single 80 GB NVIDIA GPU or 1x MI300X/MI325X/MI350X/MI355X or 2x Xeon6/Xeon5 NUMA nodes"
+    hardware_overrides:
+      dgx_spark_gb10:
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
   fp8:
     model_id: "RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic"
     precision: fp8
@@ -86,6 +91,10 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
+    hardware_overrides:
+      dgx_spark_gb10:
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
   nvfp4:
     model_id: "RedHatAI/gemma-4-26B-A4B-it-NVFP4"
     precision: nvfp4
@@ -94,6 +103,37 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
+    hardware_overrides:
+      dgx_spark_gb10:
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+  nvidia_nvfp4:
+    model_id: "nvidia/Gemma-4-26B-A4B-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 16
+    description: "NVIDIA NVFP4 (4-bit) quantized weights"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+    hardware_overrides:
+      dgx_spark_gb10:
+        extra_args:
+        - "--gpu-memory-utilization"
+        - "0.8"
+        - "--max-num-seqs"
+        - "8"
+        - "--load-format"
+        - "fastsafetensors"
+        - "--enable-prefix-caching"
+        - "--enable-auto-tool-choice"
+        - "--tool-call-parser"
+        - "gemma4"
+        - "--reasoning-parser"
+        - "gemma4"
+        - "--max-num-batched-tokens"
+        - "8192"
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
 
 compatible_strategies:
   - single_node_tp
