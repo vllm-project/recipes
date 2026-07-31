@@ -15,6 +15,8 @@ meta:
     h100: verified
     h200: verified
     b200: verified
+    arc_pro_b60: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16"
@@ -68,7 +70,11 @@ compatible_strategies:
   - multi_node_tp
   - multi_node_tp_pp
 
-hardware_overrides: {}
+hardware_overrides:
+  xpu:
+    extra_args:
+      - "--enforce-eager"
+
 strategy_overrides: {}
 
 guide: |
@@ -80,7 +86,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x H100/H200/B200, DGX Spark, or Jetson Thor
+  - Hardware: 1x H100/H200/B200, DGX Spark, Jetson Thor, or Intel Arc Pro B60/B70
   - vLLM >= 0.11.2 (0.12.0 recommended)
   - Docker with NVIDIA Container Toolkit (recommended)
 
@@ -94,6 +100,12 @@ guide: |
 
   ```bash
   docker pull ghcr.io/nvidia-ai-iot/vllm:latest-jetson-thor
+  ```
+
+  Intel XPU (B60 / B70):
+
+  ```bash
+  docker pull vllm/vllm-openai-xpu:latest
   ```
 
   ## Launch commands
@@ -122,6 +134,47 @@ guide: |
     --async-scheduling \
     --kv-cache-dtype fp8 \
     --tensor-parallel-size 1
+  ```
+
+  ### Intel XPU (B60, B70)
+
+  Validated on 1× Intel Arc Pro B60 / B70 (B60 24 GB, B70 32 GB per card) with the
+  official vLLM XPU image `vllm/vllm-openai-xpu:latest`.
+
+  BF16:
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    --entrypoint bash vllm/vllm-openai-xpu:latest \
+    -c "source /opt/intel/oneapi/setvars.sh && exec vllm serve nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16 \
+    --trust-remote-code \
+    --async-scheduling \
+    --kv-cache-dtype auto \
+    --tensor-parallel-size 1 \
+    --enforce-eager \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder \
+    --reasoning-parser-plugin nano_v3_reasoning_parser.py \
+    --reasoning-parser nano_v3 \
+    --max-model-len 8192"
+  ```
+
+  FP8:
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    --entrypoint bash vllm/vllm-openai-xpu:latest \
+    -c "source /opt/intel/oneapi/setvars.sh && exec vllm serve nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8 \
+    --trust-remote-code \
+    --async-scheduling \
+    --kv-cache-dtype fp8 \
+    --tensor-parallel-size 1 \
+    --enforce-eager \
+    --max-model-len 8192"
   ```
 
   ## Benchmarking
