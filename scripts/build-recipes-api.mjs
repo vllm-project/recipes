@@ -731,13 +731,16 @@ for (const file of findYamlFiles(modelsDir)) {
   const defaultRecommended = renderAndWriteVariant(r, "default", parentHfId, strategies, taxonomy);
   if (defaultRecommended) r.recommended_command = defaultRecommended;
 
-  // Promote each non-default variant whose `model_id` points at a distinct HF
-  // repo to its own top-level JSON endpoint, mirroring the HF URL convention.
-  // Renderings for promoted variants are gathered here and written after the
-  // parent JSON so we can store `json:` pointers in parent.variants.<v>.
+  // Promote each variant whose `model_id` points at a distinct HF repo to its
+  // own top-level JSON endpoint, mirroring the HF URL convention. `default` is
+  // included: a recipe may default to a differently-named checkpoint (this
+  // recipe's own id stays the parent path, rendered above), and that HF id
+  // needs an endpoint too — a default pointing back at the parent id is caught
+  // by the collision check below. Renderings for promoted variants are gathered
+  // here and written after the parent JSON so we can store `json:` pointers in
+  // parent.variants.<v>.
   const promotedRenderings = [];  // { variantKey, variantHfId, recommended }
   for (const [variantKey, variantCfg] of Object.entries(r.variants || {})) {
-    if (variantKey === "default") continue;
     const variantModelId = variantCfg?.model_id;
     if (!variantModelId || typeof variantModelId !== "string" || !variantModelId.includes("/")) continue;
     if (allRecipeHfIds.has(variantModelId)) {
