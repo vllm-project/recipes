@@ -82,8 +82,11 @@ export function getRecipesByOrg(org) {
  * return the parent recipe + variant key so the route can redirect to
  * `/<parent.hf_org>/<parent.hf_repo>?variant=<key>`. Otherwise null.
  *
- * Skips the `default` variant and any variant whose model_id equals the
- * parent's own HF id (those are just the base recipe).
+ * Skips any variant whose model_id equals the parent's own HF id (that's
+ * just the base recipe). The `default` variant is NOT skipped: a recipe may
+ * point its default at a differently-named checkpoint (DeepSeek-V4-Flash
+ * defaults to `-0731`, GLM-5.2 to `-FP8`), and that HF id has to resolve
+ * rather than 404.
  */
 export function findVariantRedirect(org, repo) {
   const target = `${org}/${repo}`.toLowerCase();
@@ -91,8 +94,8 @@ export function findVariantRedirect(org, repo) {
     if (r.hf_id.toLowerCase() === target) return null;
     const variants = r.variants || {};
     for (const [key, v] of Object.entries(variants)) {
-      if (key === "default") continue;
-      if (v?.model_id && v.model_id.toLowerCase() === target) {
+      if (!v?.model_id || v.model_id === r.hf_id) continue;
+      if (v.model_id.toLowerCase() === target) {
         return { parent: r, variantKey: key };
       }
     }
@@ -102,7 +105,8 @@ export function findVariantRedirect(org, repo) {
 
 /**
  * All `<org>/<repo>` pairs that should route to a recipe page — base
- * recipes plus the HF ids of each non-default variant. Used by
+ * recipes plus the HF id of every variant that names its own checkpoint
+ * (`default` included — see findVariantRedirect). Used by
  * `generateStaticParams` so variant ids are prerendered and emit the
  * redirect response instead of 404.
  */
@@ -117,8 +121,7 @@ export function getAllRoutablePairs() {
   };
   for (const r of getAllRecipes()) {
     push(r.hf_org, r.hf_repo);
-    for (const [key, v] of Object.entries(r.variants || {})) {
-      if (key === "default") continue;
+    for (const [, v] of Object.entries(r.variants || {})) {
       if (!v?.model_id || v.model_id === r.hf_id) continue;
       const [vo, ...rest] = v.model_id.split("/");
       if (!vo || rest.length === 0) continue;
