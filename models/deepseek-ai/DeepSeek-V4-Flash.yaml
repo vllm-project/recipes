@@ -142,7 +142,6 @@ variants:
     # DSpark drafting landed in 0.25.0; 0.26.0 is the first release where it also
     # works on the MI325X/MI355X pills this recipe advertises (ROCm enablement).
     min_vllm_version: "0.25.0"
-    docker_image: "vllm/vllm-openai:v0.25.0"
     default_modes:
       spec_decoding: dspark
     hardware_overrides:
