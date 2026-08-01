@@ -105,6 +105,7 @@ variants:
     vram_minimum_gb: 200
     description: "Official DeepSeek-V4-Flash release (2026-07-31) superseding the preview — substantially stronger agentic performance, with the DSpark draft module attached."
     min_vllm_version: "0.25.0"
+    docker_image: "vllm/vllm-openai:v0.25.0"
     default_modes:
       spec_decoding: dspark
     hardware_overrides:
