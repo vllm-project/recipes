@@ -139,6 +139,23 @@ compatible_strategies:
 
 # TP+EP is the default deployment; single_node_tp is offered only as a
 # latency-oriented alternative.
+# The ~960 GB checkpoint doesn't fit one 768 GB RTX PRO 6000 node, so every
+# layout there starts at 16 GPUs — which also takes the single-node strategies
+# off that GPU's pill row and lands the Nodes row on the validated 2 nodes.
+strategy_min_gpus:
+  rtx_pro_6000_8x: 16
+
+
+# TP16 + EP across two nodes is the validated SM120 layout. DEP and PD haven't
+# been exercised there. Fail-open convention: absent = assumed to work.
+
+strategy_hardware:
+  multi_node_dep:
+    rtx_pro_6000_8x: unsupported
+  pd_cluster:
+    rtx_pro_6000_8x: unsupported
+
+
 default_strategy: single_node_tep
 
 hardware_overrides:
@@ -174,6 +191,17 @@ hardware_overrides:
       - '{"mode": 3, "cudagraph_mode": "FULL_DECODE_ONLY"}'
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
+
+  blackwell_sm120:
+    extra_args:
+      - "--moe-backend"
+      - "marlin"
+      - "--linear-backend"
+      - "deep_gemm"
+      - "--gpu-memory-utilization"
+      - "0.95"
+      - "--max-model-len"
+      - "262144"
 
 strategy_overrides:
   single_node_tp:
@@ -332,6 +360,9 @@ guide: |
   - **GB200 NVL4 (4× GPU per tray)**: the ~960 GB mixed-precision checkpoint does not
     fit on one tray; run multi-node DP + EP across **2 trays** (8 GPUs total) with
     `--data-parallel-size 8`. Pick the "Multi-Node" tab and set nodes to 2.
+  - **RTX PRO 6000 (2 nodes × 8×96 GB)**: cross-node TEP over
+    InfiniBand with Marlin MoE experts. Requires the SM120 FP8 scale-layout fix pr merge—
+    https://github.com/vllm-project/vllm/pull/48052 .
 
   ### MI355X (8×288GB)
 
