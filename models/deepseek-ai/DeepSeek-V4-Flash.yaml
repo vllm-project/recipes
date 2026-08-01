@@ -104,7 +104,7 @@ variants:
     precision: fp8
     vram_minimum_gb: 200
     description: "Official DeepSeek-V4-Flash release (2026-07-31) superseding the preview — substantially stronger agentic performance, with the DSpark draft module attached."
-    min_vllm_version: "0.26.0"
+    min_vllm_version: "0.25.0"
     default_modes:
       spec_decoding: dspark
     hardware_overrides:
@@ -140,7 +140,7 @@ variants:
     description: "Preview FP4+FP8 weights with the DSpark draft module baked in — same base checkpoint as the default variant plus a fused speculative decoder."
     # DSpark drafting landed in 0.25.0; 0.26.0 is the first release where it also
     # works on the MI325X/MI355X pills this recipe advertises (ROCm enablement).
-    min_vllm_version: "0.26.0"
+    min_vllm_version: "0.25.0"
     default_modes:
       spec_decoding: dspark
     hardware_overrides:
@@ -297,7 +297,7 @@ guide: |
   ```
 
   The fused checkpoints are ~167 GB on disk versus ~160 GB for the preview — the draft
-  module is the difference. Both require **vLLM 0.26.0**: DSpark drafting itself landed
+  module is the difference. Both require **vLLM 0.25.0**: DSpark drafting itself landed
   in 0.25.0, but ROCm support for it (MI325X / MI355X) only shipped in 0.26.0. On
   NVIDIA-only deployments 0.25.0 is sufficient.
 
