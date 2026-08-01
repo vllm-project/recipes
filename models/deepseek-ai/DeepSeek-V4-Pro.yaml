@@ -16,6 +16,7 @@ meta:
     gb200: verified
     b300: verified
     gb300: verified
+    rtx_pro_6000_8x: verified
     mi300x: unsupported
     mi325x: unsupported
     mi355x: verified
