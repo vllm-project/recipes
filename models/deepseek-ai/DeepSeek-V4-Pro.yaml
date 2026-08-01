@@ -202,6 +202,8 @@ hardware_overrides:
       - "0.95"
       - "--max-model-len"
       - "262144"
+      - "--compilation-config"
+      - "{}"
 
 strategy_overrides:
   single_node_tp:
