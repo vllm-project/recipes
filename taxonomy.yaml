@@ -59,6 +59,27 @@ hardware_profiles:
     gpu_count: 4
     vram_gb: 1152
     multi_node: false
+  # RTX PRO 6000 Blackwell Server Edition — 8-GPU server node, clusterable.
+  # Distinct from the single-card `rtx_pro_6000` workstation profile above.
+  #
+  # `generation: blackwell_sm120` on purpose: these are SM120 parts, not the
+  # SM100 datacenter Blackwells. Several DeepSeek-V4 kernels selected by the
+  # `blackwell` hardware_overrides (FP4 indexer cache, deep_gemm_mega_moe) are
+  # SM100-only, so SM120 needs its own override bucket rather than inheriting
+  # them. Also keeps NVFP4/FP4 variants (gated on `generation: blackwell`) off
+  # this profile, which is correct — only the FP8 path is validated here.
+  #
+  # `multi_node: false` mirrors the repo-wide dead field; `scalable` (omitted =
+  # true) is what actually allows clustering across nodes.
+  rtx_pro_6000_8x:
+    brand: NVIDIA
+    generation: blackwell_sm120
+    display_name: "RTX PRO 6000 8×96GB"
+    description: "NVIDIA RTX PRO 6000 Blackwell Server Edition · 96 GB/GPU · 8-GPU node (SM120)"
+    gpu_count: 8
+    vram_gb: 768
+    multi_node: false
+    restricted: true
 
   # DGX Station — single-GPU Grace-Blackwell Ultra desktop workstation.
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
