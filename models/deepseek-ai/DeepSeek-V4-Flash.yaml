@@ -164,6 +164,9 @@ hardware_overrides:
   hopper:
     extra_args:
       - "--disable-custom-all-reduce"
+    extra_env:
+      VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
   blackwell:
     # Common to every variant on Blackwell. The FP8-only deep_gemm_mega_moe MoE
     # kernel is added per-variant (FP8 checkpoints), not here.
