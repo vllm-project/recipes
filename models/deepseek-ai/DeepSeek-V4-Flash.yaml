@@ -161,6 +161,9 @@ compatible_strategies:
 default_strategy: single_node_tep
 
 hardware_overrides:
+  hopper:
+    extra_args:
+      - "--disable-custom-all-reduce"
   blackwell:
     # Common to every variant on Blackwell. The FP8-only deep_gemm_mega_moe MoE
     # kernel is added per-variant (FP8 checkpoints), not here.
