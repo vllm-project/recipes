@@ -181,7 +181,7 @@ hardware_overrides:
       - "--kv-cache-dtype"
       - "fp8"
       - "--attention-config"
-      - '{"use_prefill_query_quantization":true}'
+      - '{"use_prefill_query_quantization":true,"mla_prefill_backend":"TRTLLM_RAGGED"}'
       - "--enable-prefix-caching"
     extra_env:
       VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
@@ -359,4 +359,4 @@ guide: |
   - **RDMA**: If RDMA is enabled, set `UCX_TLS="rc,cuda_copy"` to make sure KV Cache transfer goes through RDMA.
   - **MNNVL environments** (GB200/GB300 NVL): recommend adding `NCCL_MNNVL_ENABLE=1`, `NCCL_CUMEM_ENABLE=1`, and `NCCL_NVLS_ENABLE=1`.
   - **mlx5 dmabuf registration failures**: if engine init fails with "NCCL error: unhandled system error" and the log shows `mlx5dv_reg_dmabuf_mr` errno 524, the kernel/driver lacks mlx5 dmabuf support (NCCL 2.28 registers dmabuf by default). Set `NCCL_DMABUF_ENABLE=0` to fall back to `nvidia_peermem` (must be loaded on the nodes) — still GPUDirect RDMA.
-  - **FP8 KV**: If FP8 KV cache is needed, please also add `--attention-config '{"use_prefill_query_quantization":true}'` when serving vLLM.
+  - **FP8 KV**: If FP8 KV cache is needed, please also add `--attention-config '{"use_prefill_query_quantization":true,"mla_prefill_backend":"TRTLLM_RAGGED"}'` when serving vLLM.
