@@ -1654,6 +1654,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         ? "pip"
         : installMode;
 
+  // The extra-install block is pip-scoped by default: nearly every recipe's
+  // dependencies are pip installs the Docker image already bundles, so repeating
+  // them beside `docker run` is noise. Absent `install_modes` therefore means
+  // `[pip]`, which is why existing recipes are untouched. A HOST-side
+  // prerequisite is the exception — a gated checkpoint that `hf download` must
+  // place on disk before the bind mount can see it — and opts in with
+  // `install_modes: [pip, docker]`.
+  const modeDependencies = dependencies.filter((d) => {
+    const modes = d.install_modes;
+    if (!Array.isArray(modes) || modes.length === 0) return effectiveInstallMode !== "docker";
+    return modes.includes(effectiveInstallMode === "docker" ? "docker" : "pip");
+  });
+
   // Omni recipes serve via `vllm serve <model> --omni`. The command shape is
   // simpler than the regular path (no strategy / multi-node / pd), but the
   // surrounding affordances (Install tabs, Hardware pills, Variant pills) all
@@ -1734,8 +1747,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             altCudaSuffix={altCudaSuffix}
           />
 
-          {effectiveInstallMode !== "docker" && dependencies.length > 0 && (
-            <DependenciesBlock deps={dependencies} />
+          {modeDependencies.length > 0 && (
+            <DependenciesBlock deps={modeDependencies} />
           )}
 
           <div
@@ -1882,8 +1895,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             `pip install` / `bash install_*.sh`, which doesn't apply when
             vLLM ships as a container image. Revisit if a dep ever needs
             to run inside the container. */}
-        {effectiveInstallMode !== "docker" && dependencies.length > 0 && (
-          <DependenciesBlock deps={dependencies} />
+        {modeDependencies.length > 0 && (
+          <DependenciesBlock deps={modeDependencies} />
         )}
 
         {/* ── VRAM shortfall warning (single-node only) ── */}
@@ -2738,6 +2751,37 @@ function CommandTabs({ tabs, current, onSelect }) {
   );
 }
 
+// Peel the leading `#` lines off a rendered command so they can be shown in the
+// dimmed comment area instead of the bright command body — a `#` line is context,
+// not something the reader types. Callers keep the un-split string for Copy so
+// the pasted script stays self-explanatory.
+function splitLeadingComments(command) {
+  const lines = String(command ?? "").split("\n");
+  let i = 0;
+  while (i < lines.length && lines[i].trimStart().startsWith("#")) i++;
+  return { comments: lines.slice(0, i).join("\n"), body: lines.slice(i).join("\n") };
+}
+
+// One command, two contrast levels: leading `#` context dimmed like a prelude,
+// the executable body at full strength. Used by every command block so a
+// docker-run prerequisite or a companion's comments read the same everywhere.
+// Copy buttons stay wired to the unsplit string — see each block's fullScript.
+function CommandBody({ command }) {
+  const { comments, body } = splitLeadingComments(command);
+  return (
+    <>
+      {comments && (
+        <div className="px-4 pt-2 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug whitespace-pre overflow-x-auto">
+          {comments}
+        </div>
+      )}
+      <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
+        {body}
+      </pre>
+    </>
+  );
+}
+
 function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls }) {
   const [tab, setTab] = useState("vllm");
   const isDocker = installMode === "docker";
@@ -2770,21 +2814,13 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
   // Companions are host-side helper binaries (not `vllm serve`), so they get
   // neither the docker-run wrapper nor the env prelude.
   const activePrelude = activeCompanion ? "" : prelude;
-  // Leading # lines of a companion command render in the dimmed comment area
-  // (same treatment as the description line); the bright pre keeps only the
-  // executable body. Copy still grabs comments + body.
-  const companionParts = activeCompanion
-    ? (() => {
-        const lines = String(activeCompanion.command).split("\n");
-        let i = 0;
-        while (i < lines.length && lines[i].trimStart().startsWith("#")) i++;
-        return { comments: lines.slice(0, i).join("\n"), body: lines.slice(i).join("\n") };
-      })()
-    : null;
-  const activeCommand = activeCompanion ? companionParts.body : displayCommand;
-  const fullScript = activeCompanion
-    ? activeCompanion.command
-    : (activePrelude ? `${activePrelude}\n\n${activeCommand}` : activeCommand);
+  // Leading # lines render in the dimmed comment area (same treatment as a
+  // companion's description line); the bright pre keeps only the executable
+  // body. Applies to both sources: a companion's own comments and the
+  // `hf download` prerequisite buildDockerRun prepends for a local-path
+  // checkpoint. Copy still grabs comments + body.
+  const rawActive = activeCompanion ? String(activeCompanion.command) : displayCommand;
+  const fullScript = activePrelude ? `${activePrelude}\n\n${rawActive}` : rawActive;
   const actions = (
     <div className="flex items-center gap-1.5 shrink-0">
       <CopyButton text={fullScript} />
@@ -2828,19 +2864,12 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
           # {activeCompanion.description}
         </div>
       )}
-      {companionParts?.comments && (
-        <div className="px-4 pt-2 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug whitespace-pre overflow-x-auto">
-          {companionParts.comments}
-        </div>
-      )}
       {activePrelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
           {activePrelude}
         </pre>
       )}
-      <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-        {activeCommand}
-      </pre>
+      <CommandBody command={rawActive} />
     </div>
   );
 }
@@ -3156,9 +3185,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
           {prelude}
         </pre>
       )}
-      <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-        {active.command}
-      </pre>
+      <CommandBody command={active.command} />
       <div className="px-4 pb-3 text-[11px] text-[var(--command-fg)]/45 font-mono leading-snug">
         # Set $HEAD_IP to the rank-0 node&apos;s IP before launch, then run each tab on its own node —
         # they differ only by --node-rank (TP/TEP) or --data-parallel-start-rank (DEP).
@@ -3296,9 +3323,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           {prelude}
         </pre>
       )}
-      <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-        {active.command}
-      </pre>
+      <CommandBody command={active.command} />
     </div>
   );
 }
@@ -3423,9 +3448,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
           {prelude}
         </pre>
       )}
-      <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-        {active.command}
-      </pre>
+      <CommandBody command={active.command} />
     </div>
   );
 }

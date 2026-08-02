@@ -603,19 +603,43 @@ function configPathMounts(env) {
     .map(([, v]) => `${v}:${v}:ro`);
 }
 
+// A recipe may serve a checkpoint from disk instead of an HF id — either because
+// the repo is gated and must be fetched with `hf download` first, or because one
+// repo ships several independently served partitions (MiniMax H3's FL2VA /
+// Ref2VA). The HF cache mount can't reach those, so bind the served directory at
+// the SAME absolute path inside the container: the rendered `vllm serve <path>`
+// then resolves identically in and out of Docker. Read-only — weights are never
+// written to. Returns [] for HF ids, which need no mount.
+function localModelMount(modelId) {
+  return typeof modelId === "string" && modelId.startsWith("/")
+    ? [`${modelId}:${modelId}:ro`]
+    : [];
+}
+
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
 // image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
 // CMD. Env vars become `-e KEY=VAL` inside the container.
+//
 export function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
-  const mountFlags = configPathMounts(env)
+  const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
+  const localMount = localModelMount(modelId);
+  const mountFlags = [...localMount, ...configPathMounts(env)]
     .map((m) => `-v ${m}`)
     .join(" \\\n  ");
-  const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
+  // A missing host path makes the bind mount silently yield an empty directory,
+  // so state the prerequisite right above the command that depends on it. This
+  // stays a bare reminder on purpose: the runnable fetch step belongs in the
+  // recipe's `dependencies` (with `install_modes: [pip, docker]` so the Docker
+  // tab shows it too), where it is copy-pastable rather than commented out.
+  // Restating it here would mean guessing which dependency is the download.
+  const prereq = localMount.length
+    ? `# ${modelId} must already exist on the host — bind-mounted read-only below.\n`
+    : "";
   const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
-  return `docker run ${gpuFlags} \\
+  return `${prereq}docker run ${gpuFlags} \\
   --privileged --ipc=host -p ${port}:${port} \\
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}
   ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
@@ -629,13 +653,13 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
   for (const [k, v] of Object.entries(env || {})) {
     envFlags.push("-e", `${k}=${v}`);
   }
-  const mountFlags = [];
-  for (const m of configPathMounts(env)) {
-    mountFlags.push("-v", m);
-  }
   // `vllm serve <model> <...flags>` → CMD becomes `<model> <...flags>` since
   // the image's entrypoint is already `vllm serve`.
   const cmdArgs = argv[0] === "vllm" && argv[1] === "serve" ? argv.slice(2) : argv;
+  const mountFlags = [];
+  for (const m of [...localModelMount(cmdArgs[0]), ...configPathMounts(env)]) {
+    mountFlags.push("-v", m);
+  }
   return [
     "docker", "run",
     ...dockerGpuArgv(meta),
