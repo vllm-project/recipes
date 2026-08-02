@@ -1,0 +1,479 @@
+meta:
+  title: "MiniMax-H3"
+  slug: "minimax-h3"
+  provider: "MiniMax"
+  description: "Open-weight general-purpose multimodal generation model — jointly generates 24 FPS video with native stereo audio from text, image, video, and audio references, served via vLLM-Omni"
+  date_added: 2026-08-02
+  date_updated: 2026-08-02
+  difficulty: advanced
+  tasks:
+    - omni
+  performance_headline: "8.7 s of 1248×768 video with synchronized stereo audio in ~87 s on 4×B300"
+  related_recipes:
+    - Wan-AI/Wan2.2-T2V-A14B-Diffusers
+    - nvidia/Cosmos3-Super-Image2Video
+  hardware:
+    gb200: verified
+    b300: verified
+    mi300x: unsupported
+    mi325x: unsupported
+    mi355x: unsupported
+
+model:
+  model_id: "MiniMaxAI/MiniMax-H3"
+  min_vllm_version: "0.26.0"
+  docker_image: "vllm/vllm-omni:minimax-h3"
+  install:
+    docker:
+      note: "vLLM-Omni image bundling the MiniMax H3 handlers and the CuTe-DSL FlashAttention-4 kernels — no extra install needed."
+    pip:
+      command: |
+        uv venv
+        source .venv/bin/activate
+        uv pip install vllm==0.26.0
+      note: "H3 also needs vLLM-Omni built from a checkout carrying the MiniMax H3 handlers — see the extra install block below."
+  architecture: dense
+  parameter_count: "64B"
+  active_parameters: "64B"
+  # Diffusion pipeline — there is no autoregressive KV context. The Qwen3-VL
+  # presentation ranges from ~1.8k tokens (text-only) to ~16.3k (two video refs).
+  context_length: 0
+  # The validated four-GPU best-practice profile: no offload, Ulysses SP 4,
+  # native tiled VAE patch parallelism 4, Ring/TP left at 1, FlashAttention
+  # (CuTe FA4 on Blackwell). Regional torch.compile is the default granularity,
+  # so it is deliberately NOT pinned here — do not add --enforce-eager.
+  base_args:
+    - "--trust-remote-code"
+    - "--host"
+    - "0.0.0.0"
+    - "--port"
+    - "8000"
+    - "--num-gpus"
+    - "4"
+    - "--usp"
+    - "4"
+    - "--ring"
+    - "1"
+    - "--vae-patch-parallel-size"
+    - "4"
+    - "--vae-parallel-mode"
+    - "tile"
+    - "--vae-use-tiling"
+    - "--diffusion-attention-backend"
+    - "FLASH_ATTN"
+  base_env:
+    VLLM_WORKER_MULTIPROC_METHOD: "spawn"
+    VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "1800"
+    FLASHINFER_DISABLE_VERSION_CHECK: "1"
+
+omni:
+  port: 8000
+  # One server process loads exactly one checkpoint partition, so the served path
+  # swaps with the task: FL2VA serves t2va + fl2va, Ref2VA serves ref2va. H3 is
+  # served from the downloaded directory rather than the HF id — substitute your
+  # own --local-dir for /path/to/MiniMax-H3.
+  tasks:
+    - id: t2v
+      label: "T2VA · Text → Video+Audio"
+      model_id: "/path/to/MiniMax-H3/FL2VA"
+      vram_minimum_gb: 135
+      endpoint: "/v1/videos/sync"
+      description: "Text prompt → joint video + synchronized audio. Served by the FL2VA partition."
+      curl: |
+        curl -sS -X POST http://localhost:8000/v1/videos/sync \
+          -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
+          -F 'width=1344' \
+          -F 'height=768' \
+          -F 'fps=24' \
+          -F 'num_inference_steps=50' \
+          -F 'flow_shift=12' \
+          -F 'seed=1101' \
+          -F 'extra_params={"task":"t2va","duration":8.7,"audio_flow_shift":3.0}' \
+          -o t2va.mp4
+    - id: i2v
+      label: "FL2VA · First Frame → Video+Audio"
+      model_id: "/path/to/MiniMax-H3/FL2VA"
+      vram_minimum_gb: 135
+      endpoint: "/v1/videos/sync"
+      description: "First frame + prompt → video + audio, on the FL2VA partition. Omitting width/height keeps the first frame's aspect ratio at a 768 px short edge."
+      curl: |
+        export FIRST_FRAME=/path/to/fl2va_first_frame.png
+
+        curl -sS -X POST http://localhost:8000/v1/videos/sync \
+          -F 'prompt=A man stands beside a yellow car at night. The car drives away; he follows it with his eyes and begins singing sadly, with synchronized voice and city ambience.' \
+          -F 'fps=24' \
+          -F 'num_inference_steps=50' \
+          -F 'flow_shift=12' \
+          -F 'seed=2101' \
+          -F 'extra_params={"task":"fl2va","duration":8.7,"audio_flow_shift":3.0}' \
+          -F "input_reference=@${FIRST_FRAME};type=image/png" \
+          -o fl2va.mp4
+    - id: ti2v
+      label: "Ref2VA · Reference → Video+Audio"
+      model_id: "/path/to/MiniMax-H3/Ref2VA"
+      vram_minimum_gb: 168
+      endpoint: "/v1/videos/sync"
+      description: "Omni reference (image+audio, or one-or-more videos) → video + audio, on the Ref2VA partition. A full 15 s two-video request peaked at 166 GB on the main rank."
+      curl: |
+        # A) image + audio reference. `audio_reference` takes an HTTP(S) or data: URL —
+        #    serve local assets first:  python -m http.server 8092 --bind 127.0.0.1 \
+        #                                --directory /path/to/reference_assets
+        export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
+        export AUDIO_URL=http://127.0.0.1:8092/ref2va_audio.mp3
+
+        curl -sS -X POST http://localhost:8000/v1/videos/sync \
+          -F 'prompt=A white cat with black mustache and eyebrow markings sits on a beige couch, lip-syncing precisely to the complete reference audio before shifting from confusion to deadpan speechlessness.' \
+          -F 'width=1344' \
+          -F 'height=768' \
+          -F 'fps=24' \
+          -F 'num_inference_steps=50' \
+          -F 'flow_shift=12' \
+          -F 'seed=3101' \
+          -F 'extra_params={"task":"ref2va","duration":15.0,"audio_flow_shift":3.0}' \
+          -F "input_reference=@${REF_IMAGE};type=image/png" \
+          -F "audio_reference={\"audio_url\":\"${AUDIO_URL}\"}" \
+          -o ref2va_image_audio.mp4
+
+        # B) two video references — repeat `input_references` once per source video.
+        #    H3 consumes them in form order and keeps their original soundtracks.
+        export SUBJECT_VIDEO=/path/to/green_screen_subject.mp4
+        export BACKGROUND_VIDEO=/path/to/fairytale_background.mov
+
+        curl -sS -X POST http://localhost:8000/v1/videos/sync \
+          -F 'prompt=Remove the green screen background of Video 1 and replace it with the fairytale environment from Video 2. Match the background motion to the character actions and relight the character to fit the scene.' \
+          -F 'width=1344' \
+          -F 'height=768' \
+          -F 'fps=24' \
+          -F 'num_inference_steps=50' \
+          -F 'flow_shift=12' \
+          -F 'seed=3101' \
+          -F 'extra_params={"task":"ref2va","duration":15.0,"audio_flow_shift":3.0}' \
+          -F "input_references=@${SUBJECT_VIDEO};type=video/mp4" \
+          -F "input_references=@${BACKGROUND_VIDEO};type=video/quicktime" \
+          -o ref2va_video_video.mp4
+
+dependencies:
+  # Host-side prerequisite, not a pip install — the weights have to be on disk
+  # before the container can bind-mount them, so this one shows under Docker too.
+  - note: "Gated checkpoint — request access on the model card, then download it locally. H3 is served from a local path, not the HF id: both partitions (FL2VA and Ref2VA) land as subdirectories and one server loads one of them"
+    command: "hf download MiniMaxAI/MiniMax-H3 --local-dir /path/to/MiniMax-H3"
+    install_modes: [pip, docker]
+  - note: "pip path only (the Docker image already bundles it): MiniMax H3 support ships in vLLM-Omni, not the vllm wheel, so install it from a checkout. The [fa4] extra pulls the CuTe-DSL FlashAttention-4 kernels used on Blackwell"
+    command: "git clone https://github.com/vllm-project/vllm-omni.git && cd vllm-omni && uv pip install -e '.[fa4]'"
+  - note: "ffmpeg and ffprobe must be on PATH — used for reference-video preparation and MP4 video+audio muxing"
+    command: "sudo apt-get install -y ffmpeg"
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 135
+    description: "BF16 — 66.3 GB DiT + 51.5 GB Qwen3-VL encoder + ~10.6 GB VAEs. 133 GB per-GPU engine peak measured on the validated 4×B300 no-offload profile; --text-encoder-tp-size 4 brings it to 103 GB"
+
+# Omni recipes are served through `vllm serve --omni`, which has its own
+# diffusion-parallelism flags (--usp / --ring / --vae-patch-parallel-size).
+# The serving-strategy row does not apply.
+compatible_strategies: []
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  MiniMax H3 is an **open-weight, general-purpose multimodal generation model**. Rather than
+  being confined to one specialized task — generate, edit, or reference — H3 reads a
+  multimodal context that mixes text, images, video, and audio together, interprets the
+  creative intent as a whole, and produces coherent audio-visual output end to end.
+
+  Architecturally it is a **CFG-distilled joint video/audio diffusion transformer** served
+  through vLLM-Omni's OpenAI-compatible `/v1/videos` API. Every request returns a single MP4
+  containing H.264 video and **native stereo audio** — the audio is generated jointly with
+  the video by the same DiT, not dubbed on afterwards.
+
+  Three capability areas the model targets:
+
+  - **Commercial-grade generation** — film and entertainment, advertising and branding,
+    e-commerce, gaming; dynamic typography, VFX, product showcases, UI/UX motion design.
+  - **Native multimodal understanding + generation** — interprets characters, motion, sound,
+    emotion, cinematography, and visual style across mixed references, then combines them.
+  - **Precise multimodal editing and control** — iterative refinement of characters, objects,
+    scenes, sound, and rhythm with strong instruction following.
+
+  The checkpoint ships as **two independently served partitions**:
+
+  | Partition | Tasks | Conditioning |
+  |---|---|---|
+  | `FL2VA` | `t2va`, `fl2va` | text only, or text + first/last frame |
+  | `Ref2VA` | `ref2va` | text + omni references (images, video clips, audio clips) |
+
+  One server process loads one partition, so switching between T2VA/FL2VA and Ref2VA
+  means restarting the server against the other one.
+
+  Components (BF16): a 52-block joint video/audio DiT (66.3 GB), a Qwen3-VL layer-50
+  text/vision encoder (51.5 GB), a video VAE (~10 GB) and an audio VAE (~0.6 GB).
+
+  ## Model specifications
+
+  | | |
+  |---|---|
+  | Output duration | 4–15 seconds |
+  | Frame rate | 24 FPS (fixed) |
+  | Audio | Native stereo, on every generation |
+  | Resolution — 1440p (2K) | Short edge 1440 px for 16:9 … 9:16; wider formats ≈3.7 MP (e.g. 2976×1248 at 21:9) |
+  | Resolution — 768p | Short edge 768 px for 16:9 … 9:16; wider formats ≈1 MP (e.g. 1536×672 at 21:9). Upscalable to 1440p. *(mode coming soon)* |
+  | Aspect ratio | First/Last Frame follows the uploaded image. Text-to-Video and Omni Reference select from 21:9, 16:9, 4:3, 1:1, 3:4, 9:16 — Omni Reference also offers Auto |
+  | Prompt length | Up to 7,000 characters |
+
+  ### Input modes and limits
+
+  **First/Last Frame** — 0, 1, or 2 images. Edge lengths in `[256, 5760]`, aspect ratio 5:2
+  to 2:5. With no image, H3 falls back to Text-to-Video.
+
+  **Omni Reference** — up to 9 images; up to 3 video clips (2–15 s each, 15 s total); up to
+  3 audio clips (2–15 s each, 15 s total). Edge lengths in `[256, 5760]`, video aspect ratio
+  5:2 to 2:5. **Audio must be paired with at least one image or video** — it cannot be the
+  sole reference. Mixed inputs cap at 12 files total; with none, H3 falls back to
+  Text-to-Video.
+
+  | | Formats | Per-file size |
+  |---|---|---|
+  | Video | H.264/AVC, H.265/HEVC (embedded audio AAC or MP3) | 50 MB |
+  | Image | JPG, JPEG, PNG, WEBP, HEIC, HEIF | 30 MB |
+  | Audio | WAV, MP3 | 15 MB |
+
+  Limits are per file, not per combined upload. Keep the whole request body under 64 MB —
+  prefer URL-based media over inlined uploads for anything large.
+
+  ## Prerequisites
+
+  H3 is served from a **local directory, not the HF id** — the checkpoint's two partitions
+  are subdirectories, and one server process loads one of them. Request access on the model
+  card (the repo is gated), then download it:
+
+  ```bash
+  hf download MiniMaxAI/MiniMax-H3 --local-dir /path/to/MiniMax-H3
+  ```
+
+  That yields `/path/to/MiniMax-H3/FL2VA` and `/path/to/MiniMax-H3/Ref2VA`. Substitute your
+  own `--local-dir` throughout the commands below.
+
+  `ffmpeg` and `ffprobe` must be on `PATH` — they are used for reference-video preparation
+  and MP4 muxing.
+
+  ## Installation
+
+  ### Docker (recommended)
+
+  The image bundles the H3 handlers and the FlashAttention-4 kernels, so there is nothing
+  else to install:
+
+  ```bash
+  docker pull vllm/vllm-omni:minimax-h3
+  ```
+
+  Because H3 is served from a local directory, the container needs that directory bound at
+  the same absolute path — the command builder's Docker mode emits the bind mount for you:
+
+  ```bash
+  -v /path/to/MiniMax-H3/FL2VA:/path/to/MiniMax-H3/FL2VA:ro
+  ```
+
+  ### pip
+
+  H3 support ships in vLLM-Omni rather than the `vllm` wheel, so the pip path needs a
+  source checkout:
+
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install vllm==0.26.0
+  git clone https://github.com/vllm-project/vllm-omni.git
+  cd vllm-omni
+  uv pip install -e '.[fa4]'
+  ```
+
+  The `[fa4]` extra installs the CuTe-DSL FlashAttention-4 kernels — CUDA-only, and used on
+  Blackwell. Drop the extra and the `FLASH_ATTN` backend falls back to FA3/FA2.
+
+  ## Launch — four GPUs (validated best practice)
+
+  Measured on 4× NVIDIA B300: no CPU or layerwise offload, Ulysses SP degree 4, native
+  tiled VAE patch parallelism degree 4, regional `torch.compile` over the repeated DiT
+  blocks, FlashAttention, Ring and TP left at 1.
+
+  ```bash
+  CUDA_VISIBLE_DEVICES=0,1,2,3 \
+  FLASHINFER_DISABLE_VERSION_CHECK=1 \
+  VLLM_WORKER_MULTIPROC_METHOD=spawn \
+  VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
+  vllm serve /path/to/MiniMax-H3/FL2VA \
+    --omni \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --trust-remote-code \
+    --num-gpus 4 \
+    --usp 4 \
+    --ring 1 \
+    --vae-patch-parallel-size 4 \
+    --vae-parallel-mode tile \
+    --vae-use-tiling \
+    --diffusion-attention-backend FLASH_ATTN
+  ```
+
+  Swap the served path to `/path/to/MiniMax-H3/Ref2VA` and restart to handle Ref2VA
+  requests instead.
+
+  Three constraints on this configuration:
+
+  - **Do not add `--enforce-eager`.** Regional compile is the default
+    (`--diffusion-compile-granularity regional`) and is worth ~9.5%. The first request
+    includes compilation — warm the server once before measuring steady state.
+  - **`--cfg-parallel-size` must stay 1.** H3 is CFG-distilled and has no negative branch;
+    anything greater is rejected with an explicit error rather than silently duplicating a
+    branch that does not exist.
+  - **The VAE supports its native `tile` mode only** — not `spatial_shard_width` or
+    `spatial_shard_height` (those belong to the distributed Wan autoencoder). Patch
+    parallel size must be 1 or the full DiT group size.
+
+  ## Launch — single GPU (accuracy and memory first)
+
+  Model-level CPU offload keeps the Qwen3-VL encoder and the DiT from being resident
+  simultaneously. This is the accuracy-qualified reference path; it trades PCIe/NVLink
+  transfer latency for a much smaller GPU footprint, and needs enough system RAM for the
+  offloaded components.
+
+  ```bash
+  CUDA_VISIBLE_DEVICES=0 \
+  VLLM_WORKER_MULTIPROC_METHOD=spawn \
+  VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
+  vllm serve /path/to/MiniMax-H3/FL2VA \
+    --omni \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --trust-remote-code \
+    --num-gpus 1 \
+    --enable-cpu-offload \
+    --diffusion-attention-backend FLASH_ATTN
+  ```
+
+  ## Text-encoder tensor parallelism
+
+  By default the whole Qwen3-VL encoder is resident on the DiT main rank, making it the
+  peak-memory hotspot on multi-GPU no-offload runs. `--text-encoder-tp-size N` shards it
+  across the first `N` DiT ranks using vLLM-style tensor-parallel layers on a dedicated
+  encoder process group:
+
+  ```bash
+  vllm serve /path/to/MiniMax-H3/FL2VA \
+    --omni --trust-remote-code \
+    --num-gpus 4 --usp 4 --ring 1 \
+    --text-encoder-tp-size 4 \
+    --vae-patch-parallel-size 4 --vae-parallel-mode tile --vae-use-tiling \
+    --diffusion-attention-backend FLASH_ATTN
+  ```
+
+  - `N` must divide the Qwen3-VL head counts (64 attention heads / 8 KV heads) → 1, 2, 4 on
+    a 4-GPU server; 1, 2, 4, 8 on 8 GPUs.
+  - On 4 GPUs, `N=4` drops the per-rank engine peak from **133 GB to 103 GB** (~35.7 GB) at
+    no measurable throughput cost, while each non-main rank gains ~51.5/N GB.
+  - Numerically: `N=1` reproduces the HF reference path bit-exactly (`max_abs = 0`); `N=4`
+    introduces bounded BF16 rounding only (row-parallel all-reduce in FP32), giving
+    31.11 dB PSNR / 0.9566 SSIM end-to-end against `N=1` with identical structure.
+  - Combining `N>1` with regional compile used to produce a `ValueError: v must be finite`
+    on the *second* request. That is fixed — the token refiner's attention runs on
+    replicated rows before `sp_prepare` and was wrongly getting a Ulysses SP all-to-all.
+
+  ## Key request parameters
+
+  | Parameter | Recommended | Notes |
+  |---|---|---|
+  | `task` | `t2va`, `fl2va`, `ref2va` | Passed inside `extra_params`; must match the served partition |
+  | `duration` | 4–15 s | Decimal seconds in `extra_params`; snapped to H3's legal `17n+5` frame count (15 s → 362 frames / 15.083 s) |
+  | `fps` | `24` | Output FPS is fixed |
+  | `num_inference_steps` | `50` | Matches the reference accuracy workloads |
+  | `flow_shift` | `12` | Video sigma shift |
+  | `audio_flow_shift` | `3` | Audio sigma shift, in `extra_params` |
+  | `width`, `height` | see below | Server-side validation: multiples of 32, aspect ratio 1:4 to 4:1 |
+  | `seed` | fixed value | Output is deterministic per request at a fixed seed |
+
+  On `width`/`height`, the serving-side check is broader than the documented product modes —
+  pick a **short edge of 768 or 1440** in one of the supported ratios (21:9, 16:9, 4:3, 1:1,
+  3:4, 9:16) to stay on shapes the model was trained and validated for. FL2VA can omit both
+  and inherit the first frame's aspect ratio at a 768 px short edge. Prompts cap at 7,000
+  characters.
+
+  Use `POST /v1/videos/sync` when you want the MP4 in the response body; `POST /v1/videos`
+  is the async job-polling variant.
+
+  ## Validated performance (4×B300)
+
+  | Workload | Config | Result |
+  |---|---|---|
+  | FL2VA, 209 frames, 1248×768 (8.7 s) | no offload, U4, VPP4 tile, regional compile | **86.96 s** client E2E (±0.23 s) |
+  | Two-video Ref2VA, 362 frames, 1344×768 (15 s) | same | **784.4 s** accounted model-stage mean |
+
+  Stage split for the FL2VA case: text encoder 0.21 s, visual encoder 0.20 s, DiT 79.1 s
+  (**88%** of the request), video+audio VAE decode 2.40 s. VAE patch parallelism is the
+  cheapest win available — it cuts decode 3.4–3.5× (8.24 s → 2.40 s).
+
+  A `with_stack` profile of the two-video Ref2VA case shows the pipeline is
+  **GPU-attention-bound, not host-starved**: FlashAttention-4 is ~76% of `diffuse` device
+  time, Ulysses send/recv is secondary, GPU utilization is 92.8–94.3% and the CPU-idle
+  union inside the transformer forwards is 3.15%. Reducing DiT time further needs a change
+  in attention complexity (reference-latent pooling/pruning, block-sparse attention), which
+  is not lossless.
+
+  Against the checkpoint's own reference implementation, the accuracy-qualified path scores
+  SSIM 0.9873–0.9896, PSNR 39–42 dB, pixel cosine 0.9996+, and audio log-mel cosine
+  0.977–0.996 on T2VA/FL2VA. The two-video Ref2VA composite scores lower on raw pixels
+  (SSIM 0.628) largely because of H.264 bitrate differences, while CLIP cosine is 0.9816 and
+  audio log-mel cosine 0.9869 — content and motion stay aligned.
+
+  ### Cache-DiT
+
+  Opt-in only. A 50-step T2VA probe cut denoise time **30.2%** (121.01 s → 84.47 s) but
+  dropped SSIM to **0.831** against the uncached output. H3's video trajectory is sensitive
+  to cached denoise steps — choose the cache budget against your own quality target.
+
+  ### Offload and accuracy
+
+  On a **single GPU**, model-level CPU offload is the accuracy-qualified path. On four GPUs,
+  no-offload is both faster and accuracy-clean once the encoder stays resident: an earlier
+  no-offload build performed a ~63 GiB DiT GPU→CPU→GPU round trip inside `encode_prompt`,
+  which was pure overhead (encoder 30.38 s → 0.207 s once removed, ~146×).
+
+  ## Known limitations
+
+  - Each server process loads exactly **one** checkpoint partition.
+  - H3 executes **one generation request per diffusion batch** today.
+  - The first regional-compile request is a warmup — exclude it from steady-state numbers.
+  - **The serving path accepts fewer references than the model supports.** H3 documents up
+    to 9 images, 3 video clips, and 3 audio clips (12 files) per Omni Reference request;
+    the current vLLM-Omni path takes exactly one image plus one audio reference, **or** one
+    or more videos with **no** separate `audio_reference` (it uses the source soundtracks).
+  - The 768p mode is not available yet — generate at a 1440 px short edge.
+  - `--cfg-parallel-size > 1` is rejected by design (CFG-distilled, no negative branch).
+  - The VAE supports the native `tile` parallel mode only.
+  - A `U2 × Ring2` hybrid currently fails with an attention-mask length mismatch; use pure
+    Ulysses.
+  - **FP8 quantization is not supported yet** — a transformer-side blocker is known and
+    deferred past the day-0 release.
+  - **8×64 GB will OOM.** Under `--usp 8 --ring 1 --tp 1` the 66.3 GB DiT is *replicated*
+    per rank, so even `--text-encoder-tp-size 8` leaves ~83.3 GB/rank before activations.
+    Encoder TP is necessary but not sufficient — you also need DiT TP ≥ 2, HSDP, or CPU
+    offload. (Analytical extrapolation from the 4-GPU measurements, not measured on
+    64 GB hardware.)
+
+  ## References
+
+  - [Model card](https://huggingface.co/MiniMaxAI/MiniMax-H3)
+  - [vLLM-Omni Video API](https://docs.vllm.ai/projects/vllm-omni/en/latest/serving/videos_api/)
+  - [vLLM-Omni diffusion parallelism](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/parallelism/overview/)
+  - [vLLM-Omni diffusion attention backends](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/)
+  - [vLLM-Omni supported models](https://docs.vllm.ai/projects/vllm-omni/en/latest/models/supported_models/)
+  - [vLLM-Omni GPU installation](https://docs.vllm.ai/projects/vllm-omni/en/latest/getting_started/installation/gpu/)
