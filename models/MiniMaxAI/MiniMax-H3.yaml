@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "Open-weight general-purpose multimodal generation model — jointly generates 24 FPS video with native stereo audio from text, image, video, and audio references, served via vLLM-Omni"
   date_added: 2026-08-02
-  date_updated: 2026-08-02
+  date_updated: 2026-08-03
   difficulty: advanced
   tasks:
     - omni
@@ -15,17 +15,17 @@ meta:
   hardware:
     gb200: verified
     b300: verified
-    mi300x: unsupported
-    mi325x: unsupported
-    mi355x: unsupported
+    mi300x: verified
 
 model:
   model_id: "MiniMaxAI/MiniMax-H3"
   min_vllm_version: "0.26.0"
-  docker_image: "vllm/vllm-omni:minimax-h3"
+  docker_image:
+    nvidia: "vllm/vllm-omni:minimax-h3"
+    amd: "vllm/vllm-omni-rocm:minimax-h3"
   install:
     docker:
-      note: "vLLM-Omni image bundling the MiniMax H3 handlers and the CuTe-DSL FlashAttention-4 kernels — no extra install needed."
+      note: "Platform-specific H3 image. The AMD tag is verified for T2VA/FL2VA on MI300X; build v0.26.0 from source for Ref2VA until the tag is refreshed with #5699."
     pip:
       command: |
         uv venv
@@ -64,7 +64,6 @@ model:
   base_env:
     VLLM_WORKER_MULTIPROC_METHOD: "spawn"
     VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "1800"
-    FLASHINFER_DISABLE_VERSION_CHECK: "1"
 
 omni:
   port: 8000
@@ -160,7 +159,7 @@ dependencies:
     install_modes: [pip, docker]
   - note: "pip path only (the Docker image already bundles it): MiniMax H3 support ships in vLLM-Omni, not the vllm wheel, so install it from a checkout. The [fa4] extra pulls the CuTe-DSL FlashAttention-4 kernels used on Blackwell"
     command: "git clone https://github.com/vllm-project/vllm-omni.git && cd vllm-omni && uv pip install -e '.[fa4]'"
-  - note: "ffmpeg and ffprobe must be on PATH — used for reference-video preparation and MP4 video+audio muxing"
+  - note: "ffmpeg and ffprobe must be on PATH — used for reference-video preparation and MP4 video+audio muxing. The current AMD minimax-h3 tag does not bundle them."
     command: "sudo apt-get install -y ffmpeg"
 
 features: {}
@@ -178,7 +177,16 @@ variants:
 # The serving-strategy row does not apply.
 compatible_strategies: []
 
-hardware_overrides: {}
+hardware_overrides:
+  blackwell:
+    extra_env:
+      FLASHINFER_DISABLE_VERSION_CHECK: "1"
+  amd:
+    extra_args:
+      - "--text-encoder-tp-size"
+      - "4"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
 
 strategy_overrides: {}
 
@@ -328,6 +336,43 @@ guide: |
   Swap the served path to `/path/to/MiniMax-H3/Ref2VA` and restart to handle Ref2VA
   requests instead.
 
+  ### AMD ROCm — four MI300X GPUs
+
+  Verified on 4× AMD Instinct MI300X (gfx942) with the ROCm H3 image, AITER packed
+  variable-length attention, Ulysses 4, text-encoder TP4, and native tiled VAE patch
+  parallelism 4:
+
+  ```bash
+  docker pull vllm/vllm-omni-rocm:minimax-h3
+
+  HIP_VISIBLE_DEVICES=0,1,2,3 \
+  VLLM_ROCM_USE_AITER=1 \
+  VLLM_WORKER_MULTIPROC_METHOD=spawn \
+  VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
+  vllm serve /path/to/MiniMax-H3/FL2VA \
+    --omni \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --trust-remote-code \
+    --num-gpus 4 \
+    --usp 4 \
+    --ring 1 \
+    --text-encoder-tp-size 4 \
+    --vae-patch-parallel-size 4 \
+    --vae-parallel-mode tile \
+    --vae-use-tiling \
+    --diffusion-attention-backend FLASH_ATTN
+  ```
+
+  On ROCm, `FLASH_ATTN` resolves to AITER on supported Instinct architectures. Do not
+  install the CUDA-only `[fa4]` extra or set `FLASHINFER_DISABLE_VERSION_CHECK`.
+
+  The current `vllm/vllm-omni-rocm:minimax-h3` tag was built from the pre-merge #5691
+  commit. T2VA and FL2VA work out of the box, but image+audio Ref2VA needs the soundfile
+  fallback merged in #5699, and video-reference Ref2VA also needs `ffmpeg`. Until the
+  published tag is refreshed, build `docker/Dockerfile.rocm` from the v0.26.0 source tag
+  for the complete Ref2VA path.
+
   Three constraints on this configuration:
 
   - **Do not add `--enforce-eager`.** Regional compile is the default
@@ -421,6 +466,23 @@ guide: |
   (**88%** of the request), video+audio VAE decode 2.40 s. VAE patch parallelism is the
   cheapest win available — it cuts decode 3.4–3.5× (8.24 s → 2.40 s).
 
+  ### Validated performance (4×MI300X)
+
+  Measured with `vllm/vllm-omni-rocm:minimax-h3`
+  (`sha256:29d1946af9c69e3e0a7128c247bdc8c82437ead43fbc366fed443533cf6ce9e8`),
+  BF16, AITER, U4, text-encoder TP4, VPP4 tile, regional compile, one warmup, and
+  the synchronous Video API:
+
+  | Workload | Model stages | Client E2E |
+  |---|---:|---:|
+  | T2VA, 209 frames, 1344×768 (8.7 s) | encode 0.09 s, denoise 244.04 s, decode 4.15 s | **267.42 s** |
+  | FL2VA, 209 frames, 1344×768 (8.7 s) | encode 13.98 s, denoise 257.58 s, decode 4.11 s | **287.07 s** |
+
+  Both outputs were validated as 209-frame H.264 at 24 FPS with 32 kHz stereo AAC.
+  A v0.26.0 source build additionally completed image+audio and video-reference Ref2VA,
+  plus a 2048×1088 T2VA run. These measurements describe tested shapes, not a general
+  latency guarantee.
+
   A `with_stack` profile of the two-video Ref2VA case shows the pipeline is
   **GPU-attention-bound, not host-starved**: FlashAttention-4 is ~76% of `diffuse` device
   time, Ulysses send/recv is secondary, GPU utilization is 92.8–94.3% and the CPU-idle
@@ -456,7 +518,7 @@ guide: |
     to 9 images, 3 video clips, and 3 audio clips (12 files) per Omni Reference request;
     the current vLLM-Omni path takes exactly one image plus one audio reference, **or** one
     or more videos with **no** separate `audio_reference` (it uses the source soundtracks).
-  - The 768p mode is not available yet — generate at a 1440 px short edge.
+  - 768p T2VA and FL2VA are validated on MI300X; use the documented 1344×768 shape.
   - `--cfg-parallel-size > 1` is rejected by design (CFG-distilled, no negative branch).
   - The VAE supports the native `tile` parallel mode only.
   - A `U2 × Ring2` hybrid currently fails with an attention-mask length mismatch; use pure
@@ -477,3 +539,5 @@ guide: |
   - [vLLM-Omni diffusion attention backends](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/)
   - [vLLM-Omni supported models](https://docs.vllm.ai/projects/vllm-omni/en/latest/models/supported_models/)
   - [vLLM-Omni GPU installation](https://docs.vllm.ai/projects/vllm-omni/en/latest/getting_started/installation/gpu/)
+  - [ROCm H3 tracking issue](https://github.com/vllm-project/vllm-omni/issues/5697)
+  - [H3 soundfile fallback](https://github.com/vllm-project/vllm-omni/pull/5699)
