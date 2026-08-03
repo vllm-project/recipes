@@ -16,6 +16,8 @@ meta:
     gb200: verified
     b300: verified
     mi300x: verified
+    mi325x: unsupported
+    mi355x: unsupported
 
 model:
   model_id: "MiniMaxAI/MiniMax-H3"
