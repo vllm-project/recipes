@@ -34,6 +34,9 @@ meta:
     ironwood: verified
     xeon6: verified
     dgx_spark_gb10: verified
+    dgx_station_gb300: verified
+    rtx_pro_6000: verified
+    rtx_5090: verified
 
 model:
   model_id: "google/gemma-4-26B-A4B-it"
@@ -83,6 +86,15 @@ variants:
       dgx_spark_gb10:
         extra_env:
           VLLM_USE_V2_MODEL_RUNNER: "1"
+      dgx_station_gb300:
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+      rtx_pro_6000:
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+        extra_args:
+        - "--gpu-memory-utilization"
+        - "0.9"
   fp8:
     model_id: "RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic"
     precision: fp8
@@ -95,6 +107,25 @@ variants:
       dgx_spark_gb10:
         extra_env:
           VLLM_USE_V2_MODEL_RUNNER: "1"
+      dgx_station_gb300:
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+      rtx_pro_6000:
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+        extra_args:
+        - "--gpu-memory-utilization"
+        - "0.9"
+      rtx_5090:
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+        extra_args:
+        - "--gpu-memory-utilization"
+        - "0.92"
+        - "--max-model-len"
+        - "131072"
+        - "--max-num-seqs"
+        - "1"
   nvfp4:
     model_id: "RedHatAI/gemma-4-26B-A4B-it-NVFP4"
     precision: nvfp4
@@ -107,6 +138,25 @@ variants:
       dgx_spark_gb10:
         extra_env:
           VLLM_USE_V2_MODEL_RUNNER: "1"
+      dgx_station_gb300:
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+      rtx_pro_6000:
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+        extra_args:
+        - "--gpu-memory-utilization"
+        - "0.9"
+      rtx_5090:
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+        extra_args:
+        - "--gpu-memory-utilization"
+        - "0.9"
+        - "--max-num-batched-tokens"
+        - "4096"
+        - "--max-num-seqs"
+        - "4"
   nvidia_nvfp4:
     model_id: "nvidia/Gemma-4-26B-A4B-NVFP4"
     precision: nvfp4
@@ -117,6 +167,8 @@ variants:
       - "fp8"
     hardware_overrides:
       dgx_spark_gb10:
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
         extra_args:
         - "--gpu-memory-utilization"
         - "0.8"
@@ -132,8 +184,45 @@ variants:
         - "gemma4"
         - "--max-num-batched-tokens"
         - "8192"
+      dgx_station_gb300:
         extra_env:
           VLLM_USE_V2_MODEL_RUNNER: "1"
+        extra_args:
+        - "--gpu-memory-utilization"
+        - "0.92"
+        - "--max-num-batched-tokens"
+        - "8192"
+        - "--enable-prefix-caching"
+        - "--enable-chunked-prefill"
+        - "--async-scheduling"
+        - "--load-format"
+        - "fastsafetensors"
+      rtx_pro_6000:
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+        extra_args:
+        - "--gpu-memory-utilization"
+        - "0.9"
+        - "--max-num-batched-tokens"
+        - "8192"
+        - "--enable-prefix-caching"
+        - "--enable-chunked-prefill"
+        - "--async-scheduling"
+        - "--load-format"
+        - "fastsafetensors"
+      rtx_5090:
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+        extra_args:
+        - "--gpu-memory-utilization"
+        - "0.9"
+        - "--max-num-batched-tokens"
+        - "4096"
+        - "--enable-prefix-caching"
+        - "--enable-chunked-prefill"
+        - "--async-scheduling"
+        - "--max-num-seqs"
+        - "4"
 
 compatible_strategies:
   - single_node_tp
