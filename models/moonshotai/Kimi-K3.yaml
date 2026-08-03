@@ -4,7 +4,7 @@ meta:
   provider: "Moonshot AI"
   description: "Pre-release 2.8T-parameter native multimodal MoE with Kimi Delta Attention, Gated MLA, Attention Residuals, and a 1M-token context window"
   date_added: 2026-07-27
-  date_updated: 2026-07-30
+  date_updated: 2026-08-03
   difficulty: hard
   tasks:
     - multimodal
@@ -209,6 +209,9 @@ hardware_overrides:
       - "kimi_k3"
       - "--max-num-batched-tokens"
       - "4096"
+      # Fuse the KDA output RMSNorm and sigmoid gate into one Triton kernel.
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_DECODE_ONLY","custom_ops":["+fused_rms_norm_gated"]}'
 
 strategy_overrides:
   # Guide recommendation made concrete: deep_gemm_mega_moe for any DEP
@@ -291,8 +294,6 @@ strategy_overrides:
         - "--max-num-batched-tokens"
         - "32"
         - "--no-disable-hybrid-kv-cache-manager"
-        - "--compilation-config"
-        - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
 
 guide: |
   ## Overview
