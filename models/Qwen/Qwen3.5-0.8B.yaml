@@ -12,6 +12,9 @@ meta:
   performance_headline: "Tiny Qwen3.5 dense for edge / draft-model use"
   related_recipes:
     - "Qwen/Qwen3.5-2B"
+  hardware:
+    arc_pro_b60: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "Qwen/Qwen3.5-0.8B"
@@ -53,7 +56,10 @@ variants:
 compatible_strategies:
   - single_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  xpu:
+    extra_args:
+      - "--enforce-eager"
 
 strategy_overrides: {}
 
@@ -68,7 +74,7 @@ guide: |
   ## Prerequisites
 
   - **vLLM version:** >= 0.17.0
-  - **Hardware:** any modern GPU (>=4 GB VRAM)
+  - **Hardware:** any modern GPU (>=4 GB VRAM) or Intel Arc Pro B60/B70
 
   ### Install vLLM
 
@@ -78,12 +84,33 @@ guide: |
   uv pip install -U vllm --torch-backend=auto
   ```
 
+  ### Docker
+  ```bash
+  docker pull vllm/vllm-openai-xpu:latest  # Intel XPU (B60 / B70)
+  ```
+
   ## Launching the Server
 
   ```bash
   vllm serve Qwen/Qwen3.5-0.8B \
     --max-model-len 262144 \
     --reasoning-parser qwen3
+  ```
+
+  ### Docker (Intel XPU B60 / B70)
+
+  Validated on 1× Intel Arc Pro B60 / B70 (B60 24 GB, B70 32 GB per card) with the
+  official vLLM XPU image `vllm/vllm-openai-xpu:latest`.
+
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    --entrypoint bash vllm/vllm-openai-xpu:latest \
+    -c "source /opt/intel/oneapi/setvars.sh && exec vllm serve Qwen/Qwen3.5-0.8B \
+    --reasoning-parser qwen3 \
+    --enforce-eager"
   ```
 
   ## Client Usage
