@@ -17,6 +17,7 @@ meta:
     h100: verified
     h200: verified
     dgx_spark_gb10: verified
+    xeon6: verified
 
 model:
   model_id: "google/diffusiongemma-26B-A4B-it"
@@ -97,7 +98,8 @@ variants:
 compatible_strategies:
   - single_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  cpu: {}
 
 strategy_overrides:
   single_node_tp:
@@ -152,6 +154,25 @@ guide: |
           --gpu-memory-utilization 0.85 \
           --host 0.0.0.0 --port 8000
   ```
+
+  ### Intel Xeon 6 (CPU, BF16, 4× NUMA nodes)
+
+  DiffusionGemma runs on Intel Xeon 6 CPUs using vLLM's CPU backend with AMX BF16 acceleration.
+  Use `--tensor-parallel-size` equal to the number of NUMA nodes available (typically 2–4 on a dual/quad-socket server).
+
+  ```bash
+  docker run -itd --name diffusiongemma-cpu \
+      --network host \
+      --shm-size 16g \
+      -v ~/.cache/huggingface:/root/.cache/huggingface \
+      vllm/vllm-openai-cpu:latest-x86_64 \
+          --model google/diffusiongemma-26B-A4B-it \
+          --dtype bfloat16 \
+          --tensor-parallel-size 4 \
+          --max-num-seqs 4 \
+          --host 0.0.0.0 --port 8000
+  ```
+
 
   ### Full-Featured Server (text + image + thinking + tools)
 

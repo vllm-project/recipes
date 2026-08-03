@@ -23,9 +23,9 @@ Gemma 4 models are supported on NVIDIA GPUs, AMD GPUs, Google Cloud TPUs and Int
 
 ### Block-Diffusion Models
 
-| Model | Total / Active Params | Canvas Length | Min NVIDIA GPUs (BF16) | Min AMD GPUs (BF16) | Min TPUs | HuggingFace |
-|-------|----------------------|---------------|------------------------|---------------------|----------|-------------|
-| DiffusionGemma 26B-A4B IT | 26B / 4B active | 256 tokens | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | [google/diffusiongemma-26B-A4B-it](https://huggingface.co/google/diffusiongemma-26B-A4B-it) |
+| Model | Total / Active Params | Canvas Length | Min NVIDIA GPUs (BF16) | Min AMD GPUs (BF16) | Min TPUs | Min Xeon 6 CPUs | HuggingFace |
+|-------|----------------------|---------------|------------------------|---------------------|----------|-----------------|-------------|
+| DiffusionGemma 26B-A4B IT | 26B / 4B active | 256 tokens | 1× (80 GB) | 1× MI300X/MI325X/MI350X/MI355X | 4× Trillium / 1× Ironwood | 4× NUMA node | [google/diffusiongemma-26B-A4B-it](https://huggingface.co/google/diffusiongemma-26B-A4B-it) |
 
 DiffusionGemma models generate tokens via iterative denoising over a fixed-length canvas (block diffusion) rather than left-to-right autoregressive decoding. They share the same Gemma 4 MoE backbone but use a different generation mechanism that trades higher time-to-first-token for significantly higher per-request throughput (~1.9× output TPS, ~3.3× faster E2E request time vs the autoregressive baseline).
 
@@ -222,6 +222,25 @@ docker run -itd --name diffusiongemma \
 ```
 
 > ⚠️ **Important**: `--max-num-seqs` must be kept low (≤4) — the diffusion state buffers pre-allocate `max_seqs × canvas_length × vocab_size` tensors that cause OOM at higher values. `--generation-config vllm` is required to prevent the checkpoint's `generation_config.json` from capping `max_tokens` to 256.
+
+### DiffusionGemma 26B-A4B on Intel Xeon 6 (CPU)
+
+DiffusionGemma runs on Intel Xeon 6 CPUs using vLLM's CPU backend with AMX BF16 acceleration. Use `--tensor-parallel-size` equal to the number of NUMA nodes on your server.
+
+```bash
+docker run -itd --name diffusiongemma-cpu \
+    --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-cpu:latest-x86_64 \
+        --model google/diffusiongemma-26B-A4B-it \
+        --dtype bfloat16 \
+        --tensor-parallel-size 4 \
+        --max-num-seqs 4 \
+        --host 0.0.0.0 \
+        --port 8000
+```
+
 
 ### Configuration Tips
 
