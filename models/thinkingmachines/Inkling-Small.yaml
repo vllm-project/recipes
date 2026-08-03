@@ -121,6 +121,10 @@ strategy_hardware:
     h100: unsupported
     h200: unsupported
 
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
+
 hardware_overrides: {}
 
 strategy_overrides:
