@@ -1,0 +1,173 @@
+meta:
+  title: "Fusion Embedding 2 (2B preview)"
+  slug: "fusion-embedding-2-2b-preview"
+  provider: "Eximius Labs"
+  description: "Multimodal embedding model that places text, images, video and audio in one 2048-d space, built on a frozen Qwen3-VL-Embedding-2B base with a frozen Omni audio tower and token-gated adapters."
+  date_added: 2026-08-04
+  date_updated: 2026-08-04
+  difficulty: intermediate
+  tasks:
+    - embedding
+    - multimodal
+  performance_headline: "Text, image, video and audio in one 2048-d space; AudioCaps a2t R@10 0.743, t2a 0.775"
+  related_recipes: []
+
+model:
+  model_id: "EximiusLabs/fusion-embedding-2-2b-preview"
+  min_vllm_version: "0.26.0"
+  install:
+    pip:
+      command: "uv pip install 'vllm[audio]==0.26.0' fusion-embedding"
+      note: "The fusion-embedding package ships an out-of-tree plugin (entry point vllm.general_plugins), smoke-tested against vllm==0.26.0. The [audio] extra is required for the audio input path."
+  architecture: dense
+  parameter_count: "2.8B"
+  active_parameters: "2.8B"
+  context_length: 262144
+  base_args:
+    - "--runner"
+    - "pooling"
+  base_env: {}
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 7
+    description: "Full model: frozen Qwen3-VL-Embedding-2B base (2.13B) + frozen Qwen2.5-Omni audio tower (0.64B) + trained connector, whitening and rank-384 token-gated adapters (0.06B)."
+
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides: {}
+
+strategy_overrides:
+  single_node_tp:
+    tp: 1
+
+guide: |
+  ## Overview
+
+  [`fusion-embedding-2-2b-preview`](https://huggingface.co/EximiusLabs/fusion-embedding-2-2b-preview)
+  embeds text, images, video and audio into a single 2048-d space. The base
+  Qwen3-VL-Embedding-2B weights are byte-frozen, so text, image and video
+  embeddings are identical to the stock base model; audio is added through a
+  frozen Qwen2.5-Omni audio tower, a trained connector, and rank-384 adapters
+  that are token-gated to activate only on audio positions. Details in the
+  [technical report (arXiv:2607.18666)](https://arxiv.org/abs/2607.18666).
+
+  vLLM support comes from an out-of-tree plugin,
+  [`fusion_embedding.vllm_plugin`](https://github.com/Eximius-Labs/fusion-embedding/tree/main/fusion_embedding/vllm_plugin),
+  registered through the `vllm.general_plugins` entry point. Once installed, a
+  plain `vllm serve` picks it up with no flags beyond `--runner pooling` and no
+  `trust_remote_code`.
+
+  The Matryoshka ladder is advertised as `matryoshka_dimensions`, so the
+  `dimensions` parameter of the embeddings API selects shorter rungs
+  (1024, 512, ...).
+
+  ## Prerequisites
+
+  - **Hardware**: a single GPU with roughly 8 GB VRAM or more for the bf16
+    weights (~5.7 GB). Verified end to end on A10G and A100.
+  - **vLLM**: `vllm==0.26.0` (the version the plugin is smoke-tested against),
+    with the `[audio]` extra.
+
+  ## Install
+
+  ```bash
+  uv pip install 'vllm[audio]==0.26.0' fusion-embedding
+  ```
+
+  ## Launching the Server
+
+  ```bash
+  vllm serve EximiusLabs/fusion-embedding-2-2b-preview --runner pooling
+  ```
+
+  The tokenizer and processor resolve from the base repo automatically. The
+  plugin forces eager execution (the per-token adapter gate must not be captured
+  into a compiled graph) and serves on a single GPU (the trained modules are not
+  tensor-parallelized).
+
+  ## Prompt formats
+
+  The model is instruction-formatted; send the full template.
+
+  Text query:
+
+  ```
+  <|im_start|>system
+  Retrieve images or text relevant to the user's query.<|im_end|>
+  <|im_start|>user
+  {text}<|im_end|>
+  <|im_start|>assistant
+  ```
+
+  Image document (with an image attached):
+
+  ```
+  <|im_start|>system
+  Represent the user's input.<|im_end|>
+  <|im_start|>user
+  <|vision_start|><|image_pad|><|vision_end|><|im_end|>
+  <|im_start|>assistant
+  ```
+
+  Audio (with an audio clip attached): `<|vision_pad|><|im_end|>` per clip. The
+  released checkpoint reuses this inert base token as its audio slot; the plugin
+  expands it to the 64 audio positions.
+
+  ## Client usage
+
+  ### Text over HTTP (`/v1/embeddings`)
+
+  ```bash
+  curl -s http://localhost:8000/v1/embeddings \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "EximiusLabs/fusion-embedding-2-2b-preview",
+      "input": ["<|im_start|>system\nRetrieve images or text relevant to the user'"'"'s query.<|im_end|>\n<|im_start|>user\na dog barks<|im_end|>\n<|im_start|>assistant\n"]
+    }' | python3 -m json.tool
+  ```
+
+  ### Audio (offline API)
+
+  ```python
+  import soundfile as sf
+  from vllm import LLM
+
+  llm = LLM(model="EximiusLabs/fusion-embedding-2-2b-preview", runner="pooling")
+
+  wav, sr = sf.read("dog.wav", dtype="float32")
+  out = llm.embed({"prompt": "<|vision_pad|><|im_end|>",
+                   "multi_modal_data": {"audio": (wav, sr)}})
+  ```
+
+  ## Parity
+
+  The plugin's staged smoke checks the served embeddings against the reference
+  implementation on identical inputs. At fp32 on both sides: text cosine
+  0.999998+, image 0.999986+, audio 0.999999+ (including real 44.1 kHz clips
+  exercising resampling). With adapters loaded and gates closed, text and image
+  vectors match the adapter-free run with max abs diff exactly 0.0 at fp32 and
+  bf16. At served bf16, expect ~0.999 agreement (kernel-level rounding).
+
+  ## Configuration tips
+
+  - **Audio resampling** runs through soxr (the same library behind librosa's
+    default), matching how the model was trained. The plugin sets this
+    automatically.
+  - **Text embeddings are whitened, non-text are not.** This is part of the
+    model's readout contract and is handled by the plugin.
+  - `FUSION_VLLM_DISABLE_AUDIO=1` skips the audio tower entirely for a lighter
+    text/image/video-only deployment (no Omni snapshot download).
+
+  ## References
+
+  - [Model card](https://huggingface.co/EximiusLabs/fusion-embedding-2-2b-preview)
+  - [Plugin source and parity harness](https://github.com/Eximius-Labs/fusion-embedding/tree/main/fusion_embedding/vllm_plugin)
+  - [Technical report (arXiv:2607.18666)](https://arxiv.org/abs/2607.18666)
+  - [Base model: Qwen/Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B)
