@@ -310,6 +310,112 @@ guide: |
   The `[fa4]` extra installs the CuTe-DSL FlashAttention-4 kernels — CUDA-only, and used on
   Blackwell. Drop the extra and the `FLASH_ATTN` backend falls back to FA3/FA2.
 
+  ## Launch — two 24/32 GB GPUs with distributed layerwise offload
+
+  [vLLM-Omni PR #5764](https://github.com/vllm-project/vllm-omni/pull/5764) adds a
+  low-memory TP2 path for H3. Until that PR lands in a release, fetch its branch before the
+  editable install:
+
+  ```bash
+  git fetch origin pull/5764/head:minimax-h3-2gpu-dlo
+  git switch minimax-h3-2gpu-dlo
+  uv pip install -e .
+  ```
+
+  The two-GPU profile combines TP2 with distributed layerwise offload (DLO). Each rank
+  keeps its rank-local TP shard in pinned host memory; `--dlo-no-use-allgather` streams
+  those shards directly instead of reconstructing full DiT blocks on every rank. A
+  configurable prefix of DiT blocks stays resident for the complete denoise stage, then
+  releases its HBM before VAE decode.
+
+  Select the profile first. RTX 5090 uses 20 resident DiT layers at the released
+  1344×768 shape; RTX 4090 keeps more HBM headroom with 12 resident layers and a
+  1024×576 starting shape:
+
+  ```bash
+  # 2× RTX 5090 (32 GB)
+  export DLO_RESIDENT_LAYERS=20 WIDTH=1344 HEIGHT=768
+
+  # Or, 2× RTX 4090 (24 GB)
+  # export DLO_RESIDENT_LAYERS=12 WIDTH=1024 HEIGHT=576
+  ```
+
+  Start the FL2VA partition for T2VA and FL2VA:
+
+  ```bash
+  CUDA_VISIBLE_DEVICES=0,1 \
+  VLLM_WORKER_MULTIPROC_METHOD=spawn \
+  VLLM_OMNI_VIDEO_SYNC_TIMEOUT=14400 \
+  vllm serve /path/to/MiniMax-H3/FL2VA \
+    --omni \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --trust-remote-code \
+    --num-gpus 2 \
+    --tensor-parallel-size 2 \
+    --usp 1 \
+    --ring 1 \
+    --text-encoder-tp-size 2 \
+    --vae-patch-parallel-size 2 \
+    --vae-parallel-mode tile \
+    --vae-use-tiling \
+    --enable-distributed-layerwise-offload \
+    --dlo-no-use-allgather \
+    --dlo-resident-layers "${DLO_RESIDENT_LAYERS}" \
+    --enforce-eager \
+    --diffusion-attention-backend CUDNN_ATTN
+  ```
+
+  The resident count changes placement and transfer frequency only; it does not quantize
+  or change the BF16/FP32 denoise math. Use a **384 GiB-class host** for the pinned model
+  shards and offload buffers.
+
+  Wait for `Application startup complete`, then verify health and run one full 50-step
+  T2VA request:
+
+  ```bash
+  curl --fail http://127.0.0.1:8000/health
+
+  curl --fail-with-body -sS \
+    -X POST http://127.0.0.1:8000/v1/videos/sync \
+    -F 'prompt=At night, three cats march into a bedroom playing tiny brass instruments, then abruptly file out, with synchronized room ambience.' \
+    -F "width=${WIDTH}" \
+    -F "height=${HEIGHT}" \
+    -F 'fps=24' \
+    -F 'num_inference_steps=50' \
+    -F 'flow_shift=12' \
+    -F 'seed=1101' \
+    -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
+    -o minimax-h3-t2va.mp4
+
+  ffprobe -v error -show_entries \
+    stream=index,codec_name,width,height,r_frame_rate,sample_rate,channels \
+    -of json minimax-h3-t2va.mp4
+  ffmpeg -v error -i minimax-h3-t2va.mp4 \
+    -map 0:v:0 -map 0:a:0 -f null -
+  ```
+
+  A successful output has H.264 video at 24 FPS and stereo AAC audio at 32 kHz, and the
+  final `ffmpeg` command exits with status 0. One server loads one checkpoint partition;
+  stop it and restart the same command with `/path/to/MiniMax-H3/Ref2VA` before Ref2VA
+  requests.
+
+  The PR includes an all-task runner that starts both partitions in sequence, exercises
+  T2VA, FL2VA, image+audio Ref2VA, and two-video Ref2VA, validates every output stream, and
+  records live server and GPU-memory logs:
+
+  ```bash
+  RUN_ROOT=/path/to/run-root \
+  MODEL_ROOT=/path/to/MiniMax-H3 \
+  GPU_IDS=0,1 \
+  PROFILE=rtx5090 \
+  bash recipes/MiniMaxAI/scripts/run_h3_2gpu_all_tasks.sh
+  ```
+
+  Use `PROFILE=rtx4090` for the 24 GB defaults. The script fails before inference when a
+  checkpoint partition, idle GPU, host-RAM budget, or shared FFmpeg/TorchCodec dependency
+  is missing.
+
   ## Launch — four GPUs (validated best practice)
 
   Measured on 4× NVIDIA B300: no CPU or layerwise offload, Ulysses SP degree 4, native
@@ -569,5 +675,6 @@ guide: |
   - [vLLM-Omni diffusion attention backends](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/)
   - [vLLM-Omni supported models](https://docs.vllm.ai/projects/vllm-omni/en/latest/models/supported_models/)
   - [vLLM-Omni GPU installation](https://docs.vllm.ai/projects/vllm-omni/en/latest/getting_started/installation/gpu/)
+  - [Two-GPU distributed layerwise offload PR](https://github.com/vllm-project/vllm-omni/pull/5764)
   - [ROCm H3 tracking issue](https://github.com/vllm-project/vllm-omni/issues/5697)
   - [H3 soundfile fallback](https://github.com/vllm-project/vllm-omni/pull/5699)
