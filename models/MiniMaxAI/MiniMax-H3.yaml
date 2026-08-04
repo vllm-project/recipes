@@ -16,7 +16,7 @@ meta:
     gb200: verified
     b300: verified
     mi300x: verified
-    mi325x: unsupported
+    mi325x: verified
     mi355x: verified
 
 model:
