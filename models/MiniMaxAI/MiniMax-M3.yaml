@@ -122,6 +122,9 @@ variants:
       - "--attention_config.indexer_kv_dtype"
       - "fp8"
     hardware_overrides:
+      blackwell:
+        extra_env:
+          VLLM_FLOAT32_MATMUL_PRECISION: "high"
       h100:
         # 8x H100 80GB (640 GB node) fits the ~513 GB MXFP8 weights but not the
         # full 1M-token KV cache — cap the context to 128K so the engine starts.
