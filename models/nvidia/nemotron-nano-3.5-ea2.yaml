@@ -1,0 +1,204 @@
+meta:
+  title: "NVIDIA Nemotron 3.5 Lightning"
+  slug: "nemotron-3-5-lightning"
+  provider: "NVIDIA"
+  description: "NVIDIA Nemotron 3.5 Lightning hybrid Mamba-MoE model with NVFP4 (W4A4) and BF16 checkpoints, MTP and DFlash speculative decoding"
+  date_added: 2026-08-03
+  date_updated: 2026-08-03
+  difficulty: intermediate
+  tasks:
+    - text
+  related_recipes:
+    - "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16"
+  hardware:
+    h100: verified
+    gb200: verified
+    dgx_spark_gb10: verified
+
+model:
+  model_id: "nvidia/nemotron-nano-3.5-ea2"
+  min_vllm_version: "0.25.0"
+  nightly_required: true
+  architecture: moe
+  parameter_count: "30B"
+  active_parameters: "3B"
+  context_length: 262144
+  base_args:
+    - "--trust-remote-code"
+    - "--mamba-backend"
+    - "flashinfer"
+    - "--mamba-cache-mode"
+    - "align"
+  base_env:
+    VLLM_USE_FASTOKENS: "1"
+
+features:
+  tool_calling:
+    description: "Qwen3 Coder tool-call parser with automatic tool choice"
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "qwen3_coder"
+  mamba_fast_ssm_cache:
+    label: "Fast SSM Cache"
+    description: "FP16 Mamba SSM cache with stochastic rounding — faster decode than the FP32 default; the Philox rounds control the rounding stream"
+    args:
+      - "--mamba-ssm-cache-dtype"
+      - "float16"
+      - "--enable-mamba-cache-stochastic-rounding"
+      - "--mamba-cache-philox-rounds"
+      - "5"
+  spec_decoding:
+    description: "Speculative decoding — built-in MTP head or an externally trained DFlash draft model"
+    default_mode: mtp
+    modes:
+      mtp:
+        label: "MTP"
+        description: "Built-in Multi-Token Prediction head, 1 draft token, FlashInfer CUTLASS MoE kernels for the draft."
+        args:
+          - "--speculative-config"
+          - '{"method":"mtp","num_speculative_tokens":1,"moe_backend":"flashinfer_cutlass"}'
+      dflash:
+        label: "DFlash"
+        description: "DFlash drafting with an externally trained 3-token draft model; the served Nemotron checkpoint is unchanged."
+        variants:
+          - default
+        args:
+          - "--speculative-config"
+          - '{"method":"dflash","model":"nvidia/DFlash-Nemotron-3.5-Nano-MOPD-Intermediate","num_speculative_tokens":3,"attention_backend":"FLASHINFER"}'
+
+opt_in_features:
+  - spec_decoding
+
+variants:
+  default:
+    model_id: "nvidia/nemotron-nano-3.5-ea2-W4A4-PTQ-20260723"
+    precision: nvfp4
+    # NVFP4 expert weights are dequantized on the fly on Hopper, so this
+    # checkpoint is not Blackwell-only.
+    precision_hardware:
+      brand: NVIDIA
+    vram_minimum_gb: 18
+    label: "NVFP4"
+    description: "ModelOpt PTQ NVFP4 (W4A4) checkpoint with FP8 KV cache — the default deployment target"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+    hardware_overrides:
+      hopper:
+        # Hopper has no native NVFP4 path; the ModelOpt loader must be named explicitly.
+        extra_args:
+          - "--quantization"
+          - "modelopt_fp4"
+  bf16:
+    model_id: "nvidia/nemotron-nano-3.5-ea2"
+    precision: bf16
+    vram_minimum_gb: 72
+    description: "Full-precision BF16 reference checkpoint"
+    extra_args:
+      - "--moe-backend"
+      - "flashinfer_cutlass"
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - multi_node_tp
+  - multi_node_tep
+  - multi_node_dep
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  Nemotron 3.5 Lightning is a hybrid Mamba-MoE model. It ships as two checkpoints: an
+  NVFP4 (W4A4) ModelOpt PTQ checkpoint — the default deployment target, which fits a
+  single DGX Spark (GB10) or a single H100 — and a BF16 reference checkpoint.
+
+  Both are served with the FlashInfer Mamba backend and the `align` Mamba cache mode.
+  `VLLM_USE_FASTOKENS=1` is required.
+
+  ## Prerequisites
+
+  - Hardware: 1x DGX Spark (GB10), 1x H100, or 1x GB200
+  - A vLLM nightly — the Mamba cache flags below are not in a stable release yet
+
+  ```bash
+  docker pull vllm/vllm-openai:nightly-6f91edf96d3f3272945809c04702380053bff4de
+  ```
+
+  ## Launch commands
+
+  NVFP4 on 1x H100:
+
+  ```bash
+  export VLLM_USE_FASTOKENS=1
+
+  vllm serve nvidia/nemotron-nano-3.5-ea2-W4A4-PTQ-20260723 \
+    --trust-remote-code \
+    --quantization modelopt_fp4 \
+    --kv-cache-dtype fp8 \
+    --mamba-backend flashinfer \
+    --mamba-cache-mode align \
+    --mamba-ssm-cache-dtype float16 \
+    --enable-mamba-cache-stochastic-rounding \
+    --mamba-cache-philox-rounds 5
+  ```
+
+  NVFP4 on 1x DGX Spark (GB10) with MTP:
+
+  ```bash
+  export VLLM_USE_FASTOKENS=1
+
+  vllm serve nvidia/nemotron-nano-3.5-ea2-W4A4-PTQ-20260723 \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --mamba-backend flashinfer \
+    --mamba-cache-mode align \
+    --mamba-ssm-cache-dtype float16 \
+    --enable-mamba-cache-stochastic-rounding \
+    --mamba-cache-philox-rounds 5 \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":1,"moe_backend":"flashinfer_cutlass"}'
+  ```
+
+  BF16 on 8x H100 with expert parallel and MTP:
+
+  ```bash
+  export VLLM_USE_FASTOKENS=1
+
+  vllm serve nvidia/nemotron-nano-3.5-ea2 \
+    --trust-remote-code \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --moe-backend flashinfer_cutlass \
+    --mamba-backend flashinfer \
+    --mamba-cache-mode align \
+    --max-model-len 262144 \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":1,"moe_backend":"flashinfer_cutlass"}'
+  ```
+
+  Key flags:
+  - `--mamba-backend flashinfer` — required; the default backend has no kernel for this stack
+  - `--mamba-cache-mode align` — aligned Mamba state cache, needed for prefix caching
+  - `--mamba-ssm-cache-dtype float16` with stochastic rounding trades a little accuracy for decode speed; drop all three flags for the FP32 default
+  - `--quantization modelopt_fp4` — only needed on Hopper, where NVFP4 is not auto-detected
+  - DFlash drafting needs the separate `nvidia/DFlash-Nemotron-3.5-Nano-MOPD-Intermediate` draft checkpoint
+
+  ## Known gaps
+
+  - TP8 without expert parallel is not supported on the NVFP4 checkpoint.
+
+  ## Benchmarking
+
+  ```bash
+  vllm bench serve \
+    --model nvidia/nemotron-nano-3.5-ea2-W4A4-PTQ-20260723 \
+    --trust-remote-code \
+    --dataset-name random \
+    --random-input-len 32000 --random-output-len 2000 \
+    --ignore-eos \
+    --max-concurrency 256 \
+    --num-prompts 1024
+  ```
