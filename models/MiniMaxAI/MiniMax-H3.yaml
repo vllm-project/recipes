@@ -438,7 +438,7 @@ guide: |
   ## Launch — two 24/32 GB GPUs with distributed layerwise offload
 
   vLLM-Omni includes a low-memory TP2 path for H3. Install the current vLLM-Omni
-  source checkout as shown above; no feature branch is required.
+  source checkout as shown above.
 
   The two-GPU profile combines TP2 with distributed layerwise offload (DLO). Each rank
   keeps its rank-local TP shard in pinned host memory; `--dlo-no-use-allgather` streams
@@ -797,6 +797,4 @@ guide: |
   - [vLLM-Omni diffusion attention backends](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/)
   - [vLLM-Omni supported models](https://docs.vllm.ai/projects/vllm-omni/en/latest/models/supported_models/)
   - [vLLM-Omni GPU installation](https://docs.vllm.ai/projects/vllm-omni/en/latest/getting_started/installation/gpu/)
-  - [Two-GPU distributed layerwise offload PR](https://github.com/vllm-project/vllm-omni/pull/5764)
   - [ROCm H3 tracking issue](https://github.com/vllm-project/vllm-omni/issues/5697)
-  - [H3 soundfile fallback](https://github.com/vllm-project/vllm-omni/pull/5699)
