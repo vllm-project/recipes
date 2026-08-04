@@ -15,6 +15,8 @@ meta:
   hardware:
     gb200: verified
     b300: verified
+    rtx_4090_2x: verified
+    rtx_5090_2x: verified
     mi300x: verified
     mi325x: verified
     mi355x: verified
@@ -80,6 +82,22 @@ omni:
       vram_minimum_gb: 135
       endpoint: "/v1/videos/sync"
       description: "Text prompt → joint video + synchronized audio. Served by the FL2VA partition."
+      hardware_overrides:
+        rtx_5090_2x:
+          vram_minimum_gb: 64
+        rtx_4090_2x:
+          vram_minimum_gb: 48
+          curl: |
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
+              -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
+              -F 'width=1024' \
+              -F 'height=576' \
+              -F 'fps=24' \
+              -F 'num_inference_steps=50' \
+              -F 'flow_shift=12' \
+              -F 'seed=1101' \
+              -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
+              -o t2va.mp4
       curl: |
         curl -sS -X POST http://localhost:8000/v1/videos/sync \
           -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
@@ -97,6 +115,25 @@ omni:
       vram_minimum_gb: 135
       endpoint: "/v1/videos/sync"
       description: "First frame + prompt → video + audio, on the FL2VA partition. Omitting width/height keeps the first frame's aspect ratio at a 768 px short edge."
+      hardware_overrides:
+        rtx_5090_2x:
+          vram_minimum_gb: 64
+        rtx_4090_2x:
+          vram_minimum_gb: 48
+          curl: |
+            export FIRST_FRAME=/path/to/fl2va_first_frame.png
+
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
+              -F 'prompt=A man stands beside a yellow car at night. The car drives away; he follows it with his eyes and begins singing sadly, with synchronized voice and city ambience.' \
+              -F 'width=1024' \
+              -F 'height=576' \
+              -F 'fps=24' \
+              -F 'num_inference_steps=50' \
+              -F 'flow_shift=12' \
+              -F 'seed=2101' \
+              -F 'extra_params={"task":"fl2va","duration":5.0,"audio_flow_shift":3.0}' \
+              -F "input_reference=@${FIRST_FRAME};type=image/png" \
+              -o fl2va.mp4
       curl: |
         export FIRST_FRAME=/path/to/fl2va_first_frame.png
 
@@ -115,6 +152,47 @@ omni:
       vram_minimum_gb: 168
       endpoint: "/v1/videos/sync"
       description: "Omni reference (image+audio, or one-or-more videos) → video + audio, on the Ref2VA partition. A full 15 s two-video request peaked at 166 GB on the main rank."
+      hardware_overrides:
+        rtx_5090_2x:
+          vram_minimum_gb: 64
+        rtx_4090_2x:
+          vram_minimum_gb: 48
+          curl: |
+            # A) image + audio reference. Serve local assets first:
+            #    python -m http.server 8092 --bind 127.0.0.1 \
+            #      --directory /path/to/reference_assets
+            export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
+            export AUDIO_URL=http://127.0.0.1:8092/ref2va_audio.mp3
+
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
+              -F 'prompt=A white cat with black mustache and eyebrow markings sits on a beige couch, lip-syncing precisely to the complete reference audio before shifting from confusion to deadpan speechlessness.' \
+              -F 'width=1024' \
+              -F 'height=576' \
+              -F 'fps=24' \
+              -F 'num_inference_steps=50' \
+              -F 'flow_shift=12' \
+              -F 'seed=3101' \
+              -F 'extra_params={"task":"ref2va","duration":5.0,"audio_flow_shift":3.0}' \
+              -F "input_reference=@${REF_IMAGE};type=image/png" \
+              -F "audio_reference={\"audio_url\":\"${AUDIO_URL}\"}" \
+              -o ref2va_image_audio.mp4
+
+            # B) two video references. Repeat input_references in source order.
+            export SUBJECT_VIDEO=/path/to/green_screen_subject.mp4
+            export BACKGROUND_VIDEO=/path/to/fairytale_background.mov
+
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
+              -F 'prompt=Remove the green screen background of Video 1 and replace it with the fairytale environment from Video 2. Match the background motion to the character actions and relight the character to fit the scene.' \
+              -F 'width=1024' \
+              -F 'height=576' \
+              -F 'fps=24' \
+              -F 'num_inference_steps=50' \
+              -F 'flow_shift=12' \
+              -F 'seed=3101' \
+              -F 'extra_params={"task":"ref2va","duration":5.0,"audio_flow_shift":3.0}' \
+              -F "input_references=@${SUBJECT_VIDEO};type=video/mp4" \
+              -F "input_references=@${BACKGROUND_VIDEO};type=video/quicktime" \
+              -o ref2va_video_video.mp4
       curl: |
         # A) image + audio reference. `audio_reference` takes an HTTP(S) or data: URL —
         #    serve local assets first:  python -m http.server 8092 --bind 127.0.0.1 \
@@ -173,6 +251,53 @@ variants:
     precision: bf16
     vram_minimum_gb: 135
     description: "BF16 — 66.3 GB DiT + 51.5 GB Qwen3-VL encoder + ~10.6 GB VAEs. 133 GB per-GPU engine peak measured on the validated 4×B300 no-offload profile; --text-encoder-tp-size 4 brings it to 103 GB"
+    hardware_overrides:
+      rtx_5090_2x:
+        extra_args:
+          - "--num-gpus"
+          - "2"
+          - "--tensor-parallel-size"
+          - "2"
+          - "--usp"
+          - "1"
+          - "--ring"
+          - "1"
+          - "--text-encoder-tp-size"
+          - "2"
+          - "--vae-patch-parallel-size"
+          - "2"
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
+          - "--enable-distributed-layerwise-offload"
+          - "--dlo-no-use-allgather"
+          - "--dlo-resident-layers"
+          - "20"
+          - "--enforce-eager"
+        extra_env:
+          VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "14400"
+      rtx_4090_2x:
+        extra_args:
+          - "--num-gpus"
+          - "2"
+          - "--tensor-parallel-size"
+          - "2"
+          - "--usp"
+          - "1"
+          - "--ring"
+          - "1"
+          - "--text-encoder-tp-size"
+          - "2"
+          - "--vae-patch-parallel-size"
+          - "2"
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
+          - "--enable-distributed-layerwise-offload"
+          - "--dlo-no-use-allgather"
+          - "--dlo-resident-layers"
+          - "12"
+          - "--enforce-eager"
+        extra_env:
+          VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "14400"
 
 # Omni recipes are served through `vllm serve --omni`, which has its own
 # diffusion-parallelism flags (--usp / --ring / --vae-patch-parallel-size).
@@ -312,15 +437,8 @@ guide: |
 
   ## Launch — two 24/32 GB GPUs with distributed layerwise offload
 
-  [vLLM-Omni PR #5764](https://github.com/vllm-project/vllm-omni/pull/5764) adds a
-  low-memory TP2 path for H3. Until that PR lands in a release, fetch its branch before the
-  editable install:
-
-  ```bash
-  git fetch origin pull/5764/head:minimax-h3-2gpu-dlo
-  git switch minimax-h3-2gpu-dlo
-  uv pip install -e .
-  ```
+  vLLM-Omni includes a low-memory TP2 path for H3. Install the current vLLM-Omni
+  source checkout as shown above; no feature branch is required.
 
   The two-GPU profile combines TP2 with distributed layerwise offload (DLO). Each rank
   keeps its rank-local TP shard in pinned host memory; `--dlo-no-use-allgather` streams

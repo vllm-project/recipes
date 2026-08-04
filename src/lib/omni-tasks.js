@@ -208,7 +208,7 @@ export const OMNI_TASKS = {
  *                       interpolates host/port/modelId into a sample request)
  *
  * Returns: [{ id, label, endpoint, method, modelId?, vramMinimumGb?,
- *             description?, extraArgs?, example }]
+ *             description?, extraArgs?, hardwareOverrides?, example }]
  */
 export function resolveOmniTasks(recipe) {
   const decl = recipe?.omni?.tasks;
@@ -230,10 +230,29 @@ export function resolveOmniTasks(recipe) {
       vramMinimumGb: override.vram_minimum_gb,
       description: override.description,
       extraArgs: override.extra_args || [],
+      hardwareOverrides: override.hardware_overrides || {},
       example: customCurl ? () => customCurl : base.example,
     });
   }
   return out;
+}
+
+/** Apply an exact hardware override to one resolved omni task. */
+export function resolveOmniTaskForHardware(task, hwProfileId) {
+  if (!task || !hwProfileId) return task;
+  const override = task.hardwareOverrides?.[hwProfileId];
+  if (!override) return task;
+  const customCurl = override.curl;
+  return {
+    ...task,
+    label: override.label || task.label,
+    endpoint: override.endpoint || task.endpoint,
+    modelId: override.model_id || task.modelId,
+    vramMinimumGb: override.vram_minimum_gb ?? task.vramMinimumGb,
+    description: override.description || task.description,
+    extraArgs: [...(task.extraArgs || []), ...(override.extra_args || [])],
+    example: customCurl ? () => customCurl : task.example,
+  };
 }
 
 /**
