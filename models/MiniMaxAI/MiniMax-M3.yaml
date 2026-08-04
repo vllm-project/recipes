@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 plus MXFP8, NVIDIA Blackwell NVFP4, and AMD MI355X MXFP4 variants. Runs on NVIDIA (Hopper/Blackwell) and AMD CDNA4/CDNA3."
   date_added: 2026-06-12
-  date_updated: 2026-07-15
+  date_updated: 2026-08-04
   difficulty: advanced
   tasks:
     - text
@@ -14,6 +14,7 @@ meta:
   hardware:
     h200: verified
     b200: verified
+    b300: verified
     mi300x: verified
     mi355x: verified
 
@@ -164,12 +165,23 @@ variants:
     description: "NVIDIA-quantized NVFP4 weights (ModelOpt) for Blackwell (B200/B300) — native FP4 tensor cores, ~half the VRAM of MXFP8."
     extra_args:
       - "--trust-remote-code"
+      - "--kv-cache-dtype"
+      - "fp8"
       - "--attention_config.indexer_kv_dtype"
       - "fp8"
       - "--attention_config.minimax_m3_msa_decode_backend"
       - "cutlass"
     extra_env:
       VLLM_FLOAT32_MATMUL_PRECISION: "high"
+    hardware_overrides:
+      blackwell:
+        extra_args:
+          - "--attention_config.backend"
+          - "FLASHINFER"
+          - "--attention_config.use_trtllm_attention"
+          - "true"
+        extra_env:
+          VLLM_FLASHINFER_ALLREDUCE_BACKEND: "trtllm"
   mxfp4:
     model_id: "amd/MiniMax-M3-MXFP4"
     precision: mxfp4
@@ -613,45 +625,51 @@ guide: |
   is an NVFP4 checkpoint quantized by NVIDIA with ModelOpt. It requires a vLLM
   build with MiniMax-M3 NVFP4 support (vllm-project/vllm PR #46380).
 
-  Select the **nvfp4** variant and **B200** hardware in the command builder, or
-  launch the tested B200 baseline directly:
+  Select the **nvfp4** variant and **B200** or **B300** hardware in the command
+  builder, or launch the tested baseline directly:
 
   ```bash
   VLLM_FLOAT32_MATMUL_PRECISION=high \
+  VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm \
     vllm serve nvidia/MiniMax-M3-NVFP4 \
     --tensor-parallel-size 8 \
     --trust-remote-code \
     --block-size 128 \
+    --kv-cache-dtype fp8 \
     --tool-call-parser minimax_m3 \
     --reasoning-parser minimax_m3 \
     --enable-auto-tool-choice
   ```
 
   Pair it with EAGLE3 speculative decoding (the *Spec decoding* feature) for
-  faster decode — the validated B200 benchmark runs the NVFP4 target against the
-  `Inferact/MiniMax-M3-EAGLE3` draft head (3 speculative tokens):
+  faster decode — the validated B300 agentic benchmark runs the NVFP4 target
+  against the `Inferact/MiniMax-M3-EAGLE3-GQA` draft head (3 speculative
+  tokens, GQA variant for lower draft KV memory):
 
   ```bash
   VLLM_FLOAT32_MATMUL_PRECISION=high \
+  VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm \
     vllm serve nvidia/MiniMax-M3-NVFP4 \
-    --tensor-parallel-size 8 \
+    --tensor-parallel-size 4 \
     --trust-remote-code \
     --block-size 128 \
-    --language-model-only \
-    --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
-  ```
-
-  For long-context or high-batch workloads where draft KV memory is the binding
-  constraint, swap in the **GQA** variant:
-
-  ```bash
-  VLLM_FLOAT32_MATMUL_PRECISION=high \
-    vllm serve nvidia/MiniMax-M3-NVFP4 \
-    --tensor-parallel-size 8 \
-    --trust-remote-code \
-    --block-size 128 \
+    --kv-cache-dtype fp8 \
     --language-model-only \
     --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3-GQA", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
+  ```
+
+  For the standard MHA draft head (64 KV heads vs 4 for GQA):
+
+  ```bash
+  VLLM_FLOAT32_MATMUL_PRECISION=high \
+  VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm \
+    vllm serve nvidia/MiniMax-M3-NVFP4 \
+    --tensor-parallel-size 8 \
+    --trust-remote-code \
+    --block-size 128 \
+    --kv-cache-dtype fp8 \
+    --language-model-only \
+    --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
   ```
 
   ## Quantized Variant (MXFP4 on MI355X)
