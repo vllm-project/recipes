@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "Open-weight general-purpose multimodal generation model — jointly generates 24 FPS video with native stereo audio from text, image, video, and audio references, served via vLLM-Omni"
   date_added: 2026-08-02
-  date_updated: 2026-08-03
+  date_updated: 2026-08-04
   difficulty: advanced
   tasks:
     - omni
@@ -27,7 +27,7 @@ model:
     amd: "vllm/vllm-omni-rocm:minimax-h3"
   install:
     docker:
-      note: "Platform-specific H3 image. MI355X uses the EmbeddedLLM ROCm image, which includes the Ref2VA fixes, TorchCodec, and FFmpeg."
+      note: "Platform-specific H3 images bundle the model handlers and media dependencies. The refreshed official ROCm tag includes the Ref2VA fixes, TorchCodec, and FFmpeg."
     pip:
       command: |
         uv venv
@@ -161,7 +161,7 @@ dependencies:
     install_modes: [pip, docker]
   - note: "pip path only (the Docker image already bundles it): MiniMax H3 support ships in vLLM-Omni, not the vllm wheel, so install it from a checkout. The [fa4] extra pulls the CuTe-DSL FlashAttention-4 kernels used on Blackwell"
     command: "git clone https://github.com/vllm-project/vllm-omni.git && cd vllm-omni && uv pip install -e '.[fa4]'"
-  - note: "ffmpeg and ffprobe must be on PATH — used for reference-video preparation and MP4 video+audio muxing. Only the MI355X EmbeddedLLM image bundles them."
+  - note: "pip path only: ffmpeg and ffprobe must be on PATH for reference-video preparation and MP4 video+audio muxing. The official Docker images already bundle them."
     command: "sudo apt-get install -y ffmpeg"
 
 features: {}
@@ -173,10 +173,6 @@ variants:
     precision: bf16
     vram_minimum_gb: 135
     description: "BF16 — 66.3 GB DiT + 51.5 GB Qwen3-VL encoder + ~10.6 GB VAEs. 133 GB per-GPU engine peak measured on the validated 4×B300 no-offload profile; --text-encoder-tp-size 4 brings it to 103 GB"
-    hardware_overrides:
-      # Validated on four MI355X GPUs with the EmbeddedLLM ROCm image.
-      mi355x:
-        docker_image: "ghcr.io/embeddedllm/vllm-omni-minimax-h3-rocm:latest"
 
 # Omni recipes are served through `vllm serve --omni`, which has its own
 # diffusion-parallelism flags (--usp / --ring / --vae-patch-parallel-size).
@@ -373,21 +369,18 @@ guide: |
   On ROCm, `FLASH_ATTN` resolves to AITER on supported Instinct architectures. Do not
   install the CUDA-only `[fa4]` extra or set `FLASHINFER_DISABLE_VERSION_CHECK`.
 
-  The current `vllm/vllm-omni-rocm:minimax-h3` tag was built from the pre-merge #5691
-  commit. T2VA and FL2VA work out of the box, but image+audio Ref2VA needs the soundfile
-  fallback merged in #5699, and video-reference Ref2VA also needs `ffmpeg`. Until the
-  published tag is refreshed, build `docker/Dockerfile.rocm` from the v0.26.0 source tag
-  for the complete Ref2VA path.
+  The refreshed `vllm/vllm-omni-rocm:minimax-h3` tag includes the Ref2VA soundfile
+  fallback, TorchCodec, and FFmpeg, so T2VA, FL2VA, and the complete Ref2VA path use the
+  same official image.
 
   ### AMD ROCm — four MI355X GPUs
 
-  Verified on 4× AMD Instinct MI355X with the EmbeddedLLM ROCm image. This image includes
-  the MiniMax H3 Ref2VA fixes, TorchCodec 0.11.1, and FFmpeg. We tested both Ulysses 4
-  with Ring 1 and Ulysses 1 with Ring 4. The command below shows the Ulysses 4 / Ring 1
-  configuration with tiled VAE patch parallelism degree 4, AITER, and CPU offload:
-
+  Verified on 4× AMD Instinct MI355X. The official ROCm image includes the
+  MiniMax H3 Ref2VA fixes, TorchCodec, and FFmpeg. We tested both Ulysses 4 with Ring 1
+  and Ulysses 1 with Ring 4. The command below shows the Ulysses 4 / Ring 1 configuration
+  with tiled VAE patch parallelism degree 4, AITER, and CPU offload:
   ```bash
-  docker pull ghcr.io/embeddedllm/vllm-omni-minimax-h3-rocm:latest
+  docker pull vllm/vllm-omni-rocm:minimax-h3
 
   HIP_VISIBLE_DEVICES=0,1,2,3 \
   VLLM_ROCM_USE_AITER=1 \
