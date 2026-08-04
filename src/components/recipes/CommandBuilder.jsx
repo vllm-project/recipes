@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, MAX_NODES, nodesForStrategy, isStrategyReachable } from "@/lib/command-synthesis";
-import { resolveOmniTasks } from "@/lib/omni-tasks";
+import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
@@ -788,7 +788,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // All hardware profiles grouped by brand, sorted by architectural generation
   // within brand (oldest → newest; matches the semianalysis GPU timeline).
   const hwByBrand = useMemo(() => {
-    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "dgx_station_gb300"];
+    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "rtx_4090_2x", "rtx_5090_2x", "dgx_station_gb300"];
     const AMD_ORDER = ["mi300x", "mi325x", "mi355x"];
     const rankIn = (list, id) => {
       const i = list.indexOf(id);
@@ -1713,13 +1713,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const omniVariants = Object.entries(recipe.variants || {});
     const showOmniVariants = omniVariants.length > 1;
     const showOmniTaskRow = omniTasks.length > 1;
-    const activeTask = omniTasks.find((t) => t.id === omniTask) || omniTasks[0] || null;
+    const activeTaskBase = omniTasks.find((t) => t.id === omniTask) || omniTasks[0] || null;
+    const activeTask = resolveOmniTaskForHardware(activeTaskBase, hwId);
 
     // Render the `vllm serve --omni` command via the shared omni resolver.
     // Falls back to a stub when the recipe has no omni.tasks declared yet
     // (legacy omni-tagged recipes that haven't been migrated).
     const omniRendered = activeTask
-      ? resolveOmniCommand(recipe, variant, activeTask, hwProfile)
+      ? resolveOmniCommand(recipe, variant, activeTask, hwProfile, hwId)
       : {
           command: `${recipe.omni?.serve_binary || "vllm serve"} ${currentVariant.model_id || recipe.model?.model_id || "model"} --omni`,
           env: {},
@@ -1858,19 +1859,22 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 hint="Each task picks a vllm-omni handler endpoint and example payload. For multi-checkpoint families (Wan2.2 T2V/I2V/TI2V) the task also swaps the served model_id."
               >
                 <PillGroup>
-                  {omniTasks.map((t) => (
-                    <Pill
-                      key={t.id}
-                      active={activeTask?.id === t.id}
-                      onClick={() => selectOmniTask(t.id)}
-                      title={[t.description, `Endpoint: ${t.endpoint}`].filter(Boolean).join("\n\n")}
-                    >
-                      <span className="font-semibold">{t.label}</span>
-                      {t.vramMinimumGb && (
-                        <span className="text-muted-foreground ml-1.5 font-mono">{t.vramMinimumGb} GB</span>
-                      )}
-                    </Pill>
-                  ))}
+                  {omniTasks.map((task) => {
+                    const t = resolveOmniTaskForHardware(task, hwId);
+                    return (
+                      <Pill
+                        key={t.id}
+                        active={activeTask?.id === t.id}
+                        onClick={() => selectOmniTask(t.id)}
+                        title={[t.description, `Endpoint: ${t.endpoint}`].filter(Boolean).join("\n\n")}
+                      >
+                        <span className="font-semibold">{t.label}</span>
+                        {t.vramMinimumGb && (
+                          <span className="text-muted-foreground ml-1.5 font-mono">{t.vramMinimumGb} GB</span>
+                        )}
+                      </Pill>
+                    );
+                  })}
                 </PillGroup>
                 {activeTask?.description && (
                   <p className="text-[11px] text-muted-foreground mt-2 leading-snug">

@@ -132,6 +132,30 @@ hardware_profiles:
     scalable: false
     restricted: true
 
+  # Exact two-card consumer profiles. Kept restricted so they only appear for
+  # recipes with an end-to-end validated multi-GPU deployment.
+  rtx_4090_2x:
+    brand: NVIDIA
+    generation: ada
+    display_name: "RTX 4090"
+    description: "NVIDIA RTX 4090 · 2× RTX 4090 GPU · 24 GB VRAM/GPU"
+    gpu_count: 2
+    vram_gb: 48
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  rtx_5090_2x:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX 5090"
+    description: "NVIDIA RTX 5090 · 2× RTX 5090 GPU · 32 GB VRAM/GPU"
+    gpu_count: 2
+    vram_gb: 64
+    multi_node: false
+    scalable: false
+    restricted: true
+
   # ── AMD Instinct ──
   mi300x:
     brand: AMD

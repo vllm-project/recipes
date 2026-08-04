@@ -767,7 +767,7 @@ function shellQuote(s) {
  *     only user is stable-audio-open, whose handler doesn't ship in `vllm`).
  *   - `recipe.omni.port` overrides the rendered `--port` flag (default 8000).
  */
-export function resolveOmniCommand(recipe, variantKey, task, hwProfile) {
+export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfileId = null) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const modelId = task?.modelId || variant.model_id || recipe.model?.model_id || "unknown";
   const gen = normalizeGeneration(hwProfile?.generation || hwProfile?.gpu_generation);
@@ -779,12 +779,21 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile) {
   const ho = recipe.hardware_overrides?.[gen]
     || (isNvidia ? recipe.hardware_overrides?.nvidia : null);
   if (ho?.extra_env) Object.assign(env, ho.extra_env);
+  const variantGenHo = variant?.hardware_overrides?.[gen]
+    || (isNvidia ? variant?.hardware_overrides?.nvidia : null);
+  if (variantGenHo?.extra_env) Object.assign(env, variantGenHo.extra_env);
+  const variantExactHo = hwProfileId
+    ? variant?.hardware_overrides?.[hwProfileId]
+    : null;
+  if (variantExactHo?.extra_env) Object.assign(env, variantExactHo.extra_env);
 
   const args = [];
   if (recipe.model?.base_args) args.push(...recipe.model.base_args);
   if (variantKey !== "default" && variant.extra_args) args.push(...variant.extra_args);
   if (task?.extraArgs?.length) args.push(...task.extraArgs);
   if (ho?.extra_args) args.push(...ho.extra_args);
+  if (variantGenHo?.extra_args) args.push(...variantGenHo.extra_args);
+  if (variantExactHo?.extra_args) args.push(...variantExactHo.extra_args);
   // --omni is the toggle that puts vllm into omni-handler mode. Always emit it
   // last — dedupeArgs's last-wins rule keeps it idempotent if the recipe also
   // declares it in base_args.
