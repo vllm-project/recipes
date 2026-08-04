@@ -402,7 +402,6 @@ guide: |
   ```
 
   Replace `Ref2VA` with `FL2VA` to serve text-to-video+audio or first-frame-to-video+audio.
-  Podman accepts the same OCI image and command; replace `docker` with `podman` if desired.
 
   Three constraints on this configuration:
 
