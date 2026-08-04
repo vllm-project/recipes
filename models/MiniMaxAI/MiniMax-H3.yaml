@@ -649,23 +649,27 @@ guide: |
 
   - Each server process loads exactly **one** checkpoint partition.
   - H3 executes **one generation request per diffusion batch** today.
-  - The first regional-compile request is a warmup — exclude it from steady-state numbers.
+  - The first request is a compile warmup only on the resident regional-compile profiles.
+    The two-GPU DLO recipes use `--enforce-eager` and do not compile the DiT.
   - **The serving path accepts fewer references than the model supports.** H3 documents up
     to 9 images, 3 video clips, and 3 audio clips (12 files) per Omni Reference request;
     the current vLLM-Omni path takes exactly one image plus one audio reference, **or** one
     or more videos with **no** separate `audio_reference` (it uses the source soundtracks).
-  - 768p T2VA and FL2VA are validated on MI300X; use the documented 1344×768 shape.
+  - The 768 px short-edge mode is available for T2VA and FL2VA; 1344×768 is the documented
+    16:9 request shape. The 24 GB DLO recipe uses 1024×576 as its lower-memory starting
+    point.
   - `--cfg-parallel-size > 1` is rejected by design (CFG-distilled, no negative branch).
   - The VAE supports the native `tile` parallel mode only.
   - A `U2 × Ring2` hybrid currently fails with an attention-mask length mismatch; use pure
     Ulysses.
   - **FP8 quantization is not supported yet** — a transformer-side blocker is known and
     deferred past the day-0 release.
-  - **8×64 GB will OOM.** Under `--usp 8 --ring 1 --tp 1` the 66.3 GB DiT is *replicated*
-    per rank, so even `--text-encoder-tp-size 8` leaves ~83.3 GB/rank before activations.
-    Encoder TP is necessary but not sufficient — you also need DiT TP ≥ 2, HSDP, or CPU
-    offload. (Analytical extrapolation from the 4-GPU measurements, not measured on
-    64 GB hardware.)
+  - Pure Ulysses still replicates the 66.3 GB DiT on every rank, so 64 GB GPUs cannot use
+    `--usp N --tp 1` as a resident capacity path. Use DiT TP plus DLO (the two-GPU recipes
+    above), or model-level CPU offload; text-encoder TP alone is not sufficient.
+  - DLO is a capacity path, not a free speedup: it needs substantial host RAM and streams
+    weights over PCIe on every denoise step. Increase `--dlo-resident-layers` only after
+    checking peak HBM on the exact request shape.
 
   ## References
 
