@@ -35,7 +35,7 @@ opt_in_features: []
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 7
+    vram_minimum_gb: 8
     description: "Full model: frozen Qwen3-VL-Embedding-2B base (2.13B) + frozen Qwen2.5-Omni audio tower (0.64B) + trained connector, whitening and rank-384 token-gated adapters (0.06B)."
 
 compatible_strategies:
@@ -142,8 +142,8 @@ guide: |
   llm = LLM(model="EximiusLabs/fusion-embedding-2-2b-preview", runner="pooling")
 
   wav, sr = sf.read("dog.wav", dtype="float32")
-  out = llm.embed({"prompt": "<|vision_pad|><|im_end|>",
-                   "multi_modal_data": {"audio": (wav, sr)}})
+  out = llm.embed([{"prompt": "<|vision_pad|><|im_end|>",
+                    "multi_modal_data": {"audio": (wav, sr)}}])
   ```
 
   ## Parity
