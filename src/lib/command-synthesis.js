@@ -543,7 +543,8 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
       };
   const isAmd = hwProfile?.brand === "AMD";
   const isTpu = hwProfile?.generation === "tpu";
-  const isIntel = hwProfile?.generation === "cpu" ||hwProfile?.brand === "Intel";
+  const isXpu = hwProfile?.generation === "xpu";
+  const isIntel = hwProfile?.generation === "cpu" || isXpu || hwProfile?.brand === "Intel";
   const brandKey = isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
   // Exact variant+hardware image overrides win over variant-wide and
   // model-wide images (for example, an MI355X-only ROCm nightly).
@@ -580,18 +581,23 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   // does not cover instead of skipping directly to the global default.
   applyOverride(recipe.model?.docker_image);
 
-  // With a CUDA map, `image` defaults to the cu130 (upstream baseline) pick so
+  // Intel XPU ships in a dedicated image, not the CPU one. Otherwise, with a
+  // CUDA map, `image` defaults to the cu130 (upstream baseline) pick so
   // toggle-unaware callers (the JSON API's renderings) still get a real tag;
   // the client's CUDA selector re-picks from `cudaMap` on top of this.
-  const image = pinned || (cudaMap ? cudaMap.cu130 || cudaMap.cu129 : null) || DEFAULT_IMAGE[brandKey];
+  const image = isXpu && !pinned
+    ? "vllm/vllm-openai-xpu:latest"
+    : pinned || (cudaMap ? cudaMap.cu130 || cudaMap.cu129 : null) || DEFAULT_IMAGE[brandKey];
   const gpuFlags = isTpu
     ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
     : isAmd
       ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
+    : isXpu
+      ? "--device /dev/dri \\\n  -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g"
     : isIntel
       ? "--shm-size=16g"	
       : "--gpus all";
-  return { image, gpuFlags, brandKey, isAmd, isTpu, isIntel, pinned, cudaMap, nightlyRequired };
+  return { image, gpuFlags, brandKey, isAmd, isTpu, isXpu, isIntel, pinned, cudaMap, nightlyRequired };
 }
 
 // argv form of the brand-specific GPU flags from computeDockerMeta. Mirrors
@@ -605,6 +611,9 @@ function dockerGpuArgv(meta) {
       "--security-opt", "seccomp=unconfined",
       "--group-add", "video",
     ];
+  }
+  if (meta.isXpu) {
+    return ["--device", "/dev/dri", "-v", "/dev/dri/by-path:/dev/dri/by-path", "--shm-size", "16g"];
   }
   if (meta.isIntel) {
     return ["--shm-size", "16g"];
@@ -638,8 +647,7 @@ function localModelMount(modelId) {
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
 // image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
 // CMD. Env vars become `-e KEY=VAL` inside the container.
-//
-export function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
+export function buildDockerRun({ command, env, image, gpuFlags, port = 8000, isXpu = false }) {
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
@@ -658,9 +666,16 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
     ? `# ${modelId} must already exist on the host — bind-mounted read-only below.\n`
     : "";
   const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
-  return `${prereq}docker run ${gpuFlags} \\
+  const base = `${prereq}docker run ${gpuFlags} \\
   --privileged --ipc=host -p ${port}:${port} \\
-  -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}
+  -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
+  if (isXpu) {
+    const serve = `vllm serve ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
+    return `${base}
+  --entrypoint bash ${image} \\
+  -c "source /opt/intel/oneapi/setvars.sh && exec ${serve}"`;
+  }
+  return `${base}
   ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
 }
 
@@ -679,7 +694,7 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
   for (const m of [...localModelMount(cmdArgs[0]), ...configPathMounts(env)]) {
     mountFlags.push("-v", m);
   }
-  return [
+  const base = [
     "docker", "run",
     ...dockerGpuArgv(meta),
     "--privileged", "--ipc=host",
@@ -687,6 +702,18 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
     "-v", "~/.cache/huggingface:/root/.cache/huggingface",
     ...mountFlags,
     ...envFlags,
+  ];
+  // Intel XPU: override entrypoint to source oneAPI before serving (see
+  // buildDockerRun). The full serve invocation becomes a single `bash -c` arg.
+  if (meta.isXpu) {
+    return [
+      ...base,
+      "--entrypoint", "bash", meta.image,
+      "-c", `source /opt/intel/oneapi/setvars.sh && exec vllm serve ${cmdArgs.join(" ")}`,
+    ];
+  }
+  return [
+    ...base,
     meta.image,
     ...cmdArgs,
   ];

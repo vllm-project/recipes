@@ -15,6 +15,8 @@ meta:
     mi300x: verified
     mi325x: verified
     mi355x: verified
+    arc_pro_b60: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-OCR"
@@ -74,7 +76,7 @@ guide: |
 
   ## Prerequisites
 
-  - **Hardware**: Single GPU with >=8 GB VRAM (CUDA or MI300X / MI325X / MI355X)
+  - **Hardware**: Single GPU with >=8 GB VRAM (CUDA, MI300X / MI325X / MI355X, or Intel XPU B60 / B70)
   - **vLLM**: Current stable release
   - **Python**: 3.10+ (CUDA) or 3.12 (ROCm)
 
@@ -93,6 +95,11 @@ guide: |
   uv venv --python 3.12
   source .venv/bin/activate
   uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+  ```
+
+  ### Intel XPU (B60 / B70)
+  ```bash
+  docker pull vllm/vllm-openai-xpu:latest
   ```
 
   ## Client Usage
@@ -153,6 +160,21 @@ guide: |
     --logits-processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
     --mm-processor-cache-gb 0
   ```
+
+  **Intel XPU (B60, B70)**
+
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    --entrypoint bash vllm/vllm-openai-xpu:latest \
+    -c "source /opt/intel/oneapi/setvars.sh && exec vllm serve deepseek-ai/DeepSeek-OCR \
+    --logits-processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
+    --mm-processor-cache-gb 0"
+  ```
+
+  Query the running server with the OpenAI client (same for CUDA / ROCm / XPU):
 
   ```python
   import time
