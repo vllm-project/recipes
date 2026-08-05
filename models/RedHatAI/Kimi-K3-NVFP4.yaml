@@ -81,7 +81,7 @@ opt_in_features:
 variants:
   default:
     precision: nvfp4
-    vram_minimum_gb: 1976
+    vram_minimum_gb: 1650
     description: "MoE layers quantized to NVFP4; attention and embeddings remain at higher precision."
 
 compatible_strategies:
@@ -196,7 +196,6 @@ guide: |
 
   ## Prerequisites
 
-  - **vLLM:** Use the `vllm/vllm-openai:kimi-k3` docker image (CUDA 13 / cu130 build only; no -cu129 tag).
   - **CUDA:** Host needs an r580+ NVIDIA driver.
   - **Hardware:** At least 8× B300 or 2 nodes of B200/GB200/GB300 GPUs.
 
