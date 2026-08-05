@@ -168,6 +168,8 @@ variants:
     description: "NVIDIA-quantized NVFP4 weights (ModelOpt) for Blackwell (B200/B300) — native FP4 tensor cores, ~half the VRAM of MXFP8."
     extra_args:
       - "--trust-remote-code"
+      - "--kv-cache-dtype"
+      - "fp8"
       # FlashInfer TRT-LLM attention kernels with an FP8 indexer KV cache.
       - "--attention_config.backend"
       - "FLASHINFER"
