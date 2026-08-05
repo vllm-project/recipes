@@ -73,6 +73,11 @@ features:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
       - "--language-model-only"
+  thinking_always_on:
+    description: "Pin `thinking_mode: enabled` server-side — every turn reasons before answering, including after tool results. Recommended for agentic workflows."
+    args:
+      - "--default-chat-template-kwargs"
+      - '{"thinking_mode": "enabled"}'
   encoder_parallel:
     description: "Run the vision encoder data-parallel instead of tensor-parallel — avoids TP comm overhead on the small encoder. Also enables the host-shared-memory multimodal processor cache and the per-brand encoder attention backend (FlashInfer on NVIDIA, AITER FlashAttention on AMD). Mutually exclusive with text_only."
     # No platform-agnostic `args`: this recipe targets only NVIDIA + AMD, both
@@ -101,6 +106,7 @@ features:
 opt_in_features:
   - spec_decoding
   - text_only
+  - thinking_always_on
   - encoder_parallel
 
 variants:
@@ -171,6 +177,7 @@ variants:
       - "fp8"
     extra_env:
       VLLM_FLOAT32_MATMUL_PRECISION: "high"
+      VLLM_FLASHINFER_ALLREDUCE_BACKEND: "trtllm"
   mxfp4:
     model_id: "amd/MiniMax-M3-MXFP4"
     precision: mxfp4
@@ -652,28 +659,6 @@ guide: |
     --trust-remote-code \
     --block-size 128 \
     --language-model-only \
-    --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3-GQA", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
-  ```
-
-  ### Agentic coding on B300
-
-  The validated B300 agentic-coding lane runs the GQA draft head at TP4 with
-  thinking always on, and pins thinking server-side so every turn — including
-  turns after tool results — reasons before answering:
-
-  ```bash
-  VLLM_FLOAT32_MATMUL_PRECISION=high \
-    vllm serve nvidia/MiniMax-M3-NVFP4 \
-    --tensor-parallel-size 4 \
-    --trust-remote-code \
-    --block-size 128 \
-    --language-model-only \
-    --enable-prefix-caching \
-    --attention-config '{"backend": "FLASHINFER", "use_trtllm_attention": true, "indexer_kv_dtype": "fp8"}' \
-    --reasoning-parser minimax_m3 \
-    --tool-call-parser minimax_m3 \
-    --enable-auto-tool-choice \
-    --default-chat-template-kwargs '{"thinking_mode": "enabled"}' \
     --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3-GQA", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
   ```
 
