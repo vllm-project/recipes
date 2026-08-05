@@ -106,12 +106,7 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 1650
     model_id: "RedHatAI/Kimi-K3-NVFP4"
-    description: "RedHatAI compressed-tensors NVFP4 quantization; MoE layers quantized to NVFP4, attention and embeddings at higher precision (GPQA 91.0 vs 93.5 baseline)."
-    hardware_overrides:
-      blackwell:
-        extra_args:
-          - "--load-format"
-          - "instanttensor"
+    description: "RedHatAI compressed-tensors NVFP4 quantization; MoE layers quantized to NVFP4, attention and embeddings at full precision"
 
 compatible_strategies:
   - single_node_tp
