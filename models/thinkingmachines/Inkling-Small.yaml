@@ -4,7 +4,7 @@ meta:
   provider: "Thinking Machines Lab"
   description: "Natively multimodal 276B-parameter MoE from Thinking Machines Lab — 12B active parameters, text/image/audio in, text out, and up to 1M context."
   date_added: 2026-07-30
-  date_updated: 2026-07-30
+  date_updated: 2026-08-04
   difficulty: intermediate
   tasks:
     - multimodal
@@ -12,9 +12,8 @@ meta:
   related_recipes:
     - "thinkingmachines/Inkling"
   hardware:
-    mi300x: unsupported
-    mi325x: unsupported
-    mi355x: unsupported
+    mi300x: verified
+    mi355x: verified
 
 model:
   model_id: "thinkingmachines/Inkling-Small-NVFP4"
@@ -31,10 +30,8 @@ model:
     - "--trust-remote-code"
     - "--tokenizer-mode"
     - "inkling"
-    - "--kernel-config.enable_flashinfer_autotune=False"
   base_env:
     VLLM_USE_V2_MODEL_RUNNER: "1"
-    FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED: "1"
 
 dependencies:
   - note: "Audio extras — only needed when serving the audio modality"
@@ -83,6 +80,65 @@ variants:
       gb300: 1
       h200: 2
     description: "NVFP4 checkpoint requiring at least 180 GB aggregated VRAM: W4A4 with TP1 on B300/GB300 or TP2 on B200/GB200, and W4A16 with TP2 on H200."
+    extra_args:
+      - "--kernel-config.enable_flashinfer_autotune=False"
+    extra_env:
+      FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED: "1"
+  mxfp4:
+    model_id: "EmbeddedLLM/Inkling-Small-MXFP4"
+    precision: mxfp4
+    precision_hardware:
+      brand: AMD
+    vram_minimum_gb: 160
+    supported_hardware:
+      - mi300x
+      - mi325x
+      - mi355x
+    tp:
+      mi300x: 2
+      mi325x: 2
+      mi355x: 1
+    description: "Quark OCP MXFP4 checkpoint for AMD Instinct. Its measured MI355X TP1 load footprint was 149.03 GiB consumed (~160.0 GB decimal); add KV-cache capacity for serving. Full 1M context is validated at TP1 on MI355X and TP2 on MI300X. MI325X uses the same gfx942 TP2 path but is not yet smoke-tested."
+    hardware_overrides:
+      mi300x:
+        docker_image: "vllm/vllm-openai-rocm:nightly"
+        extra_args:
+          - "--moe-backend"
+          - "auto"
+          - "--block-size"
+          - "128"
+          - "--gpu-memory-utilization"
+          - "0.85"
+        extra_env:
+          VLLM_ROCM_USE_AITER: "1"
+          VLLM_ROCM_USE_AITER_MOE: "1"
+          INKLING_GFX950_GLUON: "0"
+      mi325x:
+        docker_image: "vllm/vllm-openai-rocm:nightly"
+        extra_args:
+          - "--moe-backend"
+          - "auto"
+          - "--block-size"
+          - "128"
+          - "--gpu-memory-utilization"
+          - "0.85"
+        extra_env:
+          VLLM_ROCM_USE_AITER: "1"
+          VLLM_ROCM_USE_AITER_MOE: "1"
+          INKLING_GFX950_GLUON: "0"
+      mi355x:
+        docker_image: "vllm/vllm-openai-rocm:nightly"
+        extra_args:
+          - "--moe-backend"
+          - "aiter"
+          - "--block-size"
+          - "128"
+          - "--gpu-memory-utilization"
+          - "0.95"
+        extra_env:
+          VLLM_ROCM_USE_AITER: "1"
+          VLLM_ROCM_USE_AITER_MOE: "1"
+          INKLING_GFX950_GLUON: "0"
   bf16:
     model_id: "thinkingmachines/Inkling-Small"
     precision: bf16
@@ -93,13 +149,64 @@ variants:
       - gb200
       - gb300
       - h200
+      - mi300x
+      - mi325x
+      - mi355x
     tp:
       b300: 4
       b200: 8
       gb200: 4
       gb300: 4
       h200: 8
-    description: "Full BF16 checkpoint requiring at least 600 GB aggregated VRAM: TP4 on B300/GB200/GB300 or TP8 on B200/H200."
+      mi300x: 4
+      mi325x: 4
+      mi355x: 4
+    description: "Full BF16 checkpoint requiring at least 600 GB aggregated VRAM: TP4 on B300/GB200/GB300 and AMD Instinct, or TP8 on B200/H200. MI355X TP4 is smoke-tested; MI300X/MI325X use the gfx942 automatic MoE path pending direct BF16 smoke."
+    hardware_overrides:
+      nvidia:
+        extra_args:
+          - "--kernel-config.enable_flashinfer_autotune=False"
+        extra_env:
+          FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED: "1"
+      mi300x:
+        docker_image: "vllm/vllm-openai-rocm:nightly"
+        extra_args:
+          - "--moe-backend"
+          - "auto"
+          - "--block-size"
+          - "128"
+          - "--gpu-memory-utilization"
+          - "0.90"
+          - "--enforce-eager"
+        extra_env:
+          VLLM_ROCM_USE_AITER: "1"
+          VLLM_ROCM_USE_AITER_MOE: "1"
+      mi325x:
+        docker_image: "vllm/vllm-openai-rocm:nightly"
+        extra_args:
+          - "--moe-backend"
+          - "auto"
+          - "--block-size"
+          - "128"
+          - "--gpu-memory-utilization"
+          - "0.90"
+          - "--enforce-eager"
+        extra_env:
+          VLLM_ROCM_USE_AITER: "1"
+          VLLM_ROCM_USE_AITER_MOE: "1"
+      mi355x:
+        docker_image: "vllm/vllm-openai-rocm:nightly"
+        extra_args:
+          - "--moe-backend"
+          - "aiter"
+          - "--block-size"
+          - "128"
+          - "--gpu-memory-utilization"
+          - "0.90"
+          - "--enforce-eager"
+        extra_env:
+          VLLM_ROCM_USE_AITER: "1"
+          VLLM_ROCM_USE_AITER_MOE: "1"
 
 compatible_strategies:
   - single_node_tp
@@ -163,13 +270,18 @@ guide: |
   - **NVFP4 (default):** Requires at least 180 GB aggregated VRAM. Run W4A4 with TP1
     on B300/GB300 or TP2 on B200/GB200. On H200, run W4A16 with TP2; the MoE kernel
     dequantizes the NVFP4 weights to BF16 on the fly.
-  - **BF16:** Requires at least 600 GB aggregated VRAM. Run TP4 on B300/GB200/GB300 or
-    TP8 on B200/H200.
+  - **BF16:** Requires at least 600 GB aggregated VRAM. Run TP4 on B300/GB200/GB300
+    or AMD MI300X/MI325X/MI355X, and TP8 on B200/H200. MI355X TP4 is validated;
+    direct MI300X/MI325X BF16 smoke is pending.
+  - **MXFP4 (AMD):** `EmbeddedLLM/Inkling-Small-MXFP4` keeps the full 1M-token
+    context at TP1 on MI355X or TP2 on MI300X. MI355X runs native AITER MXFP4
+    MoE; MI300X uses the supported Triton on-the-fly MXFP4 emulation path.
 
   ## Prerequisites
 
   - **Hardware:** B300/GB300 TP1 or B200/GB200/H200 TP2 for NVFP4;
-    B300/GB200/GB300 TP4 or B200/H200 TP8 for BF16.
+    B300/GB200/GB300/MI300X/MI325X/MI355X TP4 or B200/H200 TP8 for BF16;
+    MI355X TP1 or MI300X/MI325X TP2 for AMD MXFP4.
   - **vLLM:** A nightly build with Inkling support.
   - **Audio:** Install the optional `vllm[audio]` extra only when serving audio inputs.
 
@@ -194,8 +306,30 @@ guide: |
   On H200, the builder emits TP2 and vLLM runs W4A16 with on-the-fly
   dequantization.
 
-  For BF16, select the **BF16** variant. The command builder emits TP4 on
-  B300/GB200/GB300 and TP8 on B200/H200.
+  On AMD, select the **MXFP4** variant. To fit 1M context, MI300X TP2 and MI355X TP1.
+  MI355X uses `--moe-backend aiter`; MI300X uses `--moe-backend auto`
+  because native AITER W4A4 is gated to gfx950, while gfx942 falls back to
+  `OCP_MXQuantizationEmulationTritonExperts`. Inkling relative attention remains
+  on its model-specific Triton path (`INKLING_GFX950_GLUON=0`), which was faster
+  than the optional gfx950 Gluon path in the serving benchmark.
+
+  Equivalent MI355X launch:
+  ```bash
+  export VLLM_USE_V2_MODEL_RUNNER=1
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_MOE=1
+  export INKLING_GFX950_GLUON=0
+
+  vllm serve EmbeddedLLM/Inkling-Small-MXFP4 \
+    --tensor-parallel-size 1 \
+    --tokenizer-mode inkling \
+    --reasoning-parser inkling \
+    --tool-call-parser inkling \
+    --enable-auto-tool-choice \
+    --moe-backend aiter \
+    --block-size 128 \
+    --trust-remote-code
+  ```
 
   Query the server with the OpenAI SDK:
   ```python
@@ -219,4 +353,5 @@ guide: |
   ## References
 
   - [TML Inkling announcement](https://thinkingmachines.ai/news/introducing-inkling/#inkling-small)
+  - [Inkling-Small MXFP4 for AMD](https://huggingface.co/EmbeddedLLM/Inkling-Small-MXFP4)
   - [TML Inkling recipe](https://docs.vllm.ai/projects/recipes/en/latest/thinkingmachines/Inkling.html)
