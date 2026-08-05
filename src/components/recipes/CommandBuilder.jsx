@@ -1990,20 +1990,30 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                       // `unsupported` = author opt-out for this model; disables the pill.
                       const status = recipe.meta?.hardware?.[id];
                       const isUnsupported = status === "unsupported";
+                      // Hardware and variant selectors must not deadlock when
+                      // checkpoint families have disjoint targets (for
+                      // example NVIDIA NVFP4 and AMD MXFP4). selectHardware
+                      // already switches to a fitting variant, so keep this
+                      // hardware clickable whenever any recipe variant runs
+                      // on it.
+                      const fittingVariantKey = pickFittingVariant(recipe, p, id);
+                      const fittingVariant = recipe.variants?.[fittingVariantKey];
                       // Per-role PD now sizes each pool independently, so hardware
                       // only needs to fit 1× model per node (standard precision
                       // check is enough). The old co-located single-node check
                       // (2× model on one node) is no longer the default UX.
-                      const disabled = !precisionOk || !variantHardwareOk || isUnsupported;
+                      const disabled = isUnsupported || !fittingVariantKey;
                       const verifiedNote = status === "verified"
                         ? "\n\nVerified — author has tested this hardware end-to-end"
                         : "";
-                      const reason = !variantHardwareOk
-                        ? `${currentVariant.precision?.toUpperCase()} is only supported on ${(currentVariant.supported_hardware || []).map((hw) => taxonomy.hardware_profiles?.[hw]?.display_name || hw).join(", ")}`
-                        : !precisionOk
-                        ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
-                        : isUnsupported
+                      const currentVariantRunsHere = precisionOk && variantHardwareOk;
+                      const fittingVariantLabel = (fittingVariant?.label || fittingVariant?.precision || fittingVariantKey)?.toUpperCase();
+                      const reason = isUnsupported
                           ? `Not yet supported on ${p.display_name} — this model doesn't run here today, may be enabled in a future release`
+                        : !fittingVariantKey
+                          ? `No variant of this model currently runs on ${p.display_name}`
+                        : !currentVariantRunsHere
+                          ? `${p.description}\n\nSelecting ${p.display_name} also switches Variant to ${fittingVariantLabel}.${verifiedNote}`
                           : `${p.description}${verifiedNote}`;
                       return (
                         <Pill
@@ -2043,10 +2053,21 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           >
             <PillGroup>
               {Object.entries(recipe.variants || {}).map(([key, v]) => {
-                // Disable variants excluded by an exact hardware allowlist,
-                // incompatible precision, or a non-scalable VRAM shortfall.
-                const disabled = !variantRunsOnHardware(hwProfile, v, hwId);
-                const hardwareRestricted = !isVariantHardwareSupported(v, hwId);
+                // selectVariant already moves to compatible hardware. Disable
+                // only variants that have no runnable hardware anywhere;
+                // otherwise a disjoint hardware allowlist would make both the
+                // variant and its hardware mutually unselectable.
+                const currentHardwareOk = variantRunsOnHardware(hwProfile, v, hwId);
+                const hasRunnableHardware = Object.entries(taxonomy.hardware_profiles || {}).some(
+                  ([candidateId, candidateProfile]) =>
+                    isHardwareSupported(recipe, candidateId)
+                    && variantRunsOnHardware(candidateProfile, v, candidateId)
+                );
+                const disabled = !hasRunnableHardware;
+                const fallbackHwId = currentHardwareOk
+                  ? hwId
+                  : pickDefaultHardware(taxonomy.hardware_profiles, v, recipe);
+                const fallbackHw = taxonomy.hardware_profiles?.[fallbackHwId];
                 return (
                   <Pill
                     key={key}
@@ -2055,9 +2076,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     onClick={() => !disabled && selectVariant(key)}
                     title={
                       disabled
-                        ? hardwareRestricted
-                          ? `${(v.label || v.precision)?.toUpperCase()} is only supported on ${(v.supported_hardware || []).map((hw) => taxonomy.hardware_profiles?.[hw]?.display_name || hw).join(", ")}`
-                          : `${(v.label || v.precision)?.toUpperCase()} needs ${v.vram_minimum_gb} GB but ${hwProfile.display_name || "this hardware"} has ${hwProfile.vram_gb} GB and can't scale out — pick a smaller-footprint variant`
+                        ? `No currently supported hardware can run ${(v.label || v.precision)?.toUpperCase()}`
+                        : !currentHardwareOk
+                          ? [
+                              v.description,
+                              `Selecting this variant also switches Hardware to ${fallbackHw?.display_name || fallbackHwId}.`,
+                              `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
+                            ].filter(Boolean).join("\n\n")
                         : [
                             v.description,
                             `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
