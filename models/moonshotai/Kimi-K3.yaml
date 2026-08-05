@@ -4,7 +4,7 @@ meta:
   provider: "Moonshot AI"
   description: "Pre-release 2.8T-parameter native multimodal MoE with Kimi Delta Attention, Gated MLA, Attention Residuals, and a 1M-token context window"
   date_added: 2026-07-27
-  date_updated: 2026-08-03
+  date_updated: 2026-08-05
   difficulty: hard
   tasks:
     - multimodal
@@ -102,6 +102,16 @@ variants:
     # Replace with the real safetensors footprint once weights are published.
     vram_minimum_gb: 1680
     description: "Quantization-aware-trained MXFP4 weights with MXFP8 activations; footprint is estimated until the checkpoint is published."
+  nvfp4:
+    precision: nvfp4
+    vram_minimum_gb: 1650
+    model_id: "RedHatAI/Kimi-K3-NVFP4"
+    description: "RedHatAI compressed-tensors NVFP4 quantization; MoE layers quantized to NVFP4, attention and embeddings at higher precision (GPQA 91.0 vs 93.5 baseline)."
+    hardware_overrides:
+      blackwell:
+        extra_args:
+          - "--load-format"
+          - "instanttensor"
 
 compatible_strategies:
   - single_node_tp
