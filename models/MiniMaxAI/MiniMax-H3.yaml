@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "Open-weight general-purpose multimodal generation model — jointly generates 24 FPS video with native stereo audio from text, image, video, and audio references, served via vLLM-Omni"
   date_added: 2026-08-02
-  date_updated: 2026-08-04
+  date_updated: 2026-08-06
   difficulty: advanced
   tasks:
     - omni
@@ -17,6 +17,7 @@ meta:
     b300: verified
     rtx_4090_2x: verified
     rtx_5090_2x: verified
+    rtx_pro_6000_2x: verified 
     mi300x: verified
     mi325x: verified
     mi355x: verified
@@ -83,6 +84,8 @@ omni:
       endpoint: "/v1/videos/sync"
       description: "Text prompt → joint video + synchronized audio. Served by the FL2VA partition."
       hardware_overrides:
+        rtx_pro_6000_2x:
+          vram_minimum_gb: 192
         rtx_5090_2x:
           vram_minimum_gb: 64
         rtx_4090_2x:
@@ -116,6 +119,8 @@ omni:
       endpoint: "/v1/videos/sync"
       description: "First frame + prompt → video + audio, on the FL2VA partition. Omitting width/height keeps the first frame's aspect ratio at a 768 px short edge."
       hardware_overrides:
+        rtx_pro_6000_2x:
+          vram_minimum_gb: 192
         rtx_5090_2x:
           vram_minimum_gb: 64
         rtx_4090_2x:
@@ -153,6 +158,8 @@ omni:
       endpoint: "/v1/videos/sync"
       description: "Omni reference (image+audio, or one-or-more videos) → video + audio, on the Ref2VA partition. A full 15 s two-video request peaked at 166 GB on the main rank."
       hardware_overrides:
+        rtx_pro_6000_2x:
+          vram_minimum_gb: 192
         rtx_5090_2x:
           vram_minimum_gb: 64
         rtx_4090_2x:
@@ -252,6 +259,20 @@ variants:
     vram_minimum_gb: 135
     description: "BF16 — 66.3 GB DiT + 51.5 GB Qwen3-VL encoder + ~10.6 GB VAEs. 133 GB per-GPU engine peak measured on the validated 4×B300 no-offload profile; --text-encoder-tp-size 4 brings it to 103 GB"
     hardware_overrides:
+      rtx_pro_6000_2x:
+        extra_args:
+          - "--num-gpus"
+          - "2"
+          - "--tensor-parallel-size"
+          - "2"
+          - "--usp"
+          - "1"
+          - "--ring"
+          - "1"
+          - "--text-encoder-tp-size"
+          - "2"
+          - "--vae-patch-parallel-size"
+          - "2"
       rtx_5090_2x:
         extra_args:
           - "--num-gpus"
@@ -298,6 +319,7 @@ variants:
           - "--enforce-eager"
         extra_env:
           VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "14400"
+        
 
 # Omni recipes are served through `vllm serve --omni`, which has its own
 # diffusion-parallelism flags (--usp / --ring / --vae-patch-parallel-size).
@@ -512,6 +534,7 @@ guide: |
   ffmpeg -v error -i minimax-h3-t2va.mp4 \
     -map 0:v:0 -map 0:a:0 -f null -
   ```
+    **Note:** If using 2× RTX 4090, the curl request must include -F 'aspect_ratio=16:9' to succeed.
 
   A successful output has H.264 video at 24 FPS and stereo AAC audio at 32 kHz, and the
   final `ffmpeg` command exits with status 0. One server loads one checkpoint partition;
