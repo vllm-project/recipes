@@ -262,7 +262,7 @@ variants:
       rtx_pro_6000_2x:
         extra_args:
           - "--num-gpus"
-          - "1"
+          - "2"
           - "--tensor-parallel-size"
           - "2"
           - "--usp"
@@ -534,6 +534,7 @@ guide: |
   ffmpeg -v error -i minimax-h3-t2va.mp4 \
     -map 0:v:0 -map 0:a:0 -f null -
   ```
+  note: if you use 4090, request must add -F 'aspect_ratio=16:9'
 
   A successful output has H.264 video at 24 FPS and stereo AAC audio at 32 kHz, and the
   final `ffmpeg` command exits with status 0. One server loads one checkpoint partition;
