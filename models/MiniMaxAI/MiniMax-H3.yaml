@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "Open-weight general-purpose multimodal generation model — jointly generates 24 FPS video with native stereo audio from text, image, video, and audio references, served via vLLM-Omni"
   date_added: 2026-08-02
-  date_updated: 2026-08-04
+  date_updated: 2026-08-06
   difficulty: advanced
   tasks:
     - omni
@@ -17,6 +17,7 @@ meta:
     b300: verified
     rtx_4090_2x: verified
     rtx_5090_2x: verified
+    rtx_pro_6000_2x: verified 
     mi300x: verified
     mi325x: verified
     mi355x: verified
