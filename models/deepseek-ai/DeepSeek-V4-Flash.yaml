@@ -17,6 +17,7 @@ meta:
     b300: verified
     gb300: verified
     dgx_station_gb300: verified
+    rtx_pro_6000_8x: verified
     mi300x: unsupported
     mi325x: verified
     mi355x: verified
@@ -394,6 +395,24 @@ guide: |
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
   ```
 
+   ### RTX PRO 6000 (8×96GB)
+
+  Single-node TP8 + expert parallelism on the 0731 checkpoint, with DSpark
+  speculative decoding:
+
+  ```bash
+  vllm serve deepseek-ai/DeepSeek-V4-Flash-0731 \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --block-size 256 \
+    --enable-expert-parallel \
+    --tensor-parallel-size 8 \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --reasoning-parser deepseek_v4 \
+    --speculative-config '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"probabilistic"}'
+  
   ### MI325X (1×256GB)
 
   Validated end-to-end with vLLM 0.25.0 and PyTorch HIP 7.2.53211. Use this
