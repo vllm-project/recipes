@@ -543,7 +543,8 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
       };
   const isAmd = hwProfile?.brand === "AMD";
   const isTpu = hwProfile?.generation === "tpu";
-  const isIntel = hwProfile?.generation === "cpu" ||hwProfile?.brand === "Intel";
+  const isXpu = hwProfile?.generation === "xpu";
+  const isIntel = hwProfile?.generation === "cpu" || isXpu || hwProfile?.brand === "Intel";
   const brandKey = isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
   // Exact variant+hardware image overrides win over variant-wide and
   // model-wide images (for example, an MI355X-only ROCm nightly).
@@ -580,18 +581,23 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   // does not cover instead of skipping directly to the global default.
   applyOverride(recipe.model?.docker_image);
 
-  // With a CUDA map, `image` defaults to the cu130 (upstream baseline) pick so
+  // Intel XPU ships in a dedicated image, not the CPU one. Otherwise, with a
+  // CUDA map, `image` defaults to the cu130 (upstream baseline) pick so
   // toggle-unaware callers (the JSON API's renderings) still get a real tag;
   // the client's CUDA selector re-picks from `cudaMap` on top of this.
-  const image = pinned || (cudaMap ? cudaMap.cu130 || cudaMap.cu129 : null) || DEFAULT_IMAGE[brandKey];
+  const image = isXpu && !pinned
+    ? "vllm/vllm-openai-xpu:latest"
+    : pinned || (cudaMap ? cudaMap.cu130 || cudaMap.cu129 : null) || DEFAULT_IMAGE[brandKey];
   const gpuFlags = isTpu
     ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
     : isAmd
       ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
+    : isXpu
+      ? "--device /dev/dri \\\n  -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g"
     : isIntel
       ? "--shm-size=16g"	
       : "--gpus all";
-  return { image, gpuFlags, brandKey, isAmd, isTpu, isIntel, pinned, cudaMap, nightlyRequired };
+  return { image, gpuFlags, brandKey, isAmd, isTpu, isXpu, isIntel, pinned, cudaMap, nightlyRequired };
 }
 
 // argv form of the brand-specific GPU flags from computeDockerMeta. Mirrors
@@ -605,6 +611,9 @@ function dockerGpuArgv(meta) {
       "--security-opt", "seccomp=unconfined",
       "--group-add", "video",
     ];
+  }
+  if (meta.isXpu) {
+    return ["--device", "/dev/dri", "-v", "/dev/dri/by-path:/dev/dri/by-path", "--shm-size", "16g"];
   }
   if (meta.isIntel) {
     return ["--shm-size", "16g"];
@@ -638,8 +647,7 @@ function localModelMount(modelId) {
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
 // image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
 // CMD. Env vars become `-e KEY=VAL` inside the container.
-//
-export function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
+export function buildDockerRun({ command, env, image, gpuFlags, port = 8000, isXpu = false }) {
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
@@ -658,9 +666,16 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
     ? `# ${modelId} must already exist on the host — bind-mounted read-only below.\n`
     : "";
   const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
-  return `${prereq}docker run ${gpuFlags} \\
+  const base = `${prereq}docker run ${gpuFlags} \\
   --privileged --ipc=host -p ${port}:${port} \\
-  -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}
+  -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
+  if (isXpu) {
+    const serve = `vllm serve ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
+    return `${base}
+  --entrypoint bash ${image} \\
+  -c "source /opt/intel/oneapi/setvars.sh && exec ${serve}"`;
+  }
+  return `${base}
   ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
 }
 
@@ -679,7 +694,7 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
   for (const m of [...localModelMount(cmdArgs[0]), ...configPathMounts(env)]) {
     mountFlags.push("-v", m);
   }
-  return [
+  const base = [
     "docker", "run",
     ...dockerGpuArgv(meta),
     "--privileged", "--ipc=host",
@@ -687,6 +702,18 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
     "-v", "~/.cache/huggingface:/root/.cache/huggingface",
     ...mountFlags,
     ...envFlags,
+  ];
+  // Intel XPU: override entrypoint to source oneAPI before serving (see
+  // buildDockerRun). The full serve invocation becomes a single `bash -c` arg.
+  if (meta.isXpu) {
+    return [
+      ...base,
+      "--entrypoint", "bash", meta.image,
+      "-c", `source /opt/intel/oneapi/setvars.sh && exec vllm serve ${cmdArgs.join(" ")}`,
+    ];
+  }
+  return [
+    ...base,
     meta.image,
     ...cmdArgs,
   ];
@@ -955,12 +982,14 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     // The example worker is node 1, so its DP start rank = 1 × dp_local, not a
     // full node's worth of GPUs.
     const soDep = recipe.strategy_overrides?.[strategyName];
-    const soDepHo = soDep?.hardware_overrides?.[gen]
-    || (hwProfile?.brand === "NVIDIA" ? soDep?.hardware_overrides?.nvidia : null);
+    const soDepGenHo = soDep?.hardware_overrides?.[gen]
+      || (hwProfile?.brand === "NVIDIA" ? soDep?.hardware_overrides?.nvidia : null);
+    const soDepExactHo = soDep?.hardware_overrides?.[hwProfileId];
     const depOv = [
     ...(soDep?.vllm_args || []),
     ...(soDep?.extra_args || []),
-    ...(soDepHo?.extra_args || []),
+    ...(soDepGenHo?.extra_args || []),
+    ...(soDepExactHo?.extra_args || []),
       ];
     const i = depOv.lastIndexOf("--data-parallel-size-local");
     const dpLocal = i >= 0 ? Number(depOv[i + 1]) : gpuCount;
@@ -1138,6 +1167,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     //      recipe.hardware_overrides.<gen>            — baseline for ALL variants
     //      variants.<v>.hardware_overrides.<gen>      — per-variant ADDITIVE delta
     //      strategy_overrides.<s>.hardware_overrides.<gen> — per-strategy REPLACE
+    //      strategy_overrides.<s>.hardware_overrides.<gpu> — exact-GPU ADDITIVE delta
     //
     //    The strategy layer is authoritative: when it declares an override for
     //    this generation it REPLACES both the recipe baseline and the variant
@@ -1164,6 +1194,14 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         || (isNvidia ? variant?.hardware_overrides?.nvidia : null);
       if (variantGenHo?.extra_args) args.push(...variantGenHo.extra_args);
     }
+    // Exact-GPU strategy and role tweaks are a final, additive layer. They
+    // handle exceptions within one generation without replacing its baseline.
+    const strategyExactHo = so?.hardware_overrides?.[hwProfileId];
+    if (strategyExactHo?.extra_args) args.push(...strategyExactHo.extra_args);
+    const roleExactHo = roleOverride
+      ? so?.[roleOverride]?.hardware_overrides?.[hwProfileId]
+      : null;
+    if (roleExactHo?.extra_args) args.push(...roleExactHo.extra_args);
 
     // 6. Advanced tuning args (from UI's Advanced panel)
     if (advancedArgs && advancedArgs.length) args.push(...advancedArgs);
@@ -1308,6 +1346,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     // a per-strategy generation override REPLACES both recipe and variant;
     // otherwise the recipe baseline applies to every variant and the variant's
     // own generation block layers on top additively (applies to `default` too).
+    // An exact-GPU strategy delta is then applied last.
     const envIsNvidia = hwProfile?.brand === "NVIDIA";
     const envStrategyHo = so?.hardware_overrides?.[gen]
       || (envIsNvidia ? so?.hardware_overrides?.nvidia : null);
@@ -1321,6 +1360,12 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         || (envIsNvidia ? variant?.hardware_overrides?.nvidia : null);
       if (envVariantGenHo?.extra_env) Object.assign(env, envVariantGenHo.extra_env);
     }
+    const envStrategyExactHo = so?.hardware_overrides?.[hwProfileId];
+    if (envStrategyExactHo?.extra_env) Object.assign(env, envStrategyExactHo.extra_env);
+    const envRoleExactHo = roleOverride
+      ? so?.[roleOverride]?.hardware_overrides?.[hwProfileId]
+      : null;
+    if (envRoleExactHo?.extra_env) Object.assign(env, envRoleExactHo.extra_env);
 
     // NVL4-only env vars are meaningful only on GB200/GB300 trays. Drop them
     // for any other hardware regardless of where they came from (strategy YAML
