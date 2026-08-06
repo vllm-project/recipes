@@ -118,6 +118,20 @@ hardware_profiles:
     scalable: false
     restricted: true
 
+  # RTX Pro 6000 8x — 8x RTX Pro 6000 GPUs system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` (same pattern as the TPU profiles).
+  rtx_pro_6000_8x:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX Pro 6000 8x"
+    description: "NVIDIA RTX Pro 6000 · 8× RTX Pro 6000 GPU · 768 GB VRAM"
+    gpu_count: 8
+    vram_gb: 768
+    multi_node: false
+    scalable: false
+    restricted: true
+  
   # RTX 5090 — single-GPU RTX 5090 system.
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
   # lists it in `meta.hardware`
