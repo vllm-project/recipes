@@ -4,7 +4,7 @@ meta:
   provider: "Moonshot AI"
   description: "Pre-release 2.8T-parameter native multimodal MoE with Kimi Delta Attention, Gated MLA, Attention Residuals, and a 1M-token context window"
   date_added: 2026-07-27
-  date_updated: 2026-08-05
+  date_updated: 2026-08-06
   difficulty: hard
   tasks:
     - multimodal
@@ -44,9 +44,8 @@ model:
   context_length: 1048576
   base_args:
     - "--trust-remote-code"
-    # Canonical Inferact serve uses fastsafetensors (much faster weight load) + moe-backend auto.
-    - "--moe-backend"
-    - "auto"
+    # Canonical Inferact serve uses fastsafetensors for much faster weight load.
+    # Leave --moe-backend unset so vLLM selects its default automatic backend.
     - "--gpu-memory-utilization"
     - "0.95"
 
@@ -186,7 +185,7 @@ hardware_overrides:
       - "--kv-cache-dtype"
       - "fp8"
       - "--attention-config"
-      - '{"use_prefill_query_quantization":true,"mla_prefill_backend":"TRTLLM_RAGGED"}'
+      - '{"use_prefill_query_quantization":true,"mla_prefill_backend":"flashinfer"}'
       - "--enable-prefix-caching"
     extra_env:
       VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
@@ -219,13 +218,18 @@ hardware_overrides:
       - '{"cudagraph_mode":"FULL_DECODE_ONLY","custom_ops":["+fused_rms_norm_gated"]}'
 
 strategy_overrides:
-  # Guide recommendation made concrete: deep_gemm_mega_moe for any DEP
-  # environment. Emitted before hardware overrides, so Hopper's
-  # `--moe-backend marlin` still wins there (last-wins dedupe).
+  # Use MegaMoE for DEP on GB200/GB300 NVL trays. B200/B300 leave
+  # --moe-backend unset and use vLLM's default automatic selection.
   multi_node_dep:
-    extra_args:
-      - "--moe-backend"
-      - "deep_gemm_mega_moe"
+    hardware_overrides:
+      gb200:
+        extra_args:
+          - "--moe-backend"
+          - "deep_gemm_mega_moe"
+      gb300:
+        extra_args:
+          - "--moe-backend"
+          - "deep_gemm_mega_moe"
 
   # 2-node Blackwell aggregated profile: TP8 within each node x PP2 across the
   # pair (16 GPUs). The MXFP4 checkpoint (~1.68 TB of weights) does not fit one
@@ -289,10 +293,17 @@ strategy_overrides:
       parallelism: dep
       tp: 1
       env: {}
+      hardware_overrides:
+        gb200:
+          extra_args:
+            - "--moe-backend"
+            - "deep_gemm_mega_moe"
+        gb300:
+          extra_args:
+            - "--moe-backend"
+            - "deep_gemm_mega_moe"
       vllm_args:
         - "--data-parallel-hybrid-lb"
-        - "--moe-backend"
-        - "deep_gemm_mega_moe"
         - "--no-enable-prefix-caching"
         - "--max-num-seqs"
         - "32"
@@ -357,7 +368,7 @@ guide: |
   ## Notes
 
   - **Cross node communitcation**: Use `--all2all-backend deepep_v2` for RDMA and `--all2all-backend flashinfer_nvlink_one_sided` for NVLink.
-  - **MoE backend**: Recommend to use deep_gemm_mega_moe for any DEP environment.
+  - **MoE backend**: Recommend to use `deep_gemm_mega_moe` for DEP deployments with cross-node NVLink e.g. GB200 and GB300. Note that DeepGEMM MegaMoE is not compatible with cross-node RDMA.
   - **Model Runner v2 and Rust Frontend**: `VLLM_USE_V2_MODEL_RUNNER=1` and `VLLM_USE_RUST_FRONTEND=1`: Model Runner v2 and Rust Frontend fully supports this model and can be enabled if needed.
   - **Tool calling**: K3 occasionally emit a tool-call format its own parser doesn't expect. Suggest to run do schema validation and retry.
   - **AMD (MI355X / MI350X, CDNA4 gfx950)**: set AITER_SITUV2_A8W4 to 0 along with AITER master flag to use aiter a16w4 MoE path. Set it to 1 to use aiter a8w4 MoE path.
