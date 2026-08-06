@@ -215,9 +215,9 @@ strategy_overrides:
         extra_args:
           - "--no-enable-flashinfer-autotune"
       blackwell:
-        # Replaces recipe-level blackwell override: keeps the FP4 indexer cache
-        # but drops --moe-backend deep_gemm_mega_moe (TP-only path uses the
-        # default MoE backend).
+    # Replaces recipe-level blackwell override: keeps the FP4 indexer cache
+    # but drops --moe-backend deep_gemm_mega_moe (TP-only path uses the
+    # default MoE backend).
         extra_args:
          - "--attention_config.use_fp4_indexer_cache"
          - "True"
@@ -226,12 +226,12 @@ strategy_overrides:
         extra_args:
           - "--attention_config.use_fp4_indexer_cache"
           - "False"
-    single_node_tep:
-      hardware_overrides:
-      # sm_120 has neither Blackwell kernel: the FP4 indexer cache and
-      # deep_gemm_mega_moe are SM100-only and abort at startup. Turned back off
-      # here — these are the values vLLM resolves to unaided (FP8 indexer cache,
-      # DEEPGEMM_MXFP4 MoE backend), which is the verified configuration.
+  single_node_tep:
+    hardware_overrides:
+    # sm_120 has neither Blackwell kernel: the FP4 indexer cache and
+    # deep_gemm_mega_moe are SM100-only and abort at startup. Turned back off
+    # here — these are the values vLLM resolves to unaided (FP8 indexer cache,
+    # DEEPGEMM_MXFP4 MoE backend), which is the verified configuration.
       rtx_pro_6000_8x:
         extra_args:
           - "--attention_config.use_fp4_indexer_cache"
