@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, MAX_NODES, nodesForStrategy, isStrategyReachable } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -424,7 +424,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
     const rs = loadRecipeState(recipe.hf_id);
     if (!searchParams.get("strategy") && rs.strategy &&
-        (recipe.compatible_strategies || []).includes(rs.strategy) &&
+        effectiveCompatibleStrategies(recipe).includes(rs.strategy) &&
         strategies[rs.strategy]?.deploy_type !== "kv_store_lb") {
       setStrategyOverride(rs.strategy);
     }
@@ -484,7 +484,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // one node — force nodeCount to 1 in that case, even if the URL says
   // otherwise. (Nodes means nodes PER INSTANCE under Mooncake too; the
   // instance count is a separate axis and doesn't need multi-node support.)
-  const supportsMultiNode = (recipe.compatible_strategies || []).some(
+  const supportsMultiNode = effectiveCompatibleStrategies(recipe).some(
     (s) => s.startsWith("multi_node_") || s === "pd_cluster"
   );
   const [nodeCount, setNodeCount] = useState(() => {
@@ -848,13 +848,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const nodeOptions = useMemo(() => {
     const needed = Math.max(
       0,
-      ...(recipe.compatible_strategies || []).map((s) => nodesForStrategy(recipe, s, perNode, hwId)),
+      ...effectiveCompatibleStrategies(recipe).map((s) => nodesForStrategy(recipe, s, perNode, hwId)),
     );
     return needed > 2 && needed <= MAX_NODES ? [1, 2, needed] : [1, 2];
   }, [recipe, perNode, hwId]);
 
   const compatibleStrategies = useMemo(() => {
-    return (recipe.compatible_strategies || []).filter((s) => {
+    return effectiveCompatibleStrategies(recipe).filter((s) => {
       const strat = strategies[s];
       if (!strat) return false;
       // kv_store_lb deployments live on the KV Offload row, not here.
@@ -890,13 +890,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     [recipe, hwId]
   );
 
-  // Serving-strategy per-GPU opt-out, mirroring kv_cache_strategy_hardware but
-  // for the Strategy row: a recipe marks a (strategy, GPU) pair `unsupported`
-  // under `strategy_hardware` (fail-open — absent = works). The pill renders
-  // disabled with a tooltip and the active/recommended resolution skips it.
+  // Serving-strategy per-GPU gate for the Strategy row. The default is
+  // compatible_strategies membership (listed = supported everywhere, unlisted
+  // = nowhere); `strategy_hardware` overrides per hardware in either
+  // direction, maps taking the variant-`tp` keyspace (exact GPU id >
+  // generation > brand > `default`). An unsupported pill renders disabled
+  // with a tooltip and the active/recommended resolution skips it.
   const isStrategySupported = useCallback(
-    (s, hardwareId = hwId) => recipe.strategy_hardware?.[s]?.[hardwareId] !== "unsupported",
-    [recipe, hwId]
+    (s, hardwareId = hwId) => isStrategySupportedOnHardware(
+      recipe, s, taxonomy.hardware_profiles?.[hardwareId], hardwareId
+    ),
+    [recipe, taxonomy, hwId]
   );
 
   // PD now sizes each pool independently, so the "2× model VRAM on one node"
