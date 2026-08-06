@@ -982,12 +982,14 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     // The example worker is node 1, so its DP start rank = 1 × dp_local, not a
     // full node's worth of GPUs.
     const soDep = recipe.strategy_overrides?.[strategyName];
-    const soDepHo = soDep?.hardware_overrides?.[gen]
-    || (hwProfile?.brand === "NVIDIA" ? soDep?.hardware_overrides?.nvidia : null);
+    const soDepGenHo = soDep?.hardware_overrides?.[gen]
+      || (hwProfile?.brand === "NVIDIA" ? soDep?.hardware_overrides?.nvidia : null);
+    const soDepExactHo = soDep?.hardware_overrides?.[hwProfileId];
     const depOv = [
     ...(soDep?.vllm_args || []),
     ...(soDep?.extra_args || []),
-    ...(soDepHo?.extra_args || []),
+    ...(soDepGenHo?.extra_args || []),
+    ...(soDepExactHo?.extra_args || []),
       ];
     const i = depOv.lastIndexOf("--data-parallel-size-local");
     const dpLocal = i >= 0 ? Number(depOv[i + 1]) : gpuCount;
@@ -1165,6 +1167,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     //      recipe.hardware_overrides.<gen>            — baseline for ALL variants
     //      variants.<v>.hardware_overrides.<gen>      — per-variant ADDITIVE delta
     //      strategy_overrides.<s>.hardware_overrides.<gen> — per-strategy REPLACE
+    //      strategy_overrides.<s>.hardware_overrides.<gpu> — exact-GPU ADDITIVE delta
     //
     //    The strategy layer is authoritative: when it declares an override for
     //    this generation it REPLACES both the recipe baseline and the variant
@@ -1191,6 +1194,14 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         || (isNvidia ? variant?.hardware_overrides?.nvidia : null);
       if (variantGenHo?.extra_args) args.push(...variantGenHo.extra_args);
     }
+    // Exact-GPU strategy and role tweaks are a final, additive layer. They
+    // handle exceptions within one generation without replacing its baseline.
+    const strategyExactHo = so?.hardware_overrides?.[hwProfileId];
+    if (strategyExactHo?.extra_args) args.push(...strategyExactHo.extra_args);
+    const roleExactHo = roleOverride
+      ? so?.[roleOverride]?.hardware_overrides?.[hwProfileId]
+      : null;
+    if (roleExactHo?.extra_args) args.push(...roleExactHo.extra_args);
 
     // 6. Advanced tuning args (from UI's Advanced panel)
     if (advancedArgs && advancedArgs.length) args.push(...advancedArgs);
@@ -1335,6 +1346,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     // a per-strategy generation override REPLACES both recipe and variant;
     // otherwise the recipe baseline applies to every variant and the variant's
     // own generation block layers on top additively (applies to `default` too).
+    // An exact-GPU strategy delta is then applied last.
     const envIsNvidia = hwProfile?.brand === "NVIDIA";
     const envStrategyHo = so?.hardware_overrides?.[gen]
       || (envIsNvidia ? so?.hardware_overrides?.nvidia : null);
@@ -1348,6 +1360,12 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         || (envIsNvidia ? variant?.hardware_overrides?.nvidia : null);
       if (envVariantGenHo?.extra_env) Object.assign(env, envVariantGenHo.extra_env);
     }
+    const envStrategyExactHo = so?.hardware_overrides?.[hwProfileId];
+    if (envStrategyExactHo?.extra_env) Object.assign(env, envStrategyExactHo.extra_env);
+    const envRoleExactHo = roleOverride
+      ? so?.[roleOverride]?.hardware_overrides?.[hwProfileId]
+      : null;
+    if (envRoleExactHo?.extra_env) Object.assign(env, envRoleExactHo.extra_env);
 
     // NVL4-only env vars are meaningful only on GB200/GB300 trays. Drop them
     // for any other hardware regardless of where they came from (strategy YAML
