@@ -40,6 +40,7 @@ export const PROVIDERS = {
   "stabilityai":     { display_name: "Stability AI",             logo: "/providers/stabilityai.png" },
   "stepfun-ai":      { display_name: "StepFun",                  logo: "/providers/stepfun-ai.png" },
   "poolside":        { display_name: "Poolside",                 logo: "/providers/poolside.png" },
+  "CohereLabs":      { display_name: "Cohere Labs",              logo: "/providers/CohereLabs.png" },
   "JetBrains":       { display_name: "JetBrains",                 logo: "/providers/JetBrains.png" },
   "openbmb":         { display_name: "MiniCPM (OpenBMB)",          logo: "/providers/openbmb.png" },
   "LiquidAI":        { display_name: "Liquid AI",                  logo: "/providers/LiquidAI.png" },
