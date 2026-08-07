@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, MAX_NODES, nodesForStrategy, isStrategyReachable } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -424,7 +424,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
     const rs = loadRecipeState(recipe.hf_id);
     if (!searchParams.get("strategy") && rs.strategy &&
-        (recipe.compatible_strategies || []).includes(rs.strategy) &&
+        effectiveCompatibleStrategies(recipe).includes(rs.strategy) &&
         strategies[rs.strategy]?.deploy_type !== "kv_store_lb") {
       setStrategyOverride(rs.strategy);
     }
@@ -484,7 +484,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // one node — force nodeCount to 1 in that case, even if the URL says
   // otherwise. (Nodes means nodes PER INSTANCE under Mooncake too; the
   // instance count is a separate axis and doesn't need multi-node support.)
-  const supportsMultiNode = (recipe.compatible_strategies || []).some(
+  const supportsMultiNode = effectiveCompatibleStrategies(recipe).some(
     (s) => s.startsWith("multi_node_") || s === "pd_cluster"
   );
   const [nodeCount, setNodeCount] = useState(() => {
@@ -848,13 +848,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const nodeOptions = useMemo(() => {
     const needed = Math.max(
       0,
-      ...(recipe.compatible_strategies || []).map((s) => nodesForStrategy(recipe, s, perNode, hwId)),
+      ...effectiveCompatibleStrategies(recipe).map((s) => nodesForStrategy(recipe, s, perNode, hwId)),
     );
     return needed > 2 && needed <= MAX_NODES ? [1, 2, needed] : [1, 2];
   }, [recipe, perNode, hwId]);
 
   const compatibleStrategies = useMemo(() => {
-    return (recipe.compatible_strategies || []).filter((s) => {
+    return effectiveCompatibleStrategies(recipe).filter((s) => {
       const strat = strategies[s];
       if (!strat) return false;
       // kv_store_lb deployments live on the KV Offload row, not here.
@@ -890,13 +890,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     [recipe, hwId]
   );
 
-  // Serving-strategy per-GPU opt-out, mirroring kv_cache_strategy_hardware but
-  // for the Strategy row: a recipe marks a (strategy, GPU) pair `unsupported`
-  // under `strategy_hardware` (fail-open — absent = works). The pill renders
-  // disabled with a tooltip and the active/recommended resolution skips it.
+  // Serving-strategy per-GPU gate for the Strategy row. The default is
+  // compatible_strategies membership (listed = supported everywhere, unlisted
+  // = nowhere); `strategy_hardware` overrides per hardware in either
+  // direction, maps taking the variant-`tp` keyspace (exact GPU id >
+  // generation > brand > `default`). An unsupported pill renders disabled
+  // with a tooltip and the active/recommended resolution skips it.
   const isStrategySupported = useCallback(
-    (s, hardwareId = hwId) => recipe.strategy_hardware?.[s]?.[hardwareId] !== "unsupported",
-    [recipe, hwId]
+    (s, hardwareId = hwId) => isStrategySupportedOnHardware(
+      recipe, s, taxonomy.hardware_profiles?.[hardwareId], hardwareId
+    ),
+    [recipe, taxonomy, hwId]
   );
 
   // PD now sizes each pool independently, so the "2× model VRAM on one node"
@@ -2062,20 +2066,30 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                       // `unsupported` = author opt-out for this model; disables the pill.
                       const status = recipe.meta?.hardware?.[id];
                       const isUnsupported = status === "unsupported";
+                      // Hardware and variant selectors must not deadlock when
+                      // checkpoint families have disjoint targets (for
+                      // example NVIDIA NVFP4 and AMD MXFP4). selectHardware
+                      // already switches to a fitting variant, so keep this
+                      // hardware clickable whenever any recipe variant runs
+                      // on it.
+                      const fittingVariantKey = pickFittingVariant(recipe, p, id);
+                      const fittingVariant = recipe.variants?.[fittingVariantKey];
                       // Per-role PD now sizes each pool independently, so hardware
                       // only needs to fit 1× model per node (standard precision
                       // check is enough). The old co-located single-node check
                       // (2× model on one node) is no longer the default UX.
-                      const disabled = !precisionOk || !variantHardwareOk || isUnsupported;
+                      const disabled = isUnsupported || !fittingVariantKey;
                       const verifiedNote = status === "verified"
                         ? "\n\nVerified — author has tested this hardware end-to-end"
                         : "";
-                      const reason = !variantHardwareOk
-                        ? `${currentVariant.precision?.toUpperCase()} is only supported on ${(currentVariant.supported_hardware || []).map((hw) => taxonomy.hardware_profiles?.[hw]?.display_name || hw).join(", ")}`
-                        : !precisionOk
-                        ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
-                        : isUnsupported
+                      const currentVariantRunsHere = precisionOk && variantHardwareOk;
+                      const fittingVariantLabel = (fittingVariant?.label || fittingVariant?.precision || fittingVariantKey)?.toUpperCase();
+                      const reason = isUnsupported
                           ? `Not yet supported on ${p.display_name} — this model doesn't run here today, may be enabled in a future release`
+                        : !fittingVariantKey
+                          ? `No variant of this model currently runs on ${p.display_name}`
+                        : !currentVariantRunsHere
+                          ? `${p.description}\n\nSelecting ${p.display_name} also switches Variant to ${fittingVariantLabel}.${verifiedNote}`
                           : `${p.description}${verifiedNote}`;
                       return (
                         <Pill
@@ -2115,10 +2129,21 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           >
             <PillGroup>
               {Object.entries(recipe.variants || {}).map(([key, v]) => {
-                // Disable variants excluded by an exact hardware allowlist,
-                // incompatible precision, or a non-scalable VRAM shortfall.
-                const disabled = !variantRunsOnHardware(hwProfile, v, hwId);
-                const hardwareRestricted = !isVariantHardwareSupported(v, hwId);
+                // selectVariant already moves to compatible hardware. Disable
+                // only variants that have no runnable hardware anywhere;
+                // otherwise a disjoint hardware allowlist would make both the
+                // variant and its hardware mutually unselectable.
+                const currentHardwareOk = variantRunsOnHardware(hwProfile, v, hwId);
+                const hasRunnableHardware = Object.entries(taxonomy.hardware_profiles || {}).some(
+                  ([candidateId, candidateProfile]) =>
+                    isHardwareSupported(recipe, candidateId)
+                    && variantRunsOnHardware(candidateProfile, v, candidateId)
+                );
+                const disabled = !hasRunnableHardware;
+                const fallbackHwId = currentHardwareOk
+                  ? hwId
+                  : pickDefaultHardware(taxonomy.hardware_profiles, v, recipe);
+                const fallbackHw = taxonomy.hardware_profiles?.[fallbackHwId];
                 return (
                   <Pill
                     key={key}
@@ -2127,9 +2152,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     onClick={() => !disabled && selectVariant(key)}
                     title={
                       disabled
-                        ? hardwareRestricted
-                          ? `${(v.label || v.precision)?.toUpperCase()} is only supported on ${(v.supported_hardware || []).map((hw) => taxonomy.hardware_profiles?.[hw]?.display_name || hw).join(", ")}`
-                          : `${(v.label || v.precision)?.toUpperCase()} needs ${v.vram_minimum_gb} GB but ${hwProfile.display_name || "this hardware"} has ${hwProfile.vram_gb} GB and can't scale out — pick a smaller-footprint variant`
+                        ? `No currently supported hardware can run ${(v.label || v.precision)?.toUpperCase()}`
+                        : !currentHardwareOk
+                          ? [
+                              v.description,
+                              `Selecting this variant also switches Hardware to ${fallbackHw?.display_name || fallbackHwId}.`,
+                              `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
+                            ].filter(Boolean).join("\n\n")
                         : [
                             v.description,
                             `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,

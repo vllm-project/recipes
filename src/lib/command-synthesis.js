@@ -41,18 +41,63 @@ function autoFitTp(vramMinGb, perGpuVram, gpuCount) {
 }
 
 /**
+ * Resolve a hardware-keyed map: exact GPU id > generation > brand (lowercase)
+ * > `default`. The first key present wins; undefined when none match. Shared
+ * by variant `tp` maps and `strategy_hardware` gates.
+ */
+function hardwareKeyedValue(map, hwProfile, hwProfileId) {
+  if (!map || typeof map !== "object") return undefined;
+  const gen = normalizeGeneration(hwProfile?.generation || hwProfile?.gpu_generation);
+  const brand = typeof hwProfile?.brand === "string" ? hwProfile.brand.toLowerCase() : null;
+  return (hwProfileId != null ? map[hwProfileId] : undefined)
+    ?? (gen ? map[gen] : undefined)
+    ?? (brand ? map[brand] : undefined)
+    ?? map.default;
+}
+
+/**
  * Resolve a numeric TP declaration. A variant may use a bare number or a
  * hardware-aware map keyed by exact GPU id, generation, brand, or `default`.
  */
 function declaredTpForHardware(raw, hwProfile, hwProfileId) {
   if (typeof raw === "number") return raw;
-  if (!raw || typeof raw !== "object") return undefined;
-  const gen = normalizeGeneration(hwProfile?.generation || hwProfile?.gpu_generation);
-  const brand = typeof hwProfile?.brand === "string" ? hwProfile.brand.toLowerCase() : null;
-  return (hwProfileId && raw[hwProfileId])
-    ?? (gen && raw[gen])
-    ?? (brand && raw[brand])
-    ?? raw.default;
+  return hardwareKeyedValue(raw, hwProfile, hwProfileId);
+}
+
+/**
+ * Serving-strategy per-GPU gate (`strategy_hardware`), layered on the
+ * membership default: a strategy listed in `compatible_strategies` is
+ * supported everywhere, one left out is supported nowhere. `strategy_hardware`
+ * overrides that default per hardware in either direction — `unsupported`
+ * opts a listed strategy out of a GPU; `supported` opts an unlisted one in
+ * (which also adds it to the offered set, see effectiveCompatibleStrategies).
+ * Maps take the variant-`tp` keyspace — exact GPU id > generation > brand >
+ * `default` — where an explicit `default:` beats the membership baseline.
+ */
+export function isStrategySupportedOnHardware(recipe, strategyName, hwProfile, hwProfileId) {
+  const gate = hardwareKeyedValue(
+    recipe?.strategy_hardware?.[strategyName], hwProfile, hwProfileId
+  );
+  if (gate != null) return gate !== "unsupported";
+  return (recipe?.compatible_strategies || []).includes(strategyName);
+}
+
+/**
+ * Strategies a recipe offers anywhere: `compatible_strategies` plus opt-ins —
+ * a strategy absent from the list but granted `supported` somewhere in
+ * `strategy_hardware` is appended, so a layout validated on a few GPUs is
+ * declared once (the grants) instead of listed globally and opted out
+ * everywhere else. Grant-less strategy_hardware entries (pure opt-outs for
+ * unlisted strategies) add nothing.
+ */
+export function effectiveCompatibleStrategies(recipe) {
+  const listed = recipe?.compatible_strategies || [];
+  const optIns = Object.entries(recipe?.strategy_hardware || {})
+    .filter(([s, map]) => !listed.includes(s)
+      && map && typeof map === "object"
+      && Object.values(map).includes("supported"))
+    .map(([s]) => s);
+  return optIns.length ? [...listed, ...optIns] : listed;
 }
 
 /**
@@ -95,7 +140,7 @@ export function resolveSingleNodeTp(
  * advanced strategies that users can opt into explicitly.
  */
 export function recommendStrategy(recipe, _hwProfile, nodeCount = 1) {
-  const compatible = recipe.compatible_strategies || [];
+  const compatible = effectiveCompatibleStrategies(recipe);
   // Recipe-level override — useful when the global TP-first preference is wrong
   // for a model (e.g. MoE recipes where TEP/DEP is the intended default and TP
   // is offered only as a latency-oriented alternative).
@@ -197,7 +242,7 @@ export function isStrategyReachable(recipe, key, deployType, gpusPerNode, gpuId)
  * would leave no offered mode.
  */
 export function pdPoolModes(recipe) {
-  const compat = recipe?.compatible_strategies || [];
+  const compat = effectiveCompatibleStrategies(recipe);
   const modes = new Set();
   for (const s of compat) {
     if (s === "pd_cluster") continue;
@@ -982,12 +1027,14 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     // The example worker is node 1, so its DP start rank = 1 × dp_local, not a
     // full node's worth of GPUs.
     const soDep = recipe.strategy_overrides?.[strategyName];
-    const soDepHo = soDep?.hardware_overrides?.[gen]
-    || (hwProfile?.brand === "NVIDIA" ? soDep?.hardware_overrides?.nvidia : null);
+    const soDepGenHo = soDep?.hardware_overrides?.[gen]
+      || (hwProfile?.brand === "NVIDIA" ? soDep?.hardware_overrides?.nvidia : null);
+    const soDepExactHo = soDep?.hardware_overrides?.[hwProfileId];
     const depOv = [
     ...(soDep?.vllm_args || []),
     ...(soDep?.extra_args || []),
-    ...(soDepHo?.extra_args || []),
+    ...(soDepGenHo?.extra_args || []),
+    ...(soDepExactHo?.extra_args || []),
       ];
     const i = depOv.lastIndexOf("--data-parallel-size-local");
     const dpLocal = i >= 0 ? Number(depOv[i + 1]) : gpuCount;
@@ -1165,6 +1212,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     //      recipe.hardware_overrides.<gen>            — baseline for ALL variants
     //      variants.<v>.hardware_overrides.<gen>      — per-variant ADDITIVE delta
     //      strategy_overrides.<s>.hardware_overrides.<gen> — per-strategy REPLACE
+    //      strategy_overrides.<s>.hardware_overrides.<gpu> — exact-GPU ADDITIVE delta
     //
     //    The strategy layer is authoritative: when it declares an override for
     //    this generation it REPLACES both the recipe baseline and the variant
@@ -1191,6 +1239,14 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         || (isNvidia ? variant?.hardware_overrides?.nvidia : null);
       if (variantGenHo?.extra_args) args.push(...variantGenHo.extra_args);
     }
+    // Exact-GPU strategy and role tweaks are a final, additive layer. They
+    // handle exceptions within one generation without replacing its baseline.
+    const strategyExactHo = so?.hardware_overrides?.[hwProfileId];
+    if (strategyExactHo?.extra_args) args.push(...strategyExactHo.extra_args);
+    const roleExactHo = roleOverride
+      ? so?.[roleOverride]?.hardware_overrides?.[hwProfileId]
+      : null;
+    if (roleExactHo?.extra_args) args.push(...roleExactHo.extra_args);
 
     // 6. Advanced tuning args (from UI's Advanced panel)
     if (advancedArgs && advancedArgs.length) args.push(...advancedArgs);
@@ -1335,6 +1391,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     // a per-strategy generation override REPLACES both recipe and variant;
     // otherwise the recipe baseline applies to every variant and the variant's
     // own generation block layers on top additively (applies to `default` too).
+    // An exact-GPU strategy delta is then applied last.
     const envIsNvidia = hwProfile?.brand === "NVIDIA";
     const envStrategyHo = so?.hardware_overrides?.[gen]
       || (envIsNvidia ? so?.hardware_overrides?.nvidia : null);
@@ -1348,6 +1405,12 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         || (envIsNvidia ? variant?.hardware_overrides?.nvidia : null);
       if (envVariantGenHo?.extra_env) Object.assign(env, envVariantGenHo.extra_env);
     }
+    const envStrategyExactHo = so?.hardware_overrides?.[hwProfileId];
+    if (envStrategyExactHo?.extra_env) Object.assign(env, envStrategyExactHo.extra_env);
+    const envRoleExactHo = roleOverride
+      ? so?.[roleOverride]?.hardware_overrides?.[hwProfileId]
+      : null;
+    if (envRoleExactHo?.extra_env) Object.assign(env, envRoleExactHo.extra_env);
 
     // NVL4-only env vars are meaningful only on GB200/GB300 trays. Drop them
     // for any other hardware regardless of where they came from (strategy YAML

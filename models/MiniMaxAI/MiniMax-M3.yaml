@@ -14,6 +14,7 @@ meta:
   hardware:
     h200: verified
     b200: verified
+    b300: verified
     mi300x: verified
     mi355x: verified
 
@@ -72,6 +73,11 @@ features:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
       - "--language-model-only"
+  thinking_always_on:
+    description: "Pin `thinking_mode: enabled` server-side — every turn reasons before answering, including after tool results. Recommended for agentic workflows."
+    args:
+      - "--default-chat-template-kwargs"
+      - '{"thinking_mode": "enabled"}'
   encoder_parallel:
     description: "Run the vision encoder data-parallel instead of tensor-parallel — avoids TP comm overhead on the small encoder. Also enables the host-shared-memory multimodal processor cache and the per-brand encoder attention backend (FlashInfer on NVIDIA, AITER FlashAttention on AMD). Mutually exclusive with text_only."
     # No platform-agnostic `args`: this recipe targets only NVIDIA + AMD, both
@@ -100,6 +106,7 @@ features:
 opt_in_features:
   - spec_decoding
   - text_only
+  - thinking_always_on
   - encoder_parallel
 
 variants:
@@ -165,12 +172,20 @@ variants:
     description: "NVIDIA-quantized NVFP4 weights (ModelOpt) for Blackwell (B200/B300) — native FP4 tensor cores, ~half the VRAM of MXFP8."
     extra_args:
       - "--trust-remote-code"
+      - "--kv-cache-dtype"
+      - "fp8"
+      # FlashInfer TRT-LLM attention kernels with an FP8 indexer KV cache.
+      - "--attention_config.backend"
+      - "FLASHINFER"
+      - "--attention_config.use_trtllm_attention"
+      - "true"
       - "--attention_config.indexer_kv_dtype"
       - "fp8"
       - "--attention_config.minimax_m3_msa_decode_backend"
       - "cutlass"
     extra_env:
       VLLM_FLOAT32_MATMUL_PRECISION: "high"
+      VLLM_FLASHINFER_ALLREDUCE_BACKEND: "trtllm"
   mxfp4:
     model_id: "amd/MiniMax-M3-MXFP4"
     precision: mxfp4
