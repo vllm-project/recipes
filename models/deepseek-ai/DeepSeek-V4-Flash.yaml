@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
   date_added: 2026-07-31
-  date_updated: 2026-07-31
+  date_updated: 2026-08-06
   difficulty: hard
   tasks:
     - text
@@ -17,6 +17,7 @@ meta:
     b300: verified
     gb300: verified
     dgx_station_gb300: verified
+    rtx_pro_6000_8x: verified
     mi300x: unsupported
     mi325x: verified
     mi355x: verified
@@ -69,6 +70,8 @@ features:
         description: "Built-in Multi-Token Prediction, 2 draft tokens (1 on Hopper)."
         # The preview FP4+FP8 and NVFP4 checkpoints ship an MTP head only — their
         # config.json carries no dspark_* block, so dspark can't be drafted there.
+        hardware:
+          rtx_pro_6000_8x: unsupported
         variants:
           - fp8
           - nvfp4
@@ -85,6 +88,8 @@ features:
         description: "DSpark drafting, 7 draft tokens, probabilistic sampling. Requires the DSpark or 0731 checkpoint (Variant row)."
         # Only the fused checkpoints carry the DSpark draft module — the 0731
         # release (default) and the DSpark re-pack of the preview weights.
+        hardware:
+          rtx_pro_6000_8x: unsupported
         variants:
           - default
           - dspark
@@ -165,12 +170,25 @@ kv_offload_support:
   offloading_cpu: verified
   offloading_fs: verified
 
+strategy_hardware:
+  # PD splits into a prefill pool and a decode pool, each sized in whole nodes
+  # (strategy_overrides.pd_cluster gives both `nodes: 1`), so the builder emits
+  # a two-node deployment. RTX Pro 6000 8x is multi_node: false / scalable:
+  # false in taxonomy.yaml — it can't be joined into a cluster, so that command
+  # has nowhere to run. The JSON API already skips pd_cluster on non-scalable
+  # hardware; this makes the Strategy row agree. multi_node_dep needs no entry:
+  # the Nodes row is pinned to 1 here, which already hides every multi_node
+  # strategy.
+  pd_cluster:
+    rtx_pro_6000_8x: unsupported
+
 hardware_overrides:
   blackwell:
     # Common to every variant on Blackwell. The FP8-only deep_gemm_mega_moe MoE
     # kernel is added per-variant (FP8 checkpoints), not here.
     extra_args:
-      - "--attention_config.use_fp4_indexer_cache=True"
+      - "--attention_config.use_fp4_indexer_cache"
+      - "True"
   amd:
     extra_args:
       - "--distributed-executor-backend"
@@ -197,12 +215,29 @@ strategy_overrides:
         extra_args:
           - "--no-enable-flashinfer-autotune"
       blackwell:
-        # Replaces recipe-level blackwell override: keeps the FP4 indexer cache
-        # but drops --moe-backend deep_gemm_mega_moe (TP-only path uses the
-        # default MoE backend).
+    # Replaces recipe-level blackwell override: keeps the FP4 indexer cache
+    # but drops --moe-backend deep_gemm_mega_moe (TP-only path uses the
+    # default MoE backend).
         extra_args:
-          - "--attention_config.use_fp4_indexer_cache=True"
-          - "--no-enable-flashinfer-autotune"
+         - "--attention_config.use_fp4_indexer_cache"
+         - "True"
+         - "--no-enable-flashinfer-autotune"
+      rtx_pro_6000_8x:
+        extra_args:
+          - "--attention_config.use_fp4_indexer_cache"
+          - "False"
+  single_node_tep:
+    hardware_overrides:
+    # sm_120 has neither Blackwell kernel: the FP4 indexer cache and
+    # deep_gemm_mega_moe are SM100-only and abort at startup. Turned back off
+    # here — these are the values vLLM resolves to unaided (FP8 indexer cache,
+    # DEEPGEMM_MXFP4 MoE backend), which is the verified configuration.
+      rtx_pro_6000_8x:
+        extra_args:
+          - "--attention_config.use_fp4_indexer_cache"
+          - "False"
+          - "--moe-backend"
+          - "auto"
   single_node_dep:
     # Force DP=4 on all hardware (fills GB200's 4-GPU tray; on 8-GPU nodes use
     # half the GPUs per replica). dedupeArgs (last-wins) shadows the default
@@ -212,10 +247,26 @@ strategy_overrides:
       - "4"
       - "--compilation-config"
       - '{"cudagraph_mode":"FULL_AND_PIECEWISE", "custom_ops":["all"]}'
+    hardware_overrides:
+      # Same sm_120 opt-out as single_node_tep.
+      rtx_pro_6000_8x:
+        extra_args:
+          - "--attention_config.use_fp4_indexer_cache"
+          - "False"
+          - "--moe-backend"
+          - "auto"
   multi_node_dep:
     extra_args:
       - "--compilation-config"
       - '{"cudagraph_mode":"FULL_AND_PIECEWISE", "custom_ops":["all"]}'
+    hardware_overrides:
+      # Same sm_120 opt-out as single_node_tep.
+      rtx_pro_6000_8x:
+        extra_args:
+          - "--attention_config.use_fp4_indexer_cache"
+          - "False"
+          - "--moe-backend"
+          - "auto"
   pd_cluster:
     env:
       VLLM_USE_NCCL_SYMM_MEM: "1"
@@ -394,6 +445,43 @@ guide: |
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
   ```
 
+  ### RTX PRO 6000 8× (8×96 GB, sm_120)
+
+  Single-node TP8 + expert parallelism on the **0731** checkpoint. Verified with
+  the `vllm/vllm-openai:v0.25.0` image on 8× RTX PRO 6000 (PCIe, no NVLink).
+
+  Two host-side prerequisites before launching:
+
+  ```bash
+  # vLLM 0.25.0's DeepSeek-V4 sparse MLA decode passes `swa_topk_lens`, which
+  # only exists in FlashInfer 0.6.14; the image pins 0.6.13. --no-deps is
+  # required — a plain install pulls a different torch and breaks vLLM's
+  # compiled extensions.
+  /usr/bin/python3.12 -m pip install --no-deps flashinfer-python==0.6.14
+
+  # flashinfer-cubin has no matching 0.6.14 release, so skip the parity check.
+  export FLASHINFER_DISABLE_VERSION_CHECK=1
+  ```
+
+  ```bash
+  vllm serve deepseek-ai/DeepSeek-V4-Flash-0731 \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --block-size 256 \
+    --enable-expert-parallel \
+    --tensor-parallel-size 8 \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --reasoning-parser deepseek_v4
+  ```
+
+  **Speculative decoding is unavailable on sm_120.** Both MTP and DSpark abort
+  during warmup with `Check failed: num_tokens > 64` from
+  `sparse_mla_sm120_paged_attention` — the SM120 sparse MLA kernel requires more
+  than 64 tokens per batch, while speculative verification submits only the draft
+  length (7 for DSpark). The Spec Decoding pill is disabled for this profile.
+  
   ### MI325X (1×256GB)
 
   Validated end-to-end with vLLM 0.25.0 and PyTorch HIP 7.2.53211. Use this
