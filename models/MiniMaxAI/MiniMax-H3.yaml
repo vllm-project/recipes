@@ -48,10 +48,9 @@ model:
   # Diffusion pipeline — there is no autoregressive KV context. The Qwen3-VL
   # presentation ranges from ~1.8k tokens (text-only) to ~16.3k (two video refs).
   context_length: 0
-  # The validated four-GPU best-practice profile: no offload, Ulysses SP 4,
-  # native tiled VAE patch parallelism 4, Ring/TP left at 1, FlashAttention
-  # (CuTe FA4 on Blackwell). Regional torch.compile is the default granularity,
-  # so it is deliberately NOT pinned here — do not add --enforce-eager.
+  # The validated four-GPU best-practice profile uses no offload, Ulysses SP 4,
+  # native tiled VAE patch parallelism 4, Ring/TP 1, and the datacenter
+  # Blackwell default TRTLLM_ATTN. Keep regional torch.compile enabled.
   base_args:
     - "--trust-remote-code"
     - "--host"
@@ -69,24 +68,25 @@ model:
     - "--vae-parallel-mode"
     - "tile"
     - "--vae-use-tiling"
-    - "--diffusion-attention-backend"
-    - "FLASH_ATTN"
   base_env:
     VLLM_WORKER_MULTIPROC_METHOD: "spawn"
     VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "1800"
 
 omni:
   port: 8000
+  task_label: "Request Mode"
+  task_hint: "Select a ready-to-run MiniMax-H3 request preset. High-memory hardware keeps both DiTs loaded; memory-constrained hardware automatically starts the matching FL2VA-only or Ref2VA-only service."
   # The modular pipeline serves the checkpoint root and shares the encoder and
   # VAEs across FL2VA/Ref2VA. Memory-constrained hardware overrides select one
   # DiT with --task-type while retaining the same root model path.
   tasks:
     - id: t2v
-      label: "T2VA · Text → Video+Audio"
+      key: t2va
+      label: "T2VA - Text"
       model_id: "/path/to/MiniMax-H3"
       vram_minimum_gb: 202
       endpoint: "/v1/videos/sync"
-      description: "Text prompt → joint video + synchronized audio through the shared modular service."
+      description: "Text prompt to joint video and synchronized audio through the FL2VA DiT."
       hardware_overrides:
         rtx_pro_5000_4x:
           vram_minimum_gb: 288
@@ -105,6 +105,7 @@ omni:
               -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
               -F 'width=1024' \
               -F 'height=576' \
+              -F 'aspect_ratio=16:9' \
               -F 'fps=24' \
               -F 'num_inference_steps=50' \
               -F 'flow_shift=12' \
@@ -116,18 +117,21 @@ omni:
           -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
           -F 'width=1344' \
           -F 'height=768' \
+          -F 'aspect_ratio=16:9' \
           -F 'fps=24' \
           -F 'num_inference_steps=50' \
           -F 'flow_shift=12' \
           -F 'seed=1101' \
           -F 'extra_params={"task":"t2va","duration":8.7,"audio_flow_shift":3.0}' \
           -o t2va.mp4
+
     - id: i2v
-      label: "FL2VA · First Frame → Video+Audio"
+      key: fl2va_first
+      label: "FL2VA - First Frame"
       model_id: "/path/to/MiniMax-H3"
       vram_minimum_gb: 202
       endpoint: "/v1/videos/sync"
-      description: "First frame + prompt → video + audio through the shared modular service. Omitting width/height keeps the first frame aspect ratio at a 768 px short edge."
+      description: "First frame and prompt to video and audio. Omitting width and height keeps the input aspect ratio at a 768 px short edge."
       hardware_overrides:
         rtx_pro_5000_4x:
           vram_minimum_gb: 288
@@ -154,7 +158,7 @@ omni:
               -F 'seed=2101' \
               -F 'extra_params={"task":"fl2va","duration":5.0,"audio_flow_shift":3.0}' \
               -F "input_reference=@${FIRST_FRAME};type=image/png" \
-              -o fl2va.mp4
+              -o fl2va_first.mp4
       curl: |
         export FIRST_FRAME=/path/to/fl2va_first_frame.png
 
@@ -166,13 +170,66 @@ omni:
           -F 'seed=2101' \
           -F 'extra_params={"task":"fl2va","duration":8.7,"audio_flow_shift":3.0}' \
           -F "input_reference=@${FIRST_FRAME};type=image/png" \
-          -o fl2va.mp4
-    - id: ti2v
-      label: "Ref2VA · Reference → Video+Audio"
+          -o fl2va_first.mp4
+
+    - id: i2v
+      key: fl2va_first_last
+      label: "FL2VA - First + Last"
       model_id: "/path/to/MiniMax-H3"
       vram_minimum_gb: 202
       endpoint: "/v1/videos/sync"
-      description: "Omni reference (image+audio, or one-or-more videos) → video + audio through the shared modular service. A full 15 s two-video request peaked at 166 GB on the main rank."
+      description: "Ordered first and last keyframes plus prompt to video and audio through the FL2VA DiT."
+      hardware_overrides:
+        rtx_pro_5000_4x:
+          vram_minimum_gb: 288
+          extra_args: ["--task-type", "fl2va"]
+        rtx_pro_6000_2x:
+          vram_minimum_gb: 192
+          extra_args: ["--task-type", "fl2va"]
+        rtx_5090_2x:
+          vram_minimum_gb: 64
+          extra_args: ["--task-type", "fl2va"]
+        rtx_4090_2x:
+          vram_minimum_gb: 48
+          extra_args: ["--task-type", "fl2va"]
+          curl: |
+            export FIRST_FRAME=/path/to/fl2va_first_frame.png
+            export LAST_FRAME=/path/to/fl2va_last_frame.png
+
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
+              -F 'prompt=The subject moves naturally from the first image to the last image, with synchronized ambience and sound.' \
+              -F 'width=1024' \
+              -F 'height=576' \
+              -F 'fps=24' \
+              -F 'num_inference_steps=50' \
+              -F 'flow_shift=12' \
+              -F 'seed=2102' \
+              -F 'extra_params={"task":"fl2va","duration":5.0,"frame_indices":[0,-1],"audio_flow_shift":3.0}' \
+              -F "input_references=@${FIRST_FRAME};type=image/png" \
+              -F "input_references=@${LAST_FRAME};type=image/png" \
+              -o fl2va_first_last.mp4
+      curl: |
+        export FIRST_FRAME=/path/to/fl2va_first_frame.png
+        export LAST_FRAME=/path/to/fl2va_last_frame.png
+
+        curl -sS -X POST http://localhost:8000/v1/videos/sync \
+          -F 'prompt=The subject moves naturally from the first image to the last image, with synchronized ambience and sound.' \
+          -F 'fps=24' \
+          -F 'num_inference_steps=50' \
+          -F 'flow_shift=12' \
+          -F 'seed=2102' \
+          -F 'extra_params={"task":"fl2va","duration":8.7,"frame_indices":[0,-1],"audio_flow_shift":3.0}' \
+          -F "input_references=@${FIRST_FRAME};type=image/png" \
+          -F "input_references=@${LAST_FRAME};type=image/png" \
+          -o fl2va_first_last.mp4
+
+    - id: ti2v
+      key: ref_image
+      label: "Ref2VA - Image"
+      model_id: "/path/to/MiniMax-H3"
+      vram_minimum_gb: 202
+      endpoint: "/v1/videos/sync"
+      description: "Reference image and prompt to video and audio through the Ref2VA DiT."
       hardware_overrides:
         rtx_pro_5000_4x:
           vram_minimum_gb: 288
@@ -187,14 +244,62 @@ omni:
           vram_minimum_gb: 48
           extra_args: ["--task-type", "ref2va"]
           curl: |
-            # A) image + audio reference. Serve local assets first:
-            #    python -m http.server 8092 --bind 127.0.0.1 \
-            #      --directory /path/to/reference_assets
+            export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
+
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
+              -F 'prompt=A white cat sits on a beige couch and slowly looks toward the camera as quiet room ambience continues.' \
+              -F 'width=1024' \
+              -F 'height=576' \
+              -F 'fps=24' \
+              -F 'num_inference_steps=50' \
+              -F 'flow_shift=12' \
+              -F 'seed=3100' \
+              -F 'extra_params={"task":"ref2va","duration":5.0,"audio_flow_shift":3.0}' \
+              -F "input_reference=@${REF_IMAGE};type=image/png" \
+              -o ref2va_image.mp4
+      curl: |
+        export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
+
+        curl -sS -X POST http://localhost:8000/v1/videos/sync \
+          -F 'prompt=A white cat sits on a beige couch and slowly looks toward the camera as quiet room ambience continues.' \
+          -F 'aspect_ratio=adaptive' \
+          -F 'short_edge=768' \
+          -F 'fps=24' \
+          -F 'num_inference_steps=50' \
+          -F 'flow_shift=12' \
+          -F 'seed=3100' \
+          -F 'extra_params={"task":"ref2va","duration":8.0,"audio_flow_shift":3.0}' \
+          -F "input_reference=@${REF_IMAGE};type=image/png" \
+          -o ref2va_image.mp4
+
+    - id: ti2v
+      key: ref_image_audio
+      label: "Ref2VA - Image + Audio"
+      model_id: "/path/to/MiniMax-H3"
+      vram_minimum_gb: 202
+      endpoint: "/v1/videos/sync"
+      description: "Reference image and separate audio plus prompt to video and audio through the Ref2VA DiT."
+      hardware_overrides:
+        rtx_pro_5000_4x:
+          vram_minimum_gb: 288
+          extra_args: ["--task-type", "ref2va"]
+        rtx_pro_6000_2x:
+          vram_minimum_gb: 192
+          extra_args: ["--task-type", "ref2va"]
+        rtx_5090_2x:
+          vram_minimum_gb: 64
+          extra_args: ["--task-type", "ref2va"]
+        rtx_4090_2x:
+          vram_minimum_gb: 48
+          extra_args: ["--task-type", "ref2va"]
+          curl: |
+            # audio_reference takes an HTTP(S) or data: URL. Serve local assets first:
+            # python -m http.server 8092 --bind 127.0.0.1 --directory /path/to/reference_assets
             export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
             export AUDIO_URL=http://127.0.0.1:8092/ref2va_audio.mp3
 
             curl -sS -X POST http://localhost:8000/v1/videos/sync \
-              -F 'prompt=A white cat with black mustache and eyebrow markings sits on a beige couch, lip-syncing precisely to the complete reference audio before shifting from confusion to deadpan speechlessness.' \
+              -F 'prompt=A white cat with black mustache and eyebrow markings sits on a beige couch, lip-syncing precisely to the complete reference audio.' \
               -F 'width=1024' \
               -F 'height=576' \
               -F 'fps=24' \
@@ -205,27 +310,9 @@ omni:
               -F "input_reference=@${REF_IMAGE};type=image/png" \
               -F "audio_reference={\"audio_url\":\"${AUDIO_URL}\"}" \
               -o ref2va_image_audio.mp4
-
-            # B) two video references. Repeat input_references in source order.
-            export SUBJECT_VIDEO=/path/to/green_screen_subject.mp4
-            export BACKGROUND_VIDEO=/path/to/fairytale_background.mov
-
-            curl -sS -X POST http://localhost:8000/v1/videos/sync \
-              -F 'prompt=Remove the green screen background of Video 1 and replace it with the fairytale environment from Video 2. Match the background motion to the character actions and relight the character to fit the scene.' \
-              -F 'width=1024' \
-              -F 'height=576' \
-              -F 'fps=24' \
-              -F 'num_inference_steps=50' \
-              -F 'flow_shift=12' \
-              -F 'seed=3101' \
-              -F 'extra_params={"task":"ref2va","duration":5.0,"audio_flow_shift":3.0}' \
-              -F "input_references=@${SUBJECT_VIDEO};type=video/mp4" \
-              -F "input_references=@${BACKGROUND_VIDEO};type=video/quicktime" \
-              -o ref2va_video_video.mp4
       curl: |
-        # A) image + audio reference. `audio_reference` takes an HTTP(S) or data: URL —
-        #    serve local assets first:  python -m http.server 8092 --bind 127.0.0.1 \
-        #                                --directory /path/to/reference_assets
+        # audio_reference takes an HTTP(S) or data: URL. Serve local assets first:
+        # python -m http.server 8092 --bind 127.0.0.1 --directory /path/to/reference_assets
         export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
         export AUDIO_URL=http://127.0.0.1:8092/ref2va_audio.mp3
 
@@ -242,8 +329,43 @@ omni:
           -F "audio_reference={\"audio_url\":\"${AUDIO_URL}\"}" \
           -o ref2va_image_audio.mp4
 
-        # B) two video references — repeat `input_references` once per source video.
-        #    H3 consumes them in form order and keeps their original soundtracks.
+    - id: ti2v
+      key: ref_video_mixed
+      label: "Ref2VA - Video / Mixed"
+      model_id: "/path/to/MiniMax-H3"
+      vram_minimum_gb: 202
+      endpoint: "/v1/videos/sync"
+      description: "One or more ordered video or mixed media references plus prompt to video and audio through the Ref2VA DiT."
+      hardware_overrides:
+        rtx_pro_5000_4x:
+          vram_minimum_gb: 288
+          extra_args: ["--task-type", "ref2va"]
+        rtx_pro_6000_2x:
+          vram_minimum_gb: 192
+          extra_args: ["--task-type", "ref2va"]
+        rtx_5090_2x:
+          vram_minimum_gb: 64
+          extra_args: ["--task-type", "ref2va"]
+        rtx_4090_2x:
+          vram_minimum_gb: 48
+          extra_args: ["--task-type", "ref2va"]
+          curl: |
+            export SUBJECT_VIDEO=/path/to/green_screen_subject.mp4
+            export BACKGROUND_VIDEO=/path/to/fairytale_background.mov
+
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
+              -F 'prompt=Remove the green screen background of Video 1 and replace it with the fairytale environment from Video 2. Match motion and relight the character to fit the scene.' \
+              -F 'width=1024' \
+              -F 'height=576' \
+              -F 'fps=24' \
+              -F 'num_inference_steps=50' \
+              -F 'flow_shift=12' \
+              -F 'seed=3102' \
+              -F 'extra_params={"task":"ref2va","duration":5.0,"audio_flow_shift":3.0}' \
+              -F "input_references=@${SUBJECT_VIDEO};type=video/mp4" \
+              -F "input_references=@${BACKGROUND_VIDEO};type=video/quicktime" \
+              -o ref2va_video_mixed.mp4
+      curl: |
         export SUBJECT_VIDEO=/path/to/green_screen_subject.mp4
         export BACKGROUND_VIDEO=/path/to/fairytale_background.mov
 
@@ -254,11 +376,11 @@ omni:
           -F 'fps=24' \
           -F 'num_inference_steps=50' \
           -F 'flow_shift=12' \
-          -F 'seed=3101' \
+          -F 'seed=3102' \
           -F 'extra_params={"task":"ref2va","duration":15.0,"audio_flow_shift":3.0}' \
           -F "input_references=@${SUBJECT_VIDEO};type=video/mp4" \
           -F "input_references=@${BACKGROUND_VIDEO};type=video/quicktime" \
-          -o ref2va_video_video.mp4
+          -o ref2va_video_mixed.mp4
 
 dependencies:
   # Host-side prerequisite, not a pip install — the weights have to be on disk
@@ -269,7 +391,7 @@ dependencies:
   - note: "pip path only: install current vLLM-Omni main for the modular MiniMax-H3 pipeline."
     command: "git clone --depth 1 https://github.com/vllm-project/vllm-omni.git /path/to/vllm-omni && cd /path/to/vllm-omni && uv pip install -e ."
     install_modes: [pip]
-  - note: "Optional pip extra for the four-GPU B300/GB200 FLASH_ATTN profile. RTX PRO 5000 and the two-GPU RTX profiles use CUDNN_ATTN and do not need FA4."
+  - note: "Optional pip extra for explicitly comparing FA4 on datacenter Blackwell. The generated B300/GB200 route uses the TRTLLM_ATTN default; RTX PRO 5000 and the two-GPU RTX routes use CUDNN_ATTN."
     command: "cd /path/to/vllm-omni && uv pip install -e '.[fa4]'"
     install_modes: [pip]
     brand: NVIDIA
@@ -459,7 +581,7 @@ guide: |
 
   ## Prerequisites
 
-  H3 is served from a **local directory, not the HF id**. The root contains both DiT
+  H3 can be served directly from the gated HF ID or from a local root directory. The local root contains both DiT
   subdirectories plus the shared encoder and VAEs. Request access on the gated model card,
   then download the complete repository:
 
@@ -509,8 +631,8 @@ guide: |
   uv pip install -e .
   ```
 
-  The RTX PRO 5000 and two-GPU RTX profiles use `CUDNN_ATTN` and need no
-  FlashAttention-4 install. For the B300/GB200 `FLASH_ATTN` profile, additionally run
+  The generated datacenter Blackwell route uses the default `TRTLLM_ATTN`; RTX PRO 5000 and the two-GPU RTX profiles use `CUDNN_ATTN`. These routes need no
+  FlashAttention-4 install. Install the optional extra only when explicitly comparing FA4:
   `uv pip install -e '.[fa4]'`.
 
   ## Launch — two 24/32 GB GPUs with distributed layerwise offload
@@ -604,7 +726,7 @@ guide: |
   ## Launch — four GPUs (validated best practice)
 
   On B300/GB200, the no-offload root service uses Ulysses SP4, tiled VAE patch
-  parallelism 4, regional `torch.compile`, FlashAttention, and Ring/TP1. Both DiTs load
+  parallelism 4, regional `torch.compile`, dense BF16 `TRTLLM_ATTN`, and Ring/TP1. Both DiTs load
   once while the encoder and VAEs remain shared.
 
   ```bash
@@ -622,9 +744,12 @@ guide: |
     --ring 1 \
     --vae-patch-parallel-size 4 \
     --vae-parallel-mode tile \
-    --vae-use-tiling \
-    --diffusion-attention-backend FLASH_ATTN
+    --vae-use-tiling
   ```
+
+  Omitting the attention flag is intentional: current datacenter Blackwell builds default to
+  dense BF16 `TRTLLM_ATTN`. Install `[fa4]` and add `--diffusion-attention-backend FLASH_ATTN`
+  only for an explicit FA4 comparison.
 
   No restart is required: `extra_params.task` routes T2VA/FL2VA requests to the FL2VA
   DiT and Ref2VA requests to the Ref2VA DiT.
@@ -771,8 +896,7 @@ guide: |
     --task-type fl2va \
     --num-gpus 4 --usp 4 --ring 1 \
     --text-encoder-tp-size 4 \
-    --vae-patch-parallel-size 4 --vae-parallel-mode tile --vae-use-tiling \
-    --diffusion-attention-backend FLASH_ATTN
+    --vae-patch-parallel-size 4 --vae-parallel-mode tile --vae-use-tiling
   ```
 
   - `N` must divide the Qwen3-VL head counts (64 attention heads / 8 KV heads) → 1, 2, 4 on
