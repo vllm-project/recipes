@@ -212,21 +212,23 @@ compatible_strategies:
   - single_node_tp
   - single_node_tep
   - multi_node_tp
-  # Keep DEP ahead of the other multi-node alternatives so Hopper falls back
-  # to the topology used by the Inkling family when pure cross-node TP is gated.
+  # multi_node_tp_dp is the topology the Inkling family uses for Hopper
+  # scale-out (TP inside each node, DP across nodes); its Hopper tuning lives
+  # in strategy_overrides below.
+  - multi_node_tp_dp
   - multi_node_dep
   - multi_node_tep
   - pd_cluster
 
-# H100/H200 lack the cross-node NVLink fabric that pure multi-node TP relies on.
-# Use DEP (TP within each node, DP/EP across nodes) for scale-out on Hopper.
+# H100/H200 lack the cross-node NVLink fabric that pure multi-node TP (and
+# TEP's cross-node tensor traffic) relies on, so both are opted out on
+# Hopper — scale-out there falls back to multi_node_tp_dp (tuning in
+# strategy_overrides below).
 strategy_hardware:
   multi_node_tp:
-    h100: unsupported
-    h200: unsupported
+    hopper: unsupported
   multi_node_tep:
-    h100: unsupported
-    h200: unsupported
+    hopper: unsupported
 
 kv_offload_support:
   offloading_cpu: verified
@@ -235,7 +237,10 @@ kv_offload_support:
 hardware_overrides: {}
 
 strategy_overrides:
-  multi_node_dep:
+  # TP+DP+EP: the tp_dp emitter renders TP<gpus/node> × DP<nodes> (dp-local 1)
+  # from the node count; EP + hybrid LB and the context/batch caps ride along
+  # as Hopper extra_args.
+  multi_node_tp_dp:
     hardware_overrides:
       hopper:
         extra_args:
@@ -243,12 +248,8 @@ strategy_overrides:
           - "131072"
           - "--max-num-seqs"
           - "10"
-          - "--tensor-parallel-size"
-          - "8"
-          - "--data-parallel-size"
-          - "2"
-          - "--data-parallel-size-local"
-          - "1"
+          - "--enable-expert-parallel"
+          - "--data-parallel-hybrid-lb"
   pd_cluster:
     pool_modes:
       - dep

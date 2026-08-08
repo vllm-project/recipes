@@ -152,31 +152,42 @@ compatible_strategies:
   - single_node_tp
   - single_node_tep
   - multi_node_tp
-  # multi_node_dep leads the multi-node siblings so Hopper (where multi_node_tp
-  # is gated below) falls back to DEP — the intended layout with the H20 TP8/DP2
-  # tuning in strategy_overrides. Blackwell still defaults to multi_node_tp
-  # (recommendStrategy hardcodes TP-first, unaffected by this order).
+  # multi_node_tp_dp leads the multi-node siblings so Hopper (where every other
+  # multi-node layout is gated below) falls back to it. Blackwell still
+  # defaults to multi_node_tp (recommendStrategy hardcodes TP-first, unaffected
+  # by this order).
+  - multi_node_tp_dp
   - multi_node_dep
   - multi_node_tep
   - pd_cluster
 
 # H100/H200 lack the cross-node NVLink fabric that pure multi-node TP relies on
-# (every layer's all-reduce would cross the slow inter-node link), so it isn't a
-# usable layout for Inkling on Hopper — steer users to multi_node_dep (TP within
-# a node, DP across nodes) instead. Fail-open: absent = assumed to work.
+# (every layer's all-reduce would cross the slow inter-node link). Hopper's
+# validated multi-node layout is multi_node_tp_dp — TP8 inside each node, DP
+# across nodes, EP over all ranks (the H20-validated tuning rides along in
+# strategy_overrides below) — so the sibling layouts are opted out here. tp_dp
+# itself stays ungated: the layout is valid on any fabric, and on Hopper it is
+# what the gated siblings fall back to. pd_cluster is opted out as well: its
+# pools are pinned to DEP (pool_modes below) and a DEP pool keeps TP=1 per
+# rank, so every H200 GPU would have to hold the full replicated BF16
+# dense/sconv/shared-expert stack — no runnable Hopper PD shape exists.
 strategy_hardware:
   multi_node_tp:
-    h100: unsupported
-    h200: unsupported
+    hopper: unsupported
   multi_node_tep:
-    h100: unsupported
-    h200: unsupported
+    hopper: unsupported
+  multi_node_dep:
+    hopper: unsupported
+  pd_cluster:
+    hopper: unsupported
 
 hardware_overrides: {}
  
 strategy_overrides:
-  multi_node_dep:
-    # TP+DP+EP
+  # TP+DP+EP: the tp_dp emitter renders TP<gpus/node> × DP<nodes> (dp-local 1)
+  # from the node count; EP + hybrid LB and the H20-validated context/batch
+  # caps ride along as Hopper extra_args.
+  multi_node_tp_dp:
     hardware_overrides:
       hopper:
         extra_args:
@@ -184,12 +195,8 @@ strategy_overrides:
           - "131072"
           - "--max-num-seqs"
           - "10"
-          - "--tensor-parallel-size"
-          - "8"
-          - "--data-parallel-size"
-          - "2"
-          - "--data-parallel-size-local"
-          - "1"
+          - "--enable-expert-parallel"
+          - "--data-parallel-hybrid-lb"
   # PD disaggregation only makes sense with DEP pools for Inkling — pin both
   # prefill and decode to DEP. This does NOT touch the Strategy row: TP/TEP stay
   # available as standalone serving strategies via compatible_strategies above.
@@ -264,9 +271,10 @@ guide: |
     --trust-remote-code
   ```
 
-  For a multi-node BF16 deployment on Hopper (H200/H20), select the **DEP**
-  strategy with **Nodes = 2** in the command builder above — it renders the
-  per-node `vllm serve` commands (TP within each node, DP across nodes).
+  For a multi-node BF16 deployment on Hopper (H200/H20), select the
+  **Multi-Node TP + Data Parallel** strategy with **Nodes = 2** in the command
+  builder above — it renders the per-node `vllm serve` commands (TP within
+  each node, DP across nodes, EP over all ranks).
 
   On AMD, select the **MXFP4** variant. TP4 is validated with the native
   1M context on both GPU families.
