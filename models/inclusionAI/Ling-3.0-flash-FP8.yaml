@@ -1,0 +1,140 @@
+meta:
+  title: "Ling-3.0-flash-FP8"
+  slug: "ling-3-0-flash-fp8"
+  provider: "inclusionAI"
+  description: "Ling-3.0-flash MoE model with serialized block-FP8 weights and native MTP"
+  date_added: 2026-08-06
+  date_updated: 2026-08-06
+  difficulty: advanced
+  tasks:
+    - text
+  performance_headline: "Defaults to TP2 on NVIDIA H200; TP4+EP, Triton MoE, MTP, and CUDA graphs are also validated"
+  related_recipes:
+    - inclusionAI/Ling-3.0-flash
+  hardware:
+    h200: verified
+
+model:
+  model_id: "inclusionAI/Ling-3.0-flash-fp8"
+  min_vllm_version: "0.26.0"
+  nightly_required: true
+  architecture: moe
+  parameter_count: "124B"
+  active_parameters: "5.5B"
+  context_length: 262144
+  base_args:
+    - "--trust-remote-code"
+    - "--dtype"
+    - "bfloat16"
+    - "--gpu-memory-utilization"
+    - "0.9"
+    - "--compilation-config"
+    - '{"cudagraph_mode":"FULL_AND_PIECEWISE"}'
+    - "--enable-prefix-caching"
+  base_env: {}
+
+features:
+  tool_calling:
+    description: "Enable Ling 3 automatic tool calling"
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "ling3"
+  reasoning:
+    description: "Split Ling 3 thinking traces into reasoning_content"
+    args:
+      - "--reasoning-parser"
+      - "ling3"
+  spec_decoding:
+    description: "Use the model's native MTP head with three speculative tokens"
+    args:
+      - "--speculative-config"
+      - '{"method":"mtp","num_speculative_tokens":3}'
+
+opt_in_features:
+  - spec_decoding
+
+variants:
+  default:
+    precision: fp8
+    vram_minimum_gb: 150
+    description: "Serialized block-FP8 checkpoint; defaults to TP=2 on NVIDIA H200"
+
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides: {}
+
+strategy_overrides:
+  single_node_tp:
+    tp: 2
+
+guide: |
+  ## Overview
+
+  `inclusionAI/Ling-3.0-flash-FP8` is the serialized block-FP8 checkpoint of
+  Ling-3.0-flash. It uses the `BailingMoeV3ForCausalLM` architecture with a
+  hybrid MLA/KDA attention stack, 512 routed experts (8 active per token), one
+  shared expert, and a native multi-token prediction head.
+
+  ## Prerequisites
+
+  - **vLLM:** 0.26.0 or newer with Ling 3 block-FP8 support
+  - **Validated hardware:** 2x NVIDIA H200 (default); 4x H200 with expert parallelism is also supported
+  - **Weights:** serialized block FP8
+  - **Compute dtype:** BF16
+  - **Context length:** 131,072 tokens
+
+  ## Launching the Server
+
+  ```bash
+  vllm serve inclusionAI/Ling-3.0-flash-fp8 \
+    --trust-remote-code \
+    --dtype bfloat16 \
+    --tensor-parallel-size 2 \
+    --gpu-memory-utilization 0.9 \
+    --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE"}' \
+    --enable-prefix-caching \
+    --enable-auto-tool-choice \
+    --tool-call-parser ling3 \
+    --reasoning-parser ling3
+  ```
+
+  The validated configuration keeps CUDA graphs enabled; `--enforce-eager` is
+  not required.
+
+  To use TP4 with expert parallelism instead, set
+  `--tensor-parallel-size 4` and add `--enable-expert-parallel`.
+
+  To enable the native MTP head, add:
+
+  ```bash
+  --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
+  ```
+
+  ## Thinking Mode
+
+  Thinking is selected per request through the chat template:
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+  response = client.chat.completions.create(
+      model="inclusionAI/Ling-3.0-flash-fp8",
+      messages=[{"role": "user", "content": "Solve the problem step by step."}],
+      temperature=0.0,
+      max_tokens=128000,
+      extra_body={"chat_template_kwargs": {"enable_thinking": True}},
+  )
+  print(response.choices[0].message.reasoning_content)
+  print(response.choices[0].message.content)
+  ```
+
+  ## Validation
+
+  Both the default TP2 path and the TP4+EP path were validated on H200.
+
+  ## References
+
+  - [Ling-3.0-flash-FP8 on Hugging Face](https://huggingface.co/inclusionAI/Ling-3.0-flash-fp8)
