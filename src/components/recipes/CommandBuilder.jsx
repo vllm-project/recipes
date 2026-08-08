@@ -365,8 +365,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // T2V/I2V/TI2V) and the cURL endpoint/body shown in the Try-it popover.
   const [omniTask, setOmniTask] = useState(() => {
     const fromUrl = searchParams.get("task");
-    if (fromUrl && omniTasks.some((t) => t.id === fromUrl)) return fromUrl;
-    return omniTasks[0]?.id || "";
+    if (fromUrl) {
+      const exact = omniTasks.find((t) => t.key === fromUrl);
+      if (exact) return exact.key;
+      // Preserve old `?task=<catalog-id>` links after a recipe introduces
+      // distinct selector keys for several presets sharing the same task id.
+      const legacy = omniTasks.find((t) => t.id === fromUrl);
+      if (legacy) return legacy.key;
+    }
+    return omniTasks[0]?.key || "";
   });
 
   // Compute default hardware: URL param > stored preference (if compatible) > smallest compatible profile
@@ -1115,12 +1122,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   );
 
   // ── Handlers ──
-  const selectOmniTask = (id) => {
-    setOmniTask(id);
-    // Default task id is omitted from the URL so a fresh page-load lands on
+  const selectOmniTask = (key) => {
+    setOmniTask(key);
+    // Default task key is omitted from the URL so a fresh page-load lands on
     // the recipe author's intended starting task without a noisy `?task=…`.
-    const defaultId = omniTasks[0]?.id;
-    syncUrl({ task: id === defaultId ? "" : id });
+    const defaultKey = omniTasks[0]?.key;
+    syncUrl({ task: key === defaultKey ? "" : key });
   };
 
   const selectVariant = (key) => {
@@ -1736,7 +1743,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const omniVariants = Object.entries(recipe.variants || {});
     const showOmniVariants = omniVariants.length > 1;
     const showOmniTaskRow = omniTasks.length > 1;
-    const activeTaskBase = omniTasks.find((t) => t.id === omniTask) || omniTasks[0] || null;
+    const activeTaskBase = omniTasks.find((t) => t.key === omniTask) || omniTasks[0] || null;
     const activeTask = resolveOmniTaskForHardware(activeTaskBase, hwId);
 
     // Render the `vllm serve --omni` command via the shared omni resolver.
@@ -1878,17 +1885,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
             {showOmniTaskRow && (
               <ConfigRow
-                label="Task"
-                hint="Each task picks a vllm-omni handler endpoint and example payload. For multi-checkpoint families (Wan2.2 T2V/I2V/TI2V) the task also swaps the served model_id."
+                label={recipe.omni?.task_label || "Task"}
+                hint={recipe.omni?.task_hint || "Each task picks a vllm-omni handler endpoint and example payload. For multi-checkpoint families (Wan2.2 T2V/I2V/TI2V) the task also swaps the served model_id."}
               >
                 <PillGroup>
                   {omniTasks.map((task) => {
                     const t = resolveOmniTaskForHardware(task, hwId);
                     return (
                       <Pill
-                        key={t.id}
-                        active={activeTask?.id === t.id}
-                        onClick={() => selectOmniTask(t.id)}
+                        key={t.key}
+                        active={activeTask?.key === t.key}
+                        onClick={() => selectOmniTask(t.key)}
                         title={[t.description, `Endpoint: ${t.endpoint}`].filter(Boolean).join("\n\n")}
                       >
                         <span className="font-semibold">{t.label}</span>

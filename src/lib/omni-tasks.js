@@ -194,10 +194,11 @@ export const OMNI_TASKS = {
  *
  * Accepts either:
  *   omni: { tasks: ["t2i"] }                              — bare ids
- *   omni: { tasks: [{ id: "i2i", model_id, vram_minimum_gb, description,
+ *   omni: { tasks: [{ id: "i2i", key?, model_id, vram_minimum_gb, description,
  *                     extra_args, curl }, ...] }           — per-task overrides
  *
  * Per-task fields:
+ *   - key               unique selector/URL key when several presets share one task id
  *   - model_id          swap the served checkpoint (Wan2.2 picks a different
  *                       HF repo for T2V/I2V/TI2V)
  *   - vram_minimum_gb   drives the hardware-fit hint when set (otherwise
@@ -207,7 +208,7 @@ export const OMNI_TASKS = {
  *   - curl              static curl override (otherwise the built-in renderer
  *                       interpolates host/port/modelId into a sample request)
  *
- * Returns: [{ id, label, endpoint, method, modelId?, vramMinimumGb?,
+ * Returns: [{ id, key, label, endpoint, method, modelId?, vramMinimumGb?,
  *             description?, extraArgs?, hardwareOverrides?, example }]
  */
 export function resolveOmniTasks(recipe) {
@@ -223,6 +224,7 @@ export function resolveOmniTasks(recipe) {
     const customCurl = override.curl;
     out.push({
       id,
+      key: override.key || id,
       label: override.label || base.label,
       endpoint: override.endpoint || base.endpoint,
       method: base.method,
