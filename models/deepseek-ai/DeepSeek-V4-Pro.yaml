@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 flagship MoE (1.6T total / 49B active) with hybrid CSA+HCA attention, manifold-constrained hyper-connections, Muon-trained on 32T+ tokens, and three-tier reasoning."
   date_added: 2026-04-24
-  date_updated: 2026-07-10
+  date_updated: 2026-08-02
   difficulty: hard
   tasks:
     - text
@@ -16,6 +16,7 @@ meta:
     gb200: verified
     b300: verified
     gb300: verified
+    rtx_pro_6000_8x: verified
     mi300x: unsupported
     mi325x: unsupported
     mi355x: verified
@@ -134,10 +135,40 @@ compatible_strategies:
   - single_node_dep
   - multi_node_tep
   - multi_node_dep
+  - multi_node_tp_dp
   - pd_cluster
 
-# TP+EP is the default deployment; single_node_tp is offered only as a
-# latency-oriented alternative.
+# TP8 within a node x DP2 across nodes (+ EP over all 16 ranks) is the only
+# validated 2-node layout on RTX PRO 6000. Everywhere else this recipe's
+# documented multi-node path is TEP/DEP, so the pill stays off there.
+# Fail-open convention: absent = supported.
+strategy_min_gpus:
+  rtx_pro_6000_8x: 16
+
+
+strategy_hardware:
+  multi_node_tp_dp:
+    h100: unsupported
+    h200: unsupported
+    b200: unsupported
+    gb200: unsupported
+    b300: unsupported
+    gb300: unsupported
+    mi355x: unsupported
+  # Cross-node TP=16: the MTP draft's merged column-parallel weight has 24
+  # units on its sharded dimension and 16 doesn't divide 24, so the draft
+  # loader raises `IndexError: start out of range` on ranks 12-15. Every TP8
+  # layout is fine (24 % 8 == 0).
+  multi_node_tep:
+    rtx_pro_6000_8x: unsupported
+  # DEP renders TP=1 x DP=16, which duplicates the dense/attention params on
+  # every rank -- well past 96 GB/GPU before a single expert lands.
+  multi_node_dep:
+    rtx_pro_6000_8x: unsupported
+  pd_cluster:
+    rtx_pro_6000_8x: unsupported
+
+
 default_strategy: single_node_tep
 
 hardware_overrides:
@@ -173,6 +204,20 @@ hardware_overrides:
       - '{"mode": 3, "cudagraph_mode": "FULL_DECODE_ONLY"}'
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
+
+  blackwell_sm120:
+    extra_args:
+      - "--moe-backend"
+      - "marlin"
+      - "--linear-backend"
+      - "deep_gemm"
+      - "--gpu-memory-utilization"
+      - "0.95"
+      - "--max-model-len"
+      - "262144"
+      - "--compilation-config"
+      - "{}"
+      - "--enable-expert-parallel"
 
 strategy_overrides:
   single_node_tp:
@@ -331,6 +376,9 @@ guide: |
   - **GB200 NVL4 (4× GPU per tray)**: the ~960 GB mixed-precision checkpoint does not
     fit on one tray; run multi-node DP + EP across **2 trays** (8 GPUs total) with
     `--data-parallel-size 8`. Pick the "Multi-Node" tab and set nodes to 2.
+  - **RTX PRO 6000 (2 nodes × 8×96 GB)**: cross-node TEP over
+    InfiniBand with Marlin MoE experts. Requires the SM120 FP8 scale-layout fix pr merge—
+    https://github.com/vllm-project/vllm/pull/48052 .
 
   ### MI355X (8×288GB)
 
