@@ -99,6 +99,12 @@ variants:
     model_id: "RedHatAI/Kimi-K3-NVFP4"
     description: "RedHatAI compressed-tensors NVFP4 quantization; MoE layers quantized to NVFP4, attention and embeddings at full precision"
 
+  fp8:
+    model_id: "RedHatAI/Kimi-K3-FP8-BLOCK"
+    precision: fp8
+    vram_minimum_gb: 3360
+    description: "RedHatAI FP8 block quantization"
+
 compatible_strategies:
   - single_node_tp
   - multi_node_tp

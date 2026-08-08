@@ -55,6 +55,7 @@ features:
         variants:
           - default
           - nvfp4
+          - redhat_nvfp4
           - bf16
           - mxfp4
         args:
@@ -98,6 +99,12 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 558
     description: "NVIDIA modelopt NVFP4 checkpoint — only MoE expert linears are quantized to NVFP4; shared experts, attention, embeddings, and the early dense layers stay FP8/BF16, with FP8 KV cache. Blackwell GPUs (B200/B300) only."
+  redhat_nvfp4:
+    model_id: "RedHatAI/GLM-5.2-NVFP4-FP8"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 558
+    description: "RedHatAI NVFP4+FP8 mixed-precision checkpoint (MoE expert linears NVFP4, attention/embeddings FP8) for Blackwell GPUs"
   bf16:
     precision: bf16
     vram_minimum_gb: 1786

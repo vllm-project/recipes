@@ -78,6 +78,7 @@ features:
         variants:
           - fp8
           - nvfp4
+          - redhat_nvfp4
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":2}'
@@ -290,6 +291,12 @@ variants:
           OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
           TP_SOCKET_IFNAME: "$IFACE_NAME"
           UCX_NET_DEVICES: "$IFACE_NAME"
+  redhat_nvfp4:
+    model_id: "RedHatAI/DeepSeek-V4-Flash-NVFP4-FP8"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 170
+    description: "RedHatAI NVFP4+FP8 mixed-precision checkpoint for Blackwell GPUs"
   dspark:
     # Official fused DSpark checkpoint — the preview weights with the DSpark draft
     # module attached (config.json gains the dspark_* block). A distinct served

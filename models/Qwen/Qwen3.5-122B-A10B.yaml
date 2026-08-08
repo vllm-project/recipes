@@ -66,6 +66,14 @@ variants:
     precision: fp8
     vram_minimum_gb: 147
     description: "Qwen official FP8 checkpoint — fits on 2x H200"
+  nvfp4:
+    model_id: "RedHatAI/Qwen3.5-122B-A10B-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 74
+    description: "RedHatAI compressed-tensors NVFP4 quantization for Blackwell GPUs"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
   gptq_int4:
     model_id: "Qwen/Qwen3.5-122B-A10B-GPTQ-Int4"
     precision: int4
