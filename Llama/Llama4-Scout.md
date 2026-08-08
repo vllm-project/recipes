@@ -1,4 +1,4 @@
-# Quick Start Recipe for Llama 4 Scout on vLLM - NVIDIA Blackwell & Hopper Hardware
+# Quick Start Recipe for Llama 4 Scout on vLLM
 
 ## Introduction
 
@@ -26,14 +26,22 @@ For Hopper, FP8 offers the best performance for most workloads. For Blackwell, N
 
 ## Prerequisites
 
+### NVIDIA GPU
 - OS: Linux
 - Drivers: CUDA Driver 575 or above
 - GPU: Blackwell architecture or Hopper Architecture
 - [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/index.html)
 
+### AMD GPU
+- OS: Linux
+- Drivers: ROCm 7.0 or above
+- GPU: AMD MI300X, MI325X, MI350X, MI355X
+
 ## Deployment Steps
 
-### Pull Docker Image
+### NVIDIA GPU
+
+#### Pull Docker Image
 
 Pull the vLLM v0.12.0 release docker image.
 
@@ -286,3 +294,53 @@ Below are the recommended configs for different throughput-latency scenarios on 
 - **Balanced**: Set TP to 2 and set BS to 128.
 
 Finally, another minor tunable config is the `--max-num-batched-tokens` flag which controls how many tokens can be batched together within a forward iteration. We recommend setting this to `8192` which works well for most cases. Increasing it to `16384` may result in slightly higher throughput and lower TTFT latencies, with a more uneven distribution of the TPOT latencies since some output tokens may be generated with more prefill-stage tokens in the same batches.
+
+### AMD GPU (ROCm)
+
+#### Using vLLM Docker Image
+
+```bash
+docker run -it \
+  --network=host \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --group-add=video \
+  --ipc=host \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  --shm-size 32G \
+  -v /data:/data \
+  -v $HOME:/myhome \
+  -w /myhome \
+  --entrypoint /bin/bash \
+  vllm/vllm-openai-rocm:latest
+```
+
+Or install using uv environment:
+
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+```
+
+#### Launch vLLM Server
+
+You can use 8x MI300X/MI325X/MI350X/MI355X GPUs to launch this model with [AITER](https://github.com/ROCm/aiter) acceleration enabled:
+
+```bash
+export TP=8
+export MODEL="meta-llama/Llama-4-Scout-17B-16E-Instruct"
+export VLLM_ROCM_USE_AITER=1
+vllm serve $MODEL \
+  --disable-log-requests \
+  -tp $TP \
+  --max-num-seqs 64 \
+  --no-enable-prefix-caching \
+  --max-num-batched-tokens 16384 \
+  --max-model-len 32000 &
+```
+
+> **Note**: The first launch with AITER may take several minutes as AITER JIT-compiles optimized kernels (CK-based FP8 MoE, RMSNorm, activation, etc.). Subsequent launches will use cached kernels.
