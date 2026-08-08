@@ -75,6 +75,7 @@ features:
         variants:
           - fp8
           - nvfp4
+          - redhat_nvfp4
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":2}'
@@ -134,6 +135,12 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 170
     description: "NVIDIA modelopt NVFP4 checkpoint (MoE experts NVFP4; attention, shared experts, router head, and MTP stay FP8) for Blackwell GPUs."
+  redhat_nvfp4:
+    model_id: "RedHatAI/DeepSeek-V4-Flash-NVFP4-FP8"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 170
+    description: "RedHatAI NVFP4+FP8 mixed-precision checkpoint for Blackwell GPUs"
   dspark:
     # Official fused DSpark checkpoint — the preview weights with the DSpark draft
     # module attached (config.json gains the dspark_* block). A distinct served

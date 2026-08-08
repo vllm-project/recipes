@@ -49,6 +49,16 @@ variants:
       - "fp8"
     extra_env: {}
 
+  redhat_fp8:
+    model_id: "RedHatAI/Llama-3.3-70B-Instruct-FP8-dynamic"
+    precision: fp8
+    label: "FP8 (RedHat)"
+    vram_minimum_gb: 84
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
   nvfp4:
     model_id: "nvidia/Llama-3.3-70B-Instruct-NVFP4"
     precision: nvfp4
