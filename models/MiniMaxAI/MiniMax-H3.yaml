@@ -616,7 +616,92 @@ variants:
           - "--enforce-eager"
         extra_env:
           VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "14400"
-        
+
+  fp8:
+    precision: fp8
+    label: "FP8 (online)"
+    vram_minimum_gb: 202
+    description: "Online FP8 for eligible DiT and Qwen3-VL text-decoder linears. Validated on B300; other FP8-capable hardware remains selectable and should be benchmarked on the target workload."
+    extra_args:
+      - "--quantization"
+      - "fp8"
+    hardware_overrides:
+      rtx_pro_5000_4x:
+        extra_args:
+          - "--num-gpus"
+          - "4"
+          - "--tensor-parallel-size"
+          - "2"
+          - "--usp"
+          - "2"
+          - "--ring"
+          - "1"
+          - "--text-encoder-tp-size"
+          - "4"
+          - "--vae-patch-parallel-size"
+          - "4"
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
+      rtx_pro_6000_2x:
+        extra_args:
+          - "--num-gpus"
+          - "2"
+          - "--tensor-parallel-size"
+          - "2"
+          - "--usp"
+          - "1"
+          - "--ring"
+          - "1"
+          - "--text-encoder-tp-size"
+          - "2"
+          - "--vae-patch-parallel-size"
+          - "2"
+      rtx_5090_2x:
+        extra_args:
+          - "--num-gpus"
+          - "2"
+          - "--tensor-parallel-size"
+          - "2"
+          - "--usp"
+          - "1"
+          - "--ring"
+          - "1"
+          - "--text-encoder-tp-size"
+          - "2"
+          - "--vae-patch-parallel-size"
+          - "2"
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
+          - "--enable-distributed-layerwise-offload"
+          - "--dlo-no-use-allgather"
+          - "--dlo-resident-layers"
+          - "20"
+          - "--enforce-eager"
+        extra_env:
+          VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "14400"
+      rtx_4090_2x:
+        extra_args:
+          - "--num-gpus"
+          - "2"
+          - "--tensor-parallel-size"
+          - "2"
+          - "--usp"
+          - "1"
+          - "--ring"
+          - "1"
+          - "--text-encoder-tp-size"
+          - "2"
+          - "--vae-patch-parallel-size"
+          - "2"
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
+          - "--enable-distributed-layerwise-offload"
+          - "--dlo-no-use-allgather"
+          - "--dlo-resident-layers"
+          - "12"
+          - "--enforce-eager"
+        extra_env:
+          VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "14400"
 
 # Omni recipes are served through `vllm serve --omni`, which has its own
 # diffusion-parallelism flags (--usp / --ring / --vae-patch-parallel-size).
@@ -763,20 +848,23 @@ guide: |
   FlashAttention-4 install. Install the optional extra only when explicitly comparing FA4:
   `uv pip install -e '.[fa4]'`.
 
-  ## Optional resident online FP8 on B300
+  ## Optional online FP8
 
   vLLM-Omni [#5910](https://github.com/vllm-project/vllm-omni/pull/5910) adds one
   MiniMax-H3 online-FP8 mode. `--quantization fp8` quantizes eligible DiT and
   Qwen3-VL text-decoder linears while the vision tower, embeddings, norms, RoPE,
   VAEs, and FP32 input/output projections retain checkpoint precision.
 
+  Select **FP8 (online)** in the command matrix to append `--quantization fp8`.
+  The option is not restricted to B300: it remains selectable on the recipe's
+  FP8-capable hardware. Current end-to-end validation was performed on B300, so
+  benchmark and quality-check other platforms on the target workload.
+
   Online FP8 is approximate rather than a consistency ground-truth mode. Validate
   both video and audio quality, memory use, and latency on the target workload.
 
-  This resident path is currently validated on B300 with the released `FL2VA` and
-  `Ref2VA` partitions served separately. It is documented as an opt-in command instead of a
-  recipe variant because the default recipe serves the combined root checkpoint, and
-  that root-service FP8 configuration has not been validated yet:
+  The following single-partition command is the B300 validation shape used for
+  the measurements below:
 
   ```bash
   CUDA_VISIBLE_DEVICES=0 \
@@ -799,7 +887,7 @@ guide: |
     --enforce-eager
   ```
 
-  Resident B300 measurements show that FP8 is primarily a capacity optimization for
+  B300 measurements show that FP8 is primarily a capacity optimization for
   the encoder. The latency values below isolate the steady-state Qwen3-VL
   `encode_ids` call after two warmups (median of five runs; TP4 uses the slowest rank):
 
@@ -1244,9 +1332,9 @@ guide: |
   - The VAE supports the native `tile` parallel mode only.
   - A `U2 × Ring2` hybrid currently fails with an attention-mask length mismatch; use pure
     Ulysses.
-  - Online FP8 is currently validated on B300 for the separate `FL2VA` and `Ref2VA`
-    partitions. The combined root service and RTX/AMD routes are not yet validated.
-    FP8 with DLO requires `--dlo-no-use-allgather`; the sharded AllGather path cannot
+  - Online FP8 is selectable on the recipe's FP8-capable hardware. Current end-to-end
+    validation is from B300; benchmark and quality-check other platforms before production
+    use. FP8 with DLO requires `--dlo-no-use-allgather`; the sharded AllGather path cannot
     reconstruct weights quantized at runtime.
   - On unified-memory platforms (DGX Spark / GB10) CPU offload and DLO give no capacity
     benefit, because host RAM and VRAM are one pool; DLO additionally doubles peak usage
