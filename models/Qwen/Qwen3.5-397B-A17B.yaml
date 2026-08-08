@@ -78,6 +78,14 @@ variants:
       - "fp8"
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP4: "1"
+  fp8:
+    model_id: "RedHatAI/Qwen3.5-397B-A17B-FP8-dynamic"
+    precision: fp8
+    vram_minimum_gb: 477
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
   gptq_int4:
     model_id: "Qwen/Qwen3.5-397B-A17B-GPTQ-Int4"
     precision: int4

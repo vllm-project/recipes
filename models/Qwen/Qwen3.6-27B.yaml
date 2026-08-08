@@ -125,6 +125,12 @@ variants:
           - "4096"
           - "--gpu-memory-utilization"
           - "0.95"
+  redhat_fp8:
+    model_id: "RedHatAI/Qwen3.6-27B-FP8"
+    precision: fp8
+    label: "FP8 (RedHat)"
+    vram_minimum_gb: 33
+    description: "RedHatAI FP8 dynamic quantization"
 
 compatible_strategies:
   - single_node_tp

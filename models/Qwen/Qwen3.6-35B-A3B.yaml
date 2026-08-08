@@ -118,6 +118,15 @@ variants:
           - "--max-num-batched-tokens"
           - "8192"
           - "--enable-chunked-prefill"
+  redhat_nvfp4:
+    model_id: "RedHatAI/Qwen3.6-35B-A3B-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 21
+    description: "RedHatAI compressed-tensors NVFP4 quantization for Blackwell GPUs"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
 
 compatible_strategies:
   - single_node_tp
