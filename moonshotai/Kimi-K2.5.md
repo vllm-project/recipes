@@ -239,8 +239,6 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 \
 The configuration below has been verified on 8x MI300X/MI355X GPUs.
 ```bash
 export VLLM_ROCM_USE_AITER=1  # Enable AITER optimization for attention and tensor operations
-export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4  # Use INT4 quantization for faster all-reduce operations
-export VLLM_ROCM_USE_AITER_RMSNORM=0  # Disable AITER for RMSNorm layers
 
 vllm serve moonshotai/Kimi-K2.5 -tp 8 \
     --mm-encoder-tp-mode data \
@@ -249,6 +247,8 @@ vllm serve moonshotai/Kimi-K2.5 -tp 8 \
     --enable-auto-tool-choice \
     --block-size=1 \
     --mm-encoder-tp-mode data \
+    --moe-backend flydsl \
+    --compilation-config '{"pass_config": {"fuse_allreduce_rms": false}}' \
     --trust-remote-code
 ```
 
