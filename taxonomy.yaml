@@ -118,6 +118,19 @@ hardware_profiles:
     scalable: false
     restricted: true
 
+  # RTX PRO 5000 Blackwell — validated four-card PCIe profile.
+  # Restricted so it only appears for recipes with target-hardware evidence.
+  rtx_pro_5000_4x:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX PRO 5000 Blackwell 4x"
+    description: "NVIDIA RTX PRO 5000 Blackwell · 4× 72 GB VRAM · PCIe, no NVLink"
+    gpu_count: 4
+    vram_gb: 288
+    multi_node: false
+    scalable: false
+    restricted: true
+
   # RTX Pro 6000 8x — 8x RTX Pro 6000 GPUs system.
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
   # lists it in `meta.hardware` (same pattern as the TPU profiles).
