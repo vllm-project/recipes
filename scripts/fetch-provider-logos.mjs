@@ -52,7 +52,7 @@ for (const [org, meta] of Object.entries(targets)) {
     continue;
   }
   try {
-    const avatarUrl = await fetchOrgAvatarUrl(org);
+    const avatarUrl = await fetchOrgAvatarUrl(meta.avatar_org || org);
     if (!avatarUrl) {
       console.warn(`⚠ no avatar found for ${org}`);
       failed++;
