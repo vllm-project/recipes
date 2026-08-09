@@ -10,8 +10,6 @@ meta:
     - multimodal
     - text
   performance_headline: "288B multimodal MoE with BF16 and native FP8 checkpoints, about 17B active parameters, and 384K context"
-  related_recipes:
-    - "XiaomiMiMo/MiMo-V2.5"
   hardware:
     h100: verified
     mi300x: unsupported
