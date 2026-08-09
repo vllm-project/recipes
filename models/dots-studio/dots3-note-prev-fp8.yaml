@@ -13,6 +13,7 @@ meta:
   related_recipes:
     - "XiaomiMiMo/MiMo-V2.5"
   hardware:
+    h100: verified
     mi300x: unsupported
     mi325x: unsupported
     mi355x: unsupported
