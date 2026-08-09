@@ -113,11 +113,11 @@ omni:
               -F 'seed=1101' \
               -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
               -o t2va.mp4
-          dgx_spark_gb10:
-            vram_minimum_gb: 128
-            extra_args: ["--task-type", "fl2va"]
-            curl: |
-              curl -sS -X POST http://localhost:8000/v1/videos/sync \
+        dgx_spark_gb10:
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "fl2va"]
+          curl: |
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
               -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
               -F 'width=1024' \
               -F 'height=576' \
@@ -160,6 +160,7 @@ omni:
           extra_args: ["--task-type", "fl2va"]
         rtx_4090_2x:
           vram_minimum_gb: 48
+          extra_args: ["--task-type", "fl2va"]
           curl: |
             export FIRST_FRAME=/path/to/fl2va_first_frame.png
 
@@ -174,11 +175,11 @@ omni:
               -F 'extra_params={"task":"fl2va","duration":5.0,"audio_flow_shift":3.0}' \
               -F "input_reference=@${FIRST_FRAME};type=image/png" \
               -o fl2va_first.mp4
-          dgx_spark_gb10:
-            vram_minimum_gb: 128
-            extra_args: ["--task-type", "fl2va"]
-            curl: |
-              export FIRST_FRAME=/path/to/fl2va_first_frame.png
+        dgx_spark_gb10:
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "fl2va"]
+          curl: |
+            export FIRST_FRAME=/path/to/fl2va_first_frame.png
 
             curl -sS -X POST http://localhost:8000/v1/videos/sync \
               -F 'prompt=A man stands beside a yellow car at night. The car drives away; he follows it with his eyes and begins singing sadly, with synchronized voice and city ambience.' \
@@ -240,25 +241,25 @@ omni:
               -F "input_references=@${FIRST_FRAME};type=image/png" \
               -F "input_references=@${LAST_FRAME};type=image/png" \
               -o fl2va_first_last.mp4
-          dgx_spark_gb10:
-            vram_minimum_gb: 128
-            extra_args: ["--task-type", "fl2va"]
-            curl: |
-              export FIRST_FRAME=/path/to/fl2va_first_frame.png
-              export LAST_FRAME=/path/to/fl2va_last_frame.png
+        dgx_spark_gb10:
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "fl2va"]
+          curl: |
+            export FIRST_FRAME=/path/to/fl2va_first_frame.png
+            export LAST_FRAME=/path/to/fl2va_last_frame.png
 
-              curl -sS -X POST http://localhost:8000/v1/videos/sync \
-                -F 'prompt=The subject moves naturally from the first image to the last image, with synchronized ambience and sound.' \
-                -F 'width=1024' \
-                -F 'height=576' \
-                -F 'fps=24' \
-                -F 'num_inference_steps=50' \
-                -F 'flow_shift=12' \
-                -F 'seed=2102' \
-                -F 'extra_params={"task":"fl2va","duration":5.0,"frame_indices":[0,-1],"audio_flow_shift":3.0}' \
-                -F "input_references=@${FIRST_FRAME};type=image/png" \
-                -F "input_references=@${LAST_FRAME};type=image/png" \
-                -o fl2va_first_last.mp4
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
+              -F 'prompt=The subject moves naturally from the first image to the last image, with synchronized ambience and sound.' \
+              -F 'width=1024' \
+              -F 'height=576' \
+              -F 'fps=24' \
+              -F 'num_inference_steps=50' \
+              -F 'flow_shift=12' \
+              -F 'seed=2102' \
+              -F 'extra_params={"task":"fl2va","duration":5.0,"frame_indices":[0,-1],"audio_flow_shift":3.0}' \
+              -F "input_references=@${FIRST_FRAME};type=image/png" \
+              -F "input_references=@${LAST_FRAME};type=image/png" \
+              -o fl2va_first_last.mp4
       curl: |
         export FIRST_FRAME=/path/to/fl2va_first_frame.png
         export LAST_FRAME=/path/to/fl2va_last_frame.png
@@ -308,11 +309,11 @@ omni:
               -F 'extra_params={"task":"ref2va","duration":5.0,"audio_flow_shift":3.0}' \
               -F "input_reference=@${REF_IMAGE};type=image/png" \
               -o ref2va_image.mp4
-          dgx_spark_gb10:
-            vram_minimum_gb: 128
-            extra_args: ["--task-type", "ref2va"]
-            curl: |
-              export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
+        dgx_spark_gb10:
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "ref2va"]
+          curl: |
+            export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
 
             curl -sS -X POST http://localhost:8000/v1/videos/sync \
               -F 'prompt=A white cat sits on a beige couch and slowly looks toward the camera as quiet room ambience continues.' \
@@ -378,14 +379,14 @@ omni:
               -F "input_reference=@${REF_IMAGE};type=image/png" \
               -F "audio_reference={\"audio_url\":\"${AUDIO_URL}\"}" \
               -o ref2va_image_audio.mp4
-          dgx_spark_gb10:
-            vram_minimum_gb: 128
-            extra_args: ["--task-type", "ref2va"]
-            curl: |
-              # audio_reference takes an HTTP(S) or data: URL. Serve local assets first:
-              # python -m http.server 8092 --bind 127.0.0.1 --directory /path/to/reference_assets
-              export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
-              export AUDIO_URL=http://127.0.0.1:8092/ref2va_audio.mp3
+        dgx_spark_gb10:
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "ref2va"]
+          curl: |
+            # audio_reference takes an HTTP(S) or data: URL. Serve local assets first:
+            # python -m http.server 8092 --bind 127.0.0.1 --directory /path/to/reference_assets
+            export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
+            export AUDIO_URL=http://127.0.0.1:8092/ref2va_audio.mp3
 
             curl -sS -X POST http://localhost:8000/v1/videos/sync \
               -F 'prompt=A white cat with black mustache and eyebrow markings sits on a beige couch, lip-syncing precisely to the complete reference audio.' \
@@ -454,12 +455,12 @@ omni:
               -F "input_references=@${SUBJECT_VIDEO};type=video/mp4" \
               -F "input_references=@${BACKGROUND_VIDEO};type=video/quicktime" \
               -o ref2va_video_mixed.mp4
-          dgx_spark_gb10:
-            vram_minimum_gb: 128
-            extra_args: ["--task-type", "ref2va"]
-            curl: |
-              export SUBJECT_VIDEO=/path/to/green_screen_subject.mp4
-              export BACKGROUND_VIDEO=/path/to/fairytale_background.mov
+        dgx_spark_gb10:
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "ref2va"]
+          curl: |
+            export SUBJECT_VIDEO=/path/to/green_screen_subject.mp4
+            export BACKGROUND_VIDEO=/path/to/fairytale_background.mov
 
             curl -sS -X POST http://localhost:8000/v1/videos/sync \
               -F 'prompt=Remove the green screen background of Video 1 and replace it with the fairytale environment from Video 2. Match the background motion to the character actions and relight the character to fit the scene.' \
@@ -1010,10 +1011,15 @@ guide: |
     --diffusion-attention-backend FLASH_ATTN
   ```
 
-    ## Launch — DGX Spark (GB10, 128 GB unified memory)
+  ## Launch — DGX Spark (GB10, 128 GB unified memory)
 
   GB10 is a **unified-memory** platform: the 128 GB LPDDR5X (≈121 GiB usable) is shared by
-  CPU and GPU
+  CPU and GPU, so both offload strategies used elsewhere in this recipe stop being capacity
+  levers. `--enable-cpu-offload` and distributed layerwise offload move weights from "VRAM"
+  to "host RAM", which is the same physical pool here — nothing is freed. DLO is actively
+  harmful: staging rank-local shards into pinned host memory creates a second copy
+  alongside the resident one, and the process is killed by the OOM killer (`Exit code: -9`)
+  right after `Enabling offloader backend`.
 
   One partition on disk is 135 GiB in BF16:
 
@@ -1052,7 +1058,13 @@ guide: |
     --vae-use-tiling \
     --enforce-eager \
     --diffusion-attention-backend CUDNN_ATTN
-  
+  ```
+
+  Restart with `--task-type ref2va` to serve the Ref2VA family. Keep requests at a 576 px
+  short edge (1024×576) and 5 s duration as the starting shape; GB10 has one GPU and no
+  parallelism headroom, so wall-clock per request is far higher than the multi-GPU profiles
+  above.
+
   ## Text-encoder tensor parallelism
 
   By default the whole Qwen3-VL encoder is resident on the DiT main rank, making it the
