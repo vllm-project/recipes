@@ -1,15 +1,15 @@
 meta:
-  title: "Dots3Note FP8"
-  slug: "dots3-note-prev-fp8"
+  title: "Dots3Note"
+  slug: "dots3-note"
   provider: "Dots"
-  description: "Native FP8 multimodal MoE model with hybrid DSA/full and sliding-window attention, 384K context, and a three-layer MTP head."
+  description: "Multimodal MoE model available in BF16 and native FP8, with hybrid DSA/full and sliding-window attention, 384K context, and a three-layer MTP head."
   date_added: 2026-08-09
   date_updated: 2026-08-09
   difficulty: advanced
   tasks:
     - multimodal
     - text
-  performance_headline: "288B multimodal MoE with about 17B active parameters and 384K context"
+  performance_headline: "288B multimodal MoE with BF16 and native FP8 checkpoints, about 17B active parameters, and 384K context"
   related_recipes:
     - "XiaomiMiMo/MiMo-V2.5"
   hardware:
@@ -58,6 +58,11 @@ variants:
     precision: fp8
     vram_minimum_gb: 359
     description: "Native block-scaled FP8 language-model weights with BF16 multimodal encoders; verified on 8x 80GB NVIDIA GPUs."
+  bf16:
+    model_id: "dots-studio/dots3-note-prev"
+    precision: bf16
+    vram_minimum_gb: 692
+    description: "Full BF16 checkpoint; its indexed weights total about 576.9 GB before runtime and KV-cache memory."
 
 compatible_strategies:
   - single_node_tp
@@ -77,10 +82,12 @@ guide: |
   ## Overview
 
   Dots3Note is a native multimodal Mixture-of-Experts model supporting text, image,
-  video, and audio inputs through one model architecture. Its language backbone has
-  256 routed experts (top-8) plus a shared expert and mixes DSA/full-attention layers
-  with sliding-window-attention layers. The checkpoint also contains three MTP layers
-  for speculative decoding.
+  video, and audio inputs through one model architecture. It is published as a full
+  BF16 checkpoint (`dots-studio/dots3-note-prev`) and a native FP8 checkpoint
+  (`dots-studio/dots3-note-prev-fp8`). Its language backbone has 256 routed experts
+  (top-8) plus a shared expert and mixes DSA/full-attention layers with
+  sliding-window-attention layers. Both releases contain three MTP layers for
+  speculative decoding.
 
   The model configuration supports up to 393,216 tokens. The commands below use a
   validated 262,144-token serving limit and 8,192-token chunked-prefill budget so the
@@ -90,13 +97,17 @@ guide: |
   ## Prerequisites
 
   - 8 NVIDIA GPUs with at least 80 GB each for the native FP8 checkpoint.
+  - The BF16 checkpoint contains about 576.9 GB of indexed weights and needs additional
+    memory for the runtime and KV cache; the recipe budgets 692 GB aggregate VRAM.
   - A recent CUDA environment with DeepGEMM available.
   - A vLLM nightly containing native Dots3Note support.
 
   ## Launch commands
 
   The examples expose an OpenAI-compatible endpoint on all network interfaces. Remove
-  `--host 0.0.0.0` if the service should only be reachable locally.
+  `--host 0.0.0.0` if the service should only be reachable locally. They use the FP8
+  checkpoint; to serve BF16, replace the model ID with `dots-studio/dots3-note-prev`
+  and size the deployment for its larger memory footprint.
 
   ### Tensor parallel (TP=8)
 
@@ -217,6 +228,7 @@ guide: |
 
   ## References
 
-  - [Dots3Note on Hugging Face](https://huggingface.co/dots-studio/dots3-note-prev-fp8)
+  - [Dots3Note FP8 on Hugging Face](https://huggingface.co/dots-studio/dots3-note-prev-fp8)
+  - [Dots3Note BF16 on Hugging Face](https://huggingface.co/dots-studio/dots3-note-prev)
   - [vLLM Dots3Note support PR](https://github.com/vllm-project/vllm/pull/51255)
   - [vLLM parallelism and scaling guide](https://docs.vllm.ai/en/latest/serving/parallelism_scaling.html)
