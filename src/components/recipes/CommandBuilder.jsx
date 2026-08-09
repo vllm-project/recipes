@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
+import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
@@ -349,7 +349,7 @@ const MOONCAKE_DOCS_URL =
 // Offloading(2) · Mooncake(3) · LMCache(4).
 const MOONCAKE_PILL_ORDER = 3;
 
-export function CommandBuilder({ recipe, strategies, taxonomy }) {
+export function CommandBuilder({ recipe, strategies, taxonomy, guideContent = null }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -374,6 +374,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       if (legacy) return legacy.key;
     }
     return omniTasks[0]?.key || "";
+  });
+  const [omniPanel, setOmniPanel] = useState(() => {
+    const requested = searchParams.get("panel");
+    return ["overview", "serve", "request", "evidence", "reference"].includes(requested)
+      ? requested : "overview";
   });
 
   // Compute default hardware: URL param > stored preference (if compatible) > smallest compatible profile
@@ -1130,6 +1135,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     syncUrl({ task: key === defaultKey ? "" : key });
   };
 
+  const selectOmniPanel = (panel) => {
+    setOmniPanel(panel);
+    syncUrl({ panel: panel === "overview" ? "" : panel });
+  };
+
   const selectVariant = (key) => {
     setVariant(key);
     // Swap hardware when precision or an explicit variant allowlist requires
@@ -1791,50 +1801,70 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         onReset={resetEndpoints}
       />
     );
+    const consolidatedUi = recipe.omni?.consolidated_ui;
+    const usesConsolidatedUi = consolidatedUi?.enabled === true;
+    const activeProfile = consolidatedUi?.profiles?.[hwId] || {};
+    const deployment = summarizeOmniDeployment(
+      omniRendered.command,
+      currentVariant.precision,
+    );
+    const evidence = (activeProfile.evidence || []).filter(
+      (item) => !item.variants || item.variants.includes(variant),
+    );
+    const profileStatus = activeProfile.variant_status?.[variant]
+      || (variant === "fp8" && evidence.length === 0 ? "Needs target validation" : null)
+      || activeProfile.status
+      || (recipe.meta?.hardware?.[hwId] === "verified" ? "Verified" : "Documented");
+    const profileIsVerified = profileStatus === "Verified";
+    const activePartition = activeTask?.key?.startsWith("ref2va") ? "Ref2VA" : "FL2VA";
 
     // Config caption: hw · task · precision. Same shape as the non-omni
     // summary so the command-card header reads consistently across recipes.
     const omniConfigSummary = [
       hwProfile?.display_name || hwId,
       activeTask?.label,
-      currentVariant.precision?.toUpperCase(),
+      deployment.precision,
     ].filter(Boolean).join(" · ");
 
     return (
       <TooltipProvider>
-        <div className="space-y-4">
-          <InstallBlock
-            recipe={recipe}
-            variant={currentVariant}
-            dockerMeta={dockerMeta}
-            installMode={effectiveInstallMode}
-            setInstallMode={setInstallMode}
-            dockerCudaVariant={dockerCudaVariant}
-            setDockerCudaVariant={setDockerCudaVariant}
-            altCudaSuffix={altCudaSuffix}
-          />
+        <div className={usesConsolidatedUi ? "flex flex-col gap-4" : "space-y-4"}>
+          {(!usesConsolidatedUi || omniPanel === "serve") && (
+            <div className={usesConsolidatedUi ? "order-3 space-y-4" : "contents"}>
+              <InstallBlock
+                recipe={recipe}
+                variant={currentVariant}
+                dockerMeta={dockerMeta}
+                installMode={effectiveInstallMode}
+                setInstallMode={setInstallMode}
+                dockerCudaVariant={dockerCudaVariant}
+                setDockerCudaVariant={setDockerCudaVariant}
+                altCudaSuffix={altCudaSuffix}
+              />
 
-          {modeDependencies.length > 0 && (
-            <DependenciesBlock deps={modeDependencies} />
+              {modeDependencies.length > 0 && (
+                <DependenciesBlock deps={modeDependencies} />
+              )}
+
+              <div
+                className={`rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border transition-shadow ${changed ? "ring-2 ring-vllm-blue/30" : ""}`}
+              >
+                <SingleCommandBlock
+                  command={omniSubbedCommand}
+                  env={omniSubbedEnv}
+                  verifyCmd={omniCurl}
+                  benchCmd={benchCmd}
+                  statusHeader={statusHeader}
+                  installMode={effectiveInstallMode}
+                  dockerMeta={dockerMeta}
+                  configSummary={omniConfigSummary}
+                  endpointsControls={omniEndpointsControls}
+                />
+              </div>
+            </div>
           )}
 
-          <div
-            className={`rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border transition-shadow ${changed ? "ring-2 ring-vllm-blue/30" : ""}`}
-          >
-            <SingleCommandBlock
-              command={omniSubbedCommand}
-              env={omniSubbedEnv}
-              verifyCmd={omniCurl}
-              benchCmd={benchCmd}
-              statusHeader={statusHeader}
-              installMode={effectiveInstallMode}
-              dockerMeta={dockerMeta}
-              configSummary={omniConfigSummary}
-              endpointsControls={omniEndpointsControls}
-            />
-          </div>
-
-          <div className="rounded-xl border border-border divide-y divide-border">
+          <div className={"rounded-xl border border-border divide-y divide-border " + (usesConsolidatedUi ? "order-1" : "")}>
             <ConfigRow label="Hardware">
               <div className="space-y-1.5">
                 {hwByBrand.map(([brand, profiles]) => (
@@ -1882,6 +1912,26 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 ))}
               </div>
             </ConfigRow>
+
+            {usesConsolidatedUi && (
+              <ConfigRow
+                label="Deployment"
+                hint="The hardware choice resolves the supported topology, component placement, and offload policy. The command remains authoritative."
+              >
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  <span className="font-semibold">
+                    {activeProfile.label || (deployment.usesDlo ? "Layerwise offload" : "Resident")}
+                  </span>
+                  <span className={"rounded-full px-2 py-0.5 text-[10px] font-semibold " +
+                    (profileIsVerified
+                      ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                      : "bg-amber-500/10 text-amber-700 dark:text-amber-300")}>
+                    {profileStatus}
+                  </span>
+                  <span className="font-mono text-muted-foreground">{deployment.topology}</span>
+                </div>
+              </ConfigRow>
+            )}
 
             {showOmniTaskRow && (
               <ConfigRow
@@ -1938,6 +1988,174 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               </ConfigRow>
             )}
           </div>
+          {usesConsolidatedUi && (
+            <div className="order-2 rounded-2xl border border-border bg-card/40 overflow-hidden">
+              <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
+                <div>
+                  <h2 className="text-sm font-semibold">
+                    {consolidatedUi.title || "Deployment workspace"}
+                  </h2>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {consolidatedUi.description || "Every panel follows the active hardware, request, and precision selection."}
+                  </p>
+                </div>
+                <div className="text-[11px] font-mono text-muted-foreground">
+                  {[hwProfile?.display_name || hwId, activeProfile.label, activeTask?.label, deployment.precision]
+                    .filter(Boolean).join(" · ")}
+                </div>
+              </div>
+
+              <OmniPanelTabs
+                active={omniPanel}
+                onChange={selectOmniPanel}
+                showReference={!!guideContent}
+              />
+
+              <div className="p-4">
+                {omniPanel === "overview" && (
+                  <div id="omni-panel-overview" aria-labelledby="omni-tab-overview" className="space-y-4" role="tabpanel">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                      <OmniFact
+                        label="Hardware / topology"
+                        value={(hwProfile?.display_name || hwId) + " · " + deployment.topology}
+                      />
+                      <OmniFact
+                        label="Model partition"
+                        value={activePartition + " request · " + deployment.taskScope}
+                      />
+                      <OmniFact label="DiT placement" value={deployment.dit} />
+                      <OmniFact label="Text encoder" value={deployment.encoder} />
+                      <OmniFact label="VAE" value={deployment.vae} />
+                      <OmniFact
+                        label="Precision / status"
+                        value={deployment.precision + " · " + profileStatus}
+                      />
+                    </div>
+                    <div className="rounded-xl border border-vllm-blue/20 bg-vllm-blue/5 px-3 py-3 text-xs leading-relaxed">
+                      <span className="font-semibold">Why this profile: </span>
+                      {activeProfile.reason || "The generated command applies the recipe's qualified defaults for this hardware."}
+                    </div>
+                    {currentVariant.description && (
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {currentVariant.description}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {omniPanel === "serve" && (
+                  <div id="omni-panel-serve" aria-labelledby="omni-tab-serve" className="text-sm text-muted-foreground leading-relaxed" role="tabpanel">
+                    The installation requirements and generated serve command for this exact
+                    selection are shown immediately below this workspace.
+                  </div>
+                )}
+
+                {omniPanel === "request" && (
+                  <div id="omni-panel-request" aria-labelledby="omni-tab-request" className="space-y-3" role="tabpanel">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-semibold">{activeTask?.label || "Request"}</h3>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {activeTask?.endpoint || recipe.omni?.port || "/v1/videos"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {omniEndpointsControls}
+                        <CopyButton text={omniCurl || ""} />
+                      </div>
+                    </div>
+                    <div className="rounded-xl overflow-hidden bg-[var(--command-bg)]">
+                      <CommandBody command={omniCurl || "# No request example is available for this task."} />
+                    </div>
+                    {(consolidatedUi.request_notes || []).length > 0 && (
+                      <ul className="list-disc pl-5 space-y-1 text-xs text-muted-foreground leading-relaxed">
+                        {consolidatedUi.request_notes.map((note) => (
+                          <li key={note}>{note}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+
+                {omniPanel === "evidence" && (
+                  <div id="omni-panel-evidence" aria-labelledby="omni-tab-evidence" className="space-y-4" role="tabpanel">
+                    {evidence.length > 0 ? (
+                      evidence.map((item) => (
+                        <div key={item.label} className="rounded-xl border border-border overflow-hidden">
+                          <div className="px-3 py-2.5 border-b border-border bg-muted/20">
+                            <h3 className="text-xs font-semibold">{item.label}</h3>
+                            {item.scope && (
+                              <p className="text-[10px] text-muted-foreground mt-0.5">{item.scope}</p>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3">
+                            {(item.metrics || []).map((metric) => (
+                              <div key={metric.label} className="px-3 py-3 border-b sm:border-b-0 sm:border-r last:border-r-0 border-border">
+                                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                                  {metric.label}
+                                </div>
+                                <div className="mt-1 text-sm font-mono font-semibold">{metric.value}</div>
+                              </div>
+                            ))}
+                          </div>
+                          {item.note && (
+                            <p className="px-3 py-2.5 border-t border-border text-[11px] text-muted-foreground leading-relaxed">
+                              {item.note}
+                            </p>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
+                        No workload-specific measurement is published for this exact
+                        hardware and precision selection. Run the generated benchmark before
+                        promoting it as a production default.
+                      </div>
+                    )}
+
+                    {(activeProfile.constraints || []).length > 0 && (
+                      <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-3">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-1.5">
+                          Constraints
+                        </div>
+                        <ul className="list-disc pl-5 space-y-1 text-xs leading-relaxed">
+                          {activeProfile.constraints.map((constraint) => (
+                            <li key={constraint}>{constraint}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {(consolidatedUi.evidence_links || []).length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {consolidatedUi.evidence_links.map((link) => (
+                          <a
+                            key={link.url}
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs text-vllm-blue hover:bg-muted/30"
+                          >
+                            {link.label}
+                            <ExternalLink size={10} />
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {omniPanel === "reference" && (
+                  <div id="omni-panel-reference" aria-labelledby="omni-tab-reference" role="tabpanel">
+                    {guideContent || (
+                      <p className="text-sm text-muted-foreground">No additional reference is available.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
         </div>
       </TooltipProvider>
     );
@@ -2752,6 +2970,94 @@ function PdNodeInput({ label, value, gpuPerNode, onChange, modes, parallelism, o
     </div>
   );
 }
+
+function omniFlagValue(command, flag) {
+  const escaped = flag.replace(/[.*+?^$()|[\]{}\\]/g, "\\$&");
+  const match = String(command || "").match(
+    new RegExp(escaped + "\\s+(?:'([^']*)'|\"([^\"]*)\"|([^\\s\\\\]+))"),
+  );
+  return match?.[1] || match?.[2] || match?.[3] || null;
+}
+
+function summarizeOmniDeployment(command, fallbackPrecision) {
+  const gpuCount = omniFlagValue(command, "--num-gpus") || "1";
+  const tp = omniFlagValue(command, "--tensor-parallel-size") || "1";
+  const usp = omniFlagValue(command, "--usp") || "1";
+  const encoderTp = omniFlagValue(command, "--text-encoder-tp-size");
+  const vaePp = omniFlagValue(command, "--vae-patch-parallel-size") || "1";
+  const taskType = omniFlagValue(command, "--task-type");
+  const quantization = omniFlagValue(command, "--quantization");
+  const residentLayers = omniFlagValue(command, "--dlo-resident-layers");
+  const usesDlo = String(command || "").includes("--enable-distributed-layerwise-offload");
+
+  return {
+    topology: gpuCount + " GPU · TP" + tp + " · USP" + usp,
+    dit: usesDlo
+      ? (residentLayers || "0") + " layers resident · rank-local DLO"
+      : "Resident",
+    encoder: (encoderTp ? "TP" + encoderTp : "Auto") + (usesDlo ? " · staged" : " · resident"),
+    vae: "Tiled · PP" + vaePp,
+    taskScope: taskType ? taskType.toUpperCase() + " only" : "Both DiTs available",
+    precision: quantization ? quantization.toUpperCase() + " online" : String(fallbackPrecision || "bf16").toUpperCase(),
+    usesDlo,
+  };
+}
+
+function OmniFact({ label, value }) {
+  return (
+    <div className="rounded-xl border border-border bg-muted/20 px-3 py-3 min-w-0">
+      <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+        {label}
+      </div>
+      <div className="text-sm font-medium leading-snug break-words">{value || "—"}</div>
+    </div>
+  );
+}
+
+function OmniPanelTabs({ active, onChange, showReference }) {
+  const tabs = [
+    ["overview", "Overview"],
+    ["serve", "Serve"],
+    ["request", "Request"],
+    ["evidence", "Evidence"],
+    ...(showReference ? [["reference", "Reference"]] : []),
+  ];
+  return (
+    <div className="flex overflow-x-auto border-y border-border bg-muted/20" role="tablist" aria-label="Deployment workspace">
+      {tabs.map(([id, label]) => (
+        <button
+          key={id}
+          id={"omni-tab-" + id}
+          aria-controls={"omni-panel-" + id}
+          tabIndex={active === id ? 0 : -1}
+          type="button"
+          role="tab"
+          aria-selected={active === id}
+          onClick={() => onChange(id)}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+            event.preventDefault();
+            const current = tabs.findIndex(([tabId]) => tabId === id);
+            const direction = event.key === "ArrowRight" ? 1 : -1;
+            const next = (current + direction + tabs.length) % tabs.length;
+            const nextId = tabs[next][0];
+            onChange(nextId);
+            event.currentTarget.parentElement
+              ?.querySelector('[id="omni-tab-' + nextId + '"]')
+              ?.focus();
+          }}
+          className={"px-4 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-colors " +
+            (active === id
+              ? "border-vllm-blue text-foreground bg-background/70"
+              : "border-transparent text-muted-foreground hover:text-foreground")}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 
 function ConfigRow({ label, hint, nested, children }) {
   // `nested` marks a row that only exists as a child of the pick above it
