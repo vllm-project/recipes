@@ -1,0 +1,222 @@
+meta:
+  title: "Dots3Note"
+  slug: "dots3note"
+  provider: "Dots"
+  description: "Native FP8 omnimodal MoE model with hybrid DSA/full and sliding-window attention, 384K context, and a three-layer MTP head."
+  date_added: 2026-08-09
+  date_updated: 2026-08-09
+  difficulty: advanced
+  tasks:
+    - multimodal
+    - text
+  performance_headline: "288B omnimodal MoE with about 17B active parameters and 384K context"
+  related_recipes:
+    - "XiaomiMiMo/MiMo-V2.5"
+  hardware:
+    mi300x: unsupported
+    mi325x: unsupported
+    mi355x: unsupported
+
+model:
+  model_id: "MegatronPrimer/dots3note"
+  min_vllm_version: "nightly"
+  nightly_required: true
+  architecture: moe
+  parameter_count: "288B"
+  active_parameters: "17B"
+  context_length: 393216
+  base_args:
+    - "--gpu-memory-utilization"
+    - "0.9"
+    - "--max-model-len"
+    - "262144"
+    - "--max-num-batched-tokens"
+    - "8192"
+    - "--block-size"
+    - "64"
+    - "--mm-processor-cache-gb"
+    - "32"
+  base_env: {}
+
+features:
+  text_only:
+    description: "Load only the language model for text workloads, skipping the vision and audio encoders."
+    args:
+      - "--language-model-only"
+  spec_decoding:
+    description: "Use the checkpoint's three MTP layers to draft three tokens per step."
+    args:
+      - "--speculative-config"
+      - '{"method":"mtp","num_speculative_tokens":3}'
+
+opt_in_features:
+  - text_only
+  - spec_decoding
+
+variants:
+  default:
+    precision: fp8
+    vram_minimum_gb: 359
+    description: "Native block-scaled FP8 language-model weights with BF16 multimodal encoders; verified on 8x 80GB NVIDIA GPUs."
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - single_node_dep
+
+default_strategy: single_node_tep
+
+hardware_overrides:
+  nvidia:
+    extra_args:
+      - "--moe-backend"
+      - "deep_gemm"
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  Dots3Note is a native omnimodal Mixture-of-Experts model supporting text, image,
+  video, and audio inputs through one model architecture. Its language backbone has
+  256 routed experts (top-8) plus a shared expert and mixes DSA/full-attention layers
+  with sliding-window-attention layers. The checkpoint also contains three MTP layers
+  for speculative decoding.
+
+  The model configuration supports up to 393,216 tokens. The commands below use a
+  validated 262,144-token serving limit and 8,192-token chunked-prefill budget so the
+  remaining GPU memory can be used for KV cache. Increase `--max-model-len` only after
+  checking the KV-cache budget for the target workload.
+
+  ## Prerequisites
+
+  - 8 NVIDIA GPUs with at least 80 GB each for the native FP8 checkpoint.
+  - A recent CUDA environment with DeepGEMM available.
+  - A vLLM nightly containing native Dots3Note support.
+
+  ## Launch commands
+
+  The examples expose an OpenAI-compatible endpoint on all network interfaces. Remove
+  `--host 0.0.0.0` if the service should only be reachable locally.
+
+  ### Tensor parallel (TP=8)
+
+  TP shards both dense and expert weights across all eight GPUs. It is the simplest
+  deployment, but it does not enable expert parallelism.
+
+  ```bash
+  vllm serve MegatronPrimer/dots3note \
+    --host 0.0.0.0 \
+    --tensor-parallel-size 8 \
+    --gpu-memory-utilization 0.9 \
+    --max-model-len 262144 \
+    --max-num-batched-tokens 8192 \
+    --block-size 64 \
+    --mm-processor-cache-gb 32 \
+    --moe-backend deep_gemm
+  ```
+
+  ### Tensor parallel + expert parallel (TP=8, EP=8)
+
+  This is the recommended single-node configuration. Dense layers use TP while MoE
+  experts are distributed across the eight expert-parallel ranks.
+
+  ```bash
+  vllm serve MegatronPrimer/dots3note \
+    --host 0.0.0.0 \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --gpu-memory-utilization 0.9 \
+    --max-model-len 262144 \
+    --max-num-batched-tokens 8192 \
+    --block-size 64 \
+    --mm-processor-cache-gb 32 \
+    --moe-backend deep_gemm
+  ```
+
+  ### Data parallel + expert parallel (DP=8, EP=8)
+
+  DP+EP is intended for throughput-oriented serving. Each DP rank owns a replica of
+  the non-expert weights, while routed experts are distributed across all eight ranks.
+  It therefore needs more GPU memory than TP+EP.
+
+  ```bash
+  vllm serve MegatronPrimer/dots3note \
+    --host 0.0.0.0 \
+    --data-parallel-size 8 \
+    --enable-expert-parallel \
+    --gpu-memory-utilization 0.9 \
+    --max-model-len 262144 \
+    --max-num-batched-tokens 8192 \
+    --block-size 64 \
+    --mm-processor-cache-gb 32 \
+    --moe-backend deep_gemm
+  ```
+
+  ### Language-model-only serving
+
+  The checkpoint keeps a single omnimodal architecture and model type. For pure-text
+  serving, add `--language-model-only`; a separate text checkpoint is not required.
+  The option can be combined with TP, TP+EP, or DP+EP.
+
+  ```bash
+  vllm serve MegatronPrimer/dots3note \
+    --host 0.0.0.0 \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --language-model-only \
+    --gpu-memory-utilization 0.9 \
+    --max-model-len 262144 \
+    --max-num-batched-tokens 8192 \
+    --block-size 64 \
+    --mm-processor-cache-gb 32 \
+    --moe-backend deep_gemm
+  ```
+
+  ### Three-token MTP speculative decoding
+
+  Add the speculative configuration to any of the deployments above. The example uses
+  TP+EP and enables all three MTP layers shipped with the checkpoint.
+
+  ```bash
+  vllm serve MegatronPrimer/dots3note \
+    --host 0.0.0.0 \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
+    --gpu-memory-utilization 0.9 \
+    --max-model-len 262144 \
+    --max-num-batched-tokens 8192 \
+    --block-size 64 \
+    --mm-processor-cache-gb 32 \
+    --moe-backend deep_gemm
+  ```
+
+  ## Client usage
+
+  ```bash
+  curl http://localhost:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "MegatronPrimer/dots3note",
+      "messages": [{"role": "user", "content": "Explain sparse attention briefly."}],
+      "temperature": 0.7
+    }'
+  ```
+
+  ## Tuning notes
+
+  - `--max-num-batched-tokens 8192` is the chunked-prefill budget, not the maximum
+    request length. Increase it only when prefill throughput is more important than
+    inter-token latency and enough temporary workspace is available.
+  - DP+EP replicates the non-expert portion on every DP rank. Prefer TP+EP when memory
+    capacity or long-context KV cache is the priority.
+  - `--language-model-only` skips multimodal encoder loading but does not change the
+    checkpoint's model type or architecture.
+  - MTP changes decode scheduling and memory use. Benchmark it against non-speculative
+    decoding with the same prompt/output distribution before production deployment.
+
+  ## References
+
+  - [Dots3Note on Hugging Face](https://huggingface.co/MegatronPrimer/dots3note)
+  - [vLLM Dots3Note support PR](https://github.com/vllm-project/vllm/pull/51255)
+  - [vLLM parallelism and scaling guide](https://docs.vllm.ai/en/latest/serving/parallelism_scaling.html)
