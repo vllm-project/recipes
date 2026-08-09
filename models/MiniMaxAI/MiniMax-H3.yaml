@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "Open-weight general-purpose multimodal generation model — jointly generates 24 FPS video with native stereo audio from text, image, video, and audio references, served via vLLM-Omni"
   date_added: 2026-08-02
-  date_updated: 2026-08-08
+  date_updated: 2026-08-09
   difficulty: advanced
   tasks:
     - omni
@@ -15,6 +15,7 @@ meta:
   hardware:
     gb200: verified
     b300: verified
+    gb10: verified
     rtx_4090_2x: verified
     rtx_pro_5000_4x: verified
     rtx_5090_2x: verified
@@ -112,6 +113,21 @@ omni:
               -F 'seed=1101' \
               -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
               -o t2va.mp4
+        gb10:                                                   
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "fl2va", "--quantization", "fp8"]
+          curl: |
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
+              -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
+              -F 'width=1024' \
+              -F 'height=576' \
+              -F 'aspect_ratio=16:9' \
+              -F 'fps=24' \
+              -F 'num_inference_steps=50' \
+              -F 'flow_shift=12' \
+              -F 'seed=1101' \
+              -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
+              -o t2va.mp4
       curl: |
         curl -sS -X POST http://localhost:8000/v1/videos/sync \
           -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
@@ -159,6 +175,21 @@ omni:
               -F 'extra_params={"task":"fl2va","duration":5.0,"audio_flow_shift":3.0}' \
               -F "input_reference=@${FIRST_FRAME};type=image/png" \
               -o fl2va_first.mp4
+        gb10:                                                   
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "fl2va", "--quantization", "fp8"]
+          curl: |
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
+              -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
+              -F 'width=1024' \
+              -F 'height=576' \
+              -F 'aspect_ratio=16:9' \
+              -F 'fps=24' \
+              -F 'num_inference_steps=50' \
+              -F 'flow_shift=12' \
+              -F 'seed=1101' \
+              -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
+              -o t2va.mp4
       curl: |
         export FIRST_FRAME=/path/to/fl2va_first_frame.png
 
@@ -208,6 +239,21 @@ omni:
               -F "input_references=@${FIRST_FRAME};type=image/png" \
               -F "input_references=@${LAST_FRAME};type=image/png" \
               -o fl2va_first_last.mp4
+        gb10:                                                    
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "fl2va", "--quantization", "fp8"]
+          curl: |
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
+              -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
+              -F 'width=1024' \
+              -F 'height=576' \
+              -F 'aspect_ratio=16:9' \
+              -F 'fps=24' \
+              -F 'num_inference_steps=50' \
+              -F 'flow_shift=12' \
+              -F 'seed=1101' \
+              -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
+              -o t2va.mp4
       curl: |
         export FIRST_FRAME=/path/to/fl2va_first_frame.png
         export LAST_FRAME=/path/to/fl2va_last_frame.png
@@ -257,6 +303,21 @@ omni:
               -F 'extra_params={"task":"ref2va","duration":5.0,"audio_flow_shift":3.0}' \
               -F "input_reference=@${REF_IMAGE};type=image/png" \
               -o ref2va_image.mp4
+        gb10:                                                    
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "fl2va", "--quantization", "fp8"]
+          curl: |
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
+              -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
+              -F 'width=1024' \
+              -F 'height=576' \
+              -F 'aspect_ratio=16:9' \
+              -F 'fps=24' \
+              -F 'num_inference_steps=50' \
+              -F 'flow_shift=12' \
+              -F 'seed=1101' \
+              -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
+              -o t2va.mp4
       curl: |
         export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
 
@@ -310,6 +371,21 @@ omni:
               -F "input_reference=@${REF_IMAGE};type=image/png" \
               -F "audio_reference={\"audio_url\":\"${AUDIO_URL}\"}" \
               -o ref2va_image_audio.mp4
+        gb10:                                                    
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "fl2va", "--quantization", "fp8"]
+          curl: |
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
+              -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
+              -F 'width=1024' \
+              -F 'height=576' \
+              -F 'aspect_ratio=16:9' \
+              -F 'fps=24' \
+              -F 'num_inference_steps=50' \
+              -F 'flow_shift=12' \
+              -F 'seed=1101' \
+              -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
+              -o t2va.mp4
       curl: |
         # audio_reference takes an HTTP(S) or data: URL. Serve local assets first:
         # python -m http.server 8092 --bind 127.0.0.1 --directory /path/to/reference_assets
@@ -365,6 +441,21 @@ omni:
               -F "input_references=@${SUBJECT_VIDEO};type=video/mp4" \
               -F "input_references=@${BACKGROUND_VIDEO};type=video/quicktime" \
               -o ref2va_video_mixed.mp4
+        gb10:                                                    
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "fl2va", "--quantization", "fp8"]
+          curl: |
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
+              -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
+              -F 'width=1024' \
+              -F 'height=576' \
+              -F 'aspect_ratio=16:9' \
+              -F 'fps=24' \
+              -F 'num_inference_steps=50' \
+              -F 'flow_shift=12' \
+              -F 'seed=1101' \
+              -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
+              -o t2va.mp4
       curl: |
         export SUBJECT_VIDEO=/path/to/green_screen_subject.mp4
         export BACKGROUND_VIDEO=/path/to/fairytale_background.mov
@@ -412,6 +503,24 @@ variants:
     vram_minimum_gb: 202
     description: "BF16 modular service — two 66.3 GB DiTs share the 51.5 GB Qwen3-VL encoder and ~10.6 GB VAEs. Use --task-type fl2va or ref2va on memory-constrained profiles to load one DiT."
     hardware_overrides:
+      gb10:
+        extra_args:
+          - "--num-gpus"
+          - "1"
+          - "--task-type"
+          - "fl2va"
+          - "--quantization"
+          - "fp8"
+          - "--vae-parallel-mode"
+          - "tile"
+          - "--vae-use-tiling"
+          - "--enforce-eager"
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
+        extra_env:
+          VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "7200"
+          VLLM_WORKER_MULTIPROC_METHOD: "spawn"
+          FLASHINFER_DISABLE_VERSION_CHECK: "1"
       rtx_pro_5000_4x:
         extra_args:
           - "--num-gpus"
@@ -883,6 +992,48 @@ guide: |
     --diffusion-attention-backend FLASH_ATTN
   ```
 
+  ## Launch — DGX Spark (GB10, 128 GB unified memory)
+
+  GB10 is a **unified-memory** platform: the 128 GB LPDDR5X (≈121 GiB usable) is shared
+  by CPU and GPU. This invalidates both offload strategies used elsewhere in this recipe.
+  `--enable-cpu-offload` and distributed layerwise offload move weights from "VRAM" to
+  "host RAM", but on GB10 those are the same physical pool — nothing is saved. DLO is
+  actively harmful here: staging weights into pinned host memory creates a second copy
+  alongside the already-loaded one, and the process is killed by the OOM killer
+  (`Exit code: -9`) immediately after `Enabling offloader backend`.
+
+  The FL2VA partition on disk is 135 GiB total:
+
+  | Component | Size | Quantized by `--quantization fp8` |
+  |---|---:|---|
+  | `text_encoder` (Qwen3-VL) | 63 GiB | no |
+  | `transformer` (DiT) | 62 GiB | yes |
+  | `video_vae` | 9.8 GiB | no |
+  | `audio_vae` | 0.6 GiB | no |
+
+  BF16 at 135 GiB cannot fit in 121 GiB, so **FP8 is mandatory**, and only one partition
+  can be loaded — always pass `--task-type fl2va` or `--task-type ref2va`.
+
+  ```bash
+  CUDA_VISIBLE_DEVICES=0 \
+  FLASHINFER_DISABLE_VERSION_CHECK=1 \
+  VLLM_WORKER_MULTIPROC_METHOD=spawn \
+  VLLM_OMNI_VIDEO_SYNC_TIMEOUT=7200 \
+  vllm serve /path/to/MiniMax-H3 \
+    --omni \
+    --task-type fl2va \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --trust-remote-code \
+    --init-timeout 3600 \
+    --num-gpus 1 \
+    --quantization fp8 \
+    --vae-parallel-mode tile \
+    --vae-use-tiling \
+    --enforce-eager \
+    --diffusion-attention-backend CUDNN_ATTN
+  ```
+  
   ## Text-encoder tensor parallelism
 
   By default the whole Qwen3-VL encoder is resident on the DiT main rank, making it the
@@ -1007,8 +1158,13 @@ guide: |
   - The VAE supports the native `tile` parallel mode only.
   - A `U2 × Ring2` hybrid currently fails with an attention-mask length mismatch; use pure
     Ulysses.
-  - **FP8 quantization is not supported yet** — a transformer-side blocker is known and
-    deferred past the day-0 release.
+  - Online FP8 quantizes the DiT only — the Qwen3-VL text encoder and both VAEs stay
+    BF16. It is incompatible with layerwise offload (the offload path produces a weight
+    stride rejected by the Cutlass FP8 kernel).
+  - On unified-memory platforms (DGX Spark / GB10), CPU offload and DLO provide no
+    capacity benefit because host RAM and VRAM are the same pool; DLO additionally
+    doubles peak usage during staging. Use resident FP8 with a single `--task-type`
+    partition instead.
   - Pure Ulysses still replicates the 66.3 GB DiT on every rank, so 64 GB GPUs cannot use
     `--usp N --tp 1` as a resident capacity path. Use DiT TP plus DLO (the two-GPU recipes
     above), or model-level CPU offload; text-encoder TP alone is not sufficient.
