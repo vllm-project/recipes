@@ -18,7 +18,7 @@ meta:
     mi355x: unsupported
 
 model:
-  model_id: "MegatronPrimer/dots3note"
+  model_id: "dots-studio/dots3note"
   min_vllm_version: "nightly"
   nightly_required: true
   architecture: moe
@@ -104,7 +104,7 @@ guide: |
   deployment, but it does not enable expert parallelism.
 
   ```bash
-  vllm serve MegatronPrimer/dots3note \
+  vllm serve dots-studio/dots3note \
     --host 0.0.0.0 \
     --tensor-parallel-size 8 \
     --gpu-memory-utilization 0.9 \
@@ -121,7 +121,7 @@ guide: |
   experts are distributed across the eight expert-parallel ranks.
 
   ```bash
-  vllm serve MegatronPrimer/dots3note \
+  vllm serve dots-studio/dots3note \
     --host 0.0.0.0 \
     --tensor-parallel-size 8 \
     --enable-expert-parallel \
@@ -140,7 +140,7 @@ guide: |
   It therefore needs more GPU memory than TP+EP.
 
   ```bash
-  vllm serve MegatronPrimer/dots3note \
+  vllm serve dots-studio/dots3note \
     --host 0.0.0.0 \
     --data-parallel-size 8 \
     --enable-expert-parallel \
@@ -159,7 +159,7 @@ guide: |
   The option can be combined with TP, TP+EP, or DP+EP.
 
   ```bash
-  vllm serve MegatronPrimer/dots3note \
+  vllm serve dots-studio/dots3note \
     --host 0.0.0.0 \
     --tensor-parallel-size 8 \
     --enable-expert-parallel \
@@ -178,7 +178,7 @@ guide: |
   TP+EP and enables all three MTP layers shipped with the checkpoint.
 
   ```bash
-  vllm serve MegatronPrimer/dots3note \
+  vllm serve dots-studio/dots3note \
     --host 0.0.0.0 \
     --tensor-parallel-size 8 \
     --enable-expert-parallel \
@@ -197,7 +197,7 @@ guide: |
   curl http://localhost:8000/v1/chat/completions \
     -H "Content-Type: application/json" \
     -d '{
-      "model": "MegatronPrimer/dots3note",
+      "model": "dots-studio/dots3note",
       "messages": [{"role": "user", "content": "Explain sparse attention briefly."}],
       "temperature": 0.7
     }'
@@ -217,6 +217,6 @@ guide: |
 
   ## References
 
-  - [Dots3Note on Hugging Face](https://huggingface.co/MegatronPrimer/dots3note)
+  - [Dots3Note on Hugging Face](https://huggingface.co/dots-studio/dots3note)
   - [vLLM Dots3Note support PR](https://github.com/vllm-project/vllm/pull/51255)
   - [vLLM parallelism and scaling guide](https://docs.vllm.ai/en/latest/serving/parallelism_scaling.html)
