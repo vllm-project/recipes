@@ -15,7 +15,7 @@ meta:
   hardware:
     gb200: verified
     b300: verified
-    gb10: verified
+    dgx_spark_gb10: verified
     rtx_4090_2x: verified
     rtx_pro_5000_4x: verified
     rtx_5090_2x: verified
@@ -113,7 +113,7 @@ omni:
               -F 'seed=1101' \
               -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
               -o t2va.mp4
-        gb10:                                                   
+        dgx_spark_gb10::                                                   
           vram_minimum_gb: 128
           extra_args: ["--task-type", "fl2va", "--quantization", "fp8"]
           curl: |
@@ -175,21 +175,23 @@ omni:
               -F 'extra_params={"task":"fl2va","duration":5.0,"audio_flow_shift":3.0}' \
               -F "input_reference=@${FIRST_FRAME};type=image/png" \
               -o fl2va_first.mp4
-        gb10:                                                   
-          vram_minimum_gb: 128
-          extra_args: ["--task-type", "fl2va", "--quantization", "fp8"]
-          curl: |
+          dgx_spark_gb10:
+            vram_minimum_gb: 128
+            extra_args: ["--task-type", "fl2va", "--quantization", "fp8"]
+            curl: |
+              export FIRST_FRAME=/path/to/fl2va_first_frame.png
+
             curl -sS -X POST http://localhost:8000/v1/videos/sync \
-              -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
+              -F 'prompt=A man stands beside a yellow car at night. The car drives away; he follows it with his eyes and begins singing sadly, with synchronized voice and city ambience.' \
               -F 'width=1024' \
               -F 'height=576' \
-              -F 'aspect_ratio=16:9' \
               -F 'fps=24' \
               -F 'num_inference_steps=50' \
               -F 'flow_shift=12' \
-              -F 'seed=1101' \
-              -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
-              -o t2va.mp4
+              -F 'seed=2101' \
+              -F 'extra_params={"task":"fl2va","duration":5.0,"audio_flow_shift":3.0}' \
+              -F "input_reference=@${FIRST_FRAME};type=image/png" \
+              -o fl2va_first.mp4
       curl: |
         export FIRST_FRAME=/path/to/fl2va_first_frame.png
 
@@ -239,7 +241,7 @@ omni:
               -F "input_references=@${FIRST_FRAME};type=image/png" \
               -F "input_references=@${LAST_FRAME};type=image/png" \
               -o fl2va_first_last.mp4
-        gb10:                                                    
+        dgx_spark_gb10:                                                    
           vram_minimum_gb: 128
           extra_args: ["--task-type", "fl2va", "--quantization", "fp8"]
           curl: |
@@ -303,35 +305,23 @@ omni:
               -F 'extra_params={"task":"ref2va","duration":5.0,"audio_flow_shift":3.0}' \
               -F "input_reference=@${REF_IMAGE};type=image/png" \
               -o ref2va_image.mp4
-        gb10:                                                    
-          vram_minimum_gb: 128
-          extra_args: ["--task-type", "fl2va", "--quantization", "fp8"]
-          curl: |
-            curl -sS -X POST http://localhost:8000/v1/videos/sync \
-              -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
-              -F 'width=1024' \
-              -F 'height=576' \
-              -F 'aspect_ratio=16:9' \
-              -F 'fps=24' \
-              -F 'num_inference_steps=50' \
-              -F 'flow_shift=12' \
-              -F 'seed=1101' \
-              -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
-              -o t2va.mp4
-      curl: |
-        export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
+          dgx_spark_gb10:
+            vram_minimum_gb: 128
+            extra_args: ["--task-type", "ref2va", "--quantization", "fp8"]
+            curl: |
+              export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
 
-        curl -sS -X POST http://localhost:8000/v1/videos/sync \
-          -F 'prompt=A white cat sits on a beige couch and slowly looks toward the camera as quiet room ambience continues.' \
-          -F 'aspect_ratio=adaptive' \
-          -F 'short_edge=768' \
-          -F 'fps=24' \
-          -F 'num_inference_steps=50' \
-          -F 'flow_shift=12' \
-          -F 'seed=3100' \
-          -F 'extra_params={"task":"ref2va","duration":8.0,"audio_flow_shift":3.0}' \
-          -F "input_reference=@${REF_IMAGE};type=image/png" \
-          -o ref2va_image.mp4
+              curl -sS -X POST http://localhost:8000/v1/videos/sync \
+                -F 'prompt=A white cat sits on a beige couch and slowly looks toward the camera as quiet room ambience continues.' \
+                -F 'width=1024' \
+                -F 'height=576' \
+                -F 'fps=24' \
+                -F 'num_inference_steps=50' \
+                -F 'flow_shift=12' \
+                -F 'seed=3100' \
+                -F 'extra_params={"task":"ref2va","duration":5.0,"audio_flow_shift":3.0}' \
+                -F "input_reference=@${REF_IMAGE};type=image/png" \
+                -o ref2va_image.mp4
 
     - id: ti2v
       key: ref_image_audio
@@ -371,39 +361,27 @@ omni:
               -F "input_reference=@${REF_IMAGE};type=image/png" \
               -F "audio_reference={\"audio_url\":\"${AUDIO_URL}\"}" \
               -o ref2va_image_audio.mp4
-        gb10:                                                    
-          vram_minimum_gb: 128
-          extra_args: ["--task-type", "fl2va", "--quantization", "fp8"]
-          curl: |
-            curl -sS -X POST http://localhost:8000/v1/videos/sync \
-              -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
-              -F 'width=1024' \
-              -F 'height=576' \
-              -F 'aspect_ratio=16:9' \
-              -F 'fps=24' \
-              -F 'num_inference_steps=50' \
-              -F 'flow_shift=12' \
-              -F 'seed=1101' \
-              -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
-              -o t2va.mp4
-      curl: |
-        # audio_reference takes an HTTP(S) or data: URL. Serve local assets first:
-        # python -m http.server 8092 --bind 127.0.0.1 --directory /path/to/reference_assets
-        export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
-        export AUDIO_URL=http://127.0.0.1:8092/ref2va_audio.mp3
+          dgx_spark_gb10:
+            vram_minimum_gb: 128
+            extra_args: ["--task-type", "ref2va", "--quantization", "fp8"]
+            curl: |
+              # audio_reference takes an HTTP(S) or data: URL. Serve local assets first:
+              # python -m http.server 8092 --bind 127.0.0.1 --directory /path/to/reference_assets
+              export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
+              export AUDIO_URL=http://127.0.0.1:8092/ref2va_audio.mp3
 
-        curl -sS -X POST http://localhost:8000/v1/videos/sync \
-          -F 'prompt=A white cat with black mustache and eyebrow markings sits on a beige couch, lip-syncing precisely to the complete reference audio before shifting from confusion to deadpan speechlessness.' \
-          -F 'width=1344' \
-          -F 'height=768' \
-          -F 'fps=24' \
-          -F 'num_inference_steps=50' \
-          -F 'flow_shift=12' \
-          -F 'seed=3101' \
-          -F 'extra_params={"task":"ref2va","duration":15.0,"audio_flow_shift":3.0}' \
-          -F "input_reference=@${REF_IMAGE};type=image/png" \
-          -F "audio_reference={\"audio_url\":\"${AUDIO_URL}\"}" \
-          -o ref2va_image_audio.mp4
+              curl -sS -X POST http://localhost:8000/v1/videos/sync \
+                -F 'prompt=A white cat with black mustache and eyebrow markings sits on a beige couch, lip-syncing precisely to the complete reference audio.' \
+                -F 'width=1024' \
+                -F 'height=576' \
+                -F 'fps=24' \
+                -F 'num_inference_steps=50' \
+                -F 'flow_shift=12' \
+                -F 'seed=3101' \
+                -F 'extra_params={"task":"ref2va","duration":5.0,"audio_flow_shift":3.0}' \
+                -F "input_reference=@${REF_IMAGE};type=image/png" \
+                -F "audio_reference={\"audio_url\":\"${AUDIO_URL}\"}" \
+                -o ref2va_image_audio.mp4
 
     - id: ti2v
       key: ref_video_mixed
@@ -441,37 +419,25 @@ omni:
               -F "input_references=@${SUBJECT_VIDEO};type=video/mp4" \
               -F "input_references=@${BACKGROUND_VIDEO};type=video/quicktime" \
               -o ref2va_video_mixed.mp4
-        gb10:                                                    
-          vram_minimum_gb: 128
-          extra_args: ["--task-type", "fl2va", "--quantization", "fp8"]
-          curl: |
-            curl -sS -X POST http://localhost:8000/v1/videos/sync \
-              -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
-              -F 'width=1024' \
-              -F 'height=576' \
-              -F 'aspect_ratio=16:9' \
-              -F 'fps=24' \
-              -F 'num_inference_steps=50' \
-              -F 'flow_shift=12' \
-              -F 'seed=1101' \
-              -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
-              -o t2va.mp4
-      curl: |
-        export SUBJECT_VIDEO=/path/to/green_screen_subject.mp4
-        export BACKGROUND_VIDEO=/path/to/fairytale_background.mov
+          dgx_spark_gb10:
+            vram_minimum_gb: 128
+            extra_args: ["--task-type", "ref2va", "--quantization", "fp8"]
+            curl: |
+              export SUBJECT_VIDEO=/path/to/green_screen_subject.mp4
+              export BACKGROUND_VIDEO=/path/to/fairytale_background.mov
 
-        curl -sS -X POST http://localhost:8000/v1/videos/sync \
-          -F 'prompt=Remove the green screen background of Video 1 and replace it with the fairytale environment from Video 2. Match the background motion to the character actions and relight the character to fit the scene.' \
-          -F 'width=1344' \
-          -F 'height=768' \
-          -F 'fps=24' \
-          -F 'num_inference_steps=50' \
-          -F 'flow_shift=12' \
-          -F 'seed=3102' \
-          -F 'extra_params={"task":"ref2va","duration":15.0,"audio_flow_shift":3.0}' \
-          -F "input_references=@${SUBJECT_VIDEO};type=video/mp4" \
-          -F "input_references=@${BACKGROUND_VIDEO};type=video/quicktime" \
-          -o ref2va_video_mixed.mp4
+              curl -sS -X POST http://localhost:8000/v1/videos/sync \
+                -F 'prompt=Remove the green screen background of Video 1 and replace it with the fairytale environment from Video 2. Match motion and relight the character to fit the scene.' \
+                -F 'width=1024' \
+                -F 'height=576' \
+                -F 'fps=24' \
+                -F 'num_inference_steps=50' \
+                -F 'flow_shift=12' \
+                -F 'seed=3102' \
+                -F 'extra_params={"task":"ref2va","duration":5.0,"audio_flow_shift":3.0}' \
+                -F "input_references=@${SUBJECT_VIDEO};type=video/mp4" \
+                -F "input_references=@${BACKGROUND_VIDEO};type=video/quicktime" \
+                -o ref2va_video_mixed.mp4
 
 dependencies:
   # Host-side prerequisite, not a pip install — the weights have to be on disk
@@ -503,7 +469,7 @@ variants:
     vram_minimum_gb: 202
     description: "BF16 modular service — two 66.3 GB DiTs share the 51.5 GB Qwen3-VL encoder and ~10.6 GB VAEs. Use --task-type fl2va or ref2va on memory-constrained profiles to load one DiT."
     hardware_overrides:
-      gb10:
+      dgx_spark_gb10:
         extra_args:
           - "--num-gpus"
           - "1"
