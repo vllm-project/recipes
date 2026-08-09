@@ -113,7 +113,7 @@ omni:
               -F 'seed=1101' \
               -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
               -o t2va.mp4
-        dgx_spark_gb10::                                                   
+        dgx_spark_gb10:                                                 
           vram_minimum_gb: 128
           extra_args: ["--task-type", "fl2va", "--quantization", "fp8"]
           curl: |
