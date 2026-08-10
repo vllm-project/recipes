@@ -21,6 +21,7 @@ meta:
     # TP at 1 — this is a plain single-card deployment, no sharding.
     dgx_spark_gb10: verified
     mi300x: verified
+    mi325x: verified
     mi355x: verified
 
 model:
@@ -184,7 +185,7 @@ guide: |
   which leaves considerably more of that shared pool for KV and the host — the
   better fit of the two on this hardware.
 
-  ## Running on MI300X/MI355X
+  ## Running on MI300X/MI325X/MI355X
 
   As of now, please install the code from https://github.com/vllm-project/vllm/pull/51655
   if it hasn't been merged yet. After the PR is merged use `vllm/vllm-openai-rocm:nightly` image.
