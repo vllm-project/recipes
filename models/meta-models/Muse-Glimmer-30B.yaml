@@ -63,6 +63,14 @@ features:
     args:
       - "--reasoning-parser"
       - "muse_glimmer"
+  spec_decoding:
+    description: "DFlash block-diffusion draft head — predicts a whole block in one forward, verified in parallel by the target. `num_speculative_tokens: 15` is not a tuning knob: the head has `block_size: 16` and slot 0 re-presents the last accepted token, so 15 is what remains."
+    args:
+      - "--speculative-config"
+      - '{"method": "dflash", "model": "meta-models/Muse-Glimmer-30B-assistant", "num_speculative_tokens": 15}'
+
+opt_in_features:
+  - spec_decoding
 
 variants:
   default:
@@ -121,6 +129,7 @@ guide: |
   |---|---|---|---|
   | BF16 | [`meta-models/Muse-Glimmer-30B`](https://huggingface.co/meta-models/Muse-Glimmer-30B) | 59.58 GB | reference precision |
   | NVFP4 | [`Inferact/Muse-Glimmer-30B-NVFP4-W4A4`](https://huggingface.co/Inferact/Muse-Glimmer-30B-NVFP4-W4A4) | 25.42 GB | ModelOpt NVFP4, **W4A4**, group size 16 |
+  | draft | [`meta-models/Muse-Glimmer-30B-assistant`](https://huggingface.co/meta-models/Muse-Glimmer-30B-assistant) | 5.11 GB | DFlash draft head for speculative decoding |
 
   The NVFP4 build quantizes **both weights and activations** to 4 bits across 364
   language-model projections (52 layers x 7); embeddings, `lm_head` and the vision
@@ -186,3 +195,22 @@ guide: |
   **Reasoning strength.** Effort is set with a `Reasoning strength: <value>` line
   in the system prompt, one of `low` / `medium` / `high` / `xhigh`. Use `high` or
   `xhigh` for coding and agentic tasks.
+
+  ## Speculative decoding
+
+  Muse Glimmer ships a DFlash block-diffusion draft head. Rather than proposing
+  one token at a time, it predicts a whole block in a single forward — the slots
+  attend to each other bidirectionally — and the target verifies them in parallel.
+
+  ```bash
+  --speculative-config '{"method": "dflash", "model": "meta-models/Muse-Glimmer-30B-assistant", "num_speculative_tokens": 15}'
+  ```
+
+  **`num_speculative_tokens: 15` is fixed, not tuned.** The head has
+  `block_size: 16` and slot 0 re-presents the last accepted token, so 15 slots
+  remain to predict.
+
+  The head is 5 layers / 5.11 GB, reads the target's residual stream at layers
+  `[1, 13, 25, 37, 49]`, and ties its embedding and output projection to the
+  target — so it stores neither and is useless on its own. It must be paired with
+  the specific target it was distilled against, not merely a compatible one.
