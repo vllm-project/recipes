@@ -2,9 +2,9 @@ meta:
   title: "Dots3Note"
   slug: "dots3-note"
   provider: "Dots"
-  description: "Multimodal MoE model available in BF16 and native FP8, with hybrid DSA/full and sliding-window attention, 384K context, and a three-layer MTP head."
+  description: "Multimodal MoE model available in BF16 and native FP8, with hybrid DSA/full and sliding-window attention, 384K context, and MTP speculative decoding."
   date_added: 2026-08-09
-  date_updated: 2026-08-09
+  date_updated: 2026-08-10
   difficulty: advanced
   tasks:
     - multimodal
@@ -43,7 +43,7 @@ features:
     args:
       - "--language-model-only"
   spec_decoding:
-    description: "Use the checkpoint's three MTP layers to draft three tokens per step."
+    description: "Reuse the checkpoint's MTP prediction head to draft three tokens per step."
     args:
       - "--speculative-config"
       - '{"method":"mtp","num_speculative_tokens":3}'
@@ -57,11 +57,24 @@ variants:
     precision: fp8
     vram_minimum_gb: 359
     description: "Native block-scaled FP8 language-model weights with BF16 multimodal encoders; verified on 8x 80GB NVIDIA GPUs."
+    hardware_overrides:
+      nvidia:
+        extra_args:
+          - "--moe-backend"
+          - "deep_gemm"
   bf16:
     model_id: "dots-studio/dots3-note-prev"
     precision: bf16
     vram_minimum_gb: 692
-    description: "Full BF16 checkpoint; its indexed weights total about 576.9 GB before runtime and KV-cache memory."
+    description: "Full BF16 checkpoint using the Triton unquantized-MoE backend; its indexed weights total about 576.9 GB before runtime and KV-cache memory."
+    extra_args:
+      - "--gpu-memory-utilization"
+      - "0.95"
+    hardware_overrides:
+      nvidia:
+        extra_args:
+          - "--moe-backend"
+          - "triton"
 
 compatible_strategies:
   - single_node_tp
@@ -70,11 +83,7 @@ compatible_strategies:
 
 default_strategy: single_node_tep
 
-hardware_overrides:
-  nvidia:
-    extra_args:
-      - "--moe-backend"
-      - "deep_gemm"
+hardware_overrides: {}
 strategy_overrides: {}
 
 guide: |
@@ -85,8 +94,7 @@ guide: |
   BF16 checkpoint (`dots-studio/dots3-note-prev`) and a native FP8 checkpoint
   (`dots-studio/dots3-note-prev-fp8`). Its language backbone has 256 routed experts
   (top-8) plus a shared expert and mixes DSA/full-attention layers with
-  sliding-window-attention layers. Both releases contain three MTP layers for
-  speculative decoding.
+  sliding-window-attention layers. Both releases expose MTP speculative decoding.
 
   The model configuration supports up to 393,216 tokens. The commands below use a
   validated 262,144-token serving limit and 8,192-token chunked-prefill budget so the
@@ -98,15 +106,38 @@ guide: |
   - 8 NVIDIA GPUs with at least 80 GB each for the native FP8 checkpoint.
   - The BF16 checkpoint contains about 576.9 GB of indexed weights and needs additional
     memory for the runtime and KV cache; the recipe budgets 692 GB aggregate VRAM.
-  - A recent CUDA environment with DeepGEMM available.
+  - A recent CUDA environment. Native FP8 uses DeepGEMM, while unquantized BF16
+    uses the Triton MoE backend.
   - A vLLM nightly containing native Dots3Note support.
 
   ## Launch commands
 
   The examples expose an OpenAI-compatible endpoint on all network interfaces. Remove
-  `--host 0.0.0.0` if the service should only be reachable locally. They use the FP8
-  checkpoint; to serve BF16, replace the model ID with `dots-studio/dots3-note-prev`
-  and size the deployment for its larger memory footprint.
+  `--host 0.0.0.0` if the service should only be reachable locally. The general
+  strategy examples use the FP8 checkpoint. BF16 needs a different MoE backend and
+  a larger memory budget, so use the explicit BF16 command below instead of only
+  replacing the model ID.
+
+  ### BF16 tensor parallel + expert parallel (TP=8, EP=8)
+
+  This command serves the full multimodal BF16 checkpoint. Triton is required because
+  DeepGEMM does not support unquantized MoE weights. A 0.95 memory-utilization target
+  leaves enough KV-cache capacity for the 262,144-token serving limit after profiling
+  the multimodal encoders. If the target hardware cannot reserve that much memory,
+  lower `--max-model-len` or add `--language-model-only` for text workloads.
+
+  ```bash
+  vllm serve dots-studio/dots3-note-prev \
+    --host 0.0.0.0 \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --gpu-memory-utilization 0.95 \
+    --max-model-len 262144 \
+    --max-num-batched-tokens 8192 \
+    --block-size 64 \
+    --mm-processor-cache-gb 32 \
+    --moe-backend triton
+  ```
 
   ### Tensor parallel (TP=8)
 
@@ -184,8 +215,10 @@ guide: |
 
   ### Three-token MTP speculative decoding
 
-  Add the speculative configuration to any of the deployments above. The example uses
-  TP+EP and enables all three MTP layers shipped with the checkpoint.
+  Add the speculative configuration to any of the deployments above. The current
+  checkpoints expose one MTP prediction layer; with three speculative tokens, vLLM
+  reuses that layer for three draft steps rather than loading three distinct layers.
+  The example uses TP+EP with the native FP8 checkpoint.
 
   ```bash
   vllm serve dots-studio/dots3-note-prev-fp8 \
@@ -222,6 +255,11 @@ guide: |
     capacity or long-context KV cache is the priority.
   - `--language-model-only` skips multimodal encoder loading but does not change the
     checkpoint's model type or architecture.
+  - Full multimodal BF16 serving at 262,144 tokens may not have enough KV-cache memory
+    with `--gpu-memory-utilization 0.9`; the BF16 variant uses `0.95`. Lower
+    `--max-model-len` instead when the extra memory cannot be reserved.
+  - DeepGEMM is specific to the native FP8 checkpoint in this recipe. BF16 is
+    unquantized and must use `--moe-backend triton`.
   - MTP changes decode scheduling and memory use. Benchmark it against non-speculative
     decoding with the same prompt/output distribution before production deployment.
 
