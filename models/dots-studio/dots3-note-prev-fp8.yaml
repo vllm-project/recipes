@@ -12,6 +12,10 @@ meta:
   performance_headline: "288B multimodal MoE with BF16 and native FP8 checkpoints, about 17B active parameters, and 384K context"
   hardware:
     h100: verified
+    b200: unsupported
+    gb200: unsupported
+    b300: unsupported
+    gb300: unsupported
     mi300x: unsupported
     mi325x: unsupported
     mi355x: unsupported
