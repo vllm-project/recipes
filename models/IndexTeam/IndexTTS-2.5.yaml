@@ -30,6 +30,8 @@ model:
     - "--trust-remote-code"
     - "--deploy-config"
     - "vllm_omni/deploy/indextts2_5.yaml"
+    - "--served-model-name"
+    - "IndexTeam/IndexTTS-2.5"
   base_env: {}
 
 omni:
@@ -45,7 +47,7 @@ omni:
         curl -X POST http://localhost:8092/v1/audio/speech \
           -H "Content-Type: application/json" \
           -d '{
-            "model": "/path/to/indextts-2.5",
+            "model": "IndexTeam/IndexTTS-2.5",
             "input": "你好，这是 IndexTTS-2.5 语音合成测试。",
             "voice": "demo_voice",
             "speed": 1.0,
@@ -114,6 +116,7 @@ guide: |
     --omni \
     --trust-remote-code \
     --deploy-config vllm_omni/deploy/indextts2_5.yaml \
+    --served-model-name IndexTeam/IndexTTS-2.5 \
     --port 8092
   ```
 
@@ -136,7 +139,7 @@ guide: |
   curl -X POST http://localhost:8092/v1/audio/speech \
     -H "Content-Type: application/json" \
     -d '{
-      "model": "/path/to/indextts-2.5",
+      "model": "IndexTeam/IndexTTS-2.5",
       "input": "你好，这是复用已上传音色的语音合成测试。",
       "voice": "demo_voice",
       "response_format": "wav",
@@ -177,7 +180,7 @@ guide: |
   curl -X POST http://localhost:8092/v1/audio/speech \
     -H "Content-Type: application/json" \
     -d '{
-      "model": "/path/to/indextts-2.5",
+      "model": "IndexTeam/IndexTTS-2.5",
       "input": "这是使用模型原生语速控制的测试。",
       "voice": "demo_voice",
       "speed": 1.5,
