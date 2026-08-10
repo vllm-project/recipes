@@ -89,6 +89,10 @@ variants:
       mi355x:
         extra_args:
           - "--trust-remote-code"
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          VLLM_ROCM_USE_AITER_FP8BMM: "0"
+          VLLM_ROCM_USE_AITER_FP4BMM: "0"
   nvfp4:
     model_id: "nvidia/GLM-5.2-NVFP4"
     precision: nvfp4
@@ -262,6 +266,9 @@ guide: |
   export HIP_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
   export VLLM_ROCM_USE_AITER=1
   export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
+  export VLLM_USE_V2_MODEL_RUNNER=1
+  export VLLM_ROCM_USE_AITER_FP8BMM=0
+  export VLLM_ROCM_USE_AITER_FP4BMM=0
 
   vllm serve amd/GLM-5.2-MXFP4 \
     --trust-remote-code \
