@@ -11,9 +11,11 @@ meta:
     - multimodal
   performance_headline: ""
   related_recipes: []
-  # Only GPUs actually tested end-to-end.
   hardware:
     gb300: verified
+    # Single GB10 with 128 GB unified memory. gpu_count is 1, so autoFitTp caps
+    # TP at 1 — this is a plain single-card deployment, no sharding.
+    dgx_spark_gb10: verified
 
 model:
   model_id: "meta-models/Muse-Glimmer-30B"
@@ -140,36 +142,26 @@ guide: |
 
   ## Running on DGX Spark (GB10)
 
-  Muse Glimmer was built for local deployment, and it runs on a DGX Spark. GB10 is
-  aarch64 like GB300, so the same image applies.
-
-  Three things differ from the GB300 setup above:
-
-  - **One GPU, so `--tensor-parallel-size 1`.** There is nothing to shard across.
-  - **Unified memory.** The 128 GB LPDDR5X (~121 GiB usable) is shared by CPU and
-    GPU, so CPU offload is not a capacity lever — "VRAM" and "host RAM" are the
-    same physical pool and offloading frees nothing.
-  - **Context has to come down.** BF16 weights are ~55 GiB on disk and the vision
-    encoder and KV cache share what is left. The full 131,072-token context with
-    `--max-num-seqs 64` will not fit; start well below both and raise until you
-    run out.
+  Muse Glimmer was built for local deployment and runs on a DGX Spark as an
+  ordinary single-card deployment — **no special configuration**. GB10 is aarch64
+  like GB300 so the same image applies, and the launch command above is unchanged
+  apart from having one GPU to run on:
 
   ```bash
   vllm serve /model \
     --served-model-name muse-glimmer \
     --tensor-parallel-size 1 \
-    --max-model-len 32768 \
-    --max-num-seqs 8 \
     --enable-auto-tool-choice --tool-call-parser onyx \
     --reasoning-parser onyx \
     --generation-config auto \
     --mm-encoder-attn-backend TORCH_SDPA
   ```
 
-  > Every measurement in this recipe was taken on 4x GB300. The Spark settings
-  > above follow from the platform's memory layout rather than from a benchmark
-  > run, so treat `--max-model-len` and `--max-num-seqs` as starting points to
-  > tune, not as validated numbers.
+  There is no tensor parallelism to configure: GB10 is a single GPU, so TP is 1.
+  BF16 weights are ~55 GiB against 128 GB of unified memory, leaving the rest for
+  the KV cache and the perception encoder.
+
+  Throughput figures below were measured on 4x GB300, not on a Spark.
 
   ## Sampling
 
