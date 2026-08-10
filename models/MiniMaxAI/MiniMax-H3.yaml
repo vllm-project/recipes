@@ -77,6 +77,127 @@ omni:
   port: 8000
   task_label: "Request Mode"
   task_hint: "Select a ready-to-run MiniMax-H3 request preset. High-memory hardware keeps both DiTs loaded; memory-constrained hardware automatically starts the matching FL2VA-only or Ref2VA-only service."
+  consolidated_ui:
+    enabled: true
+    title: "Consolidated deployment workspace"
+    description: "Hardware, request mode, precision, commands, constraints, and measured evidence stay synchronized in one interaction."
+    request_notes:
+      - "Every preset requests a five-second clip at 24 FPS with synchronized stereo audio."
+      - "Use /v1/videos/sync for a direct MP4 response; /v1/videos is the asynchronous job endpoint."
+      - "The reference accuracy workload uses 50 denoising steps, flow_shift=12, and audio_flow_shift=3."
+      - "FL2VA accepts first, last, or ordered first+last keyframes; Ref2VA accepts image, video, and accompanied audio references."
+    evidence_links:
+      - label: "BF16 / FP8 video comparison"
+        url: "https://lishunyang12.github.io/vllm-omni-rankings/scripts/minimax_h3_global_fp8_vs_bf16/"
+      - label: "Online FP8 benchmark artifacts"
+        url: "https://github.com/lishunyang12/vllm-omni-rankings/tree/main/scripts/minimax_h3_online_fp8"
+    profiles:
+      b300:
+        label: "Resident datacenter"
+        status: "Verified"
+        reason: "The complete pipeline fits on four B300 GPUs, so the default avoids host transfers and keeps both DiTs available."
+        constraints:
+          - "The B300 selector represents an eight-GPU host, but the generated latency profile intentionally allocates four GPUs."
+          - "BF16 is the accuracy reference; online FP8 is approximate and requires video and audio review."
+        evidence:
+          - label: "4×B300 resident BF16"
+            variants: [default]
+            scope: "FL2VA · 209 frames · 1248×768 · 50 steps · single-DiT measured operating point"
+            metrics:
+              - { label: "Client E2E", value: "86.96 s" }
+              - { label: "Variation", value: "±0.23 s" }
+              - { label: "Placement", value: "U4 · VPP4" }
+            note: "This predates the combined root-service merge and is not a combined-service latency guarantee."
+          - label: "Online global FP8 capacity check"
+            variants: [fp8]
+            scope: "1×B300 resident · T2VA · 5 s · 1344×768 · 50 steps"
+            metrics:
+              - { label: "Wall time", value: "151.58 s" }
+              - { label: "Worker peak", value: "92,146 MiB" }
+              - { label: "vs BF16", value: "1.071× / −30.8%" }
+            note: "Matched BF16 measured 162.30 s and 133,110 MiB. This is single-GPU precision evidence, not the four-GPU profile latency."
+      gb200:
+        label: "Resident datacenter"
+        status: "Verified"
+        reason: "The resident four-GPU profile keeps both task partitions available and avoids CPU weight streaming."
+        constraints:
+          - "Online FP8 is selectable but its exact GB200 latency, memory, video quality, and audio quality remain target-hardware measurements."
+      dgx_spark_gb10:
+        label: "Unified-memory FP8"
+        status: "Verified"
+        variant_status:
+          fp8: "Verified"
+        reason: "GB10 host memory and VRAM are one pool, so resident online FP8 with one selected DiT is the useful capacity policy."
+        constraints:
+          - "CPU offload and DLO do not create a second capacity tier on unified memory and can increase staging use."
+          - "The generated command loads one task partition; restart to switch between FL2VA and Ref2VA."
+      rtx_pro_5000_4x:
+        label: "Resident TP2 × USP2"
+        status: "Verified"
+        reason: "TP2 shards the DiT while USP2 splits the packed sequence; encoder TP4 and VAE PP4 balance the 72 GiB cards."
+        constraints:
+          - "Use topology-aware CUDA_VISIBLE_DEVICES ordering on dual-socket PCIe hosts."
+          - "The published performance evidence is a five-step topology screen, not a 50-step throughput claim."
+        evidence:
+          - label: "4×RTX PRO 5000 topology screen"
+            variants: [default]
+            scope: "T2VA · 124 frames · 1344×768 · 5 denoising steps"
+            metrics:
+              - { label: "Client E2E", value: "32.993 s" }
+              - { label: "Denoise", value: "27.915 s" }
+              - { label: "Peak / GPU", value: "67.6 GiB" }
+            note: "The output passed H.264 video and stereo AAC validation."
+      rtx_pro_6000_2x:
+        label: "Resident TP2"
+        status: "Verified"
+        reason: "Two 96 GiB cards can keep the selected DiT partition resident with TP2."
+        constraints:
+          - "The generated service loads one task family; restart the server to change partitions."
+      rtx_5090_2x:
+        label: "Rank-local DLO · 20 layers"
+        status: "Verified"
+        reason: "TP2 plus rank-local layerwise streaming is the qualified 32 GiB capacity route."
+        constraints:
+          - "Use a 384 GiB-class host and expect PCIe weight transfer on every denoise step."
+          - "Keep --dlo-no-use-allgather with online FP8; runtime-quantized weights cannot use sharded AllGather reconstruction."
+          - "The generated service loads one task family; restart to switch partitions."
+      rtx_4090_2x:
+        label: "Rank-local DLO · 12 layers"
+        status: "Verified"
+        reason: "Lower DiT residency preserves activation headroom on two 24 GiB cards."
+        constraints:
+          - "Use a 384 GiB-class host and start with the generated 1024×576 request shape."
+          - "The generated service loads one task family and uses eager execution."
+      mi300x:
+        label: "Resident ROCm · AITER"
+        status: "Verified"
+        reason: "Resident Ulysses4, encoder TP4, AITER attention, and VAE PP4 are the qualified ROCm path."
+        constraints:
+          - "Keep regional compile enabled, CFG parallel size 1, and native tiled VAE decoding."
+          - "Do not install CUDA-only attention extras on AMD."
+        evidence:
+          - label: "4×MI300X resident BF16"
+            variants: [default]
+            scope: "T2VA · 209 frames · 1344×768 · 50 steps · one warmup"
+            metrics:
+              - { label: "Client E2E", value: "267.42 s" }
+              - { label: "Denoise", value: "244.04 s" }
+              - { label: "Decode", value: "4.15 s" }
+            note: "The output passed 209-frame H.264, 24 FPS, and 32 kHz stereo AAC validation."
+      mi325x:
+        label: "Resident ROCm · AITER"
+        status: "Verified"
+        reason: "The generated resident ROCm profile keeps both DiTs available and uses encoder TP4."
+        constraints:
+          - "Keep CFG parallel size 1 and native tiled VAE decoding."
+      mi355x:
+        label: "Resident ROCm · AITER"
+        status: "Verified"
+        reason: "The generated ROCm profile keeps both task partitions available with encoder TP4 and AITER attention."
+        constraints:
+          - "Warm once before measuring steady state and keep regional compile enabled."
+
+
   # The modular pipeline serves the checkpoint root and shares the encoder and
   # VAEs across FL2VA/Ref2VA. Memory-constrained hardware overrides select one
   # DiT with --task-type while retaining the same root model path.
@@ -138,7 +259,7 @@ omni:
           -F 'num_inference_steps=50' \
           -F 'flow_shift=12' \
           -F 'seed=1101' \
-          -F 'extra_params={"task":"t2va","duration":8.7,"audio_flow_shift":3.0}' \
+          -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
           -o t2va.mp4
 
     - id: i2v
@@ -201,9 +322,76 @@ omni:
           -F 'num_inference_steps=50' \
           -F 'flow_shift=12' \
           -F 'seed=2101' \
-          -F 'extra_params={"task":"fl2va","duration":8.7,"audio_flow_shift":3.0}' \
+          -F 'extra_params={"task":"fl2va","duration":5.0,"audio_flow_shift":3.0}' \
           -F "input_reference=@${FIRST_FRAME};type=image/png" \
           -o fl2va_first.mp4
+
+    - id: i2v
+      key: fl2va_last
+      label: "FL2VA - Last Frame"
+      model_id: "/path/to/MiniMax-H3"
+      vram_minimum_gb: 202
+      endpoint: "/v1/videos/sync"
+      description: "Last frame and prompt to video and audio. frame_indices=[-1] marks the uploaded image as the generated clip's endpoint."
+      hardware_overrides:
+        rtx_pro_5000_4x:
+          vram_minimum_gb: 288
+          extra_args: ["--task-type", "fl2va"]
+        rtx_pro_6000_2x:
+          vram_minimum_gb: 192
+          extra_args: ["--task-type", "fl2va"]
+        rtx_5090_2x:
+          vram_minimum_gb: 64
+          extra_args: ["--task-type", "fl2va"]
+        rtx_4090_2x:
+          vram_minimum_gb: 48
+          extra_args: ["--task-type", "fl2va"]
+          curl: |
+            export LAST_FRAME=/path/to/fl2va_last_frame.png
+
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
+              -F 'prompt=The scene develops naturally toward the supplied final image, with synchronized ambience and sound.' \
+              -F 'width=1024' \
+              -F 'height=576' \
+              -F 'aspect_ratio=16:9' \
+              -F 'fps=24' \
+              -F 'num_inference_steps=50' \
+              -F 'flow_shift=12' \
+              -F 'seed=2102' \
+              -F 'extra_params={"task":"fl2va","duration":5.0,"frame_indices":[-1],"audio_flow_shift":3.0}' \
+              -F "input_reference=@${LAST_FRAME};type=image/png" \
+              -o fl2va_last.mp4
+        dgx_spark_gb10:
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "fl2va"]
+          curl: |
+            export LAST_FRAME=/path/to/fl2va_last_frame.png
+
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
+              -F 'prompt=The scene develops naturally toward the supplied final image, with synchronized ambience and sound.' \
+              -F 'width=1024' \
+              -F 'height=576' \
+              -F 'aspect_ratio=16:9' \
+              -F 'fps=24' \
+              -F 'num_inference_steps=50' \
+              -F 'flow_shift=12' \
+              -F 'seed=2102' \
+              -F 'extra_params={"task":"fl2va","duration":5.0,"frame_indices":[-1],"audio_flow_shift":3.0}' \
+              -F "input_reference=@${LAST_FRAME};type=image/png" \
+              -o fl2va_last.mp4
+      curl: |
+        export LAST_FRAME=/path/to/fl2va_last_frame.png
+
+        curl -sS -X POST http://localhost:8000/v1/videos/sync \
+          -F 'prompt=The scene develops naturally toward the supplied final image, with synchronized ambience and sound.' \
+          -F 'fps=24' \
+          -F 'num_inference_steps=50' \
+          -F 'flow_shift=12' \
+          -F 'seed=2102' \
+          -F 'extra_params={"task":"fl2va","duration":5.0,"frame_indices":[-1],"audio_flow_shift":3.0}' \
+          -F "input_reference=@${LAST_FRAME};type=image/png" \
+          -o fl2va_last.mp4
+
 
     - id: i2v
       key: fl2va_first_last
@@ -236,7 +424,7 @@ omni:
               -F 'fps=24' \
               -F 'num_inference_steps=50' \
               -F 'flow_shift=12' \
-              -F 'seed=2102' \
+              -F 'seed=2103' \
               -F 'extra_params={"task":"fl2va","duration":5.0,"frame_indices":[0,-1],"audio_flow_shift":3.0}' \
               -F "input_references=@${FIRST_FRAME};type=image/png" \
               -F "input_references=@${LAST_FRAME};type=image/png" \
@@ -255,7 +443,7 @@ omni:
               -F 'fps=24' \
               -F 'num_inference_steps=50' \
               -F 'flow_shift=12' \
-              -F 'seed=2102' \
+              -F 'seed=2103' \
               -F 'extra_params={"task":"fl2va","duration":5.0,"frame_indices":[0,-1],"audio_flow_shift":3.0}' \
               -F "input_references=@${FIRST_FRAME};type=image/png" \
               -F "input_references=@${LAST_FRAME};type=image/png" \
@@ -269,8 +457,8 @@ omni:
           -F 'fps=24' \
           -F 'num_inference_steps=50' \
           -F 'flow_shift=12' \
-          -F 'seed=2102' \
-          -F 'extra_params={"task":"fl2va","duration":8.7,"frame_indices":[0,-1],"audio_flow_shift":3.0}' \
+          -F 'seed=2103' \
+          -F 'extra_params={"task":"fl2va","duration":5.0,"frame_indices":[0,-1],"audio_flow_shift":3.0}' \
           -F "input_references=@${FIRST_FRAME};type=image/png" \
           -F "input_references=@${LAST_FRAME};type=image/png" \
           -o fl2va_first_last.mp4
@@ -337,7 +525,7 @@ omni:
           -F 'num_inference_steps=50' \
           -F 'flow_shift=12' \
           -F 'seed=3100' \
-          -F 'extra_params={"task":"ref2va","duration":8.0,"audio_flow_shift":3.0}' \
+          -F 'extra_params={"task":"ref2va","duration":5.0,"audio_flow_shift":3.0}' \
           -F "input_reference=@${REF_IMAGE};type=image/png" \
           -o ref2va_image.mp4
 
@@ -414,7 +602,7 @@ omni:
           -F 'num_inference_steps=50' \
           -F 'flow_shift=12' \
           -F 'seed=3101' \
-          -F 'extra_params={"task":"ref2va","duration":15.0,"audio_flow_shift":3.0}' \
+          -F 'extra_params={"task":"ref2va","duration":5.0,"audio_flow_shift":3.0}' \
           -F "input_reference=@${REF_IMAGE};type=image/png" \
           -F "audio_reference={\"audio_url\":\"${AUDIO_URL}\"}" \
           -o ref2va_image_audio.mp4
@@ -486,7 +674,7 @@ omni:
           -F 'num_inference_steps=50' \
           -F 'flow_shift=12' \
           -F 'seed=3102' \
-          -F 'extra_params={"task":"ref2va","duration":15.0,"audio_flow_shift":3.0}' \
+          -F 'extra_params={"task":"ref2va","duration":5.0,"audio_flow_shift":3.0}' \
           -F "input_references=@${SUBJECT_VIDEO};type=video/mp4" \
           -F "input_references=@${BACKGROUND_VIDEO};type=video/quicktime" \
           -o ref2va_video_mixed.mp4
@@ -616,7 +804,110 @@ variants:
           - "--enforce-eager"
         extra_env:
           VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "14400"
-        
+
+  fp8:
+    precision: fp8
+    label: "FP8 (online)"
+    vram_minimum_gb: 202
+    description: "Online FP8 for eligible DiT and Qwen3-VL text-decoder linears. Validated on B300; other FP8-capable hardware remains selectable and should be benchmarked on the target workload."
+    extra_args:
+      - "--quantization"
+      - "fp8"
+    hardware_overrides:
+      dgx_spark_gb10:
+        extra_args:
+          - "--num-gpus"
+          - "1"
+          - "--usp"
+          - "1"
+          - "--ring"
+          - "1"
+          - "--vae-patch-parallel-size"
+          - "1"
+          - "--init-timeout"
+          - "3600"
+          - "--enforce-eager"
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
+        extra_env:
+          VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "7200"
+
+      rtx_pro_5000_4x:
+        extra_args:
+          - "--num-gpus"
+          - "4"
+          - "--tensor-parallel-size"
+          - "2"
+          - "--usp"
+          - "2"
+          - "--ring"
+          - "1"
+          - "--text-encoder-tp-size"
+          - "4"
+          - "--vae-patch-parallel-size"
+          - "4"
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
+      rtx_pro_6000_2x:
+        extra_args:
+          - "--num-gpus"
+          - "2"
+          - "--tensor-parallel-size"
+          - "2"
+          - "--usp"
+          - "1"
+          - "--ring"
+          - "1"
+          - "--text-encoder-tp-size"
+          - "2"
+          - "--vae-patch-parallel-size"
+          - "2"
+      rtx_5090_2x:
+        extra_args:
+          - "--num-gpus"
+          - "2"
+          - "--tensor-parallel-size"
+          - "2"
+          - "--usp"
+          - "1"
+          - "--ring"
+          - "1"
+          - "--text-encoder-tp-size"
+          - "2"
+          - "--vae-patch-parallel-size"
+          - "2"
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
+          - "--enable-distributed-layerwise-offload"
+          - "--dlo-no-use-allgather"
+          - "--dlo-resident-layers"
+          - "20"
+          - "--enforce-eager"
+        extra_env:
+          VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "14400"
+      rtx_4090_2x:
+        extra_args:
+          - "--num-gpus"
+          - "2"
+          - "--tensor-parallel-size"
+          - "2"
+          - "--usp"
+          - "1"
+          - "--ring"
+          - "1"
+          - "--text-encoder-tp-size"
+          - "2"
+          - "--vae-patch-parallel-size"
+          - "2"
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
+          - "--enable-distributed-layerwise-offload"
+          - "--dlo-no-use-allgather"
+          - "--dlo-resident-layers"
+          - "12"
+          - "--enforce-eager"
+        extra_env:
+          VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "14400"
 
 # Omni recipes are served through `vllm serve --omni`, which has its own
 # diffusion-parallelism flags (--usp / --ring / --vae-patch-parallel-size).
@@ -762,6 +1053,64 @@ guide: |
   The generated datacenter Blackwell route uses the default `TRTLLM_ATTN`; RTX PRO 5000 and the two-GPU RTX profiles use `CUDNN_ATTN`. These routes need no
   FlashAttention-4 install. Install the optional extra only when explicitly comparing FA4:
   `uv pip install -e '.[fa4]'`.
+
+  ## Optional online FP8
+
+  vLLM-Omni [#5910](https://github.com/vllm-project/vllm-omni/pull/5910) adds one
+  MiniMax-H3 online-FP8 mode. `--quantization fp8` quantizes eligible DiT and
+  Qwen3-VL text-decoder linears while the vision tower, embeddings, norms, RoPE,
+  VAEs, and FP32 input/output projections retain checkpoint precision.
+
+  Select **FP8 (online)** in the command matrix to append `--quantization fp8`.
+  The option is not restricted to B300: it remains selectable on the recipe's
+  FP8-capable hardware. Current end-to-end validation was performed on B300, so
+  benchmark and quality-check other platforms on the target workload.
+
+  Online FP8 is approximate rather than a consistency ground-truth mode. Validate
+  both video and audio quality, memory use, and latency on the target workload.
+
+  The following single-partition command is the B300 validation shape used for
+  the measurements below:
+
+  ```bash
+  CUDA_VISIBLE_DEVICES=0 \
+  VLLM_WORKER_MULTIPROC_METHOD=spawn \
+  vllm serve /path/to/MiniMax-H3/FL2VA \
+    --omni \
+    --quantization fp8 \
+    --trust-remote-code \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --num-gpus 1 \
+    --tensor-parallel-size 1 \
+    --usp 1 \
+    --ring 1 \
+    --text-encoder-tp-size 1 \
+    --vae-patch-parallel-size 1 \
+    --vae-parallel-mode tile \
+    --vae-use-tiling \
+    --diffusion-attention-backend CUDNN_ATTN \
+    --enforce-eager
+  ```
+
+  B300 measurements show that FP8 is primarily a capacity optimization for
+  the encoder. The latency values below isolate the steady-state Qwen3-VL
+  `encode_ids` call after two warmups (median of five runs; TP4 uses the slowest rank):
+
+  | Qwen presentation | Text-encoder TP | BF16 | Online FP8 | FP8 vs BF16 |
+  |---:|---:|---:|---:|---:|
+  | 25 tokens | 1 | 18.994 ms | 32.736 ms | 0.580x (72.4% slower) |
+  | 25 tokens | 4 | 23.510 ms | 40.919 ms | 0.575x (74.1% slower) |
+  | 1,200 tokens | 1 | 65.494 ms | 64.860 ms | 1.010x (1.0% faster) |
+  | 1,200 tokens | 4 | 43.400 ms | 44.162 ms | 0.983x (1.8% slower) |
+
+  Process-scoped model memory fell from **121.10 to 90.33 GiB/GPU (25.4%)** at
+  TP1 and from **39.92 to 32.32–32.35 GiB/GPU (19.0%)** at TP4. Those figures
+  include the complete loaded pipeline rather than only the encoder.
+
+  FP8 can be combined with distributed layerwise offload, but runtime-created FP8
+  weights require the full-weight per-rank path. Always add `--dlo-no-use-allgather`;
+  the sharded DLO AllGather path is unsupported.
 
   ## Launch — two 24/32 GB GPUs with distributed layerwise offload
 
@@ -1189,9 +1538,10 @@ guide: |
   - The VAE supports the native `tile` parallel mode only.
   - A `U2 × Ring2` hybrid currently fails with an attention-mask length mismatch; use pure
     Ulysses.
-  - Online FP8 quantizes the DiT only — the Qwen3-VL text encoder and both VAEs stay
-    BF16. It is incompatible with layerwise offload, whose weight stride is rejected by
-    the Cutlass FP8 kernel.
+  - Online FP8 is selectable on the recipe's FP8-capable hardware. Current end-to-end
+    validation is from B300; benchmark and quality-check other platforms before production
+    use. FP8 with DLO requires `--dlo-no-use-allgather`; the sharded AllGather path cannot
+    reconstruct weights quantized at runtime.
   - On unified-memory platforms (DGX Spark / GB10) CPU offload and DLO give no capacity
     benefit, because host RAM and VRAM are one pool; DLO additionally doubles peak usage
     while staging. Use resident FP8 with a single `--task-type` partition instead.
