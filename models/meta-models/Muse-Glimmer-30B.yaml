@@ -224,10 +224,13 @@ guide: |
 
   At TP=1 on MI300X this reports an 6.66M-token KV pool and ~50.82x max concurrency
   at the full 128K context.
+
   At TP=4 on MI300X this reports an 17.79M-token KV pool and ~135.73x max concurrency
   at the full 128K context.
+
   At TP=1 on MI355X this reports an 11.64M-token KV pool and ~88.86x max concurrency
   at the full 128K context.
+  
   At TP=4 on MI355X this reports an 27.68M-token KV pool and ~211.22x max concurrency
   at the full 128K context.
 
