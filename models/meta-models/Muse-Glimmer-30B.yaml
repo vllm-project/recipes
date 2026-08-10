@@ -197,10 +197,11 @@ guide: |
     --enable-auto-tool-choice \
     --tool-call-parser muse_glimmer \
     --reasoning-parser muse_glimmer \
-    --generation-config auto
+    --generation-config auto \
+    --attention-backend ROCM_AITER_FA
   ```
 
-  At TP=1 on MI355X this reports an 11.65M-token KV pool and ~88.9x max concurrency
+  At TP=1 on MI355X this reports an 11.64M-token KV pool and ~88.86x max concurrency
   at the full 128K context.
   At TP=4 on MI355X this reports an 27.68M-token KV pool and ~211.22x max concurrency
   at the full 128K context.
