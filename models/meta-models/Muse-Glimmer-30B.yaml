@@ -1,0 +1,247 @@
+meta:
+  title: "Muse Glimmer 30B"
+  slug: "muse-glimmer-30b"
+  provider: "Muse (Meta Superintelligence Lab)"
+  description: "Dense 29.6B vision-language model with a ViT-G/14 perception encoder and 128K context, distilled from Muse Spark for local agentic use. Emits channel-scoped reasoning and XML-style ATEM tool calls rather than JSON, so it needs the dedicated `onyx` tool-call and reasoning parsers."
+  date_added: 2026-08-09
+  date_updated: 2026-08-10
+  difficulty: advanced
+  tasks:
+    - text
+    - multimodal
+  performance_headline: ""
+  related_recipes: []
+  # Only GPUs actually tested end-to-end.
+  hardware:
+    gb300: verified
+
+model:
+  model_id: "meta-models/Muse-Glimmer-30B"
+  # Not supported by any released vLLM: the model code and both parsers live in a
+  # fork, so the pinned image below is the only supported path. min_vllm_version is
+  # the upstream version the fork is based on, not a version you can install.
+  min_vllm_version: "0.1.dev19059"
+  docker_image:
+    # The image and both parser names still carry the `onyx` pre-release codename.
+    # These are literal runtime strings baked into the build — do NOT rename them to
+    # match the published model name or the server will not start.
+    nvidia: "inferactinc/onyx:3823144-arm64-cu13.0.1"
+  install:
+    docker:
+      note: "Docker only — the model code and the onyx parsers are not in any released vLLM wheel. Use the arm64 tag on GB300/GB200; an x86_64 tag of the same build exists for x86 hosts. Both arches also ship a cu12.9.1 tag if your driver predates CUDA 13."
+    pip: false
+  architecture: dense
+  # Model card states ~29.6B total including the perception encoder. Measured from
+  # safetensors metadata: total_size 59,553,253,376 bytes at BF16 = 29.78B. No expert
+  # tensors in the index — dense, not MoE. 52 text layers (hidden 6656, SwiGLU FFN
+  # intermediate 19,968, RoPE theta 500,000 on local layers only, gated attention,
+  # [Local, Local, Local, Global] repeating with a 2048 sliding window) plus a
+  # ~1.8B ViT-G/14 perception encoder (50 layers, width 1536, patch 14).
+  parameter_count: "29.6B"
+  active_parameters: "29.6B"
+  context_length: 131072
+  base_args:
+    # Picks up generation_config.json: stop tokens [200001, 200008]. Do NOT add
+    # 200007 (<|eom|>) as an eos — it terminates the turn at the end of the
+    # reasoning channel and collapses tool calling.
+    - "--generation-config"
+    - "auto"
+    # The vision encoder's default CuTe flash-attention path fails to JIT-compile
+    # on some image shapes with the cutlass-dsl build shipped in this image
+    # (TYPE_UNSTABLE_JOIN in flash_fwd_sm100.py, split-KV branch), which takes the
+    # whole server down mid-request. TORCH_SDPA is tagged for ViT use and avoids it.
+    - "--mm-encoder-attn-backend"
+    - "TORCH_SDPA"
+  base_env: {}
+
+features:
+  tool_calling:
+    description: "ATEM (XML-style) tool calls with automatic tool choice. Calls arrive in `message.tool_calls`; do not enable guided JSON — this model does not emit JSON tool calls. It emits one tool call per message: several calls arrive as consecutive assistant messages, not a single multi-element `tool_calls` array."
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "onyx"
+  reasoning:
+    description: "Channel-scoped chain-of-thought. Surfaces as `message.reasoning` (non-streaming) and `delta.reasoning` (streaming) — note this model uses `reasoning`, not `reasoning_content`. Effort is controlled by a `Reasoning strength: <low|medium|high|xhigh>` line in the system prompt."
+    args:
+      - "--reasoning-parser"
+      - "onyx"
+
+variants:
+  default:
+    precision: bf16
+    # 29.78B x 2 bytes x 1.2
+    vram_minimum_gb: 72
+    description: "BF16 weights, the only precision servable by this vLLM path."
+
+compatible_strategies:
+  - single_node_tp
+
+guide: |
+  ## Overview
+
+  Muse Glimmer 30B is a dense vision-language model built for agentic work on
+  consumer hardware: a 52-layer text decoder (hidden 6656) plus a ~1.8B ViT-G/14
+  perception encoder, 128K trained context, BF16. Apache 2.0, knowledge cutoff
+  January 4 2026, trained on 100+ languages.
+
+  What makes it unlike most recipes here is its output format. It does not emit
+  JSON tool calls and it does not wrap reasoning in `<think>` tags. Every turn is
+  written as a sequence of channel-scoped messages:
+
+  ```
+  to=self<|message|>...chain of thought...<|eom|>
+  <|start|>assistant to=<tool><|message|><atem:function_calls>
+  <atem:invoke name="<tool>">
+  <atem:parameter name="<arg>">value</atem:parameter>
+  </atem:invoke>
+  </atem:function_calls><|eom|>
+  <|start|>assistant to=user<|message|>...final answer...<|eot|>
+  ```
+
+  Both `--tool-call-parser onyx` and `--reasoning-parser onyx` key off that
+  framing, so run them together. The reasoning parser also forces
+  `skip_special_tokens=False` — without it the markers are stripped before
+  parsing and both channels collapse into content.
+
+  > **The `onyx` name is not a typo.** The image tag and both parser names carry
+  > the pre-release codename. They are literal strings in the shipped build; the
+  > published model is Muse Glimmer.
+
+  ## Prerequisites
+
+  - **Hardware**: 4x GB300. Weights need ~72 GB, so the command builder will
+    suggest TP=1 — that fits on a single 288 GB GB300 GPU, but everything below
+    was measured at **TP=4** and TP=1 has not been validated here. Raise TP for
+    KV headroom at long context, not for weights.
+  - **Image**: `inferactinc/onyx:3823144-arm64-cu13.0.1`. No released vLLM wheel
+    supports this model. A cu12.9.1 tag exists for pre-CUDA-13 drivers, and
+    x86_64 tags exist for both CUDA versions.
+
+  ## Launching the Server
+
+  ```bash
+  vllm serve /model \
+    --served-model-name muse-glimmer \
+    --tensor-parallel-size 4 \
+    --gpu-memory-utilization 0.92 \
+    --max-model-len 131072 \
+    --max-num-seqs 64 \
+    --enable-auto-tool-choice --tool-call-parser onyx \
+    --reasoning-parser onyx \
+    --generation-config auto \
+    --mm-encoder-attn-backend TORCH_SDPA
+  ```
+
+  At TP=4 on GB300 this reports a 26.8M-token KV pool and ~204x max concurrency
+  at the full 128K context.
+
+  ## Running on DGX Spark (GB10)
+
+  Muse Glimmer was built for local deployment, and it runs on a DGX Spark. GB10 is
+  aarch64, so the **arm64** image is the correct one — the same tag used on GB300.
+
+  Three things differ from the GB300 setup above:
+
+  - **One GPU, so `--tensor-parallel-size 1`.** There is nothing to shard across.
+  - **Unified memory.** The 128 GB LPDDR5X (~121 GiB usable) is shared by CPU and
+    GPU, so CPU offload is not a capacity lever — "VRAM" and "host RAM" are the
+    same physical pool and offloading frees nothing.
+  - **Context has to come down.** BF16 weights are ~55 GiB on disk and the vision
+    encoder and KV cache share what is left. The full 131,072-token context with
+    `--max-num-seqs 64` will not fit; start well below both and raise until you
+    run out.
+
+  ```bash
+  vllm serve /model \
+    --served-model-name muse-glimmer \
+    --tensor-parallel-size 1 \
+    --max-model-len 32768 \
+    --max-num-seqs 8 \
+    --enable-auto-tool-choice --tool-call-parser onyx \
+    --reasoning-parser onyx \
+    --generation-config auto \
+    --mm-encoder-attn-backend TORCH_SDPA
+  ```
+
+  > Every measurement in this recipe was taken on 4x GB300. The Spark settings
+  > above follow from the platform's memory layout rather than from a benchmark
+  > run, so treat `--max-model-len` and `--max-num-seqs` as starting points to
+  > tune, not as validated numbers.
+
+  ## Sampling
+
+  Use the published settings:
+
+  ```
+  temperature = 1.0
+  top_p       = 0.95
+  top_k       = 64
+  ```
+
+  Do not run it greedy — it is a reasoning model, and greedy is not reproducible
+  here either: identical requests at `temperature: 0` with a fixed `seed` returned
+  70, 80, and 86 completion tokens across runs.
+
+  (The serving README shipped inside the image says temperature 0.95 / top_p 1.0.
+  That is superseded by the model card values above.)
+
+  **Reasoning strength.** Effort is set with a `Reasoning strength: <value>` line
+  in the system prompt, one of `low` / `medium` / `high` / `xhigh`. Use `high` or
+  `xhigh` for coding and agentic tasks.
+
+  ## Benchmarking
+
+  `vllm bench serve --backend openai-chat --endpoint /v1/chat/completions
+  --dataset-name random --ignore-eos`, 4x GB300 TP=4 BF16:
+
+  | concurrency | shape | output tok/s | mean TTFT | mean TPOT |
+  |---|---|---|---|---|
+  | 1 | 1k -> 256 | 159 | 58 ms | 6.11 ms |
+  | 8 | 1k -> 256 | 1,185 | 104 ms | 6.37 ms |
+  | 32 | 1k -> 256 | 4,136 | 211 ms | 6.93 ms |
+  | 64 | 1k -> 256 | 5,573 | 213 ms | 9.18 ms |
+  | 8 | 32k -> 512 | 593 | 2,112 ms | 9.34 ms |
+  | 32 | 512 -> 4k | 4,797 | 96 ms | 6.65 ms |
+
+  Decode stays flat near 6.1-6.9 ms TPOT to concurrency 32 and only rises to
+  9.2 ms at 64. A 32K prefill costs about 2.1 s.
+
+  Accuracy measured on the same setup, before the model-card sampling settings
+  were published: OCRBench 806/1000, MM-Star 74.3%, MMLU-Pro 70.3%, MMMU-Pro
+  61.0% (flexible), RefCOCO IoU 0.402.
+
+  Published model-card scores, for reference — these are the vendor's numbers at
+  high reasoning strength, not reproduced here: MCP Atlas 75.5, DeepSearch QA
+  74.6, SWE-Bench Pro 51.2, SWE-Bench Verified 76.0, AIME 2026 94.7, GPQA Diamond
+  83.5, MMMU Pro 74, ScreenSpot Pro 75.4.
+
+  ## Troubleshooting
+
+  **Server dies mid-request on image workloads.** `DSLUserCodeError:
+  TYPE_UNSTABLE_JOIN` at `flash_fwd_sm100.py`, reached through
+  `vit_flash_attn_wrapper`. The vision encoder's attention kernel is JIT-compiled
+  per image shape and the shipped cutlass-dsl rejects one variant, so a smoke test
+  with a single small image passes while a real workload takes the engine down.
+  `--mm-encoder-attn-backend TORCH_SDPA` (already in the launch command above)
+  avoids it. Confirm it applied: the worker log prints
+  `Using backend AttentionBackendEnum.TORCH_SDPA for vit attention`.
+
+  **Degenerate output — the same phrase repeated, no channel markers.** The
+  checkpoint does not match the build. This image expects weights from the current
+  HF converter (NEOX-style text RoPE); an older-converter checkpoint loads without
+  error and silently generates garbage.
+
+  **`message.reasoning_content` is missing.** This build returns the reasoning
+  trace on `message.reasoning`. The `reasoning_content` field returned by earlier
+  `66826a2` images is gone — update any client that reads it.
+
+  **`reasoning` is empty on tool-calling requests.** Fixed in this build. Earlier
+  images skipped the reasoning phase whenever `tools` were supplied, because the
+  chat template writes a literal `<atem:function_calls>` example into the system
+  prompt and the phase check matched it.
+
+  **Raw `<|start|>` / `<atem:` markers appear in `content`.** Known open issue
+  with `tool_choice: "none"`: that path bypasses the tool parser entirely, and
+  because this model needs `skip_special_tokens=False`, the framing reaches the
+  client. Use `tool_choice: "auto"`, or omit `tools`, until it is fixed.
