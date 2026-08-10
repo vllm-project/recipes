@@ -20,6 +20,7 @@ meta:
     # Single GB10 with 128 GB unified memory. gpu_count is 1, so autoFitTp caps
     # TP at 1 — this is a plain single-card deployment, no sharding.
     dgx_spark_gb10: verified
+    mi300x: verified
     mi355x: verified
 
 model:
@@ -183,7 +184,7 @@ guide: |
   which leaves considerably more of that shared pool for KV and the host — the
   better fit of the two on this hardware.
 
-  ## Running on MI355X
+  ## Running on MI300X/MI355X
 
   As of now, please install the code from https://github.com/vllm-project/vllm/pull/51655
   if it hasn't been merged yet. After the PR is merged use `vllm/vllm-openai-rocm:nightly` image.
@@ -201,6 +202,10 @@ guide: |
     --attention-backend ROCM_AITER_FA
   ```
 
+  At TP=1 on MI300X this reports an 6.66M-token KV pool and ~50.82x max concurrency
+  at the full 128K context.
+  At TP=4 on MI300X this reports an 17.79M-token KV pool and ~135.73x max concurrency
+  at the full 128K context.
   At TP=1 on MI355X this reports an 11.64M-token KV pool and ~88.86x max concurrency
   at the full 128K context.
   At TP=4 on MI355X this reports an 27.68M-token KV pool and ~211.22x max concurrency
