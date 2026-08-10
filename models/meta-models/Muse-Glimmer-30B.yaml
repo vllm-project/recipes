@@ -11,6 +11,10 @@ meta:
     - multimodal
   performance_headline: ""
   related_recipes: []
+  # Open the builder on GB10: this model is built for local deployment, so the
+  # single-card DGX Spark is the interesting configuration, not the 8-GPU H200
+  # node pickDefaultHardware would otherwise choose.
+  default_hardware: dgx_spark_gb10
   hardware:
     gb300: verified
     # Single GB10 with 128 GB unified memory. gpu_count is 1, so autoFitTp caps

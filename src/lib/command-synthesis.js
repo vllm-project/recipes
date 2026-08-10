@@ -521,7 +521,11 @@ export function pdFitsSingleNode(hwProfile, variant) {
 
 /**
  * Given a variant, pick the preferred default hardware:
- * - If variant requires Blackwell (e.g., NVFP4), prefer B200 then GB200
+ * - `meta.default_hardware` wins, when the recipe names one that is actually
+ *   usable for this variant. Recipes whose interesting deployment is not the
+ *   canonical H200 need this: a model built for a single GB10 desktop should
+ *   open on GB10, not on an 8-GPU H200 node the reader will never use.
+ * - Otherwise, if the variant requires Blackwell (e.g. NVFP4), prefer B200 then GB200
  * - Otherwise H200 is the canonical default
  * `recipe` is optional; when provided, hardware marked `unsupported` is excluded.
  */
@@ -533,6 +537,13 @@ export function pickDefaultHardware(hwProfiles, variant, recipe) {
       && isHardwareSupported(recipe, id)
       && isVariantHardwareSupported(variant, id)
   );
+
+  // Honour the recipe's own preference first, but only if it survived the
+  // filter above — a declared default that is precision-incompatible or marked
+  // unsupported for this variant must not win, or the page opens on hardware
+  // whose command it cannot render.
+  const declared = recipe?.meta?.default_hardware;
+  if (declared && compatible.some(([id]) => id === declared)) return declared;
 
   if (constraint?.generation === "blackwell") {
     if (compatible.some(([id]) => id === "b200")) return "b200";
