@@ -48,7 +48,7 @@ features:
     args:
       - "--language-model-only"
   spec_decoding:
-    description: "Reuse the checkpoint's MTP prediction head to draft three tokens per step."
+    description: "Enable MTP speculative decoding with the checkpoint's prediction head."
     args:
       - "--speculative-config"
       - '{"method":"mtp","num_speculative_tokens":3}'
@@ -220,12 +220,11 @@ guide: |
     --moe-backend deep_gemm
   ```
 
-  ### Three-token MTP speculative decoding
+  ### MTP speculative decoding
 
   Add the speculative configuration to any of the deployments above. The current
-  checkpoints expose one MTP prediction layer; with three speculative tokens, vLLM
-  reuses that layer for three draft steps rather than loading three distinct layers.
-  The example uses TP+EP with the native FP8 checkpoint.
+  checkpoints expose an MTP prediction head that vLLM reuses for drafting without
+  loading a separate draft model. The example uses TP+EP with the native FP8 checkpoint.
 
   ```bash
   vllm serve dots-studio/dots3-note-prev-fp8 \
