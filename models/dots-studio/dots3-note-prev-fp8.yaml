@@ -17,7 +17,7 @@ meta:
     mi355x: unsupported
 
 model:
-  model_id: "dots-studio/dots3-note-prev-fp8"
+  model_id: "dots-studio/dots3-note-prev"
   min_vllm_version: "nightly"
   nightly_required: true
   architecture: moe
@@ -54,6 +54,7 @@ opt_in_features:
 
 variants:
   default:
+    model_id: "dots-studio/dots3-note-prev-fp8"
     precision: fp8
     vram_minimum_gb: 359
     description: "Native block-scaled FP8 language-model weights with BF16 multimodal encoders; verified on 8x 80GB NVIDIA GPUs."
