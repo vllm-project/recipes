@@ -17,18 +17,19 @@ meta:
 
 model:
   model_id: "meta-models/Muse-Glimmer-30B"
-  # Not supported by any released vLLM: the model code and both parsers live in a
-  # fork, so the pinned image below is the only supported path. min_vllm_version is
-  # the upstream version the fork is based on, not a version you can install.
-  min_vllm_version: "0.1.dev19059"
+  # Not in any released wheel — the model code and both parsers land upstream on
+  # nightly first, so `nightly_required` points the Install block at the nightly
+  # index. The version below is the unreleased target, not something installable.
+  min_vllm_version: "0.27.0"
   docker_image:
-    # The image and both parser names still carry the `onyx` pre-release codename.
-    # These are literal runtime strings baked into the build — do NOT rename them to
-    # match the published model name or the server will not start.
-    nvidia: "inferactinc/onyx:3823144-arm64-cu13.0.1"
+    nvidia:
+      # Single-key map: the site pins cu130 and hides the cu129 toggle rather
+      # than fabricating a -cu129 tag that may not be published.
+      cu130: "vllm/vllm-openai:muse-glimmer"
+  nightly_required: true
   install:
     docker:
-      note: "Docker only — the model code and the onyx parsers are not in any released vLLM wheel. Use the arm64 tag on GB300/GB200; an x86_64 tag of the same build exists for x86 hosts. Both arches also ship a cu12.9.1 tag if your driver predates CUDA 13."
+      note: "Docker is the supported path — the model code and the onyx parsers are not in any released vLLM wheel. CUDA 13 (cu130) build; the host needs an r580+ NVIDIA driver."
     pip: false
   architecture: dense
   # Model card states ~29.6B total including the perception encoder. Measured from
@@ -104,9 +105,9 @@ guide: |
   `skip_special_tokens=False` — without it the markers are stripped before
   parsing and both channels collapse into content.
 
-  > **The `onyx` name is not a typo.** The image tag and both parser names carry
-  > the pre-release codename. They are literal strings in the shipped build; the
-  > published model is Muse Glimmer.
+  > **The `onyx` parser names are not a typo.** Both parsers carry the
+  > pre-release codename. They are literal strings in the build — do not rename
+  > them to match the published model name or the server will not start.
 
   ## Prerequisites
 
@@ -114,9 +115,10 @@ guide: |
     suggest TP=1 — that fits on a single 288 GB GB300 GPU, but everything below
     was measured at **TP=4** and TP=1 has not been validated here. Raise TP for
     KV headroom at long context, not for weights.
-  - **Image**: `inferactinc/onyx:3823144-arm64-cu13.0.1`. No released vLLM wheel
-    supports this model. A cu12.9.1 tag exists for pre-CUDA-13 drivers, and
-    x86_64 tags exist for both CUDA versions.
+  - **Image**: `vllm/vllm-openai:muse-glimmer`, a CUDA 13 build needing an r580+
+    driver. No released vLLM wheel supports this model; support lands on nightly
+    first. The throughput and accuracy numbers below were measured on the
+    equivalent pre-release build.
 
   ## Launching the Server
 
@@ -139,7 +141,7 @@ guide: |
   ## Running on DGX Spark (GB10)
 
   Muse Glimmer was built for local deployment, and it runs on a DGX Spark. GB10 is
-  aarch64, so the **arm64** image is the correct one — the same tag used on GB300.
+  aarch64 like GB300, so the same image applies.
 
   Three things differ from the GB300 setup above:
 
