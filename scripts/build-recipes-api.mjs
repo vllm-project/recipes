@@ -34,6 +34,8 @@ import {
   buildDockerArgv,
   nodesForStrategy,
   isStrategyReachable,
+  isStrategySupportedOnHardware,
+  effectiveCompatibleStrategies,
 } from "../src/lib/command-synthesis.js";
 
 const ROOT = process.cwd();
@@ -431,7 +433,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     nodesForStrategy(recipe, s, hwProfile.gpu_count, hwId),
   );
   const compatible = [...new Set([
-    ...(recipe.compatible_strategies || []),
+    ...effectiveCompatibleStrategies(recipe),
     ...kvStoreIds,
   ])].filter((s) => {
     // Mirrors the UI's KV Offload gating: Mooncake renders on scalable
@@ -442,10 +444,12 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
       return scalable && isKvStoreBrandSupported(hwProfile)
         && recipe.kv_cache_strategy_hardware?.[s]?.[hwId] !== "unsupported";
     }
-    // Serving-strategy per-GPU opt-out (mirrors kv_cache_strategy_hardware),
-    // fail-open: a recipe marks a (strategy, GPU) pair `unsupported` under
-    // `strategy_hardware` when that layout isn't usable on that GPU.
-    if (recipe.strategy_hardware?.[s]?.[hwId] === "unsupported") return false;
+    // Serving-strategy per-GPU gate: compatible_strategies membership is the
+    // default (listed = supported everywhere, unlisted = nowhere), and
+    // `strategy_hardware` overrides per hardware in either direction — maps
+    // take the variant-`tp` keyspace (exact GPU id > generation > brand >
+    // `default`).
+    if (!isStrategySupportedOnHardware(recipe, s, hwProfile, hwId)) return false;
     // Same GPU floor the builder applies (`strategy_min_gpus`).
     if (!isStrategyReachable(recipe, s, strategies[s]?.deploy_type, hwProfile.gpu_count, hwId)) return false;
     return scalable || (!s.startsWith("multi_node_") && s !== "pd_cluster");
@@ -496,7 +500,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     };
     const rec = recommendStrategy(recipe, hwProfile, nc);
     if (ok(rec)) return rec;
-    return (recipe.compatible_strategies || []).find(ok) || null;
+    return effectiveCompatibleStrategies(recipe).find(ok) || null;
   };
 
   const alternatives = {};

@@ -4,7 +4,7 @@ meta:
   provider: "Moonshot AI"
   description: "Pre-release 2.8T-parameter native multimodal MoE with Kimi Delta Attention, Gated MLA, Attention Residuals, and a 1M-token context window"
   date_added: 2026-07-27
-  date_updated: 2026-08-04
+  date_updated: 2026-08-06
   difficulty: hard
   tasks:
     - multimodal
@@ -44,9 +44,8 @@ model:
   context_length: 1048576
   base_args:
     - "--trust-remote-code"
-    # Canonical Inferact serve uses fastsafetensors (much faster weight load) + moe-backend auto.
-    - "--moe-backend"
-    - "auto"
+    # Canonical Inferact serve uses fastsafetensors for much faster weight load.
+    # Leave --moe-backend unset so vLLM selects its default automatic backend.
     - "--gpu-memory-utilization"
     - "0.95"
 
@@ -102,6 +101,11 @@ variants:
     # Replace with the real safetensors footprint once weights are published.
     vram_minimum_gb: 1680
     description: "Quantization-aware-trained MXFP4 weights with MXFP8 activations; footprint is estimated until the checkpoint is published."
+  nvfp4:
+    precision: nvfp4
+    vram_minimum_gb: 1650
+    model_id: "RedHatAI/Kimi-K3-NVFP4"
+    description: "RedHatAI compressed-tensors NVFP4 quantization; MoE layers quantized to NVFP4, attention and embeddings at full precision"
 
 compatible_strategies:
   - single_node_tp
@@ -109,21 +113,18 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_tp_pp
   - multi_node_dep
-  - multi_node_tp_dp
   - pd_cluster
 
 # TP-per-node + DP-across-nodes only makes sense where one node holds a full
 # replica and the cluster fabric fits the DP pattern: H200 (TP8·DP2 from 2
-# nodes) and GB200/GB300 NVL trays (TP4·DP4 from 4 trays). Everything else
-# opts out (fail-open convention: absent = supported).
+# nodes) and GB200/GB300 NVL trays (TP4·DP4 from 4 trays). It's therefore not
+# in compatible_strategies (unlisted = unsupported by default); the
+# `supported` grants below opt it in on exactly the validated GPUs.
 strategy_hardware:
   multi_node_tp_dp:
-    h100: unsupported
-    b200: unsupported
-    b300: unsupported
-    mi300x: unsupported
-    mi325x: unsupported
-    mi355x: unsupported
+    h200: supported
+    gb200: supported
+    gb300: supported
   multi_node_dep:
     h100: unsupported
     h200: unsupported
@@ -181,7 +182,7 @@ hardware_overrides:
       - "--kv-cache-dtype"
       - "fp8"
       - "--attention-config"
-      - '{"use_prefill_query_quantization":true,"mla_prefill_backend":"TRTLLM_RAGGED"}'
+      - '{"use_prefill_query_quantization":true,"mla_prefill_backend":"flashinfer"}'
       - "--enable-prefix-caching"
     extra_env:
       VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
@@ -218,13 +219,18 @@ hardware_overrides:
       - '{"cudagraph_mode":"FULL_DECODE_ONLY","custom_ops":["+fused_rms_norm_gated"]}'
 
 strategy_overrides:
-  # Guide recommendation made concrete: deep_gemm_mega_moe for any DEP
-  # environment. Emitted before hardware overrides, so Hopper's
-  # `--moe-backend marlin` still wins there (last-wins dedupe).
+  # Use MegaMoE for DEP on GB200/GB300 NVL trays. B200/B300 leave
+  # --moe-backend unset and use vLLM's default automatic selection.
   multi_node_dep:
-    extra_args:
-      - "--moe-backend"
-      - "deep_gemm_mega_moe"
+    hardware_overrides:
+      gb200:
+        extra_args:
+          - "--moe-backend"
+          - "deep_gemm_mega_moe"
+      gb300:
+        extra_args:
+          - "--moe-backend"
+          - "deep_gemm_mega_moe"
 
   # 2-node Blackwell aggregated profile: TP8 within each node x PP2 across the
   # pair (16 GPUs). The MXFP4 checkpoint (~1.68 TB of weights) does not fit one
@@ -288,10 +294,17 @@ strategy_overrides:
       parallelism: dep
       tp: 1
       env: {}
+      hardware_overrides:
+        gb200:
+          extra_args:
+            - "--moe-backend"
+            - "deep_gemm_mega_moe"
+        gb300:
+          extra_args:
+            - "--moe-backend"
+            - "deep_gemm_mega_moe"
       vllm_args:
         - "--data-parallel-hybrid-lb"
-        - "--moe-backend"
-        - "deep_gemm_mega_moe"
         - "--no-enable-prefix-caching"
         - "--max-num-seqs"
         - "32"
@@ -356,7 +369,7 @@ guide: |
   ## Notes
 
   - **Cross node communitcation**: Use `--all2all-backend deepep_v2` for RDMA and `--all2all-backend flashinfer_nvlink_one_sided` for NVLink.
-  - **MoE backend**: Recommend to use deep_gemm_mega_moe for any DEP environment.
+  - **MoE backend**: Recommend to use `deep_gemm_mega_moe` for DEP deployments with cross-node NVLink e.g. GB200 and GB300. Note that DeepGEMM MegaMoE is not compatible with cross-node RDMA.
   - **Model Runner v2 and Rust Frontend**: `VLLM_USE_V2_MODEL_RUNNER=1` and `VLLM_USE_RUST_FRONTEND=1`: Model Runner v2 and Rust Frontend fully supports this model and can be enabled if needed.
   - **Tool calling**: K3 occasionally emit a tool-call format its own parser doesn't expect. Suggest to run do schema validation and retry.
   - **AMD (MI355X / MI350X, CDNA4 gfx950)**: the AITER a8w4 MoE path is selected by `VLLM_ROCM_USE_AITER_MOE_SITUV2_A8W4=1` since vllm-project/vllm#50582, and by `AITER_SITUV2_A8W4=1` + `AITER_BF16_FP8_MOE_BOUND=0` on older builds such as the pinned `kimi-k3` image; the recipe sets all three. Clear all of them for the a16w4 path — a mixed state leaves vLLM and AITER disagreeing on the weight layout and silently returns wrong output.
@@ -364,4 +377,4 @@ guide: |
   - **RDMA**: If RDMA is enabled, set `UCX_TLS="rc,cuda_copy"` to make sure KV Cache transfer goes through RDMA.
   - **MNNVL environments** (GB200/GB300 NVL): recommend adding `NCCL_MNNVL_ENABLE=1`, `NCCL_CUMEM_ENABLE=1`, and `NCCL_NVLS_ENABLE=1`.
   - **mlx5 dmabuf registration failures**: if engine init fails with "NCCL error: unhandled system error" and the log shows `mlx5dv_reg_dmabuf_mr` errno 524, the kernel/driver lacks mlx5 dmabuf support (NCCL 2.28 registers dmabuf by default). Set `NCCL_DMABUF_ENABLE=0` to fall back to `nvidia_peermem` (must be loaded on the nodes) — still GPUDirect RDMA.
-  - **FP8 KV**: If FP8 KV cache is needed, please also add `--attention-config '{"use_prefill_query_quantization":true,"mla_prefill_backend":"TRTLLM_RAGGED"}'` when serving vLLM.
+  - **FP8 KV**: If FP8 KV cache is needed, please also add `--attention-config '{"use_prefill_query_quantization":true,"mla_prefill_backend":"flashinfer"}'` when serving vLLM.

@@ -97,13 +97,54 @@ hardware_profiles:
     brand: NVIDIA
     generation: blackwell
     display_name: "RTX Pro 6000"
-    description: "NVIDIA RTX Pro 6000· 1× RTX Pro 6000 GPU· 96 GB unified memory"
+    description: "NVIDIA RTX Pro 6000 · 1× RTX Pro 6000 GPU · 96 GB VRAM"
     gpu_count: 1
     vram_gb: 96
     multi_node: false
     scalable: false
     restricted: true
 
+  # RTX Pro 6000 2x — 2x RTX Pro 6000 GPUs system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` (same pattern as the TPU profiles).
+  rtx_pro_6000_2x:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX Pro 6000 2x"
+    description: "NVIDIA RTX Pro 6000 · 2× RTX Pro 6000 GPU · 192 GB VRAM"
+    gpu_count: 2
+    vram_gb: 192
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # RTX PRO 5000 Blackwell — validated four-card PCIe profile.
+  # Restricted so it only appears for recipes with target-hardware evidence.
+  rtx_pro_5000_4x:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX PRO 5000 Blackwell 4x"
+    description: "NVIDIA RTX PRO 5000 Blackwell · 4× 72 GB VRAM · PCIe, no NVLink"
+    gpu_count: 4
+    vram_gb: 288
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # RTX Pro 6000 8x — 8x RTX Pro 6000 GPUs system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` (same pattern as the TPU profiles).
+  rtx_pro_6000_8x:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX Pro 6000 8x"
+    description: "NVIDIA RTX Pro 6000 · 8× RTX Pro 6000 GPU · 768 GB VRAM"
+    gpu_count: 8
+    vram_gb: 768
+    multi_node: false
+    scalable: false
+    restricted: true
+  
   # RTX 5090 — single-GPU RTX 5090 system.
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
   # lists it in `meta.hardware`
@@ -114,6 +155,30 @@ hardware_profiles:
     description: "NVIDIA RTX 5090 · 1× RTX 5090 GPU · 32 GB VRAM"
     gpu_count: 1
     vram_gb: 32
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # Exact two-card consumer profiles. Kept restricted so they only appear for
+  # recipes with an end-to-end validated multi-GPU deployment.
+  rtx_4090_2x:
+    brand: NVIDIA
+    generation: ada
+    display_name: "RTX 4090"
+    description: "NVIDIA RTX 4090 · 2× RTX 4090 GPU · 24 GB VRAM/GPU"
+    gpu_count: 2
+    vram_gb: 48
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  rtx_5090_2x:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX 5090"
+    description: "NVIDIA RTX 5090 · 2× RTX 5090 GPU · 32 GB VRAM/GPU"
+    gpu_count: 2
+    vram_gb: 64
     multi_node: false
     scalable: false
     restricted: true
@@ -191,6 +256,30 @@ hardware_profiles:
     multi_node: false
     restricted: true
 
+  # ── Intel Arc Pro XPU ──
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` — XPU support ships in the separate
+  # `vllm/vllm-openai-xpu` image and is only declared on validated recipes.
+  arc_pro_b60:
+    brand: Intel
+    generation: xpu
+    display_name: "Arc Pro B60"
+    description: "Intel Arc Pro B60 24 GB · 4-card node · vLLM XPU backend"
+    gpu_count: 4
+    vram_gb: 96
+    multi_node: false
+    restricted: true
+
+  arc_pro_b70:
+    brand: Intel
+    generation: xpu
+    display_name: "Arc Pro B70"
+    description: "Intel Arc Pro B70 32 GB · 4-card node · vLLM XPU backend"
+    gpu_count: 4
+    vram_gb: 128
+    multi_node: false
+    restricted: true
+
 tasks:
   - id: text
     display_name: "Text"
@@ -213,6 +302,7 @@ strategies:
   - multi_node_tep
   - multi_node_dep
   - multi_node_tp_pp
+  - multi_node_tp_dp
   - pd_cluster
 
 # KV Offload — options for the command builder's "KV Offload" row that compose
@@ -248,7 +338,7 @@ kv_offload:
     description: "Offload KV cache to CPU DRAM on each serving node via SimpleCPUOffloadConnector — one flag, no extra infrastructure. ~220 GiB of host RAM used per GPU rank."
     args:
       - "--kv-transfer-config"
-      - '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both","kv_connector_extra_config":{"cpu_bytes_to_use_per_rank":236223201280,"lazy_offload":"false"}}'
+      - '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both","kv_connector_extra_config":{"cpu_bytes_to_use_per_rank":236223201280,"lazy_offload":false}}'
   offloading_cpu:
     display_name: "CPU DRAM only"
     label: "CPU"
