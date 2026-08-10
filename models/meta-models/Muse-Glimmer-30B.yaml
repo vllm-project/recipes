@@ -2,7 +2,7 @@ meta:
   title: "Muse Glimmer 30B"
   slug: "muse-glimmer-30b"
   provider: "Muse (Meta)"
-  description: "Dense 29.6B vision-language model with a ViT-G/14 perception encoder and 128K context, distilled from Muse Spark for local agentic use. Emits channel-scoped reasoning and XML-style ATEM tool calls rather than JSON, so it needs the dedicated `onyx` tool-call and reasoning parsers."
+  description: "Dense 29.6B vision-language model with a ViT-G/14 perception encoder and 128K context, distilled from Muse Spark for local agentic use. Emits channel-scoped reasoning and XML-style ATEM tool calls rather than JSON, so it needs the dedicated `muse_glimmer` tool-call and reasoning parsers."
   date_added: 2026-08-09
   date_updated: 2026-08-10
   difficulty: advanced
@@ -31,7 +31,7 @@ model:
   nightly_required: true
   install:
     docker:
-      note: "Docker is the supported path — the model code and the onyx parsers are not in any released vLLM wheel. CUDA 13 (cu130) build; the host needs an r580+ NVIDIA driver."
+      note: "Docker is the supported path — the model code and the muse_glimmer parsers are not in any released vLLM wheel. CUDA 13 (cu130) build; the host needs an r580+ NVIDIA driver."
     pip: false
   architecture: dense
   # Model card states ~29.6B total including the perception encoder. Measured from
@@ -49,12 +49,6 @@ model:
     # reasoning channel and collapses tool calling.
     - "--generation-config"
     - "auto"
-    # The vision encoder's default CuTe flash-attention path fails to JIT-compile
-    # on some image shapes with the cutlass-dsl build shipped in this image
-    # (TYPE_UNSTABLE_JOIN in flash_fwd_sm100.py, split-KV branch), which takes the
-    # whole server down mid-request. TORCH_SDPA is tagged for ViT use and avoids it.
-    - "--mm-encoder-attn-backend"
-    - "TORCH_SDPA"
   base_env: {}
 
 features:
@@ -63,12 +57,12 @@ features:
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "onyx"
+      - "muse_glimmer"
   reasoning:
     description: "Channel-scoped chain-of-thought. Surfaces as `message.reasoning` (non-streaming) and `delta.reasoning` (streaming) — note this model uses `reasoning`, not `reasoning_content`. Effort is controlled by a `Reasoning strength: <low|medium|high|xhigh>` line in the system prompt."
     args:
       - "--reasoning-parser"
-      - "onyx"
+      - "muse_glimmer"
 
 variants:
   default:
@@ -102,14 +96,10 @@ guide: |
   <|start|>assistant to=user<|message|>...final answer...<|eot|>
   ```
 
-  Both `--tool-call-parser onyx` and `--reasoning-parser onyx` key off that
+  Both `--tool-call-parser muse_glimmer` and `--reasoning-parser muse_glimmer` key off that
   framing, so run them together. The reasoning parser also forces
   `skip_special_tokens=False` — without it the markers are stripped before
   parsing and both channels collapse into content.
-
-  > **The `onyx` parser names are not a typo.** Both parsers carry the
-  > pre-release codename. They are literal strings in the build — do not rename
-  > them to match the published model name or the server will not start.
 
   ## Prerequisites
 
@@ -131,10 +121,9 @@ guide: |
     --gpu-memory-utilization 0.92 \
     --max-model-len 131072 \
     --max-num-seqs 64 \
-    --enable-auto-tool-choice --tool-call-parser onyx \
-    --reasoning-parser onyx \
-    --generation-config auto \
-    --mm-encoder-attn-backend TORCH_SDPA
+    --enable-auto-tool-choice --tool-call-parser muse_glimmer \
+    --reasoning-parser muse_glimmer \
+    --generation-config auto
   ```
 
   At TP=4 on GB300 this reports a 26.8M-token KV pool and ~204x max concurrency
@@ -151,10 +140,9 @@ guide: |
   vllm serve /model \
     --served-model-name muse-glimmer \
     --tensor-parallel-size 1 \
-    --enable-auto-tool-choice --tool-call-parser onyx \
-    --reasoning-parser onyx \
-    --generation-config auto \
-    --mm-encoder-attn-backend TORCH_SDPA
+    --enable-auto-tool-choice --tool-call-parser muse_glimmer \
+    --reasoning-parser muse_glimmer \
+    --generation-config auto
   ```
 
   There is no tensor parallelism to configure: GB10 is a single GPU, so TP is 1.
@@ -212,14 +200,16 @@ guide: |
 
   ## Troubleshooting
 
-  **Server dies mid-request on image workloads.** `DSLUserCodeError:
-  TYPE_UNSTABLE_JOIN` at `flash_fwd_sm100.py`, reached through
-  `vit_flash_attn_wrapper`. The vision encoder's attention kernel is JIT-compiled
-  per image shape and the shipped cutlass-dsl rejects one variant, so a smoke test
-  with a single small image passes while a real workload takes the engine down.
-  `--mm-encoder-attn-backend TORCH_SDPA` (already in the launch command above)
-  avoids it. Confirm it applied: the worker log prints
-  `Using backend AttentionBackendEnum.TORCH_SDPA for vit attention`.
+  **Server dies mid-request on image workloads** — fixed, no flag needed.
+  Earlier builds hit `DSLUserCodeError: TYPE_UNSTABLE_JOIN` at
+  `flash_fwd_sm100.py` through `vit_flash_attn_wrapper`: the vision encoder's
+  attention kernel is JIT-compiled per image shape and the shipped cutlass-dsl
+  rejected one variant, so a smoke test with a single small image passed while a
+  real workload took the engine down. The workaround was
+  `--mm-encoder-attn-backend TORCH_SDPA`. If you are pinned to an older image and
+  see this, that flag still avoids it; confirm it applied via
+  `Using backend AttentionBackendEnum.TORCH_SDPA for vit attention` in the worker
+  log.
 
   **Degenerate output — the same phrase repeated, no channel markers.** The
   checkpoint does not match the build. This image expects weights from the current
