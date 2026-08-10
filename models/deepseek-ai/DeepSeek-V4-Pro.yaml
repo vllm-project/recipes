@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 flagship MoE (1.6T total / 49B active) with hybrid CSA+HCA attention, manifold-constrained hyper-connections, Muon-trained on 32T+ tokens, and three-tier reasoning."
   date_added: 2026-04-24
-  date_updated: 2026-07-10
+  date_updated: 2026-08-11
   difficulty: hard
   tasks:
     - text
@@ -60,15 +60,16 @@ features:
     description: "Speculative decoding — pick a drafting method."
     # Mode = the --speculative-config method only (args); the served checkpoint
     # is owned by the Variant row. Default is MTP; the DSpark variant flips this
-    # to dspark via its `default_modes`. The DSpark checkpoint also runs MTP, so
-    # both modes stay available there.
+    # to dspark via its `default_modes`. Each checkpoint carries exactly one
+    # draft head, so only one method is offered per variant.
     default_mode: mtp
     modes:
       mtp:
         label: "MTP"
         description: "Built-in Multi-Token Prediction, 2 draft tokens."
-        # MTP ships with the FP8/NVFP4 checkpoints; the fused DSpark checkpoint
-        # uses its own baked-in draft, so MTP isn't offered there.
+        # The FP4+FP8 and NVFP4 checkpoints ship the standard MTP head
+        # (mtp.0.e_proj / enorm); the fused DSpark checkpoint replaces it with
+        # a three-module markov draft, so MTP can't load there.
         variants:
           - default
           - nvfp4
@@ -104,13 +105,15 @@ variants:
   nvfp4:
     model_id: "nvidia/DeepSeek-V4-Pro-NVFP4"
     precision: nvfp4
-    vram_minimum_gb: 960
+    # MIXED_PRECISION modelopt checkpoint — only the expert MLPs are 4-bit, so
+    # the params table underestimates. Sized from the checkpoint: 913 GB × 1.2.
+    vram_minimum_gb: 1096
     description: "NVIDIA modelopt NVFP4 checkpoint (MoE experts NVFP4; attention, shared experts, router head, and MTP stay FP8) for Blackwell GPUs."
   dspark:
     # Official fused DSpark checkpoint (FP4+FP8 base with the DSpark draft baked
-    # in) — a distinct served repo, so it lives on the Variant axis. Selecting it
-    # defaults the spec-decoding method to dspark (below); the checkpoint also
-    # runs MTP, so that mode stays available.
+    # in) — a distinct served repo, so it lives on the Variant axis. Its weights
+    # replace the standard MTP head with the DSpark draft, so dspark is the only
+    # method here.
     model_id: "deepseek-ai/DeepSeek-V4-Pro-DSpark"
     label: "DSpark"
     precision: fp8
@@ -140,10 +143,16 @@ compatible_strategies:
 # latency-oriented alternative.
 default_strategy: single_node_tep
 
+# 865 GB of weights needs more than one GB200 NVL4 tray (4 × 192 = 768 GB) or one
+# H100 node (8 × 80 = 640 GB), so both scale out; every other pill fits one node.
+strategy_min_gpus:
+  gb200: 8
+  h100: 16
+
 hardware_overrides:
   hopper:
     # H200 (141 GB × 8 = 1128 GB) leaves KV cache tight at 1M context with
-    # ~960 GB mixed-precision weights replicated across DP ranks — cap to 800K.
+    # ~865 GB mixed-precision weights replicated across DP ranks — cap to 200K.
     extra_args:
       - "--max-model-len"
       - "200000"
@@ -178,11 +187,9 @@ strategy_overrides:
   single_node_tp:
     # Latency-oriented TP-only deployment: no expert parallelism (single_node_tp
     # strategy doesn't add --enable-expert-parallel) and no MoE mega-kernel
-    # backend on Blackwell. Autotune is disabled to minimize startup time.
+    # backend on Blackwell. Hopper inherits the recipe-level caps, which already
+    # disable autotune; a block here would replace them and drop the caps.
     hardware_overrides:
-      hopper:
-        extra_args:
-          - "--no-enable-flashinfer-autotune"
       blackwell:
         # Replaces recipe-level blackwell override: keeps the FP4 indexer cache
         # but drops --moe-backend deep_gemm_mega_moe (TP-only path uses the
@@ -323,13 +330,15 @@ guide: |
 
   - **B300 (8× GPU)**: single-node DP + EP with `--data-parallel-size 8`.
   - **H200 (8× GPU)**: DP + EP with `--data-parallel-size 8`. Context is capped at
-    800K tokens (`--max-model-len 800000`) to leave KV headroom with dense params
-    replicated across ranks — applies to both single-node and multi-node H200.
+    200K tokens (`--max-model-len 200000`) with `--max-num-seqs 16` to leave KV
+    headroom with dense params replicated across ranks — applies to both
+    single-node and multi-node H200. **Think Max** needs `--max-model-len >=
+    393216`, so raise the cap (and expect fewer concurrent sequences) to use it.
   - **MI355X (8× GPU)**: validated with ROCm + AITER (`VLLM_ROCM_USE_AITER=1`),
-    `--gpu-memory-utilization 0.9`, `--max-num-seqs 128`,
+    `--gpu-memory-utilization 0.9`, `--max-num-seqs 512`,
     `--max-num-batched-tokens 8192`, and `--distributed-executor-backend mp`.
-  - **GB200 NVL4 (4× GPU per tray)**: the ~960 GB mixed-precision checkpoint does not
-    fit on one tray; run multi-node DP + EP across **2 trays** (8 GPUs total) with
+  - **GB200 NVL4 (4× GPU per tray)**: the ~865 GB mixed-precision checkpoint does not
+    fit on one 768 GB tray; run multi-node DP + EP across **2 trays** (8 GPUs total) with
     `--data-parallel-size 8`. Pick the "Multi-Node" tab and set nodes to 2.
 
   ### MI355X (8×288GB)
