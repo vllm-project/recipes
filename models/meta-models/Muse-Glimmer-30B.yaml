@@ -85,6 +85,19 @@ variants:
     # 29.78B x 2 bytes x 1.2
     vram_minimum_gb: 72
     description: "BF16 weights, the reference precision."
+    hardware_overrides:
+      mi300x:
+        extra_args:
+          - "--attention-backend"
+          - "ROCM_AITER_FA"
+      mi325x:
+        extra_args:
+          - "--attention-backend"
+          - "ROCM_AITER_FA"
+      mi355x:
+        extra_args:
+          - "--attention-backend"
+          - "ROCM_AITER_FA"
   nvfp4:
     precision: nvfp4
     model_id: "Inferact/Muse-Glimmer-30B-NVFP4-W4A4"
@@ -97,6 +110,12 @@ variants:
 
 compatible_strategies:
   - single_node_tp
+
+hardware_overrides:
+  amd:
+    extra_args: []
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
 
 guide: |
   ## Overview
