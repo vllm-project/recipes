@@ -20,6 +20,7 @@ meta:
     # Single GB10 with 128 GB unified memory. gpu_count is 1, so autoFitTp caps
     # TP at 1 — this is a plain single-card deployment, no sharding.
     dgx_spark_gb10: verified
+    mi355x: verified
 
 model:
   model_id: "meta-models/Muse-Glimmer-30B"
@@ -35,7 +36,7 @@ model:
   nightly_required: true
   install:
     docker:
-      note: "Docker is the supported path — the model code and the muse_glimmer parsers are not in any released vLLM wheel."
+      note: "Docker is the supported path — the model code and the muse_glimmer parsers are not in any released vLLM wheel. On ROCm, please install the code from https://github.com/vllm-project/vllm/pull/51655 ."
     pip: false
   architecture: dense
   # Model card states ~29.6B total including the perception encoder. Measured from
@@ -181,6 +182,28 @@ guide: |
   the KV cache and the perception encoder. The **NVFP4** checkpoint is 25.42 GB,
   which leaves considerably more of that shared pool for KV and the host — the
   better fit of the two on this hardware.
+
+  ## Running on MI355X
+
+  As of now, please install the code from https://github.com/vllm-project/vllm/pull/51655
+  if it hasn't been merged yet. After the PR is merged use `vllm/vllm-openai-rocm:nightly` image.
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  vllm serve /model \
+    --served-model-name muse-glimmer \
+    --tensor-parallel-size 4 \
+    --max-model-len 131072 \
+    --enable-auto-tool-choice \
+    --tool-call-parser muse_glimmer \
+    --reasoning-parser muse_glimmer \
+    --generation-config auto
+  ```
+
+  At TP=1 on MI355X this reports an 11.65M-token KV pool and ~88.9x max concurrency
+  at the full 128K context.
+  At TP=4 on MI355X this reports an 27.68M-token KV pool and ~211.22x max concurrency
+  at the full 128K context.
 
   ## Sampling
 
