@@ -1129,7 +1129,13 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         // pure noise). Internal math still uses 1 as the effective value.
         const tpExplicit = soRoleCfg.tp ?? roleCfg.tp;
         const roleTp = tpExplicit ?? 1;
-        const dpLocal = Math.max(1, Math.floor(gpuCount / roleTp));
+        // GPUs this role owns on one node. Whole-node pools (nodes >= 1) get
+        // every local GPU; a co-located pool (nodes === 0) only gets its half
+        // of the node, which is exactly what CUDA_VISIBLE_DEVICES pins below —
+        // deriving dp_local from the full gpuCount there would spawn twice the
+        // ranks the role can actually see.
+        const roleGpusPerNode = rolePoolNodes === 0 ? poolGpus : gpuCount;
+        const dpLocal = Math.max(1, Math.floor(roleGpusPerNode / roleTp));
         const dpSize = nodesInPool * dpLocal;
         const nodeIdx = Math.max(0, Math.min(nodesInPool - 1, pdRole.rank ?? 0));
         if (tpExplicit !== undefined) {

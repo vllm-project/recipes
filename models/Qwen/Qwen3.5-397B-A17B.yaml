@@ -4,12 +4,12 @@ meta:
   provider: "Qwen"
   description: "Multimodal MoE model with gated delta networks architecture, 397B total / 17B active parameters, up to 262K context"
   date_added: 2026-02-16
-  date_updated: 2026-04-16
+  date_updated: 2026-08-08
   difficulty: intermediate
   tasks:
     - multimodal
     - text
-  performance_headline: "Verified on 8x H200, 8x MI300X/MI355X, and GB200 nodes"
+  performance_headline: "25K total TPS/GPU on GB200 NVL72 with P/D disaggregation · verified on 8x H200 and 8x MI300X/MI355X"
   related_recipes:
     - "Qwen/Qwen3.6-35B-A3B"
   hardware:
@@ -51,7 +51,7 @@ features:
       - "--speculative-config"
       - '{"method":"mtp","num_speculative_tokens":3}'
   text_only:
-    description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
+    description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache and unlocks the fused QK-norm + RoPE + gate path in the attention layers. Mutually exclusive with encoder_parallel."
     args:
       - "--language-model-only"
   encoder_parallel:
@@ -97,13 +97,54 @@ compatible_strategies:
 hardware_overrides: {}
 
 strategy_overrides:
+  # Disaggregated settings track the vLLM 25K total TPS/GPU GB200 NVL72 run
+  # (https://vllm.ai/blog/2026-08-06-qwen35-25k-tps), whose launcher recipes
+  # live in NVIDIA/srt-slurm-recipes under Qwen3.5/GB200/8k1k/vllm/disagg.
   pd_cluster:
+    env:
+      # Mandatory for SSM models under disaggregation — GDN conv-state transfer
+      # over NIXL does not work without the DS layout.
+      VLLM_SSM_CONV_STATE_LAYOUT: "DS"
     prefill:
-      env:
-        VLLM_SSM_CONV_STATE_LAYOUT: "DS"
+      # Reference layout is NxDEP2 prefill endpoints (N = 4..8) against one DEP8
+      # decode endpoint. On 4-GPU NVL4 trays that is 2 trays of prefill at the
+      # 4xDEP2 base config, growing to 4 trays at 8xDEP2; rendered here as one
+      # aggregate DEP pool per role (same GPU budget, one endpoint instead of N).
+      nodes:
+        gb200: 2
+        gb300: 2
+      parallelism: dep
+      tp: 1
+      vllm_args:
+        # Key contributor to crossing 25K tok/s/GPU. Needs a vLLM build that
+        # already carries the PD race fixes (vllm#48481, vllm#45357) — older
+        # builds collapse to zero accuracy with async scheduling enabled.
+        - "--async-scheduling"
+        # Frees KV cache capacity by keeping SSM state in bf16.
+        - "--mamba-ssm-cache-dtype"
+        - "bfloat16"
+        # 2x ISL (8192), so each prefill step batches two full prompts —
+        # worth ~+8% total TPS/GPU when prefill is the bottleneck.
+        - "--max-num-batched-tokens"
+        - "16384"
+        # Cuts frontend overhead at high concurrency; buffers streamed output in
+        # 100-token chunks, so drop it when optimizing for ITL/TPOT.
+        - "--stream-interval"
+        - "100"
+      env: {}
     decode:
-      env:
-        VLLM_SSM_CONV_STATE_LAYOUT: "DS"
+      nodes:
+        gb200: 2
+        gb300: 2
+      parallelism: dep
+      tp: 1
+      vllm_args:
+        - "--async-scheduling"
+        - "--mamba-ssm-cache-dtype"
+        - "bfloat16"
+        - "--stream-interval"
+        - "100"
+      env: {}
 
 guide: |
   ## Overview
@@ -218,6 +259,73 @@ guide: |
     --enable-prefix-caching
   ```
 
+  ### GB200 NVL72 Disaggregated Serving — 25K total TPS/GPU
+
+  vLLM reaches **25,000 total TPS/GPU** on
+  [nvidia/Qwen3.5-397B-A17B-NVFP4](https://huggingface.co/nvidia/Qwen3.5-397B-A17B-NVFP4)
+  over GB200 NVL72 with prefill/decode disaggregation at ISL/OSL = 8192/1024.
+  GSM8K accuracy across all measured configurations is 88%, matching the
+  aggregated run. Full Pareto sweep in the
+  [vLLM blog post](https://vllm.ai/blog/2026-08-06-qwen35-25k-tps); the launcher
+  recipes live in
+  [NVIDIA/srt-slurm-recipes](https://github.com/NVIDIA/srt-slurm-recipes/tree/main/recipes/multi-node/Qwen3.5/GB200/8k1k/vllm/disagg).
+
+  #### Topology
+
+  The naming scheme is `NxDEP2-1xDEP8`: N prefill endpoints (N = 4…8), each
+  DEP2 — 2 GPUs running DP2 + expert parallel — against a single DEP8 decode
+  endpoint (8 GPUs = 2 NVL4 trays). Prefill grows from 2 trays at `4xDEP2` to 4
+  trays at `8xDEP2` while the decode side stays fixed. Concurrency was swept
+  from 64 to 5120; past 5120 the single decode endpoint runs out of KV cache
+  capacity and you need to add decode GPUs rather than push concurrency higher.
+
+  The command builder above renders one aggregate DEP pool per role — the same
+  GPU budget, one endpoint instead of N. To reproduce the blog's exact layout,
+  launch N independent DEP2 prefill workers behind the router.
+
+  #### Settings that matter
+
+  | Setting | Where | Why |
+  | --- | --- | --- |
+  | `VLLM_SSM_CONV_STATE_LAYOUT=DS` | both roles | Mandatory for SSM models under disaggregation — conv-state transfer does not work without it. |
+  | `--async-scheduling` | both roles | One of the key features behind crossing 25K tok/s/GPU. Requires a vLLM build containing the PD race fixes ([#48481](https://github.com/vllm-project/vllm/pull/48481), [#45357](https://github.com/vllm-project/vllm/pull/45357)); on earlier builds accuracy collapses to zero with it enabled. |
+  | `--mamba-ssm-cache-dtype bfloat16` | both roles | Significantly increases effective KV cache capacity on the decode endpoint. |
+  | `--max-num-batched-tokens 16384` | prefill | 2× ISL, so each prefill step batches two full prompts. Worth about +8% total TPS/GPU at high concurrency in the configurations where prefill is the bottleneck ({4,5,6}×DEP2). |
+  | `--language-model-only` | both roles | Text-only workload: disables multimodal inputs and unlocks the fused QK-norm + RoPE + gate path in the attention layers. Toggle the **Text Only** feature above. |
+  | `--stream-interval 100` | both roles | Reduces frontend overhead at high concurrency. It buffers streamed output in 100-token chunks, so it does affect measured per-token latency — drop it if you optimize for ITL/TPOT rather than aggregate throughput. |
+  | `--max-cudagraph-capture-size` | decode | Raised to `concurrency/8 + 128` (640 at cc=4096, 768 at cc=5120), where 8 is the number of DP ranks on the decode endpoint. vLLM's default caps captured graphs at 512, which is enough through cc=3072. |
+
+  Prefix caching was disabled for these runs — it buys nothing on the random
+  benchmark dataset. Keep it enabled for workloads with shared prefixes.
+
+  On supported Blackwell configurations, prefill automatically selects the
+  [FlashInfer GDN kernel](https://github.com/flashinfer-ai/flashinfer/pull/3001)
+  when the GDN backend is `auto` (the default); request it explicitly with
+  `--gdn-prefill-backend flashinfer`. `--no-disable-hybrid-kv-cache-manager` is
+  no longer required — HMA has been enabled by default for several vLLM releases.
+
+  #### Reproducing
+
+  The measurements used the `vllm/vllm-openai:nightly-d223c90` image,
+  [Dynamo](https://github.com/ai-dynamo/dynamo) `1.2.0.dev20260526`, and
+  [srt-slurm](https://github.com/NVIDIA/srt-slurm) `v1.0.32`:
+
+  ```bash
+  srtctl run --file 4xdep2-1xdep8.yaml
+  ```
+
+  Two practical debugging notes:
+
+  - On a data-parallel endpoint vLLM defaults `--api-server-count` to the
+    data-parallel size, and with more than one API server it disables its default
+    stats logging. Forcing `--api-server-count 1` brings back the periodic prompt
+    and generation throughput plus KV cache utilization lines (interval
+    configurable via `VLLM_LOG_STATS_INTERVAL`, default 10s) — the metrics that
+    identify per-configuration bottlenecks.
+  - Set `DYN_LOG=error`, `DYN_SDK_DISABLE_ANSI_LOGGING=1`, and
+    `VLLM_LOGGING_COLOR=0`. The first cuts Dynamo's very verbose default logging;
+    the other two suppress most ANSI escape sequences so log files stay readable.
+
   ### MI355X Deployment
 
   ```bash
@@ -307,4 +415,6 @@ guide: |
   - Model card: https://huggingface.co/Qwen/Qwen3.5-397B-A17B
   - FP8 checkpoint: https://huggingface.co/Qwen/Qwen3.5-397B-A17B-FP8
   - NVFP4 checkpoint: https://huggingface.co/nvidia/Qwen3.5-397B-A17B-NVFP4
+  - vLLM blog — 25K total TPS/GPU on Qwen3.5: https://vllm.ai/blog/2026-08-06-qwen35-25k-tps
+  - Disaggregated launcher recipes: https://github.com/NVIDIA/srt-slurm-recipes/tree/main/recipes/multi-node/Qwen3.5/GB200/8k1k/vllm/disagg
   - vLLM documentation: https://docs.vllm.ai/
