@@ -38,6 +38,11 @@ model:
   base_env: {}
 
 features:
+  reasoning:
+    description: "Extract Qwen3-style <think> traces into the OpenAI reasoning field."
+    args:
+      - "--reasoning-parser"
+      - "qwen3"
   text_only:
     description: "Load only the language model for text workloads, skipping the vision and audio encoders."
     args:
@@ -49,6 +54,7 @@ features:
       - '{"method":"mtp","num_speculative_tokens":3}'
 
 opt_in_features:
+  - reasoning
   - text_only
   - spec_decoding
 
