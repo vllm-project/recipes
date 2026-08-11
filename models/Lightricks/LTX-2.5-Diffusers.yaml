@@ -24,6 +24,7 @@ model:
         source .venv/bin/activate
         export VLLM_VERSION=0.27.0
         uv pip install "vllm==$VLLM_VERSION" --torch-backend=auto
+        uv pip install git+https://github.com/vllm-project/vllm-omni.git
       note: "LTX-2.5 uses the native vLLM-Omni pipeline from current main."
     docker: false
   architecture: dense
@@ -64,6 +65,7 @@ hardware_overrides: {}
 strategy_overrides: {}
 
 omni:
+  serve_binary: "vllm-omni serve"
   port: 8000
   task_label: "Generation Mode"
   task_hint: "Choose one-stage T2V/I2V, two-stage high-resolution T2V, or the 30-step Full/SFT T2V path."
@@ -209,7 +211,7 @@ guide: |
   ## One-stage text-to-video
 
   ```bash
-  vllm serve Lightricks/LTX-2.5-Diffusers \
+  vllm-omni serve Lightricks/LTX-2.5-Diffusers \
     --omni \
     --model-class-name LTX2Pipeline \
     --host 0.0.0.0 \
@@ -260,7 +262,7 @@ guide: |
   Select the two-stage native pipeline at server startup:
 
   ```bash
-  vllm serve Lightricks/LTX-2.5-Diffusers \
+  vllm-omni serve Lightricks/LTX-2.5-Diffusers \
     --omni \
     --model-class-name LTX2DistilledPipeline \
     --host 0.0.0.0 \
@@ -290,7 +292,7 @@ guide: |
   Select the Full/SFT transformer and its 30-step dynamic scheduler:
 
   ```bash
-  vllm serve Lightricks/LTX-2.5-Diffusers \
+  vllm-omni serve Lightricks/LTX-2.5-Diffusers \
     --omni \
     --model-class-name LTX2FullPipeline \
     --host 0.0.0.0 \
