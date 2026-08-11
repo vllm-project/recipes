@@ -273,18 +273,33 @@ guide: |
     and vision both work. `vram_minimum_gb: 31` is accurate — the margin is real
     but thin.
 
-    Two things are worth knowing before you plan around it.
-
     **Speculative decoding needs a second card.** The draft head is 5.11 GB and the
     nvfp4 weights are 25.42 GB, so on one 32 GB card vLLM OOMs during init with
-    roughly 400 MiB free. On 2x 5090 with `--tensor-parallel-size 2` it runs, and
-    it is worth the second card: 184 tok/s versus 66 without the drafter.
+    roughly 400 MiB free. On 2x 5090 with `--tensor-parallel-size 2` it is well
+    worth the second card — decode roughly triples.
 
-    **Lower `--gpu-memory-utilization` when speculating.** At the default 0.92 with
-    TP=2, vLLM sizes a 2,594,229-token KV cache and then fails to allocate 396 MiB
-    for the speculator. At 0.80 the cache is still 1,631,689 tokens (6.22x
-    concurrency at 262K) and initialisation completes. Counter-intuitively, a
-    *lower* utilisation is what makes speculative decoding start at all here.
+    On 2x 5090 the default `--gpu-memory-utilization 0.92` works with the drafter;
+    utilisation only sizes the KV cache, it does not gate initialisation. Measured
+    across the range, base recipe (131,072 ctx, bf16 KV) plus DFlash:
+
+    | `--gpu-memory-utilization` | KV cache | concurrency @131K |
+    |---|---|---|
+    | 0.92 | 1,202,076 | 9.17x |
+    | 0.88 | 1,054,407 | 8.04x |
+    | 0.84 | 906,720 | 6.92x |
+    | 0.80 | 759,051 | 5.79x |
+
+    All seven steps from 0.92 down to 0.80 initialised cleanly. Decode measured
+    212-261 tok/s across them with no trend attributable to utilisation — the
+    spread is run-to-run noise (a second model was sharing the host during the
+    early steps), so treat ~240 tok/s as the figure and pick utilisation purely
+    for the cache size you want.
+
+    If you *extend* beyond the recipe — a longer `--max-model-len` via rope
+    scaling, or `--kv-cache-dtype fp8` — the arithmetic changes and 0.92 can OOM:
+    at 262,144 with fp8 KV, vLLM sized a 2,594,229-token cache and then failed to
+    allocate 396 MiB for the speculator. Lowering to 0.80 fixed it. That is a
+    consequence of the extension, not of the recipe as written.
 
     A note on `max_tokens`: the channel-scoped output means a tight budget can
     truncate before the final channel closes, returning empty `content` with
