@@ -692,7 +692,7 @@ function localModelMount(modelId) {
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
 // image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
 // CMD. Env vars become `-e KEY=VAL` inside the container.
-export function buildDockerRun({ command, env, image, gpuFlags, port = 8000, isXpu = false }) {
+export function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
@@ -714,12 +714,6 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = 8000, isX
   const base = `${prereq}docker run ${gpuFlags} \\
   --privileged --ipc=host -p ${port}:${port} \\
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
-  if (isXpu) {
-    const serve = `vllm serve ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
-    return `${base}
-  --entrypoint bash ${image} \\
-  -c "source /opt/intel/oneapi/setvars.sh && exec ${serve}"`;
-  }
   return `${base}
   ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
 }
@@ -748,15 +742,6 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
     ...mountFlags,
     ...envFlags,
   ];
-  // Intel XPU: override entrypoint to source oneAPI before serving (see
-  // buildDockerRun). The full serve invocation becomes a single `bash -c` arg.
-  if (meta.isXpu) {
-    return [
-      ...base,
-      "--entrypoint", "bash", meta.image,
-      "-c", `source /opt/intel/oneapi/setvars.sh && exec vllm serve ${cmdArgs.join(" ")}`,
-    ];
-  }
   return [
     ...base,
     meta.image,

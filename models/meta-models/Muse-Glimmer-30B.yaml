@@ -23,6 +23,9 @@ meta:
     mi300x: verified
     mi325x: verified
     mi355x: verified
+    arc_pro_b60: verified
+    arc_pro_b70: verified
+    xeon6: verified
 
 model:
   model_id: "meta-models/Muse-Glimmer-30B"
@@ -38,7 +41,7 @@ model:
   nightly_required: true
   install:
     docker:
-      note: "Docker is the supported path — the model code and the muse_glimmer parsers are not in any released vLLM wheel. On ROCm, please install the code from https://github.com/vllm-project/vllm/pull/51655 ."
+      note: "Docker is the supported path — the model code and the muse_glimmer parsers are not in any released vLLM wheel. On ROCm, please install the code from https://github.com/vllm-project/vllm/pull/51655 . On Intel Arc Pro (XPU) or Xeon (CPU), build the vLLM XPU/CPU image from source including that PR — see the Intel section of the guide."
     pip: false
   architecture: dense
   # Model card states ~29.6B total including the perception encoder. Measured from
@@ -122,6 +125,9 @@ hardware_overrides:
     extra_args: []
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
+  xpu:
+    extra_args:
+      - "--enforce-eager"
 
 guide: |
   ## Overview
@@ -240,6 +246,47 @@ guide: |
 
   At TP=4 on MI355X this reports an 27.68M-token KV pool and ~211.22x max concurrency
   at the full 128K context.
+
+  ## Running on Intel Arc Pro (XPU) and Xeon (CPU)
+
+  validated on Intel Arc Pro B70, Arc Pro B60, and Xeon 6.
+  Until [PR #51655](https://github.com/vllm-project/vllm/pull/51655) ships in a
+  released wheel, build the vLLM Intel image from source (with that PR applied).
+
+  **Intel GPU (XPU):**
+
+  ```bash
+  git clone https://github.com/vllm-project/vllm.git
+  cd vllm
+  docker build -f docker/Dockerfile.xpu -t vllm-xpu-env --shm-size=4g .
+  docker run -it --rm --network=host --ipc=host --privileged \
+    --device /dev/dri:/dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path \
+    --entrypoint bash \
+    vllm-xpu-env
+  ```
+
+  Serve inside the container — `--enforce-eager` is required on the XPU backend:
+
+  ```bash
+  vllm serve meta-models/Muse-Glimmer-30B \
+    --tensor-parallel-size 4 \
+    --reasoning-parser muse_glimmer \
+    --enforce-eager
+  ```
+
+  **Intel Xeon CPU:**
+
+  ```bash
+  git clone https://github.com/vllm-project/vllm.git
+  cd vllm
+  docker build -f docker/Dockerfile.cpu --tag vllm-cpu-env --target vllm-openai .
+  docker run -it --rm --privileged --shm-size=4g --entrypoint bash vllm-cpu-env
+
+  vllm serve meta-models/Muse-Glimmer-30B \
+    --tensor-parallel-size 2 \
+    --reasoning-parser muse_glimmer
+  ```
 
   ## Sampling
 
