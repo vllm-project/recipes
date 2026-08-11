@@ -156,9 +156,9 @@ guide: |
     -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
     --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    --entrypoint bash vllm/vllm-openai-xpu:latest \
-    -c "source /opt/intel/oneapi/setvars.sh && exec vllm serve openai/gpt-oss-20b \
-    --max-model-len 8192"
+    vllm/vllm-openai-xpu:latest \
+    openai/gpt-oss-20b \
+    --max-model-len 8192
   ```
 
   ## Tool use
