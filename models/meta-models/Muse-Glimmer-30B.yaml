@@ -23,6 +23,7 @@ meta:
     mi300x: verified
     mi325x: verified
     mi355x: verified
+    rtx_5090: verified
 
 model:
   model_id: "meta-models/Muse-Glimmer-30B"
