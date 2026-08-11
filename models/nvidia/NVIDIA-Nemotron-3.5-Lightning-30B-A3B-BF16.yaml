@@ -1,0 +1,291 @@
+meta:
+  title: "NVIDIA Nemotron 3.5 Lightning"
+  slug: "nemotron-3-5-lightning"
+  provider: "NVIDIA"
+  description: "NVIDIA Nemotron 3.5 Lightning hybrid Mamba-MoE (30B total / 3B active) with NVFP4 and BF16 checkpoints, 1M context, and MTP / DSpark / DFlash speculative decoding"
+  date_added: 2026-08-03
+  date_updated: 2026-08-10
+  difficulty: intermediate
+  tasks:
+    - text
+  related_recipes:
+    - "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16"
+  hardware:
+    h100: verified
+    dgx_spark_gb10: verified
+    dgx_station_gb300: verified
+
+model:
+  model_id: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
+  min_vllm_version: "0.25.0"
+  nightly_required: true
+  architecture: moe
+  parameter_count: "30B"
+  active_parameters: "3B"
+  context_length: 1048576
+  base_args:
+    - "--trust-remote-code"
+    - "--mamba-backend"
+    - "flashinfer"
+    - "--mamba-cache-mode"
+    - "align"
+    - "--enable-prefix-caching"
+    - "--max-num-batched-tokens"
+    - "16384"
+  base_env:
+    # The 1M context exceeds the length derived from config.json; without this
+    # vLLM refuses to start at --max-model-len 1048576.
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+
+features:
+  reasoning:
+    description: "Nemotron v3 reasoning parser — per-request reasoning toggle with a configurable token budget"
+    args:
+      - "--reasoning-parser"
+      - "nemotron_v3"
+  tool_calling:
+    description: "Qwen3 XML tool-call parser with automatic tool choice"
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "qwen3_xml"
+  mamba_fast_ssm_cache:
+    label: "Fast SSM Cache"
+    description: "FP16 Mamba SSM cache with stochastic rounding — faster decode than the FP32 default; the Philox rounds control the rounding stream"
+    args:
+      - "--mamba-ssm-cache-dtype"
+      - "float16"
+      - "--enable-mamba-cache-stochastic-rounding"
+      - "--mamba-cache-philox-rounds"
+      - "5"
+  spec_decoding:
+    description: "Speculative decoding — built-in MTP heads, the DSpark hybrid speculator, or the DFlash diffusion drafter"
+    default_mode: dspark
+    modes:
+      dspark:
+        label: "DSpark"
+        description: "Hybrid autoregressive + diffusion speculator with a W4A16 draft head. Lowest latency on H100 and DGX Spark; needs the separate DSpark draft checkpoint."
+        variants:
+          - default
+        args:
+          - "--speculative-config"
+          - '{"method":"dspark","model":"nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark","num_speculative_tokens":3}'
+      mtp:
+        label: "MTP"
+        description: "Built-in Multi-Token Prediction heads — no extra checkpoint to download."
+        args:
+          - "--speculative-config"
+          - '{"method":"mtp","num_speculative_tokens":3}'
+        hardware_overrides:
+          blackwell:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+      dflash:
+        label: "DFlash"
+        description: "Diffusion drafter that proposes a whole block of tokens in parallel; needs the separate DFlash draft checkpoint."
+        variants:
+          - default
+        args:
+          - "--speculative-config"
+          - '{"method":"dflash","model":"nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DFlash","num_speculative_tokens":3,"attention_backend":"FLASHINFER"}'
+
+opt_in_features:
+  - spec_decoding
+
+variants:
+  default:
+    model_id: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4"
+    precision: nvfp4
+    # NVFP4 expert weights are dequantized on the fly on Hopper, so this
+    # checkpoint is not Blackwell-only.
+    precision_hardware:
+      brand: NVIDIA
+    vram_minimum_gb: 18
+    label: "NVFP4"
+    description: "ModelOpt NVFP4 (W4A16) checkpoint with FP8 KV cache — the default deployment target, and the only one the DSpark/DFlash drafts are published for"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+      - "--moe-backend"
+      - "marlin"
+    hardware_overrides:
+      hopper:
+        # Marlin is not tuned for Hopper; the Humming W4A16 kernels are ~20%
+        # faster on Nemotron's non-gated ReLU² MoE and on the dense linears.
+        # NVFP4 is also not auto-detected on Hopper, so name the loader.
+        extra_args:
+          - "--quantization"
+          - "modelopt_fp4"
+          - "--moe-backend"
+          - "humming"
+          - "--linear-backend"
+          - "humming"
+          - "--mamba-ssu-algorithm"
+          - "horizontal"
+          - "--async-scheduling"
+  bf16:
+    model_id: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
+    precision: bf16
+    vram_minimum_gb: 72
+    description: "Full-precision BF16 reference checkpoint — MTP only (no DSpark/DFlash draft is published for BF16)"
+    extra_args:
+      - "--moe-backend"
+      - "flashinfer_cutlass"
+    extra_env:
+      VLLM_USE_FASTOKENS: "1"
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  Nemotron 3.5 Lightning is a hybrid Mamba-MoE model — 30B total parameters, 3B active,
+  up to 1M context. It ships as an NVFP4 (W4A16) ModelOpt checkpoint, the default
+  deployment target, and a BF16 reference checkpoint. The NVFP4 weights fit a single
+  H100, a single DGX Spark, or a single DGX Station.
+
+  Both checkpoints need the FlashInfer Mamba backend and the `align` Mamba cache mode.
+  Three speculators are available: **MTP** (built into the checkpoint), **DSpark**
+  (hybrid autoregressive + diffusion) and **DFlash** (diffusion). DSpark gives the best
+  latency on H100 and DGX Spark; for maximum throughput, serve without speculative
+  decoding.
+
+  ## Prerequisites
+
+  - Hardware: 1x H100, 1x DGX Spark (GB10), or 1x DGX Station (GB300)
+  - A vLLM nightly — the Mamba cache flags and the DSpark speculator are not in a
+    stable release yet
+
+  ```bash
+  docker pull vllm/vllm-openai:nightly
+  ```
+
+  ## Launch commands
+
+  ### 1x H100 — NVFP4 with DSpark
+
+  Hopper has no native NVFP4 path, so name the ModelOpt loader explicitly and use the
+  Hopper-tuned Humming W4A16 kernels instead of Marlin.
+
+  ```bash
+  export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+
+  vllm serve nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4 \
+    --trust-remote-code \
+    --quantization modelopt_fp4 \
+    --moe-backend humming \
+    --linear-backend humming \
+    --kv-cache-dtype fp8 \
+    --max-model-len 1048576 \
+    --max-num-seqs 256 \
+    --max-num-batched-tokens 32768 \
+    --enable-prefix-caching \
+    --async-scheduling \
+    --mamba-backend flashinfer \
+    --mamba-cache-mode align \
+    --mamba-ssm-cache-dtype float16 \
+    --enable-mamba-cache-stochastic-rounding \
+    --mamba-cache-philox-rounds 5 \
+    --mamba-ssu-algorithm horizontal \
+    --reasoning-parser nemotron_v3 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_xml \
+    --speculative-config '{"method":"dspark","model":"nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark","num_speculative_tokens":3}'
+  ```
+
+  Drop the `--speculative-config` line for the max-throughput configuration, or swap the
+  method for `mtp` / `dflash` (DFlash uses the
+  `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DFlash` draft).
+
+  ### 1x DGX Spark (GB10) — NVFP4 with DSpark
+
+  128 GB of unified memory is shared with the host, so cap `--gpu-memory-utilization`
+  well below the default. `--load-format fastsafetensors` cuts the load time of the
+  NVFP4 weights on the Spark's slower storage path.
+
+  ```bash
+  export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+
+  vllm serve nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4 \
+    --trust-remote-code \
+    --moe-backend marlin \
+    --kv-cache-dtype fp8 \
+    --max-model-len 1048576 \
+    --max-num-batched-tokens 16384 \
+    --gpu-memory-utilization 0.7 \
+    --enable-prefix-caching \
+    --mamba-backend flashinfer \
+    --mamba-cache-mode align \
+    --mamba-ssm-cache-dtype float16 \
+    --enable-mamba-cache-stochastic-rounding \
+    --mamba-cache-philox-rounds 5 \
+    --reasoning-parser nemotron_v3 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_xml \
+    --load-format fastsafetensors \
+    --speculative_config.method dspark \
+    --speculative_config.model nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark \
+    --speculative_config.num_speculative_tokens 3 \
+    --speculative_config.max_model_len 1048576
+  ```
+
+  ### 1x DGX Station (GB300) — NVFP4 with MTP
+
+  ```bash
+  export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+
+  vllm serve nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4 \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --trust-remote-code \
+    --moe-backend marlin \
+    --kv-cache-dtype fp8 \
+    --attention-backend flashinfer \
+    --max-model-len 1048576 \
+    --max-num-batched-tokens 16384 \
+    --enable-chunked-prefill \
+    --async-scheduling \
+    --enable-prefix-caching \
+    --mamba-backend flashinfer \
+    --mamba-cache-mode align \
+    --reasoning-parser nemotron_v3 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_xml \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+  ```
+
+  Key flags:
+  - `--mamba-backend flashinfer` — required; the default backend has no kernel for this stack
+  - `--mamba-cache-mode align` — aligned Mamba state cache, needed for prefix caching
+  - `--mamba-ssm-cache-dtype float16` with stochastic rounding trades a little accuracy for
+    decode speed; drop all three flags for the FP32 default
+  - `--quantization modelopt_fp4` and the `humming` MoE/linear backends are Hopper-only;
+    Blackwell auto-detects NVFP4 and uses Marlin
+  - `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1` is only needed when serving the full 1M context
+
+  ## Known gaps
+
+  - DSpark and DFlash draft checkpoints are published for NVFP4 only — the BF16 checkpoint
+    is limited to MTP.
+  - TP8 without expert parallel is not supported on the NVFP4 checkpoint (TEP8 works).
+
+  ## Benchmarking
+
+  ```bash
+  vllm bench serve \
+    --model nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4 \
+    --trust-remote-code \
+    --dataset-name random \
+    --random-input-len 32000 --random-output-len 2000 \
+    --ignore-eos \
+    --max-concurrency 256 \
+    --num-prompts 1024
+  ```
