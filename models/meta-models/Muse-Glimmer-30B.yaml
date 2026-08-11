@@ -72,6 +72,11 @@ features:
       - "--reasoning-parser"
       - "muse_glimmer"
   spec_decoding:
+    # The 5.11 GB draft head does not fit beside the 25.42 GB nvfp4 weights on a
+    # single 32 GB RTX 5090: vLLM OOMs during init with ~400 MiB free. Verified,
+    # not inferred. Two cards are required — see the guide's RTX 5090 section.
+    hardware:
+      rtx_5090: unsupported
     description: "DFlash block-diffusion draft head — predicts a whole block in one forward, verified in parallel by the target. `num_speculative_tokens: 15` is not a tuning knob: the head has `block_size: 16` and slot 0 re-presents the last accepted token, so 15 is what remains."
     args:
       - "--speculative-config"
@@ -259,6 +264,31 @@ guide: |
   **Reasoning strength.** Effort is set with a `Reasoning strength: <value>` line
   in the system prompt, one of `low` / `medium` / `high` / `xhigh`. Use `high` or
   `xhigh` for coding and agentic tasks.
+
+  ## RTX 5090 (32 GB, consumer Blackwell)
+
+    The `nvfp4` variant runs on a **single** RTX 5090 with no overrides: 131,072
+    context, a 179,647-token KV cache (1.37x concurrency at full length), 28.8 GB
+    of 32.6 GB used, and 68.8 tok/s on a 600-token greedy generation. Tool calling
+    and vision both work. `vram_minimum_gb: 31` is accurate — the margin is real
+    but thin.
+
+    Two things are worth knowing before you plan around it.
+
+    **Speculative decoding needs a second card.** The draft head is 5.11 GB and the
+    nvfp4 weights are 25.42 GB, so on one 32 GB card vLLM OOMs during init with
+    roughly 400 MiB free. On 2x 5090 with `--tensor-parallel-size 2` it runs, and
+    it is worth the second card: 184 tok/s versus 66 without the drafter.
+
+    **Lower `--gpu-memory-utilization` when speculating.** At the default 0.92 with
+    TP=2, vLLM sizes a 2,594,229-token KV cache and then fails to allocate 396 MiB
+    for the speculator. At 0.80 the cache is still 1,631,689 tokens (6.22x
+    concurrency at 262K) and initialisation completes. Counter-intuitively, a
+    *lower* utilisation is what makes speculative decoding start at all here.
+
+    A note on `max_tokens`: the channel-scoped output means a tight budget can
+    truncate before the final channel closes, returning empty `content` with
+    `finish_reason: stop`. Give it room.
 
   ## Speculative decoding
 
