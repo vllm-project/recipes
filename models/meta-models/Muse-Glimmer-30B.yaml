@@ -41,7 +41,7 @@ model:
   nightly_required: true
   install:
     docker:
-      note: "Docker is the supported path — the model code and the muse_glimmer parsers are not in any released vLLM wheel. On ROCm, please install the code from https://github.com/vllm-project/vllm/pull/51655 . On Intel Arc Pro (XPU) or Xeon (CPU), build the vLLM XPU/CPU image from source including that PR — see the Intel section of the guide."
+      note: "Docker is the supported path — the model code and the muse_glimmer parsers are not in any released vLLM wheel. On ROCm, please install the code from https://github.com/vllm-project/vllm/pull/51655 ."
     pip: false
   architecture: dense
   # Model card states ~29.6B total including the perception encoder. Measured from
@@ -250,8 +250,6 @@ guide: |
   ## Running on Intel Arc Pro (XPU) and Xeon (CPU)
 
   validated on Intel Arc Pro B70, Arc Pro B60, and Xeon 6.
-  Until [PR #51655](https://github.com/vllm-project/vllm/pull/51655) ships in a
-  released wheel, build the vLLM Intel image from source (with that PR applied).
 
   **Intel GPU (XPU):**
 
