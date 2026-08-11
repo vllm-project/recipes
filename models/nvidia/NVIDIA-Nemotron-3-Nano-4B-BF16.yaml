@@ -147,8 +147,8 @@ guide: |
     -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
     --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    --entrypoint bash vllm/vllm-openai-xpu:latest \
-    -c "source /opt/intel/oneapi/setvars.sh && exec vllm serve nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16 \
+    vllm/vllm-openai-xpu:latest \
+    nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16 \
     --trust-remote-code \
     --async-scheduling \
     --kv-cache-dtype auto \
@@ -158,7 +158,7 @@ guide: |
     --tool-call-parser qwen3_coder \
     --reasoning-parser-plugin nano_v3_reasoning_parser.py \
     --reasoning-parser nano_v3 \
-    --max-model-len 8192"
+    --max-model-len 8192
   ```
 
   FP8:
@@ -167,14 +167,14 @@ guide: |
     -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
     --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    --entrypoint bash vllm/vllm-openai-xpu:latest \
-    -c "source /opt/intel/oneapi/setvars.sh && exec vllm serve nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8 \
+    vllm/vllm-openai-xpu:latest \
+    nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8 \
     --trust-remote-code \
     --async-scheduling \
     --kv-cache-dtype fp8 \
     --tensor-parallel-size 1 \
     --enforce-eager \
-    --max-model-len 8192"
+    --max-model-len 8192
   ```
 
   ## Benchmarking

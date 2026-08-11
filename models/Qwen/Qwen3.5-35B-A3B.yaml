@@ -182,12 +182,12 @@ guide: |
     -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
     --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    --entrypoint bash vllm/vllm-openai-xpu:latest \
-    -c "source /opt/intel/oneapi/setvars.sh && exec vllm serve Qwen/Qwen3.5-35B-A3B \
+    vllm/vllm-openai-xpu:latest \
+    Qwen/Qwen3.5-35B-A3B \
     --reasoning-parser qwen3 \
     --tensor-parallel-size 4 \
     --max-model-len 8192 \
-    --enforce-eager"
+    --enforce-eager
   ```
 
   ## Client Usage

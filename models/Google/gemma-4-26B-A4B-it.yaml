@@ -402,8 +402,8 @@ guide: |
     -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
     --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    --entrypoint bash vllm/vllm-openai-xpu:latest \
-    -c "source /opt/intel/oneapi/setvars.sh && exec vllm serve google/gemma-4-26B-A4B-it \
+    vllm/vllm-openai-xpu:latest \
+    google/gemma-4-26B-A4B-it \
     --enforce-eager \
     --attention-backend flash_attn \
     --host 0.0.0.0 \
@@ -419,7 +419,7 @@ guide: |
     --no-enable-prefix-caching \
     --max-num-batched-tokens 8192 \
     --max-model-len 5120 \
-    --tensor-parallel-size 4"
+    --tensor-parallel-size 4
   ```
 
   ## Client Usage
