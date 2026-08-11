@@ -118,6 +118,33 @@ hardware_profiles:
     scalable: false
     restricted: true
 
+  # RTX PRO 5000 Blackwell — validated four-card PCIe profile.
+  # Restricted so it only appears for recipes with target-hardware evidence.
+  rtx_pro_5000_4x:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX PRO 5000 Blackwell 4x"
+    description: "NVIDIA RTX PRO 5000 Blackwell · 4× 72 GB VRAM · PCIe, no NVLink"
+    gpu_count: 4
+    vram_gb: 288
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # RTX Pro 6000 8x — 8x RTX Pro 6000 GPUs system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` (same pattern as the TPU profiles).
+  rtx_pro_6000_8x:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX Pro 6000 8x"
+    description: "NVIDIA RTX Pro 6000 · 8× RTX Pro 6000 GPU · 768 GB VRAM"
+    gpu_count: 8
+    vram_gb: 768
+    multi_node: false
+    scalable: false
+    restricted: true
+  
   # RTX 5090 — single-GPU RTX 5090 system.
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
   # lists it in `meta.hardware`
@@ -275,6 +302,7 @@ strategies:
   - multi_node_tep
   - multi_node_dep
   - multi_node_tp_pp
+  - multi_node_tp_dp
   - pd_cluster
 
 # KV Offload — options for the command builder's "KV Offload" row that compose

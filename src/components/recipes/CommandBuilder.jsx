@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, MAX_NODES, nodesForStrategy, isStrategyReachable } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -365,8 +365,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // T2V/I2V/TI2V) and the cURL endpoint/body shown in the Try-it popover.
   const [omniTask, setOmniTask] = useState(() => {
     const fromUrl = searchParams.get("task");
-    if (fromUrl && omniTasks.some((t) => t.id === fromUrl)) return fromUrl;
-    return omniTasks[0]?.id || "";
+    if (fromUrl) {
+      const exact = omniTasks.find((t) => t.key === fromUrl);
+      if (exact) return exact.key;
+      // Preserve old `?task=<catalog-id>` links after a recipe introduces
+      // distinct selector keys for several presets sharing the same task id.
+      const legacy = omniTasks.find((t) => t.id === fromUrl);
+      if (legacy) return legacy.key;
+    }
+    return omniTasks[0]?.key || "";
   });
 
   // Compute default hardware: URL param > stored preference (if compatible) > smallest compatible profile
@@ -424,7 +431,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
     const rs = loadRecipeState(recipe.hf_id);
     if (!searchParams.get("strategy") && rs.strategy &&
-        (recipe.compatible_strategies || []).includes(rs.strategy) &&
+        effectiveCompatibleStrategies(recipe).includes(rs.strategy) &&
         strategies[rs.strategy]?.deploy_type !== "kv_store_lb") {
       setStrategyOverride(rs.strategy);
     }
@@ -484,7 +491,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // one node — force nodeCount to 1 in that case, even if the URL says
   // otherwise. (Nodes means nodes PER INSTANCE under Mooncake too; the
   // instance count is a separate axis and doesn't need multi-node support.)
-  const supportsMultiNode = (recipe.compatible_strategies || []).some(
+  const supportsMultiNode = effectiveCompatibleStrategies(recipe).some(
     (s) => s.startsWith("multi_node_") || s === "pd_cluster"
   );
   const [nodeCount, setNodeCount] = useState(() => {
@@ -848,13 +855,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const nodeOptions = useMemo(() => {
     const needed = Math.max(
       0,
-      ...(recipe.compatible_strategies || []).map((s) => nodesForStrategy(recipe, s, perNode, hwId)),
+      ...effectiveCompatibleStrategies(recipe).map((s) => nodesForStrategy(recipe, s, perNode, hwId)),
     );
     return needed > 2 && needed <= MAX_NODES ? [1, 2, needed] : [1, 2];
   }, [recipe, perNode, hwId]);
 
   const compatibleStrategies = useMemo(() => {
-    return (recipe.compatible_strategies || []).filter((s) => {
+    return effectiveCompatibleStrategies(recipe).filter((s) => {
       const strat = strategies[s];
       if (!strat) return false;
       // kv_store_lb deployments live on the KV Offload row, not here.
@@ -890,13 +897,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     [recipe, hwId]
   );
 
-  // Serving-strategy per-GPU opt-out, mirroring kv_cache_strategy_hardware but
-  // for the Strategy row: a recipe marks a (strategy, GPU) pair `unsupported`
-  // under `strategy_hardware` (fail-open — absent = works). The pill renders
-  // disabled with a tooltip and the active/recommended resolution skips it.
+  // Serving-strategy per-GPU gate for the Strategy row. The default is
+  // compatible_strategies membership (listed = supported everywhere, unlisted
+  // = nowhere); `strategy_hardware` overrides per hardware in either
+  // direction, maps taking the variant-`tp` keyspace (exact GPU id >
+  // generation > brand > `default`). An unsupported pill renders disabled
+  // with a tooltip and the active/recommended resolution skips it.
   const isStrategySupported = useCallback(
-    (s, hardwareId = hwId) => recipe.strategy_hardware?.[s]?.[hardwareId] !== "unsupported",
-    [recipe, hwId]
+    (s, hardwareId = hwId) => isStrategySupportedOnHardware(
+      recipe, s, taxonomy.hardware_profiles?.[hardwareId], hardwareId
+    ),
+    [recipe, taxonomy, hwId]
   );
 
   // PD now sizes each pool independently, so the "2× model VRAM on one node"
@@ -1111,12 +1122,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   );
 
   // ── Handlers ──
-  const selectOmniTask = (id) => {
-    setOmniTask(id);
-    // Default task id is omitted from the URL so a fresh page-load lands on
+  const selectOmniTask = (key) => {
+    setOmniTask(key);
+    // Default task key is omitted from the URL so a fresh page-load lands on
     // the recipe author's intended starting task without a noisy `?task=…`.
-    const defaultId = omniTasks[0]?.id;
-    syncUrl({ task: id === defaultId ? "" : id });
+    const defaultKey = omniTasks[0]?.key;
+    syncUrl({ task: key === defaultKey ? "" : key });
   };
 
   const selectVariant = (key) => {
@@ -1708,6 +1719,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       : installMode === "docker" && dockerEffectivelyHidden
         ? "pip"
         : installMode;
+  const commandNote = recipe.hardware_notes?.[hwId] || null;
 
   // The extra-install block is pip-scoped by default: nearly every recipe's
   // dependencies are pip installs the Docker image already bundles, so repeating
@@ -1732,7 +1744,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const omniVariants = Object.entries(recipe.variants || {});
     const showOmniVariants = omniVariants.length > 1;
     const showOmniTaskRow = omniTasks.length > 1;
-    const activeTaskBase = omniTasks.find((t) => t.id === omniTask) || omniTasks[0] || null;
+    const activeTaskBase = omniTasks.find((t) => t.key === omniTask) || omniTasks[0] || null;
     const activeTask = resolveOmniTaskForHardware(activeTaskBase, hwId);
 
     // Render the `vllm serve --omni` command via the shared omni resolver.
@@ -1820,6 +1832,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               dockerMeta={dockerMeta}
               configSummary={omniConfigSummary}
               endpointsControls={omniEndpointsControls}
+              commandNote={commandNote}
             />
           </div>
 
@@ -1874,17 +1887,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
             {showOmniTaskRow && (
               <ConfigRow
-                label="Task"
-                hint="Each task picks a vllm-omni handler endpoint and example payload. For multi-checkpoint families (Wan2.2 T2V/I2V/TI2V) the task also swaps the served model_id."
+                label={recipe.omni?.task_label || "Task"}
+                hint={recipe.omni?.task_hint || "Each task picks a vllm-omni handler endpoint and example payload. For multi-checkpoint families (Wan2.2 T2V/I2V/TI2V) the task also swaps the served model_id."}
               >
                 <PillGroup>
                   {omniTasks.map((task) => {
                     const t = resolveOmniTaskForHardware(task, hwId);
                     return (
                       <Pill
-                        key={t.id}
-                        active={activeTask?.id === t.id}
-                        onClick={() => selectOmniTask(t.id)}
+                        key={t.key}
+                        active={activeTask?.key === t.key}
+                        onClick={() => selectOmniTask(t.key)}
                         title={[t.description, `Endpoint: ${t.endpoint}`].filter(Boolean).join("\n\n")}
                       >
                         <span className="font-semibold">{t.label}</span>
@@ -2002,6 +2015,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               dockerMeta={dockerMeta}
               configSummary={configSummary}
               endpointsControls={endpointsControls}
+              commandNote={commandNote}
             />
           ) : isKvStore ? (
             <KvStoreLbBlock
@@ -2014,6 +2028,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               dockerMeta={dockerMeta}
               configSummary={configSummary}
               endpointsControls={endpointsControls}
+              commandNote={commandNote}
             />
           ) : isMultiNode ? (
             <MultiNodeBlock
@@ -2025,6 +2040,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               dockerMeta={dockerMeta}
               configSummary={configSummary}
               endpointsControls={endpointsControls}
+              commandNote={commandNote}
             />
           ) : (
             <SingleCommandBlock
@@ -2038,6 +2054,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               dockerMeta={dockerMeta}
               configSummary={configSummary}
               endpointsControls={endpointsControls}
+              commandNote={commandNote}
             />
           )}
         </div>
@@ -2062,20 +2079,30 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                       // `unsupported` = author opt-out for this model; disables the pill.
                       const status = recipe.meta?.hardware?.[id];
                       const isUnsupported = status === "unsupported";
+                      // Hardware and variant selectors must not deadlock when
+                      // checkpoint families have disjoint targets (for
+                      // example NVIDIA NVFP4 and AMD MXFP4). selectHardware
+                      // already switches to a fitting variant, so keep this
+                      // hardware clickable whenever any recipe variant runs
+                      // on it.
+                      const fittingVariantKey = pickFittingVariant(recipe, p, id);
+                      const fittingVariant = recipe.variants?.[fittingVariantKey];
                       // Per-role PD now sizes each pool independently, so hardware
                       // only needs to fit 1× model per node (standard precision
                       // check is enough). The old co-located single-node check
                       // (2× model on one node) is no longer the default UX.
-                      const disabled = !precisionOk || !variantHardwareOk || isUnsupported;
+                      const disabled = isUnsupported || !fittingVariantKey;
                       const verifiedNote = status === "verified"
                         ? "\n\nVerified — author has tested this hardware end-to-end"
                         : "";
-                      const reason = !variantHardwareOk
-                        ? `${currentVariant.precision?.toUpperCase()} is only supported on ${(currentVariant.supported_hardware || []).map((hw) => taxonomy.hardware_profiles?.[hw]?.display_name || hw).join(", ")}`
-                        : !precisionOk
-                        ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
-                        : isUnsupported
+                      const currentVariantRunsHere = precisionOk && variantHardwareOk;
+                      const fittingVariantLabel = (fittingVariant?.label || fittingVariant?.precision || fittingVariantKey)?.toUpperCase();
+                      const reason = isUnsupported
                           ? `Not yet supported on ${p.display_name} — this model doesn't run here today, may be enabled in a future release`
+                        : !fittingVariantKey
+                          ? `No variant of this model currently runs on ${p.display_name}`
+                        : !currentVariantRunsHere
+                          ? `${p.description}\n\nSelecting ${p.display_name} also switches Variant to ${fittingVariantLabel}.${verifiedNote}`
                           : `${p.description}${verifiedNote}`;
                       return (
                         <Pill
@@ -2115,10 +2142,21 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           >
             <PillGroup>
               {Object.entries(recipe.variants || {}).map(([key, v]) => {
-                // Disable variants excluded by an exact hardware allowlist,
-                // incompatible precision, or a non-scalable VRAM shortfall.
-                const disabled = !variantRunsOnHardware(hwProfile, v, hwId);
-                const hardwareRestricted = !isVariantHardwareSupported(v, hwId);
+                // selectVariant already moves to compatible hardware. Disable
+                // only variants that have no runnable hardware anywhere;
+                // otherwise a disjoint hardware allowlist would make both the
+                // variant and its hardware mutually unselectable.
+                const currentHardwareOk = variantRunsOnHardware(hwProfile, v, hwId);
+                const hasRunnableHardware = Object.entries(taxonomy.hardware_profiles || {}).some(
+                  ([candidateId, candidateProfile]) =>
+                    isHardwareSupported(recipe, candidateId)
+                    && variantRunsOnHardware(candidateProfile, v, candidateId)
+                );
+                const disabled = !hasRunnableHardware;
+                const fallbackHwId = currentHardwareOk
+                  ? hwId
+                  : pickDefaultHardware(taxonomy.hardware_profiles, v, recipe);
+                const fallbackHw = taxonomy.hardware_profiles?.[fallbackHwId];
                 return (
                   <Pill
                     key={key}
@@ -2127,9 +2165,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     onClick={() => !disabled && selectVariant(key)}
                     title={
                       disabled
-                        ? hardwareRestricted
-                          ? `${(v.label || v.precision)?.toUpperCase()} is only supported on ${(v.supported_hardware || []).map((hw) => taxonomy.hardware_profiles?.[hw]?.display_name || hw).join(", ")}`
-                          : `${(v.label || v.precision)?.toUpperCase()} needs ${v.vram_minimum_gb} GB but ${hwProfile.display_name || "this hardware"} has ${hwProfile.vram_gb} GB and can't scale out — pick a smaller-footprint variant`
+                        ? `No currently supported hardware can run ${(v.label || v.precision)?.toUpperCase()}`
+                        : !currentHardwareOk
+                          ? [
+                              v.description,
+                              `Selecting this variant also switches Hardware to ${fallbackHw?.display_name || fallbackHwId}.`,
+                              `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
+                            ].filter(Boolean).join("\n\n")
                         : [
                             v.description,
                             `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
@@ -2894,7 +2936,34 @@ function CommandBody({ command }) {
   );
 }
 
-function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls }) {
+function CommandNote({ note }) {
+  if (!note) return null;
+  const cfg = typeof note === "string" ? { body: note } : (note || {});
+  const title = cfg.title || "Hardware note";
+  const body = cfg.body || cfg.description || "";
+  const link = cfg.link || null;
+  return (
+    <div className="mx-4 mt-3 rounded-lg border border-vllm-blue/25 bg-vllm-blue/10 px-3 py-2 text-[11px] leading-snug">
+      <div className="flex items-start gap-2">
+        <Info size={13} className="mt-0.5 shrink-0 text-vllm-blue" />
+        <div className="space-y-1">
+          <p className="font-semibold text-[var(--command-fg)]">{title}</p>
+          {body && <p className="text-[var(--command-fg)]/65">{body}</p>}
+          {link?.href && (
+            <a
+              href={link.href}
+              className="inline-flex text-[11px] font-medium text-vllm-blue hover:underline"
+            >
+              {link.label || "Read guide"}
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
   const [tab, setTab] = useState("vllm");
   // The `docker pull` for the image lives in the Install block above.
   const isXpu = !!dockerMeta?.isXpu;
@@ -2983,6 +3052,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
           # {activeCompanion.description}
         </div>
       )}
+      {!activeCompanion && <CommandNote note={commandNote} />}
       {activePrelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
           {activePrelude}
@@ -3258,7 +3328,7 @@ function DependenciesBlock({ deps }) {
   );
 }
 
-function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls }) {
+function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
   const [tab, setTab] = useState("head");
   const isDocker = installMode === "docker";
   const wrap = (cmd) =>
@@ -3302,6 +3372,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
           {endpointsControls}
         </div>
       </div>
+      <CommandNote note={commandNote} />
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
           {prelude}
@@ -3316,7 +3387,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
   );
 }
 
-function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChange, installMode, dockerMeta, configSummary, endpointsControls }) {
+function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChange, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
   // Tabs: Prefill · Decode · Router.
   // Each pool (prefill/decode) now carries its own `nodes`, `parallelism`,
   // `dpSize`, `poolGpus` meta — rendered above the command so the reader
@@ -3440,6 +3511,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           )}
         </div>
       )}
+      {!active.isRouter && <CommandNote note={commandNote} />}
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
           {prelude}
@@ -3450,7 +3522,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   );
 }
 
-function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceChange, installMode, dockerMeta, configSummary, endpointsControls }) {
+function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceChange, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
   // Tabs in launch order — Mooncake Master · (centralized only) Mooncake
   // Store · vLLM Serve (config heredoc + env + serve — one paste-runnable
   // script per instance node; a Worker tab appears when instances span >1
@@ -3565,6 +3637,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
           </span>
         </div>
       )}
+      {active.isVllm && <CommandNote note={commandNote} />}
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
           {prelude}
