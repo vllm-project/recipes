@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
   date_added: 2026-07-31
-  date_updated: 2026-08-06
+  date_updated: 2026-08-10
   difficulty: hard
   tasks:
     - text
@@ -17,6 +17,7 @@ meta:
     b300: verified
     gb300: verified
     dgx_station_gb300: verified
+    dgx_spark_gb10: verified
     rtx_pro_6000_8x: verified
     mi300x: unsupported
     mi325x: verified
@@ -114,6 +115,22 @@ variants:
     default_modes:
       spec_decoding: dspark
     hardware_overrides:
+      dgx_spark_gb10:
+        docker_image: "eugr/spark-vllm:latest"
+        extra_env:
+          DG_JIT_USE_NVRTC: "0"
+          GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+          MN_IF_NAME: "$IFACE_NAME"
+          NCCL_IB_DISABLE: "0"
+          NCCL_IB_HCA: "$IB_IF"
+          NCCL_IGNORE_CPU_AFFINITY: "1"
+          NCCL_SOCKET_IFNAME: "$IFACE_NAME"
+          OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
+          TP_SOCKET_IFNAME: "$IFACE_NAME"
+          UCX_NET_DEVICES: "$IFACE_NAME"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+          VLLM_FLOAT32_MATMUL_PRECISION: "high"
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
       blackwell:
         extra_args:
           - "--moe-backend"
@@ -125,6 +142,22 @@ variants:
     # deep_gemm_mega_moe is an FP8-only MoE kernel — the FP8 checkpoint adds it on
     # Blackwell; the NVFP4 variant below adds nothing (its experts can't use it).
     hardware_overrides:
+      dgx_spark_gb10:
+        docker_image: "eugr/spark-vllm:latest"
+        extra_env:
+          DG_JIT_USE_NVRTC: "0"
+          GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+          MN_IF_NAME: "$IFACE_NAME"
+          NCCL_IB_DISABLE: "0"
+          NCCL_IB_HCA: "$IB_IF"
+          NCCL_IGNORE_CPU_AFFINITY: "1"
+          NCCL_SOCKET_IFNAME: "$IFACE_NAME"
+          OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
+          TP_SOCKET_IFNAME: "$IFACE_NAME"
+          UCX_NET_DEVICES: "$IFACE_NAME"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+          VLLM_FLOAT32_MATMUL_PRECISION: "high"
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
       blackwell:
         extra_args:
           - "--moe-backend"
@@ -134,6 +167,23 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 170
     description: "NVIDIA modelopt NVFP4 checkpoint (MoE experts NVFP4; attention, shared experts, router head, and MTP stay FP8) for Blackwell GPUs."
+    hardware_overrides:
+      dgx_spark_gb10:
+        docker_image: "eugr/spark-vllm:latest"
+        extra_env:
+          DG_JIT_USE_NVRTC: "0"
+          GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+          MN_IF_NAME: "$IFACE_NAME"
+          NCCL_IB_DISABLE: "0"
+          NCCL_IB_HCA: "$IB_IF"
+          NCCL_IGNORE_CPU_AFFINITY: "1"
+          NCCL_SOCKET_IFNAME: "$IFACE_NAME"
+          OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
+          TP_SOCKET_IFNAME: "$IFACE_NAME"
+          UCX_NET_DEVICES: "$IFACE_NAME"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+          VLLM_FLOAT32_MATMUL_PRECISION: "high"
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
   dspark:
     # Official fused DSpark checkpoint — the preview weights with the DSpark draft
     # module attached (config.json gains the dspark_* block). A distinct served
@@ -150,6 +200,22 @@ variants:
     default_modes:
       spec_decoding: dspark
     hardware_overrides:
+      dgx_spark_gb10:
+        docker_image: "eugr/spark-vllm:latest"
+        extra_env:
+          DG_JIT_USE_NVRTC: "0"
+          GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+          MN_IF_NAME: "$IFACE_NAME"
+          NCCL_IB_DISABLE: "0"
+          NCCL_IB_HCA: "$IB_IF"
+          NCCL_IGNORE_CPU_AFFINITY: "1"
+          NCCL_SOCKET_IFNAME: "$IFACE_NAME"
+          OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
+          TP_SOCKET_IFNAME: "$IFACE_NAME"
+          UCX_NET_DEVICES: "$IFACE_NAME"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+          VLLM_FLOAT32_MATMUL_PRECISION: "high"
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
       blackwell:
         extra_args:
           - "--moe-backend"
@@ -171,6 +237,11 @@ kv_offload_support:
   offloading_fs: verified
 
 strategy_hardware:
+  # Dual DGX Spark clusters need cross-node TP to shard the checkpoint across
+  # the two GB10 nodes. Keep this opt-in exact to DGX Spark so larger Blackwell
+  # platforms stay on their existing TEP/DEP/PD recommendations.
+  multi_node_tp:
+    dgx_spark_gb10: supported
   # PD splits into a prefill pool and a decode pool, each sized in whole nodes
   # (strategy_overrides.pd_cluster gives both `nodes: 1`), so the builder emits
   # a two-node deployment. RTX Pro 6000 8x is multi_node: false / scalable:
@@ -301,6 +372,14 @@ strategy_overrides:
         - "--enable-sleep-mode"
       env: {}
 
+hardware_notes:
+  dgx_spark_gb10:
+    title: "DGX Spark setup required"
+    body: "This hardware uses the community eugr/spark-vllm:latest docker image and a 2-node TP launch. Before running the generated command, check the DGX Spark cluster guide for IFACE_NAME, IB_IF and HEAD_IP."
+    link:
+      label: "DGX Spark cluster guide"
+      href: "#dgx-spark-gb10-cluster"
+
 guide: |
   ## Overview
 
@@ -429,6 +508,46 @@ guide: |
   replica on H200/B200/B300 (leaving headroom for throughput-vs-latency tuning).
   On DGX Station, use the single-GPU launch below. For disaggregated prefill/decode
   on GB200, use the PD Cluster tab.
+
+  ### DGX Spark (GB10) cluster
+
+  DGX Spark requires the community Spark vLLM build for this model rather than the
+  stock vLLM release/nightly image. The **DGX Spark (GB10)** hardware pill pins the
+  Docker tab to [`eugr/spark-vllm:latest`](https://github.com/eugr/spark-vllm-docker),
+  whose build carries the Spark-specific DeepGEMM path for the GB10 / SM12x family.
+
+  Use **2 nodes**. A single GB10's 128 GB unified memory is below the FP8/NVFP4
+  checkpoint footprint, so the recipe grants DGX Spark a Spark-only **Multi-Node TP**
+  layout (`--tensor-parallel-size 2`, one GB10 per node). The generated Docker command
+  also sets the community build's DeepGEMM JIT guard (`DG_JIT_USE_NVRTC=0`) and
+  the Spark network environment; export `IFACE_NAME` and `IB_IF` on each node before
+  launching.
+
+  To identify the values, first list the ConnectX Ethernet interfaces, RoCE
+  devices and the IP address of the UP ConnectX interface on each Spark:
+
+  ```bash
+  $ ibdev2netdev
+  roceP2p1s0f0 port 1 ==> enP2p1s0f0np0 (Up)
+  roceP2p1s0f1 port 1 ==> enP2p1s0f1np1 (Down)
+  rocep1s0f0 port 1 ==> enp1s0f0np0 (Up)
+  rocep1s0f1 port 1 ==> enp1s0f1np1 (Down)
+
+  $ ip addr show enp1s0f0np0
+  3: enp1s0f0np0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+      link/ether 4c:62:56:c1:83:68 brd ff:ff:ff:ff:ff:ff
+      inet 100.100.100.10/24 brd 100.100.100.255 scope global noprefixroute enp1s0f0np0
+        valid_lft forever preferred_lft forever
+  ```
+
+  From above example values, we can get the following common values:
+
+  ```bash
+  # Common values for all nodes
+  HEAD_IP="100.100.100.10"         # IP of the head node's UP ConnectX interface
+  IFACE_NAME="enp1s0f0np0"         # The head node's UP ConnectX Ethernet interface
+  IB_IF="rocep1s0f0,roceP2p1s0f0"  # Comma-separated RoCE device name list corresponding to the UP ConnectX interface
+  ```
 
   ### DGX Station Single-GPU
 
