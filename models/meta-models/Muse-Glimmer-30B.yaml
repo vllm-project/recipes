@@ -24,6 +24,7 @@ meta:
     mi325x: verified
     mi355x: verified
     rtx_5090: verified
+    rtx_5090_2x: verified
 
 model:
   model_id: "meta-models/Muse-Glimmer-30B"
@@ -74,7 +75,8 @@ features:
   spec_decoding:
     # The 5.11 GB draft head does not fit beside the 25.42 GB nvfp4 weights on a
     # single 32 GB RTX 5090: vLLM OOMs during init with ~400 MiB free. Verified,
-    # not inferred. Two cards are required — see the guide's RTX 5090 section.
+    # not inferred. On 2x RTX 5090 it works and is verified — see the guide's
+    # RTX 5090 section for measurements.
     hardware:
       rtx_5090: unsupported
     description: "DFlash block-diffusion draft head — predicts a whole block in one forward, verified in parallel by the target. `num_speculative_tokens: 15` is not a tuning knob: the head has `block_size: 16` and slot 0 re-presents the last accepted token, so 15 is what remains."
@@ -278,7 +280,15 @@ guide: |
     roughly 400 MiB free. On 2x 5090 with `--tensor-parallel-size 2` it is well
     worth the second card — decode roughly triples.
 
-    On 2x 5090 the default `--gpu-memory-utilization 0.92` works with the drafter;
+    ### 2x RTX 5090
+
+    Verified with the drafter enabled. Sweeping `--gpu-memory-utilization` from
+    0.92 to 0.80 on the base recipe (131,072 ctx, bf16 KV) plus DFlash, every step
+    initialised and served, 212-261 tok/s. Utilisation only sizes the KV cache.
+
+    Not tested at 2x: vision, and concurrent load at `--max-num-seqs 64`.
+
+        On 2x 5090 the default `--gpu-memory-utilization 0.92` works with the drafter;
     utilisation only sizes the KV cache, it does not gate initialisation. Measured
     across the range, base recipe (131,072 ctx, bf16 KV) plus DFlash:
 
