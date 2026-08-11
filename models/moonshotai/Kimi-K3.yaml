@@ -194,6 +194,11 @@ hardware_overrides:
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
       SAFETENSORS_FAST_GPU: "1"
+      # a8w4 (fp8 activation) SiTU MoE. vllm-project/vllm#50582 renamed the
+      # switch; the pinned kimi-k3 image still reads the AITER_* pair, so set
+      # all three — and flip them together, a mixed state silently corrupts
+      # MoE output.
+      VLLM_ROCM_USE_AITER_MOE_SITUV2_A8W4: "1"
       AITER_SITUV2_A8W4: "1"
       AITER_BF16_FP8_MOE_BOUND: "0"
       VLLM_USE_BREAKABLE_CUDAGRAPH: "0" # REQUIRED on ROCm: the build auto-enables =1
@@ -368,7 +373,7 @@ guide: |
   - **MoE backend**: Recommend to use `deep_gemm_mega_moe` for DEP deployments with cross-node NVLink e.g. GB200 and GB300. Note that DeepGEMM MegaMoE is not compatible with cross-node RDMA.
   - **Model Runner v2 and Rust Frontend**: `VLLM_USE_V2_MODEL_RUNNER=1` and `VLLM_USE_RUST_FRONTEND=1`: Model Runner v2 and Rust Frontend fully supports this model and can be enabled if needed.
   - **Tool calling**: K3 occasionally emit a tool-call format its own parser doesn't expect. Suggest to run do schema validation and retry.
-  - **AMD (MI355X / MI350X, CDNA4 gfx950)**: set AITER_SITUV2_A8W4 to 0 along with AITER master flag to use aiter a16w4 MoE path. Set it to 1 to use aiter a8w4 MoE path.
+  - **AMD (MI355X / MI350X, CDNA4 gfx950)**: the AITER a8w4 MoE path is selected by `VLLM_ROCM_USE_AITER_MOE_SITUV2_A8W4=1` since vllm-project/vllm#50582, and by `AITER_SITUV2_A8W4=1` + `AITER_BF16_FP8_MOE_BOUND=0` on older builds such as the pinned `kimi-k3` image; the recipe sets all three. Clear all of them for the a16w4 path — a mixed state leaves vLLM and AITER disagreeing on the weight layout and silently returns wrong output.
   - **max-model-len**: Adjust max-model-len for different benchmark scenarios for best performance.
   - **RDMA**: If RDMA is enabled, set `UCX_TLS="rc,cuda_copy"` to make sure KV Cache transfer goes through RDMA.
   - **MNNVL environments** (GB200/GB300 NVL): recommend adding `NCCL_MNNVL_ENABLE=1`, `NCCL_CUMEM_ENABLE=1`, and `NCCL_NVLS_ENABLE=1`.
