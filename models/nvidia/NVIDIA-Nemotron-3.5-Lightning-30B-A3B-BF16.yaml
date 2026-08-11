@@ -19,6 +19,8 @@ model:
   model_id: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
   min_vllm_version: "0.25.0"
   nightly_required: true
+  # The nightly the vLLM day-0 blog post validated this model on.
+  docker_image: "vllm/vllm-openai:nightly-b22afe45ac797ae58e67a7a3ad79ee5714024420"
   architecture: moe
   parameter_count: "30B"
   active_parameters: "3B"
@@ -120,6 +122,12 @@ variants:
           - "--mamba-ssu-algorithm"
           - "horizontal"
           - "--async-scheduling"
+          # Hopper has the headroom for a bigger prefill chunk than the
+          # single-GPU Blackwell desktops the base args are sized for.
+          - "--max-num-seqs"
+          - "256"
+          - "--max-num-batched-tokens"
+          - "32768"
   bf16:
     model_id: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
     precision: bf16
@@ -160,7 +168,7 @@ guide: |
     stable release yet
 
   ```bash
-  docker pull vllm/vllm-openai:nightly
+  docker pull vllm/vllm-openai:nightly-b22afe45ac797ae58e67a7a3ad79ee5714024420
   ```
 
   ## Launch commands
