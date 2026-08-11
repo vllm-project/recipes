@@ -372,6 +372,14 @@ strategy_overrides:
         - "--enable-sleep-mode"
       env: {}
 
+hardware_notes:
+  dgx_spark_gb10:
+    title: "DGX Spark setup required"
+    body: "This hardware uses the community eugr/spark-vllm:latest docker image and a 2-node TP launch. Before running the generated command, check the DGX Spark cluster guide for IFACE_NAME, IB_IF and HEAD_IP."
+    link:
+      label: "DGX Spark cluster guide"
+      href: "#dgx-spark-gb10-cluster"
+
 guide: |
   ## Overview
 

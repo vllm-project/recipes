@@ -1719,6 +1719,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       : installMode === "docker" && dockerEffectivelyHidden
         ? "pip"
         : installMode;
+  const commandNote = recipe.hardware_notes?.[hwId] || null;
 
   // The extra-install block is pip-scoped by default: nearly every recipe's
   // dependencies are pip installs the Docker image already bundles, so repeating
@@ -1831,6 +1832,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               dockerMeta={dockerMeta}
               configSummary={omniConfigSummary}
               endpointsControls={omniEndpointsControls}
+              commandNote={commandNote}
             />
           </div>
 
@@ -2013,6 +2015,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               dockerMeta={dockerMeta}
               configSummary={configSummary}
               endpointsControls={endpointsControls}
+              commandNote={commandNote}
             />
           ) : isKvStore ? (
             <KvStoreLbBlock
@@ -2025,6 +2028,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               dockerMeta={dockerMeta}
               configSummary={configSummary}
               endpointsControls={endpointsControls}
+              commandNote={commandNote}
             />
           ) : isMultiNode ? (
             <MultiNodeBlock
@@ -2036,6 +2040,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               dockerMeta={dockerMeta}
               configSummary={configSummary}
               endpointsControls={endpointsControls}
+              commandNote={commandNote}
             />
           ) : (
             <SingleCommandBlock
@@ -2049,6 +2054,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               dockerMeta={dockerMeta}
               configSummary={configSummary}
               endpointsControls={endpointsControls}
+              commandNote={commandNote}
             />
           )}
         </div>
@@ -2930,7 +2936,34 @@ function CommandBody({ command }) {
   );
 }
 
-function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls }) {
+function CommandNote({ note }) {
+  if (!note) return null;
+  const cfg = typeof note === "string" ? { body: note } : (note || {});
+  const title = cfg.title || "Hardware note";
+  const body = cfg.body || cfg.description || "";
+  const link = cfg.link || null;
+  return (
+    <div className="mx-4 mt-3 rounded-lg border border-vllm-blue/25 bg-vllm-blue/10 px-3 py-2 text-[11px] leading-snug">
+      <div className="flex items-start gap-2">
+        <Info size={13} className="mt-0.5 shrink-0 text-vllm-blue" />
+        <div className="space-y-1">
+          <p className="font-semibold text-[var(--command-fg)]">{title}</p>
+          {body && <p className="text-[var(--command-fg)]/65">{body}</p>}
+          {link?.href && (
+            <a
+              href={link.href}
+              className="inline-flex text-[11px] font-medium text-vllm-blue hover:underline"
+            >
+              {link.label || "Read guide"}
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
   const [tab, setTab] = useState("vllm");
   // The `docker pull` for the image lives in the Install block above.
   const isXpu = !!dockerMeta?.isXpu;
@@ -3019,6 +3052,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
           # {activeCompanion.description}
         </div>
       )}
+      {!activeCompanion && <CommandNote note={commandNote} />}
       {activePrelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
           {activePrelude}
@@ -3294,7 +3328,7 @@ function DependenciesBlock({ deps }) {
   );
 }
 
-function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls }) {
+function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
   const [tab, setTab] = useState("head");
   const isDocker = installMode === "docker";
   const wrap = (cmd) =>
@@ -3338,6 +3372,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
           {endpointsControls}
         </div>
       </div>
+      <CommandNote note={commandNote} />
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
           {prelude}
@@ -3352,7 +3387,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
   );
 }
 
-function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChange, installMode, dockerMeta, configSummary, endpointsControls }) {
+function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChange, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
   // Tabs: Prefill · Decode · Router.
   // Each pool (prefill/decode) now carries its own `nodes`, `parallelism`,
   // `dpSize`, `poolGpus` meta — rendered above the command so the reader
@@ -3476,6 +3511,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           )}
         </div>
       )}
+      {!active.isRouter && <CommandNote note={commandNote} />}
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
           {prelude}
@@ -3486,7 +3522,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   );
 }
 
-function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceChange, installMode, dockerMeta, configSummary, endpointsControls }) {
+function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceChange, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
   // Tabs in launch order — Mooncake Master · (centralized only) Mooncake
   // Store · vLLM Serve (config heredoc + env + serve — one paste-runnable
   // script per instance node; a Worker tab appears when instances span >1
@@ -3601,6 +3637,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
           </span>
         </div>
       )}
+      {active.isVllm && <CommandNote note={commandNote} />}
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
           {prelude}
