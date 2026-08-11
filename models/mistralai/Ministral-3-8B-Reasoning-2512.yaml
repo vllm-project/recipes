@@ -3,6 +3,7 @@ meta:
   slug: "ministral-3-reasoning"
   provider: "Mistral AI"
   description: "Ministral 3 Reasoning family (3B/8B/14B) with BF16 weights, vision support, and 256K context"
+  date_added: 2025-12-02
   date_updated: 2026-05-06
   difficulty: intermediate
   tasks:
@@ -81,6 +82,10 @@ variants:
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides:
   amd:

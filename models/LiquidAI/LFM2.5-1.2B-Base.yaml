@@ -3,6 +3,7 @@ meta:
   slug: "lfm2.5-1.2b-base"
   provider: "LiquidAI"
   description: "Liquid AI's 1.2B pretrained base model on the LFM2 hybrid conv+attention backbone — a text-completion and fine-tuning foundation (no chat template)."
+  date_added: 2026-06-25
   date_updated: 2026-06-24
   difficulty: beginner
   tasks:

@@ -88,6 +88,98 @@ hardware_profiles:
     gpu_count: 1
     vram_gb: 128
     multi_node: false
+    restricted: true
+
+  # RTX Pro 6000 — single-GPU RTX Pro 6000 system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` (same pattern as the TPU profiles).
+  rtx_pro_6000:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX Pro 6000"
+    description: "NVIDIA RTX Pro 6000 · 1× RTX Pro 6000 GPU · 96 GB VRAM"
+    gpu_count: 1
+    vram_gb: 96
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # RTX Pro 6000 2x — 2x RTX Pro 6000 GPUs system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` (same pattern as the TPU profiles).
+  rtx_pro_6000_2x:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX Pro 6000 2x"
+    description: "NVIDIA RTX Pro 6000 · 2× RTX Pro 6000 GPU · 192 GB VRAM"
+    gpu_count: 2
+    vram_gb: 192
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # RTX PRO 5000 Blackwell — validated four-card PCIe profile.
+  # Restricted so it only appears for recipes with target-hardware evidence.
+  rtx_pro_5000_4x:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX PRO 5000 Blackwell 4x"
+    description: "NVIDIA RTX PRO 5000 Blackwell · 4× 72 GB VRAM · PCIe, no NVLink"
+    gpu_count: 4
+    vram_gb: 288
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # RTX Pro 6000 8x — 8x RTX Pro 6000 GPUs system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` (same pattern as the TPU profiles).
+  rtx_pro_6000_8x:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX Pro 6000 8x"
+    description: "NVIDIA RTX Pro 6000 · 8× RTX Pro 6000 GPU · 768 GB VRAM"
+    gpu_count: 8
+    vram_gb: 768
+    multi_node: false
+    scalable: false
+    restricted: true
+  
+  # RTX 5090 — single-GPU RTX 5090 system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware`
+  rtx_5090:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX 5090"
+    description: "NVIDIA RTX 5090 · 1× RTX 5090 GPU · 32 GB VRAM"
+    gpu_count: 1
+    vram_gb: 32
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # Exact two-card consumer profiles. Kept restricted so they only appear for
+  # recipes with an end-to-end validated multi-GPU deployment.
+  rtx_4090_2x:
+    brand: NVIDIA
+    generation: ada
+    display_name: "RTX 4090"
+    description: "NVIDIA RTX 4090 · 2× RTX 4090 GPU · 24 GB VRAM/GPU"
+    gpu_count: 2
+    vram_gb: 48
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  rtx_5090_2x:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX 5090"
+    description: "NVIDIA RTX 5090 · 2× RTX 5090 GPU · 32 GB VRAM/GPU"
+    gpu_count: 2
+    vram_gb: 64
+    multi_node: false
     scalable: false
     restricted: true
 
@@ -164,6 +256,30 @@ hardware_profiles:
     multi_node: false
     restricted: true
 
+  # ── Intel Arc Pro XPU ──
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` — XPU support ships in the separate
+  # `vllm/vllm-openai-xpu` image and is only declared on validated recipes.
+  arc_pro_b60:
+    brand: Intel
+    generation: xpu
+    display_name: "Arc Pro B60"
+    description: "Intel Arc Pro B60 24 GB · 4-card node · vLLM XPU backend"
+    gpu_count: 4
+    vram_gb: 96
+    multi_node: false
+    restricted: true
+
+  arc_pro_b70:
+    brand: Intel
+    generation: xpu
+    display_name: "Arc Pro B70"
+    description: "Intel Arc Pro B70 32 GB · 4-card node · vLLM XPU backend"
+    gpu_count: 4
+    vram_gb: 128
+    multi_node: false
+    restricted: true
+
 tasks:
   - id: text
     display_name: "Text"
@@ -186,6 +302,7 @@ strategies:
   - multi_node_tep
   - multi_node_dep
   - multi_node_tp_pp
+  - multi_node_tp_dp
   - pd_cluster
 
 # KV Offload — options for the command builder's "KV Offload" row that compose
@@ -195,21 +312,69 @@ strategies:
 # per-option keys: `strategies` (allowlist — absent = every serving strategy),
 # `companion` ({ label, description?, command } — helper process rendered as
 # an extra command tab while the option is active), `install` (extra pip dep,
-# shown on the companion tab).
+# shown on the companion tab), `brands` (hardware-brand allowlist), `env`
+# (extra serve env while active), `docs_url`, and `requires_opt_in` (true =
+# fail-CLOSED: disabled until the recipe lists the option as `verified`
+# under `kv_offload_support`).
+
+# Options sharing a `group` collapse into one pill with a nested member
+# sub-row (Mooncake's Store Topology idiom); `description` renders under the
+# main row, member descriptions under the sub-row.
+kv_offload_groups:
+  offloading:
+    display_name: "Offloading Connector"
+    label: "Offloading"
+    order: 2
+    sub_row_label: "Offload Tiers"
+    docs_url: "https://docs.vllm.ai/en/stable/features/kv_offloading_usage"
+    tooltip: "Offloading Connector — vLLM's built-in KV offload path: extends the prefix cache into host DRAM, optionally backed by further tiers. Composes with the selected strategy."
+    description: "vLLM's built-in OffloadingConnector extends the prefix cache beyond GPU memory: completed KV blocks are copied out by DMA alongside compute and promoted back on a hit. A CPU DRAM tier is always present and is the only tier with GPU access; optional secondary tiers sit behind it and stage their transfers through it. Pick the tiers below."
 kv_offload:
   simple:
     display_name: "Simple (CPU offload)"
     label: "Simple"
-    # Pill position on the KV Offload row; the merged Mooncake pill sits at 2.
+    # Pill position on the KV Offload row; the merged Mooncake pill sits at 3.
     order: 1
     description: "Offload KV cache to CPU DRAM on each serving node via SimpleCPUOffloadConnector — one flag, no extra infrastructure. ~220 GiB of host RAM used per GPU rank."
     args:
       - "--kv-transfer-config"
-      - '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both","kv_connector_extra_config":{"cpu_bytes_to_use_per_rank":236223201280,"lazy_offload":"false"}}'
+      - '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both","kv_connector_extra_config":{"cpu_bytes_to_use_per_rank":236223201280,"lazy_offload":false}}'
+  offloading_cpu:
+    display_name: "CPU DRAM only"
+    label: "CPU"
+    group: offloading
+    order: 1
+    # Fail-closed: offered only where a recipe records a verified run.
+    requires_opt_in: true
+    # CUDA/ROCm/XPU only; the Intel profiles are Xeon CPUs, Google's TPUs.
+    brands:
+      - NVIDIA
+      - AMD
+    description: "Single CPU DRAM tier, under LRU eviction. cpu_bytes_to_use is the total across all workers — not per rank, as Simple's knob is — and should exceed the aggregate GPU KV cache, or the CPU tier just mirrors what the GPU already holds."
+    args:
+      - "--kv-transfer-config"
+      - '{"kv_connector":"OffloadingConnector","kv_role":"kv_both","kv_connector_extra_config":{"cpu_bytes_to_use":549755813888,"blocks_per_chunk":4}}'
+  offloading_fs:
+    display_name: "CPU DRAM + filesystem"
+    label: "CPU + Filesystem"
+    group: offloading
+    order: 2
+    requires_opt_in: true
+    brands:
+      - NVIDIA
+      - AMD
+    description: "Adds a filesystem tier behind the CPU tier, so cached prefixes outlive DRAM capacity and survive a restart. The CPU tier becomes a smaller staging tier; the filesystem carries the capacity. Point root_dir at fast local NVMe, or at a shared mount to pool one cache across instances. Object-store (obj) and RDMA-peer (p2p) tiers configure the same way in secondary_tiers."
+    # Pin PYTHONHASHSEED or NONE_HASH reseeds per process and stored block
+    # filenames change every restart, so the on-disk cache never hits.
+    env:
+      PYTHONHASHSEED: "0"
+    args:
+      - "--kv-transfer-config"
+      - '{"kv_connector":"OffloadingConnector","kv_role":"kv_both","kv_connector_extra_config":{"spec_name":"TieringOffloadingSpec","cpu_bytes_to_use":34359738368,"blocks_per_chunk":4,"eviction_policy":"lru","secondary_tiers":[{"type":"fs","root_dir":"/mnt/kv_cache","n_read_threads":32,"n_write_threads":16}]}}'
   lmcache:
     display_name: "LMCache"
-    # Pill position on the KV Offload row (after the Mooncake pill at 2).
-    order: 3
+    # Pill position on the KV Offload row (after the Mooncake pill at 3).
+    order: 4
     description: "Offload KV cache to a shared CPU-DRAM pool via LMCacheMPConnector — prefix caching beyond GPU KV capacity, one pool per node (not per-rank segments). Adds an LMCache Server tab; run it in a separate terminal before vllm serve."
     # Single-node only: the companion MP server is node-local, so multi-node
     # engines are out (pd_cluster / kv_store_lb are already excluded for every

@@ -32,6 +32,10 @@ import {
   computeDockerMeta,
   buildDockerRun,
   buildDockerArgv,
+  nodesForStrategy,
+  isStrategyReachable,
+  isStrategySupportedOnHardware,
+  effectiveCompatibleStrategies,
 } from "../src/lib/command-synthesis.js";
 
 const ROOT = process.cwd();
@@ -128,12 +132,89 @@ function synthesizeInstall(recipe) {
 }
 
 // Mirror CommandBuilder.jsx: features default to (all) − (opt_in_features) −
-// (hardware_opt_in_features[hw]). spec_decoding is treated as a normal opt-in
-// (off by default); agents that want it must add it explicitly.
-function defaultFeaturesFor(recipe, hwId) {
+// (hardware_opt_in_features[hw]). A variant can force an otherwise opt-in
+// feature on by declaring `default_modes.<feature>` — e.g. a fused DSpark
+// checkpoint should render with its DSpark config in the recommended command.
+function defaultFeaturesFor(recipe, hwId, variantKey = "default") {
   const optIn = new Set(recipe.opt_in_features || []);
   for (const f of recipe.hardware_opt_in_features?.[hwId] || []) optIn.add(f);
-  return Object.keys(recipe.features || {}).filter((f) => !optIn.has(f));
+  const forced = new Set(Object.keys(recipe.variants?.[variantKey]?.default_modes || {}));
+  return Object.keys(recipe.features || {}).filter((f) => forced.has(f) || !optIn.has(f));
+}
+
+// Validate the feature/mode cross-references before synthesis. Modes are
+// intentionally a strict alternative to a feature's flat `args`: accepting
+// both makes one silently shadow the other. Every checkpoint must retain at
+// least one usable mode so enabling the parent feature can never be a no-op.
+function validateFeatureModes(recipe, sourceFile) {
+  const errors = [];
+  const features = recipe.features || {};
+  const variants = recipe.variants || {};
+
+  for (const [featureKey, feature] of Object.entries(features)) {
+    if (feature?.modes === undefined) continue;
+    const modes = feature.modes;
+    const modeKeys = modes && typeof modes === "object" && !Array.isArray(modes)
+      ? Object.keys(modes)
+      : [];
+
+    if (modeKeys.length === 0) {
+      errors.push(`features.${featureKey}.modes must be a non-empty map`);
+      continue;
+    }
+    if (feature.args !== undefined) {
+      errors.push(`features.${featureKey} cannot declare both args and modes`);
+    }
+    if (feature.default_mode && !modeKeys.includes(feature.default_mode)) {
+      errors.push(`features.${featureKey}.default_mode references unknown mode ${feature.default_mode}`);
+    }
+
+    for (const [modeKey, mode] of Object.entries(modes)) {
+      if (!Array.isArray(mode?.args)) {
+        errors.push(`features.${featureKey}.modes.${modeKey}.args must be an array`);
+      }
+      if (mode?.variants !== undefined && !Array.isArray(mode.variants)) {
+        errors.push(`features.${featureKey}.modes.${modeKey}.variants must be an array`);
+      }
+      const modeVariants = Array.isArray(mode?.variants) ? mode.variants : [];
+      for (const variantKey of modeVariants) {
+        if (!Object.hasOwn(variants, variantKey)) {
+          errors.push(`features.${featureKey}.modes.${modeKey}.variants references unknown variant ${variantKey}`);
+        }
+      }
+    }
+
+    for (const variantKey of Object.keys(variants)) {
+      const available = modeKeys.some((modeKey) => {
+        const allow = modes[modeKey]?.variants;
+        return !Array.isArray(allow) || allow.length === 0 || allow.includes(variantKey);
+      });
+      if (!available) {
+        errors.push(`features.${featureKey} has no mode available for variant ${variantKey}`);
+      }
+    }
+  }
+
+  for (const [variantKey, variant] of Object.entries(variants)) {
+    for (const [featureKey, modeKey] of Object.entries(variant?.default_modes || {})) {
+      const feature = features[featureKey];
+      const mode = feature?.modes?.[modeKey];
+      if (!feature) {
+        errors.push(`variants.${variantKey}.default_modes references unknown feature ${featureKey}`);
+      } else if (!feature.modes) {
+        errors.push(`variants.${variantKey}.default_modes references non-modal feature ${featureKey}`);
+      } else if (!mode) {
+        errors.push(`variants.${variantKey}.default_modes.${featureKey} references unknown mode ${modeKey}`);
+      } else if (Array.isArray(mode.variants) && mode.variants.length > 0 && !mode.variants.includes(variantKey)) {
+        errors.push(`variants.${variantKey}.default_modes.${featureKey} selects mode ${modeKey}, which is unavailable for that variant`);
+      }
+    }
+  }
+
+  if (errors.length) {
+    const rel = path.relative(ROOT, sourceFile);
+    throw new Error(`Invalid feature modes in ${rel}:\n  - ${errors.join("\n  - ")}`);
+  }
 }
 
 // Wrap a rendered (command, argv) pair in `docker run`. Returns
@@ -152,14 +233,21 @@ function dockerize(command, argv, env, dockerMeta, port = 8000) {
 //   {prefill,decode} → one full node per role × N, derived from
 //                       ceil(variant.vram_minimum_gb / hwProfile.vram_gb)
 //   "skip" → would need >4 nodes per role; don't emit a fantasy cluster
-function pickPdNodes(hwProfile, variant) {
+// Each role is then grown to clear its parallelism's `strategy_min_gpus` floor,
+// matching what the builder renders.
+function pickPdNodes(hwProfile, variant, recipe, strategies, hwId) {
   if (pdFitsSingleNode(hwProfile, variant)) return null;
   const nodeVram = typeof hwProfile?.vram_gb === "number" ? hwProfile.vram_gb : 0;
   const modelVram = variant?.vram_minimum_gb || 0;
   if (nodeVram <= 0 || modelVram <= 0) return null;
   const nodesPerRole = Math.ceil(modelVram / nodeVram);
   if (nodesPerRole > 4) return "skip";
-  return { prefill: nodesPerRole, decode: nodesPerRole };
+  const floored = (role) => {
+    const par = recipe?.strategy_overrides?.pd_cluster?.[role]?.parallelism
+      || strategies?.pd_cluster?.[role]?.parallelism || "tp";
+    return Math.max(nodesPerRole, nodesForStrategy(recipe, par, hwProfile.gpu_count, hwId));
+  };
+  return { prefill: floored("prefill"), decode: floored("decode") };
 }
 
 // Render one (recipe × variant × strategy × hardware × nodeCount) into the
@@ -198,16 +286,28 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
   if (result.deployType === "multi_node") {
     const head = dockerize(result.headCommand, result.headArgv, env, dockerMeta);
     const worker = dockerize(result.workerCommand, result.workerArgv, env, dockerMeta);
+    // `worker_*` (singular) is rank 1; the plural arrays hold EVERY follower
+    // rank (1..node_count-1) — a 4-node cluster needs three different worker
+    // commands, so an agent must not replay rank 1 on every node.
+    const workerCommands = result.workerCommands || [result.workerCommand];
+    const workerArgvs = result.workerArgvs || [result.workerArgv];
+    const workerDockers = workerCommands.map((cmd, i) =>
+      dockerize(cmd, workerArgvs[i], env, dockerMeta)
+    );
     return {
       ...base,
       head_command: result.headCommand,
       worker_command: result.workerCommand,
+      worker_commands: workerCommands,
       head_argv: result.headArgv,
       worker_argv: result.workerArgv,
+      worker_argvs: workerArgvs,
       head_docker_command: head.docker_command,
       worker_docker_command: worker.docker_command,
+      worker_docker_commands: workerDockers.map((w) => w.docker_command),
       head_docker_argv: head.docker_argv,
       worker_docker_argv: worker.docker_argv,
+      worker_docker_argvs: workerDockers.map((w) => w.docker_argv),
     };
   }
   if (result.deployType === "pd_cluster") {
@@ -244,6 +344,14 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
     const vllmWorkerDocker = result.vllm?.workerCommand && result.vllm?.workerArgv
       ? dockerize(result.vllm.workerCommand, result.vllm.workerArgv, result.vllm.env || {}, dockerMeta)
       : {};
+    // Per-rank follower commands for instances spanning >1 node (same
+    // singular-is-rank-1 / plural-is-every-rank convention as multi_node).
+    const vllmWorkerCommands = result.vllm?.workerCommands || null;
+    const vllmWorkerArgvs = result.vllm?.workerArgvs || null;
+    const vllmWorkerDockers = vllmWorkerCommands
+      ? vllmWorkerCommands.map((cmd, i) =>
+          dockerize(cmd, vllmWorkerArgvs?.[i], result.vllm.env || {}, dockerMeta))
+      : null;
     return {
       ...base,
       strategy: kvOffload || base.strategy,
@@ -257,9 +365,13 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
       vllm_command: result.vllm?.command,
       vllm_argv: result.vllm?.argv,
       vllm_worker_command: result.vllm?.workerCommand || null,
+      vllm_worker_commands: vllmWorkerCommands,
       vllm_worker_argv: result.vllm?.workerArgv || null,
+      vllm_worker_argvs: vllmWorkerArgvs,
       vllm_worker_docker_command: vllmWorkerDocker.docker_command ?? null,
       vllm_worker_docker_argv: vllmWorkerDocker.docker_argv ?? null,
+      vllm_worker_docker_commands: vllmWorkerDockers?.map((w) => w.docker_command ?? null) ?? null,
+      vllm_worker_docker_argvs: vllmWorkerDockers?.map((w) => w.docker_argv ?? null) ?? null,
       // Extra pip dep for the instances (MooncakeStoreConnector imports the
       // mooncake package) — same field the UI's "Requires:" hint consumes.
       vllm_install: result.vllm?.install || null,
@@ -314,8 +426,14 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
   const kvStoreIds = Object.keys(strategies).filter(
     (s) => strategies[s].deploy_type === "kv_store_lb"
   );
+  // Nodes to render a strategy at: its usual count, grown to clear any
+  // `strategy_min_gpus` floor. Same helper the builder's Nodes pills use.
+  const nodesFor = (s) => Math.max(
+    strategies[s]?.deploy_type === "multi_node" ? 2 : 1,
+    nodesForStrategy(recipe, s, hwProfile.gpu_count, hwId),
+  );
   const compatible = [...new Set([
-    ...(recipe.compatible_strategies || []),
+    ...effectiveCompatibleStrategies(recipe),
     ...kvStoreIds,
   ])].filter((s) => {
     // Mirrors the UI's KV Offload gating: Mooncake renders on scalable
@@ -326,16 +444,37 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
       return scalable && isKvStoreBrandSupported(hwProfile)
         && recipe.kv_cache_strategy_hardware?.[s]?.[hwId] !== "unsupported";
     }
+    // Serving-strategy per-GPU gate: compatible_strategies membership is the
+    // default (listed = supported everywhere, unlisted = nowhere), and
+    // `strategy_hardware` overrides per hardware in either direction — maps
+    // take the variant-`tp` keyspace (exact GPU id > generation > brand >
+    // `default`).
+    if (!isStrategySupportedOnHardware(recipe, s, hwProfile, hwId)) return false;
+    // Same GPU floor the builder applies (`strategy_min_gpus`).
+    if (!isStrategyReachable(recipe, s, strategies[s]?.deploy_type, hwProfile.gpu_count, hwId)) return false;
     return scalable || (!s.startsWith("multi_node_") && s !== "pd_cluster");
   });
   const supportsMultiNode = scalable && compatible.some((s) => s.startsWith("multi_node_"));
-  const recommendedNodeCount = !fitsSingleNode(hwProfile, variant) && supportsMultiNode ? 2 : 1;
-  const recommendedStrategy = recommendStrategy(recipe, hwProfile, recommendedNodeCount);
-  const recommendedFeatures = defaultFeaturesFor(recipe, hwId);
+  const baseNodeCount = !fitsSingleNode(hwProfile, variant) && supportsMultiNode ? 2 : 1;
+  let recommendedStrategy = recommendStrategy(recipe, hwProfile, baseNodeCount);
+  // Never recommend a strategy this GPU can't actually run — opted out via
+  // strategy_hardware, or unreachable under its `strategy_min_gpus` floor
+  // (e.g. a single-node layout on a GPU whose floor spans several nodes).
+  // Both are already excluded from `compatible`, so membership is the test.
+  if (!compatible.includes(recommendedStrategy)) {
+    recommendedStrategy = compatible.find(
+      (s) => strategies[s]?.deploy_type !== "kv_store_lb" && s !== "pd_cluster"
+    ) || compatible.find((s) => strategies[s]?.deploy_type !== "kv_store_lb")
+      || recommendedStrategy;
+  }
+  // Grow to whatever the recommended strategy's floor demands, so the headline
+  // rendering never sits below its own bar.
+  const recommendedNodeCount = Math.max(baseNodeCount, nodesFor(recommendedStrategy));
+  const recommendedFeatures = defaultFeaturesFor(recipe, hwId, variantKey);
 
   // PD's node-count is independent of nodeCount — it lives in pdNodes per role.
   const recommendedPdNodes = recommendedStrategy === "pd_cluster"
-    ? pickPdNodes(hwProfile, variant)
+    ? pickPdNodes(hwProfile, variant, recipe, strategies, hwId)
     : null;
   if (recommendedPdNodes === "skip") return null;
 
@@ -361,7 +500,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     };
     const rec = recommendStrategy(recipe, hwProfile, nc);
     if (ok(rec)) return rec;
-    return (recipe.compatible_strategies || []).find(ok) || null;
+    return effectiveCompatibleStrategies(recipe).find(ok) || null;
   };
 
   const alternatives = {};
@@ -372,7 +511,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     let servingStrategy = s;
     let kvOffload = null;
     if (s === "pd_cluster") {
-      pdNodes = pickPdNodes(hwProfile, variant);
+      pdNodes = pickPdNodes(hwProfile, variant, recipe, strategies, hwId);
       if (pdNodes === "skip") continue;
       nc = 1;
     } else if (strategies[s]?.deploy_type === "kv_store_lb") {
@@ -390,11 +529,17 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
         servingStrategy = kvServingFor(1);
       }
       if (!servingStrategy) continue;
+      // Each instance still owes its serving strategy's GPU floor (K3 on H100:
+      // 4 nodes per instance, not the plain doesn't-fit 2) — growing a
+      // multi-node instance keeps that same strategy valid.
+      if (strategies[servingStrategy]?.deploy_type === "multi_node") {
+        nc = Math.max(nc, nodesForStrategy(recipe, servingStrategy, hwProfile.gpu_count, hwId));
+      }
       kvOffload = s;
     } else {
-      nc = s.startsWith("multi_node_") ? 2 : 1;
+      nc = nodesFor(s);
     }
-    const feats = defaultFeaturesFor(recipe, hwId);
+    const feats = defaultFeaturesFor(recipe, hwId, variantKey);
     const rendered = renderCommand(recipe, variantKey, servingStrategy, hwId, nc, feats, strategies, taxonomy, pdNodes, kvOffload);
     if (rendered) alternatives[s] = rendered;
   }
@@ -558,6 +703,7 @@ let collisionCount = 0;
 
 for (const file of findYamlFiles(modelsDir)) {
   const r = normalizeDates(readYaml(file));
+  validateFeatureModes(r, file);
   // Derive HF identity from path. Only `hf_id` is exposed in the public JSON;
   // `org` and `repo` are trivially `hf_id.split("/")` for consumers.
   const rel = path.relative(modelsDir, file);
@@ -589,13 +735,16 @@ for (const file of findYamlFiles(modelsDir)) {
   const defaultRecommended = renderAndWriteVariant(r, "default", parentHfId, strategies, taxonomy);
   if (defaultRecommended) r.recommended_command = defaultRecommended;
 
-  // Promote each non-default variant whose `model_id` points at a distinct HF
-  // repo to its own top-level JSON endpoint, mirroring the HF URL convention.
-  // Renderings for promoted variants are gathered here and written after the
-  // parent JSON so we can store `json:` pointers in parent.variants.<v>.
+  // Promote each variant whose `model_id` points at a distinct HF repo to its
+  // own top-level JSON endpoint, mirroring the HF URL convention. `default` is
+  // included: a recipe may default to a differently-named checkpoint (this
+  // recipe's own id stays the parent path, rendered above), and that HF id
+  // needs an endpoint too — a default pointing back at the parent id is caught
+  // by the collision check below. Renderings for promoted variants are gathered
+  // here and written after the parent JSON so we can store `json:` pointers in
+  // parent.variants.<v>.
   const promotedRenderings = [];  // { variantKey, variantHfId, recommended }
   for (const [variantKey, variantCfg] of Object.entries(r.variants || {})) {
-    if (variantKey === "default") continue;
     const variantModelId = variantCfg?.model_id;
     if (!variantModelId || typeof variantModelId !== "string" || !variantModelId.includes("/")) continue;
     if (allRecipeHfIds.has(variantModelId)) {

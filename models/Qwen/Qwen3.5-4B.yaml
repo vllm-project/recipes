@@ -3,6 +3,7 @@ meta:
   slug: "qwen3.5-4b"
   provider: "Qwen"
   description: "Qwen3.5 compact dense multimodal model (4B) — fits on 16 GB consumer GPUs with full 262K context or one Xeon 6 NUMA node"
+  date_added: 2026-04-22
   date_updated: 2026-04-22
   difficulty: beginner
   tasks:

@@ -55,7 +55,8 @@ meta:
   slug: "..."                     # lowercase-kebab (legacy, keep consistent with title)
   provider: "..."                 # human-readable org label (e.g. "DeepSeek")
   description: "..."              # one-sentence summary
-  date_updated: YYYY-MM-DD        # today's date, or the date the recipe was authored
+  date_added: YYYY-MM-DD          # initial catalog addition; never change
+  date_updated: YYYY-MM-DD        # latest material recipe change
   difficulty: beginner|intermediate|advanced
   tasks:                          # one or more of: text, multimodal, omni, embedding
     - text

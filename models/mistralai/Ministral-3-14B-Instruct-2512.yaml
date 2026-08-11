@@ -3,6 +3,7 @@ meta:
   slug: "ministral-3-instruct"
   provider: "Mistral AI"
   description: "Ministral 3 Instruct family (3B/8B/14B) with FP8 weights, vision support, and 256K context"
+  date_added: 2025-12-02
   date_updated: 2026-05-25
   difficulty: beginner
   tasks:
@@ -82,6 +83,10 @@ variants:
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides:
   amd:

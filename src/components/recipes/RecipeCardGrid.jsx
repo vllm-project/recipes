@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { Type, Eye, Sparkles, Hash, Layers, Cpu } from "lucide-react";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
+import { compareRecipesByDateAdded } from "@/lib/recipe-utils";
 
 const TASK_ICON = { text: Type, multimodal: Eye, omni: Sparkles, embedding: Hash };
 
@@ -23,19 +24,9 @@ export function RecipeCardGrid({ recipes }) {
   }, [recipes]);
 
   const latest = useMemo(() => {
-    // Sort by HF release date — newest models first. Tiebreak on recipe
-    // date_updated, then id. Then dedupe by provider so "Latest recipes"
-    // surfaces breadth across orgs instead of e.g. eight Qwen rows when
-    // one org ships a big collection.
-    const sorted = [...recipes].sort((a, b) => {
-      const ra = a.hf_released ? new Date(a.hf_released).getTime() : 0;
-      const rb = b.hf_released ? new Date(b.hf_released).getTime() : 0;
-      if (ra !== rb) return rb - ra;
-      const da = a.meta?.date_updated ? new Date(a.meta.date_updated).getTime() : 0;
-      const db = b.meta?.date_updated ? new Date(b.meta.date_updated).getTime() : 0;
-      if (da !== db) return db - da;
-      return (a.hf_id || "").localeCompare(b.hf_id || "");
-    });
+    // "Latest recipes" means newly added to this catalog, not the HF repo's
+    // createdAt (a model repo may exist privately long before launch).
+    const sorted = [...recipes].sort(compareRecipesByDateAdded);
     const seen = new Set();
     const out = [];
     for (const r of sorted) {

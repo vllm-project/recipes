@@ -3,6 +3,7 @@ meta:
   slug: "llama-4-scout"
   provider: "Meta"
   description: "Llama 4 Scout 17B-16E MoE model with NVIDIA FP8/FP4 variants, fits on a single GPU with quantization"
+  date_added: 2025-08-06
   date_updated: 2026-04-16
   difficulty: beginner
   tasks:

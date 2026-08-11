@@ -3,6 +3,7 @@ meta:
   slug: "qwen3-tts-12hz-1.7b-customvoice"
   provider: "Qwen"
   description: "Text-to-speech served via vLLM-Omni with predefined speaker voices and optional style/emotion control, exposed through the OpenAI /v1/audio/speech API. Sibling VoiceDesign and Base (voice-clone) checkpoints share the same serving path."
+  date_added: 2026-06-17
   date_updated: 2026-06-15
   difficulty: beginner
   tasks:

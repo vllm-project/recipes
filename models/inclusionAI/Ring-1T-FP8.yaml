@@ -3,6 +3,7 @@ meta:
   slug: "ring-1t-fp8"
   provider: "inclusionAI"
   description: "Ring-1T (BailingMoeV2) FP8 model (~1T total params) for 8xH200 or 8xMI300X deployment"
+  date_added: 2025-10-15
   date_updated: 2026-04-17
   difficulty: advanced
   tasks:

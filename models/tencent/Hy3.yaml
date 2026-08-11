@@ -3,6 +3,7 @@ meta:
   slug: "hy3"
   provider: "Hy (Tencent)"
   description: "Tencent Hy3 — scaled-up MoE language model (295B total / 21B active) with a 3.8B MTP layer for speculative decoding, 256K context, and hy_v3 tool/reasoning parsers"
+  date_added: 2026-07-06
   date_updated: 2026-07-06
   difficulty: intermediate
   tasks:
@@ -65,6 +66,17 @@ variants:
     precision: fp8
     vram_minimum_gb: 354
     description: "FP8-quantized instruct checkpoint (tencent/Hy3-FP8) — fits a single 8×H200 / 8×H20-3e node with wide headroom."
+    # fp8 KV cache verified on this checkpoint only; scoped here so it doesn't apply to bf16.
+    hardware_overrides:
+      amd:
+        extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
+  nvfp4:
+    model_id: "RedHatAI/Hy3-NVFP4-FP8"
+    precision: nvfp4
+    vram_minimum_gb: 214
+    description: "Mixed-precision quant by Red Hat AI — MoE experts in NVFP4, attention in FP8 block. Halves GPU requirement vs BF16 (fits 4×H100 80GB / 4×H200)."
 
 compatible_strategies:
   - single_node_tp
@@ -84,14 +96,17 @@ hardware_overrides:
     extra_env:
       VLLM_FLASHINFER_ALLREDUCE_BACKEND: "trtllm"
   amd:
-    extra_args: []
+    extra_args:
+      - "--attention-backend"
+      - "ROCM_AITER_FA"
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
-      # AITER fused-MoE disabled (CK GEMM crash); Triton fallback works. See note below.
+      # AITER fused-MoE disabled (CK GEMM crash); Triton fallback works.
       VLLM_ROCM_USE_AITER_MOE: "0"
       VLLM_ROCM_USE_AITER_MHA: "1"
       VLLM_ROCM_USE_AITER_RMSNORM: "1"
       VLLM_ROCM_USE_AITER_LINEAR: "1"
+      VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
 
 strategy_overrides: {}
 
@@ -391,6 +406,7 @@ guide: |
 
   - [Hugging Face model card](https://huggingface.co/tencent/Hy3)
   - [FP8 checkpoint — tencent/Hy3-FP8](https://huggingface.co/tencent/Hy3-FP8)
+  - [NVFP4-FP8 checkpoint — RedHatAI/Hy3-NVFP4-FP8](https://huggingface.co/RedHatAI/Hy3-NVFP4-FP8)
   - [GitHub: Tencent-Hunyuan/Hy3](https://github.com/Tencent-Hunyuan/Hy3)
   - [vLLM × HPC-Ops: high-performance attention & MoE backends](https://vllm.ai/blog/2026-07-06-vllm-hpc-ops)
   - [Tencent Hy3](https://hy.tencent.com/research/hy3)

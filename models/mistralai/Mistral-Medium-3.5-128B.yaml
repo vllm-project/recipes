@@ -3,6 +3,7 @@ meta:
   slug: "mistral-medium-3.5"
   provider: "Mistral AI"
   description: "Mistral Medium 3.5 (128B) dense vision-language model with native FP8 weights and 256K context"
+  date_added: 2026-04-30
   date_updated: 2026-05-26
   difficulty: intermediate
   tasks:
@@ -74,6 +75,10 @@ variants:
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides:
   amd:

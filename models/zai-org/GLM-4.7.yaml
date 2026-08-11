@@ -3,6 +3,7 @@ meta:
   slug: "glm-4.7"
   provider: "GLM (Z-AI)"
   description: "GLM-4.7 MoE language model (~358B total parameters) with MTP speculative decoding, updated tool call parser, and reasoning support"
+  date_added: 2025-12-20
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
@@ -85,6 +86,10 @@ compatible_strategies:
   - multi_node_dep
   - multi_node_tep
   - pd_cluster
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides: {}
 

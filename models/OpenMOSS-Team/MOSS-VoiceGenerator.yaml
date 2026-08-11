@@ -3,6 +3,7 @@ meta:
   slug: "moss-voicegenerator"
   provider: "OpenMOSS"
   description: "OpenMOSS's 1.7B zero-shot voice-design model — generate diverse voices and styles directly from a text prompt with no reference speech — served via vLLM-Omni through the OpenAI /v1/audio/speech API (24 kHz mono)."
+  date_added: 2026-06-17
   date_updated: 2026-06-15
   difficulty: intermediate
   tasks:

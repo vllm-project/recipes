@@ -3,6 +3,7 @@ meta:
   slug: "qwen3-4b"
   provider: "Qwen"
   description: "Qwen3 4B dense model with hybrid thinking/non-thinking modes — fits on a single TPU v6e chip, one GPU or one Xeon 6 NUMA node."
+  date_added: 2025-10-15
   date_updated: 2026-06-04
   difficulty: beginner
   tasks:
@@ -53,6 +54,10 @@ variants:
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides: {}
 

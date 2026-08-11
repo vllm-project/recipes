@@ -3,6 +3,7 @@ meta:
   slug: "laguna-m.1"
   provider: "Poolside"
   description: "Poolside's 225B total / 23B activated MoE coding model with global attention, native interleaved reasoning, and 256K context — designed for agentic coding and long-horizon work."
+  date_added: 2026-06-18
   date_updated: 2026-06-18
   difficulty: advanced
   tasks:

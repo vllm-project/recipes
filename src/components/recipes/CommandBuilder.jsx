@@ -4,8 +4,8 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy } from "@/lib/command-synthesis";
-import { resolveOmniTasks } from "@/lib/omni-tasks";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies } from "@/lib/command-synthesis";
+import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
@@ -346,8 +346,8 @@ const MOONCAKE_DOCS_URL =
   "https://docs.vllm.ai/en/stable/features/mooncake_store_connector_usage";
 // Where the merged Mooncake pill sorts among taxonomy.kv_offload options
 // (their `order` fields are chosen around this): Off · Simple(1) ·
-// Mooncake(2) · LMCache(3).
-const MOONCAKE_PILL_ORDER = 2;
+// Offloading(2) · Mooncake(3) · LMCache(4).
+const MOONCAKE_PILL_ORDER = 3;
 
 export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const searchParams = useSearchParams();
@@ -365,8 +365,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // T2V/I2V/TI2V) and the cURL endpoint/body shown in the Try-it popover.
   const [omniTask, setOmniTask] = useState(() => {
     const fromUrl = searchParams.get("task");
-    if (fromUrl && omniTasks.some((t) => t.id === fromUrl)) return fromUrl;
-    return omniTasks[0]?.id || "";
+    if (fromUrl) {
+      const exact = omniTasks.find((t) => t.key === fromUrl);
+      if (exact) return exact.key;
+      // Preserve old `?task=<catalog-id>` links after a recipe introduces
+      // distinct selector keys for several presets sharing the same task id.
+      const legacy = omniTasks.find((t) => t.id === fromUrl);
+      if (legacy) return legacy.key;
+    }
+    return omniTasks[0]?.key || "";
   });
 
   // Compute default hardware: URL param > stored preference (if compatible) > smallest compatible profile
@@ -424,7 +431,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
     const rs = loadRecipeState(recipe.hf_id);
     if (!searchParams.get("strategy") && rs.strategy &&
-        (recipe.compatible_strategies || []).includes(rs.strategy) &&
+        effectiveCompatibleStrategies(recipe).includes(rs.strategy) &&
         strategies[rs.strategy]?.deploy_type !== "kv_store_lb") {
       setStrategyOverride(rs.strategy);
     }
@@ -484,7 +491,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // one node — force nodeCount to 1 in that case, even if the URL says
   // otherwise. (Nodes means nodes PER INSTANCE under Mooncake too; the
   // instance count is a separate axis and doesn't need multi-node support.)
-  const supportsMultiNode = (recipe.compatible_strategies || []).some(
+  const supportsMultiNode = effectiveCompatibleStrategies(recipe).some(
     (s) => s.startsWith("multi_node_") || s === "pd_cluster"
   );
   const [nodeCount, setNodeCount] = useState(() => {
@@ -788,7 +795,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // All hardware profiles grouped by brand, sorted by architectural generation
   // within brand (oldest → newest; matches the semianalysis GPU timeline).
   const hwByBrand = useMemo(() => {
-    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "dgx_station_gb300"];
+    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "rtx_4090_2x", "rtx_5090_2x", "dgx_station_gb300"];
     const AMD_ORDER = ["mi300x", "mi325x", "mi355x"];
     const rankIn = (list, id) => {
       const i = list.indexOf(id);
@@ -834,17 +841,38 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const recommended = useMemo(() => recommendStrategy(recipe, hwProfile, nodeCount), [recipe, hwProfile, nodeCount]);
 
+  const perNode = hwProfile?.gpu_count || 8;
+  // Nodes a strategy (or PD pool mode) needs to clear its `strategy_min_gpus`
+  // floor on the active hardware — the floor itself can be hardware-conditional
+  // (a per-GPU-id block), hence hwId as well as the GPUs per node.
+  const nodesNeededFor = useCallback(
+    (key) => nodesForStrategy(recipe, key, perNode, hwId),
+    [recipe, perNode, hwId]
+  );
+
+  // Node-count pills: 1 / 2, plus whatever count an offered strategy's floor
+  // demands (DEP≥16 → 4 on a 4-GPU tray). No floor → exactly [1, 2].
+  const nodeOptions = useMemo(() => {
+    const needed = Math.max(
+      0,
+      ...effectiveCompatibleStrategies(recipe).map((s) => nodesForStrategy(recipe, s, perNode, hwId)),
+    );
+    return needed > 2 && needed <= MAX_NODES ? [1, 2, needed] : [1, 2];
+  }, [recipe, perNode, hwId]);
+
   const compatibleStrategies = useMemo(() => {
-    return (recipe.compatible_strategies || []).filter((s) => {
+    return effectiveCompatibleStrategies(recipe).filter((s) => {
       const strat = strategies[s];
       if (!strat) return false;
       // kv_store_lb deployments live on the KV Offload row, not here.
       if (strat.deploy_type === "kv_store_lb") return false;
       if (nodeCount === 1 && strat.deploy_type === "multi_node") return false;
       if (nodeCount > 1 && strat.deploy_type === "single_node") return false;
-      return true;
+      // Listed while reachable at SOME node count, not just the current one —
+      // picking it grows the count (selectStrategy).
+      return isStrategyReachable(recipe, s, strat.deploy_type, perNode, hwId);
     });
-  }, [recipe, strategies, nodeCount]);
+  }, [recipe, strategies, nodeCount, perNode, hwId]);
 
   // Mooncake KV-store deployments (deploy_type: kv_store_lb) — offered on
   // every recipe by default (omni recipes never reach this row), no
@@ -869,27 +897,85 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     [recipe, hwId]
   );
 
+  // Serving-strategy per-GPU gate for the Strategy row. The default is
+  // compatible_strategies membership (listed = supported everywhere, unlisted
+  // = nowhere); `strategy_hardware` overrides per hardware in either
+  // direction, maps taking the variant-`tp` keyspace (exact GPU id >
+  // generation > brand > `default`). An unsupported pill renders disabled
+  // with a tooltip and the active/recommended resolution skips it.
+  const isStrategySupported = useCallback(
+    (s, hardwareId = hwId) => isStrategySupportedOnHardware(
+      recipe, s, taxonomy.hardware_profiles?.[hardwareId], hardwareId
+    ),
+    [recipe, taxonomy, hwId]
+  );
+
   // PD now sizes each pool independently, so the "2× model VRAM on one node"
   // concern that used to invalidate pd_cluster on small GPUs no longer applies.
-  const recommendedServingStrategy = compatibleStrategies.includes(recommended)
+  const recommendedServingStrategy = (compatibleStrategies.includes(recommended) && isStrategySupported(recommended))
     ? recommended
-    : (compatibleStrategies[0] || recommended);
-  const activeServingStrategy = compatibleStrategies.includes(strategyOverride)
+    : (compatibleStrategies.find((s) => isStrategySupported(s)) || compatibleStrategies[0] || recommended);
+  const activeServingStrategy = (compatibleStrategies.includes(strategyOverride) && isStrategySupported(strategyOverride))
     ? strategyOverride
     : recommendedServingStrategy;
   // Downgrade an unusable KV-offload pick instead of rendering a broken
-  // command: composing options (taxonomy.kv_offload — Simple, LMCache) can't
-  // run under pd_cluster (which owns --kv-transfer-config) or outside their
-  // own `strategies` allowlist; Mooncake needs scalable hardware not opted
-  // out by the recipe.
+  // command: composing options (taxonomy.kv_offload) can't run under
+  // pd_cluster (which owns --kv-transfer-config) or outside their own
+  // `strategies` allowlist, and must pass the recipe (`kv_offload_support`)
+  // and hardware-brand gates; Mooncake needs scalable hardware not opted out
+  // by the recipe. Same helpers as synthesis, so a disabled pill and an
+  // empty command can't disagree.
   const kvOffloadOptions = taxonomy.kv_offload || {};
+  // Intel XPU: no KV-offload layer is validated on this backend, so gate every
+  // option off (and force the effective selection to Off further down).
+  const kvOffloadDisabledByHw = hwProfile?.generation === "xpu";
+  const kvOptAllowed = (key) =>
+    !kvOffloadDisabledByHw
+    && isKvOffloadAllowedForStrategy(kvOffloadOptions[key], activeServingStrategy, strategies[activeServingStrategy])
+    && isKvOffloadSupportedForRecipe(kvOffloadOptions[key], key, recipe)
+    && isKvOffloadBrandSupported(kvOffloadOptions[key], hwProfile);
+  // Disabled reason, most-fixed-first (hardware, recipe, hardware-brand,
+  // strategy). Shared by the row pills and the group sub-row.
+  const kvDisabledReason = (key) => {
+    const opt = kvOffloadOptions[key];
+    const name = opt?.display_name || key;
+    if (kvOffloadDisabledByHw) {
+      return `${name} isn't validated on Intel XPU — serve directly with the Docker image.`;
+    }
+    if (!isKvOffloadSupportedForRecipe(opt, key, recipe)) {
+      return recipe.kv_offload_support?.[key] === "unsupported"
+        ? `${name} is marked unsupported for this recipe.`
+        : `${name} is not enabled for this recipe yet. It stays off until the recipe records a verified run under kv_offload_support.`;
+    }
+    if (!isKvOffloadBrandSupported(opt, hwProfile)) {
+      return `${name} needs a CUDA, ROCm or XPU device — not available on ${hwProfile.brand ? `${hwProfile.brand} ` : ""}${hwProfile.display_name || hwId} backends.`;
+    }
+    return activeServingStrategy === "pd_cluster"
+      ? `${name} can't compose with PD cluster, which owns --kv-transfer-config. (Mooncake composes with PD instead.)`
+      : `${name} works with: ${(opt?.strategies || []).map((s) => strategies[s]?.display_name || s).join(", ")}.`;
+  };
+  // Options sharing a `group` collapse into one pill + member sub-row.
+  const kvOffloadGroups = taxonomy.kv_offload_groups || {};
+  const kvGroupMembers = {};
+  for (const [key, opt] of Object.entries(kvOffloadOptions)) {
+    if (opt.group) (kvGroupMembers[opt.group] = kvGroupMembers[opt.group] || []).push(key);
+  }
+  for (const keys of Object.values(kvGroupMembers)) {
+    keys.sort((a, b) => (kvOffloadOptions[a].order ?? 99) - (kvOffloadOptions[b].order ?? 99));
+  }
+  // Force the effective selection to Off when the hardware disables KV offload
+  // (Intel XPU) regardless of a persisted pick from other hardware — keeps the
+  // generated command a plain single-instance serve.
   const activeKvOffload =
-    kvOffloadOptions[kvOffload]
-      ? (isKvOffloadAllowedForStrategy(kvOffloadOptions[kvOffload], activeServingStrategy, strategies[activeServingStrategy]) ? kvOffload : "")
+    kvOffloadDisabledByHw
+      ? ""
+      : kvOffloadOptions[kvOffload]
+      ? (kvOptAllowed(kvOffload) ? kvOffload : "")
       : compatibleKvStoreStrategies.includes(kvOffload) && hwScalable
           && isKvStoreBrandSupported(hwProfile) && isKvStoreSupported(kvOffload)
         ? kvOffload
         : "";
+  const activeKvGroup = kvOffloadOptions[activeKvOffload]?.group || null;
   const isKvStoreActive = compatibleKvStoreStrategies.includes(activeKvOffload);
   // Mooncake COMPOSES with the serving strategy — parallelism (TP/TEP/DEP,
   // single/multi-node) is orthogonal to the KV layer. Each instance runs the
@@ -915,16 +1001,59 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeKvOffload, kvOffload]);
 
+  // Reconcile the node count with the active strategy's `strategy_min_gpus`
+  // bar on THIS hardware, both directions:
+  //   grow  — a hardware-conditional floor raises the bar on mount, on a
+  //           ?nodes= link and on a hardware switch too, and rendering below
+  //           it would emit a command that can't hold the model (K3 on H100:
+  //           4 nodes, not the 2-node default);
+  //   shrink — the same floor must not LEAK to other hardware: a count grown
+  //           for H100's 32-GPU bar sticks at 4 when the user switches to
+  //           H200, whose Nodes row only offers 1/2. The pills are the only
+  //           way to set a count, so one outside `nodeOptions` can only be a
+  //           stale floor from another GPU — snap back to the multi-node
+  //           example count (2), still honoring this hardware's own bar.
+  // Not under pd_cluster (pools size themselves; the Nodes row isn't shown).
+  // Storage is left alone — deliberate picks are saved by the click handlers,
+  // and the restore path already clamps to [1, 2].
+  useEffect(() => {
+    // Workstations can't cluster (count is pinned to 1 elsewhere) and PD
+    // pools size themselves — neither wants this row's reconciliation.
+    if (!hwScalable || activeStrategy === "pd_cluster") return;
+    const needed = nodesNeededFor(activeStrategy);
+    let next = nodeCount;
+    if (needed > nodeCount && needed <= MAX_NODES) {
+      next = needed;
+    } else if (nodeCount > 2 && !nodeOptions.includes(nodeCount)) {
+      next = Math.min(MAX_NODES, Math.max(2, needed));
+    }
+    if (next !== nodeCount) {
+      setNodeCount(next);
+      syncUrl({ nodes: String(next) });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStrategy, nodeCount, nodesNeededFor, nodeOptions]);
+
   // Effective TP under single_node_tp, via the shared resolver so the hint
-  // is perfectly in sync with the generated command. The resolver accepts
-  // both an explicit `strategy_overrides.single_node_tp.tp` and the
-  // auto-fit from `variant.vram_minimum_gb` vs per-GPU VRAM.
+  // is perfectly in sync with the generated command. The resolver accepts a
+  // variant TP number/map, a recipe-wide strategy override, or the auto-fit
+  // from `variant.vram_minimum_gb` vs per-GPU VRAM.
   const hwGpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 1;
-  const effectiveTp = resolveSingleNodeTp(recipe, currentVariant, hwProfile, activeStrategy);
+  const effectiveTp = resolveSingleNodeTp(
+    recipe,
+    currentVariant,
+    hwProfile,
+    activeStrategy,
+    hwId,
+  );
   const showGpuUsageHint =
     nodeCount === 1 && activeStrategy === "single_node_tp" && effectiveTp < hwGpuCount;
 
   const isSingleNode = nodeCount === 1 && typeof activeStrategy === "string" && activeStrategy.startsWith("single_node_");
+  // Intel XPU: the validated deployment is single-node, single-instance vLLM in
+  // the official Docker image. KV-offload layers (Simple / LMCache / Mooncake)
+  // and multi-node clustering aren't validated on this backend, so gate them off.
+  const isXpuHardware = hwProfile?.generation === "xpu";
   const needGb = currentVariant?.vram_minimum_gb;
   const availGb = hwProfile.vram_gb;
   const vramShortfall =
@@ -932,18 +1061,31 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       ? { needGb, availGb, gpuCount: hwGpuCount, hwName: hwProfile.display_name || hwId }
       : null;
 
+  // Pools scale to MAX_NODES, so every mode reachable on this hardware stays
+  // offered; picking one grows the pool to its floor (setPdPar).
+  const pdAvailableModes = useMemo(
+    () => pdModes.filter((m) => isStrategyReachable(recipe, m, "multi_node", perNode, hwId)),
+    [pdModes, recipe, perNode, hwId]
+  );
+  const effPdPrefillPar = pdAvailableModes.includes(pdPrefillPar) ? pdPrefillPar : (pdAvailableModes[0] || "tp");
+  const effPdDecodePar = pdAvailableModes.includes(pdDecodePar) ? pdDecodePar : (pdAvailableModes[0] || "tp");
+  // Floor the sizes too, not just clicks — a pool whose DEFAULT mode carries a
+  // floor (K3's decode is dep) would otherwise render below it.
+  const effPdPrefillNodes = Math.max(pdPrefillNodes, nodesNeededFor(effPdPrefillPar));
+  const effPdDecodeNodes = Math.max(pdDecodeNodes, nodesNeededFor(effPdDecodePar));
+
   const result = useMemo(
     () => {
       const advArgs = advanced.flatMap((id) => advancedById[id]?.args || []);
       const pdNodes = activeStrategy === "pd_cluster"
         ? {
-          prefill: { nodes: pdPrefillNodes, rank: pdPrefillRank, parallelism: pdPrefillPar },
-          decode: { nodes: pdDecodeNodes, rank: pdDecodeRank, parallelism: pdDecodePar },
+          prefill: { nodes: effPdPrefillNodes, rank: pdPrefillRank, parallelism: effPdPrefillPar },
+          decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
         }
         : null;
       return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx });
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, pdPrefillNodes, pdDecodeNodes, pdPrefillRank, pdDecodeRank, pdPrefillPar, pdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx]
   );
 
   // Visual feedback when any rendered command changes. Covers single-node
@@ -980,12 +1122,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   );
 
   // ── Handlers ──
-  const selectOmniTask = (id) => {
-    setOmniTask(id);
-    // Default task id is omitted from the URL so a fresh page-load lands on
+  const selectOmniTask = (key) => {
+    setOmniTask(key);
+    // Default task key is omitted from the URL so a fresh page-load lands on
     // the recipe author's intended starting task without a noisy `?task=…`.
-    const defaultId = omniTasks[0]?.id;
-    syncUrl({ task: id === defaultId ? "" : id });
+    const defaultKey = omniTasks[0]?.key;
+    syncUrl({ task: key === defaultKey ? "" : key });
   };
 
   const selectVariant = (key) => {
@@ -1100,8 +1242,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const recipeDefault = recipe.default_strategy;
     const recipeDefaultsSingleNode =
       typeof recipeDefault === "string" && recipeDefault.startsWith("single_node_");
-    const shouldBumpNodes = nodeCount === 1 && supportsMultiNode && newScalable && !fitsNew;
-    const shouldUnbumpNodes = nodeCount > 1 && (!newScalable || (fitsNew && recipeDefaultsSingleNode));
+    const shouldBumpNodes = nodeCount === 1 && supportsMultiNode && newScalable && !fitsNew && newProfile?.generation !== "xpu";
+    // Intel XPU is validated single-node only — always clamp back to 1 node.
+    const shouldUnbumpNodes = nodeCount > 1 && (!newScalable || newProfile?.generation === "xpu" || (fitsNew && recipeDefaultsSingleNode));
     if (shouldBumpNodes) setNodeCount(2);
     if (shouldUnbumpNodes) setNodeCount(1);
     syncUrl({
@@ -1127,12 +1270,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const selectStrategy = (s) => {
     setStrategyOverride(s);
-    syncUrl({ strategy: s });
+    // Grow the cluster to this strategy's GPU floor so the pick is immediately
+    // valid instead of rendering below its own bar.
+    const needed = nodesNeededFor(s);
+    const grow = needed > nodeCount;
+    if (grow) setNodeCount(needed);
+    syncUrl({ strategy: s, ...(grow && { nodes: String(needed) }) });
     // Persisted per-recipe (keyed by hf_id), so picking TP here doesn't
     // affect any other recipe's default. Spec-decoding auto-enable for
     // latency strategies is handled by an effect below so it also fires
     // on initial mount when TP is the default recommendation.
-    saveRecipeState(recipe.hf_id, { strategy: s || undefined });
+    saveRecipeState(recipe.hf_id, { strategy: s || undefined, ...(grow && { nodes: needed }) });
   };
 
   // "" = off · "simple"/"lmcache" = connector appended to the current serving
@@ -1217,15 +1365,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // (DEP start-rank vs TP node-rank), so reset that pool's rank to 0.
   const setPdPar = (role, mode) => {
     if (!pdModes.includes(mode)) return;
-    if (role === "prefill") {
-      setPdPrefillPar(mode);
-      setPdPrefillRank(0);
-      syncUrl({ prefill_mode: mode === pdDefaultPar.prefill ? "" : mode, prefill_rank: "" });
-    } else {
-      setPdDecodePar(mode);
-      setPdDecodeRank(0);
-      syncUrl({ decode_mode: mode === pdDefaultPar.decode ? "" : mode, decode_rank: "" });
-    }
+    const isPrefill = role === "prefill";
+    const cur = isPrefill ? pdPrefillNodes : pdDecodeNodes;
+    // Grow this pool to the mode's GPU floor (DEP≥16) so the pick is valid.
+    const nodes = Math.max(cur, nodesNeededFor(mode));
+    (isPrefill ? setPdPrefillPar : setPdDecodePar)(mode);
+    (isPrefill ? setPdPrefillRank : setPdDecodeRank)(0);
+    if (nodes !== cur) (isPrefill ? setPdPrefillNodes : setPdDecodeNodes)(nodes);
+    syncUrl({
+      [`${role}_mode`]: mode === pdDefaultPar[role] ? "" : mode,
+      [`${role}_rank`]: "",
+      ...(nodes !== cur && { [`${role}_nodes`]: String(nodes) }),
+    });
   };
 
   const toggleFeature = (f) => {
@@ -1388,6 +1539,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           ...result.vllm,
           command: sub(result.vllm.command),
           ...(result.vllm.workerCommand ? { workerCommand: sub(result.vllm.workerCommand) } : {}),
+          ...(result.vllm.workerCommands
+            ? { workerCommands: result.vllm.workerCommands.map(sub) }
+            : {}),
           env: substituteEnv(result.vllm.env, effectiveEndpoints),
         },
         master: { ...result.master, command: sub(result.master.command) },
@@ -1405,6 +1559,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         ...result,
         headCommand:   sub(result.headCommand),
         workerCommand: sub(result.workerCommand),
+        // Every follower rank needs the substitution too, not just rank 1.
+        ...(result.workerCommands
+          ? { workerCommands: result.workerCommands.map(sub) }
+          : {}),
         env: substituteEnv(result.env, effectiveEndpoints),
       };
     }
@@ -1500,7 +1658,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const precisionPart = currentVariant.precision?.toUpperCase();
   const configSummary = [hwPart, strategyPart, precisionPart].filter(Boolean).join(" · ")
     + (kvOffloadOptions[activeKvOffload]
-        ? ` · ${kvOffloadOptions[activeKvOffload].display_name || activeKvOffload}`
+        // Grouped members read "Offloading (CPU + Filesystem)".
+        ? activeKvGroup
+          ? ` · ${kvOffloadGroups[activeKvGroup]?.label || activeKvGroup} (${kvOffloadOptions[activeKvOffload].label || kvOffloadOptions[activeKvOffload].display_name})`
+          : ` · ${kvOffloadOptions[activeKvOffload].display_name || activeKvOffload}`
         : isKvStoreActive
           ? ` · Mooncake (${(strategies[activeKvOffload]?.label || "").split(" ")[0] || "KV Store"})`
           : "");
@@ -1548,7 +1709,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // the Install tab *and* the rendered command block to docker — they stay
   // in sync without requiring the user to re-click.
   const pipEffectivelyHidden =
-    recipe.model?.install?.pip === false || hwProfile?.generation === "tpu";
+    recipe.model?.install?.pip === false ||
+    hwProfile?.generation === "tpu" ||
+    hwProfile?.generation === "xpu";
   const dockerEffectivelyHidden = recipe.model?.install?.docker === false;
   const effectiveInstallMode =
     installMode === "pip" && pipEffectivelyHidden
@@ -1556,6 +1719,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       : installMode === "docker" && dockerEffectivelyHidden
         ? "pip"
         : installMode;
+
+  // The extra-install block is pip-scoped by default: nearly every recipe's
+  // dependencies are pip installs the Docker image already bundles, so repeating
+  // them beside `docker run` is noise. Absent `install_modes` therefore means
+  // `[pip]`, which is why existing recipes are untouched. A HOST-side
+  // prerequisite is the exception — a gated checkpoint that `hf download` must
+  // place on disk before the bind mount can see it — and opts in with
+  // `install_modes: [pip, docker]`.
+  const modeDependencies = dependencies.filter((d) => {
+    const modes = d.install_modes;
+    if (!Array.isArray(modes) || modes.length === 0) return effectiveInstallMode !== "docker";
+    return modes.includes(effectiveInstallMode === "docker" ? "docker" : "pip");
+  });
 
   // Omni recipes serve via `vllm serve <model> --omni`. The command shape is
   // simpler than the regular path (no strategy / multi-node / pd), but the
@@ -1567,13 +1743,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const omniVariants = Object.entries(recipe.variants || {});
     const showOmniVariants = omniVariants.length > 1;
     const showOmniTaskRow = omniTasks.length > 1;
-    const activeTask = omniTasks.find((t) => t.id === omniTask) || omniTasks[0] || null;
+    const activeTaskBase = omniTasks.find((t) => t.key === omniTask) || omniTasks[0] || null;
+    const activeTask = resolveOmniTaskForHardware(activeTaskBase, hwId);
 
     // Render the `vllm serve --omni` command via the shared omni resolver.
     // Falls back to a stub when the recipe has no omni.tasks declared yet
     // (legacy omni-tagged recipes that haven't been migrated).
     const omniRendered = activeTask
-      ? resolveOmniCommand(recipe, variant, activeTask, hwProfile)
+      ? resolveOmniCommand(recipe, variant, activeTask, hwProfile, hwId)
       : {
           command: `${recipe.omni?.serve_binary || "vllm serve"} ${currentVariant.model_id || recipe.model?.model_id || "model"} --omni`,
           env: {},
@@ -1637,8 +1814,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             altCudaSuffix={altCudaSuffix}
           />
 
-          {effectiveInstallMode !== "docker" && dependencies.length > 0 && (
-            <DependenciesBlock deps={dependencies} />
+          {modeDependencies.length > 0 && (
+            <DependenciesBlock deps={modeDependencies} />
           )}
 
           <div
@@ -1708,23 +1885,26 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
             {showOmniTaskRow && (
               <ConfigRow
-                label="Task"
-                hint="Each task picks a vllm-omni handler endpoint and example payload. For multi-checkpoint families (Wan2.2 T2V/I2V/TI2V) the task also swaps the served model_id."
+                label={recipe.omni?.task_label || "Task"}
+                hint={recipe.omni?.task_hint || "Each task picks a vllm-omni handler endpoint and example payload. For multi-checkpoint families (Wan2.2 T2V/I2V/TI2V) the task also swaps the served model_id."}
               >
                 <PillGroup>
-                  {omniTasks.map((t) => (
-                    <Pill
-                      key={t.id}
-                      active={activeTask?.id === t.id}
-                      onClick={() => selectOmniTask(t.id)}
-                      title={[t.description, `Endpoint: ${t.endpoint}`].filter(Boolean).join("\n\n")}
-                    >
-                      <span className="font-semibold">{t.label}</span>
-                      {t.vramMinimumGb && (
-                        <span className="text-muted-foreground ml-1.5 font-mono">{t.vramMinimumGb} GB</span>
-                      )}
-                    </Pill>
-                  ))}
+                  {omniTasks.map((task) => {
+                    const t = resolveOmniTaskForHardware(task, hwId);
+                    return (
+                      <Pill
+                        key={t.key}
+                        active={activeTask?.key === t.key}
+                        onClick={() => selectOmniTask(t.key)}
+                        title={[t.description, `Endpoint: ${t.endpoint}`].filter(Boolean).join("\n\n")}
+                      >
+                        <span className="font-semibold">{t.label}</span>
+                        {t.vramMinimumGb && (
+                          <span className="text-muted-foreground ml-1.5 font-mono">{t.vramMinimumGb} GB</span>
+                        )}
+                      </Pill>
+                    );
+                  })}
                 </PillGroup>
                 {activeTask?.description && (
                   <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
@@ -1785,8 +1965,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             `pip install` / `bash install_*.sh`, which doesn't apply when
             vLLM ships as a container image. Revisit if a dep ever needs
             to run inside the container. */}
-        {effectiveInstallMode !== "docker" && dependencies.length > 0 && (
-          <DependenciesBlock deps={dependencies} />
+        {modeDependencies.length > 0 && (
+          <DependenciesBlock deps={modeDependencies} />
         )}
 
         {/* ── VRAM shortfall warning (single-node only) ── */}
@@ -1893,20 +2073,30 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                       // `unsupported` = author opt-out for this model; disables the pill.
                       const status = recipe.meta?.hardware?.[id];
                       const isUnsupported = status === "unsupported";
+                      // Hardware and variant selectors must not deadlock when
+                      // checkpoint families have disjoint targets (for
+                      // example NVIDIA NVFP4 and AMD MXFP4). selectHardware
+                      // already switches to a fitting variant, so keep this
+                      // hardware clickable whenever any recipe variant runs
+                      // on it.
+                      const fittingVariantKey = pickFittingVariant(recipe, p, id);
+                      const fittingVariant = recipe.variants?.[fittingVariantKey];
                       // Per-role PD now sizes each pool independently, so hardware
                       // only needs to fit 1× model per node (standard precision
                       // check is enough). The old co-located single-node check
                       // (2× model on one node) is no longer the default UX.
-                      const disabled = !precisionOk || !variantHardwareOk || isUnsupported;
+                      const disabled = isUnsupported || !fittingVariantKey;
                       const verifiedNote = status === "verified"
                         ? "\n\nVerified — author has tested this hardware end-to-end"
                         : "";
-                      const reason = !variantHardwareOk
-                        ? `${currentVariant.precision?.toUpperCase()} is only supported on ${(currentVariant.supported_hardware || []).map((hw) => taxonomy.hardware_profiles?.[hw]?.display_name || hw).join(", ")}`
-                        : !precisionOk
-                        ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
-                        : isUnsupported
+                      const currentVariantRunsHere = precisionOk && variantHardwareOk;
+                      const fittingVariantLabel = (fittingVariant?.label || fittingVariant?.precision || fittingVariantKey)?.toUpperCase();
+                      const reason = isUnsupported
                           ? `Not yet supported on ${p.display_name} — this model doesn't run here today, may be enabled in a future release`
+                        : !fittingVariantKey
+                          ? `No variant of this model currently runs on ${p.display_name}`
+                        : !currentVariantRunsHere
+                          ? `${p.description}\n\nSelecting ${p.display_name} also switches Variant to ${fittingVariantLabel}.${verifiedNote}`
                           : `${p.description}${verifiedNote}`;
                       return (
                         <Pill
@@ -1946,10 +2136,21 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           >
             <PillGroup>
               {Object.entries(recipe.variants || {}).map(([key, v]) => {
-                // Disable variants excluded by an exact hardware allowlist,
-                // incompatible precision, or a non-scalable VRAM shortfall.
-                const disabled = !variantRunsOnHardware(hwProfile, v, hwId);
-                const hardwareRestricted = !isVariantHardwareSupported(v, hwId);
+                // selectVariant already moves to compatible hardware. Disable
+                // only variants that have no runnable hardware anywhere;
+                // otherwise a disjoint hardware allowlist would make both the
+                // variant and its hardware mutually unselectable.
+                const currentHardwareOk = variantRunsOnHardware(hwProfile, v, hwId);
+                const hasRunnableHardware = Object.entries(taxonomy.hardware_profiles || {}).some(
+                  ([candidateId, candidateProfile]) =>
+                    isHardwareSupported(recipe, candidateId)
+                    && variantRunsOnHardware(candidateProfile, v, candidateId)
+                );
+                const disabled = !hasRunnableHardware;
+                const fallbackHwId = currentHardwareOk
+                  ? hwId
+                  : pickDefaultHardware(taxonomy.hardware_profiles, v, recipe);
+                const fallbackHw = taxonomy.hardware_profiles?.[fallbackHwId];
                 return (
                   <Pill
                     key={key}
@@ -1958,9 +2159,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     onClick={() => !disabled && selectVariant(key)}
                     title={
                       disabled
-                        ? hardwareRestricted
-                          ? `${(v.label || v.precision)?.toUpperCase()} is only supported on ${(v.supported_hardware || []).map((hw) => taxonomy.hardware_profiles?.[hw]?.display_name || hw).join(", ")}`
-                          : `${(v.label || v.precision)?.toUpperCase()} needs ${v.vram_minimum_gb} GB but ${hwProfile.display_name || "this hardware"} has ${hwProfile.vram_gb} GB and can't scale out — pick a smaller-footprint variant`
+                        ? `No currently supported hardware can run ${(v.label || v.precision)?.toUpperCase()}`
+                        : !currentHardwareOk
+                          ? [
+                              v.description,
+                              `Selecting this variant also switches Hardware to ${fallbackHw?.display_name || fallbackHwId}.`,
+                              `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
+                            ].filter(Boolean).join("\n\n")
                         : [
                             v.description,
                             `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
@@ -1981,15 +2186,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           <ConfigRow label="Strategy">
             <PillGroup>
               {compatibleStrategies.map((s) => {
+                const supported = isStrategySupported(s);
                 return (
                   <Pill
                     key={s}
                     active={activeServingStrategy === s}
-                    onClick={() => selectStrategy(s)}
-                    title={strategies[s]?.description}
+                    disabled={!supported}
+                    onClick={() => supported && selectStrategy(s)}
+                    title={supported
+                      ? strategies[s]?.description
+                      : `${strategies[s]?.display_name || s} isn't supported on ${hwProfile.display_name || hwId} for this model.`}
                   >
                     <span className="font-semibold">{strategies[s]?.display_name || s}</span>
-                    {s === recommended && (
+                    {s === recommended && supported && (
                       <Sparkles size={10} className="text-vllm-yellow ml-1" />
                     )}
                   </Pill>
@@ -2037,34 +2246,51 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 <span className="font-semibold">Off</span>
               </Pill>
               {(() => {
-                // Composing options (Simple, LMCache) share the gating helper
-                // with synthesis: pd_cluster always excluded, plus the
-                // option's own `strategies` allowlist (LMCache = single-node
-                // only; its MP server is node-local). The merged Mooncake pill
-                // joins the same ordered list at MOONCAKE_PILL_ORDER, so the
-                // row reads Off · Simple · Mooncake · LMCache.
-                const pills = Object.entries(kvOffloadOptions).map(([key, opt]) => {
-                  const allowed = isKvOffloadAllowedForStrategy(opt, activeServingStrategy, strategies[activeServingStrategy]);
-                  // Say WHY it's disabled and what would enable it, not just
-                  // "not available" — the allowlist gives us the answer.
-                  const disabledTitle = activeServingStrategy === "pd_cluster"
-                    ? `${opt.display_name || key} can't compose with PD cluster, which owns --kv-transfer-config. (Mooncake composes with PD instead.)`
-                    : `${opt.display_name || key} works with: ${(opt.strategies || []).map((s) => strategies[s]?.display_name || s).join(", ")}.`;
-                  return {
-                    order: opt.order ?? 99,
+                // Gating helpers are shared with synthesis. Grouped options
+                // collapse into one pill at the group's `order`; the row
+                // reads Off · Simple · Offloading · Mooncake · LMCache.
+                const pills = Object.entries(kvOffloadOptions)
+                  .filter(([, opt]) => !opt.group)
+                  .map(([key, opt]) => {
+                    const allowed = kvOptAllowed(key);
+                    return {
+                      order: opt.order ?? 99,
+                      el: (
+                        <Pill
+                          key={key}
+                          active={activeKvOffload === key}
+                          disabled={!allowed}
+                          onClick={() => allowed && selectKvOffload(key)}
+                          title={allowed ? opt.description : kvDisabledReason(key)}
+                        >
+                          <span className="font-semibold">{opt.label || opt.display_name || key}</span>
+                        </Pill>
+                      ),
+                    };
+                  });
+                // One pill per group; disabled only when no member is
+                // selectable, borrowing the leading member's reason.
+                for (const [gKey, members] of Object.entries(kvGroupMembers)) {
+                  const group = kvOffloadGroups[gKey] || {};
+                  const selectable = members.filter(kvOptAllowed);
+                  const isActive = activeKvGroup === gKey;
+                  pills.push({
+                    order: group.order ?? 99,
                     el: (
                       <Pill
-                        key={key}
-                        active={activeKvOffload === key}
-                        disabled={!allowed}
-                        onClick={() => allowed && selectKvOffload(key)}
-                        title={allowed ? opt.description : disabledTitle}
+                        key={`__group_${gKey}`}
+                        active={isActive}
+                        disabled={selectable.length === 0}
+                        onClick={() => selectable.length > 0 && !isActive && selectKvOffload(selectable[0])}
+                        title={selectable.length > 0
+                          ? (group.tooltip || group.description)
+                          : kvDisabledReason(members[0])}
                       >
-                        <span className="font-semibold">{opt.label || opt.display_name || key}</span>
+                        <span className="font-semibold">{group.label || group.display_name || gKey}</span>
                       </Pill>
                     ),
-                  };
-                });
+                  });
+                }
                 if (compatibleKvStoreStrategies.length > 0) {
                   // One merged pill for the framework; the Store Topology row
                   // below picks centralized vs distributed. Disabled only when
@@ -2073,9 +2299,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   // extra store process).
                   const supported = compatibleKvStoreStrategies.filter((s) => isKvStoreSupported(s));
                   const brandOk = isKvStoreBrandSupported(hwProfile);
-                  const selectable = hwScalable && brandOk && supported.length > 0;
+                  const selectable = !isXpuHardware && hwScalable && brandOk && supported.length > 0;
                   const defaultId = supported[0];
-                  const disabledTitle = !brandOk
+                  const disabledTitle = isXpuHardware
+                    ? "Mooncake isn't validated on Intel XPU — serve directly with the Docker image."
+                    : !brandOk
                     ? `Mooncake's transfer engine ships CUDA and ROCm builds only — not available on ${hwProfile.brand || ""} ${hwProfile.display_name || hwId} backends.`
                     : !hwScalable
                       ? `${hwProfile.display_name || "This hardware"} is a single-GPU workstation and can't run a multi-node KV-store deployment.`
@@ -2108,7 +2336,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 background here, while the topology-specific text lives under
                 the Store Topology row. */}
             {(() => {
-              const opt = kvOffloadOptions[activeKvOffload];
+              // Grouped options show the group background here; member text
+              // renders under the sub-row.
+              const opt = (activeKvGroup && kvOffloadGroups[activeKvGroup])
+                || kvOffloadOptions[activeKvOffload];
               const text = opt?.description || (isKvStoreActive ? MOONCAKE_BACKGROUND : null);
               const docs = opt?.docs_url || (isKvStoreActive ? MOONCAKE_DOCS_URL : null);
               return text ? (
@@ -2126,6 +2357,35 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               ) : null;
             })()}
           </ConfigRow>
+
+          {/* Members of the active merged pill — same idiom as Store
+              Topology below; kv_offload points at a concrete member id. */}
+          {activeKvGroup && (kvGroupMembers[activeKvGroup] || []).length > 1 && (
+            <ConfigRow label={kvOffloadGroups[activeKvGroup]?.sub_row_label || "Options"} nested>
+              <PillGroup>
+                {kvGroupMembers[activeKvGroup].map((key) => {
+                  const opt = kvOffloadOptions[key];
+                  const allowed = kvOptAllowed(key);
+                  return (
+                    <Pill
+                      key={key}
+                      active={activeKvOffload === key}
+                      disabled={!allowed}
+                      onClick={() => allowed && selectKvOffload(key)}
+                      title={allowed ? opt.description : kvDisabledReason(key)}
+                    >
+                      {opt.label || opt.display_name || key}
+                    </Pill>
+                  );
+                })}
+              </PillGroup>
+              {kvOffloadOptions[activeKvOffload]?.description && (
+                <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                  {kvOffloadOptions[activeKvOffload].description}
+                </p>
+              )}
+            </ConfigRow>
+          )}
 
           {/* Store topology — Mooncake only. Same one-of-N idiom as the
               spec_decoding method row; both YAMLs stay separate deployment
@@ -2200,25 +2460,25 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               <div className="flex flex-col gap-2 text-sm">
                 <PdNodeInput
                   label="Prefill"
-                  value={pdPrefillNodes}
+                  value={effPdPrefillNodes}
                   gpuPerNode={hwProfile.gpu_count || 8}
                   onChange={(n) => setPdNodes("prefill", n)}
-                  modes={pdModes}
-                  parallelism={pdPrefillPar}
+                  modes={pdAvailableModes}
+                  parallelism={effPdPrefillPar}
                   onParChange={(m) => setPdPar("prefill", m)}
                 />
                 <PdNodeInput
                   label="Decode"
-                  value={pdDecodeNodes}
+                  value={effPdDecodeNodes}
                   gpuPerNode={hwProfile.gpu_count || 8}
                   onChange={(n) => setPdNodes("decode", n)}
-                  modes={pdModes}
-                  parallelism={pdDecodePar}
+                  modes={pdAvailableModes}
+                  parallelism={effPdDecodePar}
                   onParChange={(m) => setPdPar("decode", m)}
                 />
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  total {(pdPrefillNodes + pdDecodeNodes) * (hwProfile.gpu_count || 8)} GPUs
-                  · {pdPrefillNodes + pdDecodeNodes} node{pdPrefillNodes + pdDecodeNodes === 1 ? "" : "s"}
+                  total {(effPdPrefillNodes + effPdDecodeNodes) * (hwProfile.gpu_count || 8)} GPUs
+                  · {effPdPrefillNodes + effPdDecodeNodes} node{effPdPrefillNodes + effPdDecodeNodes === 1 ? "" : "s"}
                 </span>
               </div>
             </ConfigRow>
@@ -2233,12 +2493,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 : undefined}
             >
               <PillGroup>
-                {[1, 2].map((n) => {
+                {nodeOptions.map((n) => {
                   // Multi-node pill is disabled when the recipe declares no
                   // multi_node_* (or pd_cluster) strategy (small dense models
                   // commonly omit these), or when the active hardware can't be
                   // clustered (single-GPU workstation, e.g. DGX Station).
-                  const noMultiNode = n > 1 && (!supportsMultiNode || !hwScalable);
+                  const noMultiNode = n > 1 && (!supportsMultiNode || !hwScalable || isXpuHardware);
                   // Single-node pill is disabled when the variant can't fit on
                   // one node of the selected hardware — same struck-through
                   // treatment as unsupported hardware pills. Multi-node still
@@ -2254,7 +2514,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                       onClick={() => !disabled && selectNodes(n)}
                       title={
                         noMultiNode
-                          ? !hwScalable
+                          ? isXpuHardware
+                            ? "Multi-node clustering isn't validated on Intel XPU — serve single-node with the Docker image."
+                            : !hwScalable
                             ? `${hwProfile.display_name || "This hardware"} is a single-GPU workstation and can't be clustered into multiple nodes.`
                             : "This recipe does not declare a multi-node strategy. Fits in a single node."
                           : singleNodeDoesntFit
@@ -2264,14 +2526,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                                 ? `Each vLLM instance runs on a single node${(result.instances || 1) > 1 ? ` — ${result.instances} instances = ${result.instances} nodes total (plus master${result.store ? "/store" : ""})` : ""}.`
                                 : "Single-node deployment (one HGX box)"
                               : kvInstancesActive
-                                ? `Each instance spans 2 nodes × ${hwProfile.gpu_count || 8} GPUs${(result.instances || 1) > 1 ? ` — ${result.instances} instances = ${(result.instances || 1) * 2 * (hwProfile.gpu_count || 8)} GPUs total` : ` = ${2 * (hwProfile.gpu_count || 8)} GPUs`}.`
-                                : `2 nodes × ${hwProfile.gpu_count || 8} GPUs = ${2 * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
+                                ? `Each instance spans ${n} nodes × ${hwProfile.gpu_count || 8} GPUs${(result.instances || 1) > 1 ? ` — ${result.instances} instances = ${(result.instances || 1) * n * (hwProfile.gpu_count || 8)} GPUs total` : ` = ${n * (hwProfile.gpu_count || 8)} GPUs`}.`
+                                : `${n} nodes × ${hwProfile.gpu_count || 8} GPUs = ${n * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
                       }
                     >
-                      <span className="font-semibold">{n === 1 ? "Single-node" : "Multi-node (example: 2)"}</span>
+                      <span className="font-semibold">{n === 1 ? "Single-node" : `Multi-node (example: ${n})`}</span>
                       {n > 1 && !disabled && (
                         <span className="text-muted-foreground ml-1.5 font-mono">
-                          {2 * (hwProfile.gpu_count || 8)}×GPU
+                          {n * (hwProfile.gpu_count || 8)}×GPU
                         </span>
                       )}
                     </Pill>
@@ -2637,15 +2899,53 @@ function CommandTabs({ tabs, current, onSelect }) {
   );
 }
 
+// Peel the leading `#` lines off a rendered command so they can be shown in the
+// dimmed comment area instead of the bright command body — a `#` line is context,
+// not something the reader types. Callers keep the un-split string for Copy so
+// the pasted script stays self-explanatory.
+function splitLeadingComments(command) {
+  const lines = String(command ?? "").split("\n");
+  let i = 0;
+  while (i < lines.length && lines[i].trimStart().startsWith("#")) i++;
+  return { comments: lines.slice(0, i).join("\n"), body: lines.slice(i).join("\n") };
+}
+
+// One command, two contrast levels: leading `#` context dimmed like a prelude,
+// the executable body at full strength. Used by every command block so a
+// docker-run prerequisite or a companion's comments read the same everywhere.
+// Copy buttons stay wired to the unsplit string — see each block's fullScript.
+function CommandBody({ command }) {
+  const { comments, body } = splitLeadingComments(command);
+  return (
+    <>
+      {comments && (
+        <div className="px-4 pt-2 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug whitespace-pre overflow-x-auto">
+          {comments}
+        </div>
+      )}
+      <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
+        {body}
+      </pre>
+    </>
+  );
+}
+
 function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls }) {
   const [tab, setTab] = useState("vllm");
+  // The `docker pull` for the image lives in the Install block above.
+  const isXpu = !!dockerMeta?.isXpu;
   const isDocker = installMode === "docker";
   // Docker mode: env vars fold into `-e` flags inside the wrapped `docker run`,
   // so there's no separate prelude (the `docker pull` lives in the Install
   // block tabs above). Pip mode: prelude = `export KEY=VAL` lines.
-  const prelude = isDocker ? "" : envToExports(env);
+  const preludeBase = isDocker ? "" : envToExports(env);
+  // XPU pip mode sources oneAPI on the host first; in docker mode the wrapper
+  // sources it inside the container, so no host prelude is needed.
+  const prelude = isXpu && !isDocker
+    ? ["source /opt/intel/oneapi/setvars.sh", preludeBase].filter(Boolean).join("\n")
+    : preludeBase;
   const displayCommand = isDocker
-    ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+    ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu })
     : command;
   // A companion process may ride along (`companions[]` from resolveCommand —
   // a feature's `companion:` or the active kv_offload option's, e.g.
@@ -2669,21 +2969,13 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
   // Companions are host-side helper binaries (not `vllm serve`), so they get
   // neither the docker-run wrapper nor the env prelude.
   const activePrelude = activeCompanion ? "" : prelude;
-  // Leading # lines of a companion command render in the dimmed comment area
-  // (same treatment as the description line); the bright pre keeps only the
-  // executable body. Copy still grabs comments + body.
-  const companionParts = activeCompanion
-    ? (() => {
-        const lines = String(activeCompanion.command).split("\n");
-        let i = 0;
-        while (i < lines.length && lines[i].trimStart().startsWith("#")) i++;
-        return { comments: lines.slice(0, i).join("\n"), body: lines.slice(i).join("\n") };
-      })()
-    : null;
-  const activeCommand = activeCompanion ? companionParts.body : displayCommand;
-  const fullScript = activeCompanion
-    ? activeCompanion.command
-    : (activePrelude ? `${activePrelude}\n\n${activeCommand}` : activeCommand);
+  // Leading # lines render in the dimmed comment area (same treatment as a
+  // companion's description line); the bright pre keeps only the executable
+  // body. Applies to both sources: a companion's own comments and the
+  // `hf download` prerequisite buildDockerRun prepends for a local-path
+  // checkpoint. Copy still grabs comments + body.
+  const rawActive = activeCompanion ? String(activeCompanion.command) : displayCommand;
+  const fullScript = activePrelude ? `${activePrelude}\n\n${rawActive}` : rawActive;
   const actions = (
     <div className="flex items-center gap-1.5 shrink-0">
       <CopyButton text={fullScript} />
@@ -2727,19 +3019,12 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
           # {activeCompanion.description}
         </div>
       )}
-      {companionParts?.comments && (
-        <div className="px-4 pt-2 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug whitespace-pre overflow-x-auto">
-          {companionParts.comments}
-        </div>
-      )}
       {activePrelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
           {activePrelude}
         </pre>
       )}
-      <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-        {activeCommand}
-      </pre>
+      <CommandBody command={rawActive} />
     </div>
   );
 }
@@ -2774,7 +3059,7 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   const pipHidden = pipCfg === false;
   const dockerHidden = dockerCfg === false;
   const [open, setOpen] = useState(false);
-  const { isAmd, isTpu, image: dockerImage, brandKey, cudaMap } = dockerMeta;
+  const { isAmd, isTpu, isXpu, image: dockerImage, brandKey, cudaMap } = dockerMeta;
   // A variant may require a newer vLLM than the recipe baseline (e.g. the DSpark
   // checkpoint needs 0.25.0, currently nightly). Take the higher version and OR
   // the nightly flag so the Install block reflects the selected checkpoint.
@@ -2793,10 +3078,17 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   // pill in the Install header. Manual `install.pip.command` overrides still
   // win — this flag only affects the default.
   const nightlyRequired = recipe.model?.nightly_required === true || variant?.nightly_required === true;
+  // A CUDA map narrows the toggle to the builds the recipe actually declares.
+  // A single-key map (e.g. K3's cu130-only preview image) has nothing to
+  // toggle: hide the selector and pin both the docker tag and the pip wheel
+  // index to the one published build.
+  const cudaMapKeys = cudaMap ? ["cu130", "cu129"].filter((k) => k in cudaMap) : null;
+  const singleCudaBuild = cudaMapKeys && cudaMapKeys.length === 1 ? cudaMapKeys[0] : null;
+  const singleCudaLabel = singleCudaBuild === "cu129" ? "CUDA 12.9 (cu129)" : "CUDA 13 (cu130)";
   // Resolve the CUDA tag for pip's nightly wheel index from the same toggle
   // that drives the Docker tag suffix. "default" → cu130 (today's upstream
   // baseline); explicit picks pass through.
-  const pipCudaTag = dockerCudaVariant === "default" ? "cu130" : dockerCudaVariant;
+  const pipCudaTag = singleCudaBuild || (dockerCudaVariant === "default" ? "cu130" : dockerCudaVariant);
   const defaultPipCmd = isAmd
     ? `uv venv --python 3.12
 source .venv/bin/activate
@@ -2815,22 +3107,28 @@ uv pip install -U vllm --torch-backend auto`;
   const pipNote =
     pipCfg?.note ||
     (nightlyRequired && !isAmd
-      ? `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
+      ? singleCudaBuild
+        ? `vLLM ${minV} isn't released yet — nightly required. This recipe publishes ${singleCudaLabel} builds only.`
+        : `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
       : undefined);
 
   // Docker install step is just the image pull; the `docker run` that actually
   // serves the model is rendered in the main command block below. A YAML
   // override at `model.install.docker.command` still wins for recipes that
   // need a custom build step. The CUDA-version selector (below, next to Copy)
-  // drives the tag suffix for NVIDIA; AMD / TPU pull a single image.
+  // drives the tag suffix for NVIDIA; AMD / TPU / XPU pull a single image.
   const defaultDockerCmd = `docker pull ${dockerImage}`;
   const dockerCmd = dockerCfg?.command || defaultDockerCmd;
   const defaultDockerNote = isTpu
     ? "TPU builds are published by vllm-project/tpu-inference. See the Trillium and Ironwood tpu-recipes for pinned image tags and exact deployment flags."
+    : isXpu
+      ? "Intel XPU image. The entrypoint does not initialize oneAPI — source /opt/intel/oneapi/setvars.sh before `vllm serve`, or torch.xpu.device_count() returns 0."
     : isAmd
       ? undefined
       : cudaMap
-        ? "This recipe ships paired CUDA-tagged images. Pick `cu129` for CUDA 12.9 hosts or `cu130` for CUDA 13."
+        ? singleCudaBuild
+          ? `This tag is published as a ${singleCudaLabel} build only${singleCudaBuild === "cu130" ? " — the host needs an r580+ NVIDIA driver" : ""}.`
+          : "This recipe ships paired CUDA-tagged images. Pick `cu129` for CUDA 12.9 hosts or `cu130` for CUDA 13."
         : nightlyRequired
           ? "Nightly image ships CUDA 13. Switch to cu129 for the `cu129-nightly` variant if your host is on CUDA 12.9."
           : "Default tag ships CUDA 13. Switch to cu129 for the -cu129 variant if your host is on CUDA 12.9.";
@@ -2840,16 +3138,19 @@ uv pip install -U vllm --torch-backend auto`;
   // on the docker tab always, and on the pip tab when the command actually
   // varies by CUDA — i.e. nightly recipes whose wheel index URL is explicit.
   // Stable pip uses `--torch-backend auto`, which detects the host CUDA, so
-  // a toggle would be inert there.
+  // a toggle would be inert there. A single-build CUDA map has nothing to
+  // toggle either — the note explains the one published build instead.
   const showCudaSelector =
     brandKey === "nvidia" &&
+    !singleCudaBuild &&
     !dockerCfg?.command &&
     (installMode === "docker" ||
       (installMode === "pip" && nightlyRequired && !pipCfg?.command));
 
   // TPU has no pip wheel — force-hide the pip tab regardless of recipe overrides.
-  const effectivePipHidden = pipHidden || isTpu;
-  const dockerLabel = isTpu ? "Docker (TPU)" : isAmd ? "Docker (ROCm)" : "Docker";
+  // Intel XPU is validated via the official `vllm-openai-xpu` Docker image;
+  const effectivePipHidden = pipHidden || isTpu || isXpu;
+  const dockerLabel = isTpu ? "Docker (TPU)" : isXpu ? "Docker (XPU)" : isAmd ? "Docker (ROCm)" : "Docker";
   const tabs = [
     !effectivePipHidden && {
       id: "pip",
@@ -2877,7 +3178,7 @@ uv pip install -U vllm --torch-backend auto`;
         <Package size={12} className="text-[var(--command-fg)]/50 shrink-0" />
         <span className="text-[11px] font-semibold text-[var(--command-fg)]/70 uppercase tracking-widest">Install</span>
         <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
-          vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · {isTpu ? "TPU" : isAmd ? "ROCm" : "CUDA"}
+          vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · {isTpu ? "TPU" : isXpu ? "XPU" : isAmd ? "ROCm" : "CUDA"}
         </span>
         {nightlyRequired && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
@@ -2998,12 +3299,22 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
   const isDocker = installMode === "docker";
   const wrap = (cmd) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env: result.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+      ? buildDockerRun({ command: cmd, env: result.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu })
       : cmd;
+  // One tab per node: Head (rank 0) then every follower rank, each with its own
+  // --node-rank / --data-parallel-start-rank. `workerCommands` carries them all;
+  // the singular `workerCommand` is the pre-per-rank fallback.
+  const workerCommands = result.workerCommands
+    || (result.workerCommand ? [result.workerCommand] : []);
   const tabs = [
     { id: "head", label: "Head", command: wrap(result.headCommand) },
-    { id: "worker", label: "Node 1", command: wrap(result.workerCommand) },
+    ...workerCommands.map((cmd, i) => ({
+      id: `worker${i + 1}`,
+      label: `Node ${i + 1}`,
+      command: wrap(cmd),
+    })),
   ];
+  // A shrinking node count can strand the selected tab (Node 3 → 2 nodes).
   const active = tabs.find((t) => t.id === tab) || tabs[0];
   // Docker mode folds env into `-e` flags inside `docker run`, so no
   // separate prelude here. Pip mode keeps the `export KEY=VAL` prelude.
@@ -3032,12 +3343,10 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
           {prelude}
         </pre>
       )}
-      <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-        {active.command}
-      </pre>
+      <CommandBody command={active.command} />
       <div className="px-4 pb-3 text-[11px] text-[var(--command-fg)]/45 font-mono leading-snug">
-        # Set $HEAD_IP to the rank-0 node's IP before launch. Scale to N nodes by replicating
-        # this worker command with --node-rank = i (TP/TEP) or --data-parallel-start-rank = i × local_gpus (DEP).
+        # Set $HEAD_IP to the rank-0 node&apos;s IP before launch, then run each tab on its own node —
+        # they differ only by --node-rank (TP/TEP) or --data-parallel-start-rank (DEP).
       </div>
     </div>
   );
@@ -3056,7 +3365,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   // it stays as-is with its pip-install hint regardless of install mode.
   const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu })
       : cmd;
   // Mooncake composed into PD (result.mooncake): a "Mooncake Config" tab
   // (launch step 0) writes the shared config file(s) once — every
@@ -3172,9 +3481,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           {prelude}
         </pre>
       )}
-      <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-        {active.command}
-      </pre>
+      <CommandBody command={active.command} />
     </div>
   );
 }
@@ -3190,7 +3497,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
   const isDocker = installMode === "docker";
   const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu })
       : cmd;
 
   const instances = result.instances || 2;
@@ -3227,11 +3534,15 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
           ? `One per instance node.${requires}`
           : `Single instance — clients connect to it directly.${requires}`,
     },
-    ...(result.vllm.workerCommand ? [{
-      id: "vllm_worker", label: "Node 1", isVllm: true,
-      command: wrap(result.vllm.workerCommand, result.vllm.env), env: result.vllm.env,
-      description: `Nodes 2..${nodesPer} of each instance (rank > 0, --headless).`,
-    }] : []),
+    // One tab per follower node of an instance — each rank is a distinct
+    // command (--node-rank / --data-parallel-start-rank), never a repeat.
+    ...(result.vllm.workerCommands
+      || (result.vllm.workerCommand ? [result.vllm.workerCommand] : [])
+    ).map((cmd, i) => ({
+      id: `vllm_worker${i + 1}`, label: `Node ${i + 1}`, isVllm: true,
+      command: wrap(cmd, result.vllm.env), env: result.vllm.env,
+      description: `Follower node ${i + 1} of ${nodesPer - 1} in each instance (rank ${i + 1}, --headless).`,
+    })),
     ...(result.router ? [{ id: "router", label: "Router", command: result.router.command, env: {}, description: `LB across ${instances} vLLM instances. Install: ${result.router.install}` }] : []),
   ].map((t, i) => ({ ...t, step: i + 1 }));
   const active = tabs.find((t) => t.id === tab) || tabs[0];
@@ -3295,9 +3606,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
           {prelude}
         </pre>
       )}
-      <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-        {active.command}
-      </pre>
+      <CommandBody command={active.command} />
     </div>
   );
 }
