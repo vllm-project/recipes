@@ -287,6 +287,9 @@ guide: |
   recipe) and prefer a real `/v1/chat/completions` probe over `/health` for readiness —
   loading terabytes plus kernel JIT takes minutes.
 
+  The linear backend feature "--linear-backend flashinfer_cutedsl" is Docker only until
+  FlashInfer version upgrade in the vllm build.
+
   ## References
 
   - Model card: https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B
