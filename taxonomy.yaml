@@ -285,7 +285,7 @@ hardware_profiles:
   # lists it in `meta.hardware` — Ascend support ships in vllm-ascend and is
   # only declared on validated recipes.
   ascend_950pr:
-    brand: Ascend
+    brand: Huawei
     generation: npu
     display_name: "Ascend 950PR"
     description: "Huawei Ascend 950PR · 1× NPU · 128 GB HiBL 1.0 HBM · vLLM Ascend backend"
