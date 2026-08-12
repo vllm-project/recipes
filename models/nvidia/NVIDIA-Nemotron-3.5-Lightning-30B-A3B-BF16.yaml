@@ -200,19 +200,3 @@ guide: |
   Reasoning tokens count toward `max_tokens`. If `content` comes back empty or `None`,
   the reasoning trace consumed the entire budget before the model produced an answer —
   raise `max_tokens`.
-
-  ## Notes
-
-  - **Mamba backend**: `--mamba-backend flashinfer` is required — the default backend has
-    no kernel for this stack. `--mamba-cache-mode align` is needed for prefix caching.
-  - **Fast SSM cache**: `--mamba-ssm-cache-dtype float16` with stochastic rounding trades
-    a little accuracy for decode speed; drop it and the two rounding flags for the FP32
-    default.
-  - **Hopper**: NVFP4 is not auto-detected, so `--quantization modelopt_fp4` is named
-    explicitly, and the Hopper-tuned `humming` MoE and linear backends replace Marlin.
-  - **Context length**: the 1M window comes from the checkpoint, so no `--max-model-len`
-    is needed; lower it only to shrink the KV cache.
-  - **Draft checkpoints**: DSpark and DFlash are published for NVFP4 only
-    (`-NVFP4-DSpark`, `-NVFP4-DFlash`) — the BF16 checkpoint is limited to MTP.
-  - **Known gap**: TP8 without expert parallel is not supported on the NVFP4 checkpoint
-    (TEP8 works).
