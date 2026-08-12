@@ -246,7 +246,7 @@ hardware_overrides:
       - "flash_attn"
       - "--trust-remote-code"
       - "--gpu-memory-utilization"
-      - "0.92"
+      - "0.9"
       - "--no-enable-prefix-caching"
       - "--max-num-batched-tokens"
       - "8192"
@@ -415,7 +415,7 @@ guide: |
     --chat-template examples/tool_chat_template_gemma4.jinja \
     --limit-mm-per-prompt.image 4 \
     --async-scheduling \
-    --gpu-memory-utilization 0.92 \
+    --gpu-memory-utilization 0.9 \
     --no-enable-prefix-caching \
     --max-num-batched-tokens 8192 \
     --max-model-len 5120 \
