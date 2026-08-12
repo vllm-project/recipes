@@ -93,8 +93,6 @@ variants:
   default:
     model_id: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4"
     precision: nvfp4
-    # NVFP4 expert weights are dequantized on the fly on Hopper, so this
-    # checkpoint is not Blackwell-only.
     precision_hardware:
       brand: NVIDIA
     vram_minimum_gb: 18
@@ -107,9 +105,6 @@ variants:
       - "marlin"
     hardware_overrides:
       hopper:
-        # Marlin is not tuned for Hopper; the Humming W4A16 kernels are ~20%
-        # faster on Nemotron's non-gated ReLU² MoE and on the dense linears.
-        # NVFP4 is also not auto-detected on Hopper, so name the loader.
         extra_args:
           - "--quantization"
           - "modelopt_fp4"
@@ -120,8 +115,6 @@ variants:
           - "--mamba-ssu-algorithm"
           - "horizontal"
           - "--async-scheduling"
-          # Hopper has the headroom for a bigger prefill chunk than the
-          # single-GPU Blackwell desktops the base args are sized for.
           - "--max-num-seqs"
           - "256"
           - "--max-num-batched-tokens"
@@ -150,14 +143,11 @@ guide: |
 
   Nemotron 3.5 Lightning is a hybrid Mamba-MoE model — 30B total parameters, 3B active,
   up to 1M context. It ships as an NVFP4 (W4A16) ModelOpt checkpoint, the default
-  deployment target, and a BF16 reference checkpoint. The NVFP4 weights fit a single
-  H100, a single DGX Spark, or a single DGX Station.
+  deployment target, and a BF16 reference checkpoint.
 
-  Both checkpoints need the FlashInfer Mamba backend and the `align` Mamba cache mode.
-  Three speculators are available: **MTP** (built into the checkpoint), **DSpark**
-  (hybrid autoregressive + diffusion) and **DFlash** (diffusion). DSpark gives the best
-  latency on H100 and DGX Spark; for maximum throughput, serve without speculative
-  decoding.
+  **MTP** (built into the checkpoint), **DSpark** (hybrid autoregressive + diffusion) and
+  **DFlash** (diffusion) are all supported. DSpark gives the best latency on H100 and
+  DGX Spark; for maximum throughput, serve without speculative decoding.
 
   ## Prerequisites
 
