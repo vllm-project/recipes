@@ -4,7 +4,7 @@ meta:
   provider: "Lightricks"
   description: "19B diffusion transformer for joint video and synchronized stereo audio generation, served via vLLM-Omni"
   date_added: 2026-08-11
-  date_updated: 2026-08-11
+  date_updated: 2026-08-12
   difficulty: advanced
   tasks:
     - omni
@@ -328,7 +328,7 @@ guide: |
   ## Verified B300 results
 
   The following are single-process **cold-run diagnostics**, not steady-state
-  throughput claims. All three vLLM-Omni runs used `CUDNN_ATTN`, seed 42, 121
+  throughput claims. All four vLLM-Omni runs used `CUDNN_ATTN`, seed 42, 121
   frames at 24 FPS, and the same inputs as the Diffusers PR #14447 reference.
   Generation timing excludes MP4 encoding; end-to-end timing includes model
   loading. Accuracy compares decoded frame tensors against Diffusers.
@@ -338,12 +338,27 @@ guide: |
   | One-stage T2V · 960x544 | 4.487 s | 39.018 s | 78,640 MiB | 10.10x |
   | One-stage I2V · 960x544 | 4.567 s | 37.388 s | 78,640 MiB | 9.85x |
   | Two-stage T2V · 1920x1088 | 13.770 s | 47.264 s | 109,666 MiB | 5.47x |
+  | Full/SFT T2V · 960x544 | 40.917 s | 77.137 s | 79,678 MiB | 2.04x |
 
   | Mode | Mean SSIM ↑ | Mean PSNR ↑ | Mean LPIPS ↓ |
   |------|-------------|-------------|--------------|
-  | One-stage T2V | 0.9231 | 24.945 dB | 0.0491 |
+  | One-stage T2V | 0.8840 | 22.285 dB | 0.0696 |
   | One-stage I2V | 0.9897 | 35.771 dB | 0.0071 |
   | Two-stage T2V | 0.8965 | 23.245 dB | 0.0854 |
+  | Full/SFT T2V | 0.7656 | 18.530 dB | 0.1530 |
+
+  ## Feature qualification
+
+  | Feature | Status | Notes |
+  |---------|--------|-------|
+  | `CUDNN_ATTN` | Release-qualified | Recommended B300 path; all four modes passed offline and online. |
+  | `TORCH_SDPA` | Functional baseline | All four modes passed; intended for debugging and portability. |
+  | Native DP2 | Release-qualified | Two workers completed one fixed-seed request and a concurrent two-request wave. |
+  | VAE slicing / tiling | Release-qualified | Slicing matched eager; tiling retained SSIM 0.9867 and reduced peak memory by 5.6%. |
+  | HSDP2 / DLO DP2 / CPU offload | Capacity fallback | Outputs matched eager and reduced peak memory, but latency increased. |
+  | TP2 / Ulysses SP2 / regional compile / FP8 / Cache-DiT | Experimental | Functional paths did not pass the fixed-seed quality gate. |
+  | `TRTLLM_ATTN` / Ring SP2 / TeaCache | Unsupported | Current kernels or model-specific adapters do not support these paths. |
+  | FlashAttention-3 on H100 | Unverified | No H100 was available for validation. |
 
   ## Limitations
 
@@ -351,8 +366,8 @@ guide: |
     `LTX2FullPipeline` explicitly to load `transformer_full/`.
   - I2V is validated only for the one-stage first-frame path. Two-stage I2V and
     multi-frame conditioning are not claimed here.
-  - Cache-DiT and other acceleration toggles are intentionally omitted until
-    their LTX-2.5 accuracy and latency matrices are complete.
+  - DLO, CPU offload, and HSDP are memory-capacity fallbacks rather than
+    latency accelerators. Experimental paths above are not production claims.
 
   ## References
 
