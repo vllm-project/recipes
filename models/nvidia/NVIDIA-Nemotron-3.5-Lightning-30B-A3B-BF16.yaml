@@ -200,3 +200,8 @@ guide: |
   Reasoning tokens count toward `max_tokens`. If `content` comes back empty or `None`,
   the reasoning trace consumed the entire budget before the model produced an answer —
   raise `max_tokens`.
+
+  ## Notes
+
+  - **Speculative decoding**: DSpark is the preferred method on H100 and DGX Spark. On
+    DGX Station, prefer MTP — select it from the Speculative Decoding row above.
