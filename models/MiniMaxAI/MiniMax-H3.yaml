@@ -513,6 +513,14 @@ dependencies:
   - note: "Gated checkpoint — request access on the model card, then download it locally. Serve the root directory: both DiTs remain in subdirectories while the modular service shares the encoder and VAEs."
     command: "hf download MiniMaxAI/MiniMax-H3 --local-dir /path/to/MiniMax-H3"
     install_modes: [pip, docker]
+  - note: "Ascend pip path: build vLLM v0.26.0 with the NPU target and vLLM Ascend from the matching release branch. This replaces the CUDA wheel shown in the pip tab above."
+    command: |
+      git clone --depth 1 --branch v0.26.0 https://github.com/vllm-project/vllm.git
+      cd vllm && VLLM_TARGET_DEVICE=empty pip install -e . && cd ..
+      git clone --depth 1 --branch releases/v0.26.0rc https://github.com/vllm-project/vllm-ascend.git
+      cd vllm-ascend && git submodule update --init --recursive && pip install -e . && cd ..
+    install_modes: [pip]
+    brand: Huawei
   - note: "pip path only: install current vLLM-Omni main for the modular MiniMax-H3 pipeline."
     command: "git clone --depth 1 https://github.com/vllm-project/vllm-omni.git /path/to/vllm-omni && cd /path/to/vllm-omni && uv pip install -e ."
     install_modes: [pip]
@@ -524,6 +532,21 @@ dependencies:
   - note: "Docker path only: clone current vLLM-Omni main to the path mounted by the generated command so it overrides the older package in the image."
     command: "git clone --depth 1 https://github.com/vllm-project/vllm-omni.git /path/to/vllm-omni"
     install_modes: [docker]
+  - note: "Ascend Docker path: the generated docker run emits --gpus all, which the NPU runtime ignores. Start the container with the CANN device and driver mounts below, then run the serve command inside it. --shm-size is required — the 64 MB default cannot carry the decoded video back to the API server over shared memory."
+    command: |
+      docker run --rm -it --net=host --shm-size=8g \
+        --device /dev/davinci0 --device /dev/davinci_manager \
+        --device /dev/devmm_svm --device /dev/hisi_hdc \
+        -v /usr/local/dcmi:/usr/local/dcmi \
+        -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+        -v /usr/local/Ascend/driver/lib64/:/usr/local/Ascend/driver/lib64/ \
+        -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
+        -v /etc/ascend_install.info:/etc/ascend_install.info \
+        -v /path/to/MiniMax-H3:/path/to/MiniMax-H3:ro \
+        -v /path/to/vllm-omni:/path/to/vllm-omni:ro \
+        quay.io/ascend/vllm-omni:minimax-h3 bash
+    install_modes: [docker]
+    brand: Huawei
   - note: "pip path only: ffmpeg and ffprobe must be on PATH for reference-video preparation and MP4 video+audio muxing. The official Docker images already bundle them."
     command: "sudo apt-get install -y ffmpeg"
 
