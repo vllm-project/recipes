@@ -41,13 +41,6 @@ model:
     - "CUDNN_ATTN"
   base_env: {}
 
-dependencies:
-  - note: "Install current vLLM-Omni main for the native LTX-2.5 pipeline"
-    command: "uv pip install git+https://github.com/vllm-project/vllm-omni.git"
-  - note: "Required for I2V: PyAV/FFmpeg must provide libx264 for the default CRF-18 conditioning round-trip"
-    command: "uv pip install av"
-    optional: true
-
 features: {}
 
 opt_in_features: []
@@ -206,8 +199,6 @@ guide: |
   export VLLM_VERSION=0.27.0
   uv pip install "vllm==$VLLM_VERSION" --torch-backend=auto
   uv pip install git+https://github.com/vllm-project/vllm-omni.git
-  # Required only for image-to-video conditioning:
-  uv pip install av
   ```
 
   ## Attention backend on B300
@@ -221,7 +212,51 @@ guide: |
   not support this model's `head_dim=64`. Revisit this when that kernel gains
   head-dimension support; there is no silent fallback in this recipe.
 
-  ## One-stage text-to-video
+  ## Offline inference
+
+  The existing generic vLLM-Omni examples cover the four release-qualified modes below; no
+  model-specific runner is required. Run them from a vLLM-Omni checkout.
+
+  ```bash
+  # One-stage T2V
+  python examples/offline_inference/text_to_video/text_to_video.py \
+    --model Lightricks/LTX-2.5-Diffusers \
+    --model-class-name LTX2Pipeline \
+    --prompt "A cinematic shot of a red fox walking through a snowy forest at dawn, the camera tracking alongside, snow crunching underfoot." \
+    --height 544 --width 960 --num-frames 121 \
+    --num-inference-steps 8 --frame-rate 24 --fps 24 --seed 42 \
+    --enforce-eager --output ltx25-one-stage.mp4
+
+  # First-frame I2V
+  python examples/offline_inference/image_to_video/image_to_video.py \
+    --model Lightricks/LTX-2.5-Diffusers \
+    --model-class-name LTX2Pipeline \
+    --image /absolute/path/to/first-frame.png \
+    --prompt "The red fox walks forward while the camera tracks alongside." \
+    --height 544 --width 960 --num-frames 121 \
+    --num-inference-steps 8 --frame-rate 24 --fps 24 --seed 42 \
+    --enforce-eager --output ltx25-one-stage-i2v.mp4
+
+  # Distilled two-stage T2V
+  python examples/offline_inference/text_to_video/text_to_video.py \
+    --model Lightricks/LTX-2.5-Diffusers \
+    --model-class-name LTX2DistilledPipeline \
+    --prompt "A cinematic shot of a red fox walking through a snowy forest at dawn, the camera tracking alongside, snow crunching underfoot." \
+    --height 1088 --width 1920 --num-frames 121 \
+    --num-inference-steps 8 --frame-rate 24 --fps 24 --seed 42 \
+    --enforce-eager --output ltx25-two-stage.mp4
+
+  # Full/SFT one-stage T2V
+  python examples/offline_inference/text_to_video/text_to_video.py \
+    --model Lightricks/LTX-2.5-Diffusers \
+    --model-class-name LTX2FullPipeline \
+    --prompt "A cinematic shot of a red fox walking through a snowy forest at dawn, the camera tracking alongside, snow crunching underfoot." \
+    --height 544 --width 960 --num-frames 121 \
+    --num-inference-steps 30 --frame-rate 24 --fps 24 --seed 42 \
+    --enforce-eager --output ltx25-full.mp4
+  ```
+
+  ## Online one-stage text-to-video
 
   ```bash
   vllm serve Lightricks/LTX-2.5-Diffusers \
@@ -290,7 +325,9 @@ guide: |
   ```
 
   The request dimensions are the **final** 1920x1088 output size; the pipeline
-  derives the 960x544 first stage internally.
+  derives the 960x544 first stage internally. Override the phases independently
+  with `-F 'extra_params={"stage_1_sigmas":[...],"stage_2_sigmas":[...]}'`;
+  omitted phases retain the official schedule.
 
   ```bash
   curl -sS --fail-with-body \
@@ -339,9 +376,9 @@ guide: |
   | `width` x `height` | 960x544 | 1920x1088 | 960x544 | Two-stage values are final output dimensions |
   | `num_frames` | 121 | 121 | 121 | Produces about five seconds at 24 FPS |
   | `fps` | 24 | 24 | 24 | Audio is generated jointly at 48 kHz stereo |
-  | `num_inference_steps` | 8 | 8 | 30 | Two-stage adds a fixed 3-sigma refinement tail |
+  | `num_inference_steps` | 8 | 8 | 30 | Two-stage defaults to a 3-step refinement tail |
   | `input_reference` | I2V only | Not validated | Not validated | Upload one RGB first frame; native preprocessing defaults to CRF 18 |
-  | `sigmas` | Optional override | Rejected | Optional override | Custom schedule via `extra_params` |
+  | schedule override | `sigmas` | `stage_1_sigmas` and `stage_2_sigmas` | `sigmas` | JSON lists via `extra_params` |
   | `image_crf` | I2V only; default 18 | N/A | N/A | Set 0 only to bypass the conditioning round trip |
   | guidance | positive-only | positive-only | video CFG 3 / audio CFG 7, STG 1 | Pipeline classes select the official defaults |
 
@@ -349,23 +386,16 @@ guide: |
 
   The following are single-process **cold-run diagnostics**, not steady-state
   throughput claims. All four vLLM-Omni runs used `CUDNN_ATTN`, seed 42, 121
-  frames at 24 FPS, and the same inputs as the Diffusers PR #14447 reference.
+  frames at 24 FPS, using fixed, mode-appropriate requests.
   Generation timing excludes MP4 encoding; end-to-end timing includes model
-  loading. Accuracy compares decoded frame tensors against Diffusers.
+  loading. Correctness is guarded separately against the pinned official Lightricks implementation.
 
-  | Mode | Generation | End to end | Peak GPU memory | Diffusers generation speedup |
-  |------|------------|------------|-----------------|------------------------------|
-  | One-stage T2V · 960x544 | 4.487 s | 39.018 s | 78,640 MiB | 10.10x |
-  | One-stage I2V · 960x544 | 4.567 s | 37.388 s | 78,640 MiB | 9.85x |
-  | Two-stage T2V · 1920x1088 | 13.770 s | 47.264 s | 109,666 MiB | 5.47x |
-  | Full/SFT T2V · 960x544 | 40.917 s | 77.137 s | 79,678 MiB | 2.04x |
-
-  | Mode | Mean SSIM ↑ | Mean PSNR ↑ | Mean LPIPS ↓ |
-  |------|-------------|-------------|--------------|
-  | One-stage T2V | 0.8840 | 22.285 dB | 0.0696 |
-  | One-stage I2V | 0.9897 | 35.771 dB | 0.0071 |
-  | Two-stage T2V | 0.8965 | 23.245 dB | 0.0854 |
-  | Full/SFT T2V | 0.7656 | 18.530 dB | 0.1530 |
+  | Mode | Generation | End to end | Peak GPU memory |
+  |------|------------|------------|-----------------|
+  | One-stage T2V · 960x544 | 4.487 s | 39.018 s | 78,640 MiB |
+  | One-stage I2V · 960x544 | 4.567 s | 37.388 s | 78,640 MiB |
+  | Two-stage T2V · 1920x1088 | 13.770 s | 47.264 s | 109,666 MiB |
+  | Full/SFT T2V · 960x544 | 40.917 s | 77.137 s | 79,678 MiB |
 
   ## Feature qualification
 
@@ -393,7 +423,7 @@ guide: |
   - Only `Lightricks/LTX-2.5-Diffusers` is directly loadable; the raw split-artifact repository is not supported by this path.
   - Distilled and Full/SFT checkpoints use separate pipeline classes. Select
     `LTX2FullPipeline` explicitly to load `transformer_full/`.
-  - One-stage and Full/SFT accept custom `sigmas`; the two-stage distilled schedule is fixed.
+  - One-stage and Full/SFT accept custom `sigmas`; distilled two-stage accepts independent `stage_1_sigmas` and `stage_2_sigmas`.
   - I2V defaults to CRF 18 and supports an explicit `image_crf=0` opt-out.
   - I2V is validated only for the one-stage first-frame path. Two-stage I2V and
     multi-frame conditioning are not claimed here.
@@ -404,5 +434,4 @@ guide: |
 
   - [LTX-2.5 Diffusers model card](https://huggingface.co/Lightricks/LTX-2.5-Diffusers)
   - [LTX-2.5 base repository and license](https://huggingface.co/Lightricks/LTX-2.5)
-  - [Diffusers LTX-2.5 support PR #14447](https://github.com/huggingface/diffusers/pull/14447)
   - [LTX-2 project](https://github.com/Lightricks/LTX-2)
