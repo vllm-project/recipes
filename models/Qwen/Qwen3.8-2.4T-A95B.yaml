@@ -295,5 +295,5 @@ guide: |
   - Model card: https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B
   - FP8 checkpoint: https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B-FP8
   - MXFP4 build (AMD): https://huggingface.co/Inferact/Qwen3.8-2.4T-A95B-MXFP4
-  - NVFP4 W4A4 build (NVIDIA): https://huggingface.co/Inferact/Qwen3.8-2.4T-A95B-NVFP4-W4A4
+  - NVFP4 W4A4 build (NVIDIA): https://huggingface.co/Inferact/Qwen3.8-2.4T-A95B-NVFP4
   - vLLM documentation: https://docs.vllm.ai/
