@@ -27,6 +27,7 @@ export const PROVIDERS = {
   "fishaudio":       { display_name: "Fish Audio",              logo: "/providers/fishaudio.png" },
   "bosonai":         { display_name: "Boson AI",                logo: "/providers/bosonai.png" },
   "OpenMOSS-Team":   { display_name: "OpenMOSS",                logo: "/providers/OpenMOSS-Team.png" },
+  "IndexTeam":       { display_name: "IndexTeam",               logo: "/providers/IndexTeam.png" },
   "OpenGVLab":       { display_name: "InternVL (OpenGVLab)",    logo: "/providers/OpenGVLab.jpeg" },
   "internlm":        { display_name: "InternLM",                logo: "/providers/internlm.png" },
   "jinaai":          { display_name: "Jina AI",                 logo: "/providers/jinaai.png" },

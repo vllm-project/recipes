@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
   date_added: 2026-07-31
-  date_updated: 2026-08-10
+  date_updated: 2026-08-11
   difficulty: hard
   tasks:
     - text
@@ -59,6 +59,8 @@ features:
     args:
       - "--reasoning-parser"
       - "deepseek_v4"
+      - "--reasoning-config"
+      - '{"reasoning_parser":"deepseek_v4","reasoning_start_str":"","reasoning_end_str":""}'
   spec_decoding:
     description: "Speculative decoding — pick a drafting method."
     # Mode = the --speculative-config method only (args); the served checkpoint is
@@ -97,6 +99,11 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"probabilistic"}'
+        hardware_overrides:
+          dgx_spark_gb10:
+            args:
+              - "--speculative-config"
+              - '{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","attention_backend":"B12X_MLA_SPARSE"}'
 
 opt_in_features:
   - spec_decoding
@@ -116,9 +123,45 @@ variants:
       spec_decoding: dspark
     hardware_overrides:
       dgx_spark_gb10:
-        docker_image: "eugr/spark-vllm:latest"
+        docker_image: "eugr/spark-vllm-b12x:latest"
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--gpu-memory-utilization"
+          - "0.85"
+          - "--enable-prefix-caching"
+          - "--default-chat-template-kwargs.thinking=true"
+          - "--default-chat-template-kwargs.reasoning_effort=high"
+          - "--load-format"
+          - "instanttensor"
+          - "--moe-backend"
+          - "b12x"
+          - "--linear-backend"
+          - "b12x"
+          - "--attention-backend"
+          - "B12X_MLA_SPARSE"
+          - "--max-cudagraph-capture-size"
+          - "64"
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'
         extra_env:
-          DG_JIT_USE_NVRTC: "0"
+          PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+          CUTE_DSL_ARCH: "sm_121a"
+          VLLM_USE_AOT_COMPILE: "1"
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+          VLLM_USE_MEGA_AOT_ARTIFACT: "-1"
+          VLLM_MEMORY_PROFILE_INCLUDE_ATTN: "1"
+          VLLM_USE_FLASHINFER_SAMPLER: "1"
+          VLLM_USE_B12X_WO_PROJECTION: "1"
+          VLLM_USE_B12X_MHC: "1"
+          VLLM_USE_B12X_FP8_GEMM: "1"
+          VLLM_USE_B12X_MOE: "1"
+          VLLM_USE_B12X_SPARSE_INDEXER: "1"
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          B12X_MLA_SM120_UNIFIED: "1"
+          B12X_MOE_FORCE_A8: "1"
           GLOO_SOCKET_IFNAME: "$IFACE_NAME"
           MN_IF_NAME: "$IFACE_NAME"
           NCCL_IB_DISABLE: "0"
@@ -128,9 +171,6 @@ variants:
           OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
           TP_SOCKET_IFNAME: "$IFACE_NAME"
           UCX_NET_DEVICES: "$IFACE_NAME"
-          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
-          VLLM_FLOAT32_MATMUL_PRECISION: "high"
-          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
       blackwell:
         extra_args:
           - "--moe-backend"
@@ -143,9 +183,45 @@ variants:
     # Blackwell; the NVFP4 variant below adds nothing (its experts can't use it).
     hardware_overrides:
       dgx_spark_gb10:
-        docker_image: "eugr/spark-vllm:latest"
+        docker_image: "eugr/spark-vllm-b12x:latest"
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--gpu-memory-utilization"
+          - "0.85"
+          - "--enable-prefix-caching"
+          - "--default-chat-template-kwargs.thinking=true"
+          - "--default-chat-template-kwargs.reasoning_effort=high"
+          - "--load-format"
+          - "instanttensor"
+          - "--moe-backend"
+          - "b12x"
+          - "--linear-backend"
+          - "b12x"
+          - "--attention-backend"
+          - "B12X_MLA_SPARSE"
+          - "--max-cudagraph-capture-size"
+          - "64"
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'
         extra_env:
-          DG_JIT_USE_NVRTC: "0"
+          PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+          CUTE_DSL_ARCH: "sm_121a"
+          VLLM_USE_AOT_COMPILE: "1"
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+          VLLM_USE_MEGA_AOT_ARTIFACT: "-1"
+          VLLM_MEMORY_PROFILE_INCLUDE_ATTN: "1"
+          VLLM_USE_FLASHINFER_SAMPLER: "1"
+          VLLM_USE_B12X_WO_PROJECTION: "1"
+          VLLM_USE_B12X_MHC: "1"
+          VLLM_USE_B12X_FP8_GEMM: "1"
+          VLLM_USE_B12X_MOE: "1"
+          VLLM_USE_B12X_SPARSE_INDEXER: "1"
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          B12X_MLA_SM120_UNIFIED: "1"
+          B12X_MOE_FORCE_A8: "1"
           GLOO_SOCKET_IFNAME: "$IFACE_NAME"
           MN_IF_NAME: "$IFACE_NAME"
           NCCL_IB_DISABLE: "0"
@@ -155,9 +231,6 @@ variants:
           OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
           TP_SOCKET_IFNAME: "$IFACE_NAME"
           UCX_NET_DEVICES: "$IFACE_NAME"
-          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
-          VLLM_FLOAT32_MATMUL_PRECISION: "high"
-          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
       blackwell:
         extra_args:
           - "--moe-backend"
@@ -169,9 +242,45 @@ variants:
     description: "NVIDIA modelopt NVFP4 checkpoint (MoE experts NVFP4; attention, shared experts, router head, and MTP stay FP8) for Blackwell GPUs."
     hardware_overrides:
       dgx_spark_gb10:
-        docker_image: "eugr/spark-vllm:latest"
+        docker_image: "eugr/spark-vllm-b12x:latest"
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--gpu-memory-utilization"
+          - "0.85"
+          - "--enable-prefix-caching"
+          - "--default-chat-template-kwargs.thinking=true"
+          - "--default-chat-template-kwargs.reasoning_effort=high"
+          - "--load-format"
+          - "instanttensor"
+          - "--moe-backend"
+          - "b12x"
+          - "--linear-backend"
+          - "b12x"
+          - "--attention-backend"
+          - "B12X_MLA_SPARSE"
+          - "--max-cudagraph-capture-size"
+          - "64"
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'
         extra_env:
-          DG_JIT_USE_NVRTC: "0"
+          PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+          CUTE_DSL_ARCH: "sm_121a"
+          VLLM_USE_AOT_COMPILE: "1"
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+          VLLM_USE_MEGA_AOT_ARTIFACT: "-1"
+          VLLM_MEMORY_PROFILE_INCLUDE_ATTN: "1"
+          VLLM_USE_FLASHINFER_SAMPLER: "1"
+          VLLM_USE_B12X_WO_PROJECTION: "1"
+          VLLM_USE_B12X_MHC: "1"
+          VLLM_USE_B12X_FP8_GEMM: "1"
+          VLLM_USE_B12X_MOE: "1"
+          VLLM_USE_B12X_SPARSE_INDEXER: "1"
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          B12X_MLA_SM120_UNIFIED: "1"
+          B12X_MOE_FORCE_A8: "1"
           GLOO_SOCKET_IFNAME: "$IFACE_NAME"
           MN_IF_NAME: "$IFACE_NAME"
           NCCL_IB_DISABLE: "0"
@@ -181,9 +290,6 @@ variants:
           OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
           TP_SOCKET_IFNAME: "$IFACE_NAME"
           UCX_NET_DEVICES: "$IFACE_NAME"
-          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
-          VLLM_FLOAT32_MATMUL_PRECISION: "high"
-          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
   dspark:
     # Official fused DSpark checkpoint — the preview weights with the DSpark draft
     # module attached (config.json gains the dspark_* block). A distinct served
@@ -201,9 +307,45 @@ variants:
       spec_decoding: dspark
     hardware_overrides:
       dgx_spark_gb10:
-        docker_image: "eugr/spark-vllm:latest"
+        docker_image: "eugr/spark-vllm-b12x:latest"
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--gpu-memory-utilization"
+          - "0.85"
+          - "--enable-prefix-caching"
+          - "--default-chat-template-kwargs.thinking=true"
+          - "--default-chat-template-kwargs.reasoning_effort=high"
+          - "--load-format"
+          - "instanttensor"
+          - "--moe-backend"
+          - "b12x"
+          - "--linear-backend"
+          - "b12x"
+          - "--attention-backend"
+          - "B12X_MLA_SPARSE"
+          - "--max-cudagraph-capture-size"
+          - "64"
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'
         extra_env:
-          DG_JIT_USE_NVRTC: "0"
+          PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+          CUTE_DSL_ARCH: "sm_121a"
+          VLLM_USE_AOT_COMPILE: "1"
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+          VLLM_USE_MEGA_AOT_ARTIFACT: "-1"
+          VLLM_MEMORY_PROFILE_INCLUDE_ATTN: "1"
+          VLLM_USE_FLASHINFER_SAMPLER: "1"
+          VLLM_USE_B12X_WO_PROJECTION: "1"
+          VLLM_USE_B12X_MHC: "1"
+          VLLM_USE_B12X_FP8_GEMM: "1"
+          VLLM_USE_B12X_MOE: "1"
+          VLLM_USE_B12X_SPARSE_INDEXER: "1"
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          B12X_MLA_SM120_UNIFIED: "1"
+          B12X_MOE_FORCE_A8: "1"
           GLOO_SOCKET_IFNAME: "$IFACE_NAME"
           MN_IF_NAME: "$IFACE_NAME"
           NCCL_IB_DISABLE: "0"
@@ -213,9 +355,6 @@ variants:
           OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
           TP_SOCKET_IFNAME: "$IFACE_NAME"
           UCX_NET_DEVICES: "$IFACE_NAME"
-          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
-          VLLM_FLOAT32_MATMUL_PRECISION: "high"
-          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
       blackwell:
         extra_args:
           - "--moe-backend"
@@ -338,6 +477,19 @@ strategy_overrides:
           - "False"
           - "--moe-backend"
           - "auto"
+  multi_node_tp:
+    hardware_overrides:
+      # Multi-node TP is only enabled for DGX Spark in this recipe. Use a
+      # generation-level strategy override so it replaces the generic Blackwell
+      # FP4-indexer / deep_gemm_mega_moe overrides instead of layering on top.
+      blackwell:
+        extra_args:
+          - "--moe-backend"
+          - "b12x"
+          - "--linear-backend"
+          - "b12x"
+          - "--attention-backend"
+          - "B12X_MLA_SPARSE"
   pd_cluster:
     env:
       VLLM_USE_NCCL_SYMM_MEM: "1"
@@ -375,7 +527,7 @@ strategy_overrides:
 hardware_notes:
   dgx_spark_gb10:
     title: "DGX Spark setup required"
-    body: "This hardware uses the community eugr/spark-vllm:latest docker image and a 2-node TP launch. Before running the generated command, check the DGX Spark cluster guide for IFACE_NAME, IB_IF and HEAD_IP."
+    body: "This hardware uses the community eugr/spark-vllm-b12x:latest docker image and a 2-node TP launch. Before running the generated command, check the DGX Spark cluster guide for IFACE_NAME, IB_IF and HEAD_IP."
     link:
       label: "DGX Spark cluster guide"
       href: "#dgx-spark-gb10-cluster"
@@ -513,15 +665,14 @@ guide: |
 
   DGX Spark requires the community Spark vLLM build for this model rather than the
   stock vLLM release/nightly image. The **DGX Spark (GB10)** hardware pill pins the
-  Docker tab to [`eugr/spark-vllm:latest`](https://github.com/eugr/spark-vllm-docker),
-  whose build carries the Spark-specific DeepGEMM path for the GB10 / SM12x family.
+  Docker tab to `eugr/spark-vllm-b12x:latest`, whose build carries the B12X
+  backends and Spark-specific kernels for the GB10 / SM12x family.
 
   Use **2 nodes**. A single GB10's 128 GB unified memory is below the FP8/NVFP4
   checkpoint footprint, so the recipe grants DGX Spark a Spark-only **Multi-Node TP**
-  layout (`--tensor-parallel-size 2`, one GB10 per node). The generated Docker command
-  also sets the community build's DeepGEMM JIT guard (`DG_JIT_USE_NVRTC=0`) and
-  the Spark network environment; export `IFACE_NAME` and `IB_IF` on each node before
-  launching.
+  layout (`--tensor-parallel-size 2`, one GB10 per node). The generated command
+  also sets the B12X runtime environment and the Spark network environment; export
+  `IFACE_NAME`, `IB_IF` and `HEAD_IP` on each node before launching.
 
   To identify the values, first list the ConnectX Ethernet interfaces, RoCE
   devices and the IP address of the UP ConnectX interface on each Spark:
