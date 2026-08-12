@@ -17,3 +17,5 @@ public/providers/
 public/hf-dates.json
 public/*/
 !public/platform-logos/
+!public/media/
+!public/media/**

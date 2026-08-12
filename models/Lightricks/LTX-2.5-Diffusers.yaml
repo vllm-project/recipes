@@ -65,7 +65,6 @@ hardware_overrides: {}
 strategy_overrides: {}
 
 omni:
-  serve_binary: "vllm-omni serve"
   port: 8000
   task_label: "Generation Mode"
   task_hint: "Choose one-stage T2V/I2V, two-stage high-resolution T2V, or the 30-step Full/SFT T2V path."
@@ -171,6 +170,16 @@ guide: |
   - **Full/SFT:** 960x544 text-to-video using `transformer_full/`, the official
     dynamic sequence shift, and 30 denoising steps.
 
+  ## Generated reference videos
+
+  These lightweight previews were produced by the verified B300 runs below and
+  retain synchronized 48 kHz stereo audio:
+
+  - [One-stage text-to-video (MP4)](/media/ltx-2.5/one-stage-t2v.mp4)
+  - [First-frame image-to-video (MP4)](/media/ltx-2.5/first-frame-i2v.mp4)
+  - [Two-stage distilled text-to-video (MP4)](/media/ltx-2.5/two-stage-distilled-t2v.mp4)
+  - [Full/SFT text-to-video (MP4)](/media/ltx-2.5/full-sft-t2v.mp4)
+
   ## Prerequisites
 
   - Accept the gated LTX-2.5 community license on Hugging Face and run
@@ -211,7 +220,7 @@ guide: |
   ## One-stage text-to-video
 
   ```bash
-  vllm-omni serve Lightricks/LTX-2.5-Diffusers \
+  vllm serve Lightricks/LTX-2.5-Diffusers \
     --omni \
     --model-class-name LTX2Pipeline \
     --host 0.0.0.0 \
@@ -262,7 +271,7 @@ guide: |
   Select the two-stage native pipeline at server startup:
 
   ```bash
-  vllm-omni serve Lightricks/LTX-2.5-Diffusers \
+  vllm serve Lightricks/LTX-2.5-Diffusers \
     --omni \
     --model-class-name LTX2DistilledPipeline \
     --host 0.0.0.0 \
@@ -292,7 +301,7 @@ guide: |
   Select the Full/SFT transformer and its 30-step dynamic scheduler:
 
   ```bash
-  vllm-omni serve Lightricks/LTX-2.5-Diffusers \
+  vllm serve Lightricks/LTX-2.5-Diffusers \
     --omni \
     --model-class-name LTX2FullPipeline \
     --host 0.0.0.0 \
@@ -353,7 +362,7 @@ guide: |
   |---------|--------|-------|
   | `CUDNN_ATTN` | Release-qualified | Recommended B300 path; all four modes passed offline and online. |
   | `TORCH_SDPA` | Functional baseline | All four modes passed; intended for debugging and portability. |
-  | Native DP2 | Release-qualified | Two workers completed one fixed-seed request and a concurrent two-request wave. |
+  | Native DP2 | Unverified | The current run initialized two workers inside one stage replica; independent replica scheduling was not demonstrated. |
   | VAE slicing / tiling | Release-qualified | Slicing matched eager; tiling retained SSIM 0.9867 and reduced peak memory by 5.6%. |
   | HSDP2 / DLO DP2 / CPU offload | Capacity fallback | Outputs matched eager and reduced peak memory, but latency increased. |
   | TP2 / Ulysses SP2 / regional compile / FP8 / Cache-DiT | Experimental | Functional paths did not pass the fixed-seed quality gate. |
