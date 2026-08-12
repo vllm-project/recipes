@@ -557,6 +557,7 @@ variants:
         extra_env:
           VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "7200"
       ascend_950pr:
+        docker_image: "quay.io/ascend/vllm-omni:minimax-h3"
         extra_args:
           - "--num-gpus"
           - "1"
