@@ -32,6 +32,9 @@ model:
   # requirement here. Re-check at the next stable tag and pin it.
   min_vllm_version: "nightly"
   nightly_required: true
+  docker_image:
+    nvidia: "vllm/vllm-openai:qwen38"
+    amd: "vllm/vllm-openai-rocm:qwen38"
   architecture: moe
   parameter_count: "2.4T"
   active_parameters: "95B"
@@ -71,7 +74,7 @@ features:
     # value — tune 1-5 against your own acceptance rate rather than trusting this default.
     args:
       - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":1}'
+      - '{"method":"mtp","num_speculative_tokens":3}'
 
 opt_in_features:
   - spec_decoding
@@ -105,7 +108,7 @@ variants:
     supported_hardware: [mi300x, mi325x, mi355x]
     description: "MXFP4 build for AMD Instinct — 1.45 TiB, fits a single 8xMI355X or 8xMI325X node."
   nvfp4:
-    model_id: "Inferact/Qwen3.8-2.4T-A95B-NVFP4-W4A4"
+    model_id: "Inferact/Qwen3.8-2.4T-A95B-NVFP4"
     precision: nvfp4
     label: "NVFP4 (W4A4)"
     # Sized from the staged copy: quant_method `modelopt`, quant_algo `NVFP4`, index
