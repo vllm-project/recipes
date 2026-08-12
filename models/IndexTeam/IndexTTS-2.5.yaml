@@ -15,21 +15,18 @@ meta:
 
 model:
   model_id: "IndexTeam/IndexTTS-2.5"
-  min_vllm_version: "0.26.0"
+  min_vllm_version: "0.27.0"
   install:
     pip:
       command: 'uv pip install "vllm-omni[indextts2] @ git+https://github.com/vllm-project/vllm-omni.git"'
       note: "IndexTTS-2.5 support is included in vLLM-Omni; see the upstream IndexTTS-2.5 recipe for deployment details."
     docker: false
   architecture: dense
-  # IndexTeam has not published an authoritative total parameter count.
   parameter_count: "Undisclosed"
   active_parameters: "Undisclosed"
   context_length: 0
   base_args:
     - "--trust-remote-code"
-    - "--deploy-config"
-    - "vllm_omni/deploy/indextts2_5.yaml"
     - "--served-model-name"
     - "IndexTeam/IndexTTS-2.5"
   base_env: {}
@@ -83,8 +80,8 @@ guide: |
   text normalization, model-native speed control, and three emotion-conditioning
   modes through `/v1/audio/speech`.
 
-  The official total parameter count has not been disclosed. The model is
-  available from [IndexTeam/IndexTTS-2.5 on Hugging Face](https://huggingface.co/IndexTeam/IndexTTS-2.5).
+  The model is available from
+  [IndexTeam/IndexTTS-2.5 on Hugging Face](https://huggingface.co/IndexTeam/IndexTTS-2.5).
 
   ## Prerequisites
 
@@ -107,13 +104,12 @@ guide: |
 
   ## Launch the server
 
-  Run this command from a vLLM-Omni checkout so the deploy YAML is available:
+  IndexTTS-2.5's standard two-stage deploy config is selected automatically:
 
   ```bash
   vllm-omni serve IndexTeam/IndexTTS-2.5 \
     --omni \
     --trust-remote-code \
-    --deploy-config vllm_omni/deploy/indextts2_5.yaml \
     --served-model-name IndexTeam/IndexTTS-2.5 \
     --port 8092
   ```
@@ -150,9 +146,11 @@ guide: |
 
   ## Language and text controls
 
-  `extra_params.lang` accepts `zh` (Mandarin), `en` (English), `zhen`
-  (Chinese-English mixed), `ja` (Japanese), and `yue` (Cantonese). Text
-  normalization is enabled by default:
+  IndexTTS-2.5 officially supports `zh` (Chinese), `en` (English), `ja`
+  (Japanese), `es` (Spanish), and `ar` (Arabic). Pass the corresponding code
+  through `extra_params.lang`. vLLM-Omni also provides `zhen` as an additional
+  Chinese-English mixed-text preprocessing mode; it is not a separate model
+  language. Text normalization is enabled by default:
 
   ```json
   {
@@ -164,6 +162,10 @@ guide: |
     }
   }
   ```
+
+  Spanish and Arabic requests use `"lang": "es"` and `"lang": "ar"`,
+  respectively. Cantonese (`yue`) is not listed as an officially supported
+  IndexTTS-2.5 language.
 
   For Japanese, write numbers, dates, and percentages as readable Japanese
   text because the Japanese tokenizer does not automatically expand them.
