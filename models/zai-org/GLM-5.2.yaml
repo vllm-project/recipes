@@ -58,6 +58,8 @@ features:
           - redhat_nvfp4
           - bf16
           - mxfp4
+          - redhat_fp8
+          - redhat_nvfp4_plain
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":5}'
@@ -102,13 +104,28 @@ variants:
   redhat_nvfp4:
     model_id: "RedHatAI/GLM-5.2-NVFP4-FP8"
     precision: nvfp4
-    label: "NVFP4 (RedHat)"
+    label: "NVFP4+FP8 (RedHat)"
     vram_minimum_gb: 558
     description: "RedHatAI NVFP4+FP8 mixed-precision checkpoint (MoE expert linears NVFP4, attention/embeddings FP8) for Blackwell GPUs"
   bf16:
     precision: bf16
     vram_minimum_gb: 1786
     description: "Full precision BF16 — requires multi-node deployment"
+
+  redhat_fp8:
+    model_id: "RedHatAI/GLM-5.2-FP8"
+    precision: fp8
+    label: "FP8 (RedHat)"
+    vram_minimum_gb: 892
+    description: "RedHatAI FP8 quantization"
+
+  redhat_nvfp4_plain:
+    model_id: "RedHatAI/GLM-5.2-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 477
+    description: "RedHatAI NVFP4 quantization"
+
 
 compatible_strategies:
   - single_node_tp

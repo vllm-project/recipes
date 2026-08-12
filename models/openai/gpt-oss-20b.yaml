@@ -39,7 +39,14 @@ features:
       - "openai"
       - "--enable-auto-tool-choice"
 
-opt_in_features: []
+  spec_decoding:
+    description: "Eagle3 speculative decoding with externally trained draft model; the served checkpoint is unchanged."
+    args:
+      - "--speculative-config"
+      - '{"model": "RedHatAI/gpt-oss-20b-speculator.eagle3", "num_speculative_tokens": 3, "method": "eagle3"}'
+
+opt_in_features:
+  - spec_decoding
 
 variants:
   default:

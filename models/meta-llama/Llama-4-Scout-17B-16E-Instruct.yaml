@@ -80,6 +80,16 @@ variants:
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
+  redhat_fp8_block:
+    model_id: "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-block"
+    precision: fp8
+    label: "FP8 Block (RedHat)"
+    vram_minimum_gb: 131
+    description: "RedHatAI FP8 block quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
 compatible_strategies:
   - single_node_tp
   - single_node_tep
@@ -160,7 +170,6 @@ guide: |
       --host 0.0.0.0 \
       --port 8000
   ```
-
 
   ## Client Usage
 

@@ -69,10 +69,22 @@ features:
       - "--language-model-only"
   spec_decoding:
     description: "MTP speculative decoding for accelerated inference"
-    args:
-      - "--speculative-config"
-      - '{"model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":4}'
-
+    default_mode: mtp
+    modes:
+      mtp:
+        label: "MTP"
+        description: "Built-in Multi-Token Prediction, 4 draft tokens."
+        args:
+          - "--speculative-config"
+          - '{"model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":4}'
+      eagle3:
+        label: "Eagle3"
+        description: "Eagle3 speculative decoding with externally trained draft model; the served checkpoint is unchanged."
+        variants:
+          - default
+        args:
+          - "--speculative-config"
+          - '{"model": "RedHatAI/gemma-4-26B-A4B-it-speculator.eagle3", "num_speculative_tokens": 3, "method": "eagle3"}'
 opt_in_features:
   - text_only
   - spec_decoding

@@ -78,6 +78,15 @@ variants:
     vram_minimum_gb: 9
     description: "W4A16 QAT (4-bit weights, 16-bit activations, group_size=32) via compressed-tensors — runs on any GPU"
 
+  fp8:
+    model_id: "RedHatAI/gemma-4-12B-it-FP8-Dynamic"
+    precision: fp8
+    vram_minimum_gb: 15
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
 compatible_strategies:
   - single_node_tp
   - multi_node_tp

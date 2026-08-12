@@ -54,10 +54,38 @@ features:
       - "--language-model-only"
   spec_decoding:
     description: "MTP speculative decoding for accelerated inference"
-    args:
-      - "--speculative-config"
-      - '{"model":"google/gemma-4-31B-it-assistant","num_speculative_tokens":4}'
-
+    default_mode: mtp
+    modes:
+      mtp:
+        label: "MTP"
+        description: "Built-in Multi-Token Prediction, 4 draft tokens."
+        args:
+          - "--speculative-config"
+          - '{"model":"google/gemma-4-31B-it-assistant","num_speculative_tokens":4}'
+      dflash:
+        label: "DFlash"
+        description: "DFlash speculative decoding with an externally trained draft model; the served checkpoint is unchanged."
+        variants:
+          - default
+        args:
+          - "--speculative-config"
+          - '{"model": "RedHatAI/gemma-4-31B-it-speculator.dflash", "num_speculative_tokens": 7, "method": "dflash"}'
+      dspark:
+        label: "DSpark"
+        description: "DSpark drafting with an externally trained draft model; the served checkpoint is unchanged."
+        variants:
+          - default
+        args:
+          - "--speculative-config"
+          - '{"model": "RedHatAI/gemma-4-31B-it-speculator.dspark", "num_speculative_tokens": 7, "method": "dspark"}'
+      eagle3:
+        label: "Eagle3"
+        description: "Eagle3 speculative decoding with externally trained draft model; the served checkpoint is unchanged."
+        variants:
+          - default
+        args:
+          - "--speculative-config"
+          - '{"model": "RedHatAI/gemma-4-31B-it-speculator.eagle3", "num_speculative_tokens": 3, "method": "eagle3"}'
 opt_in_features:
   - text_only
   - spec_decoding
@@ -97,6 +125,16 @@ variants:
     precision: int4
     vram_minimum_gb: 20
     description: "W4A16 QAT (4-bit weights, 16-bit activations, group_size=32) via compressed-tensors — runs on any GPU"
+
+  redhat_fp8:
+    model_id: "RedHatAI/gemma-4-31B-it-FP8-block"
+    precision: fp8
+    label: "FP8 Block (RedHat)"
+    vram_minimum_gb: 38
+    description: "RedHatAI FP8 block quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
 
 compatible_strategies:
   - single_node_tp

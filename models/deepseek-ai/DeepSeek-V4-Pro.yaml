@@ -37,7 +37,6 @@ model:
     - "--block-size"
     - "256"
 
-
 dependencies:
   - note: "DeepGEMM FP8 kernels — install via vLLM tools/install_deepgemm.sh"
     command: "bash <(curl -fsSL https://raw.githubusercontent.com/vllm-project/vllm/main/tools/install_deepgemm.sh)"
@@ -72,6 +71,7 @@ features:
         variants:
           - default
           - nvfp4
+          - redhat_nvfp4
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":2}'
@@ -127,6 +127,13 @@ variants:
         extra_args:
           - "--moe-backend"
           - "deep_gemm_mega_moe"
+
+  redhat_nvfp4:
+    model_id: "RedHatAI/DeepSeek-V4-Pro-NVFP4-FP8"
+    precision: nvfp4
+    label: "NVFP4+FP8 (RedHat)"
+    vram_minimum_gb: 1000
+    description: "RedHatAI NVFP4+FP8 mixed-precision checkpoint"
 
 compatible_strategies:
   - single_node_tp

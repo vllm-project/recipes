@@ -106,6 +106,14 @@ features:
               - "--speculative-config"
               - '{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","attention_backend":"B12X_MLA_SPARSE"}'
 
+      dflash:
+        label: "DFlash"
+        description: "DFlash speculative decoding with an externally trained draft model; the served checkpoint is unchanged."
+        variants:
+          - default
+        args:
+          - "--speculative-config"
+          - '{"model":"RedHatAI/DeepSeek-V4-Flash-speculator.dflash","num_speculative_tokens":7,"method":"dflash"}'
 opt_in_features:
   - spec_decoding
 
