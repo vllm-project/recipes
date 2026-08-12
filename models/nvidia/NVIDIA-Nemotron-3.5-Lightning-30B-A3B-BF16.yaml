@@ -203,5 +203,9 @@ guide: |
 
   ## Notes
 
-  - **Speculative decoding**: DSpark is the preferred method on H100 and DGX Spark. On
-    DGX Station, prefer MTP — select it from the Speculative Decoding row above.
+  - **Speculative decoding**: DSpark is preferred on DGX Spark. On DGX Station, prefer
+    MTP:
+
+    ```bash
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+    ```
