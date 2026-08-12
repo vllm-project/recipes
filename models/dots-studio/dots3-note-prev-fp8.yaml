@@ -47,6 +47,12 @@ features:
     args:
       - "--reasoning-parser"
       - "qwen3"
+  tool_calling:
+    description: "Parse Dots3Note's native XML tool-call format with automatic tool choice."
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "dots"
   text_only:
     description: "Load only the language model for text workloads, skipping the vision and audio encoders."
     args:
@@ -244,6 +250,27 @@ guide: |
     --moe-backend deep_gemm
   ```
 
+  ### Tool calling
+
+  Dots3Note emits tool calls inside `<dots_function_call>` XML wrappers. Enable
+  automatic tool choice with the native `dots` parser. These options can be combined
+  with any parallel strategy, `--language-model-only`, and MTP speculative decoding.
+
+  ```bash
+  vllm serve dots-studio/dots3-note-prev-fp8 \
+    --host 0.0.0.0 \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --enable-auto-tool-choice \
+    --tool-call-parser dots \
+    --gpu-memory-utilization 0.9 \
+    --max-model-len 262144 \
+    --max-num-batched-tokens 8192 \
+    --block-size 64 \
+    --mm-processor-cache-gb 32 \
+    --moe-backend deep_gemm
+  ```
+
   ## Client usage
 
   ```bash
@@ -272,6 +299,8 @@ guide: |
     unquantized and must use `--moe-backend triton`.
   - MTP changes decode scheduling and memory use. Benchmark it against non-speculative
     decoding with the same prompt/output distribution before production deployment.
+  - `--tool-call-parser dots` supports the model's XML invoke/parameter format and its
+    JSON fallback format, including multiple tool calls in one response.
 
   ## References
 
