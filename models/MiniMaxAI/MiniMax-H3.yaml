@@ -129,11 +129,11 @@ omni:
               -F 'seed=1101' \
               -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
               -o t2va.mp4
-         ascend_950pr:
-           vram_minimum_gb: 128
-           extra_args: ["--task-type", "fl2va"]
-           curl: |
-             curl -sS -X POST http://localhost:8000/v1/videos/sync \
+        ascend_950pr:
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "fl2va"]
+          curl: |
+            curl -sS -X POST http://localhost:8000/v1/videos/sync \
               -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
               -F 'width=1024' \
               -F 'height=576' \
@@ -1140,21 +1140,21 @@ guide: |
   VLLM_WORKER_MULTIPROC_METHOD=spawn \
   VLLM_OMNI_VIDEO_SYNC_TIMEOUT=14400 \
   vllm serve /path/to/MiniMax-H3/FL2VA \
-  --omni \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --trust-remote-code \
-  --num-gpus 1 \
-  --tensor-parallel-size 1 \
-  --usp 1 \
-  --ring 1 \
-  --text-encoder-tp-size 1 \
-  --vae-patch-parallel-size 1 \
-  --vae-parallel-mode tile \
-  --vae-use-tiling \
-  --init-timeout 14400 \
-  --stage-init-timeout 14400 \
-  --quantization int8
+    --omni \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --trust-remote-code \
+    --num-gpus 1 \
+    --tensor-parallel-size 1 \
+    --usp 1 \
+    --ring 1 \
+    --text-encoder-tp-size 1 \
+    --vae-patch-parallel-size 1 \
+    --vae-parallel-mode tile \
+    --vae-use-tiling \
+    --init-timeout 14400 \
+    --stage-init-timeout 14400 \
+    --quantization int8
   ```
   
   ## Text-encoder tensor parallelism
