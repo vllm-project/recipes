@@ -3,8 +3,8 @@ meta:
   slug: "dots3-note"
   provider: "Dots"
   description: "Multimodal MoE model available in BF16 and native FP8, with hybrid DSA/full and sliding-window attention, 384K context, and MTP speculative decoding."
-  date_added: 2026-08-09
-  date_updated: 2026-08-10
+  date_added: 2026-08-13
+  date_updated: 2026-08-13
   difficulty: advanced
   tasks:
     - multimodal
@@ -65,6 +65,7 @@ features:
 
 opt_in_features:
   - reasoning
+  - tool_calling
   - text_only
   - spec_decoding
 
