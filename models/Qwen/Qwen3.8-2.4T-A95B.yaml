@@ -1,0 +1,296 @@
+meta:
+  title: "Qwen3.8-2.4T-A95B"
+  slug: "qwen3.8-2.4t-a95b"
+  provider: "Qwen"
+  description: "2.4T-parameter hybrid-attention MoE (~95B active) with linear attention on 69 of 92 layers, 512 routed experts, a built-in MTP draft head, and a 262K context window"
+  date_added: 2026-08-10
+  date_updated: 2026-08-10
+  difficulty: advanced
+  tasks:
+    - text
+  performance_headline: "MXFP4 and NVFP4 W4A4 builds bring a 2.4T model down to a single node"
+  related_recipes:
+    - "Qwen/Qwen3.5-397B-A17B"
+  default_hardware: b300
+  # No `hardware:` block on purpose. `verified` means the recipe has been run end-to-end
+  # on that GPU, and this one has not been served yet — the checkpoints are staged and
+  # content-verified, nothing more. Absent is the honest silent default; nothing is marked
+  # `unsupported` either, because no configuration has been observed to fail.
+
+model:
+  # Upstream renamed this repo on 2026-08-10: it was `Qwen/Qwen3.8-2.4T-A95B-0807`, and
+  # that id now redirects here. A DIFFERENT, older checkpoint used to hold this name and
+  # was moved to `Qwen/Qwen3.8-2.4T-A95B-Deprecated` — 260 files, a per-expert tensor
+  # layout, and `Qwen3_5MoeForConditionalGeneration` with a vision tower. Do not point at
+  # the Deprecated repo; it is a different model, not an older commit of this one.
+  model_id: "Qwen/Qwen3.8-2.4T-A95B"
+  # Verified against upstream, not taken from the model card (the README is a stub):
+  # `Qwen3_5MoeForCausalLM` — the architecture this checkpoint declares — is present in
+  # vllm/model_executor/models/registry.py on `main` but ABSENT at v0.26.0, the latest
+  # stable release, whose docs/models/supported_models.md lists only the
+  # `*ForConditionalGeneration` members of the Qwen3.5 family. Nightly is a real
+  # requirement here. Re-check at the next stable tag and pin it.
+  min_vllm_version: "nightly"
+  nightly_required: true
+  docker_image:
+    nvidia: "vllm/vllm-openai:qwen38"
+    amd: "vllm/vllm-openai-rocm:qwen38"
+  architecture: moe
+  parameter_count: "2.4T"
+  active_parameters: "95B"
+  # config.json max_position_embeddings, and tokenizer_config.json now agrees (262144).
+  # An earlier revision shipped model_max_length 131072, which silently capped context at
+  # 128K — check both fields if you pin an older commit.
+  context_length: 262144
+  # No --trust-remote-code: config.json carries no `auto_map`, so there is no remote code
+  # to trust — vLLM's own handler loads this architecture.
+  base_args: []
+  base_env:
+    # Weight load runs from 1.32 TiB (NVFP4) to 4.45 TiB (BF16). The default readiness
+    # window expires long before the first token on a cold shared filesystem.
+    VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+
+dependencies:
+  - note: "config.json declares transformers_version 5.4.0; older releases do not know this model_type."
+    command: 'uv pip install -U "transformers>=5.4.0"'
+
+features:
+  tool_calling:
+    description: "Enable automatic tool choice. The chat template emits tool calls as <tool_call><function=…><parameter=…> XML, which is the qwen3_coder format — not JSON."
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "qwen3_coder"
+  reasoning:
+    description: "Parse <think> blocks separately from the final answer. The template opens every assistant turn with <think>, so without this the reasoning lands in message.content."
+    args:
+      - "--reasoning-parser"
+      - "qwen3"
+  spec_decoding:
+    description: "Multi-token prediction using the draft head shipped inside the checkpoint — no separate speculator repo needed."
+    # config.json sets mtp_num_hidden_layers: 1 and the weight index carries `mtp.*`
+    # tensors, so the draft head is present. num_speculative_tokens is left at 1 (MTP-1,
+    # matching the single draft layer) because the model card publishes no recommended
+    # value — tune 1-5 against your own acceptance rate rather than trusting this default.
+    args:
+      - "--speculative-config"
+      - '{"method":"mtp","num_speculative_tokens":3}'
+
+opt_in_features:
+  - spec_decoding
+
+# vram_minimum_gb is ceil(real safetensors total_size in GB x 1.2) for every variant, not
+# params x bytes_per_param: at 2.4T the rounded parameter count is worth ~50 GB of error,
+# and the quantized builds are not uniformly 4-bit.
+variants:
+  default:
+    precision: bf16
+    # index total_size 4,892,388,705,238 B = 4892.4 GB
+    vram_minimum_gb: 5871
+    description: "Full-precision BF16 — 4.45 TiB of weights, so at least 3 B300 nodes."
+  fp8:
+    model_id: "Qwen/Qwen3.8-2.4T-A95B-FP8"
+    precision: fp8
+    # index total_size 2,496,154,358,768 B = 2496.2 GB. Block-scaled FP8
+    # (quantization_config.weight_block_size [128, 128]).
+    vram_minimum_gb: 2996
+    description: "Official block-scaled FP8 checkpoint — 2.27 TiB, 2 B300 nodes."
+  mxfp4:
+    model_id: "Inferact/Qwen3.8-2.4T-A95B-MXFP4"
+    precision: mxfp4
+    label: "MXFP4 (AMD)"
+    # Sized from the staged copy of this build: config.json quantization_config
+    # quant_method `mxfp4`, index total_size 1,597,051,793,152 B = 1597.1 GB.
+    # It declares the same Qwen3_5MoeForCausalLM / 92 layers / 512 experts as the base.
+    vram_minimum_gb: 1917
+    # AMD-targeted build. MXFP4 is not brand-restricted by default in this catalog, so the
+    # allowlist is explicit rather than implied by the precision.
+    supported_hardware: [mi300x, mi325x, mi355x]
+    description: "MXFP4 build for AMD Instinct — 1.45 TiB, fits a single 8xMI355X or 8xMI325X node."
+  nvfp4:
+    model_id: "Inferact/Qwen3.8-2.4T-A95B-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (W4A4)"
+    # Sized from the staged copy: quant_method `modelopt`, quant_algo `NVFP4`, index
+    # total_size 1,447,265,951,488 B = 1447.3 GB. Same base architecture as above.
+    vram_minimum_gb: 1737
+    # NVFP4 already implies NVIDIA Blackwell in this catalog; listed explicitly because
+    # W4A4 quantizes activations too and has not been exercised on every profile here.
+    supported_hardware: [b200, b300, gb200, gb300]
+    # FlashInfer CuTe-DSL GEMM kernels. vLLM's own description of this value is
+    # "(NVFP4, MXFP8)", so it belongs to this variant specifically — not to the
+    # block-scaled FP8 checkpoint, not to BF16 (no quantized linears at all), and not to
+    # the MXFP4 build, whose ROCm path is the `aiter` backend instead. CUDA-only.
+    extra_args:
+      - "--linear-backend"
+      - "flashinfer_cutedsl"
+    description: "NVFP4 build with 4-bit activations for NVIDIA Blackwell — 1.32 TiB, the smallest footprint; fits a single 8xB300 node."
+
+# Full MoE strategy set. Note the 3.4x spread between variants: NVFP4/MXFP4 fit one node
+# on the largest profiles while BF16 needs three, so `strategy_min_gpus` is deliberately
+# NOT set — a per-recipe floor sized for BF16 would block the single-node layout the
+# quantized builds exist to enable. Per-variant node counts are in the guide instead, and
+# vram_minimum_gb carries the display hint the command builder uses.
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - single_node_dep
+  - multi_node_tp
+  - multi_node_tep
+  - multi_node_dep
+  - multi_node_tp_pp
+  - pd_cluster
+
+hardware_overrides: {}
+
+# `--all2all-backend` only governs MoE expert-parallel communication, so it is set on the
+# EP strategies and nowhere else: under plain TP the 512 routed experts are TP-sharded and
+# no all2all happens, so the flag would be inert noise on single_node_tp / multi_node_tp /
+# multi_node_tp_pp.
+#
+# `allgather_reducescatter` is also vLLM's CURRENT DEFAULT (vllm/config/parallel.py), so
+# this is a pin rather than a change — it keeps the recipe on the allgather+reducescatter
+# path if the default moves, and documents the choice against the deepep / mori / nixl_ep /
+# flashinfer_nvlink alternatives. Swap to `deepep_low_latency` or
+# `flashinfer_nvlink_one_sided` only with a measurement to justify it.
+strategy_overrides:
+  single_node_tep:
+    extra_args:
+      - "--all2all-backend"
+      - "allgather_reducescatter"
+  single_node_dep:
+    extra_args:
+      - "--all2all-backend"
+      - "allgather_reducescatter"
+  multi_node_tep:
+    extra_args:
+      - "--all2all-backend"
+      - "allgather_reducescatter"
+  multi_node_dep:
+    extra_args:
+      - "--all2all-backend"
+      - "allgather_reducescatter"
+
+guide: |
+  ## Overview
+
+  Qwen3.8-2.4T-A95B is a 2.4-trillion-parameter Mixture-of-Experts model with roughly 95B
+  parameters active per token — 512 routed experts with 10 active, plus one shared expert,
+  over a 92-layer hybrid-attention backbone.
+
+  **The layer mix is the interesting part.** Only 23 of the 92 layers run full attention
+  (`full_attention_interval: 4`); the other 69 run linear attention with a constant
+  recurrent state. This is a text-only causal LM: the architecture is
+  `Qwen3_5MoeForCausalLM`, `config.json` has no `vision_config`, and the weight index
+  contains zero vision tensors.
+
+  ## Prerequisites
+
+  - **vLLM: nightly.** for the best performance
+  - **transformers >= 5.4.0**, per the version recorded in `config.json`.
+
+  ```bash
+  uv venv && source .venv/bin/activate
+  uv pip install -U vllm --extra-index-url https://wheels.vllm.ai/nightly
+  uv pip install -U "transformers>=5.4.0"
+  ```
+
+  ## Choosing a variant
+
+  | Variant | Weights | Sized | 8xB300 (2144 GB) | 8xMI355X (2304 GB) | 8xH200 (1128 GB) |
+  |---|---:|---:|---:|---:|---:|
+  | BF16 | 4.45 TiB | 5871 GB | 3 nodes | 3 nodes | 6 nodes |
+  | FP8 | 2.27 TiB | 2996 GB | 2 nodes | 2 nodes | 4 nodes |
+  | MXFP4 (AMD) | 1.45 TiB | 1917 GB | — | **1 node** | 2 nodes |
+  | NVFP4 W4A4 (NVIDIA) | 1.32 TiB | 1737 GB | **1 node** | — | 2 nodes |
+
+  The two 4-bit builds are what make this model single-node: MXFP4 targets AMD Instinct,
+  NVFP4 W4A4 targets NVIDIA Blackwell.
+
+  ## Launch commands
+
+  Single node, NVFP4 W4A4 on 8xB300:
+
+  ```bash
+  vllm serve Inferact/Qwen3.8-2.4T-A95B-NVFP4-W4A4 \
+    --tensor-parallel-size 8 \
+    --max-model-len 262144 \
+    --kv-cache-dtype fp8 \
+    --reasoning-parser qwen3 \
+    --enable-auto-tool-choice --tool-call-parser qwen3_coder
+  ```
+
+  Single node, MXFP4 on 8xMI355X — swap the model id and drop `--kv-cache-dtype fp8`
+  unless you have confirmed the ROCm path supports it in your build.
+
+  Two 8xB300 nodes, FP8, pure tensor parallel. Same command on both nodes, changing only
+  `--node-rank`:
+
+  ```bash
+  vllm serve Qwen/Qwen3.8-2.4T-A95B-FP8 \
+    --tensor-parallel-size 16 \
+    --nnodes 2 --node-rank 0 --master-addr $HEAD_ADDR \
+    --max-model-len 262144 \
+    --kv-cache-dtype fp8 \
+    --reasoning-parser qwen3
+  ```
+
+  Pipeline parallelism is offered as `multi_node_tp_pp`, but hybrid linear-attention
+  models have historically lagged on PP support — confirm it loads before planning a
+  layout around it.
+
+  ## Client usage
+
+  `generation_config.json` ships `temperature: 1.0`, `top_p: 0.95`, `top_k: 20`. Use them;
+  an earlier revision shipped `temperature: 0.6`, so don't rely on remembered defaults.
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1", timeout=3600)
+
+  resp = client.chat.completions.create(
+      model="Qwen/Qwen3.8-2.4T-A95B",
+      messages=[{"role": "user", "content": "Give me three primes above 100."}],
+      temperature=1.0, top_p=0.95, max_tokens=2048,
+  )
+  print(resp.choices[0].message.content)
+  ```
+
+  ### Thinking mode
+
+  The template opens each assistant turn with `<think>`, so a short `max_tokens` can
+  return an empty `content` — the budget went to reasoning. To turn thinking off:
+
+  ```bash
+  --default-chat-template-kwargs '{"enable_thinking": false}'
+  ```
+
+  which emits a pre-closed `<think></think>` block instead.
+
+  ### Multi-turn reasoning history
+
+  By default the template **strips `<think>` blocks from older assistant turns**, keeping
+  them only after the last user query. Pass `preserve_thinking: true` in
+  `chat_template_kwargs` to retain the full history — it changes what the model sees, so
+  it changes behaviour.
+
+  ## Troubleshooting
+
+  **CUDA graph / recurrent-state cache size error.** On hybrid models an
+  `assert num_cache_lines >= batch` failure means the CUDA-graph capture size exceeds the
+  state cache. Reduce `--max-cudagraph-capture-size` (default 512), or fall back to
+  `--compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}'` if full capture
+  misbehaves on this architecture. See <https://github.com/vllm-project/vllm/pull/34571>.
+
+  **Engine start times out.** Raise `VLLM_ENGINE_READY_TIMEOUT_S` (set to 3600 by this
+  recipe) and prefer a real `/v1/chat/completions` probe over `/health` for readiness —
+  loading terabytes plus kernel JIT takes minutes.
+
+  ## References
+
+  - Model card: https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B
+  - FP8 checkpoint: https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B-FP8
+  - MXFP4 build (AMD): https://huggingface.co/Inferact/Qwen3.8-2.4T-A95B-MXFP4
+  - NVFP4 W4A4 build (NVIDIA): https://huggingface.co/Inferact/Qwen3.8-2.4T-A95B-NVFP4-W4A4
+  - vLLM documentation: https://docs.vllm.ai/
