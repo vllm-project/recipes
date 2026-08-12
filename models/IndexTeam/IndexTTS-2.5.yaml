@@ -4,7 +4,7 @@ meta:
   provider: "IndexTeam"
   description: "Multilingual zero-shot voice-cloning TTS with native speed, emotion, and text-normalization controls, served through vLLM-Omni's OpenAI-compatible speech API."
   date_added: 2026-08-10
-  date_updated: 2026-08-10
+  date_updated: 2026-08-12
   difficulty: intermediate
   tasks:
     - omni
@@ -19,7 +19,7 @@ model:
   install:
     pip:
       command: 'uv pip install "vllm-omni[indextts2] @ git+https://github.com/vllm-project/vllm-omni.git"'
-      note: "IndexTTS-2.5 support requires vLLM-Omni PR #5957 or a later revision containing that change."
+      note: "IndexTTS-2.5 support is included in vLLM-Omni; see the upstream IndexTTS-2.5 recipe for deployment details."
     docker: false
   architecture: dense
   # IndexTeam has not published an authoritative total parameter count.
@@ -40,7 +40,7 @@ omni:
   tasks:
     - id: t2a
       label: "Text → Speech"
-      model_id: "/path/to/indextts-2.5"
+      model_id: "IndexTeam/IndexTTS-2.5"
       endpoint: "/v1/audio/speech"
       description: "Multilingual voice cloning with native speed and emotion controls (22.05 kHz mono WAV)"
       curl: |
@@ -83,22 +83,20 @@ guide: |
   text normalization, model-native speed control, and three emotion-conditioning
   modes through `/v1/audio/speech`.
 
-  The official total parameter count has not been disclosed. The
-  `IndexTeam/IndexTTS-2.5` Hugging Face repository is not currently readable
-  through the public unauthenticated API, so this recipe intentionally uses a
-  **local native model bundle** instead of claiming automatic model download.
+  The official total parameter count has not been disclosed. The model is
+  available from [IndexTeam/IndexTTS-2.5 on Hugging Face](https://huggingface.co/IndexTeam/IndexTTS-2.5).
 
   ## Prerequisites
 
-  - Obtain an authorized IndexTTS-2.5 native bundle and place it at
-    `/path/to/indextts-2.5`. The nested upstream `checkpoints/` layout is
-    accepted.
+  - Download access to [IndexTeam/IndexTTS-2.5 on Hugging Face](https://huggingface.co/IndexTeam/IndexTTS-2.5).
+    vLLM-Omni also accepts an already-downloaded native bundle and its nested
+    upstream `checkpoints/` layout.
   - Use a CUDA GPU with enough memory for both stages. The standard deploy
     config reserves up to `0.4` GPU-memory utilization per stage on one GPU;
     lower-memory profiles have not been validated.
-  - Use vLLM-Omni PR
-    [#5957](https://github.com/vllm-project/vllm-omni/pull/5957) or a later
-    revision containing IndexTTS-2.5 support.
+  - Follow the merged
+    [vLLM-Omni IndexTTS-2.5 recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/IndexTeam/IndexTTS-2_5.md)
+    for the upstream serving requirements.
 
   ## Installation
 
@@ -112,7 +110,7 @@ guide: |
   Run this command from a vLLM-Omni checkout so the deploy YAML is available:
 
   ```bash
-  vllm-omni serve /path/to/indextts-2.5 \
+  vllm-omni serve IndexTeam/IndexTTS-2.5 \
     --omni \
     --trust-remote-code \
     --deploy-config vllm_omni/deploy/indextts2_5.yaml \
@@ -253,5 +251,5 @@ guide: |
   ## References
 
   - [IndexTTS-2.5 model page](https://huggingface.co/IndexTeam/IndexTTS-2.5)
-  - [vLLM-Omni IndexTTS-2.5 support PR](https://github.com/vllm-project/vllm-omni/pull/5957)
+  - [vLLM-Omni IndexTTS-2.5 recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/IndexTeam/IndexTTS-2_5.md)
   - [vLLM-Omni repository](https://github.com/vllm-project/vllm-omni)
