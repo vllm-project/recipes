@@ -25,7 +25,6 @@ meta:
     mi355x: verified
     arc_pro_b60: verified
     arc_pro_b70: verified
-    xeon6: verified
 
 model:
   model_id: "meta-models/Muse-Glimmer-30B"
@@ -254,14 +253,11 @@ guide: |
   **Intel GPU (XPU):**
 
   ```bash
-  git clone https://github.com/vllm-project/vllm.git
-  cd vllm
-  docker build -f docker/Dockerfile.xpu -t vllm-xpu-env --shm-size=4g .
   docker run -it --rm --network=host --ipc=host --privileged \
     --device /dev/dri:/dev/dri \
     -v /dev/dri/by-path:/dev/dri/by-path \
     --entrypoint bash \
-    vllm-xpu-env
+    vllm/vllm-openai-xpu:latest
   ```
 
   Serve inside the container — `--enforce-eager` is required on the XPU backend:
@@ -271,19 +267,6 @@ guide: |
     --tensor-parallel-size 4 \
     --reasoning-parser muse_glimmer \
     --enforce-eager
-  ```
-
-  **Intel Xeon CPU:**
-
-  ```bash
-  git clone https://github.com/vllm-project/vllm.git
-  cd vllm
-  docker build -f docker/Dockerfile.cpu --tag vllm-cpu-env --target vllm-openai .
-  docker run -it --rm --privileged --shm-size=4g --entrypoint bash vllm-cpu-env
-
-  vllm serve meta-models/Muse-Glimmer-30B \
-    --tensor-parallel-size 2 \
-    --reasoning-parser muse_glimmer
   ```
 
   ## Sampling
