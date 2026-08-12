@@ -24,15 +24,7 @@ meta:
 
 model:
   model_id: "moonshotai/Kimi-K3"
-  min_vllm_version: "0.27.0"
-  docker_image:
-    nvidia:
-      # The K3 preview image is published as a CUDA 13 build only — Docker Hub
-      # has no kimi-k3-cu129 tag. Single-key map: the site pins cu130 and
-      # hides the cu129 toggle instead of fabricating a nonexistent tag.
-      cu130: "vllm/vllm-openai:kimi-k3"
-    amd: "vllm/vllm-openai-rocm:kimi-k3"
-  nightly_required: true
+  min_vllm_version: "0.27.1"
   install:
     docker:
       note: "Use a K3-enabled nightly image after the integration lands. CUDA 13 (cu130) build only — no -cu129 tag; the host needs an r580+ NVIDIA driver."
