@@ -35,7 +35,7 @@ variants:
   nvfp4:
     model_id: "AGIcafet/ThaiLLM-30B-NVFP4"
     precision: nvfp4
-    vram_minimum_gb: 19
+    vram_minimum_gb: 24
     tp: 1
     description: "Community TensorRT Model Optimizer NVFP4 checkpoint (bilingual Thai/English calibration), validated on DGX Spark with a paired BF16-vs-NVFP4 Thai/English evaluation"
     extra_args:
