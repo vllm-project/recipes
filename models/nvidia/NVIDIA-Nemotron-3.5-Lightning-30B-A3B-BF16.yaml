@@ -17,10 +17,8 @@ meta:
 
 model:
   model_id: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
-  min_vllm_version: "0.25.0"
-  nightly_required: true
-  # The nightly the vLLM day-0 blog post validated this model on.
-  docker_image: "vllm/vllm-openai:nightly-b22afe45ac797ae58e67a7a3ad79ee5714024420"
+  min_vllm_version: "0.27.1"
+  docker_image: "vllm/vllm-openai:v0.27.1"
   architecture: moe
   parameter_count: "30B"
   active_parameters: "3B"
@@ -164,11 +162,11 @@ guide: |
   ## Prerequisites
 
   - Hardware: 1x H100, 1x DGX Spark (GB10), or 1x DGX Station (GB300)
-  - A vLLM nightly — the Mamba cache flags and the DSpark speculator are not in a
-    stable release yet
+  - vLLM 0.27.1 or newer — it carries the DSpark/DFlash speculators, the Humming W4A16
+    backends, and the Mamba cache flags this recipe uses
 
   ```bash
-  docker pull vllm/vllm-openai:nightly-b22afe45ac797ae58e67a7a3ad79ee5714024420
+  docker pull vllm/vllm-openai:v0.27.1
   ```
 
   ## Launch commands
