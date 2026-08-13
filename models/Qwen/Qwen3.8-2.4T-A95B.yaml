@@ -2,7 +2,7 @@ meta:
   title: "Qwen3.8-2.4T-A95B"
   slug: "qwen3.8-2.4t-a95b"
   provider: "Qwen"
-  description: "2.4T-parameter hybrid-attention MoE (~95B active) with linear attention on 69 of 92 layers, 512 routed experts, a built-in MTP draft head, and a 262K context window"
+  description: "2.4T-parameter hybrid-attention MoE (~95B active) with linear attention on 69 of 92 layers, 512 routed experts, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-10
   date_updated: 2026-08-10
   difficulty: advanced
@@ -41,10 +41,12 @@ model:
   # config.json max_position_embeddings, and tokenizer_config.json now agrees (262144).
   # An earlier revision shipped model_max_length 131072, which silently capped context at
   # 128K — check both fields if you pin an older commit.
-  context_length: 262144
+  context_length: 1010000
   # No --trust-remote-code: config.json carries no `auto_map`, so there is no remote code
   # to trust — vLLM's own handler loads this architecture.
-  base_args: []
+  base_args:
+    - "--max-model-len"
+    - "1010000"
   base_env:
     # Weight load runs from 1.32 TiB (NVFP4) to 4.45 TiB (BF16). The default readiness
     # window expires long before the first token on a cold shared filesystem.
@@ -289,6 +291,10 @@ guide: |
 
   The linear backend feature "--linear-backend flashinfer_cutedsl" is Docker only until
   FlashInfer version upgrade in the vllm build.
+
+  **Context length** The model has 262k native context length and it can be extended to 1M 
+  with --max-model-len flag. You can pick the correct value based on the use case and GPU
+  ram usage tradeoff.
 
   ## References
 
