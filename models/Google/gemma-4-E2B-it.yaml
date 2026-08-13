@@ -3,7 +3,7 @@ meta:
   slug: "gemma-4-e2b-it"
   provider: "Google"
   description: "Google's compact Gemma 4 multimodal model (effective 2B) with native text, image, and audio, plus thinking mode and tool-use protocol."
-  date_updated: 2026-05-11
+  date_updated: 2026-08-13
   difficulty: beginner
   tasks:
     - multimodal
@@ -21,6 +21,7 @@ meta:
     trillium: verified
     ironwood: verified
     xeon6: verified
+    max1550: verified
 
 model:
   model_id: "google/gemma-4-E2B-it"
@@ -98,6 +99,16 @@ hardware_overrides:
     extra_env:
       VLLM_CPU_KVCACHE_SPACE: "40"
       VLLM_CPU_ATTN_SPLIT_KV: "0"
+  xpu:
+    extra_args:
+      - "--tensor-parallel-size"
+      - "1"
+      - "--dtype"
+      - "bfloat16"
+    extra_env:
+      ZE_AFFINITY_MASK: "0"
+      VLLM_TARGET_DEVICE: "xpu"
+      TORCH_COMPILE_DISABLE: "1"
 
 strategy_overrides:
   single_node_tp:
@@ -148,6 +159,7 @@ guide: |
   docker pull vllm/vllm-openai:gemma4-0505-cu130  # NVIDIA Blackwell (B200/B300, CUDA 13.0)
   docker pull vllm/vllm-openai-rocm:latest   # AMD
   docker pull vllm/vllm-openai-cpu:latest-x86_64 # For Intel Xeon 6
+  docker pull intel/vllm:latest  # Intel XPU
   ```
 
   ## Deployment Configurations
@@ -235,6 +247,28 @@ guide: |
       --host 0.0.0.0 \
       --port 8000
   ```
+
+  ### Intel XPU (Data Center GPU Max 1550) Deployment via Docker
+
+  For Intel XPU on Max 1550 (PCIe topology), use TP=1 for stable inference bring-up:
+
+  ```bash
+  docker run -itd --name gemma4-e2b-xpu \
+    --device /dev/dri --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e ZE_AFFINITY_MASK=0 \
+    -e VLLM_TARGET_DEVICE=xpu \
+    -e TORCH_COMPILE_DISABLE=1 \
+    intel/vllm:latest \
+      --model google/gemma-4-E2B-it \
+      --dtype bfloat16 \
+      --tensor-parallel-size 1 \
+      --host 0.0.0.0 \
+      --port 8000
+  ```
+
+  > Note: In PCIe-only Max 1550 environments (without XeLink), `--tensor-parallel-size 2` may hang on first inference. Keep TP=1 unless your topology/runtime validation confirms TP>1 stability.
 
 
   ## Client Usage
