@@ -1273,8 +1273,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         const modeKey = resolveModeKey(feat, f, variant, variantKey, hwProfile, hwProfileId, featureModes?.[f]);
         const mode = modeKey ? feat.modes[modeKey] : null;
         if (mode) {
-          const modeHo = mode.hardware_overrides?.[gen]
-            || (isNvidia ? mode.hardware_overrides?.nvidia : null);
+          const modeHo = hardwareKeyedValue(mode.hardware_overrides, hwProfile, hwProfileId);
           const modeArgs = modeHo?.args ?? mode.args;
           if (modeArgs) args.push(...modeArgs);
         }
