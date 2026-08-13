@@ -2,7 +2,7 @@ meta:
   title: "Dots3Note"
   slug: "dots3-note-prev"
   provider: "Dots"
-  description: "Multimodal MoE model available in BF16 and native FP8, with hybrid DSA and SWA, 384K context, and MTP speculative decoding."
+  description: "Multimodal MoE model available in BF16 and native FP8, with hybrid DSA and SWA, 512K context, and MTP speculative decoding."
   date_added: 2026-08-13
   date_updated: 2026-08-13
   difficulty: advanced
@@ -27,7 +27,7 @@ model:
   architecture: moe
   parameter_count: "288B"
   active_parameters: "17B"
-  context_length: 393216
+  context_length: 524288
   base_args:
     - "--gpu-memory-utilization"
     - "0.9"
@@ -114,7 +114,7 @@ guide: |
   (top-8) plus a shared expert and mixes DSA and SWA layers. Both releases expose
   MTP speculative decoding.
 
-  The model configuration supports up to 393,216 tokens. The commands below use a
+  The model configuration supports up to 524,288 tokens. The commands below use a
   validated 262,144-token serving limit and 8,192-token chunked-prefill budget so the
   remaining GPU memory can be used for KV cache. Increase `--max-model-len` only after
   checking the KV-cache budget for the target workload.
