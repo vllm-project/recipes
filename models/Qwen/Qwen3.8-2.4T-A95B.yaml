@@ -41,12 +41,10 @@ model:
   # config.json max_position_embeddings, and tokenizer_config.json now agrees (262144).
   # An earlier revision shipped model_max_length 131072, which silently capped context at
   # 128K — check both fields if you pin an older commit.
-  context_length: 1010000
+  context_length: 262144
   # No --trust-remote-code: config.json carries no `auto_map`, so there is no remote code
   # to trust — vLLM's own handler loads this architecture.
-  base_args:
-    - "--max-model-len"
-    - "1010000"
+  base_args: []
   base_env:
     # Weight load runs from 1.32 TiB (NVFP4) to 4.45 TiB (BF16). The default readiness
     # window expires long before the first token on a cold shared filesystem.
@@ -293,8 +291,16 @@ guide: |
   FlashInfer version upgrade in the vllm build.
 
   **Context length** The model has 262k native context length and it can be extended to 1M 
-  with --max-model-len flag. You can pick the correct value based on the use case and GPU
-  ram usage tradeoff.
+  with --max-model-len flag and VLLM_ALLOW_LONG_MAX_MODEL_LEN env variable. You can pick
+  the correct value based on the use case and GPU ram usage tradeoff. 
+
+  For example, to enable full 1M context length on this model:
+
+  ```bash
+  VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 vllm serve Qwen/Qwen3.8-2.4T-A95B \
+    --max-model-len 1010000 \
+    ...
+  ```
 
   ## References
 
