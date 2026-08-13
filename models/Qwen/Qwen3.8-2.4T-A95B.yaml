@@ -52,19 +52,14 @@ model:
   architecture: moe
   parameter_count: "2.4T"
   active_parameters: "95B"
-  # config.json max_position_embeddings, and tokenizer_config.json now agrees (262144).
-  # An earlier revision shipped model_max_length 131072, which silently capped context at
-  # 128K — check both fields if you pin an older commit.
   # 262144 is what config.json (max_position_embeddings) and tokenizer_config.json both
   # declare; 1010000 is the extended ceiling upstream ships this recipe with, forced via
   # base_args below. The extension has NOT been verified against the checkpoint here — the
   # staged copy tops out at 262144 on both fields.
-  context_length: 1010000
+  context_length: 262144
   # No --trust-remote-code: config.json carries no `auto_map`, so there is no remote code
   # to trust — vLLM's own handler loads this architecture.
-  base_args:
-    - "--max-model-len"
-    - "1010000"
+  base_args: []
   base_env:
     # Weight load runs from 1.32 TiB (NVFP4) to 4.45 TiB (BF16). The default readiness
     # window expires long before the first token on a cold shared filesystem.
@@ -412,6 +407,19 @@ guide: |
   `chat_template_kwargs` to retain the full history — it changes what the model sees, so
   it changes behaviour.
 
+  ## Processing Ultra-Long Texts
+  The model has 262k native context length and it can be extended to 1M with --max-model-len
+  flag and VLLM_ALLOW_LONG_MAX_MODEL_LEN env variable. You can pick the correct value based
+  on the use case and GPU ram usage tradeoff. 
+
+  For example, to enable full 1M context length on this model:
+
+  ```bash
+  VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 vllm serve Qwen/Qwen3.8-2.4T-A95B \
+    --max-model-len 1010000 \
+    ...
+  ```
+
   ## Troubleshooting
 
   **CUDA graph / recurrent-state cache size error.** On hybrid models an
@@ -427,13 +435,6 @@ guide: |
   The linear backend feature "--linear-backend flashinfer_cutedsl" is Docker only until
   FlashInfer version upgrade in the vllm build. The NVFP4 variant sets that flag, so on a
   pip install either use the Docker image pinned above or drop the flag.
-
-  **Context length** The model has 262k native context length and it can be extended to 1M
-  with --max-model-len flag. You can pick the correct value based on the use case and GPU
-  ram usage tradeoff. This recipe ships `--max-model-len 1010000` in `base_args`; lower it
-  to 262144 (or to input+output for a fixed workload) to reclaim the KV reservation — the
-  measurements below were taken at 9240 for an 8k-in / 1k-out profile, which raised usable
-  concurrency from 25x to 506x on the same 70 GiB of KV.
 
   ## References
 
