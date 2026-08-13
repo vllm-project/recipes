@@ -1,6 +1,6 @@
 meta:
   title: "Dots3Note"
-  slug: "dots3-note"
+  slug: "dots3-note-prev"
   provider: "Dots"
   description: "Multimodal MoE model available in BF16 and native FP8, with hybrid DSA/full and sliding-window attention, 384K context, and MTP speculative decoding."
   date_added: 2026-08-13
