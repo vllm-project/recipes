@@ -1,6 +1,6 @@
 meta:
-  title: "Dots3Note"
-  slug: "dots3-note-prev"
+  title: "dots-3-note-prev"
+  slug: "dots-3-note-prev"
   provider: "Dots"
   description: "Multimodal MoE model available in BF16 and native FP8, with hybrid DSA and SWA, 512K context, and MTP speculative decoding."
   date_added: 2026-08-13
@@ -21,7 +21,7 @@ meta:
     mi355x: unsupported
 
 model:
-  model_id: "dots-studio/dots3-note-prev"
+  model_id: "dots-studio/dots-3-note-prev"
   min_vllm_version: "nightly"
   nightly_required: true
   architecture: moe
@@ -29,6 +29,8 @@ model:
   active_parameters: "17B"
   context_length: 524288
   base_args:
+    - "--served-model-name"
+    - "dots-3-note-prev"
     - "--gpu-memory-utilization"
     - "0.9"
     - "--max-model-len"
@@ -48,7 +50,7 @@ features:
       - "--reasoning-parser"
       - "qwen3"
   tool_calling:
-    description: "Parse Dots3Note's native XML tool-call format with automatic tool choice."
+    description: "Parse dots-3-note-prev's native XML tool-call format with automatic tool choice."
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
@@ -71,7 +73,7 @@ opt_in_features:
 
 variants:
   default:
-    model_id: "dots-studio/dots3-note-prev-fp8"
+    model_id: "dots-studio/dots-3-note-prev-fp8"
     precision: fp8
     vram_minimum_gb: 359
     description: "Native block-scaled FP8 language-model weights with BF16 multimodal encoders; verified on 8x 80GB NVIDIA GPUs."
@@ -81,7 +83,7 @@ variants:
           - "--moe-backend"
           - "deep_gemm"
   bf16:
-    model_id: "dots-studio/dots3-note-prev"
+    model_id: "dots-studio/dots-3-note-prev"
     precision: bf16
     vram_minimum_gb: 692
     description: "Full BF16 checkpoint using the Triton unquantized-MoE backend; its indexed weights total about 576.9 GB before runtime and KV-cache memory."
@@ -107,10 +109,10 @@ strategy_overrides: {}
 guide: |
   ## Overview
 
-  Dots3Note is a native multimodal Mixture-of-Experts model supporting text, image,
+  dots-3-note-prev is a native multimodal Mixture-of-Experts model supporting text, image,
   video, and audio inputs through one model architecture. It is published as a full
-  BF16 checkpoint (`dots-studio/dots3-note-prev`) and a native FP8 checkpoint
-  (`dots-studio/dots3-note-prev-fp8`). Its language backbone has 256 routed experts
+  BF16 checkpoint (`dots-studio/dots-3-note-prev`) and a native FP8 checkpoint
+  (`dots-studio/dots-3-note-prev-fp8`). Its language backbone has 256 routed experts
   (top-8) plus a shared expert and mixes DSA and SWA layers. Both releases expose
   MTP speculative decoding.
 
@@ -126,7 +128,7 @@ guide: |
     memory for the runtime and KV cache; the recipe budgets 692 GB aggregate VRAM.
   - A recent CUDA environment. Native FP8 uses DeepGEMM, while unquantized BF16
     uses the Triton MoE backend.
-  - A vLLM nightly containing native Dots3Note support.
+  - A vLLM nightly containing native dots-3-note-prev support.
 
   ## Launch commands
 
@@ -145,7 +147,8 @@ guide: |
   lower `--max-model-len` or add `--language-model-only` for text workloads.
 
   ```bash
-  vllm serve dots-studio/dots3-note-prev \
+  vllm serve dots-studio/dots-3-note-prev \
+    --served-model-name dots-3-note-prev \
     --host 0.0.0.0 \
     --tensor-parallel-size 8 \
     --enable-expert-parallel \
@@ -163,7 +166,8 @@ guide: |
   deployment, but it does not enable expert parallelism.
 
   ```bash
-  vllm serve dots-studio/dots3-note-prev-fp8 \
+  vllm serve dots-studio/dots-3-note-prev-fp8 \
+    --served-model-name dots-3-note-prev \
     --host 0.0.0.0 \
     --tensor-parallel-size 8 \
     --gpu-memory-utilization 0.9 \
@@ -180,7 +184,8 @@ guide: |
   experts are distributed across the eight expert-parallel ranks.
 
   ```bash
-  vllm serve dots-studio/dots3-note-prev-fp8 \
+  vllm serve dots-studio/dots-3-note-prev-fp8 \
+    --served-model-name dots-3-note-prev \
     --host 0.0.0.0 \
     --tensor-parallel-size 8 \
     --enable-expert-parallel \
@@ -199,7 +204,8 @@ guide: |
   It therefore needs more GPU memory than TP+EP.
 
   ```bash
-  vllm serve dots-studio/dots3-note-prev-fp8 \
+  vllm serve dots-studio/dots-3-note-prev-fp8 \
+    --served-model-name dots-3-note-prev \
     --host 0.0.0.0 \
     --data-parallel-size 8 \
     --enable-expert-parallel \
@@ -218,7 +224,8 @@ guide: |
   The option can be combined with TP, TP+EP, or DP+EP.
 
   ```bash
-  vllm serve dots-studio/dots3-note-prev-fp8 \
+  vllm serve dots-studio/dots-3-note-prev-fp8 \
+    --served-model-name dots-3-note-prev \
     --host 0.0.0.0 \
     --tensor-parallel-size 8 \
     --enable-expert-parallel \
@@ -238,7 +245,8 @@ guide: |
   loading a separate draft model. The example uses TP+EP with the native FP8 checkpoint.
 
   ```bash
-  vllm serve dots-studio/dots3-note-prev-fp8 \
+  vllm serve dots-studio/dots-3-note-prev-fp8 \
+    --served-model-name dots-3-note-prev \
     --host 0.0.0.0 \
     --tensor-parallel-size 8 \
     --enable-expert-parallel \
@@ -253,12 +261,13 @@ guide: |
 
   ### Tool calling
 
-  Dots3Note emits tool calls inside `<dots_function_call>` XML wrappers. Enable
+  dots-3-note-prev emits tool calls inside `<dots_function_call>` XML wrappers. Enable
   automatic tool choice with the native `dots` parser. These options can be combined
   with any parallel strategy, `--language-model-only`, and MTP speculative decoding.
 
   ```bash
-  vllm serve dots-studio/dots3-note-prev-fp8 \
+  vllm serve dots-studio/dots-3-note-prev-fp8 \
+    --served-model-name dots-3-note-prev \
     --host 0.0.0.0 \
     --tensor-parallel-size 8 \
     --enable-expert-parallel \
@@ -278,7 +287,7 @@ guide: |
   curl http://localhost:8000/v1/chat/completions \
     -H "Content-Type: application/json" \
     -d '{
-      "model": "dots-studio/dots3-note-prev-fp8",
+      "model": "dots-3-note-prev",
       "messages": [{"role": "user", "content": "Explain sparse attention briefly."}],
       "temperature": 0.7
     }'
@@ -305,7 +314,7 @@ guide: |
 
   ## References
 
-  - [Dots3Note FP8 on Hugging Face](https://huggingface.co/dots-studio/dots3-note-prev-fp8)
-  - [Dots3Note BF16 on Hugging Face](https://huggingface.co/dots-studio/dots3-note-prev)
-  - [vLLM Dots3Note support PR](https://github.com/vllm-project/vllm/pull/51255)
+  - [dots-3-note-prev FP8 on Hugging Face](https://huggingface.co/dots-studio/dots-3-note-prev-fp8)
+  - [dots-3-note-prev BF16 on Hugging Face](https://huggingface.co/dots-studio/dots-3-note-prev)
+  - [vLLM dots-3-note-prev support PR](https://github.com/vllm-project/vllm/pull/51255)
   - [vLLM parallelism and scaling guide](https://docs.vllm.ai/en/latest/serving/parallelism_scaling.html)
