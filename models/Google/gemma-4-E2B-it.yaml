@@ -21,6 +21,7 @@ meta:
     trillium: verified
     ironwood: verified
     xeon6: verified
+    max1550: verified
 
 model:
   model_id: "google/gemma-4-E2B-it"
@@ -98,6 +99,17 @@ hardware_overrides:
     extra_env:
       VLLM_CPU_KVCACHE_SPACE: "40"
       VLLM_CPU_ATTN_SPLIT_KV: "0"
+  xpu:
+    extra_args:
+      - "--enforce-eager"
+      - "--kv-cache-dtype"
+      - "bfloat16"
+      - "--gpu-memory-utilization"
+      - "0.85"
+      - "--max-model-len"
+      - "4096"
+    extra_env:
+      VLLM_TARGET_DEVICE: "xpu"
 
 strategy_overrides:
   single_node_tp:
@@ -234,6 +246,27 @@ guide: |
       --model google/gemma-4-E2B-it \
       --host 0.0.0.0 \
       --port 8000
+  ```
+
+
+  ### Intel Data Center GPU Max 1550 (XPU) via Docker
+
+  Gemma 4 E2B runs on a single Intel Max 1550 tile (68.7 GB HBM2e). Requires vLLM with XPU support and the heterogeneous per-layer config fix.
+
+  ```bash
+  docker run -itd --name gemma4-e2b-xpu \
+    --device /dev/dri --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e VLLM_TARGET_DEVICE=xpu \
+    intel/vllm:latest \
+      --model google/gemma-4-E2B-it \
+      --dtype bfloat16 \
+      --enforce-eager \
+      --kv-cache-dtype bfloat16 \
+      --gpu-memory-utilization 0.85 \
+      --max-model-len 4096 \
+      --host 0.0.0.0 --port 8000
   ```
 
 
