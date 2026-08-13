@@ -9,7 +9,7 @@ meta:
   tasks:
     - multimodal
     - text
-  performance_headline: "288B multimodal MoE with BF16 and native FP8 checkpoints, about 17B active parameters, and 384K context"
+  performance_headline: "Unified multimodal intelligence with strong agent capabilities"
   hardware:
     h100: verified
     b200: unsupported
