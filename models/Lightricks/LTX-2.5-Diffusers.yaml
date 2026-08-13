@@ -4,7 +4,7 @@ meta:
   provider: "Lightricks"
   description: "19B diffusion transformer for joint video and synchronized stereo audio generation, served via vLLM-Omni"
   date_added: 2026-08-11
-  date_updated: 2026-08-12
+  date_updated: 2026-08-13
   difficulty: advanced
   tasks:
     - omni
@@ -115,7 +115,7 @@ omni:
       description: "Distilled low-resolution generation, x2 latent upsampling, and a three-sigma full-resolution refinement tail."
       extra_args:
         - "--model-class-name"
-        - "LTX2DistilledPipeline"
+        - "LTX2TwoStagePipeline"
       curl: |
         curl -sS --fail-with-body \
           -X POST http://localhost:8000/v1/videos/sync \
@@ -240,7 +240,7 @@ guide: |
   # Distilled two-stage T2V
   python examples/offline_inference/text_to_video/text_to_video.py \
     --model Lightricks/LTX-2.5-Diffusers \
-    --model-class-name LTX2DistilledPipeline \
+    --model-class-name LTX2TwoStagePipeline \
     --prompt "A cinematic shot of a red fox walking through a snowy forest at dawn, the camera tracking alongside, snow crunching underfoot." \
     --height 1088 --width 1920 --num-frames 121 \
     --num-inference-steps 8 --frame-rate 24 --fps 24 --seed 42 \
@@ -317,7 +317,7 @@ guide: |
   ```bash
   vllm serve Lightricks/LTX-2.5-Diffusers \
     --omni \
-    --model-class-name LTX2DistilledPipeline \
+    --model-class-name LTX2TwoStagePipeline \
     --host 0.0.0.0 \
     --port 8000 \
     --enforce-eager \
@@ -377,9 +377,9 @@ guide: |
   | `num_frames` | 121 | 121 | 121 | Produces about five seconds at 24 FPS |
   | `fps` | 24 | 24 | 24 | Audio is generated jointly at 48 kHz stereo |
   | `num_inference_steps` | 8 | 8 | 30 | Two-stage defaults to a 3-step refinement tail |
-  | `input_reference` | I2V only | Not validated | Not validated | Upload one RGB first frame; native preprocessing defaults to CRF 18 |
+  | `input_reference` | I2V only | I2V execution-smoke passed | I2V execution-smoke passed | Upload one RGB first frame; only one-stage has a quality artifact |
   | schedule override | `sigmas` | `stage_1_sigmas` and `stage_2_sigmas` | `sigmas` | JSON lists via `extra_params` |
-  | `image_crf` | I2V only; default 18 | N/A | N/A | Set 0 only to bypass the conditioning round trip |
+  | `image_crf` | I2V only; default 18 | I2V only; default 18 | I2V only; default 18 | Set 0 only to bypass the conditioning round trip |
   | guidance | positive-only | positive-only | video CFG 3 / audio CFG 7, STG 1 | Pipeline classes select the official defaults |
 
   ## Verified B300 results
@@ -407,12 +407,12 @@ guide: |
   | HSDP2 | Capacity fallback | Output matched eager; peak memory decreased by 21.9%, with lower performance. |
   | Distributed layerwise offload DP2 | Capacity fallback | Output matched eager; primary-rank peak memory decreased by 43.3%, with lower performance. |
   | VAE slicing | Release-qualified | Output matched eager. |
-  | VAE tiling | Release-qualified | Audio was bit-exact with eager; decoded-video mean SSIM was 0.9730 and mean PSNR was 36.72 dB; peak memory decreased by 5.6%. |
+  | VAE tiling | Release-qualified | The tiled decode completed successfully and reduced peak memory; unlike slicing, tiling is not bit-exact with eager. |
   | Whole-model CPU offload | Capacity fallback | Output matched eager; peak memory decreased by 35.3%, with lower performance. |
-  | TP2 / Ulysses SP2 | Experimental | Both completed, but neither passed the fixed-seed quality gate. |
+  | TP2 / Ulysses SP2 | Experimental | Strict Ulysses completed, but neither TP2 nor SP2 passed the fixed-seed quality gate; `advanced_uaa` is rejected. |
   | Regional `torch.compile` | Experimental | Generation completed, but the first run was slower and did not pass the fixed-seed quality gate. |
   | FP8 | Experimental | Generation completed with 23.4% lower peak memory, but did not pass the quality gate. |
-  | Cache-DiT | Experimental | Threshold 0.12 preserved eager output but recorded zero cache steps; threshold 0.15 exercised caching but failed the fixed-seed quality gate. |
+  | Cache-DiT | Experimental | One-stage only: threshold 0.12 preserved eager output but recorded zero cache steps; threshold 0.15 exercised caching but failed the quality gate. Two-stage fails fast until cache refresh becomes phase-aware. |
   | `TRTLLM_ATTN` | Unsupported | The current kernel rejects LTX-2.5's head dimension of 64. |
   | Ring SP2 | Unsupported | The tested path did not complete successfully. |
   | TeaCache | Unsupported | LTX-2.5 has no validated TeaCache residual extractor or coefficient profile. |
@@ -425,8 +425,13 @@ guide: |
     `LTX2FullPipeline` explicitly to load `transformer_full/`.
   - One-stage and Full/SFT accept custom `sigmas`; distilled two-stage accepts independent `stage_1_sigmas` and `stage_2_sigmas`.
   - I2V defaults to CRF 18 and supports an explicit `image_crf=0` opt-out.
-  - I2V is validated only for the one-stage first-frame path. Two-stage I2V and
-    multi-frame conditioning are not claimed here.
+  - Two-stage and Full/SFT first-frame I2V passed online execution smokes; only
+    one-stage I2V has a fixed-seed quality artifact. Multi-frame conditioning is not
+    release-qualified.
+  - Strict Ulysses is the only LTX sequence-parallel mode tested to completion;
+    `advanced_uaa` is rejected because it does not preserve cross-modal key-padding masks.
+  - Cache-DiT is one-stage only; two-stage requests reject it until cache state is
+    phase- and resolution-aware.
   - DLO, CPU offload, and HSDP are memory-capacity fallbacks rather than
     latency accelerators. Experimental paths above are not production claims.
 
