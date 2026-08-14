@@ -5,7 +5,7 @@ meta:
   description: "27B-parameter dense hybrid-attention model with linear attention on 48 of 64 layers, a vision tower, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-14
   date_updated: 2026-08-14
-  difficulty: intermediate
+  difficulty: beginner
   tasks:
     - multimodal
     - text
@@ -32,8 +32,7 @@ model:
   # no released tag. Note the tested image predates that PR and gets the same correctness
   # from #51674 instead — neither is a superset of the other, so treat 0.27.2 as a
   # correctness floor, not a reproduce-these-numbers pin.
-  min_vllm_version: "0.27.2"
-  nightly_required: true
+  min_vllm_version: "0.28.0"
   # NVIDIA only. The rocm tag with the same name is an AMD build of the 2.4T *text* model
   # (no `ai.vllm.build.commit` label) and has never been exercised on the 27B; naming it
   # here would imply a tested AMD path that does not exist. Non-NVIDIA hardware falls back
