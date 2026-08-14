@@ -21,6 +21,7 @@ meta:
     trillium: verified
     ironwood: verified
     xeon6: verified
+    max1550: verified
 
 model:
   model_id: "google/gemma-4-E4B-it"
@@ -98,6 +99,11 @@ hardware_overrides:
     extra_env:
       VLLM_CPU_KVCACHE_SPACE: "40"
       VLLM_CPU_ATTN_SPLIT_KV: "0"
+  xpu:
+    extra_args:
+      enforce_eager: true
+    extra_env:
+      ZE_AFFINITY_MASK: "0"
 
 strategy_overrides:
   single_node_tp:
@@ -236,6 +242,26 @@ guide: |
   ```
 
   For additional Intel Xeon 6 deployment details, see the Intel Software Catalog entries for [Gemma 4 E4B IT](https://aiswcatalog.intel.com/models/google-gemma-4-e4b-it).
+
+  ### Intel XPU Deployment via Docker (Data Center GPU Max 1550)
+
+  Gemma 4 E4B fits on a single Max 1550 tile (~16 GB BF16 weights). The per-layer mixed attention backend (Flash Attention for sliding window layers, Triton for global attention layers) is selected automatically.
+
+  ```bash
+  docker run -itd --name gemma4-e4b-xpu \
+    --device /dev/dri --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e ZE_AFFINITY_MASK=0 \
+    intel/vllm:latest \
+      --model google/gemma-4-E4B-it \
+      --dtype bfloat16 \
+      --enforce-eager \
+      --max-model-len 32768 \
+      --host 0.0.0.0 --port 8000
+  ```
+
+  For text-only workloads, add `--language-model-only` to skip loading vision/audio encoders and free VRAM for KV cache.
 
   ## Client Usage
 
