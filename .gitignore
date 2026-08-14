@@ -17,7 +17,3 @@ public/providers/
 public/hf-dates.json
 public/*/
 !public/platform-logos/
-!public/media/
-public/media/*
-!public/media/ltx-2.5/
-!public/media/ltx-2.5/**

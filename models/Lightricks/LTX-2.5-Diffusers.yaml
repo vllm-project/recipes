@@ -17,25 +17,11 @@ meta:
 model:
   model_id: "Lightricks/LTX-2.5-Diffusers"
   min_vllm_version: "0.27.0"
-  install:
-    pip:
-      command: |
-        uv venv --python 3.12
-        source .venv/bin/activate
-        export VLLM_VERSION=0.27.0
-        uv pip install "vllm==$VLLM_VERSION" --torch-backend=auto
-        uv pip install git+https://github.com/vllm-project/vllm-omni.git
-      note: "LTX-2.5 requires the native pipeline in current vLLM-Omni main."
-    docker: false
   architecture: dense
   parameter_count: "19B"
   active_parameters: "19B"
   context_length: 0
   base_args:
-    - "--host"
-    - "0.0.0.0"
-    - "--port"
-    - "8000"
     - "--diffusion-attention-backend"
     - "CUDNN_ATTN"
   base_env: {}
@@ -193,6 +179,10 @@ omni:
           -F 'prompt=The red fox walks forward while the camera tracks alongside.' \
           -o ltx25-full-two-stage-i2v.mp4
 
+dependencies:
+  - note: "LTX-2.5 support is provided by current vLLM-Omni main."
+    command: "uv pip install git+https://github.com/vllm-project/vllm-omni.git"
+
 guide: |
   ## Overview
 
@@ -222,25 +212,20 @@ guide: |
     --omni \
     --model-class-name LTX2DistilledOneStagePipeline \
     --quantization fp8 \
-    --diffusion-attention-backend CUDNN_ATTN \
-    --host 0.0.0.0 \
-    --port 8000
+    --diffusion-attention-backend CUDNN_ATTN
   ```
-
-  Use the T2V or I2V task preset after the server is ready.
 
   ## Prerequisites
 
   - Accept both Lightricks model licenses and run `hf auth login`.
-  - Install vLLM 0.27+ and current vLLM-Omni main.
+  - Use current vLLM-Omni main, targeting vLLM 0.27+.
   - Ensure `ffmpeg` and `ffprobe` are on `PATH`.
   - I2V requires PyAV with the `libx264` encoder.
 
+  ## Installation
+
   ```bash
-  uv venv --python 3.12
-  source .venv/bin/activate
-  export VLLM_VERSION=0.27.0
-  uv pip install "vllm==${VLLM_VERSION}" --torch-backend=auto
+  uv venv && source .venv/bin/activate
   uv pip install git+https://github.com/vllm-project/vllm-omni.git
   hf auth login
   ```
@@ -281,9 +266,7 @@ guide: |
   ```bash
   vllm serve "${MODEL}" \
     --omni \
-    --model-class-name "${PIPELINE}" \
-    --host 0.0.0.0 \
-    --port 8000
+    --model-class-name "${PIPELINE}"
   ```
 
   Use the task presets on this page for complete T2V and I2V requests. Restart
