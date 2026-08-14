@@ -260,6 +260,16 @@ hardware_profiles:
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
   # lists it in `meta.hardware` — XPU support ships in the separate
   # `vllm/vllm-openai-xpu` image and is only declared on validated recipes.
+  max1550:
+    brand: Intel
+    generation: xpu
+    display_name: "Data Center GPU Max 1550"
+    description: "Intel Data Center GPU Max 1550 · 68.7 GB HBM2e · Xe-HPC"
+    gpu_count: 4
+    vram_gb: 64
+    multi_node: false
+    restricted: true
+
   arc_pro_b60:
     brand: Intel
     generation: xpu
