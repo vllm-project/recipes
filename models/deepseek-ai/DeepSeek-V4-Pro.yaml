@@ -71,7 +71,7 @@ features:
           - '{"method":"mtp","num_speculative_tokens":2}'
       dspark:
         label: "DSpark"
-        description: "DSpark drafting, 7 draft tokens, greedy. Requires the 0813 or DSpark checkpoint (Variant row)."
+        description: "DSpark drafting, 7 draft tokens, probabilistic. Requires the 0813 or DSpark checkpoint (Variant row)."
         # Only the fused checkpoints carry the DSpark draft — the 0813 release
         # (default) and the DSpark re-pack of the preview weights.
         variants:
@@ -79,7 +79,7 @@ features:
           - dspark
         args:
           - "--speculative-config"
-          - '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"greedy"}'
+          - '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"probabilistic"}'
 
 opt_in_features:
   - spec_decoding
@@ -309,7 +309,7 @@ guide: |
   with `method: dspark`, emitting:
 
   ```
-  --speculative-config '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"greedy"}'
+  --speculative-config '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"probabilistic"}'
   ```
 
   The fused checkpoints are ~893 GB on disk versus ~865 GB for the preview — the draft

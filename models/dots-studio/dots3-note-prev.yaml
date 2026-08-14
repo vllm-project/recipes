@@ -4,7 +4,7 @@ meta:
   provider: "Dots"
   description: "Multimodal MoE model available in BF16 and native FP8, with hybrid DSA and SWA, 512K context, and MTP speculative decoding."
   date_added: 2026-08-13
-  date_updated: 2026-08-13
+  date_updated: 2026-08-14
   difficulty: advanced
   tasks:
     - multimodal
@@ -22,7 +22,7 @@ meta:
 
 model:
   model_id: "dots-studio/dots3-note-prev"
-  min_vllm_version: "nightly"
+  min_vllm_version: "0.28.0"
   nightly_required: true
   architecture: moe
   parameter_count: "288B"
