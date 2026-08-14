@@ -269,6 +269,26 @@ guide: |
       --host 0.0.0.0 --port 8000
   ```
 
+  ### Intel XPU — W4A16 QAT Quantized Variant
+
+  The [W4A16 QAT variant](https://huggingface.co/google/gemma-4-E2B-it-qat-w4a16-ct) uses 4-bit weights (group_size=32) via compressed-tensors, reducing VRAM from ~13 GB to ~8 GB while retaining near-full quality thanks to Quantization-Aware Training. Select the **w4a16** variant above, or launch directly:
+
+  ```bash
+  docker run -itd --name gemma4-e2b-w4a16-xpu \
+    --device /dev/dri --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e VLLM_TARGET_DEVICE=xpu \
+    intel/vllm:latest \
+      --model google/gemma-4-E2B-it-qat-w4a16-ct \
+      --dtype bfloat16 \
+      --enforce-eager \
+      --kv-cache-dtype bfloat16 \
+      --gpu-memory-utilization 0.85 \
+      --max-model-len 4096 \
+      --host 0.0.0.0 --port 8000
+  ```
+
 
   ## Client Usage
 
