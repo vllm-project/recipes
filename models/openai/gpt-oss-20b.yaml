@@ -54,13 +54,10 @@ compatible_strategies:
 hardware_overrides:
   cpu:
     extra_args:
-      - "--no-enable-prefix-caching"
       - "--max-num-batched-tokens"
       - "16384"
       - "--gpu-memory-utilization"
       - "0.8"
-    extra_env:
-      VLLM_ENGINE_ITERATION_TIMEOUT_S: "600"
   blackwell:
     extra_env:
       VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8: "1"
@@ -151,10 +148,8 @@ guide: |
   not prescribe a Xeon 6 TP value or hard-code NUMA node IDs.
 
   ```bash
-  export VLLM_ENGINE_ITERATION_TIMEOUT_S=600
 
   vllm serve openai/gpt-oss-20b \
-    --no-enable-prefix-caching \
     --max-num-batched-tokens 16384 \
     --gpu-memory-utilization 0.8
   ```
@@ -166,10 +161,8 @@ guide: |
     --network host \
     --shm-size 16g \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    -e VLLM_ENGINE_ITERATION_TIMEOUT_S=600 \
     vllm/vllm-openai-cpu:latest-x86_64 \
       --model openai/gpt-oss-20b \
-      --no-enable-prefix-caching \
       --max-num-batched-tokens 16384 \
       --gpu-memory-utilization 0.8 \
       --host 0.0.0.0 \
