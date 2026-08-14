@@ -3,7 +3,8 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
+import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
+import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
@@ -791,6 +792,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   // ── Derived ──
   const currentVariant = recipe.variants?.[variant] || recipe.variants?.default || {};
+
+  // The HF repo this variant serves — the variant's own checkpoint when it
+  // overrides `model_id` (nvidia/*-NVFP4, deepseek-ai/*-0813), otherwise the
+  // recipe's base model. Distinct from `modelId` below, which falls back to the
+  // literal "model" placeholder for command text; a URL needs a real repo or
+  // nothing at all.
+  const variantModelId = currentVariant.model_id || recipe.model?.model_id || null;
 
   // All hardware profiles grouped by brand, sorted by architectural generation
   // within brand (oldest → newest; matches the semianalysis GPU timeline).
@@ -2184,6 +2192,41 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 );
               })}
             </PillGroup>
+            {/* Active variant's description + the checkpoint it actually serves.
+                Mirrors the Strategy / KV Offload rows, which already render the
+                active option's description under the pills — this row was the
+                only one without it, so two things stayed invisible: the
+                description (it lived only in the pill's native `title`, which
+                touch and keyboard users never get), and the served repo, which
+                for a variant with its own `model_id` is NOT what the header's
+                "View on HuggingFace" points at. That link is deliberately the
+                recipe's own HF id — it's the page identity (`findVariantRedirect`
+                maps a variant repo back to this page), so the per-checkpoint link
+                belongs here, next to the pick that determines it.
+                Rendered for every variant, including ones that inherit
+                `model.model_id`: a line that appears for some pills and vanishes
+                for others is harder to learn than one that's always there. */}
+            {(currentVariant?.description || variantModelId) && (
+              <div className="mt-2 space-y-1">
+                {currentVariant?.description && (
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    {currentVariant.description}
+                  </p>
+                )}
+                {variantModelId && (
+                  <a
+                    href={`https://huggingface.co/${variantModelId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground hover:text-vllm-blue transition-colors"
+                  >
+                    <HuggingFaceIcon className="w-3 h-3" />
+                    {variantModelId}
+                    <ExternalLink size={9} />
+                  </a>
+                )}
+              </div>
+            )}
           </ConfigRow>
 
           {/* Strategy — always in effect, including under Mooncake: the KV
