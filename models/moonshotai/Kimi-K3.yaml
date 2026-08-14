@@ -4,7 +4,7 @@ meta:
   provider: "Moonshot AI"
   description: "Pre-release 2.8T-parameter native multimodal MoE with Kimi Delta Attention, Gated MLA, Attention Residuals, and a 1M-token context window"
   date_added: 2026-07-27
-  date_updated: 2026-08-06
+  date_updated: 2026-08-14
   difficulty: hard
   tasks:
     - multimodal
@@ -54,7 +54,7 @@ features:
       - "--reasoning-parser"
       - "kimi_k3"
   spec_decoding:
-    description: "Use Inferact trained DSpark."
+    description: "Use DSpark speculative decoding."
     # DSpark does not compose with pipeline parallelism yet
     # (vllm-project/vllm#50098), so the feature is gated off multi_node_tp_pp
     # (the 2-node Blackwell TP8xPP2 profile). Every other strategy keeps it.
@@ -67,7 +67,7 @@ features:
       - pd_cluster
     args:
       - "--speculative-config"
-      - '{"model":"Inferact/Kimi-K3-DSpark", "num_speculative_tokens":7, "method": "dspark", "attention_backend": "FLASHINFER_MLA", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
+      - '{"model":"RedHatAI/Kimi-K3-speculator.dspark", "num_speculative_tokens":8, "method": "dspark", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
     hardware_overrides:
       # ROCm/MI355X: target keeps AITER MLA (prefill); the DSpark verify runs on TRITON_MLA
       # (FLASHINFER_MLA is CUDA-only). max-num-seqs 128 matches our validated serve config.
@@ -76,7 +76,7 @@ features:
           - "--max-num-seqs"
           - "128"
           - "--speculative-config"
-          - '{"model":"Inferact/Kimi-K3-DSpark", "num_speculative_tokens":7, "method": "dspark", "attention_backend": "TRITON_MLA", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
+          - '{"model":"RedHatAI/Kimi-K3-speculator.dspark", "num_speculative_tokens":8, "method": "dspark", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
   text_only:
     description: "Skip the vision encoder for text-only workloads. Mutually exclusive with encoder_parallel."
     args:
