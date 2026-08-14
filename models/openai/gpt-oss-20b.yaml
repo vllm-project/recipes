@@ -2,7 +2,8 @@ meta:
   title: "GPT-OSS 20B"
   slug: "gpt-oss-20b"
   provider: "OpenAI"
-  description: "OpenAI's gpt-oss-20b — 21B-total / 3.6B-active MoE reasoning model with native MXFP4 quant; fits in 16GB VRAM"
+  description: "OpenAI's gpt-oss-20b — 21B-total / 3.6B-active MoE reasoning model with native MXFP4 quant; supports GPU, XPU, and Xeon 6 CPU serving"
+  date_added: 2025-08-05
   date_updated: 2026-05-08
   difficulty: beginner
   tasks:
@@ -17,6 +18,9 @@ meta:
     mi300x: verified
     mi325x: verified
     mi355x: verified
+    arc_pro_b60: verified
+    arc_pro_b70: verified
+    xeon6: verified
 
 model:
   model_id: "openai/gpt-oss-20b"
@@ -48,6 +52,12 @@ compatible_strategies:
   - single_node_tp
 
 hardware_overrides:
+  cpu:
+    extra_args:
+      - "--max-num-batched-tokens"
+      - "16384"
+      - "--gpu-memory-utilization"
+      - "0.8"
   blackwell:
     extra_env:
       VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8: "1"
@@ -82,9 +92,9 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: NVIDIA H100/H200/B200 or AMD MI300X/MI325X/MI355X (also runs on Ada/Ampere consumer cards with sufficient VRAM).
+  - Hardware: NVIDIA H100/H200/B200, AMD MI300X/MI325X/MI355X, Intel XPU B60/B70, or 4x Xeon 6 CPUs.
   - vLLM >= 0.10.0.
-  - CUDA >= 12.8 if building from source (must match between install and serving).
+  - CUDA >= 12.8 if building from source for NVIDIA GPUs (must match between install and serving).
 
   ### Install vLLM
 
@@ -92,6 +102,18 @@ guide: |
   uv venv
   source .venv/bin/activate
   uv pip install vllm --torch-backend=auto
+  ```
+
+  ### pip (Intel Xeon 6 CPUs)
+
+  For Intel and AMD x86 CPUs, follow the
+  [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels)
+  installation instructions.
+
+  ### Docker (Intel Xeon 6 CPUs)
+
+  ```bash
+  docker pull vllm/vllm-openai-cpu:latest-x86_64
   ```
 
   Docker quickstart:
@@ -106,12 +128,45 @@ guide: |
   uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
   ```
 
+  Intel XPU (B60 / B70):
+  ```bash
+  docker pull vllm/vllm-openai-xpu:latest
+  ```
+
   ## Launch commands
 
   Single GPU (default — works on any 16GB+ card):
 
   ```bash
   vllm serve openai/gpt-oss-20b
+  ```
+
+  ### Intel Xeon 6
+
+  Choose the tensor parallel size based on the system topology and deployment
+  requirements. Add `--tensor-parallel-size <N>` when needed; the recipe does
+  not prescribe a Xeon 6 TP value or hard-code NUMA node IDs.
+
+  ```bash
+
+  vllm serve openai/gpt-oss-20b \
+    --max-num-batched-tokens 16384 \
+    --gpu-memory-utilization 0.8
+  ```
+
+  Docker:
+
+  ```bash
+  docker run -itd --name gpt-oss-20b-cpu \
+    --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-cpu:latest-x86_64 \
+      --model openai/gpt-oss-20b \
+      --max-num-batched-tokens 16384 \
+      --gpu-memory-utilization 0.8 \
+      --host 0.0.0.0 \
+      --port 8000
   ```
 
   Blackwell (B200) with FlashInfer MXFP4+MXFP8 MoE:
@@ -138,6 +193,19 @@ guide: |
     -cc.use_inductor_graph_partition=True \
     --gpu-memory-utilization 0.95 \
     --block-size 64
+  ```
+
+  ### Intel XPU(B60, B70)
+
+
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-xpu:latest \
+    openai/gpt-oss-20b \
+    --max-model-len 8192
   ```
 
   ## Tool use

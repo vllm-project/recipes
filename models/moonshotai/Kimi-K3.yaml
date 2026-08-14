@@ -1,0 +1,363 @@
+meta:
+  title: "Kimi-K3"
+  slug: "kimi-k3"
+  provider: "Moonshot AI"
+  description: "Pre-release 2.8T-parameter native multimodal MoE with Kimi Delta Attention, Gated MLA, Attention Residuals, and a 1M-token context window"
+  date_added: 2026-07-27
+  date_updated: 2026-08-06
+  difficulty: hard
+  tasks:
+    - multimodal
+    - text
+  performance_headline: "Pre-release TP8, TEP16, TP8xPP2, and disaggregated P/D profiles for the 2.8T MXFP4 checkpoint"
+  related_recipes:
+    - "moonshotai/Kimi-K2.6"
+    - "moonshotai/Kimi-K2.5"
+  default_hardware: b300
+  hardware:
+    h200: verified
+    b200: verified
+    b300: verified
+    gb200: verified
+    gb300: verified
+    mi355x: verified
+
+model:
+  model_id: "moonshotai/Kimi-K3"
+  min_vllm_version: "0.27.1"
+  install:
+    docker:
+      note: "Use a K3-enabled nightly image after the integration lands. CUDA 13 (cu130) build only — no -cu129 tag; the host needs an r580+ NVIDIA driver."
+    pip:
+      note: "Use a K3-enabled vLLM nightly after the integration lands."
+  architecture: moe
+  parameter_count: "2.8T"
+  active_parameters: "16 experts/token + shared (of 896 routed)"
+  context_length: 1048576
+  base_args:
+    - "--trust-remote-code"
+    # Canonical Inferact serve uses fastsafetensors for much faster weight load.
+    # Leave --moe-backend unset so vLLM selects its default automatic backend.
+    - "--gpu-memory-utilization"
+    - "0.95"
+
+features:
+  tool_calling:
+    description: "Enable automatic tool choice with the Kimi K3 tool-call parser."
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "kimi_k3"
+  reasoning:
+    description: "Parse Kimi K3 reasoning output separately from the final answer."
+    args:
+      - "--reasoning-parser"
+      - "kimi_k3"
+  spec_decoding:
+    description: "Use Inferact trained DSpark."
+    # DSpark does not compose with pipeline parallelism yet
+    # (vllm-project/vllm#50098), so the feature is gated off multi_node_tp_pp
+    # (the 2-node Blackwell TP8xPP2 profile). Every other strategy keeps it.
+    strategies:
+      - single_node_tp
+      - multi_node_tp
+      - multi_node_tep
+      - multi_node_dep
+      - multi_node_tp_dp
+      - pd_cluster
+    args:
+      - "--speculative-config"
+      - '{"model":"Inferact/Kimi-K3-DSpark", "num_speculative_tokens":7, "method": "dspark", "attention_backend": "FLASHINFER_MLA", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
+    hardware_overrides:
+      # ROCm/MI355X: target keeps AITER MLA (prefill); the DSpark verify runs on TRITON_MLA
+      # (FLASHINFER_MLA is CUDA-only). max-num-seqs 128 matches our validated serve config.
+      amd:
+        args:
+          - "--max-num-seqs"
+          - "128"
+          - "--speculative-config"
+          - '{"model":"Inferact/Kimi-K3-DSpark", "num_speculative_tokens":7, "method": "dspark", "attention_backend": "TRITON_MLA", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
+  text_only:
+    description: "Skip the vision encoder for text-only workloads. Mutually exclusive with encoder_parallel."
+    args:
+      - "--language-model-only"
+
+opt_in_features:
+  - spec_decoding
+  - text_only
+
+variants:
+  default:
+    precision: mxfp4
+    # Pre-release estimate: 2.8T params × 0.5 byte/param × 1.2 headroom.
+    # Replace with the real safetensors footprint once weights are published.
+    vram_minimum_gb: 1680
+    description: "Quantization-aware-trained MXFP4 weights with MXFP8 activations; footprint is estimated until the checkpoint is published."
+  nvfp4:
+    precision: nvfp4
+    vram_minimum_gb: 1650
+    model_id: "RedHatAI/Kimi-K3-NVFP4"
+    description: "RedHatAI compressed-tensors NVFP4 quantization; MoE layers quantized to NVFP4, attention and embeddings at full precision"
+
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+  - multi_node_tep
+  - multi_node_tp_pp
+  - multi_node_dep
+  - pd_cluster
+
+# TP-per-node + DP-across-nodes only makes sense where one node holds a full
+# replica and the cluster fabric fits the DP pattern: H200 (TP8·DP2 from 2
+# nodes) and GB200/GB300 NVL trays (TP4·DP4 from 4 trays). It's therefore not
+# in compatible_strategies (unlisted = unsupported by default); the
+# `supported` grants below opt it in on exactly the validated GPUs.
+strategy_hardware:
+  multi_node_tp_dp:
+    h200: supported
+    gb200: supported
+    gb300: supported
+  multi_node_dep:
+    h100: unsupported
+    h200: unsupported
+
+default_strategy: single_node_tp
+
+# TP/TEP run from 8 GPUs; DEP and TP+PP need 16+. TP+PP is the 2-node
+# Blackwell profile (TP8 within a node x PP2 across), so its floor is a full
+# 2 nodes. Applies to aggregated and PD pools.
+# H100 (80 GB/GPU → 640 GB/node) can't hold the ~1.68 TB MXFP4 checkpoint in
+# fewer than 4 nodes, so every layout starts at 32 GPUs there — which also
+# takes single_node_tp off the H100 pill row.
+strategy_min_gpus:
+  single_node_tp: 8
+  multi_node_tp: 8
+  # 16-GPU bar makes the Nodes row land exactly on the validated layouts:
+  # H200 → 2 nodes (TP8·DP2), GB200/GB300 NVL4 trays → 4 trays (TP4·DP4).
+  multi_node_tp_dp: 16
+  multi_node_tep: 8
+  multi_node_tp_pp: 16
+  multi_node_dep: 16
+  h100: 32
+
+
+hardware_overrides:
+  hopper:
+    extra_args:
+      - "--gpu-memory-utilization"
+      - "0.97"
+      - "--max-num-seqs"
+      - "5"
+      - "--max-model-len"
+      - "32768"
+      - "--moe-backend"
+      - "marlin"
+      - "--disable-custom-all-reduce"
+      - "--no-enable-flashinfer-autotune"
+      - "--max-num-batched-tokens"
+      - "4096"
+      - "--attention-backend"
+      - "FLASHMLA"
+    extra_env:
+      VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+      VLLM_USE_V2_MODEL_RUNNER: "1"
+      VLLM_USE_RUST_FRONTEND: "1"
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+      
+  blackwell:
+    extra_args:
+      - "--load-format"
+      - "fastsafetensors"
+      - "--no-enable-flashinfer-autotune"
+      - "--max-model-len"
+      - "1048576"
+      - "--kv-cache-dtype"
+      - "fp8"
+      - "--attention-config"
+      - '{"use_prefill_query_quantization":true,"mla_prefill_backend":"flashinfer"}'
+      - "--enable-prefix-caching"
+    extra_env:
+      VLLM_ALLREDUCE_USE_FLASHINFER: "1"
+      VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+      VLLM_USE_V2_MODEL_RUNNER: "1"
+      VLLM_USE_RUST_FRONTEND: "1"
+  amd:
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      SAFETENSORS_FAST_GPU: "1"
+      VLLM_ROCM_USE_AITER_MOE_SITUV2_A8W4: "1"
+      AITER_BF16_FP8_MOE_BOUND: "0"
+      VLLM_USE_BREAKABLE_CUDAGRAPH: "0" # REQUIRED on ROCm: the build auto-enables =1
+    extra_args:
+      - "--load-format"
+      - "auto"
+      - "--gpu-memory-utilization"
+      - "0.95"
+      - "--mm-encoder-tp-mode"
+      - "data"
+      - "--max-num-seqs"
+      - "128"
+      - "--reasoning-parser"
+      - "kimi_k3"
+      - "--max-num-batched-tokens"
+      - "4096"
+      # Fuse the KDA output RMSNorm and sigmoid gate into one Triton kernel.
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_DECODE_ONLY","custom_ops":["+fused_rms_norm_gated"]}'
+
+strategy_overrides:
+  # Use MegaMoE for DEP on GB200/GB300 NVL trays. B200/B300 leave
+  # --moe-backend unset and use vLLM's default automatic selection.
+  multi_node_dep:
+    hardware_overrides:
+      gb200:
+        extra_args:
+          - "--moe-backend"
+          - "deep_gemm_mega_moe"
+      gb300:
+        extra_args:
+          - "--moe-backend"
+          - "deep_gemm_mega_moe"
+
+  # 2-node Blackwell aggregated profile: TP8 within each node x PP2 across the
+  # pair (16 GPUs). The MXFP4 checkpoint (~1.68 TB of weights) does not fit one
+  # 8xB200 node (1440 GB), so TP8 shards attention/dense and PP2 splits the
+  # layers across the pair. B300 (268 GB/GPU → 2144 GB/node) does hold a full
+  # replica, and runs the same layout for throughput. Plain TP, NOT TEP:
+  # expert parallelism stays off and the 896 routed experts are TP-sharded
+  # inside each pipeline stage.
+  #
+  # Deliberately NOT a `hardware_overrides.blackwell` block — that keyspace
+  # REPLACES the recipe Blackwell baseline, which would drop fastsafetensors,
+  # the 1M max-model-len, fp8 KV and prefix caching. These are plain strategy
+  # args instead: they emit before hardware overrides, so on Blackwell the
+  # baseline layers on top and the two flags below survive (the baseline sets
+  # neither), while Hopper/AMD keep their own memory-utilization and
+  # batched-token tuning by last-wins dedupe.
+  multi_node_tp_pp:
+    extra_args:
+      # 0.90, not the 0.95 baseline: the flashinfer TRTLLM MXFP4 MoE kernel
+      # allocates a ~1.6 GiB runtime workspace outside vLLM's pool on the first
+      # forward, and at 0.95 a 180 GB B200 OOMs on the first warmup pass. B300
+      # has the headroom to spare, so the pair shares one value.
+      - "--gpu-memory-utilization"
+      - "0.90"
+      # Cap prefill chunks so one long request cannot OOM a pipeline stage.
+      - "--max-num-batched-tokens"
+      - "8192"
+    extra_env:
+      NCCL_CUMEM_ENABLE: "1"
+      # ~1.68 TB of weights off shared storage, and one long agentic request
+      # can hold a PP stage past vLLM's 300 s model-execution default.
+      VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+      VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS: "1800"
+
+  pd_cluster:
+    router:
+      intra_node_data_parallel_size: 1
+    env:
+      VLLM_SSM_CONV_STATE_LAYOUT: "DS"
+    # Blackwell only (cuda_copy is CUDA-only); replaces the recipe-level nvidia block.
+    hardware_overrides:
+      blackwell:
+        extra_env:
+          UCX_TLS: "rc,cuda_copy"
+    prefill:
+      parallelism: tep
+      tp: 8
+      vllm_args:
+        - "--enforce-eager"
+        - "--max-num-batched-tokens"
+        - "16384"
+        - "--no-disable-hybrid-kv-cache-manager"
+        - "--no-enable-flashinfer-autotune"
+      env:
+        VLLM_KIMI_K3_SHARD_SP_SHARED_EXPERT: "1"
+    decode:
+      parallelism: dep
+      tp: 1
+      env: {}
+      hardware_overrides:
+        gb200:
+          extra_args:
+            - "--moe-backend"
+            - "deep_gemm_mega_moe"
+        gb300:
+          extra_args:
+            - "--moe-backend"
+            - "deep_gemm_mega_moe"
+      vllm_args:
+        - "--data-parallel-hybrid-lb"
+        - "--no-enable-prefix-caching"
+        - "--max-num-seqs"
+        - "8"
+        - "--max-num-batched-tokens"
+        - "32"
+        - "--no-disable-hybrid-kv-cache-manager"
+
+guide: |
+  ## Overview
+
+  Kimi K3 is a 2.8-trillion-parameter Mixture-of-Experts model (16 of 896 experts active per token) built on the Kimi Delta Attention (KDA) and Attention Residuals (AttnRes), with a 1M-token context window and native vision. 
+
+  ## Prerequisites
+
+  - **vLLM:** Use the vllm/vllm-openai:kimi-k3 docker
+  - **CUDA:** The kimi-k3 image ships as a CUDA 13 (cu130) build only — there is no -cu129 tag, and the K3-enabled wheels are not on the cu129 nightly index. The host needs an r580+ NVIDIA driver; on a CUDA 12.9 (r575) host, upgrade the driver or build vLLM from the K3 branch against cu129 PyTorch yourself.
+  - **Hardware:** At least 8x GB300. Multi-node for real production traffic.
+  - **ROCm:** Use vllm/vllm-openai_rocm:kimi-k3 docker and at least 8x MI355X/MI350X hardware.
+
+  ## Client Usage
+
+  Once the vLLM server is running, consume it via the OpenAI-compatible API:
+
+  ```python
+  import time
+  from openai import OpenAI
+
+  client = OpenAI(
+      api_key="EMPTY",
+      base_url="http://localhost:8000/v1",
+      timeout=3600
+  )
+
+  messages = [
+      {
+          "role": "user",
+          "content": [
+              {
+                  "type": "image_url",
+                  "image_url": {
+                      "url": "https://ofasys-multimodal-wlcb-3-toshanghai.oss-accelerate.aliyuncs.com/wpf272043/keepme/image/receipt.png"
+                  }
+              },
+              {
+                  "type": "text",
+                  "text": "Read all the text in the image."
+              }
+          ]
+      }
+  ]
+
+  start = time.time()
+  response = client.chat.completions.create(
+      model="moonshotai/Kimi-K3",
+      messages=messages,
+      max_tokens=2048
+  )
+  print(f"Response costs: {time.time() - start:.2f}s")
+  print(f"Generated text: {response.choices[0].message.content}")
+  ```
+
+  ## Notes
+
+  - **Cross node communitcation**: Use `--all2all-backend deepep_v2` for RDMA and `--all2all-backend flashinfer_nvlink_one_sided` for NVLink.
+  - **MoE backend**: Recommend to use `deep_gemm_mega_moe` for DEP deployments with cross-node NVLink e.g. GB200 and GB300. Note that DeepGEMM MegaMoE is not compatible with cross-node RDMA.
+  - **Model Runner v2 and Rust Frontend**: `VLLM_USE_V2_MODEL_RUNNER=1` and `VLLM_USE_RUST_FRONTEND=1`: Model Runner v2 and Rust Frontend fully supports this model and can be enabled if needed.
+  - **Tool calling**: K3 occasionally emit a tool-call format its own parser doesn't expect. Suggest to run do schema validation and retry.
+  - **AMD (MI355X / MI350X, CDNA4 gfx950)**: set AITER_SITUV2_A8W4 to 0 along with AITER master flag to use aiter a16w4 MoE path. Set it to 1 to use aiter a8w4 MoE path.
+  - **max-model-len**: Adjust max-model-len for different benchmark scenarios for best performance.
+  - **RDMA**: If RDMA is enabled, set `UCX_TLS="rc,cuda_copy"` to make sure KV Cache transfer goes through RDMA.
+  - **MNNVL environments** (GB200/GB300 NVL): recommend adding `NCCL_MNNVL_ENABLE=1`, `NCCL_CUMEM_ENABLE=1`, and `NCCL_NVLS_ENABLE=1`.
+  - **mlx5 dmabuf registration failures**: if engine init fails with "NCCL error: unhandled system error" and the log shows `mlx5dv_reg_dmabuf_mr` errno 524, the kernel/driver lacks mlx5 dmabuf support (NCCL 2.28 registers dmabuf by default). Set `NCCL_DMABUF_ENABLE=0` to fall back to `nvidia_peermem` (must be loaded on the nodes) — still GPUDirect RDMA.
+  - **FP8 KV**: If FP8 KV cache is needed, please also add `--attention-config '{"use_prefill_query_quantization":true,"mla_prefill_backend":"flashinfer"}'` when serving vLLM.

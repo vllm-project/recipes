@@ -3,7 +3,8 @@ meta:
   slug: "Qwen3.6-27b"
   provider: "Qwen"
   description: "Qwen3.6 dense multimodal model (27B) with gated delta networks hybrid attention, MTP, and 262K context"
-  date_updated: 2026-04-22
+  date_added: 2026-04-22
+  date_updated: 2026-07-02
   difficulty: beginner
   tasks:
     - multimodal
@@ -11,6 +12,11 @@ meta:
   performance_headline: "Qwen3.6 flagship dense — single-GPU FP8 or 2x GPU BF16"
   related_recipes:
     - "Qwen/Qwen3.6-35B-A3B"
+  hardware:
+    dgx_spark_gb10: verified
+    rtx_pro_6000: verified
+    dgx_station_gb300: verified
+    rtx_5090: verified
 
 model:
   model_id: "Qwen/Qwen3.6-27B"
@@ -25,7 +31,7 @@ model:
 
 features:
   tool_calling:
-    description: "Enable automatic tool choice with Qwen3 Coder parser"
+    description: "Enable automatic tool choice with Qwen3 XML parser"
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
@@ -39,7 +45,7 @@ features:
     description: "Multi-token prediction speculative decoding for lower latency"
     args:
       - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":1}'
+      - '{"method":"mtp","num_speculative_tokens":3}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -59,6 +65,11 @@ variants:
     precision: bf16
     vram_minimum_gb: 65
     description: "Full precision BF16 — fits on 1x H200 or 2x H100"
+    hardware_overrides:
+      rtx_pro_6000:
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
   fp8:
     model_id: "Qwen/Qwen3.6-27B-FP8"
     precision: fp8
@@ -67,6 +78,53 @@ variants:
     extra_args:
       - "--max-num-seqs"
       - "512"
+    hardware_overrides:
+      dgx_spark_gb10:
+        extra_env:
+          VLLM_USE_DEEP_GEMM: "0"
+      rtx_pro_6000:
+        extra_env:
+          VLLM_USE_DEEP_GEMM: "0"
+  nvfp4:
+    model_id: "nvidia/Qwen3.6-27B-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 27
+    tp: 1
+    description: "NVIDIA ModelOpt NVFP4 checkpoint — MLP linears quantized to NVFP4, attention linears and KV cache in FP8. Single Blackwell GPU, including DGX Spark."
+    hardware_overrides:
+      dgx_station_gb300:
+        extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--attention-backend"
+          - "flashinfer"
+          - "--gpu-memory-utilization"
+          - "0.92"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
+          - "--enable-prefix-caching"
+          - "--load-format"
+          - "fastsafetensors"
+          - "--async-scheduling"
+      rtx_5090:
+        extra_args:
+          - "--max-model-len"
+          - "131072"
+          - "--max-num-seqs"
+          - "4"
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--attention-backend"
+          - "flashinfer"
+          - "--enable-chunked-prefill"
+          - "--enable-prefix-caching"
+          - "--max-num-batched-tokens"
+          - "4096"
+          - "--gpu-memory-utilization"
+          - "0.95"
 
 compatible_strategies:
   - single_node_tp
@@ -88,9 +146,11 @@ guide: |
   ## Prerequisites
 
   - **vLLM version:** >= 0.17.0
+  - **DGX Spark NVFP4 vLLM version:** >= 0.24.0
   - **Hardware (BF16):** 1x H200 or 2x H100
   - **Hardware (FP8):** single 40 GB GPU (H100/H200/L40S)
   - **Hardware (Int4):** single 24 GB GPU
+  - **Hardware (NVFP4):** single NVIDIA Blackwell GPU (B200/B300/GB10 DGX Spark)
 
   ### Install vLLM
 
@@ -136,6 +196,176 @@ guide: |
     --enable-prefix-caching
   ```
 
+  ### DGX Spark GB10 NVFP4
+
+  The NVIDIA ModelOpt NVFP4 checkpoint is served from
+  [`nvidia/Qwen3.6-27B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
+  and requires vLLM 0.24.0+.
+
+  #### **Single node (TP1)**
+
+  ```bash
+  # Use container: vllm/vllm-openai:v0.24.0-ubuntu2404
+
+  vllm serve nvidia/Qwen3.6-27B-NVFP4 \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --gpu-memory-utilization 0.5 \
+    --max-model-len 262144 \
+    --max-num-seqs 8 \
+    --max-num-batched-tokens 8192 \
+    --enable-chunked-prefill \
+    --async-scheduling \
+    --enable-prefix-caching \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
+    --load-format fastsafetensors \
+    --reasoning-parser qwen3 \
+    --tool-call-parser qwen3_coder \
+    --enable-auto-tool-choice
+  ```
+
+  #### **Multi-node (TP2)**
+
+  Download the checkpoint on all nodes. Start the worker nodes first and then the head node.
+  The head node coordinates the others, so they need to be ready to connect when it comes up.
+
+  ```bash
+  # COMMON variables example values — same on all nodes
+  export HEAD_IP="<node1-connectx-ip>"   # The ConnectX IP of Node1 (Head Node)
+  export ETH_IF="enp1s0f1np1"            # CX7 ethernet interface which is UP
+  export IB_IF="rocep1s0f1,roceP2p1s0f1" # BOTH matching RoCE interfaces
+  export MASTER_PORT=29501               # Free port on the Head Node
+  export CONTAINER_NAME=vllm_node
+  export IMAGE="vllm/vllm-openai:v0.24.0-ubuntu2404"
+  ```
+
+  ```bash
+  # Head Node
+  docker run --privileged --ulimit nofile=1048576:1048576 --ipc=host \
+    --gpus all --rm --network host --name "$CONTAINER_NAME" --entrypoint="" \
+    -e MN_IF_NAME="$ETH_IF" \
+    -e UCX_NET_DEVICES="$ETH_IF" \
+    -e NCCL_SOCKET_IFNAME="$ETH_IF" \
+    -e NCCL_IB_HCA="$IB_IF" \
+    -e NCCL_IB_DISABLE=0 \
+    -e OMPI_MCA_btl_tcp_if_include="$ETH_IF" \
+    -e GLOO_SOCKET_IFNAME="$ETH_IF" \
+    -e TP_SOCKET_IFNAME="$ETH_IF" \
+    -e NCCL_IGNORE_CPU_AFFINITY=1 \
+    -e VLLM_FLOAT32_MATMUL_PRECISION=high \
+    -e HEAD_IP="$HEAD_IP" \
+    -e MASTER_PORT="$MASTER_PORT" \
+    -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
+    "$IMAGE" vllm serve nvidia/Qwen3.6-27B-NVFP4 \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --attention-backend flashinfer \
+    --gpu-memory-utilization 0.5 \
+    --max-model-len 262144 \
+    --max-num-seqs 10 \
+    --max-num-batched-tokens 8192 \
+    --enable-chunked-prefill \
+    --async-scheduling \
+    --enable-prefix-caching \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
+    --load-format fastsafetensors \
+    --reasoning-parser qwen3 \
+    --tool-call-parser qwen3_coder \
+    --enable-auto-tool-choice \
+    --tensor-parallel-size 2 \
+    --nnodes 2 \
+    --node-rank 0 \
+    --master-addr "$HEAD_IP" \
+    --master-port "$MASTER_PORT"
+
+  # Worker node
+  docker run --privileged --ulimit nofile=1048576:1048576 --ipc=host \
+    --gpus all --rm --network host --name "$CONTAINER_NAME" --entrypoint="" \
+    -e MN_IF_NAME="$ETH_IF" \
+    -e UCX_NET_DEVICES="$ETH_IF" \
+    -e NCCL_SOCKET_IFNAME="$ETH_IF" \
+    -e NCCL_IB_HCA="$IB_IF" \
+    -e NCCL_IB_DISABLE=0 \
+    -e OMPI_MCA_btl_tcp_if_include="$ETH_IF" \
+    -e GLOO_SOCKET_IFNAME="$ETH_IF" \
+    -e TP_SOCKET_IFNAME="$ETH_IF" \
+    -e NCCL_IGNORE_CPU_AFFINITY=1 \
+    -e VLLM_FLOAT32_MATMUL_PRECISION=high \
+    -e HEAD_IP="$HEAD_IP" \
+    -e MASTER_PORT="$MASTER_PORT" \
+    -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
+    "$IMAGE" vllm serve nvidia/Qwen3.6-27B-NVFP4 \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --attention-backend flashinfer \
+    --gpu-memory-utilization 0.5 \
+    --max-model-len 262144 \
+    --max-num-seqs 10 \
+    --max-num-batched-tokens 8192 \
+    --enable-chunked-prefill \
+    --async-scheduling \
+    --enable-prefix-caching \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
+    --load-format fastsafetensors \
+    --reasoning-parser qwen3 \
+    --tool-call-parser qwen3_coder \
+    --enable-auto-tool-choice \
+    --tensor-parallel-size 2 \
+    --nnodes 2 \
+    --node-rank 1 \
+    --master-addr "$HEAD_IP" \
+    --master-port "$MASTER_PORT" \
+    --headless
+  ```
+
+
+  ### RTX Pro 6000 NVFP4
+
+  The NVIDIA ModelOpt NVFP4 checkpoint is served from
+  [`nvidia/Qwen3.6-27B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
+  and requires vLLM 0.24.0+.
+
+  ```bash
+  # Use container: vllm/vllm-openai:v0.24.0-ubuntu2404
+
+  vllm serve nvidia/Qwen3.6-27B-NVFP4 \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --gpu-memory-utilization 0.9 \
+    --max-model-len 262144 \
+    --max-num-seqs 8 \
+    --max-num-batched-tokens 8192 \
+    --enable-chunked-prefill \
+    --async-scheduling \
+    --enable-prefix-caching \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
+    --load-format fastsafetensors \
+    --reasoning-parser qwen3 \
+    --tool-call-parser qwen3_coder \
+    --enable-auto-tool-choice
+  ```
+
+  ### NVFP4 on Blackwell
+
+  The [`nvidia/Qwen3.6-27B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
+  checkpoint is NVIDIA's ModelOpt re-quantization: MLP linears drop to NVFP4
+  (W4A16) while the attention linears and KV cache stay FP8, so the ~22 GB
+  weights fit a single Blackwell GPU. vLLM auto-detects the ModelOpt
+  quantization from the checkpoint, so no `--quantization` flag is needed — just
+  use a recent vLLM (NVIDIA recommends nightly or a source build with ModelOpt
+  W4A16/NVFP4 support). NVIDIA reports near-lossless accuracy versus the FP8
+  baseline.
+
+  ```bash
+  vllm serve nvidia/Qwen3.6-27B-NVFP4 \
+    --max-model-len 262144 \
+    --reasoning-parser qwen3
+  ```
+
   ## Processing Ultra-Long Texts
 
   Qwen3.6-27B natively supports `262,144` tokens. For longer inputs, apply
@@ -179,4 +409,5 @@ guide: |
   - [Model card](https://huggingface.co/Qwen/Qwen3.6-27B)
   - [FP8 checkpoint](https://huggingface.co/Qwen/Qwen3.6-27B-FP8)
   - [GPTQ-Int4 checkpoint](https://huggingface.co/Qwen/Qwen3.6-27B-GPTQ-Int4)
+  - [NVIDIA NVFP4 checkpoint](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
   - [Qwen3.6-397B-A17B recipe](../Qwen3.6-397B-A17B)

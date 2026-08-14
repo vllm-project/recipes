@@ -3,6 +3,7 @@ meta:
   slug: "voxcpm2"
   provider: "MiniCPM (OpenBMB)"
   description: "OpenBMB's 2B native-AR text-to-speech model served via vLLM-Omni — 48 kHz mono, 30+ languages, zero-shot synthesis and reference-audio voice cloning — through the OpenAI /v1/audio/speech API."
+  date_added: 2026-06-17
   date_updated: 2026-06-15
   difficulty: beginner
   tasks:

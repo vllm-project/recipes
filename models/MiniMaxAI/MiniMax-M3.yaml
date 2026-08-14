@@ -2,8 +2,9 @@ meta:
   title: "MiniMax-M3"
   slug: "minimax-m3"
   provider: "MiniMax"
-  description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 plus MXFP8 and AMD MI355X MXFP4 variants. Runs on NVIDIA (Hopper/Blackwell) and AMD CDNA4/CDNA3."
-  date_updated: 2026-06-25
+  description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 plus MXFP8, NVIDIA Blackwell NVFP4, and AMD MI355X MXFP4 variants. Runs on NVIDIA (Hopper/Blackwell) and AMD CDNA4/CDNA3."
+  date_added: 2026-06-12
+  date_updated: 2026-08-03
   difficulty: advanced
   tasks:
     - text
@@ -12,21 +13,19 @@ meta:
   related_recipes: []
   hardware:
     h200: verified
+    b200: verified
+    b300: verified
     mi300x: verified
     mi355x: verified
 
 model:
   model_id: "MiniMaxAI/MiniMax-M3"
   min_vllm_version: "0.24.0"
-  nightly_required: true
   docker_image: 
     nvidia: "vllm/vllm-openai:minimax-m3"
     amd: "vllm/vllm-openai-rocm:minimax-m3" 
   # Docker-only: MiniMax-M3 support hasn't shipped in a stable wheel, and the
   # dedicated image is the supported path — hide the pip tab.
-  install:
-    docker:
-    pip:
   architecture: moe
   # 427.04B total from safetensors metadata (BF16: 426.99B + F32: 46.3M).
   # Active: 57 MoE layers × (4 routed + 1 shared) × 56.6M + 60-layer attn
@@ -55,14 +54,40 @@ features:
       - "--reasoning-parser"
       - "minimax_m3"
   spec_decoding:
-    description: "Eagle3 speculative decoding with the Inferact MiniMax-M3 draft head — accelerates decoding."
-    args:
-      - "--speculative-config"
-      - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
+    description: "Eagle3 speculative decoding with an Inferact MiniMax-M3 draft head — accelerates decoding. Choose between the standard MHA head and the GQA head (16× smaller draft KV cache — better for long-context or high-batch deployments)."
+    default_mode: eagle3
+    modes:
+      eagle3:
+        label: "MHA"
+        description: "Standard Eagle3 draft head (Multi-Head Attention, 64 KV heads)."
+        args:
+          - "--speculative-config"
+          - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
+        hardware_overrides:
+          amd:
+            args:
+              - "--speculative-config"
+              - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "TRITON_ATTN"}'
+      eagle3_gqa:
+        label: "GQA"
+        description: "GQA Eagle3 draft head (Grouped Query Attention, 4 KV heads vs 64) — 16× smaller draft KV cache. Prefer for long-context or large-batch deployments where draft KV memory is the constraint."
+        args:
+          - "--speculative-config"
+          - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3-GQA", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
+        hardware_overrides:
+          amd:
+            args:
+              - "--speculative-config"
+              - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3-GQA", "num_speculative_tokens": 3, "attention_backend": "TRITON_ATTN"}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
       - "--language-model-only"
+  thinking_always_on:
+    description: "Pin `thinking_mode: enabled` server-side — every turn reasons before answering, including after tool results. Recommended for agentic workflows."
+    args:
+      - "--default-chat-template-kwargs"
+      - '{"thinking_mode": "enabled"}'
   encoder_parallel:
     description: "Run the vision encoder data-parallel instead of tensor-parallel — avoids TP comm overhead on the small encoder. Also enables the host-shared-memory multimodal processor cache and the per-brand encoder attention backend (FlashInfer on NVIDIA, AITER FlashAttention on AMD). Mutually exclusive with text_only."
     # No platform-agnostic `args`: this recipe targets only NVIDIA + AMD, both
@@ -91,6 +116,7 @@ features:
 opt_in_features:
   - spec_decoding
   - text_only
+  - thinking_always_on
   - encoder_parallel
 
 variants:
@@ -109,6 +135,66 @@ variants:
     # comfortably, ~4 GPUs for weights alone on Blackwell (B200/B300) or AMD MI350X/MI355X (gfx950)).
     vram_minimum_gb: 513
     description: "NVIDIA-quantized MXFP8 weights — Blackwell (B200/B300) for native MX tensor cores, and AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 Matrix Cores."
+    extra_args:
+      - "--attention_config.indexer_kv_dtype"
+      - "fp8"
+    hardware_overrides:
+      blackwell:
+        extra_env:
+          VLLM_FLOAT32_MATMUL_PRECISION: "high"
+      h100:
+        # 8x H100 80GB (640 GB node) fits the ~513 GB MXFP8 weights but not the
+        # full 1M-token KV cache — cap the context to 128K so the engine starts.
+        # H200 (1128 GB node) has the headroom and keeps the full window.
+        extra_args:
+          - "--max-model-len"
+          - "131072"
+      mi300x:
+        docker_image: "docker pull vllm/vllm-openai-rocm:nightly"
+        extra_args:
+          - "--language-model-only"
+          - "--async-scheduling"
+          - "--max-num-batched-tokens"
+          - "16384"
+        extra_env:
+          VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+          VLLM_ROCM_USE_AITER: "1"
+          VLLM_ROCM_USE_AITER_MHA: "0"
+          TORCH_BLAS_PREFER_HIPBLASLT: "1"
+          NCCL_MIN_NCHANNELS: "112"
+          GPU_MAX_HW_QUEUES: "2"
+      mi355x:
+        docker_image: "vllm/vllm-openai-rocm:nightly"
+        extra_args:
+          # run linear-layer GEMMs through the bf16 hipblasLT on MI355X.
+          - "--linear-backend"
+          - "emulation"
+        extra_env:
+          VLLM_ROCM_USE_AITER: "1"
+          VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
+          VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
+  nvfp4:
+    model_id: "nvidia/MiniMax-M3-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 257
+    description: "NVIDIA-quantized NVFP4 weights (ModelOpt) for Blackwell (B200/B300) — native FP4 tensor cores, ~half the VRAM of MXFP8."
+    extra_args:
+      - "--trust-remote-code"
+      - "--kv-cache-dtype"
+      - "fp8"
+      # FlashInfer TRT-LLM attention kernels with an FP8 indexer KV cache.
+      - "--attention_config.backend"
+      - "FLASHINFER"
+      - "--attention_config.use_trtllm_attention"
+      - "true"
+      - "--attention_config.indexer_kv_dtype"
+      - "fp8"
+      - "--attention_config.minimax_m3_msa_decode_backend"
+      - "cutlass"
+    extra_env:
+      VLLM_FLOAT32_MATMUL_PRECISION: "high"
+      VLLM_FLASHINFER_ALLREDUCE_BACKEND: "trtllm"
   mxfp4:
     model_id: "amd/MiniMax-M3-MXFP4"
     precision: mxfp4
@@ -154,6 +240,20 @@ hardware_overrides:
       # Run MiniMax-M3 with CUDA graphs on AMD MI3xx; avoids the decode
       # breakable-cudagraph path that otherwise forces eager (per @hongxiayang).
       VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+      VLLM_ROCM_USE_AITER_MOE: "1"
+      VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
+
+strategy_overrides:
+  pd_cluster:
+    hardware_overrides:
+      blackwell:
+        extra_args:
+          - "--attention_config.backend"
+          - "FLASHINFER"
+          - "--attention_config.use_trtllm_attention"
+          - "true"
+          - "--attention_config.indexer_kv_dtype"
+          - "fp8"
 
 guide: |
   ## Overview
@@ -445,6 +545,140 @@ guide: |
   For best MXFP8 throughput, prefer Blackwell (B200/B300) for native MX tensor cores,
   or AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 matrix cores.
 
+  On AMD MI300X, the **mxfp8** variant stacks two accuracy-safe scheduling
+  levers from the InferenceX MI300X tuning recipe and avoids the high-concurrency
+  expert-parallel regression by using plain TP8:
+
+  ```bash
+  export VLLM_ENGINE_READY_TIMEOUT_S=3600
+  export VLLM_USE_BREAKABLE_CUDAGRAPH=0
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_MHA=0
+  export TORCH_BLAS_PREFER_HIPBLASLT=1
+  export NCCL_MIN_NCHANNELS="${NCCL_MIN_NCHANNELS:-112}"
+  export GPU_MAX_HW_QUEUES="${GPU_MAX_HW_QUEUES:-2}"
+
+  vllm serve MiniMaxAI/MiniMax-M3-MXFP8 \
+    --tensor-parallel-size 8 \
+    --block-size 128 \
+    --language-model-only \
+    --max-model-len "$MAX_MODEL_LEN" \
+    --attention-backend TRITON_ATTN \
+    --async-scheduling \
+    --max-num-batched-tokens 16384 \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
+
+  On AMD MI355X the **mxfp8** variant additionally enables the AITER kernels,
+  the fused shared-experts MoE, and INT4 QuickReduce, and pulls the nightly ROCm
+  image (`vllm/vllm-openai-rocm:nightly`) — selected automatically in the command
+  builder; other MI3xx GPUs keep the pinned image. If you launch by hand:
+
+  ```bash
+  export VLLM_USE_BREAKABLE_CUDAGRAPH=0
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+
+  vllm serve MiniMaxAI/MiniMax-M3-MXFP8 \
+    --tensor-parallel-size 8 \
+    --block-size 128 \
+    --attention-backend TRITON_ATTN \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
+
+  ### MXFP8 high-concurrency options on MI355X
+
+  The command above is the default serving configuration and is tuned for the
+  general case. **AITER page-16 sparse paged attention** helps specifically at **long context and
+  high concurrency**. It maps MiniMax-M3's top-k 128-token MSA blocks onto AITER page-16 block tables
+  and runs AITER Gluon paged attention over only the selected KV pages.
+
+  The high-concurrency configuration is:
+
+  ```bash
+  # Long context + high concurrency only (isl >= 8k, conc >= 64). Regresses
+  # short-context / low-concurrency serving.
+  export VLLM_USE_BREAKABLE_CUDAGRAPH=0
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
+  export VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=1
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+  export VLLM_ROCM_QUICK_REDUCE_CAST_BF16_TO_FP16=0
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION_MIN_SIZE_KB=256
+
+  vllm serve MiniMaxAI/MiniMax-M3-MXFP8 \
+    --tensor-parallel-size 4 \
+    --block-size 128 \
+    --language-model-only \
+    --moe-backend aiter \
+    --kv-cache-dtype fp8 \
+    --max-num-batched-tokens 32768 \
+    --attention-backend TRITON_ATTN \
+    --linear-backend emulation \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
+
+  Note: Outside the long-context/high-batch
+  regime the shuffled layout costs more than it saves; leave it at `0`:
+
+  ```bash
+  export VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=0
+  ```
+
+  ## Quantized Variant (NVFP4 on Blackwell)
+
+  [`nvidia/MiniMax-M3-NVFP4`](https://huggingface.co/nvidia/MiniMax-M3-NVFP4)
+  is an NVFP4 checkpoint quantized by NVIDIA with ModelOpt. It requires a vLLM
+  build with MiniMax-M3 NVFP4 support (vllm-project/vllm PR #46380).
+
+  Select the **nvfp4** variant and **B200** hardware in the command builder, or
+  launch the tested B200 baseline directly:
+
+  ```bash
+  VLLM_FLOAT32_MATMUL_PRECISION=high \
+    vllm serve nvidia/MiniMax-M3-NVFP4 \
+    --tensor-parallel-size 8 \
+    --trust-remote-code \
+    --block-size 128 \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
+
+  Pair it with EAGLE3 speculative decoding (the *Spec decoding* feature) for
+  faster decode — the validated B200 benchmark runs the NVFP4 target against the
+  `Inferact/MiniMax-M3-EAGLE3` draft head (3 speculative tokens):
+
+  ```bash
+  VLLM_FLOAT32_MATMUL_PRECISION=high \
+    vllm serve nvidia/MiniMax-M3-NVFP4 \
+    --tensor-parallel-size 8 \
+    --trust-remote-code \
+    --block-size 128 \
+    --language-model-only \
+    --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
+  ```
+
+  For long-context or high-batch workloads where draft KV memory is the binding
+  constraint, swap in the **GQA** variant:
+
+  ```bash
+  VLLM_FLOAT32_MATMUL_PRECISION=high \
+    vllm serve nvidia/MiniMax-M3-NVFP4 \
+    --tensor-parallel-size 8 \
+    --trust-remote-code \
+    --block-size 128 \
+    --language-model-only \
+    --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3-GQA", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
+  ```
+
   ## Quantized Variant (MXFP4 on MI355X)
 
   [`amd/MiniMax-M3-MXFP4`](https://huggingface.co/amd/MiniMax-M3-MXFP4)
@@ -468,6 +702,69 @@ guide: |
     --reasoning-parser minimax_m3
   ```
 
+  ### MXFP4 benchmark reproduction (InferenceX MI355X sweep)
+
+  The command above is the default serving configuration. The
+  [SemiAnalysis InferenceX](https://inferencex.semianalysis.com/) MI355X
+  benchmark lane for this checkpoint is a separate **high-concurrency benchmark**
+  configuration — not the recipe default. To reproduce that sweep, start from the
+  default command above and apply these deltas:
+
+  - Use `--tensor-parallel-size 4` (the sweep runs TP4; the default recipe keeps
+    TP8 for KV-cache and multimodal-encoder headroom).
+  - Add `--kv-cache-dtype fp8`.
+  - Use the text-only language-model path with `--no-enable-prefix-caching`,
+    `--language-model-only`, and an explicit `--max-model-len`.
+  - Force the AITER MXFP4 MoE backend with `--moe-backend aiter` plus the AITER
+    MoE env vars below.
+  - Run on a current `vllm/vllm-openai-rocm:nightly` (the lane pins a specific
+    nightly build — don't hard-code a transient tag).
+  - Export INT4 quantized all-reduce before launch:
+
+  ```bash
+  # Kernel selection — required to match the benchmarked MoE path.
+  # Without these (and `--moe-backend aiter` on the serve command), vLLM's MXFP4
+  # MoE oracle selects the TRITON_UNFUSED fallback on gfx950 instead of the
+  # AITER_MXFP4_MXFP4 kernel the InferenceX lane actually runs.
+  export VLLM_ENGINE_READY_TIMEOUT_S=3600
+  export VLLM_USE_BREAKABLE_CUDAGRAPH=0
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_MOE=1
+  export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
+
+  # Benchmark-only — accuracy-sensitive; NOT part of the default command.
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+  export VLLM_ROCM_QUICK_REDUCE_CAST_BF16_TO_FP16=0
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION_MIN_SIZE_KB=256
+  ```
+
+  The full reproduction serve command is then:
+
+  ```bash
+  vllm serve amd/MiniMax-M3-MXFP4 \
+    --port "${PORT:-8000}" \
+    --tensor-parallel-size 4 \
+    --trust-remote-code \
+    --block-size 128 \
+    --no-enable-prefix-caching \
+    --language-model-only \
+    --max-model-len "$MAX_MODEL_LEN" \
+    --attention-backend TRITON_ATTN \
+    --moe-backend aiter \
+    --kv-cache-dtype fp8 \
+    --tool-call-parser minimax_m3 \
+    --enable-auto-tool-choice \
+    --reasoning-parser minimax_m3
+  ```
+
+  Selecting the AITER MXFP4 MoE backend (`--moe-backend aiter`) is a
+  kernel-selection choice (same MXFP4 math, faster kernel), not a precision
+  reduction. The INT4 all-reduce and fp8 KV-cache levers are throughput
+  optimizations for high concurrency and are **kept out of the default command
+  pending accuracy validation**. Performance figures on the InferenceX dashboard
+  are **reported externally by SemiAnalysis and have not been reproduced in this
+  repository.**
+
   ## Troubleshooting
 
   - **`--block-size` mismatch.** MSA's sparse block size is 128; the vLLM KV
@@ -487,11 +784,30 @@ guide: |
     mutually exclusive with Encoder Parallel.
  
 
+  ## EAGLE3 Speculative Decoding
+
+  Two Inferact draft heads are available as selectable modes in the *Spec decoding*
+  feature — both use `method: eagle3` with 3 speculative tokens and share
+  MiniMax-M3's embedding table and LM head:
+
+  | Mode | Repo | KV heads | Draft KV cache |
+  |------|------|----------|----------------|
+  | **MHA** (default) | `Inferact/MiniMax-M3-EAGLE3` | 64 | baseline |
+  | **GQA** | `Inferact/MiniMax-M3-EAGLE3-GQA` | 4 | **16× smaller** |
+
+  The GQA head uses Grouped Query Attention (4 KV heads grouped from 64 query
+  heads) — the only architectural difference from the MHA head. The 16× reduction
+  in draft KV state makes it preferable when draft memory is the binding constraint
+  (long-context serving or large batch sizes).
+
   ## References
 
   - [Model card](https://huggingface.co/MiniMaxAI/MiniMax-M3)
   - [MXFP8 variant](https://huggingface.co/MiniMaxAI/MiniMax-M3-MXFP8)
+  - [NVFP4 variant](https://huggingface.co/nvidia/MiniMax-M3-NVFP4)
   - [AMD MXFP4 variant](https://huggingface.co/amd/MiniMax-M3-MXFP4)
+  - [EAGLE3 draft head (MHA)](https://huggingface.co/Inferact/MiniMax-M3-EAGLE3)
+  - [EAGLE3 draft head (GQA)](https://huggingface.co/Inferact/MiniMax-M3-EAGLE3-GQA)
   - [MiniMax](https://www.minimax.io/)
   - [MiniMax Agent](https://agent.minimax.io/)
   - [MiniMax Platform](https://platform.minimax.io/)

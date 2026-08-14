@@ -3,6 +3,7 @@ meta:
   slug: "llama3.3-70b"
   provider: "Meta"
   description: "Llama 3.3 70B dense model with NVIDIA FP8/FP4 quantized variants for Hopper and Blackwell GPUs"
+  date_added: 2025-08-06
   date_updated: 2026-04-16
   difficulty: beginner
   tasks:
@@ -61,6 +62,10 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
   - multi_node_tp_pp
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides:
   hopper:

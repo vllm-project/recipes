@@ -3,6 +3,7 @@ meta:
   slug: "lfm2.5-1.2b-jp-202606"
   provider: "LiquidAI"
   description: "Liquid AI's updated (2026-06) 1.2B Japanese chat model on the LFM2 hybrid conv+attention backbone — adds tool calling, with a 32K context window."
+  date_added: 2026-06-25
   date_updated: 2026-06-24
   difficulty: beginner
   tasks:

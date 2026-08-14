@@ -1,0 +1,279 @@
+meta:
+  title: "Muse Glimmer 30B"
+  slug: "muse-glimmer-30b"
+  provider: "Muse (Meta)"
+  description: "Dense 29.6B vision-language model with a ViT-G/14 perception encoder and 128K context, distilled from Muse Spark for local agentic use. Emits channel-scoped reasoning and XML-style ATEM tool calls rather than JSON, so it needs the dedicated `muse_glimmer` tool-call and reasoning parsers."
+  date_added: 2026-08-09
+  date_updated: 2026-08-10
+  difficulty: advanced
+  tasks:
+    - text
+    - multimodal
+  performance_headline: ""
+  related_recipes: []
+  # Open the builder on GB10: this model is built for local deployment, so the
+  # single-card DGX Spark is the interesting configuration, not the 8-GPU H200
+  # node pickDefaultHardware would otherwise choose.
+  default_hardware: dgx_spark_gb10
+  hardware:
+    gb300: verified
+    # Single GB10 with 128 GB unified memory. gpu_count is 1, so autoFitTp caps
+    # TP at 1 — this is a plain single-card deployment, no sharding.
+    dgx_spark_gb10: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
+
+model:
+  model_id: "meta-models/Muse-Glimmer-30B"
+  # Not in any released wheel — the model code and both parsers land upstream on
+  # nightly first, so `nightly_required` points the Install block at the nightly
+  # index. The version below is the unreleased target, not something installable.
+  min_vllm_version: "0.27.0"
+  docker_image:
+    nvidia:
+      # Single-key map: the site pins cu130 and hides the cu129 toggle rather
+      # than fabricating a -cu129 tag that may not be published.
+      cu130: "vllm/vllm-openai:muse-glimmer"
+  nightly_required: true
+  install:
+    docker:
+      note: "Docker is the supported path — the model code and the muse_glimmer parsers are not in any released vLLM wheel. On ROCm, please install the code from https://github.com/vllm-project/vllm/pull/51655 ."
+    pip: false
+  architecture: dense
+  # Model card states ~29.6B total including the perception encoder. Measured from
+  # safetensors metadata: total_size 59,553,253,376 bytes at BF16 = 29.78B. No expert
+  # tensors in the index — dense, not MoE. 52 text layers (hidden 6656, SwiGLU FFN
+  # intermediate 19,968, RoPE theta 500,000 on local layers only, gated attention,
+  # [Local, Local, Local, Global] repeating with a 2048 sliding window) plus a
+  # ~1.8B ViT-G/14 perception encoder (50 layers, width 1536, patch 14).
+  parameter_count: "29.6B"
+  active_parameters: "29.6B"
+  context_length: 131072
+  base_args:
+    # Picks up generation_config.json: stop tokens [200001, 200008]. Do NOT add
+    # 200007 (<|eom|>) as an eos — it terminates the turn at the end of the
+    # reasoning channel and collapses tool calling.
+    - "--generation-config"
+    - "auto"
+  base_env: {}
+
+features:
+  tool_calling:
+    description: "ATEM (XML-style) tool calls with automatic tool choice. Calls arrive in `message.tool_calls`; do not enable guided JSON — this model does not emit JSON tool calls. It emits one tool call per message: several calls arrive as consecutive assistant messages, not a single multi-element `tool_calls` array."
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "muse_glimmer"
+  reasoning:
+    description: "Channel-scoped chain-of-thought. Surfaces as `message.reasoning` (non-streaming) and `delta.reasoning` (streaming) — note this model uses `reasoning`, not `reasoning_content`. Effort is controlled by a `Reasoning strength: <low|medium|high|xhigh>` line in the system prompt."
+    args:
+      - "--reasoning-parser"
+      - "muse_glimmer"
+  spec_decoding:
+    description: "DFlash block-diffusion draft head — predicts a whole block in one forward, verified in parallel by the target. `num_speculative_tokens: 15` is not a tuning knob: the head has `block_size: 16` and slot 0 re-presents the last accepted token, so 15 is what remains."
+    args:
+      - "--speculative-config"
+      - '{"method": "dflash", "model": "meta-models/Muse-Glimmer-30B-assistant", "num_speculative_tokens": 15}'
+
+opt_in_features:
+  - spec_decoding
+
+variants:
+  default:
+    precision: bf16
+    # 29.78B x 2 bytes x 1.2
+    vram_minimum_gb: 72
+    description: "BF16 weights, the reference precision."
+    hardware_overrides:
+      mi300x:
+        extra_args:
+          - "--attention-backend"
+          - "ROCM_AITER_FA"
+      mi325x:
+        extra_args:
+          - "--attention-backend"
+          - "ROCM_AITER_FA"
+      mi355x:
+        extra_args:
+          - "--attention-backend"
+          - "ROCM_AITER_FA"
+  fp8_block:
+    precision: fp8
+    model_id: "RedHatAI/Muse-Glimmer-30B-FP8-block"
+    # 33 GB on disk x 1.2 overhead
+    vram_minimum_gb: 40
+    description: "FP8_BLOCK (E4M3) weights with 128x128 block scaling, dynamic activations. 33 GB on disk, fits one GPU."
+  nvfp4:
+    precision: nvfp4
+    model_id: "Inferact/Muse-Glimmer-30B-NVFP4-W4A4"
+    # NOT the params x 0.5 x 1.2 = 18 GB the table would give: the checkpoint is
+    # only partially quantized (364 language-model projections over 52 layers),
+    # while embeddings, lm_head and the whole vision tower stay unquantized. Sized
+    # from the real files instead — 12.06 GB + 13.36 GB = 25.42 GB x 1.2.
+    vram_minimum_gb: 31
+    description: "ModelOpt NVFP4 W4A4 — weights and activations at 4 bits, group size 16. 25.42 GB on disk, fits one GPU."
+
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides:
+  amd:
+    extra_args: []
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+
+guide: |
+  ## Overview
+
+  Muse Glimmer 30B is a dense vision-language model built for agentic work on
+  consumer hardware: a 52-layer text decoder (hidden 6656) plus a ~1.8B ViT-G/14
+  perception encoder, 128K trained context, BF16. Apache 2.0, knowledge cutoff
+  January 4 2026, trained on 100+ languages.
+
+  What makes it unlike most recipes here is its output format. It does not emit
+  JSON tool calls and it does not wrap reasoning in `<think>` tags. Every turn is
+  written as a sequence of channel-scoped messages:
+
+  ```
+  to=self<|message|>...chain of thought...<|eom|>
+  <|start|>assistant to=<tool><|message|><atem:function_calls>
+  <atem:invoke name="<tool>">
+  <atem:parameter name="<arg>">value</atem:parameter>
+  </atem:invoke>
+  </atem:function_calls><|eom|>
+  <|start|>assistant to=user<|message|>...final answer...<|eot|>
+  ```
+
+  Both `--tool-call-parser muse_glimmer` and `--reasoning-parser muse_glimmer` key off that
+  framing, so run them together. The reasoning parser also forces
+  `skip_special_tokens=False` — without it the markers are stripped before
+  parsing and both channels collapse into content.
+
+  ## Prerequisites
+
+  - **Hardware**: DGX Spark. FP4 weights might also run on 5090.
+  - **Image**: `vllm/vllm-openai:muse-glimmer`, code will be released soon.
+
+  ## Checkpoints
+
+  | variant | repo | size | notes |
+  |---|---|---|---|
+  | BF16 | [`meta-models/Muse-Glimmer-30B`](https://huggingface.co/meta-models/Muse-Glimmer-30B) | 59.58 GB | reference precision |
+  | FP8 | [`RedHatAI/Muse-Glimmer-30B-FP8-block`](https://huggingface.co/RedHatAI/Muse-Glimmer-30B-FP8-block) | 32.78 GB | FP8 block-scaled weights, dynamic activations (vision tower + embeddings BF16) |
+  | NVFP4 | [`Inferact/Muse-Glimmer-30B-NVFP4-W4A4`](https://huggingface.co/Inferact/Muse-Glimmer-30B-NVFP4-W4A4) | 25.42 GB | ModelOpt NVFP4, **W4A4**, group size 16 |
+  | draft | [`meta-models/Muse-Glimmer-30B-assistant`](https://huggingface.co/meta-models/Muse-Glimmer-30B-assistant) | 5.11 GB | DFlash draft head for speculative decoding |
+
+  The NVFP4 build quantizes **both weights and activations** to 4 bits across 364
+  language-model projections (52 layers x 7); embeddings, `lm_head` and the vision
+  tower stay unquantized, which is why it is 25 GB rather than the ~15 GB a
+  uniform 4-bit quant would give. vLLM detects it from `config.json`
+  (`quant_method: modelopt`, `quant_algo: NVFP4`) and selects `modelopt_fp4` with
+  fused activation quantization — no extra flags, the launch command below is
+  unchanged apart from the model path. NVFP4 kernels are Blackwell-only.
+
+  ## Launching the Server
+
+  ```bash
+  vllm serve /model \
+    --served-model-name muse-glimmer \
+    --tensor-parallel-size 4 \
+    --gpu-memory-utilization 0.92 \
+    --max-model-len 131072 \
+    --max-num-seqs 64 \
+    --enable-auto-tool-choice --tool-call-parser muse_glimmer \
+    --reasoning-parser muse_glimmer \
+    --generation-config auto
+  ```
+
+  At TP=4 on GB300 this reports a 26.8M-token KV pool and ~204x max concurrency
+  at the full 128K context.
+
+  ## Running on DGX Spark (GB10)
+
+  Muse Glimmer was built for local deployment and runs on a DGX Spark as an
+  ordinary single-card deployment — **no special configuration**. GB10 is aarch64
+  like GB300 so the same image applies, and the launch command above is unchanged
+  apart from having one GPU to run on:
+
+  ```bash
+  vllm serve /model \
+    --served-model-name muse-glimmer \
+    --tensor-parallel-size 1 \
+    --enable-auto-tool-choice --tool-call-parser muse_glimmer \
+    --reasoning-parser muse_glimmer \
+    --generation-config auto
+  ```
+
+  There is no tensor parallelism to configure: GB10 is a single GPU, so TP is 1.
+  BF16 weights are ~55 GiB against 128 GB of unified memory, leaving the rest for
+  the KV cache and the perception encoder. The **NVFP4** checkpoint is 25.42 GB,
+  which leaves considerably more of that shared pool for KV and the host — the
+  better fit of the two on this hardware.
+
+  ## Running on MI300X/MI325X/MI355X
+
+  As of now, please install the code from https://github.com/vllm-project/vllm/pull/51655
+  if it hasn't been merged yet. After the PR is merged use `vllm/vllm-openai-rocm:nightly` image.
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  vllm serve /model \
+    --served-model-name muse-glimmer \
+    --tensor-parallel-size 4 \
+    --max-model-len 131072 \
+    --enable-auto-tool-choice \
+    --tool-call-parser muse_glimmer \
+    --reasoning-parser muse_glimmer \
+    --generation-config auto \
+    --attention-backend ROCM_AITER_FA
+  ```
+
+  At TP=1 on MI300X this reports an 6.66M-token KV pool and ~50.82x max concurrency
+  at the full 128K context.
+
+  At TP=4 on MI300X this reports an 17.79M-token KV pool and ~135.73x max concurrency
+  at the full 128K context.
+
+  At TP=1 on MI355X this reports an 11.64M-token KV pool and ~88.86x max concurrency
+  at the full 128K context.
+
+  At TP=4 on MI355X this reports an 27.68M-token KV pool and ~211.22x max concurrency
+  at the full 128K context.
+
+  ## Sampling
+
+  Use the published settings:
+
+  ```
+  temperature = 1.0
+  top_p       = 0.95
+  top_k       = 64
+  ```
+
+  Do not run it greedy — it is a reasoning model, and greedy is not reproducible
+  here either: identical requests at `temperature: 0` with a fixed `seed` returned
+  70, 80, and 86 completion tokens across runs.
+
+  **Reasoning strength.** Effort is set with a `Reasoning strength: <value>` line
+  in the system prompt, one of `low` / `medium` / `high` / `xhigh`. Use `high` or
+  `xhigh` for coding and agentic tasks.
+
+  ## Speculative decoding
+
+  Muse Glimmer ships a DFlash block-diffusion draft head. Rather than proposing
+  one token at a time, it predicts a whole block in a single forward — the slots
+  attend to each other bidirectionally — and the target verifies them in parallel.
+
+  ```bash
+  --speculative-config '{"method": "dflash", "model": "meta-models/Muse-Glimmer-30B-assistant", "num_speculative_tokens": 15}'
+  ```
+
+  **`num_speculative_tokens: 15` is fixed, not tuned.** The head has
+  `block_size: 16` and slot 0 re-presents the last accepted token, so 15 slots
+  remain to predict.
+
+  The head is 5 layers / 5.11 GB, reads the target's residual stream at layers
+  `[1, 13, 25, 37, 49]`, and ties its embedding and output projection to the
+  target — so it stores neither and is useless on its own. It must be paired with
+  the specific target it was distilled against, not merely a compatible one.

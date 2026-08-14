@@ -3,6 +3,7 @@ meta:
   slug: "glm-tts"
   provider: "GLM (Z-AI)"
   description: "Z-AI's two-stage (AR + DiT flow-matching) zero-shot voice-cloning TTS for Chinese and English, served via vLLM-Omni through the OpenAI /v1/audio/speech API. Every request is conditioned on reference audio + its transcript."
+  date_added: 2026-06-17
   date_updated: 2026-06-15
   difficulty: intermediate
   tasks:

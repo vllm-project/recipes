@@ -3,6 +3,7 @@ meta:
   slug: "nemotron-3-ultra-550b-a55b"
   provider: "NVIDIA"
   description: "NVIDIA Nemotron 3 Ultra hybrid Transformer-Mamba MoE model for long-context agentic reasoning, coding, and tool use."
+  date_added: 2026-06-04
   date_updated: 2026-06-03
   difficulty: advanced
   tasks:
@@ -78,6 +79,10 @@ variants:
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides: {}
 

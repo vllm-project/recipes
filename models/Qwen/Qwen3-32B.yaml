@@ -3,6 +3,7 @@ meta:
   slug: "qwen3-32b"
   provider: "Qwen"
   description: "Qwen3 32B dense model with hybrid thinking/non-thinking modes — verified on TPU v6e (Trillium)."
+  date_added: 2025-10-15
   date_updated: 2026-06-04
   difficulty: intermediate
   tasks:
@@ -13,6 +14,8 @@ meta:
   hardware:
     trillium: verified
     ironwood: verified
+    arc_pro_b60: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "Qwen/Qwen3-32B"
@@ -62,7 +65,15 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
 
-hardware_overrides: {}
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
+
+hardware_overrides:
+  xpu:
+    extra_args:
+      - "--gpu-memory-utilization"
+      - "0.90"
 
 strategy_overrides: {}
 
@@ -87,6 +98,12 @@ guide: |
   ```bash
   export HF_HOME=/dev/shm
   export HF_TOKEN=<your HF token>
+  ```
+
+  ### Intel XPU (B60 / B70)
+  Use the official vLLM XPU image.
+  ```bash
+  docker pull vllm/vllm-openai-xpu:latest
   ```
 
   ## Deployment Configurations
@@ -138,6 +155,23 @@ guide: |
     --host 0.0.0.0 \
     --port 8000 \
     --tensor-parallel-size 2
+  ```
+
+  ### Intel XPU (B60, B70)
+
+  Validated on 4× Intel Arc Pro B60 / B70 (B60 24 GB, B70 32 GB per card) with the
+  official vLLM XPU image `vllm/vllm-openai-xpu:latest`.
+
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-xpu:latest \
+    Qwen/Qwen3-32B \
+    --gpu-memory-utilization 0.90 \
+    --tensor-parallel-size 4 \
+    --max-model-len 8192
   ```
 
   ## Configuration Tips

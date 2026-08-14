@@ -27,6 +27,7 @@ export const PROVIDERS = {
   "fishaudio":       { display_name: "Fish Audio",              logo: "/providers/fishaudio.png" },
   "bosonai":         { display_name: "Boson AI",                logo: "/providers/bosonai.png" },
   "OpenMOSS-Team":   { display_name: "OpenMOSS",                logo: "/providers/OpenMOSS-Team.png" },
+  "IndexTeam":       { display_name: "IndexTeam",               logo: "/providers/IndexTeam.png" },
   "OpenGVLab":       { display_name: "InternVL (OpenGVLab)",    logo: "/providers/OpenGVLab.jpeg" },
   "internlm":        { display_name: "InternLM",                logo: "/providers/internlm.png" },
   "jinaai":          { display_name: "Jina AI",                 logo: "/providers/jinaai.png" },
@@ -43,6 +44,11 @@ export const PROVIDERS = {
   "JetBrains":       { display_name: "JetBrains",                 logo: "/providers/JetBrains.png" },
   "openbmb":         { display_name: "MiniCPM (OpenBMB)",          logo: "/providers/openbmb.png" },
   "LiquidAI":        { display_name: "Liquid AI",                  logo: "/providers/LiquidAI.png" },
+  "thinkingmachines":{ display_name: "Thinking Machines Lab",         logo: "/providers/thinkingmachines.png" },
+  "RedHatAI":        { display_name: "Red Hat AI",                    logo: "/providers/RedHatAI.png" },
+  "mindlab-research":{ display_name: "MindLab Research",               logo: "/providers/mindlab-research.png" },
+  "dots-studio":     { display_name: "Dots",                           logo: "/providers/dots-studio.png" },
+  "meta-models":     { display_name: "Muse (Meta)",                     logo: "/providers/meta-models.png" },
 };
 
 export function getProviderLogo(hfOrg) {

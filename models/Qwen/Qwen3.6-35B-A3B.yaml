@@ -3,6 +3,7 @@ meta:
   slug: "qwen3.6-35b-a3b"
   provider: "Qwen"
   description: "Smaller Qwen3.6 multimodal MoE model (35B total / 3B active) with BF16, FP8, and NVIDIA NVFP4 variants"
+  date_added: 2026-04-16
   date_updated: 2026-06-03
   difficulty: beginner
   tasks:
@@ -12,12 +13,15 @@ meta:
   related_recipes:
     - "Qwen/Qwen3.5-397B-A17B"
   hardware:
-    dgx_spark_gb10:
+    dgx_spark_gb10: verified
     h100: verified
     h200: verified
     mi300x: verified
     mi325x: verified
     mi355x: verified
+    rtx_pro_6000: verified
+    dgx_station_gb300: verified
+    rtx_5090: verified
 
 model:
   model_id: "Qwen/Qwen3.6-35B-A3B"
@@ -32,11 +36,11 @@ model:
 
 features:
   tool_calling:
-    description: "Enable automatic tool choice with Qwen3 XML parser"
+    description: "Enable automatic tool choice with Qwen3 Coder parser"
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_xml"
+      - "qwen3_coder"
   reasoning:
     description: "Enable chain-of-thought reasoning with Qwen3 parser"
     args:
@@ -66,11 +70,20 @@ variants:
     precision: bf16
     vram_minimum_gb: 84
     description: "Full precision BF16 — fits on 1x H200 or 2x H100"
+    hardware_overrides:
+      rtx_pro_6000:
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
   fp8:
     model_id: "Qwen/Qwen3.6-35B-A3B-FP8"
     precision: fp8
     vram_minimum_gb: 42
     description: "Qwen official FP8 checkpoint — single-GPU serving"
+    hardware_overrides:
+      rtx_pro_6000:
+        extra_env:
+          VLLM_USE_DEEP_GEMM: "0"
   nvfp4:
     model_id: "nvidia/Qwen3.6-35B-A3B-NVFP4"
     precision: nvfp4
@@ -80,11 +93,31 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-      - "--attention-backend"
-      - "flashinfer"
       - "--moe-backend"
       - "marlin"
       - "--enable-prefix-caching"
+    hardware_overrides:
+      dgx_station_gb300:
+        extra_args:
+        - "--gpu-memory-utilization"
+        - "0.92"
+        - "--max-model-len"
+        - "262144"
+        - "--max-num-batched-tokens"
+        - "8192"
+        - "--enable-chunked-prefill"
+        - "--async-scheduling"
+        - "--load-format"
+        - "fastsafetensors"
+      rtx_5090:
+        extra_args:
+          - "--gpu-memory-utilization"
+          - "0.95"
+          - "--max-num-seqs"
+          - "4"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
 
 compatible_strategies:
   - single_node_tp
@@ -115,6 +148,7 @@ guide: |
   ## Prerequisites
 
   - **vLLM version:** >= 0.17.0
+  - **DGX Spark NVFP4 vLLM version:** >= 0.24.0
   - **Hardware (BF16):** 1x H200 or 2x H100
   - **Hardware (FP8):** single H100/H200 or 1x MI300X/MI325X/MI355X
   - **Hardware (NVFP4):** NVIDIA Blackwell GPUs, including DGX Spark (GB10)
@@ -172,20 +206,51 @@ guide: |
   and requires vLLM nightly or a source build with ModelOpt W4A16/NVFP4 support.
 
   ```bash
+  # Use container: vllm/vllm-openai:v0.24.0-ubuntu2404
+
   vllm serve nvidia/Qwen3.6-35B-A3B-NVFP4 \
     --trust-remote-code \
     --kv-cache-dtype fp8 \
-    --attention-backend flashinfer \
     --moe-backend marlin \
-    --gpu-memory-utilization 0.4 \
+    --gpu-memory-utilization 0.5 \
     --max-model-len 262144 \
-    --max-num-seqs 4 \
+    --max-num-seqs 8 \
     --max-num-batched-tokens 8192 \
+    --enable-chunked-prefill \
+    --async-scheduling \
     --enable-prefix-caching \
     --speculative-config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}' \
     --load-format fastsafetensors \
     --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
+    --enable-auto-tool-choice
+  ```
+
+  ### RTX Pro 6000 NVFP4
+
+  The NVIDIA ModelOpt NVFP4 checkpoint is served from
+  [`nvidia/Qwen3.6-35B-A3B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-NVFP4)
+  and requires vLLM v0.24.0 or later.
+
+  ```bash
+  # Use container: vllm/vllm-openai:v0.24.0-ubuntu2404
+
+  vllm serve nvidia/Qwen3.6-35B-A3B-NVFP4 \
+    --tensor-parallel-size 1 \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --moe-backend marlin \
+    --gpu-memory-utilization 0.9 \
+    --max-model-len 262144 \
+    --max-num-seqs 8 \
+    --max-num-batched-tokens 8192 \
+    --enable-chunked-prefill \
+    --async-scheduling \
+    --enable-prefix-caching \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}' \
+    --load-format fastsafetensors \
+    --reasoning-parser qwen3 \
+    --tool-call-parser qwen3_coder \
     --enable-auto-tool-choice
   ```
 
