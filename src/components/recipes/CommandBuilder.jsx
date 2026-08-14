@@ -3,11 +3,24 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
+import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
+import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
+
+// Tuning guidance for a feature's sub-mode, shown under the Features row while
+// that mode is the active one. Keyed [feature][mode] and kept here rather than
+// in the recipe YAMLs: it describes the *method*, not any one checkpoint, so
+// every recipe offering the method would otherwise repeat the same paragraph.
+const FEATURE_MODE_NOTES = {
+  spec_decoding: {
+    dspark:
+      "Draft sampling: greedy at temperature 0. For chat at temperature 0.6–1.0, "
+      + "probabilistic usually accepts more tokens, at the cost of a little more VRAM.",
+  },
+};
 
 // Advanced tuning presets — optional tunable flags the user can opt into.
 // (vLLM defaults like chunked prefill, prefix caching, CUDA graphs, async
@@ -791,6 +804,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   // ── Derived ──
   const currentVariant = recipe.variants?.[variant] || recipe.variants?.default || {};
+
+  // The HF repo this variant serves — the variant's own checkpoint when it
+  // overrides `model_id` (nvidia/*-NVFP4, deepseek-ai/*-0813), otherwise the
+  // recipe's base model. Distinct from `modelId` below, which falls back to the
+  // literal "model" placeholder for command text; a URL needs a real repo or
+  // nothing at all.
+  const variantModelId = currentVariant.model_id || recipe.model?.model_id || null;
 
   // All hardware profiles grouped by brand, sorted by architectural generation
   // within brand (oldest → newest; matches the semianalysis GPU timeline).
@@ -2184,6 +2204,41 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 );
               })}
             </PillGroup>
+            {/* Active variant's description + the checkpoint it actually serves.
+                Mirrors the Strategy / KV Offload rows, which already render the
+                active option's description under the pills — this row was the
+                only one without it, so two things stayed invisible: the
+                description (it lived only in the pill's native `title`, which
+                touch and keyboard users never get), and the served repo, which
+                for a variant with its own `model_id` is NOT what the header's
+                "View on HuggingFace" points at. That link is deliberately the
+                recipe's own HF id — it's the page identity (`findVariantRedirect`
+                maps a variant repo back to this page), so the per-checkpoint link
+                belongs here, next to the pick that determines it.
+                Rendered for every variant, including ones that inherit
+                `model.model_id`: a line that appears for some pills and vanishes
+                for others is harder to learn than one that's always there. */}
+            {(currentVariant?.description || variantModelId) && (
+              <div className="mt-2 space-y-1">
+                {currentVariant?.description && (
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    {currentVariant.description}
+                  </p>
+                )}
+                {variantModelId && (
+                  <a
+                    href={`https://huggingface.co/${variantModelId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground hover:text-vllm-blue transition-colors"
+                  >
+                    <HuggingFaceIcon className="w-3 h-3" />
+                    {variantModelId}
+                    <ExternalLink size={9} />
+                  </a>
+                )}
+              </div>
+            )}
           </ConfigRow>
 
           {/* Strategy — always in effect, including under Mooncake: the KV
@@ -2596,6 +2651,28 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   );
                 })}
               </PillGroup>
+              {/* Guidance for the active sub-mode (FEATURE_MODE_NOTES) — tuning
+                  advice that outlives a tooltip, e.g. which draft_sample_method
+                  suits which temperature. It hangs off the Features row rather
+                  than the Spec method row below because that row only renders
+                  with ≥2 modes available for the current variant: a recipe whose
+                  methods are each pinned to different checkpoints (MTP on the
+                  preview, DSpark on the fused release) never shows it, and the
+                  note would have nowhere to live. */}
+              {featuredModeKeys.map((key) => {
+                const notes = FEATURE_MODE_NOTES[key];
+                if (!notes || !features.includes(key)) return null;
+                const feat = recipe.features[key];
+                if (!isFeatureAllowedForStrategy(feat, activeStrategy)) return null;
+                const activeMode = resolveModeKey(feat, key, currentVariant, variant, hwProfile, hwId, featureModes[key]);
+                const note = notes[activeMode];
+                if (!note) return null;
+                return (
+                  <p key={`${key}-note`} className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                    {note}
+                  </p>
+                );
+              })}
             </ConfigRow>
           )}
 
