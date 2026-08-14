@@ -66,12 +66,8 @@ features:
       - multi_node_tp_dp
       - pd_cluster
     args:
-      - "--spec-method"
-      - "dspark"
-      - "--spec-model"
-      - "RedHatAI/Kimi-K3-speculator.dspark"
-      - "--spec-tokens"
-      - "8"
+      - "--speculative-config"
+      - '{"model":"RedHatAI/Kimi-K3-speculator.dspark", "num_speculative_tokens":8, "method": "dspark", "attention_backend": "FLASHINFER_MLA", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
     hardware_overrides:
       # ROCm/MI355X: target keeps AITER MLA (prefill); the DSpark verify runs on TRITON_MLA
       # (FLASHINFER_MLA is CUDA-only). max-num-seqs 128 matches our validated serve config.
@@ -79,12 +75,8 @@ features:
         args:
           - "--max-num-seqs"
           - "128"
-          - "--spec-method"
-          - "dspark"
-          - "--spec-model"
-          - "RedHatAI/Kimi-K3-speculator.dspark"
-          - "--spec-tokens"
-          - "8"
+          - "--speculative-config"
+          - '{"model":"RedHatAI/Kimi-K3-speculator.dspark", "num_speculative_tokens":8, "method": "dspark", "attention_backend": "TRITON_MLA", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
   text_only:
     description: "Skip the vision encoder for text-only workloads. Mutually exclusive with encoder_parallel."
     args:
