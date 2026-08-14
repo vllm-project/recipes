@@ -213,21 +213,7 @@ guide: |
   `Lightricks/LTX-2.5` repository only supplies official two-stage sidecars and
   is not directly loadable with `--model`.
 
-  ## Hardware
-
-  | GPU | Status | Recommended scope |
-  |-----|--------|-------------------|
-  | NVIDIA B300 | Verified | All four canonical pipelines |
-  | NVIDIA B200 or H200 | Capacity-based recommendation; not yet verified | All four canonical pipelines |
-  | NVIDIA GB200 or GB300 | Capacity-based recommendation; not yet verified | All four canonical pipelines |
-  | NVIDIA H100 80 GB | FP8 recipe | Distilled one-stage at 960x544 |
-
-  The canonical 1920x1088 two-stage path needs about 114 GB of peak GPU
-  memory. 80 GB GPUs do not provide enough safety margin for that path. Only
-  B300 is marked `verified` in metadata because the recipes catalog reserves
-  that badge for end-to-end tested hardware.
-
-  ### H100 80 GB FP8
+  ## H100 80 GB FP8
 
   Use the distilled one-stage pipeline with FP8 and cuDNN attention:
 
