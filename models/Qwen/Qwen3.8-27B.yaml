@@ -5,7 +5,7 @@ meta:
   description: "27B-parameter dense hybrid-attention model with linear attention on 48 of 64 layers, a vision tower, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-14
   date_updated: 2026-08-14
-  difficulty: intermediate
+  difficulty: beginner
   tasks:
     - multimodal
     - text
@@ -23,17 +23,15 @@ model:
   # A NUMBER, not the string "nightly" the 2.4T sibling uses. `maxVersion`
   # (CommandBuilder.jsx:3146-3150) maps each dotted field through `parseInt(n,10) || 0`, so
   # "nightly" scores 0.0.0 and LOSES to any real version: pick a Mooncake KV-offload option
-  # and the Install header takes the kv_store YAMLs' "0.21.0" instead, understating the
-  # requirement. 0.27.2 is the in-flight nightly (PyPI stops at 0.27.1), so
-  # `nightly_required` still drives the wheel index — the version just renders honestly now.
+  # and the Install header would take the kv_store YAMLs' "0.21.0" instead, understating the
+  # requirement.
   #
-  # Base serving is code-identical on stable 0.27.1, but was never run there. The floor
-  # exists for `spec_decoding`: the GDN speculative-gate fix (vllm-project/vllm#51812) is in
-  # no released tag. Note the tested image predates that PR and gets the same correctness
-  # from #51674 instead — neither is a superset of the other, so treat 0.27.2 as a
-  # correctness floor, not a reproduce-these-numbers pin.
-  min_vllm_version: "0.27.2"
-  nightly_required: true
+  # 0.17.0 is where `Qwen3_5ForConditionalGeneration` is already registered. The runs behind
+  # this recipe all used the Docker image pinned below (a fork build in the 0.27 range), so
+  # older releases are unverified rather than known-good — and `spec_decoding` in particular
+  # wants the gated-delta-net speculative fix (vllm-project/vllm#51812 / #51674), which no
+  # released tag carries yet.
+  min_vllm_version: "0.17.0"
   # NVIDIA only. The rocm tag with the same name is an AMD build of the 2.4T *text* model
   # (no `ai.vllm.build.commit` label) and has never been exercised on the 27B; naming it
   # here would imply a tested AMD path that does not exist. Non-NVIDIA hardware falls back
@@ -152,9 +150,6 @@ guide: |
 
   ## Prerequisites
 
-  - **vLLM 0.27.2**, which is currently nightly — see the Install block above for the exact
-    command. Plain serving is code-identical on stable 0.27.1, but the MTP feature needs the
-    gated-delta-net speculative fix that no released tag carries yet.
   - **transformers >= 5.8.0**, matching the version `config.json` was written by. vLLM parses
     the config with its own `Qwen3_5Config`, so this is really about the Qwen3-VL processor.
 
@@ -227,8 +222,9 @@ guide: |
 
   ## Troubleshooting
 
-  **MXFP4 does not load.** The vLLM MXFP4 implementation is missing linear method support
-  so it doesn't run as intended. Use NVFP4 quantization on Nvidia instead.
+  **MXFP4 does not load on Nvidia devices.** The vLLM MXFP4 implementation on Nvidia device is
+  currently missing linear method support so it doesn't run as intended. Use NVFP4 quantization
+  on Nvidia instead.
 
   ## References
 
