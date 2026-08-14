@@ -36,7 +36,6 @@ model:
     - "0.0.0.0"
     - "--port"
     - "8000"
-    - "--enforce-eager"
     - "--diffusion-attention-backend"
     - "CUDNN_ATTN"
   base_env: {}
@@ -293,8 +292,7 @@ guide: |
     --quantization fp8 \
     --diffusion-attention-backend CUDNN_ATTN \
     --host 0.0.0.0 \
-    --port 8000 \
-    --enforce-eager
+    --port 8000
   ```
 
   Use the T2V or I2V task preset after the server is ready.
@@ -330,7 +328,7 @@ guide: |
     --prompt "A cinematic red fox walking through a snowy forest at dawn." \
     --width "${WIDTH}" --height "${HEIGHT}" --num-frames 121 \
     --num-inference-steps "${STEPS}" --frame-rate 24 --fps 24 --seed 42 \
-    --enforce-eager --output ltx25-t2v.mp4
+    --output ltx25-t2v.mp4
   ```
 
   For first-frame I2V, use the generic image-to-video example with the same
@@ -343,7 +341,7 @@ guide: |
     --prompt "The red fox walks forward while the camera tracks alongside." \
     --width "${WIDTH}" --height "${HEIGHT}" --num-frames 121 \
     --num-inference-steps "${STEPS}" --frame-rate 24 --fps 24 --seed 42 \
-    --enforce-eager --output ltx25-i2v.mp4
+    --output ltx25-i2v.mp4
   ```
 
   ## Online serving
@@ -353,8 +351,7 @@ guide: |
     --omni \
     --model-class-name "${PIPELINE}" \
     --host 0.0.0.0 \
-    --port 8000 \
-    --enforce-eager
+    --port 8000
   ```
 
   Use the task presets on this page for complete T2V and I2V requests. Restart
