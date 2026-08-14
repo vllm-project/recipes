@@ -12,6 +12,9 @@ meta:
     - "JetBrains/Mellum2-12B-A2.5B-Instruct"
   hardware:
     h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "JetBrains/Mellum2-12B-A2.5B-Thinking"
@@ -23,6 +26,7 @@ model:
   base_args:
     - "--max-model-len"
     - "131072"
+    - "--trust-remote-code"
   base_env: {}
 
 features:
@@ -51,6 +55,8 @@ compatible_strategies:
   - single_node_tep
   - single_node_dep
 
+hardware_overrides: {}
+
 strategy_overrides:
   single_node_tp:
     tp: 1
@@ -69,7 +75,8 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: a single H200, H100, or A100 (~29 GB at bf16) is plenty
+  - Hardware: a single H200, H100, or A100 (~29 GB at bf16) is plenty. On AMD,
+    use MI300X / MI325X / MI355X with TP=1.
   - vLLM **nightly** — `MellumForCausalLM` support landed after v0.22.0 and is not yet in a
     stable release. Install the nightly wheels until the next tagged release ships.
 
@@ -83,15 +90,42 @@ guide: |
 
   ## Launch command
 
+  ### Single GPU
+
+  ```bash
+  vllm serve JetBrains/Mellum2-12B-A2.5B-Thinking \
+    --max-model-len 131072 \
+    --trust-remote-code \
+    --tensor-parallel-size 1
+
+  # Optional: add parser flags for reasoning/tool-calling integrations.
+  vllm serve JetBrains/Mellum2-12B-A2.5B-Thinking \
+    --max-model-len 131072 \
+    --trust-remote-code \
+    --tensor-parallel-size 1 \
+    --reasoning-parser qwen3 \
+    --enable-auto-tool-choice \
+    --tool-call-parser hermes
+  ```
+
+  ### Docker (AMD MI300X / MI325X / MI355X)
+
+  MI300X / MI325X / MI355X GPUs have larger per-GPU HBM, so you can use
+  `--max-model-len auto`.
+
   ```bash
   # With reasoning (recommended for the Thinking checkpoint)
   vllm serve JetBrains/Mellum2-12B-A2.5B-Thinking \
-    --max-model-len 131072 \
+    --max-model-len auto \
+    --trust-remote-code \
+    --tensor-parallel-size 1 \
     --reasoning-parser qwen3
 
   # Add tool calling
   vllm serve JetBrains/Mellum2-12B-A2.5B-Thinking \
-    --max-model-len 131072 \
+    --max-model-len auto \
+    --trust-remote-code \
+    --tensor-parallel-size 1 \
     --reasoning-parser qwen3 \
     --enable-auto-tool-choice \
     --tool-call-parser hermes
