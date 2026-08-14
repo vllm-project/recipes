@@ -1792,12 +1792,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           prompt: undefined,
         })
       : verifyCmd;
+    const omniBench = activeTask?.benchmark || benchCmd;
 
     // Recompute placeholders against the omni command set rather than the
     // (unused-here) `result` from resolveCommand.
     const omniPlaceholders = detectPlaceholdersAll(
       omniRendered.command,
       omniCurl,
+      omniBench,
       ...Object.values(omniRendered.env || {}).filter((v) => typeof v === "string"),
     );
 
@@ -1846,7 +1848,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               command={omniSubbedCommand}
               env={omniSubbedEnv}
               verifyCmd={omniCurl}
-              benchCmd={benchCmd}
+              benchCmd={omniBench}
               statusHeader={statusHeader}
               installMode={effectiveInstallMode}
               dockerMeta={dockerMeta}

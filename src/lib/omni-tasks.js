@@ -207,9 +207,10 @@ export const OMNI_TASKS = {
  *   - extra_args        appended to the rendered `vllm serve --omni` command
  *   - curl              static curl override (otherwise the built-in renderer
  *                       interpolates host/port/modelId into a sample request)
+ *   - benchmark         static benchmark command override for non-LLM endpoints
  *
  * Returns: [{ id, key, label, endpoint, method, modelId?, vramMinimumGb?,
- *             description?, extraArgs?, hardwareOverrides?, example }]
+ *             description?, extraArgs?, hardwareOverrides?, benchmark?, example }]
  */
 export function resolveOmniTasks(recipe) {
   const decl = recipe?.omni?.tasks;
@@ -233,6 +234,7 @@ export function resolveOmniTasks(recipe) {
       description: override.description,
       extraArgs: override.extra_args || [],
       hardwareOverrides: override.hardware_overrides || {},
+      benchmark: override.benchmark,
       example: customCurl ? () => customCurl : base.example,
     });
   }
@@ -253,6 +255,7 @@ export function resolveOmniTaskForHardware(task, hwProfileId) {
     vramMinimumGb: override.vram_minimum_gb ?? task.vramMinimumGb,
     description: override.description || task.description,
     extraArgs: [...(task.extraArgs || []), ...(override.extra_args || [])],
+    benchmark: override.benchmark || task.benchmark,
     example: customCurl ? () => customCurl : task.example,
   };
 }
