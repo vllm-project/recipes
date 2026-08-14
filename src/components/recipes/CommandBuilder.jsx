@@ -10,6 +10,18 @@ import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
+// Tuning guidance for a feature's sub-mode, shown under the Features row while
+// that mode is the active one. Keyed [feature][mode] and kept here rather than
+// in the recipe YAMLs: it describes the *method*, not any one checkpoint, so
+// every recipe offering the method would otherwise repeat the same paragraph.
+const FEATURE_MODE_NOTES = {
+  spec_decoding: {
+    dspark:
+      "Draft sampling: greedy at temperature 0. For chat at temperature 0.6–1.0, "
+      + "probabilistic usually accepts more tokens, at the cost of a little more VRAM.",
+  },
+};
+
 // Advanced tuning presets — optional tunable flags the user can opt into.
 // (vLLM defaults like chunked prefill, prefix caching, CUDA graphs, async
 // scheduling are already on — no need to surface them here.)
@@ -2639,6 +2651,28 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   );
                 })}
               </PillGroup>
+              {/* Guidance for the active sub-mode (FEATURE_MODE_NOTES) — tuning
+                  advice that outlives a tooltip, e.g. which draft_sample_method
+                  suits which temperature. It hangs off the Features row rather
+                  than the Spec method row below because that row only renders
+                  with ≥2 modes available for the current variant: a recipe whose
+                  methods are each pinned to different checkpoints (MTP on the
+                  preview, DSpark on the fused release) never shows it, and the
+                  note would have nowhere to live. */}
+              {featuredModeKeys.map((key) => {
+                const notes = FEATURE_MODE_NOTES[key];
+                if (!notes || !features.includes(key)) return null;
+                const feat = recipe.features[key];
+                if (!isFeatureAllowedForStrategy(feat, activeStrategy)) return null;
+                const activeMode = resolveModeKey(feat, key, currentVariant, variant, hwProfile, hwId, featureModes[key]);
+                const note = notes[activeMode];
+                if (!note) return null;
+                return (
+                  <p key={`${key}-note`} className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                    {note}
+                  </p>
+                );
+              })}
             </ConfigRow>
           )}
 
