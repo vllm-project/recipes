@@ -63,7 +63,7 @@ omni:
   tasks:
     - id: t2v
       key: full_one_stage_t2v
-      label: "Full one-stage T2V · 960×544"
+      label: "Full one-stage T2V"
       vram_minimum_gb: 80
       endpoint: "/v1/videos/sync"
       description: "Full/SFT text-to-video generation with 30 denoising steps and synchronized audio."
@@ -74,17 +74,11 @@ omni:
         curl -sS --fail-with-body \
           -X POST http://localhost:8000/v1/videos/sync \
           -F 'prompt=A cinematic shot of a red fox walking through a snowy forest at dawn, the camera tracking alongside, snow crunching underfoot.' \
-          -F 'width=960' \
-          -F 'height=544' \
-          -F 'num_frames=121' \
-          -F 'fps=24' \
-          -F 'num_inference_steps=30' \
-          -F 'seed=42' \
           -o ltx25-one-stage-t2v.mp4
 
     - id: i2v
       key: full_one_stage_i2v
-      label: "Full one-stage I2V · 960×544"
+      label: "Full one-stage I2V"
       vram_minimum_gb: 80
       endpoint: "/v1/videos/sync"
       description: "Full/SFT first-frame image-to-video generation with 30 denoising steps and synchronized audio."
@@ -98,17 +92,11 @@ omni:
           -X POST http://localhost:8000/v1/videos/sync \
           -F "input_reference=@${FIRST_FRAME};type=image/png" \
           -F 'prompt=The red fox walks forward while the camera tracks alongside.' \
-          -F 'width=960' \
-          -F 'height=544' \
-          -F 'num_frames=121' \
-          -F 'fps=24' \
-          -F 'num_inference_steps=30' \
-          -F 'seed=42' \
           -o ltx25-one-stage-i2v.mp4
 
     - id: t2v
       key: distilled_one_stage_t2v
-      label: "Distilled one-stage T2V · 960×544"
+      label: "Distilled one-stage T2V"
       vram_minimum_gb: 79
       endpoint: "/v1/videos/sync"
       description: "Positive-only text-to-video generation with the fixed eight-step distilled schedule."
@@ -119,17 +107,11 @@ omni:
         curl -sS --fail-with-body \
           -X POST http://localhost:8000/v1/videos/sync \
           -F 'prompt=A cinematic shot of a red fox walking through a snowy forest at dawn, the camera tracking alongside, snow crunching underfoot.' \
-          -F 'width=960' \
-          -F 'height=544' \
-          -F 'num_frames=121' \
-          -F 'fps=24' \
-          -F 'num_inference_steps=8' \
-          -F 'seed=42' \
           -o ltx25-distilled-one-stage-t2v.mp4
 
     - id: i2v
       key: distilled_one_stage_i2v
-      label: "Distilled one-stage I2V · 960×544"
+      label: "Distilled one-stage I2V"
       vram_minimum_gb: 79
       endpoint: "/v1/videos/sync"
       description: "Positive-only first-frame I2V with CRF-18 conditioning and the fixed eight-step schedule."
@@ -143,17 +125,11 @@ omni:
           -X POST http://localhost:8000/v1/videos/sync \
           -F "input_reference=@${FIRST_FRAME};type=image/png" \
           -F 'prompt=The red fox walks forward while the camera tracks alongside.' \
-          -F 'width=960' \
-          -F 'height=544' \
-          -F 'num_frames=121' \
-          -F 'fps=24' \
-          -F 'num_inference_steps=8' \
-          -F 'seed=42' \
           -o ltx25-distilled-one-stage-i2v.mp4
 
     - id: t2v
       key: distilled_two_stage_t2v
-      label: "Distilled two-stage T2V · 1920×1088"
+      label: "Distilled two-stage T2V"
       vram_minimum_gb: 114
       endpoint: "/v1/videos/sync"
       description: "Eight-step low-resolution generation, x2 latent upsampling, and three-step full-resolution refinement."
@@ -164,17 +140,11 @@ omni:
         curl -sS --fail-with-body \
           -X POST http://localhost:8000/v1/videos/sync \
           -F 'prompt=A cinematic shot of a red fox walking through a snowy forest at dawn, the camera tracking alongside, snow crunching underfoot.' \
-          -F 'width=1920' \
-          -F 'height=1088' \
-          -F 'num_frames=121' \
-          -F 'fps=24' \
-          -F 'num_inference_steps=8' \
-          -F 'seed=42' \
           -o ltx25-distilled-two-stage-t2v.mp4
 
     - id: i2v
       key: distilled_two_stage_i2v
-      label: "Distilled two-stage I2V · 1920×1088"
+      label: "Distilled two-stage I2V"
       vram_minimum_gb: 114
       endpoint: "/v1/videos/sync"
       description: "First-frame I2V with an eight-step first stage and three-step full-resolution refinement."
@@ -188,17 +158,11 @@ omni:
           -X POST http://localhost:8000/v1/videos/sync \
           -F "input_reference=@${FIRST_FRAME};type=image/png" \
           -F 'prompt=The red fox walks forward while the camera tracks alongside.' \
-          -F 'width=1920' \
-          -F 'height=1088' \
-          -F 'num_frames=121' \
-          -F 'fps=24' \
-          -F 'num_inference_steps=8' \
-          -F 'seed=42' \
           -o ltx25-distilled-two-stage-i2v.mp4
 
     - id: t2v
       key: full_two_stage_t2v
-      label: "Full two-stage T2V · 1920×1088"
+      label: "Full two-stage T2V"
       vram_minimum_gb: 114
       endpoint: "/v1/videos/sync"
       description: "Full/SFT Stage 1, x2 latent upsampling, and LoRA-450 three-step refinement."
@@ -209,17 +173,11 @@ omni:
         curl -sS --fail-with-body \
           -X POST http://localhost:8000/v1/videos/sync \
           -F 'prompt=A cinematic shot of a red fox walking through a snowy forest at dawn, the camera tracking alongside, snow crunching underfoot.' \
-          -F 'width=1920' \
-          -F 'height=1088' \
-          -F 'num_frames=121' \
-          -F 'fps=24' \
-          -F 'num_inference_steps=30' \
-          -F 'seed=42' \
           -o ltx25-full-two-stage-t2v.mp4
 
     - id: i2v
       key: full_two_stage_i2v
-      label: "Full two-stage I2V · 1920×1088"
+      label: "Full two-stage I2V"
       vram_minimum_gb: 114
       endpoint: "/v1/videos/sync"
       description: "Full/SFT first-frame I2V followed by x2 latent upsampling and LoRA-450 refinement."
@@ -233,12 +191,6 @@ omni:
           -X POST http://localhost:8000/v1/videos/sync \
           -F "input_reference=@${FIRST_FRAME};type=image/png" \
           -F 'prompt=The red fox walks forward while the camera tracks alongside.' \
-          -F 'width=1920' \
-          -F 'height=1088' \
-          -F 'num_frames=121' \
-          -F 'fps=24' \
-          -F 'num_inference_steps=30' \
-          -F 'seed=42' \
           -o ltx25-full-two-stage-i2v.mp4
 
 guide: |
@@ -249,7 +201,7 @@ guide: |
   stereo audio. vLLM-Omni supports T2V and first-frame I2V through four
   pipeline classes:
 
-  | Pipeline | Mode | Final size | Schedule |
+  | Pipeline | Mode | Default size | Schedule |
   |----------|------|------------|----------|
   | `LTX2Pipeline` | Full/SFT one-stage | 960x544 | 30 steps |
   | `LTX2TwoStagePipeline` | Full/SFT two-stage | 1920x1088 | 30 + 3 steps |
@@ -280,12 +232,6 @@ guide: |
   Use the distilled one-stage pipeline with FP8 and cuDNN attention:
 
   ```bash
-  export MODEL=Lightricks/LTX-2.5-Diffusers
-  export PIPELINE=LTX2DistilledOneStagePipeline
-  export WIDTH=960
-  export HEIGHT=544
-  export STEPS=8
-
   vllm serve Lightricks/LTX-2.5-Diffusers \
     --omni \
     --model-class-name LTX2DistilledOneStagePipeline \
@@ -359,7 +305,10 @@ guide: |
 
   ## Constraints
 
-  - `num_frames` must be `8k+1`; set it explicitly for online requests.
+  - Online `width`, `height`, `num_frames`, `fps`, and
+    `num_inference_steps` are optional and use the selected pipeline defaults
+    when omitted. `seed` is optional and random when omitted.
+  - `num_frames` must be `8k+1` when overridden.
   - One-stage dimensions must be divisible by 32; two-stage final dimensions
     must be divisible by 64.
   - Distilled pipelines are positive-only and reject negative prompts.
