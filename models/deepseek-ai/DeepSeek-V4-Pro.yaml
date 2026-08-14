@@ -104,9 +104,14 @@ variants:
           - "--moe-backend"
           - "deep_gemm_mega_moe"
   fp8:
+    # Marked "(Preview)" rather than left bare: with the 0813 release on the same
+    # row, an unqualified FP8 pill reads as "the plain one" instead of "the
+    # superseded one". Matches DeepSeek's own naming — their benchmark tables
+    # say `DeepSeek-V4-Pro-0813` vs `DeepSeek-V4-Pro (Preview)`.
+    label: "FP8 (Preview)"
     precision: fp8
     vram_minimum_gb: 960
-    description: "Preview FP4+FP8 mixed checkpoint (MoE experts FP4, remaining params FP8)"
+    description: "Native FP4+FP8 mixed checkpoint (MoE experts FP4, remaining params FP8)"
     # deep_gemm_mega_moe is an FP8-only MoE kernel — the FP8 checkpoints (0813,
     # preview and dspark) add it on Blackwell; the NVFP4 variant adds nothing (its
     # experts can't use it). Layered on the recipe-level blackwell FP4 indexer cache.
@@ -285,7 +290,7 @@ guide: |
   | Variant | Repo | Draft | Notes |
   | :-- | :-- | :-- | :-- |
   | **FP8 (0813)** (default) | `deepseek-ai/DeepSeek-V4-Pro-0813` | DSpark | Official release, preview structure + DSpark |
-  | **FP8** | `deepseek-ai/DeepSeek-V4-Pro` | MTP | Preview FP4+FP8 mixed weights |
+  | **FP8 (Preview)** | `deepseek-ai/DeepSeek-V4-Pro` | MTP | Preview FP4+FP8 mixed weights |
   | **NVFP4** | `nvidia/DeepSeek-V4-Pro-NVFP4` | MTP | modelopt re-quant, Blackwell |
   | **DSpark** | `deepseek-ai/DeepSeek-V4-Pro-DSpark` | DSpark | Preview weights + fused DSpark module |
 
@@ -293,8 +298,8 @@ guide: |
   the preview with substantially stronger agentic capability — 87.9 on Terminal Bench
   2.1, 62.7 on DeepSWE and 42.7 on HLE (60.0 with tools), versus 72.1, 12.8 and 37.7
   for the preview. It is built on the preview model structure with a DSpark speculative
-  decoding module attached. The preview weights remain available as the **FP8** variant
-  for reproducing earlier results.
+  decoding module attached. The preview weights remain available as the
+  **FP8 (Preview)** variant for reproducing earlier results.
 
   **DSpark** is *not* new weights — it is the preview checkpoint with a speculative
   decoding module attached (see [DeepSpec](https://github.com/deepseek-ai/DeepSpec)).

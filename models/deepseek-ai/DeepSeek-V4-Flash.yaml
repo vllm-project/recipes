@@ -171,6 +171,11 @@ variants:
           - "--moe-backend"
           - "deep_gemm_mega_moe"
   fp8:
+    # Marked "(Preview)" rather than left bare: with the 0731 release on the same
+    # row, an unqualified FP8 pill reads as "the plain one" instead of "the
+    # superseded one". Matches DeepSeek's own naming — their benchmark tables
+    # say `DeepSeek-V4-Flash-0731` vs `DeepSeek-V4-Flash (Preview)`.
+    label: "FP8 (Preview)"
     precision: fp8
     vram_minimum_gb: 170
     description: "Native FP4+FP8 mixed checkpoint (MoE experts FP4, remaining params FP8)"
@@ -556,7 +561,7 @@ guide: |
   | Variant | Repo | Draft | Notes |
   | :-- | :-- | :-- | :-- |
   | **FP8 (0731)** (default) | `deepseek-ai/DeepSeek-V4-Flash-0731` | DSpark | Official release, new weights + DSpark |
-  | **FP8** | `deepseek-ai/DeepSeek-V4-Flash` | MTP | Preview FP4+FP8 mixed weights |
+  | **FP8 (Preview)** | `deepseek-ai/DeepSeek-V4-Flash` | MTP | Preview FP4+FP8 mixed weights |
   | **NVFP4** | `nvidia/DeepSeek-V4-Flash-NVFP4` | MTP | modelopt re-quant, Blackwell |
   | **DSpark** | `deepseek-ai/DeepSeek-V4-Flash-DSpark` | DSpark | Preview weights + fused DSpark module |
 
@@ -565,7 +570,7 @@ guide: |
   2.1 and 54.4 on DeepSWE, versus 61.8 and 7.3 for the preview. It beats
   DeepSeek-V4-Pro (Preview) on every agentic benchmark DeepSeek published despite its
   far smaller activated parameter count. The preview weights remain available as the
-  **FP8** variant for reproducing earlier results.
+  **FP8 (Preview)** variant for reproducing earlier results.
 
   **DSpark** is *not* new weights — it is the preview checkpoint with a speculative
   decoding module attached (see [DeepSpec](https://github.com/deepseek-ai/DeepSpec)).
