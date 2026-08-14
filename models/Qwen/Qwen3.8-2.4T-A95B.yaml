@@ -373,8 +373,7 @@ guide: |
 
   ## Client usage
 
-  `generation_config.json` ships `temperature: 1.0`, `top_p: 0.95`, `top_k: 20`. Use them;
-  an earlier revision shipped `temperature: 0.6`, so don't rely on remembered defaults.
+  `generation_config.json` ships `temperature: 1.0`, `top_p: 0.95`, `top_k: 20`.
 
   ```python
   from openai import OpenAI
@@ -388,24 +387,6 @@ guide: |
   )
   print(resp.choices[0].message.content)
   ```
-
-  ### Thinking mode
-
-  The template opens each assistant turn with `<think>`, so a short `max_tokens` can
-  return an empty `content` — the budget went to reasoning. To turn thinking off:
-
-  ```bash
-  --default-chat-template-kwargs '{"enable_thinking": false}'
-  ```
-
-  which emits a pre-closed `<think></think>` block instead.
-
-  ### Multi-turn reasoning history
-
-  By default the template **strips `<think>` blocks from older assistant turns**, keeping
-  them only after the last user query. Pass `preserve_thinking: true` in
-  `chat_template_kwargs` to retain the full history — it changes what the model sees, so
-  it changes behaviour.
 
   ## Processing Ultra-Long Texts
   The model has 262k native context length and it can be extended to 1M with --max-model-len
