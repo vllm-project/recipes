@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
   date_added: 2026-07-31
-  date_updated: 2026-08-11
+  date_updated: 2026-08-14
   difficulty: hard
   tasks:
     - text
@@ -39,11 +39,6 @@ model:
     - "fp8"
     - "--block-size"
     - "256"
-
-
-dependencies:
-  - note: "DeepGEMM FP8 kernels — install via vLLM tools/install_deepgemm.sh"
-    command: "bash <(curl -fsSL https://raw.githubusercontent.com/vllm-project/vllm/main/tools/install_deepgemm.sh)"
 
 features:
   tool_calling:
@@ -113,7 +108,7 @@ variants:
     # Official 0731 release: new weights (not a re-pack of the preview), same
     # architecture and same fused DSpark draft module.
     model_id: "deepseek-ai/DeepSeek-V4-Flash-0731"
-    label: "0731"
+    label: "FP8 (0731)"
     precision: fp8
     vram_minimum_gb: 200
     description: "Official DeepSeek-V4-Flash release (2026-07-31) superseding the preview — substantially stronger agentic performance, with the DSpark draft module attached."
@@ -560,7 +555,7 @@ guide: |
 
   | Variant | Repo | Draft | Notes |
   | :-- | :-- | :-- | :-- |
-  | **0731** (default) | `deepseek-ai/DeepSeek-V4-Flash-0731` | DSpark | Official release, new weights + DSpark |
+  | **FP8 (0731)** (default) | `deepseek-ai/DeepSeek-V4-Flash-0731` | DSpark | Official release, new weights + DSpark |
   | **FP8** | `deepseek-ai/DeepSeek-V4-Flash` | MTP | Preview FP4+FP8 mixed weights |
   | **NVFP4** | `nvidia/DeepSeek-V4-Flash-NVFP4` | MTP | modelopt re-quant, Blackwell |
   | **DSpark** | `deepseek-ai/DeepSeek-V4-Flash-DSpark` | DSpark | Preview weights + fused DSpark module |
