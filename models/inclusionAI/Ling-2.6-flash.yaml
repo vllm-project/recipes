@@ -13,6 +13,8 @@ meta:
   hardware:
     h200: verified
     mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "inclusionAI/Ling-2.6-flash"
@@ -84,8 +86,8 @@ guide: |
     --device=/dev/dri \
     --group-add video \
     -e VLLM_ROCM_USE_AITER=1 \
-    vllm/vllm-openai-rocm:v0.20.2 \
-      vllm serve inclusionAI/Ling-2.6-flash \
+    vllm/vllm-openai-rocm:latest \
+      inclusionAI/Ling-2.6-flash \
       --tensor-parallel-size 2 \
       --trust-remote-code
   ```
