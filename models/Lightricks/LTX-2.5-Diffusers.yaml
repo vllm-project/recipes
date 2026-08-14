@@ -232,7 +232,7 @@ guide: |
   ## Prerequisites
 
   - Accept both Lightricks model licenses and run `hf auth login`.
-  - Install vLLM 0.27.0 and current vLLM-Omni main.
+  - Install vLLM 0.27+ and current vLLM-Omni main.
   - Ensure `ffmpeg` and `ffprobe` are on `PATH`.
   - I2V requires PyAV with the `libx264` encoder.
 
