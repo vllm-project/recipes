@@ -27,12 +27,9 @@ model:
   context_length: 0
   base_args:
     - "--trust-remote-code"
-    - "--served-model-name"
-    - "IndexTeam/IndexTTS-2.5"
   base_env: {}
 
 omni:
-  serve_binary: "vllm-omni serve"
   port: 8092
   tasks:
     - id: t2a
@@ -107,10 +104,9 @@ guide: |
   IndexTTS-2.5's standard two-stage deploy config is selected automatically:
 
   ```bash
-  vllm-omni serve IndexTeam/IndexTTS-2.5 \
+  vllm serve IndexTeam/IndexTTS-2.5 \
     --omni \
     --trust-remote-code \
-    --served-model-name IndexTeam/IndexTTS-2.5 \
     --port 8092
   ```
 

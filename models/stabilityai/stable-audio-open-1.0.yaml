@@ -26,9 +26,10 @@ model:
   base_env: {}
 
 omni:
-  # Audio handler isn't shipped in the `vllm` console-script, so vllm-omni
-  # publishes its own `vllm-omni serve` entrypoint with the right model
-  # handler registered.
+  # This recipe pins vllm==0.14.1, which predates the `--omni` delegation added
+  # to the `vllm` console-script in 0.20.0, so `vllm serve --omni` would fail
+  # with an unrecognized argument here. Call vllm-omni's own entrypoint instead.
+  # Recipes on vLLM >= 0.20.0 must not copy this override.
   serve_binary: "vllm-omni serve"
   tasks:
     - t2a
