@@ -4,7 +4,7 @@ meta:
   provider: "Stability AI"
   description: "Text-to-audio generation model (1.2B params) producing up to ~47 s stereo audio at 44.1 kHz, served via vLLM-Omni"
   date_added: 2026-01-26
-  date_updated: 2026-04-17
+  date_updated: 2026-08-15
   difficulty: beginner
   tasks:
     - omni
@@ -13,7 +13,7 @@ meta:
 
 model:
   model_id: "stabilityai/stable-audio-open-1.0"
-  min_vllm_version: "0.14.1"
+  min_vllm_version: "0.22.0"
   architecture: dense
   parameter_count: "1.2B"
   active_parameters: "1.2B"
@@ -26,17 +26,12 @@ model:
   base_env: {}
 
 omni:
-  # This recipe pins vllm==0.14.1, which predates the `--omni` delegation added
-  # to the `vllm` console-script in 0.20.0, so `vllm serve --omni` would fail
-  # with an unrecognized argument here. Call vllm-omni's own entrypoint instead.
-  # Recipes on vLLM >= 0.20.0 must not copy this override.
-  serve_binary: "vllm-omni serve"
   tasks:
     - t2a
 
 dependencies:
-  - note: "Pin vllm==0.14.1 for Stable Audio Open"
-    command: "uv pip install vllm==0.14.1"
+  - note: "vLLM 0.22.0 or newer"
+    command: "uv pip install 'vllm>=0.22.0'"
   - note: "vllm-omni provides the audio generation backend"
     command: "uv pip install git+https://github.com/vllm-project/vllm-omni.git"
   - note: "soundfile (recommended) or scipy for WAV output"
@@ -71,7 +66,7 @@ guide: |
 
   ## Prerequisites
 
-  - vLLM-Omni on top of vLLM 0.14.1
+  - vLLM-Omni on top of vLLM 0.22.0 or newer
   - `soundfile` or `scipy` for saving audio
 
   ## Installation
@@ -79,7 +74,6 @@ guide: |
   ```bash
   uv venv
   source .venv/bin/activate
-  uv pip install vllm==0.14.1
   uv pip install git+https://github.com/vllm-project/vllm-omni.git
 
   # Audio saving

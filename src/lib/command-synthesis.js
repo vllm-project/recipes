@@ -835,11 +835,11 @@ function shellQuote(s) {
  *   { id, modelId?, extraArgs?, ... }
  *
  * Outliers:
- *   - `recipe.omni.serve_binary: "vllm-omni serve"` swaps the binary. Only for
- *     recipes pinned below vLLM 0.20.0, which is where the `vllm` console-script
- *     grew the `--omni` delegation into vllm-omni's entrypoint; on 0.20.0+ both
+ *   - `recipe.omni.serve_binary: "vllm-omni serve"` swaps the binary. Currently
+ *     unused, and new recipes should not set it. It exists only for recipes
+ *     pinned below vLLM 0.20.0, which is where the `vllm` console-script grew
+ *     the `--omni` delegation into vllm-omni's entrypoint; on 0.20.0+ both
  *     binaries reach the same handler, so the default `vllm serve` is correct.
- *     Today's only user is stable-audio-open (pinned to vllm==0.14.1).
  *   - `recipe.omni.port` overrides the rendered `--port` flag (default 8000).
  */
 export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfileId = null) {
