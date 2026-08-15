@@ -1743,9 +1743,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   if (isOmni) {
     const omniVariants = Object.entries(recipe.variants || {});
     const showOmniVariants = omniVariants.length > 1;
-    const showOmniTaskRow = omniTasks.length > 1;
+    const omniTaskAxes = Array.isArray(recipe.omni?.task_axes)
+      ? recipe.omni.task_axes.filter((axis) => axis?.id && Array.isArray(axis.options))
+      : [];
+    const showOmniTaskAxes = omniTasks.length > 1 && omniTaskAxes.length > 0;
+    const showOmniTaskRow = omniTasks.length > 1 && !showOmniTaskAxes;
     const activeTaskBase = omniTasks.find((t) => t.key === omniTask) || omniTasks[0] || null;
     const activeTask = resolveOmniTaskForHardware(activeTaskBase, hwId);
+
+    const taskForAxisOption = (axisId, optionId) => omniTasks.find((task) =>
+      omniTaskAxes.every((axis) =>
+        task.axes?.[axis.id]
+          === (axis.id === axisId ? optionId : activeTaskBase?.axes?.[axis.id])
+      )
+    );
 
     // Render the `vllm serve --omni` command via the shared omni resolver.
     // Falls back to a stub when the recipe has no omni.tasks declared yet
@@ -1915,6 +1926,40 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 )}
               </ConfigRow>
             )}
+
+            {showOmniTaskAxes && omniTaskAxes.map((axis) => (
+              <ConfigRow
+                key={axis.id}
+                label={axis.label || axis.id}
+                hint={axis.hint}
+              >
+                <PillGroup>
+                  {axis.options.map((option) => {
+                    const matchingTask = taskForAxisOption(axis.id, option.id);
+                    const disabled = !matchingTask;
+                    return (
+                      <Pill
+                        key={option.id}
+                        active={activeTaskBase?.axes?.[axis.id] === option.id}
+                        disabled={disabled}
+                        onClick={() => !disabled && selectOmniTask(matchingTask.key)}
+                        title={disabled ? "This combination is not available." : option.description}
+                      >
+                        <span className="font-semibold">{option.label || option.id}</span>
+                      </Pill>
+                    );
+                  })}
+                </PillGroup>
+                {axis.id === omniTaskAxes[omniTaskAxes.length - 1]?.id && (
+                  <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                    {activeTask?.description}
+                    {activeTask?.vramMinimumGb && (
+                      <span className="ml-1.5 font-mono">Minimum {activeTask.vramMinimumGb} GB VRAM.</span>
+                    )}
+                  </p>
+                )}
+              </ConfigRow>
+            ))}
 
             {showOmniVariants && (
               <ConfigRow

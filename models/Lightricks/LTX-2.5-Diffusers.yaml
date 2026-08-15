@@ -82,10 +82,36 @@ omni:
   port: 8000
   task_label: "Generation Mode"
   task_hint: "Choose Full/SFT or distilled weights, then one-stage or two-stage T2V/I2V execution."
+  task_axes:
+    - id: stage
+      label: "Stage"
+      options:
+        - id: one_stage
+          label: "One-stage"
+        - id: two_stage
+          label: "Two-stage"
+    - id: weights
+      label: "Weights"
+      options:
+        - id: full
+          label: "Full"
+        - id: distilled
+          label: "Distilled"
+    - id: x2v
+      label: "X2V"
+      options:
+        - id: t2v
+          label: "T2V"
+        - id: i2v
+          label: "I2V"
   tasks:
     - id: t2v
       key: full_one_stage_t2v
       label: "Full one-stage T2V"
+      axes:
+        stage: one_stage
+        weights: full
+        x2v: t2v
       vram_minimum_gb: 80
       endpoint: "/v1/videos/sync"
       description: "Full/SFT text-to-video generation with 30 denoising steps and synchronized audio."
@@ -101,6 +127,10 @@ omni:
     - id: i2v
       key: full_one_stage_i2v
       label: "Full one-stage I2V"
+      axes:
+        stage: one_stage
+        weights: full
+        x2v: i2v
       vram_minimum_gb: 80
       endpoint: "/v1/videos/sync"
       description: "Full/SFT first-frame image-to-video generation with 30 denoising steps and synchronized audio."
@@ -119,6 +149,10 @@ omni:
     - id: t2v
       key: distilled_one_stage_t2v
       label: "Distilled one-stage T2V"
+      axes:
+        stage: one_stage
+        weights: distilled
+        x2v: t2v
       vram_minimum_gb: 79
       endpoint: "/v1/videos/sync"
       description: "Positive-only text-to-video generation with the fixed eight-step distilled schedule."
@@ -134,6 +168,10 @@ omni:
     - id: i2v
       key: distilled_one_stage_i2v
       label: "Distilled one-stage I2V"
+      axes:
+        stage: one_stage
+        weights: distilled
+        x2v: i2v
       vram_minimum_gb: 79
       endpoint: "/v1/videos/sync"
       description: "Positive-only first-frame I2V with CRF-18 conditioning and the fixed eight-step schedule."
@@ -152,6 +190,10 @@ omni:
     - id: t2v
       key: distilled_two_stage_t2v
       label: "Distilled two-stage T2V"
+      axes:
+        stage: two_stage
+        weights: distilled
+        x2v: t2v
       vram_minimum_gb: 114
       endpoint: "/v1/videos/sync"
       description: "Eight-step low-resolution generation, x2 latent upsampling, and three-step full-resolution refinement."
@@ -167,6 +209,10 @@ omni:
     - id: i2v
       key: distilled_two_stage_i2v
       label: "Distilled two-stage I2V"
+      axes:
+        stage: two_stage
+        weights: distilled
+        x2v: i2v
       vram_minimum_gb: 114
       endpoint: "/v1/videos/sync"
       description: "First-frame I2V with an eight-step first stage and three-step full-resolution refinement."
@@ -185,6 +231,10 @@ omni:
     - id: t2v
       key: full_two_stage_t2v
       label: "Full two-stage T2V"
+      axes:
+        stage: two_stage
+        weights: full
+        x2v: t2v
       vram_minimum_gb: 114
       endpoint: "/v1/videos/sync"
       description: "Full/SFT Stage 1, x2 latent upsampling, and LoRA-450 three-step refinement."
@@ -200,6 +250,10 @@ omni:
     - id: i2v
       key: full_two_stage_i2v
       label: "Full two-stage I2V"
+      axes:
+        stage: two_stage
+        weights: full
+        x2v: i2v
       vram_minimum_gb: 114
       endpoint: "/v1/videos/sync"
       description: "Full/SFT first-frame I2V followed by x2 latent upsampling and LoRA-450 refinement."
