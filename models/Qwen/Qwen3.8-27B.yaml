@@ -17,6 +17,11 @@ meta:
   # and working tool calls. Everything else stays absent — the honest silent default.
   hardware:
     gb300: verified
+    # 2x RTX 5090 (consumer Blackwell, sm120), verified 2026-08-15 on vLLM
+    # 0.26.1rc1.dev608+g99a10304d: FP8 and both NVFP4 builds at TP2, each booted,
+    # served and answered a verifiable prompt, with MTP acceptance read from
+    # /metrics rather than inferred from throughput.
+    rtx_5090_2x: verified
 
 model:
   model_id: "Qwen/Qwen3.8-27B"
@@ -118,7 +123,7 @@ variants:
     label: "NVFP4 (W4A4)"
     # 26,381,249,312 B = 26.4 GB. quant_method `modelopt`, quant_algo `NVFP4`.
     vram_minimum_gb: 32
-    supported_hardware: [b200, b300, gb200, gb300]
+    supported_hardware: [b200, b300, gb200, gb300, rtx_5090_2x]
     description: "NVFP4 build for NVIDIA Blackwell — 24.6 GiB, the smallest footprint: 1 GPU."
 
 # Dense model: no routed experts, so none of the expert-parallel or PD strategies apply.
@@ -179,6 +184,44 @@ guide: |
   ```
 
   Add `--speculative-config '{"method":"mtp","num_speculative_tokens":3}'` for MTP.
+
+  ### 2x RTX 5090 (consumer Blackwell, sm120)
+
+  Verified on vLLM `0.26.1rc1.dev608+g99a10304d`, TP2 across two cards.
+
+  **NVFP4 uses the real kernel here.** vLLM selects
+  `FlashInferCutlassNvFp4LinearKernel for NVFP4 GEMM` on sm120 — a cutlass path, not an
+  emulation fallback — for both the `Inferact` build above and `unsloth/Qwen3.8-27B-NVFP4`.
+
+  **The block-scaled FP8 checkpoint needs no workaround.** vLLM auto-disables DeepGemm for
+  `model_type=qwen3_5_text` on Blackwell and falls back to CUTLASS, so it loads unaided.
+  Verified by running *without* `VLLM_USE_DEEP_GEMM=0`: identical 377,456-token KV pool.
+
+  ```bash
+  vllm serve unsloth/Qwen3.8-27B-NVFP4 \
+    --tensor-parallel-size 2 \
+    --max-model-len 262144 \
+    --kv-cache-dtype fp8 \
+    --reasoning-parser qwen3 \
+    --enable-auto-tool-choice --tool-call-parser qwen3_coder
+  ```
+
+  At 262,144 context, GPU KV cache size as reported at startup:
+
+  | precision | KV tokens | weights/GPU | MTP acceptance |
+  |---|---|---|---|
+  | FP8 | 377,456 | 14.28 GiB | 0.771 |
+  | NVFP4 (Inferact) | 445,875 | 12.02 GiB | 0.897 |
+  | NVFP4 (unsloth) | 920,517 | 10.64 GiB | 0.788 |
+
+  The two NVFP4 builds are not interchangeable on 32 GB cards: `unsloth` is
+  mixed-precision (FP8 channel-wise alongside the 4-bit groups) and leaves room for roughly
+  twice the KV cache, while the uniform-W4A4 `Inferact` build drafts better. Both serve
+  correctly.
+
+  The in-checkpoint MTP head works in every precision above. Acceptance is measured from
+  `vllm:spec_decode_num_{accepted,draft}_tokens_total`, since throughput alone cannot
+  distinguish a working drafter from one that loaded and was ignored.
 
   ## Client usage
 
