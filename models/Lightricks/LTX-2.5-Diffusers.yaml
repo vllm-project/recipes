@@ -12,6 +12,7 @@ meta:
     - Wan-AI/Wan2.2-T2V-A14B-Diffusers
   default_hardware: b300
   hardware:
+    h200: verified
     b300: verified
     dgx_spark_gb10: supported
     rtx_pro_5000: supported
