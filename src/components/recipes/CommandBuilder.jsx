@@ -1963,24 +1963,28 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
             {showOmniVariants && (
               <ConfigRow
-                label="Variant"
-                hint="VRAM shown is the minimum to LOAD the model (weights + runtime overhead). vLLM-Omni inference may need more for activations and intermediate tensors."
+                label={recipe.omni?.variant_label || "Variant"}
+                hint={recipe.omni?.variant_hint || "VRAM shown is the minimum to LOAD the model (weights + runtime overhead). vLLM-Omni inference may need more for activations and intermediate tensors."}
               >
                 <PillGroup>
-                  {omniVariants.map(([key, v]) => (
-                    <Pill
-                      key={key}
-                      active={variant === key}
-                      onClick={() => selectVariant(key)}
-                      title={[
-                        v.description,
-                        `Min ${v.vram_minimum_gb} GB to load.`,
-                      ].filter(Boolean).join("\n\n")}
-                    >
-                      <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
-                      <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
-                    </Pill>
-                  ))}
+                  {omniVariants.map(([key, v]) => {
+                    const compatible = variantRunsOnHardware(hwProfile, v, hwId);
+                    return (
+                      <Pill
+                        key={key}
+                        active={variant === key}
+                        disabled={!compatible}
+                        onClick={() => compatible && selectVariant(key)}
+                        title={compatible
+                          ? [v.description, "Min " + v.vram_minimum_gb + " GB to load."].filter(Boolean).join("\n\n")
+                          : "Unavailable on the selected hardware."
+                        }
+                      >
+                        <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
+                        <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
+                      </Pill>
+                    );
+                  })}
                 </PillGroup>
               </ConfigRow>
             )}

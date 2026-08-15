@@ -35,14 +35,22 @@ opt_in_features: []
 
 variants:
   default:
+    label: "BF16"
     precision: bf16
     vram_minimum_gb: 80
-    description: "BF16 checkpoint with Full/SFT and distilled one-stage/two-stage generation paths"
+    description: "Original BF16 weights with Full/SFT and distilled one-stage/two-stage generation paths"
+    supported_hardware:
+      - h100
+      - h200
+      - b200
+      - gb200
+      - b300
+      - gb300
+      - rtx_pro_6000
+      - mi300x
+      - mi325x
+      - mi355x
     hardware_overrides:
-      h100:
-        extra_args:
-          - "--quantization"
-          - "fp8"
       b200:
         extra_args:
           - "--diffusion-attention-backend"
@@ -59,18 +67,43 @@ variants:
         extra_args:
           - "--diffusion-attention-backend"
           - "CUDNN_ATTN"
-      dgx_spark_gb10:
+  fp8:
+    label: "FP8"
+    precision: fp8
+    precision_hardware:
+      brand: NVIDIA
+    vram_minimum_gb: 61
+    description: "Online FP8 quantization for lower memory use"
+    supported_hardware:
+      - h100
+      - h200
+      - b200
+      - gb200
+      - b300
+      - gb300
+      - dgx_spark_gb10
+      - rtx_pro_5000
+      - rtx_pro_6000
+    extra_args:
+      - "--quantization"
+      - "fp8"
+    hardware_overrides:
+      b200:
         extra_args:
-          - "--quantization"
-          - "fp8"
-      rtx_pro_5000:
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
+      gb200:
         extra_args:
-          - "--quantization"
-          - "fp8"
-      rtx_pro_6000:
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
+      b300:
         extra_args:
-          - "--quantization"
-          - "fp8"
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
+      gb300:
+        extra_args:
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
 
 compatible_strategies: []
 
@@ -80,6 +113,8 @@ strategy_overrides: {}
 
 omni:
   port: 8000
+  variant_label: "Quantization"
+  variant_hint: "Choose BF16 for original weights or FP8 to reduce memory. Unavailable options are disabled for the selected hardware."
   task_label: "Generation Mode"
   task_hint: "Choose Full/SFT or distilled weights, then one-stage or two-stage T2V/I2V execution."
   task_axes:
@@ -293,19 +328,13 @@ guide: |
   `Lightricks/LTX-2.5` repository only supplies official two-stage sidecars and
   is not directly loadable with `--model`.
 
-  ## H100 and workstation FP8
+  ## Quantization
 
-  H100 80 GB, DGX Spark (GB10), RTX PRO 6000, and RTX PRO 5000 use online FP8
-  quantization. Select one of these hardware profiles and the generated command
-  adds `--quantization fp8` automatically. Start with the distilled one-stage
-  pipeline and reduce the output shape if additional memory headroom is needed:
-
-  ```bash
-  vllm serve Lightricks/LTX-2.5-Diffusers \
-    --omni \
-    --model-class-name LTX2DistilledOneStagePipeline \
-    --quantization fp8
-  ```
+  Choose **BF16** to keep the original weights, or **FP8** to add online
+  `--quantization fp8` and reduce memory use. The command builder disables a
+  quantization option when it is not available on the selected hardware. FP8
+  is available on the listed NVIDIA Hopper and Blackwell profiles; AMD uses
+  BF16. B200, GB200, B300, and GB300 use cuDNN attention for both options.
 
   ## Prerequisites
 
