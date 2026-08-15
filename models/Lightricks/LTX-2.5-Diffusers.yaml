@@ -17,6 +17,8 @@ meta:
 model:
   model_id: "Lightricks/LTX-2.5-Diffusers"
   min_vllm_version: "0.27.0"
+  install:
+    docker: false
   architecture: dense
   parameter_count: "19B"
   active_parameters: "19B"
