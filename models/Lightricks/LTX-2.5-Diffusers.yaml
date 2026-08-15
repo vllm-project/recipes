@@ -4,7 +4,7 @@ meta:
   provider: "Lightricks"
   description: "19B diffusion transformer for joint video and synchronized audio generation, served via vLLM-Omni"
   date_added: 2026-08-11
-  date_updated: 2026-08-14
+  date_updated: 2026-08-15
   difficulty: advanced
   tasks:
     - omni
@@ -13,6 +13,9 @@ meta:
   default_hardware: b300
   hardware:
     b300: verified
+    dgx_spark_gb10: supported
+    rtx_pro_5000: supported
+    rtx_pro_6000: supported
 
 model:
   model_id: "Lightricks/LTX-2.5-Diffusers"
@@ -23,9 +26,7 @@ model:
   parameter_count: "19B"
   active_parameters: "19B"
   context_length: 0
-  base_args:
-    - "--diffusion-attention-backend"
-    - "CUDNN_ATTN"
+  base_args: []
   base_env: {}
 
 features: {}
@@ -37,6 +38,39 @@ variants:
     precision: bf16
     vram_minimum_gb: 80
     description: "BF16 checkpoint with Full/SFT and distilled one-stage/two-stage generation paths"
+    hardware_overrides:
+      h100:
+        extra_args:
+          - "--quantization"
+          - "fp8"
+      b200:
+        extra_args:
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
+      gb200:
+        extra_args:
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
+      b300:
+        extra_args:
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
+      gb300:
+        extra_args:
+          - "--diffusion-attention-backend"
+          - "CUDNN_ATTN"
+      dgx_spark_gb10:
+        extra_args:
+          - "--quantization"
+          - "fp8"
+      rtx_pro_5000:
+        extra_args:
+          - "--quantization"
+          - "fp8"
+      rtx_pro_6000:
+        extra_args:
+          - "--quantization"
+          - "fp8"
 
 compatible_strategies: []
 
@@ -205,16 +239,18 @@ guide: |
   `Lightricks/LTX-2.5` repository only supplies official two-stage sidecars and
   is not directly loadable with `--model`.
 
-  ## H100 80 GB FP8
+  ## H100 and workstation FP8
 
-  Use the distilled one-stage pipeline with FP8 and cuDNN attention:
+  H100 80 GB, DGX Spark (GB10), RTX PRO 6000, and RTX PRO 5000 use online FP8
+  quantization. Select one of these hardware profiles and the generated command
+  adds `--quantization fp8` automatically. Start with the distilled one-stage
+  pipeline and reduce the output shape if additional memory headroom is needed:
 
   ```bash
   vllm serve Lightricks/LTX-2.5-Diffusers \
     --omni \
     --model-class-name LTX2DistilledOneStagePipeline \
-    --quantization fp8 \
-    --diffusion-attention-backend CUDNN_ATTN
+    --quantization fp8
   ```
 
   ## Prerequisites

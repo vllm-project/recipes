@@ -795,7 +795,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // All hardware profiles grouped by brand, sorted by architectural generation
   // within brand (oldest → newest; matches the semianalysis GPU timeline).
   const hwByBrand = useMemo(() => {
-    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "rtx_4090_2x", "rtx_5090_2x", "dgx_station_gb300"];
+    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "rtx_pro_5000", "rtx_pro_6000", "dgx_spark_gb10", "rtx_4090_2x", "rtx_5090_2x", "dgx_station_gb300"];
     const AMD_ORDER = ["mi300x", "mi325x", "mi355x"];
     const rankIn = (list, id) => {
       const i = list.indexOf(id);
@@ -1873,7 +1873,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                             <span className="font-semibold">{p.display_name}</span>
                             {p.vram_gb > 0 && p.gpu_count > 0 && (
                               <span className="text-muted-foreground ml-1.5 font-mono">
-                                {p.gpu_count}×{Math.round(p.vram_gb / p.gpu_count)}G
+                                {Math.round(p.vram_gb / p.gpu_count)}G/GPU
                               </span>
                             )}
                           </Pill>
@@ -2116,7 +2116,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                           <span className="font-semibold">{p.display_name}</span>
                           {p.vram_gb > 0 && p.gpu_count > 0 && (
                             <span className="text-muted-foreground ml-1.5 font-mono">
-                              {p.gpu_count}×{Math.round(p.vram_gb / p.gpu_count)}G
+                              {Math.round(p.vram_gb / p.gpu_count)}G/GPU
                             </span>
                           )}
                         </Pill>
