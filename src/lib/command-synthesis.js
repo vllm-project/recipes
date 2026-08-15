@@ -869,6 +869,11 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfil
   if (ho?.extra_args) args.push(...ho.extra_args);
   if (variantGenHo?.extra_args) args.push(...variantGenHo.extra_args);
   if (variantExactHo?.extra_args) args.push(...variantExactHo.extra_args);
+  // `omni.port` is the recipe's port override. Emit it after the arg sources
+  // above so dedupeArgs's last-wins rule lets it beat a `--port` already
+  // declared in base_args. Left unset, the served port is vllm's own default
+  // (8000), which is what the client-side curl renderer assumes.
+  if (recipe.omni?.port) args.push("--port", String(recipe.omni.port));
   // --omni is the toggle that puts vllm into omni-handler mode. Always emit it
   // last — dedupeArgs's last-wins rule keeps it idempotent if the recipe also
   // declares it in base_args.
