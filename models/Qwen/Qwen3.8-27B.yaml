@@ -17,10 +17,12 @@ meta:
   # and working tool calls. Everything else stays absent — the honest silent default.
   hardware:
     gb300: verified
-    # 2x RTX 5090 (consumer Blackwell, sm120), verified 2026-08-15 on vLLM
-    # 0.26.1rc1.dev608+g99a10304d: FP8 and both NVFP4 builds at TP2, each booted,
-    # served and answered a verifiable prompt, with MTP acceptance read from
-    # /metrics rather than inferred from throughput.
+    # Consumer Blackwell (sm120), verified 2026-08-15 on vLLM
+    # 0.26.1rc1.dev608+g99a10304d. Each entry was booted, served and answered a
+    # verifiable prompt, with MTP acceptance read from /metrics rather than
+    # inferred from throughput. rtx_5090 is NVFP4 on one card and requires
+    # --enforce-eager; rtx_5090_2x covers FP8 and both NVFP4 builds at TP2.
+    rtx_5090: verified
     rtx_5090_2x: verified
 
 model:
@@ -123,7 +125,7 @@ variants:
     label: "NVFP4 (W4A4)"
     # 26,381,249,312 B = 26.4 GB. quant_method `modelopt`, quant_algo `NVFP4`.
     vram_minimum_gb: 32
-    supported_hardware: [b200, b300, gb200, gb300, rtx_5090_2x]
+    supported_hardware: [b200, b300, gb200, gb300, rtx_5090, rtx_5090_2x]
     description: "NVFP4 build for NVIDIA Blackwell — 24.6 GiB, the smallest footprint: 1 GPU."
 
 # Dense model: no routed experts, so none of the expert-parallel or PD strategies apply.
@@ -222,6 +224,30 @@ guide: |
   The in-checkpoint MTP head works in every precision above. Acceptance is measured from
   `vllm:spec_decode_num_{accepted,draft}_tokens_total`, since throughput alone cannot
   distinguish a working drafter from one that loaded and was ignored.
+
+  ### 1x RTX 5090 — NVFP4 needs `--enforce-eager`
+
+  One card has **31.4 GiB usable**, not 32, and NVFP4 fits only with CUDA graphs off:
+
+  ```bash
+  vllm serve Inferact/Qwen3.8-27B-NVFP4 \
+    --tensor-parallel-size 1 \
+    --max-model-len 32768 \
+    --kv-cache-dtype fp8 \
+    --enforce-eager \
+    --reasoning-parser qwen3
+  ```
+
+  Without `--enforce-eager`, startup dies in CUDA graph capture with
+  `torch.OutOfMemoryError: Tried to allocate 784.00 MiB`. **Raising or lowering
+  `--gpu-memory-utilization` does not help** — 0.80 and 0.93 both leave the same 47.06 MiB
+  free, because that budget covers weights and KV while graph capture allocates outside it.
+
+  KV pool at 32K context: 91,022 tokens with `--enforce-eager` alone; 135,926 adding
+  `--language-model-only`; 152,917 also capping `--max-num-seqs 8`; 76,458 with bf16 KV
+  instead of fp8 — so fp8 KV is a choice here, not a requirement. The MTP head still fits
+  (90,112 tokens, 0.754 acceptance). Those two flags are levers for a bigger pool, not fixes
+  for the OOM: only `--enforce-eager` decides whether the server starts.
 
   ## Client usage
 
