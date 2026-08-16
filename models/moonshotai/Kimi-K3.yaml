@@ -81,8 +81,8 @@ features:
     description: "Skip the vision encoder for text-only workloads. Mutually exclusive with encoder_parallel."
     args:
       - "--language-model-only"
-  dcp:
-    description: "Decode context parallelism: shard the decode KV cache across the tensor-parallel ranks for decode-heavy long-context serving. The DCP size must divide the tensor-parallel size, so the args below assume the TP8 single-node layout. Pairs the TOKENSPEED_MLA decode backend with TRTLLM_RAGGED MLA prefill under FP8 KV."
+  decode_context_parallelism:
+    description: "Decode context parallelism (DCP): shard the decode KV cache across the tensor-parallel ranks for decode-heavy long-context serving. The DCP size must divide the tensor-parallel size, so the args below assume the TP8 single-node layout. Pairs the TOKENSPEED_MLA decode backend with TRTLLM_RAGGED MLA prefill under FP8 KV."
     # Scoped to single_node_tp: --decode-context-parallel-size is pinned to 8
     # here, which only divides a TP of 8 or more.
     strategies:
