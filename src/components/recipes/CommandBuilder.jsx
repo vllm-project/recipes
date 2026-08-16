@@ -815,7 +815,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // All hardware profiles grouped by brand, sorted by architectural generation
   // within brand (oldest → newest; matches the semianalysis GPU timeline).
   const hwByBrand = useMemo(() => {
-    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "rtx_4090_2x", "rtx_5090_2x", "dgx_station_gb300"];
+    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "rtx_pro_5000", "rtx_pro_6000", "dgx_spark_gb10", "rtx_4090_2x", "rtx_5090_2x", "dgx_station_gb300"];
     const AMD_ORDER = ["mi300x", "mi325x", "mi355x"];
     const rankIn = (list, id) => {
       const i = list.indexOf(id);
@@ -1763,9 +1763,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   if (isOmni) {
     const omniVariants = Object.entries(recipe.variants || {});
     const showOmniVariants = omniVariants.length > 1;
-    const showOmniTaskRow = omniTasks.length > 1;
+    const omniTaskAxes = Array.isArray(recipe.omni?.task_axes)
+      ? recipe.omni.task_axes.filter((axis) => axis?.id && Array.isArray(axis.options))
+      : [];
+    const showOmniTaskAxes = omniTasks.length > 1 && omniTaskAxes.length > 0;
+    const showOmniTaskRow = omniTasks.length > 1 && !showOmniTaskAxes;
     const activeTaskBase = omniTasks.find((t) => t.key === omniTask) || omniTasks[0] || null;
     const activeTask = resolveOmniTaskForHardware(activeTaskBase, hwId);
+
+    const taskForAxisOption = (axisId, optionId) => omniTasks.find((task) =>
+      omniTaskAxes.every((axis) =>
+        task.axes?.[axis.id]
+          === (axis.id === axisId ? optionId : activeTaskBase?.axes?.[axis.id])
+      )
+    );
 
     // Render the `vllm serve --omni` command via the shared omni resolver.
     // Falls back to a stub when the recipe has no omni.tasks declared yet
@@ -1893,7 +1904,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                             <span className="font-semibold">{p.display_name}</span>
                             {p.vram_gb > 0 && p.gpu_count > 0 && (
                               <span className="text-muted-foreground ml-1.5 font-mono">
-                                {p.gpu_count}×{Math.round(p.vram_gb / p.gpu_count)}G
+                                {Math.round(p.vram_gb / p.gpu_count)}G/GPU
                               </span>
                             )}
                           </Pill>
@@ -1936,26 +1947,64 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               </ConfigRow>
             )}
 
-            {showOmniVariants && (
+            {showOmniTaskAxes && omniTaskAxes.map((axis) => (
               <ConfigRow
-                label="Variant"
-                hint="VRAM shown is the minimum to LOAD the model (weights + runtime overhead). vLLM-Omni inference may need more for activations and intermediate tensors."
+                key={axis.id}
+                label={axis.label || axis.id}
+                hint={axis.hint}
               >
                 <PillGroup>
-                  {omniVariants.map(([key, v]) => (
-                    <Pill
-                      key={key}
-                      active={variant === key}
-                      onClick={() => selectVariant(key)}
-                      title={[
-                        v.description,
-                        `Min ${v.vram_minimum_gb} GB to load.`,
-                      ].filter(Boolean).join("\n\n")}
-                    >
-                      <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
-                      <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
-                    </Pill>
-                  ))}
+                  {axis.options.map((option) => {
+                    const matchingTask = taskForAxisOption(axis.id, option.id);
+                    const disabled = !matchingTask;
+                    return (
+                      <Pill
+                        key={option.id}
+                        active={activeTaskBase?.axes?.[axis.id] === option.id}
+                        disabled={disabled}
+                        onClick={() => !disabled && selectOmniTask(matchingTask.key)}
+                        title={disabled ? "This combination is not available." : option.description}
+                      >
+                        <span className="font-semibold">{option.label || option.id}</span>
+                      </Pill>
+                    );
+                  })}
+                </PillGroup>
+                {axis.id === omniTaskAxes[omniTaskAxes.length - 1]?.id && (
+                  <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                    {activeTask?.description}
+                    {activeTask?.vramMinimumGb && (
+                      <span className="ml-1.5 font-mono">Minimum {activeTask.vramMinimumGb} GB VRAM.</span>
+                    )}
+                  </p>
+                )}
+              </ConfigRow>
+            ))}
+
+            {showOmniVariants && (
+              <ConfigRow
+                label={recipe.omni?.variant_label || "Variant"}
+                hint={recipe.omni?.variant_hint || "VRAM shown is the minimum to LOAD the model (weights + runtime overhead). vLLM-Omni inference may need more for activations and intermediate tensors."}
+              >
+                <PillGroup>
+                  {omniVariants.map(([key, v]) => {
+                    const compatible = variantRunsOnHardware(hwProfile, v, hwId);
+                    return (
+                      <Pill
+                        key={key}
+                        active={variant === key}
+                        disabled={!compatible}
+                        onClick={() => compatible && selectVariant(key)}
+                        title={compatible
+                          ? [v.description, "Min " + v.vram_minimum_gb + " GB to load."].filter(Boolean).join("\n\n")
+                          : "Unavailable on the selected hardware."
+                        }
+                      >
+                        <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
+                        <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
+                      </Pill>
+                    );
+                  })}
                 </PillGroup>
               </ConfigRow>
             )}
@@ -2136,7 +2185,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                           <span className="font-semibold">{p.display_name}</span>
                           {p.vram_gb > 0 && p.gpu_count > 0 && (
                             <span className="text-muted-foreground ml-1.5 font-mono">
-                              {p.gpu_count}×{Math.round(p.vram_gb / p.gpu_count)}G
+                              {Math.round(p.vram_gb / p.gpu_count)}G/GPU
                             </span>
                           )}
                         </Pill>
