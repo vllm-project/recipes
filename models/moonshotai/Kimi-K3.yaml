@@ -100,7 +100,7 @@ features:
 opt_in_features:
   - spec_decoding
   - text_only
-  - dcp
+  - decode_context_parallelism
 
 variants:
   default:
