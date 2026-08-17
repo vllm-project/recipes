@@ -721,28 +721,28 @@ guide: |
 
   ### RTX PRO 6000 8× (8×96 GB, sm_120)
 
-Single-node TP8 + expert parallelism on the **0731** checkpoint. Serving
-without speculative decoding was verified on 8× RTX PRO 6000 (PCIe, no
-NVLink). DSpark on **0731** needs `vllm/vllm-openai:nightly` (or a build
-that includes vLLM #51538) plus a FlashInfer that instantiates the SM120
-sparse-MLA decode kernel for `topk=192`. The Preview, NVFP4, and DSpark
-variant checkpoints are not verified on this profile.
+  Single-node TP8 + expert parallelism on the **0731** checkpoint. Serving
+  without speculative decoding was verified on 8× RTX PRO 6000 (PCIe, no
+  NVLink). DSpark on **0731** needs `vllm/vllm-openai:nightly` (or a build
+  that includes vLLM #51538) plus a FlashInfer that instantiates the SM120
+  sparse-MLA decode kernel for `topk=192`. The Preview, NVFP4, and DSpark
+  variant checkpoints are not verified on this profile.
 
-sm_120 cannot use the SM100 FP4 indexer cache or `deep_gemm_mega_moe`.
-The generated command already sets `--attention_config.use_fp4_indexer_cache
-False` and `--moe-backend auto`. Do not use `method: mtp` on 0731 — that
-checkpoint has no MTP head; Spec Decoding defaults to DSpark.
+  sm_120 cannot use the SM100 FP4 indexer cache or `deep_gemm_mega_moe`.
+  The generated command already sets `--attention_config.use_fp4_indexer_cache
+  False` and `--moe-backend auto`. Do not use `method: mtp` on 0731 — that
+  checkpoint has no MTP head; Spec Decoding defaults to DSpark.
 
-Host-side FlashInfer install before launching 0731 with DSpark (`--no-deps`
-is required so pip does not replace vLLM's torch):
+  Host-side FlashInfer install before launching 0731 with DSpark (`--no-deps`
+  is required so pip does not replace vLLM's torch):
 
-```bash
-/usr/bin/python3.12 -m pip install -U --pre flashinfer-python \
+  ```bash
+  /usr/bin/python3.12 -m pip install -U --pre flashinfer-python \
   --index-url https://flashinfer.ai/whl/nightly/ --no-deps
-/usr/bin/python3.12 -m pip install flashinfer-python
-/usr/bin/python3.12 -m pip install -U --pre flashinfer-cubin \
+  /usr/bin/python3.12 -m pip install flashinfer-python
+  /usr/bin/python3.12 -m pip install -U --pre flashinfer-cubin \
   --index-url https://flashinfer.ai/whl/nightly/
-/usr/bin/python3.12 -m pip install -U --pre flashinfer-jit-cache \
+  /usr/bin/python3.12 -m pip install -U --pre flashinfer-jit-cache \
   --index-url https://flashinfer.ai/whl/nightly/cu130
 
   vllm serve deepseek-ai/DeepSeek-V4-Flash-0731 \
