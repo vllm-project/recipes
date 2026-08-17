@@ -521,18 +521,39 @@ export function pdFitsSingleNode(hwProfile, variant) {
 
 /**
  * Given a variant, pick the preferred default hardware:
- * - If variant requires Blackwell (e.g., NVFP4), prefer B200 then GB200
+ * - `meta.default_hardware` (the recipe author's editorial pick) when it
+ *   resolves to a profile this variant can actually land on
+ * - Else, if the variant requires Blackwell (e.g., NVFP4), prefer B200 then GB200
  * - Otherwise H200 is the canonical default
  * `recipe` is optional; when provided, hardware marked `unsupported` is excluded.
+ *
+ * `restricted` profiles (DGX Spark/Station, RTX Pro, TPU, Xeon) are candidates
+ * only when the recipe declares them in `meta.hardware` — mirrors the picker
+ * filter in CommandBuilder so the default is always a pill that renders.
+ *
+ * This is the landing hardware for both the builder (initial `useState`, before
+ * the URL param and the stored global preference get their say) and the JSON
+ * API's `recommended_command`. The API has neither of those signals, so
+ * `default_hardware` is the only way an author can steer it.
  */
 export function pickDefaultHardware(hwProfiles, variant, recipe) {
   const constraint = precisionHardwareConstraint(variant);
+  const declared = recipe?.meta?.hardware || {};
   const compatible = Object.entries(hwProfiles).filter(
     ([id, p]) =>
       matchesConstraint(p, constraint)
       && isHardwareSupported(recipe, id)
       && isVariantHardwareSupported(variant, id)
+      && (!p.restricted || id in declared)
   );
+
+  // Author's pick wins over the generic heuristic below: it knows which GPU the
+  // guide's numbers, the performance headline and the `verified` badge were
+  // written against. Fail-open — an id that doesn't survive the filter above
+  // (unknown to the taxonomy, wrong precision for this variant, opted out, or
+  // an undeclared restricted profile) falls through silently.
+  const authored = recipe?.meta?.default_hardware;
+  if (authored && compatible.some(([id]) => id === authored)) return authored;
 
   if (constraint?.generation === "blackwell") {
     if (compatible.some(([id]) => id === "b200")) return "b200";
@@ -820,8 +841,11 @@ function shellQuote(s) {
  *   { id, modelId?, extraArgs?, ... }
  *
  * Outliers:
- *   - `recipe.omni.serve_binary: "vllm-omni serve"` swaps the binary (today's
- *     only user is stable-audio-open, whose handler doesn't ship in `vllm`).
+ *   - `recipe.omni.serve_binary: "vllm-omni serve"` swaps the binary. Currently
+ *     unused, and new recipes should not set it. It exists only for recipes
+ *     pinned below vLLM 0.20.0, which is where the `vllm` console-script grew
+ *     the `--omni` delegation into vllm-omni's entrypoint; on 0.20.0+ both
+ *     binaries reach the same handler, so the default `vllm serve` is correct.
  *   - `recipe.omni.port` overrides the rendered `--port` flag (default 8000).
  */
 export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfileId = null) {
@@ -851,6 +875,11 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfil
   if (ho?.extra_args) args.push(...ho.extra_args);
   if (variantGenHo?.extra_args) args.push(...variantGenHo.extra_args);
   if (variantExactHo?.extra_args) args.push(...variantExactHo.extra_args);
+  // `omni.port` is the recipe's port override. Emit it after the arg sources
+  // above so dedupeArgs's last-wins rule lets it beat a `--port` already
+  // declared in base_args. Left unset, the served port is vllm's own default
+  // (8000), which is what the client-side curl renderer assumes.
+  if (recipe.omni?.port) args.push("--port", String(recipe.omni.port));
   // --omni is the toggle that puts vllm into omni-handler mode. Always emit it
   // last — dedupeArgs's last-wins rule keeps it idempotent if the recipe also
   // declares it in base_args.
@@ -1258,8 +1287,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         const modeKey = resolveModeKey(feat, f, variant, variantKey, hwProfile, hwProfileId, featureModes?.[f]);
         const mode = modeKey ? feat.modes[modeKey] : null;
         if (mode) {
-          const modeHo = mode.hardware_overrides?.[gen]
-            || (isNvidia ? mode.hardware_overrides?.nvidia : null);
+          const modeHo = hardwareKeyedValue(mode.hardware_overrides, hwProfile, hwProfileId);
           const modeArgs = modeHo?.args ?? mode.args;
           if (modeArgs) args.push(...modeArgs);
         }

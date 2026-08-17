@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
   date_added: 2026-07-31
-  date_updated: 2026-08-06
+  date_updated: 2026-08-14
   difficulty: hard
   tasks:
     - text
@@ -17,6 +17,7 @@ meta:
     b300: verified
     gb300: verified
     dgx_station_gb300: verified
+    dgx_spark_gb10: verified
     rtx_pro_6000_8x: verified
     mi300x: unsupported
     mi325x: verified
@@ -39,11 +40,6 @@ model:
     - "--block-size"
     - "256"
 
-
-dependencies:
-  - note: "DeepGEMM FP8 kernels — install via vLLM tools/install_deepgemm.sh"
-    command: "bash <(curl -fsSL https://raw.githubusercontent.com/vllm-project/vllm/main/tools/install_deepgemm.sh)"
-
 features:
   tool_calling:
     description: "Enable tool calling with DeepSeek V4 chat template support."
@@ -58,6 +54,8 @@ features:
     args:
       - "--reasoning-parser"
       - "deepseek_v4"
+      - "--reasoning-config"
+      - '{"reasoning_parser":"deepseek_v4","reasoning_start_str":"","reasoning_end_str":""}'
   spec_decoding:
     description: "Speculative decoding — pick a drafting method."
     # Mode = the --speculative-config method only (args); the served checkpoint is
@@ -96,6 +94,11 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"probabilistic"}'
+        hardware_overrides:
+          dgx_spark_gb10:
+            args:
+              - "--speculative-config"
+              - '{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","attention_backend":"B12X_MLA_SPARSE"}'
 
 opt_in_features:
   - spec_decoding
@@ -105,7 +108,7 @@ variants:
     # Official 0731 release: new weights (not a re-pack of the preview), same
     # architecture and same fused DSpark draft module.
     model_id: "deepseek-ai/DeepSeek-V4-Flash-0731"
-    label: "0731"
+    label: "FP8 (0731)"
     precision: fp8
     vram_minimum_gb: 200
     description: "Official DeepSeek-V4-Flash release (2026-07-31) superseding the preview — substantially stronger agentic performance, with the DSpark draft module attached."
@@ -114,17 +117,120 @@ variants:
     default_modes:
       spec_decoding: dspark
     hardware_overrides:
+      dgx_spark_gb10:
+        docker_image: "eugr/spark-vllm-b12x:latest"
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--gpu-memory-utilization"
+          - "0.85"
+          - "--enable-prefix-caching"
+          - "--default-chat-template-kwargs.thinking=true"
+          - "--default-chat-template-kwargs.reasoning_effort=high"
+          - "--load-format"
+          - "instanttensor"
+          - "--moe-backend"
+          - "b12x"
+          - "--linear-backend"
+          - "b12x"
+          - "--attention-backend"
+          - "B12X_MLA_SPARSE"
+          - "--max-cudagraph-capture-size"
+          - "64"
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'
+        extra_env:
+          PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+          CUTE_DSL_ARCH: "sm_121a"
+          VLLM_USE_AOT_COMPILE: "1"
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+          VLLM_USE_MEGA_AOT_ARTIFACT: "-1"
+          VLLM_MEMORY_PROFILE_INCLUDE_ATTN: "1"
+          VLLM_USE_FLASHINFER_SAMPLER: "1"
+          VLLM_USE_B12X_WO_PROJECTION: "1"
+          VLLM_USE_B12X_MHC: "1"
+          VLLM_USE_B12X_FP8_GEMM: "1"
+          VLLM_USE_B12X_MOE: "1"
+          VLLM_USE_B12X_SPARSE_INDEXER: "1"
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          B12X_MLA_SM120_UNIFIED: "1"
+          B12X_MOE_FORCE_A8: "1"
+          GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+          MN_IF_NAME: "$IFACE_NAME"
+          NCCL_IB_DISABLE: "0"
+          NCCL_IB_HCA: "$IB_IF"
+          NCCL_IGNORE_CPU_AFFINITY: "1"
+          NCCL_SOCKET_IFNAME: "$IFACE_NAME"
+          OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
+          TP_SOCKET_IFNAME: "$IFACE_NAME"
+          UCX_NET_DEVICES: "$IFACE_NAME"
       blackwell:
         extra_args:
           - "--moe-backend"
           - "deep_gemm_mega_moe"
   fp8:
+    # Marked "(Preview)" rather than left bare: with the 0731 release on the same
+    # row, an unqualified FP8 pill reads as "the plain one" instead of "the
+    # superseded one". Matches DeepSeek's own naming — their benchmark tables
+    # say `DeepSeek-V4-Flash-0731` vs `DeepSeek-V4-Flash (Preview)`.
+    label: "FP8 (Preview)"
     precision: fp8
     vram_minimum_gb: 170
     description: "Native FP4+FP8 mixed checkpoint (MoE experts FP4, remaining params FP8)"
     # deep_gemm_mega_moe is an FP8-only MoE kernel — the FP8 checkpoint adds it on
     # Blackwell; the NVFP4 variant below adds nothing (its experts can't use it).
     hardware_overrides:
+      dgx_spark_gb10:
+        docker_image: "eugr/spark-vllm-b12x:latest"
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--gpu-memory-utilization"
+          - "0.85"
+          - "--enable-prefix-caching"
+          - "--default-chat-template-kwargs.thinking=true"
+          - "--default-chat-template-kwargs.reasoning_effort=high"
+          - "--load-format"
+          - "instanttensor"
+          - "--moe-backend"
+          - "b12x"
+          - "--linear-backend"
+          - "b12x"
+          - "--attention-backend"
+          - "B12X_MLA_SPARSE"
+          - "--max-cudagraph-capture-size"
+          - "64"
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'
+        extra_env:
+          PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+          CUTE_DSL_ARCH: "sm_121a"
+          VLLM_USE_AOT_COMPILE: "1"
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+          VLLM_USE_MEGA_AOT_ARTIFACT: "-1"
+          VLLM_MEMORY_PROFILE_INCLUDE_ATTN: "1"
+          VLLM_USE_FLASHINFER_SAMPLER: "1"
+          VLLM_USE_B12X_WO_PROJECTION: "1"
+          VLLM_USE_B12X_MHC: "1"
+          VLLM_USE_B12X_FP8_GEMM: "1"
+          VLLM_USE_B12X_MOE: "1"
+          VLLM_USE_B12X_SPARSE_INDEXER: "1"
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          B12X_MLA_SM120_UNIFIED: "1"
+          B12X_MOE_FORCE_A8: "1"
+          GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+          MN_IF_NAME: "$IFACE_NAME"
+          NCCL_IB_DISABLE: "0"
+          NCCL_IB_HCA: "$IB_IF"
+          NCCL_IGNORE_CPU_AFFINITY: "1"
+          NCCL_SOCKET_IFNAME: "$IFACE_NAME"
+          OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
+          TP_SOCKET_IFNAME: "$IFACE_NAME"
+          UCX_NET_DEVICES: "$IFACE_NAME"
       blackwell:
         extra_args:
           - "--moe-backend"
@@ -134,6 +240,56 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 170
     description: "NVIDIA modelopt NVFP4 checkpoint (MoE experts NVFP4; attention, shared experts, router head, and MTP stay FP8) for Blackwell GPUs."
+    hardware_overrides:
+      dgx_spark_gb10:
+        docker_image: "eugr/spark-vllm-b12x:latest"
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--gpu-memory-utilization"
+          - "0.85"
+          - "--enable-prefix-caching"
+          - "--default-chat-template-kwargs.thinking=true"
+          - "--default-chat-template-kwargs.reasoning_effort=high"
+          - "--load-format"
+          - "instanttensor"
+          - "--moe-backend"
+          - "b12x"
+          - "--linear-backend"
+          - "b12x"
+          - "--attention-backend"
+          - "B12X_MLA_SPARSE"
+          - "--max-cudagraph-capture-size"
+          - "64"
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'
+        extra_env:
+          PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+          CUTE_DSL_ARCH: "sm_121a"
+          VLLM_USE_AOT_COMPILE: "1"
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+          VLLM_USE_MEGA_AOT_ARTIFACT: "-1"
+          VLLM_MEMORY_PROFILE_INCLUDE_ATTN: "1"
+          VLLM_USE_FLASHINFER_SAMPLER: "1"
+          VLLM_USE_B12X_WO_PROJECTION: "1"
+          VLLM_USE_B12X_MHC: "1"
+          VLLM_USE_B12X_FP8_GEMM: "1"
+          VLLM_USE_B12X_MOE: "1"
+          VLLM_USE_B12X_SPARSE_INDEXER: "1"
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          B12X_MLA_SM120_UNIFIED: "1"
+          B12X_MOE_FORCE_A8: "1"
+          GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+          MN_IF_NAME: "$IFACE_NAME"
+          NCCL_IB_DISABLE: "0"
+          NCCL_IB_HCA: "$IB_IF"
+          NCCL_IGNORE_CPU_AFFINITY: "1"
+          NCCL_SOCKET_IFNAME: "$IFACE_NAME"
+          OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
+          TP_SOCKET_IFNAME: "$IFACE_NAME"
+          UCX_NET_DEVICES: "$IFACE_NAME"
   dspark:
     # Official fused DSpark checkpoint — the preview weights with the DSpark draft
     # module attached (config.json gains the dspark_* block). A distinct served
@@ -150,6 +306,55 @@ variants:
     default_modes:
       spec_decoding: dspark
     hardware_overrides:
+      dgx_spark_gb10:
+        docker_image: "eugr/spark-vllm-b12x:latest"
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--gpu-memory-utilization"
+          - "0.85"
+          - "--enable-prefix-caching"
+          - "--default-chat-template-kwargs.thinking=true"
+          - "--default-chat-template-kwargs.reasoning_effort=high"
+          - "--load-format"
+          - "instanttensor"
+          - "--moe-backend"
+          - "b12x"
+          - "--linear-backend"
+          - "b12x"
+          - "--attention-backend"
+          - "B12X_MLA_SPARSE"
+          - "--max-cudagraph-capture-size"
+          - "64"
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'
+        extra_env:
+          PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+          CUTE_DSL_ARCH: "sm_121a"
+          VLLM_USE_AOT_COMPILE: "1"
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+          VLLM_USE_MEGA_AOT_ARTIFACT: "-1"
+          VLLM_MEMORY_PROFILE_INCLUDE_ATTN: "1"
+          VLLM_USE_FLASHINFER_SAMPLER: "1"
+          VLLM_USE_B12X_WO_PROJECTION: "1"
+          VLLM_USE_B12X_MHC: "1"
+          VLLM_USE_B12X_FP8_GEMM: "1"
+          VLLM_USE_B12X_MOE: "1"
+          VLLM_USE_B12X_SPARSE_INDEXER: "1"
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          B12X_MLA_SM120_UNIFIED: "1"
+          B12X_MOE_FORCE_A8: "1"
+          GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+          MN_IF_NAME: "$IFACE_NAME"
+          NCCL_IB_DISABLE: "0"
+          NCCL_IB_HCA: "$IB_IF"
+          NCCL_IGNORE_CPU_AFFINITY: "1"
+          NCCL_SOCKET_IFNAME: "$IFACE_NAME"
+          OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
+          TP_SOCKET_IFNAME: "$IFACE_NAME"
+          UCX_NET_DEVICES: "$IFACE_NAME"
       blackwell:
         extra_args:
           - "--moe-backend"
@@ -171,6 +376,11 @@ kv_offload_support:
   offloading_fs: verified
 
 strategy_hardware:
+  # Dual DGX Spark clusters need cross-node TP to shard the checkpoint across
+  # the two GB10 nodes. Keep this opt-in exact to DGX Spark so larger Blackwell
+  # platforms stay on their existing TEP/DEP/PD recommendations.
+  multi_node_tp:
+    dgx_spark_gb10: supported
   # PD splits into a prefill pool and a decode pool, each sized in whole nodes
   # (strategy_overrides.pd_cluster gives both `nodes: 1`), so the builder emits
   # a two-node deployment. RTX Pro 6000 8x is multi_node: false / scalable:
@@ -267,6 +477,19 @@ strategy_overrides:
           - "False"
           - "--moe-backend"
           - "auto"
+  multi_node_tp:
+    hardware_overrides:
+      # Multi-node TP is only enabled for DGX Spark in this recipe. Use a
+      # generation-level strategy override so it replaces the generic Blackwell
+      # FP4-indexer / deep_gemm_mega_moe overrides instead of layering on top.
+      blackwell:
+        extra_args:
+          - "--moe-backend"
+          - "b12x"
+          - "--linear-backend"
+          - "b12x"
+          - "--attention-backend"
+          - "B12X_MLA_SPARSE"
   pd_cluster:
     env:
       VLLM_USE_NCCL_SYMM_MEM: "1"
@@ -301,6 +524,14 @@ strategy_overrides:
         - "--enable-sleep-mode"
       env: {}
 
+hardware_notes:
+  dgx_spark_gb10:
+    title: "DGX Spark setup required"
+    body: "This hardware uses the community eugr/spark-vllm-b12x:latest docker image and a 2-node TP launch. Before running the generated command, check the DGX Spark cluster guide for IFACE_NAME, IB_IF and HEAD_IP."
+    link:
+      label: "DGX Spark cluster guide"
+      href: "#dgx-spark-gb10-cluster"
+
 guide: |
   ## Overview
 
@@ -329,8 +560,8 @@ guide: |
 
   | Variant | Repo | Draft | Notes |
   | :-- | :-- | :-- | :-- |
-  | **0731** (default) | `deepseek-ai/DeepSeek-V4-Flash-0731` | DSpark | Official release, new weights + DSpark |
-  | **FP8** | `deepseek-ai/DeepSeek-V4-Flash` | MTP | Preview FP4+FP8 mixed weights |
+  | **FP8 (0731)** (default) | `deepseek-ai/DeepSeek-V4-Flash-0731` | DSpark | Official release, new weights + DSpark |
+  | **FP8 (Preview)** | `deepseek-ai/DeepSeek-V4-Flash` | MTP | Preview FP4+FP8 mixed weights |
   | **NVFP4** | `nvidia/DeepSeek-V4-Flash-NVFP4` | MTP | modelopt re-quant, Blackwell |
   | **DSpark** | `deepseek-ai/DeepSeek-V4-Flash-DSpark` | DSpark | Preview weights + fused DSpark module |
 
@@ -339,7 +570,7 @@ guide: |
   2.1 and 54.4 on DeepSWE, versus 61.8 and 7.3 for the preview. It beats
   DeepSeek-V4-Pro (Preview) on every agentic benchmark DeepSeek published despite its
   far smaller activated parameter count. The preview weights remain available as the
-  **FP8** variant for reproducing earlier results.
+  **FP8 (Preview)** variant for reproducing earlier results.
 
   **DSpark** is *not* new weights — it is the preview checkpoint with a speculative
   decoding module attached (see [DeepSpec](https://github.com/deepseek-ai/DeepSpec)).
@@ -429,6 +660,45 @@ guide: |
   replica on H200/B200/B300 (leaving headroom for throughput-vs-latency tuning).
   On DGX Station, use the single-GPU launch below. For disaggregated prefill/decode
   on GB200, use the PD Cluster tab.
+
+  ### DGX Spark (GB10) cluster
+
+  DGX Spark requires the community Spark vLLM build for this model rather than the
+  stock vLLM release/nightly image. The **DGX Spark (GB10)** hardware pill pins the
+  Docker tab to `eugr/spark-vllm-b12x:latest`, whose build carries the B12X
+  backends and Spark-specific kernels for the GB10 / SM12x family.
+
+  Use **2 nodes**. A single GB10's 128 GB unified memory is below the FP8/NVFP4
+  checkpoint footprint, so the recipe grants DGX Spark a Spark-only **Multi-Node TP**
+  layout (`--tensor-parallel-size 2`, one GB10 per node). The generated command
+  also sets the B12X runtime environment and the Spark network environment; export
+  `IFACE_NAME`, `IB_IF` and `HEAD_IP` on each node before launching.
+
+  To identify the values, first list the ConnectX Ethernet interfaces, RoCE
+  devices and the IP address of the UP ConnectX interface on each Spark:
+
+  ```bash
+  $ ibdev2netdev
+  roceP2p1s0f0 port 1 ==> enP2p1s0f0np0 (Up)
+  roceP2p1s0f1 port 1 ==> enP2p1s0f1np1 (Down)
+  rocep1s0f0 port 1 ==> enp1s0f0np0 (Up)
+  rocep1s0f1 port 1 ==> enp1s0f1np1 (Down)
+
+  $ ip addr show enp1s0f0np0
+  3: enp1s0f0np0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+      link/ether 4c:62:56:c1:83:68 brd ff:ff:ff:ff:ff:ff
+      inet 100.100.100.10/24 brd 100.100.100.255 scope global noprefixroute enp1s0f0np0
+        valid_lft forever preferred_lft forever
+  ```
+
+  From above example values, we can get the following common values:
+
+  ```bash
+  # Common values for all nodes
+  HEAD_IP="100.100.100.10"         # IP of the head node's UP ConnectX interface
+  IFACE_NAME="enp1s0f0np0"         # The head node's UP ConnectX Ethernet interface
+  IB_IF="rocep1s0f0,roceP2p1s0f0"  # Comma-separated RoCE device name list corresponding to the UP ConnectX interface
+  ```
 
   ### DGX Station Single-GPU
 

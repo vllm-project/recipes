@@ -4,7 +4,7 @@ meta:
   provider: "Moonshot AI"
   description: "Pre-release 2.8T-parameter native multimodal MoE with Kimi Delta Attention, Gated MLA, Attention Residuals, and a 1M-token context window"
   date_added: 2026-07-27
-  date_updated: 2026-08-06
+  date_updated: 2026-08-15
   difficulty: hard
   tasks:
     - multimodal
@@ -24,15 +24,7 @@ meta:
 
 model:
   model_id: "moonshotai/Kimi-K3"
-  min_vllm_version: "0.27.0"
-  docker_image:
-    nvidia:
-      # The K3 preview image is published as a CUDA 13 build only — Docker Hub
-      # has no kimi-k3-cu129 tag. Single-key map: the site pins cu130 and
-      # hides the cu129 toggle instead of fabricating a nonexistent tag.
-      cu130: "vllm/vllm-openai:kimi-k3"
-    amd: "vllm/vllm-openai-rocm:kimi-k3"
-  nightly_required: true
+  min_vllm_version: "0.27.1"
   install:
     docker:
       note: "Use a K3-enabled nightly image after the integration lands. CUDA 13 (cu130) build only — no -cu129 tag; the host needs an r580+ NVIDIA driver."
@@ -62,7 +54,7 @@ features:
       - "--reasoning-parser"
       - "kimi_k3"
   spec_decoding:
-    description: "Use Inferact trained DSpark."
+    description: "Use DSpark speculative decoding."
     # DSpark does not compose with pipeline parallelism yet
     # (vllm-project/vllm#50098), so the feature is gated off multi_node_tp_pp
     # (the 2-node Blackwell TP8xPP2 profile). Every other strategy keeps it.
@@ -75,7 +67,7 @@ features:
       - pd_cluster
     args:
       - "--speculative-config"
-      - '{"model":"Inferact/Kimi-K3-DSpark", "num_speculative_tokens":7, "method": "dspark", "attention_backend": "FLASHINFER_MLA", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
+      - '{"model":"RedHatAI/Kimi-K3-speculator.dspark", "num_speculative_tokens":8, "method": "dspark", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
     hardware_overrides:
       # ROCm/MI355X: target keeps AITER MLA (prefill); the DSpark verify runs on TRITON_MLA
       # (FLASHINFER_MLA is CUDA-only). max-num-seqs 128 matches our validated serve config.
@@ -84,15 +76,31 @@ features:
           - "--max-num-seqs"
           - "128"
           - "--speculative-config"
-          - '{"model":"Inferact/Kimi-K3-DSpark", "num_speculative_tokens":7, "method": "dspark", "attention_backend": "TRITON_MLA", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
+          - '{"model":"RedHatAI/Kimi-K3-speculator.dspark", "num_speculative_tokens":8, "method": "dspark", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
   text_only:
     description: "Skip the vision encoder for text-only workloads. Mutually exclusive with encoder_parallel."
     args:
       - "--language-model-only"
+  decode_context_parallelism:
+    description: "Decode context parallelism (DCP): shard the decode KV cache across the tensor-parallel ranks for decode-heavy long-context serving. The DCP size must divide the tensor-parallel size, so the args below assume the TP8 single-node layout. Pairs the TOKENSPEED_MLA decode backend with TRTLLM_RAGGED MLA prefill under FP8 KV."
+    # Scoped to single_node_tp: --decode-context-parallel-size is pinned to 8
+    # here, which only divides a TP of 8 or more.
+    strategies:
+      - single_node_tp
+    args:
+      - "--decode-context-parallel-size"
+      - "8"
+      - "--dcp-comm-backend"
+      - "a2a"
+      - "--attention-backend"
+      - "TOKENSPEED_MLA"
+      - "--attention-config"
+      - '{"use_prefill_query_quantization":true,"mla_prefill_backend":"TRTLLM_RAGGED"}'
 
 opt_in_features:
   - spec_decoding
   - text_only
+  - decode_context_parallelism
 
 variants:
   default:
@@ -185,7 +193,6 @@ hardware_overrides:
       - '{"use_prefill_query_quantization":true,"mla_prefill_backend":"flashinfer"}'
       - "--enable-prefix-caching"
     extra_env:
-      VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
       VLLM_ALLREDUCE_USE_FLASHINFER: "1"
       VLLM_ENGINE_READY_TIMEOUT_S: "3600"
       VLLM_USE_V2_MODEL_RUNNER: "1"
@@ -194,7 +201,7 @@ hardware_overrides:
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
       SAFETENSORS_FAST_GPU: "1"
-      AITER_SITUV2_A8W4: "1"
+      VLLM_ROCM_USE_AITER_MOE_SITUV2_A8W4: "1"
       AITER_BF16_FP8_MOE_BOUND: "0"
       VLLM_USE_BREAKABLE_CUDAGRAPH: "0" # REQUIRED on ROCm: the build auto-enables =1
     extra_args:
@@ -265,15 +272,11 @@ strategy_overrides:
     router:
       intra_node_data_parallel_size: 1
     env:
-      NCCL_CUMEM_ENABLE: "1"
-      NCCL_MNNVL_ENABLE: "1"
-      NCCL_NVLS_ENABLE: "0"
       VLLM_SSM_CONV_STATE_LAYOUT: "DS"
     # Blackwell only (cuda_copy is CUDA-only); replaces the recipe-level nvidia block.
     hardware_overrides:
       blackwell:
         extra_env:
-          VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
           UCX_TLS: "rc,cuda_copy"
     prefill:
       parallelism: tep
@@ -284,8 +287,8 @@ strategy_overrides:
         - "16384"
         - "--no-disable-hybrid-kv-cache-manager"
         - "--no-enable-flashinfer-autotune"
-
-      env: {}
+      env:
+        VLLM_KIMI_K3_SHARD_SP_SHARED_EXPERT: "1"
     decode:
       parallelism: dep
       tp: 1
@@ -303,7 +306,7 @@ strategy_overrides:
         - "--data-parallel-hybrid-lb"
         - "--no-enable-prefix-caching"
         - "--max-num-seqs"
-        - "32"
+        - "8"
         - "--max-num-batched-tokens"
         - "32"
         - "--no-disable-hybrid-kv-cache-manager"
@@ -373,4 +376,5 @@ guide: |
   - **RDMA**: If RDMA is enabled, set `UCX_TLS="rc,cuda_copy"` to make sure KV Cache transfer goes through RDMA.
   - **MNNVL environments** (GB200/GB300 NVL): recommend adding `NCCL_MNNVL_ENABLE=1`, `NCCL_CUMEM_ENABLE=1`, and `NCCL_NVLS_ENABLE=1`.
   - **mlx5 dmabuf registration failures**: if engine init fails with "NCCL error: unhandled system error" and the log shows `mlx5dv_reg_dmabuf_mr` errno 524, the kernel/driver lacks mlx5 dmabuf support (NCCL 2.28 registers dmabuf by default). Set `NCCL_DMABUF_ENABLE=0` to fall back to `nvidia_peermem` (must be loaded on the nodes) — still GPUDirect RDMA.
-  - **FP8 KV**: If FP8 KV cache is needed, please also add `--attention-config '{"use_prefill_query_quantization":true,"mla_prefill_backend":"flashinfer"}'` when serving vLLM.
+  - **FP8 KV**: If FP8 KV cache is needed, please also add `--attention-config '{"use_prefill_query_quantization":true,"mla_prefill_backend":"flashinfer"}'` when serving vLLM. `flashinfer` is the recommended default and is what the Blackwell profile above emits, but it is not the only supported choice: vLLM 0.27.1 registers three MLA prefill backends — `FLASHINFER`, `TRTLLM_RAGGED` and `TOKENSPEED_MLA` (see `vllm/v1/attention/backends/mla/prefill/registry.py`) — and any of them may be substituted for `mla_prefill_backend` alongside `use_prefill_query_quantization`. Which one wins depends on the input-length distribution, so benchmark before switching.
+  - **Decode context parallelism (DCP)**: enable the `dcp` opt-in feature in the command builder to shard the decode KV cache across the tensor-parallel ranks for decode-heavy long-context serving. It emits `--decode-context-parallel-size 8 --dcp-comm-backend a2a --attention-backend TOKENSPEED_MLA` with `mla_prefill_backend: TRTLLM_RAGGED`, and is scoped to the TP8 single-node profile because the DCP size must divide the tensor-parallel size. On builds that carry them, the `VLLM_USE_DIRECT_DCP_A2A`, `VLLM_USE_DIRECT_DCP_Q_GATHER` and `VLLM_USE_DIRECT_DCP_KV_GATHER` knobs default to auto and turn the direct DCP ops on where applicable; set them to `1` only to pin that path explicitly, or `0` to disable it.
