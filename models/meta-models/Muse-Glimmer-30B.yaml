@@ -33,17 +33,13 @@ model:
   # Not in any released wheel — the model code and both parsers land upstream on
   # nightly first, so `nightly_required` points the Install block at the nightly
   # index. The version below is the unreleased target, not something installable.
-  min_vllm_version: "0.27.0"
+  min_vllm_version: "0.28.0"
   docker_image:
     nvidia:
       # Single-key map: the site pins cu130 and hides the cu129 toggle rather
       # than fabricating a -cu129 tag that may not be published.
       cu130: "vllm/vllm-openai:muse-glimmer"
   nightly_required: true
-  install:
-    docker:
-      note: "Docker is the supported path — the model code and the muse_glimmer parsers are not in any released vLLM wheel. On ROCm, please install the code from https://github.com/vllm-project/vllm/pull/51655 ."
-    pip: false
   architecture: dense
   # Model card states ~29.6B total including the perception encoder. Measured from
   # safetensors metadata: total_size 59,553,253,376 bytes at BF16 = 29.78B. No expert

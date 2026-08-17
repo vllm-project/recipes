@@ -20,10 +20,6 @@ meta:
 model:
   model_id: "thinkingmachines/Inkling-NVFP4"
   min_vllm_version: "0.26.0"
-  nightly_required: true
-  install:
-    docker:
-    pip:
   architecture: moe
   parameter_count: "975B"
   active_parameters: "41B"

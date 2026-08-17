@@ -19,10 +19,6 @@ meta:
 model:
   model_id: "tencent/Hy3"
   min_vllm_version: "0.26.0"
-  docker_image:
-    nvidia: "vllm/vllm-openai:hy3"
-    amd: "vllm/vllm-openai-rocm:nightly-cbe9c40f998f13975b967773ac7e7920e115387f"
-  nightly_required: true
   install:
     docker:
       note: "Use the dedicated hy3 image until changes land in vllm:latest."

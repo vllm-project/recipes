@@ -41,7 +41,7 @@ model:
   # stable release, whose docs/models/supported_models.md lists only the
   # `*ForConditionalGeneration` members of the Qwen3.5 family. Nightly is a real
   # requirement here. Re-check at the next stable tag and pin it.
-  min_vllm_version: "nightly"
+  min_vllm_version: "0.28.0"
   nightly_required: true
   docker_image:
     nvidia: "vllm/vllm-openai:qwen38"

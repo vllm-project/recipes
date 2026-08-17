@@ -3,7 +3,7 @@ meta:
   slug: "qwen3-1.7b"
   provider: "Qwen"
   description: "Qwen3 1.7B dense model with hybrid thinking/non-thinking modes, validated for BF16 serving on Intel Xeon 6."
-  date_added: 2026-08-14
+  date_added: 2025-04-28
   date_updated: 2026-08-14
   difficulty: beginner
   tasks:
