@@ -521,18 +521,39 @@ export function pdFitsSingleNode(hwProfile, variant) {
 
 /**
  * Given a variant, pick the preferred default hardware:
- * - If variant requires Blackwell (e.g., NVFP4), prefer B200 then GB200
+ * - `meta.default_hardware` (the recipe author's editorial pick) when it
+ *   resolves to a profile this variant can actually land on
+ * - Else, if the variant requires Blackwell (e.g., NVFP4), prefer B200 then GB200
  * - Otherwise H200 is the canonical default
  * `recipe` is optional; when provided, hardware marked `unsupported` is excluded.
+ *
+ * `restricted` profiles (DGX Spark/Station, RTX Pro, TPU, Xeon) are candidates
+ * only when the recipe declares them in `meta.hardware` — mirrors the picker
+ * filter in CommandBuilder so the default is always a pill that renders.
+ *
+ * This is the landing hardware for both the builder (initial `useState`, before
+ * the URL param and the stored global preference get their say) and the JSON
+ * API's `recommended_command`. The API has neither of those signals, so
+ * `default_hardware` is the only way an author can steer it.
  */
 export function pickDefaultHardware(hwProfiles, variant, recipe) {
   const constraint = precisionHardwareConstraint(variant);
+  const declared = recipe?.meta?.hardware || {};
   const compatible = Object.entries(hwProfiles).filter(
     ([id, p]) =>
       matchesConstraint(p, constraint)
       && isHardwareSupported(recipe, id)
       && isVariantHardwareSupported(variant, id)
+      && (!p.restricted || id in declared)
   );
+
+  // Author's pick wins over the generic heuristic below: it knows which GPU the
+  // guide's numbers, the performance headline and the `verified` badge were
+  // written against. Fail-open — an id that doesn't survive the filter above
+  // (unknown to the taxonomy, wrong precision for this variant, opted out, or
+  // an undeclared restricted profile) falls through silently.
+  const authored = recipe?.meta?.default_hardware;
+  if (authored && compatible.some(([id]) => id === authored)) return authored;
 
   if (constraint?.generation === "blackwell") {
     if (compatible.some(([id]) => id === "b200")) return "b200";

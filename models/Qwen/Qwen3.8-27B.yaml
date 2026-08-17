@@ -1,0 +1,234 @@
+meta:
+  title: "Qwen3.8-27B"
+  slug: "qwen3.8-27b"
+  provider: "Qwen"
+  description: "27B-parameter dense hybrid-attention model with linear attention on 48 of 64 layers, a vision tower, a built-in MTP draft head, 262K native context window and extensible to 1M context"
+  date_added: 2026-08-14
+  date_updated: 2026-08-14
+  difficulty: beginner
+  tasks:
+    - multimodal
+    - text
+  performance_headline: "Fits one Blackwell GPU in every precision: NVFP4 in 24.6 GiB, 6.6M KV tokens at 1M context"
+  related_recipes:
+    - "Qwen/Qwen3.8-2.4T-A95B"
+  # `verified` = run end-to-end on that GPU. gb300 earned it on 2026-08-14: BF16 and FP8 at
+  # TP4, NVFP4 at TP1 on vLLM 0.1.dev19754+g3a0914114, correct generations at 1M context,
+  # and working tool calls. Everything else stays absent — the honest silent default.
+  hardware:
+    gb300: verified
+
+model:
+  model_id: "Qwen/Qwen3.8-27B"
+  # A NUMBER, not the string "nightly" the 2.4T sibling uses. `maxVersion`
+  # (CommandBuilder.jsx:3146-3150) maps each dotted field through `parseInt(n,10) || 0`, so
+  # "nightly" scores 0.0.0 and LOSES to any real version: pick a Mooncake KV-offload option
+  # and the Install header would take the kv_store YAMLs' "0.21.0" instead, understating the
+  # requirement.
+  #
+  # 0.17.0 is where `Qwen3_5ForConditionalGeneration` is already registered. The runs behind
+  # this recipe all used the Docker image pinned below (a fork build in the 0.27 range), so
+  # older releases are unverified rather than known-good — and `spec_decoding` in particular
+  # wants the gated-delta-net speculative fix (vllm-project/vllm#51812 / #51674), which no
+  # released tag carries yet.
+  min_vllm_version: "0.17.0"
+  # NVIDIA only. The rocm tag with the same name is an AMD build of the 2.4T *text* model
+  # (no `ai.vllm.build.commit` label) and has never been exercised on the 27B; naming it
+  # here would imply a tested AMD path that does not exist. Non-NVIDIA hardware falls back
+  # to the generic nightly image.
+  docker_image: "vllm/vllm-openai:qwen38"
+  architecture: dense
+  parameter_count: "27B"
+  active_parameters: "27B"
+  # 262144 is what config.json (text_config.max_position_embeddings) and
+  # tokenizer_config.json both declare. 1M is reachable — see Processing Ultra-Long Texts.
+  context_length: 262144
+  # No --trust-remote-code: config.json carries no `auto_map`, so there is no remote code
+  # to trust — vLLM's own handler loads this architecture.
+  base_args: []
+  base_env: {}
+
+# vLLM registers its OWN Qwen3_5Config into AutoConfig, so config parsing does not depend
+# on the transformers version at all — and vLLM already floors transformers at 5.5.3 in
+# requirements/common.txt. This pin covers the Qwen3-VL *processor* classes this checkpoint
+# needs, matching the 5.8.0 its config.json was written by. Do not restate it as "older
+# releases do not know this model_type": transformers has shipped a qwen3_5 module since
+# 5.2.0, so that claim is false.
+dependencies:
+  - note: "Matches the transformers version config.json was written by (5.8.0), for the Qwen3-VL processor classes. vLLM parses the config with its own Qwen3_5Config."
+    command: 'uv pip install -U "transformers>=5.8.0"'
+
+features:
+  tool_calling:
+    description: "Enable automatic tool choice. The chat template emits tool calls as <tool_call><function=…><parameter=…> XML, which is the qwen3_coder format — not JSON."
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "qwen3_coder"
+  reasoning:
+    description: "Parse <think> blocks separately from the final answer. The template opens every assistant turn with <think>, so without this the reasoning lands in message.content."
+    args:
+      - "--reasoning-parser"
+      - "qwen3"
+  spec_decoding:
+    description: "Multi-token prediction using the draft head shipped inside the checkpoint — no separate speculator repo needed."
+    # text_config sets mtp_num_hidden_layers: 1 and the weight index carries `mtp.*`
+    # tensors, so the draft head is present. Depth 3 matches the 2.4T sibling. Measured
+    # acceptance on short prompts: 92.2% (BF16), 84.8% (FP8), 81.5-84.8% (NVFP4).
+    # num_speculative_tokens is spelled out deliberately. vLLM reads `mtp_num_hidden_layers`
+    # off the TOP-level config (config/speculative.py), but this checkpoint carries it only
+    # under `text_config`, so the depth cannot be inferred here — omit it and startup fails.
+    args:
+      - "--speculative-config"
+      - '{"method":"mtp","num_speculative_tokens":3}'
+  text_only:
+    description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
+    args:
+      - "--language-model-only"
+  encoder_parallel:
+    description: "Run the vision encoder in data-parallel mode — avoids TP comm overhead on the small encoder. Mutually exclusive with text_only."
+    args:
+      - "--mm-encoder-tp-mode"
+      - "data"
+
+opt_in_features:
+  - spec_decoding
+  - text_only
+
+# vram_minimum_gb is ceil(real safetensors bytes in GB x 1.2) for every variant, not
+# params x bytes_per_param: the quantized builds are not uniformly 4-bit.
+variants:
+  default:
+    precision: bf16
+    # 55,563,006,776 B on disk = 55.6 GB
+    vram_minimum_gb: 67
+    description: "Full-precision BF16 — 51.7 GiB of weights: 1 GPU."
+  fp8:
+    model_id: "Qwen/Qwen3.8-27B-FP8"
+    precision: fp8
+    # 30,866,866,928 B = 30.9 GB. Block-scaled FP8
+    # (quantization_config.weight_block_size [128, 128]).
+    vram_minimum_gb: 38
+    description: "Official block-scaled FP8 checkpoint — 28.7 GiB: 1 GPU."
+  nvfp4:
+    model_id: "Inferact/Qwen3.8-27B-NVFP4"
+    precision: nvfp4
+    # Without a label the pill renders precision.toUpperCase() = "NVFP4", so a bare "NVFP4"
+    # label would be a no-op. (W4A4) is the fact worth surfacing: activations are 4-bit too.
+    label: "NVFP4 (W4A4)"
+    # 26,381,249,312 B = 26.4 GB. quant_method `modelopt`, quant_algo `NVFP4`.
+    vram_minimum_gb: 32
+    supported_hardware: [b200, b300, gb200, gb300]
+    description: "NVFP4 build for NVIDIA Blackwell — 24.6 GiB, the smallest footprint: 1 GPU."
+
+# Dense model: no routed experts, so none of the expert-parallel or PD strategies apply.
+#
+# `multi_node_tp` is deliberately ABSENT, unlike the 2.4T sibling. Multi-node TP sets
+# TP = gpus_per_node x nodes, i.e. 16 on the smallest 2-node layout — and 24 attention heads
+# are not divisible by 16, so vLLM raises in VllmConfig.__post_init__ before a single weight
+# loads. There is no schema mechanism to gate a strategy by node count, so offering it at
+# all would ship a command that cannot start. It costs nothing: 51.7 GiB of BF16 weights fit
+# one GPU, so nothing here needs a second node.
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  Qwen3.8-27B is the 27-billion-parameter dense member of the Qwen3.8 family, on the same
+  hybrid-attention backbone as the 2.4T MoE flagship.
+
+  **The layer mix is the interesting part.** Only 16 of the 64 layers run full attention
+  (`full_attention_interval: 4`); the other 48 run linear attention with a constant
+  recurrent state. Unlike the 2.4T this is a multimodal model: the architecture is
+  `Qwen3_5ForConditionalGeneration` and `config.json` carries a `vision_config`. Text
+  serving is what this recipe covers and what has been verified.
+
+  ## Prerequisites
+
+  - **transformers >= 5.8.0**, matching the version `config.json` was written by. vLLM parses
+    the config with its own `Qwen3_5Config`, so this is really about the Qwen3-VL processor.
+
+  ## Launch commands
+
+  ### Low latency
+
+  NVFP4, TP1:
+
+  ```bash
+  vllm serve Inferact/Qwen3.8-27B-NVFP4 \
+    --tensor-parallel-size 1 \
+    --max-model-len 262144 \
+    --kv-cache-dtype fp8 \
+    --reasoning-parser qwen3 \
+    --enable-auto-tool-choice --tool-call-parser qwen3_coder
+  ```
+
+  FP8, TP4 (one GB300 tray) for the largest KV cache:
+
+  ```bash
+  vllm serve Qwen/Qwen3.8-27B-FP8 \
+    --tensor-parallel-size 4 \
+    --max-model-len 262144 \
+    --kv-cache-dtype fp8 \
+    --reasoning-parser qwen3
+  ```
+
+  Add `--speculative-config '{"method":"mtp","num_speculative_tokens":3}'` for MTP.
+
+  ## Client usage
+
+  `generation_config.json` ships `temperature: 1.0`, `top_p: 0.95`, `top_k: 20`.
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1", timeout=3600)
+
+  resp = client.chat.completions.create(
+      model="Qwen/Qwen3.8-27B",
+      messages=[{"role": "user", "content": "Give me three primes above 100."}],
+      temperature=1.0, top_p=0.95, max_tokens=2048,
+  )
+  print(resp.choices[0].message.content)
+  ```
+
+  ### Thinking modes
+
+  The model supports no-think and adaptive thinking through `chat_template_kwargs`, per
+  request or server-wide via `--default-chat-template-kwargs`:
+
+  - `{"enable_thinking": false}` — no thinking, the model answers directly.
+  - `{"reasoning_effort": "low"}` — adaptive thinking. `xhigh` (default), `medium`, `low`.
+
+  ## Processing Ultra-Long Texts
+  The model has 262k native context length and it can be extended to 1M with --max-model-len
+  flag. The best value can be picked based on the use case and GPU ram usage tradeoff.
+
+  For example, to enable full 1M context length on this model:
+
+  ```bash
+  vllm serve Qwen/Qwen3.8-27B \
+    --max-model-len 1010000 \
+    --hf-overrides '{"text_config": {"max_position_embeddings": 1010000}}' \
+    ...
+  ```
+
+  Note the override is nested under `text_config` here, where the 2.4T takes it flat.
+
+  ## Troubleshooting
+
+  **MXFP4 does not load on Nvidia devices.** The vLLM MXFP4 implementation on Nvidia device is
+  currently missing linear method support so it doesn't run as intended. Use NVFP4 quantization
+  on Nvidia instead.
+
+  ## References
+
+  - Model card: https://huggingface.co/Qwen/Qwen3.8-27B
+  - FP8 checkpoint: https://huggingface.co/Qwen/Qwen3.8-27B-FP8
+  - NVFP4 build (NVIDIA): https://huggingface.co/Inferact/Qwen3.8-27B-NVFP4
+  - vLLM documentation: https://docs.vllm.ai/
