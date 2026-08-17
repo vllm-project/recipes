@@ -86,8 +86,6 @@ features:
         description: "DSpark drafting, 7 draft tokens, probabilistic sampling. Requires the DSpark or 0731 checkpoint (Variant row)."
         # Only the fused checkpoints carry the DSpark draft module — the 0731
         # release (default) and the DSpark re-pack of the preview weights.
-        hardware:
-          rtx_pro_6000_8x: unsupported
         variants:
           - default
           - dspark
