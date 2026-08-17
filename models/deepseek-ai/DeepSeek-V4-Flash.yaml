@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
   date_added: 2026-07-31
-  date_updated: 2026-08-14
+  date_updated: 2026-08-17
   difficulty: hard
   tasks:
     - text
@@ -117,6 +117,8 @@ variants:
     default_modes:
       spec_decoding: dspark
     hardware_overrides:
+      rtx_pro_6000_8x:
+        docker_image: "vllm/vllm-openai:nightly"
       dgx_spark_gb10:
         docker_image: "eugr/spark-vllm-b12x:latest"
         extra_args:
@@ -586,7 +588,9 @@ guide: |
   The fused checkpoints are ~167 GB on disk versus ~160 GB for the preview — the draft
   module is the difference. Both require **vLLM 0.25.0**: DSpark drafting itself landed
   in 0.25.0, but ROCm support for it (MI325X / MI355X) only shipped in 0.26.0. On
-  NVIDIA-only deployments 0.25.0 is sufficient.
+  NVIDIA-only deployments 0.25.0 is sufficient, except the 0731 checkpoint
+  on RTX PRO 6000 (sm_120) with DSpark, which needs `vllm/vllm-openai:nightly`
+  and a FlashInfer build containing flashinfer-ai/flashinfer#4380.
 
   ## Reasoning modes
 
@@ -717,40 +721,45 @@ guide: |
 
   ### RTX PRO 6000 8× (8×96 GB, sm_120)
 
-  Single-node TP8 + expert parallelism on the **0731** checkpoint. Verified with
-  the `vllm/vllm-openai:v0.25.0` image on 8× RTX PRO 6000 (PCIe, no NVLink).
+Single-node TP8 + expert parallelism on the **0731** checkpoint. Serving
+without speculative decoding was verified on 8× RTX PRO 6000 (PCIe, no
+NVLink). DSpark on **0731** needs `vllm/vllm-openai:nightly` (or a build
+that includes vLLM #51538) plus a FlashInfer that instantiates the SM120
+sparse-MLA decode kernel for `topk=192`. The Preview, NVFP4, and DSpark
+variant checkpoints are not verified on this profile.
 
-  Two host-side prerequisites before launching:
+sm_120 cannot use the SM100 FP4 indexer cache or `deep_gemm_mega_moe`.
+The generated command already sets `--attention_config.use_fp4_indexer_cache
+False` and `--moe-backend auto`. Do not use `method: mtp` on 0731 — that
+checkpoint has no MTP head; Spec Decoding defaults to DSpark.
 
-  ```bash
-  # vLLM 0.25.0's DeepSeek-V4 sparse MLA decode passes `swa_topk_lens`, which
-  # only exists in FlashInfer 0.6.14; the image pins 0.6.13. --no-deps is
-  # required — a plain install pulls a different torch and breaks vLLM's
-  # compiled extensions.
-  /usr/bin/python3.12 -m pip install --no-deps flashinfer-python==0.6.14
+Host-side FlashInfer install before launching 0731 with DSpark (`--no-deps`
+is required so pip does not replace vLLM's torch):
 
-  # flashinfer-cubin has no matching 0.6.14 release, so skip the parity check.
-  export FLASHINFER_DISABLE_VERSION_CHECK=1
-  ```
+```bash
+/usr/bin/python3.12 -m pip install -U --pre flashinfer-python \
+  --index-url https://flashinfer.ai/whl/nightly/ --no-deps
+/usr/bin/python3.12 -m pip install flashinfer-python
+/usr/bin/python3.12 -m pip install -U --pre flashinfer-cubin \
+  --index-url https://flashinfer.ai/whl/nightly/
+/usr/bin/python3.12 -m pip install -U --pre flashinfer-jit-cache \
+  --index-url https://flashinfer.ai/whl/nightly/cu130
 
-  ```bash
   vllm serve deepseek-ai/DeepSeek-V4-Flash-0731 \
-    --trust-remote-code \
-    --kv-cache-dtype fp8 \
-    --block-size 256 \
-    --enable-expert-parallel \
-    --tensor-parallel-size 8 \
-    --tokenizer-mode deepseek_v4 \
-    --tool-call-parser deepseek_v4 \
-    --enable-auto-tool-choice \
-    --reasoning-parser deepseek_v4
+  --trust-remote-code \
+  --kv-cache-dtype fp8 \
+  --block-size 256 \
+  --enable-expert-parallel \
+  --tensor-parallel-size 8 \
+  --moe-backend auto \
+  --attention_config.use_fp4_indexer_cache False \
+  --tokenizer-mode deepseek_v4 \
+  --tool-call-parser deepseek_v4 \
+  --enable-auto-tool-choice \
+  --reasoning-parser deepseek_v4 \
+  --reasoning-config '{"reasoning_parser":"deepseek_v4","reasoning_start_str":"","reasoning_end_str":""}' \
+  --speculative-config '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"probabilistic"}'
   ```
-
-  **Speculative decoding is unavailable on sm_120.** Both MTP and DSpark abort
-  during warmup with `Check failed: num_tokens > 64` from
-  `sparse_mla_sm120_paged_attention` — the SM120 sparse MLA kernel requires more
-  than 64 tokens per batch, while speculative verification submits only the draft
-  length (7 for DSpark). The Spec Decoding pill is disabled for this profile.
   
   ### MI325X (1×256GB)
 
