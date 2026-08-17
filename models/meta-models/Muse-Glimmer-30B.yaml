@@ -23,6 +23,8 @@ meta:
     mi300x: verified
     mi325x: verified
     mi355x: verified
+    arc_pro_b60: verified
+    arc_pro_b70: verified
     rtx_5090: verified
     rtx_5090_2x: verified
 
@@ -130,6 +132,9 @@ hardware_overrides:
     extra_args: []
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
+  xpu:
+    extra_args:
+      - "--enforce-eager"
 
 guide: |
   ## Overview
@@ -248,6 +253,29 @@ guide: |
 
   At TP=4 on MI355X this reports an 27.68M-token KV pool and ~211.22x max concurrency
   at the full 128K context.
+
+  ## Running on Intel Arc Pro (XPU) and Xeon (CPU)
+
+  validated on Intel Arc Pro B70, Arc Pro B60, and Xeon 6.
+
+  **Intel GPU (XPU):**
+
+  ```bash
+  docker run -it --rm --network=host --ipc=host --privileged \
+    --device /dev/dri:/dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path \
+    --entrypoint bash \
+    vllm/vllm-openai-xpu:latest
+  ```
+
+  Serve inside the container — `--enforce-eager` is required on the XPU backend:
+
+  ```bash
+  vllm serve meta-models/Muse-Glimmer-30B \
+    --tensor-parallel-size 4 \
+    --reasoning-parser muse_glimmer \
+    --enforce-eager
+  ```
 
   ## Sampling
 

@@ -3104,7 +3104,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
     ? ["source /opt/intel/oneapi/setvars.sh", preludeBase].filter(Boolean).join("\n")
     : preludeBase;
   const displayCommand = isDocker
-    ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu })
+    ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
     : command;
   // A companion process may ride along (`companions[]` from resolveCommand —
   // a feature's `companion:` or the active kv_offload option's, e.g.
@@ -3282,7 +3282,7 @@ uv pip install -U vllm --torch-backend auto`;
   const defaultDockerNote = isTpu
     ? "TPU builds are published by vllm-project/tpu-inference. See the Trillium and Ironwood tpu-recipes for pinned image tags and exact deployment flags."
     : isXpu
-      ? "Intel XPU image. The entrypoint does not initialize oneAPI — source /opt/intel/oneapi/setvars.sh before `vllm serve`, or torch.xpu.device_count() returns 0."
+      ? "Intel XPU image. The entrypoint initializes oneAPI automatically."
     : isAmd
       ? undefined
       : cudaMap
