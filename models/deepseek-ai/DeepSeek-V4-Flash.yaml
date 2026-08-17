@@ -735,6 +735,10 @@ guide: |
   is required so pip does not replace vLLM's torch):
 
   ```bash
+  # Trace: flashinfer-ai/flashinfer#4380
+  # merge: 24d7dfb2639083c5a4d418881099421fc800b7bb (2026-08-08)
+  # wheel: flashinfer-python==0.6.18.dev20260814
+  # index: https://flashinfer.ai/whl/nightly/
   /usr/bin/python3.12 -m pip install -U --pre flashinfer-python \
   --index-url https://flashinfer.ai/whl/nightly/ --no-deps
   /usr/bin/python3.12 -m pip install flashinfer-python
