@@ -1,0 +1,114 @@
+meta:
+  title: "Gemma 7B"
+  slug: "gemma-7b"
+  provider: "Google"
+  description: "Google Gemma 7B dense language model, validated for BF16 serving on Intel Xeon 6."
+  date_added: 2026-08-18
+  date_updated: 2026-08-18
+  difficulty: beginner
+  tasks:
+    - text
+  performance_headline: "Validated on Intel Xeon 6 (GNR) with BF16 serving"
+  related_recipes:
+    - "google/gemma-3-4b-it"
+    - "google/gemma-4-E4B-it"
+  hardware:
+    xeon6: verified
+
+model:
+  model_id: "google/gemma-7b"
+  min_vllm_version: "0.4.0"
+  architecture: dense
+  parameter_count: "7B"
+  active_parameters: "7B"
+  context_length: 8192
+  base_args: []
+  base_env: {}
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 18
+    description: "Full precision BF16"
+
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+
+hardware_overrides:
+  cpu:
+    extra_args:
+      - "--max-num-batched-tokens"
+      - "16384"
+      - "--gpu-memory-utilization"
+      - "0.8"
+    extra_env:
+      VLLM_CPU_ATTN_SPLIT_KV: "0"
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  Gemma 7B is Google's dense base language model. This recipe includes an
+  Intel Xeon 6 CPU configuration validated with BF16 serving.
+
+  ## Prerequisites
+
+  - Hardware: 2x Xeon 6 NUMA node
+  - vLLM >= 0.4.0
+
+  ### pip (Intel Xeon 6 CPUs)
+
+  For Intel and AMD x86 CPUs, follow the
+  [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels)
+  installation instructions.
+
+  ### Docker (Intel Xeon 6 CPUs)
+
+  ```bash
+  docker pull vllm/vllm-openai-cpu:latest-x86_64
+  ```
+
+  ## Intel Xeon 6
+
+  Choose tensor parallelism based on system topology and deployment
+  requirements. The recipe does not prescribe fixed TP/DP values or
+  hard-code NUMA node IDs.
+
+  ```bash
+  export VLLM_CPU_ATTN_SPLIT_KV=0
+
+  vllm serve google/gemma-7b \
+    --max-num-batched-tokens 16384 \
+    --gpu-memory-utilization 0.8
+  ```
+
+  Docker:
+
+  ```bash
+  docker run -itd --name gemma-7b-cpu \
+    --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e VLLM_CPU_ATTN_SPLIT_KV=0 \
+    vllm/vllm-openai-cpu:latest-x86_64 \
+      --model google/gemma-7b \
+      --max-num-batched-tokens 16384 \
+      --gpu-memory-utilization 0.8 \
+      --host 0.0.0.0 \
+      --port 8000
+  ```
+
+  The Xeon 6 serving validation uses BF16. Fixed TP/DP, CPU binding,
+  `--max-num-seqs`, prefix-cache benchmark controls, and repro-only timeout
+  settings are intentionally not prescribed by this portable recipe.
+
+  ## References
+
+  - [Model card](https://huggingface.co/google/gemma-7b)
+  - [vLLM CPU installation](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/)
