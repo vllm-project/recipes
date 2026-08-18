@@ -2,18 +2,19 @@ meta:
   title: "Qwen2.5-VL-7B-Instruct"
   slug: "qwen2.5-vl-7b-instruct"
   provider: "Qwen"
-  description: "Qwen2.5-VL dense vision-language model (7B) for image and video understanding — fits on a single TPU v6e chip or one GPU."
+  description: "Qwen2.5-VL dense vision-language model (7B) for image and video understanding — fits on a single TPU v6e chip, one GPU, or Intel Xeon 6 CPU."
   date_added: 2025-08-22
-  date_updated: 2026-06-04
+  date_updated: 2026-08-17
   difficulty: beginner
   tasks:
     - multimodal
     - text
-  performance_headline: "Verified on TPU v6e (Trillium) with BF16 on a single chip"
+  performance_headline: "Verified on TPU v6e (Trillium) and Intel Xeon 6 CPU with BF16"
   related_recipes:
     - "Qwen/Qwen2.5-VL-72B-Instruct"
   hardware:
     trillium: verified
+    xeon6: verified
 
 model:
   model_id: "Qwen/Qwen2.5-VL-7B-Instruct"
@@ -61,24 +62,43 @@ kv_offload_support:
   offloading_cpu: verified
   offloading_fs: verified
 
-hardware_overrides: {}
+hardware_overrides:
+  cpu:
+    extra_args:
+      - "--max-num-batched-tokens"
+      - "16384"
+      - "--gpu-memory-utilization"
+      - "0.8"
 
 strategy_overrides: {}
 
 guide: |
   ## Overview
 
-  Qwen2.5-VL-7B-Instruct is the small dense vision-language model in the Qwen2.5-VL series. At 7B it fits comfortably on a single accelerator — one TPU v6e (Trillium) chip, or a single 24GB+ GPU — making it the cheapest entry point for image and video understanding in the family. BF16 is the precision used in training, so BF16 inference gives the best accuracy.
+  Qwen2.5-VL-7B-Instruct is the small dense vision-language model in the Qwen2.5-VL series. At 7B it fits comfortably on a single accelerator — one TPU v6e (Trillium) chip, or a single 24GB+ GPU — and is also validated for Intel Xeon 6 CPU serving. BF16 is the precision used in training, so BF16 inference gives the best accuracy.
 
   For the 72B sibling, see [Qwen2.5-VL-72B-Instruct](/Qwen/Qwen2.5-VL-72B-Instruct).
 
   ## Prerequisites
+
+  - Hardware: 2x Xeon 6 CPUs
+  - vLLM CPU >= 0.8.5 for this validated Xeon 6 configuration
 
   ### NVIDIA
   ```bash
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend auto
+  ```
+
+  ### Intel Xeon 6 CPUs
+
+  For Intel and AMD x86 CPUs, follow the
+  [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels)
+  installation instructions.
+
+  ```bash
+  docker pull vllm/vllm-openai-cpu:latest-x86_64
   ```
 
   ### TPU (Trillium / v6e)
@@ -94,6 +114,32 @@ guide: |
   ```
 
   ## Deployment Configurations
+
+  ### Intel Xeon 6
+
+  Choose tensor parallelism based on the system topology; the recipe does not
+  prescribe a fixed TP/DP layout or hard-code NUMA node IDs.
+
+  ```bash
+  vllm serve Qwen/Qwen2.5-VL-7B-Instruct \
+    --max-num-batched-tokens 16384 \
+    --gpu-memory-utilization 0.8
+  ```
+
+  Docker:
+
+  ```bash
+  docker run -itd --name qwen25-vl-7b-cpu \
+    --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-cpu:latest-x86_64 \
+      --model Qwen/Qwen2.5-VL-7B-Instruct \
+      --max-num-batched-tokens 16384 \
+      --gpu-memory-utilization 0.8 \
+      --host 0.0.0.0 \
+      --port 8000
+  ```
 
   ### TPU v6e (Trillium, single chip)
   Verified end-to-end on a single v6e chip.
@@ -134,6 +180,9 @@ guide: |
 
   ## Configuration Tips
 
+  - `--max-num-batched-tokens 16384` and `--gpu-memory-utilization 0.8` are retained from the validated Xeon 6 serving configuration.
+  - TP/DP values and topology-specific CPU bindings from the validation environment are intentionally not prescribed.
+  - Benchmark-only prefix-cache disabling and extended engine timeouts are not required for general serving.
   - `--max-model-len 16384` is a safe default on a single v6e chip (native context is 128K); raise it if you have headroom.
   - `--limit-mm-per-prompt` caps incoming multimodal requests per prompt.
   - `--mm-processor-kwargs '{"max_pixels":1003520}'` bounds the per-image resolution to control encoder cost.
