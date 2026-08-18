@@ -170,6 +170,8 @@ variants:
       - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
       - "--additional-config"
       - '{"enable_cpu_binding":true}'
+      - "--max-num-batched-tokens"
+      - "16384"
     extra_env:
       PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
       HCCL_BUFFSIZE: "512"
@@ -325,12 +327,11 @@ guide: |
   vllm serve Eco-Tech/Qwen3.8-27B-w8a8 \
     --tensor-parallel-size 1 \
     --quantization ascend \
-    --max-model-len 131072 \
     --max-num-batched-tokens 16384 \
-    --max-num-seqs 32 \
-    --gpu-memory-utilization 0.85 \
     --enable-prefix-caching \
     --reasoning-parser qwen3 \
+    --tool-call-parser qwen3_coder \
+    --mm-encoder-tp-mode data \
     --speculative-config '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}' \
     --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
     --additional-config '{"enable_cpu_binding":true}'
