@@ -334,6 +334,16 @@ guide: |
     --speculative-config '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}' \
     --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
     --additional-config '{"enable_cpu_binding":true}'
+  ```
+
+  `--reasoning-parser qwen3` is not optional in practice: the chat template opens every
+  assistant turn with `<think>`, so without it the entire reasoning block lands in
+  `message.content` and a 2048-token budget can be spent before the answer starts.
+  
+  Measured single-stream decode: 32 tok/s (2048-token completion, one request, MTP on).
+  Read MTP acceptance from `vllm:spec_decode_num_{accepted,draft}_tokens_total` before
+  tuning `num_speculative_tokens` — throughput alone cannot tell a working drafter from
+  one that loaded and was ignored.
   
   ## Client usage
 
