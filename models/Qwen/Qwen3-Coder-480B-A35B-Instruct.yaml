@@ -3,6 +3,7 @@ meta:
   slug: "qwen3-coder-480b-a35b-instruct"
   provider: "Qwen"
   description: "Large coder MoE with 480B total / 35B active parameters, strong tool-use and code generation capabilities."
+  date_added: 2025-07-23
   date_updated: 2026-04-17
   difficulty: advanced
   tasks:

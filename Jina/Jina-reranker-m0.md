@@ -32,7 +32,7 @@ vllm serve jinaai/jina-reranker-m0 \
     --port 8000 \
     --tensor_parallel_size 2 \
     --gpu-memory-utilization 0.75 \
-    --max_num_seqs 32
+    --max-num-seqs 32
 ```
 
 ### 1.1 Deploy Model Server on 8xMI300x/MI325x/MI355x
@@ -45,7 +45,7 @@ vllm serve jinaai/jina-reranker-m0 \
     --port 8000 \
     --tensor_parallel_size 2 \
     --gpu-memory-utilization 0.75 \
-    --max_num_seqs 32
+    --max-num-seqs 32
 ```
 * You can set `export VLLM_ROCM_USE_AITER=1` for Better Performance on AMD GPUs. The default is `export VLLM_ROCM_USE_AITER=0`
 

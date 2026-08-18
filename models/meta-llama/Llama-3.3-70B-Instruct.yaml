@@ -3,6 +3,7 @@ meta:
   slug: "llama3.3-70b"
   provider: "Meta"
   description: "Llama 3.3 70B dense model with NVIDIA FP8/FP4 quantized variants for Hopper and Blackwell GPUs"
+  date_added: 2025-08-06
   date_updated: 2026-04-16
   difficulty: beginner
   tasks:
@@ -19,6 +20,7 @@ meta:
     mi325x: verified
     mi355x: verified
     trillium: verified
+    xeon6: verified
 
 model:
   model_id: "meta-llama/Llama-3.3-70B-Instruct"
@@ -64,6 +66,10 @@ compatible_strategies:
   - multi_node_tp
   - multi_node_tp_pp
 
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
+
 hardware_overrides:
   hopper:
     extra_args:
@@ -100,10 +106,10 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x H100/H200 (FP8), 1x B200 (FP4), 2x GPUs for BF16, or 2x MI300X/MI325X/MI355X
+  - Hardware: 1x H100/H200 (FP8), 1x B200 (FP4), 1x MI300X/MI325X/MI355X, 2x GPUs, or 4x Xeon6/Xeon5 NUMA node for BF16
   - vLLM >= 0.12.0
-  - CUDA Driver >= 575
-  - Docker with NVIDIA Container Toolkit (recommended)
+  - CUDA Driver >= 575 for GPUs
+  - Docker with NVIDIA Container Toolkit (recommended) for GPUs
 
   ### AMD ROCm
 
@@ -113,19 +119,28 @@ guide: |
   ```bash
   uv venv --python 3.12
   source .venv/bin/activate
-  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
   ```
 
-  Launch on 2x MI300X / MI325X / MI355X with AITER enabled:
+  Launch on 1x MI300X / MI325X / MI355X with AITER enabled:
 
   ```bash
   export VLLM_ROCM_USE_AITER=1
   vllm serve meta-llama/Llama-3.3-70B-Instruct \
-    --tensor-parallel-size 2 \
+    --tensor-parallel-size 1 \
     --disable-log-requests
   ```
 
   The first AITER launch may take several minutes while ROCm kernels are compiled and cached.
+
+  ### pip (Intel Xeon 6 CPUs)
+  For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.
+
+  ### Docker (Intel Xeon 6 CPUs)
+
+  ```bash
+  docker pull vllm/vllm-openai-cpu:latest-x86_64 # For Intel Xeon 6
+  ```
 
   ### Docker (Cloud TPU — Trillium)
   TPU uses the separate `vllm/vllm-tpu` image (no pip wheel). Pull the tag specified by the upstream [Trillium recipe](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.x), then run:
@@ -140,6 +155,21 @@ guide: |
       --host 0.0.0.0 --port 8000
   ```
   Trillium requires a 4-chip slice minimum.
+
+  ### Intel Xeon 6 Deployment via Docker
+
+  Launch the x86 CPU vLLM Docker container for `meta-llama/Llama-3.3-70B-Instruct`:
+
+  ```bash
+  docker run -itd --name llama3-70b-cpu \
+    --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-cpu:latest-x86_64 \
+      --model meta-llama/Llama-3.3-70B-Instruct \
+      --host 0.0.0.0 \
+      --port 8000
+  ```
 
   ## Client Usage
 

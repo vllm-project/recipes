@@ -22,8 +22,10 @@ function loadHfDates() {
 function parseRecipe(filePath) {
   const raw = yaml.load(fs.readFileSync(filePath, "utf8"));
   // js-yaml auto-parses YYYY-MM-DD into Date objects — normalize to string
-  if (raw.meta?.date_updated instanceof Date) {
-    raw.meta.date_updated = raw.meta.date_updated.toISOString().split("T")[0];
+  for (const field of ["date_added", "date_updated"]) {
+    if (raw.meta?.[field] instanceof Date) {
+      raw.meta[field] = raw.meta[field].toISOString().split("T")[0];
+    }
   }
   // Derive HF identity from file path: models/<org>/<repo>.yaml
   const rel = path.relative(MODELS_DIR, filePath);
@@ -66,8 +68,13 @@ export function getAllRecipes() {
 }
 
 export function getRecipeByHfId(org, repo) {
-  const all = getAllRecipes();
-  return all.find((r) => r.hf_org === org && r.hf_repo === repo) || null;
+  const o = org.toLowerCase(), r = repo.toLowerCase();
+  return getAllRecipes().find((x) => x.hf_org.toLowerCase() === o && x.hf_repo.toLowerCase() === r) || null;
+}
+
+export function getRecipesByOrg(org) {
+  const o = org.toLowerCase();
+  return getAllRecipes().filter((r) => r.hf_org.toLowerCase() === o);
 }
 
 /**
@@ -75,17 +82,20 @@ export function getRecipeByHfId(org, repo) {
  * return the parent recipe + variant key so the route can redirect to
  * `/<parent.hf_org>/<parent.hf_repo>?variant=<key>`. Otherwise null.
  *
- * Skips the `default` variant and any variant whose model_id equals the
- * parent's own HF id (those are just the base recipe).
+ * Skips any variant whose model_id equals the parent's own HF id (that's
+ * just the base recipe). The `default` variant is NOT skipped: a recipe may
+ * point its default at a differently-named checkpoint (DeepSeek-V4-Flash
+ * defaults to `-0731`, GLM-5.2 to `-FP8`), and that HF id has to resolve
+ * rather than 404.
  */
 export function findVariantRedirect(org, repo) {
-  const target = `${org}/${repo}`;
+  const target = `${org}/${repo}`.toLowerCase();
   for (const r of getAllRecipes()) {
-    if (r.hf_id === target) return null;
+    if (r.hf_id.toLowerCase() === target) return null;
     const variants = r.variants || {};
     for (const [key, v] of Object.entries(variants)) {
-      if (key === "default") continue;
-      if (v?.model_id && v.model_id === target) {
+      if (!v?.model_id || v.model_id === r.hf_id) continue;
+      if (v.model_id.toLowerCase() === target) {
         return { parent: r, variantKey: key };
       }
     }
@@ -95,7 +105,8 @@ export function findVariantRedirect(org, repo) {
 
 /**
  * All `<org>/<repo>` pairs that should route to a recipe page — base
- * recipes plus the HF ids of each non-default variant. Used by
+ * recipes plus the HF id of every variant that names its own checkpoint
+ * (`default` included — see findVariantRedirect). Used by
  * `generateStaticParams` so variant ids are prerendered and emit the
  * redirect response instead of 404.
  */
@@ -110,8 +121,7 @@ export function getAllRoutablePairs() {
   };
   for (const r of getAllRecipes()) {
     push(r.hf_org, r.hf_repo);
-    for (const [key, v] of Object.entries(r.variants || {})) {
-      if (key === "default") continue;
+    for (const [, v] of Object.entries(r.variants || {})) {
       if (!v?.model_id || v.model_id === r.hf_id) continue;
       const [vo, ...rest] = v.model_id.split("/");
       if (!vo || rest.length === 0) continue;

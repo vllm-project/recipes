@@ -3,6 +3,7 @@ meta:
   slug: "seed-oss-36b"
   provider: "Seed (ByteDance)"
   description: "ByteDance Seed-OSS 36B dense model with unique 'thinking budget' control and 512K context support"
+  date_added: 2025-08-28
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
@@ -45,6 +46,10 @@ variants:
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides:
   amd:

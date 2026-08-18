@@ -9,6 +9,15 @@
 
 {% block extrahead %}
   {{ super() }}
+  {# Legacy MkDocs site has moved to recipes.vllm.ai. Redirect the landing
+     page (an instant meta-refresh passes ranking signals like a 301) and
+     noindex the remaining historical-reference pages so they stop competing
+     with the new portal in search. #}
+  {% if page and page.url == "index.html" %}
+  <meta http-equiv="refresh" content="0; url=https://recipes.vllm.ai/">
+  {% else %}
+  <meta name="robots" content="noindex, follow">
+  {% endif %}
   {% if page %}
   <meta property="og:type" content="article">
   <meta property="og:title" content="{{ page.meta.title or page.title }}">
@@ -36,27 +45,9 @@
       Go to recipes.vllm.ai →
     </a>
     <p style="margin-top:1.5rem;font-size:0.85rem;color:var(--md-default-fg-color--lighter);">
-      Redirecting automatically in <span id="countdown">5</span> seconds…
-      <a id="cancel-redirect" href="#" style="margin-left:0.5rem;color:var(--md-default-fg-color--light);text-decoration:underline;">Cancel</a>
+      If you are not redirected automatically, use the link above.
     </p>
   </div>
-  <script>
-    (function () {
-      var n = 5;
-      var el = document.getElementById("countdown");
-      var iv = setInterval(function () {
-        n -= 1;
-        if (el) el.textContent = n;
-        if (n <= 0) { clearInterval(iv); window.location.href = "https://recipes.vllm.ai"; }
-      }, 1000);
-      document.getElementById("cancel-redirect").addEventListener("click", function (e) {
-        e.preventDefault();
-        clearInterval(iv);
-        var p = this.parentElement;
-        p.textContent = "Redirect cancelled. Use the link above to navigate manually.";
-      });
-    })();
-  </script>
   {% else %}
     {{ super() }}
   {% endif %}

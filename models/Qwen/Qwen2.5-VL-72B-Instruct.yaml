@@ -3,6 +3,7 @@ meta:
   slug: "qwen2.5-vl-72b-instruct"
   provider: "Qwen"
   description: "Qwen2.5-VL dense vision-language model (72B) for high-quality image and video understanding."
+  date_added: 2025-08-22
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
@@ -58,6 +59,10 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
   - multi_node_tp_pp
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides:
   hopper:

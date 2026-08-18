@@ -3,6 +3,7 @@ meta:
   slug: "deepseek-ocr"
   provider: "DeepSeek"
   description: "Frontier OCR model exploring optical context compression for LLMs, optimized for document parsing and markdown generation."
+  date_added: 2025-10-22
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
@@ -10,6 +11,12 @@ meta:
   performance_headline: "Optical context compression for efficient OCR and document understanding"
   related_recipes:
     - "deepseek-ai/DeepSeek-OCR-2"
+  hardware:
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
+    arc_pro_b60: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-OCR"
@@ -20,9 +27,8 @@ model:
   context_length: 8192
   base_args:
     - "--trust-remote-code"
-    - "--logits_processors"
+    - "--logits-processors"
     - "vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor"
-    - "--no-enable-prefix-caching"
     - "--mm-processor-cache-gb"
     - "0"
   base_env: {}
@@ -54,7 +60,6 @@ compatible_strategies:
 
 hardware_overrides:
   amd:
-    # Disable Triton FA → AITER FA is faster for dense OCR on MI300X/MI325X/MI355X.
     extra_args: []
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
@@ -71,15 +76,30 @@ guide: |
 
   ## Prerequisites
 
-  - **Hardware**: Single GPU with >=8 GB VRAM is typically sufficient for BF16 inference.
-  - **vLLM**: Current stable release (tested with `uv pip install -U vllm --torch-backend auto`).
-  - **Python**: 3.10+
+  - **Hardware**: Single GPU with >=8 GB VRAM (CUDA, MI300X / MI325X / MI355X, or Intel XPU B60 / B70)
+  - **vLLM**: Current stable release
+  - **Python**: 3.10+ (CUDA) or 3.12 (ROCm)
 
-  Install vLLM:
+  ### CUDA
   ```bash
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend auto
+  ```
+
+  ### ROCm (MI300X, MI325X, MI355X)
+  Requires Python 3.12, ROCm 7.2.1, and glibc >= 2.35. Use the Docker flow from the
+  [vLLM installation guide](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images)
+  if your host environment does not meet those requirements.
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+  ```
+
+  ### Intel XPU (B60 / B70)
+  ```bash
+  docker pull vllm/vllm-openai-xpu:latest
   ```
 
   ## Client Usage
@@ -124,12 +144,37 @@ guide: |
 
   ### Online OCR serving
 
+  **CUDA**
   ```bash
   vllm serve deepseek-ai/DeepSeek-OCR \
-    --logits_processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
-    --no-enable-prefix-caching \
+    --logits-processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
     --mm-processor-cache-gb 0
   ```
+
+  **ROCm (MI300X / MI325X / MI355X)**
+  ```bash
+  export SAFETENSORS_FAST_GPU=1
+  export VLLM_ROCM_USE_AITER=1
+
+  vllm serve deepseek-ai/DeepSeek-OCR \
+    --logits-processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
+    --mm-processor-cache-gb 0
+  ```
+
+  **Intel XPU (B60, B70)**
+
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-xpu:latest \
+    deepseek-ai/DeepSeek-OCR \
+    --logits-processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
+    --mm-processor-cache-gb 0
+  ```
+
+  Query the running server with the OpenAI client (same for CUDA / ROCm / XPU):
 
   ```python
   import time
