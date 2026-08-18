@@ -177,10 +177,10 @@ variants:
       OMP_NUM_THREADS: "1"
     # `computeDockerMeta` has no Huawei brand, so a bare string `docker_image` would only pin
     # NVIDIA. The exact variant+hardware override lands regardless of brand.
-  hardware_overrides:
-    ascend_950pr:
-      docker_image: "quay.io/ascend/vllm-ascend:qwen3.8-a5"
-  description: "ModelSlim INT8 W8A8 for Ascend NPU — 32.1 GB: 1 NPU. Requires --quantization ascend."
+    hardware_overrides:
+      ascend_950pr:
+        docker_image: "quay.io/ascend/vllm-ascend:qwen3.8-a5"
+    description: "ModelSlim INT8 W8A8 for Ascend NPU — 32.1 GB: 1 NPU. Requires --quantization ascend."
 
 # Dense model: no routed experts, so none of the expert-parallel or PD strategies apply.
 #
