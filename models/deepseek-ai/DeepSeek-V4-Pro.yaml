@@ -144,6 +144,10 @@ variants:
           - "--moe-backend"
           - "deep_gemm_mega_moe"
 
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
+
 compatible_strategies:
   - single_node_tp
   - single_node_tep
