@@ -10,6 +10,11 @@ meta:
     - text
   related_recipes:
     - baidu/ERNIE-4.5-VL-28B-A3B-PT
+  hardware:
+    h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "baidu/ERNIE-4.5-21B-A3B-PT"
@@ -18,7 +23,8 @@ model:
   parameter_count: "21B"
   active_parameters: "3B"
   context_length: 131072
-  base_args: []
+  base_args:
+    - "--trust-remote-code"
   base_env: {}
 
 features:
@@ -68,7 +74,9 @@ hardware_overrides:
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
       SAFETENSORS_FAST_GPU: "1"
-strategy_overrides: {}
+strategy_overrides:
+  single_node_tp:
+    tp: 4
 
 guide: |
   ## Overview
@@ -97,10 +105,13 @@ guide: |
 
   ## Launch commands
 
-  21B on 1x80GB GPU:
+  21B on AMD ROCm with 4-way tensor parallelism:
 
   ```bash
-  vllm serve baidu/ERNIE-4.5-21B-A3B-PT
+  VLLM_ROCM_USE_AITER=1 SAFETENSORS_FAST_GPU=1 vllm serve baidu/ERNIE-4.5-21B-A3B-PT \
+    --tensor-parallel-size 4 \
+    --gpu-memory-utilization 0.9 \
+    --trust-remote-code
   ```
 
   300B on 8x80GB with vLLM FP8 online quantization:
