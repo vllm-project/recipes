@@ -3,6 +3,7 @@ meta:
   slug: "mistral-large-3-675b-instruct"
   provider: "Mistral AI"
   description: "Mistral Large 3 (675B) with FP8 and NVFP4 weights for 8xH200 / 4xB200 deployments"
+  date_added: 2025-12-02
   date_updated: 2026-04-17
   difficulty: advanced
   tasks:

@@ -27,7 +27,7 @@ vllm serve inclusionAI/Ring-1T-FP8 \
   --trust-remote-code \
   --tensor-parallel-size 8 \
   --gpu-memory-utilization 0.97 \
-  --max_num_seqs 32 \
+  --max-num-seqs 32 \
   --kv-cache-dtype fp8 \
   --compilation-config '{"use_inductor": false}' \
   --served-model-name Ring-1T-FP8
@@ -46,7 +46,7 @@ vllm serve inclusionAI/Ring-1T-FP8 \
   --trust-remote-code \
   --tensor-parallel-size 8 \
   --gpu-memory-utilization 0.9 \
-  --max_num_seqs 32 \
+  --max-num-seqs 32 \
   --kv-cache-dtype fp8 \
   --served-model-name Ring-1T-FP8
 ```

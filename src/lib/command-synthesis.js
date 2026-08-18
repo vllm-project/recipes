@@ -41,18 +41,85 @@ function autoFitTp(vramMinGb, perGpuVram, gpuCount) {
 }
 
 /**
+ * Resolve a hardware-keyed map: exact GPU id > generation > brand (lowercase)
+ * > `default`. The first key present wins; undefined when none match. Shared
+ * by variant `tp` maps and `strategy_hardware` gates.
+ */
+function hardwareKeyedValue(map, hwProfile, hwProfileId) {
+  if (!map || typeof map !== "object") return undefined;
+  const gen = normalizeGeneration(hwProfile?.generation || hwProfile?.gpu_generation);
+  const brand = typeof hwProfile?.brand === "string" ? hwProfile.brand.toLowerCase() : null;
+  return (hwProfileId != null ? map[hwProfileId] : undefined)
+    ?? (gen ? map[gen] : undefined)
+    ?? (brand ? map[brand] : undefined)
+    ?? map.default;
+}
+
+/**
+ * Resolve a numeric TP declaration. A variant may use a bare number or a
+ * hardware-aware map keyed by exact GPU id, generation, brand, or `default`.
+ */
+function declaredTpForHardware(raw, hwProfile, hwProfileId) {
+  if (typeof raw === "number") return raw;
+  return hardwareKeyedValue(raw, hwProfile, hwProfileId);
+}
+
+/**
+ * Serving-strategy per-GPU gate (`strategy_hardware`), layered on the
+ * membership default: a strategy listed in `compatible_strategies` is
+ * supported everywhere, one left out is supported nowhere. `strategy_hardware`
+ * overrides that default per hardware in either direction — `unsupported`
+ * opts a listed strategy out of a GPU; `supported` opts an unlisted one in
+ * (which also adds it to the offered set, see effectiveCompatibleStrategies).
+ * Maps take the variant-`tp` keyspace — exact GPU id > generation > brand >
+ * `default` — where an explicit `default:` beats the membership baseline.
+ */
+export function isStrategySupportedOnHardware(recipe, strategyName, hwProfile, hwProfileId) {
+  const gate = hardwareKeyedValue(
+    recipe?.strategy_hardware?.[strategyName], hwProfile, hwProfileId
+  );
+  if (gate != null) return gate !== "unsupported";
+  return (recipe?.compatible_strategies || []).includes(strategyName);
+}
+
+/**
+ * Strategies a recipe offers anywhere: `compatible_strategies` plus opt-ins —
+ * a strategy absent from the list but granted `supported` somewhere in
+ * `strategy_hardware` is appended, so a layout validated on a few GPUs is
+ * declared once (the grants) instead of listed globally and opted out
+ * everywhere else. Grant-less strategy_hardware entries (pure opt-outs for
+ * unlisted strategies) add nothing.
+ */
+export function effectiveCompatibleStrategies(recipe) {
+  const listed = recipe?.compatible_strategies || [];
+  const optIns = Object.entries(recipe?.strategy_hardware || {})
+    .filter(([s, map]) => !listed.includes(s)
+      && map && typeof map === "object"
+      && Object.values(map).includes("supported"))
+    .map(([s]) => s);
+  return optIns.length ? [...listed, ...optIns] : listed;
+}
+
+/**
  * Single-node TP size for a recipe/variant/hardware triple. Exported so
  * the UI ("using N of M GPUs" hint) uses the same rule as the generated
  * command. See the precedence note in resolveCommand.
  */
-export function resolveSingleNodeTp(recipe, variant, hwProfile, strategyName = "single_node_tp") {
+export function resolveSingleNodeTp(
+  recipe,
+  variant,
+  hwProfile,
+  strategyName = "single_node_tp",
+  hwProfileId = null,
+) {
   const gpuCount = typeof hwProfile?.gpu_count === "number" ? hwProfile.gpu_count : 1;
   if (strategyName !== "single_node_tp") return gpuCount;
   // Variant-level override beats recipe-level. Used when a non-default variant
   // (typically an FP8-block-quantized sibling) needs a smaller TP than the
   // bf16 default — e.g. moe_intermediate_size=1536 demands TP ≤ 4 under FP8
-  // block_n=128, while bf16 happily runs at TP=8.
-  const variantTp = variant?.tp;
+  // block_n=128, while bf16 happily runs at TP=8. A map supports variants
+  // whose documented deployment differs by GPU (e.g. TP1 B300 / TP2 H200).
+  const variantTp = declaredTpForHardware(variant?.tp, hwProfile, hwProfileId);
   if (typeof variantTp === "number" && variantTp > 0) {
     return Math.min(variantTp, gpuCount);
   }
@@ -73,7 +140,7 @@ export function resolveSingleNodeTp(recipe, variant, hwProfile, strategyName = "
  * advanced strategies that users can opt into explicitly.
  */
 export function recommendStrategy(recipe, _hwProfile, nodeCount = 1) {
-  const compatible = recipe.compatible_strategies || [];
+  const compatible = effectiveCompatibleStrategies(recipe);
   // Recipe-level override — useful when the global TP-first preference is wrong
   // for a model (e.g. MoE recipes where TEP/DEP is the intended default and TP
   // is offered only as a latency-oriented alternative).
@@ -98,15 +165,117 @@ export function recommendStrategy(recipe, _hwProfile, nodeCount = 1) {
   return compatible[0] || "single_node_tp";
 }
 
+/** Most nodes the builder offers for one deployment, and per PD pool. */
+export const MAX_NODES = 16;
+
+/**
+ * Follower node ranks of an `nodes`-node deployment: [1, 2, … nodes-1].
+ * Rank 0 is the head, so an n-node cluster renders n-1 worker commands — each
+ * with its own --node-rank / --data-parallel-start-rank.
+ */
+export function followerRanks(nodes) {
+  return Array.from({ length: Math.max(0, (nodes || 1) - 1) }, (_, i) => i + 1);
+}
+
+/** One `strategy_min_gpus` block → the floor it declares for `key`. */
+function minGpusFromBlock(block, key) {
+  if (block == null) return 0;
+  if (typeof block === "number") return block;
+  return block[key] ?? block[`multi_node_${key}`] ?? block[`single_node_${key}`] ?? 0;
+}
+
+/**
+ * Recipe GPU floor (`strategy_min_gpus`) for a strategy id or a PD pool mode
+ * ("tp"/"tep"/"dep"). Scalar = one bar for every strategy, map = per-strategy
+ * bars. Absent = 0, so recipes that don't declare it are never gated.
+ *
+ * The map also accepts exact-GPU-id keys (`h100: 32`, or a nested per-strategy
+ * map) — a hardware-conditional floor layered on top of the strategy bars,
+ * highest wins. Use it when one GPU needs a bigger cluster than the recipe
+ * baseline (K3's 1.68 TB of weights fits 2 H200 nodes but needs 4 on H100).
+ * Only exact GPU ids are read here, not generations — GPUs of one generation
+ * differ in VRAM, which is exactly what moves the floor.
+ */
+export function minGpusForStrategy(recipe, key, gpuId) {
+  const cfg = recipe?.strategy_min_gpus;
+  if (cfg == null) return 0;
+  if (typeof cfg === "number") return cfg;
+  return Math.max(
+    minGpusFromBlock(cfg, key),
+    gpuId ? minGpusFromBlock(cfg[gpuId], key) : 0,
+  );
+}
+
+/** Nodes needed to clear that floor at `gpusPerNode` GPUs per node. */
+export function nodesForStrategy(recipe, key, gpusPerNode, gpuId) {
+  return Math.ceil(minGpusForStrategy(recipe, key, gpuId) / (gpusPerNode || 8)) || 1;
+}
+
+/**
+ * Whether a strategy can ever clear its floor here: multi-node scales out to
+ * MAX_NODES — as does pd_cluster, whose pools each size themselves node-wise —
+ * everything else is stuck with one node's GPUs.
+ */
+export function isStrategyReachable(recipe, key, deployType, gpusPerNode, gpuId) {
+  const scalesOut = deployType === "multi_node" || deployType === "pd_cluster";
+  const maxNodes = scalesOut ? MAX_NODES : 1;
+  return maxNodes * (gpusPerNode || 8) >= minGpusForStrategy(recipe, key, gpuId);
+}
+
+/**
+ * PD-cluster pool parallelism modes offered for a recipe, derived from its
+ * `compatible_strategies[]`. Each strategy id encodes a parallelism family in
+ * its suffix — `*_tp` / `*_tp_pp` → TP, `*_tep` → TEP, `*_dep` → DEP — and the
+ * pd_cluster pools reuse that same vocabulary. So a recipe listing
+ * single_node_tp + multi_node_tep + multi_node_dep offers TP / TEP / DEP per
+ * pool, while a dense model that only lists `*_tp` strategies offers TP alone.
+ *
+ * Returns an ordered subset of ["tp", "tep", "dep"]; never empty (falls back to
+ * ["tp"]). EP modes (tep/dep) are inherently MoE-only, which compatible_strategies
+ * already encodes — dense recipes don't list them.
+ *
+ * `strategy_overrides.pd_cluster.pool_modes: [<mode>, …]` narrows the PD-pool
+ * parallelism set INDEPENDENTLY of the serving Strategy row. Use it when a model
+ * serves fine standalone under TP/TEP/DEP (so those stay in compatible_strategies)
+ * but disaggregated PD should only use a subset — e.g. `pool_modes: [dep]` locks
+ * both pools to DEP while the Strategy row keeps offering TP/TEP. Ignored if it
+ * would leave no offered mode.
+ */
+export function pdPoolModes(recipe) {
+  const compat = effectiveCompatibleStrategies(recipe);
+  const modes = new Set();
+  for (const s of compat) {
+    if (s === "pd_cluster") continue;
+    if (/(?:^|_)dep$/.test(s)) modes.add("dep");
+    else if (/(?:^|_)tep$/.test(s)) modes.add("tep");
+    else if (/(?:^|_)tp(?:_pp|_dp)?$/.test(s)) modes.add("tp");
+  }
+  if (modes.size === 0) modes.add("tp");
+  let ordered = ["tp", "tep", "dep"].filter((m) => modes.has(m));
+  const restrict = recipe?.strategy_overrides?.pd_cluster?.pool_modes;
+  if (Array.isArray(restrict) && restrict.length) {
+    const allow = new Set(restrict);
+    const narrowed = ordered.filter((m) => allow.has(m));
+    if (narrowed.length) ordered = narrowed;
+  }
+  return ordered;
+}
+
 /**
  * Precision → allowed hardware constraint.
- * NVFP4 is NVIDIA Blackwell-only (sm_100+). FP4 generic is also Blackwell-only
- * in practice. AWQ/GPTQ/INT quants run on most NVIDIA+AMD hardware.
+ * NVFP4 is NVIDIA Blackwell-only (sm_100+) by default. A variant can override
+ * this when its runtime provides a fallback (for example, on-the-fly BF16
+ * dequantization on Hopper). FP4 generic is also Blackwell-only in practice.
+ * AWQ/GPTQ/INT quants run on most NVIDIA+AMD hardware.
  */
 const PRECISION_HARDWARE_CONSTRAINTS = {
   nvfp4: { brand: "NVIDIA", generation: "blackwell" },
   fp4: { brand: "NVIDIA", generation: "blackwell" },
 };
+
+function precisionHardwareConstraint(variant) {
+  return variant?.precision_hardware || PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
+}
 
 function matchesConstraint(profile, constraint) {
   if (!constraint) return true;
@@ -121,10 +290,11 @@ function matchesConstraint(profile, constraint) {
 
 /**
  * Check whether a hardware profile is compatible with a variant based on
- * precision constraints (e.g., NVFP4 requires Blackwell). Does NOT check VRAM.
+ * precision constraints (e.g., NVFP4 requires Blackwell by default). Does NOT
+ * check VRAM.
  */
 export function isPrecisionCompatible(profile, variant) {
-  const constraint = PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
+  const constraint = precisionHardwareConstraint(variant);
   return matchesConstraint(profile, constraint);
 }
 
@@ -138,13 +308,134 @@ export function isHardwareSupported(recipe, hwId) {
 }
 
 /**
+ * Variant-level hardware allowlist. Missing/empty means the variant inherits
+ * the recipe's normal hardware compatibility; otherwise only listed profile
+ * ids may render or be selected.
+ */
+export function isVariantHardwareSupported(variant, hwId) {
+  const supported = variant?.supported_hardware;
+  return !Array.isArray(supported) || supported.length === 0 || supported.includes(hwId);
+}
+
+/**
+ * A feature with a `modes` map is single-select ("pick one of N") rather than a
+ * boolean toggle — e.g. `spec_decoding` offering MTP / DFlash / DSpark. This
+ * returns which mode is active by default when the feature is turned on:
+ * `default_mode` if it names a real mode, else the first declared mode.
+ * Returns undefined for plain boolean features (no `modes`).
+ */
+export function defaultModeFor(feature) {
+  if (!feature?.modes || typeof feature.modes !== "object") return undefined;
+  const keys = Object.keys(feature.modes);
+  if (feature.default_mode && keys.includes(feature.default_mode)) return feature.default_mode;
+  return keys[0];
+}
+
+/**
+ * Whether a single mode may run on a given hardware profile. A mode can gate
+ * itself with a tri-state `hardware` map keyed by generation (hopper/blackwell/
+ * amd) or gpu-id; a value of `unsupported` disables it (e.g. a DFlash draft
+ * checkpoint that only ships for Blackwell). Absence = runs everywhere.
+ */
+export function isModeSupported(mode, hwProfile, hwId) {
+  const hw = mode?.hardware;
+  if (!hw || typeof hw !== "object") return true;
+  const gen = normalizeGeneration(hwProfile?.generation || hwProfile?.gpu_generation);
+  if (gen && hw[gen] === "unsupported") return false;
+  if (hwId && hw[hwId] === "unsupported") return false;
+  return true;
+}
+
+/**
+ * Whether a mode is available on a given variant. A mode may restrict itself to
+ * specific checkpoints with `variants: [<variant_key>, ...]` — e.g. the dspark
+ * method only exists on the fused DSpark checkpoint, so FP8/NVFP4 offer MTP
+ * only. Absence of `variants` = available on every variant.
+ */
+export function isModeAllowedForVariant(mode, variantKey) {
+  const allow = mode?.variants;
+  return !Array.isArray(allow) || allow.length === 0 || allow.includes(variantKey);
+}
+
+/**
+ * Whether a feature is available under a given strategy. A feature may restrict
+ * itself with `strategies: [<strategy_id>, ...]` when its args collide with a
+ * strategy's own flags or its setup doesn't generalize — e.g. an offloading
+ * feature whose --kv-transfer-config would clobber pd_cluster's NixlConnector
+ * config (features emit last, so last-wins dedupe would win), or whose
+ * companion server is node-local. Absence of `strategies` = every strategy.
+ */
+export function isFeatureAllowedForStrategy(feature, strategyName) {
+  const allow = feature?.strategies;
+  return !Array.isArray(allow) || allow.length === 0 || allow.includes(strategyName);
+}
+
+/**
+ * Whether a composing KV-offload option (taxonomy.kv_offload.*) may run under
+ * a strategy. Two layers: pd_cluster / kv_store_lb are excluded for EVERY
+ * option (both own --kv-transfer-config; last-wins dedupe would corrupt it),
+ * and an option may further restrict itself with a `strategies` allowlist
+ * (e.g. LMCache's node-local MP server rules out multi-node engines).
+ */
+export function isKvOffloadAllowedForStrategy(option, strategyName, strategy) {
+  if (!option) return false;
+  if (strategy?.deploy_type === "pd_cluster" || strategy?.deploy_type === "kv_store_lb") return false;
+  const allow = option.strategies;
+  return !Array.isArray(allow) || allow.length === 0 || allow.includes(strategyName);
+}
+
+/**
+ * Recipe gate: fail-open (`unsupported` opts out) unless the option sets
+ * `requires_opt_in` — then offered only when listed `verified` under
+ * `kv_offload_support`.
+ */
+export function isKvOffloadSupportedForRecipe(option, optionKey, recipe) {
+  if (!option) return false;
+  const support = recipe?.kv_offload_support?.[optionKey];
+  if (support === "unsupported") return false;
+  return option.requires_opt_in ? support === "verified" : true;
+}
+
+/** Hardware gate: option `brands` allowlist; absent = every brand. */
+export function isKvOffloadBrandSupported(option, hwProfile) {
+  const allow = option?.brands;
+  if (!Array.isArray(allow) || allow.length === 0) return true;
+  return allow.includes(hwProfile?.brand);
+}
+
+/**
+ * The effective mode key for a (feature, variant, hardware, user-selection)
+ * tuple — the single source of truth shared by the command emitter and the UI.
+ * Only considers modes allowed on this variant + hardware, then prefers, in
+ * order: the user's explicit pick, the variant's `default_modes[featureKey]`,
+ * the feature's `default_mode`, else the first allowed mode. Returns undefined
+ * when the feature has no modes or none are allowed here.
+ */
+export function resolveModeKey(feature, featureKey, variantObj, variantKey, hwProfile, hwId, selectedMode) {
+  if (!feature?.modes || typeof feature.modes !== "object") return undefined;
+  const allowed = Object.keys(feature.modes).filter(
+    (k) => isModeAllowedForVariant(feature.modes[k], variantKey)
+      && isModeSupported(feature.modes[k], hwProfile, hwId)
+  );
+  if (allowed.length === 0) return undefined;
+  for (const c of [selectedMode, variantObj?.default_modes?.[featureKey], feature.default_mode]) {
+    if (c && allowed.includes(c)) return c;
+  }
+  return allowed[0];
+}
+
+/**
  * List hardware profiles compatible with a variant by precision constraint
  * only. VRAM is NOT a blocking constraint — users can scale out via multi-node
  * TP/DP, so any profile that satisfies the precision requirement is valid.
  */
 export function listCompatibleHardware(hwProfiles, variant, recipe) {
   return Object.entries(hwProfiles)
-    .filter(([id, p]) => isPrecisionCompatible(p, variant) && isHardwareSupported(recipe, id))
+    .filter(([id, p]) =>
+      isPrecisionCompatible(p, variant)
+      && isHardwareSupported(recipe, id)
+      && isVariantHardwareSupported(variant, id)
+    )
     .map(([id]) => id);
 }
 
@@ -176,13 +467,24 @@ export function isHardwareScalable(hwProfile) {
 }
 
 /**
+ * Mooncake's transfer engine ships CUDA and ROCm builds only, so the KV-store
+ * deployments are limited to NVIDIA/AMD GPUs — CPU (Intel Xeon) and TPU
+ * (Google) backends have no wheel and no RDMA GPU-transfer path. Shared by
+ * the UI's Mooncake pill gate and the JSON API's kv-rendering filter.
+ */
+export function isKvStoreBrandSupported(hwProfile) {
+  return hwProfile?.brand === "NVIDIA" || hwProfile?.brand === "AMD";
+}
+
+/**
  * A variant is runnable on a hardware profile when it's precision-compatible
  * and either the hardware can scale out (multi-node supplies more VRAM) or the
  * weights already fit single-node. Used to disable variant pills on
  * non-scalable hardware where the variant has nowhere to shard.
  */
-export function variantRunsOnHardware(hwProfile, variant) {
+export function variantRunsOnHardware(hwProfile, variant, hwId = null) {
   if (!isPrecisionCompatible(hwProfile, variant)) return false;
+  if (hwId && !isVariantHardwareSupported(variant, hwId)) return false;
   if (isHardwareScalable(hwProfile)) return true;
   return fitsSingleNode(hwProfile, variant);
 }
@@ -194,9 +496,9 @@ export function variantRunsOnHardware(hwProfile, variant) {
  * key, or null when nothing fits. Used to auto-fall off an oversized variant
  * (e.g. BF16 → FP8) when the user selects a single-GPU workstation.
  */
-export function pickFittingVariant(recipe, hwProfile) {
+export function pickFittingVariant(recipe, hwProfile, hwId = null) {
   const fitting = Object.entries(recipe.variants || {}).filter(
-    ([, v]) => variantRunsOnHardware(hwProfile, v)
+    ([, v]) => variantRunsOnHardware(hwProfile, v, hwId)
   );
   if (!fitting.length) return null;
   fitting.sort((a, b) => (b[1].vram_minimum_gb || 0) - (a[1].vram_minimum_gb || 0));
@@ -219,15 +521,39 @@ export function pdFitsSingleNode(hwProfile, variant) {
 
 /**
  * Given a variant, pick the preferred default hardware:
- * - If variant requires Blackwell (e.g., NVFP4), prefer B200 then GB200
+ * - `meta.default_hardware` (the recipe author's editorial pick) when it
+ *   resolves to a profile this variant can actually land on
+ * - Else, if the variant requires Blackwell (e.g., NVFP4), prefer B200 then GB200
  * - Otherwise H200 is the canonical default
  * `recipe` is optional; when provided, hardware marked `unsupported` is excluded.
+ *
+ * `restricted` profiles (DGX Spark/Station, RTX Pro, TPU, Xeon) are candidates
+ * only when the recipe declares them in `meta.hardware` — mirrors the picker
+ * filter in CommandBuilder so the default is always a pill that renders.
+ *
+ * This is the landing hardware for both the builder (initial `useState`, before
+ * the URL param and the stored global preference get their say) and the JSON
+ * API's `recommended_command`. The API has neither of those signals, so
+ * `default_hardware` is the only way an author can steer it.
  */
 export function pickDefaultHardware(hwProfiles, variant, recipe) {
-  const constraint = PRECISION_HARDWARE_CONSTRAINTS[variant?.precision];
+  const constraint = precisionHardwareConstraint(variant);
+  const declared = recipe?.meta?.hardware || {};
   const compatible = Object.entries(hwProfiles).filter(
-    ([id, p]) => matchesConstraint(p, constraint) && isHardwareSupported(recipe, id)
+    ([id, p]) =>
+      matchesConstraint(p, constraint)
+      && isHardwareSupported(recipe, id)
+      && isVariantHardwareSupported(variant, id)
+      && (!p.restricted || id in declared)
   );
+
+  // Author's pick wins over the generic heuristic below: it knows which GPU the
+  // guide's numbers, the performance headline and the `verified` badge were
+  // written against. Fail-open — an id that doesn't survive the filter above
+  // (unknown to the taxonomy, wrong precision for this variant, opted out, or
+  // an undeclared restricted profile) falls through silently.
+  const authored = recipe?.meta?.default_hardware;
+  if (authored && compatible.some(([id]) => id === authored)) return authored;
 
   if (constraint?.generation === "blackwell") {
     if (compatible.some(([id]) => id === "b200")) return "b200";
@@ -257,10 +583,12 @@ export function pickDefaultHardware(hwProfiles, variant, recipe) {
 //   { cu129, cu130 }                   (NVIDIA CUDA-keyed — explicit paired tags,
 //                                        auto-suffix is skipped in favor of these)
 //   { nvidia: { cu129, cu130 }, amd, tpu }  (mixed: NVIDIA value may be a CUDA map)
+// Exact variant+hardware overrides may also set
+//   variants.<key>.hardware_overrides.<hw_id>.docker_image
 //
 // When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
 // the user's `dockerCudaVariant` toggle instead of appending `-cu129`/`-cu130`.
-export function computeDockerMeta(recipe, variant, hwProfile) {
+export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   // When `model.nightly_required: true` and no explicit `docker_image` pin,
   // swap the brand defaults to nightly tags so the Install block matches the
   // nightly pip wheel that's also being rendered. vLLM publishes `:nightly`
@@ -281,37 +609,61 @@ export function computeDockerMeta(recipe, variant, hwProfile) {
       };
   const isAmd = hwProfile?.brand === "AMD";
   const isTpu = hwProfile?.generation === "tpu";
-  const isIntel = hwProfile?.generation === "cpu" ||hwProfile?.brand === "Intel";
+  const isXpu = hwProfile?.generation === "xpu";
+  const isIntel = hwProfile?.generation === "cpu" || isXpu || hwProfile?.brand === "Intel";
   const brandKey = isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
-  const override = variant?.docker_image || recipe.model?.docker_image;
+  // Exact variant+hardware image overrides win over variant-wide and
+  // model-wide images (for example, an MI355X-only ROCm nightly).
+  const exactHardwareOverride = hwId
+    ? variant?.hardware_overrides?.[hwId]?.docker_image
+    : null;
 
   const isCudaMap = (v) =>
     v && typeof v === "object" && ("cu129" in v || "cu130" in v);
 
-  let pinned = null;
+  let pinned = typeof exactHardwareOverride === "string" ? exactHardwareOverride : null;
   let cudaMap = null;
-  if (typeof override === "string") {
-    if (brandKey === "nvidia") pinned = override;
-  } else if (override && typeof override === "object") {
-    const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override || "intel" in override;
-    if (isBrandKeyed) {
-      const brandValue = override[brandKey];
-      if (typeof brandValue === "string") pinned = brandValue;
-      else if (brandKey === "nvidia" && isCudaMap(brandValue)) cudaMap = brandValue;
-    } else if (brandKey === "nvidia" && isCudaMap(override)) {
-      cudaMap = override;
+
+  function applyOverride(override) {
+    if (!override || pinned || cudaMap) return;
+    if (typeof override === "string") {
+      if (brandKey === "nvidia") pinned = override;
+      return;
+    }
+    if (typeof override === "object") {
+      const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override || "intel" in override;
+      if (isBrandKeyed) {
+        const brandValue = override[brandKey];
+        if (typeof brandValue === "string") pinned = brandValue;
+        else if (brandKey === "nvidia" && isCudaMap(brandValue)) cudaMap = brandValue;
+      } else if (brandKey === "nvidia" && isCudaMap(override)) {
+        cudaMap = override;
+      }
     }
   }
 
-  const image = pinned || DEFAULT_IMAGE[brandKey];
+  applyOverride(variant?.docker_image);
+  // A partial variant override falls back to the model image for brands it
+  // does not cover instead of skipping directly to the global default.
+  applyOverride(recipe.model?.docker_image);
+
+  // Intel XPU ships in a dedicated image, not the CPU one. Otherwise, with a
+  // CUDA map, `image` defaults to the cu130 (upstream baseline) pick so
+  // toggle-unaware callers (the JSON API's renderings) still get a real tag;
+  // the client's CUDA selector re-picks from `cudaMap` on top of this.
+  const image = isXpu && !pinned
+    ? "vllm/vllm-openai-xpu:latest"
+    : pinned || (cudaMap ? cudaMap.cu130 || cudaMap.cu129 : null) || DEFAULT_IMAGE[brandKey];
   const gpuFlags = isTpu
     ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
     : isAmd
       ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
+    : isXpu
+      ? "--device /dev/dri \\\n  -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g"
     : isIntel
       ? "--shm-size=16g"	
       : "--gpus all";
-  return { image, gpuFlags, brandKey, isAmd, isTpu, isIntel, pinned, cudaMap, nightlyRequired };
+  return { image, gpuFlags, brandKey, isAmd, isTpu, isXpu, isIntel, pinned, cudaMap, nightlyRequired };
 }
 
 // argv form of the brand-specific GPU flags from computeDockerMeta. Mirrors
@@ -326,10 +678,36 @@ function dockerGpuArgv(meta) {
       "--group-add", "video",
     ];
   }
+  if (meta.isXpu) {
+    return ["--device", "/dev/dri", "-v", "/dev/dri/by-path:/dev/dri/by-path", "--shm-size", "16g"];
+  }
   if (meta.isIntel) {
     return ["--shm-size", "16g"];
   }	
   return ["--gpus", "all"];
+}
+
+// Env vars pointing at host-written config files (Mooncake's *_CONFIG_PATH
+// heredocs) need the file inside the container too — bind the host path to
+// the same path so the `-e` value stays valid there. Read-only: the serve
+// process only consumes the config.
+function configPathMounts(env) {
+  return Object.entries(env || {})
+    .filter(([k]) => k.endsWith("_CONFIG_PATH"))
+    .map(([, v]) => `${v}:${v}:ro`);
+}
+
+// A recipe may serve a checkpoint from disk instead of an HF id — either because
+// the repo is gated and must be fetched with `hf download` first, or because one
+// repo ships several independently served partitions (MiniMax H3's FL2VA /
+// Ref2VA). The HF cache mount can't reach those, so bind the served directory at
+// the SAME absolute path inside the container: the rendered `vllm serve <path>`
+// then resolves identically in and out of Docker. Read-only — weights are never
+// written to. Returns [] for HF ids, which need no mount.
+function localModelMount(modelId) {
+  return typeof modelId === "string" && modelId.startsWith("/")
+    ? [`${modelId}:${modelId}:ro`]
+    : [];
 }
 
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
@@ -340,10 +718,24 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
   const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
+  const localMount = localModelMount(modelId);
+  const mountFlags = [...localMount, ...configPathMounts(env)]
+    .map((m) => `-v ${m}`)
+    .join(" \\\n  ");
+  // A missing host path makes the bind mount silently yield an empty directory,
+  // so state the prerequisite right above the command that depends on it. This
+  // stays a bare reminder on purpose: the runnable fetch step belongs in the
+  // recipe's `dependencies` (with `install_modes: [pip, docker]` so the Docker
+  // tab shows it too), where it is copy-pastable rather than commented out.
+  // Restating it here would mean guessing which dependency is the download.
+  const prereq = localMount.length
+    ? `# ${modelId} must already exist on the host — bind-mounted read-only below.\n`
+    : "";
   const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
-  return `docker run ${gpuFlags} \\
+  const base = `${prereq}docker run ${gpuFlags} \\
   --privileged --ipc=host -p ${port}:${port} \\
-  -v ~/.cache/huggingface:/root/.cache/huggingface \\${envFlags ? `\n  ${envFlags} \\` : ""}
+  -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
+  return `${base}
   ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
 }
 
@@ -358,13 +750,21 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
   // `vllm serve <model> <...flags>` → CMD becomes `<model> <...flags>` since
   // the image's entrypoint is already `vllm serve`.
   const cmdArgs = argv[0] === "vllm" && argv[1] === "serve" ? argv.slice(2) : argv;
-  return [
+  const mountFlags = [];
+  for (const m of [...localModelMount(cmdArgs[0]), ...configPathMounts(env)]) {
+    mountFlags.push("-v", m);
+  }
+  const base = [
     "docker", "run",
     ...dockerGpuArgv(meta),
     "--privileged", "--ipc=host",
     "-p", `${port}:${port}`,
     "-v", "~/.cache/huggingface:/root/.cache/huggingface",
+    ...mountFlags,
     ...envFlags,
+  ];
+  return [
+    ...base,
     meta.image,
     ...cmdArgs,
   ];
@@ -441,11 +841,14 @@ function shellQuote(s) {
  *   { id, modelId?, extraArgs?, ... }
  *
  * Outliers:
- *   - `recipe.omni.serve_binary: "vllm-omni serve"` swaps the binary (today's
- *     only user is stable-audio-open, whose handler doesn't ship in `vllm`).
+ *   - `recipe.omni.serve_binary: "vllm-omni serve"` swaps the binary. Currently
+ *     unused, and new recipes should not set it. It exists only for recipes
+ *     pinned below vLLM 0.20.0, which is where the `vllm` console-script grew
+ *     the `--omni` delegation into vllm-omni's entrypoint; on 0.20.0+ both
+ *     binaries reach the same handler, so the default `vllm serve` is correct.
  *   - `recipe.omni.port` overrides the rendered `--port` flag (default 8000).
  */
-export function resolveOmniCommand(recipe, variantKey, task, hwProfile) {
+export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfileId = null) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const modelId = task?.modelId || variant.model_id || recipe.model?.model_id || "unknown";
   const gen = normalizeGeneration(hwProfile?.generation || hwProfile?.gpu_generation);
@@ -457,12 +860,26 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile) {
   const ho = recipe.hardware_overrides?.[gen]
     || (isNvidia ? recipe.hardware_overrides?.nvidia : null);
   if (ho?.extra_env) Object.assign(env, ho.extra_env);
+  const variantGenHo = variant?.hardware_overrides?.[gen]
+    || (isNvidia ? variant?.hardware_overrides?.nvidia : null);
+  if (variantGenHo?.extra_env) Object.assign(env, variantGenHo.extra_env);
+  const variantExactHo = hwProfileId
+    ? variant?.hardware_overrides?.[hwProfileId]
+    : null;
+  if (variantExactHo?.extra_env) Object.assign(env, variantExactHo.extra_env);
 
   const args = [];
   if (recipe.model?.base_args) args.push(...recipe.model.base_args);
   if (variantKey !== "default" && variant.extra_args) args.push(...variant.extra_args);
   if (task?.extraArgs?.length) args.push(...task.extraArgs);
   if (ho?.extra_args) args.push(...ho.extra_args);
+  if (variantGenHo?.extra_args) args.push(...variantGenHo.extra_args);
+  if (variantExactHo?.extra_args) args.push(...variantExactHo.extra_args);
+  // `omni.port` is the recipe's port override. Emit it after the arg sources
+  // above so dedupeArgs's last-wins rule lets it beat a `--port` already
+  // declared in base_args. Left unset, the served port is vllm's own default
+  // (8000), which is what the client-side curl renderer assumes.
+  if (recipe.omni?.port) args.push("--port", String(recipe.omni.port));
   // --omni is the toggle that puts vllm into omni-handler mode. Always emit it
   // last — dedupeArgs's last-wins rule keeps it idempotent if the recipe also
   // declares it in base_args.
@@ -495,7 +912,7 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile) {
  * Returns: { command, env, deployType } for single_node/multi_node,
  *          { prefillCommand, decodeCommand, routerConfig, env, deployType } for pd_cluster.
  */
-export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null) {
+export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
@@ -504,17 +921,82 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   const totalGpus = gpuCount * Math.max(1, nodeCount);
 
   // single_node_tp TP size precedence (see resolveSingleNodeTp):
-  //   1. `strategy_overrides.single_node_tp.tp` (explicit recipe override)
-  //   2. auto-fit from `variant.vram_minimum_gb` / per-GPU VRAM (pow-2).
-  //   3. gpuCount (legacy fan-out when the recipe has no VRAM hint).
+  //   1. `variant.tp` (number or hardware-aware map)
+  //   2. `strategy_overrides.single_node_tp.tp` (recipe-wide override)
+  //   3. auto-fit from `variant.vram_minimum_gb` / per-GPU VRAM.
+  //   4. gpuCount (legacy fan-out when the recipe has no VRAM hint).
   //
   // TEP/DEP require full TP by topology; multi-node is explicit scale-out.
-  const singleNodeTp = resolveSingleNodeTp(recipe, variant, hwProfile, strategyName);
+  const singleNodeTp = resolveSingleNodeTp(
+    recipe,
+    variant,
+    hwProfile,
+    strategyName,
+    hwProfileId,
+  );
 
+  // The served checkpoint is owned by the variant axis (variant.model_id > base).
+  // Spec-decoding modes are single-select and contribute only args (the
+  // --speculative-config), so exactly one is ever emitted. A fused-spec
+  // checkpoint (e.g. DeepSeek-V4-Pro-DSpark) is a variant that steers the spec
+  // mode via `default_modes`; the mode never overrides model_id.
   const modelId = variant.model_id || recipe.model?.model_id || "unknown";
+  const variantHardwareOverride = variant?.hardware_overrides?.[hwProfileId];
 
-  // Helper to merge args
-  function buildArgs(roleOverride, nodeRole) {
+  // Mooncake composition: `kvOffload` may name a kv_store deployment
+  // (deploy_type: kv_store_lb). It does NOT replace the serving strategy —
+  // the KV layer is orthogonal to parallelism — instead the serving strategy
+  // builds each instance's command as usual, the kv store's connector args +
+  // env are appended (last-wins), and the result is wrapped in the
+  // router/master/(store) deployment shell. Under pd_cluster the per-role
+  // MultiConnector path composes instead (see buildArgs step 8).
+  const kvStoreStrat = kvOffload && strategies?.[kvOffload]?.deploy_type === "kv_store_lb"
+    ? strategies[kvOffload]
+    : null;
+  const kvComposing = !!kvStoreStrat && strategy.deploy_type !== "pd_cluster";
+
+  // The composing option, resolved once behind all three gates (strategy,
+  // recipe opt-in, brand) and shared by args/env/companion emission.
+  const kvOptRaw = taxonomy?.kv_offload?.[kvOffload];
+  const kvOpt = kvOptRaw
+    && isKvOffloadAllowedForStrategy(kvOptRaw, strategyName, strategy)
+    && isKvOffloadSupportedForRecipe(kvOptRaw, kvOffload, recipe)
+    && isKvOffloadBrandSupported(kvOptRaw, hwProfile)
+    ? kvOptRaw
+    : null;
+
+  // kv composition only: instance count + which instance's command is being
+  // rendered (0-based — affects the multi-node --master-addr naming below).
+  // `kvInstances` accepts a bare count or { count, current }.
+  const kvInstObj = (kvInstances && typeof kvInstances === "object")
+    ? kvInstances
+    : { count: kvInstances };
+  const kvInstanceCount = (typeof kvInstObj.count === "number" && kvInstObj.count >= 1)
+    ? Math.floor(kvInstObj.count)
+    : (kvStoreStrat?.default_instances || 2);
+  const kvCurrentInstance = Math.max(0, Math.min(kvInstanceCount - 1, kvInstObj.current ?? 0));
+  // A kv_store `vllm.install` may be brand-keyed ({ nvidia, amd }) — Mooncake
+  // ships a CUDA wheel and a separate non-CUDA build for ROCm. Other brands
+  // (Intel CPU, Google TPU) have no wheel at all → null, never a silent
+  // fall-through to the CUDA build (they're gated out upstream by
+  // isKvStoreBrandSupported, this is defense in depth).
+  const resolveBrandInstall = (raw) => {
+    if (raw && typeof raw === "object") {
+      const key = hwProfile?.brand === "AMD" ? "amd"
+        : hwProfile?.brand === "NVIDIA" ? "nvidia"
+        : null;
+      return key ? (raw[key] || null) : null;
+    }
+    return raw || null;
+  };
+
+  // Helper to merge args. `nodeRole` selects the multi-node shape ("head" =
+  // rank 0 / "worker" = a follower); `nodeRank` is which follower — the
+  // zero-based node index that feeds --node-rank (TP/TEP/PP) or the
+  // --data-parallel-start-rank offset (DEP). Defaults to 1, the first follower,
+  // so existing two-node callers are unchanged.
+  function buildArgs(roleOverride, nodeRole, nodeRank = 1) {
+    const mpRank = nodeRole === "worker" ? Math.max(1, nodeRank) : 0;
     const args = [];
 
     // Order:
@@ -530,7 +1012,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     if (recipe.model?.base_args) args.push(...recipe.model.base_args);
 
     // 2. Variant extra args
-    if (variantKey !== "default" && variant.extra_args) args.push(...variant.extra_args);
+    if (variant.extra_args) args.push(...variant.extra_args);
+    if (variantHardwareOverride?.extra_args) {
+      args.push(...variantHardwareOverride.extra_args);
+    }
 
     // 3. Strategy args + parallel size (grouped together so -tp/-dp sits next to -ep etc.)
     if (strategy.deploy_type !== "pd_cluster") {
@@ -541,42 +1026,78 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     const parallelFlag = strategy.parallel_flag || "--tensor-parallel-size";
     const isMulti = strategy.deploy_type === "multi_node" && nodeCount > 1;
     const isPdMulti = strategy.deploy_type === "pd_cluster" && nodeCount > 1;
+    // Multi-node rendezvous host. When Mooncake composes with a multi-node
+    // strategy, each instance's head is the same host the router lists as
+    // $VLLM_INSTANCE_N — reuse that name so one Endpoints value feeds both.
+    // With a single instance there is no router (and no INSTANCE naming), so
+    // it falls back to the plain multi-node convention: $HEAD_IP.
+    const mpMasterAddr = kvComposing && kvInstanceCount > 1
+      ? `$VLLM_INSTANCE_${kvCurrentInstance + 1}`
+      : "$HEAD_IP";
 
     if (isMulti && parallelFlag === "--data-parallel-size") {
-      // Multi-node DEP: DP across all GPUs, each worker owns N local ranks.
-      args.push("--data-parallel-size", String(totalGpus));
-      args.push("--data-parallel-size-local", String(gpuCount));
-      args.push("--data-parallel-address", "$HEAD_IP");
-      if (nodeRole === "worker") {
-        // Example worker = node 1 (start rank offset by one node's worth of GPUs).
-        args.push("--data-parallel-start-rank", String(gpuCount));
-      }
-    } else if (isMulti && strategy.parallelism === "tp_pp") {
+    // dp-local may be overridden by the recipe (hybrid TP+DP: TP within a node,
+    // DP across nodes → dp_local < gpuCount).
+    // The example worker is node 1, so its DP start rank = 1 × dp_local, not a
+    // full node's worth of GPUs.
+    const soDep = recipe.strategy_overrides?.[strategyName];
+    const soDepGenHo = soDep?.hardware_overrides?.[gen]
+      || (hwProfile?.brand === "NVIDIA" ? soDep?.hardware_overrides?.nvidia : null);
+    const soDepExactHo = soDep?.hardware_overrides?.[hwProfileId];
+    const depOv = [
+    ...(soDep?.vllm_args || []),
+    ...(soDep?.extra_args || []),
+    ...(soDepGenHo?.extra_args || []),
+    ...(soDepExactHo?.extra_args || []),
+      ];
+    const i = depOv.lastIndexOf("--data-parallel-size-local");
+    const dpLocal = i >= 0 ? Number(depOv[i + 1]) : gpuCount;
+    args.push("--data-parallel-size", String(totalGpus));
+    args.push("--data-parallel-size-local", String(gpuCount));
+    args.push("--data-parallel-address", mpMasterAddr);
+    if (nodeRole === "worker") {
+    args.push("--data-parallel-start-rank", String(mpRank * dpLocal));
+    }
+} else if (isMulti && strategy.parallelism === "tp_pp") {
       // TP inside each node, PP across nodes. Cross-node traffic flows through
       // the PP stage boundaries only — much less bandwidth than pure TP across
       // nodes. Suited for very large models on commodity inter-node links.
       args.push("--tensor-parallel-size", String(gpuCount));
       args.push("--pipeline-parallel-size", String(nodeCount));
       args.push("--nnodes", String(nodeCount));
-      args.push("--node-rank", nodeRole === "worker" ? "1" : "0");
-      args.push("--master-addr", "$HEAD_IP");
-      if (nodeRole === "worker") args.push("--headless");
+      args.push("--node-rank", String(mpRank));
+      args.push("--master-addr", mpMasterAddr);
+      if (mpRank > 0) args.push("--headless");
+    } else if (isMulti && strategy.parallelism === "tp_dp") {
+      // TP inside each node, DP across nodes — one full replica per node
+      // (dp_local = 1), so the inter-node link carries only DP coordination.
+      // Same DP rendezvous shape as the DEP branch: worker node N is DP
+      // rank N via --data-parallel-start-rank.
+      args.push("--tensor-parallel-size", String(gpuCount));
+      args.push("--data-parallel-size", String(nodeCount));
+      args.push("--data-parallel-size-local", "1");
+      args.push("--data-parallel-address", mpMasterAddr);
+      if (nodeRole === "worker") {
+        args.push("--data-parallel-start-rank", String(mpRank));
+      }
     } else if (isMulti) {
       // Multi-node TP/TEP via vLLM multiprocessing (mp) backend:
       // TP spans all GPUs in the cluster; every node runs the same command,
       // varying only --node-rank and (for rank > 0) --headless.
       args.push("--tensor-parallel-size", String(totalGpus));
       args.push("--nnodes", String(nodeCount));
-      args.push("--node-rank", nodeRole === "worker" ? "1" : "0");
-      args.push("--master-addr", "$HEAD_IP");
-      if (nodeRole === "worker") args.push("--headless");
+      args.push("--node-rank", String(mpRank));
+      args.push("--master-addr", mpMasterAddr);
+      if (mpRank > 0) args.push("--headless");
     } else if (strategy.deploy_type === "pd_cluster") {
       // PD splits inference across separate prefill and decode pools.
       //
       // New model (per-role nodes + parallelism):
-      //   pdNodes = { prefill: <int>, decode: <int> } — user-set node counts
+      //   pdNodes = { prefill: {nodes, rank, parallelism?}, decode: {…} }
+      //   parallelism precedence: pdNodes (UI pill) → strategy_overrides →
+      //     strategy YAML → "tp". Modes: "tp" | "tep" | "dep".
       //   role config (strategy_overrides.pd_cluster.<role>):
-      //     parallelism: "tp" | "dep"          (default: "tp")
+      //     parallelism: "tp" | "tep" | "dep"  (default: "tp")
       //     tp:          <int>                  (default: 1 for dep, poolGpus for tp)
       //     parallel_flag: "--…"                (last-resort override)
       //
@@ -599,7 +1120,13 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       const poolGpus = rolePoolNodes === 0
         ? Math.floor(gpuCount / 2)
         : rolePoolNodes * gpuCount;
-      const parallelism = soRoleCfg.parallelism || roleCfg.parallelism || "tp";
+      let parallelism = pdRole.parallelism || soRoleCfg.parallelism || roleCfg.parallelism || "tp";
+      // Honor a per-recipe PD-pool restriction (strategy_overrides.pd_cluster.
+      // pool_modes). If the resolved mode isn't offered — e.g. the UI/JSON-API
+      // fell back to "tp" but the recipe locks pools to DEP — snap to the first
+      // allowed mode so callers that don't pre-clamp stay consistent.
+      const allowedPoolModes = pdPoolModes(recipe);
+      if (!allowedPoolModes.includes(parallelism)) parallelism = allowedPoolModes[0];
 
       if (parallelism === "dep") {
         // Data-parallel + expert-parallel pool (Kimi-K2.5 GB200 pattern).
@@ -640,18 +1167,30 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         }
         args.push("--enable-expert-parallel");
       } else {
-        // TP pool. With >1 node, layer on vLLM mp multi-node flags.
+        // TP / TEP pool. A single engine spanning the pool's nodes via vLLM's
+        // mp multi-node backend: every node runs the same command, varying only
+        // --node-rank; rank > 0 adds --headless (no HTTP server). The UI's node
+        // selector picks which rank to render via pdRole.rank, mirroring the
+        // DEP pool's per-node command rendering. TEP = the same TP layout plus
+        // expert parallel (mirrors single_node_tep / multi_node_tep strategies).
         const roleParallelFlag =
           soRoleCfg.parallel_flag ||
           roleCfg.parallel_flag ||
           strategy.parallel_flag ||
           "--tensor-parallel-size";
         args.push(roleParallelFlag, String(Math.max(1, poolGpus)));
+        if (parallelism === "tep") {
+          args.push("--enable-expert-parallel");
+          // Cross-node TEP perf tweak from multi_node_tep; single-node TEP omits it.
+        }
         if (rolePoolNodes > 1) {
+          const nodeIdx = Math.max(0, Math.min(rolePoolNodes - 1, pdRole.rank ?? 0));
           args.push("--nnodes", String(rolePoolNodes));
-          args.push("--node-rank", "0");
+          args.push("--node-rank", String(nodeIdx));
           // TP master = node 0 of pool = NODE_1 (same naming as router endpoints).
           args.push("--master-addr", `$${roleKey.toUpperCase()}_NODE_1`);
+          // Followers are GPU workers only — no API server / NIXL side channel.
+          if (nodeIdx > 0) args.push("--headless");
         }
       }
     } else {
@@ -680,22 +1219,48 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     }
 
     // 5. Hardware overrides
-    //    Precedence: generation-specific (hopper/blackwell/amd) > brand-wide (nvidia).
-    //    `nvidia:` lets a recipe apply the same overrides to every NVIDIA GPU
-    //    without duplicating hopper and blackwell blocks.
+    //    Generation-specific (hopper/blackwell/amd) with a brand-wide `nvidia:`
+    //    fallback that applies the same tweaks to every NVIDIA GPU without
+    //    duplicating hopper and blackwell blocks. Three layers for a generation:
     //
-    //    A strategy may further override hardware overrides via
-    //    `strategy_overrides.<strategy>.hardware_overrides.<gen>` — when set,
-    //    it REPLACES the recipe-level hardware override for that gen on that
-    //    strategy. Use this to drop a recipe-wide hw flag (e.g. an MoE kernel
-    //    backend) for a specific strategy without duplicating the rest.
+    //      recipe.hardware_overrides.<gen>            — baseline for ALL variants
+    //      variants.<v>.hardware_overrides.<gen>      — per-variant ADDITIVE delta
+    //      strategy_overrides.<s>.hardware_overrides.<gen> — per-strategy REPLACE
+    //      strategy_overrides.<s>.hardware_overrides.<gpu> — exact-GPU ADDITIVE delta
+    //
+    //    The strategy layer is authoritative: when it declares an override for
+    //    this generation it REPLACES both the recipe baseline and the variant
+    //    delta (e.g. single_node_tp keeps the FP4 indexer cache but drops the
+    //    MoE mega-kernel on Blackwell). Otherwise the recipe baseline applies to
+    //    every variant and the variant's own generation block layers on top —
+    //    a per-variant delta rather than a wholesale swap. Example: on Blackwell
+    //    the recipe adds the FP4 indexer cache for every variant, then the FP8
+    //    checkpoints add `--moe-backend deep_gemm_mega_moe` (an FP8-only MoE
+    //    kernel) via their variant block while the NVFP4 checkpoint adds
+    //    nothing. Unlike the top-level variant `extra_args` (step 2), the
+    //    generation HO applies to the `default` variant too — it's hardware-
+    //    conditional config, not a checkpoint delta.
     const isNvidia = hwProfile?.brand === "NVIDIA";
     const strategyHo = so?.hardware_overrides?.[gen]
       || (isNvidia ? so?.hardware_overrides?.nvidia : null);
-    const ho = strategyHo
-      || recipe.hardware_overrides?.[gen]
-      || (isNvidia ? recipe.hardware_overrides?.nvidia : null);
-    if (ho?.extra_args) args.push(...ho.extra_args);
+    if (strategyHo) {
+      if (strategyHo.extra_args) args.push(...strategyHo.extra_args);
+    } else {
+      const recipeHo = recipe.hardware_overrides?.[gen]
+        || (isNvidia ? recipe.hardware_overrides?.nvidia : null);
+      if (recipeHo?.extra_args) args.push(...recipeHo.extra_args);
+      const variantGenHo = variant?.hardware_overrides?.[gen]
+        || (isNvidia ? variant?.hardware_overrides?.nvidia : null);
+      if (variantGenHo?.extra_args) args.push(...variantGenHo.extra_args);
+    }
+    // Exact-GPU strategy and role tweaks are a final, additive layer. They
+    // handle exceptions within one generation without replacing its baseline.
+    const strategyExactHo = so?.hardware_overrides?.[hwProfileId];
+    if (strategyExactHo?.extra_args) args.push(...strategyExactHo.extra_args);
+    const roleExactHo = roleOverride
+      ? so?.[roleOverride]?.hardware_overrides?.[hwProfileId]
+      : null;
+    if (roleExactHo?.extra_args) args.push(...roleExactHo.extra_args);
 
     // 6. Advanced tuning args (from UI's Advanced panel)
     if (advancedArgs && advancedArgs.length) args.push(...advancedArgs);
@@ -708,10 +1273,51 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     for (const f of enabledFeatures || []) {
       const feat = recipe.features?.[f];
       if (!feat) continue;
+      if (!isFeatureAllowedForStrategy(feat, strategyName)) continue;
+      // A companion-backed feature can't render its helper inside the
+      // Mooncake deployment shell (companion tabs are a single-node-block
+      // concept), so its args are skipped too — args and companion always
+      // gate together, never a command that references an unstarted process.
+      if (kvComposing && feat.companion?.command) continue;
+      // Single-select sub-modes: the feature declares `modes` and the user
+      // picks one (spec_decoding → MTP / DFlash / DSpark). Emit only the
+      // effective mode's args — resolveModeKey honours variant + hardware
+      // availability and falls back when the selection isn't valid here.
+      if (feat.modes && typeof feat.modes === "object") {
+        const modeKey = resolveModeKey(feat, f, variant, variantKey, hwProfile, hwProfileId, featureModes?.[f]);
+        const mode = modeKey ? feat.modes[modeKey] : null;
+        if (mode) {
+          const modeHo = hardwareKeyedValue(mode.hardware_overrides, hwProfile, hwProfileId);
+          const modeArgs = modeHo?.args ?? mode.args;
+          if (modeArgs) args.push(...modeArgs);
+        }
+        continue;
+      }
       const featHo = feat.hardware_overrides?.[gen]
         || (isNvidia ? feat.hardware_overrides?.nvidia : null);
       const featArgs = featHo?.args ?? feat.args;
       if (featArgs) args.push(...featArgs);
+    }
+
+    // 8. Composing KV offload (taxonomy.kv_offload.<key>) — the option's
+    //    --kv-transfer-config is appended last so it wins the last-wins
+    //    dedupe over any earlier occurrence. `kvOpt` is pre-gated above.
+    if (kvOpt) {
+      args.push(...(kvOpt.args || []));
+    }
+    // Mooncake composes the same way on any non-PD serving strategy: the
+    // MooncakeStoreConnector config appends after the strategy/feature args
+    // so its --kv-transfer-config wins the last-wins dedupe. Parallelism
+    // stays whatever the strategy emitted above — the KV layer is orthogonal.
+    if (kvComposing) {
+      args.push(...(kvStoreStrat.vllm?.vllm_args || []));
+    }
+    // Mooncake × pd_cluster: each role's plain NixlConnector config is
+    // swapped (last-wins) for the kv_store YAML's `pd.<role>.args`
+    // MultiConnector — Nixl prefill↔decode path + shared MooncakeStoreConnector.
+    if (strategy.deploy_type === "pd_cluster" && roleOverride
+        && kvStoreStrat?.pd?.[roleOverride]?.args) {
+      args.push(...kvStoreStrat.pd[roleOverride].args);
     }
 
     return args;
@@ -725,13 +1331,29 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     Object.assign(env, recipe.model?.base_env || {});
 
     // Variant env
-    if (variantKey !== "default" && variant.extra_env) Object.assign(env, variant.extra_env);
+    if (variant.extra_env) Object.assign(env, variant.extra_env);
+    if (variantHardwareOverride?.extra_env) {
+      Object.assign(env, variantHardwareOverride.extra_env);
+    }
 
     // Strategy env
     if (strategy.deploy_type !== "pd_cluster") {
       Object.assign(env, strategy.env || {});
     } else if (roleOverride && strategy[roleOverride]?.env) {
       Object.assign(env, strategy[roleOverride].env);
+    }
+    // Composing-option env, after the strategy's so the option wins.
+    if (kvOpt?.env) {
+      Object.assign(env, kvOpt.env);
+    }
+    // Mooncake composition: instances (any serving strategy) and PD roles
+    // read the shared config via MOONCAKE_CONFIG_PATH (+ PYTHONHASHSEED for
+    // consistent prefix hashing across processes).
+    if (kvComposing) {
+      Object.assign(env, kvStoreStrat.vllm?.env || {});
+    } else if (strategy.deploy_type === "pd_cluster" && roleOverride
+        && kvStoreStrat?.pd) {
+      Object.assign(env, kvStoreStrat.vllm?.env || {});
     }
 
     // PD: pin GPUs per role via CUDA_VISIBLE_DEVICES.
@@ -778,17 +1400,30 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       if (!roleOverride && so.extra_env) Object.assign(env, so.extra_env);
     }
 
-    // Hardware overrides env — same precedence as args block: generation key
-    // first, then brand-wide `nvidia:` for NVIDIA GPUs. Per-strategy nested
-    // hardware_overrides REPLACES the recipe-level for that gen on that
-    // strategy (mirrors the args-block behavior).
+    // Hardware overrides env — same three-layer precedence as the args block:
+    // a per-strategy generation override REPLACES both recipe and variant;
+    // otherwise the recipe baseline applies to every variant and the variant's
+    // own generation block layers on top additively (applies to `default` too).
+    // An exact-GPU strategy delta is then applied last.
     const envIsNvidia = hwProfile?.brand === "NVIDIA";
     const envStrategyHo = so?.hardware_overrides?.[gen]
       || (envIsNvidia ? so?.hardware_overrides?.nvidia : null);
-    const envHo = envStrategyHo
-      || recipe.hardware_overrides?.[gen]
-      || (envIsNvidia ? recipe.hardware_overrides?.nvidia : null);
-    if (envHo?.extra_env) Object.assign(env, envHo.extra_env);
+    if (envStrategyHo) {
+      if (envStrategyHo.extra_env) Object.assign(env, envStrategyHo.extra_env);
+    } else {
+      const envRecipeHo = recipe.hardware_overrides?.[gen]
+        || (envIsNvidia ? recipe.hardware_overrides?.nvidia : null);
+      if (envRecipeHo?.extra_env) Object.assign(env, envRecipeHo.extra_env);
+      const envVariantGenHo = variant?.hardware_overrides?.[gen]
+        || (envIsNvidia ? variant?.hardware_overrides?.nvidia : null);
+      if (envVariantGenHo?.extra_env) Object.assign(env, envVariantGenHo.extra_env);
+    }
+    const envStrategyExactHo = so?.hardware_overrides?.[hwProfileId];
+    if (envStrategyExactHo?.extra_env) Object.assign(env, envStrategyExactHo.extra_env);
+    const envRoleExactHo = roleOverride
+      ? so?.[roleOverride]?.hardware_overrides?.[hwProfileId]
+      : null;
+    if (envRoleExactHo?.extra_env) Object.assign(env, envRoleExactHo.extra_env);
 
     // NVL4-only env vars are meaningful only on GB200/GB300 trays. Drop them
     // for any other hardware regardless of where they came from (strategy YAML
@@ -799,10 +1434,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
 
     // Per-rank node rewrite: strategy YAML carries `$PREFILL_NODE_1` /
     // `$DECODE_NODE_1` as the rank-0 default for per-node bind hosts (NIXL
-    // side channel etc). For DEP pools where the UI shows a non-zero rank's
-    // command, point those values at NODE_{rank+1} so the rendered command
-    // matches that physical node. TP pools always render the head node, so
-    // NODE_1 is already correct.
+    // side channel etc). Only DEP pools open a per-node side channel (one
+    // `vllm serve` per node), so for a non-zero DEP rank point those values at
+    // NODE_{rank+1} to match that physical node. TP followers run --headless
+    // with no side channel, so their host stays pinned to the head (NODE_1).
     if (strategy.deploy_type === "pd_cluster" && roleOverride) {
       const raw = pdNodes ? pdNodes[roleOverride] : undefined;
       const pdRoleObj =
@@ -810,7 +1445,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         : (raw && typeof raw === "object") ? raw
         : {};
       const rank = pdRoleObj.rank || 0;
-      if (rank > 0) {
+      const rwSoRoleCfg = recipe.strategy_overrides?.[strategyName]?.[roleOverride] || {};
+      const rwRoleCfg = strategy[roleOverride] || {};
+      const rwParallelism = pdRoleObj.parallelism || rwSoRoleCfg.parallelism || rwRoleCfg.parallelism || "tp";
+      if (rank > 0 && rwParallelism === "dep") {
         const oldVar = `$${roleOverride.toUpperCase()}_NODE_1`;
         const newVar = `$${roleOverride.toUpperCase()}_NODE_${rank + 1}`;
         for (const k of Object.keys(env)) {
@@ -872,7 +1510,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         : (raw && typeof raw === "object") ? raw
         : {};
       const nodes = typeof pdRole.nodes === "number" ? pdRole.nodes : legacyNodes;
-      const parallelism = soRoleCfg.parallelism || roleCfg.parallelism || "tp";
+      const parallelism = pdRole.parallelism || soRoleCfg.parallelism || roleCfg.parallelism || "tp";
       const poolGpus = nodes === 0 ? Math.floor(gpuCount / 2) : nodes * gpuCount;
       const tp = parallelism === "dep"
         ? (soRoleCfg.tp || roleCfg.tp || 1)
@@ -894,17 +1532,25 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     // Shell-variable form ($PREFILL_NODE_N / $DECODE_NODE_N) so the same name
     // the prefill/decode commands consume is also what the router lists —
     // user fills one set of values in the Endpoints panel, applied everywhere.
+    // Endpoint count per pool depends on the parallelism mode:
+    //   DEP → one `vllm serve` per node, each binds its own HTTP port, so list
+    //         one endpoint per node (NODE_1..NODE_n).
+    //   TP  → a single engine spanning n nodes; only the head node (NODE_1)
+    //         serves HTTP (followers are --headless), so list exactly one.
+    const epCount = (meta) => (meta.parallelism === "dep" ? Math.max(1, meta.nodes || 1) : 1);
     const prefillEndpoints = Array.from(
-      { length: Math.max(1, pMeta.nodes || 1) },
+      { length: epCount(pMeta) },
       (_, i) => `    --prefill http://$PREFILL_NODE_${i + 1}:8001 \\`,
     );
     const decodeEndpoints = Array.from(
-      { length: Math.max(1, dMeta.nodes || 1) },
+      { length: epCount(dMeta) },
       (_, i) => `    --decode http://$DECODE_NODE_${i + 1}:8002 \\`,
     );
     // intra-node-data-parallel-size = max dp_local across the two pools for
-    // DEP setups; 1 for pure-TP PD.
-    const intraDp = Math.max(pMeta.dpLocal || 0, dMeta.dpLocal || 0, 1);
+    // DEP setups; 1 for pure-TP PD. Recipes can pin it via
+    // strategy_overrides.<strategy>.router.intra_node_data_parallel_size.
+    const intraDp = recipe.strategy_overrides?.[strategyName]?.router?.intra_node_data_parallel_size
+      ?? Math.max(pMeta.dpLocal || 0, dMeta.dpLocal || 0, 1);
     // Router --host / --port use the same $ROUTER_HOST / $ROUTER_PORT vars
     // that curl / bench target, so filling them once in the Endpoints panel
     // makes the router and clients agree. Unfilled, shell leaves the $VAR
@@ -923,9 +1569,29 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
 
     const prefillArgs = buildArgs("prefill", null);
     const decodeArgs = buildArgs("decode", null);
+    // Mooncake composed into PD: surface master / store / config so the PD
+    // block can render their tabs and the per-node config heredoc.
+    const pdMooncake = (kvStoreStrat?.pd)
+      ? {
+          master: {
+            command: kvStoreStrat.mooncake_master?.command || "mooncake_master",
+            description: kvStoreStrat.mooncake_master?.description || "",
+          },
+          store: kvStoreStrat.mooncake_store_config ? {
+            command: kvStoreStrat.mooncake_store_config.command,
+            description: kvStoreStrat.mooncake_store_config?.description || "",
+            config: kvStoreStrat.mooncake_store_config?.config || null,
+            note: kvStoreStrat.mooncake_store_config?.note || "",
+          } : null,
+          config: kvStoreStrat.mooncake_vllm_config?.template || {},
+          configNote: kvStoreStrat.mooncake_vllm_config?.note || "",
+          install: resolveBrandInstall(kvStoreStrat.vllm?.install),
+        }
+      : null;
     return {
       deployType,
       nodeCount,
+      ...(pdMooncake ? { mooncake: pdMooncake } : {}),
       prefill: {
         command: formatCommand(prefillArgs),
         argv: formatArgv(prefillArgs),
@@ -946,27 +1612,153 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     };
   }
 
+  if (kvComposing) {
+    // Mooncake deployment shell around the serving strategy: vllm-router
+    // (cache-aware, 2+ instances) + mooncake_master + (optionally)
+    // mooncake_store_service + N × vLLM instances + a shared config JSON.
+    // Each instance's command was built ABOVE by the selected serving
+    // strategy (TP/TEP/DEP, single- or multi-node) with the
+    // MooncakeStoreConnector args/env appended — the KV layer never decides
+    // parallelism.
+    //
+    // Two orthogonal axes (mirrors agentx's `count` × `nodes_per_instance`):
+    //   instances — how many independent vLLM engines sit behind the router
+    //               (kvInstances param → kv YAML default_instances → 2).
+    //   nodeCount — nodes PER INSTANCE, straight from the Nodes row. 1 =
+    //               single-node engine; >1 = each instance shards across
+    //               nodes via the serving strategy's own mp-backend args.
+    // The router lists one endpoint per instance (each instance's head node).
+    const instances = kvInstanceCount;
+    const multiNodeInstance = strategy.deploy_type === "multi_node" && nodeCount > 1;
+    const vllmArgs = multiNodeInstance ? buildArgs(null, "head") : buildArgs(null, null);
+    // One command per follower node of an instance (ranks 1..nodes-1), same as
+    // the plain multi-node branch — each rank's command is distinct.
+    const workerArgsByRank = multiNodeInstance
+      ? followerRanks(nodeCount).map((r) => buildArgs(null, "worker", r))
+      : null;
+    const mooncakeVllmConfig = kvStoreStrat.mooncake_vllm_config?.template || {};
+    const mooncakeStoreConfig = kvStoreStrat.mooncake_store_config?.config || null;
+
+    // Router construction — mirrors pd_cluster pattern
+    const routerPolicy = kvStoreStrat.router?.policy || "cache_aware";
+    const routerPort = kvStoreStrat.router?.port || 30080;
+    const vllmPort = kvStoreStrat.vllm?.port || 8000;
+    const vllmEndpoints = Array.from(
+      { length: instances },
+      (_, i) => `    --backend-url http://$VLLM_INSTANCE_${i + 1}:${vllmPort} \\`,
+    );
+    const routerLines = [
+      `vllm-router --policy ${routerPolicy} \\`,
+      ...vllmEndpoints,
+      `    --host $ROUTER_HOST \\`,
+      // $ROUTER_PORT (not the literal) so the Endpoints panel's curl/bench
+      // target edits also retarget the bind; router.port seeds the default.
+      `    --port $ROUTER_PORT \\`,
+      `    --cache-threshold 0.5 \\`,
+      `    --balance-abs-threshold 4 \\`,
+      `    --balance-rel-threshold 1.1`,
+    ];
+    const routerCommand = routerLines.join("\n");
+
+    return {
+      deployType: "kv_store_lb",
+      // The strategy each instance runs — surfaced so UI/API consumers can
+      // name the composition ("Single-node TEP · Mooncake") without rederiving.
+      servingStrategy: strategyName,
+      nodeCount,
+      instances,
+      currentInstance: kvCurrentInstance,
+      master: {
+        command: kvStoreStrat.mooncake_master?.command || "mooncake_master",
+        description: kvStoreStrat.mooncake_master?.description || "",
+      },
+      store: kvStoreStrat.mooncake_store_config ? {
+        command: kvStoreStrat.mooncake_store_config.command,
+        description: kvStoreStrat.mooncake_store_config?.description || "",
+        config: mooncakeStoreConfig,
+        note: kvStoreStrat.mooncake_store_config?.note || "",
+      } : null,
+      vllm: {
+        command: formatCommand(vllmArgs),
+        argv: formatArgv(vllmArgs),
+        ...(workerArgsByRank ? {
+          workerCommand: formatCommand(workerArgsByRank[0]),
+          workerArgv: formatArgv(workerArgsByRank[0]),
+          workerCommands: workerArgsByRank.map(formatCommand),
+          workerArgvs: workerArgsByRank.map(formatArgv),
+        } : {}),
+        env: buildEnv(null),
+        install: resolveBrandInstall(kvStoreStrat.vllm?.install),
+      },
+      // A single instance needs no LB — clients hit it directly on the vllm
+      // port; the router (and its $VLLM_INSTANCE_N naming) only exists at 2+.
+      router: instances > 1 ? {
+        command: routerCommand,
+        install: kvStoreStrat.router?.install || "uv pip install vllm-router",
+        port: routerPort,
+      } : null,
+      mooncakeConfig: mooncakeVllmConfig,
+      // Sizing/NIC guidance rendered as # lines above the config heredoc.
+      mooncakeConfigNote: kvStoreStrat.mooncake_vllm_config?.note || "",
+    };
+  }
+
   if (deployType === "multi_node" && nodeCount > 1) {
-    // Every multi-node strategy renders the same shape: head + worker tabs.
-    // Workers use --headless (TP/TEP) or --data-parallel-start-rank offset (DEP).
+    // Every multi-node strategy renders the same shape: a head (rank 0) plus
+    // ONE COMMAND PER FOLLOWER NODE — ranks differ, so a 4-node cluster needs
+    // 3 distinct worker commands, not one repeated. Workers add --headless
+    // (TP/TEP/PP) or a --data-parallel-start-rank offset (DEP).
     const headArgs = buildArgs(null, "head");
-    const workerArgs = buildArgs(null, "worker");
+    const workerArgsByRank = followerRanks(nodeCount).map((r) => buildArgs(null, "worker", r));
     return {
       deployType: "multi_node",
       nodeCount,
       headCommand: formatCommand(headArgs),
-      workerCommand: formatCommand(workerArgs),
+      // Rank 1 stays on the singular keys — the long-standing shape consumers
+      // (and the JSON API) already read; the full per-rank list rides alongside.
+      workerCommand: formatCommand(workerArgsByRank[0]),
+      workerCommands: workerArgsByRank.map(formatCommand),
       headArgv: formatArgv(headArgs),
-      workerArgv: formatArgv(workerArgs),
+      workerArgv: formatArgv(workerArgsByRank[0]),
+      workerArgvs: workerArgsByRank.map(formatArgv),
       env: buildEnv(null),
     };
   }
 
   const singleArgs = buildArgs(null, null);
+  // Companion processes — helpers that must run alongside `vllm serve` on the
+  // same node, rendered as PD-style tabs next to the serve command. Two
+  // sources, same gating as their args so a companion never leaks onto an
+  // excluded strategy:
+  //   - enabled features declaring `companion: { label, description?, command }`
+  //   - the active composing KV-offload option (e.g. LMCache's MP server)
+  const companions = (enabledFeatures || []).flatMap((f) => {
+    const feat = recipe.features?.[f];
+    if (!feat?.companion?.command) return [];
+    if (!isFeatureAllowedForStrategy(feat, strategyName)) return [];
+    return [{
+      feature: f,
+      label: feat.companion.label || f,
+      description: feat.companion.description || "",
+      command: String(feat.companion.command).trimEnd(),
+    }];
+  });
+  if (kvOpt?.companion?.command) {
+    companions.push({
+      feature: `kv_offload:${kvOffload}`,
+      label: kvOpt.companion.label || kvOffload,
+      description: [
+        kvOpt.companion.description || "",
+        kvOpt.install ? `Requires: ${kvOpt.install}` : "",
+      ].filter(Boolean).join(" "),
+      command: String(kvOpt.companion.command).trimEnd(),
+    });
+  }
   return {
     deployType,
     command: formatCommand(singleArgs),
     argv: formatArgv(singleArgs),
     env: buildEnv(null),
+    ...(companions.length ? { companions } : {}),
   };
 }

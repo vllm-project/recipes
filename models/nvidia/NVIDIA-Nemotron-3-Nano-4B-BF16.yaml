@@ -3,6 +3,7 @@ meta:
   slug: "nemotron-3-nano-4b"
   provider: "NVIDIA"
   description: "NVIDIA Nemotron-3-Nano 4B (Mamba-hybrid dense) — compact reasoning + tool-use model with BF16 and FP8 variants"
+  date_added: 2026-04-28
   date_updated: 2026-04-28
   difficulty: beginner
   tasks:
@@ -66,6 +67,10 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
   - multi_node_tp_pp
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides: {}
 strategy_overrides: {}

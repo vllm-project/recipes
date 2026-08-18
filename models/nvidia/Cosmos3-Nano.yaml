@@ -3,6 +3,7 @@ meta:
   slug: "cosmos3-nano"
   provider: "NVIDIA"
   description: "Compact 16B omnimodal world model (Mixture-of-Transformers) for multimodal understanding, world simulation, future prediction, action reasoning, and Physical AI"
+  date_added: 2026-06-02
   date_updated: 2026-06-02
   difficulty: intermediate
   tasks:
@@ -24,7 +25,7 @@ model:
   install:
     docker:
       note: "Release-tested vLLM-Omni image bundling the Cosmos3 omni handlers."
-    pip: false
+    pip:
   architecture: dense
   parameter_count: "16B"
   active_parameters: "16B"

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Search, ArrowRight, Building2, SlidersHorizontal } from "lucide-react";
-import { recipeHref } from "@/lib/recipe-utils";
+import { compareRecipesByDateAdded, recipeHref } from "@/lib/recipe-utils";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName, PROVIDERS } from "@/lib/providers";
 import { searchRecipes, searchProviders } from "@/lib/search";
 
@@ -60,15 +60,11 @@ export function SearchBox({ recipes }) {
   }, [query, recipes]);
 
   // Empty-state default — shown when the box is focused but no query yet.
-  // Top 5 newest recipes by HF release date so ⌘K is immediately useful
-  // for "what just landed?", plus the same Browse all footer.
+  // Top 5 recipes most recently added to the catalog so ⌘K is immediately
+  // useful for "what just landed?", plus the same Browse all footer.
   const defaultResults = useMemo(() => {
     if (query.trim()) return [];
-    const sorted = [...recipes].sort((a, b) => {
-      const ra = a.hf_released ? new Date(a.hf_released).getTime() : 0;
-      const rb = b.hf_released ? new Date(b.hf_released).getTime() : 0;
-      return rb - ra;
-    });
+    const sorted = [...recipes].sort(compareRecipesByDateAdded);
     return [
       ...sorted.slice(0, 5).map((r) => ({ type: "recipe", recipe: r, href: recipeHref(r) })),
       { type: "browse", count: recipes.length, href: "/browse", fallback: true },

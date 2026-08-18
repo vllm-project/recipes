@@ -3,6 +3,7 @@ meta:
   slug: "glm-4.5"
   provider: "GLM (Z-AI)"
   description: "GLM-4.5 MoE language model (~358B total parameters, BF16) with built-in MTP layers for speculative decoding and native tool calling"
+  date_added: 2025-08-12
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
@@ -69,6 +70,10 @@ compatible_strategies:
   - multi_node_dep
   - multi_node_tep
   - pd_cluster
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides: {}
 

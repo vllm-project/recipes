@@ -3,6 +3,7 @@ meta:
   slug: "glyph"
   provider: "GLM (Z-AI)"
   description: "Visual-text compression framework that renders long text into images and processes them with a reasoning VLM, scaling effective context length"
+  date_added: 2025-10-28
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
@@ -58,6 +59,10 @@ variants:
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides: {}
 
