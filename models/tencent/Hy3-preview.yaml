@@ -3,6 +3,7 @@ meta:
   slug: "hy3-preview"
   provider: "Hunyuan (Tencent)"
   description: "Tencent Hunyuan Hy3-preview — scaled-up MoE language model (295B total / 21B active) with a 3.8B MTP layer for speculative decoding, 256K context, and hy_v3 tool/reasoning parsers"
+  date_added: 2026-04-23
   date_updated: 2026-04-23
   difficulty: intermediate
   tasks:

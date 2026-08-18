@@ -3,6 +3,7 @@ meta:
   slug: "qwen3-next-80b-a3b-instruct"
   provider: "Qwen"
   description: "Advanced Qwen3-Next MoE model (80B total / 3B active) with hybrid attention, highly sparse experts, and multi-token prediction."
+  date_added: 2025-09-11
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:

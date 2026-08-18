@@ -3,6 +3,7 @@ meta:
   slug: "minicpm5-1b"
   provider: "MiniCPM (OpenBMB)"
   description: "MiniCPM5-1B — dense 1B on-device LLM with hybrid Think/No-Think reasoning, native 128K context, and strong agentic tool use, built on the standard Llama architecture"
+  date_added: 2026-06-02
   date_updated: 2026-06-02
   difficulty: beginner
   tasks:
@@ -40,6 +41,10 @@ variants:
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 strategy_overrides:
   single_node_tp:

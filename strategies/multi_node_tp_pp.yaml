@@ -1,6 +1,7 @@
 name: multi_node_tp_pp
 deploy_type: multi_node
 display_name: "Multi-Node TP + Pipeline Parallel"
+orientation: throughput
 description: >
   Tensor parallel within each node, pipeline parallel across nodes.
   TP stays inside the high-bandwidth intra-node NVLink/IB domain; PP
@@ -12,9 +13,10 @@ hardware_match:
   min_gpus: 2
   multi_node: true
 
-# New field read by command-synthesis: "tp_pp" → emit
+# Read by command-synthesis: "tp_pp" → emit
 #   --tensor-parallel-size <gpu_count>  --pipeline-parallel-size <node_count>
-# instead of the default multi-node TP (tp = total_gpus).
+# instead of the default multi-node TP (tp = total_gpus). Rendezvous still uses
+# the mp backend (--nnodes/--node-rank/--master-addr, --headless on rank > 0).
 parallelism: tp_pp
 
 vllm_args: []

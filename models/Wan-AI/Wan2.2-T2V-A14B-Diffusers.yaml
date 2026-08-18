@@ -3,6 +3,7 @@ meta:
   slug: "wan2.2"
   provider: "Wan (Alibaba)"
   description: "Wan2.2 video generation models — T2V/I2V MoE (14B active) and unified TI2V (5B dense), served via vLLM-Omni"
+  date_added: 2025-12-31
   date_updated: 2026-04-27
   difficulty: intermediate
   tasks:
