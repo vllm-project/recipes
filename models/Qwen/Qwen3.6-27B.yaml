@@ -35,7 +35,7 @@ features:
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_xml"
+      - "qwen3_coder"
   reasoning:
     description: "Enable chain-of-thought reasoning with Qwen3 parser"
     args:
@@ -220,7 +220,7 @@ guide: |
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
     --load-format fastsafetensors \
     --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
     --enable-auto-tool-choice
   ```
 
@@ -272,7 +272,7 @@ guide: |
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
     --load-format fastsafetensors \
     --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
     --enable-auto-tool-choice \
     --tensor-parallel-size 2 \
     --nnodes 2 \
@@ -312,7 +312,7 @@ guide: |
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
     --load-format fastsafetensors \
     --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
     --enable-auto-tool-choice \
     --tensor-parallel-size 2 \
     --nnodes 2 \
@@ -345,7 +345,7 @@ guide: |
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
     --load-format fastsafetensors \
     --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
     --enable-auto-tool-choice
   ```
 
