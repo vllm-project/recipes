@@ -12,6 +12,9 @@ meta:
   related_recipes: []
   hardware:
     h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "poolside/Laguna-XS.2"
@@ -128,7 +131,7 @@ guide: |
 
   > **vLLM ≥ 0.22.0 required for the quantized variants.** The FP8 KV cache needs the per-layer attention-head fix in [vllm#42650](https://github.com/vllm-project/vllm/pull/42650); earlier versions produce scrambled output on non-Hopper GPUs. On older vLLM you can disable the FP8 KV cache with `--kv-cache-dtype-skip-layers $(seq 0 39)`.
 
-  ## Launch command
+  ## Deployment Configurations
 
   ### Single GPU (H100/H200/B200, BF16)
   ```bash
@@ -153,6 +156,38 @@ guide: |
       --tool-call-parser poolside_v1 \
       --reasoning-parser poolside_v1 \
       --host 0.0.0.0 --port 8000
+  ```
+
+  ### AMD MI300X / MI325X / MI355X
+
+  ```bash
+  vllm serve poolside/Laguna-XS.2 \
+    --trust-remote-code \
+    --max-model-len 262144 \
+    --enable-auto-tool-choice \
+    --tool-call-parser poolside_v1 \
+    --reasoning-parser poolside_v1
+  ```
+
+  ### Docker (AMD MI300X / MI325X / MI355X)
+
+  ```bash
+  docker run --rm -it \
+    --cap-add=SYS_PTRACE \
+    --ipc=host \
+    --privileged=true \
+    --shm-size=128GB \
+    --network=host \
+    --device=/dev/kfd \
+    --device=/dev/dri \
+    --group-add video \
+    vllm/vllm-openai-rocm:latest \
+      --model poolside/Laguna-XS.2 \
+      --trust-remote-code \
+      --max-model-len 262144 \
+      --enable-auto-tool-choice \
+      --tool-call-parser poolside_v1 \
+      --reasoning-parser poolside_v1 \
   ```
 
   ## Controlling reasoning
