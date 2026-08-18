@@ -1,0 +1,94 @@
+name: kv_store_distributed_mooncake
+deploy_type: kv_store_lb
+display_name: "Distributed KV Store (Mooncake)"
+# Short form for the Store Topology sub-row (the KV Offload row shows one
+# merged "Mooncake" pill for both topologies).
+label: "Distributed (embedded)"
+# Position in the Store Topology row — distributed leads (it's also the
+# first-click default; simplest to stand up, no store process).
+order: 1
+description: >
+  Mooncake KV cache in embedded mode — each GPU contributes CPU DRAM
+  (global_segment_size) to the cache pool. A single instance
+  uses it as a CPU offload tier; at 2+ instances a cache_aware
+  vllm-router shares the pool, routing prefix-matched prompts to the
+  same instance. A lightweight mooncake_master coordinates the pool;
+  no separate store process needed.
+
+router:
+  policy: "cache_aware"
+  install: "uv pip install vllm-router"
+  port: 30080
+
+vllm:
+  vllm_args:
+    - "--kv-transfer-config"
+    - '{"kv_connector":"MooncakeStoreConnector","kv_role":"kv_both"}'
+  env:
+    MOONCAKE_CONFIG_PATH: "$MOONCAKE_CONFIG_PATH"
+    PYTHONHASHSEED: 0
+  # Brand-keyed pip dep, resolved against the selected hardware and injected
+  # into the extra-install block while Mooncake is active: CUDA wheel on
+  # NVIDIA, the non-CUDA build on AMD.
+  install:
+    nvidia: "uv pip install 'mooncake-transfer-engine>=0.3.10'"
+    amd: "uv pip install 'mooncake-transfer-engine-non-cuda>=0.3.10'"
+  port: 8000
+
+# Composing with pd_cluster: Mooncake does NOT replace the PD deployment —
+# each role keeps its Nixl prefill<->decode path and gains the shared store by
+# swapping --kv-transfer-config for a MultiConnector (emitted after the role
+# args, so last-wins dedupe replaces the plain NixlConnector config).
+pd:
+  prefill:
+    args:
+      - "--kv-transfer-config"
+      - '{"kv_connector":"MultiConnector","kv_role":"kv_both","kv_connector_extra_config":{"connectors":[{"kv_connector":"NixlConnector","kv_role":"kv_producer","kv_load_failure_policy":"fail"},{"kv_connector":"MooncakeStoreConnector","kv_role":"kv_both","kv_connector_extra_config":{"load_async":true,"lookup_async":true}}]}}'
+  decode:
+    args:
+      - "--kv-transfer-config"
+      - '{"kv_connector":"MultiConnector","kv_role":"kv_both","kv_connector_extra_config":{"connectors":[{"kv_connector":"NixlConnector","kv_role":"kv_consumer","kv_load_failure_policy":"fail"},{"kv_connector":"MooncakeStoreConnector","kv_role":"kv_both","kv_connector_extra_config":{"load_async":true,"lookup_async":true}}]}}'
+
+mooncake_master:
+  command: |-
+    # Reachable by every instance as $MOONCAKE_MASTER_IP:50051.
+    # 30s KV lease; eviction starts at 95% pool usage and frees 10% per pass.
+    mooncake_master \
+      -rpc_port=50051 \
+      -rpc_thread_num=4 \
+      -default_kv_lease_ttl=30000 \
+      -eviction_high_watermark_ratio=0.95 \
+      -eviction_ratio=0.1 \
+      -logtostderr
+  description: "Lightweight metadata coordinator. One instance per cluster."
+
+mooncake_vllm_config:
+  mode: embedded
+  # Rendered as # comment lines above the config heredoc on the vLLM tab.
+  note: |-
+    Same file on every instance node. global_segment_size is per GPU (not per
+    node) — size it so the total across all GPUs fits in the host RAM you can pin.
+    device_name "" auto-selects RDMA NICs by GPU-NIC PCIe/NUMA affinity.
+  template:
+    mode: "embedded"
+    metadata_server: "P2PHANDSHAKE"
+    master_server_address: "$MOONCAKE_MASTER_IP:50051"
+    # Each GPU registers this much DRAM; per-node usage is this value times the
+    # number of GPUs. Size it so that total fits in the node's available RAM.
+    global_segment_size: "100GB"
+    local_buffer_size: "4GB"
+    protocol: "rdma"
+    # RDMA NIC CSV ("mlx5_0,mlx5_1,..."). Fill from the Endpoints panel or
+    # export MOONCAKE_DEVICE_NAME before pasting — the config writes via an
+    # unquoted heredoc, so unset → "" = auto-selection by GPU-NIC PCIe/NUMA
+    # affinity. Pin explicitly only when auto-detect picks wrong ports.
+    device_name: "$MOONCAKE_DEVICE_NAME"
+    # Embedded mode doesn't support offload. Use the centralized mode instead.
+    enable_offload: false
+
+# NB: no parallelism config here — Mooncake composes with the serving
+# strategy; each instance's TP/TEP/DEP layout comes from the Strategy row.
+min_vllm_version: "0.21.0"
+# One embedded instance is already a complete deployment (CPU offload tier);
+# the router only appears once the user scales past 1.
+default_instances: 1

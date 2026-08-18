@@ -11,10 +11,8 @@ hardware_match:
   min_gpus: 2
   multi_node: true
 
-vllm_args:
-  - "-cc.pass_config.fuse_allreduce_rms=False"
-
 parallel_flag: "--tensor-parallel-size"
 
 env:
-  VLLM_USE_NCCL_SYMM_MEM: "0"
+  GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+  NCCL_SOCKET_IFNAME: "$IFACE_NAME"

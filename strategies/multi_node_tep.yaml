@@ -14,8 +14,9 @@ hardware_match:
 
 vllm_args:
   - "--enable-expert-parallel"
-  - "-cc.pass_config.fuse_allreduce_rms=False"
 
 parallel_flag: "--tensor-parallel-size"
 
-env: {}
+env:
+  GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+  NCCL_SOCKET_IFNAME: "$IFACE_NAME"

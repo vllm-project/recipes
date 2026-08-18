@@ -65,6 +65,8 @@ export default async function RootLayout({ children }) {
       title: r.meta.title,
       provider: r.meta.provider,
       description: r.meta.description,
+      date_added: r.meta.date_added,
+      date_updated: r.meta.date_updated,
       tasks: r.meta.tasks,
       hardware: r.meta.hardware || {},
     },
@@ -72,6 +74,9 @@ export default async function RootLayout({ children }) {
       architecture: r.model.architecture,
       parameter_count: r.model.parameter_count,
     },
+    precisions: [...new Set(
+      Object.values(r.variants || {}).map((v) => v?.precision).filter(Boolean)
+    )],
   }));
 
   return (

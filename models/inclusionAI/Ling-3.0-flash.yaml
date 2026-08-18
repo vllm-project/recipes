@@ -1,0 +1,183 @@
+meta:
+  title: "Ling-3.0-flash"
+  slug: "ling-3-0-flash"
+  provider: "inclusionAI"
+  description: "Ling-3.0-flash MoE model with BF16 and serialized block-FP8 checkpoints, 124B total / 5.5B active parameters, and a 3.1B MTP layer"
+  date_updated: 2026-08-14
+  difficulty: advanced
+  tasks:
+    - text
+  performance_headline: "BF16 is validated on 4x NVIDIA H20; serialized FP8 defaults to TP2 on NVIDIA H200, with TP4+EP4 also validated"
+  hardware:
+    h20: verified
+    h200: verified
+
+model:
+  model_id: "inclusionAI/Ling-3.0-flash"
+  min_vllm_version: "0.25.0"
+  nightly_required: true
+  architecture: moe
+  parameter_count: "124B"
+  active_parameters: "5.5B"
+  context_length: 262144
+  base_args:
+    - "--trust-remote-code"
+    - "--dtype"
+    - "bfloat16"
+    - "--gpu-memory-utilization"
+    - "0.9"
+    - "--enable-chunked-prefill"
+    - "--compilation-config"
+    - '{"cudagraph_mode":"FULL_AND_PIECEWISE"}'
+    - "--enable-prefix-caching"
+
+features:
+  tool_calling:
+    description: "Enable Ling 3 automatic tool calling"
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "ling3"
+  reasoning:
+    description: "Split Ling 3 thinking traces into reasoning_content"
+    args:
+      - "--reasoning-parser"
+      - "ling3"
+  spec_decoding:
+    description: "Use the model's native MTP head with three speculative tokens"
+    args:
+      - "--speculative-config"
+      - '{"method":"mtp","num_speculative_tokens":3}'
+
+opt_in_features:
+  - spec_decoding
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 300
+    description: "Provisional BF16 checkpoint; validated with TP=4 on NVIDIA H20"
+  fp8:
+    model_id: "inclusionAI/Ling-3.0-flash-fp8"
+    precision: fp8
+    vram_minimum_gb: 150
+    min_vllm_version: "0.26.0"
+    tp: 2
+    description: "Serialized block-FP8 checkpoint; defaults to TP2 on NVIDIA H200, with TP4+EP4 as a validated alternative"
+
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides: {}
+
+strategy_overrides:
+  single_node_tp:
+    tp: 4
+
+guide: |
+  ## Overview
+
+  `inclusionAI/Ling-3.0-flash` uses the `BailingMoeV3ForCausalLM` architecture
+  with a hybrid MLA/KDA attention stack, 512 routed experts (8 active per token),
+  one shared expert, and a native multi-token prediction head. The 42-layer base
+  model has 124.4B total and 5.5B active parameters. The checkpoint also contains
+  a 3.1B MTP layer, bringing the complete checkpoint to 127.5B parameters. A
+  serialized block-FP8 checkpoint is available as
+  `inclusionAI/Ling-3.0-flash-fp8`.
+
+  ## Prerequisites
+
+  - **vLLM:** a build containing native Bailing V3 support;
+  - **Validated hardware:** NVIDIA H20, H20-3e, and H200
+  - **Precision:** BF16 or serialized block FP8 weights with BF16 compute
+  - **Context length:** 262,144 tokens
+
+  ## Launching the Server
+
+  ```bash
+  NCCL_DEBUG=WARN vllm serve inclusionAI/Ling-3.0-flash \
+    --trust-remote-code \
+    --dtype bfloat16 \
+    --tensor-parallel-size 4 \
+    --gpu-memory-utilization 0.9 \
+    --enable-chunked-prefill \
+    --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE"}' \
+    --enable-prefix-caching \
+    --enable-auto-tool-choice \
+    --tool-call-parser ling3 \
+    --reasoning-parser ling3 \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
+  ```
+
+  For the serialized FP8 variant on 2x H200, use:
+
+  ```bash
+  vllm serve inclusionAI/Ling-3.0-flash-fp8 \
+    --trust-remote-code \
+    --dtype bfloat16 \
+    --tensor-parallel-size 2 \
+    --gpu-memory-utilization 0.9 \
+    --enable-chunked-prefill \
+    --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE"}' \
+    --enable-prefix-caching \
+    --enable-auto-tool-choice \
+    --tool-call-parser ling3 \
+    --reasoning-parser ling3
+  ```
+
+  For the validated TP4+EP4 alternative on 4x H200, use:
+
+  ```bash
+  vllm serve inclusionAI/Ling-3.0-flash-fp8 \
+    --trust-remote-code \
+    --dtype bfloat16 \
+    --tensor-parallel-size 4 \
+    --enable-expert-parallel \
+    --gpu-memory-utilization 0.9 \
+    --enable-chunked-prefill \
+    --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE"}' \
+    --enable-prefix-caching \
+    --enable-auto-tool-choice \
+    --tool-call-parser ling3 \
+    --reasoning-parser ling3
+  ```
+
+  The native MTP head is available with either FP8 topology by adding:
+
+  ```bash
+  --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
+  ```
+
+  ## Validation
+
+  Both the default FP8 TP2 path and the TP4+EP4 path were validated on NVIDIA
+  H200. TP2 remains the recommended default because it uses fewer GPUs; TP4+EP4
+  is an alternative for deployments that prefer expert parallelism.
+
+  ## Thinking Mode
+
+  Thinking is selected per request through the chat template rather than by a
+  server flag:
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+  response = client.chat.completions.create(
+      model="inclusionAI/Ling-3.0-flash",
+      messages=[{"role": "user", "content": "Solve the problem step by step."}],
+      temperature=0.0,
+      max_tokens=200000,
+      extra_body={"chat_template_kwargs": {"enable_thinking": True}},
+  )
+  print(response.choices[0].message.reasoning_content)
+  print(response.choices[0].message.content)
+  ```
+
+  When serving the FP8 variant, set `model="inclusionAI/Ling-3.0-flash-fp8"`
+  in the client request.
+
+  ## References
+
+  - [Ling-3.0-flash on Hugging Face](https://huggingface.co/inclusionAI/Ling-3.0-flash)
+  - [Ling-3.0-flash-fp8 on Hugging Face](https://huggingface.co/inclusionAI/Ling-3.0-flash-fp8)

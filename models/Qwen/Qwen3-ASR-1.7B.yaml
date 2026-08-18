@@ -3,6 +3,7 @@ meta:
   slug: "qwen3-asr-1.7b"
   provider: "Qwen"
   description: "Speech-to-text model supporting 11 languages, multiple accents, and singing voice with customizable text-context prompting."
+  date_added: 2026-01-29
   date_updated: 2026-04-17
   difficulty: beginner
   tasks:
@@ -37,6 +38,10 @@ variants:
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides:
   amd:

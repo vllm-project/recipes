@@ -173,12 +173,15 @@ vllm serve MiniMaxAI/MiniMax-M2.7 \
 
 ### AMD GPU (ROCm)
 
-You can use 2x or 4x MI300X/MI325X/MI350X/MI355X GPUs to launch this model with [AITER](https://github.com/ROCm/aiter) acceleration enabled:
+You can use 2x or 4x MI300X/MI325X/MI350X/MI355X GPUs to launch this model with [AITER](https://github.com/ROCm/aiter) acceleration enabled.
+
+> **Note**: On vLLM v0.21.0+, dense full-attention models on ROCm landed on `ROCM_ATTN` default after [vLLM PR #36702](https://github.com/vllm-project/vllm/pull/36702). The commands below restore the aiter flash-attn by passing `--attention-backend ROCM_AITER_FA` and enable the AITER asm/hip paged-attention auto-dispatch with `VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=1`.
 
 - TP2 (2x MI300X/MI325X/MI350X/MI355X)
 ```bash
-VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
+VLLM_ROCM_USE_AITER=1 VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
   --tensor-parallel-size 2 \
+  --attention-backend ROCM_AITER_FA \
   --tool-call-parser minimax_m2 \
   --reasoning-parser minimax_m2 \
   --enable-auto-tool-choice \
@@ -187,8 +190,9 @@ VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
 
 - TP4 (4x MI300X/MI325X/MI350X/MI355X)
 ```bash
-VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
+VLLM_ROCM_USE_AITER=1 VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=1 vllm serve MiniMaxAI/MiniMax-M2.7 \
   --tensor-parallel-size 4 \
+  --attention-backend ROCM_AITER_FA \
   --tool-call-parser minimax_m2 \
   --reasoning-parser minimax_m2 \
   --enable-auto-tool-choice \

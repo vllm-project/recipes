@@ -3,7 +3,8 @@ meta:
   slug: "stable-audio-open"
   provider: "Stability AI"
   description: "Text-to-audio generation model (1.2B params) producing up to ~47 s stereo audio at 44.1 kHz, served via vLLM-Omni"
-  date_updated: 2026-04-17
+  date_added: 2026-01-26
+  date_updated: 2026-08-15
   difficulty: beginner
   tasks:
     - omni
@@ -12,17 +13,25 @@ meta:
 
 model:
   model_id: "stabilityai/stable-audio-open-1.0"
-  min_vllm_version: "0.14.1"
+  min_vllm_version: "0.22.0"
   architecture: dense
   parameter_count: "1.2B"
   active_parameters: "1.2B"
   context_length: 0
-  base_args: []
+  base_args:
+    - "--trust-remote-code"
+    - "--enforce-eager"
+    - "--gpu-memory-utilization"
+    - "0.9"
   base_env: {}
 
+omni:
+  tasks:
+    - t2a
+
 dependencies:
-  - note: "Pin vllm==0.14.1 for Stable Audio Open"
-    command: "uv pip install vllm==0.14.1"
+  - note: "vLLM 0.22.0 or newer"
+    command: "uv pip install 'vllm>=0.22.0'"
   - note: "vllm-omni provides the audio generation backend"
     command: "uv pip install git+https://github.com/vllm-project/vllm-omni.git"
   - note: "soundfile (recommended) or scipy for WAV output"
@@ -57,7 +66,7 @@ guide: |
 
   ## Prerequisites
 
-  - vLLM-Omni on top of vLLM 0.14.1
+  - vLLM-Omni on top of vLLM 0.22.0 or newer
   - `soundfile` or `scipy` for saving audio
 
   ## Installation
@@ -65,7 +74,6 @@ guide: |
   ```bash
   uv venv
   source .venv/bin/activate
-  uv pip install vllm==0.14.1
   uv pip install git+https://github.com/vllm-project/vllm-omni.git
 
   # Audio saving

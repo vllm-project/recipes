@@ -1,0 +1,32 @@
+# Inference platforms — third-party places to self-host vLLM.
+#
+# Phase 1: 2 curated platforms. Each model opts in via `meta.platforms: [id, ...]`
+# in its YAML; recipes that don't opt in don't render a Deploy button.
+#
+# Schema:
+#   id      — slug referenced by model YAML
+#   name    — display name in the dialog
+#   url     — "Open guide" external link
+#   blurb   — one-line description shown under the name
+#   install — (optional) short shell/Dockerfile snippet shown inline. Omit
+#             for platforms that don't need any local setup.
+
+platforms:
+  - id: modal
+    name: Modal
+    url: https://modal.com/docs/examples/vllm_inference
+    blurb: Serverless Python — wrap vLLM in @app.cls and ship with `modal deploy`
+    install: |
+      pip install modal
+      modal setup
+
+  - id: sagemaker
+    name: AWS SageMaker
+    url: https://docs.vllm.ai/en/latest/examples/deployment/sagemaker-entrypoint/
+    blurb: Managed container — BYO Docker image with the SageMaker entrypoint
+    install: |
+      # Dockerfile
+      FROM vllm/vllm-openai:latest
+      COPY sagemaker-entrypoint.sh /app/
+      RUN chmod +x /app/sagemaker-entrypoint.sh
+      ENTRYPOINT ["/app/sagemaker-entrypoint.sh"]
