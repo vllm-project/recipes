@@ -43,6 +43,19 @@ variants:
     precision: bf16
     vram_minimum_gb: 20
     description: "Full precision BF16"
+  w8a8_int8:
+    model_id: "RedHatAI/Meta-Llama-3.1-8B-Instruct-quantized.w8a8"
+    precision: int8
+    vram_minimum_gb: 10
+    description: "Red Hat AI INT8 W8A8 compressed-tensors checkpoint"
+  awq_int4:
+    model_id: "hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4"
+    precision: int4
+    vram_minimum_gb: 5
+    description: "AWQ INT4 checkpoint"
+    extra_args:
+      - "--quantization"
+      - "awq"
   nvfp4:
     model_id: "nvidia/Llama-3.1-8B-Instruct-NVFP4"
     precision: nvfp4

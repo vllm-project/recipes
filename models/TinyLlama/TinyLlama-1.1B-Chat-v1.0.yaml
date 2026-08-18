@@ -1,0 +1,106 @@
+meta:
+  title: "TinyLlama-1.1B-Chat-v1.0"
+  slug: "tinyllama-1.1b-chat-v1.0"
+  provider: "TinyLlama"
+  description: "TinyLlama 1.1B Chat with CPU-validated TheBloke AWQ and GPTQ INT4 variants."
+  date_added: 2026-08-18
+  date_updated: 2026-08-18
+  difficulty: beginner
+  tasks:
+    - text
+  performance_headline: "AWQ and GPTQ variants validated on Intel Xeon 6"
+  hardware:
+    xeon6: verified
+
+model:
+  model_id: "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+  min_vllm_version: "0.6.0"
+  architecture: dense
+  parameter_count: "1.1B"
+  active_parameters: "1.1B"
+  context_length: 2048
+  base_args: []
+  base_env: {}
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 3
+    description: "Full precision BF16 parent checkpoint"
+  awq_int4:
+    model_id: "TheBloke/TinyLlama-1.1B-Chat-v1.0-AWQ"
+    precision: int4
+    vram_minimum_gb: 2
+    description: "AWQ INT4 checkpoint"
+    extra_args:
+      - "--quantization"
+      - "awq"
+  gptq_int4:
+    model_id: "TheBloke/TinyLlama-1.1B-Chat-v1.0-GPTQ"
+    precision: int4
+    vram_minimum_gb: 2
+    description: "GPTQ INT4 checkpoint"
+    extra_args:
+      - "--quantization"
+      - "gptq"
+
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+
+hardware_overrides:
+  cpu:
+    extra_args:
+      - "--max-num-batched-tokens"
+      - "16384"
+      - "--gpu-memory-utilization"
+      - "0.8"
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  This recipe uses the canonical TinyLlama chat model as the parent and exposes
+  the CPU-validated TheBloke AWQ and GPTQ checkpoints as variants.
+
+  Both quantized checkpoints have PASS rows in the Xeon 6 serving validation
+  workbook.
+
+  ## Prerequisites
+
+  - Hardware: 1x Xeon6/Xeon5 NUMA node
+  - vLLM >= 0.6.0
+
+  ### pip (Intel Xeon 6 CPUs)
+
+  For Intel and AMD x86 CPUs, follow the
+  [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels)
+  installation instructions.
+
+  ### Docker (Intel Xeon 6 CPUs)
+
+  ```bash
+  docker pull vllm/vllm-openai-cpu:latest-x86_64
+  ```
+
+  ## Intel Xeon 6
+
+  Select either `awq` or `gptq`. Both validated variants retain:
+
+  ```text
+  --max-num-batched-tokens 16384
+  --gpu-memory-utilization 0.8
+  ```
+
+  TP/DP and host-specific CPU binding remain deployment choices.
+
+  ## References
+
+  - [TinyLlama parent model](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0)
+  - [TheBloke AWQ checkpoint](https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-AWQ)
+  - [TheBloke GPTQ checkpoint](https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GPTQ)

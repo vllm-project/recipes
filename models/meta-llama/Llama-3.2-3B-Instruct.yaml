@@ -34,6 +34,19 @@ variants:
     precision: bf16
     vram_minimum_gb: 8
     description: "Full precision BF16"
+  w8a8_int8:
+    model_id: "RedHatAI/Llama-3.2-3B-Instruct-quantized.w8a8"
+    precision: int8
+    vram_minimum_gb: 4
+    description: "Red Hat AI INT8 W8A8 compressed-tensors checkpoint"
+  awq_int4:
+    model_id: "AMead10/Llama-3.2-3B-Instruct-AWQ"
+    precision: int4
+    vram_minimum_gb: 3
+    description: "AWQ INT4 checkpoint"
+    extra_args:
+      - "--quantization"
+      - "awq"
 
 compatible_strategies:
   - single_node_tp
@@ -58,7 +71,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x Xeon 6 NUMA node
+  - Hardware: 1x Xeon6/Xeon5 NUMA node
   - vLLM >= 0.6.2
 
   ### pip (Intel Xeon 6 CPUs)
