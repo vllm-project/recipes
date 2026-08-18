@@ -3,6 +3,7 @@ meta:
   slug: "glm-ocr"
   provider: "GLM (Z-AI)"
   description: "GLM-OCR image-to-text model with built-in MTP speculative decoding for high-throughput OCR serving"
+  date_added: 2026-01-26
   date_updated: 2026-04-17
   difficulty: beginner
   tasks:
@@ -57,6 +58,10 @@ variants:
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides: {}
 

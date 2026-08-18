@@ -2,7 +2,8 @@ meta:
   title: "Laguna XS.2"
   slug: "laguna-xs.2"
   provider: "Poolside"
-  description: "Poolside's 33B total / 3B activated MoE coding model with mixed sliding-window + global attention, native interleaved reasoning, and 128K context — designed for agentic coding."
+  description: "Poolside's 33B total / 3B activated MoE coding model with mixed sliding-window + global attention, native interleaved reasoning, and 256K context — designed for agentic coding."
+  date_added: 2026-04-28
   date_updated: 2026-04-29
   difficulty: intermediate
   tasks:
@@ -14,12 +15,11 @@ meta:
 
 model:
   model_id: "poolside/Laguna-XS.2"
-  min_vllm_version: "nightly"
-  nightly_required: true
+  min_vllm_version: "0.21.0"
   architecture: moe
   parameter_count: "33B"
   active_parameters: "3B"
-  context_length: 131072
+  context_length: 262144
   base_args:
     - "--trust-remote-code"
   base_env: {}
@@ -50,6 +50,26 @@ variants:
     precision: bf16
     vram_minimum_gb: 80
     description: "BF16 weights — fits on a single 80GB+ GPU (H100/H200/B200)"
+  fp8:
+    model_id: "poolside/Laguna-XS.2-FP8"
+    precision: fp8
+    vram_minimum_gb: 40
+    min_vllm_version: "0.22.0"
+    description: "Block-FP8 weights + FP8 KV cache — halves VRAM, fits on a single 40GB+ GPU"
+    extra_env:
+      VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER: "0"
+  nvfp4:
+    model_id: "poolside/Laguna-XS.2-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 26
+    min_vllm_version: "0.22.0"
+    description: "NVFP4 weights + FP8 KV cache (Blackwell only) — the most compact variant at ~26GB"
+  int4:
+    model_id: "poolside/Laguna-XS.2-INT4"
+    precision: int4
+    vram_minimum_gb: 29
+    min_vllm_version: "0.22.0"
+    description: "INT4 (W4A16) weights + FP8 KV cache — fits on a single 32GB+ GPU"
 
 compatible_strategies:
   - single_node_tp
@@ -65,7 +85,7 @@ strategy_overrides:
 guide: |
   ## Overview
 
-  [Laguna XS.2](https://huggingface.co/poolside/Laguna-XS.2) is Poolside's 33B-total / 3B-activated Mixture-of-Experts model purpose-built for agentic coding and long-horizon work. It combines mixed sliding-window + global attention (3:1 across 40 layers) with sigmoid per-head gating and FP8 KV cache, so it stays compact enough to run locally while supporting a 131K-token context.
+  [Laguna XS.2](https://huggingface.co/poolside/Laguna-XS.2) is Poolside's 33B-total / 3B-activated Mixture-of-Experts model purpose-built for agentic coding and long-horizon work. It combines mixed sliding-window + global attention (3:1 across 40 layers) with sigmoid per-head gating and FP8 KV cache, so it stays compact enough to run locally while supporting a 256K-token context.
 
   ### Key features
   - **Mixed SWA + global attention**: 30 sliding-window layers (window=512) interleaved with 10 global-attention layers, each with per-layer rotary scaling.
@@ -93,13 +113,28 @@ guide: |
     --index-strategy unsafe-best-match
   ```
 
+  ## Quantized variants
+
+  Pre-quantized checkpoints are published alongside the BF16 weights — select one with the **Variant** control above:
+
+  | Variant | Checkpoint | Weights | ~VRAM | Notes |
+  |---------|-----------|---------|-------|-------|
+  | BF16 | [Laguna-XS.2](https://huggingface.co/poolside/Laguna-XS.2) | BF16 | 80 GB | Default |
+  | FP8 | [Laguna-XS.2-FP8](https://huggingface.co/poolside/Laguna-XS.2-FP8) | Block-FP8 | 40 GB | Set `VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER=0` |
+  | NVFP4 | [Laguna-XS.2-NVFP4](https://huggingface.co/poolside/Laguna-XS.2-NVFP4) | NVFP4 | 26 GB | Blackwell only |
+  | INT4 | [Laguna-XS.2-INT4](https://huggingface.co/poolside/Laguna-XS.2-INT4) | INT4 (W4A16) | 29 GB | Hopper or Blackwell |
+
+  Quantization is detected automatically from each checkpoint's `quantization_config`, so the launch command is identical — just swap the model ID (select the variant above). All three quantized checkpoints ship an **FP8-quantized KV cache**.
+
+  > **vLLM ≥ 0.22.0 required for the quantized variants.** The FP8 KV cache needs the per-layer attention-head fix in [vllm#42650](https://github.com/vllm-project/vllm/pull/42650); earlier versions produce scrambled output on non-Hopper GPUs. On older vLLM you can disable the FP8 KV cache with `--kv-cache-dtype-skip-layers $(seq 0 39)`.
+
   ## Launch command
 
   ### Single GPU (H100/H200/B200, BF16)
   ```bash
   vllm serve poolside/Laguna-XS.2 \
     --trust-remote-code \
-    --max-model-len 131072 \
+    --max-model-len 262144 \
     --enable-auto-tool-choice \
     --tool-call-parser poolside_v1 \
     --reasoning-parser poolside_v1
@@ -113,7 +148,7 @@ guide: |
     vllm/vllm-openai:laguna \
       --model poolside/Laguna-XS.2 \
       --trust-remote-code \
-      --max-model-len 131072 \
+      --max-model-len 262144 \
       --enable-auto-tool-choice \
       --tool-call-parser poolside_v1 \
       --reasoning-parser poolside_v1 \

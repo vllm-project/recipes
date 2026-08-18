@@ -1,0 +1,28 @@
+name: multi_node_tp_dp
+deploy_type: multi_node
+display_name: "Multi-Node TP + Data Parallel"
+orientation: balanced
+description: >
+  Tensor parallel within each node, data parallel across nodes — one
+  full model replica per node. TP stays inside the high-bandwidth
+  intra-node NVLink domain; the inter-node link carries only DP
+  coordination, no tensor traffic. E.g. 2× H200 nodes → TP8·DP2,
+  4× GB200/GB300 NVL4 trays → TP4·DP4.
+
+hardware_match:
+  min_gpus: 2
+  multi_node: true
+
+# Read by command-synthesis: "tp_dp" → emit
+#   --tensor-parallel-size <gpu_count>  --data-parallel-size <node_count>
+#   --data-parallel-size-local 1
+# with one DP rank (replica) per node; worker node N is DP rank N.
+parallelism: tp_dp
+
+vllm_args: []
+
+parallel_flag: "--tensor-parallel-size"
+
+env:
+  GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+  NCCL_SOCKET_IFNAME: "$IFACE_NAME"

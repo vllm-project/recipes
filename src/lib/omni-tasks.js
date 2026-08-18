@@ -194,21 +194,23 @@ export const OMNI_TASKS = {
  *
  * Accepts either:
  *   omni: { tasks: ["t2i"] }                              — bare ids
- *   omni: { tasks: [{ id: "i2i", model_id, vram_minimum_gb, description,
+ *   omni: { tasks: [{ id: "i2i", key?, model_id, vram_minimum_gb, description,
  *                     extra_args, curl }, ...] }           — per-task overrides
  *
  * Per-task fields:
+ *   - key               unique selector/URL key when several presets share one task id
  *   - model_id          swap the served checkpoint (Wan2.2 picks a different
  *                       HF repo for T2V/I2V/TI2V)
  *   - vram_minimum_gb   drives the hardware-fit hint when set (otherwise
  *                       falls back to the recipe's default variant VRAM)
  *   - description       short blurb shown next to the task pill
+ *   - axes              optional selector values declared by omni.task_axes
  *   - extra_args        appended to the rendered `vllm serve --omni` command
  *   - curl              static curl override (otherwise the built-in renderer
  *                       interpolates host/port/modelId into a sample request)
  *
- * Returns: [{ id, label, endpoint, method, modelId?, vramMinimumGb?,
- *             description?, extraArgs?, example }]
+ * Returns: [{ id, key, label, endpoint, method, modelId?, vramMinimumGb?,
+ *             description?, axes?, extraArgs?, hardwareOverrides?, example }]
  */
 export function resolveOmniTasks(recipe) {
   const decl = recipe?.omni?.tasks;
@@ -223,17 +225,38 @@ export function resolveOmniTasks(recipe) {
     const customCurl = override.curl;
     out.push({
       id,
+      key: override.key || id,
       label: override.label || base.label,
       endpoint: override.endpoint || base.endpoint,
       method: base.method,
       modelId: override.model_id,
       vramMinimumGb: override.vram_minimum_gb,
       description: override.description,
+      axes: override.axes || {},
       extraArgs: override.extra_args || [],
+      hardwareOverrides: override.hardware_overrides || {},
       example: customCurl ? () => customCurl : base.example,
     });
   }
   return out;
+}
+
+/** Apply an exact hardware override to one resolved omni task. */
+export function resolveOmniTaskForHardware(task, hwProfileId) {
+  if (!task || !hwProfileId) return task;
+  const override = task.hardwareOverrides?.[hwProfileId];
+  if (!override) return task;
+  const customCurl = override.curl;
+  return {
+    ...task,
+    label: override.label || task.label,
+    endpoint: override.endpoint || task.endpoint,
+    modelId: override.model_id || task.modelId,
+    vramMinimumGb: override.vram_minimum_gb ?? task.vramMinimumGb,
+    description: override.description || task.description,
+    extraArgs: [...(task.extraArgs || []), ...(override.extra_args || [])],
+    example: customCurl ? () => customCurl : task.example,
+  };
 }
 
 /**

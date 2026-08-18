@@ -3,6 +3,7 @@ meta:
   slug: "qwen-image"
   provider: "Qwen"
   description: "Text-to-image diffusion model (20B parameters) from the Qwen-Image family, served via vLLM-Omni."
+  date_added: 2026-04-03
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:

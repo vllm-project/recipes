@@ -3,6 +3,7 @@ meta:
   slug: "minimax-m2.5"
   provider: "MiniMax"
   description: "MiniMax M2.5 MoE language model (230B total / 10B active) for coding, agent toolchains, and long-context reasoning — native FP8 checkpoint"
+  date_added: 2026-02-13
   date_updated: 2026-05-18
   difficulty: intermediate
   tasks:
@@ -68,6 +69,10 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
   - pd_cluster
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides:
   nvidia:
@@ -187,7 +192,7 @@ guide: |
   For H200 FP8, choose the attention backend by sequence length for best performance:
   shorter sequences (e.g. 1024) should keep the command above with `--attention-backend FLASHINFER`
   and `--enable-flashinfer-autotune`, while longer input sequences (e.g. 8192)
-  can prefer FlashAttention by replacing those flags with `--attention-backend FLASH_ATTN`.
+  should remove those flags to use the auto-selected FlashAttention backend.
 
   Pure TP8 is not supported. For >4 GPUs use DP+EP or TP+EP.
 

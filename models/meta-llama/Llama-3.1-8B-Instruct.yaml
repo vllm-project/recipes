@@ -3,6 +3,7 @@ meta:
   slug: "llama-3.1-8b-instruct"
   provider: "Meta"
   description: "Meta's Llama 3.1 8B dense instruction-tuned language model with 128K context"
+  date_added: 2025-10-15
   date_updated: 2026-04-17
   difficulty: beginner
   tasks:
@@ -16,6 +17,9 @@ meta:
     mi325x: verified
     mi355x: verified
     trillium: verified
+    xeon6: verified
+    arc_pro_b60: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "meta-llama/Llama-3.1-8B-Instruct"
@@ -63,6 +67,10 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
 
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
+
 hardware_overrides:
   amd:
     extra_args: []
@@ -81,10 +89,10 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x GPU with >=16 GB VRAM (e.g. A100, L40S, H100, H200, MI300X/MI325X/MI355X)
+  - Hardware: 1x GPU with >=16 GB VRAM (e.g. A100, L40S, H100, H200, MI300X/MI325X/MI355X), Intel XPU B60/B70, or 2x Xeon6/Xeon5 NUMA node
   - vLLM >= 0.6.0
-  - CUDA Driver compatible with your vLLM version
-  - Docker with NVIDIA Container Toolkit (recommended)
+  - CUDA Driver compatible with your vLLM version for 1x GPU
+  - Docker with NVIDIA Container Toolkit (recommended) for 1x GPU
 
   ### Install vLLM
 
@@ -116,6 +124,17 @@ guide: |
 
   The first AITER launch may take several minutes while ROCm kernels are compiled and cached.
 
+  ### pip (Intel Xeon 6 CPUs)
+  For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.
+
+  ### Docker (Intel Xeon 6 CPUs)
+  ```bash
+  docker pull vllm/vllm-openai-cpu:latest-x86_64 # For Intel Xeon 6
+  ```
+  ### Docker (Intel XPU B60 / B70)
+  ```bash
+  docker pull vllm/vllm-openai-xpu:latest
+  ```
   ### Docker (Cloud TPU — Trillium)
   TPU uses the separate `vllm/vllm-tpu` image (no pip wheel). Pull the tag specified by the upstream [Trillium recipe](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.x), then run:
   ```bash
@@ -129,6 +148,33 @@ guide: |
       --host 0.0.0.0 --port 8000
   ```
   The 8B fits on a single chip (`v6e-1`, TP=1) — unlike the 70B, which needs a v6e-8 slice.
+
+  ### Intel Xeon 6 Deployment via Docker
+
+  Launch the x86 CPU vLLM Docker container for `meta-llama/Llama-3.1-8B-Instruct`:
+
+  ```bash
+  docker run -itd --name llama3-8b-cpu \
+    --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-cpu:latest-x86_64 \
+      --model meta-llama/Llama-3.1-8B-Instruct \
+      --host 0.0.0.0 \
+      --port 8000
+  ```
+
+  ### Intel XPU (B60, B70)
+
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-xpu:latest \
+    meta-llama/Llama-3.1-8B-Instruct \
+    --max-model-len 8192
+  ```
 
   ## Client Usage
 
