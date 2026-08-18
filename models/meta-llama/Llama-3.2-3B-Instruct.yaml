@@ -1,0 +1,119 @@
+meta:
+  title: "Llama-3.2-3B-Instruct"
+  slug: "llama-3.2-3b-instruct"
+  provider: "Meta"
+  description: "Meta Llama 3.2 3.21B dense instruction-tuned language model with 128K context, validated for BF16 serving on Intel Xeon 6."
+  date_added: 2026-08-18
+  date_updated: 2026-08-18
+  difficulty: beginner
+  tasks:
+    - text
+  performance_headline: "Validated on Intel Xeon 6 (GNR) with BF16 serving"
+  related_recipes:
+    - "meta-llama/Llama-3.2-1B"
+    - "meta-llama/Llama-3.1-8B-Instruct"
+  hardware:
+    xeon6: verified
+
+model:
+  model_id: "meta-llama/Llama-3.2-3B-Instruct"
+  min_vllm_version: "0.6.2"
+  architecture: dense
+  parameter_count: "3.21B"
+  active_parameters: "3.21B"
+  context_length: 131072
+  base_args: []
+  base_env: {}
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 8
+    description: "Full precision BF16"
+
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+
+hardware_overrides:
+  cpu:
+    extra_args:
+      - "--max-num-batched-tokens"
+      - "16384"
+      - "--gpu-memory-utilization"
+      - "0.8"
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  Llama 3.2 3B Instruct is Meta's compact instruction-tuned dense language
+  model with 128K context. This recipe includes an Intel Xeon 6 CPU
+  configuration validated with BF16 serving.
+
+  ## Prerequisites
+
+  - Hardware: 1x Xeon 6 NUMA node
+  - vLLM >= 0.6.2
+
+  ### pip (Intel Xeon 6 CPUs)
+
+  For Intel and AMD x86 CPUs, follow the
+  [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels)
+  installation instructions.
+
+  ### Docker (Intel Xeon 6 CPUs)
+
+  ```bash
+  docker pull vllm/vllm-openai-cpu:latest-x86_64
+  ```
+
+  ## Intel Xeon 6
+
+  Choose the tensor parallel size based on the system topology and deployment
+  requirements. Add `--tensor-parallel-size <N>` when needed; the recipe does
+  not prescribe a Xeon 6 TP value or hard-code NUMA node IDs.
+
+  ```bash
+  vllm serve meta-llama/Llama-3.2-3B-Instruct \
+    --max-num-batched-tokens 16384 \
+    --gpu-memory-utilization 0.8
+  ```
+
+  Docker:
+
+  ```bash
+  docker run -itd --name llama32-3b-instruct-cpu \
+    --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-cpu:latest-x86_64 \
+      --model meta-llama/Llama-3.2-3B-Instruct \
+      --max-num-batched-tokens 16384 \
+      --gpu-memory-utilization 0.8 \
+      --host 0.0.0.0 \
+      --port 8000
+  ```
+
+  ## Client Usage
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+  response = client.chat.completions.create(
+      model="meta-llama/Llama-3.2-3B-Instruct",
+      messages=[{"role": "user", "content": "Explain tensor parallelism briefly."}],
+  )
+  print(response.choices[0].message.content)
+  ```
+
+  ## References
+
+  - [Model card](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct)
+  - [vLLM CPU installation](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/)

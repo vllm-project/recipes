@@ -4,7 +4,7 @@ meta:
   provider: "Meta"
   description: "Meta's Llama 3.1 8B dense instruction-tuned language model with 128K context"
   date_added: 2025-10-15
-  date_updated: 2026-04-17
+  date_updated: 2026-08-18
   difficulty: beginner
   tasks:
     - text
@@ -69,6 +69,12 @@ kv_offload_support:
   offloading_fs: verified
 
 hardware_overrides:
+  cpu:
+    extra_args:
+      - "--max-num-batched-tokens"
+      - "16384"
+      - "--gpu-memory-utilization"
+      - "0.8"
   amd:
     extra_args: []
     extra_env:
@@ -135,9 +141,16 @@ guide: |
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     vllm/vllm-openai-cpu:latest-x86_64 \
       --model meta-llama/Llama-3.1-8B-Instruct \
+      --max-num-batched-tokens 16384 \
+      --gpu-memory-utilization 0.8 \
       --host 0.0.0.0 \
       --port 8000
   ```
+
+  The Xeon 6 1024/1024 serving validation row passed. The recipe retains
+  `--max-num-batched-tokens 16384` and `--gpu-memory-utilization 0.8` as
+  portable CPU settings. The validation TP=1, DP=6/router-DP layout and
+  host-specific CPU placement are intentionally not prescribed.
 
   ### Intel XPU (B60, B70)
 

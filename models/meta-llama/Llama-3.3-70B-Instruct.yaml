@@ -4,7 +4,7 @@ meta:
   provider: "Meta"
   description: "Llama 3.3 70B dense model with NVIDIA FP8/FP4 quantized variants for Hopper and Blackwell GPUs"
   date_added: 2025-08-06
-  date_updated: 2026-04-16
+  date_updated: 2026-08-18
   difficulty: beginner
   tasks:
     - text
@@ -99,6 +99,11 @@ guide: |
   and Blackwell (B200/GB200) GPUs. FP4 is Blackwell-only and provides the best
   VRAM efficiency.
 
+  Intel Xeon 6 CPU model support is verified in the CPU release validation
+  table. The separate 1024/1024 serving tuning row is `SLA_NOT_MET`, so this
+  recipe does not promote that benchmark's common tuning arguments as
+  recommended CPU defaults.
+
   TPU support is provided through [vLLM TPU](https://github.com/vllm-project/tpu-inference) with a recipe for [Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Llama3.x).
 
   ## Prerequisites
@@ -145,6 +150,11 @@ guide: |
       --host 0.0.0.0 \
       --port 8000
   ```
+
+  The serving reproduction row used TP=4 / DP=1 and the shared benchmark
+  argument set, but did not meet the serving SLA. TP/DP, benchmark-only
+  prefix-cache controls, sequence limits, timeouts, and CPU binding therefore
+  remain user/deployment choices rather than recipe defaults.
 
   ## Client Usage
 
