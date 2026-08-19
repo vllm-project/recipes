@@ -3,6 +3,7 @@ meta:
   slug: "ernie-4.5-vl"
   provider: "Ernie (Baidu)"
   description: "Baidu ERNIE 4.5 VL MoE vision-language models (28B-A3B, 424B-A47B) with heterogeneous text/vision experts"
+  date_added: 2025-09-03
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
@@ -74,6 +75,10 @@ compatible_strategies:
   - multi_node_tp
   - multi_node_tep
   - multi_node_dep
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides: {}
 strategy_overrides: {}

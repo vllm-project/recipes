@@ -39,7 +39,7 @@ vllm serve stepfun-ai/Step-3.7-Flash-FP8 \
   --reasoning-parser step3p5 \
   --enable-auto-tool-choice \
   --tool-call-parser step3p5 \
-  --speculative_config '{"method": "mtp", "num_speculative_tokens": 3}' \
+  --speculative-config '{"method": "mtp", "num_speculative_tokens": 3}' \
   --trust-remote-code
 ```
 
@@ -54,7 +54,7 @@ vllm serve stepfun-ai/Step-3.7-Flash \
   --reasoning-parser step3p5 \
   --enable-auto-tool-choice \
   --tool-call-parser step3p5 \
-  --speculative_config '{"method": "mtp", "num_speculative_tokens": 3}' \
+  --speculative-config '{"method": "mtp", "num_speculative_tokens": 3}' \
   --trust-remote-code
 ```
 
@@ -74,6 +74,6 @@ vllm serve stepfun-ai/Step-3.7-Flash-NVFP4  \
   --reasoning-parser step3p5 \
   --enable-auto-tool-choice \
   --tool-call-parser step3p5 \
-  --speculative_config '{"method": "mtp", "num_speculative_tokens": 3}' \
+  --speculative-config '{"method": "mtp", "num_speculative_tokens": 3}' \
   --async-scheduling
 ```

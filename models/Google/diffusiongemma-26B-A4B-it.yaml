@@ -3,6 +3,7 @@ meta:
   slug: "diffusiongemma-26b-a4b-it"
   provider: "Google"
   description: "Google's DiffusionGemma — a block-diffusion language model built on Gemma 4's MoE backbone (26B total / 4B active). Generates tokens via iterative denoising over a fixed-length canvas rather than left-to-right autoregressive decoding, enabling higher throughput with parallel block generation."
+  date_added: 2026-06-11
   date_updated: 2026-06-10
   difficulty: advanced
   tasks:
@@ -15,15 +16,13 @@ meta:
   hardware:
     h100: verified
     h200: verified
+    dgx_spark_gb10: verified
+    xeon6: verified
 
 model:
   model_id: "google/diffusiongemma-26B-A4B-it"
   min_vllm_version: "0.24.0"
-  nightly_required: true
   docker_image: "vllm/vllm-openai:gemma"
-  install:
-    docker:
-    pip:
   architecture: moe
   parameter_count: "26B"
   active_parameters: "4B"
@@ -67,11 +66,40 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 24
     description: "NVFP4 (4-bit) quantized weights"
+  nvidia_nvfp4:
+    model_id: "nvidia/diffusiongemma-26B-A4B-it-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 24
+    description: "NVIDIA NVFP4 (4-bit) quantized weights"
+    hardware_overrides:
+      dgx_spark_gb10:
+        extra_args:
+        - "--gpu-memory-utilization"
+        - "0.8"
+        - "--max-num-seqs"
+        - "8"
+        - "--enable-auto-tool-choice"
+        - "--tool-call-parser"
+        - "gemma4"
+        - "--load-format"
+        - "fastsafetensors"
+        - "--attention-backend"
+        - "TRITON_ATTN"
+        - "--enable-prefix-caching"
+        - "--diffusion-config"
+        - '{"canvas_length":256}'
+        - "--override-generation-config"
+        - '{"max_new_tokens": null}'
+        - "--reasoning-parser"
+        - "gemma4"
+        - "--default-chat-template-kwargs"
+        - '{"enable_thinking": true}'
 
 compatible_strategies:
   - single_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  cpu: {}
 
 strategy_overrides:
   single_node_tp:
@@ -126,6 +154,25 @@ guide: |
           --gpu-memory-utilization 0.85 \
           --host 0.0.0.0 --port 8000
   ```
+
+  ### Intel Xeon 6 (CPU, BF16, 4× NUMA nodes)
+
+  DiffusionGemma runs on Intel Xeon 6 CPUs using vLLM's CPU backend with AMX BF16 acceleration.
+  Use `--tensor-parallel-size` equal to the number of NUMA nodes available (typically 2–4 on a dual/quad-socket server).
+
+  ```bash
+  docker run -itd --name diffusiongemma-cpu \
+      --network host \
+      --shm-size 16g \
+      -v ~/.cache/huggingface:/root/.cache/huggingface \
+      vllm/vllm-openai-cpu:latest-x86_64 \
+          --model google/diffusiongemma-26B-A4B-it \
+          --dtype bfloat16 \
+          --tensor-parallel-size 4 \
+          --max-num-seqs 4 \
+          --host 0.0.0.0 --port 8000
+  ```
+
 
   ### Full-Featured Server (text + image + thinking + tools)
 

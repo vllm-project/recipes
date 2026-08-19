@@ -3,6 +3,7 @@ meta:
   slug: "mimo-v2-flash"
   provider: "MiMo (Xiaomi)"
   description: "Xiaomi's MoE reasoning model (309B total / 15B active) with hybrid attention and MTP for fast agentic workflows"
+  date_added: 2025-12-20
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:

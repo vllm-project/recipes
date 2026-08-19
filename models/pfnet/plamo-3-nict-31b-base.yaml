@@ -3,6 +3,7 @@ meta:
   slug: "plamo-3-nict-31b-base"
   provider: "Preferred Networks"
   description: "Largest PLaMo 3 NICT Japanese/English base model with interleaved sliding-window and full attention."
+  date_added: 2026-06-03
   date_updated: 2026-06-02
   difficulty: intermediate
   tasks:

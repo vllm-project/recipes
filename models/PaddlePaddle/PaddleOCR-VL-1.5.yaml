@@ -3,6 +3,7 @@ meta:
   slug: "paddleocr-vl-1.5"
   provider: "PaddlePaddle"
   description: "PaddleOCR-VL-1.5 (0.9B) — next-gen compact VLM for document parsing; adds text spotting, seal recognition, and Tibetan/Bengali"
+  date_added: 2026-05-11
   date_updated: 2026-05-11
   difficulty: beginner
   tasks:
@@ -58,6 +59,10 @@ variants:
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides:
   amd:

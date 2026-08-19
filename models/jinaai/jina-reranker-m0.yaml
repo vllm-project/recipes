@@ -3,6 +3,7 @@ meta:
   slug: "jina-reranker-m0"
   provider: "Jina AI"
   description: "Multilingual, multimodal reranker for text and visual documents across 29+ languages via Qwen2-VL backbone"
+  date_added: 2025-10-29
   date_updated: 2026-04-17
   difficulty: beginner
   tasks:
@@ -80,7 +81,7 @@ guide: |
     --port 8000 \
     --tensor_parallel_size 2 \
     --gpu-memory-utilization 0.75 \
-    --max_num_seqs 32
+    --max-num-seqs 32
   ```
 
   On AMD:
@@ -88,7 +89,7 @@ guide: |
   ```bash
   export VLLM_ROCM_USE_AITER=1
   vllm serve jinaai/jina-reranker-m0 \
-    --tensor_parallel_size 2 --gpu-memory-utilization 0.75 --max_num_seqs 32
+    --tensor_parallel_size 2 --gpu-memory-utilization 0.75 --max-num-seqs 32
   ```
 
   ## Rerank API

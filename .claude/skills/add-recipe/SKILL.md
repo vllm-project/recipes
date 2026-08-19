@@ -20,7 +20,7 @@ Recipes are YAML files at `models/<hf_org>/<hf_repo>.yaml`. The path mirrors Hug
    - **`dependencies:`** — any pip line beyond `vllm` itself: version pins (`mistral_common >= 1.11.1`, `transformers >= 5.4.0`), extras (`vllm[audio]`), source installs (`pip install git+...`), DeepGEMM pins, etc. Pin them even when the README says "auto-installed" — users on stale wheel caches need an explicit upgrade path. Each entry needs a one-line `note` saying *why*.
    - **Parser flags for `features:`** — `--tool-call-parser <name>`, `--reasoning-parser <name>`, `--enable-auto-tool-choice`. Use the exact parser name the README specifies.
    - **Companion / draft repos** — EAGLE / MTP / Eagle3 heads, NVFP4 quants, instruct vs base. Wire as `spec_decoding` feature (draft pointer in `--speculative-config`) or a sibling variant with `model_id:` override. Copy the recommended `--speculative-config` JSON verbatim from the README.
-   - **Recommended serve flags** — `--tensor-parallel-size`, `--gpu_memory_utilization`, `--max_num_batched_tokens`, `--max_num_seqs` go into the guide's launch command and into variant `extra_args` when they're variant-specific.
+   - **Recommended serve flags** — `--tensor-parallel-size`, `--gpu-memory-utilization`, `--max-num-batched-tokens`, `--max-num-seqs` go into the guide's launch command and into variant `extra_args` when they're variant-specific.
    - **Hardware guidance / sampling defaults** — "recommended on 8xH200" lines inform variant `description` + `vram_minimum_gb`; recommended `temperature` / `top_p` / `reasoning_effort` go in the guide's Client Usage block.
 4. **Cross-check upstream vLLM support.** The README is a snapshot — if it was written at a moment when only nightly worked, that claim rots once stable ships. **Never copy the README's "vLLM nightly" claim verbatim without checking.** Run these in parallel:
    - `gh search issues --repo vllm-project/vllm "<model-name>" --state all --limit 20` — bug reports tell you which versions users are actually running on (e.g. an issue body saying "vLLM 0.18.0 + this model crashes" is positive proof the model loads on 0.18.0).
@@ -44,7 +44,7 @@ Recipes are YAML files at `models/<hf_org>/<hf_repo>.yaml`. The path mirrors Hug
 
 5. **Create the YAML.** Write `models/<hf_org>/<hf_repo>.yaml` following the schema below. Only include sections the model needs; leave `features: {}`, `opt_in_features: []`, `hardware_overrides: {}`, `strategy_overrides: {}` empty if not applicable.
 6. **Register the provider (if new).** If `<hf_org>` isn't already in `src/lib/providers.js`, add an entry with `display_name` and the logo path `/providers/<hf_org>.png` (or `.jpeg`). Logos get downloaded by `scripts/fetch-provider-logos.mjs` on the next build.
-7. **Validate.** Run `node scripts/build-recipes-api.mjs`. It must print `✓ JSON API: N models, 7 strategies` with no errors.
+7. **Validate.** Run `node scripts/build-recipes-api.mjs`. It must print `✓ JSON API: N models, <strategy-count> strategies` with no errors.
 8. **Commit.** Follow the user's earlier feedback (no kill-and-rebuild of dev server; syntax-check only).
 
 ## YAML schema (top-level fields, in order)
@@ -55,7 +55,8 @@ meta:
   slug: "..."                     # lowercase-kebab (legacy, keep consistent with title)
   provider: "..."                 # human-readable org label (e.g. "DeepSeek")
   description: "..."              # one-sentence summary
-  date_updated: YYYY-MM-DD        # today's date, or the date the recipe was authored
+  date_added: YYYY-MM-DD          # initial catalog addition; never change
+  date_updated: YYYY-MM-DD        # latest material recipe change
   difficulty: beginner|intermediate|advanced
   tasks:                          # one or more of: text, multimodal, omni, embedding
     - text
@@ -147,10 +148,11 @@ variants:
     precision: fp8
     vram_minimum_gb: <integer>
     description: "..."
+    supported_hardware: [mi355x]  # optional exact hardware-profile allowlist
     extra_args: []
     extra_env: {}
 
-compatible_strategies:            # subset of the 7 in strategies/*.yaml
+compatible_strategies:            # subset of the SERVING strategies in strategies/*.yaml
   - single_node_tp                # always include this as a baseline
   - single_node_tep               # for MoE
   - single_node_dep               # for MoE
@@ -158,6 +160,18 @@ compatible_strategies:            # subset of the 7 in strategies/*.yaml
   - multi_node_dep                # for MoE
   - multi_node_tep                # for MoE
   - pd_cluster                    # only if the recipe documents PD
+  # Do NOT list kv_store_* ids — the KV Offload options (Simple + both
+  # Mooncake modes) are implicit on every non-omni recipe.
+
+# Optional opt-OUT for the Mooncake pills on the command builder's
+# "KV Offload" row. Fail-open like meta.hardware: absent = assumed to work
+# (pill enabled on any scalable GPU); `unsupported` disables the pill and
+# makes the JSON API skip that strategy on that hardware. Off and Simple
+# need no gating (Simple is taxonomy-driven — `taxonomy.yaml →
+# kv_offload.simple` — and needs nothing per-recipe).
+kv_cache_strategy_hardware:
+  kv_store_distributed_mooncake:
+    gb200: unsupported
 
 hardware_overrides:               # optional per-generation flags
   hopper:    { extra_args: [], extra_env: {} }
@@ -205,12 +219,23 @@ Example: a 70B BF16 model → `70 × 2 × 1.2 = 168 GB`. Round up.
 
 If the variant is `model_id`-overridden and the override is a different base model with its own param count (e.g. a distilled FP4 checkpoint), use the override's parameter count — verify it via HF.
 
+**Mixed-precision quants (NVFP4 / ModelOpt) — don't trust the bytes-per-param table.** NVIDIA ModelOpt NVFP4 checkpoints are *not* uniformly 4-bit: only the MLP linears drop to NVFP4 (W4A16), while attention linears + KV cache stay FP8 and embeddings/norms stay higher precision. `hf_quant_config.json` shows `quant_algo: MIXED_PRECISION` in this case. The pure `params × 0.5 × 1.2` formula then **underestimates** — e.g. `nvidia/Qwen3.6-27B-NVFP4` is ~21.9 GB on disk, not the 13.5 GB the table implies, so `27B × 0.5 × 1.2 = 17` is wrong (the weights alone exceed it). For any mixed-precision checkpoint, size from the **real weight footprint** instead:
+
+```bash
+# total_size is in bytes → GB; then × 1.2 for KV/activation overhead
+curl -sL "https://huggingface.co/<org>/<repo>/resolve/main/model.safetensors.index.json" \
+  | python3 -c "import json,sys; print(round(json.load(sys.stdin)['metadata']['total_size']/1e9*1.2))"
+```
+
+So `vram_minimum_gb = ceil(real_checkpoint_GB × 1.2)` (Qwen3.6-27B-NVFP4 → `ceil(21.9 × 1.2) = 27`). The bytes-per-param table stays correct for *uniform* quants (plain int4/awq/gptq/fp8, and full-model FP4).
+
 ## Naming and conventions
 
 - **Feature keys**: prefer `tool_calling`, `reasoning`, `spec_decoding`. Don't use `mtp` — it's been renamed across the repo.
-- **Strategy list**: MoE recipes usually support every strategy; dense recipes are limited to `single_node_tp` and `multi_node_tp` (TEP/DEP require MoE).
+- **Strategy list**: MoE recipes usually support every serving strategy; dense recipes are limited to `single_node_tp` and `multi_node_tp` (TEP/DEP require MoE). KV offload is a separate axis and is NOT listed here — Off / Simple / both Mooncake modes are implicit on every non-omni recipe and COMPOSE with whatever serving strategy is selected (each Mooncake instance runs the strategy's exact command; parallelism never comes from the KV layer).
+- **KV Offload gating**: fail-open. Only add `kv_cache_strategy_hardware` when a Mooncake mode is known NOT to work on a specific GPU — mark that strategy × GPU pair `unsupported`. Absence = assumed to work, same convention as `meta.hardware`.
 - **Variants**: quantized variants reuse the base name (`fp8`, `nvfp4`, `int4`). If the quantized checkpoint is authored by someone else (e.g. `nvidia/*-NVFP4`), set `model_id:` inside the variant.
-- **Tasks**: `omni` means served via vLLM-Omni (`vllm serve <model> --omni`). Add a top-level `omni:` block listing the task ids the recipe supports — bare strings for catalog defaults (`tasks: [t2i]`) or `{ id, model_id?, vram_minimum_gb?, description?, extra_args? }` overrides when a task swaps the checkpoint (Wan2.2) or needs per-task flags. Audio-only recipes set `omni.serve_binary: "vllm-omni serve"`. The catalog is `src/lib/omni-tasks.js`; do not add `--omni` to `model.base_args` (auto-injected).
+- **Tasks**: `omni` means served via vLLM-Omni (`vllm serve <model> --omni`). Add a top-level `omni:` block listing the task ids the recipe supports — bare strings for catalog defaults (`tasks: [t2i]`) or `{ id, model_id?, vram_minimum_gb?, description?, extra_args? }` overrides when a task swaps the checkpoint (Wan2.2) or needs per-task flags. Leave `omni.serve_binary` unset — `vllm serve <model> --omni` is correct for every recipe on vLLM 0.20.0+, where the `vllm` console-script delegates to vllm-omni on the `--omni` flag. No recipe currently overrides it; only a recipe pinned below 0.20.0 would need to. The catalog is `src/lib/omni-tasks.js`; do not add `--omni` to `model.base_args` (auto-injected).
 
 ## Validation checklist
 
@@ -219,6 +244,7 @@ Before committing:
 1. `node scripts/build-recipes-api.mjs` succeeds and the new recipe appears in the line count.
 2. `node -e "const d = require('./public/<hf_org>/<hf_repo>.json'); console.log(d.model.parameter_count, d.variants.default.vram_minimum_gb)"` prints sensible values.
 3. The YAML top-level key order matches the schema above — downstream tools don't care, but reviewers scan for it.
+4. If the recipe marks any KV-store mode `unsupported` under `kv_cache_strategy_hardware`, spot-check `public/<hf_org>/<hf_repo>/hw/<gpu>/strategies/`: no `kv_store_*` file may exist for an opted-out GPU (they are emitted for all other scalable hardware by default).
 
 ## Commit
 

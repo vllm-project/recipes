@@ -3,6 +3,7 @@ meta:
   slug: "mellum2-12b-a2.5b-thinking"
   provider: "JetBrains"
   description: "JetBrains' reasoning-augmented code MoE (12B total / 2.5B active) that emits explicit <think> chains for debugging, planning, and agentic coding"
+  date_added: 2026-06-02
   date_updated: 2026-06-02
   difficulty: intermediate
   tasks:

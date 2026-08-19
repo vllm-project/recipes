@@ -3,6 +3,7 @@ meta:
   slug: "nemotron-3-nano-30b-a3b"
   provider: "NVIDIA"
   description: "NVIDIA Nemotron-3-Nano Mamba-hybrid MoE (30B total / ~3B active) with BF16 and FP8 variants"
+  date_added: 2026-01-08
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
@@ -69,6 +70,10 @@ compatible_strategies:
   - multi_node_tp_pp
   - multi_node_tep
   - multi_node_dep
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides: {}
 

@@ -3,6 +3,7 @@ meta:
   slug: "gpt-oss"
   provider: "OpenAI"
   description: "OpenAI's gpt-oss family (20B / 120B) with MXFP4 MoE, attention-sinks, built-in tools via Responses API"
+  date_added: 2025-08-05
   date_updated: 2026-05-10
   difficulty: intermediate
   tasks:

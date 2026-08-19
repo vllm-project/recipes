@@ -3,6 +3,7 @@ meta:
   slug: "qwen3.5-9b"
   provider: "Qwen"
   description: "Qwen3.5 dense multimodal model (9B) with gated delta networks hybrid attention, MTP, and 262K context"
+  date_added: 2026-04-22
   date_updated: 2026-04-22
   difficulty: beginner
   tasks:
