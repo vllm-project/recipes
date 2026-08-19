@@ -4,7 +4,7 @@ meta:
   provider: "NVIDIA"
   description: "NVIDIA Nemotron-3-Super Mamba-hybrid latent-MoE (~120B total / ~12B active) with BF16, FP8, and NVFP4 variants"
   date_added: 2026-04-28
-  date_updated: 2026-04-28
+  date_updated: 2026-07-31
   difficulty: advanced
   tasks:
     - text
@@ -31,18 +31,24 @@ model:
 
 features:
   tool_calling:
-    description: "Qwen3 Coder tool-call parser with automatic tool choice"
+    description: "Qwen3 XML tool-call parser with automatic tool choice"
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_coder"
+      - "qwen3_xml"
   reasoning:
     description: "Built-in nemotron_v3 reasoning parser (vLLM >= 0.17.1)"
     args:
       - "--reasoning-parser"
       - "nemotron_v3"
+  spec_decoding:
+    description: "MTP speculative decoding for accelerated inference"
+    args:
+      - "--speculative-config"
+      - '{"method":"mtp","num_speculative_tokens":3}'
 
-opt_in_features: []
+opt_in_features:
+  - spec_decoding
 
 variants:
   default:
@@ -68,23 +74,32 @@ variants:
     vram_minimum_gb: 75
     description: "NVFP4 weights for Blackwell"
     hardware_overrides:
-      # DGX Spark (GB10 / SM121) only — single-GPU tuning + explicit opt-in to the
-      # flashinfer_b12x CuteDSL NVFP4 kernels (excluded from auto-selection on SM121
-      # pending the upstream CUTLASS SM121 MMA-op guard).
-      dgx_spark_gb10:
-        extra_args:
-          - "--gpu-memory-utilization"
-          - "0.85"
-          - "--max-model-len"
-          - "131072"
-          - "--moe-backend"
-          - "flashinfer_b12x"
-          - "--linear-backend"
-          - "flashinfer_b12x"
       rtx_pro_6000:
         extra_args:
           - "--max-num-seqs"
           - "8"
+      dgx_station_gb300:
+        extra_args:
+          - "--max-model-len"
+          - "262144"
+          - "--gpu-memory-utilization"
+          - "0.92"
+          - "--load-format"
+          - "fastsafetensors"
+          - "--attention-backend"
+          - "flashinfer"
+          - "--max-num-batched-tokens"
+          - "16384"
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--mamba-cache-mode"
+          - "align"
+          - "--mamba-ssm-cache-dtype"
+          - "float32"
+          - "--enable-prefix-caching"
+        extra_env:
+          VLLM_FLOAT32_MATMUL_PRECISION: "high"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
 
   base_bf16:
     model_id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-Base-BF16"
@@ -98,6 +113,10 @@ compatible_strategies:
   - multi_node_tp_pp
   - multi_node_tep
   - multi_node_dep
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides: {}
 
@@ -114,7 +133,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 4-8x H100/H200/B200/RTX Pro 6000, or DGX Spark
+  - Hardware: 4-8x H100/H200/B200/RTX Pro 6000, DGX Station, or DGX Spark
   - vLLM >= 0.17.1
   - Docker with NVIDIA Container Toolkit (recommended)
 
@@ -129,7 +148,7 @@ guide: |
     --trust-remote-code \
     --served-model-name nemotron \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_coder \
+    --tool-call-parser qwen3_xml \
     --reasoning-parser nemotron_v3
   ```
 
@@ -141,7 +160,7 @@ guide: |
     --tensor-parallel-size 4 \
     --trust-remote-code \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_coder \
+    --tool-call-parser qwen3_xml \
     --reasoning-parser nemotron_v3
   ```
 
@@ -152,40 +171,45 @@ guide: |
     --tensor-parallel-size 2 \
     --trust-remote-code \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_coder \
+    --tool-call-parser qwen3_xml \
     --reasoning-parser nemotron_v3
   ```
 
   ### DGX Spark (GB10)
 
-  The NVFP4 variant runs on a single DGX Spark (GB10) at TP=1. A few notes:
-
-  - **Set `--gpu-memory-utilization 0.85`** to avoid an OOM at startup — the default 0.92
-    is too aggressive here. A slightly higher value (e.g. 0.87) may also work.
-  - **`--max-model-len 131072`** caps the context so the KV cache is sized appropriately
-    for DGX Spark's memory; the model's full 262144 context would leave too little room.
-  - **Backends.** On GB10 (SM121) auto selection already lands on FlashInfer, faster than
-    the Marlin fallback:
-    - `linear_backend='auto'` → `FLASHINFER_CUTLASS`
-    - `moe_backend='auto'` → `FLASHINFER_CUTLASS`
-    - `--attention-backend='auto'` → `FLASHINFER`
-
-    This recipe additionally opts into the newer **`flashinfer_b12x`** CuteDSL NVFP4 kernels
-    via `--moe-backend flashinfer_b12x --linear-backend flashinfer_b12x`. These are
-    *excluded from auto-selection* on SM121 pending an upstream CUTLASS SM121 MMA-op guard,
-    so they are experimental/opt-in — drop both flags to fall back to the auto
-    `FLASHINFER_CUTLASS` path if you hit issues.
+  The NVFP4 variant runs on a single DGX Spark (GB10) at TP=1 inside the
+  `vllm/vllm-openai:v0.24.0-ubuntu2404` container. The command below is the optimal
+  config tuned end-to-end on DGX Spark: the full 262144-token context fits with an FP8
+  KV cache and a float32 Mamba SSM cache (`VLLM_ALLOW_LONG_MAX_MODEL_LEN=1` allows the
+  long context, `VLLM_FLOAT32_MATMUL_PRECISION=high` keeps the Mamba scan numerically
+  stable), `--gpu-memory-utilization 0.8` leaves headroom in the 128 GB unified memory,
+  batching is sized for a single GB10 (`--max-num-seqs 8`,
+  `--max-num-batched-tokens 16384`), `--load-format fastsafetensors` speeds up weight
+  loading, and MTP speculative decoding plus prefix caching are enabled for lower
+  latency:
 
   ```bash
+  # Use container: vllm/vllm-openai:v0.24.0-ubuntu2404
+
+  VLLM_FLOAT32_MATMUL_PRECISION="high" \
+  VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
   vllm serve nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4 \
-    --trust-remote-code \
-    --max-model-len 131072 \
-    --gpu-memory-utilization 0.85 \
-    --moe-backend flashinfer_b12x \
-    --linear-backend flashinfer_b12x \
-    --enable-auto-tool-choice \
-    --tool-call-parser qwen3_coder \
-    --reasoning-parser nemotron_v3
+      --host 0.0.0.0 \
+      --port 8000 \
+      --max-model-len 262144 \
+      --gpu-memory-utilization 0.8 \
+      --max-num-seqs 8 \
+      --load-format fastsafetensors \
+      --attention-backend flashinfer \
+      --max-num-batched-tokens 16384 \
+      --kv-cache-dtype fp8 \
+      --mamba-cache-mode align \
+      --mamba-ssm-cache-dtype float32 \
+      --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
+      --enable-prefix-caching \
+      --reasoning-parser nemotron_v3 \
+      --enable-auto-tool-choice \
+      --tool-call-parser qwen3_xml
   ```
 
   ### RTX Pro 6000 NVFP4
@@ -208,7 +232,7 @@ guide: |
       --max-num-batched-tokens 16384 \
       --kv-cache-dtype fp8 \
       --mamba-cache-mode align \
-      --mamba_ssm_cache_dtype float32 \
+      --mamba-ssm-cache-dtype float32 \
       --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
       --enable-prefix-caching \
       --reasoning-parser nemotron_v3 \

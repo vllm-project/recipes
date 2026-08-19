@@ -17,6 +17,7 @@ meta:
     mi325x: verified
     mi355x: verified
     dgx_station_gb300: verified
+    rtx_pro_6000_2x: verified
 
 model:
   model_id: "MiniMaxAI/MiniMax-M2.7"
@@ -70,6 +71,16 @@ variants:
           - "8192"
           - "--enable-chunked-prefill"
           - "--enable-prefix-caching"
+      rtx_pro_6000_2x:
+        extra_args:
+          - "--load-format"
+          - "fastsafetensors"
+          - "--enable-chunked-prefill"
+          - "--enable-prefix-caching"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--gpu-memory-utilization"
+          - "0.95"
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
@@ -82,6 +93,10 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
   - pd_cluster
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides:
   amd:

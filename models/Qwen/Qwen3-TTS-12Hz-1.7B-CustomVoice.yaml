@@ -135,7 +135,9 @@ guide: |
   vllm serve Qwen/Qwen3-TTS-12Hz-1.7B-Base --omni --port 8000
   ```
 
-  > `vllm-omni serve ...` is an equivalent alias for `vllm serve ... --omni`.
+  > `--omni` is what selects the Omni pipeline, so it is required. The
+  > `vllm-omni serve` console-script is equivalent only when `--omni` is passed
+  > to it as well; without the flag it falls through to stock `vllm serve`.
 
   ## Client usage
 
