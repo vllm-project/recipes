@@ -1266,10 +1266,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     if (advancedArgs && advancedArgs.length) args.push(...advancedArgs);
 
     // 7. Features last — tool_calling, reasoning, mtp, etc.
-    //    A feature can declare per-generation overrides under
-    //    `hardware_overrides.<gen>.args`; when present they REPLACE the
+    //    A feature can declare hardware overrides keyed by exact GPU id,
+    //    generation, brand, or `default`; when present they REPLACE the
     //    feature's default args (not merged), so a recipe can ship different
-    //    spec-decoding configs for hopper vs blackwell without dedupe gymnastics.
+    //    parser/spec-decoding configs without dedupe gymnastics.
     for (const f of enabledFeatures || []) {
       const feat = recipe.features?.[f];
       if (!feat) continue;
@@ -1293,8 +1293,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         }
         continue;
       }
-      const featHo = feat.hardware_overrides?.[gen]
-        || (isNvidia ? feat.hardware_overrides?.nvidia : null);
+      const featHo = hardwareKeyedValue(feat.hardware_overrides, hwProfile, hwProfileId);
       const featArgs = featHo?.args ?? feat.args;
       if (featArgs) args.push(...featArgs);
     }
