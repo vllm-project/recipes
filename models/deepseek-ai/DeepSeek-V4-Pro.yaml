@@ -60,7 +60,7 @@ features:
     modes:
       mtp:
         label: "MTP"
-        description: "Built-in Multi-Token Prediction, 2 draft tokens."
+        description: "Built-in Multi-Token Prediction, 2 draft tokens (3 on MI355X)."
         # The preview FP4+FP8 and NVFP4 checkpoints ship an MTP head only — their
         # config.json carries no dspark_* block, so dspark can't be drafted there.
         variants:
@@ -69,6 +69,12 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":2}'
+        hardware_overrides:
+          # AgentX-validated draft length on MI355X (InferenceX #2590).
+          mi355x:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":3}'
       dspark:
         label: "DSpark"
         description: "DSpark drafting, 7 draft tokens, probabilistic. Requires the 0813 or DSpark checkpoint (Variant row)."
@@ -100,6 +106,10 @@ features:
           - "0.86"
           - "--compilation-config"
           - '{"mode":3,"cudagraph_mode":"FULL_AND_PIECEWISE"}'
+        extra_env:
+          VLLM_ROCM_USE_AITER_MOE: "1"
+          VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
+          VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
 
 opt_in_features:
   - spec_decoding
@@ -231,14 +241,6 @@ strategy_overrides:
         extra_args:
           - "--attention_config.use_fp4_indexer_cache=True"
           - "--no-enable-flashinfer-autotune"
-      # Exact-GPU overlay is additive (does not replace recipe amd extra_env).
-      # FSE is mutually exclusive with --enable-expert-parallel, so these must
-      # not live on hardware_overrides.amd — that would leak onto default TEP.
-      mi355x:
-        extra_env:
-          VLLM_ROCM_USE_AITER_MOE: "1"
-          VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
-          VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
   single_node_tep:
     extra_args:
       - "--compilation-config"
@@ -486,13 +488,14 @@ guide: |
   Tick **Agentic** in the command builder (plus **Tool Calling**, **Reasoning**,
   and **Spec Decoding → MTP**). The pill is Tensor Parallel only — it is
   disabled on TEP/DEP, which inject `--enable-expert-parallel`. On MI355X it
-  also switches in `--moe-backend aiter`, `--gpu-memory-utilization 0.86`, and
-  `FULL_AND_PIECEWISE` CUDA graphs.
+  also switches in `--moe-backend aiter`, `--gpu-memory-utilization 0.86`,
+  `FULL_AND_PIECEWISE` CUDA graphs, and the AITER env vars below. Those env
+  vars travel with the Agentic pill, not with Tensor Parallel alone — TP
+  with Agentic off stays `VLLM_ROCM_USE_AITER=1` only.
 
-  Hardware = MI355X + Strategy = Tensor Parallel overlays the AITER env vars
-  below (additive exact-GPU key). Default TEP — the command-builder landing
-  strategy — keeps `VLLM_ROCM_USE_AITER=1` only. The GSM8K snippet above is a
-  static single-turn snapshot and was not re-measured with INT4 quick-reduce.
+  Default TEP — the command-builder landing strategy — is the single-turn
+  path and is unchanged. The GSM8K snippet above is a static snapshot and
+  was not re-measured with INT4 quick-reduce.
 
   Both validated AgentX topologies run `ep 1`: fused shared experts
   (`VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1`) are mutually exclusive with
@@ -514,10 +517,10 @@ guide: |
   TP8 this raised GPU KV-cache capacity from 4,730,981 to 8,524,228 tokens and
   cut peak activation memory from 11.44 GiB to 8.9 GiB.
 
-  MTP uses **3 draft tokens**. The command builder's MTP mode still emits
-  `num_speculative_tokens: 2` — override to 3 as shown. InferenceX throughput
-  pins synthetic acceptance to 2.49 (the committed thinking-on golden AL at
-  draft length 3); production serving should omit `rejection_sample_method` /
+  MTP uses **3 draft tokens** on MI355X (`features.spec_decoding.modes.mtp`
+  hardware override). NVIDIA stays at 2. InferenceX throughput pins synthetic
+  acceptance to 2.49 (the committed thinking-on golden AL at draft length 3);
+  production serving should omit `rejection_sample_method` /
   `synthetic_acceptance_length` and run real target verification.
 
   AgentX concurrency counts live session trees, not individual HTTP requests.

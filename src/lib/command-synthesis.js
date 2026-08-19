@@ -1425,6 +1425,31 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       : null;
     if (envRoleExactHo?.extra_env) Object.assign(env, envRoleExactHo.extra_env);
 
+    // Feature extra_env last, same gating as feature args: opt-in pills must
+    // not leak onto the default command. A feature hardware_overrides.<gen>
+    // extra_env REPLACES the feature's own extra_env (not merged), matching
+    // how feature args work.
+    for (const f of enabledFeatures || []) {
+      const feat = recipe.features?.[f];
+      if (!feat) continue;
+      if (!isFeatureAllowedForStrategy(feat, strategyName)) continue;
+      if (kvComposing && feat.companion?.command) continue;
+      if (feat.modes && typeof feat.modes === "object") {
+        const modeKey = resolveModeKey(feat, f, variant, variantKey, hwProfile, hwProfileId, featureModes?.[f]);
+        const mode = modeKey ? feat.modes[modeKey] : null;
+        if (mode) {
+          const modeHo = hardwareKeyedValue(mode.hardware_overrides, hwProfile, hwProfileId);
+          const modeEnv = modeHo?.extra_env ?? mode.extra_env;
+          if (modeEnv) Object.assign(env, modeEnv);
+        }
+        continue;
+      }
+      const featHo = feat.hardware_overrides?.[gen]
+        || (envIsNvidia ? feat.hardware_overrides?.nvidia : null);
+      const featEnv = featHo?.extra_env ?? feat.extra_env;
+      if (featEnv) Object.assign(env, featEnv);
+    }
+
     // NVL4-only env vars are meaningful only on GB200/GB300 trays. Drop them
     // for any other hardware regardless of where they came from (strategy YAML
     // or recipe-level pd_cluster override).
