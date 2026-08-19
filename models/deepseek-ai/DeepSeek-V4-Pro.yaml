@@ -437,8 +437,6 @@ guide: |
   export VLLM_ROCM_USE_AITER=1
 
   vllm serve deepseek-ai/DeepSeek-V4-Pro \
-    --host localhost \
-    --port 8001 \
     --dtype auto \
     --kv-cache-dtype fp8 \
     --tensor-parallel-size 8 \
@@ -461,7 +459,7 @@ guide: |
   ```bash
   MODEL=deepseek-ai/DeepSeek-V4-Pro
   lm_eval --model local-completions \
-    --model_args model=$MODEL,base_url=http://0.0.0.0:8001/v1/completions,num_concurrent=128,max_retries=10,max_gen_toks=2048,timeout=60000 \
+    --model_args model=$MODEL,base_url=http://0.0.0.0:8000/v1/completions,num_concurrent=128,max_retries=10,max_gen_toks=2048,timeout=60000 \
     --batch_size auto \
     --tasks gsm8k \
     --num_fewshot 8 \
@@ -546,8 +544,6 @@ guide: |
 
   ```bash
   vllm serve deepseek-ai/DeepSeek-V4-Pro \
-    --host 0.0.0.0 \
-    --port 8000 \
     --trust-remote-code \
     --async-scheduling \
     --distributed-executor-backend mp \
@@ -570,9 +566,9 @@ guide: |
   ### DP-attention (TP=1, DP=8) + vLLM router — high concurrency
 
   Front the engine with [`vllm-router`](https://github.com/vllm-project/router)
-  0.1.14 (`consistent_hash`) so conversation trees pin to one DP rank. Serve
-  the engine on 8001 and the router on 8000. Clients should send a stable
-  `X-Session-ID` per session.
+  0.1.14 (`consistent_hash`) so conversation trees pin to one DP rank. The
+  engine uses the default port (8000); the router listens on 8001. Clients
+  should send a stable `X-Session-ID` per session.
 
   `--prefill-schedule-interval 8` keeps DP ranks aligned under mixed prefill
   lengths. `--long-prefill-token-threshold 16384` was present on the measured
@@ -583,8 +579,6 @@ guide: |
   pip install vllm-router==0.1.14
 
   vllm serve deepseek-ai/DeepSeek-V4-Pro \
-    --host 0.0.0.0 \
-    --port 8001 \
     --trust-remote-code \
     --async-scheduling \
     --distributed-executor-backend mp \
@@ -607,11 +601,10 @@ guide: |
     --max-num-seqs 64
 
   vllm-router \
-    --worker-urls http://localhost:8001 \
+    --worker-urls http://localhost:8000 \
     --policy consistent_hash \
     --intra-node-data-parallel-size 8 \
-    --host 0.0.0.0 \
-    --port 8000 \
+    --port 8001 \
     --prometheus-host 127.0.0.1 \
     --prometheus-port 18000 \
     --request-timeout-secs 14400 \
