@@ -81,7 +81,9 @@ features:
           - "--speculative-config"
           - '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"probabilistic"}'
   agentic:
-    description: "Agentic / multi-turn serving: prefix caching, hybrid KV-cache manager, and async scheduling so session trees reuse prefixes across tool turns. On MI355X this also selects AITER MoE, FULL_AND_PIECEWISE graphs, and gpu-memory-utilization 0.86 (InferenceX #2590)."
+    description: "Agentic / multi-turn serving: prefix caching, hybrid KV-cache manager, and async scheduling so session trees reuse prefixes across tool turns. On MI355X this also selects AITER MoE, FULL_AND_PIECEWISE graphs, and gpu-memory-utilization 0.86 (InferenceX #2590). Tensor Parallel only — TEP/DEP inject expert parallelism, which disables fused shared experts."
+    strategies:
+      - single_node_tp
     args:
       - "--async-scheduling"
       - "--enable-prefix-caching"
@@ -212,11 +214,6 @@ hardware_overrides:
       - '{"mode": 3, "cudagraph_mode": "FULL_DECODE_ONLY"}'
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
-      # Mixed MXFP4 routed experts + FP8 shared expert: the fused shared-expert
-      # path is gated off by default and is mutually exclusive with EP.
-      VLLM_ROCM_USE_AITER_MOE: "1"
-      VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
-      VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
 
 strategy_overrides:
   single_node_tp:
@@ -234,6 +231,14 @@ strategy_overrides:
         extra_args:
           - "--attention_config.use_fp4_indexer_cache=True"
           - "--no-enable-flashinfer-autotune"
+      # Exact-GPU overlay is additive (does not replace recipe amd extra_env).
+      # FSE is mutually exclusive with --enable-expert-parallel, so these must
+      # not live on hardware_overrides.amd — that would leak onto default TEP.
+      mi355x:
+        extra_env:
+          VLLM_ROCM_USE_AITER_MOE: "1"
+          VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
+          VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
   single_node_tep:
     extra_args:
       - "--compilation-config"
@@ -479,15 +484,20 @@ guide: |
   scheduling, and scheduler headroom the GSM8K command does not enable.
 
   Tick **Agentic** in the command builder (plus **Tool Calling**, **Reasoning**,
-  and **Spec Decoding → MTP**). On MI355X the Agentic pill also switches in
-  `--moe-backend aiter`, `--gpu-memory-utilization 0.86`, and
-  `FULL_AND_PIECEWISE` CUDA graphs. The AITER env vars below are emitted by the
-  MI355X hardware override.
+  and **Spec Decoding → MTP**). The pill is Tensor Parallel only — it is
+  disabled on TEP/DEP, which inject `--enable-expert-parallel`. On MI355X it
+  also switches in `--moe-backend aiter`, `--gpu-memory-utilization 0.86`, and
+  `FULL_AND_PIECEWISE` CUDA graphs.
 
-  Use **Strategy = Tensor Parallel**, not TEP or DEP. Both validated AgentX
-  topologies run `ep 1`: fused shared experts
+  Hardware = MI355X + Strategy = Tensor Parallel overlays the AITER env vars
+  below (additive exact-GPU key). Default TEP — the command-builder landing
+  strategy — keeps `VLLM_ROCM_USE_AITER=1` only. The GSM8K snippet above is a
+  static single-turn snapshot and was not re-measured with INT4 quick-reduce.
+
+  Both validated AgentX topologies run `ep 1`: fused shared experts
   (`VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1`) are mutually exclusive with
-  `--enable-expert-parallel`, which TEP/DEP inject.
+  `--enable-expert-parallel`, which TEP/DEP inject. Do not copy those flags
+  onto the single-turn recipe.
 
   Pick **Variant = FP8 (Preview)** (`deepseek-ai/DeepSeek-V4-Pro`) for the
   native MTP head that this recipe was measured with. The default 0813 / DSpark
