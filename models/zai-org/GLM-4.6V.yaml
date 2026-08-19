@@ -13,6 +13,9 @@ meta:
   hardware:
     h100: verified
     h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "zai-org/GLM-4.6V"
