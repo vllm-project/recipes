@@ -13,7 +13,7 @@ uv pip install -U vllm --pre \
 uv pip install "vllm[audio]" # For additional audio dependencies
 ```
 ### ROCm
-> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images). 
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.2.3, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images). 
 ```bash
 uv venv
 source .venv/bin/activate
