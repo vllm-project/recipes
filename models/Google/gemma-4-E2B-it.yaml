@@ -22,6 +22,7 @@ meta:
     trillium: verified
     ironwood: verified
     xeon6: verified
+    max1550: verified
 
 model:
   model_id: "google/gemma-4-E2B-it"
@@ -95,6 +96,11 @@ compatible_strategies:
   - multi_node_tp
 
 hardware_overrides:
+  xpu:
+    extra_args:
+      enforce_eager: true
+    extra_env:
+      ZE_AFFINITY_MASK: "0"
   cpu:
     extra_env:
       VLLM_CPU_KVCACHE_SPACE: "40"
@@ -235,6 +241,31 @@ guide: |
       --model google/gemma-4-E2B-it \
       --host 0.0.0.0 \
       --port 8000
+  ```
+
+
+  ### Intel Data Center GPU Max 1550 (XPU) Deployment via Docker
+
+  The model fits on a single Max 1550 tile (~13 GB BF16). Text-only mode is recommended for XPU to avoid multimodal encoder overhead. Speculative decoding with the [assistant model](https://huggingface.co/google/gemma-4-E2B-it-assistant) is also supported on XPU.
+
+  ```bash
+  docker run -itd --name gemma4-e2b-xpu \
+    --device /dev/dri --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e ZE_AFFINITY_MASK=0 \
+    intel/vllm:latest \
+      --model google/gemma-4-E2B-it \
+      --language-model-only \
+      --dtype bfloat16 \
+      --enforce-eager \
+      --max-model-len 8192 \
+      --host 0.0.0.0 --port 8000
+  ```
+
+  To enable speculative decoding on XPU, add:
+  ```
+  --speculative-config '{"model":"google/gemma-4-E2B-it-assistant","num_speculative_tokens":2}'
   ```
 
 
