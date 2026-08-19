@@ -3,6 +3,7 @@ meta:
   slug: "nemotron-3-nano-omni-30b-a3b-reasoning"
   provider: "NVIDIA"
   description: "Mamba2-Transformer hybrid MoE omnimodal model (31B total / 3B active) with unified video, audio, image, and text understanding; reasoning + tool calling; BF16, FP8, and NVFP4 variants"
+  date_added: 2026-04-28
   date_updated: 2026-04-29
   difficulty: advanced
   tasks:
@@ -77,6 +78,10 @@ variants:
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides: {}
 

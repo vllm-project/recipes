@@ -3,6 +3,7 @@ meta:
   slug: "longcat-image-edit"
   provider: "LongCat (Meituan)"
   description: "Bilingual (Chinese-English) image editing model from Meituan LongCat, served via vLLM-Omni"
+  date_added: 2025-12-23
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:

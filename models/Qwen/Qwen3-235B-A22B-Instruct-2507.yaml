@@ -3,6 +3,7 @@ meta:
   slug: "qwen3-235b-a22b-instruct-2507"
   provider: "Qwen"
   description: "Flagship Qwen3 MoE instruct model with 235B total and 22B active parameters, tuned for high-quality text generation."
+  date_added: 2025-10-15
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
@@ -68,6 +69,10 @@ compatible_strategies:
   - multi_node_dep
   - multi_node_tep
   - pd_cluster
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides: {}
 

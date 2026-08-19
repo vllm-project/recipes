@@ -3,6 +3,7 @@ meta:
   slug: "cosmos3-super-image2video"
   provider: "NVIDIA"
   description: "64B Cosmos3-Super specialization for temporally coherent image-to-video generation"
+  date_added: 2026-06-02
   date_updated: 2026-06-02
   difficulty: advanced
   tasks:
