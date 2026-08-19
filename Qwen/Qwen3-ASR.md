@@ -17,7 +17,7 @@ uv pip install "vllm[audio]" # For additional audio dependencies
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+uv pip install vllm --pre --extra-index-url https://wheels.vllm.ai/rocm/
 uv pip install "vllm[audio]" # For additional audio dependencies
 ```
 ## Launching Qwen3-ASR with vLLM
