@@ -248,6 +248,17 @@ hardware_profiles:
     multi_node: false
     restricted: true
 
+  # ── Intel Data Center GPU ──
+  max1550:
+    brand: Intel
+    generation: xpu
+    display_name: "Data Center GPU Max 1550"
+    description: "Intel Data Center GPU Max 1550 · 68.7 GB HBM2e · Xe-HPC"
+    gpu_count: 4
+    vram_gb: 64
+    multi_node: false
+    restricted: true
+
   # ── Intel Xeon CPU ──
   xeon6:
     brand: Intel
