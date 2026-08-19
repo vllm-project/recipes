@@ -68,9 +68,6 @@ guide: |
   This recipe uses the canonical TinyLlama chat model as the parent and exposes
   the CPU-validated TheBloke AWQ and GPTQ checkpoints as variants.
 
-  Both quantized checkpoints have PASS rows in the Xeon 6 serving validation
-  workbook.
-
   ## Prerequisites
 
   - Hardware: 1x Xeon6/Xeon5 NUMA node

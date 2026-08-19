@@ -117,7 +117,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x B200 (FP4), 1x H100 (FP8), 4x GPUs (BF16) or 4x Xeon6/Xeon5 NUMA node for BF16
+  - Hardware: 1x B200 (FP4), 1x H100 (FP8), 4x GPUs (BF16) or 4x Xeon6/Xeon5 NUMA nodes
   - vLLM >= 0.12.0
   - CUDA Driver >= 575 for GPUs
   - Docker with NVIDIA Container Toolkit (recommended) for GPUs
@@ -150,9 +150,8 @@ guide: |
       --port 8000
   ```
 
-  The Xeon 6 serving validation row passed. `--max-model-len 8192` is retained
-  because it is the model-specific row argument in the validation workbook.
-  TP=4 and host-specific CPU placement are intentionally not prescribed.
+  `--max-model-len 8192` is retained because it is the model-specific row argument in the validation workbook.
+  TP/DP and host-specific CPU placement are intentionally not prescribed.
 
   ## Client Usage
 

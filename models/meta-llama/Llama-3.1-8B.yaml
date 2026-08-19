@@ -61,8 +61,7 @@ guide: |
   `Meta-Llama-3.1-8B-quantized.w8a8` checkpoint is quantized from the base
   model, not the instruction-tuned checkpoint.
 
-  The Xeon 6 1024/1024 serving validation row for the W8A8 variant passed. The
-  recipe retains portable model-level CPU settings while leaving TP/DP and
+  The recipe retains portable model-level CPU settings while leaving TP/DP and
   host-specific CPU placement as deployment choices.
 
   ## Prerequisites
@@ -107,7 +106,7 @@ guide: |
 
   ## Configuration Notes
 
-  - The validation TP=1 and DP=6/router-DP layout is benchmark topology and is not hard-coded.
+  - The validation TP/DP layout is benchmark topology and is not hard-coded.
   - `--max-num-seqs=256` and `--no-enable-prefix-caching` are benchmark controls and are not promoted.
   - Llama has native vLLM architecture support, so `--trust-remote-code` is not required by this recipe.
 
