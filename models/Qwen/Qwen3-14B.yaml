@@ -38,7 +38,8 @@ features:
       - "--reasoning-parser"
       - "qwen3"
 
-opt_in_features: []
+opt_in_features:
+  - reasoning
 
 variants:
   default:
