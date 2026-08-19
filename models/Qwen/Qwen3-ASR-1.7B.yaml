@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Speech-to-text model supporting 11 languages, multiple accents, and singing voice with customizable text-context prompting."
   date_added: 2026-01-29
-  date_updated: 2026-04-17
+  date_updated: 2026-08-19
   difficulty: beginner
   tasks:
     - multimodal
@@ -59,7 +59,8 @@ guide: |
 
   ## Prerequisites
 
-  Install vLLM with audio dependencies:
+  ### CUDA
+
   ```bash
   uv venv
   source .venv/bin/activate
@@ -70,9 +71,32 @@ guide: |
   uv pip install "vllm[audio]"
   ```
 
-  ## Launching with vLLM
+  ### ROCm
+
+  The vLLM ROCm wheel requires Python 3.12, ROCm 7.2.3, and glibc >= 2.35.
+  If your environment does not meet these requirements, use the
+  [Docker-based setup](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images).
 
   ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install vllm --pre --extra-index-url https://wheels.vllm.ai/rocm/
+  uv pip install "vllm[audio]"
+  ```
+
+  ## Launching with vLLM
+
+  ### CUDA
+
+  ```bash
+  vllm serve Qwen/Qwen3-ASR-1.7B
+  ```
+
+  ### ROCm
+
+  ```bash
+  SAFETENSORS_FAST_GPU=1 \
+  VLLM_ROCM_USE_AITER=1 \
   vllm serve Qwen/Qwen3-ASR-1.7B
   ```
 
