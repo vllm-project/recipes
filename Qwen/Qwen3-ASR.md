@@ -23,7 +23,7 @@ uv pip install "vllm[audio]" # For additional audio dependencies
 ## Launching Qwen3-ASR with vLLM
 ### Online Serving
 You can easily deploy Qwen3-ASR with vLLM by running the following command
-### CUDA
+#### CUDA
 ```bash
 vllm serve Qwen/Qwen3-ASR-1.7B
 ```
