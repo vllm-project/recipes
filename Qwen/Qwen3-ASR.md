@@ -87,7 +87,7 @@ transcription = client.audio.transcriptions.create(
 print(transcription.text)
 ```
 
-### Using cURL
+#### Using cURL
 ```bash
 curl http://localhost:8000/v1/chat/completions \
     -H "Content-Type: application/json" \
