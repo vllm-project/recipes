@@ -13,6 +13,9 @@ meta:
   hardware:
     h100: verified
     h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "zai-org/GLM-4.5V"
@@ -146,10 +149,9 @@ guide: |
        --mm-processor-cache-type shm
   ```
 
-  ### AMD ROCm (FP8 on 4 GPUs)
+  ### AMD ROCm (4xMI300x/MI325x/MI355x))
 
   ```bash
-  export SAFETENSORS_FAST_GPU=1
   export VLLM_ROCM_USE_AITER=1
 
   vllm serve zai-org/GLM-4.5V-FP8 \
