@@ -3,6 +3,7 @@ meta:
   slug: "minimax-m2.5"
   provider: "MiniMax"
   description: "MiniMax M2.5 MoE language model (230B total / 10B active) for coding, agent toolchains, and long-context reasoning — native FP8 checkpoint"
+  date_added: 2026-02-13
   date_updated: 2026-05-18
   difficulty: intermediate
   tasks:
@@ -69,15 +70,19 @@ compatible_strategies:
   - multi_node_dep
   - pd_cluster
 
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
+
 hardware_overrides:
   nvidia:
     extra_args:
       - "--compilation-config"
-      - '{"mode":3,"cudagraph_mode":"PIECEWISE","pass_config":{"fuse_minimax_qk_norm":true}}'
+      - '{"cudagraph_mode":"PIECEWISE"}'
   hopper:
     extra_args:
       - "--compilation-config"
-      - '{"mode":3,"cudagraph_mode":"PIECEWISE","pass_config":{"fuse_minimax_qk_norm":true}}'
+      - '{"cudagraph_mode":"PIECEWISE"}'
       - "--max-num-seqs"
       - "512"
       - "--max-num-batched-tokens"
@@ -156,7 +161,7 @@ guide: |
         --tool-call-parser minimax_m2 \
         --reasoning-parser minimax_m2 \
         --enable-auto-tool-choice \
-        --compilation-config '{"mode":3,"cudagraph_mode":"PIECEWISE","pass_config":{"fuse_minimax_qk_norm":true}}' \
+        --compilation-config '{"cudagraph_mode":"PIECEWISE"}' \
         --trust-remote-code
   ```
 
@@ -179,7 +184,7 @@ guide: |
     --enable-flashinfer-autotune \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
-    --compilation-config '{"mode":3,"cudagraph_mode":"PIECEWISE","pass_config":{"fuse_minimax_qk_norm":true}}' \
+    --compilation-config '{"cudagraph_mode":"PIECEWISE"}' \
     --enable-auto-tool-choice \
     --trust-remote-code
   ```
@@ -187,7 +192,7 @@ guide: |
   For H200 FP8, choose the attention backend by sequence length for best performance:
   shorter sequences (e.g. 1024) should keep the command above with `--attention-backend FLASHINFER`
   and `--enable-flashinfer-autotune`, while longer input sequences (e.g. 8192)
-  can prefer FlashAttention by replacing those flags with `--attention-backend FLASH_ATTN`.
+  should remove those flags to use the auto-selected FlashAttention backend.
 
   Pure TP8 is not supported. For >4 GPUs use DP+EP or TP+EP.
 
@@ -199,7 +204,7 @@ guide: |
     --enable-expert-parallel \
     --tool-call-parser minimax_m2 \
     --reasoning-parser minimax_m2 \
-    --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
+    --compilation-config '{"cudagraph_mode":"PIECEWISE"}' \
     --enable-auto-tool-choice
   ```
 
@@ -231,7 +236,7 @@ guide: |
   ## Troubleshooting
 
   - See [MiniMax-M2](./MiniMax-M2.yaml) for shared troubleshooting notes
-    (`fuse_minimax_qk_norm`, nightly vs stable, DeepGEMM, AITER).
+    (latest vLLM fusion behavior, nightly vs stable, DeepGEMM, AITER).
 
   ## References
 

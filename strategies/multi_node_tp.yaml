@@ -11,9 +11,6 @@ hardware_match:
   min_gpus: 2
   multi_node: true
 
-vllm_args:
-  - "-cc.pass_config.fuse_allreduce_rms=False"
-
 parallel_flag: "--tensor-parallel-size"
 
 env:
