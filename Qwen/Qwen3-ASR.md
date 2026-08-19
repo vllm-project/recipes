@@ -34,7 +34,7 @@ VLLM_ROCM_USE_AITER=1 \
 vllm serve Qwen/Qwen3-ASR-1.7B
 ```
 After the model server is successfully deployed, you can interact with it in multiple ways.
-### Using OpenAI SDK
+#### Using OpenAI SDK
 ```python
 import base64
 import httpx
