@@ -16,6 +16,9 @@ meta:
     h200: verified
     b200: verified
     gb200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
     trillium: verified
     xeon6: verified
 
@@ -136,10 +139,32 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x H100/H200 (FP8), 1x B200 (FP4), 2x GPUs or 4x Xeon6/Xeon5 NUMA node for BF16
+  - Hardware: 1x H100/H200 (FP8), 1x B200 (FP4), 1x MI300X/MI325X/MI355X, 2x GPUs, or 4x Xeon6/Xeon5 NUMA node for BF16
   - vLLM >= 0.12.0
   - CUDA Driver >= 575 for GPUs
   - Docker with NVIDIA Container Toolkit (recommended) for GPUs
+
+  ### AMD ROCm
+
+  The ROCm wheel requires Python 3.12, ROCm 7.0+, and glibc >= 2.35. Use the
+  ROCm Docker image when your host environment does not meet those requirements.
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
+  ```
+
+  Launch on 1x MI300X / MI325X / MI355X with AITER enabled:
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  vllm serve meta-llama/Llama-3.3-70B-Instruct \
+    --tensor-parallel-size 1 \
+    --disable-log-requests
+  ```
+
+  The first AITER launch may take several minutes while ROCm kernels are compiled and cached.
 
   ### pip (Intel Xeon 6 CPUs)
   For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.

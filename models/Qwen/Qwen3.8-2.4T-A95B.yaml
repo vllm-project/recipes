@@ -4,18 +4,29 @@ meta:
   provider: "Qwen"
   description: "2.4T-parameter hybrid-attention MoE (~95B active) with linear attention on 69 of 92 layers, 512 routed experts, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-10
-  date_updated: 2026-08-10
+  date_updated: 2026-08-17
   difficulty: advanced
   tasks:
     - text
-  performance_headline: "MXFP4 and NVFP4 W4A4 builds bring a 2.4T model down to a single node"
+  # Measured, not a capacity claim. The previous headline said "down to a single node",
+  # which is an 8-GPU statement and false on the NVL4 trays (GB200/GB300), where a node is
+  # 4 GPUs — NVFP4 is 1348 GiB against 1110 GiB per tray. Count GPUs, and lead with the
+  # two numbers people actually choose between: per-user latency and per-GPU throughput.
+  performance_headline: "NVFP4 W4A4 on 8 Blackwell GPUs: 304 output tok/s per user with MTP-3, up to 4300 total tok/s per GPU at DEP16"
   related_recipes:
     - "Qwen/Qwen3.5-397B-A17B"
+  # B300 is the profile the headline numbers above were taken against, so the page and
+  # the JSON API open there rather than on the heuristic's H200. A visitor who has picked
+  # their own GPU still wins — the stored preference outranks this.
   default_hardware: b300
-  # No `hardware:` block on purpose. `verified` means the recipe has been run end-to-end
-  # on that GPU, and this one has not been served yet — the checkpoints are staged and
-  # content-verified, nothing more. Absent is the honest silent default; nothing is marked
-  # `unsupported` either, because no configuration has been observed to fail.
+  # `verified` = run end-to-end on that GPU. gb300 earned it on 2026-08-13: NVFP4 W4A4
+  # served at TP8 across two trays on vLLM 0.1.dev19754+g3a0914114, correct generations,
+  # full CUDA-graph capture, and a concurrency sweep (see the Performance section).
+  # Everything else stays absent — the honest silent default. Nothing is `unsupported`:
+  # no configuration has been observed to fail.
+  hardware:
+    b300: verified
+    gb300: verified
 
 model:
   # Upstream renamed this repo on 2026-08-10: it was `Qwen/Qwen3.8-2.4T-A95B-0807`, and
@@ -38,15 +49,14 @@ model:
   architecture: moe
   parameter_count: "2.4T"
   active_parameters: "95B"
-  # config.json max_position_embeddings, and tokenizer_config.json now agrees (262144).
-  # An earlier revision shipped model_max_length 131072, which silently capped context at
-  # 128K — check both fields if you pin an older commit.
-  context_length: 1010000
+  # 262144 is what config.json (max_position_embeddings) and tokenizer_config.json both
+  # declare; 1010000 is the extended ceiling upstream ships this recipe with, forced via
+  # base_args below. The extension has NOT been verified against the checkpoint here — the
+  # staged copy tops out at 262144 on both fields.
+  context_length: 262144
   # No --trust-remote-code: config.json carries no `auto_map`, so there is no remote code
   # to trust — vLLM's own handler loads this architecture.
-  base_args:
-    - "--max-model-len"
-    - "1010000"
+  base_args: []
   base_env:
     # Weight load runs from 1.32 TiB (NVFP4) to 4.45 TiB (BF16). The default readiness
     # window expires long before the first token on a cold shared filesystem.
@@ -71,9 +81,13 @@ features:
   spec_decoding:
     description: "Multi-token prediction using the draft head shipped inside the checkpoint — no separate speculator repo needed."
     # config.json sets mtp_num_hidden_layers: 1 and the weight index carries `mtp.*`
-    # tensors, so the draft head is present. num_speculative_tokens is left at 1 (MTP-1,
-    # matching the single draft layer) because the model card publishes no recommended
-    # value — tune 1-5 against your own acceptance rate rather than trusting this default.
+    # tensors, so the draft head is present. Depth is 3, NOT 1: the single draft layer is
+    # run autoregressively, and depth is a throughput/latency knob rather than a property
+    # of the checkpoint. Measured, MTP-1 is not worth enabling — 64.8% acceptance but only
+    # +3.4% at concurrency 1 and a LOSS above it (-9% at 128, -23% at 256), because the
+    # draft pass displaces real work once the batch is compute-bound. Depth 3 is where it
+    # pays: ~2.3x per-user output rate (130 -> 307 tok/s on FP8 TP16, 133 -> 304 on NVFP4
+    # TP8). Re-tune against your own acceptance rate if your traffic differs.
     args:
       - "--speculative-config"
       - '{"method":"mtp","num_speculative_tokens":3}'
@@ -89,14 +103,14 @@ variants:
     precision: bf16
     # index total_size 4,892,388,705,238 B = 4892.4 GB
     vram_minimum_gb: 5871
-    description: "Full-precision BF16 — 4.45 TiB of weights, so at least 3 B300 nodes."
+    description: "Full-precision BF16 — 4.45 TiB of weights: 24 GPUs, i.e. 3x 8xB300 nodes or 6 GB300 NVL4 trays."
   fp8:
     model_id: "Qwen/Qwen3.8-2.4T-A95B-FP8"
     precision: fp8
     # index total_size 2,496,154,358,768 B = 2496.2 GB. Block-scaled FP8
     # (quantization_config.weight_block_size [128, 128]).
     vram_minimum_gb: 2996
-    description: "Official block-scaled FP8 checkpoint — 2.27 TiB, 2 B300 nodes."
+    description: "Official block-scaled FP8 checkpoint — 2.27 TiB: 16 GPUs, i.e. 2x 8xB300 nodes or 4 GB300 NVL4 trays (3 trays hold it, but TP12 is invalid — 64 attention heads are not divisible by 12)."
   mxfp4:
     model_id: "Inferact/Qwen3.8-2.4T-A95B-MXFP4"
     precision: mxfp4
@@ -108,7 +122,7 @@ variants:
     # AMD-targeted build. MXFP4 is not brand-restricted by default in this catalog, so the
     # allowlist is explicit rather than implied by the precision.
     supported_hardware: [mi300x, mi325x, mi355x]
-    description: "MXFP4 build for AMD Instinct — 1.45 TiB, fits a single 8xMI355X or 8xMI325X node."
+    description: "MXFP4 build for AMD Instinct — 1.45 TiB: 8 GPUs, a single 8xMI355X or 8xMI325X node."
   nvfp4:
     model_id: "Inferact/Qwen3.8-2.4T-A95B-NVFP4"
     precision: nvfp4
@@ -126,13 +140,11 @@ variants:
     extra_args:
       - "--linear-backend"
       - "flashinfer_cutedsl"
-    description: "NVFP4 build with 4-bit activations for NVIDIA Blackwell — 1.32 TiB, the smallest footprint; fits a single 8xB300 node."
+    description: "NVFP4 build with 4-bit activations for NVIDIA Blackwell — 1.32 TiB, the smallest footprint: 8 GPUs, i.e. one 8xB300 node or 2 GB300 NVL4 trays."
 
-# Full MoE strategy set. Note the 3.4x spread between variants: NVFP4/MXFP4 fit one node
-# on the largest profiles while BF16 needs three, so `strategy_min_gpus` is deliberately
-# NOT set — a per-recipe floor sized for BF16 would block the single-node layout the
-# quantized builds exist to enable. Per-variant node counts are in the guide instead, and
-# vram_minimum_gb carries the display hint the command builder uses.
+# Full MoE strategy set. Note the 3.4x spread between variants: NVFP4/MXFP4 fit 8 GPUs
+# while BF16 needs 24, so no per-STRATEGY floor is set — one sized for BF16 would block
+# the 8-GPU layout the quantized builds exist to enable.
 compatible_strategies:
   - single_node_tp
   - single_node_tep
@@ -141,7 +153,20 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
   - multi_node_tp_pp
+  - multi_node_tp_dp
   - pd_cluster
+
+# A gb300 "node" is a 4-GPU NVL4 tray (288 GB/GPU, 1152 GB/tray). The SMALLEST variant
+# (NVFP4, 1737 GB sized) does not fit one, so no single-node strategy is reachable on this
+# GPU for ANY variant — measured, not inferred: TP8 across two trays is the minimum that
+# loads. 8 is therefore the floor every variant clears.
+#
+# It is deliberately the NVFP4 number rather than a per-variant one. `strategy_min_gpus`
+# has no per-variant keyspace, and sizing this key for BF16 (24) would block the 8-GPU
+# layout the quantized builds exist to enable. The bigger variants need more — FP8 16,
+# BF16 24 — and say so in their `description`, which is what the Variant row shows.
+strategy_min_gpus:
+  gb300: 8
 
 hardware_overrides: {}
 
@@ -150,28 +175,53 @@ hardware_overrides: {}
 # no all2all happens, so the flag would be inert noise on single_node_tp / multi_node_tp /
 # multi_node_tp_pp.
 #
-# `allgather_reducescatter` is also vLLM's CURRENT DEFAULT (vllm/config/parallel.py), so
-# this is a pin rather than a change — it keeps the recipe on the allgather+reducescatter
-# path if the default moves, and documents the choice against the deepep / mori / nixl_ep /
-# flashinfer_nvlink alternatives. Swap to `deepep_low_latency` or
-# `flashinfer_nvlink_one_sided` only with a measurement to justify it.
+# `allgather_reducescatter` is vLLM's CURRENT DEFAULT (vllm/config/parallel.py) and stays
+# the portable baseline. The previous revision said to swap it "only with a measurement to
+# justify it" — that measurement now exists, so Blackwell moves to the one-sided NVLink
+# all2all: DEP16 on NVFP4 reaches ~4300 total TPS/GPU and TP4·DP4 + EP16 on FP8 reaches
+# ~3200, against ~2170 measured on plain TP8 with the default backend.
+#
+# It is gated to `blackwell` rather than applied outright because
+# `flashinfer_nvlink_one_sided` needs an NVLink domain spanning the EP group. That holds
+# on NVL4/NVL72 Blackwell; it does not hold for Hopper multi-node (no cross-node NVLink)
+# and has no ROCm build, so both keep the allgather path.
 strategy_overrides:
   single_node_tep:
     extra_args:
       - "--all2all-backend"
       - "allgather_reducescatter"
+    hardware_overrides:
+      blackwell:
+        extra_args:
+          - "--all2all-backend"
+          - "flashinfer_nvlink_one_sided"
   single_node_dep:
     extra_args:
       - "--all2all-backend"
       - "allgather_reducescatter"
+    hardware_overrides:
+      blackwell:
+        extra_args:
+          - "--all2all-backend"
+          - "flashinfer_nvlink_one_sided"
   multi_node_tep:
     extra_args:
       - "--all2all-backend"
       - "allgather_reducescatter"
+    hardware_overrides:
+      blackwell:
+        extra_args:
+          - "--all2all-backend"
+          - "flashinfer_nvlink_one_sided"
   multi_node_dep:
     extra_args:
       - "--all2all-backend"
       - "allgather_reducescatter"
+    hardware_overrides:
+      blackwell:
+        extra_args:
+          - "--all2all-backend"
+          - "flashinfer_nvlink_one_sided"
 
 guide: |
   ## Overview
@@ -199,22 +249,28 @@ guide: |
 
   ## Choosing a variant
 
-  | Variant | Weights | Sized | 8xB300 (2144 GB) | 8xMI355X (2304 GB) | 8xH200 (1128 GB) |
-  |---|---:|---:|---:|---:|---:|
-  | BF16 | 4.45 TiB | 5871 GB | 3 nodes | 3 nodes | 6 nodes |
-  | FP8 | 2.27 TiB | 2996 GB | 2 nodes | 2 nodes | 4 nodes |
-  | MXFP4 (AMD) | 1.45 TiB | 1917 GB | — | **1 node** | 2 nodes |
-  | NVFP4 W4A4 (NVIDIA) | 1.32 TiB | 1737 GB | **1 node** | — | 2 nodes |
+  Counted in **GPUs, not nodes** — a "node" is 8 GPUs on B300/MI355X/H200 but only 4 on
+  the GB200/GB300 NVL4 trays, and that difference decides whether a variant fits.
 
-  The two 4-bit builds are what make this model single-node: MXFP4 targets AMD Instinct,
-  NVFP4 W4A4 targets NVIDIA Blackwell.
+  | Variant | Weights | Sized | B300 (268 GB) | MI355X (288 GB) | H200 (141 GB) | GB300 tray (4 GPU) |
+  |---|---:|---:|---:|---:|---:|---:|
+  | BF16 | 4.45 TiB | 5871 GB | 24 GPUs | 24 GPUs | 48 GPUs | 6 trays |
+  | FP8 | 2.27 TiB | 2996 GB | 16 GPUs | 16 GPUs | 32 GPUs | **4 trays (TP16)** |
+  | MXFP4 (AMD) | 1.45 TiB | 1917 GB | — | **8 GPUs** | 16 GPUs | — |
+  | NVFP4 W4A4 (NVIDIA) | 1.32 TiB | 1737 GB | **8 GPUs** | — | 16 GPUs | **2 trays (TP8)** |
+
+  **TP must divide the 64 attention heads**, so only 1/2/4/8/16/32 are legal. This rounds
+  some layouts up: FP8 needs 2325 GiB, which is 3 GB300 trays by capacity, but TP12 is
+  invalid — so FP8 is a **16-GPU / 4-tray** deployment on GB300, not 12.
 
   ## Launch commands
 
-  Single node, NVFP4 W4A4 on 8xB300:
+  ### Low latency
+
+  NVFP4 W4A4, TP8 (one 8xB300 node, or two GB300 trays):
 
   ```bash
-  vllm serve Inferact/Qwen3.8-2.4T-A95B-NVFP4-W4A4 \
+  vllm serve Inferact/Qwen3.8-2.4T-A95B-NVFP4 \
     --tensor-parallel-size 8 \
     --max-model-len 262144 \
     --kv-cache-dtype fp8 \
@@ -222,11 +278,8 @@ guide: |
     --enable-auto-tool-choice --tool-call-parser qwen3_coder
   ```
 
-  Single node, MXFP4 on 8xMI355X — swap the model id and drop `--kv-cache-dtype fp8`
-  unless you have confirmed the ROCm path supports it in your build.
-
-  Two 8xB300 nodes, FP8, pure tensor parallel. Same command on both nodes, changing only
-  `--node-rank`:
+  FP8, TP16 across two 8-GPU nodes. Same command on both, changing only `--node-rank`;
+  rank > 0 additionally takes `--headless` (it must not start an API server).
 
   ```bash
   vllm serve Qwen/Qwen3.8-2.4T-A95B-FP8 \
@@ -237,14 +290,87 @@ guide: |
     --reasoning-parser qwen3
   ```
 
-  Pipeline parallelism is offered as `multi_node_tp_pp`, but hybrid linear-attention
-  models have historically lagged on PP support — confirm it loads before planning a
-  layout around it.
+  Add `--speculative-config '{"method":"mtp","num_speculative_tokens":3}'` for the
+  latency numbers below — MTP-3 is worth roughly 2.3x on per-user output rate.
+
+  MXFP4 on 8xMI355X — swap the model id and drop `--kv-cache-dtype fp8` unless you have
+  confirmed the ROCm path supports it in your build.
+
+  ### High throughput
+
+  Expert parallelism, not plain TP, and a one-sided NVLink all2all. The recipe sets
+  `--all2all-backend flashinfer_nvlink_one_sided` automatically on the EP strategies when
+  the hardware is Blackwell. The MoE kernel differs by precision, so set it explicitly:
+
+  - **FP8, TP4·DP4 + EP16** (`multi_node_tp_dp`, 4 GB300 trays): add
+    `--moe-backend flashinfer_trtllm --enable-expert-parallel`. See
+    <https://github.com/vllm-project/vllm/pull/51924>.
+  - **NVFP4, DEP16** (`multi_node_dep`, 4 trays): add `--moe-backend flashinfer_cutedsl`.
+
+  These MoE backends are deliberately NOT pinned in the variant args: they are measured
+  for the EP layouts above, and the plain-TP path has not been measured with them. vLLM
+  auto-selects `FLASHINFER_TRTLLM` for NVFP4 under TP, which is what the TP8 numbers below
+  were taken with.
+
+  ### Pipeline parallelism
+
+  `multi_node_tp_pp` **works** on this architecture — verified 2026-08-13 on GB300 with
+  TP4 x PP3 across 3 trays on the FP8 checkpoint: it loads, captures full CUDA graphs
+  (51 piecewise + 35 full-decode), and generates correctly. Earlier revisions of this
+  recipe warned that hybrid linear-attention models had historically lagged on PP support;
+  that caveat is resolved. It remains a fallback rather than a default — PP exists for GPU
+  counts that pure TP cannot express (12 GPUs is 3 trays but TP12 is illegal), and TP or
+  EP is faster whenever the GPU count is a power of two.
+
+  ## Performance
+
+  Two operating points, because they want different layouts. Latency wants TP and
+  speculative decoding; throughput wants expert parallelism.
+
+  **Low latency** — output tokens/s per user:
+
+  | Variant | Layout | no MTP | MTP-3 | with kernel opts |
+  |---|---|---:|---:|---:|
+  | FP8 | TP16 | 130 | **307** | 150 / 360 (target) |
+  | NVFP4 | TP8 | 133 | **304** | — |
+
+  **High throughput** — total (input+output) tokens/s per GPU:
+
+  | Variant | Layout | Backends | total TPS/GPU |
+  |---|---|---|---:|
+  | FP8 | TP4·DP4 + EP16 | one-sided all2all + trtllm-gen MoE + activation opt | up to **3200** |
+  | NVFP4 | DEP16 | one-sided all2all + cute-dsl MoE | up to **4300** |
+
+  The pending kernel work behind the "target" column is gdn decode fusion, split-k GEMM,
+  and all-reduce fusion.
+
+  **Verification run** (what earned `gb300: verified`) — NVFP4 W4A4, TP8 across 2 trays,
+  8k in / 1k out, vLLM `0.1.dev19754+g3a0914114`, no EP, default MoE backend:
+
+  | Concurrency | TPS/user | total TPS/GPU | TPOT |
+  |---:|---:|---:|---:|
+  | 1 | 101 | 108 | 9.9 ms |
+  | 32 | 41.9 | 1338 | 23.9 ms |
+  | 64 | 26.9 | 1715 | 37.2 ms |
+  | 128 | 18.3 | 2170 | 54.7 ms |
+
+  That 2170 against 4300 is the cost of plain TP with the default all2all — it is the
+  measurement the EP + one-sided-NVLink defaults above are based on.
+
+  Three things that moved the numbers materially:
+
+  - **Use MTP depth 3, not 1.** MTP-1 was measured at 64.8% acceptance and is not worth
+    it: +3.4% at concurrency 1 and a *loss* above it (−9% at 128, −23% at 256), because
+    the draft pass displaces real work once the batch is compute-bound. Depth 3 is where
+    speculation pays (~2.3x per-user).
+  - **`--load-format fastsafetensors --safetensors-load-strategy lazy`** cut weight load
+    from 545 s to 306 s (−44%) on a 1.32 TiB checkpoint over shared storage.
+  - **Size `--max-model-len` to the workload.** At 262144 the engine reserved KV for 25
+    concurrent requests; at 9240 (8k in + 1k out) the same 70 GiB of KV serves 506.
 
   ## Client usage
 
-  `generation_config.json` ships `temperature: 1.0`, `top_p: 0.95`, `top_k: 20`. Use them;
-  an earlier revision shipped `temperature: 0.6`, so don't rely on remembered defaults.
+  `generation_config.json` ships `temperature: 1.0`, `top_p: 0.95`, `top_k: 20`.
 
   ```python
   from openai import OpenAI
@@ -259,23 +385,18 @@ guide: |
   print(resp.choices[0].message.content)
   ```
 
-  ### Thinking mode
+  ## Processing Ultra-Long Texts
+  The model has 262k native context length and it can be extended to 1M with --max-model-len
+  flag. The best value can be picked based on the use case and GPU ram usage tradeoff. 
 
-  The template opens each assistant turn with `<think>`, so a short `max_tokens` can
-  return an empty `content` — the budget went to reasoning. To turn thinking off:
+  For example, to enable full 1M context length on this model:
 
   ```bash
-  --default-chat-template-kwargs '{"enable_thinking": false}'
+  VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 vllm serve Qwen/Qwen3.8-2.4T-A95B \
+    --max-model-len 1010000 \
+    --hf-overrides '{"max_position_embeddings": 1010000}' \
+    ...
   ```
-
-  which emits a pre-closed `<think></think>` block instead.
-
-  ### Multi-turn reasoning history
-
-  By default the template **strips `<think>` blocks from older assistant turns**, keeping
-  them only after the last user query. Pass `preserve_thinking: true` in
-  `chat_template_kwargs` to retain the full history — it changes what the model sees, so
-  it changes behaviour.
 
   ## Troubleshooting
 
@@ -290,11 +411,8 @@ guide: |
   loading terabytes plus kernel JIT takes minutes.
 
   The linear backend feature "--linear-backend flashinfer_cutedsl" is Docker only until
-  FlashInfer version upgrade in the vllm build.
-
-  **Context length** The model has 262k native context length and it can be extended to 1M 
-  with --max-model-len flag. You can pick the correct value based on the use case and GPU
-  ram usage tradeoff.
+  FlashInfer version upgrade in the vllm build. The NVFP4 variant sets that flag, so on a
+  pip install either use the Docker image pinned above or drop the flag.
 
   ## References
 

@@ -3,11 +3,24 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
+import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
+import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
+
+// Tuning guidance for a feature's sub-mode, shown under the Features row while
+// that mode is the active one. Keyed [feature][mode] and kept here rather than
+// in the recipe YAMLs: it describes the *method*, not any one checkpoint, so
+// every recipe offering the method would otherwise repeat the same paragraph.
+const FEATURE_MODE_NOTES = {
+  spec_decoding: {
+    dspark:
+      "Draft sampling: greedy at temperature 0. For chat at temperature 0.6–1.0, "
+      + "probabilistic usually accepts more tokens, at the cost of a little more VRAM.",
+  },
+};
 
 // Advanced tuning presets — optional tunable flags the user can opt into.
 // (vLLM defaults like chunked prefill, prefix caching, CUDA graphs, async
@@ -792,10 +805,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // ── Derived ──
   const currentVariant = recipe.variants?.[variant] || recipe.variants?.default || {};
 
+  // The HF repo this variant serves — the variant's own checkpoint when it
+  // overrides `model_id` (nvidia/*-NVFP4, deepseek-ai/*-0813), otherwise the
+  // recipe's base model. Distinct from `modelId` below, which falls back to the
+  // literal "model" placeholder for command text; a URL needs a real repo or
+  // nothing at all.
+  const variantModelId = currentVariant.model_id || recipe.model?.model_id || null;
+
   // All hardware profiles grouped by brand, sorted by architectural generation
   // within brand (oldest → newest; matches the semianalysis GPU timeline).
   const hwByBrand = useMemo(() => {
-    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "rtx_4090_2x", "rtx_5090_2x", "dgx_station_gb300"];
+    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "rtx_pro_5000", "rtx_pro_6000", "dgx_spark_gb10", "rtx_4090_2x", "rtx_5090_2x", "dgx_station_gb300"];
     const AMD_ORDER = ["mi300x", "mi325x", "mi355x"];
     const rankIn = (list, id) => {
       const i = list.indexOf(id);
@@ -1743,9 +1763,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   if (isOmni) {
     const omniVariants = Object.entries(recipe.variants || {});
     const showOmniVariants = omniVariants.length > 1;
-    const showOmniTaskRow = omniTasks.length > 1;
+    const omniTaskAxes = Array.isArray(recipe.omni?.task_axes)
+      ? recipe.omni.task_axes.filter((axis) => axis?.id && Array.isArray(axis.options))
+      : [];
+    const showOmniTaskAxes = omniTasks.length > 1 && omniTaskAxes.length > 0;
+    const showOmniTaskRow = omniTasks.length > 1 && !showOmniTaskAxes;
     const activeTaskBase = omniTasks.find((t) => t.key === omniTask) || omniTasks[0] || null;
     const activeTask = resolveOmniTaskForHardware(activeTaskBase, hwId);
+
+    const taskForAxisOption = (axisId, optionId) => omniTasks.find((task) =>
+      omniTaskAxes.every((axis) =>
+        task.axes?.[axis.id]
+          === (axis.id === axisId ? optionId : activeTaskBase?.axes?.[axis.id])
+      )
+    );
 
     // Render the `vllm serve --omni` command via the shared omni resolver.
     // Falls back to a stub when the recipe has no omni.tasks declared yet
@@ -1873,7 +1904,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                             <span className="font-semibold">{p.display_name}</span>
                             {p.vram_gb > 0 && p.gpu_count > 0 && (
                               <span className="text-muted-foreground ml-1.5 font-mono">
-                                {p.gpu_count}×{Math.round(p.vram_gb / p.gpu_count)}G
+                                {Math.round(p.vram_gb / p.gpu_count)}G/GPU
                               </span>
                             )}
                           </Pill>
@@ -1916,26 +1947,64 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               </ConfigRow>
             )}
 
-            {showOmniVariants && (
+            {showOmniTaskAxes && omniTaskAxes.map((axis) => (
               <ConfigRow
-                label="Variant"
-                hint="VRAM shown is the minimum to LOAD the model (weights + runtime overhead). vLLM-Omni inference may need more for activations and intermediate tensors."
+                key={axis.id}
+                label={axis.label || axis.id}
+                hint={axis.hint}
               >
                 <PillGroup>
-                  {omniVariants.map(([key, v]) => (
-                    <Pill
-                      key={key}
-                      active={variant === key}
-                      onClick={() => selectVariant(key)}
-                      title={[
-                        v.description,
-                        `Min ${v.vram_minimum_gb} GB to load.`,
-                      ].filter(Boolean).join("\n\n")}
-                    >
-                      <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
-                      <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
-                    </Pill>
-                  ))}
+                  {axis.options.map((option) => {
+                    const matchingTask = taskForAxisOption(axis.id, option.id);
+                    const disabled = !matchingTask;
+                    return (
+                      <Pill
+                        key={option.id}
+                        active={activeTaskBase?.axes?.[axis.id] === option.id}
+                        disabled={disabled}
+                        onClick={() => !disabled && selectOmniTask(matchingTask.key)}
+                        title={disabled ? "This combination is not available." : option.description}
+                      >
+                        <span className="font-semibold">{option.label || option.id}</span>
+                      </Pill>
+                    );
+                  })}
+                </PillGroup>
+                {axis.id === omniTaskAxes[omniTaskAxes.length - 1]?.id && (
+                  <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                    {activeTask?.description}
+                    {activeTask?.vramMinimumGb && (
+                      <span className="ml-1.5 font-mono">Minimum {activeTask.vramMinimumGb} GB VRAM.</span>
+                    )}
+                  </p>
+                )}
+              </ConfigRow>
+            ))}
+
+            {showOmniVariants && (
+              <ConfigRow
+                label={recipe.omni?.variant_label || "Variant"}
+                hint={recipe.omni?.variant_hint || "VRAM shown is the minimum to LOAD the model (weights + runtime overhead). vLLM-Omni inference may need more for activations and intermediate tensors."}
+              >
+                <PillGroup>
+                  {omniVariants.map(([key, v]) => {
+                    const compatible = variantRunsOnHardware(hwProfile, v, hwId);
+                    return (
+                      <Pill
+                        key={key}
+                        active={variant === key}
+                        disabled={!compatible}
+                        onClick={() => compatible && selectVariant(key)}
+                        title={compatible
+                          ? [v.description, "Min " + v.vram_minimum_gb + " GB to load."].filter(Boolean).join("\n\n")
+                          : "Unavailable on the selected hardware."
+                        }
+                      >
+                        <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
+                        <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
+                      </Pill>
+                    );
+                  })}
                 </PillGroup>
               </ConfigRow>
             )}
@@ -2116,7 +2185,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                           <span className="font-semibold">{p.display_name}</span>
                           {p.vram_gb > 0 && p.gpu_count > 0 && (
                             <span className="text-muted-foreground ml-1.5 font-mono">
-                              {p.gpu_count}×{Math.round(p.vram_gb / p.gpu_count)}G
+                              {Math.round(p.vram_gb / p.gpu_count)}G/GPU
                             </span>
                           )}
                         </Pill>
@@ -2184,6 +2253,41 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 );
               })}
             </PillGroup>
+            {/* Active variant's description + the checkpoint it actually serves.
+                Mirrors the Strategy / KV Offload rows, which already render the
+                active option's description under the pills — this row was the
+                only one without it, so two things stayed invisible: the
+                description (it lived only in the pill's native `title`, which
+                touch and keyboard users never get), and the served repo, which
+                for a variant with its own `model_id` is NOT what the header's
+                "View on HuggingFace" points at. That link is deliberately the
+                recipe's own HF id — it's the page identity (`findVariantRedirect`
+                maps a variant repo back to this page), so the per-checkpoint link
+                belongs here, next to the pick that determines it.
+                Rendered for every variant, including ones that inherit
+                `model.model_id`: a line that appears for some pills and vanishes
+                for others is harder to learn than one that's always there. */}
+            {(currentVariant?.description || variantModelId) && (
+              <div className="mt-2 space-y-1">
+                {currentVariant?.description && (
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    {currentVariant.description}
+                  </p>
+                )}
+                {variantModelId && (
+                  <a
+                    href={`https://huggingface.co/${variantModelId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground hover:text-vllm-blue transition-colors"
+                  >
+                    <HuggingFaceIcon className="w-3 h-3" />
+                    {variantModelId}
+                    <ExternalLink size={9} />
+                  </a>
+                )}
+              </div>
+            )}
           </ConfigRow>
 
           {/* Strategy — always in effect, including under Mooncake: the KV
@@ -2596,6 +2700,28 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   );
                 })}
               </PillGroup>
+              {/* Guidance for the active sub-mode (FEATURE_MODE_NOTES) — tuning
+                  advice that outlives a tooltip, e.g. which draft_sample_method
+                  suits which temperature. It hangs off the Features row rather
+                  than the Spec method row below because that row only renders
+                  with ≥2 modes available for the current variant: a recipe whose
+                  methods are each pinned to different checkpoints (MTP on the
+                  preview, DSpark on the fused release) never shows it, and the
+                  note would have nowhere to live. */}
+              {featuredModeKeys.map((key) => {
+                const notes = FEATURE_MODE_NOTES[key];
+                if (!notes || !features.includes(key)) return null;
+                const feat = recipe.features[key];
+                if (!isFeatureAllowedForStrategy(feat, activeStrategy)) return null;
+                const activeMode = resolveModeKey(feat, key, currentVariant, variant, hwProfile, hwId, featureModes[key]);
+                const note = notes[activeMode];
+                if (!note) return null;
+                return (
+                  <p key={`${key}-note`} className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                    {note}
+                  </p>
+                );
+              })}
             </ConfigRow>
           )}
 
@@ -2978,7 +3104,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
     ? ["source /opt/intel/oneapi/setvars.sh", preludeBase].filter(Boolean).join("\n")
     : preludeBase;
   const displayCommand = isDocker
-    ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu })
+    ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
     : command;
   // A companion process may ride along (`companions[]` from resolveCommand —
   // a feature's `companion:` or the active kv_offload option's, e.g.
@@ -3156,7 +3282,7 @@ uv pip install -U vllm --torch-backend auto`;
   const defaultDockerNote = isTpu
     ? "TPU builds are published by vllm-project/tpu-inference. See the Trillium and Ironwood tpu-recipes for pinned image tags and exact deployment flags."
     : isXpu
-      ? "Intel XPU image. The entrypoint does not initialize oneAPI — source /opt/intel/oneapi/setvars.sh before `vllm serve`, or torch.xpu.device_count() returns 0."
+      ? "Intel XPU image. The entrypoint initializes oneAPI automatically."
     : isAmd
       ? undefined
       : cudaMap

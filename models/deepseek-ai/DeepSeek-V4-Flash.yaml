@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
   date_added: 2026-07-31
-  date_updated: 2026-08-11
+  date_updated: 2026-08-17
   difficulty: hard
   tasks:
     - text
@@ -39,11 +39,6 @@ model:
     - "fp8"
     - "--block-size"
     - "256"
-
-
-dependencies:
-  - note: "DeepGEMM FP8 kernels — install via vLLM tools/install_deepgemm.sh"
-    command: "bash <(curl -fsSL https://raw.githubusercontent.com/vllm-project/vllm/main/tools/install_deepgemm.sh)"
 
 features:
   tool_calling:
@@ -92,8 +87,6 @@ features:
         description: "DSpark drafting, 7 draft tokens, probabilistic sampling. Requires the DSpark or 0731 checkpoint (Variant row)."
         # Only the fused checkpoints carry the DSpark draft module — the 0731
         # release (default) and the DSpark re-pack of the preview weights.
-        hardware:
-          rtx_pro_6000_8x: unsupported
         variants:
           - default
           - dspark
@@ -122,7 +115,7 @@ variants:
     # Official 0731 release: new weights (not a re-pack of the preview), same
     # architecture and same fused DSpark draft module.
     model_id: "deepseek-ai/DeepSeek-V4-Flash-0731"
-    label: "0731"
+    label: "FP8 (0731)"
     precision: fp8
     vram_minimum_gb: 200
     description: "Official DeepSeek-V4-Flash release (2026-07-31) superseding the preview — substantially stronger agentic performance, with the DSpark draft module attached."
@@ -131,6 +124,8 @@ variants:
     default_modes:
       spec_decoding: dspark
     hardware_overrides:
+      rtx_pro_6000_8x:
+        docker_image: "vllm/vllm-openai:nightly"
       dgx_spark_gb10:
         docker_image: "eugr/spark-vllm-b12x:latest"
         extra_args:
@@ -185,6 +180,11 @@ variants:
           - "--moe-backend"
           - "deep_gemm_mega_moe"
   fp8:
+    # Marked "(Preview)" rather than left bare: with the 0731 release on the same
+    # row, an unqualified FP8 pill reads as "the plain one" instead of "the
+    # superseded one". Matches DeepSeek's own naming — their benchmark tables
+    # say `DeepSeek-V4-Flash-0731` vs `DeepSeek-V4-Flash (Preview)`.
+    label: "FP8 (Preview)"
     precision: fp8
     vram_minimum_gb: 170
     description: "Native FP4+FP8 mixed checkpoint (MoE experts FP4, remaining params FP8)"
@@ -575,8 +575,8 @@ guide: |
 
   | Variant | Repo | Draft | Notes |
   | :-- | :-- | :-- | :-- |
-  | **0731** (default) | `deepseek-ai/DeepSeek-V4-Flash-0731` | DSpark | Official release, new weights + DSpark |
-  | **FP8** | `deepseek-ai/DeepSeek-V4-Flash` | MTP | Preview FP4+FP8 mixed weights |
+  | **FP8 (0731)** (default) | `deepseek-ai/DeepSeek-V4-Flash-0731` | DSpark | Official release, new weights + DSpark |
+  | **FP8 (Preview)** | `deepseek-ai/DeepSeek-V4-Flash` | MTP | Preview FP4+FP8 mixed weights |
   | **NVFP4** | `nvidia/DeepSeek-V4-Flash-NVFP4` | MTP | modelopt re-quant, Blackwell |
   | **DSpark** | `deepseek-ai/DeepSeek-V4-Flash-DSpark` | DSpark | Preview weights + fused DSpark module |
 
@@ -585,7 +585,7 @@ guide: |
   2.1 and 54.4 on DeepSWE, versus 61.8 and 7.3 for the preview. It beats
   DeepSeek-V4-Pro (Preview) on every agentic benchmark DeepSeek published despite its
   far smaller activated parameter count. The preview weights remain available as the
-  **FP8** variant for reproducing earlier results.
+  **FP8 (Preview)** variant for reproducing earlier results.
 
   **DSpark** is *not* new weights — it is the preview checkpoint with a speculative
   decoding module attached (see [DeepSpec](https://github.com/deepseek-ai/DeepSpec)).
@@ -601,7 +601,9 @@ guide: |
   The fused checkpoints are ~167 GB on disk versus ~160 GB for the preview — the draft
   module is the difference. Both require **vLLM 0.25.0**: DSpark drafting itself landed
   in 0.25.0, but ROCm support for it (MI325X / MI355X) only shipped in 0.26.0. On
-  NVIDIA-only deployments 0.25.0 is sufficient.
+  NVIDIA-only deployments 0.25.0 is sufficient, except the 0731 checkpoint
+  on RTX PRO 6000 (sm_120) with DSpark, which needs `vllm/vllm-openai:nightly`
+  and a FlashInfer build containing flashinfer-ai/flashinfer#4380.
 
   ## Reasoning modes
 
@@ -732,40 +734,49 @@ guide: |
 
   ### RTX PRO 6000 8× (8×96 GB, sm_120)
 
-  Single-node TP8 + expert parallelism on the **0731** checkpoint. Verified with
-  the `vllm/vllm-openai:v0.25.0` image on 8× RTX PRO 6000 (PCIe, no NVLink).
+  Single-node TP8 + expert parallelism on the **0731** checkpoint. Serving
+  without speculative decoding was verified on 8× RTX PRO 6000 (PCIe, no
+  NVLink). DSpark on **0731** needs `vllm/vllm-openai:nightly` (or a build
+  that includes vLLM #51538) plus a FlashInfer that instantiates the SM120
+  sparse-MLA decode kernel for `topk=192`. The Preview, NVFP4, and DSpark
+  variant checkpoints are not verified on this profile.
 
-  Two host-side prerequisites before launching:
+  sm_120 cannot use the SM100 FP4 indexer cache or `deep_gemm_mega_moe`.
+  The generated command already sets `--attention_config.use_fp4_indexer_cache
+  False` and `--moe-backend auto`. Do not use `method: mtp` on 0731 — that
+  checkpoint has no MTP head; Spec Decoding defaults to DSpark.
+
+  Host-side FlashInfer install before launching 0731 with DSpark (`--no-deps`
+  is required so pip does not replace vLLM's torch):
 
   ```bash
-  # vLLM 0.25.0's DeepSeek-V4 sparse MLA decode passes `swa_topk_lens`, which
-  # only exists in FlashInfer 0.6.14; the image pins 0.6.13. --no-deps is
-  # required — a plain install pulls a different torch and breaks vLLM's
-  # compiled extensions.
-  /usr/bin/python3.12 -m pip install --no-deps flashinfer-python==0.6.14
+  # Trace: flashinfer-ai/flashinfer#4380
+  # merge: 24d7dfb2639083c5a4d418881099421fc800b7bb (2026-08-08)
+  # wheel: flashinfer-python==0.6.18.dev20260814
+  # index: https://flashinfer.ai/whl/nightly/
+  /usr/bin/python3.12 -m pip install -U --pre flashinfer-python \
+  --index-url https://flashinfer.ai/whl/nightly/ --no-deps
+  /usr/bin/python3.12 -m pip install flashinfer-python
+  /usr/bin/python3.12 -m pip install -U --pre flashinfer-cubin \
+  --index-url https://flashinfer.ai/whl/nightly/
+  /usr/bin/python3.12 -m pip install -U --pre flashinfer-jit-cache \
+  --index-url https://flashinfer.ai/whl/nightly/cu130
 
-  # flashinfer-cubin has no matching 0.6.14 release, so skip the parity check.
-  export FLASHINFER_DISABLE_VERSION_CHECK=1
-  ```
-
-  ```bash
   vllm serve deepseek-ai/DeepSeek-V4-Flash-0731 \
-    --trust-remote-code \
-    --kv-cache-dtype fp8 \
-    --block-size 256 \
-    --enable-expert-parallel \
-    --tensor-parallel-size 8 \
-    --tokenizer-mode deepseek_v4 \
-    --tool-call-parser deepseek_v4 \
-    --enable-auto-tool-choice \
-    --reasoning-parser deepseek_v4
+  --trust-remote-code \
+  --kv-cache-dtype fp8 \
+  --block-size 256 \
+  --enable-expert-parallel \
+  --tensor-parallel-size 8 \
+  --moe-backend auto \
+  --attention_config.use_fp4_indexer_cache False \
+  --tokenizer-mode deepseek_v4 \
+  --tool-call-parser deepseek_v4 \
+  --enable-auto-tool-choice \
+  --reasoning-parser deepseek_v4 \
+  --reasoning-config '{"reasoning_parser":"deepseek_v4","reasoning_start_str":"","reasoning_end_str":""}' \
+  --speculative-config '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"probabilistic"}'
   ```
-
-  **Speculative decoding is unavailable on sm_120.** Both MTP and DSpark abort
-  during warmup with `Check failed: num_tokens > 64` from
-  `sparse_mla_sm120_paged_attention` — the SM120 sparse MLA kernel requires more
-  than 64 tokens per batch, while speculative verification submits only the draft
-  length (7 for DSpark). The Spec Decoding pill is disabled for this profile.
   
   ### MI325X (1×256GB)
 

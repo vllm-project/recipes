@@ -13,6 +13,9 @@ meta:
   hardware:
     h100: verified
     h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
     trillium: verified
     xeon6: verified
     arc_pro_b60: verified
@@ -123,7 +126,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x GPU with >=16 GB VRAM (e.g. A100, L40S, H100, H200), Intel XPU B60/B70, or 2x Xeon6/Xeon5 NUMA node
+  - Hardware: 1x GPU with >=16 GB VRAM (e.g. A100, L40S, H100, H200, MI300X/MI325X/MI355X), Intel XPU B60/B70, or 2x Xeon6/Xeon5 NUMA node
   - vLLM >= 0.6.0
   - CUDA Driver compatible with your vLLM version for 1x GPU
   - Docker with NVIDIA Container Toolkit (recommended) for 1x GPU
@@ -135,6 +138,28 @@ guide: |
   source .venv/bin/activate
   uv pip install vllm --torch-backend auto
   ```
+
+  ### AMD ROCm
+
+  The ROCm wheel requires Python 3.12, ROCm 7.0+, and glibc >= 2.35. Use the
+  ROCm Docker image when your host environment does not meet those requirements.
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+  ```
+
+  Launch on 1x MI300X / MI325X / MI355X with AITER enabled:
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  vllm serve meta-llama/Llama-3.1-8B-Instruct \
+    --tensor-parallel-size 1 \
+    --disable-log-requests
+  ```
+
+  The first AITER launch may take several minutes while ROCm kernels are compiled and cached.
 
   ### pip (Intel Xeon 6 CPUs)
   For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.

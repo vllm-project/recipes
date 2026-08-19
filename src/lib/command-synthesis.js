@@ -521,18 +521,39 @@ export function pdFitsSingleNode(hwProfile, variant) {
 
 /**
  * Given a variant, pick the preferred default hardware:
- * - If variant requires Blackwell (e.g., NVFP4), prefer B200 then GB200
+ * - `meta.default_hardware` (the recipe author's editorial pick) when it
+ *   resolves to a profile this variant can actually land on
+ * - Else, if the variant requires Blackwell (e.g., NVFP4), prefer B200 then GB200
  * - Otherwise H200 is the canonical default
  * `recipe` is optional; when provided, hardware marked `unsupported` is excluded.
+ *
+ * `restricted` profiles (DGX Spark/Station, RTX Pro, TPU, Xeon) are candidates
+ * only when the recipe declares them in `meta.hardware` — mirrors the picker
+ * filter in CommandBuilder so the default is always a pill that renders.
+ *
+ * This is the landing hardware for both the builder (initial `useState`, before
+ * the URL param and the stored global preference get their say) and the JSON
+ * API's `recommended_command`. The API has neither of those signals, so
+ * `default_hardware` is the only way an author can steer it.
  */
 export function pickDefaultHardware(hwProfiles, variant, recipe) {
   const constraint = precisionHardwareConstraint(variant);
+  const declared = recipe?.meta?.hardware || {};
   const compatible = Object.entries(hwProfiles).filter(
     ([id, p]) =>
       matchesConstraint(p, constraint)
       && isHardwareSupported(recipe, id)
       && isVariantHardwareSupported(variant, id)
+      && (!p.restricted || id in declared)
   );
+
+  // Author's pick wins over the generic heuristic below: it knows which GPU the
+  // guide's numbers, the performance headline and the `verified` badge were
+  // written against. Fail-open — an id that doesn't survive the filter above
+  // (unknown to the taxonomy, wrong precision for this variant, opted out, or
+  // an undeclared restricted profile) falls through silently.
+  const authored = recipe?.meta?.default_hardware;
+  if (authored && compatible.some(([id]) => id === authored)) return authored;
 
   if (constraint?.generation === "blackwell") {
     if (compatible.some(([id]) => id === "b200")) return "b200";
@@ -692,7 +713,7 @@ function localModelMount(modelId) {
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
 // image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
 // CMD. Env vars become `-e KEY=VAL` inside the container.
-export function buildDockerRun({ command, env, image, gpuFlags, port = 8000, isXpu = false }) {
+export function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
@@ -714,12 +735,6 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = 8000, isX
   const base = `${prereq}docker run ${gpuFlags} \\
   --privileged --ipc=host -p ${port}:${port} \\
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
-  if (isXpu) {
-    const serve = `vllm serve ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
-    return `${base}
-  --entrypoint bash ${image} \\
-  -c "source /opt/intel/oneapi/setvars.sh && exec ${serve}"`;
-  }
   return `${base}
   ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
 }
@@ -748,15 +763,6 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
     ...mountFlags,
     ...envFlags,
   ];
-  // Intel XPU: override entrypoint to source oneAPI before serving (see
-  // buildDockerRun). The full serve invocation becomes a single `bash -c` arg.
-  if (meta.isXpu) {
-    return [
-      ...base,
-      "--entrypoint", "bash", meta.image,
-      "-c", `source /opt/intel/oneapi/setvars.sh && exec vllm serve ${cmdArgs.join(" ")}`,
-    ];
-  }
   return [
     ...base,
     meta.image,
@@ -835,8 +841,11 @@ function shellQuote(s) {
  *   { id, modelId?, extraArgs?, ... }
  *
  * Outliers:
- *   - `recipe.omni.serve_binary: "vllm-omni serve"` swaps the binary (today's
- *     only user is stable-audio-open, whose handler doesn't ship in `vllm`).
+ *   - `recipe.omni.serve_binary: "vllm-omni serve"` swaps the binary. Currently
+ *     unused, and new recipes should not set it. It exists only for recipes
+ *     pinned below vLLM 0.20.0, which is where the `vllm` console-script grew
+ *     the `--omni` delegation into vllm-omni's entrypoint; on 0.20.0+ both
+ *     binaries reach the same handler, so the default `vllm serve` is correct.
  *   - `recipe.omni.port` overrides the rendered `--port` flag (default 8000).
  */
 export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfileId = null) {
@@ -866,6 +875,11 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfil
   if (ho?.extra_args) args.push(...ho.extra_args);
   if (variantGenHo?.extra_args) args.push(...variantGenHo.extra_args);
   if (variantExactHo?.extra_args) args.push(...variantExactHo.extra_args);
+  // `omni.port` is the recipe's port override. Emit it after the arg sources
+  // above so dedupeArgs's last-wins rule lets it beat a `--port` already
+  // declared in base_args. Left unset, the served port is vllm's own default
+  // (8000), which is what the client-side curl renderer assumes.
+  if (recipe.omni?.port) args.push("--port", String(recipe.omni.port));
   // --omni is the toggle that puts vllm into omni-handler mode. Always emit it
   // last — dedupeArgs's last-wins rule keeps it idempotent if the recipe also
   // declares it in base_args.
