@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.1 refreshed version of GLM-5 — frontier-scale MoE language model (~744B total parameters) with MTP speculative decoding and thinking mode"
   date_added: 2026-03-28
-  date_updated: 2026-05-21
+  date_updated: 2026-08-19
   difficulty: advanced
   tasks:
     - text
@@ -12,6 +12,7 @@ meta:
   related_recipes: []
   hardware:
     h200: verified
+    mi355x: verified
 
 model:
   model_id: "zai-org/GLM-5.1"
@@ -38,12 +39,21 @@ features:
       - "--reasoning-parser"
       - "glm45"
   spec_decoding:
-    description: "Multi-Token Prediction speculative decoding (3 draft tokens)"
-    args:
-      - "--speculative-config.method"
-      - "mtp"
-      - "--speculative-config.num_speculative_tokens"
-      - "3"
+    description: "Multi-Token Prediction speculative decoding (3 draft tokens) — not supported on the AMD MXFP4 checkpoint"
+    default_mode: mtp
+    modes:
+      mtp:
+        label: "MTP"
+        description: "Built-in Multi-Token Prediction, 3 draft tokens."
+        variants:
+          - default
+          - fp8
+          - nvfp4
+        args:
+          - "--speculative-config.method"
+          - "mtp"
+          - "--speculative-config.num_speculative_tokens"
+          - "3"
 
 opt_in_features:
   - spec_decoding
@@ -68,6 +78,30 @@ variants:
       - "fp8"
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP4: "1"
+  mxfp4:
+    model_id: "amd/GLM-5.1-MXFP4"
+    precision: mxfp4
+    vram_minimum_gb: 447
+    min_vllm_version: "0.23.0"
+    supported_hardware:
+      - mi355x
+    description: "AMD Quark MXFP4 checkpoint — MoE weights quantized for MI355X (gfx950)"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8_e4m3"
+      - "-cc.pass_config.fuse_allreduce_rms=False"
+      - "--block-size=1"
+      - "--enable-prefix-caching"
+      - "--max-num-seqs"
+      - "64"
+    hardware_overrides:
+      mi355x:
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          VLLM_ROCM_USE_AITER_FP8BMM: "0"
+          VLLM_ROCM_USE_AITER_FP4BMM: "0"
+          VLLM_ROCM_USE_AITER_RMSNORM: "0"
+          VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
 
 compatible_strategies:
   - single_node_tp
@@ -78,7 +112,26 @@ compatible_strategies:
   - multi_node_dep
   - pd_cluster
 
-hardware_overrides: {}
+# Mooncake untested on MI355X so far — opt out until verified (the schema
+# only recognizes the literal "unsupported" value here). LMCache is left
+# fail-open (no hardware-scoped gate exists for it); see the MXFP4 guide
+# note below instead.
+kv_cache_strategy_hardware:
+  kv_store_distributed_mooncake:
+    mi355x: unsupported
+  kv_store_centralized_mooncake:
+    mi355x: unsupported
+
+hardware_overrides:
+  amd:
+    extra_args:
+      - "--linear-backend"
+      - "aiter"
+      - "--moe-backend"
+      - "aiter"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
 
 strategy_overrides: {}
 
@@ -99,6 +152,7 @@ guide: |
     Use the latest main branch if you need tool calling + MTP simultaneously.
   - **Hardware (FP8):** 8xH200 or 8xH20 (141GB × 8)
   - **DeepGEMM (FP8):** install via `install_deepgemm.sh` from vLLM repo
+  - **Hardware (MXFP4):** 8x MI355X (gfx950), vLLM >= 0.23.0, `vllm/vllm-openai-rocm:latest`
 
   ### Using Docker
 
@@ -142,6 +196,54 @@ guide: |
        --chat-template-content-format=string \
        --served-model-name glm-5.1-fp8
   ```
+
+  ### MXFP4 on AMD MI355X
+
+  The AMD Quark MXFP4 checkpoint quantizes the MoE weights while leaving non-MoE
+  modules in higher precision. The recipe UI only enables this variant for
+  supported AMD MI355X hardware. Use ROCm AITER kernels:
+
+  ```bash
+  docker run -d \
+    --name glm51-mxfp4 \
+    --privileged \
+    --ipc=host \
+    --shm-size 32g \
+    -p 8000:8000 \
+    -v /data:/root/.cache/huggingface \
+    -e VLLM_USE_V2_MODEL_RUNNER=1 \
+    -e VLLM_ROCM_USE_AITER=1 \
+    -e VLLM_ROCM_USE_AITER_FP8BMM=0 \
+    -e VLLM_ROCM_USE_AITER_FP4BMM=0 \
+    -e VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1 \
+    -e VLLM_ROCM_USE_AITER_RMSNORM=0 \
+    -e VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4 \
+    vllm/vllm-openai-rocm:latest \
+    amd/GLM-5.1-MXFP4 \
+    --trust-remote-code \
+    --chat-template-content-format=string \
+    -cc.pass_config.fuse_allreduce_rms=False \
+    --tensor-parallel-size 8 \
+    --kv-cache-dtype fp8_e4m3 \
+    --linear-backend aiter \
+    --moe-backend aiter \
+    --block-size=1 \
+    --enable-prefix-caching \
+    --tool-call-parser glm47 \
+    --enable-auto-tool-choice \
+    --reasoning-parser glm45 \
+    --max-num-seqs 64
+  ```
+
+  Notes:
+  - **MTP is not supported** on this checkpoint/kernel path — the recipe UI
+    doesn't offer the MTP mode for the MXFP4 variant, so no
+    `--speculative-config` is ever emitted here.
+  - **Mooncake KV-store offload is untested on MI355X** and disabled in the
+    KV Offload row for this hardware until verified.
+  - **LMCache is untested on MI355X** (left enabled/fail-open in the UI since
+    there's no hardware-scoped gate for it) — validate before relying on it
+    in production.
 
   ## Client Usage
 
@@ -207,4 +309,5 @@ guide: |
 
   - [Model card](https://huggingface.co/zai-org/GLM-5.1)
   - [FP8 checkpoint](https://huggingface.co/zai-org/GLM-5.1-FP8)
+  - [MXFP4 checkpoint](https://huggingface.co/amd/GLM-5.1-MXFP4)
   - [DeepGEMM install script](https://github.com/vllm-project/vllm/blob/v0.16.0rc0/tools/install_deepgemm.sh)
