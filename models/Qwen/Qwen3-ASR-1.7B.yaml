@@ -9,7 +9,12 @@ meta:
   tasks:
     - multimodal
   performance_headline: "Accurate multilingual ASR, including singing voice; single-GPU serving"
-  related_recipes: []
+  related_recipes: 
+   - "Qwen/Qwen3-ASR-1.7B"
+  hardware:
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "Qwen/Qwen3-ASR-1.7B"
