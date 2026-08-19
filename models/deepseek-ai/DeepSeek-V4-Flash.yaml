@@ -73,6 +73,7 @@ features:
         variants:
           - fp8
           - nvfp4
+          - redhat_nvfp4
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":2}'
@@ -98,6 +99,14 @@ features:
               - "--speculative-config"
               - '{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","attention_backend":"B12X_MLA_SPARSE"}'
 
+      dflash:
+        label: "DFlash"
+        description: "DFlash speculative decoding with an externally trained draft model; the served checkpoint is unchanged."
+        variants:
+          - default
+        args:
+          - "--speculative-config"
+          - '{"model":"RedHatAI/DeepSeek-V4-Flash-speculator.dflash","num_speculative_tokens":7,"method":"dflash"}'
 opt_in_features:
   - spec_decoding
 
@@ -290,6 +299,12 @@ variants:
           OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
           TP_SOCKET_IFNAME: "$IFACE_NAME"
           UCX_NET_DEVICES: "$IFACE_NAME"
+  redhat_nvfp4:
+    model_id: "RedHatAI/DeepSeek-V4-Flash-NVFP4-FP8"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 170
+    description: "RedHatAI NVFP4+FP8 mixed-precision checkpoint for Blackwell GPUs"
   dspark:
     # Official fused DSpark checkpoint — the preview weights with the DSpark draft
     # module attached (config.json gains the dspark_* block). A distinct served
