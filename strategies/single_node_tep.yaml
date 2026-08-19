@@ -1,6 +1,7 @@
 name: single_node_tep
 deploy_type: single_node
 display_name: "Tensor + Expert Parallel"
+orientation: balanced
 description: >
   Single-node TEP. TP splits dense layers and EP splits expert layers
   across local GPUs. TP must be set to GPU count to avoid OOM from

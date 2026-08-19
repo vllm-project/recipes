@@ -251,7 +251,7 @@ no-enable-prefix-caching: true
 max-cudagraph-capture-size: 2048
 max-num-batched-tokens: 8192
 stream-interval: 20
-speculative-config: '{"model":"nvidia/gpt-oss-120b-Eagle3-v2","num_speculative_tokens":3,"method":"eagle3","draft_tensor_parallel_size":1}'
+speculative-config: '{"model":"nvidia/gpt-oss-120b-Eagle3-v3","num_speculative_tokens":7,"method":"eagle3","draft_tensor_parallel_size":1}'
 ```
 
 `GPT-OSS_EAGLE3_Hopper.yaml`
@@ -260,7 +260,7 @@ no-enable-prefix-caching: true
 max-cudagraph-capture-size: 2048
 max-num-batched-tokens: 8192
 stream-interval: 20
-speculative-config: '{"model":"nvidia/gpt-oss-120b-Eagle3-v2","num_speculative_tokens":3,"method":"eagle3","draft_tensor_parallel_size":1}'
+speculative-config: '{"model":"nvidia/gpt-oss-120b-Eagle3-v3","num_speculative_tokens":7,"method":"eagle3","draft_tensor_parallel_size":1}'
 ```
 
 ### Launch the vLLM Server

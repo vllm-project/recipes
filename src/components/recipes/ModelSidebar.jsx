@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
@@ -21,19 +21,40 @@ export function ModelSidebar({ recipesByOrg }) {
   const currentOrg = parts[0] || "";
   const currentRepo = parts[1] || "";
 
-  const [expanded, setExpanded] = useState(null);
+  // Compute the initial expanded org synchronously so SSR emits the recipe
+  // links inside the current org — without this the server HTML only contains
+  // org-level links, hurting crawl signal.
+  const [expanded, setExpanded] = useState(() => {
+    const found = recipesByOrg.find(([org]) => org === currentOrg);
+    return found ? found[0] : null;
+  });
 
   useEffect(() => {
     const found = recipesByOrg.find(([org]) => org === currentOrg);
     if (found) setExpanded(found[0]);
   }, [currentOrg, recipesByOrg]);
 
+  const activeRef = useRef(null);
+  useEffect(() => {
+    if (!activeRef.current) return;
+    const link = activeRef.current;
+    const scroller = link.closest("[data-sidebar-scroll]");
+    if (!scroller) return;
+    const linkTop = link.offsetTop;
+    const linkBottom = linkTop + link.offsetHeight;
+    const viewTop = scroller.scrollTop;
+    const viewBottom = viewTop + scroller.clientHeight;
+    if (linkTop < viewTop || linkBottom > viewBottom) {
+      scroller.scrollTop = linkTop - scroller.clientHeight / 2 + link.offsetHeight / 2;
+    }
+  }, [currentOrg, currentRepo, expanded]);
+
   const toggle = (org) => setExpanded(expanded === org ? null : org);
 
   return (
     <TooltipProvider>
     <nav className="w-64 shrink-0 hidden lg:block">
-      <div className="sticky top-16 pt-4 space-y-0.5 max-h-[calc(100vh-5rem)] overflow-y-auto scrollbar-thin">
+      <div data-sidebar-scroll className="sticky top-16 pt-4 space-y-0.5 max-h-[calc(100vh-5rem)] overflow-y-auto scrollbar-thin">
         <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground px-3 pb-2">
           Providers
         </div>
@@ -92,6 +113,7 @@ export function ModelSidebar({ recipesByOrg }) {
                     return (
                       <InfoTip key={m.hf_id} content={primaryTask}>
                         <Link
+                          ref={isActive ? activeRef : null}
                           href={recipeHref(m)}
                           className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-mono transition-colors ${
                             isActive

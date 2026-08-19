@@ -9,6 +9,15 @@
 
 {% block extrahead %}
   {{ super() }}
+  {# Legacy MkDocs site has moved to recipes.vllm.ai. Redirect the landing
+     page (an instant meta-refresh passes ranking signals like a 301) and
+     noindex the remaining historical-reference pages so they stop competing
+     with the new portal in search. #}
+  {% if page and page.url == "index.html" %}
+  <meta http-equiv="refresh" content="0; url=https://recipes.vllm.ai/">
+  {% else %}
+  <meta name="robots" content="noindex, follow">
+  {% endif %}
   {% if page %}
   <meta property="og:type" content="article">
   <meta property="og:title" content="{{ page.meta.title or page.title }}">
@@ -20,5 +29,26 @@
   <meta name="twitter:title" content="{{ page.meta.title or page.title }}">
   <meta name="twitter:description" content="{{ page.meta.description or config.site_description or page.title }}">
   <meta name="twitter:image" content="https://docs.vllm.ai/en/latest/assets/logos/vllm-logo-text-light.png">
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  {% if page and page.url == "index.html" %}
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;padding:2rem;">
+    <p style="font-size:3rem;margin-bottom:1rem;">📦</p>
+    <h1 style="font-size:1.75rem;font-weight:700;margin-bottom:0.75rem;">vLLM Recipes has moved</h1>
+    <p style="font-size:1.1rem;color:var(--md-default-fg-color--light);max-width:480px;margin-bottom:2rem;">
+      The recipes site now lives at <strong>recipes.vllm.ai</strong> — with an interactive
+      command builder, hardware picker, and a JSON API.
+    </p>
+    <a href="https://recipes.vllm.ai" style="display:inline-block;padding:0.75rem 1.75rem;background:var(--md-primary-fg-color);color:var(--md-primary-bg-color);border-radius:0.25rem;font-weight:600;font-size:1rem;text-decoration:none;">
+      Go to recipes.vllm.ai →
+    </a>
+    <p style="margin-top:1.5rem;font-size:0.85rem;color:var(--md-default-fg-color--lighter);">
+      If you are not redirected automatically, use the link above.
+    </p>
+  </div>
+  {% else %}
+    {{ super() }}
   {% endif %}
 {% endblock %}

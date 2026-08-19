@@ -1,8 +1,9 @@
 meta:
   title: "LongCat-Image-Edit"
   slug: "longcat-image-edit"
-  provider: "Meituan"
+  provider: "LongCat (Meituan)"
   description: "Bilingual (Chinese-English) image editing model from Meituan LongCat, served via vLLM-Omni"
+  date_added: 2025-12-23
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
@@ -18,6 +19,10 @@ model:
   context_length: 0
   base_args: []
   base_env: {}
+
+omni:
+  tasks:
+    - i2i
 
 dependencies:
   - note: "vLLM-Omni must be installed from source with vllm==0.12.0 for LongCat-Image-Edit"
@@ -35,7 +40,7 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 36
-    description: "BF16 weights; served via vLLM-Omni (offline inference)"
+    description: "BF16 weights; served via vLLM-Omni"
 
 compatible_strategies: []
 

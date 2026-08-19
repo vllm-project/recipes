@@ -3,6 +3,7 @@ meta:
   slug: "nemotron-nano-12b-v2-vl"
   provider: "NVIDIA"
   description: "NVIDIA Nemotron-Nano 12B vision-language model with video support and Efficient Video Sampling (EVS)"
+  date_added: 2025-10-31
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
@@ -16,7 +17,6 @@ meta:
 model:
   model_id: "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16"
   min_vllm_version: "0.11.1"
-  docker_image: "vllm/vllm-openai:nightly-8bff831f0aa239006f34b721e63e1340e3472067"
   architecture: dense
   parameter_count: "12B"
   active_parameters: "12B"
@@ -68,6 +68,10 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
   - multi_node_tp_pp
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides: {}
 strategy_overrides: {}

@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { Type, Eye, Sparkles, Hash, Layers, Cpu } from "lucide-react";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
+import { compareRecipesByDateAdded } from "@/lib/recipe-utils";
 
 const TASK_ICON = { text: Type, multimodal: Eye, omni: Sparkles, embedding: Hash };
 
@@ -23,19 +24,9 @@ export function RecipeCardGrid({ recipes }) {
   }, [recipes]);
 
   const latest = useMemo(() => {
-    // Sort by HF release date — newest models first. Tiebreak on recipe
-    // date_updated, then id. Then dedupe by provider so "Latest recipes"
-    // surfaces breadth across orgs instead of e.g. eight Qwen rows when
-    // one org ships a big collection.
-    const sorted = [...recipes].sort((a, b) => {
-      const ra = a.hf_released ? new Date(a.hf_released).getTime() : 0;
-      const rb = b.hf_released ? new Date(b.hf_released).getTime() : 0;
-      if (ra !== rb) return rb - ra;
-      const da = a.meta?.date_updated ? new Date(a.meta.date_updated).getTime() : 0;
-      const db = b.meta?.date_updated ? new Date(b.meta.date_updated).getTime() : 0;
-      if (da !== db) return db - da;
-      return (a.hf_id || "").localeCompare(b.hf_id || "");
-    });
+    // "Latest recipes" means newly added to this catalog, not the HF repo's
+    // createdAt (a model repo may exist privately long before launch).
+    const sorted = [...recipes].sort(compareRecipesByDateAdded);
     const seen = new Set();
     const out = [];
     for (const r of sorted) {
@@ -55,6 +46,12 @@ export function RecipeCardGrid({ recipes }) {
         <div className="flex items-baseline gap-2 mb-3 pb-2 border-b border-border">
           <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Latest recipes</span>
           <span className="text-[10px] text-muted-foreground/60">newest {latest.length}</span>
+          <Link
+            href="/browse"
+            className="ml-auto text-[11px] text-muted-foreground hover:text-vllm-blue transition-colors"
+          >
+            View all {recipes.length} →
+          </Link>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {latest.map((r) => <RecipeCard key={r.hf_id} recipe={r} />)}
@@ -78,7 +75,6 @@ function RecipeCard({ recipe }) {
   const v = recipe.variants?.default || {};
   const tasks = recipe.meta?.tasks || [];
   const logo = getProviderLogo(recipe.hf_org);
-  const isOmni = tasks.includes("omni");
   const isMoe = recipe.model?.architecture === "moe";
   const ctx = recipe.model?.context_length || 0;
   const ctxLabel = ctx >= 1_000_000 ? `${Math.round(ctx / 1_000_000)}M` : ctx >= 1000 ? `${Math.round(ctx / 1000)}K` : String(ctx);
@@ -139,11 +135,8 @@ function RecipeCard({ recipe }) {
 
       {/* Footer: hint or description */}
       <div className="mt-auto text-[11px] text-muted-foreground line-clamp-2 leading-snug">
-        {recipe.meta?.performance_headline || recipe.meta?.description || ""}
+        {recipe.meta?.description || recipe.meta?.performance_headline || ""}
       </div>
-      {isOmni && (
-        <div className="text-[10px] text-vllm-yellow/80 font-medium">via vLLM-Omni</div>
-      )}
     </Link>
   );
 }

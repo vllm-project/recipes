@@ -1,4 +1,4 @@
-# DeepSeek-OCR Usage Guide
+# DeepSeek-OCR-2 Usage Guide
 
 ## Introduction
 [DeepSeek-OCR-2](https://huggingface.co/deepseek-ai/DeepSeek-OCR-2) is a frontier OCR model exploring optical context compression for LLMs.
