@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "27B-parameter dense hybrid-attention model with linear attention on 48 of 64 layers, a vision tower, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-14
-  date_updated: 2026-08-27
+  date_updated: 2026-09-02
   difficulty: beginner
   tasks:
     - multimodal
@@ -24,6 +24,8 @@ meta:
     # --enforce-eager; rtx_5090_2x covers FP8 and both NVFP4 builds at TP2.
     rtx_5090: verified
     rtx_5090_2x: verified
+    rtx_pro_6000: verified
+    dgx_spark_gb10: verified
     # Huawei Ascend NPU, verified 2026-08-18 on vLLM Ascend 0.23.0 (image
     # quay.io/ascend/vllm-ascend:qwen3.8-a5). The `ascend_w8a8` variant booted on a
     # single 950PR at TP1 with the in-checkpoint MTP head and FULL_DECODE_ONLY
@@ -72,11 +74,11 @@ dependencies:
 
 features:
   tool_calling:
-    description: "Enable automatic tool choice. The chat template emits tool calls as <tool_call><function=…><parameter=…> XML, which is the qwen3_coder format — not JSON."
+    description: "Enable automatic tool choice. The default parser is qwen3_xml."
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_coder"
+      - "qwen3_xml"
   reasoning:
     description: "Parse <think> blocks separately from the final answer. The template opens every assistant turn with <think>, so without this the reasoning lands in message.content."
     args:
@@ -95,10 +97,19 @@ features:
         # off the TOP-level config (config/speculative.py), but this checkpoint carries it only
         # under `text_config`, so the depth cannot be inferred here — omit it and startup fails.
         description: "Native MTP head, 3 draft tokens."
-        variants: [default, fp8, nvfp4, int4]
+        variants: [default, fp8, nvfp4, radixark_nvfp4, int4]
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":3}'
+        hardware_overrides:
+          dgx_spark_gb10:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":5}'
+          rtx_pro_6000:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":5}'
       qwen3_5_mtp:
         label: "MTP (Ascend)"
         # vLLM Ascend documents `qwen3_5_mtp` for this head (it aliases to `mtp` and logs a
@@ -138,6 +149,17 @@ variants:
     # 55,563,006,776 B on disk = 55.6 GB
     vram_minimum_gb: 67
     description: "Full-precision BF16 — 51.7 GiB of weights: 1 GPU."
+    hardware_overrides:
+      rtx_pro_6000:
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
+      dgx_spark_gb10:
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
+          - "--gpu-memory-utilization"
+          - "0.8"
   fp8:
     model_id: "Qwen/Qwen3.8-27B-FP8"
     precision: fp8
@@ -163,6 +185,47 @@ variants:
     vram_minimum_gb: 32
     supported_hardware: [b200, b300, gb200, gb300, rtx_5090, rtx_5090_2x]
     description: "NVFP4 build for NVIDIA Blackwell — 24.6 GiB, the smallest footprint: 1 GPU."
+  radixark_nvfp4:
+    model_id: "RadixArk/Qwen3.8-27B-NVFP4-BF16-LMHead"
+    precision: nvfp4
+    # Without a label the pill renders precision.toUpperCase() = "NVFP4", so a bare "NVFP4"
+    # label would be a no-op.
+    label: "NVFP4 (Mixed-Precision)"
+    # 21,904,998,400 B = 21.9 GB. quant_method `modelopt`, quant_algo `NVFP4-FP8-FP4 mixed-precision`.
+    vram_minimum_gb: 32
+    supported_hardware: [rtx_pro_6000, dgx_spark_gb10]
+    description: "NVFP4 build for NVIDIA Blackwell — 24.6 GiB, the smallest footprint: 1 GPU."
+    hardware_overrides:
+      dgx_spark_gb10:
+        extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--gpu-memory-utilization"
+          - "0.7"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
+          - "--async-scheduling"
+          - "--enable-prefix-caching"
+          - "--load-format"
+          - "fastsafetensors"
+      rtx_pro_6000:
+        extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
+          - "--async-scheduling"
+          - "--enable-prefix-caching"
   int4:
     model_id: "RedHatAI/Qwen3.8-27B-INT4"
     precision: int4
@@ -170,6 +233,7 @@ variants:
     vram_minimum_gb: 24
     supported_hardware: [h100, h200, b200, b300, gb200, gb300, rtx_5090, rtx_5090_2x]
     description: "Red Hat AI compressed-tensors W4A16 INT4 build — 19.5 GB: 1 GPU, runs on Hopper too."
+
   ascend_w8a8:
     model_id: "Eco-Tech/Qwen3.8-27B-w8a8"
     precision: int8
@@ -252,7 +316,7 @@ guide: |
     --max-model-len 262144 \
     --kv-cache-dtype fp8 \
     --reasoning-parser qwen3 \
-    --enable-auto-tool-choice --tool-call-parser qwen3_coder
+    --enable-auto-tool-choice --tool-call-parser qwen3_xml
   ```
 
   FP8, TP4 (one GB300 tray) for the largest KV cache:
@@ -285,7 +349,7 @@ guide: |
     --max-model-len 262144 \
     --kv-cache-dtype fp8 \
     --reasoning-parser qwen3 \
-    --enable-auto-tool-choice --tool-call-parser qwen3_coder
+    --enable-auto-tool-choice --tool-call-parser qwen3_xml
   ```
 
   At 262,144 context, GPU KV cache size as reported at startup:
@@ -354,7 +418,7 @@ guide: |
     --max-num-batched-tokens 16384 \
     --enable-prefix-caching \
     --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_coder \
+    --tool-call-parser qwen3_xml \
     --mm-encoder-tp-mode data \
     --speculative-config '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}' \
     --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
@@ -459,6 +523,7 @@ guide: |
 
   - Model card: https://huggingface.co/Qwen/Qwen3.8-27B
   - FP8 checkpoint: https://huggingface.co/Qwen/Qwen3.8-27B-FP8
+  - NVFP4 build (RadixArk): https://huggingface.co/RadixArk/Qwen3.8-27B-NVFP4-BF16-LMHead
   - NVFP4 build (NVIDIA): https://huggingface.co/Inferact/Qwen3.8-27B-NVFP4
   - Ascend INT8 checkpoint (ModelScope): https://www.modelscope.cn/models/Eco-Tech/Qwen3.8-27B-w8a8
   - vLLM documentation: https://docs.vllm.ai/
