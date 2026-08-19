@@ -495,7 +495,7 @@ guide: |
   path and is unchanged. The GSM8K snippet above is a static snapshot and
   was not re-measured with INT4 quick-reduce.
 
-  Both validated AgentX topologies run `ep 1`: fused shared experts
+  The validated AgentX recipe runs `ep 1`: fused shared experts
   (`VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1`) are mutually exclusive with
   `--enable-expert-parallel`, which TEP/DEP inject. Do not copy those flags
   onto the single-turn recipe.
@@ -524,10 +524,9 @@ guide: |
   AgentX concurrency counts live session trees, not individual HTTP requests.
   Subagent fan-out can push instantaneous request concurrency above the
   session-tree concurrency `CONC`, so `--max-num-seqs` is `2 × CONC` on pure
-  TP8. Under DP-attention the limit is per scheduler (one per rank), so
-  `--max-num-seqs` equals `CONC`. Examples below use `CONC = 64`.
+  TP8. The example below uses `CONC = 64`.
 
-  ### Environment (both topologies)
+  ### Environment
 
   ```bash
   export VLLM_ROCM_USE_AITER=1
@@ -540,7 +539,7 @@ guide: |
   expert). vLLM gates the fused shared-expert path on
   `VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS`, which defaults to off.
 
-  ### Pure TP8 — interactive / lower TPOT
+  ### Launch command
 
   ```bash
   vllm serve deepseek-ai/DeepSeek-V4-Pro \
@@ -561,54 +560,6 @@ guide: |
     --enable-prefix-caching \
     --no-disable-hybrid-kv-cache-manager \
     --max-num-seqs 128
-  ```
-
-  ### DP-attention (TP=1, DP=8) + vLLM router — high concurrency
-
-  Front the engine with [`vllm-router`](https://github.com/vllm-project/router)
-  0.1.14 (`consistent_hash`) so conversation trees pin to one DP rank. The
-  engine uses the default port (8000); the router listens on 8001. Clients
-  should send a stable `X-Session-ID` per session.
-
-  `--prefill-schedule-interval 8` keeps DP ranks aligned under mixed prefill
-  lengths. `--long-prefill-token-threshold 16384` was present on the measured
-  point; with `--max-num-batched-tokens 8192` it sits above the token budget
-  and does not bind.
-
-  ```bash
-  pip install vllm-router==0.1.14
-
-  vllm serve deepseek-ai/DeepSeek-V4-Pro \
-    --trust-remote-code \
-    --async-scheduling \
-    --distributed-executor-backend mp \
-    --kv-cache-dtype fp8 \
-    --max-num-batched-tokens 8192 \
-    --tensor-parallel-size 1 \
-    --data-parallel-size 8 \
-    --prefill-schedule-interval 8 \
-    --long-prefill-token-threshold 16384 \
-    --gpu-memory-utilization 0.86 \
-    --moe-backend aiter \
-    --compilation-config '{"mode":3,"cudagraph_mode":"FULL_AND_PIECEWISE"}' \
-    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
-    --tokenizer-mode deepseek_v4 \
-    --tool-call-parser deepseek_v4 \
-    --reasoning-parser deepseek_v4 \
-    --enable-auto-tool-choice \
-    --enable-prefix-caching \
-    --no-disable-hybrid-kv-cache-manager \
-    --max-num-seqs 64
-
-  vllm-router \
-    --worker-urls http://localhost:8000 \
-    --policy consistent_hash \
-    --intra-node-data-parallel-size 8 \
-    --port 8001 \
-    --prometheus-host 127.0.0.1 \
-    --prometheus-port 18000 \
-    --request-timeout-secs 14400 \
-    --disable-retries
   ```
 
   ## KV Cache Offloading
