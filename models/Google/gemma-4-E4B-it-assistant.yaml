@@ -1,0 +1,163 @@
+meta:
+  title: "Gemma 4 E4B IT Assistant"
+  slug: "gemma-4-e4b-it-assistant"
+  provider: "Google"
+  description: "MTP speculative decoding draft model for Gemma 4 E4B — proposes multiple candidate tokens per step using centroids masking for efficient sparse logit computation."
+  date_added: 2026-08-16
+  difficulty: intermediate
+  tasks:
+    - text
+  performance_headline: "MTP draft model for Gemma 4 E4B — ~50% decode throughput improvement via speculative decoding on a single GPU"
+  related_recipes:
+    - google/gemma-4-E4B-it
+    - google/gemma-4-E2B-it
+  hardware:
+    h100: verified
+    b200: verified
+    mi300x: verified
+    max1550: verified
+
+model:
+  model_id: "google/gemma-4-E4B-it-assistant"
+  min_vllm_version: "0.19.1"
+  architecture: dense
+  parameter_count: "2B"
+  active_parameters: "2B"
+  context_length: 131072
+  base_args: []
+  base_env: {}
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 20
+    description: "BF16 target + draft model — single 24 GB+ GPU. The assistant adds ~2 GB on top of the 16 GB target model."
+
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides:
+  xpu:
+    extra_args:
+      enforce_eager: true
+    extra_env:
+      ZE_AFFINITY_MASK: "0"
+
+strategy_overrides:
+  single_node_tp:
+    tp: 1
+
+guide: |
+  ## Overview
+
+  [gemma-4-E4B-it-assistant](https://huggingface.co/google/gemma-4-E4B-it-assistant) is a compact draft model for **MTP (Multi-Token Prediction) speculative decoding** with [Gemma 4 E4B-it](https://huggingface.co/google/gemma-4-E4B-it). The assistant proposes multiple candidate tokens per step using centroids masking for efficient sparse logit computation, and the target model verifies them in a single forward pass.
+
+  > **Note:** This model is used exclusively as a draft model via `--speculative-config`. It is not intended for standalone inference.
+
+  ### Key Features
+  - **MTP Speculative Decoding**: Proposes up to 4 candidate tokens per step
+  - **Centroids Masking**: Sparse logit computation via centroid projection — avoids full 256K vocabulary dot product
+  - **KV Cache Sharing**: Draft layers share KV cache with target model, minimizing memory overhead
+  - **Mixed Attention**: Per-layer backend routing on XPU (Flash Attention for head_dim≤256, Triton for head_dim>256)
+
+  ## Prerequisites
+
+  ### pip (NVIDIA CUDA)
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install -U vllm --pre \
+    --extra-index-url https://wheels.vllm.ai/nightly/cu129 \
+    --extra-index-url https://download.pytorch.org/whl/cu129 \
+    --index-strategy unsafe-best-match
+  ```
+
+  ### Docker
+  ```bash
+  docker pull vllm/vllm-openai:gemma4-0505-cu129  # NVIDIA
+  docker pull intel/vllm:latest                     # Intel XPU
+  ```
+
+  ## Deployment
+
+  ### Speculative Decoding (NVIDIA)
+  ```bash
+  vllm serve google/gemma-4-E4B-it \
+    --max-model-len 32768 \
+    --speculative-config '{"model":"google/gemma-4-E4B-it-assistant","num_speculative_tokens":4}'
+  ```
+
+  ### Speculative Decoding (Intel XPU — Max 1550)
+
+  The per-layer mixed attention backend (Flash Attention for sliding window layers, Triton for global attention layers) is selected automatically for both target and draft models.
+
+  ```bash
+  ZE_AFFINITY_MASK=0 vllm serve google/gemma-4-E4B-it \
+    --dtype bfloat16 \
+    --enforce-eager \
+    --max-model-len 32768 \
+    --speculative-config '{"model":"google/gemma-4-E4B-it-assistant","num_speculative_tokens":4}' \
+    --host 0.0.0.0 --port 8000
+  ```
+
+  ### Docker (Intel XPU)
+  ```bash
+  docker run -itd --name gemma4-e4b-spec-xpu \
+    --device /dev/dri --network host \
+    --shm-size 16g \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e ZE_AFFINITY_MASK=0 \
+    intel/vllm:latest \
+      --model google/gemma-4-E4B-it \
+      --dtype bfloat16 \
+      --enforce-eager \
+      --max-model-len 32768 \
+      --speculative-config '{"model":"google/gemma-4-E4B-it-assistant","num_speculative_tokens":4}' \
+      --host 0.0.0.0 --port 8000
+  ```
+
+  ### Text-Only Mode (Longer Contexts)
+
+  Skip vision/audio encoders to free VRAM for KV cache:
+
+  ```bash
+  ZE_AFFINITY_MASK=0 vllm serve google/gemma-4-E4B-it \
+    --language-model-only \
+    --dtype bfloat16 \
+    --enforce-eager \
+    --max-model-len 65536 \
+    --speculative-config '{"model":"google/gemma-4-E4B-it-assistant","num_speculative_tokens":4}' \
+    --host 0.0.0.0 --port 8000
+  ```
+
+  ## Performance
+
+  On Intel Data Center GPU Max 1550 (68.7 GB HBM2e, TP=1, BF16):
+
+  | Configuration | Decode (tok/s, B=1) |
+  |--------------|---------------------|
+  | E4B-it base only | ~28 |
+  | E4B-it + assistant (4 spec tokens) | ~42 |
+  | **Improvement** | **+50%** |
+
+  ## Memory Budget (BF16, TP=1)
+
+  | Component | Size |
+  |-----------|------|
+  | Target model weights | ~16 GB |
+  | Draft model weights | ~2 GB |
+  | KV cache (shared) | ~8 GB |
+  | **Total** | **~28 GB** |
+
+  ## Configuration Tips
+
+  - `num_speculative_tokens=4` is the recommended setting for this assistant model
+  - The draft model shares KV cache with the target — no extra KV memory needed
+  - Use `--language-model-only` for text-only workloads to maximize context length
+  - On XPU, `--enforce-eager` is required (no torch.compile support yet)
+
+  ## References
+
+  - [Gemma 4 E4B-it-assistant model card](https://huggingface.co/google/gemma-4-E4B-it-assistant)
+  - [Gemma 4 E4B-it model card](https://huggingface.co/google/gemma-4-E4B-it)
+  - [vLLM speculative decoding docs](https://docs.vllm.ai/en/latest/features/spec_decode.html)
