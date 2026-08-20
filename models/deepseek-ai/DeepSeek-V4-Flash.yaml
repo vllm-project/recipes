@@ -500,7 +500,6 @@ strategy_overrides:
       nodes: 1               # 1 GB200 node = 4 GPUs
       parallelism: dep       # DP + expert-parallel pool
       vllm_args:
-        - "--enforce-eager"
         - "--max-num-seqs"
         - "8"
         - "--max-num-batched-tokens"
@@ -875,7 +874,6 @@ guide: |
     --max-model-len auto \
     --max-num-batched-tokens 16384 \
     --max-num-seqs 8 \
-    --enforce-eager \
     --no-disable-hybrid-kv-cache-manager \
     --disable-uvicorn-access-log \
     --kv-transfer-config '{"kv_connector":"MooncakeConnector","kv_role":"kv_both","kv_load_failure_policy":"fail","kv_buffer_device":"cuda","kv_connector_extra_config":{"enforce_handshake_compat":false,"mooncake_protocol":"rdma"}}'
@@ -963,7 +961,6 @@ guide: |
     --max-model-len auto \
     --max-num-batched-tokens 16384 \
     --max-num-seqs 8 \
-    --enforce-eager \
     --no-disable-hybrid-kv-cache-manager \
     --disable-uvicorn-access-log \
     --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both"}'

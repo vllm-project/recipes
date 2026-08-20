@@ -120,7 +120,6 @@ strategy_overrides:
       nodes: 1               # 1 GB200 node = 4 GPUs
       parallelism: dep       # DP + expert-parallel pool
       vllm_args:
-        - "--enforce-eager"
         - "--max-num-batched-tokens"
         - "16384"
         - "--block-size"
