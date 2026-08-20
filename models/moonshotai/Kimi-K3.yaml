@@ -282,7 +282,6 @@ strategy_overrides:
       parallelism: tep
       tp: 8
       vllm_args:
-        - "--enforce-eager"
         - "--max-num-batched-tokens"
         - "16384"
         - "--no-disable-hybrid-kv-cache-manager"

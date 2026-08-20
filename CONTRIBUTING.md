@@ -174,7 +174,6 @@ strategy_overrides:
       nodes: 1
       parallelism: dep
       tp: 1                                     # DP = nodes × gpus_per_node / tp = 4
-      vllm_args: ["--enforce-eager"]
       env: {}
     decode:
       nodes: 4
