@@ -1,0 +1,98 @@
+meta:
+  title: "Mistral-7B-Instruct-v0.2"
+  slug: "mistral-7b-instruct-v0.2"
+  provider: "Mistral AI"
+  description: "Mistral 7B Instruct v0.2 with a CPU-validated TheBloke AWQ INT4 variant."
+  date_added: 2026-08-19
+  date_updated: 2026-08-19
+  difficulty: beginner
+  tasks:
+    - text
+  performance_headline: "BF16 and AWQ variants validated on Intel Xeon 6"
+  hardware:
+    xeon6: verified
+
+model:
+  model_id: "mistralai/Mistral-7B-Instruct-v0.2"
+  min_vllm_version: "0.2.1"
+  architecture: dense
+  parameter_count: "7B"
+  active_parameters: "7B"
+  context_length: 32768
+  base_args: []
+  base_env: {}
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 17
+    description: "Full precision BF16"
+  awq_int4:
+    model_id: "TheBloke/Mistral-7B-Instruct-v0.2-AWQ"
+    precision: int4
+    vram_minimum_gb: 5
+    description: "TheBloke AWQ INT4 checkpoint"
+    extra_args:
+      - "--quantization"
+      - "awq"
+
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+
+hardware_overrides:
+  cpu:
+    extra_args:
+      - "--max-num-batched-tokens"
+      - "16384"
+      - "--gpu-memory-utilization"
+      - "0.8"
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  This recipe groups Mistral-7B-Instruct-v0.2 with the TheBloke AWQ INT4
+  checkpoint. Both checkpoints have PASS rows in the Intel Xeon 6 serving BKM.
+
+  ## Prerequisites
+
+  - Hardware: 4x Xeon6/Xeon5 NUMA node
+  - vLLM >= 0.2.1
+
+  ### Docker (Intel Xeon 6 CPUs)
+
+  ```bash
+  docker pull vllm/vllm-openai-cpu:latest-x86_64
+  ```
+
+  ## Intel Xeon 6
+
+  ```bash
+  vllm serve mistralai/Mistral-7B-Instruct-v0.2 \
+    --max-num-batched-tokens 16384 \
+    --gpu-memory-utilization 0.8
+  ```
+
+  AWQ:
+
+  ```bash
+  vllm serve TheBloke/Mistral-7B-Instruct-v0.2-AWQ \
+    --quantization awq \
+    --max-num-batched-tokens 16384 \
+    --gpu-memory-utilization 0.8
+  ```
+
+  TP/DP values, `--max-num-seqs=256`, prefix-cache controls, and host-specific
+  CPU placement remain benchmark/deployment choices and are not hard-coded.
+
+  ## References
+
+  - [Parent model](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2)
+  - [AWQ variant](https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-AWQ)
+  - [vLLM CPU installation](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/)

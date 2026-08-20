@@ -1,0 +1,82 @@
+meta:
+  title: "Whisper Large v3"
+  slug: "whisper-large-v3"
+  provider: "OpenAI"
+  description: "Whisper Large v3 speech recognition model, validated for Intel Xeon 6 CPU serving."
+  date_added: 2026-08-19
+  date_updated: 2026-08-19
+  difficulty: intermediate
+  tasks:
+    - multimodal
+  performance_headline: "Audio transcription validated on Intel Xeon 6"
+  hardware:
+    xeon6: verified
+
+model:
+  model_id: "openai/whisper-large-v3"
+  min_vllm_version: "0.7.0"
+  architecture: dense
+  parameter_count: "1.55B"
+  active_parameters: "1.55B"
+  context_length: 448
+  base_args: []
+  base_env: {}
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 4
+    description: "BF16 serving configuration validated on Intel Xeon 6"
+
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+
+hardware_overrides:
+  cpu:
+    extra_args:
+      - "--max-num-batched-tokens"
+      - "16384"
+      - "--gpu-memory-utilization"
+      - "0.8"
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  Whisper Large v3 is OpenAI's speech recognition model. vLLM exposes
+  transcription through the OpenAI-compatible audio transcription endpoint.
+
+  ## Prerequisites
+
+  - Hardware: 1x Xeon6/Xeon5 NUMA node
+  - vLLM >= 0.7.0
+
+  ### Docker (Intel Xeon 6 CPUs)
+
+  ```bash
+  docker pull vllm/vllm-openai-cpu:latest-x86_64
+  ```
+
+  ## Intel Xeon 6
+
+  ```bash
+  vllm serve openai/whisper-large-v3 \
+    --max-num-batched-tokens 16384 \
+    --gpu-memory-utilization 0.8
+  ```
+
+  TP/DP is deployment/topology tuning, so it is documented here but is not
+  hard-coded into the portable recipe. `--max-num-seqs=256` and
+  `--no-enable-prefix-caching` are also benchmark controls and are omitted.
+
+  ## References
+
+  - [Model card](https://huggingface.co/openai/whisper-large-v3)
+  - [vLLM Whisper implementation](https://docs.vllm.ai/en/latest/api/vllm/model_executor/models/whisper/)
+  - [vLLM CPU installation](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/)

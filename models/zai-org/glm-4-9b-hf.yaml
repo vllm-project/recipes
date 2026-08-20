@@ -1,0 +1,80 @@
+meta:
+  title: "GLM-4-9B"
+  slug: "glm-4-9b-hf"
+  provider: "Z.ai"
+  description: "GLM-4 9B dense base language model with 8K context."
+  date_added: 2026-08-19
+  date_updated: 2026-08-19
+  difficulty: intermediate
+  tasks:
+    - text
+  performance_headline: "Validated on Intel Xeon 6 with BF16 serving"
+  hardware:
+    xeon6: verified
+
+model:
+  model_id: "zai-org/glm-4-9b-hf"
+  min_vllm_version: "0.6.4"
+  architecture: dense
+  parameter_count: "9B"
+  active_parameters: "9B"
+  context_length: 8192
+  base_args: []
+  base_env: {}
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 22
+    description: "Full precision BF16"
+
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+
+hardware_overrides:
+  cpu:
+    extra_args:
+      - "--max-num-batched-tokens"
+      - "16384"
+      - "--gpu-memory-utilization"
+      - "0.8"
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  GLM-4-9B is the dense base model in the GLM-4 9B family. Intel Xeon 6 CPU
+  serving was validated with BF16.
+
+  ## Prerequisites
+
+  - Hardware: 4x Xeon6/Xeon5 NUMA node
+  - vLLM >= 0.6.4
+
+  ### Docker (Intel Xeon 6 CPUs)
+
+  ```bash
+  docker pull vllm/vllm-openai-cpu:latest-x86_64
+  ```
+
+  ## Intel Xeon 6
+
+  ```bash
+  vllm serve zai-org/glm-4-9b-hf \
+    --max-num-batched-tokens 16384 \
+    --gpu-memory-utilization 0.8
+  ```
+
+  TP/DP values, `--max-num-seqs=256`, prefix-cache controls, and host-specific
+  CPU placement remain benchmark/deployment choices and are not hard-coded.
+
+  ## References
+
+  - [Model card](https://huggingface.co/zai-org/glm-4-9b-hf)
+  - [vLLM CPU installation](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/)

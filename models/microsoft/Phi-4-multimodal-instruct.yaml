@@ -1,0 +1,84 @@
+meta:
+  title: "Phi-4-multimodal-instruct"
+  slug: "phi-4-multimodal-instruct"
+  provider: "Microsoft"
+  description: "Microsoft Phi-4 multimodal model supporting text, image, and audio inputs with text outputs."
+  date_added: 2026-08-19
+  date_updated: 2026-08-19
+  difficulty: intermediate
+  tasks:
+    - multimodal
+  performance_headline: "Validated on Intel Xeon 6"
+  hardware:
+    xeon6: verified
+
+model:
+  model_id: "microsoft/Phi-4-multimodal-instruct"
+  min_vllm_version: "0.8.0"
+  architecture: dense
+  parameter_count: "5.6B"
+  active_parameters: "5.6B"
+  context_length: 131072
+  base_args:
+    - "--trust-remote-code"
+  base_env: {}
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 14
+    description: "Full precision BF16"
+
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+
+hardware_overrides:
+  cpu:
+    extra_args:
+      - "--max-num-batched-tokens"
+      - "16384"
+      - "--gpu-memory-utilization"
+      - "0.8"
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  Phi-4-multimodal-instruct processes text, image, and audio inputs and
+  generates text. `--trust-remote-code` is retained because the model's
+  multimodal LoRA components require it.
+
+  ## Prerequisites
+
+  - Hardware: 1x Xeon6/Xeon5 NUMA node
+  - vLLM >= 0.8.0
+
+  ### Docker (Intel Xeon 6 CPUs)
+
+  ```bash
+  docker pull vllm/vllm-openai-cpu:latest-x86_64
+  ```
+
+  ## Intel Xeon 6
+
+  ```bash
+  vllm serve microsoft/Phi-4-multimodal-instruct \
+    --trust-remote-code \
+    --max-num-batched-tokens 16384 \
+    --gpu-memory-utilization 0.8
+  ```
+
+  TP/DP values, `--max-num-seqs=256`, prefix-cache controls, and host-specific
+  CPU placement remain benchmark/deployment choices and are not hard-coded.
+
+  ## References
+
+  - [Model card](https://huggingface.co/microsoft/Phi-4-multimodal-instruct)
+  - [vLLM Phi-4 usage guide](https://docs.vllm.ai/projects/recipes/en/stable/Microsoft/Phi-4.html)
+  - [vLLM CPU installation](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/)
