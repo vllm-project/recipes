@@ -238,7 +238,6 @@ strategy_overrides:
         gb300: 1             # 1 GB300 NVL4 tray = 4 GPUs (1072 GB/tray fits weights)
       parallelism: dep       # DP + expert-parallel pool
       vllm_args:
-        - "--enforce-eager"
         - "--max-num-seqs"
         - "16"
         - "--max-num-batched-tokens"
