@@ -39,16 +39,14 @@ features:
       - "--reasoning-parser"
       - "glm45"
   spec_decoding:
-    description: "Multi-Token Prediction speculative decoding (3 draft tokens) — not supported on the AMD MXFP4 checkpoint"
+    description: "Multi-Token Prediction speculative decoding (3 draft tokens) — not yet supported on the AMD MXFP4 checkpoint"
     default_mode: mtp
     modes:
       mtp:
         label: "MTP"
         description: "Built-in Multi-Token Prediction, 3 draft tokens."
-        variants:
-          - default
-          - fp8
-          - nvfp4
+        hardware:
+          mi355x: unsupported
         args:
           - "--speculative-config.method"
           - "mtp"
@@ -89,7 +87,7 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8_e4m3"
-      - "-cc.pass_config.fuse_allreduce_rms=False"
+      - "--cc.pass_config.fuse_allreduce_rms=False"
       - "--block-size=1"
       - "--enable-prefix-caching"
       - "--max-num-seqs"
@@ -222,7 +220,7 @@ guide: |
     amd/GLM-5.1-MXFP4 \
     --trust-remote-code \
     --chat-template-content-format=string \
-    -cc.pass_config.fuse_allreduce_rms=False \
+    --cc.pass_config.fuse_allreduce_rms=False \
     --tensor-parallel-size 8 \
     --kv-cache-dtype fp8_e4m3 \
     --linear-backend aiter \
@@ -236,14 +234,8 @@ guide: |
   ```
 
   Notes:
-  - **MTP is not supported** on this checkpoint/kernel path — the recipe UI
-    doesn't offer the MTP mode for the MXFP4 variant, so no
-    `--speculative-config` is ever emitted here.
-  - **Mooncake KV-store offload is untested on MI355X** and disabled in the
-    KV Offload row for this hardware until verified.
-  - **LMCache is untested on MI355X** (left enabled/fail-open in the UI since
-    there's no hardware-scoped gate for it) — validate before relying on it
-    in production.
+  - **MTP isn't yet supported** on this checkpoint/kernel path.
+  - Mooncake and LMCache KV-store offload are still untested on MI355X — worth a check before leaning on them in production.
 
   ## Client Usage
 
