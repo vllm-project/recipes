@@ -95,7 +95,11 @@ hardware_overrides:
     extra_args: []
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
-strategy_overrides: {}
+
+strategy_overrides:
+  single_node_tp:
+    tp:
+      xeon6: 2
 
 guide: |
   ## Overview

@@ -1066,8 +1066,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     activeStrategy,
     hwId,
   );
-  const showGpuUsageHint =
-    nodeCount === 1 && activeStrategy === "single_node_tp" && effectiveTp < hwGpuCount;
+  const showTpUsageHint =
+    nodeCount === 1
+    && activeStrategy === "single_node_tp"
+    && (hwProfile?.generation === "cpu" || effectiveTp < hwGpuCount);
 
   const isSingleNode = nodeCount === 1 && typeof activeStrategy === "string" && activeStrategy.startsWith("single_node_");
   // Intel XPU: the validated deployment is single-node, single-instance vLLM in
@@ -1904,7 +1906,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                             <span className="font-semibold">{p.display_name}</span>
                             {p.vram_gb > 0 && p.gpu_count > 0 && (
                               <span className="text-muted-foreground ml-1.5 font-mono">
-                                {Math.round(p.vram_gb / p.gpu_count)}G/GPU
+                                {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : "GPU"}
                               </span>
                             )}
                           </Pill>
@@ -2185,7 +2187,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                           <span className="font-semibold">{p.display_name}</span>
                           {p.vram_gb > 0 && p.gpu_count > 0 && (
                             <span className="text-muted-foreground ml-1.5 font-mono">
-                              {Math.round(p.vram_gb / p.gpu_count)}G/GPU
+                              {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : "GPU"}
                             </span>
                           )}
                         </Pill>
@@ -2194,9 +2196,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   </PillGroup>
                 </div>
               ))}
-              {showGpuUsageHint && (
+              {showTpUsageHint && (
                 <p className="text-[11px] text-muted-foreground/80 pt-1.5">
-                  This recipe runs on {effectiveTp} of {hwGpuCount} GPUs on the selected node — add
+                  {hwProfile?.generation === "cpu"
+                    ? `This recipe runs on ${effectiveTp} CPU NUMA ${effectiveTp === 1 ? "node" : "nodes"} on the selected node — add`
+                    : `This recipe runs on ${effectiveTp} of ${hwGpuCount} GPUs on the selected node — add`}
                   <code className="font-mono mx-1 px-1 py-0.5 rounded bg-foreground/5 text-[10px]">--tensor-parallel-size N</code>
                   via Advanced to scale up.
                 </p>

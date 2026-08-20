@@ -113,6 +113,7 @@ export function resolveSingleNodeTp(
   hwProfileId = null,
 ) {
   const gpuCount = typeof hwProfile?.gpu_count === "number" ? hwProfile.gpu_count : 1;
+  const isCpu = hwProfile?.generation === "cpu";
   if (strategyName !== "single_node_tp") return gpuCount;
   // Variant-level override beats recipe-level. Used when a non-default variant
   // (typically an FP8-block-quantized sibling) needs a smaller TP than the
@@ -121,11 +122,17 @@ export function resolveSingleNodeTp(
   // whose documented deployment differs by GPU (e.g. TP1 B300 / TP2 H200).
   const variantTp = declaredTpForHardware(variant?.tp, hwProfile, hwProfileId);
   if (typeof variantTp === "number" && variantTp > 0) {
-    return Math.min(variantTp, gpuCount);
+    // CPU profiles retain gpu_count only for compatibility with the generic
+    // hardware schema. It is not a physical CPU or NUMA-node limit.
+    return isCpu ? variantTp : Math.min(variantTp, gpuCount);
   }
-  const declaredTp = recipe?.strategy_overrides?.[strategyName]?.tp;
+  const declaredTp = declaredTpForHardware(
+    recipe?.strategy_overrides?.[strategyName]?.tp,
+    hwProfile,
+    hwProfileId,
+  );
   if (typeof declaredTp === "number" && declaredTp > 0) {
-    return Math.min(declaredTp, gpuCount);
+    return isCpu ? declaredTp : Math.min(declaredTp, gpuCount);
   }
   const perGpuVram = hwProfile?.vram_gb && gpuCount ? hwProfile.vram_gb / gpuCount : 0;
   const vramMinGb = variant?.vram_minimum_gb || 0;

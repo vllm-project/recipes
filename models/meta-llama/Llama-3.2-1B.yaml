@@ -47,7 +47,10 @@ hardware_overrides:
       - "--gpu-memory-utilization"
       - "0.8"
 
-strategy_overrides: {}
+strategy_overrides:
+  single_node_tp:
+    tp:
+      xeon6: 1
 
 guide: |
   ## Overview
