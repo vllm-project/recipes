@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "27B-parameter dense hybrid-attention model with linear attention on 48 of 64 layers, a vision tower, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-14
-  date_updated: 2026-08-14
+  date_updated: 2026-08-20
   difficulty: beginner
   tasks:
     - multimodal
@@ -29,6 +29,16 @@ meta:
     # single 950PR at TP1 with the in-checkpoint MTP head and FULL_DECODE_ONLY
     # ACLGraph and answered a long-form prompt correctly.
     ascend_950pr: verified
+    # Verified 2026-08-20 on an RTX PRO 6000 Blackwell Max-Q Workstation Edition
+    # (97,887 MiB, compute capability 12.0, driver 595.84) running the pinned
+    # vllm/vllm-openai:qwen38 image, vLLM 0.1.dev19754+g3a0914114 — the same build as the
+    # gb300 row. ALL THREE NVIDIA variants were booted at TP1 and served: `default` (BF16),
+    # `fp8` and `nvfp4`. Each generated correctly, returned a well-formed tool call through
+    # qwen3_coder, populated the reasoning field from the stock chat template, and drafted
+    # with the in-checkpoint MTP head (acceptance 0.735-0.765). None of them start at the
+    # emitted defaults — see strategy_overrides.single_node_tp for the Mamba-cache-block
+    # floor and the guide for the measured KV pools.
+    rtx_pro_6000: verified
 
 model:
   model_id: "Qwen/Qwen3.8-27B"
@@ -139,7 +149,7 @@ variants:
     vram_minimum_gb: 38
     description: "Official block-scaled FP8 checkpoint — 28.7 GiB: 1 GPU."
     # Not offered on ascend_950pr: vLLM Ascend has no code path for block-scaled FP8 today.
-    supported_hardware: [h100, h200, b200, b300, gb200, gb300, mi300x, mi325x, mi355x, rtx_5090, rtx_5090_2x]
+    supported_hardware: [h100, h200, b200, b300, gb200, gb300, mi300x, mi325x, mi355x, rtx_5090, rtx_5090_2x, rtx_pro_6000]
   nvfp4:
     model_id: "Inferact/Qwen3.8-27B-NVFP4"
     precision: nvfp4
@@ -148,7 +158,7 @@ variants:
     label: "NVFP4 (W4A4)"
     # 26,381,249,312 B = 26.4 GB. quant_method `modelopt`, quant_algo `NVFP4`.
     vram_minimum_gb: 32
-    supported_hardware: [b200, b300, gb200, gb300, rtx_5090, rtx_5090_2x]
+    supported_hardware: [b200, b300, gb200, gb300, rtx_5090, rtx_5090_2x, rtx_pro_6000]
     description: "NVFP4 build for NVIDIA Blackwell — 24.6 GiB, the smallest footprint: 1 GPU."
   ascend_w8a8:
     model_id: "Eco-Tech/Qwen3.8-27B-w8a8"
@@ -197,7 +207,29 @@ compatible_strategies:
 
 hardware_overrides: {}
 
-strategy_overrides: {}
+strategy_overrides:
+  single_node_tp:
+    # RTX Pro 6000 (96 GB, 1 GPU) cannot start ANY variant of this model at the
+    # emitted defaults. Qwen3.8 is a hybrid model: each decode sequence needs one
+    # Mamba cache block, and on a single 96 GB card the block count lands under the
+    # default max_num_seqs of 1024, so vLLM aborts during CUDA-graph resolution with
+    #   ValueError: max_num_seqs (1024) exceeds available Mamba cache blocks (N).
+    # Measured N on 2026-08-20, vLLM 0.1.dev19754+g3a0914114:
+    #   FP8   @ default gpu-memory-utilization -> 939   (fails)
+    #   NVFP4 @ default gpu-memory-utilization -> 1011  (fails)
+    #   BF16  @ 0.95                           -> 556   (fails)
+    # BF16 is the binding constraint, so raising gpu-memory-utilization alone is not
+    # enough for it — the seq cap has to come down too. This exact pair is the
+    # combination all three variants were verified on; it is scoped to this GPU id
+    # (additive exact-GPU layer, command-synthesis.js:1236) so no other hardware and
+    # no other recipe row is touched.
+    hardware_overrides:
+      rtx_pro_6000:
+        extra_args:
+          - "--gpu-memory-utilization"
+          - "0.95"
+          - "--max-num-seqs"
+          - "256"
 
 guide: |
   ## Overview
@@ -304,6 +336,65 @@ guide: |
   instead of fp8 — so fp8 KV is a choice here, not a requirement. The MTP head still fits
   (90,112 tokens, 0.754 acceptance). Those two flags are levers for a bigger pool, not fixes
   for the OOM: only `--enforce-eager` decides whether the server starts.
+
+  ### 1x RTX Pro 6000 (96 GB, sm120)
+
+  Verified 2026-08-20 on an **RTX PRO 6000 Blackwell Max-Q Workstation Edition** (97,887 MiB,
+  compute capability 12.0, driver 595.84), TP1, from the pinned `vllm/vllm-openai:qwen38`
+  image on vLLM `0.1.dev19754+g3a0914114` — the same build as the GB300 row. All three
+  NVIDIA variants were served on the card; the numbers below are from those runs.
+
+  Max-Q is the 300 W part, so treat throughput as a floor relative to the 600 W Workstation
+  Edition. Capacity figures are unaffected.
+
+  #### The seq cap is not optional here
+
+  **No variant starts at this recipe's plain defaults on this card.** Qwen3.8 is hybrid, so
+  every decode sequence needs one Mamba cache block; on a single 96 GB card the available
+  block count lands below the default `max_num_seqs` of 1024 and vLLM aborts before serving:
+
+  ```
+  ValueError: max_num_seqs (1024) exceeds available Mamba cache blocks (939).
+  Each decode sequence requires one Mamba cache block, so CUDA graph capture cannot
+  proceed. Please lower max_num_seqs to at most 939 or increase gpu_memory_utilization.
+  ```
+
+  Available blocks, measured: **FP8 939** and **NVFP4 1011** at default
+  `--gpu-memory-utilization`, **BF16 556** even at 0.95. So BF16 is the binding case and the
+  error's "or increase gpu_memory_utilization" branch does **not** rescue it — the seq cap
+  has to come down. The recipe therefore appends `--gpu-memory-utilization 0.95
+  --max-num-seqs 256` on this GPU id only; that pair is what all three variants were
+  verified on, and it leaves plenty of headroom under the 556 floor.
+
+  #### Measured at TP1, 262,144 context, gmu 0.95, `--max-num-seqs 256`, MTP depth 3
+
+  | variant | KV cache | concurrency @ 262K | MTP acceptance | graph capture |
+  |---|---|---|---|---|
+  | BF16 (`default`) | 504,417 tokens | 1.92x | 0.765 | 12 s, 0.82 GiB |
+  | FP8 | 839,166 tokens | 3.20x | 0.764 | 9 s, 0.89 GiB |
+  | NVFP4 | 894,193 tokens | 3.41x | 0.735 | 11 s, 1.03 GiB |
+
+  All three answered a verifiable prompt correctly, returned `finish_reason: tool_calls`
+  with `{"city": "Berlin"}` through the `qwen3_coder` parser, and populated the response's
+  reasoning field from the stock chat template. Note that this build returns it as
+  `message.reasoning`, **not** `message.reasoning_content` — a client reading the older key
+  sees an empty string and will wrongly conclude the reasoning parser is broken.
+
+  **BF16 is a genuine single-GPU option here**, which it is not on a 32 GB 5090 at any
+  context length — though it costs roughly 40% of the KV pool against FP8 for no measured
+  acceptance gain. **FP8 and NVFP4 both hold more KV on this one card than the two-5090 TP2
+  rows above** (839,166 / 894,193 against 377,456 / 445,875): 96 GB with 24-29 GiB of
+  weights simply leaves more room than 2x32 GB does.
+
+  **`--enforce-eager` is not needed.** That flag is a 1x-5090 workaround for graph capture
+  OOMing on a 31.4 GiB card; here capture completed in 9-12 s using under 1.1 GiB at the
+  default `FULL_AND_PIECEWISE`.
+
+  **Both sm120 kernel findings from the 5090 section reproduce verbatim on this card.** FP8
+  logs `Auto-disabled DeepGemm for model_type=qwen3_5_text on Blackwell ... Falling back to
+  CUTLASS` and then `Selected CutlassFp8BlockScaledMMKernel` — no `VLLM_USE_DEEP_GEMM=0`
+  needed. NVFP4 selects `FlashInferCutlassNvFp4LinearKernel for NVFP4 GEMM`, the real
+  cutlass path rather than an emulation fallback.
 
   ### Huawei Ascend 950PR (vLLM Ascend)
 
