@@ -44,6 +44,11 @@ variants:
     precision: bf16
     vram_minimum_gb: 77
     description: "Full precision BF16"
+  w8a8_int8:
+    model_id: "RedHatAI/QwQ-32B-quantized.w8a8"
+    precision: int8
+    vram_minimum_gb: 39
+    description: "Red Hat AI INT8 W8A8 compressed-tensors checkpoint"
   awq:
     model_id: "Qwen/QwQ-32B-AWQ"
     precision: int4
@@ -69,9 +74,7 @@ guide: |
   ## Overview
 
   QwQ-32B is Qwen's 32B dense reasoning model. The CPU model validation table
-  marks it supported on Intel Xeon 6. The separate 1024/1024 serving tuning run
-  did not meet its latency SLA, so this recipe intentionally does not promote
-  that benchmark's tuning values as recommended CPU defaults.
+  marks it supported on Intel Xeon 6.
 
   ## Prerequisites
 
@@ -94,6 +97,12 @@ guide: |
   vllm serve Qwen/QwQ-32B
   ```
 
+  W8A8 INT8:
+
+  ```bash
+  vllm serve RedHatAI/QwQ-32B-quantized.w8a8
+  ```
+
   Choose tensor parallelism based on system topology; the recipe does not
   prescribe a fixed TP/DP layout or topology-specific CPU binding.
 
@@ -109,5 +118,6 @@ guide: |
   ## References
 
   - [Model card](https://huggingface.co/Qwen/QwQ-32B)
+  - [W8A8 variant](https://huggingface.co/RedHatAI/QwQ-32B-quantized.w8a8)
   - [vLLM reasoning outputs](https://docs.vllm.ai/en/latest/features/reasoning_outputs.html)
   - [vLLM tool calling](https://docs.vllm.ai/en/latest/features/tool_calling.html)
