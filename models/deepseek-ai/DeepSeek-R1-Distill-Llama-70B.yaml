@@ -9,6 +9,8 @@ meta:
   tasks:
     - text
   performance_headline: "W8A8 variant validated for Intel Xeon 6 CPU execution"
+  related_recipes:
+    - "meta-llama/Llama-3.3-70B-Instruct"
   hardware:
     xeon6: verified
 
