@@ -48,7 +48,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x Xeon6/Xeon5 NUMA node
+  - Hardware: Intel Xeon 6/Xeon 5 CPUs
   - vLLM >= 0.7.0
 
   ### Docker (Intel Xeon 6 CPUs)
