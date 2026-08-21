@@ -243,7 +243,7 @@ guide: |
 
   For additional Intel Xeon 6 deployment details, see the Intel Software Catalog entries for [Gemma 4 E4B IT](https://aiswcatalog.intel.com/models/google-gemma-4-e4b-it).
 
-  ## Runtime and Platform Tuning
+  #### Runtime and Platform Tuning
 
   The following settings are intentionally not prescribed as portable CPU model
   defaults because they depend on the workload, hardware, or runtime environment:
