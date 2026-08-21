@@ -63,10 +63,7 @@ kv_offload_support:
   offloading_cpu: verified
   offloading_fs: verified
 
-hardware_overrides:
-  cpu:
-    extra_args:
-      - "--enforce-eager"
+hardware_overrides: {}
 
 strategy_overrides: {}
 
@@ -74,8 +71,7 @@ guide: |
   ## Overview
 
   Qwen3-VL-30B-A3B-Instruct is a multimodal Qwen3-VL MoE model. Intel Xeon 6
-  CPU serving was validated with BF16; the model-specific validation row adds
-  `--enforce-eager`.
+  CPU serving was validated with BF16.
 
   ## Prerequisites
 
@@ -95,8 +91,7 @@ guide: |
   ## Intel Xeon 6
 
   ```bash
-  vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct \
-    --enforce-eager
+  vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct
   ```
 
   Choose tensor parallelism based on system topology; TP/DP and NUMA binding
@@ -104,7 +99,6 @@ guide: |
 
   ## Configuration Notes
 
-  - `--enforce-eager` is retained because it is the only row-specific extra argument in the validated serving manifest for this model.
   - TP/DP values and topology-specific CPU binding remain deployment choices.
 
   ## Runtime and Platform Tuning
