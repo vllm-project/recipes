@@ -373,8 +373,6 @@ guide: |
 
   For additional Intel Xeon 6 deployment details, see the Intel Software Catalog entries for [Gemma 4 26B-A4B IT](https://aiswcatalog.intel.com/models/google-gemma-4-26b-a4b-it).
 
-  #### Runtime and Platform Tuning
-
   The following settings are intentionally not prescribed as portable CPU model
   defaults because they depend on the workload, hardware, or runtime environment:
 
