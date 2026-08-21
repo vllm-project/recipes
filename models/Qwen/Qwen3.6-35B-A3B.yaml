@@ -9,7 +9,7 @@ meta:
   tasks:
     - multimodal
     - text
-  performance_headline: "Compact Qwen3.6 MoE with 3B active parameters — single-GPU FP8 or 2-4 GPU BF16 serving"
+  performance_headline: "Compact Qwen3.6 MoE with 3B active parameters — single-GPU FP8 or 2-4 GPU or 4x Intel Arc Pro B60/B70 BF16 serving"
   related_recipes:
     - "Qwen/Qwen3.5-397B-A17B"
   hardware:
@@ -22,6 +22,8 @@ meta:
     rtx_pro_6000: verified
     dgx_station_gb300: verified
     rtx_5090: verified
+    arc_pro_b60: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "Qwen/Qwen3.6-35B-A3B"
@@ -69,7 +71,7 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 84
-    description: "Full precision BF16 — fits on 1x H200 or 2x H100"
+    description: "Full precision BF16 — fits on 1x H200, 2x H100, 4x Intel Arc Pro B60 / B70"
     hardware_overrides:
       rtx_pro_6000:
         extra_args:
@@ -133,6 +135,9 @@ hardware_overrides:
     extra_args: []
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
+  xpu:
+    extra_args:
+      - "--enforce-eager"
 
 strategy_overrides: {}
 
@@ -149,7 +154,7 @@ guide: |
 
   - **vLLM version:** >= 0.17.0
   - **DGX Spark NVFP4 vLLM version:** >= 0.24.0
-  - **Hardware (BF16):** 1x H200 or 2x H100
+  - **Hardware (BF16):** 1x H200, 2x H100, 4x Intel Arc Pro B60 / B70
   - **Hardware (FP8):** single H100/H200 or 1x MI300X/MI325X/MI355X
   - **Hardware (NVFP4):** NVIDIA Blackwell GPUs, including DGX Spark (GB10)
 
@@ -159,6 +164,11 @@ guide: |
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend=auto
+  ```
+
+  ### Docker
+  ```bash
+  docker pull vllm/vllm-openai-xpu:latest  # Intel XPU (B60 / B70)
   ```
 
   ## Launching the Server
@@ -252,6 +262,24 @@ guide: |
     --reasoning-parser qwen3 \
     --tool-call-parser qwen3_coder \
     --enable-auto-tool-choice
+  ```
+
+  ### Docker (Intel XPU B60 / B70)
+
+  Validated on 4× Intel Arc Pro B60 / B70 (B60 24 GB, B70 32 GB per card) with the
+  official vLLM XPU image `vllm/vllm-openai-xpu:latest`.
+
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-xpu:latest \
+    Qwen/Qwen3.6-35B-A3B \
+    --reasoning-parser qwen3 \
+    --tensor-parallel-size 4 \
+    --max-model-len 8192 \
+    --enforce-eager
   ```
 
   ## Processing Ultra-Long Texts
