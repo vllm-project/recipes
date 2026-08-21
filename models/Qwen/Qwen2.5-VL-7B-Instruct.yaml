@@ -75,9 +75,6 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: Intel Xeon 6 CPUs
-  - vLLM CPU >= 0.8.5 for this validated Xeon 6 configuration
-
   ### NVIDIA
   ```bash
   uv venv
@@ -86,6 +83,9 @@ guide: |
   ```
 
   ### Intel Xeon 6 CPUs
+
+  - Hardware: Intel Xeon 6 CPUs
+  - vLLM CPU >= 0.8.5 for this validated Xeon 6 configuration
 
   For Intel and AMD x86 CPUs, follow the
   [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels)
@@ -131,6 +131,21 @@ guide: |
       --port 8000
   ```
 
+  #### Runtime and Platform Tuning
+
+  The following settings are intentionally not prescribed as portable CPU model
+  defaults because they depend on the workload, hardware, or runtime environment:
+
+  - `--max-num-batched-tokens`: scheduler/throughput tuning.
+  - `--max-num-seqs`: concurrency and scheduler-capacity tuning.
+  - `--gpu-memory-utilization`: platform memory-budget tuning.
+  - `--no-enable-prefix-caching`: workload/benchmark cache-policy tuning.
+  - `VLLM_ENGINE_ITERATION_TIMEOUT_S`: operational runtime timeout.
+
+  These settings may still appear in validated hardware-specific overrides. Tune
+  them at deployment time based on platform resources, workload shape, and
+  latency/throughput goals.
+
   ### TPU v6e (Trillium, single chip)
   Verified end-to-end on a single v6e chip.
   ```bash
@@ -170,27 +185,11 @@ guide: |
 
   ## Configuration Tips
 
-  - TP/DP values and topology-specific CPU bindings from the validation environment are intentionally not prescribed.
   - `--max-model-len 16384` is a safe default on a single v6e chip (native context is 128K); raise it if you have headroom.
   - `--limit-mm-per-prompt` caps incoming multimodal requests per prompt.
   - `--mm-processor-kwargs '{"max_pixels":1003520}'` bounds the per-image resolution to control encoder cost.
   - vLLM uses 90% of device memory by default; on TPU the recipe pushes `--gpu-memory-utilization 0.98` to maximize KV cache.
   - `--disable-chunked-mm-input` is recommended on TPU for stable multimodal batching.
-
-  ## Runtime and Platform Tuning
-
-  The following settings are intentionally not prescribed as portable CPU model
-  defaults because they depend on the workload, hardware, or runtime environment:
-
-  - `--max-num-batched-tokens`: scheduler/throughput tuning.
-  - `--max-num-seqs`: concurrency and scheduler-capacity tuning.
-  - `--gpu-memory-utilization`: platform memory-budget tuning.
-  - `--no-enable-prefix-caching`: workload/benchmark cache-policy tuning.
-  - `VLLM_ENGINE_ITERATION_TIMEOUT_S`: operational runtime timeout.
-
-  These settings may still appear in validated hardware-specific overrides. Tune
-  them at deployment time based on platform resources, workload shape, and
-  latency/throughput goals.
 
   ## Benchmarking
 
