@@ -1,0 +1,154 @@
+meta:
+  title: "North-Mini-Code-1.0"
+  slug: "north-mini-code-1.0"
+  provider: "Cohere Labs"
+  description: "Cohere's open-weights 30B total / 3B activated MoE for code generation, agentic software engineering, and terminal tasks — 256K context with 64K output length, interleaved reasoning, and Command-4-style tool calling."
+  date_added: 2026-08-04
+  date_updated: 2026-08-04
+  difficulty: intermediate
+  tasks:
+    - text
+  performance_headline: "SWE-bench Verified 67.6 from a 30B MoE with only 3B active params"
+  related_recipes: []
+  hardware:
+    rtx_5090_2x: verified
+
+model:
+  model_id: "CohereLabs/North-Mini-Code-1.0"
+  min_vllm_version: "0.24.0"
+  architecture: moe
+  parameter_count: "30B"
+  active_parameters: "3B"
+  context_length: 500000
+  base_args:
+    - "--max-model-len"
+    - "320000"
+  base_env: {}
+
+dependencies:
+  - note: "The cohere_command4 tool-call and reasoning parsers import Cohere's melody library at startup"
+    command: 'uv pip install "cohere_melody>=0.9.0"'
+
+features:
+  tool_calling:
+    description: "Automatic tool choice with Cohere's Command-4 tool-call parser (JSON-schema tools)"
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "cohere_command4"
+  reasoning:
+    description: "Interleaved thinking via Cohere's Command-4 reasoning parser — pass reasoning content back in multi-turn agent loops"
+    args:
+      - "--reasoning-parser"
+      - "cohere_command4"
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 72
+    tp: 2
+    description: "BF16 weights (61 GB) — Cohere's reference command serves this at TP=2"
+  fp8:
+    model_id: "CohereLabs/North-Mini-Code-1.0-fp8"
+    precision: fp8
+    vram_minimum_gb: 39
+    tp: 1
+    extra_args:
+      - "--moe-backend"
+      - "triton"
+    description: "FP8 (per-channel weights, dynamic per-token activations; attention and router kept high-precision) — single-GPU on 40GB+. vLLM-only checkpoint, not Transformers-compatible."
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - single_node_dep
+
+hardware_overrides: {}
+
+guide: |
+  ## Overview
+
+  [North-Mini-Code-1.0](https://huggingface.co/CohereLabs/North-Mini-Code-1.0) is Cohere's first open-weights agentic coding model (Apache 2.0): a 30B-total / 3B-activated Mixture-of-Experts optimized for code generation, agentic software engineering, and terminal tasks. It was trained across multiple agent harnesses (SWE-Agent, OpenCode, Mini-SWE-Agent) for cross-harness generalization, and supports a 256K context with a 64K output length.
+
+  ### Key features
+  - **Sparse MoE**: 128 experts with top-8 sigmoid routing across 49 layers — 3B active params per token keeps decode fast at 30B-class quality.
+  - **Interleaved sliding-window + global attention**: window 4096, GQA with 32 query / 4 KV heads — long contexts stay KV-cheap.
+  - **Interleaved reasoning**: thinking blocks between tool calls, parsed into `reasoning_content` via `cohere_command4`; pass reasoning back in subsequent turns for best agentic performance.
+  - **Tool calling**: JSON-schema tools with Cohere's Command-4 protocol (`cohere_command4` parser).
+  - **256K context, 64K output**: the launch commands cap `--max-model-len` at 320000 (256K input + 64K output), the operating window Cohere validates; the raw config ceiling is 500000.
+
+  ## Prerequisites
+
+  **vLLM >= 0.24.0.** The `Cohere2MoeForCausalLM` architecture landed in v0.21.0, but loading this checkpoint is broken on v0.22.1 and v0.23.0 (`KeyError: 'layers.0.mlp.down_proj.weight'` — [vllm#46366](https://github.com/vllm-project/vllm/issues/46366), a Transformers >= 5.10 config interaction fixed by [vllm#44747](https://github.com/vllm-project/vllm/pull/44747)). v0.24.0 is the first stable release where everything works.
+
+  The Cohere parsers also need the `cohere_melody` package (the extra-install block above). The official `vllm/vllm-openai` Docker images do **not** bundle it — extend the image:
+
+  ```dockerfile
+  FROM vllm/vllm-openai:latest
+  RUN pip install --no-cache-dir "cohere_melody>=0.9.0"
+  ```
+
+  ## Quantized variants
+
+  | Variant | Checkpoint | Weights | ~VRAM | Notes |
+  |---------|-----------|---------|-------|-------|
+  | BF16 | [North-Mini-Code-1.0](https://huggingface.co/CohereLabs/North-Mini-Code-1.0) | BF16 | 72 GB | Default; TP=2 per Cohere's reference command |
+  | FP8 | [North-Mini-Code-1.0-fp8](https://huggingface.co/CohereLabs/North-Mini-Code-1.0-fp8) | FP8 W8A8 (per-channel / dynamic per-token) | 39 GB | Single GPU; vLLM-only — not Transformers-compatible |
+
+  Quantization is auto-detected from the checkpoint's `quantization_config`. The FP8 export keeps all attention projections, the MoE router, and the LM head at higher precision; Cohere's card pairs it with `--moe-backend triton` for the MoE ops (applied automatically when the FP8 variant is selected).
+
+  ## Launch command
+
+  ### BF16 (2x 48GB+ GPUs)
+  ```bash
+  vllm serve CohereLabs/North-Mini-Code-1.0 \
+    --tensor-parallel-size 2 \
+    --max-model-len 320000 \
+    --enable-auto-tool-choice \
+    --tool-call-parser cohere_command4 \
+    --reasoning-parser cohere_command4
+  ```
+
+  ### FP8 (single 40GB+ GPU)
+  ```bash
+  vllm serve CohereLabs/North-Mini-Code-1.0-fp8 \
+    --max-model-len 320000 \
+    --moe-backend triton \
+    --enable-auto-tool-choice \
+    --tool-call-parser cohere_command4 \
+    --reasoning-parser cohere_command4
+  ```
+
+  ## Client usage
+
+  Cohere recommends `temperature=1.0`, `top_p=0.95`:
+
+  ```python
+  from openai import OpenAI
+  client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+
+  resp = client.chat.completions.create(
+      model="CohereLabs/North-Mini-Code-1.0",
+      messages=[{"role": "user", "content": "Write a Python retry wrapper with exponential backoff."}],
+      temperature=1.0,
+      top_p=0.95,
+  )
+  print(resp.choices[0].message.reasoning_content)
+  print(resp.choices[0].message.content)
+  ```
+
+  In agent loops, feed each turn's `reasoning_content` and tool calls back into the conversation — the model card notes this is required for optimal multi-turn performance.
+
+  ## Benchmarks
+
+  From the [model card](https://huggingface.co/CohereLabs/North-Mini-Code-1.0): SWE-bench Verified **67.6**, SWE-bench Pro **40.2**, Terminal-Bench v2 **36**.
+
+  ## References
+
+  - [Model card](https://huggingface.co/CohereLabs/North-Mini-Code-1.0)
+  - [FP8 checkpoint](https://huggingface.co/CohereLabs/North-Mini-Code-1.0-fp8)
+  - [Release blog post](https://cohere.com/blog/north-mini-code)
+  - [vLLM enablement PR #44707](https://github.com/vllm-project/vllm/pull/44707)
+  - [vLLM weight-loading fix #44747](https://github.com/vllm-project/vllm/pull/44747)
