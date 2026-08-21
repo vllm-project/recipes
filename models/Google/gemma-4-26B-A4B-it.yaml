@@ -40,7 +40,7 @@ meta:
 
 model:
   model_id: "google/gemma-4-26B-A4B-it"
-  min_vllm_version: "0.19.1"
+  min_vllm_version: "0.25.0"
   architecture: moe
   parameter_count: "26B"
   active_parameters: "4B"
@@ -232,11 +232,6 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
 
-hardware_overrides:
-  cpu:
-    extra_env:
-      VLLM_CPU_ATTN_SPLIT_KV: "0"
-
 strategy_overrides:
   single_node_tp:
     tp: 1
@@ -246,9 +241,8 @@ guide: |
 
   [Gemma 4 26B-A4B](https://huggingface.co/google/gemma-4-26B-A4B-it) is the Mixture-of-Experts member of Google's Gemma 4 family — 26B total parameters with only 4B active per token via 128 fine-grained experts and top-8 routing. It supports text + images natively, structured thinking, function calling, and dynamic vision resolution.
 
-  Intel Xeon 6 CPU support remains verified. The CPU override retains
-  `VLLM_CPU_ATTN_SPLIT_KV=0`; benchmark-specific
-  TP/DP, CPU binding, sequence limits, and repro-only timeouts remain deployment choices.
+  Intel Xeon 6 CPU support remains verified. Benchmark-specific TP/DP, CPU binding,
+  sequence limits, and repro-only timeouts remain deployment choices.
 
   ### Key Features
   - **MoE**: 128 fine-grained experts with top-8 routing and custom GELU-activated FFN.
@@ -263,7 +257,7 @@ guide: |
   ## Prerequisites
 
   - Hardware: 2x Xeon 6 NUMA node
-  - vLLM >= 0.19.1
+  - vLLM >= 0.25.0
 
   ### pip (NVIDIA CUDA)
   ```bash
@@ -371,7 +365,6 @@ guide: |
     --network host \
     --shm-size 16g \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    -e VLLM_CPU_ATTN_SPLIT_KV=0 \
     vllm/vllm-openai-cpu:latest-x86_64 \
       --model google/gemma-4-26B-A4B-it \
       --host 0.0.0.0 \

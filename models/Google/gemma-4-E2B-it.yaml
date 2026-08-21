@@ -94,11 +94,6 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
 
-hardware_overrides:
-  cpu:
-    extra_env:
-      VLLM_CPU_ATTN_SPLIT_KV: "0"
-
 strategy_overrides:
   single_node_tp:
     tp: 1
@@ -108,9 +103,8 @@ guide: |
 
   [Gemma 4 E2B](https://huggingface.co/google/gemma-4-E2B-it) is the smallest member of Google's Gemma 4 family — an effective-2B unified multimodal model that natively processes text, images, and audio, with structured thinking/reasoning, function calling, and dynamic vision resolution. It runs comfortably on a single 24 GB+ GPU.
 
-  Intel Xeon 6 CPU support remains verified. The portable CPU override retains
-  `VLLM_CPU_ATTN_SPLIT_KV=0`. No additional benchmark-specific CPU tuning is
-  prescribed for general deployment.
+  Intel Xeon 6 CPU support remains verified. No additional benchmark-specific CPU
+  tuning is prescribed for general deployment.
 
   ### Key Features
   - **Multimodal**: Text + images + audio natively (video via custom frame-extraction pipeline).
@@ -235,7 +229,6 @@ guide: |
     --network host \
     --shm-size 16g \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    -e VLLM_CPU_ATTN_SPLIT_KV=0 \
     vllm/vllm-openai-cpu:latest-x86_64 \
       --model google/gemma-4-E2B-it \
       --host 0.0.0.0 \
