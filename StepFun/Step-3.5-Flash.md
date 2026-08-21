@@ -15,6 +15,24 @@ source .venv/bin/activate
 uv pip install vllm --torch-backend auto
 ```
 
+### Installing vLLM for AMD GPU (ROCm)
+
+Install the vLLM ROCm wheel (requires Python 3.12 and ROCm 7.2.1+):
+
+```bash
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+```
+
+Supported AMD GPUs: MI300X, MI325X, MI350X, MI355X.
+
+### Using Docker on AMD GPU (ROCm)
+
+Use the latest ROCm image:
+
+```bash
+docker pull vllm/vllm-openai-rocm:latest
+```
+
 ## Serving with vLLM
 
 
@@ -29,7 +47,6 @@ uv pip install vllm --torch-backend auto
 
 
 ### Running Step-3.5-Flash on 4xH200/H20/B200
-
 
 There are two ways to parallelize the model over multiple GPUs: (1) Tensor-parallel or (2) Data-parallel. Each one has its own advantages, where tensor-parallel is usually more beneficial for low-latency / low-load scenarios and data-parallel works better for cases where there is a lot of data with heavy-loads.
 
@@ -93,6 +110,41 @@ vllm serve stepfun-ai/Step-3.5-Flash \
 ```
 </details>
 
+### AMD GPU (ROCm)
+
+You can use 4x MI300X/MI325X/MI350X/MI355X GPUs to launch Step-3.5-Flash on AMD ROCm with [AITER](https://github.com/ROCm/aiter) acceleration enabled for attention kernels:
+
+- FP8 (4x MI300X/MI325X/MI350X/MI355X)
+```bash
+VLLM_ROCM_USE_AITER=1 \
+VLLM_ROCM_USE_AITER_MOE=0 \
+vllm serve stepfun-ai/Step-3.5-Flash-FP8 \
+  --tensor-parallel-size 4 \
+  --enable-expert-parallel \
+  --reasoning-parser step3p5 \
+  --tool-call-parser step3p5 \
+  --enable-auto-tool-choice \
+  --trust-remote-code
+```
+
+- BF16
+```bash
+VLLM_ROCM_USE_AITER=1 \
+VLLM_ROCM_USE_AITER_MOE=0 \
+vllm serve stepfun-ai/Step-3.5-Flash \
+  --tensor-parallel-size 4 \
+  --enable-expert-parallel \
+  --reasoning-parser step3p5 \
+  --tool-call-parser step3p5 \
+  --enable-auto-tool-choice \
+  --trust-remote-code
+```
+
+> **Note**: Step-3.5-Flash uses a custom MoE activation (`SWIGLUSTEP`). In vLLM v0.17.1, AITER attention kernels work on AMD, but AITER MoE kernels do not yet support this activation. Keep `VLLM_ROCM_USE_AITER=1` and set `VLLM_ROCM_USE_AITER_MOE=0` to use AITER for attention while falling back to the non-AITER MoE backend.
+
+> **Note**: Use `--enable-expert-parallel` together with `--tensor-parallel-size 4` on AMD for the 288-expert MoE architecture.
+
+> **Note**: The first launch with AITER may take several minutes as AITER JIT-compiles optimized kernels. Subsequent launches will use cached kernels.
 
 ## Benchmark 
 
