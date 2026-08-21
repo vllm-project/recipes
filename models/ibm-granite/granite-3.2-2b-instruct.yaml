@@ -36,13 +36,7 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
 
-hardware_overrides:
-  cpu:
-    extra_args:
-      - "--max-num-batched-tokens"
-      - "16384"
-      - "--gpu-memory-utilization"
-      - "0.8"
+hardware_overrides: {}
 
 strategy_overrides: {}
 
@@ -66,13 +60,25 @@ guide: |
   ## Intel Xeon 6
 
   ```bash
-  vllm serve ibm-granite/granite-3.2-2b-instruct \
-    --max-num-batched-tokens 16384 \
-    --gpu-memory-utilization 0.8
-  ```
+  vllm serve ibm-granite/granite-3.2-2b-instruct  ```
 
-  TP/DP values, `--max-num-seqs=256`, prefix-cache controls, and host-specific
-  CPU placement remain benchmark/deployment choices and are not hard-coded.
+  TP/DP values and host-specific CPU placement remain deployment choices and
+  are not hard-coded into the portable recipe.
+
+  ## Runtime and Platform Tuning
+
+  The following settings are intentionally not prescribed as portable CPU model
+  defaults because they depend on the workload, hardware, or runtime environment:
+
+  - `--max-num-batched-tokens`: scheduler/throughput tuning.
+  - `--max-num-seqs`: concurrency and scheduler-capacity tuning.
+  - `--gpu-memory-utilization`: platform memory-budget tuning.
+  - `--no-enable-prefix-caching`: workload/benchmark cache-policy tuning.
+  - `VLLM_ENGINE_ITERATION_TIMEOUT_S`: operational runtime timeout.
+
+  These settings may still appear in validated hardware-specific overrides. Tune
+  them at deployment time based on platform resources, workload shape, and
+  latency/throughput goals.
 
   ## References
 
