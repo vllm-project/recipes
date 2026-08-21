@@ -176,8 +176,6 @@ guide: |
 
   TP/DP remain user/deployment choices rather than recipe defaults.
 
-  ## Runtime and Platform Tuning
-
   The following validation settings are not model requirements and are intentionally
   not portable CPU recipe defaults:
 
