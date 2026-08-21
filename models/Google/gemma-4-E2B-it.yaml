@@ -117,7 +117,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x Xeon 6 NUMA node
+  - Hardware: Intel Xeon 6/Xeon 5 CPUs
   - vLLM >= 0.19.1
 
   ### pip (NVIDIA CUDA)
