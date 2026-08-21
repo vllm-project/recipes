@@ -184,8 +184,6 @@ guide: |
   The validation TP/DP layout and host-specific CPU placement are intentionally
   not prescribed.
 
-  #### Runtime and Platform Tuning
-
   The following validation settings are not model requirements and are intentionally
   not portable CPU recipe defaults:
 
