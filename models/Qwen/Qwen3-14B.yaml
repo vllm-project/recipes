@@ -68,13 +68,7 @@ kv_offload_support:
   offloading_cpu: verified
   offloading_fs: verified
 
-hardware_overrides:
-  cpu:
-    extra_args:
-      - "--max-num-batched-tokens"
-      - "16384"
-      - "--gpu-memory-utilization"
-      - "0.8"
+hardware_overrides: {}
 
 strategy_overrides: {}
 
@@ -106,9 +100,7 @@ guide: |
   prescribe a fixed TP/DP layout or hard-code NUMA node IDs.
 
   ```bash
-  vllm serve Qwen/Qwen3-14B \
-    --max-num-batched-tokens 16384 \
-    --gpu-memory-utilization 0.8
+  vllm serve Qwen/Qwen3-14B
   ```
 
   Docker:
@@ -120,17 +112,29 @@ guide: |
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     vllm/vllm-openai-cpu:latest-x86_64 \
       --model Qwen/Qwen3-14B \
-      --max-num-batched-tokens 16384 \
-      --gpu-memory-utilization 0.8 \
       --host 0.0.0.0 \
       --port 8000
   ```
 
   ## Configuration Notes
 
-  - `--max-num-batched-tokens 16384` and `--gpu-memory-utilization 0.8` are retained from the validated CPU serving configuration.
-  - TP/DP values, explicit CPU bindings, benchmark-only prefix-cache settings, and extended engine timeouts are intentionally not prescribed.
+  - TP/DP values and explicit CPU bindings are intentionally not prescribed.
   - The `qwen3` reasoning parser is available in vLLM 0.9.0 and later.
+
+  ## Runtime and Platform Tuning
+
+  The following settings are intentionally not prescribed as portable CPU model
+  defaults because they depend on the workload, hardware, or runtime environment:
+
+  - `--max-num-batched-tokens`: scheduler/throughput tuning.
+  - `--max-num-seqs`: concurrency and scheduler-capacity tuning.
+  - `--gpu-memory-utilization`: platform memory-budget tuning.
+  - `--no-enable-prefix-caching`: workload/benchmark cache-policy tuning.
+  - `VLLM_ENGINE_ITERATION_TIMEOUT_S`: operational runtime timeout.
+
+  These settings may still appear in validated hardware-specific overrides. Tune
+  them at deployment time based on platform resources, workload shape, and
+  latency/throughput goals.
 
   ## References
 

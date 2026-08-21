@@ -66,10 +66,6 @@ kv_offload_support:
 hardware_overrides:
   cpu:
     extra_args:
-      - "--max-num-batched-tokens"
-      - "16384"
-      - "--gpu-memory-utilization"
-      - "0.8"
       - "--enforce-eager"
 
 strategy_overrides: {}
@@ -100,8 +96,6 @@ guide: |
 
   ```bash
   vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct \
-    --max-num-batched-tokens 16384 \
-    --gpu-memory-utilization 0.8 \
     --enforce-eager
   ```
 
@@ -111,7 +105,22 @@ guide: |
   ## Configuration Notes
 
   - `--enforce-eager` is retained because it is the only row-specific extra argument in the validated serving manifest for this model.
-  - Benchmark-only prefix-cache disabling and extended engine timeouts are not required for general serving.
+  - TP/DP values and topology-specific CPU binding remain deployment choices.
+
+  ## Runtime and Platform Tuning
+
+  The following settings are intentionally not prescribed as portable CPU model
+  defaults because they depend on the workload, hardware, or runtime environment:
+
+  - `--max-num-batched-tokens`: scheduler/throughput tuning.
+  - `--max-num-seqs`: concurrency and scheduler-capacity tuning.
+  - `--gpu-memory-utilization`: platform memory-budget tuning.
+  - `--no-enable-prefix-caching`: workload/benchmark cache-policy tuning.
+  - `VLLM_ENGINE_ITERATION_TIMEOUT_S`: operational runtime timeout.
+
+  These settings may still appear in validated hardware-specific overrides. Tune
+  them at deployment time based on platform resources, workload shape, and
+  latency/throughput goals.
 
   ## References
 

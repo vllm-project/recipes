@@ -44,13 +44,7 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
 
-hardware_overrides:
-  cpu:
-    extra_args:
-      - "--max-num-batched-tokens"
-      - "16384"
-      - "--gpu-memory-utilization"
-      - "0.8"
+hardware_overrides: {}
 
 strategy_overrides: {}
 
@@ -61,8 +55,8 @@ guide: |
   groups the canonical BF16 parent checkpoint with the official GPTQ INT4
   checkpoint validated on Intel Xeon 6.
 
-  The recipe retains the portable model-level CPU settings while leaving TP/DP
-  and host-specific CPU placement as deployment choices.
+  The recipe retains model-level requirements while leaving runtime tuning,
+  TP/DP, and host-specific CPU placement as deployment choices.
 
   ## Prerequisites
 
@@ -85,9 +79,7 @@ guide: |
 
   ```bash
   vllm serve Qwen/Qwen1.5-0.5B-Chat-GPTQ-Int4 \
-    --quantization gptq \
-    --max-num-batched-tokens 16384 \
-    --gpu-memory-utilization 0.8
+    --quantization gptq
   ```
 
   Docker:
@@ -100,8 +92,6 @@ guide: |
     vllm/vllm-openai-cpu:latest-x86_64 \
       --model Qwen/Qwen1.5-0.5B-Chat-GPTQ-Int4 \
       --quantization gptq \
-      --max-num-batched-tokens 16384 \
-      --gpu-memory-utilization 0.8 \
       --host 0.0.0.0 \
       --port 8000
   ```
@@ -111,6 +101,21 @@ guide: |
   - The validation TP/DP layout is benchmark topology and is not hard-coded.
   - `--max-num-seqs=256` and `--no-enable-prefix-caching` are benchmark controls and are not promoted.
   - Qwen1.5 uses native Qwen2 architecture support, so `--trust-remote-code` is not required by this recipe.
+
+  ## Runtime and Platform Tuning
+
+  The following settings are intentionally not prescribed as portable CPU model
+  defaults because they depend on the workload, hardware, or runtime environment:
+
+  - `--max-num-batched-tokens`: scheduler/throughput tuning.
+  - `--max-num-seqs`: concurrency and scheduler-capacity tuning.
+  - `--gpu-memory-utilization`: platform memory-budget tuning.
+  - `--no-enable-prefix-caching`: workload/benchmark cache-policy tuning.
+  - `VLLM_ENGINE_ITERATION_TIMEOUT_S`: operational runtime timeout.
+
+  These settings may still appear in validated hardware-specific overrides. Tune
+  them at deployment time based on platform resources, workload shape, and
+  latency/throughput goals.
 
   ## References
 
