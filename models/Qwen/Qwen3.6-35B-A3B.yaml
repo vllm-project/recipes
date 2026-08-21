@@ -151,7 +151,9 @@ guide: |
   ## Prerequisites
 
   - **vLLM version:** >= 0.17.0
-  - **DGX Spark NVFP4 vLLM version:** >= 0.24.0
+  - **NVFP4 vLLM version:** >= 0.28.0 (currently nightly). 0.24.0 loads the
+    checkpoint, but FlashInfer only selects its XQA decode kernel on SM120
+    GPUs from 0.28.0.
   - **Hardware (BF16):** 1x H200 or 2x H100
   - **Hardware (FP8):** single H100/H200 or 1x MI300X/MI325X/MI355X
   - **Hardware (NVFP4):** NVIDIA Blackwell GPUs, including DGX Spark (GB10)
@@ -209,7 +211,7 @@ guide: |
   and requires vLLM nightly or a source build with ModelOpt W4A16/NVFP4 support.
 
   ```bash
-  # Use container: vllm/vllm-openai:v0.24.0-ubuntu2404
+  # Use container: vllm/vllm-openai:nightly
 
   vllm serve nvidia/Qwen3.6-35B-A3B-NVFP4 \
     --trust-remote-code \
@@ -233,10 +235,10 @@ guide: |
 
   The NVIDIA ModelOpt NVFP4 checkpoint is served from
   [`nvidia/Qwen3.6-35B-A3B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-NVFP4)
-  and requires vLLM v0.24.0 or later.
+  and requires vLLM 0.28.0 or later (currently nightly) for the XQA decode path.
 
   ```bash
-  # Use container: vllm/vllm-openai:v0.24.0-ubuntu2404
+  # Use container: vllm/vllm-openai:nightly
 
   vllm serve nvidia/Qwen3.6-35B-A3B-NVFP4 \
     --tensor-parallel-size 1 \
