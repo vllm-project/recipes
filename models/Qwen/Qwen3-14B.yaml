@@ -80,7 +80,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 4x Xeon 6 CPUs
+  - Hardware: Intel Xeon 6 CPUs
   - vLLM >= 0.8.5
 
   ### pip (Intel Xeon 6 CPUs)

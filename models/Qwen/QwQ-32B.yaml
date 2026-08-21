@@ -78,7 +78,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 8x Xeon 6 CPUs
+  - Hardware: Intel Xeon 6 CPUs
   - vLLM CPU >= 0.8.5 for this validated Xeon 6 configuration
 
   ### pip (Intel Xeon 6 CPUs)
