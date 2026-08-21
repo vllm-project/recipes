@@ -380,6 +380,21 @@ guide: |
 
   For additional Intel Xeon 6 deployment details, see the Intel Software Catalog entries for [Gemma 4 26B-A4B IT](https://aiswcatalog.intel.com/models/google-gemma-4-26b-a4b-it).
 
+  ## Runtime and Platform Tuning
+
+  The following settings are intentionally not prescribed as portable CPU model
+  defaults because they depend on the workload, hardware, or runtime environment:
+
+  - `--max-num-batched-tokens`: scheduler/throughput tuning.
+  - `--max-num-seqs`: concurrency and scheduler-capacity tuning.
+  - `--gpu-memory-utilization`: platform memory-budget tuning.
+  - `--no-enable-prefix-caching`: workload/benchmark cache-policy tuning.
+  - `VLLM_ENGINE_ITERATION_TIMEOUT_S`: operational runtime timeout.
+
+  These settings may still appear in validated hardware-specific overrides. Tune
+  them at deployment time based on platform resources, workload shape, and
+  latency/throughput goals.
+
   ## Client Usage
 
   ### Text Generation

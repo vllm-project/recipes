@@ -42,11 +42,6 @@ compatible_strategies:
 
 hardware_overrides:
   cpu:
-    extra_args:
-      - "--max-num-batched-tokens"
-      - "16384"
-      - "--gpu-memory-utilization"
-      - "0.8"
     extra_env:
       VLLM_CPU_ATTN_SPLIT_KV: "0"
 
@@ -85,9 +80,7 @@ guide: |
   ```bash
   export VLLM_CPU_ATTN_SPLIT_KV=0
 
-  vllm serve google/gemma-3-12b-it \
-    --max-num-batched-tokens 16384 \
-    --gpu-memory-utilization 0.8
+  vllm serve google/gemma-3-12b-it
   ```
 
   Docker:
@@ -100,15 +93,28 @@ guide: |
     -e VLLM_CPU_ATTN_SPLIT_KV=0 \
     vllm/vllm-openai-cpu:latest-x86_64 \
       --model google/gemma-3-12b-it \
-      --max-num-batched-tokens 16384 \
-      --gpu-memory-utilization 0.8 \
       --host 0.0.0.0 \
       --port 8000
   ```
 
-  The Xeon 6 serving validation uses BF16. Fixed TP/DP, CPU binding,
-  `--max-num-seqs`, prefix-cache benchmark controls, and repro-only timeout
-  settings are intentionally not prescribed by this portable recipe.
+  The Xeon 6 serving validation uses BF16. `VLLM_CPU_ATTN_SPLIT_KV=0` is
+  retained as the Gemma-specific CPU override. Fixed TP/DP and CPU binding
+  remain deployment choices rather than portable model defaults.
+
+  ## Runtime and Platform Tuning
+
+  The following settings are intentionally not prescribed as portable CPU model
+  defaults because they depend on the workload, hardware, or runtime environment:
+
+  - `--max-num-batched-tokens`: scheduler/throughput tuning.
+  - `--max-num-seqs`: concurrency and scheduler-capacity tuning.
+  - `--gpu-memory-utilization`: platform memory-budget tuning.
+  - `--no-enable-prefix-caching`: workload/benchmark cache-policy tuning.
+  - `VLLM_ENGINE_ITERATION_TIMEOUT_S`: operational runtime timeout.
+
+  These settings may still appear in validated hardware-specific overrides. Tune
+  them at deployment time based on platform resources, workload shape, and
+  latency/throughput goals.
 
   ## References
 
