@@ -91,7 +91,6 @@ export default async function RecipePage({ params, searchParams }) {
   const taxonomy = loadTaxonomy();
   const guide = recipe.guide || "";
   const logo = getProviderLogo(recipe.hf_org);
-  const usesConsolidatedUi = recipe.omni?.consolidated_ui?.enabled === true;
   const guideContent = guide ? (
     <div className="guide-content">
       <Markdown
@@ -229,14 +228,13 @@ export default async function RecipePage({ params, searchParams }) {
             recipe={recipe}
             strategies={strategies}
             taxonomy={taxonomy}
-            guideContent={usesConsolidatedUi ? guideContent : null}
           />
         </Suspense>
       </section>
 
       {/* ── Reference sections ── */}
       <section className="space-y-2">
-        {guideContent && !usesConsolidatedUi && (
+        {guideContent && (
           <Accordion title="Guide" defaultOpen>
             {guideContent}
           </Accordion>

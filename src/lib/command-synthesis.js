@@ -841,9 +841,14 @@ function shellQuote(s) {
  */
 export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfileId = null) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
-  const modelId = task?.modelId || variant.model_id || recipe.model?.model_id || "unknown";
+  const modelId = task?.modelId
+    || variant.model_id
+    || recipe.omni?.model_id
+    || recipe.model?.model_id
+    || "unknown";
   const gen = normalizeGeneration(hwProfile?.generation || hwProfile?.gpu_generation);
   const isNvidia = hwProfile?.brand === "NVIDIA";
+  const profile = hwProfileId ? recipe.omni?.profiles?.[hwProfileId] : null;
 
   const env = {};
   Object.assign(env, recipe.model?.base_env || {});
@@ -854,6 +859,7 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfil
   const variantGenHo = variant?.hardware_overrides?.[gen]
     || (isNvidia ? variant?.hardware_overrides?.nvidia : null);
   if (variantGenHo?.extra_env) Object.assign(env, variantGenHo.extra_env);
+  if (profile?.extra_env) Object.assign(env, profile.extra_env);
   const variantExactHo = hwProfileId
     ? variant?.hardware_overrides?.[hwProfileId]
     : null;
@@ -865,6 +871,7 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfil
   if (task?.extraArgs?.length) args.push(...task.extraArgs);
   if (ho?.extra_args) args.push(...ho.extra_args);
   if (variantGenHo?.extra_args) args.push(...variantGenHo.extra_args);
+  if (profile?.extra_args) args.push(...profile.extra_args);
   if (variantExactHo?.extra_args) args.push(...variantExactHo.extra_args);
   // --omni is the toggle that puts vllm into omni-handler mode. Always emit it
   // last — dedupeArgs's last-wins rule keeps it idempotent if the recipe also
@@ -889,7 +896,7 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfil
     ? `${serveBinary} ${modelId}`
     : `${serveBinary} ${modelId} \\\n  ${lines.join(" \\\n  ")}`;
 
-  return { command, env, modelId };
+  return { command, env, modelId, args: filtered };
 }
 
 /**

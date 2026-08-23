@@ -42,6 +42,85 @@ function formCurl({ host, port, endpoint, fields, outFile }) {
   return lines.join(" \\\n");
 }
 
+function shellSingleQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function shellAssignment(value) {
+  const text = String(value);
+  return /^[A-Za-z0-9_./:${}-]+$/.test(text) ? text : shellSingleQuote(text);
+}
+
+function mergeRequestSpec(base = {}, override = {}) {
+  const merged = {
+    ...base,
+    ...override,
+    setup: { ...(base.setup || {}), ...(override.setup || {}) },
+    fields: { ...(base.fields || {}), ...(override.fields || {}) },
+    extra_params: {
+      ...(base.extra_params || {}),
+      ...(override.extra_params || {}),
+    },
+    files: { ...(base.files || {}), ...(override.files || {}) },
+  };
+  for (const field of override.remove_fields || []) delete merged.fields[field];
+  delete merged.remove_fields;
+  return merged;
+}
+
+function formValue(value) {
+  const text = value && typeof value === "object" ? JSON.stringify(value) : String(value);
+  return shellSingleQuote(text);
+}
+
+function requestCurl({ host, port, endpoint, request }) {
+  const prefix = [];
+  for (const comment of request.comments || []) prefix.push(`# ${comment}`);
+  for (const [name, value] of Object.entries(request.setup || {})) {
+    prefix.push(`export ${name}=${shellAssignment(value)}`);
+  }
+
+  const parts = [`curl -sS -X POST http://${host}:${port}${endpoint}`];
+  for (const [name, value] of Object.entries(request.fields || {})) {
+    if (value === undefined || value === null) continue;
+    if (value && typeof value === "object" && value.expand === true) {
+      const expanded = `${name}=${JSON.stringify(value.value)}`
+        .replace(/(["\\])/g, "\\$1");
+      parts.push(`  -F "${expanded}"`);
+    } else {
+      const fieldValue = value && typeof value === "object" ? JSON.stringify(value) : value;
+      parts.push(`  -F ${formValue(`${name}=${fieldValue}`)}`);
+    }
+  }
+  if (Object.keys(request.extra_params || {}).length > 0) {
+    parts.push(`  -F ${shellSingleQuote(`extra_params=${JSON.stringify(request.extra_params)}`)}`);
+  }
+  for (const [name, declaration] of Object.entries(request.files || {})) {
+    const files = Array.isArray(declaration) ? declaration : [declaration];
+    for (const file of files) {
+      const path = typeof file === "string" ? file : file.path;
+      const mime = typeof file === "string" ? null : file.type;
+      parts.push(`  -F "${name}=@${path}${mime ? `;type=${mime}` : ""}"`);
+    }
+  }
+  if (request.output) parts.push(`  -o ${shellAssignment(request.output)}`);
+
+  const command = parts.join(" \\\n");
+  return prefix.length > 0 ? `${prefix.join("\n")}\n\n${command}` : command;
+}
+
+function requestExample(request, endpoint, fallback) {
+  const hasRequest = request
+    && ((request.comments || []).length > 0
+      || Object.keys(request.setup || {}).length > 0
+      || Object.keys(request.fields || {}).length > 0
+      || Object.keys(request.extra_params || {}).length > 0
+      || Object.keys(request.files || {}).length > 0
+      || !!request.output);
+  if (!hasRequest) return fallback;
+  return ({ host, port }) => requestCurl({ host, port, endpoint, request });
+}
+
 export const OMNI_TASKS = {
   t2i: {
     label: "Text → Image",
@@ -194,8 +273,8 @@ export const OMNI_TASKS = {
  *
  * Accepts either:
  *   omni: { tasks: ["t2i"] }                              — bare ids
- *   omni: { tasks: [{ id: "i2i", key?, model_id, vram_minimum_gb, description,
- *                     extra_args, curl }, ...] }           — per-task overrides
+ *   omni: { tasks: [{ id: "i2i", key?, family?, model_id, vram_minimum_gb,
+ *                     description, extra_args, request?, curl? }, ...] }
  *
  * Per-task fields:
  *   - key               unique selector/URL key when several presets share one task id
@@ -205,11 +284,15 @@ export const OMNI_TASKS = {
  *                       falls back to the recipe's default variant VRAM)
  *   - description       short blurb shown next to the task pill
  *   - extra_args        appended to the rendered `vllm serve --omni` command
- *   - curl              static curl override (otherwise the built-in renderer
- *                       interpolates host/port/modelId into a sample request)
+ *   - family            model partition selected by hardware profiles that set
+ *                       `task_scoped: true`
+ *   - request           structured multipart request; merged with
+ *                       `omni.request_defaults` and rendered at runtime
+ *   - curl              legacy static curl override
  *
- * Returns: [{ id, key, label, endpoint, method, modelId?, vramMinimumGb?,
- *             description?, extraArgs?, hardwareOverrides?, example }]
+ * Returns: [{ id, key, family?, label, endpoint, method, modelId?,
+ *             vramMinimumGb?, description?, extraArgs?, request?,
+ *             hardwareOverrides?, example }]
  */
 export function resolveOmniTasks(recipe) {
   const decl = recipe?.omni?.tasks;
@@ -222,38 +305,59 @@ export function resolveOmniTasks(recipe) {
     if (!base) continue;
     const override = typeof t === "string" ? {} : t;
     const customCurl = override.curl;
+    const endpoint = override.endpoint || base.endpoint;
+    const request = mergeRequestSpec(recipe.omni?.request_defaults, override.request);
+    const fallbackExample = customCurl ? () => customCurl : base.example;
     out.push({
       id,
       key: override.key || id,
+      family: override.family,
       label: override.label || base.label,
-      endpoint: override.endpoint || base.endpoint,
+      endpoint,
       method: base.method,
       modelId: override.model_id,
       vramMinimumGb: override.vram_minimum_gb,
       description: override.description,
       extraArgs: override.extra_args || [],
+      request,
       hardwareOverrides: override.hardware_overrides || {},
-      example: customCurl ? () => customCurl : base.example,
+      example: requestExample(request, endpoint, fallbackExample),
     });
   }
   return out;
 }
 
 /** Apply an exact hardware override to one resolved omni task. */
-export function resolveOmniTaskForHardware(task, hwProfileId) {
+export function resolveOmniTaskForHardware(task, hwProfileId, recipe = null) {
   if (!task || !hwProfileId) return task;
-  const override = task.hardwareOverrides?.[hwProfileId];
-  if (!override) return task;
+  const profile = recipe?.omni?.profiles?.[hwProfileId] || {};
+  const override = task.hardwareOverrides?.[hwProfileId] || {};
+  const request = mergeRequestSpec(
+    mergeRequestSpec(task.request, profile.request),
+    override.request,
+  );
+  const endpoint = override.endpoint || task.endpoint;
   const customCurl = override.curl;
   return {
     ...task,
     label: override.label || task.label,
-    endpoint: override.endpoint || task.endpoint,
+    endpoint,
     modelId: override.model_id || task.modelId,
-    vramMinimumGb: override.vram_minimum_gb ?? task.vramMinimumGb,
+    vramMinimumGb: override.vram_minimum_gb
+      ?? profile.vram_minimum_gb
+      ?? task.vramMinimumGb,
     description: override.description || task.description,
-    extraArgs: [...(task.extraArgs || []), ...(override.extra_args || [])],
-    example: customCurl ? () => customCurl : task.example,
+    extraArgs: [
+      ...(task.extraArgs || []),
+      ...(profile.task_scoped && task.family ? ["--task-type", task.family] : []),
+      ...(override.extra_args || []),
+    ],
+    request,
+    example: requestExample(
+      request,
+      endpoint,
+      customCurl ? () => customCurl : task.example,
+    ),
   };
 }
 

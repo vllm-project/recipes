@@ -217,6 +217,77 @@ function validateFeatureModes(recipe, sourceFile) {
   }
 }
 
+// Profiles, variants, tasks, and evidence are independent Omni axes. Validate
+// their references here so a typo cannot silently produce a plausible but
+// incorrect command or measurement badge.
+function validateOmniRecipe(recipe, sourceFile, taxonomy) {
+  const profiles = recipe.omni?.profiles;
+  if (!profiles) return;
+
+  const errors = [];
+  const tasks = Array.isArray(recipe.omni?.tasks) ? recipe.omni.tasks : [];
+  const variants = recipe.variants || {};
+  const hardware = taxonomy.hardware_profiles || {};
+  const taskKeys = new Set();
+  const taskFamilies = new Set();
+
+  for (const task of tasks) {
+    if (!task || typeof task === "string") continue;
+    const key = task.key || task.id;
+    if (taskKeys.has(key)) errors.push(`omni.tasks contains duplicate key ${key}`);
+    taskKeys.add(key);
+    if (task.family) taskFamilies.add(task.family);
+    if (task.request && task.curl) {
+      errors.push(`omni.tasks.${key} cannot declare both request and curl`);
+    }
+  }
+
+  for (const [profileKey, profile] of Object.entries(profiles)) {
+    if (!Object.hasOwn(hardware, profileKey)) {
+      errors.push(`omni.profiles references unknown hardware ${profileKey}`);
+    }
+    if (profile?.task_scoped && tasks.some(
+      (task) => !task || typeof task === "string" || !task.family,
+    )) {
+      errors.push(`omni.profiles.${profileKey}.task_scoped requires family on every task`);
+    }
+  }
+
+  for (const [variantKey, variant] of Object.entries(variants)) {
+    for (const profileKey of variant.supported_hardware || []) {
+      if (!Object.hasOwn(profiles, profileKey)) {
+        errors.push(`variants.${variantKey}.supported_hardware has no omni.profiles.${profileKey}`);
+      }
+    }
+  }
+
+  for (const [index, item] of (recipe.omni?.evidence || []).entries()) {
+    if (item.hardware && !Object.hasOwn(profiles, item.hardware)) {
+      errors.push(`omni.evidence[${index}] references unknown profile ${item.hardware}`);
+    }
+    for (const variantKey of item.variants || []) {
+      if (!Object.hasOwn(variants, variantKey)) {
+        errors.push(`omni.evidence[${index}] references unknown variant ${variantKey}`);
+      }
+    }
+    for (const taskKey of item.tasks || []) {
+      if (!taskKeys.has(taskKey)) {
+        errors.push(`omni.evidence[${index}] references unknown task ${taskKey}`);
+      }
+    }
+    for (const family of item.families || []) {
+      if (!taskFamilies.has(family)) {
+        errors.push(`omni.evidence[${index}] references unknown family ${family}`);
+      }
+    }
+  }
+
+  if (errors.length) {
+    const rel = path.relative(ROOT, sourceFile);
+    throw new Error(`Invalid Omni recipe in ${rel}:\n  - ${errors.join("\n  - ")}`);
+  }
+}
+
 // Wrap a rendered (command, argv) pair in `docker run`. Returns
 // { docker_command, docker_argv } so each form has its docker counterpart.
 function dockerize(command, argv, env, dockerMeta, port = 8000) {
@@ -704,6 +775,7 @@ let collisionCount = 0;
 for (const file of findYamlFiles(modelsDir)) {
   const r = normalizeDates(readYaml(file));
   validateFeatureModes(r, file);
+  validateOmniRecipe(r, file, taxonomy);
   // Derive HF identity from path. Only `hf_id` is exposed in the public JSON;
   // `org` and `repo` are trivially `hf_id.split("/")` for consumers.
   const rel = path.relative(modelsDir, file);
