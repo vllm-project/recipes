@@ -4,7 +4,7 @@ meta:
   provider: "Muse (Meta)"
   description: "Dense 29.6B vision-language model with a ViT-G/14 perception encoder and 128K context, distilled from Muse Spark for local agentic use. Emits channel-scoped reasoning and XML-style ATEM tool calls rather than JSON, so it needs the dedicated `muse_glimmer` tool-call and reasoning parsers."
   date_added: 2026-08-09
-  date_updated: 2026-08-10
+  date_updated: 2026-08-23
   difficulty: advanced
   tasks:
     - text
@@ -83,6 +83,8 @@ features:
       rtx_5090: unsupported
     description: "DFlash block-diffusion draft head — predicts a whole block in one forward, verified in parallel by the target. `num_speculative_tokens: 15` is not a tuning knob: the head has `block_size: 16` and slot 0 re-presents the last accepted token, so 15 is what remains."
     args:
+      - "--max-num-seqs"
+      - "32"
       - "--speculative-config"
       - '{"method": "dflash", "model": "meta-models/Muse-Glimmer-30B-assistant", "num_speculative_tokens": 15}'
 
@@ -371,7 +373,8 @@ guide: |
   attend to each other bidirectionally — and the target verifies them in parallel.
 
   ```bash
-  --speculative-config '{"method": "dflash", "model": "meta-models/Muse-Glimmer-30B-assistant", "num_speculative_tokens": 15}'
+  --max-num-seqs 32 \
+    --speculative-config '{"method": "dflash", "model": "meta-models/Muse-Glimmer-30B-assistant", "num_speculative_tokens": 15}'
   ```
 
   **`num_speculative_tokens: 15` is fixed, not tuned.** The head has
