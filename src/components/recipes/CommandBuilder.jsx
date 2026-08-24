@@ -1066,8 +1066,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     activeStrategy,
     hwId,
   );
-  const showGpuUsageHint =
-    nodeCount === 1 && activeStrategy === "single_node_tp" && effectiveTp < hwGpuCount;
+  const showTpUsageHint =
+    nodeCount === 1
+    && activeStrategy === "single_node_tp"
+    && (hwProfile?.generation === "cpu" || effectiveTp < hwGpuCount);
 
   const isSingleNode = nodeCount === 1 && typeof activeStrategy === "string" && activeStrategy.startsWith("single_node_");
   // Intel XPU: the validated deployment is single-node, single-instance vLLM in
@@ -1904,7 +1906,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                             <span className="font-semibold">{p.display_name}</span>
                             {p.vram_gb > 0 && p.gpu_count > 0 && (
                               <span className="text-muted-foreground ml-1.5 font-mono">
-                                {Math.round(p.vram_gb / p.gpu_count)}G/GPU
+                                {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : "GPU"}
                               </span>
                             )}
                           </Pill>
@@ -2185,7 +2187,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                           <span className="font-semibold">{p.display_name}</span>
                           {p.vram_gb > 0 && p.gpu_count > 0 && (
                             <span className="text-muted-foreground ml-1.5 font-mono">
-                              {Math.round(p.vram_gb / p.gpu_count)}G/GPU
+                              {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : "GPU"}
                             </span>
                           )}
                         </Pill>
@@ -2194,9 +2196,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   </PillGroup>
                 </div>
               ))}
-              {showGpuUsageHint && (
+              {showTpUsageHint && (
                 <p className="text-[11px] text-muted-foreground/80 pt-1.5">
-                  This recipe runs on {effectiveTp} of {hwGpuCount} GPUs on the selected node — add
+                  {hwProfile?.generation === "cpu"
+                    ? `This recipe runs on ${effectiveTp} CPU NUMA ${effectiveTp === 1 ? "node" : "nodes"} on the selected node — add`
+                    : `This recipe runs on ${effectiveTp} of ${hwGpuCount} GPUs on the selected node — add`}
                   <code className="font-mono mx-1 px-1 py-0.5 rounded bg-foreground/5 text-[10px]">--tensor-parallel-size N</code>
                   via Advanced to scale up.
                 </p>
@@ -3219,7 +3223,10 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   const pipHidden = pipCfg === false;
   const dockerHidden = dockerCfg === false;
   const [open, setOpen] = useState(false);
-  const { isAmd, isTpu, isXpu, image: dockerImage, brandKey, cudaMap } = dockerMeta;
+  const { isAmd, isTpu, isXpu, isIntel, image: dockerImage, brandKey, cudaMap } = dockerMeta;
+  // Intel CPU is a first-class backend in computeDockerMeta. Keep XPU
+  // distinct even though it is also Intel hardware.
+  const isCpu = isIntel && !isXpu;
   // A variant may require a newer vLLM than the recipe baseline (e.g. the DSpark
   // checkpoint needs 0.25.0, currently nightly). Take the higher version and OR
   // the nightly flag so the Install block reflects the selected checkpoint.
@@ -3253,24 +3260,41 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
     ? `uv venv --python 3.12
 source .venv/bin/activate
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm`
-    : nightlyRequired
-      ? `uv venv
+    : isCpu
+      ? nightlyRequired
+        ? `uv venv --python 3.12 --seed --managed-python
+source .venv/bin/activate
+uv pip install vllm \\
+  --extra-index-url https://wheels.vllm.ai/nightly/cpu \\
+  --index-strategy first-index \\
+  --torch-backend cpu`
+        : `uv venv --python 3.12 --seed --managed-python
+source .venv/bin/activate
+export VLLM_VERSION=$(curl -s https://api.github.com/repos/vllm-project/vllm/releases/latest | jq -r .tag_name | sed 's/^v//')
+uv pip install https://github.com/vllm-project/vllm/releases/download/v$VLLM_VERSION/vllm-$VLLM_VERSION+cpu-cp38-abi3-manylinux_2_34_x86_64.whl \\
+  --torch-backend cpu`
+      : nightlyRequired
+        ? `uv venv
 source .venv/bin/activate
 uv pip install -U vllm --pre \\
   --extra-index-url https://wheels.vllm.ai/nightly/${pipCudaTag} \\
   --extra-index-url https://download.pytorch.org/whl/${pipCudaTag} \\
   --index-strategy unsafe-best-match`
-      : `uv venv
+        : `uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto`;
   const pipCmd = pipCfg?.command || defaultPipCmd;
   const pipNote =
     pipCfg?.note ||
-    (nightlyRequired && !isAmd
-      ? singleCudaBuild
-        ? `vLLM ${minV} isn't released yet — nightly required. This recipe publishes ${singleCudaLabel} builds only.`
-        : `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
-      : undefined);
+    (isCpu
+      ? nightlyRequired
+        ? "Intel/AMD x86 CPU nightly wheels use the dedicated /nightly/cpu index and PyTorch CPU backend."
+        : "Intel/AMD x86 CPU release wheels are published separately from CUDA wheels; the command follows the official vLLM CPU pre-built-wheel flow."
+      : nightlyRequired && !isAmd
+        ? singleCudaBuild
+          ? `vLLM ${minV} isn't released yet — nightly required. This recipe publishes ${singleCudaLabel} builds only.`
+          : `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
+        : undefined);
 
   // Docker install step is just the image pull; the `docker run` that actually
   // serves the model is rendered in the main command block below. A YAML
@@ -3285,6 +3309,8 @@ uv pip install -U vllm --torch-backend auto`;
       ? "Intel XPU image. The entrypoint initializes oneAPI automatically."
     : isAmd
       ? undefined
+    : isCpu
+      ? "Intel/AMD x86 CPU image; no CUDA runtime is required."
       : cudaMap
         ? singleCudaBuild
           ? `This tag is published as a ${singleCudaLabel} build only${singleCudaBuild === "cu130" ? " — the host needs an r580+ NVIDIA driver" : ""}.`
@@ -3310,11 +3336,11 @@ uv pip install -U vllm --torch-backend auto`;
   // TPU has no pip wheel — force-hide the pip tab regardless of recipe overrides.
   // Intel XPU is validated via the official `vllm-openai-xpu` Docker image;
   const effectivePipHidden = pipHidden || isTpu || isXpu;
-  const dockerLabel = isTpu ? "Docker (TPU)" : isXpu ? "Docker (XPU)" : isAmd ? "Docker (ROCm)" : "Docker";
+  const dockerLabel = isTpu ? "Docker (TPU)" : isXpu ? "Docker (XPU)" : isAmd ? "Docker (ROCm)" : isCpu ? "Docker (CPU)" : "Docker";
   const tabs = [
     !effectivePipHidden && {
       id: "pip",
-      label: isAmd ? "pip / uv (ROCm)" : "pip / uv",
+      label: isAmd ? "pip / uv (ROCm)" : isCpu ? "pip / uv (CPU)" : "pip / uv",
       code: pipCmd,
       note: pipNote,
     },
@@ -3338,7 +3364,7 @@ uv pip install -U vllm --torch-backend auto`;
         <Package size={12} className="text-[var(--command-fg)]/50 shrink-0" />
         <span className="text-[11px] font-semibold text-[var(--command-fg)]/70 uppercase tracking-widest">Install</span>
         <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
-          vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · {isTpu ? "TPU" : isXpu ? "XPU" : isAmd ? "ROCm" : "CUDA"}
+          vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · {isTpu ? "TPU" : isXpu ? "XPU" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}
         </span>
         {nightlyRequired && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
