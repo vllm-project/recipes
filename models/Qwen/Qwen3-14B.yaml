@@ -56,6 +56,8 @@ variants:
     precision: int4
     vram_minimum_gb: 10
     description: "Qwen official AWQ 4-bit checkpoint"
+    supported_hardware:
+      - xeon6
     extra_args:
       - "--quantization"
       - "awq"
