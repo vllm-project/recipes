@@ -111,7 +111,7 @@ features:
           - '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}'
       dflash:
         label: "DFlash2"
-        description: "External DFlash2 drafter (incoai/Qwen3.8-27B-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. Needs a vLLM build that includes vllm-project/vllm#52816 (merged 2026-08-21, not in a stable release yet). num_speculative_tokens best is 5 for hopper."
+        description: "External DFlash2 drafter (incoai/Qwen3.8-27B-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. Needs a vLLM build that includes vllm-project/vllm#52816 (merged 2026-08-21, not in a stable release yet). num_speculative_tokens is best set to 5 for Hopper GPUs."
         variants: [default]
         args:
           - "--speculative-config"
