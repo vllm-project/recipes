@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "27B-parameter dense hybrid-attention model with linear attention on 48 of 64 layers, a vision tower, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-14
-  date_updated: 2026-08-14
+  date_updated: 2026-08-24
   difficulty: beginner
   tasks:
     - multimodal
@@ -83,7 +83,7 @@ features:
       - "--reasoning-parser"
       - "qwen3"
   spec_decoding:
-    description: "Multi-token prediction using the draft head shipped inside the checkpoint — no separate speculator repo needed."
+    description: "Speculative decoding — pick MTP (in-checkpoint) or DFlash2 (external draft)."
     default_mode: mtp
     modes:
       mtp:
@@ -109,6 +109,13 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}'
+      dflash:
+        label: "DFlash2"
+        description: "External DFlash2 drafter (incoai/Qwen3.8-27B-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. Needs a vLLM build that includes vllm-project/vllm#52816 (merged 2026-08-21, not in a stable release yet). num_speculative_tokens must be 7 (block_size 8 minus one)."
+        variants: [default]
+        args:
+          - "--speculative-config"
+          - '{"method":"dflash","model":"incoai/Qwen3.8-27B-DFlash2","num_speculative_tokens":7}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -346,6 +353,17 @@ guide: |
   tuning `num_speculative_tokens` — throughput alone cannot tell a working drafter from
   one that loaded and was ignored.
   
+  ### DFlash2 (opt-in)
+  
+  DFlash2 is not a standalone model. Serve `Qwen/Qwen3.8-27B` and attach
+  [incoai/Qwen3.8-27B-DFlash2](https://huggingface.co/incoai/Qwen3.8-27B-DFlash2)
+  as the drafter. Requires a vLLM build that includes
+  [vllm#52816](https://github.com/vllm-project/vllm/pull/52816).
+  ```bash
+  vllm serve Qwen/Qwen3.8-27B \
+    --speculative-config '{"method":"dflash","model":"incoai/Qwen3.8-27B-DFlash2","num_speculative_tokens":7}'
+  ```
+  
   ## Client usage
 
   `generation_config.json` ships `temperature: 1.0`, `top_p: 0.95`, `top_k: 20`.
@@ -400,3 +418,6 @@ guide: |
   - Ascend INT8 checkpoint (ModelScope): https://www.modelscope.cn/models/Eco-Tech/Qwen3.8-27B-w8a8
   - vLLM documentation: https://docs.vllm.ai/
   - vLLM Ascend tutorial: https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/Qwen3.8-27B.html
+  - DFlash2 draft: https://huggingface.co/incoai/Qwen3.8-27B-DFlash2
+  - DFlash2 blog: https://inco.ai/blog/dflash2/
+  - vLLM DFlash2 PR: https://github.com/vllm-project/vllm/pull/52816
