@@ -308,6 +308,16 @@ hardware_profiles:
     scalable: false
     restricted: true
 
+  ascend_910c:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 910C"
+    description: "Huawei Ascend 910C · 16× NPU · 64 GB HBM each · Atlas 800 A3 · vLLM Ascend backend"
+    gpu_count: 16
+    vram_gb: 1024
+    multi_node: false
+    restricted: true
+
 tasks:
   - id: text
     display_name: "Text"
