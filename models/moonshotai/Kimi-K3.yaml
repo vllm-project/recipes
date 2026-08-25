@@ -78,7 +78,7 @@ features:
           - "128"
           - "--speculative-config"
           - '{"model":"RedHatAI/Kimi-K3-speculator.dspark", "num_speculative_tokens":8, "method": "dspark", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
-      ascend_910c:
+      npu:
         args:
           - "--speculative-config"
           - '{"method":"dspark","model":"RedHatAI/Kimi-K3-speculator.dspark","num_speculative_tokens":7,"enforce_eager":true}'
