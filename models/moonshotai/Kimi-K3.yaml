@@ -113,10 +113,12 @@ variants:
     # Pre-release estimate: 2.8T params × 0.5 byte/param × 1.2 headroom.
     # Replace with the real safetensors footprint once weights are published.
     vram_minimum_gb: 1680
+    supported_hardware: [h100, h200, b200, b300, gb200, gb300, mi300x, mi325x, mi355x]
     description: "Quantization-aware-trained MXFP4 weights with MXFP8 activations; footprint is estimated until the checkpoint is published."
   nvfp4:
     precision: nvfp4
     vram_minimum_gb: 1650
+    supported_hardware: [b200, b300, gb200, gb300]
     model_id: "RedHatAI/Kimi-K3-NVFP4"
     description: "RedHatAI compressed-tensors NVFP4 quantization; MoE layers quantized to NVFP4, attention and embeddings at full precision"
 
@@ -185,6 +187,15 @@ strategy_hardware:
   multi_node_dep:
     h100: unsupported
     h200: unsupported
+    ascend_910c: unsupported
+  multi_node_tp:
+    ascend_910c: unsupported
+  multi_node_tep:
+    ascend_910c: unsupported
+  multi_node_tp_pp:
+    ascend_910c: unsupported
+  pd_cluster:
+    ascend_910c: unsupported
 
 default_strategy: single_node_tp
 
@@ -204,6 +215,7 @@ strategy_min_gpus:
   multi_node_tp_pp: 16
   multi_node_dep: 16
   h100: 32
+  ascend_910c: 64
 
 
 hardware_overrides:
