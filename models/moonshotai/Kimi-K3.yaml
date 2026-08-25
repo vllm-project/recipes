@@ -126,8 +126,6 @@ variants:
     label: "W4A8 (Ascend)"
     vram_minimum_gb: 1711
     supported_hardware: [ascend_910c]
-    default_modes:
-      spec_decoding: redhat_dspark
     extra_args:
       - "--quantization"
       - "ascend"
