@@ -141,6 +141,27 @@ variants:
       - "--linear-backend"
       - "flashinfer_cutedsl"
     description: "NVFP4 build with 4-bit activations for NVIDIA Blackwell — 1.32 TiB, the smallest footprint: 8 GPUs, i.e. one 8xB300 node or 2 GB300 NVL4 trays."
+  nvfp4_reap25:
+    model_id: "RedHatAI/Qwen3.8-2.4T-A95B-NVFP4-REAP-25"
+    precision: nvfp4
+    label: "NVFP4-REAP-25 (RedHatAI)"
+    # A distinct checkpoint from the `nvfp4` variant above, not a duplicate: REAP
+    # (Router-weighted Expert Activation Pruning, arxiv.org/abs/2510.13999) drops 128 of
+    # the 512 routed experts before quantization (config.json num_experts: 384),
+    # calibrated on 1024 samples from mlabonne/open-perfectblend. quant_method
+    # `compressed-tensors`, format `nvfp4-pack-quantized` — a different quantization
+    # toolchain than the modelopt NVFP4 above, but the same 4-bit-weight/4-bit-activation
+    # numerical format. Same base architecture, MTP head, and 262K context as the base.
+    # Sized from the staged copy: index total_size 1,144,117,102,296 B = 1144.1 GB.
+    vram_minimum_gb: 1373
+    # Same reasoning as the `nvfp4` variant above — NVFP4 already implies Blackwell in
+    # this catalog, and the AMD path is untested for this checkpoint.
+    supported_hardware: [b200, b300, gb200, gb300]
+    # NOT copying `--linear-backend flashinfer_cutedsl` from the `nvfp4` variant: that
+    # flag was pinned for the modelopt NVFP4 quant path specifically, and this checkpoint
+    # uses a different quantization toolchain (compressed-tensors) whose vLLM kernel
+    # routing has not been verified here.
+    description: "RedHatAI NVFP4 build with 25% uniform expert pruning via REAP (384 of 512 experts retained) — 1.04 TiB, smaller than the un-pruned NVFP4 build above: 8 GPUs, i.e. one 8xB300 node or 2 GB300 NVL4 trays. Per RedHatAI's model card: GPQA Diamond 91.5 vs 92.6 BF16 (~99% recovery), DeepSWE 1.1 56.6 (matching BF16). Not independently benchmarked in this recipe — no measured throughput/latency numbers for this checkpoint below."
 
 # Full MoE strategy set. Note the 3.4x spread between variants: NVFP4/MXFP4 fit 8 GPUs
 # while BF16 needs 24, so no per-STRATEGY floor is set — one sized for BF16 would block
@@ -258,6 +279,7 @@ guide: |
   | FP8 | 2.27 TiB | 2996 GB | 16 GPUs | 16 GPUs | 32 GPUs | **4 trays (TP16)** |
   | MXFP4 (AMD) | 1.45 TiB | 1917 GB | — | **8 GPUs** | 16 GPUs | — |
   | NVFP4 W4A4 (NVIDIA) | 1.32 TiB | 1737 GB | **8 GPUs** | — | 16 GPUs | **2 trays (TP8)** |
+  | NVFP4-REAP-25 (RedHatAI) | 1.04 TiB | 1373 GB | **8 GPUs** | — | 16 GPUs | **2 trays (TP8)** |
 
   **TP must divide the 64 attention heads**, so only 1/2/4/8/16/32 are legal. This rounds
   some layouts up: FP8 needs 2325 GiB, which is 3 GB300 trays by capacity, but TP12 is
@@ -295,6 +317,24 @@ guide: |
 
   MXFP4 on 8xMI355X — swap the model id and drop `--kv-cache-dtype fp8` unless you have
   confirmed the ROCm path supports it in your build.
+
+  NVFP4-REAP-25, TP8 (one 8xB300 node, or two GB300 trays) — the smallest checkpoint,
+  128 fewer routed experts than the un-pruned NVFP4 build above. This is the launch
+  command from RedHatAI's model card (its `--enable-expert-parallel 8` is a doc typo —
+  the flag is boolean, no value):
+
+  ```bash
+  vllm serve RedHatAI/Qwen3.8-2.4T-A95B-NVFP4-REAP-25 \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --max-model-len 262144 \
+    --reasoning-parser qwen3 \
+    --enable-auto-tool-choice --tool-call-parser qwen3_coder
+  ```
+
+  Kernel flags (`--linear-backend`, `--moe-backend`) and the throughput/latency numbers
+  below are specific to the modelopt NVFP4 build — they have not been re-measured against
+  this checkpoint's compressed-tensors quantization path.
 
   ### High throughput
 
@@ -420,4 +460,6 @@ guide: |
   - FP8 checkpoint: https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B-FP8
   - MXFP4 build (AMD): https://huggingface.co/Inferact/Qwen3.8-2.4T-A95B-MXFP4
   - NVFP4 W4A4 build (NVIDIA): https://huggingface.co/Inferact/Qwen3.8-2.4T-A95B-NVFP4
+  - NVFP4-REAP-25 build (RedHatAI): https://huggingface.co/RedHatAI/Qwen3.8-2.4T-A95B-NVFP4-REAP-25
+  - REAP: Router-weighted Expert Activation Pruning: https://arxiv.org/abs/2510.13999
   - vLLM documentation: https://docs.vllm.ai/
