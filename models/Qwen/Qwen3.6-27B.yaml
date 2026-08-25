@@ -37,7 +37,7 @@ features:
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_xml"
+      - "qwen3_coder"
   reasoning:
     description: "Enable chain-of-thought reasoning with Qwen3 parser"
     args:
@@ -92,6 +92,9 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 27
     tp: 1
+    # SM120 GPUs only reach FlashInfer's XQA decode kernel from 0.28.0.
+    min_vllm_version: "0.28.0"
+    nightly_required: true
     description: "NVIDIA ModelOpt NVFP4 checkpoint — MLP linears quantized to NVFP4, attention linears and KV cache in FP8. Single Blackwell GPU, including DGX Spark."
     hardware_overrides:
       dgx_station_gb300:
@@ -151,7 +154,9 @@ guide: |
   ## Prerequisites
 
   - **vLLM version:** >= 0.17.0
-  - **DGX Spark NVFP4 vLLM version:** >= 0.24.0
+  - **NVFP4 vLLM version:** >= 0.28.0 (currently nightly). 0.24.0 loads the
+    checkpoint, but FlashInfer only selects its XQA decode kernel on SM120
+    GPUs from 0.28.0.
   - **Hardware (BF16):** 1x H200, 2x H100, 4x Intel Arc Pro B60, 2x Intel Arc Pro B70
   - **Hardware (FP8):** single 40 GB GPU (H100/H200/L40S)
   - **Hardware (Int4):** single 24 GB GPU
@@ -210,12 +215,12 @@ guide: |
 
   The NVIDIA ModelOpt NVFP4 checkpoint is served from
   [`nvidia/Qwen3.6-27B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
-  and requires vLLM 0.24.0+.
+  and requires vLLM 0.28.0+ (currently nightly) for the XQA decode path.
 
   #### **Single node (TP1)**
 
   ```bash
-  # Use container: vllm/vllm-openai:v0.24.0-ubuntu2404
+  # Use container: vllm/vllm-openai:nightly
 
   vllm serve nvidia/Qwen3.6-27B-NVFP4 \
     --trust-remote-code \
@@ -230,7 +235,7 @@ guide: |
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
     --load-format fastsafetensors \
     --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
     --enable-auto-tool-choice
   ```
 
@@ -246,7 +251,7 @@ guide: |
   export IB_IF="rocep1s0f1,roceP2p1s0f1" # BOTH matching RoCE interfaces
   export MASTER_PORT=29501               # Free port on the Head Node
   export CONTAINER_NAME=vllm_node
-  export IMAGE="vllm/vllm-openai:v0.24.0-ubuntu2404"
+  export IMAGE="vllm/vllm-openai:nightly"
   ```
 
   ```bash
@@ -282,7 +287,7 @@ guide: |
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
     --load-format fastsafetensors \
     --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
     --enable-auto-tool-choice \
     --tensor-parallel-size 2 \
     --nnodes 2 \
@@ -322,7 +327,7 @@ guide: |
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
     --load-format fastsafetensors \
     --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
     --enable-auto-tool-choice \
     --tensor-parallel-size 2 \
     --nnodes 2 \
@@ -337,10 +342,10 @@ guide: |
 
   The NVIDIA ModelOpt NVFP4 checkpoint is served from
   [`nvidia/Qwen3.6-27B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
-  and requires vLLM 0.24.0+.
+  and requires vLLM 0.28.0+ (currently nightly) for the XQA decode path.
 
   ```bash
-  # Use container: vllm/vllm-openai:v0.24.0-ubuntu2404
+  # Use container: vllm/vllm-openai:nightly
 
   vllm serve nvidia/Qwen3.6-27B-NVFP4 \
     --trust-remote-code \
@@ -355,7 +360,7 @@ guide: |
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
     --load-format fastsafetensors \
     --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
     --enable-auto-tool-choice
   ```
 

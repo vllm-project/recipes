@@ -4,7 +4,7 @@ meta:
   provider: "Google"
   description: "Google's compact Gemma 4 multimodal model (effective 4B) with native text, image, and audio, plus thinking mode and tool-use protocol."
   date_added: 2026-04-02
-  date_updated: 2026-05-11
+  date_updated: 2026-08-18
   difficulty: beginner
   tasks:
     - multimodal
@@ -94,12 +94,6 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
 
-hardware_overrides:
-  cpu:
-    extra_env:
-      VLLM_CPU_KVCACHE_SPACE: "40"
-      VLLM_CPU_ATTN_SPLIT_KV: "0"
-
 strategy_overrides:
   single_node_tp:
     tp: 1
@@ -108,6 +102,9 @@ guide: |
   ## Overview
 
   [Gemma 4 E4B](https://huggingface.co/google/gemma-4-E4B-it) is Google's effective-4B unified multimodal model — text + images + audio in a single model, with structured thinking/reasoning, function calling, and dynamic vision resolution. It fits on a single 24 GB+ GPU.
+
+  Intel Xeon 6 CPU support remains verified. No additional benchmark-specific CPU
+  tuning is prescribed for general deployment.
 
   ### Key Features
   - **Multimodal**: Text + images + audio natively (video via custom frame-extraction pipeline).
@@ -119,6 +116,9 @@ guide: |
   TPU support is provided through [vLLM TPU](https://github.com/vllm-project/tpu-inference) with recipes for [Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4) and [Ironwood](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/inference/ironwood/vLLM/Gemma4/).
 
   ## Prerequisites
+
+  - Hardware: Intel Xeon 6/Xeon 5 CPUs
+  - vLLM >= 0.19.1
 
   ### pip (NVIDIA CUDA)
   ```bash
@@ -228,8 +228,6 @@ guide: |
     --network host \
     --shm-size 16g \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    -e VLLM_CPU_KVCACHE_SPACE=40 \
-    -e VLLM_CPU_ATTN_SPLIT_KV=0 \
     vllm/vllm-openai-cpu:latest-x86_64 \
       --model google/gemma-4-E4B-it \
       --host 0.0.0.0 \
@@ -237,6 +235,19 @@ guide: |
   ```
 
   For additional Intel Xeon 6 deployment details, see the Intel Software Catalog entries for [Gemma 4 E4B IT](https://aiswcatalog.intel.com/models/google-gemma-4-e4b-it).
+
+  The following settings are intentionally not prescribed as portable CPU model
+  defaults because they depend on the workload, hardware, or runtime environment:
+
+  - `--max-num-batched-tokens`: scheduler/throughput tuning.
+  - `--max-num-seqs`: concurrency and scheduler-capacity tuning.
+  - `--gpu-memory-utilization`: platform memory-budget tuning.
+  - `--no-enable-prefix-caching`: workload/benchmark cache-policy tuning.
+  - `VLLM_ENGINE_ITERATION_TIMEOUT_S`: operational runtime timeout.
+
+  These settings may still appear in validated hardware-specific overrides. Tune
+  them at deployment time based on platform resources, workload shape, and
+  latency/throughput goals.
 
   ## Client Usage
 
