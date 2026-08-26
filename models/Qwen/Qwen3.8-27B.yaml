@@ -359,7 +359,7 @@ guide: |
   tuning `num_speculative_tokens` — throughput alone cannot tell a working drafter from
   one that loaded and was ignored.
   
-  #### Native block-scaled FP8 on Ascend
+  ### Native block-scaled FP8 on Ascend
 
   Verified on a single 950PR, TP1, vLLM Ascend 0.23.0 from the
   `quay.io/ascend/vllm-ascend:nightly-main-a5` image.
