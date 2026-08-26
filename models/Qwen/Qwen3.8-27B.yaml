@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "27B-parameter dense hybrid-attention model with linear attention on 48 of 64 layers, a vision tower, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-14
-  date_updated: 2026-08-24
+  date_updated: 2026-08-26
   difficulty: beginner
   tasks:
     - multimodal
@@ -105,7 +105,7 @@ features:
         # deprecation warning). `enforce_eager` applies to the DRAFT model only: the target
         # model still replays its FULL_DECODE_ONLY graph.
         description: "Same in-checkpoint MTP head, spelled as vLLM Ascend documents it, with the draft head run eager."
-        variants: [ascend_w8a8]
+        variants: [ascend_w8a8, fp8]
         args:
           - "--speculative-config"
           - '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}'
@@ -145,8 +145,14 @@ variants:
     # (quantization_config.weight_block_size [128, 128]).
     vram_minimum_gb: 38
     description: "Official block-scaled FP8 checkpoint — 28.7 GiB: 1 GPU."
-    # Not offered on ascend_950pr: vLLM Ascend has no code path for block-scaled FP8 today.
-    supported_hardware: [h100, h200, b200, b300, gb200, gb300, mi300x, mi325x, mi355x, rtx_5090, rtx_5090_2x]
+    # ascend_950pr added 2026-08-26: vllm-project/vllm-ascend#14852 dispatches
+    # `quant_method: fp8` + `weight_block_size` in AscendFp8Config.get_quant_method and
+    # re-quantizes the block-scaled tiles to MXFP8 at load time on 950. No
+    # `--quantization ascend` — the scheme is picked up from the checkpoint config.
+    supported_hardware: [h100, h200, b200, b300, gb200, gb300, mi300x, mi325x, mi355x, rtx_5090, rtx_5090_2x, ascend_950pr]
+    hardware_overrides:
+      ascend_950pr:
+        docker_image: "quay.io/ascend/vllm-ascend:nightly-main-a5"
   nvfp4:
     model_id: "Inferact/Qwen3.8-27B-NVFP4"
     precision: nvfp4
@@ -312,7 +318,7 @@ guide: |
   (90,112 tokens, 0.754 acceptance). Those two flags are levers for a bigger pool, not fixes
   for the OOM: only `--enforce-eager` decides whether the server starts.
 
-  ### Huawei Ascend 950PR (vLLM Ascend)
+  ### Huawei Ascend 950PR-w8a8 (vLLM Ascend)
 
   Verified on a single 950PR, TP1, vLLM Ascend 0.23.0 from the
   `quay.io/ascend/vllm-ascend:qwen3.8-a5` image.
@@ -352,6 +358,34 @@ guide: |
   Read MTP acceptance from `vllm:spec_decode_num_{accepted,draft}_tokens_total` before
   tuning `num_speculative_tokens` — throughput alone cannot tell a working drafter from
   one that loaded and was ignored.
+  
+  ### Huawei Ascend 950PR-Native block-scaled FP8 (vLLM Ascend)
+
+  Verified on a single 950PR, TP1, vLLM Ascend 0.23.0 from the
+  `quay.io/ascend/vllm-ascend:nightly-main-a5` image.
+
+  The official `Qwen/Qwen3.8-27B-FP8` checkpoint serves directly on a 950PR — no offline
+  re-quantization and **no `--quantization ascend`**. vLLM Ascend reads `quant_method: fp8`
+  and `weight_block_size` straight from the checkpoint, expands the `weight_scale_inv`
+  tiles at load time and re-quantizes to MXFP8 on 950.
+
+  Requires a vLLM Ascend build that includes
+  [vllm-ascend#14852](https://github.com/vllm-project/vllm-ascend/pull/14852) (merged
+  2026-08-26); no tagged release carries it yet. The W8A8 path above is unaffected.
+
+  ```bash
+  vllm serve Qwen/Qwen3.8-27B-FP8 \
+    --tensor-parallel-size 1 \
+    --max-model-len 128000 \
+    --max-num-seqs 16 \
+    --gpu-memory-utilization 0.85 \
+    --trust-remote-code \
+    --enable-prefix-caching \
+    --reasoning-parser qwen3 \
+    --tool-call-parser qwen3_coder \
+    --mm-encoder-tp-mode data \
+    --speculative-config '{"method": "qwen3_5_mtp", "num_speculative_tokens": 3, "enforce_eager": true}'
+  ```
   
   ### DFlash2 (opt-in)
   
@@ -421,3 +455,4 @@ guide: |
   - DFlash2 draft: https://huggingface.co/incoai/Qwen3.8-27B-DFlash2
   - DFlash2 blog: https://inco.ai/blog/dflash2/
   - vLLM DFlash2 PR: https://github.com/vllm-project/vllm/pull/52816
+  - Native FP8 support on Ascend: https://github.com/vllm-project/vllm-ascend/pull/14852
