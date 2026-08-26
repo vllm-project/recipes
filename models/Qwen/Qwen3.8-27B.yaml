@@ -105,7 +105,7 @@ features:
         # deprecation warning). `enforce_eager` applies to the DRAFT model only: the target
         # model still replays its FULL_DECODE_ONLY graph.
         description: "Same in-checkpoint MTP head, spelled as vLLM Ascend documents it, with the draft head run eager."
-        variants: [ascend_w8a8,fp8]
+        variants: [ascend_w8a8, fp8]
         args:
           - "--speculative-config"
           - '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}'
@@ -150,6 +150,9 @@ variants:
     # re-quantizes the block-scaled tiles to MXFP8 at load time on 950. No
     # `--quantization ascend` — the scheme is picked up from the checkpoint config.
     supported_hardware: [h100, h200, b200, b300, gb200, gb300, mi300x, mi325x, mi355x, rtx_5090, rtx_5090_2x, ascend_950pr]
+    hardware_overrides:
+      ascend_950pr:
+        docker_image: "quay.io/ascend/vllm-ascend:nightly-main-a5"
   nvfp4:
     model_id: "Inferact/Qwen3.8-27B-NVFP4"
     precision: nvfp4
