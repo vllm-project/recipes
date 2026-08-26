@@ -1,0 +1,236 @@
+meta:
+  title: "GLM-5.3-Flash"
+  slug: "glm-5.3-flash"
+  provider: "GLM (Z-AI)"
+  description: "GLM-5.3-Flash is a 320B-total / 18B-active multimodal MoE with hybrid KDA and sparse MLA attention, native FP8 weights, MTP, and a 1M-token context window."
+  date_updated: 2026-08-26
+  difficulty: advanced
+  tasks:
+    - text
+    - multimodal
+  performance_headline: "320B MoE with 18B active parameters and 1M-token context"
+  hardware:
+    h100: verified
+    b200: verified
+    gb200: verified
+
+model:
+  model_id: "zai-org/GLM-5.3-Flash"
+  min_vllm_version: "0.27.0"
+  nightly_required: true
+  docker_image:
+    nvidia: "vllm/vllm-openai:glm53-flash"
+    amd: "vllm/vllm-openai-rocm:glm53-flash"
+  install:
+    docker:
+      note: "Use the dedicated GLM-5.3-Flash docker until support lands in the standard vLLM image."
+    pypi:
+      note: "Use the dedicated GLM-5.3-Flash docker until support lands in the standard vLLM image."
+  architecture: moe
+  parameter_count: "321B"
+  active_parameters: "18B"
+  context_length: 1048576
+  base_env:
+    VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+
+dependencies: []
+
+features:
+  tool_calling:
+    description: "GLM tool-call parsing with automatic tool choice"
+    args:
+      - "--tool-call-parser"
+      - "glm47"
+      - "--enable-auto-tool-choice"
+  reasoning:
+    description: "Extract reasoning content with the GLM reasoning parser"
+    args:
+      - "--reasoning-parser"
+      - "glm45"
+  spec_decoding:
+    description: "Use the checkpoint's single MTP layer to draft one token"
+    args:
+      - "--speculative-config"
+      - '{"method":"mtp","num_speculative_tokens":5}'
+
+opt_in_features:
+  - spec_decoding
+
+variants:
+  default:
+    precision: fp8
+    vram_minimum_gb: 386
+    description: "Default native FP8 checkpoint (zai-org/GLM-5.3-Flash)"
+  bf16:
+    model_id: "zai-org/GLM-5.3-Flash-BF16"
+    precision: bf16
+    vram_minimum_gb: 772
+    description: "Official BF16 checkpoint; requires substantially more GPU memory"
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - single_node_dep
+  - multi_node_tp
+  - multi_node_tp_pp
+  - multi_node_tep
+  - multi_node_dep
+  - pd_cluster
+
+hardware_overrides:
+  hopper:
+    extra_args:
+      - "--no-enable-flashinfer-autotune"
+  blackwell:
+    # FP8 KV cache only works on Blackwell for this model; Hopper runs BF16 KV.
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+strategy_overrides:
+  pd_cluster:
+    # KDA conv-state / KV-cache layouts must match on both pools for NIXL
+    # transfer; UCX is needed on the decode side too (strategy sets it on
+    # prefill only).
+    env:
+      VLLM_SSM_CONV_STATE_LAYOUT: "DS"
+      VLLM_KV_CACHE_LAYOUT: "HND"
+      UCX_NET_DEVICES: "all"
+    prefill:
+      vllm_args:
+        - "--no-disable-hybrid-kv-cache-manager"
+        # LM stays eager (strategy default) but keep CUDA graphs on the
+        # multimodal encoder.
+        - "--compilation-config"
+        - '{"cudagraph_mm_encoder": true}'
+    decode:
+      vllm_args:
+        - "--no-disable-hybrid-kv-cache-manager"
+        - "--max-num-seqs"
+        - "512"
+
+guide: |
+  ## Overview
+
+  GLM-5.3-Flash is a multimodal mixture-of-experts model with approximately 321B
+  total parameters and 18B active parameters per token. Its 45-layer language model
+  combines KDA linear-attention layers with NoPE sparse MLA layers, routes each token
+  through 8 of 288 experts, and supports image and video inputs. The checkpoint declares
+  a maximum context length of 1,048,576 tokens and includes one MTP draft layer.
+
+  The current vLLM implementation supports NVIDIA Hopper and newer GPUs only. It can
+  scale with tensor, pipeline, expert, or data+expert parallelism.
+
+  ## Prerequisites
+
+  - **Weights:** about 306 GiB for the default native FP8 checkpoint before runtime
+    and KV-cache overhead; the BF16 variant requires roughly twice the weight memory
+  - **vLLM:** use docker before the integration is included in the public repo
+  - **FlashInfer:** 0.6.17 or newer is required for NoPE sparse MLA
+
+  The default model ID, `zai-org/GLM-5.3-Flash`, is the FP8 checkpoint. Select the BF16
+  variant to serve `zai-org/GLM-5.3-Flash-BF16` instead.
+
+  ## Launching the server
+
+  ### FP8 with TP4 and MTP on one GB200 tray
+
+  ```bash
+  vllm serve zai-org/GLM-5.3-Flash \
+    --tensor-parallel-size 4 \
+    --kv-cache-dtype fp8 \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":5}' \
+    --tool-call-parser glm47 \
+    --reasoning-parser glm45 \
+    --enable-auto-tool-choice \
+    --served-model-name zai-org/GLM-5.3-Flash
+  ```
+
+  ### Prefill/Decode disaggregation (single node, TP4 + TP4)
+
+  Split one 8-GPU node into a prefill pool (GPUs 0-3) and a decode pool (GPUs 4-7),
+  bridged by NIXL KV transfer. The KDA conv-state and KV-cache layouts must be pinned
+  identically on both pools, and MTP drafts run on both sides. On Blackwell you can add
+  `--kv-cache-dtype fp8` to both pools; Hopper does not support FP8 KV cache for this
+  model and must run BF16 KV.
+
+  > Note: `num_speculative_tokens` must be the same in prefill and decode instance
+
+  ```bash
+  # Prefill pool
+  CUDA_VISIBLE_DEVICES=0,1,2,3 \
+  VLLM_SSM_CONV_STATE_LAYOUT=DS \
+  VLLM_KV_CACHE_LAYOUT=HND \
+  UCX_NET_DEVICES=all \
+  VLLM_NIXL_SIDE_CHANNEL_PORT=5557 \
+  vllm serve zai-org/GLM-5.3-Flash \
+    --port 8001 \
+    --tensor-parallel-size 4 \
+    --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_producer"}' \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":5}' \
+    --compilation-config '{"cudagraph_mm_encoder": true}' \
+    --enforce-eager \
+    --no-disable-hybrid-kv-cache-manager \
+    --served-model-name zai-org/GLM-5.3-Flash
+
+  # Decode pool
+  CUDA_VISIBLE_DEVICES=4,5,6,7 \
+  VLLM_SSM_CONV_STATE_LAYOUT=DS \
+  VLLM_KV_CACHE_LAYOUT=HND \
+  UCX_NET_DEVICES=all \
+  VLLM_NIXL_SIDE_CHANNEL_PORT=5558 \
+  vllm serve zai-org/GLM-5.3-Flash \
+    --port 8002 \
+    --tensor-parallel-size 4 \
+    --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_consumer"}' \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":5}' \
+    --max-num-seqs 512 \
+    --no-disable-hybrid-kv-cache-manager \
+    --served-model-name zai-org/GLM-5.3-Flash
+
+  # Router
+  vllm-router --policy round_robin --vllm-pd-disaggregation \
+    --prefill http://127.0.0.1:8001 \
+    --decode http://127.0.0.1:8002 \
+    --host 0.0.0.0 --port 8000 \
+    --intra-node-data-parallel-size 1
+  ```
+
+  ## Client usage
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+  response = client.chat.completions.create(
+      model="zai-org/GLM-5.3-Flash",
+      messages=[{"role": "user", "content": "Summarize sparse attention in one sentence."}],
+      temperature=1.0,
+      max_tokens=256,
+  )
+  print(response.choices[0].message.content)
+  ```
+
+  ## Benchmarking
+
+  ```bash
+  vllm bench serve \
+    --backend vllm \
+    --model zai-org/GLM-5.3-Flash \
+    --served-model-name zai-org/GLM-5.3-Flash \
+    --dataset-name random \
+    --random-input-len 8192 \
+    --random-output-len 1024 \
+    --max-concurrency 16 \
+    --num-prompts 64
+  ```
+
+  ## Troubleshooting
+
+  - **Sparse-MLA initialization error:** verify that the image contains FlashInfer
+    0.6.18 or newer.
+
+  ## References
+
+  - [Model card](https://huggingface.co/zai-org/GLM-5.3-Flash)
+  - [vLLM](https://github.com/vllm-project/vllm)
