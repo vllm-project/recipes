@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 flagship MoE (1.6T total / 49B active) with hybrid CSA+HCA attention, manifold-constrained hyper-connections, Muon-trained on 32T+ tokens, and three-tier reasoning."
   date_added: 2026-04-24
-  date_updated: 2026-08-14
+  date_updated: 2026-08-19
   difficulty: hard
   tasks:
     - text
@@ -60,7 +60,7 @@ features:
     modes:
       mtp:
         label: "MTP"
-        description: "Built-in Multi-Token Prediction, 2 draft tokens."
+        description: "Built-in Multi-Token Prediction, 2 draft tokens (3 on MI355X)."
         # The preview FP4+FP8 and NVFP4 checkpoints ship an MTP head only — their
         # config.json carries no dspark_* block, so dspark can't be drafted there.
         variants:
@@ -69,6 +69,12 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":2}'
+        hardware_overrides:
+          # AgentX-validated draft length on MI355X (InferenceX #2590).
+          mi355x:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":3}'
       dspark:
         label: "DSpark"
         description: "DSpark drafting, 7 draft tokens, probabilistic. Requires the 0813 or DSpark checkpoint (Variant row)."
@@ -80,9 +86,34 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"probabilistic"}'
+  agentic:
+    description: "Agentic / multi-turn serving: prefix caching, hybrid KV-cache manager, and async scheduling so session trees reuse prefixes across tool turns. On MI355X this also selects AITER MoE, FULL_AND_PIECEWISE graphs, and gpu-memory-utilization 0.86 (InferenceX #2590). Tensor Parallel only — TEP/DEP inject expert parallelism, which disables fused shared experts."
+    strategies:
+      - single_node_tp
+    args:
+      - "--async-scheduling"
+      - "--enable-prefix-caching"
+      - "--no-disable-hybrid-kv-cache-manager"
+    hardware_overrides:
+      amd:
+        args:
+          - "--async-scheduling"
+          - "--enable-prefix-caching"
+          - "--no-disable-hybrid-kv-cache-manager"
+          - "--moe-backend"
+          - "aiter"
+          - "--gpu-memory-utilization"
+          - "0.86"
+          - "--compilation-config"
+          - '{"mode":3,"cudagraph_mode":"FULL_AND_PIECEWISE"}'
+        extra_env:
+          VLLM_ROCM_USE_AITER_MOE: "1"
+          VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
+          VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
 
 opt_in_features:
   - spec_decoding
+  - agentic
 
 variants:
   default:
@@ -390,9 +421,11 @@ guide: |
   - **H200 (8× GPU)**: DP + EP with `--data-parallel-size 8`. Context is capped at
     800K tokens (`--max-model-len 800000`) to leave KV headroom with dense params
     replicated across ranks — applies to both single-node and multi-node H200.
-  - **MI355X (8× GPU)**: validated with ROCm + AITER (`VLLM_ROCM_USE_AITER=1`),
-    `--gpu-memory-utilization 0.9`, `--max-num-seqs 128`,
-    `--max-num-batched-tokens 8192`, and `--distributed-executor-backend mp`.
+  - **MI355X (8× GPU)**: single-turn serving uses ROCm + AITER
+    (`VLLM_ROCM_USE_AITER=1`), `--gpu-memory-utilization 0.9`,
+    `--max-num-seqs 512`, `--max-num-batched-tokens 8192`, and
+    `--distributed-executor-backend mp`. For multi-turn / AgentX serving see
+    [Agentic serving (MI355X)](#agentic-serving-mi355x).
   - **GB200 NVL4 (4× GPU per tray)**: the ~960 GB mixed-precision checkpoint does not
     fit on one tray; run multi-node DP + EP across **2 trays** (8 GPUs total) with
     `--data-parallel-size 8`. Pick the "Multi-Node" tab and set nodes to 2.
@@ -403,8 +436,6 @@ guide: |
   export VLLM_ROCM_USE_AITER=1
 
   vllm serve deepseek-ai/DeepSeek-V4-Pro \
-    --host localhost \
-    --port 8001 \
     --dtype auto \
     --kv-cache-dtype fp8 \
     --tensor-parallel-size 8 \
@@ -427,7 +458,7 @@ guide: |
   ```bash
   MODEL=deepseek-ai/DeepSeek-V4-Pro
   lm_eval --model local-completions \
-    --model_args model=$MODEL,base_url=http://0.0.0.0:8001/v1/completions,num_concurrent=128,max_retries=10,max_gen_toks=2048,timeout=60000 \
+    --model_args model=$MODEL,base_url=http://0.0.0.0:8000/v1/completions,num_concurrent=128,max_retries=10,max_gen_toks=2048,timeout=60000 \
     --batch_size auto \
     --tasks gsm8k \
     --num_fewshot 8 \
@@ -442,6 +473,92 @@ guide: |
   |-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
   |gsm8k|      3|flexible-extract|     8|exact_match|↑  |0.9538|±  |0.0058|
   |     |       |strict-match    |     8|exact_match|↑  |0.9545|±  |0.0057|
+  ```
+
+  ## Agentic serving (MI355X)
+
+  The command above is the single-turn / eval recipe. Agentic workloads are
+  multi-turn session trees (tool calls, subagent fan-out) that reuse long
+  prefixes — they need prefix caching, the hybrid KV-cache manager, async
+  scheduling, and scheduler headroom the GSM8K command does not enable.
+
+  Tick **Agentic** in the command builder (plus **Tool Calling**, **Reasoning**,
+  and **Spec Decoding → MTP**). The pill is Tensor Parallel only — it is
+  disabled on TEP/DEP, which inject `--enable-expert-parallel`. On MI355X it
+  also switches in `--moe-backend aiter`, `--gpu-memory-utilization 0.86`,
+  `FULL_AND_PIECEWISE` CUDA graphs, and the AITER env vars below. Those env
+  vars travel with the Agentic pill, not with Tensor Parallel alone — TP
+  with Agentic off stays `VLLM_ROCM_USE_AITER=1` only.
+
+  Default TEP — the command-builder landing strategy — is the single-turn
+  path and is unchanged. The GSM8K snippet above is a static snapshot and
+  was not re-measured with INT4 quick-reduce.
+
+  The validated AgentX recipe runs `ep 1`: fused shared experts
+  (`VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1`) are mutually exclusive with
+  `--enable-expert-parallel`, which TEP/DEP inject. Do not copy those flags
+  onto the single-turn recipe.
+
+  Pick **Variant = FP8 (Preview)** (`deepseek-ai/DeepSeek-V4-Pro`) for the
+  native MTP head that this recipe was measured with. The default 0813 / DSpark
+  checkpoint is the stronger agentic *model*, but it is a different draft
+  module; do not mix the two when reproducing the commands below.
+
+  Validated image:
+  `vllm/vllm-openai-rocm:nightly-311b3513af33bc29b4acb2fde2e9313e5e9966a0`
+  ([InferenceX #2590](https://github.com/SemiAnalysisAI/InferenceX/pull/2590)).
+  That nightly includes vLLM #51473 (native 384-shard MXFP4 TP8 allocation),
+  #52212 (gfx950 Triton sparse-MLA decode), and #52401 (ROCm DeepSeek V4 MRV1).
+
+  `--max-num-batched-tokens 8192` is pinned (the nightly default is 16384). On
+  TP8 this raised GPU KV-cache capacity from 4,730,981 to 8,524,228 tokens and
+  cut peak activation memory from 11.44 GiB to 8.9 GiB.
+
+  MTP uses **3 draft tokens** on MI355X (`features.spec_decoding.modes.mtp`
+  hardware override). NVIDIA stays at 2. InferenceX throughput pins synthetic
+  acceptance to 2.49 (the committed thinking-on golden AL at draft length 3);
+  production serving should omit `rejection_sample_method` /
+  `synthetic_acceptance_length` and run real target verification.
+
+  AgentX concurrency counts live session trees, not individual HTTP requests.
+  Subagent fan-out can push instantaneous request concurrency above the
+  session-tree concurrency `CONC`, so `--max-num-seqs` is `2 × CONC` on pure
+  TP8. The example below uses `CONC = 64`.
+
+  ### Environment
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_MOE=1
+  export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+  ```
+
+  DeepSeek-V4-Pro is a mixed checkpoint (MXFP4 routed experts, FP8 shared
+  expert). vLLM gates the fused shared-expert path on
+  `VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS`, which defaults to off.
+
+  ### Launch command
+
+  ```bash
+  vllm serve deepseek-ai/DeepSeek-V4-Pro \
+    --trust-remote-code \
+    --async-scheduling \
+    --distributed-executor-backend mp \
+    --kv-cache-dtype fp8 \
+    --max-num-batched-tokens 8192 \
+    --tensor-parallel-size 8 \
+    --gpu-memory-utilization 0.86 \
+    --moe-backend aiter \
+    --compilation-config '{"mode":3,"cudagraph_mode":"FULL_AND_PIECEWISE"}' \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --reasoning-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --enable-prefix-caching \
+    --no-disable-hybrid-kv-cache-manager \
+    --max-num-seqs 128
   ```
 
   ## KV Cache Offloading
