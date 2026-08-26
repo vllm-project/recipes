@@ -48,9 +48,26 @@ features:
       - "qwen3"
   spec_decoding:
     description: "Multi-token prediction speculative decoding for lower latency"
-    args:
-      - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+    # Single method, expressed as a mode so the config can vary per GPU id
+    # (mode hardware_overrides resolve exact id -> generation -> brand, while a
+    # flat feature's only resolve by generation and every profile here is
+    # "blackwell"). One mode renders no picker row in the UI.
+    modes:
+      mtp:
+        args:
+          - "--speculative-config"
+          - '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+        hardware_overrides:
+          # SM120 runs the draft on FlashInfer's CUTLASS MoE kernels, which
+          # sustain a deeper draft than Triton does on GB10/GB300.
+          rtx_pro_6000:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":4,"moe_backend":"flashinfer_cutlass"}'
+          rtx_5090:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":4,"moe_backend":"flashinfer_cutlass"}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -173,8 +190,6 @@ variants:
           - "--enable-chunked-prefill"
           - "--async-scheduling"
           - "--skip-mm-profiling"
-          - "--load-format"
-          - "fastsafetensors"
         extra_env:
           VLLM_HAS_FLASHINFER_CUBIN: "1"
 
@@ -374,7 +389,6 @@ guide: |
     --enable-prefix-caching \
     --async-scheduling \
     --skip-mm-profiling \
-    --load-format fastsafetensors \
     --speculative-config '{"method":"mtp","num_speculative_tokens":4,"moe_backend":"flashinfer_cutlass"}' \
     --reasoning-parser qwen3 \
     --tool-call-parser qwen3_xml \
