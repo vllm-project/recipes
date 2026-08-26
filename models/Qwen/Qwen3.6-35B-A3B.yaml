@@ -36,11 +36,11 @@ model:
 
 features:
   tool_calling:
-    description: "Enable automatic tool choice with Qwen3 Coder parser"
+    description: "Enable automatic tool choice with Qwen3 XML parser"
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_coder"
+      - "qwen3_xml"
   reasoning:
     description: "Enable chain-of-thought reasoning with Qwen3 parser"
     args:
@@ -91,7 +91,6 @@ variants:
     tp: 1
     # SM120 GPUs only reach FlashInfer's XQA decode kernel from 0.28.0.
     min_vllm_version: "0.28.0"
-    nightly_required: true
     description: "NVIDIA ModelOpt NVFP4 checkpoint for Blackwell GPUs, including DGX Spark"
     extra_args:
       - "--kv-cache-dtype"
@@ -100,27 +99,84 @@ variants:
       - "marlin"
       - "--enable-prefix-caching"
     hardware_overrides:
-      dgx_station_gb300:
+      dgx_spark_gb10:
         extra_args:
-        - "--gpu-memory-utilization"
-        - "0.92"
-        - "--max-model-len"
-        - "262144"
-        - "--max-num-batched-tokens"
-        - "8192"
-        - "--enable-chunked-prefill"
-        - "--async-scheduling"
-        - "--load-format"
-        - "fastsafetensors"
-      rtx_5090:
-        extra_args:
+          - "--attention-backend"
+          - "flashinfer"
           - "--gpu-memory-utilization"
-          - "0.95"
+          - "0.5"
+          - "--max-model-len"
+          - "262144"
           - "--max-num-seqs"
-          - "4"
+          - "8"
           - "--max-num-batched-tokens"
           - "8192"
           - "--enable-chunked-prefill"
+          - "--async-scheduling"
+          - "--load-format"
+          - "fastsafetensors"
+      dgx_station_gb300:
+        extra_args:
+          - "--attention-backend"
+          - "flashinfer"
+          - "--gpu-memory-utilization"
+          - "0.92"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
+          - "--async-scheduling"
+          - "--load-format"
+          - "fastsafetensors"
+      rtx_pro_6000:
+        extra_args:
+          - "--quantization"
+          - "modelopt_fp4"
+          - "--block-size"
+          - "128"
+          - "--attention-backend"
+          - "flashinfer"
+          - "--attention-config"
+          - '{"use_trtllm_attention":true}'
+          - "--gpu-memory-utilization"
+          - "0.9"
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
+          - "--async-scheduling"
+          - "--skip-mm-profiling"
+          - "--load-format"
+          - "fastsafetensors"
+        extra_env:
+          VLLM_HAS_FLASHINFER_CUBIN: "1"
+      rtx_5090:
+        extra_args:
+          - "--quantization"
+          - "modelopt_fp4"
+          - "--block-size"
+          - "128"
+          - "--attention-backend"
+          - "flashinfer"
+          - "--attention-config"
+          - '{"use_trtllm_attention":true}'
+          - "--gpu-memory-utilization"
+          - "0.85"
+          - "--max-model-len"
+          - "65536"
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
+          - "--async-scheduling"
+          - "--skip-mm-profiling"
+          - "--load-format"
+          - "fastsafetensors"
+        extra_env:
+          VLLM_HAS_FLASHINFER_CUBIN: "1"
 
 compatible_strategies:
   - single_node_tp
@@ -151,9 +207,8 @@ guide: |
   ## Prerequisites
 
   - **vLLM version:** >= 0.17.0
-  - **NVFP4 vLLM version:** >= 0.28.0 (currently nightly). 0.24.0 loads the
-    checkpoint, but FlashInfer only selects its XQA decode kernel on SM120
-    GPUs from 0.28.0.
+  - **NVFP4 vLLM version:** >= 0.28.0. 0.24.0 loads the checkpoint, but
+    FlashInfer only selects its XQA decode kernel on SM120 GPUs from 0.28.0.
   - **Hardware (BF16):** 1x H200 or 2x H100
   - **Hardware (FP8):** single H100/H200 or 1x MI300X/MI325X/MI355X
   - **Hardware (NVFP4):** NVIDIA Blackwell GPUs, including DGX Spark (GB10)
@@ -207,15 +262,18 @@ guide: |
   ### DGX Spark NVFP4
 
   The NVIDIA ModelOpt NVFP4 checkpoint is served from
-  [`nvidia/Qwen3.6-35B-A3B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-NVFP4)
-  and requires vLLM nightly or a source build with ModelOpt W4A16/NVFP4 support.
+  [`nvidia/Qwen3.6-35B-A3B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-NVFP4).
+  GB10's 128 GB of unified memory is shared with the host, so cap
+  `--gpu-memory-utilization` at 0.5.
 
   ```bash
-  # Use container: vllm/vllm-openai:nightly
+  # Use container: vllm/vllm-openai:v0.28.0
 
   vllm serve nvidia/Qwen3.6-35B-A3B-NVFP4 \
+    --tensor-parallel-size 1 \
     --trust-remote-code \
     --kv-cache-dtype fp8 \
+    --attention-backend flashinfer \
     --moe-backend marlin \
     --gpu-memory-utilization 0.5 \
     --max-model-len 262144 \
@@ -227,27 +285,23 @@ guide: |
     --speculative-config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}' \
     --load-format fastsafetensors \
     --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_coder \
+    --tool-call-parser qwen3_xml \
     --enable-auto-tool-choice
   ```
 
-  ### RTX Pro 6000 NVFP4
-
-  The NVIDIA ModelOpt NVFP4 checkpoint is served from
-  [`nvidia/Qwen3.6-35B-A3B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-NVFP4)
-  and requires vLLM 0.28.0 or later (currently nightly) for the XQA decode path.
+  ### DGX Station NVFP4
 
   ```bash
-  # Use container: vllm/vllm-openai:nightly
+  # Use container: vllm/vllm-openai:v0.28.0
 
   vllm serve nvidia/Qwen3.6-35B-A3B-NVFP4 \
     --tensor-parallel-size 1 \
     --trust-remote-code \
     --kv-cache-dtype fp8 \
+    --attention-backend flashinfer \
     --moe-backend marlin \
-    --gpu-memory-utilization 0.9 \
+    --gpu-memory-utilization 0.92 \
     --max-model-len 262144 \
-    --max-num-seqs 8 \
     --max-num-batched-tokens 8192 \
     --enable-chunked-prefill \
     --async-scheduling \
@@ -255,7 +309,75 @@ guide: |
     --speculative-config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}' \
     --load-format fastsafetensors \
     --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_coder \
+    --tool-call-parser qwen3_xml \
+    --enable-auto-tool-choice
+  ```
+
+  ### RTX PRO 6000 NVFP4
+
+  The consumer/workstation Blackwell parts (SM120) take a different path from
+  GB10/GB300: the checkpoint is loaded through `modelopt_fp4` with FlashInfer's
+  TRT-LLM attention kernels, which need `--block-size 128` and the
+  `VLLM_HAS_FLASHINFER_CUBIN=1` cubin cache. MTP also runs deeper here — 4
+  draft tokens on the `flashinfer_cutlass` MoE backend rather than 3 on Triton.
+
+  ```bash
+  # Use container: vllm/vllm-openai:v0.28.0
+
+  export VLLM_HAS_FLASHINFER_CUBIN=1
+
+  vllm serve nvidia/Qwen3.6-35B-A3B-NVFP4 \
+    --trust-remote-code \
+    --quantization modelopt_fp4 \
+    --kv-cache-dtype fp8 \
+    --block-size 128 \
+    --moe-backend marlin \
+    --attention-backend flashinfer \
+    --attention-config '{"use_trtllm_attention":true}' \
+    --gpu-memory-utilization 0.9 \
+    --max-num-seqs 8 \
+    --max-num-batched-tokens 8192 \
+    --enable-chunked-prefill \
+    --async-scheduling \
+    --enable-prefix-caching \
+    --skip-mm-profiling \
+    --load-format fastsafetensors \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":4,"moe_backend":"flashinfer_cutlass"}'
+  ```
+
+  ### GeForce RTX 5090 NVFP4
+
+  Same SM120 path as the RTX PRO 6000, but 32 GB of VRAM means the context has
+  to come down — 64K rather than the full 256K.
+
+  ```bash
+  # Use container: vllm/vllm-openai:v0.28.0
+
+  export VLLM_HAS_FLASHINFER_CUBIN=1
+
+  vllm serve nvidia/Qwen3.6-35B-A3B-NVFP4 \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --trust-remote-code \
+    --quantization modelopt_fp4 \
+    --kv-cache-dtype fp8 \
+    --block-size 128 \
+    --moe-backend marlin \
+    --attention-backend flashinfer \
+    --attention-config '{"use_trtllm_attention":true}' \
+    --gpu-memory-utilization 0.85 \
+    --max-model-len 65536 \
+    --max-num-seqs 8 \
+    --max-num-batched-tokens 8192 \
+    --enable-chunked-prefill \
+    --enable-prefix-caching \
+    --async-scheduling \
+    --skip-mm-profiling \
+    --load-format fastsafetensors \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":4,"moe_backend":"flashinfer_cutlass"}' \
+    --reasoning-parser qwen3 \
+    --tool-call-parser qwen3_xml \
     --enable-auto-tool-choice
   ```
 
