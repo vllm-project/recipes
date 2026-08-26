@@ -318,7 +318,7 @@ guide: |
   (90,112 tokens, 0.754 acceptance). Those two flags are levers for a bigger pool, not fixes
   for the OOM: only `--enforce-eager` decides whether the server starts.
 
-  ### Huawei Ascend 950PR (vLLM Ascend)
+  ### Huawei Ascend 950PR-w8a8 (vLLM Ascend)
 
   Verified on a single 950PR, TP1, vLLM Ascend 0.23.0 from the
   `quay.io/ascend/vllm-ascend:qwen3.8-a5` image.
@@ -359,7 +359,7 @@ guide: |
   tuning `num_speculative_tokens` — throughput alone cannot tell a working drafter from
   one that loaded and was ignored.
   
-  ### Native block-scaled FP8 on Ascend
+  ### Huawei Ascend 950PR-Native block-scaled FP8 (vLLM Ascend)
 
   Verified on a single 950PR, TP1, vLLM Ascend 0.23.0 from the
   `quay.io/ascend/vllm-ascend:nightly-main-a5` image.
