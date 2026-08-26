@@ -13,6 +13,7 @@ meta:
     h100: verified
     b200: verified
     gb200: verified
+    mi355x: verified
 
 model:
   model_id: "zai-org/GLM-5.3-Flash"
@@ -86,6 +87,14 @@ hardware_overrides:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
+  amd:
+    extra_args:
+      - "--max-num-seqs"
+      - "512"
+      - "--attention-backend"
+      - "ROCM_AITER_MLA_SPARSE"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
 
 strategy_overrides:
   pd_cluster:
@@ -118,8 +127,9 @@ guide: |
   through 8 of 288 experts, and supports image and video inputs. The checkpoint declares
   a maximum context length of 1,048,576 tokens and includes one MTP draft layer.
 
-  The current vLLM implementation supports NVIDIA Hopper and newer GPUs only. It can
-  scale with tensor, pipeline, expert, or data+expert parallelism.
+  The implementation supports NVIDIA Hopper and newer GPUs, and AMD Instinct
+  gfx950 via ROCm. It can scale with
+  tensor, pipeline, expert, or data+expert parallelism.
 
   ## Prerequisites
 
@@ -210,6 +220,28 @@ guide: |
   )
   print(response.choices[0].message.content)
   ```
+
+  ## Running on MI355X (gfx950)
+
+  The `vllm/vllm-openai-rocm:glm53-flash` docker image gates on gfx950 only.
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  vllm serve zai-org/GLM-5.3-Flash \
+    --served-model-name zai-org/GLM-5.3-Flash \
+    --tensor-parallel-size 4 \
+    --max-num-seqs 512 \
+    --tool-call-parser glm47 \
+    --reasoning-parser glm45 \
+    --enable-auto-tool-choice \
+    --attention-backend ROCM_AITER_MLA_SPARSE
+  ```
+
+  At TP=4 the FP8 checkpoint reports a 14.92M-token KV pool and ~113.81x max
+  concurrency at 128K context; the BF16 checkpoint reports an 8.87M-token KV
+  pool at the same TP and context.
+
+  > Note: MTP speculative decoding is not supported on ROCm with this image.
 
   ## Benchmarking
 
