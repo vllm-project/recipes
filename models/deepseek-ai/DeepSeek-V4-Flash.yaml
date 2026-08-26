@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
   date_added: 2026-07-31
-  date_updated: 2026-08-17
+  date_updated: "2026-08-20"
   difficulty: hard
   tasks:
     - text
@@ -19,7 +19,7 @@ meta:
     dgx_station_gb300: verified
     dgx_spark_gb10: verified
     rtx_pro_6000_8x: verified
-    mi300x: unsupported
+    mi300x: verified
     mi325x: verified
     mi355x: verified
 
@@ -436,6 +436,10 @@ strategy_overrides:
         extra_args:
           - "--attention_config.use_fp4_indexer_cache"
           - "False"
+      mi300x:
+        extra_args:
+          - "--gpu-memory-utilization"
+          - "0.85"
   single_node_tep:
     hardware_overrides:
     # sm_120 has neither Blackwell kernel: the FP4 indexer cache and
@@ -448,6 +452,10 @@ strategy_overrides:
           - "False"
           - "--moe-backend"
           - "auto"
+      mi300x:
+        extra_args:
+          - "--gpu-memory-utilization"
+          - "0.85"
   single_node_dep:
     # Force DP=4 on all hardware (fills GB200's 4-GPU tray; on 8-GPU nodes use
     # half the GPUs per replica). dedupeArgs (last-wins) shadows the default
@@ -465,6 +473,10 @@ strategy_overrides:
           - "False"
           - "--moe-backend"
           - "auto"
+      mi300x:
+        extra_args:
+          - "--gpu-memory-utilization"
+          - "0.85"
   multi_node_dep:
     extra_args:
       - "--compilation-config"
@@ -762,6 +774,13 @@ guide: |
   --speculative-config '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"probabilistic"}'
   ```
   
+  ### MI300X (8×192GB)
+
+  Verified single-node serving on MI300X (8×192 GB, CDNA 3) with the same AMD
+  launch as the MI325X/MI355X sections below — the builder lowers
+  `--gpu-memory-utilization` to `0.85` on MI300X (the 192 GB cards leave less
+  headroom at `0.9`), and DSpark speculative decoding is validated on it.
+
   ### MI325X (1×256GB)
 
   Validated end-to-end with vLLM 0.25.0 and PyTorch HIP 7.2.53211. Use this
