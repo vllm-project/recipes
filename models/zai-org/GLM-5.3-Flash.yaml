@@ -196,6 +196,53 @@ guide: |
     --intra-node-data-parallel-size 1
   ```
 
+  ## Reasoning modes
+
+  Thinking is always on — the generation prompt opens a `<think>` block unconditionally.
+  GLM-5.3-Flash offers **three reasoning effort levels** driven by the `reasoning_effort`
+  field; the default is **`max`**:
+
+  | Mode | How to request | Behavior |
+  |------|----------------|----------|
+  | **Think Max** (default) | omit `reasoning_effort`, or set `"max"` | Deepest reasoning — hard math, multi-step planning, agentic tasks. Highest token cost. |
+  | **Think High** | `"reasoning_effort": "high"` | Balanced depth and latency. |
+  | **Think Low** | `"reasoning_effort": "low"` | Lightest reasoning — simple Q&A, lowest latency and token cost. |
+
+  The chat template resolves effort to **`max` unless `reasoning_effort` is explicitly
+  `"low"` or `"high"`** (any other value falls back to `max`), then injects
+  `Reasoning Effort: Low|High|Max` into the system prompt. Pass it through
+  `chat_template_kwargs` or the top-level OpenAI `reasoning_effort` field.
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+  msgs = [{"role": "user", "content": "Summarize sparse attention in one sentence."}]
+
+  # Think Max (default) — just omit reasoning_effort
+  client.chat.completions.create(model="zai-org/GLM-5.3-Flash", messages=msgs, max_tokens=4096)
+
+  # Think High / Think Low — explicitly request the effort level
+  client.chat.completions.create(
+      model="zai-org/GLM-5.3-Flash",
+      messages=msgs,
+      max_tokens=4096,
+      extra_body={"chat_template_kwargs": {"reasoning_effort": "low"}},
+  )
+  ```
+
+  ```bash
+  curl http://localhost:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "zai-org/GLM-5.3-Flash",
+      "messages": [{"role": "user", "content": "Summarize sparse attention in one sentence."}],
+      "temperature": 1,
+      "max_tokens": 4096,
+      "chat_template_kwargs": {"reasoning_effort": "high"}
+    }'
+  ```
+
   ## Client usage
 
   ```python
