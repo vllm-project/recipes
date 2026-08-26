@@ -103,17 +103,15 @@ variants:
     min_vllm_version: "0.28.0"
     docker_image: "vllm/vllm-openai:v0.28.0"
     description: "NVIDIA ModelOpt NVFP4 checkpoint for Blackwell GPUs, including DGX Spark"
-    extra_args:
-      - "--kv-cache-dtype"
-      - "fp8"
-      - "--moe-backend"
-      - "marlin"
-      - "--enable-prefix-caching"
     hardware_overrides:
       dgx_spark_gb10:
         extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
           - "--attention-backend"
           - "flashinfer"
+          - "--moe-backend"
+          - "marlin"
           - "--gpu-memory-utilization"
           - "0.5"
           - "--max-model-len"
@@ -124,12 +122,17 @@ variants:
           - "8192"
           - "--enable-chunked-prefill"
           - "--async-scheduling"
+          - "--enable-prefix-caching"
           - "--load-format"
           - "fastsafetensors"
       dgx_station_gb300:
         extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
           - "--attention-backend"
           - "flashinfer"
+          - "--moe-backend"
+          - "marlin"
           - "--gpu-memory-utilization"
           - "0.92"
           - "--max-model-len"
@@ -138,14 +141,19 @@ variants:
           - "8192"
           - "--enable-chunked-prefill"
           - "--async-scheduling"
+          - "--enable-prefix-caching"
           - "--load-format"
           - "fastsafetensors"
       rtx_pro_6000:
         extra_args:
           - "--quantization"
           - "modelopt_fp4"
+          - "--kv-cache-dtype"
+          - "fp8"
           - "--block-size"
           - "128"
+          - "--moe-backend"
+          - "marlin"
           - "--attention-backend"
           - "flashinfer"
           - "--attention-config"
@@ -156,8 +164,9 @@ variants:
           - "8"
           - "--max-num-batched-tokens"
           - "8192"
-          - "--enable-chunked-prefill"
           - "--async-scheduling"
+          - "--enable-chunked-prefill"
+          - "--enable-prefix-caching"
           - "--skip-mm-profiling"
           - "--load-format"
           - "fastsafetensors"
@@ -167,8 +176,12 @@ variants:
         extra_args:
           - "--quantization"
           - "modelopt_fp4"
+          - "--kv-cache-dtype"
+          - "fp8"
           - "--block-size"
           - "128"
+          - "--moe-backend"
+          - "marlin"
           - "--attention-backend"
           - "flashinfer"
           - "--attention-config"
@@ -182,6 +195,7 @@ variants:
           - "--max-num-batched-tokens"
           - "8192"
           - "--enable-chunked-prefill"
+          - "--enable-prefix-caching"
           - "--async-scheduling"
           - "--skip-mm-profiling"
         extra_env:
@@ -224,15 +238,24 @@ guide: |
 
   ## NVFP4 on Blackwell
 
-  Two distinct paths. GB10 (DGX Spark) and GB300 (DGX Station) run the
-  checkpoint on the default loader with FlashInfer attention and a 3-token MTP
-  draft on Triton; on Spark, unified memory is shared with the host, so
-  `--gpu-memory-utilization` is capped at 0.5. The SM120 parts (RTX PRO 6000,
-  RTX 5090) go through `modelopt_fp4` with FlashInfer's TRT-LLM attention
-  kernels — hence `--block-size 128`, `VLLM_HAS_FLASHINFER_CUBIN=1`, and a
-  deeper 4-token MTP draft on `flashinfer_cutlass`. The RTX 5090's 32 GB caps
-  the context at 64K. Pick the hardware above and the command builder emits the
-  right set.
+  All NVFP4 tuning lives in `variants.nvfp4.hardware_overrides`, keyed by GPU
+  profile, so the exact flag set for a box is readable straight from the recipe
+  YAML (or from `by_hardware` in the JSON API) without going through the
+  command builder.
+
+  Four profiles are tuned and verified. DGX Spark (GB10) and DGX Station
+  (GB300) run the checkpoint on the default loader with FlashInfer attention,
+  `--moe-backend marlin` and a 3-token MTP draft on Triton; Spark shares
+  unified memory with the host, so `--gpu-memory-utilization` is capped at 0.5.
+  The SM120 parts (RTX PRO 6000, RTX 5090) load through `--quantization
+  modelopt_fp4` with FlashInfer's TRT-LLM attention kernels, which need
+  `--block-size 128` and `VLLM_HAS_FLASHINFER_CUBIN=1`, and sustain a deeper
+  4-token MTP draft on `flashinfer_cutlass`. The RTX 5090's 32 GB caps context
+  at 64K.
+
+  Datacenter Blackwell (B200/GB200/B300/GB300) intentionally carries no
+  overrides — it runs vLLM's own NVFP4 defaults, which select the native FP4
+  path rather than the Marlin W4A16 kernel the workstation parts need.
 
   ## Processing Ultra-Long Texts
 
