@@ -71,6 +71,13 @@ variants:
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
+  redhat_nvfp4:
+    model_id: "RedHatAI/DeepSeek-R1-NVFP4-FP8-BLOCK"
+    precision: nvfp4
+    label: "NVFP4+FP8 Block (RedHat)"
+    vram_minimum_gb: 444
+    description: "RedHatAI NVFP4+FP8 block mixed-precision checkpoint"
+
 compatible_strategies:
   - single_node_tp
   - single_node_tep

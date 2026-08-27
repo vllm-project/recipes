@@ -61,6 +61,38 @@ variants:
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
+  redhat_fp8:
+    model_id: "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic"
+    precision: fp8
+    label: "FP8 (RedHat)"
+    vram_minimum_gb: 131
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_nvfp4:
+    model_id: "RedHatAI/Llama-4-Scout-17B-16E-Instruct-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 65
+    description: "RedHatAI compressed-tensors NVFP4 quantization for Blackwell GPUs"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+    extra_env:
+      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+
+  redhat_fp8_block:
+    model_id: "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-block"
+    precision: fp8
+    label: "FP8 Block (RedHat)"
+    vram_minimum_gb: 131
+    description: "RedHatAI FP8 block quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
 compatible_strategies:
   - single_node_tp
   - single_node_tep
