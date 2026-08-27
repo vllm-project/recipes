@@ -47,9 +47,22 @@ features:
       - "qwen3"
   spec_decoding:
     description: "Multi-token prediction speculative decoding for lower latency"
-    args:
-      - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":3}'
+    default_mode: mtp
+    modes:
+      mtp:
+        label: "MTP"
+        description: "Built-in Multi-Token Prediction, 3 draft tokens."
+        args:
+          - "--speculative-config"
+          - '{"method":"mtp","num_speculative_tokens":3}'
+      dflash:
+        label: "DFlash"
+        description: "DFlash speculative decoding with an externally trained draft model; the served checkpoint is unchanged."
+        variants:
+          - default
+        args:
+          - "--speculative-config"
+          - '{"model": "RedHatAI/Qwen3.5-397B-A17B-speculator.dflash", "num_speculative_tokens": 7, "method": "dflash"}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -78,6 +91,14 @@ variants:
       - "fp8"
     extra_env:
       VLLM_USE_FLASHINFER_MOE_FP4: "1"
+  fp8:
+    model_id: "RedHatAI/Qwen3.5-397B-A17B-FP8-dynamic"
+    precision: fp8
+    vram_minimum_gb: 477
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
   gptq_int4:
     model_id: "Qwen/Qwen3.5-397B-A17B-GPTQ-Int4"
     precision: int4
