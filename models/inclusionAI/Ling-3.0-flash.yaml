@@ -2,8 +2,8 @@ meta:
   title: "Ling-3.0-flash"
   slug: "ling-3-0-flash"
   provider: "inclusionAI"
-  description: "Ling-3.0-flash MoE model with BF16 and serialized block-FP8 checkpoints, 124B total / 5.5B active parameters, and a 3.1B MTP layer"
-  date_updated: 2026-08-14
+  description: "Ling-3.0-flash MoE model with BF16, serialized block-FP8 and compressed-tensors int4 checkpoints, 124B total / 5.5B active parameters, and a 3.1B MTP layer"
+  date_updated: 2026-08-25
   difficulty: advanced
   tasks:
     - text
@@ -64,6 +64,12 @@ variants:
     min_vllm_version: "0.26.0"
     tp: 2
     description: "Serialized block-FP8 checkpoint; defaults to TP2 on NVIDIA H200, with TP4+EP4 as a validated alternative"
+  int4:
+    model_id: "inclusionAI/Ling-3.0-flash-int4"
+    precision: int4
+    vram_minimum_gb: 95
+    tp: 1
+    description: "compressed-tensors pack-quantized W4 (group 32) on the routed experts; fits one H200 at TP=1 and serves through vLLM's generic WNA16 Marlin MoE path"
 
 compatible_strategies:
   - single_node_tp
@@ -148,11 +154,55 @@ guide: |
   --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
   ```
 
+  ## Single-GPU int4
+
+  `inclusionAI/Ling-3.0-flash-int4` is a `compressed-tensors` / `pack-quantized`
+  checkpoint: symmetric W4, `group_size: 32`, applied to the **routed experts
+  only** — attention, `lm_head`, the shared expert and the dense projections are
+  all in the config's `ignore` list. It is not covered by the model-specific
+  quantization plumbing in `bailing_moe_v3.py` (which handles block FP8 and
+  mxfp4); it loads through vLLM's generic `compressed-tensors` path, and that is
+  enough to serve it on a **single H200 at TP=1**:
+
+  ```bash
+  vllm serve inclusionAI/Ling-3.0-flash-int4 \
+    --trust-remote-code \
+    --dtype bfloat16 \
+    --tensor-parallel-size 1 \
+    --gpu-memory-utilization 0.9 \
+    --enable-chunked-prefill \
+    --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE"}' \
+    --enable-prefix-caching
+  ```
+
+  The engine names the mechanism at startup:
+
+  ```
+  quantization=compressed-tensors ... trust_remote_code=True, dtype=torch.bfloat16
+  INFO [int_wna16.py:297] Using 'MARLIN' WNA16 MoE backend.
+  INFO [cuda.py:492]      Using FLASH_ATTN_MLA attention backend
+  INFO [int_wna16.py:409] Using MarlinExperts
+  ```
+
+  The vendor model card documents SGLang only, and there is no merged vLLM PR
+  specific to Ling int4 — this variant is recorded because the generic path
+  works, not because there is model-specific support behind it. Tool-call and
+  reasoning parsers, chunked prefill and CUDA graph capture behave as they do on
+  the other variants.
+
   ## Validation
 
   Both the default FP8 TP2 path and the TP4+EP4 path were validated on NVIDIA
   H200. TP2 remains the recommended default because it uses fewer GPUs; TP4+EP4
   is an alternative for deployments that prefer expert parallelism.
+
+  The `int4` variant was verified on **1x H200 (SM90), TP=1**, on a `main` build
+  reporting `0.26.1rc1.dev1133+gf94666b60`, serving at `--max-model-len 32768`:
+  77.0 GB of weights on disk, 70.27 GiB resident after load (165 s), 5 min 56 s
+  from container start to ready, `FULL_AND_PIECEWISE` capture (68 PIECEWISE + 68
+  FULL, 2.15 GiB), and a 4,072,594-token KV pool. Single-stream decode measured
+  **159.5 tok/s** at TTFT p50 0.17 s; 973 output tok/s aggregate at concurrency
+  16, with 0 failed requests and 0 preemptions over a 1..24 concurrency sweep.
 
   ## Thinking Mode
 
@@ -181,3 +231,4 @@ guide: |
 
   - [Ling-3.0-flash on Hugging Face](https://huggingface.co/inclusionAI/Ling-3.0-flash)
   - [Ling-3.0-flash-fp8 on Hugging Face](https://huggingface.co/inclusionAI/Ling-3.0-flash-fp8)
+  - [Ling-3.0-flash-int4 on Hugging Face](https://huggingface.co/inclusionAI/Ling-3.0-flash-int4)
