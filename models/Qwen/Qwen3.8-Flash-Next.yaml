@@ -300,7 +300,7 @@ guide: |
   VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
   vllm serve Qwen/Qwen3.8-Flash-Next-FP8 \
     --tensor-parallel-size 4 \
-    --rope-scaling '{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":262144}' \
+    --hf-overrides '{"rope_parameters":{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":262144}}' \
     --max-model-len 1000000 \
     --no-enable-flashinfer-autotune \
     --enable-auto-tool-choice \
