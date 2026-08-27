@@ -119,6 +119,11 @@ variants:
         docker_image: "vllm/vllm-openai:nightly"
       dgx_spark_gb10:
         docker_image: "eugr/spark-vllm-b12x:latest"
+        # No wheel path here: the B12X args and env below ship only in the
+        # Spark build's image, so the official wheel the pip tab installs
+        # would abort on startup. Hides the tab on this hardware only.
+        install:
+          pip: false
         extra_args:
           - "--max-num-seqs"
           - "8"
@@ -184,6 +189,11 @@ variants:
     hardware_overrides:
       dgx_spark_gb10:
         docker_image: "eugr/spark-vllm-b12x:latest"
+        # No wheel path here: the B12X args and env below ship only in the
+        # Spark build's image, so the official wheel the pip tab installs
+        # would abort on startup. Hides the tab on this hardware only.
+        install:
+          pip: false
         extra_args:
           - "--max-num-seqs"
           - "8"
@@ -243,6 +253,11 @@ variants:
     hardware_overrides:
       dgx_spark_gb10:
         docker_image: "eugr/spark-vllm-b12x:latest"
+        # No wheel path here: the B12X args and env below ship only in the
+        # Spark build's image, so the official wheel the pip tab installs
+        # would abort on startup. Hides the tab on this hardware only.
+        install:
+          pip: false
         extra_args:
           - "--max-num-seqs"
           - "8"
@@ -308,6 +323,11 @@ variants:
     hardware_overrides:
       dgx_spark_gb10:
         docker_image: "eugr/spark-vllm-b12x:latest"
+        # No wheel path here: the B12X args and env below ship only in the
+        # Spark build's image, so the official wheel the pip tab installs
+        # would abort on startup. Hides the tab on this hardware only.
+        install:
+          pip: false
         extra_args:
           - "--max-num-seqs"
           - "8"
@@ -538,7 +558,7 @@ strategy_overrides:
 hardware_notes:
   dgx_spark_gb10:
     title: "DGX Spark setup required"
-    body: "This hardware uses the community eugr/spark-vllm-b12x:latest docker image and a 2-node TP launch. Before running the generated command, check the DGX Spark cluster guide for IFACE_NAME, IB_IF and HEAD_IP."
+    body: "This hardware uses the community eugr/spark-vllm-b12x:latest docker image and a 2-node TP launch — the B12X backends the command relies on are not in vLLM main, so there is no pip/wheel path on Spark. Before running the generated command, check the DGX Spark cluster guide for IFACE_NAME, IB_IF and HEAD_IP."
     link:
       label: "DGX Spark cluster guide"
       href: "#dgx-spark-gb10-cluster"

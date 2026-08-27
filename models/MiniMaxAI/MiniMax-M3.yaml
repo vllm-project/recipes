@@ -150,7 +150,7 @@ variants:
           - "--max-model-len"
           - "131072"
       mi300x:
-        docker_image: "docker pull vllm/vllm-openai-rocm:nightly"
+        docker_image: "vllm/vllm-openai-rocm:nightly"
         extra_args:
           - "--language-model-only"
           - "--async-scheduling"
