@@ -145,8 +145,8 @@ guide: |
 
   The default model ID, `zai-org/GLM-5.3-Flash`, is the FP8 checkpoint. Select the BF16
   variant to serve `zai-org/GLM-5.3-Flash-BF16`, or the NVFP4 variant to serve
-  `RedHatAI/GLM-5.3-Flash-NVFP4` — its MoE experts are quantized to 4-bit (NVFP4),
-  cutting weight memory to roughly 178 GiB, and it requires an NVIDIA Blackwell GPU.
+  `RedHatAI/GLM-5.3-Flash-NVFP4`. Its MoE experts are quantized to 4-bit (NVFP4),
+  and it requires NVIDIA Blackwell GPUs.
 
   ## Launching the server
 
