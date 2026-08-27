@@ -118,6 +118,20 @@ hardware_profiles:
     scalable: false
     restricted: true
 
+  # RTX Pro 6000 4x — 4x RTX Pro 6000 GPUs system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` (same pattern as the TPU profiles).
+  rtx_pro_6000_4x:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX Pro 6000 4x"
+    description: "NVIDIA RTX Pro 6000 · 4× RTX Pro 6000 GPU · 384 GB VRAM"
+    gpu_count: 4
+    vram_gb: 384
+    multi_node: false
+    scalable: false
+    restricted: true
+
   # RTX PRO 5000 Blackwell — single-GPU workstation profile.
   # Restricted so it only appears for recipes that explicitly support it.
   rtx_pro_5000:
