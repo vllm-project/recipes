@@ -13,6 +13,7 @@ meta:
     h100: verified
     b200: verified
     gb200: verified
+    mi300x: verified
     mi355x: verified
 
 model:
@@ -21,12 +22,12 @@ model:
   nightly_required: true
   docker_image:
     nvidia: "vllm/vllm-openai:glm53-flash"
-    amd: "vllm/vllm-openai-rocm:glm53-flash"
+    amd: "vllm/vllm-openai-rocm:nightly"
   install:
     docker:
-      note: "Use the dedicated GLM-5.3-Flash docker until support lands in the standard vLLM image."
+      note: "Use the dedicated NVIDIA image or a ROCm nightly that includes the AMD integration until support lands in a tagged vLLM image."
     pypi:
-      note: "Use the dedicated GLM-5.3-Flash docker until support lands in the standard vLLM image."
+      note: "Use the appropriate Docker image until GLM-5.3-Flash support lands in a tagged vLLM release."
   architecture: moe
   parameter_count: "321B"
   active_parameters: "18B"
@@ -89,10 +90,18 @@ hardware_overrides:
       - "fp8"
   amd:
     extra_args:
+      - "--trust-remote-code"
+      - "--max-model-len"
+      - "8192"
       - "--max-num-seqs"
-      - "512"
-      - "--attention-backend"
-      - "ROCM_AITER_MLA_SPARSE"
+      - "64"
+      - "--gpu-memory-utilization"
+      - "0.85"
+      - "--enforce-eager"
+      - "--generation-config"
+      - "vllm"
+      - "--moe-backend"
+      - "triton"
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
 
@@ -127,16 +136,24 @@ guide: |
   through 8 of 288 experts, and supports image and video inputs. The checkpoint declares
   a maximum context length of 1,048,576 tokens and includes one MTP draft layer.
 
-  The implementation supports NVIDIA Hopper and newer GPUs, and AMD Instinct
-  gfx950 via ROCm. It can scale with
-  tensor, pipeline, expert, or data+expert parallelism.
+  The current upstream vLLM implementation supports NVIDIA Hopper and newer GPUs.
+  AMD Instinct MI300X, MI325X, and MI355X support is provided by the pending
+  [ROCm integration](https://github.com/ZJY0516/vllm/pull/5). MI325X uses the
+  same gfx942 execution path as MI300X, but has not been independently
+  runtime-validated.
+
+  The model can scale with tensor, pipeline, expert, or data+expert parallelism.
 
   ## Prerequisites
 
   - **Weights:** about 306 GiB for the default native FP8 checkpoint before runtime
     and KV-cache overhead; the BF16 variant requires roughly twice the weight memory
-  - **vLLM:** use docker before the integration is included in the public repo
-  - **FlashInfer:** 0.6.17 or newer is required for NoPE sparse MLA
+  - **vLLM:** use the dedicated NVIDIA image, or a ROCm nightly built after the
+    AMD integration lands, until support is included in a tagged release
+  - **NVIDIA:** FlashInfer 0.6.17 or newer is required for NoPE sparse MLA
+  - **AMD ROCm:** use 8x MI300X / MI325X / MI355X with AITER enabled. The recipe's
+    8K eager-mode configuration is the validated starting point; increase the context
+    length or enable graph capture only after validating the target deployment.
 
   The default model ID, `zai-org/GLM-5.3-Flash`, is the FP8 checkpoint. Select the BF16
   variant to serve `zai-org/GLM-5.3-Flash-BF16` instead.
@@ -155,6 +172,52 @@ guide: |
     --enable-auto-tool-choice \
     --served-model-name zai-org/GLM-5.3-Flash
   ```
+
+  ### AMD ROCm with TP8
+
+  ```bash
+  VLLM_ROCM_USE_AITER=1 \
+  vllm serve zai-org/GLM-5.3-Flash \
+    --tensor-parallel-size 8 \
+    --trust-remote-code \
+    --max-model-len 8192 \
+    --max-num-seqs 64 \
+    --gpu-memory-utilization 0.85 \
+    --enforce-eager \
+    --generation-config vllm \
+    --moe-backend triton
+  ```
+
+  This is the ROCm validation configuration for the pending integration. The
+  Triton MoE backend is part of the controlled validation baseline; it is not
+  claimed to be required for every deployment.
+
+  Full GSM8K 5-shot validation used all 1,319 samples with greedy generation:
+
+  | Hardware | Architecture | strict-match | flexible-extract |
+  | --- | --- | ---: | ---: |
+  | 8x MI300X VF | gfx942 | 0.9704321455648218 | 0.9696739954510993 |
+  | 8x MI355X | gfx950 | 0.974981046247157 | 0.9742228961334344 |
+
+  Both runs used TP8, an 8,192-token maximum model length, eager mode, AITER,
+  Triton MoE, and checkpoint revision
+  `3f1971b7b5f7a528c9c4ef6212c8785298a8c24a`. The evaluated runtime source was
+  based on vLLM `933876c388fb129ad82590660e6506614559cb86` with ROCm delta
+  fingerprint `a11b33ad99b39b21226fdaf1c05878871fb9333a593c0cb5fc6f9c8acc933d93`.
+
+  The MI355X run used the published `vllm/vllm-openai-rocm:glm53-flash` image,
+  which is gfx950-only. The MI300X run used
+  `vllm/vllm-openai-rocm@sha256:726321b39e1dbbe24d2735160be54d679496ef5d2a8479a264394f7296908617`
+  with the pending gfx942 source integration. Use a ROCm nightly containing
+  that integration for gfx942; the published `glm53-flash` image is not a
+  gfx942 image.
+
+  Although the evaluator passed `enable_thinking=false`, this checkpoint's
+  chat template ignores that boolean and defaults to maximum reasoning effort.
+  These scores therefore are not non-thinking results. MI325X shares the
+  gfx942 code path but was not independently measured and does not receive a
+  verification badge. These runs validate text generation only, not MTP,
+  multimodal input, 1M context, graph capture, prefill/decode, or throughput.
 
   ### Prefill/Decode disaggregation (single node, TP4 + TP4)
 
@@ -306,8 +369,8 @@ guide: |
 
   ## Troubleshooting
 
-  - **Sparse-MLA initialization error:** verify that the image contains FlashInfer
-    0.6.18 or newer.
+  - **NVIDIA Sparse-MLA initialization error:** verify that the image contains
+    FlashInfer 0.6.18 or newer.
 
   ## References
 
