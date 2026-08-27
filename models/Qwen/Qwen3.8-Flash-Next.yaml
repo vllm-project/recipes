@@ -20,7 +20,9 @@ meta:
 model:
   model_id: "Qwen/Qwen3.8-Flash-Next"
   min_vllm_version: "0.28.0"
-  docker_image: "vllm/vllm-openai:qwen38-flash-next"
+  docker_image:
+    nvidia: "vllm/vllm-openai:qwen38-flash-next"
+    amd: "vllm/vllm-openai-rocm:qwen38-flash-next"
   nightly_required: true
   install:
     docker:
