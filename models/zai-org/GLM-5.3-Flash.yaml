@@ -3,7 +3,7 @@ meta:
   slug: "glm-5.3-flash"
   provider: "GLM (Z-AI)"
   description: "GLM-5.3-Flash is a 320B-total / 18B-active multimodal MoE with hybrid KDA and sparse MLA attention, native FP8 weights, MTP, and a 1M-token context window."
-  date_updated: 2026-08-26
+  date_updated: 2026-08-27
   difficulty: advanced
   tasks:
     - text
@@ -62,6 +62,11 @@ variants:
     precision: fp8
     vram_minimum_gb: 386
     description: "Default native FP8 checkpoint (zai-org/GLM-5.3-Flash)"
+  nvfp4:
+    model_id: "RedHatAI/GLM-5.3-Flash-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 229
+    description: "NVFP4 checkpoint (RedHatAI/GLM-5.3-Flash-NVFP4) — MoE experts quantized to 4-bit; requires Blackwell"
   bf16:
     model_id: "zai-org/GLM-5.3-Flash-BF16"
     precision: bf16
@@ -139,7 +144,9 @@ guide: |
   - **FlashInfer:** 0.6.17 or newer is required for NoPE sparse MLA
 
   The default model ID, `zai-org/GLM-5.3-Flash`, is the FP8 checkpoint. Select the BF16
-  variant to serve `zai-org/GLM-5.3-Flash-BF16` instead.
+  variant to serve `zai-org/GLM-5.3-Flash-BF16`, or the NVFP4 variant to serve
+  `RedHatAI/GLM-5.3-Flash-NVFP4` — its MoE experts are quantized to 4-bit (NVFP4),
+  cutting weight memory to roughly 178 GiB, and it requires an NVIDIA Blackwell GPU.
 
   ## Launching the server
 
