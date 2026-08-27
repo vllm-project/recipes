@@ -16,6 +16,8 @@ meta:
     gb200: verified
     gb300: verified
     mi355x: verified
+    rtx_pro_6000_4x: verified
+    dgx_station_gb300: verified
 
 model:
   model_id: "Qwen/Qwen3.8-Flash-Next"
@@ -43,11 +45,11 @@ dependencies: []
 
 features:
   tool_calling:
-    description: "Enable automatic tool choice with the Qwen3 Coder parser"
+    description: "Enable automatic tool choice with the Qwen3 XML parser"
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_coder"
+      - "qwen3_xml"
   reasoning:
     description: "Extract thinking output with the Qwen3 reasoning parser"
     args:
@@ -73,11 +75,63 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 130
     description: "Inferact quantized NVFP4 weights with per-layer embeddings in nvfp4 too"
+    hardware_overrides:
+      dgx_station_gb300:
+        extra_args:
+          - "--max-num-seqs"
+          - "32"
+          - "--gpu-memory-utilization"
+          - "0.95"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-prefix-caching"
+          - "--distributed-executor-backend"
+          - "mp"
+          - "-cc.mode"
+          - "none"
+          - "-cc.cudagraph_mode"
+          - "full_decode_only"
+      rtx_pro_6000_4x:
+        extra_args:
+          - "--max-num-seqs"
+          - "16"
+          - "--gpu-memory-utilization"
+          - "0.95"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-prefix-caching"
+          - "--moe-backend"
+          - "marlin"
   fp8:
     model_id: "Qwen/Qwen3.8-Flash-Next-FP8"
     precision: fp8
-    vram_minimum_gb: 265
+    vram_minimum_gb: 250
     description: "Official dynamic FP8 checkpoint with blockwise weight quantization"
+    hardware_overrides:
+      dgx_station_gb300:
+        extra_args:
+          - "--max-num-seqs"
+          - "32"
+          - "--gpu-memory-utilization"
+          - "0.95"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-prefix-caching"
+          - "--distributed-executor-backend"
+          - "mp"
+          - "-cc.mode"
+          - "none"
+          - "-cc.cudagraph_mode"
+          - "full_decode_only"
+      rtx_pro_6000_4x:
+        extra_args:
+          - "--max-num-seqs"
+          - "16"
+          - "--gpu-memory-utilization"
+          - "0.95"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-prefix-caching"
   bf16:
     model_id: "Qwen/Qwen3.8-Flash-Next"
     precision: bf16
@@ -160,7 +214,7 @@ guide: |
     --enable-prefix-caching \
     --no-enable-flashinfer-autotune \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_coder \
+    --tool-call-parser qwen3_xml \
     --reasoning-parser qwen3
   ```
 
@@ -185,7 +239,7 @@ guide: |
     --enable-prefix-caching \
     --no-enable-flashinfer-autotune \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_coder \
+    --tool-call-parser qwen3_xml \
     --reasoning-parser qwen3
   ```
 
@@ -231,7 +285,7 @@ guide: |
     --max-model-len 262144 \
     --no-enable-flashinfer-autotune \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_coder \
+    --tool-call-parser qwen3_xml \
     --reasoning-parser qwen3
   ```
 
@@ -248,7 +302,7 @@ guide: |
     --max-model-len 1000000 \
     --no-enable-flashinfer-autotune \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_coder \
+    --tool-call-parser qwen3_xml \
     --reasoning-parser qwen3
   ```
 
