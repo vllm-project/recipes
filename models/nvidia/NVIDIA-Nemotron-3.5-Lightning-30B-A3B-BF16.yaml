@@ -13,6 +13,7 @@ meta:
   hardware:
     h100: verified
     dgx_spark_gb10: verified
+    rtx_pro_6000: verified
     dgx_station_gb300: verified
 
 model:
@@ -120,6 +121,25 @@ variants:
           - "--max-num-batched-tokens"
           - "32768"
       dgx_spark_gb10:
+        extra_args:
+          - "--attention-backend"
+          - "FLASHINFER"
+          - "--linear-backend"
+          - "marlin"
+          - "--attention-config"
+          - '{"use_trtllm_attention":true}'
+          - "--enable-flashinfer-autotune"
+          - "--mamba-cache-mode"
+          - "none"
+          - "--async-scheduling"
+          - "--enable-chunked-prefill"
+          - "--gpu-memory-utilization"
+          - "0.8"
+          - "--load-format"
+          - "instanttensor"
+          - "--safetensors-load-strategy"
+          - "prefetch"
+      rtx_pro_6000:
         extra_args:
           - "--attention-backend"
           - "FLASHINFER"
