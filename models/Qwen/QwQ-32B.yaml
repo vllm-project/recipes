@@ -44,6 +44,8 @@ variants:
     precision: bf16
     vram_minimum_gb: 77
     description: "Full precision BF16"
+    supported_hardware:
+      - xeon6
   w8a8_int8:
     model_id: "RedHatAI/QwQ-32B-quantized.w8a8"
     precision: int8
