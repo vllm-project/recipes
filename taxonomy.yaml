@@ -322,6 +322,17 @@ hardware_profiles:
     scalable: false
     restricted: true
 
+  ascend_950pr_8x:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 950PR 8x"
+    description: "Huawei Ascend 950PR · 8× NPU · 128 GB HiBL 1.0 HBM each · 1-node · vLLM Ascend backend"
+    gpu_count: 8
+    vram_gb: 1024
+    multi_node: false
+    scalable: false
+    restricted: true
+  
   ascend_910c:
     brand: Huawei
     generation: npu
