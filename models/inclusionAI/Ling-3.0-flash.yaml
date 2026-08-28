@@ -9,7 +9,6 @@ meta:
     - text
   performance_headline: "BF16 is validated on 4x NVIDIA H20; serialized FP8 defaults to TP2 on NVIDIA H200, with TP4+EP4 also validated"
   hardware:
-    h20: verified
     h200: verified
 
 model:

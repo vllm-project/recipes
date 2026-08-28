@@ -3,7 +3,7 @@ meta:
   slug: "glm-5.3-flash"
   provider: "GLM (Z-AI)"
   description: "GLM-5.3-Flash is a 320B-total / 18B-active multimodal MoE with hybrid KDA and sparse MLA attention, native FP8 weights, MTP, and a 1M-token context window."
-  date_updated: 2026-08-26
+  date_updated: 2026-08-27
   difficulty: advanced
   tasks:
     - text
@@ -62,6 +62,11 @@ variants:
     precision: fp8
     vram_minimum_gb: 386
     description: "Default native FP8 checkpoint (zai-org/GLM-5.3-Flash)"
+  nvfp4:
+    model_id: "RedHatAI/GLM-5.3-Flash-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 229
+    description: "NVFP4 checkpoint (RedHatAI/GLM-5.3-Flash-NVFP4) — MoE experts quantized to 4-bit; requires Blackwell"
   bf16:
     model_id: "zai-org/GLM-5.3-Flash-BF16"
     precision: bf16
@@ -139,7 +144,9 @@ guide: |
   - **FlashInfer:** 0.6.17 or newer is required for NoPE sparse MLA
 
   The default model ID, `zai-org/GLM-5.3-Flash`, is the FP8 checkpoint. Select the BF16
-  variant to serve `zai-org/GLM-5.3-Flash-BF16` instead.
+  variant to serve `zai-org/GLM-5.3-Flash-BF16`, or the NVFP4 variant to serve
+  `RedHatAI/GLM-5.3-Flash-NVFP4`. Its MoE experts are quantized to 4-bit (NVFP4),
+  and it requires NVIDIA Blackwell GPUs.
 
   ## Launching the server
 
@@ -266,6 +273,83 @@ guide: |
       max_tokens=256,
   )
   print(response.choices[0].message.content)
+  ```
+
+  ### Multimodal input (image / video)
+
+  Standard OpenAI multi-part content — list `image_url` / `video_url` items alongside the
+  text. The chat template expands each into its `<|begin_of_image|>…` / `<|begin_of_video|>…`
+  placeholder tokens, and the same image token is reused for video frames (frame spans are
+  delimited by the video start/end tokens).
+
+  ```python
+  from openai import OpenAI
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+
+  # Image
+  client.chat.completions.create(
+      model="zai-org/GLM-5.3-Flash",
+      messages=[{
+          "role": "user",
+          "content": [
+              {"type": "image_url", "image_url": {"url": "https://example.com/image.png"}},
+              {"type": "text", "text": "Describe the image."},
+          ],
+      }],
+      max_tokens=512,
+  )
+  ```
+
+  ```python
+  from openai import OpenAI
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+
+  # Video
+  client.chat.completions.create(
+      model="zai-org/GLM-5.3-Flash",
+      messages=[{
+          "role": "user",
+          "content": [
+              {"type": "video_url", "video_url": {"url": "https://example.com/clip.mp4"}},
+              {"type": "text", "text": "What happens in this video?"},
+          ],
+      }],
+      max_tokens=512,
+  )
+  ```
+
+  ```bash
+  # Image
+  curl http://localhost:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "zai-org/GLM-5.3-Flash",
+      "messages": [{
+        "role": "user",
+        "content": [
+          {"type": "image_url", "image_url": {"url": "https://example.com/image.png"}},
+          {"type": "text", "text": "Describe the image."}
+        ]
+      }],
+      "max_tokens": 512
+    }'
+  ```
+
+  ```bash
+  # Video
+  curl http://localhost:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "zai-org/GLM-5.3-Flash",
+      "messages": [{
+        "role": "user",
+        "content": [
+          {"type": "video_url", "video_url": {"url": "https://example.com/clip.mp4"}},
+          {"type": "text", "text": "What happens in this video?"}
+        ]
+      }],
+      "max_tokens": 512
+    }'
   ```
 
   ## Running on MI355X (gfx950)
