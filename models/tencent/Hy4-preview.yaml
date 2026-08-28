@@ -14,13 +14,8 @@ meta:
     - "tencent/Hy3-preview"
   default_hardware: b300
   hardware:
-    h100: unsupported
-    h200: unsupported
     b200: verified
     b300: verified
-    mi300x: unsupported
-    mi325x: unsupported
-    mi355x: unsupported
 
 model:
   model_id: "tencent/Hy4-preview"
