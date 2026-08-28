@@ -436,7 +436,7 @@ guide: |
     -v /usr/local/Ascend/driver/lib64/:/usr/local/Ascend/driver/lib64/ \
     -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
     -v /etc/ascend_install.info:/etc/ascend_install.info \
-    -v /root/.cache:/root/.cache
+    -v /root/.cache:/root/.cache \
   $IMAGE bash
 
   unset SOC_VERSION
@@ -444,7 +444,7 @@ guide: |
   export HCCL_BUFFSIZE=512
   export HCCL_OP_EXPANSION_MODE=AIV
 
-  vllm serve /data/GLM-5.3-Flash \
+  vllm serve zai-org/GLM-5.3-Flash \
     --tensor-parallel-size 8 \
     --trust-remote-code \
     --block-size 512 \
