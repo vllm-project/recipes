@@ -120,8 +120,8 @@ variants:
           - "--enable-expert-parallel"
           - "--disable-custom-all-reduce"
           - "--enable-prefix-caching"
-          - "-cc.cudagraph_mode"
-          - "full_decode_only"
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[4,8,12,16,24,32]}'
         extra_env:
           VLLM_PLE_CPU_OFFLOAD: "1"
           VLLM_PLE_FORCE_FP8: "1"
