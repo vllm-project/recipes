@@ -16,6 +16,9 @@ meta:
   hardware:
     b200: verified
     b300: verified
+    mi300x: unsupported
+    mi325x: unsupported
+    mi355x: unsupported
 
 model:
   model_id: "tencent/Hy4-preview"
