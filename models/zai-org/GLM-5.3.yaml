@@ -266,8 +266,8 @@ guide: |
   vllm bench serve \
     --model zai-org/GLM-5.3 \
     --dataset-name random \
-    --random-input 8000 \
-    --random-output 1024 \
+    --random-input-len 8000 \
+    --random-output-len 1024 \
     --request-rate 10 \
     --num-prompts 32 \
     --ignore-eos
