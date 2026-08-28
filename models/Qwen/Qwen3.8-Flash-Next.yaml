@@ -3,7 +3,7 @@ meta:
   slug: "qwen3.8-flash-next"
   provider: "Qwen"
   description: "Qwen4 architecture preview with a 125B-parameter main model, supplemented by an additional 51B N-gram embeddings, with 6B parameters activated per token."
-  date_updated: 2026-08-26
+  date_updated: 2026-08-28
   difficulty: advanced
   tasks:
     - multimodal
@@ -17,6 +17,9 @@ meta:
     gb300: verified
     mi355x: verified
     rtx_pro_6000_4x: verified
+    # rtx_5090_4x is the RadixArk NVFP4 checkpoint (FP8 N-gram table) at TEP4
+    # with PLE CPU offload; see the RTX 5090 guide section for the sm120 knobs.
+    rtx_5090_4x: verified
     dgx_station_gb300: verified
 
 model:
@@ -104,6 +107,26 @@ variants:
           - "--enable-prefix-caching"
           - "--moe-backend"
           - "marlin"
+  nvfp4_fp8_ple:
+    model_id: "RadixArk/Qwen3.8-Flash-Next-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 120
+    description: "NVFP4 weights with the N-gram table stored as FP8 + per-tensor scale — halves the host RAM needed for PLE CPU offload (~51 GB instead of ~102 GB)"
+    hardware_overrides:
+      rtx_5090_4x:
+        extra_args:
+          - "--quantization"
+          - "modelopt"
+          - "--enable-expert-parallel"
+          - "--disable-custom-all-reduce"
+          - "--enable-prefix-caching"
+          - "-cc.cudagraph_mode"
+          - "full_decode_only"
+        extra_env:
+          VLLM_PLE_CPU_OFFLOAD: "1"
+          VLLM_PLE_FORCE_FP8: "1"
+          VLLM_USE_DEEP_GEMM: "0"
+          VLLM_MOE_USE_DEEP_GEMM: "0"
   fp8:
     model_id: "Qwen/Qwen3.8-Flash-Next-FP8"
     precision: fp8
@@ -258,6 +281,76 @@ guide: |
   --gpu-memory-utilization 0.9
   ```
 
+  ### NVFP4 on 4x RTX 5090 (consumer Blackwell, sm120)
+
+  Verified on 4x RTX 5090 32 GB (PCIe, sm120) with the
+  [`RadixArk/Qwen3.8-Flash-Next-NVFP4`](https://huggingface.co/RadixArk/Qwen3.8-Flash-Next-NVFP4)
+  checkpoint, which stores the 51B N-gram table as FP8 with a per-tensor scale.
+  On a 128 GB host that is the difference between fitting and not fitting: the
+  FP8 table needs ~51 GB of host RAM under PLE CPU offload, where a BF16-table
+  NVFP4 checkpoint needs ~102 GB plus load transients.
+
+  ```bash
+  docker run --gpus all --cap-add=SYS_PTRACE --ipc=host -p 8000:8000 \
+    -e VLLM_PLE_CPU_OFFLOAD=1 \
+    -e VLLM_PLE_FORCE_FP8=1 \
+    -e VLLM_USE_DEEP_GEMM=0 -e VLLM_MOE_USE_DEEP_GEMM=0 \
+    -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+    vllm/vllm-openai:qwen38-flash-next \
+    --model RadixArk/Qwen3.8-Flash-Next-NVFP4 \
+    --quantization modelopt \
+    --tensor-parallel-size 4 \
+    --enable-expert-parallel \
+    --disable-custom-all-reduce \
+    --max-model-len 262144 \
+    --enable-prefix-caching \
+    --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[4,8,12,16,24,32]}' \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
+    --enable-auto-tool-choice --tool-call-parser qwen3_xml \
+    --reasoning-parser qwen3
+  ```
+
+  Every knob is load-bearing on this hardware:
+
+  - **`--enable-expert-parallel`**: the NVFP4 checkpoint's
+    `moe_intermediate_size` of 640 is not divisible by the 64-wide quantization
+    groups after TP4 sharding (640/4 = 160). Expert parallelism keeps experts
+    whole per rank. (`--moe-backend marlin` is the alternative route the
+    RTX PRO 6000 profile uses.)
+  - **`--disable-custom-all-reduce`**: without it, CUDA graph capture dies at
+    engine init with `custom_all_reduce.cuh:164 'invalid argument'` on
+    multi-GPU consumer Blackwell.
+  - **`VLLM_USE_DEEP_GEMM=0` / `VLLM_MOE_USE_DEEP_GEMM=0`**: DeepGEMM's
+    capability gate accepts the whole sm12x family, then its blockwise-FP8
+    kernels fail on consumer parts (`Unknown SF transformation`, or an
+    `unspecified launch failure` inside `profile_run` surfaced only as
+    `Engine core initialization failed`). See vllm#51884 and vllm#54125.
+  - **`VLLM_PLE_CPU_OFFLOAD=1`**: 32 GB cards cannot hold the N-gram table;
+    it lives in host RAM and rows are prefetched asynchronously.
+  - **`--cap-add=SYS_PTRACE`**: the PLE offload handoff uses `pidfd_getfd`,
+    which Docker's default seccomp profile blocks.
+  - **`VLLM_PLE_FORCE_FP8=1`**: the PLE embedding quant gate only selects the
+    FP8 path for `Fp8Config` checkpoints, so under this ModelOpt NVFP4 config
+    the FP8 table shards otherwise have no loadable parameter and startup fails
+    with `no module/parameter named 'ngram_embedding.weight_scale'`. This
+    escape hatch is part of the pending PLE-offload work (see the discussion on
+    vllm PR #53896); until it lands in the image, the small `ple_layer.py`
+    patch from that discussion must be applied.
+  - **`cudagraph_mode FULL_DECODE_ONLY`**: launch-day eager mode decodes at
+    ~40 tok/s; full decode graphs are the difference to ~200 tok/s.
+
+  Measured (MTP `num_speculative_tokens: 3`, greedy, single stream unless
+  noted):
+
+  | | |
+  |---|---|
+  | GPU KV cache | 389,084 tokens (1.48x at 262,144 per request) |
+  | decode, short context | 169 tok/s (code prompts: 203 tok/s, acceptance 0.90) |
+  | decode at 99K / 156K context | 188 / 200 tok/s — no depth decay |
+  | prefill at 99K / 156K | 2,690 / 2,551 tok/s (TTFT 37 s / 61 s) |
+  | 4 concurrent streams | 340 tok/s aggregate, 87-110 tok/s per stream |
+  | host RAM for PLE | ~51 GB (fits a 128 GB host without swap) |
+
   ### Full native context
 
   The checkpoint advertises a native 262,144-token context, which vLLM uses when
@@ -345,6 +438,18 @@ guide: |
     offload is not supported. The generated DEP command sets this automatically.
   - **MTP memory pressure:** reduce `num_speculative_tokens` below 3.
   - **PLE:** a network layer that injects N-gram Embeddings into the main model. 
+  - **`no module/parameter named 'ngram_embedding.weight_scale'` at load:** the
+    checkpoint stores the N-gram table as FP8 but the quant config is not
+    `Fp8Config`, so the FP8 embedding path is never selected. Set
+    `VLLM_PLE_FORCE_FP8=1` (see the RTX 5090 section).
+  - **`PLE offload checkpoint did not load all materialized parameters:
+    [...weight_scale]`:** the reverse mismatch — `VLLM_PLE_FORCE_FP8=1` with a
+    checkpoint whose N-gram table is BF16 and ships no scale tensor. Unset the
+    variable or use an FP8-table checkpoint.
+  - **`custom_all_reduce.cuh:164 'invalid argument'` at init on consumer
+    Blackwell:** add `--disable-custom-all-reduce`.
+  - **`Engine core initialization failed` with no traceback on sm120:** usually
+    DeepGEMM; set `VLLM_USE_DEEP_GEMM=0` and `VLLM_MOE_USE_DEEP_GEMM=0`.
 
   ## References
 
