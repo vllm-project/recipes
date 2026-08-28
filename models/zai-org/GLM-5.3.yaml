@@ -1,0 +1,285 @@
+meta:
+  title: "GLM-5.3"
+  slug: "glm-5.3"
+  provider: "GLM (Z-AI)"
+  description: "GLM-5.3 — Frontier Coding with Emergent Cyber Capabilities"
+  date_added: 2026-08-28
+  date_updated: 2026-08-28
+  difficulty: advanced
+  tasks:
+    - text
+  performance_headline: "Latest GLM-5 series MoE — native FP8 by default, 5-token MTP, 1M context"
+  related_recipes:
+    - "zai-org/GLM-5.2"
+    - "zai-org/GLM-5.3-Flash"
+
+model:
+  model_id: "zai-org/GLM-5.3"
+  min_vllm_version: "0.28.0"
+  docker_image:
+    nvidia: "vllm/vllm-openai:v0.28.0"
+    amd: "vllm/vllm-openai-rocm:v0.28.0"
+  architecture: moe
+  parameter_count: "743B"
+  active_parameters: "39B"
+  context_length: 1048576
+  base_args:
+    - "--kv-cache-dtype"
+    - "fp8_e4m3"
+  base_env: {}
+
+features:
+  tool_calling:
+    description: "GLM-4.7 tool call parser with automatic tool choice"
+    args:
+      - "--tool-call-parser"
+      - "glm47"
+      - "--enable-auto-tool-choice"
+  reasoning:
+    description: "Extract reasoning content with the GLM reasoning parser — thinking is always on; effort is set per request via reasoning_effort (max by default)"
+    args:
+      - "--reasoning-parser"
+      - "glm45"
+  spec_decoding:
+    description: "Built-in Multi-Token Prediction, 5 draft tokens"
+    args:
+      - "--speculative-config"
+      - '{"method":"mtp","num_speculative_tokens":5}'
+
+opt_in_features:
+  - spec_decoding
+
+variants:
+  default:
+    precision: fp8
+    vram_minimum_gb: 893
+    description: "Native FP8 checkpoint (zai-org/GLM-5.3) — 8xH200/H20 (141GB × 8) single-node serving"
+  nvfp4:
+    model_id: "Inferact/GLM-5.3-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 558
+    description: "Inferact NVFP4 checkpoint — only MoE expert linears are quantized to NVFP4; shared experts, attention, embeddings, and the early dense layers stay FP8/BF16, with FP8 KV cache. Blackwell GPUs (B200/B300) only."
+  bf16:
+    model_id: "zai-org/GLM-5.3-BF16"
+    precision: bf16
+    vram_minimum_gb: 1786
+    description: "Full precision BF16 — requires multi-node deployment"
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - multi_node_tp
+  - multi_node_tp_pp
+  - multi_node_tep
+  - multi_node_dep
+  - pd_cluster
+
+hardware_overrides:
+  hopper:
+    # H100/H200 use plain fp8 KV cache; Blackwell keeps base_args' fp8_e4m3.
+    # The synthesizer's last-wins dedupe lets this shadow --kv-cache-dtype.
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+  amd:
+    extra_args:
+      - "--linear-backend"
+      - "aiter"
+      - "--moe-backend"
+      - "aiter"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  **GLM-5.3** is the newest model in the GLM-5 series — a ~743B-parameter MoE (39B active) from **Z-AI**.
+  Architecture and serving flags are identical to GLM-5.2; the packaging change is that the
+  **default `zai-org/GLM-5.3` checkpoint is now native FP8** — BF16 weights live under the suffixed `zai-org/GLM-5.3-BF16` repo.
+
+  The FP8 checkpoint fits on a single 8xH200 / 8xH20 node and — with FP8 KV cache — reaches the full 1M-token context on 8xB200.
+  An NVFP4 checkpoint for Blackwell is published by Inferact (`Inferact/GLM-5.3-NVFP4`).
+
+  ## Prerequisites
+
+  - **vLLM 0.28.0** or newer.
+  - **GPU:** 8xH200 or 8xH20 (141 GB each) for single-node FP8; 8xB200 (180 GB each) for the full 1M context.
+
+  ## Installation
+
+  ```bash
+  uv venv
+  source .venv/bin/activate
+  uv pip install "vllm==0.28.0" --torch-backend=auto
+  uv pip install "transformers>=5.15.0"
+  ```
+
+  ## Launching the server
+
+  ### FP8 on 8xH200 (standard)
+
+  ```bash
+  vllm serve zai-org/GLM-5.3 \
+    --kv-cache-dtype fp8 \
+    --tensor-parallel-size 8 \
+    --speculative-config.method mtp \
+    --speculative-config.num_speculative_tokens 5 \
+    --tool-call-parser glm47 \
+    --reasoning-parser glm45 \
+    --enable-auto-tool-choice \
+    --served-model-name glm-5.3
+  ```
+
+  ### FP8 on AMD MI300X/MI355X
+
+  ```bash
+  VLLM_ROCM_USE_AITER=1 \
+  VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1 \
+  vllm serve zai-org/GLM-5.3 \
+    --kv-cache-dtype fp8_e4m3 \
+    --tensor-parallel-size 8 \
+    --speculative-config.method mtp \
+    --speculative-config.num_speculative_tokens 5 \
+    --tool-call-parser glm47 \
+    --enable-auto-tool-choice \
+    --reasoning-parser glm45 \
+    --gpu-memory-utilization 0.80 \
+    --max-model-len 524288 \
+    --max-num-seqs 32 \
+    --linear-backend aiter \
+    --moe-backend aiter
+  ```
+
+  ### FP8 on 8xB200 (full 1M context)
+
+  GLM-5.3 has a native 1M-token window. Whether the full window fits is a KV-cache VRAM
+  question, so the lever is `--max-num-seqs` — it bounds how many sequences share the KV
+  budget at once. **Start at 32** and scale with your node's VRAM. FP8 KV cache
+  (`--kv-cache-dtype fp8_e4m3`, already in the base flags) roughly halves that budget.
+
+  ```bash
+  vllm serve zai-org/GLM-5.3 \
+    --kv-cache-dtype fp8_e4m3 \
+    --tensor-parallel-size 8 \
+    --speculative-config.method mtp \
+    --speculative-config.num_speculative_tokens 5 \
+    --max-num-seqs 32 \
+    --tool-call-parser glm47 \
+    --reasoning-parser glm45 \
+    --enable-auto-tool-choice \
+    --served-model-name glm-5.3
+  ```
+
+  - **`--max-num-seqs 32`** — the single knob for fitting 1M context; start at 32 and tune it
+    to your VRAM (up on headroom, down on OOM).
+  - **BF16** weights are served from `zai-org/GLM-5.3-BF16` and need multi-node deployment.
+
+  ### NVFP4 on Blackwell (B200/B300)
+
+  The `Inferact/GLM-5.3-NVFP4` variant is Inferact's NVFP4 re-quantization : only the MoE expert linears drop to NVFP4 while shared experts,
+  attention, embeddings, and the early dense layers stay BF16. The ~465 GB checkpoint fits comfortably on Blackwell
+  Select the **NVFP4** variant above (Blackwell-only) or run:
+
+  ```bash
+  vllm serve Inferact/GLM-5.3-NVFP4 \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --reasoning-parser glm45 \
+    --tool-call-parser glm47 \
+    --enable-auto-tool-choice \
+    --kv-cache-dtype fp8_e4m3 \
+    --served-model-name glm-5.3-nvfp4
+  ```
+
+  ## Reasoning modes
+
+  Thinking is always on — the generation prompt opens a `<think>` block unconditionally.
+  GLM-5.3 offers **three reasoning effort levels** driven by the `reasoning_effort`
+  field; the default is **`max`**:
+
+  | Mode | How to request | Behavior |
+  |------|----------------|----------|
+  | **Think Max** (default) | omit `reasoning_effort`, or set `"max"` | Deepest reasoning — hard math, multi-step planning, agentic tasks. Highest token cost. |
+  | **Think High** | `"reasoning_effort": "high"` | Balanced depth and latency. |
+  | **Think Low** | `"reasoning_effort": "low"` | Lightest reasoning — simple Q&A, lowest latency and token cost. |
+
+  The chat template resolves effort to **`max` unless `reasoning_effort` is explicitly
+  `"low"` or `"high"`** (any other value falls back to `max`), then injects
+  `Reasoning Effort: Low|High|Max` into the system prompt. Pass it through
+  `chat_template_kwargs` or the top-level OpenAI `reasoning_effort` field.
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+  msgs = [{"role": "user", "content": "Summarize GLM-5.3 in one sentence."}]
+
+  # Think Max (default) — just omit reasoning_effort
+  client.chat.completions.create(model="glm-5.3", messages=msgs, max_tokens=4096)
+
+  # Think High / Think Low — explicitly request the effort level
+  client.chat.completions.create(
+      model="glm-5.3",
+      messages=msgs,
+      max_tokens=4096,
+      extra_body={"chat_template_kwargs": {"reasoning_effort": "low"}},
+  )
+  ```
+
+  ```bash
+  curl http://localhost:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "glm-5.3",
+      "messages": [{"role": "user", "content": "Summarize GLM-5.3 in one sentence."}],
+      "temperature": 1,
+      "max_tokens": 4096,
+      "chat_template_kwargs": {"reasoning_effort": "high"}
+    }'
+  ```
+
+  ## Client usage
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+  response = client.chat.completions.create(
+      model="glm-5.3",
+      messages=[{"role": "user", "content": "Summarize GLM-5.3 in one sentence."}],
+      temperature=1.0,
+      max_tokens=256,
+  )
+  print(response.choices[0].message.content)
+  ```
+
+  ## Benchmarking
+
+  Add `--no-enable-prefix-caching` to the server command for a clean measurement.
+
+  ```bash
+  vllm bench serve \
+    --model zai-org/GLM-5.3 \
+    --dataset-name random \
+    --random-input 8000 \
+    --random-output 1024 \
+    --request-rate 10 \
+    --num-prompts 32 \
+    --ignore-eos
+  ```
+
+  > **Note:** pure throughput benchmarks tend to under-report real speed, because MTP's
+  > acceptance rate is usually low in synthetic runs.
+
+  ## Troubleshooting
+
+  - **FP8 performance:** DeepGEMM is required — install via `install_deepgemm.sh`.
+
+  ## References
+
+  - [Model card](https://huggingface.co/zai-org/GLM-5.3)
+  - [BF16 checkpoint](https://huggingface.co/zai-org/GLM-5.3-BF16)
+  - [NVFP4 checkpoint (Inferact)](https://huggingface.co/Inferact/GLM-5.3-NVFP4)
