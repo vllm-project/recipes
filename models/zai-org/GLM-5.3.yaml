@@ -12,6 +12,8 @@ meta:
   related_recipes:
     - "zai-org/GLM-5.2"
     - "zai-org/GLM-5.3-Flash"
+  hardware:
+    b300: verified
 
 model:
   model_id: "zai-org/GLM-5.3"
