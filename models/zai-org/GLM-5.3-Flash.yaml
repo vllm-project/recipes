@@ -3,7 +3,7 @@ meta:
   slug: "glm-5.3-flash"
   provider: "GLM (Z-AI)"
   description: "GLM-5.3-Flash is a 320B-total / 18B-active multimodal MoE with hybrid KDA and sparse MLA attention, native FP8 weights, MTP, and a 1M-token context window."
-  date_updated: 2026-08-27
+  date_updated: 2026-08-28
   difficulty: advanced
   tasks:
     - text
@@ -14,6 +14,7 @@ meta:
     b200: verified
     gb200: verified
     mi355x: verified
+    ascend_950pr_8x: verified
 
 model:
   model_id: "zai-org/GLM-5.3-Flash"
@@ -24,7 +25,7 @@ model:
     amd: "vllm/vllm-openai-rocm:glm53-flash"
   install:
     docker:
-      note: "Use the dedicated GLM-5.3-Flash docker until support lands in the standard vLLM image."
+      note: "NVIDIA/AMD: use vllm/vllm-openai:glm53-flash until support lands in the standard image. Ascend 950PR: use a vLLM-Ascend image with GLM-5.3-Flash model support (vLLM#53906) and vllm-ascend #15127 or use swr.cn-north-4.myhuaweicloud.com/yiminghub/glm5.3-a5:latest on NPU."
     pypi:
       note: "Use the dedicated GLM-5.3-Flash docker until support lands in the standard vLLM image."
   architecture: moe
@@ -62,6 +63,26 @@ variants:
     precision: fp8
     vram_minimum_gb: 386
     description: "Default native FP8 checkpoint (zai-org/GLM-5.3-Flash)"
+    hardware_overrides:
+      ascend_950pr_8x:
+        docker_image: "swr.cn-north-4.myhuaweicloud.com/yiminghub/glm5.3-a5:latest"
+        extra_args:
+          - "--trust-remote-code"
+          - "--block-size"
+          - "512"
+          - "--max-model-len"
+          - "131072"
+          - "--max-num-seqs"
+          - "16"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--gpu-memory-utilization"
+          - "0.90"
+        extra_env:
+          PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+          HCCL_BUFFSIZE: "512"
+          HCCL_OP_EXPANSION_MODE: "AIV"
+          HCCL_CONNECT_TIMEOUT: "7200"
   nvfp4:
     model_id: "RedHatAI/GLM-5.3-Flash-NVFP4"
     precision: nvfp4
@@ -82,6 +103,22 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
   - pd_cluster
+
+strategy_hardware:
+  single_node_tep:
+    npu: unsupported
+  single_node_dep:
+    npu: unsupported
+  multi_node_tp:
+    npu: unsupported
+  multi_node_tp_pp:
+    npu: unsupported
+  multi_node_tep:
+    npu: unsupported
+  multi_node_dep:
+    npu: unsupported
+  pd_cluster:
+    npu: unsupported
 
 hardware_overrides:
   hopper:
@@ -132,9 +169,11 @@ guide: |
   through 8 of 288 experts, and supports image and video inputs. The checkpoint declares
   a maximum context length of 1,048,576 tokens and includes one MTP draft layer.
 
-  The implementation supports NVIDIA Hopper and newer GPUs, and AMD Instinct
-  gfx950 via ROCm. It can scale with
-  tensor, pipeline, expert, or data+expert parallelism.
+  The implementation supports NVIDIA Hopper and newer GPUs, AMD Instinct
+  gfx950 via ROCm, and Huawei Ascend 950PR (8 NPUs, one node) via vLLM
+  Ascend. On NVIDIA/AMD it can scale with tensor, pipeline, expert, or
+  data+expert parallelism. The Ascend path is validated as single-node TP=8
+  only.
 
   ## Prerequisites
 
@@ -352,6 +391,74 @@ guide: |
     }'
   ```
 
+  ## Running on Ascend 950PR ×8
+
+  Validated on one node with 8× Ascend 950PR (128 GB HBM each). Use the
+  native FP8 checkpoint `zai-org/GLM-5.3-Flash`. On 950 the published
+  block-FP8 tiles are re-grouped to MXFP8 at load; do **not** pass
+  `--quantization ascend`, and do **not** use `vllm/vllm-openai:glm53-flash`
+  (that image is CUDA/ROCm only).
+
+  Until GLM-5.3-Flash lands in a public vLLM-Ascend tag, start from
+  `quay.io/ascend/vllm-ascend:v0.23.0-950dt`, overlay
+  [vLLM#53906](https://github.com/vllm-project/vllm/pull/53906)
+  (`ZJY0516/vllm` @ `933876c38`), and install
+  [vllm-ascend#15127](https://github.com/vllm-project/vllm-ascend/pull/15127).
+  Unset `SOC_VERSION` if the image baked `ascend950dt_9582` (950PR chip is
+  `9579`).
+
+  Start the container with host net/IPC and a large shm. Do not wrap this
+  serve in GPUStack pause networking.
+
+  ```bash
+  export IMAGE=swr.cn-north-4.myhuaweicloud.com/yiminghub/glm5.3-a5:latest
+  unset SOC_VERSION
+
+  docker run --rm -it \
+    --name glm53-flash \
+    --net=host \
+    --ipc=host \
+    --privileged \
+    --shm-size=32g \
+    --device /dev/davinci0 \
+    --device /dev/davinci1 \
+    --device /dev/davinci2 \
+    --device /dev/davinci3 \
+    --device /dev/davinci4 \
+    --device /dev/davinci5 \
+    --device /dev/davinci6 \
+    --device /dev/davinci7 \
+    --device /dev/davinci_manager \
+    --device /dev/devmm_svm \
+    --device /dev/hisi_hdc \
+    -v /usr/local/dcmi:/usr/local/dcmi \
+    -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+    -v /usr/local/Ascend/driver/lib64/:/usr/local/Ascend/driver/lib64/ \
+    -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
+    -v /etc/ascend_install.info:/etc/ascend_install.info \
+    -v /root/.cache:/root/.cache
+  $IMAGE bash
+
+  unset SOC_VERSION
+  export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+  export HCCL_BUFFSIZE=512
+  export HCCL_OP_EXPANSION_MODE=AIV
+
+  vllm serve /data/GLM-5.3-Flash \
+    --tensor-parallel-size 8 \
+    --trust-remote-code \
+    --block-size 512 \
+    --max-model-len 131072 \
+    --max-num-seqs 16 \
+    --max-num-batched-tokens 8192 \
+    --gpu-memory-utilization 0.90 \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":5}' \
+    --tool-call-parser glm47 \
+    --reasoning-parser glm45 \
+    --enable-auto-tool-choice \
+    --served-model-name zai-org/GLM-5.3-Flash
+  ```
+  
   ## Running on MI355X (gfx950)
 
   The `vllm/vllm-openai-rocm:glm53-flash` docker image gates on gfx950 only.
@@ -397,3 +504,9 @@ guide: |
 
   - [Model card](https://huggingface.co/zai-org/GLM-5.3-Flash)
   - [vLLM](https://github.com/vllm-project/vllm)
+  - **FlashInfer:** 0.6.17 or newer is required for NoPE sparse MLA
+  - **Ascend 950PR:** native FP8 checkpoint (~306 GiB). On 950 the block
+    scales are re-grouped to MXFP8 at load (weights stay 1 byte/element).
+    Do not pass `--quantization ascend`. `--block-size 512` is required
+    (kpool indexer). A2/A3 and the official BF16 checkpoint are not
+    validated in this recipe.
