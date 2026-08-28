@@ -66,6 +66,11 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"dspark","model":"nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark","num_speculative_tokens":3}'
+        hardware_overrides:
+          dgx_spark_gb10:
+            args:
+              - "--speculative-config"
+              - '{"method":"dspark","model":"nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark","num_speculative_tokens":3,"rejection_sample_method":"synthetic","attention_backend":"TRITON_ATTN","quantization":"modelopt_fp4"}'
       mtp:
         label: "MTP"
         description: "Built-in Multi-Token Prediction heads — no extra checkpoint to download."
@@ -121,10 +126,23 @@ variants:
           - "32768"
       dgx_spark_gb10:
         extra_args:
+          - "--attention-backend"
+          - "FLASHINFER"
+          - "--linear-backend"
+          - "marlin"
+          - "--attention-config"
+          - '{"use_trtllm_attention":true}'
+          - "--enable-flashinfer-autotune"
+          - "--mamba-cache-mode"
+          - "none"
+          - "--async-scheduling"
+          - "--enable-chunked-prefill"
           - "--gpu-memory-utilization"
-          - "0.7"
+          - "0.8"
           - "--load-format"
-          - "fastsafetensors"
+          - "instanttensor"
+          - "--safetensors-load-strategy"
+          - "prefetch"
       dgx_station_gb300:
         extra_args:
           - "--attention-backend"
