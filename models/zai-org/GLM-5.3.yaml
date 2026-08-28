@@ -57,7 +57,7 @@ variants:
     vram_minimum_gb: 893
     description: "Native FP8 checkpoint (zai-org/GLM-5.3) — 8xH200/H20 (141GB × 8) single-node serving"
   nvfp4:
-    model_id: "Inferact/GLM-5.3-NVFP4"
+    model_id: "Inferact/GLM5.3-NVFP4"
     precision: nvfp4
     vram_minimum_gb: 558
     description: "Inferact NVFP4 checkpoint — only MoE expert linears are quantized to NVFP4; shared experts, attention, embeddings, and the early dense layers stay FP8/BF16, with FP8 KV cache. Blackwell GPUs (B200/B300) only."
@@ -103,7 +103,7 @@ guide: |
   **default `zai-org/GLM-5.3` checkpoint is now native FP8** — BF16 weights live under the suffixed `zai-org/GLM-5.3-BF16` repo.
 
   The FP8 checkpoint fits on a single 8xH200 / 8xH20 node and — with FP8 KV cache — reaches the full 1M-token context on 8xB200.
-  An NVFP4 checkpoint for Blackwell is published by Inferact (`Inferact/GLM-5.3-NVFP4`).
+  An NVFP4 checkpoint for Blackwell is published by Inferact (`Inferact/GLM5.3-NVFP4`).
 
   ## Prerequisites
 
@@ -181,12 +181,12 @@ guide: |
 
   ### NVFP4 on Blackwell (B200/B300)
 
-  The `Inferact/GLM-5.3-NVFP4` variant is Inferact's NVFP4 re-quantization : only the MoE expert linears drop to NVFP4 while shared experts,
+  The `Inferact/GLM5.3-NVFP4` variant is Inferact's NVFP4 re-quantization : only the MoE expert linears drop to NVFP4 while shared experts,
   attention, embeddings, and the early dense layers stay BF16. The ~465 GB checkpoint fits comfortably on Blackwell
   Select the **NVFP4** variant above (Blackwell-only) or run:
 
   ```bash
-  vllm serve Inferact/GLM-5.3-NVFP4 \
+  vllm serve Inferact/GLM5.3-NVFP4 \
     --tensor-parallel-size 8 \
     --enable-expert-parallel \
     --reasoning-parser glm45 \
@@ -284,4 +284,4 @@ guide: |
 
   - [Model card](https://huggingface.co/zai-org/GLM-5.3)
   - [BF16 checkpoint](https://huggingface.co/zai-org/GLM-5.3-BF16)
-  - [NVFP4 checkpoint (Inferact)](https://huggingface.co/Inferact/GLM-5.3-NVFP4)
+  - [NVFP4 checkpoint (Inferact)](https://huggingface.co/Inferact/GLM5.3-NVFP4)
