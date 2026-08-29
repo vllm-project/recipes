@@ -11,6 +11,10 @@ meta:
   performance_headline: "PLaMo 2 post-trained for English/Japanese translation"
   related_recipes:
     - "pfnet/plamo-3-nict-31b-base"
+  hardware:
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "pfnet/plamo-2-translate"
@@ -21,8 +25,6 @@ model:
   context_length: 8192
   base_args:
     - "--trust-remote-code"
-    - "--max-model-len"
-    - "8192"
   base_env: {}
 
 features: {}
@@ -62,7 +64,8 @@ guide: |
 
   ## Prerequisites
 
-  - **Hardware:** 1x GPU with at least 24 GB VRAM, such as L40S, A30, or RTX 4090
+  - **Hardware:** MI300X / MI325X / MI355X verified. NVIDIA GPUs with smaller
+    VRAM can run the model by capping `--max-model-len`.
   - **vLLM:** >= 0.8.5
   - **License:** PLaMo community license
 
@@ -73,17 +76,45 @@ guide: |
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend=auto
   ```
+  ## Deployment Configurations
 
-  ## Launching the Server
+  ### NVIDIA (small VRAM)
+
+  On NVIDIA GPUs with tighter memory budgets, cap `--max-model-len` (the model
+  card examples use 2000).
 
   ```bash
   vllm serve pfnet/plamo-2-translate \
     --trust-remote-code \
-    --max-model-len 8192
+    --tensor-parallel-size 1 \
+    --max-model-len 2000
   ```
 
-  For tighter memory budgets, reduce `--max-model-len` (the model card
-  examples use 2000).
+  ### AMD MI300X / MI325X / MI355X
+
+  ```bash
+  vllm serve pfnet/plamo-2-translate \
+    --trust-remote-code \
+    --tensor-parallel-size 1
+  ```
+
+  ### Docker (AMD MI300X / MI325X / MI355X)
+
+  ```bash
+  docker run --rm -it \
+    --cap-add=SYS_PTRACE \
+    --ipc=host \
+    --privileged=true \
+    --shm-size=128GB \
+    --network=host \
+    --device=/dev/kfd \
+    --device=/dev/dri \
+    --group-add video \
+    vllm/vllm-openai-rocm:latest \
+      pfnet/plamo-2-translate \
+      --trust-remote-code \
+      --tensor-parallel-size 1
+  ```
 
   ## Prompt Format
 
