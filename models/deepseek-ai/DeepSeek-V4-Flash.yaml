@@ -949,6 +949,7 @@ guide: |
     --data-parallel-size 4 \
     --enable-expert-parallel \
     --block-size 32 \
+    --kv-cache-dtype auto \
     --safetensors-load-strategy prefetch \
     --async-scheduling \
     --max-num-seqs 64 \
