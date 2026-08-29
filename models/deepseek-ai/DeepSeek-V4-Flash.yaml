@@ -253,8 +253,6 @@ variants:
           - "deep_gemm_mega_moe"
       ascend_950dt:
         docker_image: "swr.cn-southwest-2.myhuaweicloud.com/base_image/ascend-ci/vllm-ascend:v0.23.0-a5"
-        install:
-          pip: false
         extra_env:
           PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
           OMP_PROC_BIND: "false"
