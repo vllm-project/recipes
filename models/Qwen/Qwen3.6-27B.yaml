@@ -4,12 +4,12 @@ meta:
   provider: "Qwen"
   description: "Qwen3.6 dense multimodal model (27B) with gated delta networks hybrid attention, MTP, and 262K context"
   date_added: 2026-04-22
-  date_updated: 2026-07-02
+  date_updated: 2026-08-29
   difficulty: beginner
   tasks:
     - multimodal
     - text
-  performance_headline: "Qwen3.6 flagship dense — single-GPU FP8 or 2x GPU BF16"
+  performance_headline: "Qwen3.6 flagship dense — single-GPU FP8, 2x GPU BF16, or Ascend 950DT TP1+DP8"
   related_recipes:
     - "Qwen/Qwen3.6-35B-A3B"
   hardware:
@@ -17,6 +17,7 @@ meta:
     rtx_pro_6000: verified
     dgx_station_gb300: verified
     rtx_5090: verified
+    ascend_950dt: verified
 
 model:
   model_id: "Qwen/Qwen3.6-27B"
@@ -128,6 +129,50 @@ variants:
           - "4096"
           - "--gpu-memory-utilization"
           - "0.95"
+  ascend_w8a8_mxfp8:
+    model_id: "Eco-Tech/Qwen3.6-27B-w8a8-mxfp8"
+    precision: int8
+    label: "W8A8 (Ascend)"
+    vram_minimum_gb: 34
+    supported_hardware: [ascend_950dt]
+    tp: 1
+    min_vllm_version: "0.23.0"
+    default_modes:
+      spec_decoding: qwen3_5_mtp
+    extra_args:
+      - "--distributed-executor-backend"
+      - "mp"
+      - "--data-parallel-size"
+      - "8"
+      - "--quantization"
+      - "ascend"
+      - "--served-model-name"
+      - "qwen3.6"
+      - "--max-num-seqs"
+      - "32"
+      - "--max-model-len"
+      - "262144"
+      - "--max-num-batched-tokens"
+      - "16384"
+      - "--gpu-memory-utilization"
+      - "0.90"
+      - "--no-enable-prefix-caching"
+      - "--speculative-config"
+      - '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}'
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+      - "--additional-config"
+      - '{"enable_cpu_binding":true}'
+    extra_env:
+      VLLM_USE_MODELSCOPE: "True"
+      PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+      HCCL_BUFFSIZE: "512"
+      OMP_PROC_BIND: "false"
+      OMP_NUM_THREADS: "1"
+      TASK_QUEUE_ENABLE: "1"
+    hardware_overrides:
+      ascend_950dt:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a5"
 
 compatible_strategies:
   - single_node_tp
@@ -371,6 +416,35 @@ guide: |
     --reasoning-parser qwen3
   ```
 
+  ### Huawei Ascend 950DT
+
+  The `Eco-Tech/Qwen3.6-27B-w8a8-mxfp8` checkpoint runs on one Ascend 950DT
+  node with TP1 + DP8.
+
+  ```bash
+  export VLLM_USE_MODELSCOPE=True
+  export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+  export HCCL_BUFFSIZE=512
+  export OMP_PROC_BIND=false
+  export OMP_NUM_THREADS=1
+  export TASK_QUEUE_ENABLE=1
+
+  vllm serve Eco-Tech/Qwen3.6-27B-w8a8-mxfp8 \
+    --distributed-executor-backend mp \
+    --data-parallel-size 8 \
+    --tensor-parallel-size 1 \
+    --quantization ascend \
+    --served-model-name qwen3.6 \
+    --max-num-seqs 32 \
+    --max-model-len 262144 \
+    --max-num-batched-tokens 16384 \
+    --gpu-memory-utilization 0.90 \
+    --no-enable-prefix-caching \
+    --speculative-config '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}' \
+    --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
+    --additional-config '{"enable_cpu_binding":true}'
+  ```
+
   ## Processing Ultra-Long Texts
 
   Qwen3.6-27B natively supports `262,144` tokens. For longer inputs, apply
@@ -415,4 +489,6 @@ guide: |
   - [FP8 checkpoint](https://huggingface.co/Qwen/Qwen3.6-27B-FP8)
   - [GPTQ-Int4 checkpoint](https://huggingface.co/Qwen/Qwen3.6-27B-GPTQ-Int4)
   - [NVIDIA NVFP4 checkpoint](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
-  - [Qwen3.6-397B-A17B recipe](../Qwen3.6-397B-A17B)
+  - [Ascend W8A8 checkpoint](https://www.modelscope.cn/models/Eco-Tech/Qwen3.6-27B-w8a8-mxfp8)
+  - [vLLM Ascend tutorial](https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/Qwen3.5-27B-Qwen3.6-27B.html)
+  - [Qwen3.6-35B-A3B recipe](../Qwen3.6-35B-A3B)
