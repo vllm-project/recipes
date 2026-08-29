@@ -332,6 +332,28 @@ hardware_profiles:
     multi_node: false
     restricted: true
 
+  # 8-card Atlas A5 nodes. Distinct from `ascend_950pr` (1×128 GB, MiniMax-H3).
+  # Restricted: only recipes that list them in `meta.hardware` show the pills.
+  ascend_950dt:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 950DT"
+    description: "Huawei Ascend 950DT · 8× NPU · 96 GB HBM each · Atlas A5 · vLLM Ascend backend"
+    gpu_count: 8
+    vram_gb: 768
+    multi_node: false
+    restricted: true
+
+  ascend_950pr_8x:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 950PR (8×128 GB)"
+    description: "Huawei Ascend 950PR · 8× NPU · 128 GB HiBL 1.0 HBM each · Atlas A5 · vLLM Ascend backend"
+    gpu_count: 8
+    vram_gb: 1024
+    multi_node: false
+    restricted: true
+
 tasks:
   - id: text
     display_name: "Text"

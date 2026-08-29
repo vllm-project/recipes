@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
   date_added: 2026-07-31
-  date_updated: "2026-08-20"
+  date_updated: "2026-08-29"
   difficulty: hard
   tasks:
     - text
@@ -22,6 +22,11 @@ meta:
     mi300x: verified
     mi325x: verified
     mi355x: verified
+    # Atlas A5 8-card mixed serving of FP8 (Preview). 950PR verified 2026-08-29
+    # on vLLM Ascend 0.23.0 (DP4+EP, MTP k=1). 950DT matches the v0.23.0
+    # vLLM Ascend mixed recipe (same command, 4 of 8 NPUs).
+    ascend_950dt: verified
+    ascend_950pr_8x: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V4-Flash"
@@ -81,6 +86,13 @@ features:
             args:
               - "--speculative-config"
               - '{"method":"mtp","num_speculative_tokens":1}'
+          # Preview MTP head is next-1. vLLM Ascend 0.23.0 runs the draft eager
+          # while the target keeps FULL_DECODE_ONLY ACLGraph. DSpark is not in
+          # this release; do not raise k or switch method on the preview weights.
+          npu:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":1,"enforce_eager":true}'
       dspark:
         label: "DSpark"
         description: "DSpark drafting, 7 draft tokens, probabilistic sampling. Requires the DSpark or 0731 checkpoint (Variant row)."
@@ -110,6 +122,9 @@ variants:
     precision: fp8
     vram_minimum_gb: 200
     description: "Official DeepSeek-V4-Flash release (2026-07-31) superseding the preview — substantially stronger agentic performance, with the DSpark draft module attached."
+    # DSpark needs vLLM Ascend 0.25.0+. The A5 0.23.0 image used by the NPU
+    # pills cannot load this checkpoint's draft module.
+    supported_hardware: [h200, b200, gb200, b300, gb300, dgx_station_gb300, dgx_spark_gb10, rtx_pro_6000_8x, mi300x, mi325x, mi355x]
     min_vllm_version: "0.25.0"
     docker_image: "vllm/vllm-openai:v0.25.0"
     default_modes:
@@ -245,11 +260,23 @@ variants:
         extra_args:
           - "--moe-backend"
           - "deep_gemm_mega_moe"
+      # `computeDockerMeta` has no Huawei brand, so a bare string docker_image
+      # would only pin NVIDIA. Exact-GPU overrides land regardless of brand.
+      # The pip tab is hidden: the official vLLM wheel has no NPU kernels.
+      ascend_950dt:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a5"
+        install:
+          pip: false
+      ascend_950pr_8x:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a5"
+        install:
+          pip: false
   nvfp4:
     model_id: "nvidia/DeepSeek-V4-Flash-NVFP4"
     precision: nvfp4
     vram_minimum_gb: 170
     description: "NVIDIA modelopt NVFP4 checkpoint (MoE experts NVFP4; attention, shared experts, router head, and MTP stay FP8) for Blackwell GPUs."
+    supported_hardware: [h200, b200, gb200, b300, gb300, dgx_station_gb300, dgx_spark_gb10, rtx_pro_6000_8x, mi300x, mi325x, mi355x]
     hardware_overrides:
       dgx_spark_gb10:
         docker_image: "eugr/spark-vllm-b12x:latest"
@@ -315,6 +342,7 @@ variants:
     precision: fp8
     vram_minimum_gb: 200
     description: "Preview FP4+FP8 weights with the DSpark draft module baked in — same base checkpoint as the default variant plus a fused speculative decoder."
+    supported_hardware: [h200, b200, gb200, b300, gb300, dgx_station_gb300, dgx_spark_gb10, rtx_pro_6000_8x, mi300x, mi325x, mi355x]
     # DSpark drafting landed in 0.25.0; 0.26.0 is the first release where it also
     # works on the MI325X/MI355X pills this recipe advertises (ROCm enablement).
     min_vllm_version: "0.25.0"
@@ -409,8 +437,18 @@ strategy_hardware:
   # hardware; this makes the Strategy row agree. multi_node_dep needs no entry:
   # the Nodes row is pinned to 1 here, which already hides every multi_node
   # strategy.
+  # Atlas A5 mixed serving is DP+EP only (vLLM Ascend 0.23.0). TP-only does not
+  # partition the V4 MoE layers on 950; TEP and intra-node PD are documented
+  # separately in the vLLM Ascend 1P1D tutorial, not this builder.
+  single_node_tp:
+    npu: unsupported
+  single_node_tep:
+    npu: unsupported
+  multi_node_dep:
+    npu: unsupported
   pd_cluster:
     rtx_pro_6000_8x: unsupported
+    npu: unsupported
 
 hardware_overrides:
   blackwell:
@@ -433,6 +471,16 @@ hardware_overrides:
       - '{"mode": 3, "cudagraph_mode": "FULL_DECODE_ONLY"}'
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
+  # Shared by 950DT (8×96 GB) and 950PR (8×128 GB). Mixed serving uses 4 of the
+  # 8 NPUs (DP4+EP). HCCL_BUFFSIZE=1024 is required for MC2 dispatch; 200 MB
+  # default fails profile_run with aclnnMoeDistributeDispatchV4 561002.
+  npu:
+    extra_env:
+      PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+      OMP_PROC_BIND: "false"
+      OMP_NUM_THREADS: "10"
+      HCCL_BUFFSIZE: "1024"
+      ASCEND_RT_VISIBLE_DEVICES: "0,1,2,3"
 
 strategy_overrides:
   single_node_tp:
@@ -497,6 +545,27 @@ strategy_overrides:
         extra_args:
           - "--gpu-memory-utilization"
           - "0.85"
+      npu:
+        extra_args:
+          - "--block-size"
+          - "32"
+          - "--kv-cache-dtype"
+          - "auto"
+          - "--safetensors-load-strategy"
+          - "prefetch"
+          - "--async-scheduling"
+          - "--max-num-seqs"
+          - "64"
+          - "--max-num-batched-tokens"
+          - "4096"
+          - "--gpu-memory-utilization"
+          - "0.9"
+          - "--api-server-count"
+          - "1"
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+          - "--additional-config"
+          - '{"enable_cpu_binding": true, "multistream_overlap_shared_expert": true, "enable_shared_expert_dp": true}'
   multi_node_dep:
     extra_args:
       - "--compilation-config"
@@ -562,6 +631,18 @@ hardware_notes:
     link:
       label: "DGX Spark cluster guide"
       href: "#dgx-spark-gb10-cluster"
+  ascend_950dt:
+    title: "vLLM Ascend A5 image required"
+    body: "FP8 (Preview) mixed serving on one 8-card 950DT node uses 4 of 8 NPUs (DP4+EP). Pin quay.io/ascend/vllm-ascend:v0.23.0-a5 — the NVIDIA pip wheel cannot run here. Set HCCL_BUFFSIZE=1024 before launch."
+    link:
+      label: "Ascend 950DT 8-card mixed"
+      href: "#huawei-ascend-950dt-8x96-gb"
+  ascend_950pr_8x:
+    title: "vLLM Ascend A5 image required"
+    body: "FP8 (Preview) mixed serving on one 8-card 950PR node uses 4 of 8 NPUs (DP4+EP), same command as 950DT. Pin quay.io/ascend/vllm-ascend:v0.23.0-a5. Set HCCL_BUFFSIZE=1024 before launch."
+    link:
+      label: "Ascend 950PR 8-card mixed"
+      href: "#huawei-ascend-950pr-8x128-gb"
 
 guide: |
   ## Overview
@@ -879,6 +960,150 @@ guide: |
   |gsm8k|      3|flexible-extract|     8|exact_match|↑  |0.9439|±  |0.0063|
   |     |       |strict-match    |     8|exact_match|↑  |0.9431|±  |0.0064|
   ```
+
+  ### Huawei Ascend 950DT (8x96 GB)
+
+  Single-node **mixed** serving on one Atlas A5 950DT node (8×96 GB). The native
+  FP4+FP8 preview checkpoint (`deepseek-ai/DeepSeek-V4-Flash`) is served with
+  DP4 + expert parallel: MoE experts are sharded across four DP ranks, so each
+  NPU holds roughly a quarter of the weights. This uses **4 of 8 NPUs**
+  (`ASCEND_RT_VISIBLE_DEVICES=0,1,2,3`). The remaining four cards are free for
+  a second replica or for the intra-node 1P1D layout in the
+  [vLLM Ascend DeepSeek-V4-Flash tutorial](https://docs.vllm.ai/projects/ascend/en/v0.23.0/tutorials/models/DeepSeek-V4-Flash.html)
+  (Prefill 0–3 / Decode 4–7, both DP4+EP).
+
+  Do **not** pass `--quantization ascend` — the A5 path loads the native mixed
+  checkpoint directly. Do **not** keep the NVIDIA defaults `--kv-cache-dtype fp8`
+  / `--block-size 256`; NPU KV uses `--kv-cache-dtype auto` and `--block-size 32`.
+
+  Verified against the vLLM Ascend **0.23.0** mixed recipe from
+  `quay.io/ascend/vllm-ascend:v0.23.0-a5`. Serve Hugging Face weights, a
+  ModelScope mirror (`VLLM_USE_MODELSCOPE=True`), or a local path.
+
+  Pick **FP8 (Preview)** + **Ascend 950DT** + **Data + Expert Parallel**, then
+  enable **Spec Decoding** (MTP). The generated command matches:
+
+  ```bash
+  export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+  export OMP_PROC_BIND=false
+  export OMP_NUM_THREADS=10
+  export HCCL_BUFFSIZE=1024
+  export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3
+
+  vllm serve deepseek-ai/DeepSeek-V4-Flash \
+    --trust-remote-code \
+    --data-parallel-size 4 \
+    --enable-expert-parallel \
+    --block-size 32 \
+    --kv-cache-dtype auto \
+    --safetensors-load-strategy prefetch \
+    --async-scheduling \
+    --max-num-seqs 64 \
+    --max-num-batched-tokens 4096 \
+    --gpu-memory-utilization 0.9 \
+    --api-server-count 1 \
+    --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --reasoning-parser deepseek_v4 \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":1,"enforce_eager":true}' \
+    --additional-config '{"enable_cpu_binding": true, "multistream_overlap_shared_expert": true, "enable_shared_expert_dp": true}'
+  ```
+
+  `HCCL_BUFFSIZE=1024` is required for MC2 expert dispatch. The default ~200 MB
+  window fails `profile_run` with `aclnnMoeDistributeDispatchV4` 561002
+  (`HCCL_BUFFSIZE_EP is too SMALL`).
+
+  MTP is **k=1** on this checkpoint (next-1 draft head). DSpark (`method: dspark`,
+  k=7) needs the 0731 / DSpark weights and vLLM Ascend 0.25.0+; it is not offered
+  on these NPU pills.
+
+  Verify:
+
+  ```bash
+  curl http://127.0.0.1:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{"model":"deepseek-ai/DeepSeek-V4-Flash","messages":[{"role":"user","content":"Who are you?"}],"max_tokens":256,"temperature":0}'
+  ```
+
+  `--max-model-len` defaults to the model's 1M-token ceiling. Lower it if the KV
+  cache does not fit the node's 768 GB HBM.
+
+  ### Huawei Ascend 950PR (8x128 GB)
+
+  Same Atlas A5 backend and the same mixed command as 950DT: native FP8 (Preview)
+  weights, **no** `--quantization ascend`, DP4+EP on **4 of 8** 128 GB NPUs,
+  `HCCL_BUFFSIZE=1024`, `--block-size 32`, MTP k=1 with `enforce_eager`. Extra
+  HBM versus 950DT is headroom for KV, not a different parallelism.
+
+  Verified 2026-08-29 on vLLM Ascend 0.23.0 (`quay.io/ascend/vllm-ascend:v0.23.0-a5`)
+  serving a local `DeepSeek-V4-Flash` preview checkpoint. Concurrent
+  `vllm bench serve` (OpenAI chat, random 64k input / 3k output, 10 prompts at
+  10 RPS, all 10 successful):
+
+  | Metric | Value |
+  | :-- | --: |
+  | Output token throughput | 303.86 tok/s (peak 355) |
+  | Total token throughput | 6786.69 tok/s |
+  | Mean TTFT | 25867 ms |
+  | Mean TPOT (excl. 1st token) | 21.13 ms |
+  | Mean ITL | 36.65 ms |
+  | MTP acceptance | 72.44% (length 1.72, position 0 only) |
+
+  Launch (swap the model path / `--served-model-name` for your weights):
+
+  ```bash
+  export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+  export OMP_PROC_BIND=false
+  export OMP_NUM_THREADS=10
+  export HCCL_BUFFSIZE=1024
+  export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3
+
+  vllm serve /data/DeepSeek-V4-Flash \
+    --served-model-name dsv4 \
+    --host 0.0.0.0 \
+    --port 8900 \
+    --trust-remote-code \
+    --data-parallel-size 4 \
+    --enable-expert-parallel \
+    --block-size 32 \
+    --kv-cache-dtype auto \
+    --safetensors-load-strategy prefetch \
+    --async-scheduling \
+    --max-num-seqs 64 \
+    --max-num-batched-tokens 4096 \
+    --gpu-memory-utilization 0.9 \
+    --api-server-count 1 \
+    --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --reasoning-parser deepseek_v4 \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":1,"enforce_eager":true}' \
+    --additional-config '{"enable_cpu_binding": true, "multistream_overlap_shared_expert": true, "enable_shared_expert_dp": true}'
+  ```
+
+  Bench against that server:
+
+  ```bash
+  vllm bench serve \
+    --model /data/DeepSeek-V4-Flash \
+    --backend openai-chat \
+    --dataset-name random \
+    --tokenizer /data/DeepSeek-V4-Flash \
+    --random-input-len 64000 \
+    --random-output-len 3000 \
+    --random-range-ratio 0.0 \
+    --num-prompts 10 \
+    --base-url http://127.0.0.1:8900 \
+    --endpoint /v1/chat/completions \
+    --served-model-name dsv4 \
+    --request-rate 10
+  ```
+
+  Full 8-NPU utilization on either 950DT or 950PR is intra-node 1P1D (DP4+DP4),
+  not DP8 mixed — see the vLLM Ascend tutorial linked above.
 
   ### H200 Single-Node PD (Mooncake)
 
