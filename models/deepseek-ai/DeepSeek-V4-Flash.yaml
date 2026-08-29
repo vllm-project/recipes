@@ -22,6 +22,7 @@ meta:
     mi300x: verified
     mi325x: verified
     mi355x: verified
+    ascend_950dt: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V4-Flash"
@@ -81,6 +82,10 @@ features:
             args:
               - "--speculative-config"
               - '{"method":"mtp","num_speculative_tokens":1}'
+          npu:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":1,"enforce_eager":true}'
       dspark:
         label: "DSpark"
         description: "DSpark drafting, 7 draft tokens, probabilistic sampling. Requires the DSpark or 0731 checkpoint (Variant row)."
@@ -110,6 +115,7 @@ variants:
     precision: fp8
     vram_minimum_gb: 200
     description: "Official DeepSeek-V4-Flash release (2026-07-31) superseding the preview — substantially stronger agentic performance, with the DSpark draft module attached."
+    supported_hardware: [h100, h200, b200, gb200, b300, gb300, dgx_station_gb300, dgx_spark_gb10, rtx_pro_6000_8x, mi300x, mi325x, mi355x]
     min_vllm_version: "0.25.0"
     docker_image: "vllm/vllm-openai:v0.25.0"
     default_modes:
@@ -245,6 +251,13 @@ variants:
         extra_args:
           - "--moe-backend"
           - "deep_gemm_mega_moe"
+      ascend_950dt:
+        docker_image: "swr.cn-southwest-2.myhuaweicloud.com/base_image/ascend-ci/vllm-ascend:v0.23.0-a5"
+        extra_env:
+          PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+          OMP_PROC_BIND: "false"
+          OMP_NUM_THREADS: "10"
+          HCCL_BUFFSIZE: "1024"
   nvfp4:
     model_id: "nvidia/DeepSeek-V4-Flash-NVFP4"
     precision: nvfp4
@@ -315,6 +328,7 @@ variants:
     precision: fp8
     vram_minimum_gb: 200
     description: "Preview FP4+FP8 weights with the DSpark draft module baked in — same base checkpoint as the default variant plus a fused speculative decoder."
+    supported_hardware: [h100, h200, b200, gb200, b300, gb300, dgx_station_gb300, dgx_spark_gb10, rtx_pro_6000_8x, mi300x, mi325x, mi355x]
     # DSpark drafting landed in 0.25.0; 0.26.0 is the first release where it also
     # works on the MI325X/MI355X pills this recipe advertises (ROCm enablement).
     min_vllm_version: "0.25.0"
@@ -401,6 +415,12 @@ strategy_hardware:
   # platforms stay on their existing TEP/DEP/PD recommendations.
   multi_node_tp:
     dgx_spark_gb10: supported
+  single_node_tp:
+    ascend_950dt: unsupported
+  single_node_tep:
+    ascend_950dt: unsupported
+  multi_node_dep:
+    ascend_950dt: unsupported
   # PD splits into a prefill pool and a decode pool, each sized in whole nodes
   # (strategy_overrides.pd_cluster gives both `nodes: 1`), so the builder emits
   # a two-node deployment. RTX Pro 6000 8x is multi_node: false / scalable:
@@ -411,6 +431,7 @@ strategy_hardware:
   # strategy.
   pd_cluster:
     rtx_pro_6000_8x: unsupported
+    ascend_950dt: unsupported
 
 hardware_overrides:
   blackwell:
@@ -497,6 +518,27 @@ strategy_overrides:
         extra_args:
           - "--gpu-memory-utilization"
           - "0.85"
+      ascend_950dt:
+        extra_args:
+          - "--block-size"
+          - "32"
+          - "--kv-cache-dtype"
+          - "auto"
+          - "--safetensors-load-strategy"
+          - "prefetch"
+          - "--async-scheduling"
+          - "--max-num-seqs"
+          - "64"
+          - "--max-num-batched-tokens"
+          - "4096"
+          - "--gpu-memory-utilization"
+          - "0.9"
+          - "--api-server-count"
+          - "1"
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+          - "--additional-config"
+          - '{"enable_cpu_binding": true, "multistream_overlap_shared_expert": true, "enable_shared_expert_dp": true}'
   multi_node_dep:
     extra_args:
       - "--compilation-config"
@@ -879,6 +921,64 @@ guide: |
   |gsm8k|      3|flexible-extract|     8|exact_match|↑  |0.9439|±  |0.0063|
   |     |       |strict-match    |     8|exact_match|↑  |0.9431|±  |0.0064|
   ```
+
+  ### Huawei Ascend 950DT (vLLM Ascend)
+
+  Single-node deployment on one Ascend 950DT server (8× NPU, 96 GB HBM each). The original
+  FP4+FP8 preview checkpoint (`deepseek-ai/DeepSeek-V4-Flash`) is served with
+  data-parallel + expert-parallel (`--data-parallel-size 4 --enable-expert-parallel`): the
+  MoE experts are sharded across four DP ranks, so each NPU holds roughly a quarter of the
+  weights. The A5 path loads the native mixed-precision checkpoint directly — it does **not**
+  pass `--quantization ascend`.
+
+  Verified on vLLM Ascend 0.23.0 from the
+  `swr.cn-southwest-2.myhuaweicloud.com/base_image/ascend-ci/vllm-ascend:v0.23.0-a5`
+  image. Weights are read from the HuggingFace checkpoint, or a ModelScope mirror — set
+  `VLLM_USE_MODELSCOPE=True` or pass a local path.
+
+  ```bash
+  export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+  export OMP_PROC_BIND=false
+  export OMP_NUM_THREADS=10
+  export HCCL_BUFFSIZE=1024
+
+  vllm serve deepseek-ai/DeepSeek-V4-Flash \
+    --trust-remote-code \
+    --data-parallel-size 4 \
+    --enable-expert-parallel \
+    --block-size 32 \
+    --kv-cache-dtype auto \
+    --safetensors-load-strategy prefetch \
+    --async-scheduling \
+    --max-num-seqs 64 \
+    --max-num-batched-tokens 4096 \
+    --gpu-memory-utilization 0.9 \
+    --api-server-count 1 \
+    --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --reasoning-parser deepseek_v4 \
+    --additional-config '{"enable_cpu_binding": true, "multistream_overlap_shared_expert": true, "enable_shared_expert_dp": true}'
+  ```
+
+  Enable **Spec Decoding** (MTP) to attach the in-checkpoint draft head; the Ascend build
+  runs the draft eager while the target keeps its `FULL_DECODE_ONLY` graph:
+
+  ```bash
+  --speculative-config '{"method":"mtp","num_speculative_tokens":1,"enforce_eager":true}'
+  ```
+
+  Verify the service:
+
+  ```bash
+  curl http://<node0_ip>:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{"model":"deepseek-ai/DeepSeek-V4-Flash","messages":[{"role":"user","content":"Who are you?"}],"max_tokens":256,"temperature":0}'
+  ```
+
+  The response returns HTTP 200 with a `choices` array. `--max-model-len` defaults to the
+  model's 1M-token ceiling — lower it if KV cache does not fit the node's 768 GB.
 
   ### H200 Single-Node PD (Mooncake)
 
