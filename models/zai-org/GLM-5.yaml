@@ -108,7 +108,7 @@ variants:
           HCCL_INTRA_ROCE_ENABLE: "0"
           DYNAMIC_EPLB: "true"
           OMP_PROC_BIND: "false"
-          OMP_NUM_THREADS: "100"
+          OMP_NUM_THREADS: "16"
           HCCL_BUFFSIZE: "400"
 
 compatible_strategies:
