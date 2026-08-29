@@ -43,10 +43,23 @@ features:
       - "--reasoning-parser"
       - "qwen3"
   spec_decoding:
-    description: "Multi-token prediction speculative decoding for lower latency"
-    args:
-      - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":3}'
+    description: "Speculative decoding — pick native MTP or the Ascend MTP mode."
+    default_mode: mtp
+    modes:
+      mtp:
+        label: "MTP"
+        description: "Native MTP head, 3 draft tokens."
+        variants: [default, fp8, nvfp4]
+        args:
+          - "--speculative-config"
+          - '{"method":"mtp","num_speculative_tokens":3}'
+      qwen3_5_mtp:
+        label: "MTP (Ascend)"
+        description: "MTP mode documented for vLLM Ascend."
+        variants: [ascend_w8a8_mxfp8]
+        args:
+          - "--speculative-config"
+          - '{"method":"qwen3_5_mtp","num_speculative_tokens":3}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -131,7 +144,7 @@ variants:
           - "0.95"
   ascend_w8a8_mxfp8:
     model_id: "Eco-Tech/Qwen3.6-27B-w8a8-mxfp8"
-    precision: int8
+    precision: mxfp8
     label: "W8A8 (Ascend)"
     vram_minimum_gb: 34
     supported_hardware: [ascend_950dt]
