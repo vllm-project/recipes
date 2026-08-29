@@ -50,6 +50,7 @@ export const PROVIDERS = {
   "mindlab-research":{ display_name: "MindLab Research",               logo: "/providers/mindlab-research.png" },
   "dots-studio":     { display_name: "Dots",                           logo: "/providers/dots-studio.png" },
   "meta-models":     { display_name: "Muse (Meta)",                     logo: "/providers/meta-models.png" },
+  "ThaiLLM":         { display_name: "ThaiLLM",                        logo: "/providers/ThaiLLM.png" },
 };
 
 export function getProviderLogo(hfOrg) {
