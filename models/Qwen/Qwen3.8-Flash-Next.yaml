@@ -362,11 +362,16 @@ guide: |
     cards — the activation profiling reserves the difference. (The RTX PRO
     6000 profile can afford 8192; 32 GB cards cannot.)
   - **If you pin `--kv-cache-memory`, undercut vLLM's "fully utilize"
-    advisory by ~700 MiB.** With `VLLM_PLE_CPU_OFFLOAD=1` the PLE offload
-    worker holds its own ~682 MiB CUDA context on the first GPU, which the
-    advisory does not account for — pinning the printed value OOMs during
-    warmup. The pin also interacts with `--max-num-batched-tokens`: a value
-    sized under the default batch OOMs at 8192.
+    advisory by ~1 GiB on this model.** Two costs the advisory misses: with
+    `VLLM_PLE_CPU_OFFLOAD=1` the PLE offload worker holds its own ~682 MiB
+    CUDA context (pinning the printed value OOMs during warmup), and the
+    memory profile is text-only, so the vision encoder's runtime allocation
+    is unaccounted — a pin ~260 MiB under the advisory survived every text
+    benchmark, then hit a runtime OOM serving an image request at 155K-token
+    depth beside a second 108K stream. Advisory minus ~760 MiB has been
+    stable under the same traffic. The pin also interacts with
+    `--max-num-batched-tokens`: a value sized under the default batch OOMs
+    at 8192.
 
   ### Full native context
 
