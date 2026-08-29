@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 plus MXFP8, NVIDIA Blackwell NVFP4, and AMD MI355X MXFP4 variants. Runs on NVIDIA (Hopper/Blackwell) and AMD CDNA4/CDNA3."
   date_added: 2026-06-12
-  date_updated: 2026-08-03
+  date_updated: 2026-08-04
   difficulty: advanced
   tasks:
     - text
@@ -135,11 +135,12 @@ variants:
     # comfortably, ~4 GPUs for weights alone on Blackwell (B200/B300) or AMD MI350X/MI355X (gfx950)).
     vram_minimum_gb: 513
     description: "NVIDIA-quantized MXFP8 weights — Blackwell (B200/B300) for native MX tensor cores, and AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 Matrix Cores."
-    extra_args:
-      - "--attention_config.indexer_kv_dtype"
-      - "fp8"
     hardware_overrides:
       blackwell:
+        # FP8 index cache needs the SM100 MSA indexer; Triton (Hopper/AMD) is bf16-only.
+        extra_args:
+          - "--attention_config.indexer_kv_dtype"
+          - "fp8"
         extra_env:
           VLLM_FLOAT32_MATMUL_PRECISION: "high"
       h100:
@@ -770,6 +771,9 @@ guide: |
   - **`--block-size` mismatch.** MSA's sparse block size is 128; the vLLM KV
     cache block size must match. Using the default (16) misaligns the sparse
     attention indexing (on AMD it crashes with `No common block size for 16`).
+  - **`indexer_kv_dtype=fp8` on Hopper/AMD.** The Triton indexer only supports
+    bf16. Drop `--attention_config.indexer_kv_dtype fp8` on non-Blackwell GPUs
+    (the command builder already gates it to Blackwell for the mxfp8 variant).
   - **Parsers.** `--tool-call-parser` and `--reasoning-parser` both use
     `minimax_m3` — distinct from `minimax_m2` used by earlier releases.
   - **Long context KV cache.** See *Context Length & GPU Memory* above — cap
