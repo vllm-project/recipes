@@ -99,6 +99,10 @@ guide: |
     Use the latest main branch if you need tool calling + MTP simultaneously.
   - **Hardware (FP8):** 8xH200 or 8xH20 (141GB × 8)
   - **DeepGEMM (FP8):** install via `install_deepgemm.sh` from vLLM repo
+  - **TileRT PD disaggregation:** `vllm/vllm-openai:nightly` image +
+    `tilert >= 0.1.5.post1` (`pip install tilert`) — verified on 8xB300, see the
+    dedicated section below
+
 
   ### Using Docker
 
@@ -142,6 +146,137 @@ guide: |
        --chat-template-content-format=string \
        --served-model-name glm-5.1-fp8
   ```
+
+  ### PD Disaggregation with TileRT (vLLM Prefill + TileRT Decode)
+
+  [TileRT](https://github.com/tile-ai/TileRT) (>= v0.1.5) provides a
+  [PD-disaggregated deployment](https://www.tilert.ai/blog/tilert-vllm-disaggregation.html)
+  for GLM5.1: vLLM serves the prefill phase, the TileRT engine serves the
+  decode phase, and a lightweight router exposes a single OpenAI-compatible
+  endpoint. This trades a small amount of prefill capacity for much higher
+  single-request decode speed.
+
+  **Verified end-to-end on a single 8xB300 node** (prefill and decode
+  co-located on the same node), 64K input /1K output reaching **~428 tokens/s decode TPS** on
+  GLM-5.1-FP8 with MTP enabled.
+
+  The recipe below assumes prefill and decode run in three containers on the
+  same host. For a two-node deployment, replace `<DECODE_IP>` / `<PREFILL_IP>` / `<ROUTER_IP>`
+  accordingly and share the weights via a common path or download them on both
+  nodes.
+
+  #### 1. Prepare the decode container and convert the weights
+
+  ```bash
+  docker run -itd \
+    --name tilert-decode \
+    --privileged \
+    --gpus all \
+    --net host \
+    --ipc host \
+    -v /data/cache:/models \
+    --entrypoint /bin/bash \
+    vllm/vllm-openai:nightly \
+    -c "sleep infinity"
+
+  docker exec -it tilert-decode bash
+  pip install tilert
+  ```
+  Convert the FP8 checkpoint to the TileRT weight layout 
+
+  ```bash
+  python3 -m tilert.models.preprocess.weight_converter \
+    --model_type glm-5 \
+    --model_dir /models/GLM-5.1-FP8 \
+    --save_dir /models/tilert-glm5.1
+
+  # TileRT loads the tokenizer/template from the converted directory
+  cd /models/GLM-5.1-FP8
+  cp tokenizer.json tokenizer_config.json chat_template.jinja /models/tilert-glm5.1/
+  ```
+
+  #### 2. Launch the TileRT decode server
+
+  ```bash
+  python3 -m tilert.pd_vllm.decode_server \
+    --engine tilert --model glm5 \
+    --model-weights-dir /models/tilert-glm5.1 \
+    --with-mtp --max-seq-len 202752 \
+    --kv-cache-dtype fp8 \
+    --ctrl-port 5556 --http-port 5557
+  ```
+
+  #### 3. Launch the vLLM prefill server
+
+  In a second container from the same `vllm/vllm-openai:nightly` image
+  (install the connector only — `pip install tilert --no-deps`):
+
+  ```bash
+  vllm serve /models/GLM-5.1-FP8 \
+    --served-model-name glm5.1 \
+    --port 8000 \
+    --tensor-parallel-size 8 \
+    --enforce-eager \
+    --trust-remote-code \
+    --return-tokens-as-token-ids \
+    --gpu-memory-utilization 0.5 \
+    --kv-cache-dtype fp8_ds_mla \
+    --speculative-config '{"method": "mtp", "num_speculative_tokens": 1}' \
+    --kv-transfer-config '{
+      "kv_connector": "TileRTConnector",
+      "kv_connector_module_path": "tilert.pd_vllm.prefill_connector",
+      "kv_role": "kv_producer",
+      "kv_connector_extra_config": {
+        "tilert_host": "<DECODE_IP>",
+        "tilert_ctrl_port": 5556,
+        "tilert_model": "glm5",
+        "tilert_max_seq_len": 202752
+      }
+    }'
+  ```
+  #### 4. Launch the PD router
+
+  ```bash
+  python3 -m tilert.pd_vllm.pd_router \
+    --vllm-url http://<PREFILL_IP>:8000 \
+    --decode <DECODE_IP>:5556:5557 \
+    --model-path /models/GLM-5.1-FP8 \
+    --port 23333
+  ```
+  #### 5. Test through the router
+
+  The script below sends one request through the router and reports both
+  end-to-end TPS and decode-only TPS (from the `pd_timing_ms` field in the
+  response):
+
+  ```bash
+  curl http://<ROUTER_IP>:23333/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "glm5.1",
+    "stream": false,
+    "messages": [{"role": "user", "content": "nihao"}]
+  }'
+  ```
+  * TPS UP TO 600 + FOR SINGLE REQUEST(single B300 deploy)
+
+  #### 6. benchmark
+  
+  ```bash
+  pip install  'evalscope[perf]'
+  evalscope perf \
+  --url http://<ROUTER_IP>:23333/v1/completions \
+  --api openai \
+  --model glm5.1 \
+  --dataset random \
+  --tokenizer-path /models/GLM-5.1-FP8 \
+  --min-prompt-length 64000 --max-prompt-length 64000 \
+  --max-tokens 1000 \
+  --number 10 --parallel 1 \
+  --no-stream
+  ```
+
+  * The TileRT router does not support streaming requests currently, so you need to use stream:false to test this solution.
 
   ## Client Usage
 
