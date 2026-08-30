@@ -74,7 +74,7 @@ variants:
       # docker_image string would only affect NVIDIA. Hide pip — official
       # wheels have no NPU kernels.
       ascend_950pr_8x:
-        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a5"
+        docker_image: "quay.io/ascend/vllm-ascend:v0.27.1-a5"
         install:
           pip: false
   nvfp4:
@@ -157,7 +157,7 @@ strategy_overrides: {}
 hardware_notes:
   ascend_950pr_8x:
     title: "vLLM Ascend A5 image required"
-    body: "Single-node TP8 on 8×950PR. Pin quay.io/ascend/vllm-ascend:v0.23.0-a5 and overlay vllm-ascend#15346 for native FP8. EP is not available on this interconnect. Set HCCL_BUFFSIZE=1024 before launch."
+    body: "Single-node TP8 on 8×950PR. Pin quay.io/ascend/vllm-ascend:v0.27.1-a5 and overlay vllm-ascend#15346 for native FP8. EP is not available on this interconnect. Set HCCL_BUFFSIZE=1024 before launch."
 
 guide: |
   ## Overview
