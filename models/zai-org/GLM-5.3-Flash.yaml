@@ -3,6 +3,7 @@ meta:
   slug: "glm-5.3-flash"
   provider: "GLM (Z-AI)"
   description: "GLM-5.3-Flash is a 320B-total / 18B-active multimodal MoE with hybrid KDA and sparse MLA attention, native FP8 weights, MTP, and a 1M-token context window."
+  date_added: 2026-08-27
   date_updated: 2026-08-27
   difficulty: advanced
   tasks:
@@ -27,8 +28,7 @@ model:
   install:
     docker:
       note: "Use the dedicated GLM-5.3-Flash docker until support lands in the standard vLLM image."
-    pypi:
-      note: "Use the dedicated GLM-5.3-Flash docker until support lands in the standard vLLM image."
+    pip: false
   architecture: moe
   parameter_count: "321B"
   active_parameters: "18B"
