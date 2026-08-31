@@ -300,7 +300,7 @@ guide: |
   )
   msg = response.choices[0].message
   print(msg.reasoning)
-  print(response.choices[0].message.content)
+  print(msg.content)
   ```
 
   When serving a quantized variant, set `model` in the client request to the

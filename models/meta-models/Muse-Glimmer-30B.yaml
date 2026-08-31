@@ -64,7 +64,7 @@ features:
       - "--tool-call-parser"
       - "muse_glimmer"
   reasoning:
-    description: "Channel-scoped chain-of-thought. Surfaces as `message.reasoning` (non-streaming) and `delta.reasoning` (streaming) — note this model uses `reasoning`, not `reasoning_content`. Effort is controlled by a `Reasoning strength: <low|medium|high|xhigh>` line in the system prompt."
+    description: "Channel-scoped chain-of-thought. Surfaces as `message.reasoning` (non-streaming) and `delta.reasoning` (streaming). Effort is controlled by a `Reasoning strength: <low|medium|high|xhigh>` line in the system prompt."
     args:
       - "--reasoning-parser"
       - "muse_glimmer"
