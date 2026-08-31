@@ -57,6 +57,15 @@ variants:
     vram_minimum_gb: 22
     description: "Full precision BF16 — single 24 GB GPU"
 
+  fp8:
+    model_id: "RedHatAI/Qwen3.5-9B-FP8-dynamic"
+    precision: fp8
+    vram_minimum_gb: 11
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
 compatible_strategies:
   - single_node_tp
   - multi_node_tp

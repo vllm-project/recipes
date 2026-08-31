@@ -74,6 +74,16 @@ variants:
     vram_minimum_gb: 21
     description: "GPTQ Int4 checkpoint — fits on a single 24GB GPU"
 
+  redhat_fp8:
+    model_id: "RedHatAI/Qwen3.5-35B-A3B-FP8-dynamic"
+    precision: fp8
+    label: "FP8 Dynamic (RedHat)"
+    vram_minimum_gb: 42
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
 compatible_strategies:
   - single_node_tp
   - single_node_tep
@@ -100,7 +110,6 @@ guide: |
   - **Hardware (BF16):** 1x H200, 2x H100 or 2x Xeon 6 NUMA nodes
   - **Hardware (FP8):** single H100/H200
   - **Hardware (Int4):** single 24 GB GPU
-
 
   ### Pip Install
 
