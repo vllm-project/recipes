@@ -4,7 +4,7 @@ meta:
   provider: "Muse (Meta)"
   description: "Dense 29.6B vision-language model with a ViT-G/14 perception encoder and 128K context, distilled from Muse Spark for local agentic use. Emits channel-scoped reasoning and XML-style ATEM tool calls rather than JSON, so it needs the dedicated `muse_glimmer` tool-call and reasoning parsers."
   date_added: 2026-08-09
-  date_updated: 2026-08-10
+  date_updated: 2026-08-23
   difficulty: advanced
   tasks:
     - text
@@ -30,19 +30,13 @@ meta:
 
 model:
   model_id: "meta-models/Muse-Glimmer-30B"
-  # Not in any released wheel — the model code and both parsers land upstream on
-  # nightly first, so `nightly_required` points the Install block at the nightly
-  # index. The version below is the unreleased target, not something installable.
-  min_vllm_version: "0.27.0"
-  docker_image:
-    nvidia:
-      # Single-key map: the site pins cu130 and hides the cu129 toggle rather
-      # than fabricating a -cu129 tag that may not be published.
-      cu130: "vllm/vllm-openai:muse-glimmer"
+  # Muse Glimmer landed after v0.27.1 and is available in nightly.
+  min_vllm_version: "nightly"
+  docker_image: "vllm/vllm-openai:nightly"
   nightly_required: true
   install:
     docker:
-      note: "Docker is the supported path — the model code and the muse_glimmer parsers are not in any released vLLM wheel. On ROCm, please install the code from https://github.com/vllm-project/vllm/pull/51655 ."
+      note: "Muse Glimmer support is available in the official vLLM nightly image and has not shipped in a stable release yet."
     pip: false
   architecture: dense
   # Model card states ~29.6B total including the perception encoder. Measured from
@@ -83,6 +77,8 @@ features:
       rtx_5090: unsupported
     description: "DFlash block-diffusion draft head — predicts a whole block in one forward, verified in parallel by the target. `num_speculative_tokens: 15` is not a tuning knob: the head has `block_size: 16` and slot 0 re-presents the last accepted token, so 15 is what remains."
     args:
+      - "--max-num-seqs"
+      - "32"
       - "--speculative-config"
       - '{"method": "dflash", "model": "meta-models/Muse-Glimmer-30B-assistant", "num_speculative_tokens": 15}'
 
@@ -166,7 +162,7 @@ guide: |
   ## Prerequisites
 
   - **Hardware**: DGX Spark. FP4 weights might also run on 5090.
-  - **Image**: `vllm/vllm-openai:muse-glimmer`, code will be released soon.
+  - **Image**: `vllm/vllm-openai:nightly`.
 
   ## Checkpoints
 
@@ -226,8 +222,7 @@ guide: |
 
   ## Running on MI300X/MI325X/MI355X
 
-  As of now, please install the code from https://github.com/vllm-project/vllm/pull/51655
-  if it hasn't been merged yet. After the PR is merged use `vllm/vllm-openai-rocm:nightly` image.
+  Use the official `vllm/vllm-openai-rocm:nightly` image.
 
   ```bash
   export VLLM_ROCM_USE_AITER=1
@@ -370,8 +365,12 @@ guide: |
   one token at a time, it predicts a whole block in a single forward — the slots
   attend to each other bidirectionally — and the target verifies them in parallel.
 
+  DFlash uses 16 query positions per active request during warmup. To keep the
+  expanded batch within vLLM's token budget, replace the earlier sequence limit with:
+
   ```bash
-  --speculative-config '{"method": "dflash", "model": "meta-models/Muse-Glimmer-30B-assistant", "num_speculative_tokens": 15}'
+  --max-num-seqs 32 \
+    --speculative-config '{"method": "dflash", "model": "meta-models/Muse-Glimmer-30B-assistant", "num_speculative_tokens": 15}'
   ```
 
   **`num_speculative_tokens: 15` is fixed, not tuned.** The head has
