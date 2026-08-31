@@ -37,6 +37,14 @@ features:
       - "--enable-auto-tool-choice"
   spec_decoding:
     description: "EAGLE3 speculative decoding for accelerated inference"
+    # eagle3 is a separate-draft-model method, which doesn't compose with
+    # pipeline parallelism yet (vllm-project/vllm#50098), so the feature is
+    # gated off multi_node_tp_pp. Every other strategy keeps it.
+    strategies:
+      - single_node_tp
+      - multi_node_tp
+      - multi_node_tep
+      - multi_node_dep
     args:
       - "--speculative-config"
       - '{"model":"nvidia/gpt-oss-120b-Eagle3-v3","num_speculative_tokens":7,"method":"eagle3","draft_tensor_parallel_size":1}'

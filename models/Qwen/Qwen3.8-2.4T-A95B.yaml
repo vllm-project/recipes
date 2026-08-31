@@ -80,6 +80,18 @@ features:
       - "qwen3"
   spec_decoding:
     description: "Multi-token prediction using the draft head shipped inside the checkpoint — no separate speculator repo needed."
+    # mtp's draft model doesn't implement SupportsPP yet
+    # (vllm-project/vllm#50098), so the feature is gated off multi_node_tp_pp.
+    # Every other strategy keeps it.
+    strategies:
+      - single_node_tp
+      - single_node_tep
+      - single_node_dep
+      - multi_node_tp
+      - multi_node_tep
+      - multi_node_dep
+      - multi_node_tp_dp
+      - pd_cluster
     # config.json sets mtp_num_hidden_layers: 1 and the weight index carries `mtp.*`
     # tensors, so the draft head is present. Depth is 3, NOT 1: the single draft layer is
     # run autoregressively, and depth is a throughput/latency knob rather than a property
