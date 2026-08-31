@@ -46,6 +46,8 @@ variants:
     precision: bf16
     vram_minimum_gb: 34
     description: "Full precision BF16"
+    supported_hardware:
+      - xeon6
   fp8:
     model_id: "Qwen/Qwen3-14B-FP8"
     precision: fp8
@@ -56,6 +58,8 @@ variants:
     precision: int4
     vram_minimum_gb: 10
     description: "Qwen official AWQ 4-bit checkpoint"
+    supported_hardware:
+      - xeon6
     extra_args:
       - "--quantization"
       - "awq"

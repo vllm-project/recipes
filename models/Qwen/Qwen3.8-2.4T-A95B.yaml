@@ -141,6 +141,16 @@ variants:
       - "--linear-backend"
       - "flashinfer_cutedsl"
     description: "NVFP4 build with 4-bit activations for NVIDIA Blackwell — 1.32 TiB, the smallest footprint: 8 GPUs, i.e. one 8xB300 node or 2 GB300 NVL4 trays."
+  nvfp4_reap25:
+    model_id: "RedHatAI/Qwen3.8-2.4T-A95B-NVFP4-REAP-25"
+    precision: nvfp4
+    label: "NVFP4-REAP-25 (RedHatAI)"
+    # (Router-weighted Expert Activation Pruning, arxiv.org/abs/2510.13999) drops 128 of
+    # the 512 routed experts before quantization (config.json num_experts: 384),
+    # calibrated on 1024 samples from mlabonne/open-perfectblend.
+    vram_minimum_gb: 1373
+    supported_hardware: [b200, b300, gb200, gb300]
+    description: "NVFP4 quantization + 25% uniform expert pruning via REAP — 4.25x compression with ~99% accuracy recovery"
 
 # Full MoE strategy set. Note the 3.4x spread between variants: NVFP4/MXFP4 fit 8 GPUs
 # while BF16 needs 24, so no per-STRATEGY floor is set — one sized for BF16 would block
@@ -258,6 +268,7 @@ guide: |
   | FP8 | 2.27 TiB | 2996 GB | 16 GPUs | 16 GPUs | 32 GPUs | **4 trays (TP16)** |
   | MXFP4 (AMD) | 1.45 TiB | 1917 GB | — | **8 GPUs** | 16 GPUs | — |
   | NVFP4 W4A4 (NVIDIA) | 1.32 TiB | 1737 GB | **8 GPUs** | — | 16 GPUs | **2 trays (TP8)** |
+  | NVFP4-REAP-25 (RedHatAI) | 1.04 TiB | 1373 GB | **8 GPUs** | — | 16 GPUs | **2 trays (TP8)** |
 
   **TP must divide the 64 attention heads**, so only 1/2/4/8/16/32 are legal. This rounds
   some layouts up: FP8 needs 2325 GiB, which is 3 GB300 trays by capacity, but TP12 is
@@ -420,4 +431,6 @@ guide: |
   - FP8 checkpoint: https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B-FP8
   - MXFP4 build (AMD): https://huggingface.co/Inferact/Qwen3.8-2.4T-A95B-MXFP4
   - NVFP4 W4A4 build (NVIDIA): https://huggingface.co/Inferact/Qwen3.8-2.4T-A95B-NVFP4
+  - NVFP4-REAP-25 build (RedHatAI): https://huggingface.co/RedHatAI/Qwen3.8-2.4T-A95B-NVFP4-REAP-25
+  - REAP: Router-weighted Expert Activation Pruning: https://arxiv.org/abs/2510.13999
   - vLLM documentation: https://docs.vllm.ai/

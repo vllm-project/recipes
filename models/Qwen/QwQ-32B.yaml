@@ -44,16 +44,22 @@ variants:
     precision: bf16
     vram_minimum_gb: 77
     description: "Full precision BF16"
+    supported_hardware:
+      - xeon6
   w8a8_int8:
     model_id: "RedHatAI/QwQ-32B-quantized.w8a8"
     precision: int8
     vram_minimum_gb: 39
     description: "Red Hat AI INT8 W8A8 compressed-tensors checkpoint"
+    supported_hardware:
+      - xeon6
   awq:
     model_id: "Qwen/QwQ-32B-AWQ"
     precision: int4
     vram_minimum_gb: 20
     description: "Qwen official AWQ 4-bit checkpoint"
+    supported_hardware:
+      - xeon6
     extra_args:
       - "--quantization"
       - "awq"

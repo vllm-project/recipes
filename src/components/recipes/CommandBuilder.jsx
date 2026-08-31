@@ -1730,8 +1730,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // hardware; docker: recipe opt-out). This way switching to TPU flips both
   // the Install tab *and* the rendered command block to docker — they stay
   // in sync without requiring the user to re-click.
+  // A hardware profile can declare that an install path doesn't exist there:
+  // DGX Spark runs DeepSeek-V4-Flash only from the Spark build's image, so the
+  // official wheel cannot run the args this hardware generates and the pip tab
+  // would hand out a command that aborts on startup. Declared in the same
+  // per-GPU override block that pins `docker_image`.
+  const hwInstall =
+    currentVariant?.hardware_overrides?.[hwId]?.install ||
+    recipe.hardware_overrides?.[hwId]?.install ||
+    null;
   const pipEffectivelyHidden =
     recipe.model?.install?.pip === false ||
+    hwInstall?.pip === false ||
     hwProfile?.generation === "tpu" ||
     hwProfile?.generation === "xpu";
   const dockerEffectivelyHidden = recipe.model?.install?.docker === false;
@@ -1805,12 +1815,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           prompt: undefined,
         })
       : verifyCmd;
+    const omniBench = activeTask?.benchmark || benchCmd;
 
     // Recompute placeholders against the omni command set rather than the
     // (unused-here) `result` from resolveCommand.
     const omniPlaceholders = detectPlaceholdersAll(
       omniRendered.command,
       omniCurl,
+      omniBench,
       ...Object.values(omniRendered.env || {}).filter((v) => typeof v === "string"),
     );
 
@@ -1846,6 +1858,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             dockerCudaVariant={dockerCudaVariant}
             setDockerCudaVariant={setDockerCudaVariant}
             altCudaSuffix={altCudaSuffix}
+            hwInstall={hwInstall}
           />
 
           {modeDependencies.length > 0 && (
@@ -1859,7 +1872,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               command={omniSubbedCommand}
               env={omniSubbedEnv}
               verifyCmd={omniCurl}
-              benchCmd={benchCmd}
+              benchCmd={omniBench}
               statusHeader={statusHeader}
               installMode={effectiveInstallMode}
               dockerMeta={dockerMeta}
@@ -2031,6 +2044,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           setDockerCudaVariant={setDockerCudaVariant}
           altCudaSuffix={altCudaSuffix}
           extraMinVersion={isKvStoreActive ? strategies[activeKvOffload]?.min_vllm_version : null}
+          hwInstall={hwInstall}
         />
 
         {/* ── Dependencies / extra install ──
@@ -3208,7 +3222,7 @@ function maxVersion(a, b) {
   return a;
 }
 
-function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode, dockerCudaVariant, setDockerCudaVariant, altCudaSuffix, extraMinVersion = null }) {
+function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode, dockerCudaVariant, setDockerCudaVariant, altCudaSuffix, extraMinVersion = null, hwInstall = null }) {
   // Collapsible install reference. Shows the one-time setup step for the
   // active mode — `uv pip install vllm …` in pip mode, `docker pull <image>`
   // in docker mode. The active tab mirrors the command card's mode toggle
@@ -3330,12 +3344,17 @@ uv pip install -U vllm --torch-backend auto`;
     brandKey === "nvidia" &&
     !singleCudaBuild &&
     !dockerCfg?.command &&
-    (installMode === "docker" ||
+    // Only upstream publishes paired `-cu129` / `cu129-nightly` tags. On a
+    // third-party image the toggle would synthesize a tag that doesn't exist
+    // (`eugr/spark-vllm-b12x:latest-cu129`), so offer it for `vllm/` images
+    // alone. The pip branch is unaffected: wheels come from wheels.vllm.ai.
+    ((installMode === "docker" && dockerImage?.startsWith("vllm/")) ||
       (installMode === "pip" && nightlyRequired && !pipCfg?.command));
 
   // TPU has no pip wheel — force-hide the pip tab regardless of recipe overrides.
   // Intel XPU is validated via the official `vllm-openai-xpu` Docker image;
-  const effectivePipHidden = pipHidden || isTpu || isXpu;
+  // `hwInstall.pip: false` is the per-GPU form of the same statement.
+  const effectivePipHidden = pipHidden || isTpu || isXpu || hwInstall?.pip === false;
   const dockerLabel = isTpu ? "Docker (TPU)" : isXpu ? "Docker (XPU)" : isAmd ? "Docker (ROCm)" : isCpu ? "Docker (CPU)" : "Docker";
   const tabs = [
     !effectivePipHidden && {
