@@ -212,6 +212,10 @@ variants:
 # loads. There is no schema mechanism to gate a strategy by node count, so offering it at
 # all would ship a command that cannot start. It costs nothing: 51.7 GiB of BF16 weights fit
 # one GPU, so nothing here needs a second node.
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
+
 compatible_strategies:
   - single_node_tp
 
