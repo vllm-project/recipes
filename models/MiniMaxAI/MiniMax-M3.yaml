@@ -489,7 +489,7 @@ guide: |
     based on the task.
 
   Pass it per request through `chat_template_kwargs`. The same value also tunes
-  the `minimax_m3` reasoning parser, so `reasoning_content` and `content` are
+  the `minimax_m3` reasoning parser, so `reasoning` and `content` are
   split correctly in every mode.
 
   ```python
@@ -506,9 +506,7 @@ guide: |
       extra_body={"chat_template_kwargs": {"thinking_mode": "enabled"}},
   )
   msg = response.choices[0].message
-  # vLLM exposes the <mm:think> block as `reasoning` (the older
-  # `reasoning_content` field is deprecated but still aliased).
-  print(getattr(msg, "reasoning", None) or getattr(msg, "reasoning_content", None))
+  print(msg.reasoning)  # the <mm:think> block
   print(msg.content)  # the final answer
   ```
 
