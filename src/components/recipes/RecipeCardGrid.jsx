@@ -9,6 +9,11 @@ import { compareRecipesByDateAdded } from "@/lib/recipe-utils";
 const TASK_ICON = { text: Type, multimodal: Eye, omni: Sparkles, embedding: Hash };
 
 const LATEST_COUNT = 8;
+// At most 2 per provider: one org landing several recipes on the same day
+// shouldn't take the whole row, but a cap of 1 hid genuinely new recipes behind
+// a sibling that landed a day later, and back-filled the row with much older
+// ones from other orgs.
+const LATEST_PER_ORG = 2;
 
 export function RecipeCardGrid({ recipes }) {
   const byOrg = useMemo(() => {
@@ -27,12 +32,13 @@ export function RecipeCardGrid({ recipes }) {
     // "Latest recipes" means newly added to this catalog, not the HF repo's
     // createdAt (a model repo may exist privately long before launch).
     const sorted = [...recipes].sort(compareRecipesByDateAdded);
-    const seen = new Set();
+    const perOrg = new Map();
     const out = [];
     for (const r of sorted) {
       const org = r.hf_org || "unknown";
-      if (seen.has(org)) continue;
-      seen.add(org);
+      const taken = perOrg.get(org) || 0;
+      if (taken >= LATEST_PER_ORG) continue;
+      perOrg.set(org, taken + 1);
       out.push(r);
       if (out.length >= LATEST_COUNT) break;
     }
