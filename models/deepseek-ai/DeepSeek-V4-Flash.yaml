@@ -126,7 +126,7 @@ variants:
     # pills cannot load this checkpoint's draft module.
     supported_hardware: [h200, b200, gb200, b300, gb300, dgx_station_gb300, dgx_spark_gb10, rtx_pro_6000_8x, mi300x, mi325x, mi355x]
     min_vllm_version: "0.25.0"
-    docker_image: "vllm/vllm-openai:v0.25.0"
+    docker_image: "vllm/vllm-openai:v0.28.0"
     default_modes:
       spec_decoding: dspark
     hardware_overrides:
@@ -977,11 +977,10 @@ guide: |
     -e TILELANG_CLEANUP_TEMP_FILES=1 \
     -e VLLM_DISABLE_COMPILE_CACHE=1 \
     -e VLLM_ENGINE_READY_TIMEOUT_S=3600 \
-    -e VLLM_RPC_TIMEOUT=600000 \
     -e VLLM_LOG_STATS_INTERVAL=1 \
     -e VLLM_MOONCAKE_BOOTSTRAP_PORT=8998 \
     -e CUDA_VISIBLE_DEVICES=0,1,2,3 \
-    vllm/vllm-openai:v0.25.0 \
+    vllm/vllm-openai:v0.28.0 \
     deepseek-ai/DeepSeek-V4-Flash \
     --trust-remote-code \
     --kv-cache-dtype fp8 \
@@ -1010,11 +1009,10 @@ guide: |
     -e TILELANG_CLEANUP_TEMP_FILES=1 \
     -e VLLM_DISABLE_COMPILE_CACHE=1 \
     -e VLLM_ENGINE_READY_TIMEOUT_S=3600 \
-    -e VLLM_RPC_TIMEOUT=600000 \
     -e VLLM_LOG_STATS_INTERVAL=1 \
     -e VLLM_MOONCAKE_BOOTSTRAP_PORT=9889 \
     -e CUDA_VISIBLE_DEVICES=4,5,6,7 \
-    vllm/vllm-openai:v0.25.0 \
+    vllm/vllm-openai:v0.28.0 \
     deepseek-ai/DeepSeek-V4-Flash \
     --trust-remote-code \
     --kv-cache-dtype fp8 \
@@ -1064,11 +1062,10 @@ guide: |
     -e TILELANG_CLEANUP_TEMP_FILES=1 \
     -e VLLM_DISABLE_COMPILE_CACHE=1 \
     -e VLLM_ENGINE_READY_TIMEOUT_S=3600 \
-    -e VLLM_RPC_TIMEOUT=600000 \
     -e VLLM_LOG_STATS_INTERVAL=1 \
     -e VLLM_NIXL_SIDE_CHANNEL_PORT=5557 \
     -e CUDA_VISIBLE_DEVICES=0,1,2,3 \
-    vllm/vllm-openai:v0.25.0 \
+    vllm/vllm-openai:v0.28.0 \
     deepseek-ai/DeepSeek-V4-Flash \
     --trust-remote-code \
     --kv-cache-dtype fp8 \
@@ -1097,11 +1094,10 @@ guide: |
     -e TILELANG_CLEANUP_TEMP_FILES=1 \
     -e VLLM_DISABLE_COMPILE_CACHE=1 \
     -e VLLM_ENGINE_READY_TIMEOUT_S=3600 \
-    -e VLLM_RPC_TIMEOUT=600000 \
     -e VLLM_LOG_STATS_INTERVAL=1 \
     -e VLLM_NIXL_SIDE_CHANNEL_PORT=5558 \
     -e CUDA_VISIBLE_DEVICES=4,5,6,7 \
-    vllm/vllm-openai:v0.25.0 \
+    vllm/vllm-openai:v0.28.0 \
     deepseek-ai/DeepSeek-V4-Flash \
     --trust-remote-code \
     --kv-cache-dtype fp8 \

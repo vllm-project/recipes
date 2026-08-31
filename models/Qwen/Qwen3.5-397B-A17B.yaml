@@ -28,10 +28,11 @@ model:
   context_length: 262144
   base_args:
     - "--trust-remote-code"
+    - "--moe-backend"
+    - "flashinfer_trtllm"
   base_env:
     VLLM_DEEP_GEMM_WARMUP: "skip"
     VLLM_USE_DEEP_GEMM: "0"
-    VLLM_FLASHINFER_MOE_BACKEND: "latency"
 
 features:
   tool_calling:
@@ -76,8 +77,6 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
   gptq_int4:
     model_id: "Qwen/Qwen3.5-397B-A17B-GPTQ-Int4"
     precision: int4
