@@ -4,16 +4,17 @@ meta:
   provider: "Qwen"
   description: "Qwen3-VL MoE vision-language model with 30B total / 3B active parameters, supporting image, video, and text workloads."
   date_added: 2026-08-17
-  date_updated: 2026-08-17
+  date_updated: 2026-08-29
   difficulty: intermediate
   tasks:
     - multimodal
     - text
-  performance_headline: "Validated on Intel Xeon 6 CPU with BF16 serving"
+  performance_headline: "Validated W8A8 serving on one Ascend 950DT node (8 × 96 GB NPUs)"
   related_recipes:
     - "Qwen/Qwen3-VL-235B-A22B-Instruct"
   hardware:
     xeon6: verified
+    ascend_950dt: verified
 
 model:
   model_id: "Qwen/Qwen3-VL-30B-A3B-Instruct"
@@ -49,6 +50,59 @@ variants:
     precision: bf16
     vram_minimum_gb: 72
     description: "Full precision BF16"
+  ascend_w8a8_mxfp8:
+    model_id: "Eco-Tech/Qwen3-VL-30B-A3B-Instruct-w8a8-mxfp8"
+    label: "W8A8 (MXFP8)"
+    precision: int8
+    vram_minimum_gb: 36
+    description: "W8A8/MXFP8 checkpoint for one Ascend 950DT server (8 NPUs)."
+    supported_hardware: [ascend_950dt]
+    hardware_overrides:
+      ascend_950dt:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a5"
+        install:
+          pip: false
+        extra_args:
+          - "--distributed-executor-backend"
+          - "mp"
+          - "--data-parallel-size"
+          - "1"
+          - "--tensor-parallel-size"
+          - "8"
+          - "--enable-expert-parallel"
+          - "--seed"
+          - "1024"
+          - "--quantization"
+          - "ascend"
+          - "--served-model-name"
+          - "qwen3-vl-30b"
+          - "--max-num-seqs"
+          - "32"
+          - "--max-model-len"
+          - "32768"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--no-enable-prefix-caching"
+          - "--mm-processor-cache-gb"
+          - "0"
+          - "--limit-mm-per-prompt.image"
+          - "1"
+          - "--limit-mm-per-prompt.video"
+          - "0"
+          - "--gpu-memory-utilization"
+          - "0.9"
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+          - "--trust-remote-code"
+        extra_env:
+          VLLM_USE_MODELSCOPE: "True"
+          PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+          HCCL_OP_EXPANSION_MODE: "AIV"
+          HCCL_BUFFSIZE: "400"
+          OMP_PROC_BIND: "false"
+          OMP_NUM_THREADS: "10"
+          TASK_QUEUE_ENABLE: "1"
+          VLLM_ASCEND_ENABLE_FLASHCOMM1: "1"
 
 compatible_strategies:
   - single_node_tp
@@ -97,6 +151,22 @@ guide: |
   Choose tensor parallelism based on system topology; TP/DP and NUMA binding
   are intentionally not hard-coded in the recipe.
 
+  ## Ascend 950DT with W8A8/MXFP8
+
+  Select the `ascend_w8a8_mxfp8` variant and the `single_node_tep` strategy.
+  It is validated on one Ascend 950DT server with eight 96 GB NPUs, using
+  vLLM Ascend 0.23.0 and the public ModelScope checkpoint
+  `Eco-Tech/Qwen3-VL-30B-A3B-Instruct-w8a8-mxfp8`. The variant supplies the
+  Ascend A5 image, eight-device tensor parallelism, and runtime environment.
+
+  ```bash
+  export VLLM_USE_MODELSCOPE=True
+  vllm serve Eco-Tech/Qwen3-VL-30B-A3B-Instruct-w8a8-mxfp8
+  ```
+
+  Verify image understanding with an OpenAI-compatible request to
+  `/v1/chat/completions`; a successful response returns HTTP 200 and `choices`.
+
   ## Configuration Notes
 
   - TP/DP values and topology-specific CPU binding remain deployment choices.
@@ -119,4 +189,5 @@ guide: |
   ## References
 
   - [Model card](https://huggingface.co/Qwen/Qwen3-VL-30B-A3B-Instruct)
+  - [W8A8/MXFP8 ModelScope checkpoint](https://modelscope.cn/models/Eco-Tech/Qwen3-VL-30B-A3B-Instruct-w8a8-mxfp8)
   - [vLLM CPU installation](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/)
