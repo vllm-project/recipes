@@ -65,6 +65,12 @@ compatible_strategies:
 
 hardware_overrides:
   blackwell:
+    # vLLM 0.22+ replaces VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8 with
+    # --quantization-config.moe.activation mxfp8 for optimal 
+    # MXFP4+MXFP8 MoE performance on Blackwell.
+    extra_args:
+      - "--quantization-config.moe.activation"
+      - "mxfp8"
     extra_env:
       VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8: "1"
   amd:
