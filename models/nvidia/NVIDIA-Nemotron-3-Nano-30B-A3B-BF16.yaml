@@ -64,9 +64,9 @@ variants:
       - "fp8"
     hardware_overrides:
       nvidia:
-        extra_env:
-          VLLM_USE_FLASHINFER_MOE_FP8: "1"
-          VLLM_FLASHINFER_MOE_BACKEND: "throughput"
+        extra_args:
+          - "--moe-backend"
+          - "flashinfer_cutlass"
 
 compatible_strategies:
   - single_node_tp
@@ -97,14 +97,14 @@ guide: |
   ## Prerequisites
 
   - Hardware: 1x H100/H200 or comparable; DGX Spark, Jetson Thor, and Intel Arc Pro B60/B70 supported
-  - vLLM >= 0.11.2 (0.12.0 recommended for full support)
+  - vLLM >= 0.11.2 (0.28.0 recommended for full support)
   - Docker with NVIDIA Container Toolkit (recommended)
 
   ### Pull Docker Image
 
   ```bash
-  docker pull --platform linux/amd64 vllm/vllm-openai:v0.12.0
-  docker tag vllm/vllm-openai:v0.12.0 vllm/vllm-openai:deploy
+  docker pull --platform linux/amd64 vllm/vllm-openai:v0.28.0
+  docker tag vllm/vllm-openai:v0.28.0 vllm/vllm-openai:deploy
   ```
 
   DGX Spark users can build from source (see README) or use the NGC image:
@@ -130,14 +130,12 @@ guide: |
   FP8 with FlashInfer MoE backend (Blackwell/Hopper):
 
   ```bash
-  export VLLM_USE_FLASHINFER_MOE_FP8=1
-  export VLLM_FLASHINFER_MOE_BACKEND=throughput
-
   vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8 \
     --trust-remote-code \
     --async-scheduling \
     --kv-cache-dtype fp8 \
-    --tensor-parallel-size 1
+    --tensor-parallel-size 1 \
+    --moe-backend flashinfer_cutlass
   ```
 
   BF16 (with reasoning + tool parsers — typical for Spark/Thor):

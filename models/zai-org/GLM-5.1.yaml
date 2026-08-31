@@ -74,8 +74,6 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
   mxfp4:
     model_id: "amd/GLM-5.1-MXFP4"
     precision: mxfp4

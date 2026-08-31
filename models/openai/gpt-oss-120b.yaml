@@ -64,9 +64,6 @@ compatible_strategies:
   - multi_node_dep
 
 hardware_overrides:
-  blackwell:
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8: "1"
   amd:
     # vLLM 0.17.0+ replaces the old VLLM_ROCM_USE_AITER_* env knobs with
     # --attention-backend ROCM_AITER_UNIFIED_ATTN. HSA_NO_SCRATCH_RECLAIM is
@@ -137,12 +134,12 @@ guide: |
   Blackwell (B200) with FlashInfer MXFP4+MXFP8 MoE:
 
   ```bash
-  export VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8=1
-
   vllm serve openai/gpt-oss-120b --config GPT-OSS_Blackwell.yaml --tensor-parallel-size 1
   ```
 
-  Hopper (H100/H200): same as Blackwell without `kv-cache-dtype` and without the env var.
+  On vLLM v0.28.0+ the FlashInfer TRTLLM MXFP4 MoE path is selected automatically on Blackwell; it can be pinned explicitly with `--moe-backend flashinfer_trtllm --quantization-config.moe.activation mxfp8`.
+
+  Hopper (H100/H200): same as Blackwell without `kv-cache-dtype` and without the FlashInfer MoE flags.
 
   TPU v7 (Ironwood), verified on a `tpu7x-standard-4t` host (topology `2x2x1`, TP=2 × DP=4). Served via the OpenAI API-server entrypoint from the nightly TPU image (e.g. `vllm/vllm-tpu:nightly-20260316-e778980-57a314d`):
 
@@ -232,7 +229,7 @@ guide: |
 
   ## Troubleshooting
 
-  - **Attention sinks dtype error on Blackwell:** ensure env vars above are set.
+  - **Attention sinks dtype error on Blackwell:** pass `--quantization-config.moe.activation mxfp8` and `--kv-cache-dtype fp8`.
   - **`tl.language not defined`:** make sure no extra Triton (e.g., pytorch-triton) is installed.
   - **H100 TP1 OOM:** `--gpu-memory-utilization 0.95 --max-num-batched-tokens 1024`.
   - **Harmony vocab download failure:** pre-download tiktoken files and set `TIKTOKEN_ENCODINGS_BASE`.

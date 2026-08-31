@@ -19,7 +19,7 @@ meta:
 model:
   model_id: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
   min_vllm_version: "0.27.1"
-  docker_image: "vllm/vllm-openai:v0.27.1"
+  docker_image: "vllm/vllm-openai:v0.28.0"
   architecture: moe
   parameter_count: "30B"
   active_parameters: "3B"
@@ -193,7 +193,7 @@ guide: |
 
   ## Prerequisites
 
-  - **vLLM:** 0.27.1 or newer — `vllm/vllm-openai:v0.27.1`
+  - **vLLM:** 0.27.1 or newer — `vllm/vllm-openai:v0.28.0`
   - **Hardware:** 1x H100, 1x DGX Spark (GB10), or 1x DGX Station (GB300)
   - **Speculative decoding:** **MTP** (built into the checkpoint), **DSpark** (hybrid
     autoregressive + diffusion) and **DFlash** (diffusion) are all supported. DSpark

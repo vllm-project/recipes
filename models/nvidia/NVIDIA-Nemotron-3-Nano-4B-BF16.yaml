@@ -91,13 +91,13 @@ guide: |
   ## Prerequisites
 
   - Hardware: 1x H100/H200/B200, DGX Spark, Jetson Thor, or Intel Arc Pro B60/B70
-  - vLLM >= 0.11.2 (0.12.0 recommended)
+  - vLLM >= 0.11.2 (0.28.0 recommended)
   - Docker with NVIDIA Container Toolkit (recommended)
 
   ### Pull Docker Image
 
   ```bash
-  docker pull --platform linux/amd64 vllm/vllm-openai:v0.12.0
+  docker pull --platform linux/amd64 vllm/vllm-openai:v0.28.0
   ```
 
   Jetson Thor:
