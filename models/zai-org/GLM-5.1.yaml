@@ -195,48 +195,6 @@ guide: |
        --served-model-name glm-5.1-fp8
   ```
 
-  ### MXFP4 on AMD MI355X
-
-  The AMD Quark MXFP4 checkpoint quantizes the MoE weights while leaving non-MoE
-  modules in higher precision. The recipe UI only enables this variant for
-  supported AMD MI355X hardware. Use ROCm AITER kernels:
-
-  ```bash
-  docker run -d \
-    --name glm51-mxfp4 \
-    --privileged \
-    --ipc=host \
-    --shm-size 32g \
-    -p 8000:8000 \
-    -v /data:/root/.cache/huggingface \
-    -e VLLM_USE_V2_MODEL_RUNNER=1 \
-    -e VLLM_ROCM_USE_AITER=1 \
-    -e VLLM_ROCM_USE_AITER_FP8BMM=0 \
-    -e VLLM_ROCM_USE_AITER_FP4BMM=0 \
-    -e VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1 \
-    -e VLLM_ROCM_USE_AITER_RMSNORM=0 \
-    -e VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4 \
-    vllm/vllm-openai-rocm:latest \
-    amd/GLM-5.1-MXFP4 \
-    --trust-remote-code \
-    --chat-template-content-format=string \
-    --cc.pass_config.fuse_allreduce_rms=False \
-    --tensor-parallel-size 8 \
-    --kv-cache-dtype fp8_e4m3 \
-    --linear-backend aiter \
-    --moe-backend aiter \
-    --block-size=1 \
-    --enable-prefix-caching \
-    --tool-call-parser glm47 \
-    --enable-auto-tool-choice \
-    --reasoning-parser glm45 \
-    --max-num-seqs 64
-  ```
-
-  Notes:
-  - **MTP isn't yet supported** on this checkpoint/kernel path.
-  - Mooncake and LMCache KV-store offload are still untested on MI355X — worth a check before leaning on them in production.
-
   ## Client Usage
 
   ```python
@@ -296,6 +254,7 @@ guide: |
   - **Accuracy drift:** Prefer the 0.19.0 stable release for best accuracy.
   - **Tool calling + MTP:** If both are needed, use the latest vLLM main branch.
   - **FP8 installation:** DeepGEMM required for FP8 performance.
+  - **MXFP4 (MI355X):** MTP speculative decoding isn't yet supported on this checkpoint/kernel path. Mooncake and LMCache KV-store offload are still untested on MI355X — worth a check before leaning on them in production.
 
   ## References
 
