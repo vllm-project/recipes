@@ -63,12 +63,22 @@ features:
         args:
           - "--speculative-config"
           - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
+        hardware_overrides:
+          amd:
+            args:
+              - "--speculative-config"
+              - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "TRITON_ATTN"}'
       eagle3_gqa:
         label: "GQA"
         description: "GQA Eagle3 draft head (Grouped Query Attention, 4 KV heads vs 64) — 16× smaller draft KV cache. Prefer for long-context or large-batch deployments where draft KV memory is the constraint."
         args:
           - "--speculative-config"
           - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3-GQA", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
+        hardware_overrides:
+          amd:
+            args:
+              - "--speculative-config"
+              - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3-GQA", "num_speculative_tokens": 3, "attention_backend": "TRITON_ATTN"}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -140,7 +150,7 @@ variants:
           - "--max-model-len"
           - "131072"
       mi300x:
-        docker_image: "docker pull vllm/vllm-openai-rocm:nightly"
+        docker_image: "vllm/vllm-openai-rocm:nightly"
         extra_args:
           - "--language-model-only"
           - "--async-scheduling"

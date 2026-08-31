@@ -217,6 +217,88 @@ function validateFeatureModes(recipe, sourceFile) {
   }
 }
 
+// Validate every hardware-keyed map against the taxonomy vocabulary. Hardware
+// lookups are exact string matches (`isHardwareSupported`, `hardwareKeyedValue`),
+// so a key naming no known GPU is silently inert: an author's `verified` badge
+// never renders, and — worse — an intended `unsupported` opt-out never disables
+// anything. Nothing downstream can detect that, hence the build-time check.
+//
+// Two keyspaces, matching the schema in CLAUDE.md:
+//   - exact:   only a taxonomy profile id (`meta.hardware`, `supported_hardware`)
+//   - layered: profile id > generation > brand > `default` (`strategy_hardware`,
+//              variant `tp`, `hardware_overrides`)
+function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
+  const errors = [];
+  const profiles = taxonomy?.hardware_profiles || {};
+  const ids = new Set(Object.keys(profiles));
+  const generations = new Set();
+  const brands = new Set();
+  for (const p of Object.values(profiles)) {
+    if (p?.generation) generations.add(p.generation);
+    if (p?.brand) brands.add(String(p.brand).toLowerCase());
+  }
+  const layered = new Set([...ids, ...generations, ...brands, "default"]);
+
+  const exact = (loc, key) => {
+    if (!ids.has(key)) errors.push(`${loc} references unknown hardware profile ${key}`);
+  };
+  const keyed = (loc, key) => {
+    if (!layered.has(key)) errors.push(`${loc} references unknown hardware key ${key}`);
+  };
+  const keysOf = (o) => (o && typeof o === "object" && !Array.isArray(o) ? Object.keys(o) : []);
+
+  if (recipe?.meta?.default_hardware) exact("meta.default_hardware", recipe.meta.default_hardware);
+  for (const k of keysOf(recipe?.meta?.hardware)) exact("meta.hardware", k);
+
+  for (const [kvId, map] of Object.entries(recipe?.kv_cache_strategy_hardware || {})) {
+    for (const k of keysOf(map)) exact(`kv_cache_strategy_hardware.${kvId}`, k);
+  }
+
+  for (const [sId, map] of Object.entries(recipe?.strategy_hardware || {})) {
+    for (const k of keysOf(map)) keyed(`strategy_hardware.${sId}`, k);
+  }
+
+  for (const k of keysOf(recipe?.hardware_overrides)) keyed("hardware_overrides", k);
+
+  // `strategy_min_gpus` mixes strategy ids with an exact-GPU-id keyspace; only
+  // the latter is ours to check.
+  for (const k of keysOf(recipe?.strategy_min_gpus)) {
+    if (!strategies?.[k]) exact("strategy_min_gpus", k);
+  }
+
+  for (const [variantKey, variant] of Object.entries(recipe?.variants || {})) {
+    const at = `variants.${variantKey}`;
+    for (const k of variant?.supported_hardware || []) exact(`${at}.supported_hardware`, k);
+    for (const k of keysOf(variant?.hardware_overrides)) keyed(`${at}.hardware_overrides`, k);
+    if (variant?.tp && typeof variant.tp === "object") {
+      for (const k of keysOf(variant.tp)) keyed(`${at}.tp`, k);
+    }
+    // `precision_hardware` widens a precision's hardware constraint by value,
+    // not by key — check the vocabulary it names.
+    const ph = variant?.precision_hardware;
+    if (ph?.generation && !generations.has(ph.generation)) {
+      errors.push(`${at}.precision_hardware.generation references unknown generation ${ph.generation}`);
+    }
+    if (ph?.brand && !brands.has(String(ph.brand).toLowerCase())) {
+      errors.push(`${at}.precision_hardware.brand references unknown brand ${ph.brand}`);
+    }
+  }
+
+  for (const [featureKey, feature] of Object.entries(recipe?.features || {})) {
+    for (const k of keysOf(feature?.hardware_overrides)) keyed(`features.${featureKey}.hardware_overrides`, k);
+    for (const [modeKey, mode] of Object.entries(feature?.modes || {})) {
+      const at = `features.${featureKey}.modes.${modeKey}`;
+      for (const k of keysOf(mode?.hardware)) keyed(`${at}.hardware`, k);
+      for (const k of keysOf(mode?.hardware_overrides)) keyed(`${at}.hardware_overrides`, k);
+    }
+  }
+
+  if (errors.length) {
+    const rel = path.relative(ROOT, sourceFile);
+    throw new Error(`Invalid hardware keys in ${rel}:\n  - ${errors.join("\n  - ")}`);
+  }
+}
+
 // Wrap a rendered (command, argv) pair in `docker run`. Returns
 // { docker_command, docker_argv } so each form has its docker counterpart.
 function dockerize(command, argv, env, dockerMeta, port = 8000) {
@@ -704,6 +786,7 @@ let collisionCount = 0;
 for (const file of findYamlFiles(modelsDir)) {
   const r = normalizeDates(readYaml(file));
   validateFeatureModes(r, file);
+  validateHardwareKeys(r, file, taxonomy, strategies);
   // Derive HF identity from path. Only `hf_id` is exposed in the public JSON;
   // `org` and `repo` are trivially `hf_id.split("/")` for consumers.
   const rel = path.relative(modelsDir, file);

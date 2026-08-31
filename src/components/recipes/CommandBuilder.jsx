@@ -3,11 +3,24 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain } from "lucide-react";
+import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
+import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
+
+// Tuning guidance for a feature's sub-mode, shown under the Features row while
+// that mode is the active one. Keyed [feature][mode] and kept here rather than
+// in the recipe YAMLs: it describes the *method*, not any one checkpoint, so
+// every recipe offering the method would otherwise repeat the same paragraph.
+const FEATURE_MODE_NOTES = {
+  spec_decoding: {
+    dspark:
+      "Draft sampling: greedy at temperature 0. For chat at temperature 0.6–1.0, "
+      + "probabilistic usually accepts more tokens, at the cost of a little more VRAM.",
+  },
+};
 
 // Advanced tuning presets — optional tunable flags the user can opt into.
 // (vLLM defaults like chunked prefill, prefix caching, CUDA graphs, async
@@ -792,10 +805,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // ── Derived ──
   const currentVariant = recipe.variants?.[variant] || recipe.variants?.default || {};
 
+  // The HF repo this variant serves — the variant's own checkpoint when it
+  // overrides `model_id` (nvidia/*-NVFP4, deepseek-ai/*-0813), otherwise the
+  // recipe's base model. Distinct from `modelId` below, which falls back to the
+  // literal "model" placeholder for command text; a URL needs a real repo or
+  // nothing at all.
+  const variantModelId = currentVariant.model_id || recipe.model?.model_id || null;
+
   // All hardware profiles grouped by brand, sorted by architectural generation
   // within brand (oldest → newest; matches the semianalysis GPU timeline).
   const hwByBrand = useMemo(() => {
-    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "rtx_4090_2x", "rtx_5090_2x", "dgx_station_gb300"];
+    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "rtx_pro_5000", "rtx_pro_6000", "dgx_spark_gb10", "rtx_4090_2x", "rtx_5090_2x", "dgx_station_gb300"];
     const AMD_ORDER = ["mi300x", "mi325x", "mi355x"];
     const rankIn = (list, id) => {
       const i = list.indexOf(id);
@@ -1046,8 +1066,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     activeStrategy,
     hwId,
   );
-  const showGpuUsageHint =
-    nodeCount === 1 && activeStrategy === "single_node_tp" && effectiveTp < hwGpuCount;
+  const showTpUsageHint =
+    nodeCount === 1
+    && activeStrategy === "single_node_tp"
+    && (hwProfile?.generation === "cpu" || effectiveTp < hwGpuCount);
 
   const isSingleNode = nodeCount === 1 && typeof activeStrategy === "string" && activeStrategy.startsWith("single_node_");
   // Intel XPU: the validated deployment is single-node, single-instance vLLM in
@@ -1708,8 +1730,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // hardware; docker: recipe opt-out). This way switching to TPU flips both
   // the Install tab *and* the rendered command block to docker — they stay
   // in sync without requiring the user to re-click.
+  // A hardware profile can declare that an install path doesn't exist there:
+  // DGX Spark runs DeepSeek-V4-Flash only from the Spark build's image, so the
+  // official wheel cannot run the args this hardware generates and the pip tab
+  // would hand out a command that aborts on startup. Declared in the same
+  // per-GPU override block that pins `docker_image`.
+  const hwInstall =
+    currentVariant?.hardware_overrides?.[hwId]?.install ||
+    recipe.hardware_overrides?.[hwId]?.install ||
+    null;
   const pipEffectivelyHidden =
     recipe.model?.install?.pip === false ||
+    hwInstall?.pip === false ||
     hwProfile?.generation === "tpu" ||
     hwProfile?.generation === "xpu";
   const dockerEffectivelyHidden = recipe.model?.install?.docker === false;
@@ -1719,6 +1751,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       : installMode === "docker" && dockerEffectivelyHidden
         ? "pip"
         : installMode;
+  const commandNote = recipe.hardware_notes?.[hwId] || null;
 
   // The extra-install block is pip-scoped by default: nearly every recipe's
   // dependencies are pip installs the Docker image already bundles, so repeating
@@ -1742,9 +1775,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   if (isOmni) {
     const omniVariants = Object.entries(recipe.variants || {});
     const showOmniVariants = omniVariants.length > 1;
-    const showOmniTaskRow = omniTasks.length > 1;
+    const omniTaskAxes = Array.isArray(recipe.omni?.task_axes)
+      ? recipe.omni.task_axes.filter((axis) => axis?.id && Array.isArray(axis.options))
+      : [];
+    const showOmniTaskAxes = omniTasks.length > 1 && omniTaskAxes.length > 0;
+    const showOmniTaskRow = omniTasks.length > 1 && !showOmniTaskAxes;
     const activeTaskBase = omniTasks.find((t) => t.key === omniTask) || omniTasks[0] || null;
     const activeTask = resolveOmniTaskForHardware(activeTaskBase, hwId);
+
+    const taskForAxisOption = (axisId, optionId) => omniTasks.find((task) =>
+      omniTaskAxes.every((axis) =>
+        task.axes?.[axis.id]
+          === (axis.id === axisId ? optionId : activeTaskBase?.axes?.[axis.id])
+      )
+    );
 
     // Render the `vllm serve --omni` command via the shared omni resolver.
     // Falls back to a stub when the recipe has no omni.tasks declared yet
@@ -1814,6 +1858,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             dockerCudaVariant={dockerCudaVariant}
             setDockerCudaVariant={setDockerCudaVariant}
             altCudaSuffix={altCudaSuffix}
+            hwInstall={hwInstall}
           />
 
           {modeDependencies.length > 0 && (
@@ -1833,6 +1878,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               dockerMeta={dockerMeta}
               configSummary={omniConfigSummary}
               endpointsControls={omniEndpointsControls}
+              commandNote={commandNote}
             />
           </div>
 
@@ -1873,7 +1919,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                             <span className="font-semibold">{p.display_name}</span>
                             {p.vram_gb > 0 && p.gpu_count > 0 && (
                               <span className="text-muted-foreground ml-1.5 font-mono">
-                                {p.gpu_count}×{Math.round(p.vram_gb / p.gpu_count)}G
+                                {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : "GPU"}
                               </span>
                             )}
                           </Pill>
@@ -1916,26 +1962,64 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               </ConfigRow>
             )}
 
-            {showOmniVariants && (
+            {showOmniTaskAxes && omniTaskAxes.map((axis) => (
               <ConfigRow
-                label="Variant"
-                hint="VRAM shown is the minimum to LOAD the model (weights + runtime overhead). vLLM-Omni inference may need more for activations and intermediate tensors."
+                key={axis.id}
+                label={axis.label || axis.id}
+                hint={axis.hint}
               >
                 <PillGroup>
-                  {omniVariants.map(([key, v]) => (
-                    <Pill
-                      key={key}
-                      active={variant === key}
-                      onClick={() => selectVariant(key)}
-                      title={[
-                        v.description,
-                        `Min ${v.vram_minimum_gb} GB to load.`,
-                      ].filter(Boolean).join("\n\n")}
-                    >
-                      <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
-                      <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
-                    </Pill>
-                  ))}
+                  {axis.options.map((option) => {
+                    const matchingTask = taskForAxisOption(axis.id, option.id);
+                    const disabled = !matchingTask;
+                    return (
+                      <Pill
+                        key={option.id}
+                        active={activeTaskBase?.axes?.[axis.id] === option.id}
+                        disabled={disabled}
+                        onClick={() => !disabled && selectOmniTask(matchingTask.key)}
+                        title={disabled ? "This combination is not available." : option.description}
+                      >
+                        <span className="font-semibold">{option.label || option.id}</span>
+                      </Pill>
+                    );
+                  })}
+                </PillGroup>
+                {axis.id === omniTaskAxes[omniTaskAxes.length - 1]?.id && (
+                  <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                    {activeTask?.description}
+                    {activeTask?.vramMinimumGb && (
+                      <span className="ml-1.5 font-mono">Minimum {activeTask.vramMinimumGb} GB VRAM.</span>
+                    )}
+                  </p>
+                )}
+              </ConfigRow>
+            ))}
+
+            {showOmniVariants && (
+              <ConfigRow
+                label={recipe.omni?.variant_label || "Variant"}
+                hint={recipe.omni?.variant_hint || "VRAM shown is the minimum to LOAD the model (weights + runtime overhead). vLLM-Omni inference may need more for activations and intermediate tensors."}
+              >
+                <PillGroup>
+                  {omniVariants.map(([key, v]) => {
+                    const compatible = variantRunsOnHardware(hwProfile, v, hwId);
+                    return (
+                      <Pill
+                        key={key}
+                        active={variant === key}
+                        disabled={!compatible}
+                        onClick={() => compatible && selectVariant(key)}
+                        title={compatible
+                          ? [v.description, "Min " + v.vram_minimum_gb + " GB to load."].filter(Boolean).join("\n\n")
+                          : "Unavailable on the selected hardware."
+                        }
+                      >
+                        <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
+                        <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
+                      </Pill>
+                    );
+                  })}
                 </PillGroup>
               </ConfigRow>
             )}
@@ -1960,6 +2044,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           setDockerCudaVariant={setDockerCudaVariant}
           altCudaSuffix={altCudaSuffix}
           extraMinVersion={isKvStoreActive ? strategies[activeKvOffload]?.min_vllm_version : null}
+          hwInstall={hwInstall}
         />
 
         {/* ── Dependencies / extra install ──
@@ -2015,6 +2100,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               dockerMeta={dockerMeta}
               configSummary={configSummary}
               endpointsControls={endpointsControls}
+              commandNote={commandNote}
             />
           ) : isKvStore ? (
             <KvStoreLbBlock
@@ -2027,6 +2113,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               dockerMeta={dockerMeta}
               configSummary={configSummary}
               endpointsControls={endpointsControls}
+              commandNote={commandNote}
             />
           ) : isMultiNode ? (
             <MultiNodeBlock
@@ -2038,6 +2125,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               dockerMeta={dockerMeta}
               configSummary={configSummary}
               endpointsControls={endpointsControls}
+              commandNote={commandNote}
             />
           ) : (
             <SingleCommandBlock
@@ -2051,6 +2139,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               dockerMeta={dockerMeta}
               configSummary={configSummary}
               endpointsControls={endpointsControls}
+              commandNote={commandNote}
             />
           )}
         </div>
@@ -2112,7 +2201,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                           <span className="font-semibold">{p.display_name}</span>
                           {p.vram_gb > 0 && p.gpu_count > 0 && (
                             <span className="text-muted-foreground ml-1.5 font-mono">
-                              {p.gpu_count}×{Math.round(p.vram_gb / p.gpu_count)}G
+                              {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : "GPU"}
                             </span>
                           )}
                         </Pill>
@@ -2121,9 +2210,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   </PillGroup>
                 </div>
               ))}
-              {showGpuUsageHint && (
+              {showTpUsageHint && (
                 <p className="text-[11px] text-muted-foreground/80 pt-1.5">
-                  This recipe runs on {effectiveTp} of {hwGpuCount} GPUs on the selected node — add
+                  {hwProfile?.generation === "cpu"
+                    ? `This recipe runs on ${effectiveTp} CPU NUMA ${effectiveTp === 1 ? "node" : "nodes"} on the selected node — add`
+                    : `This recipe runs on ${effectiveTp} of ${hwGpuCount} GPUs on the selected node — add`}
                   <code className="font-mono mx-1 px-1 py-0.5 rounded bg-foreground/5 text-[10px]">--tensor-parallel-size N</code>
                   via Advanced to scale up.
                 </p>
@@ -2180,6 +2271,41 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 );
               })}
             </PillGroup>
+            {/* Active variant's description + the checkpoint it actually serves.
+                Mirrors the Strategy / KV Offload rows, which already render the
+                active option's description under the pills — this row was the
+                only one without it, so two things stayed invisible: the
+                description (it lived only in the pill's native `title`, which
+                touch and keyboard users never get), and the served repo, which
+                for a variant with its own `model_id` is NOT what the header's
+                "View on HuggingFace" points at. That link is deliberately the
+                recipe's own HF id — it's the page identity (`findVariantRedirect`
+                maps a variant repo back to this page), so the per-checkpoint link
+                belongs here, next to the pick that determines it.
+                Rendered for every variant, including ones that inherit
+                `model.model_id`: a line that appears for some pills and vanishes
+                for others is harder to learn than one that's always there. */}
+            {(currentVariant?.description || variantModelId) && (
+              <div className="mt-2 space-y-1">
+                {currentVariant?.description && (
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    {currentVariant.description}
+                  </p>
+                )}
+                {variantModelId && (
+                  <a
+                    href={`https://huggingface.co/${variantModelId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground hover:text-vllm-blue transition-colors"
+                  >
+                    <HuggingFaceIcon className="w-3 h-3" />
+                    {variantModelId}
+                    <ExternalLink size={9} />
+                  </a>
+                )}
+              </div>
+            )}
           </ConfigRow>
 
           {/* Strategy — always in effect, including under Mooncake: the KV
@@ -2592,6 +2718,28 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   );
                 })}
               </PillGroup>
+              {/* Guidance for the active sub-mode (FEATURE_MODE_NOTES) — tuning
+                  advice that outlives a tooltip, e.g. which draft_sample_method
+                  suits which temperature. It hangs off the Features row rather
+                  than the Spec method row below because that row only renders
+                  with ≥2 modes available for the current variant: a recipe whose
+                  methods are each pinned to different checkpoints (MTP on the
+                  preview, DSpark on the fused release) never shows it, and the
+                  note would have nowhere to live. */}
+              {featuredModeKeys.map((key) => {
+                const notes = FEATURE_MODE_NOTES[key];
+                if (!notes || !features.includes(key)) return null;
+                const feat = recipe.features[key];
+                if (!isFeatureAllowedForStrategy(feat, activeStrategy)) return null;
+                const activeMode = resolveModeKey(feat, key, currentVariant, variant, hwProfile, hwId, featureModes[key]);
+                const note = notes[activeMode];
+                if (!note) return null;
+                return (
+                  <p key={`${key}-note`} className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                    {note}
+                  </p>
+                );
+              })}
             </ConfigRow>
           )}
 
@@ -2932,7 +3080,34 @@ function CommandBody({ command }) {
   );
 }
 
-function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls }) {
+function CommandNote({ note }) {
+  if (!note) return null;
+  const cfg = typeof note === "string" ? { body: note } : (note || {});
+  const title = cfg.title || "Hardware note";
+  const body = cfg.body || cfg.description || "";
+  const link = cfg.link || null;
+  return (
+    <div className="mx-4 mt-3 rounded-lg border border-vllm-blue/25 bg-vllm-blue/10 px-3 py-2 text-[11px] leading-snug">
+      <div className="flex items-start gap-2">
+        <Info size={13} className="mt-0.5 shrink-0 text-vllm-blue" />
+        <div className="space-y-1">
+          <p className="font-semibold text-[var(--command-fg)]">{title}</p>
+          {body && <p className="text-[var(--command-fg)]/65">{body}</p>}
+          {link?.href && (
+            <a
+              href={link.href}
+              className="inline-flex text-[11px] font-medium text-vllm-blue hover:underline"
+            >
+              {link.label || "Read guide"}
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
   const [tab, setTab] = useState("vllm");
   // The `docker pull` for the image lives in the Install block above.
   const isXpu = !!dockerMeta?.isXpu;
@@ -2947,7 +3122,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
     ? ["source /opt/intel/oneapi/setvars.sh", preludeBase].filter(Boolean).join("\n")
     : preludeBase;
   const displayCommand = isDocker
-    ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu })
+    ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
     : command;
   // A companion process may ride along (`companions[]` from resolveCommand —
   // a feature's `companion:` or the active kv_offload option's, e.g.
@@ -3021,6 +3196,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
           # {activeCompanion.description}
         </div>
       )}
+      {!activeCompanion && <CommandNote note={commandNote} />}
       {activePrelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
           {activePrelude}
@@ -3046,7 +3222,7 @@ function maxVersion(a, b) {
   return a;
 }
 
-function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode, dockerCudaVariant, setDockerCudaVariant, altCudaSuffix, extraMinVersion = null }) {
+function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode, dockerCudaVariant, setDockerCudaVariant, altCudaSuffix, extraMinVersion = null, hwInstall = null }) {
   // Collapsible install reference. Shows the one-time setup step for the
   // active mode — `uv pip install vllm …` in pip mode, `docker pull <image>`
   // in docker mode. The active tab mirrors the command card's mode toggle
@@ -3061,7 +3237,10 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   const pipHidden = pipCfg === false;
   const dockerHidden = dockerCfg === false;
   const [open, setOpen] = useState(false);
-  const { isAmd, isTpu, isXpu, image: dockerImage, brandKey, cudaMap } = dockerMeta;
+  const { isAmd, isTpu, isXpu, isIntel, image: dockerImage, brandKey, cudaMap } = dockerMeta;
+  // Intel CPU is a first-class backend in computeDockerMeta. Keep XPU
+  // distinct even though it is also Intel hardware.
+  const isCpu = isIntel && !isXpu;
   // A variant may require a newer vLLM than the recipe baseline (e.g. the DSpark
   // checkpoint needs 0.25.0, currently nightly). Take the higher version and OR
   // the nightly flag so the Install block reflects the selected checkpoint.
@@ -3095,24 +3274,41 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
     ? `uv venv --python 3.12
 source .venv/bin/activate
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm`
-    : nightlyRequired
-      ? `uv venv
+    : isCpu
+      ? nightlyRequired
+        ? `uv venv --python 3.12 --seed --managed-python
+source .venv/bin/activate
+uv pip install vllm \\
+  --extra-index-url https://wheels.vllm.ai/nightly/cpu \\
+  --index-strategy first-index \\
+  --torch-backend cpu`
+        : `uv venv --python 3.12 --seed --managed-python
+source .venv/bin/activate
+export VLLM_VERSION=$(curl -s https://api.github.com/repos/vllm-project/vllm/releases/latest | jq -r .tag_name | sed 's/^v//')
+uv pip install https://github.com/vllm-project/vllm/releases/download/v$VLLM_VERSION/vllm-$VLLM_VERSION+cpu-cp38-abi3-manylinux_2_34_x86_64.whl \\
+  --torch-backend cpu`
+      : nightlyRequired
+        ? `uv venv
 source .venv/bin/activate
 uv pip install -U vllm --pre \\
   --extra-index-url https://wheels.vllm.ai/nightly/${pipCudaTag} \\
   --extra-index-url https://download.pytorch.org/whl/${pipCudaTag} \\
   --index-strategy unsafe-best-match`
-      : `uv venv
+        : `uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto`;
   const pipCmd = pipCfg?.command || defaultPipCmd;
   const pipNote =
     pipCfg?.note ||
-    (nightlyRequired && !isAmd
-      ? singleCudaBuild
-        ? `vLLM ${minV} isn't released yet — nightly required. This recipe publishes ${singleCudaLabel} builds only.`
-        : `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
-      : undefined);
+    (isCpu
+      ? nightlyRequired
+        ? "Intel/AMD x86 CPU nightly wheels use the dedicated /nightly/cpu index and PyTorch CPU backend."
+        : "Intel/AMD x86 CPU release wheels are published separately from CUDA wheels; the command follows the official vLLM CPU pre-built-wheel flow."
+      : nightlyRequired && !isAmd
+        ? singleCudaBuild
+          ? `vLLM ${minV} isn't released yet — nightly required. This recipe publishes ${singleCudaLabel} builds only.`
+          : `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
+        : undefined);
 
   // Docker install step is just the image pull; the `docker run` that actually
   // serves the model is rendered in the main command block below. A YAML
@@ -3124,9 +3320,11 @@ uv pip install -U vllm --torch-backend auto`;
   const defaultDockerNote = isTpu
     ? "TPU builds are published by vllm-project/tpu-inference. See the Trillium and Ironwood tpu-recipes for pinned image tags and exact deployment flags."
     : isXpu
-      ? "Intel XPU image. The entrypoint does not initialize oneAPI — source /opt/intel/oneapi/setvars.sh before `vllm serve`, or torch.xpu.device_count() returns 0."
+      ? "Intel XPU image. The entrypoint initializes oneAPI automatically."
     : isAmd
       ? undefined
+    : isCpu
+      ? "Intel/AMD x86 CPU image; no CUDA runtime is required."
       : cudaMap
         ? singleCudaBuild
           ? `This tag is published as a ${singleCudaLabel} build only${singleCudaBuild === "cu130" ? " — the host needs an r580+ NVIDIA driver" : ""}.`
@@ -3146,17 +3344,22 @@ uv pip install -U vllm --torch-backend auto`;
     brandKey === "nvidia" &&
     !singleCudaBuild &&
     !dockerCfg?.command &&
-    (installMode === "docker" ||
+    // Only upstream publishes paired `-cu129` / `cu129-nightly` tags. On a
+    // third-party image the toggle would synthesize a tag that doesn't exist
+    // (`eugr/spark-vllm-b12x:latest-cu129`), so offer it for `vllm/` images
+    // alone. The pip branch is unaffected: wheels come from wheels.vllm.ai.
+    ((installMode === "docker" && dockerImage?.startsWith("vllm/")) ||
       (installMode === "pip" && nightlyRequired && !pipCfg?.command));
 
   // TPU has no pip wheel — force-hide the pip tab regardless of recipe overrides.
   // Intel XPU is validated via the official `vllm-openai-xpu` Docker image;
-  const effectivePipHidden = pipHidden || isTpu || isXpu;
-  const dockerLabel = isTpu ? "Docker (TPU)" : isXpu ? "Docker (XPU)" : isAmd ? "Docker (ROCm)" : "Docker";
+  // `hwInstall.pip: false` is the per-GPU form of the same statement.
+  const effectivePipHidden = pipHidden || isTpu || isXpu || hwInstall?.pip === false;
+  const dockerLabel = isTpu ? "Docker (TPU)" : isXpu ? "Docker (XPU)" : isAmd ? "Docker (ROCm)" : isCpu ? "Docker (CPU)" : "Docker";
   const tabs = [
     !effectivePipHidden && {
       id: "pip",
-      label: isAmd ? "pip / uv (ROCm)" : "pip / uv",
+      label: isAmd ? "pip / uv (ROCm)" : isCpu ? "pip / uv (CPU)" : "pip / uv",
       code: pipCmd,
       note: pipNote,
     },
@@ -3180,7 +3383,7 @@ uv pip install -U vllm --torch-backend auto`;
         <Package size={12} className="text-[var(--command-fg)]/50 shrink-0" />
         <span className="text-[11px] font-semibold text-[var(--command-fg)]/70 uppercase tracking-widest">Install</span>
         <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
-          vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · {isTpu ? "TPU" : isXpu ? "XPU" : isAmd ? "ROCm" : "CUDA"}
+          vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · {isTpu ? "TPU" : isXpu ? "XPU" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}
         </span>
         {nightlyRequired && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
@@ -3296,7 +3499,7 @@ function DependenciesBlock({ deps }) {
   );
 }
 
-function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls }) {
+function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
   const [tab, setTab] = useState("head");
   const isDocker = installMode === "docker";
   const wrap = (cmd) =>
@@ -3340,6 +3543,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
           {endpointsControls}
         </div>
       </div>
+      <CommandNote note={commandNote} />
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
           {prelude}
@@ -3354,7 +3558,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
   );
 }
 
-function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChange, installMode, dockerMeta, configSummary, endpointsControls }) {
+function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChange, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
   // Tabs: Prefill · Decode · Router.
   // Each pool (prefill/decode) now carries its own `nodes`, `parallelism`,
   // `dpSize`, `poolGpus` meta — rendered above the command so the reader
@@ -3478,6 +3682,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           )}
         </div>
       )}
+      {!active.isRouter && <CommandNote note={commandNote} />}
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
           {prelude}
@@ -3488,7 +3693,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   );
 }
 
-function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceChange, installMode, dockerMeta, configSummary, endpointsControls }) {
+function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceChange, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
   // Tabs in launch order — Mooncake Master · (centralized only) Mooncake
   // Store · vLLM Serve (config heredoc + env + serve — one paste-runnable
   // script per instance node; a Worker tab appears when instances span >1
@@ -3603,6 +3808,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
           </span>
         </div>
       )}
+      {active.isVllm && <CommandNote note={commandNote} />}
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
           {prelude}

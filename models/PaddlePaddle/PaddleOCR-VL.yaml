@@ -82,8 +82,9 @@ guide: |
 
   - Hardware: 1x GPU (small VRAM footprint)
   - vLLM >= 0.11.1 (nightly if not released yet)
+  - AMD ROCm wheels require Python 3.12, ROCm 7.2.3, and glibc >= 2.35.
 
-  ### Install vLLM
+  ### Install vLLM (NVIDIA)
 
   ```bash
   uv venv
@@ -94,9 +95,29 @@ guide: |
     --index-strategy unsafe-best-match
   ```
 
+  ### Install vLLM (AMD ROCm)
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
+  ```
+
   ## Launch command
 
   ```bash
+  vllm serve PaddlePaddle/PaddleOCR-VL \
+    --trust-remote-code \
+    --max-num-batched-tokens 16384 \
+    --no-enable-prefix-caching \
+    --mm-processor-cache-gb 0
+  ```
+
+  AMD MI300X/MI325X/MI355X:
+
+  ```bash
+  export SAFETENSORS_FAST_GPU=1
+
   vllm serve PaddlePaddle/PaddleOCR-VL \
     --trust-remote-code \
     --max-num-batched-tokens 16384 \

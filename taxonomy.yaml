@@ -118,6 +118,33 @@ hardware_profiles:
     scalable: false
     restricted: true
 
+  # RTX Pro 6000 4x — 4x RTX Pro 6000 GPUs system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` (same pattern as the TPU profiles).
+  rtx_pro_6000_4x:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX Pro 6000 4x"
+    description: "NVIDIA RTX Pro 6000 · 4× RTX Pro 6000 GPU · 384 GB VRAM"
+    gpu_count: 4
+    vram_gb: 384
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # RTX PRO 5000 Blackwell — single-GPU workstation profile.
+  # Restricted so it only appears for recipes that explicitly support it.
+  rtx_pro_5000:
+    brand: NVIDIA
+    generation: blackwell
+    display_name: "RTX PRO 5000"
+    description: "NVIDIA RTX PRO 5000 Blackwell · 72 GB VRAM"
+    gpu_count: 1
+    vram_gb: 72
+    multi_node: false
+    scalable: false
+    restricted: true
+
   # RTX PRO 5000 Blackwell — validated four-card PCIe profile.
   # Restricted so it only appears for recipes with target-hardware evidence.
   rtx_pro_5000_4x:
@@ -277,6 +304,54 @@ hardware_profiles:
     description: "Intel Arc Pro B70 32 GB · 4-card node · vLLM XPU backend"
     gpu_count: 4
     vram_gb: 128
+    multi_node: false
+    restricted: true
+
+  # ── Huawei Ascend NPU ──
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` — Ascend support ships in vllm-ascend and is
+  # only declared on validated recipes.
+  ascend_950pr:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 950PR"
+    description: "Huawei Ascend 950PR · 1× NPU · 128 GB HiBL 1.0 HBM · vLLM Ascend backend"
+    gpu_count: 1
+    vram_gb: 128
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  ascend_910c:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 910C"
+    description: "Huawei Ascend 910C · 16× NPU · 64 GB HBM each · Atlas 800 A3 · vLLM Ascend backend"
+    gpu_count: 16
+    vram_gb: 1024
+    multi_node: false
+    restricted: true
+
+  # 8-card Atlas A5 nodes. Distinct from `ascend_950pr` (1×128 GB, MiniMax-H3).
+  # Restricted: only recipes that list them in `meta.hardware` show the pills.
+  # Ids / display_name follow the RTX Pro 6000 8x pattern: `<sku>_8x` / `"<name> 8x"`.
+  ascend_950dt_8x:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 950DT 8x"
+    description: "Huawei Ascend 950DT · 8× NPU · 96 GB HBM each · Atlas A5 · vLLM Ascend backend"
+    gpu_count: 8
+    vram_gb: 768
+    multi_node: false
+    restricted: true
+
+  ascend_950pr_8x:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 950PR 8x"
+    description: "Huawei Ascend 950PR · 8× NPU · 128 GB HiBL 1.0 HBM each · Atlas A5 · vLLM Ascend backend"
+    gpu_count: 8
+    vram_gb: 1024
     multi_node: false
     restricted: true
 

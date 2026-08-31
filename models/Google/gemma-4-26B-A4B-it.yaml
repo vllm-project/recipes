@@ -4,7 +4,7 @@ meta:
   provider: "Google"
   description: "Google's Gemma 4 MoE multimodal model (26B total / 4B active) with 128 fine-grained experts, top-8 routing, thinking mode, and tool-use protocol."
   date_added: 2026-04-02
-  date_updated: 2026-05-11
+  date_updated: 2026-08-18
   difficulty: intermediate
   tasks:
     - multimodal
@@ -40,7 +40,7 @@ meta:
 
 model:
   model_id: "google/gemma-4-26B-A4B-it"
-  min_vllm_version: "0.19.1"
+  min_vllm_version: "0.25.0"
   architecture: moe
   parameter_count: "26B"
   active_parameters: "4B"
@@ -69,10 +69,22 @@ features:
       - "--language-model-only"
   spec_decoding:
     description: "MTP speculative decoding for accelerated inference"
-    args:
-      - "--speculative-config"
-      - '{"model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":4}'
-
+    default_mode: mtp
+    modes:
+      mtp:
+        label: "MTP"
+        description: "Built-in Multi-Token Prediction, 4 draft tokens."
+        args:
+          - "--speculative-config"
+          - '{"model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":4}'
+      eagle3:
+        label: "Eagle3"
+        description: "Eagle3 speculative decoding with externally trained draft model; the served checkpoint is unchanged."
+        variants:
+          - default
+        args:
+          - "--speculative-config"
+          - '{"model": "RedHatAI/gemma-4-26B-A4B-it-speculator.eagle3", "num_speculative_tokens": 3, "method": "eagle3"}'
 opt_in_features:
   - text_only
   - spec_decoding
@@ -232,12 +244,6 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
 
-hardware_overrides:
-  cpu:
-    extra_env:
-      VLLM_CPU_KVCACHE_SPACE: "40"
-      VLLM_CPU_ATTN_SPLIT_KV: "0"
-
 strategy_overrides:
   single_node_tp:
     tp: 1
@@ -246,6 +252,9 @@ guide: |
   ## Overview
 
   [Gemma 4 26B-A4B](https://huggingface.co/google/gemma-4-26B-A4B-it) is the Mixture-of-Experts member of Google's Gemma 4 family — 26B total parameters with only 4B active per token via 128 fine-grained experts and top-8 routing. It supports text + images natively, structured thinking, function calling, and dynamic vision resolution.
+
+  Intel Xeon 6 CPU support remains verified. Benchmark-specific TP/DP, CPU binding,
+  sequence limits, and repro-only timeouts remain deployment choices.
 
   ### Key Features
   - **MoE**: 128 fine-grained experts with top-8 routing and custom GELU-activated FFN.
@@ -258,6 +267,9 @@ guide: |
   TPU support is provided through [vLLM TPU](https://github.com/vllm-project/tpu-inference) with recipes for [Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4) and [Ironwood](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/inference/ironwood/vLLM/Gemma4/).
 
   ## Prerequisites
+
+  - Hardware: Intel Xeon 6/Xeon 5 CPUs
+  - vLLM >= 0.25.0
 
   ### pip (NVIDIA CUDA)
   ```bash
@@ -365,8 +377,6 @@ guide: |
     --network host \
     --shm-size 16g \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    -e VLLM_CPU_KVCACHE_SPACE=40 \
-    -e VLLM_CPU_ATTN_SPLIT_KV=0 \
     vllm/vllm-openai-cpu:latest-x86_64 \
       --model google/gemma-4-26B-A4B-it \
       --host 0.0.0.0 \
@@ -374,6 +384,19 @@ guide: |
   ```
 
   For additional Intel Xeon 6 deployment details, see the Intel Software Catalog entries for [Gemma 4 26B-A4B IT](https://aiswcatalog.intel.com/models/google-gemma-4-26b-a4b-it).
+
+  The following settings are intentionally not prescribed as portable CPU model
+  defaults because they depend on the workload, hardware, or runtime environment:
+
+  - `--max-num-batched-tokens`: scheduler/throughput tuning.
+  - `--max-num-seqs`: concurrency and scheduler-capacity tuning.
+  - `--gpu-memory-utilization`: platform memory-budget tuning.
+  - `--no-enable-prefix-caching`: workload/benchmark cache-policy tuning.
+  - `VLLM_ENGINE_ITERATION_TIMEOUT_S`: operational runtime timeout.
+
+  These settings may still appear in validated hardware-specific overrides. Tune
+  them at deployment time based on platform resources, workload shape, and
+  latency/throughput goals.
 
   ## Client Usage
 
