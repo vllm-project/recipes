@@ -267,7 +267,7 @@ guide: |
       },
   )
   output_msg = resp_think.choices[0].message
-  print(output_msg.reasoning_content)  # chain-of-thought
+  print(output_msg.reasoning)  # chain-of-thought
   print(output_msg.content)             # final answer
   ```
 

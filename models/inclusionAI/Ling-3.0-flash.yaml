@@ -39,7 +39,7 @@ features:
       - "--tool-call-parser"
       - "ling3"
   reasoning:
-    description: "Split Ling 3 thinking traces into reasoning_content"
+    description: "Split Ling 3 thinking traces into reasoning"
     args:
       - "--reasoning-parser"
       - "ling3"
@@ -298,7 +298,8 @@ guide: |
       max_tokens=200000,
       extra_body={"chat_template_kwargs": {"enable_thinking": True}},
   )
-  print(response.choices[0].message.reasoning_content)
+  msg = response.choices[0].message
+  print(msg.reasoning)
   print(response.choices[0].message.content)
   ```
 

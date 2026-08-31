@@ -161,7 +161,7 @@ guide: |
   )
   for chunk in stream:
       delta = chunk.choices[0].delta
-      rc = getattr(delta, "reasoning_content", None)
+      rc = getattr(delta, "reasoning", getattr(delta, "reasoning_content", None))
       if rc:
           print(rc, end="", flush=True)
       if delta.content:

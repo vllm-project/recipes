@@ -206,7 +206,7 @@ guide: |
       top_p=1.0,
       extra_query={"top_k": 20},
   )
-  print(resp.choices[0].message.reasoning_content)
+  print(resp.choices[0].message.reasoning)
   print(resp.choices[0].message.content)
   ```
 
