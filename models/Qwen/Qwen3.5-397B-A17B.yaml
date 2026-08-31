@@ -28,8 +28,6 @@ model:
   context_length: 262144
   base_args:
     - "--trust-remote-code"
-    - "--moe-backend"
-    - "flashinfer_trtllm"
   base_env:
     VLLM_DEEP_GEMM_WARMUP: "skip"
     VLLM_USE_DEEP_GEMM: "0"
@@ -93,7 +91,13 @@ compatible_strategies:
   - multi_node_tep
   - pd_cluster
 
-hardware_overrides: {}
+hardware_overrides:
+  # FlashInfer TRTLLM MoE kernels are NVIDIA-only; pin them per-brand so AMD
+  # keeps auto-selection (AITER on ROCm).
+  nvidia:
+    extra_args:
+      - "--moe-backend"
+      - "flashinfer_trtllm"
 
 strategy_overrides:
   pd_cluster:

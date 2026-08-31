@@ -22,8 +22,8 @@ model:
   min_vllm_version: "0.20.0"
   install:
     pip:
-      command: 'uv pip install "vllm[audio]==0.20.0"'
-      note: "Pinned to 0.20.0 with the audio extra (required for audio + use_audio_in_video)."
+      command: 'uv pip install "vllm[audio]==0.28.0"'
+      note: "Pinned to 0.28.0 with the audio extra (required for audio + use_audio_in_video)."
   architecture: moe
   parameter_count: "31B"
   active_parameters: "3B"
