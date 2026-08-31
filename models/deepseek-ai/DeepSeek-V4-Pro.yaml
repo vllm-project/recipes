@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 flagship MoE (1.6T total / 49B active) with hybrid CSA+HCA attention, manifold-constrained hyper-connections, Muon-trained on 32T+ tokens, and three-tier reasoning."
   date_added: 2026-04-24
-  date_updated: 2026-08-14
+  date_updated: 2026-08-26
   difficulty: hard
   tasks:
     - text
@@ -461,3 +461,71 @@ guide: |
   - **LMCache** — `LMCacheMPConnector`: a node-local KV pool served by a
     companion `lmcache server` process, launched before `vllm serve`.
     Single-node strategies only. Install from the extra-install block above; see the [LMCache docs](https://docs.lmcache.ai/).
+
+  ## Agentic benchmark reproduction (InferenceX MI355X sweep)
+
+  The command above is the default serving configuration. The SemiAnalysis InferenceX
+  MI355X benchmark lane for this checkpoint is a separate high-concurrency benchmark
+  configuration — not the recipe default. To reproduce that sweep, start from the
+  default command above and apply these deltas:
+
+  **Applied to both arms:**
+
+  - Enable `VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4` (previously commented out).
+  - Enable `VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1`. DSv4-Pro is a mixed
+    checkpoint (MXFP4 routed experts, FP8 shared expert) and vLLM gates the fused
+    shared-expert path on this flag, which defaults to off, so the checked-in recipe
+    was not running the configuration the validated manual runs used. The flag is
+    mutually exclusive with expert parallelism inside vLLM, which is consistent with
+    both arms running EP 1.
+  - Raise `--gpu-memory-utilization` from `0.8` to `0.86`.
+  - Pin `--max-num-batched-tokens 8192` instead of the nightly default of `16384`.
+    On the TP8 initialization check this raised GPU KV-cache capacity from `4,730,981`
+    to `8,524,228` tokens and reduced peak activation memory from `11.44 GiB` to
+    `8.9 GiB`.
+
+  **Applied to the DP-attention arm only:**
+
+  - Cap `--max-num-seqs` at `CONC` rather than `2*CONC`. The limit is per scheduler
+    and DP-attention runs one scheduler per rank. The pure TP8 arm keeps the existing
+    `2*CONC` headroom for AgentX subagent fan-out.
+  - Add `--prefill-schedule-interval 8` and `--long-prefill-token-threshold 16384`.
+
+  With `--max-num-batched-tokens 8192` now pinned for both arms,
+  `--long-prefill-token-threshold 16384` sits above the token budget and therefore
+  never binds. It is inert rather than harmful, and the DP-attention point was
+  measured with it present.
+
+  `--compilation-config '{"mode":3,"cudagraph_mode":"FULL_AND_PIECEWISE"}'` is
+  unchanged; it was already in the checked-in recipe.
+
+  Export the AITER and INT4 quantized all-reduce environment variables before launch:
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+  export VLLM_ROCM_USE_AITER_MOE=1
+  export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
+  export VLLM_ENGINE_READY_TIMEOUT_S=10800
+  export VLLM_PREFIX_CACHE_RETENTION_INTERVAL=32768
+
+  vllm serve "$MODEL_PATH" --served-model-name "$MODEL" \
+    --host 0.0.0.0 \
+    --port "$VLLM_BACKEND_PORT" \
+    --trust-remote-code \
+    --async-scheduling \
+    --distributed-executor-backend mp \
+    --kv-cache-dtype fp8 \
+    --max-num-batched-tokens 8192 \
+    --gpu-memory-utilization 0.86 \
+    --moe-backend aiter \
+    --compilation-config '{"mode":3,"cudagraph_mode":"FULL_AND_PIECEWISE"}' \
+    --speculative-config '{"method": "mtp", "num_speculative_tokens": 3, "rejection_sample_method": "synthetic", "synthetic_acceptance_length": 2.49}' \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --reasoning-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --enable-prefix-caching \
+    --no-disable-hybrid-kv-cache-manager \
+    --max-num-seqs "8"
+  ```

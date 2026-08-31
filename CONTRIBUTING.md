@@ -154,6 +154,21 @@ hardware_overrides:
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
 
+# A variant's `hardware_overrides.<exact_gpu_id>` block may also declare that an
+# install path does not exist on that GPU. Use it only when the pinned image
+# carries kernels that are not in vLLM main, so the flags this hardware
+# generates would abort on an official wheel — not merely because Docker is the
+# easier route. The pip tab disappears on that GPU alone; every other hardware
+# keeps it.
+#
+#   variants:
+#     default:
+#       hardware_overrides:
+#         dgx_spark_gb10:
+#           docker_image: "eugr/spark-vllm-b12x:latest"
+#           install:
+#             pip: false
+
 # Optional per-strategy tweaks. Rare. PD recipes use this to shape each pool.
 #
 # For `pd_cluster`, each role (prefill / decode) accepts:

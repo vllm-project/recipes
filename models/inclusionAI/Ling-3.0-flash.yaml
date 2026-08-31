@@ -2,15 +2,15 @@ meta:
   title: "Ling-3.0-flash"
   slug: "ling-3-0-flash"
   provider: "inclusionAI"
-  description: "Ling-3.0-flash MoE model with BF16 and serialized block-FP8 checkpoints, 124B total / 5.5B active parameters, and a 3.1B MTP layer"
-  date_updated: 2026-08-14
+  description: "Ling-3.0-flash MoE model with BF16, FP8, FP4, and INT4 checkpoints, native MTP, and an external DSpark draft model"
+  date_updated: 2026-08-31
   difficulty: advanced
   tasks:
     - text
-  performance_headline: "BF16 is validated on 4x NVIDIA H20; serialized FP8 defaults to TP2 on NVIDIA H200, with TP4+EP4 also validated"
+  performance_headline: "BF16, FP8, FP4, and INT4 support NVIDIA H20/H200; DGX Spark verified TP1 FP4/INT4"
   hardware:
-    h20: verified
     h200: verified
+    dgx_spark_gb10: verified
 
 model:
   model_id: "inclusionAI/Ling-3.0-flash"
@@ -44,10 +44,21 @@ features:
       - "--reasoning-parser"
       - "ling3"
   spec_decoding:
-    description: "Use the model's native MTP head with three speculative tokens"
-    args:
-      - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":3}'
+    description: "Speculative decoding with the built-in MTP head or the external Ling DSpark draft model"
+    default_mode: mtp
+    modes:
+      mtp:
+        label: "MTP"
+        description: "Use the target checkpoint's native MTP head with three speculative tokens."
+        args:
+          - "--speculative-config"
+          - '{"method":"mtp","num_speculative_tokens":3}'
+      dspark:
+        label: "DSpark"
+        description: "Use inclusionAI/Ling-3.0-flash-dspark as an external draft model with any Ling-3.0-flash target variant. K may be 1-8; this recipe recommends K7."
+        args:
+          - "--speculative-config"
+          - '{"method":"dspark","model":"inclusionAI/Ling-3.0-flash-dspark","num_speculative_tokens":7,"draft_sample_method":"probabilistic","attention_backend":"FLASH_ATTN","enable_adaptive_verification":false}'
 
 opt_in_features:
   - spec_decoding
@@ -61,9 +72,25 @@ variants:
     model_id: "inclusionAI/Ling-3.0-flash-fp8"
     precision: fp8
     vram_minimum_gb: 150
-    min_vllm_version: "0.26.0"
     tp: 2
-    description: "Serialized block-FP8 checkpoint; defaults to TP2 on NVIDIA H200, with TP4+EP4 as a validated alternative"
+    description: "Serialized block-FP8 checkpoint; defaults to TP2 on NVIDIA H20/H200, with TP4+EP4 as a validated alternative"
+  fp4:
+    model_id: "inclusionAI/Ling-3.0-flash-fp4"
+    precision: fp4
+    # The checkpoint uses block-FP8 for dense/shared projections and MXFP4 for
+    # routed experts. vLLM provides a Hopper fallback instead of requiring
+    # native Blackwell FP4 tensor cores.
+    precision_hardware:
+      brand: NVIDIA
+    vram_minimum_gb: 85
+    tp: 1
+    description: "Mixed block-FP8 and MXFP4 checkpoint; uses TP1 and supports DGX Spark"
+  int4:
+    model_id: "inclusionAI/Ling-3.0-flash-int4"
+    precision: int4
+    vram_minimum_gb: 95
+    tp: 1
+    description: "compressed-tensors pack-quantized W4 (group 32) on the routed experts; serves through vLLM's generic WNA16 Marlin MoE path and fits H200 or DGX Spark at TP1"
 
 compatible_strategies:
   - single_node_tp
@@ -83,13 +110,17 @@ guide: |
   model has 124.4B total and 5.5B active parameters. The checkpoint also contains
   a 3.1B MTP layer, bringing the complete checkpoint to 127.5B parameters. A
   serialized block-FP8 checkpoint is available as
-  `inclusionAI/Ling-3.0-flash-fp8`.
+  `inclusionAI/Ling-3.0-flash-fp8`. Lower-memory checkpoints are also available
+  as `inclusionAI/Ling-3.0-flash-fp4` and
+  `inclusionAI/Ling-3.0-flash-int4`. The external
+  `inclusionAI/Ling-3.0-flash-dspark` draft can accelerate any target variant
+  without changing which target checkpoint is served.
 
   ## Prerequisites
 
   - **vLLM:** a build containing native Bailing V3 support;
-  - **Validated hardware:** NVIDIA H20, H20-3e, and H200
-  - **Precision:** BF16 or serialized block FP8 weights with BF16 compute
+  - **Validated hardware:** NVIDIA H20, H20-3e, H200, and DGX Spark (FP4/INT4)
+  - **Precision:** BF16, serialized block FP8, mixed block-FP8/MXFP4, or compressed-tensors INT4 weights with BF16 compute
   - **Context length:** 262,144 tokens
 
   ## Launching the Server
@@ -142,17 +173,114 @@ guide: |
     --reasoning-parser ling3
   ```
 
-  The native MTP head is available with either FP8 topology by adding:
+  For the FP4 variant on one GPU, use:
+
+  ```bash
+  vllm serve inclusionAI/Ling-3.0-flash-fp4 \
+    --trust-remote-code \
+    --dtype bfloat16 \
+    --tensor-parallel-size 1 \
+    --gpu-memory-utilization 0.9 \
+    --enable-chunked-prefill \
+    --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE"}' \
+    --enable-prefix-caching \
+    --enable-auto-tool-choice \
+    --tool-call-parser ling3 \
+    --reasoning-parser ling3
+  ```
+
+  For the INT4 variant on one GPU, use:
+
+  ```bash
+  vllm serve inclusionAI/Ling-3.0-flash-int4 \
+    --trust-remote-code \
+    --dtype bfloat16 \
+    --tensor-parallel-size 1 \
+    --gpu-memory-utilization 0.9 \
+    --enable-chunked-prefill \
+    --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE"}' \
+    --enable-prefix-caching \
+    --enable-auto-tool-choice \
+    --tool-call-parser ling3 \
+    --reasoning-parser ling3
+  ```
+
+  ## Speculative Decoding
+
+  The **Spec decoding** control exposes MTP and DSpark in the same place. They
+  are mutually exclusive modes, so the generated command contains exactly one
+  `--speculative-config`.
+
+  ### MTP
+
+  Use the target checkpoint's native MTP head with three draft tokens:
 
   ```bash
   --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
   ```
 
+  ### DSpark
+
+  `inclusionAI/Ling-3.0-flash-dspark` is an external draft model. It does not
+  replace the served target checkpoint. It can be paired with any
+  Ling-3.0-flash target variant; pass the DSpark repository through
+  `--speculative-config.model` while keeping the selected target as the model
+  served by `vllm serve`.
+
+  The checkpoint was trained with query block size `Q=8`. Runtime
+  `num_speculative_tokens` (`K`) may be any integer from 1 through 8. The recipe
+  emits `K=7` as the recommended throughput/KV-capacity trade-off; change the
+  value to select another supported width. `K=8` remains valid.
+
+  ```bash
+  --speculative-config '{"method":"dspark","model":"inclusionAI/Ling-3.0-flash-dspark","num_speculative_tokens":7,"draft_sample_method":"probabilistic","attention_backend":"FLASH_ATTN","enable_adaptive_verification":false}'
+  ```
+
+  `enable_adaptive_verification` is disabled because the current Ling hybrid
+  MLA/KDA path is validated with fixed-width DSpark verification. The
+  `attention_backend` setting applies only to the external draft model; the
+  target model keeps its automatically selected attention backends.
+
+  ## Single-GPU INT4
+
+  `inclusionAI/Ling-3.0-flash-int4` is a `compressed-tensors` / `pack-quantized`
+  checkpoint: symmetric W4, `group_size: 32`, applied to the **routed experts
+  only** — attention, `lm_head`, the shared expert and the dense projections are
+  all in the config's `ignore` list. It is not covered by the model-specific
+  quantization plumbing in `bailing_moe_v3.py` (which handles block FP8 and
+  MXFP4); it loads through vLLM's generic `compressed-tensors` path and runs at
+  TP1 on H200 or DGX Spark.
+
+  The engine names the mechanism at startup:
+
+  ```
+  quantization=compressed-tensors ... trust_remote_code=True, dtype=torch.bfloat16
+  INFO [int_wna16.py:297] Using 'MARLIN' WNA16 MoE backend.
+  INFO [cuda.py:492]      Using FLASH_ATTN_MLA attention backend
+  INFO [int_wna16.py:409] Using MarlinExperts
+  ```
+
+  The vendor model card documents SGLang only, and there is no merged vLLM PR
+  specific to Ling INT4. This variant works through the generic quantization
+  path; tool calling, reasoning parsing, chunked prefill and CUDA graph capture
+  behave as they do on the other variants.
+
   ## Validation
 
-  Both the default FP8 TP2 path and the TP4+EP4 path were validated on NVIDIA
-  H200. TP2 remains the recommended default because it uses fewer GPUs; TP4+EP4
-  is an alternative for deployments that prefer expert parallelism.
+  The BF16, FP8, FP4, and INT4 checkpoints support NVIDIA H20 and H200. For FP8,
+  TP2 remains the recommended multi-GPU default; TP4+EP4 is a validated H200
+  alternative for deployments that prefer expert parallelism. DGX Spark is
+  limited to the TP1 FP4 and INT4 variants because the BF16 and FP8 checkpoints
+  are too large for its 128 GB unified memory. DSpark is external and works with
+  any target variant that fits the selected hardware.
+
+  The `int4` variant was verified on **1x H200 (SM90), TP=1**, on a `main` build
+  reporting `0.26.1rc1.dev1133+gf94666b60`, serving at `--max-model-len 32768`:
+  77.0 GB of weights on disk, 70.27 GiB resident after load (165 s), 5 min 56 s
+  from container start to ready, `FULL_AND_PIECEWISE` capture (68 PIECEWISE + 68
+  FULL, 2.15 GiB), and a 4,072,594-token KV pool. Single-stream decode measured
+  **159.5 tok/s** at TTFT p50 0.17 s; 973 output tok/s aggregate at concurrency
+  16, with 0 failed requests and 0 preemptions over a 1..24 concurrency sweep.
 
   ## Thinking Mode
 
@@ -174,10 +302,13 @@ guide: |
   print(response.choices[0].message.content)
   ```
 
-  When serving the FP8 variant, set `model="inclusionAI/Ling-3.0-flash-fp8"`
-  in the client request.
+  When serving a quantized variant, set `model` in the client request to the
+  corresponding FP8, FP4, or INT4 checkpoint ID.
 
   ## References
 
   - [Ling-3.0-flash on Hugging Face](https://huggingface.co/inclusionAI/Ling-3.0-flash)
   - [Ling-3.0-flash-fp8 on Hugging Face](https://huggingface.co/inclusionAI/Ling-3.0-flash-fp8)
+  - [Ling-3.0-flash-dspark on Hugging Face](https://huggingface.co/inclusionAI/Ling-3.0-flash-dspark)
+  - [Ling-3.0-flash-fp4 on Hugging Face](https://huggingface.co/inclusionAI/Ling-3.0-flash-fp4)
+  - [Ling-3.0-flash-int4 on Hugging Face](https://huggingface.co/inclusionAI/Ling-3.0-flash-int4)
