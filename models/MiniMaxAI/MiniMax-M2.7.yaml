@@ -81,8 +81,6 @@ variants:
           - "8192"
           - "--gpu-memory-utilization"
           - "0.95"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
 compatible_strategies:
   - single_node_tp
