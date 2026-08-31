@@ -111,7 +111,7 @@ features:
           - '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}'
       dflash:
         label: "DFlash2"
-        description: "External DFlash2 drafter (incoai/Qwen3.8-27B-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. Needs a vLLM build that includes vllm-project/vllm#52816 (merged 2026-08-21, not in a stable release yet). num_speculative_tokens must be 7 (block_size 8 minus one)."
+        description: "External DFlash2 drafter (incoai/Qwen3.8-27B-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. Needs vLLM >=0.28.0, which shipped vllm-project/vllm#52816. num_speculative_tokens must be 7 (block_size 8 minus one)."
         variants: [default]
         args:
           - "--speculative-config"
@@ -398,7 +398,7 @@ guide: |
   
   DFlash2 is not a standalone model. Serve `Qwen/Qwen3.8-27B` and attach
   [incoai/Qwen3.8-27B-DFlash2](https://huggingface.co/incoai/Qwen3.8-27B-DFlash2)
-  as the drafter. Requires a vLLM build that includes
+  as the drafter. Requires vLLM >=0.28.0, which shipped
   [vllm#52816](https://github.com/vllm-project/vllm/pull/52816).
   ```bash
   vllm serve Qwen/Qwen3.8-27B \
