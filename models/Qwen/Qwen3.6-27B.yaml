@@ -263,39 +263,28 @@ guide: |
     --enable-prefix-caching
   ```
 
-  ### DGX Spark GB10 NVFP4
+  ### NVFP4 on Blackwell
 
-  The NVIDIA ModelOpt NVFP4 checkpoint is served from
-  [`nvidia/Qwen3.6-27B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
-  and requires vLLM 0.28.0+ (currently nightly) for the XQA decode path.
+  The [`nvidia/Qwen3.6-27B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
+  checkpoint is NVIDIA's ModelOpt re-quantization: MLP linears drop to NVFP4
+  (W4A16) while the attention linears and KV cache stay FP8, so the ~22 GB
+  weights fit a single Blackwell GPU. vLLM auto-detects the ModelOpt
+  quantization from the checkpoint, so no `--quantization` flag is needed, but
+  it does need vLLM 0.28.0+ (currently nightly) for FlashInfer's XQA decode path
+  on SM120. NVIDIA reports near-lossless accuracy versus the FP8 baseline.
 
-  #### **Single node (TP1)**
+  Select the NVFP4 variant in the command builder above and switch the hardware
+  pill for the validated single-node launch on DGX Spark (GB10), DGX Station
+  (GB300), RTX PRO 6000 or RTX 5090. Memory utilization, context length, batch
+  size, attention backend and MTP depth all differ per box and are encoded per
+  hardware, so the generated command is the tested one.
 
-  ```bash
-  # Use container: vllm/vllm-openai:nightly
+  #### **2× DGX Spark (TP2)**
 
-  vllm serve nvidia/Qwen3.6-27B-NVFP4 \
-    --trust-remote-code \
-    --kv-cache-dtype fp8 \
-    --attention-backend flashinfer \
-    --gpu-memory-utilization 0.5 \
-    --max-model-len 262144 \
-    --max-num-seqs 8 \
-    --max-num-batched-tokens 8192 \
-    --enable-chunked-prefill \
-    --async-scheduling \
-    --enable-prefix-caching \
-    --speculative-config '{"method":"mtp","num_speculative_tokens":5}' \
-    --load-format fastsafetensors \
-    --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_xml \
-    --enable-auto-tool-choice
-  ```
-
-  #### **Multi-node (TP2)**
-
-  Download the checkpoint on all nodes. Start the worker nodes first and then the head node.
-  The head node coordinates the others, so they need to be ready to connect when it comes up.
+  Two Sparks joined over ConnectX is the one layout the builder can't render, so
+  it is spelled out here. Download the checkpoint on all nodes. Start the worker
+  node first and then the head node — the head coordinates the others, so they
+  need to be ready to connect when it comes up.
 
   ```bash
   # COMMON variables example values — same on all nodes
@@ -332,12 +321,12 @@ guide: |
     --attention-backend flashinfer \
     --gpu-memory-utilization 0.5 \
     --max-model-len 262144 \
-    --max-num-seqs 10 \
+    --max-num-seqs 8 \
     --max-num-batched-tokens 8192 \
     --enable-chunked-prefill \
     --async-scheduling \
     --enable-prefix-caching \
-    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":5,"draft_tensor_parallel_size":2}' \
     --load-format fastsafetensors \
     --reasoning-parser qwen3 \
     --tool-call-parser qwen3_xml \
@@ -372,12 +361,12 @@ guide: |
     --attention-backend flashinfer \
     --gpu-memory-utilization 0.5 \
     --max-model-len 262144 \
-    --max-num-seqs 10 \
+    --max-num-seqs 8 \
     --max-num-batched-tokens 8192 \
     --enable-chunked-prefill \
     --async-scheduling \
     --enable-prefix-caching \
-    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":5,"draft_tensor_parallel_size":2}' \
     --load-format fastsafetensors \
     --reasoning-parser qwen3 \
     --tool-call-parser qwen3_xml \
@@ -390,104 +379,6 @@ guide: |
     --headless
   ```
 
-
-  ### RTX Pro 6000 NVFP4
-
-  The NVIDIA ModelOpt NVFP4 checkpoint is served from
-  [`nvidia/Qwen3.6-27B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
-  and requires vLLM 0.28.0+ (currently nightly) for the XQA decode path.
-
-  ```bash
-  # Use container: vllm/vllm-openai:nightly
-
-  vllm serve nvidia/Qwen3.6-27B-NVFP4 \
-    --trust-remote-code \
-    --kv-cache-dtype fp8 \
-    --attention-backend flashinfer \
-    --gpu-memory-utilization 0.9 \
-    --max-model-len 262144 \
-    --max-num-seqs 8 \
-    --max-num-batched-tokens 8192 \
-    --enable-chunked-prefill \
-    --async-scheduling \
-    --enable-prefix-caching \
-    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
-    --load-format fastsafetensors \
-    --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_xml \
-    --enable-auto-tool-choice
-  ```
-
-  ### DGX Station GB300 NVFP4
-
-  A single GB300 has 252 GB, so the full 262K context runs at high memory
-  utilization with no batch-size cap.
-
-  ```bash
-  # Use container: vllm/vllm-openai:nightly
-
-  vllm serve nvidia/Qwen3.6-27B-NVFP4 \
-    --trust-remote-code \
-    --kv-cache-dtype fp8 \
-    --attention-backend flashinfer \
-    --gpu-memory-utilization 0.92 \
-    --max-model-len 262144 \
-    --max-num-batched-tokens 8192 \
-    --enable-chunked-prefill \
-    --async-scheduling \
-    --enable-prefix-caching \
-    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
-    --load-format fastsafetensors \
-    --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_xml \
-    --enable-auto-tool-choice
-  ```
-
-  ### RTX 5090 NVFP4
-
-  32 GB leaves roughly 9 GB for KV cache once the NVFP4 weights are resident,
-  so the context is capped at 36,608 tokens and the TRT-LLM attention kernel is
-  used instead of the default FlashInfer path.
-
-  ```bash
-  # Use container: vllm/vllm-openai:nightly
-  export VLLM_HAS_FLASHINFER_CUBIN=1
-
-  vllm serve nvidia/Qwen3.6-27B-NVFP4 \
-    --trust-remote-code \
-    --kv-cache-dtype fp8 \
-    --attention-backend FLASHINFER \
-    --attention-config '{"use_trtllm_attention": true}' \
-    --gpu-memory-utilization 0.93 \
-    --max-model-len 36608 \
-    --max-num-seqs 8 \
-    --max-num-batched-tokens 4096 \
-    --enable-chunked-prefill \
-    --enable-prefix-caching \
-    --async-scheduling \
-    --skip-mm-profiling \
-    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
-    --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_xml \
-    --enable-auto-tool-choice
-  ```
-
-  ### NVFP4 on Blackwell
-
-  The [`nvidia/Qwen3.6-27B-NVFP4`](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
-  checkpoint is NVIDIA's ModelOpt re-quantization: MLP linears drop to NVFP4
-  (W4A16) while the attention linears and KV cache stay FP8, so the ~22 GB
-  weights fit a single Blackwell GPU. vLLM auto-detects the ModelOpt
-  quantization from the checkpoint, so no `--quantization` flag is needed — just
-  use a recent vLLM (NVIDIA recommends nightly or a source build with ModelOpt
-  W4A16/NVFP4 support). NVIDIA reports near-lossless accuracy versus the FP8
-  baseline.
-
-  ```bash
-  vllm serve nvidia/Qwen3.6-27B-NVFP4 \
-    --max-model-len 262144 \
-    --reasoning-parser qwen3
-  ```
 
   ### Docker (Intel XPU B60 / B70)
 
