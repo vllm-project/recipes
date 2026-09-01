@@ -13,12 +13,13 @@ meta:
   hardware:
     h100: verified
     dgx_spark_gb10: verified
+    rtx_pro_6000: verified
     dgx_station_gb300: verified
 
 model:
   model_id: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
   min_vllm_version: "0.27.1"
-  docker_image: "vllm/vllm-openai:v0.27.1"
+  docker_image: "vllm/vllm-openai:v0.28.0"
   architecture: moe
   parameter_count: "30B"
   active_parameters: "3B"
@@ -121,10 +122,42 @@ variants:
           - "32768"
       dgx_spark_gb10:
         extra_args:
+          - "--attention-backend"
+          - "FLASHINFER"
+          - "--linear-backend"
+          - "marlin"
+          - "--attention-config"
+          - '{"use_trtllm_attention":true}'
+          - "--enable-flashinfer-autotune"
+          - "--mamba-cache-mode"
+          - "none"
+          - "--async-scheduling"
+          - "--enable-chunked-prefill"
           - "--gpu-memory-utilization"
-          - "0.7"
+          - "0.8"
           - "--load-format"
-          - "fastsafetensors"
+          - "instanttensor"
+          - "--safetensors-load-strategy"
+          - "prefetch"
+      rtx_pro_6000:
+        extra_args:
+          - "--attention-backend"
+          - "FLASHINFER"
+          - "--linear-backend"
+          - "marlin"
+          - "--attention-config"
+          - '{"use_trtllm_attention":true}'
+          - "--enable-flashinfer-autotune"
+          - "--mamba-cache-mode"
+          - "none"
+          - "--async-scheduling"
+          - "--enable-chunked-prefill"
+          - "--gpu-memory-utilization"
+          - "0.8"
+          - "--load-format"
+          - "instanttensor"
+          - "--safetensors-load-strategy"
+          - "prefetch"
       dgx_station_gb300:
         extra_args:
           - "--attention-backend"
@@ -160,7 +193,7 @@ guide: |
 
   ## Prerequisites
 
-  - **vLLM:** 0.27.1 or newer — `vllm/vllm-openai:v0.27.1`
+  - **vLLM:** 0.27.1 or newer — `vllm/vllm-openai:v0.28.0`
   - **Hardware:** 1x H100, 1x DGX Spark (GB10), or 1x DGX Station (GB300)
   - **Speculative decoding:** **MTP** (built into the checkpoint), **DSpark** (hybrid
     autoregressive + diffusion) and **DFlash** (diffusion) are all supported. DSpark

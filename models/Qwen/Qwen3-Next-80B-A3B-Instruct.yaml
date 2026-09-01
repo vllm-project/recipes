@@ -61,8 +61,6 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
 compatible_strategies:
   - single_node_tp
@@ -75,13 +73,13 @@ compatible_strategies:
 
 hardware_overrides:
   blackwell:
-    extra_args: []
+    extra_args:
+      - "--moe-backend"
+      - "flashinfer_trtllm"
+      - "--attention-backend"
+      - "FLASH_ATTN"
     extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP8: "1"
-      VLLM_FLASHINFER_MOE_BACKEND: "latency"
       VLLM_USE_DEEP_GEMM: "0"
-      VLLM_USE_TRTLLM_ATTENTION: "0"
-      VLLM_ATTENTION_BACKEND: "FLASH_ATTN"
 
 strategy_overrides: {}
 
@@ -125,13 +123,11 @@ guide: |
 
   On SM100, accelerate with the FP8 FlashInfer TRTLLM MoE kernel:
   ```bash
-  VLLM_USE_FLASHINFER_MOE_FP8=1 \
-  VLLM_FLASHINFER_MOE_BACKEND=latency \
   VLLM_USE_DEEP_GEMM=0 \
-  VLLM_USE_TRTLLM_ATTENTION=0 \
-  VLLM_ATTENTION_BACKEND=FLASH_ATTN \
   vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct-FP8 \
-    --tensor-parallel-size 4
+    --tensor-parallel-size 4 \
+    --moe-backend flashinfer_trtllm \
+    --attention-backend FLASH_ATTN
   ```
 
   ### MTP (Multi-Token Prediction)

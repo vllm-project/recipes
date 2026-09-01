@@ -161,7 +161,8 @@ guide: |
   )
   for chunk in stream:
       delta = chunk.choices[0].delta
-      rc = getattr(delta, "reasoning_content", None)
+      # vLLM 0.11.0 uses reasoning_content; 0.11.1+ uses reasoning.
+      rc = getattr(delta, "reasoning", getattr(delta, "reasoning_content", None))
       if rc:
           print(rc, end="", flush=True)
       if delta.content:

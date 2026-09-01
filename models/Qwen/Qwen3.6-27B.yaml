@@ -9,7 +9,7 @@ meta:
   tasks:
     - multimodal
     - text
-  performance_headline: "Qwen3.6 flagship dense — single-GPU FP8, 2x GPU BF16, or Ascend 950DT TP1+DP8"
+  performance_headline: "Qwen3.6 flagship dense — single-GPU FP8, 2x GPU BF16, 2-4x Intel Arc Pro B60/B70 BF16, or Ascend 950DT TP1+DP8"
   related_recipes:
     - "Qwen/Qwen3.6-35B-A3B"
   hardware:
@@ -18,6 +18,8 @@ meta:
     dgx_station_gb300: verified
     rtx_5090: verified
     ascend_950dt: verified
+    arc_pro_b60: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "Qwen/Qwen3.6-27B"
@@ -78,7 +80,7 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 65
-    description: "Full precision BF16 — fits on 1x H200 or 2x H100"
+    description: "Full precision BF16 — fits on 1x H200, 2x H100, 4x Intel Arc Pro B60, 2x Intel Arc Pro B70"
     hardware_overrides:
       rtx_pro_6000:
         extra_args:
@@ -191,7 +193,10 @@ compatible_strategies:
   - single_node_tp
   - multi_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  xpu:
+    extra_args:
+      - "--enforce-eager"
 
 strategy_overrides: {}
 
@@ -210,7 +215,7 @@ guide: |
   - **NVFP4 vLLM version:** >= 0.28.0 (currently nightly). 0.24.0 loads the
     checkpoint, but FlashInfer only selects its XQA decode kernel on SM120
     GPUs from 0.28.0.
-  - **Hardware (BF16):** 1x H200 or 2x H100
+  - **Hardware (BF16):** 1x H200, 2x H100, 4x Intel Arc Pro B60, 2x Intel Arc Pro B70
   - **Hardware (FP8):** single 40 GB GPU (H100/H200/L40S)
   - **Hardware (Int4):** single 24 GB GPU
   - **Hardware (NVFP4):** single NVIDIA Blackwell GPU (B200/B300/GB10 DGX Spark)
@@ -221,6 +226,11 @@ guide: |
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend=auto
+  ```
+
+  ### Docker
+  ```bash
+  docker pull vllm/vllm-openai-xpu:latest  # Intel XPU (B60 / B70)
   ```
 
   ## Launching the Server
@@ -456,6 +466,24 @@ guide: |
     --speculative-config '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}' \
     --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
     --additional-config '{"enable_cpu_binding":true}'
+  ```
+
+  ### Docker (Intel XPU B60 / B70)
+
+  Validated on 4× Intel Arc Pro B60 or 2x Intel Arc Pro B70 (B60 24 GB, B70 32 GB per card) with the
+  official vLLM XPU image `vllm/vllm-openai-xpu:latest`.
+
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-xpu:latest \
+    Qwen/Qwen3.6-27B \
+    --reasoning-parser qwen3 \
+    --tensor-parallel-size 4 \
+    --max-model-len 8192 \
+    --enforce-eager
   ```
 
   ## Processing Ultra-Long Texts
