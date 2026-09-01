@@ -614,7 +614,7 @@ dependencies:
     install_modes: [docker]
   - note: "Ascend Docker path: the generated docker run covers the NPU devices and driver mounts but not the vLLM-Omni checkout this recipe overlays. Start the container with the mounts below, then run the serve command inside it. --shm-size is required — the 64 MB default cannot carry the decoded video back to the API server over shared memory."
     command: |
-      docker run --rm -it --net=host --shm-size=8g \
+      docker run --rm -it --net=host --shm-size=16g \
         --device /dev/davinci0 --device /dev/davinci_manager --device /dev/hisi_hdc \
         -v /usr/local/dcmi:/usr/local/dcmi \
         -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
