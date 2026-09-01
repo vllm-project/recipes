@@ -11,6 +11,8 @@ meta:
   performance_headline: "1.08B parameters with 131K context and native K2-Horizon parsing"
   related_recipes:
     - "IFM/K2-Horizon-3.7B"
+  hardware:
+    h200: verified
 model:
   model_id: "IFM/K2-Horizon-0.9B"
   min_vllm_version: "0.27"

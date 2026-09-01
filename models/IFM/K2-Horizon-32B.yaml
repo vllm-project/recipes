@@ -9,6 +9,8 @@ meta:
   tasks: [text]
   performance_headline: "34.78B parameters with native vLLM execution and up to 512K context"
   related_recipes: ["IFM/K2-Horizon-7B", "IFM/K2-Horizon-36B"]
+  hardware:
+    h200: verified
 model:
   model_id: "IFM/K2-Horizon-32B"
   min_vllm_version: "0.27"

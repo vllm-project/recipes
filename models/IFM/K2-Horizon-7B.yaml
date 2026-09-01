@@ -9,6 +9,8 @@ meta:
   tasks: [text]
   performance_headline: "9B stored parameters with up to 512K context"
   related_recipes: ["IFM/K2-Horizon-3.7B", "IFM/K2-Horizon-32B"]
+  hardware:
+    h200: verified
 model:
   model_id: "IFM/K2-Horizon-7B"
   min_vllm_version: "0.27"

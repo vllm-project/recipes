@@ -9,6 +9,8 @@ meta:
   tasks: [text]
   performance_headline: "379.17B total / 26.67B active parameters per token"
   related_recipes: ["IFM/K2-Horizon-36B"]
+  hardware:
+    h200: verified
 model:
   model_id: "IFM/K2-Horizon-375B"
   min_vllm_version: "0.27"
