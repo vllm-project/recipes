@@ -80,7 +80,6 @@ hardware_overrides:
       VLLM_ROCM_USE_AITER: "1"
       VLLM_ROCM_USE_AITER_MOE: "1"
       SAFETENSORS_FAST_GPU: "1"
-      VLLM_RPC_TIMEOUT: "18000000"
 
 strategy_overrides: {}
 
@@ -143,7 +142,6 @@ guide: |
   export SAFETENSORS_FAST_GPU=1
   export VLLM_ROCM_USE_AITER=1
   export VLLM_ROCM_USE_AITER_MOE=1
-  export VLLM_RPC_TIMEOUT=18000000
 
   vllm serve deepseek-ai/DeepSeek-V3.2-Exp \
     --tensor-parallel-size 8 \

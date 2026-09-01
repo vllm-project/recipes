@@ -38,7 +38,7 @@ features:
       - "--tool-call-parser"
       - "mistral"
   reasoning:
-    description: "Mistral reasoning parser extracts [THINK]...[/THINK] into message.reasoning_content (emitted when reasoning_effort='high')"
+    description: "Mistral reasoning parser extracts [THINK]...[/THINK] into message.reasoning (emitted when reasoning_effort='high')"
     args:
       - "--reasoning-parser"
       - "mistral"
@@ -196,7 +196,7 @@ guide: |
       temperature=0.7, max_tokens=4096,
   )
   msg = resp.choices[0].message
-  print("reasoning:", getattr(msg, "reasoning_content", None))
+  print("reasoning:", msg.reasoning)
   print("answer:", msg.content)
   ```
 

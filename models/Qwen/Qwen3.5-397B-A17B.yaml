@@ -31,7 +31,6 @@ model:
   base_env:
     VLLM_DEEP_GEMM_WARMUP: "skip"
     VLLM_USE_DEEP_GEMM: "0"
-    VLLM_FLASHINFER_MOE_BACKEND: "latency"
 
 features:
   tool_calling:
@@ -76,8 +75,6 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
   gptq_int4:
     model_id: "Qwen/Qwen3.5-397B-A17B-GPTQ-Int4"
     precision: int4
@@ -94,7 +91,13 @@ compatible_strategies:
   - multi_node_tep
   - pd_cluster
 
-hardware_overrides: {}
+hardware_overrides:
+  # FlashInfer TRTLLM MoE kernels are NVIDIA-only; pin them per-brand so AMD
+  # keeps auto-selection (AITER on ROCm).
+  nvidia:
+    extra_args:
+      - "--moe-backend"
+      - "flashinfer_trtllm"
 
 strategy_overrides:
   pd_cluster:

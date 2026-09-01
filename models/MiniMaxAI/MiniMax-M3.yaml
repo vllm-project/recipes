@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 plus MXFP8, NVIDIA Blackwell NVFP4, and AMD MI355X MXFP4 variants. Runs on NVIDIA (Hopper/Blackwell) and AMD CDNA4/CDNA3."
   date_added: 2026-06-12
-  date_updated: 2026-08-03
+  date_updated: 2026-08-29
   difficulty: advanced
   tasks:
     - text
@@ -489,7 +489,7 @@ guide: |
     based on the task.
 
   Pass it per request through `chat_template_kwargs`. The same value also tunes
-  the `minimax_m3` reasoning parser, so `reasoning_content` and `content` are
+  the `minimax_m3` reasoning parser, so `reasoning` and `content` are
   split correctly in every mode.
 
   ```python
@@ -506,9 +506,7 @@ guide: |
       extra_body={"chat_template_kwargs": {"thinking_mode": "enabled"}},
   )
   msg = response.choices[0].message
-  # vLLM exposes the <mm:think> block as `reasoning` (the older
-  # `reasoning_content` field is deprecated but still aliased).
-  print(getattr(msg, "reasoning", None) or getattr(msg, "reasoning_content", None))
+  print(msg.reasoning)  # the <mm:think> block
   print(msg.content)  # the final answer
   ```
 
@@ -706,27 +704,72 @@ guide: |
 
   The command above is the default serving configuration. The
   [SemiAnalysis InferenceX](https://inferencex.semianalysis.com/) MI355X
-  benchmark lane for this checkpoint is a separate **high-concurrency benchmark**
-  configuration — not the recipe default. To reproduce that sweep, start from the
-  default command above and apply these deltas:
+  agentic-coding lane for this checkpoint is a **separate benchmark
+  configuration** — single-node, text-only, GPU-resident, and driven by the GQA
+  EAGLE3 draft head. It is not the recipe default and not a general serving
+  recommendation.
 
-  - Use `--tensor-parallel-size 4` (the sweep runs TP4; the default recipe keeps
-    TP8 for KV-cache and multimodal-encoder headroom).
-  - Add `--kv-cache-dtype fp8`.
-  - Use the text-only language-model path with `--no-enable-prefix-caching`,
-    `--language-model-only`, and an explicit `--max-model-len`.
-  - Force the AITER MXFP4 MoE backend with `--moe-backend aiter` plus the AITER
-    MoE env vars below.
-  - Run on a current `vllm/vllm-openai-rocm:nightly` (the lane pins a specific
-    nightly build — don't hard-code a transient tag).
-  - Export INT4 quantized all-reduce before launch:
+  The lane is the `minimaxm3-fp4-mi355x-vllm-agentic-mtp` entry in
+  `configs/amd-master.yaml`, launched by
+  `benchmarks/single_node/agentic/minimaxm3_fp4_mi355x_mtp.sh` in
+  [SemiAnalysisAI/InferenceX](https://github.com/SemiAnalysisAI/InferenceX):
+
+  | Setting | Benchmark lane |
+  |---------|----------------|
+  | Served checkpoint | `amd/MiniMax-M3-MXFP4` |
+  | Hardware | one MI355X node |
+  | Scenario | agentic-coding trace replay |
+  | Parallelism | TP4 and TP2 — no expert parallelism, no KV offload |
+  | TP4 concurrency sweep | 1, 2, 4, 5, 8, 10, 12, 15, 20, 24, 28, 32 |
+  | TP2 concurrency sweep | 1, 2, 5 |
+  | Draft head | `Inferact/MiniMax-M3-EAGLE3-GQA`, 3 speculative tokens |
+  | Attention | `ROCM_AITER_UNIFIED_ATTN` for both the target and the draft |
+  | Model path | text-only (`--language-model-only`), prefix caching enabled |
+
+  Differences from the default command above: TP4/TP2 instead of TP8, the
+  text-only language-model path, `--kv-cache-dtype fp8`, the AITER MXFP4 MoE
+  backend, unified AITER attention instead of `TRITON_ATTN`, and the GQA EAGLE3
+  draft. The lane also pins thinking server-side with
+  `--default-chat-template-kwargs` instead of passing `--reasoning-parser`, and
+  it passes no `--hf-overrides` — the pinned image supplies the sparse-PA
+  index-cache and top-k refresh behavior itself, and re-adding the override
+  would rewrite the served model config.
+
+  Run it on a current official `vllm/vllm-openai-rocm:nightly`. The lane pins one
+  exact nightly digest rather than a release tag: the AITER shuffled KV-cache
+  layout that MiniMax-M3 sparse paged attention relies on was changed by the
+  KV-cache layout standardization in
+  [vllm-project/vllm#51718](https://github.com/vllm-project/vllm/pull/51718),
+  and the nightly restores it. Don't hard-code a transient tag here — the digest
+  validated for these numbers lives in the InferenceX config.
+
+  #### Environment
 
   ```bash
+  # TP4 and TP2 are the only topologies this lane validates.
+  TP_SIZE="${TP_SIZE:-4}"
+  CONC="${CONC:-32}"
+  if [ "$TP_SIZE" -ne 4 ] && [ "$TP_SIZE" -ne 2 ]; then
+    echo "TP_SIZE must be 2 or 4 for this benchmark lane" >&2
+    exit 1
+  fi
+
+  # The AITER page-16 sparse-attention path needs exactly one KV head per TP
+  # rank. MiniMax-M3 has four KV heads, so TP4 takes that fast path while TP2
+  # uses vLLM's supported Triton sparse-attention fallback. Applying the TP4
+  # layout at TP2 is not a valid configuration.
+  if [ "$TP_SIZE" -eq 4 ]; then
+    export VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=1
+  else
+    export VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=0
+  fi
+
   # Kernel selection — required to match the benchmarked MoE path.
   # Without these (and `--moe-backend aiter` on the serve command), vLLM's MXFP4
   # MoE oracle selects the TRITON_UNFUSED fallback on gfx950 instead of the
   # AITER_MXFP4_MXFP4 kernel the InferenceX lane actually runs.
   export VLLM_ENGINE_READY_TIMEOUT_S=3600
+  export VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=1800
   export VLLM_USE_BREAKABLE_CUDAGRAPH=0
   export VLLM_ROCM_USE_AITER=1
   export VLLM_ROCM_USE_AITER_MOE=1
@@ -738,24 +781,50 @@ guide: |
   export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION_MIN_SIZE_KB=256
   ```
 
-  The full reproduction serve command is then:
+  #### Serving and evaluation (real target verification)
+
+  This is the form to use for the lane's accuracy evaluation and for any normal
+  serving. The draft's proposals are verified against the real target model:
 
   ```bash
   vllm serve amd/MiniMax-M3-MXFP4 \
     --port "${PORT:-8000}" \
-    --tensor-parallel-size 4 \
+    --tensor-parallel-size "$TP_SIZE" \
     --trust-remote-code \
     --block-size 128 \
-    --no-enable-prefix-caching \
+    --gpu-memory-utilization 0.85 \
+    --enable-chunked-prefill \
+    --max-num-batched-tokens 32768 \
     --language-model-only \
-    --max-model-len "$MAX_MODEL_LEN" \
-    --attention-backend TRITON_ATTN \
+    --enable-prefix-caching \
+    --attention-backend ROCM_AITER_UNIFIED_ATTN \
     --moe-backend aiter \
     --kv-cache-dtype fp8 \
     --tool-call-parser minimax_m3 \
     --enable-auto-tool-choice \
-    --reasoning-parser minimax_m3
+    --default-chat-template-kwargs '{"thinking_mode":"enabled"}' \
+    --max-num-seqs "$((2 * CONC))" \
+    --stream-interval 20 \
+    --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3-GQA", "num_speculative_tokens": 3, "attention_backend": "ROCM_AITER_UNIFIED_ATTN"}'
   ```
+
+  #### Throughput measurement only (synthetic acceptance)
+
+  The throughput arm of the sweep replaces only the `--speculative-config` with
+  a synthetic rejection sampler so that every concurrency point is measured
+  against the same acceptance rate:
+
+  ```bash
+    --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3-GQA", "num_speculative_tokens": 3, "attention_backend": "ROCM_AITER_UNIFIED_ATTN", "rejection_sample_method": "synthetic", "synthetic_acceptance_length": 2.78}'
+  ```
+
+  `2.78` is **not** a tuning knob and **not** a production shortcut. It is the
+  committed golden EAGLE3-GQA acceptance length for MiniMax-M3 with thinking
+  enabled at 3 speculative tokens, taken from
+  [`golden_al_distribution/minimaxm3_eagle3_gqa.yaml`](https://github.com/SemiAnalysisAI/InferenceX/blob/main/golden_al_distribution/minimaxm3_eagle3_gqa.yaml).
+  Synthetic rejection standardizes throughput comparisons; it bypasses real
+  verification, so it must never be used for accuracy evaluation or for serving
+  users. Use the real-verification form above for everything else.
 
   Selecting the AITER MXFP4 MoE backend (`--moe-backend aiter`) is a
   kernel-selection choice (same MXFP4 math, faster kernel), not a precision
@@ -764,6 +833,14 @@ guide: |
   pending accuracy validation**. Performance figures on the InferenceX dashboard
   are **reported externally by SemiAnalysis and have not been reproduced in this
   repository.**
+
+  #### References for this benchmark lane
+
+  - Source PR: [SemiAnalysisAI/InferenceX#2781](https://github.com/SemiAnalysisAI/InferenceX/pull/2781)
+  - Full sweep run: [actions/runs/33239952571](https://github.com/SemiAnalysisAI/InferenceX/actions/runs/33239952571)
+  - Agentic eval job: [job/99067626974](https://github.com/SemiAnalysisAI/InferenceX/actions/runs/33239952571/job/99067626974)
+  - Golden GQA acceptance-length curve: [`minimaxm3_eagle3_gqa.yaml`](https://github.com/SemiAnalysisAI/InferenceX/blob/main/golden_al_distribution/minimaxm3_eagle3_gqa.yaml)
+  - KV-cache layout change the image pin compensates for: [vllm-project/vllm#51718](https://github.com/vllm-project/vllm/pull/51718)
 
   ## Troubleshooting
 
