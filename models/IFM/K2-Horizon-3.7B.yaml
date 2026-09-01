@@ -2,12 +2,12 @@ meta:
   title: "K2-Horizon-3.7B"
   slug: "k2-horizon-3.7b"
   provider: "IFM"
-  description: "Dense base model for long-context research, evaluation, and downstream adaptation"
+  description: "Dense model for long-context research, evaluation, and downstream adaptation"
   date_added: 2026-08-31
   date_updated: 2026-08-31
   difficulty: advanced
   tasks: [text]
-  performance_headline: "5.06B stored parameters with up to 512K context"
+  performance_headline: "5.06B stored parameters including embeddings, with up to 512K context"
   related_recipes: ["IFM/K2-Horizon-0.9B", "IFM/K2-Horizon-7B"]
   hardware:
     h200: verified
@@ -43,16 +43,17 @@ hardware_overrides: {}
 guide: |
   ## Overview
 
-  K2-Horizon-3.7B is a dense base checkpoint with 5.06B stored parameters and
-  up to 524,288 tokens of context. Its 36-layer decoder and grouped-query
-  attention make it a practical family entry point for long-context research,
-  evaluation, retrieval-augmented generation, and downstream adaptation. It is
-  a base model rather than an instruction-aligned assistant, so applications
-  should supply suitable prompting, safety controls, and task-specific
-  validation. The recipe begins at 131,072 tokens to leave room for KV cache
-  and should be scaled only after workload measurements.
+  K2-Horizon-3.7B is a small dense model in the IFM K2-Horizon family,
+  with 5.06B stored parameters including embeddings and support for up to
+  524,288 tokens of context.
 
-  ## Launch
+  K2-Horizon is an open-weight IFM model family built for transparent
+  foundation-model research, staged checkpoint analysis, and practical
+  deployment. The series spans compact dense models for local experimentation,
+  dense mid-size and large models for high-quality research workloads, and
+  mixture-of-expert (MoE) models for higher-capacity serving.
+
+  ## Launch Commands
 
   ```bash
   vllm serve IFM/K2-Horizon-3.7B \
@@ -65,7 +66,31 @@ guide: |
     --tool-call-parser k2_horizon
   ```
 
-  Increase context and concurrency only after checking KV-cache capacity.
+  ## Client usage
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(
+      api_key="EMPTY", base_url="http://localhost:8000/v1", timeout=3600
+  )
+
+  resp = client.chat.completions.create(
+      model="IFM/K2-Horizon-3.7B",
+      messages=[{"role": "user", "content": "Give me three primes above 100."}],
+      temperature=1.0, top_p=0.95, max_tokens=2048,
+  )
+  print(resp.choices[0].message.content)
+  ```
+
+  ### Thinking modes
+
+  The model supports selectable thinking through `chat_template_kwargs`, per
+  request or server-wide via `--default-chat-template-kwargs`:
+
+  - `{"reasoning_effort": "high"}` — full thinking (default).
+  - `{"reasoning_effort": "medium"}` — faster thinking.
+  - `{"reasoning_effort": "low"}` — fastest thinking.
 
   ## References
 

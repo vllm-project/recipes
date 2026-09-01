@@ -2,13 +2,13 @@ meta:
   title: "K2-Horizon-0.9B"
   slug: "k2-horizon-0.9b"
   provider: "IFM"
-  description: "Compact dense reasoning model for mathematics, code, instruction following, and STEM tasks"
+  description: "Compact dense model for mathematics, code, instruction following, and STEM tasks"
   date_added: 2026-08-31
   date_updated: 2026-08-31
   difficulty: advanced
   tasks:
     - text
-  performance_headline: "1.08B parameters with 131K context and native K2-Horizon parsing"
+  performance_headline: "1.08B stored parameters including embeddings, with 131K context and native K2-Horizon parsing"
   related_recipes:
     - "IFM/K2-Horizon-3.7B"
   hardware:
@@ -57,22 +57,18 @@ hardware_overrides: {}
 guide: |
   ## Overview
 
-  K2-Horizon-0.9B is a dense reasoning model with 1.08B stored parameters and
-  a 131,072-token YaRN context window. It combines mathematics, code
-  generation, instruction following, and STEM knowledge in a checkpoint small
-  enough for local experimentation. The chat template can select high, medium,
-  or low reasoning effort, while the vLLM parsers expose reasoning and tool
-  calls through the OpenAI-compatible API. This recipe starts conservatively
-  at 8,192 tokens and one sequence so operators can establish a stable baseline
-  before increasing context length or concurrency.
+  K2-Horizon-0.9B is a compact dense model in the IFM K2-Horizon
+  family, with 1.08B stored parameters including embeddings and a 131,072-token
+  context window.
 
-  ## Prerequisites
+  K2-Horizon is an open-weight IFM model family built for transparent
+  foundation-model research, staged checkpoint analysis, and practical
+  deployment. The series spans compact dense models such as K2-Horizon-0.9B
+  for local experimentation, dense mid-size and large models for high-quality
+  research workloads, and mixture-of-expert (MoE) models for higher-capacity
+  serving.
 
-  Use Linux x86-64, a CUDA 12.9-compatible NVIDIA driver, and the exact vLLM
-  source commit shown in the Install block. That revision contains the native
-  architecture and both `k2_horizon` parsers.
-
-  ## Launch
+  ## Launch Commands
 
   ```bash
   vllm serve IFM/K2-Horizon-0.9B \
@@ -86,8 +82,31 @@ guide: |
     --tool-call-parser k2_horizon
   ```
 
-  Use `temperature=0` for a deterministic smoke test. For sampled generation,
-  `temperature=0.6` and `top_p=0.95` are reasonable starting points.
+  ## Client usage
+
+  ```python
+  from openai import OpenAI
+
+  client = OpenAI(
+      api_key="EMPTY", base_url="http://localhost:8000/v1", timeout=3600
+  )
+
+  resp = client.chat.completions.create(
+      model="IFM/K2-Horizon-0.9B",
+      messages=[{"role": "user", "content": "Give me three primes above 100."}],
+      temperature=1.0, top_p=0.95, max_tokens=2048,
+  )
+  print(resp.choices[0].message.content)
+  ```
+
+  ### Thinking modes
+
+  The model supports selectable thinking through `chat_template_kwargs`, per
+  request or server-wide via `--default-chat-template-kwargs`:
+
+  - `{"reasoning_effort": "high"}` — full thinking (default).
+  - `{"reasoning_effort": "medium"}` — faster thinking.
+  - `{"reasoning_effort": "low"}` — fastest thinking.
 
   ## References
 
