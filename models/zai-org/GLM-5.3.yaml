@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3 — Frontier Coding with Emergent Cyber Capabilities"
   date_added: 2026-08-28
-  date_updated: 2026-08-28
+  date_updated: 2026-08-30
   difficulty: advanced
   tasks:
     - text
@@ -14,6 +14,9 @@ meta:
     - "zai-org/GLM-5.3-Flash"
   hardware:
     b300: verified
+    # Validated 2026-08-30 on one Atlas A5 node (8×950PR, TP8, graph mode).
+    # Native FP8 path needs vllm-ascend#15346.
+    ascend_950pr_8x: verified
 
 model:
   model_id: "zai-org/GLM-5.3"
@@ -43,10 +46,20 @@ features:
       - "--reasoning-parser"
       - "glm45"
   spec_decoding:
-    description: "Built-in Multi-Token Prediction, 5 draft tokens"
-    args:
-      - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":5}'
+    description: "Built-in Multi-Token Prediction — 5 draft tokens on NVIDIA/AMD, 1 on Ascend (draft stays eager)."
+    default_mode: mtp
+    modes:
+      mtp:
+        label: "MTP"
+        description: "Native multi-token prediction head."
+        args:
+          - "--speculative-config"
+          - '{"method":"mtp","num_speculative_tokens":5}'
+        hardware_overrides:
+          npu:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":1,"enforce_eager":true}'
 
 opt_in_features:
   - spec_decoding
@@ -56,6 +69,14 @@ variants:
     precision: fp8
     vram_minimum_gb: 893
     description: "Native FP8 checkpoint (zai-org/GLM-5.3) — 8xH200/H20 (141GB × 8) single-node serving"
+    hardware_overrides:
+      # Exact-GPU pin: computeDockerMeta has no Huawei brand, so a model-level
+      # docker_image string would only affect NVIDIA. Hide pip — official
+      # wheels have no NPU kernels.
+      ascend_950pr_8x:
+        docker_image: "quay.io/ascend/vllm-ascend:nightly-main-a5"
+        install:
+          pip: false
   nvfp4:
     model_id: "Inferact/GLM-5.3-NVFP4"
     precision: nvfp4
@@ -76,9 +97,21 @@ compatible_strategies:
   - multi_node_dep
   - pd_cluster
 
-kv_offload_support:
-  offloading_cpu: verified
-  offloading_fs: verified
+# EP/MC2 cannot acquire HCCL links on Atlas 350 (950PR). Multi-node and PD
+# were not validated. Only single-node TP8 is offered on NPU.
+strategy_hardware:
+  single_node_tep:
+    npu: unsupported
+  multi_node_tp:
+    npu: unsupported
+  multi_node_tp_pp:
+    npu: unsupported
+  multi_node_tep:
+    npu: unsupported
+  multi_node_dep:
+    npu: unsupported
+  pd_cluster:
+    npu: unsupported
 
 hardware_overrides:
   hopper:
@@ -96,8 +129,35 @@ hardware_overrides:
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
       VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
+  # Shared by 950PR 8x (8×128 GB). last-wins shadows --kv-cache-dtype fp8_e4m3
+  # from base_args; SFA on 950 needs --block-size 512.
+  npu:
+    extra_args:
+      - "--trust-remote-code"
+      - "--kv-cache-dtype"
+      - "auto"
+      - "--block-size"
+      - "512"
+      - "--max-model-len"
+      - "131072"
+      - "--max-num-seqs"
+      - "16"
+      - "--gpu-memory-utilization"
+      - "0.9"
+    extra_env:
+      PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+      OMP_PROC_BIND: "false"
+      OMP_NUM_THREADS: "1"
+      TASK_QUEUE_ENABLE: "1"
+      HCCL_BUFFSIZE: "1024"
+      HCCL_OP_EXPANSION_MODE: "AIV"
 
 strategy_overrides: {}
+
+hardware_notes:
+  ascend_950pr_8x:
+    title: "vLLM Ascend A5 image required"
+    body: "Single-node TP8 on 8×950PR. Pin quay.io/ascend/vllm-ascend:nightly-main-a5 and overlay vllm-ascend#15346 for native FP8. EP is not available on this interconnect. Set HCCL_BUFFSIZE=1024 before launch."
 
 guide: |
   ## Overview
