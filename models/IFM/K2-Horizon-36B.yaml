@@ -1,0 +1,76 @@
+meta:
+  title: "K2-Horizon-36B"
+  slug: "k2-horizon-36b"
+  provider: "IFM"
+  description: "Sparse MoVA and MoE long-context model for research and production-style serving experiments"
+  date_added: 2026-08-31
+  date_updated: 2026-08-31
+  difficulty: advanced
+  tasks: [text]
+  performance_headline: "37.44B total / 5.95B active parameters per token"
+  related_recipes: ["IFM/K2-Horizon-32B", "IFM/K2-Horizon-375B"]
+model:
+  model_id: "IFM/K2-Horizon-36B"
+  min_vllm_version: "0.27"
+  nightly_required: true
+  install:
+    docker: false
+    pip:
+      note: "Native support requires the reviewed vLLM PR #53806 source revision"
+      command: "uv pip install 'vllm @ git+https://github.com/vllm-project/vllm.git@d9fd5f11423a1a5628fe29e7296ceb9de91aac3c'"
+  architecture: moe
+  parameter_count: "37.44B"
+  active_parameters: "5.95B"
+  context_length: 524288
+  base_args: ["--model-impl", "vllm", "--trust-remote-code", "--dtype", "bfloat16", "--max-model-len", "131072"]
+  base_env: {}
+features:
+  reasoning:
+    description: "Extract K2-Horizon reasoning into reasoning_content"
+    args: ["--reasoning-parser", "k2_horizon"]
+  tool_calling:
+    description: "Enable automatic tool choice with the K2-Horizon parser"
+    args: ["--enable-auto-tool-choice", "--tool-call-parser", "k2_horizon"]
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 90
+    description: "BF16 evaluation runtime with native vLLM execution"
+compatible_strategies: [single_node_tp, multi_node_tp, multi_node_tp_pp]
+hardware_overrides: {}
+strategy_overrides:
+  single_node_tp:
+    tp: 2
+guide: |
+  ## Overview
+
+  K2-Horizon-36B combines MoVA attention and sparse MoE layers. It stores
+  37.44B parameters while activating about 5.95B per token and supports up to
+  524,288 tokens of context. Its architecture mixes a small number of dense
+  blocks with sparse attention and feed-forward blocks to increase total model
+  capacity without activating every parameter for each token. The model is
+  suited to multistage research, long-context evaluation, and production-style
+  serving experiments, but it is not instruction-aligned by default. This
+  recipe starts with two-way tensor parallelism and a 131,072-token limit so
+  operators can establish memory and throughput characteristics safely.
+
+  ## Launch
+
+  ```bash
+  vllm serve IFM/K2-Horizon-36B \
+    --model-impl vllm \
+    --tensor-parallel-size 2 \
+    --trust-remote-code \
+    --dtype bfloat16 \
+    --max-model-len 131072 \
+    --reasoning-parser k2_horizon \
+    --enable-auto-tool-choice \
+    --tool-call-parser k2_horizon
+  ```
+
+  Increase context and concurrency only after checking KV-cache capacity.
+
+  ## References
+
+  - [IFM/K2-Horizon-36B on Hugging Face](https://huggingface.co/IFM/K2-Horizon-36B)
+  - [K2 Horizon Collection](https://huggingface.co/collections/IFM/k2-horizon)

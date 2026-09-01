@@ -1,0 +1,77 @@
+meta:
+  title: "K2-Horizon-375B"
+  slug: "k2-horizon-375b"
+  provider: "IFM"
+  description: "Frontier-scale sparse MoE base model for long-context research and high-capacity serving"
+  date_added: 2026-08-31
+  date_updated: 2026-08-31
+  difficulty: advanced
+  tasks: [text]
+  performance_headline: "379.17B total / 26.67B active parameters per token"
+  related_recipes: ["IFM/K2-Horizon-36B"]
+model:
+  model_id: "IFM/K2-Horizon-375B"
+  min_vllm_version: "0.27"
+  nightly_required: true
+  install:
+    docker: false
+    pip:
+      note: "Requires the reviewed vLLM PR #53806 source revision"
+      command: "uv pip install 'vllm @ git+https://github.com/vllm-project/vllm.git@d9fd5f11423a1a5628fe29e7296ceb9de91aac3c'"
+  architecture: moe
+  parameter_count: "379.17B"
+  active_parameters: "26.67B"
+  context_length: 524288
+  base_args: ["--model-impl", "vllm", "--trust-remote-code", "--dtype", "bfloat16", "--max-model-len", "131072"]
+  base_env: {}
+features:
+  reasoning:
+    description: "Extract K2-Horizon reasoning into reasoning_content"
+    args: ["--reasoning-parser", "k2_horizon"]
+  tool_calling:
+    description: "Enable automatic tool choice with the K2-Horizon parser"
+    args: ["--enable-auto-tool-choice", "--tool-call-parser", "k2_horizon"]
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 911
+    description: "BF16 evaluation runtime with an eight-GPU tensor-parallel baseline"
+compatible_strategies: [single_node_tp, multi_node_tp, multi_node_tp_pp]
+hardware_overrides: {}
+strategy_overrides:
+  single_node_tp:
+    tp: 8
+guide: |
+  ## Overview
+
+  K2-Horizon-375B is a sparse MoE base checkpoint with 379.17B stored and
+  26.67B active parameters per token. It supports up to 524,288 tokens of
+  context and targets frontier-scale open research, long-context evaluation,
+  and high-capacity serving. Its 192 experts provide substantial model capacity
+  while routing each token through only eight experts, although every expert's
+  weights must still reside in accelerator memory. The model is not
+  instruction-aligned by default, so user-facing deployments require explicit
+  prompting, safeguards, and validation. This recipe uses eight-way tensor
+  parallelism and a 131,072-token starting limit for a measurable baseline.
+
+  ## Launch
+
+  ```bash
+  vllm serve IFM/K2-Horizon-375B \
+    --model-impl vllm \
+    --tensor-parallel-size 8 \
+    --trust-remote-code \
+    --dtype bfloat16 \
+    --max-model-len 131072 \
+    --reasoning-parser k2_horizon \
+    --enable-auto-tool-choice \
+    --tool-call-parser k2_horizon
+  ```
+
+  This BF16 checkpoint needs roughly 911 GB for weights plus headroom. Increase
+  context and concurrency only after checking distributed KV-cache capacity.
+
+  ## References
+
+  - [IFM/K2-Horizon-375B on Hugging Face](https://huggingface.co/IFM/K2-Horizon-375B)
+  - [K2 Horizon Collection](https://huggingface.co/collections/IFM/k2-horizon)

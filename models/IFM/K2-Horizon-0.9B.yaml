@@ -1,0 +1,93 @@
+meta:
+  title: "K2-Horizon-0.9B"
+  slug: "k2-horizon-0.9b"
+  provider: "IFM"
+  description: "Compact dense reasoning model for mathematics, code, instruction following, and STEM tasks"
+  date_added: 2026-08-31
+  date_updated: 2026-08-31
+  difficulty: advanced
+  tasks:
+    - text
+  performance_headline: "1.08B parameters with 131K context and native K2-Horizon parsing"
+  related_recipes:
+    - "IFM/K2-Horizon-3.7B"
+model:
+  model_id: "IFM/K2-Horizon-0.9B"
+  min_vllm_version: "0.27"
+  nightly_required: true
+  install:
+    docker: false
+    pip:
+      note: "Native support requires the reviewed vLLM PR #53806 source revision"
+      command: "uv pip install 'vllm @ git+https://github.com/vllm-project/vllm.git@d9fd5f11423a1a5628fe29e7296ceb9de91aac3c'"
+  architecture: dense
+  parameter_count: "1.08B"
+  active_parameters: "1.08B"
+  context_length: 131072
+  base_args:
+    - "--model-impl"
+    - "vllm"
+    - "--trust-remote-code"
+    - "--dtype"
+    - "bfloat16"
+    - "--max-model-len"
+    - "8192"
+    - "--gpu-memory-utilization"
+    - "0.85"
+  base_env: {}
+features:
+  reasoning:
+    description: "Extract K2-Horizon reasoning into reasoning_content"
+    args: ["--reasoning-parser", "k2_horizon"]
+  tool_calling:
+    description: "Enable automatic tool choice with the K2-Horizon parser"
+    args: ["--enable-auto-tool-choice", "--tool-call-parser", "k2_horizon"]
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 3
+    description: "Released BF16 checkpoint; the command starts at an 8K runtime context"
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+  - multi_node_tp_pp
+hardware_overrides: {}
+guide: |
+  ## Overview
+
+  K2-Horizon-0.9B is a dense reasoning model with 1.08B stored parameters and
+  a 131,072-token YaRN context window. It combines mathematics, code
+  generation, instruction following, and STEM knowledge in a checkpoint small
+  enough for local experimentation. The chat template can select high, medium,
+  or low reasoning effort, while the vLLM parsers expose reasoning and tool
+  calls through the OpenAI-compatible API. This recipe starts conservatively
+  at 8,192 tokens and one sequence so operators can establish a stable baseline
+  before increasing context length or concurrency.
+
+  ## Prerequisites
+
+  Use Linux x86-64, a CUDA 12.9-compatible NVIDIA driver, and the exact vLLM
+  source commit shown in the Install block. That revision contains the native
+  architecture and both `k2_horizon` parsers.
+
+  ## Launch
+
+  ```bash
+  vllm serve IFM/K2-Horizon-0.9B \
+    --model-impl vllm \
+    --trust-remote-code \
+    --dtype bfloat16 \
+    --max-model-len 8192 \
+    --gpu-memory-utilization 0.85 \
+    --reasoning-parser k2_horizon \
+    --enable-auto-tool-choice \
+    --tool-call-parser k2_horizon
+  ```
+
+  Use `temperature=0` for a deterministic smoke test. For sampled generation,
+  `temperature=0.6` and `top_p=0.95` are reasonable starting points.
+
+  ## References
+
+  - [IFM/K2-Horizon-0.9B on Hugging Face](https://huggingface.co/IFM/K2-Horizon-0.9B)
+  - [K2 Horizon Collection](https://huggingface.co/collections/IFM/k2-horizon)
