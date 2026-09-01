@@ -87,8 +87,12 @@ compatible_strategies:
 
 hardware_overrides:
   hopper:
+    # The default max_num_seqs of 1024 exceeds the Mamba cache blocks available
+    # at TP4, and startup fails. AMD already caps this below.
     extra_args:
       - "--no-enable-flashinfer-autotune"
+      - "--max-num-seqs"
+      - "512"
   blackwell:
     # FP8 KV cache only works on Blackwell for this model; Hopper runs BF16 KV.
     extra_args:
