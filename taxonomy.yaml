@@ -332,6 +332,17 @@ hardware_profiles:
     multi_node: false
     restricted: true
 
+  # Atlas 800I A2 nodes. Restricted: only recipes that explicitly declare
+  # end-to-end evidence under `meta.hardware` expose this profile.
+  ascend_910b_8x:
+    brand: Huawei
+    generation: npu
+    display_name: "Atlas 800I A2"
+    description: "Huawei Ascend 910B · 8× NPU · 64 GB HBM each · Atlas 800I A2 · vLLM Ascend backend"
+    gpu_count: 8
+    vram_gb: 512
+    multi_node: false
+    restricted: true
   # 8-card Atlas A5 nodes. Distinct from `ascend_950pr` (1×128 GB, MiniMax-H3).
   # Restricted: only recipes that list them in `meta.hardware` show the pills.
   # Ids / display_name follow the RTX Pro 6000 8x pattern: `<sku>_8x` / `"<name> 8x"`.

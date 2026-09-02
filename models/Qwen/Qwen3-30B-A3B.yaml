@@ -2,17 +2,18 @@ meta:
   title: "Qwen3-30B-A3B"
   slug: "qwen3-30b-a3b"
   provider: "Qwen"
-  description: "Qwen3 MoE model with 30.5B total and 3.3B active parameters, validated for BF16 serving on Intel Xeon 6."
+  description: "Qwen3 MoE model with 30.5B total and 3.3B active parameters, validated for BF16 serving on Intel Xeon 6 and W8A8 serving on Huawei Atlas 800I A2."
   date_added: 2026-08-14
-  date_updated: 2026-08-14
+  date_updated: 2026-09-02
   difficulty: intermediate
   tasks:
     - text
-  performance_headline: "Validated on Intel Xeon 6 (GNR) with BF16 serving"
+  performance_headline: "Validated on Intel Xeon 6 (GNR) with BF16 serving and Atlas 800I A2 with W8A8 serving"
   related_recipes:
     - "Qwen/Qwen3-235B-A22B-Instruct-2507"
   hardware:
     xeon6: verified
+    ascend_910b_8x: verified
 
 model:
   model_id: "Qwen/Qwen3-30B-A3B"
@@ -44,6 +45,29 @@ variants:
     precision: bf16
     vram_minimum_gb: 74
     description: "Full precision BF16"
+  ascend_w8a8:
+    model_id: "Eco-Tech/Qwen3-30B-A3B-w8a8"
+    precision: int8
+    label: "W8A8 (Ascend)"
+    vram_minimum_gb: 37
+    supported_hardware: [ascend_910b_8x]
+    tp:
+      ascend_910b_8x: 4
+    extra_args:
+      - "--quantization"
+      - "ascend"
+      - "--enable-expert-parallel"
+      - "--distributed-executor-backend"
+      - "mp"
+    extra_env:
+      HCCL_BUFFSIZE: "1024"
+      OMP_PROC_BIND: "false"
+      OMP_NUM_THREADS: "1"
+      PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+    hardware_overrides:
+      ascend_910b_8x:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0rc1"
+    description: "ModelSlim INT8 W8A8 for Atlas 800I A2. Validated with TP4; requires --quantization ascend."
 
 compatible_strategies:
   - single_node_tp
@@ -110,6 +134,35 @@ guide: |
       --port 8000
   ```
 
+  ## Huawei Atlas 800I A2 (8× Ascend 910B)
+
+  The validated Ascend path uses the ModelSlim W8A8 checkpoint on four of the
+  eight Ascend 910B NPUs (TP4), vLLM Ascend 0.23.0rc1, and the
+  `quay.io/ascend/vllm-ascend:v0.23.0rc1` image. The checkpoint is hosted on
+  ModelScope, so set `VLLM_USE_MODELSCOPE=True` before serving it.
+
+  ```bash
+  export VLLM_USE_MODELSCOPE=True
+  export HCCL_BUFFSIZE=1024
+  export OMP_PROC_BIND=false
+  export OMP_NUM_THREADS=1
+  export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+
+  vllm serve Eco-Tech/Qwen3-30B-A3B-w8a8 \
+    --tensor-parallel-size 4 \
+    --enable-expert-parallel \
+    --distributed-executor-backend mp \
+    --quantization ascend
+  ```
+
+  Verify the OpenAI-compatible server after it becomes ready:
+
+  ```bash
+  curl http://localhost:8000/v1/models
+  curl http://localhost:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{"model":"Eco-Tech/Qwen3-30B-A3B-w8a8","messages":[{"role":"user","content":"Give one sentence about tensor parallelism."}]}'
+  ```
   ## Client Usage
 
   ```python
@@ -126,4 +179,6 @@ guide: |
   ## References
 
   - [Model card](https://huggingface.co/Qwen/Qwen3-30B-A3B)
+  - [Ascend W8A8 checkpoint (ModelScope)](https://www.modelscope.cn/models/Eco-Tech/Qwen3-30B-A3B-w8a8)
   - [vLLM CPU installation](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/)
+  - [vLLM Ascend documentation](https://docs.vllm.ai/projects/ascend/en/latest/)
