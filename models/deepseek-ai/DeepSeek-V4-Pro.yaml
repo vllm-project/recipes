@@ -112,9 +112,8 @@ variants:
     precision: fp8
     vram_minimum_gb: 960
     description: "Native FP4+FP8 mixed checkpoint (MoE experts FP4, remaining params FP8)"
-    # deep_gemm_mega_moe is an FP8-only MoE kernel — the FP8 checkpoints (0813,
-    # preview and dspark) add it on Blackwell; the NVFP4 variant adds nothing (its
-    # experts can't use it). Layered on the recipe-level blackwell FP4 indexer cache.
+    # deep_gemm_mega_moe is FP8-only; NVFP4 selects its backend separately.
+    # Layered on the recipe-level Blackwell FP4 indexer cache.
     hardware_overrides:
       blackwell:
         extra_args:
@@ -125,9 +124,6 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 960
     description: "NVIDIA modelopt NVFP4 checkpoint (MoE experts NVFP4; attention, shared experts, router head, and MTP stay FP8) for Blackwell GPUs."
-    # The measured expert-parallel path explicitly selects CuTeDSL for the
-    # ModelOpt NVFP4 experts. The single_node_tp strategy's Blackwell override
-    # replaces this block, preserving vLLM's default backend for TP-only.
     hardware_overrides:
       blackwell:
         extra_args:
@@ -183,8 +179,8 @@ hardware_overrides:
       - "--compilation-config"
       - '{"mode": 0, "cudagraph_mode": "FULL_DECODE_ONLY"}'
   blackwell:
-    # Common to every variant on Blackwell. Each checkpoint's compatible MoE
-    # backend is added per-variant, not here.
+    # Common to every variant on Blackwell. The FP8-only deep_gemm_mega_moe MoE
+    # kernel is added per-variant (FP8 checkpoints), not here.
     extra_args:
       - "--attention_config.use_fp4_indexer_cache=True"
   amd:
@@ -213,7 +209,7 @@ strategy_overrides:
           - "--no-enable-flashinfer-autotune"
       blackwell:
         # Replaces recipe-level blackwell override: keeps the FP4 indexer cache
-        # but drops the variant-level --moe-backend selection (TP-only path uses
+        # but drops any variant-level --moe-backend selection (TP-only uses
         # the default MoE backend).
         extra_args:
           - "--attention_config.use_fp4_indexer_cache=True"
@@ -288,10 +284,7 @@ guide: |
   An **NVFP4 variant** (`nvidia/DeepSeek-V4-Pro-NVFP4`) is also available — NVIDIA
   modelopt re-quantizes the MoE experts to standard NVFP4 while attention, shared
   experts, router head, and MTP stay FP8. Pick it from the **Variant** row; it runs on
-  Blackwell GPUs with the FP4 indexer cache. Unlike the native FP8 checkpoint, the
-  NVFP4 experts don't support the `deep_gemm_mega_moe` MoE kernel (FP8-only), so it
-  uses `flashinfer_cutedsl` for expert-parallel strategies. The latency-oriented
-  TP-only strategy keeps vLLM's default MoE backend.
+  Blackwell GPUs with the FP4 indexer cache.
 
   ## Checkpoints
 
