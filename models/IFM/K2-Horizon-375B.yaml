@@ -13,13 +13,6 @@ meta:
     h200: verified
 model:
   model_id: "IFM/K2-Horizon-375B"
-  min_vllm_version: "0.27"
-  nightly_required: true
-  install:
-    docker: false
-    pip:
-      note: "Requires the reviewed vLLM PR #53806 source revision"
-      command: "uv pip install 'vllm @ git+https://github.com/vllm-project/vllm.git@d9fd5f11423a1a5628fe29e7296ceb9de91aac3c'"
   architecture: moe
   parameter_count: "379.17B"
   active_parameters: "26.67B"
