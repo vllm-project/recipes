@@ -20,13 +20,13 @@ model:
   active_parameters: "1.08B"
   context_length: 131072
   base_args:
-    - "--model-impl"
-    - "vllm"
     - "--trust-remote-code"
     - "--dtype"
     - "bfloat16"
     - "--max-model-len"
-    - "8192"
+    - "131072"
+    - "--rope-scaling"
+    - '{"rope_type":"yarn","factor":16.0,"original_max_position_embeddings":8192}'
     - "--gpu-memory-utilization"
     - "0.85"
   base_env: {}
@@ -63,9 +63,30 @@ guide: |
 
   ## Launch Commands
 
+  We recommend serving K2-Horizon-0.9B with YaRN RoPE scaling to enable the full 131,072-token context length. We have tested and verified the model under this configuration.
+
+  ### Recommended: With YaRN
+
   ```bash
   vllm serve IFM/K2-Horizon-0.9B \
-    --model-impl vllm \
+    --trust-remote-code \
+    --dtype bfloat16 \
+    --max-model-len 131072 \
+    --rope-scaling '{"rope_type":"yarn","factor":16.0,"original_max_position_embeddings":8192}' \
+    --gpu-memory-utilization 0.85 \
+    --reasoning-parser k2_horizon \
+    --enable-auto-tool-choice \
+    --tool-call-parser k2_horizon
+  ```
+
+  This configuration enables the full 131,072-token context length and is the recommended setting for K2-Horizon.
+
+  ### Without YaRN
+
+  To use the original 8,192-token context length, you can serve the model without RoPE scaling:
+
+  ```bash
+  vllm serve IFM/K2-Horizon-0.9B \
     --trust-remote-code \
     --dtype bfloat16 \
     --max-model-len 8192 \

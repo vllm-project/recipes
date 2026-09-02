@@ -17,7 +17,7 @@ model:
   parameter_count: "34.78B"
   active_parameters: "34.78B"
   context_length: 524288
-  base_args: ["--model-impl", "vllm", "--trust-remote-code", "--dtype", "bfloat16", "--max-model-len", "131072"]
+  base_args: ["--trust-remote-code", "--dtype", "bfloat16", "--max-model-len", "131072"]
   base_env: {}
 features:
   reasoning:
@@ -54,7 +54,6 @@ guide: |
 
   ```bash
   vllm serve IFM/K2-Horizon-32B \
-    --model-impl vllm \
     --tensor-parallel-size 2 \
     --trust-remote-code \
     --dtype bfloat16 \
