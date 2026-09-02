@@ -1056,9 +1056,10 @@ guide: |
   Both optimizations trade fidelity for speed, and their effects compound. The measured B300
   speedup and LPIPS for each mode and for the combination are in the vLLM blog's
   [Quantized and Sparse Attention](https://vllm.ai/blog/2026-09-01-minimax-h3-production-serving#quantized-and-sparse-attention-in-trtllm_attn)
-  section as a reference; tune the settings according to the accuracy and speed required. The
+  section as a reference; tune the settings according to the accuracy and speed required. See
+  the
   [TRTLLM attention guide](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/trtllm/)
-  documents every key.
+  for the full configuration reference.
 
   No restart is required: `extra_params.task` routes T2VA/FL2VA requests to the FL2VA
   DiT and Ref2VA requests to the Ref2VA DiT.
