@@ -1056,11 +1056,9 @@ guide: |
   Both optimizations trade fidelity for speed, and their effects compound. The measured B300
   speedup and LPIPS for each mode and for the combination are in the vLLM blog's
   [Quantized and Sparse Attention](https://vllm.ai/blog/2026-09-01-minimax-h3-production-serving#quantized-and-sparse-attention-in-trtllm_attn)
-  section as a reference; tune against dense output on your own prompts. The
+  section as a reference; tune the settings according to the accuracy and speed required. The
   [TRTLLM attention guide](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/trtllm/)
-  documents every key, and the
-  [Skip-Softmax design](https://docs.vllm.ai/projects/vllm-omni/en/latest/design/feature/skip_softmax/)
-  explains the algorithm and how the timestep cutoff maps to dense steps.
+  documents every key.
 
   No restart is required: `extra_params.task` routes T2VA/FL2VA requests to the FL2VA
   DiT and Ref2VA requests to the Ref2VA DiT.
@@ -1448,7 +1446,6 @@ guide: |
   - [vLLM-Omni diffusion parallelism](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/parallelism/overview/)
   - [vLLM-Omni diffusion attention backends](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/)
   - [vLLM-Omni TRTLLM attention guide (SAGE, Skip-Softmax)](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/trtllm/)
-  - [vLLM-Omni Skip-Softmax design](https://docs.vllm.ai/projects/vllm-omni/en/latest/design/feature/skip_softmax/)
   - [MiniMax-H3 production serving on vLLM-Omni (blog)](https://vllm.ai/blog/2026-09-01-minimax-h3-production-serving)
   - [vLLM-Omni supported models](https://docs.vllm.ai/projects/vllm-omni/en/latest/models/supported_models/)
   - [vLLM-Omni GPU installation](https://docs.vllm.ai/projects/vllm-omni/en/latest/getting_started/installation/gpu/)
