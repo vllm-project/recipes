@@ -1056,8 +1056,7 @@ guide: |
   Both optimizations trade fidelity for speed, and their effects compound. The measured B300
   speedup and LPIPS for each mode and for the combination are in the vLLM blog's
   [Quantized and Sparse Attention](https://vllm.ai/blog/2026-09-01-minimax-h3-production-serving#quantized-and-sparse-attention-in-trtllm_attn)
-  section. Take those numbers as a reference for the accuracy/speed tradeoff, then tune the
-  settings against dense output on your own prompts before adopting either. The
+  section as a reference; tune against dense output on your own prompts. The
   [TRTLLM attention guide](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/trtllm/)
   documents every key, and the
   [Skip-Softmax design](https://docs.vllm.ai/projects/vllm-omni/en/latest/design/feature/skip_softmax/)
