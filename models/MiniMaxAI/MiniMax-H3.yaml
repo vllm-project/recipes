@@ -1053,19 +1053,11 @@ guide: |
   - The `per_role` entry keeps the short token-refiner attention dense; a per-role spec does
     not inherit `quant` or `skip_softmax` from `default`.
 
-  Measured model-execution time on B300 against dense `TRTLLM_ATTN`, with LPIPS computed
-  against the dense output on the same prompt and seed (from the
-  [vLLM blog](https://blog.vllm.ai/2026/08/29/minimax-h3-production-serving.html)):
-
-  | Attention | Model execution | Speedup | LPIPS vs. dense |
-  |---|---:|---:|---:|
-  | Dense `TRTLLM_ATTN` | 54.246 s | 1.000x | 0 |
-  | SAGE FP8 | 44.787 s | 1.211x | 0.3697 |
-  | Skip-Softmax (0.05 / 0.97) | 50.029 s | 1.084x | 0.0917 |
-  | SAGE FP8 + Skip-Softmax | 43.867 s | **1.237x** | 0.3750 |
-
-  Skip-Softmax at this setting is close to lossless; most of the quality change in the combined
-  row comes from SAGE. Compare against dense output before adopting either. The
+  On B300 this configuration reduced model-execution time by **1.237x** against dense
+  `TRTLLM_ATTN`; Skip-Softmax alone at this setting is close to lossless (LPIPS 0.09 against the
+  dense output), so most of the quality change comes from SAGE. The per-mode breakdown is in the
+  [vLLM blog](https://vllm.ai/blog/2026-09-01-minimax-h3-production-serving). Compare against
+  dense output on your own prompts before adopting either. The
   [TRTLLM attention guide](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/trtllm/)
   documents every key, and the
   [Skip-Softmax design](https://docs.vllm.ai/projects/vllm-omni/en/latest/design/feature/skip_softmax/)
@@ -1458,7 +1450,7 @@ guide: |
   - [vLLM-Omni diffusion attention backends](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/)
   - [vLLM-Omni TRTLLM attention guide (SAGE, Skip-Softmax)](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/trtllm/)
   - [vLLM-Omni Skip-Softmax design](https://docs.vllm.ai/projects/vllm-omni/en/latest/design/feature/skip_softmax/)
-  - [MiniMax-H3 production serving on vLLM-Omni (blog)](https://blog.vllm.ai/2026/08/29/minimax-h3-production-serving.html)
+  - [MiniMax-H3 production serving on vLLM-Omni (blog)](https://vllm.ai/blog/2026-09-01-minimax-h3-production-serving)
   - [vLLM-Omni supported models](https://docs.vllm.ai/projects/vllm-omni/en/latest/models/supported_models/)
   - [vLLM-Omni GPU installation](https://docs.vllm.ai/projects/vllm-omni/en/latest/getting_started/installation/gpu/)
   - [ROCm H3 tracking issue](https://github.com/vllm-project/vllm-omni/issues/5697)
