@@ -47,7 +47,7 @@ compatible_strategies:
   - multi_node_tp
 
 hardware_overrides: 
-  dgx_spark_gb10: {}
+  dgx_spark_gb10: verified
 
 strategy_overrides:
   single_node_tp:
