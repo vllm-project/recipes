@@ -322,6 +322,16 @@ hardware_profiles:
     scalable: false
     restricted: true
 
+  ascend_950dt:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 950DT"
+    description: "Huawei Ascend 950DT · 8× NPU node · 96 GB HBM each · vLLM Ascend backend"
+    gpu_count: 8
+    vram_gb: 768
+    multi_node: false
+    restricted: true
+
   ascend_910c:
     brand: Huawei
     generation: npu
