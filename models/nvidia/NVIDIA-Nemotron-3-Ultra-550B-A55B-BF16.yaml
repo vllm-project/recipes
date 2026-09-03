@@ -17,7 +17,7 @@ meta:
 model:
   model_id: "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16"
   min_vllm_version: "0.22.0"
-  docker_image: "vllm/vllm-openai:v0.22.0"
+  docker_image: "vllm/vllm-openai:v0.28.0"
   architecture: moe
   parameter_count: "550B"
   active_parameters: "55B"

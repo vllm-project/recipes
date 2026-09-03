@@ -58,8 +58,6 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
 compatible_strategies:
   - single_node_tp
@@ -90,8 +88,6 @@ hardware_overrides:
       - "8192"
       - "--compilation-config"
       - '{"pass_config":{"fuse_allreduce_rms":true,"eliminate_noops":true}}'
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP8: "1"
   amd:
     # 8 GPUs required for 17B×16E MoE. AITER JIT-compiles on first launch.
     extra_args:

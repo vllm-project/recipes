@@ -13,6 +13,8 @@ meta:
     h100: verified
     b200: verified
     gb200: verified
+    mi300x: unsupported
+    mi325x: unsupported
     mi355x: verified
     ascend_950pr_8x: verified
 
@@ -461,7 +463,8 @@ guide: |
   
   ## Running on MI355X (gfx950)
 
-  The `vllm/vllm-openai-rocm:glm53-flash` docker image gates on gfx950 only.
+  The `vllm/vllm-openai-rocm:glm53-flash` docker image gates on gfx950 only. 
+  https://github.com/vllm-project/vllm/pull/53906 will add support for mi300x/mi325x.
 
   ```bash
   export VLLM_ROCM_USE_AITER=1

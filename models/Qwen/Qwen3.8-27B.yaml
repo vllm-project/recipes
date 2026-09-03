@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "27B-parameter dense hybrid-attention model with linear attention on 48 of 64 layers, a vision tower, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-14
-  date_updated: 2026-08-26
+  date_updated: 2026-08-27
   difficulty: beginner
   tasks:
     - multimodal
@@ -95,7 +95,7 @@ features:
         # off the TOP-level config (config/speculative.py), but this checkpoint carries it only
         # under `text_config`, so the depth cannot be inferred here — omit it and startup fails.
         description: "Native MTP head, 3 draft tokens."
-        variants: [default, fp8, nvfp4]
+        variants: [default, fp8, nvfp4, int4]
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":3}'
@@ -111,7 +111,7 @@ features:
           - '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}'
       dflash:
         label: "DFlash2"
-        description: "External DFlash2 drafter (incoai/Qwen3.8-27B-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. Needs a vLLM build that includes vllm-project/vllm#52816 (merged 2026-08-21, not in a stable release yet). num_speculative_tokens must be 7 (block_size 8 minus one)."
+        description: "External DFlash2 drafter (incoai/Qwen3.8-27B-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. Needs vLLM >=0.28.0, which shipped vllm-project/vllm#52816. num_speculative_tokens must be 7 (block_size 8 minus one)."
         variants: [default]
         args:
           - "--speculative-config"
@@ -163,6 +163,13 @@ variants:
     vram_minimum_gb: 32
     supported_hardware: [b200, b300, gb200, gb300, rtx_5090, rtx_5090_2x]
     description: "NVFP4 build for NVIDIA Blackwell — 24.6 GiB, the smallest footprint: 1 GPU."
+  int4:
+    model_id: "RedHatAI/Qwen3.8-27B-INT4"
+    precision: int4
+    label: "INT4 (W4A16)"
+    vram_minimum_gb: 24
+    supported_hardware: [h100, h200, b200, b300, gb200, gb300, rtx_5090, rtx_5090_2x]
+    description: "Red Hat AI compressed-tensors W4A16 INT4 build — 19.5 GB: 1 GPU, runs on Hopper too."
   ascend_w8a8:
     model_id: "Eco-Tech/Qwen3.8-27B-w8a8"
     precision: int8
@@ -205,6 +212,10 @@ variants:
 # loads. There is no schema mechanism to gate a strategy by node count, so offering it at
 # all would ship a command that cannot start. It costs nothing: 51.7 GiB of BF16 weights fit
 # one GPU, so nothing here needs a second node.
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
+
 compatible_strategies:
   - single_node_tp
 
@@ -391,7 +402,7 @@ guide: |
   
   DFlash2 is not a standalone model. Serve `Qwen/Qwen3.8-27B` and attach
   [incoai/Qwen3.8-27B-DFlash2](https://huggingface.co/incoai/Qwen3.8-27B-DFlash2)
-  as the drafter. Requires a vLLM build that includes
+  as the drafter. Requires vLLM >=0.28.0, which shipped
   [vllm#52816](https://github.com/vllm-project/vllm/pull/52816).
   ```bash
   vllm serve Qwen/Qwen3.8-27B \
