@@ -25,7 +25,7 @@ model:
     amd: "vllm/vllm-openai-rocm:glm53-flash"
   install:
     docker:
-      note: "NVIDIA/AMD: use vllm/vllm-openai:glm53-flash until support lands in the standard image. Ascend 950PR: use a vLLM-Ascend image with GLM-5.3-Flash model support (vLLM#53906) and vllm-ascend #15127 or use swr.cn-north-4.myhuaweicloud.com/yiminghub/glm5.3-a5:latest on NPU."
+      note: "NVIDIA/AMD: use vllm/vllm-openai:glm53-flash until support lands in the standard image. Ascend 950PR: pin quay.io/ascend/vllm-ascend:nightly-main-a5 (same as GLM-5.3) with GLM-5.3-Flash overlays vLLM#53906 and vllm-ascend#15127."
     pypi:
       note: "Use the dedicated GLM-5.3-Flash docker until support lands in the standard vLLM image."
   architecture: moe
@@ -65,7 +65,7 @@ variants:
     description: "Default native FP8 checkpoint (zai-org/GLM-5.3-Flash)"
     hardware_overrides:
       ascend_950pr_8x:
-        docker_image: "swr.cn-north-4.myhuaweicloud.com/yiminghub/glm5.3-a5:latest"
+        docker_image: "quay.io/ascend/vllm-ascend:nightly-main-a5"
         extra_args:
           - "--trust-remote-code"
           - "--block-size"
@@ -399,19 +399,19 @@ guide: |
   `--quantization ascend`, and do **not** use `vllm/vllm-openai:glm53-flash`
   (that image is CUDA/ROCm only).
 
-  Until GLM-5.3-Flash lands in a public vLLM-Ascend tag, start from
-  `quay.io/ascend/vllm-ascend:v0.23.0-950dt`, overlay
+  Pin the same Ascend A5 image used by the merged GLM-5.3 950PR recipe:
+  `quay.io/ascend/vllm-ascend:nightly-main-a5`. Overlay
   [vLLM#53906](https://github.com/vllm-project/vllm/pull/53906)
   (`ZJY0516/vllm` @ `933876c38`), and install
-  [vllm-ascend#15127](https://github.com/vllm-project/vllm-ascend/pull/15127).
-  Unset `SOC_VERSION` if the image baked `ascend950dt_9582` (950PR chip is
-  `9579`).
+  [vllm-ascend#15127](https://github.com/vllm-project/vllm-ascend/pull/15127)
+  for GLM-5.3-Flash model support. Unset `SOC_VERSION` if the image baked
+  `ascend950dt_9582` (950PR chip is `9579`).
 
   Start the container with host net/IPC and a large shm. Do not wrap this
   serve in GPUStack pause networking.
 
   ```bash
-  export IMAGE=swr.cn-north-4.myhuaweicloud.com/yiminghub/glm5.3-a5:latest
+  export IMAGE=quay.io/ascend/vllm-ascend:nightly-main-a5
   unset SOC_VERSION
 
   docker run --rm -it \
