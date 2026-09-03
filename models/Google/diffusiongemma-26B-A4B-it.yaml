@@ -64,11 +64,13 @@ variants:
   nvfp4:
     model_id: "RedHatAI/diffusiongemma-26B-A4B-it-NVFP4"
     precision: nvfp4
+    label: "NVFP4 - RedHatAI"
     vram_minimum_gb: 24
     description: "NVFP4 (4-bit) quantized weights"
   nvidia_nvfp4:
     model_id: "nvidia/diffusiongemma-26B-A4B-it-NVFP4"
     precision: nvfp4
+    label: "NVFP4 - NVIDIA"
     vram_minimum_gb: 24
     description: "NVIDIA NVFP4 (4-bit) quantized weights"
     hardware_overrides:
