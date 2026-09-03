@@ -4,7 +4,7 @@ meta:
   provider: "IFM"
   description: "Dense model for long-context research, fine-tuning, and cost-conscious deployment"
   date_added: 2026-08-31
-  date_updated: 2026-08-31
+  date_updated: 2026-09-02
   difficulty: advanced
   tasks: [text]
   performance_headline: "9B stored parameters including embeddings, with up to 512K context"
@@ -30,7 +30,7 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 22
-    description: "BF16 evaluation runtime with a 131K serving context baseline"
+    description: "BF16 serving runtime with a 131K context baseline"
 compatible_strategies: [single_node_tp, multi_node_tp, multi_node_tp_pp]
 hardware_overrides: {}
 guide: |
