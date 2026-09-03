@@ -1,18 +1,18 @@
 meta:
-  title: "K2-Horizon-375B"
-  slug: "k2-horizon-375b"
+  title: "K2-Horizon-375B-A23B"
+  slug: "k2-horizon-375b-a23b"
   provider: "IFM"
   description: "Frontier-scale sparse MoE model for long-context research and high-capacity serving"
   date_added: 2026-08-31
-  date_updated: 2026-08-31
+  date_updated: 2026-09-02
   difficulty: advanced
   tasks: [text]
   performance_headline: "379.17B stored parameters including embeddings / 26.67B active parameters per token"
-  related_recipes: ["IFM/K2-Horizon-36B"]
+  related_recipes: ["IFM/K2-Horizon-MoVA-36B-A4B"]
   hardware:
     h200: verified
 model:
-  model_id: "IFM/K2-Horizon-375B"
+  model_id: "IFM/K2-Horizon-375B-A23B"
   architecture: moe
   parameter_count: "379.17B"
   active_parameters: "26.67B"
@@ -30,7 +30,7 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 911
-    description: "BF16 evaluation runtime with an eight-GPU tensor-parallel baseline"
+    description: "BF16 serving runtime with an eight-GPU tensor-parallel baseline"
 compatible_strategies: [single_node_tp, multi_node_tp, multi_node_tp_pp]
 hardware_overrides: {}
 strategy_overrides:
@@ -39,7 +39,7 @@ strategy_overrides:
 guide: |
   ## Overview
 
-  K2-Horizon-375B is a frontier-scale mixture-of-expert (MoE) model in the IFM
+  K2-Horizon-375B-A23B is a frontier-scale mixture-of-expert (MoE) model in the IFM
   K2-Horizon family, with 379.17B stored parameters including embeddings,
   26.67B active parameters per token, and support for up to 524,288 tokens of
   context.
@@ -48,13 +48,13 @@ guide: |
   foundation-model research, staged checkpoint analysis, and practical
   deployment. The series spans compact dense models for local experimentation,
   dense mid-size and large models for high-quality research workloads, and
-  mixture-of-expert (MoE) models such as K2-Horizon-375B for frontier-scale
+  mixture-of-expert (MoE) models such as K2-Horizon-375B-A23B for frontier-scale
   research and higher-capacity serving.
 
   ## Launch Commands
 
   ```bash
-  vllm serve IFM/K2-Horizon-375B \
+  vllm serve IFM/K2-Horizon-375B-A23B \
     --tensor-parallel-size 8 \
     --trust-remote-code \
     --dtype bfloat16 \
@@ -74,7 +74,7 @@ guide: |
   )
 
   resp = client.chat.completions.create(
-      model="IFM/K2-Horizon-375B",
+      model="IFM/K2-Horizon-375B-A23B",
       messages=[{"role": "user", "content": "Give me three primes above 100."}],
       temperature=1.0, top_p=0.95, max_tokens=2048,
   )
@@ -92,5 +92,5 @@ guide: |
 
   ## References
 
-  - [IFM/K2-Horizon-375B on Hugging Face](https://huggingface.co/IFM/K2-Horizon-375B)
+  - [IFM/K2-Horizon-375B-A23B on Hugging Face](https://huggingface.co/IFM/K2-Horizon-375B-A23B)
   - [K2 Horizon Collection](https://huggingface.co/collections/IFM/k2-horizon)

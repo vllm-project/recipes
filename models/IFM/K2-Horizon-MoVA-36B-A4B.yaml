@@ -1,18 +1,18 @@
 meta:
-  title: "K2-Horizon-36B"
-  slug: "k2-horizon-36b"
+  title: "K2-Horizon-MoVA-36B-A4B"
+  slug: "k2-horizon-mova-36b-a4b"
   provider: "IFM"
   description: "Sparse MoVA and MoE long-context model for research and production-style serving experiments"
   date_added: 2026-08-31
-  date_updated: 2026-08-31
+  date_updated: 2026-09-02
   difficulty: advanced
   tasks: [text]
   performance_headline: "37.44B stored parameters including embeddings / 5.95B active parameters per token"
-  related_recipes: ["IFM/K2-Horizon-32B", "IFM/K2-Horizon-375B"]
+  related_recipes: ["IFM/K2-Horizon-32B", "IFM/K2-Horizon-375B-A23B"]
   hardware:
     h200: verified
 model:
-  model_id: "IFM/K2-Horizon-36B"
+  model_id: "IFM/K2-Horizon-MoVA-36B-A4B"
   architecture: moe
   parameter_count: "37.44B"
   active_parameters: "5.95B"
@@ -30,7 +30,7 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 90
-    description: "BF16 evaluation runtime with native vLLM execution"
+    description: "BF16 serving runtime with native vLLM execution"
 compatible_strategies: [single_node_tp, multi_node_tp, multi_node_tp_pp]
 hardware_overrides: {}
 strategy_overrides:
@@ -39,7 +39,7 @@ strategy_overrides:
 guide: |
   ## Overview
 
-  K2-Horizon-36B is a mixture-of-expert (MoE) model in the IFM K2-Horizon
+  K2-Horizon-MoVA-36B-A4B is a mixture-of-expert (MoE) model in the IFM K2-Horizon
   family. It combines MoVA attention and MoE layers, with 37.44B stored parameters
   including embeddings, 5.95B active parameters per token, and support for up
   to 524,288 tokens of context.
@@ -48,13 +48,13 @@ guide: |
   foundation-model research, staged checkpoint analysis, and practical
   deployment. The series spans compact dense models for local experimentation,
   dense mid-size and large models for high-quality research workloads, and
-  mixture-of-expert (MoE) models such as K2-Horizon-36B for higher-capacity
+  mixture-of-expert (MoE) models such as K2-Horizon-MoVA-36B-A4B for higher-capacity
   serving.
 
   ## Launch Commands
 
   ```bash
-  vllm serve IFM/K2-Horizon-36B \
+  vllm serve IFM/K2-Horizon-MoVA-36B-A4B \
     --tensor-parallel-size 2 \
     --trust-remote-code \
     --dtype bfloat16 \
@@ -74,7 +74,7 @@ guide: |
   )
 
   resp = client.chat.completions.create(
-      model="IFM/K2-Horizon-36B",
+      model="IFM/K2-Horizon-MoVA-36B-A4B",
       messages=[{"role": "user", "content": "Give me three primes above 100."}],
       temperature=1.0, top_p=0.95, max_tokens=2048,
   )
@@ -92,5 +92,5 @@ guide: |
 
   ## References
 
-  - [IFM/K2-Horizon-36B on Hugging Face](https://huggingface.co/IFM/K2-Horizon-36B)
+  - [IFM/K2-Horizon-MoVA-36B-A4B on Hugging Face](https://huggingface.co/IFM/K2-Horizon-MoVA-36B-A4B)
   - [K2 Horizon Collection](https://huggingface.co/collections/IFM/k2-horizon)

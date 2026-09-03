@@ -2,9 +2,9 @@ meta:
   title: "K2-Horizon-3.7B"
   slug: "k2-horizon-3.7b"
   provider: "IFM"
-  description: "Dense model for long-context research, evaluation, and downstream adaptation"
+  description: "Dense model for long-context research, serving, and downstream adaptation"
   date_added: 2026-08-31
-  date_updated: 2026-08-31
+  date_updated: 2026-09-02
   difficulty: advanced
   tasks: [text]
   performance_headline: "5.06B stored parameters including embeddings, with up to 512K context"
@@ -30,7 +30,7 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 13
-    description: "BF16 evaluation runtime with a 131K serving context baseline"
+    description: "BF16 serving runtime with a 131K context baseline"
 compatible_strategies: [single_node_tp, multi_node_tp, multi_node_tp_pp]
 hardware_overrides: {}
 guide: |
