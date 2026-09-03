@@ -4,7 +4,7 @@ meta:
   provider: "IFM"
   description: "Frontier-scale sparse MoE model for long-context research and high-capacity serving"
   date_added: 2026-08-31
-  date_updated: 2026-09-02
+  date_updated: 2026-09-03
   difficulty: advanced
   tasks: [text]
   performance_headline: "379.17B stored parameters including embeddings / 26.67B active parameters per token"
@@ -17,7 +17,7 @@ model:
   parameter_count: "379.17B"
   active_parameters: "26.67B"
   context_length: 524288
-  base_args: ["--trust-remote-code", "--dtype", "bfloat16", "--max-model-len", "131072"]
+  base_args: ["--trust-remote-code", "--dtype", "bfloat16", "--max-model-len", "131072", "--enable-expert-parallel"]
   base_env: {}
 features:
   reasoning:
@@ -31,10 +31,11 @@ variants:
     precision: bf16
     vram_minimum_gb: 911
     description: "BF16 serving runtime with an eight-GPU tensor-parallel baseline"
-compatible_strategies: [single_node_tp, multi_node_tp, multi_node_tp_pp]
+compatible_strategies: [single_node_tep, multi_node_tep, multi_node_tp_pp]
+default_strategy: single_node_tep
 hardware_overrides: {}
 strategy_overrides:
-  single_node_tp:
+  single_node_tep:
     tp: 8
 guide: |
   ## Overview
@@ -59,6 +60,7 @@ guide: |
     --trust-remote-code \
     --dtype bfloat16 \
     --max-model-len 131072 \
+    --enable-expert-parallel \
     --reasoning-parser k2_horizon \
     --enable-auto-tool-choice \
     --tool-call-parser k2_horizon
