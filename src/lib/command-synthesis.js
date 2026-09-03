@@ -593,6 +593,47 @@ export function pickDefaultHardware(hwProfiles, variant, recipe) {
 // Exact variant+hardware overrides may also set
 //   variants.<key>.hardware_overrides.<hw_id>.docker_image
 //
+// Host paths every Ascend container needs. `/usr/local/Ascend/driver` goes in
+// whole rather than as the `lib64` + `version.info` pair the older A2/A3
+// guides use: 950-class drivers keep the HCCL topology descriptors under
+// `driver/topo`, and without them `hcclCommInitRootInfoConfig` rejects the
+// communicator with EI0014 before the first forward pass.
+const ASCEND_HOST_MOUNTS = [
+  "/usr/local/Ascend/driver:/usr/local/Ascend/driver",
+  "/etc/ascend_install.info:/etc/ascend_install.info",
+  "/usr/local/dcmi:/usr/local/dcmi",
+  "/usr/local/bin/npu-smi:/usr/local/bin/npu-smi",
+];
+
+// Ascend has no `--gpus`-style flag: each NPU is its own `/dev/davinci<N>`
+// node, and `davinci_manager` plus `hisi_hdc` carry device management and the
+// host-device channel.
+function ascendDeviceNodes(deviceCount) {
+  return [
+    ...Array.from({ length: deviceCount }, (_, i) => `/dev/davinci${i}`),
+    "/dev/davinci_manager",
+    "/dev/hisi_hdc",
+  ];
+}
+
+// Four devices per line keeps a 16-NPU node readable without wrapping.
+function ascendDockerFlags(deviceCount) {
+  const devices = ascendDeviceNodes(deviceCount).map((node) => `--device ${node}`);
+  const lines = [];
+  for (let i = 0; i < devices.length; i += 4) {
+    lines.push(devices.slice(i, i + 4).join(" "));
+  }
+  lines.push(...ASCEND_HOST_MOUNTS.map((mount) => `-v ${mount}`));
+  return lines.join(" \\\n  ");
+}
+
+function ascendDockerArgv(deviceCount) {
+  const argv = [];
+  for (const node of ascendDeviceNodes(deviceCount)) argv.push("--device", node);
+  for (const mount of ASCEND_HOST_MOUNTS) argv.push("-v", mount);
+  return argv;
+}
+
 // When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
 // the user's `dockerCudaVariant` toggle instead of appending `-cu129`/`-cu130`.
 export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
@@ -618,6 +659,11 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const isTpu = hwProfile?.generation === "tpu";
   const isXpu = hwProfile?.generation === "xpu";
   const isIntel = hwProfile?.generation === "cpu" || isXpu || hwProfile?.brand === "Intel";
+  const isNpu = hwProfile?.generation === "npu";
+  const npuDeviceCount = isNpu ? hwProfile?.gpu_count ?? 1 : 0;
+  // Ascend deliberately has no `brandKey` of its own: vLLM publishes no NPU
+  // image, so every Ascend recipe pins one through `hardware_overrides`, which
+  // `exactHardwareOverride` resolves before the brand defaults are consulted.
   const brandKey = isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
   // Exact variant+hardware image overrides win over variant-wide and
   // model-wide images (for example, an MI355X-only ROCm nightly).
@@ -667,10 +713,25 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
       ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
     : isXpu
       ? "--device /dev/dri \\\n  -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g"
+    : isNpu
+      ? ascendDockerFlags(npuDeviceCount)
     : isIntel
       ? "--shm-size=16g"	
       : "--gpus all";
-  return { image, gpuFlags, brandKey, isAmd, isTpu, isXpu, isIntel, pinned, cudaMap, nightlyRequired };
+  return {
+    image,
+    gpuFlags,
+    brandKey,
+    isAmd,
+    isTpu,
+    isXpu,
+    isIntel,
+    isNpu,
+    npuDeviceCount,
+    pinned,
+    cudaMap,
+    nightlyRequired,
+  };
 }
 
 // argv form of the brand-specific GPU flags from computeDockerMeta. Mirrors
@@ -687,6 +748,9 @@ function dockerGpuArgv(meta) {
   }
   if (meta.isXpu) {
     return ["--device", "/dev/dri", "-v", "/dev/dri/by-path:/dev/dri/by-path", "--shm-size", "16g"];
+  }
+  if (meta.isNpu) {
+    return ascendDockerArgv(meta.npuDeviceCount);
   }
   if (meta.isIntel) {
     return ["--shm-size", "16g"];
@@ -720,7 +784,7 @@ function localModelMount(modelId) {
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
 // image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
 // CMD. Env vars become `-e KEY=VAL` inside the container.
-export function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
+export function buildDockerRun({ command, env, image, gpuFlags, port = 8000, isNpu = false }) {
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
@@ -739,8 +803,13 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = 8000 }) {
     ? `# ${modelId} must already exist on the host — bind-mounted read-only below.\n`
     : "";
   const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
+  // Ascend uses host networking and an explicit shm size; `-p` is a no-op
+  // under `--net=host` and hid the required `--shm-size` on 950PR.
+  const runtimeFlags = isNpu
+    ? "--privileged --net=host --shm-size=16g"
+    : `--privileged --ipc=host -p ${port}:${port}`;
   const base = `${prereq}docker run ${gpuFlags} \\
-  --privileged --ipc=host -p ${port}:${port} \\
+  ${runtimeFlags} \\
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
   return `${base}
   ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
@@ -761,11 +830,13 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
   for (const m of [...localModelMount(cmdArgs[0]), ...configPathMounts(env)]) {
     mountFlags.push("-v", m);
   }
+  const runtimeFlags = meta.isNpu
+    ? ["--privileged", "--net=host", "--shm-size", "16g"]
+    : ["--privileged", "--ipc=host", "-p", `${port}:${port}`];
   const base = [
     "docker", "run",
     ...dockerGpuArgv(meta),
-    "--privileged", "--ipc=host",
-    "-p", `${port}:${port}`,
+    ...runtimeFlags,
     "-v", "~/.cache/huggingface:/root/.cache/huggingface",
     ...mountFlags,
     ...envFlags,
