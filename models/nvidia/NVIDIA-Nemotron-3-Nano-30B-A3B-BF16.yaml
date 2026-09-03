@@ -18,7 +18,7 @@ meta:
 
 model:
   model_id: "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16"
-  min_vllm_version: "0.11.2"
+  min_vllm_version: "0.17.0"
   architecture: moe
   parameter_count: "30B"
   active_parameters: "3B"
@@ -97,7 +97,7 @@ guide: |
   ## Prerequisites
 
   - Hardware: 1x H100/H200 or comparable; DGX Spark, Jetson Thor, and Intel Arc Pro B60/B70 supported
-  - vLLM >= 0.11.2 (0.28.0 recommended for full support)
+  - vLLM >= 0.17.0 (0.28.0 recommended for full support)
   - Docker with NVIDIA Container Toolkit (recommended)
 
   ### Pull Docker Image

@@ -4,7 +4,7 @@ meta:
   provider: "Google"
   description: "Google's Gemma 4 MoE multimodal model (26B total / 4B active) with 128 fine-grained experts, top-8 routing, thinking mode, and tool-use protocol."
   date_added: 2026-04-02
-  date_updated: 2026-08-18
+  date_updated: 2026-09-02
   difficulty: intermediate
   tasks:
     - multimodal
@@ -77,6 +77,16 @@ features:
         args:
           - "--speculative-config"
           - '{"model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":4}'
+        # The single-GPU Blackwell desktops run the draft MoE on the Triton
+        # backend — the fused CUTLASS path the drafter picks by default is not
+        # built for GB10/GB300/RTX PRO in the validated images.
+        hardware_overrides:
+          dgx_spark_gb10: &gemma4_mtp_triton
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":4,"moe_backend":"triton"}'
+          dgx_station_gb300: *gemma4_mtp_triton
+          rtx_pro_6000: *gemma4_mtp_triton
       eagle3:
         label: "Eagle3"
         description: "Eagle3 speculative decoding with externally trained draft model; the served checkpoint is unchanged."
@@ -173,68 +183,79 @@ variants:
     model_id: "nvidia/Gemma-4-26B-A4B-NVFP4"
     precision: nvfp4
     vram_minimum_gb: 16
-    description: "NVIDIA NVFP4 (4-bit) quantized weights"
-    extra_args:
-      - "--kv-cache-dtype"
-      - "fp8"
+    description: "NVIDIA ModelOpt NVFP4 (4-bit) quantized weights — validated on the single-GPU Blackwell desktops (DGX Spark GB10, DGX Station GB300, RTX PRO 6000)"
     hardware_overrides:
       dgx_spark_gb10:
+        # vLLM 0.24 and the generic nightly both fail on GB10 with this
+        # checkpoint; the dated ARM64 community build is the tested runtime, so
+        # the wheel tab is hidden here rather than offering a command that
+        # won't start.
+        docker_image: "eugr/spark-vllm:nightly-20260704"
+        install:
+          pip: false
         extra_env:
           VLLM_USE_V2_MODEL_RUNNER: "1"
         extra_args:
-        - "--gpu-memory-utilization"
-        - "0.8"
-        - "--max-num-seqs"
-        - "8"
-        - "--load-format"
-        - "fastsafetensors"
-        - "--enable-prefix-caching"
-        - "--enable-auto-tool-choice"
-        - "--tool-call-parser"
-        - "gemma4"
-        - "--reasoning-parser"
-        - "gemma4"
-        - "--max-num-batched-tokens"
-        - "8192"
+          # GB10 shares its 128 GB with the CPU, so leave headroom for the host.
+          - "--gpu-memory-utilization"
+          - "0.8"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-prefix-caching"
+          - "--load-format"
+          - "fastsafetensors"
       dgx_station_gb300:
         extra_env:
           VLLM_USE_V2_MODEL_RUNNER: "1"
         extra_args:
-        - "--gpu-memory-utilization"
-        - "0.92"
-        - "--max-num-batched-tokens"
-        - "8192"
-        - "--enable-prefix-caching"
-        - "--enable-chunked-prefill"
-        - "--async-scheduling"
-        - "--load-format"
-        - "fastsafetensors"
+          # 252 GB on one GB300 — full context at high utilization and a 64-way
+          # batch.
+          - "--gpu-memory-utilization"
+          - "0.92"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "64"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
+          - "--enable-prefix-caching"
+          - "--load-format"
+          - "fastsafetensors"
       rtx_pro_6000:
         extra_env:
           VLLM_USE_V2_MODEL_RUNNER: "1"
         extra_args:
-        - "--gpu-memory-utilization"
-        - "0.9"
-        - "--max-num-batched-tokens"
-        - "8192"
-        - "--enable-prefix-caching"
-        - "--enable-chunked-prefill"
-        - "--async-scheduling"
-        - "--load-format"
-        - "fastsafetensors"
+          - "--gpu-memory-utilization"
+          - "0.92"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-prefix-caching"
+          - "--load-format"
+          - "fastsafetensors"
       rtx_5090:
         extra_env:
           VLLM_USE_V2_MODEL_RUNNER: "1"
         extra_args:
-        - "--gpu-memory-utilization"
-        - "0.9"
-        - "--max-num-batched-tokens"
-        - "4096"
-        - "--enable-prefix-caching"
-        - "--enable-chunked-prefill"
-        - "--async-scheduling"
-        - "--max-num-seqs"
-        - "4"
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--gpu-memory-utilization"
+          - "0.9"
+          - "--max-num-batched-tokens"
+          - "4096"
+          - "--enable-prefix-caching"
+          - "--enable-chunked-prefill"
+          - "--async-scheduling"
+          - "--max-num-seqs"
+          - "4"
 
 compatible_strategies:
   - single_node_tp
@@ -453,12 +474,43 @@ guide: |
 
   ## Quantized Variants
 
-  Two pre-quantized checkpoints are available:
+  Three pre-quantized checkpoints are available:
 
   - [`RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic`](https://huggingface.co/RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic) — FP8 (E4M3) weights with dynamic per-token activation quantization; runs on Hopper and Blackwell.
   - [`RedHatAI/gemma-4-26B-A4B-it-NVFP4`](https://huggingface.co/RedHatAI/gemma-4-26B-A4B-it-NVFP4) — NVFP4 (4-bit) weights; requires Blackwell (B200/B300).
+  - [`nvidia/Gemma-4-26B-A4B-NVFP4`](https://huggingface.co/nvidia/Gemma-4-26B-A4B-NVFP4) — NVIDIA ModelOpt NVFP4 (4-bit) weights; this is the checkpoint validated on the single-GPU Blackwell desktops below.
 
   Pick them from the **Variant** dropdown above, or pass the repo id directly to `vllm serve`.
+
+  ### NVFP4 on the Blackwell desktops
+
+  [`nvidia/Gemma-4-26B-A4B-NVFP4`](https://huggingface.co/nvidia/Gemma-4-26B-A4B-NVFP4)
+  has been run end to end on DGX Spark (GB10), DGX Station (GB300) and RTX PRO
+  6000, in each case on one GPU at TP1 with MTP drafting against
+  [`google/gemma-4-26B-A4B-it-assistant`](https://huggingface.co/google/gemma-4-26B-A4B-it-assistant).
+
+  Select the **NVIDIA NVFP4** variant, enable **Spec Decoding**, and switch the
+  hardware pill — memory utilization, batch size, prefill scheduling and the
+  drafter's MoE backend all differ per box and are encoded per hardware, so the
+  generated command is the tested one. Highlights:
+
+  - **DGX Spark (GB10)** — 128 GB shared with the CPU, so `--gpu-memory-utilization 0.8`
+    and an 8-way batch. Serve from `eugr/spark-vllm:nightly-20260704`: vLLM 0.24
+    and the generic nightly both fail on this checkpoint, so the pip tab is
+    hidden on this hardware.
+  - **DGX Station (GB300)** — 252 GB on one GPU, so `--gpu-memory-utilization 0.92`
+    with chunked prefill and a 64-way batch.
+  - **RTX PRO 6000** — 96 GB, `--gpu-memory-utilization 0.92` and an 8-way batch.
+
+  All three run the full 262,144-token context, above the 131,072 in
+  `config.json`, and pass `"moe_backend":"triton"` in `--speculative-config`
+  because the drafter's default fused MoE path is not built in these images.
+
+  The GB300 and RTX PRO 6000 runs used an internal NVIDIA nightly vLLM build.
+  As noted under Speculative Decoding below, Gemma 4 MTP has not landed in a
+  stable release, so the default `vllm/vllm-openai:latest` tag will not serve
+  these commands with Spec Decoding enabled — use a nightly wheel or a nightly
+  image on those two boxes.
 
   ## Throughput vs Latency
 
@@ -479,6 +531,7 @@ guide: |
   - [Model card](https://huggingface.co/google/gemma-4-26B-A4B-it)
   - [FP8 variant](https://huggingface.co/RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic)
   - [NVFP4 variant](https://huggingface.co/RedHatAI/gemma-4-26B-A4B-it-NVFP4)
+  - [NVIDIA ModelOpt NVFP4 variant](https://huggingface.co/nvidia/Gemma-4-26B-A4B-NVFP4)
   - [Gemma docs](https://ai.google.dev/gemma/docs)
   - [vLLM Gemma 4 tool-call template](https://github.com/vllm-project/vllm/blob/main/examples/tool_chat_template_gemma4.jinja)
   - [TPU recipes: Trillium](https://github.com/AI-Hypercomputer/tpu-recipes/tree/main/inference/trillium/vLLM/Gemma4)
