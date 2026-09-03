@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "Open-weight general-purpose multimodal generation model — jointly generates 24 FPS video with native stereo audio from text, image, video, and audio references, served via vLLM-Omni"
   date_added: 2026-08-02
-  date_updated: 2026-08-10
+  date_updated: 2026-09-02
   difficulty: advanced
   tasks:
     - omni
@@ -1021,6 +1021,46 @@ guide: |
   dense BF16 `TRTLLM_ATTN`. Install `[fa4]` and add `--diffusion-attention-backend FLASH_ATTN`
   only for an explicit FA4 comparison.
 
+  ### Optional lossy attention: SAGE + Skip-Softmax
+
+  `TRTLLM_ATTN` offers two **lossy** optimizations for the long main DiT attention sequence.
+  Both work under the pure Ulysses parallelism of the four-GPU profile (`--usp 4 --ring 1`) and
+  are datacenter-Blackwell only. Append the following to the four-GPU command above to enable
+  both:
+
+  ```bash
+  --diffusion-attention-config '{
+    "default": {
+      "backend": "TRTLLM_ATTN",
+      "quant": {"dtype_qk": "fp8_e4m3", "q_block_size": 1, "k_block_size": 16},
+      "skip_softmax": {"threshold": 0.05, "disabled_until_timestep": 0.97}
+    },
+    "per_role": {
+      "minimax_h3.token_refiner": {"backend": "TRTLLM_ATTN"}
+    }
+  }'
+  ```
+
+  - **SAGE** quantizes Q/K to `fp8_e4m3` for `QK^T`; P and V are always FP8 in this kernel.
+    B200 additionally supports `int8` Q/K, which preserves accuracy better than FP8.
+  - **Skip-Softmax** skips the Softmax and `PV` work of KV tiles whose scores fall far below
+    the running row maximum. `threshold=0.05` with `disabled_until_timestep=0.97` is a
+    **conservative** setting: a low threshold skips only clearly negligible tiles, and the
+    cutoff keeps the early high-noise steps dense — H3's default video flow shift of 12 keeps
+    the normalized timestep above `0.97` for the first 14 of 49 denoiser forwards at 50 steps.
+    Raise `threshold` or lower `disabled_until_timestep` for more speedup once quality is
+    verified.
+  - The `per_role` entry keeps the short token-refiner attention dense; a per-role spec does
+    not inherit `quant` or `skip_softmax` from `default`.
+
+  Both optimizations trade fidelity for speed, and their effects compound. The measured B300
+  speedup and LPIPS for each mode and for the combination are in the vLLM blog's
+  [Quantized and Sparse Attention](https://vllm.ai/blog/2026-09-01-minimax-h3-production-serving#quantized-and-sparse-attention-in-trtllm_attn)
+  section as a reference; tune the settings according to the accuracy and speed required. See
+  the
+  [TRTLLM attention guide](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/trtllm/)
+  for the full configuration reference.
+
   No restart is required: `extra_params.task` routes T2VA/FL2VA requests to the FL2VA
   DiT and Ref2VA requests to the Ref2VA DiT.
 
@@ -1345,8 +1385,9 @@ guide: |
   **GPU-attention-bound, not host-starved**: FlashAttention-4 is ~76% of `diffuse` device
   time, Ulysses send/recv is secondary, GPU utilization is 92.8–94.3% and the CPU-idle
   union inside the transformer forwards is 3.15%. Reducing DiT time further needs a change
-  in attention complexity (reference-latent pooling/pruning, block-sparse attention), which
-  is not lossless.
+  in attention cost, which is not lossless;
+  [SAGE + Skip-Softmax](#optional-lossy-attention-sage--skip-softmax) above is the supported
+  way to trade attention precision and sparsity for speed on datacenter Blackwell.
 
   Against the checkpoint's own reference implementation, the accuracy-qualified path scores
   SSIM 0.9873–0.9896, PSNR 39–42 dB, pixel cosine 0.9996+, and audio log-mel cosine
@@ -1405,6 +1446,8 @@ guide: |
   - [vLLM-Omni Video API](https://docs.vllm.ai/projects/vllm-omni/en/latest/serving/videos_api/)
   - [vLLM-Omni diffusion parallelism](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/parallelism/overview/)
   - [vLLM-Omni diffusion attention backends](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/)
+  - [vLLM-Omni TRTLLM attention guide (SAGE, Skip-Softmax)](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/trtllm/)
+  - [MiniMax-H3 production serving on vLLM-Omni (blog)](https://vllm.ai/blog/2026-09-01-minimax-h3-production-serving)
   - [vLLM-Omni supported models](https://docs.vllm.ai/projects/vllm-omni/en/latest/models/supported_models/)
   - [vLLM-Omni GPU installation](https://docs.vllm.ai/projects/vllm-omni/en/latest/getting_started/installation/gpu/)
   - [ROCm H3 tracking issue](https://github.com/vllm-project/vllm-omni/issues/5697)
