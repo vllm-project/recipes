@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Smaller Qwen3.6 multimodal MoE model (35B total / 3B active) with BF16, FP8, and NVIDIA NVFP4 variants"
   date_added: 2026-04-16
-  date_updated: 2026-06-03
+  date_updated: 2026-09-02
   difficulty: beginner
   tasks:
     - multimodal
@@ -261,6 +261,16 @@ guide: |
   Datacenter Blackwell (B200/GB200/B300/GB300) intentionally carries no
   overrides — it runs vLLM's own NVFP4 defaults, which select the native FP4
   path rather than the Marlin W4A16 kernel the workstation parts need.
+
+  ### Measured on DGX Spark (GB10)
+
+  The GB10 profile above was re-measured on 2026-08-31 with aiperf 0.12.0 on
+  vLLM 0.28.0 (Ubuntu 24.04.4, driver 580.159.03, CUDA 13.0), one GB10 at TP1,
+  serving from `vllm/vllm-openai:v0.28.0`. On SPEED-Bench at 8K input / 256
+  output tokens and concurrency 1, it sustained 6,265 prefill tok/s and 97.7
+  decode tok/s at a 3.95 s mean end-to-end latency. The flag set is unchanged —
+  the sweep confirms the tuning rather than revising it, so the command the
+  builder emits for GB10 is the one that produced these numbers.
 
   ### Docker (Intel XPU B60 / B70)
 
