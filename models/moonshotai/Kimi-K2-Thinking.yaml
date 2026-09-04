@@ -59,6 +59,15 @@ variants:
       - "--kv-cache-dtype"
       - "fp8"
 
+  fp8:
+    model_id: "RedHatAI/Kimi-K2-Thinking-FP8-Block"
+    precision: fp8
+    vram_minimum_gb: 1200
+    description: "RedHatAI FP8 block quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
 compatible_strategies:
   - single_node_tp
   - single_node_tep
