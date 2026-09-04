@@ -35,7 +35,14 @@ features:
       - "--tool-call-parser"
       - "hermes"
 
-opt_in_features: []
+  spec_decoding:
+    description: "Eagle3 speculative decoding with externally trained draft model; the served checkpoint is unchanged."
+    args:
+      - "--speculative-config"
+      - '{"model": "RedHatAI/Qwen3-235B-A22B-Instruct-2507-speculator.eagle3", "num_speculative_tokens": 3, "method": "eagle3"}'
+
+opt_in_features:
+  - spec_decoding
 
 variants:
   default:
@@ -57,6 +64,13 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
+
+  redhat_nvfp4:
+    model_id: "RedHatAI/Qwen3-235B-A22B-Instruct-2507-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 152
+    description: "RedHatAI NVFP4 quantization"
 
 compatible_strategies:
   - single_node_tp
