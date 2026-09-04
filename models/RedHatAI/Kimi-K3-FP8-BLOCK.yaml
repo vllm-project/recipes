@@ -1,0 +1,256 @@
+meta:
+  title: "Kimi-K3-FP8-BLOCK"
+  slug: "kimi-k3-fp8-block"
+  provider: "Red Hat AI"
+  description: "FP8-BLOCK compressed-tensors quantization of the 2.8T Kimi K3 MoE; MLP and expert layers are FP8, attention remains BF16."
+  date_updated: 2026-07-27
+  difficulty: hard
+  tasks:
+    - multimodal
+    - text
+  related_recipes:
+    - "moonshotai/Kimi-K3"
+
+model:
+  model_id: "RedHatAI/Kimi-K3-FP8-BLOCK"
+  min_vllm_version: "0.26.0"
+  docker_image:
+    nvidia: "vllm/vllm-openai:kimi-k3"
+    amd: "vllm/vllm-openai-rocm:kimi-k3"
+  nightly_required: true
+  install:
+    docker:
+      note: "Use a K3-enabled nightly image after the integration lands."
+    pip:
+      note: "Use a K3-enabled vLLM nightly after the integration lands."
+  architecture: moe
+  parameter_count: "2.8T"
+  active_parameters: "16 experts/token + shared (of 896 routed)"
+  context_length: 1048576
+  base_args:
+    - "--trust-remote-code"
+    - "--load-format"
+    - "fastsafetensors"
+    - "--moe-backend"
+    - "auto"
+    - "--gpu-memory-utilization"
+    - "0.95"
+  base_env: {}
+
+features:
+  tool_calling:
+    description: "Enable automatic tool choice with the Kimi K3 tool-call parser."
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "kimi_k3"
+  reasoning:
+    description: "Parse Kimi K3 reasoning output separately from the final answer."
+    args:
+      - "--reasoning-parser"
+      - "kimi_k3"
+  spec_decoding:
+    description: "Use the Inferact DSpark speculative decoding draft for faster generation. Requires additional VRAM per sequence."
+    args:
+      - "--max-num-seqs"
+      - "32"
+      - "--speculative-config"
+      - '{"model":"Inferact/Kimi-K3-DSpark", "num_speculative_tokens":7, "method": "dspark", "attention_backend": "FLASHINFER_MLA", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
+  text_only:
+    description: "Skip the vision encoder for text-only workloads."
+    args:
+      - "--language-model-only"
+
+opt_in_features:
+  - spec_decoding
+  - text_only
+
+variants:
+  default:
+    precision: fp8
+    # Mixed-precision checkpoint: FP8 on MLP/experts, BF16 on attention.
+    # VRAM = ceil(2819.87 GB real checkpoint size × 1.2) = 3384 GB.
+    vram_minimum_gb: 3384
+    description: "FP8-BLOCK quantization on MLP and expert layers; attention layers remain in BF16 due to fused-weight shape constraints."
+
+compatible_strategies:
+  - multi_node_tp
+  - multi_node_tep
+  - multi_node_dep
+  - pd_cluster
+
+# FP8 checkpoint is ~2× larger than the MXFP4 base; minimum GPU counts scale accordingly.
+strategy_min_gpus:
+  multi_node_tp: 16
+  multi_node_tep: 16
+  multi_node_dep: 32
+
+kv_cache_strategy_hardware:
+  kv_store_distributed_mooncake:
+    h100: unsupported
+    h200: unsupported
+    b200: unsupported
+    gb200: unsupported
+    b300: unsupported
+    gb300: unsupported
+    mi300x: unsupported
+    mi325x: unsupported
+    mi355x: unsupported
+  kv_store_centralized_mooncake:
+    h100: unsupported
+    h200: unsupported
+    b200: unsupported
+    gb200: unsupported
+    b300: unsupported
+    gb300: unsupported
+    mi300x: unsupported
+    mi325x: unsupported
+    mi355x: unsupported
+
+hardware_overrides:
+  hopper:
+    extra_args:
+      - "--no-enable-flashinfer-autotune"
+      - "--moe-backend"
+      - "marlin"
+      - "--disable-custom-all-reduce"
+    extra_env:
+      VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
+  nvidia:
+    extra_args:
+      - "--no-enable-flashinfer-autotune"
+    extra_env:
+      VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
+  amd:
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      SAFETENSORS_FAST_GPU: "1"
+      AITER_SITUV2_A8W4: "1"
+      AITER_BF16_FP8_MOE_BOUND: "0"
+      VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+    extra_args:
+      - "--load-format"
+      - "auto"
+      - "--gpu-memory-utilization"
+      - "0.95"
+      - "--mm-encoder-tp-mode"
+      - "data"
+      - "--max-num-seqs"
+      - "128"
+      - "--reasoning-parser"
+      - "kimi_k3"
+      - "--max-num-batched-tokens"
+      - "4096"
+
+strategy_overrides:
+  pd_cluster:
+    router:
+      intra_node_data_parallel_size: 1
+    env:
+      NCCL_CUMEM_ENABLE: "1"
+      NCCL_MNNVL_ENABLE: "1"
+      NCCL_NVLS_ENABLE: "0"
+      VLLM_SSM_CONV_STATE_LAYOUT: "DS"
+    hardware_overrides:
+      blackwell:
+        extra_env:
+          VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: "1"
+          UCX_TLS: "rc,cuda_copy"
+    prefill:
+      parallelism: tep
+      tp: 8
+      vllm_args:
+        - "--enforce-eager"
+        - "--max-num-batched-tokens"
+        - "16384"
+        - "--no-disable-hybrid-kv-cache-manager"
+        - "--no-enable-flashinfer-autotune"
+      env: {}
+    decode:
+      parallelism: dep
+      tp: 1
+      env: {}
+      vllm_args:
+        - "--data-parallel-hybrid-lb"
+        - "--moe-backend"
+        - "deep_gemm_mega_moe"
+        - "--no-enable-prefix-caching"
+        - "--max-num-seqs"
+        - "32"
+        - "--max-num-batched-tokens"
+        - "32"
+        - "--no-disable-hybrid-kv-cache-manager"
+        - "--compilation-config"
+        - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+        - "--all2all-backend"
+        - "flashinfer_nvlink_one_sided"
+
+guide: |
+  ## Overview
+
+  Kimi-K3-FP8-BLOCK is a post-training FP8-BLOCK quantization of the 2.8T Kimi K3 model produced by Red Hat AI using [llm-compressor](https://github.com/vllm-project/llm-compressor). MLP and expert layers are quantized to FP8, while attention layers remain in BF16 (fused weight shapes prevented quantization there). The resulting checkpoint is ~2.82 TB — roughly 2× the size of the native MXFP4 base — and requires a multi-node deployment.
+
+  For deployments where VRAM allows, the base [`moonshotai/Kimi-K3`](https://huggingface.co/moonshotai/Kimi-K3) MXFP4 checkpoint is smaller and was quantization-aware trained; prefer it when the full 2× VRAM requirement of the FP8 variant is a constraint.
+
+  ## Prerequisites
+
+  - **vLLM:** K3 architecture support has not yet landed in a stable release. Use the `vllm/vllm-openai:kimi-k3` nightly Docker image (or the ROCm equivalent for AMD).
+  - **Hardware:** At minimum 16 H200/B300-class GPUs across 2+ nodes (3384 GB total VRAM required). Multi-node networking (NVLink or RDMA) is essential for inter-node all-reduce.
+  - **Networking:** For RDMA, set `UCX_TLS="rc,cuda_copy"`. For NVLink, `--all2all-backend flashinfer_nvlink_one_sided` is recommended.
+
+  ## Client Usage
+
+  Once the vLLM server is running, consume it via the OpenAI-compatible API:
+
+  ```python
+  import time
+  from openai import OpenAI
+
+  client = OpenAI(
+      api_key="EMPTY",
+      base_url="http://localhost:8000/v1",
+      timeout=3600
+  )
+
+  messages = [
+      {
+          "role": "user",
+          "content": [
+              {
+                  "type": "image_url",
+                  "image_url": {
+                      "url": "https://ofasys-multimodal-wlcb-3-toshanghai.oss-accelerate.aliyuncs.com/wpf272043/keepme/image/receipt.png"
+                  }
+              },
+              {
+                  "type": "text",
+                  "text": "Read all the text in the image."
+              }
+          ]
+      }
+  ]
+
+  start = time.time()
+  response = client.chat.completions.create(
+      model="RedHatAI/Kimi-K3-FP8-BLOCK",
+      messages=messages,
+      max_tokens=2048
+  )
+  print(f"Response costs: {time.time() - start:.2f}s")
+  print(f"Generated text: {response.choices[0].message.content}")
+  ```
+
+  ## Notes
+
+  - **Cross-node communication:** Use `--all2all-backend deepep_v2` for RDMA and `--all2all-backend flashinfer_nvlink_one_sided` for NVLink.
+  - **MoE backend:** `deep_gemm_mega_moe` is recommended for any DEP environment; `flashinfer_trtllm` for TP>1. The default `auto` backend selection is safe.
+  - **max-model-len:** Adjust `--max-model-len` for your benchmark or latency target; the full 1M-token context requires substantial KV VRAM.
+  - **FP8 KV cache:** If FP8 KV cache is needed, also add `--attention-config '{"use_prefill_query_quantization":true}'`.
+  - **Tool calling:** K3 occasionally emits tool-call formats its own parser doesn't expect; apply schema validation and retry on the client side.
+  - **AMD (MI355X / MI350X):** Set `AITER_SITUV2_A8W4=0` and the AITER master flag to use the a16w4 MoE path, or `AITER_SITUV2_A8W4=1` for the a8w4 MoE path.
+
+  ## References
+
+  - [Model card — RedHatAI/Kimi-K3-FP8-BLOCK](https://huggingface.co/RedHatAI/Kimi-K3-FP8-BLOCK)
+  - [Base model — moonshotai/Kimi-K3](https://huggingface.co/moonshotai/Kimi-K3)
+  - [Kimi K3 Technical Report](https://github.com/MoonshotAI/Kimi-K3/blob/main/k3_tech_report.pdf)
