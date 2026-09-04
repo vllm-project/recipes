@@ -66,6 +66,7 @@ features:
         variants:
           - fp8
           - nvfp4
+          - redhat_nvfp4
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":2}'
@@ -148,6 +149,12 @@ variants:
           - "--moe-backend"
           - "deep_gemm_mega_moe"
 
+  redhat_nvfp4:
+    model_id: "RedHatAI/DeepSeek-V4-Pro-NVFP4-FP8"
+    precision: nvfp4
+    label: "NVFP4+FP8 (RedHat)"
+    vram_minimum_gb: 1000
+    description: "RedHatAI NVFP4+FP8 mixed-precision checkpoint"
 kv_offload_support:
   offloading_cpu: verified
   offloading_fs: verified
