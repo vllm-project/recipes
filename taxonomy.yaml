@@ -311,6 +311,18 @@ hardware_profiles:
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
   # lists it in `meta.hardware` — Ascend support ships in vllm-ascend and is
   # only declared on validated recipes.
+  ascend_950dt:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 950DT"
+    description: "Huawei Ascend 950DT · 8× NPU · 96 GB HBM each · vLLM Ascend backend"
+    gpu_count: 8
+    vram_gb: 768
+    multi_node: false
+    scalable: false
+    restricted: true
+
+
   ascend_950pr:
     brand: Huawei
     generation: npu
