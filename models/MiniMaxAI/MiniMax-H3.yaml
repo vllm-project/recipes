@@ -614,7 +614,7 @@ dependencies:
     install_modes: [pip, docker]
     optional: true
   - note: "Optional CUDA-only FastH3 VSA kernel for the pip path. --no-deps preserves the PyTorch/CUDA stack managed by vLLM. The tested B300/SM103 route uses the Triton fallback with FASTVIDEO_VSA_SM100A=0."
-    command: "python3 -m pip install --no-deps fastvideo-kernel==0.3.5"
+    command: "uv pip install --no-deps fastvideo-kernel==0.3.5"
     install_modes: [pip]
     brand: NVIDIA
     optional: true
@@ -1129,7 +1129,7 @@ guide: |
   tested version without dependencies so it cannot replace vLLM's PyTorch/CUDA stack:
 
   ```bash
-  python3 -m pip install --no-deps fastvideo-kernel==0.3.5
+  uv pip install --no-deps fastvideo-kernel==0.3.5
   ```
 
   Then switch the adapter and attention backend. B300 is SM103, so the validated route
