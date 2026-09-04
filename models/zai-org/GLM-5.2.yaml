@@ -47,6 +47,16 @@ features:
       - "glm45"
   spec_decoding:
     description: "Multi-Token Prediction speculative decoding (up to 7 draft tokens)"
+    # mtp/dspark's draft models don't implement SupportsPP yet
+    # (vllm-project/vllm#50098), so the feature is gated off multi_node_tp_pp.
+    # Every other strategy keeps it.
+    strategies:
+      - single_node_tp
+      - single_node_tep
+      - multi_node_tp
+      - multi_node_tep
+      - multi_node_dep
+      - pd_cluster
     default_mode: mtp
     modes:
       mtp:
