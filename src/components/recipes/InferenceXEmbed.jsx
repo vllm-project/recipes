@@ -43,7 +43,9 @@ export function InferenceXEmbed({ config, title }) {
   }, []);
 
   useEffect(() => {
-    const embedOrigin = new URL(INFERENCEX_BASE_URL).origin;
+    // Resolve against the page so a relative NEXT_PUBLIC_INFERENCEX_URL (a
+    // same-origin proxy in previews) yields the page origin instead of throwing.
+    const embedOrigin = new URL(INFERENCEX_BASE_URL, window.location.href).origin;
     const onMessage = (event) => {
       if (event.origin !== embedOrigin) return;
       if (event.source !== frameRef.current?.contentWindow) return;
