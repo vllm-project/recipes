@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3-Flash is a 320B-total / 18B-active multimodal MoE with hybrid KDA and sparse MLA attention, native FP8 weights, MTP, and a 1M-token context window."
   date_added: 2026-08-27
-  date_updated: 2026-08-27
+  date_updated: 2026-09-05
   difficulty: advanced
   tasks:
     - text
@@ -51,10 +51,23 @@ features:
       - "--reasoning-parser"
       - "glm45"
   spec_decoding:
-    description: "Use the checkpoint's single MTP layer to draft one token"
-    args:
-      - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":5}'
+    description: "Built-in MTP or an external DFlash2 drafter. Pick one method — only that --speculative-config is emitted."
+    default_mode: mtp
+    modes:
+      mtp:
+        label: "MTP"
+        description: "Use the checkpoint's MTP layer to draft 5 tokens."
+        args:
+          - "--speculative-config"
+          - '{"method":"mtp","num_speculative_tokens":5}'
+      dflash:
+        label: "DFlash2"
+        description: "External DFlash2 drafter (incoai/GLM-5.3-Flash-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. num_speculative_tokens must be 7 (block_size 8 minus one)."
+        hardware:
+          amd: unsupported
+        args:
+          - "--speculative-config"
+          - '{"method":"dflash","model":"incoai/GLM-5.3-Flash-DFlash2","num_speculative_tokens":7}'
 
 opt_in_features:
   - spec_decoding
