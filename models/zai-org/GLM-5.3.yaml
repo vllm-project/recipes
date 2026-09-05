@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3 — Frontier Coding with Emergent Cyber Capabilities"
   date_added: 2026-08-28
-  date_updated: 2026-08-30
+  date_updated: 2026-09-05
   difficulty: advanced
   tasks:
     - text
@@ -82,6 +82,24 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 558
     description: "Inferact NVFP4 checkpoint — only MoE expert linears are quantized to NVFP4; shared experts, attention, embeddings, and the early dense layers stay FP8/BF16, with FP8 KV cache. Blackwell GPUs (B200/B300) only."
+  w4a8:
+    model_id: "gpustack/GLM-5.3-W4A8"
+    precision: int4
+    label: "W4A8"
+    vram_minimum_gb: 447
+    precision_hardware:
+      brand: NVIDIA
+      generation: hopper
+    supported_hardware: [h100, h200]
+    extra_args:
+      - "--enable-expert-parallel"
+      - "--trust-remote-code"
+    hardware_overrides:
+      hopper:
+        extra_args:
+          - "--kv-cache-dtype"
+          - "fp8_ds_mla"
+    description: "GPUStack Hopper-native W4A8 (gpustack/GLM-5.3-W4A8). Routed experts are INT4 group-128; non-expert layers stay FP8. Weights drop from 704 GB to 372 GB, roughly doubling KV cache on 8×H200/H20 with no measurable accuracy drop vs official FP8. CUTLASS W4A8 is SM90-only — H100/H200/H20; Blackwell and AMD are unsupported."
   bf16:
     model_id: "zai-org/GLM-5.3-BF16"
     precision: bf16
