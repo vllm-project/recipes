@@ -10,6 +10,8 @@ import { resolveRecipePlatforms } from "@/lib/platforms";
 import { getProviderLogo, getProviderLogoClass } from "@/lib/providers";
 import { CommandBuilder } from "@/components/recipes/CommandBuilder";
 import { DeployDialog } from "@/components/recipes/DeployDialog";
+import { InferenceXEmbed } from "@/components/recipes/InferenceXEmbed";
+import { resolveInferencex } from "@/lib/inferencex";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -96,6 +98,8 @@ export default async function RecipePage({ params, searchParams }) {
   // an object with overrides ({ id: "modal", install, url, blurb }) for
   // recipes that ship their own deploy script.
   const enabledPlatforms = resolveRecipePlatforms(recipe.meta?.platforms);
+  // Opt-in live benchmark chart from InferenceX (`meta.inferencex`), vLLM only.
+  const inferencex = resolveInferencex(recipe.meta);
 
   const allRecipes = getAllRecipes();
   // related_recipes can be either "org/repo" HF id or the old slug format
@@ -220,6 +224,12 @@ export default async function RecipePage({ params, searchParams }) {
 
       {/* ── Reference sections ── */}
       <section className="space-y-2">
+        {inferencex && (
+          <Accordion title="vLLM Performance - InferenceX Agentic Workloads" defaultOpen>
+            <InferenceXEmbed config={inferencex} title={recipe.meta.title} />
+          </Accordion>
+        )}
+
         {guide && (
           <Accordion title="Guide" defaultOpen>
             <div className="guide-content">
