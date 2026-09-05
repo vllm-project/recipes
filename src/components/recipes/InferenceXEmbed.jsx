@@ -13,7 +13,6 @@ const MIN_HEIGHT = 560;
 const RESIZE_MESSAGE_TYPE = "inferencex:embed-resize";
 
 function readTheme() {
-  if (typeof document === "undefined") return "light";
   return document.documentElement.classList.contains("dark") ? "dark" : "light";
 }
 
@@ -24,11 +23,16 @@ function readTheme() {
  * ThemeToggle) and grows to the height the embed reports via postMessage so
  * the chart never scrolls inside the card. Only messages from the InferenceX
  * origin are honoured.
+ *
+ * The theme is applied client-side after hydration, so the server can't know
+ * it. The frame is therefore only rendered once the theme has been read on the
+ * client: SSR ships the skeleton alone, and a dark-mode visitor fetches the
+ * dark embed once instead of a light one that is immediately thrown away.
  */
 export function InferenceXEmbed({ config, title }) {
-  const [theme, setTheme] = useState("light");
+  const [theme, setTheme] = useState(null);
   const [height, setHeight] = useState(MIN_HEIGHT);
-  const [loaded, setLoaded] = useState(false);
+  const [loadedSrc, setLoadedSrc] = useState(null);
   const frameRef = useRef(null);
 
   useEffect(() => {
@@ -52,7 +56,10 @@ export function InferenceXEmbed({ config, title }) {
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  const src = inferencexEmbedUrl(config, theme);
+  const src = theme ? inferencexEmbedUrl(config, theme) : null;
+  // Tied to the src rather than a bare boolean so a theme switch (new src,
+  // remounted frame) brings the skeleton back until the new embed has loaded.
+  const loaded = src !== null && loadedSrc === src;
 
   return (
     <div className="space-y-3">
@@ -89,25 +96,26 @@ export function InferenceXEmbed({ config, title }) {
         Open the full interactive dashboard on InferenceX
         <ExternalLink size={16} />
       </a>
-      <div className="relative rounded-xl overflow-hidden bg-background">
+      <div className="relative rounded-xl overflow-hidden bg-background" style={{ height }}>
         {!loaded && (
           <div
             className="absolute inset-0 animate-pulse bg-muted"
             aria-hidden="true"
           />
         )}
-        <iframe
-          ref={frameRef}
-          key={src}
-          src={src}
-          title={`InferenceX benchmarks for ${title} on vLLM`}
-          loading="lazy"
-          onLoad={() => setLoaded(true)}
-          style={{ height }}
-          className="block w-full border-0"
-          sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-          referrerPolicy="strict-origin-when-cross-origin"
-        />
+        {src && (
+          <iframe
+            ref={frameRef}
+            key={src}
+            src={src}
+            title={`InferenceX benchmarks for ${title} on vLLM`}
+            loading="lazy"
+            onLoad={() => setLoadedSrc(src)}
+            className="block h-full w-full border-0"
+            sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+            referrerPolicy="strict-origin-when-cross-origin"
+          />
+        )}
       </div>
     </div>
   );
