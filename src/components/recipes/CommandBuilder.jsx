@@ -3122,7 +3122,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
     ? ["source /opt/intel/oneapi/setvars.sh", preludeBase].filter(Boolean).join("\n")
     : preludeBase;
   const displayCommand = isDocker
-    ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags })
+    ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isNpu: dockerMeta.isNpu })
     : command;
   // A companion process may ride along (`companions[]` from resolveCommand —
   // a feature's `companion:` or the active kv_offload option's, e.g.
@@ -3237,7 +3237,7 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   const pipHidden = pipCfg === false;
   const dockerHidden = dockerCfg === false;
   const [open, setOpen] = useState(false);
-  const { isAmd, isTpu, isXpu, isIntel, image: dockerImage, brandKey, cudaMap } = dockerMeta;
+  const { isAmd, isTpu, isXpu, isIntel, isNpu, image: dockerImage, brandKey, cudaMap } = dockerMeta;
   // Intel CPU is a first-class backend in computeDockerMeta. Keep XPU
   // distinct even though it is also Intel hardware.
   const isCpu = isIntel && !isXpu;
@@ -3321,6 +3321,8 @@ uv pip install -U vllm --torch-backend auto`;
     ? "TPU builds are published by vllm-project/tpu-inference. See the Trillium and Ironwood tpu-recipes for pinned image tags and exact deployment flags."
     : isXpu
       ? "Intel XPU image. The entrypoint initializes oneAPI automatically."
+    : isNpu
+      ? "Ascend NPU image. The generated docker run bind-mounts `/dev/davinci*` and the host driver at `/usr/local/Ascend/driver` (including HCCL topo files)."
     : isAmd
       ? undefined
     : isCpu
@@ -3342,6 +3344,7 @@ uv pip install -U vllm --torch-backend auto`;
   // toggle either — the note explains the one published build instead.
   const showCudaSelector =
     brandKey === "nvidia" &&
+    !isNpu &&
     !singleCudaBuild &&
     !dockerCfg?.command &&
     // Only upstream publishes paired `-cu129` / `cu129-nightly` tags. On a
@@ -3355,7 +3358,7 @@ uv pip install -U vllm --torch-backend auto`;
   // Intel XPU is validated via the official `vllm-openai-xpu` Docker image;
   // `hwInstall.pip: false` is the per-GPU form of the same statement.
   const effectivePipHidden = pipHidden || isTpu || isXpu || hwInstall?.pip === false;
-  const dockerLabel = isTpu ? "Docker (TPU)" : isXpu ? "Docker (XPU)" : isAmd ? "Docker (ROCm)" : isCpu ? "Docker (CPU)" : "Docker";
+  const dockerLabel = isTpu ? "Docker (TPU)" : isXpu ? "Docker (XPU)" : isNpu ? "Docker (Ascend)" : isAmd ? "Docker (ROCm)" : isCpu ? "Docker (CPU)" : "Docker";
   const tabs = [
     !effectivePipHidden && {
       id: "pip",
@@ -3383,7 +3386,7 @@ uv pip install -U vllm --torch-backend auto`;
         <Package size={12} className="text-[var(--command-fg)]/50 shrink-0" />
         <span className="text-[11px] font-semibold text-[var(--command-fg)]/70 uppercase tracking-widest">Install</span>
         <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
-          vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · {isTpu ? "TPU" : isXpu ? "XPU" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}
+          vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · {isTpu ? "TPU" : isXpu ? "XPU" : isNpu ? "Ascend" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}
         </span>
         {nightlyRequired && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
@@ -3504,7 +3507,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
   const isDocker = installMode === "docker";
   const wrap = (cmd) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env: result.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu })
+      ? buildDockerRun({ command: cmd, env: result.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu })
       : cmd;
   // One tab per node: Head (rank 0) then every follower rank, each with its own
   // --node-rank / --data-parallel-start-rank. `workerCommands` carries them all;
@@ -3571,7 +3574,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   // it stays as-is with its pip-install hint regardless of install mode.
   const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu })
+      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu })
       : cmd;
   // Mooncake composed into PD (result.mooncake): a "Mooncake Config" tab
   // (launch step 0) writes the shared config file(s) once — every
@@ -3704,7 +3707,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
   const isDocker = installMode === "docker";
   const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu })
+      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu })
       : cmd;
 
   const instances = result.instances || 2;
