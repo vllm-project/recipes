@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 flagship MoE (1.6T total / 49B active) with hybrid CSA+HCA attention, manifold-constrained hyper-connections, Muon-trained on 32T+ tokens, and three-tier reasoning."
   date_added: 2026-04-24
-  date_updated: 2026-09-02
+  date_updated: 2026-09-05
   difficulty: hard
   tasks:
     - text
@@ -531,3 +531,153 @@ guide: |
     --no-disable-hybrid-kv-cache-manager \
     --max-num-seqs "8"
   ```
+
+  ## Fixed-sequence benchmark reproduction (InferenceX MI355X 8K/1K)
+
+  This is a **second, separate InferenceX lane** — not a variation of the Agentic
+  sweep above. It is a fixed-sequence measurement at input length 8192 and output
+  length 1024 on one 8× MI355X node, run as two arms: **STP** (no speculative
+  decoding) and **real MTP with two draft tokens**. Neither arm is the general
+  recipe default, and neither is a recommendation for other AMD workloads.
+
+  The checkpoint is `deepseek-ai/DeepSeek-V4-Pro` — the **FP8 (Preview)** pill in
+  the Variant row, whose mixed FP4+FP8 weights InferenceX labels `fp4`. It is not
+  the `0813` default variant and not the DSpark checkpoint.
+
+  ### Source configuration
+
+  | Item | Value |
+  |---|---|
+  | InferenceX PR | [#2792](https://github.com/SemiAnalysisAI/InferenceX/pull/2792) |
+  | Config keys | `dsv4-fp4-mi355x-vllm` (STP), `dsv4-fp4-mi355x-vllm-mtp` (MTP) |
+  | Hardware | one node, 8× MI355X |
+  | Image | `vllm/vllm-openai-rocm:nightly-7c5dc571cbd1064ecc8a9b1045637ff647aa22cb` |
+  | Image digest | `sha256:f0bdaf5217a09949842b45c1ea1f12260d3205ec81f143b320dfc2eb3ec95e55` |
+  | Parallelism | TP 8, DP 1, EP 1 — no `--enable-expert-parallel` |
+  | Workload | ISL 8192, OSL 1024; concurrency 4, 8, 16, 32, 64, 128, 256, 512 |
+  | Requests per point | 10 × concurrency |
+
+  The image is pinned to an immutable nightly tag rather than a floating
+  `:nightly`, because the measurements depend on the ROCm DeepSeek-V4 kernel state
+  in that specific build. The Install block's AMD default stays on `:nightly`
+  deliberately — pin the tag above only when reproducing these numbers.
+
+  ### STP launch (no speculative decoding)
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_MOE=1
+  # Kept explicit for parity with the upstream ROCm recipe knobs. See the
+  # shared-expert note below — vLLM may self-disable this fusion.
+  export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+
+  vllm serve deepseek-ai/DeepSeek-V4-Pro \
+    --port "${PORT:-8000}" \
+    --tensor-parallel-size 8 \
+    --data-parallel-size 1 \
+    --async-scheduling \
+    --no-enable-prefix-caching \
+    --distributed-executor-backend mp \
+    --gpu-memory-utilization 0.8 \
+    --kv-cache-dtype fp8 \
+    --trust-remote-code \
+    --moe-backend aiter \
+    --tokenizer-mode deepseek_v4 \
+    --reasoning-parser deepseek_v4 \
+    --compilation-config '{"mode":3,"cudagraph_mode":"FULL_AND_PIECEWISE"}'
+  ```
+
+  ### MTP arm (real speculation, 2 draft tokens)
+
+  The MTP arm is the same launch plus one flag. Everything else — environment,
+  parallelism, memory, cache, executor, MoE backend, parsers, compilation — is
+  identical:
+
+  ```bash
+    --speculative-config '{"method":"mtp","num_speculative_tokens":2}'
+  ```
+
+  This is **real** MTP: draft tokens are verified against the target model. ROCm
+  support for the DeepSeek-V4 MTP head landed in
+  [vllm-project/vllm#43385](https://github.com/vllm-project/vllm/pull/43385). The
+  same two-token config is available from the command builder — enable *Spec
+  decoding* and pick the **MTP** mode with the FP8 (Preview) variant selected.
+
+  ### Left at engine defaults
+
+  This lane deliberately passes no `--max-model-len`, `--max-num-seqs`,
+  `--max-num-batched-tokens`, or `--block-size`, and no tool-calling flags. That
+  differs from this recipe's general AMD configuration, which does set several of
+  them — one reason this reproduction is documented separately rather than folded
+  into the default command.
+
+  ### Benchmarking the MTP arm needs chat formatting
+
+  MTP-style speculation is trained against chat-formatted input. Benchmarking it
+  with raw completion prompts silently depresses the acceptance rate, so measure
+  it against the chat endpoint, which applies the DeepSeek-V4 chat template that
+  `--tokenizer-mode deepseek_v4` installs:
+
+  ```bash
+  CONC=32
+
+  vllm bench serve \
+    --model deepseek-ai/DeepSeek-V4-Pro \
+    --host localhost \
+    --port "${PORT:-8000}" \
+    --backend openai-chat \
+    --endpoint /v1/chat/completions \
+    --dataset-name random \
+    --random-input-len 8192 \
+    --random-output-len 1024 \
+    --num-prompts "$((CONC * 10))" \
+    --max-concurrency "$CONC" \
+    --ignore-eos \
+    --trust-remote-code
+  ```
+
+  InferenceX drives its own benchmark client with a private DeepSeek-V4 encoder
+  rather than the tokenizer's built-in template, so the numbers on its dashboard
+  are not byte-identical to what the command above produces. Use the chat endpoint
+  for any MTP acceptance measurement regardless.
+
+  ### Shared-expert fusion may self-disable
+
+  `VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1` is exported for parity with the
+  ROCm recipe, but it is a request, not a guarantee. vLLM gates the fused
+  shared-expert path on its own eligibility check, and for this mixed FP4+FP8
+  checkpoint that check does not currently pass, so the fusion self-disables at
+  startup. Treat the flag as harmless recipe parity and check the server log
+  before assuming the fused path executed.
+
+  ### How this differs from the Agentic sweep above
+
+  | Setting | Fixed-sequence 8K/1K | Agentic sweep |
+  |---|---|---|
+  | Workload | ISL 8192 / OSL 1024, conc 4–512 | agentic-coding traces |
+  | `--gpu-memory-utilization` | `0.8` | `0.86` |
+  | Prefix caching | `--no-enable-prefix-caching` | `--enable-prefix-caching` |
+  | Speculation | none (STP) or real MTP, 2 tokens | synthetic MTP, 3 tokens |
+  | `--max-num-seqs` | not passed | `8` |
+  | `--max-num-batched-tokens` | not passed | `8192` |
+
+  The Agentic lane's synthetic acceptance length is a benchmark-comparability
+  device. This lane never uses it: the STP arm has no draft at all, and the MTP
+  arm verifies against the real target.
+
+  ### Provenance
+
+  Validation for this configuration comes from InferenceX, not from this
+  repository — no MI355X benchmark was rerun here.
+
+  - InferenceX PR: [#2792](https://github.com/SemiAnalysisAI/InferenceX/pull/2792)
+  - STP script: [`dsv4_fp4_mi355x_vllm.sh`](https://github.com/SemiAnalysisAI/InferenceX/blob/7393456f925f4962fc9bb6438567e73f7ca12bf8/benchmarks/single_node/fixed_seq_len/dsv4_fp4_mi355x_vllm.sh)
+  - MTP script: [`dsv4_fp4_mi355x_vllm_mtp.sh`](https://github.com/SemiAnalysisAI/InferenceX/blob/7393456f925f4962fc9bb6438567e73f7ca12bf8/benchmarks/single_node/fixed_seq_len/dsv4_fp4_mi355x_vllm_mtp.sh)
+  - Config matrix: [`configs/amd-master.yaml`](https://github.com/SemiAnalysisAI/InferenceX/blob/7393456f925f4962fc9bb6438567e73f7ca12bf8/configs/amd-master.yaml)
+  - Successful sweep: [run 33538769698](https://github.com/SemiAnalysisAI/InferenceX/actions/runs/33538769698),
+    which ran at commit `7a209b121932696b7efd437ac50d19c53efc7a94`. All eight
+    concurrency points passed on both arms, plus `lm-eval` GSM8K eval-only jobs at
+    concurrency 128 and 512. Commits after that point on the PR branch do not touch
+    either fixed-sequence script or these two config entries.
+  - ROCm DeepSeek-V4 MTP support: [vllm-project/vllm#43385](https://github.com/vllm-project/vllm/pull/43385)
