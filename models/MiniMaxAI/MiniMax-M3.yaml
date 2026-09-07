@@ -208,9 +208,11 @@ variants:
     tp: 8
     hardware_overrides:
       mi355x:
-        docker_image: "vllm/vllm-openai-rocm:nightly"
+        docker_image: "vllm/vllm-openai-rocm:nightly-8a728663c1c3eeace834a95f5654fa653cc1998c"
         extra_args:
           - "--trust-remote-code"
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
           # Keep the multimodal encoder loaded and run it data-parallel on MI355X.
           - "--mm-encoder-tp-mode"
           - "data"

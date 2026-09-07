@@ -18,7 +18,7 @@ meta:
 
 model:
   model_id: "Qwen/Qwen3-Next-80B-A3B-Instruct"
-  min_vllm_version: "0.10.0"
+  min_vllm_version: "0.17.0"
   architecture: moe
   parameter_count: "80B"
   active_parameters: "3B"
@@ -121,7 +121,7 @@ guide: |
     --enable-prefix-caching
   ```
 
-  On SM100, accelerate with the FP8 FlashInfer TRTLLM MoE kernel:
+  On SM100, accelerate with the FlashInfer TRTLLM MoE kernel:
   ```bash
   VLLM_USE_DEEP_GEMM=0 \
   vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct-FP8 \
