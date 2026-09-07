@@ -567,8 +567,8 @@ guide: |
   ```bash
   export VLLM_ROCM_USE_AITER=1
   export VLLM_ROCM_USE_AITER_MOE=1
-  # Kept explicit for parity with the upstream ROCm recipe knobs. See the
-  # shared-expert note below — vLLM may self-disable this fusion.
+  # Fuses the FP8 shared expert into the MXFP4 routed-expert AITER kernel.
+  # See the shared-expert note below for the build and eligibility requirements.
   export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
   export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
 
@@ -642,14 +642,24 @@ guide: |
   are not byte-identical to what the command above produces. Use the chat endpoint
   for any MTP acceptance measurement regardless.
 
-  ### Shared-expert fusion may self-disable
+  ### Shared-expert fusion requires a recent build
 
-  `VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1` is exported for parity with the
-  ROCm recipe, but it is a request, not a guarantee. vLLM gates the fused
-  shared-expert path on its own eligibility check, and for this mixed FP4+FP8
-  checkpoint that check does not currently pass, so the fusion self-disables at
-  startup. Treat the flag as harmless recipe parity and check the server log
-  before assuming the fused path executed.
+  `VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1` is a request, not a guarantee:
+  vLLM gates the fused shared-expert path on its own eligibility check. Until
+  [vllm-project/vllm#53161](https://github.com/vllm-project/vllm/pull/53161) that
+  check rejected this mixed FP4+FP8 checkpoint outright, so on any build older
+  than `de69e821` the flag is inert and the fusion self-disables at startup. That
+  PR adds the heterogeneous path that fuses the native-FP8 shared expert into the
+  MXFP4 routed-expert kernel, which is what makes the flag take effect.
+
+  On a build that includes it, the fusion additionally requires gfx950 (MI355X),
+  tensor parallelism 8, data parallelism 1, no expert parallelism and no EPLB,
+  `--moe-backend aiter`, BF16 model dtype, and the DeepSeek-V4 block-128 FP8
+  shared-expert quantization config. Both arms here satisfy this. Data-parallel
+  attention does not, and keeps the unfused path.
+
+  Failures are silent and logged at debug level, so check the server log before
+  assuming the fused path executed rather than inferring it from the flag.
 
   ### How this differs from the Agentic sweep above
 
