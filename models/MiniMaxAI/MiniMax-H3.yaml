@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "Open-weight general-purpose multimodal generation model — jointly generates 24 FPS video with native stereo audio from text, image, video, and audio references, served via vLLM-Omni"
   date_added: 2026-08-02
-  date_updated: 2026-09-03
+  date_updated: 2026-09-07
   difficulty: advanced
   tasks:
     - omni
@@ -613,6 +613,13 @@ dependencies:
         --local-dir /path/to/MiniMax-H3/FastH3-LoRA
     install_modes: [pip, docker]
     optional: true
+  - note: "Optional LightX2V Turbo few-step LoRA: download one Diffusers-layout artifact under the already-mounted H3 root. The filename carries the sampling contract, so do not rename it; the _comfyui_ exports are not supported."
+    command: |
+      hf download lightx2v/Minimax-h3-Turbo \
+        minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors \
+        --local-dir /path/to/MiniMax-H3/Turbo-LoRA
+    install_modes: [pip, docker]
+    optional: true
   - note: "Optional CUDA-only FastH3 VSA kernel for the pip path. --no-deps preserves the PyTorch/CUDA stack managed by vLLM. The tested B300/SM103 route uses the Triton fallback with FASTVIDEO_VSA_SM100A=0."
     command: "uv pip install --no-deps fastvideo-kernel==0.3.5"
     install_modes: [pip]
@@ -1175,14 +1182,138 @@ guide: |
 
   | Request | Metric | FastH3 Dense | FastH3 VSA | Speedup |
   |---|---|---:|---:|---:|
+  | 10 s | Denoise loop | ~4.44 s | ~3.20 s | 1.39× |
   | 10 s | Diffusion engine | 7.994 s | 5.610 s | 1.42× |
   | 10 s | Server E2E incl. MP4 | 9.838 s | 7.278 s | 1.35× |
+  | 15 s | Denoise loop | ~8.40 s | ~4.80 s | 1.75× |
   | 15 s | Diffusion engine | 11.530 s | 7.826 s | 1.47× |
   | 15 s | Server E2E incl. MP4 | 14.199 s | 10.800 s | 1.31× |
+
+  Sparsity pays off more as the sequence grows: the denoise loop gains 1.39× at 10 s and
+  1.75× at 15 s. End-to-end lands lower than either because text encoding, VAE decoding and
+  MP4 muxing are a fixed cost that does not shrink with sparsity — at 15 s the non-diffusion
+  stage went 1.457 s → 1.648 s and muxing 1.208 s → 1.320 s. Once a route is down to four
+  forwards, those fixed stages, not attention, set the floor.
 
   VSA added about 3.8 GB to the reported per-process peak in this comparison. Both paths
   returned H.264 video at 24 FPS with AAC stereo audio at 32 kHz. FastH3 forbids model-level,
   layerwise, and distributed layerwise offload because those paths bypass load-time fusion.
+
+  ### LightX2V Turbo few-step LoRA
+
+  [LightX2V Turbo](https://huggingface.co/lightx2v/Minimax-h3-Turbo) is a family of
+  few-step LoRA artifacts for H3. It reaches the same goal as FastH3 by the opposite
+  route: instead of fusing full-rank deltas at startup, Turbo stays a standard LoRA that
+  each request activates by name. One server can therefore hold several artifacts and let
+  requests choose between them, at the cost of the LoRA matmuls on every denoise step.
+
+  Eight Diffusers-layout artifacts are supported. The filename is the contract — the server
+  parses the task family, step count and resolution out of it, so a renamed file is rejected
+  rather than served on a guess. `audio_flow_shift` is `3.0` across the family.
+
+  | Artifact | Tasks | `num_inference_steps` | `flow_shift` | alpha |
+  |---|---|---:|---:|---:|
+  | `minimax_h3_fl2v_turbo_4step_v0.1.safetensors` | T2VA / FL2VA | 5 | 12 | none → 8 |
+  | `minimax_h3_fl2v_turbo_4step_v1.0_768p_bf16.safetensors` | T2VA / FL2VA | 5 | 6 | 128 |
+  | `minimax_h3_fl2v_turbo_4step_v1.1_768p_bf16.safetensors` | T2VA / FL2VA | 5 | 6 | 128 |
+  | `minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors` | T2VA / FL2VA | 5 | 6 | 8 |
+  | `minimax_h3_fl2v_turbo_8step_v1.0_bf16.safetensors` | T2VA / FL2VA | 9 | 12 | 8 |
+  | `minimax_h3_fl2v_turbo_8step_v1.0_768p_bf16.safetensors` | T2VA / FL2VA | 9 | 6 | 8 |
+  | `minimax_h3_ref2v_turbo_4step_v0.1_bf16.safetensors` | Ref2VA | 5 | 12 | 8 |
+  | `minimax_h3_ref2v_turbo_8step_v1.0_768p_bf16.safetensors` | Ref2VA | 9 | 6 | 8 |
+
+  Requested sigma points are always one more than the artifact's forwards, which is why a
+  four-step Turbo artifact takes `num_inference_steps=5` where FastH3 takes `4`.
+
+  Every artifact is rank 128 and the delta is applied at `scale * alpha / 128`, with alpha
+  read from the artifact's metadata — only `4step_v0.1` declares none and falls back to 8
+  with a warning.
+
+  Download one artifact under the H3 root so the existing bind mount includes it. Each
+  artifact except `4step_v0.1` also ships a `_comfyui_` export that fuses Q/K/V into a single
+  projection; those are **not** supported and are refused by name.
+
+  ```bash
+  hf download lightx2v/Minimax-h3-Turbo \
+    minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors \
+    --local-dir /path/to/MiniMax-H3/Turbo-LoRA
+  ```
+
+  Serve it on the same eight-GPU pure-Ulysses topology. `--lora-path` preloads the adapter;
+  it accepts one artifact, or a directory holding exactly one — a directory with several
+  recognized artifacts is rejected as ambiguous.
+
+  ```bash
+  CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+  VLLM_WORKER_MULTIPROC_METHOD=spawn \
+  VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
+  vllm serve /path/to/MiniMax-H3 \
+    --omni \
+    --host 127.0.0.1 \
+    --port 8095 \
+    --trust-remote-code \
+    --task-type fl2va \
+    --served-model-name MiniMaxAI/MiniMax-H3 \
+    --num-gpus 8 \
+    --usp 8 \
+    --ring 1 \
+    --vae-patch-parallel-size 8 \
+    --vae-parallel-mode tile \
+    --vae-use-tiling \
+    --diffusion-attention-backend TRTLLM_ATTN \
+    --lora-backend peft \
+    --lora-path /path/to/MiniMax-H3/Turbo-LoRA/minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors
+  ```
+
+  Unlike FastH3, the request must activate the adapter and carry that row's sampling
+  contract. A request whose steps or shift do not match the loaded artifact is rejected, so
+  a mismatch cannot silently sample the distilled model at noise levels it never saw.
+
+  ```bash
+  curl --fail-with-body -sS -X POST http://127.0.0.1:8095/v1/videos/sync \
+    -F 'prompt=A cinematic starship glides through a luminous nebula while its engines hum and distant radio chatter fills the cabin.' \
+    -F 'width=1344' \
+    -F 'height=768' \
+    -F 'aspect_ratio=16:9' \
+    -F 'fps=24' \
+    -F 'num_inference_steps=5' \
+    -F 'flow_shift=6' \
+    -F 'seed=1101' \
+    -F 'extra_params={"task":"t2va","duration":10.0,"audio_flow_shift":3.0}' \
+    -F 'lora={"name":"h3-turbo-v1.2","path":"/path/to/MiniMax-H3/Turbo-LoRA/minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors","scale":1.0}' \
+    -o turbo.mp4
+  ```
+
+  FL2VA artifacts serve `t2va` and `fl2va` on an FL2VA or combined server. The two `ref2v`
+  rows need `--task-type ref2va`: a combined server answers `ref2va` from a second DiT the
+  adapter cannot bind to, so loading one there is refused rather than running an undistilled
+  model on a few-step ladder. The integration is dynamic-only — no prefusion, no LoRA
+  composition. DLO works by keeping the request-switchable LoRA A/B buffers resident on the
+  accelerator while DLO streams the base blocks; model-level and standard layerwise offload
+  remain unsupported.
+
+  Measured on 8×B300 with the command above, at 1344×768, 24 FPS, a 15 s FL2VA request with
+  first and last keyframes (362 frames), fixed seed, one discarded warmup and three recorded
+  runs. The baseline is the same server without an adapter at `num_inference_steps=50` and
+  `flow_shift=12`:
+
+  | Metric | Base H3, 49 forwards | Turbo v1.2, 4 forwards | Speedup |
+  |---|---:|---:|---:|
+  | Denoise loop | ~105 s | ~9 s | 11.7× |
+  | Per denoise step | 2.14–2.16 s/it | 2.20–2.42 s/it | — |
+  | Diffusion engine | 111.1–111.3 s | 15.0–15.1 s | 7.4× |
+  | Server E2E incl. MP4 | 112.5–112.9 s | ~16.5 s | 6.8× |
+
+  The ~10% higher per-step cost is the LoRA matmul the fused FastH3 route does not pay —
+  irrelevant against a 12× cut in forwards, but the reason a single-artifact deployment can
+  still prefer a fused student.
+
+  These figures are for a server serving Turbo requests back to back. Alternating between
+  Turbo and adapter-free requests on one server additionally pays a LoRA rebind on each
+  switch — measured at about 24 s per switch in the same run (39.2 s diffusion engine against
+  15.1 s steady state), because every one of H3's 208 LoRA layers is torn down and re-uploaded.
+  Give Turbo its own process if the workload mixes, or track vLLM-Omni #7195, which removes
+  that rebind.
 
   ### RTX PRO 5000 Blackwell — four PCIe GPUs
 
