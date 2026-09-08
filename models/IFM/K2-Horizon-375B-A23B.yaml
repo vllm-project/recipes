@@ -41,7 +41,8 @@ default_strategy: single_node_tep
 
 # On AMD the expert-parallel dispatch is slower than replicating the experts
 # across a pure tensor-parallel shard, so the TEP strategies are opted out and
-# single-node TP is the offered path.
+# single-node TP is the offered path. multi_node_tp_pp is left available: EP
+# works there, it is just not the fast default at single-node scale.
 strategy_hardware:
   single_node_tep:
     amd: unsupported
@@ -116,6 +117,7 @@ guide: |
     --tensor-parallel-size 8 \
     --trust-remote-code \
     --dtype bfloat16 \
+    --max-model-len 131072 \
     --gpu-memory-utilization 0.9 \
     --attention-backend ROCM_AITER_UNIFIED_ATTN \
     --generation-config auto \
