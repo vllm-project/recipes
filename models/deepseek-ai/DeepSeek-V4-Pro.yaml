@@ -645,12 +645,14 @@ guide: |
   ### Shared-expert fusion requires a recent build
 
   `VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1` is a request, not a guarantee:
-  vLLM gates the fused shared-expert path on its own eligibility check. Until
-  [vllm-project/vllm#53161](https://github.com/vllm-project/vllm/pull/53161) that
-  check rejected this mixed FP4+FP8 checkpoint outright, so on any build older
-  than `de69e821` the flag is inert and the fusion self-disables at startup. That
-  PR adds the heterogeneous path that fuses the native-FP8 shared expert into the
-  MXFP4 routed-expert kernel, which is what makes the flag take effect.
+  vLLM gates the fused shared-expert path on its own eligibility check.
+  [vllm-project/vllm#53161](https://github.com/vllm-project/vllm/pull/53161),
+  merged as `de69e821`, added the heterogeneous path that fuses the native-FP8
+  shared expert into the MXFP4 routed-expert kernel. Current `:nightly` images
+  include it, so the flag takes effect. On any build older than `de69e821` the
+  check rejects this mixed FP4+FP8 checkpoint outright and the fusion
+  self-disables at startup — including the immutable tag pinned in the
+  reproduction table above, which predates the fix.
 
   On a build that includes it, the fusion additionally requires gfx950 (MI355X),
   tensor parallelism 8, data parallelism 1, no expert parallelism and no EPLB,
@@ -658,8 +660,15 @@ guide: |
   shared-expert quantization config. Both arms here satisfy this. Data-parallel
   attention does not, and keeps the unfused path.
 
+  Eligibility is also re-checked per invocation against AITER's tuned-config
+  coverage for the number of MoE input rows. Decode-sized batches are covered and
+  take the fused kernel; large prefill chunks fall back to the unfused path, so an
+  8K-input workload runs fused during decode and unfused during prefill.
+
   Failures are silent and logged at debug level, so check the server log before
-  assuming the fused path executed rather than inferring it from the flag.
+  assuming the fused path executed rather than inferring it from the flag. The
+  line to look for is `Using AITER DeepSeek V4 heterogeneous MoE for CSV-covered
+  MoE input rows`.
 
   ### How this differs from the Agentic sweep above
 
