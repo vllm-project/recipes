@@ -50,15 +50,6 @@ strategy_hardware:
     amd: unsupported
 hardware_overrides:
   amd:
-    # AITER supplies the fused MoE and the unified attention kernel on CDNA 4.
-    # NCCL_MIN_NCHANNELS is raised because the 8-way all-reduce on the MoE
-    # output is small and latency-bound at these shapes; the default channel
-    # count leaves the interconnect underfed.
-    #
-    # Leave AITER_CONFIG_FMOE unset. A single relative value REPLACES the
-    # config list with a path resolved against the process CWD; unset, AITER
-    # globs configs/model_configs/*tuned_fmoe*.csv and merges them with the
-    # stock table, which is what picks up per-model tuned rows.
     extra_args:
       - "--attention-backend"
       - "ROCM_AITER_UNIFIED_ATTN"
