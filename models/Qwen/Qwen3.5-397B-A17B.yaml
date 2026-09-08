@@ -340,41 +340,6 @@ guide: |
     --enable-prefix-caching
   ```
 
-  ### Huawei Ascend 950DT
-
-  The `Eco-Tech/Qwen3.5-397B-A17B-w8a8-mtp` and
-  `Eco-Tech/Qwen3.5-397B-A17B-w4a4-mxfp4` checkpoints run on a single Ascend
-  950DT node with TP8.
-
-  ```bash
-  export VLLM_USE_MODELSCOPE=True
-  export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
-  export HCCL_OP_EXPANSION_MODE=AIV
-  export HCCL_BUFFSIZE=400
-  export OMP_PROC_BIND=false
-  export OMP_NUM_THREADS=100
-  export TASK_QUEUE_ENABLE=1
-  export VLLM_ASCEND_ENABLE_PREFETCH_MLP=1
-  export HCCL_INTRA_PCIE_ENABLE=1
-  export HCCL_INTRA_ROCE_ENABLE=0
-
-  vllm serve Eco-Tech/Qwen3.5-397B-A17B-w4a4-mxfp4 \
-    --distributed-executor-backend mp \
-    --data-parallel-size 1 \
-    --tensor-parallel-size 8 \
-    --quantization ascend \
-    --served-model-name qwen3.5 \
-    --max-num-seqs 128 \
-    --max-model-len 133000 \
-    --max-num-batched-tokens 8192 \
-    --gpu-memory-utilization 0.95 \
-    --enable-prefix-caching \
-    --async-scheduling \
-    --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
-    --additional-config '{"enable_cpu_binding":true}' \
-    --speculative-config '{"method":"qwen3_5_mtp","num_speculative_tokens":3}'
-  ```
-
   ## Processing Ultra-Long Texts
 
   Qwen3.5-397B-A17B natively supports `262,144` tokens. For longer inputs, apply
