@@ -436,35 +436,6 @@ guide: |
   ```
 
 
-  ### Huawei Ascend 950DT
-
-  The `Eco-Tech/Qwen3.6-27B-w8a8-mxfp8` checkpoint runs on one Ascend 950DT
-  node with TP1 + DP8.
-
-  ```bash
-  export VLLM_USE_MODELSCOPE=True
-  export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
-  export HCCL_BUFFSIZE=512
-  export OMP_PROC_BIND=false
-  export OMP_NUM_THREADS=1
-  export TASK_QUEUE_ENABLE=1
-
-  vllm serve Eco-Tech/Qwen3.6-27B-w8a8-mxfp8 \
-    --distributed-executor-backend mp \
-    --data-parallel-size 8 \
-    --tensor-parallel-size 1 \
-    --quantization ascend \
-    --served-model-name qwen3.6 \
-    --max-num-seqs 32 \
-    --max-model-len 262144 \
-    --max-num-batched-tokens 16384 \
-    --gpu-memory-utilization 0.90 \
-    --no-enable-prefix-caching \
-    --speculative-config '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}' \
-    --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
-    --additional-config '{"enable_cpu_binding":true}'
-  ```
-
   ### Docker (Intel XPU B60 / B70)
 
   Validated on 4× Intel Arc Pro B60 or 2x Intel Arc Pro B70 (B60 24 GB, B70 32 GB per card) with the
