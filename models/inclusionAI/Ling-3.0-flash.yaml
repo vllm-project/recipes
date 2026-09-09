@@ -274,8 +274,8 @@ guide: |
 
   ## Running on MI300X/MI355X
 
-  Use the `vllm/vllm-openai-rocm:nightly` image — the released `rocm/vllm` tags
-  top out at vLLM 0.27.0, which predates `BailingMoeV3ForCausalLM`.
+  Use the `vllm/vllm-openai-rocm:nightly` image; the released `rocm/vllm` tags
+  do not yet register `BailingMoeV3ForCausalLM`.
 
   ```bash
   export VLLM_ROCM_USE_AITER=1
@@ -292,18 +292,12 @@ guide: |
     --reasoning-parser ling3
   ```
 
-  All four variants are verified on both arch classes, with accuracy at or above
-  the published reference scores. The FP4 and INT4 checkpoints each serve on a
-  single GPU on both parts, which is the best throughput per GPU; BF16 and FP8
-  use the TP sizes given above.
+  On MI300X the BF16 run served the full 262,144-token context with a 105.15 GiB
+  KV pool and 52.38x max concurrency.
 
-  On MI300X the BF16 run also served the full 262,144-token context with a
-  105.15 GiB KV pool and 52.38x max concurrency.
-
-  **FP4** differs between the arch classes: gfx950 selects the native
-  `AITER_MXFP4_BF16` MoE backend, while gfx942 has no MXFP4 unit and falls back
-  to the `EMULATION` backend, which is roughly an order of magnitude slower —
-  prefer INT4 there.
+  **FP4** is native on gfx950 (`AITER_MXFP4_BF16`) but has no MXFP4 unit on
+  gfx942, where it falls back to the `EMULATION` backend and runs roughly an
+  order of magnitude slower — prefer INT4 there.
 
   **MTP** works on both arch classes, but only gfx950 needs a backend pin. There
   `ROCM_AITER_MLA` lets the speculator capture a graph the backend cannot serve
