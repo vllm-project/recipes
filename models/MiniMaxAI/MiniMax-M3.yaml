@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 plus MXFP8, NVIDIA Blackwell NVFP4, and AMD MI355X MXFP4 variants. Runs on NVIDIA (Hopper/Blackwell) and AMD CDNA4/CDNA3."
   date_added: 2026-06-12
-  date_updated: 2026-08-29
+  date_updated: 2026-09-08
   difficulty: advanced
   tasks:
     - text
@@ -678,6 +678,295 @@ guide: |
     --language-model-only \
     --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3-GQA", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
   ```
+
+  ### GB200 NVFP4 with Dynamo and host KV offload
+
+  This deployment uses the
+  [NVFP4 checkpoint](https://huggingface.co/nvidia/MiniMax-M3-NVFP4) and
+  [EAGLE3-GQA draft](https://huggingface.co/Inferact/MiniMax-M3-EAGLE3-GQA)
+  on four-GPU GB200 compute trays in the same NVLink domain. It covers an
+  aggregated TP4 worker with SimpleCPU offload and disaggregated workers with
+  NIXL over UCX plus Mooncake host-memory storage.
+
+  These are explicit **Dynamo deployment commands**, separate from the
+  command builder's native vLLM `pd_cluster` router and generic KV-offload
+  presets. The builder's defaults and recipe-wide hardware badges are unchanged.
+  Do not mix the two routers or assume that selecting Mooncake in the builder
+  reproduces these role-specific connectors and memory budgets.
+
+  #### Deployment profiles and evidence
+
+  | Profile | Prefill / aggregated worker | Decode workers | GB200 trays | Runtime |
+  |---------|-----------------------------|----------------|-------------|---------|
+  | Aggregated | 1 x TP4, no EP | same worker | 1 | vLLM `v0.27.1`, Dynamo `1.3.1`, SimpleCPU |
+  | P4/D4 | 1 x TP4 + EP4 | 1 x TP4 + EP4 | 2 | pinned vLLM digest below, Dynamo `1.5.0.dev20260819`, Mooncake `0.3.12.post1` |
+  | P4/2D4 | 1 x TP4 + EP4 | 2 independent TP4 + EP4 workers | 3 | same as P4/D4 |
+  | P4/D8 | 1 x TP4 + EP4 | 1 x TP8 + EP8 across two trays | 3 | same as P4/D4; decode `max-num-seqs=1` |
+
+  EP here accompanies tensor parallelism; these are not TP1/data-parallel
+  expert pools. In particular, two independent TP4 decode workers are not one
+  TP8 worker. The TP8 decode group requires cross-tray NVLink and a headless
+  process on its second tray.
+
+  The public [InferenceX sweep, attempt 2](https://github.com/SemiAnalysisAI/InferenceX/actions/runs/33910168042/attempts/2)
+  completed all six configured throughput and six GSM8K eval lanes for
+  source commit `4033d3808230b6b6c0d906b0531dce4897c582cd`. Throughput used
+  benchmark-only synthetic acceptance; the serving examples below use real
+  target verification and omit those controls. This guide has not separately
+  rerun the GPU workloads or established end-to-end agent/task accuracy.
+  The aggregated `1048576` context setting is a configured limit, not evidence
+  that the sweep tested a single request at that length.
+
+  #### Runtime and shared services
+
+  Use Linux/aarch64 hosts with working NVIDIA Container Toolkit, NVLink fabric,
+  and RDMA devices. Make both HF checkpoints accessible on every worker using
+  your normal HF credentials/cache. For disaggregation, all trays must reach
+  the control-plane host, each other, and the Mooncake master.
+
+  Start etcd and NATS using the
+  [Dynamo service setup](https://github.com/ai-dynamo/dynamo/blob/v1.3.1/dev/docker-compose.yml).
+  Use a separate deployment namespace, and configure NATS with a 32 MiB
+  maximum payload for this workload. Services can share a worker host, but
+  their CPU/RAM usage still needs headroom. Run the following container on
+  each participating host, then perform the remaining setup inside it:
+
+  ```bash
+  # Aggregated profile:
+  MM3_IMAGE=vllm/vllm-openai:v0.27.1
+  # For every disaggregated profile, use this image instead:
+  # MM3_IMAGE=vllm/vllm-openai@sha256:b9104b7ef3048e42f79fba9ab5da06e5aff8164aca9968692ec2f569aaaf34c6
+  docker run --rm -it --gpus all --network host --ipc=host \
+    --device /dev/infiniband --ulimit memlock=-1 \
+    --cap-add IPC_LOCK --cap-add SYS_NICE \
+    -e HF_TOKEN -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
+    --entrypoint /bin/bash "$MM3_IMAGE"
+  ```
+
+  ```bash
+  # Use 1.5.0.dev20260819 for disaggregated workers and their frontend.
+  MM3_DYNAMO_VERSION=1.3.1
+  python3 -m pip install --extra-index-url https://pypi.nvidia.com \
+    "ai-dynamo-runtime==$MM3_DYNAMO_VERSION" "ai-dynamo==$MM3_DYNAMO_VERSION"
+  # Disaggregated profile only:
+  # python3 -m pip install 'mooncake-transfer-engine==0.3.12.post1'
+  python3 -c 'import importlib.metadata as m; print({p: m.version(p) for p in ("vllm", "ai-dynamo", "ai-dynamo-runtime")})'
+  ```
+
+  Set these in **every** frontend and worker shell. Replace the example
+  addresses with routable addresses from your deployment; `MM3_NODE_IP` is
+  different on each worker. The HCA list and NUMA layout below match the
+  four-GPU source trays: check `ibdev2netdev` and `nvidia-smi topo -m` before
+  adapting them to another machine.
+
+  ```bash
+  export MM3_CONTROL_IP=192.0.2.10
+  export MM3_NODE_IP=192.0.2.11
+  export ETCD_ENDPOINTS="http://$MM3_CONTROL_IP:2379"
+  export NATS_SERVER="nats://$MM3_CONTROL_IP:4222"
+  export DYN_NAMESPACE=minimax-m3-gb200
+  export DYN_REQUEST_PLANE=tcp
+  export DYN_TCP_CONNECT_TIMEOUT=120
+  export VLLM_NIXL_SIDE_CHANNEL_HOST="$MM3_NODE_IP"
+  export VLLM_NIXL_SIDE_CHANNEL_PORT=5400
+  export VLLM_FLOAT32_MATMUL_PRECISION=high
+  export VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm
+  export NCCL_CUMEM_ENABLE=1 NCCL_MNNVL_ENABLE=1 NCCL_NVLS_ENABLE=1
+  export NCCL_IB_HCA=mlx5_0,mlx5_1,mlx5_2,mlx5_3
+  export UCX_MEMTYPE_CACHE=n
+  ```
+
+  #### Aggregated TP4 with SimpleCPU offload
+
+  On the frontend, use KV-aware routing and the same block size as the engine:
+
+  ```bash
+  DYN_TCP_REQUEST_TIMEOUT=60 python3 -m dynamo.frontend \
+    --http-port 8000 --dyn-chat-processor vllm --trust-remote-code \
+    --tool-call-parser minimax_m3 --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice --router-mode kv --router-kv-events \
+    --router-reset-states --router-temperature 0 \
+    --router-session-affinity-ttl-secs 14400 --kv-cache-block-size 128
+  ```
+
+  Run one worker on the four-GPU tray. The SimpleCPU allocation is **512 GiB
+  total, 128 GiB per TP rank**; leave additional host RAM for loading and
+  services. The KV-event publisher is needed by the frontend's KV router.
+
+  ```bash
+  export ETCD_LEASE_TTL=7200
+  export DYN_SYSTEM_PORT=7500
+  export VLLM_ENGINE_READY_TIMEOUT_S=7200
+  export VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=1800
+  export VLLM_USE_SIMPLE_KV_OFFLOAD=1
+  export UCX_NET_DEVICES=mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1
+  export UCX_TLS=cuda_copy,cuda_ipc,rc
+  python3 -m dynamo.vllm \
+    --model nvidia/MiniMax-M3-NVFP4 \
+    --served-model-name nvidia/MiniMax-M3-NVFP4 \
+    --request-plane tcp --tensor-parallel-size 4 --pipeline-parallel-size 1 \
+    --trust-remote-code --enable-prefix-caching --kv-cache-metrics \
+    --language-model-only --kv-cache-dtype fp8 --block-size 128 \
+    --gpu-memory-utilization 0.9 --max-model-len 1048576 \
+    --max-num-batched-tokens 16384 --max-cudagraph-capture-size 512 \
+    --stream-interval 20 --no-enable-flashinfer-autotune \
+    --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
+    --attention-config '{"backend":"FLASHINFER","use_trtllm_attention":true,"indexer_kv_dtype":"fp8","minimax_m3_msa_decode_backend":"cutlass"}' \
+    --speculative-config '{"method":"eagle3","model":"Inferact/MiniMax-M3-EAGLE3-GQA","num_speculative_tokens":3,"attention_backend":"FLASH_ATTN"}' \
+    --kv-transfer-config '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both","kv_connector_extra_config":{"cpu_bytes_to_use":549755813888,"cpu_bytes_to_use_per_rank":137438953472,"lazy_offload":false}}' \
+    --kv-events-config '{"publisher":"zmq","topic":"kv-events","endpoint":"tcp://*:5200","enable_kv_cache_events":true}' \
+    --reasoning-parser minimax_m3 --dyn-tool-call-parser minimax_m3 \
+    --dyn-reasoning-parser minimax_m3
+  ```
+
+  #### Disaggregated P4/D4 with Mooncake and NIXL
+
+  Use the pinned disaggregated image and Dynamo version on both roles and the
+  frontend. Start one Mooncake master on the control-plane host inside that
+  environment:
+
+  ```bash
+  mooncake_master --port=8700 --enable_http_metadata_server=true \
+    --http_metadata_server_port=8701 --eviction_high_watermark_ratio=0.9 \
+    --nof_eviction_high_watermark_ratio=0.9 --default_kv_lease_ttl=10000 \
+    --rpc_thread_num=16 --enable_metric_reporting=true --metrics_port=8702
+  ```
+
+  On each worker, save this as `mooncake.json`, replacing `192.0.2.10` with
+  the control-plane address. `150GB` is per store-participating rank; budget
+  host RAM for the pool and its `4GB` local buffers. This is an embedded store,
+  so no separate store process is needed beyond the master and vLLM workers.
+
+  ```json
+  {
+    "master_server_address": "192.0.2.10:8700",
+    "metadata_server": "P2PHANDSHAKE",
+    "global_segment_size": "150GB",
+    "local_buffer_size": "4GB",
+    "protocol": "rdma",
+    "device_name": "mlx5_0,mlx5_1,mlx5_2,mlx5_3",
+    "mode": "embedded",
+    "enable_offload": true
+  }
+  ```
+
+  Add the following environment on **all** P/D workers. The UCX library path
+  is specific to the pinned image. NIXL uses the UCX backends below; Mooncake's
+  separate store transport uses RDMA.
+
+  ```bash
+  export PYTHONHASHSEED=0
+  export DYN_SYSTEM_PORT=7500
+  export VLLM_ENGINE_READY_TIMEOUT_S=3600
+  export VLLM_MOONCAKE_LOAD_RECV_THREADS=20
+  export VLLM_USE_NCCL_SYMM_MEM=0 VLLM_ALLREDUCE_USE_SYMM_MEM=0
+  export UCX_CUDA_IPC_ENABLE_MNNVL=y
+  export UCX_MODULE_DIR=/usr/local/lib/python3.12/dist-packages/nixl_cu13.libs/ucx
+  export UCX_RCACHE_MAX_UNRELEASED=1024
+  export UCX_RNDV_PIPELINE_ERROR_HANDLING=y
+  export UCX_TLS=tcp,cuda_ipc,cuda_copy
+  export WITH_NVIDIA_PEERMEM=0
+  export MC_ENABLE_DEST_DEVICE_AFFINITY=1
+  export MOONCAKE_LOCAL_HOSTNAME="$MM3_NODE_IP"
+  export MOONCAKE_MASTER="$MM3_CONTROL_IP:8700"
+  export MOONCAKE_TE_META_DATA_SERVER="http://$MM3_CONTROL_IP:8701/metadata"
+  export MOONCAKE_CONFIG_PATH="$PWD/mooncake.json"
+  ```
+
+  Start the disaggregated frontend in its own shell. It uses least-loaded
+  routing with session affinity, not the aggregated profile's KV-event router:
+
+  ```bash
+  DYN_TOKENIZER=fastokens DYN_TOKENIZER_CACHE=1 python3 -m dynamo.frontend \
+    --http-port 8000 --dyn-chat-processor vllm --trust-remote-code \
+    --tool-call-parser minimax_m3 --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice --router-mode least-loaded \
+    --router-session-affinity-ttl-secs 3600
+  ```
+
+  Save the following worker command as `mm3-pd-worker.sh` on every worker.
+  It retains the distinct prefill/decode connector roles: prefill stores KV
+  in Mooncake, while decode consumes it. Both use NIXL for P/D transfer and
+  fail a request on KV-load failure. The decode worker additionally selects
+  the Cutlass MSA decode backend and pins thinking mode.
+
+  ```bash
+  #!/usr/bin/env bash
+  set -euo pipefail
+  role="${1:?Usage: bash mm3-pd-worker.sh prefill|decode [extra worker args]}"
+  shift
+  case "$role" in
+    prefill)
+      attention='{"backend":"FLASHINFER","use_trtllm_attention":true,"indexer_kv_dtype":"fp8"}'
+      kv='{"kv_connector":"MultiConnector","kv_role":"kv_both","kv_load_failure_policy":"fail","kv_connector_extra_config":{"connectors":[{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["UCX"],"num_threads":8}},{"kv_connector":"MooncakeStoreConnector","kv_role":"kv_both","kv_connector_extra_config":{"lookup_async":false,"enable_lookup":false}}]}}'
+      role_args=()
+      ;;
+    decode)
+      attention='{"backend":"FLASHINFER","use_trtllm_attention":true,"indexer_kv_dtype":"fp8","minimax_m3_msa_decode_backend":"cutlass"}'
+      kv='{"kv_connector":"MultiConnector","kv_role":"kv_both","kv_load_failure_policy":"fail","kv_connector_extra_config":{"connectors":[{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["UCX"],"num_threads":8}},{"kv_connector":"MooncakeStoreConnector","kv_role":"kv_consumer","kv_connector_extra_config":{"enable_lookup":false}}]}}'
+      role_args=(--dyn-default-thinking-mode enabled)
+      ;;
+    *) printf 'Unknown role: %s\n' "$role" >&2; exit 2 ;;
+  esac
+  python3 -m dynamo.vllm \
+    --model nvidia/MiniMax-M3-NVFP4 \
+    --served-model-name nvidia/MiniMax-M3-NVFP4 \
+    --request-plane tcp --disaggregation-mode "$role" \
+    --tensor-parallel-size "${MM3_TP:-4}" --enable-expert-parallel \
+    --all2all-backend flashinfer_nvlink_one_sided \
+    --trust-remote-code --enable-prefix-caching --language-model-only \
+    --kv-cache-dtype fp8 --block-size 128 --gpu-memory-utilization 0.9 \
+    --max-num-batched-tokens 16384 --max-cudagraph-capture-size 512 \
+    --stream-interval 20 --no-enable-flashinfer-autotune \
+    --enable-cumem-allocator --numa-bind --numa-bind-nodes 0 0 1 1 \
+    --attention-config "$attention" --kv-transfer-config "$kv" \
+    --speculative-config '{"method":"eagle3","model":"Inferact/MiniMax-M3-EAGLE3-GQA","num_speculative_tokens":3,"attention_backend":"FLASH_ATTN"}' \
+    --reasoning-parser minimax_m3 --dyn-tool-call-parser minimax_m3 \
+    --dyn-reasoning-parser minimax_m3 "${role_args[@]}" "$@"
+  ```
+
+  For **P4/D4**, run `bash mm3-pd-worker.sh prefill` on one tray and
+  `bash mm3-pd-worker.sh decode` on a second tray. For **P4/2D4**, run the
+  same decode command independently on a third tray, with that tray's own
+  `MM3_NODE_IP`; do not add `--nnodes 2` to the two independent TP4 workers.
+
+  For **P4/D8**, keep the TP4 prefill command. On both decode trays set
+  `MM3_DECODE_HEAD` to the first decode tray's routable address and select
+  the MNNVL all-reduce backend. Run the first command only on the decode head
+  and the second only on its follower:
+
+  ```bash
+  export MM3_DECODE_HEAD=192.0.2.12
+  export VLLM_FLASHINFER_ALLREDUCE_BACKEND=mnnvl
+  # Decode head:
+  MM3_TP=8 bash mm3-pd-worker.sh decode --max-num-seqs 1 \
+    --nnodes 2 --node-rank 0 --master-addr "$MM3_DECODE_HEAD"
+  # Decode follower (a separate shell on the second decode tray):
+  MM3_TP=8 bash mm3-pd-worker.sh decode --max-num-seqs 1 \
+    --nnodes 2 --node-rank 1 --master-addr "$MM3_DECODE_HEAD" --headless
+  ```
+
+  #### Check the deployment
+
+  After all workers are ready, verify model discovery and a chat request
+  through the frontend. Keep `thinking: true` in requests for this deployment.
+  Inspect the response and finish reason; a healthy frontend alone is not
+  proof that the P/D transfer or offload path works.
+
+  ```bash
+  curl --fail "http://$MM3_CONTROL_IP:8000/health"
+  curl --fail "http://$MM3_CONTROL_IP:8000/v1/models"
+  curl --fail "http://$MM3_CONTROL_IP:8000/v1/chat/completions" \
+    -H 'Content-Type: application/json' \
+    -d '{"model":"nvidia/MiniMax-M3-NVFP4","messages":[{"role":"user","content":"What is 17 + 25?"}],"thinking":true,"max_tokens":1024}'
+  ```
+
+  Serving configuration sources: [aggregated TP4](https://github.com/SemiAnalysisAI/InferenceX/blob/4033d3808230b6b6c0d906b0531dce4897c582cd/benchmarks/multi_node/srt-slurm-recipes/vllm/minimax-m3/gb200-fp4/agentic/agg-tp4-vllm-simple-agentic.yaml),
+  [P4/D4](https://github.com/SemiAnalysisAI/InferenceX/blob/4033d3808230b6b6c0d906b0531dce4897c582cd/benchmarks/multi_node/srt-slurm-recipes/vllm/minimax-m3/gb200-fp4/agentic/disagg-1p1d-tp4-tp4-c24-agentic.yaml),
+  [P4/2D4](https://github.com/SemiAnalysisAI/InferenceX/blob/4033d3808230b6b6c0d906b0531dce4897c582cd/benchmarks/multi_node/srt-slurm-recipes/vllm/minimax-m3/gb200-fp4/agentic/disagg-1p2d-tp4-tp4-c8-c16-agentic.yaml),
+  and [P4/D8](https://github.com/SemiAnalysisAI/InferenceX/blob/4033d3808230b6b6c0d906b0531dce4897c582cd/benchmarks/multi_node/srt-slurm-recipes/vllm/minimax-m3/gb200-fp4/agentic/disagg-1p1d-tp4-tp8-c1-agentic.yaml).
+  See the [Dynamo vLLM configuration reference](https://docs.nvidia.com/dynamo/reference/backends/v-llm-configuration)
+  for the distinction between native vLLM flags and Dynamo worker roles.
 
   ## Quantized Variant (MXFP4 on MI355X)
 
