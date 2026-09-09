@@ -64,6 +64,13 @@ compatible_strategies:
   - multi_node_dep
 
 hardware_overrides:
+  blackwell:
+    # vLLM 0.24+ defaults to FLASHINFER_TRTLLM_MXFP4_BF16. Use
+    # --quantization-config.moe.activation mxfp8 to restore optimal
+    # performance on Blackwell.
+    extra_args:
+      - "--quantization-config.moe.activation"
+      - "mxfp8"
   amd:
     # vLLM 0.17.0+ replaces the old VLLM_ROCM_USE_AITER_* env knobs with
     # --attention-backend ROCM_AITER_UNIFIED_ATTN. HSA_NO_SCRATCH_RECLAIM is
