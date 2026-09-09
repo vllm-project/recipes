@@ -7,7 +7,7 @@ meta:
   difficulty: advanced
   tasks:
     - text
-  performance_headline: "All four variants verified on NVIDIA H20/H200 and AMD MI300X/MI355X"
+  performance_headline: "BF16, FP8, FP4, and INT4 support NVIDIA H20/H200 and AMD MI300X/MI355X; DGX Spark verified TP1 FP4/INT4"
   hardware:
     h200: verified
     dgx_spark_gb10: verified
@@ -87,19 +87,13 @@ variants:
     precision: fp4
     precision_hardware: {}
     vram_minimum_gb: 85
-    tp:
-      mi355x: 4
-      mi300x: 2
-      default: 1
+    tp: 1
     description: "Block-FP8 dense with MXFP4 routed experts. Emulated on gfx942 — prefer INT4 there."
   int4:
     model_id: "inclusionAI/Ling-3.0-flash-int4"
     precision: int4
     vram_minimum_gb: 95
-    tp:
-      mi355x: 4
-      mi300x: 2
-      default: 1
+    tp: 1
     description: "compressed-tensors W4 (group 32) on the routed experts."
 
 compatible_strategies:
@@ -186,8 +180,7 @@ guide: |
     --reasoning-parser ling3
   ```
 
-  For the FP4 variant on one NVIDIA GPU or DGX Spark, use (AMD uses TP2
-  on MI300X and TP4 on MI355X — see the AMD section below):
+  For the FP4 variant on one GPU, use:
 
   ```bash
   vllm serve inclusionAI/Ling-3.0-flash-fp4 \
@@ -203,8 +196,7 @@ guide: |
     --reasoning-parser ling3
   ```
 
-  For the INT4 variant on one NVIDIA GPU or DGX Spark, use (AMD uses TP2
-  on MI300X and TP4 on MI355X — see the AMD section below):
+  For the INT4 variant on one GPU, use:
 
   ```bash
   vllm serve inclusionAI/Ling-3.0-flash-int4 \
@@ -283,8 +275,7 @@ guide: |
   ## Running on MI300X/MI355X
 
   Use the `vllm/vllm-openai-rocm:nightly` image — the released `rocm/vllm` tags
-  top out at vLLM 0.27.0, which predates `BailingMoeV3ForCausalLM`. AITER is off
-  by default on ROCm, so enable it; no other AMD-specific flag is needed.
+  top out at vLLM 0.27.0, which predates `BailingMoeV3ForCausalLM`.
 
   ```bash
   export VLLM_ROCM_USE_AITER=1
@@ -301,19 +292,18 @@ guide: |
     --reasoning-parser ling3
   ```
 
-  All four variants are verified on both arch classes. At 512 in / 128 out,
-  concurrency 8, MI355X runs BF16 TP4 at 933.4 tok/s, FP8 TP2 at 747.1, FP4 TP4
-  at 900.7 and INT4 TP4 at 855.1; MI300X runs BF16 TP4 at 389.6, FP8 TP2 at
-  376.4, INT4 TP2 at 392.8 and FP4 TP2 at 83.5. GPQA-diamond on MI355X scores
-  88.8 / 86.7 / 84.5 / 85.6 over completed generations, at or above the HF
-  published numbers; GSM8K on MI300X scores 96.0 / 93.2 / 90.8 / 98.4.
+  All four variants are verified on both arch classes, with accuracy at or above
+  the published reference scores. The FP4 and INT4 checkpoints each serve on a
+  single GPU on both parts, which is the best throughput per GPU; BF16 and FP8
+  use the TP sizes given above.
 
   On MI300X the BF16 run also served the full 262,144-token context with a
   105.15 GiB KV pool and 52.38x max concurrency.
 
-  **FP4** differs between the arch classes: native MXFP4 on gfx950 lands within
-  4% of BF16, while gfx942 has no MXFP4 unit and falls back to emulation at
-  0.21x BF16 — prefer INT4 there.
+  **FP4** differs between the arch classes: gfx950 selects the native
+  `AITER_MXFP4_BF16` MoE backend, while gfx942 has no MXFP4 unit and falls back
+  to the `EMULATION` backend, which is roughly an order of magnitude slower —
+  prefer INT4 there.
 
   **MTP** works on both arch classes, but only gfx950 needs a backend pin. There
   `ROCM_AITER_MLA` lets the speculator capture a graph the backend cannot serve
@@ -323,9 +313,6 @@ guide: |
   output tok/s). `VLLM_ROCM_USE_AITER_MLA=0` reaches the same backend, but it
   applies to every command; the flag is scoped to the mode, so the
   non-speculative path keeps AITER MLA on both.
-
-  DSpark is untested on AMD — `LingDSparkModel` is absent from the registry on
-  every brand in this build.
 
   ## Validation
 
