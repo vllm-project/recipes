@@ -274,9 +274,6 @@ guide: |
 
   ## Running on MI300X/MI355X
 
-  Use the `vllm/vllm-openai-rocm:nightly` image; the released `rocm/vllm` tags
-  do not yet register `BailingMoeV3ForCausalLM`.
-
   ```bash
   export VLLM_ROCM_USE_AITER=1
   vllm serve inclusionAI/Ling-3.0-flash \
@@ -294,10 +291,6 @@ guide: |
 
   On MI300X the BF16 run served the full 262,144-token context with a 105.15 GiB
   KV pool and 52.38x max concurrency.
-
-  **FP4** is native on gfx950 (`AITER_MXFP4_BF16`) but has no MXFP4 unit on
-  gfx942, where it falls back to the `EMULATION` backend and runs roughly an
-  order of magnitude slower — prefer INT4 there.
 
   **MTP** works on both arch classes, but only gfx950 needs a backend pin. There
   `ROCM_AITER_MLA` lets the speculator capture a graph the backend cannot serve
