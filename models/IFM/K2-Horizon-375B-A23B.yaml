@@ -4,20 +4,25 @@ meta:
   provider: "IFM"
   description: "Frontier-scale sparse MoE model for long-context research and high-capacity serving"
   date_added: 2026-08-31
-  date_updated: 2026-09-03
+  date_updated: 2026-09-08
   difficulty: advanced
   tasks: [text]
   performance_headline: "379.17B stored parameters including embeddings / 26.67B active parameters per token"
   related_recipes: ["IFM/K2-Horizon-MoVA-36B-A4B"]
   hardware:
     h200: verified
+    mi355x: verified
 model:
   model_id: "IFM/K2-Horizon-375B-A23B"
   architecture: moe
   parameter_count: "379.17B"
   active_parameters: "26.67B"
   context_length: 524288
-  base_args: ["--trust-remote-code", "--dtype", "bfloat16", "--max-model-len", "131072", "--enable-expert-parallel"]
+  # --enable-expert-parallel is not here: in base_args it would reach the AMD
+  # path too, which deliberately runs pure TP (see strategy_hardware). The TEP
+  # strategies emit it themselves; multi_node_tp_pp does not, so it carries its
+  # own copy in strategy_overrides below.
+  base_args: ["--trust-remote-code", "--dtype", "bfloat16", "--max-model-len", "131072"]
   base_env: {}
 features:
   reasoning:
@@ -31,12 +36,36 @@ variants:
     precision: bf16
     vram_minimum_gb: 911
     description: "BF16 serving runtime with an eight-GPU tensor-parallel baseline"
-compatible_strategies: [single_node_tep, multi_node_tep, multi_node_tp_pp]
+compatible_strategies: [single_node_tep, single_node_tp, multi_node_tep, multi_node_tp_pp]
 default_strategy: single_node_tep
-hardware_overrides: {}
+
+# On AMD the expert-parallel dispatch is slower than replicating the experts
+# across a pure tensor-parallel shard, so the TEP strategies are opted out and
+# single-node TP is the offered path. multi_node_tp_pp is left available: EP
+# works there, it is just not the fast default at single-node scale.
+strategy_hardware:
+  single_node_tep:
+    amd: unsupported
+  multi_node_tep:
+    amd: unsupported
+hardware_overrides:
+  amd:
+    extra_args:
+      - "--attention-backend"
+      - "ROCM_AITER_UNIFIED_ATTN"
+      - "--gpu-memory-utilization"
+      - "0.9"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      NCCL_MIN_NCHANNELS: "112"
 strategy_overrides:
   single_node_tep:
     tp: 8
+  # multi_node_tp_pp emits no EP flag of its own, and this recipe has always
+  # run it with expert parallel on. Restored here rather than in base_args so
+  # it stays off the AMD single-node TP path.
+  multi_node_tp_pp:
+    extra_args: ["--enable-expert-parallel"]
 guide: |
   ## Overview
 
@@ -61,6 +90,28 @@ guide: |
     --dtype bfloat16 \
     --max-model-len 131072 \
     --enable-expert-parallel \
+    --reasoning-parser k2_horizon \
+    --enable-auto-tool-choice \
+    --tool-call-parser k2_horizon
+  ```
+
+  ### AMD MI355X
+
+  Verified on an 8-GPU MI355X (gfx950) node. AITER supplies the fused MoE and
+  the unified attention backend:
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  export NCCL_MIN_NCHANNELS=112
+
+  vllm serve IFM/K2-Horizon-375B-A23B \
+    --tensor-parallel-size 8 \
+    --trust-remote-code \
+    --dtype bfloat16 \
+    --max-model-len 131072 \
+    --gpu-memory-utilization 0.9 \
+    --attention-backend ROCM_AITER_UNIFIED_ATTN \
+    --generation-config auto \
     --reasoning-parser k2_horizon \
     --enable-auto-tool-choice \
     --tool-call-parser k2_horizon
