@@ -4,7 +4,7 @@ meta:
   provider: "Google"
   description: "Google's Gemma 4 MoE multimodal model (26B total / 4B active) with 128 fine-grained experts, top-8 routing, thinking mode, and tool-use protocol."
   date_added: 2026-04-02
-  date_updated: 2026-08-18
+  date_updated: 2026-09-09
   difficulty: intermediate
   tasks:
     - multimodal
@@ -247,10 +247,6 @@ compatible_strategies:
   - multi_node_dep
 
 hardware_overrides:
-  cpu:
-    extra_env:
-      VLLM_CPU_KVCACHE_SPACE: "40"
-      VLLM_CPU_ATTN_SPLIT_KV: "0"
   xpu:
     extra_args:
       - "--enforce-eager"
@@ -409,6 +405,19 @@ guide: |
 
   For additional Intel Xeon 6 deployment details, see the Intel Software Catalog entries for [Gemma 4 26B-A4B IT](https://aiswcatalog.intel.com/models/google-gemma-4-26b-a4b-it).
 
+  The following settings are intentionally not prescribed as portable CPU model
+  defaults because they depend on the workload, hardware, or runtime environment:
+
+  - `--max-num-batched-tokens`: scheduler/throughput tuning.
+  - `--max-num-seqs`: concurrency and scheduler-capacity tuning.
+  - `--gpu-memory-utilization`: platform memory-budget tuning.
+  - `--no-enable-prefix-caching`: workload/benchmark cache-policy tuning.
+  - `VLLM_ENGINE_ITERATION_TIMEOUT_S`: operational runtime timeout.
+
+  These settings may still appear in validated hardware-specific overrides. Tune
+  them at deployment time based on platform resources, workload shape, and
+  latency/throughput goals.
+
   ### Docker (Intel XPU B60 / B70, TP=4, Full-Featured)
 
   Validated on 4x Intel Arc Pro B60 / B70 with the official vLLM XPU image.
@@ -437,19 +446,6 @@ guide: |
     --max-model-len 5120 \
     --tensor-parallel-size 4
   ```
-
-  The following settings are intentionally not prescribed as portable CPU model
-  defaults because they depend on the workload, hardware, or runtime environment:
-
-  - `--max-num-batched-tokens`: scheduler/throughput tuning.
-  - `--max-num-seqs`: concurrency and scheduler-capacity tuning.
-  - `--gpu-memory-utilization`: platform memory-budget tuning.
-  - `--no-enable-prefix-caching`: workload/benchmark cache-policy tuning.
-  - `VLLM_ENGINE_ITERATION_TIMEOUT_S`: operational runtime timeout.
-
-  These settings may still appear in validated hardware-specific overrides. Tune
-  them at deployment time based on platform resources, workload shape, and
-  latency/throughput goals.
 
   ## Client Usage
 
