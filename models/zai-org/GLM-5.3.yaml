@@ -71,6 +71,7 @@ features:
         variants: [default]
         hardware:
           amd: unsupported
+          npu: unsupported
         args:
           - "--speculative-config"
           - '{"method":"dflash","model":"incoai/GLM-5.3-DFlash2","num_speculative_tokens":7}'
@@ -330,8 +331,8 @@ guide: |
 
   - The served checkpoint stays `zai-org/GLM-5.3`. Only `--speculative-config`
     names the draft repo.
-  - DFlash2 is offered on the native FP8 variant. It is CUDA-only (the AMD pill
-    is disabled).
+  - DFlash2 is offered on the native FP8 variant. It is CUDA-only (the AMD and
+    NPU pills are disabled).
   - The B300 session also had **KV Offload → Simple** on. That flag is optional
     for DFlash2 itself; pick Simple in the builder to reproduce it.
 
