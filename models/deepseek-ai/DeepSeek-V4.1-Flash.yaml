@@ -1,0 +1,283 @@
+# DeepSeek-V4.1-Flash — serves /deepseek-ai/DeepSeek-V4.1-Flash. Validate: node scripts/build-recipes-api.mjs
+meta:
+  title: "DeepSeek-V4.1-Exp"
+  slug: "deepseek-v4.1-flash"
+  provider: "DeepSeek"
+  description: "DeepSeek V4.1 (\"Exp\") vision-language MoE (769B total / 15.5B active) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head. Served from the deepseek-ai/DeepSeek-V4.1-Flash weight repo."
+  date_added: 2026-09-09
+  date_updated: 2026-09-10
+  difficulty: advanced
+  tasks:
+    - text
+    - multimodal
+  performance_headline: "1M context at 15.5B active parameters, with engram n-gram memory"
+  related_recipes:
+    - "deepseek-ai/DeepSeek-V4-Flash"
+    - "deepseek-ai/DeepSeek-V4-Pro"
+  default_hardware: gb200
+  hardware:
+    h200: verified
+    gb200: verified
+    mi350x: verified
+
+model:
+  model_id: "deepseek-ai/DeepSeek-V4.1-Flash"
+  min_vllm_version: "0.30.0"
+  docker_image: "vllm/vllm-openai:deepseekv41-flash"
+  architecture: moe
+  parameter_count: "769B"
+  active_parameters: "15.5B"
+  context_length: 1048576
+  base_args:
+    - "--trust-remote-code"
+    - "--tokenizer-mode"
+    - "deepseek_v41"
+  base_env:
+    VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+    VLLM_USE_RUST_FRONTEND: "1"
+  install:
+    docker:
+      note: "Serve from the dedicated vllm/vllm-openai:deepseekv41-flash image — no pip wheel carries the DeepSeek-V4.1 architecture."
+    pip: false
+
+dependencies: []
+
+features:
+  tool_calling:
+    description: "Enable tool calling. V4.1 emits DSML tag blocks rather than JSON fences."
+    args:
+      - "--tool-call-parser"
+      - "deepseek_v41"
+      - "--enable-auto-tool-choice"
+  reasoning:
+    description: "Enable thinking mode with the DeepSeek V4.1 reasoning parser."
+    args:
+      - "--reasoning-parser"
+      - "deepseek_v41"
+  spec_decoding:
+    description: "DSpark multi-token drafting, 5 tokens per round (the trained block size), with adaptive verification: the draft's confidence head scores each (request, position) slot and only high-scoring slots are verified, up to a startup-profiled compute budget. Higher throughput than static verification."
+    args:
+      - "--speculative-config"
+      - '{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","rejection_sample_method":"block","enable_adaptive_verification":true}'
+  text_only:
+    description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
+    args:
+      - "--language-model-only"
+  encoder_parallel:
+    description: "Run the vision encoder in data-parallel mode — avoids TP comm overhead on the small encoder. Mutually exclusive with text_only."
+    args:
+      - "--mm-encoder-tp-mode"
+      - "data"
+
+opt_in_features:
+  - spec_decoding
+  - text_only
+
+variants:
+  default:
+    precision: fp8
+    vram_minimum_gb: 614
+    description: "Native mixed checkpoint: MXFP4 MoE experts, MXFP8 block-quantized dense weights, UE8M0 scales throughout"
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+  - single_node_dep
+  - multi_node_tp
+  - multi_node_tep
+  - multi_node_dep
+  - pd_cluster
+
+hardware_overrides:
+  amd:
+    extra_args:
+      - "--distributed-executor-backend"
+      - "mp"
+      - "--gpu-memory-utilization"
+      - "0.9"
+      - "--max-num-seqs"
+      - "512"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--compilation-config"
+      - '{"mode": 3, "cudagraph_mode": "FULL_DECODE_ONLY"}'
+      - "--moe-backend"
+      - "aiter_triton_mxfp4_bf16"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_USE_AITER_MOE: "1"
+
+strategy_overrides:
+  single_node_tp:
+    # Verified at TP4 (one GB200 NVL4 tray; 4 of 8 GPUs on an MI350X node).
+    tp: 4
+  pd_cluster:
+    # Verified 1P1D on GB200 NVL4: one tray per role, TP4 each, NIXL transfer.
+    env:
+      VLLM_DEEP_GEMM_WARMUP: "skip"
+    prefill:
+      nodes: 1
+      parallelism: tp
+      vllm_args:
+        - "--kernel-config"
+        - '{"enable_flashinfer_autotune":false,"enable_jit_warmup":false,"enable_cutedsl_warmup":false}'
+        - "--max-num-seqs"
+        - "32"
+    decode:
+      nodes: 1
+      parallelism: tp
+      vllm_args:
+        - "--kernel-config"
+        - '{"enable_flashinfer_autotune":false,"enable_jit_warmup":false,"enable_cutedsl_warmup":false}'
+        - "--max-num-seqs"
+        - "32"
+
+guide: |
+  ## Overview
+
+  DeepSeek-V4.1 is a vision-language Mixture-of-Experts model: **769B total parameters,
+  15.5B active per token**, 40 transformer layers at hidden size 5120, with a 32-layer
+  ViT and aligner in front of the text stack. Five things distinguish it from V4:
+
+  - **Two-tier sparse attention.** Every layer attends over a 128-token sliding window.
+    Layers that carry a compression ratio add compressed KV latents reaching further
+    back, pooled by a learned softmax gate. A small side attention — the *indexer*,
+    inherited from V3.2-Exp — scores those latents and keeps the best 512 per query,
+    pre-filtered by a candidate stage that selects 2048 blocks of 8. Only four layers
+    (2, 8, 14, 20) actually compress their own KV; the rest read that cache. V4.1 uses
+    only compression ratios 1 and 2, where V4 used 4 and 128.
+  - **Engram n-gram memory.** Layers 1 and 14 each own a hash table of ~384M rows x 256
+    dims, looked up by 4-gram hashes of the input and written into the residual stream
+    through a learned gate. These two tables alone are **196.6B parameters (~189 GiB)** —
+    plan capacity for them, they dominate everything except the experts.
+  - **Hyper-Connections.** The residual stream is carried as 4 parallel copies; each
+    sublayer derives its own pre/post/combine coefficients from the stream, with the
+    combine matrix made doubly stochastic by 20 Sinkhorn iterations.
+  - **DSpark draft head.** Three stages (128 routed experts each, 3 activated) draft a
+    block of 5 tokens, reading the attention input of layers 37-39, with a Markov bias
+    head and a confidence head on the last stage.
+  - **Mixed MXFP4/MXFP8 checkpoint.** Routed expert weights are MXFP4; everything else is
+    MXFP8 block-quantized, UE8M0 scales throughout. Embedding and LM head are BF16.
+
+  Routing is 6 of 384 experts per token plus one shared expert, scored with
+  `sqrtsoftplus` and a `noaux_tc` bias — with a **separate routing bias for tokens
+  inside an image span**, so vision and text tokens do not compete for the same experts.
+
+  ## Context length
+
+  1,048,576 tokens, reached by YaRN with factor 16 over a 65,536-token training window.
+  Compressed KV rotates at its own RoPE theta (160,000) because one latent stands for
+  several tokens, so its positions are further apart than the raw stream's.
+
+  ## Images
+
+  Images enter the prompt as `<|deepseek_image|>` spans; every position in the span
+  carries the image token id, and the per-position role (start / newline / end / image)
+  comes from the processor. The vision tower is a 32-layer ViT at hidden size 1024, patch
+  14, with a 3x downsampling aligner and a cap of 1024 tokens per image (minimum 295,936
+  pixels). There is **no limit on images per prompt**. Merged embeddings enter the text
+  model as `inputs_embeds`, before the hyper-connection stream expansion, while raw token
+  ids still flow through so the router can apply the image routing bias.
+
+  Tick **Encoder parallel** to run the ViT data-parallel (`--mm-encoder-tp-mode data`)
+  instead of tensor-parallel: at 32 layers / hidden 1024 the encoder is small enough
+  that TP communication costs more than it saves, which can significantly reduce TTFT
+  for multi-image requests. It is mutually exclusive with **Text only**.
+
+  ## Reasoning and tool calling
+
+  Two thinking modes and a **numeric reasoning budget** rather than discrete tiers.
+  Send them as `chat_template_kwargs`:
+
+  | key | values |
+  |---|---|
+  | `thinking` / `enable_thinking` | boolean; if you send both they must agree |
+  | `reasoning_effort` | `low` (25), `high` (50), `xhigh` (75), `max` (100), **or an integer 1-100** |
+
+  The top-level OpenAI `reasoning_effort` field also works, where `"none"` turns
+  thinking off. `"minimal"` and `"medium"` are rejected — they are not part of this
+  model's set.
+
+  > **With both keys unset, thinking is ON at effort 50.** The do-nothing config is
+  > the most verbose one, so a request with a small `max_tokens` spends its budget on
+  > the trace and returns empty `content` with `finish_reason=length`. That reads as a
+  > broken model and is not. Either pin `thinking: false` or give the budget room.
+
+  In thinking mode the budget is rendered into the prompt as a `Reasoning Effort: N`
+  prefix on the first turn only.
+
+  ```python
+  resp = client.chat.completions.create(
+      model="deepseek-ai/DeepSeek-V4.1-Flash",
+      messages=[{"role": "user", "content": "What is 17*19?"}],
+      extra_body={"chat_template_kwargs": {"thinking": True, "reasoning_effort": 25}},
+  )
+  ```
+
+  Tool calls are wrapped in DSML tag blocks rather than JSON fences, and tool output
+  comes back in `<tool_result>` tags.
+
+  ## Serving text-only
+
+  Tick **Text only** to add `--language-model-only`, which skips the vision encoder
+  entirely. Worth it whenever the workload is text: it drops the ViT and aligner from
+  the load and frees that VRAM for KV cache. It is mutually exclusive with
+  `encoder_parallel`. The verified GB200 runs (TP4 and 1P1D) were text-only.
+
+  ## Prefill/Decode disaggregation
+
+  The **Prefill/Decode Disaggregation** strategy is the verified 1P1D layout on GB200
+  NVL4: one tray (4 GPUs) per role, TP4 in each pool, KV handed over through NIXL,
+  fronted by `vllm-router --vllm-pd-disaggregation`. Both pools disable FlashInfer
+  autotune plus JIT and CuTeDSL warmup via `--kernel-config`, skip the DeepGEMM warmup
+  (`VLLM_DEEP_GEMM_WARMUP=skip`), and cap `--max-num-seqs` at 32. On 8-GPU nodes the
+  same layout becomes TP8 per role.
+
+  With **Speculative decoding** on, DSpark runs in both pools so the transferred KV
+  stays compatible.
+
+  ## Memory
+
+  The checkpoint is roughly **511 GB on disk** (476 GiB), which breaks down as:
+
+  | Component | Params | Stored |
+  |---|---:|---:|
+  | Routed + DSpark experts (MXFP4) | 557.2B | 259.5 GiB |
+  | Engram tables (MXFP8) | 196.6B | 188.8 GiB |
+  | Attention, norms, routers (MXFP8) | 6.0B | 5.6 GiB |
+  | Embedding + LM head + misc | 3.0B | 5.8 GiB |
+  | Quantization scales | 23.6B | 21.9 GiB |
+
+  `vram_minimum_gb: 614` is that total times the schema's 1.2 headroom factor. It fits
+  one GB200 NVL4 tray (768 GB) at TP4, or one 8-GPU H200 node (1128 GB) with room for
+  KV cache, but 1M context will need the context or batch capped — measure before
+  assuming.
+
+  ## Prerequisites
+
+  - The `vllm/vllm-openai:deepseekv41-flash` image (vLLM 0.30.0+). No pip wheel serves this
+    architecture, so the Install block only offers Docker.
+  - The Rust OpenAI frontend is recommended and enabled by default with
+    `VLLM_USE_RUST_FRONTEND=1`. If you encounter any compatibility issues, remove
+    this environment variable to use the Python frontend.
+  - Expect a long first load: `VLLM_ENGINE_READY_TIMEOUT_S=3600` is set for that reason.
+
+  ## Verifying
+
+  Serve, then send one text request and one image request — the vision tower is a
+  separate path and a text-only smoke test will not exercise it:
+
+  ```bash
+  curl http://localhost:8000/v1/chat/completions \
+    -H 'Content-Type: application/json' \
+    -d '{"model":"deepseek-ai/DeepSeek-V4.1-Flash",
+         "messages":[{"role":"user","content":"What is 17*19? Return only the integer."}]}'
+  ```
+
+  A correct answer is `323`.
+
+  ## References
+
+  - [Model card](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash)
+  - [DeepSeek-V4-Flash recipe](/deepseek-ai/DeepSeek-V4-Flash) — the V4 sibling this diverges from
+  - [DeepSeek-V3.2-Exp recipe](/deepseek-ai/DeepSeek-V3.2-Exp) — where the indexer first appeared

@@ -229,6 +229,15 @@ hardware_profiles:
     vram_gb: 2048
     multi_node: false
 
+  mi350x:
+    brand: AMD
+    generation: amd
+    display_name: "MI350X"
+    description: "AMD Instinct MI350X 288 GB HBM3e · 8-GPU OAM node (CDNA 4)"
+    gpu_count: 8
+    vram_gb: 2304
+    multi_node: false
+    
   mi355x:
     brand: AMD
     generation: amd
