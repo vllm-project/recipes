@@ -80,10 +80,7 @@ variants:
     model_id: "inclusionAI/Ling-3.0-flash-fp8"
     precision: fp8
     vram_minimum_gb: 150
-    tp:
-      mi300x: 1
-      mi355x: 1
-      default: 2
+    tp: 2
     description: "Block-FP8 (E4M3) weights, 128x128 block scaling."
   fp4:
     model_id: "inclusionAI/Ling-3.0-flash-fp4"
