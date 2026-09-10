@@ -25,8 +25,8 @@ model:
   model_id: "deepseek-ai/DeepSeek-V4.1-Flash"
   min_vllm_version: "0.30.0"
   docker_image:
-    nvidia: "vllm/vllm-openai:deepseekv41-flash"
-    amd: "vllm/vllm-openai-rocm:deepseekv41-flash"
+    nvidia: "vllm/vllm-openai:deepseekv41-flash-0909"
+    amd: "vllm/vllm-openai-rocm:deepseekv41-flash-0909"
   parameter_count: "769B"
   active_parameters: "15.5B"
   context_length: 1048576
