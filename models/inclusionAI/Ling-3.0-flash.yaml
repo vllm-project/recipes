@@ -318,7 +318,8 @@ guide: |
   **159.5 tok/s** at TTFT p50 0.17 s; 973 output tok/s aggregate at concurrency
   16, with 0 failed requests and 0 preemptions over a 1..24 concurrency sweep.
 
-  AMD results are in "Running on MI300X/MI355X" above. MI355X was verified on
+  All four variants were verified on MI300X and MI355X; see "Running on
+  MI300X/MI355X" above for the AMD-specific settings. MI355X was verified on
   MI350X silicon, the same gfx950 class.
 
   ## Thinking Mode
