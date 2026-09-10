@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 flagship MoE (1.6T total / 49B active) with hybrid CSA+HCA attention, manifold-constrained hyper-connections, Muon-trained on 32T+ tokens, and three-tier reasoning."
   date_added: 2026-04-24
-  date_updated: 2026-09-05
+  date_updated: 2026-09-10
   difficulty: hard
   tasks:
     - text
@@ -80,6 +80,15 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"probabilistic"}'
+        hardware_overrides:
+          b200:
+            # B200 TP8 uses six draft tokens and the FlashMLA sparse attention
+            # path required by this speculative mode.
+            args:
+              - "--speculative-config"
+              - '{"method":"dspark","num_speculative_tokens":6,"draft_sample_method":"probabilistic"}'
+              - "--attention-config"
+              - '{"backend":"FLASHMLA_SPARSE_DSV4","use_prefill_query_quantization":true,"use_fp4_indexer_cache":true}'
 
 opt_in_features:
   - spec_decoding
@@ -398,6 +407,33 @@ guide: |
   - **GB200 NVL4 (4× GPU per tray)**: the ~960 GB mixed-precision checkpoint does not
     fit on one tray; run multi-node DP + EP across **2 trays** (8 GPUs total) with
     `--data-parallel-size 8`. Pick the "Multi-Node" tab and set nodes to 2.
+
+  ### B200 TP8 DSpark with Simple CPU KV offload
+
+  On one 8-GPU B200 node, select **FP8 (0813)**, **Single-Node TP**, **DSpark**,
+  and **Simple** KV offload. The B200 override uses six DSpark draft tokens and
+  the FlashMLA sparse DeepSeek-V4 attention path:
+
+  ```bash
+  vllm serve deepseek-ai/DeepSeek-V4-Pro-0813 \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --block-size 256 \
+    --tensor-parallel-size 8 \
+    --attention-config '{"backend":"FLASHMLA_SPARSE_DSV4","use_prefill_query_quantization":true,"use_fp4_indexer_cache":true}' \
+    --no-enable-flashinfer-autotune \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --reasoning-parser deepseek_v4 \
+    --speculative-config '{"method":"dspark","num_speculative_tokens":6,"draft_sample_method":"probabilistic"}' \
+    --kv-transfer-config '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both","kv_connector_extra_config":{"cpu_bytes_to_use_per_rank":216375000000,"enable_cross_layers_blocks":"true","lazy_offload":false}}'
+  ```
+
+  Agentic benchmark replay uses the committed golden acceptance distribution for
+  its throughput lane, while evaluation keeps real DSpark verification. That
+  benchmark-only acceptance control is intentionally not part of this serving
+  command.
 
   ### MI355X (8×288GB)
 
