@@ -7,10 +7,12 @@ meta:
   difficulty: advanced
   tasks:
     - text
-  performance_headline: "BF16, FP8, FP4, and INT4 support NVIDIA H20/H200; DGX Spark verified TP1 FP4/INT4"
+  performance_headline: "BF16, FP8, FP4, and INT4 support NVIDIA H20/H200 and AMD MI300X/MI355X; DGX Spark verified TP1 FP4/INT4"
   hardware:
     h200: verified
     dgx_spark_gb10: verified
+    mi300x: verified
+    mi355x: verified
 
 model:
   model_id: "inclusionAI/Ling-3.0-flash"
@@ -52,6 +54,13 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":3}'
+        hardware_overrides:
+          mi355x:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":3}'
+              - "--attention-backend"
+              - "TRITON_MLA"
       dspark:
         label: "DSpark"
         description: "Use inclusionAI/Ling-3.0-flash-dspark as an external draft model with any Ling-3.0-flash target variant. K may be 1-8; this recipe recommends K7."
@@ -66,35 +75,34 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 300
-    description: "Provisional BF16 checkpoint; validated with TP=4 on NVIDIA H20"
+    description: "BF16 weights, the reference precision."
   fp8:
     model_id: "inclusionAI/Ling-3.0-flash-fp8"
     precision: fp8
     vram_minimum_gb: 150
     tp: 2
-    description: "Serialized block-FP8 checkpoint; defaults to TP2 on NVIDIA H20/H200, with TP4+EP4 as a validated alternative"
+    description: "Block-FP8 (E4M3) weights, 128x128 block scaling."
   fp4:
     model_id: "inclusionAI/Ling-3.0-flash-fp4"
     precision: fp4
-    # The checkpoint uses block-FP8 for dense/shared projections and MXFP4 for
-    # routed experts. vLLM provides a Hopper fallback instead of requiring
-    # native Blackwell FP4 tensor cores.
-    precision_hardware:
-      brand: NVIDIA
+    precision_hardware: {}
     vram_minimum_gb: 85
     tp: 1
-    description: "Mixed block-FP8 and MXFP4 checkpoint; uses TP1 and supports DGX Spark"
+    description: "Block-FP8 dense with MXFP4 routed experts. Emulated on gfx942 — prefer INT4 there."
   int4:
     model_id: "inclusionAI/Ling-3.0-flash-int4"
     precision: int4
     vram_minimum_gb: 95
     tp: 1
-    description: "compressed-tensors pack-quantized W4 (group 32) on the routed experts; serves through vLLM's generic WNA16 Marlin MoE path and fits H200 or DGX Spark at TP1"
+    description: "compressed-tensors W4 (group 32) on the routed experts."
 
 compatible_strategies:
   - single_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
 
 strategy_overrides:
   single_node_tp:
@@ -118,7 +126,7 @@ guide: |
   ## Prerequisites
 
   - **vLLM:** 0.28.0 or newer, which includes native Bailing V3 support;
-  - **Validated hardware:** NVIDIA H20, H20-3e, H200, and DGX Spark (FP4/INT4)
+  - **Validated hardware:** NVIDIA H20, H20-3e, H200, DGX Spark (FP4/INT4), and AMD MI300X / MI355X
   - **Precision:** BF16, serialized block FP8, mixed block-FP8/MXFP4, or compressed-tensors INT4 weights with BF16 compute
   - **Context length:** 262,144 tokens
 
@@ -264,6 +272,31 @@ guide: |
   path; tool calling, reasoning parsing, chunked prefill and CUDA graph capture
   behave as they do on the other variants.
 
+  ## Running on MI300X/MI355X
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  vllm serve inclusionAI/Ling-3.0-flash \
+    --trust-remote-code \
+    --dtype bfloat16 \
+    --tensor-parallel-size 4 \
+    --gpu-memory-utilization 0.9 \
+    --enable-chunked-prefill \
+    --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE"}' \
+    --enable-prefix-caching \
+    --enable-auto-tool-choice \
+    --tool-call-parser ling3 \
+    --reasoning-parser ling3
+  ```
+
+  On MI300X the BF16 run served the full 262,144-token context with a 105.15 GiB
+  KV pool and 52.38x max concurrency.
+
+  **MTP** needs a backend pin on gfx950: `ROCM_AITER_MLA` lets the speculator
+  capture a graph the backend cannot serve and the workers abort with a memory
+  access fault, so the mode pins `--attention-backend TRITON_MLA` on `mi355x`.
+  gfx942 is unaffected and keeps AITER MLA.
+
   ## Validation
 
   The BF16, FP8, FP4, and INT4 checkpoints support NVIDIA H20 and H200. For FP8,
@@ -280,6 +313,8 @@ guide: |
   FULL, 2.15 GiB), and a 4,072,594-token KV pool. Single-stream decode measured
   **159.5 tok/s** at TTFT p50 0.17 s; 973 output tok/s aggregate at concurrency
   16, with 0 failed requests and 0 preemptions over a 1..24 concurrency sweep.
+
+  MI355X was verified on MI350X silicon, the same gfx950 class.
 
   ## Thinking Mode
 
