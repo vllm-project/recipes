@@ -292,14 +292,10 @@ guide: |
   On MI300X the BF16 run served the full 262,144-token context with a 105.15 GiB
   KV pool and 52.38x max concurrency.
 
-  **MTP** works on both arch classes, but only gfx950 needs a backend pin. There
-  `ROCM_AITER_MLA` lets the speculator capture a graph the backend cannot serve
-  and every worker aborts with a memory access fault, so the mode pins
-  `--attention-backend TRITON_MLA` on `mi355x`. gfx942 has no such limit and is
-  left unpinned, since MTP is ~40% faster on AITER MLA there (424.8 vs 255.6
-  output tok/s). `VLLM_ROCM_USE_AITER_MLA=0` reaches the same backend, but it
-  applies to every command; the flag is scoped to the mode, so the
-  non-speculative path keeps AITER MLA on both.
+  **MTP** needs a backend pin on gfx950: `ROCM_AITER_MLA` lets the speculator
+  capture a graph the backend cannot serve and the workers abort with a memory
+  access fault, so the mode pins `--attention-backend TRITON_MLA` on `mi355x`.
+  gfx942 is unaffected and keeps AITER MLA.
 
   ## Validation
 
