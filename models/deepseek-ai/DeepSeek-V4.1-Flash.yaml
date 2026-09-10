@@ -26,6 +26,7 @@ model:
   min_vllm_version: "0.30.0"
   docker_image:
     nvidia: "vllm/vllm-openai:deepseekv41-flash"
+    amd: "vllm/vllm-openai-rocm:deepseekv41-flash"
   parameter_count: "769B"
   active_parameters: "15.5B"
   context_length: 1048576
