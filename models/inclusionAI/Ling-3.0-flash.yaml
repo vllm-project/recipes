@@ -3,7 +3,7 @@ meta:
   slug: "ling-3-0-flash"
   provider: "inclusionAI"
   description: "Ling-3.0-flash MoE model with BF16, FP8, FP4, and INT4 checkpoints, native MTP, and an external DSpark draft model"
-  date_updated: 2026-08-31
+  date_updated: 2026-09-09
   difficulty: advanced
   tasks:
     - text
@@ -14,8 +14,7 @@ meta:
 
 model:
   model_id: "inclusionAI/Ling-3.0-flash"
-  min_vllm_version: "0.25.0"
-  nightly_required: true
+  min_vllm_version: "0.28.0"
   architecture: moe
   parameter_count: "124B"
   active_parameters: "5.5B"
@@ -118,7 +117,7 @@ guide: |
 
   ## Prerequisites
 
-  - **vLLM:** a build containing native Bailing V3 support;
+  - **vLLM:** 0.28.0 or newer, which includes native Bailing V3 support;
   - **Validated hardware:** NVIDIA H20, H20-3e, H200, and DGX Spark (FP4/INT4)
   - **Precision:** BF16, serialized block FP8, mixed block-FP8/MXFP4, or compressed-tensors INT4 weights with BF16 compute
   - **Context length:** 262,144 tokens
