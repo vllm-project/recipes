@@ -32,7 +32,7 @@ features:
     description: "Custom Nemotron tool-call parser plugin (download: nemotron_toolcall_parser_no_streaming.py)"
     args:
       - "--enable-auto-tool-choice"
-      - "--tool-call-parser-plugin"
+      - "--tool-parser-plugin"
       - "nemotron_toolcall_parser_no_streaming.py"
       - "--tool-call-parser"
       - "nemotron_json"
@@ -104,7 +104,7 @@ guide: |
     --max-model-len 131072 \
     --tensor-parallel-size 1 \
     --enable-auto-tool-choice \
-    --tool-call-parser-plugin nemotron_toolcall_parser_no_streaming.py \
+    --tool-parser-plugin nemotron_toolcall_parser_no_streaming.py \
     --tool-call-parser nemotron_json
   ```
 

@@ -76,7 +76,7 @@ guide: |
   - **Large sparse MoE**: 70-layer transformer — the first 3 layers are dense SwiGLU, the remaining 67 are sparse MoE with **256 experts + 1 shared expert** and top-k=16 routing with auxiliary-loss-free load balancing.
   - **Global attention**: global attention across all layers with 64 Q-heads, 8 KV-heads, head dim 128, and softplus attention output gating.
   - **256K context**: RoPE with YaRN extends the context window to 262,144 tokens.
-  - **Native interleaved reasoning**: thinking blocks emitted before and between tool calls, with *preserved thinking* (returning prior `reasoning_content` in history) recommended for best agentic performance. Toggled per-request via `enable_thinking`.
+  - **Native interleaved reasoning**: thinking blocks emitted before and between tool calls, with *preserved thinking* (returning prior `reasoning` in history) recommended for best agentic performance. Toggled per-request via `enable_thinking`.
   - **Tool calling**: Poolside-specific tool-call protocol, parsed via `poolside_v1`.
 
   ## Prerequisites
@@ -106,7 +106,7 @@ guide: |
 
   ## Controlling reasoning
 
-  Reasoning is enabled at the server when you pass `--default-chat-template-kwargs '{"enable_thinking": true}'` (included above). Poolside recommends **preserved thinking** for agentic coding — return the previous assistant turn's `reasoning_content` in the message history.
+  Reasoning is enabled at the server when you pass `--default-chat-template-kwargs '{"enable_thinking": true}'` (included above). Poolside recommends **preserved thinking** for agentic coding — return the previous assistant turn's `reasoning` in the message history.
 
   ```python
   from openai import OpenAI
@@ -121,8 +121,9 @@ guide: |
   )
   for chunk in resp:
       delta = chunk.choices[0].delta
-      if getattr(delta, "reasoning_content", None):
-          print(delta.reasoning_content, end="")
+      rc = delta.reasoning
+      if rc:
+          print(rc, end="")
       if delta.content:
           print(delta.content, end="")
   ```

@@ -68,8 +68,6 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
 compatible_strategies:
   - single_node_tp
@@ -82,14 +80,6 @@ compatible_strategies:
   - pd_cluster
 
 hardware_overrides:
-  hopper:
-    extra_args: []
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP8: "1"
-  blackwell:
-    extra_args: []
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
   amd:
     extra_args: []
     extra_env:
@@ -163,13 +153,9 @@ guide: |
 
   ### 4xB200 (FP4)
 
-  Enable FlashInfer MoE kernels before launching:
-  ```bash
-  # For FP4 (recommended on Blackwell)
-  export VLLM_USE_FLASHINFER_MOE_FP4=1
-  # For FP8 on Blackwell
-  export VLLM_USE_FLASHINFER_MOE_FP8=1
-  ```
+  On vLLM v0.28.0 and later, the FlashInfer MoE kernels are selected automatically
+  for both FP4 and FP8 on Blackwell — no environment variables are needed. To pin
+  the backend explicitly, pass `--moe-backend flashinfer_trtllm`.
 
   Tensor Parallel + Expert Parallel (TP4+EP):
   ```bash

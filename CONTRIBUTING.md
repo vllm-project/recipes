@@ -94,7 +94,7 @@ model:
   base_args:                                      # flags always needed
     - "--trust-remote-code"
   base_env:                                       # env vars always needed
-    VLLM_USE_FLASHINFER_MOE_FP8: "1"
+    VLLM_USE_DEEP_GEMM: "0"                       # MoE kernel selection itself is done via --moe-backend args
 
 # Optional — extra install steps beyond `uv pip install -U vllm`.
 # Rendered as a code block above the vllm serve command.
@@ -128,8 +128,7 @@ variants:
     model_id: "nvidia/*-NVFP4"                    # only if the quantized checkpoint is a different HF repo
     precision: nvfp4
     vram_minimum_gb: 403
-    extra_args: ["--kv-cache-dtype", "fp8"]
-    extra_env: { VLLM_USE_FLASHINFER_MOE_FP4: "1" }
+    extra_args: ["--kv-cache-dtype", "fp8", "--moe-backend", "flashinfer_cutlass"]
 
 compatible_strategies:                            # subset of the 8 strategy ids in strategies/*.yaml
   - single_node_tp                                # always include as baseline

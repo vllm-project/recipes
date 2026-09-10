@@ -50,8 +50,6 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
 compatible_strategies:
   - single_node_tp
@@ -136,7 +134,7 @@ guide: |
   )
 
   msg = response.choices[0].message
-  reasoning = getattr(msg, "reasoning", None) or getattr(msg, "reasoning_content", None)
+  reasoning = msg.reasoning
   print("reasoning:", reasoning)
   print("content:", msg.content)
   print("tool_calls:", msg.tool_calls)
@@ -160,7 +158,7 @@ guide: |
   ```
 
   Rules:
-  - Pass reasoning back as `reasoning` (even if your client exposes it as `reasoning_content`).
+  - Pass reasoning back as `reasoning`.
   - Keep `content` as an empty string (not `null`) on tool-only turns.
   - Append the assistant message before tool-result messages.
   - Use `/v1/chat/completions` for structured reasoning output.

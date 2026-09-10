@@ -4,7 +4,7 @@ meta:
   provider: "NVIDIA"
   description: "NVIDIA Nemotron 3.5 Lightning hybrid Mamba-MoE (30B total / 3B active) with NVFP4 and BF16 checkpoints, 1M context, and MTP / DSpark / DFlash speculative decoding"
   date_added: 2026-08-03
-  date_updated: 2026-08-10
+  date_updated: 2026-09-02
   difficulty: intermediate
   tasks:
     - text
@@ -13,12 +13,13 @@ meta:
   hardware:
     h100: verified
     dgx_spark_gb10: verified
+    rtx_pro_6000: verified
     dgx_station_gb300: verified
 
 model:
   model_id: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
   min_vllm_version: "0.27.1"
-  docker_image: "vllm/vllm-openai:v0.27.1"
+  docker_image: "vllm/vllm-openai:v0.28.0"
   architecture: moe
   parameter_count: "30B"
   active_parameters: "3B"
@@ -66,6 +67,12 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"dspark","model":"nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark","num_speculative_tokens":3}'
+        hardware_overrides:
+          # GB10 is decode-bound at concurrency 1, so the sweep drafts deeper.
+          dgx_spark_gb10:
+            args:
+              - "--speculative-config"
+              - '{"method":"dspark","model":"nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark","num_speculative_tokens":7}'
       mtp:
         label: "MTP"
         description: "Built-in Multi-Token Prediction heads — no extra checkpoint to download."
@@ -120,11 +127,35 @@ variants:
           - "--max-num-batched-tokens"
           - "32768"
       dgx_spark_gb10:
+        # Validated 2026-08-31 on vLLM 0.28.1rc1.dev130+g44fe2a392 (Ubuntu
+        # 24.04.4, driver 580.159.03, CUDA 13.0). The nightly is newer than the
+        # recipe-wide v0.28.0 image, so it is pinned here.
+        docker_image: "vllm/vllm-openai:nightly"
         extra_args:
+          # GB10 shares its 128 GB with the CPU — leave the host its share.
           - "--gpu-memory-utilization"
           - "0.7"
           - "--load-format"
           - "fastsafetensors"
+      rtx_pro_6000:
+        extra_args:
+          - "--attention-backend"
+          - "FLASHINFER"
+          - "--linear-backend"
+          - "marlin"
+          - "--attention-config"
+          - '{"use_trtllm_attention":true}'
+          - "--enable-flashinfer-autotune"
+          - "--mamba-cache-mode"
+          - "none"
+          - "--async-scheduling"
+          - "--enable-chunked-prefill"
+          - "--gpu-memory-utilization"
+          - "0.8"
+          - "--load-format"
+          - "instanttensor"
+          - "--safetensors-load-strategy"
+          - "prefetch"
       dgx_station_gb300:
         extra_args:
           - "--attention-backend"
@@ -160,7 +191,7 @@ guide: |
 
   ## Prerequisites
 
-  - **vLLM:** 0.27.1 or newer — `vllm/vllm-openai:v0.27.1`
+  - **vLLM:** 0.27.1 or newer — `vllm/vllm-openai:v0.28.0`
   - **Hardware:** 1x H100, 1x DGX Spark (GB10), or 1x DGX Station (GB300)
   - **Speculative decoding:** **MTP** (built into the checkpoint), **DSpark** (hybrid
     autoregressive + diffusion) and **DFlash** (diffusion) are all supported. DSpark
@@ -205,3 +236,9 @@ guide: |
 
   - **Speculative decoding**: DSpark is preferred on DGX Spark. On DGX Station, prefer
     MTP — choose it in the Speculative Decoding panel above.
+  - **DGX Spark (GB10)**: the selectable config is the one measured on 2026-08-31 with
+    aiperf 0.12.0 on vLLM `0.28.1rc1.dev130+g44fe2a392` — DSpark drafting 7 tokens at
+    `--gpu-memory-utilization 0.7`, `--mamba-cache-mode align` and fastsafetensors
+    loading, served from `vllm/vllm-openai:nightly`. On SPEED-Bench at 8K input / 256
+    output, concurrency 1, it reached 7,252 prefill tok/s and 93.3 decode tok/s at a
+    3.98 s mean end-to-end latency.

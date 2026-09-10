@@ -9,8 +9,7 @@ meta:
   tasks:
     - text
   performance_headline: "31B-class PLaMo 3 base checkpoint for high-quality bilingual generation"
-  related_recipes:
-    - "pfnet/plamo-2-translate"
+  related_recipes: []
 
 model:
   model_id: "pfnet/plamo-3-nict-31b-base"

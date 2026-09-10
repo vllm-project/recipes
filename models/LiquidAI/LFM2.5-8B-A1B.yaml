@@ -29,7 +29,7 @@ model:
 
 features:
   reasoning:
-    description: "Split the model's <think>…</think> chain-of-thought into a separate reasoning_content field via vLLM's qwen3 parser"
+    description: "Split the model's <think>…</think> chain-of-thought into a separate reasoning field via vLLM's qwen3 parser"
     args:
       - "--reasoning-parser"
       - "qwen3"
@@ -71,7 +71,7 @@ guide: |
 
   ### Key Features
   - **Hybrid + MoE**: Gated short convolutions + grouped-query attention with sparse expert FFNs — ~1B active parameters per token out of ~8B total.
-  - **`<think>` reasoning**: Emits an explicit `<think>…</think>` chain-of-thought on non-trivial problems; vLLM's `qwen3` parser splits it into `reasoning_content`.
+  - **`<think>` reasoning**: Emits an explicit `<think>…</think>` chain-of-thought on non-trivial problems; vLLM's `qwen3` parser splits it into `reasoning`.
   - **Tool calling**: Pythonic tool calls surfaced as OpenAI `tool_calls` by vLLM's native `lfm2` parser.
   - **128K context**: Long-context support (`max_position_embeddings = 128000`).
   - **Native vLLM support**: Served via the `Lfm2MoeForCausalLM` architecture.
@@ -160,12 +160,12 @@ guide: |
       extra_body={"top_k": 80, "repetition_penalty": 1.05},
   )
   msg = response.choices[0].message
-  print("reasoning:", msg.reasoning_content)
+  print("reasoning:", msg.reasoning)
   print("answer:", msg.content)
   ```
 
   > **Note**: the model opens the `<think>` channel for non-trivial problems; a simple prompt may
-  > be answered directly, in which case `reasoning_content` is empty. That is expected behavior —
+  > be answered directly, in which case `reasoning` is empty. That is expected behavior —
   > the `qwen3` parser extracts the block whenever it is present.
 
   ### Tool Calling

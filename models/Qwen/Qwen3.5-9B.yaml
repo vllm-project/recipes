@@ -13,6 +13,9 @@ meta:
   related_recipes:
     - "Qwen/Qwen3.5-27B"
     - "Qwen/Qwen3.5-4B"
+  hardware:
+    arc_pro_b60: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "Qwen/Qwen3.5-9B"
@@ -55,13 +58,16 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 22
-    description: "Full precision BF16 — single 24 GB GPU"
+    description: "Full precision BF16 — single 24 GB GPU or Intel Arc Pro B60/B70"
 
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  xpu:
+    extra_args:
+      - "--enforce-eager"
 
 strategy_overrides: {}
 
@@ -76,7 +82,7 @@ guide: |
   ## Prerequisites
 
   - **vLLM version:** >= 0.17.0
-  - **Hardware:** single 24 GB GPU (RTX 4090 / L4 / A10G / H100)
+  - **Hardware:** single 24 GB GPU (RTX 4090 / L4 / A10G / H100) or Intel Arc Pro B60/B70
 
   ### Install vLLM
 
@@ -84,6 +90,11 @@ guide: |
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend=auto
+  ```
+
+  ### Docker
+  ```bash
+  docker pull vllm/vllm-openai-xpu:latest  # Intel XPU (B60 / B70)
   ```
 
   ## Launching the Server
@@ -102,6 +113,23 @@ guide: |
   vllm serve Qwen/Qwen3.5-9B \
     --speculative-config '{"method": "mtp", "num_speculative_tokens": 1}' \
     --reasoning-parser qwen3
+  ```
+
+  ### Docker (Intel XPU B60 / B70)
+
+  Validated on 1× Intel Arc Pro B60 / B70 (B60 24 GB, B70 32 GB per card) with the
+  official vLLM XPU image `vllm/vllm-openai-xpu:latest`.
+  
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-xpu:latest \
+    Qwen/Qwen3.5-9B \
+    --reasoning-parser qwen3 \
+    --max-model-len 8192 \
+    --enforce-eager
   ```
 
   ## Client Usage

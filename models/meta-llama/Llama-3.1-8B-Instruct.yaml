@@ -51,11 +51,15 @@ variants:
     precision: int8
     vram_minimum_gb: 10
     description: "Red Hat AI INT8 W8A8 compressed-tensors checkpoint"
+    supported_hardware:
+      - xeon6
   awq_int4:
     model_id: "hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4"
     precision: int4
     vram_minimum_gb: 5
     description: "AWQ INT4 checkpoint"
+    supported_hardware:
+      - xeon6
     extra_args:
       - "--quantization"
       - "awq"
