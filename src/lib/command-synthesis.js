@@ -378,6 +378,15 @@ export function isFeatureAllowedForStrategy(feature, strategyName) {
 }
 
 /**
+ * Strategy-level opt-out from the whole KV Offload row (`kv_offload: false` in
+ * strategies/*.yaml): set it when a strategy already fronts its own ranks with
+ * a router that a Mooncake shell would replace.
+ */
+export function strategyAllowsKvOffload(strategy) {
+  return strategy?.kv_offload !== false;
+}
+
+/**
  * Whether a composing KV-offload option (taxonomy.kv_offload.*) may run under
  * a strategy. Two layers: pd_cluster / kv_store_lb are excluded for EVERY
  * option (both own --kv-transfer-config; last-wins dedupe would corrupt it),
@@ -386,6 +395,7 @@ export function isFeatureAllowedForStrategy(feature, strategyName) {
  */
 export function isKvOffloadAllowedForStrategy(option, strategyName, strategy) {
   if (!option) return false;
+  if (!strategyAllowsKvOffload(strategy)) return false;
   if (strategy?.deploy_type === "pd_cluster" || strategy?.deploy_type === "kv_store_lb") return false;
   const allow = option.strategies;
   return !Array.isArray(allow) || allow.length === 0 || allow.includes(strategyName);
@@ -781,10 +791,19 @@ function localModelMount(modelId) {
     : [];
 }
 
+// Port to publish, read off the command's own `--port` so a strategy that
+// serves behind a router (on 8100) stays reachable from the host.
+function servedPort(tokens, fallback = 8000) {
+  const i = tokens.lastIndexOf("--port");
+  const v = i >= 0 ? Number(tokens[i + 1]) : NaN;
+  return Number.isInteger(v) && v > 0 ? v : fallback;
+}
+
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
 // image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
 // CMD. Env vars become `-e KEY=VAL` inside the container.
-export function buildDockerRun({ command, env, image, gpuFlags, port = 8000, isNpu = false }) {
+export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false }) {
+  const pubPort = port ?? servedPort(command.split(/\s+/));
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
@@ -807,7 +826,7 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = 8000, isN
   // under `--net=host` and hid the required `--shm-size` on 950PR.
   const runtimeFlags = isNpu
     ? "--privileged --net=host --shm-size=16g"
-    : `--privileged --ipc=host -p ${port}:${port}`;
+    : `--privileged --ipc=host -p ${pubPort}:${pubPort}`;
   const base = `${prereq}docker run ${gpuFlags} \\
   ${runtimeFlags} \\
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
@@ -818,7 +837,8 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = 8000, isN
 // argv companion to buildDockerRun. `argv` here is the inner command's argv —
 // `["vllm", "serve", "<model>", ...flags]` from formatArgv. Returns the full
 // docker-run argv ready to spawn without a shell.
-export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
+export function buildDockerArgv({ argv, env, meta, port = null }) {
+  const pubPort = port ?? servedPort(argv);
   const envFlags = [];
   for (const [k, v] of Object.entries(env || {})) {
     envFlags.push("-e", `${k}=${v}`);
@@ -832,7 +852,7 @@ export function buildDockerArgv({ argv, env, meta, port = 8000 }) {
   }
   const runtimeFlags = meta.isNpu
     ? ["--privileged", "--net=host", "--shm-size", "16g"]
-    : ["--privileged", "--ipc=host", "-p", `${port}:${port}`];
+    : ["--privileged", "--ipc=host", "-p", `${pubPort}:${pubPort}`];
   const base = [
     "docker", "run",
     ...dockerGpuArgv(meta),
@@ -891,6 +911,24 @@ function dedupeArgs(args) {
       out.push(u.flag);
       if (u.value !== undefined) out.push(u.value);
     }
+  }
+  return out;
+}
+
+// Drop every occurrence of `flags` (and any value following one) from an arg
+// list. Backs a strategy's `remove_args`, the only way to unset a boolean flag
+// a recipe declares globally: dedupeArgs is last-wins, so it can override a
+// value but never remove a bare switch.
+function stripArgs(args, flags) {
+  const drop = new Set(flags);
+  const out = [];
+  for (let i = 0; i < args.length; i++) {
+    if (!drop.has(args[i])) {
+      out.push(args[i]);
+      continue;
+    }
+    const next = args[i + 1];
+    if (next !== undefined && !(typeof next === "string" && next.startsWith("-"))) i++;
   }
   return out;
 }
@@ -1096,6 +1134,13 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     }
 
     // 3. Strategy args + parallel size (grouped together so -tp/-dp sits next to -ep etc.)
+    //    Stripping `remove_args` here leaves anything emitted later free to
+    //    put the flag back under the usual last-wins rule.
+    if (strategy.remove_args?.length) {
+      const kept = stripArgs(args, strategy.remove_args);
+      args.length = 0;
+      args.push(...kept);
+    }
     if (strategy.deploy_type !== "pd_cluster") {
       if (strategy.vllm_args) args.push(...strategy.vllm_args);
     } else if (roleOverride && strategy[roleOverride]?.vllm_args) {
@@ -1271,6 +1316,11 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
           if (nodeIdx > 0) args.push("--headless");
         }
       }
+    } else if (strategy.parallelism === "dpa_tp") {
+      // One attention replica with a private KV cache per GPU; the experts
+      // shard across the ranks because `remove_args` drops EP.
+      args.push("--data-parallel-size", String(gpuCount));
+      args.push("--tensor-parallel-size", "1");
     } else {
       // Single-node TP / TEP / DEP. `singleNodeTp` equals `gpuCount` for
       // everything except single_node_tp with a recipe-declared
@@ -1805,9 +1855,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
 
   const singleArgs = buildArgs(null, null);
   // Companion processes — helpers that must run alongside `vllm serve` on the
-  // same node, rendered as PD-style tabs next to the serve command. Two
+  // same node, rendered as PD-style tabs next to the serve command. Three
   // sources, same gating as their args so a companion never leaks onto an
   // excluded strategy:
+  //   - the strategy itself (single_node_dpa_tp's vllm-router)
   //   - enabled features declaring `companion: { label, description?, command }`
   //   - the active composing KV-offload option (e.g. LMCache's MP server)
   const companions = (enabledFeatures || []).flatMap((f) => {
@@ -1830,6 +1881,22 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         kvOpt.install ? `Requires: ${kvOpt.install}` : "",
       ].filter(Boolean).join(" "),
       command: String(kvOpt.companion.command).trimEnd(),
+    });
+  }
+  // The strategy's own companion leads the launch sequence: the router has to
+  // be reachable before clients arrive. `{dp_size}` resolves against the same
+  // gpuCount the DP flag was emitted with.
+  if (strategy.companion?.command && deployType === "single_node") {
+    companions.unshift({
+      feature: `strategy:${strategyName}`,
+      label: strategy.companion.label || strategyName,
+      description: [
+        strategy.companion.description || "",
+        strategy.companion.install ? `Requires: ${strategy.companion.install}` : "",
+      ].filter(Boolean).join(" ").trim(),
+      command: String(strategy.companion.command)
+        .replace(/\{dp_size\}/g, String(gpuCount))
+        .trimEnd(),
     });
   }
   return {

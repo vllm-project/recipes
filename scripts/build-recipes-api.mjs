@@ -26,6 +26,7 @@ import {
   fitsSingleNode,
   isHardwareScalable,
   isKvStoreBrandSupported,
+  strategyAllowsKvOffload,
   pickFittingVariant,
   pdFitsSingleNode,
   resolveCommand,
@@ -301,7 +302,7 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
 
 // Wrap a rendered (command, argv) pair in `docker run`. Returns
 // { docker_command, docker_argv } so each form has its docker counterpart.
-function dockerize(command, argv, env, dockerMeta, port = 8000) {
+function dockerize(command, argv, env, dockerMeta, port = null) {
   return {
     docker_command: buildDockerRun({
       command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, port,
@@ -579,6 +580,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     const ok = (id) => {
       const d = strategies[id]?.deploy_type;
       if (!strategies[id] || d === "pd_cluster" || d === "kv_store_lb") return false;
+      if (!strategyAllowsKvOffload(strategies[id])) return false;
       return nc > 1 ? d === "multi_node" : d !== "multi_node";
     };
     const rec = recommendStrategy(recipe, hwProfile, nc);

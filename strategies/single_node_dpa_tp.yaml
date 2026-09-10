@@ -1,0 +1,50 @@
+name: single_node_dpa_tp
+deploy_type: single_node
+display_name: "DP Attention + TP Experts"
+orientation: throughput
+description: >
+  Single-node data-parallel attention with tensor-sharded experts
+  (DPA+TP). Every GPU runs its own attention replica with a private
+  KV cache, while the MoE expert weights are tensor-sharded across all
+  local GPUs instead of replicated per replica: expert parallelism is
+  deliberately off, so vLLM folds the DP ranks into the MoE
+  tensor-parallel group. Aggregate KV cache capacity scales with the
+  GPU count, so long multi-turn conversations stay resident instead of
+  being evicted and re-prefilled. A vllm-router in front spreads
+  requests across the DP ranks. For MoE models only.
+
+hardware_match:
+  min_gpus: 2
+  max_gpus: 8
+  multi_node: false
+  architecture: moe
+
+parallelism: dpa_tp
+
+remove_args:
+  - "--enable-expert-parallel"
+
+vllm_args:
+  - "--port"
+  - "8100"
+
+parallel_flag: "--data-parallel-size"
+
+kv_offload: false
+
+companion:
+  label: "vLLM Router"
+  description: >-
+    Routes client requests across the DP ranks of the single engine
+    process. --intra-node-data-parallel-size must match the engine's
+    --data-parallel-size; consistent_hash keeps a conversation pinned to
+    the rank that already holds its prefix.
+  install: "uv pip install vllm-router"
+  command: |
+    vllm-router \
+      --host 0.0.0.0 \
+      --port 8000 \
+      --policy consistent_hash \
+      --intra-node-data-parallel-size {dp_size} \
+      --worker-urls http://localhost:8100 \
+      --worker-startup-timeout-secs 1800
