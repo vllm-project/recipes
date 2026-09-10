@@ -1,9 +1,9 @@
 # DeepSeek-V4.1-Flash — serves /deepseek-ai/DeepSeek-V4.1-Flash. Validate: node scripts/build-recipes-api.mjs
 meta:
-  title: "DeepSeek-V4.1-Exp"
+  title: "DeepSeek-V4.1-Flash"
   slug: "deepseek-v4.1-flash"
   provider: "DeepSeek"
-  description: "DeepSeek V4.1 (\"Exp\") vision-language MoE (769B total / 15.5B active) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head. Served from the deepseek-ai/DeepSeek-V4.1-Flash weight repo."
+  description: "DeepSeek V4.1 Flash vision-language MoE (769B total / 15.5B active) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
   date_updated: 2026-09-10
   difficulty: advanced
@@ -18,18 +18,18 @@ meta:
   hardware:
     h200: verified
     gb200: verified
+    gb300: verified
     mi350x: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V4.1-Flash"
   min_vllm_version: "0.30.0"
-  docker_image: "vllm/vllm-openai:deepseekv41-flash"
-  architecture: moe
+  docker_image:
+    nvidia: "vllm/vllm-openai:deepseekv41-flash"
   parameter_count: "769B"
   active_parameters: "15.5B"
   context_length: 1048576
   base_args:
-    - "--trust-remote-code"
     - "--tokenizer-mode"
     - "deepseek_v41"
   base_env:
@@ -95,12 +95,6 @@ hardware_overrides:
       - "mp"
       - "--gpu-memory-utilization"
       - "0.9"
-      - "--max-num-seqs"
-      - "512"
-      - "--max-num-batched-tokens"
-      - "8192"
-      - "--compilation-config"
-      - '{"mode": 3, "cudagraph_mode": "FULL_DECODE_ONLY"}'
       - "--moe-backend"
       - "aiter_triton_mxfp4_bf16"
     extra_env:
@@ -119,16 +113,12 @@ strategy_overrides:
       nodes: 1
       parallelism: tp
       vllm_args:
-        - "--kernel-config"
-        - '{"enable_flashinfer_autotune":false,"enable_jit_warmup":false,"enable_cutedsl_warmup":false}'
         - "--max-num-seqs"
         - "32"
     decode:
       nodes: 1
       parallelism: tp
       vllm_args:
-        - "--kernel-config"
-        - '{"enable_flashinfer_autotune":false,"enable_jit_warmup":false,"enable_cutedsl_warmup":false}'
         - "--max-num-seqs"
         - "32"
 
