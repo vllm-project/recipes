@@ -97,6 +97,10 @@ hardware_overrides:
       - "0.9"
       - "--moe-backend"
       - "aiter_triton_mxfp4_bf16"
+      # Only working graph mode on ROCm; async scheduling crashes it (vllm#56347).
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+      - "--no-async-scheduling"
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
       VLLM_ROCM_USE_AITER_MOE: "1"
