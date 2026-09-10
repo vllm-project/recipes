@@ -3,14 +3,14 @@ meta:
   title: "DeepSeek-V4.1-Flash"
   slug: "deepseek-v4.1-flash"
   provider: "DeepSeek"
-  description: "DeepSeek V4.1 Flash vision-language MoE (769B total / 15.5B active) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
+  description: "DeepSeek V4.1 Flash vision-language MoE (522B total; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
   date_updated: 2026-09-10
   difficulty: advanced
   tasks:
     - text
     - multimodal
-  performance_headline: "1M context at 15.5B active parameters, with engram n-gram memory"
+  performance_headline: "1M context at 8-16B active parameters, with engram n-gram memory"
   related_recipes:
     - "deepseek-ai/DeepSeek-V4-Flash"
     - "deepseek-ai/DeepSeek-V4-Pro"
@@ -27,8 +27,9 @@ model:
   docker_image:
     nvidia: "vllm/vllm-openai:deepseekv41-flash-0909"
     amd: "vllm/vllm-openai-rocm:deepseekv41-flash-0909"
-  parameter_count: "769B"
-  active_parameters: "15.5B"
+  architecture: moe
+  parameter_count: "522B"
+  active_parameters: "8-16B"
   context_length: 1048576
   base_args:
     - "--tokenizer-mode"
@@ -124,9 +125,10 @@ strategy_overrides:
 guide: |
   ## Overview
 
-  DeepSeek-V4.1 is a vision-language Mixture-of-Experts model: **769B total parameters,
-  15.5B active per token**, 40 transformer layers at hidden size 5120, with a 32-layer
-  ViT and aligner in front of the text stack. Five things distinguish it from V4:
+  DeepSeek-V4.1 is a vision-language Mixture-of-Experts model: **522B total parameters,
+  8B active per prompt token and 16B per output token**, 40 transformer layers at hidden
+  size 5120, with a 32-layer ViT and aligner in front of the text stack. Five things
+  distinguish it from V4:
 
   - **Two-tier sparse attention.** Every layer attends over a 128-token sliding window.
     Layers that carry a compression ratio add compressed KV latents reaching further
