@@ -150,25 +150,12 @@ guide: |
     --enable-expert-parallel
   ```
 
-  ### 8xMI355X — DP Attention + Tensor Parallel (DPA+TP)
+  ### 8xMI350X / 8xMI355X (DPA+TP)
 
-  Validated on MI350X / MI355X with `deepseek-ai/DeepSeek-V3-0324` (select the
-  **V3 0324** variant above). Pick the **DP Attention + Tensor Parallel** strategy to
-  generate both commands.
-
-  Where TP8+EP replicates the KV cache decisions across one tensor-parallel
-  group, DPA+TP gives each GPU its own attention replica and private KV cache
-  while the MoE expert weights stay sharded across all eight GPUs. Leaving
-  `--enable-expert-parallel` **off** is what does the sharding: with EP disabled
-  vLLM folds the data-parallel ranks into the MoE tensor-parallel group
-  (`moe_tp = dp × tp`), so the experts are split rather than replicated per
-  rank. The result is roughly 8x the aggregate KV-cache capacity of a single TP8
-  replica, which is what makes long multi-turn chat sessions stay resident
-  instead of being evicted and re-prefilled on every turn.
-
-  The tradeoff is per-request latency: each replica runs at TP1, so a single
-  request gets one GPU's worth of attention compute. Use TP8+EP when
-  time-to-first-token on an idle server matters more than cache residency.
+  Each GPU runs its own attention replica with a private KV cache, while the MoE
+  experts stay tensor-sharded across all eight GPUs. Aggregate KV-cache
+  capacity is roughly 8x that of a single TP8 replica, useful for workloads 
+  benefiting from larger KV capacities. 
 
   Engine (all eight ranks in one process, listening on 8100):
   ```bash
