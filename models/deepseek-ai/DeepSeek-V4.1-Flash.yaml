@@ -92,8 +92,6 @@ compatible_strategies:
 hardware_overrides:
   amd:
     extra_args:
-      - "--distributed-executor-backend"
-      - "mp"
       - "--gpu-memory-utilization"
       - "0.9"
       - "--moe-backend"
