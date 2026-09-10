@@ -794,9 +794,15 @@ function localModelMount(modelId) {
 // Port to publish, read off the command's own `--port` so a strategy that
 // serves behind a router (on 8100) stays reachable from the host.
 function servedPort(tokens, fallback = 8000) {
-  const i = tokens.lastIndexOf("--port");
-  const v = i >= 0 ? Number(tokens[i + 1]) : NaN;
-  return Number.isInteger(v) && v > 0 ? v : fallback;
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    const t = tokens[i];
+    if (typeof t !== "string") continue;
+    const raw = t === "--port" ? tokens[i + 1] : t.startsWith("--port=") ? t.slice(7) : null;
+    if (raw == null) continue;
+    const v = Number(raw);
+    if (Number.isInteger(v) && v > 0) return v;
+  }
+  return fallback;
 }
 
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
@@ -1858,9 +1864,9 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   // same node, rendered as PD-style tabs next to the serve command. Three
   // sources, same gating as their args so a companion never leaks onto an
   // excluded strategy:
-  //   - the strategy itself (single_node_dpa_tp's vllm-router)
   //   - enabled features declaring `companion: { label, description?, command }`
   //   - the active composing KV-offload option (e.g. LMCache's MP server)
+  //   - the strategy itself (single_node_dpa_tp's vllm-router)
   const companions = (enabledFeatures || []).flatMap((f) => {
     const feat = recipe.features?.[f];
     if (!feat?.companion?.command) return [];
@@ -1883,19 +1889,20 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       command: String(kvOpt.companion.command).trimEnd(),
     });
   }
-  // The strategy's own companion leads the launch sequence: the router has to
-  // be reachable before clients arrive. `{dp_size}` resolves against the same
-  // gpuCount the DP flag was emitted with.
+  // `{dp_size}` resolves against the same gpuCount the DP flag was emitted
+  // with, `{port}` against the port the engine actually serves on.
   if (strategy.companion?.command && deployType === "single_node") {
-    companions.unshift({
+    companions.push({
       feature: `strategy:${strategyName}`,
       label: strategy.companion.label || strategyName,
+      after: strategy.companion.start === "after",
       description: [
         strategy.companion.description || "",
         strategy.companion.install ? `Requires: ${strategy.companion.install}` : "",
       ].filter(Boolean).join(" ").trim(),
       command: String(strategy.companion.command)
         .replace(/\{dp_size\}/g, String(gpuCount))
+        .replace(/\{port\}/g, String(servedPort(singleArgs)))
         .trimEnd(),
     });
   }

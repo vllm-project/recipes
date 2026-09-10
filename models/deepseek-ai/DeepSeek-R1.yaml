@@ -206,8 +206,8 @@ guide: |
     a conversation to the rank that already holds its prefix, so the larger
     aggregate cache actually gets hit. `round_robin` scatters turns of the same
     conversation across ranks and throws the prefix away.
-  - Start the router first; `--worker-startup-timeout-secs 1800` covers the
-    engine's weight load.
+  - Start the engine first, then the router; `--worker-startup-timeout-secs 1800`
+    covers the engine's weight load either way.
   - Send client traffic to the router on port 8000, never to 8100 directly.
 
   ### 4xB200 (FP4)

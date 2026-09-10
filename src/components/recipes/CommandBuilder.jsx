@@ -3136,9 +3136,12 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
   // a feature's `companion:` or the active kv_offload option's, e.g.
   // LMCache's `lmcache server`). When any are active the block grows a
   // PD-style tab bar in LAUNCH ORDER — companions sit LEFT of vLLM Serve
-  // because they must be running before it starts. With none, the classic
-  // single-command layout renders untouched.
+  // because they must be running before it starts, unless one marks itself
+  // `after` (a router that fronts the engine it proxies). With none, the
+  // classic single-command layout renders untouched.
   const hasCompanions = Array.isArray(companions) && companions.length > 0;
+  const preCompanions = hasCompanions ? companions.filter((c) => !c.after) : [];
+  const postCompanions = hasCompanions ? companions.filter((c) => c.after) : [];
   // Falls back to the vLLM view when the selected companion's source was
   // toggled off (stale tab state).
   const activeCompanion = hasCompanions && tab !== "vllm"
@@ -3148,7 +3151,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
   // leftmost tab so the launch sequence reads left to right from step 1.
   const companionIds = hasCompanions ? companions.map((c) => c.feature).join(",") : "";
   useEffect(() => {
-    setTab(hasCompanions ? companions[0].feature : "vllm");
+    setTab(preCompanions.length ? preCompanions[0].feature : "vllm");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companionIds]);
   // Companions are host-side helper binaries (not `vllm serve`), so they get
@@ -3182,7 +3185,11 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
           </div>
           <div className="flex items-center justify-between px-4 pt-2 gap-3">
             <CommandTabs
-              tabs={[...companions.map((c) => ({ id: c.feature, label: c.label })), { id: "vllm", label: "vLLM Serve" }].map((t, i) => ({ ...t, step: i + 1 }))}
+              tabs={[
+                ...preCompanions.map((c) => ({ id: c.feature, label: c.label })),
+                { id: "vllm", label: "vLLM Serve" },
+                ...postCompanions.map((c) => ({ id: c.feature, label: c.label })),
+              ].map((t, i) => ({ ...t, step: i + 1 }))}
               current={activeCompanion ? activeCompanion.feature : "vllm"}
               onSelect={setTab}
             />

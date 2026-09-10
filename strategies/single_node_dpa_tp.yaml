@@ -40,11 +40,12 @@ companion:
     --data-parallel-size; consistent_hash keeps a conversation pinned to
     the rank that already holds its prefix.
   install: "uv pip install vllm-router"
+  start: after
   command: |
     vllm-router \
       --host 0.0.0.0 \
       --port 8000 \
       --policy consistent_hash \
       --intra-node-data-parallel-size {dp_size} \
-      --worker-urls http://localhost:8100 \
+      --worker-urls http://localhost:{port} \
       --worker-startup-timeout-secs 1800
