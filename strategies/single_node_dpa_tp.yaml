@@ -1,17 +1,16 @@
 name: single_node_dpa_tp
 deploy_type: single_node
-display_name: "DP Attention + TP Experts"
+display_name: "DP Attention + Tensor Parallel"
 orientation: throughput
 description: >
   Single-node data-parallel attention with tensor-sharded experts
   (DPA+TP). Every GPU runs its own attention replica with a private
   KV cache, while the MoE expert weights are tensor-sharded across all
-  local GPUs instead of replicated per replica: expert parallelism is
-  deliberately off, so vLLM folds the DP ranks into the MoE
-  tensor-parallel group. Aggregate KV cache capacity scales with the
-  GPU count, so long multi-turn conversations stay resident instead of
-  being evicted and re-prefilled. A vllm-router in front spreads
-  requests across the DP ranks. For MoE models only.
+  local GPUs instead of replicated per replica. Aggregate KV cache
+  capacity scales with the GPU count, so long multi-turn conversations
+  stay resident instead of being evicted and re-prefilled. A
+  vllm-router in front spreads requests across the DP ranks. For MoE
+  models only.
 
 hardware_match:
   min_gpus: 2

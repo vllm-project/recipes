@@ -150,10 +150,10 @@ guide: |
     --enable-expert-parallel
   ```
 
-  ### 8xMI355X — DP Attention + TP Experts (DPA+TP)
+  ### 8xMI355X — DP Attention + Tensor Parallel (DPA+TP)
 
   Validated on MI350X / MI355X with `deepseek-ai/DeepSeek-V3-0324` (select the
-  **V3 0324** variant above). Pick the **DP Attention + TP Experts** strategy to
+  **V3 0324** variant above). Pick the **DP Attention + Tensor Parallel** strategy to
   generate both commands.
 
   Where TP8+EP replicates the KV cache decisions across one tensor-parallel
