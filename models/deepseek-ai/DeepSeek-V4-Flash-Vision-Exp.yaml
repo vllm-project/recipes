@@ -19,9 +19,9 @@ meta:
   # on one NVL4 tray, FP8 KV cache, block size 256, DSpark k=3, full
   # 1000-sample OCRBench at 83.5% with zero request errors.
   # Atlas A5 8-card mixed serving of the native FP4+FP8 Vision-Exp checkpoint
-  # (DP4+EP, TP=1, DSpark k=3). 950PR verified 2026-09-10 on vLLM Ascend;
-  # 950DT uses the same command (4 of 8 NPUs). See the hardware note for the
-  # required hash-router bias fix.
+  # (DP4+EP, TP=1, no speculative decoding). 950PR verified 2026-09-10 on
+  # vLLM Ascend; 950DT uses the same command (4 of 8 NPUs). See the hardware
+  # note for the required hash-router bias fix.
   default_hardware: gb200
   hardware:
     gb200: verified
@@ -85,14 +85,19 @@ features:
     args:
       - "--speculative-config"
       - '{"method":"dspark","model":"deepseek-ai/DeepSeek-V4-Flash-Vision-Exp","num_speculative_tokens":3,"draft_sample_method":"probabilistic","enable_adaptive_verification":true}'
-    # vLLM Ascend does not implement probabilistic draft sampling or adaptive
-    # verification. k=3 matches the checkpoint's n_predict; the draft stays
-    # eager while the target keeps FULL_DECODE_ONLY.
+    # 950 has no working MTP or DSpark path yet. Empty args so a toggle-on
+    # still emits no --speculative-config. Default-off via
+    # hardware_opt_in_features below — GB200 keeps DSpark on.
     hardware_overrides:
       npu:
-        args:
-          - "--speculative-config"
-          - '{"method":"dspark","num_speculative_tokens":3,"enforce_eager":true}'
+        args: []
+
+# Spec decoding stays default-on everywhere except the A5 8-card pills.
+hardware_opt_in_features:
+  ascend_950pr_8x:
+    - spec_decoding
+  ascend_950dt_8x:
+    - spec_decoding
 
 variants:
   default:
@@ -307,14 +312,13 @@ guide: |
     --additional-config '{"enable_cpu_binding": true, "multistream_overlap_shared_expert": true, "enable_shared_expert_dp": true}' \
     --tool-call-parser deepseek_v4 \
     --enable-auto-tool-choice \
-    --reasoning-parser deepseek_v4 \
-    --speculative-config '{"method":"dspark","num_speculative_tokens":3,"enforce_eager":true}'
+    --reasoning-parser deepseek_v4
   ```
 
   `--max-model-len 8192` is the verified bound. Raise it only after checking
   free HBM — the checkpoint advertises 1M tokens, which will not fit on 4
-  NPUs. DSpark stays at `num_speculative_tokens: 3` so it is divisible by
-  the checkpoint's `n_predict`.
+  NPUs. Do not pass `--speculative-config`: MTP and DSpark are not supported
+  on 950 for this checkpoint yet.
 
   ### Huawei Ascend 950DT 8x
 
