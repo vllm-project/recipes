@@ -126,7 +126,7 @@ guide: |
   ## Prerequisites
 
   - **vLLM:** 0.28.0 or newer, which includes native Bailing V3 support;
-  - **Validated hardware:** NVIDIA H20, H20-3e, H200, DGX Spark (FP4/INT4), and AMD MI300X / MI350X / MI355X
+  - **Validated hardware:** NVIDIA H20, H20-3e, H200, DGX Spark (FP4/INT4), and AMD MI300X / MI355X
   - **Precision:** BF16, serialized block FP8, mixed block-FP8/MXFP4, or compressed-tensors INT4 weights with BF16 compute
   - **Context length:** 262,144 tokens
 
