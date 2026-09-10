@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3 — Frontier Coding with Emergent Cyber Capabilities"
   date_added: 2026-08-28
-  date_updated: 2026-09-05
+  date_updated: 2026-09-10
   difficulty: advanced
   tasks:
     - text
@@ -12,6 +12,8 @@ meta:
   related_recipes:
     - "zai-org/GLM-5.2"
     - "zai-org/GLM-5.3-Flash"
+  # B300 is where FP8 + DFlash2 was run end-to-end (8-GPU HGX, TEP8, nightly image).
+  default_hardware: b300
   hardware:
     b300: verified
     # Validated 2026-08-30 on one Atlas A5 node (8×950PR, TP8, graph mode).
@@ -22,8 +24,11 @@ model:
   model_id: "zai-org/GLM-5.3"
   min_vllm_version: "0.28.0"
   docker_image:
-    nvidia: "vllm/vllm-openai:v0.28.0"
+    nvidia: "vllm/vllm-openai:nightly"
     amd: "vllm/vllm-openai-rocm:v0.28.0"
+  install:
+    docker:
+      note: "NVIDIA path uses vllm/vllm-openai:nightly — DFlash2 on 8×B300 was verified against this tag. AMD stays on the v0.28.0 ROCm image."
   architecture: moe
   parameter_count: "743B"
   active_parameters: "39B"
@@ -46,12 +51,12 @@ features:
       - "--reasoning-parser"
       - "glm45"
   spec_decoding:
-    description: "Built-in Multi-Token Prediction — 5 draft tokens on NVIDIA/AMD, 1 on Ascend (draft stays eager)."
+    description: "Speculative decoding — pick native MTP or an external DFlash2 drafter."
     default_mode: mtp
     modes:
       mtp:
         label: "MTP"
-        description: "Native multi-token prediction head."
+        description: "Native multi-token prediction head. 5 draft tokens on NVIDIA/AMD, 1 on Ascend (draft stays eager)."
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":5}'
@@ -60,6 +65,15 @@ features:
             args:
               - "--speculative-config"
               - '{"method":"mtp","num_speculative_tokens":1,"enforce_eager":true}'
+      dflash:
+        label: "DFlash2"
+        description: "External DFlash2 drafter (incoai/GLM-5.3-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. Needs the NVIDIA nightly image. num_speculative_tokens must be 7 (block_size 8 minus one)."
+        variants: [default]
+        hardware:
+          amd: unsupported
+        args:
+          - "--speculative-config"
+          - '{"method":"dflash","model":"incoai/GLM-5.3-DFlash2","num_speculative_tokens":7}'
 
 opt_in_features:
   - spec_decoding
@@ -184,13 +198,20 @@ guide: |
   Architecture and serving flags are identical to GLM-5.2; the packaging change is that the
   **default `zai-org/GLM-5.3` checkpoint is now native FP8** — BF16 weights live under the suffixed `zai-org/GLM-5.3-BF16` repo.
 
-  The FP8 checkpoint fits on a single 8xH200 / 8xH20 node and — with FP8 KV cache — reaches the full 1M-token context on 8xB200.
+  The FP8 checkpoint fits on a single 8xH200 / 8xH20 node and — with FP8 KV cache — reaches the full 1M-token context on 8xB200 / 8xB300.
   An NVFP4 checkpoint for Blackwell is published by Inferact (`Inferact/GLM-5.3-NVFP4`).
+  Speculative decoding can use the in-checkpoint MTP head or the external
+  [incoai/GLM-5.3-DFlash2](https://huggingface.co/incoai/GLM-5.3-DFlash2) drafter
+  (opt-in **Spec Decoding → DFlash2** above). DFlash2 does not change the served
+  checkpoint.
 
   ## Prerequisites
 
-  - **vLLM 0.28.0** or newer.
-  - **GPU:** 8xH200 or 8xH20 (141 GB each) for single-node FP8; 8xB200 (180 GB each) for the full 1M context.
+  - **vLLM 0.28.0** or newer for MTP. **DFlash2** was verified on the NVIDIA
+    nightly image (`vllm/vllm-openai:nightly`).
+  - **GPU:** 8xH200 or 8xH20 (141 GB each) for single-node FP8; 8xB200 (180 GB each)
+    or 8xB300 (268 GB each) for the full 1M context. DFlash2 on FP8 was verified
+    end-to-end on **8×B300**.
 
   ## Installation
 
@@ -199,6 +220,12 @@ guide: |
   source .venv/bin/activate
   uv pip install "vllm==0.28.0" --torch-backend=auto
   uv pip install "transformers>=5.15.0"
+  ```
+
+  For DFlash2 on NVIDIA, pull the nightly image instead:
+
+  ```bash
+  docker pull vllm/vllm-openai:nightly
   ```
 
   ## Launching the server
@@ -277,6 +304,36 @@ guide: |
     --kv-cache-dtype fp8_e4m3 \
     --served-model-name glm-5.3-nvfp4
   ```
+
+  ### DFlash2 on 8xB300 (verified, nightly image)
+
+  DFlash2 is not a standalone model. Serve `zai-org/GLM-5.3` and attach
+  [incoai/GLM-5.3-DFlash2](https://huggingface.co/incoai/GLM-5.3-DFlash2)
+  as the drafter. `num_speculative_tokens` must be **7** (`block_size` 8 minus
+  one). This path was verified on **8×B300**, TEP8, FP8 KV cache, 1M context,
+  `--max-num-seqs 80`, against `vllm/vllm-openai:nightly`. Enable **Spec Decoding**
+  above and pick **DFlash2**, or:
+
+  ```bash
+  vllm serve zai-org/GLM-5.3 \
+    --kv-cache-dtype fp8_e4m3 \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --speculative-config '{"method":"dflash","model":"incoai/GLM-5.3-DFlash2","num_speculative_tokens":7}' \
+    --max-model-len 1000000 \
+    --max-num-seqs 80 \
+    --tool-call-parser glm47 \
+    --reasoning-parser glm45 \
+    --enable-auto-tool-choice \
+    --served-model-name glm-5.3
+  ```
+
+  - The served checkpoint stays `zai-org/GLM-5.3`. Only `--speculative-config`
+    names the draft repo.
+  - DFlash2 is offered on the native FP8 variant. It is CUDA-only (the AMD pill
+    is disabled).
+  - The B300 session also had **KV Offload → Simple** on. That flag is optional
+    for DFlash2 itself; pick Simple in the builder to reproduce it.
 
   ## Reasoning modes
 
@@ -367,3 +424,6 @@ guide: |
   - [Model card](https://huggingface.co/zai-org/GLM-5.3)
   - [BF16 checkpoint](https://huggingface.co/zai-org/GLM-5.3-BF16)
   - [NVFP4 checkpoint (Inferact)](https://huggingface.co/Inferact/GLM-5.3-NVFP4)
+  - [DFlash2 draft](https://huggingface.co/incoai/GLM-5.3-DFlash2)
+  - [DFlash2 blog](https://inco.ai/blog/dflash2/)
+  - [vLLM DFlash2 PR](https://github.com/vllm-project/vllm/pull/52816)
