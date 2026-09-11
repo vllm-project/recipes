@@ -9,6 +9,8 @@ meta:
   tasks:
     - text
   performance_headline: "Frontier 1.6T/49B reasoning MoE with native FP4+FP8 weights, MTP and DSpark speculative decoding, and 1M-token context"
+  inferencex:
+    model: "deepseek-v4"
   related_recipes: []
   hardware:
     h200: verified

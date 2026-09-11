@@ -10,6 +10,8 @@ meta:
     - multimodal
     - text
   performance_headline: "Pre-release TP8, TEP16, TP8xPP2, and disaggregated P/D profiles for the 2.8T MXFP4 checkpoint"
+  inferencex:
+    model: "kimi-k3"
   related_recipes:
     - "moonshotai/Kimi-K2.6"
     - "moonshotai/Kimi-K2.5"

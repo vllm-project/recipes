@@ -10,6 +10,8 @@ meta:
     - text
     - multimodal
   performance_headline: "Frontier coding and agent (SWE-Bench Pro 59.0, Terminal-Bench 2.1 66.0); MSA sparse attention; 1M context"
+  inferencex:
+    model: "minimax-m3"
   related_recipes: []
   hardware:
     h200: verified
