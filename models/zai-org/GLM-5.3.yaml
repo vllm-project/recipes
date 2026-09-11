@@ -47,6 +47,16 @@ features:
       - "glm45"
   spec_decoding:
     description: "Built-in Multi-Token Prediction — 5 draft tokens on NVIDIA/AMD, 1 on Ascend (draft stays eager)."
+    # mtp's draft model doesn't implement SupportsPP yet
+    # (vllm-project/vllm#50098), so the feature is gated off multi_node_tp_pp.
+    # Every other strategy keeps it.
+    strategies:
+      - single_node_tp
+      - single_node_tep
+      - multi_node_tp
+      - multi_node_tep
+      - multi_node_dep
+      - pd_cluster
     default_mode: mtp
     modes:
       mtp:

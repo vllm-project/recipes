@@ -47,6 +47,17 @@ features:
       - "qwen3"
   spec_decoding:
     description: "Speculative decoding — pick native MTP or the Ascend MTP mode."
+    # Both modes' draft models don't implement SupportsPP yet
+    # (vllm-project/vllm#50098), so the feature is gated off multi_node_tp_pp.
+    # Every other strategy keeps it.
+    strategies:
+      - single_node_tp
+      - single_node_tep
+      - single_node_dep
+      - multi_node_tp
+      - multi_node_dep
+      - multi_node_tep
+      - pd_cluster
     default_mode: mtp
     modes:
       mtp:

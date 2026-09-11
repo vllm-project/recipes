@@ -55,6 +55,17 @@ features:
       - "minimax_m3"
   spec_decoding:
     description: "Eagle3 speculative decoding with an Inferact MiniMax-M3 draft head — accelerates decoding. Choose between the standard MHA head and the GQA head (16× smaller draft KV cache — better for long-context or high-batch deployments)."
+    # eagle3 is a separate-draft-model method, which doesn't compose with
+    # pipeline parallelism yet (vllm-project/vllm#50098), so the feature is
+    # gated off multi_node_tp_pp. Every other strategy keeps it.
+    strategies:
+      - single_node_tp
+      - single_node_tep
+      - single_node_dep
+      - multi_node_tp
+      - multi_node_tep
+      - multi_node_dep
+      - pd_cluster
     default_mode: eagle3
     modes:
       eagle3:

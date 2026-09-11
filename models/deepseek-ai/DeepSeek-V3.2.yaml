@@ -50,6 +50,17 @@ features:
       - "deepseek_v3"
   spec_decoding:
     description: "Multi-Token Prediction speculative decoding with 3 speculative tokens."
+    # mtp's draft model doesn't implement SupportsPP yet
+    # (vllm-project/vllm#50098), so the feature is gated off multi_node_tp_pp.
+    # Every other strategy keeps it.
+    strategies:
+      - single_node_tp
+      - single_node_tep
+      - single_node_dep
+      - multi_node_tp
+      - multi_node_dep
+      - multi_node_tep
+      - pd_cluster
     args:
       - "--speculative-config"
       - '{"method":"mtp","num_speculative_tokens":3}'

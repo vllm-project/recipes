@@ -35,6 +35,16 @@ features:
       - "hermes"
   spec_decoding:
     description: "Multi-token prediction speculative decoding for lower latency"
+    # qwen3_next_mtp's draft model doesn't implement SupportsPP yet
+    # (vllm-project/vllm#50098), so the feature is gated off multi_node_tp_pp.
+    # Every other strategy keeps it.
+    strategies:
+      - single_node_tp
+      - single_node_tep
+      - single_node_dep
+      - multi_node_tp
+      - multi_node_dep
+      - multi_node_tep
     args:
       - "--speculative-config"
       - '{"method":"qwen3_next_mtp","num_speculative_tokens":2}'

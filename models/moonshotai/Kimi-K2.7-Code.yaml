@@ -50,6 +50,17 @@ features:
       - "kimi_k2"
   spec_decoding:
     description: "Eagle3 speculative decoding for accelerated inference"
+    # eagle3 is a separate-draft-model method, which doesn't compose with
+    # pipeline parallelism yet (vllm-project/vllm#50098), so the feature is
+    # gated off multi_node_tp_pp. Every other strategy keeps it.
+    strategies:
+      - single_node_tp
+      - single_node_tep
+      - single_node_dep
+      - multi_node_tp
+      - multi_node_dep
+      - multi_node_tep
+      - pd_cluster
     args:
       - "--speculative-config"
       - '{"model":"lightseekorg/kimi-k2.7-coder-eagle3.1-mla","method":"eagle3","num_speculative_tokens":3}'
