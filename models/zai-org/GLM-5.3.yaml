@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3 — Frontier Coding with Emergent Cyber Capabilities"
   date_added: 2026-08-28
-  date_updated: 2026-09-05
+  date_updated: 2026-09-10
   difficulty: advanced
   tasks:
     - text
@@ -12,18 +12,18 @@ meta:
   related_recipes:
     - "zai-org/GLM-5.2"
     - "zai-org/GLM-5.3-Flash"
+  # FP8 + DFlash2 ran end-to-end on 8-GPU HGX B300 (TEP8) and on H200.
+  default_hardware: b300
   hardware:
     b300: verified
+    h200: verified
     # Validated 2026-08-30 on one Atlas A5 node (8×950PR, TP8, graph mode).
     # Native FP8 path needs vllm-ascend#15346.
     ascend_950pr_8x: verified
 
 model:
   model_id: "zai-org/GLM-5.3"
-  min_vllm_version: "0.28.0"
-  docker_image:
-    nvidia: "vllm/vllm-openai:v0.28.0"
-    amd: "vllm/vllm-openai-rocm:v0.28.0"
+  min_vllm_version: "0.29.0"
   architecture: moe
   parameter_count: "743B"
   active_parameters: "39B"
@@ -46,12 +46,12 @@ features:
       - "--reasoning-parser"
       - "glm45"
   spec_decoding:
-    description: "Built-in Multi-Token Prediction — 5 draft tokens on NVIDIA/AMD, 1 on Ascend (draft stays eager)."
+    description: "Speculative decoding — pick native MTP or an external DFlash2 drafter."
     default_mode: mtp
     modes:
       mtp:
         label: "MTP"
-        description: "Native multi-token prediction head."
+        description: "Native multi-token prediction head. 5 draft tokens on NVIDIA/AMD, 1 on Ascend (draft stays eager)."
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":5}'
@@ -60,6 +60,16 @@ features:
             args:
               - "--speculative-config"
               - '{"method":"mtp","num_speculative_tokens":1,"enforce_eager":true}'
+      dflash:
+        label: "DFlash2"
+        description: "External DFlash2 drafter (incoai/GLM-5.3-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. num_speculative_tokens must be 7 (block_size 8 minus one)."
+        variants: [default]
+        hardware:
+          amd: unsupported
+          npu: unsupported
+        args:
+          - "--speculative-config"
+          - '{"method":"dflash","model":"incoai/GLM-5.3-DFlash2","num_speculative_tokens":7}'
 
 opt_in_features:
   - spec_decoding
