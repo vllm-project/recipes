@@ -24,6 +24,7 @@ meta:
 model:
   model_id: "deepseek-ai/DeepSeek-V4.1-Flash"
   min_vllm_version: "0.30.0"
+  default_frontend: rust
   docker_image:
     nvidia: "vllm/vllm-openai:deepseekv41-flash-0909"
     amd: "vllm/vllm-openai-rocm:deepseekv41-flash-0909"
@@ -36,7 +37,6 @@ model:
     - "deepseek_v41"
   base_env:
     VLLM_ENGINE_READY_TIMEOUT_S: "3600"
-    VLLM_USE_RUST_FRONTEND: "1"
   install:
     docker:
       note: "Serve from the dedicated vllm/vllm-openai:deepseekv41-flash image — no pip wheel carries the DeepSeek-V4.1 architecture."
@@ -252,9 +252,9 @@ guide: |
 
   - The `vllm/vllm-openai:deepseekv41-flash` image (vLLM 0.30.0+). No pip wheel serves this
     architecture, so the Install block only offers Docker.
-  - The Rust OpenAI frontend is recommended and enabled by default with
-    `VLLM_USE_RUST_FRONTEND=1`. If you encounter any compatibility issues, remove
-    this environment variable to use the Python frontend.
+  - The Rust OpenAI frontend is selected by default in the command builder. Use
+    the Frontend selector to switch to Python if you encounter unsupported
+    features or compatibility issues.
   - Expect a long first load: `VLLM_ENGINE_READY_TIMEOUT_S=3600` is set for that reason.
   - On AMD, the generated command sets `VLLM_USE_BREAKABLE_CUDAGRAPH=1`. DeepSeek-V4.1-Flash does not support `torch.compile`, and the ROCm sparse SWA backend only supports uniform-batch CUDA graphs. Without breakable CUDA graphs, default `FULL_AND_PIECEWISE` dies at capture.
 

@@ -26,6 +26,7 @@ meta:
 model:
   model_id: "moonshotai/Kimi-K3"
   min_vllm_version: "0.27.1"
+  default_frontend: rust
   install:
     docker:
       note: "Use a K3-enabled nightly image after the integration lands. CUDA 13 (cu130) build only — no -cu129 tag; the host needs an r580+ NVIDIA driver."
@@ -238,7 +239,6 @@ hardware_overrides:
     extra_env:
       VLLM_ENGINE_READY_TIMEOUT_S: "3600"
       VLLM_USE_V2_MODEL_RUNNER: "1"
-      VLLM_USE_RUST_FRONTEND: "1"
       PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
       
   blackwell:
@@ -267,7 +267,6 @@ hardware_overrides:
       VLLM_ALLREDUCE_USE_FLASHINFER: "1"
       VLLM_ENGINE_READY_TIMEOUT_S: "3600"
       VLLM_USE_V2_MODEL_RUNNER: "1"
-      VLLM_USE_RUST_FRONTEND: "1"
   amd:
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
@@ -439,7 +438,8 @@ guide: |
 
   - **Cross node communitcation**: Use `--all2all-backend deepep_v2` for RDMA and `--all2all-backend flashinfer_nvlink_one_sided` for NVLink.
   - **MoE backend**: Recommend to use `deep_gemm_mega_moe` for DEP deployments with cross-node NVLink e.g. GB200 and GB300. Note that DeepGEMM MegaMoE is not compatible with cross-node RDMA.
-  - **Model Runner v2 and Rust Frontend**: `VLLM_USE_V2_MODEL_RUNNER=1` and `VLLM_USE_RUST_FRONTEND=1`: Model Runner v2 and Rust Frontend fully supports this model and can be enabled if needed.
+  - **Rust Frontend**: Selected by default in the command builder. Use the Frontend selector to switch to Python if you encounter unsupported features or compatibility issues.
+  - **Model Runner v2**: `VLLM_USE_V2_MODEL_RUNNER=1`: Model Runner v2 fully supports this model and can be enabled if needed.
   - **Tool calling**: K3 occasionally emit a tool-call format its own parser doesn't expect. Suggest to run do schema validation and retry.
   - **AMD (MI355X / MI350X, CDNA4 gfx950)**: set AITER_SITUV2_A8W4 to 0 along with AITER master flag to use aiter a16w4 MoE path. Set it to 1 to use aiter a8w4 MoE path.
   - **max-model-len**: Adjust max-model-len for different benchmark scenarios for best performance.
