@@ -32,6 +32,8 @@ features:
     args:
       - "--max-model-len"
       - "262144"
+    env:
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
 
 opt_in_features:
   - long_context
