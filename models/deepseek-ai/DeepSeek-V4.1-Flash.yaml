@@ -100,6 +100,10 @@ hardware_overrides:
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
       VLLM_ROCM_USE_AITER_MOE: "1"
+      # DeepseekV41ForCausalLM does not support torch.compile. The ROCm sparse
+      # SWA backend only reports UNIFORM_BATCH, so default FULL_AND_PIECEWISE
+      # cannot start unless breakable CUDA graphs are on.
+      VLLM_USE_BREAKABLE_CUDAGRAPH: "1"
 
 strategy_overrides:
   single_node_tp:
@@ -252,6 +256,7 @@ guide: |
     `VLLM_USE_RUST_FRONTEND=1`. If you encounter any compatibility issues, remove
     this environment variable to use the Python frontend.
   - Expect a long first load: `VLLM_ENGINE_READY_TIMEOUT_S=3600` is set for that reason.
+  - On AMD, the generated command sets `VLLM_USE_BREAKABLE_CUDAGRAPH=1`. DeepSeek-V4.1-Flash does not support `torch.compile`, and the ROCm sparse SWA backend only supports uniform-batch CUDA graphs. Without breakable CUDA graphs, default `FULL_AND_PIECEWISE` dies at capture.
 
   ## Verifying
 
