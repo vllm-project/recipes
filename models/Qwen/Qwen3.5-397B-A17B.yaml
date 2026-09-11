@@ -51,7 +51,7 @@ features:
     modes:
       mtp:
         description: "Native MTP head, 3 draft tokens."
-        variants: [default, nvfp4, gptq_int4]
+        variants: [default, nvfp4, fp8, gptq_int4]
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":3}'

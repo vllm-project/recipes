@@ -51,7 +51,7 @@ features:
       mtp:
         label: "MTP"
         description: "Native MTP head, 3 draft tokens."
-        variants: [default, fp8, nvfp4]
+        variants: [default, fp8, nvfp4, redhat_fp8]
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":3}'
