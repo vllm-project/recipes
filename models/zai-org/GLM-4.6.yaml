@@ -61,6 +61,32 @@ variants:
     vram_minimum_gb: 428
     description: "Native FP8 checkpoint with minimal accuracy loss — recommended for cost-efficient serving"
 
+  redhat_fp8:
+    model_id: "RedHatAI/GLM-4.6-FP8-dynamic"
+    precision: fp8
+    label: "FP8 Dynamic (RedHat)"
+    vram_minimum_gb: 429
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_fp8_plain:
+    model_id: "RedHatAI/GLM-4.6-FP8"
+    precision: fp8
+    label: "FP8 (RedHat)"
+    vram_minimum_gb: 429
+    description: "RedHatAI FP8 quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  nvfp4:
+    model_id: "RedHatAI/GLM-4.6-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 223
+    description: "RedHatAI NVFP4 quantization"
+
 compatible_strategies:
   - single_node_tp
   - single_node_tep

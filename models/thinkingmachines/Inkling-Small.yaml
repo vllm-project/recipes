@@ -207,6 +207,14 @@ variants:
         extra_env:
           VLLM_ROCM_USE_AITER: "1"
           VLLM_ROCM_USE_AITER_MOE: "1"
+  fp8:
+    model_id: "RedHatAI/Inkling-Small-FP8-dynamic"
+    precision: fp8
+    vram_minimum_gb: 332
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
 
 compatible_strategies:
   - single_node_tp

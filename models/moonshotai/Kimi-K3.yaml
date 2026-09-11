@@ -164,7 +164,13 @@ variants:
       ascend_910c:
         docker_image: "quay.io/ascend/vllm-ascend:kimi-k3-a3"
     description: "ModelSlim INT4 W4A8 for Ascend NPU. Requires --quantization ascend. Validated on 4× 910C mixed P/D."
-    
+
+  fp8:
+    model_id: "RedHatAI/Kimi-K3-FP8-BLOCK"
+    precision: fp8
+    vram_minimum_gb: 3360
+    description: "RedHatAI FP8 block quantization"
+
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
