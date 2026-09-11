@@ -32,9 +32,15 @@ model:
   base_args: []
   base_env: {}
 
-features: {}
+features:
+  spec_decoding:
+    description: "Eagle3 speculative decoding with externally trained draft model; the served checkpoint is unchanged."
+    args:
+      - "--speculative-config"
+      - '{"model":"RedHatAI/Llama-3.3-70B-Instruct-speculator.eagle3","num_speculative_tokens":3,"method":"eagle3"}'
 
-opt_in_features: []
+opt_in_features:
+  - spec_decoding
 
 variants:
   default:
@@ -52,6 +58,16 @@ variants:
       - "fp8"
     extra_env: {}
 
+  redhat_fp8:
+    model_id: "RedHatAI/Llama-3.3-70B-Instruct-FP8-dynamic"
+    precision: fp8
+    label: "FP8 (RedHat)"
+    vram_minimum_gb: 84
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
   nvfp4:
     model_id: "nvidia/Llama-3.3-70B-Instruct-NVFP4"
     precision: nvfp4
@@ -60,6 +76,23 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
+
+  redhat_fp8_block:
+    model_id: "RedHatAI/Llama-3.3-70B-Instruct-FP8-block"
+    precision: fp8
+    label: "FP8 Block (RedHat)"
+    vram_minimum_gb: 84
+    description: "RedHatAI FP8 block quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_nvfp4:
+    model_id: "RedHatAI/Llama-3.3-70B-Instruct-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 46
+    description: "RedHatAI NVFP4 quantization"
 
 compatible_strategies:
   - single_node_tp

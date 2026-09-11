@@ -71,6 +71,13 @@ variants:
       - "--kv-cache-dtype"
       - "fp8"
 
+  redhat_nvfp4:
+    model_id: "RedHatAI/DeepSeek-V3.2-NVFP4-FP8-BLOCK"
+    precision: nvfp4
+    label: "NVFP4+FP8 Block (RedHat)"
+    vram_minimum_gb: 430
+    description: "RedHatAI NVFP4+FP8 block mixed-precision checkpoint"
+
 compatible_strategies:
   - single_node_tp
   - single_node_tep
