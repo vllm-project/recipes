@@ -3,9 +3,9 @@ meta:
   title: "DeepSeek-V4.1-Flash"
   slug: "deepseek-v4.1-flash"
   provider: "DeepSeek"
-  description: "DeepSeek V4.1 Flash vision-language MoE (522B total; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
+  description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-09-10
+  date_updated: 2026-09-11
   difficulty: advanced
   tasks:
     - text
@@ -29,7 +29,7 @@ model:
     nvidia: "vllm/vllm-openai:deepseekv41-flash-0909"
     amd: "vllm/vllm-openai-rocm:deepseekv41-flash-0909"
   architecture: moe
-  parameter_count: "522B"
+  parameter_count: "552B"
   active_parameters: "8-16B"
   context_length: 1048576
   base_args:
@@ -39,7 +39,7 @@ model:
     VLLM_ENGINE_READY_TIMEOUT_S: "3600"
   install:
     docker:
-      note: "Serve from the dedicated vllm/vllm-openai:deepseekv41-flash image — no pip wheel carries the DeepSeek-V4.1 architecture."
+      note: "Serve from the dedicated vllm/vllm-openai:deepseekv41-flash-0909 image — no pip wheel carries the DeepSeek-V4.1 architecture."
     pip: false
 
 dependencies: []
@@ -129,11 +129,15 @@ strategy_overrides:
 guide: |
   ## Overview
 
-  DeepSeek-V4.1 is a vision-language Mixture-of-Experts model: **522B total parameters,
-  8B active per prompt token and 16B per output token**, 40 transformer layers at hidden
-  size 5120, with a 32-layer ViT and aligner in front of the text stack. Five things
-  distinguish it from V4:
+  DeepSeek-V4.1 is a vision-language Mixture-of-Experts model: **552B backbone parameters
+  plus 196B of Engram memory, 8B active per prompt token and 16B per output token**, 40
+  transformer layers at hidden size 5120, with a 32-layer ViT and aligner in front of the
+  text stack. Six things distinguish it from V4:
 
+  - **Causal encoder-decoder.** The 40 layers split into a 20-layer encoder and a
+    20-layer decoder, and the decoder's global KV is projected from the encoder's final
+    hidden state instead of being computed layer by layer. Prefill therefore only runs
+    the encoder half, which is where the 8B-prefill / 16B-decode split comes from.
   - **Two-tier sparse attention.** Every layer attends over a 128-token sliding window.
     Layers that carry a compression ratio add compressed KV latents reaching further
     back, pooled by a learned softmax gate. A small side attention — the *indexer*,
@@ -142,8 +146,8 @@ guide: |
     (2, 8, 14, 20) actually compress their own KV; the rest read that cache. V4.1 uses
     only compression ratios 1 and 2, where V4 used 4 and 128.
   - **Engram n-gram memory.** Layers 1 and 14 each own a hash table of ~384M rows x 256
-    dims, looked up by 4-gram hashes of the input and written into the residual stream
-    through a learned gate. These two tables alone are **196.6B parameters (~189 GiB)** —
+    dims, looked up by 2-, 3- and 4-gram hashes of the input and written into the residual
+    stream through a learned gate. These two tables alone are **196.6B parameters (~183 GiB)** —
     plan capacity for them, they dominate everything except the experts.
   - **Hyper-Connections.** The residual stream is carried as 4 parallel copies; each
     sublayer derives its own pre/post/combine coefficients from the stream, with the
@@ -193,6 +197,11 @@ guide: |
   thinking off. `"minimal"` and `"medium"` are rejected — they are not part of this
   model's set.
 
+  Note that the DeepSeek API maps its `low` / `high` / `max` tiers to 50 / 75 / 100,
+  while the open-source prompt encoder (and therefore vLLM) maps `low` / `high` /
+  `xhigh` / `max` to 25 / 50 / 75 / 100. A request tuned at `high` on the API runs at
+  effort 50 here; pass an integer if you need parity.
+
   > **With both keys unset, thinking is ON at effort 50.** The do-nothing config is
   > the most verbose one, so a request with a small `max_tokens` spends its budget on
   > the trace and returns empty `content` with `finish_reason=length`. That reads as a
@@ -209,8 +218,20 @@ guide: |
   )
   ```
 
+  DeepSeek's published numbers use `temperature=1.0`, `top_p=0.95` and effort 100 with
+  `max_tokens` of at least 256K. The tech report notes that efforts of 60-80 recover most
+  of that accuracy at well under half the tokens, so reserve `max` for hard tasks.
+
   Tool calls are wrapped in DSML tag blocks rather than JSON fences, and tool output
   comes back in `<tool_result>` tags.
+
+  ## Speculative decoding
+
+  DSpark is the only speculative method for this checkpoint; V4.1 dropped the MTP module
+  that V3 and V4 trained alongside the backbone. **Speculative decoding** enables a 5-token
+  block with adaptive verification (see the feature description). Acceptance depends on
+  the workload, so measure it on your own traffic before sizing a deployment around it.
+  The drafter's experts add roughly 14B parameters to the load.
 
   ## Serving text-only
 
@@ -235,23 +256,32 @@ guide: |
 
   The checkpoint is roughly **511 GB on disk** (476 GiB), which breaks down as:
 
-  | Component | Params | Stored |
+  | Component | Entries | Stored |
   |---|---:|---:|
   | Routed + DSpark experts (MXFP4) | 557.2B | 259.5 GiB |
-  | Engram tables (MXFP8) | 196.6B | 188.8 GiB |
-  | Attention, norms, routers (MXFP8) | 6.0B | 5.6 GiB |
-  | Embedding + LM head + misc | 3.0B | 5.8 GiB |
-  | Quantization scales | 23.6B | 21.9 GiB |
+  | Engram tables (FP8) | 196.6B | 183.1 GiB |
+  | Attention, dense projections, routers (FP8) | 7.4B | 6.9 GiB |
+  | Embedding + LM head (BF16), norms (FP32) | 2.0B | 3.9 GiB |
+  | UE8M0 block scales | 23.6B | 21.9 GiB |
+
+  DeepSeek's 552B backbone figure covers the routed experts, attention and embeddings;
+  the Engram tables, the ~14B DSpark drafter and the block scales sit outside it.
 
   `vram_minimum_gb: 614` is that total times the schema's 1.2 headroom factor. It fits
   one GB200 NVL4 tray (768 GB) at TP4, or one 8-GPU H200 node (1128 GB) with room for
-  KV cache, but 1M context will need the context or batch capped — measure before
-  assuming.
+  KV cache.
+
+  KV cache is a small share of that budget. The compressed latents are shared across
+  layers and trained to be stored in FP4, and DeepSeek puts the resulting global KV at
+  **890 bytes per token**, about a quarter of V4-Flash; by that accounting a full 1M-token
+  prompt holds under 1 GB of global KV, plus a fixed 128-token sliding window per layer.
+  Weights and batch size, not cache, set the capacity limit — still, measure before
+  assuming a given context/batch fits.
 
   ## Prerequisites
 
-  - The `vllm/vllm-openai:deepseekv41-flash` image (vLLM 0.30.0+). No pip wheel serves this
-    architecture, so the Install block only offers Docker.
+  - The `vllm/vllm-openai:deepseekv41-flash-0909` image (vLLM 0.30.0+). No pip wheel serves
+    this architecture, so the Install block only offers Docker.
   - The Rust OpenAI frontend is selected by default in the command builder. Switch
     to Python if you encounter unsupported features or compatibility issues.
   - Expect a long first load: `VLLM_ENGINE_READY_TIMEOUT_S=3600` is set for that reason.
@@ -274,5 +304,6 @@ guide: |
   ## References
 
   - [Model card](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash)
+  - [Technical report](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/main/DeepSeek_V41_Tech_Report.pdf)
   - [DeepSeek-V4-Flash recipe](/deepseek-ai/DeepSeek-V4-Flash) — the V4 sibling this diverges from
   - [DeepSeek-V3.2-Exp recipe](/deepseek-ai/DeepSeek-V3.2-Exp) — where the indexer first appeared
