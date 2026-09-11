@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -946,6 +946,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // by the recipe. Same helpers as synthesis, so a disabled pill and an
   // empty command can't disagree.
   const kvOffloadOptions = taxonomy.kv_offload || {};
+  const kvOffloadAllowedByStrategy = strategyAllowsKvOffload(strategies[activeServingStrategy]);
   // Intel XPU: no KV-offload layer is validated on this backend, so gate every
   // option off (and force the effective selection to Off further down).
   const kvOffloadDisabledByHw = hwProfile?.generation === "xpu";
@@ -970,6 +971,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     if (!isKvOffloadBrandSupported(opt, hwProfile)) {
       return `${name} needs a CUDA, ROCm or XPU device — not available on ${hwProfile.brand ? `${hwProfile.brand} ` : ""}${hwProfile.display_name || hwId} backends.`;
     }
+    if (!kvOffloadAllowedByStrategy) {
+      return `${name} isn't offered under ${strategies[activeServingStrategy]?.display_name || activeServingStrategy}, which manages its own KV layout across the DP ranks.`;
+    }
     return activeServingStrategy === "pd_cluster"
       ? `${name} can't compose with PD cluster, which owns --kv-transfer-config. (Mooncake composes with PD instead.)`
       : `${name} works with: ${(opt?.strategies || []).map((s) => strategies[s]?.display_name || s).join(", ")}.`;
@@ -992,6 +996,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       : kvOffloadOptions[kvOffload]
       ? (kvOptAllowed(kvOffload) ? kvOffload : "")
       : compatibleKvStoreStrategies.includes(kvOffload) && hwScalable
+          && kvOffloadAllowedByStrategy
           && isKvStoreBrandSupported(hwProfile) && isKvStoreSupported(kvOffload)
         ? kvOffload
         : "";
@@ -2427,10 +2432,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   // extra store process).
                   const supported = compatibleKvStoreStrategies.filter((s) => isKvStoreSupported(s));
                   const brandOk = isKvStoreBrandSupported(hwProfile);
-                  const selectable = !isXpuHardware && hwScalable && brandOk && supported.length > 0;
+                  const selectable = !isXpuHardware && hwScalable && brandOk
+                    && kvOffloadAllowedByStrategy && supported.length > 0;
                   const defaultId = supported[0];
                   const disabledTitle = isXpuHardware
                     ? "Mooncake isn't validated on Intel XPU — serve directly with the Docker image."
+                    : !kvOffloadAllowedByStrategy
+                    ? `${strategies[activeServingStrategy]?.display_name || activeServingStrategy} already fronts its ranks with its own router, which a Mooncake deployment would replace. Pick another strategy to layer Mooncake on.`
                     : !brandOk
                     ? `Mooncake's transfer engine ships CUDA and ROCm builds only — not available on ${hwProfile.brand || ""} ${hwProfile.display_name || hwId} backends.`
                     : !hwScalable
@@ -3128,9 +3136,12 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
   // a feature's `companion:` or the active kv_offload option's, e.g.
   // LMCache's `lmcache server`). When any are active the block grows a
   // PD-style tab bar in LAUNCH ORDER — companions sit LEFT of vLLM Serve
-  // because they must be running before it starts. With none, the classic
-  // single-command layout renders untouched.
+  // because they must be running before it starts, unless one marks itself
+  // `after` (a router that fronts the engine it proxies). With none, the
+  // classic single-command layout renders untouched.
   const hasCompanions = Array.isArray(companions) && companions.length > 0;
+  const preCompanions = hasCompanions ? companions.filter((c) => !c.after) : [];
+  const postCompanions = hasCompanions ? companions.filter((c) => c.after) : [];
   // Falls back to the vLLM view when the selected companion's source was
   // toggled off (stale tab state).
   const activeCompanion = hasCompanions && tab !== "vllm"
@@ -3140,7 +3151,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
   // leftmost tab so the launch sequence reads left to right from step 1.
   const companionIds = hasCompanions ? companions.map((c) => c.feature).join(",") : "";
   useEffect(() => {
-    setTab(hasCompanions ? companions[0].feature : "vllm");
+    setTab(preCompanions.length ? preCompanions[0].feature : "vllm");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companionIds]);
   // Companions are host-side helper binaries (not `vllm serve`), so they get
@@ -3174,7 +3185,11 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
           </div>
           <div className="flex items-center justify-between px-4 pt-2 gap-3">
             <CommandTabs
-              tabs={[...companions.map((c) => ({ id: c.feature, label: c.label })), { id: "vllm", label: "vLLM Serve" }].map((t, i) => ({ ...t, step: i + 1 }))}
+              tabs={[
+                ...preCompanions.map((c) => ({ id: c.feature, label: c.label })),
+                { id: "vllm", label: "vLLM Serve" },
+                ...postCompanions.map((c) => ({ id: c.feature, label: c.label })),
+              ].map((t, i) => ({ ...t, step: i + 1 }))}
               current={activeCompanion ? activeCompanion.feature : "vllm"}
               onSelect={setTab}
             />

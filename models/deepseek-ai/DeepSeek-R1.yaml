@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek-R1 is a 671B-parameter MoE reasoning model built on the DeepSeek-V3 architecture, trained with large-scale reinforcement learning for strong chain-of-thought capabilities."
   date_added: 2025-08-01
-  date_updated: 2026-04-17
+  date_updated: 2026-09-10
   difficulty: intermediate
   tasks:
     - text
@@ -18,6 +18,7 @@ meta:
     gb200: verified
     mi300x: verified
     mi325x: verified
+    mi350x: verified
     mi355x: verified
 
 model:
@@ -73,6 +74,7 @@ compatible_strategies:
   - single_node_tp
   - single_node_tep
   - single_node_dep
+  - single_node_dpa_tp
   - multi_node_tp
   - multi_node_tp_pp
   - multi_node_dep
@@ -84,10 +86,11 @@ hardware_overrides:
     extra_args: []
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
-      VLLM_ROCM_USE_AITER_MOE: "1"
-      SAFETENSORS_FAST_GPU: "1"
 
-strategy_overrides: {}
+strategy_overrides:
+  single_node_dpa_tp:
+    extra_env:
+      VLLM_ENGINE_READY_TIMEOUT_S: "1800"
 
 guide: |
   ## Overview
@@ -133,9 +136,7 @@ guide: |
 
   Tensor Parallel + Expert Parallel (TP8+EP) — ROCm:
   ```bash
-  export SAFETENSORS_FAST_GPU=1
   export VLLM_ROCM_USE_AITER=1
-  export VLLM_ROCM_USE_AITER_MOE=1
 
   vllm serve deepseek-ai/DeepSeek-R1 \
     --trust-remote-code \
@@ -150,6 +151,50 @@ guide: |
     --data-parallel-size 8 \
     --enable-expert-parallel
   ```
+
+  ### 8xMI350X / 8xMI355X (DPA+TP)
+
+  Each GPU runs its own attention replica with a private KV cache, while the MoE
+  experts stay tensor-sharded across all eight GPUs. Aggregate KV-cache
+  capacity is roughly 8x that of a single TP8 replica, useful for workloads 
+  benefiting from larger KV capacities. 
+
+  Engine (all eight ranks in one process, listening on 8100):
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ENGINE_READY_TIMEOUT_S=1800
+
+  vllm serve deepseek-ai/DeepSeek-R1 \
+    --trust-remote-code \
+    --port 8100 \
+    --data-parallel-size 8 \
+    --tensor-parallel-size 1
+  ```
+
+  Router (client-facing on 8000, spreads requests across the eight DP ranks):
+  ```bash
+  uv pip install vllm-router
+
+  vllm-router \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --policy consistent_hash \
+    --intra-node-data-parallel-size 8 \
+    --worker-urls http://localhost:8100 \
+    --worker-startup-timeout-secs 1800
+  ```
+
+  Notes:
+
+  - `--intra-node-data-parallel-size` must match the engine's
+    `--data-parallel-size`. A mismatch silently under-uses ranks.
+  - `consistent_hash` is the policy that makes this worthwhile for chat: it pins
+    a conversation to the rank that already holds its prefix, so the larger
+    aggregate cache actually gets hit. `round_robin` scatters turns of the same
+    conversation across ranks and throws the prefix away.
+  - Start the engine first, then the router; `--worker-startup-timeout-secs 1800`
+    covers the engine's weight load either way.
+  - Send client traffic to the router on port 8000, never to 8100 directly.
 
   ### 4xB200 (FP4)
 
@@ -221,3 +266,4 @@ guide: |
   - [DeepSeek-R1-0528 on Hugging Face](https://huggingface.co/deepseek-ai/DeepSeek-R1-0528)
   - [NVIDIA DeepSeek-R1-FP4](https://huggingface.co/nvidia/DeepSeek-R1-FP4)
   - [vLLM Expert Parallelism docs](https://docs.vllm.ai/en/latest/serving/expert_parallel_deployment.html)
+  - [vLLM Data Parallel deployment docs](https://docs.vllm.ai/en/latest/serving/data_parallel_deployment.html)
