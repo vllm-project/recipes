@@ -12,23 +12,18 @@ meta:
   related_recipes:
     - "zai-org/GLM-5.2"
     - "zai-org/GLM-5.3-Flash"
-  # B300 is where FP8 + DFlash2 was run end-to-end (8-GPU HGX, TEP8, nightly image).
+  # FP8 + DFlash2 ran end-to-end on 8-GPU HGX B300 (TEP8) and on H200.
   default_hardware: b300
   hardware:
     b300: verified
+    h200: verified
     # Validated 2026-08-30 on one Atlas A5 node (8×950PR, TP8, graph mode).
     # Native FP8 path needs vllm-ascend#15346.
     ascend_950pr_8x: verified
 
 model:
   model_id: "zai-org/GLM-5.3"
-  min_vllm_version: "0.28.0"
-  docker_image:
-    nvidia: "vllm/vllm-openai:nightly"
-    amd: "vllm/vllm-openai-rocm:v0.28.0"
-  install:
-    docker:
-      note: "NVIDIA path uses vllm/vllm-openai:nightly — DFlash2 on 8×B300 was verified against this tag. AMD stays on the v0.28.0 ROCm image."
+  min_vllm_version: "0.29.0"
   architecture: moe
   parameter_count: "743B"
   active_parameters: "39B"
@@ -67,7 +62,7 @@ features:
               - '{"method":"mtp","num_speculative_tokens":1,"enforce_eager":true}'
       dflash:
         label: "DFlash2"
-        description: "External DFlash2 drafter (incoai/GLM-5.3-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. Needs the NVIDIA nightly image. num_speculative_tokens must be 7 (block_size 8 minus one)."
+        description: "External DFlash2 drafter (incoai/GLM-5.3-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. num_speculative_tokens must be 7 (block_size 8 minus one)."
         variants: [default]
         hardware:
           amd: unsupported
