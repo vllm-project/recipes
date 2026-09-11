@@ -1519,12 +1519,14 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         const mode = modeKey ? feat.modes[modeKey] : null;
         if (mode) {
           const modeHo = hardwareKeyedValue(mode.hardware_overrides, hwProfile, hwProfileId);
-          Object.assign(env, (modeHo?.env ?? mode.env) || {});
+          const modeEnv = modeHo?.env ?? mode.env;
+          if (modeEnv) Object.assign(env, modeEnv);
         }
         continue;
       }
       const featHo = hardwareKeyedValue(feat.hardware_overrides, hwProfile, hwProfileId);
-      Object.assign(env, (featHo?.env ?? feat.env) || {});
+      const featEnv = featHo?.env ?? feat.env;
+      if (featEnv) Object.assign(env, featEnv);
     }
 
     // NVL4-only env vars are meaningful only on GB200/GB300 trays. Drop them
