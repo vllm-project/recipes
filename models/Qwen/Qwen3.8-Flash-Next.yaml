@@ -3,7 +3,7 @@ meta:
   slug: "qwen3.8-flash-next"
   provider: "Qwen"
   description: "Qwen4 architecture preview with a 125B-parameter main model, supplemented by an additional 51B N-gram embeddings, with 6B parameters activated per token."
-  date_updated: 2026-09-03
+  date_updated: 2026-09-10
   difficulty: advanced
   tasks:
     - multimodal
@@ -67,10 +67,20 @@ features:
     description: "Skip the vision encoder for text-only workloads and leave more memory for KV cache"
     args:
       - "--language-model-only"
+  long_context:
+    description: "YaRN RoPE scaling past the native 262,144-token window to 1,000,000 tokens. Static YaRN holds the scaling factor constant regardless of input length, so leave this off unless you actually serve long prompts; for ~524K, halve the factor to 2.0."
+    args:
+      - "--hf-overrides"
+      - '{"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}'
+      - "--max-model-len"
+      - "1000000"
+    env:
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
 
 opt_in_features:
   - spec_decoding
   - text_only
+  - long_context
 
 variants:
   default:
@@ -326,20 +336,12 @@ guide: |
 
   ### Extend to one million tokens with YaRN
 
-  The checkpoint is native at 262K. For a one-million-token workload, enable static
-  YaRN explicitly; evaluate shorter-context quality before using this as the default.
-
-  ```bash
-  VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
-  vllm serve Qwen/Qwen3.8-Flash-Next-FP8 \
-    --tensor-parallel-size 4 \
-    --hf-overrides '{"rope_parameters":{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":262144}}' \
-    --max-model-len 1000000 \
-    --no-enable-flashinfer-autotune \
-    --enable-auto-tool-choice \
-    --tool-call-parser qwen3_xml \
-    --reasoning-parser qwen3
-  ```
+  The checkpoint is native at 262K. For a one-million-token workload, turn on the
+  **Long Context** feature above: it applies the model card's YaRN RoPE
+  configuration under `text_config` (where this checkpoint carries
+  `rope_parameters`) and raises `--max-model-len` to 1,000,000. Evaluate
+  shorter-context quality before making it the default — static YaRN holds the
+  scaling factor constant regardless of input length.
 
   ## Verifying
 

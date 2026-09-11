@@ -1563,6 +1563,32 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       : null;
     if (envRoleExactHo?.extra_env) Object.assign(env, envRoleExactHo.extra_env);
 
+    // Feature env — the mirror of the feature args block in buildArgs (step 7),
+    // applied after every override layer so an enabled feature wins, and gated
+    // identically (strategy allowlist, Mooncake-companion skip, active mode) so
+    // a feature's env and args can never disagree about whether it's on.
+    // Needed by features whose documented launch line is env + flags rather
+    // than flags alone, e.g. long_context's VLLM_ALLOW_LONG_MAX_MODEL_LEN=1.
+    for (const f of enabledFeatures || []) {
+      const feat = recipe.features?.[f];
+      if (!feat) continue;
+      if (!isFeatureAllowedForStrategy(feat, strategyName)) continue;
+      if (kvComposing && feat.companion?.command) continue;
+      if (feat.modes && typeof feat.modes === "object") {
+        const modeKey = resolveModeKey(feat, f, variant, variantKey, hwProfile, hwProfileId, featureModes?.[f]);
+        const mode = modeKey ? feat.modes[modeKey] : null;
+        if (mode) {
+          const modeHo = hardwareKeyedValue(mode.hardware_overrides, hwProfile, hwProfileId);
+          const modeEnv = modeHo?.env ?? mode.env;
+          if (modeEnv) Object.assign(env, modeEnv);
+        }
+        continue;
+      }
+      const featHo = hardwareKeyedValue(feat.hardware_overrides, hwProfile, hwProfileId);
+      const featEnv = featHo?.env ?? feat.env;
+      if (featEnv) Object.assign(env, featEnv);
+    }
+
     // NVL4-only env vars are meaningful only on GB200/GB300 trays. Drop them
     // for any other hardware regardless of where they came from (strategy YAML
     // or recipe-level pd_cluster override).

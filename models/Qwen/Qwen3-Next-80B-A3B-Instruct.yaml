@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Advanced Qwen3-Next MoE model (80B total / 3B active) with hybrid attention, highly sparse experts, and multi-token prediction."
   date_added: 2025-09-11
-  date_updated: 2026-04-17
+  date_updated: 2026-09-10
   difficulty: intermediate
   tasks:
     - text
@@ -39,9 +39,19 @@ features:
       - "--speculative-config"
       - '{"method":"qwen3_next_mtp","num_speculative_tokens":2}'
       - "--no-enable-chunked-prefill"
+  long_context:
+    description: "YaRN RoPE scaling to the model card's validated 1M-token context (factor 4.0 over the native 262,144). Static YaRN holds the scaling factor constant regardless of input length, so leave this off unless you actually serve long prompts."
+    args:
+      - "--hf-overrides"
+      - '{"rope_parameters":{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":262144}}'
+      - "--max-model-len"
+      - "1010000"
+    env:
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
 
 opt_in_features:
   - spec_decoding
+  - long_context
 
 variants:
   default:

@@ -4,7 +4,7 @@ meta:
   provider: "Hunyuan (Tencent)"
   description: "Tencent Hunyuan A13B instruct-tuned MoE language model with AITER-accelerated AMD ROCm deployment"
   date_added: 2026-04-11
-  date_updated: 2026-04-17
+  date_updated: 2026-09-10
   difficulty: beginner
   tasks:
     - text
@@ -26,9 +26,17 @@ model:
     - "--trust-remote-code"
   base_env: {}
 
-features: {}
+features:
+  long_context:
+    description: "Raise the context window from the config's default 32,768 to the model's full 262,144 tokens. The 32K cap in config.json exists to avoid OOM on smaller nodes, so enable this only with enough KV-cache headroom."
+    args:
+      - "--max-model-len"
+      - "262144"
+    env:
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
 
-opt_in_features: []
+opt_in_features:
+  - long_context
 
 variants:
   default:
