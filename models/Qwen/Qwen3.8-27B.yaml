@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "27B-parameter dense hybrid-attention model with linear attention on 48 of 64 layers, a vision tower, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-14
-  date_updated: 2026-08-27
+  date_updated: 2026-09-10
   difficulty: beginner
   tasks:
     - multimodal
@@ -125,10 +125,20 @@ features:
     args:
       - "--mm-encoder-tp-mode"
       - "data"
+  long_context:
+    description: "YaRN RoPE scaling past the native 262,144-token window to 1,000,000 tokens. Static YaRN holds the scaling factor constant regardless of input length, so leave this off unless you actually serve long prompts; for ~524K, halve the factor to 2.0."
+    args:
+      - "--hf-overrides"
+      - '{"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}'
+      - "--max-model-len"
+      - "1000000"
+    env:
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
 
 opt_in_features:
   - spec_decoding
   - text_only
+  - long_context
 
 # vram_minimum_gb is ceil(real safetensors bytes in GB x 1.2) for every variant, not
 # params x bytes_per_param: the quantized builds are not uniformly 4-bit.
@@ -435,19 +445,17 @@ guide: |
   - `{"reasoning_effort": "low"}` — adaptive thinking. `xhigh` (default), `medium`, `low`.
 
   ## Processing Ultra-Long Texts
-  The model has 262k native context length and it can be extended to 1M with --max-model-len
-  flag. The best value can be picked based on the use case and GPU ram usage tradeoff.
 
-  For example, to enable full 1M context length on this model:
-
-  ```bash
-  vllm serve Qwen/Qwen3.8-27B \
-    --max-model-len 1010000 \
-    --hf-overrides '{"text_config": {"max_position_embeddings": 1010000}}' \
-    ...
-  ```
+  The model is native at 262k. To extend it to 1M, turn on the **Long Context**
+  feature above: it applies the model card's YaRN RoPE configuration via
+  `--hf-overrides` and raises `--max-model-len` to 1,000,000. Static YaRN holds
+  the scaling factor constant regardless of input length, so leave it off unless
+  you actually serve long prompts; for a ~524K workload, halve the card's
+  `factor` to `2.0`.
 
   Note the override is nested under `text_config` here, where the 2.4T takes it flat.
+
+  See the [model card](https://huggingface.co/Qwen/Qwen3.8-27B#processing-ultra-long-texts) for the full parameter reference.
 
   ## Troubleshooting
 

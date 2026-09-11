@@ -4,7 +4,7 @@ meta:
   provider: "NVIDIA"
   description: "NVIDIA Nemotron-3-Nano Mamba-hybrid MoE (30B total / ~3B active) with BF16 and FP8 variants"
   date_added: 2026-01-08
-  date_updated: 2026-04-17
+  date_updated: 2026-09-10
   difficulty: intermediate
   tasks:
     - text
@@ -42,8 +42,16 @@ features:
       - "nano_v3_reasoning_parser.py"
       - "--reasoning-parser"
       - "nano_v3"
+  long_context:
+    description: "Raise the context window from the default 256K to the model's full 1M tokens. Needs a large KV-cache budget — lower --max-model-len if you are memory-constrained."
+    args:
+      - "--max-model-len"
+      - "1048576"
+    env:
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
 
-opt_in_features: []
+opt_in_features:
+  - long_context
 
 variants:
   default:
