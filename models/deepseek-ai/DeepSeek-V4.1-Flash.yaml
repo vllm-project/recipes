@@ -252,9 +252,8 @@ guide: |
 
   - The `vllm/vllm-openai:deepseekv41-flash` image (vLLM 0.30.0+). No pip wheel serves this
     architecture, so the Install block only offers Docker.
-  - The Rust OpenAI frontend is selected by default in the command builder. Use
-    the Frontend selector to switch to Python if you encounter unsupported
-    features or compatibility issues.
+  - The Rust OpenAI frontend is selected by default in the command builder. Switch
+    to Python if you encounter unsupported features or compatibility issues.
   - Expect a long first load: `VLLM_ENGINE_READY_TIMEOUT_S=3600` is set for that reason.
   - On AMD, the generated command sets `VLLM_USE_BREAKABLE_CUDAGRAPH=1`. DeepSeek-V4.1-Flash does not support `torch.compile`, and the ROCm sparse SWA backend only supports uniform-batch CUDA graphs. Without breakable CUDA graphs, default `FULL_AND_PIECEWISE` dies at capture.
 
