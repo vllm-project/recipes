@@ -16,6 +16,10 @@ const NVL4_ONLY_ENV_KEYS = new Set([
 ]);
 const NVL4_HW_IDS = new Set(["gb200", "gb300"]);
 
+export function resolveFrontend(recipe, frontend = recipe.model?.default_frontend) {
+  return frontend === "rust" ? "rust" : "python";
+}
+
 /**
  * Normalize gpu_generation to a single string for hardware_overrides lookup.
  */
@@ -1034,7 +1038,7 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfil
  * Returns: { command, env, deployType } for single_node/multi_node,
  *          { prefillCommand, decodeCommand, routerConfig, env, deployType } for pd_cluster.
  */
-export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null) {
+export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
@@ -1591,6 +1595,9 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       }
     }
 
+    if (resolveFrontend(recipe, frontend) === "rust") {
+      env.VLLM_USE_RUST_FRONTEND = "1";
+    }
     return env;
   }
 

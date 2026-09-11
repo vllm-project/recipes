@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, resolveFrontend } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -373,6 +373,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   // ── State ──
   const [variant, setVariant] = useState(searchParams.get("variant") || "default");
+  const [frontend, setFrontend] = useState(() =>
+    resolveFrontend(recipe, searchParams.get("frontend") || undefined)
+  );
 
   // Active omni task — drives the `vllm serve --omni` model_id swap (Wan2.2's
   // T2V/I2V/TI2V) and the cURL endpoint/body shown in the Try-it popover.
@@ -443,6 +446,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     }
 
     const rs = loadRecipeState(recipe.hf_id);
+    if (!searchParams.get("frontend") && ["python", "rust"].includes(rs.frontend)) {
+      setFrontend(resolveFrontend(recipe, rs.frontend));
+    }
     if (!searchParams.get("strategy") && rs.strategy &&
         effectiveCompatibleStrategies(recipe).includes(rs.strategy) &&
         strategies[rs.strategy]?.deploy_type !== "kv_store_lb") {
@@ -1110,9 +1116,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
         }
         : null;
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx });
+      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend);
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend]
   );
 
   // Visual feedback when any rendered command changes. Covers single-node
@@ -1124,7 +1130,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     || result.prefill?.command
     || result.vllm?.command
     || "")
-    + (omniTask ? `|task:${omniTask}` : "");
+    + (omniTask ? `|task:${omniTask}` : "")
+    + `|frontend:${frontend}`;
   const [changed, setChanged] = useState(false);
   useEffect(() => {
     setChanged(true);
@@ -1149,6 +1156,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   );
 
   // ── Handlers ──
+  const selectFrontend = (value) => {
+    const next = resolveFrontend(recipe, value);
+    setFrontend(next);
+    syncUrl({ frontend: next });
+    saveRecipeState(recipe.hf_id, { frontend: next });
+  };
+
   const selectOmniTask = (key) => {
     setOmniTask(key);
     // Default task key is omitted from the URL so a fresh page-load lands on
@@ -2679,6 +2693,26 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             </ConfigRow>
           )}
 
+          <ConfigRow label="Frontend">
+            <PillGroup>
+              <Pill
+                active={frontend === "rust"}
+                pressed={frontend === "rust"}
+                onClick={() => selectFrontend("rust")}
+              >
+                <Zap size={11} className="inline-block mr-1 -mt-0.5" fill="currentColor" aria-hidden="true" />
+                <span className="font-semibold">Rust</span>
+              </Pill>
+              <Pill active={frontend === "python"} pressed={frontend === "python"} onClick={() => selectFrontend("python")}>
+                <span className="font-semibold">Python</span>
+              </Pill>
+            </PillGroup>
+            <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+              The experimental Rust frontend can improve throughput and latency, especially under high concurrency.
+              {" "}Switch to Python if you encounter unsupported features or compatibility issues.
+            </p>
+          </ConfigRow>
+
           {/* Features */}
           {Object.keys(recipe.features || {}).length > 0 && (
             <ConfigRow label="Features">
@@ -2947,7 +2981,7 @@ function HwStatusDot({ status }) {
   return <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 shrink-0 bg-green-500" aria-hidden />;
 }
 
-function Pill({ active, onClick, title, dimmed, disabled, children }) {
+function Pill({ active, onClick, title, dimmed, disabled, pressed, children }) {
   // disabled takes precedence over active — an "active but disabled" pill should
   // clearly look disabled (e.g. PD that was pre-selected but no longer fits).
   // dimmed de-emphasizes a selectable pill (dashed border, muted text).
@@ -2963,6 +2997,7 @@ function Pill({ active, onClick, title, dimmed, disabled, children }) {
       onClick={onClick}
       disabled={disabled}
       aria-disabled={disabled}
+      aria-pressed={pressed}
       aria-label={typeof title === "string" ? title : undefined}
       className={`inline-flex items-center rounded-lg border px-2.5 py-1.5 text-xs transition-all ${style} ${disabled ? "pointer-events-none" : ""}`}
     >
