@@ -13,10 +13,12 @@ meta:
   hardware:
     h100: verified
     h200: verified
+    arc_pro_b60: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16"
-  min_vllm_version: "0.11.2"
+  min_vllm_version: "0.17.0"
   architecture: moe
   parameter_count: "30B"
   active_parameters: "3B"
@@ -60,9 +62,11 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP8: "1"
-      VLLM_FLASHINFER_MOE_BACKEND: "throughput"
+    hardware_overrides:
+      nvidia:
+        extra_args:
+          - "--moe-backend"
+          - "flashinfer_cutlass"
 
 compatible_strategies:
   - single_node_tp
@@ -71,11 +75,15 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
 
+
 kv_offload_support:
   offloading_cpu: verified
   offloading_fs: verified
 
-hardware_overrides: {}
+hardware_overrides:
+  xpu:
+    extra_args:
+      - "--enforce-eager"
 
 strategy_overrides: {}
 
@@ -88,15 +96,15 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x H100/H200 or comparable; DGX Spark and Jetson Thor supported
-  - vLLM >= 0.11.2 (0.12.0 recommended for full support)
+  - Hardware: 1x H100/H200 or comparable; DGX Spark, Jetson Thor, and Intel Arc Pro B60/B70 supported
+  - vLLM >= 0.17.0 (0.28.0 recommended for full support)
   - Docker with NVIDIA Container Toolkit (recommended)
 
   ### Pull Docker Image
 
   ```bash
-  docker pull --platform linux/amd64 vllm/vllm-openai:v0.12.0
-  docker tag vllm/vllm-openai:v0.12.0 vllm/vllm-openai:deploy
+  docker pull --platform linux/amd64 vllm/vllm-openai:v0.28.0
+  docker tag vllm/vllm-openai:v0.28.0 vllm/vllm-openai:deploy
   ```
 
   DGX Spark users can build from source (see README) or use the NGC image:
@@ -111,19 +119,23 @@ guide: |
   docker pull ghcr.io/nvidia-ai-iot/vllm:latest-jetson-thor
   ```
 
+  Intel XPU (B60 / B70):
+
+  ```bash
+  docker pull vllm/vllm-openai-xpu:latest
+  ```
+
   ## Launch commands
 
   FP8 with FlashInfer MoE backend (Blackwell/Hopper):
 
   ```bash
-  export VLLM_USE_FLASHINFER_MOE_FP8=1
-  export VLLM_FLASHINFER_MOE_BACKEND=throughput
-
   vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8 \
     --trust-remote-code \
     --async-scheduling \
     --kv-cache-dtype fp8 \
-    --tensor-parallel-size 1
+    --tensor-parallel-size 1 \
+    --moe-backend flashinfer_cutlass
   ```
 
   BF16 (with reasoning + tool parsers — typical for Spark/Thor):
@@ -140,6 +152,47 @@ guide: |
     --tool-call-parser qwen3_coder \
     --reasoning-parser-plugin nano_v3_reasoning_parser.py \
     --reasoning-parser nano_v3
+  ```
+
+  ### Intel XPU (B60, B70)
+
+  Validated on 4× Intel Arc Pro B60 / B70 (B60 24 GB, B70 32 GB per card) with the
+  official vLLM XPU image `vllm/vllm-openai-xpu:latest`.
+
+  FP8:
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-xpu:latest \
+    nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8 \
+    --trust-remote-code \
+    --async-scheduling \
+    --kv-cache-dtype fp8 \
+    --tensor-parallel-size 4 \
+    --enforce-eager \
+    --max-model-len 8192
+  ```
+
+  BF16:
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-xpu:latest \
+    nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
+    --trust-remote-code \
+    --async-scheduling \
+    --kv-cache-dtype auto \
+    --tensor-parallel-size 4 \
+    --enforce-eager \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder \
+    --reasoning-parser-plugin nano_v3_reasoning_parser.py \
+    --reasoning-parser nano_v3 \
+    --max-model-len 8192
   ```
 
   Key flags:

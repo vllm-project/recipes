@@ -178,7 +178,7 @@ guide: |
   ### DGX Spark (GB10)
 
   The NVFP4 variant runs on a single DGX Spark (GB10) at TP=1 inside the
-  `vllm/vllm-openai:v0.24.0-ubuntu2404` container. The command below is the optimal
+  `vllm/vllm-openai:v0.28.0-ubuntu2404` container. The command below is the optimal
   config tuned end-to-end on DGX Spark: the full 262144-token context fits with an FP8
   KV cache and a float32 Mamba SSM cache (`VLLM_ALLOW_LONG_MAX_MODEL_LEN=1` allows the
   long context, `VLLM_FLOAT32_MATMUL_PRECISION=high` keeps the Mamba scan numerically
@@ -189,7 +189,7 @@ guide: |
   latency:
 
   ```bash
-  # Use container: vllm/vllm-openai:v0.24.0-ubuntu2404
+  # Use container: vllm/vllm-openai:v0.28.0-ubuntu2404
 
   VLLM_FLOAT32_MATMUL_PRECISION="high" \
   VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
@@ -221,7 +221,7 @@ guide: |
   - **Set `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1`** to allow the model to use the full context length.
 
   ```bash
-  # Use container: vllm/vllm-openai:v0.24.0-ubuntu2404
+  # Use container: vllm/vllm-openai:v0.28.0-ubuntu2404
 
   VLLM_FLOAT32_MATMUL_PRECISION="high" \
   VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \

@@ -58,9 +58,6 @@ hardware_overrides:
       - "16384"
       - "--gpu-memory-utilization"
       - "0.8"
-  blackwell:
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8: "1"
   amd:
     extra_args:
       - "--attention-backend"
@@ -172,12 +169,12 @@ guide: |
   Blackwell (B200) with FlashInfer MXFP4+MXFP8 MoE:
 
   ```bash
-  export VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8=1
-
   vllm serve openai/gpt-oss-20b
   ```
 
-  Hopper (H100/H200): same as Blackwell minus `--kv-cache-dtype fp8` and the FlashInfer env var.
+  On vLLM v0.28.0+ the FlashInfer TRTLLM MXFP4 MoE path is selected automatically on Blackwell; it can be pinned explicitly with `--moe-backend flashinfer_trtllm --quantization-config.moe.activation mxfp8`.
+
+  Hopper (H100/H200): same as Blackwell minus `--kv-cache-dtype fp8` and the FlashInfer MoE flags.
 
   AMD MI300X/MI325X/MI355X:
 
@@ -242,7 +239,7 @@ guide: |
 
   ## Troubleshooting
 
-  - **Attention sinks dtype error on Blackwell:** ensure `VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8=1` and `--kv-cache-dtype fp8`.
+  - **Attention sinks dtype error on Blackwell:** pass `--quantization-config.moe.activation mxfp8` and `--kv-cache-dtype fp8`.
   - **`tl.language not defined`:** make sure no extra Triton (e.g., `pytorch-triton`) is installed alongside vLLM's bundled Triton.
   - **Harmony vocab download failure:** pre-download tiktoken files and set `TIKTOKEN_ENCODINGS_BASE`.
 

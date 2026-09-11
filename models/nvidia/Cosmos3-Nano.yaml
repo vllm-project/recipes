@@ -16,7 +16,6 @@ meta:
   hardware:
     h200: verified
     h100: verified
-    a100: verified
 
 model:
   model_id: "nvidia/Cosmos3-Nano"

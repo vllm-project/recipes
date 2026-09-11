@@ -4,7 +4,7 @@ meta:
   provider: "Hy (Tencent)"
   description: "Tencent Hy3 — scaled-up MoE language model (295B total / 21B active) with a 3.8B MTP layer for speculative decoding, 256K context, and hy_v3 tool/reasoning parsers"
   date_added: 2026-07-06
-  date_updated: 2026-07-06
+  date_updated: 2026-09-09
   difficulty: intermediate
   tasks:
     - text
@@ -18,16 +18,15 @@ meta:
 
 model:
   model_id: "tencent/Hy3"
-  min_vllm_version: "0.26.0"
+  min_vllm_version: "0.28.0"
   docker_image:
     nvidia: "vllm/vllm-openai:hy3"
     amd: "vllm/vllm-openai-rocm:nightly-cbe9c40f998f13975b967773ac7e7920e115387f"
-  nightly_required: true
   install:
     docker:
-      note: "Use the dedicated hy3 image until changes land in vllm:latest."
+      note: "Recommended: the dedicated image ships the Hy3 runtime and dependencies."
     pip:
-      note: "Hy3's latest optimizations (vLLM #47433) aren't in a stable release yet — use nightly wheels or build from source."
+      note: "vLLM 0.28.0 includes Hy3 support and the optimizations from vLLM #47433."
   architecture: moe
   parameter_count: "295B"
   active_parameters: "21B"
@@ -122,10 +121,10 @@ guide: |
 
   Hy3 uses the same model code as
   [Hy3-preview](https://huggingface.co/tencent/Hy3-preview), so any vLLM build that
-  serves Hy3-preview also serves Hy3. The latest optimizations — Tencent's HPC-Ops
-  attention and MoE backends — require a newer vLLM that includes
-  [#47433](https://github.com/vllm-project/vllm/pull/47433) plus the separately-built
-  HPC-Ops kernels (see the HPC-Ops backends section below).
+  serves Hy3-preview also serves Hy3. vLLM 0.28.0 includes
+  [#47433](https://github.com/vllm-project/vllm/pull/47433), which adds Tencent's
+  HPC-Ops attention and MoE backends. The HPC-Ops kernels are still built and
+  installed separately (see the HPC-Ops backends section below).
 
   ## Setup
 
@@ -339,7 +338,7 @@ guide: |
       },
   )
   output_msg = resp_think.choices[0].message
-  print(output_msg.reasoning_content)  # chain-of-thought
+  print(output_msg.reasoning)           # chain-of-thought
   print(output_msg.content)             # final answer
   ```
 
