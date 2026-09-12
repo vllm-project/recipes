@@ -4,7 +4,7 @@ meta:
   provider: "Meta"
   description: "Meta Llama 3.2 1B Instruct with CPU-validated Red Hat AI W8A8 and AMead10 AWQ variants."
   date_added: 2026-08-18
-  date_updated: 2026-08-18
+  date_updated: 2026-09-12
   difficulty: beginner
   tasks:
     - text
@@ -94,7 +94,23 @@ guide: |
 
   ## Intel Xeon 6
 
-  TP/DP and host-specific CPU binding are intentionally not hard-coded.
+  ```bash
+  vllm serve meta-llama/Llama-3.2-1B-Instruct \
+    --tensor-parallel-size 1
+  ```
+
+  Docker (the image entrypoint is `vllm serve`):
+
+  ```bash
+  docker run --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-cpu:latest-x86_64 meta-llama/Llama-3.2-1B-Instruct \
+    --tensor-parallel-size 1
+  ```
+
+  The example uses TP=1. Adjust TP/DP for the deployment topology;
+  host-specific CPU binding is intentionally not hard-coded.
 
   ## Runtime and Platform Tuning
 

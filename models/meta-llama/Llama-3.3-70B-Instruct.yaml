@@ -4,7 +4,7 @@ meta:
   provider: "Meta"
   description: "Llama 3.3 70B dense model with NVIDIA FP8/FP4 quantized variants for Hopper and Blackwell GPUs"
   date_added: 2025-08-06
-  date_updated: 2026-08-18
+  date_updated: 2026-09-12
   difficulty: beginner
   tasks:
     - text
@@ -164,14 +164,11 @@ guide: |
   Launch the x86 CPU vLLM Docker container for `meta-llama/Llama-3.3-70B-Instruct`:
 
   ```bash
-  docker run -itd --name llama3-70b-cpu \
-    --network host \
-    --shm-size 16g \
+  docker run --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-cpu:latest-x86_64 \
-      --model meta-llama/Llama-3.3-70B-Instruct \
-      --host 0.0.0.0 \
-      --port 8000
+    vllm/vllm-openai-cpu:latest-x86_64 meta-llama/Llama-3.3-70B-Instruct \
+    --tensor-parallel-size 8
   ```
 
   TP/DP remain user/deployment choices rather than recipe defaults.

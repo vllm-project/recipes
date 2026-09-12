@@ -4,7 +4,7 @@ meta:
   provider: "Google"
   description: "Google's Gemma 4 MoE multimodal model (26B total / 4B active) with 128 fine-grained experts, top-8 routing, thinking mode, and tool-use protocol."
   date_added: 2026-04-02
-  date_updated: 2026-09-02
+  date_updated: 2026-09-12
   difficulty: intermediate
   tasks:
     - multimodal
@@ -394,14 +394,15 @@ guide: |
   Launch the x86 CPU vLLM Docker container for `google/gemma-4-26B-A4B-it`:
 
   ```bash
-  docker run -itd --name gemma4-cpu \
-    --network host \
-    --shm-size 16g \
+  docker run --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-cpu:latest-x86_64 \
-      --model google/gemma-4-26B-A4B-it \
-      --host 0.0.0.0 \
-      --port 8000
+    vllm/vllm-openai-cpu:latest-x86_64 google/gemma-4-26B-A4B-it \
+    --tensor-parallel-size 1 \
+    --enable-auto-tool-choice \
+    --tool-call-parser gemma4 \
+    --chat-template examples/tool_chat_template_gemma4.jinja \
+    --reasoning-parser gemma4
   ```
 
   For additional Intel Xeon 6 deployment details, see the Intel Software Catalog entries for [Gemma 4 26B-A4B IT](https://aiswcatalog.intel.com/models/google-gemma-4-26b-a4b-it).

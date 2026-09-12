@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Qwen3 14B dense model with hybrid thinking/non-thinking modes, validated for Intel Xeon 6 CPU serving."
   date_added: 2026-08-17
-  date_updated: 2026-09-10
+  date_updated: 2026-09-12
   difficulty: intermediate
   tasks:
     - text
@@ -118,14 +118,13 @@ guide: |
   Docker:
 
   ```bash
-  docker run -itd --name qwen3-14b-cpu \
-    --network host \
-    --shm-size 16g \
+  docker run --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-cpu:latest-x86_64 \
-      --model Qwen/Qwen3-14B \
-      --host 0.0.0.0 \
-      --port 8000
+    vllm/vllm-openai-cpu:latest-x86_64 Qwen/Qwen3-14B \
+    --tensor-parallel-size 1 \
+    --enable-auto-tool-choice \
+    --tool-call-parser hermes
   ```
 
   ## Configuration Notes

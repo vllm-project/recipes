@@ -4,7 +4,7 @@ meta:
   provider: "Meta"
   description: "Meta Llama 3.2 1.23B dense pretrained language model with 128K context, validated for BF16 serving on Intel Xeon 6."
   date_added: 2026-08-18
-  date_updated: 2026-08-18
+  date_updated: 2026-09-12
   difficulty: beginner
   tasks:
     - text
@@ -99,14 +99,11 @@ guide: |
   Docker:
 
   ```bash
-  docker run -itd --name llama32-1b-cpu \
-    --network host \
-    --shm-size 16g \
+  docker run --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-cpu:latest-x86_64 \
-      --model meta-llama/Llama-3.2-1B \
-      --host 0.0.0.0 \
-      --port 8000
+    vllm/vllm-openai-cpu:latest-x86_64 meta-llama/Llama-3.2-1B \
+    --tensor-parallel-size 1
   ```
 
   ## Client Usage

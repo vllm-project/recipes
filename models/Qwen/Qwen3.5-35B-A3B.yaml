@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Compact Qwen3.5 multimodal MoE (35B total / 3B active) with gated delta networks, 256 experts, and 262K context"
   date_added: 2026-04-22
-  date_updated: 2026-09-10
+  date_updated: 2026-09-12
   difficulty: beginner
   tasks:
     - multimodal
@@ -164,14 +164,16 @@ guide: |
   Launch the x86 CPU vLLM Docker container for `Qwen/Qwen3.5-35B-A3B`:
 
   ```bash
-  docker run -itd --name qwen35b-cpu \
-    --network host \
-    --shm-size 16g \
+  docker run --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-cpu:latest-x86_64 \
-      --model Qwen/Qwen3.5-35B-A3B \
-      --host 0.0.0.0 \
-      --port 8000
+    vllm/vllm-openai-cpu:latest-x86_64 Qwen/Qwen3.5-35B-A3B \
+    --trust-remote-code \
+    --tensor-parallel-size 1 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder \
+    --reasoning-parser qwen3 \
+    --mm-encoder-tp-mode data
   ```
 
   ### MTP speculative decoding

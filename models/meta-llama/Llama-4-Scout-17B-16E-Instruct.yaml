@@ -4,7 +4,7 @@ meta:
   provider: "Meta"
   description: "Llama 4 Scout 17B-16E MoE model with NVIDIA FP8/FP4 variants, fits on a single GPU with quantization"
   date_added: 2025-08-06
-  date_updated: 2026-08-18
+  date_updated: 2026-09-12
   difficulty: beginner
   tasks:
     - text
@@ -161,15 +161,12 @@ guide: |
   Launch the x86 CPU vLLM Docker container for `meta-llama/Llama-4-Scout-17B-16E-Instruct`:
 
   ```bash
-  docker run -itd --name llama4-17b-cpu \
-    --network host \
-    --shm-size 16g \
+  docker run --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-cpu:latest-x86_64 \
-      --model meta-llama/Llama-4-Scout-17B-16E-Instruct \
-      --max-model-len 8192 \
-      --host 0.0.0.0 \
-      --port 8000
+    vllm/vllm-openai-cpu:latest-x86_64 meta-llama/Llama-4-Scout-17B-16E-Instruct \
+    --tensor-parallel-size 4 \
+    --max-model-len 8192
   ```
 
   `--max-model-len 8192` is retained because it is the model-specific row argument

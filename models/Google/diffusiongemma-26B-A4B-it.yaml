@@ -4,7 +4,7 @@ meta:
   provider: "Google"
   description: "Google's DiffusionGemma — a block-diffusion language model built on Gemma 4's MoE backbone (26B total / 4B active). Generates tokens via iterative denoising over a fixed-length canvas rather than left-to-right autoregressive decoding, enabling higher throughput with parallel block generation."
   date_added: 2026-06-11
-  date_updated: 2026-06-10
+  date_updated: 2026-09-12
   difficulty: advanced
   tasks:
     - multimodal
@@ -155,22 +155,23 @@ guide: |
           --host 0.0.0.0 --port 8000
   ```
 
-  ### Intel Xeon 6 (CPU, BF16, 4× NUMA nodes)
+  ### Intel Xeon 6 (CPU, BF16)
 
   DiffusionGemma runs on Intel Xeon 6 CPUs using vLLM's CPU backend with AMX BF16 acceleration.
-  Use `--tensor-parallel-size` equal to the number of NUMA nodes available (typically 2–4 on a dual/quad-socket server).
+  The generated example uses TP=1. Adjust `--tensor-parallel-size` based on the
+  detected NUMA topology and deployment requirements.
 
   ```bash
-  docker run -itd --name diffusiongemma-cpu \
-      --network host \
-      --shm-size 16g \
-      -v ~/.cache/huggingface:/root/.cache/huggingface \
-      vllm/vllm-openai-cpu:latest-x86_64 \
-          --model google/diffusiongemma-26B-A4B-it \
-          --dtype bfloat16 \
-          --tensor-parallel-size 4 \
-          --max-num-seqs 4 \
-          --host 0.0.0.0 --port 8000
+  docker run --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-cpu:latest-x86_64 google/diffusiongemma-26B-A4B-it \
+    --max-num-seqs 4 \
+    --tensor-parallel-size 1 \
+    --enable-auto-tool-choice \
+    --tool-call-parser gemma4 \
+    --chat-template examples/tool_chat_template_gemma4.jinja \
+    --reasoning-parser gemma4
   ```
 
 

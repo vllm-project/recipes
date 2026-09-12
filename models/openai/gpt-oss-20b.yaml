@@ -4,7 +4,7 @@ meta:
   provider: "OpenAI"
   description: "OpenAI's gpt-oss-20b — 21B-total / 3.6B-active MoE reasoning model with native MXFP4 quant; supports GPU, XPU, and Xeon 6 CPU serving"
   date_added: 2025-08-05
-  date_updated: 2026-05-08
+  date_updated: 2026-09-12
   difficulty: beginner
   tasks:
     - text
@@ -154,16 +154,15 @@ guide: |
   Docker:
 
   ```bash
-  docker run -itd --name gpt-oss-20b-cpu \
-    --network host \
-    --shm-size 16g \
+  docker run --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-cpu:latest-x86_64 \
-      --model openai/gpt-oss-20b \
-      --max-num-batched-tokens 16384 \
-      --gpu-memory-utilization 0.8 \
-      --host 0.0.0.0 \
-      --port 8000
+    vllm/vllm-openai-cpu:latest-x86_64 openai/gpt-oss-20b \
+    --tensor-parallel-size 1 \
+    --max-num-batched-tokens 16384 \
+    --gpu-memory-utilization 0.8 \
+    --tool-call-parser openai \
+    --enable-auto-tool-choice
   ```
 
   Blackwell (B200) with FlashInfer MXFP4+MXFP8 MoE:

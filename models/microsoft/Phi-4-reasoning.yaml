@@ -4,7 +4,7 @@ meta:
   provider: "Microsoft"
   description: "Microsoft Phi-4 14B dense reasoning model with 32K context."
   date_added: 2026-08-19
-  date_updated: 2026-08-19
+  date_updated: 2026-09-12
   difficulty: intermediate
   tasks:
     - text
@@ -60,10 +60,22 @@ guide: |
   ## Intel Xeon 6
 
   ```bash
-  vllm serve microsoft/Phi-4-reasoning  ```
+  vllm serve microsoft/Phi-4-reasoning \
+    --tensor-parallel-size 1
+  ```
 
-  TP/DP values and host-specific CPU placement remain deployment choices and
-  are not hard-coded into the portable recipe.
+  Docker (the image entrypoint is `vllm serve`):
+
+  ```bash
+  docker run --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-cpu:latest-x86_64 microsoft/Phi-4-reasoning \
+    --tensor-parallel-size 1
+  ```
+
+  The example uses TP=1. Adjust TP/DP for the deployment topology;
+  host-specific CPU placement is intentionally not hard-coded.
 
   ## Runtime and Platform Tuning
 

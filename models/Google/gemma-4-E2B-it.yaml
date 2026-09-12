@@ -4,7 +4,7 @@ meta:
   provider: "Google"
   description: "Google's compact Gemma 4 multimodal model (effective 2B) with native text, image, and audio, plus thinking mode and tool-use protocol."
   date_added: 2026-04-02
-  date_updated: 2026-08-18
+  date_updated: 2026-09-12
   difficulty: beginner
   tasks:
     - multimodal
@@ -225,14 +225,15 @@ guide: |
   Launch the x86 CPU vLLM Docker container for `google/gemma-4-E2B-it`:
 
   ```bash
-  docker run -itd --name gemma4-cpu \
-    --network host \
-    --shm-size 16g \
+  docker run --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-cpu:latest-x86_64 \
-      --model google/gemma-4-E2B-it \
-      --host 0.0.0.0 \
-      --port 8000
+    vllm/vllm-openai-cpu:latest-x86_64 google/gemma-4-E2B-it \
+    --tensor-parallel-size 1 \
+    --enable-auto-tool-choice \
+    --tool-call-parser gemma4 \
+    --chat-template examples/tool_chat_template_gemma4.jinja \
+    --reasoning-parser gemma4
   ```
 
 
