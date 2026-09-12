@@ -187,15 +187,9 @@ hardware_notes:
   ascend_950dt_8x:
     title: "vLLM Ascend A5 image required"
     body: "Mixed serving on one 8-card 950DT node uses 4 of 8 NPUs (DP4+EP, TP=1). Same command as 950PR. Pin quay.io/ascend/vllm-ascend:v0.23.0-a5 — the NVIDIA pip wheel cannot run here. Set HCCL_BUFFSIZE=1024 before launch. Native Flash-Vision checkpoints need the hash-router bias skip in vllm-project/vllm-ascend#16259 — without it load_weights aborts on model.layers.0.mlp.gate.e_score_correction_bias."
-    link:
-      label: "Ascend 950DT 8x mixed"
-      href: "#huawei-ascend-950dt-8x"
   ascend_950pr_8x:
     title: "vLLM Ascend A5 image required"
     body: "Mixed serving on one 8-card 950PR node uses 4 of 8 NPUs (DP4+EP, TP=1). Same command as 950DT. Pin quay.io/ascend/vllm-ascend:v0.23.0-a5 and set HCCL_BUFFSIZE=1024 before launch. Native Flash-Vision checkpoints need the hash-router bias skip in vllm-project/vllm-ascend#16259 — without it load_weights aborts on model.layers.0.mlp.gate.e_score_correction_bias."
-    link:
-      label: "Ascend 950PR 8x mixed"
-      href: "#huawei-ascend-950pr-8x"
 
 guide: |
   ## Overview
@@ -221,14 +215,11 @@ guide: |
   wheel routes this checkpoint to the text-only class and fails on the vision tensors.
 
   - **Weights:** ~168 GB on disk (48 shards). Budget ~202 GB of VRAM before KV cache.
-  - **Hardware:** NVIDIA GB200 is the published OCRBench run. Atlas A5
-    (950PR / 950DT, 8-card) runs the same native checkpoint via vLLM Ascend
-    (DP4+EP, TP=1). The ROCm and XPU builds have no vision implementation.
-  - **Tokenizer / chat template:** nothing extra to pass on NVIDIA. The repo
-    ships no Jinja template (prompt encoding lives in `encoding/`); vLLM
-    resolves `--tokenizer-mode` to `deepseek_v4` automatically, which is what
-    turns OpenAI content blocks into `<｜deepseek_image｜>` placeholders. On
-    Ascend the generated command sets `--tokenizer-mode deepseek_v4` explicitly.
+  - **Hardware:** NVIDIA only — the ROCm and XPU builds have no vision implementation.
+  - **Tokenizer / chat template:** nothing to pass. The repo ships no Jinja template
+    (prompt encoding lives in `encoding/`); vLLM resolves `--tokenizer-mode` to
+    `deepseek_v4` automatically, which is what turns OpenAI content blocks into
+    `<｜deepseek_image｜>` placeholders.
 
   ## Launching the server
 
@@ -272,59 +263,6 @@ guide: |
   `--attention_config.use_fp4_indexer_cache` / `--moe-backend deep_gemm_mega_moe` tweaks
   the text recipe applies are deliberately not set here: the verified vision run did not
   use them.
-
-  ### Huawei Ascend 950PR 8x
-
-  Mixed serving on one 8-card Atlas A5 node uses **4 of 8 NPUs** (DP4+EP,
-  TP=1). The native checkpoint has 64 attention heads; 950's FP8 DSA operator
-  only accepts a local `num_heads_q` of 64 or 128, so TP cannot be 2/4/8.
-  **950DT 8x uses the same command.** Pin
-  `quay.io/ascend/vllm-ascend:v0.23.0-a5` and overlay
-  [vllm-ascend#16259](https://github.com/vllm-project/vllm-ascend/pull/16259)
-  so hash-router layers skip the unused `e_score_correction_bias`. Do not
-  pass `--quantization ascend` — the mixed FP8/FP4 scheme is read from the
-  checkpoint. Leave `--reasoning-config` off; an empty start/end string
-  swallows the chat response.
-
-  ```bash
-  export OMP_PROC_BIND=false
-  export OMP_NUM_THREADS=10
-  export PYTORCH_NPU_ALLOC_CONF="expandable_segments:True"
-  export ASCEND_RT_VISIBLE_DEVICES="0,1,2,3"
-  export HCCL_BUFFSIZE=1024
-  export HCCL_OP_EXPANSION_MODE="AIV"
-  export TASK_QUEUE_ENABLE=1
-
-  vllm serve deepseek-ai/DeepSeek-V4-Flash-Vision-Exp \
-    --enable-expert-parallel \
-    --data-parallel-size 4 \
-    --block-size 128 \
-    --kv-cache-dtype auto \
-    --tokenizer-mode deepseek_v4 \
-    --safetensors-load-strategy prefetch \
-    --async-scheduling \
-    --max-model-len 8192 \
-    --max-num-seqs 16 \
-    --max-num-batched-tokens 2048 \
-    --gpu-memory-utilization 0.9 \
-    --api-server-count 1 \
-    --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
-    --additional-config '{"enable_cpu_binding": true, "multistream_overlap_shared_expert": true, "enable_shared_expert_dp": true}' \
-    --tool-call-parser deepseek_v4 \
-    --enable-auto-tool-choice \
-    --reasoning-parser deepseek_v4
-  ```
-
-  `--max-model-len 8192` is the verified bound. Raise it only after checking
-  free HBM — the checkpoint advertises 1M tokens, which will not fit on 4
-  NPUs. Do not pass `--speculative-config`: MTP and DSpark are not supported
-  on 950 for this checkpoint yet.
-
-  ### Huawei Ascend 950DT 8x
-
-  Same DP4+EP command as [950PR 8x](#huawei-ascend-950pr-8x). 950DT is
-  8×96 GB; the recipe still uses 4 of 8 NPUs so both A5 SKUs share one
-  command. Do not switch to TP>1.
 
   ## Reasoning modes
 
@@ -433,10 +371,9 @@ guide: |
 
   - **Pre-release.** Flags and defaults can change before #54566 lands; re-check before
     deploying, and keep the image pinned.
-  - **ROCm and XPU** raise `NotImplementedError` at model construction.
-  - **Published vision runs:** GB200 (OCRBench 83.5%) and Atlas A5 950PR/950DT
-    (DP4+EP, TP=1). Every other pill is the repo's fail-open default, not a
-    tested claim. A5 needs vllm-ascend#16259.
+  - **NVIDIA only.** ROCm and XPU raise `NotImplementedError` at model construction.
+  - **GB200 is the only hardware with a published vision run.** Every other pill is the
+    repo's fail-open default, not a tested claim.
   - **PD disaggregation is not offered**, and the CPU/filesystem KV-offload pills stay
     off — neither has a verified run to record. The Mooncake KV-store pills follow the
     repo's fail-open default and are offered, but untested here.
@@ -446,6 +383,5 @@ guide: |
 
   - [Model card](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-Vision-Exp)
   - [vLLM support PR #54566](https://github.com/vllm-project/vllm/pull/54566)
-  - [vLLM Ascend hash-router bias fix #16259](https://github.com/vllm-project/vllm-ascend/pull/16259)
   - [DeepSeek-V4-Flash recipe](/deepseek-ai/DeepSeek-V4-Flash) — the text-only sibling
   - [DeepSpec (DSpark)](https://github.com/deepseek-ai/DeepSpec)
