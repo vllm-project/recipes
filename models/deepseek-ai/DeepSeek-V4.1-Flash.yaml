@@ -57,17 +57,18 @@ features:
       - "--reasoning-parser"
       - "deepseek_v41"
   spec_decoding:
-    description: "DSpark multi-token drafting, 5 tokens per round (the trained block size). On NVIDIA, adaptive verification scores each (request, position) slot and only high-scoring slots are verified, up to a startup-profiled compute budget. On AMD, DeepseekV41IndexerBackend does not consume device query lengths, so the generated command sets enable_adaptive_verification:false and verifies the full 5-token block."
+    description: "DSpark multi-token drafting, 5 tokens per round (the trained block size). On NVIDIA, adaptive verification scores each (request, position) slot and only high-scoring slots are verified, up to a startup-profiled compute budget. On AMD, vLLM currently refuses that flag because DeepseekV41IndexerBackend.supports_device_cpu_query_lens_mismatch() is False, so the generated command sets enable_adaptive_verification:false and verifies the full 5-token block."
     args:
       - "--speculative-config"
       - '{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","rejection_sample_method":"block","enable_adaptive_verification":true}'
     hardware_overrides:
-      # Adaptive verification writes query_start_loc on device. The ROCm
-      # indexer builds decode metadata from CPU query lengths, so the
-      # published true flag dies during determine_available_memory with
+      # Adaptive verification writes query_start_loc on device. On ROCm,
       # DeepseekV41IndexerBackend.supports_device_cpu_query_lens_mismatch()
-      # False. Features emit last in resolveCommand, so this replacement
-      # must live here rather than in hardware_overrides.amd.extra_args.
+      # is False, so maybe_create_adaptive_verification_manager raises
+      # during initialize_kv_cache after the weights load. Features emit
+      # last in resolveCommand, so this replacement must live here rather
+      # than in hardware_overrides.amd.extra_args. vllm-project/vllm#56620
+      # is the engine-side follow-up.
       amd:
         args:
           - "--speculative-config"
@@ -241,10 +242,11 @@ guide: |
   DSpark is the only speculative method for this checkpoint; V4.1 dropped the MTP module
   that V3 and V4 trained alongside the backbone. **Speculative decoding** enables a 5-token
   block. On NVIDIA it also turns on adaptive verification (see the feature description).
-  On AMD the indexer backend cannot consume the device query lengths that adaptive
-  verification writes, so the generated command sets `enable_adaptive_verification:false`
-  and verifies the full block. Acceptance depends on
-  the workload, so measure it on your own traffic before sizing a deployment around it.
+  On AMD, vLLM currently refuses adaptive verification because
+  `DeepseekV41IndexerBackend.supports_device_cpu_query_lens_mismatch()` is False, so the
+  generated command sets `enable_adaptive_verification:false` and verifies the full
+  block. Acceptance depends on the workload, so measure it on your own traffic before
+  sizing a deployment around it.
   The drafter's experts add roughly 14B parameters to the load.
 
   ## Serving text-only
@@ -300,7 +302,7 @@ guide: |
     to Python if you encounter unsupported features or compatibility issues.
   - Expect a long first load: `VLLM_ENGINE_READY_TIMEOUT_S=3600` is set for that reason.
   - On AMD, the generated command sets `VLLM_USE_BREAKABLE_CUDAGRAPH=1`. DeepSeek-V4.1-Flash does not support `torch.compile`, and the ROCm sparse SWA backend only supports uniform-batch CUDA graphs. Without breakable CUDA graphs, default `FULL_AND_PIECEWISE` dies at capture.
-  - On AMD, ticking **Speculative decoding** also sets `enable_adaptive_verification:false`. The ROCm AITER indexer does not support the device query-length mismatch that adaptive verification needs. DSpark still drafts 5 tokens per round.
+  - On AMD, ticking **Speculative decoding** also sets `enable_adaptive_verification:false`. vLLM currently refuses the true flag because `DeepseekV41IndexerBackend.supports_device_cpu_query_lens_mismatch()` is False. DSpark still drafts 5 tokens per round.
 
   ## Verifying
 
