@@ -98,11 +98,24 @@ hardware_overrides:
     extra_args:
       - "--gpu-memory-utilization"
       - "0.9"
+      # Plain "aiter" rather than "aiter_triton_mxfp4_bf16": the specific name
+      # maps to one entry and pins the Triton W4A16 kernel (_moe_gemm_a16w4),
+      # while the plain name opens vLLM's full priority list, whose head is the
+      # Composable Kernel backend, giving the a8w4 experts
+      # (mfma_moe1_silu_mul_afp8_wfp4_bf16 / mfma_moe2_afp8_wfp4_bf16). CK
+      # quantizes activations to FP8 internally, despite the BF16 backend name
+      # and this checkpoint declaring activation_scheme=dynamic with no
+      # input_scale tensors.
       - "--moe-backend"
-      - "aiter_triton_mxfp4_bf16"
+      - "aiter"
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
       VLLM_ROCM_USE_AITER_MOE: "1"
+      # aiter.ops.triton warns on every call that Gluon is unavailable and it
+      # is falling back to Triton. Gluon supports only gfx1250, so on gfx950
+      # that is a fixed property rather than a condition worth reporting, and
+      # it was 98% of the lines in a server log (411k of 417k, 30 MiB of 32).
+      AITER_TRITON_LOG_LEVEL: "ERROR"
       # DeepseekV41ForCausalLM does not support torch.compile. The ROCm sparse
       # SWA backend only reports UNIFORM_BATCH, so default FULL_AND_PIECEWISE
       # cannot start unless breakable CUDA graphs are on.
@@ -291,6 +304,7 @@ guide: |
     to Python if you encounter unsupported features or compatibility issues.
   - Expect a long first load: `VLLM_ENGINE_READY_TIMEOUT_S=3600` is set for that reason.
   - On AMD, the generated command sets `VLLM_USE_BREAKABLE_CUDAGRAPH=1`. DeepSeek-V4.1-Flash does not support `torch.compile`, and the ROCm sparse SWA backend only supports uniform-batch CUDA graphs. Without breakable CUDA graphs, default `FULL_AND_PIECEWISE` dies at capture.
+  - On AMD, the generated command passes `--moe-backend aiter` rather than naming a kernel. Naming `aiter_triton_mxfp4_bf16` pins the Triton W4A16 kernel; the plain name lets vLLM select the Composable Kernel a8w4 experts, which measured 4–9% faster per decode step at 131k context on MI355X (larger gains at higher concurrency) with gsm8k strict-match unchanged.
 
   ## Verifying
 
