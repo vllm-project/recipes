@@ -17,7 +17,7 @@ model:
   parameter_count: "37.44B"
   active_parameters: "5.95B"
   context_length: 524288
-  base_args: ["--trust-remote-code", "--dtype", "bfloat16", "--max-model-len", "131072", "--enable-expert-parallel"]
+  base_args: ["--trust-remote-code", "--dtype", "bfloat16", "--enable-expert-parallel"]
   base_env: {}
 features:
   reasoning:
@@ -59,7 +59,6 @@ guide: |
     --tensor-parallel-size 2 \
     --trust-remote-code \
     --dtype bfloat16 \
-    --max-model-len 131072 \
     --enable-expert-parallel \
     --reasoning-parser k2_horizon \
     --enable-auto-tool-choice \
