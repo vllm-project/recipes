@@ -5,7 +5,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-09-11
+  date_updated: 2026-09-12
   difficulty: advanced
   tasks:
     - text
@@ -27,7 +27,10 @@ model:
   default_frontend: rust
   docker_image:
     nvidia: "vllm/vllm-openai:deepseekv41-flash-0909"
-    amd: "vllm/vllm-openai-rocm:deepseekv41-flash-0909"
+    # AMD tracks a ROCm nightly rather than the 0909 release tag: that tag
+    # predates vllm-project/vllm#56503, which moves the mHC delayed pre block
+    # off the eager Torch reference and onto AITER.
+    amd: "vllm/vllm-openai-rocm:nightly-eed1f3d0c6043bd494424a22443ee198dd56f657"
   architecture: moe
   parameter_count: "552B"
   active_parameters: "8-16B"
@@ -281,7 +284,9 @@ guide: |
   ## Prerequisites
 
   - The `vllm/vllm-openai:deepseekv41-flash-0909` image (vLLM 0.30.0+). No pip wheel serves
-    this architecture, so the Install block only offers Docker.
+    this architecture, so the Install block only offers Docker. On AMD, use the
+    `vllm/vllm-openai-rocm:nightly-eed1f3d0...` image instead — it carries the AITER
+    mHC path from vllm-project/vllm#56503, which the 0909 tag predates.
   - The Rust OpenAI frontend is selected by default in the command builder. Switch
     to Python if you encounter unsupported features or compatibility issues.
   - Expect a long first load: `VLLM_ENGINE_READY_TIMEOUT_S=3600` is set for that reason.
