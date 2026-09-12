@@ -51,7 +51,7 @@ features:
       mtp:
         label: "MTP"
         description: "Native MTP head, 3 draft tokens."
-        variants: [default, fp8, nvfp4]
+        variants: [default, fp8, nvfp4, redhat_fp8]
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":3}'
@@ -200,12 +200,20 @@ variants:
           - "8"
           - "--max-num-batched-tokens"
           - "4096"
+          - "--gpu-memory-utilization"
+          - "0.95"
           - "--enable-chunked-prefill"
           - "--enable-prefix-caching"
           - "--async-scheduling"
           - "--skip-mm-profiling"
         extra_env:
-          VLLM_HAS_FLASHINFER_CUBIN: "1"
+          VLLM_HAS_FLASHINFER_CUBIN: "1"  
+  redhat_fp8:
+    model_id: "RedHatAI/Qwen3.6-27B-FP8"
+    precision: fp8
+    label: "FP8 (RedHat)"
+    vram_minimum_gb: 33
+    description: "RedHatAI FP8 dynamic quantization"
   ascend_w8a8_mxfp8:
     model_id: "Eco-Tech/Qwen3.6-27B-w8a8-mxfp8"
     precision: mxfp8

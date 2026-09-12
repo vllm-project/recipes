@@ -46,16 +46,23 @@ features:
       - "--reasoning-parser"
       - "qwen3"
   spec_decoding:
-    description: "Speculative decoding — pick native MTP or the Ascend MTP mode."
+    description: "Multiple options for multi-token prediction speculative decoding for lower latency. Also has DFlash option. "
     default_mode: mtp
     modes:
       mtp:
-        label: "MTP"
         description: "Native MTP head, 3 draft tokens."
-        variants: [default, nvfp4, gptq_int4]
+        variants: [default, nvfp4, fp8, gptq_int4]
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":3}'
+      dflash:
+        label: "DFlash"
+        description: "DFlash speculative decoding with an externally trained draft model; the served checkpoint is unchanged."
+        variants:
+          - default
+        args:
+          - "--speculative-config"
+          - '{"model": "RedHatAI/Qwen3.5-397B-A17B-speculator.dflash", "num_speculative_tokens": 7, "method": "dflash"}'
       qwen3_5_mtp:
         label: "MTP (Ascend)"
         description: "MTP mode documented for vLLM Ascend."
@@ -96,6 +103,16 @@ variants:
     model_id: "nvidia/Qwen3.5-397B-A17B-NVFP4"
     precision: nvfp4
     vram_minimum_gb: 238
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+    extra_env:
+      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+  fp8:
+    model_id: "RedHatAI/Qwen3.5-397B-A17B-FP8-dynamic"
+    precision: fp8
+    vram_minimum_gb: 477
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
