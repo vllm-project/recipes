@@ -5,7 +5,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-09-12
+  date_updated: 2026-09-13
   difficulty: advanced
   tasks:
     - text
@@ -27,7 +27,8 @@ model:
   default_frontend: rust
   docker_image:
     nvidia: "vllm/vllm-openai:deepseekv41-flash-0909"
-    amd: "vllm/vllm-openai-rocm:deepseekv41-flash-0909"
+    # Includes the AITER mHC delayed-pre path from vllm-project/vllm#56503.
+    amd: "vllm/vllm-openai-rocm:nightly"
   architecture: moe
   parameter_count: "552B"
   active_parameters: "8-16B"
@@ -39,7 +40,7 @@ model:
     VLLM_ENGINE_READY_TIMEOUT_S: "3600"
   install:
     docker:
-      note: "Serve from the dedicated vllm/vllm-openai:deepseekv41-flash-0909 image — no pip wheel carries the DeepSeek-V4.1 architecture."
+      note: "Serve from the image for your GPU vendor — no pip wheel carries the DeepSeek-V4.1 architecture. NVIDIA uses the 0909 release tag; AMD tracks ROCm nightly (see Prerequisites)."
     pip: false
 
 dependencies: []
@@ -111,11 +112,14 @@ hardware_overrides:
     extra_args:
       - "--gpu-memory-utilization"
       - "0.9"
+      # Allow CK a8w4 expert selection instead of pinning Triton W4A16.
       - "--moe-backend"
-      - "aiter_triton_mxfp4_bf16"
+      - "aiter"
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
       VLLM_ROCM_USE_AITER_MOE: "1"
+      # Suppress repeated Gluon-unavailable warnings on gfx950.
+      AITER_TRITON_LOG_LEVEL: "ERROR"
       # DeepseekV41ForCausalLM does not support torch.compile. The ROCm sparse
       # SWA backend only reports UNIFORM_BATCH, so default FULL_AND_PIECEWISE
       # cannot start unless breakable CUDA graphs are on.
@@ -123,7 +127,7 @@ hardware_overrides:
 
 strategy_overrides:
   single_node_tp:
-    # Verified at TP4 (one GB200 NVL4 tray; 4 of 8 GPUs on an MI350X node).
+    # TP4 baseline (one GB200 NVL4 tray; 4 GPUs on MI350X or MI355X).
     tp: 4
   pd_cluster:
     # Verified 1P1D on GB200 NVL4: one tray per role, TP4 each, NIXL transfer.
@@ -303,12 +307,18 @@ guide: |
 
   ## Prerequisites
 
-  - The `vllm/vllm-openai:deepseekv41-flash-0909` image (vLLM 0.30.0+). No pip wheel serves
-    this architecture, so the Install block only offers Docker.
+  - An image (vLLM 0.30.0+); no pip wheel serves this architecture, so the Install block
+    only offers Docker. On NVIDIA that is `vllm/vllm-openai:deepseekv41-flash-0909`. On AMD
+    it is `vllm/vllm-openai-rocm:nightly` — a ROCm
+    nightly rather than the 0909 tag, because 0909 predates
+    [vllm-project/vllm#56503](https://github.com/vllm-project/vllm/pull/56503), which moves
+    the mHC delayed pre block off the eager Torch reference and onto AITER.
   - The Rust OpenAI frontend is selected by default in the command builder. Switch
     to Python if you encounter unsupported features or compatibility issues.
   - Expect a long first load: `VLLM_ENGINE_READY_TIMEOUT_S=3600` is set for that reason.
   - On AMD, the generated command sets `VLLM_USE_BREAKABLE_CUDAGRAPH=1`. DeepSeek-V4.1-Flash does not support `torch.compile`, and the ROCm sparse SWA backend only supports uniform-batch CUDA graphs. Without breakable CUDA graphs, default `FULL_AND_PIECEWISE` dies at capture.
+  - On AMD, the generated command passes `--moe-backend aiter` rather than naming a kernel. Naming `aiter_triton_mxfp4_bf16` pins the Triton W4A16 `_moe_gemm_a16w4` kernel; the plain name lets vLLM select the Composable Kernel a8w4 experts, used in the MI355X benchmark below. It also sets `AITER_TRITON_LOG_LEVEL=ERROR` to drop AITER's per-call "Gluon unavailable" warning, which is constant on gfx950 and dominated the server log.
+  - On MI355X, **Tensor Parallel** inherits vLLM's scheduler limits. Tune `--max-num-seqs` for your traffic and memory budget if needed. The benchmark configuration below records an explicit limit for reproducibility.
   - On AMD, ticking **Speculative decoding** also sets `enable_adaptive_verification:false`. vLLM currently refuses the true flag: `DeepseekV41IndexerBackend.supports_device_cpu_query_lens_mismatch()` is False, and `DeepseekV41ROCMAiterSparseSWABackend` reports `UNIFORM_BATCH` rather than `ALWAYS`. DSpark still drafts 5 tokens per round.
 
   ## Verifying
@@ -324,6 +334,78 @@ guide: |
   ```
 
   A correct answer is `323`.
+
+  ## Performance tuning
+
+  Start with vLLM's defaults and tune one parameter at a time for your workload:
+
+  - `--max-num-seqs`: raise the running-sequence limit if it causes queueing and
+    memory permits; lower it if larger batches hurt latency or memory use.
+  - `--max-num-batched-tokens`: balance prefill throughput against decode latency
+    and memory use by adjusting the token budget per scheduling iteration.
+  - `--max-cudagraph-capture-size`: cover expected decode batches, including DSpark
+    draft tokens, while accounting for graph memory and startup cost. The benchmark
+    below rounds `128 * (1 + 5) = 768` up to 1024.
+  - `--max-model-len`: size the context limit for your prompt plus output lengths.
+
+  ### MI355X benchmark server
+
+  This runnable command matches the server arguments and execution environment in
+  [InferenceX #3058](https://github.com/SemiAnalysisAI/InferenceX/pull/3058) at
+  [commit `559ef756`](https://github.com/SemiAnalysisAI/InferenceX/blob/559ef7560a74d0fb8da64fdfc0c357ad2fc33c4f/benchmarks/single_node/agentic/dsv41flash_fp4_mi355x_vllm_mtp.sh).
+  It uses four MI355X GPUs and the pinned image. Set `ROCR_VISIBLE_DEVICES` and `PORT`
+  for your host, and `HF_HOME` to an existing writable Hugging Face cache if needed.
+  Throughput mode uses synthetic acceptance for benchmark measurement only. Run
+  `export EVAL_ONLY=true` before this command for real block rejection, as used by
+  the InferenceX accuracy eval; use that mode for ordinary serving too.
+
+  ```bash
+  docker run --rm -i --network host --ipc host \
+    --device /dev/kfd --device /dev/dri --group-add video \
+    --security-opt seccomp=unconfined --workdir /tmp \
+    -v "${HF_HOME:-$HOME/.cache/huggingface}:/root/.cache/huggingface" \
+    -e ROCR_VISIBLE_DEVICES="${ROCR_VISIBLE_DEVICES:-0,1,2,3}" \
+    -e PORT="${PORT:-8000}" -e EVAL_ONLY="${EVAL_ONLY:-false}" \
+    --entrypoint /bin/bash \
+    vllm/vllm-openai-rocm:nightly-eed1f3d0c6043bd494424a22443ee198dd56f657 -s <<'BASH'
+  set -eo pipefail
+  export HIP_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES"
+  export VLLM_ROCM_USE_AITER=1 VLLM_ROCM_USE_AITER_MOE=1
+  export AITER_TRITON_LOG_LEVEL=ERROR VLLM_USE_BREAKABLE_CUDAGRAPH=1
+  export OMP_NUM_THREADS=1 VLLM_ENGINE_READY_TIMEOUT_S=3600
+  export VLLM_USE_RUST_FRONTEND=1 PYTHONUNBUFFERED=1 GPU_COUNT=4
+  MODEL=deepseek-ai/DeepSeek-V4.1-Flash
+  hf download "$MODEL"
+  if [[ "$EVAL_ONLY" == true ]]; then
+    SPEC_CONFIG='{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","rejection_sample_method":"block","enable_adaptive_verification":false}'
+  else
+    SPEC_CONFIG='{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","rejection_sample_method":"synthetic","synthetic_acceptance_length":3.51,"enable_adaptive_verification":false}'
+  fi
+  exec vllm serve "$MODEL" --served-model-name "$MODEL" \
+    --host 0.0.0.0 --port "$PORT" --tensor-parallel-size 4 \
+    --language-model-only \
+    --tokenizer-mode deepseek_v41 \
+    --tool-call-parser deepseek_v41 --enable-auto-tool-choice \
+    --reasoning-parser deepseek_v41 \
+    --moe-backend aiter \
+    --gpu-memory-utilization 0.9 \
+    --speculative-config "$SPEC_CONFIG" \
+    --max-model-len 1048576 \
+    --max-num-seqs 128 \
+    --max-cudagraph-capture-size 1024 \
+    --max-num-batched-tokens 16384 \
+    --disable-uvicorn-access-log
+  BASH
+  ```
+
+  The AgentX sweep uses task concurrencies 1, 2, 4, 8, 16 and 32, GPU-resident KV,
+  and `WEKA_LOADER_OVERRIDE=semianalysis_cc_traces_weka_062126`. Five-token DSpark
+  uses golden acceptance length 3.51. For replay setup and results, see
+  [InferenceX #3058](https://github.com/SemiAnalysisAI/InferenceX/pull/3058) and its
+  [pinned master config](https://github.com/SemiAnalysisAI/InferenceX/blob/559ef7560a74d0fb8da64fdfc0c357ad2fc33c4f/configs/amd-master.yaml#L1761).
+  The command above starts the server; the InferenceX harness supplies the replay
+  client. Validation evidence applies to that pinned benchmark configuration, not
+  every future `:nightly` image or the general command's inherited scheduler limits.
 
   ## References
 
