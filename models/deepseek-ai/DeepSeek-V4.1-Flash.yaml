@@ -20,7 +20,6 @@ meta:
     gb200: verified
     gb300: verified
     mi350x: verified
-    mi355x: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V4.1-Flash"
@@ -31,7 +30,7 @@ model:
     # ROCm nightly rather than the 0909 tag: 0909 predates
     # vllm-project/vllm#56503, which moves the mHC delayed pre block off the
     # eager Torch reference and onto AITER.
-    amd: "vllm/vllm-openai-rocm:nightly-eed1f3d0c6043bd494424a22443ee198dd56f657"
+    amd: "vllm/vllm-openai-rocm:nightly"
   architecture: moe
   parameter_count: "552B"
   active_parameters: "8-16B"
@@ -43,7 +42,7 @@ model:
     VLLM_ENGINE_READY_TIMEOUT_S: "3600"
   install:
     docker:
-      note: "Serve from the pinned image for your GPU vendor — no pip wheel carries the DeepSeek-V4.1 architecture. NVIDIA pins the 0909 release tag; AMD pins a ROCm nightly (see Prerequisites)."
+      note: "Serve from the image for your GPU vendor — no pip wheel carries the DeepSeek-V4.1 architecture. NVIDIA uses the 0909 release tag; AMD tracks ROCm nightly (see Prerequisites)."
     pip: false
 
 dependencies: []
@@ -134,17 +133,8 @@ hardware_overrides:
 
 strategy_overrides:
   single_node_tp:
-    # Verified at TP4 (one GB200 NVL4 tray; 4 of 8 GPUs on an MI350X or
-    # MI355X node).
+    # TP4 baseline (one GB200 NVL4 tray; 4 GPUs on MI350X or MI355X).
     tp: 4
-    hardware_overrides:
-      mi355x:
-        # vllm serve defaults max_num_seqs to 1024 on >=160 GiB GPUs, but the
-        # MI355X run this recipe is verified against served 128. Pinned so the
-        # published command reproduces that run, and only for this pairing.
-        extra_args:
-          - "--max-num-seqs"
-          - "128"
   pd_cluster:
     # Verified 1P1D on GB200 NVL4: one tray per role, TP4 each, NIXL transfer.
     env:
@@ -164,6 +154,9 @@ strategy_overrides:
 
 guide: |
   ## Overview
+
+  For MI355X serving parameters and the measured InferenceX configuration, see
+  [Performance tuning](#performance-tuning).
 
   DeepSeek-V4.1 is a vision-language Mixture-of-Experts model: **552B backbone parameters
   plus 196B of Engram memory, 8B active per prompt token and 16B per output token**, 40
@@ -325,7 +318,7 @@ guide: |
 
   - An image (vLLM 0.30.0+); no pip wheel serves this architecture, so the Install block
     only offers Docker. On NVIDIA that is `vllm/vllm-openai:deepseekv41-flash-0909`. On AMD
-    it is `vllm/vllm-openai-rocm:nightly-eed1f3d0c6043bd494424a22443ee198dd56f657` — a ROCm
+    it is `vllm/vllm-openai-rocm:nightly` — a ROCm
     nightly rather than the 0909 tag, because 0909 predates
     [vllm-project/vllm#56503](https://github.com/vllm-project/vllm/pull/56503), which moves
     the mHC delayed pre block off the eager Torch reference and onto AITER.
@@ -333,8 +326,8 @@ guide: |
     to Python if you encounter unsupported features or compatibility issues.
   - Expect a long first load: `VLLM_ENGINE_READY_TIMEOUT_S=3600` is set for that reason.
   - On AMD, the generated command sets `VLLM_USE_BREAKABLE_CUDAGRAPH=1`. DeepSeek-V4.1-Flash does not support `torch.compile`, and the ROCm sparse SWA backend only supports uniform-batch CUDA graphs. Without breakable CUDA graphs, default `FULL_AND_PIECEWISE` dies at capture.
-  - On AMD, the generated command passes `--moe-backend aiter` rather than naming a kernel. Naming `aiter_triton_mxfp4_bf16` pins the Triton W4A16 `_moe_gemm_a16w4` kernel; the plain name lets vLLM select the Composable Kernel a8w4 experts, which measured 4–9% faster per decode step at 131k context on MI355X, with larger gains at higher concurrency. It also sets `AITER_TRITON_LOG_LEVEL=ERROR` to drop AITER's per-call "Gluon unavailable" warning, which is constant on gfx950 and dominated the server log.
-  - On MI355X, **Tensor Parallel** additionally pins `--max-num-seqs 128`, the value the verified run served. Left unset, `vllm serve` defaults to 1024 on GPUs with at least 160 GiB. Raise it if your traffic needs more scheduler capacity than the verified configuration.
+  - On AMD, the generated command passes `--moe-backend aiter` rather than naming a kernel. Naming `aiter_triton_mxfp4_bf16` pins the Triton W4A16 `_moe_gemm_a16w4` kernel; the plain name lets vLLM select the Composable Kernel a8w4 experts, used in the MI355X benchmark below. It also sets `AITER_TRITON_LOG_LEVEL=ERROR` to drop AITER's per-call "Gluon unavailable" warning, which is constant on gfx950 and dominated the server log.
+  - On MI355X, **Tensor Parallel** inherits vLLM's scheduler limits. Tune `--max-num-seqs` for your traffic and memory budget if needed. The benchmark configuration below records an explicit limit for reproducibility.
   - On AMD, ticking **Speculative decoding** also sets `enable_adaptive_verification:false`. vLLM currently refuses the true flag: `DeepseekV41IndexerBackend.supports_device_cpu_query_lens_mismatch()` is False, and `DeepseekV41ROCMAiterSparseSWABackend` reports `UNIFORM_BATCH` rather than `ALWAYS`. DSpark still drafts 5 tokens per round.
 
   ## Verifying
@@ -350,6 +343,75 @@ guide: |
   ```
 
   A correct answer is `323`.
+
+  ## Performance tuning
+
+  Start with the generated serving command and measure your workload before
+  overriding vLLM's defaults. For MI355X Tensor Parallel serving:
+
+  - `--max-num-seqs` limits simultaneous running sequences. Increase it when requests
+    queue because this limit is reached and memory permits; reduce it when larger
+    batches increase latency or memory pressure. AgentX task concurrency includes
+    subagent fan-out, so 32 tasks can produce more than 32 simultaneous requests.
+  - `--max-num-batched-tokens` limits the token budget per scheduling iteration.
+    Larger budgets can improve prefill throughput but increase memory use and delay
+    decode work. Compare throughput, TTFT and inter-token latency under representative
+    prompt lengths and concurrency.
+  - `--max-cudagraph-capture-size` controls the largest captured graph batch. With
+    DSpark, account for the extra draft tokens: the benchmark below uses five draft
+    tokens, so its sizing rule is `max_num_seqs * (1 + 5)`, rounded up to a power of
+    two and capped at 2048. Larger capture sizes can cover larger decode batches but
+    cost startup time and memory; this benchmark rule is not a universal optimum.
+  - `--max-model-len` should cover the prompt plus generated output your application
+    needs. The benchmark uses 1048576; choose a smaller limit if your workload allows
+    it and measure the effect on memory and serving capacity.
+
+  Change one parameter at a time, holding the image and other settings fixed. The
+  results in [InferenceX #3058](https://github.com/SemiAnalysisAI/InferenceX/pull/3058)
+  provide a measured reference for this workload, not an optimum for every deployment.
+
+  ### Supplement: MI355X benchmark configuration
+
+  The general serving command tracks ROCm `:nightly` and inherits vLLM's scheduler
+  defaults. For the MI355X TP4 measurements in
+  [InferenceX #3058](https://github.com/SemiAnalysisAI/InferenceX/pull/3058), use the
+  tested image and add these serving overrides to the generated **Tensor Parallel**
+  command with **Speculative decoding** and **Text only** enabled:
+
+  ```bash
+  docker pull vllm/vllm-openai-rocm:nightly-eed1f3d0c6043bd494424a22443ee198dd56f657
+  ```
+
+  Run the generated command inside that image, with these additional arguments:
+
+  ```bash
+  --max-num-seqs 128 \
+  --max-num-batched-tokens 16384 \
+  --max-cudagraph-capture-size 1024 \
+  --max-model-len 1048576
+  ```
+
+  These are benchmark settings, not general serving requirements. At this image's
+  vLLM commit, the MI355X serving default is 1024 sequences; 128 is an explicit
+  benchmark limit. Five draft tokens and 128 sequences give 768 verification tokens,
+  rounded up to a graph capture size of 1024 in the benchmark script.
+
+  [InferenceX run 34710937012, attempt 2](https://github.com/SemiAnalysisAI/InferenceX/actions/runs/34710937012/attempts/2)
+  supplies the reported MI355X TP4 text-only accuracy evidence: gsm8k 5-shot
+  strict-match 0.9689 ± 0.0048 and flexible-extract 0.9682 ± 0.0048. It used real
+  DSpark block rejection with `enable_adaptive_verification:false`, as the public
+  AMD speculative-decoding command does. This evidence covers the pinned
+  configuration; the moving nightly command with inherited scheduler limits still
+  needs end-to-end validation, and the text-only eval does not validate vision.
+
+  AgentX throughput measurements used task concurrencies 1, 2, 4, 8, 16 and 32,
+  `rejection_sample_method: synthetic`, and `synthetic_acceptance_length: 3.51`.
+  Synthetic rejection is a benchmark measurement setting; retain real block
+  rejection for serving and accuracy evaluation. For the complete replay setup,
+  including the workload and environment, use the
+  [benchmark script](https://github.com/SemiAnalysisAI/InferenceX/blob/559ef7560a74d0fb8da64fdfc0c357ad2fc33c4f/benchmarks/single_node/agentic/dsv41flash_fp4_mi355x_vllm_mtp.sh).
+  The CK-path decode traces reported in #3058 measured 4–9% faster steps at 131k
+  context on MI355X; those results describe that benchmark configuration.
 
   ## References
 
