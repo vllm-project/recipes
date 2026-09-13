@@ -5,7 +5,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-09-12
+  date_updated: 2026-09-13
   difficulty: advanced
   tasks:
     - text
@@ -27,7 +27,10 @@ model:
   default_frontend: rust
   docker_image:
     nvidia: "vllm/vllm-openai:deepseekv41-flash-0909"
-    amd: "vllm/vllm-openai-rocm:deepseekv41-flash-0909"
+    # The ROCm side needs a newer build than the 0909 release tag: that tag
+    # predates vllm-project/vllm#56503, which moves the hyper-connection
+    # delayed pre block off the eager Torch reference and onto AITER.
+    amd: "vllm/vllm-openai-rocm:nightly-eed1f3d0c6043bd494424a22443ee198dd56f657"
   architecture: moe
   parameter_count: "552B"
   active_parameters: "8-16B"
@@ -39,7 +42,7 @@ model:
     VLLM_ENGINE_READY_TIMEOUT_S: "3600"
   install:
     docker:
-      note: "Serve from the dedicated vllm/vllm-openai:deepseekv41-flash-0909 image — no pip wheel carries the DeepSeek-V4.1 architecture."
+      note: "Serve from the pinned image below — no pip wheel carries the DeepSeek-V4.1 architecture. NVIDIA uses the deepseekv41-flash-0909 release tag; ROCm pins a newer nightly."
     pip: false
 
 dependencies: []
@@ -111,11 +114,21 @@ hardware_overrides:
     extra_args:
       - "--gpu-memory-utilization"
       - "0.9"
+      # `aiter` opens the whole AITER MXFP4 candidate list and lets vLLM's
+      # oracle pick the first kernel the GPU actually supports — the CK
+      # expert kernel on CDNA 4, falling back to the Triton W4A16 path
+      # elsewhere. Naming `aiter_triton_mxfp4_bf16` pins that Triton
+      # fallback everywhere, including where CK is available.
       - "--moe-backend"
-      - "aiter_triton_mxfp4_bf16"
+      - "aiter"
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
       VLLM_ROCM_USE_AITER_MOE: "1"
+      # AITER's Triton MoE path warns on every call that Gluon is
+      # unavailable and it is falling back to Triton. Gluon only targets
+      # gfx1250, so on CDNA that is a fixed property rather than an event,
+      # and it can account for most of a server log.
+      AITER_TRITON_LOG_LEVEL: "ERROR"
       # DeepseekV41ForCausalLM does not support torch.compile. The ROCm sparse
       # SWA backend only reports UNIFORM_BATCH, so default FULL_AND_PIECEWISE
       # cannot start unless breakable CUDA graphs are on.
@@ -256,6 +269,36 @@ guide: |
   sizing a deployment around it.
   The drafter's experts add roughly 14B parameters to the load.
 
+  ## CUDA graph capture size under DSpark
+
+  With **Speculative decoding** on, every active decode sequence submits one real token
+  plus the 5 drafted ones, so the widest decode batch the engine ever sees is six times
+  the number of sequences actually decoding at once. Size graph capture from that, not
+  from the scheduler cap:
+
+  ```text
+  --max-cudagraph-capture-size = next_power_of_two(6 x peak_active_decode_sequences)
+  ```
+
+  | Peak active decode sequences | 1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 |
+  |---|---:|---:|---:|---:|---:|---:|---:|---:|
+  | Tokens per decode step | 6 | 12 | 24 | 48 | 96 | 192 | 384 | 768 |
+  | `--max-cudagraph-capture-size` | 8 | 16 | 32 | 64 | 128 | 256 | 512 | 1024 |
+
+  Deriving the ceiling from `--max-num-seqs` instead is the easy mistake: that value is a
+  constant, so every deployment captures out to the same shape no matter what it serves.
+  vLLM's own default ceiling is 512 (1024 on data-center Blackwell), and this recipe
+  leaves `--max-num-seqs` at the vLLM default of 128 — six times that is 768, so a
+  concurrency-blind reading lands at 1024 even for a single-stream deployment. Capturing
+  shapes the workload cannot reach costs capture time at startup and holds memory that
+  would otherwise be KV cache.
+
+  Use a *measured* peak rather than the client's configured concurrency, and keep
+  headroom: a closed-loop client spends part of each turn thinking rather than decoding,
+  so fewer sequences are live than lanes configured, while an open-loop one can burst
+  past its nominal rate. Batches above the ceiling still run, just without a matching
+  captured graph, so the cost of aiming slightly low is tail latency rather than failure.
+
   ## Serving text-only
 
   Tick **Text only** to add `--language-model-only`, which skips the vision encoder
@@ -303,13 +346,32 @@ guide: |
 
   ## Prerequisites
 
-  - The `vllm/vllm-openai:deepseekv41-flash-0909` image (vLLM 0.30.0+). No pip wheel serves
-    this architecture, so the Install block only offers Docker.
+  - The pinned image (vLLM 0.30.0+). No pip wheel serves this architecture, so the Install
+    block only offers Docker. NVIDIA uses the `deepseekv41-flash-0909` release tag. ROCm
+    pins a newer nightly, `vllm/vllm-openai-rocm:nightly-eed1f3d0c6043bd494424a22443ee198dd56f657`:
+    the 0909 tag predates [vllm-project/vllm#56503](https://github.com/vllm-project/vllm/pull/56503),
+    which moves the hyper-connection delayed pre block off the eager Torch reference and
+    onto AITER.
   - The Rust OpenAI frontend is selected by default in the command builder. Switch
     to Python if you encounter unsupported features or compatibility issues.
   - Expect a long first load: `VLLM_ENGINE_READY_TIMEOUT_S=3600` is set for that reason.
   - On AMD, the generated command sets `VLLM_USE_BREAKABLE_CUDAGRAPH=1`. DeepSeek-V4.1-Flash does not support `torch.compile`, and the ROCm sparse SWA backend only supports uniform-batch CUDA graphs. Without breakable CUDA graphs, default `FULL_AND_PIECEWISE` dies at capture.
   - On AMD, ticking **Speculative decoding** also sets `enable_adaptive_verification:false`. vLLM currently refuses the true flag: `DeepseekV41IndexerBackend.supports_device_cpu_query_lens_mismatch()` is False, and `DeepseekV41ROCMAiterSparseSWABackend` reports `UNIFORM_BATCH` rather than `ALWAYS`. DSpark still drafts 5 tokens per round.
+  - On AMD, the generated command passes `--moe-backend aiter` rather than naming one
+    AITER kernel. That hands vLLM's MXFP4 oracle the full AITER candidate list, so it
+    selects the CK expert kernel on CDNA 4 and still falls back to the Triton W4A16 path
+    where CK is unavailable. `AITER_TRITON_LOG_LEVEL=ERROR` goes with it: the Triton path
+    warns on every call that Gluon is unavailable, and since Gluon only targets gfx1250
+    that is a fixed property on CDNA rather than an event worth logging — left at the
+    default it can account for most of a server log.
+  - On AMD, do **not** pass `--engram-config`. `EngramConfig.verify_model_config` requires
+    `current_platform.is_cuda()`, which is false on ROCm, so the flag raises `ValueError`
+    and the engine refuses to start. Omitting it is not a downgrade: with the flag absent
+    the pinned ROCm image leaves Engram at `cpu_offload=True`, so the tables are allocated
+    in **pinned host memory** and read over UVA instead of taking HBM. Budget host RAM
+    accordingly — the two tables are the ~183 GiB in the memory table above, sharded
+    across the node's ranks rather than replicated — and make sure that much can be
+    page-locked.
 
   ## Verifying
 
