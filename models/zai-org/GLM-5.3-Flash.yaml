@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3-Flash is a 320B-total / 18B-active multimodal MoE with hybrid KDA and sparse MLA attention, native FP8 weights, MTP, and a 1M-token context window."
   date_added: 2026-08-27
-  date_updated: 2026-09-05
+  date_updated: 2026-09-11
   difficulty: advanced
   tasks:
     - text
@@ -439,7 +439,10 @@ guide: |
   concurrency at 128K context; the BF16 checkpoint reports an 8.87M-token KV
   pool at the same TP and context.
 
-  > Note: MTP speculative decoding is not supported on ROCm with this image.
+  MTP speculative decoding is supported on MI355X by vLLM builds containing
+  [vLLM #55239](https://github.com/vllm-project/vllm/pull/55239), validated on 4×MI355X
+  with TP=4 and MTP5. Enable **Spec Decoding** and select **MTP** in the command builder
+  to add the required configuration.
 
   ## Benchmarking
 
@@ -464,6 +467,7 @@ guide: |
 
   - [Model card](https://huggingface.co/zai-org/GLM-5.3-Flash)
   - [vLLM](https://github.com/vllm-project/vllm)
+  - [ROCm MTP sparse-MLA fix](https://github.com/vllm-project/vllm/pull/55239)
   - **FlashInfer:** 0.6.17 or newer is required for NoPE sparse MLA
   - **Ascend 950PR:** native FP8 checkpoint (~306 GiB). On 950 the block
     scales are re-grouped to MXFP8 at load (weights stay 1 byte/element).
