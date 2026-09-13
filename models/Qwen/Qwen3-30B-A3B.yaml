@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Qwen3 MoE model with 30.5B total and 3.3B active parameters, validated for BF16 serving on Intel Xeon 6."
   date_added: 2026-08-14
-  date_updated: 2026-09-10
+  date_updated: 2026-09-12
   difficulty: intermediate
   tasks:
     - text
@@ -106,16 +106,16 @@ guide: |
   Docker:
 
   ```bash
-  docker run -itd --name qwen3-30b-a3b-cpu \
-    --network host \
-    --shm-size 16g \
+  docker run --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-cpu:latest-x86_64 \
-      --model Qwen/Qwen3-30B-A3B \
-      --max-num-batched-tokens 16384 \
-      --gpu-memory-utilization 0.8 \
-      --host 0.0.0.0 \
-      --port 8000
+    vllm/vllm-openai-cpu:latest-x86_64 Qwen/Qwen3-30B-A3B \
+    --tensor-parallel-size 1 \
+    --max-num-batched-tokens 16384 \
+    --gpu-memory-utilization 0.8 \
+    --enable-auto-tool-choice \
+    --tool-call-parser hermes \
+    --reasoning-parser qwen3
   ```
 
   ## Client Usage

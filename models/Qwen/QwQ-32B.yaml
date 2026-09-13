@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Qwen's 32B dense reasoning model, validated for Intel Xeon 6 CPU execution."
   date_added: 2026-08-17
-  date_updated: 2026-09-10
+  date_updated: 2026-09-12
   difficulty: intermediate
   tasks:
     - text
@@ -99,7 +99,9 @@ guide: |
 
   For Intel and AMD x86 CPUs, follow the
   [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels)
-  installation instructions, or use:
+  installation instructions.
+
+  ### Docker (Intel Xeon 6 CPUs)
 
   ```bash
   docker pull vllm/vllm-openai-cpu:latest-x86_64
@@ -108,7 +110,24 @@ guide: |
   ## Intel Xeon 6
 
   ```bash
-  vllm serve Qwen/QwQ-32B
+  vllm serve Qwen/QwQ-32B \
+    --tensor-parallel-size 1 \
+    --enable-auto-tool-choice \
+    --tool-call-parser hermes \
+    --reasoning-parser deepseek_r1
+  ```
+
+  Docker (the image entrypoint is `vllm serve`):
+
+  ```bash
+  docker run --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-cpu:latest-x86_64 Qwen/QwQ-32B \
+    --tensor-parallel-size 1 \
+    --enable-auto-tool-choice \
+    --tool-call-parser hermes \
+    --reasoning-parser deepseek_r1
   ```
 
   W8A8 INT8:
@@ -117,17 +136,8 @@ guide: |
   vllm serve RedHatAI/QwQ-32B-quantized.w8a8
   ```
 
-  Choose tensor parallelism based on system topology; the recipe does not
-  prescribe a fixed TP/DP layout or topology-specific CPU binding.
-
-  For reasoning-content extraction and automatic tool choice:
-
-  ```bash
-  vllm serve Qwen/QwQ-32B \
-    --reasoning-parser deepseek_r1 \
-    --enable-auto-tool-choice \
-    --tool-call-parser hermes
-  ```
+  The example uses TP=1. Adjust tensor parallelism based on system topology;
+  topology-specific CPU binding is intentionally not hard-coded.
 
   ## Runtime and Platform Tuning
 

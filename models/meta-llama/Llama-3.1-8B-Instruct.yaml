@@ -4,7 +4,7 @@ meta:
   provider: "Meta"
   description: "Meta's Llama 3.1 8B dense instruction-tuned language model with 128K context"
   date_added: 2025-10-15
-  date_updated: 2026-08-18
+  date_updated: 2026-09-12
   difficulty: beginner
   tasks:
     - text
@@ -175,14 +175,11 @@ guide: |
   Launch the x86 CPU vLLM Docker container for `meta-llama/Llama-3.1-8B-Instruct`:
 
   ```bash
-  docker run -itd --name llama3-8b-cpu \
-    --network host \
-    --shm-size 16g \
+  docker run --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-cpu:latest-x86_64 \
-      --model meta-llama/Llama-3.1-8B-Instruct \
-      --host 0.0.0.0 \
-      --port 8000
+    vllm/vllm-openai-cpu:latest-x86_64 meta-llama/Llama-3.1-8B-Instruct \
+    --tensor-parallel-size 2
   ```
 
   The validation TP/DP layout and host-specific CPU placement are intentionally
