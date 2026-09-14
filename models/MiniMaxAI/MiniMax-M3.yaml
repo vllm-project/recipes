@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 plus MXFP8, NVIDIA Blackwell NVFP4, and AMD MI355X MXFP4 variants. Runs on NVIDIA (Hopper/Blackwell) and AMD CDNA4/CDNA3."
   date_added: 2026-06-12
-  date_updated: 2026-08-29
+  date_updated: 2026-09-13
   difficulty: advanced
   tasks:
     - text
@@ -208,7 +208,7 @@ variants:
     tp: 8
     hardware_overrides:
       mi355x:
-        docker_image: "vllm/vllm-openai-rocm:nightly-8a728663c1c3eeace834a95f5654fa653cc1998c"
+        docker_image: "vllm/vllm-openai-rocm:nightly-2a02f6efe319c885e3ccbcecde402e0028f9ec1e"
         extra_args:
           - "--trust-remote-code"
           - "--compilation-config"
@@ -722,17 +722,19 @@ guide: |
   | Hardware | one MI355X node |
   | Scenario | agentic-coding trace replay |
   | Parallelism | TP4 and TP2 — no expert parallelism, no KV offload |
-  | TP4 concurrency sweep | 1, 2, 4, 5, 8, 10, 12, 15, 20, 24, 28, 32 |
-  | TP2 concurrency sweep | 1, 2, 5 |
+  | TP4 concurrency sweep | 1, 4, 5, 8, 10, 12, 15, 20, 24, 32 |
+  | TP2 concurrency sweep | 1, 2 |
   | Draft head | `Inferact/MiniMax-M3-EAGLE3-GQA`, 3 speculative tokens |
   | Attention | `ROCM_AITER_UNIFIED_ATTN` for both the target and the draft |
+  | Indexer K cache | `fp8` (`--attention-config`); MiniMax-M3's default is bf16 |
   | Model path | text-only (`--language-model-only`), prefix caching enabled |
 
   Differences from the default command above: TP4/TP2 instead of TP8, the
-  text-only language-model path, `--kv-cache-dtype fp8`, the AITER MXFP4 MoE
-  backend, unified AITER attention instead of `TRITON_ATTN`, and the GQA EAGLE3
-  draft. The lane also pins thinking server-side with
-  `--default-chat-template-kwargs` instead of passing `--reasoning-parser`, and
+  text-only language-model path, `--kv-cache-dtype fp8`, the FP8 sparse-attention
+  indexer K cache, the AITER MXFP4 MoE backend, unified AITER attention instead
+  of `TRITON_ATTN`, the GQA EAGLE3 draft, and a hand-tuned decode
+  `cudagraph_capture_sizes` list sized for the lane's `--max-num-seqs` range. The
+  lane also pins thinking server-side with `--default-chat-template-kwargs`, and
   it passes no `--hf-overrides` — the pinned image supplies the sparse-PA
   index-cache and top-k refresh behavior itself, and re-adding the override
   would rewrite the served model config.
@@ -742,7 +744,12 @@ guide: |
   layout that MiniMax-M3 sparse paged attention relies on was changed by the
   KV-cache layout standardization in
   [vllm-project/vllm#51718](https://github.com/vllm-project/vllm/pull/51718),
-  and the nightly restores it. Don't hard-code a transient tag here — the digest
+  and the nightly restores it. The currently pinned digest
+  (`nightly-2a02f6efe319c885e3ccbcecde402e0028f9ec1e`) also carries the AITER
+  indexer scoring and top-k kernels for the MiniMax-M3 sparse-attention path from
+  [vllm-project/vllm#52664](https://github.com/vllm-project/vllm/pull/52664),
+  which is what makes the FP8 indexer K cache and the unconditional shuffled
+  layout below worthwhile. Don't hard-code a transient tag here — the digest
   validated for these numbers lives in the InferenceX config.
 
   #### Environment
@@ -756,15 +763,12 @@ guide: |
     exit 1
   fi
 
-  # The AITER page-16 sparse-attention path needs exactly one KV head per TP
-  # rank. MiniMax-M3 has four KV heads, so TP4 takes that fast path while TP2
-  # uses vLLM's supported Triton sparse-attention fallback. Applying the TP4
-  # layout at TP2 is not a valid configuration.
-  if [ "$TP_SIZE" -eq 4 ]; then
-    export VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=1
-  else
-    export VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=0
-  fi
+  # Shuffled KV-cache layout, now unconditional. Earlier digests needed the
+  # page-16 sparse-attention fast path's one-KV-head-per-rank property, so TP2
+  # (two of MiniMax-M3's four KV heads per rank) had to fall back to 0; the
+  # pinned digest's AITER indexer kernels serve both widths from the shuffled
+  # layout, and the lane runs TP4 and TP2 with it enabled.
+  export VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT=1
 
   # Kernel selection — required to match the benchmarked MoE path.
   # Without these (and `--moe-backend aiter` on the serve command), vLLM's MXFP4
@@ -794,15 +798,18 @@ guide: |
     --tensor-parallel-size "$TP_SIZE" \
     --trust-remote-code \
     --block-size 128 \
-    --gpu-memory-utilization 0.85 \
+    --gpu-memory-utilization 0.90 \
     --enable-chunked-prefill \
     --max-num-batched-tokens 32768 \
+    --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY", "cudagraph_capture_sizes": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,20,22,24,26,28,30,32,34,36,48,64,72,80,88,96,104,112,120,128]}' \
     --language-model-only \
     --enable-prefix-caching \
     --attention-backend ROCM_AITER_UNIFIED_ATTN \
     --moe-backend aiter \
     --kv-cache-dtype fp8 \
+    --attention-config '{"indexer_kv_dtype": "fp8"}' \
     --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
     --enable-auto-tool-choice \
     --default-chat-template-kwargs '{"thinking_mode":"enabled"}' \
     --max-num-seqs "$((2 * CONC))" \
@@ -830,19 +837,33 @@ guide: |
 
   Selecting the AITER MXFP4 MoE backend (`--moe-backend aiter`) is a
   kernel-selection choice (same MXFP4 math, faster kernel), not a precision
-  reduction. The INT4 all-reduce and fp8 KV-cache levers are throughput
-  optimizations for high concurrency and are **kept out of the default command
-  pending accuracy validation**. Performance figures on the InferenceX dashboard
-  are **reported externally by SemiAnalysis and have not been reproduced in this
-  repository.**
+  reduction. The INT4 all-reduce, the fp8 KV cache, and the fp8 indexer K cache
+  are throughput optimizations for high concurrency and are **kept out of the
+  default command pending accuracy validation** — `--attention-config
+  '{"indexer_kv_dtype": "fp8"}'` quantizes the sparse-attention indexer's K
+  cache away from MiniMax-M3's bf16 default and depends on the indexer kernels
+  in the pinned digest. The raised `--gpu-memory-utilization 0.90` and the
+  explicit `cudagraph_capture_sizes` list are likewise lane-specific: the list
+  is sized for this sweep's `--max-num-seqs` range (`2 × concurrency`, so at
+  most 64 here) and capping graph capture at 128 would shrink CUDA-graph
+  coverage on a general deployment that serves wider batches. Performance
+  figures on the InferenceX dashboard are **reported externally by SemiAnalysis
+  and have not been reproduced in this repository.**
 
   #### References for this benchmark lane
 
-  - Source PR: [SemiAnalysisAI/InferenceX#2781](https://github.com/SemiAnalysisAI/InferenceX/pull/2781)
-  - Full sweep run: [actions/runs/33239952571](https://github.com/SemiAnalysisAI/InferenceX/actions/runs/33239952571)
-  - Agentic eval job: [job/99067626974](https://github.com/SemiAnalysisAI/InferenceX/actions/runs/33239952571/job/99067626974)
+  - Current source PR: [SemiAnalysisAI/InferenceX#2959](https://github.com/SemiAnalysisAI/InferenceX/pull/2959)
+    (image bump, fp8 indexer K cache, tuned decode graphs) — reviewed at head
+    `43c23db28f400f643f79dc490699910a010d3360`
+  - Full sweep run for that lane: [actions/runs/34609443618](https://github.com/SemiAnalysisAI/InferenceX/actions/runs/34609443618)
+    — all TP4 and TP2 throughput and real-verification eval jobs passed on
+    commit `c738b5030e2277cc701ab15e115cb6584e0cacd0`, whose lane script and
+    config entry are byte-identical to the reviewed head
+  - Original lane PR: [SemiAnalysisAI/InferenceX#2781](https://github.com/SemiAnalysisAI/InferenceX/pull/2781)
+    ([sweep](https://github.com/SemiAnalysisAI/InferenceX/actions/runs/33239952571))
   - Golden GQA acceptance-length curve: [`minimaxm3_eagle3_gqa.yaml`](https://github.com/SemiAnalysisAI/InferenceX/blob/main/golden_al_distribution/minimaxm3_eagle3_gqa.yaml)
   - KV-cache layout change the image pin compensates for: [vllm-project/vllm#51718](https://github.com/vllm-project/vllm/pull/51718)
+  - AITER indexer scoring and top-k kernels the pinned digest adds: [vllm-project/vllm#52664](https://github.com/vllm-project/vllm/pull/52664)
 
   ## Troubleshooting
 
