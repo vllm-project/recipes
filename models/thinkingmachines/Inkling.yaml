@@ -148,6 +148,32 @@ variants:
     extra_env:
       FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED: "1"
 
+  fp8:
+    model_id: "RedHatAI/Inkling-FP8-dynamic"
+    precision: fp8
+    vram_minimum_gb: 1170
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_fp8:
+    model_id: "RedHatAI/Inkling-FP8-block"
+    precision: fp8
+    label: "FP8 Block (RedHat)"
+    vram_minimum_gb: 1170
+    description: "RedHatAI FP8 block quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_nvfp4:
+    model_id: "RedHatAI/Inkling-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 618
+    description: "RedHatAI NVFP4 quantization"
+
 compatible_strategies:
   - single_node_tp
   - single_node_tep
