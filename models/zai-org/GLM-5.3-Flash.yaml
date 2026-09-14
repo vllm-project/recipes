@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3-Flash is a 320B-total / 18B-active multimodal MoE with hybrid KDA and sparse MLA attention, native FP8 weights, MTP, and a 1M-token context window."
   date_added: 2026-08-27
-  date_updated: 2026-09-11
+  date_updated: 2026-09-14
   difficulty: advanced
   tasks:
     - text
@@ -14,8 +14,6 @@ meta:
     h100: verified
     b200: verified
     gb200: verified
-    mi300x: unsupported
-    mi325x: unsupported
     mi355x: verified
     ascend_950pr_8x: verified
 
@@ -25,10 +23,10 @@ model:
   nightly_required: true
   docker_image:
     nvidia: "vllm/vllm-openai:glm53-flash"
-    amd: "vllm/vllm-openai-rocm:glm53-flash"
+    amd: "vllm/vllm-openai-rocm:nightly"
   install:
     docker:
-      note: "NVIDIA/AMD: use vllm/vllm-openai:glm53-flash until support lands in the standard image. Ascend 950PR: pin quay.io/ascend/vllm-ascend:nightly-main-a5 (same as GLM-5.3) with GLM-5.3-Flash overlays vLLM#53906 and vllm-ascend#15127."
+      note: "NVIDIA: use vllm/vllm-openai:glm53-flash until support lands in the standard image. AMD: use the official vllm/vllm-openai-rocm:nightly image, which includes merged GLM-5.3-Flash support. Ascend 950PR: pin quay.io/ascend/vllm-ascend:nightly-main-a5 (same as GLM-5.3) with GLM-5.3-Flash overlays vLLM#53906 and vllm-ascend#15127."
     pip: false
   architecture: moe
   parameter_count: "321B"
@@ -418,10 +416,10 @@ guide: |
     }'
   ```
   
-  ## Running on MI355X (gfx950)
+  ## Running on AMD Instinct
 
-  The `vllm/vllm-openai-rocm:glm53-flash` docker image gates on gfx950 only. 
-  https://github.com/vllm-project/vllm/pull/53906 will add support for mi300x/mi325x.
+  Use the official `vllm/vllm-openai-rocm:nightly` image. GLM-5.3-Flash support
+  landed in [vLLM #53906](https://github.com/vllm-project/vllm/pull/53906).
 
   ```bash
   export VLLM_ROCM_USE_AITER=1
