@@ -4,7 +4,7 @@ meta:
   provider: "Hy (Tencent)"
   description: "Tencent Hy3 — scaled-up MoE language model (295B total / 21B active) with a 3.8B MTP layer for speculative decoding, 256K context, and hy_v3 tool/reasoning parsers"
   date_added: 2026-07-06
-  date_updated: 2026-09-09
+  date_updated: 2026-09-14
   difficulty: intermediate
   tasks:
     - text
@@ -19,6 +19,7 @@ meta:
 model:
   model_id: "tencent/Hy3"
   min_vllm_version: "0.28.0"
+  default_frontend: rust
   docker_image:
     nvidia: "vllm/vllm-openai:hy3"
     amd: "vllm/vllm-openai-rocm:nightly-cbe9c40f998f13975b967773ac7e7920e115387f"

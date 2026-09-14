@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
   date_added: 2026-07-31
-  date_updated: "2026-09-09"
+  date_updated: 2026-09-14
   difficulty: hard
   tasks:
     - text
@@ -34,6 +34,7 @@ meta:
 model:
   model_id: "deepseek-ai/DeepSeek-V4-Flash"
   min_vllm_version: "0.20.0"
+  default_frontend: rust
   docker_image:
     amd: "vllm/vllm-openai-rocm:nightly"
   architecture: moe

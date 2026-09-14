@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Multimodal MoE model with gated delta networks architecture, 397B total / 17B active parameters, up to 262K context"
   date_added: 2026-02-16
-  date_updated: 2026-09-10
+  date_updated: 2026-09-14
   difficulty: intermediate
   tasks:
     - multimodal
@@ -23,6 +23,7 @@ meta:
 model:
   model_id: "Qwen/Qwen3.5-397B-A17B"
   min_vllm_version: "0.17.0"
+  default_frontend: rust
   architecture: moe
   parameter_count: "397B"
   active_parameters: "17B"

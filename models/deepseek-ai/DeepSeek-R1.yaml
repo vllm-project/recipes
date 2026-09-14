@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek-R1 is a 671B-parameter MoE reasoning model built on the DeepSeek-V3 architecture, trained with large-scale reinforcement learning for strong chain-of-thought capabilities."
   date_added: 2025-08-01
-  date_updated: 2026-09-10
+  date_updated: 2026-09-14
   difficulty: intermediate
   tasks:
     - text
@@ -24,6 +24,7 @@ meta:
 model:
   model_id: "deepseek-ai/DeepSeek-R1"
   min_vllm_version: "0.12.0"
+  default_frontend: rust
   architecture: moe
   parameter_count: "671B"
   active_parameters: "37B"

@@ -4,7 +4,7 @@ meta:
   provider: "Hunyuan (Tencent)"
   description: "Tencent Hunyuan Hy4-preview — scaled-up MoE language model (770B total / 49B active) with a 10B MTP layer for speculative decoding, 1M context, and hy_v4 tool/reasoning parsers"
   date_added: 2026-08-28
-  date_updated: 2026-08-28
+  date_updated: 2026-09-14
   difficulty: intermediate
   tasks:
     - text
@@ -23,6 +23,7 @@ meta:
 model:
   model_id: "tencent/Hy4-preview"
   min_vllm_version: "0.29.0"
+  default_frontend: rust
   docker_image:
     nvidia: "vllm/vllm-openai:hy4-preview"
   nightly_required: true

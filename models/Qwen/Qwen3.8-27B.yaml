@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "27B-parameter dense hybrid-attention model with linear attention on 48 of 64 layers, a vision tower, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-14
-  date_updated: 2026-09-10
+  date_updated: 2026-09-14
   difficulty: beginner
   tasks:
     - multimodal
@@ -44,6 +44,7 @@ model:
   # wants the gated-delta-net speculative fix (vllm-project/vllm#51812 / #51674), which no
   # released tag carries yet.
   min_vllm_version: "0.17.0"
+  default_frontend: rust
   # NVIDIA only. The rocm tag with the same name is an AMD build of the 2.4T *text* model
   # (no `ai.vllm.build.commit` label) and has never been exercised on the 27B; naming it
   # here would imply a tested AMD path that does not exist. Non-NVIDIA hardware falls back
