@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.2 — frontier-scale MoE language model (~743B total parameters, 39B active) with up to 5-token MTP speculative decoding and thinking mode"
   date_added: 2026-06-16
-  date_updated: 2026-07-12
+  date_updated: 2026-09-14
   difficulty: advanced
   tasks:
     - text
@@ -21,6 +21,7 @@ meta:
 model:
   model_id: "zai-org/GLM-5.2"
   min_vllm_version: "0.23.0"
+  default_frontend: rust
   docker_image:
     nvidia: "vllm/vllm-openai:v0.28.0"
     amd: "vllm/vllm-openai-rocm:nightly-4c626633159887b0f2c962058c17c78f1434556d"

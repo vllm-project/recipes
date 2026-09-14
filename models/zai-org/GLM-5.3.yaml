@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3 — Frontier Coding with Emergent Cyber Capabilities"
   date_added: 2026-08-28
-  date_updated: 2026-09-10
+  date_updated: 2026-09-14
   difficulty: advanced
   tasks:
     - text
@@ -24,6 +24,7 @@ meta:
 model:
   model_id: "zai-org/GLM-5.3"
   min_vllm_version: "0.29.0"
+  default_frontend: rust
   architecture: moe
   parameter_count: "743B"
   active_parameters: "39B"

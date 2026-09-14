@@ -3,7 +3,7 @@ meta:
   slug: "qwen3.8-flash-next"
   provider: "Qwen"
   description: "Qwen4 architecture preview with a 125B-parameter main model, supplemented by an additional 51B N-gram embeddings, with 6B parameters activated per token."
-  date_updated: 2026-09-10
+  date_updated: 2026-09-14
   difficulty: advanced
   tasks:
     - multimodal
@@ -23,6 +23,7 @@ meta:
 model:
   model_id: "Qwen/Qwen3.8-Flash-Next"
   min_vllm_version: "0.29.0"
+  default_frontend: rust
   docker_image:
     nvidia: "vllm/vllm-openai:qwen38-flash-next"
     amd: "vllm/vllm-openai-rocm:qwen38-flash-next"
@@ -48,11 +49,11 @@ dependencies: []
 
 features:
   tool_calling:
-    description: "Enable automatic tool choice with the Qwen3 XML parser"
+    description: "Enable automatic tool choice with the Qwen3 Coder parser"
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_xml"
+      - "qwen3_coder"
   reasoning:
     description: "Extract thinking output with the Qwen3 reasoning parser"
     args:
@@ -230,7 +231,7 @@ guide: |
     --enable-prefix-caching \
     --no-enable-flashinfer-autotune \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
     --reasoning-parser qwen3
   ```
 
@@ -255,7 +256,7 @@ guide: |
     --enable-prefix-caching \
     --no-enable-flashinfer-autotune \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
     --reasoning-parser qwen3
   ```
 
@@ -278,7 +279,7 @@ guide: |
     --enable-prefix-caching \
     --no-enable-flashinfer-autotune \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
     --reasoning-parser qwen3
   ```
 
@@ -330,7 +331,7 @@ guide: |
     --max-model-len 262144 \
     --no-enable-flashinfer-autotune \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
     --reasoning-parser qwen3
   ```
 

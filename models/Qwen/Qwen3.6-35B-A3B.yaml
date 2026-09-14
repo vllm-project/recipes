@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Smaller Qwen3.6 multimodal MoE model (35B total / 3B active) with BF16, FP8, and NVIDIA NVFP4 variants"
   date_added: 2026-04-16
-  date_updated: 2026-09-10
+  date_updated: 2026-09-14
   difficulty: beginner
   tasks:
     - multimodal
@@ -28,6 +28,7 @@ meta:
 model:
   model_id: "Qwen/Qwen3.6-35B-A3B"
   min_vllm_version: "0.17.0"
+  default_frontend: rust
   architecture: moe
   parameter_count: "35B"
   active_parameters: "3B"
@@ -38,11 +39,11 @@ model:
 
 features:
   tool_calling:
-    description: "Enable automatic tool choice with Qwen3 XML parser"
+    description: "Enable automatic tool choice with Qwen3 Coder parser"
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_xml"
+      - "qwen3_coder"
   reasoning:
     description: "Enable chain-of-thought reasoning with Qwen3 parser"
     args:
