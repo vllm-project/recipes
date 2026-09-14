@@ -216,6 +216,10 @@ strategy_min_gpus:
   multi_node_tp_pp: 16
   multi_node_dep: 16
   h100: 32
+  # GB200 pure TP needs 16 GPUs across four NVL4 trays.
+  # https://vllm-project.github.io/2026/07/27/k3.html#performance-optimizations
+  gb200:
+    multi_node_tp: 16
   ascend_910c: 64
 
 
