@@ -5,7 +5,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-09-13
+  date_updated: 2026-09-15
   difficulty: advanced
   tasks:
     - text
@@ -19,6 +19,7 @@ meta:
     h200: verified
     gb200: verified
     gb300: verified
+    b300: verified
     mi350x: verified
 
 model:
@@ -406,6 +407,51 @@ guide: |
   The command above starts the server; the InferenceX harness supplies the replay
   client. Validation evidence applies to that pinned benchmark configuration, not
   every future `:nightly` image or the general command's inherited scheduler limits.
+
+  ### B300 benchmark server
+
+  This runnable command matches the general-tier server arguments validated on
+  one B300 node (8 GPUs) in
+  [InferenceX #3109](https://github.com/SemiAnalysisAI/InferenceX/pull/3109),
+  at **TP4** (using 4 of the 8 GPUs). Unlike the general command above, the
+  B300 recipe pins explicit `FULL_AND_PIECEWISE` CUDA graph capture-size
+  tiers and a fixed `--max-num-seqs 256` instead of the inherited scheduler
+  defaults:
+
+  ```bash
+  vllm serve deepseek-ai/DeepSeek-V4.1-Flash \
+    --tensor-parallel-size 4 \
+    --language-model-only \
+    --tokenizer-mode deepseek_v41 \
+    --tool-call-parser deepseek_v41 --enable-auto-tool-choice \
+    --reasoning-parser deepseek_v41 \
+    --engram-config '{"cpu_offload":true}' \
+    --speculative-config '{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","rejection_sample_method":"synthetic","synthetic_acceptance_length":3.51,"enable_adaptive_verification":false}' \
+    --max-model-len 1048576 \
+    --compilation-config '{"mode":"VLLM_COMPILE","cudagraph_mode":"FULL_AND_PIECEWISE","cudagraph_capture_sizes":[6,12,18,24,30,36,48,60,72,96,120,144,192,240,288,384,480,576,768,1020,1536,2046,3072,4092,6144,8190]}' \
+    --max-cudagraph-capture-size 8190 \
+    --max-num-batched-tokens 8192 \
+    --max-num-seqs 256 \
+    --disable-uvicorn-access-log
+  ```
+
+  The same script also validates a **TP2** topology (2 of the 8 GPUs) at
+  concurrency 2-128, with two deltas from the command above: at concurrency
+  ≤4 (either TP) the graph tiers shrink to `cudagraph_capture_sizes` ending at
+  `2046` with `--max-num-batched-tokens 2048`; and at TP2 concurrency 128
+  specifically, `--gpu-memory-utilization 0.97` is added on top of that same
+  smaller tier. Real-verification evals use
+  `rejection_sample_method: "block"` and `enable_adaptive_verification: true`
+  in place of the synthetic config above.
+
+  The AgentX sweep covers TP4 at concurrency 1-128 and TP2 at concurrency
+  2-128, GPU-resident KV, and five-token DSpark at golden acceptance length
+  3.51. TP4 first landed in
+  [InferenceX #2958](https://github.com/SemiAnalysisAI/InferenceX/pull/2958);
+  the graph-capture tiers and TP2 variant are from
+  [InferenceX #3109](https://github.com/SemiAnalysisAI/InferenceX/pull/3109).
+  Validation evidence applies to this pinned benchmark configuration, not the
+  general command's inherited scheduler limits.
 
   ## References
 
