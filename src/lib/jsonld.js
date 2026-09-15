@@ -14,9 +14,10 @@
 //
 // JSON-LD is rendered inside a `<script>` tag, so a stray `</script>` inside
 // a stringified value would break the document. `jsonLdScript` defends with
-// the standard `<` → `<` substitution.
+// the standard `<` → `\u003c` substitution.
 
 import { siteUrl } from "@/lib/site-url";
+import { loadTaxonomy } from "@/lib/taxonomy";
 
 const ORG_NAME = "vLLM";
 const ORG_LEGAL_NAME = "vLLM Project";
@@ -55,6 +56,14 @@ export function buildWebSiteLd() {
       "Per-model vLLM serving recipes: hardware-tuned vllm serve commands, flag explanations, and known pitfalls.",
     publisher: { "@id": VLLM_BRAND_ID },
     inLanguage: "en",
+    potentialAction: {
+      "@type": "SearchAction",
+      target: {
+        "@type": "EntryPoint",
+        urlTemplate: `${siteUrl}/browse?q={search_term_string}`,
+      },
+      "query-input": "required name=search_term_string",
+    },
   };
 }
 
@@ -75,9 +84,10 @@ export function buildBreadcrumbLd(crumbs) {
 export function hardwareLabel(recipe) {
   const hw = recipe?.meta?.hardware;
   if (!hw || typeof hw !== "object") return "";
+  const profiles = loadTaxonomy().hardware_profiles || {};
   const verified = Object.entries(hw)
     .filter(([, status]) => status === "verified")
-    .map(([gpu]) => gpu);
+    .map(([gpu]) => profiles[gpu]?.display_name || gpu);
   if (verified.length === 0) return "";
   return verified.join(", ");
 }
@@ -85,7 +95,7 @@ export function hardwareLabel(recipe) {
 export function buildTechArticleLd(recipe) {
   const url = `${siteUrl}/${recipe.hf_org}/${recipe.hf_repo}`;
   const hwList = hardwareLabel(recipe);
-  const datePublished = recipe.hf_released || recipe.meta?.date_updated || undefined;
+  const datePublished = recipe.meta?.date_added || recipe.meta?.date_updated || undefined;
   const dateModified = recipe.meta?.date_updated || datePublished;
 
   const keywords = [
@@ -118,11 +128,7 @@ export function buildTechArticleLd(recipe) {
       name: recipe.hf_id,
       url: `https://huggingface.co/${recipe.hf_id}`,
     },
-    author: {
-      "@type": "Organization",
-      name: recipe.meta?.provider || "vLLM",
-      ...(recipe.hf_org && { url: `https://huggingface.co/${recipe.hf_org}` }),
-    },
+    author: { "@id": VLLM_BRAND_ID },
     publisher: { "@id": VLLM_BRAND_ID },
     isPartOf: { "@id": `${siteUrl}/#website` },
   };

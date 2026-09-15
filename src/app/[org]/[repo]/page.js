@@ -60,7 +60,7 @@ export async function generateMetadata({ params }) {
     : title;
   // <meta name="description"> follows the umbrella spec template too. Prefer
   // the recipe's own description, then fall back to the templated form.
-  const templateDescription = `Recommended \`vllm serve\` command, hardware matrix, and flag explanations for serving ${recipe.hf_id} with vLLM${hwList ? ` on ${hwList}` : ""}.`;
+  const templateDescription = `Recommended vllm serve command, hardware matrix, and flag explanations for serving ${recipe.hf_id} with vLLM${hwList ? ` on ${hwList}` : ""}.`;
   const description = meta.description || templateDescription;
   const ogUrl = `/og?title=${encodeURIComponent(title)}&meta=${encodeURIComponent(
     metaLine

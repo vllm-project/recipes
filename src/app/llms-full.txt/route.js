@@ -7,7 +7,6 @@
 // and the docs.vllm.ai llms-full.txt. Each recipe section contains:
 //   - Title heading
 //   - Canonical URL (HTML)
-//   - Markdown shadow URL (machine-readable)
 //   - Publish/last-modified dates
 //   - Model metadata
 //   - Recommended `vllm serve` flags
@@ -19,9 +18,12 @@ import { hardwareLabel } from "@/lib/jsonld";
 
 export const dynamic = "force-static";
 
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
 function renderRecipeSection(recipe) {
   const canonical = `${siteUrl}/${recipe.hf_org}/${recipe.hf_repo}`;
-  const markdown = `${canonical}.md`;
   const hw = hardwareLabel(recipe);
   const tasks = (recipe.meta?.tasks || []).join(", ");
   const provider = recipe.meta?.provider || recipe.hf_org;
@@ -29,7 +31,6 @@ function renderRecipeSection(recipe) {
   const header = [
     `# ${recipe.hf_id} on vLLM`,
     `Source: ${canonical}`,
-    `Markdown: ${markdown}`,
     `Provider: ${provider}`,
     recipe.hf_released ? `Released: ${recipe.hf_released}` : null,
     recipe.meta?.date_updated ? `Updated: ${recipe.meta.date_updated}` : null,
@@ -71,8 +72,8 @@ function renderRecipeSection(recipe) {
     argsLines.push("");
     argsLines.push("## Recommended base flags");
     if (baseArgs.length > 0) {
-      argsLines.push("```");
-      argsLines.push(`vllm serve ${recipe.model?.model_id || recipe.hf_id} \\`);
+      argsLines.push("```bash");
+      argsLines.push(`vllm serve ${shellQuote(recipe.model?.model_id || recipe.hf_id)} \\`);
       for (let i = 0; i < baseArgs.length; i++) {
         const trailing = i < baseArgs.length - 1 ? " \\" : "";
         argsLines.push(`  ${baseArgs[i]}${trailing}`);
@@ -82,9 +83,9 @@ function renderRecipeSection(recipe) {
     if (Object.keys(baseEnv).length > 0) {
       argsLines.push("");
       argsLines.push("Environment:");
-      argsLines.push("```");
+      argsLines.push("```bash");
       for (const [k, v] of Object.entries(baseEnv)) {
-        argsLines.push(`${k}=${v}`);
+        argsLines.push(`${k}=${shellQuote(v)}`);
       }
       argsLines.push("```");
     }
@@ -107,7 +108,7 @@ export async function GET() {
     "",
     `Concatenated full text of every recipe on ${siteUrl}, formatted for`,
     "AI-assistant retrieval. Each section is prefixed with its canonical URL,",
-    "markdown shadow URL, model metadata, recommended flags, and (where",
+    "model metadata, recommended flags, and (where",
     "present) the recipe's full guide body.",
     "",
     `Recipe count: ${recipes.length}`,

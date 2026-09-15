@@ -1,6 +1,6 @@
 // /llms.txt — curated hierarchical index of every recipe + supporting page,
-// formatted per the emerging spec at https://llmstxt.org. Absolute URLs end
-// in `.md`, pointing at the markdown shadow served alongside each recipe.
+// formatted per the emerging spec at https://llmstxt.org. Links use canonical
+// recipe URLs so every advertised resource is available independently.
 //
 // This file is what AI assistants (Claude, ChatGPT, Perplexity, Gemini)
 // retrieve when they want to know "what does recipes.vllm.ai cover and
@@ -38,7 +38,7 @@ export async function GET() {
   const lines = [
     "# vLLM Recipes",
     "",
-    "> Per-model serving recipes for vLLM: hardware-tuned `vllm serve` commands, flag explanations, and known pitfalls. Each recipe page also serves clean markdown at the same URL with a `.md` suffix.",
+    "> Per-model serving recipes for vLLM: hardware-tuned `vllm serve` commands, flag explanations, and known pitfalls.",
     "",
     "## Core pages",
     "",
@@ -59,7 +59,7 @@ export async function GET() {
     lines.push(`### ${escapeMarkdownLinkText(providerName)}`);
     lines.push("");
     for (const r of recipesForOrg) {
-      const url = `${siteUrl}/${r.hf_org}/${r.hf_repo}.md`;
+      const url = `${siteUrl}/${r.hf_org}/${r.hf_repo}`;
       const summary = r.meta?.description
         ? r.meta.description.replace(/\s+/g, " ").trim()
         : `${r.hf_id} serving recipe.`;

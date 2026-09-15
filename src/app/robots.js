@@ -1,9 +1,8 @@
 import { siteUrl } from "@/lib/site-url";
 
-// Internal-only paths we never want indexed. `/og` is the dynamic OG image
-// endpoint (never an SEO destination); `/api/` is the Next.js internal route
-// bucket; `/_next/` and `/static/` are framework build artefacts.
-const COMMON_DISALLOW = ["/og", "/api/", "/_next/", "/static/"];
+// Internal-only paths we never want indexed. Keep framework assets crawlable:
+// search engines need CSS and JavaScript to render and assess pages correctly.
+const COMMON_DISALLOW = ["/og", "/api/"];
 
 // Default policy is "allow everything to all crawlers" via `User-Agent: *`.
 // We still list the major AI crawlers explicitly so:
