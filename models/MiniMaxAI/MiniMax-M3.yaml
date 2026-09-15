@@ -553,11 +553,6 @@ guide: |
   For best MXFP8 throughput, prefer Blackwell (B200/B300) for native MX tensor cores,
   or AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 matrix cores.
 
-  On H200, the **mxfp8** variant runs the dense linear layers through the
-  Humming backend (`--linear-backend humming`) and enables Marlin atomic
-  reduction on the MoE path (`VLLM_MARLIN_USE_ATOMIC_ADD=1`) — selected
-  automatically in the command builder.
-
   On AMD MI300X, the **mxfp8** variant stacks two accuracy-safe scheduling
   levers from the InferenceX MI300X tuning recipe and avoids the high-concurrency
   expert-parallel regression by using plain TP8:
