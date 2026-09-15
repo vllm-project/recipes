@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek's first experimental multimodal V4 model — the V4-Flash MoE backbone plus a 32-layer vision tower, 1M context, and a fused DSpark draft module."
   date_added: 2026-09-01
-  date_updated: 2026-09-10
+  date_updated: 2026-09-14
   difficulty: advanced
   tasks:
     - text
@@ -22,9 +22,14 @@ meta:
   # (DP4+EP, TP=1, no speculative decoding). 950PR verified 2026-09-10 on
   # vLLM Ascend; 950DT uses the same command (4 of 8 NPUs). See the hardware
   # note for the required hash-router bias fix.
+  # AMD MI350X (gfx950): ROCm vision merged in vllm-project/vllm#55107 (2026-09-11)
+  # on the #54566 base. Verified text+vision on stock ROCm nightly at single-node
+  # TP2 and TP4, with DSpark k=3 (needs VLLM_USE_V2_MODEL_RUNNER=1). See
+  # "Launching on AMD" in the guide.
   default_hardware: gb200
   hardware:
     gb200: verified
+    mi350x: verified
     ascend_950dt_8x: verified
     ascend_950pr_8x: verified
 
@@ -34,13 +39,15 @@ model:
   # image below is the only runnable path.
   min_vllm_version: "0.29.0"
   nightly_required: true
-  docker_image: "vllm/vllm-openai:deepseekv4-flash-vision"
+  docker_image:
+    nvidia: "vllm/vllm-openai:deepseekv4-flash-vision"
+    amd: "vllm/vllm-openai-rocm:nightly"
   install:
     # Docker first so it is the default tab. The official wheel can't run this
     # checkpoint: released vLLM routes it to the text-only
     # DeepseekV4ForCausalLM, which then fails on the vision/aligner tensors.
     docker:
-      note: "NVIDIA: use the dedicated DeepSeek-V4-Flash-Vision image until support lands in the standard vLLM image. Ascend 950PR/950DT: pin quay.io/ascend/vllm-ascend:v0.23.0-a5 and overlay vllm-project/vllm-ascend#16259."
+      note: "NVIDIA: use the dedicated DeepSeek-V4-Flash-Vision image until support lands in the standard vLLM image. AMD: track vllm/vllm-openai-rocm:nightly (>= 2026-09-11, includes #55107). Ascend 950PR/950DT: pin quay.io/ascend/vllm-ascend:v0.23.0-a5 and overlay vllm-project/vllm-ascend#16259."
     pip: false
   architecture: moe
   parameter_count: "285B"
@@ -89,6 +96,13 @@ features:
     # still emits no --speculative-config. Default-off via
     # hardware_opt_in_features below — GB200 keeps DSpark on.
     hardware_overrides:
+      # ROCm: the DeepseekV4 indexer backend rejects adaptive verification, so it
+      # is forced false (DSpark still drafts k=3). VLLM_USE_V2_MODEL_RUNNER=1
+      # (hardware_overrides.amd.extra_env) is also required.
+      amd:
+        args:
+          - "--speculative-config"
+          - '{"method":"dspark","model":"deepseek-ai/DeepSeek-V4-Flash-Vision-Exp","num_speculative_tokens":3,"draft_sample_method":"probabilistic","enable_adaptive_verification":false}'
       npu:
         args: []
 
@@ -147,6 +161,18 @@ strategy_hardware:
 # dispatch. last-wins shadows the DEP builder's --data-parallel-size 8
 # and the recipe-level --block-size 256 / --kv-cache-dtype fp8.
 hardware_overrides:
+  amd:
+    extra_args:
+      - "--tensor-parallel-size"
+      - "2"
+      - "--gpu-memory-utilization"
+      - "0.9"
+      - "--max-model-len"
+      - "32768"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_USE_BREAKABLE_CUDAGRAPH: "1"
+      VLLM_USE_V2_MODEL_RUNNER: "1"
   npu:
     extra_args:
       - "--data-parallel-size"
@@ -215,7 +241,8 @@ guide: |
   wheel routes this checkpoint to the text-only class and fails on the vision tensors.
 
   - **Weights:** ~168 GB on disk (48 shards). Budget ~202 GB of VRAM before KV cache.
-  - **Hardware:** NVIDIA only — the ROCm and XPU builds have no vision implementation.
+  - **Hardware:** NVIDIA (verified on GB200) and AMD MI350X (gfx950);
+    XPU still has no vision implementation.
   - **Tokenizer / chat template:** nothing to pass. The repo ships no Jinja template
     (prompt encoding lives in `encoding/`); vLLM resolves `--tokenizer-mode` to
     `deepseek_v4` automatically, which is what turns OpenAI content blocks into
@@ -263,6 +290,43 @@ guide: |
   `--attention_config.use_fp4_indexer_cache` / `--moe-backend deep_gemm_mega_moe` tweaks
   the text recipe applies are deliberately not set here: the verified vision run did not
   use them.
+
+  ### AMD MI350X (gfx950)
+
+  ROCm vision support is merged (#55107 on the #54566 base); a
+  `vllm/vllm-openai-rocm:nightly` built on/after 2026-09-11 runs the checkpoint
+  natively. Three env vars are required:
+
+  - `VLLM_ROCM_USE_AITER=1` — the sparse-attention indexer's ROCm path runs only on
+    AITER; without it the engine aborts at KV-cache profiling.
+  - `VLLM_USE_BREAKABLE_CUDAGRAPH=1` — the multimodal wrapper is not torch-compiled, so
+    the default `FULL_AND_PIECEWISE` capture cannot attach without breakable graphs.
+  - `VLLM_USE_V2_MODEL_RUNNER=1` — required for DSpark (the V1 ROCm runner refuses it);
+    harmless for plain serving.
+
+  Verified single-node launch:
+
+  ```bash
+  docker run -d --name dsv4-vision \
+    --ipc host --network host --privileged --shm-size 128g \
+    --device /dev/kfd --device /dev/dri --group-add video \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e VLLM_ROCM_USE_AITER=1 \
+    -e VLLM_USE_BREAKABLE_CUDAGRAPH=1 \
+    -e VLLM_USE_V2_MODEL_RUNNER=1 \
+    vllm/vllm-openai-rocm:nightly \
+    deepseek-ai/DeepSeek-V4-Flash-Vision-Exp \
+    --tensor-parallel-size 2 \
+    --kv-cache-dtype fp8 --block-size 256 \
+    --gpu-memory-utilization 0.9 \
+    --max-model-len 32768
+  ```
+
+  Observed backends: AITER Flash-Attention for the ViT, DeepSeek `fp8_ds_mla` KV cache,
+  FP8 Lightning-Indexer cache, `DEEPSEEK_SPARSE_SWA` (block 256), and the
+  `ROCM_FLASHMLA_SPARSE_DSV4` MLA backend. TP2 loads 75.2 GiB/card (1.76M-token KV pool
+  at 131K context); TP4 loads 38.8 GiB/card.
+
 
   ## Reasoning modes
 
@@ -371,9 +435,9 @@ guide: |
 
   - **Pre-release.** Flags and defaults can change before #54566 lands; re-check before
     deploying, and keep the image pinned.
-  - **NVIDIA only.** ROCm and XPU raise `NotImplementedError` at model construction.
-  - **GB200 is the only hardware with a published vision run.** Every other pill is the
-    repo's fail-open default, not a tested claim.
+  - **XPU has no vision path** — it raises `NotImplementedError` at model construction.
+  - **GB200 (NVIDIA) and MI350X (AMD) are the hardware with a verified vision run.**
+    Every other pill is the repo's fail-open default, not a tested claim.
   - **PD disaggregation is not offered**, and the CPU/filesystem KV-offload pills stay
     off — neither has a verified run to record. The Mooncake KV-store pills follow the
     repo's fail-open default and are offered, but untested here.
@@ -383,5 +447,6 @@ guide: |
 
   - [Model card](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-Vision-Exp)
   - [vLLM support PR #54566](https://github.com/vllm-project/vllm/pull/54566)
+  - [vLLM ROCm vision PR #55107](https://github.com/vllm-project/vllm/pull/55107)
   - [DeepSeek-V4-Flash recipe](/deepseek-ai/DeepSeek-V4-Flash) — the text-only sibling
   - [DeepSpec (DSpark)](https://github.com/deepseek-ai/DeepSpec)
