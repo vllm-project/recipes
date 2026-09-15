@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5 frontier-scale MoE language model (~744B total parameters, 28.5T training tokens) with asynchronous RL infrastructure for reasoning, coding, and agentic tasks"
   date_added: 2026-02-09
-  date_updated: 2026-08-14
+  date_updated: 2026-09-14
   difficulty: advanced
   tasks:
     - text
@@ -16,6 +16,7 @@ meta:
 model:
   model_id: "zai-org/GLM-5"
   min_vllm_version: "0.16.0"
+  default_frontend: rust
   architecture: moe
   parameter_count: "744B"
   active_parameters: "40B"

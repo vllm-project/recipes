@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Qwen3.5 dense multimodal model (9B) with gated delta networks hybrid attention, MTP, and 262K context"
   date_added: 2026-04-22
-  date_updated: 2026-09-10
+  date_updated: 2026-09-14
   difficulty: beginner
   tasks:
     - multimodal
@@ -20,6 +20,7 @@ meta:
 model:
   model_id: "Qwen/Qwen3.5-9B"
   min_vllm_version: "0.17.0"
+  default_frontend: rust
   architecture: dense
   parameter_count: "9B"
   active_parameters: "9B"
@@ -69,6 +70,15 @@ variants:
     precision: bf16
     vram_minimum_gb: 22
     description: "Full precision BF16 — single 24 GB GPU or Intel Arc Pro B60/B70"
+
+  fp8:
+    model_id: "RedHatAI/Qwen3.5-9B-FP8-dynamic"
+    precision: fp8
+    vram_minimum_gb: 11
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
 
 compatible_strategies:
   - single_node_tp

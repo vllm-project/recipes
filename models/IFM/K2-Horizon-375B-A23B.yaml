@@ -22,7 +22,7 @@ model:
   # path too, which deliberately runs pure TP (see strategy_hardware). The TEP
   # strategies emit it themselves; multi_node_tp_pp does not, so it carries its
   # own copy in strategy_overrides below.
-  base_args: ["--trust-remote-code", "--dtype", "bfloat16", "--max-model-len", "131072"]
+  base_args: ["--trust-remote-code", "--dtype", "bfloat16"]
   base_env: {}
 features:
   reasoning:
@@ -88,7 +88,6 @@ guide: |
     --tensor-parallel-size 8 \
     --trust-remote-code \
     --dtype bfloat16 \
-    --max-model-len 131072 \
     --enable-expert-parallel \
     --reasoning-parser k2_horizon \
     --enable-auto-tool-choice \
