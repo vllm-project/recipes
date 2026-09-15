@@ -139,7 +139,7 @@ export function resolveSingleNodeTp(
     return isCpu ? declaredTp : Math.min(declaredTp, gpuCount);
   }
   const perGpuVram = hwProfile?.vram_gb && gpuCount ? hwProfile.vram_gb / gpuCount : 0;
-  const vramMinGb = variant?.vram_minimum_gb || 0;
+  const vramMinGb = variantVramMinimumGb(variant, hwProfileId);
   return autoFitTp(vramMinGb, perGpuVram, gpuCount);
 }
 
@@ -461,14 +461,30 @@ export function listCompatibleHardware(hwProfiles, variant, recipe) {
 }
 
 /**
+ * GPU-resident VRAM the fit check uses for this (variant × hardware) pair.
+ * `variants.<key>.vram_minimum_gb` is the full-weight footprint. An exact-GPU
+ * `hardware_overrides.<gpu_id>.vram_minimum_gb` replaces it when a recipe
+ * documents a smaller on-device budget — typically CPU weight offload on a
+ * unified-memory workstation. Taxonomy `vram_gb` stays physical HBM; other
+ * recipes are unaffected.
+ */
+export function variantVramMinimumGb(variant, hwProfileId = null) {
+  const override = hwProfileId
+    ? variant?.hardware_overrides?.[hwProfileId]?.vram_minimum_gb
+    : undefined;
+  if (typeof override === "number" && override > 0) return override;
+  return variant?.vram_minimum_gb || 0;
+}
+
+/**
  * Single-node fit check: strategies bound to one node (TP, TEP, DEP) shard
  * weights across that node's GPUs and can't scale VRAM further. Returns false
- * when the variant's declared `vram_minimum_gb` exceeds the node's `vram_gb`.
+ * when the variant's effective `vram_minimum_gb` exceeds the node's `vram_gb`.
  * Missing size info → treat as fit (don't block on incomplete metadata).
  */
-export function fitsSingleNode(hwProfile, variant) {
+export function fitsSingleNode(hwProfile, variant, hwProfileId = null) {
   const nodeVram = typeof hwProfile?.vram_gb === "number" ? hwProfile.vram_gb : 0;
-  const modelVram = variant?.vram_minimum_gb || 0;
+  const modelVram = variantVramMinimumGb(variant, hwProfileId);
   if (modelVram <= 0 || nodeVram <= 0) return true;
   return modelVram <= nodeVram;
 }
@@ -507,7 +523,7 @@ export function variantRunsOnHardware(hwProfile, variant, hwId = null) {
   if (!isPrecisionCompatible(hwProfile, variant)) return false;
   if (hwId && !isVariantHardwareSupported(variant, hwId)) return false;
   if (isHardwareScalable(hwProfile)) return true;
-  return fitsSingleNode(hwProfile, variant);
+  return fitsSingleNode(hwProfile, variant, hwId);
 }
 
 /**
@@ -522,6 +538,9 @@ export function pickFittingVariant(recipe, hwProfile, hwId = null) {
     ([, v]) => variantRunsOnHardware(hwProfile, v, hwId)
   );
   if (!fitting.length) return null;
+  // Prefer highest-fidelity among those that fit: original footprint, not the
+  // GPU-resident override (an offloaded 558 GB NVFP4 still outranks a 24 GB
+  // native that also happens to fit the box).
   fitting.sort((a, b) => (b[1].vram_minimum_gb || 0) - (a[1].vram_minimum_gb || 0));
   return fitting[0][0];
 }
@@ -531,12 +550,12 @@ export function pickFittingVariant(recipe, hwProfile, hwId = null) {
  * holds a full model across its TP group, so the node must fit 2× the model's
  * VRAM. Also requires at least 2 GPUs to split.
  */
-export function pdFitsSingleNode(hwProfile, variant) {
+export function pdFitsSingleNode(hwProfile, variant, hwProfileId = null) {
   if (!hwProfile || !variant) return false;
   const gpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 0;
   if (gpuCount < 2) return false;
   const nodeVram = typeof hwProfile.vram_gb === "number" ? hwProfile.vram_gb : 0;
-  const modelVram = variant.vram_minimum_gb || 0;
+  const modelVram = variantVramMinimumGb(variant, hwProfileId);
   return nodeVram >= 2 * modelVram;
 }
 
