@@ -188,6 +188,17 @@ hardware_profiles:
 
   # Exact two-card consumer profiles. Kept restricted so they only appear for
   # recipes with an end-to-end validated multi-GPU deployment.
+  rtx_3090_2x:
+    brand: NVIDIA
+    generation: ampere
+    display_name: "RTX 3090"
+    description: "NVIDIA RTX 3090 · 2× RTX 3090 GPU · 24 GB VRAM/GPU · PCIe, no NVLink"
+    gpu_count: 2
+    vram_gb: 48
+    multi_node: false
+    scalable: false
+    restricted: true
+
   rtx_4090_2x:
     brand: NVIDIA
     generation: ada
