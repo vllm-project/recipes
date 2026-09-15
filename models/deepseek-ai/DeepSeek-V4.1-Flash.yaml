@@ -422,13 +422,6 @@ guide: |
   client. Validation evidence applies to that pinned benchmark configuration, not
   every future `:nightly` image or the general command's inherited scheduler limits.
 
-  On B300, the generated command pins explicit `FULL_AND_PIECEWISE` CUDA
-  graph capture sizes and `--max-num-seqs 256` in place of the inherited
-  scheduler defaults; a validated **TP2** topology (2 of the 8 GPUs, vs. the
-  TP4 default) is also available by passing `--tensor-parallel-size 2`. See
-  [InferenceX #3109](https://github.com/SemiAnalysisAI/InferenceX/pull/3109)
-  for the full concurrency sweep on both topologies.
-
   ## References
 
   - [Model card](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash)
