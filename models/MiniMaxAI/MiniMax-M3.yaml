@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 plus MXFP8, NVIDIA Blackwell NVFP4, and AMD MI355X MXFP4 variants. Runs on NVIDIA (Hopper/Blackwell) and AMD CDNA4/CDNA3."
   date_added: 2026-06-12
-  date_updated: 2026-09-13
+  date_updated: 2026-09-15
   difficulty: advanced
   tasks:
     - text
@@ -149,6 +149,14 @@ variants:
         extra_args:
           - "--max-model-len"
           - "131072"
+      h200:
+        # Humming runs the dense MXFP8 linear layers; the atomic-add env var
+        # enables Marlin's atomic reduction on the MXFP8 MoE path.
+        extra_args:
+          - "--linear-backend"
+          - "humming"
+        extra_env:
+          VLLM_MARLIN_USE_ATOMIC_ADD: "1"
       mi300x:
         docker_image: "vllm/vllm-openai-rocm:nightly"
         extra_args:
@@ -544,6 +552,11 @@ guide: |
 
   For best MXFP8 throughput, prefer Blackwell (B200/B300) for native MX tensor cores,
   or AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 matrix cores.
+
+  On H200, the **mxfp8** variant runs the dense linear layers through the
+  Humming backend (`--linear-backend humming`) and enables Marlin atomic
+  reduction on the MoE path (`VLLM_MARLIN_USE_ATOMIC_ADD=1`) — selected
+  automatically in the command builder.
 
   On AMD MI300X, the **mxfp8** variant stacks two accuracy-safe scheduling
   levers from the InferenceX MI300X tuning recipe and avoids the high-concurrency
