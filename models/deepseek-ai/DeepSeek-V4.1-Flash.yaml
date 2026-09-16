@@ -5,7 +5,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-09-16
+  date_updated: 2026-09-17
   difficulty: advanced
   tasks:
     - text
@@ -136,6 +136,10 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
   - pd_cluster
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides:
   amd:
@@ -463,6 +467,20 @@ guide: |
   The command builder defaults to TP2 for B300 (2 of the 8 GPUs). For high
   interactivity, deploy the model using TP4: pass
   `--tensor-parallel-size 4`.
+
+  ## KV cache offloading
+
+  Offloading requires a build containing [vllm-project/vllm#57145](https://github.com/vllm-project/vllm/pull/57145).
+  Validation used [deepseek-ai/DeepSeek-V4.1-Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash) on 4×H200 (TP4),
+  vLLM commit `d1b4028d7e`, the Python frontend, `--enforce-eager`,
+  `--max-model-len 16384`, `--max-num-seqs 16` and `--max-num-batched-tokens 8192`.
+  DeepSeek validation used `--gpu-memory-utilization 0.95`.
+  Validation used `TieringOffloadingSpec`: 8 GiB total CPU tier, `blocks_per_chunk: 1`,
+  a persistent filesystem `root_dir`, eight read/write threads and `PYTHONHASHSEED=0`.
+  Three CPU-tier reloads and three filesystem reloads after restarting the server passed.
+  Reloaded responses matched the cold output, including the reasoning field.
+  The five-shot GSM8K diagnostic scored 31/32; this is a small sample, not the full benchmark.
+  These results cover this text-only configuration, not the builder's larger tier/chunk defaults or other variants.
 
   ## References
 
