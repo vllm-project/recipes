@@ -160,8 +160,8 @@ strategy_overrides:
     # TP4 baseline (one GB200 NVL4 tray; 4 GPUs on MI350X or MI355X). H100
     # spans the whole 8x80 GB node: 4 cards hold 320 GB against a 614 GB
     # minimum, and even TP8 needs the H100 override above. B300 defaults to
-    # TP2 (2 of the 8 GPUs) — most of the validated Pareto curve sits there;
-    # see the "4xB300" guide note for the higher-interactivity TP4 alternative.
+    # TP2 (2 of the 8 GPUs); see the "4xB300" guide note for the
+    # higher-interactivity TP4 alternative.
     tp:
       default: 4
       h100: 8
