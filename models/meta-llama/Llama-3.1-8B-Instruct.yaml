@@ -175,7 +175,7 @@ guide: |
   Launch the x86 CPU vLLM Docker container for `meta-llama/Llama-3.1-8B-Instruct`:
 
   ```bash
-  docker run --shm-size=16g \
+  docker run \
     --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     vllm/vllm-openai-cpu:latest-x86_64 meta-llama/Llama-3.1-8B-Instruct \

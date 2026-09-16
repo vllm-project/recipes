@@ -116,7 +116,7 @@ guide: |
   Docker:
 
   ```bash
-  docker run --shm-size=16g \
+  docker run \
     --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     vllm/vllm-openai-cpu:latest-x86_64 meta-llama/Llama-3.2-3B-Instruct \

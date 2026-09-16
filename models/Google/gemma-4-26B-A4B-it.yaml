@@ -394,7 +394,7 @@ guide: |
   Launch the x86 CPU vLLM Docker container for `google/gemma-4-26B-A4B-it`:
 
   ```bash
-  docker run --shm-size=16g \
+  docker run \
     --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     vllm/vllm-openai-cpu:latest-x86_64 google/gemma-4-26B-A4B-it \
