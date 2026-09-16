@@ -159,20 +159,13 @@ strategy_overrides:
   single_node_tp:
     # TP4 baseline (one GB200 NVL4 tray; 4 GPUs on MI350X or MI355X). H100
     # spans the whole 8x80 GB node: 4 cards hold 320 GB against a 614 GB
-    # minimum, and even TP8 needs the H100 override above. B300 defaults to
-    # TP2 (2 of the 8 GPUs); see the "4xB300" guide note for the
-    # higher-interactivity TP4 alternative.
+    # minimum, and even TP8 needs the H100 override above.
     tp:
       default: 4
       h100: 8
       b300: 2
     hardware_overrides:
       b300:
-        # Explicit FULL_AND_PIECEWISE graph capture tiers sized to the
-        # six-token DSpark verification block, replacing the inherited
-        # scheduler defaults. Engram tables are offloaded to host memory —
-        # required for the default TP2 topology to fit under the 614 GB
-        # vram_minimum_gb, and applied at TP4 too for consistency.
         extra_args:
           - "--engram-config"
           - '{"cpu_offload":true}'
