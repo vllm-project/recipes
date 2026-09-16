@@ -458,6 +458,10 @@ guide: |
   client. Validation evidence applies to that pinned benchmark configuration, not
   every future `:nightly` image or the general command's inherited scheduler limits.
 
+  The command builder above is for a TP4 topology (`FULL_AND_PIECEWISE` CUDA
+  graph capture and `--max-num-seqs 256`). For a **TP2** deployment (2 of the
+  8 GPUs), pass `--tensor-parallel-size 2`.
+
   ## References
 
   - [Model card](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash)
