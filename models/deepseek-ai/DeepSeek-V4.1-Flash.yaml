@@ -16,7 +16,9 @@ meta:
     - "deepseek-ai/DeepSeek-V4-Pro"
   default_hardware: gb200
   hardware:
+    h100: verified
     h200: verified
+    b200: verified
     gb200: verified
     gb300: verified
     b300: verified
@@ -25,9 +27,12 @@ meta:
 model:
   model_id: "deepseek-ai/DeepSeek-V4.1-Flash"
   min_vllm_version: "0.30.0"
+  # 0.30.0 has not shipped; the architecture lives on main (vllm-project/vllm#56228),
+  # so NVIDIA renders `vllm/vllm-openai:nightly` instead of the launch-day
+  # `deepseekv41-flash-0909` tag, which is now behind main.
+  nightly_required: true
   default_frontend: rust
   docker_image:
-    nvidia: "vllm/vllm-openai:deepseekv41-flash-0909"
     # Includes the AITER mHC delayed-pre path from vllm-project/vllm#56503.
     amd: "vllm/vllm-openai-rocm:nightly"
   architecture: moe
@@ -41,7 +46,7 @@ model:
     VLLM_ENGINE_READY_TIMEOUT_S: "3600"
   install:
     docker:
-      note: "Serve from the image for your GPU vendor — no pip wheel carries the DeepSeek-V4.1 architecture. NVIDIA uses the 0909 release tag; AMD tracks ROCm nightly (see Prerequisites)."
+      note: "Serve from the image for your GPU vendor — no pip wheel carries the DeepSeek-V4.1 architecture. Both vendors track the nightly image; the launch-day 0909 tag is superseded (see Prerequisites)."
     pip: false
 
 dependencies: []
@@ -98,6 +103,30 @@ variants:
     precision: fp8
     vram_minimum_gb: 614
     description: "Native mixed checkpoint: MXFP4 MoE experts, MXFP8 block-quantized dense weights, UE8M0 scales throughout"
+    hardware_overrides:
+      # 8x80 GB is the smallest NVIDIA node that serves this checkpoint, and
+      # only with the memory levers the InferenceX H100 arm settled on
+      # (SemiAnalysisAI/InferenceX#2974, validated on the 2026-09-15 nightly in
+      # SemiAnalysisAI/InferenceX#3135). Engram tables (183 GiB FP8) move to
+      # pinned host DRAM behind UVA, leaving ~36 GiB/GPU of resident weights at
+      # TP8. The sparse-attention indexer then allocates a
+      # [max-num-batched-tokens, max-model-len] logits buffer at startup:
+      # 8192 x 1M x 2 B is exactly 16 GiB and does not fit next to the weights,
+      # so batched tokens are capped at 4096 (8 GiB) rather than the context
+      # length, which would push the 256k-plus agentic traces off the model.
+      # The V2 model runner and expandable segments keep the KV pool from
+      # fragmenting around that buffer.
+      h100:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+          - "--max-num-batched-tokens"
+          - "4096"
+          - "--gpu-memory-utilization"
+          - "0.92"
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
 
 compatible_strategies:
   - single_node_tp
@@ -128,8 +157,12 @@ hardware_overrides:
 
 strategy_overrides:
   single_node_tp:
-    # TP4 baseline (one GB200 NVL4 tray; 4 GPUs on MI350X or MI355X).
-    tp: 4
+    # TP4 baseline (one GB200 NVL4 tray; 4 GPUs on MI350X or MI355X). H100
+    # spans the whole 8x80 GB node: 4 cards hold 320 GB against a 614 GB
+    # minimum, and even TP8 needs the H100 override above.
+    tp:
+      default: 4
+      h100: 8
     hardware_overrides:
       b300:
         # Explicit FULL_AND_PIECEWISE graph capture tiers sized to the
@@ -323,11 +356,14 @@ guide: |
   ## Prerequisites
 
   - An image (vLLM 0.30.0+); no pip wheel serves this architecture, so the Install block
-    only offers Docker. On NVIDIA that is `vllm/vllm-openai:deepseekv41-flash-0909`. On AMD
-    it is `vllm/vllm-openai-rocm:nightly` — a ROCm
-    nightly rather than the 0909 tag, because 0909 predates
-    [vllm-project/vllm#56503](https://github.com/vllm-project/vllm/pull/56503), which moves
-    the mHC delayed pre block off the eager Torch reference and onto AITER.
+    only offers Docker. On NVIDIA that is `vllm/vllm-openai:nightly`: the architecture
+    landed on `main` in [vllm-project/vllm#56228](https://github.com/vllm-project/vllm/pull/56228),
+    so any nightly from 2026-09-10 on serves it, and the launch-day
+    `deepseekv41-flash-0909` tag is no longer needed. On AMD it is
+    `vllm/vllm-openai-rocm:nightly`, which also carries
+    [vllm-project/vllm#56503](https://github.com/vllm-project/vllm/pull/56503) — the change
+    that moves the mHC delayed pre block off the eager Torch reference and onto AITER
+    and postdates the 0909 tag.
   - The Rust OpenAI frontend is selected by default in the command builder. Switch
     to Python if you encounter unsupported features or compatibility issues.
   - Expect a long first load: `VLLM_ENGINE_READY_TIMEOUT_S=3600` is set for that reason.
