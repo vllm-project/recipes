@@ -467,9 +467,9 @@ guide: |
 
   ## 4xB300
 
-  The command builder above now defaults B300 to a TP2 topology (2 of the 8
-  GPUs), which covers most of the validated Pareto curve. For high
-  interactivity, deploy the model using TP4: pass `--tensor-parallel-size 4`.
+  The command builder defaults to TP2 for B300 (2 of the 8 GPUs), which
+  covers most of the validated Pareto curve. For high interactivity, deploy
+  the model using TP4: pass `--tensor-parallel-size 4`.
 
   ## References
 
