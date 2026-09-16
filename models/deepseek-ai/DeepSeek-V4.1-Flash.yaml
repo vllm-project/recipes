@@ -5,7 +5,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-09-15
+  date_updated: 2026-09-16
   difficulty: advanced
   tasks:
     - text
@@ -458,9 +458,36 @@ guide: |
   client. Validation evidence applies to that pinned benchmark configuration, not
   every future `:nightly` image or the general command's inherited scheduler limits.
 
-  The command builder above is for a TP4 topology (`FULL_AND_PIECEWISE` CUDA
-  graph capture and `--max-num-seqs 256`). For a **TP2** deployment (2 of the
-  8 GPUs), pass `--tensor-parallel-size 2`.
+  ### 2xB300 (TP2)
+
+  The command builder above is for a TP4 topology
+  (`FULL_AND_PIECEWISE` CUDA graph capture and `--max-num-seqs 256`).
+  For a **TP2** deployment using 2 of the 8 GPUs in an HGX B300 node,
+  pass `--tensor-parallel-size 2` and offload the Engram tables to host
+  memory with `--engram-config '{"cpu_offload":true}'`.
+
+  Run the following command inside the
+  `vllm/vllm-openai:nightly` container:
+
+  ```bash
+  CUDA_VISIBLE_DEVICES=0,1 \
+  VLLM_ENGINE_READY_TIMEOUT_S=3600 \
+  VLLM_USE_RUST_FRONTEND=1 \
+  vllm serve deepseek-ai/DeepSeek-V4.1-Flash \
+    --tensor-parallel-size 2 \
+    --language-model-only \
+    --tokenizer-mode deepseek_v41 \
+    --tool-call-parser deepseek_v41 \
+    --enable-auto-tool-choice \
+    --reasoning-parser deepseek_v41 \
+    --engram-config '{"cpu_offload":true}' \
+    --speculative-config '{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","rejection_sample_method":"block","enable_adaptive_verification":true}' \
+    --max-model-len 1048576 \
+    --compilation-config '{"mode":"VLLM_COMPILE","cudagraph_mode":"FULL_AND_PIECEWISE","cudagraph_capture_sizes":[6,12,18,24,30,36,48,60,72,96,120,144,192,240,288,384,480,576,768,1020,1536,2046,3072,4092,6144,8190]}' \
+    --max-cudagraph-capture-size 8190 \
+    --max-num-batched-tokens 8192 \
+    --max-num-seqs 256
+  ```
 
   ## References
 
