@@ -5,7 +5,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-09-15
+  date_updated: 2026-09-16
   difficulty: advanced
   tasks:
     - text
@@ -163,12 +163,12 @@ strategy_overrides:
     tp:
       default: 4
       h100: 8
+      b300: 2
     hardware_overrides:
       b300:
-        # Explicit FULL_AND_PIECEWISE graph capture tiers sized to the
-        # six-token DSpark verification block, replacing the inherited
-        # scheduler defaults.
         extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
           - "--compilation-config"
           - '{"mode":"VLLM_COMPILE","cudagraph_mode":"FULL_AND_PIECEWISE","cudagraph_capture_sizes":[6,12,18,24,30,36,48,60,72,96,120,144,192,240,288,384,480,576,768,1020,1536,2046,3072,4092,6144,8190]}'
           - "--max-cudagraph-capture-size"
@@ -458,9 +458,11 @@ guide: |
   client. Validation evidence applies to that pinned benchmark configuration, not
   every future `:nightly` image or the general command's inherited scheduler limits.
 
-  The command builder above is for a TP4 topology (`FULL_AND_PIECEWISE` CUDA
-  graph capture and `--max-num-seqs 256`). For a **TP2** deployment (2 of the
-  8 GPUs), pass `--tensor-parallel-size 2`.
+  ## 4xB300
+
+  The command builder defaults to TP2 for B300 (2 of the 8 GPUs). For high
+  interactivity, deploy the model using TP4: pass
+  `--tensor-parallel-size 4`.
 
   ## References
 
