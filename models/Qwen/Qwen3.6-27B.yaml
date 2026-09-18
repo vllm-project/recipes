@@ -4,12 +4,12 @@ meta:
   provider: "Qwen"
   description: "Qwen3.6 dense multimodal model (27B) with gated delta networks hybrid attention, MTP, and 262K context"
   date_added: 2026-04-22
-  date_updated: 2026-09-14
+  date_updated: 2026-09-17
   difficulty: beginner
   tasks:
     - multimodal
     - text
-  performance_headline: "Qwen3.6 flagship dense — single-GPU FP8, 2x GPU BF16, 2-4x Intel Arc Pro B60/B70 BF16, or Ascend 950DT TP1+DP8"
+  performance_headline: "Qwen3.6 flagship dense — single-GPU FP8, 2x GPU BF16, 2-4x Intel Arc Pro B60/B70 BF16, Ascend 910C TP2+DP8, or Ascend 950DT TP1+DP8"
   related_recipes:
     - "Qwen/Qwen3.6-35B-A3B"
   hardware:
@@ -18,6 +18,7 @@ meta:
     dgx_station_gb300: verified
     rtx_5090: verified
     ascend_950dt: verified
+    ascend_910c: verified
     arc_pro_b60: verified
     arc_pro_b70: verified
 
@@ -65,7 +66,7 @@ features:
       qwen3_5_mtp:
         label: "MTP (Ascend)"
         description: "MTP mode documented for vLLM Ascend."
-        variants: [ascend_w8a8_mxfp8]
+        variants: [ascend_w8a8_mxfp8, ascend_w8a8]
         args:
           - "--speculative-config"
           - '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}'
@@ -97,12 +98,40 @@ variants:
   default:
     precision: bf16
     vram_minimum_gb: 65
-    description: "Full precision BF16 — fits on 1x H200, 2x H100, 4x Intel Arc Pro B60, 2x Intel Arc Pro B70"
+    description: "Full precision BF16 — fits on 1x H200, 2x H100, 4x Intel Arc Pro B60, 2x Intel Arc Pro B70, or an Ascend A3 node (TP2+DP8)"
+    tp:
+      ascend_910c: 2
     hardware_overrides:
       rtx_pro_6000:
         extra_args:
           - "--max-num-seqs"
           - "8"
+      ascend_910c:
+        docker_image: "swr.cn-southwest-2.myhuaweicloud.com/base_image/ascend-ci/vllm-ascend:v0.23.0-a3"
+        extra_args:
+          - "--data-parallel-size"
+          - "8"
+          - "--served-model-name"
+          - "qwen3.6"
+          - "--max-num-seqs"
+          - "32"
+          - "--max-model-len"
+          - "133000"
+          - "--max-num-batched-tokens"
+          - "16384"
+          - "--gpu-memory-utilization"
+          - "0.90"
+          - "--no-enable-prefix-caching"
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+          - "--async-scheduling"
+        extra_env:
+          VLLM_USE_MODELSCOPE: "True"
+          PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+          HCCL_BUFFSIZE: "512"
+          OMP_PROC_BIND: "false"
+          OMP_NUM_THREADS: "1"
+          TASK_QUEUE_ENABLE: "1"
   fp8:
     model_id: "Qwen/Qwen3.6-27B-FP8"
     precision: fp8
@@ -257,6 +286,48 @@ variants:
     hardware_overrides:
       ascend_950dt:
         docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a5"
+  ascend_w8a8:
+    model_id: "Eco-Tech/Qwen3.6-27B-w8a8"
+    precision: int8
+    label: "W8A8 (Ascend A3)"
+    vram_minimum_gb: 33
+    supported_hardware: [ascend_910c]
+    tp: 2
+    min_vllm_version: "0.23.0"
+    default_modes:
+      spec_decoding: qwen3_5_mtp
+    extra_args:
+      - "--data-parallel-size"
+      - "8"
+      - "--quantization"
+      - "ascend"
+      - "--served-model-name"
+      - "qwen3.6"
+      - "--max-num-seqs"
+      - "32"
+      - "--max-model-len"
+      - "133000"
+      - "--max-num-batched-tokens"
+      - "16384"
+      - "--gpu-memory-utilization"
+      - "0.90"
+      - "--no-enable-prefix-caching"
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+      - "--additional-config"
+      - '{"enable_cpu_binding":true}'
+      - "--async-scheduling"
+    extra_env:
+      VLLM_USE_MODELSCOPE: "True"
+      PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+      HCCL_BUFFSIZE: "512"
+      OMP_PROC_BIND: "false"
+      OMP_NUM_THREADS: "1"
+      TASK_QUEUE_ENABLE: "1"
+    hardware_overrides:
+      ascend_910c:
+        docker_image: "swr.cn-southwest-2.myhuaweicloud.com/base_image/ascend-ci/vllm-ascend:v0.23.0-a3"
+    description: "ModelSlim INT8 W8A8 checkpoint for one Atlas 800 A3 node (16x Ascend 910C), using TP2+DP8. Requires --quantization ascend."
 
 compatible_strategies:
   - single_node_tp
@@ -512,5 +583,6 @@ guide: |
   - [GPTQ-Int4 checkpoint](https://huggingface.co/Qwen/Qwen3.6-27B-GPTQ-Int4)
   - [NVIDIA NVFP4 checkpoint](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4)
   - [Ascend W8A8 checkpoint](https://www.modelscope.cn/models/Eco-Tech/Qwen3.6-27B-w8a8-mxfp8)
+  - [Ascend A3 W8A8 checkpoint](https://www.modelscope.cn/models/Eco-Tech/Qwen3.6-27B-w8a8)
   - [vLLM Ascend tutorial](https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/Qwen3.5-27B-Qwen3.6-27B.html)
   - [Qwen3.6-35B-A3B recipe](../Qwen3.6-35B-A3B)
