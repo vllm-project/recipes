@@ -4,11 +4,11 @@ meta:
   provider: "Hunyuan (Tencent)"
   description: "Tencent Hunyuan Hy4-preview — scaled-up MoE language model (770B total / 49B active) with a 10B MTP layer for speculative decoding, 1M context, and hy_v4 tool/reasoning parsers"
   date_added: 2026-08-28
-  date_updated: 2026-09-14
+  date_updated: 2026-09-15
   difficulty: intermediate
   tasks:
     - text
-  performance_headline: "Hunyuan Hy4-preview MoE — 770B/49B on 16xB200, 8xB300 with MTP"
+  performance_headline: "Hunyuan Hy4-preview MoE — 770B/49B on 16xB200, 8xB300, 8xMI300X/MI350X/MI355X with MTP"
   related_recipes:
     - "tencent/Hy3"
     - "tencent/Hy3-preview"
@@ -16,9 +16,10 @@ meta:
   hardware:
     b200: verified
     b300: verified
-    mi300x: unsupported
+    mi300x: verified
     mi325x: unsupported
-    mi355x: unsupported
+    mi350x: verified
+    mi355x: verified
 
 model:
   model_id: "tencent/Hy4-preview"
@@ -26,10 +27,11 @@ model:
   default_frontend: rust
   docker_image:
     nvidia: "vllm/vllm-openai:hy4-preview"
+    amd: "vllm/vllm-openai-rocm:nightly"
   nightly_required: true
   install:
     docker:
-      note: "Use the dedicated hy4-preview image until changes land in vllm:latest."
+      note: "NVIDIA: dedicated hy4-preview image until changes land in vllm:latest. AMD: ROCm nightly after enablement #54404 (AITER sparse-MLA sinks) + #54405 (HY-V4 init)."
     pip:
       note: "Hy4-preview's latest optimizations aren't in a stable release yet — use nightly wheels or build from source."
   architecture: moe
@@ -87,6 +89,12 @@ hardware_overrides:
     extra_args:
       - "--attention-backend"
       - "FLASHMLA_SPARSE"
+  amd:
+    extra_args:
+      - "--attention-backend"
+      - "ROCM_AITER_MLA_SPARSE"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
 
 strategy_overrides: {}
 
@@ -145,6 +153,32 @@ guide: |
     --tensor-parallel-size 8 \
     --speculative-config '{"num_speculative_tokens":3,"method":"mtp"}' \
     --attention-backend FLASHMLA_SPARSE \
+    --tool-call-parser hy_v4 \
+    --reasoning-parser hy_v4 \
+    --enable-auto-tool-choice \
+    --port 8000 \
+    --served-model-name hy4-preview
+  ```
+
+  ### Serving on 8×AMD MI350X / MI355X (gfx950)
+
+  ROCm enablement is two stacked PRs:
+  [#54404](https://github.com/vllm-project/vllm/pull/54404) (AITER sparse-MLA
+  attention sinks) and
+  [#54405](https://github.com/vllm-project/vllm/pull/54405) (HY-V4
+  initialization).
+
+  Verified serve path: `tencent/Hy4-preview-FP8` revision `4215ec29de87`,
+  `VLLM_ROCM_USE_AITER=1` at process start, backend `ROCM_AITER_MLA_SPARSE`,
+  graph mode, BF16 KV, native MTP `k=3`, `hy_v4` parsers. 
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+
+  vllm serve tencent/Hy4-preview-FP8 \
+    --tensor-parallel-size 8 \
+    --attention-backend ROCM_AITER_MLA_SPARSE \
+    --speculative-config '{"num_speculative_tokens":3,"method":"mtp"}' \
     --tool-call-parser hy_v4 \
     --reasoning-parser hy_v4 \
     --enable-auto-tool-choice \
