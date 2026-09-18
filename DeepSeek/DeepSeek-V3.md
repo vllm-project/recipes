@@ -25,10 +25,11 @@ uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
 
 ## Running DeepSeek-R1 / DeepSeek-V3
 
-DeepSeek-R1 and DeepSeek-V3 share the same architecture, so the same serving setup applies. Two common configurations are:
+DeepSeek-R1 and DeepSeek-V3 share the same architecture, so the same serving setup applies. Three common configurations are:
 
 - **8xH200 / 8xMI300X with `fp8`**: Native FP8 with TP+EP or DP+EP.
 - **4xB200 with `fp4`**: Native FP4 with FlashInfer enabled (TP+EP or DP+EP).
+- **8xMI300X/MI355X with `fp4`**: Native FP4 with TP and FP8 KV Cache.
 
 See sections below for detailed launch arguments for each configuration.
 
@@ -107,6 +108,20 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 vllm serve nvidia/DeepSeek-R1-FP4 \
 
 </details>
 
+### 8xMI300X/MI355X (FP4)
+
+<details>
+<summary>Tensor Parallel + FP8 KV Cache (TP8)</summary>
+
+```bash
+export VLLM_ROCM_USE_AITER=1
+export VLLM_ROCM_USE_SKINNY_GEMM=0
+
+vllm serve amd/DeepSeek-R1-0528-MXFP4-MTP-MoEFP4 \
+  --trust-remote-code \
+  --tensor-parallel-size 8 \
+  --kv-cache-dtype fp8
+```
 
 ## Benchmarking
 
