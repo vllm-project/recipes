@@ -74,7 +74,7 @@ variants:
     model_id: "amd/DeepSeek-R1-0528-MXFP4-MTP-MoEFP4"
     precision: mxfp4
     vram_minimum_gb: 450
-    description: "AMD Quark OCP MXFP4 weights for MI350X / MI355X (gfx950); ~375 GB on disk."
+    description: "AMD MXFP4 quantized weights for MI350X / MI355X (gfx950)"
     supported_hardware:
       - mi350x
       - mi355x
