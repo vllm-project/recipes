@@ -113,17 +113,16 @@ guide: |
 
   DeepSeek-R1 is a 671B-parameter Mixture-of-Experts reasoning model (37B activated per
   token) that shares its architecture with DeepSeek-V3, so the same launch recipes apply
-  to both. DeepSeek publishes a refreshed checkpoint as `DeepSeek-R1-0528`, and NVIDIA
+  to both. DeepSeek publishes a refreshed checkpoint as `DeepSeek-R1-0528`, NVIDIA
   publishes an FP4 quantized variant (`nvidia/DeepSeek-R1-FP4`) that runs on Blackwell
-  GPUs with fewer devices. AMD publishes the matching 4-bit checkpoint for Instinct,
-  [`amd/DeepSeek-R1-0528-MXFP4-MTP-MoEFP4`](https://huggingface.co/amd/DeepSeek-R1-0528-MXFP4-MTP-MoEFP4),
-  quantized with AMD-Quark to OCP MXFP4.
+  GPUs with fewer devices, and AMD publishes an MXFP4 quantized variant
+  (`amd/DeepSeek-R1-0528-MXFP4-MTP-MoEFP4`) that runs on Instinct GPUs.
 
   ## Prerequisites
 
   - **Hardware (FP8)**: 8x H200 (CUDA) or 8x MI300X / MI325X / MI355X (ROCm)
   - **Hardware (NVFP4)**: 4x B200 GPUs
-  - **Hardware (MXFP4)**: 8x MI350X / MI355X (ROCm) — gfx950 only
+  - **Hardware (MXFP4)**: 8x MI350X / MI355X (ROCm)
   - **vLLM**: Current stable release
 
   ### CUDA
@@ -334,6 +333,5 @@ guide: |
   - [DeepSeek-R1-0528 on Hugging Face](https://huggingface.co/deepseek-ai/DeepSeek-R1-0528)
   - [NVIDIA DeepSeek-R1-FP4](https://huggingface.co/nvidia/DeepSeek-R1-FP4)
   - [AMD DeepSeek-R1-0528-MXFP4-MTP-MoEFP4](https://huggingface.co/amd/DeepSeek-R1-0528-MXFP4-MTP-MoEFP4)
-  - [AMD-Quark quantization docs](https://quark.docs.amd.com/latest/index.html)
   - [vLLM Expert Parallelism docs](https://docs.vllm.ai/en/latest/serving/expert_parallel_deployment.html)
   - [vLLM Data Parallel deployment docs](https://docs.vllm.ai/en/latest/serving/data_parallel_deployment.html)
