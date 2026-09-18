@@ -238,13 +238,6 @@ guide: |
 
   ### 8xMI350X / 8xMI355X (MXFP4)
 
-  [`amd/DeepSeek-R1-0528-MXFP4-MTP-MoEFP4`](https://huggingface.co/amd/DeepSeek-R1-0528-MXFP4-MTP-MoEFP4)
-  is AMD's Quark quantization of DeepSeek-R1-0528: MoE weights and activations in
-  OCP MXFP4, attention left at per-channel / per-token FP8. About 375 GB on disk,
-  so a single MI350X or MI355X node holds it with room for a large KV cache. It
-  requires gfx950 — MI300X and MI325X have no native MXFP4 datapath. AMD reports
-  GSM8K 94.90 for this checkpoint against 94.24 for the BF16 source.
-
   Tensor Parallel + FP8 KV cache (TP8):
   ```bash
   export VLLM_ROCM_USE_AITER=1
@@ -255,23 +248,6 @@ guide: |
     --tensor-parallel-size 8 \
     --kv-cache-dtype fp8
   ```
-
-  Notes:
-
-  - This layout was validated with plain tensor parallel, not expert parallel.
-    Every other variant of this recipe runs with `--enable-expert-parallel`, so
-    the generated command carries `--no-enable-expert-parallel` to switch it back
-    off — `--enable-expert-parallel --no-enable-expert-parallel` resolves to *off*,
-    since vLLM exposes both spellings through `argparse.BooleanOptionalAction` and
-    the later flag wins. Drop both flags to run the expert-parallel layout instead.
-  - `VLLM_ROCM_USE_SKINNY_GEMM=0` disables the skinny-GEMM decode path for this
-    checkpoint. `VLLM_ROCM_USE_AITER=1` applies to every AMD selection in this
-    recipe and is emitted automatically.
-  - The checkpoint ships a quantized MTP head (`num_nextn_predict_layers: 1`), and
-    AMD's reproduction command enables it with
-    `--speculative-config '{"method":"mtp","num_speculative_tokens":1}' --block-size 1`.
-    That path is **not** covered by this recipe's verification — benchmark it on your
-    own cluster before depending on it.
 
   ## Benchmarking
 
