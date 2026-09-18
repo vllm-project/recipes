@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3 — Frontier Coding with Emergent Cyber Capabilities"
   date_added: 2026-08-28
-  date_updated: 2026-09-14
+  date_updated: 2026-09-18
   difficulty: advanced
   tasks:
     - text
@@ -45,7 +45,7 @@ features:
     description: "Extract reasoning content with the GLM reasoning parser — thinking is always on; effort is set per request via reasoning_effort (max by default)"
     args:
       - "--reasoning-parser"
-      - "glm45"
+      - "glm47"
   spec_decoding:
     description: "Speculative decoding — pick native MTP or an external DFlash2 drafter."
     default_mode: mtp
@@ -223,7 +223,7 @@ guide: |
     --speculative-config.method mtp \
     --speculative-config.num_speculative_tokens 5 \
     --tool-call-parser glm47 \
-    --reasoning-parser glm45 \
+    --reasoning-parser glm47 \
     --enable-auto-tool-choice \
     --served-model-name glm-5.3
   ```
@@ -240,7 +240,7 @@ guide: |
     --speculative-config.num_speculative_tokens 5 \
     --tool-call-parser glm47 \
     --enable-auto-tool-choice \
-    --reasoning-parser glm45 \
+    --reasoning-parser glm47 \
     --gpu-memory-utilization 0.80 \
     --max-model-len 524288 \
     --max-num-seqs 32 \
@@ -263,7 +263,7 @@ guide: |
     --speculative-config.num_speculative_tokens 5 \
     --max-num-seqs 32 \
     --tool-call-parser glm47 \
-    --reasoning-parser glm45 \
+    --reasoning-parser glm47 \
     --enable-auto-tool-choice \
     --served-model-name glm-5.3
   ```
@@ -282,7 +282,7 @@ guide: |
   vllm serve Inferact/GLM-5.3-NVFP4 \
     --tensor-parallel-size 8 \
     --enable-expert-parallel \
-    --reasoning-parser glm45 \
+    --reasoning-parser glm47 \
     --tool-call-parser glm47 \
     --enable-auto-tool-choice \
     --kv-cache-dtype fp8_e4m3 \
