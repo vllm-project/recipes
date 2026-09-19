@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Mid-size Qwen3.5 multimodal MoE (122B total / 10B active) with gated delta networks, 256 experts, and 262K context"
   date_added: 2026-04-22
-  date_updated: 2026-09-14
+  date_updated: 2026-09-19
   difficulty: intermediate
   tasks:
     - multimodal
@@ -13,11 +13,16 @@ meta:
   related_recipes:
     - "Qwen/Qwen3.5-397B-A17B"
     - "Qwen/Qwen3.5-35B-A3B"
+  hardware:
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "Qwen/Qwen3.5-122B-A10B"
   min_vllm_version: "0.17.0"
   default_frontend: rust
+  docker_image:
+    amd: "vllm/vllm-openai-rocm:nightly-rocm100-a8d1aa9c99b8698a2a78b611b7a10c30e6b3995b"
   architecture: moe
   parameter_count: "122B"
   active_parameters: "10B"
@@ -110,7 +115,19 @@ compatible_strategies:
   - multi_node_tep
   - pd_cluster
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    # AITER is opt-in on ROCm and the image does not set it; without these two the
+    # server runs ROCM_ATTN + the Triton FP8 MoE and single-stream decode of this
+    # hybrid GDN model drops 4x from ~200 to ~12k prompt tokens. With AITER on, the
+    # auto-selection still ranks ROCM_ATTN ahead of the AITER backends on CDNA, so
+    # the unified attention backend has to be named. Verified 2026-09-19 on one
+    # MI325X and one MI355X with the FP8 checkpoint (see the AMD section of the guide).
+    extra_args:
+      - "--attention-backend"
+      - "ROCM_AITER_UNIFIED_ATTN"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
 
 strategy_overrides:
   pd_cluster:
@@ -182,6 +199,31 @@ guide: |
     --speculative-config '{"method": "mtp", "num_speculative_tokens": 1}' \
     --reasoning-parser qwen3
   ```
+
+  ### AMD (MI325X / MI355X, single GPU, FP8)
+
+  The FP8 checkpoint fits one MI300X-class GPU. Two settings matter on ROCm and neither
+  is on by default: `VLLM_ROCM_USE_AITER=1` switches the MoE to the AITER FP8 kernels, and
+  `--attention-backend ROCM_AITER_UNIFIED_ATTN` keeps decode flat across context (the
+  auto-selected `ROCM_ATTN` decays with prompt length on this hybrid GDN model).
+
+  ```bash
+  VLLM_ROCM_USE_AITER=1 vllm serve Qwen/Qwen3.5-122B-A10B-FP8 \
+    --attention-backend ROCM_AITER_UNIFIED_ATTN \
+    --kv-cache-dtype fp8 --max-num-seqs 64 \
+    --reasoning-parser qwen3
+  ```
+
+  `--max-num-seqs 64` because the default exceeds the Mamba block budget on 192 GB. MTP
+  (`--speculative-config '{"method":"mtp","num_speculative_tokens":1}'`) works with the same
+  flags. Single-stream decode (tokens/s at ~200 / ~2k / ~12k prompt tokens, 128 output
+  tokens, prefix caching off) on `vllm/vllm-openai-rocm:nightly-rocm100-a8d1aa9c9…`:
+
+  | | MI325X | MI355X |
+  |---|---|---|
+  | image defaults (`ROCM_ATTN` + Triton MoE) | 74 / 62 / 32 | 97 / 72 / 30 |
+  | AITER + `ROCM_AITER_UNIFIED_ATTN` | 134 / 134 / 133 | 140 / 140 / 140 |
+  | + MTP | 192 / 183 / 180 | 212 / 189 / 200 |
 
   ## Client Usage
 
