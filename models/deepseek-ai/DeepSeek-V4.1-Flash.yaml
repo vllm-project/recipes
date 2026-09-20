@@ -530,14 +530,6 @@ guide: |
   serving profile. For high interactivity on any of them, use
   `--tensor-parallel-size 4`.
 
-  Validation of the TP2 cells comes from the InferenceX AgentX sweeps: B200
-  completed concurrency 1 through 128 with evals
-  ([InferenceX #3216](https://github.com/SemiAnalysisAI/InferenceX/pull/3216),
-  run 35480787586), and GB200 and GB300 are under test in
-  [#3320](https://github.com/SemiAnalysisAI/InferenceX/pull/3320) and
-  [#3321](https://github.com/SemiAnalysisAI/InferenceX/pull/3321). The B300
-  settings are unchanged by this update and were not rerun.
-
   ## KV cache offloading
 
   Offloading requires a build containing [vllm-project/vllm#57145](https://github.com/vllm-project/vllm/pull/57145).
