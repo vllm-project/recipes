@@ -22,7 +22,9 @@ model:
   min_vllm_version: "0.17.0"
   default_frontend: rust
   docker_image:
-    amd: "vllm/vllm-openai-rocm:nightly-rocm100-a8d1aa9c99b8698a2a78b611b7a10c30e6b3995b"
+    # Moving ROCm 10 nightly (hash-pinned nightly tags get pruned from Docker Hub);
+    # the AMD numbers in the guide were taken on nightly-rocm100 @ a8d1aa9c9 (2026-09-19).
+    amd: "vllm/vllm-openai-rocm:nightly-rocm100"
   architecture: moe
   parameter_count: "122B"
   active_parameters: "10B"
@@ -217,7 +219,8 @@ guide: |
   `--max-num-seqs 64` because the default exceeds the Mamba block budget on 192 GB. MTP
   (`--speculative-config '{"method":"mtp","num_speculative_tokens":1}'`) works with the same
   flags. Single-stream decode (tokens/s at ~200 / ~2k / ~12k prompt tokens, 128 output
-  tokens, prefix caching off) on `vllm/vllm-openai-rocm:nightly-rocm100-a8d1aa9c9…`:
+  tokens, prefix caching off), measured 2026-09-19 on the `vllm/vllm-openai-rocm:nightly-rocm100`
+  image at commit `a8d1aa9c9`:
 
   | | MI325X | MI355X |
   |---|---|---|
