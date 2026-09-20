@@ -3,7 +3,7 @@ meta:
   slug: "qwen3.8-flash-next"
   provider: "Qwen"
   description: "Qwen4 architecture preview with a 125B-parameter main model, supplemented by an additional 51B N-gram embeddings, with 6B parameters activated per token."
-  date_updated: 2026-09-14
+  date_updated: 2026-09-17
   difficulty: advanced
   tasks:
     - multimodal
@@ -25,7 +25,7 @@ model:
   min_vllm_version: "0.29.0"
   default_frontend: rust
   docker_image:
-    nvidia: "vllm/vllm-openai:qwen38-flash-next"
+    nvidia: "vllm/vllm-openai:nightly"
     amd: "vllm/vllm-openai-rocm:qwen38-flash-next"
   nightly_required: true
   install:
@@ -159,6 +159,10 @@ compatible_strategies:
   - single_node_tp
   - single_node_tep
   - single_node_dep
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides:
   hopper:
@@ -383,6 +387,20 @@ guide: |
     offload is not supported. The generated DEP command sets this automatically.
   - **MTP memory pressure:** reduce `num_speculative_tokens` below 3.
   - **PLE:** a network layer that injects N-gram Embeddings into the main model. 
+
+  ## KV cache offloading
+
+  Offloading requires a build containing [vllm-project/vllm#57145](https://github.com/vllm-project/vllm/pull/57145).
+  Validation used [Qwen/Qwen3.8-Flash-Next-FP8](https://huggingface.co/Qwen/Qwen3.8-Flash-Next-FP8) on 4×H200 (TP4),
+  vLLM commit `d1b4028d7e`, the Python frontend, `--enforce-eager`,
+  `--max-model-len 16384`, `--max-num-seqs 16` and `--max-num-batched-tokens 8192`.
+  Qwen validation used the FP8 variant with `--limit-mm-per-prompt '{"image":0,"video":0}'`.
+  Validation used `TieringOffloadingSpec`: 8 GiB total CPU tier, `blocks_per_chunk: 1`,
+  a persistent filesystem `root_dir`, eight read/write threads and `PYTHONHASHSEED=0`.
+  Three CPU-tier reloads and three filesystem reloads after restarting the server passed.
+  Reloaded responses matched the cold output, including the reasoning field.
+  The five-shot GSM8K diagnostic scored 31/32; this is a small sample, not the full benchmark.
+  These results cover this text-only configuration, not the builder's larger tier/chunk defaults or other variants.
 
   ## References
 

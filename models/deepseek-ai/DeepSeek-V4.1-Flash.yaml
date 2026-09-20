@@ -5,7 +5,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-09-19
+  date_updated: 2026-09-20
   difficulty: advanced
   tasks:
     - text
@@ -137,6 +137,10 @@ compatible_strategies:
   - multi_node_dep
   - pd_cluster
 
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
+
 hardware_overrides:
   amd:
     extra_args:
@@ -159,19 +163,26 @@ strategy_overrides:
   single_node_tp:
     # TP4 baseline (one GB200 NVL4 tray; 4 GPUs on MI350X or MI355X). H100
     # spans the whole 8x80 GB node: 4 cards hold 320 GB against a 614 GB
-    # minimum, and even TP8 needs the H100 override above. B200 and B300
-    # serve on 2 of their 8 GPUs once the Engram tables leave HBM.
+    # minimum, and even TP8 needs the H100 override above.
     tp:
       default: 4
       h100: 8
       b200: 2
       b300: 2
     hardware_overrides:
+      blackwell:
+        extra_args:
+          - "--attention-config"
+          - '{"backend":"FLASHINFER_MLA_SPARSE_DSV41","indexer_kv_dtype":"mxfp4","indexer_sparse_logits":true}'
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--max-num-seqs"
+          - "128"
       # TP2 on 180 GB B200 with the Engram tables in pinned host DRAM behind
       # UVA still leaves ~145 GiB of resident weights per GPU, so the memory
       # levers from the InferenceX B200 arm apply
       # (SemiAnalysisAI/InferenceX#3216, AgentX c1-c128 green in run
-      # 35460277352): at the upstream 16384 batched tokens the
+      # 35480787586): at the upstream 16384 batched tokens the
       # sparse-attention indexer's [batched-tokens, 1M] fp8 logits buffer is
       # 32 GiB and graph capture above 512 tokens pushed the KV budget
       # negative, so batched tokens are capped at 4096 (8 GiB) and CUDA-graph
@@ -201,6 +212,20 @@ strategy_overrides:
           - "8192"
           - "--max-num-seqs"
           - "256"
+  single_node_dep:
+    hardware_overrides:
+      blackwell:
+        extra_args:
+          - "--kernel-config"
+          - '{"moe_backend":"deep_gemm_mega_moe"}'
+          - "--attention-config"
+          - '{"backend":"FLASHMLA_MEGA_ATTN_DSV41","indexer_kv_dtype":"mxfp4","indexer_sparse_logits":true}'
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--max-num-seqs"
+          - "128"
+          - "--engram-config"
+          - '{"embedding_across_dp":true}'
   pd_cluster:
     # Verified 1P1D on GB200 NVL4: one tray per role, TP4 each, NIXL transfer.
     env:
@@ -482,17 +507,48 @@ guide: |
   client. Validation evidence applies to that pinned benchmark configuration, not
   every future `:nightly` image or the general command's inherited scheduler limits.
 
-  ## B200 and B300 at TP2
+  ## Blackwell TP and DEP
 
-  The command builder defaults to TP2 for B200 and B300 (2 of the 8 GPUs) and
-  moves the Engram tables to pinned host DRAM with `--engram-config
-  '{"cpu_offload":true}'`; the lookups read the tables through UVA and the
-  output is bitwise unchanged. On B200 (180 GB per GPU) TP2 also caps
-  `--max-num-batched-tokens` at 4096 and `--max-cudagraph-capture-size` at 512,
-  the settings under which the InferenceX AgentX sweep completed concurrency
-  1 through 128 ([InferenceX #3216](https://github.com/SemiAnalysisAI/InferenceX/pull/3216)).
-  For high interactivity, deploy the model using TP4: pass
-  `--tensor-parallel-size 4`.
+  On B200, GB200 and GB300, **Tensor Parallel** uses TP4 with
+  `FLASHINFER_MLA_SPARSE_DSV41`. **Data + Expert Parallel** uses the hardware's
+  GPU count: DEP4 on GB200/GB300 trays, DEP8 on B200/B300 nodes. It enables
+  `--enable-expert-parallel`, `FLASHMLA_MEGA_ATTN_DSV41`,
+  `--kernel-config '{"moe_backend":"deep_gemm_mega_moe"}'`, and
+  `--engram-config '{"embedding_across_dp":true}'`.
+
+  Both configurations set `indexer_kv_dtype` to `mxfp4`, `indexer_sparse_logits`
+  to `true`, `--kv-cache-dtype fp8`, and `--max-num-seqs 128`. Reasoning uses
+  `--reasoning-parser deepseek_v41`.
+
+  B300 retains its **Tensor Parallel** override: TP2, Engram CPU offload,
+  the existing CUDA Graph capture configuration (`--max-cudagraph-capture-size 8190`),
+  `--max-num-batched-tokens 8192`, and `--max-num-seqs 256`. Its exact-GPU
+  settings take precedence over the shared Blackwell defaults. For high
+  interactivity, use `--tensor-parallel-size 4`.
+
+  B200 (180 GB per GPU) also defaults to **TP2** with Engram CPU offload. Its
+  exact-GPU override caps `--max-num-batched-tokens` at 4096 and
+  `--max-cudagraph-capture-size` at 512 and sets `--max-num-seqs 256`, the
+  settings under which the InferenceX AgentX sweep completed concurrency 1
+  through 128 ([InferenceX #3216](https://github.com/SemiAnalysisAI/InferenceX/pull/3216),
+  run 35480787586). For high interactivity, use `--tensor-parallel-size 4`.
+
+  These command settings were updated on 2026-09-20; the B300 settings have not
+  been rerun on GPUs as part of this recipe update.
+
+  ## KV cache offloading
+
+  Offloading requires a build containing [vllm-project/vllm#57145](https://github.com/vllm-project/vllm/pull/57145).
+  Validation used [deepseek-ai/DeepSeek-V4.1-Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash) on 4×H200 (TP4),
+  vLLM commit `d1b4028d7e`, the Python frontend, `--enforce-eager`,
+  `--max-model-len 16384`, `--max-num-seqs 16` and `--max-num-batched-tokens 8192`.
+  DeepSeek validation used `--gpu-memory-utilization 0.95`.
+  Validation used `TieringOffloadingSpec`: 8 GiB total CPU tier, `blocks_per_chunk: 1`,
+  a persistent filesystem `root_dir`, eight read/write threads and `PYTHONHASHSEED=0`.
+  Three CPU-tier reloads and three filesystem reloads after restarting the server passed.
+  Reloaded responses matched the cold output, including the reasoning field.
+  The five-shot GSM8K diagnostic scored 31/32; this is a small sample, not the full benchmark.
+  These results cover this text-only configuration, not the builder's larger tier/chunk defaults or other variants.
 
   ## References
 
