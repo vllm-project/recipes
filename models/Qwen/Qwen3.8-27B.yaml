@@ -253,8 +253,7 @@ variants:
     label: "MXFP4 (W4A4)"
     # 19.83 GB on disk (19,832,841,464 B). Transformer linear weights+activations are FP4
     # (OCP Microscaling, group-32, E8M0 scales); the vision tower, embeddings and the
-    # linear-attention in_proj_a/b stay BF16, so this is not a uniform 4-bit build — size it
-    # from the real footprint, not the bytes-per-param table.
+    # linear-attention in_proj_a/b stay BF16.
     vram_minimum_gb: 24
     supported_hardware: [h100, h200, b200, b300, gb200, gb300, rtx_5090, rtx_5090_2x]
     description: "Red Hat AI compressed-tensors MXFP4 build — 19.8 GB: 1 GPU. True W4A4 on Blackwell (SM100+); W4A16 via Marlin on Hopper and elsewhere."
@@ -362,8 +361,6 @@ guide: |
    ```bash
    vllm serve RedHatAI/Qwen3.8-27B-MXFP4 \
      --tensor-parallel-size 1 \
-     --max-model-len 262144 \
-     --kv-cache-dtype fp8 \
      --reasoning-parser qwen3 \
      --enable-auto-tool-choice --tool-call-parser qwen3_xml
    ```

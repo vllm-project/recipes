@@ -102,12 +102,10 @@ variants:
     label: "MXFP4 (W4A4)"
     # 403.34 GB on disk (403,337,136,288 B). Transformer linear weights+activations are FP4
     # (OCP Microscaling, group-32, E8M0 scales); the MoE router gate, lm_head, embed_tokens,
-    # the DSA indexer and eh_proj stay unquantized, so this is not a uniform 4-bit build — size
-    # it from the real footprint. Halves the 8×H200 FP8 node's ~704 GB weight footprint.
+    # the DSA indexer and eh_proj stay unquantized. 
+    # Halves the 8×H200 FP8 node's ~704 GB weight footprint.
     vram_minimum_gb: 485
     supported_hardware: [h100, h200, b200, b300, gb200, gb300]
-    extra_args:
-      - "--enable-expert-parallel"
     description: "Red Hat AI compressed-tensors MXFP4 build — 403 GB: fits one 8×B200 node with room for the full 1M context. True W4A4 on Blackwell (SM100+); W4A16 via Marlin on Hopper."
   w4a8:
     model_id: "gpustack/GLM-5.3-W4A8"
@@ -310,7 +308,7 @@ guide: |
   ### MXFP4 on Blackwell (B200)
 
   `RedHatAI/GLM-5.3-MXFP4` is Red Hat AI's OCP Microscaling FP4 re-quantization of the FP8
-  checkpoint — a compressed-tensors `mxfp4-pack-quantized` build. True W4A4 on Blackwell
+  checkpoint. This is a compressed-tensors `mxfp4-pack-quantized` build. True W4A4 on Blackwell
   (SM100+); it falls back to W4A16 via Marlin on Hopper. The ~403 GB weights halve the FP8
   footprint, so one 8×B200 node holds the model with ample KV for the full 1M context.
 
