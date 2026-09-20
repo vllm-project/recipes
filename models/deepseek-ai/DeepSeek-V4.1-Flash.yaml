@@ -167,7 +167,10 @@ strategy_overrides:
     tp:
       default: 4
       h100: 8
+      b200: 2
       b300: 2
+      gb200: 2
+      gb300: 2
     hardware_overrides:
       blackwell:
         extra_args:
@@ -177,6 +180,50 @@ strategy_overrides:
           - "fp8"
           - "--max-num-seqs"
           - "128"
+      # TP2 halves the replica GPU count, so each rank holds the full
+      # non-expert weights plus half the experts: ~145 GiB per GPU on B200 and
+      # GB200 and ~175 GiB on GB300, measured with the Engram tables already in
+      # pinned host DRAM. On top of that the sparse-attention indexer allocates
+      # a [max-num-batched-tokens, max-model-len] fp8 logits buffer at startup,
+      # which is 32 GiB at the upstream 16384 batched tokens, and CUDA-graph
+      # capture at 1024 adds a further ~22 GiB. On a 180 GB B200 and a 256 GiB
+      # GB200 that combination leaves no KV pool at all: GB200 concurrency 128
+      # ended memory profiling at -5.34 GiB of KV
+      # (SemiAnalysisAI/InferenceX#3320). Capping batched tokens at 4096 (8 GiB)
+      # and stopping graph capture at 512 restores the pool; larger decode
+      # batches run eagerly. FlashInfer's autotune batches max-num-seqs requests
+      # through the DSpark draft head and selected an invalid MXFP8 tactic below
+      # 16 sequences, so keep --max-num-seqs at 16 or above.
+      b200:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+          - "--max-num-batched-tokens"
+          - "4096"
+          - "--max-cudagraph-capture-size"
+          - "512"
+          - "--max-num-seqs"
+          - "256"
+      gb200:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+          - "--max-num-batched-tokens"
+          - "4096"
+          - "--max-cudagraph-capture-size"
+          - "512"
+          - "--max-num-seqs"
+          - "256"
+      gb300:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+          - "--max-num-batched-tokens"
+          - "4096"
+          - "--max-cudagraph-capture-size"
+          - "512"
+          - "--max-num-seqs"
+          - "256"
       b300:
         extra_args:
           - "--engram-config"
@@ -486,8 +533,11 @@ guide: |
 
   ## Blackwell TP and DEP
 
-  On B200, GB200 and GB300, **Tensor Parallel** uses TP4 with
-  `FLASHINFER_MLA_SPARSE_DSV41`. **Data + Expert Parallel** uses the hardware's
+  On B200, B300, GB200 and GB300, **Tensor Parallel** uses **TP2** with
+  `FLASHINFER_MLA_SPARSE_DSV41` and Engram CPU offload
+  (`--engram-config '{"cpu_offload":true}'`), which moves the Engram tables to
+  pinned host DRAM and reads them through UVA; the output is unchanged.
+  **Data + Expert Parallel** uses the hardware's
   GPU count: DEP4 on GB200/GB300 trays, DEP8 on B200/B300 nodes. It enables
   `--enable-expert-parallel`, `FLASHMLA_MEGA_ATTN_DSV41`,
   `--kernel-config '{"moe_backend":"deep_gemm_mega_moe"}'`, and
@@ -497,14 +547,24 @@ guide: |
   to `true`, `--kv-cache-dtype fp8`, and `--max-num-seqs 128`. Reasoning uses
   `--reasoning-parser deepseek_v41`.
 
-  B300 retains its **Tensor Parallel** override: TP2, Engram CPU offload,
-  the existing CUDA Graph capture configuration (`--max-cudagraph-capture-size 8190`),
-  `--max-num-batched-tokens 8192`, and `--max-num-seqs 256`. Its exact-GPU
-  settings take precedence over the shared Blackwell defaults. For high
-  interactivity, use `--tensor-parallel-size 4`.
+  Each Blackwell SKU carries an exact-GPU override that takes precedence over
+  the shared Blackwell defaults. B300 keeps its existing CUDA Graph capture
+  configuration (`--max-cudagraph-capture-size 8190`),
+  `--max-num-batched-tokens 8192` and `--max-num-seqs 256`. B200, GB200 and
+  GB300 instead cap `--max-num-batched-tokens` at 4096 and
+  `--max-cudagraph-capture-size` at 512, with `--max-num-seqs 256`: at TP2 the
+  sparse-attention indexer's `[max-num-batched-tokens, max-model-len]` fp8
+  logits buffer is 32 GiB at the upstream 16384 batched tokens, which leaves no
+  KV pool next to ~145 GiB of resident weights. For high interactivity on any
+  of them, use `--tensor-parallel-size 4`.
 
-  These command settings were updated on 2026-09-20; they have not been rerun
-  on GPUs as part of this recipe update.
+  Validation of the TP2 cells comes from the InferenceX AgentX sweeps: B200
+  completed concurrency 1 through 128 with evals
+  ([InferenceX #3216](https://github.com/SemiAnalysisAI/InferenceX/pull/3216),
+  run 35480787586), and GB200 and GB300 are under test in
+  [#3320](https://github.com/SemiAnalysisAI/InferenceX/pull/3320) and
+  [#3321](https://github.com/SemiAnalysisAI/InferenceX/pull/3321). The B300
+  settings are unchanged by this update and were not rerun.
 
   ## KV cache offloading
 
