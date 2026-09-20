@@ -19,7 +19,7 @@ meta:
 
 model:
   model_id: "Qwen/Qwen2.5-VL-72B-Instruct"
-  min_vllm_version: "0.7.0"
+  min_vllm_version: "0.10.2"
   architecture: dense
   parameter_count: "72B"
   active_parameters: "72B"
