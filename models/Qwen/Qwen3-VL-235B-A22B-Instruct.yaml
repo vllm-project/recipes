@@ -47,9 +47,20 @@ features:
     args:
       - "--mm-encoder-tp-mode"
       - "data"
+  long_context:
+    description: "Extend the 262K context to 1M tokens with YaRN. Static scaling costs quality on
+      short prompts and the wider window inflates the KV budget, so it is opt-in."
+    args:
+      - "--hf-overrides"
+      - '{"text_config":{"rope_parameters":{"rope_type":"yarn","factor":3.0,"original_max_position_embeddings":262144,"mrope_section":[24,20,20],"mrope_interleaved":true}}}'
+      - "--max-model-len"
+      - "1000000"
+    env:
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
 
 opt_in_features:
   - text_only
+  - long_context
 
 variants:
   default:
@@ -263,8 +274,8 @@ guide: |
   - `--async-scheduling` overlaps scheduling with decoding for better throughput.
   - `--mm-encoder-tp-mode data` deploys the vision encoder in data-parallel fashion for better performance.
   - If your inputs are mostly unique, pass `--mm-processor-cache-gb 0` to skip caching overhead.
-  - Extend context with YaRN:
-    `--rope-scaling '{"rope_type":"yarn","factor":3.0,"original_max_position_embeddings":262144,"mrope_section":[24,20,20],"mrope_interleaved":true}' --max-model-len 1000000`
+  - Extend context to 1M tokens with the **Long Context** toggle, which applies YaRN via
+    `--hf-overrides` and raises `--max-model-len`. Static YaRN costs quality on short prompts.
 
   Text-only mode: pass `--limit-mm-per-prompt.video 0 --limit-mm-per-prompt.image 0` to free memory for KV cache when serving text-only traffic.
 
