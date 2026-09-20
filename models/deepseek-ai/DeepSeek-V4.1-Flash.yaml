@@ -181,49 +181,22 @@ strategy_overrides:
           - "--max-num-seqs"
           - "128"
       # TP2 halves the replica GPU count, so each rank holds the full
-      # non-expert weights plus half the experts: ~145 GiB per GPU on B200 and
-      # GB200 and ~175 GiB on GB300, measured with the Engram tables already in
-      # pinned host DRAM. On top of that the sparse-attention indexer allocates
-      # a [max-num-batched-tokens, max-model-len] fp8 logits buffer at startup,
-      # which is 32 GiB at the upstream 16384 batched tokens, and CUDA-graph
-      # capture at 1024 adds a further ~22 GiB. On a 180 GB B200 and a 256 GiB
-      # GB200 that combination leaves no KV pool at all: GB200 concurrency 128
-      # ended memory profiling at -5.34 GiB of KV
-      # (SemiAnalysisAI/InferenceX#3320). Capping batched tokens at 4096 (8 GiB)
-      # and stopping graph capture at 512 restores the pool; larger decode
-      # batches run eagerly. FlashInfer's autotune batches max-num-seqs requests
-      # through the DSpark draft head and selected an invalid MXFP8 tactic below
-      # 16 sequences, so keep --max-num-seqs at 16 or above.
+      # non-expert weights plus half the experts. Moving the Engram tables to
+      # pinned host DRAM keeps that resident footprint inside HBM on these
+      # SKUs; the lookups read the tables through UVA and the output is
+      # unchanged.
       b200:
         extra_args:
           - "--engram-config"
           - '{"cpu_offload":true}'
-          - "--max-num-batched-tokens"
-          - "4096"
-          - "--max-cudagraph-capture-size"
-          - "512"
-          - "--max-num-seqs"
-          - "256"
       gb200:
         extra_args:
           - "--engram-config"
           - '{"cpu_offload":true}'
-          - "--max-num-batched-tokens"
-          - "4096"
-          - "--max-cudagraph-capture-size"
-          - "512"
-          - "--max-num-seqs"
-          - "256"
       gb300:
         extra_args:
           - "--engram-config"
           - '{"cpu_offload":true}'
-          - "--max-num-batched-tokens"
-          - "4096"
-          - "--max-cudagraph-capture-size"
-          - "512"
-          - "--max-num-seqs"
-          - "256"
       b300:
         extra_args:
           - "--engram-config"
@@ -550,13 +523,12 @@ guide: |
   Each Blackwell SKU carries an exact-GPU override that takes precedence over
   the shared Blackwell defaults. B300 keeps its existing CUDA Graph capture
   configuration (`--max-cudagraph-capture-size 8190`),
-  `--max-num-batched-tokens 8192` and `--max-num-seqs 256`. B200, GB200 and
-  GB300 instead cap `--max-num-batched-tokens` at 4096 and
-  `--max-cudagraph-capture-size` at 512, with `--max-num-seqs 256`: at TP2 the
-  sparse-attention indexer's `[max-num-batched-tokens, max-model-len]` fp8
-  logits buffer is 32 GiB at the upstream 16384 batched tokens, which leaves no
-  KV pool next to ~145 GiB of resident weights. For high interactivity on any
-  of them, use `--tensor-parallel-size 4`.
+  `--max-num-batched-tokens 8192` and `--max-num-seqs 256`; B200, GB200 and
+  GB300 add Engram CPU offload and otherwise inherit the shared Blackwell
+  settings. Scheduler limits are workload-dependent at TP2, so size
+  `--max-num-batched-tokens` and `--max-cudagraph-capture-size` for your own
+  serving profile. For high interactivity on any of them, use
+  `--tensor-parallel-size 4`.
 
   Validation of the TP2 cells comes from the InferenceX AgentX sweeps: B200
   completed concurrency 1 through 128 with evals
