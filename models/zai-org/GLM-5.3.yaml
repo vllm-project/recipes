@@ -310,7 +310,8 @@ guide: |
   `RedHatAI/GLM-5.3-MXFP4` is Red Hat AI's OCP Microscaling FP4 re-quantization of the FP8
   checkpoint. This is a compressed-tensors `mxfp4-pack-quantized` build. True W4A4 on Blackwell
   (SM100+); it falls back to W4A16 via Marlin on Hopper. The ~403 GB weights halve the FP8
-  footprint.
+  footprint, so one 8×B200 node holds the model with ample KV for the full 1M context or 4xB200
+  for the default.
 
   ```bash
   vllm serve RedHatAI/GLM-5.3-MXFP4 \
@@ -318,6 +319,8 @@ guide: |
     --tensor-parallel-size 4 \
     --enable-expert-parallel \
     --reasoning-parser glm47 \
+    --tool-call-parser glm47 \
+    --enable-auto-tool-choice \
     --speculative-config '{"method":"mtp","num_speculative_tokens":5}'
   ```
 

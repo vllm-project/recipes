@@ -356,19 +356,19 @@ guide: |
 
   Add `--speculative-config '{"method":"mtp","num_speculative_tokens":3}'` for MTP.
 
-   ### MXFP4 (W4A4) — Blackwell
+  ### MXFP4 (W4A4) — Blackwell
 
-   ```bash
-   vllm serve RedHatAI/Qwen3.8-27B-MXFP4 \
-     --tensor-parallel-size 1 \
-     --reasoning-parser qwen3 \
-     --enable-auto-tool-choice --tool-call-parser qwen3_xml
-   ```
+  ```bash
+  vllm serve RedHatAI/Qwen3.8-27B-MXFP4 \
+    --tensor-parallel-size 1 \
+    --reasoning-parser qwen3 \
+    --enable-auto-tool-choice --tool-call-parser qwen3_xml
+  ```
 
-   True W4A4 on Blackwell. The in-checkpoint MTP head, long-context YaRN and tool calling all
-   carry over from the base recipe.
+  True W4A4 on Blackwell. The in-checkpoint MTP head, long-context YaRN and tool calling all
+  carry over from the base recipe.
 
-   ### 2x RTX 5090 (consumer Blackwell, sm120)
+  ### 2x RTX 5090 (consumer Blackwell, sm120)
 
   Verified on vLLM `0.26.1rc1.dev608+g99a10304d`, TP2 across two cards.
 
@@ -562,8 +562,8 @@ guide: |
   - Model card: https://huggingface.co/Qwen/Qwen3.8-27B
   - FP8 checkpoint: https://huggingface.co/Qwen/Qwen3.8-27B-FP8
   - NVFP4 build (NVIDIA): https://huggingface.co/nvidia/Qwen3.8-27B-NVFP4
-   - NVFP4 build (Inferact): https://huggingface.co/Inferact/Qwen3.8-27B-NVFP4
-   - MXFP4 build (RedHatAI): https://huggingface.co/RedHatAI/Qwen3.8-27B-MXFP4
+  - NVFP4 build (Inferact): https://huggingface.co/Inferact/Qwen3.8-27B-NVFP4
+  - MXFP4 build (RedHatAI): https://huggingface.co/RedHatAI/Qwen3.8-27B-MXFP4
   - Ascend INT8 checkpoint (ModelScope): https://www.modelscope.cn/models/Eco-Tech/Qwen3.8-27B-w8a8
   - vLLM documentation: https://docs.vllm.ai/
   - vLLM Ascend tutorial: https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/Qwen3.8-27B.html
