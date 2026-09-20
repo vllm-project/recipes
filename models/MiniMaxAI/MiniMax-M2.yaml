@@ -19,7 +19,7 @@ meta:
 
 model:
   model_id: "MiniMaxAI/MiniMax-M2"
-  min_vllm_version: "0.11.0"
+  min_vllm_version: "0.11.1"
   architecture: moe
   parameter_count: "230B"
   active_parameters: "10B"

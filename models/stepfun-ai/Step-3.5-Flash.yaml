@@ -16,7 +16,7 @@ meta:
 
 model:
   model_id: "stepfun-ai/Step-3.5-Flash"
-  min_vllm_version: "0.11.0"
+  min_vllm_version: "0.15.1"
   architecture: moe
   parameter_count: "196B"
   active_parameters: "11B"

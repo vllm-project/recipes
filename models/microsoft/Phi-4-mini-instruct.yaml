@@ -58,6 +58,7 @@ variants:
 
   multimodal:
     model_id: "microsoft/Phi-4-multimodal-instruct"
+    min_vllm_version: "0.8.0"
     precision: bf16
     vram_minimum_gb: 16
     description: "Multimodal instruction-following (text + image)"

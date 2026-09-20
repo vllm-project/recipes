@@ -24,7 +24,7 @@ meta:
 
 model:
   model_id: "openai/gpt-oss-20b"
-  min_vllm_version: "0.10.0"
+  min_vllm_version: "0.10.1"
   architecture: moe
   parameter_count: "21B"
   active_parameters: "3.6B"
