@@ -183,7 +183,7 @@ hardware_overrides:
     # Common to every variant on Blackwell. The FP8-only deep_gemm_mega_moe MoE
     # kernel is added per-variant (FP8 checkpoints), not here.
     extra_args:
-      - "--attention_config.use_fp4_indexer_cache=True"
+      - "--attention_config.indexer_kv_dtype=mxfp4"
   amd:
     extra_args:
       - "--distributed-executor-backend"
@@ -213,7 +213,7 @@ strategy_overrides:
         # but drops any variant-level --moe-backend selection (TP-only uses
         # the default MoE backend).
         extra_args:
-          - "--attention_config.use_fp4_indexer_cache=True"
+          - "--attention_config.indexer_kv_dtype=mxfp4"
           - "--no-enable-flashinfer-autotune"
   single_node_tep:
     extra_args:
