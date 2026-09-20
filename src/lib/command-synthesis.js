@@ -59,6 +59,15 @@ function hardwareKeyedValue(map, hwProfile, hwProfileId) {
     ?? map.default;
 }
 
+// Feature and mode args/env can vary by both strategy and hardware. Resolve
+// each field independently; an explicit empty args/env block clears it.
+function featureFieldForStrategy(feature, field, strategyName, hwProfile, hwProfileId) {
+  const strategyOverride = feature.strategy_overrides?.[strategyName];
+  const strategyHardware = hardwareKeyedValue(strategyOverride?.hardware_overrides, hwProfile, hwProfileId);
+  const hardware = hardwareKeyedValue(feature.hardware_overrides, hwProfile, hwProfileId);
+  return strategyHardware?.[field] ?? strategyOverride?.[field] ?? hardware?.[field] ?? feature[field];
+}
+
 /**
  * Resolve a numeric TP declaration. A variant may use a bare number or a
  * hardware-aware map keyed by exact GPU id, generation, brand, or `default`.
@@ -1409,6 +1418,8 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     //    brand; when present they REPLACE the feature's default args (not
     //    merged), so a recipe can ship different spec-decoding configs for
     //    hopper vs blackwell — or for one GB10 box — without dedupe gymnastics.
+    //    `strategy_overrides.<strategy>.{args,env,hardware_overrides}` takes
+    //    precedence over those defaults while keeping the feature opt-in.
     for (const f of enabledFeatures || []) {
       const feat = recipe.features?.[f];
       if (!feat) continue;
@@ -1426,14 +1437,12 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         const modeKey = resolveModeKey(feat, f, variant, variantKey, hwProfile, hwProfileId, featureModes?.[f]);
         const mode = modeKey ? feat.modes[modeKey] : null;
         if (mode) {
-          const modeHo = hardwareKeyedValue(mode.hardware_overrides, hwProfile, hwProfileId);
-          const modeArgs = modeHo?.args ?? mode.args;
+          const modeArgs = featureFieldForStrategy(mode, "args", strategyName, hwProfile, hwProfileId);
           if (modeArgs) args.push(...modeArgs);
         }
         continue;
       }
-      const featHo = hardwareKeyedValue(feat.hardware_overrides, hwProfile, hwProfileId);
-      const featArgs = featHo?.args ?? feat.args;
+      const featArgs = featureFieldForStrategy(feat, "args", strategyName, hwProfile, hwProfileId);
       if (featArgs) args.push(...featArgs);
     }
 
@@ -1578,14 +1587,12 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         const modeKey = resolveModeKey(feat, f, variant, variantKey, hwProfile, hwProfileId, featureModes?.[f]);
         const mode = modeKey ? feat.modes[modeKey] : null;
         if (mode) {
-          const modeHo = hardwareKeyedValue(mode.hardware_overrides, hwProfile, hwProfileId);
-          const modeEnv = modeHo?.env ?? mode.env;
+          const modeEnv = featureFieldForStrategy(mode, "env", strategyName, hwProfile, hwProfileId);
           if (modeEnv) Object.assign(env, modeEnv);
         }
         continue;
       }
-      const featHo = hardwareKeyedValue(feat.hardware_overrides, hwProfile, hwProfileId);
-      const featEnv = featHo?.env ?? feat.env;
+      const featEnv = featureFieldForStrategy(feat, "env", strategyName, hwProfile, hwProfileId);
       if (featEnv) Object.assign(env, featEnv);
     }
 

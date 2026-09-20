@@ -5,7 +5,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-09-17
+  date_updated: 2026-09-20
   difficulty: advanced
   tasks:
     - text
@@ -64,7 +64,7 @@ features:
       - "--reasoning-parser"
       - "deepseek_v41"
   spec_decoding:
-    description: "DSpark multi-token drafting, 5 tokens per round (the trained block size). On NVIDIA, adaptive verification scores each (request, position) slot and only high-scoring slots are verified, up to a startup-profiled compute budget. On AMD, vLLM currently refuses that flag, so the generated command sets enable_adaptive_verification:false and verifies the full 5-token block. Remove the AMD override only after a serve with the true flag actually starts on ROCm."
+    description: "DSpark multi-token drafting, 5 tokens per round (the trained block size). Blackwell single-node TP uses the basic DSpark config; DEP explicitly enables adaptive verification. Other NVIDIA strategies retain adaptive verification. On AMD, vLLM currently refuses that flag, so the generated command sets enable_adaptive_verification:false and verifies the full 5-token block."
     args:
       - "--speculative-config"
       - '{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","rejection_sample_method":"block","enable_adaptive_verification":true}'
@@ -84,6 +84,19 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","rejection_sample_method":"block","enable_adaptive_verification":false}'
+    strategy_overrides:
+      single_node_tp:
+        hardware_overrides:
+          blackwell:
+            args:
+              - "--speculative-config"
+              - '{"method":"dspark","num_speculative_tokens":5}'
+      single_node_dep:
+        hardware_overrides:
+          blackwell:
+            args:
+              - "--speculative-config"
+              - '{"method":"dspark","num_speculative_tokens":5,"enable_adaptive_verification":true}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -169,6 +182,14 @@ strategy_overrides:
       h100: 8
       b300: 2
     hardware_overrides:
+      blackwell:
+        extra_args:
+          - "--attention-config"
+          - '{"backend":"FLASHINFER_MLA_SPARSE_DSV41","indexer_kv_dtype":"mxfp4","indexer_sparse_logits":true}'
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--max-num-seqs"
+          - "128"
       b300:
         extra_args:
           - "--engram-config"
@@ -181,6 +202,20 @@ strategy_overrides:
           - "8192"
           - "--max-num-seqs"
           - "256"
+  single_node_dep:
+    hardware_overrides:
+      blackwell:
+        extra_args:
+          - "--kernel-config"
+          - '{"moe_backend":"deep_gemm_mega_moe"}'
+          - "--attention-config"
+          - '{"backend":"FLASHMLA_MEGA_ATTN_DSV41","indexer_kv_dtype":"mxfp4","indexer_sparse_logits":true}'
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--max-num-seqs"
+          - "128"
+          - "--engram-config"
+          - '{"embedding_across_dp":true}'
   pd_cluster:
     # Verified 1P1D on GB200 NVL4: one tray per role, TP4 each, NIXL transfer.
     env:
@@ -301,7 +336,9 @@ guide: |
 
   DSpark is the only speculative method for this checkpoint. V4.1 dropped the MTP module
   that V3 and V4 trained alongside the backbone. **Speculative decoding** enables a 5-token
-  block. On NVIDIA it also turns on adaptive verification (see the feature description).
+  block. Blackwell single-node TP uses `{"method":"dspark","num_speculative_tokens":5}`;
+  DEP adds `"enable_adaptive_verification":true`. Other NVIDIA configurations retain
+  adaptive verification (see the feature description).
   On AMD, vLLM currently refuses adaptive verification. The generated command sets
   `enable_adaptive_verification:false` and verifies the full block. Two checks in
   `maybe_create_adaptive_verification_manager` fail on ROCm: the indexer helper
@@ -462,11 +499,28 @@ guide: |
   client. Validation evidence applies to that pinned benchmark configuration, not
   every future `:nightly` image or the general command's inherited scheduler limits.
 
-  ## 4xB300
+  ## Blackwell TP and DEP
 
-  The command builder defaults to TP2 for B300 (2 of the 8 GPUs). For high
-  interactivity, deploy the model using TP4: pass
-  `--tensor-parallel-size 4`.
+  On B200, GB200 and GB300, **Tensor Parallel** uses TP4 with
+  `FLASHINFER_MLA_SPARSE_DSV41`. **Data + Expert Parallel** uses the hardware's
+  GPU count: DEP4 on GB200/GB300 trays, DEP8 on B200/B300 nodes. It enables
+  `--enable-expert-parallel`, `FLASHMLA_MEGA_ATTN_DSV41`,
+  `--kernel-config '{"moe_backend":"deep_gemm_mega_moe"}'`, and
+  `--engram-config '{"embedding_across_dp":true}'`.
+
+  Both configurations set `indexer_kv_dtype` to `mxfp4`, `indexer_sparse_logits`
+  to `true`, `--kv-cache-dtype fp8`, and `--max-num-seqs 128`. Reasoning uses
+  `--reasoning-parser deepseek_v41`. Enable **Speculative decoding** for 5-token
+  DSpark; DEP explicitly enables adaptive verification.
+
+  B300 retains its **Tensor Parallel** override: TP2, Engram CPU offload,
+  the existing CUDA Graph capture configuration (`--max-cudagraph-capture-size 8190`),
+  `--max-num-batched-tokens 8192`, and `--max-num-seqs 256`. Its exact-GPU
+  settings take precedence over the shared Blackwell defaults. For high
+  interactivity, use `--tensor-parallel-size 4`.
+
+  These command settings were updated on 2026-09-20; they have not been rerun
+  on GPUs as part of this recipe update.
 
   ## KV cache offloading
 
