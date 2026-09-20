@@ -5,7 +5,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-09-16
+  date_updated: 2026-09-19
   difficulty: advanced
   tasks:
     - text
@@ -159,12 +159,36 @@ strategy_overrides:
   single_node_tp:
     # TP4 baseline (one GB200 NVL4 tray; 4 GPUs on MI350X or MI355X). H100
     # spans the whole 8x80 GB node: 4 cards hold 320 GB against a 614 GB
-    # minimum, and even TP8 needs the H100 override above.
+    # minimum, and even TP8 needs the H100 override above. B200 and B300
+    # serve on 2 of their 8 GPUs once the Engram tables leave HBM.
     tp:
       default: 4
       h100: 8
+      b200: 2
       b300: 2
     hardware_overrides:
+      # TP2 on 180 GB B200 with the Engram tables in pinned host DRAM behind
+      # UVA still leaves ~145 GiB of resident weights per GPU, so the memory
+      # levers from the InferenceX B200 arm apply
+      # (SemiAnalysisAI/InferenceX#3216, AgentX c1-c128 green in run
+      # 35460277352): at the upstream 16384 batched tokens the
+      # sparse-attention indexer's [batched-tokens, 1M] fp8 logits buffer is
+      # 32 GiB and graph capture above 512 tokens pushed the KV budget
+      # negative, so batched tokens are capped at 4096 (8 GiB) and CUDA-graph
+      # capture stops at 512 tokens; larger decode batches run eagerly.
+      # FlashInfer's autotune batches max-num-seqs requests through the DSpark
+      # draft head and picked an invalid MXFP8 tactic below 16 sequences, so
+      # keep --max-num-seqs at 16 or above.
+      b200:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+          - "--max-num-batched-tokens"
+          - "4096"
+          - "--max-cudagraph-capture-size"
+          - "512"
+          - "--max-num-seqs"
+          - "256"
       b300:
         extra_args:
           - "--engram-config"
@@ -458,10 +482,16 @@ guide: |
   client. Validation evidence applies to that pinned benchmark configuration, not
   every future `:nightly` image or the general command's inherited scheduler limits.
 
-  ## 4xB300
+  ## B200 and B300 at TP2
 
-  The command builder defaults to TP2 for B300 (2 of the 8 GPUs). For high
-  interactivity, deploy the model using TP4: pass
+  The command builder defaults to TP2 for B200 and B300 (2 of the 8 GPUs) and
+  moves the Engram tables to pinned host DRAM with `--engram-config
+  '{"cpu_offload":true}'`; the lookups read the tables through UVA and the
+  output is bitwise unchanged. On B200 (180 GB per GPU) TP2 also caps
+  `--max-num-batched-tokens` at 4096 and `--max-cudagraph-capture-size` at 512,
+  the settings under which the InferenceX AgentX sweep completed concurrency
+  1 through 128 ([InferenceX #3216](https://github.com/SemiAnalysisAI/InferenceX/pull/3216)).
+  For high interactivity, deploy the model using TP4: pass
   `--tensor-parallel-size 4`.
 
   ## References
