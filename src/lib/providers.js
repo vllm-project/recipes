@@ -51,6 +51,7 @@ export const PROVIDERS = {
   "dots-studio":     { display_name: "Dots",                           logo: "/providers/dots-studio.png" },
   "meta-models":     { display_name: "Muse (Meta)",                     logo: "/providers/meta-models.png" },
   "IFM":             { display_name: "IFM",                     logo: "/providers/IFM.png" },
+  "bharatgenai":     { display_name: "BharatGen",                logo: "/providers/bharatgenai.jpeg" },
 };
 
 export function getProviderLogo(hfOrg) {
