@@ -210,6 +210,15 @@ strategy_overrides:
           - "8192"
           - "--max-num-seqs"
           - "256"
+      # H200 takes the TP4 default on 8x141 GB. Moving the Engram tables to
+      # pinned host DRAM (23.6 GiB per rank, 94 GiB across the replica) drops
+      # resident weights to 81.2 GiB per GPU and leaves 38.5 GiB of KV per GPU,
+      # about 20M tokens, measured on the InferenceX AgentX sweep. Without the
+      # offload the tables stay row-sharded in HBM and the KV pool collapses.
+      h200:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
   single_node_dep:
     hardware_overrides:
       blackwell:
@@ -523,6 +532,14 @@ guide: |
 
   ROCm additionally needs `--no-swa-bounded-replay`, which the shared AMD
   override supplies; see the comment there for why.
+  ## H200 Tensor Parallel
+
+  On H200, **Tensor Parallel** uses the TP4 default with Engram CPU offload
+  (`--engram-config '{"cpu_offload":true}'`). The Engram tables move to pinned
+  host DRAM and are read through UVA, so the output is unchanged. On 141 GB
+  cards that offload is what makes TP4 practical: it moves 23.6 GiB per rank off
+  the GPU, leaving 81.2 GiB of resident weights and 38.5 GiB of KV per GPU
+  (about 20M tokens). No scheduler caps are needed at this replica size.
 
   ## Blackwell TP and DEP
 
