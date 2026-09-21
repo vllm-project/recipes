@@ -90,7 +90,7 @@ guide: |
   ## Prerequisites
 
   - Hardware: NVIDIA H100/H200/B200, AMD MI300X/MI325X/MI355X, Intel XPU B60/B70, or 4x Xeon 6 CPUs.
-  - vLLM >= 0.10.0.
+  - vLLM >= 0.10.1.
   - CUDA >= 12.8 if building from source for NVIDIA GPUs (must match between install and serving).
 
   ### Install vLLM

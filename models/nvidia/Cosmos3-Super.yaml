@@ -19,7 +19,7 @@ meta:
 
 model:
   model_id: "nvidia/Cosmos3-Super"
-  min_vllm_version: "0.23.0"
+  min_vllm_version: "0.21.0"
   docker_image: "vllm/vllm-omni:cosmos3"
   install:
     docker:

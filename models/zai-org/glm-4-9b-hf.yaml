@@ -51,7 +51,7 @@ guide: |
   ## Prerequisites
 
   - Hardware: Intel Xeon 6/Xeon 5 CPUs
-  - vLLM >= 0.6.4
+  - vLLM >= 0.6.5
 
   ### Docker (Intel Xeon 6 CPUs)
 

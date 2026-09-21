@@ -82,7 +82,7 @@ guide: |
   ## Prerequisites
 
   - Hardware: 1x GPU with >=16 GB VRAM (A100, L40S, H100, etc.)
-  - vLLM >= 0.7.0
+  - vLLM >= 0.7.0 (the `multimodal` variant serves `Phi-4-multimodal-instruct`, which needs vLLM >= 0.8.0)
 
   ### Install vLLM
 
