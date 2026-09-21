@@ -18,6 +18,8 @@ meta:
     h200: verified
     dgx_spark_gb10: verified
     xeon6: verified
+    arc_pro_b60: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "google/diffusiongemma-26B-A4B-it"
@@ -102,6 +104,13 @@ compatible_strategies:
 
 hardware_overrides:
   cpu: {}
+  xpu:
+    extra_args:
+      - "--enforce-eager"
+      - "--attention-backend"
+      - "TRITON_ATTN"
+      - "--tensor-parallel-size"
+      - "4"
 
 strategy_overrides:
   single_node_tp:
@@ -170,6 +179,31 @@ guide: |
     vllm/vllm-openai-cpu:latest-x86_64 google/diffusiongemma-26B-A4B-it \
     --max-num-seqs 4 \
     --tensor-parallel-size 1 \
+    --enable-auto-tool-choice \
+    --tool-call-parser gemma4 \
+    --chat-template examples/tool_chat_template_gemma4.jinja \
+    --reasoning-parser gemma4
+  ```
+
+
+  ### Intel XPU (B60 / B70, BF16)
+
+  Validated on 4x Intel Arc Pro B60 or 2x Intel Arc Pro B70 (B60 24 GB, B70 32 GB per card)
+  with the official vLLM XPU image `vllm/vllm-openai-xpu:latest`. `--enforce-eager` 
+  and `--attention-backend TRITON_ATTN` are required.
+
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-xpu:latest \
+    google/diffusiongemma-26B-A4B-it \
+    --max-num-seqs 4 \
+    --enforce-eager \
+    --tensor-parallel-size 4 \
+    --max-model-len 8192 \
+    --attention-backend TRITON_ATTN \
     --enable-auto-tool-choice \
     --tool-call-parser gemma4 \
     --chat-template examples/tool_chat_template_gemma4.jinja \
