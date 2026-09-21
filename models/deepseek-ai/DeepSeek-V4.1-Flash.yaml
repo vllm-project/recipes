@@ -23,6 +23,7 @@ meta:
     gb300: verified
     b300: verified
     mi350x: verified
+    mi355x: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V4.1-Flash"
@@ -149,6 +150,14 @@ hardware_overrides:
       # Allow CK a8w4 expert selection instead of pinning Triton W4A16.
       - "--moe-backend"
       - "aiter"
+      # vllm-project/vllm#56227 turned SWA bounded replay on by default. It pads
+      # the replayed tokens' slots in the prefix-cacheable groups and relies on a
+      # window clamp that landed in the FlashInfer and FlashMLA kernels; the ROCm
+      # sparse SWA path only gained the replay_start kwarg. On gfx950 every TP=2
+      # and TP=4 point died with HSA_STATUS_ERROR_MEMORY_FAULT at the first prefix
+      # hit carrying a replay start. Drop this once ROCm clamps too; prefix
+      # caching stays on.
+      - "--no-swa-bounded-replay"
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
       VLLM_ROCM_USE_AITER_MOE: "1"
@@ -168,7 +177,19 @@ strategy_overrides:
       default: 4
       h100: 8
       b300: 2
+      mi355x: 2
     hardware_overrides:
+      # 288 GiB per card. The Engram tables cost 47.2 GiB of device memory per
+      # rank at TP4 and 94.4 GiB at TP2, which does not fit beside half the
+      # checkpoint, so TP2 offloads them to pinned host memory. TP4 leaves them
+      # resident. vllm-project/vllm#57491 widened two is_cuda() gates to
+      # is_cuda_alike(), which is what makes the offload resolve on gfx950; on
+      # builds carrying it cpu_offload also defaults on via VLLM_PLE_CPU_OFFLOAD,
+      # so set it explicitly rather than inheriting the default.
+      mi355x:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
       blackwell:
         extra_args:
           - "--attention-config"
@@ -483,6 +504,25 @@ guide: |
   The command above starts the server; the InferenceX harness supplies the replay
   client. Validation evidence applies to that pinned benchmark configuration, not
   every future `:nightly` image or the general command's inherited scheduler limits.
+
+  ## MI355X Tensor Parallel
+
+  On MI355X, **Tensor Parallel** defaults to **TP2** with Engram CPU offload
+  (`--engram-config '{"cpu_offload":true}'`). The Engram tables cost 47.2 GiB of
+  device memory per rank at TP4 and 94.4 GiB at TP2; on a 288 GiB card the TP2
+  figure does not fit beside half the checkpoint, so the tables move to pinned
+  host memory. TP2 halves the GPUs per server and so doubles the servers per
+  node. For TP4, pass `--tensor-parallel-size 4` and
+  `--engram-config '{"cpu_offload":false}'` to keep the tables resident.
+
+  The offload resolves on gfx950 only on builds carrying
+  [vllm-project/vllm#57491](https://github.com/vllm-project/vllm/pull/57491),
+  which widened two `is_cuda()` gates to `is_cuda_alike()`. Those builds also
+  default `cpu_offload` on through `VLLM_PLE_CPU_OFFLOAD`, so set it explicitly
+  rather than inheriting the default.
+
+  ROCm additionally needs `--no-swa-bounded-replay`, which the shared AMD
+  override supplies; see the comment there for why.
 
   ## Blackwell TP and DEP
 
