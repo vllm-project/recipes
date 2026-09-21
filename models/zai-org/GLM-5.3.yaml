@@ -17,6 +17,9 @@ meta:
   hardware:
     b300: verified
     h200: verified
+    # Blackwell B200, verified 2026-09-20: the RedHatAI MXFP4 variant (true W4A4, 4-GPU pool)
+    # booted, served and answered on B200 — the same hardware used for the checkpoint's eval.
+    b200: verified
     # Validated 2026-08-30 on one Atlas A5 node (8×950PR, TP8, graph mode).
     # Native FP8 path needs vllm-ascend#15346.
     ascend_950pr_8x: verified
@@ -93,6 +96,17 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 558
     description: "Inferact NVFP4 checkpoint — only MoE expert linears are quantized to NVFP4; shared experts, attention, embeddings, and the early dense layers stay FP8/BF16, with FP8 KV cache. Blackwell GPUs (B200/B300) only."
+  mxfp4:
+    model_id: "RedHatAI/GLM-5.3-MXFP4"
+    precision: mxfp4
+    label: "MXFP4 (W4A4)"
+    # 403.34 GB on disk (403,337,136,288 B). Transformer linear weights+activations are FP4
+    # (OCP Microscaling, group-32, E8M0 scales); the MoE router gate, lm_head, embed_tokens,
+    # the DSA indexer and eh_proj stay unquantized. 
+    # Halves the 8×H200 FP8 node's ~704 GB weight footprint.
+    vram_minimum_gb: 485
+    supported_hardware: [h100, h200, b200, b300, gb200, gb300]
+    description: "Red Hat AI compressed-tensors MXFP4 build — 403 GB: fits one 8×B200 node with room for the full 1M context. True W4A4 on Blackwell (SM100+); W4A16 via Marlin on Hopper."
   w4a8:
     model_id: "gpustack/GLM-5.3-W4A8"
     precision: int4
@@ -196,7 +210,9 @@ guide: |
   **default `zai-org/GLM-5.3` checkpoint is now native FP8** — BF16 weights live under the suffixed `zai-org/GLM-5.3-BF16` repo.
 
   The FP8 checkpoint fits on a single 8xH200 / 8xH20 node and — with FP8 KV cache — reaches the full 1M-token context on 8xB200.
-  An NVFP4 checkpoint for Blackwell is published by Inferact (`Inferact/GLM-5.3-NVFP4`).
+   An NVFP4 checkpoint for Blackwell is published by Inferact (`Inferact/GLM-5.3-NVFP4`), and
+   Red Hat AI publishes an MXFP4 build (`RedHatAI/GLM-5.3-MXFP4`) that halves the FP8 footprint
+   and fits one 8×B200 node.
 
   ## Prerequisites
 
@@ -289,6 +305,25 @@ guide: |
     --served-model-name glm-5.3-nvfp4
   ```
 
+  ### MXFP4 on Blackwell (B200)
+
+  `RedHatAI/GLM-5.3-MXFP4` is Red Hat AI's OCP Microscaling FP4 re-quantization of the FP8
+  checkpoint. This is a compressed-tensors `mxfp4-pack-quantized` build. True W4A4 on Blackwell
+  (SM100+); it falls back to W4A16 via Marlin on Hopper. The ~403 GB weights halve the FP8
+  footprint, so one 8×B200 node holds the model with ample KV for the full 1M context or 4xB200
+  for the default.
+
+  ```bash
+  vllm serve RedHatAI/GLM-5.3-MXFP4 \
+    --kv-cache-dtype fp8_e4m3 \
+    --tensor-parallel-size 4 \
+    --enable-expert-parallel \
+    --reasoning-parser glm47 \
+    --tool-call-parser glm47 \
+    --enable-auto-tool-choice \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":5}'
+  ```
+
   ## Reasoning modes
 
   Thinking is always on — the generation prompt opens a `<think>` block unconditionally.
@@ -377,4 +412,5 @@ guide: |
 
   - [Model card](https://huggingface.co/zai-org/GLM-5.3)
   - [BF16 checkpoint](https://huggingface.co/zai-org/GLM-5.3-BF16)
-  - [NVFP4 checkpoint (Inferact)](https://huggingface.co/Inferact/GLM-5.3-NVFP4)
+   - [NVFP4 checkpoint (Inferact)](https://huggingface.co/Inferact/GLM-5.3-NVFP4)
+   - [MXFP4 checkpoint (RedHatAI)](https://huggingface.co/RedHatAI/GLM-5.3-MXFP4)
