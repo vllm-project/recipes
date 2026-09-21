@@ -73,7 +73,7 @@ variants:
   mxfp4:
     model_id: "amd/DeepSeek-R1-0528-MXFP4-MTP-MoEFP4"
     precision: mxfp4
-    vram_minimum_gb: 450
+    vram_minimum_gb: 403
     description: "AMD MXFP4 quantized weights for MI350X / MI355X (gfx950)"
     supported_hardware:
       - mi350x
