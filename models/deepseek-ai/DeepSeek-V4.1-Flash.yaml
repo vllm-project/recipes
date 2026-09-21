@@ -176,7 +176,10 @@ strategy_overrides:
     tp:
       default: 4
       h100: 8
+      b200: 2
       b300: 2
+      gb200: 2
+      gb300: 2
       mi355x: 2
     hardware_overrides:
       # 288 GiB per card. The Engram tables cost 47.2 GiB of device memory per
@@ -198,6 +201,23 @@ strategy_overrides:
           - "fp8"
           - "--max-num-seqs"
           - "128"
+      # TP2 halves the replica GPU count, so each rank holds the full
+      # non-expert weights plus half the experts. Moving the Engram tables to
+      # pinned host DRAM keeps that resident footprint inside HBM on these
+      # SKUs; the lookups read the tables through UVA and the output is
+      # unchanged.
+      b200:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+      gb200:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+      gb300:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
       b300:
         extra_args:
           - "--engram-config"
@@ -543,8 +563,11 @@ guide: |
 
   ## Blackwell TP and DEP
 
-  On B200, GB200 and GB300, **Tensor Parallel** uses TP4 with
-  `FLASHINFER_MLA_SPARSE_DSV41`. **Data + Expert Parallel** uses the hardware's
+  On B200, B300, GB200 and GB300, **Tensor Parallel** uses **TP2** with
+  `FLASHINFER_MLA_SPARSE_DSV41` and Engram CPU offload
+  (`--engram-config '{"cpu_offload":true}'`), which moves the Engram tables to
+  pinned host DRAM and reads them through UVA; the output is unchanged.
+  **Data + Expert Parallel** uses the hardware's
   GPU count: DEP4 on GB200/GB300 trays, DEP8 on B200/B300 nodes. It enables
   `--enable-expert-parallel`, `FLASHMLA_MEGA_ATTN_DSV41`,
   `--kernel-config '{"moe_backend":"deep_gemm_mega_moe"}'`, and
@@ -554,14 +577,15 @@ guide: |
   to `true`, `--kv-cache-dtype fp8`, and `--max-num-seqs 128`. Reasoning uses
   `--reasoning-parser deepseek_v41`.
 
-  B300 retains its **Tensor Parallel** override: TP2, Engram CPU offload,
-  the existing CUDA Graph capture configuration (`--max-cudagraph-capture-size 8190`),
-  `--max-num-batched-tokens 8192`, and `--max-num-seqs 256`. Its exact-GPU
-  settings take precedence over the shared Blackwell defaults. For high
-  interactivity, use `--tensor-parallel-size 4`.
-
-  These command settings were updated on 2026-09-20; they have not been rerun
-  on GPUs as part of this recipe update.
+  Each Blackwell SKU carries an exact-GPU override that takes precedence over
+  the shared Blackwell defaults. B300 keeps its existing CUDA Graph capture
+  configuration (`--max-cudagraph-capture-size 8190`),
+  `--max-num-batched-tokens 8192` and `--max-num-seqs 256`; B200, GB200 and
+  GB300 add Engram CPU offload and otherwise inherit the shared Blackwell
+  settings. Scheduler limits are workload-dependent at TP2, so size
+  `--max-num-batched-tokens` and `--max-cudagraph-capture-size` for your own
+  serving profile. For high interactivity on any of them, use
+  `--tensor-parallel-size 4`.
 
   ## KV cache offloading
 
