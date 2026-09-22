@@ -287,7 +287,7 @@ guide: |
   the [DeepSeek-V4-Flash](/deepseek-ai/DeepSeek-V4-Flash) recipe already runs there, but
   the vision path has no published run on those GPUs — expect to tune
   `--gpu-memory-utilization` and `--max-num-seqs`. The Blackwell
-  `--attention_config.use_fp4_indexer_cache` / `--moe-backend deep_gemm_mega_moe` tweaks
+  `--attention_config.indexer_kv_dtype mxfp4` / `--moe-backend deep_gemm_mega_moe` tweaks
   the text recipe applies are deliberately not set here: the verified vision run did not
   use them.
 

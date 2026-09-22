@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3 — Frontier Coding with Emergent Cyber Capabilities"
   date_added: 2026-08-28
-  date_updated: 2026-09-14
+  date_updated: 2026-09-18
   difficulty: advanced
   tasks:
     - text
@@ -20,6 +20,9 @@ meta:
     # Validated 2026-08-30 on one Atlas A5 node (8×950PR, TP8, graph mode).
     # Native FP8 path needs vllm-ascend#15346.
     ascend_950pr_8x: verified
+    # NVFP4 + --cpu-offload-gb on 1× GB300 (252 GB HBM + unified host RAM).
+    # Do not raise taxonomy vram_gb — host RAM is recipe-specific, not HBM.
+    dgx_station_gb300: verified
 
 model:
   model_id: "zai-org/GLM-5.3"
@@ -45,14 +48,14 @@ features:
     description: "Extract reasoning content with the GLM reasoning parser — thinking is always on; effort is set per request via reasoning_effort (max by default)"
     args:
       - "--reasoning-parser"
-      - "glm45"
+      - "glm47"
   spec_decoding:
     description: "Speculative decoding — pick native MTP or an external DFlash2 drafter."
     default_mode: mtp
     modes:
       mtp:
         label: "MTP"
-        description: "Native multi-token prediction head. 5 draft tokens on NVIDIA/AMD, 1 on Ascend (draft stays eager)."
+        description: "Native multi-token prediction head. 5 draft tokens on NVIDIA/AMD, 4 on DGX Station (FlashInfer TRT-LLM MoE), 1 on Ascend (draft stays eager)."
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":5}'
@@ -61,6 +64,10 @@ features:
             args:
               - "--speculative-config"
               - '{"method":"mtp","num_speculative_tokens":1,"enforce_eager":true}'
+          dgx_station_gb300:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":4,"moe_backend":"flashinfer_trtllm"}'
       dflash:
         label: "DFlash2"
         description: "External DFlash2 drafter (incoai/GLM-5.3-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. num_speculative_tokens must be 7 (block_size 8 minus one)."
@@ -92,7 +99,36 @@ variants:
     model_id: "Inferact/GLM-5.3-NVFP4"
     precision: nvfp4
     vram_minimum_gb: 558
-    description: "Inferact NVFP4 checkpoint — only MoE expert linears are quantized to NVFP4; shared experts, attention, embeddings, and the early dense layers stay FP8/BF16, with FP8 KV cache. Blackwell GPUs (B200/B300) only."
+    description: "Inferact NVFP4 checkpoint — only MoE expert linears are quantized to NVFP4; shared experts, attention, embeddings, and the early dense layers stay FP8/BF16, with FP8 KV cache. Blackwell GPUs (B200/B300) only. On DGX Station, weights CPU-offload into unified system RAM."
+    hardware_overrides:
+      # Exact-GPU: GPU-resident fit stays ≤ 252 GB HBM. Taxonomy vram_gb is
+      # unchanged — host RAM is only this variant's --cpu-offload-gb path.
+      dgx_station_gb300:
+        docker_image: "vllm/vllm-openai:v0.29.0-ubuntu2404"
+        vram_minimum_gb: 252
+        extra_env:
+          VLLM_WEIGHT_OFFLOADING_DISABLE_PIN_MEMORY: "1"
+          VLLM_ENGINE_READY_TIMEOUT_S: "900"
+        extra_args:
+          - "--trust-remote-code"
+          - "--gpu-memory-utilization"
+          - "0.97"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "8"
+          - "--offload-backend"
+          - "uva"
+          - "--cpu-offload-gb"
+          - "222"
+          - "--cpu-offload-params"
+          - "w13_weight"
+          - "w2_weight"
+          - "--load-format"
+          - "fastsafetensors"
+          - "--no-enable-flashinfer-autotune"
+          - "--moe-backend"
+          - "flashinfer_trtllm"
   w4a8:
     model_id: "gpustack/GLM-5.3-W4A8"
     precision: int4
@@ -187,6 +223,9 @@ hardware_notes:
   ascend_950pr_8x:
     title: "vLLM Ascend A5 image required"
     body: "Single-node TP8 on 8×950PR. Pin quay.io/ascend/vllm-ascend:nightly-main-a5 and overlay vllm-ascend#15346 for native FP8. EP is not available on this interconnect. Set HCCL_BUFFSIZE=1024 before launch."
+  dgx_station_gb300:
+    title: "CPU weight offload (NVFP4)"
+    body: "1× GB300 (252 GB HBM) plus unified host RAM. NVFP4 offloads MoE expert weights (w13_weight, w2_weight) with --offload-backend uva and --cpu-offload-gb 222. Set VLLM_WEIGHT_OFFLOADING_DISABLE_PIN_MEMORY=1. Context is capped at 262K / 8 seqs. FP8/BF16 still do not fit this box."
 
 guide: |
   ## Overview
@@ -223,7 +262,7 @@ guide: |
     --speculative-config.method mtp \
     --speculative-config.num_speculative_tokens 5 \
     --tool-call-parser glm47 \
-    --reasoning-parser glm45 \
+    --reasoning-parser glm47 \
     --enable-auto-tool-choice \
     --served-model-name glm-5.3
   ```
@@ -240,7 +279,7 @@ guide: |
     --speculative-config.num_speculative_tokens 5 \
     --tool-call-parser glm47 \
     --enable-auto-tool-choice \
-    --reasoning-parser glm45 \
+    --reasoning-parser glm47 \
     --gpu-memory-utilization 0.80 \
     --max-model-len 524288 \
     --max-num-seqs 32 \
@@ -263,7 +302,7 @@ guide: |
     --speculative-config.num_speculative_tokens 5 \
     --max-num-seqs 32 \
     --tool-call-parser glm47 \
-    --reasoning-parser glm45 \
+    --reasoning-parser glm47 \
     --enable-auto-tool-choice \
     --served-model-name glm-5.3
   ```
@@ -282,7 +321,7 @@ guide: |
   vllm serve Inferact/GLM-5.3-NVFP4 \
     --tensor-parallel-size 8 \
     --enable-expert-parallel \
-    --reasoning-parser glm45 \
+    --reasoning-parser glm47 \
     --tool-call-parser glm47 \
     --enable-auto-tool-choice \
     --kv-cache-dtype fp8_e4m3 \

@@ -479,8 +479,8 @@ hardware_overrides:
     # Common to every variant on Blackwell. The FP8-only deep_gemm_mega_moe MoE
     # kernel is added per-variant (FP8 checkpoints), not here.
     extra_args:
-      - "--attention_config.use_fp4_indexer_cache"
-      - "True"
+      - "--attention_config.indexer_kv_dtype"
+      - "mxfp4"
   amd:
     extra_args:
       - "--distributed-executor-backend"
@@ -521,13 +521,13 @@ strategy_overrides:
     # but drops --moe-backend deep_gemm_mega_moe (TP-only path uses the
     # default MoE backend).
         extra_args:
-         - "--attention_config.use_fp4_indexer_cache"
-         - "True"
+         - "--attention_config.indexer_kv_dtype"
+         - "mxfp4"
          - "--no-enable-flashinfer-autotune"
       rtx_pro_6000_8x:
         extra_args:
-          - "--attention_config.use_fp4_indexer_cache"
-          - "False"
+          - "--attention_config.indexer_kv_dtype"
+          - "fp8"
       mi300x:
         extra_args:
           - "--gpu-memory-utilization"
@@ -540,8 +540,8 @@ strategy_overrides:
     # DEEPGEMM_MXFP4 MoE backend), which is the verified configuration.
       rtx_pro_6000_8x:
         extra_args:
-          - "--attention_config.use_fp4_indexer_cache"
-          - "False"
+          - "--attention_config.indexer_kv_dtype"
+          - "fp8"
           - "--moe-backend"
           - "auto"
       mi300x:
@@ -561,8 +561,8 @@ strategy_overrides:
       # Same sm_120 opt-out as single_node_tep.
       rtx_pro_6000_8x:
         extra_args:
-          - "--attention_config.use_fp4_indexer_cache"
-          - "False"
+          - "--attention_config.indexer_kv_dtype"
+          - "fp8"
           - "--moe-backend"
           - "auto"
       mi300x:
@@ -609,8 +609,8 @@ strategy_overrides:
       # Same sm_120 opt-out as single_node_tep.
       rtx_pro_6000_8x:
         extra_args:
-          - "--attention_config.use_fp4_indexer_cache"
-          - "False"
+          - "--attention_config.indexer_kv_dtype"
+          - "fp8"
           - "--moe-backend"
           - "auto"
   multi_node_tp:
@@ -857,7 +857,7 @@ guide: |
     --kv-cache-dtype fp8 --trust-remote-code --block-size 256 \
     --gpu-memory-utilization 0.92 \
     --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}' \
-    --attention_config.use_fp4_indexer_cache True \
+    --attention_config.indexer_kv_dtype mxfp4 \
     --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 \
     --enable-auto-tool-choice --reasoning-parser deepseek_v4 \
     --max-cudagraph-capture-size 128 \
@@ -874,8 +874,8 @@ guide: |
   variant checkpoints are not verified on this profile.
 
   sm_120 cannot use the SM100 FP4 indexer cache or `deep_gemm_mega_moe`.
-  The generated command already sets `--attention_config.use_fp4_indexer_cache
-  False` and `--moe-backend auto`. Do not use `method: mtp` on 0731 — that
+  The generated command already sets `--attention_config.indexer_kv_dtype
+  fp8` and `--moe-backend auto`. Do not use `method: mtp` on 0731 — that
   checkpoint has no MTP head; Spec Decoding defaults to DSpark.
 
   Host-side FlashInfer install before launching 0731 with DSpark (`--no-deps`
@@ -901,7 +901,7 @@ guide: |
   --enable-expert-parallel \
   --tensor-parallel-size 8 \
   --moe-backend auto \
-  --attention_config.use_fp4_indexer_cache False \
+  --attention_config.indexer_kv_dtype fp8 \
   --tokenizer-mode deepseek_v4 \
   --tool-call-parser deepseek_v4 \
   --enable-auto-tool-choice \

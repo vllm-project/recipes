@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, resolveFrontend } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, resolveFrontend } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -486,7 +486,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // ?variant= still wins.
     if (!searchParams.get("variant") && resolvedHw && !resolvedScalable) {
       const v = recipe.variants?.[variant] || recipe.variants?.default || {};
-      if (!fitsSingleNode(resolvedHw, v)) {
+      if (!fitsSingleNode(resolvedHw, v, resolvedHwId)) {
         const fitting = pickFittingVariant(recipe, resolvedHw, resolvedHwId);
         if (fitting && fitting !== variant) setVariant(fitting);
       }
@@ -500,7 +500,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         setNodeCount(saved);
       } else if (restoredFitsHw) {
         const v = recipe.variants?.[variant] || recipe.variants?.default || {};
-        if (!fitsSingleNode(restoredFitsHw, v)) setNodeCount(2);
+        if (!fitsSingleNode(restoredFitsHw, v, prefs.hardware)) setNodeCount(2);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -528,7 +528,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // No URL pin: start on multi-node when the initial hardware can't fit
     // single-node. Same fit check the hardware-change handler runs.
     const v = recipe.variants?.[variant] || recipe.variants?.default || {};
-    return initialHw && !fitsSingleNode(initialHw, v) ? 2 : 1;
+    return initialHw && !fitsSingleNode(initialHw, v, initialHwId) ? 2 : 1;
   });
   // PD-specific per-role node counts. Only surfaced when the active strategy
   // is `pd_cluster`; ignored otherwise. Defaults come from the recipe's
@@ -548,7 +548,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const v = recipe.variants?.[variant] || recipe.variants?.default || {};
     const hw = taxonomy.hardware_profiles?.[hwId];
     const nodeVram = hw?.vram_gb || 0;
-    const modelVram = v?.vram_minimum_gb || 0;
+    const modelVram = variantVramMinimumGb(v, hwId);
     const minNodesPerRole = (modelVram > 0 && nodeVram > 0)
       ? Math.max(1, Math.ceil(modelVram / nodeVram))
       : 1;
@@ -1087,7 +1087,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // the official Docker image. KV-offload layers (Simple / LMCache / Mooncake)
   // and multi-node clustering aren't validated on this backend, so gate them off.
   const isXpuHardware = hwProfile?.generation === "xpu";
-  const needGb = currentVariant?.vram_minimum_gb;
+  const needGb = variantVramMinimumGb(currentVariant, hwId);
   const availGb = hwProfile.vram_gb;
   const vramShortfall =
     isSingleNode && typeof needGb === "number" && typeof availGb === "number" && availGb > 0 && needGb > availGb
@@ -1279,7 +1279,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // 2 nodes and pick the multi-node sibling. Tied to the click so a
     // deliberate Single-/Multi-node click afterwards still wins. Non-scalable
     // hardware never bumps — it's single-node by definition.
-    const fitsNew = fitsSingleNode(newProfile, activeVariant);
+    const fitsNew = fitsSingleNode(newProfile, activeVariant, id);
     const recipeDefault = recipe.default_strategy;
     const recipeDefaultsSingleNode =
       typeof recipeDefault === "string" && recipeDefault.startsWith("single_node_");
@@ -2284,6 +2284,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                           ].filter(Boolean).join("\n\n")
                     }
                   >
+                    {/* The checkpoint's own footprint, never the per-GPU
+                        `hardware_overrides.<gpu>.vram_minimum_gb` offload budget:
+                        the pill describes the variant, so its number must not
+                        shift when Hardware changes. The offload budget stays in
+                        the fit/gating path (fitsSingleNode) and in hardware_notes. */}
                     <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
                     <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
                   </Pill>
@@ -2654,7 +2659,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   // treatment as unsupported hardware pills. Multi-node still
                   // works because weights shard across nodes.
                   const singleNodeDoesntFit =
-                    n === 1 && !fitsSingleNode(hwProfile, currentVariant);
+                    n === 1 && !fitsSingleNode(hwProfile, currentVariant, hwId);
                   const disabled = noMultiNode || singleNodeDoesntFit;
                   return (
                     <Pill
@@ -2670,7 +2675,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                             ? `${hwProfile.display_name || "This hardware"} is a single-GPU workstation and can't be clustered into multiple nodes.`
                             : "This recipe does not declare a multi-node strategy. Fits in a single node."
                           : singleNodeDoesntFit
-                            ? `Single-node can't fit this variant on ${hwProfile.display_name || "the selected hardware"} (${currentVariant.vram_minimum_gb}GB > ${hwProfile.vram_gb}GB) — use multi-node`
+                            ? `Single-node can't fit this variant on ${hwProfile.display_name || "the selected hardware"} (${variantVramMinimumGb(currentVariant, hwId)}GB > ${hwProfile.vram_gb}GB) — use multi-node`
                             : n === 1
                               ? kvInstancesActive
                                 ? `Each vLLM instance runs on a single node${(result.instances || 1) > 1 ? ` — ${result.instances} instances = ${result.instances} nodes total (plus master${result.store ? "/store" : ""})` : ""}.`

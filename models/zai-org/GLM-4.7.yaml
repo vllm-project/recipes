@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-4.7 MoE language model (~358B total parameters) with MTP speculative decoding, updated tool call parser, and reasoning support"
   date_added: 2025-12-20
-  date_updated: 2026-09-14
+  date_updated: 2026-09-18
   difficulty: intermediate
   tasks:
     - text
@@ -18,7 +18,7 @@ meta:
 
 model:
   model_id: "zai-org/GLM-4.7"
-  min_vllm_version: "0.11.0"
+  min_vllm_version: "0.24.0"
   default_frontend: rust
   architecture: moe
   parameter_count: "358B"
@@ -42,10 +42,10 @@ features:
       - "glm47"
       - "--enable-auto-tool-choice"
   reasoning:
-    description: "GLM-4.5 reasoning parser for chain-of-thought extraction"
+    description: "GLM-4.7 reasoning parser for chain-of-thought extraction"
     args:
       - "--reasoning-parser"
-      - "glm45"
+      - "glm47"
   spec_decoding:
     description: "Multi-Token Prediction speculative decoding using the model's built-in MTP layers"
     args:
@@ -98,7 +98,7 @@ guide: |
   ## Overview
 
   GLM-4.7 is the latest GLM-4.X MoE release from Z-AI. It introduces the `glm47`
-  tool call parser while retaining the GLM-4.5 reasoning parser. Built-in
+  tool call parser and uses the matching `glm47` reasoning parser. Built-in
   Multi-Token Prediction (MTP) layers enable speculative decoding for throughput
   gains on decode-heavy workloads.
 
@@ -136,7 +136,7 @@ guide: |
       --speculative-config.method mtp \
       --speculative-config.num_speculative_tokens 1 \
       --tool-call-parser glm47 \
-      --reasoning-parser glm45 \
+      --reasoning-parser glm47 \
       --enable-auto-tool-choice
   ```
 
@@ -187,7 +187,7 @@ guide: |
 
   ## Troubleshooting
 
-  - **Parser mismatch:** GLM-4.7 uses `--tool-call-parser glm47` (not `glm45`).
+  - **Parser mismatch:** GLM-4.7 uses `--tool-call-parser glm47` and `--reasoning-parser glm47`.
   - **MTP acceptance:** 1 speculative token gives ~90%+ acceptance and best throughput.
 
   ## References

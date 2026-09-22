@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3-Flash is a 320B-total / 18B-active multimodal MoE with hybrid KDA and sparse MLA attention, native FP8 weights, MTP, and a 1M-token context window."
   date_added: 2026-08-27
-  date_updated: 2026-09-17
+  date_updated: 2026-09-18
   difficulty: advanced
   tasks:
     - text
@@ -48,7 +48,7 @@ features:
     description: "Extract reasoning content with the GLM reasoning parser"
     args:
       - "--reasoning-parser"
-      - "glm45"
+      - "glm47"
   spec_decoding:
     description: "Built-in MTP or an external DFlash2 drafter. Pick one method — only that --speculative-config is emitted."
     default_mode: mtp
@@ -226,7 +226,7 @@ guide: |
     --kv-cache-dtype fp8 \
     --speculative-config '{"method":"mtp","num_speculative_tokens":5}' \
     --tool-call-parser glm47 \
-    --reasoning-parser glm45 \
+    --reasoning-parser glm47 \
     --enable-auto-tool-choice \
     --served-model-name zai-org/GLM-5.3-Flash
   ```
@@ -432,7 +432,7 @@ guide: |
     --tensor-parallel-size 4 \
     --max-num-seqs 512 \
     --tool-call-parser glm47 \
-    --reasoning-parser glm45 \
+    --reasoning-parser glm47 \
     --enable-auto-tool-choice \
     --attention-backend ROCM_AITER_MLA_SPARSE
   ```

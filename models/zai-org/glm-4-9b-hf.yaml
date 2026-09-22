@@ -14,7 +14,7 @@ meta:
 
 model:
   model_id: "zai-org/glm-4-9b-hf"
-  min_vllm_version: "0.6.4"
+  min_vllm_version: "0.6.5"
   architecture: dense
   parameter_count: "9B"
   active_parameters: "9B"
@@ -51,7 +51,7 @@ guide: |
   ## Prerequisites
 
   - Hardware: Intel Xeon 6/Xeon 5 CPUs
-  - vLLM >= 0.6.4
+  - vLLM >= 0.6.5
 
   ### Docker (Intel Xeon 6 CPUs)
 
