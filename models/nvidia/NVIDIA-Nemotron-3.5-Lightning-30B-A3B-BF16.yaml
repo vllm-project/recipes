@@ -4,7 +4,7 @@ meta:
   provider: "NVIDIA"
   description: "NVIDIA Nemotron 3.5 Lightning hybrid Mamba-MoE (30B total / 3B active) with NVFP4 and BF16 checkpoints, 1M context, and MTP / DSpark / DFlash speculative decoding"
   date_added: 2026-08-03
-  date_updated: 2026-09-10
+  date_updated: 2026-09-22
   difficulty: intermediate
   tasks:
     - text
@@ -33,6 +33,10 @@ model:
     - "--max-num-batched-tokens"
     - "16384"
   base_env: {}
+
+dependencies:
+  - command: 'uv pip install "fastokens>=0.2.0"'
+    note: "Required by the BF16 variant, which sets VLLM_USE_FASTOKENS=1; vLLM does not bundle it yet (vllm-project/vllm#47859)"
 
 features:
   reasoning:
