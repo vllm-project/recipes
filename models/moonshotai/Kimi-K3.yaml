@@ -328,6 +328,9 @@ strategy_overrides:
   # concurrency it sweeps; its per-concurrency tuning stays in the guide. An
   # exact-GPU block layers after the recipe `amd` baseline and wins last-wins
   # dedupe there, so other AMD GPUs and every other strategy keep the baseline.
+  # Single-node 8x B200 cannot hold the full Kimi-K3 MXFP4 checkpoint in GPU
+  # memory alone. Use UVA selective CPU weight offload for the large routed
+  # expert weights, matching the validated bring-up configuration.
   single_node_tp:
     hardware_overrides:
       mi355x:
@@ -345,6 +348,40 @@ strategy_overrides:
           - '{"mla_prefill_backend":"ROCM_AITER_FA"}'
         extra_env:
           VLLM_ROCM_AITER_MLA_ASM_PADDING: "asm"
+      b200:
+        extra_args:
+          - "--gpu-memory-utilization"
+          - "0.90"
+          - "--load-format"
+          - "safetensors"
+          - "--safetensors-load-strategy"
+          - "lazy"
+          - "--offload-backend"
+          - "uva"
+          - "--cpu-offload-gb"
+          - "68"
+          - "--cpu-offload-params"
+          - "w13_weight"
+          - "w2_weight"
+          - "--no-enable-flashinfer-autotune"
+          # Conservative initial bring-up on B200. Increase only after
+          # validating host RAM, KV-cache headroom, and target concurrency.
+          - "--max-model-len"
+          - "32768"
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--attention-config"
+          - '{"use_prefill_query_quantization":true,"mla_prefill_backend":"TOKENSPEED_MLA"}'
+          - "--enable-prefix-caching"
+          - "--attention-backend"
+          - "TOKENSPEED_MLA"
+          - "--prefix-match-unit"
+          - "128"
+        extra_env:
+          VLLM_ALLREDUCE_USE_FLASHINFER: "1"
+          VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          VLLM_USE_RUST_FRONTEND: "1"
 
   # Use MegaMoE for DEP on GB200/GB300 NVL trays. B200/B300 leave
   # --moe-backend unset and use vLLM's default automatic selection.
@@ -443,7 +480,7 @@ guide: |
 
   - **vLLM:** Use the vllm/vllm-openai:kimi-k3 docker
   - **CUDA:** The kimi-k3 image ships as a CUDA 13 (cu130) build only — there is no -cu129 tag, and the K3-enabled wheels are not on the cu129 nightly index. The host needs an r580+ NVIDIA driver; on a CUDA 12.9 (r575) host, upgrade the driver or build vLLM from the K3 branch against cu129 PyTorch yourself.
-  - **Hardware:** At least 8x GB300. Multi-node for real production traffic.
+  - **Hardware:** 8x B200 is supported for single-node TP8 with selective UVA CPU weight offload; B300/GB300 can use the standard Blackwell profile. Multi-node remains recommended for production-scale capacity.
   - **ROCm:** At least 8x MI355X/MI350X. On MI355X the command builder uses the ROCm 10.0 nightly image `vllm/vllm-openai-rocm:nightly-rocm100`; the day-0 `vllm/vllm-openai-rocm:kimi-k3` image predates the DSpark and MoE fixes that path needs (see [AMD MI355X: InferenceX AgentX alignment](#amd-mi355x-inferencex-agentx-alignment)).
   
   ## Client Usage
@@ -490,6 +527,7 @@ guide: |
 
   ## Notes
 
+  - **Single-node 8x B200:** The recipe uses TP8 with UVA CPU offload of `w13_weight` and `w2_weight`, `--cpu-offload-gb 68`, lazy safetensors loading, `--gpu-memory-utilization 0.90`, and an initial `--max-model-len 32768`. The Docker container should use `--ipc=host --ulimit memlock=-1:-1 --cap-add IPC_LOCK` so pinned/locked host memory is available to the offload path. Ensure sufficient host RAM before increasing context length or concurrency.
   - **Cross node communitcation**: Use `--all2all-backend deepep_v2` for RDMA and `--all2all-backend flashinfer_nvlink_one_sided` for NVLink.
   - **MoE backend**: Recommend to use `deep_gemm_mega_moe` for DEP deployments with cross-node NVLink e.g. GB200 and GB300. Note that DeepGEMM MegaMoE is not compatible with cross-node RDMA.
   - **Rust Frontend**: Selected by default in the command builder. Switch to Python if you encounter unsupported features or compatibility issues.
