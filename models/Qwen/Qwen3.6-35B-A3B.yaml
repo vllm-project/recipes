@@ -311,8 +311,9 @@ guide: |
   at 64K.
 
   Datacenter Blackwell (B200/GB200/B300/GB300) carries no overrides and runs
-  vLLM's own defaults. The checkpoint's expert and shared-expert layers are
-  `W4A16_NVFP4` (FP4 weights, BF16 activations). vLLM's native FP4 MoE
+  vLLM's own defaults. The checkpoint labels its expert and shared-expert
+  layers `W4A16_NVFP4` (FP4 weights, BF16 activations), although it also ships
+  calibrated activation scales. vLLM follows the label, and its native FP4 MoE
   backends (TRT-LLM, CuteDSL, CUTLASS) require FP4 activations, so the MoE path
   falls back to Marlin here as well.
 
