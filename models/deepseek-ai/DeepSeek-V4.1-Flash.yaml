@@ -261,6 +261,7 @@ strategy_overrides:
       gb200: 2
       gb300: 2
       mi355x: 2
+      dgx_station_gb300: 1
     hardware_overrides:
       # 288 GiB per card. The Engram tables cost 47.2 GiB of device memory per
       # rank at TP4 and 94.4 GiB at TP2, which does not fit beside half the
