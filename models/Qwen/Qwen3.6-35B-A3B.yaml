@@ -314,9 +314,7 @@ guide: |
   vLLM's own defaults. The checkpoint's expert and shared-expert layers are
   `W4A16_NVFP4` (FP4 weights, BF16 activations). vLLM's native FP4 MoE
   backends (TRT-LLM, CuteDSL, CUTLASS) require FP4 activations, so the MoE path
-  falls back to Marlin here as well. As of vLLM 0.29.0 the remaining W4A16
-  linears (shared experts, `lm_head`) also run on Marlin; later releases move
-  them to FlashInfer's CuTe-DSL W4A16 kernel on SM100.
+  falls back to Marlin here as well.
 
   ### FP8 or NVFP4 on B200
 
