@@ -1697,7 +1697,25 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         ? `TP=${effectiveTp}`
         : (strategies[activeStrategy]?.display_name || activeStrategy);
   const precisionPart = currentVariant.precision?.toUpperCase();
-  const configSummary = [hwPart, strategyPart, precisionPart].filter(Boolean).join(" · ")
+
+  // Surface CPU weight offload from the final resolved command rather than
+  // hard-coding model or hardware ids in the UI. Any recipe/strategy that
+  // emits vLLM's offload flags gets the same indication automatically.
+  const indicatorCommand = [
+    displayedResult.command,
+    displayedResult.headCommand,
+    displayedResult.prefillCommand,
+    displayedResult.decodeCommand,
+  ].filter(Boolean).join("\n");
+  const cpuOffloadBackend =
+    indicatorCommand.match(/--offload-backend\s+([^\s\\]+)/)?.[1] || null;
+  const cpuOffloadGb =
+    indicatorCommand.match(/--cpu-offload-gb\s+([^\s\\]+)/)?.[1] || null;
+  const cpuOffloadActive = !!cpuOffloadBackend && cpuOffloadBackend !== "none";
+  const cpuOffloadSummary = cpuOffloadActive
+    ? `CPU offload${cpuOffloadGb ? ` ${cpuOffloadGb} GB` : ""}`
+    : null;
+  const configSummary = [hwPart, strategyPart, precisionPart, cpuOffloadSummary].filter(Boolean).join(" · ")
     + (kvOffloadOptions[activeKvOffload]
         // Grouped members read "Offloading (CPU + Filesystem)".
         ? activeKvGroup
@@ -2229,6 +2247,26 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   </PillGroup>
                 </div>
               ))}
+              {cpuOffloadActive && (
+                <div className="flex flex-wrap items-center gap-2 pt-1.5">
+                  <InfoTip content="This hardware/strategy uses CPU host memory for model weights. The generated vLLM command is the source of truth for the offload backend and size.">
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-vllm-blue/25 bg-vllm-blue/5 px-2 py-1 text-[11px]">
+                      <span className="font-semibold text-foreground">CPU offload</span>
+                      <span className="font-mono text-muted-foreground">
+                        {cpuOffloadBackend.toUpperCase()}
+                      </span>
+                      {cpuOffloadGb && (
+                        <span className="font-mono text-muted-foreground">
+                          {cpuOffloadGb} GB
+                        </span>
+                      )}
+                    </span>
+                  </InfoTip>
+                  <span className="text-[11px] text-muted-foreground/80">
+                    Host-memory weight offload enabled for this hardware/strategy.
+                  </span>
+                </div>
+              )}
               {showTpUsageHint && (
                 <p className="text-[11px] text-muted-foreground/80 pt-1.5">
                   {hwProfile?.generation === "cpu"
