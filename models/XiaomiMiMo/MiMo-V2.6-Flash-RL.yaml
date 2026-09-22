@@ -11,6 +11,9 @@ meta:
   related_recipes:
     - "XiaomiMiMo/MiMo-V2.6-Pro-RL"
     - "XiaomiMiMo/MiMo-V2-Flash"
+  hardware:
+    h200: verified
+    gb300: verified
 
 model:
   model_id: "XiaomiMiMo/MiMo-V2.6-Flash-RL"
@@ -45,7 +48,7 @@ features:
     description: "DFlash 5-layer MTP drafter (predicts 7 tokens); ships in the dflash/ subfolder of the checkpoint"
     args:
       - "--speculative-config"
-      - '{"method":"dflash","model":"XiaomiMiMo/MiMo-V2.6-Flash-RL/dflash","num_speculative_tokens":7,"draft_tensor_parallel_size":4}'
+      - '{"method":"dflash","model":"/root/.cache/huggingface/hub/models--XiaomiMiMo--MiMo-V2.6-Flash-RL/snapshots/<hash>/dflash","num_speculative_tokens":7}'
 
 opt_in_features:
   - spec_decoding
@@ -123,7 +126,18 @@ guide: |
     --generation-config vllm
   ```
 
-  With DFlash speculative decoding (drafter ships inside the checkpoint):
+  With DFlash speculative decoding (drafter ships inside the checkpoint).
+  vLLM does not resolve a `<repo>/dflash` Hub subfolder as the draft model —
+  `model` must be a concrete local path to the `dflash/` directory inside the
+  downloaded snapshot. Replace `<hash>` with the actual snapshot revision
+  (run `hf download XiaomiMiMo/MiMo-V2.6-Flash-RL` first if the checkpoint is
+  not cached yet):
+
+  ```bash
+  # resolve the on-disk path of the dflash drafter
+  DFLASH_DIR=$(ls -d ~/.cache/huggingface/hub/models--XiaomiMiMo--MiMo-V2.6-Flash-RL/snapshots/*/dflash)
+  echo "$DFLASH_DIR"
+  ```
 
   ```bash
   vllm serve XiaomiMiMo/MiMo-V2.6-Flash-RL \
@@ -131,13 +145,18 @@ guide: |
     --trust-remote-code \
     --gpu-memory-utilization 0.95 \
     --max-model-len auto \
-    --speculative-config '{"method":"dflash","model":"XiaomiMiMo/MiMo-V2.6-Flash-RL/dflash","num_speculative_tokens":7,"draft_tensor_parallel_size":4}' \
+    --speculative-config "{\"method\":\"dflash\",\"model\":\"$DFLASH_DIR\",\"num_speculative_tokens\":7}" \
     --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
     --reasoning-parser mimo \
     --tool-call-parser mimo \
     --enable-auto-tool-choice \
     --generation-config vllm
   ```
+
+  The drafter inherits the target's tensor-parallel size by default. To pin it
+  explicitly, add `"draft_tensor_parallel_size": 4` to the speculative config
+  (useful if you want the draft on fewer GPUs than the target, or to silence
+  mis-detection on asymmetric topologies).
 
   ## Client Usage
 
