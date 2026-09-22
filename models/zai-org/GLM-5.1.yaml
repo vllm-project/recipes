@@ -86,7 +86,7 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8_e4m3"
-      - "--cc.pass_config.fuse_allreduce_rms=False"
+      - "-cc.pass_config.fuse_allreduce_rms=False"
       - "--block-size=1"
       - "--enable-prefix-caching"
       - "--max-num-seqs"
