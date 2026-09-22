@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Smaller Qwen3.6 multimodal MoE model (35B total / 3B active) with BF16, FP8, and NVIDIA NVFP4 variants"
   date_added: 2026-04-16
-  date_updated: 2026-09-14
+  date_updated: 2026-09-22
   difficulty: beginner
   tasks:
     - multimodal
@@ -60,10 +60,23 @@ features:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
         hardware_overrides:
+          # First launch spends ~13 min in the MTP draft's warmup run on B200,
+          # past vLLM's default 600 s engine-ready wait; cached launches take <3 min.
+          b200:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+            env:
+              VLLM_ENGINE_READY_TIMEOUT_S: "1800"
+          # vLLM 0.29.0's V2 model runner ignores the draft's moe_backend, so the
+          # unquantized MTP layer inherits NVFP4's marlin and fails to start
+          # (fixed upstream by vllm-project/vllm#54788, not yet released).
           rtx_pro_6000:
             args:
               - "--speculative-config"
               - '{"method":"mtp","num_speculative_tokens":4,"moe_backend":"flashinfer_cutlass"}'
+            env:
+              VLLM_USE_V2_MODEL_RUNNER: "0"
           rtx_5090:
             args:
               - "--speculative-config"
