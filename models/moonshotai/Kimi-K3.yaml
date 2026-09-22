@@ -98,12 +98,31 @@ opt_in_features:
   - text_only
   - decode_context_parallelism
 
+advanced_options:
+  - id: b200_cpu_offload_52gb
+    label: "Lower CPU offload — 52 GB"
+    description: "Reduce B200 single-node CPU weight offload from the default 68 GB to 52 GB and cap max-num-seqs at 256."
+    hardware:
+      - b200
+    strategies:
+      - single_node_tp
+    args:
+      - "--cpu-offload-gb"
+      - "52"
+      - "--max-num-seqs"
+      - "256"
+
 variants:
   default:
     precision: mxfp4
     # Pre-release estimate: 2.8T params × 0.5 byte/param × 1.2 headroom.
     # Replace with the real safetensors footprint once weights are published.
     vram_minimum_gb: 1680
+    hardware_overrides:
+      # Exact-GPU fit budget after validated UVA CPU weight offload.
+      # One 8x B200 node provides 1440 GB HBM.
+      b200:
+        vram_minimum_gb: 1440
     supported_hardware: [h100, h200, b200, b300, gb200, gb300, mi300x, mi325x, mi355x]
     description: "Quantization-aware-trained MXFP4 weights with MXFP8 activations; footprint is estimated until the checkpoint is published."
   nvfp4:
@@ -470,6 +489,7 @@ guide: |
   ## Notes
 
   - **Single-node 8x B200:** The recipe uses TP8 with UVA CPU offload of `w13_weight` and `w2_weight`, `--cpu-offload-gb 68`, lazy safetensors loading, `--gpu-memory-utilization 0.90`, and an initial `--max-model-len 32768`. The Docker container should use `--ipc=host --ulimit memlock=-1:-1 --cap-add IPC_LOCK` so pinned/locked host memory is available to the offload path. Ensure sufficient host RAM before increasing context length or concurrency.
+  - **Lower CPU-offload profile:** Under Advanced, select **Lower CPU offload — 52 GB** to use `--cpu-offload-gb 52` with `--max-num-seqs 256` while keeping the same TP8, UVA parameter selection, and 32K initial context.
   - **Cross node communitcation**: Use `--all2all-backend deepep_v2` for RDMA and `--all2all-backend flashinfer_nvlink_one_sided` for NVLink.
   - **MoE backend**: Recommend to use `deep_gemm_mega_moe` for DEP deployments with cross-node NVLink e.g. GB200 and GB300. Note that DeepGEMM MegaMoE is not compatible with cross-node RDMA.
   - **Rust Frontend**: Selected by default in the command builder. Switch to Python if you encounter unsupported features or compatibility issues.
