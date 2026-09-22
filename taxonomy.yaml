@@ -210,6 +210,21 @@ hardware_profiles:
     scalable: false
     restricted: true
 
+  # L40S — single-GPU Ada datacenter inference card (PCIe, no NVLink).
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware`; `scalable: false` marks it non-clusterable, so
+  # 48 GB is a hard limit and variants that don't fit one card are disabled.
+  l40s:
+    brand: NVIDIA
+    generation: ada
+    display_name: "L40S"
+    description: "NVIDIA L40S · 1× L40S GPU · 48 GB GDDR6 ECC (PCIe, no NVLink)"
+    gpu_count: 1
+    vram_gb: 48
+    multi_node: false
+    scalable: false
+    restricted: true
+
   # ── AMD Instinct ──
   mi300x:
     brand: AMD
