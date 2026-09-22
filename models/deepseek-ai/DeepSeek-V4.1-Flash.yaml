@@ -22,6 +22,7 @@ meta:
     gb200: verified
     gb300: verified
     b300: verified
+    mi325x: verified
     mi350x: verified
     mi355x: verified
 
@@ -189,6 +190,25 @@ strategy_overrides:
       # is_cuda_alike(), which is what makes the offload resolve on gfx950; on
       # builds carrying it cpu_offload also defaults on via VLLM_PLE_CPU_OFFLOAD,
       # so set it explicitly rather than inheriting the default.
+      # 256 GB per card (gfx942). MI325X takes the TP4 default rather than the
+      # MI355X TP2: at TP2 the resident weights are ~145 GiB per rank, which
+      # leaves the smallest KV pool of any arm here, while TP4 lands at ~81 GiB
+      # per rank with room to spare. The Engram tables are offloaded to pinned
+      # host memory at TP4 as well -- gfx942 has no FP4 MFMA, so the MXFP4
+      # experts run through a Triton kernel and the device memory is better
+      # spent on KV. Same vllm-project/vllm#57491 gate as MI355X applies.
+      #
+      # gfx942 also differs from gfx950 on graph capture: every worker
+      # segfaults during piecewise capture, so breakable CUDA graphs are off
+      # and only full decode graphs are captured. Prefill runs eagerly.
+      mi325x:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+        extra_env:
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
       mi355x:
         extra_args:
           - "--engram-config"
@@ -552,6 +572,33 @@ guide: |
 
   ROCm additionally needs `--no-swa-bounded-replay`, which the shared AMD
   override supplies; see the comment there for why.
+  ## MI325X Tensor Parallel
+
+  On MI325X, **Tensor Parallel** takes the recipe default of **TP4**, with the
+  Engram tables offloaded to pinned host memory
+  (`--engram-config '{"cpu_offload":true}'`). A 256 GB card leaves roughly
+  81 GiB per rank of resident weights at TP4 and roughly 145 GiB at TP2; TP2
+  fits but leaves the smallest KV pool of any arm in this recipe, so TP4 is the
+  default here rather than the TP2 that MI355X uses on its larger 288 GiB card.
+  For TP2, pass `--tensor-parallel-size 2`.
+
+  MI325X is gfx942, which differs from gfx950 in two ways that matter. It has no
+  FP4 MFMA, so the MXFP4 experts run through a Triton kernel and device memory is
+  better spent on KV than on resident Engram tables. It also segfaults in every
+  worker during piecewise graph capture, so this recipe sets
+  `VLLM_USE_BREAKABLE_CUDAGRAPH=0` and captures only full decode graphs
+  (`--compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}'`); prefill runs
+  eagerly.
+
+  The offload resolves on gfx942 only on builds carrying
+  [vllm-project/vllm#57491](https://github.com/vllm-project/vllm/pull/57491),
+  the same gate MI355X needs. Those builds also default `cpu_offload` on through
+  `VLLM_PLE_CPU_OFFLOAD`, so set it explicitly rather than inheriting the
+  default.
+
+  ROCm additionally needs `--no-swa-bounded-replay`, which the shared AMD
+  override supplies; see the comment there for why.
+
   ## H200 Tensor Parallel
 
   On H200, **Tensor Parallel** uses the TP4 default with Engram CPU offload
