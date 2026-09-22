@@ -5,7 +5,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-09-20
+  date_updated: 2026-09-22
   difficulty: advanced
   tasks:
     - text
@@ -25,6 +25,11 @@ meta:
     mi325x: verified
     mi350x: verified
     mi355x: verified
+    # One GB300 (252 GB HBM) plus Grace unified memory: 60 GiB of routed
+    # experts and both Engram tables live in pinned host DRAM behind UVA.
+    # Measured 2026-09-20 on nightly dee37d89 (two boots). Taxonomy vram_gb
+    # stays physical HBM; the fit budget is the exact-GPU override below.
+    dgx_station_gb300: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V4.1-Flash"
@@ -86,6 +91,17 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","rejection_sample_method":"block","enable_adaptive_verification":false}'
+      # DGX Station: decode is C2C-bandwidth bound (a quarter of the experts
+      # a k=5 verify window touches live in Grace), so depth is set per batch
+      # size rather than adaptively: k=5 at 1-4 seqs, where agent text (tool
+      # JSON, shell) gains a third, and k=1 from 5 seqs, where k=5 loses
+      # 23-33% on multi-stream prose. Adaptive verification works on this
+      # box but its V2-runner graph capture costs ~6-7 GiB of residency
+      # that the offload budget does not have.
+      dgx_station_gb300:
+        args:
+          - "--speculative-config"
+          - '{"method":"dspark","num_speculative_tokens":5,"num_speculative_tokens_per_batch_size":[[1,4,5],[5,24,1]]}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -129,6 +145,60 @@ variants:
         extra_env:
           VLLM_USE_V2_MODEL_RUNNER: "1"
           PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+      # One GB300 Superchip: 252 GB HBM3e next to 496 GB of Grace LPDDR5X
+      # over NVLink-C2C. The 476 GiB checkpoint fits only with weights in
+      # host memory: both Engram tables (2 x 94.4 GiB, pinned, read through
+      # UVA) and 60 GiB of routed experts (`--offload-backend uva`, the
+      # positional `--cpu-offload-gb` budget over w13/w2). What stays
+      # resident is ~226 GiB of experts, attention and dense weights; KV
+      # pool, CUDA graphs and activations fill the rest of 0.97 x 252, so
+      # the fit budget is 244 GB. 60 is the lowest verified offload at 1M
+      # context with DSpark on; 55 fails the minimum-KV check. Measured
+      # 2026-09-20 on vllm/vllm-openai:nightly-dee37d89 (v0.29.1rc1.dev347),
+      # two boots: 90.5 tok/s single-stream prose, 302 tok/s aggregate at
+      # 8 streams, ~420 at 16, KV pool 3.09M tokens (2.95 concurrent 1M
+      # requests). Full 1M context costs 5.5 GiB of KV pool and no decode
+      # speed, so there is no reason to run this box smaller.
+      # `--cudagraph-capture-sizes` takes token counts: with DSpark k=5 at
+      # 1-4 seqs and k=1 above (see the spec_decoding override) this list
+      # covers every decode batch to 24 seqs for 2.2 GiB of graphs instead
+      # of the ~4 GiB the engine default spends, which is +0.7M KV tokens.
+      dgx_station_gb300:
+        vram_minimum_gb: 244
+        extra_args:
+          - "--offload-backend"
+          - "uva"
+          - "--cpu-offload-gb"
+          - "60"
+          - "--cpu-offload-params"
+          - "routed_experts.w13_weight"
+          - "routed_experts.w2_weight"
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+          - "--gpu-memory-utilization"
+          - "0.97"
+          - "--max-model-len"
+          - "1048576"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--long-prefill-token-threshold"
+          - "6144"
+          - "--cudagraph-capture-sizes"
+          - "1"
+          - "2"
+          - "4"
+          - "6"
+          - "8"
+          - "12"
+          - "16"
+          - "18"
+          - "24"
+          - "32"
+          - "40"
+          - "48"
+          - "64"
+          - "96"
+          - "128"
 
 compatible_strategies:
   - single_node_tp
@@ -142,6 +212,15 @@ compatible_strategies:
 kv_offload_support:
   offloading_cpu: verified
   offloading_fs: verified
+
+strategy_hardware:
+  # One GPU: there is nothing to shard experts across, and the DEP block's
+  # `embedding_across_dp` Engram layout would replace the host offload the
+  # Station needs to fit. Only TP1 is measured there.
+  single_node_tep:
+    dgx_station_gb300: unsupported
+  single_node_dep:
+    dgx_station_gb300: unsupported
 
 hardware_overrides:
   amd:
@@ -238,6 +317,26 @@ strategy_overrides:
         extra_args:
           - "--engram-config"
           - '{"cpu_offload":true}'
+      # Exact-GPU layer, emitted after the shared Blackwell block so its
+      # values win the last-wins dedupe. The Station run does not pass
+      # `--attention-config`: the engine selects FLASHMLA_MEGA_ATTN_DSV41
+      # itself with the FP8 indexer cache, so that backend is pinned here in
+      # place of the FLASHINFER_MLA_SPARSE_DSV41 / mxfp4-indexer pair the
+      # multi-GPU Blackwell SKUs use. `fp8_ds_mla` is the KV format the
+      # measurement used ("Using DeepSeek's fp8_ds_mla KV cache format");
+      # the engine's own default on this nightly is nvfp4_ds_mla, which is
+      # +5% on single-stream prose but 4-8 points lower DSpark acceptance on
+      # tool-JSON and shell text. 24 seqs is the lane the Station serves:
+      # a 35-seat agent harness at 16 seqs queued on slots while KV usage
+      # peaked at 16%; 24 took the warm agent-turn p50 from 27 s to 0.55 s.
+      dgx_station_gb300:
+        extra_args:
+          - "--attention-config"
+          - '{"backend":"FLASHMLA_MEGA_ATTN_DSV41"}'
+          - "--kv-cache-dtype"
+          - "fp8_ds_mla"
+          - "--max-num-seqs"
+          - "24"
       b300:
         extra_args:
           - "--engram-config"
@@ -289,6 +388,11 @@ strategy_overrides:
       vllm_args:
         - "--max-num-seqs"
         - "32"
+
+hardware_notes:
+  dgx_station_gb300:
+    title: "Weights in Grace memory (UVA offload)"
+    body: "1× GB300 (252 GB HBM) plus 496 GB Grace LPDDR5X. Both Engram tables (189 GiB) and 60 GiB of routed experts sit in pinned host DRAM behind --offload-backend uva; ~226 GiB stays resident. Full 1M context, 24 seqs, KV pool 3.09M tokens. Nightly only. First boot on a new flag set pays a ~75-90 min FlashInfer autotune; keep /root/.cache/vllm on a volume and later boots bind in ~7 min. Measured 90.5 tok/s single-stream, 302 tok/s at 8 streams."
 
 guide: |
   ## Overview
@@ -633,6 +737,71 @@ guide: |
   `--max-num-batched-tokens` and `--max-cudagraph-capture-size` for your own
   serving profile. For high interactivity on any of them, use
   `--tensor-parallel-size 4`.
+
+  ## DGX Station (GB300) Tensor Parallel
+
+  One GB300 Superchip exposes 252 GB of HBM3e (250.7 GiB visible) next to
+  496 GB of Grace LPDDR5X over NVLink-C2C, and the 476 GiB checkpoint does
+  not fit the HBM. On **DGX Station (GB300)** the recipe therefore serves TP1
+  with weights in two places:
+
+  - both Engram tables (2 × 94.4 GiB) in pinned host memory, read through
+    UVA (`--engram-config '{"cpu_offload":true}'`) — the same mechanism the
+    Blackwell TP2 rows use;
+  - 60 GiB of routed-expert weights in pinned host memory
+    (`--offload-backend uva --cpu-offload-gb 60 --cpu-offload-params
+    routed_experts.w13_weight routed_experts.w2_weight`). The offload is
+    positional over `w13`/`w2`; the last layers' experts are the ones that
+    move.
+
+  That leaves ~226 GiB of experts, attention and dense weights resident and,
+  at `--gpu-memory-utilization 0.97`, a KV pool of **3,092,486 tokens** with
+  `fp8_ds_mla` KV (2.95 concurrent full-1M requests). `vram_minimum_gb` for
+  this GPU is the 244 GB GPU-resident budget, declared through the
+  exact-GPU `hardware_overrides.dgx_station_gb300.vram_minimum_gb` key; the
+  taxonomy's 252 GB is still physical HBM.
+
+  The offloaded-expert byte count is the lever, not the utilization
+  fraction: decode is bound by C2C bandwidth (~340 GB/s on the pinned path)
+  plus the MoE kernels, and each GiB moved back into HBM is worth roughly
+  0.76 tok/s single-stream. 60 GiB is the lowest verified setting at 1M
+  context with DSpark on; 55 fails the minimum-KV check and 40 does not fit
+  even at 131K. For more than ~3 concurrent 1M contexts, raise
+  `--cpu-offload-gb` to 70 and accept ~10% less single-stream decode.
+
+  Measured 2026-09-20 on `vllm/vllm-openai:nightly-dee37d89` (v0.29.1rc1.dev347),
+  flag-only, two boots (live autotune and a fresh boot loading the saved
+  autotune set, 17/18 greedy parity between them):
+
+  | | 1 stream | 2 | 4 | 8 | 12 | 16 |
+  |---|--:|--:|--:|--:|--:|--:|
+  | aggregate tok/s, prose | 90.5 | 124 | 168 | 302 | 378 | 416–423 |
+
+  Ticking **Speculative decoding** on this hardware emits DSpark with a
+  per-batch-size depth schedule, `[[1,4,5],[5,24,1]]`: k=5 at 1–4 sequences
+  and k=1 from 5 up. A k=5 verify window touches ~3.7× the unique experts of
+  one token, a quarter of them in Grace, so k=5 wins agent text (shell,
+  tool JSON: +a third) and loses multi-stream prose (−23–33% at 8–16
+  streams); the schedule takes each where it wins. Adaptive verification
+  starts here but its V2-runner graph capture costs ~6–7 GiB of residency
+  the budget does not have. Acceptance on the fixture at k=5: prose 0.31,
+  structured 0.48, code 0.61, shell 0.91, tool JSON 0.86.
+
+  Two things to plan for:
+
+  - **Autotune.** The first boot on any new flag set or image runs a
+    FlashInfer autotune of **75–90 minutes** (the config hash covers the
+    kernel shapes, so `--max-num-seqs`, KV dtype and the capture list all
+    change it; `--cpu-offload-gb` does not). Mount `/root/.cache/vllm` on a
+    persistent volume; a boot that hits the saved set binds in ~7.5 minutes.
+  - **Host memory.** Pinned weights (61 + 189 GiB) plus the loader's shared
+    memory leave the Grace side at ~430 of 494 GiB with nothing else running.
+    `VLLM_WEIGHT_OFFLOADING_DISABLE_PIN_MEMORY=1` saves ~66 GB of host RAM
+    at −7% single-stream decode, if the box has to share.
+
+  Launch scripts, boot logs, knee sweeps and the fp8-vs-nvfp4 KV comparison
+  are in [J-M-Recipes/recipes](https://github.com/J-M-Recipes/recipes/tree/main/recipes/dgx-station-gb300/deepseek-v4.1-flash-vllm-uva-dspark)
+  (`results/2026-09-19-overnight-ksched-nightly-adaptive/T3c`).
 
   ## KV cache offloading
 
