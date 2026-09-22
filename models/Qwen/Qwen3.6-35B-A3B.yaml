@@ -311,13 +311,16 @@ guide: |
   at 64K.
 
   Datacenter Blackwell (B200/GB200/B300/GB300) carries no overrides and runs
-  vLLM's own defaults. The checkpoint's expert layers are `W4A16_NVFP4` (FP4
-  weights, BF16 activations), which the native FP4 tensor-core kernels cannot
-  run, so vLLM selects Marlin here as well.
+  vLLM's own defaults. The checkpoint's expert and shared-expert layers are
+  `W4A16_NVFP4` (FP4 weights, BF16 activations). vLLM's native FP4 MoE
+  backends (TRT-LLM, CuteDSL, CUTLASS) require FP4 activations, so the MoE path
+  falls back to Marlin here as well. As of vLLM 0.29.0 the remaining W4A16
+  linears (shared experts, `lm_head`) also run on Marlin; later releases move
+  them to FlashInfer's CuTe-DSL W4A16 kernel on SM100.
 
   ### FP8 or NVFP4 on B200
 
-  Prefer the FP8 variant on B200. Measured on 2026-09-22 with vLLM 0.29.0 on
+  On vLLM 0.29.0, prefer the FP8 variant on B200. Measured on 2026-09-22 on
   one B200 at TP1, using the default command for each variant, FP8 matched or
   beat NVFP4 on every workload: 12.6% more output tok/s on 8K-token prompts
   (432 vs 384 at concurrency 4), within 3% on decode-heavy and chat traffic,
