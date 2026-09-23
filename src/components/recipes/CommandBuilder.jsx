@@ -1724,8 +1724,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const indicatorCommand = [
     displayedResult.command,
     displayedResult.headCommand,
-    displayedResult.prefillCommand,
-    displayedResult.decodeCommand,
+    displayedResult.prefill?.command,
+    displayedResult.decode?.command,
+    displayedResult.vllm?.command,
   ].filter(Boolean).join("\n");
   const cpuOffloadBackend =
     indicatorCommand.match(/--offload-backend\s+([^\s\\]+)/)?.[1] || null;
