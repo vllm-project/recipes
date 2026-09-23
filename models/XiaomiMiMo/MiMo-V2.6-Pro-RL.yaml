@@ -4,7 +4,7 @@ meta:
   provider: "MiMo (Xiaomi)"
   description: "Xiaomi's flagship omnimodal MoE reasoning model (1.02T total / 42B active) with hybrid attention, FP8-compute/mxfp4-stored weights, 1M context, and a DFlash speculative decoder"
   date_added: 2026-09-22
-  date_updated: 2026-09-22
+  date_updated: 2026-09-23
   difficulty: advanced
   tasks:
     - text
@@ -14,12 +14,15 @@ meta:
   hardware:
     h200: verified
     gb300: verified
+    mi355x: verified
 
 model:
   model_id: "XiaomiMiMo/MiMo-V2.6-Pro-RL"
   min_vllm_version: "nightly"
   nightly_required: true
-  docker_image: "vllm/vllm-openai:mimo-v26"
+  docker_image:
+    nvidia: "vllm/vllm-openai:mimo-v26"
+    amd: "vllm/vllm-openai-rocm:nightly"
   architecture: moe
   parameter_count: "1T"
   active_parameters: "42B"
@@ -57,7 +60,9 @@ variants:
   default:
     precision: fp8
     vram_minimum_gb: 680
-    description: "FP8 (e4m3) compute with mxfp4-stored MoE weights; 566 GB checkpoint — 8x H200 with TP8"
+    description: "FP8 (e4m3) compute with mxfp4-stored MoE weights; 566 GB checkpoint — 8x H200 with TP8, or 4x MI355X with TP4"
+    tp:
+      mi355x: 4
     extra_args:
       - "--tensor-parallel-size"
       - "8"
@@ -69,7 +74,20 @@ compatible_strategies:
   - single_node_tep
   - pd_cluster
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    # AITER is opt-in on ROCm and the image does not set it; without it the MoE
+    # falls back off the native CDNA 4 MXFP4 path. INT4 quick-reduce quantizes the
+    # allreduce, which is a real cost at this TP. Verified 2026-09-23 on an
+    # 8x MI355X node, vllm/vllm-openai-rocm:nightly @ 0961bbae2.
+    extra_args:
+      - "--gpu-memory-utilization"
+      - "0.93"
+      - "--kv-cache-dtype"
+      - "fp8"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
 strategy_overrides: {}
 
 guide: |
@@ -94,7 +112,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 8x H200 (TP8) or equivalent aggregate VRAM (>= 680 GB)
+  - Hardware: 8x H200 (TP8), 4x MI355X (TP4), or equivalent aggregate VRAM (>= 680 GB)
 
   ### Pull the vLLM docker image
 
@@ -123,6 +141,39 @@ guide: |
     --enable-auto-tool-choice \
     --generation-config vllm
   ```
+
+  ### AMD (MI355X, TP4)
+
+  ```bash
+  VLLM_ROCM_USE_AITER=1 \
+  VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4 \
+  vllm serve XiaomiMiMo/MiMo-V2.6-Pro-RL \
+    --tensor-parallel-size 4 \
+    --trust-remote-code \
+    --gpu-memory-utilization 0.93 \
+    --kv-cache-dtype fp8 \
+    --max-model-len auto \
+    --reasoning-parser mimo \
+    --tool-call-parser mimo \
+    --enable-auto-tool-choice \
+    --generation-config vllm
+  ```
+
+  MXFP4 MoE weights run natively on CDNA 4, so no load-time requantization is
+  needed. `VLLM_ROCM_USE_AITER=1` is off by default and is required to reach
+  the AITER MXFP4 MoE and FP8 block-scaled GEMM kernels. Attention resolves to
+  `TRITON_ATTN_DIFFKV`, the only backend covering this model's asymmetric head
+  dims (QK 192 / V 128) together with attention sinks and sliding-window
+  attention.
+
+  On MI355X, **Tensor Parallel** defaults to **TP4**: 4x288 GiB clears the 680 GiB
+  requirement, so TP4 halves the GPUs per server and doubles the servers per node.
+  For TP8, pass `--tensor-parallel-size 8`.
+
+  The checkpoint pre-shards its fused QKV into `num_key_value_heads` (8) chunks,
+  each carrying its own FP8 scales. TP8 consumes them directly; TP4 merges two
+  chunks per rank, which vLLM handles by dequantizing, reordering and
+  re-quantizing at load time. TP4 costs no accuracy.
 
   With DFlash speculative decoding (drafter ships inside the checkpoint).
   vLLM does not resolve a `<repo>/dflash` Hub subfolder as the draft model —
@@ -180,3 +231,4 @@ guide: |
   - [MiMo-V2.6 blog post](https://mimo.xiaomi.com/mimo-v2-6)
   - [vLLM PR #57784 — mxfp4 MoE / bf16 router / DFlash for MiMo V2](https://github.com/vllm-project/vllm/pull/57784)
   - [SGLang MiMo cookbook](https://docs.sglang.io/cookbook/autoregressive/Xiaomi/MiMo-V2.5)
+  - [vLLM ROCm GPU install docs](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/?device=rocm)
