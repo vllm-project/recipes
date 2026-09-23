@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
-import { recipeHref } from "@/lib/recipe-utils";
+import { primaryRecipeTask, recipeHref } from "@/lib/recipe-utils";
 import { ChevronRight, Type, Eye, Sparkles, Hash, Cpu } from "lucide-react";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 
@@ -108,7 +108,7 @@ export function ModelSidebar({ recipesByOrg }) {
                 <div className="ml-[29px] border-l border-border/60 pl-2.5 py-0.5 space-y-px">
                   {models.map((m) => {
                     const isActive = m.hf_repo === currentRepo && m.hf_org === currentOrg;
-                    const primaryTask = (m.meta.tasks || [])[0];
+                    const primaryTask = primaryRecipeTask(m);
                     const Icon = TASK_ICON[primaryTask] || Cpu;
                     return (
                       <InfoTip key={m.hf_id} content={primaryTask}>
