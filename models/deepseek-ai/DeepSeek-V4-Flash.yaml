@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
   date_added: 2026-07-31
-  date_updated: 2026-09-14
+  date_updated: 2026-09-23
   difficulty: hard
   tasks:
     - text
@@ -30,6 +30,9 @@ meta:
     # required fix.
     ascend_950dt_8x: verified
     ascend_950pr_8x: verified
+    # Atlas 800 A3 (16× Ascend 910C, 64 GB each). W8A8 quantized checkpoint,
+    # DP2+TP8 on all 16 NPUs. Verified 2026-09-23 on vLLM Ascend v0.23.0-a3.
+    ascend_910c: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V4-Flash"
@@ -82,6 +85,7 @@ features:
         variants:
           - fp8
           - nvfp4
+          - ascend_w8a8
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":2}'
@@ -431,6 +435,59 @@ variants:
         extra_args:
           - "--moe-backend"
           - "deep_gemm_mega_moe"
+  ascend_w8a8:
+    # W8A8 quantized checkpoint for Atlas 800 A3 (16× Ascend 910C, 64 GB each).
+    # TP8 shards the 284B weights across 8 NPUs (35.5 GB each), fitting within
+    # the 64 GB per-NPU limit. DP2 uses all 16 NPUs (2 replicas × 8 NPUs each).
+    model_id: "Eco-Tech/DeepSeek-V4-Flash-w8a8-mtp"
+    label: "W8A8 (Ascend A3)"
+    precision: int8
+    vram_minimum_gb: 341
+    description: "ModelSlim INT8 W8A8 checkpoint for one Atlas 800 A3 node (16× Ascend 910C), using DP2+TP8. Requires --quantization ascend."
+    supported_hardware: [ascend_910c]
+    tp:
+      ascend_910c: 8
+    min_vllm_version: "0.23.0"
+    extra_args:
+      - "--data-parallel-size"
+      - "2"
+      - "--quantization"
+      - "ascend"
+      - "--max-num-seqs"
+      - "32"
+      - "--max-num-batched-tokens"
+      - "10240"
+      - "--gpu-memory-utilization"
+      - "0.90"
+      - "--block-size"
+      - "128"
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+      - "--async-scheduling"
+      - "--api-server-count"
+      - "1"
+      - "--safetensors-load-strategy"
+      - "prefetch"
+      - "--additional-config"
+      - '{"ascend_compilation_config":{"enable_npugraph_ex":true,"enable_static_kernel":false},"enable_cpu_binding":true,"multistream_overlap_shared_expert":true}'
+    extra_env:
+      HCCL_OP_EXPANSION_MODE: "AIV"
+      HCCL_BUFFSIZE: "2560"
+      PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+      OMP_PROC_BIND: "false"
+      OMP_NUM_THREADS: "10"
+      TASK_QUEUE_ENABLE: "1"
+      LD_PRELOAD: "/usr/lib/aarch64-linux-gnu/libjemalloc.so.2:$LD_PRELOAD"
+      # Override the npu generation-level "0,1,2,3" (for A5) — A3 uses all 16 NPUs.
+      ASCEND_RT_VISIBLE_DEVICES: "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15"
+      # Pull W8A8 weights from ModelScope (Eco-Tech checkpoint).
+      VLLM_USE_MODELSCOPE: "True"
+    hardware_overrides:
+      ascend_910c:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a3"
+        # Ascend recommends Docker; no official pip wheel for NPU.
+        install:
+          pip: false
 
 compatible_strategies:
   - single_node_tp
@@ -473,6 +530,9 @@ strategy_hardware:
   pd_cluster:
     rtx_pro_6000_8x: unsupported
     npu: unsupported
+    # Atlas 800 A3 PD separation (1P1D or multi-node) is documented in the
+    # vllm-ascend tutorial separately from the A5 single-node mixed path.
+    ascend_910c: supported
 
 hardware_overrides:
   blackwell:
@@ -678,6 +738,12 @@ hardware_notes:
     link:
       label: "Ascend 950PR 8x mixed"
       href: "#huawei-ascend-950pr-8x"
+  ascend_910c:
+    title: "vLLM Ascend A3 image required"
+    body: "Single-node DP2+TP8 on all 16 NPUs using the W8A8 quantized checkpoint from Eco-Tech. TP8 shards the 284B weights to 35.5 GB per NPU (within the 64 GB limit). Pin quay.io/ascend/vllm-ascend:v0.23.0-a3 — the NVIDIA pip wheel cannot run here. Set HCCL_BUFFSIZE=2560 before launch. The A3 path uses ModelScope to download the W8A8 weights (pip install modelscope). Multi-node PD separation is also available; see the vllm-ascend tutorial."
+    link:
+      label: "Ascend 910C A3 reference"
+      href: "https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/DeepSeek-V4-Flash.html"
 
 guide: |
   ## Overview
