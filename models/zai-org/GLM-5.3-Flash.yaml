@@ -163,12 +163,10 @@ hardware_overrides:
       HCCL_CONNECT_TIMEOUT: "7200"
 
 hardware_notes:
-  mi350x:
+  mi350x: &cdna4_indexer_topk_notes
     title: "Long-context indexer top-k opt-in"
     body: "The sparse-MLA indexer top-k defaults to the in-tree HIP kernel. On CDNA 4 the AITER kernel is faster once prompts reach roughly 64K tokens, but full CUDA graph decode cannot pick a kernel per request, so it is not selected automatically. When serving long context, add --sparse-indexer-topk-backend aiter. Requires vLLM#58167."
-  mi355x:
-    title: "Long-context indexer top-k opt-in"
-    body: "The sparse-MLA indexer top-k defaults to the in-tree HIP kernel. On CDNA 4 the AITER kernel is faster once prompts reach roughly 64K tokens, but full CUDA graph decode cannot pick a kernel per request, so it is not selected automatically. When serving long context, add --sparse-indexer-topk-backend aiter. Requires vLLM#58167."
+  mi355x: *cdna4_indexer_topk_notes
   ascend_950pr_8x:
     title: "vLLM Ascend A5 image required"
     body: "Single-node TP8 on 8×950PR. Pin quay.io/ascend/vllm-ascend:nightly-main-a5 and overlay vLLM#53906 / vllm-ascend#15127. Do not pass --quantization ascend. --block-size 512 is required (kpool indexer). EP is not available on this interconnect."
