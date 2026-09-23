@@ -163,6 +163,12 @@ hardware_overrides:
       HCCL_CONNECT_TIMEOUT: "7200"
 
 hardware_notes:
+  mi350x:
+    title: "Long-context indexer top-k opt-in"
+    body: "The sparse-MLA indexer top-k defaults to the in-tree HIP kernel. On CDNA 4 the AITER kernel is faster once prompts reach roughly 64K tokens, but full CUDA graph decode cannot pick a kernel per request, so it is not selected automatically. When serving long context, add --sparse-indexer-topk-backend aiter. Requires vLLM#58167."
+  mi355x:
+    title: "Long-context indexer top-k opt-in"
+    body: "The sparse-MLA indexer top-k defaults to the in-tree HIP kernel. On CDNA 4 the AITER kernel is faster once prompts reach roughly 64K tokens, but full CUDA graph decode cannot pick a kernel per request, so it is not selected automatically. When serving long context, add --sparse-indexer-topk-backend aiter. Requires vLLM#58167."
   ascend_950pr_8x:
     title: "vLLM Ascend A5 image required"
     body: "Single-node TP8 on 8×950PR. Pin quay.io/ascend/vllm-ascend:nightly-main-a5 and overlay vLLM#53906 / vllm-ascend#15127. Do not pass --quantization ascend. --block-size 512 is required (kpool indexer). EP is not available on this interconnect."
@@ -440,6 +446,25 @@ guide: |
   At TP=4 the FP8 checkpoint reports a 14.92M-token KV pool and ~113.81x max
   concurrency at 128K context; the BF16 checkpoint reports an 8.87M-token KV
   pool at the same TP and context.
+
+  ### Long-context indexer top-k
+
+  The sparse-MLA indexer top-k runs on the in-tree HIP kernel by default. On
+  MI350X / MI355X the AITER kernel is faster for decodes once prompts reach
+  roughly 64K tokens, but it is slower on short prompts, and full CUDA graph
+  decode replays a fixed kernel and cannot branch on the actual sequence
+  length. So it is never selected automatically. If your traffic is mostly
+  long context, opt in explicitly:
+
+  ```bash
+  vllm serve zai-org/GLM-5.3-Flash \
+    --attention-backend ROCM_AITER_MLA_SPARSE \
+    --sparse-indexer-topk-backend aiter
+  ```
+
+  The flag requires a build containing
+  [vLLM #58167](https://github.com/vllm-project/vllm/pull/58167). Leave it
+  unset for mixed or short-prompt traffic.
 
   MTP speculative decoding is supported on MI355X by vLLM builds containing
   [vLLM #55239](https://github.com/vllm-project/vllm/pull/55239), validated on 4×MI355X
