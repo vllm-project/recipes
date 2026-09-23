@@ -428,7 +428,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     if (requestedHwId && requestedHwId !== hwId) {
       const sp = new URLSearchParams(searchParams.toString());
       sp.set("hardware", hwId);
-      router.replace(`?${sp.toString()}`, { scroll: false });
+      router.replace(`?${sp.toString()}${window.location.hash}`, { scroll: false });
     }
     if (!searchParams.get("hardware") && prefs.hardware) {
       const v = recipe.variants?.[variant] || recipe.variants?.default || {};
@@ -1150,7 +1150,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         else sp.delete(k);
       }
       const qs = sp.toString();
-      router.replace(qs ? `?${qs}` : pathname, { scroll: false });
+      router.replace(`${qs ? `?${qs}` : pathname}${window.location.hash}`, { scroll: false });
     },
     [searchParams, router, recommended, pathname]
   );
