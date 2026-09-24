@@ -61,8 +61,8 @@ features:
       - "--speculative-config"
       - '{"method":"dflash","model":"/root/.cache/huggingface/hub/models--XiaomiMiMo--MiMo-V2.6-Flash-RL/snapshots/<hash>/dflash","num_speculative_tokens":7}'
     hardware_overrides:
-      # 3 is the largest draft depth whose warm-up assertions pass on the
-      # measured SM120 build; 5 already fails at start-up.
+      # 3 is the draft depth every number in this section was measured with;
+      # deeper drafts were not measured here.
       rtx_pro_6000_4x:
         args:
           - "--speculative-config"
@@ -219,7 +219,7 @@ guide: |
   ## NVIDIA RTX PRO 6000 Blackwell (SM120), 4x TP4 — measured with patches
 
   Measured 2026-09-23 on a dedicated node with 4x NVIDIA RTX PRO 6000
-  Blackwell Server Edition (96 GB each, compute capability 12.0, driver 595.71,
+  Blackwell Server Edition (96 GB each, compute capability 12.0, driver 595.71.05,
   CUDA 13.0.2), tensor parallel 4, FP8 KV cache, DFlash speculative decoding,
   priority scheduling. Runtime: vLLM `0.29.1rc1.dev449+geb8798058` from the
   `vllm/vllm-openai:mimo-v26-x86_64-cu130` image, model revision
@@ -245,10 +245,9 @@ guide: |
 
   Why each patch is needed:
 
-  - **FP8 KV cache in the Triton DiffKV backend** (first three files). MiMo's
-    global attention uses the DiffKV backend and the stock kernel silently
-    ignores `--kv-cache-dtype fp8` for this model, so the 262k × 36 KV budget
-    above does not fit. Upstream work:
+  - **FP8 KV cache in the Triton DiffKV backend** (first three files) — adds
+    the FP8 KV path to the Triton DiffKV backend that MiMo's global attention
+    uses; the KV-cache figure above was measured with it. Upstream work:
     [vllm#58128](https://github.com/vllm-project/vllm/pull/58128) (scalar FP8 KV
     in Triton DiffKV), [vllm#58141](https://github.com/vllm-project/vllm/pull/58141),
     [vllm#58177](https://github.com/vllm-project/vllm/pull/58177).
@@ -303,11 +302,10 @@ guide: |
 
   Why each non-default flag is there:
 
-  - `--kv-cache-dtype fp8` — halves KV memory; with the DiffKV patch it is what
-    makes 262k context × 36 sequences fit.
+  - `--kv-cache-dtype fp8` — the 9,554,082-token KV figure was measured with
+    it and the DiffKV patch.
   - `--moe-backend marlin` and `--hf-overrides '{"moe_router_dtype":"bfloat16"}'`
-    — the Marlin MoE kernels are the fast path for the MXFP4-stored experts on
-    SM 12.0; the router in bf16 keeps top-k selection identical to the reference.
+    — part of the measured configuration; not ablated separately here.
   - `--compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}'` — full CUDA
     graphs for decode only; prefill stays eager so 262k prompts do not pay graph
     capture at every new shape.
@@ -320,14 +318,15 @@ guide: |
     body, lower is served first). With all priorities equal it behaves exactly
     like FCFS.
   - `--speculative-config` DFlash with `num_speculative_tokens: 3` — 3 is the
-    largest value whose warm-up assertions pass on this build; 5 fails at
-    start-up.
+    draft depth every number in this section was measured with; deeper drafts
+    were not measured here.
   - `--enable-prompt-tokens-details` — reports
     `prompt_tokens_details.cached_tokens` in `usage`; without it prefix-cache
     hits are invisible to clients and billing.
-  - `--limit-mm-per-prompt '{"image":4,...}'` — images cost roughly one token
-    per 32×32 patch pair on this encoder (384×256 → 131 prompt tokens, 1024² →
-    1059, 1920×1080 → 2075, 4096² → 8135); four per request is a sane ceiling.
+  - `--limit-mm-per-prompt '{"image":4,...}'` — images cost about one prompt
+    token per 1,024 pixels, capped near 8,192 tokens per image by the
+    processor's max-pixels limit (384×256 → 131 prompt tokens, 1024² → 1059,
+    1920×1080 → 2075, 4096² → 8135); four per request is a sane ceiling.
   - `--max-model-len 262144` with `--gpu-memory-utilization 0.94` — the values
     every number below was measured at; the 9,554,082-token KV figure assumes
     them.
@@ -349,11 +348,8 @@ guide: |
   | 64 concurrent streams | **3,414 tok/s aggregate**, 56.9 tok/s per stream, TTFT p50 0.32 s / p95 0.38 s |
   | KV cache | 9,554,082 tokens across 4 GPUs at `--gpu-memory-utilization 0.94` ≈ 36 concurrent full-length (262k) sequences |
   | Prefix cache | hits only for prompts above roughly 1–2k tokens (a 754-token prompt never hits; an 11,714-token prompt reports 11,680 cached) |
-  | GSM8K (100 sampled, temperature 1.0 / top_p 0.95, 16 concurrent) | 100/100, all `finish_reason: stop` |
 
-  Numbers are for an otherwise idle node. Any co-tenant on the same GPUs or CPU
-  (we measured this with CI runners sharing the host) drops the interactive
-  median to a few tens of tok/s, so keep the box dedicated.
+  Numbers are for an otherwise idle node.
 
   ```bash
   vllm bench serve --backend openai-chat --base-url http://127.0.0.1:8000 \
@@ -368,7 +364,8 @@ guide: |
      it the DFlash accept length drops from 3.17 to 2.24 tokens and throughput
      at 16 concurrent streams falls by about 22%.
   2. `GET /v1/models` lists exactly the served name(s) you expect.
-  3. Text: a GSM8K sample at the sampling settings you will serve; expect ~100%.
+  3. Text: a GSM8K sample at the sampling settings you will serve, compared
+     against a reference deployment.
   4. Tool calling: a two-tool request returns `finish_reason: tool_calls` with
      parseable JSON arguments, streamed and non-streamed.
   5. Vision: a content-verifiable test (for example, three-colour vertical bars
