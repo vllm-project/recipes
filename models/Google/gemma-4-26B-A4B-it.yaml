@@ -104,6 +104,7 @@ variants:
     precision: bf16
     vram_minimum_gb: 64
     description: "Full BF16 — single 80 GB NVIDIA GPU or 1x MI300X/MI325X/MI350X/MI355X or 2x Xeon6/Xeon5 NUMA nodes"
+    supported_hardware: [h100, h200, mi300x, mi325x, mi355x, trillium, ironwood, xeon6, dgx_spark_gb10, dgx_station_gb300, rtx_pro_6000, rtx_5090]
     hardware_overrides:
       dgx_spark_gb10:
         extra_env:
@@ -122,6 +123,7 @@ variants:
     precision: fp8
     vram_minimum_gb: 32
     description: "FP8 (E4M3) weights with dynamic per-token activation quantization — Hopper or Blackwell"
+    supported_hardware: [h100, h200, dgx_spark_gb10, dgx_station_gb300, rtx_pro_6000, rtx_5090]
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
@@ -153,6 +155,7 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 16
     description: "NVFP4 (4-bit) quantized weights — requires Blackwell (B200/B300)"
+    supported_hardware: [dgx_spark_gb10, dgx_station_gb300, rtx_pro_6000, rtx_5090]
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
@@ -184,6 +187,7 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 16
     description: "NVIDIA ModelOpt NVFP4 (4-bit) quantized weights — validated on the single-GPU Blackwell desktops (DGX Spark GB10, DGX Station GB300, RTX PRO 6000)"
+    supported_hardware: [dgx_spark_gb10, dgx_station_gb300, rtx_pro_6000]
     hardware_overrides:
       dgx_spark_gb10:
         # vLLM 0.24 and the generic nightly both fail on GB10 with this

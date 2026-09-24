@@ -53,11 +53,13 @@ variants:
     precision: bf16
     vram_minimum_gb: 10
     description: "Full precision BF16 — fits on a single TPU v6e chip or one 16GB+ GPU or one Xeon 6 NUMA node"
+    supported_hardware: [trillium, xeon6]
   fp8:
     model_id: "Qwen/Qwen3-4B-FP8"
     precision: fp8
     vram_minimum_gb: 5
     description: "Qwen official FP8 checkpoint"
+    supported_hardware: [trillium]
 
 compatible_strategies:
   - single_node_tp
