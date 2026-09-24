@@ -4,22 +4,27 @@ meta:
   provider: "MiMo (Xiaomi)"
   description: "Xiaomi's efficiency-balanced omnimodal MoE reasoning model (309B total / 15B active) with hybrid attention, FP8-compute/mxfp4-stored weights, 1M context, and a DFlash speculative decoder"
   date_added: 2026-09-22
-  date_updated: 2026-09-22
+  date_updated: 2026-09-23
   difficulty: intermediate
   tasks:
     - text
+    - multimodal
   related_recipes:
     - "XiaomiMiMo/MiMo-V2.6-Pro-RL"
     - "XiaomiMiMo/MiMo-V2-Flash"
   hardware:
     h200: verified
     gb300: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "XiaomiMiMo/MiMo-V2.6-Flash-RL"
   min_vllm_version: "nightly"
   nightly_required: true
-  docker_image: "vllm/vllm-openai:mimo-v26"
+  docker_image:
+    nvidia: "vllm/vllm-openai:mimo-v26"
+    amd: "vllm/vllm-openai-rocm:nightly"
   architecture: moe
   parameter_count: "309B"
   active_parameters: "15B"
@@ -72,7 +77,14 @@ compatible_strategies:
   - multi_node_dep
   - pd_cluster
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+    extra_env:
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
 strategy_overrides: {}
 
 guide: |
@@ -96,7 +108,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 4x H200 (TP4) or equivalent aggregate VRAM (>= 208 GB)
+  - Hardware: 4x H200 (TP4), 4x MI355X/MI325X (TP4), or equivalent aggregate VRAM (>= 208 GB)
 
   ### Pull the vLLM docker image
 
@@ -125,6 +137,24 @@ guide: |
     --enable-auto-tool-choice \
     --generation-config vllm
   ```
+
+  ### AMD (MI355X, MI325X)
+
+  ```bash
+  VLLM_ROCM_USE_AITER=1 \
+  VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4 \
+  vllm serve XiaomiMiMo/MiMo-V2.6-Flash-RL \
+    --tensor-parallel-size 4 \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --max-model-len auto \
+    --reasoning-parser mimo \
+    --tool-call-parser mimo \
+    --enable-auto-tool-choice \
+    --generation-config vllm
+  ```
+
+  MI355X also runs TP2 just fine.
 
   With DFlash speculative decoding (drafter ships inside the checkpoint).
   vLLM does not resolve a `<repo>/dflash` Hub subfolder as the draft model —
@@ -182,3 +212,4 @@ guide: |
   - [MiMo-V2.6 blog post](https://mimo.xiaomi.com/mimo-v2-6)
   - [vLLM PR #57784 — mxfp4 MoE / bf16 router / DFlash for MiMo V2](https://github.com/vllm-project/vllm/pull/57784)
   - [SGLang MiMo cookbook](https://docs.sglang.io/cookbook/autoregressive/Xiaomi/MiMo-V2.5)
+  - [vLLM ROCm GPU install docs](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/?device=rocm)

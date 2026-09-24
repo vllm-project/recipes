@@ -8,6 +8,7 @@ meta:
   difficulty: advanced
   tasks:
     - text
+    - multimodal
   related_recipes:
     - "XiaomiMiMo/MiMo-V2.6-Flash-RL"
     - "XiaomiMiMo/MiMo-V2.5-Pro"
