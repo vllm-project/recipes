@@ -4,7 +4,7 @@ meta:
   provider: "OpenAI"
   description: "OpenAI's gpt-oss family (20B / 120B) with MXFP4 MoE, attention-sinks, built-in tools via Responses API"
   date_added: 2025-08-05
-  date_updated: 2026-05-10
+  date_updated: 2026-09-22
   difficulty: intermediate
   tasks:
     - text
@@ -17,6 +17,7 @@ meta:
     mi325x: verified
     mi355x: verified
     ironwood: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "openai/gpt-oss-120b"
@@ -88,6 +89,23 @@ hardware_overrides:
       VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
       HSA_NO_SCRATCH_RECLAIM: "1"
       AMDGCN_USE_BUFFER_OPS: "0"
+  xpu:
+    extra_args:
+      - "--block-size"
+      - "64"
+      - "--enforce-eager"
+      - "--disable-sliding-window"
+      - "--no-enable-prefix-caching"
+      - "--max-model-len"
+      - "9216"
+      - "--max-num-batched-tokens"
+      - "9216"
+      - "--gpu-memory-utilization"
+      - "0.9"
+    extra_env:
+      TORCH_LLM_ALLREDUCE: "1"
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+      VLLM_WORKER_MULTIPROC_METHOD: "spawn"
 
 strategy_overrides: {}
 
@@ -127,6 +145,12 @@ guide: |
 
   ```bash
   uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
+  ```
+
+  Intel XPU (Arc Pro B70):
+
+  ```bash
+  docker pull vllm/vllm-openai-xpu:latest
   ```
 
   ## Launch commands
@@ -186,6 +210,28 @@ guide: |
     -cc.use_inductor_graph_partition=True \
     --gpu-memory-utilization 0.95 \
     --block-size 64
+  ```
+
+  Intel Arc Pro B70 (4x 32 GB, TP=4), MXFP4 weights via the official XPU image:
+
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e TORCH_LLM_ALLREDUCE=1 \
+    -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
+    -e VLLM_WORKER_MULTIPROC_METHOD=spawn \
+    vllm/vllm-openai-xpu:latest \
+    openai/gpt-oss-120b \
+    --tensor-parallel-size 4 \
+    --block-size 64 \
+    --enforce-eager \
+    --disable-sliding-window \
+    --no-enable-prefix-caching \
+    --max-model-len 9216 \
+    --max-num-batched-tokens 9216 \
+    --gpu-memory-utilization 0.9
   ```
 
   ## Tool Use

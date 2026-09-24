@@ -2,17 +2,18 @@ meta:
   title: "Qwen3-30B-A3B"
   slug: "qwen3-30b-a3b"
   provider: "Qwen"
-  description: "Qwen3 MoE model with 30.5B total and 3.3B active parameters, validated for BF16 serving on Intel Xeon 6."
+  description: "Qwen3 MoE model with 30.5B total and 3.3B active parameters, validated for BF16 serving on Intel Xeon 6 and Intel Arc Pro B70."
   date_added: 2026-08-14
-  date_updated: 2026-09-12
+  date_updated: 2026-09-22
   difficulty: intermediate
   tasks:
     - text
-  performance_headline: "Validated on Intel Xeon 6 (GNR) with BF16 serving"
+  performance_headline: "Validated on Intel Xeon 6 (GNR) and 4x Intel Arc Pro B70 with BF16 serving"
   related_recipes:
     - "Qwen/Qwen3-235B-A22B-Instruct-2507"
   hardware:
     xeon6: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "Qwen/Qwen3-30B-A3B"
@@ -64,6 +65,19 @@ hardware_overrides:
       - "16384"
       - "--gpu-memory-utilization"
       - "0.8"
+  xpu:
+    extra_args:
+      - "--block-size"
+      - "64"
+      - "--enforce-eager"
+      - "--no-enable-prefix-caching"
+      - "--disable-sliding-window"
+      - "--max-model-len"
+      - "9472"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--gpu-memory-utilization"
+      - "0.9"
 
 strategy_overrides: {}
 
@@ -76,7 +90,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 4x Xeon 6 CPUs.
+  - Hardware: 4x Xeon 6 CPUs, or 4x Intel Arc Pro B70 (32 GB per card).
   - vLLM >= 0.8.5
 
   ### pip (Intel Xeon 6 CPUs)
@@ -89,6 +103,12 @@ guide: |
 
   ```bash
   docker pull vllm/vllm-openai-cpu:latest-x86_64
+  ```
+
+  ### Docker (Intel Arc Pro B70)
+
+  ```bash
+  docker pull vllm/vllm-openai-xpu:latest
   ```
 
   ## Intel Xeon 6
@@ -116,6 +136,28 @@ guide: |
     --enable-auto-tool-choice \
     --tool-call-parser hermes \
     --reasoning-parser qwen3
+  ```
+
+  ## Intel Arc Pro B70 (XPU)
+
+  Validated on 4x Intel Arc Pro B70 (32 GB per card) with the official vLLM XPU
+  image `vllm/vllm-openai-xpu:latest`, BF16, TP=4.
+
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-xpu:latest \
+    Qwen/Qwen3-30B-A3B \
+    --tensor-parallel-size 4 \
+    --block-size 64 \
+    --enforce-eager \
+    --no-enable-prefix-caching \
+    --disable-sliding-window \
+    --max-model-len 9472 \
+    --max-num-batched-tokens 8192 \
+    --gpu-memory-utilization 0.9
   ```
 
   ## Client Usage
