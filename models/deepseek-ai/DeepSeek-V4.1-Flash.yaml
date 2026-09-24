@@ -5,7 +5,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-09-20
+  date_updated: 2026-09-24
   difficulty: advanced
   tasks:
     - text
@@ -25,6 +25,11 @@ meta:
     mi325x: verified
     mi350x: verified
     mi355x: verified
+    # Atlas A5, 8 cards, official mixed FP8/FP4 checkpoint. Same command on
+    # both SKUs: TP8+EP, DSpark k=5, FULL_DECODE_ONLY capture 64, 1M context.
+    # Measured 2026-09-24 on 950PR (8×128 GB). 950DT uses that command.
+    ascend_950pr_8x: verified
+    ascend_950dt_8x: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V4.1-Flash"
@@ -86,6 +91,17 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","rejection_sample_method":"block","enable_adaptive_verification":false}'
+      # Adaptive verification and the probabilistic draft sampler are CUDA
+      # paths. On Ascend the draft runs eager and the target stays in the
+      # FULL_DECODE_ONLY graph.
+      ascend_950pr_8x:
+        args:
+          - "--speculative-config"
+          - '{"method":"dspark","num_speculative_tokens":5,"enforce_eager":true}'
+      ascend_950dt_8x:
+        args:
+          - "--speculative-config"
+          - '{"method":"dspark","num_speculative_tokens":5,"enforce_eager":true}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -99,6 +115,14 @@ features:
 opt_in_features:
   - spec_decoding
   - text_only
+
+# Encoder parallel is on for the NVIDIA rows. The verified A5 command does
+# not pass --mm-encoder-tp-mode.
+hardware_opt_in_features:
+  ascend_950pr_8x:
+    - encoder_parallel
+  ascend_950dt_8x:
+    - encoder_parallel
 
 variants:
   default:
@@ -129,6 +153,16 @@ variants:
         extra_env:
           VLLM_USE_V2_MODEL_RUNNER: "1"
           PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+      # No NVIDIA wheel has the NPU kernels. Pull the A5 nightly; do not
+      # build vllm-ascend locally.
+      ascend_950pr_8x:
+        docker_image: "quay.io/ascend/vllm-ascend:nightly-main-a5"
+        install:
+          pip: false
+      ascend_950dt_8x:
+        docker_image: "quay.io/ascend/vllm-ascend:nightly-main-a5"
+        install:
+          pip: false
 
 compatible_strategies:
   - single_node_tp
@@ -169,7 +203,60 @@ hardware_overrides:
       # cannot start unless breakable CUDA graphs are on.
       VLLM_USE_BREAKABLE_CUDAGRAPH: "1"
 
+strategy_hardware:
+  # The verified layout is single-node TP8+EP. The other strategies are not
+  # this configuration.
+  single_node_tp:
+    ascend_950pr_8x: unsupported
+    ascend_950dt_8x: unsupported
+  single_node_dep:
+    ascend_950pr_8x: unsupported
+    ascend_950dt_8x: unsupported
+  multi_node_tp:
+    ascend_950pr_8x: unsupported
+    ascend_950dt_8x: unsupported
+  multi_node_tep:
+    ascend_950pr_8x: unsupported
+    ascend_950dt_8x: unsupported
+  multi_node_dep:
+    ascend_950pr_8x: unsupported
+    ascend_950dt_8x: unsupported
+  pd_cluster:
+    ascend_950pr_8x: unsupported
+    ascend_950dt_8x: unsupported
+
 strategy_overrides:
+  single_node_tep:
+    tp:
+      ascend_950pr_8x: 8
+      ascend_950dt_8x: 8
+    # Exact-GPU layer is additive. KV stays FP8, prefix caching stays on,
+    # and engram is not passed on the CLI. DSpark is included here because
+    # spec_decoding is opt-in for the NVIDIA rows.
+    hardware_overrides:
+      ascend_950pr_8x: &ascend_950_v41_tep
+        extra_args:
+          - "--block-size"
+          - "128"
+          - "--max-model-len"
+          - "1000000"
+          - "--max-num-batched-tokens"
+          - "4096"
+          - "--max-num-seqs"
+          - "10"
+          - "--gpu-memory-utilization"
+          - "0.92"
+          - "--no-disable-hybrid-kv-cache-manager"
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_DECODE_ONLY","max_cudagraph_capture_size":64}'
+          - "--trust-remote-code"
+          - "--safetensors-load-strategy"
+          - "lazy"
+          - "--quantization"
+          - "deepseek_v4_fp8"
+          - "--speculative-config"
+          - '{"method":"dspark","num_speculative_tokens":5,"enforce_eager":true}'
+      ascend_950dt_8x: *ascend_950_v41_tep
   single_node_tp:
     # TP4 baseline (one GB200 NVL4 tray; 4 GPUs on MI350X or MI355X). H100
     # spans the whole 8x80 GB node: 4 cards hold 320 GB against a 614 GB
