@@ -1640,7 +1640,12 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       }
     }
 
-    if (resolveFrontend(recipe, frontend) === "rust") {
+    // An exact-GPU `frontend: python` keeps the recipe's Rust default for
+    // every other card and omits VLLM_USE_RUST_FRONTEND on this one.
+    const hwFrontend = recipe.strategy_overrides?.[strategyName]
+      ?.hardware_overrides?.[hwProfileId]?.frontend
+      || recipe.hardware_overrides?.[hwProfileId]?.frontend;
+    if (resolveFrontend(recipe, hwFrontend || frontend) === "rust") {
       env.VLLM_USE_RUST_FRONTEND = "1";
     }
     return env;

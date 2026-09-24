@@ -235,6 +235,7 @@ strategy_overrides:
     # spec_decoding is opt-in for the NVIDIA rows.
     hardware_overrides:
       ascend_950pr_8x: &ascend_950_v41_tep
+        frontend: python
         extra_args:
           - "--block-size"
           - "128"
@@ -252,8 +253,6 @@ strategy_overrides:
           - "--trust-remote-code"
           - "--safetensors-load-strategy"
           - "lazy"
-          - "--quantization"
-          - "deepseek_v4_fp8"
           - "--speculative-config"
           - '{"method":"dspark","num_speculative_tokens":5,"enforce_eager":true}'
       ascend_950dt_8x: *ascend_950_v41_tep
