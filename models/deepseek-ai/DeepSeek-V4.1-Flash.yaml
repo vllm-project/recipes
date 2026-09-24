@@ -231,8 +231,8 @@ strategy_overrides:
       ascend_950pr_8x: 8
       ascend_950dt_8x: 8
     # Exact-GPU layer is additive. KV stays FP8, prefix caching stays on,
-    # and engram is not passed on the CLI. DSpark is included here because
-    # spec_decoding is opt-in for the NVIDIA rows.
+    # and engram is not passed on the CLI. DSpark stays on the Spec Decoding
+    # pill, so the command omits it until that pill is on.
     hardware_overrides:
       ascend_950pr_8x: &ascend_950_v41_tep
         frontend: python
@@ -253,8 +253,6 @@ strategy_overrides:
           - "--trust-remote-code"
           - "--safetensors-load-strategy"
           - "lazy"
-          - "--speculative-config"
-          - '{"method":"dspark","num_speculative_tokens":5,"enforce_eager":true}'
       ascend_950dt_8x: *ascend_950_v41_tep
   single_node_tp:
     # TP4 baseline (one GB200 NVL4 tray; 4 GPUs on MI350X or MI355X). H100
