@@ -45,11 +45,13 @@ variants:
     precision: bf16
     vram_minimum_gb: 17
     description: "Full precision BF16 — fits on a single TPU v6e chip or one 24GB+ GPU"
+    supported_hardware: [trillium, xeon6]
   awq:
     model_id: "Qwen/Qwen2.5-VL-7B-Instruct-AWQ"
     precision: int4
     vram_minimum_gb: 5
     description: "AWQ 4-bit quantized weights"
+    supported_hardware: [trillium]
     extra_args:
       - "--quantization"
       - "awq"

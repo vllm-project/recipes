@@ -46,6 +46,7 @@ variants:
     precision: bf16
     vram_minimum_gb: 20
     description: "Full precision BF16"
+    supported_hardware: [h100, h200, mi300x, mi325x, mi355x, trillium, xeon6, arc_pro_b60, arc_pro_b70]
   w8a8_int8:
     model_id: "RedHatAI/Meta-Llama-3.1-8B-Instruct-quantized.w8a8"
     precision: int8
@@ -68,6 +69,7 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 5
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
+    supported_hardware: [b200, b300, gb200, gb300]
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
@@ -76,6 +78,7 @@ variants:
     precision: fp8
     vram_minimum_gb: 10
     description: "FP8 quantized weights for Hopper/Blackwell GPUs"
+    supported_hardware: [h100, h200]
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
