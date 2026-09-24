@@ -249,9 +249,6 @@ guide: |
 
   - [Hugging Face: Hy4-preview](https://huggingface.co/tencent/Hy4-preview)
   - [Hugging Face: Hy4-preview-FP8](https://huggingface.co/tencent/Hy4-preview-FP8)
-  - [vLLM #54404](https://github.com/vllm-project/vllm/pull/54404) — AITER sparse-MLA sinks
-  - [vLLM #54405](https://github.com/vllm-project/vllm/pull/54405) — HY-V4 init
-  - [vLLM #57526](https://github.com/vllm-project/vllm/pull/57526) — ROCm compiled backbone / cudagraphs
   - [ModelScope: Hy4-preview](https://modelscope.cn/models/Tencent-Hunyuan/Hy4-preview)
   - [GitHub: Tencent-Hunyuan/Hy4-preview](https://github.com/Tencent-Hunyuan/Hy4-preview)
   - [GitCode: Hy4-preview](https://ai.gitcode.com/tencent_hunyuan/Hy4-preview)
