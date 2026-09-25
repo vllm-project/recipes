@@ -81,6 +81,9 @@ const HW_BRANDS = [
       { id: "gb200", label: "GB200" },
       { id: "gb300", label: "GB300" },
       { id: "dgx_station_gb300", label: "DGX Station" },
+      { id: "dgx_spark_gb10", label: "DGX Spark" },
+      { id: "rtx_pro_6000", label: "RTX Pro 6000" },
+      { id: "rtx_5090", label: "RTX 5090" },
     ],
   },
   {

@@ -4,12 +4,12 @@ meta:
   provider: "Qwen"
   description: "Multimodal MoE model with gated delta networks architecture, 397B total / 17B active parameters, up to 262K context"
   date_added: 2026-02-16
-  date_updated: 2026-04-16
+  date_updated: 2026-09-14
   difficulty: intermediate
   tasks:
     - multimodal
     - text
-  performance_headline: "Verified on 8x H200, 8x MI300X/MI355X, and GB200 nodes"
+  performance_headline: "Verified on 8x H200, 8x MI300X/MI355X, GB200 nodes, and Ascend 950DT"
   related_recipes:
     - "Qwen/Qwen3.6-35B-A3B"
   hardware:
@@ -18,10 +18,12 @@ meta:
     mi300x: verified
     mi325x: verified
     mi355x: verified
+    ascend_950dt: verified
 
 model:
   model_id: "Qwen/Qwen3.5-397B-A17B"
   min_vllm_version: "0.17.0"
+  default_frontend: rust
   architecture: moe
   parameter_count: "397B"
   active_parameters: "17B"
@@ -31,7 +33,6 @@ model:
   base_env:
     VLLM_DEEP_GEMM_WARMUP: "skip"
     VLLM_USE_DEEP_GEMM: "0"
-    VLLM_FLASHINFER_MOE_BACKEND: "latency"
 
 features:
   tool_calling:
@@ -46,10 +47,30 @@ features:
       - "--reasoning-parser"
       - "qwen3"
   spec_decoding:
-    description: "Multi-token prediction speculative decoding for lower latency"
-    args:
-      - "--speculative-config"
-      - '{"method":"mtp","num_speculative_tokens":3}'
+    description: "Multiple options for multi-token prediction speculative decoding for lower latency. Also has DFlash option. "
+    default_mode: mtp
+    modes:
+      mtp:
+        description: "Native MTP head, 3 draft tokens."
+        variants: [default, nvfp4, fp8, gptq_int4]
+        args:
+          - "--speculative-config"
+          - '{"method":"mtp","num_speculative_tokens":3}'
+      dflash:
+        label: "DFlash"
+        description: "DFlash speculative decoding with an externally trained draft model; the served checkpoint is unchanged."
+        variants:
+          - default
+        args:
+          - "--speculative-config"
+          - '{"model": "RedHatAI/Qwen3.5-397B-A17B-speculator.dflash", "num_speculative_tokens": 7, "method": "dflash"}'
+      qwen3_5_mtp:
+        label: "MTP (Ascend)"
+        description: "MTP mode documented for vLLM Ascend."
+        variants: [ascend_w8a8_mtp, ascend_w4a4_mxfp4]
+        args:
+          - "--speculative-config"
+          - '{"method":"qwen3_5_mtp","num_speculative_tokens":3}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -59,10 +80,20 @@ features:
     args:
       - "--mm-encoder-tp-mode"
       - "data"
+  long_context:
+    description: "YaRN RoPE scaling past the native 262,144-token window to ~1,010,000 tokens. Static YaRN holds the scaling factor constant regardless of input length, so leave this off unless you actually serve long prompts; for ~524K, halve the factor to 2.0."
+    args:
+      - "--hf-overrides"
+      - '{"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}'
+      - "--max-model-len"
+      - "1010000"
+    env:
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
 
 opt_in_features:
   - spec_decoding
   - text_only
+  - long_context
 
 variants:
   default:
@@ -76,13 +107,113 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+  fp8:
+    model_id: "RedHatAI/Qwen3.5-397B-A17B-FP8-dynamic"
+    precision: fp8
+    vram_minimum_gb: 477
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
   gptq_int4:
     model_id: "Qwen/Qwen3.5-397B-A17B-GPTQ-Int4"
     precision: int4
     vram_minimum_gb: 239
     description: "GPTQ Int4 checkpoint — halves VRAM vs FP8"
+  ascend_w8a8_mtp:
+    model_id: "Eco-Tech/Qwen3.5-397B-A17B-w8a8-mtp"
+    precision: int8
+    label: "W8A8 (Ascend)"
+    vram_minimum_gb: 477
+    supported_hardware: [ascend_950dt]
+    tp: 8
+    min_vllm_version: "0.23.0"
+    default_modes:
+      spec_decoding: qwen3_5_mtp
+    extra_args:
+      - "--distributed-executor-backend"
+      - "mp"
+      - "--data-parallel-size"
+      - "1"
+      - "--quantization"
+      - "ascend"
+      - "--served-model-name"
+      - "qwen3.5"
+      - "--max-num-seqs"
+      - "128"
+      - "--max-model-len"
+      - "133000"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--gpu-memory-utilization"
+      - "0.95"
+      - "--enable-prefix-caching"
+      - "--async-scheduling"
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+      - "--additional-config"
+      - '{"enable_cpu_binding":true}'
+    extra_env:
+      VLLM_USE_MODELSCOPE: "True"
+      PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+      HCCL_OP_EXPANSION_MODE: "AIV"
+      HCCL_BUFFSIZE: "400"
+      OMP_PROC_BIND: "false"
+      OMP_NUM_THREADS: "100"
+      TASK_QUEUE_ENABLE: "1"
+      VLLM_ASCEND_ENABLE_PREFETCH_MLP: "1"
+      HCCL_INTRA_PCIE_ENABLE: "1"
+      HCCL_INTRA_ROCE_ENABLE: "0"
+    hardware_overrides:
+      ascend_950dt:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-950DT"
+  ascend_w4a4_mxfp4:
+    model_id: "Eco-Tech/Qwen3.5-397B-A17B-w4a4-mxfp4"
+    precision: mxfp4
+    label: "W4A4 (Ascend)"
+    vram_minimum_gb: 239
+    supported_hardware: [ascend_950dt]
+    tp: 8
+    min_vllm_version: "0.23.0"
+    default_modes:
+      spec_decoding: qwen3_5_mtp
+    extra_args:
+      - "--distributed-executor-backend"
+      - "mp"
+      - "--data-parallel-size"
+      - "1"
+      - "--quantization"
+      - "ascend"
+      - "--served-model-name"
+      - "qwen3.5"
+      - "--max-num-seqs"
+      - "128"
+      - "--max-model-len"
+      - "133000"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--gpu-memory-utilization"
+      - "0.95"
+      - "--enable-prefix-caching"
+      - "--async-scheduling"
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+      - "--additional-config"
+      - '{"enable_cpu_binding":true}'
+    extra_env:
+      VLLM_USE_MODELSCOPE: "True"
+      PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+      HCCL_OP_EXPANSION_MODE: "AIV"
+      HCCL_BUFFSIZE: "400"
+      OMP_PROC_BIND: "false"
+      OMP_NUM_THREADS: "100"
+      TASK_QUEUE_ENABLE: "1"
+      VLLM_ASCEND_ENABLE_PREFETCH_MLP: "1"
+      HCCL_INTRA_PCIE_ENABLE: "1"
+      HCCL_INTRA_ROCE_ENABLE: "0"
+    hardware_overrides:
+      ascend_950dt:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-950DT"
 
 compatible_strategies:
   - single_node_tp
@@ -94,7 +225,13 @@ compatible_strategies:
   - multi_node_tep
   - pd_cluster
 
-hardware_overrides: {}
+hardware_overrides:
+  # FlashInfer TRTLLM MoE kernels are NVIDIA-only; pin them per-brand so AMD
+  # keeps auto-selection (AITER on ROCm).
+  nvidia:
+    extra_args:
+      - "--moe-backend"
+      - "flashinfer_trtllm"
 
 strategy_overrides:
   pd_cluster:
@@ -231,18 +368,12 @@ guide: |
 
   ## Processing Ultra-Long Texts
 
-  Qwen3.5-397B-A17B natively supports `262,144` tokens. For longer inputs, apply
-  YaRN RoPE scaling via `--hf-overrides` and raise `--max-model-len`. Pick
-  `factor` to match your real workload — `2.0` covers ~524K, `4.0` covers
-  ~1M — since YaRN at higher factors degrades short-context quality.
-
-  ```bash
-  VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 vllm serve Qwen/Qwen3.5-397B-A17B-FP8 \
-    --tensor-parallel-size 8 \
-    --max-model-len 1010000 \
-    --reasoning-parser qwen3 \
-    --hf-overrides '{"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}'
-  ```
+  Qwen3.5-397B-A17B natively supports `262,144` tokens. To serve longer inputs, turn on the
+  **Long Context** feature above: it applies the model card's YaRN RoPE
+  configuration via `--hf-overrides` and raises `--max-model-len` to ~1,010,000 tokens.
+  Static YaRN holds the scaling factor constant regardless of input length, so
+  leave it off unless you actually serve long prompts; for a ~524K workload,
+  halve the card's `factor` to `2.0`.
 
   See the [model card](https://huggingface.co/Qwen/Qwen3.5-397B-A17B#processing-ultra-long-texts) for the full parameter reference.
 
@@ -307,4 +438,7 @@ guide: |
   - Model card: https://huggingface.co/Qwen/Qwen3.5-397B-A17B
   - FP8 checkpoint: https://huggingface.co/Qwen/Qwen3.5-397B-A17B-FP8
   - NVFP4 checkpoint: https://huggingface.co/nvidia/Qwen3.5-397B-A17B-NVFP4
+  - Ascend W8A8 checkpoint: https://www.modelscope.cn/models/Eco-Tech/Qwen3.5-397B-A17B-w8a8-mtp
+  - Ascend W4A4 checkpoint: https://www.modelscope.cn/models/Eco-Tech/Qwen3.5-397B-A17B-w4a4-mxfp4
+  - vLLM Ascend tutorial: https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/Qwen3.5-397B-A17B.html
   - vLLM documentation: https://docs.vllm.ai/

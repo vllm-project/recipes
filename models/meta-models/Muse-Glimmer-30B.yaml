@@ -4,7 +4,7 @@ meta:
   provider: "Muse (Meta)"
   description: "Dense 29.6B vision-language model with a ViT-G/14 perception encoder and 128K context, distilled from Muse Spark for local agentic use. Emits channel-scoped reasoning and XML-style ATEM tool calls rather than JSON, so it needs the dedicated `muse_glimmer` tool-call and reasoning parsers."
   date_added: 2026-08-09
-  date_updated: 2026-08-23
+  date_updated: 2026-09-09
   difficulty: advanced
   tasks:
     - text
@@ -30,14 +30,12 @@ meta:
 
 model:
   model_id: "meta-models/Muse-Glimmer-30B"
-  # Muse Glimmer landed after v0.27.1 and is available in nightly.
-  min_vllm_version: "nightly"
-  docker_image: "vllm/vllm-openai:nightly"
-  nightly_required: true
+  # Muse Glimmer support merged in vllm-project/vllm#51655 and shipped in v0.28.0.
+  min_vllm_version: "0.28.0"
+  docker_image: "vllm/vllm-openai:v0.28.0"
   install:
     docker:
-      note: "Muse Glimmer support is available in the official vLLM nightly image and has not shipped in a stable release yet."
-    pip: false
+      note: "Recommended: the pinned image ships all dependencies"
   architecture: dense
   # Model card states ~29.6B total including the perception encoder. Measured from
   # safetensors metadata: total_size 59,553,253,376 bytes at BF16 = 29.78B. No expert
@@ -64,7 +62,7 @@ features:
       - "--tool-call-parser"
       - "muse_glimmer"
   reasoning:
-    description: "Channel-scoped chain-of-thought. Surfaces as `message.reasoning` (non-streaming) and `delta.reasoning` (streaming) — note this model uses `reasoning`, not `reasoning_content`. Effort is controlled by a `Reasoning strength: <low|medium|high|xhigh>` line in the system prompt."
+    description: "Channel-scoped chain-of-thought. Surfaces as `message.reasoning` (non-streaming) and `delta.reasoning` (streaming). Effort is controlled by a `Reasoning strength: <low|medium|high|xhigh>` line in the system prompt."
     args:
       - "--reasoning-parser"
       - "muse_glimmer"
@@ -162,7 +160,7 @@ guide: |
   ## Prerequisites
 
   - **Hardware**: DGX Spark. FP4 weights might also run on 5090.
-  - **Image**: `vllm/vllm-openai:nightly`.
+  - **Image**: `vllm/vllm-openai:v0.28.0`.
 
   ## Checkpoints
 

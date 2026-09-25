@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.2 — frontier-scale MoE language model (~743B total parameters, 39B active) with up to 5-token MTP speculative decoding and thinking mode"
   date_added: 2026-06-16
-  date_updated: 2026-07-12
+  date_updated: 2026-09-18
   difficulty: advanced
   tasks:
     - text
@@ -20,9 +20,10 @@ meta:
 
 model:
   model_id: "zai-org/GLM-5.2"
-  min_vllm_version: "0.23.0"
+  min_vllm_version: "0.24.0"
+  default_frontend: rust
   docker_image:
-    nvidia: "vllm/vllm-openai:v0.23.0"
+    nvidia: "vllm/vllm-openai:v0.28.0"
     amd: "vllm/vllm-openai-rocm:nightly-4c626633159887b0f2c962058c17c78f1434556d"
   architecture: moe
   parameter_count: "743B"
@@ -41,10 +42,10 @@ features:
       - "glm47"
       - "--enable-auto-tool-choice"
   reasoning:
-    description: "GLM-4.5 reasoning parser — thinking mode enabled by default on requests"
+    description: "GLM-4.7 reasoning parser — thinking mode enabled by default on requests"
     args:
       - "--reasoning-parser"
-      - "glm45"
+      - "glm47"
   spec_decoding:
     description: "Multi-Token Prediction speculative decoding (up to 7 draft tokens)"
     default_mode: mtp
@@ -151,7 +152,7 @@ guide: |
 
   ## Prerequisites
 
-  - **vLLM 0.23.0** (stable). If you need tool calling and MTP at the same time, use the latest
+  - **vLLM >= 0.24.0** for the `glm47` reasoning parser. If you need tool calling and MTP at the same time, use the latest
     `main` branch.
   - **GPU:** 8xH200 or 8xH20 (141 GB each) for single-node FP8; 8xB200 (180 GB each) for the
     full 1M context.
@@ -168,23 +169,23 @@ guide: |
     -p 8000:8000 \
     --ipc=host \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai:glm52 zai-org/GLM-5.2-FP8 \
+    vllm/vllm-openai:v0.28.0 zai-org/GLM-5.2-FP8 \
       --tensor-parallel-size 8 \
       --tool-call-parser glm47 \
-      --reasoning-parser glm45 \
+      --reasoning-parser glm47 \
       --enable-auto-tool-choice \
       --served-model-name glm-5.2-fp8 \
       --max-model-len 131072
   ```
 
-  On CUDA 12.x, swap the image for `vllm/vllm-openai:glm52-cu129`.
+  On CUDA 12.x, swap the image for `vllm/vllm-openai:v0.28.0-cu129`.
 
   ### From source
 
   ```bash
   uv venv
   source .venv/bin/activate
-  uv pip install "vllm==0.23.0" --torch-backend=auto
+  uv pip install "vllm==0.28.0" --torch-backend=auto
   uv pip install "transformers>=5.9.0"
   ```
 
@@ -199,7 +200,7 @@ guide: |
     --speculative-config.method mtp \
     --speculative-config.num_speculative_tokens 5 \
     --tool-call-parser glm47 \
-    --reasoning-parser glm45 \
+    --reasoning-parser glm47 \
     --enable-auto-tool-choice \
     --served-model-name glm-5.2-fp8
   ```
@@ -208,7 +209,7 @@ guide: |
   vllm serve zai-org/GLM-5.2-FP8 \
      --tensor-parallel-size 8 \
      --tool-call-parser glm47 \
-     --reasoning-parser glm45 \
+     --reasoning-parser glm47 \
      --enable-auto-tool-choice \
      --max-model-len 200000 \
      --max-num-seqs 16 \
@@ -236,7 +237,7 @@ guide: |
     --speculative-config.num_speculative_tokens 5 \
     --tool-call-parser glm47 \
     --enable-auto-tool-choice \
-    --reasoning-parser glm45 \
+    --reasoning-parser glm47 \
     --gpu-memory-utilization 0.80 \
     --max-model-len 524288 \
     --max-num-seqs 32 \
@@ -278,7 +279,7 @@ guide: |
     --max-model-len 32768 \
     --tool-call-parser glm47 \
     --enable-auto-tool-choice \
-    --reasoning-parser glm45 \
+    --reasoning-parser glm47 \
     --no-enable-prefix-caching \
     --served-model-name glm-5.2-mxfp4
   ```
@@ -303,7 +304,7 @@ guide: |
     --speculative-config.num_speculative_tokens 5 \
     --max-num-seqs 32 \
     --tool-call-parser glm47 \
-    --reasoning-parser glm45 \
+    --reasoning-parser glm47 \
     --enable-auto-tool-choice \
     --served-model-name glm-5.2-fp8
   ```
@@ -326,7 +327,7 @@ guide: |
   vllm serve nvidia/GLM-5.2-NVFP4 \
     --tensor-parallel-size 8 \
     --enable-expert-parallel \
-    --reasoning-parser glm45 \
+    --reasoning-parser glm47 \
     --tool-call-parser glm47 \
     --enable-auto-tool-choice \
     --kv-cache-dtype fp8_e4m3 \

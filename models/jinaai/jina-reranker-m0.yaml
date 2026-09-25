@@ -12,7 +12,7 @@ meta:
 
 model:
   model_id: "jinaai/jina-reranker-m0"
-  min_vllm_version: "0.8.0"
+  min_vllm_version: "0.10.0"
   architecture: dense
   parameter_count: "2.4B"
   active_parameters: "2.4B"
@@ -59,7 +59,7 @@ guide: |
   ## Prerequisites
 
   - Hardware: 2x T4 or 2x L4 (or any 2x GPU with ~16 GB each)
-  - vLLM >= 0.8.0
+  - vLLM >= 0.10.0
 
   ### Install vLLM (CUDA)
 

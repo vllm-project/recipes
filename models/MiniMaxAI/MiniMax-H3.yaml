@@ -4,11 +4,12 @@ meta:
   provider: "MiniMax"
   description: "Open-weight general-purpose multimodal generation model — jointly generates 24 FPS video with native stereo audio from text, image, video, and audio references, served via vLLM-Omni"
   date_added: 2026-08-02
-  date_updated: 2026-08-09
+  date_updated: 2026-09-07
   difficulty: advanced
   tasks:
     - omni
-  performance_headline: "8.7 s of 1248×768 video with synchronized stereo audio in ~87 s on 4×B300"
+  performance_headline: "FastH3 VSA generates 15 s of 1344×768 video with synchronized stereo audio in 10.8 s server-side on 8×B300"
+  default_hardware: b300
   related_recipes:
     - Wan-AI/Wan2.2-T2V-A14B-Diffusers
     - nvidia/Cosmos3-Super-Image2Video
@@ -89,6 +90,21 @@ omni:
       vram_minimum_gb: 202
       endpoint: "/v1/videos/sync"
       description: "Text prompt to joint video and synchronized audio through the FL2VA DiT."
+      benchmark: |
+        python3 /path/to/vllm-omni/benchmarks/diffusion/diffusion_benchmark_serving.py \
+          --model /path/to/MiniMax-H3 \
+          --host localhost \
+          --port 8000 \
+          --endpoint /v1/videos \
+          --dataset random \
+          --task t2v \
+          --num-prompts 3 \
+          --max-concurrency 1 \
+          --warmup-requests 1 \
+          --warmup-concurrency 1 \
+          --seed 42 \
+          --random-request-config '[{"width":1344,"height":768,"prompt":"Cinematic drone shot pushing through misty mountain ridges at sunrise, golden light catching the clouds, slow and smooth.","num_inference_steps":8,"num_frames":209,"fps":24,"weight":1}]' \
+          --extra-body '{"flow_shift":12.0,"extra_params":"{\"task\":\"t2va\",\"duration\":8.7,\"aspect_ratio\":\"16:9\",\"audio_flow_shift\":3.0}"}'
       hardware_overrides:
         rtx_pro_5000_4x:
           vram_minimum_gb: 288
@@ -164,6 +180,22 @@ omni:
       vram_minimum_gb: 202
       endpoint: "/v1/videos/sync"
       description: "First frame and prompt to video and audio. Omitting width and height keeps the input aspect ratio at a 768 px short edge."
+      benchmark: &minimax_h3_fl2va_benchmark |
+        python3 /path/to/vllm-omni/benchmarks/diffusion/diffusion_benchmark_serving.py \
+          --model /path/to/MiniMax-H3 \
+          --host localhost \
+          --port 8000 \
+          --endpoint /v1/videos \
+          --dataset random \
+          --task ti2v \
+          --num-prompts 3 \
+          --max-concurrency 1 \
+          --warmup-requests 1 \
+          --warmup-concurrency 1 \
+          --num-input-images 1 \
+          --seed 42 \
+          --random-request-config '[{"width":1344,"height":768,"prompt":"Continue the scene: the camera slowly pushes in on the subject as the background city lights drift and blur, with the actor singing softly and emotionally.","num_inference_steps":8,"num_frames":209,"fps":24,"weight":1}]' \
+          --extra-body '{"flow_shift":12.0,"extra_params":"{\"task\":\"fl2va\",\"duration\":8.7,\"audio_flow_shift\":3.0}"}'
       hardware_overrides:
         rtx_pro_5000_4x:
           vram_minimum_gb: 288
@@ -228,6 +260,7 @@ omni:
       vram_minimum_gb: 202
       endpoint: "/v1/videos/sync"
       description: "Ordered first and last keyframes plus prompt to video and audio through the FL2VA DiT."
+      benchmark: *minimax_h3_fl2va_benchmark
       hardware_overrides:
         rtx_pro_5000_4x:
           vram_minimum_gb: 288
@@ -298,6 +331,22 @@ omni:
       vram_minimum_gb: 202
       endpoint: "/v1/videos/sync"
       description: "Reference image and prompt to video and audio through the Ref2VA DiT."
+      benchmark: &minimax_h3_ref2va_image_benchmark |
+        python3 /path/to/vllm-omni/benchmarks/diffusion/diffusion_benchmark_serving.py \
+          --model /path/to/MiniMax-H3 \
+          --host localhost \
+          --port 8000 \
+          --endpoint /v1/videos \
+          --dataset random \
+          --task ti2v \
+          --num-prompts 3 \
+          --max-concurrency 1 \
+          --warmup-requests 1 \
+          --warmup-concurrency 1 \
+          --num-input-images 1 \
+          --seed 42 \
+          --random-request-config '[{"width":1344,"height":768,"prompt":"A white cat sits on a beige couch and slowly looks toward the camera as quiet room ambience continues.","num_inference_steps":8,"num_frames":209,"fps":24,"weight":1}]' \
+          --extra-body '{"flow_shift":12.0,"extra_params":"{\"task\":\"ref2va\",\"duration\":8.7,\"audio_flow_shift\":3.0}"}'
       hardware_overrides:
         rtx_pro_5000_4x:
           vram_minimum_gb: 288
@@ -364,6 +413,23 @@ omni:
       vram_minimum_gb: 202
       endpoint: "/v1/videos/sync"
       description: "Reference image and separate audio plus prompt to video and audio through the Ref2VA DiT."
+      benchmark: |
+        # Serve /path/to/reference_assets on port 8092 before running this benchmark.
+        python3 /path/to/vllm-omni/benchmarks/diffusion/diffusion_benchmark_serving.py \
+          --model /path/to/MiniMax-H3 \
+          --host localhost \
+          --port 8000 \
+          --endpoint /v1/videos \
+          --dataset random \
+          --task ti2v \
+          --num-prompts 3 \
+          --max-concurrency 1 \
+          --warmup-requests 1 \
+          --warmup-concurrency 1 \
+          --num-input-images 1 \
+          --seed 42 \
+          --random-request-config '[{"width":1344,"height":768,"prompt":"A white cat with black mustache and eyebrow markings sits on a beige couch, lip-syncing precisely to the complete reference audio.","num_inference_steps":8,"num_frames":209,"fps":24,"weight":1}]' \
+          --extra-body '{"flow_shift":12.0,"audio_reference":"{\"audio_url\":\"http://localhost:8092/ref2va_audio.mp3\"}","extra_params":"{\"task\":\"ref2va\",\"duration\":8.7,\"audio_flow_shift\":3.0}"}'
       hardware_overrides:
         rtx_pro_5000_4x:
           vram_minimum_gb: 288
@@ -442,6 +508,21 @@ omni:
       vram_minimum_gb: 202
       endpoint: "/v1/videos/sync"
       description: "One or more ordered video or mixed media references plus prompt to video and audio through the Ref2VA DiT."
+      benchmark: |
+        python3 /path/to/vllm-omni/benchmarks/diffusion/diffusion_benchmark_serving.py \
+          --model /path/to/MiniMax-H3 \
+          --host localhost \
+          --port 8000 \
+          --endpoint /v1/videos \
+          --dataset random \
+          --task v2v \
+          --num-prompts 3 \
+          --max-concurrency 1 \
+          --warmup-requests 1 \
+          --warmup-concurrency 1 \
+          --seed 42 \
+          --random-request-config '[{"width":1344,"height":768,"prompt":"Restyle the reference footage into a cinematic night scene with neon reflections, keeping the same camera motion and subject.","num_inference_steps":8,"num_frames":209,"fps":24,"weight":1}]' \
+          --extra-body '{"flow_shift":12.0,"extra_params":"{\"task\":\"ref2va\",\"duration\":8.7,\"aspect_ratio\":\"16:9\",\"audio_flow_shift\":3.0}"}'
       hardware_overrides:
         rtx_pro_5000_4x:
           vram_minimum_gb: 288
@@ -524,6 +605,26 @@ dependencies:
   - note: "pip path only: install current vLLM-Omni main for the modular MiniMax-H3 pipeline."
     command: "git clone --depth 1 https://github.com/vllm-project/vllm-omni.git /path/to/vllm-omni && cd /path/to/vllm-omni && uv pip install -e ."
     install_modes: [pip]
+  - note: "Optional FastH3 adapters: download the Dense / Data-Free baseline and the recommended VSA / Data-Free artifact under the already-mounted H3 root. FastH3 preview v1 serves T2VA only and is fused at startup."
+    command: |
+      hf download FastVideo/FastVideo-FastH3-4-step-Preview-v1-LoRA \
+        dense-datafree/adapter_model.safetensors \
+        vsa-datafree/adapter_model.safetensors \
+        --local-dir /path/to/MiniMax-H3/FastH3-LoRA
+    install_modes: [pip, docker]
+    optional: true
+  - note: "Optional LightX2V Turbo few-step LoRA: download one Diffusers-layout artifact under the already-mounted H3 root. The filename carries the sampling contract, so do not rename it; the _comfyui_ exports are not supported."
+    command: |
+      hf download lightx2v/Minimax-h3-Turbo \
+        minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors \
+        --local-dir /path/to/MiniMax-H3/Turbo-LoRA
+    install_modes: [pip, docker]
+    optional: true
+  - note: "Optional CUDA-only FastH3 VSA kernel for the pip path. --no-deps preserves the PyTorch/CUDA stack managed by vLLM. The tested B300/SM103 route uses the Triton fallback with FASTVIDEO_VSA_SM100A=0."
+    command: "uv pip install --no-deps fastvideo-kernel==0.3.5"
+    install_modes: [pip]
+    brand: NVIDIA
+    optional: true
   - note: "Optional pip extra for explicitly comparing FA4 on datacenter Blackwell. The generated B300/GB200 route uses the TRTLLM_ATTN default; RTX PRO 5000 and the two-GPU RTX routes use CUDNN_ATTN."
     command: "cd /path/to/vllm-omni && uv pip install -e '.[fa4]'"
     install_modes: [pip]
@@ -532,21 +633,6 @@ dependencies:
   - note: "Docker path only: clone current vLLM-Omni main to the path mounted by the generated command so it overrides the older package in the image."
     command: "git clone --depth 1 https://github.com/vllm-project/vllm-omni.git /path/to/vllm-omni"
     install_modes: [docker]
-  - note: "Ascend Docker path: the generated docker run emits --gpus all, which the NPU runtime ignores. Start the container with the CANN device and driver mounts below, then run the serve command inside it. --shm-size is required — the 64 MB default cannot carry the decoded video back to the API server over shared memory."
-    command: |
-      docker run --rm -it --net=host --shm-size=8g \
-        --device /dev/davinci0 --device /dev/davinci_manager \
-        --device /dev/devmm_svm --device /dev/hisi_hdc \
-        -v /usr/local/dcmi:/usr/local/dcmi \
-        -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
-        -v /usr/local/Ascend/driver/lib64/:/usr/local/Ascend/driver/lib64/ \
-        -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
-        -v /etc/ascend_install.info:/etc/ascend_install.info \
-        -v /path/to/MiniMax-H3:/path/to/MiniMax-H3:ro \
-        -v /path/to/vllm-omni:/path/to/vllm-omni:ro \
-        quay.io/ascend/vllm-omni:minimax-h3 bash
-    install_modes: [docker]
-    brand: Huawei
   - note: "pip path only: ffmpeg and ffprobe must be on PATH for reference-video preparation and MP4 video+audio muxing. The official Docker images already bundle them."
     command: "sudo apt-get install -y ffmpeg"
 
@@ -941,8 +1027,293 @@ guide: |
   dense BF16 `TRTLLM_ATTN`. Install `[fa4]` and add `--diffusion-attention-backend FLASH_ATTN`
   only for an explicit FA4 comparison.
 
+  ### Optional lossy attention: SAGE + Skip-Softmax
+
+  `TRTLLM_ATTN` offers two **lossy** optimizations for the long main DiT attention sequence.
+  Both work under the pure Ulysses parallelism of the four-GPU profile (`--usp 4 --ring 1`) and
+  are datacenter-Blackwell only. Append the following to the four-GPU command above to enable
+  both:
+
+  ```bash
+  --diffusion-attention-config '{
+    "default": {
+      "backend": "TRTLLM_ATTN",
+      "quant": {"dtype_qk": "fp8_e4m3", "q_block_size": 1, "k_block_size": 16},
+      "skip_softmax": {"threshold": 0.05, "disabled_until_timestep": 0.97}
+    },
+    "per_role": {
+      "minimax_h3.token_refiner": {"backend": "TRTLLM_ATTN"}
+    }
+  }'
+  ```
+
+  - **SAGE** quantizes Q/K to `fp8_e4m3` for `QK^T`; P and V are always FP8 in this kernel.
+    B200 additionally supports `int8` Q/K, which preserves accuracy better than FP8.
+  - **Skip-Softmax** skips the Softmax and `PV` work of KV tiles whose scores fall far below
+    the running row maximum. `threshold=0.05` with `disabled_until_timestep=0.97` is a
+    **conservative** setting: a low threshold skips only clearly negligible tiles, and the
+    cutoff keeps the early high-noise steps dense — H3's default video flow shift of 12 keeps
+    the normalized timestep above `0.97` for the first 14 of 49 denoiser forwards at 50 steps.
+    Raise `threshold` or lower `disabled_until_timestep` for more speedup once quality is
+    verified.
+  - The `per_role` entry keeps the short token-refiner attention dense; a per-role spec does
+    not inherit `quant` or `skip_softmax` from `default`.
+
+  Both optimizations trade fidelity for speed, and their effects compound. The measured B300
+  speedup and LPIPS for each mode and for the combination are in the vLLM blog's
+  [Quantized and Sparse Attention](https://vllm.ai/blog/2026-09-01-minimax-h3-production-serving#quantized-and-sparse-attention-in-trtllm_attn)
+  section as a reference; tune the settings according to the accuracy and speed required. See
+  the
+  [TRTLLM attention guide](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/trtllm/)
+  for the full configuration reference.
+
   No restart is required: `extra_params.task` routes T2VA/FL2VA requests to the FL2VA
   DiT and Ref2VA requests to the Ref2VA DiT.
+
+  ### FastH3 four-step Dense and VSA adapters
+
+  [FastH3](https://haoailab.com/blogs/fasth3-preview/) is FastVideo's four-step DMD2
+  student of H3-Base. It keeps H3's encoder, VAEs, tokenizers, and schedulers, but replaces
+  49 denoiser evaluations with four. Preview v1 is T2VA-only and is fused into the FL2VA
+  DiT at server startup, so run it in a dedicated process rather than expecting request-time
+  LoRA switching.
+
+  This path requires current vLLM-Omni `main` at or after the merge of #6909. The PR was
+  validated with vLLM 0.28.0; upgrade the core package to that version when reproducing its
+  environment, while the base H3 paths elsewhere in this recipe retain their v0.26.0 floor.
+
+  The release contains one dense and three VSA artifacts. The commands below compare the
+  Dense / Data-Free baseline with the recommended VSA / Data-Free artifact. Download both
+  under the H3 root so the existing Docker bind mount includes them:
+
+  ```bash
+  hf download FastVideo/FastVideo-FastH3-4-step-Preview-v1-LoRA \
+    dense-datafree/adapter_model.safetensors \
+    vsa-datafree/adapter_model.safetensors \
+    --local-dir /path/to/MiniMax-H3/FastH3-LoRA
+  ```
+
+  Serve the dense artifact with the same eight-GPU pure-Ulysses topology used by the
+  comparison in vLLM-Omni #6909:
+
+  ```bash
+  CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+  VLLM_WORKER_MULTIPROC_METHOD=spawn \
+  VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
+  vllm serve /path/to/MiniMax-H3 \
+    --omni \
+    --host 127.0.0.1 \
+    --port 8095 \
+    --trust-remote-code \
+    --task-type fl2va \
+    --served-model-name MiniMaxAI/MiniMax-H3 \
+    --num-gpus 8 \
+    --usp 8 \
+    --ring 1 \
+    --vae-patch-parallel-size 8 \
+    --vae-parallel-mode tile \
+    --vae-use-tiling \
+    --diffusion-attention-backend TRTLLM_ATTN \
+    --lora-path /path/to/MiniMax-H3/FastH3-LoRA/dense-datafree/adapter_model.safetensors
+  ```
+
+  FastH3 VSA is CUDA-only and requires FastVideo's external kernel package. Install the
+  tested version without dependencies so it cannot replace vLLM's PyTorch/CUDA stack:
+
+  ```bash
+  uv pip install --no-deps fastvideo-kernel==0.3.5
+  ```
+
+  Then switch the adapter and attention backend. B300 is SM103, so the validated route
+  explicitly selects the Triton fallback; `FASTVIDEO_VSA_SM100A=1` requires a compatible
+  source-built wheel containing FastVideo's native Blackwell SM100a extension.
+
+  ```bash
+  CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+  FASTVIDEO_VSA_SM100A=0 \
+  VLLM_WORKER_MULTIPROC_METHOD=spawn \
+  VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
+  vllm serve /path/to/MiniMax-H3 \
+    --omni \
+    --host 127.0.0.1 \
+    --port 8095 \
+    --trust-remote-code \
+    --task-type fl2va \
+    --served-model-name MiniMaxAI/MiniMax-H3 \
+    --num-gpus 8 \
+    --usp 8 \
+    --ring 1 \
+    --vae-patch-parallel-size 8 \
+    --vae-parallel-mode tile \
+    --vae-use-tiling \
+    --diffusion-attention-backend FASTVIDEO_VSA \
+    --fastvideo-vsa-topk 64 \
+    --lora-path /path/to/MiniMax-H3/FastH3-LoRA/vsa-datafree/adapter_model.safetensors
+  ```
+
+  FastH3 VSA applies the artifact's 50 learned compression gates to H3's packed
+  `[text | condition | audio | video]` sequence. Prefix tiles remain segment-pure and
+  dense; video queries use `(4, 4, 4)` 3-D tiles (64 tokens) and select every prefix tile
+  plus the top 64 video tiles. The token refiner intentionally stays dense. Pure Ulysses
+  (`--usp 8 --ring 1`) is supported, while Ring or AllGather sequence parallelism is
+  rejected because a sparse-kernel rank would not own the complete H3 block map.
+
+  Send the same fixed request to either server. Keep `num_inference_steps=4`; do not pass
+  `flow_shift` or `audio_flow_shift`, because the adapter must use the sigma ladder and
+  modality shifts it was distilled on.
+
+  ```bash
+  curl --fail-with-body -sS -X POST http://127.0.0.1:8095/v1/videos/sync \
+    -F 'prompt=A cinematic starship glides through a luminous nebula while its engines hum and distant radio chatter fills the cabin.' \
+    -F 'width=1344' \
+    -F 'height=768' \
+    -F 'aspect_ratio=16:9' \
+    -F 'fps=24' \
+    -F 'num_inference_steps=4' \
+    -F 'seed=1101' \
+    -F 'extra_params={"task":"t2va","duration":10.0}' \
+    -o fasth3.mp4
+  ```
+
+  Check the first-forward log for `route=VSA`; a `route=SDPA` or
+  `FASTVIDEO_VSA falling back to SDPA` message means sparse attention did not execute.
+  The PR's measured B300 results used 1344×768, 24 FPS, four transformer forwards,
+  top-k 64, one discarded warmup, and the same fixed seed:
+
+  | Request | Metric | FastH3 Dense | FastH3 VSA | Speedup |
+  |---|---|---:|---:|---:|
+  | 10 s | Denoise loop | ~4.44 s | ~3.20 s | 1.39× |
+  | 10 s | Diffusion engine | 7.994 s | 5.610 s | 1.42× |
+  | 10 s | Server E2E incl. MP4 | 9.838 s | 7.278 s | 1.35× |
+  | 15 s | Denoise loop | ~8.40 s | ~4.80 s | 1.75× |
+  | 15 s | Diffusion engine | 11.530 s | 7.826 s | 1.47× |
+  | 15 s | Server E2E incl. MP4 | 14.199 s | 10.800 s | 1.31× |
+
+  Sparsity pays off more as the sequence grows: the denoise loop gains 1.39× at 10 s and
+  1.75× at 15 s. End-to-end lands lower than either because text encoding, VAE decoding and
+  MP4 muxing are a fixed cost that does not shrink with sparsity — at 15 s the non-diffusion
+  stage went 1.457 s → 1.648 s and muxing 1.208 s → 1.320 s. Once a route is down to four
+  forwards, those fixed stages, not attention, set the floor.
+
+  VSA added about 3.8 GB to the reported per-process peak in this comparison. Both paths
+  returned H.264 video at 24 FPS with AAC stereo audio at 32 kHz. FastH3 forbids model-level,
+  layerwise, and distributed layerwise offload because those paths bypass load-time fusion.
+
+  ### LightX2V Turbo few-step LoRA
+
+  [LightX2V Turbo](https://huggingface.co/lightx2v/Minimax-h3-Turbo) is a family of
+  few-step LoRA artifacts for H3. It reaches the same goal as FastH3 by the opposite
+  route: instead of fusing full-rank deltas at startup, Turbo stays a standard LoRA that
+  each request activates by name. One server can therefore hold several artifacts and let
+  requests choose between them, at the cost of the LoRA matmuls on every denoise step.
+
+  Eight Diffusers-layout artifacts are supported. The filename is the contract — the server
+  parses the task family, step count and resolution out of it, so a renamed file is rejected
+  rather than served on a guess. `audio_flow_shift` is `3.0` across the family.
+
+  | Artifact | Tasks | `num_inference_steps` | `flow_shift` | alpha |
+  |---|---|---:|---:|---:|
+  | `minimax_h3_fl2v_turbo_4step_v0.1.safetensors` | T2VA / FL2VA | 5 | 12 | none → 8 |
+  | `minimax_h3_fl2v_turbo_4step_v1.0_768p_bf16.safetensors` | T2VA / FL2VA | 5 | 6 | 128 |
+  | `minimax_h3_fl2v_turbo_4step_v1.1_768p_bf16.safetensors` | T2VA / FL2VA | 5 | 6 | 128 |
+  | `minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors` | T2VA / FL2VA | 5 | 6 | 8 |
+  | `minimax_h3_fl2v_turbo_8step_v1.0_bf16.safetensors` | T2VA / FL2VA | 9 | 12 | 8 |
+  | `minimax_h3_fl2v_turbo_8step_v1.0_768p_bf16.safetensors` | T2VA / FL2VA | 9 | 6 | 8 |
+  | `minimax_h3_ref2v_turbo_4step_v0.1_bf16.safetensors` | Ref2VA | 5 | 12 | 8 |
+  | `minimax_h3_ref2v_turbo_8step_v1.0_768p_bf16.safetensors` | Ref2VA | 9 | 6 | 8 |
+
+  Requested sigma points are always one more than the artifact's forwards, which is why a
+  four-step Turbo artifact takes `num_inference_steps=5` where FastH3 takes `4`.
+
+  Every artifact is rank 128 and the delta is applied at `scale * alpha / 128`, with alpha
+  read from the artifact's metadata — only `4step_v0.1` declares none and falls back to 8
+  with a warning.
+
+  Download one artifact under the H3 root so the existing bind mount includes it. Each
+  artifact except `4step_v0.1` also ships a `_comfyui_` export that fuses Q/K/V into a single
+  projection; those are **not** supported and are refused by name.
+
+  ```bash
+  hf download lightx2v/Minimax-h3-Turbo \
+    minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors \
+    --local-dir /path/to/MiniMax-H3/Turbo-LoRA
+  ```
+
+  Serve it on the same eight-GPU pure-Ulysses topology. `--lora-path` preloads the adapter;
+  it accepts one artifact, or a directory holding exactly one — a directory with several
+  recognized artifacts is rejected as ambiguous.
+
+  ```bash
+  CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+  VLLM_WORKER_MULTIPROC_METHOD=spawn \
+  VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
+  vllm serve /path/to/MiniMax-H3 \
+    --omni \
+    --host 127.0.0.1 \
+    --port 8095 \
+    --trust-remote-code \
+    --task-type fl2va \
+    --served-model-name MiniMaxAI/MiniMax-H3 \
+    --num-gpus 8 \
+    --usp 8 \
+    --ring 1 \
+    --vae-patch-parallel-size 8 \
+    --vae-parallel-mode tile \
+    --vae-use-tiling \
+    --diffusion-attention-backend TRTLLM_ATTN \
+    --lora-backend peft \
+    --lora-path /path/to/MiniMax-H3/Turbo-LoRA/minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors
+  ```
+
+  Unlike FastH3, the request must activate the adapter and carry that row's sampling
+  contract. A request whose steps or shift do not match the loaded artifact is rejected, so
+  a mismatch cannot silently sample the distilled model at noise levels it never saw.
+
+  ```bash
+  curl --fail-with-body -sS -X POST http://127.0.0.1:8095/v1/videos/sync \
+    -F 'prompt=A cinematic starship glides through a luminous nebula while its engines hum and distant radio chatter fills the cabin.' \
+    -F 'width=1344' \
+    -F 'height=768' \
+    -F 'aspect_ratio=16:9' \
+    -F 'fps=24' \
+    -F 'num_inference_steps=5' \
+    -F 'flow_shift=6' \
+    -F 'seed=1101' \
+    -F 'extra_params={"task":"t2va","duration":10.0,"audio_flow_shift":3.0}' \
+    -F 'lora={"name":"h3-turbo-v1.2","path":"/path/to/MiniMax-H3/Turbo-LoRA/minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors","scale":1.0}' \
+    -o turbo.mp4
+  ```
+
+  FL2VA artifacts serve `t2va` and `fl2va` on an FL2VA or combined server. The two `ref2v`
+  rows need `--task-type ref2va`: a combined server answers `ref2va` from a second DiT the
+  adapter cannot bind to, so loading one there is refused rather than running an undistilled
+  model on a few-step ladder. The integration is dynamic-only — no prefusion, no LoRA
+  composition. DLO works by keeping the request-switchable LoRA A/B buffers resident on the
+  accelerator while DLO streams the base blocks; model-level and standard layerwise offload
+  remain unsupported.
+
+  Measured on 8×B300 with the command above, at 1344×768, 24 FPS, a 15 s FL2VA request with
+  first and last keyframes (362 frames), fixed seed, one discarded warmup and three recorded
+  runs. The baseline is the same server without an adapter at `num_inference_steps=50` and
+  `flow_shift=12`:
+
+  | Metric | Base H3, 49 forwards | Turbo v1.2, 4 forwards | Speedup |
+  |---|---:|---:|---:|
+  | Denoise loop | ~105 s | ~9 s | 11.7× |
+  | Per denoise step | 2.14–2.16 s/it | 2.20–2.42 s/it | — |
+  | Diffusion engine | 111.1–111.3 s | 15.0–15.1 s | 7.4× |
+  | Server E2E incl. MP4 | 112.5–112.9 s | ~16.5 s | 6.8× |
+
+  The ~10% higher per-step cost is the LoRA matmul the fused FastH3 route does not pay —
+  irrelevant against a 12× cut in forwards, but the reason a single-artifact deployment can
+  still prefer a fused student.
+
+  These figures are for a server serving Turbo requests back to back. Alternating between
+  Turbo and adapter-free requests on one server additionally pays a LoRA rebind on each
+  switch — measured at about 24 s per switch in the same run (39.2 s diffusion engine against
+  15.1 s steady state), because every one of H3's 208 LoRA layers is torn down and re-uploaded.
+  Give Turbo its own process if the workload mixes, or track vLLM-Omni #7195, which removes
+  that rebind.
 
   ### RTX PRO 5000 Blackwell — four PCIe GPUs
 
@@ -1265,8 +1636,9 @@ guide: |
   **GPU-attention-bound, not host-starved**: FlashAttention-4 is ~76% of `diffuse` device
   time, Ulysses send/recv is secondary, GPU utilization is 92.8–94.3% and the CPU-idle
   union inside the transformer forwards is 3.15%. Reducing DiT time further needs a change
-  in attention complexity (reference-latent pooling/pruning, block-sparse attention), which
-  is not lossless.
+  in attention cost, which is not lossless;
+  [SAGE + Skip-Softmax](#optional-lossy-attention-sage--skip-softmax) above is the supported
+  way to trade attention precision and sparsity for speed on datacenter Blackwell.
 
   Against the checkpoint's own reference implementation, the accuracy-qualified path scores
   SSIM 0.9873–0.9896, PSNR 39–42 dB, pixel cosine 0.9996+, and audio log-mel cosine
@@ -1305,6 +1677,10 @@ guide: |
   - The VAE supports the native `tile` parallel mode only.
   - A `U2 × Ring2` hybrid currently fails with an attention-mask length mismatch; use pure
     Ulysses.
+  - FastH3 preview v1 serves T2VA only, is fused at startup, and cannot use model-level,
+    layerwise, or distributed layerwise offload. Its VSA variants additionally require CUDA,
+    `fastvideo-kernel`, `FASTVIDEO_VSA`, and pure local/Ulysses attention; Ring and AllGather
+    sequence parallelism are rejected.
   - Online FP8 quantizes the DiT only — the Qwen3-VL text encoder and both VAEs stay
     BF16. It is incompatible with layerwise offload, whose weight stride is rejected by
     the Cutlass FP8 kernel.
@@ -1325,6 +1701,11 @@ guide: |
   - [vLLM-Omni Video API](https://docs.vllm.ai/projects/vllm-omni/en/latest/serving/videos_api/)
   - [vLLM-Omni diffusion parallelism](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/parallelism/overview/)
   - [vLLM-Omni diffusion attention backends](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/)
+  - [FastVideo VSA attention guide](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/fastvideo_vsa/)
+  - [FastH3 preview adapters](https://huggingface.co/FastVideo/FastVideo-FastH3-4-step-Preview-v1-LoRA)
+  - [MiniMax-H3 VSA and Ulysses support (vLLM-Omni #6909)](https://github.com/vllm-project/vllm-omni/pull/6909)
+  - [vLLM-Omni TRTLLM attention guide (SAGE, Skip-Softmax)](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/trtllm/)
+  - [MiniMax-H3 production serving on vLLM-Omni (blog)](https://vllm.ai/blog/2026-09-01-minimax-h3-production-serving)
   - [vLLM-Omni supported models](https://docs.vllm.ai/projects/vllm-omni/en/latest/models/supported_models/)
   - [vLLM-Omni GPU installation](https://docs.vllm.ai/projects/vllm-omni/en/latest/getting_started/installation/gpu/)
   - [ROCm H3 tracking issue](https://github.com/vllm-project/vllm-omni/issues/5697)

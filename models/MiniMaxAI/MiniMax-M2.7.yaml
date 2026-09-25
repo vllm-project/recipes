@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "MiniMax M2.7 MoE language model (230B total / 10B active) — latest M2 release for coding, agent toolchains, and long-context reasoning with native FP8"
   date_added: 2026-04-12
-  date_updated: 2026-04-17
+  date_updated: 2026-09-14
   difficulty: intermediate
   tasks:
     - text
@@ -22,6 +22,7 @@ meta:
 model:
   model_id: "MiniMaxAI/MiniMax-M2.7"
   min_vllm_version: "0.20.0"
+  default_frontend: rust
   architecture: moe
   parameter_count: "230B"
   active_parameters: "10B"
@@ -81,8 +82,6 @@ variants:
           - "8192"
           - "--gpu-memory-utilization"
           - "0.95"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
 compatible_strategies:
   - single_node_tp

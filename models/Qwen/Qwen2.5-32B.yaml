@@ -75,7 +75,7 @@ guide: |
   export HF_TOKEN=<your HF token>
   export TP=4
   export MAX_MODEL_LEN=4096
-  VLLM_USE_V1=1 vllm serve Qwen/Qwen2.5-32B \
+  vllm serve Qwen/Qwen2.5-32B \
     --seed 42 \
     --gpu-memory-utilization 0.98 \
     --max-num-batched-tokens 2048 \
@@ -95,7 +95,7 @@ guide: |
   ## Configuration Tips
 
   - `--max-model-len 4096` keeps memory in check on a 4-chip v6e slice; native context is 128K — raise it if you have headroom.
-  - `VLLM_USE_V1=1` selects the V1 engine (default on recent vLLM; explicit here to match the upstream TPU recipe).
+  - vLLM has been V1-engine-only for a long time, so no `VLLM_USE_V1=1` export is needed even though the upstream TPU recipe still shows it.
   - vLLM uses 90% of device memory by default; the TPU recipe pushes `--gpu-memory-utilization 0.98` to maximize KV cache.
   - `--max-num-batched-tokens` and `--max-num-seqs` tune batch throughput vs latency.
 

@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "27B-parameter dense hybrid-attention model with linear attention on 48 of 64 layers, a vision tower, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-14
-  date_updated: 2026-08-26
+  date_updated: 2026-09-14
   difficulty: beginner
   tasks:
     - multimodal
@@ -24,6 +24,8 @@ meta:
     # --enforce-eager; rtx_5090_2x covers FP8 and both NVFP4 builds at TP2.
     rtx_5090: verified
     rtx_5090_2x: verified
+    rtx_pro_6000: verified
+    dgx_spark_gb10: verified
     # Huawei Ascend NPU, verified 2026-08-18 on vLLM Ascend 0.23.0 (image
     # quay.io/ascend/vllm-ascend:qwen3.8-a5). The `ascend_w8a8` variant booted on a
     # single 950PR at TP1 with the in-checkpoint MTP head and FULL_DECODE_ONLY
@@ -44,6 +46,7 @@ model:
   # wants the gated-delta-net speculative fix (vllm-project/vllm#51812 / #51674), which no
   # released tag carries yet.
   min_vllm_version: "0.17.0"
+  default_frontend: rust
   # NVIDIA only. The rocm tag with the same name is an AMD build of the 2.4T *text* model
   # (no `ai.vllm.build.commit` label) and has never been exercised on the 27B; naming it
   # here would imply a tested AMD path that does not exist. Non-NVIDIA hardware falls back
@@ -72,11 +75,11 @@ dependencies:
 
 features:
   tool_calling:
-    description: "Enable automatic tool choice. The chat template emits tool calls as <tool_call><function=…><parameter=…> XML, which is the qwen3_coder format — not JSON."
+    description: "Enable automatic tool choice. The default parser is qwen3_xml."
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_coder"
+      - "qwen3_xml"
   reasoning:
     description: "Parse <think> blocks separately from the final answer. The template opens every assistant turn with <think>, so without this the reasoning lands in message.content."
     args:
@@ -95,10 +98,19 @@ features:
         # off the TOP-level config (config/speculative.py), but this checkpoint carries it only
         # under `text_config`, so the depth cannot be inferred here — omit it and startup fails.
         description: "Native MTP head, 3 draft tokens."
-        variants: [default, fp8, nvfp4]
+        variants: [default, fp8, nvfp4, nvfp4_nvidia, int4]
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":3}'
+        hardware_overrides:
+          dgx_spark_gb10:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":5}'
+          rtx_pro_6000:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":5}'
       qwen3_5_mtp:
         label: "MTP (Ascend)"
         # vLLM Ascend documents `qwen3_5_mtp` for this head (it aliases to `mtp` and logs a
@@ -111,7 +123,7 @@ features:
           - '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}'
       dflash:
         label: "DFlash2"
-        description: "External DFlash2 drafter (incoai/Qwen3.8-27B-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. Needs a vLLM build that includes vllm-project/vllm#52816 (merged 2026-08-21, not in a stable release yet). num_speculative_tokens must be 7 (block_size 8 minus one)."
+        description: "External DFlash2 drafter (incoai/Qwen3.8-27B-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. Needs vLLM >=0.28.0, which shipped vllm-project/vllm#52816. num_speculative_tokens must be 7 (block_size 8 minus one)."
         variants: [default]
         args:
           - "--speculative-config"
@@ -125,10 +137,20 @@ features:
     args:
       - "--mm-encoder-tp-mode"
       - "data"
+  long_context:
+    description: "YaRN RoPE scaling past the native 262,144-token window to 1,000,000 tokens. Static YaRN holds the scaling factor constant regardless of input length, so leave this off unless you actually serve long prompts; for ~524K, halve the factor to 2.0."
+    args:
+      - "--hf-overrides"
+      - '{"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}'
+      - "--max-model-len"
+      - "1000000"
+    env:
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
 
 opt_in_features:
   - spec_decoding
   - text_only
+  - long_context
 
 # vram_minimum_gb is ceil(real safetensors bytes in GB x 1.2) for every variant, not
 # params x bytes_per_param: the quantized builds are not uniformly 4-bit.
@@ -138,6 +160,17 @@ variants:
     # 55,563,006,776 B on disk = 55.6 GB
     vram_minimum_gb: 67
     description: "Full-precision BF16 — 51.7 GiB of weights: 1 GPU."
+    hardware_overrides:
+      rtx_pro_6000:
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
+      dgx_spark_gb10:
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
+          - "--gpu-memory-utilization"
+          - "0.8"
   fp8:
     model_id: "Qwen/Qwen3.8-27B-FP8"
     precision: fp8
@@ -163,6 +196,55 @@ variants:
     vram_minimum_gb: 32
     supported_hardware: [b200, b300, gb200, gb300, rtx_5090, rtx_5090_2x]
     description: "NVFP4 build for NVIDIA Blackwell — 24.6 GiB, the smallest footprint: 1 GPU."
+  nvfp4_nvidia:
+    model_id: "nvidia/Qwen3.8-27B-NVFP4"
+    precision: nvfp4
+    # Without a label the pill renders precision.toUpperCase() = "NVFP4", so a bare "NVFP4"
+    # label would be a no-op.
+    label: "NVFP4 (NVIDIA)"
+    # 21,904,998,400 B = 21.9 GB. quant_method `modelopt`, quant_algo `NVFP4-FP8 mixed-precision`.
+    vram_minimum_gb: 32
+    supported_hardware: [rtx_pro_6000, dgx_spark_gb10]
+    description: "NVFP4 build for NVIDIA Blackwell — 21.9 GiB, the smallest footprint: 1 GPU."
+    hardware_overrides:
+      dgx_spark_gb10:
+        extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--gpu-memory-utilization"
+          - "0.7"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
+          - "--async-scheduling"
+          - "--enable-prefix-caching"
+          - "--load-format"
+          - "fastsafetensors"
+      rtx_pro_6000:
+        extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
+          - "--async-scheduling"
+          - "--enable-prefix-caching"
+  int4:
+    model_id: "RedHatAI/Qwen3.8-27B-INT4"
+    precision: int4
+    label: "INT4 (W4A16)"
+    vram_minimum_gb: 24
+    supported_hardware: [h100, h200, b200, b300, gb200, gb300, rtx_5090, rtx_5090_2x]
+    description: "Red Hat AI compressed-tensors W4A16 INT4 build — 19.5 GB: 1 GPU, runs on Hopper too."
+
   ascend_w8a8:
     model_id: "Eco-Tech/Qwen3.8-27B-w8a8"
     precision: int8
@@ -205,6 +287,10 @@ variants:
 # loads. There is no schema mechanism to gate a strategy by node count, so offering it at
 # all would ship a command that cannot start. It costs nothing: 51.7 GiB of BF16 weights fit
 # one GPU, so nothing here needs a second node.
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
+
 compatible_strategies:
   - single_node_tp
 
@@ -241,7 +327,7 @@ guide: |
     --max-model-len 262144 \
     --kv-cache-dtype fp8 \
     --reasoning-parser qwen3 \
-    --enable-auto-tool-choice --tool-call-parser qwen3_coder
+    --enable-auto-tool-choice --tool-call-parser qwen3_xml
   ```
 
   FP8, TP4 (one GB300 tray) for the largest KV cache:
@@ -274,7 +360,7 @@ guide: |
     --max-model-len 262144 \
     --kv-cache-dtype fp8 \
     --reasoning-parser qwen3 \
-    --enable-auto-tool-choice --tool-call-parser qwen3_coder
+    --enable-auto-tool-choice --tool-call-parser qwen3_xml
   ```
 
   At 262,144 context, GPU KV cache size as reported at startup:
@@ -343,7 +429,7 @@ guide: |
     --max-num-batched-tokens 16384 \
     --enable-prefix-caching \
     --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_coder \
+    --tool-call-parser qwen3_xml \
     --mm-encoder-tp-mode data \
     --speculative-config '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}' \
     --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
@@ -391,7 +477,7 @@ guide: |
   
   DFlash2 is not a standalone model. Serve `Qwen/Qwen3.8-27B` and attach
   [incoai/Qwen3.8-27B-DFlash2](https://huggingface.co/incoai/Qwen3.8-27B-DFlash2)
-  as the drafter. Requires a vLLM build that includes
+  as the drafter. Requires vLLM >=0.28.0, which shipped
   [vllm#52816](https://github.com/vllm-project/vllm/pull/52816).
   ```bash
   vllm serve Qwen/Qwen3.8-27B \
@@ -424,19 +510,17 @@ guide: |
   - `{"reasoning_effort": "low"}` — adaptive thinking. `xhigh` (default), `medium`, `low`.
 
   ## Processing Ultra-Long Texts
-  The model has 262k native context length and it can be extended to 1M with --max-model-len
-  flag. The best value can be picked based on the use case and GPU ram usage tradeoff.
 
-  For example, to enable full 1M context length on this model:
-
-  ```bash
-  vllm serve Qwen/Qwen3.8-27B \
-    --max-model-len 1010000 \
-    --hf-overrides '{"text_config": {"max_position_embeddings": 1010000}}' \
-    ...
-  ```
+  The model is native at 262k. To extend it to 1M, turn on the **Long Context**
+  feature above: it applies the model card's YaRN RoPE configuration via
+  `--hf-overrides` and raises `--max-model-len` to 1,000,000. Static YaRN holds
+  the scaling factor constant regardless of input length, so leave it off unless
+  you actually serve long prompts; for a ~524K workload, halve the card's
+  `factor` to `2.0`.
 
   Note the override is nested under `text_config` here, where the 2.4T takes it flat.
+
+  See the [model card](https://huggingface.co/Qwen/Qwen3.8-27B#processing-ultra-long-texts) for the full parameter reference.
 
   ## Troubleshooting
 
@@ -448,7 +532,8 @@ guide: |
 
   - Model card: https://huggingface.co/Qwen/Qwen3.8-27B
   - FP8 checkpoint: https://huggingface.co/Qwen/Qwen3.8-27B-FP8
-  - NVFP4 build (NVIDIA): https://huggingface.co/Inferact/Qwen3.8-27B-NVFP4
+  - NVFP4 build (NVIDIA): https://huggingface.co/nvidia/Qwen3.8-27B-NVFP4
+  - NVFP4 build (Inferact): https://huggingface.co/Inferact/Qwen3.8-27B-NVFP4
   - Ascend INT8 checkpoint (ModelScope): https://www.modelscope.cn/models/Eco-Tech/Qwen3.8-27B-w8a8
   - vLLM documentation: https://docs.vllm.ai/
   - vLLM Ascend tutorial: https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/Qwen3.8-27B.html

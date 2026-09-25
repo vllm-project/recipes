@@ -101,7 +101,7 @@ guide: |
 
   Reasoning is opt-in per request via `reasoning_effort: "high"` — when set,
   the model emits `[THINK]...[/THINK]` blocks that the Mistral reasoning
-  parser surfaces as `message.reasoning_content`. Tool calling uses the
+  parser surfaces as `message.reasoning`. Tool calling uses the
   `[AVAILABLE_TOOLS]` / `[TOOL_CALLS]` chat-template tokens.
 
   ## Prerequisites
@@ -177,7 +177,7 @@ guide: |
       temperature=0.7, max_tokens=4096,
   )
   msg = resp.choices[0].message
-  print("reasoning:", getattr(msg, "reasoning_content", None))
+  print("reasoning:", msg.reasoning)
   print("answer:", msg.content)
   ```
 

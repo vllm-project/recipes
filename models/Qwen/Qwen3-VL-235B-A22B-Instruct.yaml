@@ -29,7 +29,7 @@ model:
   base_args: []
   base_env: {}
   docker_image:
-    amd: "vllm/vllm-openai-rocm:v0.22.1"
+    amd: "vllm/vllm-openai-rocm:v0.28.0"
 
 
 dependencies:
@@ -47,9 +47,20 @@ features:
     args:
       - "--mm-encoder-tp-mode"
       - "data"
+  long_context:
+    description: "Extend the 262K context to 1M tokens with YaRN. Static scaling costs quality on
+      short prompts and the wider window inflates the KV budget, so it is opt-in."
+    args:
+      - "--hf-overrides"
+      - '{"text_config":{"rope_parameters":{"rope_type":"yarn","factor":3.0,"original_max_position_embeddings":262144,"mrope_section":[24,20,20],"mrope_interleaved":true}}}'
+      - "--max-model-len"
+      - "1000000"
+    env:
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
 
 opt_in_features:
   - text_only
+  - long_context
 
 variants:
   default:
@@ -71,8 +82,6 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
 compatible_strategies:
   - single_node_tp
@@ -236,13 +245,11 @@ guide: |
   export SAFETENSORS_FAST_GPU="1"
   export HIP_FORCE_DEV_KERNARG="1"
   export HIP_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
-  export VLLM_USE_V1="1"
   export VLLM_WORKER_MULTIPROC_METHOD="spawn"
   export VLLM_ROCM_USE_AITER="1"
   export VLLM_ROCM_USE_AITER_MHA="1"
   export VLLM_ROCM_USE_AITER_RMSNORM="0"
   export VLLM_ROCM_SHUFFLE_KV_CACHE_LAYOUT="0"
-  export VLLM_RPC_TIMEOUT="300000"
 
   vllm serve Qwen/Qwen3-VL-235B-A22B-Instruct-FP8 \
     --tensor-parallel-size 8 \
@@ -267,8 +274,8 @@ guide: |
   - `--async-scheduling` overlaps scheduling with decoding for better throughput.
   - `--mm-encoder-tp-mode data` deploys the vision encoder in data-parallel fashion for better performance.
   - If your inputs are mostly unique, pass `--mm-processor-cache-gb 0` to skip caching overhead.
-  - Extend context with YaRN:
-    `--rope-scaling '{"rope_type":"yarn","factor":3.0,"original_max_position_embeddings":262144,"mrope_section":[24,20,20],"mrope_interleaved":true}' --max-model-len 1000000`
+  - Extend context to 1M tokens with the **Long Context** toggle, which applies YaRN via
+    `--hf-overrides` and raises `--max-model-len`. Static YaRN costs quality on short prompts.
 
   Text-only mode: pass `--limit-mm-per-prompt.video 0 --limit-mm-per-prompt.image 0` to free memory for KV cache when serving text-only traffic.
 
