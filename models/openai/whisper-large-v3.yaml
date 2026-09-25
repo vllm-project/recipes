@@ -4,7 +4,7 @@ meta:
   provider: "OpenAI"
   description: "Whisper Large v3 speech recognition model, validated for Intel Xeon 6 CPU serving."
   date_added: 2026-08-19
-  date_updated: 2026-08-19
+  date_updated: 2026-09-12
   difficulty: intermediate
   tasks:
     - multimodal
@@ -31,6 +31,8 @@ variants:
     precision: bf16
     vram_minimum_gb: 4
     description: "BF16 serving configuration validated on Intel Xeon 6"
+    supported_hardware:
+      - xeon6
 
 compatible_strategies:
   - single_node_tp
@@ -60,10 +62,21 @@ guide: |
   ## Intel Xeon 6
 
   ```bash
-  vllm serve openai/whisper-large-v3  ```
+  vllm serve openai/whisper-large-v3 \
+    --tensor-parallel-size 1
+  ```
 
-  TP/DP is deployment/topology tuning and is not hard-coded into the portable
-  recipe.
+  Docker (the image entrypoint is `vllm serve`):
+
+  ```bash
+  docker run \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-cpu:latest-x86_64 openai/whisper-large-v3 \
+    --tensor-parallel-size 1
+  ```
+
+  The example uses TP=1. Adjust TP/DP for the deployment topology.
 
   ## Runtime and Platform Tuning
 

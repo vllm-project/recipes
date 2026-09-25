@@ -64,8 +64,6 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
   redhat_nvfp4:
     model_id: "RedHatAI/Qwen3-235B-A22B-Instruct-2507-NVFP4"

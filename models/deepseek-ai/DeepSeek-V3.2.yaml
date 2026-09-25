@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V3.2 MoE model with MLA attention, sparse attention, and scalable RL for strong reasoning and agent capabilities."
   date_added: 2025-12-04
-  date_updated: 2026-04-01
+  date_updated: 2026-09-14
   difficulty: intermediate
   tasks:
     - text
@@ -17,6 +17,7 @@ meta:
 model:
   model_id: "deepseek-ai/DeepSeek-V3.2"
   min_vllm_version: "0.18.0"
+  default_frontend: rust
   architecture: moe
   parameter_count: "671B"
   active_parameters: "37B"
@@ -70,8 +71,6 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
 compatible_strategies:
   - single_node_tp

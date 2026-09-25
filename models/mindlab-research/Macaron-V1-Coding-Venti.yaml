@@ -18,7 +18,7 @@ model:
   model_id: "mindlab-research/Macaron-V1-Coding-Venti"
   min_vllm_version: "0.25.0"
   docker_image:
-    nvidia: "vllm/vllm-openai:v0.25.0"
+    nvidia: "vllm/vllm-openai:v0.28.0"
     amd: "vllm/vllm-openai-rocm:nightly-4c626633159887b0f2c962058c17c78f1434556d"
   architecture: moe
   parameter_count: "743B"
@@ -151,7 +151,7 @@ guide: |
     --ipc=host \
     --network host \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai:v0.25.0 mindlab-research/Macaron-V1-Coding-Venti \
+    vllm/vllm-openai:v0.28.0 mindlab-research/Macaron-V1-Coding-Venti \
       --tensor-parallel-size 16 \
       --nnodes 2 \
       --node-rank 0 \

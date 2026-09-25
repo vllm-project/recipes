@@ -4,7 +4,7 @@ meta:
   provider: "Z.ai"
   description: "GLM-4 9B dense base language model with 8K context."
   date_added: 2026-08-19
-  date_updated: 2026-08-19
+  date_updated: 2026-09-12
   difficulty: intermediate
   tasks:
     - text
@@ -14,7 +14,7 @@ meta:
 
 model:
   model_id: "zai-org/glm-4-9b-hf"
-  min_vllm_version: "0.6.4"
+  min_vllm_version: "0.6.5"
   architecture: dense
   parameter_count: "9B"
   active_parameters: "9B"
@@ -31,6 +31,8 @@ variants:
     precision: bf16
     vram_minimum_gb: 22
     description: "Full precision BF16"
+    supported_hardware:
+      - xeon6
 
 compatible_strategies:
   - single_node_tp
@@ -49,7 +51,7 @@ guide: |
   ## Prerequisites
 
   - Hardware: Intel Xeon 6/Xeon 5 CPUs
-  - vLLM >= 0.6.4
+  - vLLM >= 0.6.5
 
   ### Docker (Intel Xeon 6 CPUs)
 
@@ -60,10 +62,22 @@ guide: |
   ## Intel Xeon 6
 
   ```bash
-  vllm serve zai-org/glm-4-9b-hf  ```
+  vllm serve zai-org/glm-4-9b-hf \
+    --tensor-parallel-size 1
+  ```
 
-  TP/DP values and host-specific CPU placement remain deployment choices and
-  are not hard-coded into the portable recipe.
+  Docker (the image entrypoint is `vllm serve`):
+
+  ```bash
+  docker run \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-cpu:latest-x86_64 zai-org/glm-4-9b-hf \
+    --tensor-parallel-size 1
+  ```
+
+  The example uses TP=1. Adjust TP/DP for the deployment topology;
+  host-specific CPU placement is intentionally not hard-coded.
 
   ## Runtime and Platform Tuning
 

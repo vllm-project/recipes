@@ -62,8 +62,6 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
 
   redhat_fp8:
     model_id: "RedHatAI/Qwen3-Coder-480B-A35B-Instruct-FP8"

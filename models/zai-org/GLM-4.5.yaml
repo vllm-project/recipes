@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-4.5 MoE language model (~358B total parameters, BF16) with built-in MTP layers for speculative decoding and native tool calling"
   date_added: 2025-08-12
-  date_updated: 2026-04-17
+  date_updated: 2026-09-14
   difficulty: intermediate
   tasks:
     - text
@@ -19,6 +19,7 @@ meta:
 model:
   model_id: "zai-org/GLM-4.5"
   min_vllm_version: "0.11.0"
+  default_frontend: rust
   architecture: moe
   parameter_count: "358B"
   active_parameters: "32B"

@@ -4,7 +4,7 @@ meta:
   provider: "Meta"
   description: "Meta Llama 3.1 8B dense base language model with a CPU-validated Red Hat AI W8A8 variant."
   date_added: 2026-08-19
-  date_updated: 2026-08-19
+  date_updated: 2026-09-12
   difficulty: beginner
   tasks:
     - text
@@ -38,6 +38,8 @@ variants:
     precision: int8
     vram_minimum_gb: 10
     description: "Red Hat AI INT8 W8A8 compressed-tensors checkpoint"
+    supported_hardware:
+      - xeon6
 
 compatible_strategies:
   - single_node_tp
@@ -87,14 +89,11 @@ guide: |
   Docker:
 
   ```bash
-  docker run -itd --name llama31-8b-w8a8-cpu \
-    --network host \
-    --shm-size 16g \
+  docker run \
+    --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-cpu:latest-x86_64 \
-      --model RedHatAI/Meta-Llama-3.1-8B-quantized.w8a8 \
-      --host 0.0.0.0 \
-      --port 8000
+    vllm/vllm-openai-cpu:latest-x86_64 RedHatAI/Meta-Llama-3.1-8B-quantized.w8a8 \
+    --tensor-parallel-size 2
   ```
 
   ## Runtime and Platform Tuning

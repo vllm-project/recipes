@@ -4,7 +4,7 @@ meta:
   provider: "Meta"
   description: "Llama 3.3 70B dense model with NVIDIA FP8/FP4 quantized variants for Hopper and Blackwell GPUs"
   date_added: 2025-08-06
-  date_updated: 2026-08-18
+  date_updated: 2026-09-22
   difficulty: beginner
   tasks:
     - text
@@ -21,6 +21,7 @@ meta:
     mi355x: verified
     trillium: verified
     xeon6: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "meta-llama/Llama-3.3-70B-Instruct"
@@ -41,6 +42,15 @@ variants:
     precision: bf16
     vram_minimum_gb: 170
     description: "Full precision BF16"
+    hardware_overrides:
+      # BF16 weights (~140 GB) exceed a 4x B70 node (128 GB); the validated
+      # XPU config quantizes online to FP8 at load time.
+      xpu:
+        extra_args:
+          - "--quantization"
+          - "fp8"
+          - "--kv-cache-dtype"
+          - "fp8"
 
   fp8:
     model_id: "nvidia/Llama-3.3-70B-Instruct-FP8"
@@ -91,6 +101,24 @@ hardware_overrides:
     extra_args: []
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
+  xpu:
+    extra_args:
+      - "--block-size"
+      - "64"
+      - "--enforce-eager"
+      - "--no-enable-prefix-caching"
+      - "--disable-sliding-window"
+      - "--max-model-len"
+      - "9472"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--gpu-memory-utilization"
+      - "0.9"
+    extra_env:
+      PYTHONUNBUFFERED: "1"
+      TORCH_LLM_ALLREDUCE: "1"
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+      VLLM_WORKER_MULTIPROC_METHOD: "spawn"
 
 strategy_overrides:
   single_node_tp:
@@ -109,7 +137,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x H100/H200 (FP8), 1x B200 (FP4), 1x MI300X/MI325X/MI355X, 2x GPUs or 8x Xeon6/Xeon5 NUMA nodes
+  - Hardware: 1x H100/H200 (FP8), 1x B200 (FP4), 1x MI300X/MI325X/MI355X, 2x GPUs, 8x Xeon6/Xeon5 NUMA nodes, or 4x Intel Arc Pro B70 (online FP8)
   - vLLM >= 0.12.0
   - CUDA Driver >= 575 for GPUs
   - Docker with NVIDIA Container Toolkit (recommended) for GPUs
@@ -164,14 +192,11 @@ guide: |
   Launch the x86 CPU vLLM Docker container for `meta-llama/Llama-3.3-70B-Instruct`:
 
   ```bash
-  docker run -itd --name llama3-70b-cpu \
-    --network host \
-    --shm-size 16g \
+  docker run \
+    --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-cpu:latest-x86_64 \
-      --model meta-llama/Llama-3.3-70B-Instruct \
-      --host 0.0.0.0 \
-      --port 8000
+    vllm/vllm-openai-cpu:latest-x86_64 meta-llama/Llama-3.3-70B-Instruct \
+    --tensor-parallel-size 8
   ```
 
   TP/DP remain user/deployment choices rather than recipe defaults.
@@ -187,6 +212,37 @@ guide: |
 
   Hardware-specific overrides may still use these settings when they are part of a
   validated platform configuration.
+
+  ## Intel Arc Pro B70 (XPU)
+
+  Validated on 4x Intel Arc Pro B70 (32 GB per card) with the official vLLM XPU
+  image `vllm/vllm-openai-xpu:latest`, TP=4. BF16 weights (~140 GB) exceed the
+  128 GB node, so the validated configuration quantizes the base checkpoint
+  online to FP8 (`--quantization fp8`) with an FP8 KV cache.
+
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e HF_TOKEN=$HF_TOKEN \
+    -e PYTHONUNBUFFERED=1 \
+    -e TORCH_LLM_ALLREDUCE=1 \
+    -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
+    -e VLLM_WORKER_MULTIPROC_METHOD=spawn \
+    vllm/vllm-openai-xpu:latest \
+    meta-llama/Llama-3.3-70B-Instruct \
+    --tensor-parallel-size 4 \
+    --block-size 64 \
+    --enforce-eager \
+    --no-enable-prefix-caching \
+    --disable-sliding-window \
+    --max-model-len 9472 \
+    --max-num-batched-tokens 8192 \
+    --gpu-memory-utilization 0.9 \
+    --quantization fp8 \
+    --kv-cache-dtype fp8
+  ```
 
   ## Client Usage
 

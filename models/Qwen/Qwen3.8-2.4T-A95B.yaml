@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "2.4T-parameter hybrid-attention MoE (~95B active) with linear attention on 69 of 92 layers, 512 routed experts, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-10
-  date_updated: 2026-08-17
+  date_updated: 2026-09-14
   difficulty: advanced
   tasks:
     - text
@@ -42,6 +42,7 @@ model:
   # `*ForConditionalGeneration` members of the Qwen3.5 family. Nightly is a real
   # requirement here. Re-check at the next stable tag and pin it.
   min_vllm_version: "nightly"
+  default_frontend: rust
   nightly_required: true
   docker_image:
     nvidia: "vllm/vllm-openai:qwen38"
