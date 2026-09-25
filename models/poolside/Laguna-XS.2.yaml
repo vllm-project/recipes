@@ -74,6 +74,23 @@ variants:
     min_vllm_version: "0.22.0"
     description: "INT4 (W4A16) weights + FP8 KV cache — fits on a single 32GB+ GPU"
 
+  redhat_fp8:
+    model_id: "RedHatAI/Laguna-XS.2-FP8"
+    precision: fp8
+    label: "FP8 (RedHat)"
+    vram_minimum_gb: 40
+    description: "RedHatAI FP8 quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_nvfp4:
+    model_id: "RedHatAI/Laguna-XS.2-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 22
+    description: "RedHatAI NVFP4 quantization"
+
 compatible_strategies:
   - single_node_tp
   - single_node_tep
