@@ -1015,6 +1015,26 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // Under pd_cluster the per-role MultiConnector path composes instead. The
   // Strategy row therefore stays fully in effect at all times.
   const activeStrategy = activeServingStrategy;
+
+  // Recipe-defined Advanced options may be scoped to exact hardware ids and
+  // serving strategies. This keeps model-specific tuning choices from leaking
+  // onto configurations where they were not validated.
+  const availableAdvancedOptions = useMemo(
+    () => advancedOptions.filter((opt) => {
+      if (Array.isArray(opt.hardware) && opt.hardware.length > 0 && !opt.hardware.includes(hwId)) return false;
+      if (Array.isArray(opt.strategies) && opt.strategies.length > 0 && !opt.strategies.includes(activeStrategy)) return false;
+      return !opt.gatedBy || opt.gatedBy(recipe, activeStrategy);
+    }),
+    [advancedOptions, hwId, activeStrategy, recipe]
+  );
+  const availableAdvancedIds = useMemo(
+    () => new Set(availableAdvancedOptions.map((opt) => opt.id)),
+    [availableAdvancedOptions]
+  );
+  const activeAdvanced = useMemo(
+    () => advanced.filter((id) => availableAdvancedIds.has(id)),
+    [advanced, availableAdvancedIds]
+  );
   // Mooncake instance scaling applies (Instances row + per-instance Nodes
   // semantics) on every serving strategy except PD, whose pools size themselves.
   const kvInstancesActive = isKvStoreActive && activeServingStrategy !== "pd_cluster";
@@ -1109,7 +1129,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const result = useMemo(
     () => {
-      const advArgs = advanced.flatMap((id) => advancedById[id]?.args || []);
+      const advArgs = activeAdvanced.flatMap((id) => advancedById[id]?.args || []);
       const pdNodes = activeStrategy === "pd_cluster"
         ? {
           prefill: { nodes: effPdPrefillNodes, rank: pdPrefillRank, parallelism: effPdPrefillPar },
@@ -1118,7 +1138,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         : null;
       return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend);
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, activeAdvanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend]
   );
 
   // Visual feedback when any rendered command changes. Covers single-node
@@ -1697,7 +1717,26 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         ? `TP=${effectiveTp}`
         : (strategies[activeStrategy]?.display_name || activeStrategy);
   const precisionPart = currentVariant.precision?.toUpperCase();
-  const configSummary = [hwPart, strategyPart, precisionPart].filter(Boolean).join(" · ")
+
+  // Surface CPU weight offload from the final resolved command rather than
+  // hard-coding model or hardware ids in the UI. Any recipe/strategy that
+  // emits vLLM's offload flags gets the same indication automatically.
+  const indicatorCommand = [
+    displayedResult.command,
+    displayedResult.headCommand,
+    displayedResult.prefill?.command,
+    displayedResult.decode?.command,
+    displayedResult.vllm?.command,
+  ].filter(Boolean).join("\n");
+  const cpuOffloadBackend =
+    indicatorCommand.match(/--offload-backend\s+([^\s\\]+)/)?.[1] || null;
+  const cpuOffloadGb =
+    indicatorCommand.match(/--cpu-offload-gb\s+([^\s\\]+)/)?.[1] || null;
+  const cpuOffloadActive = !!cpuOffloadBackend && cpuOffloadBackend !== "none";
+  const cpuOffloadSummary = cpuOffloadActive
+    ? `CPU offload${cpuOffloadGb ? ` ${cpuOffloadGb} GB` : ""}`
+    : null;
+  const configSummary = [hwPart, strategyPart, precisionPart, cpuOffloadSummary].filter(Boolean).join(" · ")
     + (kvOffloadOptions[activeKvOffload]
         // Grouped members read "Offloading (CPU + Filesystem)".
         ? activeKvGroup
@@ -2229,6 +2268,26 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   </PillGroup>
                 </div>
               ))}
+              {cpuOffloadActive && (
+                <div className="flex flex-wrap items-center gap-2 pt-1.5">
+                  <InfoTip content="This hardware/strategy uses CPU host memory for model weights. The generated vLLM command is the source of truth for the offload backend and size.">
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-vllm-blue/25 bg-vllm-blue/5 px-2 py-1 text-[11px]">
+                      <span className="font-semibold text-foreground">CPU offload</span>
+                      <span className="font-mono text-muted-foreground">
+                        {cpuOffloadBackend.toUpperCase()}
+                      </span>
+                      {cpuOffloadGb && (
+                        <span className="font-mono text-muted-foreground">
+                          {cpuOffloadGb} GB
+                        </span>
+                      )}
+                    </span>
+                  </InfoTip>
+                  <span className="text-[11px] text-muted-foreground/80">
+                    Host-memory weight offload enabled for this hardware/strategy.
+                  </span>
+                </div>
+              )}
               {showTpUsageHint && (
                 <p className="text-[11px] text-muted-foreground/80 pt-1.5">
                   {hwProfile?.generation === "cpu"
@@ -2832,23 +2891,23 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             <summary className="px-4 py-3 cursor-pointer text-[10px] font-semibold text-muted-foreground uppercase tracking-widest hover:bg-muted/30 transition-colors flex items-center gap-2 select-none list-none">
               <span>Advanced</span>
               <span className="text-muted-foreground/50 normal-case tracking-normal font-normal">
-                {advanced.length > 0 ? `(${advanced.length} enabled)` : "— performance tuning"}
+                {activeAdvanced.length > 0 ? `(${activeAdvanced.length} enabled)` : "— performance tuning"}
               </span>
               <ChevronDown size={12} className="ml-auto group-open:rotate-180 transition-transform" />
             </summary>
             <div className="px-4 pb-4 pt-1 border-t border-border/60">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {advancedOptions.filter((opt) => !opt.gatedBy || opt.gatedBy(recipe, activeStrategy)).map((opt) => (
+                {availableAdvancedOptions.map((opt) => (
                   <label
                     key={opt.id}
-                    className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition-colors ${advanced.includes(opt.id)
+                    className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition-colors ${activeAdvanced.includes(opt.id)
                         ? "border-vllm-blue/40 bg-vllm-blue/5"
                         : "border-border hover:bg-muted/30"
                       }`}
                   >
                     <input
                       type="checkbox"
-                      checked={advanced.includes(opt.id)}
+                      checked={activeAdvanced.includes(opt.id)}
                       onChange={() => toggleAdvanced(opt.id)}
                       className="accent-vllm-blue mt-0.5"
                     />
