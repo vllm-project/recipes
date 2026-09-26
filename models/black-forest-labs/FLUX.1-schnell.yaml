@@ -1,0 +1,168 @@
+meta:
+  title: "FLUX.1-schnell"
+  slug: "flux-1-schnell"
+  provider: "Black Forest Labs"
+  description: "Fast distilled FLUX.1 text-to-image generation recipe for vLLM-Omni."
+  date_updated: 2026-07-05
+  difficulty: intermediate
+  tasks:
+    - omni
+  performance_headline: "Distilled FLUX.1 path for 1024x1024 text-to-image generation; supports vLLM-Omni cache, CPU offload, and FP8 quantization features."
+  related_recipes: []
+
+model:
+  model_id: "black-forest-labs/FLUX.1-schnell"
+  min_vllm_version: "0.18.0"
+  architecture: dense
+  parameter_count: "12B"
+  active_parameters: "12B"
+  context_length: 0
+  base_args: []
+  base_env: {}
+
+omni:
+  tasks:
+    - t2i
+
+dependencies:
+  - note: "vLLM-Omni provides the FLUX diffusion pipeline and offline text-to-image runner."
+    command: "uv pip install git+https://github.com/vllm-project/vllm-omni.git"
+  - note: "Use current diffusers/transformers when working with gated FLUX checkpoints or newer scheduler/tokenizer metadata."
+    command: "uv pip install -U diffusers transformers accelerate sentencepiece"
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 32
+    description: "BF16 FLUX.1-schnell checkpoint; vLLM-Omni docs report ~31.4 GiB peak VRAM for a basic 1024x1024, batch=1 run."
+  fp8:
+    precision: fp8
+    vram_minimum_gb: 24
+    description: "FP8 weight quantization supported by vLLM-Omni for FLUX.1; budget at least 24 GiB VRAM for the model, text encoders, and activations unless using CPU offload."
+    extra_args:
+      - "--quantization"
+      - "fp8"
+
+compatible_strategies: []
+
+hardware_overrides: {}
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  [FLUX.1-schnell](https://huggingface.co/black-forest-labs/FLUX.1-schnell) is
+  Black Forest Labs' fast distilled FLUX.1 text-to-image model. In vLLM-Omni it
+  is handled by the `FluxPipeline` path and can be launched through the shared
+  offline text-to-image example.
+
+  Use this recipe when you want a practical CUDA runbook for a low-step
+  FLUX.1-schnell generation job. The checkpoint is hosted on Hugging Face by
+  Black Forest Labs and may require accepting the model license before download.
+
+  ## Prerequisites
+
+  - **Hardware**: one CUDA GPU with at least 32 GiB VRAM for the baseline BF16
+    1024x1024, batch=1 run. The vLLM-Omni text-to-image README lists
+    `black-forest-labs/FLUX.1-schnell` at ~31.4 GiB peak VRAM for this setup.
+  - **Software**: vLLM-Omni with a recent vLLM release and the diffusion
+    dependencies used by the text-to-image examples.
+  - **Access**: make sure the runtime can download the gated FLUX checkpoint
+    from Hugging Face, if access has not already been granted.
+
+  ```bash
+  uv venv --python 3.12 --seed
+  source .venv/bin/activate
+  uv pip install git+https://github.com/vllm-project/vllm-omni.git
+  uv pip install -U diffusers transformers accelerate sentencepiece
+  ```
+
+  ## Launch / offline generation
+
+  ```bash
+  git clone https://github.com/vllm-project/vllm-omni.git
+  cd vllm-omni
+
+  python3 ./examples/offline_inference/text_to_image/text_to_image.py \
+      --model black-forest-labs/FLUX.1-schnell \
+      --prompt "a cinematic photo of a red panda reading vLLM documentation in a neon library" \
+      --output flux1_schnell.png \
+      --height 1024 \
+      --width 1024 \
+      --num-inference-steps 4 \
+      --seed 42
+  ```
+
+  The expected result is a generated PNG at `flux1_schnell.png`.
+
+  ## Optional memory / performance flags
+
+  ### FP8 quantization
+
+  vLLM-Omni documents FLUX.1 (`black-forest-labs/FLUX.1-dev` and
+  `black-forest-labs/FLUX.1-schnell`) as supporting FP8 quantization:
+
+  ```bash
+  python3 ./examples/offline_inference/text_to_image/text_to_image.py \
+      --model black-forest-labs/FLUX.1-schnell \
+      --prompt "a tiny robot painting a sign that says vLLM-Omni" \
+      --output flux1_schnell_fp8.png \
+      --num-inference-steps 4 \
+      --quantization fp8
+  ```
+
+  ### CPU offload
+
+  If the model does not fit comfortably on the target GPU, use vLLM-Omni's
+  diffusion CPU offload path:
+
+  ```bash
+  python3 ./examples/offline_inference/text_to_image/text_to_image.py \
+      --model black-forest-labs/FLUX.1-schnell \
+      --prompt "a studio product photo of a glass GPU" \
+      --output flux1_schnell_offload.png \
+      --num-inference-steps 4 \
+      --enable-cpu-offload
+  ```
+
+  ### Cache acceleration
+
+  Cache-DiT and TeaCache are available through the common diffusion example;
+  choose one cache backend at a time:
+
+  ```bash
+  python3 ./examples/offline_inference/text_to_image/text_to_image.py \
+      --model black-forest-labs/FLUX.1-schnell \
+      --prompt "a colorful vLLM recipe card" \
+      --output flux1_schnell_cache_dit.png \
+      --num-inference-steps 4 \
+      --cache-backend cache_dit
+  ```
+
+  ## Verification
+
+  1. Confirm the command finishes without exceptions.
+  2. Confirm `flux1_schnell.png` exists and is a non-empty PNG file.
+  3. If testing FP8 or cache acceleration, compare the generated image for gross
+     artifacts and rerun with the same seed to confirm deterministic behavior
+     for the chosen configuration.
+
+  ## Known limitations
+
+  - FLUX.1-schnell is a distilled model; start with a small number of steps
+    (for example 4) before increasing generation cost.
+  - Hugging Face access to Black Forest Labs checkpoints may be gated.
+  - This is an offline vLLM-Omni diffusion recipe; use the canonical vLLM-Omni
+    examples and docs as the source of truth for newly added flags.
+
+  ## References
+
+  - [FLUX.1-schnell model card](https://huggingface.co/black-forest-labs/FLUX.1-schnell)
+  - [vLLM-Omni supported models](https://github.com/vllm-project/vllm-omni/blob/main/docs/models/supported_models.md)
+  - [vLLM-Omni text-to-image example README](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/text_to_image/README.md)
+  - [vLLM-Omni FP8 diffusion quantization docs](https://github.com/vllm-project/vllm-omni/blob/main/docs/user_guide/quantization/fp8.md)
+  - [vLLM-Omni diffusion features guide](https://github.com/vllm-project/vllm-omni/blob/main/docs/user_guide/diffusion_features.md)
