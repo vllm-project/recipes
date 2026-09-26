@@ -21,12 +21,12 @@ model:
   context_length: 131072
   base_args:
     - "--trust-remote-code"
+    - "--chat-template-content-format"
+    - "string"
     - "--dtype"
     - "bfloat16"
     - "--max-model-len"
     - "131072"
-    - "--hf-overrides"
-    - '{"rope_parameters":{"rope_type":"yarn","factor":16.0,"original_max_position_embeddings":8192}}'
     - "--gpu-memory-utilization"
     - "0.85"
   base_env: {}
@@ -63,16 +63,16 @@ guide: |
 
   ## Launch Commands
 
-  We recommend serving K2-Horizon-0.9B with YaRN RoPE scaling to enable the full 131,072-token context length. We have tested and verified the model under this configuration.
+  K2-Horizon-0.9B ships YaRN RoPE scaling in its `config.json` (factor 16 over an 8,192-token original window, `rope_theta` 1,000,000, `beta_fast` 128, `beta_slow` 4), so the full 131,072-token context needs no `--hf-overrides`. A top-level `rope_parameters` override replaces that whole block rather than merging into it, so a partial one silently drops `rope_theta` and the YaRN betas.
 
   ### Recommended: With YaRN
 
   ```bash
   vllm serve IFM/K2-Horizon-0.9B \
     --trust-remote-code \
+    --chat-template-content-format string \
     --dtype bfloat16 \
     --max-model-len 131072 \
-    --hf-overrides '{"rope_parameters":{"rope_type":"yarn","factor":16.0,"original_max_position_embeddings":8192}}' \
     --gpu-memory-utilization 0.85 \
     --reasoning-parser k2_horizon \
     --enable-auto-tool-choice \
@@ -81,13 +81,14 @@ guide: |
 
   This configuration enables the full 131,072-token context length and is the recommended setting for K2-Horizon.
 
-  ### Without YaRN
+  ### Shorter context
 
-  To use the original 8,192-token context length, you can serve the model without RoPE scaling:
+  To cap memory at the original 8,192-token window, lower `--max-model-len`. YaRN stays on because it comes from the checkpoint config:
 
   ```bash
   vllm serve IFM/K2-Horizon-0.9B \
     --trust-remote-code \
+    --chat-template-content-format string \
     --dtype bfloat16 \
     --max-model-len 8192 \
     --gpu-memory-utilization 0.85 \
