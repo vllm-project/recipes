@@ -17,7 +17,7 @@ model:
   parameter_count: "9B"
   active_parameters: "9B"
   context_length: 524288
-  base_args: ["--trust-remote-code", "--dtype", "bfloat16"]
+  base_args: ["--trust-remote-code", "--chat-template-content-format", "string", "--dtype", "bfloat16"]
   base_env: {}
 features:
   reasoning:
@@ -52,6 +52,7 @@ guide: |
   ```bash
   vllm serve IFM/K2-Horizon-7B \
     --trust-remote-code \
+    --chat-template-content-format string \
     --dtype bfloat16 \
     --reasoning-parser k2_horizon \
     --enable-auto-tool-choice \

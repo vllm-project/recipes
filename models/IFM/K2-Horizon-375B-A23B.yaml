@@ -22,7 +22,7 @@ model:
   # path too, which deliberately runs pure TP (see strategy_hardware). The TEP
   # strategies emit it themselves; multi_node_tp_pp does not, so it carries its
   # own copy in strategy_overrides below.
-  base_args: ["--trust-remote-code", "--dtype", "bfloat16"]
+  base_args: ["--trust-remote-code", "--chat-template-content-format", "string", "--dtype", "bfloat16"]
   base_env: {}
 features:
   reasoning:
@@ -87,6 +87,7 @@ guide: |
   vllm serve IFM/K2-Horizon-375B-A23B \
     --tensor-parallel-size 8 \
     --trust-remote-code \
+    --chat-template-content-format string \
     --dtype bfloat16 \
     --enable-expert-parallel \
     --reasoning-parser k2_horizon \
@@ -106,6 +107,7 @@ guide: |
   vllm serve IFM/K2-Horizon-375B-A23B \
     --tensor-parallel-size 8 \
     --trust-remote-code \
+    --chat-template-content-format string \
     --dtype bfloat16 \
     --max-model-len 131072 \
     --gpu-memory-utilization 0.9 \
