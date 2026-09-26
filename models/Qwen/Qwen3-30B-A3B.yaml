@@ -59,6 +59,7 @@ variants:
     precision: bf16
     vram_minimum_gb: 74
     description: "Full precision BF16"
+    supported_hardware: [xeon6, arc_pro_b70]
   ascend_w8a8:
     model_id: "Eco-Tech/Qwen3-30B-A3B-w8a8"
     precision: int8

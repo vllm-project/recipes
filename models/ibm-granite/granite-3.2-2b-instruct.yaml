@@ -31,8 +31,7 @@ variants:
     precision: bf16
     vram_minimum_gb: 6
     description: "Full precision BF16"
-    supported_hardware:
-      - xeon6
+    supported_hardware: [xeon6]
 
 compatible_strategies:
   - single_node_tp
