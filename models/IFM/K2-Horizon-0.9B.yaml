@@ -63,9 +63,7 @@ guide: |
 
   ## Launch Commands
 
-  K2-Horizon-0.9B ships YaRN RoPE scaling in its `config.json` (factor 16 over an 8,192-token original window, `rope_theta` 1,000,000, `beta_fast` 128, `beta_slow` 4), so the full 131,072-token context needs no `--hf-overrides`. A top-level `rope_parameters` override replaces that whole block rather than merging into it, so a partial one silently drops `rope_theta` and the YaRN betas.
-
-  ### Recommended: With YaRN
+  K2-Horizon-0.9B's `config.json` already enables YaRN, so the full 131,072-token context needs no RoPE override.
 
   ```bash
   vllm serve IFM/K2-Horizon-0.9B \
@@ -79,23 +77,7 @@ guide: |
     --tool-call-parser k2_horizon
   ```
 
-  This configuration enables the full 131,072-token context length and is the recommended setting for K2-Horizon.
-
-  ### Shorter context
-
-  To cap memory at the original 8,192-token window, lower `--max-model-len`. YaRN stays on because it comes from the checkpoint config:
-
-  ```bash
-  vllm serve IFM/K2-Horizon-0.9B \
-    --trust-remote-code \
-    --chat-template-content-format string \
-    --dtype bfloat16 \
-    --max-model-len 8192 \
-    --gpu-memory-utilization 0.85 \
-    --reasoning-parser k2_horizon \
-    --enable-auto-tool-choice \
-    --tool-call-parser k2_horizon
-  ```
+  Lower `--max-model-len` (e.g. 8192) to reduce KV-cache memory.
 
   ## Client usage
 
