@@ -89,7 +89,6 @@ strategy_overrides:
       - "1024"
       - "--max-num-seqs"
       - "1"
-      - "--disable-log-requests"
 
 guide: |
   ## Overview
@@ -140,7 +139,6 @@ guide: |
     --max-num-seqs 1 \
     --max-num-batched-tokens 1024 \
     --enable-chunked-prefill \
-    --disable-log-requests \
     --kv-cache-dtype fp8 \
     -dcp 8
   ```

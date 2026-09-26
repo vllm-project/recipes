@@ -139,8 +139,7 @@ guide: |
   ```bash
   export VLLM_ROCM_USE_AITER=1
   vllm serve meta-llama/Llama-3.1-8B-Instruct \
-    --tensor-parallel-size 1 \
-    --disable-log-requests
+    --tensor-parallel-size 1
   ```
 
   The first AITER launch may take several minutes while ROCm kernels are compiled and cached.

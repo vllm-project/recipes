@@ -147,7 +147,6 @@ guide: |
   vllm serve zai-org/GLM-4.7 \
       --tensor-parallel-size 8 \
       --gpu-memory-utilization 0.9 \
-      --disable-log-requests \
       --no-enable-prefix-caching \
       --trust-remote-code
   ```
