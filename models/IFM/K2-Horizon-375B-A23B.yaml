@@ -26,7 +26,7 @@ model:
   base_env: {}
 features:
   reasoning:
-    description: "Extract K2-Horizon reasoning into reasoning_content"
+    description: "Extract K2-Horizon reasoning into message.reasoning"
     args: ["--reasoning-parser", "k2_horizon"]
   tool_calling:
     description: "Enable automatic tool choice with the K2-Horizon parser"
