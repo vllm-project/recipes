@@ -125,7 +125,6 @@ guide: |
   export MAX_MODEL_LEN=4096
   vllm serve Qwen/Qwen3-32B \
     --seed 42 \
-    --disable-log-requests \
     --gpu-memory-utilization 0.98 \
     --max-num-batched-tokens 2048 \
     --max-num-seqs 256 \

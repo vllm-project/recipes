@@ -141,8 +141,7 @@ guide: |
     --max-num-seqs 64 \
     --no-enable-prefix-caching \
     --max-num-batched-tokens 16384 \
-    --max-model-len 32000 \
-    --disable-log-requests
+    --max-model-len 32000
   ```
 
   The first AITER launch may take several minutes while ROCm kernels are compiled and cached.
