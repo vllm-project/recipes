@@ -50,7 +50,7 @@ features:
       - "--reasoning-parser"
       - "glm47"
   spec_decoding:
-    description: "Speculative decoding — pick native MTP or an external DFlash2 drafter."
+    description: "Speculative decoding — pick native MTP, DFlash2, or DSpark (external drafts)."
     default_mode: mtp
     modes:
       mtp:
@@ -78,6 +78,13 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"dflash","model":"incoai/GLM-5.3-DFlash2","num_speculative_tokens":7}'
+      dspark:
+        label: "DSpark"
+        description: "External DSpark drafter (RedHatAI/GLM-5.3-speculator.dspark), with a Markov head and confidence head. The model card specifies 8 draft tokens."
+        variants: [default]
+        args:
+          - "--speculative-config"
+          - '{"method":"dspark","model":"RedHatAI/GLM-5.3-speculator.dspark","num_speculative_tokens":8}'
 
 opt_in_features:
   - spec_decoding
@@ -328,6 +335,18 @@ guide: |
     --served-model-name glm-5.3-nvfp4
   ```
 
+  ### DSpark (opt-in)
+
+  DSpark is an external confidence-scheduled drafter. Serve `zai-org/GLM-5.3` and attach
+  [RedHatAI/GLM-5.3-speculator.dspark](https://huggingface.co/RedHatAI/GLM-5.3-speculator.dspark)
+  with eight speculative tokens:
+
+  ```bash
+  vllm serve zai-org/GLM-5.3 \
+    --tensor-parallel-size 8 \
+    --speculative-config '{"method":"dspark","model":"RedHatAI/GLM-5.3-speculator.dspark","num_speculative_tokens":8}'
+  ```
+
   ## Reasoning modes
 
   Thinking is always on — the generation prompt opens a `<think>` block unconditionally.
@@ -417,3 +436,4 @@ guide: |
   - [Model card](https://huggingface.co/zai-org/GLM-5.3)
   - [BF16 checkpoint](https://huggingface.co/zai-org/GLM-5.3-BF16)
   - [NVFP4 checkpoint (Inferact)](https://huggingface.co/Inferact/GLM-5.3-NVFP4)
+  - [DSpark draft](https://huggingface.co/RedHatAI/GLM-5.3-speculator.dspark)

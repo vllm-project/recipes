@@ -63,6 +63,16 @@ variants:
       - "--kv-cache-dtype"
       - "fp8"
 
+  redhat_fp8:
+    model_id: "RedHatAI/Qwen3-Coder-480B-A35B-Instruct-FP8"
+    precision: fp8
+    label: "FP8 (RedHat)"
+    vram_minimum_gb: 576
+    description: "RedHatAI FP8 quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
 compatible_strategies:
   - single_node_tp
   - single_node_tep
