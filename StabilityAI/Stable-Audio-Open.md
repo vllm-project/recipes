@@ -23,6 +23,23 @@ uv pip install soundfile  # Recommended
 uv pip install scipy
 ```
 
+### AMD ROCm: MI300X, MI325X, MI355X
+
+> **Note:** The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35.
+> If your environment does not meet these requirements, please use the Docker-based setup.
+
+```bash
+uv venv --python 3.12
+source .venv/bin/activate
+VLLM_OMNI_TARGET_DEVICE=rocm uv pip install \
+  git+https://github.com/vllm-project/vllm-omni.git \
+  vllm==0.14.1+rocm700 \
+  --extra-index-url https://wheels.vllm.ai/rocm/0.14.1/rocm700
+
+# Audio saving
+uv pip install soundfile
+```
+
 The CLI examples below are from the vLLM-Omni repo. If you want to run them directly, clone that repo and run the scripts from its `examples/offline_inference` directory.
 
 ## Text-to-Audio Generation
