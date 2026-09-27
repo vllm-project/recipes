@@ -110,7 +110,6 @@ guide: |
   vllm serve Qwen/Qwen3-235B-A22B \
     --trust-remote-code \
     -tp 4 \
-    --disable-log-requests \
     --swap-space 32 \
     --distributed-executor-backend mp \
     --max-num-batched-tokens 32768 \
@@ -129,7 +128,6 @@ guide: |
   vllm serve Qwen/Qwen3-235B-A22B-FP8 \
     --trust-remote-code \
     -tp 4 \
-    --disable-log-requests \
     --swap-space 16 \
     --distributed-executor-backend mp \
     --max-num-batched-tokens 32768 \

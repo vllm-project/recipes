@@ -4,7 +4,7 @@ meta:
   provider: "NVIDIA"
   description: "NVIDIA Nemotron-3-Super Mamba-hybrid latent-MoE (~120B total / ~12B active) with BF16, FP8, and NVFP4 variants"
   date_added: 2026-04-28
-  date_updated: 2026-07-31
+  date_updated: 2026-09-10
   difficulty: advanced
   tasks:
     - text
@@ -46,9 +46,17 @@ features:
     args:
       - "--speculative-config"
       - '{"method":"mtp","num_speculative_tokens":3}'
+  long_context:
+    description: "Raise the context window from the default 256K to the model's full 1M tokens. Needs a large KV-cache budget — lower --max-model-len if you are memory-constrained."
+    args:
+      - "--max-model-len"
+      - "1048576"
+    env:
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
 
 opt_in_features:
   - spec_decoding
+  - long_context
 
 variants:
   default:

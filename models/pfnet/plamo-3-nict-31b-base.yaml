@@ -4,7 +4,7 @@ meta:
   provider: "Preferred Networks"
   description: "Largest PLaMo 3 NICT Japanese/English base model with interleaved sliding-window and full attention."
   date_added: 2026-06-03
-  date_updated: 2026-06-02
+  date_updated: 2026-09-13
   difficulty: intermediate
   tasks:
     - text
@@ -66,7 +66,7 @@ guide: |
   uv venv
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend=auto
-  huggingface-cli login
+  hf auth login
   ```
 
   ## Launching the Server
@@ -106,7 +106,7 @@ guide: |
   - **Out of memory on 80 GB GPUs:** add `--tensor-parallel-size 2` or lower
     `--max-model-len`.
   - **Gated repo errors:** accept the PLaMo community license on Hugging Face and
-    run `huggingface-cli login`.
+    run `hf auth login`.
   - **Repetitive or low-quality completions:** adjust sampling for free-form
     generation, or fine-tune the model for chat or assistant workloads.
 

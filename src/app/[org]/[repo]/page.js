@@ -9,13 +9,21 @@ import { loadTaxonomy } from "@/lib/taxonomy";
 import { resolveRecipePlatforms } from "@/lib/platforms";
 import { getProviderLogo, getProviderLogoClass } from "@/lib/providers";
 import { CommandBuilder } from "@/components/recipes/CommandBuilder";
+import { GuideLinks } from "@/components/recipes/GuideLinks";
 import { DeployDialog } from "@/components/recipes/DeployDialog";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
 import { Badge } from "@/components/ui/badge";
-import { Cpu, Layers, Pencil, Bug, ExternalLink } from "lucide-react";
+import { Cpu, Layers, Pencil, Bug, ExternalLink, Link2 } from "lucide-react";
+import {
+  buildBreadcrumbLd,
+  buildSoftwareApplicationLd,
+  buildTechArticleLd,
+  hardwareLabel,
+  jsonLdScript,
+} from "@/lib/jsonld";
 
 export async function generateStaticParams() {
   return getAllRoutablePairs();
@@ -26,8 +34,10 @@ export async function generateMetadata({ params }) {
   const recipe = getRecipeByHfId(org, repo);
   if (!recipe) return {};
   const { meta, model } = recipe;
+  // Page <title> uses the canonical hf_id (e.g. "deepseek-ai/DeepSeek-V3.2")
+  // — that's what people search for. The layout template appends " | vLLM
+  // Recipes" so the final tab reads "deepseek-ai/DeepSeek-V3.2 | vLLM Recipes".
   const title = `${org}/${repo}`;
-  const description = meta.description || meta.title;
   const paramStr = model.parameter_count
     ? model.active_parameters && model.active_parameters !== model.parameter_count
       ? `${model.parameter_count} / ${model.active_parameters} active`
@@ -38,17 +48,24 @@ export async function generateMetadata({ params }) {
     .filter(Boolean)
     .join(" · ");
   const versionStr = model.min_vllm_version ? `vLLM ${model.min_vllm_version}+` : "";
-  // Provider subtitle is redundant with the "org/" prefix in the title, so
-  // the recipe OG uses: title + meta (spec strip) + version pill.
+  // og:title follows the umbrella spec (PROD-5):
+  //   "<Model Name> on vLLM — Serve command for <hardware list>"
+  // The og:site_name already provides "vLLM Recipes" branding, so the on-vLLM
+  // suffix here is purely a SERP-snippet signal. Falls back to the model meta
+  // line when no verified hardware is listed.
+  const hwList = hardwareLabel(recipe);
+  const ogTitle = hwList
+    ? `${repo} on vLLM — Serve command for ${hwList}`
+    : metaLine
+    ? `${title} — ${metaLine}`
+    : title;
+  // <meta name="description"> follows the umbrella spec template too. Prefer
+  // the recipe's own description, then fall back to the templated form.
+  const templateDescription = `Recommended vllm serve command, hardware matrix, and flag explanations for serving ${recipe.hf_id} with vLLM${hwList ? ` on ${hwList}` : ""}.`;
+  const description = meta.description || templateDescription;
   const ogUrl = `/og?title=${encodeURIComponent(title)}&meta=${encodeURIComponent(
     metaLine
   )}&version=${encodeURIComponent(versionStr)}&path=${encodeURIComponent(`/${org}/${repo}`)}`;
-  // og:title — aim for 50–60 chars for optimal preview width. Skip the
-  // " on vLLM" suffix since og:site_name already provides it.
-  const ogTitle = metaLine ? `${title} — ${metaLine}` : title;
-  // Page <title> uses the canonical hf_id (e.g. "deepseek-ai/DeepSeek-V3.2")
-  // — that's what people search for. The layout template appends " | vLLM
-  // Recipes" so the final tab reads "deepseek-ai/DeepSeek-V3.2 | vLLM Recipes".
   return {
     title,
     description,
@@ -103,40 +120,29 @@ export default async function RecipePage({ params, searchParams }) {
     .map((s) => allRecipes.find((r) => r.hf_id === s || r.meta.slug === s))
     .filter(Boolean);
 
-  const recipeUrl = `${siteUrl}/${recipe.hf_org}/${recipe.hf_repo}`;
-  const jsonLd = [
-    {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      name: recipe.hf_id,
-      alternateName: recipe.meta.title,
-      description: recipe.meta.description || recipe.meta.title,
-      applicationCategory: "DeveloperApplication",
-      operatingSystem: "Linux",
-      url: recipeUrl,
-      softwareRequirements: recipe.model.min_vllm_version
-        ? `vLLM ${recipe.model.min_vllm_version}+`
-        : "vLLM",
-      creator: { "@type": "Organization", name: recipe.meta.provider, url: `https://huggingface.co/${recipe.hf_org}` },
-      sameAs: [`https://huggingface.co/${recipe.hf_id}`],
-    },
-    {
-      "@context": "https://schema.org",
-      "@type": "BreadcrumbList",
-      itemListElement: [
-        { "@type": "ListItem", position: 1, name: "vLLM Recipes", item: siteUrl },
-        { "@type": "ListItem", position: 2, name: recipe.meta.provider, item: `${siteUrl}/${recipe.hf_org}` },
-        { "@type": "ListItem", position: 3, name: recipe.hf_repo, item: recipeUrl },
-      ],
-    },
-  ];
+  // JSON-LD @graph: TechArticle is the spec'd primary type (PROD-8), but
+  // SoftwareApplication carries useful schema (softwareRequirements, sameAs
+  // to HuggingFace) Google honours separately, so we keep both alongside the
+  // BreadcrumbList that mirrors the URL hierarchy.
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      buildTechArticleLd(recipe),
+      buildSoftwareApplicationLd(recipe),
+      buildBreadcrumbLd([
+        { name: "vLLM Recipes", url: "/" },
+        { name: recipe.meta.provider, url: `/${recipe.hf_org}` },
+        { name: recipe.hf_repo, url: `/${recipe.hf_org}/${recipe.hf_repo}` },
+      ]),
+    ],
+  };
 
   return (
     <main className="py-6 w-full min-w-0">
       <script
         type="application/ld+json"
         // eslint-disable-next-line react/no-danger
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={jsonLdScript(jsonLd)}
       />
       {/* ── Model header ── */}
       <header className="mb-8">
@@ -221,16 +227,19 @@ export default async function RecipePage({ params, searchParams }) {
       {/* ── Reference sections ── */}
       <section className="space-y-2">
         {guide && (
-          <Accordion title="Guide" defaultOpen>
-            <div className="guide-content">
-              <Markdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeSlug]}
-              >
-                {guide}
-              </Markdown>
-            </div>
-          </Accordion>
+          <GuideLinks>
+            <Accordion title={<span className="flex items-center gap-2">Guide<HeadingLink id="recipe-guide" /></span>} id="recipe-guide" defaultOpen>
+              <div className="guide-content">
+                <Markdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeSlug]}
+                  components={guideHeadings}
+                >
+                  {guide}
+                </Markdown>
+              </div>
+            </Accordion>
+          </GuideLinks>
         )}
 
       </section>
@@ -267,12 +276,27 @@ export default async function RecipePage({ params, searchParams }) {
   );
 }
 
-function Accordion({ title, children, defaultOpen = false }) {
+function HeadingLink({ id }) {
+  return (
+    <a href={`#${id}`} data-guide-link className="guide-heading-link" aria-label="Copy link to this section" title="Copy link to this section">
+      <Link2 size={16} aria-hidden="true" />
+    </a>
+  );
+}
+
+const guideHeadings = Object.fromEntries(
+  ["h1", "h2", "h3", "h4", "h5", "h6"].map((Tag) => [Tag, function GuideHeading({ id, children }) {
+    return <Tag id={id}>{children}{id && <HeadingLink id={id} />}</Tag>;
+  }])
+);
+
+function Accordion({ title, children, id, defaultOpen = false }) {
   // Stronger border than bare `--border` (10% in dark mode) so the outline is
   // visible on both themes. `foreground/15` stays subtle but catches enough
   // contrast to define the card.
   return (
     <details
+      id={id}
       className="group rounded-xl border border-foreground/15 bg-card/40 overflow-hidden"
       open={defaultOpen || undefined}
     >

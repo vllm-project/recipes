@@ -13,7 +13,7 @@ meta:
 
 model:
   model_id: "zai-org/GLM-OCR"
-  min_vllm_version: "0.12.0"
+  min_vllm_version: "0.16.0"
   architecture: dense
   parameter_count: "0.9B"
   active_parameters: "0.9B"

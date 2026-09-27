@@ -17,11 +17,11 @@ model:
   parameter_count: "9B"
   active_parameters: "9B"
   context_length: 524288
-  base_args: ["--trust-remote-code", "--dtype", "bfloat16", "--max-model-len", "131072"]
+  base_args: ["--trust-remote-code", "--chat-template-content-format", "string", "--dtype", "bfloat16"]
   base_env: {}
 features:
   reasoning:
-    description: "Extract K2-Horizon reasoning into reasoning_content"
+    description: "Extract K2-Horizon reasoning into message.reasoning"
     args: ["--reasoning-parser", "k2_horizon"]
   tool_calling:
     description: "Enable automatic tool choice with the K2-Horizon parser"
@@ -52,8 +52,8 @@ guide: |
   ```bash
   vllm serve IFM/K2-Horizon-7B \
     --trust-remote-code \
+    --chat-template-content-format string \
     --dtype bfloat16 \
-    --max-model-len 131072 \
     --reasoning-parser k2_horizon \
     --enable-auto-tool-choice \
     --tool-call-parser k2_horizon

@@ -17,11 +17,11 @@ model:
   parameter_count: "37.44B"
   active_parameters: "5.95B"
   context_length: 524288
-  base_args: ["--trust-remote-code", "--dtype", "bfloat16", "--max-model-len", "131072", "--enable-expert-parallel"]
+  base_args: ["--trust-remote-code", "--chat-template-content-format", "string", "--dtype", "bfloat16", "--enable-expert-parallel"]
   base_env: {}
 features:
   reasoning:
-    description: "Extract K2-Horizon reasoning into reasoning_content"
+    description: "Extract K2-Horizon reasoning into message.reasoning"
     args: ["--reasoning-parser", "k2_horizon"]
   tool_calling:
     description: "Enable automatic tool choice with the K2-Horizon parser"
@@ -58,8 +58,8 @@ guide: |
   vllm serve IFM/K2-Horizon-MoVA-36B-A4B \
     --tensor-parallel-size 2 \
     --trust-remote-code \
+    --chat-template-content-format string \
     --dtype bfloat16 \
-    --max-model-len 131072 \
     --enable-expert-parallel \
     --reasoning-parser k2_horizon \
     --enable-auto-tool-choice \

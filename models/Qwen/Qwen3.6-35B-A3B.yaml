@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Smaller Qwen3.6 multimodal MoE model (35B total / 3B active) with BF16, FP8, and NVIDIA NVFP4 variants"
   date_added: 2026-04-16
-  date_updated: 2026-09-02
+  date_updated: 2026-09-14
   difficulty: beginner
   tasks:
     - multimodal
@@ -28,6 +28,7 @@ meta:
 model:
   model_id: "Qwen/Qwen3.6-35B-A3B"
   min_vllm_version: "0.17.0"
+  default_frontend: rust
   architecture: moe
   parameter_count: "35B"
   active_parameters: "3B"
@@ -38,11 +39,11 @@ model:
 
 features:
   tool_calling:
-    description: "Enable automatic tool choice with Qwen3 XML parser"
+    description: "Enable automatic tool choice with Qwen3 Coder parser"
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_xml"
+      - "qwen3_coder"
   reasoning:
     description: "Enable chain-of-thought reasoning with Qwen3 parser"
     args:
@@ -50,8 +51,11 @@ features:
       - "qwen3"
   spec_decoding:
     description: "Multi-token prediction speculative decoding for lower latency"
+    default_mode: mtp
     modes:
       mtp:
+        label: "MTP"
+        description: "Built-in Multi-Token Prediction, 3 draft tokens."
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
@@ -64,6 +68,14 @@ features:
             args:
               - "--speculative-config"
               - '{"method":"mtp","num_speculative_tokens":4,"moe_backend":"flashinfer_cutlass"}'
+      dspark:
+        label: "DSpark"
+        description: "DSpark drafting with an externally trained draft model; the served checkpoint is unchanged."
+        variants:
+          - default
+        args:
+          - "--speculative-config"
+          - '{"model": "RedHatAI/Qwen3.6-35B-A3B-speculator.dspark", "num_speculative_tokens": 7, "method": "dspark"}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -73,10 +85,20 @@ features:
     args:
       - "--mm-encoder-tp-mode"
       - "data"
+  long_context:
+    description: "YaRN RoPE scaling past the native 262,144-token window to ~1,010,000 tokens. Static YaRN holds the scaling factor constant regardless of input length, so leave this off unless you actually serve long prompts; for ~524K, halve the factor to 2.0."
+    args:
+      - "--hf-overrides"
+      - '{"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}'
+      - "--max-model-len"
+      - "1010000"
+    env:
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
 
 opt_in_features:
   - spec_decoding
   - text_only
+  - long_context
 
 variants:
   default:
@@ -203,6 +225,36 @@ variants:
         extra_env:
           VLLM_HAS_FLASHINFER_CUBIN: "1"
 
+  redhat_nvfp4:
+    model_id: "RedHatAI/Qwen3.6-35B-A3B-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 21
+    description: "RedHatAI compressed-tensors NVFP4 quantization for Blackwell GPUs"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_fp8:
+    model_id: "RedHatAI/Qwen3.6-35B-A3B-FP8-dynamic"
+    precision: fp8
+    label: "FP8 Dynamic (RedHat)"
+    vram_minimum_gb: 42
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_fp8_plain:
+    model_id: "RedHatAI/Qwen3.6-35B-A3B-FP8"
+    precision: fp8
+    label: "FP8 (RedHat)"
+    vram_minimum_gb: 42
+    description: "RedHatAI FP8 quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
 compatible_strategies:
   - single_node_tp
   - single_node_tep
@@ -292,18 +344,12 @@ guide: |
 
   ## Processing Ultra-Long Texts
 
-  Qwen3.6-35B-A3B natively supports `262,144` tokens. For longer inputs, apply
-  YaRN RoPE scaling via `--hf-overrides` and raise `--max-model-len`. Pick
-  `factor` to match your real workload — `2.0` covers ~524K, `4.0` covers
-  ~1M — since YaRN at higher factors degrades short-context quality.
-
-  ```bash
-  VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 vllm serve Qwen/Qwen3.6-35B-A3B-FP8 \
-    --tensor-parallel-size 2 \
-    --max-model-len 1010000 \
-    --reasoning-parser qwen3 \
-    --hf-overrides '{"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}'
-  ```
+  Qwen3.6-35B-A3B natively supports `262,144` tokens. To serve longer inputs, turn on the
+  **Long Context** feature above: it applies the model card's YaRN RoPE
+  configuration via `--hf-overrides` and raises `--max-model-len` to ~1,010,000 tokens.
+  Static YaRN holds the scaling factor constant regardless of input length, so
+  leave it off unless you actually serve long prompts; for a ~524K workload,
+  halve the card's `factor` to `2.0`.
 
   See the [model card](https://huggingface.co/Qwen/Qwen3.6-35B-A3B#processing-ultra-long-texts) for the full parameter reference.
 

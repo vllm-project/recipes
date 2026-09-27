@@ -17,7 +17,7 @@ meta:
 
 model:
   model_id: "XiaomiMiMo/MiMo-V2-Flash"
-  min_vllm_version: "0.11.0"
+  min_vllm_version: "0.14.0"
   architecture: moe
   parameter_count: "309B"
   active_parameters: "15B"
@@ -81,7 +81,7 @@ guide: |
   ## Prerequisites
 
   - Hardware: 4x H200 (TP4) or equivalent aggregate VRAM (~320 GB with FP8)
-  - vLLM >= 0.11.0
+  - vLLM >= 0.14.0
 
   ### Install vLLM (NVIDIA)
 

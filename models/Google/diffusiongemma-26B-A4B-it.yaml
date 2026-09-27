@@ -4,7 +4,7 @@ meta:
   provider: "Google"
   description: "Google's DiffusionGemma — a block-diffusion language model built on Gemma 4's MoE backbone (26B total / 4B active). Generates tokens via iterative denoising over a fixed-length canvas rather than left-to-right autoregressive decoding, enabling higher throughput with parallel block generation."
   date_added: 2026-06-11
-  date_updated: 2026-06-10
+  date_updated: 2026-09-23
   difficulty: advanced
   tasks:
     - multimodal
@@ -64,11 +64,13 @@ variants:
   nvfp4:
     model_id: "RedHatAI/diffusiongemma-26B-A4B-it-NVFP4"
     precision: nvfp4
+    label: "NVFP4 - RedHatAI"
     vram_minimum_gb: 24
     description: "NVFP4 (4-bit) quantized weights"
   nvidia_nvfp4:
     model_id: "nvidia/diffusiongemma-26B-A4B-it-NVFP4"
     precision: nvfp4
+    label: "NVFP4 - NVIDIA"
     vram_minimum_gb: 24
     description: "NVIDIA NVFP4 (4-bit) quantized weights"
     hardware_overrides:
@@ -155,22 +157,23 @@ guide: |
           --host 0.0.0.0 --port 8000
   ```
 
-  ### Intel Xeon 6 (CPU, BF16, 4× NUMA nodes)
+  ### Intel Xeon 6 (CPU, BF16)
 
   DiffusionGemma runs on Intel Xeon 6 CPUs using vLLM's CPU backend with AMX BF16 acceleration.
-  Use `--tensor-parallel-size` equal to the number of NUMA nodes available (typically 2–4 on a dual/quad-socket server).
+  The generated example uses TP=1. Adjust `--tensor-parallel-size` based on the
+  detected NUMA topology and deployment requirements.
 
   ```bash
-  docker run -itd --name diffusiongemma-cpu \
-      --network host \
-      --shm-size 16g \
-      -v ~/.cache/huggingface:/root/.cache/huggingface \
-      vllm/vllm-openai-cpu:latest-x86_64 \
-          --model google/diffusiongemma-26B-A4B-it \
-          --dtype bfloat16 \
-          --tensor-parallel-size 4 \
-          --max-num-seqs 4 \
-          --host 0.0.0.0 --port 8000
+  docker run \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-cpu:latest-x86_64 google/diffusiongemma-26B-A4B-it \
+    --max-num-seqs 4 \
+    --tensor-parallel-size 1 \
+    --enable-auto-tool-choice \
+    --tool-call-parser gemma4 \
+    --chat-template examples/tool_chat_template_gemma4.jinja \
+    --reasoning-parser gemma4
   ```
 
 
@@ -191,6 +194,63 @@ guide: |
           --tool-call-parser gemma4 \
           --reasoning-parser gemma4 \
           --host 0.0.0.0 --port 8000
+  ```
+
+  ### Jev-Style Structured Decisions (Nightly)
+
+  vLLM's structured-read support for DiffusionGemma can answer yes/no, multiple-choice,
+  and scored questions with a confidence value. The example server seeds a canvas with
+  the response template, leaves only the answer slots noisy, and reads a probability
+  distribution from every slot after one denoising step. It exposes the Jev-compatible
+  `/v1/systemone` endpoint; this is an example server rather than a standard vLLM endpoint.
+
+  Use the pinned nightly image that contains the merged structured-read support:
+
+  ```bash
+  docker run -d --name dgemma \
+      --gpus '"device=0"' \
+      --ipc=host \
+      -p 8000:8000 \
+      -p 8011:8011 \
+      -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
+      vllm/vllm-openai:nightly-e9757321527ca1ecd514c07c1418dd2c53da3d19 \
+      google/diffusiongemma-26B-A4B-it \
+      --served-model-name dgemma \
+      --diffusion-config '{"canvas_length":64}' \
+      --max-logprobs 32 \
+      --enable-prefix-caching
+  ```
+
+  Wait for the vLLM server to become healthy, then start the example server in the same
+  container:
+
+  ```bash
+  until curl -fsS localhost:8000/health >/dev/null; do sleep 2; done
+
+  docker exec -d dgemma \
+      python /vllm-workspace/examples/features/structured_diffusion/structured_server.py \
+      --upstream http://127.0.0.1:8000 \
+      --tokenizer google/diffusiongemma-26B-A4B-it \
+      --canvas 64
+  ```
+
+  After the example server becomes healthy, send a Jev-style decision request:
+
+  ```bash
+  until curl -fsS localhost:8011/health >/dev/null; do sleep 2; done
+
+  curl -sS localhost:8011/v1/systemone \
+      -H 'content-type: application/json' \
+      -d '{
+        "model": "jev-latest",
+        "state": {"ticket": "Everything is down, demo at noon."},
+        "questions": {
+          "urgent": {
+            "type": "noul",
+            "instructions": "Needs a reply within the hour?"
+          }
+        }
+      }'
   ```
 
   ## Client Usage
@@ -273,5 +333,7 @@ guide: |
   ## References
 
   - [Model card](https://huggingface.co/google/diffusiongemma-26B-A4B-it)
+  - [vLLM structured-read support for DiffusionGemma](https://github.com/vllm-project/vllm/pull/57250)
+  - [djev-run Cloud Run deployment](https://github.com/taeold/djev-run)
   - [Gemma 4 26B-A4B (autoregressive baseline)](https://huggingface.co/google/gemma-4-26B-A4B-it)
   - [Gemma docs](https://ai.google.dev/gemma/docs)

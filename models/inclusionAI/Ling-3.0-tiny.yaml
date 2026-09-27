@@ -4,7 +4,7 @@ meta:
   provider: "inclusionAI"
   description: "Ling-3.0-tiny lightweight hybrid-reasoning MoE with BF16, block-FP8, and compressed-tensors INT4 checkpoints"
   date_added: 2026-08-31
-  date_updated: 2026-08-31
+  date_updated: 2026-09-09
   difficulty: intermediate
   tasks:
     - text
@@ -16,8 +16,7 @@ meta:
 
 model:
   model_id: "inclusionAI/Ling-3.0-tiny"
-  min_vllm_version: "0.25.0"
-  nightly_required: true
+  min_vllm_version: "0.28.0"
   architecture: moe
   parameter_count: "7.9B"
   active_parameters: "1.3B"
@@ -94,7 +93,7 @@ guide: |
 
   ## Prerequisites
 
-  - **vLLM:** use a nightly/source build containing Ling 3.0 / Bailing V3
+  - **vLLM:** 0.28.0 or newer, which includes Ling 3.0 / Bailing V3
     hybrid-attention support;
   - **Parallelism:** TP1 is recommended for all three checkpoints;
   - **Thinking mode:** enabled per request by the chat template.
