@@ -13,10 +13,11 @@ meta:
     - "zai-org/GLM-5.1"
   hardware:
     h200: verified
+    ascend_950dt: null
 
 model:
   model_id: "zai-org/GLM-5"
-  min_vllm_version: "0.24.0"
+  min_vllm_version: "0.23.0"
   default_frontend: rust
   architecture: moe
   parameter_count: "744B"
@@ -24,7 +25,8 @@ model:
   context_length: 202752
   base_args:
     - "--trust-remote-code"
-    - "--chat-template-content-format=string"
+    - "--chat-template-content-format"
+    - "string"
   base_env: {}
 
 features:
@@ -39,6 +41,9 @@ features:
     args:
       - "--reasoning-parser"
       - "glm47"
+    hardware_overrides:
+      ascend_950dt:
+        args: ["--reasoning-parser", "glm45"]
   spec_decoding:
     description: "Multi-Token Prediction speculative decoding (3 draft tokens)"
     args:
@@ -46,21 +51,29 @@ features:
       - "mtp"
       - "--speculative-config.num_speculative_tokens"
       - "3"
+    hardware_overrides:
+      ascend_950dt:
+        args:
+          - "--speculative-config"
+          - '{"num_speculative_tokens":3,"method":"deepseek_mtp","enforce_eager":true}'
 
 opt_in_features:
   - spec_decoding
 
 variants:
   default:
+    min_vllm_version: "0.24.0"
     precision: bf16
     vram_minimum_gb: 1786
     description: "Full precision BF16 — requires multi-node deployment"
   fp8:
+    min_vllm_version: "0.24.0"
     model_id: "zai-org/GLM-5-FP8"
     precision: fp8
     vram_minimum_gb: 893
     description: "Native FP8 checkpoint — 8xH200/H20 (141GB x 8) single-node serving"
   nvfp4:
+    min_vllm_version: "0.24.0"
     model_id: "nvidia/GLM-5-NVFP4"
     precision: nvfp4
     vram_minimum_gb: 446
@@ -68,6 +81,67 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
+
+  ascend_w4a4_local:
+    model_id: "GLM5-w4a4"
+    label: "W4A4 (Ascend, local weights)"
+    precision: mxfp4
+    # Conservative budget matching the tutorial's full 8x96 GB node.
+    vram_minimum_gb: 768
+    description: "Ascend 950DT single-node W4A4C8/MXFP4; 8x96 GB, TP8 + EP, DP1."
+    supported_hardware: [ascend_950dt]
+    tp: 8
+    extra_args:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--data-parallel-size"
+      - "1"
+      - "--seed"
+      - "1024"
+      - "--enable-expert-parallel"
+      - "--max-num-seqs"
+      - "128"
+      - "--max-model-len"
+      - "202752"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--enable-prefix-caching"
+      - "--gpu-memory-utilization"
+      - "0.95"
+      - "--quantization"
+      - "ascend"
+      - "--kv-cache-dtype"
+      - "int8"
+      - "--attention_config.indexer_kv_dtype"
+      - "int8"
+      - "--chat-template-content-format"
+      - "auto"
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+      - "--hf-overrides"
+      - '{"use_index_cache":true,"index_topk_freq":4}'
+      - "--additional-config"
+      - '{"enable_cpu_binding":"True","multistream_overlap_shared_expert":"True","enable_dsa_cp":true,"eplb_config":{"dynamic_eplb":true,"expert_heat_collection_interval":50,"algorithm_execution_interval":5,"eplb_policy_type":2,"num_redundant_experts":0},"enable_flashcomm1":true}'
+    extra_env:
+      HCCL_BUFFSIZE: "400"
+      HCCL_IF_IP: "${HCCL_IF_IP:?Set_HCCL_IF_IP}"
+      HCCL_INTRA_ROCE_ENABLE: "0"
+      HCCL_OP_EXPANSION_MODE: "AIV"
+      HCCL_SOCKET_IFNAME: "${HCCL_SOCKET_IFNAME:?Set_HCCL_SOCKET_IFNAME}"
+      ASCEND_RT_VISIBLE_DEVICES: "0,1,2,3,4,5,6,7"
+      DYNAMIC_EPLB: "true"
+      GLOO_SOCKET_IFNAME: "${HCCL_SOCKET_IFNAME:?Set_HCCL_SOCKET_IFNAME}"
+      PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+      PROMETHEUS_MULTIPROC_DIR: "/dev/shm/vllm_metrics"
+      HCCL_DFS_CONFIG: "task_exception:off,inconsistent_check:off"
+      VLLM_ASCEND_ENABLE_PREFETCH_MLP: "1"
+    hardware_overrides:
+      ascend_950dt:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a5"
+        install:
+          pip: false
 
 compatible_strategies:
   - single_node_tp
@@ -78,23 +152,123 @@ compatible_strategies:
   - multi_node_dep
   - pd_cluster
 
-hardware_overrides: {}
+strategy_hardware:
+  # This recipe exposes only the tutorial's single-node TP8 + EP on A5.
+  single_node_tp:
+    ascend_950dt: unsupported
+  multi_node_tp:
+    ascend_950dt: unsupported
+  multi_node_tp_pp:
+    ascend_950dt: unsupported
+  multi_node_tep:
+    ascend_950dt: unsupported
+  multi_node_dep:
+    ascend_950dt: unsupported
+  pd_cluster:
+    ascend_950dt: unsupported
+
+hardware_overrides:
+  ascend_950dt:
+    frontend: python
 
 strategy_overrides: {}
 
 guide: |
-  ## Ascend 950DT (A5)
+  ## Ascend 950DT (A5), single node
 
-  The [vLLM Ascend tutorial](https://github.com/vllm-project/vllm-ascend/blob/597ab74d86af0e5d9a467618d70bd0aafed0cbea/docs/source/tutorials/models/GLM5.md)
-  covers GLM-5 and GLM-5.1. Its A5 single-node configuration uses eight 96 GB
-  NPUs, TP8 + EP, DP1 and W4A4/MXFP4 weights.
+  Based on the [vLLM Ascend tutorial](https://github.com/vllm-project/vllm-ascend/blob/597ab74d86af0e5d9a467618d70bd0aafed0cbea/docs/source/tutorials/models/GLM5.md):
+  one 8x96 GB node, TP8 + EP, DP1. Select the Ascend variant, **Single-node**,
+  **Tensor + Expert Parallel**, **Python** and enable **Spec Decoding** for MTP3.
+  Other parallel layouts are outside this recipe's A5 configuration.
 
-  The public A5 checkpoint linked by that tutorial is **GLM-5.1**, not GLM-5.
-  Use the [GLM-5.1 A5 recipe](/zai-org/GLM-5.1?hardware=ascend_950dt&variant=ascend_w4a4_mxfp4)
-  for its container setup and generated `vllm serve` command. The tutorial's
-  GLM-5 local path is an example, not a published checkpoint identifier; it is
-  not substituted with GLM-5.1 under this model's name. A separate GLM-5 A5
-  variant needs a matching public W4A4 checkpoint and its own verification.
+  Use a complete local Ascend W4A4 **GLM-5** checkpoint (including MTP weights),
+  not the GLM-5.1 checkpoint. Set `GLM5_MODEL_PATH` to its absolute host directory.
+  The container below mounts it at `/models/GLM5-w4a4` and starts in `/models`;
+  `GLM5-w4a4` in Serve is a local directory, not a Hugging Face repository.
+
+  ```bash
+  export GLM5_MODEL_PATH="/absolute/path/to/GLM5-w4a4"
+  ```
+
+  ### Prepare the container
+
+  Run on the host after checking the device/driver paths. Use this setup and
+  in-container launch instead of the site's generic Docker wrapper.
+
+  ```bash
+  docker pull quay.io/ascend/vllm-ascend:v0.23.0-a5
+  docker run --rm -it -w /models --net=host --shm-size=1g \
+    --device /dev/davinci0 --device /dev/davinci1 \
+    --device /dev/davinci2 --device /dev/davinci3 \
+    --device /dev/davinci4 --device /dev/davinci5 \
+    --device /dev/davinci6 --device /dev/davinci7 \
+    --device /dev/davinci_manager --device /dev/hisi_hdc \
+    --device /dev/ummu --device /dev/uburma \
+    -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
+    -v /etc/ascend_install.info:/etc/ascend_install.info \
+    -v /etc/hccl_rootinfo.json:/etc/hccl_rootinfo.json \
+    -v /etc/hixlep/:/etc/hixlep/ \
+    --mount "type=bind,src=${GLM5_MODEL_PATH:?Set_GLM5_MODEL_PATH},dst=/models/GLM5-w4a4,readonly" \
+    -v ~/.cache:/root/.cache \
+    -v /usr/local/sbin:/usr/local/sbin \
+    -v /usr/local/dcmi:/usr/local/dcmi \
+    -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+    -v /usr/local/sbin/npu-smi:/usr/local/sbin/npu-smi \
+    -v /usr/bin/urma_admin:/usr/bin/urma_admin \
+    -v /lib/route.conf:/lib/route.conf \
+    -v /usr/lib64:/usr/lib64 \
+    --entrypoint /bin/bash quay.io/ascend/vllm-ascend:v0.23.0-a5
+  ```
+
+  ### Serve inside the container
+
+  Replace the communication IP/interface below. Keep the working directory
+  set by the container command. The Python frontend is used on A5.
+
+  ```bash
+  export HCCL_IF_IP="<node_ip>"
+  export HCCL_SOCKET_IFNAME="<network_interface>"
+  mkdir -p /dev/shm/vllm_metrics
+  export HCCL_BUFFSIZE=400
+  export HCCL_IF_IP=${HCCL_IF_IP:?Set_HCCL_IF_IP}
+  export HCCL_INTRA_ROCE_ENABLE=0
+  export HCCL_OP_EXPANSION_MODE=AIV
+  export HCCL_SOCKET_IFNAME=${HCCL_SOCKET_IFNAME:?Set_HCCL_SOCKET_IFNAME}
+  export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+  export DYNAMIC_EPLB=true
+  export GLOO_SOCKET_IFNAME=${HCCL_SOCKET_IFNAME:?Set_HCCL_SOCKET_IFNAME}
+  export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+  export PROMETHEUS_MULTIPROC_DIR=/dev/shm/vllm_metrics
+  export HCCL_DFS_CONFIG=task_exception:off,inconsistent_check:off
+  export VLLM_ASCEND_ENABLE_PREFETCH_MLP=1
+  vllm serve GLM5-w4a4 \
+    --trust-remote-code \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --data-parallel-size 1 \
+    --seed 1024 \
+    --max-num-seqs 128 \
+    --max-model-len 202752 \
+    --max-num-batched-tokens 8192 \
+    --enable-prefix-caching \
+    --gpu-memory-utilization 0.95 \
+    --quantization ascend \
+    --kv-cache-dtype int8 \
+    --attention_config.indexer_kv_dtype int8 \
+    --chat-template-content-format auto \
+    --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
+    --hf-overrides '{"use_index_cache":true,"index_topk_freq":4}' \
+    --additional-config '{"enable_cpu_binding":"True","multistream_overlap_shared_expert":"True","enable_dsa_cp":true,"eplb_config":{"dynamic_eplb":true,"expert_heat_collection_interval":50,"algorithm_execution_interval":5,"eplb_policy_type":2,"num_redundant_experts":0},"enable_flashcomm1":true}' \
+    --enable-expert-parallel \
+    --tensor-parallel-size 8 \
+    --tool-call-parser glm47 \
+    --enable-auto-tool-choice \
+    --reasoning-parser glm45 \
+    --speculative-config '{"num_speculative_tokens":3,"method":"deepseek_mtp","enforce_eager":true}'
+  ```
+
+  No fresh NPU run is claimed. The 202752-token window and concurrency 128
+  follow the tutorial, not a measured capacity guarantee.
 
   ## Overview
 

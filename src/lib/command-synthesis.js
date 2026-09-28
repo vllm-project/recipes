@@ -16,12 +16,8 @@ const NVL4_ONLY_ENV_KEYS = new Set([
 ]);
 const NVL4_HW_IDS = new Set(["gb200", "gb300"]);
 
-export function resolveFrontend(recipe, frontend, hwId = null) {
-  const defaults = recipe.model?.default_frontend;
-  const fallback = defaults && typeof defaults === "object"
-    ? defaults[hwId] ?? defaults.default
-    : defaults;
-  return (frontend ?? fallback) === "rust" ? "rust" : "python";
+export function resolveFrontend(recipe, frontend = recipe.model?.default_frontend) {
+  return frontend === "rust" ? "rust" : "python";
 }
 
 /**
@@ -764,8 +760,6 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
     isXpu,
     isIntel,
     isNpu,
-    containerShell: isNpu && variant?.hardware_overrides?.[hwId]?.install?.docker?.container_shell === true,
-    containerSetupCommand: variant?.hardware_overrides?.[hwId]?.install?.docker?.command,
     npuDeviceCount,
     pinned,
     cudaMap,
@@ -834,19 +828,9 @@ function servedPort(tokens, fallback = 8000) {
   return fallback;
 }
 
-// Prepare an interactive Ascend container; serving is a separate in-container step.
-export function buildAscendContainerSetup({ image, gpuFlags }) {
-  return `docker pull ${image}
-docker run --rm -it ${gpuFlags} \\
-  --privileged --net=host --shm-size=16g \\
-  -v ~/.cache/huggingface:/root/.cache/huggingface \\
-  -v ~/.cache/modelscope:/root/.cache/modelscope \\
-  --entrypoint /bin/bash \\
-  ${image}`;
-}
-
-// vllm-openai has a serve entrypoint. Ascend images may default to bash,
-// so specify their entrypoint explicitly instead of treating MODEL as a command.
+// Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
+// image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
+// CMD. Env vars become `-e KEY=VAL` inside the container.
 export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false }) {
   const pubPort = port ?? servedPort(command.split(/\s+/));
   const envFlags = Object.entries(env || {})
@@ -875,8 +859,8 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = null, isN
   const base = `${prereq}docker run ${gpuFlags} \\
   ${runtimeFlags} \\
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
-  return `${base}${isNpu ? "\n  -v ~/.cache/modelscope:/root/.cache/modelscope \\\n  --entrypoint vllm \\" : ""}
-  ${image} ${isNpu ? "serve " : ""}${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
+  return `${base}
+  ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
 }
 
 // argv companion to buildDockerRun. `argv` here is the inner command's argv —
@@ -905,12 +889,10 @@ export function buildDockerArgv({ argv, env, meta, port = null }) {
     "-v", "~/.cache/huggingface:/root/.cache/huggingface",
     ...mountFlags,
     ...envFlags,
-    ...(meta.isNpu ? ["-v", "~/.cache/modelscope:/root/.cache/modelscope", "--entrypoint", "vllm"] : []),
   ];
   return [
     ...base,
     meta.image,
-    ...(meta.isNpu ? ["serve"] : []),
     ...cmdArgs,
   ];
 }
@@ -1658,7 +1640,11 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       }
     }
 
-    if (resolveFrontend(recipe, frontend, hwProfileId) === "rust") {
+    // Exact-hardware overrides preserve other GPUs' recipe frontend default.
+    const hwFrontend = recipe.strategy_overrides?.[strategyName]
+      ?.hardware_overrides?.[hwProfileId]?.frontend
+      || recipe.hardware_overrides?.[hwProfileId]?.frontend;
+    if (resolveFrontend(recipe, hwFrontend || frontend) === "rust") {
       env.VLLM_USE_RUST_FRONTEND = "1";
     }
     return env;
