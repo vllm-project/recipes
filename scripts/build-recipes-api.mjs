@@ -33,6 +33,7 @@ import {
   resolveCommand,
   computeDockerMeta,
   buildDockerRun,
+  buildAscendContainerSetup,
   buildDockerArgv,
   nodesForStrategy,
   isStrategyReachable,
@@ -304,6 +305,16 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
 // Wrap a rendered (command, argv) pair in `docker run`. Returns
 // { docker_command, docker_argv } so each form has its docker counterpart.
 function dockerize(command, argv, env, dockerMeta, port = null) {
+  // Two-step recipes require their setup mounts and preparation before serving.
+  // Do not publish a generic one-shot wrapper that silently drops that setup.
+  if (dockerMeta.containerShell) {
+    return {
+      container_setup_command: dockerMeta.containerSetupCommand || buildAscendContainerSetup(dockerMeta),
+      execution_context: "prepared_container",
+      docker_command: null,
+      docker_argv: null,
+    };
+  }
   return {
     docker_command: buildDockerRun({
       command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, port,

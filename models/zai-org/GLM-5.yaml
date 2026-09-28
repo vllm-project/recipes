@@ -4,12 +4,13 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5 frontier-scale MoE language model (~744B total parameters, 28.5T training tokens) with asynchronous RL infrastructure for reasoning, coding, and agentic tasks"
   date_added: 2026-02-09
-  date_updated: 2026-09-18
+  date_updated: 2026-09-28
   difficulty: advanced
   tasks:
     - text
   performance_headline: "Frontier-scale MoE with 744B parameters, best-in-class open-source performance on reasoning/coding/agents"
-  related_recipes: []
+  related_recipes:
+    - "zai-org/GLM-5.1"
   hardware:
     h200: verified
 
@@ -82,6 +83,19 @@ hardware_overrides: {}
 strategy_overrides: {}
 
 guide: |
+  ## Ascend 950DT (A5)
+
+  The [vLLM Ascend tutorial](https://github.com/vllm-project/vllm-ascend/blob/597ab74d86af0e5d9a467618d70bd0aafed0cbea/docs/source/tutorials/models/GLM5.md)
+  covers GLM-5 and GLM-5.1. Its A5 single-node configuration uses eight 96 GB
+  NPUs, TP8 + EP, DP1 and W4A4/MXFP4 weights.
+
+  The public A5 checkpoint linked by that tutorial is **GLM-5.1**, not GLM-5.
+  Use the [GLM-5.1 A5 recipe](/zai-org/GLM-5.1?hardware=ascend_950dt&variant=ascend_w4a4_mxfp4)
+  for its container setup and generated `vllm serve` command. The tutorial's
+  GLM-5 local path is an example, not a published checkpoint identifier; it is
+  not substituted with GLM-5.1 under this model's name. A separate GLM-5 A5
+  variant needs a matching public W4A4 checkpoint and its own verification.
+
   ## Overview
 
   GLM-5 is a significantly scaled-up language model with 744B parameters, trained on

@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.1 refreshed version of GLM-5 — frontier-scale MoE language model (~744B total parameters) with MTP speculative decoding and thinking mode"
   date_added: 2026-03-28
-  date_updated: 2026-09-18
+  date_updated: 2026-09-28
   difficulty: advanced
   tasks:
     - text
@@ -13,18 +13,23 @@ meta:
   hardware:
     h200: verified
     mi355x: verified
+    # Opt into the restricted profile without claiming a fresh tutorial run.
+    ascend_950dt: null
 
 model:
   model_id: "zai-org/GLM-5.1"
-  min_vllm_version: "0.24.0"
-  default_frontend: rust
+  min_vllm_version: "0.23.0"
+  default_frontend:
+    default: rust
+    ascend_950dt: python
   architecture: moe
   parameter_count: "744B"
   active_parameters: "40B"
   context_length: 202752
   base_args:
     - "--trust-remote-code"
-    - "--chat-template-content-format=string"
+    - "--chat-template-content-format"
+    - "string"
   base_env: {}
 
 features:
@@ -39,6 +44,9 @@ features:
     args:
       - "--reasoning-parser"
       - "glm47"
+    hardware_overrides:
+      ascend_950dt:
+        args: ["--reasoning-parser", "glm45"]
   spec_decoding:
     description: "Multi-Token Prediction speculative decoding (3 draft tokens) — not yet supported on the AMD MXFP4 checkpoint"
     default_mode: mtp
@@ -53,21 +61,29 @@ features:
           - "mtp"
           - "--speculative-config.num_speculative_tokens"
           - "3"
+        hardware_overrides:
+          ascend_950dt:
+            args:
+              - "--speculative-config"
+              - '{"num_speculative_tokens":3,"method":"deepseek_mtp","enforce_eager":true}'
 
 opt_in_features:
   - spec_decoding
 
 variants:
   default:
+    min_vllm_version: "0.24.0"
     precision: bf16
     vram_minimum_gb: 1786
     description: "Full precision BF16 — requires multi-node deployment"
   fp8:
+    min_vllm_version: "0.24.0"
     model_id: "zai-org/GLM-5.1-FP8"
     precision: fp8
     vram_minimum_gb: 893
     description: "Native FP8 checkpoint — 8xH200/H20 (141GB × 8) single-node serving"
   nvfp4:
+    min_vllm_version: "0.24.0"
     model_id: "nvidia/GLM-5.1-NVFP4"
     precision: nvfp4
     vram_minimum_gb: 446
@@ -100,6 +116,94 @@ variants:
           VLLM_ROCM_USE_AITER_RMSNORM: "0"
           VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
 
+  ascend_w4a4_mxfp4:
+    model_id: "Eco-Tech/GLM-5.1-w4a4c8-mxfp4"
+    label: "W4A4C8 (Ascend MXFP4)"
+    precision: mxfp4
+    # Conservative budget matching the tutorial's full 8x96 GB node.
+    vram_minimum_gb: 768
+    description: "Ascend 950DT single-node W4A4C8/MXFP4; 8x96 GB, TP8 + EP, DP1."
+    supported_hardware: [ascend_950dt]
+    tp: 8
+    default_modes:
+      spec_decoding: mtp
+    extra_args:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--data-parallel-size"
+      - "1"
+      - "--seed"
+      - "1024"
+      - "--enable-expert-parallel"
+      - "--max-num-seqs"
+      - "128"
+      - "--max-model-len"
+      - "202752"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--enable-prefix-caching"
+      - "--gpu-memory-utilization"
+      - "0.95"
+      - "--quantization"
+      - "ascend"
+      - "--kv-cache-dtype"
+      - "int8"
+      - "--attention_config.indexer_kv_dtype"
+      - "int8"
+      - "--chat-template-content-format"
+      - "auto"
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+      - "--hf-overrides"
+      - '{"use_index_cache":true,"index_topk_freq":4}'
+      - "--additional-config"
+      - '{"enable_cpu_binding":"True","multistream_overlap_shared_expert":"True","enable_dsa_cp":true,"eplb_config":{"dynamic_eplb":true,"expert_heat_collection_interval":50,"algorithm_execution_interval":5,"eplb_policy_type":2,"num_redundant_experts":0},"enable_flashcomm1":true}'
+    extra_env:
+      VLLM_USE_MODELSCOPE: "True"
+      HCCL_BUFFSIZE: "400"
+      HCCL_IF_IP: "${HCCL_IF_IP:?Set_HCCL_IF_IP}"
+      HCCL_INTRA_ROCE_ENABLE: "0"
+      HCCL_OP_EXPANSION_MODE: "AIV"
+      HCCL_SOCKET_IFNAME: "${HCCL_SOCKET_IFNAME:?Set_HCCL_SOCKET_IFNAME}"
+      ASCEND_RT_VISIBLE_DEVICES: "0,1,2,3,4,5,6,7"
+      DYNAMIC_EPLB: "true"
+      GLOO_SOCKET_IFNAME: "${HCCL_SOCKET_IFNAME:?Set_HCCL_SOCKET_IFNAME}"
+      PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+      PROMETHEUS_MULTIPROC_DIR: "/dev/shm/vllm_metrics"
+      HCCL_DFS_CONFIG: "task_exception:off,inconsistent_check:off"
+      VLLM_ASCEND_ENABLE_PREFETCH_MLP: "1"
+    hardware_overrides:
+      ascend_950dt:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a5"
+        install:
+          pip: false
+          docker:
+            container_shell: true
+            command: |
+              docker pull quay.io/ascend/vllm-ascend:v0.23.0-a5
+              docker run --rm -it --net=host --shm-size=1g \
+                --device /dev/davinci0 --device /dev/davinci1 \
+                --device /dev/davinci2 --device /dev/davinci3 \
+                --device /dev/davinci4 --device /dev/davinci5 \
+                --device /dev/davinci6 --device /dev/davinci7 \
+                --device /dev/davinci_manager --device /dev/hisi_hdc \
+                --device /dev/ummu --device /dev/uburma \
+                -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
+                -v /etc/ascend_install.info:/etc/ascend_install.info \
+                -v /etc/hccl_rootinfo.json:/etc/hccl_rootinfo.json \
+                -v /etc/hixlep/:/etc/hixlep/ \
+                -v ~/.cache:/root/.cache \
+                -v /usr/local/sbin:/usr/local/sbin \
+                -v /usr/local/dcmi:/usr/local/dcmi \
+                -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+                -v /usr/local/sbin/npu-smi:/usr/local/sbin/npu-smi \
+                -v /usr/bin/urma_admin:/usr/bin/urma_admin \
+                -v /lib/route.conf:/lib/route.conf \
+                -v /usr/lib64:/usr/lib64 \
+                --entrypoint /bin/bash quay.io/ascend/vllm-ascend:v0.23.0-a5
+
 compatible_strategies:
   - single_node_tp
   - single_node_tep
@@ -108,6 +212,11 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
   - pd_cluster
+
+strategy_hardware:
+  # This strategy generates NIXL roles, not Ascend's MooncakeConnectorV1 setup.
+  pd_cluster:
+    ascend_950dt: unsupported
 
 # Mooncake untested on MI355X so far — opt out until verified (the schema
 # only recognizes the literal "unsupported" value here). LMCache is left
@@ -133,6 +242,38 @@ hardware_overrides:
 strategy_overrides: {}
 
 guide: |
+  ## Ascend 950DT (A5), single node
+
+  The [vLLM Ascend GLM-5/5.1 tutorial](https://github.com/vllm-project/vllm-ascend/blob/597ab74d86af0e5d9a467618d70bd0aafed0cbea/docs/source/tutorials/models/GLM5.md)
+  documents one 8x96 GB node using TP8, DP1 and expert parallelism. Select
+  **Ascend 950DT** and **W4A4C8 (Ascend MXFP4)** for the published
+  [Eco-Tech GLM-5.1 checkpoint](https://modelscope.cn/models/Eco-Tech/GLM-5.1-w4a4c8-mxfp4).
+  This is not the AMD MXFP4 checkpoint or the original GLM-5 model.
+
+  Run **Install** on the host to enter the Ascend container. It follows the
+  tutorial's device and driver mounts; check that the host paths exist first.
+  Inside the container, set the node's communication IP/interface and prepare
+  the metrics directory before running the generated **Serve** command:
+
+  ```bash
+  export HCCL_IF_IP="<node_ip>"
+  export HCCL_SOCKET_IFNAME="<network_interface>"
+  mkdir -p /dev/shm/vllm_metrics
+  ```
+
+  Python is the default frontend on A5. The tutorial enables MTP3
+  (`deepseek_mtp`, eager draft), INT8 KV/indexer caches, decode-only graph
+  execution, index caching, DSA CP and dynamic EPLB. The 202752-token context
+  and concurrency 128 are reference settings, not a measured capacity guarantee.
+  The memory hint conservatively reserves the tutorial's full 768 GB node.
+  The tutorial's image variable resolves to `v0.23.0-a5`; use that image rather
+  than the generic pip/NVIDIA installation instructions below.
+
+  [Earlier downstream A5 CI](https://github.com/vllm-ascend/vllm-ascend-recipes/actions/runs/35466171714/job/105958847157)
+  passed startup and chat with this checkpoint, but used an older configuration
+  without MTP and with `enable_sparse_c8`. The current tutorial configuration
+  has not been rerun here; no new hardware-verification badge is claimed.
+
   ## Overview
 
   GLM-5.1 is a refreshed version of GLM-5, the 744B parameter frontier MoE model from Z-AI.
