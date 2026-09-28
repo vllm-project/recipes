@@ -4,7 +4,7 @@ meta:
   provider: "Hunyuan (Tencent)"
   description: "Tencent Hunyuan Hy4-preview — scaled-up MoE language model (770B total / 49B active) with a 10B MTP layer for speculative decoding, 1M context, and hy_v4 tool/reasoning parsers"
   date_added: 2026-08-28
-  date_updated: 2026-09-23
+  date_updated: 2026-09-28
   difficulty: intermediate
   tasks:
     - text
@@ -17,7 +17,7 @@ meta:
     b200: verified
     b300: verified
     mi300x: unverified
-    mi325x: unsupported
+    mi325x: verified
     mi355x: verified
 
 model:
@@ -75,7 +75,7 @@ variants:
     model_id: "tencent/Hy4-preview-FP8"
     precision: mxfp8
     vram_minimum_gb: 924
-    description: "MXFP8-quantized instruct checkpoint (tencent/Hy4-preview-FP8) — fits a single 8xB200 / 8xB300 node with wide headroom. Verified AMD path on 8xMI355X."
+    description: "MXFP8-quantized instruct checkpoint (tencent/Hy4-preview-FP8) — fits a single 8xB200 / 8xB300 node with wide headroom. Verified AMD path on 8xMI355X and 8xMI325X."
 
 compatible_strategies:
   - single_node_tp
@@ -104,7 +104,29 @@ hardware_overrides:
       - "--max-num-batched-tokens"
       - "8192"
 
-strategy_overrides: {}
+strategy_overrides:
+  single_node_tp:
+    hardware_overrides:
+      # gfx942 stores the MXFP8 checkpoint as BF16. The shared AMD window
+      # (262144, util 0.85, 8192 batched tokens) stays the MI355X path.
+      # These flags replace that window on MI325X only.
+      mi325x:
+        extra_args:
+          - "--trust-remote-code"
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--max-model-len"
+          - "139264"
+          - "--max-num-batched-tokens"
+          - "16384"
+          - "--gpu-memory-utilization"
+          - "0.96"
+        extra_env:
+          VLLM_ROCM_USE_AITER_MOE: "1"
+          VLLM_ROCM_USE_AITER_MHA: "1"
+          VLLM_ROCM_USE_AITER_RMSNORM: "1"
+          VLLM_ROCM_USE_AITER_LINEAR: "1"
+          VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
 
 guide: |
   # Hy4-preview Usage Guide
@@ -190,6 +212,35 @@ guide: |
   **Context window.** 262,144 is the default verified window. MXFP8
   (`tencent/Hy4-preview-FP8`) also comes up at the full 1,048,576 ceiling
   at util `0.92` (1.21× concurrency for a 1M request). 
+
+  ### Serving on 8×AMD MI325X (gfx942)
+
+  Select the FP8 variant. Since gfx942 dequantizes MXFP8 weights to BF16,
+  the context window is not the same as on the MI355X. The verified serve
+  is context 139264, FP8 KV, and the AITER MoE, MHA, RMSNorm, and linear toggles.
+  At GPU memory utilization 0.96 the KV cache holds 530,912 tokens,
+  about 3.81× one 139,264-token request.
+  
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  export VLLM_ROCM_USE_AITER_MOE=1
+  export VLLM_ROCM_USE_AITER_MHA=1
+  export VLLM_ROCM_USE_AITER_RMSNORM=1
+  export VLLM_ROCM_USE_AITER_LINEAR=1
+  export VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4
+  export VLLM_USE_RUST_FRONTEND=1
+
+  vllm serve tencent/Hy4-preview-FP8 \
+    --tensor-parallel-size 8 \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --max-model-len 139264 \
+    --max-num-batched-tokens 16384 \
+    --gpu-memory-utilization 0.96 \
+    --tool-call-parser hy_v4 \
+    --enable-auto-tool-choice \
+    --reasoning-parser hy_v4
+  ```
 
   ## OpenAI Client Example
 
