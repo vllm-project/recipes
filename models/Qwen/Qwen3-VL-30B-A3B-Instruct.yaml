@@ -4,16 +4,17 @@ meta:
   provider: "Qwen"
   description: "Qwen3-VL MoE vision-language model with 30B total / 3B active parameters, supporting image, video, and text workloads."
   date_added: 2026-08-17
-  date_updated: 2026-09-12
+  date_updated: 2026-09-28
   difficulty: intermediate
   tasks:
     - multimodal
     - text
-  performance_headline: "Validated on Intel Xeon 6 CPU with BF16 serving"
+  performance_headline: "Validated BF16 on Intel Xeon 6 and W8A8/MXFP8 on Ascend 950DT"
   related_recipes:
     - "Qwen/Qwen3-VL-235B-A22B-Instruct"
   hardware:
     xeon6: verified
+    ascend_950dt: verified
 
 model:
   model_id: "Qwen/Qwen3-VL-30B-A3B-Instruct"
@@ -44,6 +45,10 @@ features:
 opt_in_features:
   - text_only
 
+hardware_opt_in_features:
+  ascend_950dt:
+    - encoder_parallel
+
 variants:
   default:
     precision: bf16
@@ -51,6 +56,55 @@ variants:
     description: "Full precision BF16"
     supported_hardware:
       - xeon6
+  ascend_w8a8_mxfp8:
+    model_id: "Eco-Tech/Qwen3-VL-30B-A3B-Instruct-w8a8-mxfp8"
+    label: "W8A8 (Ascend MXFP8)"
+    precision: mxfp8
+    vram_minimum_gb: 36
+    description: "ModelSlim W8A8/MXFP8 checkpoint for one 8x96 GB Ascend 950DT node, using TP8 + EP."
+    supported_hardware: [ascend_950dt]
+    tp: 8
+    min_vllm_version: "0.23.0"
+    extra_args:
+      - "--distributed-executor-backend"
+      - "mp"
+      - "--data-parallel-size"
+      - "1"
+      - "--enable-expert-parallel"
+      - "--seed"
+      - "1024"
+      - "--quantization"
+      - "ascend"
+      - "--max-num-seqs"
+      - "32"
+      - "--max-model-len"
+      - "32768"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--no-enable-prefix-caching"
+      - "--mm-processor-cache-gb"
+      - "0"
+      - "--limit-mm-per-prompt"
+      - '{"image":1,"video":0}'
+      - "--gpu-memory-utilization"
+      - "0.9"
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+      - "--trust-remote-code"
+    extra_env:
+      VLLM_USE_MODELSCOPE: "True"
+      PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+      HCCL_OP_EXPANSION_MODE: "AIV"
+      HCCL_BUFFSIZE: "400"
+      OMP_PROC_BIND: "false"
+      OMP_NUM_THREADS: "100"
+      TASK_QUEUE_ENABLE: "1"
+      VLLM_ASCEND_ENABLE_FLASHCOMM1: "1"
+    hardware_overrides:
+      ascend_950dt:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a5"
+        install:
+          pip: false
 
 compatible_strategies:
   - single_node_tp
@@ -60,6 +114,12 @@ compatible_strategies:
   - multi_node_tp_pp
   - multi_node_dep
   - multi_node_tep
+
+# This variant occupies the full node with TP8 and fixes DP=1; the DEP
+# strategy would otherwise advertise DP8 on the same eight devices.
+strategy_hardware:
+  single_node_dep:
+    ascend_950dt: unsupported
 
 kv_offload_support:
   offloading_cpu: verified
@@ -114,6 +174,18 @@ guide: |
   The example uses TP=1. Adjust TP/DP based on system topology; NUMA binding is
   intentionally not hard-coded in the recipe.
 
+  ## Ascend 950DT
+
+  Select **Ascend 950DT**, **W8A8 (Ascend MXFP8)** and **Tensor + Expert
+  Parallel** for the single-node TP8 configuration. Use the generated Docker
+  command with the pinned vLLM Ascend image and the public ModelScope checkpoint.
+  The reference configuration serves one image per prompt, disables video,
+  and caps context at 32K. Encoder data parallelism is opt-in on this hardware.
+
+  [Runtime verification](https://github.com/vllm-ascend/vllm-ascend-recipes/actions/runs/33243667020/job/99077266543)
+  covered server startup, model discovery and an image chat-completions request
+  on eight 96 GB NPUs. This is a functional check, not a performance comparison.
+
   ## Configuration Notes
 
   - TP/DP values and topology-specific CPU binding remain deployment choices.
@@ -136,4 +208,5 @@ guide: |
   ## References
 
   - [Model card](https://huggingface.co/Qwen/Qwen3-VL-30B-A3B-Instruct)
+  - [Ascend W8A8/MXFP8 checkpoint](https://modelscope.cn/models/Eco-Tech/Qwen3-VL-30B-A3B-Instruct-w8a8-mxfp8)
   - [vLLM CPU installation](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/)
