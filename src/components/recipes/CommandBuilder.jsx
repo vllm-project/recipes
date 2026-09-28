@@ -1,4 +1,5 @@
 "use client";
+import { buildAscendContainerSetup } from "@/lib/command-synthesis";
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -3159,7 +3160,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
   const [tab, setTab] = useState("vllm");
   // The `docker pull` for the image lives in the Install block above.
   const isXpu = !!dockerMeta?.isXpu;
-  const isDocker = installMode === "docker";
+  const isDocker = installMode === "docker" && !dockerMeta?.containerShell;
   // Docker mode: env vars fold into `-e` flags inside the wrapped `docker run`,
   // so there's no separate prelude (the `docker pull` lives in the Install
   // block tabs above). Pip mode: prelude = `export KEY=VAL` lines.
@@ -3251,7 +3252,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
           # {activeCompanion.description}
         </div>
       )}
-      {!activeCompanion && <CommandNote note={commandNote} />}
+      {!activeCompanion && <CommandNote note={commandNote || (dockerMeta?.containerShell && installMode === "docker" ? "Run inside the Ascend container prepared in Install above." : null)} />}
       {activePrelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
           {activePrelude}
@@ -3370,14 +3371,18 @@ uv pip install -U vllm --torch-backend auto`;
   // override at `model.install.docker.command` still wins for recipes that
   // need a custom build step. The CUDA-version selector (below, next to Copy)
   // drives the tag suffix for NVIDIA; AMD / TPU / XPU pull a single image.
-  const defaultDockerCmd = `docker pull ${dockerImage}`;
+  const defaultDockerCmd = dockerMeta.containerShell
+    ? buildAscendContainerSetup(dockerMeta)
+    : `docker pull ${dockerImage}`;
   const dockerCmd = dockerCfg?.command || defaultDockerCmd;
   const defaultDockerNote = isTpu
     ? "TPU builds are published by vllm-project/tpu-inference. See the Trillium and Ironwood tpu-recipes for pinned image tags and exact deployment flags."
     : isXpu
       ? "Intel XPU image. The entrypoint initializes oneAPI automatically."
     : isNpu
-      ? "Ascend NPU image. The generated docker run bind-mounts `/dev/davinci*` and the host driver at `/usr/local/Ascend/driver` (including HCCL topo files)."
+      ? dockerMeta.containerShell
+        ? "Run on the host to enter the Ascend container with NPU devices, drivers and model caches mounted. Then run the Serve command below inside that container. If already inside a prepared container, skip this step."
+        : "Ascend NPU image. The generated docker run mounts NPU devices, host drivers and model caches, and explicitly launches vllm serve."
     : isAmd
       ? undefined
     : isCpu
@@ -3559,7 +3564,7 @@ function DependenciesBlock({ deps }) {
 
 function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
   const [tab, setTab] = useState("head");
-  const isDocker = installMode === "docker";
+  const isDocker = installMode === "docker" && !dockerMeta?.containerShell;
   const wrap = (cmd) =>
     isDocker
       ? buildDockerRun({ command: cmd, env: result.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu })
@@ -3623,7 +3628,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   // knows whether the block is a single engine or a rank-0 template that
   // needs to be duplicated for the rest of the DP ranks.
   const [tab, setTab] = useState("prefill");
-  const isDocker = installMode === "docker";
+  const isDocker = installMode === "docker" && !dockerMeta?.containerShell;
   // Prefill/decode are `vllm serve` and get wrapped in `docker run`. The
   // router is `vllm-router` (separate pip package, different entrypoint) —
   // it stays as-is with its pip-install hint regardless of install mode.
@@ -3759,7 +3764,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
   // vLLM command gets docker-wrapped; router / master / store are separate
   // binaries and render as-is with their pip-install hints.
   const [tab, setTab] = useState("config");
-  const isDocker = installMode === "docker";
+  const isDocker = installMode === "docker" && !dockerMeta?.containerShell;
   const wrap = (cmd, env) =>
     isDocker
       ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu })

@@ -105,6 +105,8 @@ variants:
         docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a5"
         install:
           pip: false
+          docker:
+            container_shell: true
 
 compatible_strategies:
   - single_node_tp
@@ -177,8 +179,11 @@ guide: |
   ## Ascend 950DT
 
   Select **Ascend 950DT**, **W8A8 (Ascend MXFP8)** and **Tensor + Expert
-  Parallel** for the single-node TP8 configuration. Use the generated Docker
-  command with the pinned vLLM Ascend image and the public ModelScope checkpoint.
+  Parallel** for the single-node TP8 configuration. Expand **Install** and run
+  the container preparation command on the host, then run the generated
+  `vllm serve` command inside that container. If already inside a prepared Ascend
+  container, skip Install. The pinned image uses the public ModelScope checkpoint;
+  the preparation command mounts both ModelScope and Hugging Face caches.
   The reference configuration serves one image per prompt, disables video,
   and caps context at 32K. Encoder data parallelism is opt-in on this hardware.
 
