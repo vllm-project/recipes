@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.2 — frontier-scale MoE language model (~743B total parameters, 39B active) with up to 5-token MTP speculative decoding and thinking mode"
   date_added: 2026-06-16
-  date_updated: 2026-09-18
+  date_updated: 2026-09-28
   difficulty: advanced
   tasks:
     - text
@@ -16,6 +16,7 @@ meta:
     b300: verified
     b200: verified
     mi300x: verified
+    mi325x: verified
     mi355x: verified
 
 model:
@@ -24,7 +25,7 @@ model:
   default_frontend: rust
   docker_image:
     nvidia: "vllm/vllm-openai:v0.28.0"
-    amd: "vllm/vllm-openai-rocm:nightly-4c626633159887b0f2c962058c17c78f1434556d"
+    amd: "vllm/vllm-openai-rocm:nightly"
   architecture: moe
   parameter_count: "743B"
   active_parameters: "39B"
@@ -243,7 +244,7 @@ guide: |
   ```
   tps up to 70+ for single request
 
-  ### FP8 on AMD MI300X/MI355X (full 1M context)
+  ### FP8 on AMD MI300X/MI325X/MI355X (full 1M context)
 
   GLM-5.2 has a native 1M-token window. Whether the full window fits on ROCm is a
   KV-cache VRAM question, so the levers are `--max-model-len` and `--max-num-seqs`.
@@ -280,6 +281,11 @@ guide: |
   - **`VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1`** — enables the shared-expert fused
     MoE path. `VLLM_ROCM_USE_AITER_LINEAR` and `VLLM_ROCM_USE_AITER_MOE` default to enabled
     when `VLLM_ROCM_USE_AITER=1`.
+
+  On 8x MI325X this command serves the full `--max-model-len 524288` at
+  `--gpu-memory-utilization 0.80`, reporting a 1,564,016-token KV cache and 2.98x maximum
+  concurrency. MTP is healthy there: a mean acceptance length of 4.00 out of 5 drafted
+  tokens on a short greedy generation.
 
   ### MXFP4 on AMD MI355X
 
