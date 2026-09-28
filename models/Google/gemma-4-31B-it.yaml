@@ -4,7 +4,7 @@ meta:
   provider: "Google"
   description: "Google's unified multimodal Gemma 4 dense model (31B) with native text, image, and audio, plus thinking mode and tool-use protocol."
   date_added: 2026-04-02
-  date_updated: 2026-05-11
+  date_updated: 2026-10-06
   difficulty: intermediate
   tasks:
     - multimodal
@@ -18,6 +18,8 @@ meta:
     mi355x: verified
     trillium: verified
     ironwood: verified
+    dgx_spark_gb10: verified
+    dgx_spark_gb10_64gb: verified
 
 model:
   model_id: "google/gemma-4-31B-it"
@@ -43,6 +45,13 @@ features:
       - "gemma4"
       - "--chat-template"
       - "examples/tool_chat_template_gemma4.jinja"
+    hardware_overrides:
+      dgx_spark_gb10: &gemma4_tool_calling_spark
+        args:
+          - "--enable-auto-tool-choice"
+          - "--tool-call-parser"
+          - "gemma4"
+      dgx_spark_gb10_64gb: *gemma4_tool_calling_spark
   reasoning:
     description: "Enable structured thinking/reasoning output"
     args:
@@ -111,6 +120,57 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
+    hardware_overrides:
+      dgx_spark_gb10:
+        docker_image: "eugr/spark-vllm:nightly-20260704"
+        docker_serve_command: "vllm serve"
+        install:
+          pip: false
+        extra_args:
+          - "--gpu-memory-utilization"
+          - "0.80"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "8"
+          - "--enable-prefix-caching"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--reasoning-parser"
+          - "gemma4"
+          - "--enable-auto-tool-choice"
+          - "--tool-call-parser"
+          - "gemma4"
+          - "--load-format"
+          - "fastsafetensors"
+          - "--kv-cache-dtype"
+          - "auto"
+      dgx_spark_gb10_64gb:
+        docker_image: "eugr/spark-vllm:nightly-20260704"
+        docker_serve_command: "vllm serve"
+        install:
+          pip: false
+        extra_args:
+          - "--gpu-memory-utilization"
+          - "0.80"
+          - "--kv-cache-memory-bytes"
+          - "14519000000"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "8"
+          - "--enable-prefix-caching"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--reasoning-parser"
+          - "gemma4"
+          - "--enable-auto-tool-choice"
+          - "--tool-call-parser"
+          - "gemma4"
+          - "--load-format"
+          - "safetensors"
+          - "--kv-cache-dtype"
+          - "auto"
   redhat_nvfp4:
     model_id: "RedHatAI/gemma-4-31B-it-NVFP4"
     precision: nvfp4

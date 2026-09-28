@@ -103,6 +103,20 @@ hardware_profiles:
     multi_node: false
     restricted: true
 
+  # DGX Spark 64GB — single-GPU GB10 desktop system with 64GB Unified Memory.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` (same pattern as the TPU profiles).
+  dgx_spark_gb10_64gb:
+    brand: NVIDIA
+    generation: blackwell
+    compute_arch: sm121
+    display_name: "DGX Spark (GB10 64GB)"
+    description: "NVIDIA DGX Spark · 1× GB10 Grace Blackwell Superchip · 64 GB unified memory"
+    gpu_count: 1
+    vram_gb: 64
+    multi_node: false
+    restricted: true
+
   # RTX Pro 6000 — single-GPU RTX Pro 6000 system.
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
   # lists it in `meta.hardware` (same pattern as the TPU profiles).

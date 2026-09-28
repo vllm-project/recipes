@@ -3,7 +3,7 @@ meta:
   slug: "qwen3.8-flash-next"
   provider: "Qwen"
   description: "Qwen4 architecture preview with a 125B-parameter main model, supplemented by an additional 51B N-gram embeddings, with 6B parameters activated per token."
-  date_updated: 2026-09-30
+  date_updated: 2026-10-06
   difficulty: advanced
   tasks:
     - multimodal
@@ -19,6 +19,8 @@ meta:
     mi355x: verified
     rtx_pro_6000_4x: verified
     dgx_station_gb300: verified
+    dgx_spark_gb10: verified
+    dgx_spark_gb10_64gb: verified
 
 model:
   model_id: "Qwen/Qwen3.8-Flash-Next"
@@ -53,7 +55,7 @@ features:
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_coder"
+      - "qwen3_xml"
   reasoning:
     description: "Extract thinking output with the Qwen3 reasoning parser"
     args:
@@ -64,6 +66,15 @@ features:
     args:
       - "--speculative-config"
       - '{"method":"mtp","num_speculative_tokens":3}'
+    hardware_overrides:
+      dgx_spark_gb10:
+        args:
+          - "--speculative-config"
+          - '{"method":"mtp","num_speculative_tokens":4}'
+      dgx_spark_gb10_64gb:
+        args:
+          - "--speculative-config"
+          - '{"method":"mtp","num_speculative_tokens":4}'
   text_only:
     description: "Skip the vision encoder for text-only workloads and leave more memory for KV cache"
     args:
@@ -119,6 +130,145 @@ variants:
           - "--enable-prefix-caching"
           - "--moe-backend"
           - "marlin"
+  nvfp4:
+    model_id: "local-inference-lab/Qwen3.8-Flash-Next-NVFP4"
+    precision: nvfp4
+    label: "NVIDIA NVFP4"
+    vram_minimum_gb: 128
+    description: "NVIDIA NVFP4 quantized weights"
+    supported_hardware: [dgx_spark_gb10, dgx_spark_gb10_64gb]
+    hardware_overrides:
+      dgx_spark_gb10:
+        docker_image: "eugr/spark-vllm-b12x:latest"
+        docker_serve_command: "vllm serve"
+        install:
+          docker:
+            note: "Use the specified docker image; PyPI installation is not supported for this recipe."
+          pip: false
+        extra_env:
+          CUTE_DSL_ARCH: "sm_121a"
+          SAFETENSORS_FAST_GPU: "1"
+          VLLM_WORKER_MULTIPROC_METHOD: "spawn"
+          VLLM_SSM_CONV_STATE_LAYOUT: "DS"
+          VLLM_USE_AOT_COMPILE: "1"
+          VLLM_USE_MEGA_AOT_ARTIFACT: "1"
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          B12X_POLICY_MODE: "auto"
+          VLLM_MXFP8_LM_HEAD: "1"
+          VLLM_ENGINE_READY_TIMEOUT_S: "1200"
+        extra_args:
+          - "--mamba-cache-mode"
+          - "align"
+          - "--enable-prefix-caching"
+          - "--enable-chunked-prefill"
+          - "--dtype"
+          - "bfloat16"
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--quantization"
+          - "modelopt_mixed"
+          - "--block-size"
+          - "16"
+          - "--load-format"
+          - "b12x"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "4096"
+          - "--gdn-decode-kernel"
+          - "b12x"
+          - "--linear-backend"
+          - "b12x"
+          - "--moe-backend"
+          - "b12x"
+          - "--no-enable-flashinfer-autotune"
+          - "--mm-encoder-tp-mode"
+          - "data"
+          - "--reasoning-parser"
+          - "qwen3"
+          - "--tool-call-parser"
+          - "qwen3_xml"
+          - "--enable-auto-tool-choice"
+          - "--compilation-config"
+          - '{"pass_config":{"fuse_act_quant":true}}'
+          - "--gpu-memory-utilization"
+          - "0.8"
+      dgx_spark_gb10_64gb:
+        docker_image: "eugr/spark-vllm-b12x:latest"
+        docker_serve_command: "vllm serve"
+        install:
+          docker:
+            note: "Use the specified docker image; PyPI installation is not supported for this recipe."
+          pip: false
+        extra_env:
+          MN_IF_NAME: "$IFACE_NAME"
+          UCX_NET_DEVICES: "$IFACE_NAME"
+          NCCL_SOCKET_IFNAME: "$IFACE_NAME"
+          NCCL_IB_HCA: "$IB_IF"
+          NCCL_IB_DISABLE: 0
+          OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
+          GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+          TP_SOCKET_IFNAME: "$IFACE_NAME"
+          NCCL_IGNORE_CPU_AFFINITY: "1"
+          VLLM_PLE_TABLE_MEMORY: "disk"
+          CUTE_DSL_ARCH: "sm_121a"
+          SAFETENSORS_FAST_GPU: "1"
+          VLLM_WORKER_MULTIPROC_METHOD: "spawn"
+          VLLM_SSM_CONV_STATE_LAYOUT: "DS"
+          VLLM_USE_AOT_COMPILE: "1"
+          VLLM_USE_MEGA_AOT_ARTIFACT: "1"
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          B12X_POLICY_MODE: "auto"
+          VLLM_ENABLE_ROCE_ALLREDUCE: "1"
+          VLLM_ROCE_ALLREDUCE_MAX_SIZE: "2MB"
+          NCCL_BUFFSIZE: "1048576"
+          NCCL_MAX_CTAS: "8"
+          B12X_WEIGHTS_COMPILE_WORKERS: "4"
+          B12X_STATE_COMPILE_WORKERS: "4"
+          B12X_BIND_COMPILE_WORKERS: "4"
+          VLLM_ENGINE_READY_TIMEOUT_S: "1200"
+        extra_args:
+          - "--mamba-cache-mode"
+          - "align"
+          - "--enable-prefix-caching"
+          - "--enable-chunked-prefill"
+          - "--dtype"
+          - "bfloat16"
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--quantization"
+          - "modelopt_mixed"
+          - "--block-size"
+          - "16"
+          - "--load-format"
+          - "b12x"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "2048"
+          - "--gdn-decode-kernel"
+          - "b12x"
+          - "--linear-backend"
+          - "b12x"
+          - "--moe-backend"
+          - "b12x"
+          - "--no-enable-flashinfer-autotune"
+          - "--mm-encoder-tp-mode"
+          - "data"
+          - "--compilation-config"
+          - '{"pass_config":{"fuse_act_quant":true},"max_cudagraph_capture_size":40,"cudagraph_capture_sizes":[1,2,4,5,8,10,16,20,24,32,40]}'
+          - "--mm-processor-cache-gb"
+          - "0"
+          - "--limit-mm-per-prompt"
+          - '{"image":1}'
+          - "--gpu-memory-utilization"
+          - "0.8"
+          - "--kv-cache-memory-bytes"
+          - "3G"
   fp8:
     model_id: "Qwen/Qwen3.8-Flash-Next-FP8"
     precision: fp8
@@ -162,6 +312,7 @@ compatible_strategies:
   - single_node_tp
   - single_node_tep
   - single_node_dep
+  - multi_node_tp
 
 kv_offload_support:
   offloading_cpu: verified
@@ -185,12 +336,55 @@ hardware_overrides:
       - "fp8"
       - "--attention-config.indexer_kv_dtype"
       - "fp8"
+
+strategy_hardware:
+  single_node_tp:
+    dgx_spark_gb10_64gb: unsupported
+  single_node_tep:
+    dgx_spark_gb10: unsupported
+    dgx_spark_gb10_64gb: unsupported
+  single_node_dep:
+    dgx_spark_gb10: unsupported
+    dgx_spark_gb10_64gb: unsupported
+
 strategy_overrides:
   single_node_tp:
     tp: 4
+    hardware_overrides:
+      dgx_spark_gb10:
+        extra_env:
+          VLLM_PLE_TABLE_MEMORY: "disk"
+          VLLM_B12X_MOE_FP4_LAYER_MAX_INPUT_SCALE: "w13"
+      dgx_spark_gb10_64gb: unsupported
   single_node_dep:
     extra_env:
       VLLM_PLE_CPU_OFFLOAD: "1"
+  multi_node_tp:
+    hardware_overrides:
+      dgx_spark_gb10:
+        extra_env:
+          MN_IF_NAME: "$IFACE_NAME"
+          UCX_NET_DEVICES: "$IFACE_NAME"
+          NCCL_SOCKET_IFNAME: "$IFACE_NAME"
+          NCCL_IB_HCA: "$IB_IF"
+          NCCL_IB_DISABLE: 0
+          OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
+          GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+          TP_SOCKET_IFNAME: "$IFACE_NAME"
+          NCCL_IGNORE_CPU_AFFINITY: "1"
+          VLLM_ENABLE_ROCE_ALLREDUCE: "1"
+          VLLM_ROCE_ALLREDUCE_MAX_SIZE: "2MB"
+        extra_args:
+          - "--max-num-seqs"
+          - "16"
+
+hardware_notes:
+  dgx_spark_gb10_64gb:
+    title: "DGX Spark setup required"
+    body: "This hardware uses the community eugr/spark-vllm-b12x:latest docker image and a 4-node TP launch — the B12X backends the command relies on are not in vLLM main, so there is no pip/wheel path on Spark. Before running the generated command, check the DGX Spark cluster guide for IFACE_NAME, IB_IF and HEAD_IP."
+    link:
+      label: "DGX Spark cluster guide"
+      href: "#dgx-spark-gb10-cluster"
 
 guide: |
   ## Overview
@@ -251,7 +445,7 @@ guide: |
     --attention-config.indexer_kv_dtype fp8 \
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_coder \
+    --tool-call-parser qwen3_xml \
     --reasoning-parser qwen3
   ```
 
@@ -279,7 +473,7 @@ guide: |
     --attention-config.indexer_kv_dtype fp8 \
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_coder \
+    --tool-call-parser qwen3_xml \
     --reasoning-parser qwen3
   ```
 
@@ -303,7 +497,7 @@ guide: |
     --no-enable-flashinfer-autotune \
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_coder \
+    --tool-call-parser qwen3_xml \
     --reasoning-parser qwen3
   ```
 
@@ -319,6 +513,36 @@ guide: |
   --max-model-len auto \
   --gpu-memory-utilization 0.9 \
   --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
+  ```
+  ### DGX Spark (GB10) cluster
+
+  For running the model on **2 nodes** GB10 64GB clusters, export
+  `IFACE_NAME`, `IB_IF` and `HEAD_IP` on each node before launching.
+
+  To identify the values, first list the ConnectX Ethernet interfaces, RoCE
+  devices and the IP address of the UP ConnectX interface on each Spark:
+
+  ```bash
+  $ ibdev2netdev
+  roceP2p1s0f0 port 1 ==> enP2p1s0f0np0 (Up)
+  roceP2p1s0f1 port 1 ==> enP2p1s0f1np1 (Down)
+  rocep1s0f0 port 1 ==> enp1s0f0np0 (Up)
+  rocep1s0f1 port 1 ==> enp1s0f1np1 (Down)
+
+  $ ip addr show enp1s0f0np0
+  3: enp1s0f0np0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+      link/ether 4c:62:56:c1:83:68 brd ff:ff:ff:ff:ff:ff
+      inet 100.100.100.10/24 brd 100.100.100.255 scope global noprefixroute enp1s0f0np0
+        valid_lft forever preferred_lft forever
+  ```
+
+  From above example values, we can get the following common values:
+
+  ```bash
+  # Common values for all nodes
+  HEAD_IP="100.100.100.10"         # IP of the head node's UP ConnectX interface
+  IFACE_NAME="enp1s0f0np0"         # The head node's UP ConnectX Ethernet interface
+  IB_IF="rocep1s0f0,roceP2p1s0f0"  # Comma-separated RoCE device name list corresponding to the UP ConnectX interface
   ```
 
   ### Full native context
@@ -352,7 +576,7 @@ guide: |
     --max-model-len 262144 \
     --no-enable-flashinfer-autotune \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_coder \
+    --tool-call-parser qwen3_xml \
     --reasoning-parser qwen3
   ```
 

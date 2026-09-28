@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "27B-parameter dense hybrid-attention model with linear attention on 48 of 64 layers, a vision tower, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-14
-  date_updated: 2026-10-02
+  date_updated: 2026-10-06
   difficulty: beginner
   tasks:
     - multimodal
@@ -31,6 +31,7 @@ meta:
     # single 950PR at TP1 with the in-checkpoint MTP head and FULL_DECODE_ONLY
     # ACLGraph and answered a long-form prompt correctly.
     ascend_950pr: verified
+    dgx_spark_gb10_64gb: verified
 
 model:
   model_id: "Qwen/Qwen3.8-27B"
@@ -87,7 +88,7 @@ features:
       - "qwen3"
   spec_decoding:
     description: "Speculative decoding — pick MTP (in-checkpoint), DFlash2, or DSpark (external drafts)."
-    default_mode: mtp
+    default_mode: dflash
     modes:
       mtp:
         label: "MTP"
@@ -103,14 +104,12 @@ features:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":3}'
         hardware_overrides:
-          dgx_spark_gb10:
+          dgx_spark_gb10: &qwen38_mtp_spark
             args:
               - "--speculative-config"
               - '{"method":"mtp","num_speculative_tokens":5}'
-          rtx_pro_6000:
-            args:
-              - "--speculative-config"
-              - '{"method":"mtp","num_speculative_tokens":5}'
+          dgx_spark_gb10_64gb: *qwen38_mtp_spark
+          rtx_pro_6000: *qwen38_mtp_spark
       qwen3_5_mtp:
         label: "MTP (Ascend)"
         # vLLM Ascend documents `qwen3_5_mtp` for this head (it aliases to `mtp` and logs a
@@ -124,10 +123,31 @@ features:
       dflash:
         label: "DFlash2"
         description: "External DFlash2 drafter (incoai/Qwen3.8-27B-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. Needs vLLM >=0.28.0, which shipped vllm-project/vllm#52816. num_speculative_tokens must be 7 (block_size 8 minus one)."
-        variants: [default]
+        variants: [default, nvfp4_nvidia]
         args:
           - "--speculative-config"
           - '{"method":"dflash","model":"incoai/Qwen3.8-27B-DFlash2","num_speculative_tokens":7}'
+        hardware_overrides:
+          dgx_spark_gb10:
+            args:
+              - "--speculative-config"
+              - '{"method":"dflash","model":"z-lab/Qwen3.8-27B-DFlash2","num_speculative_tokens":8}'
+          dgx_spark_gb10_64gb:
+            args:
+              - "--speculative-config"
+              - '{"method":"dflash","model":"z-lab/Qwen3.8-27B-DFlash2","num_speculative_tokens":8}'
+        # Multi-node TP on Spark shards the draft across the cluster. This
+        # replaces the hardware override above only while multi_node_tp is
+        # selected; single-node Spark keeps num_speculative_tokens 8 with no
+        # draft TP.
+        strategy_overrides:
+          multi_node_tp:
+            hardware_overrides:
+              dgx_spark_gb10: &qwen38_dflash_mn_spark
+                args:
+                  - "--speculative-config"
+                  - '{"method":"dflash","model":"z-lab/Qwen3.8-27B-DFlash2","num_speculative_tokens":8,"draft_tensor_parallel_size":2}'
+              dgx_spark_gb10_64gb: *qwen38_dflash_mn_spark
       dspark:
         label: "DSpark"
         description: "External DSpark drafter (RedHatAI/Qwen3.8-27B-speculator.dspark), with a Markov head and confidence head. The model card specifies 8 draft tokens."
@@ -221,26 +241,51 @@ variants:
     label: "NVFP4 (NVIDIA)"
     # 21,904,998,400 B = 21.9 GB. quant_method `modelopt`, quant_algo `NVFP4-FP8 mixed-precision`.
     vram_minimum_gb: 32
-    supported_hardware: [rtx_pro_6000, dgx_spark_gb10]
+    supported_hardware: [rtx_pro_6000, dgx_spark_gb10, dgx_spark_gb10_64gb]
     description: "NVFP4 build for NVIDIA Blackwell — 21.9 GiB, the smallest footprint: 1 GPU."
     hardware_overrides:
       dgx_spark_gb10:
+        install:
+          pip: false
+        docker_image: "vllm/vllm-openai:v0.28.0"
+        extra_env:
+          VLLM_ENGINE_READY_TIMEOUT_S: "1200"
         extra_args:
           - "--kv-cache-dtype"
           - "fp8"
           - "--gpu-memory-utilization"
-          - "0.7"
+          - "0.8"
           - "--max-model-len"
           - "262144"
           - "--max-num-seqs"
           - "8"
           - "--max-num-batched-tokens"
-          - "8192"
+          - "16384"
           - "--enable-chunked-prefill"
           - "--async-scheduling"
           - "--enable-prefix-caching"
           - "--load-format"
           - "fastsafetensors"
+      dgx_spark_gb10_64gb:
+        install:
+          pip: false
+        docker_image: "vllm/vllm-openai:v0.28.0"
+        extra_env:
+          VLLM_ENGINE_READY_TIMEOUT_S: "1200"
+        extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--gpu-memory-utilization"
+          - "0.8"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "16384"
+          - "--enable-chunked-prefill"
+          - "--async-scheduling"
+          - "--enable-prefix-caching"
       rtx_pro_6000:
         extra_args:
           - "--kv-cache-dtype"
@@ -311,9 +356,47 @@ kv_offload_support:
 compatible_strategies:
   - single_node_tp
 
+strategy_hardware:
+  # Dual DGX Spark clusters need cross-node TP to shard the checkpoint across
+  # the two GB10 nodes. Keep this opt-in exact to DGX Spark so larger Blackwell
+  # platforms stay on their existing recommendations.
+  multi_node_tp:
+    dgx_spark_gb10: supported
+    dgx_spark_gb10_64gb: supported
+
 hardware_overrides: {}
 
-strategy_overrides: {}
+strategy_overrides:
+  multi_node_tp:
+    hardware_overrides:
+      dgx_spark_gb10:
+        extra_env:
+          MN_IF_NAME: "$IFACE_NAME"
+          UCX_NET_DEVICES: "$IFACE_NAME"
+          NCCL_SOCKET_IFNAME: "$IFACE_NAME"
+          NCCL_IB_HCA: "$IB_IF"
+          NCCL_IB_DISABLE: 0
+          OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
+          GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+          TP_SOCKET_IFNAME: "$IFACE_NAME"
+          NCCL_IGNORE_CPU_AFFINITY: "1"
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+          VLLM_FLOAT32_MATMUL_PRECISION: "high"
+      dgx_spark_gb10_64gb:
+        extra_env:
+          MN_IF_NAME: "$IFACE_NAME"
+          UCX_NET_DEVICES: "$IFACE_NAME"
+          NCCL_SOCKET_IFNAME: "$IFACE_NAME"
+          NCCL_IB_HCA: "$IB_IF"
+          NCCL_IB_DISABLE: 0
+          OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
+          GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+          TP_SOCKET_IFNAME: "$IFACE_NAME"
+          NCCL_IGNORE_CPU_AFFINITY: "1"
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+          VLLM_FLOAT32_MATMUL_PRECISION: "high"
 
 guide: |
   ## Overview
@@ -358,6 +441,37 @@ guide: |
   ```
 
   Add `--speculative-config '{"method":"mtp","num_speculative_tokens":3}'` for MTP.
+
+  ### DGX Spark (GB10) cluster
+
+  For running the model on **2 nodes** GB10 128GB or 64GB cluster, export
+  `IFACE_NAME`, `IB_IF` and `HEAD_IP` on each node before launching.
+
+  To identify the values, first list the ConnectX Ethernet interfaces, RoCE
+  devices and the IP address of the UP ConnectX interface on each Spark:
+
+  ```bash
+  $ ibdev2netdev
+  roceP2p1s0f0 port 1 ==> enP2p1s0f0np0 (Up)
+  roceP2p1s0f1 port 1 ==> enP2p1s0f1np1 (Down)
+  rocep1s0f0 port 1 ==> enp1s0f0np0 (Up)
+  rocep1s0f1 port 1 ==> enp1s0f1np1 (Down)
+
+  $ ip addr show enp1s0f0np0
+  3: enp1s0f0np0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+      link/ether 4c:62:56:c1:83:68 brd ff:ff:ff:ff:ff:ff
+      inet 100.100.100.10/24 brd 100.100.100.255 scope global noprefixroute enp1s0f0np0
+        valid_lft forever preferred_lft forever
+  ```
+
+  From above example values, we can get the following common values:
+
+  ```bash
+  # Common values for all nodes
+  HEAD_IP="100.100.100.10"         # IP of the head node's UP ConnectX interface
+  IFACE_NAME="enp1s0f0np0"         # The head node's UP ConnectX Ethernet interface
+  IB_IF="rocep1s0f0,roceP2p1s0f0"  # Comma-separated RoCE device name list corresponding to the UP ConnectX interface
+  ```
 
   ### 2x RTX 5090 (consumer Blackwell, sm120)
 

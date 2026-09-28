@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek's first experimental multimodal V4 model — the V4-Flash MoE backbone plus a 32-layer vision tower, 1M context, and a fused DSpark draft module."
   date_added: 2026-09-01
-  date_updated: 2026-09-14
+  date_updated: 2026-10-06
   difficulty: advanced
   tasks:
     - text
@@ -32,6 +32,8 @@ meta:
     mi350x: verified
     ascend_950dt_8x: verified
     ascend_950pr_8x: verified
+    dgx_spark_gb10: verified
+    dgx_spark_gb10_64gb: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp"
@@ -106,6 +108,14 @@ features:
           - '{"method":"dspark","model":"deepseek-ai/DeepSeek-V4-Flash-Vision-Exp","num_speculative_tokens":3,"draft_sample_method":"probabilistic","enable_adaptive_verification":false}'
       npu:
         args: []
+      dgx_spark_gb10:
+        args:
+          - "--speculative-config"
+          - '{"method":"dspark","num_speculative_tokens":6,"draft_sample_method":"probabilistic","attention_backend":"B12X"}'
+      dgx_spark_gb10_64gb:
+        args:
+          - "--speculative-config"
+          - '{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","attention_backend":"B12X","draft_tensor_parallel_size":4}'
 
 # Spec decoding stays default-on everywhere except the A5 8-card pills.
 hardware_opt_in_features:
@@ -133,6 +143,139 @@ variants:
         docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a5"
         install:
           pip: false
+      dgx_spark_gb10:
+        docker_image: "eugr/spark-vllm-b12x:latest"
+        docker_serve_command: "vllm serve"
+        install:
+          pip: false
+        extra_env:
+          MN_IF_NAME: "$IFACE_NAME"
+          UCX_NET_DEVICES: "$IFACE_NAME"
+          NCCL_SOCKET_IFNAME: "$IFACE_NAME"
+          NCCL_IB_HCA: "$IB_IF"
+          NCCL_IB_DISABLE: 0
+          OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
+          GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+          TP_SOCKET_IFNAME: "$IFACE_NAME"
+          NCCL_IGNORE_CPU_AFFINITY: "1"
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+          CUTE_DSL_ARCH: "sm_121a"
+          VLLM_USE_AOT_COMPILE: "1"
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+          VLLM_USE_MEGA_AOT_ARTIFACT: "1"
+          VLLM_MEMORY_PROFILE_INCLUDE_ATTN: "1"
+          VLLM_USE_FLASHINFER_SAMPLER: "1"
+          VLLM_USE_B12X_WO_PROJECTION: "1"
+          VLLM_USE_B12X_MHC: "1"
+          VLLM_USE_B12X_FP8_GEMM: "1"
+          VLLM_USE_B12X_MOE: "1"
+          VLLM_USE_B12X_SPARSE_INDEXER: "1"
+          B12X_MLA_SM120_UNIFIED: "1"
+          B12X_MOE_FORCE_A8: "1"
+          VLLM_MOE_SKIP_PADDING: "0"
+          VLLM_ENABLE_ROCE_ALLREDUCE: "1"
+          VLLM_ROCE_ALLREDUCE_MAX_SIZE: "2MB"
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--gpu-memory-utilization"
+          - "0.85"
+          - "--enable-prefix-caching"
+          - "--tokenizer-mode"
+          - "deepseek_v4"
+          - "--default-chat-template-kwargs.thinking=true"
+          - "--default-chat-template-kwargs.reasoning_effort=high"
+          - "--load-format"
+          - "b12x"
+          - "--moe-backend"
+          - "b12x"
+          - "--linear-backend"
+          - "b12x"
+          - "--attention-backend"
+          - "B12X"
+          - "--max-cudagraph-capture-size"
+          - "48"
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'
+      dgx_spark_gb10_64gb:
+        docker_image: "eugr/spark-vllm-b12x:latest"
+        docker_serve_command: "vllm serve"
+        install:
+          pip: false
+        extra_env:
+          MN_IF_NAME: "$IFACE_NAME"
+          UCX_NET_DEVICES: "$IFACE_NAME"
+          NCCL_SOCKET_IFNAME: "$IFACE_NAME"
+          NCCL_IB_HCA: "$IB_IF"
+          NCCL_IB_DISABLE: 0
+          OMPI_MCA_btl_tcp_if_include: "$IFACE_NAME"
+          GLOO_SOCKET_IFNAME: "$IFACE_NAME"
+          TP_SOCKET_IFNAME: "$IFACE_NAME"
+          CMAKE_BUILD_PARALLEL_LEVEL: "1"
+          MAX_JOBS: "1"
+          NINJAFLAGS: "-j1"
+          MAKEFLAGS: "-j1"
+          NCCL_IGNORE_CPU_AFFINITY: "1"
+          NCCL_BUFFSIZE: "1048576"
+          NCCL_MAX_CTAS: "8"
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+          CUTE_DSL_ARCH: "sm_121a"
+          MIMALLOC_PURGE_DELAY: "0"
+          VLLM_ENABLE_ROCE_ALLREDUCE: "1"
+          VLLM_USE_AOT_COMPILE: "1"
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+          VLLM_USE_MEGA_AOT_ARTIFACT: "1"
+          VLLM_MEMORY_PROFILE_INCLUDE_ATTN: "1"
+          VLLM_USE_FLASHINFER_SAMPLER: "1"
+          VLLM_USE_B12X_WO_PROJECTION: "1"
+          VLLM_USE_B12X_MHC: "1"
+          VLLM_USE_B12X_FP8_GEMM: "1"
+          VLLM_USE_B12X_MOE: "1"
+          VLLM_USE_B12X_SPARSE_INDEXER: "1"
+          VLLM_MOE_SKIP_PADDING: "0"
+          VLLM_ROCE_ALLREDUCE_MAX_SIZE: "2MB"
+          VLLM_USE_RUST_FRONTEND: "0"
+          B12X_COMPILE_WORKERS: "1"
+          B12X_MLA_SM120_UNIFIED: "1"
+          B12X_MOE_FORCE_A8: "1"
+        extra_args:
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "2048"
+          - "--gpu-memory-utilization"
+          - "0.7"
+          - "--enable-prefix-caching"
+          - "--tokenizer-mode"
+          - "deepseek_v4"
+          - "--default-chat-template-kwargs.thinking=true"
+          - "--default-chat-template-kwargs.reasoning_effort=high"
+          - "--load-format"
+          - "b12x"
+          - "--moe-backend"
+          - "b12x"
+          - "--linear-backend"
+          - "b12x"
+          - "--attention-backend"
+          - "B12X"
+          - "--max-cudagraph-capture-size"
+          - "48"
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'
+          - "--limit-mm-per-prompt"
+          - '{"image":2}'
+          - "--mm-processor-cache-gb"
+          - "0"
+          - "--mm-encoder-tp-mode"
+          - "weights"
+          - "--kv-cache-memory-bytes"
+          - "3G"
 
 compatible_strategies:
   - single_node_tp
@@ -140,6 +283,7 @@ compatible_strategies:
   - single_node_dep
   - multi_node_tep
   - multi_node_dep
+  - multi_node_tp
 
 # TP + EP is the verified layout (TP4 + EP on one GB200 NVL4 tray).
 default_strategy: single_node_tep
@@ -154,8 +298,18 @@ strategy_hardware:
     npu: unsupported
   multi_node_tep:
     npu: unsupported
+    dgx_spark_gb10: unsupported
+    dgx_spark_gb10_64gb: unsupported
   multi_node_dep:
     npu: unsupported
+    dgx_spark_gb10: unsupported
+    dgx_spark_gb10_64gb: unsupported
+  multi_node_tp:
+    dgx_spark_gb10: supported
+    dgx_spark_gb10_64gb: supported
+
+strategy_min_gpus:
+  dgx_spark_gb10_64gb: 4
 
 # Shared by 950DT 8x (8×96 GB) and 950PR 8x (8×128 GB). Mixed serving uses
 # 4 of the 8 NPUs (DP4+EP, TP=1). HCCL_BUFFSIZE=1024 is required for MC2
@@ -217,6 +371,18 @@ hardware_notes:
   ascend_950pr_8x:
     title: "vLLM Ascend A5 image required"
     body: "Mixed serving on one 8-card 950PR node uses 4 of 8 NPUs (DP4+EP, TP=1). Same command as 950DT. Pin quay.io/ascend/vllm-ascend:v0.23.0-a5 and set HCCL_BUFFSIZE=1024 before launch. Native Flash-Vision checkpoints need the hash-router bias skip in vllm-project/vllm-ascend#16259 — without it load_weights aborts on model.layers.0.mlp.gate.e_score_correction_bias."
+  dgx_spark_gb10:
+    title: "DGX Spark setup required"
+    body: "This hardware uses the community eugr/spark-vllm-b12x:latest docker image and a 2-node TP launch — the B12X backends the command relies on are not in vLLM main, so there is no pip/wheel path on Spark. Before running the generated command, check the DGX Spark cluster guide for IFACE_NAME, IB_IF and HEAD_IP."
+    link:
+      label: "DGX Spark cluster guide"
+      href: "#dgx-spark-gb10-cluster"
+  dgx_spark_gb10_64gb:
+    title: "DGX Spark setup required"
+    body: "This hardware uses the community eugr/spark-vllm-b12x:latest docker image and a 4-node TP launch — the B12X backends the command relies on are not in vLLM main, so there is no pip/wheel path on Spark. Before running the generated command, check the DGX Spark cluster guide for IFACE_NAME, IB_IF and HEAD_IP."
+    link:
+      label: "DGX Spark cluster guide"
+      href: "#dgx-spark-gb10-cluster"
 
 guide: |
   ## Overview
@@ -291,6 +457,37 @@ guide: |
   `--attention_config.indexer_kv_dtype mxfp4` / `--moe-backend deep_gemm_mega_moe` tweaks
   the text recipe applies are deliberately not set here: the verified vision run did not
   use them.
+
+  ### DGX Spark (GB10) cluster
+
+  For running the model on **2 nodes** GB10 128GB or **4 nodes** GB10 64GB clusters,
+  export `IFACE_NAME`, `IB_IF` and `HEAD_IP` on each node before launching.
+
+  To identify the values, first list the ConnectX Ethernet interfaces, RoCE
+  devices and the IP address of the UP ConnectX interface on each Spark:
+
+  ```bash
+  $ ibdev2netdev
+  roceP2p1s0f0 port 1 ==> enP2p1s0f0np0 (Up)
+  roceP2p1s0f1 port 1 ==> enP2p1s0f1np1 (Down)
+  rocep1s0f0 port 1 ==> enp1s0f0np0 (Up)
+  rocep1s0f1 port 1 ==> enp1s0f1np1 (Down)
+
+  $ ip addr show enp1s0f0np0
+  3: enp1s0f0np0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+      link/ether 4c:62:56:c1:83:68 brd ff:ff:ff:ff:ff:ff
+      inet 100.100.100.10/24 brd 100.100.100.255 scope global noprefixroute enp1s0f0np0
+        valid_lft forever preferred_lft forever
+  ```
+
+  From above example values, we can get the following common values:
+
+  ```bash
+  # Common values for all nodes
+  HEAD_IP="100.100.100.10"         # IP of the head node's UP ConnectX interface
+  IFACE_NAME="enp1s0f0np0"         # The head node's UP ConnectX Ethernet interface
+  IB_IF="rocep1s0f0,roceP2p1s0f0"  # Comma-separated RoCE device name list corresponding to the UP ConnectX interface
+  ```
 
   ### AMD MI350X (gfx950)
 
