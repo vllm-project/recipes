@@ -142,6 +142,8 @@ variants:
         docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a5"
         install:
           pip: false
+          docker:
+            serve_in_container: true
 
 compatible_strategies:
   - single_node_tp
@@ -172,6 +174,14 @@ hardware_overrides:
     frontend: python
 
 strategy_overrides: {}
+
+hardware_notes:
+  ascend_950dt:
+    title: "Run Serve inside the prepared Ascend container"
+    body: "Follow Prepare the container in the Guide first, including the local weight mount. Run the Serve command inside that container from /models after setting the communication IP/interface and creating the metrics directory."
+    link:
+      label: "Prepare the container"
+      href: "#prepare-the-container"
 
 guide: |
   ## Ascend 950DT (A5), single node

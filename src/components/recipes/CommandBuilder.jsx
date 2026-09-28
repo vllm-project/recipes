@@ -2151,6 +2151,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               command={displayedResult.command}
               env={displayedResult.env}
               companions={displayedResult.companions}
+              preparedContainer={hwInstall?.docker?.serve_in_container === true}
               verifyCmd={verifyCmd}
               benchCmd={benchCmd}
               statusHeader={statusHeader}
@@ -3155,11 +3156,11 @@ function CommandNote({ note }) {
   );
 }
 
-function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
+function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote, preparedContainer = false }) {
   const [tab, setTab] = useState("vllm");
   // The `docker pull` for the image lives in the Install block above.
   const isXpu = !!dockerMeta?.isXpu;
-  const isDocker = installMode === "docker";
+  const isDocker = installMode === "docker" && !preparedContainer;
   // Docker mode: env vars fold into `-e` flags inside the wrapped `docker run`,
   // so there's no separate prelude (the `docker pull` lives in the Install
   // block tabs above). Pip mode: prelude = `export KEY=VAL` lines.
