@@ -319,13 +319,20 @@ export function isHardwareSupported(recipe, hwId) {
 }
 
 /**
- * Variant-level hardware allowlist. Missing/empty means the variant inherits
- * the recipe's normal hardware compatibility; otherwise only listed profile
- * ids may render or be selected.
+ * Variant-level hardware selectors. Entries may be exact profile ids or
+ * `arch:<compute_arch>`. Missing/empty inherits normal precision compatibility.
+ * Architecture selectors admit future profiles with the same GPU ISA without
+ * confusing data-center Blackwell (SM100/SM103) with workstation SM120/SM121.
  */
-export function isVariantHardwareSupported(variant, hwId) {
+export function isVariantHardwareSupported(variant, hwId, profile = null) {
   const supported = variant?.supported_hardware;
-  return !Array.isArray(supported) || supported.length === 0 || supported.includes(hwId);
+  if (!Array.isArray(supported) || supported.length === 0) return true;
+  return supported.some((entry) => {
+    if (entry === hwId) return true;
+    if (!profile) return false;
+    if (entry.startsWith("arch:")) return profile.compute_arch === entry.slice(5);
+    return false;
+  });
 }
 
 /**
@@ -455,7 +462,7 @@ export function listCompatibleHardware(hwProfiles, variant, recipe) {
     .filter(([id, p]) =>
       isPrecisionCompatible(p, variant)
       && isHardwareSupported(recipe, id)
-      && isVariantHardwareSupported(variant, id)
+      && isVariantHardwareSupported(variant, id, p)
     )
     .map(([id]) => id);
 }
@@ -521,7 +528,7 @@ export function isKvStoreBrandSupported(hwProfile) {
  */
 export function variantRunsOnHardware(hwProfile, variant, hwId = null) {
   if (!isPrecisionCompatible(hwProfile, variant)) return false;
-  if (hwId && !isVariantHardwareSupported(variant, hwId)) return false;
+  if (hwId && !isVariantHardwareSupported(variant, hwId, hwProfile)) return false;
   if (isHardwareScalable(hwProfile)) return true;
   return fitsSingleNode(hwProfile, variant, hwId);
 }
@@ -583,7 +590,7 @@ export function pickDefaultHardware(hwProfiles, variant, recipe) {
     ([id, p]) =>
       matchesConstraint(p, constraint)
       && isHardwareSupported(recipe, id)
-      && isVariantHardwareSupported(variant, id)
+      && isVariantHardwareSupported(variant, id, p)
       && (!p.restricted || id in declared)
   );
 
