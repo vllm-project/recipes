@@ -101,9 +101,6 @@ strategy_overrides:
   single_node_dpa_tp:
     extra_env:
       VLLM_ENGINE_READY_TIMEOUT_S: "1800"
-    hardware_overrides:
-      nvidia:
-        extra_args: []   # DPA+TP shards experts with TP; no --enable-expert-parallel
 
 guide: |
   ## Overview
