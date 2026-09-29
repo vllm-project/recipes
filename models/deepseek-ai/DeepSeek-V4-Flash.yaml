@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 MoE model with hybrid CSA+HCA attention, manifold-constrained hyper-connections, and three-tier reasoning (Non-think / Think High / Think Max)."
   date_added: 2026-07-31
-  date_updated: 2026-09-23
+  date_updated: 2026-09-29
   difficulty: hard
   tasks:
     - text
@@ -142,7 +142,7 @@ variants:
     # release. 950DT is offered on the same grounds the FP8 (Preview) row
     # already uses — one A5 profile, one command, 4 of 8 NPUs — and its 4x96 GB
     # clears this variant's 200 GB minimum. 0731 itself was run on 950PR.
-    supported_hardware: [h200, b200, gb200, b300, gb300, dgx_station_gb300, dgx_spark_gb10, rtx_pro_6000_8x, mi300x, mi325x, mi355x, ascend_950pr_8x, ascend_950dt_8x]
+    supported_hardware: [h100, h200, b200, gb200, b300, gb300, dgx_station_gb300, dgx_spark_gb10, rtx_pro_6000_8x, mi300x, mi325x, mi355x, ascend_950pr_8x, ascend_950dt_8x]
     min_vllm_version: "0.25.0"
     docker_image: "vllm/vllm-openai:v0.28.0"
     default_modes:
@@ -304,7 +304,8 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 170
     description: "NVIDIA modelopt NVFP4 checkpoint (MoE experts NVFP4; attention, shared experts, router head, and MTP stay FP8) for Blackwell GPUs."
-    supported_hardware: [h200, b200, gb200, b300, gb300, dgx_station_gb300, dgx_spark_gb10, rtx_pro_6000_8x, mi300x, mi325x, mi355x]
+    # Unlike Inkling's NVFP4 checkpoint, no Hopper W4A16 fallback is documented.
+    supported_hardware: [b200, gb200, b300, gb300, dgx_station_gb300, dgx_spark_gb10, rtx_pro_6000_8x]
     hardware_overrides:
       dgx_spark_gb10:
         docker_image: "eugr/spark-vllm-b12x:latest"
@@ -875,6 +876,14 @@ guide: |
   replica on H200/B200/B300 (leaving headroom for throughput-vs-latency tuning).
   On DGX Station, use the single-GPU launch below. For disaggregated prefill/decode
   on GB200, use the PD Cluster tab.
+
+  ### H100 (8×80 GB)
+
+  The FP8 (0731) checkpoint is selectable on H100. A reported 8×H100 TP8 + EP
+  deployment served requests with vLLM 0.26.0, while the same deployment failed
+  during startup on 0.27.0, both with and without DSpark. The recipe's current
+  0.28.0 image has not been verified on H100; check startup and inference before
+  using it in production. See [vLLM #52065](https://github.com/vllm-project/vllm/issues/52065).
 
   ### DGX Spark (GB10) cluster
 
