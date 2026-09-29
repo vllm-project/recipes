@@ -150,14 +150,13 @@ variants:
       # One 8x B200 node provides 1440 GB HBM.
       b200:
         vram_minimum_gb: 1440
-    supported_hardware: [h100, h200, b200, b300, gb200, gb300, mi300x, mi325x, mi355x]
-    description: "Quantization-aware-trained MXFP4 weights with MXFP8 activations; footprint is estimated until the checkpoint is published."
-    hardware_overrides:
       # The MI355X path needs vllm-project/vllm#53940 (SiTUv2 a4w4 MoE routing),
       # which v0.30.0 (:latest) lacks, and #55966. InferenceX's digest-pinned
       # nightly has aged out of Docker Hub, so track the same ROCm 10.0 channel.
       mi355x:
         docker_image: "vllm/vllm-openai-rocm:nightly-rocm100"
+    supported_hardware: [h100, h200, b200, b300, gb200, gb300, mi300x, mi325x, mi355x]
+    description: "Quantization-aware-trained MXFP4 weights with MXFP8 activations; footprint is estimated until the checkpoint is published."
   nvfp4:
     precision: nvfp4
     vram_minimum_gb: 1650
