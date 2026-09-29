@@ -411,6 +411,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const requestedVariant = recipe.variants?.[searchParams.get("variant") || "default"] || recipe.variants?.default || {};
   const requestedHwProfile = taxonomy.hardware_profiles?.[requestedHwId] || {};
   const requestedHwAllowed = requestedHwId
+    && taxonomy.hardware_profiles?.[requestedHwId]
+    && (!requestedHwProfile.restricted || requestedHwId in (recipe.meta?.hardware || {}))
     && isPrecisionCompatible(requestedHwProfile, requestedVariant)
     && isHardwareSupported(recipe, requestedHwId)
     && isVariantHardwareSupported(requestedVariant, requestedHwId, requestedHwProfile);
