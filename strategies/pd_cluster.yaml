@@ -60,6 +60,7 @@ smg:
   docs: "https://lightseek.org/smg/getting-started/pd-disaggregation#vllm-pd-over-http"
   version: "1.11.0"
   install: 'uv pip install "smg==1.11.0"'
+  docker_image: "lightseekorg/smg:1.11.0"
   policy: round_robin
 
 # Alternative PD orchestrator: NVIDIA Dynamo. Picked from the "PD Router" row

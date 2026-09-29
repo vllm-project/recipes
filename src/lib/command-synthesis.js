@@ -1912,6 +1912,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         : smg ? {
             label: "SMG",
             command: `smg launch \\\n    --pd-disaggregation \\\n    --policy ${smg.policy || "round_robin"} \\\n    --host 0.0.0.0 \\\n    --port $ROUTER_PORT`,
+            dockerCommand: `docker run --rm --network host \\\n    ${smg.docker_image} \\\n    --pd-disaggregation \\\n    --policy ${smg.policy || "round_robin"} \\\n    --host 0.0.0.0 \\\n    --port $ROUTER_PORT`,
             install: smg.install,
           } : {
             command: routerCommand,

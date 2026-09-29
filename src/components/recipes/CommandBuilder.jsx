@@ -1581,7 +1581,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         ...result,
         prefill: { ...result.prefill, command: sub(result.prefill.command), env: substituteEnv(result.prefill.env, effectiveEndpoints) },
         decode:  { ...result.decode,  command: sub(result.decode.command),  env: substituteEnv(result.decode.env,  effectiveEndpoints) },
-        router:  { ...result.router,  command: sub(result.router.command), ...(result.router.env ? { env: substituteEnv(result.router.env, effectiveEndpoints) } : {}) },
+        router:  { ...result.router,  command: sub(result.router.command), ...(result.router.dockerCommand ? { dockerCommand: sub(result.router.dockerCommand) } : {}), ...(result.router.env ? { env: substituteEnv(result.router.env, effectiveEndpoints) } : {}) },
         ...(result.infra ? { infra: { ...result.infra, command: sub(result.infra.command) } } : {}),
         ...(result.registration ? { registration: { ...result.registration, command: sub(result.registration.command) } } : {}),
         ...(result.mooncake ? {
@@ -1689,7 +1689,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       }
     }
     if (result.orchestrator === "smg") {
-      deps.push({ command: result.router.install, note: "SMG — install on the router host", install_modes: ["pip", "docker"] });
+      deps.push({ command: result.router.install, note: "SMG — install on the router host", install_modes: ["pip"] });
     }
     return deps;
   }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall, result.router?.install]);
@@ -3728,9 +3728,9 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   // vllm-openai image's `vllm serve` entrypoint can't wrap — render them
   // pip-style (install hint above) regardless of install mode.
   const isDocker = installMode === "docker" && !isDynamo;
-  // Prefill/decode are `vllm serve` and get wrapped in `docker run`. The
-  // router is `vllm-router` (separate pip package, different entrypoint) —
-  // it stays as-is with its pip-install hint regardless of install mode.
+  // Prefill/decode use the vLLM image. SMG has its own CPU-only router
+  // image; vllm-router keeps its pip command and install hint.
+  const routerDocker = isDocker && result.router.dockerCommand;
   const wrap = (cmd, env) =>
     isDocker
       ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu })
@@ -3756,7 +3756,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
     ...(isDynamo && result.infra ? [{ id: "dyn_infra", label: result.infra.label, command: result.infra.command, env: {}, description: result.infra.description }] : []),
     { id: "prefill", label: "Prefill", command: wrap(result.prefill.command, result.prefill.env), env: result.prefill.env, meta: result.prefill },
     { id: "decode", label: "Decode", command: wrap(result.decode.command, result.decode.env), env: result.decode.env, meta: result.decode },
-    { id: "router", label: result.router.label || "Router", command: result.router.command, env: result.router.env || {}, install: result.router.install, isRouter: true },
+    { id: "router", label: result.router.label || "Router", command: routerDocker || result.router.command, env: result.router.env || {}, install: routerDocker ? null : result.router.install, isRouter: true },
     ...(result.registration ? [{ id: "registration", ...result.registration, env: {}, isRouter: true }] : []),
   ].map((t, i) => (mc || isDynamo || isSmg ? { ...t, step: i + 1 } : t));
   // When Mooncake is toggled on/off, jump to the leftmost tab so the launch
@@ -3770,7 +3770,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   const active = tabs.find((t) => t.id === tab) || tabs[0];
   // Docker mode folds env into `-e` flags inside `docker run` for prefill /
   // decode, so no prelude there. Router (and pip mode) keep the export-style
-  // env lines — router is `vllm-router` regardless of install mode.
+  // env lines (the SMG container command needs no environment prelude).
   const prelude = isDocker && !active.isRouter ? "" : envToExports(active.env);
   const fullScript = prelude ? `${prelude}\n\n${active.command}` : active.command;
   return (

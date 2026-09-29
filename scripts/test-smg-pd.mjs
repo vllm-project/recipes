@@ -80,6 +80,13 @@ test("SMG startup is separate from registration and workers retain Docker suppor
   assert.match(result.router.command, /^smg launch/);
   assert.match(result.router.command, /--pd-disaggregation/);
   assert.doesNotMatch(result.router.command, /--prefill |--decode |etcd|dynamo/);
+  const routerDocker = substitute(result.router.dockerCommand, { ROUTER_PORT: "31000" });
+  assert.match(routerDocker, /^docker run --rm --network host/);
+  assert.match(routerDocker, /lightseekorg\/smg:1\.11\.0/);
+  assert.match(routerDocker, /--pd-disaggregation/);
+  assert.match(routerDocker, /--port 31000/);
+  assert.doesNotMatch(routerDocker, /--gpus|vllm-openai|uv pip|smg launch/);
+  execFileSync("bash", ["-n"], { input: routerDocker });
   const meta = computeDockerMeta(recipe, recipe.variants.default, taxonomy.hardware_profiles.gb300, "gb300");
   const command = buildDockerRun({ command: result.prefill.command, env: result.prefill.env, image: meta.image, gpuFlags: meta.gpuFlags });
   assert.match(command, /vllm\/vllm-openai:mimo-v26/);
