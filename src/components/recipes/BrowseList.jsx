@@ -72,7 +72,7 @@ const HARDWARE_BRAND_LOGOS = {
   AMD: "/providers/amd.png",
   Google: "/providers/Google.png",
   Intel: "/providers/intel.png",
-  Huawei: "/providers/ascend.png",
+  Huawei: "/providers/huawei.png",
 };
 
 const SORT_OPTIONS = [
