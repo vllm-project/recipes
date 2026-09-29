@@ -4,7 +4,7 @@ meta:
   provider: "Thinking Machines Lab"
   description: "Natively multimodal 276B-parameter MoE from Thinking Machines Lab — 12B active parameters, text/image/audio in, text out, and up to 1M context."
   date_added: 2026-07-30
-  date_updated: 2026-08-04
+  date_updated: 2026-09-29
   difficulty: intermediate
   tasks:
     - multimodal
@@ -68,18 +68,17 @@ variants:
       brand: NVIDIA
     vram_minimum_gb: 180
     supported_hardware:
-      - b300
-      - b200
-      - gb200
-      - gb300
-      - h200
+      - arch:sm90
+      - arch:sm100
+      - arch:sm103
     tp:
+      hopper: 4
       b300: 1
       b200: 2
       gb200: 2
       gb300: 1
       h200: 2
-    description: "NVFP4 checkpoint requiring at least 180 GB aggregated VRAM: W4A4 with TP1 on B300/GB300 or TP2 on B200/GB200, and W4A16 with TP2 on H200."
+    description: "NVFP4 checkpoint requiring at least 180 GB aggregated VRAM: W4A4 with TP1 on B300/GB300 or TP2 on B200/GB200, and W4A16 with TP4 on H100 or TP2 on H200."
     extra_args:
       - "--kernel-config.enable_flashinfer_autotune=False"
     extra_env:
@@ -281,8 +280,8 @@ guide: |
   ## Variants
 
   - **NVFP4 (default):** Requires at least 180 GB aggregated VRAM. Run W4A4 with TP1
-    on B300/GB300 or TP2 on B200/GB200. On H200, run W4A16 with TP2; the MoE kernel
-    dequantizes the NVFP4 weights to BF16 on the fly.
+    on B300/GB300 or TP2 on B200/GB200. On Hopper, run W4A16 with TP4 on H100
+    or TP2 on H200; the MoE kernel dequantizes the NVFP4 weights to BF16 on the fly.
   - **BF16:** Requires at least 600 GB aggregated VRAM. Run TP4 on B300/GB200/GB300
     or AMD MI300X/MI325X/MI355X, and TP8 on B200/H200. MI355X TP4 is validated;
     direct MI300X/MI325X BF16 smoke is pending.
@@ -292,7 +291,7 @@ guide: |
 
   ## Prerequisites
 
-  - **Hardware:** B300/GB300 TP1 or B200/GB200/H200 TP2 for NVFP4;
+  - **Hardware:** B300/GB300 TP1, B200/GB200/H200 TP2, or H100 TP4 for NVFP4;
     B300/GB200/GB300/MI300X/MI325X/MI355X TP4 or B200/H200 TP8 for BF16;
     MI355X TP1 or MI300X/MI325X TP2 for AMD MXFP4.
   - **vLLM:** A nightly build with Inkling support.
@@ -316,8 +315,11 @@ guide: |
   ```
 
   Select **GB300** for W4A4 with TP1, or **B200**/**GB200** for W4A4 with TP2.
-  On H200, the builder emits TP2 and vLLM runs W4A16 with on-the-fly
-  dequantization.
+  On H100, the builder emits TP4; on H200, it emits TP2. vLLM runs W4A16 with on-the-fly
+  dequantization. A reported 4×H100 deployment served a plain chat request, but
+  JSON-schema structured output returned HTTP 500; see
+  [vLLM #51693](https://github.com/vllm-project/vllm/issues/51693). H100 is not
+  marked verified for the full recipe.
 
   On AMD, select the **MXFP4** variant. To fit 1M context, MI300X TP2 and MI355X TP1.
   MI355X uses `--moe-backend aiter`; MI300X uses `--moe-backend auto`
