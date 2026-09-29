@@ -1,13 +1,13 @@
 /**
- * Build-time: fetch HF org avatars to public/providers/<hf_org>.<ext>.
+ * Build-time: fetch provider and hardware logos to public/providers/.
  *
  * Two sources feed this:
  *  1. src/lib/providers.js — model providers (DeepSeek, Qwen, …). Each has a
  *     logo path like "/providers/<hf_org>.png".
  *  2. HARDWARE_LOGOS below — hardware vendors shown in the Hardware filter row
- *     of BrowseList.jsx (AMD, Intel). These aren't model providers, so they're
- *     not in PROVIDERS, but the filter still needs their avatars. NVIDIA and
- *     Google ride along for free because they're also in PROVIDERS.
+ *     of BrowseList.jsx. These aren't model providers, so they're not in
+ *     PROVIDERS. Huawei's logo comes from its official site; NVIDIA and Google
+ *     ride along because they're also providers.
  *
  * Populates these files at build time so Vercel's CDN serves them globally.
  * public/ is gitignored, so anything not fetched here 404s in production.
@@ -18,11 +18,15 @@ import fs from "fs";
 import path from "path";
 import { PROVIDERS } from "../src/lib/providers.js";
 
-// Hardware vendors referenced by BrowseList.jsx's HW_BRANDS that have no entry
-// in PROVIDERS. logo path must match what BrowseList.jsx points <img src> at.
+// Hardware vendors referenced by BrowseList.jsx that have no entry in
+// PROVIDERS. Huawei uses its official site logo rather than an HF org avatar.
 const HARDWARE_LOGOS = {
   amd: { logo: "/providers/amd.png" },
   Intel: { logo: "/providers/intel.png" },
+  Huawei: {
+    logo: "/providers/huawei.png",
+    url: "https://consumer.huawei.com/dam/content/dam/huawei-cbg-site/common/huawei-logo.png",
+  },
 };
 
 const OUT = "public/providers";
@@ -52,13 +56,14 @@ for (const [org, meta] of Object.entries(targets)) {
     continue;
   }
   try {
-    const avatarUrl = await fetchOrgAvatarUrl(org);
+    const avatarUrl = meta.url || await fetchOrgAvatarUrl(org);
     if (!avatarUrl) {
       console.warn(`⚠ no avatar found for ${org}`);
       failed++;
       continue;
     }
     const imgRes = await fetch(avatarUrl);
+    if (!imgRes.ok) throw new Error(`image request failed (${imgRes.status})`);
     const buffer = Buffer.from(await imgRes.arrayBuffer());
     fs.writeFileSync(localPath, buffer);
     console.log(`✓ ${org} (${buffer.length}B)`);

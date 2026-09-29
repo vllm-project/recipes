@@ -1,5 +1,7 @@
 import { Suspense } from "react";
 import { getAllRecipes } from "@/lib/recipes";
+import { loadTaxonomy } from "@/lib/taxonomy";
+import { isHardwareSupported, variantRunsOnHardware } from "@/lib/command-synthesis";
 import { BrowseList } from "@/components/recipes/BrowseList";
 
 export const metadata = {
@@ -9,11 +11,25 @@ export const metadata = {
 
 export default function BrowsePage() {
   const recipes = getAllRecipes();
+  const hardwareProfiles = Object.entries(loadTaxonomy().hardware_profiles);
   // Slim payload — drop the heavy `guide` markdown before sending to the
   // client, same shape the search box uses but with the fields BrowseList
   // needs for filtering and display.
   const slim = recipes.map((r) => {
     const v = r.variants?.default || {};
+    const variants = Object.entries(r.variants || {})
+      .filter(([, variant]) => variant?.precision)
+      .map(([key, variant]) => ({
+        key,
+        precision: variant.precision,
+        hardware: hardwareProfiles
+          .filter(([id, profile]) =>
+            isHardwareSupported(r, id)
+            && (!profile.restricted || id in (r.meta?.hardware || {}))
+            && variantRunsOnHardware(profile, variant, id)
+          )
+          .map(([id]) => id),
+      }));
     return {
       hf_id: r.hf_id,
       hf_org: r.hf_org,
@@ -42,9 +58,8 @@ export default function BrowsePage() {
       // / INT4 / etc. typically ship as *non-default* variants (quantized
       // checkpoints), so a precision filter that only inspects the default
       // would miss them. Used by BrowseList for both counts and matching.
-      precisions: [...new Set(
-        Object.values(r.variants || {}).map((vv) => vv?.precision).filter(Boolean)
-      )],
+      precisions: [...new Set(variants.map((variant) => variant.precision))],
+      variants,
     };
   });
 
@@ -57,7 +72,14 @@ export default function BrowsePage() {
         </p>
       </header>
       <Suspense fallback={<div className="text-sm text-muted-foreground py-8">Loading...</div>}>
-        <BrowseList recipes={slim} />
+        <BrowseList
+          recipes={slim}
+          hardwareOptions={hardwareProfiles.map(([id, profile]) => ({
+            id,
+            brand: profile.brand,
+            label: profile.display_name,
+          }))}
+        />
       </Suspense>
 
       {/* Server-rendered crawlable index. BrowseList above is client-rendered,
@@ -65,21 +87,25 @@ export default function BrowsePage() {
           them and search engines can only discover them via the sitemap. A
           plain <a> list gives every recipe a real internal link from this
           indexable hub page. */}
-      <nav aria-label="All recipes" className="mt-12 pt-6 border-t border-border">
-        <h2 className="text-sm font-semibold text-muted-foreground mb-3">All recipes</h2>
-        <ul className="columns-2 sm:columns-3 lg:columns-4 gap-x-6 text-sm">
-          {slim
-            .slice()
-            .sort((a, b) => a.hf_id.localeCompare(b.hf_id))
-            .map((r) => (
-              <li key={r.hf_id} className="mb-1 break-inside-avoid">
-                <a href={`/${r.hf_org}/${r.hf_repo}`} className="text-vllm-blue hover:underline">
-                  {r.hf_id}
-                </a>
-              </li>
-            ))}
-        </ul>
-      </nav>
+      <details className="mt-12 border-t border-border pt-6">
+        <summary className="w-fit cursor-pointer text-sm font-semibold text-muted-foreground hover:text-foreground">
+          All recipes ({slim.length})
+        </summary>
+        <nav aria-label="All recipes" className="mt-3">
+          <ul className="columns-2 sm:columns-3 lg:columns-4 gap-x-6 text-sm">
+            {slim
+              .slice()
+              .sort((a, b) => a.hf_id.localeCompare(b.hf_id))
+              .map((r) => (
+                <li key={r.hf_id} className="mb-1 break-inside-avoid">
+                  <a href={`/${r.hf_org}/${r.hf_repo}`} className="text-vllm-blue hover:underline">
+                    {r.hf_id}
+                  </a>
+                </li>
+              ))}
+          </ul>
+        </nav>
+      </details>
     </main>
   );
 }

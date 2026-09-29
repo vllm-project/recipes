@@ -29,11 +29,13 @@ const ARCH_META = {
 const PRECISION_DOT = {
   bf16:  "w-2 h-2 bg-blue-500",
   fp8:   "w-2 h-2 bg-amber-500",
+  mxfp8: "w-2 h-2 bg-orange-500",
   fp4:   "w-2 h-2 bg-pink-500",
   nvfp4: "w-2 h-2 bg-fuchsia-500",
   mxfp4: "w-2 h-2 bg-rose-500",
   int8:  "w-2 h-2 bg-emerald-500",
   int4:  "w-2 h-2 bg-green-600",
+  "int2/4/8": "w-2 h-2 bg-lime-600",
 };
 // "120B" -> 120, "1.2B" -> 1.2, "1T" -> 1000, "" -> 0.
 // `parameter_count` is a free-form string in YAMLs; this normalises to
@@ -64,58 +66,14 @@ const SIZE_BUCKETS = [
 
 const TASK_OPTIONS = ["text", "multimodal", "omni", "embedding"];
 const ARCH_OPTIONS = ["moe", "dense"];
-const PRECISION_OPTIONS = ["bf16", "fp8", "fp4", "nvfp4", "mxfp4", "int4", "int8"];
-// Hardware grouped by brand — rendered as stacked sub-rows under the
-// Hardware filter so the visual separation is unambiguous. Single source
-// of truth: HARDWARE_BY_ID is derived from this for lookups elsewhere
-// (active-filter pills, result rows).
-const HW_BRANDS = [
-  {
-    name: "NVIDIA",
-    logo: "/providers/nvidia.png",
-    items: [
-      { id: "h100", label: "H100" },
-      { id: "h200", label: "H200" },
-      { id: "b200", label: "B200" },
-      { id: "b300", label: "B300" },
-      { id: "gb200", label: "GB200" },
-      { id: "gb300", label: "GB300" },
-      { id: "dgx_station_gb300", label: "DGX Station" },
-      { id: "dgx_spark_gb10", label: "DGX Spark" },
-      { id: "rtx_pro_6000", label: "RTX Pro 6000" },
-      { id: "rtx_5090", label: "RTX 5090" },
-    ],
-  },
-  {
-    name: "AMD",
-    logo: "/providers/amd.png",
-    items: [
-      { id: "mi300x", label: "MI300X" },
-      { id: "mi325x", label: "MI325X" },
-      { id: "mi355x", label: "MI355X" },
-    ],
-  },
-  {
-    name: "Google",
-    logo: "/providers/Google.png",
-    items: [
-      { id: "trillium", label: "TPU v6e" },
-      { id: "ironwood", label: "TPU v7" },
-    ],
-  },
-  {
-    name: "Intel",
-    logo: "/providers/intel.png",
-    items: [
-      { id: "xeon6", label: "Xeon 6" },
-      { id: "xeon5", label: "Xeon 5" },
-    ],
-  },
-];
-
-const HARDWARE_BY_ID = Object.fromEntries(
-  HW_BRANDS.flatMap((b) => b.items.map((it) => [it.id, it]))
-);
+const PRECISION_OPTIONS = ["bf16", "fp8", "mxfp8", "fp4", "nvfp4", "mxfp4", "int8", "int4", "int2/4/8"];
+const HARDWARE_BRAND_LOGOS = {
+  NVIDIA: "/providers/nvidia.png",
+  AMD: "/providers/amd.png",
+  Google: "/providers/Google.png",
+  Intel: "/providers/intel.png",
+  Huawei: "/providers/huawei.png",
+};
 
 const SORT_OPTIONS = [
   { id: "released", label: "Newest" },
@@ -125,15 +83,34 @@ const SORT_OPTIONS = [
   { id: "name", label: "Name" },
 ];
 
-export function BrowseList({ recipes }) {
+function matchingVariant(recipe, precision, hardware) {
+  const matches = recipe.variants.filter((variant) =>
+    (!precision || variant.precision === precision)
+    && (!hardware || variant.hardware.includes(hardware))
+  );
+  return matches.find((variant) => variant.key === "default") || matches[0];
+}
+
+export function BrowseList({ recipes, hardwareOptions }) {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const hardwareById = useMemo(
+    () => Object.fromEntries(hardwareOptions.map((option) => [option.id, option])),
+    [hardwareOptions],
+  );
+  const hardwareBrands = useMemo(() => {
+    const groups = new Map();
+    for (const option of hardwareOptions) {
+      if (!groups.has(option.brand)) groups.set(option.brand, []);
+      groups.get(option.brand).push(option);
+    }
+    return [...groups].map(([name, items]) => ({ name, items, logo: HARDWARE_BRAND_LOGOS[name] }));
+  }, [hardwareOptions]);
 
-  // Single useMemo so the Sets keep stable identity across renders. Without
-  // this, downstream useMemos that depend on tasks/archs/etc. invalidate on
-  // every render (Set identity changes even if URL didn't).
+  // Single useMemo so the Sets keep stable identity across renders. Each row
+  // holds at most one choice, including when opening an older multi-select URL.
   const { tasks, archs, sizes, precisions, hardware, provider, sort, q } = useMemo(() => {
-    const setOf = (k) => new Set((searchParams.get(k) || "").split(",").filter(Boolean));
+    const setOf = (k) => new Set((searchParams.get(k) || "").split(",").filter(Boolean).slice(0, 1));
     return {
       tasks: setOf("task"),
       archs: setOf("arch"),
@@ -159,11 +136,14 @@ export function BrowseList({ recipes }) {
   const update = useCallback(
     (patch) => {
       const sp = new URLSearchParams(searchParams.toString());
+      for (const key of ["task", "arch", "size", "precision", "hw"]) {
+        const first = sp.get(key)?.split(",").find(Boolean);
+        if (first) sp.set(key, first);
+        else sp.delete(key);
+      }
       for (const [k, v] of Object.entries(patch)) {
-        if (v === "" || v == null || (Array.isArray(v) && v.length === 0)) {
+        if (v === "" || v == null) {
           sp.delete(k);
-        } else if (Array.isArray(v)) {
-          sp.set(k, v.join(","));
         } else {
           sp.set(k, v);
         }
@@ -176,25 +156,17 @@ export function BrowseList({ recipes }) {
 
   const toggle = useCallback(
     (key, value) => {
-      const cur = new Set((searchParams.get(key) || "").split(",").filter(Boolean));
-      if (cur.has(value)) cur.delete(value);
-      else cur.add(value);
-      update({ [key]: [...cur] });
+      const selected = (searchParams.get(key) || "").split(",").find(Boolean);
+      update({ [key]: selected === value ? "" : value });
     },
     [searchParams, update]
   );
 
   const removeOne = useCallback(
-    (key, value) => {
-      if (key === "provider" || key === "q") {
-        update({ [key]: "" });
-        return;
-      }
-      const cur = new Set((searchParams.get(key) || "").split(",").filter(Boolean));
-      cur.delete(value);
-      update({ [key]: [...cur] });
+    (key) => {
+      update({ [key]: "" });
     },
-    [searchParams, update]
+    [update]
   );
 
   const providers = useMemo(() => {
@@ -204,8 +176,11 @@ export function BrowseList({ recipes }) {
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [recipes]);
 
+  const selectedPrecision = [...precisions][0] || null;
+  const selectedHardware = [...hardware][0] || null;
+
   // Counts shown next to each chip — based on the *other* active filters,
-  // so toggling a chip on the same row doesn't suddenly zero it out.
+  // so changing the choice in one row doesn't suddenly zero it out.
   const counts = useMemo(() => {
     const matchExcept = (r, exclude) => {
       if (!matchesQ(r)) return false;
@@ -216,12 +191,11 @@ export function BrowseList({ recipes }) {
         const bucket = SIZE_BUCKETS.find((x) => x.test(b))?.id;
         if (!bucket || !sizes.has(bucket)) return false;
       }
-      if (exclude !== "precision" && precisions.size > 0 && !(r.precisions || []).some((p) => precisions.has(p))) return false;
-      if (exclude !== "hw" && hardware.size > 0) {
-        const hw = r.meta.hardware || {};
-        const ok = [...hardware].some((h) => hw[h] === "verified");
-        if (!ok) return false;
-      }
+      if (!matchingVariant(
+        r,
+        exclude === "precision" ? null : selectedPrecision,
+        exclude === "hw" ? null : selectedHardware,
+      )) return false;
       if (exclude !== "provider" && provider && r.hf_org !== provider) return false;
       return true;
     };
@@ -242,10 +216,14 @@ export function BrowseList({ recipes }) {
         const id = SIZE_BUCKETS.find((x) => x.test(b))?.id;
         return id ? [id] : [];
       }),
-      precision: tally("precision", (r) => r.precisions || []),
-      hw: tally("hw", (r) => Object.entries(r.meta.hardware || {}).filter(([, s]) => s === "verified").map(([h]) => h)),
+      precision: tally("precision", (r) => [...new Set(r.variants
+        .filter((variant) => !selectedHardware || variant.hardware.includes(selectedHardware))
+        .map((variant) => variant.precision))]),
+      hw: tally("hw", (r) => [...new Set(r.variants
+        .filter((variant) => !selectedPrecision || variant.precision === selectedPrecision)
+        .flatMap((variant) => variant.hardware))]),
     };
-  }, [recipes, tasks, archs, sizes, precisions, hardware, provider, matchesQ]);
+  }, [recipes, tasks, archs, sizes, selectedPrecision, selectedHardware, provider, matchesQ]);
 
   const filtered = useMemo(() => {
     const out = recipes.filter((r) => {
@@ -257,12 +235,7 @@ export function BrowseList({ recipes }) {
         const id = SIZE_BUCKETS.find((x) => x.test(b))?.id;
         if (!id || !sizes.has(id)) return false;
       }
-      if (precisions.size > 0 && !(r.precisions || []).some((p) => precisions.has(p))) return false;
-      if (hardware.size > 0) {
-        const hw = r.meta.hardware || {};
-        const ok = [...hardware].some((h) => hw[h] === "verified");
-        if (!ok) return false;
-      }
+      if (!matchingVariant(r, selectedPrecision, selectedHardware)) return false;
       if (provider && r.hf_org !== provider) return false;
       return true;
     });
@@ -275,15 +248,12 @@ export function BrowseList({ recipes }) {
       name: (a, b) => a.hf_id.localeCompare(b.hf_id),
     }[sort] || ((a, b) => 0);
     return [...out].sort(cmp);
-  }, [recipes, tasks, archs, sizes, precisions, hardware, provider, sort, matchesQ]);
+  }, [recipes, tasks, archs, sizes, selectedPrecision, selectedHardware, provider, sort, matchesQ]);
 
   const activeCount =
     tasks.size + archs.size + sizes.size + precisions.size + hardware.size +
     (provider ? 1 : 0) + (q ? 1 : 0);
   const hasFilters = activeCount > 0;
-  // A recipe page accepts one hardware profile. Preserve an unambiguous
-  // Browse selection when opening a result; multi-select stays unpinned.
-  const selectedHardware = hardware.size === 1 ? [...hardware][0] : null;
 
   // Flat list of currently-applied filters for the inline pills shown when
   // the panel is collapsed. Keeps user oriented without forcing a panel
@@ -299,12 +269,12 @@ export function BrowseList({ recipes }) {
     }
     for (const p of precisions) out.push({ key: "precision", value: p, label: p.toUpperCase() });
     for (const h of hardware) {
-      const opt = HARDWARE_BY_ID[h];
+      const opt = hardwareById[h];
       if (opt) out.push({ key: "hw", value: h, label: opt.label });
     }
     if (provider) out.push({ key: "provider", value: provider, label: getProviderDisplayName(provider) });
     return out;
-  }, [q, tasks, archs, sizes, precisions, hardware, provider]);
+  }, [q, tasks, archs, sizes, precisions, hardware, provider, hardwareById]);
 
   // Panel state persists in the URL (`?panel=open`) so a refresh keeps
   // whatever the user had. Default is closed — applied filters are
@@ -314,7 +284,13 @@ export function BrowseList({ recipes }) {
   const setOpen = (next) =>
     update({ panel: (typeof next === "function" ? next(open) : next) ? "open" : "" });
 
-  const clearAll = () => router.replace(window.location.pathname + (sort !== "released" ? `?sort=${sort}` : ""), { scroll: false });
+  const clearAll = () => {
+    const sp = new URLSearchParams();
+    if (sort !== "released") sp.set("sort", sort);
+    if (open) sp.set("panel", "open");
+    const qs = sp.toString();
+    router.replace(qs ? `?${qs}` : window.location.pathname, { scroll: false });
+  };
 
   return (
     <div className="space-y-3">
@@ -354,7 +330,7 @@ export function BrowseList({ recipes }) {
         {!open && hasFilters && (
           <div className="flex flex-wrap items-center gap-1.5">
             {activeFilters.map((f) => (
-              <ActivePill key={`${f.key}:${f.value}`} onRemove={() => removeOne(f.key, f.value)}>
+              <ActivePill key={`${f.key}:${f.value}`} onRemove={() => removeOne(f.key)}>
                 {f.label}
               </ActivePill>
             ))}
@@ -461,11 +437,14 @@ export function BrowseList({ recipes }) {
 
         <FilterRow label="Hardware">
           <div className="space-y-2.5">
-            {HW_BRANDS.map((brand) => (
+            <p className="text-xs text-muted-foreground">Shows recipes with a compatible variant. Verified hardware is marked in the results.</p>
+            {hardwareBrands.map((brand) => (
               <div key={brand.name} className="flex flex-wrap items-center gap-3">
                 <span className="inline-flex items-center gap-2 w-28 shrink-0">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={brand.logo} alt="" width={20} height={20} className="rounded shrink-0" aria-hidden />
+                  {brand.logo && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={brand.logo} alt="" width={20} height={20} className="rounded shrink-0" aria-hidden />
+                  )}
                   <span className="text-[12px] font-semibold uppercase tracking-wider text-foreground/80">
                     {brand.name}
                   </span>
@@ -516,11 +495,11 @@ export function BrowseList({ recipes }) {
             <div>Size</div>
             <div>Arch</div>
             <div>Precision</div>
-            <div>Verified on</div>
+            <div>{selectedHardware ? "Hardware status" : "Verified on"}</div>
             <div>Notes</div>
           </div>
           <ul className="divide-y divide-border">
-            {filtered.map((r) => <Row key={r.hf_id} recipe={r} hardware={selectedHardware} />)}
+            {filtered.map((r) => <Row key={r.hf_id} recipe={r} hardware={selectedHardware} precision={selectedPrecision} hardwareById={hardwareById} />)}
           </ul>
         </div>
       )}
@@ -588,6 +567,7 @@ function Chip({ active, count, onClick, icon: Icon, iconClass, dot, logo, mono, 
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-pressed={active}
       className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] transition-all ${style}`}
     >
       {Icon && <Icon size={13} className={leadIconColor} aria-hidden />}
@@ -619,8 +599,14 @@ function Chip({ active, count, onClick, icon: Icon, iconClass, dot, logo, mono, 
   );
 }
 
-function Row({ recipe, hardware }) {
+function Row({ recipe, hardware, precision, hardwareById }) {
   const r = recipe;
+  const variant = matchingVariant(r, precision, hardware);
+  const displayedPrecision = variant?.precision || r.variant?.precision;
+  const queryParams = new URLSearchParams();
+  if (variant?.key && variant.key !== "default") queryParams.set("variant", variant.key);
+  if (hardware) queryParams.set("hardware", hardware);
+  const query = queryParams.toString();
   const isMoe = r.model.architecture === "moe";
   const params = r.model.parameter_count || "—";
   const active = r.model.active_parameters;
@@ -634,7 +620,7 @@ function Row({ recipe, hardware }) {
   return (
     <li>
       <Link
-        href={`/${r.hf_id}${hardware ? `?hardware=${encodeURIComponent(hardware)}` : ""}`}
+        href={`/${r.hf_id}${query ? `?${query}` : ""}`}
         className="group block px-4 py-3 hover:bg-muted/30 transition-colors md:grid md:grid-cols-[1fr_72px_64px_72px_140px_1fr] md:gap-3 md:items-center"
       >
         {/* Model */}
@@ -671,17 +657,21 @@ function Row({ recipe, hardware }) {
 
         {/* Precision */}
         <div className="hidden md:block text-xs font-mono uppercase">
-          {r.variant?.precision || "—"}
+          {displayedPrecision || "—"}
         </div>
 
         {/* Verified on */}
         <div className="hidden md:flex flex-wrap gap-1">
-          {verified.length === 0 ? (
+          {hardware ? (
+            <span className="text-[10px] text-muted-foreground">
+              {hardwareById[hardware]?.label || hardware} · {verified.includes(hardware) ? "Verified" : "Compatible"}
+            </span>
+          ) : verified.length === 0 ? (
             <span className="text-[10px] text-muted-foreground/50">—</span>
           ) : (
             verified.map((h) => (
               <span key={h} className="inline-block rounded border border-border px-1 py-0 text-[10px] font-mono text-muted-foreground">
-                {HARDWARE_BY_ID[h]?.label || h}
+                {hardwareById[h]?.label || h}
               </span>
             ))
           )}
@@ -697,11 +687,16 @@ function Row({ recipe, hardware }) {
           <span className="font-mono">{sizeLabel}</span>
           <span>·</span>
           <span>{isMoe ? "MoE" : "Dense"}</span>
-          {r.variant?.precision && (<><span>·</span><span className="font-mono uppercase">{r.variant.precision}</span></>)}
-          {verified.length > 0 && (
+          {displayedPrecision && (<><span>·</span><span className="font-mono uppercase">{displayedPrecision}</span></>)}
+          {hardware ? (
             <>
               <span>·</span>
-              <span className="font-mono">{verified.map((h) => HARDWARE_BY_ID[h]?.label || h).join(" ")}</span>
+              <span>{hardwareById[hardware]?.label || hardware} · {verified.includes(hardware) ? "Verified" : "Compatible"}</span>
+            </>
+          ) : verified.length > 0 && (
+            <>
+              <span>·</span>
+              <span className="font-mono">{verified.map((h) => hardwareById[h]?.label || h).join(" ")}</span>
             </>
           )}
         </div>
