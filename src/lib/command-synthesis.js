@@ -319,10 +319,10 @@ export function isHardwareSupported(recipe, hwId) {
 }
 
 /**
- * Variant-level hardware selectors. Entries may be exact profile ids,
- * `generation:<name>`, or `brand:<name>`. Missing/empty inherits normal
- * precision compatibility. Broad selectors admit future profiles in the same
- * hardware family without editing every recipe.
+ * Variant-level hardware selectors. Entries may be exact profile ids or
+ * `arch:<compute_arch>`. Missing/empty inherits normal precision compatibility.
+ * Architecture selectors admit future profiles with the same GPU ISA without
+ * confusing data-center Blackwell (SM100/SM103) with workstation SM120/SM121.
  */
 export function isVariantHardwareSupported(variant, hwId, profile = null) {
   const supported = variant?.supported_hardware;
@@ -330,8 +330,7 @@ export function isVariantHardwareSupported(variant, hwId, profile = null) {
   return supported.some((entry) => {
     if (entry === hwId) return true;
     if (!profile) return false;
-    if (entry.startsWith("generation:")) return profile.generation === entry.slice(11);
-    if (entry.startsWith("brand:")) return profile.brand?.toLowerCase() === entry.slice(6).toLowerCase();
+    if (entry.startsWith("arch:")) return profile.compute_arch === entry.slice(5);
     return false;
   });
 }

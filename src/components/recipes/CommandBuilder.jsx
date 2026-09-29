@@ -363,8 +363,7 @@ const MOONCAKE_DOCS_URL =
 const MOONCAKE_PILL_ORDER = 3;
 
 function hardwareSelectorLabel(selector, profiles) {
-  if (selector.startsWith("generation:")) return `${selector.slice(11)} GPUs`;
-  if (selector.startsWith("brand:")) return `${selector.slice(6)} GPUs`;
+  if (selector.startsWith("arch:")) return `${selector.slice(5).toUpperCase()} GPUs`;
   return profiles?.[selector]?.display_name || selector;
 }
 

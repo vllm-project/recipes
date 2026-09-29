@@ -142,7 +142,7 @@ variants:
     # release. 950DT is offered on the same grounds the FP8 (Preview) row
     # already uses — one A5 profile, one command, 4 of 8 NPUs — and its 4x96 GB
     # clears this variant's 200 GB minimum. 0731 itself was run on 950PR.
-    supported_hardware: [generation:hopper, generation:blackwell, brand:AMD, ascend_950pr_8x, ascend_950dt_8x]
+    supported_hardware: [arch:sm90, arch:sm100, arch:sm103, arch:gfx942, mi355x, rtx_pro_6000_8x, dgx_spark_gb10, ascend_950pr_8x, ascend_950dt_8x]
     min_vllm_version: "0.25.0"
     docker_image: "vllm/vllm-openai:v0.28.0"
     default_modes:
@@ -305,7 +305,8 @@ variants:
     vram_minimum_gb: 170
     description: "NVIDIA modelopt NVFP4 checkpoint (MoE experts NVFP4; attention, shared experts, router head, and MTP stay FP8) for Blackwell GPUs."
     # Unlike Inkling's NVFP4 checkpoint, no Hopper W4A16 fallback is documented.
-    # The default NVFP4 precision constraint already limits this to Blackwell.
+    # SM120/SM121 need the exact profile-specific runtime paths below.
+    supported_hardware: [arch:sm100, arch:sm103, rtx_pro_6000_8x, dgx_spark_gb10]
     hardware_overrides:
       dgx_spark_gb10:
         docker_image: "eugr/spark-vllm-b12x:latest"
@@ -371,7 +372,7 @@ variants:
     precision: fp8
     vram_minimum_gb: 200
     description: "Preview FP4+FP8 weights with the DSpark draft module baked in — same base checkpoint as the default variant plus a fused speculative decoder."
-    supported_hardware: [h200, generation:blackwell, brand:AMD]
+    supported_hardware: [h200, arch:sm100, arch:sm103, arch:gfx942, mi355x, rtx_pro_6000_8x, dgx_spark_gb10]
     # DSpark drafting landed in 0.25.0; 0.26.0 is the first release where it also
     # works on the MI325X/MI355X pills this recipe advertises (ROCm enablement).
     min_vllm_version: "0.25.0"

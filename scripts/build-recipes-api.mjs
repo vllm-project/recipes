@@ -227,7 +227,7 @@ function validateFeatureModes(recipe, sourceFile) {
 //
 // Three keyspaces, matching the schema in CLAUDE.md:
 //   - exact:   only a taxonomy profile id (`meta.hardware`)
-//   - variant selectors: profile id, `generation:<name>`, or `brand:<name>`
+//   - variant selectors: profile id or `arch:<compute_arch>`
 //   - layered: profile id > generation > brand > `default` (`strategy_hardware`,
 //              variant `tp`, `hardware_overrides`)
 function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
@@ -236,9 +236,11 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
   const ids = new Set(Object.keys(profiles));
   const generations = new Set();
   const brands = new Set();
+  const computeArchs = new Set();
   for (const p of Object.values(profiles)) {
     if (p?.generation) generations.add(p.generation);
     if (p?.brand) brands.add(String(p.brand).toLowerCase());
+    if (p?.compute_arch) computeArchs.add(p.compute_arch);
   }
   const layered = new Set([...ids, ...generations, ...brands, "default"]);
 
@@ -272,10 +274,8 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
   for (const [variantKey, variant] of Object.entries(recipe?.variants || {})) {
     const at = `variants.${variantKey}`;
     for (const k of variant?.supported_hardware || []) {
-      if (k.startsWith("generation:")) {
-        if (!generations.has(k.slice(11))) errors.push(`${at}.supported_hardware references unknown generation ${k}`);
-      } else if (k.startsWith("brand:")) {
-        if (!brands.has(k.slice(6).toLowerCase())) errors.push(`${at}.supported_hardware references unknown brand ${k}`);
+      if (k.startsWith("arch:")) {
+        if (!computeArchs.has(k.slice(5))) errors.push(`${at}.supported_hardware references unknown compute architecture ${k}`);
       } else {
         exact(`${at}.supported_hardware`, k);
       }

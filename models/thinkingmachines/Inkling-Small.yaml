@@ -68,8 +68,9 @@ variants:
       brand: NVIDIA
     vram_minimum_gb: 180
     supported_hardware:
-      - generation:hopper
-      - generation:blackwell
+      - arch:sm90
+      - arch:sm100
+      - arch:sm103
     tp:
       hopper: 4
       b300: 1
