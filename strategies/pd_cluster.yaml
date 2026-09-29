@@ -55,28 +55,27 @@ router:
 # under the Strategy row (URL ?pd_router=dynamo). Pools, parallelism and node
 # counts are identical to the native path — only the launcher and the front
 # door change: each role runs `python3 -m dynamo.vllm --disaggregation-mode
-# <role>` (workers register over etcd/NATS, no per-worker HTTP port) and
-# `dynamo.frontend` replaces vllm-router. Reference deployment:
+# <role>` (workers register in etcd and talk over the TCP request plane, no
+# per-worker HTTP port) and `dynamo.frontend` replaces vllm-router. Reference deployment:
 # https://github.com/SemiAnalysisAI/InferenceX/pull/2807 (MiniMax-M3 GB200).
 dynamo:
   display_name: "Dynamo"
   description: >
     NVIDIA Dynamo frontend + dynamo.vllm workers. Workers discover each other
-    through etcd/NATS instead of fixed HTTP endpoints, and the frontend adds
-    KV-aware / least-loaded routing. Same prefill/decode pools as the native
+    through etcd (TCP request plane, no NATS) instead of fixed HTTP
+    endpoints, and the frontend adds KV-aware / least-loaded routing. Same prefill/decode pools as the native
     vLLM router.
   docs: "https://docs.nvidia.com/dynamo/latest/backends/vllm/README.html"
   # Dynamo workers use NIXL/UCX + the NVIDIA runtime wheels — NVIDIA only.
   brands: [NVIDIA]
-  # Pinned to the release the InferenceX reference ran (Dynamo 1.3.1 with
-  # vLLM v0.27.1). Rendered in the extra-install block while Dynamo is picked;
-  # `optional: true` entries are dimmed and left out of Copy-all.
-  version: "1.3.1"
+  # Pinned to the latest Dynamo release (1.5.0). Rendered in the extra-install
+  # block while Dynamo is picked; `optional: true` entries are dimmed and left out of Copy-all.
+  version: "1.5.0"
   install:
-    - note: "NVIDIA Dynamo runtime — on every prefill / decode node and the frontend host (validated with vLLM v0.27.1)"
+    - note: "NVIDIA Dynamo runtime — on every prefill / decode node and the frontend host"
       command: >-
         uv pip install --extra-index-url https://pypi.nvidia.com
-        "ai-dynamo-runtime==1.3.1" "ai-dynamo==1.3.1"
+        "ai-dynamo-runtime==1.5.0" "ai-dynamo==1.5.0"
     - note: "Confirm the vLLM / Dynamo versions every node resolved"
       optional: true
       command: >-
@@ -86,8 +85,8 @@ dynamo:
   remove_args: ["--port"]
   env:
     ETCD_ENDPOINTS: "http://$DYN_CONTROL_IP:2379"
-    NATS_SERVER: "nats://$DYN_CONTROL_IP:4222"
     DYN_NAMESPACE: "vllm-pd"
+    # TCP request plane (Dynamo's default) — no NATS server needed.
     DYN_REQUEST_PLANE: "tcp"
   prefill:
     vllm_args:
@@ -102,13 +101,12 @@ dynamo:
       - "--kv-transfer-config"
       - '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_load_failure_policy":"fail"}'
   infra:
-    label: "etcd + NATS"
+    label: "etcd"
     description: "Control plane — start once on $DYN_CONTROL_IP before any worker or the frontend."
     command: |
       docker run -d --name dynamo-etcd --network host quay.io/coreos/etcd:v3.5.21 \
         etcd --listen-client-urls http://0.0.0.0:2379 \
         --advertise-client-urls http://$DYN_CONTROL_IP:2379
-      docker run -d --name dynamo-nats --network host nats:2.11 -js --max_payload 32MB
   frontend:
     label: "Frontend"
     router_mode: "round-robin"

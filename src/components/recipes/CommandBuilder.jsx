@@ -3724,7 +3724,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
     }] : []),
     ...(mc ? [{ id: "mc_master", label: "Mooncake Master", command: mc.master.command, env: {}, description: mc.master.description }] : []),
     ...(mc?.store ? [{ id: "mc_store", label: "Mooncake Store", command: mc.store.command, env: {}, description: mc.store.description }] : []),
-    // Dynamo: the etcd + NATS control plane comes first in the sequence.
+    // Dynamo: the etcd control plane comes first in the sequence.
     ...(isDynamo && result.infra ? [{ id: "dyn_infra", label: result.infra.label, command: result.infra.command, env: {}, description: result.infra.description }] : []),
     { id: "prefill", label: "Prefill", command: wrap(result.prefill.command, result.prefill.env), env: result.prefill.env, meta: result.prefill },
     { id: "decode", label: "Decode", command: wrap(result.decode.command, result.decode.env), env: result.decode.env, meta: result.decode },
