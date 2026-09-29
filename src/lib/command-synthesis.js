@@ -1914,6 +1914,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
             command: `smg launch \\\n    --pd-disaggregation \\\n    --policy ${smg.policy || "round_robin"} \\\n    --host 0.0.0.0 \\\n    --port $ROUTER_PORT`,
             dockerCommand: `docker run --rm --network host \\\n    ${smg.docker_image} \\\n    --pd-disaggregation \\\n    --policy ${smg.policy || "round_robin"} \\\n    --host 0.0.0.0 \\\n    --port $ROUTER_PORT`,
             install: smg.install,
+            dockerInstall: `docker pull ${smg.docker_image}`,
           } : {
             command: routerCommand,
             install: "uv pip install vllm-router",

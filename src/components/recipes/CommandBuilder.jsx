@@ -1690,9 +1690,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     }
     if (result.orchestrator === "smg") {
       deps.push({ command: result.router.install, note: "SMG — install on the router host", install_modes: ["pip"] });
+      deps.push({ command: result.router.dockerInstall, note: "SMG — pull on the router host", install_modes: ["docker"] });
     }
     return deps;
-  }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall, result.router?.install]);
+  }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall, result.router?.install, result.router?.dockerInstall]);
 
   // Status caption for the command block header.
   // Only `verified` is a positive signal worth surfacing; anything else

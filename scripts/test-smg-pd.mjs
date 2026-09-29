@@ -83,6 +83,7 @@ test("SMG startup is separate from registration and workers retain Docker suppor
   const routerDocker = substitute(result.router.dockerCommand, { ROUTER_PORT: "31000" });
   assert.match(routerDocker, /^docker run --rm --network host/);
   assert.match(routerDocker, /lightseekorg\/smg:1\.11\.0/);
+  assert.equal(result.router.dockerInstall, "docker pull lightseekorg/smg:1.11.0");
   assert.match(routerDocker, /--pd-disaggregation/);
   assert.match(routerDocker, /--port 31000/);
   assert.doesNotMatch(routerDocker, /--gpus|vllm-openai|uv pip|smg launch/);
