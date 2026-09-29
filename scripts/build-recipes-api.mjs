@@ -225,8 +225,9 @@ function validateFeatureModes(recipe, sourceFile) {
 // never renders, and — worse — an intended `unsupported` opt-out never disables
 // anything. Nothing downstream can detect that, hence the build-time check.
 //
-// Two keyspaces, matching the schema in CLAUDE.md:
-//   - exact:   only a taxonomy profile id (`meta.hardware`, `supported_hardware`)
+// Three keyspaces, matching the schema in CLAUDE.md:
+//   - exact:   only a taxonomy profile id (`meta.hardware`)
+//   - variant selectors: profile id, `generation:<name>`, or `brand:<name>`
 //   - layered: profile id > generation > brand > `default` (`strategy_hardware`,
 //              variant `tp`, `hardware_overrides`)
 function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
@@ -270,7 +271,15 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
 
   for (const [variantKey, variant] of Object.entries(recipe?.variants || {})) {
     const at = `variants.${variantKey}`;
-    for (const k of variant?.supported_hardware || []) exact(`${at}.supported_hardware`, k);
+    for (const k of variant?.supported_hardware || []) {
+      if (k.startsWith("generation:")) {
+        if (!generations.has(k.slice(11))) errors.push(`${at}.supported_hardware references unknown generation ${k}`);
+      } else if (k.startsWith("brand:")) {
+        if (!brands.has(k.slice(6).toLowerCase())) errors.push(`${at}.supported_hardware references unknown brand ${k}`);
+      } else {
+        exact(`${at}.supported_hardware`, k);
+      }
+    }
     for (const k of keysOf(variant?.hardware_overrides)) keyed(`${at}.hardware_overrides`, k);
     if (variant?.tp && typeof variant.tp === "object") {
       for (const k of keysOf(variant.tp)) keyed(`${at}.tp`, k);

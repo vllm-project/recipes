@@ -68,18 +68,14 @@ variants:
       brand: NVIDIA
     vram_minimum_gb: 180
     supported_hardware:
-      - b300
-      - b200
-      - gb200
-      - gb300
-      - h100
-      - h200
+      - generation:hopper
+      - generation:blackwell
     tp:
+      hopper: 4
       b300: 1
       b200: 2
       gb200: 2
       gb300: 1
-      h100: 4
       h200: 2
     description: "NVFP4 checkpoint requiring at least 180 GB aggregated VRAM: W4A4 with TP1 on B300/GB300 or TP2 on B200/GB200, and W4A16 with TP4 on H100 or TP2 on H200."
     extra_args:

@@ -319,13 +319,21 @@ export function isHardwareSupported(recipe, hwId) {
 }
 
 /**
- * Variant-level hardware allowlist. Missing/empty means the variant inherits
- * the recipe's normal hardware compatibility; otherwise only listed profile
- * ids may render or be selected.
+ * Variant-level hardware selectors. Entries may be exact profile ids,
+ * `generation:<name>`, or `brand:<name>`. Missing/empty inherits normal
+ * precision compatibility. Broad selectors admit future profiles in the same
+ * hardware family without editing every recipe.
  */
-export function isVariantHardwareSupported(variant, hwId) {
+export function isVariantHardwareSupported(variant, hwId, profile = null) {
   const supported = variant?.supported_hardware;
-  return !Array.isArray(supported) || supported.length === 0 || supported.includes(hwId);
+  if (!Array.isArray(supported) || supported.length === 0) return true;
+  return supported.some((entry) => {
+    if (entry === hwId) return true;
+    if (!profile) return false;
+    if (entry.startsWith("generation:")) return profile.generation === entry.slice(11);
+    if (entry.startsWith("brand:")) return profile.brand?.toLowerCase() === entry.slice(6).toLowerCase();
+    return false;
+  });
 }
 
 /**
@@ -455,7 +463,7 @@ export function listCompatibleHardware(hwProfiles, variant, recipe) {
     .filter(([id, p]) =>
       isPrecisionCompatible(p, variant)
       && isHardwareSupported(recipe, id)
-      && isVariantHardwareSupported(variant, id)
+      && isVariantHardwareSupported(variant, id, p)
     )
     .map(([id]) => id);
 }
@@ -521,7 +529,7 @@ export function isKvStoreBrandSupported(hwProfile) {
  */
 export function variantRunsOnHardware(hwProfile, variant, hwId = null) {
   if (!isPrecisionCompatible(hwProfile, variant)) return false;
-  if (hwId && !isVariantHardwareSupported(variant, hwId)) return false;
+  if (hwId && !isVariantHardwareSupported(variant, hwId, hwProfile)) return false;
   if (isHardwareScalable(hwProfile)) return true;
   return fitsSingleNode(hwProfile, variant, hwId);
 }
@@ -583,7 +591,7 @@ export function pickDefaultHardware(hwProfiles, variant, recipe) {
     ([id, p]) =>
       matchesConstraint(p, constraint)
       && isHardwareSupported(recipe, id)
-      && isVariantHardwareSupported(variant, id)
+      && isVariantHardwareSupported(variant, id, p)
       && (!p.restricted || id in declared)
   );
 
