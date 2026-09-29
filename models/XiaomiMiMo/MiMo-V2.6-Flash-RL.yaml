@@ -4,7 +4,7 @@ meta:
   provider: "MiMo (Xiaomi)"
   description: "Xiaomi's efficiency-balanced omnimodal MoE reasoning model (309B total / 15B active) with hybrid attention, FP8-compute/mxfp4-stored weights, 1M context, and a DFlash speculative decoder"
   date_added: 2026-09-22
-  date_updated: 2026-09-23
+  date_updated: 2026-09-29
   difficulty: intermediate
   tasks:
     - text
@@ -187,6 +187,51 @@ guide: |
   explicitly, add `"draft_tensor_parallel_size": 4` to the speculative config
   (useful if you want the draft on fewer GPUs than the target, or to silence
   mis-detection on asymmetric topologies).
+
+  ## Prefill/decode with SMG
+
+  Select **Prefill/Decode Disaggregation → SMG** in the command builder.
+  The [TP4 + TP4 GB300 example](?hardware=gb300&strategy=pd_cluster&pd_router=smg&prefill_nodes=1&decode_nodes=1&prefill_mode=tp&decode_mode=tp&features=tool_calling,reasoning&kv_offload=off&frontend=python)
+  uses two four-GPU pools. Pool sizing follows the selected hardware profile:
+  a full H100 or H200 node in the builder has eight GPUs.
+
+  SMG 1.11.0 fronts native vLLM HTTP workers. Keep the MiMo vLLM image and
+  `mimo` reasoning/tool parsers on the workers. Start with DFlash and KV
+  offload disabled. This recipe enables SMG for TP/TEP pools; DEP rank routing
+  and composed KV connectors require separate validation.
+
+  1. Fill in reachable worker and router addresses in **Endpoints**.
+  2. Start the **Prefill** and **Decode** commands on their respective GPU pools.
+  3. Install SMG on the router host and start the **SMG** command there.
+  4. Run **Register workers** after the workers are ready. Registration supplies
+     `runtime_type: vllm`, `kv_connector: NixlConnector`, and the producer or
+     consumer role, then checks SMG readiness.
+  5. Send the generated cURL request to SMG, using `n=1` for the PD baseline.
+
+  The HTTP ports and NIXL side-channel/data transport must be reachable between
+  the relevant hosts. A successful response alone does not prove KV handoff:
+  capture prefill/decode activity and NIXL transfer evidence on the decode
+  worker, and check that no KV-load failures or recomputation fallback occurred.
+  The recipe's existing hardware badges do not certify the SMG PD combination.
+
+  ### H100 smoke validation (2026-09-29)
+
+  Tested SMG 1.11.0 with two separate H100 hosts, allocating four H100 80GB
+  GPUs to each worker (TP4 prefill + TP4 decode). The MiMo image digest was
+  `sha256:5d8a6c5708f5673602b3c7eba0c3c00bd3678e655951a5b8a93c45e10780c42b`,
+  containing vLLM `0.29.1rc1.dev449+geb8798058` and NIXL 1.4.1. The model
+  revision was `5711b268169967567844e1e560e8a3966da959b1`.
+
+  This smoke run used `--max-model-len 8192`, `--gpu-memory-utilization 0.90`,
+  `--enforce-eager`, and `UCX_TLS=tcp,cuda_copy,cuda_ipc`, with DFlash disabled.
+  Four text requests (including streaming and concurrency two) produced
+  16 completed NIXL transfers across the four TP ranks, totaling 207,175,680
+  bytes, with zero transfer failures. Separate tool-call and reasoning checks
+  also passed. This validates HTTP PD handoff and parsing for this configuration;
+  it is not a throughput benchmark or validation of multimodal inputs, DFlash,
+  long context, or the builder's full-node H100 TP8 configuration.
+
+  See [SMG HTTP PD documentation](https://lightseek.org/smg/getting-started/pd-disaggregation#vllm-pd-over-http).
 
   ## Client Usage
 
