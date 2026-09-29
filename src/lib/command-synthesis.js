@@ -1834,7 +1834,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     if (smg) {
       for (const [role, args, kvRole] of [["prefill", prefillArgs, "kv_producer"], ["decode", decodeArgs, "kv_consumer"]]) {
         const finalArgs = dedupeArgs(args.filter(Boolean));
-        const value = (flag) => finalArgs[finalArgs.indexOf(flag) + 1];
+        const value = (flag) => {
+          const index = finalArgs.indexOf(flag);
+          return index !== -1 ? finalArgs[index + 1] : undefined;
+        };
         let kv;
         try { kv = JSON.parse(value("--kv-transfer-config")); } catch { /* Report unsupported config below. */ }
         const port = value("--port");
