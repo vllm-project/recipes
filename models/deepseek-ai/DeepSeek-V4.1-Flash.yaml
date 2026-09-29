@@ -5,7 +5,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-09-22
+  date_updated: 2026-09-29
   difficulty: advanced
   tasks:
     - text
@@ -252,6 +252,17 @@ strategy_overrides:
         extra_args:
           - "--engram-config"
           - '{"cpu_offload":true}'
+          # ROCm paged MXFP4 sparse indexer (vllm-project/vllm#58671).
+          - "--attention-config"
+          - '{"indexer_kv_dtype":"mxfp4","indexer_sparse_logits":true}'
+          # The fp4 indexer prefers block-size 128; auto-resolution
+          # otherwise falls back to 64.
+          - "--block-size"
+          - "128"
+        extra_env:
+          # Aiter's Gluon sparse-MLA kernel, gfx950 only
+          # (vllm-project/vllm#53492).
+          VLLM_ROCM_USE_AITER_TRITON_SPARSE_MLA: "1"
       blackwell:
         extra_args:
           - "--attention-config"
