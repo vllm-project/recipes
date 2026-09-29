@@ -1052,12 +1052,34 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfil
 }
 
 /**
+ * Whether the pd_cluster `dynamo` block can run on this hardware — gated by
+ * its optional `brands` allowlist (absent = any brand). Shared by the builder
+ * (pill disabled) and synthesis (falls back to the native router).
+ */
+export function isDynamoSupportedOnHardware(dynamoCfg, hwProfile) {
+  if (!dynamoCfg) return false;
+  const brands = dynamoCfg.brands;
+  return !Array.isArray(brands) || brands.includes(hwProfile?.brand);
+}
+
+/**
+ * Normalize the `dynamo.install` field to a list of `{ command, note?,
+ * optional? }` steps — accepts a bare string for brevity.
+ */
+export function dynamoInstallSteps(dynamoCfg) {
+  const raw = dynamoCfg?.install;
+  if (!raw) return [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list.map((x) => (typeof x === "string" ? { command: x } : x)).filter((x) => x?.command);
+}
+
+/**
  * Resolve a complete vllm serve command from recipe + user selections.
  *
  * Returns: { command, env, deployType } for single_node/multi_node,
  *          { prefillCommand, decodeCommand, routerConfig, env, deployType } for pd_cluster.
  */
-export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined) {
+export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
@@ -1099,6 +1121,15 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     ? strategies[kvOffload]
     : null;
   const kvComposing = !!kvStoreStrat && strategy.deploy_type !== "pd_cluster";
+
+  // PD orchestrator: "dynamo" swaps vllm-router for the strategy YAML's
+  // `dynamo` block — same pools/parallelism, but each role launches through
+  // `python3 -m dynamo.vllm --disaggregation-mode <role>` and dynamo.frontend
+  // fronts them. Any other value (or a strategy without the block) = native.
+  const dynamo = strategy.deploy_type === "pd_cluster" && pdRouter === "dynamo"
+      && isDynamoSupportedOnHardware(strategy.dynamo, hwProfile)
+    ? strategy.dynamo
+    : null;
 
   // The composing option, resolved once behind all three gates (strategy,
   // recipe opt-in, brand) and shared by args/env/companion emission.
@@ -1174,6 +1205,11 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       if (strategy.vllm_args) args.push(...strategy.vllm_args);
     } else if (roleOverride && strategy[roleOverride]?.vllm_args) {
       args.push(...strategy[roleOverride].vllm_args);
+    }
+    // Dynamo role args (--disaggregation-mode + its kv_both Nixl config)
+    // follow the native ones so the connector swap wins the last-wins dedupe.
+    if (dynamo && roleOverride && dynamo[roleOverride]?.vllm_args) {
+      args.push(...dynamo[roleOverride].vllm_args);
     }
     const parallelFlag = strategy.parallel_flag || "--tensor-parallel-size";
     const isMulti = strategy.deploy_type === "multi_node" && nodeCount > 1;
@@ -1477,6 +1513,9 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       args.push(...kvStoreStrat.pd[roleOverride].args);
     }
 
+    // Dynamo workers serve no HTTP of their own (the frontend does), so drop
+    // flags like --port whichever layer emitted them.
+    if (dynamo?.remove_args?.length) return stripArgs(args, dynamo.remove_args);
     return args;
   }
 
@@ -1499,6 +1538,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     } else if (roleOverride && strategy[roleOverride]?.env) {
       Object.assign(env, strategy[roleOverride].env);
     }
+    if (dynamo && roleOverride) Object.assign(env, dynamo.env || {});
     // Composing-option env, after the strategy's so the option wins.
     if (kvOpt?.env) {
       Object.assign(env, kvOpt.env);
@@ -1646,9 +1686,14 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     return env;
   }
 
+  // Dynamo workers launch via `python3 -m dynamo.vllm --model <id>`; every
+  // other path is `vllm serve <id>`.
+  const serveHead = dynamo
+    ? `${dynamo.launcher || "python3 -m dynamo.vllm"} --model ${modelId}`
+    : `vllm serve ${modelId}`;
   function formatCommand(args) {
     const filtered = dedupeArgs(args.filter(Boolean));
-    if (filtered.length === 0) return `vllm serve ${modelId}`;
+    if (filtered.length === 0) return serveHead;
     // Pair each --flag with its immediate value on the same line so the output
     // reads like the human-written command in the recipe guide, not
     // --flag\n value\n --flag\n value\n ...
@@ -1663,7 +1708,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         lines.push(cur);
       }
     }
-    return `vllm serve ${modelId} \\\n  ${lines.join(" \\\n  ")}`;
+    return `${serveHead} \\\n  ${lines.join(" \\\n  ")}`;
   }
 
   // Companion to formatCommand: returns the deduped flat argv (no shell
@@ -1671,7 +1716,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   // going through a shell. ["vllm", "serve", "<model>", ...flags].
   function formatArgv(args) {
     const filtered = dedupeArgs(args.filter(Boolean));
-    return ["vllm", "serve", modelId, ...filtered];
+    const head = dynamo
+      ? [...(dynamo.launcher || "python3 -m dynamo.vllm").split(/\s+/), "--model", modelId]
+      : ["vllm", "serve", modelId];
+    return [...head, ...filtered];
   }
 
   const deployType = strategy.deploy_type || "single_node";
@@ -1790,10 +1838,30 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         env: buildEnv("decode"),
         ...dMeta,
       },
-      router: {
-        command: routerCommand,
-        install: "uv pip install vllm-router",
-      },
+      orchestrator: dynamo ? "dynamo" : "vllm-router",
+      router: dynamo
+        ? {
+            label: dynamo.frontend?.label || "Frontend",
+            command: [
+              `python3 -m dynamo.frontend \\`,
+              `    --http-port $ROUTER_PORT \\`,
+              `    --router-mode ${dynamo.frontend?.router_mode || "round-robin"}`,
+            ].join("\n"),
+            env: { ...(dynamo.env || {}) },
+            install: dynamoInstallSteps(dynamo)[0]?.command,
+          }
+        : {
+            command: routerCommand,
+            install: "uv pip install vllm-router",
+          },
+      ...(dynamo?.infra ? {
+        infra: {
+          label: dynamo.infra.label || "Control plane",
+          description: dynamo.infra.description || "",
+          command: String(dynamo.infra.command).trimEnd(),
+        },
+      } : {}),
+      ...(dynamo ? { dynamoInstall: dynamoInstallSteps(dynamo) } : {}),
       routerConfig: strategy.router || { policy: "round_robin" },
     };
   }
