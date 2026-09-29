@@ -281,6 +281,9 @@ export function BrowseList({ recipes }) {
     tasks.size + archs.size + sizes.size + precisions.size + hardware.size +
     (provider ? 1 : 0) + (q ? 1 : 0);
   const hasFilters = activeCount > 0;
+  // A recipe page accepts one hardware profile. Preserve an unambiguous
+  // Browse selection when opening a result; multi-select stays unpinned.
+  const selectedHardware = hardware.size === 1 ? [...hardware][0] : null;
 
   // Flat list of currently-applied filters for the inline pills shown when
   // the panel is collapsed. Keeps user oriented without forcing a panel
@@ -517,7 +520,7 @@ export function BrowseList({ recipes }) {
             <div>Notes</div>
           </div>
           <ul className="divide-y divide-border">
-            {filtered.map((r) => <Row key={r.hf_id} recipe={r} />)}
+            {filtered.map((r) => <Row key={r.hf_id} recipe={r} hardware={selectedHardware} />)}
           </ul>
         </div>
       )}
@@ -616,7 +619,7 @@ function Chip({ active, count, onClick, icon: Icon, iconClass, dot, logo, mono, 
   );
 }
 
-function Row({ recipe }) {
+function Row({ recipe, hardware }) {
   const r = recipe;
   const isMoe = r.model.architecture === "moe";
   const params = r.model.parameter_count || "—";
@@ -631,7 +634,7 @@ function Row({ recipe }) {
   return (
     <li>
       <Link
-        href={`/${r.hf_id}`}
+        href={`/${r.hf_id}${hardware ? `?hardware=${encodeURIComponent(hardware)}` : ""}`}
         className="group block px-4 py-3 hover:bg-muted/30 transition-colors md:grid md:grid-cols-[1fr_72px_64px_72px_140px_1fr] md:gap-3 md:items-center"
       >
         {/* Model */}
