@@ -372,7 +372,7 @@ variants:
     precision: fp8
     vram_minimum_gb: 200
     description: "Preview FP4+FP8 weights with the DSpark draft module baked in — same base checkpoint as the default variant plus a fused speculative decoder."
-    supported_hardware: [h200, arch:sm100, arch:sm103, arch:gfx942, mi355x, rtx_pro_6000_8x, dgx_spark_gb10]
+    supported_hardware: [arch:sm90, arch:sm100, arch:sm103, arch:gfx942, mi355x, rtx_pro_6000_8x, dgx_spark_gb10]
     # DSpark drafting landed in 0.25.0; 0.26.0 is the first release where it also
     # works on the MI325X/MI355X pills this recipe advertises (ROCm enablement).
     min_vllm_version: "0.25.0"
@@ -880,11 +880,19 @@ guide: |
 
   ### H100 (8×80 GB)
 
-  The FP8 (0731) checkpoint is selectable on H100. A reported 8×H100 TP8 + EP
-  deployment served requests with vLLM 0.26.0, while the same deployment failed
-  during startup on 0.27.0, both with and without DSpark. The recipe's current
-  0.28.0 image has not been verified on H100; check startup and inference before
-  using it in production. See [vLLM #52065](https://github.com/vllm-project/vllm/issues/52065).
+  The FP8 (0731) and DSpark checkpoints are selectable on H100. A reported
+  8×H100 TP8 + EP deployment of 0731 served requests with vLLM 0.26.0, while
+  the same deployment failed during startup on 0.27.0, both with and without
+  DSpark. See [vLLM #52065](https://github.com/vllm-project/vllm/issues/52065).
+
+  For the separate DSpark checkpoint, a 4×H100 TP4 report on vLLM 0.25.0
+  reached inference after removing `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`
+  and setting `--gpu-memory-utilization` below 0.9. A 2×H100 NVL report also
+  ran the checkpoint with DSpark k=5 on a custom vLLM build. These reports
+  establish Hopper compatibility, but do not verify this recipe's generated
+  H100 topology or current image. Check startup and inference before production.
+  See [vLLM #49101](https://github.com/vllm-project/vllm/issues/49101) and
+  [the H100 NVL report](https://github.com/vllm-project/vllm/pull/46995#issuecomment-4835994467).
 
   ### DGX Spark (GB10) cluster
 
