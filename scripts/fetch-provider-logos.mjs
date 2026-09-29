@@ -5,9 +5,8 @@
  *  1. src/lib/providers.js — model providers (DeepSeek, Qwen, …). Each has a
  *     logo path like "/providers/<hf_org>.png".
  *  2. HARDWARE_LOGOS below — hardware vendors shown in the Hardware filter row
- *     of BrowseList.jsx (AMD, Intel). These aren't model providers, so they're
- *     not in PROVIDERS, but the filter still needs their avatars. NVIDIA and
- *     Google ride along for free because they're also in PROVIDERS.
+ *     of BrowseList.jsx. These aren't model providers, so they're not in
+ *     PROVIDERS. NVIDIA and Google ride along because they're also providers.
  *
  * Populates these files at build time so Vercel's CDN serves them globally.
  * public/ is gitignored, so anything not fetched here 404s in production.
@@ -18,11 +17,14 @@ import fs from "fs";
 import path from "path";
 import { PROVIDERS } from "../src/lib/providers.js";
 
-// Hardware vendors referenced by BrowseList.jsx's HW_BRANDS that have no entry
-// in PROVIDERS. logo path must match what BrowseList.jsx points <img src> at.
+// Hardware vendors referenced by BrowseList.jsx that have no entry in
+// PROVIDERS. Ascend's official community favicon is checked in so the
+// hardware logo stays available without a build-time request to its site.
+// Source: https://www.hiascend.com/_static3/favicon.ico
 const HARDWARE_LOGOS = {
   amd: { logo: "/providers/amd.png" },
   Intel: { logo: "/providers/intel.png" },
+  Huawei: { logo: "/providers/ascend.png", source: "assets/hardware/ascend.png" },
 };
 
 const OUT = "public/providers";
@@ -47,6 +49,12 @@ const targets = { ...HARDWARE_LOGOS, ...PROVIDERS };
 for (const [org, meta] of Object.entries(targets)) {
   if (!meta.logo) continue;
   const localPath = path.join("public", meta.logo);
+  if (meta.source) {
+    fs.copyFileSync(meta.source, localPath);
+    console.log(`✓ ${org} (local asset)`);
+    fetched++;
+    continue;
+  }
   if (fs.existsSync(localPath)) {
     skipped++;
     continue;
