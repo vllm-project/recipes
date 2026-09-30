@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3-Flash is a 320B-total / 18B-active multimodal MoE with hybrid KDA and sparse MLA attention, native FP8 weights, MTP, and a 1M-token context window."
   date_added: 2026-08-27
-  date_updated: 2026-09-21
+  date_updated: 2026-09-30
   difficulty: advanced
   tasks:
     - text
@@ -422,11 +422,11 @@ guide: |
   Use the official `vllm/vllm-openai-rocm:nightly` image. GLM-5.3-Flash support
   landed in [vLLM #53906](https://github.com/vllm-project/vllm/pull/53906).
 
-  > **gfx942 (MI325X) also needs [vLLM #56607](https://github.com/vllm-project/vllm/pull/56607),
-  > which is still open.** Without it the server starts and answers short
-  > prompts, but the first prompt long enough to engage the sparse indexer
-  > kills the worker and brings the engine down — including the benchmark
-  > below. gfx950 is unaffected; the failing path is gated on gfx942.
+  On gfx942 (MI325X) the image needs AITER 0.1.23 or newer
+  ([vLLM #58867](https://github.com/vllm-project/vllm/pull/58867)). The current
+  `nightly` has it; if `pip show amd-aiter` in your cached copy reports an older
+  version, pull the tag again. Older images, including `v0.30.0`, crash on the
+  first long prompt (see Troubleshooting).
 
   ```bash
   export VLLM_ROCM_USE_AITER=1
@@ -468,13 +468,11 @@ guide: |
   - **Sparse-MLA initialization error:** verify that the image contains FlashInfer
     0.6.18 or newer.
   - **gfx942 only, `AttributeError: 'int' object has no attribute '_CAPIPtr'` in
-    `fp8_mqa_logits`:** the worker dies during a long prefill and takes the engine
-    with it; short prompts are unaffected because they never reach the sparse
-    indexer. `fwht128_quant_fp8` hardcodes `float8_e4m3fn` for the indexer query,
-    so gfx942 enters AITER's FN-to-FNUZ conversion path and fails at kernel
-    emission. Fixed by [vLLM #56607](https://github.com/vllm-project/vllm/pull/56607),
-    still open — apply it, or drop `VLLM_ROCM_USE_AITER` to fall back to the
-    non-AITER logits path at a significant performance cost.
+    `fp8_mqa_logits`:** the image's AITER is older than 0.1.23. On gfx942 the
+    sparse indexer's `float8_e4m3fn` query goes through AITER's FN-to-FNUZ
+    conversion, which fails at kernel emission before 0.1.23. The worker dies on
+    the first prefill long enough to reach the indexer and takes the engine with
+    it; short prompts are unaffected. Pull a current `nightly`.
 
   ## References
 
