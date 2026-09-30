@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5 frontier-scale MoE language model (~744B total parameters, 28.5T training tokens) with asynchronous RL infrastructure for reasoning, coding, and agentic tasks"
   date_added: 2026-02-09
-  date_updated: 2026-09-18
+  date_updated: 2026-09-30
   difficulty: advanced
   tasks:
     - text
@@ -12,11 +12,14 @@ meta:
   related_recipes: []
   hardware:
     h200: verified
+    mi325x: verified
 
 model:
   model_id: "zai-org/GLM-5"
   min_vllm_version: "0.24.0"
   default_frontend: rust
+  docker_image:
+    amd: "vllm/vllm-openai-rocm:nightly"
   architecture: moe
   parameter_count: "744B"
   active_parameters: "40B"
@@ -77,7 +80,20 @@ compatible_strategies:
   - multi_node_dep
   - pd_cluster
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_args:
+      - "--linear-backend"
+      - "aiter"
+      - "--moe-backend"
+      - "aiter"
+    extra_env:
+      # Without AITER, the ROCm sparse-attention indexer only runs on gfx950/gfx11.
+      VLLM_ROCM_USE_AITER: "1"
+      VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
+      # Loading the FP8 checkpoint on 8x MI325X can outlast the Rust
+      # frontend's 600 s default wait for the engine.
+      VLLM_ENGINE_READY_TIMEOUT_S: "3600"
 
 strategy_overrides: {}
 
@@ -96,7 +112,8 @@ guide: |
 
   - **vLLM version:** >= 0.24.0 for the `glm47` reasoning parser
   - **Hardware (FP8):** 8xH200 or 8xH20 (141GB × 8)
-  - **DeepGEMM (FP8):** install via `install_deepgemm.sh` from the vLLM repo
+  - **DeepGEMM (FP8, NVIDIA):** install via `install_deepgemm.sh` from the vLLM repo
+  - **Hardware (FP8, AMD):** 8x MI325X (256GB × 8), `vllm/vllm-openai-rocm:nightly`; uses AITER, not DeepGEMM
 
   ### Using Docker
 
@@ -124,7 +141,7 @@ guide: |
   uv pip install "transformers>=5.4.0"
   ```
 
-  Install DeepGEMM using `install_deepgemm.sh` from the vLLM tools directory.
+  On NVIDIA, install DeepGEMM using `install_deepgemm.sh` from the vLLM tools directory.
 
   ## Launching the Server
 
@@ -141,6 +158,18 @@ guide: |
        --chat-template-content-format=string \
        --served-model-name glm-5-fp8
   ```
+
+  ### FP8 on AMD MI325X
+
+  Select **MI325X** and the **FP8** variant in the command builder above. The generated command
+  adds `VLLM_ROCM_USE_AITER=1`, `VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1`,
+  `--linear-backend aiter` and `--moe-backend aiter`, and raises `VLLM_ENGINE_READY_TIMEOUT_S`
+  because loading the weights can take longer than the Rust frontend's 600 s default. The
+  Docker command uses `vllm/vllm-openai-rocm:nightly`.
+
+  On 8x MI325X that command, with MTP enabled, serves the full 202,752-token context with a
+  1,292,544-token KV cache (6.38x maximum concurrency) and an MTP mean acceptance length of
+  2.74 with 3 draft tokens on a ~380-token greedy generation.
 
   ## Client Usage
 
@@ -189,7 +218,7 @@ guide: |
 
   - **Accuracy drift:** Prefer the 0.19.0 stable release over nightly for best accuracy.
   - **Tool calling + MTP:** If you need both, use the latest vLLM main branch.
-  - **FP8 installation:** DeepGEMM is required for FP8 performance.
+  - **FP8 installation (NVIDIA):** DeepGEMM is required for FP8 performance.
 
   ## References
 
