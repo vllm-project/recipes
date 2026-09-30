@@ -1093,6 +1093,22 @@ export function dynamoInstallSteps(dynamoCfg) {
   return list.map((x) => (typeof x === "string" ? { command: x } : x)).filter((x) => x?.command);
 }
 
+// The first SMG recipe path uses connector-aware HTTP registration. DEP rank
+// routing and composed KV connectors need separate validation before opting in.
+export function smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload) {
+  if (!strategy?.smg) return "SMG is not configured for this strategy.";
+  if (kvOffload) return "SMG currently supports NIXL without KV offload. Disable KV offload to use SMG.";
+  const allowed = pdPoolModes(recipe);
+  for (const role of ["prefill", "decode"]) {
+    const requested = pdNodes?.[role]?.parallelism
+      || recipe.strategy_overrides?.pd_cluster?.[role]?.parallelism
+      || strategy[role]?.parallelism || "tp";
+    const mode = allowed.includes(requested) ? requested : allowed[0];
+    if (mode === "dep") return "SMG DEP rank routing is not enabled in this recipe. Use TP or TEP for both pools.";
+  }
+  return null;
+}
+
 /**
  * Resolve a complete vllm serve command from recipe + user selections.
  *
@@ -1150,6 +1166,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       && isDynamoSupportedOnHardware(strategy.dynamo, hwProfile)
     ? strategy.dynamo
     : null;
+  let routerUnavailableReason = strategy.deploy_type === "pd_cluster" && pdRouter === "smg"
+    ? smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload) : null;
+  let smg = strategy.deploy_type === "pd_cluster" && pdRouter === "smg" && !routerUnavailableReason
+    ? strategy.smg : null;
 
   // The composing option, resolved once behind all three gates (strategy,
   // recipe opt-in, brand) and shared by args/env/companion emission.
@@ -1823,6 +1843,39 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
 
     const prefillArgs = buildArgs("prefill", null);
     const decodeArgs = buildArgs("decode", null);
+    const smgWorkers = [];
+    if (smg) {
+      for (const [role, args, kvRole] of [["prefill", prefillArgs, "kv_producer"], ["decode", decodeArgs, "kv_consumer"]]) {
+        const finalArgs = dedupeArgs(args.filter(Boolean));
+        const value = (flag) => {
+          const index = finalArgs.indexOf(flag);
+          return index !== -1 ? finalArgs[index + 1] : undefined;
+        };
+        let kv;
+        try { kv = JSON.parse(value("--kv-transfer-config")); } catch { /* Report unsupported config below. */ }
+        const port = value("--port");
+        if (kv?.kv_connector !== "NixlConnector" || kv?.kv_role !== kvRole || !/^\d+$/.test(port)) {
+          routerUnavailableReason = "SMG requires NixlConnector producer/consumer workers with numeric HTTP ports. Remove incompatible worker overrides.";
+          smg = null;
+          break;
+        }
+        smgWorkers.push({ role, port, kvRole });
+      }
+    }
+    const registration = smg ? {
+      label: "Register workers",
+      description: "After both workers and SMG are running, register the NIXL roles, then wait for readiness before sending requests.",
+      command: [
+        "set -e",
+        ...smgWorkers.map(({ role, port, kvRole }) => [
+          'curl --fail-with-body -sS -X POST "http://$ROUTER_HOST:$ROUTER_PORT/workers" \\',
+          '  -H "Content-Type: application/json" --data-binary @- <<JSON',
+          JSON.stringify({ url: `http://$${role.toUpperCase()}_NODE_1:${port}`, worker_type: role, runtime_type: "vllm", kv_connector: "NixlConnector", kv_role: kvRole }),
+          "JSON",
+        ].join("\n")),
+        'curl --fail --retry 60 --retry-delay 2 --retry-all-errors --max-time 5 "http://$ROUTER_HOST:$ROUTER_PORT/readiness"',
+      ].join("\n\n"),
+    } : null;
     // Mooncake composed into PD: surface master / store / config so the PD
     // block can render their tabs and the per-node config heredoc.
     const pdMooncake = (kvStoreStrat?.pd)
@@ -1858,7 +1911,9 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         env: buildEnv("decode"),
         ...dMeta,
       },
-      orchestrator: dynamo ? "dynamo" : "vllm-router",
+      orchestrator: dynamo ? "dynamo" : smg ? "smg" : "vllm-router",
+      ...(routerUnavailableReason ? { routerUnavailableReason } : {}),
+      ...(registration ? { registration } : {}),
       router: dynamo
         ? {
             label: dynamo.frontend?.label || "Frontend",
@@ -1870,7 +1925,13 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
             env: { ...(dynamo.env || {}) },
             install: dynamoInstallSteps(dynamo)[0]?.command,
           }
-        : {
+        : smg ? {
+            label: "SMG",
+            command: `smg launch \\\n    --pd-disaggregation \\\n    --policy ${smg.policy || "round_robin"} \\\n    --host 0.0.0.0 \\\n    --port $ROUTER_PORT`,
+            dockerCommand: `docker run --rm --network host \\\n    ${smg.docker_image} \\\n    --pd-disaggregation \\\n    --policy ${smg.policy || "round_robin"} \\\n    --host 0.0.0.0 \\\n    --port $ROUTER_PORT`,
+            install: smg.install,
+            dockerInstall: `docker pull ${smg.docker_image}`,
+          } : {
             command: routerCommand,
             install: "uv pip install vllm-router",
           },

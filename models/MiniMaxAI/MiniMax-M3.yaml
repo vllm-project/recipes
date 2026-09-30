@@ -714,6 +714,13 @@ guide: |
     --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3-GQA", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
   ```
 
+  You may also consider FlashInfer for draft attention if it performs better for
+  your workload, and local argmax reduction to reduce communication traffic:
+
+  ```bash
+  --speculative-config '{"method":"eagle3","model":"Inferact/MiniMax-M3-EAGLE3-GQA","num_speculative_tokens":3,"attention_backend":"FLASHINFER","use_local_argmax_reduction":true}'
+  ```
+
   ## Quantized Variant (MXFP4 on MI355X)
 
   [`amd/MiniMax-M3-MXFP4`](https://huggingface.co/amd/MiniMax-M3-MXFP4)
