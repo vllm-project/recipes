@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, resolveFrontend, isDynamoSupportedOnHardware } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, resolveFrontend, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -623,10 +623,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const n = parseInt(searchParams.get("decode_rank") || "0", 10);
     return Number.isFinite(n) && n >= 0 ? n : 0;
   });
-  // PD orchestrator — "vllm" (native vllm-router, default) or "dynamo"
-  // (strategies/pd_cluster.yaml → dynamo block). Only read under pd_cluster.
+  // PD router selection is only used under pd_cluster.
   const [pdRouter, setPdRouter] = useState(() =>
-    searchParams.get("pd_router") === "dynamo" ? "dynamo" : "vllm"
+    ["dynamo", "smg"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : "vllm"
   );
   const [strategyOverride, setStrategyOverride] = useState(() => {
     // A kv_store id in ?strategy= must never become the serving strategy —
@@ -1420,10 +1419,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // Dynamo is brand-gated (strategy YAML `dynamo.brands`); on other hardware
   // the row shows vLLM Router active and synthesis ignores the pick.
   const dynamoOk = isDynamoSupportedOnHardware(strategies.pd_cluster?.dynamo, hwProfile);
-  const effPdRouter = dynamoOk ? pdRouter : "vllm";
+  const smgReason = smgUnsupportedReason(recipe, strategies.pd_cluster, {
+    prefill: { parallelism: effPdPrefillPar }, decode: { parallelism: effPdDecodePar },
+  }, activeKvOffload);
+  const effPdRouter = result.orchestrator === "smg" ? "smg" : result.orchestrator === "dynamo" ? "dynamo" : "vllm";
   const selectPdRouter = (value) => {
     setPdRouter(value);
-    syncUrl({ pd_router: value === "dynamo" ? "dynamo" : "" });
+    syncUrl({ pd_router: value === "vllm" ? "" : value });
   };
 
   const setPdPar = (role, mode) => {
@@ -1521,6 +1523,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     if (result.decode?.command) texts.push(result.decode.command);
     if (result.router?.command) texts.push(result.router.command);
     if (result.infra?.command) texts.push(result.infra.command);
+    if (result.registration?.command) texts.push(result.registration.command);
     if (result.vllm?.command) texts.push(result.vllm.command);
     if (result.vllm?.workerCommand) texts.push(result.vllm.workerCommand);
     if (result.master?.command) texts.push(result.master.command);
@@ -1578,8 +1581,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         ...result,
         prefill: { ...result.prefill, command: sub(result.prefill.command), env: substituteEnv(result.prefill.env, effectiveEndpoints) },
         decode:  { ...result.decode,  command: sub(result.decode.command),  env: substituteEnv(result.decode.env,  effectiveEndpoints) },
-        router:  { ...result.router,  command: sub(result.router.command), ...(result.router.env ? { env: substituteEnv(result.router.env, effectiveEndpoints) } : {}) },
+        router:  { ...result.router,  command: sub(result.router.command), ...(result.router.dockerCommand ? { dockerCommand: sub(result.router.dockerCommand) } : {}), ...(result.router.env ? { env: substituteEnv(result.router.env, effectiveEndpoints) } : {}) },
         ...(result.infra ? { infra: { ...result.infra, command: sub(result.infra.command) } } : {}),
+        ...(result.registration ? { registration: { ...result.registration, command: sub(result.registration.command) } } : {}),
         ...(result.mooncake ? {
           mooncake: {
             ...result.mooncake,
@@ -1684,8 +1688,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         deps.push({ ...step, install_modes: ["pip", "docker"] });
       }
     }
+    if (result.orchestrator === "smg") {
+      deps.push({ command: result.router.install, note: "SMG — install on the router host", install_modes: ["pip"] });
+      deps.push({ command: result.router.dockerInstall, note: "SMG — pull on the router host", install_modes: ["docker"] });
+    }
     return deps;
-  }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall]);
+  }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall, result.router?.install, result.router?.dockerInstall]);
 
   // Status caption for the command block header.
   // Only `verified` is a positive signal worth surfacing; anything else
@@ -1697,7 +1705,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const hwFullName = hwProfile?.brand
     ? `${hwProfile.brand} ${hwProfile.display_name || hwId}`
     : (hwProfile?.display_name || hwId);
-  const statusHeader = hwStatus === "verified" && !activeKvOffload && result.orchestrator !== "dynamo" ? (
+  const statusHeader = hwStatus === "verified" && !activeKvOffload && !["dynamo", "smg"].includes(result.orchestrator) ? (
     <span className="text-[11px] font-medium text-green-500 inline-flex items-center gap-1.5">
       <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />
       Verified on {hwFullName}
@@ -2417,7 +2425,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           {/* PD Router — which orchestrator fronts the prefill/decode pools.
               Nested under Strategy: it only exists for pd_cluster and never
               changes the pools, just the launcher + front door. */}
-          {activeServingStrategy === "pd_cluster" && strategies.pd_cluster?.dynamo && (
+          {activeServingStrategy === "pd_cluster" && (strategies.pd_cluster?.dynamo || strategies.pd_cluster?.smg) && (
             <ConfigRow label="PD Router" nested>
               <PillGroup>
                 <Pill
@@ -2428,7 +2436,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 >
                   <span className="font-semibold">vLLM Router</span>
                 </Pill>
-                <Pill
+                {strategies.pd_cluster.dynamo && <Pill
                   active={effPdRouter === "dynamo"}
                   pressed={effPdRouter === "dynamo"}
                   disabled={!dynamoOk}
@@ -2438,17 +2446,27 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     : `Dynamo isn't available on ${hwProfile.display_name || hwId} — it needs ${(strategies.pd_cluster.dynamo.brands || []).join(" / ")} hardware.`}
                 >
                   <span className="font-semibold">{strategies.pd_cluster.dynamo.display_name || "Dynamo"}</span>
-                </Pill>
+                </Pill>}
+                {strategies.pd_cluster.smg && <Pill
+                  active={effPdRouter === "smg"}
+                  pressed={effPdRouter === "smg"}
+                  disabled={!!smgReason}
+                  onClick={() => !smgReason && selectPdRouter("smg")}
+                  title={smgReason || strategies.pd_cluster.smg.description}
+                >
+                  <span className="font-semibold">SMG</span>
+                </Pill>}
               </PillGroup>
               <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
                 {effPdRouter === "dynamo"
                   ? strategies.pd_cluster.dynamo.description
+                  : effPdRouter === "smg" ? strategies.pd_cluster.smg.description
                   : "vllm-router with --vllm-pd-disaggregation fronts the pools; each role is a `vllm serve` on its own HTTP port."}
-                {effPdRouter === "dynamo" && strategies.pd_cluster.dynamo.docs && (
+                {strategies.pd_cluster[effPdRouter]?.docs && (
                   <>
                     {" "}
                     <a
-                      href={strategies.pd_cluster.dynamo.docs}
+                      href={strategies.pd_cluster[effPdRouter].docs}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-0.5 text-vllm-blue hover:underline"
@@ -2458,6 +2476,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   </>
                 )}
               </p>
+              {result.routerUnavailableReason && (
+                <p className="text-[11px] text-amber-600 mt-2">{result.routerUnavailableReason} Showing vLLM Router commands.</p>
+              )}
             </ConfigRow>
           )}
 
@@ -3703,13 +3724,14 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   // needs to be duplicated for the rest of the DP ranks.
   const [tab, setTab] = useState("prefill");
   const isDynamo = result.orchestrator === "dynamo";
+  const isSmg = result.orchestrator === "smg";
   // Dynamo workers launch via `python3 -m dynamo.vllm`, which the
   // vllm-openai image's `vllm serve` entrypoint can't wrap — render them
   // pip-style (install hint above) regardless of install mode.
   const isDocker = installMode === "docker" && !isDynamo;
-  // Prefill/decode are `vllm serve` and get wrapped in `docker run`. The
-  // router is `vllm-router` (separate pip package, different entrypoint) —
-  // it stays as-is with its pip-install hint regardless of install mode.
+  // Prefill/decode use the vLLM image. SMG has its own CPU-only router
+  // image; vllm-router keeps its pip command and install hint.
+  const routerDocker = isDocker && result.router.dockerCommand;
   const wrap = (cmd, env) =>
     isDocker
       ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu })
@@ -3735,8 +3757,9 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
     ...(isDynamo && result.infra ? [{ id: "dyn_infra", label: result.infra.label, command: result.infra.command, env: {}, description: result.infra.description }] : []),
     { id: "prefill", label: "Prefill", command: wrap(result.prefill.command, result.prefill.env), env: result.prefill.env, meta: result.prefill },
     { id: "decode", label: "Decode", command: wrap(result.decode.command, result.decode.env), env: result.decode.env, meta: result.decode },
-    { id: "router", label: result.router.label || "Router", command: result.router.command, env: result.router.env || {}, install: result.router.install, isRouter: true },
-  ].map((t, i) => (mc || isDynamo ? { ...t, step: i + 1 } : t));
+    { id: "router", label: result.router.label || "Router", command: routerDocker || result.router.command, env: result.router.env || {}, install: routerDocker ? null : result.router.install, isRouter: true },
+    ...(result.registration ? [{ id: "registration", ...result.registration, env: {}, isRouter: true }] : []),
+  ].map((t, i) => (mc || isDynamo || isSmg ? { ...t, step: i + 1 } : t));
   // When Mooncake is toggled on/off, jump to the leftmost tab so the launch
   // sequence reads left to right (same behavior as SingleCommandBlock's
   // companion tabs).
@@ -3744,11 +3767,11 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   useEffect(() => {
     setTab(hasMc ? "mc_config" : isDynamo && result.infra ? "dyn_infra" : "prefill");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMc, isDynamo]);
+  }, [hasMc, isDynamo, isSmg]);
   const active = tabs.find((t) => t.id === tab) || tabs[0];
   // Docker mode folds env into `-e` flags inside `docker run` for prefill /
   // decode, so no prelude there. Router (and pip mode) keep the export-style
-  // env lines — router is `vllm-router` regardless of install mode.
+  // env lines (the SMG container command needs no environment prelude).
   const prelude = isDocker && !active.isRouter ? "" : envToExports(active.env);
   const fullScript = prelude ? `${prelude}\n\n${active.command}` : active.command;
   return (

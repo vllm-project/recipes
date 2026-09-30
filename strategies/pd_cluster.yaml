@@ -51,6 +51,18 @@ parallel_flag: "--tensor-parallel-size"
 router:
   policy: round_robin
 
+# HTTP PD keeps native vLLM workers; registration supplies NIXL metadata.
+smg:
+  display_name: "SMG"
+  description: >
+    SMG HTTP router with native vLLM prefill/decode workers and explicit NIXL
+    registration. Supports TP/TEP pools without KV offload in this recipe.
+  docs: "https://lightseek.org/smg/getting-started/pd-disaggregation#vllm-pd-over-http"
+  version: "1.11.0"
+  install: 'uv pip install "smg==1.11.0"'
+  docker_image: "lightseekorg/smg:1.11.0"
+  policy: round_robin
+
 # Alternative PD orchestrator: NVIDIA Dynamo. Picked from the "PD Router" row
 # under the Strategy row (URL ?pd_router=dynamo). Pools, parallelism and node
 # counts are identical to the native path — only the launcher and the front
