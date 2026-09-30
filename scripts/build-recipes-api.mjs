@@ -34,6 +34,7 @@ import {
   computeDockerMeta,
   buildDockerRun,
   buildDockerArgv,
+  buildExecutionSteps,
   nodesForStrategy,
   isStrategyReachable,
   isStrategySupportedOnHardware,
@@ -313,6 +314,15 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
 // Wrap a rendered (command, argv) pair in `docker run`. Returns
 // { docker_command, docker_argv } so each form has its docker counterpart.
 function dockerize(command, argv, env, dockerMeta, port = null) {
+  const executionSteps = buildExecutionSteps(dockerMeta, command, env);
+  if (executionSteps) {
+    return {
+      execution_context: "container",
+      execution_steps: executionSteps,
+      docker_command: null,
+      docker_argv: null,
+    };
+  }
   return {
     docker_command: buildDockerRun({
       command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, port,

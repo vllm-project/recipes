@@ -1,5 +1,7 @@
 "use client";
 
+import { buildExecutionSteps } from "@/lib/command-synthesis";
+
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
@@ -378,8 +380,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   // ── State ──
   const [variant, setVariant] = useState(searchParams.get("variant") || "default");
-  const [frontend, setFrontend] = useState(() =>
-    resolveFrontend(recipe, searchParams.get("frontend") || undefined)
+  const [frontendChoice, setFrontend] = useState(() =>
+    ["python", "rust"].includes(searchParams.get("frontend")) ? searchParams.get("frontend") : undefined
   );
 
   // Active omni task — drives the `vllm serve --omni` model_id swap (Wan2.2's
@@ -513,14 +515,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Recipes without a multi_node_* / pd_cluster strategy can't scale beyond
+  // Hardware without a supported multi_node_* / pd_cluster strategy can't scale beyond
   // one node — force nodeCount to 1 in that case, even if the URL says
   // otherwise. (Nodes means nodes PER INSTANCE under Mooncake too; the
   // instance count is a separate axis and doesn't need multi-node support.)
-  const supportsMultiNode = effectiveCompatibleStrategies(recipe).some(
-    (s) => s.startsWith("multi_node_") || s === "pd_cluster"
+  const supportsMultiNodeOn = (hardwareId) => effectiveCompatibleStrategies(recipe).some(
+    (s) => (s.startsWith("multi_node_") || s === "pd_cluster") &&
+      isStrategySupportedOnHardware(recipe, s, taxonomy.hardware_profiles?.[hardwareId], hardwareId)
   );
-  const [nodeCount, setNodeCount] = useState(() => {
+  const supportsMultiNode = supportsMultiNodeOn(hwId);
+  const [requestedNodeCount, setNodeCount] = useState(() => {
     if (!supportsMultiNode) return 1;
     const initialHwId = searchParams.get("hardware") || defaultHw;
     const initialHw = taxonomy.hardware_profiles?.[initialHwId];
@@ -537,6 +541,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const v = recipe.variants?.[variant] || recipe.variants?.default || {};
     return initialHw && !fitsSingleNode(initialHw, v, initialHwId) ? 2 : 1;
   });
+  // Recheck after hardware changes and preference restoration, not just on mount.
+  const nodeCount = supportsMultiNode ? requestedNodeCount : 1;
   // PD-specific per-role node counts. Only surfaced when the active strategy
   // is `pd_cluster`; ignored otherwise. Defaults come from the recipe's
   // strategy_overrides block, else 1 for each role. `?prefill_nodes=1&decode_nodes=4`
@@ -1026,6 +1032,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // Under pd_cluster the per-role MultiConnector path composes instead. The
   // Strategy row therefore stays fully in effect at all times.
   const activeStrategy = activeServingStrategy;
+  // Keep the effective default reactive to hardware/strategy switches until
+  // the user explicitly chooses a frontend (via URL, saved choice or picker).
+  const frontend = resolveFrontend(recipe, frontendChoice, hwId, activeStrategy);
   // Mooncake instance scaling applies (Instances row + per-instance Nodes
   // semantics) on every serving strategy except PD, whose pools size themselves.
   const kvInstancesActive = isKvStoreActive && activeServingStrategy !== "pd_cluster";
@@ -1295,9 +1304,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const recipeDefault = recipe.default_strategy;
     const recipeDefaultsSingleNode =
       typeof recipeDefault === "string" && recipeDefault.startsWith("single_node_");
-    const shouldBumpNodes = nodeCount === 1 && supportsMultiNode && newScalable && !fitsNew && newProfile?.generation !== "xpu";
+    const newSupportsMultiNode = supportsMultiNodeOn(id);
+    const shouldBumpNodes = nodeCount === 1 && newSupportsMultiNode && newScalable && !fitsNew && newProfile?.generation !== "xpu";
     // Intel XPU is validated single-node only — always clamp back to 1 node.
-    const shouldUnbumpNodes = nodeCount > 1 && (!newScalable || newProfile?.generation === "xpu" || (fitsNew && recipeDefaultsSingleNode));
+    const shouldUnbumpNodes = nodeCount > 1 && (!newSupportsMultiNode || !newScalable || newProfile?.generation === "xpu" || (fitsNew && recipeDefaultsSingleNode));
     if (shouldBumpNodes) setNodeCount(2);
     if (shouldUnbumpNodes) setNodeCount(1);
     syncUrl({
@@ -2773,7 +2783,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                             ? "Multi-node clustering isn't validated on Intel XPU — serve single-node with the Docker image."
                             : !hwScalable
                             ? `${hwProfile.display_name || "This hardware"} is a single-GPU workstation and can't be clustered into multiple nodes.`
-                            : "This recipe does not declare a multi-node strategy. Fits in a single node."
+                            : "This recipe has no supported multi-node strategy on the selected hardware."
                           : singleNodeDoesntFit
                             ? `Single-node can't fit this variant on ${hwProfile.display_name || "the selected hardware"} (${variantVramMinimumGb(currentVariant, hwId)}GB > ${hwProfile.vram_gb}GB) — use multi-node`
                             : n === 1
@@ -3256,10 +3266,11 @@ function CommandNote({ note }) {
 }
 
 function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
-  const [tab, setTab] = useState("vllm");
+  const executionSteps = buildExecutionSteps(dockerMeta, command, env);
+  const [tab, setTab] = useState(dockerMeta?.execution ? "setup" : "vllm");
   // The `docker pull` for the image lives in the Install block above.
   const isXpu = !!dockerMeta?.isXpu;
-  const isDocker = installMode === "docker";
+  const isDocker = installMode === "docker" && !executionSteps;
   // Docker mode: env vars fold into `-e` flags inside the wrapped `docker run`,
   // so there's no separate prelude (the `docker pull` lives in the Install
   // block tabs above). Pip mode: prelude = `export KEY=VAL` lines.
@@ -3291,30 +3302,31 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
   // leftmost tab so the launch sequence reads left to right from step 1.
   const companionIds = hasCompanions ? companions.map((c) => c.feature).join(",") : "";
   useEffect(() => {
-    setTab(preCompanions.length ? preCompanions[0].feature : "vllm");
+    setTab(dockerMeta?.execution ? "setup" : preCompanions.length ? preCompanions[0].feature : "vllm");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companionIds]);
+  }, [companionIds, dockerMeta?.execution]);
   // Companions are host-side helper binaries (not `vllm serve`), so they get
   // neither the docker-run wrapper nor the env prelude.
-  const activePrelude = activeCompanion ? "" : prelude;
+  const activeStep = activeCompanion ? null : executionSteps?.find((step) => step.id === tab) || executionSteps?.[0];
+  const activePrelude = activeStep || activeCompanion ? "" : prelude;
   // Leading # lines render in the dimmed comment area (same treatment as a
   // companion's description line); the bright pre keeps only the executable
   // body. Applies to both sources: a companion's own comments and the
   // `hf download` prerequisite buildDockerRun prepends for a local-path
   // checkpoint. Copy still grabs comments + body.
-  const rawActive = activeCompanion ? String(activeCompanion.command) : displayCommand;
+  const rawActive = activeStep ? activeStep.command : activeCompanion ? String(activeCompanion.command) : displayCommand;
   const fullScript = activePrelude ? `${activePrelude}\n\n${rawActive}` : rawActive;
   const actions = (
     <div className="flex items-center gap-1.5 shrink-0">
       <CopyButton text={fullScript} />
-      <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={!!activeCompanion} disabledNote="Clients talk to the vLLM server — cURL & Bench live on the vLLM Serve tab." />
-      <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={!!activeCompanion} disabledNote="Clients talk to the vLLM server — cURL & Bench live on the vLLM Serve tab." />
+      <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={!!activeCompanion || activeStep?.context === "host"} disabledNote="Clients talk to the vLLM server — cURL & Bench live on the vLLM Serve tab." />
+      <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={!!activeCompanion || activeStep?.context === "host"} disabledNote="Clients talk to the vLLM server — cURL & Bench live on the vLLM Serve tab." />
       {endpointsControls}
     </div>
   );
   return (
     <div>
-      {hasCompanions ? (
+      {hasCompanions || executionSteps ? (
         <>
           <div className="px-4 pt-3 pb-1">
             {statusHeader || (
@@ -3326,11 +3338,12 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
           <div className="flex items-center justify-between px-4 pt-2 gap-3">
             <CommandTabs
               tabs={[
+                ...(executionSteps ? [executionSteps[0]] : []),
                 ...preCompanions.map((c) => ({ id: c.feature, label: c.label })),
-                { id: "vllm", label: "vLLM Serve" },
+                executionSteps?.[1] || { id: "vllm", label: "vLLM Serve" },
                 ...postCompanions.map((c) => ({ id: c.feature, label: c.label })),
               ].map((t, i) => ({ ...t, step: i + 1 }))}
-              current={activeCompanion ? activeCompanion.feature : "vllm"}
+              current={activeStep?.id || (activeCompanion ? activeCompanion.feature : "vllm")}
               onSelect={setTab}
             />
             {actions}
@@ -3352,6 +3365,13 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
         </div>
       )}
       {!activeCompanion && <CommandNote note={commandNote} />}
+      {activeStep && (
+        <div className="px-4 pt-3 text-[11px] text-[var(--command-fg)]/70">
+          {activeStep.context === "host"
+            ? "Run on the host after Install. This opens an interactive container; then run Container: vLLM Serve inside it. Skip this step if the container is already prepared."
+            : "Run inside the container opened in step 1. Set the communication IP/interface below before serving."}
+        </div>
+      )}
       {activePrelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
           {activePrelude}
