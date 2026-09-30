@@ -714,6 +714,16 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const isCudaMap = (v) =>
     v && typeof v === "object" && ("cu129" in v || "cu130" in v);
 
+  // Images whose entrypoint is not `vllm serve` (NVIDIA-base community builds
+  // run nvidia_entrypoint.sh, which execs the first CMD token) need the serve
+  // command restated in CMD, or the model id is executed as a path.
+  const exactCmdPrefix = hwId
+    ? variant?.hardware_overrides?.[hwId]?.docker_serve_command
+    : null;
+  const cmdPrefix = typeof exactCmdPrefix === "string" && exactCmdPrefix.trim()
+    ? exactCmdPrefix.trim()
+    : null;
+
   let pinned = typeof exactHardwareOverride === "string" ? exactHardwareOverride : null;
   let cudaMap = null;
 
@@ -771,6 +781,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
     pinned,
     cudaMap,
     nightlyRequired,
+    cmdPrefix,
   };
 }
 
@@ -837,8 +848,9 @@ function servedPort(tokens, fallback = 8000) {
 
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
 // image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
-// CMD. Env vars become `-e KEY=VAL` inside the container.
-export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false }) {
+// CMD. `cmdPrefix` (e.g. "vllm serve") is restated before MODEL for images whose
+// entrypoint is something else. Env vars become `-e KEY=VAL` inside the container.
+export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, cmdPrefix = null }) {
   const pubPort = port ?? servedPort(command.split(/\s+/));
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
@@ -866,8 +878,9 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = null, isN
   const base = `${prereq}docker run ${gpuFlags} \\
   ${runtimeFlags} \\
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
+  const cmdHead = cmdPrefix ? `${image} \\\n  ${cmdPrefix} ${modelId}` : `${image} ${modelId}`;
   return `${base}
-  ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
+  ${cmdHead}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
 }
 
 // argv companion to buildDockerRun. `argv` here is the inner command's argv —
@@ -900,6 +913,7 @@ export function buildDockerArgv({ argv, env, meta, port = null }) {
   return [
     ...base,
     meta.image,
+    ...(meta.cmdPrefix ? meta.cmdPrefix.split(/\s+/) : []),
     ...cmdArgs,
   ];
 }
