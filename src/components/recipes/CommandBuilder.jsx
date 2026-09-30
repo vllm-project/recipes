@@ -3826,6 +3826,16 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           {endpointsControls}
         </div>
       </div>
+      {isDocker && result.workerDockerSetup && (
+        <div className="mx-4 mt-3 rounded-lg border border-[var(--command-fg)]/15 p-3 text-[11px] text-[var(--command-fg)]/70 leading-relaxed">
+          <p className="font-semibold">Worker container setup · automatic</p>
+          <p className="mt-1">
+            Each Prefill / Decode Docker command installs the pinned gRPC servicer inside the vLLM container before starting the worker.
+            Installation needs network access and repeats for each new container.
+          </p>
+          <pre className="mt-2 font-mono whitespace-pre-wrap break-words">{result.workerDockerSetup}</pre>
+        </div>
+      )}
       {active.isRouter && active.install && (
         <div className="px-4 pt-3 text-[11px] text-[var(--command-fg)]/50 font-mono leading-snug">
           # Install: {active.install}
