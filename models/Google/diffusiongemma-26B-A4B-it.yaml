@@ -17,7 +17,6 @@ meta:
     h100: verified
     h200: verified
     dgx_spark_gb10: verified
-    xeon6: verified
 
 model:
   model_id: "google/diffusiongemma-26B-A4B-it"
@@ -56,7 +55,7 @@ variants:
     precision: bf16
     vram_minimum_gb: 64
     description: "Full BF16 — single 80 GB NVIDIA GPU (H100/H200). Requires --max-num-seqs 4 to avoid OOM from diffusion state buffers."
-    supported_hardware: [h100, h200, dgx_spark_gb10, xeon6]
+    supported_hardware: [h100, h200, dgx_spark_gb10]
   fp8:
     model_id: "RedHatAI/diffusiongemma-26B-A4B-it-FP8-dynamic"
     precision: fp8
@@ -104,8 +103,7 @@ variants:
 compatible_strategies:
   - single_node_tp
 
-hardware_overrides:
-  cpu: {}
+hardware_overrides: {}
 
 strategy_overrides:
   single_node_tp:
@@ -160,26 +158,6 @@ guide: |
           --gpu-memory-utilization 0.85 \
           --host 0.0.0.0 --port 8000
   ```
-
-  ### Intel Xeon 6 (CPU, BF16)
-
-  DiffusionGemma runs on Intel Xeon 6 CPUs using vLLM's CPU backend with AMX BF16 acceleration.
-  The generated example uses TP=1. Adjust `--tensor-parallel-size` based on the
-  detected NUMA topology and deployment requirements.
-
-  ```bash
-  docker run \
-    --privileged --ipc=host -p 8000:8000 \
-    -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-cpu:latest-x86_64 google/diffusiongemma-26B-A4B-it \
-    --max-num-seqs 4 \
-    --tensor-parallel-size 1 \
-    --enable-auto-tool-choice \
-    --tool-call-parser gemma4 \
-    --chat-template examples/tool_chat_template_gemma4.jinja \
-    --reasoning-parser gemma4
-  ```
-
 
   ### Full-Featured Server (text + image + thinking + tools)
 
