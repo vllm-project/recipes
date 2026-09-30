@@ -627,6 +627,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const [pdRouter, setPdRouter] = useState(() =>
     ["dynamo", "smg"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : "vllm"
   );
+  const [pdTransport, setPdTransport] = useState(() =>
+    recipe.model?.smg_grpc && searchParams.get("pd_transport") === "grpc" ? "grpc" : "http"
+  );
   const [strategyOverride, setStrategyOverride] = useState(() => {
     // A kv_store id in ?strategy= must never become the serving strategy —
     // Mooncake selection travels in ?kv_offload= instead.
@@ -1127,9 +1130,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
         }
         : null;
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter);
+      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport);
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport]
   );
 
   // Visual feedback when any rendered command changes. Covers single-node
@@ -1143,7 +1146,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     || "")
     + (omniTask ? `|task:${omniTask}` : "")
     + `|frontend:${frontend}`
-    + `|pd_router:${pdRouter}`;
+    + `|pd_router:${pdRouter}|pd_transport:${pdTransport}`;
   const [changed, setChanged] = useState(false);
   useEffect(() => {
     setChanged(true);
@@ -1423,6 +1426,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     prefill: { parallelism: effPdPrefillPar }, decode: { parallelism: effPdDecodePar },
   }, activeKvOffload);
   const effPdRouter = result.orchestrator === "smg" ? "smg" : result.orchestrator === "dynamo" ? "dynamo" : "vllm";
+  const isSmgGrpc = result.orchestrator === "smg" && result.transport === "grpc";
   const selectPdRouter = (value) => {
     setPdRouter(value);
     syncUrl({ pd_router: value === "vllm" ? "" : value });
@@ -1689,11 +1693,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       }
     }
     if (result.orchestrator === "smg") {
+      if (result.workerInstall) deps.push({ command: result.workerInstall, note: "gRPC servicer — install on every prefill/decode node", install_modes: ["pip"] });
       deps.push({ command: result.router.install, note: "SMG — install on the router host", install_modes: ["pip"] });
       deps.push({ command: result.router.dockerInstall, note: "SMG — pull on the router host", install_modes: ["docker"] });
     }
     return deps;
-  }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall, result.router?.install, result.router?.dockerInstall]);
+  }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall, result.router?.install, result.router?.dockerInstall, result.workerInstall]);
 
   // Status caption for the command block header.
   // Only `verified` is a positive signal worth surfacing; anything else
@@ -2460,13 +2465,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
                 {effPdRouter === "dynamo"
                   ? strategies.pd_cluster.dynamo.description
-                  : effPdRouter === "smg" ? strategies.pd_cluster.smg.description
+                  : effPdRouter === "smg" ? (isSmgGrpc ? "SMG gRPC router with NIXL prefill/decode workers. Supports text requests on TP/TEP pools without KV offload." : strategies.pd_cluster.smg.description)
                   : "vllm-router with --vllm-pd-disaggregation fronts the pools; each role is a `vllm serve` on its own HTTP port."}
                 {strategies.pd_cluster[effPdRouter]?.docs && (
                   <>
                     {" "}
                     <a
-                      href={strategies.pd_cluster[effPdRouter].docs}
+                      href={isSmgGrpc ? strategies.pd_cluster.smg.grpc.docs : strategies.pd_cluster[effPdRouter].docs}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-0.5 text-vllm-blue hover:underline"
@@ -2479,6 +2484,27 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               {result.routerUnavailableReason && (
                 <p className="text-[11px] text-amber-600 mt-2">{result.routerUnavailableReason} Showing vLLM Router commands.</p>
               )}
+            </ConfigRow>
+          )}
+
+          {effPdRouter === "smg" && recipe.model?.smg_grpc && (
+            <ConfigRow label="SMG transport" nested>
+              <PillGroup>
+                {["http", "grpc"].map((transport) => (
+                  <Pill key={transport} active={pdTransport === transport} pressed={pdTransport === transport}
+                    onClick={() => {
+                      setPdTransport(transport);
+                      syncUrl({ pd_transport: transport === "http" ? "" : transport });
+                    }}>
+                    {transport === "grpc" ? "gRPC" : "HTTP"}
+                  </Pill>
+                ))}
+              </PillGroup>
+              <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                {isSmgGrpc
+                  ? "Text-only gRPC PD: SMG handles tokenization, tools and reasoning. Docker workers install the pinned servicer at startup. Clients still use the HTTP API on SMG."
+                  : "HTTP workers handle tokenization, tools and reasoning."}
+              </p>
             </ConfigRow>
           )}
 
@@ -2801,20 +2827,22 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           <ConfigRow label="Frontend">
             <PillGroup>
               <Pill
-                active={frontend === "rust"}
-                pressed={frontend === "rust"}
+                active={!isSmgGrpc && frontend === "rust"}
+                pressed={!isSmgGrpc && frontend === "rust"}
+                disabled={isSmgGrpc}
+                title={isSmgGrpc ? "SMG gRPC uses the Python servicer." : undefined}
                 onClick={() => selectFrontend("rust")}
               >
                 <Zap size={11} className="inline-block mr-1 -mt-0.5" fill="currentColor" aria-hidden="true" />
                 <span className="font-semibold">Rust</span>
               </Pill>
-              <Pill active={frontend === "python"} pressed={frontend === "python"} onClick={() => selectFrontend("python")}>
+              <Pill active={isSmgGrpc || frontend === "python"} pressed={isSmgGrpc || frontend === "python"} onClick={() => selectFrontend("python")}>
                 <span className="font-semibold">Python</span>
               </Pill>
             </PillGroup>
             <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
-              The experimental Rust frontend can improve throughput and latency, especially under high concurrency.
-              {" "}Switch to Python if you encounter unsupported features or compatibility issues.
+              {isSmgGrpc ? "The SMG-compatible gRPC servicer runs through vllm serve --grpc."
+                : "The experimental Rust frontend can improve throughput and latency, especially under high concurrency. Switch to Python if you encounter unsupported features or compatibility issues."}
             </p>
           </ConfigRow>
 
@@ -2833,14 +2861,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   // inside the Mooncake deployment shell — synthesis skips
                   // their args too, so the pill disables to match.
                   const kvBlocked = kvInstancesActive && !!f?.companion?.command;
-                  const allowed = isFeatureAllowedForStrategy(f, activeStrategy) && !kvBlocked;
+                  const grpcBlocked = isSmgGrpc && ["encoder_parallel", "thinking_always_on"].includes(key);
+                  const grpcRequired = isSmgGrpc && key === "text_only";
+                  const allowed = isFeatureAllowedForStrategy(f, activeStrategy) && !kvBlocked && !grpcBlocked;
                   return (
                   <Pill
                     key={key}
-                    active={features.includes(key) && allowed}
-                    disabled={!allowed}
+                    active={grpcRequired || (features.includes(key) && allowed)}
+                    disabled={!allowed || grpcRequired}
                     onClick={() => allowed && toggleFeature(key)}
-                    title={!allowed
+                    title={grpcRequired ? "This gRPC recipe supports text requests only."
+                      : grpcBlocked ? (key === "thinking_always_on"
+                        ? "Set thinking_mode per request through chat_template_kwargs in gRPC mode."
+                        : "This gRPC recipe supports text requests only.")
+                      : !allowed
                       ? kvBlocked
                         ? "Needs its companion process, which isn't rendered inside a Mooncake deployment — set KV Offload to Off to use it."
                         : "Not available with this strategy"
@@ -3734,7 +3768,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   const routerDocker = isDocker && result.router.dockerCommand;
   const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix })
+      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix, setupCommand: result.workerDockerSetup, hostNetwork: result.transport === "grpc" })
       : cmd;
   // Mooncake composed into PD (result.mooncake): a "Mooncake Config" tab
   // (launch step 0) writes the shared config file(s) once — every

@@ -30,6 +30,10 @@ meta:
 
 model:
   model_id: "deepseek-ai/DeepSeek-V4.1-Flash"
+  # Opt in to SMG gRPC PD; parsing runs on the router, not vLLM.
+  smg_grpc:
+    reasoning_parser: deepseek_v41
+    tool_call_parser: deepseek_v41
   min_vllm_version: "0.30.0"
   # 0.30.0 has not shipped; the architecture lives on main (vllm-project/vllm#56228),
   # so NVIDIA renders `vllm/vllm-openai:nightly` instead of the launch-day
