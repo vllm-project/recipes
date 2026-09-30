@@ -16,8 +16,13 @@ const NVL4_ONLY_ENV_KEYS = new Set([
 ]);
 const NVL4_HW_IDS = new Set(["gb200", "gb300"]);
 
-export function resolveFrontend(recipe, frontend = recipe.model?.default_frontend) {
-  return frontend === "rust" ? "rust" : "python";
+export function resolveFrontend(recipe, frontend, hwId = null, strategyName = null) {
+  // A hardware setting is a default, not a forced override of a user's choice.
+  const selected = frontend
+    ?? recipe?.strategy_overrides?.[strategyName]?.hardware_overrides?.[hwId]?.frontend
+    ?? recipe?.hardware_overrides?.[hwId]?.frontend
+    ?? recipe?.model?.default_frontend;
+  return selected === "rust" ? "rust" : "python";
 }
 
 /**
@@ -694,6 +699,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const isIntel = hwProfile?.generation === "cpu" || isXpu || hwProfile?.brand === "Intel";
   const isNpu = hwProfile?.generation === "npu";
   const npuDeviceCount = isNpu ? hwProfile?.gpu_count ?? 1 : 0;
+  const execution = variant?.hardware_overrides?.[hwId]?.execution;
   // Ascend deliberately has no `brandKey` of its own: vLLM publishes no NPU
   // image, so every Ascend recipe pins one through `hardware_overrides`, which
   // `exactHardwareOverride` resolves before the brand defaults are consulted.
@@ -764,7 +770,24 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
     pinned,
     cudaMap,
     nightlyRequired,
+    ...(execution ? { execution } : {}),
   };
+}
+
+// Shared by the command card and JSON API. These are separate shell sessions:
+// step 1 opens a container on the host; step 2 runs inside that container.
+export function buildExecutionSteps(dockerMeta, command, env) {
+  const execution = dockerMeta?.execution;
+  if (!execution) return null;
+  if (execution.context !== "container" || typeof execution.setup_command !== "string" || !execution.setup_command.trim()) {
+    throw new Error("Container execution requires a host setup_command");
+  }
+  const exports = Object.entries(env || {}).map(([k, v]) => `export ${k}=${v}`).join("\n");
+  return [
+    { id: "setup", label: "Host: prepare container", context: "host", command: execution.setup_command.trim() },
+    { id: "vllm", label: "Container: vLLM Serve", context: "container",
+      command: [execution.prepare_command?.trim(), exports, command].filter(Boolean).join("\n\n") },
+  ];
 }
 
 // argv form of the brand-specific GPU flags from computeDockerMeta. Mirrors
@@ -1640,11 +1663,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       }
     }
 
-    // Exact-hardware overrides preserve other GPUs' recipe frontend default.
-    const hwFrontend = recipe.strategy_overrides?.[strategyName]
-      ?.hardware_overrides?.[hwProfileId]?.frontend
-      || recipe.hardware_overrides?.[hwProfileId]?.frontend;
-    if (resolveFrontend(recipe, hwFrontend || frontend) === "rust") {
+    if (resolveFrontend(recipe, frontend, hwProfileId, strategyName) === "rust") {
       env.VLLM_USE_RUST_FRONTEND = "1";
     }
     return env;
