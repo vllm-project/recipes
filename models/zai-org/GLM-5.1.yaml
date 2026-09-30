@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.1 refreshed version of GLM-5 — frontier-scale MoE language model (~744B total parameters) with MTP speculative decoding and thinking mode"
   date_added: 2026-03-28
-  date_updated: 2026-09-18
+  date_updated: 2026-09-30
   difficulty: advanced
   tasks:
     - text
@@ -12,12 +12,15 @@ meta:
   related_recipes: []
   hardware:
     h200: verified
+    mi325x: verified
     mi355x: verified
 
 model:
   model_id: "zai-org/GLM-5.1"
   min_vllm_version: "0.24.0"
   default_frontend: rust
+  docker_image:
+    amd: "vllm/vllm-openai-rocm:nightly"
   architecture: moe
   parameter_count: "744B"
   active_parameters: "40B"
@@ -129,6 +132,9 @@ hardware_overrides:
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
       VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
+      # Loading the FP8 checkpoint on 8x MI325X can outlast the Rust
+      # frontend's 600 s default wait for the engine.
+      VLLM_ENGINE_READY_TIMEOUT_S: "3600"
 
 strategy_overrides: {}
 
@@ -147,7 +153,7 @@ guide: |
 
   - **vLLM version:** >= 0.24.0 for the `glm47` reasoning parser.
     Use the latest main branch if you need tool calling + MTP simultaneously.
-  - **Hardware (FP8):** 8xH200 or 8xH20 (141GB × 8)
+  - **Hardware (FP8):** 8xH200 or 8xH20 (141GB × 8), or 8x MI325X (256GB × 8)
   - **DeepGEMM (FP8):** install via `install_deepgemm.sh` from vLLM repo
   - **Hardware (MXFP4):** 8x MI355X (gfx950), vLLM >= 0.24.0, `vllm/vllm-openai-rocm:latest`
 
@@ -193,6 +199,18 @@ guide: |
        --chat-template-content-format=string \
        --served-model-name glm-5.1-fp8
   ```
+
+  ### FP8 on AMD MI325X
+
+  Select **MI325X** and the **FP8** variant in the command builder above. The generated command
+  adds `VLLM_ROCM_USE_AITER=1`, `VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1`,
+  `--linear-backend aiter` and `--moe-backend aiter`, and raises `VLLM_ENGINE_READY_TIMEOUT_S`
+  because loading the weights can take longer than the Rust frontend's 600 s default. The
+  Docker command uses `vllm/vllm-openai-rocm:nightly`.
+
+  On 8x MI325X that command, with MTP enabled, serves the full 202,752-token context with a
+  1,292,544-token KV cache (6.38x maximum concurrency) and an MTP mean acceptance length of
+  2.72 with 3 draft tokens on a ~380-token greedy generation.
 
   ## Client Usage
 
