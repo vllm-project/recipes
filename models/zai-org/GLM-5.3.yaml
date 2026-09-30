@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3 — Frontier Coding with Emergent Cyber Capabilities"
   date_added: 2026-08-28
-  date_updated: 2026-09-28
+  date_updated: 2026-09-30
   difficulty: advanced
   tasks:
     - text
@@ -17,7 +17,7 @@ meta:
   hardware:
     b300: verified
     h200: verified
-    # FP8 + 5-token MTP validated 2026-09-27 on 8×MI325X (TP8).
+    # FP8 + 5-token MTP validated 2026-09-30 on 8×MI325X (TP8).
     mi325x: verified
     # Validated 2026-08-30 on one Atlas A5 node (8×950PR, TP8, graph mode).
     # Native FP8 path needs vllm-ascend#15346.
@@ -31,7 +31,7 @@ model:
   min_vllm_version: "0.29.0"
   default_frontend: rust
   docker_image:
-    amd: "vllm/vllm-openai-rocm:nightly"
+    amd: "vllm/vllm-openai-rocm:v0.29.0"
   architecture: moe
   parameter_count: "743B"
   active_parameters: "39B"
@@ -291,13 +291,10 @@ guide: |
     --moe-backend aiter
   ```
 
-  On 8x MI325X this command serves the full `--max-model-len 524288` at
-  `--gpu-memory-utilization 0.80`, reporting a 1,564,016-token KV cache and 2.98x maximum
-  concurrency. MTP is healthy there: a mean acceptance length of 3.06 with 5 tokens drafted
-  per step on a ~500-token greedy generation. The command builder's MI325X command, which
-  runs the Rust frontend and leaves `--max-model-len`, `--gpu-memory-utilization` and
-  `--max-num-seqs` at their defaults, also serves the full 1,048,576-token window
-  (1,423,680-token KV cache, 1.36x) with the MTP toggle on.
+  On 8x MI325X with `vllm/vllm-openai-rocm:v0.29.0`, this command serves the full
+  `--max-model-len 524288` at `--gpu-memory-utilization 0.80`, reporting a 1,477,168-token
+  KV cache and 2.82x maximum concurrency. MTP is healthy there: a mean acceptance length of
+  2.77 with 5 tokens drafted per step on a ~500-token greedy generation.
 
   ### FP8 on 8xB200 (full 1M context)
 
