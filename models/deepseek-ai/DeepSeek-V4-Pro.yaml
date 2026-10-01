@@ -514,7 +514,6 @@ guide: |
   export VLLM_ROCM_USE_AITER_MOE=1
   export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=0
   export VLLM_ENGINE_READY_TIMEOUT_S=10800
-  export VLLM_PREFIX_CACHE_RETENTION_INTERVAL=32768
 
   vllm serve "$MODEL_PATH" --served-model-name "$MODEL" \
     --host 0.0.0.0 \
@@ -533,6 +532,7 @@ guide: |
     --reasoning-parser deepseek_v4 \
     --enable-auto-tool-choice \
     --enable-prefix-caching \
+    --prefix-cache-retention-interval 32768 \
     --no-disable-hybrid-kv-cache-manager \
     --max-num-seqs "8"
   ```
