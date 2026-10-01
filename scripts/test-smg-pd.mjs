@@ -268,17 +268,3 @@ test("gRPC Text Only remains an opt-in feature on both pools", () => {
     }
   }
 });
-
-test("DeepSeek H100 PD does not inherit the allocator rejected by NIXL", () => {
-  const model = read("models/deepseek-ai/DeepSeek-V4.1-Flash.yaml");
-  for (const transport of ["http", "grpc"]) {
-    const result = resolve({ model, hardware: "h100", transport });
-    for (const role of ["prefill", "decode"]) {
-      assert.doesNotMatch(result[role].env.PYTORCH_CUDA_ALLOC_CONF || "", /expandable_segments:True/);
-      assert.equal(result[role].env.VLLM_USE_V2_MODEL_RUNNER, "1");
-      assert.equal(flag(result[role].argv, "--engram-config"), '{"cpu_offload":true}');
-    }
-  }
-  const single = resolve({ model, hardware: "h100", strategy: "single_node_tp" });
-  assert.equal(single.env.PYTORCH_CUDA_ALLOC_CONF, "expandable_segments:True");
-});

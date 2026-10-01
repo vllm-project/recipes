@@ -353,15 +353,6 @@ strategy_overrides:
           - '{"embedding_across_dp":true}'
   pd_cluster:
     # Verified 1P1D on GB200 NVL4: one tray per role, TP4 each, NIXL transfer.
-    hardware_overrides:
-      h100:
-        extra_env:
-          # NIXL requires stable registered KV addresses; expandable segments
-          # can remap them and are rejected by vLLM's KV connector validation.
-          PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:False"
-          # Avoid CPU contention while copying thousands of expert shards:
-          # automatic per-rank thread counts made TP8 loading much slower on H100.
-          OMP_NUM_THREADS: "1"
     env:
       VLLM_DEEP_GEMM_WARMUP: "skip"
     prefill:
