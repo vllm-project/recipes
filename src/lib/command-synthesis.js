@@ -1897,6 +1897,12 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       ] : []),
       "--host 0.0.0.0", "--port $ROUTER_PORT",
     ].join(" \\\n    ") : "";
+    const smgReplicaComments = smgGrpc ? [
+      "# Multiple prefill replicas: --prefill grpc://prefill-a:8001 --prefill grpc://prefill-b:8001",
+      "# Multiple decode replicas: --decode grpc://decode-a:8002 --decode grpc://decode-b:8002",
+      "# Repeat each flag (no commas); use serving heads, not headless TP/TEP followers.",
+      "",
+    ].join("\n") : "";
     const registration = smg && !smgGrpc ? {
       label: "Register workers",
       description: "After both workers and SMG are running, register the NIXL roles, then wait for readiness before sending requests.",
@@ -1967,8 +1973,8 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
           }
         : smg ? {
             label: "SMG",
-            command: `smg launch \\\n    ${smgRouterArgs}`,
-            dockerCommand: `docker run --rm --network host \\\n    ${smgGrpc ? "-v ~/.cache/huggingface:/root/.cache/huggingface \\\n    " : ""}${smg.docker_image} \\\n    ${smgRouterArgs}`,
+            command: `${smgReplicaComments}smg launch \\\n    ${smgRouterArgs}`,
+            dockerCommand: `${smgReplicaComments}docker run --rm --network host \\\n    ${smgGrpc ? "-v ~/.cache/huggingface:/root/.cache/huggingface \\\n    " : ""}${smg.docker_image} \\\n    ${smgRouterArgs}`,
             install: smg.install,
             dockerInstall: `docker pull ${smg.docker_image}`,
           } : {
