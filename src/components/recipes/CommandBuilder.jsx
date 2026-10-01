@@ -2465,7 +2465,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
                 {effPdRouter === "dynamo"
                   ? strategies.pd_cluster.dynamo.description
-                  : effPdRouter === "smg" ? (isSmgGrpc ? "SMG gRPC router with NIXL prefill/decode workers. Supports text requests on TP/TEP pools without KV offload." : strategies.pd_cluster.smg.description)
+                  : effPdRouter === "smg" ? (isSmgGrpc ? "SMG gRPC router with NIXL prefill/decode workers. Supports TP/TEP pools without KV offload." : strategies.pd_cluster.smg.description)
                   : "vllm-router with --vllm-pd-disaggregation fronts the pools; each role is a `vllm serve` on its own HTTP port."}
                 {strategies.pd_cluster[effPdRouter]?.docs && (
                   <>
@@ -2502,7 +2502,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               </PillGroup>
               <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
                 {isSmgGrpc
-                  ? "Text-only gRPC PD: SMG handles tokenization, tools and reasoning. Docker workers install the pinned servicer at startup. Clients still use the HTTP API on SMG."
+                  ? "SMG handles tokenization, tools and reasoning. Text Only is optional. Docker workers install the pinned servicer at startup. Clients still use the HTTP API on SMG."
                   : "HTTP workers handle tokenization, tools and reasoning."}
               </p>
             </ConfigRow>
@@ -2861,19 +2861,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   // inside the Mooncake deployment shell — synthesis skips
                   // their args too, so the pill disables to match.
                   const kvBlocked = kvInstancesActive && !!f?.companion?.command;
-                  const grpcBlocked = isSmgGrpc && ["encoder_parallel", "thinking_always_on"].includes(key);
-                  const grpcRequired = isSmgGrpc && key === "text_only";
+                  const grpcBlocked = isSmgGrpc && key === "thinking_always_on";
                   const allowed = isFeatureAllowedForStrategy(f, activeStrategy) && !kvBlocked && !grpcBlocked;
                   return (
                   <Pill
                     key={key}
-                    active={grpcRequired || (features.includes(key) && allowed)}
-                    disabled={!allowed || grpcRequired}
+                    active={features.includes(key) && allowed}
+                    disabled={!allowed}
                     onClick={() => allowed && toggleFeature(key)}
-                    title={grpcRequired ? "This gRPC recipe supports text requests only."
-                      : grpcBlocked ? (key === "thinking_always_on"
-                        ? "Set thinking_mode per request through chat_template_kwargs in gRPC mode."
-                        : "This gRPC recipe supports text requests only.")
+                    title={grpcBlocked ? "Set thinking_mode per request through chat_template_kwargs in gRPC mode."
                       : !allowed
                       ? kvBlocked
                         ? "Needs its companion process, which isn't rendered inside a Mooncake deployment — set KV Offload to Off to use it."

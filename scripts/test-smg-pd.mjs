@@ -165,7 +165,7 @@ for (const [id, reasoning, tools] of grpcModels) {
       assert.ok(!result[role].argv.includes("--reasoning-parser"));
       assert.ok(!result[role].argv.includes("--enable-auto-tool-choice"));
       assert.equal(JSON.parse(flag(result[role].argv, "--kv-transfer-config")).kv_role, kvRole);
-      if (model.features.text_only) assert.ok(result[role].argv.includes("--language-model-only"));
+      if (model.features.text_only) assert.ok(!result[role].argv.includes("--language-model-only"));
     }
     assert.match(result.router.command, /--prefill grpc:\/\/\$PREFILL_NODE_1:8001/);
     assert.match(result.router.command, /--decode grpc:\/\/\$DECODE_NODE_1:8002/);
@@ -243,12 +243,28 @@ test("gRPC Docker installs dependencies inside the vLLM image and exposes NIXL o
   }
 });
 
-test("gRPC text mode does not retain worker-only chat defaults or encoder options", () => {
+test("gRPC preserves vision encoder settings while removing worker-only chat defaults", () => {
   const result = resolve({ model: read("models/MiniMaxAI/MiniMax-M3.yaml"), transport: "grpc", pools: grpcPools,
     features: ["tool_calling", "reasoning", "encoder_parallel", "thinking_always_on"] });
   for (const role of ["prefill", "decode"]) {
     assert.ok(!result[role].argv.includes("--default-chat-template-kwargs"));
-    assert.ok(!result[role].argv.includes("--mm-encoder-tp-mode"));
-    assert.ok(result[role].argv.includes("--language-model-only"));
+    assert.equal(flag(result[role].argv, "--mm-encoder-tp-mode"), "data");
+    assert.equal(flag(result[role].argv, "--mm-encoder-attn-backend"), "FLASHINFER");
+    assert.equal(flag(result[role].argv, "--mm-processor-cache-type"), "shm");
+    assert.ok(!result[role].argv.includes("--language-model-only"));
+  }
+});
+
+test("gRPC Text Only remains an opt-in feature on both pools", () => {
+  for (const id of ["moonshotai/Kimi-K3", "MiniMaxAI/MiniMax-M3", "deepseek-ai/DeepSeek-V4.1-Flash"]) {
+    const model = read(`models/${id}.yaml`);
+    for (const enabled of [false, true, false]) {
+      const result = resolve({ model, transport: "grpc", pools: grpcPools,
+        features: ["tool_calling", "reasoning", ...(enabled ? ["text_only"] : [])] });
+      for (const role of ["prefill", "decode"]) {
+        assert.equal(result[role].argv.includes("--language-model-only"), enabled, `${id} ${role}`);
+        assert.ok(result[role].argv.includes("--grpc"));
+      }
+    }
   }
 });

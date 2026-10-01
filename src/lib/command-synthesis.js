@@ -1879,11 +1879,9 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       // Keep engine/KV flags; the gateway now owns chat rendering and parsing.
       const grpcArgs = (args) => [
         ...stripArgs(args, ["--tool-call-parser", "--reasoning-parser", "--enable-auto-tool-choice",
-          "--mm-encoder-tp-mode", "--mm-encoder-attn-backend", "--mm-processor-cache-type",
           "--default-chat-template-kwargs"]),
         // vLLM dispatches gRPC before headless; followers must not start an API server.
         ...(args.includes("--headless") ? [] : ["--grpc", "--host", "0.0.0.0"]),
-        ...(recipe.features?.text_only ? ["--language-model-only"] : []),
       ];
       prefillArgs = grpcArgs(prefillArgs);
       decodeArgs = grpcArgs(decodeArgs);
