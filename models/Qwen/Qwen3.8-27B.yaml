@@ -86,7 +86,7 @@ features:
       - "--reasoning-parser"
       - "qwen3"
   spec_decoding:
-    description: "Speculative decoding — pick MTP (in-checkpoint) or DFlash2 (external draft)."
+    description: "Speculative decoding — pick MTP (in-checkpoint), DFlash2, or DSpark (external drafts)."
     default_mode: mtp
     modes:
       mtp:
@@ -128,6 +128,13 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"dflash","model":"incoai/Qwen3.8-27B-DFlash2","num_speculative_tokens":7}'
+      dspark:
+        label: "DSpark"
+        description: "External DSpark drafter (RedHatAI/Qwen3.8-27B-speculator.dspark), with a Markov head and confidence head. The model card specifies 8 draft tokens."
+        variants: [default]
+        args:
+          - "--speculative-config"
+          - '{"method":"dspark","model":"RedHatAI/Qwen3.8-27B-speculator.dspark","num_speculative_tokens":8}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -483,6 +490,17 @@ guide: |
   vllm serve Qwen/Qwen3.8-27B \
     --speculative-config '{"method":"dflash","model":"incoai/Qwen3.8-27B-DFlash2","num_speculative_tokens":7}'
   ```
+
+  ### DSpark (opt-in)
+
+  DSpark is an external confidence-scheduled drafter. Serve `Qwen/Qwen3.8-27B` and attach
+  [RedHatAI/Qwen3.8-27B-speculator.dspark](https://huggingface.co/RedHatAI/Qwen3.8-27B-speculator.dspark)
+  with eight speculative tokens:
+
+  ```bash
+  vllm serve Qwen/Qwen3.8-27B \
+    --speculative-config '{"method":"dspark","model":"RedHatAI/Qwen3.8-27B-speculator.dspark","num_speculative_tokens":8}'
+  ```
   
   ## Client usage
 
@@ -538,6 +556,7 @@ guide: |
   - vLLM documentation: https://docs.vllm.ai/
   - vLLM Ascend tutorial: https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/Qwen3.8-27B.html
   - DFlash2 draft: https://huggingface.co/incoai/Qwen3.8-27B-DFlash2
+  - DSpark draft: https://huggingface.co/RedHatAI/Qwen3.8-27B-speculator.dspark
   - DFlash2 blog: https://inco.ai/blog/dflash2/
   - vLLM DFlash2 PR: https://github.com/vllm-project/vllm/pull/52816
   - Native FP8 support on Ascend: https://github.com/vllm-project/vllm-ascend/pull/14852
