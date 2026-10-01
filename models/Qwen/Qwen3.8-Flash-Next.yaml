@@ -3,7 +3,7 @@ meta:
   slug: "qwen3.8-flash-next"
   provider: "Qwen"
   description: "Qwen4 architecture preview with a 125B-parameter main model, supplemented by an additional 51B N-gram embeddings, with 6B parameters activated per token."
-  date_updated: 2026-09-27
+  date_updated: 2026-10-01
   difficulty: advanced
   tasks:
     - multimodal
@@ -17,6 +17,7 @@ meta:
     gb200: verified
     gb300: verified
     mi355x: verified
+    rtx_pro_6000: verified
     rtx_pro_6000_4x: verified
     dgx_station_gb300: verified
 
@@ -64,6 +65,14 @@ features:
     args:
       - "--speculative-config"
       - '{"method":"mtp","num_speculative_tokens":3}'
+    hardware_overrides:
+      # K=2 with the NVFP4 MTP drafter directory assembled as described in the
+      # guide ("NVFP4 on a single RTX PRO 6000 (TP1)"). The checkpoint's bundled
+      # BF16 MTP head also runs, with a ~37% smaller KV pool on a 96 GB card.
+      rtx_pro_6000:
+        args:
+          - "--speculative-config"
+          - '{"method":"mtp","num_speculative_tokens":2,"model":"/root/.cache/huggingface/Qwen3.8-Flash-Next-MTP-NVFP4"}'
   text_only:
     description: "Skip the vision encoder for text-only workloads and leave more memory for KV cache"
     args:
@@ -84,6 +93,8 @@ opt_in_features:
 
 hardware_opt_in_features:
   h100:
+    - spec_decoding
+  rtx_pro_6000:
     - spec_decoding
   rtx_pro_6000_4x:
     - spec_decoding
@@ -159,6 +170,36 @@ variants:
     precision: bf16
     vram_minimum_gb: 423
     description: "Official BF16 checkpoint"
+  nvfp4_radixark:
+    model_id: "RadixArk/Qwen3.8-Flash-Next-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (RadixArk)"
+    # 135.2 GB checkpoint (NVFP4 experts; attention/embeddings/MTP unquantized)
+    # -> ceil(135.2 x 1.2)
+    vram_minimum_gb: 163
+    description: "RadixArk NVFP4 routed experts with an FP8 N-gram embedding table, which current vLLM offloads to host RAM"
+    # Tested only on a single RTX PRO 6000; other hardware keeps the default variants.
+    supported_hardware:
+      - rtx_pro_6000
+    hardware_overrides:
+      rtx_pro_6000:
+        # GPU-resident budget with the ~51 GB N-gram embedding table in pinned
+        # host RAM: 74.34 GiB ~= 79.8 GB weights reported at model load (earlier
+        # build), excluding the ~1.5 GiB NVFP4 MTP drafter.
+        vram_minimum_gb: 80
+        extra_args:
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "4"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--gpu-memory-utilization"
+          - "0.93"
+          - "--mamba-cache-mode"
+          - "align"
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
 
 compatible_strategies:
   - single_node_tp
@@ -314,6 +355,122 @@ guide: |
   acceptance rate. Do not enable it by default here; it may help on other
   hardware or workloads, but verify before turning it on.
 
+  ### NVFP4 on a single RTX PRO 6000 (TP1)
+
+  Tested on one RTX PRO 6000 Blackwell Workstation (sm_120, 96 GB) in a PCIe 4.0
+  host with 125 GiB DDR4, using the
+  [`RadixArk/Qwen3.8-Flash-Next-NVFP4`](https://huggingface.co/RadixArk/Qwen3.8-Flash-Next-NVFP4)
+  checkpoint (NVFP4 routed experts, FP8 N-gram embedding table). The ~51 GB table
+  stays in pinned host RAM; only weights and KV cache live on the GPU. Nightlies
+  after [vllm#57937](https://github.com/vllm-project/vllm/pull/57937) enable
+  N-gram Embedding offload by default and ignore `VLLM_PLE_CPU_OFFLOAD`, so no
+  env var is needed. The Inferact checkpoint was not tested on one card: its BF16
+  N-gram embedding table (~102 GB) would need far more pinned host RAM, and its
+  `vram_minimum_gb` keeps it out of the single-card picker.
+
+  Tested image: `vllm/vllm-openai:nightly-a9eafde59cbd55182dc2265cc398b7186f0a0eaa`
+  (2026-09-27). Use a nightly whose commit is from 2026-09-25 or later: it includes
+  [vllm#58489](https://github.com/vllm-project/vllm/pull/58489), which fixes N-gram
+  prefetch ids being overwritten by CUDA graph memory (silently non-reproducible
+  output with offload on).
+
+  `--mamba-cache-mode align` is required for `--enable-prefix-caching` to take
+  effect on this hybrid GDN/QSA model. `--max-num-seqs 4` is the concurrency cap
+  tested on this single-user card; higher values were not tested. `--moe-backend`
+  was left at its default. Do not combine `--moe-backend marlin` with MTP using the
+  bundled BF16 MTP head: Marlin is applied to the unquantized draft MoE and startup
+  aborts ([vllm#56832](https://github.com/vllm-project/vllm/issues/56832), fix
+  proposed in [vllm#56964](https://github.com/vllm-project/vllm/pull/56964)).
+
+  The measurements below were taken with this command (Python frontend, MTP on):
+
+  ```bash
+  VLLM_USE_V2_MODEL_RUNNER=1 \
+  VLLM_SPARSE_INDEXER_MAX_LOGITS_MB=512 \
+  vllm serve RadixArk/Qwen3.8-Flash-Next-NVFP4 \
+    --trust-remote-code \
+    --max-model-len 262144 \
+    --max-num-seqs 4 \
+    --max-num-batched-tokens 8192 \
+    --gpu-memory-utilization 0.93 \
+    --kv-cache-dtype fp8 \
+    --attention-config.indexer_kv_dtype fp8 \
+    --mamba-cache-mode align \
+    --enable-prefix-caching \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":2,"model":"<drafter-dir>"}' \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_xml \
+    --reasoning-parser qwen3
+  ```
+
+  The command the builder generates for this hardware differs from the measured
+  one: it uses the Rust frontend (`VLLM_USE_RUST_FRONTEND=1`), adds
+  `--no-enable-flashinfer-autotune`, uses `--tool-call-parser qwen3_coder`, leaves
+  MTP off unless **Spec Decoding** is toggled on (no-MTP was measured only on an
+  older branch build, not on a current nightly), uses the floating `:nightly` tag,
+  and omits `--trust-remote-code` and `VLLM_SPARSE_INDEXER_MAX_LOGITS_MB`.
+
+  **Optional NVFP4 MTP drafter.** The RadixArk checkpoint ships its MTP head in
+  BF16 (4.86 GiB, as
+  [Peuqui reported](https://huggingface.co/RadixArk/Qwen3.8-Flash-Next-NVFP4/discussions/6)).
+  [`Inferact/Qwen3.8-Flash-Next-NVFP4`](https://huggingface.co/Inferact/Qwen3.8-Flash-Next-NVFP4)
+  ships an NVFP4-quantized MTP head (~1.49 GiB) as a single file,
+  `nvfp4_experts_mtp.safetensors`;
+  [`provsalt/Qwen3.8-Flash-Next-NVFP4-PLE-NVFP4`](https://huggingface.co/provsalt/Qwen3.8-Flash-Next-NVFP4-PLE-NVFP4)
+  redistributes the same file byte for byte and is the download source tested here.
+  Peuqui's [mtp-quant-transplant](https://github.com/Peuqui/mtp-quant-transplant)
+  splices that file into the RadixArk checkpoint. The steps below instead load it
+  as a separate drafter directory through the `model` field of
+  `--speculative-config`, which leaves the main checkpoint untouched. The directory
+  holds the MTP file, provsalt's config and tokenizer files, and an index trimmed
+  to the MTP tensors; the inline script keeps only the index entries that point at
+  the MTP file and sets `total_size` to that file's tensor bytes.
+
+  ```bash
+  D=~/.cache/huggingface/Qwen3.8-Flash-Next-MTP-NVFP4
+  hf download provsalt/Qwen3.8-Flash-Next-NVFP4-PLE-NVFP4 \
+    --revision 48d98195ac8da8ff10d9ee497b5d52e7817f058d --local-dir "$D" \
+    nvfp4_experts_mtp.safetensors model.safetensors.index.json config.json \
+    generation_config.json tokenizer.json tokenizer_config.json vocab.json merges.txt
+  python3 - "$D" <<'PY'
+  import json, os, struct, sys
+  d, f = sys.argv[1], "nvfp4_experts_mtp.safetensors"
+  p = os.path.join(d, "model.safetensors.index.json")
+  idx = json.load(open(p))
+  idx["weight_map"] = {k: v for k, v in idx["weight_map"].items() if v == f}
+  with open(os.path.join(d, f), "rb") as fh:
+      header_len = struct.unpack("<Q", fh.read(8))[0]
+  idx["metadata"]["total_size"] = os.path.getsize(os.path.join(d, f)) - 8 - header_len
+  json.dump(idx, open(p, "w"))
+  PY
+  ```
+
+  The builder's **Spec Decoding** toggle on this hardware points at
+  `/root/.cache/huggingface/Qwen3.8-Flash-Next-MTP-NVFP4`, which is where `$D`
+  lands inside the generated `docker run` (it mounts `~/.cache/huggingface`).
+
+  Measured on this card, single stream:
+
+  | Metric | Result | Build |
+  |---|---|---|
+  | KV pool, MTP K=2 + NVFP4 MTP drafter, prefix caching on | 602,931 tokens (2.30x at 262,144) | nightly `a9eafde` (2026-09-27) |
+  | KV pool, MTP K=2, bundled BF16 MTP head vs NVFP4 MTP drafter (only variable) | 372,244 vs 587,202 tokens (~37% smaller with the BF16 head) | earlier build (main at #55450), 2026-09-11/12 |
+  | Decode tok/s at 256 / 4K / 16K / 64K / 128K / 200K / 250K context, prefix caching on | 149.0 / 136.4 / 131.6 / 131.9 / 124.4 / 121.4 / 128.6 | nightly `a9eafde` |
+  | Prefill tok/s, unique prompts, 4K / 16K / 64K / 128K / 200K | 16,216 / 17,018 / 16,436 / 16,039 / 15,607 | nightly `a9eafde` (from the burn-in) |
+
+  The 602,931 figure includes about 16K tokens gained from
+  [vllm#58430](https://github.com/vllm-project/vllm/pull/58430). MTP decode speed
+  depends on acceptance and varies run to run, so treat the decode row as a range.
+
+  Burn-in on the same build, prefix caching off: no errors or preemptions, single
+  requests up to a 248,784-token prompt, and an 8-round soak alternating ~100K and
+  short prompts. Live traffic overlapped part of the run without affecting
+  stability; the prefill row comes from this burn-in, and its 250K point is omitted
+  because the overlap hit it. The decode row was re-measured separately with prefix
+  caching on and no other traffic. Correctness check on the same build, idle
+  server, prefix caching off: teacher-forced mean logprob on a fixed passage (n=8)
+  matched earlier builds within run-to-run noise.
+
   ### FP8 configuration on a 4x MI355X GPU
   ```bash
   export VLLM_ROCM_USE_AITER=1
@@ -395,7 +552,8 @@ guide: |
   - **FP8 on eight GPUs:** use TEP8; plain TP8 is incompatible with this
     checkpoint. TP4 is also supported if GPU memory capacity allows.
   - **TP1 compilation OOM on GB300:** use TP2 or TP4.
-  - **Mamba-cache capacity error at startup:** keep `--max-num-seqs 256`.
+  - **Mamba-cache capacity error at startup:** keep `--max-num-seqs 256` (except
+    the single RTX PRO 6000 profile, which was tested at 4).
   - **Runtime OOM on large multimodal batches:** keep `--gpu-memory-utilization 0.90`.
   - **Out of memory while loading:** enable N-gram Embedding CPU offload, increase
     TP size, or reduce `--max-model-len` to reserve less KV cache. On 4x H100
@@ -428,5 +586,8 @@ guide: |
 
   - [Qwen3.8-Flash-Next model card](https://huggingface.co/Qwen/Qwen3.8-Flash-Next)
   - [Qwen3.8-Flash-Next FP8 checkpoint](https://huggingface.co/Qwen/Qwen3.8-Flash-Next-FP8)
+  - [RadixArk NVFP4 checkpoint](https://huggingface.co/RadixArk/Qwen3.8-Flash-Next-NVFP4)
+  - [Inferact NVFP4 checkpoint (origin of the NVFP4 MTP drafter file)](https://huggingface.co/Inferact/Qwen3.8-Flash-Next-NVFP4)
+  - [provsalt NVFP4 checkpoint (tested download source for the same file)](https://huggingface.co/provsalt/Qwen3.8-Flash-Next-NVFP4-PLE-NVFP4)
   - [Qwen3.8-Flash-Next: A New Architecture, Towards Ultimate Cost-Efficiency](https://qwen.ai/blog?id=qwen3.8-flash-next)
   - [Qwen3-Next recipe](../Qwen3-Next-80B-A3B-Instruct)
