@@ -2502,7 +2502,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               </PillGroup>
               <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
                 {isSmgGrpc
-                  ? "SMG handles tokenization, tools and reasoning. Text Only is optional. Docker workers install the pinned servicer at startup. Clients still use the HTTP API on SMG."
+                  ? "SMG handles tokenization, tools and reasoning. Text Only is optional. Docker workers install the gRPC servicer at startup. Clients still use the HTTP API on SMG."
                   : "HTTP workers handle tokenization, tools and reasoning."}
               </p>
             </ConfigRow>
@@ -3826,7 +3826,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
         <div className="mx-4 mt-3 rounded-lg border border-[var(--command-fg)]/15 p-3 text-[11px] text-[var(--command-fg)]/70 leading-relaxed">
           <p className="font-semibold">Worker container setup · automatic</p>
           <p className="mt-1">
-            Each Prefill / Decode Docker command installs the pinned gRPC servicer inside the vLLM container before starting the worker.
+            Each Prefill / Decode Docker command installs the gRPC servicer inside the vLLM container before starting the worker.
             Installation needs network access and repeats for each new container.
           </p>
           <pre className="mt-2 font-mono whitespace-pre-wrap break-words">{result.workerDockerSetup}</pre>

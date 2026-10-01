@@ -172,8 +172,8 @@ for (const [id, reasoning, tools] of grpcModels) {
     assert.ok(result.router.command.includes(`--model-path ${id}`));
     assert.ok(result.router.command.includes(`--reasoning-parser ${reasoning}`));
     assert.ok(result.router.command.includes(`--tool-call-parser ${tools}`));
-    assert.match(result.workerInstall, /smg-grpc-servicer==/);
-    assert.match(result.workerInstall, /smg-grpc-proto==/);
+    assert.match(result.workerInstall, /smg-grpc-servicer>=/);
+    assert.match(result.workerInstall, /smg-grpc-proto>=/);
     execFileSync("bash", ["-n"], { input: result.router.command });
   });
 }
@@ -215,7 +215,7 @@ test("gRPC Docker installs dependencies inside the vLLM image and exposes NIXL o
   assert.match(command, /--network host/);
   assert.match(command, /--entrypoint \/bin\/sh/);
   assert.match(command, /vllm\/vllm-openai:minimax-m3/);
-  assert.match(command, /python3 -m pip install.*smg-grpc-servicer==/);
+  assert.match(command, /python3 -m pip install.*smg-grpc-servicer>=/);
   assert.match(command, /exec vllm serve/);
   assert.doesNotMatch(command, / -p /);
   const router = result.router.dockerCommand;
