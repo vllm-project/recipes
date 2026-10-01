@@ -3883,7 +3883,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
                 of 1..{active.meta.nodes} · --node-rank = {active.meta.currentNode ?? 0}
               </span>
               <span className="text-[var(--command-fg)]/40 ml-auto">
-                {(active.meta.currentNode ?? 0) === 0 ? "head node — serves HTTP + NIXL" : "follower — runs --headless"}
+                {(active.meta.currentNode ?? 0) === 0 ? `head node — serves ${result.transport === "grpc" ? "gRPC" : "HTTP"} + NIXL` : "follower — runs --headless"}
               </span>
             </>
           )}
