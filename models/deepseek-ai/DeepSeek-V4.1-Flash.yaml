@@ -5,7 +5,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-09-29
+  date_updated: 2026-10-02
   difficulty: advanced
   tasks:
     - text
@@ -278,6 +278,8 @@ strategy_overrides:
           # Aiter's Gluon sparse-MLA kernel, gfx950 only
           # (vllm-project/vllm#53492).
           VLLM_ROCM_USE_AITER_TRITON_SPARSE_MLA: "1"
+          # INT4 quantization for faster all-reduce
+          VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
       blackwell:
         extra_args:
           - "--attention-config"
