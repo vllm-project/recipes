@@ -37,7 +37,7 @@ model:
   model_id: "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp"
   # Support targets the next release; nothing has shipped yet, so the pinned
   # image below is the only runnable path.
-  min_vllm_version: "0.29.0"
+  min_vllm_version: "0.30.0"
   nightly_required: true
   docker_image:
     nvidia: "vllm/vllm-openai:deepseekv4-flash-vision"
