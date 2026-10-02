@@ -95,6 +95,11 @@ model:
     - "--trust-remote-code"
   base_env:                                       # env vars always needed
     VLLM_USE_DEEP_GEMM: "0"                       # MoE kernel selection itself is done via --moe-backend args
+  default_frontend: rust                          # optional — python (default) | rust; preselects the Frontend pill
+  frontends:                                      # optional — mark a frontend unusable and explain why
+    rust:
+      status: unsupported                         # greys the pill out; synthesis falls back to python
+      note: "…"                                   # optional — pill tooltip + help text; say what would make it work again
 
 # Optional — extra install steps beyond `uv pip install -U vllm`.
 # Rendered as a code block above the vllm serve command.

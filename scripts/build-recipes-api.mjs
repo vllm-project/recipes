@@ -219,6 +219,31 @@ function validateFeatureModes(recipe, sourceFile) {
   }
 }
 
+// `model.frontends.<name>` gates a frontend out of the command builder. Accept
+// only `"unsupported"` or `{ status: "unsupported", note? }`: like a stray
+// hardware key, any other spelling silently never disables anything and there
+// is no downstream symptom to catch it.
+function validateFrontends(recipe, sourceFile) {
+  const errors = [];
+  const frontends = recipe.model?.frontends;
+  if (frontends !== undefined && (typeof frontends !== "object" || frontends === null || Array.isArray(frontends))) {
+    errors.push(`model.frontends must be a map of frontend name to status`);
+  }
+  for (const [name, entry] of Object.entries(frontends || {})) {
+    const status = typeof entry === "string" ? entry : entry?.status;
+    if (status !== "unsupported") {
+      errors.push(`model.frontends.${name} must be "unsupported" or { status: "unsupported", note? }`);
+    }
+    if (entry && typeof entry === "object" && entry.note !== undefined && typeof entry.note !== "string") {
+      errors.push(`model.frontends.${name}.note must be a string`);
+    }
+  }
+  if (errors.length) {
+    const rel = path.relative(ROOT, sourceFile);
+    throw new Error(`Invalid frontends in ${rel}:\n  - ${errors.join("\n  - ")}`);
+  }
+}
+
 // Validate every hardware-keyed map against the taxonomy vocabulary. Hardware
 // lookups are exact string matches (`isHardwareSupported`, `hardwareKeyedValue`),
 // so a key naming no known GPU is silently inert: an author's `verified` badge
@@ -799,6 +824,7 @@ let collisionCount = 0;
 for (const file of findYamlFiles(modelsDir)) {
   const r = normalizeDates(readYaml(file));
   validateFeatureModes(r, file);
+  validateFrontends(r, file);
   validateHardwareKeys(r, file, taxonomy, strategies);
   // Derive HF identity from path. Only `hf_id` is exposed in the public JSON;
   // `org` and `repo` are trivially `hf_id.split("/")` for consumers.

@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, resolveFrontend, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, resolveFrontend, frontendUnsupportedReason, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -381,6 +381,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const [frontend, setFrontend] = useState(() =>
     resolveFrontend(recipe, searchParams.get("frontend") || undefined)
   );
+  const rustDisabledReason = frontendUnsupportedReason(recipe, "rust");
 
   // Active omni task — drives the `vllm serve --omni` model_id swap (Wan2.2's
   // T2V/I2V/TI2V) and the cURL endpoint/body shown in the Try-it popover.
@@ -2803,7 +2804,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               <Pill
                 active={frontend === "rust"}
                 pressed={frontend === "rust"}
-                onClick={() => selectFrontend("rust")}
+                disabled={!!rustDisabledReason}
+                title={rustDisabledReason || undefined}
+                onClick={() => !rustDisabledReason && selectFrontend("rust")}
               >
                 <Zap size={11} className="inline-block mr-1 -mt-0.5" fill="currentColor" aria-hidden="true" />
                 <span className="font-semibold">Rust</span>
@@ -2813,8 +2816,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               </Pill>
             </PillGroup>
             <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
-              The experimental Rust frontend can improve throughput and latency, especially under high concurrency.
-              {" "}Switch to Python if you encounter unsupported features or compatibility issues.
+              {rustDisabledReason ? (
+                rustDisabledReason
+              ) : (
+                <>
+                  The experimental Rust frontend can improve throughput and latency, especially under high concurrency.
+                  {" "}Switch to Python if you encounter unsupported features or compatibility issues.
+                </>
+              )}
             </p>
           </ConfigRow>
 

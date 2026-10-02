@@ -16,8 +16,22 @@ const NVL4_ONLY_ENV_KEYS = new Set([
 ]);
 const NVL4_HW_IDS = new Set(["gb200", "gb300"]);
 
+// `model.frontends.<name>` marks a frontend unavailable for the recipe, as
+// `"unsupported"` or `{ status: "unsupported", note? }` — the note becomes the
+// pill tooltip. Synthesis falls back to the Python frontend regardless, so a
+// forced `?frontend=rust` URL can never emit a broken command.
+export function frontendUnsupportedReason(recipe, frontend) {
+  const entry = recipe.model?.frontends?.[frontend];
+  if (!entry) return null;
+  const status = typeof entry === "string" ? entry : entry.status;
+  if (status !== "unsupported") return null;
+  const note = typeof entry === "string" ? "" : (entry.note || "");
+  return note || `${frontend} frontend is not supported for this recipe.`;
+}
+
 export function resolveFrontend(recipe, frontend = recipe.model?.default_frontend) {
-  return frontend === "rust" ? "rust" : "python";
+  const wanted = frontend === "rust" ? "rust" : "python";
+  return frontendUnsupportedReason(recipe, wanted) ? "python" : wanted;
 }
 
 /**
