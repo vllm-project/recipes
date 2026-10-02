@@ -44,11 +44,11 @@ model:
     amd: "vllm/vllm-openai-rocm:nightly"
   install:
     # Docker first so it is the default tab. The official wheel can't run this
-    # checkpoint: released vLLM routes it to the text-only
+    # checkpoint: released vLLM prior to v0.30.0 routes it to the text-only
     # DeepseekV4ForCausalLM, which then fails on the vision/aligner tensors.
     # v0.30.0 already resolves it to DeepseekV4ForConditionalGeneration (verified on the ROCm image, 2026-10-02).
     docker:
-      note: "NVIDIA: use the dedicated DeepSeek-V4-Flash-Vision image until support lands in the standard vLLM image. AMD: vllm/vllm-openai-rocm:v0.30.0 (ROCm 7.2.3) or a nightly >= 2026-09-11 (includes #55107); on v0.30.0 also set cudagraph_mode FULL_DECODE_ONLY (see the AMD section). Ascend 950PR/950DT: pin quay.io/ascend/vllm-ascend:v0.23.0-a5 and overlay vllm-project/vllm-ascend#16259."
+      note: "NVIDIA: use the dedicated DeepSeek-V4-Flash-Vision image until support lands in the standard vLLM image. AMD: vllm/vllm-openai-rocm:v0.30.0 (ROCm 7.2.3) or a nightly >= 2026-09-11 (includes #55107); on v0.30.0 also pass --compilation-config '{\"cudagraph_mode\":\"FULL_DECODE_ONLY\"}' (see the AMD section). Ascend 950PR/950DT: pin quay.io/ascend/vllm-ascend:v0.23.0-a5 and overlay vllm-project/vllm-ascend#16259."
     pip: false
   architecture: moe
   parameter_count: "285B"
