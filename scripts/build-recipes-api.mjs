@@ -225,8 +225,9 @@ function validateFeatureModes(recipe, sourceFile) {
 // never renders, and — worse — an intended `unsupported` opt-out never disables
 // anything. Nothing downstream can detect that, hence the build-time check.
 //
-// Two keyspaces, matching the schema in CLAUDE.md:
-//   - exact:   only a taxonomy profile id (`meta.hardware`, `supported_hardware`)
+// Three keyspaces, matching the schema in CLAUDE.md:
+//   - exact:   only a taxonomy profile id (`meta.hardware`)
+//   - variant selectors: profile id or `arch:<compute_arch>`
 //   - layered: profile id > generation > brand > `default` (`strategy_hardware`,
 //              variant `tp`, `hardware_overrides`)
 function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
@@ -235,9 +236,11 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
   const ids = new Set(Object.keys(profiles));
   const generations = new Set();
   const brands = new Set();
+  const computeArchs = new Set();
   for (const p of Object.values(profiles)) {
     if (p?.generation) generations.add(p.generation);
     if (p?.brand) brands.add(String(p.brand).toLowerCase());
+    if (p?.compute_arch) computeArchs.add(p.compute_arch);
   }
   const layered = new Set([...ids, ...generations, ...brands, "default"]);
 
@@ -270,7 +273,13 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
 
   for (const [variantKey, variant] of Object.entries(recipe?.variants || {})) {
     const at = `variants.${variantKey}`;
-    for (const k of variant?.supported_hardware || []) exact(`${at}.supported_hardware`, k);
+    for (const k of variant?.supported_hardware || []) {
+      if (k.startsWith("arch:")) {
+        if (!computeArchs.has(k.slice(5))) errors.push(`${at}.supported_hardware references unknown compute architecture ${k}`);
+      } else {
+        exact(`${at}.supported_hardware`, k);
+      }
+    }
     for (const k of keysOf(variant?.hardware_overrides)) keyed(`${at}.hardware_overrides`, k);
     if (variant?.tp && typeof variant.tp === "object") {
       for (const k of keysOf(variant.tp)) keyed(`${at}.tp`, k);
@@ -307,7 +316,7 @@ function dockerize(command, argv, env, dockerMeta, port = null) {
   return {
     docker_command: buildDockerRun({
       command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, port,
-      isNpu: dockerMeta.isNpu,
+      isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix,
     }),
     docker_argv: buildDockerArgv({ argv, env, meta: dockerMeta, port }),
   };

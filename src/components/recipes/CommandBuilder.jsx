@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, resolveFrontend } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, resolveFrontend, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -362,6 +362,11 @@ const MOONCAKE_DOCS_URL =
 // Offloading(2) · Mooncake(3) · LMCache(4).
 const MOONCAKE_PILL_ORDER = 3;
 
+function hardwareSelectorLabel(selector, profiles) {
+  if (selector.startsWith("arch:")) return `${selector.slice(5).toUpperCase()} GPUs`;
+  return profiles?.[selector]?.display_name || selector;
+}
+
 export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -406,9 +411,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const requestedVariant = recipe.variants?.[searchParams.get("variant") || "default"] || recipe.variants?.default || {};
   const requestedHwProfile = taxonomy.hardware_profiles?.[requestedHwId] || {};
   const requestedHwAllowed = requestedHwId
+    && taxonomy.hardware_profiles?.[requestedHwId]
+    && (!requestedHwProfile.restricted || requestedHwId in (recipe.meta?.hardware || {}))
     && isPrecisionCompatible(requestedHwProfile, requestedVariant)
     && isHardwareSupported(recipe, requestedHwId)
-    && isVariantHardwareSupported(requestedVariant, requestedHwId);
+    && isVariantHardwareSupported(requestedVariant, requestedHwId, requestedHwProfile);
   const [hwId, setHwId] = useState(requestedHwAllowed ? requestedHwId : defaultHw);
 
   // After mount: restore preferences from localStorage in two scopes.
@@ -439,7 +446,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       // preference and leave every other recipe with no rendered pill selected.
       const declaredHere = prefs.hardware in (recipe.meta?.hardware || {});
       const restrictedElsewhere = prefProfile?.restricted && !declaredHere;
-      if (prefProfile?.brand === "NVIDIA" && !restrictedElsewhere && isPrecisionCompatible(prefProfile, v) && isHardwareSupported(recipe, prefs.hardware) && isVariantHardwareSupported(v, prefs.hardware)) {
+      if (prefProfile?.brand === "NVIDIA" && !restrictedElsewhere && isPrecisionCompatible(prefProfile, v) && isHardwareSupported(recipe, prefs.hardware) && isVariantHardwareSupported(v, prefs.hardware, prefProfile)) {
         setHwId(prefs.hardware);
         restoredFitsHw = prefProfile;
       }
@@ -616,6 +623,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const n = parseInt(searchParams.get("decode_rank") || "0", 10);
     return Number.isFinite(n) && n >= 0 ? n : 0;
   });
+  // PD router selection is only used under pd_cluster.
+  const [pdRouter, setPdRouter] = useState(() =>
+    ["dynamo", "smg"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : "vllm"
+  );
   const [strategyOverride, setStrategyOverride] = useState(() => {
     // A kv_store id in ?strategy= must never become the serving strategy —
     // Mooncake selection travels in ?kv_offload= instead.
@@ -1116,9 +1127,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
         }
         : null;
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend);
+      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter);
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter]
   );
 
   // Visual feedback when any rendered command changes. Covers single-node
@@ -1131,7 +1142,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     || result.vllm?.command
     || "")
     + (omniTask ? `|task:${omniTask}` : "")
-    + `|frontend:${frontend}`;
+    + `|frontend:${frontend}`
+    + `|pd_router:${pdRouter}`;
   const [changed, setChanged] = useState(false);
   useEffect(() => {
     setChanged(true);
@@ -1178,7 +1190,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const v = recipe.variants?.[key] || {};
     const currentProfile = taxonomy.hardware_profiles?.[hwId] || {};
     const updates = { variant: key };
-    if (!isPrecisionCompatible(currentProfile, v) || !isVariantHardwareSupported(v, hwId)) {
+    if (!isPrecisionCompatible(currentProfile, v) || !isVariantHardwareSupported(v, hwId, currentProfile)) {
       const next = pickDefaultHardware(taxonomy.hardware_profiles, v, recipe);
       setHwId(next);
       updates.hardware = next;
@@ -1404,6 +1416,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   // Switching a pool's parallelism changes what the rank/node index means
   // (DEP start-rank vs TP node-rank), so reset that pool's rank to 0.
+  // Dynamo is brand-gated (strategy YAML `dynamo.brands`); on other hardware
+  // the row shows vLLM Router active and synthesis ignores the pick.
+  const dynamoOk = isDynamoSupportedOnHardware(strategies.pd_cluster?.dynamo, hwProfile);
+  const smgReason = smgUnsupportedReason(recipe, strategies.pd_cluster, {
+    prefill: { parallelism: effPdPrefillPar }, decode: { parallelism: effPdDecodePar },
+  }, activeKvOffload);
+  const effPdRouter = result.orchestrator === "smg" ? "smg" : result.orchestrator === "dynamo" ? "dynamo" : "vllm";
+  const selectPdRouter = (value) => {
+    setPdRouter(value);
+    syncUrl({ pd_router: value === "vllm" ? "" : value });
+  };
+
   const setPdPar = (role, mode) => {
     if (!pdModes.includes(mode)) return;
     const isPrefill = role === "prefill";
@@ -1498,6 +1522,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     if (result.prefill?.command) texts.push(result.prefill.command);
     if (result.decode?.command) texts.push(result.decode.command);
     if (result.router?.command) texts.push(result.router.command);
+    if (result.infra?.command) texts.push(result.infra.command);
+    if (result.registration?.command) texts.push(result.registration.command);
     if (result.vllm?.command) texts.push(result.vllm.command);
     if (result.vllm?.workerCommand) texts.push(result.vllm.workerCommand);
     if (result.master?.command) texts.push(result.master.command);
@@ -1513,7 +1539,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       if (result.mooncake.store?.config) texts.push(JSON.stringify(result.mooncake.store.config));
       texts.push(JSON.stringify(result.mooncake.config));
     }
-    for (const e of [result.env, result.prefill?.env, result.decode?.env, result.vllm?.env]) {
+    for (const e of [result.env, result.prefill?.env, result.decode?.env, result.vllm?.env, result.router?.env]) {
       if (!e) continue;
       for (const v of Object.values(e)) if (typeof v === "string") texts.push(v);
     }
@@ -1555,7 +1581,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         ...result,
         prefill: { ...result.prefill, command: sub(result.prefill.command), env: substituteEnv(result.prefill.env, effectiveEndpoints) },
         decode:  { ...result.decode,  command: sub(result.decode.command),  env: substituteEnv(result.decode.env,  effectiveEndpoints) },
-        router:  { ...result.router,  command: sub(result.router.command) },
+        router:  { ...result.router,  command: sub(result.router.command), ...(result.router.dockerCommand ? { dockerCommand: sub(result.router.dockerCommand) } : {}), ...(result.router.env ? { env: substituteEnv(result.router.env, effectiveEndpoints) } : {}) },
+        ...(result.infra ? { infra: { ...result.infra, command: sub(result.infra.command) } } : {}),
+        ...(result.registration ? { registration: { ...result.registration, command: sub(result.registration.command) } } : {}),
         ...(result.mooncake ? {
           mooncake: {
             ...result.mooncake,
@@ -1652,8 +1680,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         });
       }
     }
+    // Dynamo PD: its pinned runtime wheels join the block while picked. Both
+    // install tabs — the workers render pip-style even in Docker mode (the
+    // vllm-openai entrypoint can't launch dynamo.vllm).
+    if (result.orchestrator === "dynamo") {
+      for (const step of result.dynamoInstall || []) {
+        deps.push({ ...step, install_modes: ["pip", "docker"] });
+      }
+    }
+    if (result.orchestrator === "smg") {
+      deps.push({ command: result.router.install, note: "SMG — install on the router host", install_modes: ["pip"] });
+      deps.push({ command: result.router.dockerInstall, note: "SMG — pull on the router host", install_modes: ["docker"] });
+    }
     return deps;
-  }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies]);
+  }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall, result.router?.install, result.router?.dockerInstall]);
 
   // Status caption for the command block header.
   // Only `verified` is a positive signal worth surfacing; anything else
@@ -1665,7 +1705,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const hwFullName = hwProfile?.brand
     ? `${hwProfile.brand} ${hwProfile.display_name || hwId}`
     : (hwProfile?.display_name || hwId);
-  const statusHeader = hwStatus === "verified" && !activeKvOffload ? (
+  const statusHeader = hwStatus === "verified" && !activeKvOffload && !["dynamo", "smg"].includes(result.orchestrator) ? (
     <span className="text-[11px] font-medium text-green-500 inline-flex items-center gap-1.5">
       <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />
       Verified on {hwFullName}
@@ -1912,7 +1952,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     <PillGroup>
                       {profiles.map(([id, p]) => {
                         const precisionOk = isPrecisionCompatible(p, currentVariant);
-                        const variantHardwareOk = isVariantHardwareSupported(currentVariant, id);
+                        const variantHardwareOk = isVariantHardwareSupported(currentVariant, id, p);
                         const status = recipe.meta?.hardware?.[id];
                         const isUnsupported = status === "unsupported";
                         const disabled = !precisionOk || !variantHardwareOk || isUnsupported;
@@ -1920,7 +1960,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                           ? "\n\nVerified — author has tested this hardware end-to-end"
                           : "";
                         const reason = !variantHardwareOk
-                          ? `${currentVariant.precision?.toUpperCase()} is only supported on ${(currentVariant.supported_hardware || []).map((hw) => taxonomy.hardware_profiles?.[hw]?.display_name || hw).join(", ")}`
+                          ? `${currentVariant.precision?.toUpperCase()} is only supported on ${(currentVariant.supported_hardware || []).map((hw) => hardwareSelectorLabel(hw, taxonomy.hardware_profiles)).join(", ")}`
                           : !precisionOk
                           ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
                           : isUnsupported
@@ -2178,7 +2218,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   <PillGroup>
                     {profiles.map(([id, p]) => {
                       const precisionOk = isPrecisionCompatible(p, currentVariant);
-                      const variantHardwareOk = isVariantHardwareSupported(currentVariant, id);
+                      const variantHardwareOk = isVariantHardwareSupported(currentVariant, id, p);
                       // Only `verified` carries a label; everything else = silent default.
                       // `unsupported` = author opt-out for this model; disables the pill.
                       const status = recipe.meta?.hardware?.[id];
@@ -2381,6 +2421,66 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               );
             })()}
           </ConfigRow>
+
+          {/* PD Router — which orchestrator fronts the prefill/decode pools.
+              Nested under Strategy: it only exists for pd_cluster and never
+              changes the pools, just the launcher + front door. */}
+          {activeServingStrategy === "pd_cluster" && (strategies.pd_cluster?.dynamo || strategies.pd_cluster?.smg) && (
+            <ConfigRow label="PD Router" nested>
+              <PillGroup>
+                <Pill
+                  active={effPdRouter === "vllm"}
+                  pressed={effPdRouter === "vllm"}
+                  onClick={() => selectPdRouter("vllm")}
+                  title="Native vllm-router in PD mode — prefill/decode workers are plain `vllm serve` processes on fixed HTTP ports."
+                >
+                  <span className="font-semibold">vLLM Router</span>
+                </Pill>
+                {strategies.pd_cluster.dynamo && <Pill
+                  active={effPdRouter === "dynamo"}
+                  pressed={effPdRouter === "dynamo"}
+                  disabled={!dynamoOk}
+                  onClick={() => dynamoOk && selectPdRouter("dynamo")}
+                  title={dynamoOk
+                    ? strategies.pd_cluster.dynamo.description
+                    : `Dynamo isn't available on ${hwProfile.display_name || hwId} — it needs ${(strategies.pd_cluster.dynamo.brands || []).join(" / ")} hardware.`}
+                >
+                  <span className="font-semibold">{strategies.pd_cluster.dynamo.display_name || "Dynamo"}</span>
+                </Pill>}
+                {strategies.pd_cluster.smg && <Pill
+                  active={effPdRouter === "smg"}
+                  pressed={effPdRouter === "smg"}
+                  disabled={!!smgReason}
+                  onClick={() => !smgReason && selectPdRouter("smg")}
+                  title={smgReason || strategies.pd_cluster.smg.description}
+                >
+                  <span className="font-semibold">SMG</span>
+                </Pill>}
+              </PillGroup>
+              <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                {effPdRouter === "dynamo"
+                  ? strategies.pd_cluster.dynamo.description
+                  : effPdRouter === "smg" ? strategies.pd_cluster.smg.description
+                  : "vllm-router with --vllm-pd-disaggregation fronts the pools; each role is a `vllm serve` on its own HTTP port."}
+                {strategies.pd_cluster[effPdRouter]?.docs && (
+                  <>
+                    {" "}
+                    <a
+                      href={strategies.pd_cluster[effPdRouter].docs}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-0.5 text-vllm-blue hover:underline"
+                    >
+                      Docs <ExternalLink size={9} />
+                    </a>
+                  </>
+                )}
+              </p>
+              {result.routerUnavailableReason && (
+                <p className="text-[11px] text-amber-600 mt-2">{result.routerUnavailableReason} Showing vLLM Router commands.</p>
+              )}
+            </ConfigRow>
+          )}
 
           {/* KV Offload — every option COMPOSES with the serving strategy
               above (the KV layer is orthogonal to parallelism). Simple/LMCache
@@ -3170,7 +3270,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
     ? ["source /opt/intel/oneapi/setvars.sh", preludeBase].filter(Boolean).join("\n")
     : preludeBase;
   const displayCommand = isDocker
-    ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isNpu: dockerMeta.isNpu })
+    ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix })
     : command;
   // A companion process may ride along (`companions[]` from resolveCommand —
   // a feature's `companion:` or the active kv_offload option's, e.g.
@@ -3562,7 +3662,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
   const isDocker = installMode === "docker";
   const wrap = (cmd) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env: result.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu })
+      ? buildDockerRun({ command: cmd, env: result.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix })
       : cmd;
   // One tab per node: Head (rank 0) then every follower rank, each with its own
   // --node-rank / --data-parallel-start-rank. `workerCommands` carries them all;
@@ -3623,13 +3723,18 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   // knows whether the block is a single engine or a rank-0 template that
   // needs to be duplicated for the rest of the DP ranks.
   const [tab, setTab] = useState("prefill");
-  const isDocker = installMode === "docker";
-  // Prefill/decode are `vllm serve` and get wrapped in `docker run`. The
-  // router is `vllm-router` (separate pip package, different entrypoint) —
-  // it stays as-is with its pip-install hint regardless of install mode.
+  const isDynamo = result.orchestrator === "dynamo";
+  const isSmg = result.orchestrator === "smg";
+  // Dynamo workers launch via `python3 -m dynamo.vllm`, which the
+  // vllm-openai image's `vllm serve` entrypoint can't wrap — render them
+  // pip-style (install hint above) regardless of install mode.
+  const isDocker = installMode === "docker" && !isDynamo;
+  // Prefill/decode use the vLLM image. SMG has its own CPU-only router
+  // image; vllm-router keeps its pip command and install hint.
+  const routerDocker = isDocker && result.router.dockerCommand;
   const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu })
+      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix })
       : cmd;
   // Mooncake composed into PD (result.mooncake): a "Mooncake Config" tab
   // (launch step 0) writes the shared config file(s) once — every
@@ -3648,21 +3753,25 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
     }] : []),
     ...(mc ? [{ id: "mc_master", label: "Mooncake Master", command: mc.master.command, env: {}, description: mc.master.description }] : []),
     ...(mc?.store ? [{ id: "mc_store", label: "Mooncake Store", command: mc.store.command, env: {}, description: mc.store.description }] : []),
+    // Dynamo: the etcd control plane comes first in the sequence.
+    ...(isDynamo && result.infra ? [{ id: "dyn_infra", label: result.infra.label, command: result.infra.command, env: {}, description: result.infra.description }] : []),
     { id: "prefill", label: "Prefill", command: wrap(result.prefill.command, result.prefill.env), env: result.prefill.env, meta: result.prefill },
     { id: "decode", label: "Decode", command: wrap(result.decode.command, result.decode.env), env: result.decode.env, meta: result.decode },
-    { id: "router", label: "Router", command: result.router.command, env: {}, install: result.router.install, isRouter: true },
-  ].map((t, i) => (mc ? { ...t, step: i + 1 } : t));
+    { id: "router", label: result.router.label || "Router", command: routerDocker || result.router.command, env: result.router.env || {}, install: routerDocker ? null : result.router.install, isRouter: true },
+    ...(result.registration ? [{ id: "registration", ...result.registration, env: {}, isRouter: true }] : []),
+  ].map((t, i) => (mc || isDynamo || isSmg ? { ...t, step: i + 1 } : t));
   // When Mooncake is toggled on/off, jump to the leftmost tab so the launch
   // sequence reads left to right (same behavior as SingleCommandBlock's
   // companion tabs).
   const hasMc = !!mc;
   useEffect(() => {
-    setTab(hasMc ? "mc_config" : "prefill");
-  }, [hasMc]);
+    setTab(hasMc ? "mc_config" : isDynamo && result.infra ? "dyn_infra" : "prefill");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMc, isDynamo, isSmg]);
   const active = tabs.find((t) => t.id === tab) || tabs[0];
   // Docker mode folds env into `-e` flags inside `docker run` for prefill /
   // decode, so no prelude there. Router (and pip mode) keep the export-style
-  // env lines — router is `vllm-router` regardless of install mode.
+  // env lines (the SMG container command needs no environment prelude).
   const prelude = isDocker && !active.isRouter ? "" : envToExports(active.env);
   const fullScript = prelude ? `${prelude}\n\n${active.command}` : active.command;
   return (
@@ -3678,8 +3787,8 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
         <CommandTabs tabs={tabs} current={active.id} onSelect={setTab} />
         <div className="flex items-center gap-1.5 shrink-0">
           <CopyButton text={fullScript} />
-          <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={!active.isRouter} disabledNote="Clients connect via the Router tab — cURL & Bench live there." />
-          <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={!active.isRouter} disabledNote="Clients connect via the Router tab — cURL & Bench live there." />
+          <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={!active.isRouter} disabledNote={`Clients connect via the ${result.router.label || "Router"} tab — cURL & Bench live there.`} />
+          <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={!active.isRouter} disabledNote={`Clients connect via the ${result.router.label || "Router"} tab — cURL & Bench live there.`} />
           {endpointsControls}
         </div>
       </div>
@@ -3762,7 +3871,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
   const isDocker = installMode === "docker";
   const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu })
+      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix })
       : cmd;
 
   const instances = result.instances || 2;

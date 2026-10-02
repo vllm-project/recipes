@@ -58,6 +58,12 @@ features:
       - "gemma4"
       - "--chat-template"
       - "examples/tool_chat_template_gemma4.jinja"
+    hardware_overrides:
+      dgx_spark_gb10:
+        args:
+          - "--enable-auto-tool-choice"
+          - "--tool-call-parser"
+          - "gemma4"
   reasoning:
     description: "Enable structured thinking/reasoning output"
     args:
@@ -151,6 +157,7 @@ variants:
   nvfp4:
     model_id: "RedHatAI/gemma-4-26B-A4B-it-NVFP4"
     precision: nvfp4
+    label: "NVFP4 - RedHatAI"
     vram_minimum_gb: 16
     description: "NVFP4 (4-bit) quantized weights — requires Blackwell (B200/B300)"
     extra_args:
@@ -182,6 +189,7 @@ variants:
   nvidia_nvfp4:
     model_id: "nvidia/Gemma-4-26B-A4B-NVFP4"
     precision: nvfp4
+    label: "NVFP4 - NVIDIA"
     vram_minimum_gb: 16
     description: "NVIDIA ModelOpt NVFP4 (4-bit) quantized weights — validated on the single-GPU Blackwell desktops (DGX Spark GB10, DGX Station GB300, RTX PRO 6000)"
     hardware_overrides:
@@ -191,6 +199,8 @@ variants:
         # the wheel tab is hidden here rather than offering a command that
         # won't start.
         docker_image: "eugr/spark-vllm:nightly-20260704"
+        # This image's entrypoint is nvidia_entrypoint.sh, not `vllm serve`.
+        docker_serve_command: "vllm serve"
         install:
           pip: false
         extra_env:
