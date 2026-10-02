@@ -4,7 +4,7 @@ meta:
   provider: "MiMo (Xiaomi)"
   description: "Xiaomi's efficiency-balanced omnimodal MoE reasoning model (309B total / 15B active) with hybrid attention, FP8-compute/mxfp4-stored weights, 1M context, and a DFlash speculative decoder"
   date_added: 2026-09-22
-  date_updated: 2026-09-23
+  date_updated: 2026-10-02
   difficulty: intermediate
   tasks:
     - text
@@ -36,6 +36,10 @@ model:
     - "--generation-config"
     - "vllm"
   base_env: {}
+  frontends:
+    rust:
+      status: unsupported
+      note: 'Requires vLLM PR #57933 (2026-09-22+), which registered the `mimo` parsers in the Rust frontend. The pinned vllm/vllm-openai:mimo-v26 image predates it: the Rust frontend aborts at startup with "tool parser `mimo` is not registered". Use the Python frontend, or rebuild the image on #57933 or newer.'
 
 features:
   tool_calling:
