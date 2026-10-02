@@ -165,7 +165,7 @@ hardware_overrides:
 hardware_notes:
   mi350x: &cdna4_indexer_topk_notes
     title: "Long-context indexer top-k opt-in"
-    body: "The sparse-MLA indexer top-k defaults to the in-tree HIP kernel. On CDNA 4 the AITER kernel is faster once prompts reach roughly 64K tokens, but full CUDA graph decode cannot pick a kernel per request, so it is not selected automatically. When serving long context, add --sparse-indexer-topk-backend aiter. Requires vLLM#58167."
+    body: "When serving long contexts (>=64k), add `--sparse-indexer-topk-backend aiter` for improved decode performance."
   mi355x: *cdna4_indexer_topk_notes
   ascend_950pr_8x:
     title: "vLLM Ascend A5 image required"
@@ -445,29 +445,21 @@ guide: |
   concurrency at 128K context; the BF16 checkpoint reports an 8.87M-token KV
   pool at the same TP and context.
 
-  ### Long-context indexer top-k
+  MTP speculative decoding is supported on MI355X by vLLM builds containing
+  [vLLM #55239](https://github.com/vllm-project/vllm/pull/55239), validated on 4×MI355X
+  with TP=4 and MTP5. Enable **Spec Decoding** and select **MTP** in the command builder
+  to add the required configuration.
 
-  The sparse-MLA indexer top-k runs on the in-tree HIP kernel by default. On
-  MI350X / MI355X the AITER kernel is faster for decodes once prompts reach
-  roughly 64K tokens, but it is slower on short prompts, and full CUDA graph
-  decode replays a fixed kernel and cannot branch on the actual sequence
-  length. So it is never selected automatically. If your traffic is mostly
-  long context, opt in explicitly:
+  ### Long-context indexer top-k (gfx950)
+
+  If your traffic is mostly long context (>=64k tokens) and using gfx950 
+  (MI350X/MI355X), using the topk indexer backend from AITER is recommended:
 
   ```bash
   vllm serve zai-org/GLM-5.3-Flash \
     --attention-backend ROCM_AITER_MLA_SPARSE \
     --sparse-indexer-topk-backend aiter
   ```
-
-  The flag requires a build containing
-  [vLLM #58167](https://github.com/vllm-project/vllm/pull/58167). Leave it
-  unset for mixed or short-prompt traffic.
-
-  MTP speculative decoding is supported on MI355X by vLLM builds containing
-  [vLLM #55239](https://github.com/vllm-project/vllm/pull/55239), validated on 4×MI355X
-  with TP=4 and MTP5. Enable **Spec Decoding** and select **MTP** in the command builder
-  to add the required configuration.
 
   ## Benchmarking
 
