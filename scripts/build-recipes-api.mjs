@@ -226,16 +226,22 @@ function validateFeatureModes(recipe, sourceFile) {
 function validateFrontends(recipe, sourceFile) {
   const errors = [];
   const frontends = recipe.model?.frontends;
-  if (frontends !== undefined && (typeof frontends !== "object" || frontends === null || Array.isArray(frontends))) {
-    errors.push(`model.frontends must be a map of frontend name to status`);
-  }
-  for (const [name, entry] of Object.entries(frontends || {})) {
-    const status = typeof entry === "string" ? entry : entry?.status;
-    if (status !== "unsupported") {
-      errors.push(`model.frontends.${name} must be "unsupported" or { status: "unsupported", note? }`);
-    }
-    if (entry && typeof entry === "object" && entry.note !== undefined && typeof entry.note !== "string") {
-      errors.push(`model.frontends.${name}.note must be a string`);
+  if (frontends !== undefined) {
+    if (typeof frontends !== "object" || frontends === null || Array.isArray(frontends)) {
+      errors.push(`model.frontends must be a map of frontend name to status`);
+    } else {
+      // Only walk entries once the shape is a map: Object.entries() on a stray
+      // string/array yields index/char pairs and cascades one typo into a pile
+      // of `model.frontends.0 must be …` noise.
+      for (const [name, entry] of Object.entries(frontends)) {
+        const status = typeof entry === "string" ? entry : entry?.status;
+        if (status !== "unsupported") {
+          errors.push(`model.frontends.${name} must be "unsupported" or { status: "unsupported", note? }`);
+        }
+        if (entry && typeof entry === "object" && entry.note !== undefined && typeof entry.note !== "string") {
+          errors.push(`model.frontends.${name}.note must be a string`);
+        }
+      }
     }
   }
   if (errors.length) {
