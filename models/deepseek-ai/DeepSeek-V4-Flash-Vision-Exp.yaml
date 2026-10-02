@@ -46,8 +46,9 @@ model:
     # Docker first so it is the default tab. The official wheel can't run this
     # checkpoint: released vLLM routes it to the text-only
     # DeepseekV4ForCausalLM, which then fails on the vision/aligner tensors.
+    # v0.30.0 already resolves it to DeepseekV4ForConditionalGeneration (verified on the ROCm image, 2026-10-02).
     docker:
-      note: "NVIDIA: use the dedicated DeepSeek-V4-Flash-Vision image until support lands in the standard vLLM image. AMD: track vllm/vllm-openai-rocm:nightly (>= 2026-09-11, includes #55107). Ascend 950PR/950DT: pin quay.io/ascend/vllm-ascend:v0.23.0-a5 and overlay vllm-project/vllm-ascend#16259."
+      note: "NVIDIA: use the dedicated DeepSeek-V4-Flash-Vision image until support lands in the standard vLLM image. AMD: vllm/vllm-openai-rocm:v0.30.0 (ROCm 7.2.3) or a nightly >= 2026-09-11 (includes #55107); on v0.30.0 also set cudagraph_mode FULL_DECODE_ONLY (see the AMD section). Ascend 950PR/950DT: pin quay.io/ascend/vllm-ascend:v0.23.0-a5 and overlay vllm-project/vllm-ascend#16259."
     pip: false
   architecture: moe
   parameter_count: "285B"
@@ -326,6 +327,18 @@ guide: |
   FP8 Lightning-Indexer cache, `DEEPSEEK_SPARSE_SWA` (block 256), and the
   `ROCM_FLASHMLA_SPARSE_DSV4` MLA backend. TP2 loads 75.2 GiB/card (1.76M-token KV pool
   at 131K context); TP4 loads 38.8 GiB/card.
+
+  **Stable v0.30.0 and single-card TP1** (verified 2026-10-02 on one MI350X). The stable
+  `vllm/vllm-openai-rocm:v0.30.0` image (ROCm 7.2.3) already contains #54566 and #55107 and
+  runs the checkpoint natively — text, vision and DSpark — with the same three env vars. On
+  v0.30.0 only, also pass `--compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}'`:
+  v0.30.0's ROCm platform still defaults DeepSeek V4 on gfx950 + ModelRunner V2 to eager
+  (the #52644 workaround, removed by #57229 after v0.30.0 was branched), so without it decode
+  runs without CUDA graphs. Batch 1 at TP1: 12 tok/s eager vs 94 tok/s with
+  `FULL_DECODE_ONLY`, and 137–164 tok/s with DSpark (k=3, adaptive verification off per the
+  AMD override). Against eager in the same run, a 25-item known-answer check scored 25/25 and
+  decode-vs-prefill logprobs agreed within eager's range. Nightlies after 2026-09-17 and
+  v0.31+ don't need the override. TP1 fits one 288 GB card (147.9 GiB of weights).
 
 
   ## Reasoning modes
