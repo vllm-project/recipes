@@ -1292,9 +1292,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // deliberate Single-/Multi-node click afterwards still wins. Non-scalable
     // hardware never bumps — it's single-node by definition.
     const fitsNew = fitsSingleNode(newProfile, activeVariant, id);
-    const recipeDefault = recipe.default_strategy;
-    const recipeDefaultsSingleNode =
-      typeof recipeDefault === "string" && recipeDefault.startsWith("single_node_");
+    // Against the EFFECTIVE 1-node default (declared default_strategy, else the
+    // TP-first fallback): checking only the declared field never unbumped for
+    // recipes that leave it out and rely on the fallback, so one detour through
+    // non-fitting hardware pinned them at 2 nodes for good.
+    const recipeDefaultsSingleNode = recommendStrategy(recipe, newProfile, 1).startsWith("single_node_");
     const shouldBumpNodes = nodeCount === 1 && supportsMultiNode && newScalable && !fitsNew && newProfile?.generation !== "xpu";
     // Intel XPU is validated single-node only — always clamp back to 1 node.
     const shouldUnbumpNodes = nodeCount > 1 && (!newScalable || newProfile?.generation === "xpu" || (fitsNew && recipeDefaultsSingleNode));
@@ -1312,9 +1314,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     savePreference("hardware", id);
     // Mirror the new state to per-recipe storage so a hardware switch
     // doesn't leave stale strategy/nodes/features cached for this recipe.
+    // The count goes too: what the switch settles on is derived from the fit
+    // check, and caching it would pin it over every future hardware because
+    // the mount restore honors any saved 1/2 ahead of its own fit check.
+    // Deliberate picks persist via the Nodes row / strategy floors instead.
     saveRecipeState(recipe.hf_id, {
       strategy: undefined,
-      nodes: shouldBumpNodes ? 2 : shouldUnbumpNodes ? 1 : nodeCount,
+      nodes: undefined,
       features: next,
       ...(nextModes !== featureModes ? { featureModes: nextModes } : {}),
       ...(kvOffloadOk ? {} : { kvOffload: undefined, kvInstances: undefined }),
