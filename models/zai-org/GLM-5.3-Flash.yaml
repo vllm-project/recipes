@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3-Flash is a 320B-total / 18B-active multimodal MoE with hybrid KDA and sparse MLA attention, native FP8 weights, MTP, and a 1M-token context window."
   date_added: 2026-08-27
-  date_updated: 2026-09-18
+  date_updated: 2026-09-30
   difficulty: advanced
   tasks:
     - text
@@ -14,6 +14,7 @@ meta:
     h100: verified
     b200: verified
     gb200: verified
+    mi325x: verified
     mi355x: verified
     ascend_950pr_8x: verified
 
@@ -199,10 +200,10 @@ guide: |
   a maximum context length of 1,048,576 tokens and includes one MTP draft layer.
 
   The implementation supports NVIDIA Hopper and newer GPUs, AMD Instinct
-  gfx950 via ROCm, and Huawei Ascend 950PR (8 NPUs, one node) via vLLM
-  Ascend. On NVIDIA/AMD it can scale with tensor, pipeline, expert, or
-  data+expert parallelism. The Ascend path is validated as single-node TP=8
-  only.
+  gfx942 (MI325X) and gfx950 via ROCm, and Huawei Ascend 950PR (8 NPUs, one
+  node) via vLLM Ascend. On NVIDIA/AMD it can scale with tensor, pipeline,
+  expert, or data+expert parallelism. The Ascend path is validated as
+  single-node TP=8 only.
 
   ## Prerequisites
 
@@ -425,6 +426,12 @@ guide: |
   Use the official `vllm/vllm-openai-rocm:nightly` image. GLM-5.3-Flash support
   landed in [vLLM #53906](https://github.com/vllm-project/vllm/pull/53906).
 
+  On gfx942 (MI325X) the image needs AITER 0.1.23 or newer
+  ([vLLM #58867](https://github.com/vllm-project/vllm/pull/58867)). The current
+  `nightly` has it; if `pip show amd-aiter` in your cached copy reports an older
+  version, pull the tag again. Older images, including `v0.30.0`, crash on the
+  first long prompt (see Troubleshooting).
+
   ```bash
   export VLLM_ROCM_USE_AITER=1
   vllm serve zai-org/GLM-5.3-Flash \
@@ -464,6 +471,12 @@ guide: |
 
   - **Sparse-MLA initialization error:** verify that the image contains FlashInfer
     0.6.18 or newer.
+  - **gfx942 only, `AttributeError: 'int' object has no attribute '_CAPIPtr'` in
+    `fp8_mqa_logits`:** the image's AITER is older than 0.1.23. On gfx942 the
+    sparse indexer's `float8_e4m3fn` query goes through AITER's FN-to-FNUZ
+    conversion, which fails at kernel emission before 0.1.23. The worker dies on
+    the first prefill long enough to reach the indexer and takes the engine with
+    it; short prompts are unaffected. Pull a current `nightly`.
 
   ## KV cache offloading
 
