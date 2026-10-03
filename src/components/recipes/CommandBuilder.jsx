@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, resolveFrontend, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -379,7 +379,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // ── State ──
   const [variant, setVariant] = useState(searchParams.get("variant") || "default");
   const [frontend, setFrontend] = useState(() =>
-    resolveFrontend(recipe, searchParams.get("frontend") || undefined)
+    resolveFrontend(recipe, searchParams.get("frontend") || undefined, taxonomy)
   );
 
   // Active omni task — drives the `vllm serve --omni` model_id swap (Wan2.2's
@@ -453,8 +453,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     }
 
     const rs = loadRecipeState(recipe.hf_id);
-    if (!searchParams.get("frontend") && ["python", "rust"].includes(rs.frontend)) {
-      setFrontend(resolveFrontend(recipe, rs.frontend));
+    if (!searchParams.get("frontend") && rs.frontend && taxonomy.frontends?.[rs.frontend]) {
+      setFrontend(resolveFrontend(recipe, rs.frontend, taxonomy));
     }
     if (!searchParams.get("strategy") && rs.strategy &&
         effectiveCompatibleStrategies(recipe).includes(rs.strategy) &&
@@ -1169,7 +1169,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   // ── Handlers ──
   const selectFrontend = (value) => {
-    const next = resolveFrontend(recipe, value);
+    const next = resolveFrontend(recipe, value, taxonomy);
     setFrontend(next);
     syncUrl({ frontend: next });
     saveRecipeState(recipe.hf_id, { frontend: next });
@@ -2800,21 +2800,32 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
           <ConfigRow label="Frontend">
             <PillGroup>
-              <Pill
-                active={frontend === "rust"}
-                pressed={frontend === "rust"}
-                onClick={() => selectFrontend("rust")}
-              >
-                <Zap size={11} className="inline-block mr-1 -mt-0.5" fill="currentColor" aria-hidden="true" />
-                <span className="font-semibold">Rust</span>
-              </Pill>
-              <Pill active={frontend === "python"} pressed={frontend === "python"} onClick={() => selectFrontend("python")}>
-                <span className="font-semibold">Python</span>
-              </Pill>
+              {Object.entries(taxonomy.frontends || {}).map(([id, fe]) => {
+                const supported = isFrontendSupported(recipe, id);
+                return (
+                  <Pill
+                    key={id}
+                    active={frontend === id}
+                    pressed={frontend === id}
+                    disabled={!supported}
+                    title={supported ? undefined : `The ${fe.label} frontend doesn't support this model yet`}
+                    onClick={() => selectFrontend(id)}
+                  >
+                    {id === "rust" && <Zap size={11} className="inline-block mr-1 -mt-0.5" fill="currentColor" aria-hidden="true" />}
+                    <span className="font-semibold">{fe.label}</span>
+                  </Pill>
+                );
+              })}
             </PillGroup>
             <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
-              The experimental Rust frontend can improve throughput and latency, especially under high concurrency.
-              {" "}Switch to Python if you encounter unsupported features or compatibility issues.
+              {isFrontendSupported(recipe, "rust") ? (
+                <>
+                  The experimental Rust frontend can improve throughput and latency, especially under high concurrency.
+                  {" "}Switch to Python if you encounter unsupported features or compatibility issues.
+                </>
+              ) : (
+                "The Rust frontend doesn't support this model yet, so commands use the Python frontend."
+              )}
             </p>
           </ConfigRow>
 

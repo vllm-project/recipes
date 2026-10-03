@@ -38,6 +38,7 @@ import {
   isStrategyReachable,
   isStrategySupportedOnHardware,
   effectiveCompatibleStrategies,
+  FALLBACK_FRONTEND,
 } from "../src/lib/command-synthesis.js";
 
 const ROOT = process.cwd();
@@ -216,6 +217,39 @@ function validateFeatureModes(recipe, sourceFile) {
   if (errors.length) {
     const rel = path.relative(ROOT, sourceFile);
     throw new Error(`Invalid feature modes in ${rel}:\n  - ${errors.join("\n  - ")}`);
+  }
+}
+
+// Frontend keys under `model` are matched by exact id against
+// `taxonomy.frontends`, so a typo would silently keep a broken frontend
+// selectable (or default to one that doesn't exist). `default_frontend` must
+// name a known frontend; `<id>_frontend` may only opt a non-baseline frontend
+// out (`unsupported`), and never the one the recipe defaults to.
+function validateFrontends(recipe, sourceFile, taxonomy) {
+  const errors = [];
+  const known = taxonomy.frontends || {};
+  const model = recipe.model || {};
+  const def = model.default_frontend;
+  if (def !== undefined && !known[def]) {
+    errors.push(`model.default_frontend: unknown frontend "${def}" (known: ${Object.keys(known).join(", ")})`);
+  }
+  for (const [key, value] of Object.entries(model)) {
+    const m = key.match(/^(.+)_frontend$/);
+    if (!m || key === "default_frontend") continue;
+    const id = m[1];
+    if (!known[id]) {
+      errors.push(`model.${key}: unknown frontend "${id}" (known: ${Object.keys(known).join(", ")})`);
+    } else if (id === FALLBACK_FRONTEND) {
+      errors.push(`model.${key}: the ${id} frontend is the fallback and can't be marked unsupported`);
+    } else if (value !== "unsupported") {
+      errors.push(`model.${key} must be "unsupported" (omit the key when the frontend works)`);
+    } else if (def === id) {
+      errors.push(`model.default_frontend is "${id}", but model.${key} marks it unsupported`);
+    }
+  }
+  if (errors.length) {
+    const rel = path.relative(ROOT, sourceFile);
+    throw new Error(`Invalid frontend config in ${rel}:\n  - ${errors.join("\n  - ")}`);
   }
 }
 
@@ -799,6 +833,7 @@ let collisionCount = 0;
 for (const file of findYamlFiles(modelsDir)) {
   const r = normalizeDates(readYaml(file));
   validateFeatureModes(r, file);
+  validateFrontends(r, file, taxonomy);
   validateHardwareKeys(r, file, taxonomy, strategies);
   // Derive HF identity from path. Only `hf_id` is exposed in the public JSON;
   // `org` and `repo` are trivially `hf_id.split("/")` for consumers.
