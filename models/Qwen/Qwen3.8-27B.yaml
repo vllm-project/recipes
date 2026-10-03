@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "27B-parameter dense hybrid-attention model with linear attention on 48 of 64 layers, a vision tower, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-14
-  date_updated: 2026-09-14
+  date_updated: 2026-10-02
   difficulty: beginner
   tasks:
     - multimodal
@@ -203,6 +203,16 @@ variants:
     vram_minimum_gb: 32
     supported_hardware: [b200, b300, gb200, gb300, rtx_5090, rtx_5090_2x]
     description: "NVFP4 build for NVIDIA Blackwell — 24.6 GiB, the smallest footprint: 1 GPU."
+    # The verified 1x RTX 5090 launch from the guide: CUDA graph capture OOMs on 31.4 GiB
+    # usable, so --enforce-eager is required, and the KV pool holds a 32K context.
+    hardware_overrides:
+      rtx_5090:
+        extra_args:
+          - "--max-model-len"
+          - "32768"
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--enforce-eager"
   nvfp4_nvidia:
     model_id: "nvidia/Qwen3.8-27B-NVFP4"
     precision: nvfp4

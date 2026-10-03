@@ -15,5 +15,25 @@ hardware_match:
 
 vllm_args:
   - "--enable-expert-parallel"
+  - "--port"
+  - "8100"
 
 parallel_flag: "--data-parallel-size"
+
+companion:
+  label: "vLLM Router"
+  description: >-
+    Routes client requests across the DP ranks of the single engine
+    process. --intra-node-data-parallel-size must match the engine's
+    --data-parallel-size; consistent_hash keeps a conversation pinned to
+    the rank that already holds its prefix.
+  install: "uv pip install vllm-router"
+  start: after
+  command: |
+    vllm-router \
+      --host 0.0.0.0 \
+      --port 8000 \
+      --policy consistent_hash \
+      --intra-node-data-parallel-size {dp_size} \
+      --worker-urls http://localhost:{port} \
+      --worker-startup-timeout-secs 1800
