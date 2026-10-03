@@ -537,6 +537,10 @@ guide: |
     --max-num-seqs "8"
   ```
 
+  `--prefix-cache-retention-interval` replaces the `VLLM_PREFIX_CACHE_RETENTION_INTERVAL`
+  env var, removed in vLLM 0.30.0
+  ([vllm-project/vllm#55353](https://github.com/vllm-project/vllm/pull/55353)).
+
   ## Fixed-sequence benchmark reproduction (InferenceX MI355X 8K/1K)
 
   This is a **second, separate InferenceX lane** — not a variation of the Agentic
