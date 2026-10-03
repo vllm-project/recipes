@@ -4,7 +4,7 @@ meta:
   provider: "MiMo (Xiaomi)"
   description: "Xiaomi's flagship MoE reasoning model (1.02T total / 42B active) with hybrid attention, native FP8 weights, and Multi-Token Prediction"
   date_added: 2026-04-27
-  date_updated: 2026-04-27
+  date_updated: 2026-10-03
   difficulty: advanced
   tasks:
     - text
@@ -90,6 +90,11 @@ guide: |
   ```bash
   docker pull vllm/vllm-openai:mimov25-cu129
   ```
+
+  > **Rust frontend:** this image predates Rust-frontend support for the `mimo`
+  > parsers, so selecting Rust aborts at startup with ``tool parser `mimo` is
+  > not registered``. Use the Python frontend here, or vLLM >= 0.31.0 / a
+  > nightly built after 2026-09-22 (vllm-project/vllm#57933).
 
   ## Launch commands
 

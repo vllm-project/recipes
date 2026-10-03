@@ -4,7 +4,7 @@ meta:
   provider: "MiMo (Xiaomi)"
   description: "Xiaomi's flagship omnimodal MoE reasoning model (1.02T total / 42B active) with hybrid attention, FP8-compute/mxfp4-stored weights, 1M context, and a DFlash speculative decoder"
   date_added: 2026-09-22
-  date_updated: 2026-09-23
+  date_updated: 2026-10-03
   difficulty: advanced
   tasks:
     - text
@@ -126,6 +126,11 @@ guide: |
 
   A vLLM nightly wheel built after 2026-09-20 also works (`uv pip install -U
   vllm --extra-index-url https://wheels.vllm.ai/nightly/cu130`).
+
+  > **Rust frontend:** the `mimo-v26` image predates Rust-frontend support for
+  > the `mimo` parsers, so selecting Rust aborts at startup with ``tool parser
+  > `mimo` is not registered``. Use the Python frontend with the image; the Rust
+  > frontend needs a nightly built after 2026-09-22 (vllm-project/vllm#57933).
 
   ## Launch command
 

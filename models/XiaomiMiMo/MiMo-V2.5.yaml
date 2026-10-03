@@ -4,7 +4,7 @@ meta:
   provider: "MiMo (Xiaomi)"
   description: "MiMo-V2.5 is a native omnimodal model with strong agentic capabilities, supporting text, image, video, and audio understanding within a unified architecture"
   date_added: 2026-04-27
-  date_updated: 2026-04-27
+  date_updated: 2026-10-03
   difficulty: advanced
   tasks:
     - multimodal
@@ -98,6 +98,11 @@ guide: |
   ```bash
   docker pull vllm/vllm-openai:mimov25-cu129
   ```
+
+  > **Rust frontend:** this image predates Rust-frontend support for the `mimo`
+  > parsers, so selecting Rust aborts at startup with ``tool parser `mimo` is
+  > not registered``. Use the Python frontend here, or vLLM >= 0.31.0 / a
+  > nightly built after 2026-09-22 (vllm-project/vllm#57933).
 
   ## Launch commands
 
