@@ -367,6 +367,47 @@ function hardwareSelectorLabel(selector, profiles) {
   return profiles?.[selector]?.display_name || selector;
 }
 
+/**
+ * Whether the recipe's one-node landing is a single-node strategy: its
+ * recommendation at 1 node (declared `default_strategy`, else the TP-first
+ * fallback) must be single-node AND actually usable on the new GPU — a
+ * `strategy_hardware: unsupported` single-node pick can't justify snapping
+ * back to 1 node there. Checked against the pick that would really render
+ * (`recommendStrategy`), not "some single-node strategy is listed", so a
+ * recipe whose 1-node pick is `pd_cluster` keeps its multi-node home too.
+ */
+function oneNodeLandsSingleNode(recipe, newProfile, newHwId) {
+  const pick = recommendStrategy(recipe, newProfile, 1);
+  return (
+    pick.startsWith("single_node_") &&
+    isStrategySupportedOnHardware(recipe, pick, newProfile, newHwId)
+  );
+}
+
+/**
+ * Node count a hardware switch settles on.  Validity beats everything:
+ * hardware that can't cluster (or XPU) is one node no matter the history, and
+ * hardware that can't fit the variant alone forces two.  Between those, only a
+ * fit-derived count (`countIsDerived` — never a user's Nodes pick) drops back
+ * to 1 when the new GPU fits alone and `oneNodeLandsSingleNode`; a deliberate
+ * Nodes=2 survives the switch, including a detour through hardware that forced
+ * two.  `variant` is the variant both fit checks should run against.
+ */
+function nodeCountAfterSwitch({ recipe, count, countIsDerived, variant, newHwId, newProfile }) {
+  const fitsNew = fitsSingleNode(newProfile, variant, newHwId);
+  const xpu = newProfile?.generation === "xpu";
+  const scalable = isHardwareScalable(newProfile);
+  if (count > 1 && (!scalable || xpu)) return 1;
+  const multiNodeCapable = effectiveCompatibleStrategies(recipe).some(
+    (s) => s.startsWith("multi_node_") || s === "pd_cluster"
+  );
+  if (count === 1 && multiNodeCapable && scalable && !fitsNew && !xpu) return 2;
+  if (count > 1 && countIsDerived && fitsNew && oneNodeLandsSingleNode(recipe, newProfile, newHwId)) {
+    return 1;
+  }
+  return count;
+}
+
 export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -498,16 +539,35 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         if (fitting && fitting !== variant) setVariant(fitting);
       }
     }
-    // Nodes: prefer the saved value; otherwise auto-bump if the resolved
-    // hardware can't fit single-node (mirrors `setHw`'s bump). Non-scalable
-    // hardware never bumps — it's locked to one node.
+    // Nodes: prefer a saved pick, but only take it the way it was made. A
+    // pick stores the hardware it was made on (nodesHw) and just has to clear
+    // validity on this one — a deliberate Nodes=2 survives moving house. A
+    // cache without that context predates the scoping and may be a fit-derived
+    // count the old switch bug left behind, so it gets the switch's own
+    // re-check before it's honored (mirrors `selectHardware`'s rules). When
+    // there's no saved count at all, auto-bump if the resolved hardware can't
+    // fit single-node. Non-scalable hardware never bumps — it's locked to one
+    // node.
     if (!searchParams.get("nodes") && supportsMultiNode && resolvedScalable) {
+      const v = recipe.variants?.[variant] || recipe.variants?.default || {};
       const saved = parseInt(rs.nodes, 10);
       if ([1, 2].includes(saved)) {
-        setNodeCount(saved);
+        const scoped = typeof rs.nodesHw === "string" && rs.nodesHw.length > 0;
+        const settled = nodeCountAfterSwitch({
+          recipe,
+          count: saved,
+          countIsDerived: !scoped,
+          variant: v,
+          newHwId: resolvedHwId,
+          newProfile: resolvedHw,
+        });
+        setNodeCount(settled);
+        setNodesDerived(settled !== saved);
       } else if (restoredFitsHw) {
-        const v = recipe.variants?.[variant] || recipe.variants?.default || {};
-        if (!fitsSingleNode(restoredFitsHw, v, prefs.hardware)) setNodeCount(2);
+        if (!fitsSingleNode(restoredFitsHw, v, prefs.hardware)) {
+          setNodeCount(2);
+          setNodesDerived(true);
+        }
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -536,6 +596,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // single-node. Same fit check the hardware-change handler runs.
     const v = recipe.variants?.[variant] || recipe.variants?.default || {};
     return initialHw && !fitsSingleNode(initialHw, v, initialHwId) ? 2 : 1;
+  });
+  // Whether the current nodeCount came from fit/validity machinery rather
+  // than a user pick. Only derived counts get snapped back to one node when a
+  // hardware switch lands on fitting hardware (nodeCountAfterSwitch) —
+  // deliberate Nodes picks survive the switch, including a detour through
+  // hardware that forced two. Count-setting actions re-label it: selectNodes /
+  // selectStrategy floors → false, fit checks / the reconcile effect → true.
+  // The mount restore re-labels it per the value it loads.
+  const [nodesDerived, setNodesDerived] = useState(() => {
+    // At first render only an explicit ?nodes= pin is a pick; the count every
+    // other initializer branch settles on is derived.
+    const urlN = searchParams.get("nodes");
+    return !(urlN && [1, 2].includes(parseInt(urlN, 10)));
   });
   // PD-specific per-role node counts. Only surfaced when the active strategy
   // is `pd_cluster`; ignored otherwise. Defaults come from the recipe's
@@ -1071,6 +1144,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     }
     if (next !== nodeCount) {
       setNodeCount(next);
+      // Floor/stale-count bookkeeping, not a user pick.
+      setNodesDerived(true);
       syncUrl({ nodes: String(next) });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1282,30 +1357,36 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         activeVariant = recipe.variants?.[fitting] || currentVariant;
       }
     }
-    // Bump to multi-node if the new hardware can't fit single-node (otherwise
-    // the Single-node pill shows crossed out but the command keeps rendering
-    // the invalid single-node config). Bump back DOWN to single-node when the
-    // new hardware comfortably fits and the recipe's default is a single-node
-    // strategy — without this, switching from GB200 (which bumped to 2 nodes
-    // because the model didn't fit a 4-GPU tray) to B300/GB300 would stay at
-    // 2 nodes and pick the multi-node sibling. Tied to the click so a
-    // deliberate Single-/Multi-node click afterwards still wins. Non-scalable
-    // hardware never bumps — it's single-node by definition.
-    const fitsNew = fitsSingleNode(newProfile, activeVariant, id);
-    // Against the EFFECTIVE 1-node default (declared default_strategy, else the
-    // TP-first fallback): checking only the declared field never unbumped for
-    // recipes that leave it out and rely on the fallback, so one detour through
-    // non-fitting hardware pinned them at 2 nodes for good.
-    const recipeDefaultsSingleNode = recommendStrategy(recipe, newProfile, 1).startsWith("single_node_");
-    const shouldBumpNodes = nodeCount === 1 && supportsMultiNode && newScalable && !fitsNew && newProfile?.generation !== "xpu";
-    // Intel XPU is validated single-node only — always clamp back to 1 node.
-    const shouldUnbumpNodes = nodeCount > 1 && (!newScalable || newProfile?.generation === "xpu" || (fitsNew && recipeDefaultsSingleNode));
-    if (shouldBumpNodes) setNodeCount(2);
-    if (shouldUnbumpNodes) setNodeCount(1);
+    // Node count the switch settles on — see nodeCountAfterSwitch: bump when
+    // the new hardware can't fit single-node (otherwise the Single-node pill
+    // shows crossed out but the command keeps rendering the invalid
+    // single-node config), snap a fit-derived 2 back down when the new
+    // hardware fits alone and the recipe lands on a single-node strategy at
+    // one node (without this, one detour through non-fitting hardware pinned
+    // the recipe at 2 nodes for good), and clamp non-scalable / XPU hardware
+    // to 1. Deliberate Nodes picks are never touched: a Nodes=2 the user
+    // chose where the model fit alone survives the switch — and any detour
+    // through hardware that forced two.
+    const settledNodes = nodeCountAfterSwitch({
+      recipe,
+      count: nodeCount,
+      countIsDerived: nodesDerived,
+      variant: activeVariant,
+      newHwId: id,
+      newProfile,
+    });
+    const nodesDerivedNow = settledNodes !== nodeCount;
+    if (nodesDerivedNow) {
+      setNodeCount(settledNodes);
+      setNodesDerived(true);
+    }
     syncUrl({
       hardware: id,
       strategy: "",
-      nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
+      // syncUrl deletes keys it receives falsy — so when the count passed
+      // through untouched, leave `nodes` out entirely to keep a deliberate
+      // pin in the URL; "" clears the pin when the count was derived back to 1.
+      ...(nodesDerivedNow ? { nodes: settledNodes === 2 ? "2" : "" } : {}),
       features: featuresToUrl(next, id, variant),
       ...(nextModes !== featureModes ? { fmode: featureModesToUrl(nextModes, variant) } : {}),
       ...(variantUpdate ? { variant: variantUpdate } : {}),
@@ -1313,14 +1394,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     });
     savePreference("hardware", id);
     // Mirror the new state to per-recipe storage so a hardware switch
-    // doesn't leave stale strategy/nodes/features cached for this recipe.
-    // The count goes too: what the switch settles on is derived from the fit
-    // check, and caching it would pin it over every future hardware because
-    // the mount restore honors any saved 1/2 ahead of its own fit check.
-    // Deliberate picks persist via the Nodes row / strategy floors instead.
+    // doesn't leave stale strategy/features cached for this recipe. The count
+    // only goes when the switch itself derived a new one — that supersedes any
+    // cached pick, and keeping it would pin the stale pick over this hardware
+    // on the next visit. An untouched count keeps its pick (nodes + nodesHw,
+    // the hardware it was made on) so deliberate multi-node choices survive
+    // moving house.
     saveRecipeState(recipe.hf_id, {
       strategy: undefined,
-      nodes: undefined,
+      ...(nodesDerivedNow ? { nodes: undefined, nodesHw: undefined } : {}),
       features: next,
       ...(nextModes !== featureModes ? { featureModes: nextModes } : {}),
       ...(kvOffloadOk ? {} : { kvOffload: undefined, kvInstances: undefined }),
@@ -1333,13 +1415,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // valid instead of rendering below its own bar.
     const needed = nodesNeededFor(s);
     const grow = needed > nodeCount;
-    if (grow) setNodeCount(needed);
+    if (grow) {
+      setNodeCount(needed);
+      // The floor is part of the pick — deliberate, not fit-derived.
+      setNodesDerived(false);
+    }
     syncUrl({ strategy: s, ...(grow && { nodes: String(needed) }) });
     // Persisted per-recipe (keyed by hf_id), so picking TP here doesn't
     // affect any other recipe's default. Spec-decoding auto-enable for
     // latency strategies is handled by an effect below so it also fires
-    // on initial mount when TP is the default recommendation.
-    saveRecipeState(recipe.hf_id, { strategy: s || undefined, ...(grow && { nodes: needed }) });
+    // on initial mount when TP is the default recommendation. A grown count
+    // persists with the hardware it was picked on (nodesHw) like any other
+    // deliberate count.
+    saveRecipeState(recipe.hf_id, { strategy: s || undefined, ...(grow && { nodes: needed, nodesHw: hwId }) });
   };
 
   // "" = off · "simple"/"lmcache" = connector appended to the current serving
@@ -1387,7 +1475,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     setNodeCount(n);
     setStrategyOverride("");
     syncUrl({ nodes: n === 1 ? "" : String(n), strategy: "" });
-    saveRecipeState(recipe.hf_id, { nodes: n, strategy: undefined });
+    // A click that doesn't change the count isn't a pick: on hardware that
+    // forced 2 the Nodes=2 pill is just the active one, and recording that
+    // would launder a fit-derived count into a persistent deliberate one —
+    // the restore-side version of the stuck-at-2 bug. A real change is
+    // deliberate and persists with the hardware it was made on (nodesHw), so
+    // a restore can tell a pick apart from a stale fit-derived cache.
+    if (n !== nodeCount) {
+      setNodesDerived(false);
+      saveRecipeState(recipe.hf_id, { nodes: n, strategy: undefined, nodesHw: hwId });
+    } else {
+      saveRecipeState(recipe.hf_id, { strategy: undefined });
+    }
   };
 
   const setPdNodes = (role, n) => {
