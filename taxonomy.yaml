@@ -441,6 +441,20 @@ strategies:
   - multi_node_tp_dp
   - pd_cluster
 
+# Frontends — options for the command builder's "Frontend" row (pill order =
+# key order). Each is `{ label, env? }`: synthesis merges the selected
+# frontend's `env` into every rendered command (head, workers, PD roles, Docker
+# `-e`). `python` is the baseline: it is what a recipe gets when it sets no
+# `model.default_frontend`, and what synthesis falls back to when a recipe opts
+# a frontend out with `model.<id>_frontend: unsupported` (e.g. `rust_frontend`).
+frontends:
+  rust:
+    label: "Rust"
+    env:
+      VLLM_USE_RUST_FRONTEND: "1"
+  python:
+    label: "Python"
+
 # KV Offload — options for the command builder's "KV Offload" row that compose
 # with (rather than replace) the serving strategy. `simple` appends its args to
 # the end of the vllm arg list; every option is skipped for pd_cluster /
