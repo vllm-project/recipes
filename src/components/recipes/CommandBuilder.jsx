@@ -977,7 +977,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       // kv_store_lb deployments live on the KV Offload row, not here.
       if (strat.deploy_type === "kv_store_lb") return false;
       if (nodeCount === 1 && strat.deploy_type === "multi_node") return false;
-      if (nodeCount > 1 && strat.deploy_type === "single_node") return false;
+      // Single-node strategies stay LISTED at 2+ nodes as the way back: the
+      // cluster can't run one there, but picking the pill collapses the count
+      // to it (selectStrategy). Hiding the row instead left a deliberate 2-node
+      // pick walled into PD-only with no exit back to single-node TP.
       // Listed while reachable at SOME node count, not just the current one —
       // picking it grows the count (selectStrategy).
       return isStrategyReachable(recipe, s, strat.deploy_type, perNode, hwId);
@@ -1022,10 +1025,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   // PD now sizes each pool independently, so the "2× model VRAM on one node"
   // concern that used to invalidate pd_cluster on small GPUs no longer applies.
-  const recommendedServingStrategy = (compatibleStrategies.includes(recommended) && isStrategySupported(recommended))
+  // A single-node strategy can't be IN EFFECT over one node — a hand-merged
+  // ?strategy=&nodes= pin pair would otherwise render a single-node command
+  // against a 2-node cluster. The pill stays visible above one node purely as
+  // the affordance that collapses the count (selectStrategy); until it's
+  // clicked, the resolution falls through to a strategy that fits the count.
+  const strategyFitsCount = (s) => strategies[s]?.deploy_type !== "single_node" || nodeCount === 1;
+  const recommendedServingStrategy = (compatibleStrategies.includes(recommended) && isStrategySupported(recommended) && strategyFitsCount(recommended))
     ? recommended
-    : (compatibleStrategies.find((s) => isStrategySupported(s)) || compatibleStrategies[0] || recommended);
-  const activeServingStrategy = (compatibleStrategies.includes(strategyOverride) && isStrategySupported(strategyOverride))
+    : (compatibleStrategies.find((s) => isStrategySupported(s) && strategyFitsCount(s)) || compatibleStrategies[0] || recommended);
+  const activeServingStrategy = (compatibleStrategies.includes(strategyOverride) && isStrategySupported(strategyOverride) && strategyFitsCount(strategyOverride))
     ? strategyOverride
     : recommendedServingStrategy;
   // Downgrade an unusable KV-offload pick instead of rendering a broken
@@ -1121,32 +1130,39 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   //   grow  — a hardware-conditional floor raises the bar on mount, on a
   //           ?nodes= link and on a hardware switch too, and rendering below
   //           it would emit a command that can't hold the model (K3 on H100:
-  //           4 nodes, not the 2-node default);
+  //           4 nodes, not the 2-node default). Applies under pd_cluster
+  //           too — the floor gates its pools as well, and a PD floor never
+  //           persists as a pick (selectStrategy), so restore re-derives it
+  //           here from the strategy pick alone;
   //   shrink — the same floor must not LEAK to other hardware: a count grown
   //           for H100's 32-GPU bar sticks at 4 when the user switches to
   //           H200, whose Nodes row only offers 1/2. The pills are the only
   //           way to set a count, so one outside `nodeOptions` can only be a
   //           stale floor from another GPU — snap back to the multi-node
-  //           example count (2), still honoring this hardware's own bar.
-  // Not under pd_cluster (pools size themselves; the Nodes row isn't shown).
+  //           example count (2), still honoring this hardware's own bar. Not
+  //           under pd_cluster (pools size themselves; the Nodes row isn't
+  //           shown).
   // Storage is left alone — deliberate picks are saved by the click handlers,
   // and the restore path already clamps to [1, 2].
   useEffect(() => {
-    // Workstations can't cluster (count is pinned to 1 elsewhere) and PD
-    // pools size themselves — neither wants this row's reconciliation.
-    if (!hwScalable || activeStrategy === "pd_cluster") return;
+    // Workstations can't cluster (count is pinned to 1 elsewhere).
+    if (!hwScalable) return;
     const needed = nodesNeededFor(activeStrategy);
     let next = nodeCount;
     if (needed > nodeCount && needed <= MAX_NODES) {
       next = needed;
-    } else if (nodeCount > 2 && !nodeOptions.includes(nodeCount)) {
+    } else if (activeStrategy !== "pd_cluster" && nodeCount > 2 && !nodeOptions.includes(nodeCount)) {
       next = Math.min(MAX_NODES, Math.max(2, needed));
     }
     if (next !== nodeCount) {
       setNodeCount(next);
       // Floor/stale-count bookkeeping, not a user pick.
       setNodesDerived(true);
-      syncUrl({ nodes: String(next) });
+      // "" clears any pin — a machine-derived count must never leave one:
+      // the `nodesDerived` initializer reads a ?nodes= pin back as a
+      // deliberate pick on load, so writing one here launders the floor
+      // across reloads into a pick that can never unbump.
+      syncUrl({ nodes: "" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStrategy, nodeCount, nodesNeededFor, nodeOptions]);
@@ -1385,8 +1401,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       strategy: "",
       // syncUrl deletes keys it receives falsy — so when the count passed
       // through untouched, leave `nodes` out entirely to keep a deliberate
-      // pin in the URL; "" clears the pin when the count was derived back to 1.
-      ...(nodesDerivedNow ? { nodes: settledNodes === 2 ? "2" : "" } : {}),
+      // pin in the URL. When the switch derived one, "" clears the pin: a
+      // fit bump to 2 must never leave `nodes=2` behind (the initializer
+      // reads a pin back as a deliberate pick on load, so a machine-written
+      // one launders into a count that can never unbump), and derived counts
+      // re-derive from hardware + variant anyway.
+      ...(nodesDerivedNow ? { nodes: "" } : {}),
       features: featuresToUrl(next, id, variant),
       ...(nextModes !== featureModes ? { fmode: featureModesToUrl(nextModes, variant) } : {}),
       ...(variantUpdate ? { variant: variantUpdate } : {}),
@@ -1411,23 +1431,45 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const selectStrategy = (s) => {
     setStrategyOverride(s);
-    // Grow the cluster to this strategy's GPU floor so the pick is immediately
-    // valid instead of rendering below its own bar.
     const needed = nodesNeededFor(s);
+    // The count settles toward this strategy's floor in both directions:
+    //   grow     — rendering below a strategy's own GPU bar would emit a
+    //              command that can't hold the model (K3's 4 nodes on H100);
+    //   collapse — a single-node pick returns the cluster to one node. This
+    //              is the 2-node dead end's exit: a deliberate Nodes=2 that
+    //              walled the recipe into PD-only gets undone with one click
+    //              on the pill the user was looking for. Only single-node
+    //              strategies shrink — the Nodes row owns deliberate growth.
+    const collapse = strategies[s]?.deploy_type === "single_node" && nodeCount > needed;
     const grow = needed > nodeCount;
-    if (grow) {
+    const change = grow || collapse;
+    // PD floors are bookkeeping, not a pick: its pools own the layout, so the
+    // grown count re-derives on every restore from the strategy pick alone
+    // (the reconcile effect re-applies the floor). Persisting it would launder
+    // the floor into a deliberate Nodes pick that outlives the strategy change
+    // and pins the recipe at multi-node for good.
+    const pdFloor = strategies[s]?.deploy_type === "pd_cluster";
+    if (change) {
       setNodeCount(needed);
-      // The floor is part of the pick — deliberate, not fit-derived.
-      setNodesDerived(false);
+      setNodesDerived(pdFloor);
     }
-    syncUrl({ strategy: s, ...(grow && { nodes: String(needed) }) });
+    syncUrl({
+      strategy: s,
+      // syncUrl deletes falsy keys — "" clears any stale pin (a collapse to
+      // one node, a derived PD floor); a deliberate count keeps a pin the
+      // nodesDerived initializer reads back as a pick on load.
+      ...(change ? { nodes: pdFloor || needed === 1 ? "" : String(needed) } : {}),
+    });
     // Persisted per-recipe (keyed by hf_id), so picking TP here doesn't
     // affect any other recipe's default. Spec-decoding auto-enable for
     // latency strategies is handled by an effect below so it also fires
-    // on initial mount when TP is the default recommendation. A grown count
-    // persists with the hardware it was picked on (nodesHw) like any other
-    // deliberate count.
-    saveRecipeState(recipe.hf_id, { strategy: s || undefined, ...(grow && { nodes: needed, nodesHw: hwId }) });
+    // on initial mount when TP is the default recommendation. A settled
+    // count persists with the hardware it was picked on (nodesHw) like any
+    // other deliberate count — PD floors excepted (see above).
+    saveRecipeState(recipe.hf_id, {
+      strategy: s || undefined,
+      ...(change && !pdFloor ? { nodes: needed, nodesHw: hwId } : {}),
+    });
   };
 
   // "" = off · "simple"/"lmcache" = connector appended to the current serving
@@ -2484,14 +2526,25 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             <PillGroup>
               {compatibleStrategies.map((s) => {
                 const supported = isStrategySupported(s);
+                // A single-node strategy listed at 2+ nodes is the collapse
+                // affordance: picking it returns the cluster to one node
+                // (selectStrategy). Disabled — struck through like the Nodes
+                // row's Single-node pill — when the variant can't fit one.
+                const singleNodeOver2 = nodeCount > 1 && strategies[s]?.deploy_type === "single_node";
+                const noCollapse = singleNodeOver2 && !fitsSingleNode(hwProfile, currentVariant, hwId);
+                const disabled = !supported || noCollapse;
                 return (
                   <Pill
                     key={s}
                     active={activeServingStrategy === s}
-                    disabled={!supported}
-                    onClick={() => supported && selectStrategy(s)}
+                    disabled={disabled}
+                    onClick={() => !disabled && selectStrategy(s)}
                     title={supported
-                      ? strategies[s]?.description
+                      ? noCollapse
+                        ? `Single-node can't fit this variant on ${hwProfile.display_name || "the selected hardware"} (${variantVramMinimumGb(currentVariant, hwId)}GB > ${hwProfile.vram_gb}GB) — use multi-node`
+                        : singleNodeOver2
+                          ? `${strategies[s]?.description || ""}\n\nSingle-node layout — picking it returns the cluster to 1 node.`.trim()
+                          : strategies[s]?.description
                       : `${strategies[s]?.display_name || s} isn't supported on ${hwProfile.display_name || hwId} for this model.`}
                   >
                     <span className="font-semibold">{strategies[s]?.display_name || s}</span>
