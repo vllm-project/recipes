@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3 — Frontier Coding with Emergent Cyber Capabilities"
   date_added: 2026-08-28
-  date_updated: 2026-09-30
+  date_updated: 2026-10-03
   difficulty: advanced
   tasks:
     - text
@@ -19,6 +19,8 @@ meta:
     h200: verified
     # FP8 + 5-token MTP validated 2026-09-30 on 8×MI325X (TP8).
     mi325x: verified
+    # FP8 + 5-token MTP validated 2026-10-03 on 8×MI350X (TP8).
+    mi350x: verified
     # Validated 2026-08-30 on one Atlas A5 node (8×950PR, TP8, graph mode).
     # Native FP8 path needs vllm-ascend#15346.
     ascend_950pr_8x: verified
@@ -278,7 +280,7 @@ guide: |
     --served-model-name glm-5.3
   ```
 
-  ### FP8 on AMD MI300X/MI325X/MI355X
+  ### FP8 on AMD MI300X/MI325X/MI350X/MI355X
 
   ```bash
   VLLM_ROCM_USE_AITER=1 \
@@ -302,6 +304,10 @@ guide: |
   `--max-model-len 524288` at `--gpu-memory-utilization 0.80`, reporting a 1,477,168-token
   KV cache and 2.82x maximum concurrency. MTP is healthy there: a mean acceptance length of
   2.77 with 5 tokens drafted per step on a ~500-token greedy generation.
+
+  On 8x MI350X with the same image and settings, it reports a 2,013,072-token KV cache and
+  3.84x maximum concurrency, and MTP's mean acceptance length is 3.19 with 5 tokens drafted
+  per step on a 512-token greedy generation.
 
   ### FP8 on 8xB200 (full 1M context)
 
