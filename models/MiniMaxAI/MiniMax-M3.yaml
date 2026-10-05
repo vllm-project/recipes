@@ -133,6 +133,14 @@ variants:
     # On AMD, 8x MI350X/MI355X fits comfortably.
     vram_minimum_gb: 1025
     description: "Native BF16 checkpoint — multi-node TP recommended for long-context headroom"
+    hardware_overrides:
+      h200:
+        # After ~1 TB of BF16 weights, 8x H200 has ~3.5 GiB/GPU left for KV;
+        # vLLM estimates ~83K max tokens, so the 1M default fails at startup
+        # ("KV cache is needed"). Cap at 64K; use MXFP8 or multi-node for more.
+        extra_args:
+          - "--max-model-len"
+          - "65536"
   mxfp8:
     model_id: "MiniMaxAI/MiniMax-M3-MXFP8"
     precision: mxfp8
