@@ -20,6 +20,10 @@ meta:
 
 model:
   model_id: "MiniMaxAI/MiniMax-M3"
+  # Opt in to SMG gRPC PD; parsing runs on the router, not vLLM.
+  smg_grpc:
+    reasoning_parser: minimax_m3
+    tool_call_parser: minimax_m3
   min_vllm_version: "0.24.0"
   nightly_required: true
   docker_image:

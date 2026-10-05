@@ -28,6 +28,10 @@ meta:
 
 model:
   model_id: "zai-org/GLM-5.3"
+  # Opt in to SMG gRPC PD; parsing runs on the router, not vLLM.
+  smg_grpc:
+    reasoning_parser: glm45
+    tool_call_parser: glm47_moe
   min_vllm_version: "0.29.0"
   default_frontend: rust
   docker_image:
