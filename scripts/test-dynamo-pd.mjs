@@ -17,7 +17,10 @@ const strategies = Object.fromEntries(["strategies", "kv_store"].flatMap((dir) =
 const resolve = ({ router = "dynamo", offload = null, pools = {}, specs = strategies } = {}) =>
   resolveCommand(recipe, "default", "pd_cluster", "gb300", ["tool_calling", "reasoning"],
     specs, taxonomy, [], 1, pools, {}, offload, null, undefined, router);
-const flag = (argv, key) => argv[argv.indexOf(key) + 1];
+const flag = (argv, key) => {
+  const index = argv.indexOf(key);
+  return index === -1 ? undefined : argv[index + 1];
+};
 
 test("frontend command delivers agentic flags intact after shell expansion", () => {
   const result = resolve();
@@ -25,7 +28,7 @@ test("frontend command delivers agentic flags intact after shell expansion", () 
   try {
     fs.writeFileSync(path.join(dir, "python3"), '#!/usr/bin/env node\nconsole.log(JSON.stringify(process.argv.slice(2)));\n', { mode: 0o755 });
     const argv = JSON.parse(execFileSync("bash", ["-c", result.router.command], {
-      env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, ROUTER_PORT: "31000" }, encoding: "utf8",
+      env: { ...process.env, PATH: `${dir}${path.delimiter}${process.env.PATH || ""}`, ROUTER_PORT: "31000" }, encoding: "utf8",
     }));
     assert.deepEqual(argv.slice(0, 2), ["-m", "dynamo.frontend"]);
     assert.equal(flag(argv, "--http-port"), "31000");
