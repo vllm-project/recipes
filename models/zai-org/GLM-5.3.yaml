@@ -103,6 +103,13 @@ variants:
     vram_minimum_gb: 893
     description: "Native FP8 checkpoint (zai-org/GLM-5.3) — 8xH200/H20 (141GB × 8) single-node serving"
     hardware_overrides:
+      # 8x H200 (1128 GB) leaves ~23 GiB/GPU for KV after the 704 GB FP8
+      # weights — vLLM estimates ~450K max tokens, so the 1M default fails
+      # at startup ("KV cache is needed"). Cap at 256K.
+      h200:
+        extra_args:
+          - "--max-model-len"
+          - "262144"
       # Exact-GPU pin: computeDockerMeta has no Huawei brand, so a model-level
       # docker_image string would only affect NVIDIA. Hide pip — official
       # wheels have no NPU kernels.
