@@ -4,7 +4,7 @@ meta:
   provider: "MiMo (Xiaomi)"
   description: "Xiaomi's efficiency-balanced omnimodal MoE reasoning model (309B total / 15B active) with hybrid attention, FP8-compute/mxfp4-stored weights, 1M context, and a DFlash speculative decoder"
   date_added: 2026-09-22
-  date_updated: 2026-09-23
+  date_updated: 2026-09-24
   difficulty: intermediate
   tasks:
     - text
@@ -17,6 +17,12 @@ meta:
     gb300: verified
     mi325x: verified
     mi355x: verified
+    # 4x RTX PRO 6000 Blackwell (SM120) serves end-to-end (measured 2026-09-23)
+    # but only with a four-file Python patch overlay that no official wheel or
+    # image ships yet (fp8-KV DiffKV path + the vllm#58235 vision-sink hunk —
+    # see the guide section "NVIDIA RTX PRO 6000 Blackwell (SM120)").
+    # Deliberately NOT `verified`: `verified` means the recipe runs as-is.
+    rtx_pro_6000_4x: supported
 
 model:
   model_id: "XiaomiMiMo/MiMo-V2.6-Flash-RL"
@@ -50,10 +56,17 @@ features:
       - "--reasoning-parser"
       - "mimo"
   spec_decoding:
-    description: "DFlash 5-layer MTP drafter (predicts 7 tokens); ships in the dflash/ subfolder of the checkpoint"
+    description: "DFlash 5-layer MTP drafter (predicts 7 tokens; 3 on SM120 — see the RTX PRO 6000 guide section); ships in the dflash/ subfolder of the checkpoint"
     args:
       - "--speculative-config"
       - '{"method":"dflash","model":"/root/.cache/huggingface/hub/models--XiaomiMiMo--MiMo-V2.6-Flash-RL/snapshots/<hash>/dflash","num_speculative_tokens":7}'
+    hardware_overrides:
+      # 3 is the draft depth every number in this section was measured with;
+      # deeper drafts were not measured here.
+      rtx_pro_6000_4x:
+        args:
+          - "--speculative-config"
+          - '{"method":"dflash","model":"/root/.cache/huggingface/hub/models--XiaomiMiMo--MiMo-V2.6-Flash-RL/snapshots/<hash>/dflash","num_speculative_tokens":3}'
 
 opt_in_features:
   - spec_decoding
@@ -68,6 +81,21 @@ variants:
       - "4"
       - "--gpu-memory-utilization"
       - "0.95"
+  # Measured 4x RTX PRO 6000 Blackwell (SM120, 96 GB each, 384 GB total) TP4
+  # config. Same checkpoint as `default`; only the flags that differ on SM120.
+  rtx_pro_6000_4x:
+    precision: fp8
+    vram_minimum_gb: 208
+    label: "RTX PRO 6000 4x"
+    supported_hardware: [rtx_pro_6000_4x]
+    description: "4x RTX PRO 6000 Blackwell (SM120) TP4 with FP8 KV — requires the patch overlay described in the guide; no official wheel/image contains it yet"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+      - "--moe-backend"
+      - "marlin"
+      - "--hf-overrides"
+      - '{"moe_router_dtype":"bfloat16"}'
 
 compatible_strategies:
   - single_node_tp
@@ -187,6 +215,165 @@ guide: |
   explicitly, add `"draft_tensor_parallel_size": 4` to the speculative config
   (useful if you want the draft on fewer GPUs than the target, or to silence
   mis-detection on asymmetric topologies).
+
+  ## NVIDIA RTX PRO 6000 Blackwell (SM120), 4x TP4 — measured with patches
+
+  Measured 2026-09-23 on a dedicated node with 4x NVIDIA RTX PRO 6000
+  Blackwell Server Edition (96 GB each, compute capability 12.0, driver 595.71.05,
+  CUDA 13.0.2), tensor parallel 4, FP8 KV cache, DFlash speculative decoding,
+  priority scheduling. Runtime: vLLM `0.29.1rc1.dev449+geb8798058` from the
+  `vllm/vllm-openai:mimo-v26-x86_64-cu130` image, model revision
+  `5711b268169967567844e1e560e8a3966da959b1` (MIT),
+  `--gpu-memory-utilization 0.94` giving **9,554,082 KV-cache tokens across the
+  4 GPUs — about 36 concurrent full-length (262,144-token) sequences**.
+
+  The stock build serves the model, but it needs a four-file Python overlay
+  that **no official wheel or published image contains**. That is why this GPU
+  is declared `supported` rather than `verified` in `meta.hardware`: the
+  command below is not reproducible on a stock build yet.
+
+  ### Required patches (until the upstream PRs land)
+
+  Each file is pinned by sha256 of the patched result:
+
+  | File | Source | sha256 (patched) |
+  |---|---|---|
+  | `vllm/model_executor/models/mimo_v2.py` | [diffbot/MiMo-V2.6-Flash-RL-FP8KV-W4A8-2x-RTX-PRO-6000](https://huggingface.co/diffbot/MiMo-V2.6-Flash-RL-FP8KV-W4A8-2x-RTX-PRO-6000) rev `0c29889b2bdbe19ea4110871018b7f5dd1657820` (MIT) | `1b9589bab6146e5c7e5782cbdfcc8db6df5bcc9914a9c8971f377d55786111ee` |
+  | `vllm/v1/attention/backends/triton_attn_diffkv.py` | same diffbot revision (MIT) | `20b9a213bea2d231c8ac30dcb10c7aad06ea994b73ff1a2ba27d68f3427f19f1` |
+  | `vllm/v1/attention/ops/triton_unified_attention_diffkv.py` | same diffbot revision (MIT) | `1d41934e448c5854b9ecf290c526e71c2d4b683f824e2f73773ce9a2a5a70e05` |
+  | `vllm/model_executor/models/mimo_v2_omni.py` | hunk 2 of [vllm-project/vllm#58235](https://github.com/vllm-project/vllm/pull/58235) (PR rev `3650a53589bedb2762768bb364fcba91243fb421`, applied diff sha256 `970747326bba7dad0112a9f68c12cb2fefedcc07513eb702a72b30fbf3d46f2f`) | `3ea106fd537ad9fca538c66d753d3e1e29bf21e2f01b9564a40ed7491a462562` |
+
+  Why each patch is needed:
+
+  - **FP8 KV cache in the Triton DiffKV backend** (first three files) — adds
+    the FP8 KV path to the Triton DiffKV backend that MiMo's global attention
+    uses; the KV-cache figure above was measured with it. Upstream work:
+    [vllm#58128](https://github.com/vllm-project/vllm/pull/58128) (scalar FP8 KV
+    in Triton DiffKV), [vllm#58141](https://github.com/vllm-project/vllm/pull/58141),
+    [vllm#58177](https://github.com/vllm-project/vllm/pull/58177).
+  - **Vision attention-sink semantics** (fourth file, hunk 2 of
+    [vllm#58235](https://github.com/vllm-project/vllm/pull/58235)). The stock
+    `mimo_v2_omni.py` runs with `sinks_bias_key0=True`, which collapses uniform
+    image patches: on a 34-question colour-bar permutation test the model
+    answered 14–18 correctly (chance is about 6) and hallucinated descriptions;
+    with `sinks_bias_key0=False` it answers 34/34. Apply it if you serve images.
+
+  Once #58128 / #58141 / #58177 / #58235 are in your vLLM version, drop the
+  corresponding files — no other part of this section is needed. Start vLLM
+  with `PYTHONDONTWRITEBYTECODE=1` (already in the exports below) so stale
+  `.pyc` files never shadow the patched sources.
+
+  ### Full launch command (as measured)
+
+  The interactive builder on this GPU shows the core flags (variant
+  **RTX PRO 6000 4x**); the complete measured argv is:
+
+  ```bash
+  export VLLM_NO_USAGE_STATS=1 DO_NOT_TRACK=1 HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1
+  export PYTHONDONTWRITEBYTECODE=1
+
+  # the offline flags assume the snapshot is already on disk:
+  hf download XiaomiMiMo/MiMo-V2.6-Flash-RL
+  DFLASH_DIR=$(ls -d ~/.cache/huggingface/hub/models--XiaomiMiMo--MiMo-V2.6-Flash-RL/snapshots/*/dflash)
+
+  python3 -m vllm.entrypoints.openai.api_server \
+      --model XiaomiMiMo/MiMo-V2.6-Flash-RL \
+      --served-model-name mimo-v2.6-flash \
+      --host 127.0.0.1 --port 8000 \
+      --no-trust-remote-code \
+      --tensor-parallel-size 4 \
+      --gpu-memory-utilization 0.94 \
+      --max-model-len 262144 \
+      --kv-cache-dtype fp8 \
+      --reasoning-parser mimo \
+      --tool-call-parser mimo --enable-auto-tool-choice \
+      --generation-config vllm \
+      --limit-mm-per-prompt '{"image":4,"video":0,"audio":0}' \
+      --moe-backend marlin \
+      --hf-overrides '{"moe_router_dtype":"bfloat16"}' \
+      --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
+      --max-num-batched-tokens 8192 \
+      --max-num-seqs 256 \
+      --long-prefill-token-threshold 4096 \
+      --scheduling-policy priority \
+      --enable-prompt-tokens-details \
+      --speculative-config "{\"method\":\"dflash\",\"model\":\"$DFLASH_DIR\",\"num_speculative_tokens\":3}"
+  ```
+
+  Why each non-default flag is there:
+
+  - `--kv-cache-dtype fp8` — the 9,554,082-token KV figure was measured with
+    it and the DiffKV patch.
+  - `--moe-backend marlin` and `--hf-overrides '{"moe_router_dtype":"bfloat16"}'`
+    — part of the measured configuration; not ablated separately here.
+  - `--compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}'` — full CUDA
+    graphs for decode only; prefill stays eager so 262k prompts do not pay graph
+    capture at every new shape.
+  - `--max-num-batched-tokens 8192` with `--long-prefill-token-threshold 4096`
+    — chunked prefill that keeps decode latency flat while a 200k-token prompt
+    is prefilled next to it.
+  - `--scheduling-policy priority` — with FCFS, one cold 250k-token prompt
+    stalls every short request behind it for tens of seconds; priority lets the
+    gateway rank short interactive requests first (`priority` in the request
+    body, lower is served first). With all priorities equal it behaves exactly
+    like FCFS.
+  - `--speculative-config` DFlash with `num_speculative_tokens: 3` — 3 is the
+    draft depth every number in this section was measured with; deeper drafts
+    were not measured here.
+  - `--enable-prompt-tokens-details` — reports
+    `prompt_tokens_details.cached_tokens` in `usage`; without it prefix-cache
+    hits are invisible to clients and billing.
+  - `--limit-mm-per-prompt '{"image":4,...}'` — images cost about one prompt
+    token per 1,024 pixels, capped near 8,192 tokens per image by the
+    processor's max-pixels limit (384×256 → 131 prompt tokens, 1024² → 1059,
+    1920×1080 → 2075, 4096² → 8135); four per request is a sane ceiling.
+  - `--max-model-len 262144` with `--gpu-memory-utilization 0.94` — the values
+    every number below was measured at; the 9,554,082-token KV figure assumes
+    them.
+  - `--reasoning-parser mimo` / `--tool-call-parser mimo` — the in-tree MiMo
+    parsers; tool calls come back as standard OpenAI `tool_calls`
+    (JSON-string arguments, `finish_reason: tool_calls`), also when streamed.
+  - `--no-trust-remote-code` — on this build the `MiMoV2` config/model classes
+    are in-tree; `configuration_mimo_v2.py` and `modeling_mimo_v2.py` are never
+    imported, so remote code execution is off.
+  - The four environment variables switch off vLLM's usage telemetry and
+    Hugging Face network access; the offline flags are what let the server start
+    with the cached snapshot alone.
+
+  ### Measured performance (2026-09-23, greedy, thinking off)
+
+  | Scenario | Result |
+  |---|---|
+  | Single stream, 24-token prompt, 569 output tokens | **296.8 tok/s**, TTFT 51 ms |
+  | 64 concurrent streams | **3,414 tok/s aggregate**, 56.9 tok/s per stream, TTFT p50 0.32 s / p95 0.38 s |
+  | KV cache | 9,554,082 tokens across 4 GPUs at `--gpu-memory-utilization 0.94` ≈ 36 concurrent full-length (262k) sequences |
+  | Prefix cache | hits only for prompts above roughly 1–2k tokens (a 754-token prompt never hits; an 11,714-token prompt reports 11,680 cached) |
+
+  Numbers are for an otherwise idle node.
+
+  ```bash
+  vllm bench serve --backend openai-chat --base-url http://127.0.0.1:8000 \
+    --model mimo-v2.6-flash --endpoint /v1/chat/completions \
+    --dataset-name random --random-input-len 24 --random-output-len 1024 \
+    --num-prompts 64 --max-concurrency 64 --temperature 0
+  ```
+
+  ### Validation checklist before serving traffic
+
+  1. `dflash/mask_embedding.pt` is present in the snapshot — required. Without
+     it the DFlash accept length drops from 3.17 to 2.24 tokens and throughput
+     at 16 concurrent streams falls by about 22%.
+  2. `GET /v1/models` lists exactly the served name(s) you expect.
+  3. Text: a GSM8K sample at the sampling settings you will serve, compared
+     against a reference deployment.
+  4. Tool calling: a two-tool request returns `finish_reason: tool_calls` with
+     parseable JSON arguments, streamed and non-streamed.
+  5. Vision: a content-verifiable test (for example, three-colour vertical bars
+     in a shuffled order, answered item by item), not just an HTTP 200 and a
+     plausible token count. The stock ViT sink bug passes the latter and fails
+     the former.
+  6. Check `/proc/<pid>/environ` for the telemetry/offline variables rather
+     than trusting the launch script text.
 
   ## Client Usage
 
