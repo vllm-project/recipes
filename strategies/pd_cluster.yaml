@@ -80,12 +80,12 @@ dynamo:
   description: >
     NVIDIA Dynamo frontend + dynamo.vllm workers. Workers discover each other
     through etcd (TCP request plane, no NATS) instead of fixed HTTP
-    endpoints. Agentic defaults use prediction-based KV routing, fastokens
-    with an 8 GB tokenizer cache, and four-hour session affinity; decode
-    workers advertise least-loaded routing.
-    Allow 8 GB of host memory for the tokenizer cache and prefer a dedicated
-    frontend host. Tune capacity for your workload. Session affinity requires a stable
-    X-Dynamo-Session-ID request header across agent turns.
+    endpoints. Agentic defaults use prediction-based KV routing. Requests
+    carrying a stable X-Dynamo-Session-ID header across agent turns enable
+    affinity to a prefill worker with a four-hour idle timeout. Decode workers
+    advertise least-loaded routing. The frontend uses fastokens with an 8 GB
+    tokenizer cache; allow 8 GB of memory on the frontend host and prefer a
+    dedicated frontend host. Tune capacity for your workload.
   docs: "https://docs.nvidia.com/dynamo/latest/backends/vllm/README.html"
   # Dynamo workers use NIXL/UCX + the NVIDIA runtime wheels — NVIDIA only.
   brands: [NVIDIA]
