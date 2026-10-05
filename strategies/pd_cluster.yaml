@@ -80,12 +80,16 @@ dynamo:
   description: >
     NVIDIA Dynamo frontend + dynamo.vllm workers. Workers discover each other
     through etcd (TCP request plane, no NATS) instead of fixed HTTP
-    endpoints, and the frontend adds KV-aware / least-loaded routing. Same prefill/decode pools as the native
-    vLLM router.
+    endpoints. Agentic defaults use prediction-based KV routing, fastokens
+    with an 8 GB tokenizer cache, and four-hour session affinity; decode
+    workers advertise least-loaded routing.
+    Allow 8 GB of host memory for the tokenizer cache and prefer a dedicated
+    frontend host. Tune capacity for your workload. Session affinity requires a stable
+    X-Dynamo-Session-ID request header across agent turns.
   docs: "https://docs.nvidia.com/dynamo/latest/backends/vllm/README.html"
   # Dynamo workers use NIXL/UCX + the NVIDIA runtime wheels — NVIDIA only.
   brands: [NVIDIA]
-  # Pinned to the latest Dynamo release (1.5.0). Rendered in the extra-install
+  # Pinned Dynamo release. Rendered in the extra-install
   # block while Dynamo is picked; `optional: true` entries are dimmed and left out of Copy-all.
   version: "1.5.0"
   install:
@@ -115,6 +119,10 @@ dynamo:
     vllm_args:
       - "--disaggregation-mode"
       - "decode"
+      # Advertised to Dynamo so decode dispatch balances active requests,
+      # while prefill inherits the frontend's KV routing policy.
+      - "--router-mode"
+      - "least-loaded"
       - "--kv-transfer-config"
       - '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_load_failure_policy":"fail"}'
   infra:
@@ -126,4 +134,16 @@ dynamo:
         --advertise-client-urls http://$DYN_CONTROL_IP:2379
   frontend:
     label: "Frontend"
-    router_mode: "round-robin"
+    router_mode: "kv"
+    # These settings belong only to the frontend, not to the GPU workers.
+    env:
+      ETCD_LEASE_TTL: "120"
+      DYN_TOKENIZER_CACHE_BYTES: "8000000000"
+      DYN_TOKENIZER: "fastokens"
+      DYN_TCP_REQUEST_TIMEOUT: "30"
+    args:
+      - "--router-session-affinity-ttl-secs"
+      - "14400"
+      # srt-slurm translates DYN_FRONTEND_ENABLE_KV_EVENTS=0 to this flag;
+      # that environment variable alone is not a dynamo.frontend option.
+      - "--no-router-kv-events"
