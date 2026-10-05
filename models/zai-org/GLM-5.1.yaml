@@ -213,7 +213,8 @@ guide: |
 
   On 8x MI325X that command, with MTP enabled, serves the full 202,752-token context with a
   1,292,544-token KV cache (6.38x maximum concurrency) and an MTP mean acceptance length of
-  2.72 with 3 draft tokens on a ~380-token greedy generation. 
+  2.72 with 3 draft tokens on a ~380-token greedy generation.
+
   ## Client Usage
 
   ```python
