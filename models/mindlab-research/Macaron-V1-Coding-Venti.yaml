@@ -19,7 +19,7 @@ model:
   min_vllm_version: "0.25.0"
   docker_image:
     nvidia: "vllm/vllm-openai:v0.28.0"
-    amd: "vllm/vllm-openai-rocm:nightly-4c626633159887b0f2c962058c17c78f1434556d"
+    amd: "vllm/vllm-openai-rocm:nightly"
   architecture: moe
   parameter_count: "743B"
   active_parameters: "39B"
@@ -71,6 +71,15 @@ variants:
     precision: bf16
     vram_minimum_gb: 1786
     description: "Full-precision BF16 merged checkpoint — requires multi-node (≈1786 GB weights + KV; a single 8xH200/8xB200 node does not fit)."
+    hardware_overrides:
+      amd:
+        extra_args:
+          - "--linear-backend"
+          - "aiter"
+      mi355x:
+        extra_args:
+          - "--max-model-len"
+          - "262144"
   fp8:
     precision: fp8
     label: "FP8 (on-the-fly)"
@@ -79,6 +88,11 @@ variants:
     extra_args:
       - "--quantization"
       - "fp8"
+    hardware_overrides:
+      amd:
+        extra_args:
+          - "--quantization"
+          - "fp8_per_channel"
 
 compatible_strategies:
   - single_node_tp
@@ -98,8 +112,6 @@ hardware_overrides:
       - "fp8"
   amd:
     extra_args:
-      - "--linear-backend"
-      - "aiter"
       - "--moe-backend"
       - "aiter"
     extra_env:

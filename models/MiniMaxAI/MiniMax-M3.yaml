@@ -217,7 +217,7 @@ variants:
     tp: 8
     hardware_overrides:
       mi355x:
-        docker_image: "vllm/vllm-openai-rocm:nightly-2a02f6efe319c885e3ccbcecde402e0028f9ec1e"
+        docker_image: "vllm/vllm-openai-rocm:nightly"
         extra_args:
           - "--trust-remote-code"
           - "--compilation-config"
