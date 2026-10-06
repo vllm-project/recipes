@@ -275,9 +275,7 @@ guide: |
   ### AMD MI300X / MI355X
 
   Use the AITER backends under ROCm, same as GLM-5.2. On AMD the FP8 (on-the-fly) variant
-  quantizes with `--quantization fp8_per_channel` instead of `--quantization fp8`, which
-  produces incorrect output on ROCm with CUDA graphs. On 8×MI355X, FP8 serves the full 1M
-  window and BF16 fits a single node at 262K.
+  uses `--quantization fp8_per_channel`.
 
   FP8 (on-the-fly):
 
