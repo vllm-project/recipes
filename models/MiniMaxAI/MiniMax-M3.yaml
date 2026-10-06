@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 plus MXFP8, NVIDIA Blackwell NVFP4, and AMD MI355X MXFP4 variants. Runs on NVIDIA (Hopper/Blackwell) and AMD CDNA4/CDNA3."
   date_added: 2026-06-12
-  date_updated: 2026-09-15
+  date_updated: 2026-10-06
   difficulty: advanced
   tasks:
     - text
@@ -164,7 +164,9 @@ variants:
           - "131072"
       h200:
         # Humming runs the dense MXFP8 linear layers; the atomic-add env var
-        # enables Marlin's atomic reduction on the MXFP8 MoE path.
+        # enables Marlin's atomic reduction on the MXFP8 MoE path. This image
+        # also supports the FP8 MSA indexer cache on H200.
+        docker_image: "vllm/vllm-openai:nightly-1a001d584244bd21829a5e5bd4a376ea141c0ce3"
         extra_args:
           - "--linear-backend"
           - "humming"
@@ -588,6 +590,42 @@ guide: |
     --reasoning-parser minimax_m3 \
     --enable-auto-tool-choice
   ```
+
+  ### MXFP8 on H200 with GPU-resident KV
+
+  Select **mxfp8** and **H200** in the command builder. Enable **Spec decoding**
+  with the **GQA** mode, plus **Text only** and **Thinking always on**, for
+  text-based agent serving. Tool calling and reasoning parsing are enabled by
+  default. Add the deployment-specific flags below through **Advanced Args**.
+  This H200 image supports an FP8 MSA indexer cache:
+
+  ```bash
+  VLLM_MARLIN_USE_ATOMIC_ADD=1 \
+    vllm serve MiniMaxAI/MiniMax-M3-MXFP8 \
+    --tensor-parallel-size 8 \
+    --block-size 128 \
+    --attention-backend FLASH_ATTN \
+    --linear-backend humming \
+    --kv-cache-dtype fp8 \
+    --attention_config.indexer_kv_dtype fp8 \
+    --gpu-memory-utilization 0.95 \
+    --max-num-seqs 28 \
+    --max-cudagraph-capture-size 112 \
+    --enable-prefix-caching \
+    --language-model-only \
+    --trust-remote-code \
+    --default-chat-template-kwargs '{"thinking_mode":"enabled"}' \
+    --speculative-config '{"method":"eagle3","model":"Inferact/MiniMax-M3-EAGLE3-GQA","num_speculative_tokens":3,"attention_backend":"FLASH_ATTN"}' \
+    --tool-call-parser minimax_m3 \
+    --reasoning-parser minimax_m3 \
+    --enable-auto-tool-choice
+  ```
+
+  Use `vllm/vllm-openai:nightly-1a001d584244bd21829a5e5bd4a376ea141c0ce3`.
+  The 28-sequence and 112-graph limits are a capacity choice; adjust them
+  together for your workload and device-memory budget. The KV caches remain
+  on GPU without a transfer connector. Check the image's indexer support
+  before using the FP8 setting with another version.
 
   For best MXFP8 throughput, prefer Blackwell (B200/B300) for native MX tensor cores,
   or AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 matrix cores.
