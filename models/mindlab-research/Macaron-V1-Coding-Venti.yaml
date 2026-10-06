@@ -145,7 +145,7 @@ guide: |
   - **vLLM 0.25.0** (stable) — the `GlmMoeDsaForCausalLM` handler is the same one GLM-5.2 uses.
   - **GPU:** at full **BF16** precision (≈1786 GB) a single 8×H200 / 8×B200 node does not fit —
     run **multi-node** (e.g. 2× 8-GPU nodes, tensor-parallel 16), or pick the **FP8 (on-the-fly)**
-    variant (≈893 GB, `--quantization fp8`) to run single-node. The native FP8/NVFP4 GLM-5.2
+    variant (≈893 GB, `--quantization fp8`; `fp8_per_channel` on AMD) to run single-node. The native FP8/NVFP4 GLM-5.2
     checkpoints are a calibrated-quant alternative.
 
   ## Installation
@@ -274,19 +274,35 @@ guide: |
 
   ### AMD MI300X / MI355X
 
-  Use the AITER backends under ROCm, same as GLM-5.2. Both the BF16 (multi-node) and FP8
-  (on-the-fly) variants run; whether the full 1M window fits is a KV-cache VRAM question, so
-  tune `--max-model-len` and `--max-num-seqs` to your nodes' HBM.
+  Use the AITER backends under ROCm, same as GLM-5.2. On AMD the FP8 (on-the-fly) variant
+  quantizes with `--quantization fp8_per_channel` instead of `--quantization fp8`, which
+  produces incorrect output on ROCm with CUDA graphs. On 8×MI355X, FP8 serves the full 1M
+  window and BF16 fits a single node at 262K.
+
+  FP8 (on-the-fly):
 
   ```bash
   VLLM_ROCM_USE_AITER=1 \
   VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1 \
   vllm serve mindlab-research/Macaron-V1-Coding-Venti \
     --kv-cache-dtype fp8_e4m3 \
-    --tensor-parallel-size 16 \
-    --gpu-memory-utilization 0.80 \
-    --max-model-len 524288 \
-    --max-num-seqs 32 \
+    --tensor-parallel-size 8 \
+    --quantization fp8_per_channel \
+    --moe-backend aiter \
+    --tool-call-parser glm47 \
+    --enable-auto-tool-choice \
+    --reasoning-parser glm45
+  ```
+
+  BF16:
+
+  ```bash
+  VLLM_ROCM_USE_AITER=1 \
+  VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1 \
+  vllm serve mindlab-research/Macaron-V1-Coding-Venti \
+    --kv-cache-dtype fp8_e4m3 \
+    --tensor-parallel-size 8 \
+    --max-model-len 262144 \
     --linear-backend aiter \
     --moe-backend aiter \
     --tool-call-parser glm47 \
@@ -294,9 +310,7 @@ guide: |
     --reasoning-parser glm45
   ```
 
-  - **`--max-model-len`** — raise toward the 1M window when KV-cache headroom allows; lower on OOM.
-  - **`--max-num-seqs 32`** — the main knob for fitting long context under concurrency.
-  - **`--gpu-memory-utilization 0.80`** — leaves ROCm runtime headroom for MTP graph capture.
+  On 8×MI355X, GSM8K 5-shot (strict-match) is 0.9469 for both BF16 and FP8 (on-the-fly).
 
   ## Reasoning modes
 

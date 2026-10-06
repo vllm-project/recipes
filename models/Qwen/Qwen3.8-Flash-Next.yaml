@@ -30,7 +30,7 @@ model:
   nightly_required: true
   install:
     docker:
-      note: "Use the dedicated Qwen3.8 Flash-Next image; PyPI installation is not supported for this recipe."
+      note: "Use the vLLM nightly image; PyPI installation is not supported for this recipe."
     pip: false
   architecture: moe
   parameter_count: "176B"
@@ -221,8 +221,9 @@ guide: |
 
   ## Prerequisites
 
-  - **Runtime:** use `vllm/vllm-openai:qwen38-flash-next`. PyPI installation is
-    not supported for this recipe.
+  - **Runtime:** use the nightly image, `vllm/vllm-openai:nightly` on NVIDIA or
+    `vllm/vllm-openai-rocm:nightly` on AMD. PyPI installation is not supported
+    for this recipe.
   - **Hardware:** NVIDIA CUDA and AMD ROCm instructions are provided below.
   - **FP8 memory:** the checkpoint is 172.78 GiB. TP2 is the validated minimum on
     GB300; TP4 is the recommended full-tray configuration.
@@ -231,7 +232,7 @@ guide: |
   - **Host memory for N-gram Embedding offload:** at least 51 GB plus
     runtime headroom.
 
-  The Install block above generates the pull and Docker launch flow for the dedicated
+  The Install block above generates the pull and Docker launch flow for the nightly
   image.
 
   ## Serving
