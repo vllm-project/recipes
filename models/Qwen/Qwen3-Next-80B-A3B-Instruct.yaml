@@ -43,7 +43,7 @@ features:
     description: "YaRN RoPE scaling to the model card's validated 1M-token context (factor 4.0 over the native 262,144). Static YaRN holds the scaling factor constant regardless of input length, so leave this off unless you actually serve long prompts."
     args:
       - "--hf-overrides"
-      - '{"rope_parameters":{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":262144}}'
+      - '{"rope_parameters":{"rope_type":"yarn","rope_theta":10000000,"partial_rotary_factor":0.25,"factor":4.0,"original_max_position_embeddings":262144}}'
       - "--max-model-len"
       - "1010000"
     env:
@@ -71,6 +71,43 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
+
+  redhat_fp8:
+    model_id: "RedHatAI/Qwen3-Next-80B-A3B-Instruct-FP8-dynamic"
+    precision: fp8
+    label: "FP8 Dynamic (RedHat)"
+    vram_minimum_gb: 96
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_fp8_plain:
+    model_id: "RedHatAI/Qwen3-Next-80B-A3B-Instruct-FP8"
+    precision: fp8
+    label: "FP8 (RedHat)"
+    vram_minimum_gb: 96
+    description: "RedHatAI FP8 quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_fp8_block:
+    model_id: "RedHatAI/Qwen3-Next-80B-A3B-Instruct-FP8-block"
+    precision: fp8
+    label: "FP8 Block (RedHat)"
+    vram_minimum_gb: 96
+    description: "RedHatAI FP8 block quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_nvfp4:
+    model_id: "RedHatAI/Qwen3-Next-80B-A3B-Instruct-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 48
+    description: "RedHatAI NVFP4 quantization"
 
 compatible_strategies:
   - single_node_tp

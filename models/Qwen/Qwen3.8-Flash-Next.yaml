@@ -3,7 +3,7 @@ meta:
   slug: "qwen3.8-flash-next"
   provider: "Qwen"
   description: "Qwen4 architecture preview with a 125B-parameter main model, supplemented by an additional 51B N-gram embeddings, with 6B parameters activated per token."
-  date_updated: 2026-09-17
+  date_updated: 2026-09-30
   difficulty: advanced
   tasks:
     - multimodal
@@ -79,9 +79,12 @@ features:
       VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
 
 opt_in_features:
-  - spec_decoding
   - text_only
   - long_context
+
+hardware_opt_in_features:
+  rtx_pro_6000_4x:
+    - spec_decoding
 
 variants:
   default:
@@ -171,7 +174,17 @@ hardware_overrides:
       - "triton"
       - "--gpu-memory-utilization"
       - "0.85"
+      - "--kv-cache-dtype"
+      - "fp8"
+      - "--attention-config.indexer_kv_dtype"
+      - "fp8"
     extra_env: {}
+  blackwell:
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+      - "--attention-config.indexer_kv_dtype"
+      - "fp8"
 strategy_overrides:
   single_node_tp:
     tp: 4
@@ -234,6 +247,9 @@ guide: |
     --max-num-seqs 256 \
     --enable-prefix-caching \
     --no-enable-flashinfer-autotune \
+    --kv-cache-dtype fp8 \
+    --attention-config.indexer_kv_dtype fp8 \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
     --enable-auto-tool-choice \
     --tool-call-parser qwen3_coder \
     --reasoning-parser qwen3
@@ -259,6 +275,9 @@ guide: |
     --max-num-seqs 256 \
     --enable-prefix-caching \
     --no-enable-flashinfer-autotune \
+    --kv-cache-dtype fp8 \
+    --attention-config.indexer_kv_dtype fp8 \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
     --enable-auto-tool-choice \
     --tool-call-parser qwen3_coder \
     --reasoning-parser qwen3
@@ -282,16 +301,13 @@ guide: |
     --max-num-seqs 256 \
     --enable-prefix-caching \
     --no-enable-flashinfer-autotune \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
     --enable-auto-tool-choice \
     --tool-call-parser qwen3_coder \
     --reasoning-parser qwen3
   ```
 
-  MTP speculative decoding was measured on this hardware and **made throughput
-  worse at every concurrency tested (8 and 64)** — 8-36% lower request
-  throughput and 32-173% higher per-token latency, driven by a low ~36%
-  acceptance rate. Do not enable it by default here; it may help on other
-  hardware or workloads, but verify before turning it on.
+  Benchmark MTP with SPEED-Bench (`--dataset-name speed_bench`), not `random`.
 
   ### FP8 configuration on a 4x MI355X GPU
   ```bash
@@ -301,7 +317,8 @@ guide: |
   vllm serve Qwen/Qwen3.8-Flash-Next-FP8 \
   --tensor-parallel-size 4 \
   --max-model-len auto \
-  --gpu-memory-utilization 0.9
+  --gpu-memory-utilization 0.9 \
+  --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
   ```
 
   ### Full native context

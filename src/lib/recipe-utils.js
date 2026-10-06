@@ -2,6 +2,14 @@
  * Shared utilities — safe to import from client components (no fs/path/yaml).
  */
 
+// Prefer specialized capabilities over text, regardless of YAML tag order.
+const PRIMARY_TASK_PRIORITY = ["omni", "embedding", "multimodal", "text"];
+
+export function primaryRecipeTask(recipe) {
+  const tasks = recipe.meta?.tasks || [];
+  return PRIMARY_TASK_PRIORITY.find((task) => tasks.includes(task)) || tasks[0] || "other";
+}
+
 /**
  * URL for a recipe — matches HuggingFace org/repo path.
  * e.g. /deepseek-ai/DeepSeek-V3.2 (swap huggingface.co → recipes.vllm.ai)

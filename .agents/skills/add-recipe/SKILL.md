@@ -248,6 +248,9 @@ variants:
     supported_hardware: [mi355x]  # optional exact hardware-profile allowlist
     extra_args: []
     extra_env: {}
+    # Optional exact-GPU hardware_overrides.<gpu_id>.vram_minimum_gb: GPU-resident
+    # budget after CPU weight offload. Replaces this variant's vram_minimum_gb for
+    # fitsSingleNode on that GPU only. Never raise taxonomy vram_gb with host RAM.
 
 compatible_strategies:            # subset of the SERVING strategies in strategies/*.yaml
   - single_node_tp                # always include this as a baseline

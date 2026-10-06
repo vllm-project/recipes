@@ -17,7 +17,7 @@ meta:
 
 model:
   model_id: "internlm/Intern-S1"
-  min_vllm_version: "0.10.0"
+  min_vllm_version: "0.10.2"
   architecture: moe
   parameter_count: "241B"
   active_parameters: "28B"
@@ -93,7 +93,7 @@ guide: |
   ## Prerequisites
 
   - Hardware: 8xH800 (80GB) for BF16, 4xH800 for FP8, or 4-8x MI300X/MI325X/MI355X
-  - vLLM >= 0.10.0
+  - vLLM >= 0.10.2
 
   ### Install vLLM (CUDA)
 

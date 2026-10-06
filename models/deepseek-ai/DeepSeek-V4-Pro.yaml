@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 flagship MoE (1.6T total / 49B active) with hybrid CSA+HCA attention, manifold-constrained hyper-connections, Muon-trained on 32T+ tokens, and three-tier reasoning."
   date_added: 2026-04-24
-  date_updated: 2026-09-14
+  date_updated: 2026-10-02
   difficulty: hard
   tasks:
     - text
@@ -67,6 +67,7 @@ features:
         variants:
           - fp8
           - nvfp4
+          - redhat_nvfp4
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":2}'
@@ -149,6 +150,12 @@ variants:
           - "--moe-backend"
           - "deep_gemm_mega_moe"
 
+  redhat_nvfp4:
+    model_id: "RedHatAI/DeepSeek-V4-Pro-NVFP4-FP8"
+    precision: nvfp4
+    label: "NVFP4+FP8 (RedHat)"
+    vram_minimum_gb: 1000
+    description: "RedHatAI NVFP4+FP8 mixed-precision checkpoint"
 kv_offload_support:
   offloading_cpu: verified
   offloading_fs: verified
@@ -514,7 +521,6 @@ guide: |
   export VLLM_ROCM_USE_AITER_MOE=1
   export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=0
   export VLLM_ENGINE_READY_TIMEOUT_S=10800
-  export VLLM_PREFIX_CACHE_RETENTION_INTERVAL=32768
 
   vllm serve "$MODEL_PATH" --served-model-name "$MODEL" \
     --host 0.0.0.0 \
@@ -533,9 +539,14 @@ guide: |
     --reasoning-parser deepseek_v4 \
     --enable-auto-tool-choice \
     --enable-prefix-caching \
+    --prefix-cache-retention-interval 32768 \
     --no-disable-hybrid-kv-cache-manager \
     --max-num-seqs "8"
   ```
+
+  `--prefix-cache-retention-interval` replaces the `VLLM_PREFIX_CACHE_RETENTION_INTERVAL`
+  env var, removed in vLLM 0.30.0
+  ([vllm-project/vllm#55353](https://github.com/vllm-project/vllm/pull/55353)).
 
   ## Fixed-sequence benchmark reproduction (InferenceX MI355X 8K/1K)
 

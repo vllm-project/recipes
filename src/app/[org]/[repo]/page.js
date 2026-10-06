@@ -9,13 +9,14 @@ import { loadTaxonomy } from "@/lib/taxonomy";
 import { resolveRecipePlatforms } from "@/lib/platforms";
 import { getProviderLogo, getProviderLogoClass } from "@/lib/providers";
 import { CommandBuilder } from "@/components/recipes/CommandBuilder";
+import { GuideLinks } from "@/components/recipes/GuideLinks";
 import { DeployDialog } from "@/components/recipes/DeployDialog";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
 import { Badge } from "@/components/ui/badge";
-import { Cpu, Layers, Pencil, Bug, ExternalLink } from "lucide-react";
+import { Cpu, Layers, Pencil, Bug, ExternalLink, Link2 } from "lucide-react";
 import {
   buildBreadcrumbLd,
   buildSoftwareApplicationLd,
@@ -226,16 +227,19 @@ export default async function RecipePage({ params, searchParams }) {
       {/* ── Reference sections ── */}
       <section className="space-y-2">
         {guide && (
-          <Accordion title="Guide" defaultOpen>
-            <div className="guide-content">
-              <Markdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeSlug]}
-              >
-                {guide}
-              </Markdown>
-            </div>
-          </Accordion>
+          <GuideLinks>
+            <Accordion title={<span className="flex items-center gap-2">Guide<HeadingLink id="recipe-guide" /></span>} id="recipe-guide" defaultOpen>
+              <div className="guide-content">
+                <Markdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeSlug]}
+                  components={guideHeadings}
+                >
+                  {guide}
+                </Markdown>
+              </div>
+            </Accordion>
+          </GuideLinks>
         )}
 
       </section>
@@ -272,12 +276,27 @@ export default async function RecipePage({ params, searchParams }) {
   );
 }
 
-function Accordion({ title, children, defaultOpen = false }) {
+function HeadingLink({ id }) {
+  return (
+    <a href={`#${id}`} data-guide-link className="guide-heading-link" aria-label="Copy link to this section" title="Copy link to this section">
+      <Link2 size={16} aria-hidden="true" />
+    </a>
+  );
+}
+
+const guideHeadings = Object.fromEntries(
+  ["h1", "h2", "h3", "h4", "h5", "h6"].map((Tag) => [Tag, function GuideHeading({ id, children }) {
+    return <Tag id={id}>{children}{id && <HeadingLink id={id} />}</Tag>;
+  }])
+);
+
+function Accordion({ title, children, id, defaultOpen = false }) {
   // Stronger border than bare `--border` (10% in dark mode) so the outline is
   // visible on both themes. `foreground/15` stays subtle but catches enough
   // contrast to define the card.
   return (
     <details
+      id={id}
       className="group rounded-xl border border-foreground/15 bg-card/40 overflow-hidden"
       open={defaultOpen || undefined}
     >

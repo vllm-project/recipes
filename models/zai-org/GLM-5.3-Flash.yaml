@@ -22,7 +22,7 @@ model:
   min_vllm_version: "0.29.0"
   nightly_required: true
   docker_image:
-    nvidia: "vllm/vllm-openai:glm53-flash"
+    nvidia: "vllm/vllm-openai:nightly"
     amd: "vllm/vllm-openai-rocm:nightly"
   install:
     docker:
@@ -104,6 +104,10 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
   - pd_cluster
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 strategy_hardware:
   single_node_tep:
@@ -460,6 +464,19 @@ guide: |
 
   - **Sparse-MLA initialization error:** verify that the image contains FlashInfer
     0.6.18 or newer.
+
+  ## KV cache offloading
+
+  Offloading requires a build containing [vllm-project/vllm#57145](https://github.com/vllm-project/vllm/pull/57145).
+  Validation used [zai-org/GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) on 4×H200 (TP4),
+  vLLM commit `d1b4028d7e`, the Python frontend, `--enforce-eager`,
+  `--max-model-len 16384`, `--max-num-seqs 16` and `--max-num-batched-tokens 8192`.
+  Validation used `TieringOffloadingSpec`: 8 GiB total CPU tier, `blocks_per_chunk: 1`,
+  a persistent filesystem `root_dir`, eight read/write threads and `PYTHONHASHSEED=0`.
+  Three CPU-tier reloads and three filesystem reloads after restarting the server passed.
+  GLM returned matching final answers; its arithmetic reasoning field varied on filesystem reload.
+  The five-shot GSM8K diagnostic scored 31/32; this is a small sample, not the full benchmark.
+  These results cover this text-only configuration, not the builder's larger tier/chunk defaults or other variants.
 
   ## References
 

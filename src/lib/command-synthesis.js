@@ -139,7 +139,7 @@ export function resolveSingleNodeTp(
     return isCpu ? declaredTp : Math.min(declaredTp, gpuCount);
   }
   const perGpuVram = hwProfile?.vram_gb && gpuCount ? hwProfile.vram_gb / gpuCount : 0;
-  const vramMinGb = variant?.vram_minimum_gb || 0;
+  const vramMinGb = variantVramMinimumGb(variant, hwProfileId);
   return autoFitTp(vramMinGb, perGpuVram, gpuCount);
 }
 
@@ -319,13 +319,20 @@ export function isHardwareSupported(recipe, hwId) {
 }
 
 /**
- * Variant-level hardware allowlist. Missing/empty means the variant inherits
- * the recipe's normal hardware compatibility; otherwise only listed profile
- * ids may render or be selected.
+ * Variant-level hardware selectors. Entries may be exact profile ids or
+ * `arch:<compute_arch>`. Missing/empty inherits normal precision compatibility.
+ * Architecture selectors admit future profiles with the same GPU ISA without
+ * confusing data-center Blackwell (SM100/SM103) with workstation SM120/SM121.
  */
-export function isVariantHardwareSupported(variant, hwId) {
+export function isVariantHardwareSupported(variant, hwId, profile = null) {
   const supported = variant?.supported_hardware;
-  return !Array.isArray(supported) || supported.length === 0 || supported.includes(hwId);
+  if (!Array.isArray(supported) || supported.length === 0) return true;
+  return supported.some((entry) => {
+    if (entry === hwId) return true;
+    if (!profile) return false;
+    if (entry.startsWith("arch:")) return profile.compute_arch === entry.slice(5);
+    return false;
+  });
 }
 
 /**
@@ -455,20 +462,36 @@ export function listCompatibleHardware(hwProfiles, variant, recipe) {
     .filter(([id, p]) =>
       isPrecisionCompatible(p, variant)
       && isHardwareSupported(recipe, id)
-      && isVariantHardwareSupported(variant, id)
+      && isVariantHardwareSupported(variant, id, p)
     )
     .map(([id]) => id);
 }
 
 /**
+ * GPU-resident VRAM the fit check uses for this (variant × hardware) pair.
+ * `variants.<key>.vram_minimum_gb` is the full-weight footprint. An exact-GPU
+ * `hardware_overrides.<gpu_id>.vram_minimum_gb` replaces it when a recipe
+ * documents a smaller on-device budget — typically CPU weight offload on a
+ * unified-memory workstation. Taxonomy `vram_gb` stays physical HBM; other
+ * recipes are unaffected.
+ */
+export function variantVramMinimumGb(variant, hwProfileId = null) {
+  const override = hwProfileId
+    ? variant?.hardware_overrides?.[hwProfileId]?.vram_minimum_gb
+    : undefined;
+  if (typeof override === "number" && override > 0) return override;
+  return variant?.vram_minimum_gb || 0;
+}
+
+/**
  * Single-node fit check: strategies bound to one node (TP, TEP, DEP) shard
  * weights across that node's GPUs and can't scale VRAM further. Returns false
- * when the variant's declared `vram_minimum_gb` exceeds the node's `vram_gb`.
+ * when the variant's effective `vram_minimum_gb` exceeds the node's `vram_gb`.
  * Missing size info → treat as fit (don't block on incomplete metadata).
  */
-export function fitsSingleNode(hwProfile, variant) {
+export function fitsSingleNode(hwProfile, variant, hwProfileId = null) {
   const nodeVram = typeof hwProfile?.vram_gb === "number" ? hwProfile.vram_gb : 0;
-  const modelVram = variant?.vram_minimum_gb || 0;
+  const modelVram = variantVramMinimumGb(variant, hwProfileId);
   if (modelVram <= 0 || nodeVram <= 0) return true;
   return modelVram <= nodeVram;
 }
@@ -505,9 +528,9 @@ export function isKvStoreBrandSupported(hwProfile) {
  */
 export function variantRunsOnHardware(hwProfile, variant, hwId = null) {
   if (!isPrecisionCompatible(hwProfile, variant)) return false;
-  if (hwId && !isVariantHardwareSupported(variant, hwId)) return false;
+  if (hwId && !isVariantHardwareSupported(variant, hwId, hwProfile)) return false;
   if (isHardwareScalable(hwProfile)) return true;
-  return fitsSingleNode(hwProfile, variant);
+  return fitsSingleNode(hwProfile, variant, hwId);
 }
 
 /**
@@ -522,6 +545,9 @@ export function pickFittingVariant(recipe, hwProfile, hwId = null) {
     ([, v]) => variantRunsOnHardware(hwProfile, v, hwId)
   );
   if (!fitting.length) return null;
+  // Prefer highest-fidelity among those that fit: original footprint, not the
+  // GPU-resident override (an offloaded 558 GB NVFP4 still outranks a 24 GB
+  // native that also happens to fit the box).
   fitting.sort((a, b) => (b[1].vram_minimum_gb || 0) - (a[1].vram_minimum_gb || 0));
   return fitting[0][0];
 }
@@ -531,12 +557,12 @@ export function pickFittingVariant(recipe, hwProfile, hwId = null) {
  * holds a full model across its TP group, so the node must fit 2× the model's
  * VRAM. Also requires at least 2 GPUs to split.
  */
-export function pdFitsSingleNode(hwProfile, variant) {
+export function pdFitsSingleNode(hwProfile, variant, hwProfileId = null) {
   if (!hwProfile || !variant) return false;
   const gpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 0;
   if (gpuCount < 2) return false;
   const nodeVram = typeof hwProfile.vram_gb === "number" ? hwProfile.vram_gb : 0;
-  const modelVram = variant.vram_minimum_gb || 0;
+  const modelVram = variantVramMinimumGb(variant, hwProfileId);
   return nodeVram >= 2 * modelVram;
 }
 
@@ -564,7 +590,7 @@ export function pickDefaultHardware(hwProfiles, variant, recipe) {
     ([id, p]) =>
       matchesConstraint(p, constraint)
       && isHardwareSupported(recipe, id)
-      && isVariantHardwareSupported(variant, id)
+      && isVariantHardwareSupported(variant, id, p)
       && (!p.restricted || id in declared)
   );
 
@@ -688,6 +714,16 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const isCudaMap = (v) =>
     v && typeof v === "object" && ("cu129" in v || "cu130" in v);
 
+  // Images whose entrypoint is not `vllm serve` (NVIDIA-base community builds
+  // run nvidia_entrypoint.sh, which execs the first CMD token) need the serve
+  // command restated in CMD, or the model id is executed as a path.
+  const exactCmdPrefix = hwId
+    ? variant?.hardware_overrides?.[hwId]?.docker_serve_command
+    : null;
+  const cmdPrefix = typeof exactCmdPrefix === "string" && exactCmdPrefix.trim()
+    ? exactCmdPrefix.trim()
+    : null;
+
   let pinned = typeof exactHardwareOverride === "string" ? exactHardwareOverride : null;
   let cudaMap = null;
 
@@ -745,6 +781,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
     pinned,
     cudaMap,
     nightlyRequired,
+    cmdPrefix,
   };
 }
 
@@ -811,8 +848,9 @@ function servedPort(tokens, fallback = 8000) {
 
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
 // image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
-// CMD. Env vars become `-e KEY=VAL` inside the container.
-export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false }) {
+// CMD. `cmdPrefix` (e.g. "vllm serve") is restated before MODEL for images whose
+// entrypoint is something else. Env vars become `-e KEY=VAL` inside the container.
+export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false }) {
   const pubPort = port ?? servedPort(command.split(/\s+/));
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
@@ -836,12 +874,16 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = null, isN
   // under `--net=host` and hid the required `--shm-size` on 950PR.
   const runtimeFlags = isNpu
     ? "--privileged --net=host --shm-size=16g"
-    : `--privileged --ipc=host -p ${pubPort}:${pubPort}`;
+    : `--privileged --ipc=host ${hostNetwork ? "--network host" : `-p ${pubPort}:${pubPort}`}`;
   const base = `${prereq}docker run ${gpuFlags} \\
   ${runtimeFlags} \\
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
+  const setup = setupCommand
+    ? `--entrypoint /bin/sh ${image} -c ${shellQuote(`${setupCommand} && exec vllm serve "$@"`)} vllm-grpc ${modelId}`
+    : null;
+  const cmdHead = setup || (cmdPrefix ? `${image} \\\n  ${cmdPrefix} ${modelId}` : `${image} ${modelId}`);
   return `${base}
-  ${image} ${modelId}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
+  ${cmdHead}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
 }
 
 // argv companion to buildDockerRun. `argv` here is the inner command's argv —
@@ -874,6 +916,7 @@ export function buildDockerArgv({ argv, env, meta, port = null }) {
   return [
     ...base,
     meta.image,
+    ...(meta.cmdPrefix ? meta.cmdPrefix.split(/\s+/) : []),
     ...cmdArgs,
   ];
 }
@@ -1033,12 +1076,53 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfil
 }
 
 /**
+ * Whether the pd_cluster `dynamo` block can run on this hardware — gated by
+ * its optional `brands` allowlist (absent = any brand). Shared by the builder
+ * (pill disabled) and synthesis (falls back to the native router).
+ */
+export function isDynamoSupportedOnHardware(dynamoCfg, hwProfile) {
+  if (!dynamoCfg) return false;
+  const brands = dynamoCfg.brands;
+  return !Array.isArray(brands) || brands.includes(hwProfile?.brand);
+}
+
+/**
+ * Normalize the `dynamo.install` field to a list of `{ command, note?,
+ * optional? }` steps — accepts a bare string for brevity.
+ */
+export function dynamoInstallSteps(dynamoCfg) {
+  const raw = dynamoCfg?.install;
+  if (!raw) return [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list.map((x) => (typeof x === "string" ? { command: x } : x)).filter((x) => x?.command);
+}
+
+// The first SMG recipe path uses connector-aware HTTP registration. DEP rank
+// routing and composed KV connectors need separate validation before opting in.
+export function smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, transport = "http") {
+  if (!strategy?.smg) return "SMG is not configured for this strategy.";
+  if (transport === "grpc" && (!recipe.model?.smg_grpc || !strategy.smg.grpc)) {
+    return "SMG gRPC is only enabled for Kimi K3, MiniMax M3, GLM-5.3 and DeepSeek-V4.1-Flash.";
+  }
+  if (kvOffload) return "SMG currently supports NIXL without KV offload. Disable KV offload to use SMG.";
+  const allowed = pdPoolModes(recipe);
+  for (const role of ["prefill", "decode"]) {
+    const requested = pdNodes?.[role]?.parallelism
+      || recipe.strategy_overrides?.pd_cluster?.[role]?.parallelism
+      || strategy[role]?.parallelism || "tp";
+    const mode = allowed.includes(requested) ? requested : allowed[0];
+    if (mode === "dep") return "SMG DEP rank routing is not enabled in this recipe. Use TP or TEP for both pools.";
+  }
+  return null;
+}
+
+/**
  * Resolve a complete vllm serve command from recipe + user selections.
  *
  * Returns: { command, env, deployType } for single_node/multi_node,
  *          { prefillCommand, decodeCommand, routerConfig, env, deployType } for pd_cluster.
  */
-export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined) {
+export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null, pdTransport = "http") {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
@@ -1080,6 +1164,21 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     ? strategies[kvOffload]
     : null;
   const kvComposing = !!kvStoreStrat && strategy.deploy_type !== "pd_cluster";
+
+  // PD orchestrator: "dynamo" swaps vllm-router for the strategy YAML's
+  // `dynamo` block — same pools/parallelism, but each role launches through
+  // `python3 -m dynamo.vllm --disaggregation-mode <role>` and dynamo.frontend
+  // fronts them. Any other value (or a strategy without the block) = native.
+  const dynamo = strategy.deploy_type === "pd_cluster" && pdRouter === "dynamo"
+      && isDynamoSupportedOnHardware(strategy.dynamo, hwProfile)
+    ? strategy.dynamo
+    : null;
+  let routerUnavailableReason = strategy.deploy_type === "pd_cluster" && pdRouter === "smg"
+    ? smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, pdTransport) : null;
+  let smg = strategy.deploy_type === "pd_cluster" && pdRouter === "smg" && !routerUnavailableReason
+    ? strategy.smg : null;
+
+  let smgGrpc = !!smg && pdTransport === "grpc";
 
   // The composing option, resolved once behind all three gates (strategy,
   // recipe opt-in, brand) and shared by args/env/companion emission.
@@ -1155,6 +1254,11 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       if (strategy.vllm_args) args.push(...strategy.vllm_args);
     } else if (roleOverride && strategy[roleOverride]?.vllm_args) {
       args.push(...strategy[roleOverride].vllm_args);
+    }
+    // Dynamo role args (--disaggregation-mode + its kv_both Nixl config)
+    // follow the native ones so the connector swap wins the last-wins dedupe.
+    if (dynamo && roleOverride && dynamo[roleOverride]?.vllm_args) {
+      args.push(...dynamo[roleOverride].vllm_args);
     }
     const parallelFlag = strategy.parallel_flag || "--tensor-parallel-size";
     const isMulti = strategy.deploy_type === "multi_node" && nodeCount > 1;
@@ -1458,6 +1562,9 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       args.push(...kvStoreStrat.pd[roleOverride].args);
     }
 
+    // Dynamo workers serve no HTTP of their own (the frontend does), so drop
+    // flags like --port whichever layer emitted them.
+    if (dynamo?.remove_args?.length) return stripArgs(args, dynamo.remove_args);
     return args;
   }
 
@@ -1480,6 +1587,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     } else if (roleOverride && strategy[roleOverride]?.env) {
       Object.assign(env, strategy[roleOverride].env);
     }
+    if (dynamo && roleOverride) Object.assign(env, dynamo.env || {});
     // Composing-option env, after the strategy's so the option wins.
     if (kvOpt?.env) {
       Object.assign(env, kvOpt.env);
@@ -1621,15 +1729,22 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       }
     }
 
-    if (resolveFrontend(recipe, frontend) === "rust") {
+    if (smgGrpc) {
+      env.VLLM_USE_RUST_FRONTEND = "0";
+    } else if (resolveFrontend(recipe, frontend) === "rust") {
       env.VLLM_USE_RUST_FRONTEND = "1";
     }
     return env;
   }
 
+  // Dynamo workers launch via `python3 -m dynamo.vllm --model <id>`; every
+  // other path is `vllm serve <id>`.
+  const serveHead = dynamo
+    ? `${dynamo.launcher || "python3 -m dynamo.vllm"} --model ${modelId}`
+    : `vllm serve ${modelId}`;
   function formatCommand(args) {
     const filtered = dedupeArgs(args.filter(Boolean));
-    if (filtered.length === 0) return `vllm serve ${modelId}`;
+    if (filtered.length === 0) return serveHead;
     // Pair each --flag with its immediate value on the same line so the output
     // reads like the human-written command in the recipe guide, not
     // --flag\n value\n --flag\n value\n ...
@@ -1644,7 +1759,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         lines.push(cur);
       }
     }
-    return `vllm serve ${modelId} \\\n  ${lines.join(" \\\n  ")}`;
+    return `${serveHead} \\\n  ${lines.join(" \\\n  ")}`;
   }
 
   // Companion to formatCommand: returns the deduped flat argv (no shell
@@ -1652,7 +1767,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   // going through a shell. ["vllm", "serve", "<model>", ...flags].
   function formatArgv(args) {
     const filtered = dedupeArgs(args.filter(Boolean));
-    return ["vllm", "serve", modelId, ...filtered];
+    const head = dynamo
+      ? [...(dynamo.launcher || "python3 -m dynamo.vllm").split(/\s+/), "--model", modelId]
+      : ["vllm", "serve", modelId];
+    return [...head, ...filtered];
   }
 
   const deployType = strategy.deploy_type || "single_node";
@@ -1734,8 +1852,71 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     ];
     const routerCommand = routerLines.join("\n");
 
-    const prefillArgs = buildArgs("prefill", null);
-    const decodeArgs = buildArgs("decode", null);
+    let prefillArgs = buildArgs("prefill", null);
+    let decodeArgs = buildArgs("decode", null);
+    const smgWorkers = [];
+    if (smg) {
+      for (const [role, args, kvRole] of [["prefill", prefillArgs, "kv_producer"], ["decode", decodeArgs, "kv_consumer"]]) {
+        const finalArgs = dedupeArgs(args.filter(Boolean));
+        const value = (flag) => {
+          const index = finalArgs.indexOf(flag);
+          return index !== -1 ? finalArgs[index + 1] : undefined;
+        };
+        let kv;
+        try { kv = JSON.parse(value("--kv-transfer-config")); } catch { /* Report unsupported config below. */ }
+        const port = value("--port");
+        if (kv?.kv_connector !== "NixlConnector" || kv?.kv_role !== kvRole || !/^\d+$/.test(port)) {
+          routerUnavailableReason = "SMG requires NixlConnector producer/consumer workers with numeric ports. Remove incompatible worker overrides.";
+          smg = null;
+          smgGrpc = false;
+          break;
+        }
+        smgWorkers.push({ role, port, kvRole });
+      }
+    }
+    const grpcConfig = recipe.model?.smg_grpc;
+    if (smgGrpc) {
+      // Keep engine/KV flags; the gateway now owns chat rendering and parsing.
+      const grpcArgs = (args) => [
+        ...stripArgs(args, ["--tool-call-parser", "--reasoning-parser", "--enable-auto-tool-choice",
+          "--default-chat-template-kwargs"]),
+        // vLLM dispatches gRPC before headless; followers must not start an API server.
+        ...(args.includes("--headless") ? [] : ["--grpc", "--host", "0.0.0.0"]),
+      ];
+      prefillArgs = grpcArgs(prefillArgs);
+      decodeArgs = grpcArgs(decodeArgs);
+    }
+    const smgRouterArgs = smg ? [
+      "--pd-disaggregation",
+      `--policy ${smg.policy || "round_robin"}`,
+      ...(smgGrpc ? [
+        ...smgWorkers.map(({ role, port }) => `--${role} grpc://$${role.toUpperCase()}_NODE_1:${port}`),
+        `--model-path ${shellQuote(modelId)}`,
+        `--reasoning-parser ${enabledFeatures.includes("reasoning") ? grpcConfig.reasoning_parser : "passthrough"}`,
+        `--tool-call-parser ${enabledFeatures.includes("tool_calling") ? grpcConfig.tool_call_parser : "passthrough"}`,
+      ] : []),
+      "--host 0.0.0.0", "--port $ROUTER_PORT",
+    ].join(" \\\n    ") : "";
+    const smgReplicaComments = smgGrpc ? [
+      "# Multiple prefill replicas: --prefill grpc://prefill-a:8001 --prefill grpc://prefill-b:8001",
+      "# Multiple decode replicas: --decode grpc://decode-a:8002 --decode grpc://decode-b:8002",
+      "# Repeat each flag (no commas); use serving heads, not headless TP/TEP followers.",
+      "",
+    ].join("\n") : "";
+    const registration = smg && !smgGrpc ? {
+      label: "Register workers",
+      description: "After both workers and SMG are running, register the NIXL roles, then wait for readiness before sending requests.",
+      command: [
+        "set -e",
+        ...smgWorkers.map(({ role, port, kvRole }) => [
+          'curl --fail-with-body -sS -X POST "http://$ROUTER_HOST:$ROUTER_PORT/workers" \\',
+          '  -H "Content-Type: application/json" --data-binary @- <<JSON',
+          JSON.stringify({ url: `http://$${role.toUpperCase()}_NODE_1:${port}`, worker_type: role, runtime_type: "vllm", kv_connector: "NixlConnector", kv_role: kvRole }),
+          "JSON",
+        ].join("\n")),
+        'curl --fail --retry 60 --retry-delay 2 --retry-all-errors --max-time 5 "http://$ROUTER_HOST:$ROUTER_PORT/readiness"',
+      ].join("\n\n"),
+    } : null;
     // Mooncake composed into PD: surface master / store / config so the PD
     // block can render their tabs and the per-node config heredoc.
     const pdMooncake = (kvStoreStrat?.pd)
@@ -1771,10 +1952,43 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         env: buildEnv("decode"),
         ...dMeta,
       },
-      router: {
-        command: routerCommand,
-        install: "uv pip install vllm-router",
-      },
+      orchestrator: dynamo ? "dynamo" : smg ? "smg" : "vllm-router",
+      ...(smg ? { transport: smgGrpc ? "grpc" : "http" } : {}),
+      ...(smgGrpc ? {
+        workerInstall: `uv pip install ${smg.grpc.packages}`,
+        workerDockerSetup: `python3 -m pip install --no-cache-dir ${smg.grpc.packages}`,
+      } : {}),
+      ...(routerUnavailableReason ? { routerUnavailableReason } : {}),
+      ...(registration ? { registration } : {}),
+      router: dynamo
+        ? {
+            label: dynamo.frontend?.label || "Frontend",
+            command: [
+              `python3 -m dynamo.frontend \\`,
+              `    --http-port $ROUTER_PORT \\`,
+              `    --router-mode ${dynamo.frontend?.router_mode || "round-robin"}`,
+            ].join("\n"),
+            env: { ...(dynamo.env || {}) },
+            install: dynamoInstallSteps(dynamo)[0]?.command,
+          }
+        : smg ? {
+            label: "SMG",
+            command: `${smgReplicaComments}smg launch \\\n    ${smgRouterArgs}`,
+            dockerCommand: `${smgReplicaComments}docker run --rm --network host \\\n    ${smgGrpc ? "-v ~/.cache/huggingface:/root/.cache/huggingface \\\n    " : ""}${smg.docker_image} \\\n    ${smgRouterArgs}`,
+            install: smg.install,
+            dockerInstall: `docker pull ${smg.docker_image}`,
+          } : {
+            command: routerCommand,
+            install: "uv pip install vllm-router",
+          },
+      ...(dynamo?.infra ? {
+        infra: {
+          label: dynamo.infra.label || "Control plane",
+          description: dynamo.infra.description || "",
+          command: String(dynamo.infra.command).trimEnd(),
+        },
+      } : {}),
+      ...(dynamo ? { dynamoInstall: dynamoInstallSteps(dynamo) } : {}),
       routerConfig: strategy.router || { policy: "round_robin" },
     };
   }

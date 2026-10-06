@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3 — Frontier Coding with Emergent Cyber Capabilities"
   date_added: 2026-08-28
-  date_updated: 2026-09-18
+  date_updated: 2026-09-30
   difficulty: advanced
   tasks:
     - text
@@ -17,14 +17,25 @@ meta:
   hardware:
     b300: verified
     h200: verified
+    # FP8 + 5-token MTP validated 2026-09-30 on 8×MI325X (TP8).
+    mi325x: verified
     # Validated 2026-08-30 on one Atlas A5 node (8×950PR, TP8, graph mode).
     # Native FP8 path needs vllm-ascend#15346.
     ascend_950pr_8x: verified
+    # NVFP4 + --cpu-offload-gb on 1× GB300 (252 GB HBM + unified host RAM).
+    # Do not raise taxonomy vram_gb — host RAM is recipe-specific, not HBM.
+    dgx_station_gb300: verified
 
 model:
   model_id: "zai-org/GLM-5.3"
+  # Opt in to SMG gRPC PD; parsing runs on the router, not vLLM.
+  smg_grpc:
+    reasoning_parser: glm45
+    tool_call_parser: glm47_moe
   min_vllm_version: "0.29.0"
   default_frontend: rust
+  docker_image:
+    amd: "vllm/vllm-openai-rocm:v0.29.0"
   architecture: moe
   parameter_count: "743B"
   active_parameters: "39B"
@@ -47,12 +58,12 @@ features:
       - "--reasoning-parser"
       - "glm47"
   spec_decoding:
-    description: "Speculative decoding — pick native MTP or an external DFlash2 drafter."
+    description: "Speculative decoding — pick native MTP, DFlash2, or DSpark (external drafts)."
     default_mode: mtp
     modes:
       mtp:
         label: "MTP"
-        description: "Native multi-token prediction head. 5 draft tokens on NVIDIA/AMD, 1 on Ascend (draft stays eager)."
+        description: "Native multi-token prediction head. 5 draft tokens on NVIDIA/AMD, 4 on DGX Station (FlashInfer TRT-LLM MoE), 1 on Ascend (draft stays eager)."
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":5}'
@@ -61,6 +72,10 @@ features:
             args:
               - "--speculative-config"
               - '{"method":"mtp","num_speculative_tokens":1,"enforce_eager":true}'
+          dgx_station_gb300:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":4,"moe_backend":"flashinfer_trtllm"}'
       dflash:
         label: "DFlash2"
         description: "External DFlash2 drafter (incoai/GLM-5.3-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. num_speculative_tokens must be 7 (block_size 8 minus one)."
@@ -71,6 +86,13 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"dflash","model":"incoai/GLM-5.3-DFlash2","num_speculative_tokens":7}'
+      dspark:
+        label: "DSpark"
+        description: "External DSpark drafter (RedHatAI/GLM-5.3-speculator.dspark), with a Markov head and confidence head. The model card specifies 8 draft tokens."
+        variants: [default]
+        args:
+          - "--speculative-config"
+          - '{"method":"dspark","model":"RedHatAI/GLM-5.3-speculator.dspark","num_speculative_tokens":8}'
 
 opt_in_features:
   - spec_decoding
@@ -81,6 +103,13 @@ variants:
     vram_minimum_gb: 893
     description: "Native FP8 checkpoint (zai-org/GLM-5.3) — 8xH200/H20 (141GB × 8) single-node serving"
     hardware_overrides:
+      # 8x H200 (1128 GB) leaves ~23 GiB/GPU for KV after the 704 GB FP8
+      # weights — vLLM estimates ~450K max tokens, so the 1M default fails
+      # at startup ("KV cache is needed"). Cap at 256K.
+      h200:
+        extra_args:
+          - "--max-model-len"
+          - "262144"
       # Exact-GPU pin: computeDockerMeta has no Huawei brand, so a model-level
       # docker_image string would only affect NVIDIA. Hide pip — official
       # wheels have no NPU kernels.
@@ -92,7 +121,36 @@ variants:
     model_id: "Inferact/GLM-5.3-NVFP4"
     precision: nvfp4
     vram_minimum_gb: 558
-    description: "Inferact NVFP4 checkpoint — only MoE expert linears are quantized to NVFP4; shared experts, attention, embeddings, and the early dense layers stay FP8/BF16, with FP8 KV cache. Blackwell GPUs (B200/B300) only."
+    description: "Inferact NVFP4 checkpoint — only MoE expert linears are quantized to NVFP4; shared experts, attention, embeddings, and the early dense layers stay FP8/BF16, with FP8 KV cache. Blackwell GPUs (B200/B300) only. On DGX Station, weights CPU-offload into unified system RAM."
+    hardware_overrides:
+      # Exact-GPU: GPU-resident fit stays ≤ 252 GB HBM. Taxonomy vram_gb is
+      # unchanged — host RAM is only this variant's --cpu-offload-gb path.
+      dgx_station_gb300:
+        docker_image: "vllm/vllm-openai:v0.29.0-ubuntu2404"
+        vram_minimum_gb: 252
+        extra_env:
+          VLLM_WEIGHT_OFFLOADING_DISABLE_PIN_MEMORY: "1"
+          VLLM_ENGINE_READY_TIMEOUT_S: "900"
+        extra_args:
+          - "--trust-remote-code"
+          - "--gpu-memory-utilization"
+          - "0.97"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "8"
+          - "--offload-backend"
+          - "uva"
+          - "--cpu-offload-gb"
+          - "222"
+          - "--cpu-offload-params"
+          - "w13_weight"
+          - "w2_weight"
+          - "--load-format"
+          - "fastsafetensors"
+          - "--no-enable-flashinfer-autotune"
+          - "--moe-backend"
+          - "flashinfer_trtllm"
   w4a8:
     model_id: "gpustack/GLM-5.3-W4A8"
     precision: int4
@@ -187,6 +245,9 @@ hardware_notes:
   ascend_950pr_8x:
     title: "vLLM Ascend A5 image required"
     body: "Single-node TP8 on 8×950PR. Pin quay.io/ascend/vllm-ascend:nightly-main-a5 and overlay vllm-ascend#15346 for native FP8. EP is not available on this interconnect. Set HCCL_BUFFSIZE=1024 before launch."
+  dgx_station_gb300:
+    title: "CPU weight offload (NVFP4)"
+    body: "1× GB300 (252 GB HBM) plus unified host RAM. NVFP4 offloads MoE expert weights (w13_weight, w2_weight) with --offload-backend uva and --cpu-offload-gb 222. Set VLLM_WEIGHT_OFFLOADING_DISABLE_PIN_MEMORY=1. Context is capped at 262K / 8 seqs. FP8/BF16 still do not fit this box."
 
 guide: |
   ## Overview
@@ -228,7 +289,7 @@ guide: |
     --served-model-name glm-5.3
   ```
 
-  ### FP8 on AMD MI300X/MI355X
+  ### FP8 on AMD MI300X/MI325X/MI355X
 
   ```bash
   VLLM_ROCM_USE_AITER=1 \
@@ -247,6 +308,11 @@ guide: |
     --linear-backend aiter \
     --moe-backend aiter
   ```
+
+  On 8x MI325X with `vllm/vllm-openai-rocm:v0.29.0`, this command serves the full
+  `--max-model-len 524288` at `--gpu-memory-utilization 0.80`, reporting a 1,477,168-token
+  KV cache and 2.82x maximum concurrency. MTP is healthy there: a mean acceptance length of
+  2.77 with 5 tokens drafted per step on a ~500-token greedy generation.
 
   ### FP8 on 8xB200 (full 1M context)
 
@@ -287,6 +353,18 @@ guide: |
     --enable-auto-tool-choice \
     --kv-cache-dtype fp8_e4m3 \
     --served-model-name glm-5.3-nvfp4
+  ```
+
+  ### DSpark (opt-in)
+
+  DSpark is an external confidence-scheduled drafter. Serve `zai-org/GLM-5.3` and attach
+  [RedHatAI/GLM-5.3-speculator.dspark](https://huggingface.co/RedHatAI/GLM-5.3-speculator.dspark)
+  with eight speculative tokens:
+
+  ```bash
+  vllm serve zai-org/GLM-5.3 \
+    --tensor-parallel-size 8 \
+    --speculative-config '{"method":"dspark","model":"RedHatAI/GLM-5.3-speculator.dspark","num_speculative_tokens":8}'
   ```
 
   ## Reasoning modes
@@ -378,3 +456,4 @@ guide: |
   - [Model card](https://huggingface.co/zai-org/GLM-5.3)
   - [BF16 checkpoint](https://huggingface.co/zai-org/GLM-5.3-BF16)
   - [NVFP4 checkpoint (Inferact)](https://huggingface.co/Inferact/GLM-5.3-NVFP4)
+  - [DSpark draft](https://huggingface.co/RedHatAI/GLM-5.3-speculator.dspark)

@@ -20,6 +20,10 @@ meta:
 
 model:
   model_id: "MiniMaxAI/MiniMax-M3"
+  # Opt in to SMG gRPC PD; parsing runs on the router, not vLLM.
+  smg_grpc:
+    reasoning_parser: minimax_m3
+    tool_call_parser: minimax_m3
   min_vllm_version: "0.24.0"
   nightly_required: true
   docker_image:
@@ -129,6 +133,14 @@ variants:
     # On AMD, 8x MI350X/MI355X fits comfortably.
     vram_minimum_gb: 1025
     description: "Native BF16 checkpoint — multi-node TP recommended for long-context headroom"
+    hardware_overrides:
+      h200:
+        # After ~1 TB of BF16 weights, 8x H200 has ~3.5 GiB/GPU left for KV;
+        # vLLM estimates ~83K max tokens, so the 1M default fails at startup
+        # ("KV cache is needed"). Cap at 64K; use MXFP8 or multi-node for more.
+        extra_args:
+          - "--max-model-len"
+          - "65536"
   mxfp8:
     model_id: "MiniMaxAI/MiniMax-M3-MXFP8"
     precision: mxfp8
@@ -712,6 +724,13 @@ guide: |
     --block-size 128 \
     --language-model-only \
     --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3-GQA", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
+  ```
+
+  You may also consider FlashInfer for draft attention if it performs better for
+  your workload, and local argmax reduction to reduce communication traffic:
+
+  ```bash
+  --speculative-config '{"method":"eagle3","model":"Inferact/MiniMax-M3-EAGLE3-GQA","num_speculative_tokens":3,"attention_backend":"FLASHINFER","use_local_argmax_reduction":true}'
   ```
 
   ## Quantized Variant (MXFP4 on MI355X)

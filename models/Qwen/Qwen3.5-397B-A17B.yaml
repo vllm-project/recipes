@@ -226,9 +226,10 @@ compatible_strategies:
   - pd_cluster
 
 hardware_overrides:
-  # FlashInfer TRTLLM MoE kernels are NVIDIA-only; pin them per-brand so AMD
-  # keeps auto-selection (AITER on ROCm).
-  nvidia:
+  # FlashInfer TRTLLM MoE kernels are Blackwell-only (Hopper fails with "kernel
+  # does not support current device"); pin them per-generation so Hopper and
+  # AMD keep auto-selection (AITER on ROCm).
+  blackwell:
     extra_args:
       - "--moe-backend"
       - "flashinfer_trtllm"

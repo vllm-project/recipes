@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAllRecipes, getRecipesByOrg } from "@/lib/recipes";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
-import { recipeHref } from "@/lib/recipe-utils";
+import { primaryRecipeTask, recipeHref } from "@/lib/recipe-utils";
 import { siteUrl } from "@/lib/site-url";
 import { Badge } from "@/components/ui/badge";
 import { ExternalLink, Type, Eye, Sparkles, Cpu, Hash } from "lucide-react";
@@ -66,10 +66,10 @@ export default async function OrgPage({ params }) {
   const logo = getProviderLogo(org);
   const displayName = getProviderDisplayName(org);
 
-  // Group by primary task (first in meta.tasks, or "other" if empty)
+  // Group by capability, independently of the order of meta.tasks.
   const groups = {};
   for (const m of models) {
-    const task = (m.meta.tasks || [])[0] || "other";
+    const task = primaryRecipeTask(m);
     if (!groups[task]) groups[task] = [];
     groups[task].push(m);
   }
@@ -160,9 +160,9 @@ export default async function OrgPage({ params }) {
 
 function ModelRow({ recipe }) {
   const { meta, model, variants, hf_repo } = recipe;
-  // Secondary tasks (beyond the primary used for grouping) — surface as small
-  // icons so a model under "Text" that also does vision is discoverable.
-  const secondaryTasks = (meta.tasks || []).slice(1);
+  // Show capabilities other than the task used for grouping.
+  const primaryTask = primaryRecipeTask(recipe);
+  const secondaryTasks = (meta.tasks || []).filter((task) => task !== primaryTask);
 
   return (
     <Link
