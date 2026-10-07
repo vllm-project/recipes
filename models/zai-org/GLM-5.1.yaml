@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.1 refreshed version of GLM-5 — frontier-scale MoE language model (~744B total parameters) with MTP speculative decoding and thinking mode"
   date_added: 2026-03-28
-  date_updated: 2026-09-18
+  date_updated: 2026-10-05
   difficulty: advanced
   tasks:
     - text
@@ -12,6 +12,8 @@ meta:
   related_recipes: []
   hardware:
     h200: verified
+    mi325x: verified
+    mi350x: verified
     mi355x: verified
 
 model:
@@ -67,6 +69,11 @@ variants:
     precision: fp8
     vram_minimum_gb: 893
     description: "Native FP8 checkpoint — 8xH200/H20 (141GB × 8) single-node serving"
+    hardware_overrides:
+      mi325x:
+        docker_image: "vllm/vllm-openai-rocm:nightly-92044241a02f05de51420d654daf669de20b4691"
+      mi350x:
+        docker_image: "vllm/vllm-openai-rocm:nightly-92044241a02f05de51420d654daf669de20b4691"
   nvfp4:
     model_id: "nvidia/GLM-5.1-NVFP4"
     precision: nvfp4
@@ -129,6 +136,9 @@ hardware_overrides:
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
       VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
+      # Loading the FP8 checkpoint on 8x MI325X can outlast the Rust
+      # frontend's 600 s default wait for the engine.
+      VLLM_ENGINE_READY_TIMEOUT_S: "3600"
 
 strategy_overrides: {}
 
@@ -148,7 +158,8 @@ guide: |
   - **vLLM version:** >= 0.24.0 for the `glm47` reasoning parser.
     Use the latest main branch if you need tool calling + MTP simultaneously.
   - **Hardware (FP8):** 8xH200 or 8xH20 (141GB × 8)
-  - **DeepGEMM (FP8):** install via `install_deepgemm.sh` from vLLM repo
+  - **DeepGEMM (FP8, NVIDIA):** install via `install_deepgemm.sh` from vLLM repo
+  - **Hardware (FP8, AMD):** 8x MI325X (256GB × 8) or 8x MI350X (288GB × 8), `vllm/vllm-openai-rocm:nightly-92044241a02f05de51420d654daf669de20b4691`; uses AITER, not DeepGEMM
   - **Hardware (MXFP4):** 8x MI355X (gfx950), vLLM >= 0.24.0, `vllm/vllm-openai-rocm:latest`
 
   ### Using Docker
@@ -193,6 +204,23 @@ guide: |
        --chat-template-content-format=string \
        --served-model-name glm-5.1-fp8
   ```
+
+  ### FP8 on AMD MI325X and MI350X
+
+  Select **MI325X** or **MI350X** and the **FP8** variant in the command builder above. The
+  generated command adds `VLLM_ROCM_USE_AITER=1`, `VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1`,
+  `--linear-backend aiter` and `--moe-backend aiter`, and raises `VLLM_ENGINE_READY_TIMEOUT_S`
+  because loading the weights can take longer than the Rust frontend's 600 s default. The
+  Docker command uses the nightly build
+  `vllm/vllm-openai-rocm:nightly-92044241a02f05de51420d654daf669de20b4691`.
+
+  On 8x MI325X that command, with MTP enabled, serves the full 202,752-token context with a
+  1,292,544-token KV cache (6.38x maximum concurrency) and an MTP mean acceptance length of
+  2.72 with 3 draft tokens on a ~380-token greedy generation.
+
+  On 8x MI350X the same command serves the full context with a 1,587,312-token KV cache (7.83x
+  maximum concurrency) and an MTP mean acceptance length of 3.13 with 3 draft tokens on a
+  512-token greedy generation.
 
   ## Client Usage
 
@@ -252,7 +280,7 @@ guide: |
 
   - **Accuracy drift:** Prefer the 0.19.0 stable release for best accuracy.
   - **Tool calling + MTP:** If both are needed, use the latest vLLM main branch.
-  - **FP8 installation:** DeepGEMM required for FP8 performance.
+  - **FP8 installation (NVIDIA):** DeepGEMM required for FP8 performance.
   - **MXFP4 (MI355X):** MTP speculative decoding isn't yet supported on this checkpoint/kernel path. Mooncake and LMCache KV-store offload are still untested on MI355X — worth a check before leaning on them in production.
 
   ## References
