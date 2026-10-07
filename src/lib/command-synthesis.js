@@ -76,6 +76,29 @@ function hardwareKeyedValue(map, hwProfile, hwProfileId) {
 }
 
 /**
+ * Args and env a feature mode emits for this strategy and GPU. Each matching
+ * layer replaces the one below it (same semantics as hardware_overrides):
+ *
+ *   mode.strategy_overrides.<strategy>.hardware_overrides.<gpu|gen|brand>
+ *   mode.strategy_overrides.<strategy>            — strategy-wide args/env
+ *   mode.hardware_overrides.<gpu|gen|brand>
+ *   mode.args / mode.env
+ *
+ * Recipe-level strategy extra_args cannot do this: they are appended before
+ * features, and last-wins dedupe keeps the mode's --speculative-config.
+ */
+export function resolveModeLaunch(mode, strategyName, hwProfile, hwProfileId) {
+  if (!mode) return { args: undefined, env: undefined };
+  const strategyOv = mode.strategy_overrides?.[strategyName];
+  const strategyHw = hardwareKeyedValue(strategyOv?.hardware_overrides, hwProfile, hwProfileId);
+  const modeHo = hardwareKeyedValue(mode.hardware_overrides, hwProfile, hwProfileId);
+  return {
+    args: strategyHw?.args ?? strategyOv?.args ?? modeHo?.args ?? mode.args,
+    env: strategyHw?.env ?? strategyOv?.env ?? modeHo?.env ?? mode.env,
+  };
+}
+
+/**
  * Resolve a numeric TP declaration. A variant may use a bare number or a
  * hardware-aware map keyed by exact GPU id, generation, brand, or `default`.
  */
@@ -1527,8 +1550,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     //    A feature can declare per-generation overrides under
     //    `hardware_overrides.<key>.args` keyed by exact GPU id, generation or
     //    brand; when present they REPLACE the feature's default args (not
-    //    merged), so a recipe can ship different spec-decoding configs for
-    //    hopper vs blackwell — or for one GB10 box — without dedupe gymnastics.
+    //    merged). A mode may further replace that with
+    //    `strategy_overrides.<strategy>` (optional hardware_overrides inside
+    //    it) via resolveModeLaunch — strategy+hardware, then strategy-wide,
+    //    then hardware, then the mode default.
     for (const f of enabledFeatures || []) {
       const feat = recipe.features?.[f];
       if (!feat) continue;
@@ -1546,8 +1571,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         const modeKey = resolveModeKey(feat, f, variant, variantKey, hwProfile, hwProfileId, featureModes?.[f]);
         const mode = modeKey ? feat.modes[modeKey] : null;
         if (mode) {
-          const modeHo = hardwareKeyedValue(mode.hardware_overrides, hwProfile, hwProfileId);
-          const modeArgs = modeHo?.args ?? mode.args;
+          const modeArgs = resolveModeLaunch(mode, strategyName, hwProfile, hwProfileId).args;
           if (modeArgs) args.push(...modeArgs);
         }
         continue;
@@ -1702,8 +1726,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         const modeKey = resolveModeKey(feat, f, variant, variantKey, hwProfile, hwProfileId, featureModes?.[f]);
         const mode = modeKey ? feat.modes[modeKey] : null;
         if (mode) {
-          const modeHo = hardwareKeyedValue(mode.hardware_overrides, hwProfile, hwProfileId);
-          const modeEnv = modeHo?.env ?? mode.env;
+          const modeEnv = resolveModeLaunch(mode, strategyName, hwProfile, hwProfileId).env;
           if (modeEnv) Object.assign(env, modeEnv);
         }
         continue;

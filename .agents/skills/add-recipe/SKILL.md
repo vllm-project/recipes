@@ -231,6 +231,10 @@ features:
   spec_decoding:                  # USE spec_decoding, NOT mtp — unified key for
     description: "..."            # MTP / Eagle3 / ERNIE-MTP / etc.
     args: ["--speculative-config", '{"method":"mtp","num_speculative_tokens":1}']
+    # Modes may also set strategy_overrides.<strategy_id>.{args,env,hardware_overrides}
+    # to replace the speculative config for one serving strategy. Precedence:
+    # strategy+hardware > strategy-wide > hardware_overrides > args. Recipe-level
+    # strategy_overrides.extra_args cannot override --speculative-config.
 
 opt_in_features:                  # features that default OFF (users tick them on)
   - spec_decoding                 # spec decoding is opt-in unless the model docs insist

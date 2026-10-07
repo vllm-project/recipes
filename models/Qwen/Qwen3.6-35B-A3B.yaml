@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Smaller Qwen3.6 multimodal MoE model (35B total / 3B active) with BF16, FP8, and NVIDIA NVFP4 variants"
   date_added: 2026-04-16
-  date_updated: 2026-09-14
+  date_updated: 2026-10-06
   difficulty: beginner
   tasks:
     - multimodal
@@ -14,6 +14,7 @@ meta:
     - "Qwen/Qwen3.5-397B-A17B"
   hardware:
     dgx_spark_gb10: verified
+    dgx_spark_gb10_64gb: verified
     h100: verified
     h200: verified
     mi300x: verified
@@ -39,11 +40,11 @@ model:
 
 features:
   tool_calling:
-    description: "Enable automatic tool choice with Qwen3 Coder parser"
+    description: "Enable automatic tool choice with Qwen3 XML parser"
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_coder"
+      - "qwen3_xml"
   reasoning:
     description: "Enable chain-of-thought reasoning with Qwen3 parser"
     args:
@@ -149,6 +150,25 @@ variants:
           - "--enable-prefix-caching"
           - "--load-format"
           - "fastsafetensors"
+      dgx_spark_gb10_64gb:
+        extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--attention-backend"
+          - "flashinfer"
+          - "--moe-backend"
+          - "marlin"
+          - "--gpu-memory-utilization"
+          - "0.8"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "4"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
+          - "--async-scheduling"
+          - "--enable-prefix-caching"
       dgx_station_gb300:
         extra_args:
           - "--kv-cache-dtype"

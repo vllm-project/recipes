@@ -4,7 +4,7 @@ meta:
   provider: "NVIDIA"
   description: "NVIDIA Nemotron 3.5 Lightning hybrid Mamba-MoE (30B total / 3B active) with NVFP4 and BF16 checkpoints, 1M context, and MTP / DSpark / DFlash speculative decoding"
   date_added: 2026-08-03
-  date_updated: 2026-09-22
+  date_updated: 2026-10-06
   difficulty: intermediate
   tasks:
     - text
@@ -13,6 +13,7 @@ meta:
   hardware:
     h100: verified
     dgx_spark_gb10: verified
+    dgx_spark_gb10_64gb: verified
     rtx_pro_6000: verified
     dgx_station_gb300: verified
 
@@ -74,6 +75,11 @@ features:
         hardware_overrides:
           # GB10 is decode-bound at concurrency 1, so the sweep drafts deeper.
           dgx_spark_gb10:
+            args:
+              - "--speculative-config"
+              - '{"method":"dspark","model":"nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark","num_speculative_tokens":7}'
+          # GB10 is decode-bound at concurrency 1, so the sweep drafts deeper.
+          dgx_spark_gb10_64gb:
             args:
               - "--speculative-config"
               - '{"method":"dspark","model":"nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark","num_speculative_tokens":7}'
@@ -149,6 +155,10 @@ variants:
           - "0.7"
           - "--load-format"
           - "fastsafetensors"
+      dgx_spark_gb10_64gb:
+        extra_args:
+          - "--gpu-memory-utilization"
+          - "0.8"
       rtx_pro_6000:
         extra_args:
           - "--attention-backend"

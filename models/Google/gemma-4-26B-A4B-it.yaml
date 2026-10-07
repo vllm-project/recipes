@@ -4,7 +4,7 @@ meta:
   provider: "Google"
   description: "Google's Gemma 4 MoE multimodal model (26B total / 4B active) with 128 fine-grained experts, top-8 routing, thinking mode, and tool-use protocol."
   date_added: 2026-04-02
-  date_updated: 2026-09-12
+  date_updated: 2026-10-06
   difficulty: intermediate
   tasks:
     - multimodal
@@ -34,6 +34,7 @@ meta:
     ironwood: verified
     xeon6: verified
     dgx_spark_gb10: verified
+    dgx_spark_gb10_64gb: verified
     dgx_station_gb300: verified
     rtx_pro_6000: verified
     rtx_5090: verified
@@ -59,11 +60,12 @@ features:
       - "--chat-template"
       - "examples/tool_chat_template_gemma4.jinja"
     hardware_overrides:
-      dgx_spark_gb10:
+      dgx_spark_gb10: &gemma4_tool_calling_gb10
         args:
           - "--enable-auto-tool-choice"
           - "--tool-call-parser"
           - "gemma4"
+      dgx_spark_gb10_64gb: *gemma4_tool_calling_gb10
   reasoning:
     description: "Enable structured thinking/reasoning output"
     args:
@@ -93,6 +95,7 @@ features:
               - '{"method":"mtp","model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":4,"moe_backend":"triton"}'
           dgx_station_gb300: *gemma4_mtp_triton
           rtx_pro_6000: *gemma4_mtp_triton
+          dgx_spark_gb10_64gb: *gemma4_mtp_triton
       eagle3:
         label: "Eagle3"
         description: "Eagle3 speculative decoding with externally trained draft model; the served checkpoint is unchanged."
@@ -217,7 +220,32 @@ variants:
           - "8192"
           - "--enable-prefix-caching"
           - "--load-format"
-          - "fastsafetensors"
+          - "instanttensor"
+      dgx_spark_gb10_64gb:
+        # vLLM 0.24 and the generic nightly both fail on GB10 with this
+        # checkpoint; the dated ARM64 community build is the tested runtime, so
+        # the wheel tab is hidden here rather than offering a command that
+        # won't start.
+        docker_image: "eugr/spark-vllm:nightly-20260704"
+        # This image's entrypoint is nvidia_entrypoint.sh, not `vllm serve`.
+        docker_serve_command: "vllm serve"
+        install:
+          pip: false
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+        extra_args:
+          # GB10 shares its 64 GB with the CPU, so leave headroom for the host.
+          - "--gpu-memory-utilization"
+          - "0.8"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-prefix-caching"
+          - "--load-format"
+          - "instanttensor"
       dgx_station_gb300:
         extra_env:
           VLLM_USE_V2_MODEL_RUNNER: "1"
