@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 plus MXFP8, NVIDIA Blackwell NVFP4, and AMD MI355X MXFP4 variants. Runs on NVIDIA (Hopper/Blackwell) and AMD CDNA4/CDNA3."
   date_added: 2026-06-12
-  date_updated: 2026-09-15
+  date_updated: 2026-10-06
   difficulty: advanced
   tasks:
     - text
@@ -20,6 +20,10 @@ meta:
 
 model:
   model_id: "MiniMaxAI/MiniMax-M3"
+  # Opt in to SMG gRPC PD; parsing runs on the router, not vLLM.
+  smg_grpc:
+    reasoning_parser: minimax_m3
+    tool_call_parser: minimax_m3
   min_vllm_version: "0.24.0"
   nightly_required: true
   docker_image:
@@ -129,6 +133,14 @@ variants:
     # On AMD, 8x MI350X/MI355X fits comfortably.
     vram_minimum_gb: 1025
     description: "Native BF16 checkpoint — multi-node TP recommended for long-context headroom"
+    hardware_overrides:
+      h200:
+        # After ~1 TB of BF16 weights, 8x H200 has ~3.5 GiB/GPU left for KV;
+        # vLLM estimates ~83K max tokens, so the 1M default fails at startup
+        # ("KV cache is needed"). Cap at 64K; use MXFP8 or multi-node for more.
+        extra_args:
+          - "--max-model-len"
+          - "65536"
   mxfp8:
     model_id: "MiniMaxAI/MiniMax-M3-MXFP8"
     precision: mxfp8
@@ -152,10 +164,19 @@ variants:
           - "131072"
       h200:
         # Humming runs the dense MXFP8 linear layers; the atomic-add env var
-        # enables Marlin's atomic reduction on the MXFP8 MoE path.
+        # enables Marlin's atomic reduction on the MXFP8 MoE path. This image
+        # also supports the FP8 MSA indexer cache on H200.
+        docker_image: "vllm/vllm-openai:nightly-1a001d584244bd21829a5e5bd4a376ea141c0ce3"
         extra_args:
+          - "--attention-backend"
+          - "FLASH_ATTN"
           - "--linear-backend"
           - "humming"
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--gpu-memory-utilization"
+          - "0.95"
+          - "--enable-prefix-caching"
         extra_env:
           VLLM_MARLIN_USE_ATOMIC_ADD: "1"
       mi300x:

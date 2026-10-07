@@ -866,7 +866,7 @@ function servedPort(tokens, fallback = 8000) {
 // image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
 // CMD. `cmdPrefix` (e.g. "vllm serve") is restated before MODEL for images whose
 // entrypoint is something else. Env vars become `-e KEY=VAL` inside the container.
-export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, cmdPrefix = null }) {
+export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false }) {
   const pubPort = port ?? servedPort(command.split(/\s+/));
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
@@ -890,11 +890,14 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = null, isN
   // under `--net=host` and hid the required `--shm-size` on 950PR.
   const runtimeFlags = isNpu
     ? "--privileged --net=host --shm-size=16g"
-    : `--privileged --ipc=host -p ${pubPort}:${pubPort}`;
+    : `--privileged --ipc=host ${hostNetwork ? "--network host" : `-p ${pubPort}:${pubPort}`}`;
   const base = `${prereq}docker run ${gpuFlags} \\
   ${runtimeFlags} \\
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
-  const cmdHead = cmdPrefix ? `${image} \\\n  ${cmdPrefix} ${modelId}` : `${image} ${modelId}`;
+  const setup = setupCommand
+    ? `--entrypoint /bin/sh ${image} -c ${shellQuote(`${setupCommand} && exec vllm serve "$@"`)} vllm-grpc ${modelId}`
+    : null;
+  const cmdHead = setup || (cmdPrefix ? `${image} \\\n  ${cmdPrefix} ${modelId}` : `${image} ${modelId}`);
   return `${base}
   ${cmdHead}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
 }
@@ -1112,8 +1115,11 @@ export function dynamoInstallSteps(dynamoCfg) {
 
 // The first SMG recipe path uses connector-aware HTTP registration. DEP rank
 // routing and composed KV connectors need separate validation before opting in.
-export function smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload) {
+export function smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, transport = "http") {
   if (!strategy?.smg) return "SMG is not configured for this strategy.";
+  if (transport === "grpc" && (!recipe.model?.smg_grpc || !strategy.smg.grpc)) {
+    return "SMG gRPC is only enabled for Kimi K3, MiniMax M3, GLM-5.3 and DeepSeek-V4.1-Flash.";
+  }
   if (kvOffload) return "SMG currently supports NIXL without KV offload. Disable KV offload to use SMG.";
   const allowed = pdPoolModes(recipe);
   for (const role of ["prefill", "decode"]) {
@@ -1132,7 +1138,7 @@ export function smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload) {
  * Returns: { command, env, deployType } for single_node/multi_node,
  *          { prefillCommand, decodeCommand, routerConfig, env, deployType } for pd_cluster.
  */
-export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null) {
+export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null, pdTransport = "http") {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
@@ -1184,9 +1190,11 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     ? strategy.dynamo
     : null;
   let routerUnavailableReason = strategy.deploy_type === "pd_cluster" && pdRouter === "smg"
-    ? smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload) : null;
+    ? smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, pdTransport) : null;
   let smg = strategy.deploy_type === "pd_cluster" && pdRouter === "smg" && !routerUnavailableReason
     ? strategy.smg : null;
+
+  let smgGrpc = !!smg && pdTransport === "grpc";
 
   // The composing option, resolved once behind all three gates (strategy,
   // recipe opt-in, brand) and shared by args/env/companion emission.
@@ -1737,7 +1745,12 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       }
     }
 
-    Object.assign(env, taxonomy.frontends?.[resolveFrontend(recipe, frontend, taxonomy)]?.env);
+    if (smgGrpc) {
+      // The SMG-compatible gRPC servicer only runs on the Python frontend.
+      env.VLLM_USE_RUST_FRONTEND = "0";
+    } else {
+      Object.assign(env, taxonomy.frontends?.[resolveFrontend(recipe, frontend, taxonomy)]?.env);
+    }
     return env;
   }
 
@@ -1856,8 +1869,8 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     ];
     const routerCommand = routerLines.join("\n");
 
-    const prefillArgs = buildArgs("prefill", null);
-    const decodeArgs = buildArgs("decode", null);
+    let prefillArgs = buildArgs("prefill", null);
+    let decodeArgs = buildArgs("decode", null);
     const smgWorkers = [];
     if (smg) {
       for (const [role, args, kvRole] of [["prefill", prefillArgs, "kv_producer"], ["decode", decodeArgs, "kv_consumer"]]) {
@@ -1870,14 +1883,44 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         try { kv = JSON.parse(value("--kv-transfer-config")); } catch { /* Report unsupported config below. */ }
         const port = value("--port");
         if (kv?.kv_connector !== "NixlConnector" || kv?.kv_role !== kvRole || !/^\d+$/.test(port)) {
-          routerUnavailableReason = "SMG requires NixlConnector producer/consumer workers with numeric HTTP ports. Remove incompatible worker overrides.";
+          routerUnavailableReason = "SMG requires NixlConnector producer/consumer workers with numeric ports. Remove incompatible worker overrides.";
           smg = null;
+          smgGrpc = false;
           break;
         }
         smgWorkers.push({ role, port, kvRole });
       }
     }
-    const registration = smg ? {
+    const grpcConfig = recipe.model?.smg_grpc;
+    if (smgGrpc) {
+      // Keep engine/KV flags; the gateway now owns chat rendering and parsing.
+      const grpcArgs = (args) => [
+        ...stripArgs(args, ["--tool-call-parser", "--reasoning-parser", "--enable-auto-tool-choice",
+          "--default-chat-template-kwargs"]),
+        // vLLM dispatches gRPC before headless; followers must not start an API server.
+        ...(args.includes("--headless") ? [] : ["--grpc", "--host", "0.0.0.0"]),
+      ];
+      prefillArgs = grpcArgs(prefillArgs);
+      decodeArgs = grpcArgs(decodeArgs);
+    }
+    const smgRouterArgs = smg ? [
+      "--pd-disaggregation",
+      `--policy ${smg.policy || "round_robin"}`,
+      ...(smgGrpc ? [
+        ...smgWorkers.map(({ role, port }) => `--${role} grpc://$${role.toUpperCase()}_NODE_1:${port}`),
+        `--model-path ${shellQuote(modelId)}`,
+        `--reasoning-parser ${enabledFeatures.includes("reasoning") ? grpcConfig.reasoning_parser : "passthrough"}`,
+        `--tool-call-parser ${enabledFeatures.includes("tool_calling") ? grpcConfig.tool_call_parser : "passthrough"}`,
+      ] : []),
+      "--host 0.0.0.0", "--port $ROUTER_PORT",
+    ].join(" \\\n    ") : "";
+    const smgReplicaComments = smgGrpc ? [
+      "# Multiple prefill replicas: --prefill grpc://prefill-a:8001 --prefill grpc://prefill-b:8001",
+      "# Multiple decode replicas: --decode grpc://decode-a:8002 --decode grpc://decode-b:8002",
+      "# Repeat each flag (no commas); use serving heads, not headless TP/TEP followers.",
+      "",
+    ].join("\n") : "";
+    const registration = smg && !smgGrpc ? {
       label: "Register workers",
       description: "After both workers and SMG are running, register the NIXL roles, then wait for readiness before sending requests.",
       command: [
@@ -1927,6 +1970,11 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         ...dMeta,
       },
       orchestrator: dynamo ? "dynamo" : smg ? "smg" : "vllm-router",
+      ...(smg ? { transport: smgGrpc ? "grpc" : "http" } : {}),
+      ...(smgGrpc ? {
+        workerInstall: `uv pip install ${smg.grpc.packages}`,
+        workerDockerSetup: `python3 -m pip install --no-cache-dir ${smg.grpc.packages}`,
+      } : {}),
       ...(routerUnavailableReason ? { routerUnavailableReason } : {}),
       ...(registration ? { registration } : {}),
       router: dynamo
@@ -1942,8 +1990,8 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
           }
         : smg ? {
             label: "SMG",
-            command: `smg launch \\\n    --pd-disaggregation \\\n    --policy ${smg.policy || "round_robin"} \\\n    --host 0.0.0.0 \\\n    --port $ROUTER_PORT`,
-            dockerCommand: `docker run --rm --network host \\\n    ${smg.docker_image} \\\n    --pd-disaggregation \\\n    --policy ${smg.policy || "round_robin"} \\\n    --host 0.0.0.0 \\\n    --port $ROUTER_PORT`,
+            command: `${smgReplicaComments}smg launch \\\n    ${smgRouterArgs}`,
+            dockerCommand: `${smgReplicaComments}docker run --rm --network host \\\n    ${smgGrpc ? "-v ~/.cache/huggingface:/root/.cache/huggingface \\\n    " : ""}${smg.docker_image} \\\n    ${smgRouterArgs}`,
             install: smg.install,
             dockerInstall: `docker pull ${smg.docker_image}`,
           } : {

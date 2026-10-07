@@ -25,6 +25,10 @@ meta:
 
 model:
   model_id: "moonshotai/Kimi-K3"
+  # Opt in to SMG gRPC PD; parsing runs on the router, not vLLM.
+  smg_grpc:
+    reasoning_parser: kimi_k3
+    tool_call_parser: kimi_k3
   min_vllm_version: "0.29.0"
   default_frontend: rust
   install:
