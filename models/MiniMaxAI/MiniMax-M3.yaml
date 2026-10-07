@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "MiniMax M3 vision-language MoE (427B total / 26B active) for frontier coding, agent toolchains, and 1M-token reasoning via MSA sparse attention — native multimodal (image + video + computer use); BF16 plus MXFP8, NVIDIA Blackwell NVFP4, and AMD MI355X MXFP4 variants. Runs on NVIDIA (Hopper/Blackwell) and AMD CDNA4/CDNA3."
   date_added: 2026-06-12
-  date_updated: 2026-09-15
+  date_updated: 2026-10-06
   difficulty: advanced
   tasks:
     - text
@@ -164,10 +164,19 @@ variants:
           - "131072"
       h200:
         # Humming runs the dense MXFP8 linear layers; the atomic-add env var
-        # enables Marlin's atomic reduction on the MXFP8 MoE path.
+        # enables Marlin's atomic reduction on the MXFP8 MoE path. This image
+        # also supports the FP8 MSA indexer cache on H200.
+        docker_image: "vllm/vllm-openai:nightly-1a001d584244bd21829a5e5bd4a376ea141c0ce3"
         extra_args:
+          - "--attention-backend"
+          - "FLASH_ATTN"
           - "--linear-backend"
           - "humming"
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--gpu-memory-utilization"
+          - "0.95"
+          - "--enable-prefix-caching"
         extra_env:
           VLLM_MARLIN_USE_ATOMIC_ADD: "1"
       mi300x:
