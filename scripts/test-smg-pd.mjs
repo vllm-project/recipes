@@ -15,15 +15,15 @@ const strategies = Object.fromEntries(fs.readdirSync(new URL("../strategies", im
   .filter((file) => file.endsWith(".yaml"))
   .map((file) => { const strategy = read(`strategies/${file}`); return [strategy.name, strategy]; }));
 const flag = (argv, key) => argv[argv.indexOf(key) + 1];
-const resolve = ({ router = "smg", hardware = "gb300", pools = { prefill: { nodes: 1 }, decode: { nodes: 1 } }, offload = null, model = recipe, strategy = "pd_cluster" } = {}) =>
-  resolveCommand(model, "default", strategy, hardware, ["tool_calling", "reasoning"], strategies, taxonomy, [], 1, pools, {}, offload, null, undefined, router);
+const resolve = ({ router = "smg", hardware = "gb300", pools = { prefill: { nodes: 1 }, decode: { nodes: 1 } }, offload = null, model = recipe, strategy = "pd_cluster", transport = "http", features = ["tool_calling", "reasoning"], variant = "default", frontend = undefined } = {}) =>
+  resolveCommand(model, variant, strategy, hardware, features, strategies, taxonomy, [], 1, pools, {}, offload, null, frontend, router, transport);
 
 test("SMG preserves MiMo TP4 HTTP workers and producer/consumer connectors", () => {
   const result = resolve();
   assert.equal(result.orchestrator, "smg");
   for (const [role, port, kvRole] of [["prefill", "8001", "kv_producer"], ["decode", "8002", "kv_consumer"]]) {
     const { argv } = result[role];
-    assert.deepEqual(argv.slice(0, 3), ["vllm", "serve", "XiaomiMiMo/MiMo-V2.6-Flash-RL"]);
+    assert.deepEqual(argv.slice(0, 3), ["vllm", "serve", "XiaomiMiMo/MiMo-V2.6-Flash-MOPD"]);
     assert.equal(flag(argv, "--tensor-parallel-size"), "4");
     assert.equal(flag(argv, "--port"), port);
     assert.equal(flag(argv, "--tool-call-parser"), "mimo");
@@ -90,7 +90,7 @@ test("SMG startup is separate from registration and workers retain Docker suppor
   execFileSync("bash", ["-n"], { input: routerDocker });
   const meta = computeDockerMeta(recipe, recipe.variants.default, taxonomy.hardware_profiles.gb300, "gb300");
   const command = buildDockerRun({ command: result.prefill.command, env: result.prefill.env, image: meta.image, gpuFlags: meta.gpuFlags });
-  assert.match(command, /vllm\/vllm-openai:mimo-v26/);
+  assert.match(command, /vllm\/vllm-openai:v0\.31\.0/);
   assert.match(command, /--port 8001/);
 });
 
@@ -141,4 +141,130 @@ test("native and Dynamo selections retain their existing behavior", () => {
   assert.ok(!dynamo.prefill.argv.includes("--port"));
   assert.equal(JSON.parse(flag(dynamo.prefill.argv, "--kv-transfer-config")).kv_role, "kv_both");
   assert.equal(resolve({ strategy: "single_node_tp" }).registration, undefined);
+});
+
+const grpcModels = [
+  ["moonshotai/Kimi-K3", "kimi_k3", "kimi_k3"],
+  ["MiniMaxAI/MiniMax-M3", "minimax_m3", "minimax_m3"],
+  ["zai-org/GLM-5.3", "glm45", "glm47_moe"],
+  ["deepseek-ai/DeepSeek-V4.1-Flash", "deepseek_v41", "deepseek_v41"],
+];
+const grpcPools = { prefill: { nodes: 2, parallelism: "tp" }, decode: { nodes: 2, parallelism: "tep" } };
+for (const [id, reasoning, tools] of grpcModels) {
+  test(`SMG gRPC ${id} routes to pool heads and parses at the gateway`, () => {
+    const model = read(`models/${id}.yaml`);
+    const result = resolve({ model, transport: "grpc", pools: grpcPools, frontend: "rust" });
+    assert.equal(result.transport, "grpc");
+    assert.equal(result.orchestrator, "smg");
+    assert.equal(result.registration, undefined);
+    for (const [role, kvRole] of [["prefill", "kv_producer"], ["decode", "kv_consumer"]]) {
+      assert.ok(result[role].argv.includes("--grpc"));
+      assert.equal(flag(result[role].argv, "--host"), "0.0.0.0");
+      assert.equal(result[role].env.VLLM_USE_RUST_FRONTEND, "0");
+      assert.ok(!result[role].argv.includes("--tool-call-parser"));
+      assert.ok(!result[role].argv.includes("--reasoning-parser"));
+      assert.ok(!result[role].argv.includes("--enable-auto-tool-choice"));
+      assert.equal(JSON.parse(flag(result[role].argv, "--kv-transfer-config")).kv_role, kvRole);
+      if (model.features.text_only) assert.ok(!result[role].argv.includes("--language-model-only"));
+    }
+    assert.match(result.router.command, /--prefill grpc:\/\/\$PREFILL_NODE_1:8001/);
+    assert.match(result.router.command, /--decode grpc:\/\/\$DECODE_NODE_1:8002/);
+    assert.ok(result.router.command.includes(`--model-path ${id}`));
+    assert.ok(result.router.command.includes(`--reasoning-parser ${reasoning}`));
+    assert.ok(result.router.command.includes(`--tool-call-parser ${tools}`));
+    assert.match(result.workerInstall, /smg-grpc-servicer>=/);
+    assert.match(result.workerInstall, /smg-grpc-proto>=/);
+    execFileSync("bash", ["-n"], { input: result.router.command });
+  });
+}
+
+test("gRPC respects parser toggles, variant tokenizer IDs and headless follower ranks", () => {
+  const model = read("models/moonshotai/Kimi-K3.yaml");
+  const result = resolve({ model, variant: "nvfp4", transport: "grpc", features: [], pools: {
+    prefill: { nodes: 2, rank: 1, parallelism: "tp" }, decode: { nodes: 2, rank: 1, parallelism: "tep" },
+  } });
+  assert.ok(result.prefill.argv.includes("--headless"));
+  assert.ok(!result.prefill.argv.includes("--grpc"), "gRPC dispatch would bypass the headless launcher");
+  assert.ok(!result.decode.argv.includes("--grpc"));
+  assert.match(result.router.command, /--model-path RedHatAI\/Kimi-K3-NVFP4/);
+  assert.match(result.router.command, /--reasoning-parser passthrough/);
+  assert.match(result.router.command, /--tool-call-parser passthrough/);
+  assert.doesNotMatch(result.router.command, /NODE_2/);
+});
+
+test("gRPC is opt-in only and unsupported selections never emit gRPC workers", () => {
+  for (const id of ["XiaomiMiMo/MiMo-V2.6-Flash-RL", "zai-org/GLM-5.3-Flash"]) {
+    const result = resolve({ model: read(`models/${id}.yaml`), transport: "grpc", pools: grpcPools });
+    assert.ok(result.routerUnavailableReason);
+    assert.ok(!result.prefill.argv.includes("--grpc"));
+  }
+  const model = read("models/zai-org/GLM-5.3.yaml");
+  for (const options of [{}, { router: "vllm", transport: "grpc" }, { router: "dynamo", transport: "grpc" },
+    { transport: "grpc", offload: "simple" }, { transport: "grpc", pools: { prefill: { parallelism: "dep" } } }]) {
+    const result = resolve({ model, pools: grpcPools, ...options });
+    assert.ok(!result.prefill.argv.includes("--grpc"));
+  }
+});
+
+test("gRPC Docker installs dependencies inside the vLLM image and exposes NIXL on host networking", () => {
+  const model = read("models/MiniMaxAI/MiniMax-M3.yaml");
+  const result = resolve({ model, transport: "grpc", pools: grpcPools });
+  const meta = computeDockerMeta(model, model.variants.default, taxonomy.hardware_profiles.gb300, "gb300");
+  const command = buildDockerRun({ command: result.prefill.command, env: result.prefill.env,
+    image: meta.image, gpuFlags: meta.gpuFlags, setupCommand: result.workerDockerSetup, hostNetwork: result.transport === "grpc" });
+  assert.match(command, /--network host/);
+  assert.match(command, /--entrypoint \/bin\/sh/);
+  assert.match(command, /vllm\/vllm-openai:minimax-m3/);
+  assert.match(command, /python3 -m pip install.*smg-grpc-servicer>=/);
+  assert.match(command, /exec vllm serve/);
+  assert.doesNotMatch(command, / -p /);
+  const router = result.router.dockerCommand;
+  assert.match(router, /--prefill grpc:/);
+  assert.match(router, /-v ~\/.cache\/huggingface:\/root\/.cache\/huggingface/);
+  assert.doesNotMatch(router, /--gpus|smg launch/);
+  for (const script of [command, router]) execFileSync("bash", ["-n"], { input: script });
+  // Exercise both shell layers without launching containers or installing packages.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-grpc-docker-"));
+  try {
+    fs.writeFileSync(path.join(dir, "docker"), '#!/usr/bin/env node\nconsole.log(JSON.stringify(process.argv.slice(2)));\n', { mode: 0o755 });
+    const env = { ...process.env, PATH: `${dir}:${process.env.PATH}`, PREFILL_NODE_1: "192.0.2.11", IFACE_NAME: "eth0" };
+    const argv = JSON.parse(execFileSync("bash", ["-c", command], { env, encoding: "utf8" }));
+    const scriptIndex = argv.indexOf("-c");
+    assert.ok(scriptIndex > argv.indexOf(meta.image));
+    fs.writeFileSync(path.join(dir, "python3"), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    fs.writeFileSync(path.join(dir, "vllm"), '#!/usr/bin/env node\nconsole.log(JSON.stringify(process.argv.slice(2)));\n', { mode: 0o755 });
+    const worker = JSON.parse(execFileSync("sh", argv.slice(scriptIndex), { env, encoding: "utf8" }));
+    assert.deepEqual(worker.slice(0, 2), ["serve", "MiniMaxAI/MiniMax-M3"]);
+    assert.ok(worker.includes("--grpc"));
+    assert.equal(flag(worker, "--master-addr"), "192.0.2.11");
+    assert.equal(JSON.parse(flag(worker, "--kv-transfer-config")).kv_role, "kv_producer");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("gRPC preserves vision encoder settings while removing worker-only chat defaults", () => {
+  const result = resolve({ model: read("models/MiniMaxAI/MiniMax-M3.yaml"), transport: "grpc", pools: grpcPools,
+    features: ["tool_calling", "reasoning", "encoder_parallel", "thinking_always_on"] });
+  for (const role of ["prefill", "decode"]) {
+    assert.ok(!result[role].argv.includes("--default-chat-template-kwargs"));
+    assert.equal(flag(result[role].argv, "--mm-encoder-tp-mode"), "data");
+    assert.equal(flag(result[role].argv, "--mm-encoder-attn-backend"), "FLASHINFER");
+    assert.equal(flag(result[role].argv, "--mm-processor-cache-type"), "shm");
+    assert.ok(!result[role].argv.includes("--language-model-only"));
+  }
+});
+
+test("gRPC Text Only remains an opt-in feature on both pools", () => {
+  for (const id of ["moonshotai/Kimi-K3", "MiniMaxAI/MiniMax-M3", "deepseek-ai/DeepSeek-V4.1-Flash"]) {
+    const model = read(`models/${id}.yaml`);
+    for (const enabled of [false, true, false]) {
+      const result = resolve({ model, transport: "grpc", pools: grpcPools,
+        features: ["tool_calling", "reasoning", ...(enabled ? ["text_only"] : [])] });
+      for (const role of ["prefill", "decode"]) {
+        assert.equal(result[role].argv.includes("--language-model-only"), enabled, `${id} ${role}`);
+        assert.ok(result[role].argv.includes("--grpc"));
+      }
+    }
+  }
 });

@@ -4,7 +4,7 @@ meta:
   provider: "MiMo (Xiaomi)"
   description: "Xiaomi's flagship omnimodal MoE (1.02T total / 42B active) with hybrid attention, FP8-compute/mxfp4-stored weights, 1M context, and a DFlash speculative decoder — the default MOPD checkpoint fixes the RL release's tool-call repetition"
   date_added: 2026-09-22
-  date_updated: 2026-10-02
+  date_updated: 2026-10-07
   difficulty: advanced
   tasks:
     - text
@@ -19,10 +19,10 @@ meta:
 
 model:
   model_id: "XiaomiMiMo/MiMo-V2.6-Pro-RL"
-  min_vllm_version: "nightly"
-  nightly_required: true
+  min_vllm_version: "0.31.0"
   docker_image:
-    nvidia: "vllm/vllm-openai:mimo-v26"
+    nvidia: "vllm/vllm-openai:v0.31.0"
+    # AMD stays on the ROCm nightly the MI355X verification ran against.
     amd: "vllm/vllm-openai-rocm:nightly"
   architecture: moe
   parameter_count: "1T"
@@ -35,10 +35,6 @@ model:
     - "--generation-config"
     - "vllm"
   base_env: {}
-  frontends:
-    rust:
-      status: unsupported
-      note: 'Requires vLLM PR #57933 (2026-09-22+), which registered the `mimo` parsers in the Rust frontend. The pinned vllm/vllm-openai:mimo-v26 image predates it: the Rust frontend aborts at startup with "tool parser `mimo` is not registered". Use the Python frontend, or rebuild the image on #57933 or newer.'
 
 features:
   tool_calling:
@@ -148,8 +144,7 @@ guide: |
   so the checkpoint is 566 GB on disk. Loading this mixed storage format
   requires vLLM with the MiMo V2 mxfp4/bf16-router support
   ([vllm-project/vllm#57784](https://github.com/vllm-project/vllm/pull/57784)),
-  which is newer than the latest stable release — use the pre-built image or a
-  nightly wheel.
+  first shipped in the v0.31.0 stable release.
 
   ## Prerequisites
 
@@ -157,11 +152,12 @@ guide: |
 
   ### Pull the vLLM docker image
 
-  Stable vLLM (<= 0.29.0) cannot load the mxfp4-stored weights. Use the
-  pre-built image published for the MiMo-V2.6 series:
+  vLLM 0.31.0 is the first stable release that can load the mxfp4-stored
+  weights ([vllm-project/vllm#57784](https://github.com/vllm-project/vllm/pull/57784));
+  earlier stable releases cannot:
 
   ```bash
-  docker pull vllm/vllm-openai:mimo-v26
+  docker pull vllm/vllm-openai:v0.31.0
   ```
 
   A vLLM nightly wheel built after 2026-09-20 also works (`uv pip install -U
@@ -169,7 +165,11 @@ guide: |
 
   The Hugging Face model cards point at `vllm/vllm-openai:mimov25-cu129`, the
   V2.5-era image; that tag predates the mxfp4-stored-weight support linked above,
-  so use the V2.6 image.
+  so use the v0.31.0 image recommended above.
+
+  This release also registers the `mimo` tool-call and reasoning parsers with
+  the Rust frontend
+  ([vllm-project/vllm#57933](https://github.com/vllm-project/vllm/pull/57933)).
 
   ## Launch command
 
@@ -280,5 +280,6 @@ guide: |
   - [Diagnosing and Mitigating Tool-Call Repetition in MiMo-V2.6](https://mimo.xiaomi.com/blog/mimo-v2-6-tool-call-repetition)
   - [MiMo-V2.6 blog post](https://mimo.xiaomi.com/mimo-v2-6)
   - [vLLM PR #57784 — mxfp4 MoE / bf16 router / DFlash for MiMo V2](https://github.com/vllm-project/vllm/pull/57784)
+  - [vLLM PR #57933 — MiMo tool-call/reasoning parsers for the Rust frontend](https://github.com/vllm-project/vllm/pull/57933)
   - [SGLang MiMo cookbook](https://docs.sglang.io/cookbook/autoregressive/Xiaomi/MiMo-V2.5)
   - [vLLM ROCm GPU install docs](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/?device=rocm)

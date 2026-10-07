@@ -4,7 +4,7 @@ meta:
   provider: "MiMo (Xiaomi)"
   description: "Xiaomi's efficiency-balanced omnimodal MoE (309B total / 15B active) with hybrid attention, FP8-compute/mxfp4-stored weights, 1M context, and a DFlash speculative decoder — the default MOPD checkpoint fixes the RL release's tool-call repetition"
   date_added: 2026-09-22
-  date_updated: 2026-10-02
+  date_updated: 2026-10-07
   difficulty: intermediate
   tasks:
     - text
@@ -15,15 +15,17 @@ meta:
   hardware:
     h200: verified
     gb300: verified
+    mi300x: verified
     mi325x: verified
     mi355x: verified
 
 model:
   model_id: "XiaomiMiMo/MiMo-V2.6-Flash-RL"
-  min_vllm_version: "nightly"
-  nightly_required: true
+  min_vllm_version: "0.31.0"
   docker_image:
-    nvidia: "vllm/vllm-openai:mimo-v26"
+    nvidia: "vllm/vllm-openai:v0.31.0"
+    # AMD stays on the ROCm nightly: the gfx942 MXFP4 routing gate (vllm#58262)
+    # merged after the v0.31.0 branch cut, so MI300X/MI325X need it.
     amd: "vllm/vllm-openai-rocm:nightly"
   architecture: moe
   parameter_count: "309B"
@@ -36,10 +38,6 @@ model:
     - "--generation-config"
     - "vllm"
   base_env: {}
-  frontends:
-    rust:
-      status: unsupported
-      note: 'Requires vLLM PR #57933 (2026-09-22+), which registered the `mimo` parsers in the Rust frontend. The pinned vllm/vllm-openai:mimo-v26 image predates it: the Rust frontend aborts at startup with "tool parser `mimo` is not registered". Use the Python frontend, or rebuild the image on #57933 or newer.'
 
 features:
   tool_calling:
@@ -72,11 +70,22 @@ variants:
     precision: fp8
     vram_minimum_gb: 208
     description: "FP8 (e4m3) compute with mxfp4-stored MoE weights; 173 GB checkpoint — 4x H200 with TP4. MOPD2-distilled upgrade that fixes tool-call repetition; recommended."
+    tp:
+      mi300x: 2
     extra_args:
       - "--tensor-parallel-size"
       - "4"
       - "--gpu-memory-utilization"
       - "0.95"
+    hardware_overrides:
+      mi300x:
+        extra_args:
+          - "--moe-backend"
+          - "aiter_triton_mxfp4_bf16"
+      mi325x:
+        extra_args:
+          - "--moe-backend"
+          - "aiter_triton_mxfp4_bf16"
   rl:
     # The original 2026-09-22 RL checkpoint. No `model_id` override: it serves
     # the recipe's own repo, like DeepSeek-V4-Pro's "FP8 (Preview)" variant.
@@ -84,11 +93,22 @@ variants:
     precision: fp8
     vram_minimum_gb: 208
     description: "Same shape as the MOPD variant (173 GB, FP8-compute/mxfp4-stored) — the original RL release, kept for reproducing earlier results. Suffers from tool-call repetition (the more affected of the two sizes); prefer MOPD for agentic workloads."
+    tp:
+      mi300x: 2
     extra_args:
       - "--tensor-parallel-size"
       - "4"
       - "--gpu-memory-utilization"
       - "0.95"
+    hardware_overrides:
+      mi300x:
+        extra_args:
+          - "--moe-backend"
+          - "aiter_triton_mxfp4_bf16"
+      mi325x:
+        extra_args:
+          - "--moe-backend"
+          - "aiter_triton_mxfp4_bf16"
 
 compatible_strategies:
   - single_node_tp
@@ -143,28 +163,35 @@ guide: |
   so the checkpoint is only 173 GB on disk. Loading this mixed storage format
   requires vLLM with the MiMo V2 mxfp4/bf16-router support
   ([vllm-project/vllm#57784](https://github.com/vllm-project/vllm/pull/57784)),
-  which is newer than the latest stable release — use the pre-built image or a
-  nightly wheel.
+  first shipped in the v0.31.0 stable release.
 
   ## Prerequisites
 
-  - Hardware: 4x H200 (TP4), 4x MI355X/MI325X (TP4), or equivalent aggregate VRAM (>= 208 GB)
+  - Hardware: 4x H200 (TP4), 4x MI355X/MI325X/MI300X (TP4), or equivalent aggregate VRAM (>= 208 GB)
 
   ### Pull the vLLM docker image
 
-  Stable vLLM (<= 0.29.0) cannot load the mxfp4-stored weights. Use the
-  pre-built image published for the MiMo-V2.6 series:
+  vLLM 0.31.0 is the first stable release that can load the mxfp4-stored
+  weights ([vllm-project/vllm#57784](https://github.com/vllm-project/vllm/pull/57784));
+  earlier stable releases cannot:
 
   ```bash
-  docker pull vllm/vllm-openai:mimo-v26
+  docker pull vllm/vllm-openai:v0.31.0
   ```
 
-  A vLLM nightly wheel built after 2026-09-20 also works (`uv pip install -U
-  vllm --extra-index-url https://wheels.vllm.ai/nightly/cu130`).
+  MI300X / MI325X (gfx942) additionally need the MiMo MXFP4 routing gate
+  ([vllm-project/vllm#58262](https://github.com/vllm-project/vllm/pull/58262)),
+  which merged after the v0.31.0 branch cut — on those GPUs use a nightly wheel
+  built after 2026-09-30 (`uv pip install -U vllm --extra-index-url
+  https://wheels.vllm.ai/nightly/cu130`) or the ROCm nightly image.
+
+  This release also registers the `mimo` tool-call and reasoning parsers with
+  the Rust frontend
+  ([vllm-project/vllm#57933](https://github.com/vllm-project/vllm/pull/57933)).
 
   The Hugging Face model cards point at `vllm/vllm-openai:mimov25-cu129`, the
   V2.5-era image; that tag predates the mxfp4-stored-weight support linked above,
-  so use the V2.6 image.
+  so use the v0.31.0 image recommended above.
 
   ## Launch command
 
@@ -184,7 +211,7 @@ guide: |
     --generation-config vllm
   ```
 
-  ### AMD (MI355X, MI325X)
+  ### AMD (MI355X, gfx950)
 
   ```bash
   VLLM_ROCM_USE_AITER=1 \
@@ -200,6 +227,34 @@ guide: |
     --generation-config vllm
   ```
 
+  MI355X also runs TP2 just fine.
+
+  ### AMD (MI300X / MI325X, gfx942)
+
+  gfx942 has no native MXFP4 MoE path: without an explicit backend vLLM's
+  oracle falls back to OCP emulation — correct, but about 6.5x lower output
+  throughput. Select AITER's Triton W4A16 kernel instead with
+  `--moe-backend aiter_triton_mxfp4_bf16`; supported since
+  [vllm-project/vllm#58262](https://github.com/vllm-project/vllm/pull/58262)
+  (merged 2026-09-30, after the v0.31.0 branch cut — not in any stable release
+  yet, so this flag needs a nightly wheel; it also needs aiter >= 0.1.20, which
+  the ROCm nightly image ships). Verified end-to-end on MI300X in that PR — see
+  it for the gsm8k and `vllm bench serve` numbers against the emulation
+  baseline:
+
+  ```bash
+  VLLM_ROCM_USE_AITER=1 \
+  VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4 \
+  vllm serve XiaomiMiMo/MiMo-V2.6-Flash-MOPD \
+    --tensor-parallel-size 2 \
+    --trust-remote-code \
+    --max-model-len auto \
+    --reasoning-parser mimo \
+    --tool-call-parser mimo \
+    --enable-auto-tool-choice \
+    --moe-backend aiter_triton_mxfp4_bf16 \
+    --generation-config vllm
+  ```
   With DFlash speculative decoding (drafter ships inside the checkpoint).
   vLLM does not resolve a `<repo>/dflash` Hub subfolder as the draft model —
   `model` must be a concrete local path to the `dflash/` directory inside the
@@ -258,5 +313,7 @@ guide: |
   - [Diagnosing and Mitigating Tool-Call Repetition in MiMo-V2.6](https://mimo.xiaomi.com/blog/mimo-v2-6-tool-call-repetition)
   - [MiMo-V2.6 blog post](https://mimo.xiaomi.com/mimo-v2-6)
   - [vLLM PR #57784 — mxfp4 MoE / bf16 router / DFlash for MiMo V2](https://github.com/vllm-project/vllm/pull/57784)
+  - [vLLM PR #57933 — MiMo tool-call/reasoning parsers for the Rust frontend](https://github.com/vllm-project/vllm/pull/57933)
+  - [vLLM PR #58262 — MiMo-V2.6 MXFP4 on gfx942 (`--moe-backend aiter_triton_mxfp4_bf16`)](https://github.com/vllm-project/vllm/pull/58262)
   - [SGLang MiMo cookbook](https://docs.sglang.io/cookbook/autoregressive/Xiaomi/MiMo-V2.5)
   - [vLLM ROCm GPU install docs](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/?device=rocm)

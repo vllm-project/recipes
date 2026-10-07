@@ -62,6 +62,11 @@ smg:
   install: 'uv pip install "smg==1.11.0"'
   docker_image: "lightseekorg/smg:1.11.0"
   policy: round_robin
+  grpc:
+    docs: "https://lightseek.org/smg/getting-started/pd-disaggregation#vllm-pd-over-grpc"
+    # Install into the existing model-specific vLLM environment/image.
+    # vLLM's bundled LMCache and OpenTelemetry require protobuf below 7.
+    packages: '"smg-grpc-servicer>=0.13.0" "smg-grpc-proto>=0.4.22" "protobuf<7"'
 
 # Alternative PD orchestrator: NVIDIA Dynamo. Picked from the "PD Router" row
 # under the Strategy row (URL ?pd_router=dynamo). Pools, parallelism and node
