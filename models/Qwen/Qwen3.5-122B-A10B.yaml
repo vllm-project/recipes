@@ -213,7 +213,7 @@ guide: |
 
   ### AMD (MI325X / MI355X, single GPU, FP8)
 
-  The FP8 checkpoint fits one MI300X-class GPU. Three settings matter on ROCm and none is the
+  The FP8 checkpoint fits one MI300X-class GPU. Three settings matter on ROCm and none is on by
   default: `VLLM_ROCM_USE_AITER=1` switches the MoE to the AITER FP8 kernels,
   `--attention-backend ROCM_AITER_FA` keeps decode flat across context (the auto-selected
   `ROCM_ATTN` decays with prompt length on this hybrid GDN model), and `--kv-cache-dtype fp8`
