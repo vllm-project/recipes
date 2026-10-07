@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.2 — frontier-scale MoE language model (~743B total parameters, 39B active) with up to 5-token MTP speculative decoding and thinking mode"
   date_added: 2026-06-16
-  date_updated: 2026-09-28
+  date_updated: 2026-10-03
   difficulty: advanced
   tasks:
     - text
@@ -17,6 +17,7 @@ meta:
     b200: verified
     mi300x: verified
     mi325x: verified
+    mi350x: verified
     mi355x: verified
 
 model:
@@ -244,7 +245,7 @@ guide: |
   ```
   tps up to 70+ for single request
 
-  ### FP8 on AMD MI300X/MI325X/MI355X (full 1M context)
+  ### FP8 on AMD MI300X/MI325X/MI350X/MI355X (full 1M context)
 
   GLM-5.2 has a native 1M-token window. Whether the full window fits on ROCm is a
   KV-cache VRAM question, so the levers are `--max-model-len` and `--max-num-seqs`.
@@ -286,6 +287,10 @@ guide: |
   `--gpu-memory-utilization 0.80`, reporting a 1,564,016-token KV cache and 2.98x maximum
   concurrency. MTP is healthy there: a mean acceptance length of 4.00 out of 5 drafted
   tokens on a short greedy generation.
+
+  On 8x MI350X it reports a 2,205,424-token KV cache and 4.21x maximum concurrency at the
+  same settings, and MTP's mean acceptance length is 3.62 out of 5 drafted tokens on a
+  512-token greedy generation.
 
   ### MXFP4 on AMD MI355X
 
