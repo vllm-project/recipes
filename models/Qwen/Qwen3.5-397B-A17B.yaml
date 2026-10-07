@@ -402,6 +402,7 @@ guide: |
 
   ```bash
   VLLM_ROCM_USE_AITER=1 vllm serve amd/Qwen3.5-397B-A17B-MXFP4 \
+    --tensor-parallel-size 1 \
     --attention-backend ROCM_AITER_FA \
     --max-num-seqs 64 \
     --trust-remote-code \
