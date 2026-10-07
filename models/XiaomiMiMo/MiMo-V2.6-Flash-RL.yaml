@@ -4,7 +4,7 @@ meta:
   provider: "MiMo (Xiaomi)"
   description: "Xiaomi's efficiency-balanced omnimodal MoE reasoning model (309B total / 15B active) with hybrid attention, FP8-compute/mxfp4-stored weights, 1M context, and a DFlash speculative decoder"
   date_added: 2026-09-22
-  date_updated: 2026-10-06
+  date_updated: 2026-10-07
   difficulty: intermediate
   tasks:
     - text
@@ -21,10 +21,11 @@ meta:
 
 model:
   model_id: "XiaomiMiMo/MiMo-V2.6-Flash-RL"
-  min_vllm_version: "nightly"
-  nightly_required: true
+  min_vllm_version: "0.31.0"
   docker_image:
-    nvidia: "vllm/vllm-openai:mimo-v26"
+    nvidia: "vllm/vllm-openai:v0.31.0"
+    # AMD stays on the ROCm nightly: the gfx942 MXFP4 routing gate (vllm#58262)
+    # merged after the v0.31.0 branch cut, so MI300X/MI325X need it.
     amd: "vllm/vllm-openai-rocm:nightly"
   architecture: moe
   parameter_count: "309B"
@@ -115,8 +116,7 @@ guide: |
   so the checkpoint is only 173 GB on disk. Loading this mixed storage format
   requires vLLM with the MiMo V2 mxfp4/bf16-router support
   ([vllm-project/vllm#57784](https://github.com/vllm-project/vllm/pull/57784)),
-  which is newer than the latest stable release — use the pre-built image or a
-  nightly wheel.
+  first shipped in the v0.31.0 stable release.
 
   ## Prerequisites
 
@@ -124,17 +124,23 @@ guide: |
 
   ### Pull the vLLM docker image
 
-  Stable vLLM (<= 0.29.0) cannot load the mxfp4-stored weights. Use the
-  pre-built image published for the MiMo-V2.6 series:
+  vLLM 0.31.0 is the first stable release that can load the mxfp4-stored
+  weights ([vllm-project/vllm#57784](https://github.com/vllm-project/vllm/pull/57784));
+  earlier stable releases cannot:
 
   ```bash
-  docker pull vllm/vllm-openai:mimo-v26
+  docker pull vllm/vllm-openai:v0.31.0
   ```
 
-  A vLLM nightly wheel built after 2026-09-30 also works (`uv pip install -U
-  vllm --extra-index-url https://wheels.vllm.ai/nightly/cu130`) — that date
-  includes the MiMo MXFP4 routing gate for gfx942
-  ([vllm-project/vllm#58262](https://github.com/vllm-project/vllm/pull/58262)).
+  MI300X / MI325X (gfx942) additionally need the MiMo MXFP4 routing gate
+  ([vllm-project/vllm#58262](https://github.com/vllm-project/vllm/pull/58262)),
+  which merged after the v0.31.0 branch cut — on those GPUs use a nightly wheel
+  built after 2026-09-30 (`uv pip install -U vllm --extra-index-url
+  https://wheels.vllm.ai/nightly/cu130`) or the ROCm nightly image.
+
+  This release also registers the `mimo` tool-call and reasoning parsers with
+  the Rust frontend
+  ([vllm-project/vllm#57933](https://github.com/vllm-project/vllm/pull/57933)).
 
   ## Launch command
 
@@ -177,9 +183,11 @@ guide: |
   throughput. Select AITER's Triton W4A16 kernel instead with
   `--moe-backend aiter_triton_mxfp4_bf16`; supported since
   [vllm-project/vllm#58262](https://github.com/vllm-project/vllm/pull/58262)
-  (merged 2026-09-30; needs aiter >= 0.1.20, which the ROCm nightly image
-  ships). Verified end-to-end on MI300X in that PR — see it for the gsm8k and
-  `vllm bench serve` numbers against the emulation baseline:
+  (merged 2026-09-30, after the v0.31.0 branch cut — not in any stable release
+  yet, so this flag needs a nightly wheel; it also needs aiter >= 0.1.20, which
+  the ROCm nightly image ships). Verified end-to-end on MI300X in that PR — see
+  it for the gsm8k and `vllm bench serve` numbers against the emulation
+  baseline:
 
   ```bash
   VLLM_ROCM_USE_AITER=1 \
@@ -250,6 +258,7 @@ guide: |
   - [MiMo-V2.6 technical report](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL/blob/main/MiMo_V2_6_technical_report.pdf)
   - [MiMo-V2.6 blog post](https://mimo.xiaomi.com/mimo-v2-6)
   - [vLLM PR #57784 — mxfp4 MoE / bf16 router / DFlash for MiMo V2](https://github.com/vllm-project/vllm/pull/57784)
+  - [vLLM PR #57933 — MiMo tool-call/reasoning parsers for the Rust frontend](https://github.com/vllm-project/vllm/pull/57933)
   - [vLLM PR #58262 — MiMo-V2.6 MXFP4 on gfx942 (`--moe-backend aiter_triton_mxfp4_bf16`)](https://github.com/vllm-project/vllm/pull/58262)
   - [SGLang MiMo cookbook](https://docs.sglang.io/cookbook/autoregressive/Xiaomi/MiMo-V2.5)
   - [vLLM ROCm GPU install docs](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/?device=rocm)
