@@ -16,8 +16,24 @@ const NVL4_ONLY_ENV_KEYS = new Set([
 ]);
 const NVL4_HW_IDS = new Set(["gb200", "gb300"]);
 
-export function resolveFrontend(recipe, frontend = recipe.model?.default_frontend) {
-  return frontend === "rust" ? "rust" : "python";
+// Serving frontends are defined once in `taxonomy.frontends` (label + the env
+// each one sets). Python is the baseline every recipe can fall back to; any
+// other frontend can be opted out per recipe with
+// `model.<frontend>_frontend: unsupported` (e.g. `rust_frontend`).
+export const FALLBACK_FRONTEND = "python";
+
+export function isFrontendSupported(recipe, frontend) {
+  return frontend === FALLBACK_FRONTEND || recipe.model?.[`${frontend}_frontend`] !== "unsupported";
+}
+
+// Resolve the frontend a command is rendered for: the requested one (URL,
+// saved state, pill click), else the recipe's `default_frontend`, falling back
+// to Python when that frontend is unknown to the taxonomy or unsupported by the
+// recipe — so a stale `?frontend=rust` link can never emit a broken command.
+export function resolveFrontend(recipe, frontend, taxonomy) {
+  const wanted = frontend || recipe.model?.default_frontend;
+  if (!wanted || !taxonomy?.frontends?.[wanted]) return FALLBACK_FRONTEND;
+  return isFrontendSupported(recipe, wanted) ? wanted : FALLBACK_FRONTEND;
 }
 
 /**
@@ -1730,9 +1746,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     }
 
     if (smgGrpc) {
+      // The SMG-compatible gRPC servicer only runs on the Python frontend.
       env.VLLM_USE_RUST_FRONTEND = "0";
-    } else if (resolveFrontend(recipe, frontend) === "rust") {
-      env.VLLM_USE_RUST_FRONTEND = "1";
+    } else {
+      Object.assign(env, taxonomy.frontends?.[resolveFrontend(recipe, frontend, taxonomy)]?.env);
     }
     return env;
   }
