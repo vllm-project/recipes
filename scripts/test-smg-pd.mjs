@@ -23,7 +23,7 @@ test("SMG preserves MiMo TP4 HTTP workers and producer/consumer connectors", () 
   assert.equal(result.orchestrator, "smg");
   for (const [role, port, kvRole] of [["prefill", "8001", "kv_producer"], ["decode", "8002", "kv_consumer"]]) {
     const { argv } = result[role];
-    assert.deepEqual(argv.slice(0, 3), ["vllm", "serve", "XiaomiMiMo/MiMo-V2.6-Flash-RL"]);
+    assert.deepEqual(argv.slice(0, 3), ["vllm", "serve", "XiaomiMiMo/MiMo-V2.6-Flash-MOPD"]);
     assert.equal(flag(argv, "--tensor-parallel-size"), "4");
     assert.equal(flag(argv, "--port"), port);
     assert.equal(flag(argv, "--tool-call-parser"), "mimo");

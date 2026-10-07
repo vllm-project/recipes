@@ -2,7 +2,7 @@ meta:
   title: "MiMo-V2.6-Flash-RL"
   slug: "mimo-v2-6-flash-rl"
   provider: "MiMo (Xiaomi)"
-  description: "Xiaomi's efficiency-balanced omnimodal MoE reasoning model (309B total / 15B active) with hybrid attention, FP8-compute/mxfp4-stored weights, 1M context, and a DFlash speculative decoder"
+  description: "Xiaomi's efficiency-balanced omnimodal MoE (309B total / 15B active) with hybrid attention, FP8-compute/mxfp4-stored weights, 1M context, and a DFlash speculative decoder — the default MOPD checkpoint fixes the RL release's tool-call repetition"
   date_added: 2026-09-22
   date_updated: 2026-10-07
   difficulty: intermediate
@@ -52,19 +52,47 @@ features:
       - "--reasoning-parser"
       - "mimo"
   spec_decoding:
-    description: "DFlash 5-layer MTP drafter (predicts 7 tokens); ships in the dflash/ subfolder of the checkpoint"
+    description: "DFlash 5-layer MTP drafter (predicts 7 tokens); ships in the dflash/ subfolder of every checkpoint. Set DFLASH_DIR to that directory first (see the guide)"
     args:
       - "--speculative-config"
-      - '{"method":"dflash","model":"/root/.cache/huggingface/hub/models--XiaomiMiMo--MiMo-V2.6-Flash-RL/snapshots/<hash>/dflash","num_speculative_tokens":7}'
+      - '{"method":"dflash","model":"$DFLASH_DIR","num_speculative_tokens":7}'
 
 opt_in_features:
   - spec_decoding
 
 variants:
+  # MOPD supersedes the RL release as the default served checkpoint (same
+  # architecture and weight format; the RL checkpoint stays selectable below),
+  # mirroring how the DeepSeek-V4-Pro recipe rolled its 0813 release to default.
   default:
+    model_id: "XiaomiMiMo/MiMo-V2.6-Flash-MOPD"
+    label: "MOPD"
     precision: fp8
     vram_minimum_gb: 208
-    description: "FP8 (e4m3) compute with mxfp4-stored MoE weights; 173 GB checkpoint — 4x H200 with TP4"
+    description: "FP8 (e4m3) compute with mxfp4-stored MoE weights; 173 GB checkpoint — 4x H200 with TP4. MOPD2-distilled upgrade that fixes tool-call repetition; recommended."
+    tp:
+      mi300x: 2
+    extra_args:
+      - "--tensor-parallel-size"
+      - "4"
+      - "--gpu-memory-utilization"
+      - "0.95"
+    hardware_overrides:
+      mi300x:
+        extra_args:
+          - "--moe-backend"
+          - "aiter_triton_mxfp4_bf16"
+      mi325x:
+        extra_args:
+          - "--moe-backend"
+          - "aiter_triton_mxfp4_bf16"
+  rl:
+    # The original 2026-09-22 RL checkpoint. No `model_id` override: it serves
+    # the recipe's own repo, like DeepSeek-V4-Pro's "FP8 (Preview)" variant.
+    label: "RL (original)"
+    precision: fp8
+    vram_minimum_gb: 208
+    description: "Same shape as the MOPD variant (173 GB, FP8-compute/mxfp4-stored) — the original RL release, kept for reproducing earlier results. Suffers from tool-call repetition (the more affected of the two sizes); prefer MOPD for agentic workloads."
     tp:
       mi300x: 2
     extra_args:
@@ -103,14 +131,33 @@ strategy_overrides: {}
 guide: |
   ## Overview
 
-  MiMo-V2.6-Flash-RL is the efficiency-balanced checkpoint of Xiaomi's MiMo-V2.6
-  series, trained with large-scale mixed RL (GRPO + groupwise agentic grading).
-  It is a sparse MoE model with 309B total parameters and 15B active per token:
-  48 layers (1 dense + 47 MoE) with 256 routed experts (top-8), hybrid attention
-  (sliding-window 128 and global attention), and a 5-layer DFlash-style MTP
-  drafter that predicts 7 tokens per pass. The model is natively omnimodal
-  (text, image, video, audio via a 681M-param MiMo ViT and audio encoders) and
-  supports up to 1M tokens of context.
+  This recipe serves the MiMo-V2.6-Flash family from two checkpoints on the
+  Variant row:
+
+  - **MOPD** (default) — [XiaomiMiMo/MiMo-V2.6-Flash-MOPD](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-MOPD),
+    the MOPD2-distilled upgrade and the recommended starting point for new
+    deployments. It fixes the RL release's most visible agentic failure mode —
+    tool-call repetition, where the model keeps re-issuing the same or highly
+    similar tool calls while making no progress (the blog measures the Flash
+    line as the more affected of the two) — with benchmark quality unchanged,
+    folded into a regular MOPD2 pass via a short specialized-teacher run
+    ([diagnosis blog](https://mimo.xiaomi.com/blog/mimo-v2-6-tool-call-repetition)).
+  - **RL (original)** — [XiaomiMiMo/MiMo-V2.6-Flash-RL](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL),
+    the 2026-09-22 RL release, kept for reproducing earlier results. It can get
+    stuck re-issuing the same tool calls in agentic workloads; prefer **MOPD**
+    unless you are reproducing a specific earlier run.
+
+  MOPD2 (Technical Report §5.6) is multi-teacher on-policy distillation:
+  domain-specialized mixRL and SFT teachers supervise the student on three
+  on-policy streams (standard MOPD, teacher-prefix OPD, and SFT-prefix OPD).
+
+  The architecture is shared by both checkpoints: a sparse MoE model with
+  309B total parameters and 15B active per token — 48 layers (1 dense + 47 MoE)
+  with 256 routed experts (top-8), hybrid attention (sliding-window 128 and
+  global attention), and a 5-layer DFlash-style MTP drafter that predicts 7
+  tokens per pass. The model is natively omnimodal (text, image, video, audio
+  via a 681M-param MiMo ViT and audio encoders) and supports up to 1M tokens of
+  context.
 
   Weights are stored as mxfp4 and computed as FP8 (block-wise e4m3, 128x128),
   so the checkpoint is only 173 GB on disk. Loading this mixed storage format
@@ -142,12 +189,18 @@ guide: |
   the Rust frontend
   ([vllm-project/vllm#57933](https://github.com/vllm-project/vllm/pull/57933)).
 
+  The Hugging Face model cards point at `vllm/vllm-openai:mimov25-cu129`, the
+  V2.5-era image; that tag predates the mxfp4-stored-weight support linked above,
+  so use the v0.31.0 image recommended above.
+
   ## Launch command
 
-  Single-node TP4 (H200):
+  Single-node TP4 (H200). Selecting the **RL (original)** variant in the builder
+  swaps only the checkpoint id (`XiaomiMiMo/MiMo-V2.6-Flash-RL`); everything
+  else is identical:
 
   ```bash
-  vllm serve XiaomiMiMo/MiMo-V2.6-Flash-RL \
+  vllm serve XiaomiMiMo/MiMo-V2.6-Flash-MOPD \
     --tensor-parallel-size 4 \
     --trust-remote-code \
     --gpu-memory-utilization 0.95 \
@@ -163,7 +216,7 @@ guide: |
   ```bash
   VLLM_ROCM_USE_AITER=1 \
   VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4 \
-  vllm serve XiaomiMiMo/MiMo-V2.6-Flash-RL \
+  vllm serve XiaomiMiMo/MiMo-V2.6-Flash-MOPD \
     --tensor-parallel-size 4 \
     --trust-remote-code \
     --kv-cache-dtype fp8 \
@@ -192,7 +245,7 @@ guide: |
   ```bash
   VLLM_ROCM_USE_AITER=1 \
   VLLM_ROCM_QUICK_REDUCE_QUANTIZATION=INT4 \
-  vllm serve XiaomiMiMo/MiMo-V2.6-Flash-RL \
+  vllm serve XiaomiMiMo/MiMo-V2.6-Flash-MOPD \
     --tensor-parallel-size 2 \
     --trust-remote-code \
     --max-model-len auto \
@@ -202,22 +255,22 @@ guide: |
     --moe-backend aiter_triton_mxfp4_bf16 \
     --generation-config vllm
   ```
-
   With DFlash speculative decoding (drafter ships inside the checkpoint).
   vLLM does not resolve a `<repo>/dflash` Hub subfolder as the draft model —
   `model` must be a concrete local path to the `dflash/` directory inside the
-  downloaded snapshot. Replace `<hash>` with the actual snapshot revision
-  (run `hf download XiaomiMiMo/MiMo-V2.6-Flash-RL` first if the checkpoint is
-  not cached yet):
+  downloaded snapshot. Resolve it per checkpoint (run `hf download
+  <checkpoint>` first if it is not cached yet):
 
   ```bash
-  # resolve the on-disk path of the dflash drafter
-  DFLASH_DIR=$(ls -d ~/.cache/huggingface/hub/models--XiaomiMiMo--MiMo-V2.6-Flash-RL/snapshots/*/dflash)
+  # MOPD variant
+  DFLASH_DIR=$(ls -d ~/.cache/huggingface/hub/models--XiaomiMiMo--MiMo-V2.6-Flash-MOPD/snapshots/*/dflash)
+  # RL (original) variant
+  # DFLASH_DIR=$(ls -d ~/.cache/huggingface/hub/models--XiaomiMiMo--MiMo-V2.6-Flash-RL/snapshots/*/dflash)
   echo "$DFLASH_DIR"
   ```
 
   ```bash
-  vllm serve XiaomiMiMo/MiMo-V2.6-Flash-RL \
+  vllm serve XiaomiMiMo/MiMo-V2.6-Flash-MOPD \
     --tensor-parallel-size 4 \
     --trust-remote-code \
     --gpu-memory-utilization 0.95 \
@@ -241,7 +294,7 @@ guide: |
   curl -X POST http://localhost:8000/v1/chat/completions \
     -H "Content-Type: application/json" \
     -d '{
-      "model": "XiaomiMiMo/MiMo-V2.6-Flash-RL",
+      "model": "XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
       "messages": [{"role": "user", "content": "Hello MiMo!"}],
       "temperature": 1.0,
       "top_p": 0.95,
@@ -254,8 +307,10 @@ guide: |
 
   ## References
 
+  - [MiMo-V2.6-Flash-MOPD on Hugging Face](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-MOPD)
   - [MiMo-V2.6-Flash-RL on Hugging Face](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL)
-  - [MiMo-V2.6 technical report](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL/blob/main/MiMo_V2_6_technical_report.pdf)
+  - [MiMo-V2.6 technical report](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Pro-RL/blob/main/MiMo_V2_6_technical_report.pdf) (§5.6 covers MOPD2)
+  - [Diagnosing and Mitigating Tool-Call Repetition in MiMo-V2.6](https://mimo.xiaomi.com/blog/mimo-v2-6-tool-call-repetition)
   - [MiMo-V2.6 blog post](https://mimo.xiaomi.com/mimo-v2-6)
   - [vLLM PR #57784 — mxfp4 MoE / bf16 router / DFlash for MiMo V2](https://github.com/vllm-project/vllm/pull/57784)
   - [vLLM PR #57933 — MiMo tool-call/reasoning parsers for the Rust frontend](https://github.com/vllm-project/vllm/pull/57933)
