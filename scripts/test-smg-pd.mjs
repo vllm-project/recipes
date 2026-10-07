@@ -90,7 +90,7 @@ test("SMG startup is separate from registration and workers retain Docker suppor
   execFileSync("bash", ["-n"], { input: routerDocker });
   const meta = computeDockerMeta(recipe, recipe.variants.default, taxonomy.hardware_profiles.gb300, "gb300");
   const command = buildDockerRun({ command: result.prefill.command, env: result.prefill.env, image: meta.image, gpuFlags: meta.gpuFlags });
-  assert.match(command, /vllm\/vllm-openai:mimo-v26/);
+  assert.match(command, /vllm\/vllm-openai:v0\.31\.0/);
   assert.match(command, /--port 8001/);
 });
 
