@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "27B-parameter dense hybrid-attention model with linear attention on 48 of 64 layers, a vision tower, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-14
-  date_updated: 2026-10-02
+  date_updated: 2026-10-08
   difficulty: beginner
   tasks:
     - multimodal
@@ -75,11 +75,11 @@ dependencies:
 
 features:
   tool_calling:
-    description: "Enable automatic tool choice. The default parser is qwen3_xml."
+    description: "Enable automatic tool choice. The default parser is qwen3_coder."
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_xml"
+      - "qwen3_coder"
   reasoning:
     description: "Parse <think> blocks separately from the final answer. The template opens every assistant turn with <think>, so without this the reasoning lands in message.content."
     args:
@@ -344,7 +344,7 @@ guide: |
     --max-model-len 262144 \
     --kv-cache-dtype fp8 \
     --reasoning-parser qwen3 \
-    --enable-auto-tool-choice --tool-call-parser qwen3_xml
+    --enable-auto-tool-choice --tool-call-parser qwen3_coder
   ```
 
   FP8, TP4 (one GB300 tray) for the largest KV cache:
@@ -377,7 +377,7 @@ guide: |
     --max-model-len 262144 \
     --kv-cache-dtype fp8 \
     --reasoning-parser qwen3 \
-    --enable-auto-tool-choice --tool-call-parser qwen3_xml
+    --enable-auto-tool-choice --tool-call-parser qwen3_coder
   ```
 
   At 262,144 context, GPU KV cache size as reported at startup:
@@ -446,7 +446,7 @@ guide: |
     --max-num-batched-tokens 16384 \
     --enable-prefix-caching \
     --reasoning-parser qwen3 \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
     --mm-encoder-tp-mode data \
     --speculative-config '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}' \
     --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
