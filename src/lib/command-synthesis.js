@@ -1760,8 +1760,11 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     ? `${dynamo.launcher || "python3 -m dynamo.vllm"} --model ${modelId}`
     : `vllm serve ${modelId}`;
   function formatCommand(args) {
+    return formatLaunchCommand(args, serveHead);
+  }
+  function formatLaunchCommand(args, commandHead) {
     const filtered = dedupeArgs(args.filter(Boolean));
-    if (filtered.length === 0) return serveHead;
+    if (filtered.length === 0) return commandHead;
     // Pair each --flag with its immediate value on the same line so the output
     // reads like the human-written command in the recipe guide, not
     // --flag\n value\n --flag\n value\n ...
@@ -1776,7 +1779,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         lines.push(cur);
       }
     }
-    return `${serveHead} \\\n  ${lines.join(" \\\n  ")}`;
+    return `${commandHead} \\\n  ${lines.join(" \\\n  ")}`;
   }
 
   // Companion to formatCommand: returns the deduped flat argv (no shell
@@ -1980,12 +1983,12 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       router: dynamo
         ? {
             label: dynamo.frontend?.label || "Frontend",
-            command: [
-              `python3 -m dynamo.frontend \\`,
-              `    --http-port $ROUTER_PORT \\`,
-              `    --router-mode ${dynamo.frontend?.router_mode || "round-robin"}`,
-            ].join("\n"),
-            env: { ...(dynamo.env || {}) },
+            command: formatLaunchCommand([
+              "--http-port", "$ROUTER_PORT",
+              "--router-mode", dynamo.frontend?.router_mode || "round-robin",
+              ...(dynamo.frontend?.args || []),
+            ], "python3 -m dynamo.frontend"),
+            env: { ...(dynamo.env || {}), ...(dynamo.frontend?.env || {}) },
             install: dynamoInstallSteps(dynamo)[0]?.command,
           }
         : smg ? {
