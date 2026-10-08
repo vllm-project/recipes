@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "27B-parameter dense hybrid-attention model with linear attention on 48 of 64 layers, a vision tower, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-14
-  date_updated: 2026-10-02
+  date_updated: 2026-10-08
   difficulty: beginner
   tasks:
     - multimodal
@@ -75,11 +75,11 @@ dependencies:
 
 features:
   tool_calling:
-    description: "Enable automatic tool choice. The default parser is qwen3_xml."
+    description: "Enable automatic tool choice. The default parser is qwen3_coder."
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_xml"
+      - "qwen3_coder"
   reasoning:
     description: "Parse <think> blocks separately from the final answer. The template opens every assistant turn with <think>, so without this the reasoning lands in message.content."
     args:
