@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3-Flash is a 320B-total / 18B-active multimodal MoE with hybrid KDA and sparse MLA attention, native FP8 weights, MTP, and a 1M-token context window."
   date_added: 2026-08-27
-  date_updated: 2026-09-18
+  date_updated: 2026-10-08
   difficulty: advanced
   tasks:
     - text
@@ -84,6 +84,11 @@ variants:
         docker_image: "quay.io/ascend/vllm-ascend:nightly-main-a5"
         install:
           pip: false
+      mi350x: &gfx950_aiter
+        extra_env:
+          VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
+          VLLM_ROCM_USE_AITER_TRITON_SPARSE_MLA: "1"
+      mi355x: *gfx950_aiter
   nvfp4:
     model_id: "RedHatAI/GLM-5.3-Flash-NVFP4"
     precision: nvfp4
@@ -94,6 +99,9 @@ variants:
     precision: bf16
     vram_minimum_gb: 772
     description: "Official BF16 checkpoint; requires substantially more GPU memory"
+    hardware_overrides:
+      mi350x: *gfx950_aiter
+      mi355x: *gfx950_aiter
 
 compatible_strategies:
   - single_node_tp
@@ -431,6 +439,9 @@ guide: |
 
   ```bash
   export VLLM_ROCM_USE_AITER=1
+  # gfx950 (MI350X/MI355X) only
+  export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
+  export VLLM_ROCM_USE_AITER_TRITON_SPARSE_MLA=1
   vllm serve zai-org/GLM-5.3-Flash \
     --served-model-name zai-org/GLM-5.3-Flash \
     --tensor-parallel-size 4 \
