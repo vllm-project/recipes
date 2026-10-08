@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 flagship MoE (1.6T total / 49B active) with hybrid CSA+HCA attention, manifold-constrained hyper-connections, Muon-trained on 32T+ tokens, and three-tier reasoning."
   date_added: 2026-04-24
-  date_updated: 2026-10-02
+  date_updated: 2026-10-03
   difficulty: hard
   tasks:
     - text
@@ -176,13 +176,14 @@ hardware_overrides:
   hopper:
     # H200 (141 GB × 8 = 1128 GB) leaves KV cache tight at 1M context with
     # ~960 GB mixed-precision weights replicated across DP ranks — cap to 800K.
+    # H20 (no profile here) needs `--max-model-len 200000 --max-num-seqs 16` (#617).
     extra_args:
       - "--max-model-len"
-      - "200000"
+      - "800000"
       - "--gpu-memory-utilization"
       - "0.95"
       - "--max-num-seqs"
-      - "16"
+      - "512"
       - "--no-enable-flashinfer-autotune"
       - "--compilation-config"
       - '{"mode": 0, "cudagraph_mode": "FULL_DECODE_ONLY"}'
