@@ -4,7 +4,7 @@ meta:
   provider: "NVIDIA"
   description: "NVIDIA Nemotron-3-Super Mamba-hybrid latent-MoE (~120B total / ~12B active) with BF16, FP8, and NVFP4 variants"
   date_added: 2026-04-28
-  date_updated: 2026-09-10
+  date_updated: 2026-10-08
   difficulty: advanced
   tasks:
     - text
@@ -31,11 +31,11 @@ model:
 
 features:
   tool_calling:
-    description: "Qwen3 XML tool-call parser with automatic tool choice"
+    description: "Qwen3 Coder tool-call parser with automatic tool choice"
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_xml"
+      - "qwen3_coder"
   reasoning:
     description: "Built-in nemotron_v3 reasoning parser (vLLM >= 0.17.1)"
     args:
@@ -156,7 +156,7 @@ guide: |
     --trust-remote-code \
     --served-model-name nemotron \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
     --reasoning-parser nemotron_v3
   ```
 
@@ -168,7 +168,7 @@ guide: |
     --tensor-parallel-size 4 \
     --trust-remote-code \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
     --reasoning-parser nemotron_v3
   ```
 
@@ -179,7 +179,7 @@ guide: |
     --tensor-parallel-size 2 \
     --trust-remote-code \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
     --reasoning-parser nemotron_v3
   ```
 
@@ -217,7 +217,7 @@ guide: |
       --enable-prefix-caching \
       --reasoning-parser nemotron_v3 \
       --enable-auto-tool-choice \
-      --tool-call-parser qwen3_xml
+      --tool-call-parser qwen3_coder
   ```
 
   ### RTX Pro 6000 NVFP4
@@ -245,7 +245,7 @@ guide: |
       --enable-prefix-caching \
       --reasoning-parser nemotron_v3 \
       --enable-auto-tool-choice \
-      --tool-call-parser qwen3_xml
+      --tool-call-parser qwen3_coder
   ```
 
   ## Benchmarking

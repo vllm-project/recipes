@@ -4,7 +4,7 @@ meta:
   provider: "NVIDIA"
   description: "NVIDIA Nemotron 3.5 Lightning hybrid Mamba-MoE (30B total / 3B active) with NVFP4 and BF16 checkpoints, 1M context, and MTP / DSpark / DFlash speculative decoding"
   date_added: 2026-08-03
-  date_updated: 2026-09-22
+  date_updated: 2026-10-08
   difficulty: intermediate
   tasks:
     - text
@@ -45,11 +45,11 @@ features:
       - "--reasoning-parser"
       - "nemotron_v3"
   tool_calling:
-    description: "Qwen3 XML tool-call parser with automatic tool choice"
+    description: "Qwen3 Coder tool-call parser with automatic tool choice"
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
-      - "qwen3_xml"
+      - "qwen3_coder"
   mamba_fast_ssm_cache:
     label: "Fast SSM Cache"
     description: "FP16 Mamba SSM cache with stochastic rounding — faster decode than the FP32 default; the Philox rounds control the rounding stream"

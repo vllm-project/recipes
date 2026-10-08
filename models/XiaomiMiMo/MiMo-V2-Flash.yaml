@@ -4,7 +4,7 @@ meta:
   provider: "MiMo (Xiaomi)"
   description: "Xiaomi's MoE reasoning model (309B total / 15B active) with hybrid attention and MTP for fast agentic workflows"
   date_added: 2025-12-20
-  date_updated: 2026-04-17
+  date_updated: 2026-10-08
   difficulty: intermediate
   tasks:
     - text
@@ -30,10 +30,10 @@ model:
 
 features:
   tool_calling:
-    description: "Qwen3 XML tool-call parser"
+    description: "Qwen3 Coder tool-call parser"
     args:
       - "--tool-call-parser"
-      - "qwen3_xml"
+      - "qwen3_coder"
   reasoning:
     description: "Qwen3 reasoning parser"
     args:
@@ -116,7 +116,7 @@ guide: |
   ```bash
   vllm serve XiaomiMiMo/MiMo-V2-Flash \
     --tensor-parallel-size 4 --trust-remote-code --gpu-memory-utilization 0.9 \
-    --tool-call-parser qwen3_xml \
+    --tool-call-parser qwen3_coder \
     --reasoning-parser qwen3 \
     --generation-config vllm \
     --served-model-name mimo_v2_flash
