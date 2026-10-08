@@ -17,7 +17,7 @@ meta:
 
 model:
   model_id: "XiaomiMiMo/MiMo-V2-Flash"
-  min_vllm_version: "0.14.0"
+  min_vllm_version: "0.20.0"
   architecture: moe
   parameter_count: "309B"
   active_parameters: "15B"
@@ -30,10 +30,10 @@ model:
 
 features:
   tool_calling:
-    description: "Qwen3 Coder tool-call parser"
+    description: "MiMo tool-call parser"
     args:
       - "--tool-call-parser"
-      - "qwen3_coder"
+      - "mimo"
   reasoning:
     description: "Qwen3 reasoning parser"
     args:
@@ -81,7 +81,7 @@ guide: |
   ## Prerequisites
 
   - Hardware: 4x H200 (TP4) or equivalent aggregate VRAM (~320 GB with FP8)
-  - vLLM >= 0.14.0
+  - vLLM >= 0.20.0
 
   ### Install vLLM (NVIDIA)
 
@@ -116,7 +116,7 @@ guide: |
   ```bash
   vllm serve XiaomiMiMo/MiMo-V2-Flash \
     --tensor-parallel-size 4 --trust-remote-code --gpu-memory-utilization 0.9 \
-    --tool-call-parser qwen3_coder \
+    --tool-call-parser mimo \
     --reasoning-parser qwen3 \
     --generation-config vllm \
     --served-model-name mimo_v2_flash
