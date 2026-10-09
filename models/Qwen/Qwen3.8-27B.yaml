@@ -31,6 +31,8 @@ meta:
     # single 950PR at TP1 with the in-checkpoint MTP head and FULL_DECODE_ONLY
     # ACLGraph and answered a long-form prompt correctly.
     ascend_950pr: verified
+    arc_pro_b60: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "Qwen/Qwen3.8-27B"
@@ -311,7 +313,10 @@ kv_offload_support:
 compatible_strategies:
   - single_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  xpu:
+    extra_args:
+      - "--enforce-eager"
 
 strategy_overrides: {}
 
@@ -420,6 +425,24 @@ guide: |
   instead of fp8 — so fp8 KV is a choice here, not a requirement. The MTP head still fits
   (90,112 tokens, 0.754 acceptance). Those two flags are levers for a bigger pool, not fixes
   for the OOM: only `--enforce-eager` decides whether the server starts.
+
+  ### Intel XPU B60 / B70
+
+  Validated on 4x Intel Arc Pro B60 or 2x Intel Arc Pro B70 (B60 24 GB, B70 32 GB per card) with the
+  official vLLM XPU image `vllm/vllm-openai-xpu:latest`.
+
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-xpu:latest \
+    Qwen/Qwen3.8-27B \
+    --tensor-parallel-size 4 \
+    --max-model-len 8192 \
+    --reasoning-parser qwen3 \
+    --enforce-eager
+  ```
 
   ### Huawei Ascend 950PR-w8a8 (vLLM Ascend)
 
