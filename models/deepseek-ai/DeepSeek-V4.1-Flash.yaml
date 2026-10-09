@@ -790,8 +790,7 @@ guide: |
 
   For DEP2 at c128, add vLLM's native CPU KV offloading with
   `--kv-offloading-backend native --kv-offloading-size 32` (GiB per DP rank, 64 GiB per
-  server), `--gpu-memory-utilization 0.955` and `--max-num-seqs 48`. Source:
-  [InferenceX #3837](https://github.com/SemiAnalysisAI/InferenceX/pull/3837).
+  server), `--gpu-memory-utilization 0.955` and `--max-num-seqs 48`.
 
   ## DGX Station (GB300) Tensor Parallel
 
