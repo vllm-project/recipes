@@ -4,7 +4,7 @@ meta:
   provider: "Moonshot AI"
   description: "Pre-release 2.8T-parameter native multimodal MoE with Kimi Delta Attention, Gated MLA, Attention Residuals, and a 1M-token context window"
   date_added: 2026-07-27
-  date_updated: 2026-09-25
+  date_updated: 2026-10-09
   difficulty: hard
   tasks:
     - multimodal
@@ -509,6 +509,47 @@ guide: |
   - **Decode context parallelism (DCP)**: enable the **Decode context parallelism** opt-in feature in the command builder to shard the decode KV cache across the tensor-parallel ranks for decode-heavy long-context serving. It emits `--decode-context-parallel-size 8 --dcp-comm-backend a2a --attention-backend TOKENSPEED_MLA` with `mla_prefill_backend: TRTLLM_RAGGED` (on MI355X: `--attention-backend ROCM_AITER_MLA` with `mla_prefill_backend: ROCM_AITER_FA`), and is scoped to the TP8 single-node profile because the DCP size must divide the tensor-parallel size. On builds that carry them, the `VLLM_USE_DIRECT_DCP_A2A`, `VLLM_USE_DIRECT_DCP_Q_GATHER` and `VLLM_USE_DIRECT_DCP_KV_GATHER` knobs default to auto and turn the direct DCP ops on where applicable; set them to `1` only to pin that path explicitly, or `0` to disable it. The MI355X DCP option sets all three to `0`, as InferenceX does.
   - Ascend W4A8 checkpoint (ModelScope): https://www.modelscope.cn/models/Eco-Tech/Kimi-K3-w4a8
   - vLLM Ascend tutorial: https://docs.vllm.ai/projects/ascend/en/v0.23.0/tutorials/models/Kimi-K3.html
+
+  ## GB200: InferenceX AgentX alignment
+
+  The GB200 NVFP4 AgentX lanes in [SemiAnalysis InferenceX](https://inferencex.semianalysis.com/) (`kimik3-fp4-gb200-dynamo-vllm-agentic*`, [SemiAnalysisAI/InferenceX#3748](https://github.com/SemiAnalysisAI/InferenceX/pull/3748)) serve the NVFP4 checkpoint ([`RedHatAI/Kimi-K3-NVFP4`](https://huggingface.co/RedHatAI/Kimi-K3-NVFP4) variant) with the Mooncake KV store on 4-GPU NVL trays. They are benchmark configurations; the settings below are the production-useful parts. The builder's **Mooncake** option generates the `mooncake_master` and store config; the lane-specific connector settings are below.
+
+  **Aggregated (16 GPUs, 4 trays): TP8 x PP2 + DCP8.** The builder's TP+PP strategy uses one pipeline stage per node (TP4 x PP4 on these 4-GPU trays), so this lane is documented as an explicit command. Add Mooncake's `MooncakeStoreConnector` config to the same command:
+
+  ```bash
+  export VLLM_USE_DIRECT_DCP_A2A=1 VLLM_USE_DIRECT_DCP_Q_GATHER=1 VLLM_USE_DIRECT_DCP_KV_GATHER=1
+  export VLLM_ALLREDUCE_USE_FLASHINFER=1 VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION=1 NCCL_CUMEM_ENABLE=1
+  export VLLM_MOONCAKE_LOAD_RECV_THREADS=4 MC_SLICE_SIZE=1048576 MC_WORKERS_PER_CTX=4
+  vllm serve RedHatAI/Kimi-K3-NVFP4 --trust-remote-code \
+    --tensor-parallel-size 8 --pipeline-parallel-size 2 \
+    --decode-context-parallel-size 8 --dcp-comm-backend a2a \
+    --attention-backend TOKENSPEED_MLA \
+    --attention-config '{"mla_prefill_backend":"TRTLLM_RAGGED","use_prefill_query_quantization":true}' \
+    --kv-cache-dtype fp8 --mamba-ssm-cache-dtype bfloat16 --enable-prefix-caching --prefix-match-unit 128 \
+    --max-model-len 1048576 --gpu-memory-utilization 0.88 --max-num-seqs 16 --max-num-batched-tokens 8192 \
+    --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","cudagraph_capture_sizes":[8,16,24,40,56,64,80,104,128,256,512,1024,2048,4096,8192]}' \
+    --kv-transfer-config '{"kv_connector":"MooncakeStoreConnector","kv_role":"kv_both","kv_load_failure_policy":"recompute","kv_connector_extra_config":{"load_async":true,"lookup_async":true,"enable_offload":false}}' \
+    --language-model-only
+  ```
+
+  **Disaggregated (1 prefill + 1 decode, 16 GPUs each): TP16 + DCP16 on both roles.** This is a different layout from the TEP8/DEP profile above, tuned for long-context agentic traffic with a shared Mooncake store, so it is documented here rather than in the builder. Both roles run:
+
+  ```bash
+  --tensor-parallel-size 16 --decode-context-parallel-size 16 --dcp-comm-backend a2a \
+  --attention-backend TOKENSPEED_MLA \
+  --attention-config '{"mla_prefill_backend":"TRTLLM_RAGGED","use_prefill_query_quantization":true}' \
+  --speculative-config '{"model":"Inferact/Kimi-K3-DSpark","attention_backend":"TOKENSPEED_MLA","method":"dspark","num_speculative_tokens":4,"draft_sample_method":"probabilistic"}' \
+  --kv-cache-dtype fp8 --enable-prefix-caching --prefix-match-unit 128 --language-model-only \
+  --enable-cumem-allocator --stream-interval 10 --max-num-seqs 64 \
+  --kv-transfer-config '{"kv_connector":"MultiConnector","kv_role":"kv_both","kv_load_failure_policy":"recompute","kv_connector_extra_config":{"connectors":[{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_load_failure_policy":"fail","kv_buffer_device":"cuda","kv_connector_extra_config":{"enforce_handshake_compat":false,"enable_cross_layers_blocks":false}},{"kv_connector":"MooncakeStoreConnector","kv_role":"kv_both","kv_load_failure_policy":"recompute","kv_connector_extra_config":{"load_async":true,"lookup_async":true,"compact_group_io":true,"max_load_batch_keys":2,"enable_cross_layers_blocks":false,"enable_offload":false}}]}}'
+  ```
+
+  - **Prefill:** `--gpu-memory-utilization 0.88 --max-cudagraph-capture-size 512`.
+  - **Decode:** `--gpu-memory-utilization 0.90` (0.92 at low concurrency) and `--max-cudagraph-capture-size` sized to `max-num-seqs x (1 + draft tokens)` (320 at 64 seqs).
+  - **Environment (both roles):** the three direct-DCP variables, `VLLM_ALLREDUCE_USE_FLASHINFER=1`, `VLLM_KIMI_K3_SHARD_SP_SHARED_EXPERT=0`, `VLLM_SSM_CONV_STATE_LAYOUT=DS`, `VLLM_USE_V2_MODEL_RUNNER=1`, `NCCL_MNNVL_ENABLE=1`, `NCCL_NVLS_ENABLE=1`, `NCCL_CUMEM_ENABLE=1`, `NCCL_P2P_LEVEL=NVL`, `NCCL_NET_PLUGIN=none`, `VLLM_USE_NCCL_SYMM_MEM=0`, `VLLM_ENGINE_READY_TIMEOUT_S=3600`, `VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=1800`, `VLLM_MOONCAKE_LOAD_RECV_THREADS=4`, `MC_SLICE_SIZE=1048576`, `MC_ENABLE_DEST_DEVICE_AFFINITY=1`, `UCX_MEMTYPE_CACHE=n`, `UCX_MEMTYPE_REG_WHOLE=n`.
+  - **Frontend:** the Dynamo frontend runs with `--router-mode least-loaded --router-session-affinity-ttl-secs 900`, so each conversation sticks to one worker and reuses its prefix cache; the Rust frontend is selected with `VLLM_USE_RUST_FRONTEND=1`.
+  - **Mooncake master:** `--default_kv_lease_ttl=60000 --eviction_high_watermark_ratio=0.95 --eviction_ratio=0.10`, 128 GB global segment, RDMA over `mlx5_0..mlx5_3`.
+  - Per-concurrency tuning in the lane (`--max-num-seqs` 32 to 96, capture sizes 160 to 480) follows the same `max-num-seqs x (1 + draft tokens)` rule.
 
   ## AMD MI355X: InferenceX AgentX alignment
 
