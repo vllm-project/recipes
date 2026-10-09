@@ -56,23 +56,27 @@ variants:
     precision: bf16
     vram_minimum_gb: 64
     description: "Full BF16 — single 80 GB NVIDIA GPU (H100/H200). Requires --max-num-seqs 4 to avoid OOM from diffusion state buffers."
+    supported_hardware: [h100, h200, dgx_spark_gb10, xeon6]
   fp8:
     model_id: "RedHatAI/diffusiongemma-26B-A4B-it-FP8-dynamic"
     precision: fp8
     vram_minimum_gb: 32
     description: "FP8 (E4M3) weights with dynamic per-token activation quantization"
+    supported_hardware: [h100, h200, dgx_spark_gb10]
   nvfp4:
     model_id: "RedHatAI/diffusiongemma-26B-A4B-it-NVFP4"
     precision: nvfp4
     label: "NVFP4 - RedHatAI"
     vram_minimum_gb: 24
     description: "NVFP4 (4-bit) quantized weights"
+    supported_hardware: [dgx_spark_gb10]
   nvidia_nvfp4:
     model_id: "nvidia/diffusiongemma-26B-A4B-it-NVFP4"
     precision: nvfp4
     label: "NVFP4 - NVIDIA"
     vram_minimum_gb: 24
     description: "NVIDIA NVFP4 (4-bit) quantized weights"
+    supported_hardware: [dgx_spark_gb10]
     hardware_overrides:
       dgx_spark_gb10:
         extra_args:

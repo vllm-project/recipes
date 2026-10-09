@@ -71,11 +71,13 @@ variants:
     precision: bf16
     vram_minimum_gb: 13
     description: "Full BF16 — single 24 GB+ NVIDIA GPU or 1x MI300X/MI325X/MI350X/MI355X or 1x Xeon6/Xeon5 NUMA node"
+    supported_hardware: [h100, mi300x, mi325x, mi355x, trillium, ironwood, xeon6]
   fp8:
     model_id: "RedHatAI/gemma-4-E2B-it-FP8-dynamic"
     precision: fp8
     vram_minimum_gb: 6
     description: "FP8 (E4M3) linear weights with dynamic per-token activation quantization (vision/audio encoders stay BF16) — Hopper or Blackwell"
+    supported_hardware: [h100]
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
@@ -84,11 +86,13 @@ variants:
     precision: int4
     vram_minimum_gb: 8
     description: "W4A16 QAT (4-bit weights, 16-bit activations, group_size=32) via compressed-tensors — runs on any GPU"
+    supported_hardware: [h100, mi300x, mi325x, mi355x]
   mobile:
     model_id: "google/gemma-4-E2B-it-qat-mobile-ct"
     precision: int2/4/8
     vram_minimum_gb: 4
     description: "Mobile QAT — mixed int2/4/8 compressed-tensors (int2 embeddings + lm_head + deep MLP, int4 attention + early MLP, int8 vision + gates). 3.6× weight compression vs BF16, up to 1.25× faster decode at low batch"
+    supported_hardware: [h100, mi300x, mi325x, mi355x]
 
 compatible_strategies:
   - single_node_tp
