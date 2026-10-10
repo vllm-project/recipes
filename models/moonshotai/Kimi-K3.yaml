@@ -4,7 +4,7 @@ meta:
   provider: "Moonshot AI"
   description: "Pre-release 2.8T-parameter native multimodal MoE with Kimi Delta Attention, Gated MLA, Attention Residuals, and a 1M-token context window"
   date_added: 2026-07-27
-  date_updated: 2026-09-25
+  date_updated: 2026-10-09
   difficulty: hard
   tasks:
     - multimodal
@@ -138,11 +138,10 @@ variants:
     supported_hardware: [h100, h200, b200, b300, gb200, gb300, mi300x, mi325x, mi355x]
     description: "Quantization-aware-trained MXFP4 weights with MXFP8 activations; footprint is estimated until the checkpoint is published."
     hardware_overrides:
-      # The MI355X path needs vllm-project/vllm#53940 (SiTUv2 a4w4 MoE routing),
-      # which v0.30.0 (:latest) lacks, and #55966. InferenceX's digest-pinned
-      # nightly has aged out of Docker Hub, so track the same ROCm 10.0 channel.
+      # The MI355X path needs vllm-project/vllm#53940 (SiTUv2 a4w4 MoE routing)
+      # and #55966. This is the digest used by InferenceX AgentX PR #3833.
       mi355x:
-        docker_image: "vllm/vllm-openai-rocm:nightly-rocm100"
+        docker_image: "vllm/vllm-openai-rocm:nightly-rocm100-81198e97ba7eee2a22540caaa756b7fdddcb4d93"
   nvfp4:
     precision: nvfp4
     vram_minimum_gb: 1650
@@ -347,8 +346,11 @@ strategy_overrides:
           - "fp8"
           - "--attention-config"
           - '{"mla_prefill_backend":"ROCM_AITER_FA"}'
+          - "--stream-interval"
+          - "10"
         extra_env:
           VLLM_ROCM_AITER_MLA_ASM_PADDING: "asm"
+          VLLM_ROCM_AITER_MLA_DCP_VERIFY: "asm"
 
   # Use MegaMoE for DEP on GB200/GB300 NVL trays. B200/B300 leave
   # --moe-backend unset and use vLLM's default automatic selection.
@@ -449,7 +451,7 @@ guide: |
   - **CUDA:** The kimi-k3 image ships as a CUDA 13 (cu130) build only — there is no -cu129 tag, and the K3-enabled wheels are not on the cu129 nightly index. The host needs an r580+ NVIDIA driver; on a CUDA 12.9 (r575) host, upgrade the driver or build vLLM from the K3 branch against cu129 PyTorch yourself.
   - **Hardware:** At least 8x GB300. Multi-node for real production traffic.
   - **ROCm:** At least 8x MI355X/MI350X. On MI355X the command builder uses the ROCm 10.0 nightly image `vllm/vllm-openai-rocm:nightly-rocm100`; the day-0 `vllm/vllm-openai-rocm:kimi-k3` image predates the DSpark and MoE fixes that path needs (see [AMD MI355X: InferenceX AgentX alignment](#amd-mi355x-inferencex-agentx-alignment)).
-  
+
   ## Client Usage
 
   Once the vLLM server is running, consume it via the OpenAI-compatible API:
@@ -512,28 +514,35 @@ guide: |
 
   ## AMD MI355X: InferenceX AgentX alignment
 
-  The MI355X single-node TP8 command follows the [SemiAnalysis InferenceX](https://inferencex.semianalysis.com/) agentic-coding (AgentX) lane `kimik3-fp4-mi355x-vllm-agentic-mtp` as of InferenceX commit [`03bfdecc`](https://github.com/SemiAnalysisAI/InferenceX/tree/03bfdecc33f174f22ad8ac5221ae464a4428adab): the entry in [`configs/amd-master.yaml`](https://github.com/SemiAnalysisAI/InferenceX/blob/03bfdecc33f174f22ad8ac5221ae464a4428adab/configs/amd-master.yaml), launched by [`benchmarks/single_node/agentic/kimik3_fp4_mi355x_mtp.sh`](https://github.com/SemiAnalysisAI/InferenceX/blob/03bfdecc33f174f22ad8ac5221ae464a4428adab/benchmarks/single_node/agentic/kimik3_fp4_mi355x_mtp.sh). The lane is a benchmark configuration: text-only, TP8 on one MI355X node, with the tool-call and reasoning parsers on.
+  The MI355X single-node TP8 command follows the [SemiAnalysis InferenceX](https://inferencex.semianalysis.com/) agentic-coding (AgentX) lane `kimik3-fp4-mi355x-vllm-agentic-mtp` as of [PR #3833](https://github.com/SemiAnalysisAI/InferenceX/pull/3833), whose final branch revision is [`6a0fe9d`](https://github.com/SemiAnalysisAI/InferenceX/tree/6a0fe9dea905dda24acfc8f8a190d9f65de987d3): the entry in [`configs/amd-master.yaml`](https://github.com/SemiAnalysisAI/InferenceX/blob/6a0fe9dea905dda24acfc8f8a190d9f65de987d3/inferencex-e2e/configs/amd-master.yaml). The lane is a benchmark configuration: text-only, TP8 on one MI355X node, with the tool-call and reasoning parsers on.
 
-  **In the command builder.** Settings the lane uses at every concurrency are part of the MI355X TP8 command: `--load-format fastsafetensors`, `--gpu-memory-utilization 0.9`, `--max-model-len 1048576`, `--enable-prefix-caching`, `--kv-cache-dtype fp8`, `--attention-config '{"mla_prefill_backend":"ROCM_AITER_FA"}'` and `VLLM_ROCM_AITER_MLA_ASM_PADDING=asm`. The lane's `--moe-backend auto` is vLLM's default selection, so the builder leaves that flag unset. Other AMD GPUs keep the general AMD profile.
+  **In the command builder.** Settings the lane uses at every concurrency are part of the MI355X TP8 command: `--load-format fastsafetensors`, `--gpu-memory-utilization 0.9`, `--max-model-len 1048576`, `--enable-prefix-caching`, `--kv-cache-dtype fp8`, `--attention-config '{"mla_prefill_backend":"ROCM_AITER_FA"}'`, `--stream-interval 10`, `VLLM_ROCM_AITER_MLA_ASM_PADDING=asm` and `VLLM_ROCM_AITER_MLA_DCP_VERIFY=asm`. The lane's `--moe-backend auto` is vLLM's default selection, so the builder leaves that flag unset. Other AMD GPUs keep the general AMD profile.
 
-  - **Spec decoding** serves the lane's draft, the published [`Inferact/Kimi-K3-DSpark`](https://huggingface.co/Inferact/Kimi-K3-DSpark), with its attention on `ROCM_AITER_MLA` ([vllm-project/vllm#55966](https://github.com/vllm-project/vllm/pull/55966)), FP8 KV, probabilistic drafting and block verification, at 7 draft tokens (the lane's concurrency-1 setting).
+  - **Spec decoding** serves the lane's draft, the published [`Inferact/Kimi-K3-DSpark`](https://huggingface.co/Inferact/Kimi-K3-DSpark), with its attention on `ROCM_AITER_MLA` ([vllm-project/vllm#55966](https://github.com/vllm-project/vllm/pull/55966)), FP8 KV, probabilistic drafting and block verification. Draft length is tuned per concurrency in the matrix below.
+  - **C1 target quantization** applies `linear: fp8_per_channel` only to the dcp1/dcp8 concurrency-1 target cells, with the PR's ignored-layer list. The routed experts remain MXFP4; the DSpark draft remains BF16 with FP8 KV because it has its own unquantized model config.
   - **Decode context parallelism** emits the lane's DCP8 pairing: `--attention-backend ROCM_AITER_MLA`, `--dcp-comm-backend a2a`, `ROCM_AITER_FA` prefill and the direct DCP ops off.
   - The **Simple** KV-offload option emits the connector the lane uses (`SimpleCPUOffloadConnector`, `kv_both`, `lazy_offload: false`).
   - Select **Python** in the frontend selector to match the lane, which runs vLLM's default frontend.
 
-  **Per-concurrency tuning (guide only).** The lane retunes the following per concurrency, so the builder keeps the recipe's general values (`--max-num-seqs 128`, `--max-num-batched-tokens 4096`, `FULL_DECODE_ONLY` CUDA graphs, 7 draft tokens):
+  **Per-concurrency tuning (guide only).** The lane retunes the following nine points. The builder keeps general values (`--max-num-seqs 128`, `--max-num-batched-tokens 4096`, and effective `FULL_DECODE_ONLY` CUDA graphs); use the reproduction command below for exact benchmark cells. Every point requests `FULL_AND_PIECEWISE` with breakable CUDA graphs disabled; because Kimi-K3 has no `torch.compile` submodule, vLLM resolves that mode to `FULL_DECODE_ONLY` at load.
 
   | Concurrency | DCP | KV offload | Draft tokens | `--max-num-seqs` | `--max-num-batched-tokens` | `cudagraph_mode` | `VLLM_USE_BREAKABLE_CUDAGRAPH` |
   | ---: | ---: | --- | ---: | ---: | ---: | --- | ---: |
-  | 1 | 1 | none | 7 | 2 | 16384 | `FULL_AND_PIECEWISE` | 1 |
-  | 4 | 1 | none | 5 | 8 | 8192 | `FULL_AND_PIECEWISE` | 1 |
-  | 8, 10 | 1 | Simple | 4 | 16, 20 | 8192 | `FULL` | 0 |
-  | 12, 14 | 1 | Simple | 3 | 24, 28 | 8192 | `FULL` | 0 |
-  | 44, 48, 70 | 8 | Simple | draft off | 88, 96, 140 | 8192 | `FULL` | 0 |
+  | 1 | 1 | none | 7 | 2 | 16384 | `FULL_AND_PIECEWISE` | 0 |
+  | 1 | 8 | none | 7 | 2 | 16384 | `FULL_AND_PIECEWISE` | 0 |
+  | 4 | 8 | Simple | 5 | 8 | 8192 | `FULL_AND_PIECEWISE` | 0 |
+  | 10 | 8 | Simple | 4 | 20 | 8192 | `FULL_AND_PIECEWISE` | 0 |
+  | 12 | 8 | Simple | 3 | 24 | 8192 | `FULL_AND_PIECEWISE` | 0 |
+  | 14 | 8 | Simple | 4 | 28 | 8192 | `FULL_AND_PIECEWISE` | 0 |
+  | 16 | 8 | Simple | 4 | 32 | 8192 | `FULL_AND_PIECEWISE` | 0 |
+  | 44 | 8 | Simple | 4 | 88 | 8192 | `FULL_AND_PIECEWISE` | 0 |
+  | 48 | 8 | Simple | 4 | 96 | 8192 | `FULL_AND_PIECEWISE` | 0 |
 
-  The lane never runs DSpark together with DCP: from concurrency 44 it drops the draft and shards the decode KV cache across all eight GPUs instead. Every cell captures CUDA graphs for sizes 2 up to `2 × concurrency × (1 + draft tokens)`.
+  DCP8 shards the decode KV read across all eight GPUs and uses the A2A backend. Simple offload points use 224.875 GB of host DRAM per rank. Every cell captures every even CUDA-graph size from 2 through `2 × concurrency × (1 + draft tokens)`. Agentic benchmark runs replace block rejection with the golden acceptance length for every draft point; synthetic acceptance is not suitable for serving or accuracy evaluation.
 
-  **Image.** The lane pins `vllm/vllm-openai-rocm:nightly-rocm100-af1c01499b289be555c475669ba50a88e96d846e` (vLLM 0.29.1rc1.dev187), which has aged out of Docker Hub; ROCm nightly digests are kept for about a week. The builder uses the same ROCm 10.0 nightly channel, `vllm/vllm-openai-rocm:nightly-rocm100`. This path needs [vllm-project/vllm#53940](https://github.com/vllm-project/vllm/pull/53940) (SiTUv2 a4w4 MoE routing) and #55966; v0.30.0 (`:latest`) carries only #55966.
+  PR #3833 retains a c50 dcp8 recipe variant for future use, but c50 is not part of the nine-point sweep documented above.
+
+  **Image.** PR #3833 pins `vllm/vllm-openai-rocm:nightly-rocm100-81198e97ba7eee2a22540caaa756b7fdddcb4d93`. The recipe pins that digest for the MI355X default variant; ROCm nightly digests may age out of Docker Hub. This path needs [vllm-project/vllm#53940](https://github.com/vllm-project/vllm/pull/53940) (SiTUv2 a4w4 MoE routing) and #55966.
 
   **MoE environment.** The lane exports the legacy names `VLLM_ROCM_USE_AITER_MOE_SITUV2_A8W4=1`, `AITER_SITUV2_A8W4=1` and `AITER_BF16_FP8_MOE_BOUND=0`. On its image the first is a deprecated alias for `VLLM_ROCM_USE_AITER_MOE_SITUV2`, vLLM removes `AITER_SITUV2_A8W4` at startup, and the a4w4 kernels do not read `AITER_BF16_FP8_MOE_BOUND`, so the lane runs the same SiTUv2 a4w4 MoE path as the recipe's `VLLM_ROCM_USE_AITER_MOE_SITUV2=1`.
 
@@ -542,21 +551,22 @@ guide: |
   This is the real-verification form, the one InferenceX's eval jobs use and the one to use for any serving:
 
   ```bash
-  # One lane cell per server: CONC is one of 1 4 8 10 12 14 44 48 70.
+  # One lane cell per server. For CONC=1, choose DCP=1 or DCP=8.
   CONC=1
-  case "$CONC" in
-    1) K=7; BATCHED=16384; DCP=1; OFFLOAD=0 ;;
-    4) K=5; BATCHED=8192; DCP=1; OFFLOAD=0 ;;
-    8|10) K=4; BATCHED=8192; DCP=1; OFFLOAD=1 ;;
-    12|14) K=3; BATCHED=8192; DCP=1; OFFLOAD=1 ;;
-    44|48|70) K=0; BATCHED=8192; DCP=8; OFFLOAD=1 ;;
-    *) echo "CONC=$CONC is not a lane cell" >&2; exit 1 ;;
+  DCP=1
+  case "$CONC:$DCP" in
+    1:1|1:8) K=7; BATCHED=16384; OFFLOAD=0 ;;
+    4:8) K=5; BATCHED=8192; OFFLOAD=1 ;;
+    10:8|14:8|16:8|44:8|48:8) K=4; BATCHED=8192; OFFLOAD=1 ;;
+    12:8) K=3; BATCHED=8192; OFFLOAD=1 ;;
+    *) echo "CONC=$CONC DCP=$DCP is not a lane cell" >&2; exit 1 ;;
   esac
 
   export VLLM_ROCM_USE_AITER=1
   export SAFETENSORS_FAST_GPU=1
   export VLLM_ROCM_USE_AITER_MOE_SITUV2=1
   export VLLM_ROCM_AITER_MLA_ASM_PADDING=asm
+  export VLLM_ROCM_AITER_MLA_DCP_VERIFY=asm
   export VLLM_USE_DIRECT_DCP_A2A=0
   export VLLM_USE_DIRECT_DCP_Q_GATHER=0
   export VLLM_USE_DIRECT_DCP_KV_GATHER=0
@@ -567,18 +577,16 @@ guide: |
   export VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=1200
   # On MEC firmware older than 177 (rocm-smi --showfw), also export HSA_NO_SCRATCH_RECLAIM=1.
 
-  if [ "$CONC" -le 4 ]; then
-    GRAPH_MODE=FULL_AND_PIECEWISE
-    export VLLM_USE_BREAKABLE_CUDAGRAPH=1
-  else
-    GRAPH_MODE=FULL
-    export VLLM_USE_BREAKABLE_CUDAGRAPH=0
-  fi
+  GRAPH_MODE=FULL_AND_PIECEWISE
+  export VLLM_USE_BREAKABLE_CUDAGRAPH=0
   MAX_SEQS=$((2 * CONC))
   MAX_CAPTURE=$((MAX_SEQS * (1 + K)))
   COMPILATION="{\"mode\":3,\"cudagraph_mode\":\"$GRAPH_MODE\",\"max_cudagraph_capture_size\":$MAX_CAPTURE,\"custom_ops\":[\"+fused_rms_norm_gated\"],\"cudagraph_capture_sizes\":[$(seq -s, 2 "$MAX_CAPTURE")]}"
 
   EXTRA=()
+  if [ "$CONC" -eq 1 ]; then
+    EXTRA+=(--quantization-config '{"linear":"fp8_per_channel","ignore":["*kv_b_proj","*vision_tower*","*mm_projector*","*in_proj_qkvgfab","*f_b_proj","*fused_qkv_a_proj","*self_attn.g_proj","*.layers.0.mlp.down_proj"]}')
+  fi
   if [ "$K" -gt 0 ]; then
     EXTRA+=(--speculative-config "{\"model\":\"Inferact/Kimi-K3-DSpark\",\"num_speculative_tokens\":$K,\"method\":\"dspark\",\"attention_backend\":\"ROCM_AITER_MLA\",\"kv_cache_dtype\":\"fp8\",\"draft_sample_method\":\"probabilistic\",\"rejection_sample_method\":\"block\"}")
   fi
@@ -607,6 +615,7 @@ guide: |
     --max-model-len 1048576 \
     --enable-prefix-caching \
     --kv-cache-dtype fp8 \
+    --stream-interval 10 \
     --max-num-batched-tokens "$BATCHED" \
     --attention-config '{"mla_prefill_backend":"ROCM_AITER_FA"}' \
     --compilation-config "$COMPILATION" \
@@ -625,15 +634,15 @@ guide: |
 
   | Draft tokens | Golden acceptance length | Lane concurrency |
   | ---: | ---: | --- |
-  | 7 | 3.84 | 1 |
+  | 7 | 3.84 | 1 (dcp1 and dcp8) |
   | 5 | 3.62 | 4 |
-  | 4 | 3.36 | 8, 10 |
-  | 3 | 3.00 | 12, 14 |
+  | 4 | 3.36 | 10, 14, 16, 44, 48 |
+  | 3 | 3.00 | 12 |
 
-  These lengths come from [`kimik3_dspark_probabilistic_sample_method_block_rejection_sample_method.yaml`](https://github.com/SemiAnalysisAI/InferenceX/blob/03bfdecc33f174f22ad8ac5221ae464a4428adab/golden_al_distribution/kimik3_dspark_probabilistic_sample_method_block_rejection_sample_method.yaml): SPEED-Bench coding prompts with thinking on, measured on B300 for `Inferact/Kimi-K3-DSpark` with probabilistic drafting and block verification. They hold only for that draft at those draft lengths, not for `RedHatAI/Kimi-K3-speculator.dspark`. Synthetic acceptance skips real verification: never use it to serve users or to evaluate accuracy.
+  These lengths come from [`kimik3_dspark_probabilistic_sample_method_block_rejection_sample_method.yaml`](https://github.com/SemiAnalysisAI/InferenceX/blob/6a0fe9dea905dda24acfc8f8a190d9f65de987d3/golden_al_distribution/kimik3_dspark_probabilistic_sample_method_block_rejection_sample_method.yaml): SPEED-Bench coding prompts with thinking on, measured on B300 for `Inferact/Kimi-K3-DSpark` with probabilistic drafting and block verification. They hold only for that draft at those draft lengths, not for `RedHatAI/Kimi-K3-speculator.dspark`. Synthetic acceptance skips real verification: never use it to serve users or to evaluate accuracy.
 
   ### Evidence and limits
 
-  - InferenceX evaluates every lane concurrency with its Kimi tool-call suite (`kimi_tool_call_schema_full`) using the real-verification form above. The lane's last change was [SemiAnalysisAI/InferenceX#3124](https://github.com/SemiAnalysisAI/InferenceX/pull/3124).
+  - InferenceX evaluates every lane concurrency with its Kimi tool-call suite (`kimi_tool_call_schema_full`) using the real-verification form above. The lane's current change is [SemiAnalysisAI/InferenceX#3833](https://github.com/SemiAnalysisAI/InferenceX/pull/3833).
   - Performance figures on the InferenceX dashboard are reported by SemiAnalysis and have not been reproduced for this recipe.
-  - Model policy (vLLM as the native engine, `Inferact/Kimi-K3-DSpark` as the agreed draft): [`MODELS.md`](https://github.com/SemiAnalysisAI/InferenceX/blob/03bfdecc33f174f22ad8ac5221ae464a4428adab/MODELS.md).
+  - Model policy (vLLM as the native engine, `Inferact/Kimi-K3-DSpark` as the agreed draft): [`MODELS.md`](https://github.com/SemiAnalysisAI/InferenceX/blob/6a0fe9dea905dda24acfc8f8a190d9f65de987d3/MODELS.md).
