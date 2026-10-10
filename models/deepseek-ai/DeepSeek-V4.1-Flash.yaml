@@ -195,13 +195,10 @@ hardware_overrides:
       # Allow CK a8w4 expert selection instead of pinning Triton W4A16.
       - "--moe-backend"
       - "aiter"
-      # vllm-project/vllm#56227 turned SWA bounded replay on by default. It pads
-      # the replayed tokens' slots in the prefix-cacheable groups and relies on a
-      # window clamp that landed in the FlashInfer and FlashMLA kernels; the ROCm
-      # sparse SWA path only gained the replay_start kwarg. On gfx950 every TP=2
-      # and TP=4 point died with HSA_STATUS_ERROR_MEMORY_FAULT at the first prefix
-      # hit carrying a replay start. Drop this once ROCm clamps too; prefix
-      # caching stays on.
+      # The ROCm sparse SWA path lacks the replay window clamp that vllm#56227
+      # relies on, so on gfx950 every TP=2 and TP=4 point died with
+      # HSA_STATUS_ERROR_MEMORY_FAULT at the first prefix hit carrying a replay
+      # start. Drop this once ROCm clamps too; prefix caching stays on.
       - "--no-swa-bounded-replay"
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
@@ -285,6 +282,11 @@ strategy_overrides:
           VLLM_ROCM_USE_AITER_TRITON_SPARSE_MLA: "1"
           # INT4 quantization for faster all-reduce
           VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
+          # Mono decode kernels (vllm-project/vllm#60397): two persistent
+          # launches a layer for decode steps of up to 48 rows, i.e. up to
+          # concurrency 8 with five DSpark drafts. Larger steps take the
+          # regular path, so the gain fades as concurrency rises.
+          VLLM_ROCM_MONO_DECODE: "1"
       blackwell:
         extra_args:
           - "--attention-config"
@@ -658,6 +660,14 @@ guide: |
 
   ROCm additionally needs `--no-swa-bounded-replay`, which the shared AMD
   override supplies; see the comment there for why.
+
+  `VLLM_ROCM_MONO_DECODE=1` selects the mono decode layer from
+  [vllm-project/vllm#60397](https://github.com/vllm-project/vllm/pull/60397).
+  Two persistent launches cover a layer for decode steps of up to 48 rows,
+  which with five DSpark drafts is concurrency 8; larger steps fall back to the
+  regular path, so the gain is largest at low concurrency and fades as
+  concurrency rises.
+
   ## MI300X Tensor Parallel
 
   On MI300X, **Tensor Parallel** takes the recipe default of **TP4** with the
