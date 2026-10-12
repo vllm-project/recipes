@@ -591,6 +591,8 @@ guide: |
   after its Node.js, ImageMagick, XeLaTeX and Source Han Sans SC dependencies pass an
   identical-formula identity check; a missing renderer cannot be treated as a zero score.
 
+  Use a fresh result directory for each prediction set: CDM caches renders by sample index, so reusing a demo or previous run can contaminate scores. The official CDM default is 32 workers; reduce its max_workers to fit available host RAM (this task uses two) and run memory-heavy evaluation separately from site builds.
+
   `Overall = ((1 - Text Edit Distance) * 100 + Table TEDS * 100 + Formula CDM * 100) / 3`.
   ModelZoo publishes 92.43% Overall and 12.10 seconds per input file on a single
   300I DUO chip, compared with its cited official 92.86% accuracy. These are reference
