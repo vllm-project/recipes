@@ -34,7 +34,7 @@ dependencies:
     optional: true
     brand: NVIDIA
   - note: "PaddleOCR document-parsing helpers"
-    command: 'uv pip install -U "paddleocr[doc-parser]"'
+    command: 'uv pip install "paddleocr[doc-parser]==3.3.2"'
     optional: true
   - note: "Safetensors loader used by the doc-parser path"
     command: "uv pip install safetensors"
@@ -253,7 +253,7 @@ guide: |
 
   ```bash
   uv pip install paddlepaddle-gpu==3.2.1 --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
-  uv pip install -U "paddleocr[doc-parser]"
+  uv pip install "paddleocr[doc-parser]==3.3.2"
   uv pip install safetensors
   ```
 
@@ -310,9 +310,12 @@ guide: |
     expected content and `finish_reason=stop` were checked. Optional text-only,
     encoder-parallel, KV offload and the advertised 131072-token context were not tested.
   - The platform's 0.26.0rc1 image was preserved as a tested rollback baseline.
-    No container engine was available for the complete newest-image run; the latest
-    source build was installed separately. Keep this limitation separate from the
-    image digest and source validation claims.
+    The complete pinned 310P OCI rootfs ran its original entrypoint and graph/eager
+    serving under PRoot 5.5.0, with driver/devices/proc/sys/tmp/workspace bindings.
+    Its source refs are vLLM `ced6857afa0ea7b2e3f0846a62e1394e90f15607` and Ascend
+    `9f9da5562089280a7f01c3d03e855b258e372807`. No normal Docker engine was available;
+    keep PRoot explicit in execution/performance reports. Latest fetched main source
+    serving was also tested independently on the preserved platform base.
   - The container skipped CPU binding because its allowed CPUs conflicted with NUMA
     affinity. Preserve that warning when reporting performance.
 
