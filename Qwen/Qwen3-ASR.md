@@ -2,7 +2,7 @@
 Qwen3-ASR is a speech-to-text model that achieves accurate and robust speech recogition performance, supporting 11 languages and multiple accents. Qwen3-ASR supports users to prompt the model with texture context in any format to obtain costumized ASR results, and is also good at singing voice recognition. This guide demonstrates how to deploy Qwen3-ASR efficiently with vLLM.
 
 ## Installing vllm
-
+### CUDA
 ```bash
 uv venv
 source .venv/bin/activate
@@ -12,16 +12,28 @@ uv pip install -U vllm --pre \
     --index-strategy unsafe-best-match
 uv pip install "vllm[audio]" # For additional audio dependencies
 ```
-
+### ROCm
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described in the [documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#pre-built-images). 
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+uv pip install "vllm[audio]" # For additional audio dependencies
+```
 ## Launching Qwen3-ASR with vLLM
-### Online Serving
 You can easily deploy Qwen3-ASR with vLLM by running the following command
+### CUDA
 ```bash
 vllm serve Qwen/Qwen3-ASR-1.7B
 ```
+### ROCm
+```bash
+SAFETENSORS_FAST_GPU=1 \
+VLLM_ROCM_USE_AITER=1 \
+vllm serve Qwen/Qwen3-ASR-1.7B
+```
 After the model server is successfully deployed, you can interact with it in multiple ways.
-
-#### Using OpenAI SDK
+### Using OpenAI SDK
 ```python
 import base64
 import httpx
@@ -74,7 +86,7 @@ transcription = client.audio.transcriptions.create(
 print(transcription.text)
 ```
 
-#### Using cURL
+### Using cURL
 ```bash
 curl http://localhost:8000/v1/chat/completions \
     -H "Content-Type: application/json" \
