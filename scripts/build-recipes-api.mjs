@@ -31,6 +31,7 @@ import {
   isKvStoreBrandSupported,
   strategyAllowsKvOffload,
   pickFittingVariant,
+  variantRunsOnHardware,
   pdFitsSingleNode,
   resolveCommand,
   computeDockerMeta,
@@ -565,7 +566,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
   // Non-scalable hardware (single-GPU workstation, e.g. DGX Station) can't
   // shard an oversized variant — substitute the largest variant that fits, and
   // skip multi-node strategies. Mirrors the command builder's UI behavior.
-  if (!scalable && !fitsSingleNode(hwProfile, variant, hwId)) {
+  if (!variantRunsOnHardware(hwProfile, variant, hwId)) {
     const fitting = pickFittingVariant(recipe, hwProfile, hwId);
     if (!fitting) return null;
     variantKey = fitting;
@@ -845,7 +846,14 @@ function renderAndWriteVariant(recipe, variantKey, altBaseHfId, strategies, taxo
   // recipes that explicitly opt in via `meta.hardware.<id>`. Otherwise we'd
   // emit speculative TPU commands for every NVIDIA recipe.
   const declaredHw = recipe.meta?.hardware || {};
-  const compatibleHw = listCompatibleHardware(hwProfiles, variant, recipe)
+  // The canonical endpoint also covers hardware supported by another
+  // precision variant. Select that variant below, as the UI picker does.
+  const candidates = variantKey === "default"
+    ? Object.values(recipe.variants || {})
+    : [variant];
+  const compatibleHw = [...new Set(candidates.flatMap(
+    (candidate) => listCompatibleHardware(hwProfiles, candidate, recipe)
+  ))]
     .filter((id) => !hwProfiles[id]?.restricted || id in declaredHw);
   // Ensure default is first; de-dupe.
   const hwIds = Array.from(new Set([defaultHw, ...compatibleHw]));
