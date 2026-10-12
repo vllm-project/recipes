@@ -24,8 +24,10 @@ import {
   listCompatibleHardware,
   recommendStrategy,
   fitsSingleNode,
+  variantVramMinimumGb,
   isHardwareScalable,
   isKvStoreBrandSupported,
+  strategyAllowsKvOffload,
   pickFittingVariant,
   pdFitsSingleNode,
   resolveCommand,
@@ -36,6 +38,7 @@ import {
   isStrategyReachable,
   isStrategySupportedOnHardware,
   effectiveCompatibleStrategies,
+  FALLBACK_FRONTEND,
 } from "../src/lib/command-synthesis.js";
 
 const ROOT = process.cwd();
@@ -217,12 +220,137 @@ function validateFeatureModes(recipe, sourceFile) {
   }
 }
 
+// Frontend keys under `model` are matched by exact id against
+// `taxonomy.frontends`, so a typo would silently keep a broken frontend
+// selectable (or default to one that doesn't exist). `default_frontend` must
+// name a known frontend; `<id>_frontend` may only opt a non-baseline frontend
+// out (`unsupported`), and never the one the recipe defaults to.
+function validateFrontends(recipe, sourceFile, taxonomy) {
+  const errors = [];
+  const known = taxonomy.frontends || {};
+  const model = recipe.model || {};
+  const def = model.default_frontend;
+  if (def !== undefined && !known[def]) {
+    errors.push(`model.default_frontend: unknown frontend "${def}" (known: ${Object.keys(known).join(", ")})`);
+  }
+  for (const [key, value] of Object.entries(model)) {
+    const m = key.match(/^(.+)_frontend$/);
+    if (!m || key === "default_frontend") continue;
+    const id = m[1];
+    if (!known[id]) {
+      errors.push(`model.${key}: unknown frontend "${id}" (known: ${Object.keys(known).join(", ")})`);
+    } else if (id === FALLBACK_FRONTEND) {
+      errors.push(`model.${key}: the ${id} frontend is the fallback and can't be marked unsupported`);
+    } else if (value !== "unsupported") {
+      errors.push(`model.${key} must be "unsupported" (omit the key when the frontend works)`);
+    } else if (def === id) {
+      errors.push(`model.default_frontend is "${id}", but model.${key} marks it unsupported`);
+    }
+  }
+  if (errors.length) {
+    const rel = path.relative(ROOT, sourceFile);
+    throw new Error(`Invalid frontend config in ${rel}:\n  - ${errors.join("\n  - ")}`);
+  }
+}
+
+// Validate every hardware-keyed map against the taxonomy vocabulary. Hardware
+// lookups are exact string matches (`isHardwareSupported`, `hardwareKeyedValue`),
+// so a key naming no known GPU is silently inert: an author's `verified` badge
+// never renders, and — worse — an intended `unsupported` opt-out never disables
+// anything. Nothing downstream can detect that, hence the build-time check.
+//
+// Three keyspaces, matching the schema in CLAUDE.md:
+//   - exact:   only a taxonomy profile id (`meta.hardware`)
+//   - variant selectors: profile id or `arch:<compute_arch>`
+//   - layered: profile id > generation > brand > `default` (`strategy_hardware`,
+//              variant `tp`, `hardware_overrides`)
+function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
+  const errors = [];
+  const profiles = taxonomy?.hardware_profiles || {};
+  const ids = new Set(Object.keys(profiles));
+  const generations = new Set();
+  const brands = new Set();
+  const computeArchs = new Set();
+  for (const p of Object.values(profiles)) {
+    if (p?.generation) generations.add(p.generation);
+    if (p?.brand) brands.add(String(p.brand).toLowerCase());
+    if (p?.compute_arch) computeArchs.add(p.compute_arch);
+  }
+  const layered = new Set([...ids, ...generations, ...brands, "default"]);
+
+  const exact = (loc, key) => {
+    if (!ids.has(key)) errors.push(`${loc} references unknown hardware profile ${key}`);
+  };
+  const keyed = (loc, key) => {
+    if (!layered.has(key)) errors.push(`${loc} references unknown hardware key ${key}`);
+  };
+  const keysOf = (o) => (o && typeof o === "object" && !Array.isArray(o) ? Object.keys(o) : []);
+
+  if (recipe?.meta?.default_hardware) exact("meta.default_hardware", recipe.meta.default_hardware);
+  for (const k of keysOf(recipe?.meta?.hardware)) exact("meta.hardware", k);
+
+  for (const [kvId, map] of Object.entries(recipe?.kv_cache_strategy_hardware || {})) {
+    for (const k of keysOf(map)) exact(`kv_cache_strategy_hardware.${kvId}`, k);
+  }
+
+  for (const [sId, map] of Object.entries(recipe?.strategy_hardware || {})) {
+    for (const k of keysOf(map)) keyed(`strategy_hardware.${sId}`, k);
+  }
+
+  for (const k of keysOf(recipe?.hardware_overrides)) keyed("hardware_overrides", k);
+
+  // `strategy_min_gpus` mixes strategy ids with an exact-GPU-id keyspace; only
+  // the latter is ours to check.
+  for (const k of keysOf(recipe?.strategy_min_gpus)) {
+    if (!strategies?.[k]) exact("strategy_min_gpus", k);
+  }
+
+  for (const [variantKey, variant] of Object.entries(recipe?.variants || {})) {
+    const at = `variants.${variantKey}`;
+    for (const k of variant?.supported_hardware || []) {
+      if (k.startsWith("arch:")) {
+        if (!computeArchs.has(k.slice(5))) errors.push(`${at}.supported_hardware references unknown compute architecture ${k}`);
+      } else {
+        exact(`${at}.supported_hardware`, k);
+      }
+    }
+    for (const k of keysOf(variant?.hardware_overrides)) keyed(`${at}.hardware_overrides`, k);
+    if (variant?.tp && typeof variant.tp === "object") {
+      for (const k of keysOf(variant.tp)) keyed(`${at}.tp`, k);
+    }
+    // `precision_hardware` widens a precision's hardware constraint by value,
+    // not by key — check the vocabulary it names.
+    const ph = variant?.precision_hardware;
+    if (ph?.generation && !generations.has(ph.generation)) {
+      errors.push(`${at}.precision_hardware.generation references unknown generation ${ph.generation}`);
+    }
+    if (ph?.brand && !brands.has(String(ph.brand).toLowerCase())) {
+      errors.push(`${at}.precision_hardware.brand references unknown brand ${ph.brand}`);
+    }
+  }
+
+  for (const [featureKey, feature] of Object.entries(recipe?.features || {})) {
+    for (const k of keysOf(feature?.hardware_overrides)) keyed(`features.${featureKey}.hardware_overrides`, k);
+    for (const [modeKey, mode] of Object.entries(feature?.modes || {})) {
+      const at = `features.${featureKey}.modes.${modeKey}`;
+      for (const k of keysOf(mode?.hardware)) keyed(`${at}.hardware`, k);
+      for (const k of keysOf(mode?.hardware_overrides)) keyed(`${at}.hardware_overrides`, k);
+    }
+  }
+
+  if (errors.length) {
+    const rel = path.relative(ROOT, sourceFile);
+    throw new Error(`Invalid hardware keys in ${rel}:\n  - ${errors.join("\n  - ")}`);
+  }
+}
+
 // Wrap a rendered (command, argv) pair in `docker run`. Returns
 // { docker_command, docker_argv } so each form has its docker counterpart.
-function dockerize(command, argv, env, dockerMeta, port = 8000) {
+function dockerize(command, argv, env, dockerMeta, port = null) {
   return {
     docker_command: buildDockerRun({
       command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, port,
+      isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix,
     }),
     docker_argv: buildDockerArgv({ argv, env, meta: dockerMeta, port }),
   };
@@ -236,9 +364,9 @@ function dockerize(command, argv, env, dockerMeta, port = 8000) {
 // Each role is then grown to clear its parallelism's `strategy_min_gpus` floor,
 // matching what the builder renders.
 function pickPdNodes(hwProfile, variant, recipe, strategies, hwId) {
-  if (pdFitsSingleNode(hwProfile, variant)) return null;
+  if (pdFitsSingleNode(hwProfile, variant, hwId)) return null;
   const nodeVram = typeof hwProfile?.vram_gb === "number" ? hwProfile.vram_gb : 0;
-  const modelVram = variant?.vram_minimum_gb || 0;
+  const modelVram = variantVramMinimumGb(variant, hwId);
   if (nodeVram <= 0 || modelVram <= 0) return null;
   const nodesPerRole = Math.ceil(modelVram / nodeVram);
   if (nodesPerRole > 4) return "skip";
@@ -413,7 +541,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
   // Non-scalable hardware (single-GPU workstation, e.g. DGX Station) can't
   // shard an oversized variant — substitute the largest variant that fits, and
   // skip multi-node strategies. Mirrors the command builder's UI behavior.
-  if (!scalable && !fitsSingleNode(hwProfile, variant)) {
+  if (!scalable && !fitsSingleNode(hwProfile, variant, hwId)) {
     const fitting = pickFittingVariant(recipe, hwProfile, hwId);
     if (!fitting) return null;
     variantKey = fitting;
@@ -455,7 +583,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     return scalable || (!s.startsWith("multi_node_") && s !== "pd_cluster");
   });
   const supportsMultiNode = scalable && compatible.some((s) => s.startsWith("multi_node_"));
-  const baseNodeCount = !fitsSingleNode(hwProfile, variant) && supportsMultiNode ? 2 : 1;
+  const baseNodeCount = !fitsSingleNode(hwProfile, variant, hwId) && supportsMultiNode ? 2 : 1;
   let recommendedStrategy = recommendStrategy(recipe, hwProfile, baseNodeCount);
   // Never recommend a strategy this GPU can't actually run — opted out via
   // strategy_hardware, or unreachable under its `strategy_min_gpus` floor
@@ -496,6 +624,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     const ok = (id) => {
       const d = strategies[id]?.deploy_type;
       if (!strategies[id] || d === "pd_cluster" || d === "kv_store_lb") return false;
+      if (!strategyAllowsKvOffload(strategies[id])) return false;
       return nc > 1 ? d === "multi_node" : d !== "multi_node";
     };
     const rec = recommendStrategy(recipe, hwProfile, nc);
@@ -519,7 +648,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
       // resolveCommand). Single-node instances unless the variant needs
       // multi-node sharding to fit at all. Mooncake composes with a serving
       // strategy — the kv id rides in via kvOffload, never as the strategy.
-      nc = fitsSingleNode(hwProfile, variant) ? 1 : 2;
+      nc = fitsSingleNode(hwProfile, variant, hwId) ? 1 : 2;
       servingStrategy = kvServingFor(nc);
       if (!servingStrategy && nc === 2) {
         // No multi_node_* strategy to shard with — fall back to single-node
@@ -704,6 +833,8 @@ let collisionCount = 0;
 for (const file of findYamlFiles(modelsDir)) {
   const r = normalizeDates(readYaml(file));
   validateFeatureModes(r, file);
+  validateFrontends(r, file, taxonomy);
+  validateHardwareKeys(r, file, taxonomy, strategies);
   // Derive HF identity from path. Only `hf_id` is exposed in the public JSON;
   // `org` and `repo` are trivially `hf_id.split("/")` for consumers.
   const rel = path.relative(modelsDir, file);

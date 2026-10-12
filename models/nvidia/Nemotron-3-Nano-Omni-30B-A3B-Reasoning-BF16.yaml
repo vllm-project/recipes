@@ -22,8 +22,8 @@ model:
   min_vllm_version: "0.20.0"
   install:
     pip:
-      command: 'uv pip install "vllm[audio]==0.20.0"'
-      note: "Pinned to 0.20.0 with the audio extra (required for audio + use_audio_in_video)."
+      command: 'uv pip install "vllm[audio]==0.28.0"'
+      note: "Pinned to 0.28.0 with the audio extra (required for audio + use_audio_in_video)."
   architecture: moe
   parameter_count: "31B"
   active_parameters: "3B"
@@ -107,8 +107,8 @@ guide: |
 
   ## Prerequisites
 
-  - vLLM **0.20.0** (pinned: `pip install vllm[audio]==0.20.0`,
-    or pull `vllm/vllm-openai:v0.20.0`)
+  - vLLM **0.28.0** (pinned: `pip install vllm[audio]==0.28.0`,
+    or pull `vllm/vllm-openai:v0.28.0`)
   - Hardware: 1× B200 / H200 / H100 (single-GPU TP1 is the documented profile)
   - The `audio` extra is required for any audio input, including
     `use_audio_in_video=true`
@@ -117,9 +117,9 @@ guide: |
 
   ```bash
   # CUDA 13:
-  docker pull vllm/vllm-openai:v0.20.0
+  docker pull vllm/vllm-openai:v0.28.0
   # CUDA 12.9:
-  docker pull vllm/vllm-openai:v0.20.0-cu129
+  docker pull vllm/vllm-openai:v0.28.0-cu129
   ```
 
   ## Launch command

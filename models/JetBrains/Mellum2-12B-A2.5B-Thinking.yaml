@@ -39,13 +39,35 @@ features:
       - "--tool-call-parser"
       - "hermes"
 
-opt_in_features: []
+  spec_decoding:
+    description: "DFlash speculative decoding with an externally trained draft model; the served checkpoint is unchanged."
+    args:
+      - "--speculative-config"
+      - '{"model": "RedHatAI/Mellum2-12B-A2.5B-Thinking-speculator.dflash", "num_speculative_tokens": 7, "method": "dflash"}'
+
+opt_in_features:
+  - spec_decoding
 
 variants:
   default:
     precision: bf16
     vram_minimum_gb: 29
     description: "Native bfloat16 weights; fits comfortably on a single H200/H100/A100"
+
+  fp8:
+    model_id: "RedHatAI/Mellum2-12B-A2.5B-Thinking-FP8-Dynamic"
+    precision: fp8
+    vram_minimum_gb: 15
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  nvfp4:
+    model_id: "RedHatAI/Mellum2-12B-A2.5B-Thinking-NVFP4"
+    precision: nvfp4
+    vram_minimum_gb: 8
+    description: "RedHatAI NVFP4 quantization"
 
 compatible_strategies:
   - single_node_tp

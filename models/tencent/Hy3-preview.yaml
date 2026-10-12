@@ -4,7 +4,7 @@ meta:
   provider: "Hunyuan (Tencent)"
   description: "Tencent Hunyuan Hy3-preview — scaled-up MoE language model (295B total / 21B active) with a 3.8B MTP layer for speculative decoding, 256K context, and hy_v3 tool/reasoning parsers"
   date_added: 2026-04-23
-  date_updated: 2026-04-23
+  date_updated: 2026-09-14
   difficulty: intermediate
   tasks:
     - text
@@ -14,12 +14,12 @@ meta:
     h200: verified
     mi300x: verified
     mi325x: verified
-    mi350x: verified
     mi355x: verified
 
 model:
   model_id: "tencent/Hy3-preview"
   min_vllm_version: "0.20.0"
+  default_frontend: rust
   install:
     docker:
       note: "Use the dedicated hy3-preview image until changes land in vllm:latest."
@@ -268,7 +268,7 @@ guide: |
       },
   )
   output_msg = resp_think.choices[0].message
-  print(output_msg.reasoning_content)  # chain-of-thought
+  print(output_msg.reasoning)           # chain-of-thought
   print(output_msg.content)             # final answer
   ```
 

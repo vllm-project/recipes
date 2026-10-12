@@ -94,7 +94,9 @@ model:
   base_args:                                      # flags always needed
     - "--trust-remote-code"
   base_env:                                       # env vars always needed
-    VLLM_USE_FLASHINFER_MOE_FP8: "1"
+    VLLM_USE_DEEP_GEMM: "0"                       # MoE kernel selection itself is done via --moe-backend args
+  default_frontend: rust                          # optional — python (default) | rust; preselects the Frontend pill
+  rust_frontend: unsupported                      # optional — only when Rust is confirmed to fail (e.g. a parser it hasn't registered); explain why in the guide
 
 # Optional — extra install steps beyond `uv pip install -U vllm`.
 # Rendered as a code block above the vllm serve command.
@@ -115,9 +117,16 @@ features:
   spec_decoding:                                  # USE spec_decoding, NOT mtp — unified key for MTP / Eagle3 / ERNIE-MTP
     description: "…"
     args: ["--speculative-config", '{"method":"mtp","num_speculative_tokens":1}']
+  long_context:                                   # RoPE/YaRN context extension — always opt-in (see below)
+    description: "…"
+    args: ["--hf-overrides", '{"rope_parameters":{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":32768}}',
+           "--max-model-len", "131072"]
+    env:                                          # optional — env set only while the feature is on
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"          # needed when the window exceeds max_position_embeddings
 
 opt_in_features:                                  # features that default OFF (users tick them on)
   - spec_decoding                                 # spec decoding is opt-in unless docs insist
+  - long_context                                  # always opt-in: static YaRN costs short-prompt quality
 
 variants:
   default:                                        # ALWAYS include a `default` variant
@@ -128,8 +137,7 @@ variants:
     model_id: "nvidia/*-NVFP4"                    # only if the quantized checkpoint is a different HF repo
     precision: nvfp4
     vram_minimum_gb: 403
-    extra_args: ["--kv-cache-dtype", "fp8"]
-    extra_env: { VLLM_USE_FLASHINFER_MOE_FP4: "1" }
+    extra_args: ["--kv-cache-dtype", "fp8", "--moe-backend", "flashinfer_cutlass"]
 
 compatible_strategies:                            # subset of the 8 strategy ids in strategies/*.yaml
   - single_node_tp                                # always include as baseline
@@ -154,6 +162,21 @@ hardware_overrides:
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
 
+# A variant's `hardware_overrides.<exact_gpu_id>` block may also declare that an
+# install path does not exist on that GPU. Use it only when the pinned image
+# carries kernels that are not in vLLM main, so the flags this hardware
+# generates would abort on an official wheel — not merely because Docker is the
+# easier route. The pip tab disappears on that GPU alone; every other hardware
+# keeps it.
+#
+#   variants:
+#     default:
+#       hardware_overrides:
+#         dgx_spark_gb10:
+#           docker_image: "eugr/spark-vllm-b12x:latest"
+#           install:
+#             pip: false
+
 # Optional per-strategy tweaks. Rare. PD recipes use this to shape each pool.
 #
 # For `pd_cluster`, each role (prefill / decode) accepts:
@@ -174,7 +197,6 @@ strategy_overrides:
       nodes: 1
       parallelism: dep
       tp: 1                                     # DP = nodes × gpus_per_node / tp = 4
-      vllm_args: ["--enforce-eager"]
       env: {}
     decode:
       nodes: 4
@@ -267,6 +289,49 @@ Declaring `default_modes` also enables that feature by default for the variant,
 even when it appears in `opt_in_features`. The build validator rejects mixed
 `args` + `modes`, unknown mode/variant references, and variants with no usable
 mode.
+
+### Long-context extension (`long_context`)
+
+Add this feature only when the **model card documents a specific extension
+config** — never invent a YaRN factor. Keep it in `opt_in_features`: every card
+that ships one says the same thing, that static YaRN applies a constant scaling
+factor and therefore costs quality on short prompts, and the wider window also
+inflates the KV budget.
+
+Two things to get right when translating a model card:
+
+1. **Use `--hf-overrides`, not `--rope-scaling`.** Most cards still print
+   `--rope-scaling '{...}'`, but that flag was removed from vLLM's `ModelConfig`
+   by 0.26 — a recipe emitting it breaks on any current wheel, even when the
+   recipe's `min_vllm_version` floor is old enough that the flag once existed.
+2. **Use the `rope_parameters` key.** Transformers v5 renamed the config field
+   `rope_scaling` → `rope_parameters`, and vLLM 0.29 reads
+   `hf_config.rope_parameters`. On a VL/omni checkpoint the block nests under
+   `text_config` — a top-level override silently misses the decoder's config.
+
+So a card's `--rope-scaling '{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":32768}'`
+becomes:
+
+```yaml
+  long_context:
+    description: "YaRN RoPE scaling to the card's validated 131,072-token context. …"
+    args:
+      - "--hf-overrides"
+      - '{"rope_parameters":{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":32768}}'
+      - "--max-model-len"
+      - "131072"
+```
+
+Add `env: { VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1" }` whenever the target window
+exceeds the checkpoint's `max_position_embeddings` (cards show it in the launch
+line when it's needed). Features emit last and arg dedupe is last-wins, so both
+flags cleanly shadow a `--max-model-len` already present in `base_args` — don't
+edit `base_args` to make room.
+
+Some cards describe an extension path that is **not** a flag toggle: a local
+`config.json` swap, a removed engine (`VLLM_USE_V1=0`), or instructions given
+only for another serving framework. Leave those out of the feature and describe
+them in the `guide` instead.
 
 ## VRAM formula
 

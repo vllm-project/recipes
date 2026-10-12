@@ -4,7 +4,7 @@ meta:
   provider: "Meta"
   description: "Meta's Llama 3.1 8B dense instruction-tuned language model with 128K context"
   date_added: 2025-10-15
-  date_updated: 2026-04-17
+  date_updated: 2026-09-12
   difficulty: beginner
   tasks:
     - text
@@ -13,6 +13,9 @@ meta:
   hardware:
     h100: verified
     h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
     trillium: verified
     xeon6: verified
     arc_pro_b60: verified
@@ -43,11 +46,30 @@ variants:
     precision: bf16
     vram_minimum_gb: 20
     description: "Full precision BF16"
+    supported_hardware: [h100, h200, mi300x, mi325x, mi355x, trillium, xeon6, arc_pro_b60, arc_pro_b70]
+  w8a8_int8:
+    model_id: "RedHatAI/Meta-Llama-3.1-8B-Instruct-quantized.w8a8"
+    precision: int8
+    vram_minimum_gb: 10
+    description: "Red Hat AI INT8 W8A8 compressed-tensors checkpoint"
+    supported_hardware:
+      - xeon6
+  awq_int4:
+    model_id: "hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4"
+    precision: int4
+    vram_minimum_gb: 5
+    description: "AWQ INT4 checkpoint"
+    supported_hardware:
+      - xeon6
+    extra_args:
+      - "--quantization"
+      - "awq"
   nvfp4:
     model_id: "nvidia/Llama-3.1-8B-Instruct-NVFP4"
     precision: nvfp4
     vram_minimum_gb: 5
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
+    supported_hardware: [b200, b300, gb200, gb300]
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
@@ -56,9 +78,47 @@ variants:
     precision: fp8
     vram_minimum_gb: 10
     description: "FP8 quantized weights for Hopper/Blackwell GPUs"
+    supported_hardware: [h100, h200]
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
+
+  fp8:
+    model_id: "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic"
+    precision: fp8
+    label: "FP8 Dynamic (RedHat)"
+    vram_minimum_gb: 10
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_fp8:
+    model_id: "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8"
+    precision: fp8
+    label: "FP8 (RedHat)"
+    vram_minimum_gb: 10
+    description: "RedHatAI FP8 quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_fp8_block:
+    model_id: "RedHatAI/Llama-3.1-8B-Instruct-FP8-block"
+    precision: fp8
+    label: "FP8 Block (RedHat)"
+    vram_minimum_gb: 10
+    description: "RedHatAI FP8 block quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_nvfp4:
+    model_id: "RedHatAI/Llama-3.1-8B-Instruct-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 6
+    description: "RedHatAI NVFP4 quantization"
 
 compatible_strategies:
   - single_node_tp
@@ -73,7 +133,11 @@ hardware_overrides:
     extra_args: []
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
-strategy_overrides: {}
+
+strategy_overrides:
+  single_node_tp:
+    tp:
+      xeon6: 2
 
 guide: |
   ## Overview
@@ -86,7 +150,7 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x GPU with >=16 GB VRAM (e.g. A100, L40S, H100, H200), Intel XPU B60/B70, or 2x Xeon6/Xeon5 NUMA node
+  - Hardware: 1x GPU with >=16 GB VRAM (e.g. A100, L40S, H100, H200, MI300X/MI325X/MI355X), Intel XPU B60/B70, or 2x Xeon6/Xeon5 NUMA node
   - vLLM >= 0.6.0
   - CUDA Driver compatible with your vLLM version for 1x GPU
   - Docker with NVIDIA Container Toolkit (recommended) for 1x GPU
@@ -98,6 +162,27 @@ guide: |
   source .venv/bin/activate
   uv pip install vllm --torch-backend auto
   ```
+
+  ### AMD ROCm
+
+  The ROCm wheel requires Python 3.12, ROCm 7.0+, and glibc >= 2.35. Use the
+  ROCm Docker image when your host environment does not meet those requirements.
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+  ```
+
+  Launch on 1x MI300X / MI325X / MI355X with AITER enabled:
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  vllm serve meta-llama/Llama-3.1-8B-Instruct \
+    --tensor-parallel-size 1
+  ```
+
+  The first AITER launch may take several minutes while ROCm kernels are compiled and cached.
 
   ### pip (Intel Xeon 6 CPUs)
   For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.
@@ -129,15 +214,27 @@ guide: |
   Launch the x86 CPU vLLM Docker container for `meta-llama/Llama-3.1-8B-Instruct`:
 
   ```bash
-  docker run -itd --name llama3-8b-cpu \
-    --network host \
-    --shm-size 16g \
+  docker run \
+    --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-cpu:latest-x86_64 \
-      --model meta-llama/Llama-3.1-8B-Instruct \
-      --host 0.0.0.0 \
-      --port 8000
+    vllm/vllm-openai-cpu:latest-x86_64 meta-llama/Llama-3.1-8B-Instruct \
+    --tensor-parallel-size 2
   ```
+
+  The validation TP/DP layout and host-specific CPU placement are intentionally
+  not prescribed.
+
+  The following validation settings are not model requirements and are intentionally
+  not portable CPU recipe defaults:
+
+  - `--max-num-batched-tokens` and `--max-num-seqs`: scheduler batch/concurrency
+    tuning for workload shape, latency targets, and platform capacity.
+  - `--gpu-memory-utilization`: platform memory-budget tuning.
+  - `--no-enable-prefix-caching`: workload/benchmark cache-policy tuning.
+  - `VLLM_ENGINE_ITERATION_TIMEOUT_S`: runtime operational timeout tuning.
+
+  Hardware-specific overrides may still use these settings when they are part of a
+  validated platform configuration.
 
   ### Intel XPU (B60, B70)
 

@@ -4,7 +4,7 @@ meta:
   provider: "Meta"
   description: "Llama 3.3 70B dense model with NVIDIA FP8/FP4 quantized variants for Hopper and Blackwell GPUs"
   date_added: 2025-08-06
-  date_updated: 2026-04-16
+  date_updated: 2026-09-22
   difficulty: beginner
   tasks:
     - text
@@ -16,8 +16,12 @@ meta:
     h200: verified
     b200: verified
     gb200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
     trillium: verified
     xeon6: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "meta-llama/Llama-3.3-70B-Instruct"
@@ -29,34 +33,79 @@ model:
   base_args: []
   base_env: {}
 
-features: {}
+features:
+  spec_decoding:
+    description: "Eagle3 speculative decoding with externally trained draft model; the served checkpoint is unchanged."
+    args:
+      - "--speculative-config"
+      - '{"model":"RedHatAI/Llama-3.3-70B-Instruct-speculator.eagle3","num_speculative_tokens":3,"method":"eagle3"}'
 
-opt_in_features: []
+opt_in_features:
+  - spec_decoding
 
 variants:
   default:
     precision: bf16
     vram_minimum_gb: 170
     description: "Full precision BF16"
+    supported_hardware: [h100, h200, b200, gb200, mi300x, mi325x, mi355x, trillium, xeon6, arc_pro_b70]
+    hardware_overrides:
+      # BF16 weights (~140 GB) exceed a 4x B70 node (128 GB); the validated
+      # XPU config quantizes online to FP8 at load time.
+      xpu:
+        extra_args:
+          - "--quantization"
+          - "fp8"
+          - "--kv-cache-dtype"
+          - "fp8"
 
   fp8:
     model_id: "nvidia/Llama-3.3-70B-Instruct-FP8"
     precision: fp8
     vram_minimum_gb: 84
     description: "NVIDIA FP8 quantization for Hopper and Blackwell"
+    supported_hardware: [h100, h200, b200, gb200]
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
     extra_env: {}
+
+  redhat_fp8:
+    model_id: "RedHatAI/Llama-3.3-70B-Instruct-FP8-dynamic"
+    precision: fp8
+    label: "FP8 (RedHat)"
+    vram_minimum_gb: 84
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
 
   nvfp4:
     model_id: "nvidia/Llama-3.3-70B-Instruct-NVFP4"
     precision: nvfp4
     vram_minimum_gb: 42
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
+    supported_hardware: [b200, gb200]
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
+
+  redhat_fp8_block:
+    model_id: "RedHatAI/Llama-3.3-70B-Instruct-FP8-block"
+    precision: fp8
+    label: "FP8 Block (RedHat)"
+    vram_minimum_gb: 84
+    description: "RedHatAI FP8 block quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_nvfp4:
+    model_id: "RedHatAI/Llama-3.3-70B-Instruct-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 46
+    description: "RedHatAI NVFP4 quantization"
 
 compatible_strategies:
   - single_node_tp
@@ -88,8 +137,29 @@ hardware_overrides:
     extra_args: []
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
+  xpu:
+    extra_args:
+      - "--block-size"
+      - "64"
+      - "--enforce-eager"
+      - "--no-enable-prefix-caching"
+      - "--disable-sliding-window"
+      - "--max-model-len"
+      - "9472"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--gpu-memory-utilization"
+      - "0.9"
+    extra_env:
+      PYTHONUNBUFFERED: "1"
+      TORCH_LLM_ALLREDUCE: "1"
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+      VLLM_WORKER_MULTIPROC_METHOD: "spawn"
 
-strategy_overrides: {}
+strategy_overrides:
+  single_node_tp:
+    tp:
+      xeon6: 8
 
 guide: |
   ## Overview
@@ -103,10 +173,31 @@ guide: |
 
   ## Prerequisites
 
-  - Hardware: 1x H100/H200 (FP8), 1x B200 (FP4), 2x GPUs or 4x Xeon6/Xeon5 NUMA node for BF16
+  - Hardware: 1x H100/H200 (FP8), 1x B200 (FP4), 1x MI300X/MI325X/MI355X, 2x GPUs, 8x Xeon6/Xeon5 NUMA nodes, or 4x Intel Arc Pro B70 (online FP8)
   - vLLM >= 0.12.0
   - CUDA Driver >= 575 for GPUs
   - Docker with NVIDIA Container Toolkit (recommended) for GPUs
+
+  ### AMD ROCm
+
+  The ROCm wheel requires Python 3.12, ROCm 7.0+, and glibc >= 2.35. Use the
+  ROCm Docker image when your host environment does not meet those requirements.
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm
+  ```
+
+  Launch on 1x MI300X / MI325X / MI355X with AITER enabled:
+
+  ```bash
+  export VLLM_ROCM_USE_AITER=1
+  vllm serve meta-llama/Llama-3.3-70B-Instruct \
+    --tensor-parallel-size 1
+  ```
+
+  The first AITER launch may take several minutes while ROCm kernels are compiled and cached.
 
   ### pip (Intel Xeon 6 CPUs)
   For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.
@@ -136,14 +227,56 @@ guide: |
   Launch the x86 CPU vLLM Docker container for `meta-llama/Llama-3.3-70B-Instruct`:
 
   ```bash
-  docker run -itd --name llama3-70b-cpu \
-    --network host \
-    --shm-size 16g \
+  docker run \
+    --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-cpu:latest-x86_64 \
-      --model meta-llama/Llama-3.3-70B-Instruct \
-      --host 0.0.0.0 \
-      --port 8000
+    vllm/vllm-openai-cpu:latest-x86_64 meta-llama/Llama-3.3-70B-Instruct \
+    --tensor-parallel-size 8
+  ```
+
+  TP/DP remain user/deployment choices rather than recipe defaults.
+
+  The following validation settings are not model requirements and are intentionally
+  not portable CPU recipe defaults:
+
+  - `--max-num-batched-tokens` and `--max-num-seqs`: scheduler batch/concurrency
+    tuning for workload shape, latency targets, and platform capacity.
+  - `--gpu-memory-utilization`: platform memory-budget tuning.
+  - `--no-enable-prefix-caching`: workload/benchmark cache-policy tuning.
+  - `VLLM_ENGINE_ITERATION_TIMEOUT_S`: runtime operational timeout tuning.
+
+  Hardware-specific overrides may still use these settings when they are part of a
+  validated platform configuration.
+
+  ## Intel Arc Pro B70 (XPU)
+
+  Validated on 4x Intel Arc Pro B70 (32 GB per card) with the official vLLM XPU
+  image `vllm/vllm-openai-xpu:latest`, TP=4. BF16 weights (~140 GB) exceed the
+  128 GB node, so the validated configuration quantizes the base checkpoint
+  online to FP8 (`--quantization fp8`) with an FP8 KV cache.
+
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -e HF_TOKEN=$HF_TOKEN \
+    -e PYTHONUNBUFFERED=1 \
+    -e TORCH_LLM_ALLREDUCE=1 \
+    -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
+    -e VLLM_WORKER_MULTIPROC_METHOD=spawn \
+    vllm/vllm-openai-xpu:latest \
+    meta-llama/Llama-3.3-70B-Instruct \
+    --tensor-parallel-size 4 \
+    --block-size 64 \
+    --enforce-eager \
+    --no-enable-prefix-caching \
+    --disable-sliding-window \
+    --max-model-len 9472 \
+    --max-num-batched-tokens 8192 \
+    --gpu-memory-utilization 0.9 \
+    --quantization fp8 \
+    --kv-cache-dtype fp8
   ```
 
   ## Client Usage

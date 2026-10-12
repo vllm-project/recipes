@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "Experimental DeepSeek-V3.2 preview with sparse attention (MQA-like logits) and FP8 KV cache; architecture matches DeepSeek-V3.1 except for the sparse attention mechanism."
   date_added: 2025-09-29
-  date_updated: 2026-04-17
+  date_updated: 2026-09-14
   difficulty: advanced
   tasks:
     - text
@@ -21,6 +21,7 @@ meta:
 model:
   model_id: "deepseek-ai/DeepSeek-V3.2-Exp"
   min_vllm_version: "0.12.0"
+  default_frontend: rust
   architecture: moe
   parameter_count: "671B"
   active_parameters: "37B"
@@ -80,7 +81,6 @@ hardware_overrides:
       VLLM_ROCM_USE_AITER: "1"
       VLLM_ROCM_USE_AITER_MOE: "1"
       SAFETENSORS_FAST_GPU: "1"
-      VLLM_RPC_TIMEOUT: "18000000"
 
 strategy_overrides: {}
 
@@ -143,7 +143,6 @@ guide: |
   export SAFETENSORS_FAST_GPU=1
   export VLLM_ROCM_USE_AITER=1
   export VLLM_ROCM_USE_AITER_MOE=1
-  export VLLM_RPC_TIMEOUT=18000000
 
   vllm serve deepseek-ai/DeepSeek-V3.2-Exp \
     --tensor-parallel-size 8 \

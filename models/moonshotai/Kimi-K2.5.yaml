@@ -81,8 +81,6 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
   mxfp4:
     model_id: "amd/Kimi-K2.5-MXFP4"
     precision: mxfp4
@@ -152,7 +150,6 @@ strategy_overrides:
       nodes: 1               # 1 GB200 node = 4 GPUs
       parallelism: dep       # DP + expert-parallel pool
       vllm_args:
-        - "--enforce-eager"
         - "--max-num-batched-tokens"
         - "16384"
         - "--block-size"

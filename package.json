@@ -8,6 +8,7 @@
     "build": "node scripts/build-recipes-api.mjs && node scripts/fetch-provider-logos.mjs && node scripts/fetch-hf-dates.mjs && next build",
     "start": "next start",
     "lint": "next lint",
+    "test:smg-pd": "node --test scripts/test-smg-pd.mjs",
     "validate": "node --experimental-vm-modules hooks/validate.mjs"
   },
   "dependencies": {

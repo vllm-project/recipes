@@ -79,7 +79,7 @@ guide: |
     --device=/dev/dri \
     --group-add video \
     -e VLLM_ROCM_USE_AITER=1 \
-    vllm/vllm-openai-rocm:v0.20.2 \
+    vllm/vllm-openai-rocm:v0.28.0 \
       inclusionAI/Ling-2.6-1T \
       --tensor-parallel-size 8 \
       --trust-remote-code

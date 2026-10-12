@@ -13,7 +13,7 @@ meta:
 
 model:
   model_id: "tencent/HunyuanOCR"
-  min_vllm_version: "0.11.0"
+  min_vllm_version: "0.12.0"
   architecture: dense
   parameter_count: "1B"
   active_parameters: "1B"
