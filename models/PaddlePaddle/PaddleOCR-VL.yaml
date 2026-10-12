@@ -474,10 +474,16 @@ guide: |
   git -C modelzoo checkout e779117e8cfeba296a7105e26adac0741ab04768
   export MODELZOO_DIR="$PWD/modelzoo/ACL_PyTorch/built-in/ocr/PP-DocLayoutV2"
   python -m pip install -r "$MODELZOO_DIR/requirements.txt"
-  # The reference requirements install three overlapping cv2 distributions.
-  # Keep the headless build on containers without libGL; reinstall it last.
-  python -m pip uninstall -y opencv-python opencv-contrib-python opencv-python-headless
-  python -m pip install opencv-python-headless==4.11.0.86
+  # The reference includes overlapping cv2 wheels; PaddleX requires contrib.
+  # Extract Ubuntu runtime libraries locally if the base image lacks libGL.
+  # This avoids changing the selected container's system package inventory.
+  mkdir -p layout-libs
+  (cd layout-libs && apt-get update && apt-get download \
+      libgl1 libglx0 libglvnd0 libglib2.0-0 libpcre3 \
+      libx11-6 libxcb1 libxau6 libxdmcp6 libxext6 libbsd0 libmd0 && \
+      for package in *.deb; do dpkg-deb -x "$package" .; done)
+  export LD_LIBRARY_PATH="$PWD/layout-libs/usr/lib/aarch64-linux-gnu:$PWD/layout-libs/lib/aarch64-linux-gnu:$LD_LIBRARY_PATH"
+  python -m pip install --force-reinstall --no-deps opencv-contrib-python==4.11.0.86
   python -m pip install \
       https://aisbench.obs.myhuaweicloud.com/packet/ais_bench_infer/0.0.2/ait/ais_bench-0.0.2-py3-none-any.whl \
       https://aisbench.obs.myhuaweicloud.com/packet/ais_bench_infer/0.0.2/ait/aclruntime-0.0.2-cp312-cp312-linux_aarch64.whl
@@ -550,11 +556,18 @@ guide: |
   args.output.mkdir(parents=True, exist_ok=True)
   start = time.perf_counter()
   count = 0
-  for result in pipeline.predict_iter(args.input):
-      result.save_to_json(str(args.output))
-      result.save_to_markdown(str(args.output))
-      count += 1
-  elapsed = time.perf_counter() - start
+  try:
+      for result in pipeline.predict_iter(args.input):
+          result.save_to_json(str(args.output))
+          result.save_to_markdown(str(args.output))
+          count += 1
+      elapsed = time.perf_counter() - start
+  finally:
+      pipeline.close()
+      if args.layout_device == 'cpu':
+          from ais_bench.infer.interface import InferSession
+          pipeline.paddlex_pipeline.layout_det_model.om_sess.free_resource()
+          InferSession.finalize()
   assert count > 0, 'No pages parsed'
   assert list(args.output.glob('*.md')), 'No Markdown output'
   assert list(args.output.glob('*.json')), 'No JSON output'
