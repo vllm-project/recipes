@@ -11,6 +11,11 @@ meta:
   performance_headline: "1B-class open-source SOTA on tool use, code, and reasoning"
   related_recipes:
     - openbmb/MiniCPM-V-4.6
+  hardware:
+    h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "openbmb/MiniCPM5-1B"
@@ -19,7 +24,8 @@ model:
   parameter_count: "1.1B"
   active_parameters: "1.1B"
   context_length: 131072
-  base_args: []
+  base_args:
+    - "--trust-remote-code"
   base_env: {}
 
 features:
@@ -45,6 +51,8 @@ compatible_strategies:
 kv_offload_support:
   offloading_cpu: verified
   offloading_fs: verified
+
+hardware_overrides: {}
 
 strategy_overrides:
   single_node_tp:
@@ -74,7 +82,9 @@ guide: |
   Use the command builder above. The baseline is simply:
 
   ```bash
-  vllm serve openbmb/MiniCPM5-1B --port 8000
+  vllm serve openbmb/MiniCPM5-1B \
+    --trust-remote-code \
+    --tensor-parallel-size 1
   ```
 
   At ~1.1B params the model fits on a single GPU (TP=1). It supports the full
