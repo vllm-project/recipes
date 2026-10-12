@@ -428,21 +428,9 @@ guide: |
 
   ### Intel XPU B60 / B70
 
-  Validated on 4x Intel Arc Pro B60 or 2x Intel Arc Pro B70 (B60 24 GB, B70 32 GB per card) with the
-  official vLLM XPU image `vllm/vllm-openai-xpu:latest`.
-
-  ```bash
-  docker run --device /dev/dri \
-    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
-    --privileged --ipc=host -p 8000:8000 \
-    -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-xpu:latest \
-    Qwen/Qwen3.8-27B \
-    --tensor-parallel-size 4 \
-    --max-model-len 8192 \
-    --reasoning-parser qwen3 \
-    --enforce-eager
-  ```
+  Validated on 4x Intel Arc Pro B60 / B70 (B60 24 GB, B70 32 GB per card) with the
+  official vLLM XPU image `vllm/vllm-openai-xpu:latest`. `--enforce-eager` is required on this
+  backend. Select Arc Pro B60/B70 in the hardware picker above for the exact command.
 
   ### Huawei Ascend 950PR-w8a8 (vLLM Ascend)
 
