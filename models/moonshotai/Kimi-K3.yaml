@@ -4,7 +4,7 @@ meta:
   provider: "Moonshot AI"
   description: "Pre-release 2.8T-parameter native multimodal MoE with Kimi Delta Attention, Gated MLA, Attention Residuals, and a 1M-token context window"
   date_added: 2026-07-27
-  date_updated: 2026-10-09
+  date_updated: 2026-10-12
   difficulty: hard
   tasks:
     - multimodal
@@ -139,9 +139,9 @@ variants:
     description: "Quantization-aware-trained MXFP4 weights with MXFP8 activations; footprint is estimated until the checkpoint is published."
     hardware_overrides:
       # The MI355X path needs vllm-project/vllm#53940 (SiTUv2 a4w4 MoE routing)
-      # and #55966. This is the digest used by InferenceX AgentX PR #3833.
+      # and #55966. Track the rolling ROCm 10.0 nightly.
       mi355x:
-        docker_image: "vllm/vllm-openai-rocm:nightly-rocm100-81198e97ba7eee2a22540caaa756b7fdddcb4d93"
+        docker_image: "vllm/vllm-openai-rocm:nightly-rocm100"
   nvfp4:
     precision: nvfp4
     vram_minimum_gb: 1650
@@ -540,9 +540,7 @@ guide: |
 
   DCP8 shards the decode KV read across all eight GPUs and uses the A2A backend. Simple offload points use 224.875 GB of host DRAM per rank. Every cell captures every even CUDA-graph size from 2 through `2 × concurrency × (1 + draft tokens)`. Agentic benchmark runs replace block rejection with the golden acceptance length for every draft point; synthetic acceptance is not suitable for serving or accuracy evaluation.
 
-  PR #3833 retains a c50 dcp8 recipe variant for future use, but c50 is not part of the nine-point sweep documented above.
-
-  **Image.** PR #3833 pins `vllm/vllm-openai-rocm:nightly-rocm100-81198e97ba7eee2a22540caaa756b7fdddcb4d93`. The recipe pins that digest for the MI355X default variant; ROCm nightly digests may age out of Docker Hub. This path needs [vllm-project/vllm#53940](https://github.com/vllm-project/vllm/pull/53940) (SiTUv2 a4w4 MoE routing) and #55966.
+  **Image.** The MI355X default variant uses `vllm/vllm-openai-rocm:nightly-rocm100`, the rolling ROCm 10.0 nightly. This path needs [vllm-project/vllm#53940](https://github.com/vllm-project/vllm/pull/53940) (SiTUv2 a4w4 MoE routing) and #55966.
 
   **MoE environment.** The lane exports the legacy names `VLLM_ROCM_USE_AITER_MOE_SITUV2_A8W4=1`, `AITER_SITUV2_A8W4=1` and `AITER_BF16_FP8_MOE_BOUND=0`. On its image the first is a deprecated alias for `VLLM_ROCM_USE_AITER_MOE_SITUV2`, vLLM removes `AITER_SITUV2_A8W4` at startup, and the a4w4 kernels do not read `AITER_BF16_FP8_MOE_BOUND`, so the lane runs the same SiTUv2 a4w4 MoE path as the recipe's `VLLM_ROCM_USE_AITER_MOE_SITUV2=1`.
 
