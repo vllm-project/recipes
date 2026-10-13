@@ -647,21 +647,21 @@ guide: |
 
   ## AMD MI355X: disaggregated prefill and decode
 
-  This deployment uses one TP8 prefill worker and one, two, or three independent TP8 decode workers, each on a separate 8-GPU MI355X node. MoRIIO transfers the KV cache in READ mode; `MultiConnector` combines it with `SimpleCPUOffloadConnector` on prefill only. Both roles use the same target and DSpark draft checkpoints, FP8 KV, and matching DCP/cache layouts.
+  This example uses one TP8/DCP8 prefill worker and one TP8/DCP8 decode worker on separate 8-GPU MI355X nodes. MoRIIO transfers the KV cache in READ mode; `MultiConnector` combines it with `SimpleCPUOffloadConnector` on prefill only. Both roles use the same target and DSpark draft checkpoints and FP8 KV.
 
-  These are standalone commands, separate from the command builder's NIXL PD configuration. They follow the configurations in [InferenceX#3582](https://github.com/SemiAnalysisAI/InferenceX/pull/3582) and use real block verification for serving and accuracy evaluation.
+  These standalone commands follow the 1P1D c48 configuration in [InferenceX#3582](https://github.com/SemiAnalysisAI/InferenceX/pull/3582), with real block verification for serving and accuracy evaluation. They are separate from the command builder's NIXL PD configuration.
 
   ### Prerequisites
 
   - Make [moonshotai/Kimi-K3](https://huggingface.co/moonshotai/Kimi-K3) and [Inferact/Kimi-K3-DSpark](https://huggingface.co/Inferact/Kimi-K3-DSpark) available inside every worker container. The commands below use `/models/Kimi-K3` and `/models/Inferact-Kimi-K3-DSpark` as example container paths; adjust them to match your deployment. Use identical checkpoint revisions on all workers.
-  - Use the worker and router images below. The worker image contains the required vLLM support; no source patches are needed.
+  - Use the worker and router images below, with the same worker image build on every node. The worker image contains the required vLLM support; no source patches are needed.
   - Expose all eight GPUs, `/dev/infiniband`, host networking, and sufficient shared memory to each worker container. Allow locked memory for RDMA. The container's verbs provider must be compatible with the host NIC and driver.
   - The prefill offload budget is 1,799 GB of host DRAM **across all eight ranks**, in addition to weight-loading and runtime memory. Reduce `CPU_OFFLOAD_BYTES` if the host cannot accommodate that allocation; the documented configurations use `1799000000000`.
   - Set `SOCKET_IFNAME` and `RDMA_DEVICES` to your network interface and HCA list. `ROUTER_IP` and each `WORKER_IP` must be reachable addresses, not `0.0.0.0`. Allow router TCP ports 8000 and 36367, worker HTTP port 6100, and MoRIIO handshake/notification ports 26000–26007 and 27000–27007, plus the site's RDMA traffic.
 
   ```bash
-  WORKER_IMAGE=vllm/vllm-openai-rocm:nightly-81198e97ba7eee2a22540caaa756b7fdddcb4d93@sha256:a401e4f46872dcde77e07ae3d7fa2d3a71b7f2773714316116532e2b39deb179
-  ROUTER_IMAGE=vllm/vllm-router@sha256:1fbf06701abce8c8cd459414e472d63999c05b201baffc62e00727c10583f5ea
+  WORKER_IMAGE=vllm/vllm-openai-rocm:nightly
+  ROUTER_IMAGE=vllm/vllm-router:nightly
   ```
 
   ### Start the router
@@ -683,7 +683,7 @@ guide: |
 
   ### Start the workers
 
-  Save the following as `kimi-k3-pd.sh` on every worker. Run it with Bash **inside the worker image**, with the devices and model mounts described above. `TOPOLOGY` and `CONC` select a configuration; they do not generate client load or launch additional nodes.
+  Save the following as `kimi-k3-pd.sh` on each worker. Run it with Bash **inside the worker image**, with the devices and model paths described above.
 
   ```bash
   #!/usr/bin/env bash
@@ -694,20 +694,7 @@ guide: |
   : "${WORKER_IP:?Set this worker reachable IP}"
   : "${SOCKET_IFNAME:?Set the host network interface}"
   : "${RDMA_DEVICES:?Set the comma-separated HCA list}"
-  TOPOLOGY=${TOPOLOGY:-1p1d}
-  CONC=${CONC:-48}
   CPU_OFFLOAD_BYTES=${CPU_OFFLOAD_BYTES:-1799000000000}
-
-  DCP=8
-  case "$TOPOLOGY:$CONC" in
-    1p1d:48) P_SEQS=96;  D_SEQS=96;  D_CAPTURE=240; D_DENSE=128 ;;
-    1p1d:56) P_SEQS=112; D_SEQS=112; D_CAPTURE=280; D_DENSE=128 ;;
-    1p2d:24) P_SEQS=48;  D_SEQS=24;  D_CAPTURE=120; D_DENSE=64 ;;
-    1p2d:48) P_SEQS=96;  D_SEQS=48;  D_CAPTURE=240; D_DENSE=128 ;;
-    1p3d:12) P_SEQS=24;  D_SEQS=8;   D_CAPTURE=40;  D_DENSE=40; DCP=1 ;;
-    1p3d:24) P_SEQS=48;  D_SEQS=16;  D_CAPTURE=120; D_DENSE=64 ;;
-    *) echo "Unsupported configuration: $TOPOLOGY c$CONC" >&2; exit 1 ;;
-  esac
 
   export NCCL_SOCKET_IFNAME="$SOCKET_IFNAME" GLOO_SOCKET_IFNAME="$SOCKET_IFNAME"
   export NCCL_IB_HCA="$RDMA_DEVICES"
@@ -729,23 +716,18 @@ guide: |
   CUSTOM_OPS='["+fused_rms_norm_gated","+quant_fp8","+grouped_topk","+sparse_attn_indexer","none"]'
   case "$ROLE" in
     prefill)
-      MAX_SEQS=$P_SEQS
+      MAX_SEQS=96
       BATCHED=8192
       KV_ROLE=kv_producer
       COMPILATION="{\"mode\":3,\"cudagraph_mode\":\"NONE\",\"max_cudagraph_capture_size\":0,\"custom_ops\":$CUSTOM_OPS}"
-      case "$TOPOLOGY:$CONC" in
-        1p1d:*|1p2d:48|1p3d:12) export HSA_NO_SCRATCH_RECLAIM=0 ;;
-      esac
+      export HSA_NO_SCRATCH_RECLAIM=0
       ;;
     decode)
-      MAX_SEQS=$D_SEQS
+      MAX_SEQS=96
       BATCHED=512
       KV_ROLE=kv_consumer
-      CAPTURES=$(seq -s, 1 "$D_DENSE")
-      if (( D_CAPTURE > D_DENSE )); then
-        CAPTURES+=,$(seq -s, "$(( (D_DENSE / 10 + 1) * 10 ))" 10 "$D_CAPTURE")
-      fi
-      COMPILATION="{\"mode\":3,\"cudagraph_mode\":\"FULL_DECODE_ONLY\",\"max_cudagraph_capture_size\":$D_CAPTURE,\"cudagraph_capture_sizes\":[$CAPTURES],\"custom_ops\":$CUSTOM_OPS}"
+      CAPTURES="$(seq -s, 1 128),$(seq -s, 130 10 240)"
+      COMPILATION="{\"mode\":3,\"cudagraph_mode\":\"FULL_DECODE_ONLY\",\"max_cudagraph_capture_size\":240,\"cudagraph_capture_sizes\":[$CAPTURES],\"custom_ops\":$CUSTOM_OPS}"
       ;;
     *) echo "Role must be prefill or decode" >&2; exit 1 ;;
   esac
@@ -762,7 +744,7 @@ guide: |
     --served-model-name moonshotai/Kimi-K3 \
     --trust-remote-code \
     --tensor-parallel-size 8 \
-    --decode-context-parallel-size "$DCP" \
+    --decode-context-parallel-size 8 \
     --cp-kv-cache-interleave-size 1 \
     --dcp-comm-backend a2a \
     --moe-backend auto \
@@ -785,12 +767,12 @@ guide: |
     --kv-transfer-config "$KV_CONFIG"
   ```
 
-  For 1P1D c48, run the following on the prefill worker, replacing the example addresses, interface, and HCAs with your site's values:
+  On the prefill worker, replace the example addresses, interface, and HCAs with your site's values:
 
   ```bash
   export ROUTER_IP=192.0.2.10 WORKER_IP=192.0.2.11
   export SOCKET_IFNAME=eth0 RDMA_DEVICES=rdma0,rdma1,rdma2,rdma3,rdma4,rdma5,rdma6,rdma7
-  TOPOLOGY=1p1d CONC=48 bash kimi-k3-pd.sh prefill
+  bash kimi-k3-pd.sh prefill
   ```
 
   On the decode worker:
@@ -798,25 +780,26 @@ guide: |
   ```bash
   export ROUTER_IP=192.0.2.10 WORKER_IP=192.0.2.12
   export SOCKET_IFNAME=eth0 RDMA_DEVICES=rdma0,rdma1,rdma2,rdma3,rdma4,rdma5,rdma6,rdma7
-  TOPOLOGY=1p1d CONC=48 bash kimi-k3-pd.sh decode
+  bash kimi-k3-pd.sh decode
   ```
 
-  INT4 QuickReduce is a quantized collective optimization; validate accuracy for your workload. Keep the same setting on all workers. The RDMA queue backoff is 50,000 microseconds (50 ms). The prefill scratch-reclaim override allows transient MLA scratch to be reclaimed in the selected configurations.
+  Prefill uses an 8,192-token batch budget without CUDA graphs; decode uses a 512-token budget with `FULL_DECODE_ONLY` graphs. Both roles use a 96-sequence limit and four DSpark draft tokens. INT4 QuickReduce is a quantized collective optimization; validate accuracy for your workload and keep the same setting on all workers. The RDMA queue backoff is 50,000 microseconds (50 ms). The prefill scratch-reclaim override allows transient MLA scratch to be reclaimed.
 
   ### Scaling decode workers
 
-  Use the same `TOPOLOGY` and `CONC` on every worker. For 1P2D or 1P3D, run the decode command on two or three separate nodes with their own `WORKER_IP`; the port ranges can be reused because each worker has its own host. These are router-balanced replicas, not a cross-node TP group.
+  For 1P2D or 1P3D, run the decode command on additional nodes with their own `WORKER_IP`. Discovery registers each worker automatically; the port ranges can be reused on separate hosts. These are router-balanced replicas, not a cross-node TP group.
 
-  | `TOPOLOGY` | `CONC` | Total GPUs | P / D DCP | P / per-D max sequences | D max capture size |
-  | --- | ---: | ---: | --- | --- | ---: |
-  | 1p1d | 48 | 16 | 8 / 8 | 96 / 96 | 240 |
-  | 1p1d | 56 | 16 | 8 / 8 | 112 / 112 | 280 |
-  | 1p2d | 24 | 24 | 8 / 8 | 48 / 24 | 120 |
-  | 1p2d | 48 | 24 | 8 / 8 | 96 / 48 | 240 |
-  | 1p3d | 12 | 32 | 1 / 1 | 24 / 8 | 40 |
-  | 1p3d | 24 | 32 | 8 / 8 | 48 / 16 | 120 |
+  The other configurations use the following changes to the worker script; unlisted settings stay the same. Set `MAX_SEQS` separately in each role's branch and `--decode-context-parallel-size` on both roles. DCP 1 disables DCP. Keep P/D cache layouts matched.
 
-  Prefill uses an 8,192-token batch budget without CUDA graphs; each decode worker uses a 512-token budget with `FULL_DECODE_ONLY` graphs. DSpark uses four draft tokens on both roles. The script preserves each configuration's capture list rather than deriving it from the per-decode sequence limit.
+  | Decode workers | P / per-D `MAX_SEQS` | DCP (both roles) | D graph dense / max | P scratch override |
+  | ---: | --- | ---: | --- | --- |
+  | 1 | 112 / 112 | 8 | 128 / 280 | `0` |
+  | 2 | 48 / 24 | 8 | 64 / 120 | omit |
+  | 2 | 96 / 48 | 8 | 128 / 240 | `0` |
+  | 3 | 24 / 8 | 1 | 40 / 40 | `0` |
+  | 3 | 48 / 16 | 8 | 64 / 120 | omit |
+
+  For decode graphs, capture every size from 1 through **dense**, then multiples of 10 above **dense** through **max**; set `max_cudagraph_capture_size` to **max**. For rows marked **omit**, remove the prefill `HSA_NO_SCRATCH_RECLAIM` export to use the image default. Benchmark concurrency and harness settings remain in the linked InferenceX configuration.
 
   ### Verify routed inference
 
