@@ -653,9 +653,9 @@ guide: |
 
   ### Prerequisites
 
-  - Stage [moonshotai/Kimi-K3](https://huggingface.co/moonshotai/Kimi-K3) at `/models/Kimi-K3` and [Inferact/Kimi-K3-DSpark](https://huggingface.co/Inferact/Kimi-K3-DSpark) at `/models/Inferact-Kimi-K3-DSpark` inside every worker container. Use identical checkpoint revisions on all workers.
+  - Make [moonshotai/Kimi-K3](https://huggingface.co/moonshotai/Kimi-K3) and [Inferact/Kimi-K3-DSpark](https://huggingface.co/Inferact/Kimi-K3-DSpark) available inside every worker container. The commands below use `/models/Kimi-K3` and `/models/Inferact-Kimi-K3-DSpark` as example container paths; adjust them to match your deployment. Use identical checkpoint revisions on all workers.
   - Use the worker and router images below. The worker image contains the required vLLM support; no source patches are needed.
-  - Expose all eight GPUs, `/dev/infiniband`, host networking, and sufficient shared memory to each worker container. Allow locked memory for RDMA. The container's verbs provider must support the host NIC/driver; on Ionic hosts, use a compatible Ionic provider without replacing the image's verbs core.
+  - Expose all eight GPUs, `/dev/infiniband`, host networking, and sufficient shared memory to each worker container. Allow locked memory for RDMA. The container's verbs provider must be compatible with the host NIC and driver.
   - The prefill offload budget is 1,799 GB of host DRAM **across all eight ranks**, in addition to weight-loading and runtime memory. Reduce `CPU_OFFLOAD_BYTES` if the host cannot accommodate that allocation; the documented configurations use `1799000000000`.
   - Set `SOCKET_IFNAME` and `RDMA_DEVICES` to your network interface and HCA list. `ROUTER_IP` and each `WORKER_IP` must be reachable addresses, not `0.0.0.0`. Allow router TCP ports 8000 and 36367, worker HTTP port 6100, and MoRIIO handshake/notification ports 26000–26007 and 27000–27007, plus the site's RDMA traffic.
 
