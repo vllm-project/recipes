@@ -211,10 +211,9 @@ guide: |
 
   The checkpoint natively supports 262,144 tokens. Qwen reports that QSA reaches up
   to 10.2x prefill and 6.6x decode attention-kernel speedups at one million tokens.
-  On GB300, TP1 is the minimum validated FP8 deployment (the checkpoint fits on
-  a single GPU) and TEP4 is the recommended full-tray configuration. On an 8x
-  H200 node, use TEP8 for the official FP8
-  checkpoint; plain TP8 is incompatible with its 128-wide quantization blocks.
+  On GB300, TEP4 is the recommended full-tray configuration. On an 8x H200 node,
+  use TEP8 for the official FP8 checkpoint; plain TP8 is incompatible with its
+  128-wide quantization blocks.
 
   ## Prerequisites
 
@@ -222,8 +221,8 @@ guide: |
     `vllm/vllm-openai-rocm:nightly` on AMD, or the nightly PyPI wheels. Stable
     ≥0.30.0 runs the model, but this recipe is tuned and verified on nightly.
   - **Hardware:** NVIDIA CUDA and AMD ROCm instructions are provided below.
-  - **FP8 memory:** the checkpoint is 172.78 GiB. TP1 is the validated minimum on
-    GB300 (288 GB HBM3e); TEP4 is the recommended full-tray configuration.
+  - **FP8 memory:** the checkpoint is 172.78 GiB; it fits on a single GB300 GPU
+    (288 GB HBM3e).
   - **BF16 memory:** the checkpoint is 335.28 GiB. The validated TP2 configuration
     used about 190 GiB per GB300 GPU.
   - **Host memory for N-gram Embedding offload:** at least 51 GB plus
@@ -254,20 +253,19 @@ guide: |
     --reasoning-parser qwen3
   ```
 
-  TP1 is the minimum FP8 deployment on GB300. TEP4 is the recommended
-  full-tray configuration — we recommend it over plain TP4 because expert
-  parallelism is consistently faster for this model. TP4 and TEP4 are both
-  validated full-tray configurations, including with MTP3.
+  TEP4 is the recommended full-tray configuration — we recommend it over plain
+  TP4 because expert parallelism is consistently faster for this model. TP4 and
+  TEP4 are both validated full-tray configurations, including with MTP3.
 
   To serve BF16, use the `Qwen/Qwen3.8-Flash-Next` checkpoint with the same
   arguments.
 
   ### Single-GPU deployment on GB200/GB300
 
-  The model also runs on one GPU (TP1): validated on a single GB300 with both
-  the FP8 and NVFP4 checkpoints (engine starts, correct responses). The FP8
-  checkpoint needs GB300's 288 GB HBM3e; NVFP4 also fits a GB200. Multi-GPU
-  TEP remains the recommended deployment for serving throughput.
+  The model fits on a single GPU: the FP8 checkpoint on one GB300 (288 GB
+  HBM3e), and the NVFP4 variant on GB200 as well. Single-GPU TP1 suits
+  evaluation and development; multi-GPU TEP remains the recommended deployment
+  for serving throughput.
 
   ### Recommended FP8 configuration on 8x H200
 
@@ -312,8 +310,7 @@ guide: |
     --reasoning-parser qwen3
   ```
 
-  Verified on this hardware with plain TP4 (before TEP became the default):
-  engine starts, produces correct output, and sustains ~1,430 output tok/s at
+  Measured on this hardware with plain TP4: ~1,430 output tok/s at
   concurrency 64 (random 1024-in/256-out workload).
 
   Benchmark MTP with SPEED-Bench (`--dataset-name speed_bench`), not `random`.
