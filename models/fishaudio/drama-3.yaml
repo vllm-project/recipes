@@ -126,11 +126,28 @@ guide: |
   Add `"stream": true, "response_format": "pcm"` to receive Server-Sent
   Events whose `speech.audio.delta` events carry base64 16-bit PCM at 44.1 kHz.
 
-  ### Tags
+  ### Event and emotion tags
 
-  Event tags go inline where the event should happen, for example
-  `"[sighs] Fine. If we miss it, it's on you. [laughs] Well, maybe that's fair."`.
-  Speaker tags switch characters: `"<|speaker:0|> Hi. <|speaker:1|> Hello."`.
+  Non-verbal events and delivery are controlled only through the input text.
+  Write a short natural-language descriptor in square brackets where the event
+  should happen:
+
+  ```text
+  [sighs] Fine. If we miss it, it's on you. [laughs] Well, maybe that's fair.
+  ```
+
+  - There is no fixed tag list. Tags are ordinary text (no special tokens), so
+    any short descriptor is accepted; wordings close to the ones Fish Audio
+    documents work best: `[sighs]`, `[laughs]`, `[laughing]`, `[whisper]`,
+    `[angry]`, `[excited]`, `[pause]`.
+  - Speaker tags `<|speaker:0|>` … `<|speaker:15|>` are the only special control
+    tokens: `"<|speaker:0|> Hi. <|speaker:1|> Hello."`. Text without a leading
+    speaker tag is spoken by speaker 0.
+  - The reference clip also shapes delivery implicitly (an expressive or
+    pause-heavy reference carries over), but it is not a targeted control.
+  - A tag or filler word at the very start of a line (`[sighs] …`, `Yeah. …`)
+    more often renders the first word or event and then only silence until
+    `max_new_tokens`; mid-sentence tags are more reliable.
 
   ## Performance
 
