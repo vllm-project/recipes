@@ -203,7 +203,7 @@ guide: |
 
   ### Docker (Intel XPU B60 / B70, TP=2, Full-Featured)
 
-  Validated on 4× Intel Arc Pro B60 / B70 with the official vLLM XPU image.
+  Validated on 2× Intel Arc Pro B60 / B70 with the official vLLM XPU image.
 
   ```bash
   docker run --device /dev/dri \
