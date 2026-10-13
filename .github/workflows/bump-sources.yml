@@ -1,0 +1,146 @@
+# Keep sources.lock.json pointed at the latest recipe content of each source
+# repo (vllm-project/vllm:recipes/, …). On a schedule — or on demand, or when a
+# source repo sends `repository_dispatch: recipes-updated` — re-resolve the
+# channel's refs; if a source's recipe directory changed (tree_sha), validate
+# the new content with the full JSON API build and commit the lock to main,
+# which Vercel deploys. A failing validation leaves the lock (and the site) on
+# the last good commit and opens/updates a tracking issue.
+name: Bump recipe sources
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "sources.yaml channel to bump"
+        default: latest
+  repository_dispatch:
+    types: [recipes-updated]
+
+concurrency:
+  group: bump-sources
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  actions: read     # previous run's result, to keep one-off sync errors quiet
+
+env:
+  CHANNEL: ${{ inputs.channel || 'latest' }}
+  FAILURE_LABEL: sources-bump-failed
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Re-resolve source refs
+        id: sync
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/sync-sources.mjs --update --channel "$CHANNEL"
+          message="$(node scripts/lock-changes.mjs)"
+          if [ -z "$message" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No recipe source changed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$message" > "$RUNNER_TEMP/commit-message.txt"
+          { echo '```'; printf '%s\n' "$message"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate new content
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          RECIPES_CHANNEL: ${{ env.CHANNEL }}
+        run: |
+          set -o pipefail
+          node scripts/build-recipes-api.mjs 2>&1 | tee "$RUNNER_TEMP/validate.log"
+          node --test scripts/test-overlay.mjs 2>&1 | tee -a "$RUNNER_TEMP/validate.log"
+
+      - name: Commit lock
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add sources.lock.json
+          git commit -s -F "$RUNNER_TEMP/commit-message.txt"
+          # main may have moved while validating; the lock rarely conflicts.
+          for attempt in 1 2 3; do
+            git push origin HEAD:main && exit 0
+            git pull --rebase origin main
+          done
+          exit 1
+
+      - name: Close tracking issue
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for n in $(gh issue list --label "$FAILURE_LABEL" --state open --json number --jq '.[].number'); do
+            gh issue close "$n" --comment "Recovered in ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          done
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # One issue per failure, not per run: each report carries a fingerprint
+        # of what failed (the target commits it tried to pin), and a run whose
+        # fingerprint the open issue already shows adds nothing. A new failing
+        # target (the source moved on, still broken) adds one comment.
+        run: |
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ -f "$RUNNER_TEMP/commit-message.txt" ]; then
+            fingerprint="target-$(sha256sum "$RUNNER_TEMP/commit-message.txt" | cut -c1-16)"
+          else
+            # Failed before resolving a target (e.g. a GitHub API error). Report
+            # only the second such failure in a row, so a one-off stays quiet.
+            previous="$(gh run list --workflow bump-sources.yml --limit 5 --json databaseId,conclusion \
+              --jq '[.[] | select(.databaseId != ${{ github.run_id }}) | .conclusion][0]')"
+            if [ "$previous" != "failure" ]; then
+              echo "First failure in a row before any target was resolved; not reporting yet."
+              exit 0
+            fi
+            fingerprint="no-target"
+          fi
+          marker="<!-- bump-sources: $fingerprint -->"
+          {
+            echo "The \`$CHANNEL\` recipe sources could not be bumped, so the site stays on the last good lock."
+            echo
+            echo "Run: $run_url"
+            if [ -f "$RUNNER_TEMP/commit-message.txt" ]; then
+              echo; echo '```'; cat "$RUNNER_TEMP/commit-message.txt"; echo '```'
+            fi
+            if [ -f "$RUNNER_TEMP/validate.log" ]; then
+              echo; echo '<details><summary>Validation log (tail)</summary>'; echo; echo '```'
+              tail -n 60 "$RUNNER_TEMP/validate.log"
+              echo '```'; echo '</details>'
+            fi
+            echo; echo "$marker"
+          } > "$RUNNER_TEMP/issue.md"
+          gh label create "$FAILURE_LABEL" --color B60205 --description "bump-sources workflow failing" --force
+          existing="$(gh issue list --label "$FAILURE_LABEL" --state open --json number --jq '.[0].number')"
+          if [ -z "$existing" ]; then
+            gh issue create --title "Recipe source bump failing ($CHANNEL)" --label "$FAILURE_LABEL" --body-file "$RUNNER_TEMP/issue.md"
+          elif gh issue view "$existing" --json body,comments --jq '.body, .comments[].body' | grep -qF "$marker"; then
+            echo "#$existing already reports this failure; not commenting again."
+          else
+            gh issue comment "$existing" --body-file "$RUNNER_TEMP/issue.md"
+          fi

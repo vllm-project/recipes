@@ -16,7 +16,6 @@ meta:
   hardware:
     b200: verified
     b300: verified
-    mi300x: unverified
     mi325x: verified
     mi355x: verified
 

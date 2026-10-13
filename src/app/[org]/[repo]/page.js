@@ -248,11 +248,28 @@ export default async function RecipePage({ params, searchParams }) {
       <footer className="mt-10 pt-4 border-t border-border text-sm text-muted-foreground flex flex-wrap gap-x-4 gap-y-2">
         <span>Updated {recipe.meta.date_updated}</span>
         <a
-          href={`https://github.com/vllm-project/recipes/edit/main/models/${recipe.hf_org}/${recipe.hf_repo}.yaml`}
+          href={recipe.source?.edit_url || `https://github.com/vllm-project/recipes/edit/main/models/${recipe.hf_org}/${recipe.hf_repo}.yaml`}
           className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
         >
           <Pencil size={12} /> Edit recipe
         </a>
+        {recipe.source?.overlays?.map((o) => o.edit_url && (
+          <a
+            key={o.path}
+            href={o.edit_url}
+            className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+          >
+            <Pencil size={12} /> Edit {o.source} overlay
+          </a>
+        ))}
+        {recipe.source?.sha && (
+          <a
+            href={`https://github.com/${recipe.source.repo}/blob/${recipe.source.sha}/${recipe.source.path}`}
+            className="font-mono hover:text-foreground transition-colors"
+          >
+            {recipe.source.repo}@{recipe.source.sha.slice(0, 7)}
+          </a>
+        )}
         <a
           href="https://github.com/vllm-project/recipes/issues"
           className="inline-flex items-center gap-1 hover:text-foreground transition-colors"

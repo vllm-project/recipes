@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=https://recipes.vllm.ai/recipe.schema.json
+#
+# Starter recipe (text or multimodal, dense or MoE). Copy it to
+# models/<hf_org>/<hf_repo>.yaml in the repo that owns the recipe
+# (vllm: recipes/models/…), replace every TODO, and delete what you don't need.
+# Every field, with rules and examples: SCHEMA.md in vllm-project/recipes.
+
+meta:
+  title: "TODO-Model-Name"
+  slug: "todo-model-name"
+  provider: "TODO Org"
+  description: "TODO: one-sentence summary of the model and what it's good at."
+  date_added: 2026-01-01          # TODO: today; never change it afterwards
+  date_updated: 2026-01-01        # TODO: today; bump on material recipe changes
+  tasks:
+    - text                        # text | multimodal | embedding
+  performance_headline: "TODO (optional): one line from your own benchmark"
+  related_recipes: []
+  hardware:
+    h200: verified                # TODO: only GPUs you ran end-to-end
+
+model:
+  model_id: "TODO-org/TODO-repo"  # MUST equal the file path
+  min_vllm_version: "0.30.0"      # TODO: lowest stable release that serves it
+  architecture: dense             # TODO: dense | moe
+  parameter_count: "8B"           # TODO: total parameters (multimodal: encoder included)
+  active_parameters: "8B"         # TODO: activated per token (= parameter_count for dense)
+  context_length: 131072          # TODO: max_position_embeddings (multimodal: text_config's)
+  base_args: []                   # flags every command needs (e.g. --trust-remote-code)
+  base_env: {}
+
+features:
+  tool_calling:
+    description: "TODO: automatic tool choice with the <name> tool-call parser."
+    args: ["--enable-auto-tool-choice", "--tool-call-parser", "TODO"]
+  reasoning:
+    description: "TODO: parse reasoning output separately from the answer."
+    args: ["--reasoning-parser", "TODO"]
+  # Multimodal models: set tasks to [multimodal] and usually add these two,
+  # listed in opt_in_features:
+  # text_only:
+  #   description: "Skip the multimodal encoder for text-only workloads; frees its memory for KV cache."
+  #   args: ["--language-model-only"]
+  # encoder_parallel:
+  #   description: "Run the multimodal encoder data-parallel across the TP ranks instead of sharding it."
+  #   args: ["--mm-encoder-tp-mode", "data"]
+
+opt_in_features: []               # features that default OFF (e.g. spec_decoding)
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 20           # TODO: ceil(total params × 2 × 1.2) for bf16 — see SCHEMA.md
+    description: "TODO: BF16 weights."
+
+compatible_strategies:            # MoE: also single_node_tep/dep, multi_node_tep/dep
+  - single_node_tp
+  - multi_node_tp
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  TODO: what the model is, what this recipe was tested on, and its limits.
+
+  ## Launch
+
+  ## Client usage
+
+  TODO: a chat request (multimodal: one with image/video/audio input).
+
+  ## Benchmarking
+
+  ## Troubleshooting
+
+  ## References
+
+  - [Model card](https://huggingface.co/TODO-org/TODO-repo)
