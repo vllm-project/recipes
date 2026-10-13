@@ -238,7 +238,7 @@ variants:
     tp: 8
     hardware_overrides:
       mi355x:
-        docker_image: "vllm/vllm-openai-rocm:nightly-2a02f6efe319c885e3ccbcecde402e0028f9ec1e"
+        docker_image: "vllm/vllm-openai-rocm:nightly"
         extra_args:
           - "--trust-remote-code"
           - "--compilation-config"
@@ -326,9 +326,7 @@ guide: |
 
   ### Docker (AMD ROCm)
 
-  MiniMax-M3 support has not yet shipped in a stable vLLM release (`latest` is
-  still 0.23.0, with no M3 plugin and no `fp8_per_channel` on ROCm) — use the
-  nightly image:
+  Use the nightly image, which is the image the AMD variants of this recipe pin:
 
   ```bash
   docker pull vllm/vllm-openai-rocm:nightly
@@ -630,7 +628,7 @@ guide: |
   On AMD MI355X the **mxfp8** variant additionally enables the AITER kernels,
   the fused shared-experts MoE, and INT4 QuickReduce, and pulls the nightly ROCm
   image (`vllm/vllm-openai-rocm:nightly`) — selected automatically in the command
-  builder; other MI3xx GPUs keep the pinned image. If you launch by hand:
+  builder. If you launch by hand:
 
   ```bash
   export VLLM_USE_BREAKABLE_CUDAGRAPH=0
@@ -807,8 +805,7 @@ guide: |
   layout that MiniMax-M3 sparse paged attention relies on was changed by the
   KV-cache layout standardization in
   [vllm-project/vllm#51718](https://github.com/vllm-project/vllm/pull/51718),
-  and the nightly restores it. The currently pinned digest
-  (`nightly-2a02f6efe319c885e3ccbcecde402e0028f9ec1e`) also carries the AITER
+  and the nightly restores it. The lane's pinned digest also carries the AITER
   indexer scoring and top-k kernels for the MiniMax-M3 sparse-attention path from
   [vllm-project/vllm#52664](https://github.com/vllm-project/vllm/pull/52664),
   which is what makes the FP8 indexer K cache and the unconditional shuffled

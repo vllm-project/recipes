@@ -195,13 +195,10 @@ hardware_overrides:
       # Allow CK a8w4 expert selection instead of pinning Triton W4A16.
       - "--moe-backend"
       - "aiter"
-      # vllm-project/vllm#56227 turned SWA bounded replay on by default. It pads
-      # the replayed tokens' slots in the prefix-cacheable groups and relies on a
-      # window clamp that landed in the FlashInfer and FlashMLA kernels; the ROCm
-      # sparse SWA path only gained the replay_start kwarg. On gfx950 every TP=2
-      # and TP=4 point died with HSA_STATUS_ERROR_MEMORY_FAULT at the first prefix
-      # hit carrying a replay start. Drop this once ROCm clamps too; prefix
-      # caching stays on.
+      # The ROCm sparse SWA path lacks the replay window clamp that vllm#56227
+      # relies on, so on gfx950 every TP=2 and TP=4 point died with
+      # HSA_STATUS_ERROR_MEMORY_FAULT at the first prefix hit carrying a replay
+      # start. Drop this once ROCm clamps too; prefix caching stays on.
       - "--no-swa-bounded-replay"
     extra_env:
       VLLM_ROCM_USE_AITER: "1"
@@ -285,6 +282,11 @@ strategy_overrides:
           VLLM_ROCM_USE_AITER_TRITON_SPARSE_MLA: "1"
           # INT4 quantization for faster all-reduce
           VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
+          # Mono decode kernels (vllm-project/vllm#60397): two persistent
+          # launches a layer for decode steps of up to 48 rows, i.e. up to
+          # concurrency 8 with five DSpark drafts. Larger steps take the
+          # regular path, so the gain fades as concurrency rises.
+          VLLM_ROCM_MONO_DECODE: "1"
       blackwell:
         extra_args:
           - "--attention-config"
@@ -298,10 +300,20 @@ strategy_overrides:
       # pinned host DRAM keeps that resident footprint inside HBM on these
       # SKUs; the lookups read the tables through UVA and the output is
       # unchanged.
+      # B200 TP2 serves the low-concurrency (c1) agentic setting: THP-backed
+      # Engram tables, 4096 batched tokens, and graphs captured up to 4092 tokens.
       b200:
         extra_args:
           - "--engram-config"
-          - '{"cpu_offload":true}'
+          - '{"cpu_offload":true,"use_thp":true}'
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "4096"
+          - "--compilation-config"
+          - '{"mode":"VLLM_COMPILE","cudagraph_mode":"FULL_AND_PIECEWISE","cudagraph_capture_sizes":[6,12,18,24,30,36,48,60,72,96,120,144,192,240,288,384,480,576,768,1020,1536,2046,3072,4092]}'
+          - "--max-cudagraph-capture-size"
+          - "4092"
       gb200:
         extra_args:
           - "--engram-config"
@@ -354,6 +366,21 @@ strategy_overrides:
           - "128"
           - "--engram-config"
           - '{"embedding_across_dp":true}'
+      # B200 DEP2 at c32: piecewise graphs extend to 4096 tokens so prefill-bearing
+      # steps replay graphs, and new prefills are admitted every 64 engine steps,
+      # aligned across DP ranks. The vLLM default of 1 admits on every step.
+      b200:
+        extra_args:
+          - "--max-num-seqs"
+          - "32"
+          - "--max-num-batched-tokens"
+          - "4096"
+          - "--prefill-schedule-interval"
+          - "64"
+          - "--compilation-config"
+          - '{"mode":"VLLM_COMPILE","cudagraph_mode":"FULL_AND_PIECEWISE","cudagraph_capture_sizes":[6,12,18,24,30,36,48,60,72,96,120,144,192,240,288,384,480,576,640,768,896,1024,1280,1536,1792,2048,2304,2560,2816,3072,3328,3584,3840,4096]}'
+          - "--max-cudagraph-capture-size"
+          - "4096"
   pd_cluster:
     # Verified 1P1D on GB200 NVL4: one tray per role, TP4 each, NIXL transfer.
     env:
@@ -658,6 +685,14 @@ guide: |
 
   ROCm additionally needs `--no-swa-bounded-replay`, which the shared AMD
   override supplies; see the comment there for why.
+
+  `VLLM_ROCM_MONO_DECODE=1` selects the mono decode layer from
+  [vllm-project/vllm#60397](https://github.com/vllm-project/vllm/pull/60397).
+  Two persistent launches cover a layer for decode steps of up to 48 rows,
+  which with five DSpark drafts is concurrency 8; larger steps fall back to the
+  regular path, so the gain is largest at low concurrency and fades as
+  concurrency rises.
+
   ## MI300X Tensor Parallel
 
   On MI300X, **Tensor Parallel** takes the recipe default of **TP4** with the
@@ -753,6 +788,19 @@ guide: |
   `--max-num-batched-tokens` and `--max-cudagraph-capture-size` for your own
   serving profile. For high interactivity on any of them, use
   `--tensor-parallel-size 4`.
+
+  ## B200 AgentX tuning
+
+  On B200, TP2 at concurrency 1 uses `--engram-config '{"cpu_offload":true,"use_thp":true}'`,
+  `--max-num-seqs 8` and `--max-num-batched-tokens 4096`. DEP2 (TP1 x DP2 with expert
+  parallelism) serves concurrency 8 to 32; at c8 and c16 graph capture stops at 576 tokens and
+  `--prefill-schedule-interval` stays at the vLLM default of 1, while c32 extends piecewise
+  graphs to 4096 tokens and sets `--prefill-schedule-interval 64`. DEP4 sets
+  `--prefill-schedule-interval 48` at c128 and keeps the default of 1 at c64.
+
+  For DEP2 at c128, add vLLM's native CPU KV offloading with
+  `--kv-offloading-backend native --kv-offloading-size 32` (GiB per DP rank, 64 GiB per
+  server), `--gpu-memory-utilization 0.955` and `--max-num-seqs 48`.
 
   ## DGX Station (GB300) Tensor Parallel
 

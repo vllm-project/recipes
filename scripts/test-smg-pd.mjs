@@ -7,8 +7,11 @@ import { test } from "node:test";
 import yaml from "js-yaml";
 import { resolveCommand, buildDockerRun, computeDockerMeta } from "../src/lib/command-synthesis.js";
 import { substitute } from "../src/lib/cluster-endpoints.js";
+import { contentDir } from "../src/lib/content-root.js";
 
-const read = (file) => yaml.load(fs.readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));
+// Recipes live in their source repos; read the assembled tree (run
+// build-recipes-api or assemble-content first).
+const read = (file) => yaml.load(fs.readFileSync(path.join(contentDir(), file), "utf8"));
 const recipe = read("models/XiaomiMiMo/MiMo-V2.6-Flash-RL.yaml");
 const taxonomy = read("taxonomy.yaml");
 const strategies = Object.fromEntries(fs.readdirSync(new URL("../strategies", import.meta.url))

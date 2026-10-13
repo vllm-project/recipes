@@ -112,7 +112,7 @@ export async function GET() {
     "present) the recipe's full guide body.",
     "",
     `Recipe count: ${recipes.length}`,
-    `Generated at build time from the canonical YAML sources under \`models/\`.`,
+    `Generated at build time from the canonical recipe YAMLs, assembled from their source repositories (see \`sources.yaml\` in vllm-project/recipes).`,
     "",
   ].join("\n");
 

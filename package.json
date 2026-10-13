@@ -4,17 +4,23 @@
   "private": true,
   "packageManager": "pnpm@10.24.0",
   "scripts": {
-    "dev": "next dev",
-    "build": "node scripts/build-recipes-api.mjs && node scripts/fetch-provider-logos.mjs && node scripts/fetch-hf-dates.mjs && next build",
+    "dev": "node scripts/sync-sources.mjs && node scripts/assemble-content.mjs && next dev",
+    "build": "node scripts/sync-sources.mjs && node scripts/build-recipes-api.mjs && node scripts/fetch-provider-logos.mjs && node scripts/fetch-hf-dates.mjs && next build",
     "start": "next start",
     "lint": "next lint",
+    "content": "node scripts/sync-sources.mjs && node scripts/assemble-content.mjs",
+    "content:watch": "node scripts/assemble-content.mjs --watch",
+    "content:update": "node scripts/sync-sources.mjs --update",
     "test:smg-pd": "node --test scripts/test-smg-pd.mjs",
-    "validate": "node --experimental-vm-modules hooks/validate.mjs"
+    "validate": "node --experimental-vm-modules hooks/validate.mjs",
+    "test:overlay": "node --test scripts/test-overlay.mjs",
+    "test:schema": "node --test scripts/test-schema.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.2",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@vercel/analytics": "^2.0.1",
+    "ajv": "^8.20.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "js-yaml": "^4.1.1",
