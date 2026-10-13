@@ -6,7 +6,6 @@ meta:
   description: "Speech-decision model for voice agents: answers closed-set questions about a clip (end of turn, emotion, gender, intent …) with a single constrained token, so nothing is decoded."
   date_added: 2026-10-13
   date_updated: 2026-10-13
-  difficulty: intermediate
   tasks:
     - multimodal
   performance_headline: "Several decisions about one clip in one round of max_tokens=1 requests that share the audio prefix"
@@ -89,7 +88,8 @@ guide: |
   def letter_id(c):
       req = urllib.request.Request(f"{base}/tokenize", headers={"Content-Type": "application/json"},
           data=json.dumps({"model": model, "prompt": c, "add_special_tokens": False}).encode())
-      return json.load(urllib.request.urlopen(req))["tokens"][0]
+      with urllib.request.urlopen(req) as resp:
+          return json.load(resp)["tokens"][0]
 
   def ask(wav_bytes, question, options):
       letters = "ABCDEFGHIJ"[:len(options)]
@@ -109,7 +109,8 @@ guide: |
       p = [math.exp(v - max(z)) for v in z]
       return dict(zip(options, (x / sum(p) for x in p)))
 
-  wav = open("clip.wav", "rb").read()
+  with open("clip.wav", "rb") as f:
+      wav = f.read()
   print(ask(wav, "Has the user finished speaking?", ["finished", "not finished"]))
   print(ask(wav, "What is the speaker's emotional state?", ["neutral", "happy", "angry", "sad"]))
   ```
