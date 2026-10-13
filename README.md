@@ -153,7 +153,7 @@ How the pieces fit:
   2. Validates the new content with the full JSON API build.
   3. Commits the lock, which redeploys the site.
 
-  If validation fails, the lock stays on the last good commit, so the site keeps serving the previous content, and a `sources-bump-failed` issue is opened.
+  If validation fails, the lock stays on the last good commit, so the site keeps serving the previous content, and a `sources-bump-failed` issue is opened. There is one issue per failure, not one per run, and it closes itself on the next successful run.
 - **Provenance.** Every recipe page links "Edit recipe" to the repository that owns the file. Every recipe JSON carries a `source` field (repo, commit, path) for tracing a command back to its YAML.
 
 ## Contributing

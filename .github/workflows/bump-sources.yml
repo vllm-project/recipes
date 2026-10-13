@@ -25,6 +25,7 @@ concurrency:
 permissions:
   contents: write
   issues: write
+  actions: read     # previous run's result, to keep one-off sync errors quiet
 
 env:
   CHANNEL: ${{ inputs.channel || 'latest' }}
@@ -100,8 +101,26 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
+        # One issue per failure, not per run: each report carries a fingerprint
+        # of what failed (the target commits it tried to pin), and a run whose
+        # fingerprint the open issue already shows adds nothing. A new failing
+        # target (the source moved on, still broken) adds one comment.
         run: |
           run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ -f "$RUNNER_TEMP/commit-message.txt" ]; then
+            fingerprint="target-$(sha256sum "$RUNNER_TEMP/commit-message.txt" | cut -c1-16)"
+          else
+            # Failed before resolving a target (e.g. a GitHub API error). Report
+            # only the second such failure in a row, so a one-off stays quiet.
+            previous="$(gh run list --workflow bump-sources.yml --limit 5 --json databaseId,conclusion \
+              --jq '[.[] | select(.databaseId != ${{ github.run_id }}) | .conclusion][0]')"
+            if [ "$previous" != "failure" ]; then
+              echo "First failure in a row before any target was resolved; not reporting yet."
+              exit 0
+            fi
+            fingerprint="no-target"
+          fi
+          marker="<!-- bump-sources: $fingerprint -->"
           {
             echo "The \`$CHANNEL\` recipe sources could not be bumped, so the site stays on the last good lock."
             echo
@@ -114,11 +133,14 @@ jobs:
               tail -n 60 "$RUNNER_TEMP/validate.log"
               echo '```'; echo '</details>'
             fi
+            echo; echo "$marker"
           } > "$RUNNER_TEMP/issue.md"
           gh label create "$FAILURE_LABEL" --color B60205 --description "bump-sources workflow failing" --force
           existing="$(gh issue list --label "$FAILURE_LABEL" --state open --json number --jq '.[0].number')"
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body-file "$RUNNER_TEMP/issue.md"
-          else
+          if [ -z "$existing" ]; then
             gh issue create --title "Recipe source bump failing ($CHANNEL)" --label "$FAILURE_LABEL" --body-file "$RUNNER_TEMP/issue.md"
+          elif gh issue view "$existing" --json body,comments --jq '.body, .comments[].body' | grep -qF "$marker"; then
+            echo "#$existing already reports this failure; not commenting again."
+          else
+            gh issue comment "$existing" --body-file "$RUNNER_TEMP/issue.md"
           fi
