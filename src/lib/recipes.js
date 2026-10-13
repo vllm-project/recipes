@@ -1,10 +1,11 @@
 import fs from "fs";
 import path from "path";
 import yaml from "js-yaml";
+import { contentDir, loadProvenance } from "./content-root.js";
 
 let cache = null;
 
-const MODELS_DIR = path.join(process.cwd(), "models");
+const MODELS_DIR = path.join(contentDir(), "models");
 const HF_DATES_PATH = path.join(process.cwd(), "public", "hf-dates.json");
 
 // HF release dates per hf_id (populated at build by scripts/fetch-hf-dates.mjs)
@@ -37,6 +38,8 @@ function parseRecipe(filePath) {
     // Attach HF release date (ISO string) from build-time manifest
     const dates = loadHfDates();
     raw.hf_released = dates[raw.hf_id] || null;
+    // Owning repo + overlays (from .content/<channel>/provenance.json)
+    raw.source = loadProvenance()[raw.hf_id] || null;
   }
   return raw;
 }
@@ -54,9 +57,18 @@ function findYamlFiles(dir) {
   return results;
 }
 
+// In `next dev`, re-parse when any recipe file changed (the content tree
+// symlinks into source checkouts such as ~/vllm/recipes), so edits show on
+// refresh. Production builds parse once.
+let cacheKey = null;
+function filesKey(files) {
+  return files.map((f) => `${f}:${fs.statSync(f).mtimeMs}`).join("|");
+}
+
 export function getAllRecipes() {
-  if (cache) return cache;
-  const files = findYamlFiles(MODELS_DIR);
+  const files = cache && process.env.NODE_ENV !== "development" ? null : findYamlFiles(MODELS_DIR);
+  if (cache && (!files || filesKey(files) === cacheKey)) return cache;
+  if (files) cacheKey = filesKey(files);
   cache = files
     .map(parseRecipe)
     .sort((a, b) => {

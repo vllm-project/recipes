@@ -8,6 +8,7 @@
 import fs from "fs";
 import path from "path";
 import yaml from "js-yaml";
+import { contentDir } from "../src/lib/content-root.js";
 
 const ROOT = process.cwd();
 const MANIFEST = path.join(ROOT, "public", "hf-dates.json");
@@ -41,9 +42,10 @@ async function fetchCreatedAt(modelId) {
   }
 }
 
-const files = findYamlFiles(path.join(ROOT, "models"));
+const MODELS_DIR = path.join(contentDir(), "models");
+const files = findYamlFiles(MODELS_DIR);
 const hfIds = files.map((f) => {
-  const rel = path.relative(path.join(ROOT, "models"), f);
+  const rel = path.relative(MODELS_DIR, f);
   const parts = rel.split(path.sep);
   const repo = parts[parts.length - 1].replace(/\.(yaml|yml)$/, "");
   return `${parts[0]}/${repo}`;
