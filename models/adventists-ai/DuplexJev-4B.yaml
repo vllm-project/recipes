@@ -1,0 +1,131 @@
+# yaml-language-server: $schema=https://recipes.vllm.ai/recipe.schema.json
+meta:
+  title: "DuplexJev-4B"
+  slug: "duplexjev-4b"
+  provider: "Adventists AI"
+  description: "Speech-decision model for voice agents: answers closed-set questions about a clip (end of turn, emotion, gender, intent …) with a single constrained token, so nothing is decoded."
+  date_added: 2026-10-13
+  date_updated: 2026-10-13
+  difficulty: intermediate
+  tasks:
+    - multimodal
+  performance_headline: "Several decisions about one clip in one round of max_tokens=1 requests that share the audio prefix"
+  related_recipes: ["Qwen/Qwen3-4B"]
+
+model:
+  model_id: "adventists-ai/DuplexJev-4B"
+  min_vllm_version: "0.29.0"
+  install:
+    pip:
+      note: "The stock Docker image does not include the duplexjev-vllm plugin; install with pip"
+    docker: false
+  architecture: dense
+  parameter_count: "4.2B"
+  active_parameters: "4.2B"
+  context_length: 40960
+  base_args: ["--max-model-len", "4096"]
+  base_env: {}
+
+dependencies:
+  - note: "Audio extras for vLLM plus the DuplexJev plugin (registers DuplexJevForConditionalGeneration through vllm.general_plugins; Apache-2.0)"
+    command: 'uv pip install -U "vllm[audio]>=0.29" duplexjev-vllm'
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 11
+    description: "BF16 weights (Qwen3-ASR-0.6B audio encoder + connector + Qwen3-4B); fits a single GPU"
+
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  DuplexJev-4B listens to raw speech and answers closed-set questions about it:
+  has the user finished speaking, what is the emotion or perceived gender, what does
+  the user want, and so on. Each question is a multiple-choice prompt and the answer
+  is the next-token distribution over the option letters, read with `max_tokens=1`
+  and `allowed_token_ids`. No text is generated, so a batch of decisions about one
+  clip costs about one prefill.
+
+  The model is an Ultravox-style stack: Qwen3-ASR-0.6B audio encoder → connector →
+  Qwen3-4B. vLLM does not ship the Qwen3-ASR encoder for this architecture, so the
+  out-of-tree plugin `duplexjev-vllm` adds the encoder and its preprocessing
+  (128-bin log-mel) on top of vLLM's own Ultravox implementation. The connector and
+  the LLM run on vLLM's code.
+
+  Weights are CC BY-NC 4.0 (non-commercial); code and plugin are Apache-2.0.
+  Larger checkpoints (DuplexJev-32B, -Turn, -Para) use the same plugin and commands.
+
+  ## Launch
+
+  ```bash
+  uv pip install -U "vllm[audio]>=0.29" duplexjev-vllm
+  vllm serve adventists-ai/DuplexJev-4B --max-model-len 4096
+  ```
+
+  ## Client usage
+
+  One request per question; requests about the same clip share their prefix
+  (chat header + audio), which the prefix cache computes once.
+
+  ```python
+  import base64, json, math, urllib.request
+  from openai import OpenAI
+
+  base = "http://localhost:8000"
+  client = OpenAI(base_url=f"{base}/v1", api_key="EMPTY")
+  model = "adventists-ai/DuplexJev-4B"
+
+  def letter_id(c):
+      req = urllib.request.Request(f"{base}/tokenize", headers={"Content-Type": "application/json"},
+          data=json.dumps({"model": model, "prompt": c, "add_special_tokens": False}).encode())
+      return json.load(urllib.request.urlopen(req))["tokens"][0]
+
+  def ask(wav_bytes, question, options):
+      letters = "ABCDEFGHIJ"[:len(options)]
+      text = ("The user said: <|audio|>\n\nQuestion: " + question + "\n\nOptions:\n"
+              + "\n".join(f"{l}. {o}" for l, o in zip(letters, options))
+              + "\n\nAnswer with only the letter of the correct option.")
+      r = client.chat.completions.create(
+          model=model, max_tokens=1, temperature=0, logprobs=True, top_logprobs=20,
+          messages=[{"role": "user", "content": [
+              {"type": "text", "text": text},
+              {"type": "input_audio", "input_audio": {
+                  "data": base64.b64encode(wav_bytes).decode(), "format": "wav"}}]}],
+          extra_body={"allowed_token_ids": [letter_id(l) for l in letters],
+                      "chat_template_kwargs": {"enable_thinking": False}})
+      lp = {t.token: t.logprob for t in r.choices[0].logprobs.content[0].top_logprobs}
+      z = [lp.get(l, -1e9) for l in letters]
+      p = [math.exp(v - max(z)) for v in z]
+      return dict(zip(options, (x / sum(p) for x in p)))
+
+  wav = open("clip.wav", "rb").read()
+  print(ask(wav, "Has the user finished speaking?", ["finished", "not finished"]))
+  print(ask(wav, "What is the speaker's emotional state?", ["neutral", "happy", "angry", "sad"]))
+  ```
+
+  A concurrent client that asks several questions about one clip is in
+  [examples/vllm_client.py](https://github.com/adventists-ai/duplexjev/blob/main/examples/vllm_client.py).
+
+  ## Troubleshooting
+
+  - **Unknown architecture `DuplexJevForConditionalGeneration`:** the plugin is not
+    installed in the environment that runs `vllm serve` (`pip show duplexjev-vllm`).
+  - **Option letters must be single tokens:** the client above looks them up with
+    `/tokenize`; keep options to at most 10 (A–J).
+
+  ## References
+
+  - [Model card](https://huggingface.co/adventists-ai/DuplexJev-4B)
+  - [vLLM plugin](https://github.com/adventists-ai/duplexjev/tree/main/vllm_plugin) · [PyPI](https://pypi.org/project/duplexjev-vllm/)
+  - [Paper (arXiv 2610.02638)](https://arxiv.org/abs/2610.02638)
