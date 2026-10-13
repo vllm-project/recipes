@@ -29,9 +29,10 @@ model:
     amd: "vllm/vllm-openai-rocm:nightly"
   nightly_required: true
   install:
+    pip:
+      note: "Nightly wheels are recommended and verified by this recipe; stable vLLM ≥0.30.0 also runs the model."
     docker:
-      note: "Use the vLLM nightly image; PyPI installation is not supported for this recipe."
-    pip: false
+      note: "Use the vLLM nightly image."
   architecture: moe
   parameter_count: "176B"
   active_parameters: "6B"
@@ -218,8 +219,8 @@ guide: |
   ## Prerequisites
 
   - **Runtime:** use the nightly image, `vllm/vllm-openai:nightly` on NVIDIA or
-    `vllm/vllm-openai-rocm:nightly` on AMD. PyPI installation is not supported
-    for this recipe.
+    `vllm/vllm-openai-rocm:nightly` on AMD, or the nightly PyPI wheels. Stable
+    ≥0.30.0 runs the model, but this recipe is tuned and verified on nightly.
   - **Hardware:** NVIDIA CUDA and AMD ROCm instructions are provided below.
   - **FP8 memory:** the checkpoint is 172.78 GiB. TP1 is the validated minimum on
     GB300 (288 GB HBM3e); TEP4 is the recommended full-tray configuration.
@@ -228,8 +229,7 @@ guide: |
   - **Host memory for N-gram Embedding offload:** at least 51 GB plus
     runtime headroom.
 
-  The Install block above generates the pull and Docker launch flow for the nightly
-  image.
+  The Install block above generates the nightly-wheel and Docker launch flows.
 
   ## Serving
 
