@@ -8,7 +8,7 @@ meta:
   date_updated: 2026-10-13
   tasks:
     - omni
-  performance_headline: "1x H100: first audio 123 ms, RTF 0.26 at concurrency 1"
+  performance_headline: "1x H100: first audio 126 ms, RTF 0.28 at concurrency 1"
   related_recipes:
     - fishaudio/s2-pro
     - Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
@@ -88,6 +88,7 @@ guide: |
 
   ```bash
   uv venv && source .venv/bin/activate
+  uv pip install vllm==0.31.0 --torch-backend=auto
   uv pip install git+https://github.com/vllm-project/vllm-omni.git
   ```
 
@@ -100,7 +101,7 @@ guide: |
   vllm serve fishaudio/drama-3 --omni --port 8000
   ```
 
-  The first request after start compiles kernels and takes a few seconds;
+  The first request after start compiles kernels and takes about 10 s;
   send a few warmup requests before measuring latency.
 
   ## Client usage
@@ -138,9 +139,9 @@ guide: |
 
   | Concurrency | First audio (p50) | RTF |
   |---:|---:|---:|
-  | 1 | 123 ms | 0.26 |
-  | 4 | 261 ms | 0.38 |
-  | 8 | 336 ms | 0.51 |
+  | 1 | 126 ms | 0.28 |
+  | 4 | 246 ms | 0.40 |
+  | 8 | 360 ms | 0.51 |
 
   Voice cloning, 5 public Common Voice reference voices x 4 English
   sentences: Whisper-large-v3 WER 0.000.
