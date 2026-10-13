@@ -31,9 +31,11 @@ function yamlFiles(d) {
 }
 
 const recipes = yamlFiles(path.join(dir, "models")).map((f) => ({ f, r: normalize(load(f)) }));
-const kimi = recipes.find(({ f }) => f.endsWith("moonshotai/Kimi-K3.yaml")).r;
+// Mutations start from a fixed fixture (the starter template), not a catalog
+// recipe that a source update could rename or remove.
+const fixture = normalize(load(new URL("../templates/text.yaml", import.meta.url).pathname));
 const errorsFor = (mutate) => {
-  const r = structuredClone(kimi);
+  const r = structuredClone(fixture);
   mutate(r);
   return validate(r) ? [] : validate.errors;
 };

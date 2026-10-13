@@ -23,7 +23,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import yaml from "js-yaml";
-import { applyOverlay, hasGuideMarkers, resolveScope, stripGuideMarkers } from "../src/lib/overlay-merge.js";
+import { applyOverlay, hasGuideMarkers, resolveScope, stripGuideMarkers, variantInScope } from "../src/lib/overlay-merge.js";
 import { ROOT, loadLock, loadOverrides, loadSources, parseArgs, resolveSourceDir } from "./lib/content-sources.mjs";
 
 // Highest recipe schema this renderer understands (source manifest.yaml).
@@ -110,8 +110,9 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
         errors.push(`${hfId}: shipped by both "${prev.name}" (${prev.rel}) and "${name}" (${rel}) — one source must own it`);
         continue;
       }
-      const meta = yaml.load(fs.readFileSync(file, "utf8"))?.meta || {};
-      const tasks = meta.tasks || [];
+      const doc = yaml.load(fs.readFileSync(file, "utf8")) || {};
+      const meta = doc.meta || {};
+      const tasks = Array.isArray(meta.tasks) ? meta.tasks : [];
       if (spec.scope?.tasks && !spec.scope.tasks.some((t) => tasks.includes(t))) {
         errors.push(`${label} ${rel}: source scope requires meta.tasks to include ${spec.scope.tasks.join("|")}`);
       }
@@ -120,10 +121,14 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
       }
       if (spec.role === "overlay") {
         // An overlay repo may own whole recipes only for models that run
-        // exclusively on its hardware.
+        // exclusively on its hardware: every declared GPU and every variant's
+        // supported_hardware allowlist must be in scope (a variant without
+        // one would render on every GPU).
         const hw = Object.keys(meta.hardware || {});
-        if (hw.length === 0 || !hw.every((k) => ctx.isHwKey(k))) {
-          errors.push(`${label} ${rel}: an overlay source may only own recipes whose meta.hardware is all in scope`);
+        const variants = Object.entries(doc.variants || {});
+        if (hw.length === 0 || !hw.every((k) => ctx.isHwKey(k))
+          || variants.length === 0 || !variants.every(([, v]) => variantInScope(v, ctx))) {
+          errors.push(`${label} ${rel}: an overlay source may only own recipes whose meta.hardware and every variant's supported_hardware are in scope`);
         }
       }
       owners.set(hfId, { name, spec, file, rel, sha });
@@ -178,6 +183,10 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
       continue;
     }
     let recipe = yaml.load(raw);
+    if (!recipe || typeof recipe !== "object" || Array.isArray(recipe)) {
+      errors.push(`${owner.name} ${owner.rel}: recipe is empty or not a map`);
+      continue;
+    }
     for (const o of ovs) {
       const res = applyOverlay(recipe, yaml.load(fs.readFileSync(o.file, "utf8")) || {}, { ctx: o.ctx, source: o.name });
       for (const e of res.errors) errors.push(`${channel}.${o.name} ${o.rel}: ${e}`);

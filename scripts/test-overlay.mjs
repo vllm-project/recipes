@@ -36,11 +36,11 @@ const recipes = yamlFiles(path.join(contentDir(), "models")).map((file) => ({
   recipe: yaml.load(fs.readFileSync(file, "utf8")),
 }));
 
+// Holds for any catalog — including one whose Ascend content already lives in
+// vllm-ascend overlays, where every split is empty.
 test("split → merge reproduces every recipe (Huawei scope)", () => {
-  let withOverlay = 0;
   for (const { file, recipe } of recipes) {
     const { core, overlay } = splitOverlay(recipe, { ctx, source, guideHeading: /ascend/i });
-    if (Object.keys(overlay).length) withOverlay++;
     // The overlay must survive a YAML round-trip, as it will on disk.
     const ov = yaml.load(yaml.dump(overlay, { lineWidth: -1 })) || {};
     const { recipe: merged, errors } = applyOverlay(core, ov, { ctx, source });
@@ -54,12 +54,12 @@ test("split → merge reproduces every recipe (Huawei scope)", () => {
     // Core keeps nothing in scope except prose and per-variant references.
     assert.equal(splitOverlay(core, { ctx, source, guideHeading: /ascend/i }).overlay.meta, undefined, file);
   }
-  assert.ok(withOverlay > 0, "expected recipes with Ascend content");
 });
 
-const kimi = recipes.find((r) => r.file.endsWith("moonshotai/Kimi-K3.yaml")).recipe;
-const { core: kimiCore } = splitOverlay(kimi, { ctx, source });
-const errs = (overlay) => applyOverlay(kimiCore, overlay, { ctx, source }).errors;
+// A fixed fixture (the starter template), so a catalog change can't break the
+// scope tests — bump-sources.yml runs this file to validate new content.
+const core0 = yaml.load(fs.readFileSync(path.join(ROOT, "templates/text.yaml"), "utf8"));
+const errs = (overlay) => applyOverlay(core0, overlay, { ctx, source }).errors;
 
 test("overlay can't touch out-of-scope hardware or model config", () => {
   assert.equal(errs({ hardware_overrides: { blackwell: { extra_args: ["--x"] } } }).length, 1);
@@ -71,7 +71,7 @@ test("overlay can't touch out-of-scope hardware or model config", () => {
 });
 
 test("overlay is add-only", () => {
-  const once = applyOverlay(kimiCore, { meta: { hardware: { ascend_910c: "verified" } } }, { ctx, source }).recipe;
+  const once = applyOverlay(core0, { meta: { hardware: { ascend_910c: "verified" } } }, { ctx, source }).recipe;
   assert.equal(applyOverlay(once, { meta: { hardware: { ascend_910c: "unsupported" } } }, { ctx, source }).errors.length, 1);
   // An existing variant can't be replaced wholesale, only extended per hardware.
   assert.equal(errs({ variants: { default: { precision: "int4" } } }).length, 1);
@@ -88,7 +88,7 @@ test("new variants and dependencies must be in scope", () => {
 
 test("an overlay source needs a granted scope", () => {
   const none = resolveScope({}, taxonomy);
-  assert.equal(applyOverlay(kimiCore, { meta: { hardware: { ascend_910c: "verified" } } }, { ctx: none, source }).errors.length, 1);
+  assert.equal(applyOverlay(core0, { meta: { hardware: { ascend_910c: "verified" } } }, { ctx: none, source }).errors.length, 1);
 });
 
 test("guide sections fill their marker, else append", () => {

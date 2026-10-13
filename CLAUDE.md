@@ -20,7 +20,11 @@ pnpm lint                               # next lint (ESLint)
 node scripts/build-recipes-api.mjs      # Assemble content + rebuild the JSON API — fastest validation that all YAMLs parse
 node scripts/sync-sources.mjs [--update] # Fetch remote recipe sources pinned in sources.lock.json (--update re-resolves refs)
 node scripts/assemble-content.mjs [--strict] [--override name=dir]  # Merge a channel's sources into .content/<channel>/
+pnpm content:watch                      # Re-assemble when files are added/removed in a local source (alongside pnpm dev)
+pnpm content:update                     # Re-resolve every source ref and rewrite sources.lock.json
+node scripts/validate-source.mjs --source <name> --dir <path>  # Validate a source repo's recipe dir (what its PR check runs)
 pnpm test:overlay                       # Overlay merge/split round-trip over every recipe + scope violations
+pnpm test:schema                        # Recipes + templates match the schema; misspelled keys are rejected
 node scripts/fetch-provider-logos.mjs   # Re-download HF org avatars to public/providers/
 node scripts/fetch-hf-dates.mjs         # Refresh public/hf-dates.json (HF createdAt per model)
 bash scripts/hf-info.sh <org>/<repo>    # Pull config.json / params.json for a model (used when authoring recipes)

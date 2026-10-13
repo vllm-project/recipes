@@ -23,7 +23,7 @@ import {
 const args = parseArgs(process.argv.slice(2));
 const { defaultChannel, channels } = loadSources();
 const overrides = loadOverrides(args.override);
-const targets = args.all ? Object.keys(channels) : [args.channel || defaultChannel];
+const targets = args.all ? Object.keys(channels) : [args.channel || process.env.RECIPES_CHANNEL || defaultChannel];
 
 async function gh(apiPath) {
   const headers = { Accept: "application/vnd.github+json", "User-Agent": "vllm-recipes-sync" };
@@ -73,7 +73,7 @@ function git(cwd, ...argv) {
 }
 
 function fetchSource(repo, sha, subPath) {
-  const dest = cacheDirFor(repo, sha);
+  const dest = cacheDirFor(repo, sha, subPath);
   if (fs.existsSync(dest)) return false;
   fs.mkdirSync(CACHE_DIR, { recursive: true });
   const tmp = fs.mkdtempSync(path.join(CACHE_DIR, ".tmp-"));

@@ -44,7 +44,7 @@ function brandInScope(brand, ctx) {
 
 // A variant belongs to the overlay when it can only ever run on in-scope
 // hardware (e.g. Kimi-K3's `ascend_w4a8`, `supported_hardware: [ascend_910c]`).
-function variantInScope(variant, ctx) {
+export function variantInScope(variant, ctx) {
   const hw = variant?.supported_hardware;
   return Array.isArray(hw) && hw.length > 0 && hw.every((k) => ctx.isHwKey(k));
 }
@@ -116,7 +116,8 @@ export function applyOverlay(core, overlay, { ctx, source }) {
       const start = [];
       const end = [];
       for (const [i, dep] of value.entries()) {
-        if (!brandInScope(dep?.brand, ctx)) err([key, i], `needs a brand in scope (${[...ctx.brands].join(", ")})`);
+        if (!isObj(dep)) { err([key, i], "must be a map"); continue; }
+        if (!brandInScope(dep.brand, ctx)) err([key, i], `needs a brand in scope (${[...ctx.brands].join(", ")})`);
         const { position, ...rest } = structuredClone(dep);
         (position === "end" ? end : start).push(rest);
       }

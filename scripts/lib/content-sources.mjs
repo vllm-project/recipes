@@ -68,8 +68,12 @@ export function loadOverrides(cliOverrides = []) {
   return out;
 }
 
-export function cacheDirFor(repo, sha) {
-  return path.join(CACHE_DIR, `${repo.replace("/", "__")}@${sha}`);
+// One cache dir per (repo, commit, recipe dir): two sources may read
+// different directories of the same commit.
+export function cacheDirFor(repo, sha, subPath = ".") {
+  const sub = path.posix.normalize(subPath || ".").replace(/\/$/, "");
+  const suffix = sub === "." ? "" : `__${sub.replace(/[^A-Za-z0-9._-]+/g, "_")}`;
+  return path.join(CACHE_DIR, `${repo.replace("/", "__")}@${sha}${suffix}`);
 }
 
 export function isRemote(spec, name, overrides) {
@@ -85,7 +89,7 @@ export function resolveSourceDir(channel, name, spec, lock, overrides) {
   if (!entry?.sha) {
     throw new Error(`${channel}.${name} is not locked — run: node scripts/sync-sources.mjs --channel ${channel} --update`);
   }
-  const dir = cacheDirFor(spec.repo, entry.sha);
+  const dir = cacheDirFor(spec.repo, entry.sha, spec.path);
   if (!fs.existsSync(dir)) {
     throw new Error(`${channel}.${name}@${entry.sha.slice(0, 12)} is not fetched — run: node scripts/sync-sources.mjs --channel ${channel}`);
   }

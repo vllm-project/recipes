@@ -148,7 +148,8 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
         benchmark: { type: "string" },
         endpoint: { type: "string" },
         axes: { type: "object", additionalProperties: { type: "string" } },
-        hardware_overrides: keyed(hwKey, obj({ curl: { type: "string" }, extra_args: strings, vram_minimum_gb: { type: "number", minimum: 0 } })),
+        // Resolved by exact profile id only (resolveOmniTaskForHardware).
+        hardware_overrides: keyed(gpuId, obj({ curl: { type: "string" }, extra_args: strings, vram_minimum_gb: { type: "number", minimum: 0 } })),
       }, { required: ["id"] }),
     ],
   };
@@ -214,7 +215,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
 
       features: { type: "object", additionalProperties: feature },
       opt_in_features: strings,
-      hardware_opt_in_features: keyed(hwKey, strings),
+      hardware_opt_in_features: keyed(gpuId, strings),         // looked up by exact profile id
       variants: { type: "object", required: ["default"], additionalProperties: variant },
       compatible_strategies: { type: "array", items: strategyId },
       default_strategy: strategyId,
@@ -228,7 +229,8 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
       kv_offload_support: keyed({ enum: kvOffload }, status),
       strategy_hardware: keyed(strategyId, keyed(hwKey, { enum: ["supported", "unsupported"] })),
       hardware_overrides: keyed(hwKey, extraArgsEnv({ install_note: { type: "string" } })),
-      hardware_notes: keyed(hwKey, obj({ title: { type: "string" }, body: { type: "string" }, link: obj({ href: { type: "string" }, label: { type: "string" } }) }, { required: ["body"] })),
+      // looked up by exact profile id
+      hardware_notes: keyed(gpuId, obj({ title: { type: "string" }, body: { type: "string" }, link: obj({ href: { type: "string" }, label: { type: "string" } }) }, { required: ["body"] })),
       strategy_overrides: keyed(strategyId, strategyOverride),
       advanced_options: { type: "array", items: { type: "object" } },
       omni: obj({
