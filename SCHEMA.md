@@ -16,9 +16,8 @@ Two tools enforce and assist it:
   errors (the renderer would otherwise ignore them silently). Point your editor at it for completion
   and inline errors — with the YAML language server (VS Code's Red Hat YAML extension), start the file
   with `# yaml-language-server: $schema=https://recipes.vllm.ai/recipe.schema.json`.
-- **Starter templates** — [`templates/text.yaml`](templates/text.yaml) and
-  [`templates/multimodal.yaml`](templates/multimodal.yaml): the required fields plus the common
-  ones, with `TODO`s to fill in.
+- **Starter template** — [`templates/recipe.yaml`](templates/recipe.yaml): the required fields
+  plus the common ones (text or multimodal, dense or MoE), with `TODO`s to fill in.
 
 - [Annotated example](#annotated-example) — every field in order, with inline notes.
 - [Field reference](#field-reference) — semantics, precedence, and rendering consequences.

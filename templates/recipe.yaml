@@ -1,7 +1,6 @@
 # yaml-language-server: $schema=https://recipes.vllm.ai/recipe.schema.json
 #
-# Starter recipe for a MULTIMODAL model (image/video/audio input, dense or MoE).
-# For text-only models, start from text.yaml instead. Copy it to
+# Starter recipe (text or multimodal, dense or MoE). Copy it to
 # models/<hf_org>/<hf_repo>.yaml in the repo that owns the recipe
 # (vllm: recipes/models/…), replace every TODO, and delete what you don't need.
 # Every field, with rules and examples: SCHEMA.md in vllm-project/recipes.
@@ -10,11 +9,11 @@ meta:
   title: "TODO-Model-Name"
   slug: "todo-model-name"
   provider: "TODO Org"
-  description: "TODO: one-sentence summary — modalities in, and what it's good at."
+  description: "TODO: one-sentence summary of the model and what it's good at."
   date_added: 2026-01-01          # TODO: today; never change it afterwards
   date_updated: 2026-01-01        # TODO: today; bump on material recipe changes
   tasks:
-    - multimodal
+    - text                        # text | multimodal | embedding
   performance_headline: "TODO (optional): one line from your own benchmark"
   related_recipes: []
   hardware:
@@ -24,10 +23,10 @@ model:
   model_id: "TODO-org/TODO-repo"  # MUST equal the file path
   min_vllm_version: "0.30.0"      # TODO: lowest stable release that serves it
   architecture: dense             # TODO: dense | moe
-  parameter_count: "8B"           # TODO: total parameters, vision/audio encoder included
+  parameter_count: "8B"           # TODO: total parameters (multimodal: encoder included)
   active_parameters: "8B"         # TODO: activated per token (= parameter_count for dense)
-  context_length: 131072          # TODO: text_config.max_position_embeddings
-  base_args: []                   # e.g. --trust-remote-code, --mm-processor-cache-gb 0
+  context_length: 131072          # TODO: max_position_embeddings (multimodal: text_config's)
+  base_args: []                   # flags every command needs (e.g. --trust-remote-code)
   base_env: {}
 
 features:
@@ -37,16 +36,16 @@ features:
   reasoning:
     description: "TODO: parse reasoning output separately from the answer."
     args: ["--reasoning-parser", "TODO"]
-  text_only:
-    description: "Skip the multimodal encoder for text-only workloads; frees its memory for KV cache."
-    args: ["--language-model-only"]
-  encoder_parallel:
-    description: "Run the multimodal encoder data-parallel across the TP ranks instead of sharding it."
-    args: ["--mm-encoder-tp-mode", "data"]
+  # Multimodal models: set tasks to [multimodal] and usually add these two,
+  # listed in opt_in_features:
+  # text_only:
+  #   description: "Skip the multimodal encoder for text-only workloads; frees its memory for KV cache."
+  #   args: ["--language-model-only"]
+  # encoder_parallel:
+  #   description: "Run the multimodal encoder data-parallel across the TP ranks instead of sharding it."
+  #   args: ["--mm-encoder-tp-mode", "data"]
 
-opt_in_features:                  # features that default OFF
-  - text_only
-  - encoder_parallel
+opt_in_features: []               # features that default OFF (e.g. spec_decoding)
 
 variants:
   default:
@@ -65,22 +64,13 @@ strategy_overrides: {}
 guide: |
   ## Overview
 
-  TODO: what the model is, which modalities it accepts, what this recipe was
-  tested on, and its limits.
+  TODO: what the model is, what this recipe was tested on, and its limits.
 
   ## Launch
 
-  ## Client usage — image input
+  ## Client usage
 
-  ```bash
-  curl http://localhost:8000/v1/chat/completions -H "Content-Type: application/json" -d '{
-    "model": "TODO-org/TODO-repo",
-    "messages": [{"role": "user", "content": [
-      {"type": "image_url", "image_url": {"url": "https://TODO/image.jpg"}},
-      {"type": "text", "text": "Describe this image."}
-    ]}]
-  }'
-  ```
+  TODO: a chat request (multimodal: one with image/video/audio input).
 
   ## Benchmarking
 

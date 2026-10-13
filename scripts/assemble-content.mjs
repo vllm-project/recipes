@@ -163,7 +163,8 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
 
   // ── Write the tree ──
   fs.rmSync(tmp, { recursive: true, force: true });
-  fs.mkdirSync(tmp, { recursive: true });
+  // models/ always exists, even for a channel with no recipes yet.
+  fs.mkdirSync(path.join(tmp, "models"), { recursive: true });
   for (const entry of VOCABULARY) {
     const src = path.join(ROOT, entry);
     if (fs.existsSync(src)) link(src, path.join(tmp, entry));

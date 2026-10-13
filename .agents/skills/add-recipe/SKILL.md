@@ -140,8 +140,7 @@ guide markdown ─────────────────────�
    Test multimodal, tool calling, reasoning parsing, speculative decoding, offload, long
    context, and other optional paths separately before calling those paths verified.
 9. **Translate evidence into YAML.** Write `models/<hf_org>/<hf_repo>.yaml` in the owning
-   repo (table above), starting from `templates/text.yaml` or `templates/multimodal.yaml`
-   in vllm-project/recipes, following the component contract and [SCHEMA.md](https://github.com/vllm-project/recipes/blob/main/SCHEMA.md).
+   repo (table above), starting from `templates/recipe.yaml` in vllm-project/recipes, following the component contract and [SCHEMA.md](https://github.com/vllm-project/recipes/blob/main/SCHEMA.md).
    Every build checks the file against `https://recipes.vllm.ai/recipe.schema.json`;
    an unknown or misspelled key is an error. The tested command belongs in the builder
    fields; the guide records exact evidence, limitations, and explicit checkpoint links.

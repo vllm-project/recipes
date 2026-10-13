@@ -30,9 +30,8 @@ to this repo.
 
 1. Fork + clone the owning repo (above) and this repo.
 2. Create `models/<hf_org>/<hf_repo>.yaml` in the owning repo, starting from
-   [`templates/text.yaml`](templates/text.yaml) or
-   [`templates/multimodal.yaml`](templates/multimodal.yaml) and following
-   [SCHEMA.md](SCHEMA.md). The templates' first line points YAML-aware editors at
+   [`templates/recipe.yaml`](templates/recipe.yaml) and following
+   [SCHEMA.md](SCHEMA.md). The template's first line points YAML-aware editors at
    the published schema for completion and inline errors.
 3. Point this repo at your checkout with a gitignored `sources.local.yaml`
    (skip this when the recipe lives in this repo):

@@ -58,7 +58,7 @@ test("split → merge reproduces every recipe (Huawei scope)", () => {
 
 // A fixed fixture (the starter template), so a catalog change can't break the
 // scope tests — bump-sources.yml runs this file to validate new content.
-const core0 = yaml.load(fs.readFileSync(path.join(ROOT, "templates/text.yaml"), "utf8"));
+const core0 = yaml.load(fs.readFileSync(path.join(ROOT, "templates/recipe.yaml"), "utf8"));
 const errs = (overlay) => applyOverlay(core0, overlay, { ctx, source }).errors;
 
 test("overlay can't touch out-of-scope hardware or model config", () => {

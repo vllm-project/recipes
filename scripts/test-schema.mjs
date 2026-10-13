@@ -33,7 +33,7 @@ function yamlFiles(d) {
 const recipes = yamlFiles(path.join(dir, "models")).map((f) => ({ f, r: normalize(load(f)) }));
 // Mutations start from a fixed fixture (the starter template), not a catalog
 // recipe that a source update could rename or remove.
-const fixture = normalize(load(new URL("../templates/text.yaml", import.meta.url).pathname));
+const fixture = normalize(load(new URL("../templates/recipe.yaml", import.meta.url).pathname));
 const errorsFor = (mutate) => {
   const r = structuredClone(fixture);
   mutate(r);
