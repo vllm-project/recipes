@@ -475,8 +475,8 @@ guide: |
 
   ## Agentic serving on GB200/GB300 (DSpark)
 
-  For agentic serving, such as the [InferenceX AgentX benchmark](https://github.com/SemiAnalysisAI/InferenceX/pull/3738),
-  use the following common settings with [DeepSeek-V4-Pro-0813](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro-0813/tree/72e1d3230f6c080a530b0a1d46f8eb4602340597)
+  For agentic serving, use the following common settings with
+  [DeepSeek-V4-Pro-0813](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro-0813/tree/72e1d3230f6c080a530b0a1d46f8eb4602340597)
   and its native DSpark draft. These are separate from the command-builder defaults.
 
   ### Common settings
@@ -507,7 +507,7 @@ guide: |
   For aggregate and decode, set `cudagraph_mode=FULL_DECODE_ONLY` and `mode=0`
   in `--compilation-config`, with explicit capture sizes `n*(K+1)` for `n=1..S`.
   `S` is `max-num-seqs` per DP rank, or per engine for pure TP. Set the maximum
-  capture size to `S*(K+1)`; the GB300 aggregate example also includes `n*K` sizes.
+  capture size to `S*(K+1)`; aggregate serving can also include `n*K` sizes.
   Recompute the capture sizes when K or S changes. Size `max-num-batched-tokens`
   to cover verification tokens plus any prefill work scheduled on that engine.
 
@@ -516,7 +516,7 @@ guide: |
   - Aggregate: `--router-mode kv`, `DYN_ROUTER_TEMPERATURE=0` and
     `DYN_TOKENIZER=fastokens`.
   - Disaggregated: `--router-mode random` with session affinity, or `kv` with
-    the same tokenizer settings as in the GB300 example. Send a stable conversation
+    the same tokenizer settings. Send a stable conversation
     ID as `x-dynamo-session-id` and set `--router-session-affinity-ttl-secs` to
     cover the conversation lifetime.
   - Both DEP roles use `MultiConnector` with `NixlConnector` for PD transfer and
