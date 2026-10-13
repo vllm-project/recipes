@@ -289,21 +289,24 @@ guide: |
 
   Plain TP8 is incompatible with the FP8 checkpoint; use TEP8.
 
-  ### FP8 configuration on 4x H100
+  ### Recommended FP8 configuration on 8x H100
 
   H100's 80GB/GPU is not enough headroom for the 51B N-gram/PLE embedding table
-  — it relies on PLE CPU offload, which vLLM enables by default. Use TEP with
+  — it relies on PLE CPU offload, which vLLM enables by default. Use TEP8 with
   the Triton MoE backend; as on other hardware, expert parallelism is faster
-  than plain TP for this model.
+  than plain TP, and plain TP8 is incompatible with the FP8 checkpoint's
+  128-wide quantization blocks.
 
   ```bash
   vllm serve Qwen/Qwen3.8-Flash-Next-FP8 \
-    --tensor-parallel-size 4 \
+    --tensor-parallel-size 8 \
     --enable-expert-parallel \
     --moe-backend triton \
     --gpu-memory-utilization 0.85 \
     --max-num-seqs 256 \
     --enable-prefix-caching \
+    --kv-cache-dtype fp8 \
+    --attention-config.indexer_kv_dtype fp8 \
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
     --enable-auto-tool-choice \
     --tool-call-parser qwen3_coder \
