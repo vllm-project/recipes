@@ -310,9 +310,6 @@ guide: |
     --reasoning-parser qwen3
   ```
 
-  Measured on this hardware with plain TP4: ~1,430 output tok/s at
-  concurrency 64 (random 1024-in/256-out workload).
-
   Benchmark MTP with SPEED-Bench (`--dataset-name speed_bench`), not `random`.
 
   ### FP8 configuration on a 4x MI355X GPU
