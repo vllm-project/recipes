@@ -615,8 +615,13 @@ guide: |
   and the standard-library path before forkserver workers. These settings and
   evidence are maintained in the bilingual Ascend recipe. This upstream hardware
   picker exposes only the tested 310P profile; it does not add an A2 profile.
-  The 1355-page score is 310P evidence only. A2 full-dataset accuracy, 910B2,
-  long-context inputs, native Docker launch and nightly CI remain untested.
+  The companion [Ascend recipe PR](https://github.com/vllm-ascend/vllm-ascend-recipes/pull/101)
+  also records the completed original 1355-page A2 run: Overall 92.4426% using
+  unchanged official ED/TEDS/rendered CDM metrics, with page batch 16 and
+  preprocessing queues disabled. Renderer failures and truncated predictions
+  are retained. This is separate from the 310P profile and does not establish
+  matched performance or formal acceptance. 910B2, long-context inputs,
+  native Docker launch and nightly CI remain untested.
   Multi-node PD is not supported by this tutorial.
 
   ### Ascend references
