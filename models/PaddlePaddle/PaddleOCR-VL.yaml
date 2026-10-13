@@ -4,7 +4,7 @@ meta:
   provider: "PaddlePaddle"
   description: "PaddleOCR-VL (0.9B) — compact vision-language model for document parsing, OCR, tables, formulas, charts"
   date_added: 2025-11-04
-  date_updated: 2026-10-12
+  date_updated: 2026-10-13
   difficulty: beginner
   tasks:
     - multimodal
@@ -90,9 +90,7 @@ variants:
         docker_serve_command: vllm serve
         install:
           pip: false
-          docker:
-            note: Official main 310P image pinned by digest. End-to-end evidence uses the corresponding latest source
-              build on HiDevLab CANN 9.1.0; the entire new container has not been run.
+          docker: true
         extra_args:
         - --dtype
         - float16
@@ -125,9 +123,7 @@ variants:
         docker_serve_command: vllm serve
         install:
           pip: false
-          docker:
-            note: Official main 310P image pinned by digest. End-to-end evidence uses the corresponding latest source
-              build on HiDevLab CANN 9.1.0; the entire new container has not been run.
+          docker: true
         extra_args:
         - --dtype
         - float16
@@ -605,10 +601,18 @@ guide: |
 
   The source tutorial also documents A2 single-NPU graph serving (BF16,
   `--max-num-batched-tokens 16384`) and a separate Paddle custom-NPU layout pipeline.
-  Those configurations are prepared in the bilingual Ascend recipe, but A2 hardware
-  was not authorized/available for this task. They remain untested; 310P evidence
-  does not validate A2 or all tutorial scenarios. Multi-node PD is not supported by
-  this tutorial.
+  On 2026-10-13, a dedicated A2 environment (actual Ascend 910B3, CANN 9.1.0)
+  passed all four tasks with both model aliases in BF16 graph mode and a separate
+  native Paddle custom-NPU newspaper pipeline (31 blocks, clean exit). The tested
+  settings use `TASK_QUEUE_ENABLE=0` and `--gpu-memory-utilization 0.80`; the
+  tutorial defaults failed startup on this image. Paddle layout uses its separate
+  CANN 8.0 image, genuine compatible compiler dependencies, ABI 0 ATB libraries,
+  and the standard-library path before forkserver workers. These settings and
+  evidence are maintained in the bilingual Ascend recipe. This upstream hardware
+  picker exposes only the tested 310P profile; it does not add an A2 profile.
+  The 1355-page score is 310P evidence only. A2 full-dataset accuracy, 910B2,
+  long-context inputs, native Docker launch and nightly CI remain untested.
+  Multi-node PD is not supported by this tutorial.
 
   ### Ascend references
 
