@@ -14,7 +14,7 @@ The site is the canonical surface. New work goes into YAMLs + the Next.js app; t
 ## Commands
 
 ```bash
-pnpm dev                                # Next dev server (do not kill or rebuild as part of a task)
+pnpm dev                                # sync + assemble sources, then the Next dev server (do not kill or rebuild as part of a task)
 pnpm build                              # Regenerates JSON API + fetches logos/HF dates, then next build
 pnpm lint                               # next lint (ESLint)
 node scripts/build-recipes-api.mjs      # Assemble content + rebuild the JSON API — fastest validation that all YAMLs parse

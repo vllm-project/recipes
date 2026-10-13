@@ -77,12 +77,15 @@ export const OVERLAY_RULES = [
 ].map((r) => (Array.isArray(r) ? { path: r } : r));
 
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && !(v instanceof Date);
+// Keys that would reach Object.prototype through a merge; never valid in a recipe.
+const RESERVED = new Set(["__proto__", "constructor", "prototype"]);
+const own = (o, k) => isObj(o) && Object.hasOwn(o, k);
 const taskKey = (t) => (typeof t === "string" ? t : t?.key ?? t?.id);
 
 function segmentMatches(seg, key, coreParent, ctx) {
   if (seg === "*") return true;
   if (seg === "@hw") return ctx.isHwKey(key);
-  if (seg === "@variant") return !(isObj(coreParent) && key in coreParent);
+  if (seg === "@variant") return !own(coreParent, key);
   if (seg === "[task]") return true;
   return seg === key;
 }
@@ -90,7 +93,7 @@ function segmentMatches(seg, key, coreParent, ctx) {
 // Child of a core node, resolving "[task]" against the omni tasks array.
 function coreChild(node, key, seg) {
   if (seg === "[task]") return Array.isArray(node) ? node.find((t) => taskKey(t) === key) : undefined;
-  return isObj(node) ? node[key] : undefined;
+  return own(node, key) ? node[key] : undefined;
 }
 
 // ── Merge ──
@@ -109,6 +112,7 @@ export function applyOverlay(core, overlay, { ctx, source }) {
   }
 
   for (const [key, value] of Object.entries(overlay || {})) {
+    if (RESERVED.has(key)) { err([key], "reserved key"); continue; }
     if (key === "dependencies") {
       if (!Array.isArray(value)) { err([key], "must be a list"); continue; }
       // Platform installs (vllm-ascend builds) must precede the model's own
@@ -141,7 +145,8 @@ export function applyOverlay(core, overlay, { ctx, source }) {
 // whose prefix matched so far and `p` is the path of `key`.
 function mergeNode(parent, key, ov, p, rules, ctx, err, seg = null) {
   const depth = p.length - 1;
-  const coreVal = seg === "[task]" ? coreChild(parent, key, seg) : parent?.[key];
+  if (RESERVED.has(key)) return err(p, "reserved key");
+  const coreVal = seg === "[task]" ? coreChild(parent, key, seg) : own(parent, key) ? parent[key] : undefined;
   const live = rules.filter((r) => r.path.length > depth && segmentMatches(r.path[depth], key, parent, ctx));
   if (live.length === 0) return err(p, "not writable by an overlay (outside its hardware scope)");
 
@@ -202,7 +207,7 @@ function setChild(parent, key, value, seg) {
 function insertGuideSections(guide, source, sections) {
   const placed = new Set();
   let out = guide.replace(GUIDE_MARKER, (m, src, name = "default") => {
-    if (src !== source || !(name in sections)) return m;
+    if (src !== source || !Object.hasOwn(sections, name)) return m;
     placed.add(name);
     return ensureTrailingNewline(sections[name]);
   });

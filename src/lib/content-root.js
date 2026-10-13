@@ -37,10 +37,19 @@ export function assembledDir(channel = contentChannel()) {
   return path.join(ROOT, ".content", channel);
 }
 
+let warnedFallback = false;
+
 export function contentDir(channel = contentChannel()) {
   if (process.env.RECIPES_CONTENT_DIR) return path.resolve(process.env.RECIPES_CONTENT_DIR);
   const dir = assembledDir(channel);
   if (fs.existsSync(path.join(dir, "models"))) return dir;
+  // Un-assembled checkout: only this repo's own models/ is visible, which is a
+  // partial catalog once any recipe lives in another source repo.
+  const sources = loadSourcesConfig().channels?.[channel] || {};
+  if (!warnedFallback && Object.values(sources).some((s) => !s?.local)) {
+    warnedFallback = true;
+    console.warn(`[recipes] .content/${channel} is not assembled — showing only this repo's models/. Run \`pnpm content\` (pnpm dev and the build do it).`);
+  }
   return ROOT;
 }
 

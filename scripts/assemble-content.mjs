@@ -54,6 +54,17 @@ function editUrl(spec, relPath) {
   return `https://github.com/${spec.repo}/edit/${spec.ref || "main"}/${p}`;
 }
 
+// Parse a source file, reporting a syntax error with its source and path
+// (and continuing, so one run lists every broken file).
+function loadYaml(file, label, rel, errors) {
+  try {
+    return yaml.load(fs.readFileSync(file, "utf8"), { filename: rel });
+  } catch (e) {
+    errors.push(`${label} ${rel}: invalid YAML — ${e.message.split("\n")[0]}`);
+    return undefined;
+  }
+}
+
 function readManifest(dir, label) {
   const file = path.join(dir, "manifest.yaml");
   if (!fs.existsSync(file)) return {};
@@ -110,7 +121,9 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
         errors.push(`${hfId}: shipped by both "${prev.name}" (${prev.rel}) and "${name}" (${rel}) — one source must own it`);
         continue;
       }
-      const doc = yaml.load(fs.readFileSync(file, "utf8")) || {};
+      const parsed = loadYaml(file, label, rel, errors);
+      if (parsed === undefined) continue;
+      const doc = parsed && typeof parsed === "object" ? parsed : {};
       const meta = doc.meta || {};
       const tasks = Array.isArray(meta.tasks) ? meta.tasks : [];
       if (spec.scope?.tasks && !spec.scope.tasks.some((t) => tasks.includes(t))) {
@@ -162,6 +175,7 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
     const dest = path.join(tmp, "models", `${hfId}.yaml`);
     const ovs = overlays.get(hfId) || [];
     const raw = fs.readFileSync(owner.file, "utf8");
+    const ownerLabel = `${channel}.${owner.name}`;
     provenance[hfId] = {
       source: owner.name,
       repo: owner.spec.repo || null,
@@ -182,13 +196,16 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
       link(owner.file, dest);
       continue;
     }
-    let recipe = yaml.load(raw);
+    let recipe = loadYaml(owner.file, ownerLabel, owner.rel, errors);
+    if (recipe === undefined) continue;
     if (!recipe || typeof recipe !== "object" || Array.isArray(recipe)) {
       errors.push(`${owner.name} ${owner.rel}: recipe is empty or not a map`);
       continue;
     }
     for (const o of ovs) {
-      const res = applyOverlay(recipe, yaml.load(fs.readFileSync(o.file, "utf8")) || {}, { ctx: o.ctx, source: o.name });
+      const ov = loadYaml(o.file, `${channel}.${o.name}`, o.rel, errors);
+      if (ov === undefined) continue;
+      const res = applyOverlay(recipe, ov || {}, { ctx: o.ctx, source: o.name });
       for (const e of res.errors) errors.push(`${channel}.${o.name} ${o.rel}: ${e}`);
       recipe = res.recipe;
     }
@@ -219,8 +236,12 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
     fs.rmSync(tmp, { recursive: true, force: true });
     throw new Error(`assemble ${channel} failed:\n  - ${errors.join("\n  - ")}`);
   }
-  fs.rmSync(out, { recursive: true, force: true });
+  // Two renames back to back keep the window without a tree to microseconds.
+  const old = path.join(ROOT, ".content", `.old-${channel}`);
+  fs.rmSync(old, { recursive: true, force: true });
+  if (fs.existsSync(out)) fs.renameSync(out, old);
   fs.renameSync(tmp, out);
+  fs.rmSync(old, { recursive: true, force: true });
   if (!quiet) {
     console.log(`✓ Content ${channel}: ${owners.size} recipes from ${Object.keys(sources).length} source(s), ${merged} with overlays → .content/${channel}`);
   }

@@ -63,8 +63,11 @@ fs.writeFileSync(path.join(tmp, "sources.yaml"),
   yaml.dump({ default_channel: CHANNEL, channels: { [CHANNEL]: sources } }));
 fs.writeFileSync(path.join(tmp, "sources.lock.json"), JSON.stringify(lock, null, 2));
 
+// The caller's RECIPES_OVERRIDES would replace --dir (overrides win over
+// `local`), so the children never see it.
+const { RECIPES_OVERRIDES: _ignored, ...inherited } = process.env;
 const env = {
-  ...process.env,
+  ...inherited,
   RECIPES_SOURCES: path.join(tmp, "sources.yaml"),
   RECIPES_CHANNEL: CHANNEL,
   RECIPES_PUBLIC_DIR: path.join(tmp, "public"),
@@ -72,7 +75,9 @@ const env = {
 const steps = [
   ["Fetch the other pinned sources", ["scripts/sync-sources.mjs"]],
   ["Assemble strictly", ["scripts/assemble-content.mjs", "--strict"]],
-  ["Check the schema and build the JSON API", ["scripts/build-recipes-api.mjs"]],
+  // Reuse the strict tree instead of assembling again.
+  ["Check the schema and build the JSON API", ["scripts/build-recipes-api.mjs"],
+    { RECIPES_CONTENT_DIR: path.join(ROOT, ".content", CHANNEL) }],
 ];
 
 function report(msg) {
@@ -81,9 +86,9 @@ function report(msg) {
 }
 
 let failed = null;
-for (const [label, argv] of steps) {
+for (const [label, argv, extraEnv = {}] of steps) {
   console.log(`\n▶ ${label}`);
-  const res = spawnSync(process.execPath, argv, { stdio: "inherit", env, cwd: ROOT });
+  const res = spawnSync(process.execPath, argv, { stdio: "inherit", env: { ...env, ...extraEnv }, cwd: ROOT });
   if (res.status !== 0) {
     failed = { label, status: res.status || 1 };
     break;

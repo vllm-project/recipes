@@ -104,6 +104,11 @@ for (const channel of targets) {
     let entry = lock[channel]?.[name];
     const stale = !entry || entry.repo !== spec.repo || entry.ref !== spec.ref
       || normalizedPath(entry.path) !== normalizedPath(spec.path);
+    if (stale && !args.update) {
+      // Never float: a build must deploy exactly what a lock bump validated.
+      throw new Error(`${label}: sources.lock.json has no pin for ${spec.repo}@${spec.ref}:${spec.path || "."} `
+        + `(new source, or its repo/ref/path changed) — run: node scripts/sync-sources.mjs --update --channel ${channel}`);
+    }
     if (args.update || stale) {
       const resolved = await resolveRef(spec.repo, spec.ref, spec.path);
       if (stale || resolved.tree_sha !== entry.tree_sha || await rewritten(spec.repo, entry.sha, resolved.sha)) {

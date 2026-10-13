@@ -5,7 +5,9 @@ import { contentDir, loadProvenance } from "./content-root.js";
 
 let cache = null;
 
-const MODELS_DIR = path.join(contentDir(), "models");
+// Resolved per call, not at import: the content tree may be assembled after
+// this module loads (pnpm dev assembles first, but a re-assemble can follow).
+const modelsDir = () => path.join(contentDir(), "models");
 const HF_DATES_PATH = path.join(process.cwd(), "public", "hf-dates.json");
 
 // HF release dates per hf_id (populated at build by scripts/fetch-hf-dates.mjs)
@@ -20,7 +22,7 @@ function loadHfDates() {
   return hfDates;
 }
 
-function parseRecipe(filePath) {
+function parseRecipe(filePath, dir, provenance) {
   const raw = yaml.load(fs.readFileSync(filePath, "utf8"));
   // js-yaml auto-parses YYYY-MM-DD into Date objects — normalize to string
   for (const field of ["date_added", "date_updated"]) {
@@ -29,7 +31,7 @@ function parseRecipe(filePath) {
     }
   }
   // Derive HF identity from file path: models/<org>/<repo>.yaml
-  const rel = path.relative(MODELS_DIR, filePath);
+  const rel = path.relative(dir, filePath);
   const parts = rel.split(path.sep);
   if (parts.length >= 2) {
     raw.hf_org = parts[0];
@@ -39,38 +41,49 @@ function parseRecipe(filePath) {
     const dates = loadHfDates();
     raw.hf_released = dates[raw.hf_id] || null;
     // Owning repo + overlays (from .content/<channel>/provenance.json)
-    raw.source = loadProvenance()[raw.hf_id] || null;
+    raw.source = provenance[raw.hf_id] || null;
   }
   return raw;
 }
 
+// Skips dangling symlinks (a source checkout renamed or deleted a recipe) and
+// treats a missing tree as empty (the brief swap while re-assembling).
 function findYamlFiles(dir) {
   const results = [];
+  if (!fs.existsSync(dir)) return results;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       results.push(...findYamlFiles(full));
-    } else if (entry.name.endsWith(".yaml") || entry.name.endsWith(".yml")) {
+    } else if ((entry.name.endsWith(".yaml") || entry.name.endsWith(".yml")) && fs.existsSync(full)) {
       results.push(full);
     }
   }
   return results;
 }
 
-// In `next dev`, re-parse when any recipe file changed (the content tree
-// symlinks into source checkouts such as ~/vllm/recipes), so edits show on
-// refresh. Production builds parse once.
+const mtime = (f) => {
+  try { return fs.statSync(f).mtimeMs; } catch { return "missing"; }
+};
+
+// In `next dev`, re-parse when any recipe file or provenance.json changed (the
+// content tree symlinks into source checkouts such as ~/vllm/recipes), so
+// edits show on refresh. Production builds parse once.
 let cacheKey = null;
-function filesKey(files) {
-  return files.map((f) => `${f}:${fs.statSync(f).mtimeMs}`).join("|");
-}
 
 export function getAllRecipes() {
-  const files = cache && process.env.NODE_ENV !== "development" ? null : findYamlFiles(MODELS_DIR);
-  if (cache && (!files || filesKey(files) === cacheKey)) return cache;
-  if (files) cacheKey = filesKey(files);
+  const dev = process.env.NODE_ENV === "development";
+  if (cache && !dev) return cache;
+  const dir = modelsDir();
+  const files = findYamlFiles(dir);
+  const key = dev
+    ? [mtime(path.join(contentDir(), "provenance.json")), ...files.map((f) => `${f}:${mtime(f)}`)].join("|")
+    : null;
+  if (cache && key === cacheKey) return cache;
+  const provenance = loadProvenance();
+  cacheKey = key;
   cache = files
-    .map(parseRecipe)
+    .map((f) => parseRecipe(f, dir, provenance))
     .sort((a, b) => {
       const da = new Date(a.meta.date_updated);
       const db = new Date(b.meta.date_updated);

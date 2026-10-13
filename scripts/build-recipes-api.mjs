@@ -69,7 +69,7 @@ function sourceRel(file) {
 }
 
 function readYaml(filePath) {
-  return yaml.load(fs.readFileSync(filePath, "utf8"));
+  return yaml.load(fs.readFileSync(filePath, "utf8"), { filename: path.relative(ROOT, filePath) });
 }
 
 function writeJson(relPath, data) {
@@ -760,18 +760,22 @@ const validateRecipe = new Ajv({ allErrors: true, strict: false }).compile(recip
 // One line per problem. anyOf branches report every alternative they tried;
 // keep the deepest, most specific message for each location.
 function schemaErrors(errors) {
-  const byPath = new Map();
+  // A bad map key fails `propertyNames` and also each alternative inside it
+  // (enum / pattern, reported with propertyName set); keep only the summary.
+  const badKeys = new Set(errors.filter((e) => e.keyword === "propertyNames")
+    .map((e) => `${e.instancePath}|${e.params.propertyName}`));
+  const out = new Set();
   for (const e of errors) {
     if (e.keyword === "anyOf" || e.keyword === "if") continue;
+    if (e.keyword !== "propertyNames" && e.propertyName !== undefined
+      && badKeys.has(`${e.instancePath}|${e.propertyName}`)) continue;
     const at = e.instancePath || "/";
-    let msg;
-    if (e.keyword === "additionalProperties") msg = `unknown key "${e.params.additionalProperty}" at ${at}`;
-    else if (e.keyword === "propertyNames") msg = `key "${e.params.propertyName}" is not valid at ${at}`;
-    else if (e.keyword === "enum") msg = `${at} must be one of: ${e.params.allowedValues.slice(0, 12).join(", ")}${e.params.allowedValues.length > 12 ? ", …" : ""}`;
-    else msg = `${at} ${e.message}`;
-    if (!byPath.has(at) || e.keyword === "additionalProperties") byPath.set(`${at}:${msg}`, msg);
+    if (e.keyword === "additionalProperties") out.add(`unknown key "${e.params.additionalProperty}" at ${at}`);
+    else if (e.keyword === "propertyNames") out.add(`key "${e.params.propertyName}" is not valid at ${at}`);
+    else if (e.keyword === "enum") out.add(`${at} must be one of: ${e.params.allowedValues.slice(0, 12).join(", ")}${e.params.allowedValues.length > 12 ? ", …" : ""}`);
+    else out.add(`${at} ${e.message}`);
   }
-  return [...new Set(byPath.values())];
+  return [...out];
 }
 
 // ── Recipes ── (walks models/<hf_org>/<hf_repo>.yaml)

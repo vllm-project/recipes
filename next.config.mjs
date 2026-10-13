@@ -7,7 +7,10 @@ const nextConfig = {
   // content tree at runtime; its path is computed (src/lib/content-root.js),
   // so the tracer can't discover it on its own.
   outputFileTracingIncludes: {
-    "/**/*": ["./.content/**/*"],
+    "/**/*": ["./.content/**/*", "./sources.yaml"],
+  },
+  outputFileTracingExcludes: {
+    "/**/*": ["./.content/.tmp-*/**", "./.content/.old-*/**", "./.content/validate/**"],
   },
 };
 
