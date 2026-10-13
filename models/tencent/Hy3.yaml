@@ -22,7 +22,7 @@ model:
   default_frontend: rust
   docker_image:
     nvidia: "vllm/vllm-openai:hy3"
-    amd: "vllm/vllm-openai-rocm:nightly-cbe9c40f998f13975b967773ac7e7920e115387f"
+    amd: "vllm/vllm-openai-rocm:latest"
   install:
     docker:
       note: "Recommended: the dedicated image ships the Hy3 runtime and dependencies."
