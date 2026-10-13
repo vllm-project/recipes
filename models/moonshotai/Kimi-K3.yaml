@@ -786,7 +786,7 @@ guide: |
 
   If long prefills encounter kernel scratch-allocation errors with limited free VRAM, allow scratch reclamation on the prefill worker with `HSA_NO_SCRATCH_RECLAIM=0 bash kimi-k3-pd.sh prefill`, subject to the host's ROCm/firmware compatibility requirements. This controls temporary kernel scratch memory, not KV-cache eviction or post-exit cleanup.
 
-  ### Scaling decode workers
+  ### Scaling and concurrency tuning
 
   For 1P2D or 1P3D, run the decode command on additional nodes with their own `WORKER_IP`. Discovery registers each worker automatically; the port ranges can be reused on separate hosts. These are router-balanced replicas, not a cross-node TP group.
 
@@ -800,14 +800,20 @@ guide: |
 
   Set `MAX_SEQS` in each role's branch accordingly. The factor of two provides scheduling headroom. For decode, set `max_cudagraph_capture_size` to `G`, keeping it within the decode token budget. In `CAPTURES`, include every size from 1 through the smaller of `G` and the next power of two at or above `2 * C`, then larger multiples of 10 up to `G`; include `G` itself if needed.
 
-  Two examples with K4 and DCP8:
+  At low concurrency, `G = (K + 1) * D max-num-seqs` with dense captures from 1 through `G` is an alternative.
 
-  | Topology | Global concurrency C | P max-num-seqs | Per-D max-num-seqs | D graph max G |
-  | --- | ---: | ---: | ---: | ---: |
-  | 1P2D | 24 | 48 | 24 | 120 |
-  | 1P3D | 24 | 48 | 16 | 120 |
+  The configurations below range from throughput-oriented to latency-oriented. All use TP8 workers, K4, prefill-only CPU offload, and the same P/D token budgets and graph modes as the example above. Capture every integer size from 1 through **dense**, then larger multiples of 10 through **max**.
 
-  For smaller low-concurrency batches, `G = (K + 1) * D max-num-seqs` with dense captures from 1 through `G` is an alternative. At low concurrency, for example C=12, DCP can also be disabled with `--decode-context-parallel-size 1` on both roles. Keep P/D DCP and cache layouts matched. Benchmark concurrency sweeps and harness settings remain in the linked InferenceX configuration.
+  | Topology | Global concurrency C | P/D DCP | P max-num-seqs | Per-D max-num-seqs | D graph dense / max |
+  | --- | ---: | --- | ---: | ---: | --- |
+  | 1P1D | 56 | 8/8 | 112 | 112 | 128 / 280 |
+  | 1P1D | 48 | 8/8 | 96 | 96 | 128 / 240 |
+  | 1P2D | 48 | 8/8 | 96 | 48 | 128 / 240 |
+  | 1P2D | 24 | 8/8 | 48 | 24 | 64 / 120 |
+  | 1P3D | 24 | 8/8 | 48 | 16 | 64 / 120 |
+  | 1P3D | 12 | 1/1 | 24 | 8 | 40 / 40 |
+
+  The 1P3D C=12 configuration uses the low-concurrency graph formula (`G = 5 * 8 = 40`) and disables DCP with `--decode-context-parallel-size 1` on both roles. Keep P/D DCP and cache layouts matched. Benchmark concurrency sweeps and harness settings remain in the linked InferenceX configuration.
 
   ### Verify routed inference
 
