@@ -3803,6 +3803,8 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
     ...(isDynamo && result.infra ? [{ id: "dyn_infra", label: result.infra.label, command: result.infra.command, env: {}, description: result.infra.description }] : []),
     { id: "prefill", label: "Prefill", command: wrap(result.prefill.command, result.prefill.env), env: result.prefill.env, meta: result.prefill },
     { id: "decode", label: "Decode", command: wrap(result.decode.command, result.decode.env), env: result.decode.env, meta: result.decode },
+    // Ascend NPU PD: external DP launcher tab appears after Decode.
+    ...(result.launcher ? [{ id: "launcher", label: result.launcher.label, command: [result.launcher.script, result.launcher.prefillCmd, result.launcher.decodeCmd, result.launcher.postScript].join("\n"), env: {}, description: result.launcher.description }] : []),
     { id: "router", label: result.router.label || "Router", command: routerDocker || result.router.command, env: result.router.env || {}, install: routerDocker ? null : result.router.install, isRouter: true },
     ...(result.registration ? [{ id: "registration", ...result.registration, env: {}, isRouter: true }] : []),
   ].map((t, i) => (mc || isDynamo || isSmg ? { ...t, step: i + 1 } : t));
