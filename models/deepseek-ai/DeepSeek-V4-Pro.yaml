@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 flagship MoE (1.6T total / 49B active) with hybrid CSA+HCA attention, manifold-constrained hyper-connections, Muon-trained on 32T+ tokens, and three-tier reasoning."
   date_added: 2026-04-24
-  date_updated: 2026-10-12
+  date_updated: 2026-10-13
   difficulty: hard
   tasks:
     - text
@@ -510,6 +510,52 @@ guide: |
   capture size to `S*(K+1)`; aggregate serving can also include `n*K` sizes.
   Recompute the capture sizes when K or S changes. Size `max-num-batched-tokens`
   to cover verification tokens plus any prefill work scheduled on that engine.
+
+  ### Scheduling, NUMA binding, and streaming
+
+  The following role-specific settings come from the
+  [GB200 DSpark configurations](https://github.com/SemiAnalysisAI/InferenceX/tree/954a9aa600417289c6967f4cd96a3e9279a09c77/inferencex-e2e/benchmarks/multi_node/srt-slurm-recipes/dsv4/vllm/gb200-fp4/agentx)
+  using `vllm/vllm-openai:nightly-dev-arm64-cu13.0.1-20ebb28` with Dynamo
+  `1.3.0.dev20260720`. Append these arguments to the corresponding worker's
+  engine command alongside the common settings above.
+
+  **DEP decode scheduling:** use the following overrides for the layouts marked
+  below. Concurrency is the total number of concurrent requests; DEP sizes count
+  GPUs in each pool, with TP1.
+
+  ```text
+  --prefill-schedule-interval 16 --long-prefill-token-threshold 512
+  ```
+
+  | Prefill / decode DEP size | Concurrency | Decode scheduling overrides |
+  | --- | --- | --- |
+  | 8 / 8 | 32, 64, 128, 384 | Apply both flags above |
+  | 12 / 12 | 384 | Apply both flags above |
+  | 12 / 16 | 512 | Apply both flags above |
+  | 8 / 8 | 256 | Omit both overrides |
+  | 8 / 12 | 360 | Omit both overrides |
+
+  These overrides apply to the decode pool. The prefill pool uses
+  `--long-prefill-token-threshold 1024` and leaves `--prefill-schedule-interval`
+  unset. Tune scheduling again when changing the workload, pool sizes, or engine
+  version; the table records the GB200 configurations rather than GB300 results.
+
+  **DEP NUMA binding:** on every prefill and decode node, enable binding and
+  provide one NUMA node ID per visible GPU. For the four-GPU layout where GPUs
+  0/1 are local to NUMA node 0 and GPUs 2/3 to NUMA node 1, use:
+
+  ```text
+  --numa-bind --numa-bind-nodes 0 0 1 1
+  ```
+
+  Match the list to the local GPU order and topology on each node, including
+  GB300 deployments. See the [vLLM NUMA binding guide](https://docs.vllm.ai/en/latest/configuration/optimization/#numa-binding-for-multi-socket-gpu-nodes)
+  for automatic detection and explicit mappings.
+
+  **Aggregate streaming:** add `--stream-interval 10` to the aggregate TP8
+  worker at concurrency 1, 4, or 8. This batches streamed output into larger
+  updates to reduce host overhead; use a smaller interval when smoother token
+  delivery matters more. The DEP configurations leave this override unset.
 
   ### Dynamo routing and KV transfer
 
