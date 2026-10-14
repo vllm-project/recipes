@@ -22,7 +22,7 @@ model:
   architecture: moe
   parameter_count: "35B"
   active_parameters: "3B"
-  context_length: 262144
+  context_length: 0
   base_args:
     - "--omni"
   base_env: {}
