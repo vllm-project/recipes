@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 flagship MoE (1.6T total / 49B active) with hybrid CSA+HCA attention, manifold-constrained hyper-connections, Muon-trained on 32T+ tokens, and three-tier reasoning."
   date_added: 2026-04-24
-  date_updated: 2026-10-12
+  date_updated: 2026-10-13
   difficulty: hard
   tasks:
     - text
@@ -499,10 +499,7 @@ guide: |
   `--disable-custom-all-reduce`, `VLLM_ALLREDUCE_USE_FLASHINFER=1`,
   `VLLM_FLASHINFER_ALLREDUCE_BACKEND=auto`; do not select an EP MoE backend.
   For DEP (TP1 with data and expert parallelism), both pools instead use
-  `--enable-expert-parallel --enable-ep-weight-filter --enable-cumem-allocator`,
-  `--moe-backend deep_gemm_amxf4_mega_moe` and `VLLM_DSV4_MEGA_FP8_COMBINE=1`.
-  This MoE configuration supports the native mixed FP4/FP8 checkpoint, unlike
-  the FP8-only `deep_gemm_mega_moe` setting above.
+  `--enable-expert-parallel --enable-ep-weight-filter --enable-cumem-allocator`.
 
   For aggregate and decode, set `cudagraph_mode=FULL_DECODE_ONLY` and `mode=0`
   in `--compilation-config`, with explicit capture sizes `n*(K+1)` for `n=1..S`.
@@ -510,6 +507,41 @@ guide: |
   capture size to `S*(K+1)`; aggregate serving can also include `n*K` sizes.
   Recompute the capture sizes when K or S changes. Size `max-num-batched-tokens`
   to cover verification tokens plus any prefill work scheduled on that engine.
+
+  ### Optional AMXF4 Mega MoE
+
+  On a vLLM build that implements the `deep_gemm_amxf4_mega_moe` backend and
+  `VLLM_DSV4_MEGA_FP8_COMBINE`, with a compatible DeepGEMM build, DEP users can
+  optionally enable these settings on both prefill and decode workers:
+
+  ```bash
+  export VLLM_DSV4_MEGA_FP8_COMBINE=1
+  ```
+
+  Add `--moe-backend deep_gemm_amxf4_mega_moe` to each worker's launch command.
+  These are build-specific options, not requirements for every DSpark deployment.
+
+  For source builds, vLLM's
+  [DeepGEMM build configuration](https://github.com/vllm-project/vllm/blob/2521446ac8c92937b5a32b7dc2a84ef7fa8e99c5/cmake/external_projects/deepgemm.cmake)
+  accepts a local checkout through `DEEPGEMM_SRC_DIR`. Check out a DeepGEMM
+  revision compatible with the selected vLLM revision, initialize its submodules,
+  and set the absolute path before building vLLM:
+
+  ```bash
+  export DEEPGEMM_SRC_DIR=/absolute/path/to/DeepGEMM
+  ```
+
+  The [vLLM DeepGEMM fork](https://github.com/vllm-project/DeepGEMM) is the
+  source used by the linked build configuration. This variable selects build-time
+  source; setting it when launching an already-built image does not replace its
+  kernels. Record both source revisions and confirm that the resulting vLLM build
+  registers the backend and honors the environment variable before opting in.
+  Pointing the build at the fork alone does not establish support for these two
+  options: the fork's
+  [FP8/FP4 Mega MoE API](https://github.com/vllm-project/DeepGEMM/blob/bd2e2000fa883310b4229b300aa2e13cd4a52925/deep_gemm/mega/__init__.py)
+  is not evidence of an AMXF4 activation path or an FP8-combine integration in
+  vLLM. Keep the selected build's supported MoE configuration when that support
+  has not been established.
 
   ### Dynamo routing and KV transfer
 
