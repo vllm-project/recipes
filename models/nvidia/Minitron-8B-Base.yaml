@@ -1,0 +1,174 @@
+meta:
+  title: "Minitron-8B-Base"
+  slug: "Minitron-8B-Base"
+  provider: "NVIDIA"
+  description: "NVIDIA Minitron-8B-Base — a compact 8B dense Nemotron model pruned and distilled from Nemotron-4 15B, for general-purpose text generation and reasoning; fits a single 64 GB NPU"
+  date_added: 2026-10-14
+  date_updated: 2026-10-14
+  tasks:
+    - text
+  performance_headline: "Single-card BF16 serving on Ascend 910B (Atlas 800I A2) with vLLM Ascend"
+  hardware:
+    ascend_910b: verified
+
+model:
+  model_id: "nvidia/Minitron-8B-Base"
+  min_vllm_version: "0.9.2"
+  architecture: dense
+  parameter_count: "8B"
+  active_parameters: "8B"
+  context_length: 4096
+  base_args: []
+  base_env: {}
+  docker_image:
+    ascend_910b: "quay.io/ascend/vllm-ascend:v0.30.0rc2"
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 20
+    supported_hardware: [ascend_910b]
+    hardware_overrides:
+      ascend_910b:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.30.0rc2"
+        install:
+          pip: false
+        extra_args:
+          - "--enforce-eager"
+          - "--gpu-memory-utilization"
+          - "0.9"
+        extra_env:
+          VLLM_USE_MODELSCOPE: "false"
+    description: "BF16 checkpoint on a single 64 GB Ascend 910B NPU (TP1), verified end-to-end with vLLM Ascend"
+
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides: {}
+strategy_overrides: {}
+
+dependencies: []
+
+guide: |
+  ## Overview
+
+  Minitron-8B-Base is a lightweight, efficient language model developed by NVIDIA. It was
+  produced by pruning and distilling the Nemotron-4 15B model down to 8B parameters, and is
+  designed for general-purpose text generation and reasoning tasks. The model uses the
+  Nemotron architecture (`NemotronForCausalLM`, 32 layers, GQA attention with partial rotary
+  embeddings, 256k vocabulary) and is released in BF16 precision
+  ([HuggingFace](https://huggingface.co/nvidia/Minitron-8B-Base),
+  [ModelScope](https://www.modelscope.cn/models/nv-community/Minitron-8B-Base)).
+
+  The full BF16 checkpoint fits on a single 64 GB Ascend 910B NPU, which makes it a
+  convenient baseline for functional verification, accuracy evaluation, and small-scale
+  online serving on [vLLM Ascend](https://github.com/vllm-project/vllm-ascend).
+
+  ## Prerequisites
+
+  - **Hardware:** 1× Ascend 910B NPU (64 GB HBM), Atlas 800I A2 series
+  - **Runtime:** the official vLLM Ascend Docker image (Ascend installs are docker-only —
+    there is no official pip wheel):
+
+    ```bash
+    docker pull quay.io/ascend/vllm-ascend:v0.30.0rc2
+    ```
+
+  - **Checkpoint:** download the BF16 weights and record the local path
+
+    ```bash
+    pip install modelscope
+    modelscope download --model nv-community/Minitron-8B-Base
+    ```
+
+  ## Launching the Server
+
+  ### Single Ascend 910B (TP1)
+
+  Start the container with the NPU devices mounted, then serve the model:
+
+  ```bash
+  export IMAGE=quay.io/ascend/vllm-ascend:v0.30.0rc2
+
+  docker run --rm \
+      --name vllm-ascend \
+      --shm-size=1g \
+      --device /dev/davinci0 \
+      --device /dev/davinci_manager \
+      --device /dev/devmm_svm \
+      --device /dev/hisi_hdc \
+      -v /usr/local/dcmi:/usr/local/dcmi \
+      -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+      -v /usr/local/Ascend/driver/lib64/:/usr/local/Ascend/driver/lib64/ \
+      -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
+      -v /etc/ascend_install.info:/etc/ascend_install.info \
+      -v /root/.cache:/root/.cache \
+      -p 8000:8000 \
+      -it $IMAGE bash
+  ```
+
+  ```bash
+  vllm serve /root/.cache/models/nv-community/Minitron-8B-Base \
+      --served-model-name minitron-8b-base \
+      --tensor-parallel-size 1 \
+      --max-model-len 4096 \
+      --gpu-memory-utilization 0.9 \
+      --enforce-eager \
+      --port 8000
+  ```
+
+  > The recipe's generated command encodes the same tested baseline (`--enforce-eager`,
+  > `--gpu-memory-utilization 0.9`, TP1) via hardware overrides, so selecting the
+  > Ascend 910B pill reproduces it.
+
+  ## Verifying the Deployment
+
+  ```bash
+  curl http://localhost:8000/v1/completions \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model": "minitron-8b-base",
+          "prompt": "Question: If a train travels 60 miles in 2 hours, what is its average speed in miles per hour?\nAnswer:",
+          "max_tokens": 64,
+          "temperature": 1.0
+      }'
+  ```
+
+  A valid response indicates the model is deployed correctly and can generate text.
+
+  ## Accuracy Evaluation
+
+  GSM8K (5-shot, `test` split, first 1000 samples, `apply_chat_template: False`,
+  `fewshot_as_multiturn: False`) with [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness):
+
+  ```bash
+  lm_eval --model vllm \
+      --model_args pretrained=/root/.cache/models/nv-community/Minitron-8B-Base,tensor_parallel_size=1,distributed_executor_backend=mp \
+      --tasks gsm8k \
+      --num_fewshot 5 \
+      --limit 1000 \
+      --batch_size auto
+  ```
+
+  Measured results (Ascend 910B 64 GB, single card, vLLM Ascend):
+
+  | Category | Dataset | Metric | Result |
+  |----------|---------|--------|--------|
+  | Accuracy | gsm8k / test | Total Samples | 1000 |
+  | Accuracy | gsm8k / test | exact_match,strict-match | 0.5436 |
+  | Accuracy | gsm8k / test | exact_match,flexible-extract | 0.5451 |
+
+  - **exact_match,strict-match**: only predictions that strictly match the expected
+    final-answer extraction format are counted as correct.
+  - **exact_match,flexible-extract**: a more flexible answer-extraction rule that tolerates
+    minor formatting differences as long as the final numeric answer is correct.
+
+  Throughput and latency depend on hardware resources, prompt/output length, concurrency,
+  and runtime configuration; benchmark with `vllm bench serve` on your own deployment.
+
+  ## References
+
+  - [Minitron-8B-Base model card (HuggingFace)](https://huggingface.co/nvidia/Minitron-8B-Base)
+  - [Minitron-8B-Base (ModelScope)](https://www.modelscope.cn/models/nv-community/Minitron-8B-Base)
+  - [vLLM Ascend tutorial: Minitron-8B-Base](https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/Minitron-8B-Base.html)
+  - [vLLM Ascend repository](https://github.com/vllm-project/vllm-ascend)
