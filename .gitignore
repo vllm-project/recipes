@@ -12,8 +12,14 @@ public/strategies.json
 public/taxonomy.json
 public/platforms.json
 public/kv_store.json
+public/recipe.schema.json
 public/strategies/
 public/providers/
 public/hf-dates.json
 public/*/
 !public/platform-logos/
+
+# Assembled recipe content (scripts/sync-sources.mjs + assemble-content.mjs)
+.sources/
+.content/
+sources.local.yaml

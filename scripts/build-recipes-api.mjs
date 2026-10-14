@@ -19,6 +19,8 @@
 import fs from "fs";
 import path from "path";
 import yaml from "js-yaml";
+import Ajv from "ajv";
+import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import {
   pickDefaultHardware,
   listCompatibleHardware,
@@ -40,12 +42,34 @@ import {
   effectiveCompatibleStrategies,
   FALLBACK_FRONTEND,
 } from "../src/lib/command-synthesis.js";
+import { contentChannel, contentDir, loadProvenance } from "../src/lib/content-root.js";
+import { assembleChannel } from "./assemble-content.mjs";
+import { loadOverrides } from "./lib/content-sources.mjs";
 
 const ROOT = process.cwd();
-const PUBLIC = path.join(ROOT, "public");
+// RECIPES_PUBLIC_DIR redirects the output (validate-source.mjs builds into a
+// temp dir so a check never clobbers the dev site's public/).
+const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES_PUBLIC_DIR) : path.join(ROOT, "public");
+
+// Assemble the channel's sources into .content/<channel>/ first (cheap and
+// local — remote sources must already be fetched by sync-sources.mjs), so a
+// new or edited YAML in any source is picked up. RECIPES_CONTENT_DIR points at
+// a prebuilt tree instead.
+if (!process.env.RECIPES_CONTENT_DIR) {
+  assembleChannel(contentChannel(), { overrides: loadOverrides() });
+}
+const CONTENT = contentDir();
+const provenance = loadProvenance();
+
+// Report a recipe by the path in its source repo, not its .content/ alias.
+function sourceRel(file) {
+  const hfId = path.relative(path.join(CONTENT, "models"), file).replace(/\.(yaml|yml)$/, "").split(path.sep).join("/");
+  const p = provenance[hfId];
+  return p ? (p.repo ? `${p.repo}:${p.path}` : p.path) : path.relative(ROOT, file);
+}
 
 function readYaml(filePath) {
-  return yaml.load(fs.readFileSync(filePath, "utf8"));
+  return yaml.load(fs.readFileSync(filePath, "utf8"), { filename: path.relative(ROOT, filePath) });
 }
 
 function writeJson(relPath, data) {
@@ -215,7 +239,7 @@ function validateFeatureModes(recipe, sourceFile) {
   }
 
   if (errors.length) {
-    const rel = path.relative(ROOT, sourceFile);
+    const rel = sourceRel(sourceFile);
     throw new Error(`Invalid feature modes in ${rel}:\n  - ${errors.join("\n  - ")}`);
   }
 }
@@ -248,7 +272,7 @@ function validateFrontends(recipe, sourceFile, taxonomy) {
     }
   }
   if (errors.length) {
-    const rel = path.relative(ROOT, sourceFile);
+    const rel = sourceRel(sourceFile);
     throw new Error(`Invalid frontend config in ${rel}:\n  - ${errors.join("\n  - ")}`);
   }
 }
@@ -339,7 +363,7 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
   }
 
   if (errors.length) {
-    const rel = path.relative(ROOT, sourceFile);
+    const rel = sourceRel(sourceFile);
     throw new Error(`Invalid hardware keys in ${rel}:\n  - ${errors.join("\n  - ")}`);
   }
 }
@@ -690,11 +714,11 @@ function findYamlFiles(dir) {
 }
 
 // ── Taxonomy ──
-const taxonomy = normalizeDates(readYaml(path.join(ROOT, "taxonomy.yaml")));
+const taxonomy = normalizeDates(readYaml(path.join(CONTENT, "taxonomy.yaml")));
 writeJson("taxonomy.json", taxonomy);
 
 // ── Platforms ── (third-party self-host targets; flat catalog)
-const platformsFile = path.join(ROOT, "platforms.yaml");
+const platformsFile = path.join(CONTENT, "platforms.yaml");
 let platformsCount = 0;
 if (fs.existsSync(platformsFile)) {
   const platforms = normalizeDates(readYaml(platformsFile));
@@ -703,7 +727,7 @@ if (fs.existsSync(platformsFile)) {
 }
 
 // ── Strategies ──
-const strategiesDir = path.join(ROOT, "strategies");
+const strategiesDir = path.join(CONTENT, "strategies");
 const strategies = {};
 for (const file of fs.readdirSync(strategiesDir).filter((f) => f.endsWith(".yaml"))) {
   const s = normalizeDates(readYaml(path.join(strategiesDir, file)));
@@ -717,7 +741,7 @@ const servingStrategyCount = Object.keys(strategies).length;
 // They power the KV Offload row, not the Strategy row, so they publish under
 // /kv_store/ and stay out of /strategies.json — but merge into the same
 // in-memory map since renderCommand looks every deployment spec up by id.
-const kvStoreDir = path.join(ROOT, "kv_store");
+const kvStoreDir = path.join(CONTENT, "kv_store");
 const kvStoreDeployments = {};
 for (const file of fs.readdirSync(kvStoreDir).filter((f) => f.endsWith(".yaml"))) {
   const s = normalizeDates(readYaml(path.join(kvStoreDir, file)));
@@ -727,15 +751,46 @@ for (const file of fs.readdirSync(kvStoreDir).filter((f) => f.endsWith(".yaml"))
 }
 writeJson("kv_store.json", kvStoreDeployments);
 
+// ── Recipe schema ── generated from the taxonomy + strategies, published at
+// /recipe.schema.json for editors, and enforced on every recipe below.
+const recipeSchema = buildRecipeSchema({ taxonomy, strategies });
+writeJson("recipe.schema.json", recipeSchema);
+const validateRecipe = new Ajv({ allErrors: true, strict: false }).compile(recipeSchema);
+
+// One line per problem. anyOf branches report every alternative they tried;
+// keep the deepest, most specific message for each location.
+function schemaErrors(errors) {
+  // A bad map key fails `propertyNames` and also each alternative inside it
+  // (enum / pattern, reported with propertyName set); keep only the summary.
+  const badKeys = new Set(errors.filter((e) => e.keyword === "propertyNames")
+    .map((e) => `${e.instancePath}|${e.params.propertyName}`));
+  const out = new Set();
+  for (const e of errors) {
+    if (e.keyword === "anyOf" || e.keyword === "if") continue;
+    if (e.keyword !== "propertyNames" && e.propertyName !== undefined
+      && badKeys.has(`${e.instancePath}|${e.propertyName}`)) continue;
+    const at = e.instancePath || "/";
+    if (e.keyword === "additionalProperties") out.add(`unknown key "${e.params.additionalProperty}" at ${at}`);
+    else if (e.keyword === "propertyNames") out.add(`key "${e.params.propertyName}" is not valid at ${at}`);
+    else if (e.keyword === "enum") out.add(`${at} must be one of: ${e.params.allowedValues.slice(0, 12).join(", ")}${e.params.allowedValues.length > 12 ? ", …" : ""}`);
+    else out.add(`${at} ${e.message}`);
+  }
+  return [...out];
+}
+
 // ── Recipes ── (walks models/<hf_org>/<hf_repo>.yaml)
-const modelsDir = path.join(ROOT, "models");
+const modelsDir = path.join(CONTENT, "models");
 
 // Pre-scan: collect every recipe's hf_id so variant-promotion can detect
 // collisions with standalone YAMLs (e.g. inclusionAI/Ring-1T-FP8.yaml exists
 // as its own recipe, so a sibling recipe must not also promote a "Ring-1T-FP8"
 // variant).
 const allRecipeHfIds = new Set();
+const schemaFailures = [];
 for (const file of findYamlFiles(modelsDir)) {
+  if (!validateRecipe(normalizeDates(readYaml(file)))) {
+    schemaFailures.push(`${sourceRel(file)}:\n    - ${schemaErrors(validateRecipe.errors).join("\n    - ")}`);
+  }
   const rel = path.relative(modelsDir, file);
   const parts = rel.split(path.sep);
   if (parts.length >= 2) {
@@ -743,6 +798,9 @@ for (const file of findYamlFiles(modelsDir)) {
     const repo = parts[parts.length - 1].replace(/\.(yaml|yml)$/, "");
     allRecipeHfIds.add(`${org}/${repo}`);
   }
+}
+if (schemaFailures.length) {
+  throw new Error(`Recipes don't match the schema (SCHEMA.md, /recipe.schema.json):\n  ${schemaFailures.join("\n  ")}`);
 }
 
 // Write the public recipe JSON (parent or promoted) with HEAD_KEYS ordering.
@@ -905,6 +963,9 @@ for (const file of findYamlFiles(modelsDir)) {
   delete r.strategy_overrides;
   delete r.compatible_strategies;
   delete r.default_strategy;
+  // Which repo owns this recipe (and which overlays merged into it), so agents
+  // can trace a command back to the YAML that produced it.
+  r.source = provenance[parentHfId] || null;
   // JSON at /<org>/<repo>.json — mirrors HF URL scheme.
   const out = writeRecipeJson(parentHfId, r);
   recipes.push(out);
@@ -961,7 +1022,7 @@ const index = [
 writeJson("models.json", index);
 
 // ── Quickstart ──
-const quickstartDir = path.join(ROOT, "quickstart");
+const quickstartDir = path.join(CONTENT, "quickstart");
 if (fs.existsSync(quickstartDir)) {
   for (const file of fs.readdirSync(quickstartDir).filter((f) => f.endsWith(".yaml"))) {
     const q = normalizeDates(readYaml(path.join(quickstartDir, file)));

@@ -1,10 +1,11 @@
 import fs from "fs";
 import path from "path";
 import yaml from "js-yaml";
+import { contentDir } from "./content-root.js";
 
 let cache = null;
 
-const PLATFORMS_PATH = path.join(process.cwd(), "platforms.yaml");
+const PLATFORMS_PATH = path.join(contentDir(), "platforms.yaml");
 
 export function loadPlatforms() {
   if (cache) return cache;

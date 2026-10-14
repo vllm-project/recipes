@@ -120,16 +120,62 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 - [HunyuanOCR](Tencent-Hunyuan/HunyuanOCR.md)
 
+## How recipes are maintained
+
+Each recipe is a structured YAML file at `models/<hf_org>/<hf_repo>.yaml`. This repository is the **renderer**: it assembles recipes from one or more source repositories, then builds [recipes.vllm.ai](https://recipes.vllm.ai/) and its JSON API. Today every recipe still lives in this repo's `models/`. Recipes are moving step by step into the repositories of the projects that serve them, starting with vllm-project/vllm ([vllm-project/vllm#61302](https://github.com/vllm-project/vllm/pull/61302)).
+
+```mermaid
+flowchart LR
+  vllm["vllm-project/vllm<br/>recipes/models/ (planned)"] -.-> sync
+  omni["vllm-omni<br/>omni recipes (planned)"] -.-> sync
+  ascend["vllm-ascend<br/>overlays/ (planned)"] -.-> sync
+  self["this repo<br/>models/ (every recipe today)<br/>taxonomy · strategies · kv_store"] --> assemble
+  sync["sync-sources.mjs<br/>pinned by sources.lock.json"] --> assemble["assemble-content.mjs<br/>→ .content/&lt;channel&gt;/"]
+  assemble --> build["build-recipes-api.mjs + next build"] --> site["recipes.vllm.ai<br/>+ JSON API"]
+```
+
+| Content | Where it lives | Status |
+| --- | --- | --- |
+| Model recipes served by vLLM | This repo's `models/` | Moving to `recipes/models/` in vllm-project/vllm ([#61302](https://github.com/vllm-project/vllm/pull/61302)) |
+| Omni recipes (image, video, audio generation) | This repo's `models/` | Moving to vllm-omni later |
+| Ascend NPU content | Inline in the recipes | Moving to `overlays/` in vllm-ascend later |
+| Schema, hardware profiles, serving strategies, KV-store deployments, platforms | This repo (`taxonomy.yaml`, `strategies/`, `kv_store/`, `platforms.yaml`) | Owned here |
+| Command synthesis, site, JSON API | This repo (`src/`, `scripts/`) | Owned here |
+
+How the pieces fit:
+
+- **[`sources.yaml`](https://github.com/vllm-project/recipes/blob/main/sources.yaml)** lists every source repository for a *channel* (today only `latest`). For each source it gives the repo, ref, and directory, a role, and the scope this repo grants it:
+  - **core / owner** sources ship whole recipes. Each Hugging Face ID may come from only one source.
+  - **overlay** sources add content to another source's recipe, for example Ascend profiles, variants, and overrides from vllm-ascend. An overlay can only *add* keys, and only for the hardware brands its scope grants, so it can never change what the NVIDIA or AMD commands render.
+- **[`sources.lock.json`](https://github.com/vllm-project/recipes/blob/main/sources.lock.json)** pins every remote source to a commit, so each build is reproducible.
+- **Updates are automatic.** [`bump-sources.yml`](https://github.com/vllm-project/recipes/blob/main/.github/workflows/bump-sources.yml) runs every 20 minutes:
+  1. Checks whether a source's recipe directory changed.
+  2. Validates the new content with the full JSON API build.
+  3. Commits the lock, which redeploys the site.
+
+  If validation fails, the lock stays on the last good commit, so the site keeps serving the previous content, and a `sources-bump-failed` issue is opened. There is one issue per failure, not one per run, and it closes itself on the next successful run.
+- **Provenance.** Every recipe page links "Edit recipe" to the repository that owns the file. Every recipe JSON carries a `source` field (repo, commit, path) for tracing a command back to its YAML.
+
 ## Contributing
 
-New recipes live as structured YAML at `models/<hf_org>/<hf_repo>.yaml` and render on [recipes.vllm.ai](https://recipes.vllm.ai/). **See [CONTRIBUTING.md](CONTRIBUTING.md) for the full schema, VRAM formula, and validation steps.**
+Edit or add a recipe in the repository that owns it (see the table above), following **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full schema, VRAM formula, and validation steps. Changes to the schema, hardware profiles, strategies, or the site go to this repository.
+
+To preview a recipe change from a local checkout of a source repository, create a gitignored `sources.local.yaml` in this repo:
+
+```yaml
+overrides:
+  vllm: ~/vllm/recipes
+```
 
 Quick loop:
 
 ```bash
 pnpm install
 pnpm dev                              # http://localhost:3000
-node scripts/build-recipes-api.mjs    # validates every YAML + rebuilds the JSON API
+node scripts/sync-sources.mjs         # fetch the source commits pinned in sources.lock.json
+node scripts/build-recipes-api.mjs    # assembles sources, validates every YAML, rebuilds the JSON API
+node scripts/validate-source.mjs --source vllm --dir ~/vllm/recipes   # validate a source checkout (what its CI runs)
+pnpm content:watch                    # re-assemble when files are added to or removed from a local source
 ```
 
 ### Legacy MkDocs guides

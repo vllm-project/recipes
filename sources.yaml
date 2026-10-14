@@ -1,0 +1,36 @@
+# Where recipe content comes from. Each channel is a named set of source
+# repos; `scripts/assemble-content.mjs` merges a channel into
+# `.content/<channel>/`, which the site and the JSON API read.
+#
+# Source fields:
+#   repo   — GitHub `<owner>/<name>`; identity for edit links and fetching
+#   ref    — branch or tag `sync-sources --update` resolves into sources.lock.json
+#   path   — directory inside the repo holding models/ (and overlays/)
+#   local  — read this local directory instead of fetching (path already applied)
+#   role   — core | owner | overlay
+#              core/owner: ship full recipes under models/<org>/<repo>.yaml;
+#                          one hf_id may come from only one source
+#              overlay:    ship overlays/<org>/<repo>.yaml fragments merged
+#                          into another source's recipe (see overlay-merge.js)
+#   scope  — what the source may contribute, granted here (not self-declared):
+#              { tasks: [omni] }        owner: every recipe must carry the task
+#              { exclude_tasks: [omni] } core/owner: no recipe may carry the task
+#              { brands: [Huawei] }     overlay: only hardware keys of these brands
+#
+# Developers preview a local checkout via sources.local.yaml (gitignored):
+#   overrides:
+#     vllm: ~/vllm/recipes
+
+schema_version: 1
+default_channel: latest
+
+channels:
+  latest:
+    # Today every recipe still lives in this repo's models/. Other source repos
+    # (vllm, vllm-omni, vllm-ascend) are added here as they take over theirs.
+    recipes:
+      repo: vllm-project/recipes
+      ref: main
+      path: .
+      local: .
+      role: core
