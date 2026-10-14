@@ -513,26 +513,21 @@ guide: |
 
   ### Scheduling, NUMA binding, and streaming
 
-  **DEP decode scheduling:** use the following overrides for the layouts marked
-  below. Concurrency is the total number of concurrent requests; DEP sizes count
-  GPUs in each pool, with TP1.
+  **DEP decode scheduling:** the decode example below uses:
 
   ```text
   --prefill-schedule-interval 16 --long-prefill-token-threshold 512
   ```
 
-  | Prefill / decode DEP size | Concurrency | Decode scheduling overrides |
-  | --- | --- | --- |
-  | 8 / 8 | 32, 64, 128, 384 | Apply both flags above |
-  | 12 / 12 | 384 | Apply both flags above |
-  | 12 / 16 | 512 | Apply both flags above |
-  | 8 / 8 | 256 | Omit both overrides |
-  | 8 / 12 | 360 | Omit both overrides |
+  The interval controls how often DP ranks admit new prefill requests. Increasing
+  it can balance work across ranks but delays admission. The threshold limits
+  long-prefill chunk size when requests share the token budget.
+  Compare these overrides with leaving both flags unset, measuring throughput,
+  time to first token, and inter-token latency at your target load. Retune when
+  changing the workload, pool sizes, hardware, or engine version.
 
-  These overrides apply to the decode pool. The prefill pool uses
-  `--long-prefill-token-threshold 1024` and leaves `--prefill-schedule-interval`
-  unset. Tune scheduling again when changing the workload, pool sizes, or engine
-  version; the table records the GB200 configurations rather than GB300 results.
+  The prefill example uses `--long-prefill-token-threshold 1024` and leaves
+  `--prefill-schedule-interval` unset.
 
   **DEP NUMA binding:** on every prefill and decode node, enable binding and
   provide one NUMA node ID per visible GPU. For the four-GPU layout where GPUs
@@ -716,8 +711,8 @@ guide: |
 
   For DEP12/DEP16, set `--data-parallel-size` to 12/16 in the corresponding
   pool and run on three/four four-GPU nodes. Each pool keeps its own head address;
-  start ranks are `4 * NODE_RANK` (0, 4, 8, 12). Apply the scheduling table above
-  and recompute graph sizes when changing K or S. The same port numbers can be
+  start ranks are `4 * NODE_RANK` (0, 4, 8, 12). Tune scheduling for the target
+  workload and recompute graph sizes when changing K or S. The same port numbers can be
   reused on separate hosts; co-located workers need distinct port allocations.
   The [official Dynamo vLLM examples](https://github.com/ai-dynamo/dynamo/tree/59dd504105db498b11e5715854a2512d57b7a1e0/examples/backends/vllm/launch)
   provide the aggregate and KV-routing launch patterns; apply this section's
