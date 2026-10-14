@@ -5,7 +5,6 @@ meta:
   description: "Ling-3.1-flash MoE model with block-FP8 weights, tool calling, and reasoning support"
   date_added: 2026-10-14
   date_updated: 2026-10-14
-  difficulty: advanced
   tasks:
     - text
   performance_headline: "Block-FP8 weights with BF16 compute and TP8 + EP8 deployment"
@@ -18,6 +17,8 @@ model:
   nightly_required: true
   docker_image: "vllm/vllm-openai:nightly"
   architecture: moe
+  parameter_count: "560B"
+  active_parameters: "25B"
   context_length: 262144
   base_args:
     - "--trust-remote-code"
