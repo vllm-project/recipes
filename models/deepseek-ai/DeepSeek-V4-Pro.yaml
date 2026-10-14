@@ -513,12 +513,6 @@ guide: |
 
   ### Scheduling, NUMA binding, and streaming
 
-  The following role-specific settings come from the
-  [GB200 DSpark configurations](https://github.com/SemiAnalysisAI/InferenceX/tree/954a9aa600417289c6967f4cd96a3e9279a09c77/inferencex-e2e/benchmarks/multi_node/srt-slurm-recipes/dsv4/vllm/gb200-fp4/agentx)
-  using `vllm/vllm-openai:nightly-dev-arm64-cu13.0.1-20ebb28` with Dynamo
-  `1.3.0.dev20260720`. Append these arguments to the corresponding worker's
-  engine command alongside the common settings above.
-
   **DEP decode scheduling:** use the following overrides for the layouts marked
   below. Concurrency is the total number of concurrent requests; DEP sizes count
   GPUs in each pool, with TP1.
@@ -561,8 +555,8 @@ guide: |
 
   The example below runs a DEP8 prefill pool and a DEP8 decode pool, each across
   two four-GPU GB200 nodes, plus a host for shared services and the frontend.
-  It uses the pinned vLLM image and Dynamo version above. Run the Python commands
-  inside that image with the model, recipe files, GPUs, and RDMA devices accessible;
+  Run the Python commands in `vllm/vllm-openai:nightly-dev-arm64-cu13.0.1-20ebb28`
+  with the model, recipe files, GPUs, and RDMA devices accessible;
   use host networking so the advertised addresses are reachable across nodes.
   Install the matching Dynamo packages in each frontend/worker container:
 
