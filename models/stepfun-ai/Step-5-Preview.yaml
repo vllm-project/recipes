@@ -73,6 +73,8 @@ compatible_strategies:
   - single_node_dep
   - pd_cluster
 
+default_strategy: single_node_tp
+
 strategy_min_gpus: 4
 
 hardware_overrides:
