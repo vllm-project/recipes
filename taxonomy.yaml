@@ -7,18 +7,6 @@
 # AMD: https://rocm.docs.amd.com/en/docs-7.2.4/how-to/rocm-for-ai/inference-optimization/workload.html
 
 hardware_profiles:
-  # A two-GPU A100 allocation, shown only by recipes that explicitly list it.
-  a100_80gb_2x:
-    brand: NVIDIA
-    generation: ampere
-    compute_arch: sm80
-    display_name: "A100 80GB 2x"
-    description: "2× NVIDIA A100 80GB GPUs · 160 GB HBM2e total"
-    gpu_count: 2
-    vram_gb: 160
-    multi_node: false
-    restricted: true
-
   # ── NVIDIA Hopper ──
   h100:
     brand: NVIDIA

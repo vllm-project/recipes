@@ -12,7 +12,6 @@ meta:
     - "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16"
   default_hardware: h200
   hardware:
-    a100_80gb_2x: verified
     h100: verified
     h200: verified
     gb200: verified
@@ -43,15 +42,12 @@ features:
         hardware_overrides:
           blackwell:
             args: ["--speculative-config.method", "mtp", "--speculative-config.num_speculative_tokens", "5"]
-          a100_80gb_2x:
-            args: ["--speculative-config.method", "mtp", "--speculative-config.num_speculative_tokens", "5"]
           dgx_spark_gb10:
             args: ["--speculative-config.method", "mtp", "--speculative-config.num_speculative_tokens", "5", "--mamba-cache-mode", "align", "--chat-template-content-format", "string"]
       lillicorr:
         label: "LiLiCorr"
         description: "Separate DFlash draft checkpoint, seven tokens on DGX Spark"
         hardware:
-          a100_80gb_2x: unsupported
           h100: unsupported
           h200: unsupported
           gb200: unsupported
@@ -84,8 +80,8 @@ variants:
       brand: NVIDIA
     vram_minimum_gb: 91
     description: "NVFP4 W4A16 checkpoint; select a hardware profile for its cookbook configuration"
-    supported_hardware: [a100_80gb_2x, h100, h200, gb200, dgx_spark_gb10, rtx_pro_6000]
-    tp: { a100_80gb_2x: 2, h100: 2, h200: 1, gb200: 1, dgx_spark_gb10: 1, rtx_pro_6000: 1 }
+    supported_hardware: [h100, h200, gb200, dgx_spark_gb10, rtx_pro_6000]
+    tp: { h100: 2, h200: 1, gb200: 1, dgx_spark_gb10: 1, rtx_pro_6000: 1 }
     hardware_overrides:
       hopper:
         extra_args:
@@ -169,8 +165,6 @@ variants:
           - "--enable-mamba-shared-prefix-checkpoint"
       rtx_pro_6000:
         extra_args: ["--max-model-len", "16384", "--max-num-seqs", "128"]
-      a100_80gb_2x:
-        extra_args: ["--max-model-len", "8192", "--max-num-seqs", "512"]
   bf16:
     model_id: "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16"
     precision: bf16
@@ -241,7 +235,6 @@ guide: |
   | 2x GB200 | BF16 | 2 | 114,688 | Multimodal, MTP 5 |
   | 4x GB200 | NVFP4 or BF16 4x | 4 | 28,672 | Text only, MTP 5 |
   | 1x DGX Spark | NVFP4 | 1 | 114,688 | Text-only MTP 5 or LiLiCorr 7 |
-  | 2x A100 80GB | NVFP4 | 2 | 8,192 | MTP 5 |
   | 1x RTX Pro 6000 | NVFP4 | 1 | 16,384 | MTP 5 |
 
   Select the matching Hardware and Variant pills to generate these commands.
@@ -251,6 +244,27 @@ guide: |
   separate DFlash draft checkpoint and changes its concurrency and memory budget.
   The BF16 notebook examples allow local media paths under `/`; turn on the
   optional Local Media feature only when serving trusted clients that need it.
+
+  The cookbook also validates NVFP4 on 2x A100 with an 8,192-token allocation.
+  A100 is not in the site's hardware taxonomy, so use its command directly:
+
+  ```bash
+  vllm serve nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4 \
+    --served-model-name nemotron-3.5-super \
+    --trust-remote-code \
+    --tensor-parallel-size 2 \
+    --pipeline-parallel-size 1 \
+    --data-parallel-size 1 \
+    --max-model-len 8192 \
+    --max-num-seqs 512 \
+    --speculative_config.method mtp \
+    --speculative_config.num_speculative_tokens 5 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder \
+    --reasoning-parser nemotron_v3
+  ```
+
+  Use `nemotron-3.5-super` as the client model name for this A100 command.
 
   The cookbook also provides 1M-token text-only commands. They use
   `--language-model-only` and `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1`; apply those
