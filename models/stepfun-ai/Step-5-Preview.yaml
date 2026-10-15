@@ -71,11 +71,21 @@ compatible_strategies:
   - single_node_tp
   - single_node_tep
   - single_node_dep
+  - multi_node_tp
+  - multi_node_tep
+  - multi_node_dep
   - pd_cluster
 
 default_strategy: single_node_tp
 
-strategy_min_gpus: 4
+# Blackwell runs on 8 GPUs: one B200/B300 node, or two 4-GPU GB200/GB300
+# trays. FP8 does not fit one 8x H100 node, so H100 runs on two nodes.
+# The floor drops single-node layouts there and sizes multi-node layouts
+# (and GB200/GB300 P/D pools) to two nodes.
+strategy_min_gpus:
+  gb200: 8
+  gb300: 8
+  h100: 16
 
 hardware_overrides:
   blackwell:
@@ -86,6 +96,10 @@ strategy_overrides:
     hardware_overrides:
       blackwell:
         extra_args: []  # MegaMoE requires expert parallelism
+  multi_node_tp:
+    hardware_overrides:
+      blackwell:
+        extra_args: []
   pd_cluster:
     pool_modes: [dep]  # P and D must share TP
 
