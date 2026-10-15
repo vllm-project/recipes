@@ -10,6 +10,10 @@ meta:
   default_hardware: b300
   related_recipes:
     - "stepfun-ai/Step-3.7-Flash"
+  hardware:
+    h200: verified
+    b300: verified
+    gb300: verified
 
 model:
   model_id: "stepfun-ai/Step-5-Preview"
