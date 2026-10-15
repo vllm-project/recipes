@@ -117,7 +117,11 @@ export function effectiveCompatibleStrategies(recipe) {
       && map && typeof map === "object"
       && Object.values(map).includes("supported"))
     .map(([s]) => s);
-  return optIns.length ? [...listed, ...optIns] : listed;
+  const all = optIns.length ? [...listed, ...optIns] : listed;
+  // pd_cluster always renders last in the Strategy row, after any opt-ins.
+  return all.includes("pd_cluster") && all[all.length - 1] !== "pd_cluster"
+    ? [...all.filter((s) => s !== "pd_cluster"), "pd_cluster"]
+    : all;
 }
 
 /**
@@ -247,6 +251,38 @@ export function isStrategyReachable(recipe, key, deployType, gpusPerNode, gpuId)
   const scalesOut = deployType === "multi_node" || deployType === "pd_cluster";
   const maxNodes = scalesOut ? MAX_NODES : 1;
   return maxNodes * (gpusPerNode || 8) >= minGpusForStrategy(recipe, key, gpuId);
+}
+
+/**
+ * Whether the builder should open on multi-node for this hardware: the
+ * variant doesn't fit one node, or `strategy_min_gpus` / `strategy_hardware`
+ * leave no single-node strategy here while a multi-node one is offered
+ * (e.g. an 8-GPU floor on a 4-GPU GB300 tray). Without the second check the
+ * Strategy row would show only pd_cluster at Nodes = 1.
+ */
+export function needsMultiNode(recipe, strategies, hwProfile, variant, hwProfileId) {
+  if (!fitsSingleNode(hwProfile, variant, hwProfileId)) return true;
+  return !offersDeployType(recipe, strategies, hwProfile, hwProfileId, "single_node")
+    && offersDeployType(recipe, strategies, hwProfile, hwProfileId, "multi_node");
+}
+
+/**
+ * The mirror case: single-node runs here and no multi_node_* strategy is
+ * offered on this hardware, so Multi-node would leave only pd_cluster (whose
+ * pools size themselves) in the Strategy row.
+ */
+export function multiNodeUnavailable(recipe, strategies, hwProfile, variant, hwProfileId) {
+  return !needsMultiNode(recipe, strategies, hwProfile, variant, hwProfileId)
+    && !offersDeployType(recipe, strategies, hwProfile, hwProfileId, "multi_node");
+}
+
+/** Whether any offered strategy of `deployType` is supported and reachable here. */
+function offersDeployType(recipe, strategies, hwProfile, hwProfileId, deployType) {
+  const perNode = hwProfile?.gpu_count || 8;
+  return effectiveCompatibleStrategies(recipe).some((s) =>
+    strategies?.[s]?.deploy_type === deployType
+    && isStrategySupportedOnHardware(recipe, s, hwProfile, hwProfileId)
+    && isStrategyReachable(recipe, s, deployType, perNode, hwProfileId));
 }
 
 /**
