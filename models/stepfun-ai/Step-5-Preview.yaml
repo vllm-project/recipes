@@ -3,7 +3,7 @@ meta:
   slug: "step-5-preview"
   provider: "StepFun"
   description: "Multimodal MoE with hybrid sparse/sliding-window attention, a 1M-token context window, and MTP."
-  date_added: 2026-10-13
+  date_added: 2026-10-15
   date_updated: 2026-10-15
   tasks:
     - multimodal
