@@ -3,7 +3,7 @@ meta:
   title: "NVIDIA Nemotron 3.5 Super VL"
   slug: "nemotron-3-5-super-vl"
   provider: "NVIDIA"
-  description: "120B total / 12B active vision-language model with NVFP4, FP8, BF16, and D-Spark recipes for H100, H200, GB200, DGX Spark, and RTX Pro 6000"
+  description: "120B total / 12B active vision-language model with NVFP4, FP8, and BF16 recipes for H100, H200, GB200, DGX Spark, and RTX Pro 6000"
   date_added: 2026-10-15
   date_updated: 2026-10-15
   tasks:
@@ -47,10 +47,42 @@ features:
       dspark:
         label: "D-Spark"
         description: "External draft with up to eight speculative tokens"
-        args: ["--speculative-config", "{\"method\":\"dspark\",\"model\":\"RedHatAI/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B.dspark\",\"num_speculative_tokens\":8,\"draft_tensor_parallel_size\":1,\"draft_sample_method\":\"greedy\"}"]
+        args:
+          - "--speculative-config"
+          - '{"method":"dspark","model":"RedHatAI/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B.dspark","num_speculative_tokens":8,"draft_tensor_parallel_size":1,"draft_sample_method":"greedy"}'
         hardware_overrides:
           h100:
-            args: ["--speculative-config", "{\"method\":\"dspark\",\"model\":\"RedHatAI/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B.dspark\",\"num_speculative_tokens\":8,\"draft_tensor_parallel_size\":1,\"draft_sample_method\":\"greedy\"}", "--gpu-memory-utilization", "0.89", "--prefix-match-unit", "64", "--block-size", "64", "--compilation-config", "{\"max_cudagraph_capture_size\":192}", "--enable-expert-parallel", "--max-num-seqs", "128", "--max-model-len", "114688", "--max-num-batched-tokens", "16384", "--enable-prefix-caching", "--async-scheduling", "--mamba-backend", "flashinfer", "--mamba-ssm-cache-dtype", "float16", "--enable-mamba-cache-stochastic-rounding", "--mamba-cache-philox-rounds", "5", "--chat-template-content-format", "string", "--mamba-cache-mode", "align"]
+            args:
+              - "--speculative-config"
+              - '{"method":"dspark","model":"RedHatAI/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B.dspark","num_speculative_tokens":8,"draft_tensor_parallel_size":1,"draft_sample_method":"greedy"}'
+              - "--gpu-memory-utilization"
+              - "0.89"
+              - "--prefix-match-unit"
+              - "64"
+              - "--block-size"
+              - "64"
+              - "--compilation-config"
+              - '{"max_cudagraph_capture_size":192}'
+              - "--enable-expert-parallel"
+              - "--max-num-seqs"
+              - "128"
+              - "--max-model-len"
+              - "114688"
+              - "--max-num-batched-tokens"
+              - "16384"
+              - "--enable-prefix-caching"
+              - "--async-scheduling"
+              - "--mamba-backend"
+              - "flashinfer"
+              - "--mamba-ssm-cache-dtype"
+              - "float16"
+              - "--enable-mamba-cache-stochastic-rounding"
+              - "--mamba-cache-philox-rounds"
+              - "5"
+              - "--chat-template-content-format"
+              - "string"
+              - "--mamba-cache-mode"
+              - "align"
       lillicorr:
         label: "LiLiCorr"
         description: "Separate DFlash draft checkpoint, seven tokens on DGX Spark"
