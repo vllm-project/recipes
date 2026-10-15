@@ -175,6 +175,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
         performance_headline: { type: "string" },
         related_recipes: strings,
         default_hardware: gpuId,
+        default_variant: keyed(hwKey, { type: "string" }),
         hardware: keyed(gpuId, status, "verified = tested end-to-end; supported = declared (lists a restricted profile) without a verified claim; unsupported = confirmed blocker today"),
         platforms: { type: "array", items: { anyOf: [{ type: "string" }, obj({ id: { type: "string" }, install: { type: "string" }, url: { type: "string" }, blurb: { type: "string" }, script: { type: "string" } }, { required: ["id"] })] } },
       }, { required: ["title", "provider", "description", "date_updated", "tasks"] }),
