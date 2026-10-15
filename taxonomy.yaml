@@ -393,6 +393,18 @@ hardware_profiles:
     multi_node: false
     restricted: true
 
+  # Atlas 800I A2 — the 910B-generation inference server (64 GB HBM per NPU).
+  # Single-NPU recipes (e.g. 8B-class BF16 models) run TP1 on one card.
+  ascend_910b:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 910B"
+    description: "Huawei Ascend 910B · 8× NPU node · 64 GB HBM each · Atlas 800I A2 · vLLM Ascend backend"
+    gpu_count: 8
+    vram_gb: 512
+    multi_node: false
+    restricted: true
+
   # 8-card Atlas A5 nodes. Distinct from `ascend_950pr` (1×128 GB, MiniMax-H3).
   # Restricted: only recipes that list them in `meta.hardware` show the pills.
   # Ids / display_name follow the RTX Pro 6000 8x pattern: `<sku>_8x` / `"<name> 8x"`.
