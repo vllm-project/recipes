@@ -1812,7 +1812,11 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         : (raw && typeof raw === "object") ? raw
         : {};
       const nodes = typeof pdRole.nodes === "number" ? pdRole.nodes : legacyNodes;
-      const parallelism = pdRole.parallelism || soRoleCfg.parallelism || roleCfg.parallelism || "tp";
+      let parallelism = pdRole.parallelism || soRoleCfg.parallelism || roleCfg.parallelism || "tp";
+      // Same pool_modes snap as buildArgs, so the router / endpoints agree
+      // with the pool commands (e.g. pool_modes: [dep] → intra-node DP > 1).
+      const allowedPoolModes = pdPoolModes(recipe);
+      if (!allowedPoolModes.includes(parallelism)) parallelism = allowedPoolModes[0];
       const poolGpus = nodes === 0 ? Math.floor(gpuCount / 2) : nodes * gpuCount;
       const tp = parallelism === "dep"
         ? (soRoleCfg.tp || roleCfg.tp || 1)
