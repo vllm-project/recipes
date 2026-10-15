@@ -50,7 +50,7 @@ features:
       - "--reasoning-parser"
       - "glm47"
   spec_decoding:
-    description: "Built-in MTP or an external DFlash2 drafter. Pick one method — only that --speculative-config is emitted."
+    description: "Built-in MTP."
     default_mode: mtp
     modes:
       mtp:
@@ -59,14 +59,6 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":5}'
-      dflash:
-        label: "DFlash2"
-        description: "External DFlash2 drafter (incoai/GLM-5.3-Flash-DFlash2). method is dflash; DFlash2 is selected by the draft architecture. num_speculative_tokens must be 7 (block_size 8 minus one)."
-        hardware:
-          amd: unsupported
-        args:
-          - "--speculative-config"
-          - '{"method":"dflash","model":"incoai/GLM-5.3-Flash-DFlash2","num_speculative_tokens":7}'
 
 opt_in_features:
   - spec_decoding
