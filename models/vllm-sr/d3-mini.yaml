@@ -72,8 +72,8 @@ guide: |
   optionally with images and videos) and typed questions: pick one of several options (`choice`), yes or no
   (`noul`), or a level on a scale (`score`). It returns a probability for every option, without generating text.
 
-  It is a Qwen3.5 backbone (4.54B parameters, including the 0.33B vision encoder; from
-  `Qwen/Qwen3.5-4B`) with an answer-code readout. vLLM detects the checkpoint's `decision_config.json` and serves it
+  It is a backbone of the Qwen3.5 architecture (4.54B parameters, including the 0.33B vision
+  encoder), trained from `Qwen/Qwen3.5-4B`, with an answer-code readout. vLLM detects the checkpoint's `decision_config.json` and serves it
   as a classification model (`D3ForSequenceClassification`) on its System One endpoint, `/v1/systemone`: one
   forward pass per question, whose readout scores that question's options at the last token. The full attention
   layers read the prompt in both directions, so chunked prefill and prefix caching are off.
