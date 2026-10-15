@@ -52,6 +52,8 @@ export const PROVIDERS = {
   "meta-models":     { display_name: "Muse (Meta)",                     logo: "/providers/meta-models.png" },
   "IFM":             { display_name: "IFM",                     logo: "/providers/IFM.png" },
   "bharatgenai":     { display_name: "BharatGen",                logo: "/providers/bharatgenai.jpeg" },
+  "vllm-sr":         { display_name: "vLLM Semantic Router",     logo: "/providers/vllm-sr.png" },
+  "black-forest-labs": { display_name: "Black Forest Labs",     logo: "/providers/black-forest-labs.png" },
 };
 
 export function getProviderLogo(hfOrg) {
