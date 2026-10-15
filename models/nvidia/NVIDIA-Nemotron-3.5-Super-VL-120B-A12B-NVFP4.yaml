@@ -3,7 +3,7 @@ meta:
   title: "NVIDIA Nemotron 3.5 Super VL"
   slug: "nemotron-3-5-super-vl"
   provider: "NVIDIA"
-  description: "120B total / 12B active vision-language model with NVFP4 and BF16 configurations across A100, H100, H200, GB200, DGX Spark, and RTX Pro 6000"
+  description: "120B total / 12B active vision-language model with NVFP4 and BF16 recipes for H100, H200, GB200, DGX Spark, and RTX Pro 6000"
   date_added: 2026-10-15
   date_updated: 2026-10-15
   tasks:
@@ -203,8 +203,7 @@ compatible_strategies:
 
 hardware_overrides: {}
 
-strategy_overrides:
-  single_node_tp: {}
+strategy_overrides: {}
 
 guide: |
   ## Overview
