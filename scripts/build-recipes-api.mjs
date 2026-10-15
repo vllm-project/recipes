@@ -19,11 +19,14 @@
 import fs from "fs";
 import path from "path";
 import yaml from "js-yaml";
+import Ajv from "ajv";
+import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import {
   pickDefaultHardware,
   listCompatibleHardware,
   recommendStrategy,
   fitsSingleNode,
+  variantVramMinimumGb,
   isHardwareScalable,
   isKvStoreBrandSupported,
   strategyAllowsKvOffload,
@@ -37,13 +40,36 @@ import {
   isStrategyReachable,
   isStrategySupportedOnHardware,
   effectiveCompatibleStrategies,
+  FALLBACK_FRONTEND,
 } from "../src/lib/command-synthesis.js";
+import { contentChannel, contentDir, loadProvenance } from "../src/lib/content-root.js";
+import { assembleChannel } from "./assemble-content.mjs";
+import { loadOverrides } from "./lib/content-sources.mjs";
 
 const ROOT = process.cwd();
-const PUBLIC = path.join(ROOT, "public");
+// RECIPES_PUBLIC_DIR redirects the output (validate-source.mjs builds into a
+// temp dir so a check never clobbers the dev site's public/).
+const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES_PUBLIC_DIR) : path.join(ROOT, "public");
+
+// Assemble the channel's sources into .content/<channel>/ first (cheap and
+// local — remote sources must already be fetched by sync-sources.mjs), so a
+// new or edited YAML in any source is picked up. RECIPES_CONTENT_DIR points at
+// a prebuilt tree instead.
+if (!process.env.RECIPES_CONTENT_DIR) {
+  assembleChannel(contentChannel(), { overrides: loadOverrides() });
+}
+const CONTENT = contentDir();
+const provenance = loadProvenance();
+
+// Report a recipe by the path in its source repo, not its .content/ alias.
+function sourceRel(file) {
+  const hfId = path.relative(path.join(CONTENT, "models"), file).replace(/\.(yaml|yml)$/, "").split(path.sep).join("/");
+  const p = provenance[hfId];
+  return p ? (p.repo ? `${p.repo}:${p.path}` : p.path) : path.relative(ROOT, file);
+}
 
 function readYaml(filePath) {
-  return yaml.load(fs.readFileSync(filePath, "utf8"));
+  return yaml.load(fs.readFileSync(filePath, "utf8"), { filename: path.relative(ROOT, filePath) });
 }
 
 function writeJson(relPath, data) {
@@ -213,8 +239,41 @@ function validateFeatureModes(recipe, sourceFile) {
   }
 
   if (errors.length) {
-    const rel = path.relative(ROOT, sourceFile);
+    const rel = sourceRel(sourceFile);
     throw new Error(`Invalid feature modes in ${rel}:\n  - ${errors.join("\n  - ")}`);
+  }
+}
+
+// Frontend keys under `model` are matched by exact id against
+// `taxonomy.frontends`, so a typo would silently keep a broken frontend
+// selectable (or default to one that doesn't exist). `default_frontend` must
+// name a known frontend; `<id>_frontend` may only opt a non-baseline frontend
+// out (`unsupported`), and never the one the recipe defaults to.
+function validateFrontends(recipe, sourceFile, taxonomy) {
+  const errors = [];
+  const known = taxonomy.frontends || {};
+  const model = recipe.model || {};
+  const def = model.default_frontend;
+  if (def !== undefined && !known[def]) {
+    errors.push(`model.default_frontend: unknown frontend "${def}" (known: ${Object.keys(known).join(", ")})`);
+  }
+  for (const [key, value] of Object.entries(model)) {
+    const m = key.match(/^(.+)_frontend$/);
+    if (!m || key === "default_frontend") continue;
+    const id = m[1];
+    if (!known[id]) {
+      errors.push(`model.${key}: unknown frontend "${id}" (known: ${Object.keys(known).join(", ")})`);
+    } else if (id === FALLBACK_FRONTEND) {
+      errors.push(`model.${key}: the ${id} frontend is the fallback and can't be marked unsupported`);
+    } else if (value !== "unsupported") {
+      errors.push(`model.${key} must be "unsupported" (omit the key when the frontend works)`);
+    } else if (def === id) {
+      errors.push(`model.default_frontend is "${id}", but model.${key} marks it unsupported`);
+    }
+  }
+  if (errors.length) {
+    const rel = sourceRel(sourceFile);
+    throw new Error(`Invalid frontend config in ${rel}:\n  - ${errors.join("\n  - ")}`);
   }
 }
 
@@ -224,8 +283,9 @@ function validateFeatureModes(recipe, sourceFile) {
 // never renders, and — worse — an intended `unsupported` opt-out never disables
 // anything. Nothing downstream can detect that, hence the build-time check.
 //
-// Two keyspaces, matching the schema in CLAUDE.md:
-//   - exact:   only a taxonomy profile id (`meta.hardware`, `supported_hardware`)
+// Three keyspaces, matching the schema in CLAUDE.md:
+//   - exact:   only a taxonomy profile id (`meta.hardware`)
+//   - variant selectors: profile id or `arch:<compute_arch>`
 //   - layered: profile id > generation > brand > `default` (`strategy_hardware`,
 //              variant `tp`, `hardware_overrides`)
 function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
@@ -234,9 +294,11 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
   const ids = new Set(Object.keys(profiles));
   const generations = new Set();
   const brands = new Set();
+  const computeArchs = new Set();
   for (const p of Object.values(profiles)) {
     if (p?.generation) generations.add(p.generation);
     if (p?.brand) brands.add(String(p.brand).toLowerCase());
+    if (p?.compute_arch) computeArchs.add(p.compute_arch);
   }
   const layered = new Set([...ids, ...generations, ...brands, "default"]);
 
@@ -269,7 +331,13 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
 
   for (const [variantKey, variant] of Object.entries(recipe?.variants || {})) {
     const at = `variants.${variantKey}`;
-    for (const k of variant?.supported_hardware || []) exact(`${at}.supported_hardware`, k);
+    for (const k of variant?.supported_hardware || []) {
+      if (k.startsWith("arch:")) {
+        if (!computeArchs.has(k.slice(5))) errors.push(`${at}.supported_hardware references unknown compute architecture ${k}`);
+      } else {
+        exact(`${at}.supported_hardware`, k);
+      }
+    }
     for (const k of keysOf(variant?.hardware_overrides)) keyed(`${at}.hardware_overrides`, k);
     if (variant?.tp && typeof variant.tp === "object") {
       for (const k of keysOf(variant.tp)) keyed(`${at}.tp`, k);
@@ -295,7 +363,7 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
   }
 
   if (errors.length) {
-    const rel = path.relative(ROOT, sourceFile);
+    const rel = sourceRel(sourceFile);
     throw new Error(`Invalid hardware keys in ${rel}:\n  - ${errors.join("\n  - ")}`);
   }
 }
@@ -306,7 +374,7 @@ function dockerize(command, argv, env, dockerMeta, port = null) {
   return {
     docker_command: buildDockerRun({
       command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, port,
-      isNpu: dockerMeta.isNpu,
+      isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix,
     }),
     docker_argv: buildDockerArgv({ argv, env, meta: dockerMeta, port }),
   };
@@ -320,9 +388,9 @@ function dockerize(command, argv, env, dockerMeta, port = null) {
 // Each role is then grown to clear its parallelism's `strategy_min_gpus` floor,
 // matching what the builder renders.
 function pickPdNodes(hwProfile, variant, recipe, strategies, hwId) {
-  if (pdFitsSingleNode(hwProfile, variant)) return null;
+  if (pdFitsSingleNode(hwProfile, variant, hwId)) return null;
   const nodeVram = typeof hwProfile?.vram_gb === "number" ? hwProfile.vram_gb : 0;
-  const modelVram = variant?.vram_minimum_gb || 0;
+  const modelVram = variantVramMinimumGb(variant, hwId);
   if (nodeVram <= 0 || modelVram <= 0) return null;
   const nodesPerRole = Math.ceil(modelVram / nodeVram);
   if (nodesPerRole > 4) return "skip";
@@ -497,7 +565,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
   // Non-scalable hardware (single-GPU workstation, e.g. DGX Station) can't
   // shard an oversized variant — substitute the largest variant that fits, and
   // skip multi-node strategies. Mirrors the command builder's UI behavior.
-  if (!scalable && !fitsSingleNode(hwProfile, variant)) {
+  if (!scalable && !fitsSingleNode(hwProfile, variant, hwId)) {
     const fitting = pickFittingVariant(recipe, hwProfile, hwId);
     if (!fitting) return null;
     variantKey = fitting;
@@ -539,7 +607,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     return scalable || (!s.startsWith("multi_node_") && s !== "pd_cluster");
   });
   const supportsMultiNode = scalable && compatible.some((s) => s.startsWith("multi_node_"));
-  const baseNodeCount = !fitsSingleNode(hwProfile, variant) && supportsMultiNode ? 2 : 1;
+  const baseNodeCount = !fitsSingleNode(hwProfile, variant, hwId) && supportsMultiNode ? 2 : 1;
   let recommendedStrategy = recommendStrategy(recipe, hwProfile, baseNodeCount);
   // Never recommend a strategy this GPU can't actually run — opted out via
   // strategy_hardware, or unreachable under its `strategy_min_gpus` floor
@@ -604,7 +672,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
       // resolveCommand). Single-node instances unless the variant needs
       // multi-node sharding to fit at all. Mooncake composes with a serving
       // strategy — the kv id rides in via kvOffload, never as the strategy.
-      nc = fitsSingleNode(hwProfile, variant) ? 1 : 2;
+      nc = fitsSingleNode(hwProfile, variant, hwId) ? 1 : 2;
       servingStrategy = kvServingFor(nc);
       if (!servingStrategy && nc === 2) {
         // No multi_node_* strategy to shard with — fall back to single-node
@@ -646,11 +714,11 @@ function findYamlFiles(dir) {
 }
 
 // ── Taxonomy ──
-const taxonomy = normalizeDates(readYaml(path.join(ROOT, "taxonomy.yaml")));
+const taxonomy = normalizeDates(readYaml(path.join(CONTENT, "taxonomy.yaml")));
 writeJson("taxonomy.json", taxonomy);
 
 // ── Platforms ── (third-party self-host targets; flat catalog)
-const platformsFile = path.join(ROOT, "platforms.yaml");
+const platformsFile = path.join(CONTENT, "platforms.yaml");
 let platformsCount = 0;
 if (fs.existsSync(platformsFile)) {
   const platforms = normalizeDates(readYaml(platformsFile));
@@ -659,7 +727,7 @@ if (fs.existsSync(platformsFile)) {
 }
 
 // ── Strategies ──
-const strategiesDir = path.join(ROOT, "strategies");
+const strategiesDir = path.join(CONTENT, "strategies");
 const strategies = {};
 for (const file of fs.readdirSync(strategiesDir).filter((f) => f.endsWith(".yaml"))) {
   const s = normalizeDates(readYaml(path.join(strategiesDir, file)));
@@ -673,7 +741,7 @@ const servingStrategyCount = Object.keys(strategies).length;
 // They power the KV Offload row, not the Strategy row, so they publish under
 // /kv_store/ and stay out of /strategies.json — but merge into the same
 // in-memory map since renderCommand looks every deployment spec up by id.
-const kvStoreDir = path.join(ROOT, "kv_store");
+const kvStoreDir = path.join(CONTENT, "kv_store");
 const kvStoreDeployments = {};
 for (const file of fs.readdirSync(kvStoreDir).filter((f) => f.endsWith(".yaml"))) {
   const s = normalizeDates(readYaml(path.join(kvStoreDir, file)));
@@ -683,15 +751,46 @@ for (const file of fs.readdirSync(kvStoreDir).filter((f) => f.endsWith(".yaml"))
 }
 writeJson("kv_store.json", kvStoreDeployments);
 
+// ── Recipe schema ── generated from the taxonomy + strategies, published at
+// /recipe.schema.json for editors, and enforced on every recipe below.
+const recipeSchema = buildRecipeSchema({ taxonomy, strategies });
+writeJson("recipe.schema.json", recipeSchema);
+const validateRecipe = new Ajv({ allErrors: true, strict: false }).compile(recipeSchema);
+
+// One line per problem. anyOf branches report every alternative they tried;
+// keep the deepest, most specific message for each location.
+function schemaErrors(errors) {
+  // A bad map key fails `propertyNames` and also each alternative inside it
+  // (enum / pattern, reported with propertyName set); keep only the summary.
+  const badKeys = new Set(errors.filter((e) => e.keyword === "propertyNames")
+    .map((e) => `${e.instancePath}|${e.params.propertyName}`));
+  const out = new Set();
+  for (const e of errors) {
+    if (e.keyword === "anyOf" || e.keyword === "if") continue;
+    if (e.keyword !== "propertyNames" && e.propertyName !== undefined
+      && badKeys.has(`${e.instancePath}|${e.propertyName}`)) continue;
+    const at = e.instancePath || "/";
+    if (e.keyword === "additionalProperties") out.add(`unknown key "${e.params.additionalProperty}" at ${at}`);
+    else if (e.keyword === "propertyNames") out.add(`key "${e.params.propertyName}" is not valid at ${at}`);
+    else if (e.keyword === "enum") out.add(`${at} must be one of: ${e.params.allowedValues.slice(0, 12).join(", ")}${e.params.allowedValues.length > 12 ? ", …" : ""}`);
+    else out.add(`${at} ${e.message}`);
+  }
+  return [...out];
+}
+
 // ── Recipes ── (walks models/<hf_org>/<hf_repo>.yaml)
-const modelsDir = path.join(ROOT, "models");
+const modelsDir = path.join(CONTENT, "models");
 
 // Pre-scan: collect every recipe's hf_id so variant-promotion can detect
 // collisions with standalone YAMLs (e.g. inclusionAI/Ring-1T-FP8.yaml exists
 // as its own recipe, so a sibling recipe must not also promote a "Ring-1T-FP8"
 // variant).
 const allRecipeHfIds = new Set();
+const schemaFailures = [];
 for (const file of findYamlFiles(modelsDir)) {
+  if (!validateRecipe(normalizeDates(readYaml(file)))) {
+    schemaFailures.push(`${sourceRel(file)}:\n    - ${schemaErrors(validateRecipe.errors).join("\n    - ")}`);
+  }
   const rel = path.relative(modelsDir, file);
   const parts = rel.split(path.sep);
   if (parts.length >= 2) {
@@ -699,6 +798,9 @@ for (const file of findYamlFiles(modelsDir)) {
     const repo = parts[parts.length - 1].replace(/\.(yaml|yml)$/, "");
     allRecipeHfIds.add(`${org}/${repo}`);
   }
+}
+if (schemaFailures.length) {
+  throw new Error(`Recipes don't match the schema (SCHEMA.md, /recipe.schema.json):\n  ${schemaFailures.join("\n  ")}`);
 }
 
 // Write the public recipe JSON (parent or promoted) with HEAD_KEYS ordering.
@@ -789,6 +891,7 @@ let collisionCount = 0;
 for (const file of findYamlFiles(modelsDir)) {
   const r = normalizeDates(readYaml(file));
   validateFeatureModes(r, file);
+  validateFrontends(r, file, taxonomy);
   validateHardwareKeys(r, file, taxonomy, strategies);
   // Derive HF identity from path. Only `hf_id` is exposed in the public JSON;
   // `org` and `repo` are trivially `hf_id.split("/")` for consumers.
@@ -860,6 +963,9 @@ for (const file of findYamlFiles(modelsDir)) {
   delete r.strategy_overrides;
   delete r.compatible_strategies;
   delete r.default_strategy;
+  // Which repo owns this recipe (and which overlays merged into it), so agents
+  // can trace a command back to the YAML that produced it.
+  r.source = provenance[parentHfId] || null;
   // JSON at /<org>/<repo>.json — mirrors HF URL scheme.
   const out = writeRecipeJson(parentHfId, r);
   recipes.push(out);
@@ -916,7 +1022,7 @@ const index = [
 writeJson("models.json", index);
 
 // ── Quickstart ──
-const quickstartDir = path.join(ROOT, "quickstart");
+const quickstartDir = path.join(CONTENT, "quickstart");
 if (fs.existsSync(quickstartDir)) {
   for (const file of fs.readdirSync(quickstartDir).filter((f) => f.endsWith(".yaml"))) {
     const q = normalizeDates(readYaml(path.join(quickstartDir, file)));

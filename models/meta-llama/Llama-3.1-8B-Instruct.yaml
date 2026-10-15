@@ -4,7 +4,7 @@ meta:
   provider: "Meta"
   description: "Meta's Llama 3.1 8B dense instruction-tuned language model with 128K context"
   date_added: 2025-10-15
-  date_updated: 2026-08-18
+  date_updated: 2026-09-12
   difficulty: beginner
   tasks:
     - text
@@ -46,6 +46,7 @@ variants:
     precision: bf16
     vram_minimum_gb: 20
     description: "Full precision BF16"
+    supported_hardware: [h100, h200, mi300x, mi325x, mi355x, trillium, xeon6, arc_pro_b60, arc_pro_b70]
   w8a8_int8:
     model_id: "RedHatAI/Meta-Llama-3.1-8B-Instruct-quantized.w8a8"
     precision: int8
@@ -68,6 +69,7 @@ variants:
     precision: nvfp4
     vram_minimum_gb: 5
     description: "NVIDIA NVFP4 quantized weights for Blackwell GPUs"
+    supported_hardware: [b200, b300, gb200, gb300]
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
@@ -76,9 +78,47 @@ variants:
     precision: fp8
     vram_minimum_gb: 10
     description: "FP8 quantized weights for Hopper/Blackwell GPUs"
+    supported_hardware: [h100, h200]
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
+
+  fp8:
+    model_id: "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic"
+    precision: fp8
+    label: "FP8 Dynamic (RedHat)"
+    vram_minimum_gb: 10
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_fp8:
+    model_id: "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8"
+    precision: fp8
+    label: "FP8 (RedHat)"
+    vram_minimum_gb: 10
+    description: "RedHatAI FP8 quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_fp8_block:
+    model_id: "RedHatAI/Llama-3.1-8B-Instruct-FP8-block"
+    precision: fp8
+    label: "FP8 Block (RedHat)"
+    vram_minimum_gb: 10
+    description: "RedHatAI FP8 block quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_nvfp4:
+    model_id: "RedHatAI/Llama-3.1-8B-Instruct-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 6
+    description: "RedHatAI NVFP4 quantization"
 
 compatible_strategies:
   - single_node_tp
@@ -139,8 +179,7 @@ guide: |
   ```bash
   export VLLM_ROCM_USE_AITER=1
   vllm serve meta-llama/Llama-3.1-8B-Instruct \
-    --tensor-parallel-size 1 \
-    --disable-log-requests
+    --tensor-parallel-size 1
   ```
 
   The first AITER launch may take several minutes while ROCm kernels are compiled and cached.
@@ -175,14 +214,11 @@ guide: |
   Launch the x86 CPU vLLM Docker container for `meta-llama/Llama-3.1-8B-Instruct`:
 
   ```bash
-  docker run -itd --name llama3-8b-cpu \
-    --network host \
-    --shm-size 16g \
+  docker run \
+    --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    vllm/vllm-openai-cpu:latest-x86_64 \
-      --model meta-llama/Llama-3.1-8B-Instruct \
-      --host 0.0.0.0 \
-      --port 8000
+    vllm/vllm-openai-cpu:latest-x86_64 meta-llama/Llama-3.1-8B-Instruct \
+    --tensor-parallel-size 2
   ```
 
   The validation TP/DP layout and host-specific CPU placement are intentionally

@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3-Flash is a 320B-total / 18B-active multimodal MoE with hybrid KDA and sparse MLA attention, native FP8 weights, MTP, and a 1M-token context window."
   date_added: 2026-08-27
-  date_updated: 2026-09-14
+  date_updated: 2026-10-08
   difficulty: advanced
   tasks:
     - text
@@ -22,7 +22,7 @@ model:
   min_vllm_version: "0.29.0"
   nightly_required: true
   docker_image:
-    nvidia: "vllm/vllm-openai:glm53-flash"
+    nvidia: "vllm/vllm-openai:nightly"
     amd: "vllm/vllm-openai-rocm:nightly"
   install:
     docker:
@@ -48,7 +48,7 @@ features:
     description: "Extract reasoning content with the GLM reasoning parser"
     args:
       - "--reasoning-parser"
-      - "glm45"
+      - "glm47"
   spec_decoding:
     description: "Built-in MTP or an external DFlash2 drafter. Pick one method — only that --speculative-config is emitted."
     default_mode: mtp
@@ -84,6 +84,11 @@ variants:
         docker_image: "quay.io/ascend/vllm-ascend:nightly-main-a5"
         install:
           pip: false
+      mi350x: &gfx950_aiter
+        extra_env:
+          VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
+          VLLM_ROCM_USE_AITER_TRITON_SPARSE_MLA: "1"
+      mi355x: *gfx950_aiter
   nvfp4:
     model_id: "RedHatAI/GLM-5.3-Flash-NVFP4"
     precision: nvfp4
@@ -94,6 +99,9 @@ variants:
     precision: bf16
     vram_minimum_gb: 772
     description: "Official BF16 checkpoint; requires substantially more GPU memory"
+    hardware_overrides:
+      mi350x: *gfx950_aiter
+      mi355x: *gfx950_aiter
 
 compatible_strategies:
   - single_node_tp
@@ -104,6 +112,10 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
   - pd_cluster
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 strategy_hardware:
   single_node_tep:
@@ -159,6 +171,10 @@ hardware_overrides:
       HCCL_CONNECT_TIMEOUT: "7200"
 
 hardware_notes:
+  mi350x: &cdna4_indexer_topk_notes
+    title: "Long-context indexer top-k opt-in"
+    body: "When serving long contexts (>=64k), add `--sparse-indexer-topk-backend aiter` for improved decode performance."
+  mi355x: *cdna4_indexer_topk_notes
   ascend_950pr_8x:
     title: "vLLM Ascend A5 image required"
     body: "Single-node TP8 on 8×950PR. Pin quay.io/ascend/vllm-ascend:nightly-main-a5 and overlay vLLM#53906 / vllm-ascend#15127. Do not pass --quantization ascend. --block-size 512 is required (kpool indexer). EP is not available on this interconnect."
@@ -222,7 +238,7 @@ guide: |
     --kv-cache-dtype fp8 \
     --speculative-config '{"method":"mtp","num_speculative_tokens":5}' \
     --tool-call-parser glm47 \
-    --reasoning-parser glm45 \
+    --reasoning-parser glm47 \
     --enable-auto-tool-choice \
     --served-model-name zai-org/GLM-5.3-Flash
   ```
@@ -423,12 +439,15 @@ guide: |
 
   ```bash
   export VLLM_ROCM_USE_AITER=1
+  # gfx950 (MI350X/MI355X) only
+  export VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=1
+  export VLLM_ROCM_USE_AITER_TRITON_SPARSE_MLA=1
   vllm serve zai-org/GLM-5.3-Flash \
     --served-model-name zai-org/GLM-5.3-Flash \
     --tensor-parallel-size 4 \
     --max-num-seqs 512 \
     --tool-call-parser glm47 \
-    --reasoning-parser glm45 \
+    --reasoning-parser glm47 \
     --enable-auto-tool-choice \
     --attention-backend ROCM_AITER_MLA_SPARSE
   ```
@@ -441,6 +460,17 @@ guide: |
   [vLLM #55239](https://github.com/vllm-project/vllm/pull/55239), validated on 4×MI355X
   with TP=4 and MTP5. Enable **Spec Decoding** and select **MTP** in the command builder
   to add the required configuration.
+
+  ### Long-context indexer top-k (gfx950)
+
+  If your traffic is mostly long context (>=64k tokens) and using gfx950 
+  (MI350X/MI355X), using the topk indexer backend from AITER is recommended:
+
+  ```bash
+  vllm serve zai-org/GLM-5.3-Flash \
+    --attention-backend ROCM_AITER_MLA_SPARSE \
+    --sparse-indexer-topk-backend aiter
+  ```
 
   ## Benchmarking
 
@@ -460,6 +490,19 @@ guide: |
 
   - **Sparse-MLA initialization error:** verify that the image contains FlashInfer
     0.6.18 or newer.
+
+  ## KV cache offloading
+
+  Offloading requires a build containing [vllm-project/vllm#57145](https://github.com/vllm-project/vllm/pull/57145).
+  Validation used [zai-org/GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) on 4×H200 (TP4),
+  vLLM commit `d1b4028d7e`, the Python frontend, `--enforce-eager`,
+  `--max-model-len 16384`, `--max-num-seqs 16` and `--max-num-batched-tokens 8192`.
+  Validation used `TieringOffloadingSpec`: 8 GiB total CPU tier, `blocks_per_chunk: 1`,
+  a persistent filesystem `root_dir`, eight read/write threads and `PYTHONHASHSEED=0`.
+  Three CPU-tier reloads and three filesystem reloads after restarting the server passed.
+  GLM returned matching final answers; its arithmetic reasoning field varied on filesystem reload.
+  The five-shot GSM8K diagnostic scored 31/32; this is a small sample, not the full benchmark.
+  These results cover this text-only configuration, not the builder's larger tier/chunk defaults or other variants.
 
   ## References
 

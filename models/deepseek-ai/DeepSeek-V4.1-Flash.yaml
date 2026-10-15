@@ -5,7 +5,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-09-13
+  date_updated: 2026-10-13
   difficulty: advanced
   tasks:
     - text
@@ -16,19 +16,34 @@ meta:
     - "deepseek-ai/DeepSeek-V4-Pro"
   default_hardware: gb200
   hardware:
+    h100: verified
     h200: verified
+    b200: verified
     gb200: verified
     gb300: verified
+    b300: verified
+    mi300x: verified
+    mi325x: verified
     mi350x: verified
+    mi355x: verified
+    dgx_station_gb300: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-V4.1-Flash"
+  # Opt in to SMG gRPC PD; parsing runs on the router, not vLLM.
+  smg_grpc:
+    reasoning_parser: deepseek_v41
+    tool_call_parser: deepseek_v41
   min_vllm_version: "0.30.0"
+  # 0.30.0 has not shipped; the architecture lives on main (vllm-project/vllm#56228),
+  # so NVIDIA renders `vllm/vllm-openai:nightly` instead of the launch-day
+  # `deepseekv41-flash-0909` tag, which is now behind main.
+  nightly_required: true
   default_frontend: rust
   docker_image:
-    nvidia: "vllm/vllm-openai:deepseekv41-flash-0909"
-    # Includes the AITER mHC delayed-pre path from vllm-project/vllm#56503.
-    amd: "vllm/vllm-openai-rocm:nightly"
+    # ROCm 10.0 nightly channel; includes the AITER mHC delayed-pre path from
+    # vllm-project/vllm#56503.
+    amd: "vllm/vllm-openai-rocm:nightly-rocm100"
   architecture: moe
   parameter_count: "552B"
   active_parameters: "8-16B"
@@ -40,7 +55,7 @@ model:
     VLLM_ENGINE_READY_TIMEOUT_S: "3600"
   install:
     docker:
-      note: "Serve from the image for your GPU vendor — no pip wheel carries the DeepSeek-V4.1 architecture. NVIDIA uses the 0909 release tag; AMD tracks ROCm nightly (see Prerequisites)."
+      note: "Serve from the image for your GPU vendor — no pip wheel carries the DeepSeek-V4.1 architecture. Both vendors track the nightly image; the launch-day 0909 tag is superseded (see Prerequisites)."
     pip: false
 
 dependencies: []
@@ -78,6 +93,11 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","rejection_sample_method":"block","enable_adaptive_verification":false}'
+      # Offloaded experts make deep drafts expensive at high batch: k=5 to 4 seqs, k=1 above.
+      dgx_station_gb300:
+        args:
+          - "--speculative-config"
+          - '{"method":"dspark","num_speculative_tokens":5,"num_speculative_tokens_per_batch_size":[[1,4,5],[5,24,1]]}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -97,6 +117,55 @@ variants:
     precision: fp8
     vram_minimum_gb: 614
     description: "Native mixed checkpoint: MXFP4 MoE experts, MXFP8 block-quantized dense weights, UE8M0 scales throughout"
+    hardware_overrides:
+      # 8x80 GB is the smallest NVIDIA node that serves this checkpoint, and
+      # only with the memory levers the InferenceX H100 arm settled on
+      # (SemiAnalysisAI/InferenceX#2974, validated on the 2026-09-15 nightly in
+      # SemiAnalysisAI/InferenceX#3135). Engram tables (183 GiB FP8) move to
+      # pinned host DRAM behind UVA, leaving ~36 GiB/GPU of resident weights at
+      # TP8. The sparse-attention indexer then allocates a
+      # [max-num-batched-tokens, max-model-len] logits buffer at startup:
+      # 8192 x 1M x 2 B is exactly 16 GiB and does not fit next to the weights,
+      # so batched tokens are capped at 4096 (8 GiB) rather than the context
+      # length, which would push the 256k-plus agentic traces off the model.
+      # The V2 model runner and expandable segments keep the KV pool from
+      # fragmenting around that buffer.
+      h100:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+          - "--max-num-batched-tokens"
+          - "4096"
+          - "--gpu-memory-utilization"
+          - "0.92"
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+      # Single GB300 + Grace: Engram tables and 60 GiB of experts in host memory via UVA.
+      # vram_minimum_gb is the GPU-resident fit budget (0.97 x 252); taxonomy vram_gb stays physical HBM.
+      # 60 GiB is the lowest verified offload at 1M context with DSpark on; 55 fails the minimum-KV check.
+      dgx_station_gb300:
+        vram_minimum_gb: 244
+        extra_args:
+          - "--offload-backend"
+          - "uva"
+          - "--cpu-offload-gb"
+          - "60"
+          - "--cpu-offload-params"
+          - "routed_experts.w13_weight"
+          - "routed_experts.w2_weight"
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+          - "--gpu-memory-utilization"
+          - "0.97"
+          - "--max-model-len"
+          - "1048576"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--long-prefill-token-threshold"
+          - "6144"
+          - "--compilation-config"
+          - '{"cudagraph_capture_sizes":[1,2,4,6,8,12,16,18,24,32,40,48,64,96,128]}'
 
 compatible_strategies:
   - single_node_tp
@@ -106,6 +175,17 @@ compatible_strategies:
   - multi_node_tep
   - multi_node_dep
   - pd_cluster
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
+
+strategy_hardware:
+  # Single GPU; only TP1 is measured.
+  single_node_tep:
+    dgx_station_gb300: unsupported
+  single_node_dep:
+    dgx_station_gb300: unsupported
 
 hardware_overrides:
   amd:
@@ -127,8 +207,176 @@ hardware_overrides:
 
 strategy_overrides:
   single_node_tp:
-    # TP4 baseline (one GB200 NVL4 tray; 4 GPUs on MI350X or MI355X).
-    tp: 4
+    # TP4 baseline (one GB200 NVL4 tray; 4 GPUs on MI350X or MI355X). H100
+    # spans the whole 8x80 GB node: 4 cards hold 320 GB against a 614 GB
+    # minimum, and even TP8 needs the H100 override above.
+    tp:
+      default: 4
+      h100: 8
+      b200: 2
+      b300: 2
+      gb200: 2
+      gb300: 2
+      mi355x: 2
+      dgx_station_gb300: 1
+    hardware_overrides:
+      # 288 GiB per card. The Engram tables cost 47.2 GiB of device memory per
+      # rank at TP4 and 94.4 GiB at TP2, which does not fit beside half the
+      # checkpoint, so TP2 offloads them to pinned host memory. TP4 leaves them
+      # resident. vllm-project/vllm#57491 widened two is_cuda() gates to
+      # is_cuda_alike(), which is what makes the offload resolve on gfx950; on
+      # builds carrying it cpu_offload also defaults on via VLLM_PLE_CPU_OFFLOAD,
+      # so set it explicitly rather than inheriting the default.
+      # 256 GB per card (gfx942). MI325X takes the TP4 default rather than the
+      # MI355X TP2: at TP2 the resident weights are ~145 GiB per rank, which
+      # leaves the smallest KV pool of any arm here, while TP4 lands at ~81 GiB
+      # per rank with room to spare. The Engram tables are offloaded to pinned
+      # host memory at TP4 as well -- gfx942 has no FP4 MFMA, so the MXFP4
+      # experts run through a Triton kernel and the device memory is better
+      # spent on KV. Same vllm-project/vllm#57491 gate as MI355X applies.
+      #
+      # gfx942 also differs from gfx950 on graph capture: every worker
+      # segfaults during piecewise capture, so breakable CUDA graphs are off
+      # and only full decode graphs are captured. Prefill runs eagerly.
+      # 192 GB per card, the smallest gfx942 part here. Same TP4 default and the
+      # same two gfx942 workarounds as MI325X below. TP2 is NOT offered on this
+      # SKU: at TP2 the offloaded weights are ~145 GiB per rank, and a measured
+      # run reported "Available KV cache memory: -13.51 GiB" -- the engine could
+      # not start even with the sparse-attention indexer buffer halved. TP4
+      # lands at ~81 GiB per rank and leaves a healthy KV pool.
+      mi300x:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+        extra_env:
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+      mi325x:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+          - "--compilation-config"
+          - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+        extra_env:
+          VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+      mi355x:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+          # ROCm paged MXFP4 sparse indexer (vllm-project/vllm#58671).
+          - "--attention-config"
+          - '{"indexer_kv_dtype":"mxfp4","indexer_sparse_logits":true}'
+          # The fp4 indexer prefers block-size 128; auto-resolution
+          # otherwise falls back to 64.
+          - "--block-size"
+          - "128"
+          # Mono decode kernels (vllm-project/vllm#60397, #61082): two persistent
+          # launches a layer on all 40 backbone layers for decode steps of up to
+          # 48 rows, i.e. up to concurrency 8 with five DSpark drafts. Larger
+          # steps take the regular path, so the gain fades as concurrency rises.
+          # Replaces the VLLM_ROCM_MONO_DECODE environment variable.
+          - "--monokernel"
+        extra_env:
+          # Aiter's Gluon sparse-MLA kernel, gfx950 only
+          # (vllm-project/vllm#53492).
+          VLLM_ROCM_USE_AITER_TRITON_SPARSE_MLA: "1"
+          # INT4 quantization for faster all-reduce
+          VLLM_ROCM_QUICK_REDUCE_QUANTIZATION: "INT4"
+      blackwell:
+        extra_args:
+          - "--attention-config"
+          - '{"backend":"FLASHINFER_MLA_SPARSE_DSV41","indexer_kv_dtype":"mxfp4","indexer_sparse_logits":true}'
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--max-num-seqs"
+          - "128"
+      # TP2 halves the replica GPU count, so each rank holds the full
+      # non-expert weights plus half the experts. Moving the Engram tables to
+      # pinned host DRAM keeps that resident footprint inside HBM on these
+      # SKUs; the lookups read the tables through UVA and the output is
+      # unchanged.
+      # B200 TP2 serves the low-concurrency (c1) agentic setting: THP-backed
+      # Engram tables, 4096 batched tokens, and graphs captured up to 4092 tokens.
+      b200:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true,"use_thp":true}'
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "4096"
+          - "--compilation-config"
+          - '{"mode":"VLLM_COMPILE","cudagraph_mode":"FULL_AND_PIECEWISE","cudagraph_capture_sizes":[6,12,18,24,30,36,48,60,72,96,120,144,192,240,288,384,480,576,768,1020,1536,2046,3072,4092]}'
+          - "--max-cudagraph-capture-size"
+          - "4092"
+      gb200:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+      gb300:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+      # Exact-GPU override, after the shared Blackwell block so it wins last-wins dedupe.
+      dgx_station_gb300:
+        extra_args:
+          - "--attention-config"
+          - '{"backend":"FLASHMLA_MEGA_ATTN_DSV41"}'
+          - "--kv-cache-dtype"
+          - "fp8_ds_mla"
+          - "--max-num-seqs"
+          - "24"
+      b300:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+          - "--compilation-config"
+          - '{"mode":"VLLM_COMPILE","cudagraph_mode":"FULL_AND_PIECEWISE","cudagraph_capture_sizes":[6,12,18,24,30,36,48,60,72,96,120,144,192,240,288,384,480,576,768,1020,1536,2046,3072,4092,6144,8190]}'
+          - "--max-cudagraph-capture-size"
+          - "8190"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--max-num-seqs"
+          - "256"
+      # H200 takes the TP4 default on 8x141 GB. Moving the Engram tables to
+      # pinned host DRAM (23.6 GiB per rank, 94 GiB across the replica) drops
+      # resident weights to 81.2 GiB per GPU and leaves 38.5 GiB of KV per GPU,
+      # about 20M tokens, measured on the InferenceX AgentX sweep. Without the
+      # offload the tables stay row-sharded in HBM and the KV pool collapses.
+      h200:
+        extra_args:
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+  single_node_dep:
+    hardware_overrides:
+      blackwell:
+        extra_args:
+          - "--kernel-config"
+          - '{"moe_backend":"deep_gemm_mega_moe"}'
+          - "--attention-config"
+          - '{"backend":"FLASHMLA_MEGA_ATTN_DSV41","indexer_kv_dtype":"mxfp4","indexer_sparse_logits":true}'
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--max-num-seqs"
+          - "128"
+          - "--engram-config"
+          - '{"embedding_across_dp":true}'
+      # B200 DEP2 at c32: piecewise graphs extend to 4096 tokens so prefill-bearing
+      # steps replay graphs, and new prefills are admitted every 64 engine steps,
+      # aligned across DP ranks. The vLLM default of 1 admits on every step.
+      b200:
+        extra_args:
+          - "--max-num-seqs"
+          - "32"
+          - "--max-num-batched-tokens"
+          - "4096"
+          - "--prefill-schedule-interval"
+          - "64"
+          - "--compilation-config"
+          - '{"mode":"VLLM_COMPILE","cudagraph_mode":"FULL_AND_PIECEWISE","cudagraph_capture_sizes":[6,12,18,24,30,36,48,60,72,96,120,144,192,240,288,384,480,576,640,768,896,1024,1280,1536,1792,2048,2304,2560,2816,3072,3328,3584,3840,4096]}'
+          - "--max-cudagraph-capture-size"
+          - "4096"
   pd_cluster:
     # Verified 1P1D on GB200 NVL4: one tray per role, TP4 each, NIXL transfer.
     env:
@@ -145,6 +393,11 @@ strategy_overrides:
       vllm_args:
         - "--max-num-seqs"
         - "32"
+
+hardware_notes:
+  dgx_station_gb300:
+    title: "Weights in Grace memory (UVA offload)"
+    body: "Single GB300 with both Engram tables and 60 GiB of routed experts in pinned Grace memory (UVA offload). Nightly image only. The first boot on a new flag set runs a 75-90 min FlashInfer autotune; keep /root/.cache/vllm on a persistent volume."
 
 guide: |
   ## Overview
@@ -308,11 +561,14 @@ guide: |
   ## Prerequisites
 
   - An image (vLLM 0.30.0+); no pip wheel serves this architecture, so the Install block
-    only offers Docker. On NVIDIA that is `vllm/vllm-openai:deepseekv41-flash-0909`. On AMD
-    it is `vllm/vllm-openai-rocm:nightly` — a ROCm
-    nightly rather than the 0909 tag, because 0909 predates
-    [vllm-project/vllm#56503](https://github.com/vllm-project/vllm/pull/56503), which moves
-    the mHC delayed pre block off the eager Torch reference and onto AITER.
+    only offers Docker. On NVIDIA that is `vllm/vllm-openai:nightly`: the architecture
+    landed on `main` in [vllm-project/vllm#56228](https://github.com/vllm-project/vllm/pull/56228),
+    so any nightly from 2026-09-10 on serves it, and the launch-day
+    `deepseekv41-flash-0909` tag is no longer needed. On AMD it is
+    `vllm/vllm-openai-rocm:nightly-rocm100`, the ROCm 10.0 nightly, which also carries
+    [vllm-project/vllm#56503](https://github.com/vllm-project/vllm/pull/56503) — the change
+    that moves the mHC delayed pre block off the eager Torch reference and onto AITER
+    and postdates the 0909 tag.
   - The Rust OpenAI frontend is selected by default in the command builder. Switch
     to Python if you encounter unsupported features or compatibility issues.
   - Expect a long first load: `VLLM_ENGINE_READY_TIMEOUT_S=3600` is set for that reason.
@@ -406,6 +662,182 @@ guide: |
   The command above starts the server; the InferenceX harness supplies the replay
   client. Validation evidence applies to that pinned benchmark configuration, not
   every future `:nightly` image or the general command's inherited scheduler limits.
+
+  ## MI355X Tensor Parallel
+
+  On MI355X, **Tensor Parallel** defaults to **TP2** with Engram CPU offload
+  (`--engram-config '{"cpu_offload":true}'`). The Engram tables cost 47.2 GiB of
+  device memory per rank at TP4 and 94.4 GiB at TP2; on a 288 GiB card the TP2
+  figure does not fit beside half the checkpoint, so the tables move to pinned
+  host memory. TP2 halves the GPUs per server and so doubles the servers per
+  node. For TP4, pass `--tensor-parallel-size 4` and
+  `--engram-config '{"cpu_offload":false}'` to keep the tables resident.
+
+  The offload resolves on gfx950 only on builds carrying
+  [vllm-project/vllm#57491](https://github.com/vllm-project/vllm/pull/57491),
+  which widened two `is_cuda()` gates to `is_cuda_alike()`. Those builds also
+  default `cpu_offload` on through `VLLM_PLE_CPU_OFFLOAD`, so set it explicitly
+  rather than inheriting the default.
+
+  `--monokernel` selects the mono decode layer from
+  [vllm-project/vllm#60397](https://github.com/vllm-project/vllm/pull/60397),
+  which [vllm-project/vllm#61082](https://github.com/vllm-project/vllm/pull/61082)
+  extended to all 40 backbone layers and moved from the
+  `VLLM_ROCM_MONO_DECODE` environment variable to this flag. Two persistent
+  launches cover a layer for decode steps of up to 48 rows, which with five
+  DSpark drafts is concurrency 8; larger steps fall back to the regular path, so
+  the gain is largest at low concurrency and fades as concurrency rises.
+
+  Decoder SWA bounded replay
+  ([vllm-project/vllm#59039](https://github.com/vllm-project/vllm/pull/59039))
+  is on by default on ROCm, so the recipe no longer passes
+  `--no-swa-bounded-replay`. Use a nightly from 2026-10-13 or later; earlier
+  ROCm builds lack the replay window clamp and fault at the first prefix hit.
+
+  ## MI300X Tensor Parallel
+
+  On MI300X, **Tensor Parallel** takes the recipe default of **TP4** with the
+  Engram tables offloaded to pinned host memory
+  (`--engram-config '{"cpu_offload":true}'`). At TP4 the resident weights are
+  roughly 81 GiB per rank, which leaves a healthy KV pool on a 192 GB card.
+
+  **TP2 does not fit on this SKU.** At TP2 the offloaded weights rise to roughly
+  145 GiB per rank, and a measured run reported
+  `Available KV cache memory: -13.51 GiB`, so the engine refused to start with
+  `No available memory for the cache blocks`. That was already with the
+  sparse-attention indexer buffer halved to 4096 batched tokens. Raising
+  `--gpu-memory-utilization` and halving the buffer again recover roughly 13 GiB
+  between them, which still leaves no usable KV for a 1M-context model, so TP2
+  is not offered here. MI325X runs the same TP2 configuration successfully on
+  its larger 256 GB card.
+
+  MI300X is gfx942 and needs the same two workarounds as MI325X: no FP4 MFMA, so
+  the MXFP4 experts run through a Triton kernel and device memory is better spent
+  on KV than on resident Engram tables; and piecewise graph capture segfaults
+  every worker, so this recipe sets `VLLM_USE_BREAKABLE_CUDAGRAPH=0` and captures
+  only full decode graphs
+  (`--compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}'`), with prefill
+  eager.
+
+  The offload resolves on gfx942 only on builds carrying
+  [vllm-project/vllm#57491](https://github.com/vllm-project/vllm/pull/57491),
+  the same gate MI325X and MI355X need. Those builds also default `cpu_offload`
+  on through `VLLM_PLE_CPU_OFFLOAD`, so set it explicitly rather than inheriting
+  the default.
+
+  ## MI325X Tensor Parallel
+
+  On MI325X, **Tensor Parallel** takes the recipe default of **TP4**, with the
+  Engram tables offloaded to pinned host memory
+  (`--engram-config '{"cpu_offload":true}'`). A 256 GB card leaves roughly
+  81 GiB per rank of resident weights at TP4 and roughly 145 GiB at TP2; TP2
+  fits but leaves the smallest KV pool of any arm in this recipe, so TP4 is the
+  default here rather than the TP2 that MI355X uses on its larger 288 GiB card.
+  For TP2, pass `--tensor-parallel-size 2`.
+
+  MI325X is gfx942, which differs from gfx950 in two ways that matter. It has no
+  FP4 MFMA, so the MXFP4 experts run through a Triton kernel and device memory is
+  better spent on KV than on resident Engram tables. It also segfaults in every
+  worker during piecewise graph capture, so this recipe sets
+  `VLLM_USE_BREAKABLE_CUDAGRAPH=0` and captures only full decode graphs
+  (`--compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}'`); prefill runs
+  eagerly.
+
+  The offload resolves on gfx942 only on builds carrying
+  [vllm-project/vllm#57491](https://github.com/vllm-project/vllm/pull/57491),
+  the same gate MI355X needs. Those builds also default `cpu_offload` on through
+  `VLLM_PLE_CPU_OFFLOAD`, so set it explicitly rather than inheriting the
+  default.
+
+  ## H200 Tensor Parallel
+
+  On H200, **Tensor Parallel** uses the TP4 default with Engram CPU offload
+  (`--engram-config '{"cpu_offload":true}'`). The Engram tables move to pinned
+  host DRAM and are read through UVA, so the output is unchanged. On 141 GB
+  cards that offload is what makes TP4 practical: it moves 23.6 GiB per rank off
+  the GPU, leaving 81.2 GiB of resident weights and 38.5 GiB of KV per GPU
+  (about 20M tokens). No scheduler caps are needed at this replica size.
+
+  ## Blackwell TP and DEP
+
+  On B200, B300, GB200 and GB300, **Tensor Parallel** uses **TP2** with
+  `FLASHINFER_MLA_SPARSE_DSV41` and Engram CPU offload
+  (`--engram-config '{"cpu_offload":true}'`), which moves the Engram tables to
+  pinned host DRAM and reads them through UVA; the output is unchanged.
+  **Data + Expert Parallel** uses the hardware's
+  GPU count: DEP4 on GB200/GB300 trays, DEP8 on B200/B300 nodes. It enables
+  `--enable-expert-parallel`, `FLASHMLA_MEGA_ATTN_DSV41`,
+  `--kernel-config '{"moe_backend":"deep_gemm_mega_moe"}'`, and
+  `--engram-config '{"embedding_across_dp":true}'`.
+
+  Both configurations set `indexer_kv_dtype` to `mxfp4`, `indexer_sparse_logits`
+  to `true`, `--kv-cache-dtype fp8`, and `--max-num-seqs 128`. Reasoning uses
+  `--reasoning-parser deepseek_v41`.
+
+  Each Blackwell SKU carries an exact-GPU override that takes precedence over
+  the shared Blackwell defaults. B300 keeps its existing CUDA Graph capture
+  configuration (`--max-cudagraph-capture-size 8190`),
+  `--max-num-batched-tokens 8192` and `--max-num-seqs 256`; B200, GB200 and
+  GB300 add Engram CPU offload and otherwise inherit the shared Blackwell
+  settings. Scheduler limits are workload-dependent at TP2, so size
+  `--max-num-batched-tokens` and `--max-cudagraph-capture-size` for your own
+  serving profile. For high interactivity on any of them, use
+  `--tensor-parallel-size 4`.
+
+  ## B200 AgentX tuning
+
+  On B200, TP2 at concurrency 1 uses `--engram-config '{"cpu_offload":true,"use_thp":true}'`,
+  `--max-num-seqs 8` and `--max-num-batched-tokens 4096`. DEP2 (TP1 x DP2 with expert
+  parallelism) serves concurrency 8 to 32; at c8 and c16 graph capture stops at 576 tokens and
+  `--prefill-schedule-interval` stays at the vLLM default of 1, while c32 extends piecewise
+  graphs to 4096 tokens and sets `--prefill-schedule-interval 64`. DEP4 sets
+  `--prefill-schedule-interval 48` at c128 and keeps the default of 1 at c64.
+
+  For DEP2 at c128, add vLLM's native CPU KV offloading with
+  `--kv-offloading-backend native --kv-offloading-size 32` (GiB per DP rank, 64 GiB per
+  server), `--gpu-memory-utilization 0.955` and `--max-num-seqs 48`.
+
+  ## DGX Station (GB300) Tensor Parallel
+
+  One GB300 exposes 252 GB of HBM next to 496 GB of Grace LPDDR5X, and the
+  476 GiB checkpoint does not fit the HBM. The Station row serves TP1 with
+  both Engram tables (189 GiB) and 60 GiB of routed experts in pinned host
+  memory, read through UVA. At `--gpu-memory-utilization 0.97` the KV pool
+  holds about 3.09M tokens at full 1M context. 60 GiB is the lowest
+  verified offload at 1M context with speculative decoding on (55 fails the
+  minimum-KV check). For more concurrent 1M contexts, raise
+  `--cpu-offload-gb` to 70 and accept ~10% lower single-stream decode.
+
+  Measured on `vllm/vllm-openai:nightly-dee37d89`:
+
+  | | 1 stream | 2 | 4 | 8 | 12 | 16 |
+  |---|--:|--:|--:|--:|--:|--:|
+  | aggregate tok/s, prose | 90.5 | 124 | 168 | 302 | 378 | 416–423 |
+
+  - **Autotune.** The first boot on a new flag set or image runs a 75–90
+    minute FlashInfer autotune. Mount `/root/.cache/vllm` on a persistent
+    volume; later boots start in about 7 minutes.
+  - **Host memory.** With the server loaded, ~430 of the 494 GiB Grace pool
+    is in use (pinned weights plus loader shared memory).
+    `VLLM_WEIGHT_OFFLOADING_DISABLE_PIN_MEMORY=1` frees ~66 GB at about 7%
+    lower single-stream decode.
+
+  Launch scripts and full measurements:
+  [J-M-Recipes/recipes](https://github.com/J-M-Recipes/recipes/tree/main/recipes/dgx-station-gb300/deepseek-v4.1-flash-vllm-uva-dspark).
+
+  ## KV cache offloading
+
+  Offloading requires a build containing [vllm-project/vllm#57145](https://github.com/vllm-project/vllm/pull/57145).
+  Validation used [deepseek-ai/DeepSeek-V4.1-Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash) on 4×H200 (TP4),
+  vLLM commit `d1b4028d7e`, the Python frontend, `--enforce-eager`,
+  `--max-model-len 16384`, `--max-num-seqs 16` and `--max-num-batched-tokens 8192`.
+  DeepSeek validation used `--gpu-memory-utilization 0.95`.
+  Validation used `TieringOffloadingSpec`: 8 GiB total CPU tier, `blocks_per_chunk: 1`,
+  a persistent filesystem `root_dir`, eight read/write threads and `PYTHONHASHSEED=0`.
+  Three CPU-tier reloads and three filesystem reloads after restarting the server passed.
+  Reloaded responses matched the cold output, including the reasoning field.
+  The five-shot GSM8K diagnostic scored 31/32; this is a small sample, not the full benchmark.
+  These results cover this text-only configuration, not the builder's larger tier/chunk defaults or other variants.
 
   ## References
 

@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "27B-parameter dense hybrid-attention model with linear attention on 48 of 64 layers, a vision tower, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-14
-  date_updated: 2026-09-14
+  date_updated: 2026-10-08
   difficulty: beginner
   tasks:
     - multimodal
@@ -24,11 +24,15 @@ meta:
     # --enforce-eager; rtx_5090_2x covers FP8 and both NVFP4 builds at TP2.
     rtx_5090: verified
     rtx_5090_2x: verified
+    rtx_pro_6000: verified
+    dgx_spark_gb10: verified
     # Huawei Ascend NPU, verified 2026-08-18 on vLLM Ascend 0.23.0 (image
     # quay.io/ascend/vllm-ascend:qwen3.8-a5). The `ascend_w8a8` variant booted on a
     # single 950PR at TP1 with the in-checkpoint MTP head and FULL_DECODE_ONLY
     # ACLGraph and answered a long-form prompt correctly.
     ascend_950pr: verified
+    arc_pro_b60: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "Qwen/Qwen3.8-27B"
@@ -73,7 +77,7 @@ dependencies:
 
 features:
   tool_calling:
-    description: "Enable automatic tool choice. The chat template emits tool calls as <tool_call><function=…><parameter=…> XML, which is the qwen3_coder format — not JSON."
+    description: "Enable automatic tool choice. The default parser is qwen3_coder."
     args:
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
@@ -84,7 +88,7 @@ features:
       - "--reasoning-parser"
       - "qwen3"
   spec_decoding:
-    description: "Speculative decoding — pick MTP (in-checkpoint) or DFlash2 (external draft)."
+    description: "Speculative decoding — pick MTP (in-checkpoint), DFlash2, or DSpark (external drafts)."
     default_mode: mtp
     modes:
       mtp:
@@ -96,10 +100,19 @@ features:
         # off the TOP-level config (config/speculative.py), but this checkpoint carries it only
         # under `text_config`, so the depth cannot be inferred here — omit it and startup fails.
         description: "Native MTP head, 3 draft tokens."
-        variants: [default, fp8, nvfp4, int4]
+        variants: [default, fp8, nvfp4, nvfp4_nvidia, int4]
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":3}'
+        hardware_overrides:
+          dgx_spark_gb10:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":5}'
+          rtx_pro_6000:
+            args:
+              - "--speculative-config"
+              - '{"method":"mtp","num_speculative_tokens":5}'
       qwen3_5_mtp:
         label: "MTP (Ascend)"
         # vLLM Ascend documents `qwen3_5_mtp` for this head (it aliases to `mtp` and logs a
@@ -117,6 +130,13 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"dflash","model":"incoai/Qwen3.8-27B-DFlash2","num_speculative_tokens":7}'
+      dspark:
+        label: "DSpark"
+        description: "External DSpark drafter (RedHatAI/Qwen3.8-27B-speculator.dspark), with a Markov head and confidence head. The model card specifies 8 draft tokens."
+        variants: [default]
+        args:
+          - "--speculative-config"
+          - '{"method":"dspark","model":"RedHatAI/Qwen3.8-27B-speculator.dspark","num_speculative_tokens":8}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -149,6 +169,17 @@ variants:
     # 55,563,006,776 B on disk = 55.6 GB
     vram_minimum_gb: 67
     description: "Full-precision BF16 — 51.7 GiB of weights: 1 GPU."
+    hardware_overrides:
+      rtx_pro_6000:
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
+      dgx_spark_gb10:
+        extra_args:
+          - "--max-num-seqs"
+          - "8"
+          - "--gpu-memory-utilization"
+          - "0.8"
   fp8:
     model_id: "Qwen/Qwen3.8-27B-FP8"
     precision: fp8
@@ -174,6 +205,57 @@ variants:
     vram_minimum_gb: 32
     supported_hardware: [b200, b300, gb200, gb300, rtx_5090, rtx_5090_2x]
     description: "NVFP4 build for NVIDIA Blackwell — 24.6 GiB, the smallest footprint: 1 GPU."
+    # The verified 1x RTX 5090 launch from the guide: CUDA graph capture OOMs on 31.4 GiB
+    # usable, so --enforce-eager is required, and the KV pool holds a 32K context.
+    hardware_overrides:
+      rtx_5090:
+        extra_args:
+          - "--max-model-len"
+          - "32768"
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--enforce-eager"
+  nvfp4_nvidia:
+    model_id: "nvidia/Qwen3.8-27B-NVFP4"
+    precision: nvfp4
+    # Without a label the pill renders precision.toUpperCase() = "NVFP4", so a bare "NVFP4"
+    # label would be a no-op.
+    label: "NVFP4 (NVIDIA)"
+    # 21,904,998,400 B = 21.9 GB. quant_method `modelopt`, quant_algo `NVFP4-FP8 mixed-precision`.
+    vram_minimum_gb: 32
+    supported_hardware: [rtx_pro_6000, dgx_spark_gb10]
+    description: "NVFP4 build for NVIDIA Blackwell — 21.9 GiB, the smallest footprint: 1 GPU."
+    hardware_overrides:
+      dgx_spark_gb10:
+        extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--gpu-memory-utilization"
+          - "0.7"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
+          - "--async-scheduling"
+          - "--enable-prefix-caching"
+          - "--load-format"
+          - "fastsafetensors"
+      rtx_pro_6000:
+        extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--max-model-len"
+          - "262144"
+          - "--max-num-seqs"
+          - "8"
+          - "--max-num-batched-tokens"
+          - "8192"
+          - "--enable-chunked-prefill"
+          - "--async-scheduling"
+          - "--enable-prefix-caching"
   int4:
     model_id: "RedHatAI/Qwen3.8-27B-INT4"
     precision: int4
@@ -181,6 +263,7 @@ variants:
     vram_minimum_gb: 24
     supported_hardware: [h100, h200, b200, b300, gb200, gb300, rtx_5090, rtx_5090_2x]
     description: "Red Hat AI compressed-tensors W4A16 INT4 build — 19.5 GB: 1 GPU, runs on Hopper too."
+
   ascend_w8a8:
     model_id: "Eco-Tech/Qwen3.8-27B-w8a8"
     precision: int8
@@ -230,7 +313,10 @@ kv_offload_support:
 compatible_strategies:
   - single_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  xpu:
+    extra_args:
+      - "--enforce-eager"
 
 strategy_overrides: {}
 
@@ -340,6 +426,12 @@ guide: |
   (90,112 tokens, 0.754 acceptance). Those two flags are levers for a bigger pool, not fixes
   for the OOM: only `--enforce-eager` decides whether the server starts.
 
+  ### Intel XPU B60 / B70
+
+  Validated on 4x Intel Arc Pro B60 / B70 (B60 24 GB, B70 32 GB per card) with the
+  official vLLM XPU image `vllm/vllm-openai-xpu:latest`. `--enforce-eager` is required on this
+  backend. Select Arc Pro B60/B70 in the hardware picker above for the exact command.
+
   ### Huawei Ascend 950PR-w8a8 (vLLM Ascend)
 
   Verified on a single 950PR, TP1, vLLM Ascend 0.23.0 from the
@@ -419,6 +511,17 @@ guide: |
   vllm serve Qwen/Qwen3.8-27B \
     --speculative-config '{"method":"dflash","model":"incoai/Qwen3.8-27B-DFlash2","num_speculative_tokens":7}'
   ```
+
+  ### DSpark (opt-in)
+
+  DSpark is an external confidence-scheduled drafter. Serve `Qwen/Qwen3.8-27B` and attach
+  [RedHatAI/Qwen3.8-27B-speculator.dspark](https://huggingface.co/RedHatAI/Qwen3.8-27B-speculator.dspark)
+  with eight speculative tokens:
+
+  ```bash
+  vllm serve Qwen/Qwen3.8-27B \
+    --speculative-config '{"method":"dspark","model":"RedHatAI/Qwen3.8-27B-speculator.dspark","num_speculative_tokens":8}'
+  ```
   
   ## Client usage
 
@@ -468,11 +571,13 @@ guide: |
 
   - Model card: https://huggingface.co/Qwen/Qwen3.8-27B
   - FP8 checkpoint: https://huggingface.co/Qwen/Qwen3.8-27B-FP8
-  - NVFP4 build (NVIDIA): https://huggingface.co/Inferact/Qwen3.8-27B-NVFP4
+  - NVFP4 build (NVIDIA): https://huggingface.co/nvidia/Qwen3.8-27B-NVFP4
+  - NVFP4 build (Inferact): https://huggingface.co/Inferact/Qwen3.8-27B-NVFP4
   - Ascend INT8 checkpoint (ModelScope): https://www.modelscope.cn/models/Eco-Tech/Qwen3.8-27B-w8a8
   - vLLM documentation: https://docs.vllm.ai/
   - vLLM Ascend tutorial: https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/Qwen3.8-27B.html
   - DFlash2 draft: https://huggingface.co/incoai/Qwen3.8-27B-DFlash2
+  - DSpark draft: https://huggingface.co/RedHatAI/Qwen3.8-27B-speculator.dspark
   - DFlash2 blog: https://inco.ai/blog/dflash2/
   - vLLM DFlash2 PR: https://github.com/vllm-project/vllm/pull/52816
   - Native FP8 support on Ascend: https://github.com/vllm-project/vllm-ascend/pull/14852

@@ -1,11 +1,21 @@
 ---
 name: add-recipe
-description: Use when the user asks to add, update, validate, or publish a vLLM model recipe in this repo. Covers canonical Hugging Face identity, source/image requirements, checkpoint staging, hardware evidence, YAML-to-UI relationships, command validation, JSON generation, and staging the reviewed files.
+description: Use when the user asks to add, update, validate, or publish a vLLM model recipe — in vllm-project/vllm's recipes/ directory, another source repo, or vllm-project/recipes. Covers canonical Hugging Face identity, source/image requirements, checkpoint staging, hardware evidence, YAML-to-UI relationships, command validation, JSON generation, and staging the reviewed files.
 ---
 
 # Author and validate a vLLM recipe
 
-Recipes are YAML files at `models/<hf_org>/<hf_repo>.yaml`. The path mirrors HuggingFace (`huggingface.co/<hf_org>/<hf_repo>`), and the site/API are generated at build time from these files + `taxonomy.yaml` + `strategies/*.yaml`.
+Recipes are YAML files at `models/<hf_org>/<hf_repo>.yaml`. The path mirrors HuggingFace (`huggingface.co/<hf_org>/<hf_repo>`). Each recipe lives in the repository that owns it; [vllm-project/recipes](https://github.com/vllm-project/recipes) renders them all into the site and JSON API, together with its own `taxonomy.yaml` + `strategies/*.yaml`.
+
+| Recipe | Write the YAML in |
+|---|---|
+| Models served by vLLM | `vllm-project/recipes` → `models/<hf_org>/<hf_repo>.yaml` today; `vllm-project/vllm` → `recipes/models/<hf_org>/<hf_repo>.yaml` once vllm-project/vllm#61302 lands (check which exists) |
+| Omni models (`meta.tasks` includes `omni`) | `vllm-project/recipes` → `models/<hf_org>/<hf_repo>.yaml` (moving to vllm-omni later) |
+| Ascend NPU content | inline in the recipe for now (moving to `overlays/` in vllm-ascend later) |
+
+Fields are defined once in [SCHEMA.md](https://github.com/vllm-project/recipes/blob/main/SCHEMA.md). Run the validation and preview
+commands below from a checkout of vllm-project/recipes, pointed at your checkout of
+the owning repo (step 11).
 
 ## Component contract: evidence → YAML → rendered surface
 
@@ -78,7 +88,7 @@ guide markdown ─────────────────────�
    canonical recipe repo and every alternate checkpoint independently. Verify access
    using the configured credential through the normal HF client; do not substitute a
    similarly named cached model or invent an alias.
-3. **Fetch model metadata.** Run `bash scripts/hf-info.sh <org>/<repo>` or inspect the
+3. **Fetch model metadata.** Run `bash scripts/hf-info.sh <org>/<repo>` (in the recipes checkout) or inspect the
    staged checkpoint's `config.json` / `params.json`. Extract:
    - `architecture`: `moe` if `num_experts`, `num_local_experts`, `moe.num_experts`, or a `*MoE*` architecture name is present. Otherwise `dense`.
    - the exact `architectures[]` / `model_type`; confirm the runtime resolves that
@@ -129,203 +139,34 @@ guide markdown ─────────────────────�
    - the response fingerprint matches the intended source build.
    Test multimodal, tool calling, reasoning parsing, speculative decoding, offload, long
    context, and other optional paths separately before calling those paths verified.
-9. **Translate evidence into YAML.** Write `models/<hf_org>/<hf_repo>.yaml` following
-   the component contract and schema below. The tested command belongs in the builder
+9. **Translate evidence into YAML.** Write `models/<hf_org>/<hf_repo>.yaml` in the owning
+   repo (table above), starting from `templates/recipe.yaml` in vllm-project/recipes, following the component contract and [SCHEMA.md](https://github.com/vllm-project/recipes/blob/main/SCHEMA.md).
+   Every build checks the file against `https://recipes.vllm.ai/recipe.schema.json`;
+   an unknown or misspelled key is an error. The tested command belongs in the builder
    fields; the guide records exact evidence, limitations, and explicit checkpoint links.
 10. **Register the provider (if new).** If `<hf_org>` isn't already in
-   `src/lib/providers.js`, add `display_name` and `/providers/<hf_org>.png` (or `.jpeg`).
-11. **Validate data and rendering.** Run the JSON generator, inspect the generated model
-   JSON, then preview the page when dependencies are available. Exercise every relevant
+   vllm-project/recipes' `src/lib/providers.js`, add `display_name` and
+   `/providers/<hf_org>.png` (or `.jpeg`) — a separate PR there when the recipe lives
+   in another repo.
+11. **Validate data and rendering.** In the recipes checkout, point the owning repo's
+   source at your checkout with a gitignored `sources.local.yaml`
+   (`overrides: { vllm: ~/vllm/recipes }`; skip for recipes that live in the recipes
+   repo itself). Run the JSON generator, inspect the generated model JSON, then preview
+   the page with `pnpm dev` (YAML edits show on refresh; run `pnpm content:watch` to pick
+   up added or removed files). Exercise every relevant
    Hardware / Variant / Strategy / Feature selection and compare the generated command
    to the tested command. The Guide alone is not a builder preview.
-12. **Stage only intended source files.** Stage the recipe and provider entry if needed;
+12. **Stage only intended source files.** In the owning repo, stage the recipe (and, in
+    the recipes repo, the provider entry if needed);
     never stage generated `public/`, `node_modules/`, or unrelated operational artifacts.
     Commit only when the user asked for a commit, using the repository's DCO convention.
 
-## YAML schema (top-level fields, in order)
+## Schema and VRAM sizing
 
-```yaml
-meta:
-  title: "..."                    # display name (e.g. "DeepSeek-V3.2")
-  slug: "..."                     # lowercase-kebab (legacy, keep consistent with title)
-  provider: "..."                 # human-readable org label (e.g. "DeepSeek")
-  description: "..."              # one-sentence summary
-  date_added: YYYY-MM-DD          # initial catalog addition; never change
-  date_updated: YYYY-MM-DD        # latest material recipe change
-  difficulty: beginner|intermediate|advanced
-  tasks:                          # one or more of: text, multimodal, omni, embedding
-    - text
-  performance_headline: "..."     # optional pithy line for cards
-  related_recipes: []             # optional list of "<org>/<repo>" ids
-  # Optional. Tri-state:
-  #   `verified`    — you've run this recipe on this GPU end-to-end (green ✓).
-  #   `unsupported` — not yet runnable here today (compat gap, missing kernel,
-  #                   upstream blocker). Pill disabled in UI with "Not yet
-  #                   supported" tooltip. May flip later — revisit on updates.
-  #   absent        — silent default, assumed to work. Don't mark "untested".
-  hardware:
-    h200: verified
-    mi355x: verified
-    # mi300x: unsupported    # e.g. when a required kernel/feature is missing
-
-model:
-  model_id: "<hf_org>/<hf_repo>"  # MUST match the filename path
-  min_vllm_version: "0.11.0"      # string, e.g. "0.12.0"
-  # Optional — pin the Docker image shown in Install → Docker. Two forms:
-  #   docker_image: "vllm/vllm-openai:glm51"      # string pins NVIDIA only;
-  #                                               # AMD/TPU still use brand defaults
-  #   docker_image:                               # object pins per-brand
-  #     nvidia: "vllm/vllm-openai:gemma4"
-  #     amd:    "vllm/vllm-openai-rocm:gemma4"
-  #     tpu:    "vllm/vllm-tpu:gemma4"
-  # Missing keys fall back to `:latest` for that brand (vllm/vllm-openai,
-  # vllm/vllm-openai-rocm, vllm/vllm-tpu). Use the object form when CUDA /
-  # ROCm / TPU ship different pinned tags for the same recipe.
-  docker_image: ""
-  # Optional — set true when `min_vllm_version` hasn't shipped as a stable
-  # release yet. Swaps the default pip command to nightly wheels
-  # (https://wheels.vllm.ai/nightly/cu130) and adds a yellow "nightly" pill
-  # to the Install header. Manual install.pip overrides still win.
-  nightly_required: false
-  # Optional — control the Install block's pip/Docker tabs. Each key accepts
-  # `false` (hide the tab entirely) OR an object `{ command?, note? }` to
-  # override the generated one-liner and/or show a note above it.
-  #   install.pip: false                 → no wheel available, Docker only
-  #   install.docker: false              → no published image, pip only
-  #   install.pip.command: "..."         → replace the pip command
-  #   install.pip.note: "..."            → one-liner above the code block
-  # For unreleased source-only support, put the complete clone/checkout/build
-  # sequence in install.pip.command and set install.docker: false.
-  # Tab ORDER follows the YAML key order — put `docker` first to make it the
-  # default tab when Docker is the recommended install path.
-  install:
-    pip:
-      command: ""
-      note: ""
-    docker:
-      note: ""
-  architecture: dense|moe
-  parameter_count: "30B"          # string with suffix (B or T)
-  active_parameters: "30B"        # same as parameter_count for dense models
-  context_length: 131072          # integer (tokens)
-  base_args: []                   # flags always needed (trust-remote-code, etc.)
-  base_env: {}                    # env vars always needed
-
-# Optional — only if the recipe needs extra pip installs beyond `uv pip install -U vllm`.
-# Rendered as an "extra install" block above the vllm serve command.
-dependencies:
-  - note: "Why you need it (one line)"
-    command: 'uv pip install -U "vllm[audio]"'
-    optional: false               # omit or false for required; true = dimmed in UI + excluded from "Copy all"
-    brand: NVIDIA                 # optional: NVIDIA | AMD | Intel (or array). Omit for platform-agnostic deps.
-                                  # Use this for CUDA-only kernels (xformers/DeepGEMM) or ROCm-only wheels —
-                                  # the dep is hidden when the user picks a hardware pill of a different brand.
-
-features:
-  tool_calling:                   # flip any of these pills; recipe chooses naming
-    description: "..."
-    args: ["--enable-auto-tool-choice", "--tool-call-parser", "<name>"]
-  reasoning:
-    description: "..."
-    args: ["--reasoning-parser", "<name>"]
-  spec_decoding:                  # USE spec_decoding, NOT mtp — unified key for
-    description: "..."            # MTP / Eagle3 / ERNIE-MTP / etc.
-    args: ["--speculative-config", '{"method":"mtp","num_speculative_tokens":1}']
-
-opt_in_features:                  # features that default OFF (users tick them on)
-  - spec_decoding                 # spec decoding is opt-in unless the model docs insist
-
-variants:
-  default:                        # ALWAYS include a `default` variant
-    precision: bf16|fp8|nvfp4|fp4|int4|int8|awq|gptq|mxfp4
-    vram_minimum_gb: <integer>    # params × bytes × 1.2 (see formula below)
-    description: "..."
-  fp8:                            # optional extra variants
-    model_id: "<optional override>"   # only if the quantized variant is a different HF repo
-    precision: fp8
-    vram_minimum_gb: <integer>
-    description: "..."
-    supported_hardware: [mi355x]  # optional exact hardware-profile allowlist
-    extra_args: []
-    extra_env: {}
-
-compatible_strategies:            # subset of the SERVING strategies in strategies/*.yaml
-  - single_node_tp                # always include this as a baseline
-  - single_node_tep               # for MoE
-  - single_node_dep               # for MoE
-  - multi_node_tp
-  - multi_node_tp_pp              # TP within node + PP across nodes
-  - multi_node_dep                # for MoE
-  - multi_node_tep                # for MoE
-  - pd_cluster                    # only if the recipe documents PD
-  # Do NOT list kv_store_* ids — the KV Offload options (Simple + both
-  # Mooncake modes) are implicit on every non-omni recipe.
-
-# Optional opt-OUT for the Mooncake pills on the command builder's
-# "KV Offload" row. Fail-open like meta.hardware: absent = assumed to work
-# (pill enabled on any scalable GPU); `unsupported` disables the pill and
-# makes the JSON API skip that strategy on that hardware. Off and Simple
-# need no gating (Simple is taxonomy-driven — `taxonomy.yaml →
-# kv_offload.simple` — and needs nothing per-recipe).
-kv_cache_strategy_hardware:
-  kv_store_distributed_mooncake:
-    gb200: unsupported
-
-hardware_overrides:               # optional per-generation flags
-  hopper:    { extra_args: [], extra_env: {} }
-  blackwell: { extra_args: [], extra_env: {} }
-  amd:       { extra_args: [], extra_env: {} }
-
-strategy_overrides:               # optional per-strategy tweaks
-  single_node_tp:
-    tp: 1                         # optional — default TP size for this strategy.
-                                  # Lets a small model run below full-node TP
-                                  # (e.g. Gemma 4 fits on 1 GPU → tp: 1). Omit
-                                  # to default to the node's gpu_count. Clamped
-                                  # to [1, gpu_count]. When effective TP <
-                                  # gpu_count the UI shows a "using N of M GPUs"
-                                  # hint under the Hardware pill. TEP/DEP and
-                                  # multi-node ignore `tp:` (topology requires
-                                  # full pool).
-    extra_args: []
-    extra_env: {}
-
-guide: |                          # markdown, rendered as the Guide accordion
-  ## Overview
-  ...
-  ## Prerequisites
-  ...
-  ## Launch command
-  ...
-  ## Benchmarking
-  ...
-  ## References
-  - [Model card](https://huggingface.co/<hf_org>/<hf_repo>)
-```
-
-## VRAM formula
-
-`vram_minimum_gb = ceil(params × bytes_per_param × 1.2)` where params is the **total** parameter count (MoE includes inactive experts — they still live in VRAM).
-
-| Precision | Bytes/param |
-|-----------|-------------|
-| bf16, fp16 | 2 |
-| fp8, int8, awq, gptq (8-bit) | 1 |
-| int4, nvfp4, fp4, mxfp4 (4-bit) | 0.5 |
-
-Example: a 70B BF16 model → `70 × 2 × 1.2 = 168 GB`. Round up.
-
-If the variant is `model_id`-overridden and the override is a different base model with its own param count (e.g. a distilled FP4 checkpoint), use the override's parameter count — verify it via HF.
-
-**Mixed-precision quants (NVFP4 / ModelOpt) — don't trust the bytes-per-param table.** NVIDIA ModelOpt NVFP4 checkpoints are *not* uniformly 4-bit: only the MLP linears drop to NVFP4 (W4A16), while attention linears + KV cache stay FP8 and embeddings/norms stay higher precision. `hf_quant_config.json` shows `quant_algo: MIXED_PRECISION` in this case. The pure `params × 0.5 × 1.2` formula then **underestimates** — e.g. `nvidia/Qwen3.6-27B-NVFP4` is ~21.9 GB on disk, not the 13.5 GB the table implies, so `27B × 0.5 × 1.2 = 17` is wrong (the weights alone exceed it). For any mixed-precision checkpoint, size from the **real weight footprint** instead:
-
-```bash
-# total_size is in bytes → GB; then × 1.2 for KV/activation overhead
-curl -sL "https://huggingface.co/<org>/<repo>/resolve/main/model.safetensors.index.json" \
-  | python3 -c "import json,sys; print(round(json.load(sys.stdin)['metadata']['total_size']/1e9*1.2))"
-```
-
-So `vram_minimum_gb = ceil(real_checkpoint_GB × 1.2)` (Qwen3.6-27B-NVFP4 → `ceil(21.9 × 1.2) = 27`). The bytes-per-param table stays correct for *uniform* quants (plain int4/awq/gptq/fp8, and full-model FP4).
+Every field, its precedence rules, an annotated example, and the VRAM formula
+(including the mixed-precision NVFP4 exception) are in [SCHEMA.md](https://github.com/vllm-project/recipes/blob/main/SCHEMA.md) —
+the single authoritative copy, versioned with the renderer. Keep the top-level
+key order it lists.
 
 ## Naming and conventions
 
@@ -339,20 +180,20 @@ So `vram_minimum_gb = ceil(real_checkpoint_GB × 1.2)` (Qwen3.6-27B-NVFP4 → `c
 
 Before committing:
 
-1. `node scripts/build-recipes-api.mjs` succeeds and the new recipe appears in the line count.
+1. From the recipes checkout, `node scripts/validate-source.mjs --source vllm --dir ~/vllm/recipes` passes — the same strict assemble + JSON API build the owning repo's PR check runs (or `node scripts/build-recipes-api.mjs` with `sources.local.yaml` pointing at your checkout) — and the new recipe appears in the line count.
 2. `node -e "const d = require('./public/<hf_org>/<hf_repo>.json'); console.log(d.model.parameter_count, d.variants.default.vram_minimum_gb)"` prints sensible values.
-3. Inspect `git diff --check` and confirm the YAML top-level key order matches the schema.
+3. In the owning repo, inspect `git diff --check` and confirm the YAML top-level key order matches SCHEMA.md.
 4. If the recipe marks any KV-store mode `unsupported` under `kv_cache_strategy_hardware`, spot-check `public/<hf_org>/<hf_repo>/hw/<gpu>/strategies/`: no `kv_store_*` file may exist for an opted-out GPU (they are emitted for all other scalable hardware by default).
 5. Preview the recipe route and select each authored hardware, variant, strategy, and feature. Verify the Install tabs, serve command, Verify model id, Bench model id, verified badge, and Guide links.
 6. Compare the displayed command with the exact successful runtime command. Clearly label any advertised-but-untested context length or optional feature.
 
 ## Commit
 
-Stage **only** the new recipe (and providers.js if edited):
+Commit in the owning repo and stage **only** the new recipe; vllm-project repos enforce DCO, so sign off:
 
 ```bash
-git add models/<hf_org>/<hf_repo>.yaml src/lib/providers.js
+git add recipes/models/<hf_org>/<hf_repo>.yaml   # in vllm; omni recipes in this repo: models/<hf_org>/<hf_repo>.yaml
 git commit -s -m "Add <hf_org>/<hf_repo> recipe"
 ```
 
-Do not stage `public/` (it's generated) or the design docs.
+A new `src/lib/providers.js` entry is a separate PR to vllm-project/recipes. Never stage `public/`, `.content/`, `.sources/`, or `sources.local.yaml`. In vllm, follow its PR conventions (the `pr-checklist` skill, PR template). Once merged, the recipes site picks the change up automatically.

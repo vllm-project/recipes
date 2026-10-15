@@ -51,6 +51,13 @@ variants:
       - "--kv-cache-dtype"
       - "fp8"
 
+  redhat_nvfp4:
+    model_id: "RedHatAI/Trinity-Large-Thinking-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 254
+    description: "RedHatAI NVFP4 quantization"
+
 compatible_strategies:
   - single_node_tp
   - multi_node_tp

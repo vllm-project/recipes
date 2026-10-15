@@ -145,7 +145,6 @@ guide: |
     vllm serve baidu/ERNIE-4.5-VL-28B-A3B-PT \
     --tensor-parallel-size 4 \
     --gpu-memory-utilization 0.9 \
-    --disable-log-requests \
     --trust-remote-code
   ```
 
