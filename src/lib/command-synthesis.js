@@ -591,8 +591,15 @@ export function variantRunsOnHardware(hwProfile, variant, hwId = null) {
  * largest-footprint (highest fidelity) among those that fit. Returns a variant
  * key, or null when nothing fits. Used to auto-fall off an oversized variant
  * (e.g. BF16 → FP8) when the user selects a single-GPU workstation.
+ * `meta.default_variant` (variant-`tp` keyspace) names the author's pick for a
+ * hardware and wins whenever that variant runs there.
  */
 export function pickFittingVariant(recipe, hwProfile, hwId = null) {
+  const preferred = hardwareKeyedValue(recipe.meta?.default_variant, hwProfile, hwId);
+  const preferredVariant = preferred && recipe.variants?.[preferred];
+  if (preferredVariant && variantRunsOnHardware(hwProfile, preferredVariant, hwId)) {
+    return preferred;
+  }
   const fitting = Object.entries(recipe.variants || {}).filter(
     ([, v]) => variantRunsOnHardware(hwProfile, v, hwId)
   );
