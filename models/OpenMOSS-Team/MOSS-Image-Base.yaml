@@ -181,21 +181,40 @@ guide: |
   curl --fail-with-body -sS http://localhost:8000/v1/models
   ```
 
+  ## Inference Parameters
+
+  MOSS-Image-Base has no post-training or CFG distillation, preserving its training
+  information for community adaptation such as LoRA. Inference settings therefore
+  matter for image quality. The official
+  [Inference Parameters guide](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE.md#inference-parameters)
+  ([中文](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE_ZH.md#推理参数配置))
+  recommends:
+
+  | Parameter | Official guidance |
+  | --- | --- |
+  | Resolution (`size`) | Target 1M, 1.5M, or 2M total pixels. The model also supports extrapolation from 0.25M (512 × 512) to 4M (2048 × 2048). |
+  | Aspect ratio | Any ratio; both dimensions must be positive multiples of 16. |
+  | Steps (`num_inference_steps`) | Use at least 50 for best quality. |
+  | CFG (`guidance_scale`) | Default 3.0; recommended range 3.0–6.0. Long prompts generally work at 3.0; increase it as needed for shorter prompts. |
+  | Shift (`flow_shift`) | Default 5.0. |
+  | Sampler | Euler is recommended. |
+
+  The guide describes two forms of **Skip Layer Guidance (SLG)**:
+
+  - **Standard SLG:** use scale 3 over the 0.01–1.0 sampling interval.
+  - **Two-pass sampling SLG:** the recommended `uncond skip` mode skips layer 22
+    (zero-based) in the negative branch. Layers 24 and 26 are also useful alternatives.
+
+  The authors report that disabling SLG can increase realism while degrading details.
+
+  In vLLM-Omni, SLG options belong in `extra_params`. Standard SLG uses `slg_layers`
+  and `slg_scale`; uncond skip uses `uncond_skip_layers` without requiring
+  `slg_scale`. Both use `slg_start` and `slg_stop` to select the sampling interval.
+
   ## Generate an image
 
-  The following settings follow the official
-  [MOSS-Image-Base user guide](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE_ZH.md).
-
-  | Parameter | Recommended setting |
-  | --- | --- |
-  | Size | Start at 1024 × 1024; 1–2 megapixels recommended, with width and height divisible by 16 |
-  | Steps | 50 or more |
-  | Guidance scale | 3.0; try up to 6.0 for short prompts |
-  | Flow shift / sampler | 5.0 / Euler |
-  | Negative-branch layer skipping | `[22]`, zero-based |
-  | Skipping interval | `slg_start=0.01`, `slg_stop=1.0` |
-  | Seed | 0 in this example |
-  | Negative prompt | `nsfw, worst quality, bad anatomy, watermark, jpeg artifact` |
+  This example uses 1024 × 1024, 50 steps, CFG 3.0, shift 5.0, and seed 0, with
+  `uncond_skip_layers=[22]` active over `slg_start=0.01` to `slg_stop=1.0`.
 
   Natural-language descriptions, tag lists, and JSON layouts are supported.
   English is recommended for scene descriptions; keep visible Chinese text in
