@@ -29,9 +29,9 @@ model:
       note: "MOSS-Image preview images with vLLM-Omni PR #8926. Choose CUDA 13.0 or CUDA 12.9 for your host driver."
     pip: false
   architecture: dense
-  # Counted from the checkpoint: 5.082B DiT + 8.393B text encoder + 0.062B VAE.
-  parameter_count: "13.54B"
-  active_parameters: "13.54B"
+  # Parameter scale refers to the DiT; text encoder and VAE are separate components.
+  parameter_count: "5B"
+  active_parameters: "5B"
   context_length: 0
   base_args:
     - "--model-class-name"
@@ -52,6 +52,7 @@ variants:
   default:
     label: "Base"
     precision: bf16
+    # Deployment memory includes the text encoder and VAE.
     vram_minimum_gb: 33
     description: "MOSS-Image-Base; BF16 DiT/text encoder and FP32 VAE. The memory hint is for batch 1; use a 96 GB GPU for the batch-8 configuration below."
     supported_hardware: &nvidia_hardware
@@ -135,8 +136,8 @@ guide: |
   [MOSS-Image-SFT](https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT)
   through vLLM-Omni's `/v1/images/generations` API.
 
-  The checkpoint contains a 5.08B DiT, a Qwen3.5 text encoder, and a FLUX.2 VAE,
-  totaling approximately 13.54B parameters. DiT and text-encoder weights use BF16;
+  MOSS-Image is a 5B diffusion transformer paired with a Qwen3.5 text encoder
+  and a FLUX.2 VAE. DiT and text-encoder weights use BF16;
   the VAE, noise, guidance arithmetic, and Euler updates use FP32.
 
   ## Choose a Docker image
