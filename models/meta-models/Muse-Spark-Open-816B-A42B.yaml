@@ -3,7 +3,7 @@ meta:
   slug: "muse-spark-open-816b-a42b"
   provider: "Muse (Meta)"
   description: "Sparse MoE reasoning model with 816B total / 42B active parameters and a 1M-token context, built for long-horizon agentic coding. Native image and video perception, channel-scoped reasoning and tool calls via the `musespark1x` parsers, and an optional DSpark draft model for speculative decoding."
-  date_added: 2026-09-14
+  date_added: 2026-10-15
   date_updated: 2026-10-15
   difficulty: advanced
   tasks:
@@ -15,6 +15,8 @@ meta:
   default_variant:
     amd: mxfp4
   hardware:
+    h200: verified
+    gb200: verified
     gb300: verified
     mi350x: verified
     mi355x: verified
