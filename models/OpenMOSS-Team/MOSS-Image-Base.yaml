@@ -8,8 +8,6 @@ meta:
   date_added: 2026-10-16
   date_updated: 2026-10-16
   tasks: [omni]
-  performance_headline: "MOSS-Image-Base: 23.42 images/min on 8 RTX PRO 6000 GPUs at 1024x1024, 50 steps"
-  default_hardware: rtx_pro_6000
   # The source checkout has inference evidence; the two published containers
   # have been inspected, but have not yet been run end-to-end on this host.
   hardware:
@@ -49,7 +47,7 @@ variants:
     precision: bf16
     # Deployment memory includes the text encoder and VAE.
     vram_minimum_gb: 33
-    description: "MOSS-Image-Base; BF16 DiT/text encoder and FP32 VAE. The memory hint is for batch 1; use a 96 GB GPU for the batch-8 configuration below."
+    description: "MOSS-Image-Base; BF16 DiT/text encoder and FP32 VAE. The memory estimate is for batch 1."
     supported_hardware: &nvidia_hardware
       - h100
       - h200
@@ -139,13 +137,13 @@ guide: |
 
   Install Docker and the NVIDIA Container Toolkit on a Linux GPU host.
 
-  | Image | CUDA runtime | Suggested Linux driver | Use |
-  | --- | --- | --- | --- |
-  | `vllm/vllm-omni:mosimage` | 13.0.2 | R580 or newer | Default for the RTX PRO 6000 setup below |
-  | `vllm/vllm-omni:mosimage-cu129` | 12.9.1 | 575.57.08 or newer | CUDA 12.9 deployment |
+  | Image | CUDA runtime | Suggested Linux driver |
+  | --- | --- | --- |
+  | `vllm/vllm-omni:mosimage` | 13.0.2 | R580 or newer |
+  | `vllm/vllm-omni:mosimage-cu129` | 12.9.1 | 575.57.08 or newer |
 
   The container supplies CUDA libraries; a separate host CUDA Toolkit installation
-  is not required. The reference RTX PRO 6000 host used driver 595.80.
+  is not required.
   See NVIDIA's [driver compatibility table](https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html#cuda-driver).
 
   Both images contain the preview implementation from
@@ -277,10 +275,10 @@ guide: |
   `--max-num-seqs 8` sets a batch limit; keep eight requests in flight per replica
   to fill it. Each request here generates one image (`n=1`).
 
-  ### Reference performance on RTX PRO 6000
+  ### Reference performance
 
   Hardware: 8 × NVIDIA RTX PRO 6000 Blackwell Server Edition, 96 GB per GPU,
-  600 W power limit. Eight independent replicas, eager execution, cuDNN attention,
+  600 W power limit, driver 595.80. Eight independent replicas, eager execution, cuDNN attention,
   and NUMA-local CPU affinity. The source runs used PyTorch 2.13.0+cu130,
   vLLM 0.31.0, Transformers 5.14.1, and Diffusers 0.40.0.
 
@@ -296,9 +294,8 @@ guide: |
   These are source-checkout measurements from October 15–16, 2026; the batch-8
   rerun used commit `5c60dbcb713ffe772345c9225b99890b3a16aa55`.
 
-  Start with batch 1 for interactive serving: it delivered essentially the same
-  aggregate throughput with much lower latency. Batch 8 handles 64 simultaneous
-  in-flight requests across the node, with roughly 162-second mean latency.
+  Batch 1 delivered similar aggregate throughput with lower latency in this run.
+  Tune batch size and concurrency for your hardware and latency target.
 
   ### Measure concurrent throughput
 
@@ -366,7 +363,6 @@ guide: |
   - **CUDA driver mismatch:** select the CUDA 12.9 image or update the host driver
     to the matching supported version.
   - **High latency with batch 8:** lower `--max-num-seqs` and per-replica concurrency.
-    The measured throughput on this hardware is already near its peak at batch 1.
 
   ## References
 
