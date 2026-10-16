@@ -37,12 +37,7 @@ model:
     - "--model-class-name"
     - "MOSImagePipeline"
     - "--enforce-eager"
-    - "--max-num-seqs"
-    - "1"
-    - "--host"
-    - "0.0.0.0"
-  base_env:
-    CUDA_VISIBLE_DEVICES: "0"
+  base_env: {}
 
 features: {}
 
@@ -177,8 +172,7 @@ guide: |
     vllm serve "$MODEL" --omni \
       --model-class-name MOSImagePipeline \
       --enforce-eager \
-      --max-num-seqs 1 \
-      --host 0.0.0.0 --port 8000
+      --port 8000
   ```
 
   `-e HF_TOKEN` forwards an existing host token if one is set. For an existing
@@ -272,7 +266,7 @@ guide: |
         --enforce-eager \
         --max-num-seqs "$BATCH_SIZE" \
         --request-batch-max-wait-ms 50 \
-        --host 0.0.0.0 --port 8000
+        --port 8000
   done
   ```
 
