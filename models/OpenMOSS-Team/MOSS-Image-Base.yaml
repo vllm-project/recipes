@@ -94,14 +94,14 @@ omni:
         curl --fail-with-body -sS http://localhost:8000/v1/images/generations \
           -H 'Content-Type: application/json' \
           -d '{
-            "prompt": "A clean Chinese nutrition poster with a colorful five-level food pagoda. Large title: 中国居民平衡膳食宝塔. White background, clear Chinese typography, neatly arranged food illustrations.",
+            "prompt": "A sunlit kitchen with a mint-green refrigerator beside a wooden counter. On the refrigerator, a yellow note has three clearly handwritten Chinese lines:\n记得买牛奶和鸡蛋！\n牛奶两盒，鸡蛋一打。\n顺便带一袋面包。",
             "size": "1024x1024",
             "n": 1,
             "num_inference_steps": 50,
             "guidance_scale": 3.0,
             "flow_shift": 5.0,
             "seed": 0,
-            "negative_prompt": "",
+            "negative_prompt": "nsfw, worst quality, bad anatomy, watermark, jpeg artifact",
             "response_format": "b64_json",
             "extra_params": {
               "uncond_skip_layers": [22],
@@ -183,28 +183,36 @@ guide: |
 
   ## Generate an image
 
-  | Parameter | Starting value |
+  The following settings follow the official
+  [MOSS-Image-Base user guide](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE_ZH.md).
+
+  | Parameter | Recommended setting |
   | --- | --- |
-  | Size | 1024 × 1024; dimensions must be multiples of 16 |
-  | Steps | 50 |
-  | Guidance scale | 3.0 |
-  | Flow shift | 5.0 |
+  | Size | Start at 1024 × 1024; 1–2 megapixels recommended, with width and height divisible by 16 |
+  | Steps | 50 or more |
+  | Guidance scale | 3.0; try up to 6.0 for short prompts |
+  | Flow shift / sampler | 5.0 / Euler |
   | Negative-branch layer skipping | `[22]`, zero-based |
   | Skipping interval | `slg_start=0.01`, `slg_stop=1.0` |
-  | Seed | 0 |
-  | Negative prompt | Empty |
+  | Seed | 0 in this example |
+  | Negative prompt | `nsfw, worst quality, bad anatomy, watermark, jpeg artifact` |
+
+  Natural-language descriptions, tag lists, and JSON layouts are supported.
+  English is recommended for scene descriptions; keep visible Chinese text in
+  Chinese and insert explicit line breaks to control its layout. This kitchen
+  example follows the guide's approach to multilingual text rendering:
 
   ```bash
   cat > request.json <<'JSON'
   {
-    "prompt": "A clean Chinese nutrition poster with a colorful five-level food pagoda. Large title: 中国居民平衡膳食宝塔. White background, clear Chinese typography, neatly arranged food illustrations.",
+    "prompt": "A sunlit kitchen with a mint-green refrigerator beside a wooden counter. On the refrigerator, a yellow note has three clearly handwritten Chinese lines:\n记得买牛奶和鸡蛋！\n牛奶两盒，鸡蛋一打。\n顺便带一袋面包。",
     "size": "1024x1024",
     "n": 1,
     "num_inference_steps": 50,
     "guidance_scale": 3.0,
     "flow_shift": 5.0,
     "seed": 0,
-    "negative_prompt": "",
+    "negative_prompt": "nsfw, worst quality, bad anatomy, watermark, jpeg artifact",
     "response_format": "b64_json",
     "extra_params": {
       "uncond_skip_layers": [22],
@@ -230,49 +238,81 @@ guide: |
 
   The request uses the server's loaded model, so it also works with SFT.
   To disable negative-branch skipping, set `uncond_skip_layers` to `[]`.
-  For layout prompts, JSON-encode the layout into the `prompt` string and match
-  the requested image dimensions to its canvas. See the
-  [layout format](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE.md#layout-prompts-experimental).
 
-  ## Use all eight GPUs
+  ### Layout prompts
 
-  Run eight independent single-GPU replicas, one per port, for aggregate throughput.
-  Use a client or a load balancer to distribute requests across ports 8000–8007.
-  The hardware selector above starts one replica; use this loop for all eight.
+  For precise text and object placement, use the guide's experimental Layout format:
+  `summary` describes the scene, and `items` supplies captions, visible `text`, and
+  bounding boxes. Coordinates use `[y_min, x_min, y_max, x_max]` with the canvas
+  center as origin; a 1024 × 1024 canvas spans −512 to +512 on each axis.
+
+  Encode the layout as the API's `prompt` **string** and use the matching canvas size:
 
   ```bash
-  export IMAGE=vllm/vllm-omni:mosimage
-  export MODEL=OpenMOSS-Team/MOSS-Image-Base
-  export BATCH_SIZE=1
-  # Set BATCH_SIZE=8 to allow up to eight requests per GPU batch.
+  python3 - <<'PY'
+  import json
+  from pathlib import Path
+  layout = {
+      "summary": {"caption": "A travel poster on ivory paper with teal mountains and a Chinese heading."},
+      "items": [
+          {"label": "text", "caption": "Large teal heading at the top.",
+           "text": "向山而行", "bbox": [-432, -368, -288, 368]},
+          {"label": "object", "caption": "Layered mountain silhouettes below the heading.",
+           "bbox": [-176, -336, 400, 336]}
+      ],
+      "bbox_coord_space": "abs_centralized",
+      "bbox_format": "yxyx"
+  }
+  request = json.loads(Path("request.json").read_text(encoding="utf-8"))
+  request["prompt"] = json.dumps(layout, ensure_ascii=False, separators=(",", ":"))
+  request["size"] = "1024x1024"
+  Path("request-layout.json").write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")
+  PY
 
-  docker pull "$IMAGE"
-  for gpu in $(seq 0 7); do
-    docker run -d --rm --name "moss-image-$gpu" \
-      --gpus "device=$gpu" --ipc=host \
-      -p "$((8000 + gpu)):8000" \
-      -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
-      -e HF_TOKEN \
-      "$IMAGE" \
-      vllm serve "$MODEL" --omni \
-        --enforce-eager \
-        --max-num-seqs "$BATCH_SIZE" \
-        --request-batch-max-wait-ms 50 \
-        --port 8000
-  done
+  curl --fail-with-body -sS http://localhost:8000/v1/images/generations \
+    -H 'Content-Type: application/json' \
+    --data-binary @request-layout.json -o response.json
   ```
 
-  Stop the single-GPU example first (`docker stop moss-image`) if it is using
-  GPU 0 and port 8000. Pre-download the checkpoint into the shared cache before
-  launching eight replicas. Keep resolution, steps, CFG, shift, and skipping
-  settings consistent across requests so the server can batch them together.
-  `--max-num-seqs 8` sets a batch limit; keep eight requests in flight per replica
-  to fill it. Each request here generates one image (`n=1`).
+  Decode `response.json` with the image-saving snippet above.
 
-  To stop these replicas:
+  ## Improve prompts with the official skill
+
+  The official [MOSS-Image Prompt Enhancer](https://github.com/OpenMOSS/MOSS-Image/tree/main/skills/moss-image-prompt-enhancer)
+  turns an image idea into a detailed caption or a spatial Layout prompt.
+  Choose a caption for scenes and illustrations, or Layout for posters, panels,
+  and precise text placement. The skill prepares prompts; vLLM-Omni generates the image.
+
+  Copy the complete `skills/moss-image-prompt-enhancer` directory, including its
+  `scripts` and `references`, into your agent's skills directory. See the official
+  [SKILL.md](https://github.com/OpenMOSS/MOSS-Image/blob/main/skills/moss-image-prompt-enhancer/SKILL.md)
+  for its workflow. For example, ask the agent:
+
+  ```text
+  Use $moss-image-prompt-enhancer to create a 1024×1024 Layout prompt for
+  a travel poster with teal mountains on ivory paper. Put the exact Chinese
+  heading “向山而行” at the top. Save the draft as draft.json and compile it
+  to prompt.txt.
+  ```
+
+  The bundled `compile_prompt.py` converts top-left pixel boxes in the draft
+  into MOSS-Image's centered layout coordinates. It also supports caption drafts
+  and needs only Python's standard library. Send the compiled `prompt.txt` as a
+  string, keeping the requested dimensions the same as the draft:
 
   ```bash
-  for gpu in $(seq 0 7); do docker stop "moss-image-$gpu"; done
+  python3 - <<'PY'
+  import json
+  from pathlib import Path
+  request = json.loads(Path("request.json").read_text(encoding="utf-8"))
+  request["prompt"] = Path("prompt.txt").read_text(encoding="utf-8").strip()
+  request["size"] = "1024x1024"
+  Path("request-enhanced.json").write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")
+  PY
+
+  curl --fail-with-body -sS http://localhost:8000/v1/images/generations \
+    -H 'Content-Type: application/json' \
+    --data-binary @request-enhanced.json -o response.json
   ```
 
   ## Troubleshooting
@@ -281,12 +321,13 @@ guide: |
     the checkpoint's scheduler configuration.
   - **CUDA driver mismatch:** select the CUDA 12.9 image or update the host driver
     to the matching supported version.
-  - **High latency with batch 8:** lower `--max-num-seqs` and per-replica concurrency.
 
   ## References
 
   - [MOSS-Image-Base model card](https://huggingface.co/OpenMOSS-Team/MOSS-Image-Base)
   - [MOSS-Image-SFT model card](https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT)
   - [MOSS-Image project and user guide](https://github.com/OpenMOSS/MOSS-Image)
+  - [Official Chinese user guide](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE_ZH.md)
+  - [Official Prompt Enhancer skill](https://github.com/OpenMOSS/MOSS-Image/blob/main/skills/moss-image-prompt-enhancer/SKILL.md)
   - [vLLM-Omni implementation PR #8926](https://github.com/vllm-project/vllm-omni/pull/8926)
   - [vLLM-Omni Docker images](https://hub.docker.com/r/vllm/vllm-omni/tags?name=mosimage)
