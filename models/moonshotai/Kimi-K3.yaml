@@ -518,26 +518,19 @@ guide: |
 
   The `latency_specialized` decode backend provides a CuTe-based implementation for low-concurrency Kimi-K3 serving on Blackwell. The configurations below serve the default [moonshotai/Kimi-K3](https://huggingface.co/moonshotai/Kimi-K3) MXFP4 checkpoint with [Inferact/Kimi-K3-DSpark](https://huggingface.co/Inferact/Kimi-K3-DSpark), using one aggregated engine across 4-GPU GB300 NVLink compute nodes and the native Python vLLM frontend.
 
-  Use the tested image on every node; it already contains the implementation and needs no patches:
+  Use the vLLM nightly image on every node; it contains the implementation and needs no patches:
 
   ```bash
-  docker pull vllm/vllm-openai:nightly-49cb2bbf71cfd36ee5aa33d1e184b1cddff55294@sha256:a8d84c552462d1c60da4d7fc97f8f8f48a8fbfbf6820f73477fa0efe2571bf9d
+  docker pull vllm/vllm-openai:nightly
   ```
 
-  These four settings were exercised in [InferenceX PR #4178](https://github.com/SemiAnalysisAI/InferenceX/pull/4178) and its [completed performance and eval sweep](https://github.com/SemiAnalysisAI/InferenceX/actions/runs/38916655840). Concurrency is the number of client requests in flight; all four configurations keep `--max-num-seqs 8` and `--max-num-batched-tokens 16384`.
-
-  | Client concurrency | TP / DCP | Nodes (GPUs) | DSpark draft tokens | CUDA graph capture sizes |
-  | ---: | --- | --- | ---: | --- |
-  | 1 | 16 / 16 | 4 (16) | 5 | `5,6,10,12,20,24,40,48` |
-  | 2 | 16 / 16 | 4 (16) | 5 | `5,6,10,12,20,24,40,48` |
-  | 2 | 8 / 8 | 2 (8) | 7 | `7,8,14,16,28,32,56,64` |
-  | 4 | 8 / 8 | 2 (8) | 7 | `7,8,14,16,28,32,56,64` |
+  For client concurrency 1 or 2, use TP16/DCP16 with five DSpark draft tokens. For concurrency 2 or 4, use TP8/DCP8 with seven draft tokens. Both presets keep `--max-num-seqs 8` and `--max-num-batched-tokens 16384`.
 
   The explicit opt-in is `--additional-config '{"decode_backend":"latency_specialized"}'`; `auto` keeps the stock decode path in this image. The specialized path requires the V2 model runner, FULL decode CUDA graphs, and BF16 convolution state with FP32 recurrent state (`--mamba-ssm-cache-dtype float32`). Keep `FULL_AND_PIECEWISE` and the capture sizes together: the lists cover DSpark draft and verification shapes. Prefill and eager/piecewise steps still use the stock implementation. This recipe uses PP1, no expert parallelism, and at most seven draft tokens; do not combine it with `--enforce-eager`, ReplaySSM/RecoverSSM, or adaptive verification. See the pinned [backend requirements](https://github.com/vllm-project/vllm/blob/49cb2bbf71cfd36ee5aa33d1e184b1cddff55294/vllm/models/kimi_k3/nvidia/specialized_decode/runtime/__init__.py).
 
   ### Launch on each node
 
-  Make the same target checkpoint available at the same local path on every node, and make `Inferact/Kimi-K3-DSpark` available through the mounted Hugging Face cache. Run the script below **inside the pinned image** on every allocated node, with four visible GPUs, host networking, sufficient shared memory, and the devices and network access required by your NVLink/RDMA deployment. Use the reachable address of rank 0 for `MASTER_ADDR` on every node and a distinct `NODE_RANK` from `0` through `NODES - 1`.
+  Make the same target checkpoint available at the same local path on every node, and make `Inferact/Kimi-K3-DSpark` available through the mounted Hugging Face cache. Run the script below **inside the nightly image** on every allocated node, with four visible GPUs, host networking, sufficient shared memory, and the devices and network access required by your NVLink/RDMA deployment. Use the reachable address of rank 0 for `MASTER_ADDR` on every node and a distinct `NODE_RANK` from `0` through `NODES - 1`.
 
   Save as `kimi-k3-low-latency.sh`:
 
@@ -597,9 +590,7 @@ guide: |
 
   For TP16, run `bash kimi-k3-low-latency.sh 16 192.0.2.10 0 /models/Kimi-K3` on rank 0 and the same command with ranks `1`, `2`, and `3` on the other three nodes. Replace the example address and model path. For TP8, use `8` as the first argument and launch ranks `0` and `1` only. Rank 0 serves the OpenAI-compatible API on port 8000; the other ranks run headless.
 
-  Wait for CUDA graph capture to finish on all nodes and for rank 0's `/health` endpoint to respond successfully, then use the [client examples](#client-usage). The logs should show `latency_specialized`, `enforce_eager=False`, and completed FULL graph capture, including DSpark graphs. The generic command builder above does not select these low-latency presets; use this script for the settings in the table.
-
-  **Serving versus AgentX measurement.** The command above uses real block verification with greedy drafting, matching the eval configuration. InferenceX's performance jobs instead apply measured golden synthetic acceptance (3.44 for K5 and 3.78 for K7); those performance figures are benchmark measurements, not a latency guarantee for real-verification serving. Keep `rejection_sample_method: block` for serving and accuracy evaluation. The [pinned InferenceX recipe](https://github.com/SemiAnalysisAI/InferenceX/blob/8439a66b3debb3496689633cac5b445cbf79b625/inferencex-e2e/benchmarks/multi_node/srt-slurm-recipes/kimik3/vllm/gb300-fp4/agentx/agg-megakernel-variants.yaml) records the complete benchmark settings.
+  Wait for CUDA graph capture to finish on all nodes and for rank 0's `/health` endpoint to respond successfully, then use the [client examples](#client-usage). The logs should show `latency_specialized`, `enforce_eager=False`, and completed FULL graph capture, including DSpark graphs. The generic command builder above does not select these low-latency presets; use this script for either preset.
 
   ## GB200: InferenceX AgentX alignment
 
