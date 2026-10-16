@@ -73,7 +73,7 @@ variants:
     model_id: "OpenMOSS-Team/MOSS-Image-SFT"
     precision: bf16
     vram_minimum_gb: 33
-    description: "Supervised fine-tune with the same architecture and pipeline. Configuration compatibility checked; the performance results below are for Base."
+    description: "Supervised fine-tune with the same architecture and pipeline."
     supported_hardware: *nvidia_hardware
     hardware_overrides: *image_command
 
@@ -116,7 +116,7 @@ omni:
         # Save the request from the guide as request.json; warm up first.
         curl --fail-with-body -sS http://localhost:8000/v1/images/generations \
           -H 'Content-Type: application/json' --data-binary @request.json -o /dev/null
-        # This measures one request's latency. See the guide for concurrent throughput.
+        # Time one image-generation request.
         time curl --fail-with-body -sS http://localhost:8000/v1/images/generations \
           -H 'Content-Type: application/json' --data-binary @request.json -o /dev/null
 
@@ -274,77 +274,6 @@ guide: |
   settings consistent across requests so the server can batch them together.
   `--max-num-seqs 8` sets a batch limit; keep eight requests in flight per replica
   to fill it. Each request here generates one image (`n=1`).
-
-  ### Reference performance
-
-  Hardware: 8 × NVIDIA RTX PRO 6000 Blackwell Server Edition, 96 GB per GPU,
-  600 W power limit, driver 595.80. Eight independent replicas, eager execution, cuDNN attention,
-  and NUMA-local CPU affinity. The source runs used PyTorch 2.13.0+cu130,
-  vLLM 0.31.0, Transformers 5.14.1, and Diffusers 0.40.0.
-
-  | Batch per GPU | Total concurrency | Images/min, all 8 GPUs | Mean latency | P95 latency |
-  | ---: | ---: | ---: | ---: | ---: |
-  | 1 | 8 | 23.41 | 20.23 s | — |
-  | 8 | 64 | 23.42 | 161.99 s | 163.95 s |
-
-  The workload was the long nutrition-pagoda layout prompt (~2,524 text tokens),
-  1024 × 1024, 50 steps, CFG 5, shift 5, seed 0, and no layer skipping. Batch 8
-  completed 128/128 measured requests after one full warm-up wave, with 48.37 GiB
-  peak PyTorch allocated memory and 61.08 GiB peak device memory per GPU.
-  These are source-checkout measurements from October 15–16, 2026; the batch-8
-  rerun used commit `5c60dbcb713ffe772345c9225b99890b3a16aa55`.
-
-  Batch 1 delivered similar aggregate throughput with lower latency in this run.
-  Tune batch size and concurrency for your hardware and latency target.
-
-  ### Measure concurrent throughput
-
-  Wait until `/health` succeeds on all eight ports. Save your workload in
-  `request.json`, then run the following with `BATCH_SIZE` matching the servers.
-  It performs one warm-up wave and two measured waves, counts successful images,
-  and includes queueing, JSON parsing, and response transfer in the elapsed time.
-
-  ```bash
-  BATCH_SIZE=1 python3 - <<'PY'
-  import concurrent.futures
-  import json
-  import os
-  import statistics
-  import time
-  import urllib.request
-  from pathlib import Path
-
-  batch = int(os.environ["BATCH_SIZE"])
-  payload = json.loads(Path("request.json").read_text())
-  assert payload.get("n", 1) == 1, "This benchmark expects one image per request"
-  body = json.dumps(payload, ensure_ascii=False).encode()
-  ports = [8000 + gpu for gpu in range(8) for _ in range(batch)]
-
-  def generate(port):
-      start = time.perf_counter()
-      request = urllib.request.Request(
-          f"http://localhost:{port}/v1/images/generations", data=body,
-          headers={"Content-Type": "application/json"},
-      )
-      with urllib.request.urlopen(request, timeout=900) as response:
-          result = json.load(response)
-      assert len(result["data"]) == 1 and result["data"][0]["b64_json"]
-      return time.perf_counter() - start
-
-  latencies, seconds = [], 0.0
-  with concurrent.futures.ThreadPoolExecutor(max_workers=len(ports)) as pool:
-      for wave in range(3):
-          start = time.perf_counter()
-          durations = list(pool.map(generate, ports))
-          elapsed = time.perf_counter() - start
-          print(f"wave={wave} images={len(durations)} elapsed={elapsed:.2f}s")
-          if wave:
-              latencies.extend(durations)
-              seconds += elapsed
-  print(f"images/min={60 * len(latencies) / seconds:.2f}")
-  print(f"mean_latency={statistics.mean(latencies):.2f}s")
-  PY
-  ```
 
   To stop these replicas:
 
