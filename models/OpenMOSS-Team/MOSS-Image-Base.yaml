@@ -32,8 +32,6 @@ model:
   active_parameters: "5B"
   context_length: 0
   base_args:
-    - "--model-class-name"
-    - "MOSImagePipeline"
     - "--enforce-eager"
   base_env: {}
 
@@ -146,11 +144,9 @@ guide: |
   is not required.
   See NVIDIA's [driver compatibility table](https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html#cuda-driver).
 
-  Both images contain the preview implementation from
+  Use image builds containing the `MOSSImagePipeline` registration from
   [vLLM-Omni PR #8926](https://github.com/vllm-project/vllm-omni/pull/8926).
-  Their current registry uses the legacy name `MOSImagePipeline`, so retain
-  `--model-class-name MOSImagePipeline` when using these tags. The Hugging Face
-  checkpoint name remains `OpenMOSS-Team/MOSS-Image-Base` or `OpenMOSS-Team/MOSS-Image-SFT`.
+  The pipeline is detected automatically for both Base and SFT checkpoints.
 
   ## Start a single-GPU server
 
@@ -168,7 +164,6 @@ guide: |
     -e HF_TOKEN \
     "$IMAGE" \
     vllm serve "$MODEL" --omni \
-      --model-class-name MOSImagePipeline \
       --enforce-eager \
       --port 8000
   ```
@@ -260,7 +255,6 @@ guide: |
       -e HF_TOKEN \
       "$IMAGE" \
       vllm serve "$MODEL" --omni \
-        --model-class-name MOSImagePipeline \
         --enforce-eager \
         --max-num-seqs "$BATCH_SIZE" \
         --request-batch-max-wait-ms 50 \
@@ -283,12 +277,8 @@ guide: |
 
   ## Troubleshooting
 
-  - **Unknown `MOSSImagePipeline`:** keep `--model-class-name MOSImagePipeline`
-    for the two preview images. A rebuilt image containing the naming fix in
-    PR #8926 can discover the canonical pipeline automatically.
-  - **Unexpected sampling behavior:** send `flow_shift: 5.0` explicitly. These
-    images still have an internal scheduler fallback of 3.0; the checkpoint
-    configuration and this request use 5.0.
+  - **Unexpected sampling behavior:** send `flow_shift: 5.0` explicitly to match
+    the checkpoint's scheduler configuration.
   - **CUDA driver mismatch:** select the CUDA 12.9 image or update the host driver
     to the matching supported version.
   - **High latency with batch 8:** lower `--max-num-seqs` and per-replica concurrency.
