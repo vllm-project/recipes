@@ -108,13 +108,30 @@ omni:
               "slg_start": 0.01,
               "slg_stop": 1.0
             }
-          }' -o response.json
+          }' -o response.json && \
         python3 -c 'import base64,json,pathlib; r=json.loads(pathlib.Path("response.json").read_text()); pathlib.Path("moss-image.png").write_bytes(base64.b64decode(r["data"][0]["b64_json"]))'
       benchmark: |
-        # Save the request from the guide as request.json; warm up first.
+        cat > request.json <<'JSON'
+        {
+          "prompt": "A sunlit kitchen with a mint-green refrigerator beside a wooden counter. On the refrigerator, a yellow note has three clearly handwritten Chinese lines:\n记得买牛奶和鸡蛋！\n牛奶两盒，鸡蛋一打。\n顺便带一袋面包。",
+          "size": "1024x1024",
+          "n": 1,
+          "num_inference_steps": 50,
+          "guidance_scale": 3.0,
+          "flow_shift": 5.0,
+          "seed": 0,
+          "negative_prompt": "nsfw, worst quality, bad anatomy, watermark, jpeg artifact",
+          "response_format": "b64_json",
+          "extra_params": {
+            "uncond_skip_layers": [22],
+            "slg_start": 0.01,
+            "slg_stop": 1.0
+          }
+        }
+        JSON
+        # Warm up, then time one image-generation request.
         curl --fail-with-body -sS http://localhost:8000/v1/images/generations \
-          -H 'Content-Type: application/json' --data-binary @request.json -o /dev/null
-        # Time one image-generation request.
+          -H 'Content-Type: application/json' --data-binary @request.json -o /dev/null && \
         time curl --fail-with-body -sS http://localhost:8000/v1/images/generations \
           -H 'Content-Type: application/json' --data-binary @request.json -o /dev/null
 
@@ -243,8 +260,7 @@ guide: |
 
   curl --fail-with-body -sS http://localhost:8000/v1/images/generations \
     -H 'Content-Type: application/json' \
-    --data-binary @request.json -o response.json
-
+    --data-binary @request.json -o response.json && \
   python3 - <<'PY'
   import base64
   import json
