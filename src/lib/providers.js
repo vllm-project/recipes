@@ -54,6 +54,7 @@ export const PROVIDERS = {
   "bharatgenai":     { display_name: "BharatGen",                logo: "/providers/bharatgenai.jpeg" },
   "vllm-sr":         { display_name: "vLLM Semantic Router",     logo: "/providers/vllm-sr.png" },
   "black-forest-labs": { display_name: "Black Forest Labs",     logo: "/providers/black-forest-labs.png" },
+  "reflection":      { display_name: "Reflection AI",            logo: "/providers/reflection.png" },
 };
 
 export function getProviderLogo(hfOrg) {
