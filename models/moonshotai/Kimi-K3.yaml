@@ -588,10 +588,6 @@ guide: |
     "${API_ARGS[@]}"
   ```
 
-  For TP16, run `bash kimi-k3-low-latency.sh 16 192.0.2.10 0 /models/Kimi-K3` on rank 0 and the same command with ranks `1`, `2`, and `3` on the other three nodes. Replace the example address and model path. For TP8, use `8` as the first argument and launch ranks `0` and `1` only. Rank 0 serves the OpenAI-compatible API on port 8000; the other ranks run headless.
-
-  Wait for CUDA graph capture to finish on all nodes and for rank 0's `/health` endpoint to respond successfully, then use the [client examples](#client-usage). The logs should show `latency_specialized`, `enforce_eager=False`, and completed FULL graph capture, including DSpark graphs. The generic command builder above does not select these low-latency presets; use this script for either preset.
-
   ## GB200: InferenceX AgentX alignment
 
   The GB200 AgentX lanes in [SemiAnalysis InferenceX](https://inferencex.semianalysis.com/) (`kimik3-fp4-gb200-dynamo-vllm-agentic-dspark-mooncake-*`, [SemiAnalysisAI/InferenceX#3748](https://github.com/SemiAnalysisAI/InferenceX/pull/3748), pinned to [`49a8e45`](https://github.com/SemiAnalysisAI/InferenceX/tree/49a8e45349cf0b4a03ffa2c6d49da1fd861586f7/inferencex-e2e/benchmarks/multi_node/srt-slurm-recipes/kimik3/vllm/gb200-fp4/agentx)) serve the default `moonshotai/Kimi-K3` checkpoint (MXFP4 weights) with DSpark speculative decoding and a Mooncake KV store on 4-GPU NVL trays. They are benchmark configurations; the settings below are the production-useful parts. The builder's **Mooncake** option generates the `mooncake_master` and store config; the lane-specific connector settings are below. Throughput runs use InferenceX's golden acceptance lengths for DSpark.
