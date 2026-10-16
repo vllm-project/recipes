@@ -1,0 +1,382 @@
+# yaml-language-server: $schema=https://recipes.vllm.ai/recipe.schema.json
+
+meta:
+  title: "MOSS-Image"
+  slug: "moss-image"
+  provider: "OpenMOSS"
+  description: "Serve MOSS-Image-Base and MOSS-Image-SFT with vLLM-Omni for text-to-image generation, Chinese text rendering, and JSON layout prompts."
+  date_added: 2026-10-16
+  date_updated: 2026-10-16
+  tasks: [omni]
+  performance_headline: "MOSS-Image-Base: 23.42 images/min on 8 RTX PRO 6000 GPUs at 1024x1024, 50 steps"
+  default_hardware: rtx_pro_6000
+  # The source checkout has inference evidence; the two published containers
+  # have been inspected, but have not yet been run end-to-end on this host.
+  hardware:
+    rtx_pro_6000: supported
+    rtx_pro_6000_8x: supported
+
+model:
+  model_id: "OpenMOSS-Team/MOSS-Image-Base"
+  # This is the vLLM base version in the images. MOSS-Image support is in
+  # vLLM-Omni PR #8926, not the standalone vLLM wheel.
+  min_vllm_version: "0.31.0"
+  docker_image:
+    cu130: "vllm/vllm-omni:mosimage"
+    cu129: "vllm/vllm-omni:mosimage-cu129"
+  install:
+    docker:
+      note: "MOSS-Image preview images with vLLM-Omni PR #8926. Choose CUDA 13.0 or CUDA 12.9 for your host driver."
+    pip: false
+  architecture: dense
+  # Counted from the checkpoint: 5.082B DiT + 8.393B text encoder + 0.062B VAE.
+  parameter_count: "13.54B"
+  active_parameters: "13.54B"
+  context_length: 0
+  base_args:
+    - "--model-class-name"
+    - "MOSImagePipeline"
+    - "--enforce-eager"
+    - "--max-num-seqs"
+    - "1"
+    - "--host"
+    - "0.0.0.0"
+  base_env:
+    CUDA_VISIBLE_DEVICES: "0"
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    label: "Base"
+    precision: bf16
+    vram_minimum_gb: 33
+    description: "MOSS-Image-Base; BF16 DiT/text encoder and FP32 VAE. The memory hint is for batch 1; use a 96 GB GPU for the batch-8 configuration below."
+    supported_hardware: &nvidia_hardware
+      - h100
+      - h200
+      - b200
+      - gb200
+      - b300
+      - gb300
+      - rtx_pro_6000
+      - rtx_pro_6000_8x
+    # These images have an empty ENTRYPOINT. Restore the command in Docker
+    # CMD on every selectable profile, including the default variant.
+    hardware_overrides: &image_command
+      h100: { docker_serve_command: "vllm serve" }
+      h200: { docker_serve_command: "vllm serve" }
+      b200: { docker_serve_command: "vllm serve" }
+      gb200: { docker_serve_command: "vllm serve" }
+      b300: { docker_serve_command: "vllm serve" }
+      gb300: { docker_serve_command: "vllm serve" }
+      rtx_pro_6000: { docker_serve_command: "vllm serve" }
+      rtx_pro_6000_8x: { docker_serve_command: "vllm serve" }
+  sft:
+    label: "SFT"
+    model_id: "OpenMOSS-Team/MOSS-Image-SFT"
+    precision: bf16
+    vram_minimum_gb: 33
+    description: "Supervised fine-tune with the same architecture and pipeline. Configuration compatibility checked; the performance results below are for Base."
+    supported_hardware: *nvidia_hardware
+    hardware_overrides: *image_command
+
+compatible_strategies: []
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+omni:
+  port: 8000
+  variant_label: "Checkpoint"
+  variant_hint: "Base and SFT use the same serving command and sampling parameters."
+  tasks:
+    - id: t2i
+      description: "1024x1024, 50 Euler steps, CFG 3, shift 5, negative-branch layer skipping at index 22."
+      # The Images API uses the loaded checkpoint when model is omitted, so
+      # this static example works for both the Base and SFT variant selectors.
+      curl: |
+        curl --fail-with-body -sS http://localhost:8000/v1/images/generations \
+          -H 'Content-Type: application/json' \
+          -d '{
+            "prompt": "A clean Chinese nutrition poster with a colorful five-level food pagoda. Large title: 中国居民平衡膳食宝塔. White background, clear Chinese typography, neatly arranged food illustrations.",
+            "size": "1024x1024",
+            "n": 1,
+            "num_inference_steps": 50,
+            "guidance_scale": 3.0,
+            "flow_shift": 5.0,
+            "seed": 0,
+            "negative_prompt": "",
+            "response_format": "b64_json",
+            "extra_params": {
+              "uncond_skip_layers": [22],
+              "slg_start": 0.01,
+              "slg_stop": 1.0
+            }
+          }' -o response.json
+        python3 -c 'import base64,json,pathlib; r=json.loads(pathlib.Path("response.json").read_text()); pathlib.Path("moss-image.png").write_bytes(base64.b64decode(r["data"][0]["b64_json"]))'
+      benchmark: |
+        # Save the request from the guide as request.json; warm up first.
+        curl --fail-with-body -sS http://localhost:8000/v1/images/generations \
+          -H 'Content-Type: application/json' --data-binary @request.json -o /dev/null
+        # This measures one request's latency. See the guide for concurrent throughput.
+        time curl --fail-with-body -sS http://localhost:8000/v1/images/generations \
+          -H 'Content-Type: application/json' --data-binary @request.json -o /dev/null
+
+guide: |
+  ## Overview
+
+  MOSS-Image supports natural-language prompts, Chinese and English text rendering,
+  and structured JSON layouts. This recipe serves
+  [MOSS-Image-Base](https://huggingface.co/OpenMOSS-Team/MOSS-Image-Base) and
+  [MOSS-Image-SFT](https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT)
+  through vLLM-Omni's `/v1/images/generations` API.
+
+  The checkpoint contains a 5.08B DiT, a Qwen3.5 text encoder, and a FLUX.2 VAE,
+  totaling approximately 13.54B parameters. DiT and text-encoder weights use BF16;
+  the VAE, noise, guidance arithmetic, and Euler updates use FP32.
+
+  ## Choose a Docker image
+
+  Install Docker and the NVIDIA Container Toolkit on a Linux GPU host.
+
+  | Image | CUDA runtime | Suggested Linux driver | Use |
+  | --- | --- | --- | --- |
+  | `vllm/vllm-omni:mosimage` | 13.0.2 | R580 or newer | Default for the RTX PRO 6000 setup below |
+  | `vllm/vllm-omni:mosimage-cu129` | 12.9.1 | 575.57.08 or newer | CUDA 12.9 deployment |
+
+  The container supplies CUDA libraries; a separate host CUDA Toolkit installation
+  is not required. The reference RTX PRO 6000 host used driver 595.80.
+  See NVIDIA's [driver compatibility table](https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html#cuda-driver).
+
+  Both images contain the preview implementation from
+  [vLLM-Omni PR #8926](https://github.com/vllm-project/vllm-omni/pull/8926).
+  Their current registry uses the legacy name `MOSImagePipeline`, so retain
+  `--model-class-name MOSImagePipeline` when using these tags. The Hugging Face
+  checkpoint name remains `OpenMOSS-Team/MOSS-Image-Base` or `OpenMOSS-Team/MOSS-Image-SFT`.
+
+  ## Start a single-GPU server
+
+  ```bash
+  export IMAGE=vllm/vllm-omni:mosimage
+  # For CUDA 12.9: export IMAGE=vllm/vllm-omni:mosimage-cu129
+  export MODEL=OpenMOSS-Team/MOSS-Image-Base
+  # For SFT: export MODEL=OpenMOSS-Team/MOSS-Image-SFT
+
+  docker pull "$IMAGE"
+  docker run --rm --name moss-image \
+    --gpus 'device=0' --ipc=host \
+    -p 8000:8000 \
+    -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
+    -e HF_TOKEN \
+    "$IMAGE" \
+    vllm serve "$MODEL" --omni \
+      --model-class-name MOSImagePipeline \
+      --enforce-eager \
+      --max-num-seqs 1 \
+      --host 0.0.0.0 --port 8000
+  ```
+
+  `-e HF_TOKEN` forwards an existing host token if one is set. For an existing
+  Hugging Face cache, replace the host side of the mount with its cache root.
+  For a standalone model directory, mount it with `-v /path/to/model:/model:ro`,
+  use `vllm serve /model`, and add `--served-model-name "$MODEL"`.
+
+  These images have no default entrypoint: include `vllm serve` after the image
+  name. Wait for startup to finish, then check the server from another terminal:
+
+  ```bash
+  curl --fail-with-body -sS http://localhost:8000/health
+  curl --fail-with-body -sS http://localhost:8000/v1/models
+  ```
+
+  ## Generate an image
+
+  | Parameter | Starting value |
+  | --- | --- |
+  | Size | 1024 × 1024; dimensions must be multiples of 16 |
+  | Steps | 50 |
+  | Guidance scale | 3.0 |
+  | Flow shift | 5.0 |
+  | Negative-branch layer skipping | `[22]`, zero-based |
+  | Skipping interval | `slg_start=0.01`, `slg_stop=1.0` |
+  | Seed | 0 |
+  | Negative prompt | Empty |
+
+  ```bash
+  cat > request.json <<'JSON'
+  {
+    "prompt": "A clean Chinese nutrition poster with a colorful five-level food pagoda. Large title: 中国居民平衡膳食宝塔. White background, clear Chinese typography, neatly arranged food illustrations.",
+    "size": "1024x1024",
+    "n": 1,
+    "num_inference_steps": 50,
+    "guidance_scale": 3.0,
+    "flow_shift": 5.0,
+    "seed": 0,
+    "negative_prompt": "",
+    "response_format": "b64_json",
+    "extra_params": {
+      "uncond_skip_layers": [22],
+      "slg_start": 0.01,
+      "slg_stop": 1.0
+    }
+  }
+  JSON
+
+  curl --fail-with-body -sS http://localhost:8000/v1/images/generations \
+    -H 'Content-Type: application/json' \
+    --data-binary @request.json -o response.json
+
+  python3 - <<'PY'
+  import base64
+  import json
+  from pathlib import Path
+  response = json.loads(Path("response.json").read_text())
+  Path("moss-image.png").write_bytes(base64.b64decode(response["data"][0]["b64_json"]))
+  print("Saved moss-image.png")
+  PY
+  ```
+
+  The request uses the server's loaded model, so it also works with SFT.
+  To disable negative-branch skipping, set `uncond_skip_layers` to `[]`.
+  For layout prompts, JSON-encode the layout into the `prompt` string and match
+  the requested image dimensions to its canvas. See the
+  [layout format](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE.md#layout-prompts-experimental).
+
+  ## Use all eight GPUs
+
+  Run eight independent single-GPU replicas, one per port, for aggregate throughput.
+  Use a client or a load balancer to distribute requests across ports 8000–8007.
+  The hardware selector above starts one replica; use this loop for all eight.
+
+  ```bash
+  export IMAGE=vllm/vllm-omni:mosimage
+  export MODEL=OpenMOSS-Team/MOSS-Image-Base
+  export BATCH_SIZE=1
+  # Set BATCH_SIZE=8 to allow up to eight requests per GPU batch.
+
+  docker pull "$IMAGE"
+  for gpu in $(seq 0 7); do
+    docker run -d --rm --name "moss-image-$gpu" \
+      --gpus "device=$gpu" --ipc=host \
+      -p "$((8000 + gpu)):8000" \
+      -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
+      -e HF_TOKEN \
+      "$IMAGE" \
+      vllm serve "$MODEL" --omni \
+        --model-class-name MOSImagePipeline \
+        --enforce-eager \
+        --max-num-seqs "$BATCH_SIZE" \
+        --request-batch-max-wait-ms 50 \
+        --host 0.0.0.0 --port 8000
+  done
+  ```
+
+  Stop the single-GPU example first (`docker stop moss-image`) if it is using
+  GPU 0 and port 8000. Pre-download the checkpoint into the shared cache before
+  launching eight replicas. Keep resolution, steps, CFG, shift, and skipping
+  settings consistent across requests so the server can batch them together.
+  `--max-num-seqs 8` sets a batch limit; keep eight requests in flight per replica
+  to fill it. Each request here generates one image (`n=1`).
+
+  ### Reference performance on RTX PRO 6000
+
+  Hardware: 8 × NVIDIA RTX PRO 6000 Blackwell Server Edition, 96 GB per GPU,
+  600 W power limit. Eight independent replicas, eager execution, cuDNN attention,
+  and NUMA-local CPU affinity. The source runs used PyTorch 2.13.0+cu130,
+  vLLM 0.31.0, Transformers 5.14.1, and Diffusers 0.40.0.
+
+  | Batch per GPU | Total concurrency | Images/min, all 8 GPUs | Mean latency | P95 latency |
+  | ---: | ---: | ---: | ---: | ---: |
+  | 1 | 8 | 23.41 | 20.23 s | — |
+  | 8 | 64 | 23.42 | 161.99 s | 163.95 s |
+
+  The workload was the long nutrition-pagoda layout prompt (~2,524 text tokens),
+  1024 × 1024, 50 steps, CFG 5, shift 5, seed 0, and no layer skipping. Batch 8
+  completed 128/128 measured requests after one full warm-up wave, with 48.37 GiB
+  peak PyTorch allocated memory and 61.08 GiB peak device memory per GPU.
+  These are source-checkout measurements from October 15–16, 2026; the batch-8
+  rerun used commit `5c60dbcb713ffe772345c9225b99890b3a16aa55`.
+
+  Start with batch 1 for interactive serving: it delivered essentially the same
+  aggregate throughput with much lower latency. Batch 8 handles 64 simultaneous
+  in-flight requests across the node, with roughly 162-second mean latency.
+
+  ### Measure concurrent throughput
+
+  Wait until `/health` succeeds on all eight ports. Save your workload in
+  `request.json`, then run the following with `BATCH_SIZE` matching the servers.
+  It performs one warm-up wave and two measured waves, counts successful images,
+  and includes queueing, JSON parsing, and response transfer in the elapsed time.
+
+  ```bash
+  BATCH_SIZE=1 python3 - <<'PY'
+  import concurrent.futures
+  import json
+  import os
+  import statistics
+  import time
+  import urllib.request
+  from pathlib import Path
+
+  batch = int(os.environ["BATCH_SIZE"])
+  payload = json.loads(Path("request.json").read_text())
+  assert payload.get("n", 1) == 1, "This benchmark expects one image per request"
+  body = json.dumps(payload, ensure_ascii=False).encode()
+  ports = [8000 + gpu for gpu in range(8) for _ in range(batch)]
+
+  def generate(port):
+      start = time.perf_counter()
+      request = urllib.request.Request(
+          f"http://localhost:{port}/v1/images/generations", data=body,
+          headers={"Content-Type": "application/json"},
+      )
+      with urllib.request.urlopen(request, timeout=900) as response:
+          result = json.load(response)
+      assert len(result["data"]) == 1 and result["data"][0]["b64_json"]
+      return time.perf_counter() - start
+
+  latencies, seconds = [], 0.0
+  with concurrent.futures.ThreadPoolExecutor(max_workers=len(ports)) as pool:
+      for wave in range(3):
+          start = time.perf_counter()
+          durations = list(pool.map(generate, ports))
+          elapsed = time.perf_counter() - start
+          print(f"wave={wave} images={len(durations)} elapsed={elapsed:.2f}s")
+          if wave:
+              latencies.extend(durations)
+              seconds += elapsed
+  print(f"images/min={60 * len(latencies) / seconds:.2f}")
+  print(f"mean_latency={statistics.mean(latencies):.2f}s")
+  PY
+  ```
+
+  To stop these replicas:
+
+  ```bash
+  for gpu in $(seq 0 7); do docker stop "moss-image-$gpu"; done
+  ```
+
+  ## Troubleshooting
+
+  - **Unknown `MOSSImagePipeline`:** keep `--model-class-name MOSImagePipeline`
+    for the two preview images. A rebuilt image containing the naming fix in
+    PR #8926 can discover the canonical pipeline automatically.
+  - **Unexpected sampling behavior:** send `flow_shift: 5.0` explicitly. These
+    images still have an internal scheduler fallback of 3.0; the checkpoint
+    configuration and this request use 5.0.
+  - **CUDA driver mismatch:** select the CUDA 12.9 image or update the host driver
+    to the matching supported version.
+  - **High latency with batch 8:** lower `--max-num-seqs` and per-replica concurrency.
+    The measured throughput on this hardware is already near its peak at batch 1.
+
+  ## References
+
+  - [MOSS-Image-Base model card](https://huggingface.co/OpenMOSS-Team/MOSS-Image-Base)
+  - [MOSS-Image-SFT model card](https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT)
+  - [MOSS-Image project and user guide](https://github.com/OpenMOSS/MOSS-Image)
+  - [vLLM-Omni implementation PR #8926](https://github.com/vllm-project/vllm-omni/pull/8926)
+  - [vLLM-Omni Docker images](https://hub.docker.com/r/vllm/vllm-omni/tags?name=mosimage)
