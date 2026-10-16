@@ -229,7 +229,10 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
       kv_cache_strategy_hardware: keyed({ enum: kvStores }, keyed(gpuId, { const: "unsupported" })),
       kv_offload_support: keyed({ enum: kvOffload }, status),
       strategy_hardware: keyed(strategyId, keyed(hwKey, { enum: ["supported", "unsupported"] })),
-      hardware_overrides: keyed(hwKey, extraArgsEnv({ install_note: { type: "string" } })),
+      hardware_overrides: keyed(hwKey, extraArgsEnv({
+        install_note: { type: "string" },
+        frontend: { enum: frontends },
+      })),
       // looked up by exact profile id
       hardware_notes: keyed(gpuId, obj({ title: { type: "string" }, body: { type: "string" }, link: obj({ href: { type: "string" }, label: { type: "string" } }) }, { required: ["body"] })),
       strategy_overrides: keyed(strategyId, strategyOverride),

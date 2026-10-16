@@ -883,6 +883,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   }, [taxonomy]);
 
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
+  const effectiveFrontend = resolveFrontend(recipe, frontend, taxonomy, hwProfile, hwId);
   // Non-scalable hardware (single-GPU workstation, e.g. DGX Station) can't add
   // nodes, so multi-node is off and variants that don't fit are disabled.
   const hwScalable = isHardwareScalable(hwProfile);
@@ -1099,9 +1100,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     activeStrategy,
     hwId,
   );
+  // A tutorial may use several TP groups within this node (e.g. TP8/DP2
+  // across 16 NPUs). TP alone is not its total device usage.
+  const dpArgIndex = currentVariant.extra_args?.lastIndexOf("--data-parallel-size") ?? -1;
+  const declaredDp = dpArgIndex >= 0 ? Number(currentVariant.extra_args[dpArgIndex + 1]) : 1;
   const showTpUsageHint =
     nodeCount === 1
     && activeStrategy === "single_node_tp"
+    && !(declaredDp > 1)
     && (hwProfile?.generation === "cpu" || effectiveTp < hwGpuCount);
 
   const isSingleNode = nodeCount === 1 && typeof activeStrategy === "string" && activeStrategy.startsWith("single_node_");
@@ -1180,7 +1186,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   // ── Handlers ──
   const selectFrontend = (value) => {
-    const next = resolveFrontend(recipe, value, taxonomy);
+    const next = resolveFrontend(recipe, value, taxonomy, hwProfile, hwId);
     setFrontend(next);
     syncUrl({ frontend: next });
     saveRecipeState(recipe.hf_id, { frontend: next });
@@ -2848,9 +2854,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           <ConfigRow label="Frontend">
             <PillGroup>
               {Object.entries(taxonomy.frontends || {}).map(([id, fe]) => {
-                const supported = isFrontendSupported(recipe, id);
+                const supported = isFrontendSupported(recipe, id, hwProfile, hwId);
                 // SMG gRPC always runs the Python servicer, so pin the pill to it.
-                const active = isSmgGrpc ? id === "python" : frontend === id;
+                const active = isSmgGrpc ? id === "python" : effectiveFrontend === id;
                 const disabled = !supported || (isSmgGrpc && id !== "python");
                 return (
                   <Pill
@@ -2859,7 +2865,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     pressed={active}
                     disabled={disabled}
                     title={!supported
-                      ? `The ${fe.label} frontend doesn't support this model yet`
+                      ? `The ${fe.label} frontend isn't enabled for this model and hardware configuration`
                       : disabled ? "SMG gRPC uses the Python servicer." : undefined}
                     onClick={() => selectFrontend(id)}
                   >
@@ -2872,13 +2878,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
               {isSmgGrpc ? (
                 "The SMG-compatible gRPC servicer runs through vllm serve --grpc."
-              ) : isFrontendSupported(recipe, "rust") ? (
+              ) : isFrontendSupported(recipe, "rust", hwProfile, hwId) ? (
                 <>
                   The experimental Rust frontend can improve throughput and latency, especially under high concurrency.
                   {" "}Switch to Python if you encounter unsupported features or compatibility issues.
                 </>
               ) : (
-                "The Rust frontend doesn't support this model yet, so commands use the Python frontend."
+                `This recipe uses the ${taxonomy.frontends?.[effectiveFrontend]?.label || effectiveFrontend} frontend for the selected hardware configuration.`
               )}
             </p>
           </ConfigRow>
