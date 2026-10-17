@@ -110,9 +110,10 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
 
   const installTab = { anyOf: [{ type: "boolean" }, { type: "null" }, obj({ command: { type: "string" }, note: { type: "string" } })] };
 
+  const pdMode = { enum: ["tp", "tep", "dep"] };
   const pdRole = obj({
     nodes: intOrHwMap,
-    parallelism: { enum: ["tp", "tep", "dep"] },
+    parallelism: { anyOf: [pdMode, keyed(hwKey, pdMode)] },
     tp: { type: "integer", minimum: 1 },
     vllm_args: strings,
     env: envMap,

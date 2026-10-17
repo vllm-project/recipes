@@ -32,6 +32,7 @@ import {
   strategyAllowsKvOffload,
   pickFittingVariant,
   pdFitsSingleNode,
+  pdRoleParallelism,
   resolveCommand,
   computeDockerMeta,
   buildDockerRun,
@@ -395,8 +396,7 @@ function pickPdNodes(hwProfile, variant, recipe, strategies, hwId) {
   const nodesPerRole = Math.ceil(modelVram / nodeVram);
   if (nodesPerRole > 4) return "skip";
   const floored = (role) => {
-    const par = recipe?.strategy_overrides?.pd_cluster?.[role]?.parallelism
-      || strategies?.pd_cluster?.[role]?.parallelism || "tp";
+    const par = pdRoleParallelism(recipe, strategies?.pd_cluster, role, hwProfile, hwId);
     return Math.max(nodesPerRole, nodesForStrategy(recipe, par, hwProfile.gpu_count, hwId));
   };
   return { prefill: floored("prefill"), decode: floored("decode") };

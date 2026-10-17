@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -601,17 +601,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // compatible_strategies (TP / TEP / DEP). A single-mode list (e.g. dense
   // models with only TP) hides the per-pool pills entirely.
   const pdModes = useMemo(() => pdPoolModes(recipe), [recipe]);
-  // Default per-role parallelism: recipe strategy_overrides → strategy YAML →
-  // "tp", clamped to an offered mode.
+  // Default per-role parallelism: recipe strategy_overrides (a mode or a
+  // per-hw map, like `nodes`) → strategy YAML → "tp", clamped to an offered mode.
   const pdDefaultPar = useMemo(() => {
-    const so = recipe.strategy_overrides?.pd_cluster || {};
-    const st = strategies?.pd_cluster || {};
+    const hw = taxonomy.hardware_profiles?.[hwId];
     const pick = (role) => {
-      const d = so[role]?.parallelism || st[role]?.parallelism || "tp";
+      const d = pdRoleParallelism(recipe, strategies?.pd_cluster, role, hw, hwId);
       return pdModes.includes(d) ? d : pdModes[0];
     };
     return { prefill: pick("prefill"), decode: pick("decode") };
-  }, [recipe, strategies, pdModes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recipe, strategies, pdModes, hwId]);
   const [pdPrefillPar, setPdPrefillPar] = useState(() => {
     const p = searchParams.get("prefill_mode");
     return p && pdModes.includes(p) ? p : pdDefaultPar.prefill;
@@ -620,6 +620,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const p = searchParams.get("decode_mode");
     return p && pdModes.includes(p) ? p : pdDefaultPar.decode;
   });
+  // Re-sync per-role parallelism with hw-specific defaults when hw changes,
+  // unless the URL pins a mode (same rule as the node counts above).
+  useEffect(() => {
+    if (!searchParams.get("prefill_mode")) setPdPrefillPar(pdDefaultPar.prefill);
+    if (!searchParams.get("decode_mode")) setPdDecodePar(pdDefaultPar.decode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pdDefaultPar]);
   // Which DP rank's command to render for each DEP pool. User can bump this
   // to see e.g. rank 7's command — illustrates that each rank differs only in
   // --data-parallel-rank, CUDA_VISIBLE_DEVICES, and the per-host ports.

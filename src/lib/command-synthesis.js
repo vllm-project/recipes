@@ -325,6 +325,18 @@ export function pdPoolModes(recipe) {
 }
 
 /**
+ * Default parallelism of one PD pool: `strategy_overrides.pd_cluster.<role>.
+ * parallelism` (a mode, or a hardware-keyed map like `nodes`, e.g.
+ * `{ default: tp, gb300: dep }`) → strategy YAML → "tp". Not snapped to
+ * pdPoolModes; callers do that.
+ */
+export function pdRoleParallelism(recipe, strategy, role, hwProfile, hwProfileId) {
+  const raw = recipe?.strategy_overrides?.pd_cluster?.[role]?.parallelism;
+  const declared = typeof raw === "string" ? raw : hardwareKeyedValue(raw, hwProfile, hwProfileId);
+  return declared || strategy?.[role]?.parallelism || "tp";
+}
+
+/**
  * Precision → allowed hardware constraint.
  * NVFP4 is NVIDIA Blackwell-only (sm_100+) by default. A variant can override
  * this when its runtime provides a fallback (for example, on-the-fly BF16
@@ -1158,7 +1170,7 @@ export function dynamoInstallSteps(dynamoCfg) {
 
 // The first SMG recipe path uses connector-aware HTTP registration. DEP rank
 // routing and composed KV connectors need separate validation before opting in.
-export function smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, transport = "http") {
+export function smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, transport = "http", hwProfile = null, hwProfileId = null) {
   if (!strategy?.smg) return "SMG is not configured for this strategy.";
   if (transport === "grpc" && (!recipe.model?.smg_grpc || !strategy.smg.grpc)) {
     return "SMG gRPC is only enabled for Kimi K3, MiniMax M3, GLM-5.3 and DeepSeek-V4.1-Flash.";
@@ -1167,8 +1179,7 @@ export function smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, trans
   const allowed = pdPoolModes(recipe);
   for (const role of ["prefill", "decode"]) {
     const requested = pdNodes?.[role]?.parallelism
-      || recipe.strategy_overrides?.pd_cluster?.[role]?.parallelism
-      || strategy[role]?.parallelism || "tp";
+      || pdRoleParallelism(recipe, strategy, role, hwProfile, hwProfileId);
     const mode = allowed.includes(requested) ? requested : allowed[0];
     if (mode === "dep") return "SMG DEP rank routing is not enabled in this recipe. Use TP or TEP for both pools.";
   }
@@ -1233,7 +1244,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     ? strategy.dynamo
     : null;
   let routerUnavailableReason = strategy.deploy_type === "pd_cluster" && pdRouter === "smg"
-    ? smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, pdTransport) : null;
+    ? smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, pdTransport, hwProfile, hwProfileId) : null;
   let smg = strategy.deploy_type === "pd_cluster" && pdRouter === "smg" && !routerUnavailableReason
     ? strategy.smg : null;
 
@@ -1416,7 +1427,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       const poolGpus = rolePoolNodes === 0
         ? Math.floor(gpuCount / 2)
         : rolePoolNodes * gpuCount;
-      let parallelism = pdRole.parallelism || soRoleCfg.parallelism || roleCfg.parallelism || "tp";
+      let parallelism = pdRole.parallelism || pdRoleParallelism(recipe, strategy, roleKey, hwProfile, hwProfileId);
       // Honor a per-recipe PD-pool restriction (strategy_overrides.pd_cluster.
       // pool_modes). If the resolved mode isn't offered — e.g. the UI/JSON-API
       // fell back to "tp" but the recipe locks pools to DEP — snap to the first
@@ -1776,9 +1787,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         : (raw && typeof raw === "object") ? raw
         : {};
       const rank = pdRoleObj.rank || 0;
-      const rwSoRoleCfg = recipe.strategy_overrides?.[strategyName]?.[roleOverride] || {};
-      const rwRoleCfg = strategy[roleOverride] || {};
-      const rwParallelism = pdRoleObj.parallelism || rwSoRoleCfg.parallelism || rwRoleCfg.parallelism || "tp";
+      const rwParallelism = pdRoleObj.parallelism || pdRoleParallelism(recipe, strategy, roleOverride, hwProfile, hwProfileId);
       if (rank > 0 && rwParallelism === "dep") {
         const oldVar = `$${roleOverride.toUpperCase()}_NODE_1`;
         const newVar = `$${roleOverride.toUpperCase()}_NODE_${rank + 1}`;
@@ -1855,7 +1864,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         : (raw && typeof raw === "object") ? raw
         : {};
       const nodes = typeof pdRole.nodes === "number" ? pdRole.nodes : legacyNodes;
-      let parallelism = pdRole.parallelism || soRoleCfg.parallelism || roleCfg.parallelism || "tp";
+      let parallelism = pdRole.parallelism || pdRoleParallelism(recipe, strategy, role, hwProfile, hwProfileId);
       // Same pool_modes snap as buildArgs, so the router / endpoints agree
       // with the pool commands (e.g. pool_modes: [dep] → intra-node DP > 1).
       const allowedPoolModes = pdPoolModes(recipe);
