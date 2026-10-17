@@ -646,8 +646,31 @@ guide: |
   Size the deployment to the load. Prefill is usually the bottleneck for long agentic
   prompts, so scale it out first by running more prefill engines behind the router;
   InferenceX paired one DEP16 decode engine with four to eight smaller DEP2 prefill
-  engines (two per tray) as concurrency grew. To serve more sequences per decode
-  rank, raise `--max-num-seqs`, keep `--max-num-batched-tokens` above 6x that value, and
+  engines as concurrency grew.
+
+  To match that, split each prefill tray into **two DEP2 engines** instead of one DEP4.
+  Take the generated prefill command and change it per engine as shown below. Each
+  engine stays inside one tray, so drop `--data-parallel-start-rank`,
+  `--data-parallel-address` and `--data-parallel-rpc-port` (single-node DP uses local
+  IPC). Every engine needs its own GPUs and HTTP port. NIXL opens one side-channel
+  port per DP rank, starting from `VLLM_NIXL_SIDE_CHANNEL_PORT`, so the second
+  engine's base must skip past the first engine's two ports:
+
+  ```bash
+  # Engine A: GPUs 0-1
+  CUDA_VISIBLE_DEVICES=0,1 VLLM_NIXL_SIDE_CHANNEL_PORT=5557 \
+    vllm serve ... --port 8001 \
+    --data-parallel-size 2 --data-parallel-size-local 2 --enable-expert-parallel
+  # Engine B: GPUs 2-3
+  CUDA_VISIBLE_DEVICES=2,3 VLLM_NIXL_SIDE_CHANNEL_PORT=5559 \
+    vllm serve ... --port 8011 \
+    --data-parallel-size 2 --data-parallel-size-local 2 --enable-expert-parallel
+  ```
+
+  List each engine as its own prefill endpoint on the router, for example
+  `--prefill http://$PREFILL_NODE_1:8001 --prefill http://$PREFILL_NODE_1:8011`.
+
+  To serve more sequences per decode rank, raise `--max-num-seqs`, keep `--max-num-batched-tokens` above 6x that value, and
   extend `cudagraph_capture_sizes` in multiples of 6 up to 6 x `--max-num-seqs`.
   InferenceX ran DSpark with adaptive verification off. For long multi-turn sessions,
   consider a KV-aware router such as the **Dynamo** PD router.
