@@ -166,8 +166,8 @@ hardware_overrides:
 # For `pd_cluster`, each role (prefill / decode) accepts:
 #   nodes        — how many dedicated nodes the pool uses (default 1)
 #   parallelism  — "tp" (tensor-parallel pool) | "dep" (data-parallel + expert-parallel)
-#                  default "tp"; like `nodes`, also a hardware-keyed map
-#                  (e.g. { default: tp, gb300: dep })
+#                  default "tp"; `nodes` and `parallelism` also take a
+#                  hardware-keyed map (e.g. { default: tp, gb300: dep })
 #   tp           — TP width per DP rank when parallelism=dep (default 1);
 #                  unused for parallelism=tp (the whole pool is one TP group)
 #   vllm_args    — extra flags appended to this role's `vllm serve`

@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -551,10 +551,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // persists in the URL so shares round-trip.
   //
   // `nodes` accepts two shapes: a bare integer (same default for every hw)
-  // or an object `{ default, <hwId>… }` for per-hw defaults (e.g. GB200 = 2,
-  // GB300 = 1). Unknown hw ids fall through to `default`, then to 1.
+  // or a hardware-keyed map `{ default, <hwId>… }` for per-hw defaults (e.g.
+  // GB200 = 2, GB300 = 1). Unmatched hw falls through to the VRAM fit.
   const pdDefaults = useMemo(() => {
-    const so = recipe.strategy_overrides?.pd_cluster || {};
     // Each PD role holds a full model copy on its own pool of nodes. If a
     // single node can't fit the model, the role must span >= ceil(model/node)
     // nodes — same logic as the top-level multi-node bump on line 378, applied
@@ -567,15 +566,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const minNodesPerRole = (modelVram > 0 && nodeVram > 0)
       ? Math.max(1, Math.ceil(modelVram / nodeVram))
       : 1;
-    const pickNodes = (role, fallback) => {
-      const ov = so[role]?.nodes;
-      if (typeof ov === "number") return ov;
-      if (ov && typeof ov === "object") {
-        if (typeof ov[hwId] === "number") return ov[hwId];
-        if (typeof ov.default === "number") return ov.default;
-      }
-      return fallback;
-    };
+    const pickNodes = (role, fallback) => pdRoleNodes(recipe, role, hw, hwId) ?? fallback;
     return {
       prefill: pickNodes("prefill", minNodesPerRole),
       decode: pickNodes("decode", minNodesPerRole),
@@ -610,8 +601,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       return pdModes.includes(d) ? d : pdModes[0];
     };
     return { prefill: pick("prefill"), decode: pick("decode") };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recipe, strategies, pdModes, hwId]);
+  }, [recipe, strategies, taxonomy, pdModes, hwId]);
   const [pdPrefillPar, setPdPrefillPar] = useState(() => {
     const p = searchParams.get("prefill_mode");
     return p && pdModes.includes(p) ? p : pdDefaultPar.prefill;

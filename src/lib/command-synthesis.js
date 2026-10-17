@@ -325,15 +325,27 @@ export function pdPoolModes(recipe) {
 }
 
 /**
- * Default parallelism of one PD pool: `strategy_overrides.pd_cluster.<role>.
- * parallelism` (a mode, or a hardware-keyed map like `nodes`, e.g.
- * `{ default: tp, gb300: dep }`) → strategy YAML → "tp". Not snapped to
- * pdPoolModes; callers do that.
+ * A PD pool's declared `strategy_overrides.pd_cluster.<role>.<key>`: a bare
+ * value or a hardware-keyed map (e.g. `{ default: tp, gb300: dep }`).
+ */
+function pdRoleValue(recipe, role, key, hwProfile, hwProfileId) {
+  const raw = recipe?.strategy_overrides?.pd_cluster?.[role]?.[key];
+  return raw && typeof raw === "object" ? hardwareKeyedValue(raw, hwProfile, hwProfileId) : raw;
+}
+
+/** Default node count of one PD pool, or undefined when the recipe sets none. */
+export function pdRoleNodes(recipe, role, hwProfile, hwProfileId) {
+  const n = pdRoleValue(recipe, role, "nodes", hwProfile, hwProfileId);
+  return typeof n === "number" ? n : undefined;
+}
+
+/**
+ * Default parallelism of one PD pool: recipe override → strategy YAML → "tp".
+ * Not snapped to pdPoolModes; callers do that.
  */
 export function pdRoleParallelism(recipe, strategy, role, hwProfile, hwProfileId) {
-  const raw = recipe?.strategy_overrides?.pd_cluster?.[role]?.parallelism;
-  const declared = typeof raw === "string" ? raw : hardwareKeyedValue(raw, hwProfile, hwProfileId);
-  return declared || strategy?.[role]?.parallelism || "tp";
+  return pdRoleValue(recipe, role, "parallelism", hwProfile, hwProfileId)
+    || strategy?.[role]?.parallelism || "tp";
 }
 
 /**
