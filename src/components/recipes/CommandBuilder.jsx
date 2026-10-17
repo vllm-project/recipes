@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -551,10 +551,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // persists in the URL so shares round-trip.
   //
   // `nodes` accepts two shapes: a bare integer (same default for every hw)
-  // or an object `{ default, <hwId>… }` for per-hw defaults (e.g. GB200 = 2,
-  // GB300 = 1). Unknown hw ids fall through to `default`, then to 1.
+  // or a hardware-keyed map `{ default, <hwId>… }` for per-hw defaults (e.g.
+  // GB200 = 2, GB300 = 1). Unmatched hw falls through to the VRAM fit.
   const pdDefaults = useMemo(() => {
-    const so = recipe.strategy_overrides?.pd_cluster || {};
     // Each PD role holds a full model copy on its own pool of nodes. If a
     // single node can't fit the model, the role must span >= ceil(model/node)
     // nodes — same logic as the top-level multi-node bump on line 378, applied
@@ -567,15 +566,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const minNodesPerRole = (modelVram > 0 && nodeVram > 0)
       ? Math.max(1, Math.ceil(modelVram / nodeVram))
       : 1;
-    const pickNodes = (role, fallback) => {
-      const ov = so[role]?.nodes;
-      if (typeof ov === "number") return ov;
-      if (ov && typeof ov === "object") {
-        if (typeof ov[hwId] === "number") return ov[hwId];
-        if (typeof ov.default === "number") return ov.default;
-      }
-      return fallback;
-    };
+    const pickNodes = (role, fallback) => pdRoleNodes(recipe, role, hw, hwId) ?? fallback;
     return {
       prefill: pickNodes("prefill", minNodesPerRole),
       decode: pickNodes("decode", minNodesPerRole),
@@ -601,17 +592,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // compatible_strategies (TP / TEP / DEP). A single-mode list (e.g. dense
   // models with only TP) hides the per-pool pills entirely.
   const pdModes = useMemo(() => pdPoolModes(recipe), [recipe]);
-  // Default per-role parallelism: recipe strategy_overrides → strategy YAML →
-  // "tp", clamped to an offered mode.
+  // Default per-role parallelism: recipe strategy_overrides (a mode or a
+  // per-hw map, like `nodes`) → strategy YAML → "tp", clamped to an offered mode.
   const pdDefaultPar = useMemo(() => {
-    const so = recipe.strategy_overrides?.pd_cluster || {};
-    const st = strategies?.pd_cluster || {};
+    const hw = taxonomy.hardware_profiles?.[hwId];
     const pick = (role) => {
-      const d = so[role]?.parallelism || st[role]?.parallelism || "tp";
+      const d = pdRoleParallelism(recipe, strategies?.pd_cluster, role, hw, hwId);
       return pdModes.includes(d) ? d : pdModes[0];
     };
     return { prefill: pick("prefill"), decode: pick("decode") };
-  }, [recipe, strategies, pdModes]);
+  }, [recipe, strategies, taxonomy, pdModes, hwId]);
   const [pdPrefillPar, setPdPrefillPar] = useState(() => {
     const p = searchParams.get("prefill_mode");
     return p && pdModes.includes(p) ? p : pdDefaultPar.prefill;
@@ -620,6 +610,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const p = searchParams.get("decode_mode");
     return p && pdModes.includes(p) ? p : pdDefaultPar.decode;
   });
+  // Re-sync per-role parallelism with hw-specific defaults when hw changes,
+  // unless the URL pins a mode (same rule as the node counts above).
+  useEffect(() => {
+    if (!searchParams.get("prefill_mode")) setPdPrefillPar(pdDefaultPar.prefill);
+    if (!searchParams.get("decode_mode")) setPdDecodePar(pdDefaultPar.decode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pdDefaultPar]);
   // Which DP rank's command to render for each DEP pool. User can bump this
   // to see e.g. rank 7's command — illustrates that each rank differs only in
   // --data-parallel-rank, CUDA_VISIBLE_DEVICES, and the per-host ports.

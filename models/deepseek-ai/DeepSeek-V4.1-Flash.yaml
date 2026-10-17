@@ -400,20 +400,69 @@ strategy_overrides:
           - "4096"
   pd_cluster:
     # Verified 1P1D on GB200 NVL4: one tray per role, TP4 each, NIXL transfer.
+    # GB300: DEP4 prefill + DEP16 decode (SemiAnalysisAI/InferenceX#3941).
     env:
       VLLM_DEEP_GEMM_WARMUP: "skip"
+    hardware_overrides:
+      gb300:
+        extra_args:
+          - "--kv-cache-dtype"
+          - "fp8"
+          - "--attention-config"
+          - '{"backend":"FLASHMLA_MEGA_ATTN_DSV41","indexer_kv_dtype":"mxfp4","indexer_sparse_logits":true}'
+          - "--kernel-config"
+          - '{"moe_backend":"deep_gemm_mega_moe","sparse_indexer_topk_backend":"deep_select"}'
+          - "--engram-config"
+          - '{"cpu_offload":true}'
+          - "--enable-ep-weight-filter"
+          - "--gpu-memory-utilization"
+          - "0.95"
+          - "--numa-bind"
+        extra_env:
+          VLLM_USE_V2_MODEL_RUNNER: "1"
+          # KV moves over the NVLink fabric between trays.
+          UCX_TLS: "cuda_copy,cuda_ipc,tcp"
+          UCX_CUDA_IPC_ENABLE_MNNVL: "y"
     prefill:
       nodes: 1
-      parallelism: tp
+      parallelism:
+        default: tp
+        gb300: dep
       vllm_args:
         - "--max-num-seqs"
         - "32"
+      hardware_overrides:
+        gb300:
+          extra_args:
+            - "--max-num-seqs"
+            - "64"
+            - "--max-num-batched-tokens"
+            - "32768"
+            - "--long-prefill-token-threshold"
+            - "8192"
+            - "--compilation-config"
+            - '{"mode":"VLLM_COMPILE","cudagraph_mode":"FULL_AND_PIECEWISE","cudagraph_capture_sizes":[6,12,18,24,30,36,48,60,72,96,120,144,192,240,288,384,480,576,768,1020,1536,2046],"max_cudagraph_capture_size":2046}'
     decode:
-      nodes: 1
-      parallelism: tp
+      nodes:
+        default: 1
+        gb300: 4
+      parallelism:
+        default: tp
+        gb300: dep
       vllm_args:
         - "--max-num-seqs"
         - "32"
+      hardware_overrides:
+        # 40 sequences per rank; graph sizes are multiples of 1 + 5 DSpark tokens.
+        gb300:
+          extra_args:
+            - "--max-num-seqs"
+            - "40"
+            - "--max-num-batched-tokens"
+            - "400"
+            - "--compilation-config"
+            - '{"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[6,12,18,24,30,36,42,48,54,60,66,72,78,84,90,96,102,108,114,120,126,132,138,144,150,156,162,168,174,180,186,192,198,204,210,216,222,228,234,240],"max_cudagraph_capture_size":240}'
+            - "--no-enable-prefix-caching"
 
 hardware_notes:
   dgx_station_gb300:
@@ -572,6 +621,25 @@ guide: |
 
   With **Speculative decoding** on, DSpark runs in both pools so the transferred KV
   stays compatible.
+
+  ### GB300
+
+  GB300 runs both pools as DEP, per
+  [SemiAnalysisAI/InferenceX#3941](https://github.com/SemiAnalysisAI/InferenceX/pull/3941):
+  one tray of DEP4 prefill, four trays of DEP16 decode. Keep them on DEP; MegaMoE needs
+  expert parallelism.
+
+  To scale prefill, InferenceX ran two DEP2 engines per tray. Drop the
+  `--data-parallel-{start-rank,address,rpc-port}` flags from the prefill command and
+  run it twice:
+
+  ```bash
+  CUDA_VISIBLE_DEVICES=0,1 VLLM_NIXL_SIDE_CHANNEL_PORT=5557 vllm serve ... --port 8001 \
+    --data-parallel-size 2 --data-parallel-size-local 2
+  CUDA_VISIBLE_DEVICES=2,3 VLLM_NIXL_SIDE_CHANNEL_PORT=5559 vllm serve ... --port 8011 \
+    --data-parallel-size 2 --data-parallel-size-local 2
+  # vllm-router: list both ports, with --intra-node-data-parallel-size 1
+  ```
 
   ## Memory
 

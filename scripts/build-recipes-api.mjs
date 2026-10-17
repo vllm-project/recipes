@@ -32,6 +32,8 @@ import {
   strategyAllowsKvOffload,
   pickFittingVariant,
   pdFitsSingleNode,
+  pdRoleNodes,
+  pdRoleParallelism,
   resolveCommand,
   computeDockerMeta,
   buildDockerRun,
@@ -382,8 +384,8 @@ function dockerize(command, argv, env, dockerMeta, port = null) {
 
 // Pick the per-role node count for a `pd_cluster` rendering.
 //   null   → co-located on a single node (variant fits the 2× PD VRAM budget)
-//   {prefill,decode} → one full node per role × N, derived from
-//                       ceil(variant.vram_minimum_gb / hwProfile.vram_gb)
+//   {prefill,decode} → one full node per role × N: ceil(variant.vram_minimum_gb /
+//                       hwProfile.vram_gb), raised to the recipe's per-role `nodes`
 //   "skip" → would need >4 nodes per role; don't emit a fantasy cluster
 // Each role is then grown to clear its parallelism's `strategy_min_gpus` floor,
 // matching what the builder renders.
@@ -395,9 +397,9 @@ function pickPdNodes(hwProfile, variant, recipe, strategies, hwId) {
   const nodesPerRole = Math.ceil(modelVram / nodeVram);
   if (nodesPerRole > 4) return "skip";
   const floored = (role) => {
-    const par = recipe?.strategy_overrides?.pd_cluster?.[role]?.parallelism
-      || strategies?.pd_cluster?.[role]?.parallelism || "tp";
-    return Math.max(nodesPerRole, nodesForStrategy(recipe, par, hwProfile.gpu_count, hwId));
+    const par = pdRoleParallelism(recipe, strategies?.pd_cluster, role, hwProfile, hwId);
+    const nodes = Math.max(nodesPerRole, pdRoleNodes(recipe, role, hwProfile, hwId) ?? 0);
+    return Math.max(nodes, nodesForStrategy(recipe, par, hwProfile.gpu_count, hwId));
   };
   return { prefill: floored("prefill"), decode: floored("decode") };
 }
