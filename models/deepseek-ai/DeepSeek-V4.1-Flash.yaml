@@ -5,7 +5,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-10-13
+  date_updated: 2026-10-17
   difficulty: advanced
   tasks:
     - text
@@ -114,10 +114,18 @@ opt_in_features:
 
 variants:
   default:
+    # 2026-10-17 weight refresh, now the default (mirrors DeepSeek-V4-Pro's 0813
+    # roll-forward). config.json, tokenizer files and encoding/ are byte-identical
+    # to the launch repo, and the index holds the same 96,085 tensors (510.3 GB),
+    # so it keeps the launch checkpoint's per-GPU memory layout below. The repo
+    # ships no chat_template.jinja; the deepseek_v41 tokenizer mode in base_args
+    # encodes prompts in Python, so none is needed.
+    model_id: "deepseek-ai/DeepSeek-V4.1-Flash-1017"
+    label: "FP8 (1017)"
     precision: fp8
     vram_minimum_gb: 614
-    description: "Native mixed checkpoint: MXFP4 MoE experts, MXFP8 block-quantized dense weights, UE8M0 scales throughout"
-    hardware_overrides:
+    description: "DeepSeek-V4.1-Flash-1017 (2026-10-17): native mixed checkpoint (MXFP4 MoE experts, MXFP8 block-quantized dense weights, UE8M0 scales) with updated weights — stronger reasoning, coding, agentic and visual results, and shorter outputs."
+    hardware_overrides: &v41_flash_hw_overrides
       # 8x80 GB is the smallest NVIDIA node that serves this checkpoint, and
       # only with the memory levers the InferenceX H100 arm settled on
       # (SemiAnalysisAI/InferenceX#2974, validated on the 2026-09-15 nightly in
@@ -166,6 +174,15 @@ variants:
           - "6144"
           - "--compilation-config"
           - '{"cudagraph_capture_sizes":[1,2,4,6,8,12,16,18,24,32,40,48,64,96,128]}'
+  fp8:
+    # The 2026-09-09 launch checkpoint. No model_id override: it serves the
+    # recipe's own repo. Labeled with its date so the pill doesn't read as
+    # "the plain one" next to the 1017 default.
+    label: "FP8 (0909)"
+    precision: fp8
+    vram_minimum_gb: 614
+    description: "Launch checkpoint (2026-09-09), superseded by 1017 — kept for reproducing earlier results. Same mixed MXFP4/MXFP8 format."
+    hardware_overrides: *v41_flash_hw_overrides
 
 compatible_strategies:
   - single_node_tp
@@ -435,6 +452,26 @@ guide: |
   `sqrtsoftplus` and a `noaux_tc` bias — with a **separate routing bias for tokens
   inside an image span**, so vision and text tokens do not compete for the same experts.
 
+  ## Checkpoints
+
+  | Variant | Checkpoint | Notes |
+  |---|---|---|
+  | **FP8 (1017)** (default) | [deepseek-ai/DeepSeek-V4.1-Flash-1017](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017) | 2026-10-17 weight update — recommended |
+  | **FP8 (0909)** | [deepseek-ai/DeepSeek-V4.1-Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash) | Launch release (2026-09-09) |
+
+  **1017 is the default here.** It is a minor update with the same architecture,
+  `config.json`, tokenizer and prompt encoding as the launch checkpoint — only the
+  weights change. DeepSeek reports gains across reasoning, coding, agentic and visual
+  benchmarks (e.g. Terminal-Bench 4.0 31.2 → 42.3, HLE w/o tools 36.8 → 42.6) along with
+  shorter outputs. Both serve with the same command; the Variant row only swaps the model
+  id. Like the launch repo it ships no Jinja chat template, which the
+  `--tokenizer-mode deepseek_v41` flag already covers. Pick **FP8 (0909)** to reproduce
+  earlier results.
+
+  The verified hardware badges and the measured numbers in the sections below
+  (benchmarks, KV offloading validation) were taken on the 0909 launch checkpoint; the
+  1017 weights share its config and footprint but have not been separately re-run.
+
   ## Context length
 
   1,048,576 tokens, reached by YaRN with factor 16 over a 65,536-token training window.
@@ -485,7 +522,7 @@ guide: |
 
   ```python
   resp = client.chat.completions.create(
-      model="deepseek-ai/DeepSeek-V4.1-Flash",
+      model="deepseek-ai/DeepSeek-V4.1-Flash-1017",
       messages=[{"role": "user", "content": "What is 17*19?"}],
       extra_body={"chat_template_kwargs": {"thinking": True, "reasoning_effort": 25}},
   )
@@ -585,7 +622,7 @@ guide: |
   ```bash
   curl http://localhost:8000/v1/chat/completions \
     -H 'Content-Type: application/json' \
-    -d '{"model":"deepseek-ai/DeepSeek-V4.1-Flash",
+    -d '{"model":"deepseek-ai/DeepSeek-V4.1-Flash-1017",
          "messages":[{"role":"user","content":"What is 17*19? Return only the integer."}]}'
   ```
 
@@ -842,6 +879,7 @@ guide: |
   ## References
 
   - [Model card](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash)
+  - [DeepSeek-V4.1-Flash-1017 model card](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017)
   - [Technical report](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/main/DeepSeek_V41_Tech_Report.pdf)
   - [DeepSeek-V4-Flash recipe](/deepseek-ai/DeepSeek-V4-Flash) — the V4 sibling this diverges from
   - [DeepSeek-V3.2-Exp recipe](/deepseek-ai/DeepSeek-V3.2-Exp) — where the indexer first appeared
