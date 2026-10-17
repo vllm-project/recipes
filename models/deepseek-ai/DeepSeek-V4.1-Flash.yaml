@@ -34,15 +34,18 @@ model:
   smg_grpc:
     reasoning_parser: deepseek_v41
     tool_call_parser: deepseek_v41
-  min_vllm_version: "0.30.0"
-  # 0.30.0 has not shipped; the architecture lives on main (vllm-project/vllm#56228),
-  # so NVIDIA renders `vllm/vllm-openai:nightly` instead of the launch-day
-  # `deepseekv41-flash-0909` tag, which is now behind main.
-  nightly_required: true
+  # The architecture shipped in 0.30.0 (vllm-project/vllm#56228). 0.31.0 is the
+  # first release carrying KV offloading's scratch-group skip
+  # (vllm-project/vllm#57145) and the ROCm Engram host-memory gate
+  # (vllm-project/vllm#57491) the MI300X/MI325X/MI355X commands rely on. Every
+  # flag the NVIDIA commands generate is in the 0.31.0 wheel.
+  min_vllm_version: "0.31.0"
   default_frontend: rust
   docker_image:
-    # ROCm 10.0 nightly channel; includes the AITER mHC delayed-pre path from
-    # vllm-project/vllm#56503.
+    # ROCm 10.0 nightly channel. MI355X's --monokernel (vllm-project/vllm#60397,
+    # #61082), paged MXFP4 indexer (#58671) and Gluon sparse MLA (#53492) are on
+    # main but not in 0.31.0, so AMD stays on the nightly image the AMD rows were
+    # verified on; the MI355X pip tab is hidden in the variants below.
     amd: "vllm/vllm-openai-rocm:nightly-rocm100"
   architecture: moe
   parameter_count: "552B"
@@ -53,10 +56,6 @@ model:
     - "deepseek_v41"
   base_env:
     VLLM_ENGINE_READY_TIMEOUT_S: "3600"
-  install:
-    docker:
-      note: "Serve from the image for your GPU vendor — no pip wheel carries the DeepSeek-V4.1 architecture. Both vendors track the nightly image; the launch-day 0909 tag is superseded (see Prerequisites)."
-    pip: false
 
 dependencies: []
 
@@ -149,6 +148,11 @@ variants:
         extra_env:
           VLLM_USE_V2_MODEL_RUNNER: "1"
           PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+      # --monokernel and the ROCm MXFP4 indexer path are on main, not in the
+      # 0.31.0 wheel, which rejects the flag. Drop this once a release ships them.
+      mi355x:
+        install:
+          pip: false
       # Single GB300 + Grace: Engram tables and 60 GiB of experts in host memory via UVA.
       # vram_minimum_gb is the GPU-resident fit budget (0.97 x 252); taxonomy vram_gb stays physical HBM.
       # 60 GiB is the lowest verified offload at 1M context with DSpark on; 55 fails the minimum-KV check.
@@ -414,7 +418,7 @@ strategy_overrides:
 hardware_notes:
   dgx_station_gb300:
     title: "Weights in Grace memory (UVA offload)"
-    body: "Single GB300 with both Engram tables and 60 GiB of routed experts in pinned Grace memory (UVA offload). Nightly image only. The first boot on a new flag set runs a 75-90 min FlashInfer autotune; keep /root/.cache/vllm on a persistent volume."
+    body: "Single GB300 with both Engram tables and 60 GiB of routed experts in pinned Grace memory (UVA offload). Measured on a nightly image; vLLM 0.31.0 carries every flag this row uses. The first boot on a new flag set runs a 75-90 min FlashInfer autotune; keep /root/.cache/vllm on a persistent volume."
 
 guide: |
   ## Overview
@@ -597,15 +601,16 @@ guide: |
 
   ## Prerequisites
 
-  - An image (vLLM 0.30.0+); no pip wheel serves this architecture, so the Install block
-    only offers Docker. On NVIDIA that is `vllm/vllm-openai:nightly`: the architecture
-    landed on `main` in [vllm-project/vllm#56228](https://github.com/vllm-project/vllm/pull/56228),
-    so any nightly from 2026-09-10 on serves it, and the launch-day
-    `deepseekv41-flash-0909` tag is no longer needed. On AMD it is
-    `vllm/vllm-openai-rocm:nightly-rocm100`, the ROCm 10.0 nightly, which also carries
-    [vllm-project/vllm#56503](https://github.com/vllm-project/vllm/pull/56503) — the change
-    that moves the mHC delayed pre block off the eager Torch reference and onto AITER
-    and postdates the 0909 tag.
+  - vLLM 0.31.0+, from the pip wheel or the release image. The architecture shipped in
+    0.30.0 ([vllm-project/vllm#56228](https://github.com/vllm-project/vllm/pull/56228));
+    0.31.0 adds the KV-offload fix ([vllm-project/vllm#57145](https://github.com/vllm-project/vllm/pull/57145))
+    and the ROCm Engram host-memory gate ([vllm-project/vllm#57491](https://github.com/vllm-project/vllm/pull/57491)).
+    The launch-day `deepseekv41-flash-0909` image is no longer needed.
+  - On AMD the Docker tab uses `vllm/vllm-openai-rocm:nightly-rocm100`, the ROCm 10.0
+    nightly the AMD rows were verified on. **MI355X needs it**: the TP2 command uses
+    `--monokernel` and the ROCm MXFP4 indexer, which are on `main` but not in 0.31.0,
+    so the Install block offers only Docker on MI355X. MI300X, MI325X and MI350X also
+    run from the ROCm pip wheel.
   - The Rust OpenAI frontend is selected by default in the command builder. Switch
     to Python if you encounter unsupported features or compatibility issues.
   - Expect a long first load: `VLLM_ENGINE_READY_TIMEOUT_S=3600` is set for that reason.
@@ -864,7 +869,7 @@ guide: |
 
   ## KV cache offloading
 
-  Offloading requires a build containing [vllm-project/vllm#57145](https://github.com/vllm-project/vllm/pull/57145).
+  Offloading requires vLLM 0.31.0+, the first release containing [vllm-project/vllm#57145](https://github.com/vllm-project/vllm/pull/57145).
   Validation used [deepseek-ai/DeepSeek-V4.1-Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash) on 4×H200 (TP4),
   vLLM commit `d1b4028d7e`, the Python frontend, `--enforce-eager`,
   `--max-model-len 16384`, `--max-num-seqs 16` and `--max-num-batched-tokens 8192`.
