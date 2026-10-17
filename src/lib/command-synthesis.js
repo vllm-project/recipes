@@ -1188,6 +1188,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   const gen = normalizeGeneration(hwProfile.generation || hwProfile.gpu_generation);
   const gpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 1;
   const totalGpus = gpuCount * Math.max(1, nodeCount);
+  const isNpu = hwProfile?.generation === "npu";
 
   // single_node_tp TP size precedence (see resolveSingleNodeTp):
   //   1. `variant.tp` (number or hardware-aware map)
@@ -2050,6 +2051,30 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
           label: dynamo.infra.label || "Control plane",
           description: dynamo.infra.description || "",
           command: String(dynamo.infra.command).trimEnd(),
+        },
+      } : {}),
+      ...(strategy.external_dp && isNpu ? {
+        launcher: {
+          label: strategy.external_dp.label || "Launch",
+          description: (strategy.external_dp.description || "").trim(),
+          script: strategy.external_dp.script || "",
+          prefillCmd: [
+            "# Run on the prefill node:",
+            "# python launch_online_dp.py --dp-size 4 --tp-size 4 --dp-size-local 4 \\",
+            "#     --dp-rank-start 0 --dp-address $PREFILL_NODE_1 \\",
+            "#     --dp-rpc-port 12321 --vllm-start-port 7100",
+          ].join("\n"),
+          decodeCmd: [
+            "# Run on the decode node:",
+            "# python launch_online_dp.py --dp-size 16 --tp-size 1 --dp-size-local 16 \\",
+            "#     --dp-rank-start 0 --dp-address $DECODE_NODE_1 \\",
+            "#     --dp-rpc-port 12321 --vllm-start-port 7100",
+          ].join("\n"),
+          postScript: [
+            "",
+            "# After all instances are ready, deploy the Mooncake proxy.",
+            "# See: https://docs.vllm.ai/projects/ascend/en/latest/tutorials/features/pd_disaggregation_mooncake_multi_node.html",
+          ].join("\n"),
         },
       } : {}),
       ...(dynamo ? { dynamoInstall: dynamoInstallSteps(dynamo) } : {}),
