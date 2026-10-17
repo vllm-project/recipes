@@ -2,178 +2,164 @@ meta:
   title: "DeepSeek-OCR-2"
   slug: "deepseek-ocr-2"
   provider: "DeepSeek"
-  description: "Next-generation DeepSeek OCR model with improved document-to-markdown grounding and optical context compression."
-  date_added: 2026-03-28
-  date_updated: 2026-04-17
-  difficulty: intermediate
+  description: "DeepSeek-OCR-2 — a multimodal OCR model for document text extraction, figure parsing, and document understanding; single-card serving on Ascend 910B with vLLM Ascend"
+  date_added: 2026-10-14
+  date_updated: 2026-10-14
   tasks:
     - multimodal
-  performance_headline: "Improved grounding and markdown conversion over DeepSeek-OCR"
-  related_recipes:
-    - "deepseek-ai/DeepSeek-OCR"
+  performance_headline: "Single-card multimodal OCR serving on Ascend 910B (Atlas 800 A2) with vLLM Ascend"
+  hardware:
+    ascend_910b: verified
 
 model:
   model_id: "deepseek-ai/DeepSeek-OCR-2"
-  min_vllm_version: "0.16.0"
   architecture: dense
   parameter_count: "3B"
   active_parameters: "3B"
   context_length: 8192
   base_args:
     - "--trust-remote-code"
-    - "--logits_processors"
-    - "vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor"
-    - "--no-enable-prefix-caching"
-    - "--mm-processor-cache-gb"
-    - "0"
   base_env: {}
-
-features:
-  text_only:
-    description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
-    args:
-      - "--language-model-only"
-  encoder_parallel:
-    description: "Run the vision encoder in data-parallel mode — avoids TP comm overhead on the small encoder. Mutually exclusive with text_only."
-    args:
-      - "--mm-encoder-tp-mode"
-      - "data"
-
-opt_in_features:
-  - text_only
-  - encoder_parallel
+  docker_image:
+    ascend_910b: "quay.io/ascend/vllm-ascend:v0.30.0rc2"
 
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 7
-    description: "Full precision BF16 (~3.4B params)"
+    vram_minimum_gb: 8
+    supported_hardware: [ascend_910b]
+    hardware_overrides:
+      ascend_910b:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.30.0rc2"
+        install:
+          pip: false
+        extra_args:
+          - "--gpu-memory-utilization"
+          - "0.8"
+    description: "BF16 checkpoint on a single 64 GB Ascend 910B NPU (TP1, gpu-memory-utilization 0.8), verified end-to-end with vLLM Ascend"
 
 compatible_strategies:
   - single_node_tp
-  - multi_node_tp
 
 hardware_overrides: {}
-
 strategy_overrides: {}
+
+dependencies: []
 
 guide: |
   ## Overview
 
-  DeepSeek-OCR-2 is a frontier OCR model exploring optical context compression for LLMs.
-  It iterates on DeepSeek-OCR with better grounding and markdown conversion, and supports
-  prompts like `<image>\n<|grounding|>Convert the document to markdown.` for richer
-  document parsing.
+  DeepSeek-OCR-2 is a multimodal OCR model from DeepSeek for document text extraction, figure
+  parsing, and multimodal document understanding. It can be deployed on a single Atlas 800 A2
+  with vLLM Ascend. Single-node deployment is recommended; Prefill-Decode disaggregation is not
+  required.
 
   ## Prerequisites
 
-  - **Hardware**: Single GPU with >=8 GB VRAM is typically sufficient for BF16 inference.
-  - **vLLM**: Current stable release (tested with `uv pip install -U vllm --torch-backend auto`).
-  - **Python**: 3.10+
+  - **Hardware:** 1x Ascend 910B NPU (64 GB HBM), Atlas 800 A2 series
+  - **Runtime:** official vLLM Ascend Docker image (Ascend installs are docker-only —
+    there is no official pip wheel):
 
-  Install vLLM:
-  ```bash
-  uv venv
-  source .venv/bin/activate
-  uv pip install -U vllm --torch-backend auto
-  ```
+    ```bash
+    docker pull quay.io/ascend/vllm-ascend:v0.30.0rc2
+    ```
 
-  ## Client Usage
+  - **Checkpoint:** download the BF16 weights and record the local path
 
-  ### Offline OCR (Python)
+    ```bash
+    pip install modelscope
+    modelscope download --model deepseek-ai/DeepSeek-OCR-2
+    ```
 
-  ```python
-  from vllm import LLM, SamplingParams
-  from vllm.model_executor.models.deepseek_ocr import NGramPerReqLogitsProcessor
-  from PIL import Image
+  ## Launching the Server
 
-  llm = LLM(
-      model="deepseek-ai/DeepSeek-OCR-2",
-      enable_prefix_caching=False,
-      mm_processor_cache_gb=0,
-      logits_processors=[NGramPerReqLogitsProcessor],
-  )
+  ### Single Ascend 910B (TP1)
 
-  image_1 = Image.open("path/to/your/image_1.png").convert("RGB")
-  image_2 = Image.open("path/to/your/image_2.png").convert("RGB")
-  # prompt = "<image>\nFree OCR. "
-  prompt = "<image>\n<|grounding|>Convert the document to markdown. "
-
-  model_input = [
-      {"prompt": prompt, "multi_modal_data": {"image": image_1}},
-      {"prompt": prompt, "multi_modal_data": {"image": image_2}},
-  ]
-
-  sampling_param = SamplingParams(
-      temperature=0.0,
-      max_tokens=8192,
-      extra_args=dict(
-          ngram_size=30,
-          window_size=90,
-          whitelist_token_ids={128821, 128822},  # <td>, </td>
-      ),
-      skip_special_tokens=False,
-  )
-
-  for output in llm.generate(model_input, sampling_param):
-      print(output.outputs[0].text)
-  ```
-
-  ### Online OCR serving
+  Start the container with the NPU devices mounted, then serve the model:
 
   ```bash
-  vllm serve deepseek-ai/DeepSeek-OCR-2 \
-    --logits_processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
-    --no-enable-prefix-caching \
-    --mm-processor-cache-gb 0
+  export IMAGE=quay.io/ascend/vllm-ascend:v0.30.0rc2
+
+  docker run --rm \
+      --name vllm-ascend \
+      --shm-size=1g \
+      --net=host \
+      --device /dev/davinci0 \
+      --device /dev/davinci_manager \
+      --device /dev/devmm_svm \
+      --device /dev/hisi_hdc \
+      -v /usr/local/dcmi:/usr/local/dcmi \
+      -v /usr/local/Ascend/driver/tools/hccn_tool:/usr/local/Ascend/driver/tools/hccn_tool \
+      -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+      -v /usr/local/Ascend/driver/lib64/:/usr/local/Ascend/driver/lib64/ \
+      -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
+      -v /etc/ascend_install.info:/etc/ascend_install.info \
+      -v /root/.cache:/root/.cache \
+      -it $IMAGE bash
   ```
 
-  ```python
-  import time
-  from openai import OpenAI
+  ```bash
+  export PYTORCH_NPU_ALLOC_CONF="expandable_segments:True"
 
-  client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1", timeout=3600)
-
-  messages = [
-      {
-          "role": "user",
-          "content": [
-              {"type": "image_url", "image_url": {"url": "https://ofasys-multimodal-wlcb-3-toshanghai.oss-accelerate.aliyuncs.com/wpf272043/keepme/image/receipt.png"}},
-              {"type": "text", "text": "Free OCR."},
-          ],
-      }
-  ]
-
-  start = time.time()
-  response = client.chat.completions.create(
-      model="deepseek-ai/DeepSeek-OCR-2",
-      messages=messages,
-      max_tokens=2048,
-      temperature=0.0,
-      extra_body={
-          "skip_special_tokens": False,
-          "vllm_xargs": {
-              "ngram_size": 30,
-              "window_size": 90,
-              "whitelist_token_ids": [128821, 128822],
-          },
-      },
-  )
-  print(f"Response costs: {time.time() - start:.2f}s")
-  print(f"Generated text: {response.choices[0].message.content}")
+  vllm serve /root/.cache/models/DeepSeek-OCR-2 \
+      --served-model-name deepseekocr2 \
+      --trust-remote-code \
+      --tensor-parallel-size 1  \
+      --port 1055 \
+      --max_model_len 8192 \
+      --no-enable-prefix-caching \
+      --gpu-memory-utilization 0.8 \
+      --allowed-local-media-path / \
+      --additional-config '{
+        "weight_nz_mode": 0,
+        "enable_cpu_binding": true,
+        "multistream_overlap_shared_expert": true,
+        "ascend_compilation_config": {"fuse_qknorm_rope": false}
+      }' \
+      --mm-processor-cache-gb 0
   ```
 
-  ## Troubleshooting / Configuration Tips
+  ## Verifying the Deployment
 
-  - **Use the custom logits processor** along with the model for optimal OCR and markdown
-    generation performance.
-  - Unlike multi-turn chat, OCR tasks do not typically benefit from prefix caching or image
-    reuse, so disable these features to avoid unnecessary hashing and caching overhead.
-  - DeepSeek-OCR-2 works better with plain prompts than instruction formats. See the
-    [official main prompts](https://huggingface.co/deepseek-ai/DeepSeek-OCR-2#main-prompts).
-  - Depending on your hardware, adjust `max_num_batched_tokens` for better throughput.
+  Once your server is started, you can query the model with a prompt:
+
+  ```bash
+  curl http://localhost:1055/v1/completions \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model": "deepseekocr2",
+          "prompt": "The future of AI is",
+          "max_completion_tokens": 50,
+          "temperature": 0
+      }'
+  ```
+
+  Expected result: HTTP 200 with a coherent continuation. Startup logs contain
+  `Application startup complete`.
+
+  ## Accuracy Evaluation
+
+  AISBench results from the official tutorial (1 Atlas 800 A2):
+
+  | dataset | version | metric | mode | vllm-api-general-chat | note |
+  | ------- | ------- | ------ | ---- | --------------------- | ---- |
+  | textvqa | - | accuracy | gen | 50.28 | 1 Atlas 800 A2 |
+  | omnidocbench | - | accuracy | gen | 66.86 | 1 Atlas 800 A2 |
+
+  For setup details, see [Using AISBench](https://docs.vllm.ai/projects/ascend/en/latest/developer_guide/evaluation/using_ais_bench.html).
+
+  ## Performance Evaluation
+
+  Official tutorial performance result:
+
+  - **Hardware**: A2-313T, 1 node
+  - **Input/Output**: 1080P/256
+  - **Performance**: TTFT = 2s, TPOT = 200ms, average performance of each card is 864 TPS (tokens per second).
 
   ## References
 
-  - [DeepSeek-OCR-2 on Hugging Face](https://huggingface.co/deepseek-ai/DeepSeek-OCR-2)
-  - [vLLM multimodal inputs guide](https://docs.vllm.ai/en/latest/features/multimodal_inputs.html#offline-inference)
+  - [DeepSeek-OCR-2 model card (HuggingFace)](https://huggingface.co/deepseek-ai/DeepSeek-OCR-2)
+  - [DeepSeek-OCR-2 (ModelScope)](https://www.modelscope.cn/models/deepseek-ai/DeepSeek-OCR-2)
+  - [vLLM Ascend tutorial: DeepSeekOCR2](https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/DeepSeekOCR2.html)
+  - [AISBench evaluation guide](https://docs.vllm.ai/projects/ascend/en/latest/developer_guide/evaluation/using_ais_bench.html)
+  - [vLLM Ascend repository](https://github.com/vllm-project/vllm-ascend)
