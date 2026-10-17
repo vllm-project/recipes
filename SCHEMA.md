@@ -1,8 +1,8 @@
 # Recipe YAML schema
 
 The authoritative reference for a recipe YAML, `models/<hf_org>/<hf_repo>.yaml`,
-whichever repository the file lives in (this repo's `models/` today;
-`recipes/` in vllm-project/vllm, vllm-omni, … as recipes move). It is versioned with the renderer that reads it:
+whichever repository the file lives in (`recipes/` in vllm-project/vllm,
+vllm-omni, or this repo). It is versioned with the renderer that reads it:
 change it in the same pull request as any code that adds or changes a field.
 [CONTRIBUTING.md](CONTRIBUTING.md), [CLAUDE.md](CLAUDE.md) and the
 [add-recipe skill](.agents/skills/add-recipe/SKILL.md) link here rather than

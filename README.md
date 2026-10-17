@@ -122,23 +122,23 @@ This repo intends to host community maintained common recipes to run vLLM answer
 
 ## How recipes are maintained
 
-Each recipe is a structured YAML file at `models/<hf_org>/<hf_repo>.yaml`. This repository is the **renderer**: it assembles recipes from one or more source repositories, then builds [recipes.vllm.ai](https://recipes.vllm.ai/) and its JSON API. Today every recipe still lives in this repo's `models/`. Recipes are moving step by step into the repositories of the projects that serve them, starting with vllm-project/vllm ([vllm-project/vllm#61302](https://github.com/vllm-project/vllm/pull/61302)).
+Each recipe is a structured YAML file at `models/<hf_org>/<hf_repo>.yaml`, kept in the repository of the project that knows the model best. This repository is the **renderer**: it pulls those files in, merges them, and builds [recipes.vllm.ai](https://recipes.vllm.ai/) and its JSON API.
 
 ```mermaid
 flowchart LR
-  vllm["vllm-project/vllm<br/>recipes/models/ (planned)"] -.-> sync
-  omni["vllm-omni<br/>omni recipes (planned)"] -.-> sync
-  ascend["vllm-ascend<br/>overlays/ (planned)"] -.-> sync
-  self["this repo<br/>models/ (every recipe today)<br/>taxonomy · strategies · kv_store"] --> assemble
+  vllm["vllm-project/vllm<br/>recipes/models/"] --> sync
+  omni["vllm-omni<br/>(omni recipes)"] -.-> sync
+  ascend["vllm-ascend<br/>overlays/"] -.-> sync
+  self["this repo<br/>models/ (omni, interim)<br/>taxonomy · strategies · kv_store"] --> assemble
   sync["sync-sources.mjs<br/>pinned by sources.lock.json"] --> assemble["assemble-content.mjs<br/>→ .content/&lt;channel&gt;/"]
   assemble --> build["build-recipes-api.mjs + next build"] --> site["recipes.vllm.ai<br/>+ JSON API"]
 ```
 
 | Content | Where it lives | Status |
 | --- | --- | --- |
-| Model recipes served by vLLM | This repo's `models/` | Moving to `recipes/models/` in vllm-project/vllm ([#61302](https://github.com/vllm-project/vllm/pull/61302)) |
-| Omni recipes (image, video, audio generation) | This repo's `models/` | Moving to vllm-omni later |
-| Ascend NPU content | Inline in the recipes | Moving to `overlays/` in vllm-ascend later |
+| Model recipes served by vLLM | [`vllm-project/vllm` → `recipes/models/`](https://github.com/vllm-project/vllm/tree/main/recipes) | Owned by vLLM; a merge there reaches recipes.vllm.ai in about 30 minutes. Copies stay in this repo's `models/` until they are synced to vLLM and removed; they aren't rendered |
+| Omni recipes (image, video, audio generation) | This repo's `models/` | Interim; moving to vllm-omni |
+| Ascend NPU content | Inline in the vLLM recipes | Moving to `overlays/` in vllm-ascend |
 | Schema, hardware profiles, serving strategies, KV-store deployments, platforms | This repo (`taxonomy.yaml`, `strategies/`, `kv_store/`, `platforms.yaml`) | Owned here |
 | Command synthesis, site, JSON API | This repo (`src/`, `scripts/`) | Owned here |
 
