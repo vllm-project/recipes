@@ -202,7 +202,7 @@ For additional Intel Xeon 6 deployment details, see the Intel Software Catalog e
 
 ### DiffusionGemma 26B-A4B Deployment
 
-DiffusionGemma requires several specific flags due to its block-diffusion architecture. See the [DiffusionGemma recipe](../models/Google/diffusiongemma-26B-A4B-it.yaml) for full details.
+DiffusionGemma requires several specific flags due to its block-diffusion architecture. See the [DiffusionGemma recipe](https://recipes.vllm.ai/Google/diffusiongemma-26B-A4B-it) for full details.
 
 ```bash
 docker run -itd --name diffusiongemma \

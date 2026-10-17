@@ -18,9 +18,9 @@ repo renders them (see "How recipes are maintained" in the
 
 | Recipe | Repository and directory |
 | --- | --- |
-| Models served by vLLM | This repo → `models/<hf_org>/<hf_repo>.yaml` today; moving to `recipes/models/` in vllm-project/vllm ([#61302](https://github.com/vllm-project/vllm/pull/61302)) |
-| Omni models (`meta.tasks` includes `omni`) | This repo → `models/<hf_org>/<hf_repo>.yaml`; moving to vllm-omni later |
-| Ascend NPU content | Inline in the recipe; moving to `overlays/<hf_org>/<hf_repo>.yaml` in vllm-ascend later |
+| Models served by vLLM | `vllm-project/vllm` → `recipes/models/<hf_org>/<hf_repo>.yaml` |
+| Omni models (`meta.tasks` includes `omni`) | This repo → `models/<hf_org>/<hf_repo>.yaml`, until they move to vllm-omni |
+| Ascend NPU content | Inline in the vLLM recipe for now; moving to `overlays/<hf_org>/<hf_repo>.yaml` in vllm-ascend |
 
 The schema ([SCHEMA.md](SCHEMA.md)) is the same everywhere. Changes to the schema, hardware
 profiles (`taxonomy.yaml`), strategies, provider logos, or the site itself go
@@ -34,7 +34,7 @@ to this repo.
    [SCHEMA.md](SCHEMA.md). The template's first line points YAML-aware editors at
    the published schema for completion and inline errors.
 3. Point this repo at your checkout with a gitignored `sources.local.yaml`
-   (skip this when the recipe lives in this repo):
+   (skip this for omni recipes, which live here):
 
    ```yaml
    overrides:

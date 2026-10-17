@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import yaml from "js-yaml";
@@ -95,4 +97,38 @@ test("guide sections fill their marker, else append", () => {
   const core = { meta: {}, guide: "## A\n\n<!-- overlay:vllm-ascend:npu -->\n## B\n" };
   const { recipe } = applyOverlay(core, { guide_sections: { npu: "## NPU\nx\n\n", tail: "## Tail\n" } }, { ctx, source });
   assert.equal(recipe.guide, "## A\n\n## NPU\nx\n\n## B\n\n## Tail\n");
+});
+
+test("defers_to skips copies the other source ships; ownership and scope still hold", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-defers-"));
+  const recipe = (tasks) => yaml.dump({ meta: { title: "x", tasks } });
+  const put = (rel, body) => {
+    fs.mkdirSync(path.dirname(path.join(tmp, rel)), { recursive: true });
+    fs.writeFileSync(path.join(tmp, rel), body);
+  };
+  put("core/models/org/a.yaml", recipe(["text"]));
+  put("old/models/org/a.yaml", "stale: [copy");                  // skipped unparsed
+  put("old/models/org/b.yaml", recipe(["text"]));                // not in core yet: renders from old
+  const channel = "test-defers";
+  const assemble = (old) => {
+    put("sources.yaml", yaml.dump({ channels: { [channel]: {
+      core: { local: path.join(tmp, "core"), role: "core" },
+      old: { local: path.join(tmp, "old"), role: "owner", ...old },
+    } } }));
+    return spawnSync(process.execPath, [path.join(ROOT, "scripts/assemble-content.mjs")], {
+      cwd: ROOT, encoding: "utf8", env: { ...process.env, RECIPES_SOURCES: path.join(tmp, "sources.yaml"), RECIPES_CHANNEL: channel },
+    });
+  };
+  try {
+    const ok = assemble({ defers_to: "core" });
+    assert.equal(ok.status, 0, ok.stderr);
+    const prov = JSON.parse(fs.readFileSync(path.join(ROOT, ".content", channel, "provenance.json"), "utf8")).recipes;
+    assert.deepEqual([prov["org/a"].source, prov["org/b"].source], ["core", "old"]);
+    assert.match(assemble({}).stderr, /org\/a: shipped by both/);
+    assert.match(assemble({ defers_to: "core", scope: { tasks: ["omni"] } }).stderr, /org\/b\.yaml: source scope requires/);
+    assert.match(assemble({ defers_to: "nope" }).stderr, /defers_to must name another source/);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(path.join(ROOT, ".content", channel), { recursive: true, force: true });
+  }
 });
