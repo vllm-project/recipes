@@ -22,8 +22,6 @@ repo renders them (see "How recipes are maintained" in the
 | Omni models (`meta.tasks` includes `omni`) | This repo → `models/<hf_org>/<hf_repo>.yaml`, until they move to vllm-omni |
 | Ascend NPU content | Inline in the vLLM recipe for now; moving to `overlays/<hf_org>/<hf_repo>.yaml` in vllm-ascend |
 
-This repo's `models/` still holds copies of the vLLM recipes until they are synced to vLLM and removed. The site renders vLLM's version, so open changes to those models against vLLM, not the copies here. Pull requests already open against the copies can still merge; they reach the site once synced to vLLM.
-
 The schema ([SCHEMA.md](SCHEMA.md)) is the same everywhere. Changes to the schema, hardware
 profiles (`taxonomy.yaml`), strategies, provider logos, or the site itself go
 to this repo.

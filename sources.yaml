@@ -36,13 +36,10 @@ channels:
       role: core
       scope: { exclude_tasks: [omni] }
     # Interim owner of the omni recipes, until they move to vllm-project/vllm-omni.
-    # models/ also keeps copies of the vLLM recipes until they are synced to
-    # vllm and removed: vllm's version renders; a recipe merged here that vllm
-    # doesn't have yet renders from here.
     recipes:
       repo: vllm-project/recipes
       ref: main
       path: .
       local: .
       role: owner
-      defers_to: vllm
+      scope: { tasks: [omni] }

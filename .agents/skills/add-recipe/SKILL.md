@@ -13,8 +13,6 @@ Recipes are YAML files at `models/<hf_org>/<hf_repo>.yaml`. The path mirrors Hug
 | Omni models (`meta.tasks` includes `omni`) | `vllm-project/recipes` → `models/<hf_org>/<hf_repo>.yaml` (until they move to vllm-omni) |
 | Ascend NPU content | inline in the vLLM recipe for now (moving to `overlays/` in vllm-ascend) |
 
-This repo's `models/` still holds copies of the vLLM recipes until they are synced to vLLM and removed. The site renders vLLM's version, so open changes to those models against vLLM, not the copies here.
-
 Fields are defined once in [SCHEMA.md](https://github.com/vllm-project/recipes/blob/main/SCHEMA.md). Run the validation and preview
 commands below from a checkout of vllm-project/recipes, pointed at your checkout of
 the owning repo (step 11).

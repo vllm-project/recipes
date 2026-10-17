@@ -136,7 +136,7 @@ flowchart LR
 
 | Content | Where it lives | Status |
 | --- | --- | --- |
-| Model recipes served by vLLM | [`vllm-project/vllm` → `recipes/models/`](https://github.com/vllm-project/vllm/tree/main/recipes) | Owned by vLLM; a merge there reaches recipes.vllm.ai in about 30 minutes. Copies stay in this repo's `models/` until they are synced to vLLM and removed; they aren't rendered |
+| Model recipes served by vLLM | [`vllm-project/vllm` → `recipes/models/`](https://github.com/vllm-project/vllm/tree/main/recipes) | Owned by vLLM; a merge there reaches recipes.vllm.ai in about 30 minutes |
 | Omni recipes (image, video, audio generation) | This repo's `models/` | Interim; moving to vllm-omni |
 | Ascend NPU content | Inline in the vLLM recipes | Moving to `overlays/` in vllm-ascend |
 | Schema, hardware profiles, serving strategies, KV-store deployments, platforms | This repo (`taxonomy.yaml`, `strategies/`, `kv_store/`, `platforms.yaml`) | Owned here |
