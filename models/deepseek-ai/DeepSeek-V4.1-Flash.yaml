@@ -462,9 +462,6 @@ strategy_overrides:
             - "400"
             - "--compilation-config"
             - '{"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[6,12,18,24,30,36,42,48,54,60,66,72,78,84,90,96,102,108,114,120,126,132,138,144,150,156,162,168,174,180,186,192,198,204,210,216,222,228,234,240],"max_cudagraph_capture_size":240}'
-            - "--enable-eplb"
-            - "--eplb-config"
-            - '{"num_redundant_experts":16,"window_size":1000,"step_interval":3000}'
             - "--no-enable-prefix-caching"
 
 hardware_notes:
@@ -629,8 +626,8 @@ guide: |
 
   GB300 runs both pools as DEP, per
   [SemiAnalysisAI/InferenceX#3941](https://github.com/SemiAnalysisAI/InferenceX/pull/3941):
-  one tray of DEP4 prefill, four trays of DEP16 decode. Keep them on DEP; MegaMoE and
-  EPLB need expert parallelism.
+  one tray of DEP4 prefill, four trays of DEP16 decode. Keep them on DEP; MegaMoE needs
+  expert parallelism.
 
   To scale prefill, InferenceX ran two DEP2 engines per tray. Drop the
   `--data-parallel-{start-rank,address,rpc-port}` flags from the prefill command and
