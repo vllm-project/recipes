@@ -27,6 +27,9 @@ export function loadSources() {
       if (!spec.local && !(spec.repo && spec.ref)) {
         throw new Error(`sources.yaml: ${channel}.${name} needs repo + ref (or local)`);
       }
+      if (spec.defers_to !== undefined && (spec.defers_to === name || !sources[spec.defers_to] || sources[spec.defers_to].defers_to)) {
+        throw new Error(`sources.yaml: ${channel}.${name}.defers_to must name another source of ${channel} that doesn't defer itself`);
+      }
     }
   }
   return { defaultChannel: cfg.default_channel || "latest", channels };

@@ -1,12 +1,43 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import { before, test } from "node:test";
+import os from "node:os";
+import path from "node:path";
+import { after, before, test } from "node:test";
+import { fileURLToPath } from "node:url";
 
-const read = (file) => JSON.parse(fs.readFileSync(new URL(`../public/${file}`, import.meta.url), "utf8"));
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-hardware-variant-"));
+const channel = path.basename(tmp);
+const output = path.join(tmp, "public");
+const read = (file) => JSON.parse(fs.readFileSync(path.join(output, file), "utf8"));
+
+after(() => {
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(path.join(ROOT, ".content", channel), { recursive: true, force: true });
+});
 
 before(() => {
-  execFileSync(process.execPath, ["scripts/build-recipes-api.mjs"], { stdio: "pipe" });
+  // Existing PRs can still target this repo's recipe copies during the vLLM
+  // migration. Exercise those submitted files in an isolated source channel;
+  // the default channel deliberately defers to vLLM's not-yet-synced copies.
+  const sources = path.join(tmp, "sources.yaml");
+  fs.writeFileSync(sources, JSON.stringify({
+    default_channel: channel,
+    channels: { [channel]: { recipes: { local: ROOT, role: "core" } } },
+  }));
+  execFileSync(process.execPath, ["scripts/build-recipes-api.mjs"], {
+    cwd: ROOT,
+    stdio: "pipe",
+    env: {
+      ...process.env,
+      RECIPES_SOURCES: sources,
+      RECIPES_CHANNEL: channel,
+      RECIPES_PUBLIC_DIR: output,
+      RECIPES_CONTENT_DIR: "",
+      RECIPES_OVERRIDES: "",
+    },
+  });
 });
 
 test("canonical API serves an eligible precision variant on declared restricted hardware", () => {

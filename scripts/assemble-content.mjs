@@ -103,7 +103,11 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
   const overlays = new Map(); // hf_id → [{ name, spec, file, rel, sha, ctx }]
   const sourceInfo = {};
   const localDirs = [];
-  for (const [name, spec] of Object.entries(sources)) {
+  let deferred = 0;
+  // A source that defers goes after the others, so the copies it skips are
+  // never parsed or scope-checked.
+  const ordered = Object.entries(sources).sort(([, a], [, b]) => !!a.defers_to - !!b.defers_to);
+  for (const [name, spec] of ordered) {
     const { dir, sha, local } = resolveSourceDir(channel, name, spec, lock, overrides);
     const label = `${channel}.${name}`;
     if (local) localDirs.push(dir);
@@ -117,6 +121,10 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
       if (!hfId) continue;
       const rel = path.relative(dir, file);
       const prev = owners.get(hfId);
+      if (prev && spec.defers_to === prev.name) {
+        deferred++;
+        continue;
+      }
       if (prev) {
         errors.push(`${hfId}: shipped by both "${prev.name}" (${prev.rel}) and "${name}" (${rel}) — one source must own it`);
         continue;
@@ -244,7 +252,8 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
   fs.renameSync(tmp, out);
   fs.rmSync(old, { recursive: true, force: true });
   if (!quiet) {
-    console.log(`✓ Content ${channel}: ${owners.size} recipes from ${Object.keys(sources).length} source(s), ${merged} with overlays → .content/${channel}`);
+    console.log(`✓ Content ${channel}: ${owners.size} recipes from ${Object.keys(sources).length} source(s), ${merged} with overlays`
+      + `${deferred ? `, ${deferred} deferred copies skipped` : ""} → .content/${channel}`);
   }
   return { channel, dir: out, recipes: owners.size, merged, localDirs };
 }

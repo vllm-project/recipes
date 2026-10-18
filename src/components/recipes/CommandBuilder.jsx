@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -503,11 +503,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // hardware never bumps — it's locked to one node.
     if (!searchParams.get("nodes") && supportsMultiNode && resolvedScalable) {
       const saved = parseInt(rs.nodes, 10);
+      const v = recipe.variants?.[variant] || recipe.variants?.default || {};
+      const multi = resolvedHw && needsMultiNode(recipe, strategies, resolvedHw, v, resolvedHwId);
       if ([1, 2].includes(saved)) {
-        setNodeCount(saved);
-      } else if (restoredFitsHw) {
-        const v = recipe.variants?.[variant] || recipe.variants?.default || {};
-        if (!fitsSingleNode(restoredFitsHw, v, prefs.hardware)) setNodeCount(2);
+        // A saved single-node pick can't stand where no single-node strategy is offered.
+        const single = resolvedHw && multiNodeUnavailable(recipe, strategies, resolvedHw, v, resolvedHwId);
+        setNodeCount(saved === 1 && multi ? 2 : saved > 1 && single ? 1 : saved);
+      } else if (restoredFitsHw && multi) {
+        setNodeCount(2);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -527,15 +530,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // Non-scalable hardware (single-GPU workstation) is single-node by
     // definition — ignore any ?nodes= pin.
     if (initialHw && !isHardwareScalable(initialHw)) return 1;
+    // Start on multi-node when the initial hardware can't run single-node
+    // (doesn't fit, or no single-node strategy offered). Same check the
+    // hardware-change handler runs; it also overrides a ?nodes=1 pin, whose
+    // pill is disabled there.
+    const v = recipe.variants?.[variant] || recipe.variants?.default || {};
+    const multi = initialHw && needsMultiNode(recipe, strategies, initialHw, v, initialHwId);
     const urlN = searchParams.get("nodes");
     if (urlN) {
       const n = parseInt(urlN, 10);
+      if (n === 1 && multi) return 2;
+      if (n > 1 && initialHw && multiNodeUnavailable(recipe, strategies, initialHw, v, initialHwId)) return 1;
       return [1, 2].includes(n) ? n : 1;
     }
-    // No URL pin: start on multi-node when the initial hardware can't fit
-    // single-node. Same fit check the hardware-change handler runs.
-    const v = recipe.variants?.[variant] || recipe.variants?.default || {};
-    return initialHw && !fitsSingleNode(initialHw, v, initialHwId) ? 2 : 1;
+    return multi ? 2 : 1;
   });
   // PD-specific per-role node counts. Only surfaced when the active strategy
   // is `pd_cluster`; ignored otherwise. Defaults come from the recipe's
@@ -543,10 +551,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // persists in the URL so shares round-trip.
   //
   // `nodes` accepts two shapes: a bare integer (same default for every hw)
-  // or an object `{ default, <hwId>… }` for per-hw defaults (e.g. GB200 = 2,
-  // GB300 = 1). Unknown hw ids fall through to `default`, then to 1.
+  // or a hardware-keyed map `{ default, <hwId>… }` for per-hw defaults (e.g.
+  // GB200 = 2, GB300 = 1). Unmatched hw falls through to the VRAM fit.
   const pdDefaults = useMemo(() => {
-    const so = recipe.strategy_overrides?.pd_cluster || {};
     // Each PD role holds a full model copy on its own pool of nodes. If a
     // single node can't fit the model, the role must span >= ceil(model/node)
     // nodes — same logic as the top-level multi-node bump on line 378, applied
@@ -559,15 +566,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const minNodesPerRole = (modelVram > 0 && nodeVram > 0)
       ? Math.max(1, Math.ceil(modelVram / nodeVram))
       : 1;
-    const pickNodes = (role, fallback) => {
-      const ov = so[role]?.nodes;
-      if (typeof ov === "number") return ov;
-      if (ov && typeof ov === "object") {
-        if (typeof ov[hwId] === "number") return ov[hwId];
-        if (typeof ov.default === "number") return ov.default;
-      }
-      return fallback;
-    };
+    const pickNodes = (role, fallback) => pdRoleNodes(recipe, role, hw, hwId) ?? fallback;
     return {
       prefill: pickNodes("prefill", minNodesPerRole),
       decode: pickNodes("decode", minNodesPerRole),
@@ -593,17 +592,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // compatible_strategies (TP / TEP / DEP). A single-mode list (e.g. dense
   // models with only TP) hides the per-pool pills entirely.
   const pdModes = useMemo(() => pdPoolModes(recipe), [recipe]);
-  // Default per-role parallelism: recipe strategy_overrides → strategy YAML →
-  // "tp", clamped to an offered mode.
+  // Default per-role parallelism: recipe strategy_overrides (a mode or a
+  // per-hw map, like `nodes`) → strategy YAML → "tp", clamped to an offered mode.
   const pdDefaultPar = useMemo(() => {
-    const so = recipe.strategy_overrides?.pd_cluster || {};
-    const st = strategies?.pd_cluster || {};
+    const hw = taxonomy.hardware_profiles?.[hwId];
     const pick = (role) => {
-      const d = so[role]?.parallelism || st[role]?.parallelism || "tp";
+      const d = pdRoleParallelism(recipe, strategies?.pd_cluster, role, hw, hwId);
       return pdModes.includes(d) ? d : pdModes[0];
     };
     return { prefill: pick("prefill"), decode: pick("decode") };
-  }, [recipe, strategies, pdModes]);
+  }, [recipe, strategies, taxonomy, pdModes, hwId]);
   const [pdPrefillPar, setPdPrefillPar] = useState(() => {
     const p = searchParams.get("prefill_mode");
     return p && pdModes.includes(p) ? p : pdDefaultPar.prefill;
@@ -612,6 +610,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const p = searchParams.get("decode_mode");
     return p && pdModes.includes(p) ? p : pdDefaultPar.decode;
   });
+  // Re-sync per-role parallelism with hw-specific defaults when hw changes,
+  // unless the URL pins a mode (same rule as the node counts above).
+  useEffect(() => {
+    if (!searchParams.get("prefill_mode")) setPdPrefillPar(pdDefaultPar.prefill);
+    if (!searchParams.get("decode_mode")) setPdDecodePar(pdDefaultPar.decode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pdDefaultPar]);
   // Which DP rank's command to render for each DEP pool. User can bump this
   // to see e.g. rank 7's command — illustrates that each rank differs only in
   // --data-parallel-rank, CUDA_VISIBLE_DEVICES, and the per-host ports.
@@ -1294,13 +1299,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // 2 nodes and pick the multi-node sibling. Tied to the click so a
     // deliberate Single-/Multi-node click afterwards still wins. Non-scalable
     // hardware never bumps — it's single-node by definition.
-    const fitsNew = fitsSingleNode(newProfile, activeVariant, id);
+    const fitsNew = !needsMultiNode(recipe, strategies, newProfile, activeVariant, id);
     const recipeDefault = recipe.default_strategy;
     const recipeDefaultsSingleNode =
       typeof recipeDefault === "string" && recipeDefault.startsWith("single_node_");
     const shouldBumpNodes = nodeCount === 1 && supportsMultiNode && newScalable && !fitsNew && newProfile?.generation !== "xpu";
     // Intel XPU is validated single-node only — always clamp back to 1 node.
-    const shouldUnbumpNodes = nodeCount > 1 && (!newScalable || newProfile?.generation === "xpu" || (fitsNew && recipeDefaultsSingleNode));
+    const shouldUnbumpNodes = nodeCount > 1 && (!newScalable || newProfile?.generation === "xpu" || (fitsNew && recipeDefaultsSingleNode)
+      || multiNodeUnavailable(recipe, strategies, newProfile, activeVariant, id));
     if (shouldBumpNodes) setNodeCount(2);
     if (shouldUnbumpNodes) setNodeCount(1);
     syncUrl({
@@ -2780,13 +2786,21 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   // commonly omit these), or when the active hardware can't be
                   // clustered (single-GPU workstation, e.g. DGX Station).
                   const noMultiNode = n > 1 && (!supportsMultiNode || !hwScalable || isXpuHardware);
+                  const noMultiNodeStrategy = n > 1 && !noMultiNode &&
+                    multiNodeUnavailable(recipe, strategies, hwProfile, currentVariant, hwId);
                   // Single-node pill is disabled when the variant can't fit on
                   // one node of the selected hardware — same struck-through
                   // treatment as unsupported hardware pills. Multi-node still
                   // works because weights shard across nodes.
                   const singleNodeDoesntFit =
                     n === 1 && !fitsSingleNode(hwProfile, currentVariant, hwId);
-                  const disabled = noMultiNode || singleNodeDoesntFit;
+                  // Also disabled when no single-node strategy is offered here
+                  // (e.g. an 8-GPU strategy_min_gpus floor on a 4-GPU tray) —
+                  // otherwise Single-node leaves only pd_cluster in the Strategy row.
+                  const singleNodeNoStrategy =
+                    n === 1 && !singleNodeDoesntFit &&
+                    needsMultiNode(recipe, strategies, hwProfile, currentVariant, hwId);
+                  const disabled = noMultiNode || noMultiNodeStrategy || singleNodeDoesntFit || singleNodeNoStrategy;
                   return (
                     <Pill
                       key={n}
@@ -2800,8 +2814,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                             : !hwScalable
                             ? `${hwProfile.display_name || "This hardware"} is a single-GPU workstation and can't be clustered into multiple nodes.`
                             : "This recipe does not declare a multi-node strategy. Fits in a single node."
+                          : noMultiNodeStrategy
+                            ? `This recipe runs single-node on ${hwProfile.display_name || "this hardware"} — no multi-node strategy here. Disaggregated PD sizes its own pools.`
                           : singleNodeDoesntFit
                             ? `Single-node can't fit this variant on ${hwProfile.display_name || "the selected hardware"} (${variantVramMinimumGb(currentVariant, hwId)}GB > ${hwProfile.vram_gb}GB) — use multi-node`
+                            : singleNodeNoStrategy
+                            ? `This recipe needs more GPUs than one ${hwProfile.display_name || "node"} has (${hwProfile.gpu_count || 8}) — use multi-node`
                             : n === 1
                               ? kvInstancesActive
                                 ? `Each vLLM instance runs on a single node${(result.instances || 1) > 1 ? ` — ${result.instances} instances = ${result.instances} nodes total (plus master${result.store ? "/store" : ""})` : ""}.`
