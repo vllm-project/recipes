@@ -35,6 +35,13 @@ channels:
       path: recipes
       role: core
       scope: { exclude_tasks: [omni] }
+    metal:
+      repo: vllm-project/vllm-metal
+      # Preview vllm-metal#1146; switch to main and refresh the lock after merge.
+      ref: 9b49c1bcf0e7cad1b7148d00a5cbae1a96e02f3c
+      path: recipes
+      role: overlay
+      scope: { brands: [Apple] }
     # Interim owner of the omni recipes, until they move to vllm-project/vllm-omni.
     # models/ also keeps copies of the vLLM recipes until they are synced to
     # vllm and removed: vllm's version renders; a recipe merged here that vllm

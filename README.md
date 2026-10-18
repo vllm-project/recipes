@@ -127,6 +127,7 @@ Each recipe is a structured YAML file at `models/<hf_org>/<hf_repo>.yaml`, kept 
 ```mermaid
 flowchart LR
   vllm["vllm-project/vllm<br/>recipes/models/"] --> sync
+  metal["vllm-metal<br/>recipes/overlays/"] --> sync
   omni["vllm-omni<br/>(omni recipes)"] -.-> sync
   ascend["vllm-ascend<br/>overlays/"] -.-> sync
   self["this repo<br/>models/ (omni, interim)<br/>taxonomy · strategies · kv_store"] --> assemble
@@ -138,6 +139,7 @@ flowchart LR
 | --- | --- | --- |
 | Model recipes served by vLLM | [`vllm-project/vllm` → `recipes/models/`](https://github.com/vllm-project/vllm/tree/main/recipes) | Owned by vLLM; a merge there reaches recipes.vllm.ai in about 30 minutes. Copies stay in this repo's `models/` until they are synced to vLLM and removed; they aren't rendered |
 | Omni recipes (image, video, audio generation) | This repo's `models/` | Interim; moving to vllm-omni |
+| Apple Silicon variants | `vllm-project/vllm-metal` → `recipes/overlays/` | Metal adds variants to the original model pages; `featured.yaml` controls its own docs only |
 | Ascend NPU content | Inline in the vLLM recipes | Moving to `overlays/` in vllm-ascend |
 | Schema, hardware profiles, serving strategies, KV-store deployments, platforms | This repo (`taxonomy.yaml`, `strategies/`, `kv_store/`, `platforms.yaml`) | Owned here |
 | Command synthesis, site, JSON API | This repo (`src/`, `scripts/`) | Owned here |

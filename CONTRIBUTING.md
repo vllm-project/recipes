@@ -19,6 +19,7 @@ repo renders them (see "How recipes are maintained" in the
 | Recipe | Repository and directory |
 | --- | --- |
 | Models served by vLLM | `vllm-project/vllm` → `recipes/models/<hf_org>/<hf_repo>.yaml` |
+| Apple Silicon variants served by vLLM Metal | `vllm-project/vllm-metal` → `recipes/overlays/<hf_org>/<hf_repo>.yaml` |
 | Omni models (`meta.tasks` includes `omni`) | This repo → `models/<hf_org>/<hf_repo>.yaml`, until they move to vllm-omni |
 | Ascend NPU content | Inline in the vLLM recipe for now; moving to `overlays/<hf_org>/<hf_repo>.yaml` in vllm-ascend |
 

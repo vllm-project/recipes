@@ -22,18 +22,29 @@ const NVL4_HW_IDS = new Set(["gb200", "gb300"]);
 // `model.<frontend>_frontend: unsupported` (e.g. `rust_frontend`).
 export const FALLBACK_FRONTEND = "python";
 
-export function isFrontendSupported(recipe, frontend) {
-  return frontend === FALLBACK_FRONTEND || recipe.model?.[`${frontend}_frontend`] !== "unsupported";
+export function isFrontendSupported(recipe, frontend, variant = {}) {
+  return frontend === FALLBACK_FRONTEND || (
+    recipe.model?.[`${frontend}_frontend`] !== "unsupported"
+    && (!variant.supported_frontends || variant.supported_frontends.includes(frontend))
+  );
 }
 
 // Resolve the frontend a command is rendered for: the requested one (URL,
 // saved state, pill click), else the recipe's `default_frontend`, falling back
 // to Python when that frontend is unknown to the taxonomy or unsupported by the
 // recipe — so a stale `?frontend=rust` link can never emit a broken command.
-export function resolveFrontend(recipe, frontend, taxonomy) {
+export function resolveFrontend(recipe, frontend, taxonomy, variant = {}) {
   const wanted = frontend || recipe.model?.default_frontend;
   if (!wanted || !taxonomy?.frontends?.[wanted]) return FALLBACK_FRONTEND;
-  return isFrontendSupported(recipe, wanted) ? wanted : FALLBACK_FRONTEND;
+  return isFrontendSupported(recipe, wanted, variant) ? wanted : FALLBACK_FRONTEND;
+}
+
+export function resolveInstall(recipe, variant = {}) {
+  return { ...recipe.model?.install, ...variant.install };
+}
+
+export function isFeatureAllowedForVariant(variant, featureKey) {
+  return !variant?.supported_features || variant.supported_features.includes(featureKey);
 }
 
 /**
@@ -396,13 +407,14 @@ export function isHardwareSupported(recipe, hwId) {
 
 /**
  * Variant-level hardware selectors. Entries may be exact profile ids or
- * `arch:<compute_arch>`. Missing/empty inherits normal precision compatibility.
+ * `arch:<compute_arch>`. Profiles with `requires_variant_opt_in` need an explicit
+ * match; otherwise a missing/empty list inherits normal precision compatibility.
  * Architecture selectors admit future profiles with the same GPU ISA without
  * confusing data-center Blackwell (SM100/SM103) with workstation SM120/SM121.
  */
 export function isVariantHardwareSupported(variant, hwId, profile = null) {
   const supported = variant?.supported_hardware;
-  if (!Array.isArray(supported) || supported.length === 0) return true;
+  if (!Array.isArray(supported) || supported.length === 0) return !profile?.requires_variant_opt_in;
   return supported.some((entry) => {
     if (entry === hwId) return true;
     if (!profile) return false;
@@ -500,10 +512,10 @@ export function isKvOffloadSupportedForRecipe(option, optionKey, recipe) {
   return option.requires_opt_in ? support === "verified" : true;
 }
 
-/** Hardware gate: option `brands` allowlist; absent = every brand. */
+/** Hardware gate: Metal presets require an explicit entry in `brands`. */
 export function isKvOffloadBrandSupported(option, hwProfile) {
   const allow = option?.brands;
-  if (!Array.isArray(allow) || allow.length === 0) return true;
+  if (!Array.isArray(allow) || allow.length === 0) return hwProfile?.generation !== "metal";
   return allow.includes(hwProfile?.brand);
 }
 
@@ -783,11 +795,12 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const isXpu = hwProfile?.generation === "xpu";
   const isIntel = hwProfile?.generation === "cpu" || isXpu || hwProfile?.brand === "Intel";
   const isNpu = hwProfile?.generation === "npu";
+  const isMetal = hwProfile?.generation === "metal";
   const npuDeviceCount = isNpu ? hwProfile?.gpu_count ?? 1 : 0;
   // Ascend deliberately has no `brandKey` of its own: vLLM publishes no NPU
   // image, so every Ascend recipe pins one through `hardware_overrides`, which
   // `exactHardwareOverride` resolves before the brand defaults are consulted.
-  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
+  const brandKey = isMetal ? "apple" : isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
   // Exact variant+hardware image overrides win over variant-wide and
   // model-wide images (for example, an MI355X-only ROCm nightly).
   const exactHardwareOverride = hwId
@@ -837,10 +850,10 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   // CUDA map, `image` defaults to the cu130 (upstream baseline) pick so
   // toggle-unaware callers (the JSON API's renderings) still get a real tag;
   // the client's CUDA selector re-picks from `cudaMap` on top of this.
-  const image = isXpu && !pinned
+  const image = isMetal ? null : isXpu && !pinned
     ? "vllm/vllm-openai-xpu:latest"
     : pinned || (cudaMap ? cudaMap.cu130 || cudaMap.cu129 : null) || DEFAULT_IMAGE[brandKey];
-  const gpuFlags = isTpu
+  const gpuFlags = isMetal ? "" : isTpu
     ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
     : isAmd
       ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
@@ -860,6 +873,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
     isXpu,
     isIntel,
     isNpu,
+    isMetal,
     npuDeviceCount,
     pinned,
     cudaMap,
@@ -1206,6 +1220,7 @@ export function smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, trans
  */
 export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null, pdTransport = "http") {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
+  enabledFeatures = (enabledFeatures || []).filter((key) => isFeatureAllowedForVariant(variant, key));
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
   const gen = normalizeGeneration(hwProfile.generation || hwProfile.gpu_generation);
@@ -1316,7 +1331,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     // 7. features          (tool_calling, reasoning, mtp — last for readability)
 
     // 1. base_args
-    if (recipe.model?.base_args) args.push(...recipe.model.base_args);
+    args.push(...(variant.base_args ?? recipe.model?.base_args ?? []));
 
     // 2. Variant extra args
     if (variant.extra_args) args.push(...variant.extra_args);
@@ -1813,7 +1828,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       // The SMG-compatible gRPC servicer only runs on the Python frontend.
       env.VLLM_USE_RUST_FRONTEND = "0";
     } else {
-      Object.assign(env, taxonomy.frontends?.[resolveFrontend(recipe, frontend, taxonomy)]?.env);
+      Object.assign(env, taxonomy.frontends?.[resolveFrontend(recipe, frontend, taxonomy, variant)]?.env);
     }
     return env;
   }

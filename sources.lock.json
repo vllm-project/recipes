@@ -7,6 +7,14 @@
       "sha": "21e09ea95926fcfe4df1c57bf2eb95123cab70c3",
       "tree_sha": "e288cf8579666b37ab0a4e28acf6f84985960abe",
       "resolved_at": "2026-10-17T12:37:43.373Z"
+    },
+    "metal": {
+      "repo": "vllm-project/vllm-metal",
+      "ref": "9b49c1bcf0e7cad1b7148d00a5cbae1a96e02f3c",
+      "path": "recipes",
+      "sha": "9b49c1bcf0e7cad1b7148d00a5cbae1a96e02f3c",
+      "tree_sha": "bc1dd0ff094dc3e80078a4f9ab3f9c610761d84f",
+      "resolved_at": "2026-10-18T01:04:23.160Z"
     }
   }
 }
