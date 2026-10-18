@@ -2,10 +2,11 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import Markdown from "react-markdown";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
+import { resolveInstall, isFeatureAllowedForVariant, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import ShellCode from "@/components/recipes/ShellCode";
@@ -814,6 +815,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
 
   // ── Derived ──
   const currentVariant = recipe.variants?.[variant] || recipe.variants?.default || {};
+  const effectiveFrontend = resolveFrontend(recipe, frontend, taxonomy, currentVariant);
+  const availableFeatures = Object.entries(recipe.features || {}).filter(([key]) =>
+    isFeatureAllowedForVariant(currentVariant, key)
+  );
 
   // The HF repo this variant serves — the variant's own checkpoint when it
   // overrides `model_id` (nvidia/*-NVFP4, deepseek-ai/*-0813), otherwise the
@@ -1245,7 +1250,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
 
   // ── Handlers ──
   const selectFrontend = (value) => {
-    const next = resolveFrontend(recipe, value, taxonomy);
+    const next = resolveFrontend(recipe, value, taxonomy, currentVariant);
     setFrontend(next);
     syncUrl({ frontend: next });
     saveRecipeState(recipe.hf_id, { frontend: next });
@@ -2082,12 +2087,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     currentVariant?.hardware_overrides?.[hwId]?.install ||
     recipe.hardware_overrides?.[hwId]?.install ||
     null;
+  const variantInstall = resolveInstall(recipe, currentVariant);
   const pipEffectivelyHidden =
-    recipe.model?.install?.pip === false ||
+    variantInstall.pip === false ||
     hwInstall?.pip === false ||
     hwProfile?.generation === "tpu" ||
     hwProfile?.generation === "xpu";
-  const dockerEffectivelyHidden = recipe.model?.install?.docker === false;
+  const dockerEffectivelyHidden = variantInstall.docker === false;
   const effectiveInstallMode =
     installMode === "pip" && pipEffectivelyHidden
       ? "docker"
@@ -2269,7 +2275,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                           >
                             <HwStatusDot status={status} />
                             <span className="font-semibold">{p.display_name}</span>
-                            {p.vram_gb > 0 && p.gpu_count > 0 && (
+                            {p.generation !== "metal" && p.vram_gb > 0 && p.gpu_count > 0 && (
                               <span className="text-muted-foreground ml-1.5 font-mono">
                                 {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : "GPU"}
                               </span>
@@ -2406,6 +2412,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             to run inside the container. */}
         {modeDependencies.length > 0 && (
           <DependenciesBlock deps={modeDependencies} />
+        )}
+
+        {currentVariant.guide && (
+          <div className="guide-content rounded-xl border border-border px-4 py-3 text-sm">
+            <Markdown>{currentVariant.guide}</Markdown>
+          </div>
         )}
 
         {/* ── VRAM shortfall warning (single-node only) ── */}
@@ -2555,7 +2567,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                         >
                           <HwStatusDot status={status} />
                           <span className="font-semibold">{p.display_name}</span>
-                          {p.vram_gb > 0 && p.gpu_count > 0 && (
+                          {p.generation !== "metal" && p.vram_gb > 0 && p.gpu_count > 0 && (
                             <span className="text-muted-foreground ml-1.5 font-mono">
                               {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : "GPU"}
                             </span>
@@ -2592,7 +2604,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           {/* Variant */}
           <ConfigRow
             label="Variant"
-            hint="VRAM shown is the minimum to LOAD the model (weights + CUDA/vLLM runtime overhead, ≈ params × bytes × 1.2). It's not a serving budget — long context or large batch typically needs 1.5–2× more for KV cache."
+            hint={hwProfile.generation === "metal"
+              ? "Estimated memory to load the weights, not a serving budget. Unified memory is shared with macOS; context length and batch size determine the additional memory needed."
+              : "VRAM shown is the minimum to LOAD the model (weights + CUDA/vLLM runtime overhead, ≈ params × bytes × 1.2). It's not a serving budget — long context or large batch typically needs 1.5–2× more for KV cache."}
           >
             <PillGroup>
               {Object.entries(recipe.variants || {}).map(([key, v]) => {
@@ -2624,11 +2638,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                           ? [
                               v.description,
                               `Selecting this variant also switches Hardware to ${fallbackHw?.display_name || fallbackHwId}.`,
-                              `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
+                              `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving.${fallbackHw?.generation === "metal" ? "" : " Scale out via multi-node if needed."}`,
                             ].filter(Boolean).join("\n\n")
                         : [
                             v.description,
-                            `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
+                            `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving.${hwProfile.generation === "metal" ? "" : " Scale out via multi-node if needed."}`,
                           ].filter(Boolean).join("\n\n")
                     }
                   >
@@ -3253,7 +3267,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                             : n === 1
                               ? kvInstancesActive
                                 ? `Each vLLM instance runs on a single node${(result.instances || 1) > 1 ? ` — ${result.instances} instances = ${result.instances} nodes total (plus master${result.store ? "/store" : ""})` : ""}.`
-                                : "Single-node deployment (one HGX box)"
+                                : hwProfile.generation === "metal" ? "Serve on one Mac." : "Single-node deployment (one HGX box)"
                               : kvInstancesActive
                                 ? `Each instance spans ${n} nodes × ${hwProfile.gpu_count || 8} GPUs${(result.instances || 1) > 1 ? ` — ${result.instances} instances = ${(result.instances || 1) * n * (hwProfile.gpu_count || 8)} GPUs total` : ` = ${n * (hwProfile.gpu_count || 8)} GPUs`}.`
                                 : `${n} nodes × ${hwProfile.gpu_count || 8} GPUs = ${n * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
@@ -3275,9 +3289,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           <ConfigRow label="Frontend">
             <PillGroup>
               {Object.entries(taxonomy.frontends || {}).map(([id, fe]) => {
-                const supported = isFrontendSupported(recipe, id);
+                const supported = isFrontendSupported(recipe, id, currentVariant);
                 // SMG gRPC always runs the Python servicer, so pin the pill to it.
-                const active = isSmgGrpc ? id === "python" : frontend === id;
+                const active = isSmgGrpc ? id === "python" : effectiveFrontend === id;
                 const disabled = !supported || (isSmgGrpc && id !== "python");
                 return (
                   <Pill
@@ -3299,7 +3313,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
               {isSmgGrpc ? (
                 "The SMG-compatible gRPC servicer runs through vllm serve --grpc."
-              ) : isFrontendSupported(recipe, "rust") ? (
+              ) : isFrontendSupported(recipe, "rust", currentVariant) ? (
                 <>
                   The experimental Rust frontend can improve throughput and latency, especially under high concurrency.
                   {" "}Switch to Python if you encounter unsupported features or compatibility issues.
@@ -3321,10 +3335,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           )}
 
           {/* Features */}
-          {Object.keys(recipe.features || {}).length > 0 && (
+          {availableFeatures.length > 0 && (
             <ConfigRow label="Features">
               <PillGroup>
-                {Object.entries(recipe.features || {}).map(([key, f]) => {
+                {availableFeatures.map(([key, f]) => {
                   // Strategy-gated feature (feature declares `strategies: [...]`):
                   // struck-through + disabled on excluded strategies, same
                   // treatment as unsupported hardware pills. The toggle state is
@@ -3379,7 +3393,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   note would have nowhere to live. */}
               {featuredModeKeys.map((key) => {
                 const notes = FEATURE_MODE_NOTES[key];
-                if (!notes || !features.includes(key)) return null;
+                if (!notes || !features.includes(key) || !isFeatureAllowedForVariant(currentVariant, key)) return null;
                 const feat = recipe.features[key];
                 if (!isFeatureAllowedForStrategy(feat, activeStrategy)) return null;
                 const activeMode = resolveModeKey(feat, key, currentVariant, variant, hwProfile, hwId, featureModes[key]);
@@ -3397,7 +3411,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           {/* Sub-mode selector for single-select features (spec_decoding →
               MTP / DFlash / DSpark). Only shown while the parent feature is on. */}
           {featuredModeKeys.map((key) => {
-            if (!features.includes(key)) return null;
+            if (!features.includes(key) || !isFeatureAllowedForVariant(currentVariant, key)) return null;
             const feat = recipe.features[key];
             // Only modes available on the current checkpoint (variant). If a
             // single method is available (e.g. FP8/NVFP4 → MTP only), the row is
@@ -3932,13 +3946,13 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   // Per-recipe overrides via `model.install.{pip,docker}`:
   //   false              → hide that tab entirely
   //   { command, note }  → override the generated one-liner and/or show a note
-  const install = recipe.model?.install || {};
+  const install = resolveInstall(recipe, variant);
   const pipCfg = install.pip;
   const dockerCfg = install.docker;
   const pipHidden = pipCfg === false;
   const dockerHidden = dockerCfg === false;
   const [open, setOpen] = useState(false);
-  const { isAmd, isTpu, isXpu, isIntel, isNpu, image: dockerImage, brandKey, cudaMap, cu129Image } = dockerMeta;
+  const { isAmd, isTpu, isXpu, isIntel, isNpu, isMetal, image: dockerImage, brandKey, cudaMap, cu129Image } = dockerMeta;
   // Intel CPU is a first-class backend in computeDockerMeta. Keep XPU
   // distinct even though it is also Intel hardware.
   const isCpu = isIntel && !isXpu;
@@ -4057,7 +4071,7 @@ uv pip install -U vllm --torch-backend auto`;
   const tabs = [
     !effectivePipHidden && {
       id: "pip",
-      label: isAmd ? "pip / uv (ROCm)" : isCpu ? "pip / uv (CPU)" : "pip / uv",
+      label: isMetal ? "macOS" : isAmd ? "pip / uv (ROCm)" : isCpu ? "pip / uv (CPU)" : "pip / uv",
       code: pipCmd,
       note: pipNote,
     },
@@ -4070,7 +4084,7 @@ uv pip install -U vllm --torch-backend auto`;
   ].filter(Boolean);
   if (tabs.length === 0) return null;
   const active = tabs.find((t) => t.id === installMode) || tabs[0];
-  const summary = tabs.map((t) => (t.id === "pip" ? "pip" : "Docker")).join(" / ");
+  const summary = tabs.map((t) => (t.id === "pip" ? (isMetal ? "macOS" : "pip") : "Docker")).join(" / ");
 
   return (
     <div className="rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border">
@@ -4081,7 +4095,7 @@ uv pip install -U vllm --torch-backend auto`;
         <Package size={12} className="text-[var(--command-fg)]/50 shrink-0" />
         <span className="text-[11px] font-semibold text-[var(--command-fg)]/70 uppercase tracking-widest">Install</span>
         <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
-          vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · {isTpu ? "TPU" : isXpu ? "XPU" : isNpu ? "Ascend" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}
+          vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · {isMetal ? "Metal" : isTpu ? "TPU" : isXpu ? "XPU" : isNpu ? "Ascend" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}
         </span>
         {nightlyRequired && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">

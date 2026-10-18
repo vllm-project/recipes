@@ -645,7 +645,11 @@ for (const file of findYamlFiles(modelsDir)) {
       ...r,  // share meta/features/guide/etc. with the parent
       hf_id: variantModelId,
       meta: { ...r.meta, derived_from: parentHfId, variant: variantKey },
-      model: { ...r.model, model_id: variantModelId },
+      model: {
+        ...r.model,
+        model_id: variantModelId,
+        ...(variantCfg.install && { install: synthesizeInstall(r, variantCfg) }),
+      },
       variants: { default: variantCore },
       recommended_command: recommended,
     };

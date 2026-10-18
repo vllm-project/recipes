@@ -51,6 +51,12 @@ channels:
       path: recipes
       role: overlay
       scope: { brands: [Huawei] }
+    metal:
+      repo: vllm-project/vllm-metal
+      ref: main
+      path: recipes
+      role: overlay
+      scope: { brands: [Apple] }
     # models/ keeps copies of the vLLM and vLLM-Omni recipes until they are
     # synced upstream and removed: the upstream version renders; a recipe
     # merged here that upstream doesn't have yet renders from here.

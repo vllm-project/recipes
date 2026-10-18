@@ -21,6 +21,7 @@ import {
   pdPoolModes,
   resolveModeKey,
   resolveFrontend,
+  resolveInstall,
   resolveOmniCommand,
   isKvOffloadAllowedForStrategy,
   isKvOffloadSupportedForRecipe,
@@ -78,13 +79,13 @@ export function resolveDockerImage(recipe, baseCuda) {
 //   pip: { command?, note?} → use overrides; missing fields fall back to defaults
 //   (same for docker)
 // `extras` carries the recipe's `dependencies` array verbatim.
-export function synthesizeInstall(recipe) {
-  const installCfg = recipe.model?.install || {};
+export function synthesizeInstall(recipe, variant = {}) {
+  const installCfg = resolveInstall(recipe, variant);
   const pipCfg = installCfg.pip;
   const dockerCfg = installCfg.docker;
 
-  const v = recipe.model?.min_vllm_version || "";
-  const nightlyRequired = recipe.model?.nightly_required === true;
+  const v = variant.min_vllm_version || recipe.model?.min_vllm_version || "";
+  const nightlyRequired = variant.nightly_required === true || recipe.model?.nightly_required === true;
   const baseCuda = "cu130";
 
   const out = {};
@@ -102,7 +103,7 @@ export function synthesizeInstall(recipe) {
   }
 
   if (dockerCfg !== false) {
-    const defaultDockerCmd = `docker pull ${resolveDockerImage(recipe, baseCuda)}`;
+    const defaultDockerCmd = `docker pull ${variant.docker_image || resolveDockerImage(recipe, baseCuda)}`;
     const command = (dockerCfg && dockerCfg.command) || defaultDockerCmd;
     const note = dockerCfg && dockerCfg.note;
     out.docker = note ? { command, note } : { command };
@@ -130,6 +131,7 @@ export function defaultFeaturesFor(recipe, hwId, variantKey = "default") {
 // { docker_command, docker_argv } so each form has its docker counterpart.
 // `docker` is a PD KV connector's container needs ({ host_network, flags }).
 export function dockerize(command, argv, env, dockerMeta, port = null, docker = null) {
+  if (dockerMeta.isMetal) return {};
   const hostNetwork = !!docker?.host_network;
   const extraFlags = docker?.flags || [];
   return {
@@ -255,6 +257,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     ...(result.preset?.point?.selected && result.preset.selected !== "baseline" ? { preset_point: result.preset.point.selected } : {}),
     env,
     docker_image: dockerMeta.image,
+    ...(variant.install && { install: synthesizeInstall(recipe, variant) }),
   };
   if (result.deployType === "multi_node") {
     const head = dockerize(result.headCommand, result.headArgv, env, dockerMeta);
