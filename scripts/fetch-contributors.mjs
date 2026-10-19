@@ -1,7 +1,8 @@
 /**
  * Credit the people who wrote each recipe: refresh recipe-contributors.json
- * (hf_id → [{ login, commits }]) from the git history of the recipe's YAML,
- * which the recipe page and the JSON API show as its contributors.
+ * (hf_id → { contributors: [{ login, commits }], history: [url] }) from the git
+ * history of the recipe's YAML. The recipe page shows both, and the JSON API
+ * publishes the contributors.
  *
  *   GITHUB_TOKEN=… node scripts/fetch-contributors.mjs
  *
@@ -111,8 +112,8 @@ for (const hfId of hfIds) {
   const p = provenance[hfId];
   const places = [p, ...(p.overlays || [])]
     .filter((s) => s.repo)
-    .map((s) => ({ repo: s.repo, ref: s.sha || s.ref || "main", path: s.path }));
-  places.push({ repo: LEGACY_REPO, ref: "main", path: `models/${hfId}.yaml` });
+    .map((s) => ({ repo: s.repo, ref: s.sha || s.ref || "main", branch: s.ref || "main", path: s.path }));
+  places.push({ repo: LEGACY_REPO, ref: "main", branch: "main", path: `models/${hfId}.yaml` });
   recipeTargets[hfId] = [];
   for (const t of places) {
     const key = `${t.repo}:${t.path}`;
@@ -151,12 +152,19 @@ for (const hfId of hfIds) {
       people.set(login, p);
     }
   }
-  // Most commits first; ties by who contributed first.
-  result[hfId] = [...people]
-    .sort(([la, a], [lb, b]) => b.commits - a.commits || a.first.localeCompare(b.first) || la.localeCompare(lb))
-    .map(([login, { commits }]) => ({ login, commits }));
+  result[hfId] = {
+    // Most commits first; ties by who contributed first.
+    contributors: [...people]
+      .sort(([la, a], [lb, b]) => b.commits - a.commits || a.first.localeCompare(b.first) || la.localeCompare(lb))
+      .map(([login, { commits }]) => ({ login, commits })),
+    // GitHub history pages that have commits: the owning repo, then the old path.
+    history: recipeTargets[hfId]
+      .filter((key) => histories.get(key).length)
+      .map((key) => targets.get(key))
+      .map((t) => `https://github.com/${t.repo}/commits/${t.branch}/${t.path}`),
+  };
 }
 
 fs.writeFileSync(OUT, JSON.stringify(result, null, 2) + "\n");
-const people = new Set(Object.values(result).flat().map((c) => c.login));
+const people = new Set(Object.values(result).flatMap((r) => r.contributors.map((c) => c.login)));
 console.log(`✓ recipe-contributors.json: ${hfIds.length} recipes, ${people.size} contributors (${targets.size} file histories; ${skippedBulk} bulk-commit credits skipped)`);

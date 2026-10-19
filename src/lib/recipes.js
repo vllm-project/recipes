@@ -55,7 +55,9 @@ function parseRecipe(filePath, dir, provenance) {
     raw.hf_released = dates[raw.hf_id] || null;
     // Owning repo + overlays (from .content/<channel>/provenance.json)
     raw.source = provenance[raw.hf_id] || null;
-    raw.contributors = loadContributors()[raw.hf_id] || [];
+    const credit = loadContributors()[raw.hf_id];
+    raw.contributors = credit?.contributors || [];
+    raw.history = credit?.history || [];
   }
   return raw;
 }

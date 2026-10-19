@@ -62,7 +62,7 @@ if (!process.env.RECIPES_CONTENT_DIR) {
 }
 const CONTENT = contentDir();
 const provenance = loadProvenance();
-// hf_id → [{ login, commits }], from scripts/fetch-contributors.mjs.
+// hf_id → { contributors: [{ login, commits }], history }, from scripts/fetch-contributors.mjs.
 const contributors = fs.existsSync(path.join(ROOT, "recipe-contributors.json"))
   ? JSON.parse(fs.readFileSync(path.join(ROOT, "recipe-contributors.json"), "utf8"))
   : {};
@@ -973,7 +973,7 @@ for (const file of findYamlFiles(modelsDir)) {
   // can trace a command back to the YAML that produced it.
   r.source = provenance[parentHfId] || null;
   // The people who wrote it, from the YAML's git history (most commits first).
-  r.contributors = (contributors[parentHfId] || []).map((c) => ({ ...c, url: `https://github.com/${c.login}` }));
+  r.contributors = (contributors[parentHfId]?.contributors || []).map((c) => ({ ...c, url: `https://github.com/${c.login}` }));
   // JSON at /<org>/<repo>.json — mirrors HF URL scheme.
   const out = writeRecipeJson(parentHfId, r);
   recipes.push(out);
