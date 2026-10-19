@@ -2,7 +2,7 @@ meta:
   title: "Qwen3-VL-Dense"
   slug: "qwen3-vl-dense"
   provider: "Qwen"
-  description: "Qwen3-VL dense VLMs (8B/32B) on Ascend NPU via vLLM-Ascend — A2/A3 BF16, 300I DUO FP16, 950DT W8A8"
+  description: "Qwen3-VL dense VLMs (8B/32B) on Ascend NPU via vLLM-Ascend — A3 BF16, 950DT W8A8"
   date_added: 2026-10-19
   date_updated: 2026-10-19
   difficulty: intermediate
@@ -31,6 +31,7 @@ model:
     - "bfloat16"
     - "--max-model-len"
     - "8192"
+    - "--enforce-eager"
   base_env:
     HCCL_OP_EXPANSION_MODE: "AIV"
     PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
@@ -70,8 +71,6 @@ variants:
     description: "W8A8 Qwen3-VL-8B on 950DT (--quantization ascend)"
     supported_hardware: [ascend_950dt]
     extra_args:
-      - "--quantization"
-      - "ascend"
       - "--max-model-len"
       - "4096"
   vl_32b_w8a8:
@@ -81,8 +80,6 @@ variants:
     description: "W8A8 Qwen3-VL-32B QuaRot on 950DT"
     supported_hardware: [ascend_950dt]
     extra_args:
-      - "--quantization"
-      - "ascend"
       - "--max-model-len"
       - "4096"
 
@@ -115,6 +112,7 @@ guide: |
   export HCCL_OP_EXPANSION_MODE=AIV
   export ASCEND_RT_VISIBLE_DEVICES=0
   export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+  export VLLM_USE_MODELSCOPE=True
 
   vllm serve Qwen/Qwen3-VL-8B-Instruct \
     --host 0.0.0.0 --port 8000 \
