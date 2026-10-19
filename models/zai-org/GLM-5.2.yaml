@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.2 — frontier-scale MoE language model (~743B total parameters, 39B active) with up to 5-token MTP speculative decoding and thinking mode"
   date_added: 2026-06-16
-  date_updated: 2026-10-16
+  date_updated: 2026-10-19
   difficulty: advanced
   tasks:
     - text
@@ -258,8 +258,6 @@ kv_offload_support:
   offloading_fs: verified
 
 hardware_overrides:
-  npu:
-    frontend: python
   hopper:
     # H100/H200 use plain fp8 KV cache; Blackwell keeps base_args' fp8_e4m3,H20 do not use kvcache fp8
     # The synthesizer's last-wins dedupe lets this shadow --kv-cache-dtype.
@@ -281,7 +279,7 @@ strategy_overrides: {}
 hardware_notes:
   ascend_910c:
     title: "Atlas 800 A3 — tutorial baseline"
-    body: "W4A8C8 uses TP8 + DP2 + expert parallel across all 16 NPUs, with MTP enabled. The generated client uses the checkpoint ID; the guide uses a local weight path and served name glm-52. A2, multi-node, PD, 1M and 950-series instructions are in the Ascend guide."
+    body: "Select Python in the Frontend row to match the tutorial. W4A8C8 uses TP8 + DP2 + expert parallel across all 16 NPUs, with MTP enabled. The generated client uses the checkpoint ID; the guide uses a local weight path and served name glm-52. A2, multi-node, PD, 1M and 950-series instructions are in the Ascend guide."
     link:
       href: "#ascend-deployment-guide"
       label: "Ascend deployment guide"
@@ -606,8 +604,10 @@ guide: |
   the generic GPU PD/NIXL builder is not the Ascend Mooncake deployment.
 
   The builder resolves the W4A8C8 checkpoint through ModelScope and enables the
-  tutorial's three-token MTP mode. It uses Python for this Ascend configuration,
-  while retaining the recipe's existing frontend selection on NVIDIA/AMD.
+  tutorial's three-token MTP mode. Select **Python** in the existing Frontend row
+  to match this Ascend configuration, or open the
+  [A3 W4A8C8 configuration](https://recipes.vllm.ai/zai-org/GLM-5.2?hardware=ascend_910c&variant=ascend_w4a8c8&frontend=python).
+  The recipe's existing NVIDIA/AMD frontend defaults are unchanged.
 
   ### Ascend images and checkpoint paths
 

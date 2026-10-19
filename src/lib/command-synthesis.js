@@ -22,22 +22,18 @@ const NVL4_HW_IDS = new Set(["gb200", "gb300"]);
 // `model.<frontend>_frontend: unsupported` (e.g. `rust_frontend`).
 export const FALLBACK_FRONTEND = "python";
 
-export function isFrontendSupported(recipe, frontend, hwProfile = null, hwId = null) {
-  const pinned = hardwareKeyedValue(recipe.hardware_overrides, hwProfile, hwId)?.frontend;
-  if (pinned) return frontend === pinned;
+export function isFrontendSupported(recipe, frontend) {
   return frontend === FALLBACK_FRONTEND || recipe.model?.[`${frontend}_frontend`] !== "unsupported";
 }
 
-// A hardware-pinned frontend reproduces the authored deployment even when
-// the URL or stored preference names another frontend. Otherwise resolve the
-// requested one, then the recipe's `default_frontend`, falling back
+// Resolve the frontend a command is rendered for: the requested one (URL,
+// saved state, pill click), else the recipe's `default_frontend`, falling back
 // to Python when that frontend is unknown to the taxonomy or unsupported by the
 // recipe — so a stale `?frontend=rust` link can never emit a broken command.
-export function resolveFrontend(recipe, frontend, taxonomy, hwProfile = null, hwId = null) {
-  const pinned = hardwareKeyedValue(recipe.hardware_overrides, hwProfile, hwId)?.frontend;
-  const wanted = pinned || frontend || recipe.model?.default_frontend;
+export function resolveFrontend(recipe, frontend, taxonomy) {
+  const wanted = frontend || recipe.model?.default_frontend;
   if (!wanted || !taxonomy?.frontends?.[wanted]) return FALLBACK_FRONTEND;
-  return isFrontendSupported(recipe, wanted, hwProfile, hwId) ? wanted : FALLBACK_FRONTEND;
+  return isFrontendSupported(recipe, wanted) ? wanted : FALLBACK_FRONTEND;
 }
 
 /**
@@ -715,7 +711,6 @@ function ascendDeviceNodes(deviceCount) {
   return [
     ...Array.from({ length: deviceCount }, (_, i) => `/dev/davinci${i}`),
     "/dev/davinci_manager",
-    "/dev/devmm_svm",
     "/dev/hisi_hdc",
   ];
 }
@@ -1797,7 +1792,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       // The SMG-compatible gRPC servicer only runs on the Python frontend.
       env.VLLM_USE_RUST_FRONTEND = "0";
     } else {
-      Object.assign(env, taxonomy.frontends?.[resolveFrontend(recipe, frontend, taxonomy, hwProfile, hwProfileId)]?.env);
+      Object.assign(env, taxonomy.frontends?.[resolveFrontend(recipe, frontend, taxonomy)]?.env);
     }
     return env;
   }
