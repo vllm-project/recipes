@@ -246,6 +246,7 @@ export default async function RecipePage({ params, searchParams }) {
 
       {/* ── Footer ── */}
       <footer className="mt-10 pt-4 border-t border-border text-sm text-muted-foreground flex flex-wrap gap-x-4 gap-y-2">
+        <RecipeContributors recipe={recipe} />
         <span>Updated {recipe.meta.date_updated}</span>
         <a
           href={recipe.source?.edit_url || `https://github.com/vllm-project/recipes/edit/main/models/${recipe.hf_org}/${recipe.hf_repo}.yaml`}
@@ -334,5 +335,56 @@ function ChevronIcon() {
     >
       <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
     </svg>
+  );
+}
+
+const MAX_AVATARS = 24;
+
+// The people who wrote this recipe (recipe-contributors.json, from the YAML's
+// git history), most commits first. History links cover the owning repo and,
+// for a recipe that moved, its earlier path here.
+function RecipeContributors({ recipe }) {
+  const people = recipe.contributors || [];
+  if (!people.length) return null;
+  const { repo, ref, path } = recipe.source || {};
+  const history = repo && path ? `https://github.com/${repo}/commits/${ref || "main"}/${path}` : null;
+  const legacy = repo !== "vllm-project/recipes"
+    ? `https://github.com/vllm-project/recipes/commits/main/models/${recipe.hf_id}.yaml`
+    : null;
+  const shown = people.slice(0, MAX_AVATARS);
+  return (
+    <div className="basis-full flex flex-wrap items-center gap-x-3 gap-y-2 mb-1">
+      <span>{people.length === 1 ? "Contributor" : `${people.length} contributors`}</span>
+      <span className="flex flex-wrap items-center gap-1">
+        {shown.map((c) => (
+          <a
+            key={c.login}
+            href={`https://github.com/${c.login}`}
+            title={`${c.login} · ${c.commits} commit${c.commits === 1 ? "" : "s"}`}
+            className="rounded-full ring-1 ring-border hover:ring-foreground/40 transition"
+          >
+            <img
+              src={`https://github.com/${c.login}.png?size=56`}
+              alt={c.login}
+              width={24}
+              height={24}
+              loading="lazy"
+              className="rounded-full"
+            />
+          </a>
+        ))}
+        {people.length > shown.length && (
+          <a href={history || legacy} className="ml-1 hover:text-foreground transition-colors">
+            +{people.length - shown.length}
+          </a>
+        )}
+      </span>
+      {history && (
+        <a href={history} className="hover:text-foreground transition-colors">History</a>
+      )}
+      {legacy && (
+        <a href={legacy} className="hover:text-foreground transition-colors">Earlier history</a>
+      )}
+    </div>
   );
 }

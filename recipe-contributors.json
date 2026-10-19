@@ -1,0 +1,3768 @@
+{
+  "ByteDance-Seed/Seed-OSS-36B-Instruct": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    }
+  ],
+  "Google/diffusiongemma-26B-A4B-it": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    },
+    {
+      "login": "LucasWilkinson",
+      "commits": 2
+    },
+    {
+      "login": "prodney-dev",
+      "commits": 2
+    },
+    {
+      "login": "lucianommartins",
+      "commits": 1
+    },
+    {
+      "login": "zhejiangxiaomai",
+      "commits": 1
+    },
+    {
+      "login": "louie-tsai",
+      "commits": 1
+    },
+    {
+      "login": "yuwenzho",
+      "commits": 1
+    }
+  ],
+  "Google/gemma-4-12B-it": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    },
+    {
+      "login": "lucianommartins",
+      "commits": 1
+    },
+    {
+      "login": "mgoin",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    },
+    {
+      "login": "yintong-lu",
+      "commits": 1
+    }
+  ],
+  "Google/gemma-4-26B-A4B-it": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    },
+    {
+      "login": "louie-tsai",
+      "commits": 3
+    },
+    {
+      "login": "prodney-dev",
+      "commits": 3
+    },
+    {
+      "login": "bigPYJ1151",
+      "commits": 2
+    },
+    {
+      "login": "khluu",
+      "commits": 1
+    },
+    {
+      "login": "lucianommartins",
+      "commits": 1
+    },
+    {
+      "login": "ywang96",
+      "commits": 1
+    },
+    {
+      "login": "lianakoleva",
+      "commits": 1
+    },
+    {
+      "login": "Aratako",
+      "commits": 1
+    },
+    {
+      "login": "mgoin",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    },
+    {
+      "login": "faradawn",
+      "commits": 1
+    },
+    {
+      "login": "yintong-lu",
+      "commits": 1
+    }
+  ],
+  "Google/gemma-4-31B-it": [
+    {
+      "login": "esmeetu",
+      "commits": 4
+    },
+    {
+      "login": "lucianommartins",
+      "commits": 2
+    },
+    {
+      "login": "mgoin",
+      "commits": 2
+    },
+    {
+      "login": "khluu",
+      "commits": 1
+    },
+    {
+      "login": "ywang96",
+      "commits": 1
+    },
+    {
+      "login": "Aratako",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    },
+    {
+      "login": "yintong-lu",
+      "commits": 1
+    }
+  ],
+  "Google/gemma-4-E2B-it": [
+    {
+      "login": "louie-tsai",
+      "commits": 3
+    },
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "lucianommartins",
+      "commits": 2
+    },
+    {
+      "login": "mgoin",
+      "commits": 2
+    },
+    {
+      "login": "bigPYJ1151",
+      "commits": 2
+    },
+    {
+      "login": "khluu",
+      "commits": 1
+    },
+    {
+      "login": "ywang96",
+      "commits": 1
+    },
+    {
+      "login": "Aratako",
+      "commits": 1
+    }
+  ],
+  "Google/gemma-4-E4B-it": [
+    {
+      "login": "louie-tsai",
+      "commits": 3
+    },
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "lucianommartins",
+      "commits": 2
+    },
+    {
+      "login": "mgoin",
+      "commits": 2
+    },
+    {
+      "login": "bigPYJ1151",
+      "commits": 2
+    },
+    {
+      "login": "khluu",
+      "commits": 1
+    },
+    {
+      "login": "ywang96",
+      "commits": 1
+    },
+    {
+      "login": "Aratako",
+      "commits": 1
+    }
+  ],
+  "Google/translategemma-27b-it": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    }
+  ],
+  "IFM/Jais-3-0.9B": [
+    {
+      "login": "GeorgeSherif",
+      "commits": 1
+    }
+  ],
+  "IFM/Jais-3-3.7B": [
+    {
+      "login": "GeorgeSherif",
+      "commits": 1
+    }
+  ],
+  "IFM/Jais-3-32B": [
+    {
+      "login": "GeorgeSherif",
+      "commits": 1
+    }
+  ],
+  "IFM/Jais-3-375B-A23B": [
+    {
+      "login": "GeorgeSherif",
+      "commits": 1
+    }
+  ],
+  "IFM/Jais-3-7B": [
+    {
+      "login": "GeorgeSherif",
+      "commits": 1
+    }
+  ],
+  "IFM/Jais-3-MoVA-36B-A4B": [
+    {
+      "login": "GeorgeSherif",
+      "commits": 1
+    }
+  ],
+  "IFM/K2-Horizon-0.9B": [
+    {
+      "login": "namgyu-youn",
+      "commits": 3
+    },
+    {
+      "login": "Dao007forever",
+      "commits": 2
+    },
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "tanyuqian",
+      "commits": 2
+    },
+    {
+      "login": "yiminghub2024",
+      "commits": 2
+    }
+  ],
+  "IFM/K2-Horizon-3.7B": [
+    {
+      "login": "tanyuqian",
+      "commits": 3
+    },
+    {
+      "login": "Dao007forever",
+      "commits": 2
+    },
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "yiminghub2024",
+      "commits": 2
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 2
+    }
+  ],
+  "IFM/K2-Horizon-32B": [
+    {
+      "login": "tanyuqian",
+      "commits": 3
+    },
+    {
+      "login": "Dao007forever",
+      "commits": 2
+    },
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "yiminghub2024",
+      "commits": 2
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 2
+    }
+  ],
+  "IFM/K2-Horizon-375B-A23B": [
+    {
+      "login": "tanyuqian",
+      "commits": 3
+    },
+    {
+      "login": "Dao007forever",
+      "commits": 2
+    },
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "yiminghub2024",
+      "commits": 2
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 2
+    },
+    {
+      "login": "sshlyapn",
+      "commits": 1
+    }
+  ],
+  "IFM/K2-Horizon-7B": [
+    {
+      "login": "tanyuqian",
+      "commits": 3
+    },
+    {
+      "login": "Dao007forever",
+      "commits": 2
+    },
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "yiminghub2024",
+      "commits": 2
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 2
+    }
+  ],
+  "IFM/K2-Horizon-MoVA-36B-A4B": [
+    {
+      "login": "tanyuqian",
+      "commits": 3
+    },
+    {
+      "login": "Dao007forever",
+      "commits": 2
+    },
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "yiminghub2024",
+      "commits": 2
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 2
+    }
+  ],
+  "IndexTeam/IndexTTS-2.5": [
+    {
+      "login": "Sy0307",
+      "commits": 2
+    },
+    {
+      "login": "linyueqian",
+      "commits": 1
+    }
+  ],
+  "JetBrains/Mellum2-12B-A2.5B-Instruct": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    },
+    {
+      "login": "haichen07",
+      "commits": 1
+    }
+  ],
+  "JetBrains/Mellum2-12B-A2.5B-Thinking": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "Lightricks/LTX-2.5-Diffusers": [
+    {
+      "login": "lishunyang12",
+      "commits": 1
+    }
+  ],
+  "LiquidAI/LFM2.5-1.2B-Base": [
+    {
+      "login": "vincentzed",
+      "commits": 2
+    }
+  ],
+  "LiquidAI/LFM2.5-1.2B-Instruct": [
+    {
+      "login": "vincentzed",
+      "commits": 2
+    }
+  ],
+  "LiquidAI/LFM2.5-1.2B-JP": [
+    {
+      "login": "vincentzed",
+      "commits": 2
+    }
+  ],
+  "LiquidAI/LFM2.5-1.2B-JP-202606": [
+    {
+      "login": "vincentzed",
+      "commits": 2
+    }
+  ],
+  "LiquidAI/LFM2.5-1.2B-Thinking": [
+    {
+      "login": "vincentzed",
+      "commits": 2
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "LiquidAI/LFM2.5-230M": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    }
+  ],
+  "LiquidAI/LFM2.5-350M": [
+    {
+      "login": "vincentzed",
+      "commits": 2
+    }
+  ],
+  "LiquidAI/LFM2.5-8B-A1B": [
+    {
+      "login": "vincentzed",
+      "commits": 2
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "LiquidAI/LFM2.5-VL-1.6B": [
+    {
+      "login": "vincentzed",
+      "commits": 2
+    }
+  ],
+  "LiquidAI/LFM2.5-VL-450M": [
+    {
+      "login": "vincentzed",
+      "commits": 2
+    }
+  ],
+  "MiniMaxAI/MiniMax-H3": [
+    {
+      "login": "yiminghub2024",
+      "commits": 4
+    },
+    {
+      "login": "lishunyang12",
+      "commits": 3
+    },
+    {
+      "login": "princepride",
+      "commits": 2
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Xunzhuo",
+      "commits": 1
+    },
+    {
+      "login": "BadrBasowid",
+      "commits": 1
+    },
+    {
+      "login": "david6666666",
+      "commits": 1
+    },
+    {
+      "login": "bobboli",
+      "commits": 1
+    }
+  ],
+  "MiniMaxAI/MiniMax-M2": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "mgoin",
+      "commits": 1
+    },
+    {
+      "login": "hongxiayang",
+      "commits": 1
+    },
+    {
+      "login": "vllmellm",
+      "commits": 1
+    },
+    {
+      "login": "faradawn",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "MiniMaxAI/MiniMax-M2.1": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "hongxiayang",
+      "commits": 1
+    },
+    {
+      "login": "vllmellm",
+      "commits": 1
+    },
+    {
+      "login": "faradawn",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "MiniMaxAI/MiniMax-M2.5": [
+    {
+      "login": "faradawn",
+      "commits": 3
+    },
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "anish-shanbhag",
+      "commits": 1
+    },
+    {
+      "login": "hongxiayang",
+      "commits": 1
+    },
+    {
+      "login": "vllmellm",
+      "commits": 1
+    },
+    {
+      "login": "MatthewBonanni",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "MiniMaxAI/MiniMax-M2.7": [
+    {
+      "login": "esmeetu",
+      "commits": 4
+    },
+    {
+      "login": "faradawn",
+      "commits": 3
+    },
+    {
+      "login": "prodney-dev",
+      "commits": 2
+    },
+    {
+      "login": "hongxiayang",
+      "commits": 1
+    },
+    {
+      "login": "Kh4L",
+      "commits": 1
+    },
+    {
+      "login": "vllmellm",
+      "commits": 1
+    }
+  ],
+  "MiniMaxAI/MiniMax-M3": [
+    {
+      "login": "hongxiayang",
+      "commits": 6
+    },
+    {
+      "login": "faradawn",
+      "commits": 6
+    },
+    {
+      "login": "esmeetu",
+      "commits": 5
+    },
+    {
+      "login": "haic0",
+      "commits": 3
+    },
+    {
+      "login": "haichen07",
+      "commits": 3
+    },
+    {
+      "login": "chunfangamd",
+      "commits": 3
+    },
+    {
+      "login": "xianbaoqian",
+      "commits": 2
+    },
+    {
+      "login": "functionstackx",
+      "commits": 2
+    },
+    {
+      "login": "Fangzhou-Ai",
+      "commits": 2
+    },
+    {
+      "login": "xinli-sw",
+      "commits": 2
+    },
+    {
+      "login": "jeejeelee",
+      "commits": 1
+    },
+    {
+      "login": "lengrongfu",
+      "commits": 1
+    },
+    {
+      "login": "tuukkjs",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "hshrivastava-droid",
+      "commits": 1
+    },
+    {
+      "login": "key4ng",
+      "commits": 1
+    },
+    {
+      "login": "khluu",
+      "commits": 1
+    },
+    {
+      "login": "RohitNagraj",
+      "commits": 1
+    },
+    {
+      "login": "indivats",
+      "commits": 1
+    }
+  ],
+  "OpenGVLab/InternVL3_5-8B": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    }
+  ],
+  "OpenMOSS-Team/MOSS-Image-Base": [
+    {
+      "login": "gcanlin",
+      "commits": 1
+    }
+  ],
+  "OpenMOSS-Team/MOSS-SoundEffect": [
+    {
+      "login": "linyueqian",
+      "commits": 1
+    }
+  ],
+  "OpenMOSS-Team/MOSS-TTS": [
+    {
+      "login": "linyueqian",
+      "commits": 1
+    }
+  ],
+  "OpenMOSS-Team/MOSS-TTS-Realtime": [
+    {
+      "login": "linyueqian",
+      "commits": 1
+    }
+  ],
+  "OpenMOSS-Team/MOSS-TTSD-v1.0": [
+    {
+      "login": "linyueqian",
+      "commits": 1
+    }
+  ],
+  "OpenMOSS-Team/MOSS-Transcribe-Diarize": [
+    {
+      "login": "gcanlin",
+      "commits": 1
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "wskr00",
+      "commits": 1
+    }
+  ],
+  "OpenMOSS-Team/MOSS-VoiceGenerator": [
+    {
+      "login": "linyueqian",
+      "commits": 1
+    }
+  ],
+  "PaddlePaddle/PaddleOCR-VL": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    }
+  ],
+  "PaddlePaddle/PaddleOCR-VL-1.5": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    }
+  ],
+  "PaddlePaddle/PaddleOCR-VL-1.6": [
+    {
+      "login": "lilllee",
+      "commits": 1
+    }
+  ],
+  "Qwen/QwQ-32B": [
+    {
+      "login": "louie-tsai",
+      "commits": 2
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen-Image": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    }
+  ],
+  "Qwen/Qwen-Image-2.1": [
+    {
+      "login": "xianbaoqian",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen2.5-32B": [
+    {
+      "login": "mtsokol",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen2.5-VL-72B-Instruct": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "mtsokol",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen2.5-VL-7B-Instruct": [
+    {
+      "login": "louie-tsai",
+      "commits": 3
+    },
+    {
+      "login": "mtsokol",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3-1.7B": [
+    {
+      "login": "louie-tsai",
+      "commits": 2
+    }
+  ],
+  "Qwen/Qwen3-14B": [
+    {
+      "login": "louie-tsai",
+      "commits": 2
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3-235B-A22B-Instruct-2507": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "faradawn",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3-30B-A3B": [
+    {
+      "login": "louie-tsai",
+      "commits": 2
+    },
+    {
+      "login": "sureshnam",
+      "commits": 1
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "NaraFluorine",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3-32B": [
+    {
+      "login": "Yejing-Lai",
+      "commits": 2
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 2
+    },
+    {
+      "login": "mtsokol",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3-4B": [
+    {
+      "login": "louie-tsai",
+      "commits": 3
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 2
+    },
+    {
+      "login": "mtsokol",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3-8B": [
+    {
+      "login": "louie-tsai",
+      "commits": 2
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3-ASR-1.7B": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3-Coder-480B-A35B-Instruct": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "mtsokol",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    },
+    {
+      "login": "jbelloncastro",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3-Next-80B-A3B-Instruct": [
+    {
+      "login": "namgyu-youn",
+      "commits": 2
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice": [
+    {
+      "login": "linyueqian",
+      "commits": 2
+    }
+  ],
+  "Qwen/Qwen3-VL-235B-A22B-Instruct": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "amd-bishwoadhikari",
+      "commits": 1
+    },
+    {
+      "login": "bichowdh",
+      "commits": 1
+    },
+    {
+      "login": "eppaneamd",
+      "commits": 1
+    },
+    {
+      "login": "jakki-amd",
+      "commits": 1
+    },
+    {
+      "login": "sahirema",
+      "commits": 1
+    },
+    {
+      "login": "vorapolsiloai",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3-VL-30B-A3B-Instruct": [
+    {
+      "login": "louie-tsai",
+      "commits": 2
+    }
+  ],
+  "Qwen/Qwen3.5-0.8B": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Dboyqiao",
+      "commits": 1
+    },
+    {
+      "login": "yintong-lu",
+      "commits": 1
+    },
+    {
+      "login": "yuwenzho",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3.5-122B-A10B": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "jolpindo96",
+      "commits": 2
+    },
+    {
+      "login": "mgoin",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3.5-27B": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Dboyqiao",
+      "commits": 1
+    },
+    {
+      "login": "yintong-lu",
+      "commits": 1
+    },
+    {
+      "login": "yuwenzho",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3.5-2B": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Dboyqiao",
+      "commits": 1
+    },
+    {
+      "login": "yintong-lu",
+      "commits": 1
+    },
+    {
+      "login": "yuwenzho",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3.5-35B-A3B": [
+    {
+      "login": "louie-tsai",
+      "commits": 2
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Dboyqiao",
+      "commits": 1
+    },
+    {
+      "login": "yintong-lu",
+      "commits": 1
+    },
+    {
+      "login": "yuwenzho",
+      "commits": 1
+    },
+    {
+      "login": "mgoin",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3.5-397B-A17B": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    },
+    {
+      "login": "abtraore",
+      "commits": 1
+    },
+    {
+      "login": "yewentao256",
+      "commits": 1
+    },
+    {
+      "login": "NaraFluorine",
+      "commits": 1
+    },
+    {
+      "login": "mgoin",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    },
+    {
+      "login": "khluu",
+      "commits": 1
+    },
+    {
+      "login": "jolpindo96",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3.5-4B": [
+    {
+      "login": "louie-tsai",
+      "commits": 2
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Dboyqiao",
+      "commits": 1
+    },
+    {
+      "login": "yintong-lu",
+      "commits": 1
+    },
+    {
+      "login": "yuwenzho",
+      "commits": 1
+    },
+    {
+      "login": "mgoin",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3.5-9B": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Dboyqiao",
+      "commits": 1
+    },
+    {
+      "login": "yintong-lu",
+      "commits": 1
+    },
+    {
+      "login": "yuwenzho",
+      "commits": 1
+    },
+    {
+      "login": "mgoin",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3.6-27B": [
+    {
+      "login": "prodney-dev",
+      "commits": 5
+    },
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "NaraFluorine",
+      "commits": 2
+    },
+    {
+      "login": "abtraore",
+      "commits": 1
+    },
+    {
+      "login": "alvarobartt",
+      "commits": 1
+    },
+    {
+      "login": "MatthewBonanni",
+      "commits": 1
+    },
+    {
+      "login": "xianbaoqian",
+      "commits": 1
+    },
+    {
+      "login": "stecasta",
+      "commits": 1
+    },
+    {
+      "login": "Dboyqiao",
+      "commits": 1
+    },
+    {
+      "login": "yintong-lu",
+      "commits": 1
+    },
+    {
+      "login": "yuwenzho",
+      "commits": 1
+    },
+    {
+      "login": "faradawn",
+      "commits": 1
+    },
+    {
+      "login": "mgoin",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    },
+    {
+      "login": "agarg21",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3.6-35B-A3B": [
+    {
+      "login": "prodney-dev",
+      "commits": 5
+    },
+    {
+      "login": "faradawn",
+      "commits": 4
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "abtraore",
+      "commits": 1
+    },
+    {
+      "login": "Kh4L",
+      "commits": 1
+    },
+    {
+      "login": "MatthewBonanni",
+      "commits": 1
+    },
+    {
+      "login": "xianbaoqian",
+      "commits": 1
+    },
+    {
+      "login": "stecasta",
+      "commits": 1
+    },
+    {
+      "login": "Dboyqiao",
+      "commits": 1
+    },
+    {
+      "login": "yintong-lu",
+      "commits": 1
+    },
+    {
+      "login": "yuwenzho",
+      "commits": 1
+    },
+    {
+      "login": "mgoin",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3.8-2.4T-A95B": [
+    {
+      "login": "xianbaoqian",
+      "commits": 10
+    },
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "kylesayrs",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3.8-27B": [
+    {
+      "login": "yiminghub2024",
+      "commits": 3
+    },
+    {
+      "login": "xianbaoqian",
+      "commits": 2
+    },
+    {
+      "login": "dsikka",
+      "commits": 2
+    },
+    {
+      "login": "abtraore",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "Etelis",
+      "commits": 1
+    },
+    {
+      "login": "EtelisIBM",
+      "commits": 1
+    },
+    {
+      "login": "prodney-dev",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "dromerosm",
+      "commits": 1
+    },
+    {
+      "login": "yuwenzho",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3.8-Flash-Next": [
+    {
+      "login": "gau-nernst",
+      "commits": 3
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 3
+    },
+    {
+      "login": "xianbaoqian",
+      "commits": 2
+    },
+    {
+      "login": "prodney-dev",
+      "commits": 1
+    },
+    {
+      "login": "robertoberto",
+      "commits": 1
+    },
+    {
+      "login": "Etelis",
+      "commits": 1
+    },
+    {
+      "login": "indivats",
+      "commits": 1
+    }
+  ],
+  "Qwen/Qwen3Guard-Gen-8B": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "matti-palomaki-amd",
+      "commits": 1
+    }
+  ],
+  "Wan-AI/Wan2.2-T2V-A14B-Diffusers": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    },
+    {
+      "login": "ChangLiu0709",
+      "commits": 1
+    }
+  ],
+  "XiaomiMiMo/MiMo-V2-Flash": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    }
+  ],
+  "XiaomiMiMo/MiMo-V2.5": [
+    {
+      "login": "esmeetu",
+      "commits": 4
+    }
+  ],
+  "XiaomiMiMo/MiMo-V2.5-Pro": [
+    {
+      "login": "esmeetu",
+      "commits": 4
+    },
+    {
+      "login": "ZJY0516",
+      "commits": 2
+    },
+    {
+      "login": "Isotr0py",
+      "commits": 1
+    }
+  ],
+  "XiaomiMiMo/MiMo-V2.6-Flash-RL": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    },
+    {
+      "login": "BenWongCityuCS",
+      "commits": 2
+    },
+    {
+      "login": "akii96",
+      "commits": 1
+    },
+    {
+      "login": "vllmellm",
+      "commits": 1
+    }
+  ],
+  "XiaomiMiMo/MiMo-V2.6-Pro-RL": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    },
+    {
+      "login": "BenWongCityuCS",
+      "commits": 2
+    },
+    {
+      "login": "akii96",
+      "commits": 1
+    }
+  ],
+  "arcee-ai/Trinity-Large-Thinking": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "baidu/ERNIE-4.5-21B-A3B-PT": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    }
+  ],
+  "baidu/ERNIE-4.5-VL-28B-A3B-PT": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "baidu/Unlimited-OCR": [
+    {
+      "login": "jeejeelee",
+      "commits": 2
+    },
+    {
+      "login": "ywang96",
+      "commits": 2
+    }
+  ],
+  "bharatgenai/Param2-17B-A2.4B-Thinking": [
+    {
+      "login": "VMD7",
+      "commits": 1
+    }
+  ],
+  "black-forest-labs/flux-3-image-klein": [
+    {
+      "login": "Isotr0py",
+      "commits": 1
+    }
+  ],
+  "bosonai/higgs-audio-v3-tts-4b": [
+    {
+      "login": "linyueqian",
+      "commits": 1
+    }
+  ],
+  "deepseek-ai/DeepSeek-OCR": [
+    {
+      "login": "Yejing-Lai",
+      "commits": 2
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "GoldenGrapeGentleman",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    }
+  ],
+  "deepseek-ai/DeepSeek-OCR-2": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "deepseek-ai/DeepSeek-R1": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    },
+    {
+      "login": "GoldenGrapeGentleman",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    },
+    {
+      "login": "simondanielsson",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    },
+    {
+      "login": "farlukas",
+      "commits": 1
+    },
+    {
+      "login": "eky-amd",
+      "commits": 1
+    }
+  ],
+  "deepseek-ai/DeepSeek-V3": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    },
+    {
+      "login": "ApostaC",
+      "commits": 1
+    },
+    {
+      "login": "ivanium",
+      "commits": 1
+    },
+    {
+      "login": "mpashkovskii",
+      "commits": 1
+    },
+    {
+      "login": "tjtanaa",
+      "commits": 1
+    },
+    {
+      "login": "GoldenGrapeGentleman",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    },
+    {
+      "login": "simondanielsson",
+      "commits": 1
+    }
+  ],
+  "deepseek-ai/DeepSeek-V3.1": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "GoldenGrapeGentleman",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    }
+  ],
+  "deepseek-ai/DeepSeek-V3.2": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "yewentao256",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "deepseek-ai/DeepSeek-V3.2-Exp": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "GoldenGrapeGentleman",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    }
+  ],
+  "deepseek-ai/DeepSeek-V4-Flash": [
+    {
+      "login": "esmeetu",
+      "commits": 13
+    },
+    {
+      "login": "yiminghub2024",
+      "commits": 6
+    },
+    {
+      "login": "prodney-dev",
+      "commits": 2
+    },
+    {
+      "login": "zhewenl",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "zixi-qi",
+      "commits": 1
+    },
+    {
+      "login": "NickLucche",
+      "commits": 1
+    },
+    {
+      "login": "ywang96",
+      "commits": 1
+    },
+    {
+      "login": "dsingal0",
+      "commits": 1
+    },
+    {
+      "login": "Kh4L",
+      "commits": 1
+    },
+    {
+      "login": "tjtanaa",
+      "commits": 1
+    },
+    {
+      "login": "wuhuikx",
+      "commits": 1
+    },
+    {
+      "login": "yewentao256",
+      "commits": 1
+    },
+    {
+      "login": "sagearc",
+      "commits": 1
+    },
+    {
+      "login": "Etelis",
+      "commits": 1
+    },
+    {
+      "login": "EtelisIBM",
+      "commits": 1
+    },
+    {
+      "login": "benchislett",
+      "commits": 1
+    },
+    {
+      "login": "vllmellm",
+      "commits": 1
+    },
+    {
+      "login": "ivanium",
+      "commits": 1
+    },
+    {
+      "login": "monkeyLoveding",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "yiminghub2024",
+      "commits": 1
+    },
+    {
+      "login": "indivats",
+      "commits": 1
+    },
+    {
+      "login": "ivanium",
+      "commits": 1
+    },
+    {
+      "login": "jolpindo96",
+      "commits": 1
+    }
+  ],
+  "deepseek-ai/DeepSeek-V4-Pro": [
+    {
+      "login": "esmeetu",
+      "commits": 14
+    },
+    {
+      "login": "ivanium",
+      "commits": 3
+    },
+    {
+      "login": "xinli-sw",
+      "commits": 3
+    },
+    {
+      "login": "ywang96",
+      "commits": 2
+    },
+    {
+      "login": "simon-mo",
+      "commits": 2
+    },
+    {
+      "login": "zixi-qi",
+      "commits": 2
+    },
+    {
+      "login": "functionstackx",
+      "commits": 2
+    },
+    {
+      "login": "tjtanaa",
+      "commits": 2
+    },
+    {
+      "login": "yiminghub2024",
+      "commits": 2
+    },
+    {
+      "login": "haic0",
+      "commits": 2
+    },
+    {
+      "login": "haichen07",
+      "commits": 2
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "wuhuikx",
+      "commits": 1
+    },
+    {
+      "login": "yewentao256",
+      "commits": 1
+    },
+    {
+      "login": "ApostaC",
+      "commits": 1
+    },
+    {
+      "login": "mpashkovskii",
+      "commits": 1
+    },
+    {
+      "login": "Etelis",
+      "commits": 1
+    },
+    {
+      "login": "EtelisIBM",
+      "commits": 1
+    },
+    {
+      "login": "Ankur-singh",
+      "commits": 1
+    },
+    {
+      "login": "chunfangamd",
+      "commits": 1
+    },
+    {
+      "login": "Fangzhou-Ai",
+      "commits": 1
+    },
+    {
+      "login": "mnaumanofficial13-svg",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "jackiectl2",
+      "commits": 1
+    }
+  ],
+  "deepseek-ai/DeepSeek-V4.1-Flash": [
+    {
+      "login": "functionstackx",
+      "commits": 6
+    },
+    {
+      "login": "Fangzhou-Ai",
+      "commits": 5
+    },
+    {
+      "login": "esmeetu",
+      "commits": 4
+    },
+    {
+      "login": "hshrivastava-droid",
+      "commits": 4
+    },
+    {
+      "login": "maeehart",
+      "commits": 2
+    },
+    {
+      "login": "ZJY0516",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "ivanium",
+      "commits": 1
+    },
+    {
+      "login": "chunfangamd",
+      "commits": 1
+    },
+    {
+      "login": "Etelis",
+      "commits": 1
+    },
+    {
+      "login": "jmeadlock",
+      "commits": 1
+    },
+    {
+      "login": "ahmed-bsod",
+      "commits": 1
+    },
+    {
+      "login": "key4ng",
+      "commits": 1
+    },
+    {
+      "login": "Juntian777",
+      "commits": 1
+    }
+  ],
+  "dots-studio/dots3-note-prev": [
+    {
+      "login": "KurodaKanbei",
+      "commits": 1
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "wqqqqq0720",
+      "commits": 1
+    }
+  ],
+  "fishaudio/drama-3": [
+    {
+      "login": "linyueqian",
+      "commits": 1
+    }
+  ],
+  "fishaudio/s2-pro": [
+    {
+      "login": "linyueqian",
+      "commits": 1
+    }
+  ],
+  "ibm-granite/granite-3.2-2b-instruct": [
+    {
+      "login": "louie-tsai",
+      "commits": 3
+    }
+  ],
+  "inclusionAI/Ling-2.6-1T": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "ZJY0516",
+      "commits": 1
+    },
+    {
+      "login": "pinsiangamd",
+      "commits": 1
+    },
+    {
+      "login": "tanpinsiang",
+      "commits": 1
+    }
+  ],
+  "inclusionAI/Ling-2.6-flash": [
+    {
+      "login": "ZJY0516",
+      "commits": 1
+    },
+    {
+      "login": "pinsiangamd",
+      "commits": 1
+    },
+    {
+      "login": "tanpinsiang",
+      "commits": 1
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    }
+  ],
+  "inclusionAI/Ling-3.0-flash": [
+    {
+      "login": "zexplorerhj",
+      "commits": 3
+    },
+    {
+      "login": "phyde682",
+      "commits": 2
+    },
+    {
+      "login": "Schnitzel",
+      "commits": 1
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "wqqqqq0720",
+      "commits": 1
+    },
+    {
+      "login": "indivats",
+      "commits": 1
+    },
+    {
+      "login": "jotsaiun",
+      "commits": 1
+    }
+  ],
+  "inclusionAI/Ling-3.0-flash-VL": [
+    {
+      "login": "zexplorerhj",
+      "commits": 1
+    }
+  ],
+  "inclusionAI/Ling-3.0-tiny": [
+    {
+      "login": "zexplorerhj",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "wqqqqq0720",
+      "commits": 1
+    }
+  ],
+  "inclusionAI/Ling-3.1-flash": [
+    {
+      "login": "zexplorerhj",
+      "commits": 1
+    },
+    {
+      "login": "ZJY0516",
+      "commits": 1
+    },
+    {
+      "login": "indivats",
+      "commits": 1
+    }
+  ],
+  "inclusionAI/Ming-omni-tts-0.5B": [
+    {
+      "login": "linyueqian",
+      "commits": 1
+    }
+  ],
+  "inclusionAI/Ring-1T-FP8": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "yewentao256",
+      "commits": 1
+    }
+  ],
+  "inclusionAI/Ring-2.6-1T": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    }
+  ],
+  "internlm/Intern-S1": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "internlm/Intern-S2-397B": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    }
+  ],
+  "internlm/Intern-S2-Preview": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    }
+  ],
+  "jinaai/jina-embeddings-v5-text-small": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    }
+  ],
+  "jinaai/jina-reranker-m0": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "yewentao256",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "meituan-longcat/LongCat-Image-Edit": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    }
+  ],
+  "meta-llama/Llama-3.1-8B": [
+    {
+      "login": "louie-tsai",
+      "commits": 2
+    },
+    {
+      "login": "bigPYJ1151",
+      "commits": 1
+    }
+  ],
+  "meta-llama/Llama-3.1-8B-Instruct": [
+    {
+      "login": "louie-tsai",
+      "commits": 5
+    },
+    {
+      "login": "Yejing-Lai",
+      "commits": 2
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "mgoin",
+      "commits": 1
+    },
+    {
+      "login": "mtsokol",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    },
+    {
+      "login": "bigPYJ1151",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "meta-llama/Llama-3.2-1B": [
+    {
+      "login": "louie-tsai",
+      "commits": 2
+    },
+    {
+      "login": "bigPYJ1151",
+      "commits": 1
+    }
+  ],
+  "meta-llama/Llama-3.2-1B-Instruct": [
+    {
+      "login": "louie-tsai",
+      "commits": 2
+    },
+    {
+      "login": "bigPYJ1151",
+      "commits": 1
+    }
+  ],
+  "meta-llama/Llama-3.2-3B-Instruct": [
+    {
+      "login": "louie-tsai",
+      "commits": 2
+    },
+    {
+      "login": "bigPYJ1151",
+      "commits": 1
+    }
+  ],
+  "meta-llama/Llama-3.3-70B-Instruct": [
+    {
+      "login": "louie-tsai",
+      "commits": 4
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "mtsokol",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    },
+    {
+      "login": "bigPYJ1151",
+      "commits": 1
+    },
+    {
+      "login": "sureshnam",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "meta-llama/Llama-4-Scout-17B-16E-Instruct": [
+    {
+      "login": "louie-tsai",
+      "commits": 4
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    },
+    {
+      "login": "bigPYJ1151",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "meta-models/Muse-Glimmer-30B": [
+    {
+      "login": "xianbaoqian",
+      "commits": 2
+    },
+    {
+      "login": "dsikka",
+      "commits": 1
+    },
+    {
+      "login": "tjtanaa",
+      "commits": 1
+    },
+    {
+      "login": "abtraore",
+      "commits": 1
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Yejing-Lai",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "ExpertVagabond",
+      "commits": 1
+    }
+  ],
+  "meta-models/Muse-Spark-Open-816B-A42B": [
+    {
+      "login": "andyluo7",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    },
+    {
+      "login": "hongxiayang",
+      "commits": 1
+    },
+    {
+      "login": "xianbaoqian",
+      "commits": 1
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "mgoin",
+      "commits": 1
+    }
+  ],
+  "microsoft/Phi-4-mini-instruct": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "microsoft/Phi-4-multimodal-instruct": [
+    {
+      "login": "louie-tsai",
+      "commits": 2
+    }
+  ],
+  "microsoft/Phi-4-reasoning": [
+    {
+      "login": "louie-tsai",
+      "commits": 2
+    }
+  ],
+  "mindlab-research/Macaron-V1-Coding-Venti": [
+    {
+      "login": "JaredforReal",
+      "commits": 1
+    },
+    {
+      "login": "indivats",
+      "commits": 1
+    }
+  ],
+  "mistralai/Ministral-3-14B-Instruct-2512": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "matti-palomaki-amd",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "mistralai/Ministral-3-8B-Reasoning-2512": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "matti-palomaki-amd",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "mistralai/Mistral-Large-3-675B-Instruct-2512": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "mistralai/Mistral-Medium-3.5-128B": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "matti-palomaki-amd",
+      "commits": 1
+    },
+    {
+      "login": "yewentao256",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "mistralai/Mistral-Small-4-119B-2603": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "yewentao256",
+      "commits": 1
+    },
+    {
+      "login": "MatthewBonanni",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "mistralai/Voxtral-4B-TTS-2603": [
+    {
+      "login": "linyueqian",
+      "commits": 1
+    }
+  ],
+  "mistralai/Voxtral-Mini-4B-Realtime-2602": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "LironKesem",
+      "commits": 1
+    }
+  ],
+  "moonshotai/Kimi-K2-Instruct": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    },
+    {
+      "login": "tjtanaa",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "moonshotai/Kimi-K2-Thinking": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "moonshotai/Kimi-K2.5": [
+    {
+      "login": "esmeetu",
+      "commits": 5
+    },
+    {
+      "login": "ywang96",
+      "commits": 3
+    },
+    {
+      "login": "hongxiayang",
+      "commits": 2
+    },
+    {
+      "login": "haic0",
+      "commits": 2
+    },
+    {
+      "login": "haichen07",
+      "commits": 2
+    },
+    {
+      "login": "Fangzhou-Ai",
+      "commits": 2
+    },
+    {
+      "login": "mmangkad",
+      "commits": 1
+    },
+    {
+      "login": "tanpinsiang",
+      "commits": 1
+    },
+    {
+      "login": "simon-mo",
+      "commits": 1
+    }
+  ],
+  "moonshotai/Kimi-K2.6": [
+    {
+      "login": "ywang96",
+      "commits": 4
+    },
+    {
+      "login": "esmeetu",
+      "commits": 3
+    },
+    {
+      "login": "mmangkad",
+      "commits": 1
+    },
+    {
+      "login": "hongxiayang",
+      "commits": 1
+    },
+    {
+      "login": "tanpinsiang",
+      "commits": 1
+    },
+    {
+      "login": "Ankur-singh",
+      "commits": 1
+    },
+    {
+      "login": "xinli-sw",
+      "commits": 1
+    },
+    {
+      "login": "simon-mo",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "moonshotai/Kimi-K2.7-Code": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "hongxiayang",
+      "commits": 1
+    },
+    {
+      "login": "tanpinsiang",
+      "commits": 1
+    },
+    {
+      "login": "ovowei",
+      "commits": 1
+    },
+    {
+      "login": "simon-mo",
+      "commits": 1
+    }
+  ],
+  "moonshotai/Kimi-K3": [
+    {
+      "login": "esmeetu",
+      "commits": 12
+    },
+    {
+      "login": "yiminghub2024",
+      "commits": 3
+    },
+    {
+      "login": "kylesayrs",
+      "commits": 2
+    },
+    {
+      "login": "xianbaoqian",
+      "commits": 1
+    },
+    {
+      "login": "hongxiayang",
+      "commits": 1
+    },
+    {
+      "login": "panpan0000",
+      "commits": 1
+    },
+    {
+      "login": "simon-mo",
+      "commits": 1
+    },
+    {
+      "login": "functionstackx",
+      "commits": 1
+    },
+    {
+      "login": "Fangzhou-Ai",
+      "commits": 1
+    },
+    {
+      "login": "gau-nernst",
+      "commits": 1
+    },
+    {
+      "login": "seungrokj",
+      "commits": 1
+    },
+    {
+      "login": "shanjiaz",
+      "commits": 1
+    },
+    {
+      "login": "Ankur-singh",
+      "commits": 1
+    },
+    {
+      "login": "faradawn",
+      "commits": 1
+    },
+    {
+      "login": "ivanium",
+      "commits": 1
+    },
+    {
+      "login": "NickLucche",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "jiangLLM",
+      "commits": 1
+    },
+    {
+      "login": "ppalanga",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    },
+    {
+      "login": "chunfangamd",
+      "commits": 1
+    },
+    {
+      "login": "key4ng",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    },
+    {
+      "login": "YukioZzz",
+      "commits": 1
+    },
+    {
+      "login": "hshrivastava-droid",
+      "commits": 1
+    },
+    {
+      "login": "xinli-sw",
+      "commits": 1
+    }
+  ],
+  "moonshotai/Kimi-Linear-48B-A3B-Instruct": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    }
+  ],
+  "nvidia/Cosmos3-Nano": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    }
+  ],
+  "nvidia/Cosmos3-Super": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    }
+  ],
+  "nvidia/Cosmos3-Super-Image2Video": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    }
+  ],
+  "nvidia/Cosmos3-Super-Text2Image": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    }
+  ],
+  "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Etelis",
+      "commits": 1
+    },
+    {
+      "login": "EtelisIBM",
+      "commits": 1
+    },
+    {
+      "login": "Dboyqiao",
+      "commits": 1
+    },
+    {
+      "login": "yintong-lu",
+      "commits": 1
+    },
+    {
+      "login": "yuwenzho",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Etelis",
+      "commits": 1
+    },
+    {
+      "login": "EtelisIBM",
+      "commits": 1
+    },
+    {
+      "login": "Dboyqiao",
+      "commits": 1
+    },
+    {
+      "login": "yintong-lu",
+      "commits": 1
+    },
+    {
+      "login": "yuwenzho",
+      "commits": 1
+    }
+  ],
+  "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16": [
+    {
+      "login": "faradawn",
+      "commits": 3
+    },
+    {
+      "login": "prodney-dev",
+      "commits": 2
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Kh4L",
+      "commits": 1
+    },
+    {
+      "login": "MatthewBonanni",
+      "commits": 1
+    },
+    {
+      "login": "Etelis",
+      "commits": 1
+    },
+    {
+      "login": "EtelisIBM",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    }
+  ],
+  "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16": [
+    {
+      "login": "faradawn",
+      "commits": 1
+    },
+    {
+      "login": "yewentao256",
+      "commits": 1
+    },
+    {
+      "login": "Etelis",
+      "commits": 1
+    },
+    {
+      "login": "EtelisIBM",
+      "commits": 1
+    }
+  ],
+  "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16": [
+    {
+      "login": "faradawn",
+      "commits": 3
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    }
+  ],
+  "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4": [
+    {
+      "login": "pst2154",
+      "commits": 2
+    },
+    {
+      "login": "shanjiaz",
+      "commits": 1
+    }
+  ],
+  "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Etelis",
+      "commits": 1
+    },
+    {
+      "login": "EtelisIBM",
+      "commits": 1
+    }
+  ],
+  "nvidia/NVIDIA-Nemotron-Nano-9B-v2": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Etelis",
+      "commits": 1
+    },
+    {
+      "login": "EtelisIBM",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Etelis",
+      "commits": 1
+    },
+    {
+      "login": "EtelisIBM",
+      "commits": 1
+    }
+  ],
+  "openai/gpt-oss-120b": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    },
+    {
+      "login": "mmangkad",
+      "commits": 1
+    },
+    {
+      "login": "mtsokol",
+      "commits": 1
+    },
+    {
+      "login": "aas008",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "sureshnam",
+      "commits": 1
+    }
+  ],
+  "openai/gpt-oss-20b": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "Yejing-Lai",
+      "commits": 2
+    },
+    {
+      "login": "louie-tsai",
+      "commits": 2
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "openai/whisper-large-v3": [
+    {
+      "login": "louie-tsai",
+      "commits": 2
+    }
+  ],
+  "openbmb/MiniCPM-V-4.6": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    }
+  ],
+  "openbmb/MiniCPM5-1B": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    }
+  ],
+  "openbmb/MiniCPM5-2B": [
+    {
+      "login": "zhangtao2-1",
+      "commits": 1
+    }
+  ],
+  "openbmb/VoxCPM2": [
+    {
+      "login": "linyueqian",
+      "commits": 1
+    }
+  ],
+  "pfnet/plamo-3-nict-31b-base": [
+    {
+      "login": "Alnusjaponica",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "1fanwang",
+      "commits": 1
+    }
+  ],
+  "poolside/Laguna-M.1": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "poolside/Laguna-S-2.1": [
+    {
+      "login": "joerowell",
+      "commits": 1
+    },
+    {
+      "login": "akii96",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "poolside/Laguna-XS-2.1": [
+    {
+      "login": "joerowell",
+      "commits": 2
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "poolside/Laguna-XS.2": [
+    {
+      "login": "esmeetu",
+      "commits": 4
+    },
+    {
+      "login": "joerowell",
+      "commits": 2
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    },
+    {
+      "login": "haichen07",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "reflection/Beam-1.0-501B-A23B": [
+    {
+      "login": "kaiwu-reflection",
+      "commits": 1
+    },
+    {
+      "login": "xianbaoqian",
+      "commits": 1
+    }
+  ],
+  "stabilityai/stable-audio-open-1.0": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "JasonJ2021",
+      "commits": 1
+    },
+    {
+      "login": "linyueqian",
+      "commits": 1
+    }
+  ],
+  "stabilityai/stable-diffusion-3.5-medium": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "JasonJ2021",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    }
+  ],
+  "stepfun-ai/Step-3.5-Flash": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "stepfun-ai/Step-3.7-Flash": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    },
+    {
+      "login": "jeejeelee",
+      "commits": 1
+    },
+    {
+      "login": "ltd0924",
+      "commits": 1
+    }
+  ],
+  "stepfun-ai/Step-5-Preview": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    }
+  ],
+  "tencent/Hunyuan-A13B-Instruct": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    }
+  ],
+  "tencent/HunyuanOCR": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "tencent/Hy3": [
+    {
+      "login": "xianbaoqian",
+      "commits": 2
+    },
+    {
+      "login": "jotsaiun",
+      "commits": 2
+    },
+    {
+      "login": "hongxiayang",
+      "commits": 1
+    },
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "wqqqqq0720",
+      "commits": 1
+    },
+    {
+      "login": "indivats",
+      "commits": 1
+    }
+  ],
+  "tencent/Hy3-preview": [
+    {
+      "login": "esmeetu",
+      "commits": 4
+    },
+    {
+      "login": "andyluo7",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "tencent/Hy4-preview": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "indivats",
+      "commits": 1
+    },
+    {
+      "login": "matti-palomaki-amd",
+      "commits": 1
+    }
+  ],
+  "thinkingmachines/Inkling": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    },
+    {
+      "login": "ywang96",
+      "commits": 1
+    },
+    {
+      "login": "yiminghub2024",
+      "commits": 1
+    },
+    {
+      "login": "WoosukKwon",
+      "commits": 1
+    },
+    {
+      "login": "tanpinsiang",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "thinkingmachines/Inkling-Small": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "WoosukKwon",
+      "commits": 1
+    },
+    {
+      "login": "Etelis",
+      "commits": 1
+    },
+    {
+      "login": "EtelisIBM",
+      "commits": 1
+    },
+    {
+      "login": "tanpinsiang",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "vllm-sr/d3": [
+    {
+      "login": "Xunzhuo",
+      "commits": 1
+    }
+  ],
+  "vllm-sr/d3-edge": [
+    {
+      "login": "Xunzhuo",
+      "commits": 1
+    }
+  ],
+  "vllm-sr/d3-flash": [
+    {
+      "login": "Xunzhuo",
+      "commits": 1
+    }
+  ],
+  "vllm-sr/d3-lite": [
+    {
+      "login": "Xunzhuo",
+      "commits": 1
+    }
+  ],
+  "vllm-sr/d3-mini": [
+    {
+      "login": "Xunzhuo",
+      "commits": 1
+    }
+  ],
+  "vllm-sr/d3-nano": [
+    {
+      "login": "Xunzhuo",
+      "commits": 1
+    }
+  ],
+  "zai-org/GLM-4.5": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    }
+  ],
+  "zai-org/GLM-4.5V": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    }
+  ],
+  "zai-org/GLM-4.6": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "zai-org/GLM-4.6V": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "haic0",
+      "commits": 1
+    }
+  ],
+  "zai-org/GLM-4.7": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "zai-org/GLM-5": [
+    {
+      "login": "esmeetu",
+      "commits": 4
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "jin-amd",
+      "commits": 1
+    }
+  ],
+  "zai-org/GLM-5.1": [
+    {
+      "login": "esmeetu",
+      "commits": 3
+    },
+    {
+      "login": "mmangkad",
+      "commits": 1
+    },
+    {
+      "login": "ajith-sirra-amd",
+      "commits": 1
+    },
+    {
+      "login": "AjithSirra",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    },
+    {
+      "login": "jin-amd",
+      "commits": 1
+    }
+  ],
+  "zai-org/GLM-5.2": [
+    {
+      "login": "JaredforReal",
+      "commits": 2
+    },
+    {
+      "login": "vllmellm",
+      "commits": 2
+    },
+    {
+      "login": "xianbaoqian",
+      "commits": 2
+    },
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "jin-amd",
+      "commits": 2
+    },
+    {
+      "login": "jeejeelee",
+      "commits": 1
+    },
+    {
+      "login": "giuseppegrossi",
+      "commits": 1
+    },
+    {
+      "login": "hongxiayang",
+      "commits": 1
+    },
+    {
+      "login": "yewentao256",
+      "commits": 1
+    },
+    {
+      "login": "yiminghub2024",
+      "commits": 1
+    },
+    {
+      "login": "mgoin",
+      "commits": 1
+    },
+    {
+      "login": "xiao-llm",
+      "commits": 1
+    },
+    {
+      "login": "Etelis",
+      "commits": 1
+    },
+    {
+      "login": "EtelisIBM",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    }
+  ],
+  "zai-org/GLM-5.3": [
+    {
+      "login": "yiminghub2024",
+      "commits": 3
+    },
+    {
+      "login": "jin-amd",
+      "commits": 2
+    },
+    {
+      "login": "JaredforReal",
+      "commits": 1
+    },
+    {
+      "login": "Etelis",
+      "commits": 1
+    },
+    {
+      "login": "EtelisIBM",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "prodney-dev",
+      "commits": 1
+    },
+    {
+      "login": "Roderick-Wu",
+      "commits": 1
+    },
+    {
+      "login": "key4ng",
+      "commits": 1
+    },
+    {
+      "login": "khluu",
+      "commits": 1
+    },
+    {
+      "login": "sheldon-lang",
+      "commits": 1
+    }
+  ],
+  "zai-org/GLM-5.3-Flash": [
+    {
+      "login": "xianbaoqian",
+      "commits": 3
+    },
+    {
+      "login": "JaredforReal",
+      "commits": 2
+    },
+    {
+      "login": "esmeetu",
+      "commits": 2
+    },
+    {
+      "login": "yiminghub2024",
+      "commits": 2
+    },
+    {
+      "login": "jamesETsmith",
+      "commits": 2
+    },
+    {
+      "login": "simondanielsson",
+      "commits": 2
+    },
+    {
+      "login": "jotsaiun",
+      "commits": 1
+    },
+    {
+      "login": "dsikka",
+      "commits": 1
+    },
+    {
+      "login": "ziliangpeng",
+      "commits": 1
+    },
+    {
+      "login": "BugenZhao",
+      "commits": 1
+    },
+    {
+      "login": "Etelis",
+      "commits": 1
+    }
+  ],
+  "zai-org/GLM-ASR-Nano-2512": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    }
+  ],
+  "zai-org/GLM-GA": [
+    {
+      "login": "JaredforReal",
+      "commits": 1
+    }
+  ],
+  "zai-org/GLM-Image": [
+    {
+      "login": "esmeetu",
+      "commits": 2
+    }
+  ],
+  "zai-org/GLM-OCR": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ],
+  "zai-org/GLM-TTS": [
+    {
+      "login": "linyueqian",
+      "commits": 1
+    }
+  ],
+  "zai-org/Glyph": [
+    {
+      "login": "esmeetu",
+      "commits": 1
+    }
+  ],
+  "zai-org/glm-4-9b-hf": [
+    {
+      "login": "louie-tsai",
+      "commits": 2
+    },
+    {
+      "login": "namgyu-youn",
+      "commits": 1
+    }
+  ]
+}

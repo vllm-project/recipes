@@ -1,0 +1,63 @@
+# Refresh recipe-contributors.json — the people credited on each recipe page
+# and in the JSON API — from the git history of every recipe YAML (see
+# scripts/fetch-contributors.mjs), and commit it to main when it changed.
+# Lock bumps by bump-sources.yml don't trigger push workflows, so the schedule
+# picks up recipe changes merged in source repos.
+name: Recipe contributors
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  push:
+    branches: [main]
+    paths: ["models/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: recipe-contributors
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Fetch contributors
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/sync-sources.mjs
+          node scripts/assemble-content.mjs
+          node scripts/fetch-contributors.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit
+        run: |
+          if git diff --quiet -- recipe-contributors.json; then
+            echo "No change." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add recipe-contributors.json
+          git commit -s -m "Refresh recipe contributors"
+          for attempt in 1 2 3; do
+            git push origin HEAD:main && exit 0
+            git pull --rebase origin main
+          done
+          exit 1

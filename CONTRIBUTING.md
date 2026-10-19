@@ -164,6 +164,19 @@ Do not stage:
 - `node_modules/`
 - `site/` — the legacy MkDocs output
 
+## Credit
+
+Each recipe page lists its contributors, and the JSON API carries them as
+`contributors`. The list comes from the YAML's git history, so there is
+nothing to fill in. Commit authors and `Co-authored-by:` trailers count when
+the email is linked to a GitHub account; add a trailer to credit someone who
+helped. Not counted:
+
+- bots and coding agents;
+- commits that touch more than 20 recipes at once, such as catalog-wide field
+  changes;
+- commits that only copy recipes between repositories.
+
 ## Questions
 
 - Open an issue at https://github.com/vllm-project/recipes/issues
