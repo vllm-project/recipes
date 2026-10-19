@@ -41,6 +41,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
   const frontends = Object.keys(taxonomy?.frontends || {});
   const tasks = (taxonomy?.tasks || []).map((t) => (typeof t === "string" ? t : t.id));
   const kvOffload = Object.keys(taxonomy?.kv_offload || {});
+  const maintainers = Object.keys(taxonomy?.maintainers || {});
   const all = Object.values(strategies || {});
   const kvStores = all.filter((s) => s.deploy_type === "kv_store_lb").map((s) => s.name);
   const serving = all.filter((s) => s.deploy_type !== "kv_store_lb").map((s) => s.name);
@@ -56,6 +57,20 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
   };
   const strategyId = { enum: serving };
   const status = { enum: ["verified", "supported", "unsupported"] };
+  // A status, or a verified run with its details (src/lib/verification.js).
+  const hardwareStatus = {
+    anyOf: [
+      status,
+      obj({
+        status: { const: "verified" },
+        date,
+        vllm: { type: "string", description: "vLLM version the run used" },
+        image: { type: "string", description: "Docker image the run used, when it isn't a vLLM release" },
+        note: { type: "string", description: "What the run covered, e.g. hardware count and measured numbers" },
+      }, { required: ["status"] }),
+    ],
+  };
+  const maintainer = { enum: maintainers };
   const intOrHwMap = { anyOf: [{ type: "integer", minimum: 1 }, keyed(hwKey, { type: "integer", minimum: 1 })] };
   const argsEnv = obj({ args: strings, env: envMap });
   const extraArgsEnv = (more = {}) => obj({ extra_args: strings, extra_env: envMap, ...more });
@@ -176,8 +191,12 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
         performance_headline: { type: "string" },
         related_recipes: strings,
         default_hardware: gpuId,
+        maintained_by: {
+          anyOf: [maintainer, keyed(hwKey, maintainer)],
+          description: "Who maintains the recipe (taxonomy.yaml maintainers): an id, or a map by hardware (exact id > generation > brand > default)",
+        },
         default_variant: keyed(hwKey, { type: "string" }),
-        hardware: keyed(gpuId, status, "verified = tested end-to-end; supported = declared (lists a restricted profile) without a verified claim; unsupported = confirmed blocker today"),
+        hardware: keyed(gpuId, hardwareStatus, "verified = tested end-to-end; supported = declared (lists a restricted profile) without a verified claim; unsupported = confirmed blocker today. A verified run may be an object with its details: { status, date, vllm, image, note }"),
         platforms: { type: "array", items: { anyOf: [{ type: "string" }, obj({ id: { type: "string" }, install: { type: "string" }, url: { type: "string" }, blurb: { type: "string" }, script: { type: "string" } }, { required: ["id"] })] } },
       }, { required: ["title", "provider", "description", "date_updated", "tasks"] }),
 

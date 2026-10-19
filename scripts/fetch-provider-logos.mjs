@@ -1,13 +1,15 @@
 /**
  * Build-time: fetch provider and hardware logos to public/providers/.
  *
- * Two sources feed this:
+ * Three sources feed this:
  *  1. src/lib/providers.js — model providers (DeepSeek, Qwen, …). Each has a
  *     logo path like "/providers/<hf_org>.png".
  *  2. HARDWARE_LOGOS below — hardware vendors shown in the Hardware filter row
  *     of BrowseList.jsx. These aren't model providers, so they're not in
  *     PROVIDERS. Huawei's logo comes from its official site; NVIDIA and Google
  *     ride along because they're also providers.
+ *  3. `maintainers` in taxonomy.yaml — organizations shown as "Maintained by
+ *     …" on recipes; one with an `hf_org` fetches that org's avatar.
  *
  * Populates these files at build time so Vercel's CDN serves them globally.
  * public/ is gitignored, so anything not fetched here 404s in production.
@@ -16,6 +18,7 @@
 
 import fs from "fs";
 import path from "path";
+import yaml from "js-yaml";
 import { PROVIDERS } from "../src/lib/providers.js";
 
 // Hardware vendors referenced by BrowseList.jsx that have no entry in
@@ -45,8 +48,16 @@ let fetched = 0;
 let skipped = 0;
 let failed = 0;
 
-// Merge both sources; PROVIDERS wins if an org appears in both.
-const targets = { ...HARDWARE_LOGOS, ...PROVIDERS };
+// Maintainers (taxonomy.yaml) shown as "Maintained by …"; those with an
+// `hf_org` fetch its avatar, the rest reuse a logo fetched above.
+const MAINTAINER_LOGOS = Object.fromEntries(
+  Object.values(yaml.load(fs.readFileSync("taxonomy.yaml", "utf8")).maintainers || {})
+    .filter((v) => v.hf_org && v.logo)
+    .map((v) => [v.hf_org, { logo: v.logo }]),
+);
+
+// Merge the sources; PROVIDERS wins if an org appears in more than one.
+const targets = { ...MAINTAINER_LOGOS, ...HARDWARE_LOGOS, ...PROVIDERS };
 
 for (const [org, meta] of Object.entries(targets)) {
   if (!meta.logo) continue;

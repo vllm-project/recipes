@@ -455,6 +455,41 @@ frontends:
   python:
     label: "Python"
 
+# Maintainers — organizations that maintain a recipe, or its configurations for
+# some hardware: `meta.maintained_by` (SCHEMA.md). The recipe header reads
+# "Maintained by <logo> <name>"; a hardware with its own maintainer adds
+# "<hw> configuration maintained by …" to the command block. Adding one is a
+# pull request here, reviewed by the maintainers. `logo` is served from
+# public/providers/, which scripts/fetch-provider-logos.mjs fills at build time —
+# from the Hugging Face org avatar of `hf_org` when no other entry (a model
+# provider or hardware vendor) already fetches that file.
+maintainers:
+  inferact:
+    name: "Inferact"
+    url: "https://inferact.ai"
+    logo: "/providers/Inferact.webp"
+    hf_org: "Inferact"
+  amd:
+    name: "AMD"
+    url: "https://www.amd.com"
+    logo: "/providers/amd.png"
+  nvidia:
+    name: "NVIDIA"
+    url: "https://www.nvidia.com"
+    logo: "/providers/nvidia.png"
+  intel:
+    name: "Intel"
+    url: "https://www.intel.com"
+    logo: "/providers/intel.png"
+  redhat:
+    name: "Red Hat"
+    url: "https://www.redhat.com"
+    logo: "/providers/RedHatAI.png"
+  huawei:
+    name: "Huawei"
+    url: "https://www.huawei.com"
+    logo: "/providers/huawei.png"
+
 # KV Offload — options for the command builder's "KV Offload" row that compose
 # with (rather than replace) the serving strategy. `simple` appends its args to
 # the end of the vllm arg list; every option is skipped for pd_cluster /

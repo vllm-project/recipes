@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import yaml from "js-yaml";
 import { contentDir, loadProvenance } from "./content-root.js";
+import { splitHardwareStatus } from "./verification.js";
 
 let cache = null;
 
@@ -30,6 +31,8 @@ function parseRecipe(filePath, dir, provenance) {
       raw.meta[field] = raw.meta[field].toISOString().split("T")[0];
     }
   }
+  // meta.hardware back to status strings; attributed runs → meta.verification
+  splitHardwareStatus(raw);
   // Derive HF identity from file path: models/<org>/<repo>.yaml
   const rel = path.relative(dir, filePath);
   const parts = rel.split(path.sep);

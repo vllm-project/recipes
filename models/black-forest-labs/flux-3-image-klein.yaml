@@ -10,8 +10,13 @@ meta:
     - omni
   performance_headline: "1024x1024 in ~2s on a single GB200 (16-step distilled schedule)"
   related_recipes: []
+  maintained_by: inferact
   hardware:
-    gb200: verified
+    gb200:
+      status: verified
+      date: 2026-10-15
+      image: "vllm/vllm-omni:flux-3-image-klein"
+      note: "1x GB200 (arm64, CUDA 13.0): T2I 1024x1024 in ~2.1s, I2I in ~2.8s, ~19 GiB GPU memory with the BF16 package"
 
 model:
   model_id: "black-forest-labs/flux-3-image-klein"

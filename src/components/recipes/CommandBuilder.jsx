@@ -6,6 +6,8 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
+import { verificationFor, verificationNote } from "@/lib/verification";
+import { maintainerFor } from "@/lib/maintainers";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -1716,10 +1718,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const hwFullName = hwProfile?.brand
     ? `${hwProfile.brand} ${hwProfile.display_name || hwId}`
     : (hwProfile?.display_name || hwId);
+  // A verified run with details (meta.verification) adds its date; the
+  // tooltip carries the environment and the note.
+  const verification = verificationFor(recipe, hwId);
   const statusHeader = hwStatus === "verified" && !activeKvOffload && !["dynamo", "smg"].includes(result.orchestrator) ? (
-    <span className="text-[11px] font-medium text-green-500 inline-flex items-center gap-1.5">
+    <span className="text-[11px] font-medium text-green-500 inline-flex items-center gap-1.5" title={verificationNote(recipe, hwId)}>
       <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />
       Verified on {hwFullName}
+      {verification?.date && <span className="text-green-500/70">· {verification.date}</span>}
     </span>
   ) : null;
 
@@ -1968,7 +1974,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                         const isUnsupported = status === "unsupported";
                         const disabled = !precisionOk || !variantHardwareOk || isUnsupported;
                         const verifiedNote = status === "verified"
-                          ? "\n\nVerified — author has tested this hardware end-to-end"
+                          ? `\n\n${verificationNote(recipe, id)}`
                           : "";
                         const reason = !variantHardwareOk
                           ? `${currentVariant.precision?.toUpperCase()} is only supported on ${(currentVariant.supported_hardware || []).map((hw) => hardwareSelectorLabel(hw, taxonomy.hardware_profiles)).join(", ")}`
@@ -1999,6 +2005,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   </div>
                 ))}
               </div>
+              <HwMaintainerNote recipe={recipe} hwProfile={hwProfile} hwId={hwId} taxonomy={taxonomy} />
             </ConfigRow>
 
             {showOmniTaskRow && (
@@ -2248,7 +2255,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                       // (2× model on one node) is no longer the default UX.
                       const disabled = isUnsupported || !fittingVariantKey;
                       const verifiedNote = status === "verified"
-                        ? "\n\nVerified — author has tested this hardware end-to-end"
+                        ? `\n\n${verificationNote(recipe, id)}`
                         : "";
                       const currentVariantRunsHere = precisionOk && variantHardwareOk;
                       const fittingVariantLabel = (fittingVariant?.label || fittingVariant?.precision || fittingVariantKey)?.toUpperCase();
@@ -2289,6 +2296,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   via Advanced to scale up.
                 </p>
               )}
+              <HwMaintainerNote recipe={recipe} hwProfile={hwProfile} hwId={hwId} taxonomy={taxonomy} />
             </div>
           </ConfigRow>
 
@@ -3316,6 +3324,21 @@ function CommandNote({ note }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// "<hw> configuration maintained by <logo> <name>" under the Hardware row, when
+// the selected hardware has its own maintainer (meta.maintained_by); the
+// recipe-wide one is in the page header.
+function HwMaintainerNote({ recipe, hwProfile, hwId, taxonomy }) {
+  const own = maintainerFor(recipe, hwProfile, hwId, taxonomy);
+  if (!own || own.id === maintainerFor(recipe, null, null, taxonomy)?.id) return null;
+  return (
+    <p className="text-[11px] text-muted-foreground/80 pt-1.5 flex items-center gap-1">
+      {hwProfile?.display_name || hwId} configuration maintained by
+      {own.logo && <img src={own.logo} alt="" width={14} height={14} className="rounded-sm" />}
+      <span className="font-medium text-foreground/80">{own.name}</span>
+    </p>
   );
 }
 

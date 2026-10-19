@@ -65,7 +65,7 @@ function autoFitTp(vramMinGb, perGpuVram, gpuCount) {
  * > `default`. The first key present wins; undefined when none match. Shared
  * by variant `tp` maps and `strategy_hardware` gates.
  */
-function hardwareKeyedValue(map, hwProfile, hwProfileId) {
+export function hardwareKeyedValue(map, hwProfile, hwProfileId) {
   if (!map || typeof map !== "object") return undefined;
   const gen = normalizeGeneration(hwProfile?.generation || hwProfile?.gpu_generation);
   const brand = typeof hwProfile?.brand === "string" ? hwProfile.brand.toLowerCase() : null;
