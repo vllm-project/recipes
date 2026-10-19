@@ -54,7 +54,7 @@ test("canonical API serves an eligible precision variant on declared restricted 
   assert.ok(command.argv.includes("PaddlePaddle/PaddleOCR-VL"));
   assert.ok(command.argv.includes("PaddleOCR-VL-0.9B"));
   assert.ok(!command.argv.includes("--enforce-eager"));
-  assert.match(command.docker_command, /nightly-main-310p@sha256:/);
+  assert.match(command.docker_command, /v0\.30\.0rc2-310p@sha256:/);
   assert.ok(!model.recommended_command.argv.includes("--dtype"));
   // Adding a restricted NPU must not expose it on unrelated GPU recipes.
   const unrelated = read("Qwen/Qwen3-8B.json");

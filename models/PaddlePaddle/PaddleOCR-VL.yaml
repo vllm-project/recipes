@@ -4,13 +4,13 @@ meta:
   provider: "PaddlePaddle"
   description: "PaddleOCR-VL (0.9B) — compact vision-language model for document parsing, OCR, tables, formulas, charts"
   date_added: 2025-11-04
-  date_updated: 2026-10-13
+  date_updated: 2026-10-19
   difficulty: beginner
   tasks:
     - multimodal
   related_recipes: []
   hardware:
-    ascend_310p3: verified
+    ascend_310p3: supported
 
 model:
   model_id: "PaddlePaddle/PaddleOCR-VL"
@@ -86,7 +86,7 @@ variants:
     - ascend_310p3
     hardware_overrides:
       ascend_310p3:
-        docker_image: quay.io/ascend/vllm-ascend:nightly-main-310p@sha256:3706317b3a91fda5b7b53174d65d97aeb5c762068c8edf96387f0e9f462f9723
+        docker_image: quay.io/ascend/vllm-ascend:v0.30.0rc2-310p@sha256:930dcb52a6d80460d823367356b012e95b18327470cff2bc2b94063b49b5f175
         docker_serve_command: vllm serve
         install:
           pip: false
@@ -119,7 +119,7 @@ variants:
     - ascend_310p3
     hardware_overrides:
       ascend_310p3:
-        docker_image: quay.io/ascend/vllm-ascend:nightly-main-310p@sha256:3706317b3a91fda5b7b53174d65d97aeb5c762068c8edf96387f0e9f462f9723
+        docker_image: quay.io/ascend/vllm-ascend:v0.30.0rc2-310p@sha256:930dcb52a6d80460d823367356b012e95b18327470cff2bc2b94063b49b5f175
         docker_serve_command: vllm serve
         install:
           pip: false
@@ -284,13 +284,19 @@ guide: |
   Both public model aliases are served: `PaddlePaddle/PaddleOCR-VL` for this site's
   Verify/Bench clients and `PaddleOCR-VL-0.9B` for the PaddleOCR document pipeline.
 
-  The latest official main 310P image was resolved on 2026-10-12 and pinned to
-  `sha256:3706317b3a91fda5b7b53174d65d97aeb5c762068c8edf96387f0e9f462f9723`.
-  It needs a matching CANN/driver stack. Eager mode disables graph execution; it
+  The builder now uses the official `v0.30.0rc2-310p` image (vLLM v0.30.0), pinned to
+  `sha256:930dcb52a6d80460d823367356b012e95b18327470cff2bc2b94063b49b5f175`.
+  Its arm64 manifest/config and referenced blobs were accessible on 2026-10-19;
+  NPU regression on this replacement is pending, so the profile is declared
+  `supported` without a verified badge. The former 2026-10-12 nightly digest
+  `sha256:3706317b3a91fda5b7b53174d65d97aeb5c762068c8edf96387f0e9f462f9723`
+  now returns `MANIFEST_UNKNOWN`. The manual device results below identify that
+  old environment only and do not validate the replacement image.
+  The selected image needs a matching CANN/driver stack. Eager mode disables graph execution; it
   does not make the current image compatible with an older CANN installation.
   The source tutorial permits eager as a graph fallback on older compatible runtimes.
 
-  ### Tested source environment
+  ### Historical tested source environment
 
   - HiDevLab Ascend 310P3: one of two logical devices selected, about 44 GB usable
     device memory; the platform's 64 GB selection is host RAM. The hardware profile
@@ -343,7 +349,7 @@ guide: |
   manifest = []
   for task, (filename, box, expected_hash) in SAMPLES.items():
       source = (args.source_dir or args.output) / filename
-      url = f'https://huggingface.co/datasets/PaddlePaddle/PaddleOCR-VL_demo/resolve/{REVISION}/imgs/{filename}'
+      url = '/'.join(('https://huggingface.co', 'datasets', 'PaddlePaddle', 'PaddleOCR-VL_demo', 'resolve', REVISION, 'imgs', filename))
       if not source.exists():
           with urllib.request.urlopen(url, timeout=90) as response:
               source.write_bytes(response.read())
