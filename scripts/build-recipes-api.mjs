@@ -45,6 +45,8 @@ import {
   FALLBACK_FRONTEND,
 } from "../src/lib/command-synthesis.js";
 import { contentChannel, contentDir, loadProvenance } from "../src/lib/content-root.js";
+import { splitHardwareStatus } from "../src/lib/verification.js";
+import { maintainedByMap } from "../src/lib/maintainers.js";
 import { assembleChannel } from "./assemble-content.mjs";
 import { loadOverrides } from "./lib/content-sources.mjs";
 
@@ -314,6 +316,7 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
 
   if (recipe?.meta?.default_hardware) exact("meta.default_hardware", recipe.meta.default_hardware);
   for (const k of keysOf(recipe?.meta?.hardware)) exact("meta.hardware", k);
+  for (const k of keysOf(recipe?.meta?.maintained_by)) keyed("meta.maintained_by", k);
 
   for (const [kvId, map] of Object.entries(recipe?.kv_cache_strategy_hardware || {})) {
     for (const k of keysOf(map)) exact(`kv_cache_strategy_hardware.${kvId}`, k);
@@ -891,7 +894,10 @@ let promotedCount = 0;
 let collisionCount = 0;
 
 for (const file of findYamlFiles(modelsDir)) {
-  const r = normalizeDates(readYaml(file));
+  // Status strings in meta.hardware, verified-run details in meta.verification;
+  // maintained_by always in its map form.
+  const r = splitHardwareStatus(normalizeDates(readYaml(file)));
+  if (r.meta?.maintained_by) r.meta.maintained_by = maintainedByMap(r);
   validateFeatureModes(r, file);
   validateFrontends(r, file, taxonomy);
   validateHardwareKeys(r, file, taxonomy, strategies);

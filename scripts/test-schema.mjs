@@ -62,3 +62,19 @@ test("vocabulary and status values are checked", () => {
   assert.ok(errorsFor((r) => { r.hardware_overrides.dgx_spark_gb10 = "verified"; }).length);
   assert.deepEqual(errorsFor((r) => { r.meta.hardware.dgx_spark_gb10 = "supported"; }), []);
 });
+
+test("a verified run can carry its details", () => {
+  const run = { status: "verified", date: "2026-10-15", vllm: "0.32.0", note: "8x H200, TP8" };
+  assert.deepEqual(errorsFor((r) => { r.meta.hardware.h200 = run; }), []);
+  assert.deepEqual(errorsFor((r) => { r.meta.hardware.h200 = { status: "verified" }; }), []);
+  assert.ok(errorsFor((r) => { r.meta.hardware.h200 = { ...run, status: "unsupported" }; }).length, "details only on verified");
+  assert.ok(errorsFor((r) => { r.meta.hardware.h200 = { ...run, by: "amd" }; }).length, "who maintains is maintained_by");
+  assert.ok(errorsFor((r) => { r.meta.hardware.h200 = { ...run, evidence: "https://example.com" }; }).length, "no unknown keys");
+});
+
+test("maintained_by names maintainers, recipe-wide or per hardware", () => {
+  assert.deepEqual(errorsFor((r) => { r.meta.maintained_by = "inferact"; }), []);
+  assert.deepEqual(errorsFor((r) => { r.meta.maintained_by = { default: "inferact", amd: "amd", ascend_910c: "huawei", blackwell: "nvidia" }; }), []);
+  assert.ok(errorsFor((r) => { r.meta.maintained_by = "acme"; }).length, "unknown maintainer");
+  assert.ok(errorsFor((r) => { r.meta.maintained_by = { h999: "amd" }; }).length, "unknown hardware key");
+});

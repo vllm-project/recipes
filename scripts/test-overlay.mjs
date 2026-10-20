@@ -72,6 +72,15 @@ test("overlay can't touch out-of-scope hardware or model config", () => {
   assert.equal(errs({ meta: { default_hardware: "ascend_910c" } }).length, 1);
 });
 
+test("overlay adds the maintainer of its own hardware only", () => {
+  const core = { ...core0, meta: { ...core0.meta, maintained_by: "inferact" } };
+  const res = applyOverlay(core, { meta: { maintained_by: { huawei: "huawei", ascend_910c: "huawei" } } }, { ctx, source });
+  assert.deepEqual(res.errors, []);
+  assert.deepEqual(res.recipe.meta.maintained_by, { default: "inferact", huawei: "huawei", ascend_910c: "huawei" });
+  assert.equal(applyOverlay(core, { meta: { maintained_by: { amd: "huawei" } } }, { ctx, source }).errors.length, 1);
+  assert.equal(applyOverlay(core, { meta: { maintained_by: { default: "huawei" } } }, { ctx, source }).errors.length, 1);
+});
+
 test("overlay is add-only", () => {
   const once = applyOverlay(core0, { meta: { hardware: { ascend_910c: "verified" } } }, { ctx, source }).recipe;
   assert.equal(applyOverlay(once, { meta: { hardware: { ascend_910c: "unsupported" } } }, { ctx, source }).errors.length, 1);

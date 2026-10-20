@@ -17,6 +17,7 @@ import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
 import { Badge } from "@/components/ui/badge";
 import { Cpu, Layers, Pencil, Bug, ExternalLink, Link2 } from "lucide-react";
+import { recipeMaintainers } from "@/lib/maintainers";
 import {
   buildBreadcrumbLd,
   buildSoftwareApplicationLd,
@@ -171,6 +172,7 @@ export default async function RecipePage({ params, searchParams }) {
                 View on HuggingFace
                 <ExternalLink size={10} />
               </a>
+              <Maintainers recipe={recipe} taxonomy={taxonomy} />
             </div>
           </div>
         </div>
@@ -334,5 +336,29 @@ function ChevronIcon() {
     >
       <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
     </svg>
+  );
+}
+
+// "Maintained by <logo> Inferact · AMD hardware: <logo> AMD" — meta.maintained_by,
+// the recipe-wide maintainer first, then those of specific hardware.
+function Maintainers({ recipe, taxonomy }) {
+  const maintainers = recipeMaintainers(recipe, taxonomy);
+  if (!maintainers.length) return null;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+      Maintained by
+      {maintainers.map((m, i) => (
+        <span key={m.id} className="inline-flex items-center gap-1">
+          {i > 0 && <span aria-hidden>·</span>}
+          {m.scopes.length > 0 && <span>{m.scopes.join(", ")}:</span>}
+          {m.logo && <img src={m.logo} alt="" width={14} height={14} className="rounded-sm" />}
+          {m.url ? (
+            <a href={m.url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground/80 hover:text-vllm-blue transition-colors">{m.name}</a>
+          ) : (
+            <span className="font-medium text-foreground/80">{m.name}</span>
+          )}
+        </span>
+      ))}
+    </span>
   );
 }

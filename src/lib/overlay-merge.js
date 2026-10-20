@@ -59,6 +59,7 @@ export function variantInScope(variant, ctx) {
 // When the schema gains a new hardware-keyed field, add it here.
 export const OVERLAY_RULES = [
   ["meta", "hardware", "@hw"],
+  ["meta", "maintained_by", "@hw"],
   ["hardware_overrides", "@hw"],
   ["hardware_notes", "@hw"],
   ["hardware_opt_in_features", "@hw"],
@@ -109,6 +110,11 @@ export function applyOverlay(core, overlay, { ctx, source }) {
   if (ctx.empty) {
     errors.push(`source "${source}" has no scope.brands in sources.yaml — overlays need a granted scope`);
     return { recipe, errors };
+  }
+  // A core `maintained_by: <id>` is shorthand for `{ default: <id> }`, so an
+  // overlay can add the maintainer of its own hardware next to it.
+  if (typeof recipe.meta?.maintained_by === "string" && isObj(overlay?.meta?.maintained_by)) {
+    recipe.meta.maintained_by = { default: recipe.meta.maintained_by };
   }
 
   for (const [key, value] of Object.entries(overlay || {})) {
