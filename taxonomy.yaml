@@ -176,20 +176,6 @@ hardware_profiles:
     scalable: false
     restricted: true
 
-  # Eight-card topology documented in the FastH3 Omni development baseline.
-  # Listing the profile does not imply end-to-end verification of a recipe.
-  rtx_pro_5000_8x:
-    brand: NVIDIA
-    generation: blackwell
-    compute_arch: sm120
-    display_name: "RTX PRO 5000 Blackwell 8x"
-    description: "NVIDIA RTX PRO 5000 Blackwell · 8× 72 GB VRAM"
-    gpu_count: 8
-    vram_gb: 576
-    multi_node: false
-    scalable: false
-    restricted: true
-
   # RTX Pro 6000 8x — 8x RTX Pro 6000 GPUs system.
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
   # lists it in `meta.hardware` (same pattern as the TPU profiles).

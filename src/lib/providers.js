@@ -20,7 +20,6 @@ export const PROVIDERS = {
   "nvidia":          { display_name: "NVIDIA",                  logo: "/providers/nvidia.png" },
   "openai":          { display_name: "OpenAI",                  logo: "/providers/openai.png", invertInDark: true },
   "MiniMaxAI":       { display_name: "MiniMax",                 logo: "/providers/MiniMaxAI.jpeg" },
-  "FastVideo":       { display_name: "FastVideo",               logo: "/providers/FastVideo.png" },
   "zai-org":         { display_name: "GLM (Z-AI)",              logo: "/providers/zai-org.png" },
   "baidu":           { display_name: "Ernie (Baidu)",           logo: "/providers/baidu.png" },
   "arcee-ai":        { display_name: "Arcee AI",                logo: "/providers/arcee-ai.png" },

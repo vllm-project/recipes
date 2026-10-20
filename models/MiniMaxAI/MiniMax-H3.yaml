@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "Open-weight general-purpose multimodal generation model — jointly generates 24 FPS video with native stereo audio from text, image, video, and audio references, served via vLLM-Omni"
   date_added: 2026-08-02
-  date_updated: 2026-09-07
+  date_updated: 2026-10-20
   difficulty: advanced
   tasks:
     - omni
@@ -1070,9 +1070,26 @@ guide: |
   No restart is required: `extra_params.task` routes T2VA/FL2VA requests to the FL2VA
   DiT and Ref2VA requests to the Ref2VA DiT.
 
+  ### FastH3 model family
+
+  FastH3 is a family of post-trained, distilled models based on MiniMax-H3. The
+  releases below reuse `MiniMaxH3Pipeline` and its video API, but have different
+  weights, input requirements, and trained sampling schedules:
+
+  | Release | Weights | Input → output | Transformer forwards |
+  |---|---|---|---:|
+  | [FastH3 Preview V1](https://huggingface.co/FastVideo/FastVideo-FastH3-4-step-Preview-v1-LoRA) | Adapter fused into native H3 | Text → video and audio (T2VA) | 4 |
+  | [FastH3 V2](https://huggingface.co/FastVideo/FastVideo-FastH3-8-Step-V2) | Full eight-step checkpoint | Text → video and audio (T2VA) | 8 |
+  | [FastH3 Omni V1](https://huggingface.co/FastVideo/FastVideo-FastH3-Omni-8-Step-V1) | Full eight-step checkpoint | Text and visual references → video and audio (Ref2VA) | 8 |
+
+  Each server loads one release. A request cannot switch between these releases,
+  and the four-step adapter must not be applied to either full checkpoint. The
+  existing four-step instructions follow first; the V2 and Omni source preview
+  is described separately below.
+
   ### FastH3 four-step Dense and VSA adapters
 
-  [FastH3](https://haoailab.com/blogs/fasth3-preview/) is FastVideo's four-step DMD2
+  [FastH3 Preview V1](https://haoailab.com/blogs/fasth3-preview/) is FastVideo's four-step DMD2
   student of H3-Base. It keeps H3's encoder, VAEs, tokenizers, and schedulers, but replaces
   49 denoiser evaluations with four. Preview v1 is T2VA-only and is fused into the FL2VA
   DiT at server startup, so run it in a dedicated process rather than expecting request-time
@@ -1196,8 +1213,105 @@ guide: |
   forwards, those fixed stages, not attention, set the floor.
 
   VSA added about 3.8 GB to the reported per-process peak in this comparison. Both paths
-  returned H.264 video at 24 FPS with AAC stereo audio at 32 kHz. FastH3 forbids model-level,
-  layerwise, and distributed layerwise offload because those paths bypass load-time fusion.
+  returned H.264 video at 24 FPS with AAC stereo audio at 32 kHz. The four-step adapter
+  forbids model-level, layerwise, and distributed layerwise offload because those paths
+  bypass load-time fusion.
+
+  ### FastH3 V2 and Omni eight-step checkpoints
+
+  This supplement follows [vLLM-Omni #9167](https://github.com/vllm-project/vllm-omni/pull/9167),
+  which was open on October 20, 2026, at commit
+  `ac75e28d473266f39c9d291bc322e2399933ca92`. These full checkpoints require that
+  source integration. Use the separate environment below; the base MiniMax-H3
+  command builder and its installation options describe the native model.
+
+  **Install the source preview.** The following commands target Linux x86_64,
+  Python 3.12, and a CUDA 13-compatible driver, using the vLLM 0.32.0 wheel from
+  the integration's [CUDA source-install instructions](https://github.com/vllm-project/vllm-omni/blob/ac75e28d473266f39c9d291bc322e2399933ca92/docs/getting_started/installation/gpu/cuda.inc.md).
+  Install `uv`, Git, and `ffmpeg` first. Authenticate with `hf auth login` if the
+  student checkpoint or its native MiniMax-H3 components require access.
+
+  ```bash
+  git clone https://github.com/vllm-project/vllm-omni.git vllm-omni-fasth3
+  cd vllm-omni-fasth3
+  git fetch origin ac75e28d473266f39c9d291bc322e2399933ca92
+  git checkout --detach ac75e28d473266f39c9d291bc322e2399933ca92
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install --torch-backend=cu130 \
+    "vllm @ https://wheels.vllm.ai/5df63a7203cdb9328d824a27b682e77c7b9928be/vllm-0.32.0-cp38-abi3-manylinux_2_28_x86_64.whl"
+  uv pip install -e .
+  uv pip check
+  ```
+
+  Complete the [VSA provider setup](https://github.com/vllm-project/vllm-omni/blob/ac75e28d473266f39c9d291bc322e2399933ca92/docs/user_guide/diffusion/attention_backends/fastvideo_vsa.md)
+  for the target GPUs before serving. Omni uses native FastVideo tile128 on
+  SM100/SM103, or logical tile128 through FlashInfer BF16 block64 on SM120/SM121;
+  its current sparse path requires one of these Blackwell providers. V2 uses
+  tile64 on compatible CUDA GPUs and automatically selects FlashInfer BF16 on
+  SM120/SM121 when available. Kernel availability alone does not qualify a
+  full-model deployment.
+
+  **Serve one checkpoint on eight GPUs.** Run one of the commands below from the
+  pinned repository root. The [shared configuration](https://github.com/vllm-project/vllm-omni/blob/ac75e28d473266f39c9d291bc322e2399933ca92/recipes/FastVideo/fasth3-8step-8gpu.yaml)
+  enables HSDP, Ulysses, text-encoder TP, and tiled parallel VAE decoding, and sets
+  the request defaults to eight steps and guidance 1. It uses port 8000.
+
+  For Omni Ref2VA:
+
+  ```bash
+  vllm serve FastVideo/FastVideo-FastH3-Omni-8-Step-V1 --omni \
+    --config recipes/FastVideo/fasth3-8step-8gpu.yaml
+  ```
+
+  For V2 T2VA, start a separate server instead:
+
+  ```bash
+  vllm serve FastVideo/FastVideo-FastH3-8-Step-V2 --omni \
+    --config recipes/FastVideo/fasth3-8step-8gpu.yaml
+  ```
+
+  Keep the checkpoint's sampling contract: V2 uses video/audio shifts 10/3 and
+  64-token VSA at 80% sparsity; Omni uses shifts 12/3 and logical 128-token VSA at
+  90% sparsity. These settings are selected by the checkpoint. Do not copy the
+  four-step adapter's fixed top-k, override the trained shifts or guidance, or
+  set V2 to nine steps: nine sigma nodes correspond to eight transformer forwards.
+
+  **Generate with Omni.** Put a scene description in `prompt.txt` and a reference
+  image in `reference.jpg`, then send:
+
+  ```bash
+  curl --fail-with-body -sS http://localhost:8000/v1/videos/sync \
+    -F 'prompt=<prompt.txt' \
+    -F 'input_reference=@reference.jpg' \
+    -F 'size=1344x768' -F 'seconds=5' \
+    -o fasth3-omni.mp4
+  ```
+
+  Omni requires at least one image or video; an audio-only reference is
+  insufficient. For multiple images, video, or supplementary audio references,
+  use the [native H3 reference API](https://github.com/vllm-project/vllm-omni/blob/ac75e28d473266f39c9d291bc322e2399933ca92/recipes/MiniMaxAI/MiniMax-H3.md).
+  The response includes generated video and stereo audio. H3 aligns durations
+  to its frame lattice, so the five-second example produces 124 frames at 24 FPS
+  (about 5.167 seconds).
+
+  **Generate with V2.** When the V2 server is running, use a text-only request:
+
+  ```bash
+  curl --fail-with-body -sS http://localhost:8000/v1/videos/sync \
+    -F 'prompt=A train crosses a stone bridge at sunrise, with rhythmic wheels and distant birdsong.' \
+    -F 'size=1344x768' -F 'seconds=5' \
+    -o fasth3-v2.mp4
+  ```
+
+  **Validation scope.** The upstream [Omni guide](https://github.com/vllm-project/vllm-omni/blob/ac75e28d473266f39c9d291bc322e2399933ca92/recipes/FastVideo/FastH3-Omni.md)
+  reports HTTP serving on 8× RTX PRO 5000 with vLLM 0.32.0, PyTorch 2.13.0+cu130,
+  and FlashInfer 0.7.0.post1. Its historical offline benchmarks used vLLM 0.30.0
+  and are not HTTP timings for this environment. The [V2 guide](https://github.com/vllm-project/vllm-omni/blob/ac75e28d473266f39c9d291bc322e2399933ca92/recipes/FastVideo/FastH3-V2.md)
+  covers loader, sampling, and sparse-kernel regressions; V2 full-model serving
+  and performance remain unverified. Omni results do not qualify V2, and
+  cross-provider output equivalence remains unverified. This documentation
+  contribution has not independently repeated GPU inference.
 
   ### LightX2V Turbo few-step LoRA
 
@@ -1703,6 +1817,8 @@ guide: |
   - [vLLM-Omni diffusion attention backends](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/)
   - [FastVideo VSA attention guide](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/fastvideo_vsa/)
   - [FastH3 preview adapters](https://huggingface.co/FastVideo/FastVideo-FastH3-4-step-Preview-v1-LoRA)
+  - [FastH3 family: Preview V1, V2, and Omni](https://github.com/vllm-project/vllm-omni/blob/ac75e28d473266f39c9d291bc322e2399933ca92/recipes/FastVideo/README.md)
+  - [FastH3 Omni and V2 integration (vLLM-Omni #9167)](https://github.com/vllm-project/vllm-omni/pull/9167)
   - [MiniMax-H3 VSA and Ulysses support (vLLM-Omni #6909)](https://github.com/vllm-project/vllm-omni/pull/6909)
   - [vLLM-Omni TRTLLM attention guide (SAGE, Skip-Softmax)](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/diffusion/attention_backends/trtllm/)
   - [MiniMax-H3 production serving on vLLM-Omni (blog)](https://vllm.ai/blog/2026-09-01-minimax-h3-production-serving)
