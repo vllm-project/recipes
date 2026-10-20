@@ -308,10 +308,6 @@ compatible_strategies:
   - multi_node_dep
   - pd_cluster
 
-strategy_hardware:
-  single_node_dep: { npu: supported }
-  multi_node_tp_dp: { npu: supported }
-
 kv_offload_support:
   offloading_cpu: verified
   offloading_fs: verified
