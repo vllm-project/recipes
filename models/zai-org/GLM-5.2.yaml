@@ -81,7 +81,7 @@ features:
       ascend_mtp:
         label: "MTP (Ascend)"
         description: "The tutorial's in-checkpoint MTP configuration: three draft tokens, with the draft model running eager."
-        variants: [ascend_bf16, ascend_w8a8, ascend_w4a8c8]
+        variants: [ascend_bf16, ascend_w8a8, ascend_w4a8]
         hardware: { npu: supported, default: unsupported }
         args:
           - "--speculative-config"
@@ -92,36 +92,6 @@ opt_in_features:
 
 variants:
   default:
-    # Existing checkpoints retain their current non-Ascend hardware targets.
-    supported_hardware: &non_ascend_hardware
-      - h100
-      - h200
-      - b200
-      - gb200
-      - b300
-      - gb300
-      - dgx_station_gb300
-      - dgx_spark_gb10
-      - rtx_pro_6000
-      - rtx_pro_6000_2x
-      - rtx_pro_6000_4x
-      - rtx_pro_5000
-      - rtx_pro_5000_4x
-      - rtx_pro_6000_8x
-      - rtx_5090
-      - rtx_4090_2x
-      - rtx_5090_2x
-      - l40s
-      - mi300x
-      - mi325x
-      - mi350x
-      - mi355x
-      - trillium
-      - ironwood
-      - xeon6
-      - xeon5
-      - arc_pro_b60
-      - arc_pro_b70
     model_id: "zai-org/GLM-5.2-FP8"
     precision: fp8
     vram_minimum_gb: 893
@@ -153,13 +123,11 @@ variants:
     vram_minimum_gb: 558
     description: "RedHatAI NVFP4+FP8 mixed-precision checkpoint (MoE expert linears NVFP4, attention/embeddings FP8) for Blackwell GPUs"
   bf16:
-    supported_hardware: *non_ascend_hardware
     precision: bf16
     vram_minimum_gb: 1786
     description: "Full precision BF16 — requires multi-node deployment"
 
   redhat_fp8:
-    supported_hardware: *non_ascend_hardware
     model_id: "RedHatAI/GLM-5.2-FP8"
     precision: fp8
     label: "FP8 (RedHat)"
@@ -277,7 +245,7 @@ variants:
         install:
           pip: false
 
-  ascend_w4a8c8:
+  ascend_w4a8:
     model_id: "Eco-Tech/GLM-5.2-w4a8c8"
     precision: int4
     label: "W4A8 (Ascend)"
@@ -716,7 +684,7 @@ guide: |
   The builder resolves these checkpoints through ModelScope (W4A8 uses W4A8C8) and enables the
   tutorial's three-token MTP mode. Select **Python** in the existing Frontend row
   to match this Ascend configuration, or open the
-  [A3 W4A8C8 configuration](https://recipes.vllm.ai/zai-org/GLM-5.2?hardware=ascend_910c&variant=ascend_w4a8c8&frontend=python).
+  [A3 W4A8C8 configuration](https://recipes.vllm.ai/zai-org/GLM-5.2?hardware=ascend_910c&variant=ascend_w4a8&frontend=python).
   The recipe's existing NVIDIA/AMD frontend defaults are unchanged.
 
   ### Ascend images and checkpoint paths
