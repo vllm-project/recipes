@@ -13,8 +13,6 @@ meta:
     - "zai-org/GLM-5"
     - "zai-org/GLM-5.1"
   hardware:
-    # Ascend configurations are verified in the vLLM-Ascend tutorial linked
-    # in the guide; this migration does not claim a new hardware test run.
     ascend_910c: verified
     b300: verified
     b200: verified
@@ -22,8 +20,6 @@ meta:
     mi325x: verified
     mi350x: verified
     mi355x: verified
-  default_variant:
-    ascend_910c: ascend_w4a8c8
 
 model:
   model_id: "zai-org/GLM-5.2"
