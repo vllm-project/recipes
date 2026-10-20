@@ -1139,7 +1139,7 @@ guide: |
           str(dp_size),
           str(dp_rank),
           dp_address,
-          dp_rpc_port,
+          str(dp_rpc_port),
           str(tp_size),
           str(pp_size),
       ]
@@ -1191,7 +1191,7 @@ guide: |
   # Ensure the model path matches the directory recorded during download
   vllm serve "$MODEL_PATH" \
       --host 0.0.0.0 \
-      --port $2 \
+      --port "${2:-9081}" \
       --tensor-parallel-size 16 \
       --enable-expert-parallel \
       --pipeline-parallel-size 2 \
@@ -1254,7 +1254,7 @@ guide: |
   # Ensure the model path matches the directory recorded during download
   vllm serve "$MODEL_PATH" \
       --host 0.0.0.0 \
-      --port $2 \
+      --port "${2:-9081}" \
       --tensor-parallel-size 16 \
       --enable-expert-parallel \
       --pipeline-parallel-size 2 \
@@ -1910,7 +1910,7 @@ guide: |
       parser.add_argument(
           "--dp-rpc-port",
           type=str,
-          default=12345,
+          default="12345",
           help="Port for data parallel master node."
       )
       parser.add_argument(
@@ -1941,7 +1941,7 @@ guide: |
           str(dp_size),
           str(dp_rank),
           dp_address,
-          dp_rpc_port,
+          str(dp_rpc_port),
           str(tp_size),
       ]
       subprocess.run(command, check=True)
