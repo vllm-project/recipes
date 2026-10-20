@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.2 — frontier-scale MoE language model (~743B total parameters, 39B active) with up to 5-token MTP speculative decoding and thinking mode"
   date_added: 2026-06-16
-  date_updated: 2026-10-19
+  date_updated: 2026-10-20
   difficulty: advanced
   tasks:
     - text
@@ -81,7 +81,7 @@ features:
       ascend_mtp:
         label: "MTP (Ascend)"
         description: "The tutorial's in-checkpoint MTP configuration: three draft tokens, with the draft model running eager."
-        variants: [ascend_w4a8c8]
+        variants: [ascend_bf16, ascend_w8a8, ascend_w4a8c8]
         hardware: { npu: supported, default: unsupported }
         args:
           - "--speculative-config"
@@ -173,10 +173,114 @@ variants:
     vram_minimum_gb: 477
     description: "RedHatAI NVFP4 quantization"
 
+  ascend_bf16:
+    model_id: "ZhipuAI/GLM-5.2"
+    precision: bf16
+    label: "BF16 (Ascend)"
+    # Weight-only estimate: 743B x 2 bytes x 1.2. Actual allocation also
+    # includes higher-precision modules, scales, activations and KV cache.
+    vram_minimum_gb: 1786
+    description: "BF16 on at least two Atlas 800 A3 nodes (16 x 64 GB each): multi-node TP with EP. Select Multi-Node Tensor Parallel."
+    supported_hardware: [ascend_910c]
+    tp: 16
+    default_modes:
+      spec_decoding: ascend_mtp
+    extra_args:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--api-server-count"
+      - "1"
+      - "--enable-expert-parallel"
+      - "--seed"
+      - "1024"
+      - "--max-num-seqs"
+      - "12"
+      - "--max-model-len"
+      - "135000"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--trust-remote-code"
+      - "--gpu-memory-utilization"
+      - "0.92"
+      - "--dtype"
+      - "bfloat16"
+      # Restore vLLM's default instead of inheriting the GPU FP8 KV flag.
+      - "--kv-cache-dtype"
+      - "auto"
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+      - "--additional-config"
+      - '{"enable_balance_scheduling":true,"multistream_overlap_shared_expert":true,"enable_flashcomm1":true,"enable_fused_mc2":0}'
+    extra_env:
+      VLLM_USE_MODELSCOPE: "True"
+      HCCL_BUFFSIZE: "200"
+      HCCL_OP_EXPANSION_MODE: "AIV"
+      PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+    hardware_overrides:
+      ascend_910c:
+        docker_image: "quay.io/ascend/vllm-ascend:nightly-main-a3"
+        docker_serve_command: "vllm serve"
+        install:
+          pip: false
+
+  ascend_w8a8:
+    model_id: "Eco-Tech/GLM-5.2-w8a8"
+    precision: int8
+    label: "W8A8 (Ascend)"
+    # Weight-only estimate: 743B x 1 byte x 1.2. Actual allocation also
+    # includes higher-precision modules, scales, activations and KV cache.
+    vram_minimum_gb: 893
+    description: "ModelSlim W8A8 on one Atlas 800 A3 (16 x 64 GB): TP8, DP2 and EP, 135000-token serving limit. See the Ascend guide for other topologies."
+    supported_hardware: [ascend_910c]
+    tp: 8
+    default_modes:
+      spec_decoding: ascend_mtp
+    extra_args:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--api-server-count"
+      - "1"
+      - "--enable-expert-parallel"
+      - "--seed"
+      - "1024"
+      - "--max-num-seqs"
+      - "12"
+      - "--max-model-len"
+      - "135000"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--trust-remote-code"
+      - "--gpu-memory-utilization"
+      - "0.92"
+      - "--quantization"
+      - "ascend"
+      # Restore vLLM's default instead of inheriting the GPU FP8 KV flag.
+      - "--kv-cache-dtype"
+      - "auto"
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+      - "--additional-config"
+      - '{"enable_balance_scheduling":true,"multistream_overlap_shared_expert":true,"enable_flashcomm1":true,"enable_fused_mc2":0}'
+    extra_env:
+      VLLM_USE_MODELSCOPE: "True"
+      HCCL_BUFFSIZE: "200"
+      HCCL_OP_EXPANSION_MODE: "AIV"
+      PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+    hardware_overrides:
+      ascend_910c:
+        docker_image: "quay.io/ascend/vllm-ascend:nightly-main-a3"
+        docker_serve_command: "vllm serve"
+        install:
+          pip: false
+
   ascend_w4a8c8:
     model_id: "Eco-Tech/GLM-5.2-w4a8c8"
     precision: int4
-    label: "W4A8C8 (Ascend)"
+    label: "W4A8 (Ascend)"
     # Weight-only estimate: 743B x 0.5 bytes x 1.2. Actual allocation also
     # includes higher-precision modules, scales, activations and KV cache.
     vram_minimum_gb: 446
@@ -192,8 +296,6 @@ variants:
       - "8000"
       - "--api-server-count"
       - "1"
-      - "--data-parallel-size"
-      - "2"
       - "--enable-expert-parallel"
       - "--seed"
       - "1024"
@@ -238,12 +340,10 @@ compatible_strategies:
   - multi_node_dep
   - pd_cluster
 
-# The builder exposes the exact A3 TP8/DP2/EP single-node baseline above.
-# The generic multi-node/PD strategies synthesize a different topology or a
-# NIXL connector; the complete validated Ascend deployments live in the guide.
+# Ascend supports single-node quantized serving and multi-node TP for BF16.
+# The complete Ascend PD deployments live in the guide.
 strategy_hardware:
   single_node_tep: { npu: unsupported }
-  multi_node_tp: { npu: unsupported }
   multi_node_tp_pp: { npu: unsupported }
   multi_node_tep: { npu: unsupported }
   multi_node_dep: { npu: unsupported }
@@ -270,12 +370,23 @@ hardware_overrides:
       VLLM_ROCM_USE_AITER: "1"
       VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS: "1"
 
-strategy_overrides: {}
+strategy_overrides:
+  single_node_tp:
+    hardware_overrides:
+      ascend_910c:
+        extra_args: ["--data-parallel-size", "2"]
+  multi_node_tp:
+    hardware_overrides:
+      ascend_910c:
+        extra_env:
+          HCCL_BUFFSIZE: "400"
+          HCCL_IF_IP: "$LOCAL_IP"
+          HCCL_SOCKET_IFNAME: "$IFACE_NAME"
 
 hardware_notes:
   ascend_910c:
     title: "Atlas 800 A3 — tutorial baseline"
-    body: "Select Python in the Frontend row to match the tutorial. W4A8C8 uses TP8 + DP2 + expert parallel across all 16 NPUs, with MTP enabled. The generated client uses the checkpoint ID; the guide uses a local weight path and served name glm-52. A2, multi-node, PD, 1M and 950-series instructions are in the Ascend guide."
+    body: "Select Python in the Frontend row to match the tutorial. W8A8 and W4A8 use TP8 + DP2 + expert parallel across all 16 NPUs. BF16 requires at least two A3 nodes using Multi-Node Tensor Parallel with expert parallel. All three use MTP; W4A8 selects the W4A8C8 checkpoint. Set LOCAL_IP and IFACE_NAME on each node for multi-node serving. The generated client uses the checkpoint ID; the guide uses a local weight path and served name glm-52. A2, multi-node, PD, 1M and 950-series instructions are in the Ascend guide."
     link:
       href: "#ascend-deployment-guide"
       label: "Ascend deployment guide"
@@ -595,11 +706,14 @@ guide: |
   [validated vLLM-Ascend GLM-5.2 tutorial](https://github.com/vllm-project/vllm-ascend/blob/932818a5b16dd57bea61a5c2a15c7dc9bda8dea3/docs/source/tutorials/models/GLM5.2.md).
   Their parallelism, cache settings, graph settings and role-specific optimizations
   are retained together for each scenario. The command builder exposes the
-  **single-node Atlas 800 A3 W4A8C8 baseline** (16 logical NPUs, TP8, DP2 and EP).
+  **BF16, W8A8 and W4A8** on Atlas 800 A3. W8A8 and W4A8 use the
+  single-node TP8/DP2/EP configuration; BF16 requires at least two nodes with
+  Multi-Node Tensor Parallel and EP. Set `LOCAL_IP` and `IFACE_NAME` on each node
+  to its local communication IP and network interface before multi-node serving.
   Use the complete commands below for A2, multi-node, PD and long-context deployment;
   the generic GPU PD/NIXL builder is not the Ascend Mooncake deployment.
 
-  The builder resolves the W4A8C8 checkpoint through ModelScope and enables the
+  The builder resolves these checkpoints through ModelScope (W4A8 uses W4A8C8) and enables the
   tutorial's three-token MTP mode. Select **Python** in the existing Frontend row
   to match this Ascend configuration, or open the
   [A3 W4A8C8 configuration](https://recipes.vllm.ai/zai-org/GLM-5.2?hardware=ascend_910c&variant=ascend_w4a8c8&frontend=python).
