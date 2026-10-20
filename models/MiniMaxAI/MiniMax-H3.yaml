@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "Open-weight general-purpose multimodal generation model — jointly generates 24 FPS video with native stereo audio from text, image, video, and audio references, served via vLLM-Omni"
   date_added: 2026-08-02
-  date_updated: 2026-10-20
+  date_updated: 2026-10-21
   difficulty: advanced
   tasks:
     - omni
@@ -1072,20 +1072,44 @@ guide: |
 
   ### FastH3 model family
 
-  FastH3 is a family of post-trained, distilled models based on MiniMax-H3. The
-  releases below reuse `MiniMaxH3Pipeline` and its video API, but have different
-  weights, input requirements, and trained sampling schedules:
+  FastH3 is a family of post-trained, distilled models based on MiniMax-H3.
+  The four-step adapter, experimental eight-step checkpoints, and official
+  quantized releases have distinct weights and loading requirements.
 
-  | Release | Weights | Input → output | Transformer forwards |
+  The source preview documented below covers these earlier artifacts:
+
+  | Artifact | Weights | Input → output | Transformer forwards |
   |---|---|---|---:|
   | [FastH3 Preview V1](https://huggingface.co/FastVideo/FastVideo-FastH3-4-step-Preview-v1-LoRA) | Adapter fused into native H3 | Text → video and audio (T2VA) | 4 |
-  | [FastH3 V2](https://huggingface.co/FastVideo/FastVideo-FastH3-8-Step-V2) | Full eight-step checkpoint | Text → video and audio (T2VA) | 8 |
-  | [FastH3 Omni V1](https://huggingface.co/FastVideo/FastVideo-FastH3-Omni-8-Step-V1) | Full eight-step checkpoint | Text and visual references → video and audio (Ref2VA) | 8 |
+  | [FastH3 V2 (experimental)](https://huggingface.co/FastVideo/FastVideo-FastH3-8-Step-V2) | Full eight-step checkpoint | Text → video and audio (T2VA) | 8 |
+  | [FastH3 Omni V1 (experimental)](https://huggingface.co/FastVideo/FastVideo-FastH3-Omni-8-Step-V1) | Full eight-step checkpoint | Text and visual references → video and audio (Ref2VA) | 8 |
 
-  Each server loads one release. A request cannot switch between these releases,
+  Each server loads one artifact. A request cannot switch between these artifacts,
   and the four-step adapter must not be applied to either full checkpoint. The
-  existing four-step instructions follow first; the V2 and Omni source preview
-  is described separately below.
+  four-step instructions and experimental eight-step source preview follow below.
+
+  **Official releases.** The following artifacts are separate integration targets.
+  The serving instructions below cover only the earlier snapshots. Official
+  quantization and component-loading paths require separate integration and
+  end-to-end validation before these commands can target the new releases.
+
+  | Official artifact | Scope | vLLM-Omni status at the pinned commit |
+  |---|---|---|
+  | [FastH3-QAD-v2](https://huggingface.co/FastVideo/FastH3-QAD-v2) | Eight-step T2VA; NVFP4 DiT and text encoder, lightweight INT8 video VAE | Release-specific loading and end-to-end validation pending |
+  | [FastH3-OmniRef-FP8](https://huggingface.co/FastVideo/FastH3-OmniRef-FP8) | OmniRef FP8 checkpoint | Checkpoint inspection and serving validation pending |
+  | [FastH3-OmniRef-NVFP4-QAD](https://huggingface.co/FastVideo/FastH3-OmniRef-NVFP4-QAD) | OmniRef NVFP4 QAD checkpoint | Checkpoint inspection and serving validation pending |
+  | [FastH3-NVFP4-VAE-Decoder](https://huggingface.co/FastVideo/FastH3-NVFP4-VAE-Decoder) | Optional video decoder: `quality-36L` or `fast-8L` | Decoder loading and full-pipeline validation pending; not a standalone generation model |
+
+  The [QAD-v2 model card](https://huggingface.co/FastVideo/FastH3-QAD-v2/blob/a0dc05a76acdba7733c196b67b424889b6a2272b/README.md)
+  specifies eight transformer forwards, 64-token BF16 VSA at 80% sparsity,
+  a 50-layer NVFP4 text encoder, and a lightweight INT8 video VAE. Its optional
+  AdaLN table is tied to the published schedule. Those components must be
+  preserved when qualifying the release.
+  The [NVFP4 decoder card](https://huggingface.co/FastVideo/FastH3-NVFP4-VAE-Decoder/blob/ddd17469cab7e490b1a04baaf26b247f0f0dcf0e/README.md)
+  specifies W4A4 linears and BF16 decode autocast on Blackwell FP4 hardware.
+  The two OmniRef metadata endpoints returned HTTP 401 during the October 21,
+  2026 review, so their formats and sampling contracts have not been verified.
+  The experimental measurements below do not qualify these official releases.
 
   ### FastH3 four-step Dense and VSA adapters
 
@@ -1217,13 +1241,15 @@ guide: |
   forbids model-level, layerwise, and distributed layerwise offload because those paths
   bypass load-time fusion.
 
-  ### FastH3 V2 and Omni eight-step checkpoints
+  ### Experimental FastH3 V2 and Omni eight-step checkpoints
 
   This supplement follows [vLLM-Omni #9167](https://github.com/vllm-project/vllm-omni/pull/9167),
-  which was open on October 20, 2026, at commit
-  `ac75e28d473266f39c9d291bc322e2399933ca92`. These full checkpoints require that
-  source integration. Use the separate environment below; the base MiniMax-H3
-  command builder and its installation options describe the native model.
+  which was open on October 21, 2026, at commit
+  `ac75e28d473266f39c9d291bc322e2399933ca92`. The commands reproduce the earlier
+  experimental integration for users with access to those snapshots. They do
+  not serve the official FP8/NVFP4 releases listed above. Use the separate
+  environment below; the base MiniMax-H3 command builder and its installation
+  options describe the native model.
 
   **Install the source preview.** The following commands target Linux x86_64,
   Python 3.12, and a CUDA 13-compatible driver, using the vLLM 0.32.0 wheel from
@@ -1261,6 +1287,7 @@ guide: |
 
   ```bash
   vllm serve FastVideo/FastVideo-FastH3-Omni-8-Step-V1 --omni \
+    --revision 88d512c5e7cc38dda499fbb65688ce58611f9c80 \
     --config recipes/FastVideo/fasth3-8step-8gpu.yaml
   ```
 
@@ -1268,6 +1295,7 @@ guide: |
 
   ```bash
   vllm serve FastVideo/FastVideo-FastH3-8-Step-V2 --omni \
+    --revision 3da2ddfe1954d9cda4c05b643dc0f26007a655c5 \
     --config recipes/FastVideo/fasth3-8step-8gpu.yaml
   ```
 
@@ -1309,9 +1337,34 @@ guide: |
   and FlashInfer 0.7.0.post1. Its historical offline benchmarks used vLLM 0.30.0
   and are not HTTP timings for this environment. The [V2 guide](https://github.com/vllm-project/vllm-omni/blob/ac75e28d473266f39c9d291bc322e2399933ca92/recipes/FastVideo/FastH3-V2.md)
   covers loader, sampling, and sparse-kernel regressions; V2 full-model serving
-  and performance remain unverified. Omni results do not qualify V2, and
-  cross-provider output equivalence remains unverified. This documentation
-  contribution has not independently repeated GPU inference.
+  and performance remain unverified. That V2 integration uses native MiniMax-H3
+  VAEs at revision `9bfb6693f2cf6de171db46d1aa586f67d773a1da` as a compatibility
+  choice; VAE weight and output equivalence to the V2 export is unverified.
+  Omni results do not qualify V2, and cross-provider output equivalence remains
+  unverified. This documentation contribution has not repeated GPU inference.
+
+  **Historical Omni baseline: 8× RTX PRO 5000 Blackwell 72 GB (SM120).**
+  BF16, 1344×768 at 24 FPS, eight PDD forwards, one image reference, seed 43,
+  and one request at a time:
+
+  | Frames | Video duration | Generation latency | Reported allocator peak |
+  |---:|---:|---:|---:|
+  | 124 | 5.167 s | 41.04 s, median of 3 runs after one warmup | 35.15 GiB |
+  | 345 | 14.375 s | 95.93 s, one run without a shape-specific warmup | 38.94 GiB |
+
+  These [offline measurements](https://github.com/lishunyang12/vllm-omni/pull/63)
+  use TP1/Ulysses8/HSDP8, text-encoder TP8, tiled VAE parallelism 8, eager
+  execution, and NCCL. Timing covers `Omni.generate` through encoded MP4 bytes,
+  excluding model loading and file writes. Memory is the reported CUDA allocator
+  high-water mark, not whole-device usage.
+  The environment was vLLM 0.30.0, PyTorch 2.13.0+cu130, Triton 3.7.1,
+  CUTLASS DSL 4.6.2, and FlashInfer
+  `f75bed5da7112103b75f82a4d4b5faf4be335154`. The model revision was
+  `88d512c5e7cc38dda499fbb65688ce58611f9c80`, with native components at
+  `9bfb6693f2cf6de171db46d1aa586f67d773a1da`.
+  These are experimental Omni results, not vLLM 0.32 HTTP timings or official
+  FP8/NVFP4 benchmarks. The three measured 124-frame outputs were byte-identical;
+  warmup audio differed, with the cause unresolved.
 
   ### LightX2V Turbo few-step LoRA
 
