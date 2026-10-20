@@ -1096,8 +1096,8 @@ guide: |
   | Official artifact | Scope | vLLM-Omni status at the pinned commit |
   |---|---|---|
   | [FastH3-QAD-v2](https://huggingface.co/FastVideo/FastH3-QAD-v2) | Eight-step T2VA; NVFP4 DiT and text encoder, lightweight INT8 video VAE | Release-specific loading and end-to-end validation pending |
-  | [FastH3-OmniRef-FP8](https://huggingface.co/FastVideo/FastH3-OmniRef-FP8) | OmniRef FP8 checkpoint | Checkpoint inspection and serving validation pending |
-  | [FastH3-OmniRef-NVFP4-QAD](https://huggingface.co/FastVideo/FastH3-OmniRef-NVFP4-QAD) | OmniRef NVFP4 QAD checkpoint | Checkpoint inspection and serving validation pending |
+  | [FastH3-OmniRef-FP8](https://huggingface.co/FastVideo/FastH3-OmniRef-FP8/blob/707a8268014bb49db870c0d59d57d6ee0ea3f5e9/README.md) | Eight-forward Ref2VA; FP8 DiT, NVFP4 text encoder, dense lightweight video VAE | Release-specific loading and end-to-end validation pending |
+  | [FastH3-OmniRef-NVFP4-QAD](https://huggingface.co/FastVideo/FastH3-OmniRef-NVFP4-QAD/blob/b81e1bf0496dc7c034ffdb8c82c3cde2d63ebf24/README.md) | Eight-forward Ref2VA; NVFP4 DiT and text encoder, 36-layer or 8-layer NVFP4 decoder | Release-specific loading, attention, and end-to-end validation pending |
   | [FastH3-NVFP4-VAE-Decoder](https://huggingface.co/FastVideo/FastH3-NVFP4-VAE-Decoder) | Optional video decoder: `quality-36L` or `fast-8L` | Decoder loading and full-pipeline validation pending; not a standalone generation model |
 
   The [QAD-v2 model card](https://huggingface.co/FastVideo/FastH3-QAD-v2/blob/a0dc05a76acdba7733c196b67b424889b6a2272b/README.md)
@@ -1107,8 +1107,10 @@ guide: |
   preserved when qualifying the release.
   The [NVFP4 decoder card](https://huggingface.co/FastVideo/FastH3-NVFP4-VAE-Decoder/blob/ddd17469cab7e490b1a04baaf26b247f0f0dcf0e/README.md)
   specifies W4A4 linears and BF16 decode autocast on Blackwell FP4 hardware.
-  The two OmniRef metadata endpoints returned HTTP 401 during the October 21,
-  2026 review, so their formats and sampling contracts have not been verified.
+  Both OmniRef manifests retain eight PDD forwards, video/audio shifts 12/3,
+  128-token VSA at 90% sparsity, and a separate reference keep rate of 0.1.
+  The NVFP4 QAD card specifies FP4 sparse attention with an FP8 prefix quality
+  mode; the experimental BF16 attention route does not establish equivalence.
   The experimental measurements below do not qualify these official releases.
 
   ### FastH3 four-step Dense and VSA adapters
