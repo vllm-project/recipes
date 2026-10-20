@@ -308,14 +308,9 @@ compatible_strategies:
   - multi_node_dep
   - pd_cluster
 
-# Ascend supports single-node quantized serving and multi-node TP for BF16.
-# The complete Ascend PD deployments live in the guide.
 strategy_hardware:
-  single_node_tep: { npu: unsupported }
-  multi_node_tp_pp: { npu: unsupported }
-  multi_node_tep: { npu: unsupported }
-  multi_node_dep: { npu: unsupported }
-  pd_cluster: { npu: unsupported }
+  single_node_dep: { npu: supported }
+  multi_node_tp_dp: { npu: supported }
 
 kv_offload_support:
   offloading_cpu: verified
