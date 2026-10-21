@@ -69,6 +69,9 @@ test("overlay can't touch out-of-scope hardware or model config", () => {
   assert.equal(errs({ model: { base_args: ["--x"] } }).length, 1);
   assert.equal(errs({ compatible_strategies: ["pd_cluster"] }).length, 1);
   assert.equal(errs({ strategy_hardware: { pd_cluster: { h200: "unsupported" } } }).length, 1);
+  assert.equal(errs({ container_setup: { h200: "#setup" } }).length, 1);
+  assert.equal(errs({ deployment_scripts: { h200: { launch: "echo wrong hardware" } } }).length, 1);
+  assert.equal(errs({ scripted_strategies: { pd_cluster: { h200: {} } } }).length, 1);
   assert.equal(errs({ meta: { default_hardware: "ascend_910c" } }).length, 1);
 });
 
@@ -78,6 +81,9 @@ test("overlay is add-only", () => {
   // An existing variant can't be replaced wholesale, only extended per hardware.
   assert.equal(errs({ variants: { default: { precision: "int4" } } }).length, 1);
   assert.deepEqual(errs({ variants: { default: { hardware_overrides: { ascend_910c: { docker_image: "x" } } } } }), []);
+  assert.deepEqual(errs({ container_setup: { ascend_910c: "#setup" } }), []);
+  assert.deepEqual(errs({ deployment_scripts: { ascend_910c: { launch: "echo Ascend" } } }), []);
+  assert.deepEqual(errs({ scripted_strategies: { pd_cluster: { ascend_910c: {} } } }), []);
 });
 
 test("new variants and dependencies must be in scope", () => {
