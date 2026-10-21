@@ -16,6 +16,12 @@ export const CACHE_DIR = path.join(ROOT, ".sources");
 
 const ROLES = new Set(["core", "owner", "overlay"]);
 
+// `defers_to` names one source or a list of them.
+export function defersTo(spec) {
+  const d = spec?.defers_to;
+  return d === undefined ? [] : [].concat(d);
+}
+
 export function loadSources() {
   const cfg = yaml.load(fs.readFileSync(SOURCES_FILE, "utf8")) || {};
   const channels = cfg.channels || {};
@@ -27,8 +33,9 @@ export function loadSources() {
       if (!spec.local && !(spec.repo && spec.ref)) {
         throw new Error(`sources.yaml: ${channel}.${name} needs repo + ref (or local)`);
       }
-      if (spec.defers_to !== undefined && (spec.defers_to === name || !sources[spec.defers_to] || sources[spec.defers_to].defers_to)) {
-        throw new Error(`sources.yaml: ${channel}.${name}.defers_to must name another source of ${channel} that doesn't defer itself`);
+      if (spec.defers_to !== undefined && !(defersTo(spec).length && defersTo(spec).every((other) =>
+        other !== name && sources[other] && !sources[other].defers_to))) {
+        throw new Error(`sources.yaml: ${channel}.${name}.defers_to must name other sources of ${channel} that don't defer themselves`);
       }
     }
   }

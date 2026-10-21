@@ -16,9 +16,9 @@
 #              { tasks: [omni] }        owner: every recipe must carry the task
 #              { exclude_tasks: [omni] } core/owner: no recipe may carry the task
 #              { brands: [Huawei] }     overlay: only hardware keys of these brands
-#   defers_to — another source in the channel: where both ship a recipe, that
-#              source's copy wins and this one's is skipped (for a migration:
-#              copies stay here until they are removed)
+#   defers_to — another source in the channel, or a list of them: where both
+#              ship a recipe, that source's copy wins and this one's is skipped
+#              (for a migration: copies stay here until they are removed)
 #
 # Developers preview a local checkout via sources.local.yaml (gitignored):
 #   overrides:
@@ -35,14 +35,19 @@ channels:
       path: recipes
       role: core
       scope: { exclude_tasks: [omni] }
-    # Interim owner of the omni recipes, until they move to vllm-project/vllm-omni.
-    # models/ also keeps copies of the vLLM recipes until they are synced to
-    # vllm and removed: vllm's version renders; a recipe merged here that vllm
-    # doesn't have yet renders from here.
+    vllm-omni:
+      repo: vllm-project/vllm-omni
+      ref: main
+      path: recipes
+      role: owner
+      scope: { tasks: [omni] }
+    # models/ keeps copies of the vLLM and vLLM-Omni recipes until they are
+    # synced upstream and removed: the upstream version renders; a recipe
+    # merged here that upstream doesn't have yet renders from here.
     recipes:
       repo: vllm-project/recipes
       ref: main
       path: .
       local: .
       role: owner
-      defers_to: vllm
+      defers_to: [vllm, vllm-omni]

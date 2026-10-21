@@ -126,7 +126,9 @@ test("defers_to skips copies the other source ships; ownership and scope still h
     assert.deepEqual([prov["org/a"].source, prov["org/b"].source], ["core", "old"]);
     assert.match(assemble({}).stderr, /org\/a: shipped by both/);
     assert.match(assemble({ defers_to: "core", scope: { tasks: ["omni"] } }).stderr, /org\/b\.yaml: source scope requires/);
-    assert.match(assemble({ defers_to: "nope" }).stderr, /defers_to must name another source/);
+    assert.match(assemble({ defers_to: "nope" }).stderr, /defers_to must name other sources/);
+    assert.match(assemble({ defers_to: ["core", "nope"] }).stderr, /defers_to must name other sources/);
+    assert.equal(assemble({ defers_to: ["core"] }).status, 0);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
     fs.rmSync(path.join(ROOT, ".content", channel), { recursive: true, force: true });

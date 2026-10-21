@@ -19,10 +19,10 @@ repo renders them (see "How recipes are maintained" in the
 | Recipe | Repository and directory |
 | --- | --- |
 | Models served by vLLM | `vllm-project/vllm` → `recipes/models/<hf_org>/<hf_repo>.yaml` |
-| Omni models (`meta.tasks` includes `omni`) | This repo → `models/<hf_org>/<hf_repo>.yaml`, until they move to vllm-omni |
+| Omni models (`meta.tasks` includes `omni`) | `vllm-project/vllm-omni` → `recipes/models/<hf_org>/<hf_repo>.yaml` |
 | Ascend NPU content | Inline in the vLLM recipe for now; moving to `overlays/<hf_org>/<hf_repo>.yaml` in vllm-ascend |
 
-This repo's `models/` still holds copies of the vLLM recipes until they are synced to vLLM and removed. The site renders vLLM's version, so open changes to those models against vLLM, not the copies here. Pull requests already open against the copies can still merge; they reach the site once synced to vLLM.
+This repo's `models/` still holds copies of the vLLM and vLLM-Omni recipes until they are synced upstream and removed. The site renders the upstream version, so open changes to those models against vLLM or vLLM-Omni, not the copies here. Pull requests already open against the copies can still merge; they reach the site once synced upstream.
 
 The schema ([SCHEMA.md](SCHEMA.md)) is the same everywhere. Changes to the schema, hardware
 profiles (`taxonomy.yaml`), strategies, provider logos, or the site itself go
@@ -36,11 +36,12 @@ to this repo.
    [SCHEMA.md](SCHEMA.md). The template's first line points YAML-aware editors at
    the published schema for completion and inline errors.
 3. Point this repo at your checkout with a gitignored `sources.local.yaml`
-   (skip this for omni recipes, which live here):
+:
 
    ```yaml
    overrides:
-     vllm: ~/vllm/recipes
+     vllm: ~/vllm/recipes            # or, for an omni recipe:
+     vllm-omni: ~/vllm-omni/recipes
    ```
 
 4. Validate from this repo: `node scripts/build-recipes-api.mjs` — must print
@@ -131,7 +132,7 @@ node scripts/build-recipes-api.mjs
 
 # Or validate a source checkout exactly as its pull-request check does
 # (strict assemble + JSON API build), without touching sources.local.yaml:
-node scripts/validate-source.mjs --source vllm --dir ~/vllm/recipes
+node scripts/validate-source.mjs --source vllm --dir ~/vllm/recipes   # or --source vllm-omni --dir ~/vllm-omni/recipes
 
 # Full preview
 pnpm install
@@ -151,7 +152,7 @@ In the owning repo, stage **only** the new recipe YAML, and sign off the
 commit (vllm-project repos enforce DCO):
 
 ```bash
-git add recipes/models/<hf_org>/<hf_repo>.yaml   # in vllm; omni recipes here: models/<hf_org>/<hf_repo>.yaml
+git add recipes/models/<hf_org>/<hf_repo>.yaml   # in vllm or vllm-omni
 git commit -s -m "Add <hf_org>/<hf_repo> recipe"
 ```
 
