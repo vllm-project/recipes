@@ -15,7 +15,8 @@
     "validate": "node --experimental-vm-modules hooks/validate.mjs",
     "test:overlay": "node --test scripts/test-overlay.mjs",
     "test:schema": "node --test scripts/test-schema.mjs",
-    "test:dcp": "node --test scripts/test-dcp-selector.mjs"
+    "test:dcp": "node --test scripts/test-dcp-selector.mjs",
+    "test:profiles": "node --test scripts/test-profiles.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.2",

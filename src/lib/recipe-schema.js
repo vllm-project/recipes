@@ -240,6 +240,24 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
       // looked up by exact profile id
       hardware_notes: keyed(gpuId, obj({ title: { type: "string" }, body: { type: "string" }, link: obj({ href: { type: "string" }, label: { type: "string" } }) }, { required: ["body"] })),
       strategy_overrides: keyed(strategyId, strategyOverride),
+      // Tuned profiles (recipe-profiles.js): a named delta for one exact GPU,
+      // optionally one strategy. Keys are lowercase ids; `baseline` is reserved.
+      profiles: keyed({ pattern: "^[a-z0-9][a-z0-9_]*$" }, obj({
+        label: { type: "string" },
+        hardware: gpuId,
+        strategy: strategyId,
+        workload: { type: "string" },
+        description: { type: "string" },
+        default: { type: "boolean" },
+        args: strings,
+        env: envMap,
+        roles: (() => {
+          const role = obj({ args: strings, env: envMap, nodes: { type: "integer", minimum: 1 }, parallelism: pdMode });
+          return obj({ prefill: role, decode: role });
+        })(),
+        source: obj({ label: { type: "string" }, href: { type: "string" } }, { required: ["href"] }),
+        runbook: { type: "string" },
+      }, { required: ["label", "hardware"] })),
       advanced_options: { type: "array", items: { type: "object" } },
       omni: obj({
         serve_binary: { type: "string" },

@@ -21,6 +21,7 @@ import path from "path";
 import yaml from "js-yaml";
 import Ajv from "ajv";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
+import { resolveProfileKey, validateProfiles, withProfile } from "../src/lib/recipe-profiles.js";
 import {
   pickDefaultHardware,
   listCompatibleHardware,
@@ -389,7 +390,9 @@ function dockerize(command, argv, env, dockerMeta, port = null) {
 //   "skip" → would need >4 nodes per role; don't emit a fantasy cluster
 // Each role is then grown to clear its parallelism's `strategy_min_gpus` floor,
 // matching what the builder renders.
-function pickPdNodes(hwProfile, variant, recipe, strategies, hwId) {
+function pickPdNodes(hwProfile, variant, baseRecipe, strategies, hwId) {
+  // The pd_cluster profile this rendering bakes in may own the pools' topology.
+  const recipe = withProfile(baseRecipe, resolveProfileKey(baseRecipe, hwId, "pd_cluster"), hwId, "pd_cluster");
   if (pdFitsSingleNode(hwProfile, variant, hwId)) return null;
   const nodeVram = typeof hwProfile?.vram_gb === "number" ? hwProfile.vram_gb : 0;
   const modelVram = variantVramMinimumGb(variant, hwId);
@@ -434,6 +437,9 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
     variant: variantKey,
     node_count: nodeCount,
     deploy_type: result.deployType,
+    // The tuned profile baked into this rendering (its default for this
+    // hardware + strategy); absent when the baseline renders.
+    ...(result.profile && result.profile.selected !== "baseline" ? { profile: result.profile.selected } : {}),
     env,
     docker_image: dockerMeta.image,
   };
@@ -895,6 +901,8 @@ for (const file of findYamlFiles(modelsDir)) {
   validateFeatureModes(r, file);
   validateFrontends(r, file, taxonomy);
   validateHardwareKeys(r, file, taxonomy, strategies);
+  const profileErrors = validateProfiles(r, taxonomy, effectiveCompatibleStrategies(r));
+  if (profileErrors.length) throw new Error(`Invalid profiles in ${sourceRel(file)}:\n  - ${profileErrors.join("\n  - ")}`);
   // Derive HF identity from path. Only `hf_id` is exposed in the public JSON;
   // `org` and `repo` are trivially `hf_id.split("/")` for consumers.
   const rel = path.relative(modelsDir, file);

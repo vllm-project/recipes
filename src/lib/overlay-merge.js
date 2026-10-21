@@ -49,11 +49,17 @@ export function variantInScope(variant, ctx) {
   return Array.isArray(hw) && hw.length > 0 && hw.every((k) => ctx.isHwKey(k));
 }
 
+// A tuned profile belongs to the overlay when its hardware is in scope.
+export function profileInScope(profile, ctx) {
+  return typeof profile?.hardware === "string" && ctx.isHwKey(profile.hardware);
+}
+
 // ── Rule table ──
 //
 // Path segments: a literal key, "*" (any key), "@hw" (an in-scope hardware
 // key — the whole subtree below it belongs to the overlay), "@variant" (a
-// variant absent from the core recipe that passes variantInScope), "[task]"
+// variant absent from the core recipe that passes variantInScope), "@profile"
+// (likewise, a profile that passes profileInScope), "[task]"
 // (an omni task in the core `omni.tasks` array, addressed by `key ?? id`).
 // `union: true` = an array the overlay may append in-scope hardware ids to.
 // When the schema gains a new hardware-keyed field, add it here.
@@ -70,6 +76,7 @@ export const OVERLAY_RULES = [
   ["features", "*", "modes", "*", "hardware_overrides", "@hw"],
   ["features", "*", "modes", "*", "hardware", "@hw"],
   ["variants", "@variant"],
+  ["profiles", "@profile"],
   ["variants", "*", "hardware_overrides", "@hw"],
   ["variants", "*", "tp", "@hw"],
   { path: ["variants", "*", "supported_hardware"], union: true },
@@ -85,7 +92,7 @@ const taskKey = (t) => (typeof t === "string" ? t : t?.key ?? t?.id);
 function segmentMatches(seg, key, coreParent, ctx) {
   if (seg === "*") return true;
   if (seg === "@hw") return ctx.isHwKey(key);
-  if (seg === "@variant") return !own(coreParent, key);
+  if (seg === "@variant" || seg === "@profile") return !own(coreParent, key);
   if (seg === "[task]") return true;
   return seg === key;
 }
@@ -164,6 +171,9 @@ function mergeNode(parent, key, ov, p, rules, ctx, err, seg = null) {
     }
     if (done.path[depth] === "@variant" && !variantInScope(ov, ctx)) {
       return err(p, "new variant must list only in-scope hardware in supported_hardware");
+    }
+    if (done.path[depth] === "@profile" && !profileInScope(ov, ctx)) {
+      return err(p, "new profile must target in-scope hardware");
     }
     if (coreVal !== undefined) return err(p, "already set by the core recipe (overlays are add-only)");
     setChild(parent, key, structuredClone(ov), seg);
@@ -253,8 +263,15 @@ export function splitOverlay(recipe, { ctx, source, guideHeading = null }) {
     }
   }
 
+  for (const [pk, prof] of Object.entries(core.profiles || {})) {
+    if (!profileInScope(prof, ctx)) continue;
+    put(["profiles", pk], prof);
+    delete core.profiles[pk];
+  }
+  if (core.profiles && !Object.keys(core.profiles).length) delete core.profiles;
+
   for (const rule of OVERLAY_RULES) {
-    if (rule.path.includes("@variant")) continue;
+    if (rule.path.includes("@variant") || rule.path.includes("@profile")) continue;
     extract(core, rule, 0, [], ctx, put);
   }
 
