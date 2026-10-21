@@ -1,12 +1,20 @@
 {
   "latest": {
     "vllm": {
-      "repo": "vllm-project/vllm",
-      "ref": "main",
+      "repo": "esmeetu/vllm",
+      "ref": "recipes-ascend-overlays",
       "path": "recipes",
-      "sha": "612e928016e2cfe28da95fc03ed894aceaf18299",
-      "tree_sha": "f265163c4dc930d469591cdef9130c545437985c",
-      "resolved_at": "2026-10-20T22:12:40.239Z"
+      "sha": "7846aee877aa763108476ed035d410fe8e175bca",
+      "tree_sha": "d4d6d8c89be11110d8d0c68adddacdde3640839d",
+      "resolved_at": "2026-10-21T03:33:37.977Z"
+    },
+    "vllm-ascend": {
+      "repo": "esmeetu/vllm-ascend",
+      "ref": "recipes-overlays",
+      "path": "recipes",
+      "sha": "159363ddb2d60ec0a4fe6af256839803bb945180",
+      "tree_sha": "02e975e6f2876f7d7a10df6a8dcd56f6488a4afd",
+      "resolved_at": "2026-10-21T03:33:46.488Z"
     }
   }
 }
