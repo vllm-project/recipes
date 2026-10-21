@@ -1,12 +1,12 @@
 {
   "latest": {
     "vllm": {
-      "repo": "vllm-project/vllm",
-      "ref": "main",
+      "repo": "esmeetu/vllm",
+      "ref": "recipes-profiles",
       "path": "recipes",
-      "sha": "52a65d7b19e9e3ad86bf1e3b6954e4e11eeec7da",
-      "tree_sha": "b64b9fedf19e8a63674ba52aaa6352544fa944d2",
-      "resolved_at": "2026-10-21T05:53:21.643Z"
+      "sha": "57c32a677488a8a0155f8ee643ebf390526cc535",
+      "tree_sha": "e21db30acf416d8f3a27664ad37ad5cbc827d0a6",
+      "resolved_at": "2026-10-21T07:56:46.607Z"
     }
   }
 }

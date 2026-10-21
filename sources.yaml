@@ -29,9 +29,11 @@ default_channel: latest
 
 channels:
   latest:
+    # PREVIEW: esmeetu/vllm@recipes-profiles (Kimi-K3's AgentX lanes as
+    # tuned profiles); drop this commit before merging.
     vllm:
-      repo: vllm-project/vllm
-      ref: main
+      repo: esmeetu/vllm
+      ref: recipes-profiles
       path: recipes
       role: core
       scope: { exclude_tasks: [omni] }
