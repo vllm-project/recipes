@@ -108,7 +108,8 @@ jobs:
         run: |
           run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           if [ -f "$RUNNER_TEMP/commit-message.txt" ]; then
-            fingerprint="target-$(sha256sum "$RUNNER_TEMP/commit-message.txt" | cut -c1-16)"
+            # The subject names every target commit; the body depends on the API.
+            fingerprint="target-$(head -n 1 "$RUNNER_TEMP/commit-message.txt" | sha256sum | cut -c1-16)"
           else
             # Failed before resolving a target (e.g. a GitHub API error). Report
             # only the second such failure in a row, so a one-off stays quiet.
