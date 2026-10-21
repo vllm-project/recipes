@@ -8,6 +8,13 @@
 // `applyOverlay` is the merge; `splitOverlay` is its inverse (pull every
 // in-scope key out of a full recipe) — the migration tool for moving content
 // into an overlay repo, and the round-trip check that keeps the two in sync.
+//
+// An overlay entry identical to what the core recipe already has (a value, a
+// variant, a dependency, a guide section) is a no-op rather than an error, so
+// a source can start shipping content before the core recipe drops its copy:
+// the page is the same before, during and after the move.
+
+import { isDeepStrictEqual } from "node:util";
 
 // ── Scope ──
 
@@ -130,6 +137,7 @@ export function applyOverlay(core, overlay, { ctx, source }) {
         if (!isObj(dep)) { err([key, i], "must be a map"); continue; }
         if (!brandInScope(dep.brand, ctx)) err([key, i], `needs a brand in scope (${[...ctx.brands].join(", ")})`);
         const { position, ...rest } = structuredClone(dep);
+        if ((recipe.dependencies || []).some((d) => isDeepStrictEqual(d, rest))) continue;
         (position === "end" ? end : start).push(rest);
       }
       recipe.dependencies = [...start, ...(recipe.dependencies || []), ...end];
@@ -154,7 +162,10 @@ function mergeNode(parent, key, ov, p, rules, ctx, err, seg = null) {
   const depth = p.length - 1;
   if (RESERVED.has(key)) return err(p, "reserved key");
   const coreVal = seg === "[task]" ? coreChild(parent, key, seg) : own(parent, key) ? parent[key] : undefined;
-  const live = rules.filter((r) => r.path.length > depth && segmentMatches(r.path[depth], key, parent, ctx));
+  // A value the core already has is matched as if it were new (so a variant
+  // the core still carries resolves to the "@variant" rule), then skipped.
+  const same = coreVal !== undefined && isDeepStrictEqual(coreVal, ov);
+  const live = rules.filter((r) => r.path.length > depth && segmentMatches(r.path[depth], key, same ? {} : parent, ctx));
   if (live.length === 0) return err(p, "not writable by an overlay (outside its hardware scope)");
 
   // A rule ending here: the overlay owns this key (or, for `union`, may extend
@@ -175,6 +186,7 @@ function mergeNode(parent, key, ov, p, rules, ctx, err, seg = null) {
     if (done.path[depth] === "@preset" && !presetInScope(ov, ctx)) {
       return err(p, "new preset must target in-scope hardware");
     }
+    if (same) return;
     if (coreVal !== undefined) return err(p, "already set by the core recipe (overlays are add-only)");
     setChild(parent, key, structuredClone(ov), seg);
     return;
@@ -213,11 +225,15 @@ function setChild(parent, key, value, seg) {
 
 // Insert each named section at `<!-- overlay:<source>:<name> -->` (or the
 // bare `<!-- overlay:<source> -->` for a section named "default"); sections
-// without a marker append to the end of the guide.
+// without a marker append to the end of the guide. A section whose text the
+// guide already contains is skipped.
 function insertGuideSections(guide, source, sections) {
   const placed = new Set();
+  for (const [name, md] of Object.entries(sections)) {
+    if (String(md).trim() && guide.includes(String(md).trim())) placed.add(name);
+  }
   let out = guide.replace(GUIDE_MARKER, (m, src, name = "default") => {
-    if (src !== source || !Object.hasOwn(sections, name)) return m;
+    if (src !== source || !Object.hasOwn(sections, name) || placed.has(name)) return m;
     placed.add(name);
     return ensureTrailingNewline(sections[name]);
   });
