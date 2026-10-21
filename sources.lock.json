@@ -7,6 +7,14 @@
       "sha": "52a65d7b19e9e3ad86bf1e3b6954e4e11eeec7da",
       "tree_sha": "b64b9fedf19e8a63674ba52aaa6352544fa944d2",
       "resolved_at": "2026-10-21T05:53:21.643Z"
+    },
+    "vllm-omni": {
+      "repo": "vllm-project/vllm-omni",
+      "ref": "main",
+      "path": "recipes",
+      "sha": "24f0cf37b94076baece79a685dbf04f66b14aef4",
+      "tree_sha": "e25e3c3bf29a0b0094e14b9180385babb374edef",
+      "resolved_at": "2026-10-21T06:43:22.953Z"
     }
   }
 }

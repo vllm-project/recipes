@@ -10,10 +10,10 @@ Recipes are YAML files at `models/<hf_org>/<hf_repo>.yaml`. The path mirrors Hug
 | Recipe | Write the YAML in |
 |---|---|
 | Models served by vLLM | `vllm-project/vllm` → `recipes/models/<hf_org>/<hf_repo>.yaml` |
-| Omni models (`meta.tasks` includes `omni`) | `vllm-project/recipes` → `models/<hf_org>/<hf_repo>.yaml` (until they move to vllm-omni) |
+| Omni models (`meta.tasks` includes `omni`) | `vllm-project/vllm-omni` → `recipes/models/<hf_org>/<hf_repo>.yaml` |
 | Ascend NPU content | inline in the vLLM recipe for now (moving to `overlays/` in vllm-ascend) |
 
-This repo's `models/` still holds copies of the vLLM recipes until they are synced to vLLM and removed. The site renders vLLM's version, so open changes to those models against vLLM, not the copies here.
+This repo's `models/` still holds copies of the vLLM and vLLM-Omni recipes until they are synced upstream and removed. The site renders the upstream version, so open changes to those models against vLLM or vLLM-Omni, not the copies here.
 
 Fields are defined once in [SCHEMA.md](https://github.com/vllm-project/recipes/blob/main/SCHEMA.md). Run the validation and preview
 commands below from a checkout of vllm-project/recipes, pointed at your checkout of
@@ -152,8 +152,8 @@ guide markdown ─────────────────────�
    in another repo.
 11. **Validate data and rendering.** In the recipes checkout, point the owning repo's
    source at your checkout with a gitignored `sources.local.yaml`
-   (`overrides: { vllm: ~/vllm/recipes }`; skip for recipes that live in the recipes
-   repo itself). Run the JSON generator, inspect the generated model JSON, then preview
+   (`overrides: { vllm: ~/vllm/recipes }`, or `vllm-omni: ~/vllm-omni/recipes` for an
+   omni recipe). Run the JSON generator, inspect the generated model JSON, then preview
    the page with `pnpm dev` (YAML edits show on refresh; run `pnpm content:watch` to pick
    up added or removed files). Exercise every relevant
    Hardware / Variant / Strategy / Feature selection and compare the generated command
@@ -182,7 +182,7 @@ key order it lists.
 
 Before committing:
 
-1. From the recipes checkout, `node scripts/validate-source.mjs --source vllm --dir ~/vllm/recipes` passes — the same strict assemble + JSON API build the owning repo's PR check runs (or `node scripts/build-recipes-api.mjs` with `sources.local.yaml` pointing at your checkout) — and the new recipe appears in the line count.
+1. From the recipes checkout, `node scripts/validate-source.mjs --source vllm --dir ~/vllm/recipes` (or `--source vllm-omni --dir ~/vllm-omni/recipes`) passes — the same strict assemble + JSON API build the owning repo's PR check runs (or `node scripts/build-recipes-api.mjs` with `sources.local.yaml` pointing at your checkout) — and the new recipe appears in the line count.
 2. `node -e "const d = require('./public/<hf_org>/<hf_repo>.json'); console.log(d.model.parameter_count, d.variants.default.vram_minimum_gb)"` prints sensible values.
 3. In the owning repo, inspect `git diff --check` and confirm the YAML top-level key order matches SCHEMA.md.
 4. If the recipe marks any KV-store mode `unsupported` under `kv_cache_strategy_hardware`, spot-check `public/<hf_org>/<hf_repo>/hw/<gpu>/strategies/`: no `kv_store_*` file may exist for an opted-out GPU (they are emitted for all other scalable hardware by default).
@@ -194,7 +194,7 @@ Before committing:
 Commit in the owning repo and stage **only** the new recipe; vllm-project repos enforce DCO, so sign off:
 
 ```bash
-git add recipes/models/<hf_org>/<hf_repo>.yaml   # in vllm; omni recipes in this repo: models/<hf_org>/<hf_repo>.yaml
+git add recipes/models/<hf_org>/<hf_repo>.yaml   # in vllm or vllm-omni
 git commit -s -m "Add <hf_org>/<hf_repo> recipe"
 ```
 

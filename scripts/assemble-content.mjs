@@ -24,7 +24,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import yaml from "js-yaml";
 import { applyOverlay, hasGuideMarkers, resolveScope, stripGuideMarkers, variantInScope } from "../src/lib/overlay-merge.js";
-import { ROOT, loadLock, loadOverrides, loadSources, parseArgs, resolveSourceDir } from "./lib/content-sources.mjs";
+import { ROOT, defersTo, loadLock, loadOverrides, loadSources, parseArgs, resolveSourceDir } from "./lib/content-sources.mjs";
 
 // Highest recipe schema this renderer understands (source manifest.yaml).
 export const SUPPORTED_SCHEMA_VERSION = 1;
@@ -121,7 +121,7 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
       if (!hfId) continue;
       const rel = path.relative(dir, file);
       const prev = owners.get(hfId);
-      if (prev && spec.defers_to === prev.name) {
+      if (prev && defersTo(spec).includes(prev.name)) {
         deferred++;
         continue;
       }
