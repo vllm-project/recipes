@@ -661,6 +661,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const n = parseInt(searchParams.get("kv_instance") || "0", 10);
     return Number.isFinite(n) && n >= 0 ? n : 0;
   });
+  // Decode Context Parallelism pick: null follows the recipe default, 1 = Off,
+  // N = that DCP size. Only read when the recipe declares decode_context_parallel.
+  const [dcpSize, setDcpSize] = useState(() => {
+    const n = parseInt(searchParams.get("dcp") || "", 10);
+    return Number.isFinite(n) && n >= 1 ? n : null;
+  });
   // Default-on features = (all features) − (recipe.opt_in_features) − (recipe.hardware_opt_in_features[hwId]).
   // The per-hw override lets a recipe suppress a feature's default on specific
   // hardware (e.g. GB200's 4-GPU trays make --mm-encoder-tp-mode data unnecessary).
@@ -1135,9 +1141,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
         }
         : null;
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport);
+      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport, dcpSize);
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport, dcpSize]
   );
 
   // Visual feedback when any rendered command changes. Covers single-node
@@ -1473,6 +1479,24 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     setFeatureModes(next);
     syncUrl({ fmode: featureModesToUrl(next, variant) });
     saveRecipeState(recipe.hf_id, { featureModes: next });
+  };
+
+  // A DCP pick belongs to one hardware/variant/strategy: Off or a size chosen
+  // on GB200 aggregated must not carry over to a PD topology with another
+  // default. Skip the mount run so a shared ?dcp= link keeps its pick.
+  const dcpScope = `${hwId}|${variant}|${activeStrategy}`;
+  const prevDcpScope = useRef(dcpScope);
+  useEffect(() => {
+    if (prevDcpScope.current === dcpScope) return;
+    prevDcpScope.current = dcpScope;
+    setDcpSize(null);
+    syncUrl({ dcp: "" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dcpScope]);
+
+  const selectDcp = (size) => {
+    setDcpSize(size);
+    syncUrl({ dcp: size == null ? "" : String(size) });
   };
 
   const toggleAdvanced = (id) => {
@@ -2879,6 +2903,28 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               )}
             </p>
           </ConfigRow>
+
+          {/* Decode Context Parallelism — sizes come from the recipe's qualified
+              list, narrowed to those dividing the TP of every role, so one pick
+              keeps all node tabs consistent. Hidden when nothing is offered. */}
+          {result?.dcp && result.dcp.sizes.length > 0 && (
+            <ConfigRow label="Decode context parallel" hint="--decode-context-parallel-size">
+              <PillGroup>
+                {[1, ...result.dcp.sizes].map((n) => (
+                  <Pill
+                    key={n}
+                    active={(n === 1 ? 0 : n) === result.dcp.selected}
+                    onClick={() => selectDcp(n === 1 && result.dcp.baseline === 0 ? null : n)}
+                    title={n === 1
+                      ? "No decode context parallelism"
+                      : `Shard the decode KV cache ${n} ways (divides TP ${[...new Set(result.dcp.tp)].join("/")})`}
+                  >
+                    {n === 1 ? "Off" : `DCP${n}`}
+                  </Pill>
+                ))}
+              </PillGroup>
+            </ConfigRow>
+          )}
 
           {/* Features */}
           {Object.keys(recipe.features || {}).length > 0 && (
