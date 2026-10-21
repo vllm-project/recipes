@@ -1499,6 +1499,24 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     syncUrl({ dcp: size == null ? "" : String(size) });
   };
 
+  const hasDcp = !!result?.dcp && result.dcp.sizes.length > 0;
+  const dcpPills = hasDcp && (
+    <PillGroup>
+      {[1, ...result.dcp.sizes].map((n) => (
+        <Pill
+          key={n}
+          active={(n === 1 ? 0 : n) === result.dcp.selected}
+          onClick={() => selectDcp(n === 1 && result.dcp.baseline === 0 ? null : n)}
+          title={n === 1
+            ? "No decode context parallelism"
+            : `Shard the decode KV cache ${n} ways (divides TP ${[...new Set(result.dcp.tp)].join("/")})`}
+        >
+          {n === 1 ? "Off" : `DCP${n}`}
+        </Pill>
+      ))}
+    </PillGroup>
+  );
+
   const toggleAdvanced = (id) => {
     const next = advanced.includes(id) ? advanced.filter((x) => x !== id) : [...advanced, id];
     setAdvanced(next);
@@ -2787,6 +2805,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   parallelism={effPdDecodePar}
                   onParChange={(m) => setPdPar("decode", m)}
                 />
+                {hasDcp && (
+                  <div className="flex items-center gap-2" title="--decode-context-parallel-size">
+                    <span className="w-12 shrink-0 text-xs font-medium text-muted-foreground">DCP</span>
+                    {dcpPills}
+                  </div>
+                )}
                 <span className="text-xs text-muted-foreground tabular-nums">
                   total {(effPdPrefillNodes + effPdDecodeNodes) * (hwProfile.gpu_count || 8)} GPUs
                   · {effPdPrefillNodes + effPdDecodeNodes} node{effPdPrefillNodes + effPdDecodeNodes === 1 ? "" : "s"}
@@ -2906,23 +2930,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
           {/* Decode Context Parallelism — sizes come from the recipe's qualified
               list, narrowed to those dividing the TP of every role, so one pick
-              keeps all node tabs consistent. Hidden when nothing is offered. */}
-          {result?.dcp && result.dcp.sizes.length > 0 && (
+              keeps all node tabs consistent. Hidden when nothing is offered.
+              Under PD it renders inside the Nodes row instead (dcpPills). */}
+          {hasDcp && activeStrategy !== "pd_cluster" && (
             <ConfigRow label="Decode context parallel" hint="--decode-context-parallel-size">
-              <PillGroup>
-                {[1, ...result.dcp.sizes].map((n) => (
-                  <Pill
-                    key={n}
-                    active={(n === 1 ? 0 : n) === result.dcp.selected}
-                    onClick={() => selectDcp(n === 1 && result.dcp.baseline === 0 ? null : n)}
-                    title={n === 1
-                      ? "No decode context parallelism"
-                      : `Shard the decode KV cache ${n} ways (divides TP ${[...new Set(result.dcp.tp)].join("/")})`}
-                  >
-                    {n === 1 ? "Off" : `DCP${n}`}
-                  </Pill>
-                ))}
-              </PillGroup>
+              {dcpPills}
             </ConfigRow>
           )}
 
