@@ -1204,7 +1204,50 @@ export function smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, trans
  * Returns: { command, env, deployType } for single_node/multi_node,
  *          { prefillCommand, decodeCommand, routerConfig, env, deployType } for pd_cluster.
  */
-export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null, pdTransport = "http") {
+/**
+ * Decode context parallelism (DCP). A recipe opts in with
+ * `decode_context_parallel.sizes` — a list, or a hardware-keyed map of lists
+ * (exact GPU id > generation > brand > `default`) — naming the DCP sizes that
+ * were qualified on that hardware. Returns the sorted sizes above 1.
+ */
+export function dcpSizesFor(recipe, hwProfile, hwProfileId) {
+  const raw = recipe?.decode_context_parallel?.sizes;
+  const list = Array.isArray(raw) ? raw : hardwareKeyedValue(raw, hwProfile, hwProfileId);
+  if (!Array.isArray(list)) return [];
+  return [...new Set(list.filter((n) => Number.isInteger(n) && n > 1))].sort((a, b) => a - b);
+}
+
+function lastFlagValue(args, flag) {
+  const i = args.lastIndexOf(flag);
+  return i >= 0 ? args[i + 1] : undefined;
+}
+
+/**
+ * Set (size > 0) or drop (size 0) `--decode-context-parallel-size` in an argv.
+ * An existing flag is rewritten in place so the argument order is stable; when
+ * it is absent the flag is appended with the recipe's `comm_backend`. Dropping
+ * also removes `--dcp-comm-backend`, which is meaningless without DCP.
+ */
+function applyDcpSize(args, size, commBackend) {
+  const SIZE = "--decode-context-parallel-size";
+  const BACKEND = "--dcp-comm-backend";
+  if (size === 0) return stripArgs(args, [SIZE, BACKEND]);
+  if (!args.includes(SIZE)) {
+    return [...args, SIZE, String(size), ...(commBackend && !args.includes(BACKEND) ? [BACKEND, commBackend] : [])];
+  }
+  return args.map((a, i) => (args[i - 1] === SIZE ? String(size) : a));
+}
+
+export function resolveCommand(...params) {
+  const dcpOut = {};
+  const result = resolveCommandImpl(dcpOut, ...params);
+  if (result && typeof result === "object" && !Array.isArray(result)) result.dcp = dcpOut.get?.() ?? null;
+  return result;
+}
+
+// `dcpSize` is the user's Decode Context Parallelism pick: null follows the
+// recipe's own default, 1 forces DCP off, N > 1 selects that size.
+function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null, pdTransport = "http", dcpSize = null) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
@@ -1297,12 +1340,40 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     return raw || null;
   };
 
+  // DCP is validated against the topology's tensor-parallel size: a size is
+  // offered only when it divides the TP of EVERY role (equals it, with `match_tp`) (both PD pools, or the
+  // single aggregated engine), so one pick keeps all node tabs consistent. The
+  // default is whatever the layered recipe args already carry (the qualified
+  // lane value), dropped when the current topology can't run it.
+  let dcpState;
+  function getDcp() {
+    if (dcpState !== undefined) return dcpState;
+    const sizes = dcpSizesFor(recipe, hwProfile, hwProfileId);
+    if (!sizes.length) return (dcpState = null);
+    const pd = strategy.deploy_type === "pd_cluster";
+    const raws = (pd ? ["prefill", "decode"] : [null]).map((role) =>
+      buildArgsRaw(role, !pd && strategy.deploy_type === "multi_node" && nodeCount > 1 ? "head" : null));
+    const tps = raws.map((a) => Number(lastFlagValue(a, "--tensor-parallel-size")) || 1);
+    const matchTp = recipe.decode_context_parallel.match_tp === true;
+    const allowed = sizes.filter((n) => tps.every((tp) => (matchTp ? tp === n : tp % n === 0)));
+    const carried = raws.map((a) => Number(lastFlagValue(a, "--decode-context-parallel-size")) || 0);
+    const baseline = carried.every((n) => n === carried[0]) && allowed.includes(carried[0]) ? carried[0] : 0;
+    const selected = dcpSize === 1 ? 0 : allowed.includes(dcpSize) ? dcpSize : baseline;
+    return (dcpState = { sizes: allowed, baseline, selected, tp: tps });
+  }
+  dcpOut.get = getDcp;
+  function buildArgs(roleOverride, nodeRole, nodeRank = 1) {
+    const args = buildArgsRaw(roleOverride, nodeRole, nodeRank);
+    const dcp = getDcp();
+    return dcp ? applyDcpSize(args, dcp.selected, recipe.decode_context_parallel.comm_backend) : args;
+  }
+
   // Helper to merge args. `nodeRole` selects the multi-node shape ("head" =
   // rank 0 / "worker" = a follower); `nodeRank` is which follower — the
   // zero-based node index that feeds --node-rank (TP/TEP/PP) or the
   // --data-parallel-start-rank offset (DEP). Defaults to 1, the first follower,
   // so existing two-node callers are unchanged.
-  function buildArgs(roleOverride, nodeRole, nodeRank = 1) {
+  function buildArgsRaw(roleOverride, nodeRole, nodeRank = 1) {
     const mpRank = nodeRole === "worker" ? Math.max(1, nodeRank) : 0;
     const args = [];
 

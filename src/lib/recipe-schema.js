@@ -56,6 +56,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
   };
   const strategyId = { enum: serving };
   const status = { enum: ["verified", "supported", "unsupported"] };
+  const dcpSizes = { type: "array", items: { type: "integer", minimum: 2 }, uniqueItems: true };
   const intOrHwMap = { anyOf: [{ type: "integer", minimum: 1 }, keyed(hwKey, { type: "integer", minimum: 1 })] };
   const argsEnv = obj({ args: strings, env: envMap });
   const extraArgsEnv = (more = {}) => obj({ extra_args: strings, extra_env: envMap, ...more });
@@ -220,6 +221,11 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
       hardware_opt_in_features: keyed(gpuId, strings),         // looked up by exact profile id
       variants: { type: "object", required: ["default"], additionalProperties: variant },
       compatible_strategies: { type: "array", items: strategyId },
+      decode_context_parallel: obj({
+        sizes: { anyOf: [dcpSizes, keyed(hwKey, dcpSizes)] },
+        comm_backend: { type: "string" },
+        match_tp: { type: "boolean" },
+      }, { required: ["sizes"] }),
       default_strategy: strategyId,
       strategy_min_gpus: {
         anyOf: [
