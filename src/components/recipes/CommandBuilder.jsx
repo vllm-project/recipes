@@ -1645,7 +1645,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     if (prevDcpScope.current === dcpScope) return;
     prevDcpScope.current = dcpScope;
     setDcpSize(null);
-    syncUrl({ dcp: "" });
+    // Do not overwrite an in-flight hardware/variant URL change with a no-op
+    // reset built from the previous URL (fixed Ascend PD has no DCP pick).
+    if (searchParams.has("dcp")) syncUrl({ dcp: "" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dcpScope]);
 
