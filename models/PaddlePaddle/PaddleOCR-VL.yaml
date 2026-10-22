@@ -4,7 +4,7 @@ meta:
   provider: "PaddlePaddle"
   description: "PaddleOCR-VL (0.9B) — compact vision-language model for document parsing, OCR, tables, formulas, charts"
   date_added: 2025-11-04
-  date_updated: 2026-10-19
+  date_updated: 2026-10-22
   difficulty: beginner
   tasks:
     - multimodal
@@ -233,7 +233,7 @@ guide: |
       messages=[{
           "role": "user",
           "content": [
-              {"type": "image_url", "image_url": {"url": "https://.../receipt.png"}},
+              {"type": "image_url", "image_url": {"url": "https://paddle-model-ecology.bj.bcebos.com/paddlex/imgs/demo_image/paddleocr_vl_demo.png"}},
               {"type": "text", "text": TASKS["ocr"]},
           ],
       }],
@@ -323,12 +323,14 @@ guide: |
 
   ### Recognition verification
 
-  Save the following scripts in the working directory. The tutorial receipt URL currently returns HTTP 400, so these checks use pinned official demonstration images and crop only input regions. Sources, coordinates and hashes are recorded. If the NPU container cannot reach Hugging Face, download the same source files on the client and transfer them; pass --source-dir with their directory. These are functional sample assertions, not OmniDocBench accuracy. Table output is OTSL; the document pipeline converts it to HTML.
+  Save the following scripts in the working directory. The tutorial receipt URL currently returns HTTP 400, so these checks use pinned official demonstration images and crop only input regions. Downloads try PaddlePaddle's official ModelScope dataset first, then the pinned Hugging Face copy, with bounded retries. Both sources must match the same SHA256 before any cache file is written; the manifest retains the pinned Hugging Face provenance. If both endpoints are unavailable, prefetch the exact originals and pass --source-dir with their directory. These are functional sample assertions, not OmniDocBench accuracy. Table output is OTSL; the document pipeline converts it to HTML. API failures report the request method, URL and response details and still stop verification.
 
   ```python
   import argparse
   import hashlib
   import json
+  import time
+  import urllib.error
   import urllib.request
   from pathlib import Path
 
@@ -341,6 +343,32 @@ guide: |
       'formula': ('formula_EN.jpg', (126, 1328, 594, 1570), 'b9a96b4be44896a45df21103ba1b06af18621381b563707a42fa6cdf21f837d1'),
       'chart': ('chart_01.jpg', (27, 81, 614, 400), 'd77acb00585d16f978123bc8288c41e7a589083df51e18076a20853892c0d4a9'),
   }
+
+
+  def download_source(urls):
+      failures = []
+      for url in urls:
+          for attempt in range(1, 4):
+              print(f'Sample download {attempt}/3: GET {url}', flush=True)
+              try:
+                  with urllib.request.urlopen(url, timeout=90) as response:
+                      return response.read()
+              except OSError as error:
+                  retryable = not isinstance(error, urllib.error.HTTPError) or error.code in {408, 429, 500, 502, 503, 504}
+                  if not retryable or attempt == 3:
+                      failures.append(f'GET {url}: {error}')
+                      print(f'Sample source unavailable: {failures[-1]}', flush=True)
+                      break
+                  delay = 2 ** attempt
+                  print(f'Sample download failed: GET {url}: {error}; retrying in {delay}s', flush=True)
+                  time.sleep(delay)
+      raise OSError(
+          f'Sample download failed from all official sources: {"; ".join(failures)}. '
+          'Prefetch the same pinned original into samples/ on a network-enabled client; '
+          'the SHA256 check remains required.'
+      )
+
+
   parser = argparse.ArgumentParser()
   parser.add_argument('--output', type=Path, default=Path('samples'))
   parser.add_argument('--source-dir', type=Path)
@@ -351,8 +379,11 @@ guide: |
       source = (args.source_dir or args.output) / filename
       url = '/'.join(('https://huggingface.co', 'datasets', 'PaddlePaddle', 'PaddleOCR-VL_demo', 'resolve', REVISION, 'imgs', filename))
       if not source.exists():
-          with urllib.request.urlopen(url, timeout=90) as response:
-              source.write_bytes(response.read())
+          # Both official dataset copies must match the immutable source hash below.
+          modelscope_url = '/'.join(('https://modelscope.cn', 'datasets', 'PaddlePaddle', 'PaddleOCR-VL_demo', 'resolve', 'master', 'imgs', filename))
+          data = download_source((modelscope_url, url))
+          assert hashlib.sha256(data).hexdigest() == expected_hash, f'Source mismatch: {filename}'
+          source.write_bytes(data)
       data = source.read_bytes()
       assert hashlib.sha256(data).hexdigest() == expected_hash, f'Source mismatch: {filename}'
       # The official demo collages contain input and expected output panels.
@@ -383,14 +414,28 @@ guide: |
   import json
   import re
   import time
+  import urllib.error
   import urllib.request
   from pathlib import Path
 
   TASKS = {'ocr': 'OCR:', 'table': 'Table Recognition:', 'formula': 'Formula Recognition:', 'chart': 'Chart Recognition:'}
 
 
+  def open_api(request, timeout):
+      url = request.full_url if isinstance(request, urllib.request.Request) else request
+      method = request.get_method() if isinstance(request, urllib.request.Request) else 'GET'
+      print(f'API request: {method} {url}', flush=True)
+      try:
+          return urllib.request.urlopen(request, timeout=timeout)
+      except urllib.error.HTTPError as error:
+          detail = error.read(1024).decode('utf-8', errors='replace')
+          raise OSError(f'API request failed: {method} {url}: HTTP {error.code}; response: {detail}') from error
+      except OSError as error:
+          raise OSError(f'API request failed: {method} {url}: {error}') from error
+
+
   def get_json(url):
-      with urllib.request.urlopen(url, timeout=15) as response:
+      with open_api(url, timeout=15) as response:
           return json.load(response)
 
 
@@ -420,7 +465,7 @@ guide: |
       parser.add_argument('--warmup', type=int, default=0)
       args = parser.parse_args()
       args.output.mkdir(parents=True, exist_ok=True)
-      with urllib.request.urlopen(args.base_url + '/health', timeout=15) as response:
+      with open_api(args.base_url + '/health', timeout=15) as response:
           assert response.status == 200
       models = get_json(args.base_url + '/v1/models')
       (args.output / 'models.json').write_text(json.dumps(models, indent=2))
@@ -434,7 +479,7 @@ guide: |
                   {'type': 'text', 'text': prompt}]}], 'temperature': 0.0, 'max_tokens': 2048, 'seed': 0}
               request = urllib.request.Request(args.base_url + '/v1/chat/completions', data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json'})
               start = time.perf_counter()
-              with urllib.request.urlopen(request, timeout=300) as response:
+              with open_api(request, timeout=300) as response:
                   result = json.load(response)
               latency = time.perf_counter() - start
               (args.output / f'{task}-{repeat}.json').write_text(json.dumps(result, indent=2, ensure_ascii=False) + '\n')
@@ -627,7 +672,14 @@ guide: |
   preprocessing queues disabled. Renderer failures and truncated predictions
   are retained. This is separate from the 310P profile and does not establish
   matched performance or formal acceptance. 910B2, long-context inputs,
-  native Docker launch and nightly CI remain untested.
+  native Docker launch on 310P and nightly CI remain untested.
+
+  The companion Ascend recipe PR was merged on 2026-10-22. Its
+  [A2 PR verification run #427](https://github.com/vllm-ascend/vllm-ascend-recipes/actions/runs/39742255957)
+  completed real inference on the `v0.30.0rc2` A2 image: four hash-checked sample
+  downloads and all eight recognition checks (four tasks under both aliases) passed.
+  This A2 result does not validate the replacement `v0.30.0rc2-310p` image or
+  replace the full-dataset accuracy and performance evidence above.
   Multi-node PD is not supported by this tutorial.
 
   ### Ascend references
@@ -635,3 +687,5 @@ guide: |
   - [Pinned Ascend tutorial](https://github.com/vllm-project/vllm-ascend/blob/0830899b4e3f55ea6ed9f3518385e9d81192ae29/docs/source/tutorials/models/PaddleOCR-VL.md)
   - [ModelZoo OM integration and evaluation](https://gitcode.com/Ascend/ModelZoo-PyTorch/tree/e779117e8cfeba296a7105e26adac0741ab04768/ACL_PyTorch/built-in/ocr/PP-DocLayoutV2)
   - [OmniDocBench v1.5](https://huggingface.co/datasets/opendatalab/OmniDocBench/tree/v1_5)
+  - [Official ModelScope demonstration assets (same SHA256 required)](https://modelscope.cn/datasets/PaddlePaddle/PaddleOCR-VL_demo)
+  - [Pinned Hugging Face demonstration assets](https://huggingface.co/datasets/PaddlePaddle/PaddleOCR-VL_demo/tree/702b96b0a06740b0ed3d41ba382a5bf69986dcae/imgs)
