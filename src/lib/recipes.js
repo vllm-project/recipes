@@ -10,6 +10,19 @@ let cache = null;
 const modelsDir = () => path.join(contentDir(), "models");
 const HF_DATES_PATH = path.join(process.cwd(), "public", "hf-dates.json");
 
+// People who wrote each recipe, from its git history
+// (scripts/fetch-contributors.mjs, refreshed by a workflow and committed).
+let contributors = null;
+function loadContributors() {
+  if (contributors !== null) return contributors;
+  try {
+    contributors = JSON.parse(fs.readFileSync(path.join(process.cwd(), "recipe-contributors.json"), "utf8"));
+  } catch {
+    contributors = {};
+  }
+  return contributors;
+}
+
 // HF release dates per hf_id (populated at build by scripts/fetch-hf-dates.mjs)
 let hfDates = null;
 function loadHfDates() {
@@ -42,6 +55,9 @@ function parseRecipe(filePath, dir, provenance) {
     raw.hf_released = dates[raw.hf_id] || null;
     // Owning repo + overlays (from .content/<channel>/provenance.json)
     raw.source = provenance[raw.hf_id] || null;
+    const credit = loadContributors()[raw.hf_id];
+    raw.contributors = credit?.contributors || [];
+    raw.history = credit?.history || [];
   }
   return raw;
 }

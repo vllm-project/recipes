@@ -246,6 +246,7 @@ export default async function RecipePage({ params, searchParams }) {
 
       {/* ── Footer ── */}
       <footer className="mt-10 pt-4 border-t border-border text-sm text-muted-foreground flex flex-wrap gap-x-4 gap-y-2">
+        <RecipeContributors recipe={recipe} />
         <span>Updated {recipe.meta.date_updated}</span>
         <a
           href={recipe.source?.edit_url || `https://github.com/vllm-project/recipes/edit/main/models/${recipe.hf_org}/${recipe.hf_repo}.yaml`}
@@ -334,5 +335,42 @@ function ChevronIcon() {
     >
       <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
     </svg>
+  );
+}
+
+// The people who wrote this recipe (recipe-contributors.json, from the YAML's
+// git history), most commits first, and links to that history: in the owning
+// repo and, for a recipe that moved, at its old path in vllm-project/recipes.
+function RecipeContributors({ recipe }) {
+  const people = recipe.contributors || [];
+  if (!people.length) return null;
+  return (
+    <div className="basis-full flex flex-wrap items-center gap-x-3 gap-y-2 mb-1">
+      <span>{people.length === 1 ? "Contributor" : `${people.length} contributors`}</span>
+      <span className="flex flex-wrap items-center gap-1">
+        {people.map((c) => (
+          <a
+            key={c.login}
+            href={`https://github.com/${c.login}`}
+            title={`${c.login} · ${c.commits} commit${c.commits === 1 ? "" : "s"}`}
+            className="rounded-full ring-1 ring-border hover:ring-foreground/40 transition"
+          >
+            <img
+              src={`https://github.com/${c.login}.png?size=56`}
+              alt={c.login}
+              width={24}
+              height={24}
+              loading="lazy"
+              className="rounded-full"
+            />
+          </a>
+        ))}
+      </span>
+      {recipe.history?.map((url) => (
+        <a key={url} href={url} className="hover:text-foreground transition-colors">
+          History in {url.split("/")[4]}
+        </a>
+      ))}
+    </div>
   );
 }
