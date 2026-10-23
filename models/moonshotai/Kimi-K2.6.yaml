@@ -18,7 +18,7 @@ meta:
     mi300x: verified
     mi325x: verified
     mi355x: verified
-    ascend_910c: supported
+    ascend_950dt: supported
 
 model:
   model_id: "moonshotai/Kimi-K2.6"
@@ -70,6 +70,8 @@ opt_in_features:
 # GB200's 4-GPU NVL4 trays keep encoder TP comm cheap — data-parallel encoder
 # isn't the default win it is on 8-GPU nodes.
 hardware_opt_in_features:
+  ascend_950dt:
+    - spec_decoding
   gb200:
     - encoder_parallel
 
@@ -102,6 +104,20 @@ variants:
     label: "NVFP4 (RedHat)"
     vram_minimum_gb: 600
     description: "RedHatAI NVFP4 quantization"
+
+  w4a8_ascend:
+    model_id: "Eco-Tech/Kimi-K2.6-w4a8"
+    precision: int4
+    label: "W4A8 (Ascend)"
+    vram_minimum_gb: 714
+    description: "Ascend W4A8 checkpoint on ModelScope. VRAM is an estimate inherited from the INT4 baseline; this checkpoint has not been runtime-validated here."
+    supported_hardware:
+      - ascend_950dt
+    extra_env:
+      VLLM_USE_MODELSCOPE: "True"
+    extra_args:
+      - "--quantization"
+      - "ascend"
 
 compatible_strategies:
   - single_node_tp
@@ -258,6 +274,15 @@ guide: |
   - vLLM has tuned MI350X/MI355X FlyDSL configs for this Kimi shape at TP=8 and TP=4.
   - Keep vLLM's default block size unless you are tuning long-context
     throughput; `--block-size 64` is safe to try.
+
+  ### Huawei W4A8 checkpoint
+
+  The **W4A8 (Ascend)** variant uses [Eco-Tech/Kimi-K2.6-w4a8 on ModelScope](https://www.modelscope.cn/models/Eco-Tech/Kimi-K2.6-w4a8)
+  with `VLLM_USE_MODELSCOPE=True` and `--quantization ascend`. This public
+  checkpoint is distinct from the unreleased W4A4C8 weights used below.
+  The W4A4C8 speculative-decoding cases do not validate this W4A8 checkpoint
+  or its compatibility with the default draft model; disable Spec Decoding
+  unless a matching draft checkpoint has been validated.
 
   ### Huawei A5: W4A4C8 with Eagle3 or Dflash
 
