@@ -13,7 +13,7 @@ function statusText(pull) {
   if (pull.merged_at) return "The PR is merged.";
   if (pull.state === "closed") return "The PR is closed.";
   if (pull.head.sha === preview.sha) return "Up to date with the PR's latest commit.";
-  return `The PR has newer commits (${short(pull.head.sha)}); this preview rebuilds within about 10–20 minutes.`;
+  return `The PR has newer commits (${short(pull.head.sha)}) than this preview.`;
 }
 
 export function PreviewBanner() {

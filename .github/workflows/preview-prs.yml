@@ -1,26 +1,32 @@
 # Branch previews of recipe PRs in source repos (vllm-project/vllm's recipes/).
-# Every open source PR labeled `recipe` gets a branch `preview/<source>-pr-<N>`
-# here that pins the source to the PR head; Vercel deploys it at
+# A source PR gets a branch `preview/<source>-pr-<N>` here that pins the source
+# to the PR head; Vercel deploys it at
 # https://vllm-recipes-git-preview-<source>-pr-<N>-inferact-inc.vercel.app,
-# which the source repo's Mergify rule links from the PR.
+# which the source repo links from the PR.
 #
-# Polling from here, rather than pushing from the source repo, needs no
-# cross-repo secret: the source is public and this repository's own token
-# pushes the branches. Nothing from a PR is run; Vercel reads its recipes as
-# data, the same way it reads them after a lock bump.
+# vllm's recipes-preview.yml sends `preview-pr` (client_payload.pr) when a
+# recipe PR from an author its CI trusts is pushed, labeled ready or closed;
+# this rebuilds or deletes that PR's branch right away. The hourly run only
+# refreshes existing branches and deletes those of closed or unlabeled PRs,
+# since GitHub runs scheduled workflows late. Nothing from a PR is run; Vercel
+# reads its recipes as data, the same way it reads them after a lock bump.
 name: Preview source PRs
 
 on:
+  repository_dispatch:
+    types: [preview-pr]
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       pr:
         description: "Only these source PR numbers (comma-separated); empty = all labeled PRs"
         required: false
 
+# Per PR: a group keeps only one pending run, so a shared group would drop
+# dispatches for other PRs that arrive together.
 concurrency:
-  group: preview-prs
+  group: preview-prs-${{ github.event.client_payload.pr || inputs.pr || 'all' }}
   cancel-in-progress: false
 
 permissions:
@@ -48,8 +54,12 @@ jobs:
       - name: Update preview branches
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          PR: ${{ inputs.pr }}
+          PR: ${{ github.event.client_payload.pr || inputs.pr }}
         run: |
+          if [ -n "$PR" ] && ! [[ "$PR" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+            echo "Invalid PR number(s): $PR"
+            exit 1
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           node scripts/preview-prs.mjs --source vllm ${PR:+--pr "$PR"}
