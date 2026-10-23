@@ -18,6 +18,7 @@ meta:
     mi300x: verified
     mi325x: verified
     mi355x: verified
+    ascend_950dt: supported
 
 model:
   model_id: "moonshotai/Kimi-K2.6"
@@ -69,6 +70,8 @@ opt_in_features:
 # GB200's 4-GPU NVL4 trays keep encoder TP comm cheap — data-parallel encoder
 # isn't the default win it is on 8-GPU nodes.
 hardware_opt_in_features:
+  ascend_950dt:
+    - spec_decoding
   gb200:
     - encoder_parallel
 
@@ -101,6 +104,20 @@ variants:
     label: "NVFP4 (RedHat)"
     vram_minimum_gb: 600
     description: "RedHatAI NVFP4 quantization"
+
+  w4a8_ascend:
+    model_id: "Eco-Tech/Kimi-K2.6-w4a8"
+    precision: int4
+    label: "W4A8 (Ascend)"
+    vram_minimum_gb: 714
+    description: "Ascend W4A8 checkpoint on ModelScope. VRAM is an estimate inherited from the INT4 baseline; this checkpoint has not been runtime-validated here."
+    supported_hardware:
+      - ascend_950dt
+    extra_env:
+      VLLM_USE_MODELSCOPE: "True"
+    extra_args:
+      - "--quantization"
+      - "ascend"
 
 compatible_strategies:
   - single_node_tp
@@ -165,6 +182,7 @@ guide: |
   - **Hardware (INT4):** 8× H200 GPUs (verified), or equivalent aggregate VRAM (~640 GB)
   - **Hardware (B300 / NVFP4):** 4× B300 (verified); use `vllm/vllm-openai:latest`
   - **AMD support:** 8x MI300X / MI325X / MI355X with ROCm 7.2.1 and Python 3.12
+  - **Huawei support:** 8x Ascend 910C
 
   ### NVIDIA B300: NVFP4 with Eagle3
 
@@ -256,6 +274,75 @@ guide: |
   - vLLM has tuned MI350X/MI355X FlyDSL configs for this Kimi shape at TP=8 and TP=4.
   - Keep vLLM's default block size unless you are tuning long-context
     throughput; `--block-size 64` is safe to try.
+
+  ### Huawei W4A8 checkpoint
+
+  The **W4A8 (Ascend)** variant uses [Eco-Tech/Kimi-K2.6-w4a8 on ModelScope](https://www.modelscope.cn/models/Eco-Tech/Kimi-K2.6-w4a8)
+  with `VLLM_USE_MODELSCOPE=True` and `--quantization ascend`. This public
+  checkpoint is distinct from the unreleased W4A4C8 weights used below.
+  The W4A4C8 speculative-decoding cases do not validate this W4A8 checkpoint
+  or its compatibility with the default draft model; disable Spec Decoding
+  unless a matching draft checkpoint has been validated.
+
+  ### Huawei A5: W4A4C8 with Eagle3 or Dflash
+
+  This template consolidates the supplied A5 test-case launch commands. It uses
+  colocated prefill/decode serving with TP=4, DP=2, and expert parallelism.
+  Replace the checkpoint paths and served model name before running.
+  This Guide template is independent of the interactive command builder above.
+
+  ```bash
+  MODEL_PATH="/path/to/kimi-k2.6-w4a4c8"
+  SERVED_MODEL_NAME="kimi-k2.6-w4a4c8"
+  DRAFT_MODEL_PATH="/path/to/draft-model"
+  PORT=8000
+
+  SPEC_METHOD="eagle3"           # eagle3 or dflash
+  NUM_SPECULATIVE_TOKENS=1       # 1 or 3, as listed below
+  GPU_MEMORY_UTILIZATION=0.9     # 0.96 for Eagle3 MLA cases
+
+  export HCCL_OP_EXPANSION_MODE="AIV"
+  export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+  export OMP_PROC_BIND=false
+  export VLLM_ASCEND_ENABLE_MLAPO=1
+  export HCCL_BUFFSIZE=512
+  export VLLM_ASCEND_ENABLE_NZ=1
+
+  vllm serve "$MODEL_PATH" \
+    --quantization ascend \
+    --served-model-name "$SERVED_MODEL_NAME" \
+    --no-enable-prefix-caching \
+    --enable-chunked-prefill \
+    --allowed-local-media-path / \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --tensor-parallel-size 4 \
+    --data-parallel-size 2 \
+    --enable-expert-parallel \
+    --port "$PORT" \
+    --max-num-seqs 8 \
+    --max-model-len 5000 \
+    --max-num-batched-tokens 8192 \
+    --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION" \
+    --seed 42 \
+    --async-scheduling \
+    --compilation-config '{"cudagraph_capture_sizes":[48,64,80,96,112,128],"cudagraph_mode":"FULL_DECODE_ONLY"}' \
+    --speculative_config "{\"method\":\"${SPEC_METHOD}\",\"kv_cache_dtype\":\"bfloat16\",\"model\":\"${DRAFT_MODEL_PATH}\",\"num_speculative_tokens\":${NUM_SPECULATIVE_TOKENS}}" \
+    --additional-config '{"enable_shared_expert_dp":true,"enable_fused_mc2":1}' \
+    --mm-processor-cache-gb 0 \
+    --mm-encoder-tp-mode data
+  ```
+
+  Notes:
+  - Main weights correspond to weight_path_kimi_k2_6_w4a4c8 in the test file.
+    Actual checkpoint paths are defined in an imported module and were not supplied.
+  - Eagle3 Step 02 specifies 1 speculative token in the source, just like Step 01;
+    confirm the intended value before changing it to 3.
+  - Trailing whitespace after a continuation backslash in the original Eagle3
+    Step 02 case has been removed. This template has not been runtime-validated here.
+  - The W4A4C8 checkpoint and Ascend quantization path are distinct from the
+    compressed-tensors INT4 and NVIDIA NVFP4 examples above.
+  - API clients must use SERVED_MODEL_NAME as the request's model value.
 
   ## Client Usage
 
