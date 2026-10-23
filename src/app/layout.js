@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Analytics } from "@vercel/analytics/next";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { SearchBox } from "@/components/recipes/SearchBox";
+import { PreviewBanner } from "@/components/PreviewBanner";
 import { getAllRecipes } from "@/lib/recipes";
 import { siteUrl } from "@/lib/site-url";
 import {
@@ -139,6 +140,7 @@ export default async function RootLayout({ children }) {
             </nav>
           </div>
         </header>
+        <PreviewBanner />
 
         {/* Content */}
         <div className="flex-1">
