@@ -1,0 +1,55 @@
+# Branch previews of recipe PRs in source repos (vllm-project/vllm's recipes/).
+# Every open source PR labeled `recipe` gets a branch `preview/<source>-pr-<N>`
+# here that pins the source to the PR head; Vercel deploys it at
+# https://vllm-recipes-git-preview-<source>-pr-<N>-inferact-inc.vercel.app,
+# which the source repo's Mergify rule links from the PR.
+#
+# Polling from here, rather than pushing from the source repo, needs no
+# cross-repo secret: the source is public and this repository's own token
+# pushes the branches. Nothing from a PR is run; Vercel reads its recipes as
+# data, the same way it reads them after a lock bump.
+name: Preview source PRs
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Only these source PR numbers (comma-separated); empty = all labeled PRs"
+        required: false
+
+concurrency:
+  group: preview-prs
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  preview:
+    if: github.repository == 'vllm-project/recipes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Update preview branches
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          node scripts/preview-prs.mjs --source vllm ${PR:+--pr "$PR"}
