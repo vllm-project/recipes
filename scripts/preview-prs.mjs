@@ -2,7 +2,7 @@
  * Keep one preview branch per open source-repo pull request that changes
  * recipes, so Vercel deploys each one as a branch preview.
  *
- *   node scripts/preview-prs.mjs --source vllm [--label recipes] [--max 20] [--dry-run]
+ *   node scripts/preview-prs.mjs --source vllm [--label recipe] [--max 20] [--dry-run]
  *   node scripts/preview-prs.mjs --source vllm --pr 63244 [--dry-run]   # just these PRs
  *
  * For every open PR in the source repo carrying `--label`, the branch
@@ -28,7 +28,7 @@ if (!source) {
   console.error("usage: preview-prs.mjs --source <name> [--label <label>] [--max <n>] [--pr <n,n>] [--dry-run]");
   process.exit(2);
 }
-const label = args.label || "recipes";
+const label = args.label || "recipe";
 const max = Number(args.max || 20);
 const dryRun = Boolean(args["dry-run"]);
 const selfRepo = process.env.GITHUB_REPOSITORY || "vllm-project/recipes";
