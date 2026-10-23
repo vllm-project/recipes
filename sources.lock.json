@@ -15,6 +15,14 @@
       "sha": "798fef99a33fba3ad3c2439d6ec10fe838c0076b",
       "tree_sha": "0bdbf739d7345dbe731d3634de59766f38dcda8c",
       "resolved_at": "2026-10-22T13:16:52.694Z"
+    },
+    "metal": {
+      "repo": "vllm-project/vllm-metal",
+      "ref": "main",
+      "path": "recipes",
+      "sha": "1c5f19c41acb512df48eaed4ccab8cb67e60fab0",
+      "tree_sha": "bc1dd0ff094dc3e80078a4f9ab3f9c610761d84f",
+      "resolved_at": "2026-10-23T04:12:29.263Z"
     }
   }
 }

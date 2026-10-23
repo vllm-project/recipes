@@ -43,6 +43,7 @@ import {
   isStrategySupportedOnHardware,
   effectiveCompatibleStrategies,
   FALLBACK_FRONTEND,
+  resolveInstall,
 } from "../src/lib/command-synthesis.js";
 import { contentChannel, contentDir, loadProvenance } from "../src/lib/content-root.js";
 import { assembleChannel } from "./assemble-content.mjs";
@@ -123,13 +124,13 @@ function resolveDockerImage(recipe, baseCuda) {
 //   pip: { command?, note?} → use overrides; missing fields fall back to defaults
 //   (same for docker)
 // `extras` carries the recipe's `dependencies` array verbatim.
-function synthesizeInstall(recipe) {
-  const installCfg = recipe.model?.install || {};
+function synthesizeInstall(recipe, variant = {}) {
+  const installCfg = resolveInstall(recipe, variant);
   const pipCfg = installCfg.pip;
   const dockerCfg = installCfg.docker;
 
-  const v = recipe.model?.min_vllm_version || "";
-  const nightlyRequired = recipe.model?.nightly_required === true;
+  const v = variant.min_vllm_version || recipe.model?.min_vllm_version || "";
+  const nightlyRequired = variant.nightly_required === true || recipe.model?.nightly_required === true;
   const baseCuda = "cu130";
 
   const out = {};
@@ -147,7 +148,7 @@ function synthesizeInstall(recipe) {
   }
 
   if (dockerCfg !== false) {
-    const defaultDockerCmd = `docker pull ${resolveDockerImage(recipe, baseCuda)}`;
+    const defaultDockerCmd = `docker pull ${variant.docker_image || resolveDockerImage(recipe, baseCuda)}`;
     const command = (dockerCfg && dockerCfg.command) || defaultDockerCmd;
     const note = dockerCfg && dockerCfg.note;
     out.docker = note ? { command, note } : { command };
@@ -373,6 +374,7 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
 // Wrap a rendered (command, argv) pair in `docker run`. Returns
 // { docker_command, docker_argv } so each form has its docker counterpart.
 function dockerize(command, argv, env, dockerMeta, port = null) {
+  if (dockerMeta.isMetal) return {};
   return {
     docker_command: buildDockerRun({
       command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, port,
@@ -436,6 +438,7 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
     deploy_type: result.deployType,
     env,
     docker_image: dockerMeta.image,
+    ...(variant.install && { install: synthesizeInstall(recipe, variant) }),
   };
   if (result.deployType === "multi_node") {
     const head = dockerize(result.headCommand, result.headArgv, env, dockerMeta);
@@ -984,7 +987,11 @@ for (const file of findYamlFiles(modelsDir)) {
       ...r,  // share meta/features/guide/etc. with the parent
       hf_id: variantModelId,
       meta: { ...r.meta, derived_from: parentHfId, variant: variantKey },
-      model: { ...r.model, model_id: variantModelId },
+      model: {
+        ...r.model,
+        model_id: variantModelId,
+        ...(variantCfg.install && { install: synthesizeInstall(r, variantCfg) }),
+      },
       variants: { default: variantCore },
       recommended_command: recommended,
     };
