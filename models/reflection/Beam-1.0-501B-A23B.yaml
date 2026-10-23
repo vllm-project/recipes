@@ -4,7 +4,7 @@ meta:
   provider: "Reflection"
   description: "Reflection's Beam — a sparse MoE language model (501B total / 23B active) with hybrid sliding-window + NoPE full attention, a 1M-token window, Harmony-format reasoning and tool calling, and an optional DFlash2 speculative drafter. Available in NVFP4, FP8 and BF16 on NVIDIA and BF16 on AMD ROCm."
   date_added: 2026-10-16
-  date_updated: 2026-10-17
+  date_updated: 2026-10-23
   difficulty: advanced
   tasks:
     - text
@@ -12,13 +12,13 @@ meta:
   related_recipes: []
   # The AMD path (vllm/models/beam/amd/) replaces the CUDA-only fast paths with
   # RCCL collectives and Triton kernels, so Beam serves on ROCm too. Validated
-  # end-to-end on gfx950 (MI350X, TP8 + expert parallel, BF16); gfx942 is
-  # enabled by the same Triton code path but not yet measured.
+  # end-to-end with BF16, TP8 and expert parallelism on MI325X (gfx942) and
+  # MI350X/MI355X (gfx950). MI300X uses the validated gfx942 code path.
   hardware:
     b300: verified
     h200: verified
     mi300x: supported
-    mi325x: supported
+    mi325x: verified
     mi350x: verified
     mi355x: verified
   # Open on the default variant's recommended hardware (NVFP4, TP4). On AMD
@@ -320,9 +320,10 @@ guide: |
 
   The AMD path in `vllm/models/beam/amd/` selects its classes on ROCm and
   runs the target and the DFlash2 drafter on standard vLLM ROCm attention,
-  RCCL collectives and AMD-local Triton kernels. Validated end-to-end on
-  8x MI350X (gfx950); MI300X/MI325X (gfx942) use the same code path, where
-  the weights need 1,204 GB of the node's 1,536 GB.
+  RCCL collectives and AMD-local Triton kernels. It was validated end-to-end
+  on 8x MI325X (gfx942), 8x MI350X and 8x MI355X (gfx950). MI300X uses the
+  validated gfx942 code path, where the weights need 1,204 GB of the node's
+  1,536 GB.
 
   ```bash
   VLLM_ROCM_USE_AITER=1 vllm serve reflection/Beam-1.0-501B-A23B \
@@ -407,8 +408,10 @@ guide: |
   ```
 
   The token count is not platform-specific. The AMD DFlash2 path was
-  validated on 8x MI350X with the BF16 target, and reaches the same GSM8K
-  accuracy as serving without it.
+  validated with the BF16 target on MI325X, MI350X and MI355X. On MI355X,
+  both vanilla decoding and DFlash2 reached 90.06% on GPQA-Diamond and 97.45%
+  on AIME 2026. On MI325X, both reached 90.18% on GPQA-Diamond. These results
+  reproduce Reflection's published BF16 accuracy within statistical error.
 
   ### Output constraints
 
