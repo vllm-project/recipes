@@ -2,6 +2,7 @@
  * Core command synthesis: Recipe + Variant + Strategy + Hardware + Features → vllm serve command.
  * Pure functions, no I/O.
  */
+import { resolveAscendPd } from "./ascend-pd.js";
 
 // NVL4-only env vars: NCCL symmetric memory + cross-node NVLink kernels +
 // UCX device selection. Tuned for GB200/GB300 NVL4 trays (NVL72 rack with
@@ -1248,6 +1249,10 @@ export function resolveCommand(...params) {
 // `dcpSize` is the user's Decode Context Parallelism pick: null follows the
 // recipe's own default, 1 forces DCP off, N > 1 selects that size.
 function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null, pdTransport = "http", dcpSize = null) {
+  if (strategyName === "pd_cluster" && taxonomy.hardware_profiles?.[hwProfileId]?.generation === "npu") {
+    const fixed = resolveAscendPd(recipe, variantKey, hwProfileId, pdNodes);
+    if (fixed) return fixed;
+  }
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};

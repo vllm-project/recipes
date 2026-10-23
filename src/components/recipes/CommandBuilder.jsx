@@ -7,6 +7,8 @@ import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
+import { resolveScriptedStrategy, resolveContainerSetup } from "@/lib/scripted-strategies";
+import { substituteAscendPd } from "@/lib/ascend-pd";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
@@ -201,7 +203,7 @@ function PopoverButton({ label, code, icon: Icon, disabled, disabledNote }) {
 // is a form for editing $VAR / NODE_N substitutions. Lives on each command
 // block header next to cURL/Bench so the user finds it where they realize
 // "this curl is hitting localhost — I need to point it elsewhere."
-function EndpointsPopoverButton({ isPd, isKvStore, isMultiNode, placeholders, endpoints, onChange, onReset }) {
+function EndpointsPopoverButton({ isPd, isKvStore, isMultiNode, placeholders, endpoints, onChange, onReset, fixedClientPort = null }) {
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState(null);
   const btnRef = useRef(null);
@@ -274,7 +276,8 @@ function EndpointsPopoverButton({ isPd, isKvStore, isMultiNode, placeholders, en
               <EndpointInput
                 label={`$${clientPortKey}`}
                 hint={clientPortHint}
-                value={endpoints[clientPortKey] || ""}
+                value={fixedClientPort ? String(fixedClientPort) : endpoints[clientPortKey] || ""}
+                disabled={Boolean(fixedClientPort)}
                 onChange={(v) => onChange(clientPortKey, v)}
               />
             </div>
@@ -365,6 +368,113 @@ const MOONCAKE_PILL_ORDER = 3;
 function hardwareSelectorLabel(selector, profiles) {
   if (selector.startsWith("arch:")) return `${selector.slice(5).toUpperCase()} GPUs`;
   return profiles?.[selector]?.display_name || selector;
+}
+
+function ContainerPreparation({ preparation }) {
+  if (preparation.guideHref) return <a href={preparation.guideHref} className="block text-sm text-vllm-blue underline">Prepare the Docker container in the Guide, then run the service command below inside it.</a>;
+  return <details open data-container-preparation className="rounded-xl border border-border">
+    <summary className="px-4 py-3 text-sm font-semibold cursor-pointer">Container preparation</summary>
+    <div className="px-4 pb-4 space-y-4">
+      <p className="text-xs text-muted-foreground">{preparation.description || "Run Docker on the host, then run the service command inside the container."}</p>
+      <div>
+        <div className="flex items-center justify-between text-sm mb-2"><span>Host: Docker environment</span><CopyButton text={preparation.command} /></div>
+        <div className="rounded-xl overflow-hidden bg-[var(--command-bg)] border border-border"><CommandBody command={preparation.command} /></div>
+      </div>
+      {preparation.containerCommand && <div>
+        <div className="flex items-center justify-between text-sm mb-2"><span>Container: fill this node's environment before starting the service</span><CopyButton text={preparation.containerCommand} /></div>
+        <div className="rounded-xl overflow-hidden bg-[var(--command-bg)] border border-border"><CommandBody command={preparation.containerCommand} /></div>
+      </div>}
+    </div>
+  </details>;
+}
+
+function PdPreparation({ preparation }) {
+  return <details open data-pd-preparation className="rounded-xl border border-border">
+    <summary className="px-4 py-3 text-sm font-semibold cursor-pointer">Common preparation · Docker and launch_online_dp.py</summary>
+    <div className="px-4 pb-4 space-y-4">
+      <p className="text-xs text-muted-foreground">Use the same image/checkpoint on all four nodes. Fill Cluster endpoints or edit each node's marked values before starting it; no common environment exports are required. Source revision: <code>{preparation.revision}</code>.</p>
+      <div>
+        <div className="flex items-center justify-between text-sm mb-2"><span>1. Host: start the {preparation.hardwareLabel} container on {preparation.containerNodes.join(", ")}</span><CopyButton text={preparation.hostCommand} /></div>
+        <div className="rounded-xl overflow-hidden bg-[var(--command-bg)] border border-border"><CommandBody command={preparation.hostCommand} /></div>
+      </div>
+      <div data-pd-launcher>
+        <div className="flex items-center justify-between text-sm mb-2">
+          <span>2. {preparation.launcherNodes.join(", ")}: save as <code>{preparation.launcherPath}</code></span>
+          <CopyButton text={preparation.launcherSource} />
+        </div>
+        <p className="text-xs text-muted-foreground mb-2">Copy the complete Python file below into this path in {preparation.launcherNodes.join(", ")}'s containers, alongside run_dp_template.sh.{preparation.directNodes.length > 0 && ` ${preparation.directNodes.join(", ")} do not use it: they launch the Bash template directly.`}</p>
+        <pre className="rounded-xl p-4 overflow-x-auto bg-[var(--command-bg)] text-[var(--command-fg)] text-xs font-mono leading-relaxed whitespace-pre">{preparation.launcherSource}</pre>
+      </div>
+    </div>
+  </details>;
+}
+
+function ScriptedPdCommands({ preset }) {
+  const [nodes, setNodes] = useState({ prefill: 0, decode: 0 });
+  const roles = {
+    prefill: preset.steps.filter(s => /^Prefill\b/.test(s.label)),
+    decode: preset.steps.filter(s => /^Decode\b/.test(s.label)),
+  };
+  const proxy = preset.steps.find(s => /^(Proxy|Router)\b/.test(s.label));
+  const roleResult = role => {
+    const steps = roles[role];
+    const currentNode = Math.min(nodes[role], steps.length - 1);
+    return {
+      command: steps[currentNode].command,
+      env: {}, nodes: steps.length, currentNode,
+      fixed: true, nodeHint: steps[currentNode].label,
+      description: `${steps[currentNode].label} · fixed tutorial configuration`,
+    };
+  };
+  const firstCommand = roles.prefill[0].command;
+  const model = firstCommand.match(/--served-model-name\s+([^\s\\]+)/)?.[1] || preset.model_id;
+  const tokenizer = firstCommand.match(/vllm serve\s+([^\s\\]+)/)?.[1] || preset.model_id;
+  const port = proxy.command.match(/--port\s+(\d+)/)?.[1] || "8000";
+  const verifyCmd = `curl http://$ROUTER_HOST:${port}/v1/chat/completions \\
+  -H 'Content-Type: application/json' \\
+  -d '{"model":"${model}","messages":[{"role":"user","content":"Hello"}],"max_tokens":32}'`;
+  const benchCmd = `vllm bench serve \\
+  --model ${tokenizer} \\
+  --served-model-name ${model} \\
+  --host $ROUTER_HOST --port ${port} \\
+  --dataset-name random --num-prompts 100`;
+  return <>
+    <PdClusterBlock result={{
+      prefill: roleResult("prefill"), decode: roleResult("decode"),
+      router: { command: proxy.command, label: "Router" },
+    }} verifyCmd={verifyCmd} benchCmd={benchCmd}
+      configSummary={`${preset.label} · ${preset.model_id}`}
+      installMode="pip" dockerMeta={{}}
+      onRankChange={(role, rank) => setNodes(previous => ({ ...previous,
+        [role]: Math.max(0, Math.min(roles[role].length - 1, rank)),
+      }))} />
+    <p className="px-4 pb-3 text-xs text-muted-foreground">
+      {preset.description} Run inside the prepared containers; save the common launcher first.
+      Set ROUTER_HOST to the proxy address for cURL and Bench.
+      {" "}<a href={preset.guide_href} className="text-vllm-blue underline">Setup and full guide</a>
+    </p>
+  </>;
+}
+
+function ScriptedStrategyCommands({ preset }) {
+  const [step, setStep] = useState("0");
+  const [copyStatus, setCopyStatus] = useState("");
+  const tabs = preset.steps.map((s, i) => ({ id: String(i), label: s.label }));
+  const current = preset.steps[Number(step)] || preset.steps[0];
+  return <div className="rounded-xl border border-border bg-background p-5 space-y-5">
+    <h3 className="font-semibold">{preset.label}</h3>
+    <p className="text-sm text-muted-foreground">{preset.description}</p>
+    <p className="text-sm">Checkpoint: <code>{preset.model_id}</code></p>
+    <p className="text-sm text-muted-foreground">Fixed documented topology and feature settings. Run the Docker preparation above first. Replace the IP, NIC and checkpoint paths before launching. These scripts run inside the prepared containers.</p>
+    <a className="text-sm text-vllm-blue underline" href={preset.guide_href}>Deployment notes and prerequisites</a>
+    <CommandTabs tabs={tabs} current={step} onSelect={id => { setStep(id); setCopyStatus(""); }} />
+    <div className="flex justify-end"><button type="button" className="text-sm border border-border rounded px-3 py-1" onClick={async () => {
+      try { await navigator.clipboard.writeText(current.command); setCopyStatus("Copied"); }
+      catch { setCopyStatus("Copy unavailable; select the code below."); }
+    }}>Copy {current.label}</button></div>
+    <span role="status" className="text-sm">{copyStatus}</span>
+    <CommandBody command={current.command} />
+  </div>;
 }
 
 export function CommandBuilder({ recipe, strategies, taxonomy }) {
@@ -630,7 +740,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   });
   // PD router selection is only used under pd_cluster.
   const [pdRouter, setPdRouter] = useState(() =>
-    ["dynamo", "smg"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : "vllm"
+    ["dynamo", "smg", "ascend_proxy"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : "vllm"
   );
   const [pdTransport, setPdTransport] = useState(() =>
     recipe.model?.smg_grpc && searchParams.get("pd_transport") === "grpc" ? "grpc" : "http"
@@ -912,18 +1022,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   }, [recipe, perNode, hwId]);
 
   const compatibleStrategies = useMemo(() => {
-    return effectiveCompatibleStrategies(recipe).filter((s) => {
+    return [...new Set([...effectiveCompatibleStrategies(recipe), ...Object.keys(recipe.scripted_strategies || {}).filter(s => recipe.scripted_strategies[s][hwId])])].filter((s) => {
+      if (recipe.scripted_strategies?.[s]?.[hwId]) return true;
       const strat = strategies[s];
       if (!strat) return false;
       // kv_store_lb deployments live on the KV Offload row, not here.
       if (strat.deploy_type === "kv_store_lb") return false;
       if (nodeCount === 1 && strat.deploy_type === "multi_node") return false;
-      if (nodeCount > 1 && strat.deploy_type === "single_node") return false;
+      if (nodeCount > 1 && strat.deploy_type === "single_node" && !recipe.scripted_strategies?.[strategyOverride]?.[hwId]) return false;
       // Listed while reachable at SOME node count, not just the current one —
       // picking it grows the count (selectStrategy).
       return isStrategyReachable(recipe, s, strat.deploy_type, perNode, hwId);
     });
-  }, [recipe, strategies, nodeCount, perNode, hwId]);
+  }, [recipe, strategies, nodeCount, perNode, hwId, strategyOverride]);
 
   // Mooncake KV-store deployments (deploy_type: kv_store_lb) — offered on
   // every recipe by default (omni recipes never reach this row), no
@@ -955,7 +1066,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // generation > brand > `default`). An unsupported pill renders disabled
   // with a tooltip and the active/recommended resolution skips it.
   const isStrategySupported = useCallback(
-    (s, hardwareId = hwId) => isStrategySupportedOnHardware(
+    (s, hardwareId = hwId) => Boolean(recipe.scripted_strategies?.[s]?.[hardwareId]) || isStrategySupportedOnHardware(
       recipe, s, taxonomy.hardware_profiles?.[hardwareId], hardwareId
     ),
     [recipe, taxonomy, hwId]
@@ -969,6 +1080,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const activeServingStrategy = (compatibleStrategies.includes(strategyOverride) && isStrategySupported(strategyOverride))
     ? strategyOverride
     : recommendedServingStrategy;
+  const scriptedPreset = useMemo(
+    () => resolveScriptedStrategy(recipe, activeServingStrategy, hwId),
+    [recipe, activeServingStrategy, hwId]
+  );
+  const isAscendPd = scriptedPreset?.router?.id === "ascend_proxy";
   // Downgrade an unusable KV-offload pick instead of rendering a broken
   // command: composing options (taxonomy.kv_offload) can't run under
   // pd_cluster (which owns --kv-transfer-config) or outside their own
@@ -1129,8 +1245,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const effPdDecodePar = pdAvailableModes.includes(pdDecodePar) ? pdDecodePar : (pdAvailableModes[0] || "tp");
   // Floor the sizes too, not just clicks — a pool whose DEFAULT mode carries a
   // floor (K3's decode is dep) would otherwise render below it.
-  const effPdPrefillNodes = Math.max(pdPrefillNodes, nodesNeededFor(effPdPrefillPar));
-  const effPdDecodeNodes = Math.max(pdDecodeNodes, nodesNeededFor(effPdDecodePar));
+  const fixedPdSteps = isAscendPd ? recipe.scripted_strategies.pd_cluster[hwId].steps : [];
+  const effPdPrefillNodes = isAscendPd ? fixedPdSteps.filter(s => s.role === "prefill").length : Math.max(pdPrefillNodes, nodesNeededFor(effPdPrefillPar));
+  const effPdDecodeNodes = isAscendPd ? fixedPdSteps.filter(s => s.role === "decode").length : Math.max(pdDecodeNodes, nodesNeededFor(effPdDecodePar));
 
   const result = useMemo(
     () => {
@@ -1141,9 +1258,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
         }
         : null;
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport, dcpSize);
+      // Fixed scripts own their commands; retain synthesis only for the normal
+      // controls' supporting metadata, never render a generic NIXL substitute.
+      return resolveCommand(recipe, isAscendPd ? scriptedPreset.variant : variant, scriptedPreset && !isAscendPd ? "single_node_tp" : activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, scriptedPreset && !isAscendPd ? null : pdNodes, featureModes, scriptedPreset ? null : activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, isAscendPd ? "ascend_proxy" : pdRouter, pdTransport, dcpSize);
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport, dcpSize]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport, dcpSize, scriptedPreset, isAscendPd]
   );
 
   // Visual feedback when any rendered command changes. Covers single-node
@@ -1204,6 +1323,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const v = recipe.variants?.[key] || {};
     const currentProfile = taxonomy.hardware_profiles?.[hwId] || {};
     const updates = { variant: key };
+    if (scriptedPreset && key !== scriptedPreset.variant) {
+      setStrategyOverride("");
+      updates.strategy = "";
+    }
     if (!isPrecisionCompatible(currentProfile, v) || !isVariantHardwareSupported(v, hwId, currentProfile)) {
       const next = pickDefaultHardware(taxonomy.hardware_profiles, v, recipe);
       setHwId(next);
@@ -1239,6 +1362,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   };
 
   const selectHardware = (id) => {
+    // Keep PD between explicit Ascend presets; other hardware retains its reset behavior.
+    const targetPd = isAscendPd && recipe.scripted_strategies?.pd_cluster?.[id]?.router?.id === "ascend_proxy"
+      ? recipe.scripted_strategies.pd_cluster[id] : null;
     // Apply per-hw opt-in delta: turn off features the new hw opts out of,
     // and turn back on features the old hw opted out of that the new hw doesn't.
     // Features explicitly in recipe.opt_in_features stay off either way.
@@ -1251,7 +1377,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     }
     setFeatures(next);
     setHwId(id);
-    setStrategyOverride("");
+    setStrategyOverride(targetPd ? "pd_cluster" : "");
     const newProfile = taxonomy.hardware_profiles?.[id] || {};
     // A selected spec-mode may be gated to specific hardware (e.g. a DFlash
     // draft that only ships for Blackwell). If the new GPU doesn't support it,
@@ -1288,7 +1414,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // as selectVariant). Left undefined when the variant is unchanged so the
     // existing variant= param is preserved, not deleted.
     let variantUpdate;
-    if (!variantRunsOnHardware(newProfile, currentVariant, id)) {
+    if (targetPd) {
+      setVariant(targetPd.variant);
+      variantUpdate = targetPd.variant;
+      activeVariant = recipe.variants[targetPd.variant];
+    } else if (!variantRunsOnHardware(newProfile, currentVariant, id)) {
       const fitting = pickFittingVariant(recipe, newProfile, id);
       if (fitting && fitting !== variant) {
         setVariant(fitting);
@@ -1317,7 +1447,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     if (shouldUnbumpNodes) setNodeCount(1);
     syncUrl({
       hardware: id,
-      strategy: "",
+      strategy: targetPd ? "pd_cluster" : "",
       nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
       features: featuresToUrl(next, id, variant),
       ...(nextModes !== featureModes ? { fmode: featureModesToUrl(nextModes, variant) } : {}),
@@ -1328,7 +1458,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // Mirror the new state to per-recipe storage so a hardware switch
     // doesn't leave stale strategy/nodes/features cached for this recipe.
     saveRecipeState(recipe.hf_id, {
-      strategy: undefined,
+      strategy: targetPd ? "pd_cluster" : undefined,
       nodes: shouldBumpNodes ? 2 : shouldUnbumpNodes ? 1 : nodeCount,
       features: next,
       ...(nextModes !== featureModes ? { featureModes: nextModes } : {}),
@@ -1338,6 +1468,21 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   const selectStrategy = (s) => {
     setStrategyOverride(s);
+    const preset = recipe.scripted_strategies?.[s]?.[hwId];
+    if (preset) {
+      if (preset.variant) setVariant(preset.variant);
+      setFrontend("python");
+      setKvOffload("");
+      if (preset.router?.id) setPdRouter(preset.router.id);
+      syncUrl({ strategy: s, variant: preset.variant || variant, frontend: "python", kv_offload: "", pd_router: preset.router?.id || "" });
+      return;
+    }
+    if (scriptedPreset && s.startsWith("single_node_")) {
+      setNodeCount(1);
+      syncUrl({ strategy: s, nodes: "" });
+      saveRecipeState(recipe.hf_id, { strategy: s, nodes: 1 });
+      return;
+    }
     // Grow the cluster to this strategy's GPU floor so the pick is immediately
     // valid instead of rendering below its own bar.
     const needed = nodesNeededFor(s);
@@ -1350,6 +1495,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     // on initial mount when TP is the default recommendation.
     saveRecipeState(recipe.hf_id, { strategy: s || undefined, ...(grow && { nodes: needed }) });
   };
+
+  useEffect(() => {
+    if (isAscendPd && (variant !== scriptedPreset.variant || frontend !== "python" || pdRouter !== "ascend_proxy" || kvOffload)) {
+      setVariant(scriptedPreset.variant);
+      setFrontend("python");
+      setPdRouter("ascend_proxy");
+      setKvOffload("");
+      syncUrl({ variant: scriptedPreset.variant, frontend: "python", pd_router: "ascend_proxy", kv_offload: "" });
+    }
+  }, [isAscendPd, scriptedPreset, variant, frontend, pdRouter, kvOffload, syncUrl]);
 
   // "" = off · "simple"/"lmcache" = connector appended to the current serving
   // strategy · kv_store id = Mooncake composed around it (instances each run
@@ -1437,7 +1592,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const smgReason = smgUnsupportedReason(recipe, strategies.pd_cluster, {
     prefill: { parallelism: effPdPrefillPar }, decode: { parallelism: effPdDecodePar },
   }, activeKvOffload);
-  const effPdRouter = result.orchestrator === "smg" ? "smg" : result.orchestrator === "dynamo" ? "dynamo" : "vllm";
+  const effPdRouter = result.orchestrator === "ascend_proxy" ? "ascend_proxy" : result.orchestrator === "smg" ? "smg" : result.orchestrator === "dynamo" ? "dynamo" : "vllm";
   const isSmgGrpc = result.orchestrator === "smg" && result.transport === "grpc";
   const selectPdRouter = (value) => {
     setPdRouter(value);
@@ -1490,7 +1645,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     if (prevDcpScope.current === dcpScope) return;
     prevDcpScope.current = dcpScope;
     setDcpSize(null);
-    syncUrl({ dcp: "" });
+    // Do not overwrite an in-flight hardware/variant URL change with a no-op
+    // reset built from the previous URL (fixed Ascend PD has no DCP pick).
+    if (searchParams.has("dcp")) syncUrl({ dcp: "" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dcpScope]);
 
@@ -1529,10 +1686,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // Single-instance Mooncake renders no router — clients hit the engine
   // directly, so the curl/bench target falls back to VLLM_HOST:8000.
   const kvHasRouter = isKvStore && !!result.router;
-  const modelId = recipe.variants?.[variant]?.model_id || recipe.model?.model_id || "model";
+  const modelId = result.servedModelName || recipe.variants?.[variant]?.model_id || recipe.model?.model_id || "model";
 
   // PD / KV-store clients hit the router; everyone else hits `vllm serve` on 8000.
-  const clientPort = isPd ? 30000 : kvHasRouter ? (result.router?.port || 30080) : 8000;
+  const clientPort = isPd ? (result.router?.port || 30000) : kvHasRouter ? (result.router?.port || 30080) : 8000;
 
   // curl/bench target. PD / routed KV-store → router host:port; everyone else
   // (incl. single-instance Mooncake) → the vllm-serve node (head node for
@@ -1542,7 +1699,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const clientHostKey = (isPd || kvHasRouter) ? "ROUTER_HOST" : (isMultiNode ? "HEAD_IP" : "VLLM_HOST");
   const clientPortKey = (isPd || kvHasRouter) ? "ROUTER_PORT" : "VLLM_PORT";
   const clientHost = endpoints[clientHostKey] || "localhost";
-  const clientPortStr = endpoints[clientPortKey] || String(clientPort);
+  const clientPortStr = isAscendPd ? String(clientPort) : endpoints[clientPortKey] || String(clientPort);
 
   const verifyCmd = `curl http://${clientHost}:${clientPortStr}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
@@ -1553,8 +1710,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   }'`;
 
   const benchCmd = `vllm bench serve \\
-  --model ${modelId} \\
-  --host ${clientHost} \\
+  --model ${isAscendPd ? result.prefill.checkpointPath : modelId} \\
+  ${isAscendPd ? `--served-model-name ${modelId} \\\n  ` : ""}--host ${clientHost} \\
   --port ${clientPortStr} \\
   --dataset-name random \\
   --random-input-len 1024 \\
@@ -1566,6 +1723,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // Detection runs on the *un*substituted commands so the panel can list
   // every placeholder still pending a value.
   const placeholdersInUse = useMemo(() => {
+    if (result.endpointNames) return result.endpointNames.map(name => ({kind: "var", name, label: `$${name}`}));
     const texts = [];
     if (result.command) texts.push(result.command);
     for (const c of result.companions || []) texts.push(c.command);
@@ -1607,7 +1765,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const defaults = {};
     if (result.deployType === "pd_cluster") {
       defaults.ROUTER_HOST = "localhost";
-      defaults.ROUTER_PORT = "30000";
+      defaults.ROUTER_PORT = String(result.router?.port || 30000);
+      if (result.orchestrator === "ascend_proxy") defaults.MODEL_PATH = result.prefill.checkpointPath;
     } else if (result.deployType === "kv_store_lb") {
       if (result.router) {
         defaults.ROUTER_HOST = "localhost";
@@ -1624,15 +1783,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       defaults.VLLM_PORT = "8000";
     }
     return { ...defaults, ...endpoints };
-  }, [result.deployType, result.router?.port, endpoints]);
+  }, [result.deployType, result.router?.port, result.orchestrator, result.prefill?.checkpointPath, endpoints]);
 
   const displayedResult = useMemo(() => {
-    const sub = (s) => substitute(s, effectiveEndpoints);
+    const sub = (s) => result.orchestrator === "ascend_proxy" ? substituteAscendPd(s, effectiveEndpoints) : substitute(s, effectiveEndpoints);
     if (result.deployType === "pd_cluster") {
       return {
         ...result,
-        prefill: { ...result.prefill, command: sub(result.prefill.command), env: substituteEnv(result.prefill.env, effectiveEndpoints) },
-        decode:  { ...result.decode,  command: sub(result.decode.command),  env: substituteEnv(result.decode.env,  effectiveEndpoints) },
+        prefill: { ...result.prefill, command: sub(result.prefill.command), launchCommand: sub(result.prefill.launchCommand), env: substituteEnv(result.prefill.env, effectiveEndpoints) },
+        decode:  { ...result.decode,  command: sub(result.decode.command), launchCommand: sub(result.decode.launchCommand), env: substituteEnv(result.decode.env,  effectiveEndpoints) },
         router:  { ...result.router,  command: sub(result.router.command), ...(result.router.dockerCommand ? { dockerCommand: sub(result.router.dockerCommand) } : {}), ...(result.router.env ? { env: substituteEnv(result.router.env, effectiveEndpoints) } : {}) },
         ...(result.infra ? { infra: { ...result.infra, command: sub(result.infra.command) } } : {}),
         ...(result.registration ? { registration: { ...result.registration, command: sub(result.registration.command) } } : {}),
@@ -1857,7 +2016,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     hwProfile?.generation === "tpu" ||
     hwProfile?.generation === "xpu";
   const dockerEffectivelyHidden = recipe.model?.install?.docker === false;
-  const effectiveInstallMode =
+  const containerSetup = resolveContainerSetup(recipe, hwId);
+  const effectiveInstallMode = containerSetup ? "pip" :
     installMode === "pip" && pipEffectivelyHidden
       ? "docker"
       : installMode === "docker" && dockerEffectivelyHidden
@@ -2146,7 +2306,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       <div className="space-y-4">
         {/* ── Install (tabs: pip / docker — mirrors the command-card mode toggle
           so switching from either place keeps them in sync). */}
-        <InstallBlock
+        {isAscendPd ? <PdPreparation preparation={displayedResult.preparation} /> : containerSetup ? <ContainerPreparation preparation={containerSetup} /> : <InstallBlock
           recipe={recipe}
             variant={currentVariant}
           dockerMeta={dockerMeta}
@@ -2157,7 +2317,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           altCudaSuffix={altCudaSuffix}
           extraMinVersion={isKvStoreActive ? strategies[activeKvOffload]?.min_vllm_version : null}
           hwInstall={hwInstall}
-        />
+        />}
 
         {/* ── Dependencies / extra install ──
             Hidden in docker mode: today every entry is a host-level
@@ -2188,6 +2348,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           const endpointsControls = (
             <EndpointsPopoverButton
               isPd={isPd}
+              fixedClientPort={isAscendPd ? result.router.port : null}
               isKvStore={kvHasRouter}
               isMultiNode={isMultiNode}
               placeholders={placeholdersInUse}
@@ -2201,7 +2362,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           className={`rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border transition-shadow ${changed ? "ring-2 ring-vllm-blue/30" : ""
             }`}
         >
-          {isPd ? (
+          {scriptedPreset && !isAscendPd ? (
+            scriptedPreset.strategy === "pd_cluster"
+              && ["Prefill", "Decode"].every(role => scriptedPreset.steps.some(s => s.label.startsWith(`${role} `)))
+              && scriptedPreset.steps.some(s => /^(Proxy|Router)\b/.test(s.label))
+              ? <ScriptedPdCommands key={`${hwId}:${activeServingStrategy}`} preset={scriptedPreset} />
+              : <ScriptedStrategyCommands key={`${hwId}:${activeServingStrategy}`} preset={scriptedPreset} />
+          ) : isPd ? (
             <PdClusterBlock
               result={displayedResult}
               verifyCmd={verifyCmd}
@@ -2406,18 +2573,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               <div className="mt-2 space-y-1">
                 {currentVariant?.description && (
                   <p className="text-[11px] text-muted-foreground leading-snug">
-                    {currentVariant.description}
+                    {isAscendPd ? result.constraints : currentVariant.description}
                   </p>
                 )}
                 {variantModelId && (
                   <a
-                    href={`https://huggingface.co/${variantModelId}`}
+                    href={isAscendPd ? `https://modelscope.cn/models/${scriptedPreset.model_id}` : `https://huggingface.co/${variantModelId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground hover:text-vllm-blue transition-colors"
                   >
                     <HuggingFaceIcon className="w-3 h-3" />
-                    {variantModelId}
+                    {isAscendPd ? scriptedPreset.model_id : variantModelId}
                     <ExternalLink size={9} />
                   </a>
                 )}
@@ -2431,18 +2598,21 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           <ConfigRow label="Strategy">
             <PillGroup>
               {compatibleStrategies.map((s) => {
-                const supported = isStrategySupported(s);
+                const scripted = recipe.scripted_strategies?.[s]?.[hwId];
+                const supported = Boolean(scripted) || isStrategySupported(s);
                 return (
                   <Pill
                     key={s}
                     active={activeServingStrategy === s}
                     disabled={!supported}
-                    onClick={() => supported && selectStrategy(s)}
+                    onClick={() => {
+                      if (supported) selectStrategy(s);
+                    }}
                     title={supported
-                      ? strategies[s]?.description
+                      ? scripted?.description || strategies[s]?.description
                       : `${strategies[s]?.display_name || s} isn't supported on ${hwProfile.display_name || hwId} for this model.`}
                   >
-                    <span className="font-semibold">{strategies[s]?.display_name || s}</span>
+                    <span className="font-semibold">{scripted?.label || strategies[s]?.display_name || s}</span>
                     {s === recommended && supported && (
                       <Sparkles size={10} className="text-vllm-yellow ml-1" />
                     )}
@@ -2452,13 +2622,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             </PillGroup>
             {strategies[activeServingStrategy]?.description && (
               <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
-                {strategies[activeServingStrategy].description.split("\n")[0]}
+                {(scriptedPreset?.description || strategies[activeServingStrategy].description).split("\n")[0]}
                 {isKvStoreActive && activeServingStrategy !== "pd_cluster" && (
                   <span className="text-vllm-blue/80"> Each Mooncake instance runs this strategy.</span>
                 )}
               </p>
             )}
-            {strategies[activeServingStrategy]?.orientation && (() => {
+            {!scriptedPreset && strategies[activeServingStrategy]?.orientation && (() => {
               const o = strategies[activeServingStrategy].orientation;
               const { label, classes } = o === "latency"
                 ? { label: "Latency oriented", classes: "bg-green-500/20 text-green-600 dark:text-green-400" }
@@ -2475,10 +2645,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             })()}
           </ConfigRow>
 
+          {scriptedPreset && <p id="fixed-deployment-controls" className="px-4 py-3 text-xs text-muted-foreground">
+            This preset uses the checkpoint, Python frontend, topology and feature settings in the scripts above.
+            The controls below remain visible but do not modify this fixed reference. Select a normal strategy to edit them.
+          </p>}
+          {isAscendPd && <ConfigRow label="PD Router" nested>
+            <PillGroup><Pill active pressed onClick={() => selectPdRouter("ascend_proxy")} title="Ascend tutorial Python proxy; MooncakeConnectorV1 workers.">Ascend Proxy</Pill></PillGroup>
+            <p className="text-xs text-muted-foreground mt-2">Python load_balance_proxy_server_example.py, not vLLM Router. {result.constraints}</p>
+          </ConfigRow>}
+          <fieldset disabled={Boolean(scriptedPreset)} aria-describedby={scriptedPreset ? "fixed-deployment-controls" : undefined}
+            className={`min-w-0 divide-y divide-border ${scriptedPreset ? "opacity-60" : ""}`}>
           {/* PD Router — which orchestrator fronts the prefill/decode pools.
               Nested under Strategy: it only exists for pd_cluster and never
               changes the pools, just the launcher + front door. */}
-          {activeServingStrategy === "pd_cluster" && (strategies.pd_cluster?.dynamo || strategies.pd_cluster?.smg) && (
+          {!isAscendPd && activeServingStrategy === "pd_cluster" && (strategies.pd_cluster?.dynamo || strategies.pd_cluster?.smg) && (
             <ConfigRow label="PD Router" nested>
               <PillGroup>
                 <Pill
@@ -2779,7 +2959,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           )}
 
           {/* Nodes — two number inputs for PD (one per pool), pills otherwise */}
-          {activeStrategy === "pd_cluster" ? (
+          {scriptedPreset ? (
+            <ConfigRow label="Nodes"><p className="text-xs">{scriptedPreset.description}</p></ConfigRow>
+          ) : activeStrategy === "pd_cluster" ? (
             <ConfigRow
               label="Nodes"
               hint={pdModes.length > 1
@@ -3083,6 +3265,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               </div>
             </div>
           </details>
+          </fieldset>
         </div>
       </div>
     </TooltipProvider>
@@ -3091,7 +3274,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
 // ── Sub-components ──
 
-function EndpointInput({ label, hint, value, onChange }) {
+function EndpointInput({ label, hint, value, onChange, disabled = false }) {
   return (
     <label className="flex items-center gap-2 min-w-0">
       <span className="text-[11px] font-mono text-muted-foreground shrink-0 w-32 truncate" title={label}>
@@ -3100,6 +3283,7 @@ function EndpointInput({ label, hint, value, onChange }) {
       <input
         type="text"
         value={value}
+        disabled={disabled}
         placeholder={hint || ""}
         onChange={(e) => onChange(e.target.value)}
         spellCheck={false}
@@ -3877,8 +4061,8 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
     ...(mc?.store ? [{ id: "mc_store", label: "Mooncake Store", command: mc.store.command, env: {}, description: mc.store.description }] : []),
     // Dynamo: the etcd control plane comes first in the sequence.
     ...(isDynamo && result.infra ? [{ id: "dyn_infra", label: result.infra.label, command: result.infra.command, env: {}, description: result.infra.description }] : []),
-    { id: "prefill", label: "Prefill", command: wrap(result.prefill.command, result.prefill.env), env: result.prefill.env, meta: result.prefill },
-    { id: "decode", label: "Decode", command: wrap(result.decode.command, result.decode.env), env: result.decode.env, meta: result.decode },
+    { id: "prefill", label: "Prefill", command: wrap(result.prefill.command, result.prefill.env), env: result.prefill.env, meta: result.prefill, description: result.prefill.description },
+    { id: "decode", label: "Decode", command: wrap(result.decode.command, result.decode.env), env: result.decode.env, meta: result.decode, description: result.decode.description },
     { id: "router", label: result.router.label || "Router", command: routerDocker || result.router.command, env: result.router.env || {}, install: routerDocker ? null : result.router.install, isRouter: true },
     ...(result.registration ? [{ id: "registration", ...result.registration, env: {}, isRouter: true }] : []),
   ].map((t, i) => (mc || isDynamo || isSmg ? { ...t, step: i + 1 } : t));
@@ -3897,7 +4081,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   const prelude = isDocker && !active.isRouter ? "" : envToExports(active.env);
   const fullScript = prelude ? `${prelude}\n\n${active.command}` : active.command;
   return (
-    <div>
+    <div data-pd-workflow={result.orchestrator || "vllm"}>
       <div className="px-4 pt-3 pb-1">
         {statusHeader || (
           <span className="text-[11px] text-[var(--command-fg)]/55 font-mono">
@@ -3934,7 +4118,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           # {active.description}
         </div>
       )}
-      {!active.isRouter && active.meta && (
+      {!active.isRouter && active.meta && !active.meta.fixed && (
         <div className="px-4 pt-3 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug">
           # {active.meta.nodes === 0
             ? `Co-located half-node · ${active.meta.poolGpus} GPU · ${active.meta.parallelism.toUpperCase()}`
@@ -3950,7 +4134,11 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           {/* Display node index is 1-based; the emitted rank flag stays 0-based
               to match vLLM's convention — --data-parallel-start-rank for DEP,
               --node-rank for TP. */}
-          <input
+          {active.meta.nodeLabels ? <div className="flex gap-2">
+            {active.meta.nodeLabels.map((label, index) => <button type="button" key={label}
+              aria-pressed={index === active.meta.currentNode} onClick={() => onRankChange(active.id, index)}
+              className={`px-2 py-1 rounded border ${index === active.meta.currentNode ? "border-vllm-blue text-vllm-blue" : "border-[var(--command-fg)]/20"}`}>{label}</button>)}
+          </div> : <input
             type="number"
             min={1}
             max={active.meta.nodes}
@@ -3961,8 +4149,10 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
               if (Number.isFinite(n)) onRankChange(active.id, n - 1);
             }}
             className="w-14 px-2 py-0.5 text-xs font-mono tabular-nums rounded border border-[var(--command-fg)]/20 bg-transparent text-[var(--command-fg)] focus:outline-none focus:border-vllm-blue/60"
-          />
-          {active.meta.parallelism === "dep" ? (
+          />}
+          {active.meta.fixed ? (
+            <span className="text-[var(--command-fg)]/40">{active.meta.nodeHint}</span>
+          ) : active.meta.parallelism === "dep" ? (
             <>
               <span className="text-[var(--command-fg)]/40">
                 of 1..{active.meta.nodes} · start_rank = {active.meta.startRank}
@@ -3987,7 +4177,15 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           {prelude}
         </pre>
       )}
+      {active.meta?.template && <div className="px-4 pt-3 text-xs text-[var(--command-fg)]/60">1. Save the complete run_dp_template.sh below in {result.preparation.workdir} inside {active.meta.label}'s container.</div>}
       <CommandBody command={active.command} />
+      {active.meta?.launchCommand && <div className="border-t border-[var(--command-fg)]/20">
+        <div className="flex items-center justify-between px-4 pt-3 text-xs text-[var(--command-fg)]/70">
+          <span>2. Launch on {active.meta.label} · inside the same container (not inside the template)</span>
+          <CopyButton text={active.meta.launchCommand} />
+        </div>
+        <CommandBody command={active.meta.launchCommand} />
+      </div>}
     </div>
   );
 }
