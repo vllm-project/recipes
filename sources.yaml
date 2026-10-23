@@ -30,8 +30,10 @@ default_channel: latest
 channels:
   latest:
     vllm:
-      repo: vllm-project/vllm
-      ref: main
+      # PREVIEW ONLY: companion recipe PR vllm-project/vllm#62890.
+      # Drop this preview pin and restore upstream main before merging.
+      repo: Wyz-134/vllm
+      ref: codex/glm51-ascend-recipe
       path: recipes
       role: core
       scope: { exclude_tasks: [omni] }
