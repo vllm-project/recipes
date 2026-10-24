@@ -8,6 +8,7 @@ import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { resolveProfileKey, withProfile } from "@/lib/recipe-profiles";
+import { publishSelection } from "@/lib/selection-store";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
@@ -1155,6 +1156,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     },
     [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport, dcpSize, profilePick]
   );
+
+  // Publish the selection for the sections below the builder (This
+  // configuration / Tuned profiles / Troubleshooting filter on it).
+  const selectedProfile = result?.profile?.selected ?? null;
+  useEffect(() => {
+    publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features, profile: selectedProfile });
+  }, [recipe.hf_id, hwId, activeStrategy, variant, features, selectedProfile]);
 
   // Visual feedback when any rendered command changes. Covers single-node
   // (result.command), multi-node (headCommand), pd_cluster (prefill.command),
@@ -2516,7 +2524,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                         <> <a href={active.source.href} className="text-vllm-blue hover:underline" target="_blank" rel="noreferrer">{active.source.label || "Source"}</a></>
                       )}
                       {active.runbook && (
-                        <> · <a href={`#profile-${active.key}`} className="text-vllm-blue hover:underline">Runbook</a></>
+                        <> · <a href="#this-configuration" className="text-vllm-blue hover:underline">Runbook</a></>
                       )}
                     </>
                   ) : options.some((p) => p.default) ? (

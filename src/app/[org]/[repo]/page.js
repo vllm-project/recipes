@@ -10,6 +10,8 @@ import { resolveRecipePlatforms } from "@/lib/platforms";
 import { getProviderLogo, getProviderLogoClass } from "@/lib/providers";
 import { CommandBuilder } from "@/components/recipes/CommandBuilder";
 import { GuideLinks } from "@/components/recipes/GuideLinks";
+import { ThisConfiguration, TunedProfiles, Troubleshooting } from "@/components/recipes/ConfigSections";
+import { whenLabels } from "@/lib/recipe-context";
 import { DeployDialog } from "@/components/recipes/DeployDialog";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import Markdown from "react-markdown";
@@ -107,7 +109,33 @@ export default async function RecipePage({ params, searchParams }) {
   const strategies = loadStrategies();
   const taxonomy = loadTaxonomy();
   const guide = recipe.guide || "";
-  const profiles = Object.entries(recipe.profiles || {}).map(([key, p]) => ({ key, ...p }));
+  // Sections below the builder (ConfigSections) filter on its selection; the
+  // Markdown is rendered here, on the server, and handed over as nodes.
+  const hardwareSlim = Object.fromEntries(Object.entries(taxonomy.hardware_profiles || {}).map(
+    ([id, h]) => [id, { display_name: h.display_name, generation: h.generation, brand: h.brand, compute_arch: h.compute_arch }]
+  ));
+  const strategyLabels = Object.fromEntries(Object.entries(strategies).map(([id, s]) => [id, s.display_name || id]));
+  const profiles = Object.entries(recipe.profiles || {}).map(([key, p]) => ({
+    key, label: p.label, hardware: p.hardware, strategy: p.strategy || null, workload: p.workload || null,
+    description: p.description || null, default: !!p.default, source: p.source || null,
+    runbook: p.runbook ? <GuideMarkdown prefix={`profile-${key}-`}>{p.runbook}</GuideMarkdown> : null,
+    toc: p.runbook ? markdownToc(p.runbook, `profile-${key}-`) : [],
+  }));
+  const whenCtx = { hardwareProfiles: taxonomy.hardware_profiles || {}, strategies, recipe };
+  const notes = (recipe.notes || []).map((n) => ({
+    title: n.title || null, when: n.when || null, body: <GuideMarkdown>{n.body}</GuideMarkdown>,
+  }));
+  const issueIds = new Map();
+  const troubleshooting = (recipe.troubleshooting || []).map((t) => {
+    const base = `issue-${slugify(t.title)}`;
+    const n = issueIds.get(base) || 0;
+    issueIds.set(base, n + 1);
+    return {
+      id: n ? `${base}-${n}` : base, title: t.title, when: t.when || null, labels: whenLabels(t.when, whenCtx),
+      body: <GuideMarkdown prefix={`${n ? `${base}-${n}` : base}-`}>{t.body}</GuideMarkdown>,
+    };
+  });
+  const sectionProps = { hfId: recipe.hf_id, hardware: hardwareSlim, strategyLabels, profiles, notes, troubleshooting };
   const logo = getProviderLogo(recipe.hf_org);
 
   // Per-recipe platform opt-in. Each entry is either a bare id ("modal") or
@@ -227,6 +255,10 @@ export default async function RecipePage({ params, searchParams }) {
 
       {/* ── Reference sections ── */}
       <section className="space-y-2">
+        <GuideLinks>
+          <ThisConfiguration {...sectionProps} />
+        </GuideLinks>
+
         {guide && (
           <GuideLinks>
             <Accordion title={<span className="flex items-center gap-2">Guide<HeadingLink id="recipe-guide" /></span>} id="recipe-guide" defaultOpen>
@@ -243,24 +275,12 @@ export default async function RecipePage({ params, searchParams }) {
           </GuideLinks>
         )}
 
-        {/* Tuned profiles — server-rendered so runbooks stay searchable and
-            linkable. Each profile is a collapsed row: the summary is what you
-            scan, the runbook opens on demand (or via #profile-<key>, which the
-            builder's Profile row links to). */}
-        {profiles.length > 0 && (
-          <GuideLinks>
-            <Accordion title={<span className="flex items-center gap-2">Tuned profiles<span className="font-normal text-muted-foreground">{profiles.length}</span><HeadingLink id="tuned-profiles" /></span>} id="tuned-profiles" defaultOpen>
-              <p className="text-sm text-muted-foreground mb-3">
-                Configurations qualified on specific hardware, layered on the baseline command. A default profile applies automatically in the builder on its hardware; pick Baseline there to drop it.
-              </p>
-              <div className="space-y-2">
-                {profiles.map((p) => (
-                  <ProfileRow key={p.key} profile={p} hardware={taxonomy.hardware_profiles?.[p.hardware]} strategy={p.strategy && strategies[p.strategy]} />
-                ))}
-              </div>
-            </Accordion>
-          </GuideLinks>
-        )}
+        <GuideLinks>
+          <TunedProfiles {...sectionProps} />
+        </GuideLinks>
+        <GuideLinks>
+          <Troubleshooting {...sectionProps} />
+        </GuideLinks>
 
       </section>
 
@@ -327,53 +347,35 @@ const guideHeadings = Object.fromEntries(
   }])
 );
 
-function ProfileRow({ profile: p, hardware, strategy }) {
-  const id = `profile-${p.key}`;
-  const builderHref = `?hardware=${p.hardware}${p.strategy ? `&strategy=${p.strategy}` : ""}&profile=${p.key}#recipe-builder`;
-  const summary = (
-    <div className="min-w-0 flex-1">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="rounded-md border border-foreground/15 px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{hardware?.display_name || p.hardware}</span>
-        <span id={id} className="scroll-mt-24 font-semibold">{p.label}</span>
-        {p.default && <Badge variant="secondary" className="text-[11px]">Default</Badge>}
-        <HeadingLink id={id} />
-      </div>
-      <div className="mt-1 text-xs text-muted-foreground">
-        {[strategy?.display_name || p.strategy, p.workload].filter(Boolean).join(" · ")}
-      </div>
-      {p.description && <p className="mt-1.5 text-sm">{p.description}</p>}
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-        <a href={builderHref} className="text-vllm-blue hover:underline">Use in builder</a>
-        {p.source?.href && (
-          <a href={p.source.href} className="inline-flex items-center gap-1 text-vllm-blue hover:underline" target="_blank" rel="noreferrer">
-            {p.source.label || "Source"}<ExternalLink size={11} aria-hidden="true" />
-          </a>
-        )}
-      </div>
-    </div>
-  );
-  if (!p.runbook) {
-    return <div className="rounded-lg border border-foreground/10 px-4 py-3">{summary}</div>;
-  }
+function GuideMarkdown({ children, prefix = "" }) {
   return (
-    <details className="group/profile rounded-lg border border-foreground/10 open:border-foreground/20">
-      <summary className="flex cursor-pointer list-none items-start gap-3 px-4 py-3 hover:bg-foreground/[0.03] [&::-webkit-details-marker]:hidden">
-        {summary}
-        <span className="mt-0.5 flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-          <span className="group-open/profile:hidden">Runbook</span>
-          <span className="hidden group-open/profile:inline">Hide</span>
-          <svg className="h-3.5 w-3.5 transition-transform group-open/profile:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
-        </span>
-      </summary>
-      <div className="guide-content border-t border-foreground/10 px-4 pt-3 pb-4">
-        <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeSlug, { prefix: `${id}-` }]]} components={guideHeadings}>
-          {p.runbook}
-        </Markdown>
-      </div>
-    </details>
+    <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeSlug, { prefix }]]} components={guideHeadings}>
+      {children}
+    </Markdown>
   );
+}
+
+// github-slugger's rule (what rehype-slug uses) for plain heading text.
+function slugify(text) {
+  return text.toLowerCase().replace(/[`*~]/g, "").replace(/[^\p{L}\p{N}\s-]/gu, "").trim().replace(/\s/g, "-");
+}
+
+// The ## – #### headings of a Markdown string, with the ids rehype-slug gives them.
+function markdownToc(md, prefix = "") {
+  const seen = new Map();
+  let fence = false;
+  const out = [];
+  for (const line of md.split("\n")) {
+    if (/^\s*```/.test(line)) fence = !fence;
+    const m = !fence && line.match(/^#{2,4}\s+(.+?)\s*$/);
+    if (!m) continue;
+    const text = m[1].replace(/[`*]/g, "");
+    const base = slugify(text);
+    const n = seen.get(base) || 0;
+    seen.set(base, n + 1);
+    out.push({ text, id: `${prefix}${n ? `${base}-${n}` : base}` });
+  }
+  return out;
 }
 
 function Accordion({ title, children, id, defaultOpen = false }) {

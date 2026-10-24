@@ -55,6 +55,12 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     ],
   };
   const strategyId = { enum: serving };
+  const when = obj({
+    hardware: { type: "array", minItems: 1, items: { anyOf: [{ enum: [...new Set([...profileIds, ...generations, ...brands.map((b) => b.toLowerCase())])] }, { pattern: `^arch:(${archs.join("|")})$` }] } },
+    strategy: { type: "array", minItems: 1, items: strategyId },
+    variant: { type: "array", minItems: 1, items: { type: "string" } },
+    feature: { type: "array", minItems: 1, items: { type: "string" } },
+  });
   const status = { enum: ["verified", "supported", "unsupported"] };
   const dcpSizes = { type: "array", items: { type: "integer", minimum: 2 }, uniqueItems: true };
   const intOrHwMap = { anyOf: [{ type: "integer", minimum: 1 }, keyed(hwKey, { type: "integer", minimum: 1 })] };
@@ -258,6 +264,10 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
         source: obj({ label: { type: "string" }, href: { type: "string" } }, { required: ["href"] }),
         runbook: { type: "string" },
       }, { required: ["label", "hardware"] })),
+      // Configuration-scoped guide entries (recipe-context.js): shown below
+      // the builder when `when` matches the selection.
+      notes: { type: "array", items: obj({ title: { type: "string" }, when, body: { type: "string" } }, { required: ["when", "body"] }) },
+      troubleshooting: { type: "array", items: obj({ title: { type: "string" }, when, body: { type: "string" } }, { required: ["title", "body"] }) },
       advanced_options: { type: "array", items: { type: "object" } },
       omni: obj({
         serve_binary: { type: "string" },

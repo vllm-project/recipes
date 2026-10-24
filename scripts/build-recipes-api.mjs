@@ -22,6 +22,7 @@ import yaml from "js-yaml";
 import Ajv from "ajv";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import { resolveProfileKey, validateProfiles, withProfile } from "../src/lib/recipe-profiles.js";
+import { validateContextEntries } from "../src/lib/recipe-context.js";
 import {
   pickDefaultHardware,
   listCompatibleHardware,
@@ -903,6 +904,8 @@ for (const file of findYamlFiles(modelsDir)) {
   validateHardwareKeys(r, file, taxonomy, strategies);
   const profileErrors = validateProfiles(r, taxonomy, effectiveCompatibleStrategies(r));
   if (profileErrors.length) throw new Error(`Invalid profiles in ${sourceRel(file)}:\n  - ${profileErrors.join("\n  - ")}`);
+  const contextErrors = validateContextEntries(r);
+  if (contextErrors.length) throw new Error(`Invalid notes/troubleshooting in ${sourceRel(file)}:\n  - ${contextErrors.join("\n  - ")}`);
   // Derive HF identity from path. Only `hf_id` is exposed in the public JSON;
   // `org` and `repo` are trivially `hf_id.split("/")` for consumers.
   const rel = path.relative(modelsDir, file);
