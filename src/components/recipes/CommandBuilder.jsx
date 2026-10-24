@@ -1346,6 +1346,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     syncUrl({
       hardware: id,
       strategy: "",
+      preset: "",
       nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
       features: featuresToUrl(next, id, variant),
       ...(nextModes !== featureModes ? { fmode: featureModesToUrl(nextModes, variant) } : {}),
@@ -1364,14 +1365,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     });
   };
 
-  const selectStrategy = (s) => {
+  // `preset` rides along when a Preset pill for another strategy triggers the
+  // switch (see selectPreset); otherwise the pick is cleared.
+  const selectStrategy = (s, { preset = "" } = {}) => {
     setStrategyOverride(s);
     // Grow the cluster to this strategy's GPU floor so the pick is immediately
     // valid instead of rendering below its own bar.
     const needed = nodesNeededFor(s);
     const grow = needed > nodeCount;
     if (grow) setNodeCount(needed);
-    syncUrl({ strategy: s, ...(grow && { nodes: String(needed) }) });
+    syncUrl({ strategy: s, preset, ...(grow && { nodes: String(needed) }) });
     // Persisted per-recipe (keyed by hf_id), so picking TP here doesn't
     // affect any other recipe's default. Spec-decoding auto-enable for
     // latency strategies is handled by an effect below so it also fires
@@ -1528,18 +1531,38 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   };
 
   // A preset belongs to one hardware + strategy; a pick made elsewhere falls
-  // back to that pair's default. Skip the mount run so ?preset= links hold.
+  // back to that pair's default, unless the switch came from picking a preset
+  // of the new strategy (pendingPreset). Skip the mount run so ?preset= links
+  // hold. State only: selectHardware / selectStrategy put `preset` into their
+  // own syncUrl call (a second call here would read stale searchParams and
+  // clobber theirs).
   const presetScope = `${hwId}|${activeStrategy}`;
   const prevPresetScope = useRef(presetScope);
+  const pendingPreset = useRef(null);
   useEffect(() => {
     if (prevPresetScope.current === presetScope) return;
     prevPresetScope.current = presetScope;
-    setPresetPick(null);
-    syncUrl({ preset: "" });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setPresetPick(pendingPreset.current);
+    pendingPreset.current = null;
   }, [presetScope]);
 
+  // Every preset for this hardware, the current strategy's first: the Preset
+  // row offers all of them, so presets on other strategies are discoverable.
+  const hwPresets = useMemo(() => {
+    const all = Object.entries(recipe.presets || {}).filter(([, p]) => p.hardware === hwId).map(([key, p]) => ({ key, ...p }));
+    const here = (p) => !p.strategy || p.strategy === activeStrategy;
+    return [...all.filter(here), ...all.filter((p) => !here(p))];
+  }, [recipe, hwId, activeStrategy]);
+
   const selectPreset = (key) => {
+    const target = recipe.presets?.[key];
+    if (target?.strategy && target.strategy !== activeStrategy) {
+      // A preset of another strategy: switch to it. Its default needs no pick.
+      const pick = target.default ? null : key;
+      pendingPreset.current = pick;
+      selectStrategy(target.strategy, { preset: pick ?? "" });
+      return;
+    }
     const def = result?.preset?.options.find((p) => p.default)?.key ?? "baseline";
     const next = key === def ? null : key;
     setPresetPick(next);
@@ -2332,6 +2355,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                         : "";
                       const currentVariantRunsHere = precisionOk && variantHardwareOk;
                       const fittingVariantLabel = (fittingVariant?.label || fittingVariant?.precision || fittingVariantKey)?.toUpperCase();
+                      const presetsHere = Object.values(recipe.presets || {}).filter((x) => x.hardware === id);
+                      const presetNote = presetsHere.length && !disabled
+                        ? `\n\nTuned presets: ${presetsHere.map((x) => x.label).join(", ")}`
+                        : "";
                       const reason = isUnsupported
                           ? `Not yet supported on ${p.display_name} — this model doesn't run here today, may be enabled in a future release`
                         : !fittingVariantKey
@@ -2345,13 +2372,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                           active={hwId === id}
                           disabled={disabled}
                           onClick={() => !disabled && selectHardware(id)}
-                          title={reason}
+                          title={reason + presetNote}
                         >
                           <HwStatusDot status={status} />
                           <span className="font-semibold">{p.display_name}</span>
                           {p.vram_gb > 0 && p.gpu_count > 0 && (
                             <span className="text-muted-foreground ml-1.5 font-mono">
                               {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : "GPU"}
+                            </span>
+                          )}
+                          {presetsHere.length > 0 && !disabled && (
+                            <span className="ml-1.5 rounded bg-vllm-blue/12 px-1 py-px text-[10px] font-medium text-vllm-blue">
+                              {presetsHere.length === 1 ? "preset" : `${presetsHere.length} presets`}
                             </span>
                           )}
                         </Pill>
@@ -2516,20 +2548,26 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           {/* Tuned presets — named, evidence-backed deltas for this exact GPU
               (and strategy), e.g. an InferenceX lane. Baseline is the
               recipe's generic command; the runbook lives under the guide. */}
-          {result?.preset && (() => {
-            const { selected, options } = result.preset;
-            const active = options.find((p) => p.key === selected);
+          {hwPresets.length > 0 && (() => {
+            const selected = result?.preset?.selected ?? "baseline";
+            const active = hwPresets.find((p) => p.key === selected);
+            const hereHasDefault = hwPresets.some((p) => p.default && (!p.strategy || p.strategy === activeStrategy));
             return (
-              <ConfigRow label="Preset" nested hint="Tuned configurations qualified on this hardware. Baseline is the recipe's generic command.">
+              <ConfigRow label="Preset" nested hint="Tuned configurations qualified on this hardware. Picking one for another strategy switches the strategy. Baseline is the recipe's generic command.">
                 <PillGroup>
-                  {options.map((p) => (
-                    <Pill key={p.key} active={selected === p.key} pressed={selected === p.key} onClick={() => selectPreset(p.key)}
-                      title={p.description || p.label}>
-                      {p.label}
-                    </Pill>
-                  ))}
+                  {hwPresets.map((p) => {
+                    const elsewhere = p.strategy && p.strategy !== activeStrategy;
+                    const sName = strategies[p.strategy]?.display_name || p.strategy;
+                    return (
+                      <Pill key={p.key} active={selected === p.key} pressed={selected === p.key} onClick={() => selectPreset(p.key)}
+                        title={[p.description || p.label, elsewhere && `Switches the strategy to ${sName}.`].filter(Boolean).join("\n\n")}>
+                        {p.label}
+                        {elsewhere && <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">{strategies[p.strategy]?.short_label || sName}</span>}
+                      </Pill>
+                    );
+                  })}
                   <Pill active={selected === "baseline"} pressed={selected === "baseline"} onClick={() => selectPreset("baseline")}
-                    title="The recipe's generic command for this hardware, without a tuned preset">
+                    title="The recipe's generic command for this hardware and strategy, without a tuned preset">
                     Baseline
                   </Pill>
                 </PillGroup>
@@ -2545,10 +2583,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                         <> · <a href={`#preset-${active.key}`} className="text-vllm-blue hover:underline">Runbook</a></>
                       )}
                     </>
-                  ) : options.some((p) => p.default) ? (
+                  ) : hereHasDefault ? (
                     "Generic command without the tuned preset's settings. Not the configuration that was qualified on this hardware."
                   ) : (
-                    "The recipe's generic command. Pick a preset for a configuration qualified on this hardware."
+                    `No preset for ${strategies[activeStrategy]?.display_name || activeStrategy} here; the presets above switch to the strategy they were qualified on.`
                   )}
                 </p>
               </ConfigRow>
