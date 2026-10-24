@@ -1546,13 +1546,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     pendingPreset.current = null;
   }, [presetScope]);
 
-  // Every preset for this hardware, the current strategy's first: the Preset
-  // row offers all of them, so presets on other strategies are discoverable.
-  const hwPresets = useMemo(() => {
-    const all = Object.entries(recipe.presets || {}).filter(([, p]) => p.hardware === hwId).map(([key, p]) => ({ key, ...p }));
-    const here = (p) => !p.strategy || p.strategy === activeStrategy;
-    return [...all.filter(here), ...all.filter((p) => !here(p))];
-  }, [recipe, hwId, activeStrategy]);
+  // Every preset for this hardware, in YAML order: the Preset row offers all
+  // of them, so presets on other strategies are discoverable. The order stays
+  // fixed across strategy switches so a clicked pill doesn't jump.
+  const hwPresets = useMemo(
+    () => Object.entries(recipe.presets || {}).filter(([, p]) => p.hardware === hwId).map(([key, p]) => ({ key, ...p })),
+    [recipe, hwId]
+  );
 
   const selectPreset = (key) => {
     const target = recipe.presets?.[key];
@@ -2021,7 +2021,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
 
     return (
       <TooltipProvider>
-        <div className="space-y-4">
+        <div className="space-y-4" onClickCapture={keepClickedRowInPlace}>
           <InstallBlock
             recipe={recipe}
             variant={currentVariant}
@@ -2204,7 +2204,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
 
   return (
     <TooltipProvider>
-      <div className="space-y-4">
+      <div className="space-y-4" onClickCapture={keepClickedRowInPlace}>
         {/* ── Install (tabs: pip / docker — mirrors the command-card mode toggle
           so switching from either place keeps them in sync). */}
         <InstallBlock
@@ -3296,13 +3296,39 @@ function PdNodeInput({ label, value, gpuPerNode, onChange, modes, parallelism, o
   );
 }
 
+// A pick re-renders the command block, which sits ABOVE the config rows, so
+// its height can change by hundreds of pixels (a preset or strategy swaps a
+// whole PD / multi-node command) and shove the clicked row off screen. Native
+// scroll anchoring doesn't catch it (and Safari has none), so keep the
+// clicked row where it was: measure it before the update, then scroll by the
+// difference once the update (and router.replace's re-render) has painted.
+// Buttons only, so links inside a row (Runbook, Source) still navigate.
+function keepClickedRowInPlace(e) {
+  if (!e.target.closest?.("button")) return;
+  const row = e.target.closest("[data-config-row]");
+  if (!row) return;
+  const before = row.getBoundingClientRect().top;
+  const settle = () => {
+    if (!row.isConnected) return;
+    const delta = row.getBoundingClientRect().top - before;
+    if (Math.abs(delta) > 1) window.scrollBy(0, delta);
+  };
+  // React flushes a discrete event's update synchronously before its native
+  // listener returns, so a microtask runs after the new layout exists but
+  // before anything is painted; the frame and timeout catch later renders
+  // (router.replace's transition).
+  queueMicrotask(settle);
+  requestAnimationFrame(settle);
+  setTimeout(settle, 250);
+}
+
 function ConfigRow({ label, hint, nested, children }) {
   // `nested` marks a row that only exists as a child of the pick above it
   // (Store Topology / Instances under Mooncake, the spec-method row under
   // Features): a blue left rail + slight tint expresses the ownership that
   // the flat divide-y list otherwise hides.
   return (
-    <div className={`px-4 py-3 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 ${nested ? "border-l-2 border-vllm-blue/30 bg-muted/20" : ""}`}>
+    <div data-config-row className={`px-4 py-3 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 ${nested ? "border-l-2 border-vllm-blue/30 bg-muted/20" : ""}`}>
       <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest sm:w-28 sm:pt-1.5 shrink-0 inline-flex items-center gap-1">
         {label}
         {hint && (
