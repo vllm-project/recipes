@@ -8,7 +8,7 @@ import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { resolvePresetKey, withPreset } from "@/lib/recipe-presets";
-import { publishSelection } from "@/lib/selection-store";
+import { publishSelection, onPresetRequest } from "@/lib/selection-store";
 import { whenMatches } from "@/lib/recipe-context";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -420,6 +420,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     && isHardwareSupported(recipe, requestedHwId)
     && isVariantHardwareSupported(requestedVariant, requestedHwId, requestedHwProfile);
   const [hwId, setHwId] = useState(requestedHwAllowed ? requestedHwId : defaultHw);
+  const hwIdRef = useRef(hwId);
+  hwIdRef.current = hwId;
 
   // After mount: restore preferences from localStorage in two scopes.
   // URL params always win (explicit > stored).
@@ -1568,6 +1570,33 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     setPresetPick(next);
     syncUrl({ preset: next ?? "" });
   };
+
+  // A preset card (Presets tab) asks for a preset. Same hardware: pick it
+  // (selectPreset switches strategy if needed). Other hardware: switch first,
+  // and pick once the switch has rendered, so strategy floors, node counts
+  // and the preset's own default resolve against the new hardware. Declared
+  // after the preset-scope reset effect so that effect can't clear the pick.
+  const requestedPreset = useRef(null);
+  const selectPresetRef = useRef(selectPreset);
+  selectPresetRef.current = selectPreset;
+  const selectHardwareRef = useRef(selectHardware);
+  selectHardwareRef.current = selectHardware;
+  useEffect(() => onPresetRequest(({ hfId, key }) => {
+    const target = recipe.presets?.[key];
+    if (hfId !== recipe.hf_id || !target) return;
+    if (target.hardware === hwIdRef.current) selectPresetRef.current(key);
+    else {
+      requestedPreset.current = key;
+      selectHardwareRef.current(target.hardware);
+    }
+  }), [recipe]);
+  useEffect(() => {
+    const key = requestedPreset.current;
+    if (!key || recipe.presets?.[key]?.hardware !== hwId) return;
+    requestedPreset.current = null;
+    selectPreset(key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hwId]);
 
   const toggleAdvanced = (id) => {
     const next = advanced.includes(id) ? advanced.filter((x) => x !== id) : [...advanced, id];

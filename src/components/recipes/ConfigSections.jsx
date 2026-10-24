@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, Link2 } from "lucide-react";
-import { useSelection } from "@/lib/selection-store";
+import { requestPreset, useSelection } from "@/lib/selection-store";
 import { whenMatches } from "@/lib/recipe-context";
 
 function HeadingLink({ id }) {
@@ -68,15 +68,25 @@ function Runbook({ preset }) {
   );
 }
 
-function PresetCard({ p, hardware, strategyLabels, active }) {
+function PresetCard({ hfId, p, hardware, strategyLabels, active }) {
   const id = `preset-${p.key}`;
   const builderHref = `?hardware=${p.hardware}${p.strategy ? `&strategy=${p.strategy}` : ""}&preset=${p.key}#recipe-builder`;
+  // Apply in place and bring the builder (its command) into view; the href
+  // stays as the no-JS / new-tab path.
+  const use = (e) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (!requestPreset(hfId, p.key)) return;
+    e.preventDefault();
+    document.getElementById("recipe-builder")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   return (
     <div className={`rounded-lg border px-4 py-3 ${active ? "border-vllm-blue/50 bg-vllm-blue/[0.04]" : "border-foreground/10"}`}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="rounded-md border border-foreground/15 px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{hardware[p.hardware]?.display_name || p.hardware}</span>
         <span id={id} className="scroll-mt-24 font-semibold">{p.label}</span>
-        {p.default && <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium">Default</span>}
+        {!p.default && (
+          <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium" title="Not applied automatically: pick it in the builder's Preset row">Opt-in</span>
+        )}
         {active && <span className="rounded-md bg-vllm-blue/15 px-1.5 py-0.5 text-[11px] font-medium text-vllm-blue">In use</span>}
         <HeadingLink id={id} />
       </div>
@@ -85,7 +95,11 @@ function PresetCard({ p, hardware, strategyLabels, active }) {
       </div>
       {p.description && <p className="mt-1.5 text-sm">{p.description}</p>}
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-        {!active && <a href={builderHref} className="text-vllm-blue hover:underline">Use in builder</a>}
+        {!active && (
+          <a href={builderHref} onClick={use} className="rounded-md border border-vllm-blue/40 px-2 py-0.5 font-medium text-vllm-blue hover:bg-vllm-blue/10">
+            Use this preset
+          </a>
+        )}
         <SourceLink source={p.source} />
       </div>
       {p.runbook && <Runbook preset={p} />}
@@ -252,11 +266,11 @@ export function ReferenceTabs({ hfId, hardware, strategyLabels, presets, trouble
       {presets.length > 0 && (
         <div {...panelProps("presets")}><div className="px-5 pt-4 pb-5">
           <p className="mb-3 text-sm text-muted-foreground">
-            Configurations qualified on specific hardware, layered on the baseline command. A default preset applies automatically in the builder on its hardware; pick Baseline there to drop it.
+            Configurations qualified on specific hardware, layered on the baseline command. Unless marked Opt-in, a preset applies automatically on its hardware and strategy; pick Baseline in the builder to drop it.
           </p>
           <div className="space-y-2">
             {(sel ? [...presets].sort((a, b) => (b.hardware === sel.hwId) - (a.hardware === sel.hwId)) : presets).map((p) => (
-              <PresetCard key={p.key} p={p} hardware={hardware} strategyLabels={strategyLabels} active={sel?.preset === p.key} />
+              <PresetCard key={p.key} hfId={hfId} p={p} hardware={hardware} strategyLabels={strategyLabels} active={sel?.preset === p.key} />
             ))}
           </div>
         </div></div>
