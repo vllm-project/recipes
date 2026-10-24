@@ -224,6 +224,26 @@ html.dark .shiki span {
   font-weight: 600;
 }
 
+/* Markdown bodies of `notes` inside the command block (CommandNote). */
+.command-note-md {
+  color: color-mix(in srgb, var(--command-fg) 70%, transparent);
+}
+.command-note-md > * + * { margin-top: 0.35rem; }
+.command-note-md code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  background: color-mix(in srgb, var(--command-fg) 10%, transparent);
+  color: var(--command-fg);
+  padding: 0.05em 0.3em;
+  border-radius: 3px;
+  overflow-wrap: anywhere;
+}
+.command-note-md a { color: var(--color-vllm-blue); }
+.command-note-md a:hover { text-decoration: underline; }
+.command-note-md ul { list-style: disc; padding-left: 1.1rem; }
+.command-note-md pre { overflow-x: auto; padding: 0.4rem 0.5rem; border-radius: 4px; background: color-mix(in srgb, var(--command-fg) 8%, transparent); }
+.command-note-md pre code { background: none; padding: 0; }
+
 .guide-content code {
   font-family: var(--font-mono);
   font-size: 0.825em;

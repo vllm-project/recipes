@@ -10,7 +10,7 @@ import { resolveRecipePlatforms } from "@/lib/platforms";
 import { getProviderLogo, getProviderLogoClass } from "@/lib/providers";
 import { CommandBuilder } from "@/components/recipes/CommandBuilder";
 import { GuideLinks } from "@/components/recipes/GuideLinks";
-import { ForThisConfiguration, ReferenceTabs } from "@/components/recipes/ConfigSections";
+import { ReferenceTabs } from "@/components/recipes/ConfigSections";
 import { whenLabels } from "@/lib/recipe-context";
 import { DeployDialog } from "@/components/recipes/DeployDialog";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
@@ -109,7 +109,8 @@ export default async function RecipePage({ params, searchParams }) {
   const strategies = loadStrategies();
   const taxonomy = loadTaxonomy();
   const guide = recipe.guide || "";
-  // Sections below the builder (ConfigSections) filter on its selection; the
+  // The builder (notes under the command) and the reference tabs below it
+  // (ConfigSections) filter these on its selection; the
   // Markdown is rendered here, on the server, and handed over as nodes.
   const hardwareSlim = Object.fromEntries(Object.entries(taxonomy.hardware_profiles || {}).map(
     ([id, h]) => [id, { display_name: h.display_name, generation: h.generation, brand: h.brand, compute_arch: h.compute_arch }]
@@ -135,7 +136,10 @@ export default async function RecipePage({ params, searchParams }) {
       body: <GuideMarkdown prefix={`${n ? `${base}-${n}` : base}-`}>{t.body}</GuideMarkdown>,
     };
   });
-  const sectionProps = { hfId: recipe.hf_id, hardware: hardwareSlim, strategyLabels, presets, notes, troubleshooting };
+  const sectionProps = { hfId: recipe.hf_id, hardware: hardwareSlim, strategyLabels, presets, troubleshooting };
+  // For the command block: notes render under the command, and matching
+  // troubleshooting entries are linked from there.
+  const issueIndex = troubleshooting.map(({ id, title, when }) => ({ id, title, when }));
   const logo = getProviderLogo(recipe.hf_org);
 
   // Per-recipe platform opt-in. Each entry is either a bare id ("modal") or
@@ -249,7 +253,7 @@ export default async function RecipePage({ params, searchParams }) {
       {/* ── Command Builder ── */}
       <section id="recipe-builder" className="mb-10 scroll-mt-20">
         <Suspense fallback={<div className="h-40 rounded-2xl bg-muted animate-pulse" />}>
-          <CommandBuilder recipe={recipe} strategies={strategies} taxonomy={taxonomy} />
+          <CommandBuilder recipe={recipe} strategies={strategies} taxonomy={taxonomy} contextNotes={notes} issueIndex={issueIndex} />
         </Suspense>
       </section>
 
@@ -257,7 +261,6 @@ export default async function RecipePage({ params, searchParams }) {
       <section className="space-y-3">
         <GuideLinks>
           <div className="space-y-3">
-            <ForThisConfiguration {...sectionProps} />
             <ReferenceTabs {...sectionProps} guide={guide ? <GuideMarkdown>{guide}</GuideMarkdown> : null} />
           </div>
         </GuideLinks>

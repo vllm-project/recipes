@@ -9,6 +9,7 @@ import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSup
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import { publishSelection } from "@/lib/selection-store";
+import { whenMatches } from "@/lib/recipe-context";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
@@ -369,7 +370,7 @@ function hardwareSelectorLabel(selector, profiles) {
   return profiles?.[selector]?.display_name || selector;
 }
 
-export function CommandBuilder({ recipe, strategies, taxonomy }) {
+export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = [], issueIndex = [] }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -1883,7 +1884,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       : installMode === "docker" && dockerEffectivelyHidden
         ? "pip"
         : installMode;
-  const commandNote = recipe.hardware_notes?.[hwId] || null;
+  // Shown under the command: the GPU's hardware note, `notes` whose `when`
+  // matches this selection (server-rendered Markdown, from the page), and
+  // links to matching troubleshooting entries (in the Troubleshooting tab).
+  const commandNote = useMemo(() => {
+    const sel = { hwId, strategy: activeStrategy, variant, features };
+    const hw = taxonomy.hardware_profiles || {};
+    const notes = contextNotes.filter((n) => whenMatches(n.when, sel, hw));
+    const issues = issueIndex.filter((t) => t.when && whenMatches(t.when, sel, hw));
+    const hardware = recipe.hardware_notes?.[hwId] || null;
+    return hardware || notes.length || issues.length ? { hardware, notes, issues } : null;
+  }, [recipe, hwId, activeStrategy, variant, features, taxonomy, contextNotes, issueIndex]);
 
   // The extra-install block is pip-scoped by default: nearly every recipe's
   // dependencies are pip installs the Docker image already bundles, so repeating
@@ -2524,7 +2535,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                         <> <a href={active.source.href} className="text-vllm-blue hover:underline" target="_blank" rel="noreferrer">{active.source.label || "Source"}</a></>
                       )}
                       {active.runbook && (
-                        <> · <a href="#this-configuration" className="text-vllm-blue hover:underline">Runbook</a></>
+                        <> · <a href={`#preset-${active.key}`} className="text-vllm-blue hover:underline">Runbook</a></>
                       )}
                     </>
                   ) : options.some((p) => p.default) ? (
@@ -3418,7 +3429,7 @@ function CommandBody({ command }) {
   );
 }
 
-function CommandNote({ note }) {
+function HardwareNote({ note }) {
   if (!note) return null;
   const cfg = typeof note === "string" ? { body: note } : (note || {});
   const title = cfg.title || "Hardware note";
@@ -3442,6 +3453,52 @@ function CommandNote({ note }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Everything under the command that follows the selection: the hardware
+// note, then `notes` (titles listed, bodies on demand), then links to the
+// matching troubleshooting entries.
+function CommandNote({ note }) {
+  if (!note) return null;
+  const { hardware, notes = [], issues = [] } = note;
+  return (
+    <>
+      {hardware && <HardwareNote note={hardware} />}
+      {notes.length > 0 && (
+        <details className="group/notes mx-4 mt-3 rounded-lg border border-vllm-blue/25 bg-vllm-blue/10 text-[11px] leading-snug">
+          <summary className="flex cursor-pointer list-none items-start gap-2 px-3 py-2 [&::-webkit-details-marker]:hidden">
+            <Info size={13} className="mt-0.5 shrink-0 text-vllm-blue" />
+            <span className="min-w-0 flex-1">
+              <span className="font-semibold text-[var(--command-fg)]">
+                {notes.length === 1 ? "1 note" : `${notes.length} notes`} for this configuration
+              </span>
+              <span className="text-[var(--command-fg)]/55 group-open/notes:hidden"> · {notes.map((n) => n.title || "Note").join(" · ")}</span>
+            </span>
+            <ChevronDown size={13} className="mt-0.5 shrink-0 text-[var(--command-fg)]/50 transition-transform group-open/notes:rotate-180" />
+          </summary>
+          <div className="space-y-2.5 border-t border-vllm-blue/20 px-3 py-2.5 pl-8">
+            {notes.map((n, i) => (
+              <div key={i}>
+                {n.title && <p className="font-semibold text-[var(--command-fg)]">{n.title}</p>}
+                <div className="command-note-md">{n.body}</div>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+      {issues.length > 0 && (
+        <div className="mx-4 mt-2 flex items-start gap-2 px-3 text-[11px] leading-snug">
+          <Wrench size={12} className="mt-0.5 shrink-0 text-amber-500" />
+          <p className="text-[var(--command-fg)]/65">
+            {issues.length === 1 ? "Known issue" : `${issues.length} known issues`}:{" "}
+            {issues.map((t, i) => (
+              <span key={t.id}>{i > 0 && " · "}<a href={`#${t.id}`} className="font-medium text-vllm-blue hover:underline">{t.title}</a></span>
+            ))}
+          </p>
+        </div>
+      )}
+    </>
   );
 }
 

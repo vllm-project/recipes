@@ -1,12 +1,13 @@
 "use client";
 
-// Sections below the command builder that follow its selection: a "For this
-// configuration" panel, then the reference tabs (Guide · Presets ·
-// Troubleshooting). Content (Markdown) is rendered on the server and passed in
-// as nodes; these only decide placement. Before the builder publishes a
-// selection (server HTML, pre-hydration) everything renders unfiltered, and
-// every tab panel stays in the DOM, so no content is lost to search or to
-// find-in-page.
+// The reference tabs below the command builder (Guide · Presets ·
+// Troubleshooting), following its selection: the active preset is marked and
+// listed first, and troubleshooting entries matching the selection come first.
+// What applies to the command itself (`notes`, links to matching issues)
+// renders inside the command block (CommandNote). Content (Markdown) is
+// rendered on the server and passed in as nodes; before the builder publishes
+// a selection everything renders unfiltered, and every tab panel stays in the
+// DOM, so no content is lost to search or to find-in-page.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, Link2 } from "lucide-react";
@@ -52,7 +53,7 @@ function SourceLink({ source }) {
 
 function Runbook({ preset }) {
   return (
-    <details className="group/rb mt-3 rounded-lg border border-foreground/10">
+    <details data-runbook-for={`preset-${preset.key}`} className="group/rb mt-3 rounded-lg border border-foreground/10">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-2.5 text-sm hover:bg-foreground/[0.03] [&::-webkit-details-marker]:hidden">
         <span className="min-w-0">
           <span className="font-medium">Runbook</span>
@@ -64,59 +65,6 @@ function Runbook({ preset }) {
       </summary>
       <div className="guide-content border-t border-foreground/10 px-4 pt-3 pb-4">{preset.runbook}</div>
     </details>
-  );
-}
-
-// What applies to the command just built: the active preset and its runbook,
-// notes whose `when` matches, and links to matching known issues. Hidden when
-// nothing matches, so the tabs below never shift.
-export function ForThisConfiguration({ hfId, hardware, strategyLabels, presets, notes, troubleshooting }) {
-  const sel = useSelection(hfId);
-  useRevealHashOnSelection(!!sel);
-  if (!sel) return null;
-  const preset = presets.find((p) => p.key === sel.preset);
-  const myNotes = notes.filter((n) => whenMatches(n.when, sel, hardware));
-  const myIssues = troubleshooting.filter((t) => t.when && whenMatches(t.when, sel, hardware));
-  if (!preset && !myNotes.length && !myIssues.length) return null;
-
-  const scope = [hardware[sel.hwId]?.display_name || sel.hwId, strategyLabels[sel.strategy] || sel.strategy].filter(Boolean).join(" · ");
-  return (
-    <section id="this-configuration" aria-labelledby="this-configuration-title" className="rounded-xl border border-foreground/15 bg-card/40 scroll-mt-24">
-      <div className="flex items-center justify-between gap-3 border-b border-foreground/10 px-5 py-3">
-        <h2 id="this-configuration-title" className="flex items-center gap-2 text-sm font-semibold">
-          For this configuration<HeadingLink id="this-configuration" />
-        </h2>
-        <span className="truncate text-xs text-muted-foreground">{scope}</span>
-      </div>
-      <div className="space-y-4 px-5 pt-4 pb-5">
-        {preset && (
-          <div>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-              <span className="text-muted-foreground">Preset</span>
-              <span className="font-semibold">{preset.label}</span>
-              {preset.workload && <span className="text-xs text-muted-foreground">· {preset.workload}</span>}
-            </div>
-            {preset.description && <p className="mt-1 text-sm">{preset.description}</p>}
-            {preset.source?.href && <p className="mt-1 text-xs"><SourceLink source={preset.source} /></p>}
-            {preset.runbook && <Runbook preset={preset} />}
-          </div>
-        )}
-        {myNotes.map((n, i) => (
-          <div key={i} className="guide-content">
-            {n.title && <p className="!mb-1 font-semibold">{n.title}</p>}
-            {n.body}
-          </div>
-        ))}
-        {myIssues.length > 0 && (
-          <div className="text-sm">
-            <span className="text-muted-foreground">Troubleshooting for this configuration: </span>
-            {myIssues.map((t, i) => (
-              <span key={t.id}>{i > 0 && " · "}<a href={`#${t.id}`} className="text-vllm-blue hover:underline">{t.title}</a></span>
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
   );
 }
 
@@ -137,12 +85,10 @@ function PresetCard({ p, hardware, strategyLabels, active }) {
       </div>
       {p.description && <p className="mt-1.5 text-sm">{p.description}</p>}
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-        {active
-          ? <a href="#this-configuration" className="text-vllm-blue hover:underline">Runbook in For this configuration ↑</a>
-          : <a href={builderHref} className="text-vllm-blue hover:underline">Use in builder</a>}
+        {!active && <a href={builderHref} className="text-vllm-blue hover:underline">Use in builder</a>}
         <SourceLink source={p.source} />
       </div>
-      {!active && p.runbook && <Runbook preset={p} />}
+      {p.runbook && <Runbook preset={p} />}
     </div>
   );
 }
@@ -162,15 +108,20 @@ function Issue({ t }) {
   );
 }
 
-// Open every <details> around `el` and bring it into view.
+// Open every <details> around `el` (and a preset's runbook, which the
+// builder's Preset row links to as #preset-<key>), then bring it into view.
 function reveal(el) {
   for (let d = el.closest("details"); d; d = d.parentElement?.closest("details")) d.open = true;
+  if (el.id) {
+    const runbook = document.querySelector(`[data-runbook-for="${CSS.escape(el.id)}"]`);
+    if (runbook) runbook.open = true;
+  }
   el.scrollIntoView({ block: "start" });
 }
 
-// The selection arrives after hydration and can add the For this configuration
-// panel above a #hash target the browser already scrolled to (or be the
-// target itself), so scroll to it once more when it does.
+// The builder renders on the client, after the browser already scrolled to a
+// #hash target below it, and pushes it down; scroll to it once more when the
+// selection (and so the builder) arrives.
 function useRevealHashOnSelection(ready, within) {
   const done = useRef(false);
   useEffect(() => {
