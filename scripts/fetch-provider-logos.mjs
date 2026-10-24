@@ -32,11 +32,16 @@ const HARDWARE_LOGOS = {
 const OUT = "public/providers";
 fs.mkdirSync(OUT, { recursive: true });
 
+// The org API names the org's own avatar. The org page HTML is only a
+// fallback: its first cdn-avatars URL can be a member's avatar (RecursiveSI).
 async function fetchOrgAvatarUrl(org) {
-  const res = await fetch(`https://huggingface.co/${org}`, {
-    headers: { "User-Agent": "vllm-recipes-build/1.0" },
-  });
-  const html = await res.text();
+  const headers = { "User-Agent": "vllm-recipes-build/1.0" };
+  const api = await fetch(`https://huggingface.co/api/organizations/${org}/overview`, { headers });
+  if (api.ok) {
+    const { avatarUrl } = await api.json();
+    if (avatarUrl) return avatarUrl;
+  }
+  const html = await (await fetch(`https://huggingface.co/${org}`, { headers })).text();
   const match = html.match(/cdn-avatars\.huggingface\.co\/[^"&]+/);
   return match ? `https://${match[0]}` : null;
 }
