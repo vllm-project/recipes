@@ -3879,7 +3879,10 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
     ...(isDynamo && result.infra ? [{ id: "dyn_infra", label: result.infra.label, command: result.infra.command, env: {}, description: result.infra.description }] : []),
     { id: "prefill", label: "Prefill", command: wrap(result.prefill.command, result.prefill.env), env: result.prefill.env, meta: result.prefill },
     { id: "decode", label: "Decode", command: wrap(result.decode.command, result.decode.env), env: result.decode.env, meta: result.decode },
-    { id: "router", label: result.router.label || "Router", command: routerDocker || result.router.command, env: result.router.env || {}, install: routerDocker ? null : result.router.install, isRouter: true },
+    // Ascend NPU PD: external DP launcher replaces the Router tab.
+    // Mooncake proxy handles routing; vllm-router / SMG / Dynamo are not used.
+    ...(result.launcher ? [{ id: "launcher", label: result.launcher.label, command: [result.launcher.script, result.launcher.prefillCmd, result.launcher.decodeCmd, result.launcher.postScript].join("\n"), env: {}, description: result.launcher.description }] : []),
+    ...(result.launcher ? [] : [{ id: "router", label: result.router.label || "Router", command: routerDocker || result.router.command, env: result.router.env || {}, install: routerDocker ? null : result.router.install, isRouter: true }]),
     ...(result.registration ? [{ id: "registration", ...result.registration, env: {}, isRouter: true }] : []),
   ].map((t, i) => (mc || isDynamo || isSmg ? { ...t, step: i + 1 } : t));
   // When Mooncake is toggled on/off, jump to the leftmost tab so the launch

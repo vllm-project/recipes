@@ -1264,3 +1264,244 @@ guide: |
     --intra-node-data-parallel-size 4 \
     --kv-connector nixl
   ```
+
+  ### Ascend A3 Multi-Node PD (Mooncake)
+
+  Multi-host disaggregated serving on 2 Atlas 800I A3 (128G × 8) nodes with
+  MooncakeHybridConnector for KV cache transfer. A 1P1D topology: DP=4 / TP=4
+  (16 NPUs) on the prefill node and DP=16 / TP=1 (16 NPUs) on the decode node.
+
+  Replace `your_model_path` with the local path to the W8A8 quantized checkpoint
+  (e.g. `Eco-Tech/DeepSeek-V4-Flash-w8a8-mtp` on ModelScope).
+
+  **Prefill** (1 node, DP=4, TP=4, 16 NPUs):
+
+  The prefill node runs 4 DP × 4 TP vLLM instances. Replace `nic_name` and
+  `local_ip`.
+
+  ```bash
+  nic_name=xxxx              # your NIC name (e.g., eth0)
+  local_ip=xx.xx.xx.1        # prefill node IP
+
+  export HCCL_IF_IP=$local_ip
+  export GLOO_SOCKET_IFNAME=$nic_name
+  export TP_SOCKET_IFNAME=$nic_name
+  export HCCL_SOCKET_IFNAME=$nic_name
+  export HCCL_OP_EXPANSION_MODE=AIV
+  export VLLM_ASCEND_ENABLE_FLASHCOMM1=1
+  export VLLM_RPC_TIMEOUT=3600000
+  export VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=30000
+  export HCCL_EXEC_TIMEOUT=204
+  export HCCL_CONNECT_TIMEOUT=120
+  export OMP_PROC_BIND=false
+  export OMP_NUM_THREADS=10
+  export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+  export HCCL_BUFFSIZE=2560
+  export TASK_QUEUE_ENABLE=1
+
+  # One representative instance (rank 0, NPUs 0–3, port 7100).
+  # launch_online_dp.py starts all 4 instances with ascending device sets.
+
+  vllm serve your_model_path \
+      --host 0.0.0.0 \
+      --port 7100 \
+      --data-parallel-size 4 \
+      --data-parallel-rank 0 \
+      --data-parallel-address $local_ip \
+      --data-parallel-rpc-port 12321 \
+      --tensor-parallel-size 4 \
+      --enable-expert-parallel \
+      --seed 1024 \
+      --served-model-name dsv4 \
+      --max-model-len 131072 \
+      --max-num-batched-tokens 8192 \
+      --max-num-seqs 16 \
+      --block-size 128 \
+      --no-disable-hybrid-kv-cache-manager \
+      --safetensors-load-strategy prefetch \
+      --trust-remote-code \
+      --tokenizer-mode deepseek_v4 \
+      --tool-call-parser deepseek_v4 \
+      --enable-auto-tool-choice \
+      --reasoning-parser deepseek_v4 \
+      --gpu-memory-utilization 0.9 \
+      --quantization ascend \
+      --enforce-eager \
+      --additional-config \
+          '{"enable_cpu_binding":true,"enable_shared_expert_dp":true,"enable_dsa_cp":true}' \
+      --kv-transfer-config \
+          '{"kv_connector":"MooncakeHybridConnector","kv_role":"kv_producer","kv_port":"30000","engine_id":"0","kv_connector_extra_config":{"prefill":{"dp_size":4,"tp_size":4},"decode":{"dp_size":16,"tp_size":1}}}'
+  ```
+
+  **Decode** (1 node, DP=16, TP=1, 16 NPUs):
+
+  The decode node runs 16 DP × 1 TP vLLM instances. Replace `nic_name` and
+  `local_ip`.
+
+  ```bash
+  nic_name=xxxx              # your NIC name
+  local_ip=xx.xx.xx.2        # decode node IP
+
+  export HCCL_IF_IP=$local_ip
+  export GLOO_SOCKET_IFNAME=$nic_name
+  export TP_SOCKET_IFNAME=$nic_name
+  export HCCL_SOCKET_IFNAME=$nic_name
+  export HCCL_OP_EXPANSION_MODE=AIV
+  export VLLM_RPC_TIMEOUT=3600000
+  export VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=30000
+  export HCCL_EXEC_TIMEOUT=204
+  export HCCL_CONNECT_TIMEOUT=1200
+  export OMP_PROC_BIND=false
+  export OMP_NUM_THREADS=10
+  export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+  export HCCL_BUFFSIZE=1024
+  export TASK_QUEUE_ENABLE=1
+
+  # One representative instance (rank 0, NPU 0, port 7100).
+  # launch_online_dp.py starts all 16 instances on ports 7100–7115.
+
+  vllm serve your_model_path \
+      --host 0.0.0.0 \
+      --port 7100 \
+      --data-parallel-size 16 \
+      --data-parallel-rank 0 \
+      --data-parallel-address $local_ip \
+      --data-parallel-rpc-port 12321 \
+      --tensor-parallel-size 1 \
+      --enable-expert-parallel \
+      --seed 1024 \
+      --served-model-name dsv4 \
+      --max-model-len 131072 \
+      --max-num-batched-tokens 120 \
+      --max-num-seqs 512 \
+      --async-scheduling \
+      --block-size 128 \
+      --no-disable-hybrid-kv-cache-manager \
+      --enable-prefix-caching \
+      --safetensors-load-strategy prefetch \
+      --trust-remote-code \
+      --tokenizer-mode deepseek_v4 \
+      --tool-call-parser deepseek_v4 \
+      --enable-auto-tool-choice \
+      --reasoning-parser deepseek_v4 \
+      --gpu-memory-utilization 0.9 \
+      --quantization ascend \
+      --speculative-config '{"num_speculative_tokens":1,"method":"mtp","enforce_eager":true}' \
+      --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
+      --additional-config \
+          '{"ascend_compilation_config":{"enable_npugraph_ex":true,"enable_static_kernel":false},"enable_cpu_binding":true,"multistream_overlap_shared_expert":true,"recompute_scheduler_enable":true}' \
+      --kv-transfer-config \
+          '{"kv_connector":"MooncakeHybridConnector","kv_role":"kv_consumer","kv_port":"30100","engine_id":"1","kv_connector_extra_config":{"prefill":{"dp_size":4,"tp_size":4},"decode":{"dp_size":16,"tp_size":1}}}'
+  ```
+
+  **[Launch](https://github.com/vllm-ascend/vllm-ascend/tree/main/examples/external_online_dp)**:
+
+  Save the following as `launch_online_dp.py` on each node:
+
+  ```python
+  import argparse
+  import multiprocessing
+  import os
+  import subprocess
+  import sys
+
+
+  def parse_args():
+      parser = argparse.ArgumentParser()
+      parser.add_argument(
+          "--dp-size", type=int, required=True,
+          help="Data parallel size.",
+      )
+      parser.add_argument(
+          "--tp-size", type=int, default=1,
+          help="Tensor parallel size.",
+      )
+      parser.add_argument(
+          "--dp-size-local", type=int, default=-1,
+          help="Local data parallel size.",
+      )
+      parser.add_argument(
+          "--dp-rank-start", type=int, default=0,
+          help="Starting rank for data parallel.",
+      )
+      parser.add_argument(
+          "--dp-address", type=str, required=True,
+          help="IP address for data parallel master node.",
+      )
+      parser.add_argument(
+          "--dp-rpc-port", type=str, default=12345,
+          help="Port for data parallel master node.",
+      )
+      parser.add_argument(
+          "--vllm-start-port", type=int, default=9000,
+          help="Starting port for the engine.",
+      )
+      return parser.parse_args()
+
+
+  args = parse_args()
+  dp_size = args.dp_size
+  tp_size = args.tp_size
+  dp_size_local = args.dp_size_local
+  if dp_size_local == -1:
+      dp_size_local = dp_size
+  dp_rank_start = args.dp_rank_start
+  dp_address = args.dp_address
+  dp_rpc_port = args.dp_rpc_port
+  vllm_start_port = args.vllm_start_port
+
+
+  def run_command(visible_devices, dp_rank, vllm_engine_port):
+      command = [
+          "bash", "./run_dp_template.sh",
+          visible_devices, str(vllm_engine_port),
+          str(dp_size), str(dp_rank),
+          dp_address, dp_rpc_port, str(tp_size),
+      ]
+      subprocess.run(command, check=True)
+
+
+  if __name__ == "__main__":
+      template_path = "./run_dp_template.sh"
+      if not os.path.exists(template_path):
+          print(f"Template file {template_path} does not exist.")
+          sys.exit(1)
+
+      processes = []
+      for i in range(dp_size_local):
+          dp_rank = dp_rank_start + i
+          vllm_engine_port = vllm_start_port + i
+          visible_devices = ",".join(
+              str(x) for x in range(i * tp_size, (i + 1) * tp_size)
+          )
+          process = multiprocessing.Process(
+              target=run_command,
+              args=(visible_devices, dp_rank, vllm_engine_port),
+          )
+          processes.append(process)
+          process.start()
+
+      for process in processes:
+          process.join()
+  ```
+
+  Save the Prefill/Decode commands from above as `run_dp_template.sh` on the
+  respective nodes, then start:
+
+  ```bash
+  # === Prefill node (DP=4, TP=4, 16 NPUs) ===
+  python launch_online_dp.py \
+      --dp-size 4 --tp-size 4 --dp-size-local 4 \
+      --dp-rank-start 0 --dp-address xx.xx.xx.1 \
+      --dp-rpc-port 12321 --vllm-start-port 7100
+
+  # === Decode node (DP=16, TP=1, 16 NPUs) ===
+  python launch_online_dp.py \
+      --dp-size 16 --tp-size 1 --dp-size-local 16 \
+      --dp-rank-start 0 --dp-address xx.xx.xx.2 \
+      --dp-rpc-port 12321 --vllm-start-port 7100
+  ```
+
+  After all instances are ready, deploy the Mooncake proxy. Refer to the
+  [Prefill-Decode Disaggregation guide](https://docs.vllm.ai/projects/ascend/en/latest/tutorials/features/pd_disaggregation_mooncake_multi_node.html)
+  for proxy setup, service verification, and troubleshooting.
