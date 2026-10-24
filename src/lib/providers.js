@@ -55,16 +55,21 @@ export const PROVIDERS = {
   "vllm-sr":         { display_name: "vLLM Semantic Router",     logo: "/providers/vllm-sr.png" },
   "black-forest-labs": { display_name: "Black Forest Labs",     logo: "/providers/black-forest-labs.png" },
   "reflection":      { display_name: "Reflection AI",            logo: "/providers/reflection.png" },
+  "RecursiveSI":     { display_name: "RecursiveSI",              logo: "/providers/RecursiveSI.png", invertInLight: true },
 };
 
 export function getProviderLogo(hfOrg) {
   return PROVIDERS[hfOrg]?.logo || null;
 }
 
-// Monochrome logos (e.g. OpenAI's pure-black mark) disappear on dark backgrounds.
-// Flip them to white via `dark:invert` for those providers.
+// Monochrome logos disappear on one theme's background: OpenAI's pure-black
+// mark on dark (`invertInDark`), RecursiveSI's white-on-transparent mark on
+// light (`invertInLight`). Flip them with `invert` for that theme.
 export function getProviderLogoClass(hfOrg) {
-  return PROVIDERS[hfOrg]?.invertInDark ? "dark:invert" : "";
+  const p = PROVIDERS[hfOrg];
+  if (p?.invertInDark) return "dark:invert";
+  if (p?.invertInLight) return "invert dark:invert-0";
+  return "";
 }
 
 export function getProviderDisplayName(hfOrg) {
