@@ -38,6 +38,7 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      # The lockfile may come from a PR: don't run its dependencies' install scripts.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
 
       - run: pnpm test:guide-html
