@@ -5,11 +5,11 @@
 # which the source repo links from the PR.
 #
 # vllm's recipes-preview.yml sends `preview-pr` (client_payload.pr) when a
-# recipe PR from an author its CI trusts is pushed, labeled ready or closed;
-# this rebuilds or deletes that PR's branch right away. The hourly run only
-# refreshes existing branches and deletes those of closed or unlabeled PRs,
-# since GitHub runs scheduled workflows late. Nothing from a PR is run; Vercel
-# reads its recipes as data, the same way it reads them after a lock bump.
+# recipe PR is opened, pushed, reopened or closed; this rebuilds or deletes
+# that PR's branch once the PR has been quiet for two minutes. The hourly run
+# is a fallback for missed dispatches, since GitHub runs scheduled workflows
+# hours late. Nothing from a PR is run; Vercel reads its recipes as data, the
+# same way it reads them after a lock bump.
 name: Preview source PRs
 
 on:
@@ -24,10 +24,11 @@ on:
         required: false
 
 # Per PR: a group keeps only one pending run, so a shared group would drop
-# dispatches for other PRs that arrive together.
+# dispatches for other PRs that arrive together. A new dispatch for the same PR
+# cancels the waiting one (debounce, see below).
 concurrency:
   group: preview-prs-${{ github.event.client_payload.pr || inputs.pr || 'all' }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'repository_dispatch' }}
 
 permissions:
   contents: write
@@ -38,6 +39,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # Debounce: a burst of pushes builds one preview, for the last push.
+      - name: Wait for the PR to settle
+        if: github.event_name == 'repository_dispatch'
+        run: sleep 120
+
       - uses: actions/checkout@v4
         with:
           ref: main

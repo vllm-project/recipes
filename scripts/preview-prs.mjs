@@ -7,12 +7,12 @@
  *
  * A preview branch `preview/<source>-pr-<N>` is this checkout's HEAD plus a lock
  * that pins the source to the PR head (`ref` is unchanged, so sync-sources
- * fetches the pinned commit as usual) and `public/preview.json`. It is created
- * only with `--pr`: the source repo dispatches that for PRs from authors its CI
- * trusts, or a maintainer runs it. Without `--pr`, open PRs carrying `--label`
- * get their existing branch refreshed, and branches of closed or unlabeled PRs
- * are deleted. A branch is rewritten only when the PR's recipe directory
- * (tree_sha) changed. The source repo links the preview from its PR:
+ * fetches the pinned commit as usual) and `public/preview.json`. With `--pr`
+ * (what the source repo dispatches on each PR event) only those PRs are handled,
+ * and a closed PR's branch is deleted. Without it, every open PR carrying
+ * `--label` gets a branch, and branches of closed or unlabeled PRs are deleted.
+ * A branch is rewritten only when the PR's recipe directory (tree_sha) changed.
+ * The source repo links the preview from its PR:
  *   https://vllm-recipes-git-preview-<source>-pr-<N>-inferact-inc.vercel.app
  *
  * Only the PR's commit and tree ids are handled here; nothing from the PR is
@@ -121,10 +121,6 @@ for (const pr of wanted) {
     }
     console.log(`  ✗ #${pr}: closed, deleting ${prefix}${pr}`);
     if (!dryRun) git("push", "-q", "origin", "--delete", `refs/heads/${prefix}${pr}`);
-    continue;
-  }
-  if (!only && !existing.has(pr)) {
-    console.log(`  - #${pr}: no preview requested yet`);
     continue;
   }
   const sha = pull.head.sha;
