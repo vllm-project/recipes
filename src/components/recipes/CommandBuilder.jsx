@@ -1188,14 +1188,22 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
 
 
   // ── URL sync ──
+  // router.replace is async, so `searchParams` stays stale until it commits.
+  // A click handler and the effects its state change triggers (e.g. the DCP
+  // reset on a hardware switch) each call syncUrl in one interaction; building
+  // every call on the previous call's pending query keeps them composing
+  // instead of the last one reverting the others.
+  const pendingQs = useRef(null);
+  useEffect(() => { pendingQs.current = null; }, [searchParams]);
   const syncUrl = useCallback(
     (updates) => {
-      const sp = new URLSearchParams(searchParams.toString());
+      const sp = new URLSearchParams(pendingQs.current ?? searchParams.toString());
       for (const [k, v] of Object.entries(updates)) {
         if (v && v !== "default" && v !== recommended) sp.set(k, v);
         else sp.delete(k);
       }
       const qs = sp.toString();
+      pendingQs.current = qs;
       router.replace(`${qs ? `?${qs}` : pathname}${window.location.hash}`, { scroll: false });
     },
     [searchParams, router, recommended, pathname]
