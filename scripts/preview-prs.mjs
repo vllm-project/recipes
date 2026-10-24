@@ -101,7 +101,12 @@ const existing = new Set(
   (await gh(`/repos/${selfRepo}/git/matching-refs/heads/${prefix}`))
     .map((ref) => Number(ref.ref.slice(`refs/heads/${prefix}`.length))),
 );
-const only = args.pr ? String(args.pr).split(",").map(Number) : null;
+// A dispatch names one PR; cap a list so one request can't fan out widely.
+const MAX_PRS = 10;
+const only = args.pr ? [...new Set(String(args.pr).split(",").map(Number))] : null;
+if (only && (only.length > MAX_PRS || !only.every(Number.isInteger))) {
+  throw new Error(`--pr takes up to ${MAX_PRS} PR numbers, got "${args.pr}"`);
+}
 const wanted = only || await labeledPrs();
 const keep = new Set(wanted);
 let rebuilt = 0;
@@ -110,7 +115,10 @@ for (const pr of wanted) {
   const pull = await gh(`/repos/${spec.repo}/pulls/${pr}`);
   if (pull.state !== "open") {
     keep.delete(pr);
-    if (!existing.has(pr)) continue;
+    if (!existing.has(pr)) {
+      console.log(`  - #${pr}: closed, no preview`);
+      continue;
+    }
     console.log(`  ✗ #${pr}: closed, deleting ${prefix}${pr}`);
     if (!dryRun) git("push", "-q", "origin", "--delete", `refs/heads/${prefix}${pr}`);
     continue;
