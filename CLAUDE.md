@@ -84,6 +84,7 @@ The schema lives in [SCHEMA.md](SCHEMA.md) — annotated example, field referenc
 
 ### Non-obvious design decisions
 
+- **One syncUrl per interaction is not guaranteed.** A click handler and the reset effects its state change triggers (DCP, node count) can each call `syncUrl`; `router.replace` is async, so `syncUrl` builds on the previous call's pending query (`pendingQs`) instead of the stale `searchParams`, or the last call would revert the others (it did: hardware/strategy clicks never reached the URL).
 - **Hardware is never blocked by VRAM.** Multi-node scales VRAM, so `command-synthesis.js` only uses VRAM as a display hint. Precision constraints (NVFP4/FP4 require Blackwell by default) are the only things that disable a hardware pill; exceptional runtime fallbacks can broaden them with variant-level `precision_hardware`.
 - **Default hardware is always H200** (or B200 for Blackwell-constrained variants). `pickDefaultHardware` prefers NVIDIA over AMD; `loadPreferences` deliberately ignores AMD entries from localStorage so first-page-load is always H200.
 - **Omni recipes render `vllm serve --omni`** via a dedicated `resolveOmniCommand` path (no strategy / multi-node / pd). The command builder adds a Task pill row (T2I / I2I / T2V / I2V / TI2V / T2A) above Hardware, with task-specific cURL examples in the popover. Detection: `meta.tasks` includes `omni`. The `--omni` flag is auto-injected, so don't add it to `model.base_args`.
