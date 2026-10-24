@@ -4,9 +4,9 @@
       "repo": "vllm-project/vllm",
       "ref": "main",
       "path": "recipes",
-      "sha": "5f63ea461ccd567ece6f50dd3701430c0f321039",
-      "tree_sha": "3919bcc1013b66dd6c91abd8befb762c1bacf23b",
-      "resolved_at": "2026-10-24T14:41:51.778Z"
+      "sha": "285678fc5723411cf21eafdeb23d5a4d3f196166",
+      "tree_sha": "1ee0294113d4de177fc3d4c19787fca0fa7d65e9",
+      "resolved_at": "2026-10-24T20:48:04.920Z"
     },
     "vllm-omni": {
       "repo": "vllm-project/vllm-omni",
