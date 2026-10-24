@@ -56,6 +56,7 @@ export const PROVIDERS = {
   "black-forest-labs": { display_name: "Black Forest Labs",     logo: "/providers/black-forest-labs.png" },
   "reflection":      { display_name: "Reflection AI",            logo: "/providers/reflection.png" },
   "RecursiveSI":     { display_name: "RecursiveSI",              logo: "/providers/RecursiveSI.png", invertInLight: true },
+  "ibm-granite":     { display_name: "IBM Granite",              logo: "/providers/ibm-granite.png" },
 };
 
 export function getProviderLogo(hfOrg) {
