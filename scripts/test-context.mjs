@@ -35,20 +35,20 @@ test("when.hardware: exact id, generation, lowercase brand and arch selector", (
   assert.equal(whenMatches({ hardware: ["arch:gfx950"] }, sel(), hw), false);
 });
 
-test("when: keys AND together, values OR together; feature matches while on", () => {
-  const when = { hardware: ["gb200", "gb300"], strategy: ["pd_cluster", "multi_node_dep"] };
+test("when: keys AND together, values OR together; features match while on", () => {
+  const when = { hardware: ["gb200", "gb300"], strategies: ["pd_cluster", "multi_node_dep"] };
   assert.equal(whenMatches(when, sel({ hwId: "gb300", strategy: "pd_cluster" }), hw), true);
   assert.equal(whenMatches(when, sel({ hwId: "gb300", strategy: "single_node_tp" }), hw), false);
   assert.equal(whenMatches(when, sel({ hwId: "h200", strategy: "pd_cluster" }), hw), false);
-  assert.equal(whenMatches({ feature: ["tool_calling"] }, sel({ features: ["reasoning", "tool_calling"] }), hw), true);
-  assert.equal(whenMatches({ feature: ["tool_calling"] }, sel({ features: ["reasoning"] }), hw), false);
-  assert.equal(whenMatches({ variant: ["nvfp4"] }, sel({ variant: "nvfp4" }), hw), true);
+  assert.equal(whenMatches({ features: ["tool_calling"] }, sel({ features: ["reasoning", "tool_calling"] }), hw), true);
+  assert.equal(whenMatches({ features: ["tool_calling"] }, sel({ features: ["reasoning"] }), hw), false);
+  assert.equal(whenMatches({ variants: ["nvfp4"] }, sel({ variant: "nvfp4" }), hw), true);
 });
 
 test("whenLabels uses display names", () => {
   const recipe = { variants: { nvfp4: { precision: "nvfp4" } }, features: { tool_calling: {} } };
   const labels = whenLabels(
-    { hardware: ["gb200", "nvidia", "hopper"], strategy: ["pd_cluster"], variant: ["nvfp4"], feature: ["tool_calling"] },
+    { hardware: ["gb200", "nvidia", "hopper"], strategies: ["pd_cluster"], variants: ["nvfp4"], features: ["tool_calling"] },
     { hardwareProfiles: hw, strategies, recipe },
   );
   assert.deepEqual(labels, [hw.gb200.display_name, "NVIDIA", "Hopper", strategies.pd_cluster.display_name, "NVFP4", "Tool calling"]);
@@ -58,12 +58,12 @@ test("validateContextEntries rejects unknown variants and features", () => {
   const recipe = {
     variants: { default: {} },
     features: { reasoning: {} },
-    notes: [{ when: { variant: ["fp8"] }, body: "x" }],
-    troubleshooting: [{ title: "t", when: { feature: ["tool_calling"] }, body: "x" }],
+    notes: [{ when: { variants: ["fp8"] }, body: "x" }],
+    troubleshooting: [{ title: "t", when: { features: ["tool_calling"] }, body: "x" }],
   };
   assert.deepEqual(validateContextEntries(recipe), [
-    'notes[0].when.variant: no variant "fp8"',
-    'troubleshooting[0].when.feature: no feature "tool_calling"',
+    'notes[0].when.variants: no variant "fp8"',
+    'troubleshooting[0].when.features: no feature "tool_calling"',
   ]);
 });
 
@@ -79,6 +79,6 @@ test("schema: notes need a when, troubleshooting a title; ids are checked", () =
   assert.equal(ok({ troubleshooting: [{ body: "x" }] }), false);
   assert.equal(ok({ troubleshooting: [{ title: "t", body: "x" }] }), true);
   assert.equal(ok({ notes: [{ when: { hardware: ["h900"] }, body: "x" }] }), false);
-  assert.equal(ok({ notes: [{ when: { strategy: ["warp_drive"] }, body: "x" }] }), false);
+  assert.equal(ok({ notes: [{ when: { strategies: ["warp_drive"] }, body: "x" }] }), false);
   assert.equal(ok({ notes: [{ when: { gpu: ["h200"] }, body: "x" }] }), false);
 });

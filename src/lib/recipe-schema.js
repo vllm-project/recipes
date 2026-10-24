@@ -57,9 +57,9 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
   const strategyId = { enum: serving };
   const when = obj({
     hardware: { type: "array", minItems: 1, items: { anyOf: [{ enum: [...new Set([...profileIds, ...generations, ...brands.map((b) => b.toLowerCase())])] }, { pattern: `^arch:(${archs.join("|")})$` }] } },
-    strategy: { type: "array", minItems: 1, items: strategyId },
-    variant: { type: "array", minItems: 1, items: { type: "string" } },
-    feature: { type: "array", minItems: 1, items: { type: "string" } },
+    strategies: { type: "array", minItems: 1, items: strategyId },
+    variants: { type: "array", minItems: 1, items: { type: "string" } },
+    features: { type: "array", minItems: 1, items: { type: "string" } },
   });
   const status = { enum: ["verified", "supported", "unsupported"] };
   const dcpSizes = { type: "array", items: { type: "integer", minimum: 2 }, uniqueItems: true };
@@ -246,9 +246,9 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
       // looked up by exact profile id
       hardware_notes: keyed(gpuId, obj({ title: { type: "string" }, body: { type: "string" }, link: obj({ href: { type: "string" }, label: { type: "string" } }) }, { required: ["body"] })),
       strategy_overrides: keyed(strategyId, strategyOverride),
-      // Tuned profiles (recipe-profiles.js): a named delta for one exact GPU,
+      // Tuned presets (recipe-presets.js): a named delta for one exact GPU,
       // optionally one strategy. Keys are lowercase ids; `baseline` is reserved.
-      profiles: keyed({ pattern: "^[a-z0-9][a-z0-9_]*$" }, obj({
+      presets: keyed({ pattern: "^[a-z0-9][a-z0-9_]*$" }, obj({
         label: { type: "string" },
         hardware: gpuId,
         strategy: strategyId,

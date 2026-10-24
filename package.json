@@ -16,7 +16,7 @@
     "test:overlay": "node --test scripts/test-overlay.mjs",
     "test:schema": "node --test scripts/test-schema.mjs",
     "test:dcp": "node --test scripts/test-dcp-selector.mjs",
-    "test:profiles": "node --test scripts/test-profiles.mjs",
+    "test:presets": "node --test scripts/test-presets.mjs",
     "test:context": "node --test scripts/test-context.mjs"
   },
   "dependencies": {

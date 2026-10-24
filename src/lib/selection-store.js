@@ -1,7 +1,7 @@
 "use client";
 
 // The command builder's current selection, published for the sections below
-// it (This configuration, Tuned profiles, Troubleshooting) without lifting the
+// it (This configuration, Tuned presets, Troubleshooting) without lifting the
 // builder's state. null until the builder mounts, so server HTML renders the
 // unfiltered content.
 

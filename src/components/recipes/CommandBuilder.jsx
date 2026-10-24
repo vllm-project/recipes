@@ -7,7 +7,7 @@ import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
-import { resolveProfileKey, withProfile } from "@/lib/recipe-profiles";
+import { resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import { publishSelection } from "@/lib/selection-store";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
@@ -555,14 +555,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // `nodes` accepts two shapes: a bare integer (same default for every hw)
   // or a hardware-keyed map `{ default, <hwId>… }` for per-hw defaults (e.g.
   // GB200 = 2, GB300 = 1). Unmatched hw falls through to the VRAM fit.
-  // Tuned-profile pick (recipe-profiles.js): null follows the recipe default
+  // Tuned-preset pick (recipe-presets.js): null follows the recipe default
   // for this hardware + strategy, "baseline" opts out, a key selects it.
-  const [profilePick, setProfilePick] = useState(() => searchParams.get("profile") || null);
-  // PD pool defaults read the recipe with the pd_cluster profile in effect
-  // mounted, since a profile may own the pools' nodes and parallelism.
+  const [presetPick, setPresetPick] = useState(() => searchParams.get("preset") || null);
+  // PD pool defaults read the recipe with the pd_cluster preset in effect
+  // mounted, since a preset may own the pools' nodes and parallelism.
   const pdRecipe = useMemo(
-    () => withProfile(recipe, resolveProfileKey(recipe, hwId, "pd_cluster", profilePick), hwId, "pd_cluster"),
-    [recipe, hwId, profilePick],
+    () => withPreset(recipe, resolvePresetKey(recipe, hwId, "pd_cluster", presetPick), hwId, "pd_cluster"),
+    [recipe, hwId, presetPick],
   );
   const pdDefaults = useMemo(() => {
     // Each PD role holds a full model copy on its own pool of nodes. If a
@@ -1152,17 +1152,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
         }
         : null;
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport, dcpSize, profilePick);
+      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport, dcpSize, presetPick);
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport, dcpSize, profilePick]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport, dcpSize, presetPick]
   );
 
   // Publish the selection for the sections below the builder (This
-  // configuration / Tuned profiles / Troubleshooting filter on it).
-  const selectedProfile = result?.profile?.selected ?? null;
+  // configuration / Tuned presets / Troubleshooting filter on it).
+  const selectedPreset = result?.preset?.selected ?? null;
   useEffect(() => {
-    publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features, profile: selectedProfile });
-  }, [recipe.hf_id, hwId, activeStrategy, variant, features, selectedProfile]);
+    publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features, preset: selectedPreset });
+  }, [recipe.hf_id, hwId, activeStrategy, variant, features, selectedPreset]);
 
   // Visual feedback when any rendered command changes. Covers single-node
   // (result.command), multi-node (headCommand), pd_cluster (prefill.command),
@@ -1176,7 +1176,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     + (omniTask ? `|task:${omniTask}` : "")
     + `|frontend:${frontend}`
     + `|pd_router:${pdRouter}|pd_transport:${pdTransport}`
-    + `|profile:${result.profile?.selected ?? ""}`;
+    + `|preset:${result.preset?.selected ?? ""}`;
   const [changed, setChanged] = useState(false);
   useEffect(() => {
     setChanged(true);
@@ -1518,23 +1518,23 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     syncUrl({ dcp: size == null ? "" : String(size) });
   };
 
-  // A profile belongs to one hardware + strategy; a pick made elsewhere falls
-  // back to that pair's default. Skip the mount run so ?profile= links hold.
-  const profileScope = `${hwId}|${activeStrategy}`;
-  const prevProfileScope = useRef(profileScope);
+  // A preset belongs to one hardware + strategy; a pick made elsewhere falls
+  // back to that pair's default. Skip the mount run so ?preset= links hold.
+  const presetScope = `${hwId}|${activeStrategy}`;
+  const prevPresetScope = useRef(presetScope);
   useEffect(() => {
-    if (prevProfileScope.current === profileScope) return;
-    prevProfileScope.current = profileScope;
-    setProfilePick(null);
-    syncUrl({ profile: "" });
+    if (prevPresetScope.current === presetScope) return;
+    prevPresetScope.current = presetScope;
+    setPresetPick(null);
+    syncUrl({ preset: "" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileScope]);
+  }, [presetScope]);
 
-  const selectProfile = (key) => {
-    const def = result?.profile?.options.find((p) => p.default)?.key ?? "baseline";
+  const selectPreset = (key) => {
+    const def = result?.preset?.options.find((p) => p.default)?.key ?? "baseline";
     const next = key === def ? null : key;
-    setProfilePick(next);
-    syncUrl({ profile: next ?? "" });
+    setPresetPick(next);
+    syncUrl({ preset: next ?? "" });
   };
 
   const toggleAdvanced = (id) => {
@@ -2495,23 +2495,23 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             })()}
           </ConfigRow>
 
-          {/* Tuned profiles — named, evidence-backed deltas for this exact GPU
+          {/* Tuned presets — named, evidence-backed deltas for this exact GPU
               (and strategy), e.g. an InferenceX lane. Baseline is the
               recipe's generic command; the runbook lives under the guide. */}
-          {result?.profile && (() => {
-            const { selected, options } = result.profile;
+          {result?.preset && (() => {
+            const { selected, options } = result.preset;
             const active = options.find((p) => p.key === selected);
             return (
-              <ConfigRow label="Profile" nested hint="Tuned configurations qualified on this hardware. Baseline is the recipe's generic command.">
+              <ConfigRow label="Preset" nested hint="Tuned configurations qualified on this hardware. Baseline is the recipe's generic command.">
                 <PillGroup>
                   {options.map((p) => (
-                    <Pill key={p.key} active={selected === p.key} pressed={selected === p.key} onClick={() => selectProfile(p.key)}
+                    <Pill key={p.key} active={selected === p.key} pressed={selected === p.key} onClick={() => selectPreset(p.key)}
                       title={p.description || p.label}>
                       {p.label}
                     </Pill>
                   ))}
-                  <Pill active={selected === "baseline"} pressed={selected === "baseline"} onClick={() => selectProfile("baseline")}
-                    title="The recipe's generic command for this hardware, without a tuned profile">
+                  <Pill active={selected === "baseline"} pressed={selected === "baseline"} onClick={() => selectPreset("baseline")}
+                    title="The recipe's generic command for this hardware, without a tuned preset">
                     Baseline
                   </Pill>
                 </PillGroup>
@@ -2528,9 +2528,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                       )}
                     </>
                   ) : options.some((p) => p.default) ? (
-                    "Generic command without the tuned profile's settings. Not the configuration that was qualified on this hardware."
+                    "Generic command without the tuned preset's settings. Not the configuration that was qualified on this hardware."
                   ) : (
-                    "The recipe's generic command. Pick a profile for a configuration qualified on this hardware."
+                    "The recipe's generic command. Pick a preset for a configuration qualified on this hardware."
                   )}
                 </p>
               </ConfigRow>

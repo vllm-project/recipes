@@ -1,4 +1,4 @@
-import { matchingProfiles, resolveProfileKey, withProfile } from "./recipe-profiles.js";
+import { matchingPresets, resolvePresetKey, withPreset } from "./recipe-presets.js";
 
 /**
  * Core command synthesis: Recipe + Variant + Strategy + Hardware + Features → vllm serve command.
@@ -1240,19 +1240,19 @@ function applyDcpSize(args, size, commBackend) {
   return args.map((a, i) => (args[i - 1] === SIZE ? String(size) : a));
 }
 
-// The last parameter, `profile`, is the user's tuned-profile pick (see
-// recipe-profiles.js): undefined follows the recipe's default for this
-// hardware + strategy, "baseline" opts out, a key selects that profile.
+// The last parameter, `preset`, is the user's tuned-preset pick (see
+// recipe-presets.js): undefined follows the recipe's default for this
+// hardware + strategy, "baseline" opts out, a key selects that preset.
 export function resolveCommand(...params) {
   const dcpOut = {};
   const [recipe, , strategyName, hwProfileId] = params;
-  const profileKey = resolveProfileKey(recipe, hwProfileId, strategyName, params[17]);
-  params[0] = withProfile(recipe, profileKey, hwProfileId, strategyName);
+  const presetKey = resolvePresetKey(recipe, hwProfileId, strategyName, params[17]);
+  params[0] = withPreset(recipe, presetKey, hwProfileId, strategyName);
   const result = resolveCommandImpl(dcpOut, ...params.slice(0, 17));
   if (result && typeof result === "object" && !Array.isArray(result)) {
     result.dcp = dcpOut.get?.() ?? null;
-    const options = matchingProfiles(recipe, hwProfileId, strategyName);
-    result.profile = options.length ? { selected: profileKey, options } : null;
+    const options = matchingPresets(recipe, hwProfileId, strategyName);
+    result.preset = options.length ? { selected: presetKey, options } : null;
   }
   return result;
 }

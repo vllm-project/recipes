@@ -2,14 +2,14 @@
 // carry a `when` condition, so the page below the command builder can show
 // what applies to the command the reader just built (and fold the rest away).
 //
-// when: { hardware: [hwKey], strategy: [id], variant: [key], feature: [key] }
+// when: { hardware: [hwKey], strategies: [id], variants: [key], features: [key] }
 //   - keys AND together, values within a key OR together; absent = any.
 //   - hardware values use the hardware-map keyspace: exact GPU id, generation,
 //     lowercase brand, or `arch:<compute_arch>`.
-//   - feature matches while that feature is on.
+//   - features matches while one of those features is on.
 
 export const CONTEXT_KINDS = ["notes", "troubleshooting"];
-const WHEN_KEYS = ["hardware", "strategy", "variant", "feature"];
+const WHEN_KEYS = ["hardware", "strategies", "variants", "features"];
 
 export function hardwareKeyMatches(key, hwId, hp) {
   if (!hwId) return false;
@@ -26,9 +26,9 @@ export function whenMatches(when, sel, hardwareProfiles = {}) {
   if (!sel) return false;
   const hp = hardwareProfiles[sel.hwId];
   if (when.hardware?.length && !when.hardware.some((k) => hardwareKeyMatches(k, sel.hwId, hp))) return false;
-  if (when.strategy?.length && !when.strategy.includes(sel.strategy)) return false;
-  if (when.variant?.length && !when.variant.includes(sel.variant)) return false;
-  if (when.feature?.length && !when.feature.some((f) => (sel.features || []).includes(f))) return false;
+  if (when.strategies?.length && !when.strategies.includes(sel.strategy)) return false;
+  if (when.variants?.length && !when.variants.includes(sel.variant)) return false;
+  if (when.features?.length && !when.features.some((f) => (sel.features || []).includes(f))) return false;
   return true;
 }
 
@@ -44,9 +44,9 @@ export function whenLabels(when, { hardwareProfiles = {}, strategies = {}, recip
   };
   return [
     ...(when.hardware || []).map(hwLabel),
-    ...(when.strategy || []).map((s) => strategies[s]?.display_name || s),
-    ...(when.variant || []).map((v) => recipe?.variants?.[v]?.label || (recipe?.variants?.[v]?.precision || v).toUpperCase()),
-    ...(when.feature || []).map((f) => recipe?.features?.[f]?.label || f.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())),
+    ...(when.strategies || []).map((s) => strategies[s]?.display_name || s),
+    ...(when.variants || []).map((v) => recipe?.variants?.[v]?.label || (recipe?.variants?.[v]?.precision || v).toUpperCase()),
+    ...(when.features || []).map((f) => recipe?.features?.[f]?.label || f.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())),
   ];
 }
 
@@ -60,11 +60,11 @@ export function validateContextEntries(recipe) {
       for (const k of Object.keys(entry.when || {})) {
         if (!WHEN_KEYS.includes(k)) errors.push(`${at}.when.${k}: unknown condition`);
       }
-      for (const v of entry.when?.variant || []) {
-        if (!recipe.variants?.[v]) errors.push(`${at}.when.variant: no variant "${v}"`);
+      for (const v of entry.when?.variants || []) {
+        if (!recipe.variants?.[v]) errors.push(`${at}.when.variants: no variant "${v}"`);
       }
-      for (const f of entry.when?.feature || []) {
-        if (!recipe.features?.[f]) errors.push(`${at}.when.feature: no feature "${f}"`);
+      for (const f of entry.when?.features || []) {
+        if (!recipe.features?.[f]) errors.push(`${at}.when.features: no feature "${f}"`);
       }
     });
   }
