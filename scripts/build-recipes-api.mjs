@@ -31,6 +31,7 @@ import {
   isKvStoreBrandSupported,
   strategyAllowsKvOffload,
   pickFittingVariant,
+  variantRunsOnHardware,
   pdFitsSingleNode,
   pdRoleNodes,
   pdRoleParallelism,
@@ -557,18 +558,18 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
 // { recommended, alternatives: { <strategy>: <rendered> } } where the caller
 // writes each alternative to its own file and replaces it with a path link.
 // Null for omni recipes or unknown variants.
-function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
+function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy, allowVariantFallback = false) {
   let variant = recipe.variants?.[variantKey];
   if (!variant) return null;
   if ((recipe.meta?.tasks || []).includes("omni")) return null;
 
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
   const scalable = isHardwareScalable(hwProfile);
-  // Non-scalable hardware (single-GPU workstation, e.g. DGX Station) can't
-  // shard an oversized variant — substitute the largest variant that fits, and
-  // skip multi-node strategies. Mirrors the command builder's UI behavior.
-  if (!scalable && !fitsSingleNode(hwProfile, variant, hwId)) {
-    const fitting = pickFittingVariant(recipe, hwProfile, hwId);
+  // A parent endpoint mirrors the UI's fallback for incompatible precision or
+  // oversized weights on non-scalable hardware. A promoted checkpoint must
+  // stay on its requested variant, so omit hardware that cannot run it.
+  if (!variantRunsOnHardware(hwProfile, variant, hwId)) {
+    const fitting = allowVariantFallback ? pickFittingVariant(recipe, hwProfile, hwId) : null;
     if (!fitting) return null;
     variantKey = fitting;
     variant = recipe.variants[fitting];
@@ -847,7 +848,15 @@ function renderAndWriteVariant(recipe, variantKey, altBaseHfId, strategies, taxo
   // recipes that explicitly opt in via `meta.hardware.<id>`. Otherwise we'd
   // emit speculative TPU commands for every NVIDIA recipe.
   const declaredHw = recipe.meta?.hardware || {};
-  const compatibleHw = listCompatibleHardware(hwProfiles, variant, recipe)
+  // Only the parent family endpoint may offer a sibling precision. A promoted
+  // checkpoint can itself be named "default" but must keep that checkpoint.
+  const isParentEndpoint = altBaseHfId === recipe.hf_id;
+  const candidates = isParentEndpoint
+    ? Object.values(recipe.variants || {})
+    : [variant];
+  const compatibleHw = [...new Set(candidates.flatMap(
+    (candidate) => listCompatibleHardware(hwProfiles, candidate, recipe)
+  ))]
     .filter((id) => !hwProfiles[id]?.restricted || id in declaredHw);
   // Ensure default is first; de-dupe.
   const hwIds = Array.from(new Set([defaultHw, ...compatibleHw]));
@@ -855,7 +864,7 @@ function renderAndWriteVariant(recipe, variantKey, altBaseHfId, strategies, taxo
   // Render every (variant × hardware) combo up front.
   const renderedByHw = {};
   for (const hwId of hwIds) {
-    const built = buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy);
+    const built = buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy, isParentEndpoint);
     if (built) renderedByHw[hwId] = built;
   }
   if (!renderedByHw[defaultHw]) return null;
