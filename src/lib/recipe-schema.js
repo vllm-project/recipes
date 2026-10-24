@@ -55,6 +55,12 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     ],
   };
   const strategyId = { enum: serving };
+  const when = obj({
+    hardware: { type: "array", minItems: 1, items: { anyOf: [{ enum: [...new Set([...profileIds, ...generations, ...brands.map((b) => b.toLowerCase())])] }, { pattern: `^arch:(${archs.join("|")})$` }] } },
+    strategies: { type: "array", minItems: 1, items: strategyId },
+    variants: { type: "array", minItems: 1, items: { type: "string" } },
+    features: { type: "array", minItems: 1, items: { type: "string" } },
+  });
   const status = { enum: ["verified", "supported", "unsupported"] };
   const dcpSizes = { type: "array", items: { type: "integer", minimum: 2 }, uniqueItems: true };
   const intOrHwMap = { anyOf: [{ type: "integer", minimum: 1 }, keyed(hwKey, { type: "integer", minimum: 1 })] };
@@ -240,6 +246,55 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
       // looked up by exact profile id
       hardware_notes: keyed(gpuId, obj({ title: { type: "string" }, body: { type: "string" }, link: obj({ href: { type: "string" }, label: { type: "string" } }) }, { required: ["body"] })),
       strategy_overrides: keyed(strategyId, strategyOverride),
+      // Tuned presets (recipe-presets.js): a named delta for one exact GPU,
+      // optionally one strategy. Keys are lowercase ids; `baseline` is reserved.
+      presets: (() => {
+        const jsonArgs = keyed({ pattern: "^--" }, { type: "object" }, "edits to JSON-valued flags: keys to set, null deletes");
+        const delta = { args: strings, env: envMap, remove_args: { type: "array", items: { type: "string", pattern: "^--" } }, json_args: jsonArgs };
+        const role = obj({ ...delta, nodes: { type: "integer", minimum: 1 }, parallelism: pdMode });
+        const roles = obj({ prefill: role, decode: role });
+        const select = obj({
+          pd_router: { enum: ["vllm", "dynamo", "smg"] },
+          frontend: { enum: frontends },
+          features: keyed({ type: "string" }, { anyOf: [{ type: "boolean" }, { type: "string" }] }, "true/false toggles a feature; a string picks that mode (and turns it on)"),
+          dcp: { type: "integer", minimum: 1 },
+          kv_offload: { anyOf: [{ type: "string" }, { const: false }] },
+        });
+        const image = { anyOf: [
+          { type: "string" },
+          obj({ vllm: { type: "string" }, dynamo: { type: "string" }, pip: strings, model_revision: { type: "string" } }),
+        ] };
+        const point = obj({
+          label: { type: "string" },
+          concurrency: { type: "integer", minimum: 1 },
+          description: { type: "string" },
+          default: { type: "boolean" },
+          ...delta,
+          roles,
+          select,
+          image,
+        }, { required: ["label"] });
+        return keyed({ pattern: "^[a-z0-9][a-z0-9_]*$" }, obj({
+          label: { type: "string" },
+          hardware: gpuId,
+          strategy: strategyId,
+          variants: { type: "array", minItems: 1, items: { type: "string" } },
+          workload: { type: "string" },
+          description: { type: "string" },
+          default: { type: "boolean" },
+          ...delta,
+          roles,
+          select,
+          image,
+          points: keyed({ pattern: "^[a-z0-9][a-z0-9_]*$" }, point),
+          source: obj({ label: { type: "string" }, href: { type: "string" }, key: { type: "string" }, revision: { type: "string" } }, { required: ["href"] }),
+          runbook: { type: "string" },
+        }, { required: ["label", "hardware"] }));
+      })(),
+      // Configuration-scoped guide entries (recipe-context.js): shown below
+      // the builder when `when` matches the selection.
+      notes: { type: "array", items: obj({ title: { type: "string" }, when, body: { type: "string" } }, { required: ["when", "body"] }) },
+      troubleshooting: { type: "array", items: obj({ title: { type: "string" }, when, body: { type: "string" } }, { required: ["title", "body"] }) },
       advanced_options: { type: "array", items: { type: "object" } },
       omni: obj({
         serve_binary: { type: "string" },

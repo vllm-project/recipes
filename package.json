@@ -16,7 +16,9 @@
     "test:overlay": "node --test scripts/test-overlay.mjs",
     "test:schema": "node --test scripts/test-schema.mjs",
     "test:guide-html": "node --test scripts/test-guide-html.mjs",
-    "test:dcp": "node --test scripts/test-dcp-selector.mjs"
+    "test:dcp": "node --test scripts/test-dcp-selector.mjs",
+    "test:presets": "node --test scripts/test-presets.mjs",
+    "test:context": "node --test scripts/test-context.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.2",

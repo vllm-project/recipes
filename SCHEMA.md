@@ -204,8 +204,67 @@ strategy_overrides:
   #                                            # Only read for single_node_tp —
   #                                            # TEP/DEP and multi-node ignore.
 
+# Optional — tuned presets: named configurations qualified on one GPU (and
+# optionally one strategy and some variants), e.g. a benchmark lane. Each is a
+# delta on the baseline command; the builder's Preset row offers it next to
+# Baseline, and its points (if any) in a Point row below.
+presets:
+  gb200_agentx_pd:
+    label: "AgentX 1P1D"
+    hardware: gb200                               # exact GPU id (required)
+    strategy: pd_cluster                          # optional; absent = every strategy
+    variants: [default]                           # optional; absent = every variant
+    workload: "Agentic (InferenceX AgentX)"       # optional free-text tag
+    default: true                                 # applied unless the user picks Baseline; omit = opt-in
+    description: "…"
+    source: { label: "InferenceX #4322", href: "https://github.com/SemiAnalysisAI/InferenceX/pull/4322", key: "<lane config key>", revision: b7eee97 }
+    image:                                        # or a plain string (the vLLM image)
+      vllm: "vllm/vllm-openai:nightly-e68efc68…"  # pins this GPU's docker command
+      dynamo: "ffbbaaa6…"                         # shown with the preset; also pip: [...], model_revision
+    select:                                       # builder choices the preset implies
+      pd_router: dynamo                           # vllm | dynamo | smg (pd_cluster only)
+      frontend: rust
+      features: { tool_calling: false, spec_decoding: false }   # true/false, or a mode key
+      dcp: 16
+      kv_offload: simple                          # a taxonomy kv_offload id or kv_store id; off/false
+    args: ["--decode-context-parallel-size", "16"]   # every node / both PD roles
+    env: { NCCL_NET_PLUGIN: "none" }
+    remove_args: ["--block-size"]                 # drop an inherited flag (and its value)
+    json_args:                                    # edit keys inside a JSON-valued flag; null deletes
+      --speculative-config: { num_speculative_tokens: 4 }
+    roles:                                        # pd_cluster only
+      decode: { nodes: 4, parallelism: tp, args: ["--max-num-batched-tokens", "1024"] }
+    points:                                       # optional named operating points
+      c16:
+        label: "C16"
+        concurrency: 16                           # informational
+        default: true                             # else the first point
+        roles: { decode: { args: ["--max-num-seqs", "32"] } }
+      c32:
+        label: "C32"
+        roles: { decode: { args: ["--max-num-seqs", "64"] } }
+    runbook: |                                    # prose only: evidence, reproduction, limits
+      Services, frontend, per-concurrency tuning the builder can't express…
+
+# Optional — configuration-scoped notes and known issues. Rendered below the
+# builder and filtered by its selection: `when` keys AND together, values OR
+# together (hardware: exact id / generation / brand / arch:<isa>; strategies;
+# variants; features = while one of them is on).
+notes:                                            # under the command; `when` required
+  - title: "MNNVL environments"
+    when: { hardware: [gb200, gb300] }
+    body: |
+      Add `NCCL_MNNVL_ENABLE=1`, `NCCL_CUMEM_ENABLE=1` and `NCCL_NVLS_ENABLE=1`.
+troubleshooting:                                  # Troubleshooting tab; matching entries first
+  - title: "DeepGEMM warmup too slow"
+    when: { hardware: [nvidia] }                  # optional; absent = always relevant
+    body: |
+      Set `VLLM_USE_DEEP_GEMM=0` to skip the long warmup.
+
 # Markdown guide. Rendered on the recipe page under the command builder.
-# Covers Overview, Prerequisites, Launch, Benchmarking, Troubleshooting, References.
+# Covers Overview, Prerequisites, Client usage, References — not launch
+# commands (the builder renders those) and not configuration-specific notes
+# or known issues (use `notes` / `troubleshooting`).
 guide: |
   ## Overview
   ...
@@ -347,8 +406,11 @@ Top-level keys, in this order:
 - `hardware_overrides` — optional per-generation tweaks keyed by `hopper`, `blackwell`, `amd`, or the brand-wide `nvidia`. Generation-specific blocks take precedence over the NVIDIA fallback. Each supplies `{ extra_args[], extra_env{} }`.
 - `decode_context_parallel` (optional) — `{ sizes, comm_backend?, match_tp? }` adds a **Decode Context Parallelism** control to the command builder: its own row for aggregated strategies, and a `DCP` line inside the **Nodes** row (beside the Prefill/Decode TP/TEP/DEP controls) under `pd_cluster`, where one shared pick covers both roles. `sizes` lists the DCP sizes qualified for the recipe, either a bare list or a hardware-keyed map of lists (exact GPU id > generation > brand > `default`), so a size is never offered on hardware it was not run on. The row offers **Off** plus each size that divides the tensor-parallel size of *every* role in the current topology (both pools under `pd_cluster`, the single engine otherwise), so one pick keeps every node tab consistent; a size that does not divide TP is never rendered. `match_tp: true` narrows that to sizes *equal* to TP, for recipes qualified only at DCP = TP. That is a statement about what the recipe has been run at, not a vLLM constraint, and it also hides the row when prefill and decode have different TP; leave it off for recipes qualified at other divisors. The default pick is the `--decode-context-parallel-size` the layered recipe args already carry (the qualified lane value) when the topology can run it, else Off. A pick rewrites that flag in every role's command (and adds it, with `comm_backend` as `--dcp-comm-backend`, when absent); **Off** drops both flags. Hardware with no `sizes` entry shows no row and is left untouched. The pick syncs to the URL as `?dcp=<size>` (`1` = Off) and is exposed on the resolved command as `dcp: { sizes, baseline, selected, tp }`.
 - `strategy_overrides` — optional per-strategy tweaks (rare). For `pd_cluster` specifically: `prefill`/`decode` sub-objects set each pool's `nodes`, `parallelism` (`tp`|`tep`|`dep`, or a hardware-keyed map of them like `nodes`), and `tp`; `router.intra_node_data_parallel_size` pins the router flag that otherwise derives from the pools' `max(dp_local)`; plus optional `pool_modes: [<mode>, …]` — narrows the PD-pool parallelism pills INDEPENDENTLY of the Strategy row. PD-pool modes are otherwise derived from `compatible_strategies[]` suffixes (via `pdPoolModes`), so `pool_modes` is how you offer TP/TEP as standalone serving strategies while locking disaggregated PD to a subset (e.g. `pool_modes: [dep]` → both pools DEP-only, single mode hides the pills; synthesis snaps any resolved mode not in the set to the first allowed one, so the JSON API stays consistent too).
+- `presets` (optional) — tuned presets, `{ <key>: { label, hardware, strategy?, variants?, workload?, description?, default?, source?, image?, select?, args?, env?, remove_args?, json_args?, roles?, points?, runbook? } }`: a named configuration qualified on one exact GPU — and, with `strategy` / `variants`, one serving strategy and some checkpoints — such as a benchmark lane. It is a **delta on the baseline command**, applied after every other override layer: `args`/`env` reach every node (both roles under PD); `roles.<prefill|decode>` adds per-role `args`/`env` (and `remove_args`/`json_args`) and sets that pool's `nodes` / `parallelism` on this GPU, so the lane's topology travels with its flags. Synthesis mounts the active preset into the exact-GPU layers (`strategy_overrides.<s>.hardware_overrides.<gpu>`, `strategy_overrides.pd_cluster.<role>.hardware_overrides.<gpu>` and the role's `nodes`/`parallelism` maps), so moving such a block into a `default: true` preset leaves every rendered command unchanged. **`remove_args`** drops a flag (and its value) whichever layer emitted it, base args and features included — for flags with no `--no-` form. **`json_args`** edits keys inside a JSON-valued flag (`--speculative-config`, `--compilation-config`, `--attention-config`, `--kv-transfer-config`, …): the edit deep-merges into the flag's last occurrence (adding the flag if absent), `null` deletes a key, and `_`/`-` spellings match alike — so a lane changes `num_speculative_tokens` without restating the feature's whole JSON, or sizes the Simple offload through its `--kv-transfer-config`. **`points`** are named operating points (one per client concurrency, or arms such as eval vs throughput), keyed by id because concurrency values can repeat: each has a `label`, optional `concurrency` / `description` / `default`, and the preset's own delta fields (`args`, `env`, `remove_args`, `json_args`, `roles` incl. `nodes`/`parallelism`, `select`, `image`), layered on the preset; a point can't change the hardware, strategy or variants (that is another preset). **`select`** names the builder choices the preset implies — `pd_router`, `frontend`, `features` (`true`/`false`, or a mode key, which also turns the feature on), `dcp`, `kv_offload` — and is applied when the preset (or point) becomes active, except for what a shared URL sets explicitly; the JSON API renders with them too. **`image`** (a string, or `{ vllm, dynamo?, pip?, model_revision? }`) pins the docker command on this GPU for the variants the preset covers; the rest is shown with the preset and published. When the selected hardware has presets, its pill says so ("preset" / "N presets") and the builder shows a Preset row (nested under Strategy) listing all of them — presets of another strategy or variant are tagged and switch it when picked — plus **Baseline**; the selection syncs to `?preset=<key>` and `?point=<key>` (`baseline` opts out). A `default: true` preset is selected on its GPU + strategy until the user picks Baseline, and the JSON API's renderings bake it in and name it as `preset` / `preset_point`; every preset is also rendered at each point under `/<hf_id>/presets/<key>.json`. At most one default per GPU + strategy + variants; `baseline` is a reserved key; `roles` needs `strategy: pd_cluster`. Mark a preset `default: true` only when it is the configuration this GPU should serve with by default — a benchmark lane with benchmark-only settings stays opt-in. Put what the builder can't express — services, multi-engine placement, site specifics, benchmark parameters, evidence — in `runbook` (markdown), rendered server-side on its card in the Presets tab (anchor `#preset-<key>`), never launch commands or builder instructions. Use a preset for an evidence-backed configuration with a `source`, not for general hardware support: kernels or flags every workload on that GPU needs stay in `hardware_overrides`. An overlay source may add presets whose `hardware` is in its scope. Helpers: `src/lib/recipe-presets.js`.
 - `omni` (optional) — vllm-omni online-serving config. Required when `meta.tasks` includes `omni`. Shape: `{ serve_binary?, port?, task_label?, task_hint?, tasks: [...] }`. `tasks` accepts bare ids from the catalog (`t2i`, `i2i`, `t2v`, `i2v`, `ti2v`, `t2a`) or `{ id, key?, model_id?, vram_minimum_gb?, description?, extra_args?, curl?, benchmark? }` overrides — Wan2.2 uses overrides to swap the served checkpoint per task. `benchmark` is a static command override for diffusion or other non-LLM endpoints that cannot use the default `vllm bench serve` command. `serve_binary: "vllm-omni serve"` swaps the binary; currently unused, and needed only for recipes pinned below vLLM 0.20.0, where the `vllm` console-script does not yet delegate to vllm-omni on `--omni`. Catalog lives at `src/lib/omni-tasks.js`.
   `key` is the unique selector and URL identity when multiple request presets share one catalog `id`; absent `key` falls back to `id`. `task_label` and `task_hint` customize that selector row.
+- `notes` (optional) — `[{ title?, when, body }]`: configuration-specific guidance, shown in the command block (beside the hardware note, titles listed and bodies expandable) only while `when` matches the builder's selection. `when` is `{ hardware?, strategies?, variants?, features? }`, each a non-empty list: keys AND together, values within a key OR together; `hardware` takes the hardware-map keyspace (exact GPU id, generation, lowercase brand, `arch:<compute_arch>`), `features` matches while one of those features is on. `when` is required — a note that applies to every configuration belongs in `guide`. Use it for what a reader of *this* command needs (an env to add on MNNVL, why a flag is set on Blackwell), not for flags the builder should emit itself.
+- `troubleshooting` (optional) — `[{ title, when?, body }]`: known issues, rendered in the **Troubleshooting** tab (beside Guide and Presets): entries whose `when` matches (or that have none) first, the rest folded under "Other configurations"; the tab gets a dot when a conditional entry matches. `title` is the symptom (an error message, "warmup too slow"), and becomes the anchor `#issue-<slug>`. The build rejects `when.variants` / `when.features` naming a variant or feature the recipe doesn't have. Helpers: `src/lib/recipe-context.js`.
 - `guide` — markdown string (`|`-block), rendered with `react-markdown` + `remark-gfm` + `rehype-slug`.
 
 ## VRAM formula

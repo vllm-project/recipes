@@ -10,10 +10,12 @@ import { resolveRecipePlatforms } from "@/lib/platforms";
 import { getProviderLogo, getProviderLogoClass } from "@/lib/providers";
 import { CommandBuilder } from "@/components/recipes/CommandBuilder";
 import { GuideLinks } from "@/components/recipes/GuideLinks";
+import { ReferenceTabs } from "@/components/recipes/ConfigSections";
+import { whenLabels } from "@/lib/recipe-context";
 import { DeployDialog } from "@/components/recipes/DeployDialog";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import Markdown from "react-markdown";
-import { guideRehypePlugins, guideRemarkPlugins } from "@/lib/guide-markdown";
+import { guideRehypePluginsFor, guideRemarkPlugins } from "@/lib/guide-markdown";
 import { Badge } from "@/components/ui/badge";
 import { Cpu, Layers, Pencil, Bug, ExternalLink, Link2 } from "lucide-react";
 import {
@@ -106,6 +108,37 @@ export default async function RecipePage({ params, searchParams }) {
   const strategies = loadStrategies();
   const taxonomy = loadTaxonomy();
   const guide = recipe.guide || "";
+  // The builder (notes under the command) and the reference tabs below it
+  // (ConfigSections) filter these on its selection; the
+  // Markdown is rendered here, on the server, and handed over as nodes.
+  const hardwareSlim = Object.fromEntries(Object.entries(taxonomy.hardware_profiles || {}).map(
+    ([id, h]) => [id, { display_name: h.display_name, generation: h.generation, brand: h.brand, compute_arch: h.compute_arch }]
+  ));
+  const strategyLabels = Object.fromEntries(Object.entries(strategies).map(([id, s]) => [id, s.display_name || id]));
+  const presets = Object.entries(recipe.presets || {}).map(([key, p]) => ({
+    key, label: p.label, hardware: p.hardware, strategy: p.strategy || null, workload: p.workload || null,
+    description: p.description || null, default: !!p.default, source: p.source || null,
+    variants: (p.variants || []).map((v) => recipe.variants?.[v]?.label || recipe.variants?.[v]?.precision?.toUpperCase() || v),
+    points: Object.entries(p.points || {}).map(([k, pt]) => ({ key: k, label: pt.label, concurrency: pt.concurrency ?? null })),
+    image: typeof p.image === "string" ? { vllm: p.image } : (p.image || null),
+    runbook: p.runbook ? <GuideMarkdown prefix={`preset-${key}-`}>{p.runbook}</GuideMarkdown> : null,
+    toc: p.runbook ? markdownToc(p.runbook, `preset-${key}-`) : [],
+  }));
+  const whenCtx = { hardwareProfiles: taxonomy.hardware_profiles || {}, strategies, recipe };
+  const notes = (recipe.notes || []).map((n) => ({
+    title: n.title || null, when: n.when || null, body: <GuideMarkdown>{n.body}</GuideMarkdown>,
+  }));
+  const issueIds = new Map();
+  const troubleshooting = (recipe.troubleshooting || []).map((t) => {
+    const base = `issue-${slugify(t.title)}`;
+    const n = issueIds.get(base) || 0;
+    issueIds.set(base, n + 1);
+    return {
+      id: n ? `${base}-${n}` : base, title: t.title, when: t.when || null, labels: whenLabels(t.when, whenCtx),
+      body: <GuideMarkdown prefix={`${n ? `${base}-${n}` : base}-`}>{t.body}</GuideMarkdown>,
+    };
+  });
+  const sectionProps = { hfId: recipe.hf_id, hardware: hardwareSlim, strategyLabels, presets, troubleshooting };
   const logo = getProviderLogo(recipe.hf_org);
 
   // Per-recipe platform opt-in. Each entry is either a bare id ("modal") or
@@ -217,30 +250,19 @@ export default async function RecipePage({ params, searchParams }) {
       </header>
 
       {/* ── Command Builder ── */}
-      <section className="mb-10">
+      <section id="recipe-builder" className="mb-10 scroll-mt-20">
         <Suspense fallback={<div className="h-40 rounded-2xl bg-muted animate-pulse" />}>
-          <CommandBuilder recipe={recipe} strategies={strategies} taxonomy={taxonomy} />
+          <CommandBuilder recipe={recipe} strategies={strategies} taxonomy={taxonomy} contextNotes={notes} />
         </Suspense>
       </section>
 
       {/* ── Reference sections ── */}
-      <section className="space-y-2">
-        {guide && (
-          <GuideLinks>
-            <Accordion title={<span className="flex items-center gap-2">Guide<HeadingLink id="recipe-guide" /></span>} id="recipe-guide" defaultOpen>
-              <div className="guide-content">
-                <Markdown
-                  remarkPlugins={guideRemarkPlugins}
-                  rehypePlugins={guideRehypePlugins}
-                  components={guideHeadings}
-                >
-                  {guide}
-                </Markdown>
-              </div>
-            </Accordion>
-          </GuideLinks>
-        )}
-
+      <section className="space-y-3">
+        <GuideLinks>
+          <div className="space-y-3">
+            <ReferenceTabs {...sectionProps} guide={guide ? <GuideMarkdown>{guide}</GuideMarkdown> : null} />
+          </div>
+        </GuideLinks>
       </section>
 
       {/* ── Footer ── */}
@@ -306,32 +328,33 @@ const guideHeadings = Object.fromEntries(
   }])
 );
 
-function Accordion({ title, children, id, defaultOpen = false }) {
-  // Stronger border than bare `--border` (10% in dark mode) so the outline is
-  // visible on both themes. `foreground/15` stays subtle but catches enough
-  // contrast to define the card.
+function GuideMarkdown({ children, prefix = "" }) {
   return (
-    <details
-      id={id}
-      className="group rounded-xl border border-foreground/15 bg-card/40 overflow-hidden"
-      open={defaultOpen || undefined}
-    >
-      <summary className="px-5 py-3 cursor-pointer text-sm font-semibold select-none hover:bg-foreground/[0.04] transition-colors flex items-center justify-between">
-        {title}
-        <ChevronIcon />
-      </summary>
-      <div className="px-5 pb-5 border-t border-foreground/10 pt-4">{children}</div>
-    </details>
+    <Markdown remarkPlugins={guideRemarkPlugins} rehypePlugins={guideRehypePluginsFor(prefix)} components={guideHeadings}>
+      {children}
+    </Markdown>
   );
 }
 
-function ChevronIcon() {
-  return (
-    <svg
-      className="w-4 h-4 text-muted-foreground transition-transform duration-200 group-open:rotate-180"
-      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-    >
-      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-    </svg>
-  );
+// github-slugger's rule (what rehype-slug uses) for plain heading text.
+function slugify(text) {
+  return text.toLowerCase().replace(/[`*~]/g, "").replace(/[^\p{L}\p{N}\s-]/gu, "").trim().replace(/\s/g, "-");
+}
+
+// The ## – #### headings of a Markdown string, with the ids rehype-slug gives them.
+function markdownToc(md, prefix = "") {
+  const seen = new Map();
+  let fence = false;
+  const out = [];
+  for (const line of md.split("\n")) {
+    if (/^\s*```/.test(line)) fence = !fence;
+    const m = !fence && line.match(/^#{2,4}\s+(.+?)\s*$/);
+    if (!m) continue;
+    const text = m[1].replace(/[`*]/g, "");
+    const base = slugify(text);
+    const n = seen.get(base) || 0;
+    seen.set(base, n + 1);
+    out.push({ text, id: `${prefix}${n ? `${base}-${n}` : base}` });
+  }
+  return out;
 }

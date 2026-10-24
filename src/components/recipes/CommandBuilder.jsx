@@ -7,6 +7,10 @@ import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
+import { resolvePresetKey, withPreset } from "@/lib/recipe-presets";
+import { publishSelection, onPresetRequest } from "@/lib/selection-store";
+import { holdInPlace } from "@/lib/hold-in-place";
+import { whenMatches } from "@/lib/recipe-context";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
@@ -367,7 +371,7 @@ function hardwareSelectorLabel(selector, profiles) {
   return profiles?.[selector]?.display_name || selector;
 }
 
-export function CommandBuilder({ recipe, strategies, taxonomy }) {
+export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = [] }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -417,6 +421,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     && isHardwareSupported(recipe, requestedHwId)
     && isVariantHardwareSupported(requestedVariant, requestedHwId, requestedHwProfile);
   const [hwId, setHwId] = useState(requestedHwAllowed ? requestedHwId : defaultHw);
+  const hwIdRef = useRef(hwId);
+  hwIdRef.current = hwId;
 
   // After mount: restore preferences from localStorage in two scopes.
   // URL params always win (explicit > stored).
@@ -553,6 +559,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // `nodes` accepts two shapes: a bare integer (same default for every hw)
   // or a hardware-keyed map `{ default, <hwId>… }` for per-hw defaults (e.g.
   // GB200 = 2, GB300 = 1). Unmatched hw falls through to the VRAM fit.
+  // Tuned-preset pick (recipe-presets.js): null follows the recipe default
+  // for this hardware + strategy, "baseline" opts out, a key selects it.
+  const [presetPick, setPresetPick] = useState(() => searchParams.get("preset") || null);
+  // Point pick within the active preset (`?point=`); null follows its default point.
+  const [pointPick, setPointPick] = useState(() => searchParams.get("point") || null);
+  // PD pool defaults read the recipe with the pd_cluster preset in effect
+  // mounted, since a preset may own the pools' nodes and parallelism.
+  const pdRecipe = useMemo(
+    () => withPreset(recipe, resolvePresetKey(recipe, hwId, "pd_cluster", presetPick, variant), hwId, "pd_cluster", { variantKey: variant, point: pointPick }),
+    [recipe, hwId, presetPick, pointPick, variant],
+  );
   const pdDefaults = useMemo(() => {
     // Each PD role holds a full model copy on its own pool of nodes. If a
     // single node can't fit the model, the role must span >= ceil(model/node)
@@ -566,13 +583,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const minNodesPerRole = (modelVram > 0 && nodeVram > 0)
       ? Math.max(1, Math.ceil(modelVram / nodeVram))
       : 1;
-    const pickNodes = (role, fallback) => pdRoleNodes(recipe, role, hw, hwId) ?? fallback;
+    const pickNodes = (role, fallback) => pdRoleNodes(pdRecipe, role, hw, hwId) ?? fallback;
     return {
       prefill: pickNodes("prefill", minNodesPerRole),
       decode: pickNodes("decode", minNodesPerRole),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recipe, hwId, variant]);
+  }, [recipe, pdRecipe, hwId, variant]);
   const [pdPrefillNodes, setPdPrefillNodes] = useState(() => {
     const n = parseInt(searchParams.get("prefill_nodes") || "", 10);
     return Number.isFinite(n) && n > 0 ? n : pdDefaults.prefill;
@@ -597,11 +614,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const pdDefaultPar = useMemo(() => {
     const hw = taxonomy.hardware_profiles?.[hwId];
     const pick = (role) => {
-      const d = pdRoleParallelism(recipe, strategies?.pd_cluster, role, hw, hwId);
+      const d = pdRoleParallelism(pdRecipe, strategies?.pd_cluster, role, hw, hwId);
       return pdModes.includes(d) ? d : pdModes[0];
     };
     return { prefill: pick("prefill"), decode: pick("decode") };
-  }, [recipe, strategies, taxonomy, pdModes, hwId]);
+  }, [pdRecipe, strategies, taxonomy, pdModes, hwId]);
   const [pdPrefillPar, setPdPrefillPar] = useState(() => {
     const p = searchParams.get("prefill_mode");
     return p && pdModes.includes(p) ? p : pdDefaultPar.prefill;
@@ -1141,10 +1158,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
         }
         : null;
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport, dcpSize);
+      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick);
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport, dcpSize]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick]
   );
+
+  // Publish the selection for the sections below the builder (This
+  // configuration / Tuned presets / Troubleshooting filter on it).
+  const selectedPreset = result?.preset?.selected ?? null;
+  useEffect(() => {
+    publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features, preset: selectedPreset });
+  }, [recipe.hf_id, hwId, activeStrategy, variant, features, selectedPreset]);
 
   // Visual feedback when any rendered command changes. Covers single-node
   // (result.command), multi-node (headCommand), pd_cluster (prefill.command),
@@ -1157,7 +1181,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     || "")
     + (omniTask ? `|task:${omniTask}` : "")
     + `|frontend:${frontend}`
-    + `|pd_router:${pdRouter}|pd_transport:${pdTransport}`;
+    + `|pd_router:${pdRouter}|pd_transport:${pdTransport}`
+    + `|preset:${result.preset?.selected ?? ""}`;
   const [changed, setChanged] = useState(false);
   useEffect(() => {
     setChanged(true);
@@ -1326,6 +1351,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     syncUrl({
       hardware: id,
       strategy: "",
+      preset: "",
+      point: "",
       nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
       features: featuresToUrl(next, id, variant),
       ...(nextModes !== featureModes ? { fmode: featureModesToUrl(nextModes, variant) } : {}),
@@ -1344,14 +1371,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     });
   };
 
-  const selectStrategy = (s) => {
+  // `preset` rides along when a Preset pill for another strategy triggers the
+  // switch (see selectPreset); otherwise the pick is cleared.
+  const selectStrategy = (s, { preset = "" } = {}) => {
     setStrategyOverride(s);
     // Grow the cluster to this strategy's GPU floor so the pick is immediately
     // valid instead of rendering below its own bar.
     const needed = nodesNeededFor(s);
     const grow = needed > nodeCount;
     if (grow) setNodeCount(needed);
-    syncUrl({ strategy: s, ...(grow && { nodes: String(needed) }) });
+    syncUrl({ strategy: s, preset, point: "", ...(grow && { nodes: String(needed) }) });
     // Persisted per-recipe (keyed by hf_id), so picking TP here doesn't
     // affect any other recipe's default. Spec-decoding auto-enable for
     // latency strategies is handled by an effect below so it also fires
@@ -1524,6 +1553,147 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       ))}
     </PillGroup>
   );
+
+  // A preset belongs to one hardware + strategy; a pick made elsewhere falls
+  // back to that pair's default, unless the switch came from picking a preset
+  // of the new strategy (pendingPreset). Skip the mount run so ?preset= links
+  // hold. State only: selectHardware / selectStrategy put `preset` into their
+  // own syncUrl call (a second call here would read stale searchParams and
+  // clobber theirs).
+  const presetScope = `${hwId}|${activeStrategy}|${variant}`;
+  const prevPresetScope = useRef(presetScope);
+  const pendingPreset = useRef(null);
+  useEffect(() => {
+    if (prevPresetScope.current === presetScope) return;
+    prevPresetScope.current = presetScope;
+    setPresetPick(pendingPreset.current);
+    setPointPick(null);
+    pendingPreset.current = null;
+  }, [presetScope]);
+
+  // Every preset for this hardware, in YAML order: the Preset row offers all
+  // of them, so presets on other strategies are discoverable. The order stays
+  // fixed across strategy switches so a clicked pill doesn't jump.
+  const hwPresets = useMemo(
+    () => Object.entries(recipe.presets || {}).filter(([, p]) => p.hardware === hwId).map(([key, p]) => ({ key, ...p })),
+    [recipe, hwId]
+  );
+
+  const selectPreset = (key) => {
+    const target = recipe.presets?.[key];
+    const otherVariant = target?.variants?.length && !target.variants.includes(variant) ? target.variants[0] : null;
+    const otherStrategy = target?.strategy && target.strategy !== activeStrategy ? target.strategy : null;
+    if (otherVariant || otherStrategy) {
+      // A preset of another variant and/or strategy: switch to it; the scope
+      // reset picks it up (pendingPreset). Its default needs no pick.
+      const pick = target.default ? null : key;
+      pendingPreset.current = pick;
+      if (otherVariant) selectVariant(otherVariant);
+      if (otherStrategy) selectStrategy(otherStrategy, { preset: pick ?? "" });
+      else syncUrl({ preset: pick ?? "", point: "" });
+      return;
+    }
+    const def = result?.preset?.options.find((p) => p.default)?.key ?? "baseline";
+    const next = key === def ? null : key;
+    setPresetPick(next);
+    setPointPick(null);
+    syncUrl({ preset: next ?? "", point: "" });
+  };
+
+  const selectPoint = (key) => {
+    const points = result?.preset?.point?.options || [];
+    const def = (points.find((pt) => pt.default) || points[0])?.key;
+    const next = key === def ? null : key;
+    setPointPick(next);
+    syncUrl({ point: next ?? "" });
+  };
+
+  // A preset card (Presets tab) asks for a preset. Same hardware: pick it
+  // (selectPreset switches strategy if needed). Other hardware: switch first,
+  // and pick once the switch has rendered, so strategy floors, node counts
+  // and the preset's own default resolve against the new hardware. Declared
+  // after the preset-scope reset effect so that effect can't clear the pick.
+  const requestedPreset = useRef(null);
+  const selectPresetRef = useRef(selectPreset);
+  selectPresetRef.current = selectPreset;
+  const selectHardwareRef = useRef(selectHardware);
+  selectHardwareRef.current = selectHardware;
+  useEffect(() => onPresetRequest(({ hfId, key }) => {
+    const target = recipe.presets?.[key];
+    if (hfId !== recipe.hf_id || !target) return;
+    if (target.hardware === hwIdRef.current) selectPresetRef.current(key);
+    else {
+      requestedPreset.current = key;
+      selectHardwareRef.current(target.hardware);
+    }
+  }), [recipe]);
+  useEffect(() => {
+    const key = requestedPreset.current;
+    if (!key || recipe.presets?.[key]?.hardware !== hwId) return;
+    requestedPreset.current = null;
+    selectPreset(key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hwId]);
+
+  // The preset (at its point) in effect implies builder choices — PD router,
+  // frontend, features, DCP, KV offload (`select`). Apply them whenever it
+  // becomes active: a pick, a point change, or landing on the hardware +
+  // strategy of a default preset. On the first render, fields the URL set
+  // explicitly stay as linked. Declared after the DCP / preset scope resets
+  // so a switch's resets can't undo the preset's picks. Leaving the preset
+  // (Baseline) keeps these choices; the user changes them like any other.
+  const activeSelect = result?.preset?.select || null;
+  const selectKey = result?.preset ? `${result.preset.selected}|${result.preset.point?.selected ?? ""}` : "";
+  const appliedSelectKey = useRef(null);
+  const urlAtMount = useRef(null);
+  if (urlAtMount.current === null) urlAtMount.current = new URLSearchParams(searchParams.toString());
+  useEffect(() => {
+    if (appliedSelectKey.current === selectKey) return;
+    const first = appliedSelectKey.current === null;
+    appliedSelectKey.current = selectKey;
+    if (!activeSelect) return;
+    const linked = (param) => first && urlAtMount.current.get(param) != null;
+    const updates = {};
+    if (activeSelect.frontend && !linked("frontend")) {
+      const f = resolveFrontend(recipe, activeSelect.frontend, taxonomy);
+      setFrontend(f);
+      updates.frontend = f;
+    }
+    if (activeSelect.pd_router && !linked("pd_router")) {
+      setPdRouter(activeSelect.pd_router);
+      updates.pd_router = activeSelect.pd_router === "vllm" ? "" : activeSelect.pd_router;
+    }
+    if (activeSelect.features && !linked("features")) {
+      let next = [...features];
+      const modes = { ...featureModes };
+      let modesChanged = false;
+      for (const [f, v] of Object.entries(activeSelect.features)) {
+        if (!recipe.features?.[f]) continue;
+        if (v === false) next = next.filter((x) => x !== f);
+        else {
+          if (!next.includes(f)) next.push(f);
+          if (typeof v === "string") { modes[f] = v; modesChanged = true; }
+        }
+      }
+      setFeatures(next);
+      updates.features = featuresToUrl(next, hwId, variant);
+      if (modesChanged && !linked("fmode")) {
+        setFeatureModes(modes);
+        updates.fmode = featureModesToUrl(modes, variant);
+      }
+    }
+    if (activeSelect.dcp !== undefined && !linked("dcp")) {
+      setDcpSize(activeSelect.dcp);
+      updates.dcp = String(activeSelect.dcp);
+    }
+    if (activeSelect.kv_offload !== undefined && !linked("kv_offload")) {
+      const kv = activeSelect.kv_offload === false || activeSelect.kv_offload === "off" ? "" : activeSelect.kv_offload;
+      setKvOffload(kv);
+      updates.kv_offload = kv;
+    }
+    if (Object.keys(updates).length) syncUrl(updates);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectKey]);
 
   const toggleAdvanced = (id) => {
     const next = advanced.includes(id) ? advanced.filter((x) => x !== id) : [...advanced, id];
@@ -1815,8 +1985,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // is a constant.
   const altCudaSuffix = "cu129";
 
+  // A preset's engine image pins this GPU's docker command (an exact
+  // variant × GPU image, which computeDockerMeta already prefers).
+  const presetImage = result?.preset?.image?.vllm || null;
+  const imageVariant = useMemo(
+    () => (presetImage
+      ? { ...currentVariant, hardware_overrides: { ...(currentVariant.hardware_overrides || {}), [hwId]: { ...(currentVariant.hardware_overrides?.[hwId] || {}), docker_image: presetImage } } }
+      : currentVariant),
+    [currentVariant, presetImage, hwId]
+  );
   const dockerMeta = useMemo(() => {
-    const meta = computeDockerMeta(recipe, currentVariant, hwProfile, hwId);
+    const meta = computeDockerMeta(recipe, imageVariant, hwProfile, hwId);
     if (meta.brandKey !== "nvidia") return meta;
 
     // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
@@ -1843,7 +2022,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       return { ...meta, image: next };
     }
     return meta;
-  }, [recipe, currentVariant, hwProfile, hwId, dockerCudaVariant, altCudaSuffix]);
+  }, [recipe, imageVariant, hwProfile, hwId, dockerCudaVariant, altCudaSuffix]);
 
   // `installMode` carries the user's tab choice; `effectiveInstallMode` folds
   // in constraints that would hide a tab entirely (pip: recipe opt-out or TPU
@@ -1871,7 +2050,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       : installMode === "docker" && dockerEffectivelyHidden
         ? "pip"
         : installMode;
-  const commandNote = recipe.hardware_notes?.[hwId] || null;
+  // Shown with the command: the GPU's hardware note and the `notes` whose
+  // `when` matches this selection (server-rendered Markdown, from the page).
+  // Matching troubleshooting is flagged on the Troubleshooting tab instead.
+  const commandNote = useMemo(() => {
+    const sel = { hwId, strategy: activeStrategy, variant, features };
+    const hw = taxonomy.hardware_profiles || {};
+    const notes = contextNotes.filter((n) => whenMatches(n.when, sel, hw));
+    const hardware = recipe.hardware_notes?.[hwId] || null;
+    return hardware || notes.length ? { hardware, notes } : null;
+  }, [recipe, hwId, activeStrategy, variant, features, taxonomy, contextNotes]);
 
   // The extra-install block is pip-scoped by default: nearly every recipe's
   // dependencies are pip installs the Docker image already bundles, so repeating
@@ -1968,7 +2156,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
     return (
       <TooltipProvider>
-        <div className="space-y-4">
+        <div className="space-y-4" onClickCapture={keepClickedRowInPlace}>
           <InstallBlock
             recipe={recipe}
             variant={currentVariant}
@@ -2151,7 +2339,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   return (
     <TooltipProvider>
-      <div className="space-y-4">
+      <div className="space-y-4" onClickCapture={keepClickedRowInPlace}>
         {/* ── Install (tabs: pip / docker — mirrors the command-card mode toggle
           so switching from either place keeps them in sync). */}
         <InstallBlock
@@ -2302,6 +2490,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                         : "";
                       const currentVariantRunsHere = precisionOk && variantHardwareOk;
                       const fittingVariantLabel = (fittingVariant?.label || fittingVariant?.precision || fittingVariantKey)?.toUpperCase();
+                      const presetsHere = Object.values(recipe.presets || {}).filter((x) => x.hardware === id);
+                      const presetNote = presetsHere.length && !disabled
+                        ? `\n\nTuned presets: ${presetsHere.map((x) => x.label).join(", ")}`
+                        : "";
                       const reason = isUnsupported
                           ? `Not yet supported on ${p.display_name} — this model doesn't run here today, may be enabled in a future release`
                         : !fittingVariantKey
@@ -2315,13 +2507,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                           active={hwId === id}
                           disabled={disabled}
                           onClick={() => !disabled && selectHardware(id)}
-                          title={reason}
+                          title={reason + presetNote}
                         >
                           <HwStatusDot status={status} />
                           <span className="font-semibold">{p.display_name}</span>
                           {p.vram_gb > 0 && p.gpu_count > 0 && (
                             <span className="text-muted-foreground ml-1.5 font-mono">
                               {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : "GPU"}
+                            </span>
+                          )}
+                          {presetsHere.length > 0 && !disabled && (
+                            <span className="ml-1.5 rounded bg-vllm-blue/12 px-1 py-px text-[10px] font-medium text-vllm-blue">
+                              {presetsHere.length === 1 ? "preset" : `${presetsHere.length} presets`}
                             </span>
                           )}
                         </Pill>
@@ -2482,6 +2679,81 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               );
             })()}
           </ConfigRow>
+
+          {/* Tuned presets — named, evidence-backed deltas for this exact GPU
+              (and strategy), e.g. an InferenceX lane. Baseline is the
+              recipe's generic command; the runbook lives under the guide. */}
+          {hwPresets.length > 0 && (() => {
+            const selected = result?.preset?.selected ?? "baseline";
+            const active = hwPresets.find((p) => p.key === selected);
+            const here = (p) => (!p.strategy || p.strategy === activeStrategy) && (!p.variants?.length || p.variants.includes(variant));
+            const hereHasDefault = hwPresets.some((p) => p.default && here(p));
+            const point = result?.preset?.point;
+            const img = result?.preset?.image;
+            return (
+              <ConfigRow label="Preset" nested hint="Tuned configurations qualified on this hardware. Picking one for another strategy switches the strategy. Baseline is the recipe's generic command.">
+                <PillGroup>
+                  {hwPresets.map((p) => {
+                    const elsewhere = p.strategy && p.strategy !== activeStrategy;
+                    const sName = strategies[p.strategy]?.display_name || p.strategy;
+                    const otherVariant = p.variants?.length && !p.variants.includes(variant) ? p.variants[0] : null;
+                    const vName = otherVariant && (recipe.variants?.[otherVariant]?.label || recipe.variants?.[otherVariant]?.precision?.toUpperCase() || otherVariant);
+                    const tags = [elsewhere && (strategies[p.strategy]?.short_label || sName), vName].filter(Boolean);
+                    return (
+                      <Pill key={p.key} active={selected === p.key} pressed={selected === p.key} onClick={() => selectPreset(p.key)}
+                        title={[p.description || p.label, elsewhere && `Switches the strategy to ${sName}.`, vName && `Switches the variant to ${vName}.`].filter(Boolean).join("\n\n")}>
+                        {p.label}
+                        {tags.length > 0 && <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">{tags.join(" · ")}</span>}
+                      </Pill>
+                    );
+                  })}
+                  <Pill active={selected === "baseline"} pressed={selected === "baseline"} onClick={() => selectPreset("baseline")}
+                    title="The recipe's generic command for this hardware and strategy, without a tuned preset">
+                    Baseline
+                  </Pill>
+                </PillGroup>
+                <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                  {active ? (
+                    <>
+                      {active.workload && <span className="font-medium text-foreground/80">{active.workload}. </span>}
+                      {active.description}
+                      {active.source?.href && (
+                        <> <a href={active.source.href} className="text-vllm-blue hover:underline" target="_blank" rel="noreferrer">{active.source.label || "Source"}</a></>
+                      )}
+                      {active.runbook && (
+                        <> · <a href={`#preset-${active.key}`} className="text-vllm-blue hover:underline">Runbook</a></>
+                      )}
+                      {img && (img.vllm || img.dynamo || img.pip?.length || img.model_revision) && (
+                        <span className="mt-1 block font-mono text-[10px] text-muted-foreground/80">
+                          {[img.vllm && `image ${img.vllm}`, img.dynamo && `dynamo ${img.dynamo}`, ...(img.pip || []).map((x) => `pip ${x}`), img.model_revision && `model rev ${img.model_revision}`].filter(Boolean).join(" · ")}
+                        </span>
+                      )}
+                    </>
+                  ) : hereHasDefault ? (
+                    "Generic command without the tuned preset's settings. Not the configuration that was qualified on this hardware."
+                  ) : (
+                    `No preset for ${strategies[activeStrategy]?.display_name || activeStrategy} here; the presets above switch to the strategy they were qualified on.`
+                  )}
+                </p>
+              </ConfigRow>
+            );
+          })()}
+          {result?.preset?.point && result.preset.point.options.length > 1 && (
+            <ConfigRow label="Point" nested hint="The preset's qualified operating points, e.g. one per client concurrency. Each renders its own settings.">
+              <PillGroup>
+                {result.preset.point.options.map((pt) => (
+                  <Pill key={pt.key} active={result.preset.point.selected === pt.key} pressed={result.preset.point.selected === pt.key}
+                    onClick={() => selectPoint(pt.key)} title={pt.description || pt.label}>
+                    {pt.label}
+                  </Pill>
+                ))}
+              </PillGroup>
+              {(() => {
+                const pt = result.preset.point.options.find((x) => x.key === result.preset.point.selected);
+                return pt?.description ? <p className="text-[11px] text-muted-foreground mt-2 leading-snug">{pt.description}</p> : null;
+              })()}
+            </ConfigRow>
+          )}
 
           {/* PD Router — which orchestrator fronts the prefill/decode pools.
               Nested under Strategy: it only exists for pd_cluster and never
@@ -3180,13 +3452,21 @@ function PdNodeInput({ label, value, gpuPerNode, onChange, modes, parallelism, o
   );
 }
 
+// A pick re-renders the command block above the rows; keep the clicked row
+// where it was on screen (see hold-in-place.js). Buttons only, so links inside
+// a row (Runbook, Source) still navigate.
+function keepClickedRowInPlace(e) {
+  if (!e.target.closest?.("button")) return;
+  holdInPlace(e.target.closest("[data-config-row]"));
+}
+
 function ConfigRow({ label, hint, nested, children }) {
   // `nested` marks a row that only exists as a child of the pick above it
   // (Store Topology / Instances under Mooncake, the spec-method row under
   // Features): a blue left rail + slight tint expresses the ownership that
   // the flat divide-y list otherwise hides.
   return (
-    <div className={`px-4 py-3 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 ${nested ? "border-l-2 border-vllm-blue/30 bg-muted/20" : ""}`}>
+    <div data-config-row className={`px-4 py-3 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 ${nested ? "border-l-2 border-vllm-blue/30 bg-muted/20" : ""}`}>
       <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest sm:w-28 sm:pt-1.5 shrink-0 inline-flex items-center gap-1">
         {label}
         {hint && (
@@ -3358,7 +3638,7 @@ function CommandBody({ command }) {
   );
 }
 
-function CommandNote({ note }) {
+function HardwareNote({ note }) {
   if (!note) return null;
   const cfg = typeof note === "string" ? { body: note } : (note || {});
   const title = cfg.title || "Hardware note";
@@ -3382,6 +3662,40 @@ function CommandNote({ note }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Everything with the command that follows the selection: the hardware
+// note, then `notes` (titles listed, bodies on demand).
+function CommandNote({ note }) {
+  if (!note) return null;
+  const { hardware, notes = [] } = note;
+  return (
+    <>
+      {hardware && <HardwareNote note={hardware} />}
+      {notes.length > 0 && (
+        <details className="group/notes mx-4 mt-3 rounded-lg border border-vllm-blue/25 bg-vllm-blue/10 text-[11px] leading-snug">
+          <summary className="flex cursor-pointer list-none items-start gap-2 px-3 py-2 [&::-webkit-details-marker]:hidden">
+            <Info size={13} className="mt-0.5 shrink-0 text-vllm-blue" />
+            <span className="min-w-0 flex-1">
+              <span className="font-semibold text-[var(--command-fg)]">
+                {notes.length === 1 ? "1 note" : `${notes.length} notes`} for this configuration
+              </span>
+              <span className="text-[var(--command-fg)]/55 group-open/notes:hidden"> · {notes.map((n) => n.title || "Note").join(" · ")}</span>
+            </span>
+            <ChevronDown size={13} className="mt-0.5 shrink-0 text-[var(--command-fg)]/50 transition-transform group-open/notes:rotate-180" />
+          </summary>
+          <div className="space-y-2.5 border-t border-vllm-blue/20 px-3 py-2.5 pl-8">
+            {notes.map((n, i) => (
+              <div key={i}>
+                {n.title && <p className="font-semibold text-[var(--command-fg)]">{n.title}</p>}
+                <div className="command-note-md">{n.body}</div>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </>
   );
 }
 

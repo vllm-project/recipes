@@ -1,3 +1,5 @@
+import { applyPresetArgOps, effectivePreset, matchingPresets, presetImage, presetPoints, resolvePresetKey, withPreset } from "./recipe-presets.js";
+
 /**
  * Core command synthesis: Recipe + Variant + Strategy + Hardware + Features → vllm serve command.
  * Pure functions, no I/O.
@@ -1238,10 +1240,37 @@ function applyDcpSize(args, size, commBackend) {
   return args.map((a, i) => (args[i - 1] === SIZE ? String(size) : a));
 }
 
+// The last two parameters are the user's tuned-preset pick and point pick (see
+// recipe-presets.js): an undefined preset follows the recipe's default for
+// this hardware + strategy + variant, "baseline" opts out, a key selects that
+// preset; an undefined point follows the preset's default point.
+//
+// `result.preset` = { selected, options, point: { selected, options } | null,
+// select, image } — `select` is the builder state the preset implies, which
+// the CALLER applies (the builder to its pills, the JSON API to the params it
+// passes): synthesis renders whatever frontend / router / features it is given.
 export function resolveCommand(...params) {
   const dcpOut = {};
-  const result = resolveCommandImpl(dcpOut, ...params);
-  if (result && typeof result === "object" && !Array.isArray(result)) result.dcp = dcpOut.get?.() ?? null;
+  const [recipe, variantKey, strategyName, hwProfileId] = params;
+  const presetKey = resolvePresetKey(recipe, hwProfileId, strategyName, params[17], variantKey);
+  const raw = recipe?.presets?.[presetKey];
+  const eff = raw ? effectivePreset(raw, params[18]) : null;
+  params[0] = withPreset(recipe, presetKey, hwProfileId, strategyName, { variantKey, point: params[18] });
+  const result = resolveCommandImpl(dcpOut, ...params.slice(0, 17));
+  if (result && typeof result === "object" && !Array.isArray(result)) {
+    result.dcp = dcpOut.get?.() ?? null;
+    const options = matchingPresets(recipe, hwProfileId, strategyName, variantKey);
+    const points = raw ? presetPoints(raw) : [];
+    result.preset = options.length
+      ? {
+        selected: presetKey,
+        options,
+        point: points.length ? { selected: eff?.point ?? null, options: points } : null,
+        select: eff?.select || null,
+        image: presetImage(eff?.image),
+      }
+      : null;
+  }
   return result;
 }
 
@@ -1717,8 +1746,16 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
 
     // Dynamo workers serve no HTTP of their own (the frontend does), so drop
     // flags like --port whichever layer emitted them.
-    if (dynamo?.remove_args?.length) return stripArgs(args, dynamo.remove_args);
-    return args;
+    let out = dynamo?.remove_args?.length ? stripArgs(args, dynamo.remove_args) : args;
+    // 9. The active preset's `remove_args` / `json_args` (recipe-presets.js),
+    //    after every layer so they also reach feature and KV-offload flags
+    //    (e.g. num_speculative_tokens inside --speculative-config).
+    const ops = recipe._presetOps;
+    if (ops) {
+      out = applyPresetArgOps(out, ops.all);
+      if (roleOverride) out = applyPresetArgOps(out, ops.roles?.[roleOverride]);
+    }
+    return out;
   }
 
   // Helper to merge env

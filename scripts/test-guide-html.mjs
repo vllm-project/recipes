@@ -1,6 +1,8 @@
 // Guides from source-repo PRs render unreviewed on preview URLs, so the guide
 // renderer must never emit markup or URLs a guide author controls beyond plain
-// Markdown. Runs the page's react-markdown configuration (src/lib/guide-markdown.js).
+// Markdown. Runs the page's react-markdown configuration (src/lib/guide-markdown.js),
+// which also renders preset runbooks, notes and troubleshooting bodies (with
+// prefixed heading ids).
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -8,10 +10,10 @@ import { test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import Markdown from "react-markdown";
-import { guideRehypePlugins, guideRemarkPlugins } from "../src/lib/guide-markdown.js";
+import { guideRehypePlugins, guideRehypePluginsFor, guideRemarkPlugins } from "../src/lib/guide-markdown.js";
 
-const render = (guide) => renderToStaticMarkup(
-  createElement(Markdown, { remarkPlugins: guideRemarkPlugins, rehypePlugins: guideRehypePlugins }, guide),
+const render = (guide, rehypePlugins = guideRehypePlugins) => renderToStaticMarkup(
+  createElement(Markdown, { remarkPlugins: guideRemarkPlugins, rehypePlugins }, guide),
 );
 
 const ATTACKS = {
@@ -28,9 +30,9 @@ const ATTACKS = {
   "html in a table cell": "| a |\n|---|\n| <script>alert(1)</script> |",
 };
 
-for (const [name, guide] of Object.entries(ATTACKS)) {
-  test(`guide markup stays data: ${name}`, () => {
-    const html = render(guide);
+for (const [name, guide] of Object.entries(ATTACKS)) for (const prefix of ["", "preset-x-"]) {
+  test(`guide markup stays data: ${name}${prefix ? " (prefixed ids)" : ""}`, () => {
+    const html = render(guide, guideRehypePluginsFor(prefix));
     assert.doesNotMatch(html, /<(script|iframe|style|object|embed)\b/i, html);
     // Raw HTML may come out as escaped text (&lt;img …&gt;); only real tags matter.
     for (const tag of html.match(/<[a-z][^>]*>/gi) || []) {
@@ -78,6 +80,10 @@ test("every Markdown renderer in src/ uses the guide configuration", () => {
   for (const f of users.filter((f) => !f.endsWith(path.join("lib", "guide-markdown.js")))) {
     assert.match(fs.readFileSync(f, "utf8"), /from "@\/lib\/guide-markdown"/, `${f} renders Markdown without src/lib/guide-markdown.js`);
   }
+});
+
+test("prefixed heading ids for runbooks, notes and troubleshooting", () => {
+  assert.match(render("## Services", guideRehypePluginsFor("preset-gb200-")), /<h2 id="preset-gb200-services">Services<\/h2>/);
 });
 
 test("plain Markdown still renders", () => {

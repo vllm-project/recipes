@@ -6,3 +6,10 @@ import rehypeSlug from "rehype-slug";
 // scripts/test-guide-html.mjs checks this configuration.
 export const guideRemarkPlugins = [remarkGfm];
 export const guideRehypePlugins = [rehypeSlug];
+
+// The same configuration with heading ids prefixed, for Markdown that renders
+// beside the guide on one page (preset runbooks, notes, troubleshooting) so
+// their heading ids can't collide with the guide's.
+export function guideRehypePluginsFor(prefix) {
+  return prefix ? [[rehypeSlug, { prefix }]] : guideRehypePlugins;
+}
