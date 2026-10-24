@@ -370,7 +370,7 @@ function hardwareSelectorLabel(selector, profiles) {
   return profiles?.[selector]?.display_name || selector;
 }
 
-export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = [], issueIndex = [] }) {
+export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = [] }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -1884,17 +1884,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       : installMode === "docker" && dockerEffectivelyHidden
         ? "pip"
         : installMode;
-  // Shown under the command: the GPU's hardware note, `notes` whose `when`
-  // matches this selection (server-rendered Markdown, from the page), and
-  // links to matching troubleshooting entries (in the Troubleshooting tab).
+  // Shown with the command: the GPU's hardware note and the `notes` whose
+  // `when` matches this selection (server-rendered Markdown, from the page).
+  // Matching troubleshooting is flagged on the Troubleshooting tab instead.
   const commandNote = useMemo(() => {
     const sel = { hwId, strategy: activeStrategy, variant, features };
     const hw = taxonomy.hardware_profiles || {};
     const notes = contextNotes.filter((n) => whenMatches(n.when, sel, hw));
-    const issues = issueIndex.filter((t) => t.when && whenMatches(t.when, sel, hw));
     const hardware = recipe.hardware_notes?.[hwId] || null;
-    return hardware || notes.length || issues.length ? { hardware, notes, issues } : null;
-  }, [recipe, hwId, activeStrategy, variant, features, taxonomy, contextNotes, issueIndex]);
+    return hardware || notes.length ? { hardware, notes } : null;
+  }, [recipe, hwId, activeStrategy, variant, features, taxonomy, contextNotes]);
 
   // The extra-install block is pip-scoped by default: nearly every recipe's
   // dependencies are pip installs the Docker image already bundles, so repeating
@@ -3456,12 +3455,11 @@ function HardwareNote({ note }) {
   );
 }
 
-// Everything under the command that follows the selection: the hardware
-// note, then `notes` (titles listed, bodies on demand), then links to the
-// matching troubleshooting entries.
+// Everything with the command that follows the selection: the hardware
+// note, then `notes` (titles listed, bodies on demand).
 function CommandNote({ note }) {
   if (!note) return null;
-  const { hardware, notes = [], issues = [] } = note;
+  const { hardware, notes = [] } = note;
   return (
     <>
       {hardware && <HardwareNote note={hardware} />}
@@ -3486,17 +3484,6 @@ function CommandNote({ note }) {
             ))}
           </div>
         </details>
-      )}
-      {issues.length > 0 && (
-        <div className="mx-4 mt-2 flex items-start gap-2 px-3 text-[11px] leading-snug">
-          <Wrench size={12} className="mt-0.5 shrink-0 text-amber-500" />
-          <p className="text-[var(--command-fg)]/65">
-            {issues.length === 1 ? "Known issue" : `${issues.length} known issues`}:{" "}
-            {issues.map((t, i) => (
-              <span key={t.id}>{i > 0 && " · "}<a href={`#${t.id}`} className="font-medium text-vllm-blue hover:underline">{t.title}</a></span>
-            ))}
-          </p>
-        </div>
       )}
     </>
   );

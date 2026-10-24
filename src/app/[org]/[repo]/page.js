@@ -137,9 +137,6 @@ export default async function RecipePage({ params, searchParams }) {
     };
   });
   const sectionProps = { hfId: recipe.hf_id, hardware: hardwareSlim, strategyLabels, presets, troubleshooting };
-  // For the command block: notes render under the command, and matching
-  // troubleshooting entries are linked from there.
-  const issueIndex = troubleshooting.map(({ id, title, when }) => ({ id, title, when }));
   const logo = getProviderLogo(recipe.hf_org);
 
   // Per-recipe platform opt-in. Each entry is either a bare id ("modal") or
@@ -253,7 +250,7 @@ export default async function RecipePage({ params, searchParams }) {
       {/* ── Command Builder ── */}
       <section id="recipe-builder" className="mb-10 scroll-mt-20">
         <Suspense fallback={<div className="h-40 rounded-2xl bg-muted animate-pulse" />}>
-          <CommandBuilder recipe={recipe} strategies={strategies} taxonomy={taxonomy} contextNotes={notes} issueIndex={issueIndex} />
+          <CommandBuilder recipe={recipe} strategies={strategies} taxonomy={taxonomy} contextNotes={notes} />
         </Suspense>
       </section>
 
