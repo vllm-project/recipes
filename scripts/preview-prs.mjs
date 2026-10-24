@@ -5,12 +5,14 @@
  *   node scripts/preview-prs.mjs --source vllm [--label recipe] [--max 20] [--dry-run]
  *   node scripts/preview-prs.mjs --source vllm --pr 63244 [--dry-run]   # just these PRs
  *
- * For every open PR in the source repo carrying `--label`, the branch
- * `preview/<source>-pr-<N>` is this checkout's HEAD plus a lock that pins the
- * source to the PR head (`ref` is unchanged, so sync-sources fetches the pinned
- * commit as usual) and `public/preview.json`. The branch is rewritten only when
- * the PR's recipe directory (tree_sha) changed, and deleted once the PR is
- * closed or unlabeled. The source repo links the preview from its PR:
+ * A preview branch `preview/<source>-pr-<N>` is this checkout's HEAD plus a lock
+ * that pins the source to the PR head (`ref` is unchanged, so sync-sources
+ * fetches the pinned commit as usual) and `public/preview.json`. With `--pr`
+ * (what the source repo dispatches on each PR event) only those PRs are handled,
+ * and a closed PR's branch is deleted. Without it, every open PR carrying
+ * `--label` gets a branch, and branches of closed or unlabeled PRs are deleted.
+ * A branch is rewritten only when the PR's recipe directory (tree_sha) changed.
+ * The source repo links the preview from its PR:
  *   https://vllm-recipes-git-preview-<source>-pr-<N>-inferact-inc.vercel.app
  *
  * Only the PR's commit and tree ids are handled here; nothing from the PR is
@@ -99,13 +101,29 @@ const existing = new Set(
   (await gh(`/repos/${selfRepo}/git/matching-refs/heads/${prefix}`))
     .map((ref) => Number(ref.ref.slice(`refs/heads/${prefix}`.length))),
 );
-const only = args.pr ? String(args.pr).split(",").map(Number) : null;
+// A dispatch names one PR; cap a list so one request can't fan out widely.
+const MAX_PRS = 10;
+const prArgs = args.pr ? String(args.pr).split(",") : null;
+const only = prArgs ? [...new Set(prArgs.map(Number))] : null;
+if (prArgs && (only.length > MAX_PRS || !prArgs.every((n) => /^\d{1,7}$/.test(n)))) {
+  throw new Error(`--pr takes up to ${MAX_PRS} PR numbers, got "${args.pr}"`);
+}
 const wanted = only || await labeledPrs();
 const keep = new Set(wanted);
 let rebuilt = 0;
 
 for (const pr of wanted) {
   const pull = await gh(`/repos/${spec.repo}/pulls/${pr}`);
+  if (pull.state !== "open") {
+    keep.delete(pr);
+    if (!existing.has(pr)) {
+      console.log(`  - #${pr}: closed, no preview`);
+      continue;
+    }
+    console.log(`  ✗ #${pr}: closed, deleting ${prefix}${pr}`);
+    if (!dryRun) git("push", "-q", "origin", "--delete", `refs/heads/${prefix}${pr}`);
+    continue;
+  }
   const sha = pull.head.sha;
   const treeSha = await recipeTree(sha);
   if (!treeSha) {
