@@ -103,8 +103,9 @@ const existing = new Set(
 );
 // A dispatch names one PR; cap a list so one request can't fan out widely.
 const MAX_PRS = 10;
-const only = args.pr ? [...new Set(String(args.pr).split(",").map(Number))] : null;
-if (only && (only.length > MAX_PRS || !only.every(Number.isInteger))) {
+const prArgs = args.pr ? String(args.pr).split(",") : null;
+const only = prArgs ? [...new Set(prArgs.map(Number))] : null;
+if (prArgs && (only.length > MAX_PRS || !prArgs.every((n) => /^\d{1,7}$/.test(n)))) {
   throw new Error(`--pr takes up to ${MAX_PRS} PR numbers, got "${args.pr}"`);
 }
 const wanted = only || await labeledPrs();

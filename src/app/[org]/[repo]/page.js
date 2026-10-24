@@ -13,8 +13,7 @@ import { GuideLinks } from "@/components/recipes/GuideLinks";
 import { DeployDialog } from "@/components/recipes/DeployDialog";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeSlug from "rehype-slug";
+import { guideRehypePlugins, guideRemarkPlugins } from "@/lib/guide-markdown";
 import { Badge } from "@/components/ui/badge";
 import { Cpu, Layers, Pencil, Bug, ExternalLink, Link2 } from "lucide-react";
 import {
@@ -231,8 +230,8 @@ export default async function RecipePage({ params, searchParams }) {
             <Accordion title={<span className="flex items-center gap-2">Guide<HeadingLink id="recipe-guide" /></span>} id="recipe-guide" defaultOpen>
               <div className="guide-content">
                 <Markdown
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeSlug]}
+                  remarkPlugins={guideRemarkPlugins}
+                  rehypePlugins={guideRehypePlugins}
                   components={guideHeadings}
                 >
                   {guide}

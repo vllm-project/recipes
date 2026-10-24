@@ -25,6 +25,7 @@ pnpm content:update                     # Re-resolve every source ref and rewrit
 node scripts/validate-source.mjs --source <name> --dir <path>  # Validate a source repo's recipe dir (what its PR check runs)
 pnpm test:overlay                       # Overlay merge/split round-trip over every recipe + scope violations
 pnpm test:schema                        # Recipes + templates match the schema; misspelled keys are rejected
+pnpm test:guide-html                    # Guide Markdown renders no raw HTML or unsafe URLs (source-PR previews render guides unreviewed)
 node scripts/fetch-provider-logos.mjs   # Re-download HF org avatars to public/providers/
 node scripts/fetch-hf-dates.mjs         # Refresh public/hf-dates.json (HF createdAt per model)
 bash scripts/hf-info.sh <org>/<repo>    # Pull config.json / params.json for a model (used when authoring recipes)
