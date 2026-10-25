@@ -215,8 +215,10 @@ some variants). Field reference: the `presets` entry in SCHEMA.md.
   informational. Write explicit values — no formulas (`2 × C`), no ranges. A point
   may change the single-node TP size (`tp`) or, under multi_node_*, the node count
   (`select.nodes`); a different strategy or variant is a different preset.
-- **Builder choices go in `select`** (PD router, frontend, features and their modes,
-  DCP, KV offload), never in prose ("pick Dynamo, untick Tool calling").
+- **Builder choices go in `select`** (PD router, PD KV transfer connector, frontend,
+  features and their modes, DCP, KV offload), never in prose ("pick Dynamo, untick Tool
+  calling"). A PD lane on MoRI-IO or Mooncake sets `pd_connector`; tune one connector of
+  a composed config with `json_args` keyed by its name (`MoRIIOConnector: {…}`).
 - **Change inherited config precisely:** `remove_args` drops a flag a base layer or
   feature emitted; `json_args` changes keys inside a JSON flag (`num_speculative_tokens`
   in `--speculative-config`, capture sizes in `--compilation-config`, sizes in

@@ -17,6 +17,7 @@
 //       select:                    # builder choices the preset implies
 //         nodes: 2                 # multi_node_* only: node count
 //         pd_router: dynamo
+//         pd_connector: moriio     # pd_cluster.yaml `connectors` key
 //         frontend: python
 //         features: { tool_calling: false, spec_decoding: dspark }
 //         dcp: 16
@@ -223,6 +224,28 @@ export function presetSelect(recipe, key, point) {
 const normFlag = (f) => (typeof f === "string" && f.startsWith("--") ? `--${f.slice(2).replace(/_/g, "-")}` : f);
 const takesValue = (next) => next !== undefined && !(typeof next === "string" && next.startsWith("-"));
 
+// A KV connector's name (`MoRIIOConnector`, `SimpleCPUOffloadConnector`) as a
+// key of a --kv-transfer-config edit addresses that connector: the value itself
+// when it is that connector, else the matching child of a MultiConnector, so a
+// lane can tune one connector without restating the composed list.
+const CONNECTOR_KEY = /^[A-Z][A-Za-z0-9]*Connector[A-Za-z0-9]*$/;
+function mergeEdit(base, edit, flag) {
+  if (!isObj(edit)) return deepMerge(base, edit);
+  let out = base;
+  const rest = {};
+  for (const [k, v] of Object.entries(edit)) {
+    if (!CONNECTOR_KEY.test(k)) { rest[k] = v; continue; }
+    if (out?.kv_connector === k) { out = deepMerge(out, v); continue; }
+    const children = out?.kv_connector_extra_config?.connectors;
+    const i = Array.isArray(children) ? children.findIndex((c) => c?.kv_connector === k) : -1;
+    if (i < 0) throw new Error(`json_args: ${flag} has no ${k}`);
+    const next = [...children];
+    next[i] = deepMerge(children[i], v);
+    out = { ...out, kv_connector_extra_config: { ...out.kv_connector_extra_config, connectors: next } };
+  }
+  return deepMerge(out, rest);
+}
+
 function applyJsonEdit(value, edit, flag) {
   let base = {};
   if (value !== undefined) {
@@ -235,12 +258,13 @@ function applyJsonEdit(value, edit, flag) {
     if (!isObj(base)) throw new Error(`json_args: ${flag} value is not a JSON object: ${value}`);
   }
   const prune = (o) => {
+    if (Array.isArray(o)) return o.map(prune);
     if (!isObj(o)) return o;
     const out = {};
     for (const [k, v] of Object.entries(o)) if (v !== null) out[k] = prune(v);
     return out;
   };
-  return JSON.stringify(prune(deepMerge(base, edit)));
+  return JSON.stringify(prune(mergeEdit(base, edit, flag)));
 }
 
 /**
@@ -299,7 +323,8 @@ export function applyPresetArgOps(args, ops, editOnly) {
 // ── Validation ──────────────────────────────────────────────────────────────
 
 /** Build-time checks the JSON Schema can't express. Returns error strings. */
-export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = []) {
+// `pdConnectors` is pd_cluster.yaml's `connectors` map (select.pd_connector).
+export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = [], pdConnectors = {}) {
   const errors = [];
   const seenDefault = new Map();
   const frontends = Object.keys(taxonomy?.frontends || {});
@@ -333,6 +358,14 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = []) 
     const checkSelect = (s, at) => {
       if (!s) return;
       if (s.pd_router !== undefined && !isPd) errors.push(`${at}.pd_router: only a pd_cluster preset picks a PD router`);
+      if (s.pd_connector !== undefined) {
+        const c = pdConnectors[s.pd_connector];
+        const brand = taxonomy?.hardware_profiles?.[p.hardware]?.brand;
+        if (!isPd) errors.push(`${at}.pd_connector: only a pd_cluster preset picks a KV transfer connector`);
+        else if (!c) errors.push(`${at}.pd_connector: unknown connector "${s.pd_connector}"`);
+        else if (c.brands?.length && !c.brands.includes(brand)) errors.push(`${at}.pd_connector: ${s.pd_connector} doesn't run on ${p.hardware} (${c.brands.join(" / ")} only)`);
+        else if (s.pd_router && !(c.routers || ["vllm"]).includes(s.pd_router)) errors.push(`${at}.pd_connector: ${s.pd_connector} doesn't work behind pd_router ${s.pd_router}`);
+      }
       if (s.frontend !== undefined) {
         if (!frontends.includes(s.frontend)) errors.push(`${at}.frontend: unknown frontend "${s.frontend}"`);
         else if (recipe.model?.[`${s.frontend}_frontend`] === "unsupported") errors.push(`${at}.frontend: ${s.frontend} is unsupported by this recipe`);
