@@ -547,7 +547,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       const n = parseInt(urlN, 10);
       if (n === 1 && multi) return 2;
       if (n > 1 && initialHw && multiNodeUnavailable(recipe, strategies, initialHw, v, initialHwId)) return 1;
-      return [1, 2].includes(n) ? n : 1;
+      // Any count up to MAX_NODES: a preset can select one beyond 2 (a lane at
+      // four trays), and the reconcile effect below snaps a count that isn't
+      // among this hardware's options back.
+      return Number.isInteger(n) && n >= 1 && n <= MAX_NODES ? n : 1;
     }
     return multi ? 2 : 1;
   });
@@ -1212,12 +1215,22 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // instead of the last one reverting the others.
   const pendingQs = useRef(null);
   useEffect(() => { pendingQs.current = null; }, [searchParams]);
+  const activeStrategyRef = useRef(activeStrategy);
+  activeStrategyRef.current = activeStrategy;
   const syncUrl = useCallback(
     (updates) => {
       const sp = new URLSearchParams(pendingQs.current ?? searchParams.toString());
       for (const [k, v] of Object.entries(updates)) {
         if (v && v !== "default" && v !== recommended) sp.set(k, v);
         else sp.delete(k);
+      }
+      // A preset belongs to one strategy, and the recommended strategy (which
+      // the URL otherwise omits) depends on the node count a preset may set:
+      // a link naming a preset names its strategy too, or reloading it can
+      // land on another strategy (and that strategy's default preset).
+      if (sp.get("preset") && !sp.get("strategy")) {
+        const s = updates.strategy || activeStrategyRef.current;
+        if (s) sp.set("strategy", s);
       }
       const qs = sp.toString();
       pendingQs.current = qs;
