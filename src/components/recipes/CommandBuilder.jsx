@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import { publishSelection, onPresetRequest } from "@/lib/selection-store";
@@ -1181,6 +1181,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // Publish the selection for the sections below the builder (This
   // configuration / Tuned presets / Troubleshooting filter on it).
   const selectedPreset = result?.preset?.selected ?? null;
+  // A preset can run DEP on part of the node (`--data-parallel-size 2`);
+  // say so the way the TP hint does.
+  const depWidth = isSingleNode && activeStrategy === "single_node_dep" && Array.isArray(result?.argv)
+    ? lastIntFlag(result.argv, "--data-parallel-size", hwGpuCount)
+    : hwGpuCount;
+  const showDepUsageHint = depWidth < hwGpuCount;
   useEffect(() => {
     publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features, preset: selectedPreset });
   }, [recipe.hf_id, hwId, activeStrategy, variant, features, selectedPreset]);
@@ -2563,6 +2569,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                     : `This recipe runs on ${effectiveTp} of ${hwGpuCount} GPUs on the selected node — add`}
                   <code className="font-mono mx-1 px-1 py-0.5 rounded bg-foreground/5 text-[10px]">--tensor-parallel-size N</code>
                   via Advanced to scale up.
+                </p>
+              )}
+              {showDepUsageHint && (
+                <p className="text-[11px] text-muted-foreground/80 pt-1.5">
+                  This command runs DP={depWidth} on {depWidth} of {hwGpuCount} GPUs on the selected node; give each
+                  server its own GPUs to run several per node.
                 </p>
               )}
             </div>
