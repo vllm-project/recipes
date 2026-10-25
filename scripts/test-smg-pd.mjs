@@ -166,6 +166,20 @@ test("Dynamo workers use Dynamo parser flags for tool calling and reasoning", ()
   assert.ok(!withoutFeatures.prefill.argv.includes("--dyn-reasoning-parser"));
 });
 
+test("Dynamo parser mapping does not consume a following flag as a value", () => {
+  const model = structuredClone(read("models/moonshotai/Kimi-K3.yaml"));
+  model.features.tool_calling.args = ["--tool-call-parser", "--max-num-seqs", "4"];
+  model.features.reasoning.args = ["--reasoning-parser", "--max-model-len", "16384"];
+  const result = resolve({ model, router: "dynamo" });
+  for (const role of ["prefill", "decode"]) {
+    const argv = result[role].argv;
+    assert.equal(flag(argv, "--max-num-seqs"), "4");
+    assert.equal(flag(argv, "--max-model-len"), "16384");
+    assert.ok(!argv.includes("--dyn-tool-call-parser"));
+    assert.ok(!argv.includes("--dyn-reasoning-parser"));
+  }
+});
+
 const grpcModels = [
   ["moonshotai/Kimi-K3", "kimi_k3", "kimi_k3"],
   ["MiniMaxAI/MiniMax-M3", "minimax_m3", "minimax_m3"],

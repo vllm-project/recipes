@@ -1086,15 +1086,19 @@ function dynamoParserArgs(args) {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--enable-auto-tool-choice") continue;
-    if (arg === "--tool-call-parser") {
-      if (!hasToolParser) out.push("--dyn-tool-call-parser", args[i + 1]);
+    if (arg === "--tool-call-parser" || arg === "--reasoning-parser") {
+      const parser = args[i + 1];
+      if (parser === undefined || (typeof parser === "string" && parser.startsWith("-"))) {
+        if (arg === "--reasoning-parser") out.push(arg);
+        continue;
+      }
+      if (arg === "--tool-call-parser") {
+        if (!hasToolParser) out.push("--dyn-tool-call-parser", parser);
+      } else {
+        out.push(arg, parser);
+        if (!hasReasoningParser) out.push("--dyn-reasoning-parser", parser);
+      }
       i++;
-      continue;
-    }
-    if (arg === "--reasoning-parser") {
-      const parser = args[++i];
-      out.push(arg, parser);
-      if (!hasReasoningParser) out.push("--dyn-reasoning-parser", parser);
       continue;
     }
     out.push(arg);
