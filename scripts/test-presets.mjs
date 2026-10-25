@@ -263,6 +263,26 @@ test("select.kv_offload accepts only known options", () => {
   assert.match(String(withKv("kv_store_typo_mooncake")), /kv_offload/);
 });
 
+test("tp sets the single-node TP size; points can change it", () => {
+  const r = {
+    ...structuredClone(lane),
+    presets: {
+      tp: {
+        label: "TP", hardware: "b200", strategy: "single_node_tp", variants: ["nvfp4"], default: true, tp: 4,
+        points: { a: { label: "A" }, b: { label: "B", tp: 2 } },
+      },
+    },
+  };
+  const tpOf = (variant, point, preset) => flagValue(resolveCommand(r, variant, "single_node_tp", "b200", [], strategies, taxonomy,
+    [], 1, null, {}, null, null, undefined, null, "http", null, preset, point).argv, "--tensor-parallel-size");
+  assert.equal(tpOf("nvfp4", "a"), "4");
+  assert.equal(tpOf("nvfp4", "b"), "2");
+  // Baseline keeps the auto-fit TP (the NVFP4 fixture fits one GPU).
+  assert.equal(tpOf("nvfp4", "a", BASELINE), "1");
+  // Another variant keeps its own TP: the preset only mounts onto the variants it covers.
+  assert.equal(tpOf("default", "a"), tpOf("default", "a", BASELINE));
+});
+
 test("preset validation: points, select, arg ops and variants", () => {
   const errs = (presets) => validatePresets({ ...lane, presets }, taxonomy, ["single_node_tp", "pd_cluster"]);
   assert.deepEqual(errs(lane.presets), []);
@@ -276,6 +296,10 @@ test("preset validation: points, select, arg ops and variants", () => {
   assert.ok(one({ json_args: { "--x": "1" } }).some((e) => /must be an object/.test(e)));
   assert.ok(one({ points: { a: { label: "a", default: true }, b: { label: "b", default: true } } }).some((e) => /more than one default point/.test(e)));
   assert.ok(one({ points: { a: { label: "a", roles: { decode: {} } } } }).some((e) => /only a pd_cluster preset has roles/.test(e)));
+  assert.ok(errs({ a: { label: "a", hardware: "b200", strategy: "pd_cluster", tp: 4 } }).some((e) => /only a single_node_tp preset sets tp/.test(e)));
+  assert.ok(one({ tp: 99 }).some((e) => /exceeds/.test(e)));
+  assert.ok(one({ select: { nodes: 2 } }).some((e) => /only a multi_node_\* preset sets the node count/.test(e)));
+  assert.ok(one({ points: { a: { label: "a", tp: 99 } } }).some((e) => /exceeds/.test(e)));
 });
 
 test("an overlay adds only presets for its own hardware, and split moves them back", () => {

@@ -436,6 +436,8 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
     }
   }
   const selKv = sel.kv_offload && sel.kv_offload !== "off" ? sel.kv_offload : null;
+  // A multi-node preset's node count, as the builder applies it.
+  if (Number.isInteger(sel.nodes) && strategies[strategy]?.deploy_type === "multi_node") nodeCount = sel.nodes;
   let result;
   try {
     result = resolveCommand(
