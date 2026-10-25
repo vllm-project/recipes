@@ -273,9 +273,10 @@ guide: |
   - **Hardware**: 8x H200
   - **vLLM**: >= 0.18.0
 
-  ## Launching the Server
-  ```bash
-  vllm serve deepseek-ai/DeepSeek-V3.2 --tensor-parallel-size 8 ...
+  ## Client Usage
+  ```python
+  client.chat.completions.create(model="deepseek-ai/DeepSeek-V3.2", messages=[...],
+      extra_body={"chat_template_kwargs": {"thinking": True}})
   ```
 
   ## References

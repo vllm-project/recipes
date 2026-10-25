@@ -150,7 +150,8 @@ function mountKeyed(raw, hwId, value) {
   return map;
 }
 
-function mountLayer(block, delta) {
+function mountLayer(block, delta = {}) {
+  delta = delta || {};
   const next = { ...(block || {}) };
   const args = concat(next.extra_args, delta.args);
   const env = assign(next.extra_env, delta.env);
@@ -178,7 +179,7 @@ export function withPreset(recipe, key, hwId, strategyName, opts = {}) {
     r.hardware_overrides = { ...(r.hardware_overrides || {}) };
     r.hardware_overrides[hwId] = mountLayer(r.hardware_overrides[hwId], delta);
     for (const k of ["nodes", "parallelism"]) {
-      const v = mountKeyed(r[k], hwId, delta[k]);
+      const v = mountKeyed(r[k], hwId, delta?.[k]);
       if (v !== undefined) r[k] = v;
     }
     so[role] = r;

@@ -1593,7 +1593,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       else syncUrl({ preset: pick ?? "", point: "" });
       return;
     }
-    const def = result?.preset?.options.find((p) => p.default)?.key ?? "baseline";
+    const def = result?.preset?.options?.find((p) => p.default)?.key ?? "baseline";
     const next = key === def ? null : key;
     setPresetPick(next);
     setPointPick(null);
