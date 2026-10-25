@@ -1077,6 +1077,31 @@ function stripArgs(args, flags) {
   return out;
 }
 
+// Dynamo's worker launcher accepts vLLM engine arguments, but chat parser
+// options live in Dynamo's own CLI. Keep the engine reasoning parser too.
+function dynamoParserArgs(args) {
+  const hasToolParser = args.includes("--dyn-tool-call-parser");
+  const hasReasoningParser = args.includes("--dyn-reasoning-parser");
+  const out = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--enable-auto-tool-choice") continue;
+    if (arg === "--tool-call-parser") {
+      if (!hasToolParser) out.push("--dyn-tool-call-parser", args[i + 1]);
+      i++;
+      continue;
+    }
+    if (arg === "--reasoning-parser") {
+      const parser = args[++i];
+      out.push(arg, parser);
+      if (!hasReasoningParser) out.push("--dyn-reasoning-parser", parser);
+      continue;
+    }
+    out.push(arg);
+  }
+  return out;
+}
+
 // Wrap values containing shell-special chars in single quotes so the rendered
 // command is paste-safe. Without this, JSON values like
 // `{"cudagraph_mode":"FULL_AND_PIECEWISE"}` trigger brace expansion and get
@@ -1762,7 +1787,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       out = applyPresetArgOps(out, ops.all, editOnly);
       if (roleOverride) out = applyPresetArgOps(out, ops.roles?.[roleOverride], editOnly);
     }
-    return out;
+    return dynamo ? dynamoParserArgs(out) : out;
   }
 
   // Helper to merge env

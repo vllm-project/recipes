@@ -146,6 +146,26 @@ test("native and Dynamo selections retain their existing behavior", () => {
   assert.equal(resolve({ strategy: "single_node_tp" }).registration, undefined);
 });
 
+test("Dynamo workers use Dynamo parser flags for tool calling and reasoning", () => {
+  const model = read("models/moonshotai/Kimi-K3.yaml");
+  const dynamo = resolve({ model, router: "dynamo" });
+  const native = resolve({ model, router: "vllm" });
+  for (const role of ["prefill", "decode"]) {
+    const argv = dynamo[role].argv;
+    assert.equal(flag(argv, "--dyn-tool-call-parser"), "kimi_k3");
+    assert.equal(flag(argv, "--reasoning-parser"), "kimi_k3");
+    assert.equal(flag(argv, "--dyn-reasoning-parser"), "kimi_k3");
+    assert.ok(!argv.includes("--enable-auto-tool-choice"));
+    assert.ok(!argv.includes("--tool-call-parser"));
+    assert.ok(native[role].argv.includes("--enable-auto-tool-choice"));
+    assert.equal(flag(native[role].argv, "--tool-call-parser"), "kimi_k3");
+    assert.ok(!native[role].argv.includes("--dyn-tool-call-parser"));
+  }
+  const withoutFeatures = resolve({ model, router: "dynamo", features: [] });
+  assert.ok(!withoutFeatures.prefill.argv.includes("--dyn-tool-call-parser"));
+  assert.ok(!withoutFeatures.prefill.argv.includes("--dyn-reasoning-parser"));
+});
+
 const grpcModels = [
   ["moonshotai/Kimi-K3", "kimi_k3", "kimi_k3"],
   ["MiniMaxAI/MiniMax-M3", "minimax_m3", "minimax_m3"],
