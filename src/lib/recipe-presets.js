@@ -244,12 +244,33 @@ function applyJsonEdit(value, edit, flag) {
 }
 
 /**
+ * Flags a toggle owns: every flag a recipe feature (args, modes, hardware
+ * overrides) or a KV Offload option emits. Whether such a flag is on the
+ * command is the toggle's call, so a preset only edits it (`select` is how a
+ * preset turns the toggle on).
+ */
+export function toggleOwnedFlags(recipe, taxonomy) {
+  const flags = new Set();
+  const add = (list) => (list || []).forEach((t) => typeof t === "string" && t.startsWith("--") && flags.add(normFlag(t)));
+  const addHo = (ho) => Object.values(ho || {}).forEach((o) => add(o?.args));
+  for (const f of Object.values(recipe?.features || {})) {
+    add(f?.args);
+    addHo(f?.hardware_overrides);
+    for (const m of Object.values(f?.modes || {})) { add(m?.args); addHo(m?.hardware_overrides); }
+  }
+  for (const o of Object.values(taxonomy?.kv_offload || {})) add(o?.args);
+  return flags;
+}
+
+/**
  * Apply a preset's `remove_args` and `json_args` to a raw arg list. Flags match
  * with `_` and `-` treated alike. `json_args` edits the LAST occurrence of the
  * flag (the one last-wins dedupe keeps); a flag that isn't there yet is added
- * with the edit as its value.
+ * with the edit as its value, unless it is in `editOnly` (toggleOwnedFlags):
+ * spec decoding switched off must not leave a `--speculative-config` holding
+ * only the preset's tweak.
  */
-export function applyPresetArgOps(args, ops) {
+export function applyPresetArgOps(args, ops, editOnly) {
   if (!ops) return args;
   let out = args;
   if (ops.remove_args?.length) {
@@ -268,7 +289,7 @@ export function applyPresetArgOps(args, ops) {
     if (at >= 0) {
       out = [...out];
       out[at + 1] = applyJsonEdit(out[at + 1], edit, flag);
-    } else {
+    } else if (!editOnly?.has(want)) {
       out = [...out, flag, applyJsonEdit(undefined, edit, flag)];
     }
   }

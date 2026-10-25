@@ -1,4 +1,4 @@
-import { applyPresetArgOps, effectivePreset, matchingPresets, presetImage, presetPoints, resolvePresetKey, withPreset } from "./recipe-presets.js";
+import { applyPresetArgOps, effectivePreset, toggleOwnedFlags, matchingPresets, presetImage, presetPoints, resolvePresetKey, withPreset } from "./recipe-presets.js";
 
 /**
  * Core command synthesis: Recipe + Variant + Strategy + Hardware + Features → vllm serve command.
@@ -1752,8 +1752,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     //    (e.g. num_speculative_tokens inside --speculative-config).
     const ops = recipe._presetOps;
     if (ops) {
-      out = applyPresetArgOps(out, ops.all);
-      if (roleOverride) out = applyPresetArgOps(out, ops.roles?.[roleOverride]);
+      const editOnly = toggleOwnedFlags(recipe, taxonomy);
+      out = applyPresetArgOps(out, ops.all, editOnly);
+      if (roleOverride) out = applyPresetArgOps(out, ops.roles?.[roleOverride], editOnly);
     }
     return out;
   }
