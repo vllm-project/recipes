@@ -415,7 +415,7 @@ function pickPdNodes(hwProfile, variant, baseRecipe, strategies, hwId, presetPic
 // alongside the pip-mode command/argv. The `features` argument controls
 // command synthesis but is intentionally NOT echoed back in the output —
 // agents read the actual args from `command`/`argv`.
-function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, strategies, taxonomy, pdNodes = null, kvOffload = null, presetPick = undefined, pointPick = undefined) {
+function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, strategies, taxonomy, pdNodes = null, kvOffload = null, presetPick = undefined, pointPick = undefined, strict = false) {
   // The preset in effect (the default here unless one is picked) implies
   // builder choices — frontend, PD router, features, DCP, KV offload — which
   // the rendering applies the way the builder does.
@@ -439,6 +439,9 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
       presetPick, pointPick
     );
   } catch (e) {
+    // A preset is authored config with nothing to fall back to: fail the build
+    // (and the source repo's PR check) rather than drop its rendering.
+    if (strict) throw new Error(`Invalid preset ${presetPick}${pointPick ? ` at point ${pointPick}` : ""} in ${recipe.hf_id} (${hwId} / ${strategy}): ${e.message}`);
     console.warn(`  ⚠ command synthesis failed for ${recipe.hf_id} / ${variantKey} / ${strategy}: ${e.message}`);
     return null;
   }
@@ -942,7 +945,7 @@ function writePresetRenderings(recipe, hfId, strategies, taxonomy) {
       } else if (deploy === "multi_node") {
         nc = Math.max(2, nodesForStrategy(recipe, strategy, hwProfile.gpu_count, hwId));
       }
-      const rendered = renderCommand(recipe, variantKey, strategy, hwId, nc, feats, strategies, taxonomy, pdNodes, null, key, pt?.key);
+      const rendered = renderCommand(recipe, variantKey, strategy, hwId, nc, feats, strategies, taxonomy, pdNodes, null, key, pt?.key, true);
       if (!rendered) continue;
       out[pt?.key || "default"] = { ...(pt ? { label: pt.label, ...(pt.concurrency ? { concurrency: pt.concurrency } : {}) } : {}), ...rendered };
     }

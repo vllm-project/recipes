@@ -203,6 +203,9 @@ test("remove_args drops inherited flags; json_args edits keys inside JSON flags,
   const base = laneRender("nvfp4", "single_node_tp", BASELINE);
   assert.equal(flagValue(base.argv, "--block-size"), "256");
   assert.equal(JSON.parse(flagValue(base.argv, "--speculative-config")).num_speculative_tokens, 2);
+  // A json_args edit on a flag whose value isn't JSON is an error, not a skip.
+  assert.throws(() => applyPresetArgOps(["--block-size", "128"], { json_args: { "--block-size": { x: 1 } } }), /not a JSON object/);
+  assert.throws(() => applyPresetArgOps(["--kv-cache-dtype", "fp8"], { json_args: { "--kv-cache-dtype": { x: 1 } } }), /not a JSON object/);
   // Unit level: `_` and `-` match alike, and only the last occurrence is edited.
   assert.deepEqual(
     applyPresetArgOps(["--block_size", "1", "--x-cfg", '{"a":1}', "--x_cfg", '{"a":2}'], { remove_args: ["--block-size"], json_args: { "--x-cfg": { b: 3 } } }),

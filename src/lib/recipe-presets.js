@@ -220,8 +220,10 @@ function applyJsonEdit(value, edit, flag) {
     try {
       base = JSON.parse(value);
     } catch {
-      throw new Error(`json_args: ${flag} value is not JSON: ${value}`);
+      base = undefined;
     }
+    // Only a JSON object can take key edits (`128` or `"fp8"` parse as JSON too).
+    if (!isObj(base)) throw new Error(`json_args: ${flag} value is not a JSON object: ${value}`);
   }
   const prune = (o) => {
     if (!isObj(o)) return o;
