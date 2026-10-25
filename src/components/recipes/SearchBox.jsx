@@ -130,12 +130,14 @@ export function SearchBox({ recipes }) {
           onBlur={() => setTimeout(() => setFocused(false), 200)}
           onKeyDown={handleKeyDown}
           aria-label="Search models or providers"
-          className="w-full rounded-lg border border-border bg-background pl-8 sm:pl-9 pr-2 sm:pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-vllm-blue/40"
+          className="w-full rounded-lg border border-border bg-background pl-8 sm:pl-9 pr-2 sm:pr-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-vllm-blue/40"
         />
         {/* Responsive placeholder: a native `placeholder` can't change with the
-            viewport, and on a phone the header leaves room for one word. */}
+            viewport, and on a phone the header leaves room for one word.
+            16px text below `sm`: iOS Safari zooms the page into any input
+            under 16px on focus. */}
         {!query && (
-          <span className="absolute left-8 sm:left-9 right-2 sm:right-3 top-1/2 -translate-y-1/2 flex items-center gap-2 text-sm text-muted-foreground pointer-events-none whitespace-nowrap overflow-hidden">
+          <span className="absolute left-8 sm:left-9 right-2 sm:right-3 top-1/2 -translate-y-1/2 flex items-center gap-2 text-base sm:text-sm text-muted-foreground pointer-events-none whitespace-nowrap overflow-hidden">
             <span className="sm:hidden">Search</span>
             <span className="hidden sm:inline truncate">Search models or providers...</span>
             <kbd className="hidden sm:inline ml-auto font-sans text-xs">⌘K</kbd>
@@ -144,7 +146,9 @@ export function SearchBox({ recipes }) {
       </div>
 
       {showDropdown && (
-        <div className="absolute top-full mt-1 left-0 right-0 bg-card border border-border rounded-lg shadow-lg overflow-hidden z-50">
+        // On a phone the input is a narrow slot in the header, so the results
+        // span the screen just below the (sticky) header instead of the input.
+        <div className="fixed inset-x-4 top-[4.25rem] max-h-[calc(100dvh-5rem)] overflow-y-auto sm:absolute sm:inset-x-0 sm:top-full sm:mt-1 sm:max-h-none sm:overflow-hidden bg-card border border-border rounded-lg shadow-lg z-50">
           {!query.trim() && (
             <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground bg-muted/30 border-b border-border">
               Latest
