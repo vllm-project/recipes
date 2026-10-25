@@ -16,7 +16,7 @@ meta:
     - "deepseek-ai/DeepSeek-V4-Pro"
   default_hardware: gb200
   hardware:
-    ascend_910c: verified
+    ascend_910c: supported
     h100: verified
     h200: verified
     b200: verified
@@ -189,10 +189,6 @@ variants:
     description: "Launch checkpoint (2026-09-09), superseded by 1017 — kept for reproducing earlier results. Same mixed MXFP4/MXFP8 format."
     hardware_overrides: *v41_flash_hw_overrides
 
-  ascend_w8a8:
-    precision: w8a8
-    vram_minimum_gb: 916
-    description: "Auto-generated variant, please review."
 compatible_strategies:
   - single_node_tp
   - single_node_tep
