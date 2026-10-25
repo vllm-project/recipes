@@ -2767,8 +2767,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               </ConfigRow>
             );
           })()}
-          {result?.preset?.point && result.preset.point.options.length > 1 && (
-            <ConfigRow label="Point" nested hint="The preset's qualified operating points, e.g. one per client concurrency. Each renders its own settings.">
+          {result?.preset?.point && result.preset.point.options.length > 1 && (() => {
+            // Points are usually one per client concurrency; name the row after
+            // it when every point declares one, else keep the generic name
+            // (e.g. eval vs throughput arms).
+            const byConcurrency = result.preset.point.options.every((pt) => Number.isInteger(pt.concurrency));
+            return (
+            <ConfigRow
+              label={byConcurrency ? "Concurrency" : "Point"}
+              nested
+              hint={byConcurrency
+                ? "Client concurrency the preset was qualified at. Each renders its own settings."
+                : "The preset's qualified operating points. Each renders its own settings."}
+            >
               <PillGroup>
                 {result.preset.point.options.map((pt) => (
                   <Pill key={pt.key} active={result.preset.point.selected === pt.key} pressed={result.preset.point.selected === pt.key}
@@ -2782,7 +2793,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 return pt?.description ? <p className="text-[11px] text-muted-foreground mt-2 leading-snug">{pt.description}</p> : null;
               })()}
             </ConfigRow>
-          )}
+            );
+          })()}
 
           {/* PD Router — which orchestrator fronts the prefill/decode pools.
               Nested under Strategy: it only exists for pd_cluster and never

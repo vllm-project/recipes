@@ -35,7 +35,7 @@ recipe YAML ─► loader ─► command-synthesis ─► CommandBuilder / Verif
 guide markdown ──────────────────────► Guide tab: recipe-wide prose and reference links
 notes[] (with `when`) ───────────────► callout in the command block, for matching selections
 troubleshooting[] ───────────────────► Troubleshooting tab, matching entries first
-presets (tuned/benchmark configs) ───► Preset + Point rows, Presets tab, /<org>/<repo>/presets/*.json
+presets (tuned/benchmark configs) ───► Preset + Concurrency/Point rows, Presets tab, /<org>/<repo>/presets/*.json
 ```
 
 The builder renders the command. Nothing that it can render belongs in the guide: no
