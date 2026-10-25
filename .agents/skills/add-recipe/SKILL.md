@@ -220,7 +220,8 @@ some variants). Field reference: the `presets` entry in SCHEMA.md.
   feature emitted; `json_args` changes keys inside a JSON flag (`num_speculative_tokens`
   in `--speculative-config`, capture sizes in `--compilation-config`, sizes in
   `--kv-transfer-config`; `null` deletes a key). Don't restate a whole JSON value or add
-  "undo" flags.
+  "undo" flags. An edit to a feature's or KV Offload option's flag applies only while
+  that toggle is on, so pair it with `select` when the lane needs the toggle.
 - **`image`** pins what the lane ran: the vLLM image (with digest), Dynamo commit, extra
   pip packages, model revision.
 - **`runbook`** is prose: evidence (measured numbers, golden acceptance lengths),

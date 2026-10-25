@@ -206,6 +206,11 @@ test("remove_args drops inherited flags; json_args edits keys inside JSON flags,
   const base = laneRender("nvfp4", "single_node_tp", BASELINE);
   assert.equal(flagValue(base.argv, "--block-size"), "256");
   assert.equal(JSON.parse(flagValue(base.argv, "--speculative-config")).num_speculative_tokens, 2);
+  // A toggle-owned flag is only edited: spec decoding off leaves no partial
+  // --speculative-config, while a flag nothing toggles is still added.
+  const off = laneRender("nvfp4", "single_node_tp", undefined, undefined, []);
+  assert.equal(off.argv.includes("--speculative-config"), false);
+  assert.deepEqual(JSON.parse(flagValue(off.argv, "--compilation-config")), { cudagraph_capture_sizes: [1, 2] });
   // A json_args edit on a flag whose value isn't JSON is an error, not a skip.
   assert.throws(() => applyPresetArgOps(["--block-size", "128"], { json_args: { "--block-size": { x: 1 } } }), /not a JSON object/);
   assert.throws(() => applyPresetArgOps(["--kv-cache-dtype", "fp8"], { json_args: { "--kv-cache-dtype": { x: 1 } } }), /not a JSON object/);
