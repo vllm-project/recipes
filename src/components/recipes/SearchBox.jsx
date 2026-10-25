@@ -171,8 +171,19 @@ export function SearchBox({ recipes }) {
   );
 }
 
+function ProviderLogo({ org }) {
+  const logo = getProviderLogo(org);
+  return logo ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={logo} alt="" width={22} height={22} className={`rounded shrink-0 ${getProviderLogoClass(org)}`} />
+  ) : (
+    <div className="w-[22px] h-[22px] rounded bg-muted flex items-center justify-center shrink-0">
+      <Building2 size={12} className="text-muted-foreground" />
+    </div>
+  );
+}
+
 function ProviderResult({ entry, active, onClick }) {
-  const logo = getProviderLogo(entry.org);
   return (
     <button
       onMouseDown={onClick}
@@ -180,14 +191,7 @@ function ProviderResult({ entry, active, onClick }) {
         active ? "bg-muted border-vllm-blue" : "border-transparent hover:bg-muted/50"
       }`}
     >
-      {logo ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={logo} alt="" width={22} height={22} className={`rounded shrink-0 ${getProviderLogoClass(entry.org)}`} />
-      ) : (
-        <div className="w-[22px] h-[22px] rounded bg-muted flex items-center justify-center">
-          <Building2 size={12} className="text-muted-foreground" />
-        </div>
-      )}
+      <ProviderLogo org={entry.org} />
       <div className="flex-1 min-w-0">
         <div className="font-medium truncate flex items-center gap-2">
           {entry.displayName}
@@ -244,6 +248,7 @@ function RecipeResult({ entry, active, onClick }) {
         active ? "bg-muted border-vllm-blue" : "border-transparent hover:bg-muted/50"
       }`}
     >
+      <ProviderLogo org={r.hf_org} />
       <div className="flex-1 min-w-0">
         <div className="font-medium truncate font-mono text-[13px]">
           {r.hf_repo || r.meta.title}
