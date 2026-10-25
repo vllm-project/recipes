@@ -7,7 +7,7 @@ import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
-import { resolvePresetKey, withPreset } from "@/lib/recipe-presets";
+import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import { publishSelection, onPresetRequest } from "@/lib/selection-store";
 import { holdInPlace } from "@/lib/hold-in-place";
 import { whenMatches } from "@/lib/recipe-context";
@@ -925,7 +925,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       0,
       ...effectiveCompatibleStrategies(recipe).map((s) => nodesForStrategy(recipe, s, perNode, hwId)),
     );
-    return needed > 2 && needed <= MAX_NODES ? [1, 2, needed] : [1, 2];
+    // Node counts this GPU's presets select (a lane at 4 nodes) are options
+    // too, or the reconcile effect below would snap them back.
+    const presetNodes = Object.values(recipe.presets || {})
+      .filter((p) => p.hardware === hwId)
+      .flatMap((p) => [p.select?.nodes, ...presetPoints(p).map((pt) => pt.select?.nodes)])
+      .filter((n) => Number.isInteger(n) && n > 2 && n <= MAX_NODES);
+    const base = needed > 2 && needed <= MAX_NODES ? [1, 2, needed] : [1, 2];
+    return [...new Set([...base, ...presetNodes])].sort((a, b) => a - b);
   }, [recipe, perNode, hwId]);
 
   const compatibleStrategies = useMemo(() => {
@@ -1112,9 +1119,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // variant TP number/map, a recipe-wide strategy override, or the auto-fit
   // from `variant.vram_minimum_gb` vs per-GPU VRAM.
   const hwGpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 1;
+  // The preset (at its point) may set the single-node TP size.
+  const presetTpRecipe = useMemo(
+    () => withPreset(recipe, resolvePresetKey(recipe, hwId, activeStrategy, presetPick, variant), hwId, activeStrategy, { variantKey: variant, point: pointPick }),
+    [recipe, hwId, activeStrategy, presetPick, variant, pointPick]
+  );
   const effectiveTp = resolveSingleNodeTp(
-    recipe,
-    currentVariant,
+    presetTpRecipe,
+    presetTpRecipe.variants?.[variant] || currentVariant,
     hwProfile,
     activeStrategy,
     hwId,
@@ -1681,6 +1693,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
         setFeatureModes(modes);
         updates.fmode = featureModesToUrl(modes, variant);
       }
+    }
+    if (activeSelect.nodes !== undefined && !linked("nodes") && activeStrategy?.startsWith("multi_node_")) {
+      setNodeCount(activeSelect.nodes);
+      updates.nodes = String(activeSelect.nodes);
     }
     if (activeSelect.dcp !== undefined && !linked("dcp")) {
       setDcpSize(activeSelect.dcp);

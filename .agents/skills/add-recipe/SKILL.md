@@ -211,7 +211,9 @@ some variants). Field reference: the `presets` entry in SCHEMA.md.
 - **Shared flags on the preset, per-point values in `points`.** One point per measured
   operating point (client concurrency, or arms such as eval vs throughput), keyed by an
   id (`c16`, `c24_1p2d`, `eval`) because concurrency values repeat; `concurrency` is
-  informational. Write explicit values — no formulas (`2 × C`), no ranges.
+  informational. Write explicit values — no formulas (`2 × C`), no ranges. A point
+  may change the single-node TP size (`tp`) or, under multi_node_*, the node count
+  (`select.nodes`); a different strategy or variant is a different preset.
 - **Builder choices go in `select`** (PD router, frontend, features and their modes,
   DCP, KV offload), never in prose ("pick Dynamo, untick Tool calling").
 - **Change inherited config precisely:** `remove_args` drops a flag a base layer or

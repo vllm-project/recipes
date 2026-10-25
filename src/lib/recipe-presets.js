@@ -13,7 +13,9 @@
 //       default: true              # applied unless the user picks Baseline
 //       source: { label, href, key, revision }
 //       image: "vllm/vllm-openai:…"  # or { vllm, dynamo, pip: [], model_revision }
+//       tp: 4                      # single_node_tp only: TP size on this GPU
 //       select:                    # builder choices the preset implies
+//         nodes: 2                 # multi_node_* only: node count
 //         pd_router: dynamo
 //         frontend: python
 //         features: { tool_calling: false, spec_decoding: dspark }
@@ -32,7 +34,7 @@
 //       runbook: |                 # prose only: evidence, reproduction, limits
 //
 // A point has the preset's own delta fields (args, env, remove_args,
-// json_args, roles, select, image) and layers on top of it, so the preset
+// json_args, roles, select, image, tp) and layers on top of it, so the preset
 // holds what every point shares. A point can't change the hardware, strategy
 // or variants: that is another preset.
 //
@@ -113,7 +115,7 @@ function mergeDelta(a = {}, b = {}) {
   if (env) out.env = env;
   if (remove) out.remove_args = remove;
   if (json) out.json_args = json;
-  for (const k of ["nodes", "parallelism"]) if (b[k] !== undefined) out[k] = b[k];
+  for (const k of ["nodes", "parallelism", "tp"]) if (b[k] !== undefined) out[k] = b[k];
   return out;
 }
 
@@ -193,13 +195,18 @@ export function withPreset(recipe, key, hwId, strategyName, opts = {}) {
   // The preset's engine image pins the docker command on this GPU, for the
   // variants it covers (exact variant × GPU image, which computeDockerMeta
   // already prefers over model- and brand-wide images).
+  // The preset's single-node TP size becomes the exact-GPU entry of the
+  // variant `tp` map, which resolveSingleNodeTp already prefers.
   const image = presetImage(p.image)?.vllm;
-  if (image) {
+  const tp = strategyName === "single_node_tp" && Number.isInteger(p.tp) ? p.tp : null;
+  if (image || tp) {
     out.variants = { ...(recipe.variants || {}) };
     for (const vk of raw.variants?.length ? raw.variants : Object.keys(out.variants)) {
-      const v = out.variants[vk];
+      let v = out.variants[vk];
       if (!v) continue;
-      out.variants[vk] = { ...v, hardware_overrides: { ...(v.hardware_overrides || {}), [hwId]: { ...(v.hardware_overrides?.[hwId] || {}), docker_image: image } } };
+      if (image) v = { ...v, hardware_overrides: { ...(v.hardware_overrides || {}), [hwId]: { ...(v.hardware_overrides?.[hwId] || {}), docker_image: image } } };
+      if (tp) v = { ...v, tp: mountKeyed(v.tp, hwId, tp) };
+      out.variants[vk] = v;
     }
   }
   return out;
@@ -319,7 +326,18 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = []) 
         errors.push(`${at}.kv_offload: unknown option "${s.kv_offload}"`);
       }
     };
+    const gpus = taxonomy?.hardware_profiles?.[p.hardware]?.gpu_count;
+    const checkTopology = (d, at) => {
+      if (d?.tp !== undefined) {
+        if (p.strategy !== "single_node_tp") errors.push(`${at}.tp: only a single_node_tp preset sets tp`);
+        else if (gpus && d.tp > gpus) errors.push(`${at}.tp: ${d.tp} exceeds ${p.hardware}'s ${gpus} GPUs`);
+      }
+      if (d?.select?.nodes !== undefined && !String(p.strategy || "").startsWith("multi_node_")) {
+        errors.push(`${at}.select.nodes: only a multi_node_* preset sets the node count`);
+      }
+    };
     checkDelta(p, where);
+    checkTopology(p, where);
     checkSelect(p.select, `${where}.select`);
     for (const [role, d] of Object.entries(p.roles || {})) checkDelta(d, `${where}.roles.${role}`);
     const points = presetPoints(p);
@@ -328,6 +346,7 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = []) 
       const at = `${where}.points.${pt.key}`;
       if (pt.roles && !isPd) errors.push(`${at}.roles: only a pd_cluster preset has roles`);
       checkDelta(pt, at);
+      checkTopology(pt, at);
       checkSelect(pt.select, `${at}.select`);
       for (const [role, d] of Object.entries(pt.roles || {})) checkDelta(d, `${at}.roles.${role}`);
     }

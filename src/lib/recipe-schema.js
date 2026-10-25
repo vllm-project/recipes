@@ -254,6 +254,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
         const role = obj({ ...delta, nodes: { type: "integer", minimum: 1 }, parallelism: pdMode });
         const roles = obj({ prefill: role, decode: role });
         const select = obj({
+          nodes: { type: "integer", minimum: 1 },
           pd_router: { enum: ["vllm", "dynamo", "smg"] },
           frontend: { enum: frontends },
           features: keyed({ type: "string" }, { anyOf: [{ type: "boolean" }, { type: "string" }] }, "true/false toggles a feature; a string picks that mode (and turns it on)"),
@@ -270,6 +271,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
           description: { type: "string" },
           default: { type: "boolean" },
           ...delta,
+          tp: { type: "integer", minimum: 1 },
           roles,
           select,
           image,
@@ -283,6 +285,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
           description: { type: "string" },
           default: { type: "boolean" },
           ...delta,
+          tp: { type: "integer", minimum: 1 },
           roles,
           select,
           image,
