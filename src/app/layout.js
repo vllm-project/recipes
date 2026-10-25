@@ -105,7 +105,7 @@ export default async function RootLayout({ children }) {
       <body className="antialiased bg-background text-foreground min-h-screen flex flex-col">
         {/* Global header */}
         <header className="border-b border-border bg-background/95 backdrop-blur-sm sticky top-0 z-30">
-          <div className="max-w-[1480px] mx-auto px-4 sm:px-6 h-16 flex items-center gap-4">
+          <div className="max-w-[1480px] mx-auto px-4 sm:px-6 h-16 flex items-center gap-3 sm:gap-4">
             <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity group shrink-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
