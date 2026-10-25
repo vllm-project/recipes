@@ -3783,7 +3783,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
               </span>
             )}
           </div>
-          <div className="flex items-center justify-between px-4 pt-2 gap-3">
+          <div className="flex flex-wrap items-center justify-between px-4 pt-2 gap-x-3 gap-y-2">
             <CommandTabs
               tabs={[
                 ...preCompanions.map((c) => ({ id: c.feature, label: c.label })),
@@ -3797,7 +3797,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
           </div>
         </>
       ) : (
-        <div className="flex items-center justify-between px-4 pt-3 gap-3">
+        <div className="flex flex-wrap items-center justify-between px-4 pt-3 gap-x-3 gap-y-2">
           {statusHeader || (
             <span className="text-[11px] text-[var(--command-fg)]/55 font-mono">
               {configSummary}
@@ -4088,8 +4088,8 @@ function DependenciesBlock({ deps }) {
   const optionalCount = deps.length - requiredCount;
   return (
     <div className="rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border">
-      <div className="flex items-center justify-between px-4 pt-3">
-        <span className="text-[11px] text-[var(--command-fg)]/50 font-mono inline-flex items-center gap-1.5">
+      <div className="flex items-center justify-between px-4 pt-3 gap-3">
+        <span className="text-[11px] text-[var(--command-fg)]/50 font-mono flex flex-wrap items-center gap-x-1.5 whitespace-nowrap">
           <Package size={11} /> extra install
           {requiredCount > 0 && <span className="text-[var(--command-fg)]/40">· {requiredCount} required</span>}
           {optionalCount > 0 && <span className="text-[var(--command-fg)]/40">· {optionalCount} optional</span>}
@@ -4100,9 +4100,9 @@ function DependenciesBlock({ deps }) {
         {deps.map((d, i) => (
           <div key={i} className={d.optional ? "opacity-50" : undefined}>
             {d.note && (
-              <div className="text-[var(--command-fg)]/45 text-[11px] leading-snug mb-0.5 inline-flex items-center gap-1.5">
+              <div className="text-[var(--command-fg)]/45 text-[11px] leading-snug mb-0.5">
                 {d.optional && (
-                  <span className="inline-flex items-center rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wider bg-foreground/10 text-[var(--command-fg)]/60">
+                  <span className="inline-flex items-center rounded px-1 py-px mr-1.5 align-[1px] text-[9px] font-semibold uppercase tracking-wider bg-foreground/10 text-[var(--command-fg)]/60">
                     Optional
                   </span>
                 )}
@@ -4152,9 +4152,9 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
           </span>
         )}
       </div>
-      <div className="flex items-center justify-between px-4 pt-2">
+      <div className="flex flex-wrap items-center justify-between px-4 pt-2 gap-x-3 gap-y-2">
         <CommandTabs tabs={tabs} current={active.id} onSelect={setTab} />
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           <CopyButton text={fullScript} />
           <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={active.id !== "head"} disabledNote="Clients connect to the head node — cURL & Bench live on the Head tab." />
           <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={active.id !== "head"} disabledNote="Clients connect to the head node — cURL & Bench live on the Head tab." />
@@ -4243,7 +4243,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           </span>
         )}
       </div>
-      <div className="flex items-center justify-between px-4 pt-2 gap-3">
+      <div className="flex flex-wrap items-center justify-between px-4 pt-2 gap-x-3 gap-y-2">
         <CommandTabs tabs={tabs} current={active.id} onSelect={setTab} />
         <div className="flex items-center gap-1.5 shrink-0">
           <CopyButton text={fullScript} />
@@ -4410,7 +4410,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
           </span>
         )}
       </div>
-      <div className="flex items-center justify-between px-4 pt-2 gap-3">
+      <div className="flex flex-wrap items-center justify-between px-4 pt-2 gap-x-3 gap-y-2">
         <CommandTabs tabs={tabs} current={active.id} onSelect={setTab} />
         <div className="flex items-center gap-1.5 shrink-0">
           <CopyButton text={fullScript} />

@@ -215,6 +215,9 @@ html.dark .shiki span {
 .guide-content a {
   color: var(--color-vllm-blue);
   text-decoration: none;
+  /* Long URLs / image tags have no break points; without this one token
+     widens the whole page on a phone. */
+  overflow-wrap: anywhere;
 }
 .guide-content a:hover {
   text-decoration: underline;
@@ -251,6 +254,7 @@ html.dark .shiki span {
   color: var(--code-fg);
   padding: 0.15em 0.4em;
   border-radius: 4px;
+  overflow-wrap: anywhere;
 }
 
 .guide-content pre {
@@ -265,6 +269,7 @@ html.dark .shiki span {
 }
 
 .guide-content pre code {
+  overflow-wrap: normal;
   background: none;
   color: inherit;
   padding: 0;
@@ -279,11 +284,15 @@ html.dark .shiki span {
   margin-bottom: 0.75rem;
 }
 
+.guide-content .guide-table {
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+
 .guide-content table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.875rem;
-  margin-bottom: 1rem;
 }
 
 .guide-content th {

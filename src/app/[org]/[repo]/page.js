@@ -323,15 +323,21 @@ function HeadingLink({ id }) {
   );
 }
 
-const guideHeadings = Object.fromEntries(
-  ["h1", "h2", "h3", "h4", "h5", "h6"].map((Tag) => [Tag, function GuideHeading({ id, children }) {
-    return <Tag id={id}>{children}{id && <HeadingLink id={id} />}</Tag>;
-  }])
-);
+const guideComponents = {
+  ...Object.fromEntries(
+    ["h1", "h2", "h3", "h4", "h5", "h6"].map((Tag) => [Tag, function GuideHeading({ id, children }) {
+      return <Tag id={id}>{children}{id && <HeadingLink id={id} />}</Tag>;
+    }])
+  ),
+  // A wide table scrolls inside its own box instead of widening the page on a phone.
+  table: function GuideTable({ children }) {
+    return <div className="guide-table"><table>{children}</table></div>;
+  },
+};
 
 function GuideMarkdown({ children, prefix = "" }) {
   return (
-    <Markdown remarkPlugins={guideRemarkPlugins} rehypePlugins={guideRehypePluginsFor(prefix)} components={guideHeadings}>
+    <Markdown remarkPlugins={guideRemarkPlugins} rehypePlugins={guideRehypePluginsFor(prefix)} components={guideComponents}>
       {children}
     </Markdown>
   );
