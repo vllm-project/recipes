@@ -3,16 +3,19 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import yaml from "js-yaml";
+import Ajv from "ajv";
 import { pdRoleNodes, pdRoleParallelism, resolveCommand } from "../src/lib/command-synthesis.js";
+import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import { contentDir } from "../src/lib/content-root.js";
 import { applyOverlay, resolveScope, splitOverlay } from "../src/lib/overlay-merge.js";
 import { BASELINE, applyPresetArgOps, effectivePreset, presetSelect, resolvePresetKey, validatePresets, withPreset } from "../src/lib/recipe-presets.js";
 
 const read = (file) => yaml.load(fs.readFileSync(path.join(contentDir(), file), "utf8"));
 const taxonomy = read("taxonomy.yaml");
-const strategies = Object.fromEntries(fs.readdirSync(path.join(contentDir(), "strategies"))
+// Serving strategies plus the KV-store deployments, merged as the build does.
+const strategies = Object.fromEntries(["strategies", "kv_store"].flatMap((dir) => fs.readdirSync(path.join(contentDir(), dir))
   .filter((file) => file.endsWith(".yaml"))
-  .map((file) => { const s = read(`strategies/${file}`); return [s.name, s]; }));
+  .map((file) => { const s = read(`${dir}/${file}`); return [s.name, s]; })));
 
 function yamlFiles(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -237,6 +240,27 @@ test("pd_cluster points change role args, topology and role JSON edits", () => {
   assert.equal(flagValue(r.decode.argv, "--max-num-seqs"), "64");
   assert.equal(JSON.parse(flagValue(r.decode.argv, "--compilation-config")).mode, 3);
   assert.equal(r.prefill.argv.includes("--max-num-seqs"), false);
+});
+
+test("a point's image fields layer over the preset's", () => {
+  const p = { image: { vllm: "img:1", dynamo: "d1" }, points: { a: { label: "a", image: { dynamo: "d2" } }, b: { label: "b", image: "img:2" } } };
+  assert.deepEqual(effectivePreset(p, "a").image, { vllm: "img:1", dynamo: "d2" });
+  assert.deepEqual(effectivePreset(p, "b").image, { vllm: "img:2", dynamo: "d1" });
+});
+
+test("select.kv_offload accepts only known options", () => {
+  const kvIds = Object.values(strategies).filter((st) => st.deploy_type === "kv_store_lb").map((st) => st.name);
+  assert.ok(kvIds.length > 0);
+  const errs = (kv) => validatePresets({ ...lane, presets: { a: { label: "a", hardware: "b200", strategy: "single_node_tp", select: { kv_offload: kv } } } },
+    taxonomy, ["single_node_tp", "pd_cluster"], kvIds);
+  assert.deepEqual(errs(kvIds[0]), []);
+  assert.deepEqual(errs(Object.keys(taxonomy.kv_offload)[0]), []);
+  assert.deepEqual(errs("off"), []);
+  assert.ok(errs("kv_store_typo_mooncake").some((e) => /unknown option/.test(e)));
+  const validate = new Ajv({ allErrors: true, strict: false }).compile(buildRecipeSchema({ taxonomy, strategies }));
+  const withKv = (kv) => validate({ ...structuredClone(lane), meta: { title: "t", slug: "t", provider: "p", description: "d", date_added: "2026-01-01", date_updated: "2026-01-01", tasks: ["text"] },
+    presets: { a: { label: "a", hardware: "b200", select: { kv_offload: kv } } } }) || validate.errors.map((e) => e.instancePath).join(",");
+  assert.match(String(withKv("kv_store_typo_mooncake")), /kv_offload/);
 });
 
 test("preset validation: points, select, arg ops and variants", () => {

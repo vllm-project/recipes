@@ -119,6 +119,7 @@ export default async function RecipePage({ params, searchParams }) {
     key, label: p.label, hardware: p.hardware, strategy: p.strategy || null, workload: p.workload || null,
     description: p.description || null, default: !!p.default, source: p.source || null,
     variants: (p.variants || []).map((v) => recipe.variants?.[v]?.label || recipe.variants?.[v]?.precision?.toUpperCase() || v),
+    variantKeys: p.variants || [],
     points: Object.entries(p.points || {}).map(([k, pt]) => ({ key: k, label: pt.label, concurrency: pt.concurrency ?? null })),
     image: typeof p.image === "string" ? { vllm: p.image } : (p.image || null),
     runbook: p.runbook ? <GuideMarkdown prefix={`preset-${key}-`}>{p.runbook}</GuideMarkdown> : null,

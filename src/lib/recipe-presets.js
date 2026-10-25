@@ -125,7 +125,9 @@ export function effectivePreset(preset, pointKey) {
   if (!pt) return preset;
   const out = { ...mergeDelta(preset, pt), point: key };
   out.select = pt.select ? deepMerge(preset.select || {}, pt.select) : preset.select;
-  if (pt.image) out.image = pt.image;
+  // A point's image fields layer over the preset's (a point may pin only a
+  // different Dynamo commit and keep the preset's vLLM image).
+  if (pt.image) out.image = { ...(presetImage(preset.image) || {}), ...presetImage(pt.image) };
   if (preset.roles || pt.roles) {
     out.roles = {};
     for (const role of ROLES) {
@@ -269,7 +271,7 @@ export function applyPresetArgOps(args, ops) {
 // ── Validation ──────────────────────────────────────────────────────────────
 
 /** Build-time checks the JSON Schema can't express. Returns error strings. */
-export function validatePresets(recipe, taxonomy, strategyIds) {
+export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = []) {
   const errors = [];
   const seenDefault = new Map();
   const frontends = Object.keys(taxonomy?.frontends || {});
@@ -313,7 +315,7 @@ export function validatePresets(recipe, taxonomy, strategyIds) {
         else if (typeof v === "string" && !feat.modes?.[v]) errors.push(`${at}.features.${f}: no mode "${v}"`);
       }
       if (s.kv_offload !== undefined && s.kv_offload !== false && s.kv_offload !== "off"
-          && !taxonomy?.kv_offload?.[s.kv_offload] && !String(s.kv_offload).startsWith("kv_store_")) {
+          && !taxonomy?.kv_offload?.[s.kv_offload] && !kvStoreIds.includes(s.kv_offload)) {
         errors.push(`${at}.kv_offload: unknown option "${s.kv_offload}"`);
       }
     };

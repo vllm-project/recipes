@@ -22,7 +22,7 @@ import path from "path";
 import yaml from "js-yaml";
 import Ajv from "ajv";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
-import { presetImage, presetPoints, presetSelect, resolvePresetKey, validatePresets, withPreset } from "../src/lib/recipe-presets.js";
+import { BASELINE, effectivePreset, presetImage, presetPoints, presetSelect, resolvePresetKey, validatePresets, withPreset } from "../src/lib/recipe-presets.js";
 import { validateContextEntries } from "../src/lib/recipe-context.js";
 import {
   pickDefaultHardware,
@@ -394,8 +394,13 @@ function dockerize(command, argv, env, dockerMeta, port = null) {
 // matching what the builder renders.
 function pickPdNodes(hwProfile, variant, baseRecipe, strategies, hwId, presetPick = undefined, pointPick = undefined, variantKey = undefined) {
   // The pd_cluster preset this rendering bakes in may own the pools' topology.
-  const recipe = withPreset(baseRecipe, resolvePresetKey(baseRecipe, hwId, "pd_cluster", presetPick, variantKey), hwId, "pd_cluster", { variantKey, point: pointPick });
-  if (pdFitsSingleNode(hwProfile, variant, hwId)) return null;
+  const presetKey = resolvePresetKey(baseRecipe, hwId, "pd_cluster", presetPick, variantKey);
+  const recipe = withPreset(baseRecipe, presetKey, hwId, "pd_cluster", { variantKey, point: pointPick });
+  // A preset that sizes a pool explicitly gets dedicated pools even where two
+  // copies would fit one node, as the builder renders it.
+  const eff = presetKey !== BASELINE && baseRecipe.presets?.[presetKey] ? effectivePreset(baseRecipe.presets[presetKey], pointPick) : null;
+  const presetSizesPools = ["prefill", "decode"].some((r) => eff?.roles?.[r]?.nodes != null);
+  if (!presetSizesPools && pdFitsSingleNode(hwProfile, variant, hwId)) return null;
   const nodeVram = typeof hwProfile?.vram_gb === "number" ? hwProfile.vram_gb : 0;
   const modelVram = variantVramMinimumGb(variant, hwId);
   if (nodeVram <= 0 || modelVram <= 0) return null;
@@ -661,7 +666,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
 
   // PD's node-count is independent of nodeCount — it lives in pdNodes per role.
   const recommendedPdNodes = recommendedStrategy === "pd_cluster"
-    ? pickPdNodes(hwProfile, variant, recipe, strategies, hwId)
+    ? pickPdNodes(hwProfile, variant, recipe, strategies, hwId, undefined, undefined, variantKey)
     : null;
   if (recommendedPdNodes === "skip") return null;
 
@@ -699,7 +704,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     let servingStrategy = s;
     let kvOffload = null;
     if (s === "pd_cluster") {
-      pdNodes = pickPdNodes(hwProfile, variant, recipe, strategies, hwId);
+      pdNodes = pickPdNodes(hwProfile, variant, recipe, strategies, hwId, undefined, undefined, variantKey);
       if (pdNodes === "skip") continue;
       nc = 1;
     } else if (strategies[s]?.deploy_type === "kv_store_lb") {
@@ -969,6 +974,9 @@ function writePresetRenderings(recipe, hfId, strategies, taxonomy) {
   return written;
 }
 
+// KV-store deployment ids a preset's `select.kv_offload` may name.
+const kvStoreIds = Object.keys(strategies).filter((id) => strategies[id]?.deploy_type === "kv_store_lb");
+
 const recipes = [];
 const promotedIndexEntries = [];
 let promotedCount = 0;
@@ -979,7 +987,7 @@ for (const file of findYamlFiles(modelsDir)) {
   validateFeatureModes(r, file);
   validateFrontends(r, file, taxonomy);
   validateHardwareKeys(r, file, taxonomy, strategies);
-  const presetErrors = validatePresets(r, taxonomy, effectiveCompatibleStrategies(r));
+  const presetErrors = validatePresets(r, taxonomy, effectiveCompatibleStrategies(r), kvStoreIds);
   if (presetErrors.length) throw new Error(`Invalid presets in ${sourceRel(file)}:\n  - ${presetErrors.join("\n  - ")}`);
   const contextErrors = validateContextEntries(r);
   if (contextErrors.length) throw new Error(`Invalid notes/troubleshooting in ${sourceRel(file)}:\n  - ${contextErrors.join("\n  - ")}`);

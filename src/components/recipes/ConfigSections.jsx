@@ -71,7 +71,9 @@ function Runbook({ preset }) {
 
 function PresetCard({ hfId, p, hardware, strategyLabels, active }) {
   const id = `preset-${p.key}`;
-  const builderHref = `?hardware=${p.hardware}${p.strategy ? `&strategy=${p.strategy}` : ""}&preset=${p.key}#recipe-builder`;
+  // The no-JS / new-tab path: a variant-scoped preset needs its variant in the
+  // link, or the builder opens on `default` and rejects the preset.
+  const builderHref = `?hardware=${p.hardware}${p.variantKeys?.[0] ? `&variant=${p.variantKeys[0]}` : ""}${p.strategy ? `&strategy=${p.strategy}` : ""}&preset=${p.key}#recipe-builder`;
   // Apply in the builder without moving the reader: they are often comparing
   // presets here, so the feedback is this card turning "In use" with a
   // "View command" link, not a jump to the builder. The href stays as the

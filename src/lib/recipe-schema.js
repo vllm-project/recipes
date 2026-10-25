@@ -258,7 +258,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
           frontend: { enum: frontends },
           features: keyed({ type: "string" }, { anyOf: [{ type: "boolean" }, { type: "string" }] }, "true/false toggles a feature; a string picks that mode (and turns it on)"),
           dcp: { type: "integer", minimum: 1 },
-          kv_offload: { anyOf: [{ type: "string" }, { const: false }] },
+          kv_offload: { enum: [...kvOffload, ...kvStores, "off", false] },
         });
         const image = { anyOf: [
           { type: "string" },
