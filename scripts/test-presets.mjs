@@ -288,6 +288,28 @@ test("tp sets the single-node TP size; points can change it", () => {
   assert.equal(tpOf("default", "a"), tpOf("default", "a", BASELINE));
 });
 
+test("a DEP preset narrowed below the node also narrows the router", () => {
+  const r = {
+    ...structuredClone(lane),
+    compatible_strategies: ["single_node_dep"],
+    presets: {
+      dep: {
+        label: "DEP", hardware: "b200", strategy: "single_node_dep", default: true, args: ["--data-parallel-size", "2"],
+        points: { a: { label: "A" }, b: { label: "B", args: ["--data-parallel-size", "4"] } },
+      },
+    },
+  };
+  const at = (point, preset) => {
+    const res = resolveCommand(r, "default", "single_node_dep", "b200", [], strategies, taxonomy,
+      [], 1, null, {}, null, null, undefined, null, "http", null, preset, point);
+    const router = res.companions.find((c) => c.feature === "strategy:single_node_dep").command;
+    return [flagValue(res.argv, "--data-parallel-size"), router.match(/--intra-node-data-parallel-size (\d+)/)[1]];
+  };
+  assert.deepEqual(at("a"), ["2", "2"]);
+  assert.deepEqual(at("b"), ["4", "4"]);
+  assert.deepEqual(at("a", BASELINE), ["8", "8"]);
+});
+
 test("preset validation: points, select, arg ops and variants", () => {
   const errs = (presets) => validatePresets({ ...lane, presets }, taxonomy, ["single_node_tp", "pd_cluster"]);
   assert.deepEqual(errs(lane.presets), []);

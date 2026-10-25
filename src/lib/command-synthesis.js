@@ -917,18 +917,24 @@ function localModelMount(modelId) {
     : [];
 }
 
-// Port to publish, read off the command's own `--port` so a strategy that
-// serves behind a router (on 8100) stays reachable from the host.
-function servedPort(tokens, fallback = 8000) {
+// The value a command actually runs with for an integer flag: the last
+// occurrence wins, as in dedupeArgs.
+export function lastIntFlag(tokens, flag, fallback) {
   for (let i = tokens.length - 1; i >= 0; i--) {
     const t = tokens[i];
     if (typeof t !== "string") continue;
-    const raw = t === "--port" ? tokens[i + 1] : t.startsWith("--port=") ? t.slice(7) : null;
+    const raw = t === flag ? tokens[i + 1] : t.startsWith(`${flag}=`) ? t.slice(flag.length + 1) : null;
     if (raw == null) continue;
     const v = Number(raw);
     if (Number.isInteger(v) && v > 0) return v;
   }
   return fallback;
+}
+
+// Port to publish, read off the command's own `--port` so a strategy that
+// serves behind a router (on 8100) stays reachable from the host.
+function servedPort(tokens, fallback = 8000) {
+  return lastIntFlag(tokens, "--port", fallback);
 }
 
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
@@ -2330,8 +2336,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       command: String(kvOpt.companion.command).trimEnd(),
     });
   }
-  // `{dp_size}` resolves against the same gpuCount the DP flag was emitted
-  // with, `{port}` against the port the engine actually serves on.
+  // `{dp_size}` and `{port}` resolve against what the engine actually runs
+  // with: a preset may narrow DEP below the node (`--data-parallel-size 2`),
+  // and a strategy may serve behind the router on another port.
   if (strategy.companion?.command && deployType === "single_node") {
     companions.push({
       feature: `strategy:${strategyName}`,
@@ -2342,7 +2349,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         strategy.companion.install ? `Requires: ${strategy.companion.install}` : "",
       ].filter(Boolean).join(" ").trim(),
       command: String(strategy.companion.command)
-        .replace(/\{dp_size\}/g, String(gpuCount))
+        .replace(/\{dp_size\}/g, String(lastIntFlag(singleArgs, "--data-parallel-size", gpuCount)))
         .replace(/\{port\}/g, String(servedPort(singleArgs)))
         .trimEnd(),
     });
