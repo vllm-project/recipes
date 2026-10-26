@@ -129,6 +129,18 @@ compatible_strategies:
   - multi_node_tep
   - pd_cluster
 
+strategy_hardware:
+  pd_cluster:
+    ascend_950dt: unsupported
+  multi_node_tp:
+    ascend_950dt: unsupported
+  multi_node_tp_pp:
+    ascend_950dt: unsupported
+  multi_node_dep:
+    ascend_950dt: unsupported
+  multi_node_tep:
+    ascend_950dt: unsupported
+
 hardware_overrides:
   blackwell:
     extra_args:
@@ -403,6 +415,8 @@ guide: |
 
   - [Kimi-K2.6 on Hugging Face](https://huggingface.co/moonshotai/Kimi-K2.6)
   - [NVIDIA Kimi-K2.6-NVFP4 on Hugging Face](https://huggingface.co/nvidia/Kimi-K2.6-NVFP4)
+  - [Kimi-K2.6 on ModelScope](https://www.modelscope.cn/models/moonshotai/Kimi-K2.6)
+  - [Eco-Tech Kimi-K2.6-W4A8 on ModelScope](https://www.modelscope.cn/models/Eco-Tech/Kimi-K2.6-w4a8)
   - [vLLM multimodal inputs guide](https://docs.vllm.ai/en/latest/features/multimodal_inputs.html)
   - [vLLM Expert Parallelism docs](https://docs.vllm.ai/en/latest/serving/expert_parallel_deployment.html)
   - [vLLM NixlConnector usage guide](https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html)
