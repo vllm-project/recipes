@@ -162,3 +162,66 @@ test("a role override that pins another connector keeps it, and the pick falls b
   assert.match(r.kvConnector.unavailableReason, /prefill command .* sets its own --kv-transfer-config/);
   assert.doesNotMatch(r.router.command, /moriio/);
 });
+
+test("the Ascend router rewrites both pools to vllm-ascend external DP + MooncakeHybridConnector", () => {
+  // Read the repo's own copy, not the assembled tree: once a recipe is synced
+  // to the vllm-project/vllm source the local copy defers to it, so the A3
+  // pool overrides under test travel with this repo's PR first.
+  const ds = yaml.load(fs.readFileSync(path.resolve("models/deepseek-ai/DeepSeek-V4-Flash.yaml"), "utf8"));
+  const r = resolveCommand(ds, "ascend_w8a8", "pd_cluster", "ascend_910c", [], strategies, taxonomy, [], 1, pools, {}, null, null, undefined, "ascend");
+  assert.equal(r.orchestrator, "ascend");
+  // Prefill pool (A3 Mooncake PD layout: dp4 x tp4): the external-DP
+  // rendezvous takes rank + rpc-port, and the HTTP port moves to 7100.
+  assert.equal(flag(r.prefill.argv, "--tensor-parallel-size"), "4");
+  assert.equal(flag(r.prefill.argv, "--data-parallel-size"), "4");
+  assert.equal(flag(r.prefill.argv, "--data-parallel-rank"), "0");
+  assert.equal(flag(r.prefill.argv, "--data-parallel-rpc-port"), "12321");
+  assert.equal(flag(r.prefill.argv, "--port"), "7100");
+  assert.deepEqual(JSON.parse(flag(r.prefill.argv, "--kv-transfer-config")), {
+    kv_connector: "MooncakeHybridConnector",
+    kv_role: "kv_producer",
+    kv_port: "36000",
+    engine_id: "0",
+    kv_connector_extra_config: { prefill: { dp_size: 4, tp_size: 4 }, decode: { dp_size: 16, tp_size: 1 } },
+  });
+  // Decode pool (dp16 x tp1).
+  assert.equal(flag(r.decode.argv, "--tensor-parallel-size"), "1");
+  assert.equal(flag(r.decode.argv, "--data-parallel-size"), "16");
+  const dcfg = JSON.parse(flag(r.decode.argv, "--kv-transfer-config"));
+  assert.equal(dcfg.kv_role, "kv_consumer");
+  assert.equal(dcfg.kv_port, "36100");
+  assert.equal(dcfg.engine_id, "1");
+  // A3 pool tuning (role hardware_overrides) overrides the GB200 vllm_args
+  // and the variant's single-node values via last-wins dedupe.
+  assert.equal(flag(r.prefill.argv, "--max-num-seqs"), "16");
+  assert.equal(flag(r.prefill.argv, "--max-num-batched-tokens"), "8192");
+  assert.equal(flag(r.decode.argv, "--max-num-seqs"), "60");
+  assert.equal(flag(r.decode.argv, "--max-num-batched-tokens"), "120");
+  assert.ok(JSON.parse(flag(r.prefill.argv, "--additional-config")).enable_dsa_cp);
+  assert.ok(JSON.parse(flag(r.decode.argv, "--additional-config")).recompute_scheduler_enable);
+  // NPU visibility replaces CUDA, NVIDIA NCCL knobs are dropped (HCCL has its
+  // own), decode runs HCCL_BUFFSIZE=1024 while prefill keeps the variant's 2560.
+  for (const role of ["prefill", "decode"]) {
+    assert.equal(r[role].env.ASCEND_RT_VISIBLE_DEVICES, "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15");
+    assert.equal(r[role].env.CUDA_VISIBLE_DEVICES, undefined);
+    assert.equal(r[role].env.VLLM_USE_NCCL_SYMM_MEM, undefined);
+    for (const k of Object.keys(r[role].env)) assert.ok(!k.startsWith("NCCL_"), `NCCL var leaked: ${k}`);
+  }
+  assert.equal(r.prefill.env.HCCL_BUFFSIZE, "2560");
+  assert.equal(r.decode.env.HCCL_BUFFSIZE, "1024");
+  // Scripts / Start_Server / proxy payloads carry the image-matching tag.
+  assert.ok(r.ascendScripts.launcher.includes("/blob/v0.23.0/"), "launcher tag must match the pulled image");
+  assert.ok(r.ascendScripts.proxy.includes("/blob/v0.23.0/"), "proxy tag must match the pulled image");
+  assert.ok(r.startServer.command.includes("launch_online_dp.py"));
+  assert.ok(r.router.command.includes("load_balance_proxy_server_example.py"));
+  assert.equal(r.router.link, r.ascendScripts.proxy);
+  // A connector pick (nixl / mooncake / moriio) must not leak into the Ascend
+  // router: the transfer config and env belong to the strategy alone.
+  const picked = resolveCommand(ds, "ascend_w8a8", "pd_cluster", "ascend_910c", [], strategies, taxonomy, [], 1,
+    pools, {}, null, null, undefined, "ascend", "http", null, undefined, undefined, "mooncake");
+  assert.equal(picked.kvConnector, null);
+  assert.equal(picked.prefill.env.VLLM_MOONCAKE_BOOTSTRAP_PORT, undefined);
+  assert.equal(picked.prefill.env.VLLM_NIXL_SIDE_CHANNEL_PORT, undefined);
+  assert.equal(picked.prefill.argv.filter((t) => t === "--kv-transfer-config").length, 1);
+  assert.equal(JSON.parse(flag(picked.prefill.argv, "--kv-transfer-config")).kv_connector, "MooncakeHybridConnector");
+});

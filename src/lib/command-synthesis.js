@@ -1413,9 +1413,23 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
 
   let smgGrpc = !!smg && pdTransport === "grpc";
 
+  // Ascend router: vllm-ascend's external-DP Mooncake disaggregation — same
+  // pools, but launch_online_dp.py starts one `vllm serve` per DP rank and a
+  // load-balance proxy fronts the cluster. Brand-gated like dynamo (the
+  // Mooncake transfer engine ships in vllm-ascend — Huawei only).
+  const ascend = strategy.deploy_type === "pd_cluster" && pdRouter === "ascend"
+      && isDynamoSupportedOnHardware(strategy.ascend, hwProfile)
+    ? strategy.ascend
+    : null;
+
   // PD KV transfer connector: the pick when this hardware and router can run
-  // it, else the default, with the reason surfaced as for the router.
-  let pdConnectorSel = strategy.deploy_type === "pd_cluster" ? pdConnectorKey(strategy, pdConnectorPick) : null;
+  // it, else the default, with the reason surfaced as for the router. The
+  // Ascend router owns its transfer config outright (MooncakeHybridConnector,
+  // whose extra config names both pools), so the nixl/mooncake/moriio
+  // vocabulary neither applies nor may leak its config or env into those
+  // commands.
+  let pdConnectorSel = strategy.deploy_type === "pd_cluster" && !ascend
+    ? pdConnectorKey(strategy, pdConnectorPick) : null;
   let pdConnectorUnavailable = null;
   if (pdConnectorSel && pdConnectorPick && pdConnectorSel === pdConnectorPick) {
     pdConnectorUnavailable = pdConnectorUnavailableReason(strategy.connectors[pdConnectorSel], hwProfile,
@@ -1485,6 +1499,42 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     return (dcpState = { sizes: allowed, baseline, selected, tp: tps });
   }
   dcpOut.get = getDcp;
+
+  // Per-pool PD topology, shared by the arg builder (Ascend external-DP flags
+  // + Mooncake's cross-pool sizes) and the return payload's role meta: nodes,
+  // parallelism mode, tp/dp_local/dp_size, and which node's command is being
+  // rendered. Pure function of the recipe/strategy/UI state — hoisted here so
+  // buildArgsRaw can call it before the pd_cluster return block runs.
+  function pdRoleMeta(role) {
+    const soRoleCfg = recipe.strategy_overrides?.[strategyName]?.[role] || {};
+    const roleCfg = strategy[role] || {};
+    const legacyNodes = nodeCount > 1 ? 1 : 0;
+    const raw = pdNodes ? pdNodes[role] : undefined;
+    const pdRole =
+      typeof raw === "number" ? { nodes: raw }
+      : (raw && typeof raw === "object") ? raw
+      : {};
+    const nodes = typeof pdRole.nodes === "number" ? pdRole.nodes : legacyNodes;
+    let parallelism = pdRole.parallelism || pdRoleParallelism(recipe, strategy, role, hwProfile, hwProfileId);
+    // Same pool_modes snap as buildArgs, so the router / endpoints agree
+    // with the pool commands (e.g. pool_modes: [dep] → intra-node DP > 1).
+    const allowedPoolModes = pdPoolModes(recipe);
+    if (!allowedPoolModes.includes(parallelism)) parallelism = allowedPoolModes[0];
+    const poolGpus = nodes === 0 ? Math.floor(gpuCount / 2) : nodes * gpuCount;
+    const tp = parallelism === "dep"
+      ? (pdRoleValue(recipe, role, "tp", hwProfile, hwProfileId) || roleCfg.tp || 1)
+      : poolGpus;
+    const dpLocal = parallelism === "dep" ? Math.max(1, Math.floor(gpuCount / tp)) : 0;
+    const dpSize = parallelism === "dep" ? Math.max(1, nodes) * dpLocal : 1;
+    // `currentNode` = which node of the DEP pool this command is for
+    // (0..nodes-1). Stored in pdRole.rank for backward-compat with the
+    // earlier rank-selector UI; now semantically a node index.
+    const nodesInPool = Math.max(1, nodes);
+    const currentNode = Math.max(0, Math.min(nodesInPool - 1, pdRole.rank ?? 0));
+    const startRank = currentNode * dpLocal;
+    return { nodes, parallelism, tp, dpLocal, dpSize, poolGpus, currentNode, startRank };
+  }
+
   function buildArgs(roleOverride, nodeRole, nodeRank = 1) {
     const args = buildArgsRaw(roleOverride, nodeRole, nodeRank);
     const dcp = getDcp();
@@ -1643,7 +1693,33 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const allowedPoolModes = pdPoolModes(recipe);
       if (!allowedPoolModes.includes(parallelism)) parallelism = allowedPoolModes[0];
 
-      if (parallelism === "dep") {
+      if (ascend) {
+        // Ascend router: launch_online_dp.py starts one `vllm serve` per DP
+        // rank with vLLM's external-DP rendezvous (rank + rpc-port, not the
+        // internal size-local/start-rank pair), and KV transfer rides the
+        // MooncakeHybridConnector, whose extra config names BOTH pools'
+        // dp/tp sizes so prefill and decode workers find each other. Pushed
+        // after the native connector config above — the last-wins dedupe
+        // swaps NIXL out.
+        const meta = pdRoleMeta(roleKey);
+        args.push("--tensor-parallel-size", String(meta.tp));
+        args.push("--data-parallel-size", String(meta.dpSize));
+        args.push("--data-parallel-rank", String(meta.startRank));
+        args.push("--data-parallel-address", `$${roleKey.toUpperCase()}_NODE_1`);
+        args.push("--data-parallel-rpc-port", String(ascend.dp_rpc_port ?? 12321));
+        args.push("--port", String(ascend.vllm_start_port ?? 7100));
+        const ascRole = ascend[roleKey] || {};
+        args.push("--kv-transfer-config", JSON.stringify({
+          kv_connector: ascend.kv_connector || "MooncakeHybridConnector",
+          kv_role: roleKey === "prefill" ? "kv_producer" : "kv_consumer",
+          kv_port: String(ascRole.kv_port ?? (roleKey === "prefill" ? "36000" : "36100")),
+          engine_id: String(ascRole.engine_id ?? (roleKey === "prefill" ? "0" : "1")),
+          kv_connector_extra_config: {
+            prefill: { dp_size: pdRoleMeta("prefill").dpSize, tp_size: pdRoleMeta("prefill").tp },
+            decode: { dp_size: pdRoleMeta("decode").dpSize, tp_size: pdRoleMeta("decode").tp },
+          },
+        }));
+      } else if (parallelism === "dep") {
         // Data-parallel + expert-parallel pool (Kimi-K2.5 GB200 pattern).
         // One `vllm serve` per NODE. vLLM spawns `--data-parallel-size-local`
         // ranks internally per node; the leader node starts at rank 0 and
@@ -1907,10 +1983,13 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       Object.assign(env, kvStoreStrat.vllm?.env || {});
     }
 
-    // PD: pin GPUs per role via CUDA_VISIBLE_DEVICES.
+    // PD: pin GPUs per role via CUDA_VISIBLE_DEVICES — or, under the Ascend
+    // router, ASCEND_RT_VISIBLE_DEVICES (the NPU equivalent; launch_online_dp.py
+    // carves each rank's subset out of it).
     // With per-role `nodes` (new model):
     //   nodes >= 1 → this role owns whole node(s), list all local GPUs
     //   nodes === 0 (legacy co-located half) → split 0..N/2-1 / N/2..N-1
+    let npuVisibility = null;
     if (strategy.deploy_type === "pd_cluster" && roleOverride) {
       const raw = pdNodes ? pdNodes[roleOverride] : undefined;
       const pdRoleObj =
@@ -1920,10 +1999,19 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const legacyNodes = nodeCount > 1 ? 1 : 0;
       const rolePoolNodes =
         typeof pdRoleObj.nodes === "number" ? pdRoleObj.nodes : legacyNodes;
+      const setVisibility = (ids) => {
+        if (ascend) {
+          npuVisibility = ids;
+          env.ASCEND_RT_VISIBLE_DEVICES = ids;
+          delete env.CUDA_VISIBLE_DEVICES;
+        } else {
+          env.CUDA_VISIBLE_DEVICES = ids;
+        }
+      };
       if (rolePoolNodes >= 1) {
         // Dedicated node(s) — each node owns all its local GPUs. Same value
         // is correct whether the pool is DEP (vllm spawns local ranks) or TP.
-        env.CUDA_VISIBLE_DEVICES = Array.from({ length: gpuCount }, (_, i) => i).join(",");
+        setVisibility(Array.from({ length: gpuCount }, (_, i) => i).join(","));
         // Cross-node NCCL/GLOO for this role only kicks in when the role
         // spans 2+ nodes. Single-node roles use NIXL for cross-role transfer
         // and don't need socket-iface hints.
@@ -1938,7 +2026,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
           const ids = roleOverride === "prefill"
             ? Array.from({ length: half }, (_, i) => i)
             : Array.from({ length: gpuCount - half }, (_, i) => half + i);
-          env.CUDA_VISIBLE_DEVICES = ids.join(",");
+          setVisibility(ids.join(","));
         }
       }
     }
@@ -2038,6 +2126,23 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     } else {
       Object.assign(env, taxonomy.frontends?.[resolveFrontend(recipe, frontend, taxonomy)]?.env);
     }
+
+    // Ascend router: re-assert the NPU visibility AFTER every override layer —
+    // a generation-keyed npu extra_env written for single-node mixed serving
+    // (e.g. ASCEND_RT_VISIBLE_DEVICES="0,1,2,3" of 8) must not shrink a
+    // dedicated PD pool node that owns the full set. NCCL_* knobs that leaked
+    // in from the NVIDIA-tuned pd_cluster env (strategy YAML or recipe
+    // strategy_overrides) are dead weight on HCCL — drop them here so the
+    // NPU command carries only the connector env it can actually use.
+    if (ascend && roleOverride) {
+      if (npuVisibility !== null) {
+        env.ASCEND_RT_VISIBLE_DEVICES = npuVisibility;
+        delete env.CUDA_VISIBLE_DEVICES;
+      }
+      for (const k of Object.keys(env)) {
+        if (k.startsWith("NCCL_") || k === "VLLM_USE_NCCL_SYMM_MEM") delete env[k];
+      }
+    }
     return env;
   }
 
@@ -2104,41 +2209,12 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     // (one local rank per GPU) so routing picks the right DP rank.
     const policy = strategy.router?.policy || "round_robin";
 
-    // Resolve per-role node counts + parallelism mode for the return payload
-    // so the UI can render "1 node" vs "4 nodes — duplicate for ranks 1..N-1"
-    // notices without rederiving the logic.
-    const roleMeta = (role) => {
-      const soRoleCfg = recipe.strategy_overrides?.[strategyName]?.[role] || {};
-      const roleCfg = strategy[role] || {};
-      const legacyNodes = nodeCount > 1 ? 1 : 0;
-      const raw = pdNodes ? pdNodes[role] : undefined;
-      const pdRole =
-        typeof raw === "number" ? { nodes: raw }
-        : (raw && typeof raw === "object") ? raw
-        : {};
-      const nodes = typeof pdRole.nodes === "number" ? pdRole.nodes : legacyNodes;
-      let parallelism = pdRole.parallelism || pdRoleParallelism(recipe, strategy, role, hwProfile, hwProfileId);
-      // Same pool_modes snap as buildArgs, so the router / endpoints agree
-      // with the pool commands (e.g. pool_modes: [dep] → intra-node DP > 1).
-      const allowedPoolModes = pdPoolModes(recipe);
-      if (!allowedPoolModes.includes(parallelism)) parallelism = allowedPoolModes[0];
-      const poolGpus = nodes === 0 ? Math.floor(gpuCount / 2) : nodes * gpuCount;
-      const tp = parallelism === "dep"
-        ? (soRoleCfg.tp || roleCfg.tp || 1)
-        : poolGpus;
-      const dpLocal = parallelism === "dep" ? Math.max(1, Math.floor(gpuCount / tp)) : 0;
-      const dpSize = parallelism === "dep" ? Math.max(1, nodes) * dpLocal : 1;
-      // `currentNode` = which node of the DEP pool this command is for
-      // (0..nodes-1). Stored in pdRole.rank for backward-compat with the
-      // earlier rank-selector UI; now semantically a node index.
-      const nodesInPool = Math.max(1, nodes);
-      const currentNode = Math.max(0, Math.min(nodesInPool - 1, pdRole.rank ?? 0));
-      const startRank = currentNode * dpLocal;
-      return { nodes, parallelism, tp, dpLocal, dpSize, poolGpus, currentNode, startRank };
-    };
-
-    const pMeta = roleMeta("prefill");
-    const dMeta = roleMeta("decode");
+    // Per-role node counts + parallelism mode come from the shared pdRoleMeta
+    // (hoisted above buildArgs) so the UI's "1 node" vs "4 nodes — duplicate
+    // for ranks 1..N-1" notices and the Ascend launch commands can never
+    // drift from what the arg builder emitted.
+    const pMeta = pdRoleMeta("prefill");
+    const dMeta = pdRoleMeta("decode");
     // Router endpoints: one per node (each node binds its own HTTP --port).
     // Shell-variable form ($PREFILL_NODE_N / $DECODE_NODE_N) so the same name
     // the prefill/decode commands consume is also what the router lists —
@@ -2184,6 +2260,71 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       `    --intra-node-data-parallel-size ${intraDp}`,
     ];
     const routerCommand = routerLines.join("\n");
+
+    // Ascend router extras — the Scripts / Start_Server / Start_Proxy tabs.
+    // Script links are pinned to the strategy YAML's `version` tag, the same
+    // revision as the quay.io/ascend/vllm-ascend image the recipes pull, so
+    // the staged scripts always match the container.
+    let ascendScripts = null;
+    let ascendStartServer = null;
+    let ascendProxy = null;
+    if (ascend) {
+      const toRaw = (blob) => (typeof blob === "string" && blob.includes("/blob/")
+        ? blob.replace("https://github.com", "https://raw.githubusercontent.com").replace("/blob/", "/")
+        : null);
+      const rpcPort = String(ascend.dp_rpc_port ?? 12321);
+      const startPort = ascend.vllm_start_port ?? 7100;
+      const launch = (m, prefix) =>
+        `python launch_online_dp.py --dp-size ${m.dpSize} --tp-size ${m.tp} --dp-size-local ${m.dpLocal} --dp-rank-start ${m.startRank} --dp-address $${prefix}_NODE_1 --dp-rpc-port ${rpcPort} --vllm-start-port ${startPort}`;
+      // One host entry per (node, local rank): the proxy pairs --prefiller/
+      // --decoder-hosts with -ports positionally (tutorial: "Example Proxy
+      // for Deployment").
+      const expandPool = (m, prefix) => {
+        const hosts = [], ports = [];
+        for (let n = 0; n < Math.max(1, m.nodes); n++) {
+          for (let r = 0; r < Math.max(1, m.dpLocal || 1); r++) {
+            hosts.push(`$${prefix}_NODE_${n + 1}`);
+            ports.push(String(startPort + r));
+          }
+        }
+        return { hosts: hosts.join(" "), ports: ports.join(" ") };
+      };
+      const p = expandPool(pMeta, "PREFILL");
+      const d = expandPool(dMeta, "DECODE");
+      ascendScripts = {
+        version: ascend.version || null,
+        launcher: ascend.scripts?.launcher || null,
+        launcherRaw: toRaw(ascend.scripts?.launcher),
+        proxy: ascend.scripts?.proxy || null,
+        proxyRaw: toRaw(ascend.scripts?.proxy),
+      };
+      ascendStartServer = {
+        label: "Start_Server",
+        description: "Run on every node of each pool — the launcher starts one vLLM per DP rank (ports 7100, 7101, ...) via run_dp_template.sh.",
+        command: [
+          `# Prefill node — dp_size ${pMeta.dpSize}, tp ${pMeta.tp}:`,
+          launch(pMeta, "PREFILL"),
+          ``,
+          `# Decode node — dp_size ${dMeta.dpSize}, tp ${dMeta.tp}:`,
+          launch(dMeta, "DECODE"),
+        ].join("\n"),
+      };
+      ascendProxy = {
+        label: "Start_Proxy",
+        description: "Run on the prefill node after both pools are up — clients connect to the proxy, not the workers.",
+        command: [
+          `python load_balance_proxy_server_example.py \\`,
+          `    --host 0.0.0.0 --port $ROUTER_PORT \\`,
+          `    --prefiller-hosts ${p.hosts} \\`,
+          `    --prefiller-ports ${p.ports} \\`,
+          `    --decoder-hosts ${d.hosts} \\`,
+          `    --decoder-ports ${d.ports}`,
+        ].join("\n"),
+        link: ascend.scripts?.proxy || null,
+        linkLabel: "load_balance_proxy_server_example.py",
+        env: {},
+      };
+    }
 
     let prefillArgs = buildArgs("prefill", null);
     let decodeArgs = buildArgs("decode", null);
@@ -2273,6 +2414,8 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       deployType,
       nodeCount,
       ...(pdMooncake ? { mooncake: pdMooncake } : {}),
+      ...(ascendScripts ? { ascendScripts } : {}),
+      ...(ascendStartServer ? { startServer: ascendStartServer } : {}),
       prefill: {
         command: formatCommand(prefillArgs),
         argv: formatArgv(prefillArgs),
@@ -2285,7 +2428,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         env: buildEnv("decode"),
         ...dMeta,
       },
-      orchestrator: dynamo ? "dynamo" : smg ? "smg" : "vllm-router",
+      orchestrator: ascend ? "ascend" : dynamo ? "dynamo" : smg ? "smg" : "vllm-router",
       ...(smg ? { transport: smgGrpc ? "grpc" : "http" } : {}),
       ...(smgGrpc ? {
         workerInstall: `uv pip install ${smg.grpc.packages}`,
@@ -2293,7 +2436,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       } : {}),
       ...(routerUnavailableReason ? { routerUnavailableReason } : {}),
       ...(registration ? { registration } : {}),
-      router: dynamo
+      router: ascend
+        ? ascendProxy
+        : dynamo
         ? {
             label: dynamo.frontend?.label || "Frontend",
             command: [

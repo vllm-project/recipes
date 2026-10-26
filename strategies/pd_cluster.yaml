@@ -196,3 +196,49 @@ dynamo:
   frontend:
     label: "Frontend"
     router_mode: "round-robin"
+
+# Ascend PD router: vllm-ascend's Mooncake disaggregation. Picked from the
+# "PD Router" row on Huawei hardware (URL ?pd_router=ascend). The command
+# block becomes a five-tab launch sequence: Scripts (stage the external-DP
+# launcher on every node), Prefill / Decode (each pool's `vllm serve`, which
+# the launcher re-invokes per DP rank — this is run_dp_template.sh's content),
+# Start_Server (run launch_online_dp.py on every node of both pools), and
+# Start_Proxy (the disaggregation proxy that fronts the cluster; clients
+# connect there). KV transfer swaps NIXL for the MooncakeHybridConnector used
+# by the verified vllm-ascend PD recipes, whose kv_connector_extra_config
+# carries BOTH pools' dp/tp sizes (synthesis fills them from the pool
+# topology). Reference deployment:
+# https://docs.vllm.ai/projects/ascend/en/latest/tutorials/features/pd_disaggregation_mooncake_multi_node.html
+ascend:
+  display_name: "Ascend Router"
+  description: >
+    vllm-ascend Mooncake PD disaggregation: prefill/decode workers transfer
+    KV over MooncakeHybridConnector and the load-balance proxy fronts the
+    cluster. Stage launch_online_dp.py (Scripts), run it on every pool node
+    (Start_Server), then start the proxy (Start_Proxy) — clients connect to
+    the proxy.
+  docs: "https://docs.vllm.ai/projects/ascend/en/latest/tutorials/features/pd_disaggregation_mooncake_multi_node.html"
+  # The Mooncake transfer engine ships in vllm-ascend — Huawei only.
+  brands: [Huawei]
+  # Keep `version` and the script links' tag in lockstep with the Ascend image
+  # tag the recipes pull (quay.io/ascend/vllm-ascend:<version>-a3/a5): the
+  # scripts must be the exact revision that matches the container.
+  version: "v0.23.0"
+  kv_connector: "MooncakeHybridConnector"
+  # External-DP rendezvous shared by both pools (launch_online_dp.py
+  # --dp-rpc-port) and the first per-rank API port (--vllm-start-port).
+  dp_rpc_port: 12321
+  vllm_start_port: 7100
+  # Per-pool Mooncake engine identity: distinct kv_port + engine_id per role.
+  # 36000/36100 clear AscendDirectTransport's random RDMA port range
+  # [20000, 20000 + npus_per_node × 1000) on both 8- and 16-NPU nodes
+  # (tutorial: "kv_port Configuration Guide").
+  prefill:
+    kv_port: "36000"
+    engine_id: "0"
+  decode:
+    kv_port: "36100"
+    engine_id: "1"
+  scripts:
+    launcher: "https://github.com/vllm-project/vllm-ascend/blob/v0.23.0/examples/external_online_dp/launch_online_dp.py"
+    proxy: "https://github.com/vllm-project/vllm-ascend/blob/v0.23.0/examples/disaggregated_prefill_v1/load_balance_proxy_server_example.py"

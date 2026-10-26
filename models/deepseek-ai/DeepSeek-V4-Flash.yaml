@@ -704,14 +704,19 @@ strategy_overrides:
           - "--attention-backend"
           - "B12X_MLA_SPARSE"
   pd_cluster:
+    # NCCL tuning applies to the NVIDIA pools; the Ascend router path drops
+    # NCCL_* env in command-synthesis (HCCL has its own knobs).
     env:
       VLLM_USE_NCCL_SYMM_MEM: "1"
       NCCL_CUMEM_ENABLE: "1"
       NCCL_MNNVL_ENABLE: "1"
       NCCL_NVLS_ENABLE: "1"
     prefill:
-      nodes: 1               # 1 GB200 node = 4 GPUs
+      nodes: 1               # 1 GB200 node = 4 GPUs / 1 A3 node = 16 NPUs
       parallelism: dep       # DP + expert-parallel pool
+      # Ascend router (A3 Mooncake PD): 1 node = 4 DP ranks x tp4 = 16 NPUs.
+      tp:
+        ascend_910c: 4
       vllm_args:
         - "--max-num-seqs"
         - "8"
@@ -720,9 +725,36 @@ strategy_overrides:
         - "--no-disable-hybrid-kv-cache-manager"
         - "--enable-sleep-mode"
       env: {}
+      hardware_overrides:
+        ascend_910c:
+          # Verified A3 prefill pool (vllm-ascend v0.23.0 Mooncake PD
+          # tutorial): dp4 x tp4, eager prefill, DSA context parallel on.
+          # Overrides both the GB200 vllm_args and the W8A8 variant's
+          # single-node values via last-wins dedupe.
+          extra_args:
+            - "--enable-expert-parallel"
+            - "--max-model-len"
+            - "1048576"
+            - "--max-num-seqs"
+            - "16"
+            - "--max-num-batched-tokens"
+            - "8192"
+            - "--enforce-eager"
+            - "--no-enable-prefix-caching"
+            - "--model-loader-extra-config"
+            - '{"enable_multithread_load": "true", "num_threads": 128}'
+            - "--additional-config"
+            - '{"enable_cpu_binding": true, "enable_shared_expert_dp": true, "enable_dsa_cp": true}'
+          extra_env:
+            # The npu generation block (A5, 1024) layers over the variant's
+            # 2560; the verified Mooncake PD prefill pool runs 2560.
+            HCCL_BUFFSIZE: "2560"
     decode:
-      nodes: 1               # 1 GB200 nodes = 4 GPUs
+      nodes: 1               # 1 GB200 nodes = 4 GPUs / 1 A3 node = 16 NPUs
       parallelism: dep
+      # Ascend router (A3 Mooncake PD): 1 node = 16 DP ranks x tp1 = 16 NPUs.
+      tp:
+        ascend_910c: 1
       vllm_args:
         - "--max-num-seqs"
         - "1536"
@@ -735,6 +767,27 @@ strategy_overrides:
         - "--no-disable-hybrid-kv-cache-manager"
         - "--enable-sleep-mode"
       env: {}
+      hardware_overrides:
+        ascend_910c:
+          # Verified A3 decode pool: dp16 x tp1, FULL_DECODE_ONLY graph
+          # (kept from the variant), recompute scheduling on.
+          extra_args:
+            - "--enable-expert-parallel"
+            - "--max-model-len"
+            - "1048576"
+            - "--max-num-seqs"
+            - "60"
+            - "--max-num-batched-tokens"
+            - "120"
+            - "--no-enable-prefix-caching"
+            - "--model-loader-extra-config"
+            - '{"enable_multithread_load": "true", "num_threads": 128}'
+            - "--additional-config"
+            - '{"ascend_compilation_config":{"enable_npugraph_ex":true,"enable_static_kernel":false},"enable_cpu_binding":true,"multistream_overlap_shared_expert":true,"recompute_scheduler_enable":true}'
+          extra_env:
+            # Prefill keeps the W8A8 variant's 2560; the verified Mooncake PD
+            # decode pool runs HCCL_BUFFSIZE=1024.
+            HCCL_BUFFSIZE: "1024"
 
 hardware_notes:
   dgx_spark_gb10:
@@ -757,7 +810,7 @@ hardware_notes:
       href: "#huawei-ascend-950pr-8x"
   ascend_910c:
     title: "vLLM Ascend A3 image required"
-    body: "Single-node DP2+TP8 on all 16 NPUs using the W8A8 quantized checkpoint from Eco-Tech. TP8 shards the 284B weights to 35.5 GB per NPU (within the 64 GB limit). Pin quay.io/ascend/vllm-ascend:v0.23.0-a3 — the NVIDIA pip wheel cannot run here. Set HCCL_BUFFSIZE=2560 before launch. The A3 path uses ModelScope to download the W8A8 weights (pip install modelscope). Multi-node PD separation is also available; see the vllm-ascend tutorial."
+    body: "Single-node DP2+TP8 on all 16 NPUs using the W8A8 quantized checkpoint from Eco-Tech. TP8 shards the 284B weights to 35.5 GB per NPU (within the 64 GB limit). Pin quay.io/ascend/vllm-ascend:v0.23.0-a3 — the NVIDIA pip wheel cannot run here. Set HCCL_BUFFSIZE=2560 before launch. The A3 path uses ModelScope to download the W8A8 weights (pip install modelscope). PD disaggregation is also available: pick the Ascend Router under the PD strategy — it stages the v0.23.0 launch_online_dp.py and load-balance proxy (same tag as the pulled image) and splits the cluster into a prefill pool (dp4x tp4) and a decode pool (dp16 x tp1) with MooncakeHybridConnector KV transfer."
     link:
       label: "Ascend 910C A3 reference"
       href: "https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/DeepSeek-V4-Flash.html"

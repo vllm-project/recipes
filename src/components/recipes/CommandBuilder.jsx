@@ -650,7 +650,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   });
   // PD router selection is only used under pd_cluster.
   const [pdRouter, setPdRouter] = useState(() =>
-    ["dynamo", "smg"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : "vllm"
+    ["dynamo", "smg", "ascend"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : "vllm"
   );
   // PD KV transfer connector (pd_cluster.yaml `connectors`); null = the default.
   const [pdConnector, setPdConnector] = useState(() => {
@@ -1507,10 +1507,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // Dynamo is brand-gated (strategy YAML `dynamo.brands`); on other hardware
   // the row shows vLLM Router active and synthesis ignores the pick.
   const dynamoOk = isDynamoSupportedOnHardware(strategies.pd_cluster?.dynamo, hwProfile);
+  // Same brand gate for the Ascend router (strategy YAML `ascend.brands`).
+  const ascendOk = isDynamoSupportedOnHardware(strategies.pd_cluster?.ascend, hwProfile);
   const smgReason = smgUnsupportedReason(recipe, strategies.pd_cluster, {
     prefill: { parallelism: effPdPrefillPar }, decode: { parallelism: effPdDecodePar },
   }, activeKvOffload);
-  const effPdRouter = result.orchestrator === "smg" ? "smg" : result.orchestrator === "dynamo" ? "dynamo" : "vllm";
+  const effPdRouter = result.orchestrator === "ascend" ? "ascend"
+    : result.orchestrator === "smg" ? "smg" : result.orchestrator === "dynamo" ? "dynamo" : "vllm";
   const isSmgGrpc = result.orchestrator === "smg" && result.transport === "grpc";
   const selectPdRouter = (value) => {
     setPdRouter(value);
@@ -1994,7 +1997,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const hwFullName = hwProfile?.brand
     ? `${hwProfile.brand} ${hwProfile.display_name || hwId}`
     : (hwProfile?.display_name || hwId);
-  const statusHeader = hwStatus === "verified" && !activeKvOffload && !["dynamo", "smg"].includes(result.orchestrator) ? (
+  const statusHeader = hwStatus === "verified" && !activeKvOffload && !["dynamo", "smg", "ascend"].includes(result.orchestrator) ? (
     <span className="text-[11px] font-medium text-green-500 inline-flex items-center gap-1.5">
       <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />
       Verified on {hwFullName}
@@ -2834,7 +2837,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           {/* PD Router — which orchestrator fronts the prefill/decode pools.
               Nested under Strategy: it only exists for pd_cluster and never
               changes the pools, just the launcher + front door. */}
-          {activeServingStrategy === "pd_cluster" && (strategies.pd_cluster?.dynamo || strategies.pd_cluster?.smg) && (
+          {activeServingStrategy === "pd_cluster" && (strategies.pd_cluster?.dynamo || strategies.pd_cluster?.smg || strategies.pd_cluster?.ascend) && (
             <ConfigRow label="PD Router" nested>
               <PillGroup>
                 <Pill
@@ -2865,10 +2868,22 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 >
                   <span className="font-semibold">SMG</span>
                 </Pill>}
+                {strategies.pd_cluster.ascend && <Pill
+                  active={effPdRouter === "ascend"}
+                  pressed={effPdRouter === "ascend"}
+                  disabled={!ascendOk}
+                  onClick={() => ascendOk && selectPdRouter("ascend")}
+                  title={ascendOk
+                    ? strategies.pd_cluster.ascend.description
+                    : `Ascend Router isn't available on ${hwProfile.display_name || hwId} — it needs ${(strategies.pd_cluster.ascend.brands || []).join(" / ")} hardware.`}
+                >
+                  <span className="font-semibold">{strategies.pd_cluster.ascend.display_name || "Ascend Router"}</span>
+                </Pill>}
               </PillGroup>
               <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
                 {effPdRouter === "dynamo"
                   ? strategies.pd_cluster.dynamo.description
+                  : effPdRouter === "ascend" ? strategies.pd_cluster.ascend.description
                   : effPdRouter === "smg" ? (isSmgGrpc ? "SMG gRPC router with NIXL prefill/decode workers. Supports TP/TEP pools without KV offload." : strategies.pd_cluster.smg.description)
                   : "vllm-router with --vllm-pd-disaggregation fronts the pools; each role is a `vllm serve` on its own HTTP port."}
                 {strategies.pd_cluster[effPdRouter]?.docs && (
@@ -2917,7 +2932,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               each role's --kv-transfer-config and the router's KV mode, never
               the pools. A connector this hardware or router can't run is
               disabled with the reason. */}
-          {activeServingStrategy === "pd_cluster" && Object.keys(pdConnectors).length > 1 && (
+          {activeServingStrategy === "pd_cluster" && effPdRouter !== "ascend" && Object.keys(pdConnectors).length > 1 && (
             <ConfigRow label="PD Connector" nested hint="Connector that moves each request's KV cache from the prefill pool to the decode pool. KV Offload tiers below compose with it.">
               <PillGroup>
                 {Object.entries(pdConnectors).map(([key, c]) => {
@@ -4285,6 +4300,9 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   const [tab, setTab] = useState("prefill");
   const isDynamo = result.orchestrator === "dynamo";
   const isSmg = result.orchestrator === "smg";
+  // Ascend router (vllm-ascend Mooncake PD): the block becomes a five-tab
+  // launch sequence — Scripts · Prefill · Decode · Start_Server · Start_Proxy.
+  const isAscend = result.orchestrator === "ascend";
   // Dynamo workers launch via `python3 -m dynamo.vllm`, which the
   // vllm-openai image's `vllm serve` entrypoint can't wrap — render them
   // pip-style (install hint above) regardless of install mode.
@@ -4308,6 +4326,8 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   // With Mooncake composed in, the tabs become a real launch sequence
   // (config → master → (store) → pools → router), so they get step numbers.
   // Plain PD keeps unnumbered tabs — prefill/decode have no strict order.
+  // The Ascend router is a sequence too: Scripts → pools → Start_Server →
+  // Start_Proxy (the proxy needs both pools up).
   const tabs = [
     ...(mc ? [{
       id: "mc_config", label: "Mooncake Config",
@@ -4318,19 +4338,30 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
     ...(mc?.store ? [{ id: "mc_store", label: "Mooncake Store", command: mc.store.command, env: {}, description: mc.store.description }] : []),
     // Dynamo: the etcd control plane comes first in the sequence.
     ...(isDynamo && result.infra ? [{ id: "dyn_infra", label: result.infra.label, command: result.infra.command, env: {}, description: result.infra.description }] : []),
+    // Ascend: stage the launcher first — Start_Server re-invokes it per node.
+    ...(isAscend && result.ascendScripts ? [{
+      id: "ascend_scripts", label: "Scripts",
+      command: `curl -LO ${result.ascendScripts.launcherRaw}`,
+      env: {},
+      link: result.ascendScripts.launcher,
+      linkLabel: "launch_online_dp.py",
+      description: `Stage the external-DP launcher (it drives run_dp_template.sh from the same directory) on every node of both pools. Tag ${result.ascendScripts.version} — the same revision as the pulled vllm-ascend image.`,
+    }] : []),
     { id: "prefill", label: "Prefill", command: wrap(result.prefill.command, result.prefill.env), env: result.prefill.env, meta: result.prefill },
     { id: "decode", label: "Decode", command: wrap(result.decode.command, result.decode.env), env: result.decode.env, meta: result.decode },
-    { id: "router", label: result.router.label || "Router", command: routerDocker || result.router.command, env: result.router.env || {}, install: routerDocker ? null : result.router.install, isRouter: true },
+    // Ascend: the per-node launcher invocations for both pools.
+    ...(isAscend && result.startServer ? [{ id: "ascend_server", label: result.startServer.label || "Start_Server", command: result.startServer.command, env: {}, description: result.startServer.description }] : []),
+    { id: "router", label: result.router.label || "Router", command: routerDocker || result.router.command, env: result.router.env || {}, install: routerDocker ? null : result.router.install, isRouter: true, link: result.router.link || null, linkLabel: result.router.linkLabel || null },
     ...(result.registration ? [{ id: "registration", ...result.registration, env: {}, isRouter: true }] : []),
-  ].map((t, i) => (mc || isDynamo || isSmg ? { ...t, step: i + 1 } : t));
+  ].map((t, i) => (mc || isDynamo || isSmg || isAscend ? { ...t, step: i + 1 } : t));
   // When Mooncake is toggled on/off, jump to the leftmost tab so the launch
   // sequence reads left to right (same behavior as SingleCommandBlock's
   // companion tabs).
   const hasMc = !!mc;
   useEffect(() => {
-    setTab(hasMc ? "mc_config" : isDynamo && result.infra ? "dyn_infra" : "prefill");
+    setTab(hasMc ? "mc_config" : isDynamo && result.infra ? "dyn_infra" : isAscend ? "ascend_scripts" : "prefill");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMc, isDynamo, isSmg]);
+  }, [hasMc, isDynamo, isSmg, isAscend]);
   const active = tabs.find((t) => t.id === tab) || tabs[0];
   // Docker mode folds env into `-e` flags inside `docker run` for prefill /
   // decode, so no prelude there. Router (and pip mode) keep the export-style
@@ -4375,11 +4406,23 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           # {active.description}
         </div>
       )}
+      {active.link && (
+        <div className="px-4 pt-3 text-[11px] font-mono leading-snug">
+          <a
+            href={active.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-vllm-blue hover:underline"
+          >
+            {active.linkLabel || active.link} <ExternalLink size={9} />
+          </a>
+        </div>
+      )}
       {!active.isRouter && active.meta && (
         <div className="px-4 pt-3 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug">
           # {active.meta.nodes === 0
-            ? `Co-located half-node · ${active.meta.poolGpus} GPU · ${active.meta.parallelism.toUpperCase()}`
-            : `${active.meta.nodes} node${active.meta.nodes === 1 ? "" : "s"} × ${(active.meta.poolGpus / Math.max(1, active.meta.nodes))} GPU = ${active.meta.poolGpus} GPU · ${active.meta.parallelism.toUpperCase()}`}
+            ? `Co-located half-node · ${active.meta.poolGpus} ${isAscend ? "NPU" : "GPU"} · ${active.meta.parallelism.toUpperCase()}`
+            : `${active.meta.nodes} node${active.meta.nodes === 1 ? "" : "s"} × ${(active.meta.poolGpus / Math.max(1, active.meta.nodes))} ${isAscend ? "NPU" : "GPU"} = ${active.meta.poolGpus} ${isAscend ? "NPU" : "GPU"} · ${active.meta.parallelism.toUpperCase()}`}
           {active.meta.parallelism === "dep" && active.meta.nodes > 1 && (
             <> {" · DP="}{active.meta.dpSize}{" (dp_local="}{active.meta.dpLocal}{", one vllm serve per node)"}</>
           )}
