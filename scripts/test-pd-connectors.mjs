@@ -233,3 +233,12 @@ test("the Ascend router rewrites both pools to vllm-ascend external DP + Mooncak
     assert.equal(JSON.parse(flag(offloaded[role].argv, "--kv-transfer-config")).kv_connector, "MooncakeHybridConnector");
   }
 });
+
+test("Ascend hardware defaults to the Ascend router, other brands keep vllm-router", () => {
+  const ds = yaml.load(fs.readFileSync(path.resolve("models/deepseek-ai/DeepSeek-V4-Flash.yaml"), "utf8"));
+  // No explicit pick (what the builder's unset router means).
+  assert.equal(resolveCommand(ds, "ascend_w8a8", "pd_cluster", "ascend_910c", [], strategies, taxonomy, [], 1, pools, {}).orchestrator, "ascend");
+  assert.equal(resolveCommand(recipe, "default", "pd_cluster", "gb300", [], strategies, taxonomy, [], 1, pools, {}).orchestrator, "vllm-router");
+  // An explicit pick still wins, so presets / ?pd_router links are honored.
+  assert.equal(resolveCommand(ds, "ascend_w8a8", "pd_cluster", "ascend_910c", [], strategies, taxonomy, [], 1, pools, {}, null, null, undefined, "vllm").orchestrator, "vllm-router");
+});

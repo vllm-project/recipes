@@ -1416,8 +1416,12 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   // Ascend router: vllm-ascend's external-DP Mooncake disaggregation — same
   // pools, but launch_online_dp.py starts one `vllm serve` per DP rank and a
   // load-balance proxy fronts the cluster. Brand-gated like dynamo (the
-  // Mooncake transfer engine ships in vllm-ascend — Huawei only).
-  const ascend = strategy.deploy_type === "pd_cluster" && pdRouter === "ascend"
+  // Mooncake transfer engine ships in vllm-ascend — Huawei only). Ascend
+  // hardware has no plain vllm-router default: with no explicit pick it
+  // resolves to this router (an explicit `vllm` still wins, for presets).
+  const pdRouterPick = pdRouter ?? (strategy.deploy_type === "pd_cluster" && strategy.ascend
+      && isDynamoSupportedOnHardware(strategy.ascend, hwProfile) ? "ascend" : null);
+  const ascend = strategy.deploy_type === "pd_cluster" && pdRouterPick === "ascend"
       && isDynamoSupportedOnHardware(strategy.ascend, hwProfile)
     ? strategy.ascend
     : null;

@@ -1016,11 +1016,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // The Ascend router owns each pool's --kv-transfer-config outright
   // (MooncakeHybridConnector, whose extra config carries both pools' dp/tp), so
   // no KV-offload tier can compose with it either — Off is the only choice.
-  // Brand-gated like the router pill itself: on hardware that can't run the
-  // Ascend router the pick never reaches synthesis, so other vendors are
-  // untouched.
-  const ascendRouterActive = activeServingStrategy === "pd_cluster" && pdRouter === "ascend"
+  // Ascend hardware ships its own PD router, so the plain vllm-router lane is
+  // gone there: an unset / `vllm` pick resolves to `ascend`. Brand-gated like
+  // the router pill itself (strategy YAML `ascend.brands`), so other vendors
+  // keep the vLLM Router default untouched.
+  const ascendOk = activeServingStrategy === "pd_cluster"
     && isDynamoSupportedOnHardware(strategies.pd_cluster?.ascend, hwProfile);
+  const pdRouterPick = ascendOk && pdRouter === "vllm" ? "ascend" : pdRouter;
+  const ascendRouterActive = ascendOk && pdRouterPick === "ascend";
   const kvOptAllowed = (key) =>
     !kvOffloadDisabledByHw && !ascendRouterActive
     && isKvOffloadAllowedForStrategy(kvOffloadOptions[key], activeServingStrategy, strategies[activeServingStrategy])
@@ -1190,9 +1193,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
         }
         : null;
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick, pdConnector);
+      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouterPick, pdTransport, dcpSize, presetPick, pointPick, pdConnector);
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick, pdConnector]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouterPick, pdTransport, dcpSize, presetPick, pointPick, pdConnector]
   );
 
   // Publish the selection for the sections below the builder (This
@@ -1219,7 +1222,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     || "")
     + (omniTask ? `|task:${omniTask}` : "")
     + `|frontend:${frontend}`
-    + `|pd_router:${pdRouter}|pd_transport:${pdTransport}|pd_connector:${pdConnector ?? ""}`
+    + `|pd_router:${pdRouterPick}|pd_transport:${pdTransport}|pd_connector:${pdConnector ?? ""}`
     + `|preset:${result.preset?.selected ?? ""}`;
   const [changed, setChanged] = useState(false);
   useEffect(() => {
@@ -1519,8 +1522,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // Dynamo is brand-gated (strategy YAML `dynamo.brands`); on other hardware
   // the row shows vLLM Router active and synthesis ignores the pick.
   const dynamoOk = isDynamoSupportedOnHardware(strategies.pd_cluster?.dynamo, hwProfile);
-  // Same brand gate for the Ascend router (strategy YAML `ascend.brands`).
-  const ascendOk = isDynamoSupportedOnHardware(strategies.pd_cluster?.ascend, hwProfile);
+  // `ascendOk` / `pdRouterPick` (hoisted above the KV-offload gate) make the
+  // Ascend router the PD default on Huawei hardware.
   const smgReason = smgUnsupportedReason(recipe, strategies.pd_cluster, {
     prefill: { parallelism: effPdPrefillPar }, decode: { parallelism: effPdDecodePar },
   }, activeKvOffload);
@@ -2852,14 +2855,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           {activeServingStrategy === "pd_cluster" && (strategies.pd_cluster?.dynamo || strategies.pd_cluster?.smg || strategies.pd_cluster?.ascend) && (
             <ConfigRow label="PD Router" nested>
               <PillGroup>
-                <Pill
+                {/* Ascend hardware has its own router, so the plain
+                    vllm-router lane isn't offered there (the default pick
+                    resolves to `ascend`; see pdRouterPick). */}
+                {!ascendOk && <Pill
                   active={effPdRouter === "vllm"}
                   pressed={effPdRouter === "vllm"}
                   onClick={() => selectPdRouter("vllm")}
                   title="Native vllm-router in PD mode — prefill/decode workers are plain `vllm serve` processes on fixed HTTP ports."
                 >
                   <span className="font-semibold">vLLM Router</span>
-                </Pill>
+                </Pill>}
                 {strategies.pd_cluster.dynamo && <Pill
                   active={effPdRouter === "dynamo"}
                   pressed={effPdRouter === "dynamo"}
