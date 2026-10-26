@@ -1013,8 +1013,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // Intel XPU: no KV-offload layer is validated on this backend, so gate every
   // option off (and force the effective selection to Off further down).
   const kvOffloadDisabledByHw = hwProfile?.generation === "xpu";
+  // The Ascend router owns each pool's --kv-transfer-config outright
+  // (MooncakeHybridConnector, whose extra config carries both pools' dp/tp), so
+  // no KV-offload tier can compose with it either — Off is the only choice.
+  // Brand-gated like the router pill itself: on hardware that can't run the
+  // Ascend router the pick never reaches synthesis, so other vendors are
+  // untouched.
+  const ascendRouterActive = activeServingStrategy === "pd_cluster" && pdRouter === "ascend"
+    && isDynamoSupportedOnHardware(strategies.pd_cluster?.ascend, hwProfile);
   const kvOptAllowed = (key) =>
-    !kvOffloadDisabledByHw
+    !kvOffloadDisabledByHw && !ascendRouterActive
     && isKvOffloadAllowedForStrategy(kvOffloadOptions[key], activeServingStrategy, strategies[activeServingStrategy])
     && isKvOffloadSupportedForRecipe(kvOffloadOptions[key], key, recipe)
     && isKvOffloadBrandSupported(kvOffloadOptions[key], hwProfile);
@@ -1025,6 +1033,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const name = opt?.display_name || key;
     if (kvOffloadDisabledByHw) {
       return `${name} isn't validated on Intel XPU — serve directly with the Docker image.`;
+    }
+    if (ascendRouterActive) {
+      return `${name} can't compose with the Ascend router, which owns --kv-transfer-config (MooncakeHybridConnector) on both pools.`;
     }
     if (!isKvOffloadSupportedForRecipe(opt, key, recipe)) {
       return recipe.kv_offload_support?.[key] === "unsupported"
@@ -1051,10 +1062,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     keys.sort((a, b) => (kvOffloadOptions[a].order ?? 99) - (kvOffloadOptions[b].order ?? 99));
   }
   // Force the effective selection to Off when the hardware disables KV offload
-  // (Intel XPU) regardless of a persisted pick from other hardware — keeps the
-  // generated command a plain single-instance serve.
+  // (Intel XPU) or the Ascend router owns the transfer config, regardless of a
+  // persisted pick from another hardware — keeps the generated command a plain
+  // single-instance serve / a pure MooncakeHybridConnector PD pair.
   const activeKvOffload =
-    kvOffloadDisabledByHw
+    kvOffloadDisabledByHw || ascendRouterActive
       ? ""
       : kvOffloadOptions[kvOffload]
       ? (kvOptAllowed(kvOffload) ? kvOffload : "")

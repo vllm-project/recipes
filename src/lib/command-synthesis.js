@@ -1911,7 +1911,8 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     // Mooncake × pd_cluster: the kv_store YAML's `pd.<role>.tier`
     // (MooncakeStoreConnector) joins the role's transfer connector in a
     // MultiConnector, which replaces (last-wins) the plain transfer config.
-    if (strategy.deploy_type === "pd_cluster" && roleOverride
+    // The Ascend router owns that config outright, so no tier composes there.
+    if (!ascend && strategy.deploy_type === "pd_cluster" && roleOverride
         && kvStoreStrat?.pd?.[roleOverride]?.tier) {
       args.push("--kv-transfer-config", JSON.stringify(multiConnector([
         pdTransferConfig(roleOverride),
@@ -1920,7 +1921,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     }
     // A composing KV-offload option that declares `pd.roles` (Simple CPU
     // offload: prefill only) joins those roles' transfer connector the same way.
-    const pdTier = strategy.deploy_type === "pd_cluster" && roleOverride
+    const pdTier = !ascend && strategy.deploy_type === "pd_cluster" && roleOverride
       && kvOpt?.pd?.roles?.includes(roleOverride) ? kvOptionConfig(kvOpt) : null;
     if (pdTier) {
       args.push("--kv-transfer-config", JSON.stringify(multiConnector([pdTransferConfig(roleOverride), pdTier])));
@@ -1969,8 +1970,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     }
     if (dynamo && roleOverride) Object.assign(env, dynamo.env || {});
     // Composing-option env, after the strategy's so the option wins (under
-    // PD only on the roles it joins).
-    if (kvOpt?.env && (strategy.deploy_type !== "pd_cluster" || kvOpt.pd?.roles?.includes(roleOverride))) {
+    // PD only on the roles it joins — never under the Ascend router, which
+    // ignores the composing tier entirely).
+    if (!ascend && kvOpt?.env && (strategy.deploy_type !== "pd_cluster" || kvOpt.pd?.roles?.includes(roleOverride))) {
       Object.assign(env, kvOpt.env);
     }
     // Mooncake composition: instances (any serving strategy) and PD roles
@@ -1978,7 +1980,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     // consistent prefix hashing across processes).
     if (kvComposing) {
       Object.assign(env, kvStoreStrat.vllm?.env || {});
-    } else if (strategy.deploy_type === "pd_cluster" && roleOverride
+    } else if (!ascend && strategy.deploy_type === "pd_cluster" && roleOverride
         && kvStoreStrat?.pd) {
       Object.assign(env, kvStoreStrat.vllm?.env || {});
     }

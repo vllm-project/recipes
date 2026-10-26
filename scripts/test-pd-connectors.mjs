@@ -224,4 +224,12 @@ test("the Ascend router rewrites both pools to vllm-ascend external DP + Mooncak
   assert.equal(picked.prefill.env.VLLM_NIXL_SIDE_CHANNEL_PORT, undefined);
   assert.equal(picked.prefill.argv.filter((t) => t === "--kv-transfer-config").length, 1);
   assert.equal(JSON.parse(flag(picked.prefill.argv, "--kv-transfer-config")).kv_connector, "MooncakeHybridConnector");
+  // ...and neither does a KV-offload tier (Simple CPU offload on prefill): the
+  // strategy's own config stays the role's only --kv-transfer-config.
+  const offloaded = resolveCommand(ds, "ascend_w8a8", "pd_cluster", "ascend_910c", [], strategies, taxonomy, [], 1,
+    pools, {}, "simple", null, undefined, "ascend");
+  for (const role of ["prefill", "decode"]) {
+    assert.equal(offloaded[role].argv.filter((t) => t === "--kv-transfer-config").length, 1);
+    assert.equal(JSON.parse(flag(offloaded[role].argv, "--kv-transfer-config")).kv_connector, "MooncakeHybridConnector");
+  }
 });
