@@ -2856,16 +2856,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             <ConfigRow label="PD Router" nested>
               <PillGroup>
                 {/* Ascend hardware has its own router, so the plain
-                    vllm-router lane isn't offered there (the default pick
-                    resolves to `ascend`; see pdRouterPick). */}
-                {!ascendOk && <Pill
+                    vllm-router lane is shown disabled (greyed + struck
+                    through) there; the default pick resolves to `ascend` (see
+                    pdRouterPick). */}
+                <Pill
                   active={effPdRouter === "vllm"}
                   pressed={effPdRouter === "vllm"}
-                  onClick={() => selectPdRouter("vllm")}
-                  title="Native vllm-router in PD mode — prefill/decode workers are plain `vllm serve` processes on fixed HTTP ports."
+                  disabled={ascendOk}
+                  onClick={() => !ascendOk && selectPdRouter("vllm")}
+                  title={ascendOk
+                    ? "vLLM Router isn't used on Ascend hardware — its PD router is the Ascend Router."
+                    : "Native vllm-router in PD mode — prefill/decode workers are plain `vllm serve` processes on fixed HTTP ports."}
                 >
                   <span className="font-semibold">vLLM Router</span>
-                </Pill>}
+                </Pill>
                 {strategies.pd_cluster.dynamo && <Pill
                   active={effPdRouter === "dynamo"}
                   pressed={effPdRouter === "dynamo"}
