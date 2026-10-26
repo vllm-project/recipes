@@ -139,8 +139,10 @@ export default async function RootLayout({ children }) {
               <ThemeToggle />
             </nav>
           </div>
+          {/* Inside the sticky header so it stays in view; it publishes its
+              height as --preview-h for what is positioned under the header. */}
+          <PreviewBanner />
         </header>
-        <PreviewBanner />
 
         {/* Content */}
         <div className="flex-1">

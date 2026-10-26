@@ -36,17 +36,29 @@ decode:
     - "--compilation-config"
     - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
 
-# KV transfer connectors between the prefill and decode pools. Each role's
-# `config` is its --kv-transfer-config (an object, serialized by synthesis)
+# KV transfer connectors between the prefill and decode pools, picked on the
+# builder's PD Connector row (URL ?pd_connector=, a preset's
+# select.pd_connector). Each role's `config` is its --kv-transfer-config (an
+# object, serialized by synthesis; `{port}` becomes the role's served port)
 # and `env` its connector env. KV tiers that compose under PD (the Mooncake
-# store) wrap the selected config in a MultiConnector, so a tier never names
-# the transfer connector itself. `default: true` marks the one rendered when
-# nothing selects another.
+# store, Simple CPU offload on prefill) wrap the selected config in a
+# MultiConnector, so a tier never names the transfer connector itself.
+#   default: true  — rendered when nothing selects another
+#   brands         — hardware brands that run it (absent = all)
+#   routers        — PD routers that speak it (absent = vLLM Router only)
+#   router         — vllm-router's mode: kv_connector (--kv-connector, nixl
+#                    is its default), bootstrap_port (listed after each
+#                    prefill endpoint), discovery_port (workers register via
+#                    --vllm-discovery-address instead of being listed)
+#   install        — extra pip steps (the vLLM images ship them)
+#   docker         — host_network / extra runtime flags for the workers
 connectors:
   nixl:
     display_name: "NIXL"
     default: true
+    description: "NIXL pull transfer: decode reads each request's KV from prefill. Works with every PD router."
     docs: "https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html"
+    routers: [vllm, dynamo, smg]
     prefill:
       config: { kv_connector: NixlConnector, kv_role: kv_producer, kv_load_failure_policy: fail }
       env:
@@ -62,6 +74,47 @@ connectors:
         # Same per-node binding pattern as prefill above.
         VLLM_NIXL_SIDE_CHANNEL_HOST: "$DECODE_NODE_1"
 
+  mooncake:
+    display_name: "Mooncake"
+    description: "Mooncake push transfer over RDMA: prefill writes KV into decode. The router queries each prefill's bootstrap server for its engines. Set WITH_NVIDIA_PEERMEM=0 on hosts without the nvidia-peermem module (GB200)."
+    docs: "https://docs.vllm.ai/en/latest/features/mooncake_connector_usage.html"
+    brands: [NVIDIA]
+    prefill:
+      config: { kv_connector: MooncakeConnector, kv_role: kv_producer, kv_load_failure_policy: fail }
+      env:
+        VLLM_MOONCAKE_BOOTSTRAP_PORT: "8998"
+    decode:
+      config: { kv_connector: MooncakeConnector, kv_role: kv_consumer, kv_load_failure_policy: fail }
+    router: { kv_connector: mooncake, bootstrap_port: 8998 }
+    install:
+      - note: "Mooncake transfer engine on every prefill / decode node (CUDA 12: mooncake-transfer-engine)"
+        command: "uv pip install mooncake-transfer-engine-cuda13"
+    docker: { host_network: true, flags: ["--ulimit", "memlock=-1"] }
+  moriio:
+    display_name: "MoRI-IO"
+    description: "ROCm MoRI-IO transfer over RDMA. Workers register with the router (proxy_ip / proxy_ping_port), which discovers them instead of listing endpoints; WRITE mode by default, READ with read_mode."
+    docs: "https://docs.vllm.ai/en/latest/features/moriio_connector_usage.html"
+    brands: [AMD]
+    prefill:
+      config:
+        kv_connector: MoRIIOConnector
+        kv_role: kv_producer
+        kv_load_failure_policy: fail
+        # proxy_ping_port is the router's discovery port below. Handshake and
+        # notify ports differ per role so co-located pools don't collide;
+        # notify_port is a base, offset per rank.
+        kv_connector_extra_config: { proxy_ip: "$ROUTER_HOST", proxy_ping_port: "36367", http_port: "{port}", handshake_port: "6301", notify_port: "61005" }
+    decode:
+      config:
+        kv_connector: MoRIIOConnector
+        kv_role: kv_consumer
+        kv_load_failure_policy: fail
+        kv_connector_extra_config: { proxy_ip: "$ROUTER_HOST", proxy_ping_port: "36367", http_port: "{port}", handshake_port: "7301", notify_port: "62005" }
+    router: { kv_connector: moriio, discovery_port: 36367 }
+    install:
+      - note: "MoRI on every prefill / decode node (the ROCm image ships it)"
+        command: "uv pip install amd_mori"
+    docker: { host_network: true, flags: ["--ulimit", "memlock=-1"] }
 parallel_flag: "--tensor-parallel-size"
 
 router:

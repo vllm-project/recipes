@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import { publishSelection, onPresetRequest } from "@/lib/selection-store";
@@ -652,6 +652,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const [pdRouter, setPdRouter] = useState(() =>
     ["dynamo", "smg"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : "vllm"
   );
+  // PD KV transfer connector (pd_cluster.yaml `connectors`); null = the default.
+  const [pdConnector, setPdConnector] = useState(() => {
+    const v = searchParams.get("pd_connector");
+    return v && strategies.pd_cluster?.connectors?.[v] ? v : null;
+  });
   const [pdTransport, setPdTransport] = useState(() =>
     recipe.model?.smg_grpc && searchParams.get("pd_transport") === "grpc" ? "grpc" : "http"
   );
@@ -1033,7 +1038,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       return `${name} isn't offered under ${strategies[activeServingStrategy]?.display_name || activeServingStrategy}, which manages its own KV layout across the DP ranks.`;
     }
     return activeServingStrategy === "pd_cluster"
-      ? `${name} can't compose with PD cluster, which owns --kv-transfer-config. (Mooncake composes with PD instead.)`
+      ? `${name} can't compose with Prefill/Decode, which owns --kv-transfer-config. Simple (on prefill) and Mooncake Store compose with its KV transfer connector instead.`
       : `${name} works with: ${(opt?.strategies || []).map((s) => strategies[s]?.display_name || s).join(", ")}.`;
   };
   // Options sharing a `group` collapse into one pill + member sub-row.
@@ -1173,9 +1178,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
         }
         : null;
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick);
+      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick, pdConnector);
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick, pdConnector]
   );
 
   // Publish the selection for the sections below the builder (This
@@ -1202,7 +1207,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     || "")
     + (omniTask ? `|task:${omniTask}` : "")
     + `|frontend:${frontend}`
-    + `|pd_router:${pdRouter}|pd_transport:${pdTransport}`
+    + `|pd_router:${pdRouter}|pd_transport:${pdTransport}|pd_connector:${pdConnector ?? ""}`
     + `|preset:${result.preset?.selected ?? ""}`;
   const [changed, setChanged] = useState(false);
   useEffect(() => {
@@ -1511,6 +1516,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     setPdRouter(value);
     syncUrl({ pd_router: value === "vllm" ? "" : value });
   };
+  // PD Connector row: the connector synthesis actually rendered (a pick this
+  // hardware or router can't run falls back to the default).
+  const pdConnectors = strategies.pd_cluster?.connectors || {};
+  const effPdConnector = result.kvConnector?.selected ?? null;
+  const pdConnectorReason = (key) => pdConnectorUnavailableReason(pdConnectors[key], hwProfile, effPdRouter);
+  const selectPdConnector = (key) => {
+    const isDefault = pdConnectors[key]?.default;
+    setPdConnector(isDefault ? null : key);
+    syncUrl({ pd_connector: isDefault ? "" : key });
+  };
 
   const setPdPar = (role, mode) => {
     if (!pdModes.includes(mode)) return;
@@ -1693,6 +1708,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     if (activeSelect.pd_router && !linked("pd_router")) {
       setPdRouter(activeSelect.pd_router);
       updates.pd_router = activeSelect.pd_router === "vllm" ? "" : activeSelect.pd_router;
+    }
+    if (activeSelect.pd_connector && !linked("pd_connector")) {
+      setPdConnector(activeSelect.pd_connector);
+      updates.pd_connector = activeSelect.pd_connector;
     }
     if (activeSelect.features && !linked("features")) {
       let next = [...features];
@@ -1953,13 +1972,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
         deps.push({ ...step, install_modes: ["pip", "docker"] });
       }
     }
+    // The PD KV transfer connector's runtime (the vLLM images ship it).
+    for (const step of result.kvConnector?.install || []) {
+      deps.push({ ...step, install_modes: ["pip"] });
+    }
     if (result.orchestrator === "smg") {
       if (result.workerInstall) deps.push({ command: result.workerInstall, note: "gRPC servicer — install on every prefill/decode node", install_modes: ["pip"] });
       deps.push({ command: result.router.install, note: "SMG — install on the router host", install_modes: ["pip"] });
       deps.push({ command: result.router.dockerInstall, note: "SMG — pull on the router host", install_modes: ["docker"] });
     }
     return deps;
-  }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall, result.router?.install, result.router?.dockerInstall, result.workerInstall]);
+  }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall, result.router?.install, result.router?.dockerInstall, result.workerInstall, result.kvConnector?.install]);
 
   // Status caption for the command block header.
   // Only `verified` is a positive signal worth surfacing; anything else
@@ -2780,7 +2803,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             );
           })()}
           {result?.preset?.point && result.preset.point.options.length > 1 && (() => {
-            // Points are usually one per client concurrency; name the row after
+            // Points are usually one per benchmark concurrency; name the row after
             // it when every point declares one, else keep the generic name
             // (e.g. eval vs throughput arms).
             const byConcurrency = result.preset.point.options.every((pt) => Number.isInteger(pt.concurrency));
@@ -2789,7 +2812,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               label={byConcurrency ? "Concurrency" : "Point"}
               nested
               hint={byConcurrency
-                ? "Client concurrency the preset was qualified at. Each renders its own settings."
+                ? "Concurrency the preset was qualified at: concurrent sessions for agentic lanes, concurrent requests otherwise. Each renders its own settings."
                 : "The preset's qualified operating points. Each renders its own settings."}
             >
               <PillGroup>
@@ -2889,6 +2912,44 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             </ConfigRow>
           )}
 
+          {/* PD Connector — the connector that moves KV from the prefill to the
+              decode pool. Nested under Strategy beside PD Router: it changes
+              each role's --kv-transfer-config and the router's KV mode, never
+              the pools. A connector this hardware or router can't run is
+              disabled with the reason. */}
+          {activeServingStrategy === "pd_cluster" && Object.keys(pdConnectors).length > 1 && (
+            <ConfigRow label="PD Connector" nested hint="Connector that moves each request's KV cache from the prefill pool to the decode pool. KV Offload tiers below compose with it.">
+              <PillGroup>
+                {Object.entries(pdConnectors).map(([key, c]) => {
+                  const reason = pdConnectorReason(key);
+                  return (
+                    <Pill key={key} active={effPdConnector === key} pressed={effPdConnector === key} disabled={!!reason}
+                      onClick={() => !reason && selectPdConnector(key)} title={reason || c.description}>
+                      <span className="font-semibold">{c.display_name || key}</span>
+                    </Pill>
+                  );
+                })}
+              </PillGroup>
+              <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                {pdConnectors[effPdConnector]?.description}
+                {pdConnectors[effPdConnector]?.docs && (
+                  <>
+                    {" "}
+                    <a href={pdConnectors[effPdConnector].docs} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-0.5 text-vllm-blue hover:underline">
+                      Docs <ExternalLink size={9} />
+                    </a>
+                  </>
+                )}
+              </p>
+              {result.kvConnector?.unavailableReason && (
+                <p className="text-[11px] text-amber-600 mt-2">
+                  {result.kvConnector.unavailableReason} Showing {pdConnectors[effPdConnector]?.display_name || effPdConnector} commands.
+                </p>
+              )}
+            </ConfigRow>
+          )}
+
           {/* KV Offload — every option COMPOSES with the serving strategy
               above (the KV layer is orthogonal to parallelism). Simple/LMCache
               append a connector to the current command; Mooncake additionally
@@ -2984,7 +3045,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                           ? "Mooncake — distributed KV cache: vLLM instances share prefix KV through a coordinated CPU-DRAM pool. Composes with the selected strategy — each instance runs it."
                           : disabledTitle}
                       >
-                        <span className="font-semibold">Mooncake</span>
+                        <span className="font-semibold">Mooncake Store</span>
                       </Pill>
                     ),
                   });
@@ -3004,9 +3065,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 || kvOffloadOptions[activeKvOffload];
               const text = opt?.description || (isKvStoreActive ? MOONCAKE_BACKGROUND : null);
               const docs = opt?.docs_url || (isKvStoreActive ? MOONCAKE_DOCS_URL : null);
+              const pdRoles = activeServingStrategy === "pd_cluster" ? kvOffloadOptions[activeKvOffload]?.pd?.roles : null;
               return text ? (
                 <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
                   {text}
+                  {pdRoles && ` Under Prefill/Decode it joins the ${pdRoles.join(" and ")} role's KV transfer connector in a MultiConnector.`}
                   {docs && (
                     <>
                       {" "}
@@ -4231,7 +4294,10 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   const routerDocker = isDocker && result.router.dockerCommand;
   const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix, setupCommand: result.workerDockerSetup, hostNetwork: result.transport === "grpc" })
+      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix, setupCommand: result.workerDockerSetup,
+        // RDMA connectors (Mooncake, MoRI-IO) need host networking and locked memory.
+        hostNetwork: result.transport === "grpc" || !!result.kvConnector?.docker?.host_network,
+        extraFlags: result.kvConnector?.docker?.flags || [] })
       : cmd;
   // Mooncake composed into PD (result.mooncake): a "Mooncake Config" tab
   // (launch step 0) writes the shared config file(s) once — every
