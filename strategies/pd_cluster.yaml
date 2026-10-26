@@ -37,7 +37,7 @@ decode:
     - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
 
 # KV transfer connectors between the prefill and decode pools, picked on the
-# builder's KV Transfer row (URL ?pd_connector=, a preset's
+# builder's PD Connector row (URL ?pd_connector=, a preset's
 # select.pd_connector). Each role's `config` is its --kv-transfer-config (an
 # object, serialized by synthesis; `{port}` becomes the role's served port)
 # and `env` its connector env. KV tiers that compose under PD (the Mooncake

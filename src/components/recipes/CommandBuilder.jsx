@@ -1516,7 +1516,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     setPdRouter(value);
     syncUrl({ pd_router: value === "vllm" ? "" : value });
   };
-  // KV Transfer row: the connector synthesis actually rendered (a pick this
+  // PD Connector row: the connector synthesis actually rendered (a pick this
   // hardware or router can't run falls back to the default).
   const pdConnectors = strategies.pd_cluster?.connectors || {};
   const effPdConnector = result.kvConnector?.selected ?? null;
@@ -2912,13 +2912,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             </ConfigRow>
           )}
 
-          {/* KV Transfer — the connector that moves KV from the prefill to the
+          {/* PD Connector — the connector that moves KV from the prefill to the
               decode pool. Nested under Strategy beside PD Router: it changes
               each role's --kv-transfer-config and the router's KV mode, never
               the pools. A connector this hardware or router can't run is
               disabled with the reason. */}
           {activeServingStrategy === "pd_cluster" && Object.keys(pdConnectors).length > 1 && (
-            <ConfigRow label="KV Transfer" nested hint="Connector that moves each request's KV cache from the prefill pool to the decode pool. KV Offload tiers below compose with it.">
+            <ConfigRow label="PD Connector" nested hint="Connector that moves each request's KV cache from the prefill pool to the decode pool. KV Offload tiers below compose with it.">
               <PillGroup>
                 {Object.entries(pdConnectors).map(([key, c]) => {
                   const reason = pdConnectorReason(key);
