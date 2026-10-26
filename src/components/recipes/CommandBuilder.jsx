@@ -2780,7 +2780,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             );
           })()}
           {result?.preset?.point && result.preset.point.options.length > 1 && (() => {
-            // Points are usually one per client concurrency; name the row after
+            // Points are usually one per benchmark concurrency; name the row after
             // it when every point declares one, else keep the generic name
             // (e.g. eval vs throughput arms).
             const byConcurrency = result.preset.point.options.every((pt) => Number.isInteger(pt.concurrency));
@@ -2789,7 +2789,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               label={byConcurrency ? "Concurrency" : "Point"}
               nested
               hint={byConcurrency
-                ? "Client concurrency the preset was qualified at. Each renders its own settings."
+                ? "Concurrency the preset was qualified at: concurrent sessions for agentic lanes, concurrent requests otherwise. Each renders its own settings."
                 : "The preset's qualified operating points. Each renders its own settings."}
             >
               <PillGroup>
