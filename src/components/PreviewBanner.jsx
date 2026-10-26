@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // Set at build time from public/preview.json, which only preview branches
 // (scripts/preview-prs.mjs) carry; empty on the production site.
@@ -18,6 +18,22 @@ function statusText(pull) {
 
 export function PreviewBanner() {
   const [pull, setPull] = useState(null);
+  const ref = useRef(null);
+
+  // The banner sits in the sticky header, so whatever is offset by the
+  // header's 4rem (sidebar, mobile search results, anchor scrolls) adds
+  // --preview-h. It's measured because the banner wraps on narrow screens.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const ro = new ResizeObserver(() => root.style.setProperty("--preview-h", `${el.offsetHeight}px`));
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      root.style.removeProperty("--preview-h");
+    };
+  }, []);
 
   useEffect(() => {
     if (!preview) return;
@@ -34,7 +50,7 @@ export function PreviewBanner() {
   const outdated = pull && !pull.merged_at && pull.state === "open" && pull.head.sha !== preview.sha;
 
   return (
-    <div className="border-b border-amber-500/40 bg-amber-500/10 text-[13px] leading-snug">
+    <div ref={ref} className="border-t border-amber-500/40 bg-amber-500/10 text-[13px] leading-snug">
       <div className="max-w-[1480px] mx-auto px-4 sm:px-6 py-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="font-semibold text-amber-600 dark:text-amber-400">Preview</span>
         <span>
