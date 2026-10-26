@@ -1,3 +1,5 @@
+import { applyPresetArgOps, effectivePreset, toggleOwnedFlags, matchingPresets, presetImage, presetPoints, resolvePresetKey, withPreset } from "./recipe-presets.js";
+
 /**
  * Core command synthesis: Recipe + Variant + Strategy + Hardware + Features → vllm serve command.
  * Pure functions, no I/O.
@@ -337,6 +339,24 @@ function pdRoleValue(recipe, role, key, hwProfile, hwProfileId) {
 export function pdRoleNodes(recipe, role, hwProfile, hwProfileId) {
   const n = pdRoleValue(recipe, role, "nodes", hwProfile, hwProfileId);
   return typeof n === "number" ? n : undefined;
+}
+
+/**
+ * The PD strategy's KV transfer connector key (strategies/pd_cluster.yaml
+ * `connectors`): the requested one when it exists, else the `default: true`
+ * entry, else the first. null when the strategy declares none.
+ */
+export function pdConnectorKey(strategy, requested) {
+  const connectors = strategy?.connectors || {};
+  if (requested && connectors[requested]) return requested;
+  const keys = Object.keys(connectors);
+  return keys.find((k) => connectors[k]?.default) ?? keys[0] ?? null;
+}
+
+// A KV tier composed with the transfer connector, in the shape vLLM's
+// MultiConnector takes (the transfer connector first).
+function multiConnector(connectors) {
+  return { kv_connector: "MultiConnector", kv_role: "kv_both", kv_connector_extra_config: { connectors: connectors.filter(Boolean) } };
 }
 
 /**
@@ -915,18 +935,24 @@ function localModelMount(modelId) {
     : [];
 }
 
-// Port to publish, read off the command's own `--port` so a strategy that
-// serves behind a router (on 8100) stays reachable from the host.
-function servedPort(tokens, fallback = 8000) {
+// The value a command actually runs with for an integer flag: the last
+// occurrence wins, as in dedupeArgs.
+export function lastIntFlag(tokens, flag, fallback) {
   for (let i = tokens.length - 1; i >= 0; i--) {
     const t = tokens[i];
     if (typeof t !== "string") continue;
-    const raw = t === "--port" ? tokens[i + 1] : t.startsWith("--port=") ? t.slice(7) : null;
+    const raw = t === flag ? tokens[i + 1] : t.startsWith(`${flag}=`) ? t.slice(flag.length + 1) : null;
     if (raw == null) continue;
     const v = Number(raw);
     if (Number.isInteger(v) && v > 0) return v;
   }
   return fallback;
+}
+
+// Port to publish, read off the command's own `--port` so a strategy that
+// serves behind a router (on 8100) stays reachable from the host.
+function servedPort(tokens, fallback = 8000) {
+  return lastIntFlag(tokens, "--port", fallback);
 }
 
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
@@ -1238,10 +1264,37 @@ function applyDcpSize(args, size, commBackend) {
   return args.map((a, i) => (args[i - 1] === SIZE ? String(size) : a));
 }
 
+// The last two parameters are the user's tuned-preset pick and point pick (see
+// recipe-presets.js): an undefined preset follows the recipe's default for
+// this hardware + strategy + variant, "baseline" opts out, a key selects that
+// preset; an undefined point follows the preset's default point.
+//
+// `result.preset` = { selected, options, point: { selected, options } | null,
+// select, image } — `select` is the builder state the preset implies, which
+// the CALLER applies (the builder to its pills, the JSON API to the params it
+// passes): synthesis renders whatever frontend / router / features it is given.
 export function resolveCommand(...params) {
   const dcpOut = {};
-  const result = resolveCommandImpl(dcpOut, ...params);
-  if (result && typeof result === "object" && !Array.isArray(result)) result.dcp = dcpOut.get?.() ?? null;
+  const [recipe, variantKey, strategyName, hwProfileId] = params;
+  const presetKey = resolvePresetKey(recipe, hwProfileId, strategyName, params[17], variantKey);
+  const raw = recipe?.presets?.[presetKey];
+  const eff = raw ? effectivePreset(raw, params[18]) : null;
+  params[0] = withPreset(recipe, presetKey, hwProfileId, strategyName, { variantKey, point: params[18] });
+  const result = resolveCommandImpl(dcpOut, ...params.slice(0, 17));
+  if (result && typeof result === "object" && !Array.isArray(result)) {
+    result.dcp = dcpOut.get?.() ?? null;
+    const options = matchingPresets(recipe, hwProfileId, strategyName, variantKey);
+    const points = raw ? presetPoints(raw) : [];
+    result.preset = options.length
+      ? {
+        selected: presetKey,
+        options,
+        point: points.length ? { selected: eff?.point ?? null, options: points } : null,
+        select: eff?.select || null,
+        image: presetImage(eff?.image),
+      }
+      : null;
+  }
   return result;
 }
 
@@ -1294,6 +1347,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   // `dynamo` block — same pools/parallelism, but each role launches through
   // `python3 -m dynamo.vllm --disaggregation-mode <role>` and dynamo.frontend
   // fronts them. Any other value (or a strategy without the block) = native.
+  const pdConnector = strategy.deploy_type === "pd_cluster"
+    ? strategy.connectors?.[pdConnectorKey(strategy)] ?? null
+    : null;
   const dynamo = strategy.deploy_type === "pd_cluster" && pdRouter === "dynamo"
       && isDynamoSupportedOnHardware(strategy.dynamo, hwProfile)
     ? strategy.dynamo
@@ -1405,8 +1461,10 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     }
     if (strategy.deploy_type !== "pd_cluster") {
       if (strategy.vllm_args) args.push(...strategy.vllm_args);
-    } else if (roleOverride && strategy[roleOverride]?.vllm_args) {
-      args.push(...strategy[roleOverride].vllm_args);
+    } else if (roleOverride) {
+      if (strategy[roleOverride]?.vllm_args) args.push(...strategy[roleOverride].vllm_args);
+      const transfer = pdConnector?.[roleOverride]?.config;
+      if (transfer) args.push("--kv-transfer-config", JSON.stringify(transfer));
     }
     // Dynamo role args (--disaggregation-mode + its kv_both Nixl config)
     // follow the native ones so the connector swap wins the last-wins dedupe.
@@ -1707,18 +1765,30 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     if (kvComposing) {
       args.push(...(kvStoreStrat.vllm?.vllm_args || []));
     }
-    // Mooncake × pd_cluster: each role's plain NixlConnector config is
-    // swapped (last-wins) for the kv_store YAML's `pd.<role>.args`
-    // MultiConnector — Nixl prefill↔decode path + shared MooncakeStoreConnector.
+    // Mooncake × pd_cluster: the kv_store YAML's `pd.<role>.tier`
+    // (MooncakeStoreConnector) joins the role's transfer connector in a
+    // MultiConnector, which replaces (last-wins) the plain transfer config.
     if (strategy.deploy_type === "pd_cluster" && roleOverride
-        && kvStoreStrat?.pd?.[roleOverride]?.args) {
-      args.push(...kvStoreStrat.pd[roleOverride].args);
+        && kvStoreStrat?.pd?.[roleOverride]?.tier) {
+      args.push("--kv-transfer-config", JSON.stringify(multiConnector([
+        pdConnector?.[roleOverride]?.config,
+        kvStoreStrat.pd[roleOverride].tier,
+      ])));
     }
 
     // Dynamo workers serve no HTTP of their own (the frontend does), so drop
     // flags like --port whichever layer emitted them.
-    if (dynamo?.remove_args?.length) return stripArgs(args, dynamo.remove_args);
-    return args;
+    let out = dynamo?.remove_args?.length ? stripArgs(args, dynamo.remove_args) : args;
+    // 9. The active preset's `remove_args` / `json_args` (recipe-presets.js),
+    //    after every layer so they also reach feature and KV-offload flags
+    //    (e.g. num_speculative_tokens inside --speculative-config).
+    const ops = recipe._presetOps;
+    if (ops) {
+      const editOnly = toggleOwnedFlags(recipe, taxonomy);
+      out = applyPresetArgOps(out, ops.all, editOnly);
+      if (roleOverride) out = applyPresetArgOps(out, ops.roles?.[roleOverride], editOnly);
+    }
+    return out;
   }
 
   // Helper to merge env
@@ -1737,8 +1807,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     // Strategy env
     if (strategy.deploy_type !== "pd_cluster") {
       Object.assign(env, strategy.env || {});
-    } else if (roleOverride && strategy[roleOverride]?.env) {
-      Object.assign(env, strategy[roleOverride].env);
+    } else if (roleOverride) {
+      Object.assign(env, strategy[roleOverride]?.env || {});
+      Object.assign(env, pdConnector?.[roleOverride]?.env || {});
     }
     if (dynamo && roleOverride) Object.assign(env, dynamo.env || {});
     // Composing-option env, after the strategy's so the option wins.
@@ -2292,8 +2363,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       command: String(kvOpt.companion.command).trimEnd(),
     });
   }
-  // `{dp_size}` resolves against the same gpuCount the DP flag was emitted
-  // with, `{port}` against the port the engine actually serves on.
+  // `{dp_size}` and `{port}` resolve against what the engine actually runs
+  // with: a preset may narrow DEP below the node (`--data-parallel-size 2`),
+  // and a strategy may serve behind the router on another port.
   if (strategy.companion?.command && deployType === "single_node") {
     companions.push({
       feature: `strategy:${strategyName}`,
@@ -2304,7 +2376,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         strategy.companion.install ? `Requires: ${strategy.companion.install}` : "",
       ].filter(Boolean).join(" ").trim(),
       command: String(strategy.companion.command)
-        .replace(/\{dp_size\}/g, String(gpuCount))
+        .replace(/\{dp_size\}/g, String(lastIntFlag(singleArgs, "--data-parallel-size", gpuCount)))
         .replace(/\{port\}/g, String(servedPort(singleArgs)))
         .trimEnd(),
     });

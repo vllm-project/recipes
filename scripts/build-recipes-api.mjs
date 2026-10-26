@@ -8,6 +8,7 @@
  *   /{hf_id}/strategies/{strategy}.json         — default-hw alternative (per strategy)
  *   /{hf_id}/hw/{hw}.json                       — per-hardware rendering
  *   /{hf_id}/hw/{hw}/strategies/{strategy}.json — per-(hw, strategy) alternative
+ *   /{hf_id}/presets/{preset}.json              — a tuned preset, one rendering per point
  *   /strategies.json                            — all strategies
  *   /strategies/{strategy}.json                 — single strategy spec
  *   /taxonomy.json                              — controlled vocabulary
@@ -21,6 +22,8 @@ import path from "path";
 import yaml from "js-yaml";
 import Ajv from "ajv";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
+import { BASELINE, effectivePreset, presetImage, presetPoints, presetSelect, resolvePresetKey, validatePresets, withPreset } from "../src/lib/recipe-presets.js";
+import { validateContextEntries } from "../src/lib/recipe-context.js";
 import {
   pickDefaultHardware,
   listCompatibleHardware,
@@ -389,8 +392,15 @@ function dockerize(command, argv, env, dockerMeta, port = null) {
 //   "skip" → would need >4 nodes per role; don't emit a fantasy cluster
 // Each role is then grown to clear its parallelism's `strategy_min_gpus` floor,
 // matching what the builder renders.
-function pickPdNodes(hwProfile, variant, recipe, strategies, hwId) {
-  if (pdFitsSingleNode(hwProfile, variant, hwId)) return null;
+function pickPdNodes(hwProfile, variant, baseRecipe, strategies, hwId, presetPick = undefined, pointPick = undefined, variantKey = undefined) {
+  // The pd_cluster preset this rendering bakes in may own the pools' topology.
+  const presetKey = resolvePresetKey(baseRecipe, hwId, "pd_cluster", presetPick, variantKey);
+  const recipe = withPreset(baseRecipe, presetKey, hwId, "pd_cluster", { variantKey, point: pointPick });
+  // A preset that sizes a pool explicitly gets dedicated pools even where two
+  // copies would fit one node, as the builder renders it.
+  const eff = presetKey !== BASELINE && baseRecipe.presets?.[presetKey] ? effectivePreset(baseRecipe.presets[presetKey], pointPick) : null;
+  const presetSizesPools = ["prefill", "decode"].some((r) => eff?.roles?.[r]?.nodes != null);
+  if (!presetSizesPools && pdFitsSingleNode(hwProfile, variant, hwId)) return null;
   const nodeVram = typeof hwProfile?.vram_gb === "number" ? hwProfile.vram_gb : 0;
   const modelVram = variantVramMinimumGb(variant, hwId);
   if (nodeVram <= 0 || modelVram <= 0) return null;
@@ -410,21 +420,47 @@ function pickPdNodes(hwProfile, variant, recipe, strategies, hwId) {
 // alongside the pip-mode command/argv. The `features` argument controls
 // command synthesis but is intentionally NOT echoed back in the output —
 // agents read the actual args from `command`/`argv`.
-function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, strategies, taxonomy, pdNodes = null, kvOffload = null) {
+function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, strategies, taxonomy, pdNodes = null, kvOffload = null, presetPick = undefined, pointPick = undefined, strict = false) {
+  // The preset in effect (the default here unless one is picked) implies
+  // builder choices — frontend, PD router, features, DCP, KV offload — which
+  // the rendering applies the way the builder does.
+  const sel = presetSelect(recipe, resolvePresetKey(recipe, hwId, strategy, presetPick, variantKey), pointPick) || {};
+  let feats = [...features];
+  const modes = {};
+  for (const [f, v] of Object.entries(sel.features || {})) {
+    if (!recipe.features?.[f]) continue;
+    if (v === false) feats = feats.filter((x) => x !== f);
+    else {
+      if (!feats.includes(f)) feats.push(f);
+      if (typeof v === "string") modes[f] = v;
+    }
+  }
+  const selKv = sel.kv_offload && sel.kv_offload !== "off" ? sel.kv_offload : null;
+  // A multi-node preset's node count, as the builder applies it.
+  if (Number.isInteger(sel.nodes) && strategies[strategy]?.deploy_type === "multi_node") nodeCount = sel.nodes;
   let result;
   try {
     result = resolveCommand(
-      recipe, variantKey, strategy, hwId, features, strategies, taxonomy, [], nodeCount, pdNodes,
-      {}, kvOffload
+      recipe, variantKey, strategy, hwId, feats, strategies, taxonomy, [], nodeCount, pdNodes,
+      modes, kvOffload ?? selKv, null, sel.frontend, sel.pd_router ?? null, "http", sel.dcp ?? null,
+      presetPick, pointPick
     );
   } catch (e) {
+    // A preset is authored config with nothing to fall back to: fail the build
+    // (and the source repo's PR check) rather than drop its rendering.
+    if (strict) throw new Error(`Invalid preset ${presetPick}${pointPick ? ` at point ${pointPick}` : ""} in ${recipe.hf_id} (${hwId} / ${strategy}): ${e.message}`);
     console.warn(`  ⚠ command synthesis failed for ${recipe.hf_id} / ${variantKey} / ${strategy}: ${e.message}`);
     return null;
   }
   if (!result) return null;
 
-  const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
+  const baseVariant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
+  // A preset's engine image pins this GPU's docker command.
+  const pinned = result.preset?.image?.vllm;
+  const variant = pinned
+    ? { ...baseVariant, hardware_overrides: { ...(baseVariant.hardware_overrides || {}), [hwId]: { ...(baseVariant.hardware_overrides?.[hwId] || {}), docker_image: pinned } } }
+    : baseVariant;
   const dockerMeta = computeDockerMeta(recipe, variant, hwProfile, hwId);
   const env = result.env || {};
 
@@ -434,6 +470,10 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
     variant: variantKey,
     node_count: nodeCount,
     deploy_type: result.deployType,
+    // The tuned preset baked into this rendering (its default for this
+    // hardware + strategy); absent when the baseline renders.
+    ...(result.preset && result.preset.selected !== "baseline" ? { preset: result.preset.selected } : {}),
+    ...(result.preset?.point?.selected && result.preset.selected !== "baseline" ? { preset_point: result.preset.point.selected } : {}),
     env,
     docker_image: dockerMeta.image,
   };
@@ -628,7 +668,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
 
   // PD's node-count is independent of nodeCount — it lives in pdNodes per role.
   const recommendedPdNodes = recommendedStrategy === "pd_cluster"
-    ? pickPdNodes(hwProfile, variant, recipe, strategies, hwId)
+    ? pickPdNodes(hwProfile, variant, recipe, strategies, hwId, undefined, undefined, variantKey)
     : null;
   if (recommendedPdNodes === "skip") return null;
 
@@ -666,7 +706,7 @@ function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
     let servingStrategy = s;
     let kvOffload = null;
     if (s === "pd_cluster") {
-      pdNodes = pickPdNodes(hwProfile, variant, recipe, strategies, hwId);
+      pdNodes = pickPdNodes(hwProfile, variant, recipe, strategies, hwId, undefined, undefined, variantKey);
       if (pdNodes === "skip") continue;
       nc = 1;
     } else if (strategies[s]?.deploy_type === "kv_store_lb") {
@@ -885,6 +925,60 @@ function renderAndWriteVariant(recipe, variantKey, altBaseHfId, strategies, taxo
   return defaultRecommended;
 }
 
+// Every tuned preset rendered at each of its points, so agents can read the
+// exact commands of a non-default preset or point without the builder:
+//   /<hf_id>/presets/<key>.json = { preset meta, points: { <point|default>: rendering } }
+// Variant: the preset's first listed one, else `default`. Strategy: the
+// preset's, else the recommendation for that GPU.
+function writePresetRenderings(recipe, hfId, strategies, taxonomy) {
+  const written = {};
+  for (const [key, p] of Object.entries(recipe.presets || {})) {
+    const hwId = p.hardware;
+    const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
+    const variantKey = p.variants?.[0] || "default";
+    const variant = recipe.variants?.[variantKey];
+    if (!variant) continue;
+    const strategy = p.strategy || recommendStrategy(recipe, hwProfile, fitsSingleNode(hwProfile, variant, hwId) ? 1 : 2);
+    const deploy = strategies[strategy]?.deploy_type;
+    const feats = defaultFeaturesFor(recipe, hwId, variantKey);
+    const points = presetPoints(p);
+    const out = {};
+    for (const pt of points.length ? points : [null]) {
+      let nc = 1;
+      let pdNodes = null;
+      if (deploy === "pd_cluster") {
+        pdNodes = pickPdNodes(hwProfile, variant, recipe, strategies, hwId, key, pt?.key, variantKey);
+        if (pdNodes === "skip") continue;
+      } else if (deploy === "multi_node") {
+        nc = Math.max(2, nodesForStrategy(recipe, strategy, hwProfile.gpu_count, hwId));
+      }
+      const rendered = renderCommand(recipe, variantKey, strategy, hwId, nc, feats, strategies, taxonomy, pdNodes, null, key, pt?.key, true);
+      if (!rendered) continue;
+      out[pt?.key || "default"] = { ...(pt ? { label: pt.label, ...(pt.concurrency ? { concurrency: pt.concurrency } : {}) } : {}), ...rendered };
+    }
+    if (!Object.keys(out).length) continue;
+    const rel = `${hfId}/presets/${key}.json`;
+    writeJson(rel, {
+      preset: key,
+      label: p.label,
+      hardware: hwId,
+      strategy,
+      variant: variantKey,
+      ...(p.workload ? { workload: p.workload } : {}),
+      default: !!p.default,
+      ...(p.source ? { source: p.source } : {}),
+      ...(p.image ? { image: presetImage(p.image) } : {}),
+      ...(points.length ? { default_point: (points.find((x) => x.default) || points[0]).key } : {}),
+      points: out,
+    });
+    written[key] = `/${rel}`;
+  }
+  return written;
+}
+
+// KV-store deployment ids a preset's `select.kv_offload` may name.
+const kvStoreIds = Object.keys(strategies).filter((id) => strategies[id]?.deploy_type === "kv_store_lb");
+
 const recipes = [];
 const promotedIndexEntries = [];
 let promotedCount = 0;
@@ -895,6 +989,10 @@ for (const file of findYamlFiles(modelsDir)) {
   validateFeatureModes(r, file);
   validateFrontends(r, file, taxonomy);
   validateHardwareKeys(r, file, taxonomy, strategies);
+  const presetErrors = validatePresets(r, taxonomy, effectiveCompatibleStrategies(r), kvStoreIds);
+  if (presetErrors.length) throw new Error(`Invalid presets in ${sourceRel(file)}:\n  - ${presetErrors.join("\n  - ")}`);
+  const contextErrors = validateContextEntries(r);
+  if (contextErrors.length) throw new Error(`Invalid notes/troubleshooting in ${sourceRel(file)}:\n  - ${contextErrors.join("\n  - ")}`);
   // Derive HF identity from path. Only `hf_id` is exposed in the public JSON;
   // `org` and `repo` are trivially `hf_id.split("/")` for consumers.
   const rel = path.relative(modelsDir, file);
@@ -925,6 +1023,11 @@ for (const file of findYamlFiles(modelsDir)) {
   const parentHfId = `${hfOrg}/${hfRepo}`;
   const defaultRecommended = renderAndWriteVariant(r, "default", parentHfId, strategies, taxonomy);
   if (defaultRecommended) r.recommended_command = defaultRecommended;
+  // Each preset at each point, written into the subtree rebuilt above, with a
+  // `json:` pointer on the recipe's own preset entry.
+  for (const [key, link] of Object.entries(writePresetRenderings(r, parentHfId, strategies, taxonomy))) {
+    r.presets[key] = { ...r.presets[key], json: link };
+  }
 
   // Promote each variant whose `model_id` points at a distinct HF repo to its
   // own top-level JSON endpoint, mirroring the HF URL convention. `default` is

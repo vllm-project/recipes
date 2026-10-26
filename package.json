@@ -12,10 +12,14 @@
     "content:watch": "node scripts/assemble-content.mjs --watch",
     "content:update": "node scripts/sync-sources.mjs --update",
     "test:smg-pd": "node --test scripts/test-smg-pd.mjs",
+    "test:pd-connectors": "node --test scripts/test-pd-connectors.mjs",
     "validate": "node --experimental-vm-modules hooks/validate.mjs",
     "test:overlay": "node --test scripts/test-overlay.mjs",
     "test:schema": "node --test scripts/test-schema.mjs",
-    "test:dcp": "node --test scripts/test-dcp-selector.mjs"
+    "test:guide-html": "node --test scripts/test-guide-html.mjs",
+    "test:dcp": "node --test scripts/test-dcp-selector.mjs",
+    "test:presets": "node --test scripts/test-presets.mjs",
+    "test:context": "node --test scripts/test-context.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.2",

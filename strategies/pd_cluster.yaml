@@ -1,6 +1,7 @@
 name: pd_cluster
 deploy_type: pd_cluster
 display_name: "Prefill/Decode Disaggregation"
+short_label: "PD"                  # compact name for tight spots (Preset pills)
 orientation: production
 description: >
   Disaggregated prefill/decode cluster. Splits inference into separate
@@ -16,35 +17,50 @@ hardware_match:
 # Worker environment follows the Kimi-K2.5 NIXL/MoE pattern.
 # CUDA_VISIBLE_DEVICES is set per-rank when running one `vllm serve` per GPU
 # (data parallel); omit it if your launcher already pins GPUs.
+# The KV transfer wiring (--kv-transfer-config and its env) comes from the
+# selected entry of `connectors` below, emitted after each role's vllm_args.
 prefill:
   vllm_args:
     - "--port"
     - "8001"
-    - "--kv-transfer-config"
-    - '{"kv_connector":"NixlConnector","kv_role":"kv_producer","kv_load_failure_policy":"fail"}'
   env:
     NCCL_CUMEM_ENABLE: "1"
     NCCL_MNNVL_ENABLE: "1"
     NCCL_NVLS_ENABLE: "1"
     UCX_NET_DEVICES: "all"
-    VLLM_NIXL_SIDE_CHANNEL_PORT: "5557"
-    # Bind on this prefill node's own IP. Rendered as $PREFILL_NODE_1 by
-    # default (rank-0 view); command-synthesis rewrites to $PREFILL_NODE_<rank+1>
-    # when the UI shows a non-zero DEP rank.
-    VLLM_NIXL_SIDE_CHANNEL_HOST: "$PREFILL_NODE_1"
 
 decode:
   vllm_args:
     - "--port"
     - "8002"
-    - "--kv-transfer-config"
-    - '{"kv_connector":"NixlConnector","kv_role":"kv_consumer","kv_load_failure_policy":"fail"}'
     - "--compilation-config"
     - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
-  env:
-    VLLM_NIXL_SIDE_CHANNEL_PORT: "5558"
-    # Same per-node binding pattern as prefill above.
-    VLLM_NIXL_SIDE_CHANNEL_HOST: "$DECODE_NODE_1"
+
+# KV transfer connectors between the prefill and decode pools. Each role's
+# `config` is its --kv-transfer-config (an object, serialized by synthesis)
+# and `env` its connector env. KV tiers that compose under PD (the Mooncake
+# store) wrap the selected config in a MultiConnector, so a tier never names
+# the transfer connector itself. `default: true` marks the one rendered when
+# nothing selects another.
+connectors:
+  nixl:
+    display_name: "NIXL"
+    default: true
+    docs: "https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html"
+    prefill:
+      config: { kv_connector: NixlConnector, kv_role: kv_producer, kv_load_failure_policy: fail }
+      env:
+        VLLM_NIXL_SIDE_CHANNEL_PORT: "5557"
+        # Bind on this prefill node's own IP. Rendered as $PREFILL_NODE_1 by
+        # default (rank-0 view); command-synthesis rewrites to $PREFILL_NODE_<rank+1>
+        # when the UI shows a non-zero DEP rank.
+        VLLM_NIXL_SIDE_CHANNEL_HOST: "$PREFILL_NODE_1"
+    decode:
+      config: { kv_connector: NixlConnector, kv_role: kv_consumer, kv_load_failure_policy: fail }
+      env:
+        VLLM_NIXL_SIDE_CHANNEL_PORT: "5558"
+        # Same per-node binding pattern as prefill above.
+        VLLM_NIXL_SIDE_CHANNEL_HOST: "$DECODE_NODE_1"
 
 parallel_flag: "--tensor-parallel-size"
 
