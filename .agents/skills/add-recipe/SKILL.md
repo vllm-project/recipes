@@ -210,8 +210,8 @@ some variants). Field reference: the `presets` entry in SCHEMA.md.
   concurrency, one workload) stay opt-in.
 - **Shared flags on the preset, per-point values in `points`.** One point per measured
   operating point (benchmark concurrency, or arms such as eval vs throughput), keyed by an
-  id (`c16`, `c24_1p2d`, `eval`) because concurrency values repeat; label it `C16`
-  (plus what else changes, `C8 · TP4`), not "16 clients"; `concurrency` is
+  id (`c16`, `c24_1p2d`, `eval`) because concurrency values repeat; label it `16`
+  (plus what else changes in parentheses, `8 (TP4)`), not "16 clients"; `concurrency` is
   informational. Write explicit values — no formulas (`2 × C`), no ranges. A point
   may change the single-node TP size (`tp`) or, under multi_node_*, the node count
   (`select.nodes`); a different strategy or variant is a different preset.
