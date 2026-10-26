@@ -313,3 +313,9 @@ html.dark .shiki span {
   border-top: 1px solid var(--border);
   margin: 1.5rem 0;
 }
+
+/* Anchor scrolls clear the preview banner in the sticky header (0 outside
+   preview deploys); each target's own scroll-mt clears the header itself. */
+html {
+  scroll-padding-top: var(--preview-h, 0px);
+}
