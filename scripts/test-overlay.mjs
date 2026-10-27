@@ -111,6 +111,10 @@ test("guide sections fill their marker, else append", () => {
   const core = { meta: {}, guide: "## A\n\n<!-- overlay:vllm-ascend:npu -->\n## B\n" };
   const { recipe } = applyOverlay(core, { guide_sections: { npu: "## NPU\nx\n\n", tail: "## Tail\n" } }, { ctx, source });
   assert.equal(recipe.guide, "## A\n\n## NPU\nx\n\n## B\n\n## Tail\n");
+  // A section that ends the guide splits off and merges back unchanged.
+  const tail = { meta: {}, guide: "## A\n\n## Ascend\nx\n" };
+  const split = splitOverlay(tail, { ctx, source, guideHeading: /ascend/i });
+  assert.equal(applyOverlay(split.core, split.overlay, { ctx, source }).recipe.guide, tail.guide);
 });
 
 test("exclude_brands keeps a brand's hardware out of a core source", () => {

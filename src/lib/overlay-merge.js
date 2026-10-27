@@ -365,7 +365,10 @@ function pruneEmpty(node, original) {
 // heading matches (plus its subsections) out. Adjacent moved sections share
 // one marker.
 function extractGuideSections(guide, heading, source) {
-  const lines = guide.split("\n");
+  // The guide's final newline stays with the guide, so a moved section that
+  // runs to the end doesn't gain an extra one on the way back in.
+  const trailing = guide.endsWith("\n") ? "\n" : "";
+  const lines = (trailing ? guide.slice(0, -1) : guide).split("\n");
   const sections = {};
   const out = [];
   let fence = false;
@@ -394,7 +397,7 @@ function extractGuideSections(guide, heading, source) {
     }
   }
   return {
-    guide: out.join("\n"),
+    guide: out.join("\n") + trailing,
     // Trailing "\n" terminates the last line, so merging the section back in
     // place of its marker line reproduces the original text exactly.
     sections: Object.fromEntries(Object.entries(sections).map(([k, v]) => [k, `${v.join("\n")}\n`])),
