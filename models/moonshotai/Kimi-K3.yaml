@@ -61,6 +61,12 @@ features:
       - "--speculative-config"
       - '{"model":"RedHatAI/Kimi-K3-speculator.dspark", "num_speculative_tokens":8, "method": "dspark", "draft_sample_method": "probabilistic", "rejection_sample_method": "block"}'
     hardware_overrides:
+      # Match the measured B200 DSpark runs. Runtime validation covers
+      # single-node TP8 with the 52 GB performance profile below.
+      b200:
+        args:
+          - "--speculative-config"
+          - '{"model":"RedHatAI/Kimi-K3-speculator.dspark","method":"dspark","num_speculative_tokens":8,"draft_sample_method":"probabilistic","rejection_sample_method":"standard"}'
       # MI355X serves the InferenceX AgentX lane's draft (see the guide's MI355X
       # section). The stock Inferact checkpoint needs ROCM_AITER_MLA from
       # vllm-project/vllm#55966, and the draft's FP8 KV assumes an FP8 target KV.
@@ -127,8 +133,8 @@ opt_in_features:
 
 advanced_options:
   - id: b200_cpu_offload_52gb
-    label: "Lower CPU offload — 52 GB"
-    description: "Reduce B200 single-node CPU weight offload from the default 68 GB to 52 GB and cap max-num-seqs at 256."
+    label: "B200 52 GB offload profile"
+    description: "Use 52 GB CPU weight offload per GPU, five sequences and a 16384-token batch limit. Enable Spec decoding separately to use DSpark."
     hardware:
       - b200
     strategies:
@@ -137,7 +143,18 @@ advanced_options:
       - "--cpu-offload-gb"
       - "52"
       - "--max-num-seqs"
-      - "256"
+      - "5"
+      - "--max-num-batched-tokens"
+      - "16384"
+  - id: b200_numa_bind
+    label: "B200 NUMA binding"
+    description: "Bind GPU workers to their local NUMA nodes for CPU weight offload. Docker may require --cap-add SYS_NICE. Independent of Spec decoding."
+    hardware:
+      - b200
+    strategies:
+      - single_node_tp
+    args:
+      - "--numa-bind"
 
 variants:
   default:
@@ -546,7 +563,9 @@ guide: |
   ## Notes
 
   - **Single-node 8x B200:** The recipe uses TP8 with UVA CPU offload of `w13_weight` and `w2_weight`, `--cpu-offload-gb 68`, lazy safetensors loading, `--gpu-memory-utilization 0.90`, and an initial `--max-model-len 32768`. The Docker container should use `--ipc=host --ulimit memlock=-1:-1 --cap-add IPC_LOCK` so pinned/locked host memory is available to the offload path. Ensure sufficient host RAM before increasing context length or concurrency.
-  - **Lower CPU-offload profile:** Under Advanced, select **Lower CPU offload — 52 GB** to use `--cpu-offload-gb 52` with `--max-num-seqs 256` while keeping the same TP8, UVA parameter selection, and 32K initial context.
+  - **B200 offload profile:** Under Advanced, select **B200 52 GB offload profile** for `--cpu-offload-gb 52 --max-num-seqs 5 --max-num-batched-tokens 16384`, retaining TP8, UVA weight selection, FP8 KV, TOKENSPEED_MLA, prefix caching and the 32K context. The default stays at 68 GB for conservative bring-up. The offload amount is per GPU: 52 GB across eight ranks requires roughly 416 GB of host weight storage plus additional host-memory overhead. The draft and KV cache also need GPU headroom.
+  - **B200 DSpark:** Select the 52 GB performance profile and enable **Spec decoding**. The B200 override uses `RedHatAI/Kimi-K3-speculator.dspark`, eight draft tokens, probabilistic drafting and standard rejection, Other hardware retains its existing speculative configuration. Only single-node TP8 was validated for this B200 configuration.
+  - **B200 NUMA binding:** Additionally select **B200 NUMA binding** for `--numa-bind`, and add `--cap-add SYS_NICE` to Docker alongside `--ipc=host --ulimit memlock=-1:-1 --cap-add IPC_LOCK`. SYS_NICE alone does not enable binding. Confirm the GPU-to-NUMA mapping and worker binding in startup logs. The recipe documents the Docker capability; this option adds only the vLLM argument to the generated command.
   - **Cross node communitcation**: Use `--all2all-backend deepep_v2` for RDMA and `--all2all-backend flashinfer_nvlink_one_sided` for NVLink.
   - **MoE backend**: Recommend to use `deep_gemm_mega_moe` for DEP deployments with cross-node NVLink e.g. GB200 and GB300. Note that DeepGEMM MegaMoE is not compatible with cross-node RDMA.
   - **Rust Frontend**: Selected by default in the command builder. Switch to Python if you encounter unsupported features or compatibility issues.
