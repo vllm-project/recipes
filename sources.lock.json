@@ -4,17 +4,17 @@
       "repo": "vllm-project/vllm",
       "ref": "main",
       "path": "recipes",
-      "sha": "ed1a7307950ab5e6593d25123579ed7ca998b350",
+      "sha": "b82393b77315692f390880d2e931fdc1fbd13928",
       "tree_sha": "7caec0848cc0ce16708815f3ea27f259a7e55bcc",
-      "resolved_at": "2026-10-27T01:01:32.857Z"
+      "resolved_at": "2026-10-26T23:35:18.455Z"
     },
     "vllm-omni": {
       "repo": "vllm-project/vllm-omni",
       "ref": "main",
       "path": "recipes",
-      "sha": "c84638f3208f0fffd872200adfc5860103a6244b",
+      "sha": "0bce034b7bbe3d9937103300bc794e6b4620d0b6",
       "tree_sha": "4bb947a54a4590988ed31cf8d60e5833a120870a",
-      "resolved_at": "2026-10-26T17:38:08.328Z"
+      "resolved_at": "2026-10-26T17:28:40.102Z"
     }
   }
 }
