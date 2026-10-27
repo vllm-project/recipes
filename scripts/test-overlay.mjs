@@ -99,6 +99,18 @@ test("guide sections fill their marker, else append", () => {
   assert.equal(recipe.guide, "## A\n\n## NPU\nx\n\n## B\n\n## Tail\n");
 });
 
+// A moved section can consume the last line, including any final newlines.
+test("guide split preserves end-of-file newlines", () => {
+  for (const ending of ["", "\n", "\n\n"]) {
+    const original = { guide: `## Core\n\n## Ascend\nbody${ending}` };
+    const { core, overlay } = splitOverlay(original, { ctx, source, guideHeading: /ascend/i });
+    const diskOverlay = yaml.load(yaml.dump(overlay));
+    const { recipe, errors } = applyOverlay(core, diskOverlay, { ctx, source });
+    assert.deepEqual(errors, []);
+    assert.equal(recipe.guide, original.guide);
+  }
+});
+
 test("defers_to skips copies the other source ships; ownership and scope still hold", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-defers-"));
   const recipe = (tasks) => yaml.dump({ meta: { title: "x", tasks } });

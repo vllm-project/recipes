@@ -219,7 +219,7 @@ function insertGuideSections(guide, source, sections) {
   let out = guide.replace(GUIDE_MARKER, (m, src, name = "default") => {
     if (src !== source || !Object.hasOwn(sections, name)) return m;
     placed.add(name);
-    return ensureTrailingNewline(sections[name]);
+    return m.endsWith("\n") ? ensureTrailingNewline(sections[name]) : String(sections[name]);
   });
   for (const [name, md] of Object.entries(sections)) {
     if (!placed.has(name)) out = `${ensureTrailingNewline(out)}\n${ensureTrailingNewline(md)}`;
@@ -379,8 +379,10 @@ function extractGuideSections(guide, heading, source) {
   }
   return {
     guide: out.join("\n"),
-    // Trailing "\n" terminates the last line, so merging the section back in
-    // place of its marker line reproduces the original text exactly.
-    sections: Object.fromEntries(Object.entries(sections).map(([k, v]) => [k, `${v.join("\n")}\n`])),
+    // A section followed by core content replaces a terminated marker line.
+    // At EOF the split already includes the original trailing empty lines.
+    sections: Object.fromEntries(Object.entries(sections).map(([k, v]) => [k,
+      movingLevel && k === current ? v.join("\n") : `${v.join("\n")}\n`,
+    ])),
   };
 }
