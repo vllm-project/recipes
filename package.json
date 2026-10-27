@@ -19,7 +19,8 @@
     "test:guide-html": "node --test scripts/test-guide-html.mjs",
     "test:dcp": "node --test scripts/test-dcp-selector.mjs",
     "test:presets": "node --test scripts/test-presets.mjs",
-    "test:context": "node --test scripts/test-context.mjs"
+    "test:context": "node --test scripts/test-context.mjs",
+    "test:kv-offload": "node --test scripts/test-kv-offload.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.2",
