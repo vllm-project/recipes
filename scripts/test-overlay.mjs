@@ -97,6 +97,9 @@ test("new variants and dependencies must be in scope", () => {
   assert.deepEqual(errs({ variants: { foo: { precision: "fp8", supported_hardware: ["ascend_910c"] } } }), []);
   assert.equal(errs({ dependencies: [{ command: "pip install x" }] }).length, 1);
   assert.deepEqual(errs({ dependencies: [{ command: "pip install x", brand: "Huawei" }] }), []);
+  // An entry repeated within one overlay lands once.
+  const dep = { command: "pip install x", brand: "Huawei" };
+  assert.equal(applyOverlay(core0, { dependencies: [dep, dep] }, { ctx, source }).recipe.dependencies.filter((d) => d.command === dep.command).length, 1);
 });
 
 test("an overlay source needs a granted scope", () => {

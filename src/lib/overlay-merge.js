@@ -137,7 +137,7 @@ export function applyOverlay(core, overlay, { ctx, source }) {
         if (!isObj(dep)) { err([key, i], "must be a map"); continue; }
         if (!brandInScope(dep.brand, ctx)) err([key, i], `needs a brand in scope (${[...ctx.brands].join(", ")})`);
         const { position, ...rest } = structuredClone(dep);
-        if ((recipe.dependencies || []).some((d) => isDeepStrictEqual(d, rest))) continue;
+        if ([...(recipe.dependencies || []), ...start, ...end].some((d) => isDeepStrictEqual(d, rest))) continue;
         (position === "end" ? end : start).push(rest);
       }
       recipe.dependencies = [...start, ...(recipe.dependencies || []), ...end];
