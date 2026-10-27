@@ -373,6 +373,16 @@ hardware_profiles:
     scalable: false
     restricted: true
 
+  ascend_950pr_4x:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 950PR 4x"
+    description: "Huawei Ascend 950PR · 4× NPU · 128 GB HBM each · vLLM-Omni A5"
+    gpu_count: 4
+    vram_gb: 512
+    multi_node: false
+    restricted: true
+
   ascend_950dt:
     brand: Huawei
     generation: npu
@@ -380,6 +390,16 @@ hardware_profiles:
     description: "Huawei Ascend 950DT · 8× NPU node · 96 GB HBM each · vLLM Ascend backend"
     gpu_count: 8
     vram_gb: 768
+    multi_node: false
+    restricted: true
+
+  ascend_950dt_4x:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 950DT 4x"
+    description: "Huawei Ascend 950DT · 4× NPU · 96 GB HBM each · vLLM-Omni A5"
+    gpu_count: 4
+    vram_gb: 384
     multi_node: false
     restricted: true
 

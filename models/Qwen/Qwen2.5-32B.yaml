@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Qwen2.5 32B dense base (pretrained) language model for text completion — verified on TPU v6e (Trillium)."
   date_added: 2026-06-05
-  date_updated: 2026-06-04
+  date_updated: 2026-10-25
   difficulty: intermediate
   tasks:
     - text
@@ -30,7 +30,7 @@ opt_in_features: []
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 77
+    vram_minimum_gb: 79
     description: "Full precision BF16 — TPU v6e 2x2 (4 chips, TP=4) or a single 80GB+ GPU"
 
   fp8:

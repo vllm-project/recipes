@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Smaller Qwen3.6 multimodal MoE model (35B total / 3B active) with BF16, FP8, and NVIDIA NVFP4 variants"
   date_added: 2026-04-16
-  date_updated: 2026-09-14
+  date_updated: 2026-10-25
   difficulty: beginner
   tasks:
     - multimodal
@@ -103,7 +103,7 @@ opt_in_features:
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 84
+    vram_minimum_gb: 87
     description: "Full precision BF16 — fits on 1x H200, 2x H100, 4x Intel Arc Pro B60 / B70"
     hardware_overrides:
       rtx_pro_6000:

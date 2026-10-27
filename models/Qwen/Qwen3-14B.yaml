@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Qwen3 14B dense model with hybrid thinking/non-thinking modes, validated for Intel Xeon 6 CPU serving."
   date_added: 2026-08-17
-  date_updated: 2026-09-12
+  date_updated: 2026-10-25
   difficulty: intermediate
   tasks:
     - text
@@ -52,7 +52,7 @@ opt_in_features:
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 34
+    vram_minimum_gb: 36
     description: "Full precision BF16"
     supported_hardware:
       - xeon6

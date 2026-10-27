@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek's first experimental multimodal V4 model — the V4-Flash MoE backbone plus a 32-layer vision tower, 1M context, and a fused DSpark draft module."
   date_added: 2026-09-01
-  date_updated: 2026-09-14
+  date_updated: 2026-10-25
   difficulty: advanced
   tasks:
     - text
@@ -19,9 +19,9 @@ meta:
   # on one NVL4 tray, FP8 KV cache, block size 256, DSpark k=3, full
   # 1000-sample OCRBench at 83.5% with zero request errors.
   # Atlas A5 8-card mixed serving of the native FP4+FP8 Vision-Exp checkpoint
-  # (DP4+EP, TP=1, no speculative decoding). 950PR verified 2026-09-10 on
-  # vLLM Ascend; 950DT uses the same command (4 of 8 NPUs). See the hardware
-  # note for the required hash-router bias fix.
+  # (DP4+EP, TP=1, no speculative decoding). Upstream recorded a manual serving
+  # check on 950PR; it did not record a separate 950DT run, so 950DT is supported
+  # rather than verified below.
   # AMD MI350X (gfx950): ROCm vision merged in vllm-project/vllm#55107 (2026-09-11)
   # on the #54566 base. Verified text+vision on stock ROCm nightly at single-node
   # TP2 and TP4, with DSpark k=3 (needs VLLM_USE_V2_MODEL_RUNNER=1). See
@@ -30,7 +30,7 @@ meta:
   hardware:
     gb200: verified
     mi350x: verified
-    ascend_950dt_8x: verified
+    ascend_950dt_8x: supported
     ascend_950pr_8x: verified
 
 model:

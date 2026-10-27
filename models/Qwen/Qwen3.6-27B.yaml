@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Qwen3.6 dense multimodal model (27B) with gated delta networks hybrid attention, MTP, and 262K context"
   date_added: 2026-04-22
-  date_updated: 2026-10-12
+  date_updated: 2026-10-25
   difficulty: beginner
   tasks:
     - multimodal
@@ -101,7 +101,7 @@ opt_in_features:
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 65
+    vram_minimum_gb: 67
     description: "Full precision BF16 — fits on 1x H200, 2x H100, 4x Intel Arc Pro B60, 2x Intel Arc Pro B70, or an Ascend A3 node (TP2+DP8)"
     tp:
       ascend_910c: 2

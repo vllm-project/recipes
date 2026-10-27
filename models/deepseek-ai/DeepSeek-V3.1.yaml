@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek-V3.1 is a hybrid MoE model that supports dynamic switching between thinking and non-thinking modes, with tool calling and function execution."
   date_added: 2025-08-21
-  date_updated: 2026-09-14
+  date_updated: 2026-10-25
   difficulty: intermediate
   tasks:
     - text

@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Qwen2.5-VL dense vision-language model (72B) for high-quality image and video understanding."
   date_added: 2025-08-22
-  date_updated: 2026-04-17
+  date_updated: 2026-10-25
   difficulty: intermediate
   tasks:
     - multimodal
@@ -44,7 +44,7 @@ opt_in_features:
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 173
+    vram_minimum_gb: 177
     description: "Full precision BF16 — 4x A100 80GB or 4x MI300X/MI325X/MI355X"
   awq:
     model_id: "Qwen/Qwen2.5-VL-72B-Instruct-AWQ"

@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Qwen3-VL MoE vision-language model with 30B total / 3B active parameters, supporting image, video, and text workloads."
   date_added: 2026-08-17
-  date_updated: 2026-09-12
+  date_updated: 2026-10-25
   difficulty: intermediate
   tasks:
     - multimodal
@@ -47,7 +47,7 @@ opt_in_features:
 variants:
   default:
     precision: bf16
-    vram_minimum_gb: 72
+    vram_minimum_gb: 75
     description: "Full precision BF16"
     supported_hardware:
       - xeon6

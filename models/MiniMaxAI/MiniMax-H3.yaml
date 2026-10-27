@@ -4,7 +4,7 @@ meta:
   provider: "MiniMax"
   description: "Open-weight general-purpose multimodal generation model — jointly generates 24 FPS video with native stereo audio from text, image, video, and audio references, served via vLLM-Omni"
   date_added: 2026-08-02
-  date_updated: 2026-09-07
+  date_updated: 2026-10-25
   difficulty: advanced
   tasks:
     - omni
@@ -25,6 +25,8 @@ meta:
     mi325x: verified
     mi355x: verified
     ascend_950pr: verified
+    ascend_950pr_4x: verified
+    ascend_950dt_4x: supported
 
 model:
   model_id: "MiniMaxAI/MiniMax-H3"
@@ -391,6 +393,12 @@ omni:
               -F 'extra_params={"task":"ref2va","duration":5.0,"audio_flow_shift":3.0}' \
               -F "input_reference=@${REF_IMAGE};type=image/png" \
               -o ref2va_image.mp4
+        ascend_950pr_4x:
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "ref2va"]
+        ascend_950dt_4x:
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "ref2va"]
       curl: |
         export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
 
@@ -482,6 +490,12 @@ omni:
               -F "input_reference=@${REF_IMAGE};type=image/png" \
               -F "audio_reference={\"audio_url\":\"${AUDIO_URL}\"}" \
               -o ref2va_image_audio.mp4
+        ascend_950pr_4x:
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "ref2va"]
+        ascend_950dt_4x:
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "ref2va"]
       curl: |
         # audio_reference takes an HTTP(S) or data: URL. Serve local assets first:
         # python -m http.server 8092 --bind 127.0.0.1 --directory /path/to/reference_assets
@@ -571,6 +585,12 @@ omni:
               -F "input_references=@${SUBJECT_VIDEO};type=video/mp4" \
               -F "input_references=@${BACKGROUND_VIDEO};type=video/quicktime" \
               -o ref2va_video_mixed.mp4
+        ascend_950pr_4x:
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "ref2va"]
+        ascend_950dt_4x:
+          vram_minimum_gb: 128
+          extra_args: ["--task-type", "ref2va"]
       curl: |
         export SUBJECT_VIDEO=/path/to/green_screen_subject.mp4
         export BACKGROUND_VIDEO=/path/to/fairytale_background.mov
@@ -633,6 +653,13 @@ dependencies:
   - note: "Docker path only: clone current vLLM-Omni main to the path mounted by the generated command so it overrides the older package in the image."
     command: "git clone --depth 1 https://github.com/vllm-project/vllm-omni.git /path/to/vllm-omni"
     install_modes: [docker]
+  - note: "Ascend 950PR/950DT 4-NPU profile: the selected A5 image is quay.io/ascend/vllm-omni:v0.29.0-a5. MindIE-SD must be available for FLASH_ATTN and Laser Attention; install it inside the container if the image does not include it."
+    command: |
+      git clone https://gitcode.com/Ascend/MindIE-SD.git
+      cd MindIE-SD && python setup.py bdist_wheel
+      pip install dist/mindiesd-*.whl
+    install_modes: [docker]
+    brand: Huawei
   - note: "pip path only: ffmpeg and ffprobe must be on PATH for reference-video preparation and MP4 video+audio muxing. The official Docker images already bundle them."
     command: "sudo apt-get install -y ffmpeg"
 
@@ -688,6 +715,40 @@ variants:
           - "14400"
         extra_env:
           VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "14400"
+      ascend_950pr_4x:
+        docker_image: "quay.io/ascend/vllm-omni:v0.29.0-a5"
+        extra_args:
+          - "--text-encoder-tp-size"
+          - "4"
+          - "--enable-distributed-layerwise-offload"
+          - "--enable-diffusion-pipeline-profiler"
+          - "--diffusion-attention-backend"
+          - "FLASH_ATTN"
+        extra_env:
+          VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "4000"
+          PYTHONDONTWRITEBYTECODE: "1"
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+          PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+          MINDIE_SD_FA_TYPE: "ascend_laser_attention"
+          HCCL_NPU_SOCKET_PORT_RANGE: "auto"
+      ascend_950dt_4x:
+        docker_image: "quay.io/ascend/vllm-omni:v0.29.0-a5"
+        extra_args:
+          - "--text-encoder-tp-size"
+          - "4"
+          - "--enable-distributed-layerwise-offload"
+          - "--enable-diffusion-pipeline-profiler"
+          - "--diffusion-attention-backend"
+          - "FLASH_ATTN"
+        extra_env:
+          VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "4000"
+          PYTHONDONTWRITEBYTECODE: "1"
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+          PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+          MINDIE_SD_FA_TYPE: "ascend_laser_attention"
+          HCCL_NPU_SOCKET_PORT_RANGE: "auto"
       rtx_pro_5000_4x:
         extra_args:
           - "--num-gpus"
@@ -1551,6 +1612,18 @@ guide: |
     --stage-init-timeout 14400 \
     --quantization int8
   ```
+
+  ## Launch — four Ascend 950PR / 950DT NPUs
+
+  Select the **Ascend 950PR 4x** or **Ascend 950DT 4x** profile to use the
+  upstream A5 path. The generated server command selects the official
+  `quay.io/ascend/vllm-omni:v0.29.0-a5` image and adds four-card text-encoder TP,
+  distributed layerwise offload, the profiler, and `FLASH_ATTN`. Install
+  MindIE-SD in the container if it is not already present; the selected profile
+  sets `MINDIE_SD_FA_TYPE=ascend_laser_attention`. The upstream guide's measured
+  950PR workloads use 1344×768 at 50 inference steps. The 950DT profile is
+  marked supported from the guide, while the published benchmark table is
+  specifically measured on 950PR.
   
   ## Text-encoder tensor parallelism
 
