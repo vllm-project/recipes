@@ -3999,8 +3999,8 @@ uv pip install vllm \\
   --torch-backend cpu`
         : `uv venv --python 3.12 --seed --managed-python
 source .venv/bin/activate
-export VLLM_VERSION=$(curl -s https://api.github.com/repos/vllm-project/vllm/releases/latest | jq -r .tag_name | sed 's/^v//')
-uv pip install https://github.com/vllm-project/vllm/releases/download/v$VLLM_VERSION/vllm-$VLLM_VERSION+cpu-cp38-abi3-manylinux_2_34_x86_64.whl \\
+export VLLM_VERSION=$(curl -sI https://github.com/vllm-project/vllm/releases/latest | sed -n 's|^[Ll]ocation: .*/tag/v||p' | tr -d '\\r')
+uv pip install https://github.com/vllm-project/vllm/releases/download/v$VLLM_VERSION/vllm-$VLLM_VERSION+cpu-cp38-abi3-manylinux_2_39_x86_64.whl \\
   --torch-backend cpu`
       : nightlyRequired
         ? `uv venv
@@ -4018,7 +4018,7 @@ uv pip install -U vllm --torch-backend auto`;
     (isCpu
       ? nightlyRequired
         ? "Intel/AMD x86 CPU nightly wheels use the dedicated /nightly/cpu index and PyTorch CPU backend."
-        : "Intel/AMD x86 CPU release wheels are published separately from CUDA wheels; the command follows the official vLLM CPU pre-built-wheel flow."
+        : "Intel/AMD x86 CPU release wheels are published separately from CUDA wheels; the command follows the official vLLM CPU pre-built-wheel flow. Since v0.30.0 they are manylinux_2_39 builds, which need glibc 2.39+ (e.g. Ubuntu 24.04+); on older distros use the Docker tab."
       : nightlyRequired && !isAmd
         ? singleCudaBuild
           ? `vLLM ${minV} isn't released yet — nightly required. This recipe publishes ${singleCudaLabel} builds only.`
