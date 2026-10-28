@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 flagship MoE (1.6T total / 49B active) with hybrid CSA+HCA attention, manifold-constrained hyper-connections, Muon-trained on 32T+ tokens, and three-tier reasoning."
   date_added: 2026-04-24
-  date_updated: 2026-10-13
+  date_updated: 2026-10-27
   difficulty: hard
   tasks:
     - text
@@ -726,6 +726,123 @@ guide: |
     -H 'Content-Type: application/json' -H 'x-dynamo-session-id: example-session' \
     -d '{"model":"deepseek-ai/DeepSeek-V4-Pro-0813","messages":[{"role":"user","content":"Hello"}],"max_tokens":32}'
   ```
+
+  ## Agentic serving on B200 (DSpark)
+
+  Qualified single-node B200 (8× GPU) AgentX settings for
+  [DeepSeek-V4-Pro-0813](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro-0813)
+  with its native DSpark draft, from
+  [InferenceX #4554](https://github.com/SemiAnalysisAI/InferenceX/pull/4554). They were
+  measured on two images: `vllm/vllm-openai:nightly-8e2beaa3bff595577a069d49d96bde9074294ec2`
+  (TP8 c1, c6, c14, TP4×DP2 c32 and DEP8 c64 to c192) and
+  `vllm/vllm-openai@sha256:d428631bb917a33d22308265d1b8be91522f862bf9fd133bee62dde3313664ae`
+  (TP8 c4, c10 and TP2×DP4 c48, c64). These are separate from the command-builder defaults.
+
+  ### Common settings
+
+  Every B200 point sets these on the single worker:
+
+  ```text
+  --trust-remote-code --tokenizer-mode deepseek_v4
+  --tool-call-parser deepseek_v4 --enable-auto-tool-choice --reasoning-parser deepseek_v4
+  --kv-cache-dtype fp8 --block-size 256 --max-model-len 1048576 --gpu-memory-utilization 0.90
+  --numa-bind --enable-cumem-allocator --no-enable-flashinfer-autotune
+  --no-disable-hybrid-kv-cache-manager
+  --attention-config '{"backend":"FLASHINFER_MLA_SPARSE_DSV4","use_prefill_query_quantization":true,"indexer_kv_dtype":"mxfp4"}'
+  --speculative-config '{"method":"dspark","num_speculative_tokens":6,"draft_sample_method":"probabilistic"}'
+  ```
+
+  ```bash
+  export VLLM_USE_V2_MODEL_RUNNER=1 VLLM_USE_RUST_FRONTEND=1
+  export VLLM_PREFIX_CACHE_RETENTION_INTERVAL=32768 VLLM_FLOAT32_MATMUL_PRECISION=high
+  export TORCH_CUDA_ARCH_LIST=10.0
+  # 1M-token context can make engine startup and RPCs slow:
+  export VLLM_ENGINE_READY_TIMEOUT_S=7200 VLLM_RPC_TIMEOUT=600000
+  ```
+
+  `K=6` is `num_speculative_tokens`. Retune it with the concurrency target. Throughput
+  replay in the benchmark swaps real verification for a fixed acceptance length; that is
+  a benchmark control and is not part of the serving command.
+
+  ### Topologies and per-point sizing
+
+  `S` is `--max-num-seqs`, per engine for TP8 and per DP rank otherwise. Every point
+  captures decode graphs at `n*(K+1)` tokens for `n=1..S`, that is 7, 14, …, `7*S`.
+  DP points also size `--max-num-batched-tokens` as `8192 + S*(K+1)`: an 8192-token
+  prefill budget plus the verification slots.
+
+  | Topology | Concurrency | `--max-num-seqs` | KV cache per engine (`--kv-cache-memory-bytes`) | KV offload |
+  | :-- | :-- | :-- | :-- | :-- |
+  | TP8 | 1, 4, 6, 10, 14 | = concurrency | 53687091200 (c4 low-latency variant: 42949672960) | none |
+  | TP4 × DP2 + EP | 32 | 32 | 51539607552 | Simple CPU |
+  | TP2 × DP4 + EP | 48, 64 | 24, 32 | 37580963840 | Simple CPU |
+  | TP1 × DP8 (DEP8) | 64, 96, 128, 160, 192 | 16, 24, 32, 40, 48 | 37580963840 (c64), 33285996544 (c96, c128), 32212254720 (c160, c192) | Simple CPU |
+
+  ### TP8 (no offload, concurrency 1 to 14)
+
+  ```text
+  --tensor-parallel-size 8 --data-parallel-size 1
+  --max-num-batched-tokens 16384 --kv-cache-memory-bytes 53687091200
+  --max-num-seqs <C>
+  --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","cudagraph_capture_sizes":[7,14,…,<7*C>,100,200,300,400,500]}'
+  ```
+
+  The captured sizes are the decode sizes `7*n` followed by piecewise sizes
+  100, 200, 300, 400, 500 for mixed prefill/decode batches. Concurrency 14, for example,
+  captures 7 through 98 in steps of 7, then 100 to 500.
+
+  The TP8 points also export `VLLM_DSV4_MEGA_FP8_COMBINE=1`, except concurrency 10, which
+  leaves it unset, sets `--prefix-cache-retention-interval 32768` and
+  `--prefill-schedule-interval 64`, and adds `"indexer_tp_shard_min_rows":4096` to
+  `--attention-config`.
+
+  The low-latency concurrency-4 variant adds `--sparse-indexer-topk-backend deep_select`
+  and `--kv-cache-memory-bytes 42949672960`, and extends graph capture to every size
+  up to 16384:
+
+  ```text
+  --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","cudagraph_capture_sizes":[7,14,21,28,100,200,300,400,500,640,800,1024,1280,1600,2048,2560,3200,4096,5120,6400,8192,10240,12800,16384],"max_cudagraph_capture_size":16384}'
+  ```
+
+  ### DP + EP with Simple CPU offload (concurrency 32 to 192)
+
+  Above concurrency 14 the points run data-parallel ranks with expert parallelism and
+  eager Simple CPU KV offload. Per point, set `--tensor-parallel-size` and
+  `--data-parallel-size` from the table (TP4×DP2, TP2×DP4 or TP1×DP8) and add:
+
+  ```text
+  --enable-expert-parallel --enable-ep-weight-filter
+  --moe-backend deep_gemm_mega_moe
+  --prefill-schedule-interval 16 --long-prefill-token-threshold 512
+  --max-num-seqs <S> --max-num-batched-tokens <8192 + 7*S> --kv-cache-memory-bytes <bytes from the table>
+  --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[7,14,…,<7*S>],"mode":0}'
+  --kv-transfer-config '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both","kv_connector_extra_config":{"cpu_bytes_to_use_per_rank":241500000000,"enable_cross_layers_blocks":"true","lazy_offload":false}}'
+  ```
+
+  ```bash
+  export PYTORCH_ALLOC_CONF=expandable_segments:True PYTHONHASHSEED=42
+  # DEP8 c64 to c192 also export VLLM_DSV4_MEGA_FP8_COMBINE=1. TP4×DP2 and
+  # TP2×DP4 leave it unset.
+  ```
+
+  `cpu_bytes_to_use_per_rank` is 241.5 GB on each of the 8 ranks, 1932 GB of host memory
+  in all; size it to the node's DRAM. `deep_gemm_mega_moe` is the backend the FP8 (0813)
+  variant already selects on Blackwell; the GB200/GB300 section above uses
+  `deep_gemm_amxf4_mega_moe` instead.
+
+  **Router.** The DP points sit behind a consistent-hash
+  [vLLM Router](https://github.com/vllm-project/router) (`vllm-router==0.1.14`) so that
+  turns of one conversation land on the same rank and reuse its prefix cache:
+
+  ```text
+  --policy consistent_hash --disable-retries --request-timeout-secs 14400
+  --prometheus-host 127.0.0.1 --prometheus-port 18000
+  ```
+
+  Send a stable per-conversation `X-Session-ID` header with each request; the router
+  hashes it first (see its [load-balancing docs](https://github.com/vllm-project/router/blob/main/docs/load_balancing/README.md)).
+  How the DP rank endpoints are registered with the router is deployment-specific and
+  not covered here.
 
   ## Agentic benchmark reproduction (InferenceX MI355X sweep)
 
