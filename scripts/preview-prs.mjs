@@ -39,7 +39,7 @@ const MARKER = path.join(ROOT, "public", "preview.json");
 
 const { defaultChannel, channels } = loadSources();
 const spec = channels[defaultChannel]?.[source];
-if (!spec?.repo) throw new Error(`sources.yaml: ${defaultChannel}.${source} is not a remote source`);
+if (!spec?.repo || spec.local) throw new Error(`sources.yaml: ${defaultChannel}.${source} is not a remote source`);
 const subPath = path.posix.normalize(spec.path || ".").replace(/\/$/, "");
 
 async function gh(apiPath, { method = "GET", raw = false, allow404 = false } = {}) {

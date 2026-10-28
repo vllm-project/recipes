@@ -1,11 +1,11 @@
-# Branch previews of recipe PRs in source repos (the recipes/ of vllm-project/vllm
-# and vllm-project/vllm-ascend). A source PR gets a branch
+# Branch previews of recipe PRs in source repos (the remote sources in
+# sources.yaml, e.g. vllm-project/vllm's recipes/). A source PR gets a branch
 # `preview/<source>-pr-<N>` here that pins the source to the PR head; Vercel
 # deploys it at https://vllm-recipes-git-preview-<source>-pr-<N>-inferact-inc.vercel.app,
 # which the source repo links from the PR.
 #
 # Each source's recipes-preview.yml sends `preview-pr` (client_payload.pr, and
-# client_payload.source unless it is vllm) when a recipe PR is opened, pushed,
+# client_payload.source, absent from vllm) when a recipe PR is opened, pushed,
 # reopened or closed; this rebuilds or deletes that PR's branch once the PR has
 # been quiet for two minutes. The hourly run covers every source and is a
 # fallback for missed dispatches, since GitHub runs scheduled workflows hours
@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       source:
-        description: "Source repo: vllm or vllm-ascend; empty = every source (vllm with pr)"
+        description: "Source name in sources.yaml (vllm, vllm-ascend, …); empty = every remote source (vllm with pr)"
         required: false
       pr:
         description: "Only these source PR numbers (comma-separated); empty = all labeled PRs"
@@ -71,12 +71,20 @@ jobs:
             echo "Invalid PR number(s): $PR"
             exit 1
           fi
-          # vllm's dispatches name no source.
-          case "$SOURCE" in
-            vllm | vllm-ascend) sources=$SOURCE ;;
-            "") if [ -n "$PR" ]; then sources=vllm; else sources="vllm vllm-ascend"; fi ;;
-            *) echo "Unknown source: $SOURCE"; exit 1 ;;
-          esac
+          # vllm's dispatches name no source. preview-prs.mjs rejects a name that
+          # isn't a remote source in sources.yaml.
+          if [ -n "$SOURCE" ]; then
+            [[ "$SOURCE" =~ ^[a-z0-9-]+$ ]] || { echo "Invalid source: $SOURCE"; exit 1; }
+            sources=$SOURCE
+          elif [ -n "$PR" ]; then
+            sources=vllm
+          else
+            sources=$(node --input-type=module -e '
+              import { loadSources } from "./scripts/lib/content-sources.mjs";
+              const { defaultChannel, channels } = loadSources();
+              const remote = Object.entries(channels[defaultChannel]).filter(([, s]) => s.repo && !s.local);
+              console.log(remote.map(([name]) => name).join(" "));')
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           status=0
