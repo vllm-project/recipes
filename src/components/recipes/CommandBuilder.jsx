@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import Markdown from "react-markdown";
+import { guideRehypePluginsFor, guideRemarkPlugins } from "@/lib/guide-markdown";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
@@ -2416,7 +2417,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
 
         {currentVariant.guide && (
           <div className="guide-content rounded-xl border border-border px-4 py-3 text-sm">
-            <Markdown>{currentVariant.guide}</Markdown>
+            <Markdown remarkPlugins={guideRemarkPlugins} rehypePlugins={guideRehypePluginsFor("variant-")}>
+              {currentVariant.guide}
+            </Markdown>
           </div>
         )}
 
@@ -3300,7 +3303,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                     pressed={active}
                     disabled={disabled}
                     title={!supported
-                      ? `The ${fe.label} frontend doesn't support this model yet`
+                      ? `The ${fe.label} frontend is unavailable for this configuration`
                       : disabled ? "SMG gRPC uses the Python servicer." : undefined}
                     onClick={() => selectFrontend(id)}
                   >
@@ -3319,7 +3322,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   {" "}Switch to Python if you encounter unsupported features or compatibility issues.
                 </>
               ) : (
-                "The Rust frontend doesn't support this model yet, so commands use the Python frontend."
+                "The Rust frontend is unavailable for this configuration, so commands use the Python frontend."
               )}
             </p>
           </ConfigRow>

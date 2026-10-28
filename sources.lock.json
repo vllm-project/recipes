@@ -24,7 +24,7 @@
       "tree_sha": "aa2c7503f1b45c8a57a0ae01e40c65ddf8e81283",
       "resolved_at": "2026-10-28T02:06:32.523Z"
     },
-    "metal": {
+    "vllm-metal": {
       "repo": "vllm-project/vllm-metal",
       "ref": "main",
       "path": "recipes",

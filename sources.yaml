@@ -51,7 +51,7 @@ channels:
       path: recipes
       role: overlay
       scope: { brands: [Huawei] }
-    metal:
+    vllm-metal:
       repo: vllm-project/vllm-metal
       ref: main
       path: recipes
