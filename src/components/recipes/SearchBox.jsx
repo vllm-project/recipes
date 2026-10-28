@@ -148,7 +148,7 @@ export function SearchBox({ recipes }) {
       {showDropdown && (
         // On a phone the input is a narrow slot in the header, so the results
         // span the screen just below the (sticky) header instead of the input.
-        <div className="fixed inset-x-4 top-[4.25rem] max-h-[calc(100dvh-5rem)] overflow-y-auto sm:absolute sm:inset-x-0 sm:top-full sm:mt-1 sm:max-h-none sm:overflow-hidden bg-card border border-border rounded-lg shadow-lg z-50">
+        <div className="fixed inset-x-4 top-[calc(4.25rem+var(--preview-h,0px))] max-h-[calc(100dvh-5rem-var(--preview-h,0px))] overflow-y-auto sm:absolute sm:inset-x-0 sm:top-full sm:mt-1 sm:max-h-none sm:overflow-hidden bg-card border border-border rounded-lg shadow-lg z-50">
           {!query.trim() && (
             <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground bg-muted/30 border-b border-border">
               Latest
