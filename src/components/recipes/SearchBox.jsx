@@ -120,7 +120,7 @@ export function SearchBox({ recipes }) {
   return (
     <div className="relative w-full max-w-md">
       <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+        <Search size={16} className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         <input
           ref={inputRef}
           type="text"
@@ -129,13 +129,26 @@ export function SearchBox({ recipes }) {
           onFocus={() => setFocused(true)}
           onBlur={() => setTimeout(() => setFocused(false), 200)}
           onKeyDown={handleKeyDown}
-          placeholder="Search models or providers...  ⌘K"
-          className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-vllm-blue/40"
+          aria-label="Search models or providers"
+          className="w-full rounded-lg border border-border bg-background pl-8 sm:pl-9 pr-2 sm:pr-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-vllm-blue/40"
         />
+        {/* Responsive placeholder: a native `placeholder` can't change with the
+            viewport, and on a phone the header leaves room for one word.
+            16px text below `sm`: iOS Safari zooms the page into any input
+            under 16px on focus. */}
+        {!query && (
+          <span className="absolute left-8 sm:left-9 right-2 sm:right-3 top-1/2 -translate-y-1/2 flex items-center gap-2 text-base sm:text-sm text-muted-foreground pointer-events-none whitespace-nowrap overflow-hidden">
+            <span className="sm:hidden">Search</span>
+            <span className="hidden sm:inline truncate">Search models or providers...</span>
+            <kbd className="hidden sm:inline ml-auto font-sans text-xs">⌘K</kbd>
+          </span>
+        )}
       </div>
 
       {showDropdown && (
-        <div className="absolute top-full mt-1 left-0 right-0 bg-card border border-border rounded-lg shadow-lg overflow-hidden z-50">
+        // On a phone the input is a narrow slot in the header, so the results
+        // span the screen just below the (sticky) header instead of the input.
+        <div className="fixed inset-x-4 top-[calc(4.25rem+var(--preview-h,0px))] max-h-[calc(100dvh-5rem-var(--preview-h,0px))] overflow-y-auto sm:absolute sm:inset-x-0 sm:top-full sm:mt-1 sm:max-h-none sm:overflow-hidden bg-card border border-border rounded-lg shadow-lg z-50">
           {!query.trim() && (
             <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground bg-muted/30 border-b border-border">
               Latest
@@ -158,8 +171,19 @@ export function SearchBox({ recipes }) {
   );
 }
 
+function ProviderLogo({ org }) {
+  const logo = getProviderLogo(org);
+  return logo ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={logo} alt="" width={22} height={22} className={`rounded shrink-0 ${getProviderLogoClass(org)}`} />
+  ) : (
+    <div className="w-[22px] h-[22px] rounded bg-muted flex items-center justify-center shrink-0">
+      <Building2 size={12} className="text-muted-foreground" />
+    </div>
+  );
+}
+
 function ProviderResult({ entry, active, onClick }) {
-  const logo = getProviderLogo(entry.org);
   return (
     <button
       onMouseDown={onClick}
@@ -167,14 +191,7 @@ function ProviderResult({ entry, active, onClick }) {
         active ? "bg-muted border-vllm-blue" : "border-transparent hover:bg-muted/50"
       }`}
     >
-      {logo ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={logo} alt="" width={22} height={22} className={`rounded shrink-0 ${getProviderLogoClass(entry.org)}`} />
-      ) : (
-        <div className="w-[22px] h-[22px] rounded bg-muted flex items-center justify-center">
-          <Building2 size={12} className="text-muted-foreground" />
-        </div>
-      )}
+      <ProviderLogo org={entry.org} />
       <div className="flex-1 min-w-0">
         <div className="font-medium truncate flex items-center gap-2">
           {entry.displayName}
@@ -231,6 +248,7 @@ function RecipeResult({ entry, active, onClick }) {
         active ? "bg-muted border-vllm-blue" : "border-transparent hover:bg-muted/50"
       }`}
     >
+      <ProviderLogo org={r.hf_org} />
       <div className="flex-1 min-w-0">
         <div className="font-medium truncate font-mono text-[13px]">
           {r.hf_repo || r.meta.title}

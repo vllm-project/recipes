@@ -23,7 +23,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import yaml from "js-yaml";
-import { applyOverlay, hasGuideMarkers, resolveScope, stripGuideMarkers, variantInScope } from "../src/lib/overlay-merge.js";
+import { applyOverlay, hasGuideMarkers, resolveScope, splitOverlay, stripGuideMarkers, variantInScope } from "../src/lib/overlay-merge.js";
 import { ROOT, defersTo, loadLock, loadOverrides, loadSources, parseArgs, resolveSourceDir } from "./lib/content-sources.mjs";
 
 // Highest recipe schema this renderer understands (source manifest.yaml).
@@ -40,6 +40,13 @@ function findYamlFiles(dir) {
     else if (/\.ya?ml$/.test(e.name)) out.push(full);
   }
   return out;
+}
+
+// "a.b.c" paths into a nested map, each ending at the first key `stop` accepts
+// (or at a leaf).
+function scopedPaths(node, stop, prefix = []) {
+  if (!node || typeof node !== "object" || Array.isArray(node)) return prefix.length ? [prefix.join(".")] : [];
+  return Object.entries(node).flatMap(([k, v]) => (stop(prefix, k) ? [[...prefix, k].join(".")] : scopedPaths(v, stop, [...prefix, k])));
 }
 
 function hfIdOf(baseDir, file) {
@@ -114,6 +121,7 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
     readManifest(dir, label);
     sourceInfo[name] = { repo: spec.repo || null, ref: spec.ref || null, sha, path: spec.path || ".", role: spec.role, local };
     const ctx = resolveScope(spec.scope, taxonomy);
+    const excluded = spec.scope?.exclude_brands ? resolveScope({ brands: spec.scope.exclude_brands }, taxonomy) : null;
 
     const modelsDir = path.join(dir, "models");
     for (const file of findYamlFiles(modelsDir)) {
@@ -139,6 +147,15 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
       }
       if (spec.scope?.exclude_tasks?.some((t) => tasks.includes(t))) {
         errors.push(`${label} ${rel}: source scope excludes meta.tasks ${spec.scope.exclude_tasks.join("|")}`);
+      }
+      if (excluded) {
+        // Content for these brands comes from their overlay source; what a
+        // split would move out of this recipe must not be here.
+        const { overlay, movedVariants } = splitOverlay(doc, { ctx: excluded, source: name });
+        const found = scopedPaths(overlay, (p, k) => excluded.isHwKey(k) || (p.length === 1 && p[0] === "variants" && movedVariants.includes(k)));
+        if (found.length) {
+          errors.push(`${label} ${rel}: source scope excludes ${spec.scope.exclude_brands.join("|")} hardware, which belongs in its overlay: ${found.join(", ")}`);
+        }
       }
       if (spec.role === "overlay") {
         // An overlay repo may own whole recipes only for models that run

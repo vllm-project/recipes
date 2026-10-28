@@ -35,10 +35,27 @@ jobs:
   bump:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Rulesets restrict updates to every branch but preview/**, and GitHub
+    # Actions can't be a bypass actor, so main is pushed with a publisher App
+    # that is. Its key lives in this main-only environment. The App that vllm
+    # dispatches with is a different one and stays out of the bypass list.
+    environment: recipes-publisher
     steps:
+      - name: Create a publisher token
+        id: publisher
+        if: vars.RECIPES_PUBLISHER_APP_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RECIPES_PUBLISHER_APP_ID }}
+          private-key: ${{ secrets.RECIPES_PUBLISHER_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      # Falls back to GITHUB_TOKEN until the publisher App is configured,
+      # which only works while main has no update restriction.
       - uses: actions/checkout@v4
         with:
           ref: main
+          token: ${{ steps.publisher.outputs.token || github.token }}
 
       - uses: pnpm/action-setup@v4
 

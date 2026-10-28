@@ -1,5 +1,15 @@
+import fs from "fs";
+
+// Preview branches of source-repo PRs (scripts/preview-prs.mjs) carry
+// public/preview.json; PreviewBanner shows which PR commit the site renders.
+const previewFile = "public/preview.json";
+const preview = fs.existsSync(previewFile) ? fs.readFileSync(previewFile, "utf8") : "";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  env: {
+    RECIPES_PREVIEW: preview,
+  },
   images: {
     unoptimized: true,
   },

@@ -58,6 +58,17 @@ test("split → merge reproduces every recipe (Huawei scope)", () => {
   }
 });
 
+test("an overlay may repeat what the core recipe still has (cutover)", () => {
+  // Shipping the overlay before the core drops its copy changes nothing.
+  for (const { file, recipe } of recipes) {
+    const { overlay } = splitOverlay(recipe, { ctx, source, guideHeading: /ascend/i });
+    const ov = yaml.load(yaml.dump(overlay, { lineWidth: -1 })) || {};
+    const { recipe: merged, errors } = applyOverlay(recipe, ov, { ctx, source });
+    assert.deepEqual(errors, [], `${file}: ${errors.join("; ")}`);
+    assert.deepEqual(canonical(merged), canonical(recipe), `${file}: repeated overlay changed the recipe`);
+  }
+});
+
 // A fixed fixture (the starter template), so a catalog change can't break the
 // scope tests — bump-sources.yml runs this file to validate new content.
 const core0 = yaml.load(fs.readFileSync(path.join(ROOT, "templates/recipe.yaml"), "utf8"));
@@ -92,6 +103,9 @@ test("new variants and dependencies must be in scope", () => {
   assert.deepEqual(errs({ variants: { foo: { precision: "fp8", supported_hardware: ["ascend_910c"] } } }), []);
   assert.equal(errs({ dependencies: [{ command: "pip install x" }] }).length, 1);
   assert.deepEqual(errs({ dependencies: [{ command: "pip install x", brand: "Huawei" }] }), []);
+  // An entry repeated within one overlay lands once.
+  const dep = { command: "pip install x", brand: "Huawei" };
+  assert.equal(applyOverlay(core0, { dependencies: [dep, dep] }, { ctx, source }).recipe.dependencies.filter((d) => d.command === dep.command).length, 1);
 });
 
 test("an overlay source needs a granted scope", () => {
@@ -103,6 +117,32 @@ test("guide sections fill their marker, else append", () => {
   const core = { meta: {}, guide: "## A\n\n<!-- overlay:vllm-ascend:npu -->\n## B\n" };
   const { recipe } = applyOverlay(core, { guide_sections: { npu: "## NPU\nx\n\n", tail: "## Tail\n" } }, { ctx, source });
   assert.equal(recipe.guide, "## A\n\n## NPU\nx\n\n## B\n\n## Tail\n");
+  // A section that ends the guide splits off and merges back unchanged.
+  const tail = { meta: {}, guide: "## A\n\n## Ascend\nx\n" };
+  const split = splitOverlay(tail, { ctx, source, guideHeading: /ascend/i });
+  assert.equal(applyOverlay(split.core, split.overlay, { ctx, source }).recipe.guide, tail.guide);
+});
+
+test("exclude_brands keeps a brand's hardware out of a core source", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-exclude-"));
+  const recipe = (hardware) => yaml.dump({ meta: { title: "x", tasks: ["text"], hardware } });
+  fs.mkdirSync(path.join(tmp, "core/models/org"), { recursive: true });
+  const channel = "test-exclude";
+  fs.writeFileSync(path.join(tmp, "sources.yaml"), yaml.dump({ channels: { [channel]: {
+    core: { local: path.join(tmp, "core"), role: "core", scope: { exclude_brands: ["Huawei"] } },
+  } } }));
+  const assemble = () => spawnSync(process.execPath, [path.join(ROOT, "scripts/assemble-content.mjs")], {
+    cwd: ROOT, encoding: "utf8", env: { ...process.env, RECIPES_SOURCES: path.join(tmp, "sources.yaml"), RECIPES_CHANNEL: channel },
+  });
+  try {
+    fs.writeFileSync(path.join(tmp, "core/models/org/a.yaml"), recipe({ h200: "verified" }));
+    assert.equal(assemble().status, 0);
+    fs.writeFileSync(path.join(tmp, "core/models/org/a.yaml"), recipe({ h200: "verified", ascend_910c: "verified" }));
+    assert.match(assemble().stderr, /excludes Huawei hardware, which belongs in its overlay: meta\.hardware\.ascend_910c/);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(path.join(ROOT, ".content", channel), { recursive: true, force: true });
+  }
 });
 
 test("defers_to skips copies the other source ships; ownership and scope still hold", () => {

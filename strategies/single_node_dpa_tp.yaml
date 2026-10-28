@@ -1,6 +1,7 @@
 name: single_node_dpa_tp
 deploy_type: single_node
 display_name: "DP Attention + Tensor Parallel"
+short_label: "DPA+TP"                  # compact name for tight spots (Preset pills)
 orientation: throughput
 description: >
   Single-node data-parallel attention with tensor-sharded experts

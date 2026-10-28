@@ -489,6 +489,11 @@ kv_offload:
     args:
       - "--kv-transfer-config"
       - '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both","kv_connector_extra_config":{"cpu_bytes_to_use_per_rank":236223201280,"lazy_offload":false}}'
+    # Under Prefill/Decode it joins the prefill role's KV transfer connector
+    # in a MultiConnector (a host KV tier behind prefill, as the AgentX PD
+    # lanes run); decode keeps the plain transfer connector.
+    pd:
+      roles: [prefill]
   offloading_cpu:
     display_name: "CPU DRAM only"
     label: "CPU"
