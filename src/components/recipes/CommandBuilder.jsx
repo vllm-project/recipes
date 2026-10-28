@@ -1541,13 +1541,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // switch (see selectPreset); otherwise the pick is cleared.
   const selectStrategy = (s, { preset = "" } = {}) => {
     setStrategyOverride(s);
-    const preset = recipe.scripted_strategies?.[s]?.[hwId];
-    if (preset) {
-      if (preset.variant) setVariant(preset.variant);
+    const documentedPreset = recipe.scripted_strategies?.[s]?.[hwId];
+    if (documentedPreset) {
+      if (documentedPreset.variant) setVariant(documentedPreset.variant);
       setFrontend("python");
       setKvOffload("");
-      if (preset.router?.id) setPdRouter(preset.router.id);
-      syncUrl({ strategy: s, variant: preset.variant || variant, frontend: "python", kv_offload: "", pd_router: preset.router?.id || "" });
+      if (documentedPreset.router?.id) setPdRouter(documentedPreset.router.id);
+      syncUrl({ strategy: s, variant: documentedPreset.variant || variant, frontend: "python", kv_offload: "", pd_router: documentedPreset.router?.id || "" });
       return;
     }
     if (scriptedPreset && s.startsWith("single_node_")) {
