@@ -121,7 +121,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
   const pdRole = obj({
     nodes: intOrHwMap,
     parallelism: { anyOf: [pdMode, keyed(hwKey, pdMode)] },
-    tp: { type: "integer", minimum: 1 },
+    tp: intOrHwMap,
     vllm_args: strings,
     env: envMap,
     parallel_flag: { type: "string" },
@@ -255,7 +255,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
         const roles = obj({ prefill: role, decode: role });
         const select = obj({
           nodes: { type: "integer", minimum: 1 },
-          pd_router: { enum: ["vllm", "dynamo", "smg"] },
+          pd_router: { enum: ["vllm", "dynamo", "smg", "ascend"] },
           pd_connector: { enum: Object.keys(strategies?.pd_cluster?.connectors || {}) },
           frontend: { enum: frontends },
           features: keyed({ type: "string" }, { anyOf: [{ type: "boolean" }, { type: "string" }] }, "true/false toggles a feature; a string picks that mode (and turns it on)"),
