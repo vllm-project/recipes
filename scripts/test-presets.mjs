@@ -56,7 +56,15 @@ function migrate(recipe) {
         const r = {};
         if (rho?.extra_args) r.args = rho.extra_args;
         if (rho?.extra_env) r.env = rho.extra_env;
-        delete so[role]?.hardware_overrides?.[hw];
+        // Only args/env move into this synthetic preset. Keep role-specific
+        // operations (such as remove_args and feature_overrides) in their
+        // original layer rather than silently dropping their behavior.
+        if (rho) {
+          // YAML aliases can share one role block between hardware ids.
+          const { extra_args, extra_env, ...remaining } = rho;
+          if (Object.keys(remaining).length) so[role].hardware_overrides[hw] = remaining;
+          else delete so[role].hardware_overrides[hw];
+        }
         for (const k of ["nodes", "parallelism"]) {
           const map = so[role]?.[k];
           if (map && typeof map === "object" && Object.hasOwn(map, hw)) { r[k] = map[hw]; delete map[hw]; }
@@ -286,6 +294,27 @@ test("tp sets the single-node TP size; points can change it", () => {
   assert.equal(tpOf("nvfp4", "a", BASELINE), "1");
   // Another variant keeps its own TP: the preset only mounts onto the variants it covers.
   assert.equal(tpOf("default", "a"), tpOf("default", "a", BASELINE));
+});
+
+test("an Ascend PD preset accepts and renders separate router and connector keys", () => {
+  const model = read("models/moonshotai/Kimi-K3.yaml");
+  for (const field of ["date_added", "date_updated"]) {
+    if (model.meta[field] instanceof Date) model.meta[field] = model.meta[field].toISOString().slice(0, 10);
+  }
+  model.presets = { a5: {
+    label: "A5 PD", hardware: "ascend_950dt", strategy: "pd_cluster",
+    select: { pd_router: "ascend", pd_connector: "mooncakev2" },
+  } };
+  const validate = new Ajv({ allErrors: true, strict: false }).compile(buildRecipeSchema({ taxonomy, strategies }));
+  assert.ok(validate(model), JSON.stringify(validate.errors));
+  const errors = () => validatePresets(model, taxonomy, Object.keys(strategies), [], strategies.pd_cluster.connectors);
+  assert.deepEqual(errors(), []);
+  const result = resolveCommand(model, "ascend_mxfp4", "pd_cluster", "ascend_950dt", [], strategies, taxonomy,
+    [], 1, null, {}, null, null, undefined, "ascend", "http", null, "a5", null, "mooncakev2");
+  assert.equal(result.pdRouter, "ascend");
+  assert.equal(result.kvConnector.selected, "mooncakev2");
+  model.presets.a5.select.pd_router = "vllm";
+  assert.ok(errors().some((error) => /doesn't work behind pd_router vllm/.test(error)));
 });
 
 test("a DEP preset narrowed below the node also narrows the router", () => {

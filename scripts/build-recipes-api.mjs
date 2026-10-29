@@ -36,6 +36,8 @@ import {
   pickFittingVariant,
   pdFitsSingleNode,
   pdRoleNodes,
+  pdRoleNodesPerInstance,
+  normalizePdRoleNodes,
   pdRoleParallelism,
   resolveCommand,
   computeDockerMeta,
@@ -392,7 +394,7 @@ function dockerize(command, argv, env, dockerMeta, port = null, docker = null) {
 //   null   → co-located on a single node (variant fits the 2× PD VRAM budget)
 //   {prefill,decode} → one full node per role × N: ceil(variant.vram_minimum_gb /
 //                       hwProfile.vram_gb), raised to the recipe's per-role `nodes`
-//   "skip" → would need >4 nodes per role; don't emit a fantasy cluster
+//   "skip" → exceeds the rendering limit (4 nodes, or 16 for grouped pools)
 // Each role is then grown to clear its parallelism's `strategy_min_gpus` floor,
 // matching what the builder renders.
 function pickPdNodes(hwProfile, variant, baseRecipe, strategies, hwId, presetPick = undefined, pointPick = undefined, variantKey = undefined) {
@@ -403,16 +405,17 @@ function pickPdNodes(hwProfile, variant, baseRecipe, strategies, hwId, presetPic
   // copies would fit one node, as the builder renders it.
   const eff = presetKey !== BASELINE && baseRecipe.presets?.[presetKey] ? effectivePreset(baseRecipe.presets[presetKey], pointPick) : null;
   const presetSizesPools = ["prefill", "decode"].some((r) => eff?.roles?.[r]?.nodes != null);
-  if (!presetSizesPools && pdFitsSingleNode(hwProfile, variant, hwId)) return null;
+  const groupedPools = ["prefill", "decode"].some((role) => pdRoleNodesPerInstance(recipe, role, hwProfile, hwId));
+  if (!presetSizesPools && !groupedPools && pdFitsSingleNode(hwProfile, variant, hwId)) return null;
   const nodeVram = typeof hwProfile?.vram_gb === "number" ? hwProfile.vram_gb : 0;
   const modelVram = variantVramMinimumGb(variant, hwId);
-  if (nodeVram <= 0 || modelVram <= 0) return null;
-  const nodesPerRole = Math.ceil(modelVram / nodeVram);
-  if (nodesPerRole > 4) return "skip";
+  if (!groupedPools && (nodeVram <= 0 || modelVram <= 0)) return null;
+  const nodesPerRole = nodeVram > 0 && modelVram > 0 ? Math.ceil(modelVram / nodeVram) : 1;
+  if (nodesPerRole > (groupedPools ? 16 : 4)) return "skip";
   const floored = (role) => {
     const par = pdRoleParallelism(recipe, strategies?.pd_cluster, role, hwProfile, hwId);
     const nodes = Math.max(nodesPerRole, pdRoleNodes(recipe, role, hwProfile, hwId) ?? 0);
-    return Math.max(nodes, nodesForStrategy(recipe, par, hwProfile.gpu_count, hwId));
+    return normalizePdRoleNodes(recipe, role, hwProfile, hwId, Math.max(nodes, nodesForStrategy(recipe, par, hwProfile.gpu_count, hwId)));
   };
   return { prefill: floored("prefill"), decode: floored("decode") };
 }
@@ -526,10 +529,15 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
     return {
       ...base,
       pd_connector: result.kvConnector?.selected ?? null,
+      pd_router: result.pdRouter,
+      ...(result.orchestrator ? { orchestrator: result.orchestrator } : {}),
+      ...(result.frontendRequired ? { frontend: result.frontendRequired } : {}),
       prefill,
       decode,
       router: result.router,
       router_config: result.routerConfig,
+      ...(result.ascendScripts ? { ascend_scripts: result.ascendScripts } : {}),
+      ...(result.startServer ? { start_server: result.startServer } : {}),
     };
   }
   if (result.deployType === "kv_store_lb") {

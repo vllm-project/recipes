@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleNodesPerInstance, normalizePdRoleNodes, pdRoleModes, pdConnectorsFor, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, recipeAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import { publishSelection, onPresetRequest } from "@/lib/selection-store";
@@ -13,6 +13,8 @@ import { holdInPlace } from "@/lib/hold-in-place";
 import { whenMatches } from "@/lib/recipe-context";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
+
+const ASCEND_PD_ENDPOINT = /^(?:(?:PREFILL|DECODE)_NODE_\d+|(?:PREFILL|DECODE)_DP_RPC_PORT|IFACE_NAME|NIC_NAME|HCCL_SOCKET_IFNAME|GLOO_SOCKET_IFNAME|ROUTER_HOST|ROUTER_PORT)$/;
 
 // Tuning guidance for a feature's sub-mode, shown under the Features row while
 // that mode is the active one. Keyed [feature][mode] and kept here rather than
@@ -205,7 +207,7 @@ function PopoverButton({ label, code, icon: Icon, disabled, disabledNote }) {
 // is a form for editing $VAR / NODE_N substitutions. Lives on each command
 // block header next to cURL/Bench so the user finds it where they realize
 // "this curl is hitting localhost — I need to point it elsewhere."
-function EndpointsPopoverButton({ isPd, isKvStore, isMultiNode, placeholders, endpoints, onChange, onReset }) {
+function EndpointsPopoverButton({ isPd, isKvStore, isMultiNode, routerPort, placeholders, endpoints, onChange, onReset }) {
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState(null);
   const btnRef = useRef(null);
@@ -232,7 +234,7 @@ function EndpointsPopoverButton({ isPd, isKvStore, isMultiNode, placeholders, en
   const clientHostKey = (isPd || isKvStore) ? "ROUTER_HOST" : (isMultiNode ? "HEAD_IP" : "VLLM_HOST");
   const clientPortKey = (isPd || isKvStore) ? "ROUTER_PORT" : "VLLM_PORT";
   const clientHostHint = "localhost";
-  const clientPortHint = isPd ? "30000" : isKvStore ? "30080" : "8000";
+  const clientPortHint = String(routerPort || (isPd ? 30000 : isKvStore ? 30080 : 8000));
 
   const extras = placeholders.filter(
     (p) => !(p.kind === "var" && (p.name === clientHostKey || p.name === clientPortKey)),
@@ -586,7 +588,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const minNodesPerRole = (modelVram > 0 && nodeVram > 0)
       ? Math.max(1, Math.ceil(modelVram / nodeVram))
       : 1;
-    const pickNodes = (role, fallback) => pdRoleNodes(pdRecipe, role, hw, hwId) ?? fallback;
+    const pickNodes = (role, fallback) => {
+      const explicit = pdRoleNodes(pdRecipe, role, hw, hwId);
+      const nodes = pdRoleNodesPerInstance(pdRecipe, role, hw, hwId) ? Math.max(explicit || 1, fallback) : (explicit ?? fallback);
+      return normalizePdRoleNodes(pdRecipe, role, hw, hwId, nodes);
+    };
     return {
       prefill: pickNodes("prefill", minNodesPerRole),
       decode: pickNodes("decode", minNodesPerRole),
@@ -595,46 +601,56 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   }, [recipe, pdRecipe, hwId, variant]);
   const [pdPrefillNodes, setPdPrefillNodes] = useState(() => {
     const n = parseInt(searchParams.get("prefill_nodes") || "", 10);
-    return Number.isFinite(n) && n > 0 ? n : pdDefaults.prefill;
+    return normalizePdRoleNodes(pdRecipe, "prefill", taxonomy.hardware_profiles?.[hwId], hwId, Number.isFinite(n) && n > 0 ? n : pdDefaults.prefill);
   });
   const [pdDecodeNodes, setPdDecodeNodes] = useState(() => {
     const n = parseInt(searchParams.get("decode_nodes") || "", 10);
-    return Number.isFinite(n) && n > 0 ? n : pdDefaults.decode;
+    return normalizePdRoleNodes(pdRecipe, "decode", taxonomy.hardware_profiles?.[hwId], hwId, Number.isFinite(n) && n > 0 ? n : pdDefaults.decode);
   });
   // Re-sync per-role node state with hw-specific defaults when hw changes,
   // unless the URL pins a value (shareable links must survive hw switches).
   useEffect(() => {
-    if (!searchParams.get("prefill_nodes")) setPdPrefillNodes(pdDefaults.prefill);
-    if (!searchParams.get("decode_nodes")) setPdDecodeNodes(pdDefaults.decode);
+    const hw = taxonomy.hardware_profiles?.[hwId];
+    for (const [role, setNodes] of [["prefill", setPdPrefillNodes], ["decode", setPdDecodeNodes]]) {
+      const pinned = parseInt(searchParams.get(`${role}_nodes`) || "", 10);
+      setNodes(normalizePdRoleNodes(pdRecipe, role, hw, hwId, pinned > 0 ? pinned : pdDefaults[role]));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdDefaults]);
   // PD-pool parallelism modes offered for this recipe, derived from
   // compatible_strategies (TP / TEP / DEP). A single-mode list (e.g. dense
   // models with only TP) hides the per-pool pills entirely.
   const pdModes = useMemo(() => pdPoolModes(recipe), [recipe]);
+  const pdModesByRole = useMemo(() => {
+    const hw = taxonomy.hardware_profiles?.[hwId];
+    return Object.fromEntries(["prefill", "decode"].map((role) => [role, pdRoleModes(pdRecipe, role, hw, hwId)]));
+  }, [pdRecipe, taxonomy, hwId]);
   // Default per-role parallelism: recipe strategy_overrides (a mode or a
   // per-hw map, like `nodes`) → strategy YAML → "tp", clamped to an offered mode.
   const pdDefaultPar = useMemo(() => {
     const hw = taxonomy.hardware_profiles?.[hwId];
     const pick = (role) => {
       const d = pdRoleParallelism(pdRecipe, strategies?.pd_cluster, role, hw, hwId);
-      return pdModes.includes(d) ? d : pdModes[0];
+      const modes = pdModesByRole[role];
+      return modes.includes(d) ? d : modes[0];
     };
     return { prefill: pick("prefill"), decode: pick("decode") };
-  }, [pdRecipe, strategies, taxonomy, pdModes, hwId]);
+  }, [pdRecipe, strategies, taxonomy, pdModesByRole, hwId]);
   const [pdPrefillPar, setPdPrefillPar] = useState(() => {
     const p = searchParams.get("prefill_mode");
-    return p && pdModes.includes(p) ? p : pdDefaultPar.prefill;
+    return p && pdModesByRole.prefill.includes(p) ? p : pdDefaultPar.prefill;
   });
   const [pdDecodePar, setPdDecodePar] = useState(() => {
     const p = searchParams.get("decode_mode");
-    return p && pdModes.includes(p) ? p : pdDefaultPar.decode;
+    return p && pdModesByRole.decode.includes(p) ? p : pdDefaultPar.decode;
   });
   // Re-sync per-role parallelism with hw-specific defaults when hw changes,
   // unless the URL pins a mode (same rule as the node counts above).
   useEffect(() => {
-    if (!searchParams.get("prefill_mode")) setPdPrefillPar(pdDefaultPar.prefill);
-    if (!searchParams.get("decode_mode")) setPdDecodePar(pdDefaultPar.decode);
+    for (const [role, setMode] of [["prefill", setPdPrefillPar], ["decode", setPdDecodePar]]) {
+      const pinned = searchParams.get(`${role}_mode`);
+      setMode(pdModesByRole[role].includes(pinned) ? pinned : pdDefaultPar[role]);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdDefaultPar]);
   // Which DP rank's command to render for each DEP pool. User can bump this
@@ -650,7 +666,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   });
   // PD router selection is only used under pd_cluster.
   const [pdRouter, setPdRouter] = useState(() =>
-    ["dynamo", "smg"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : "vllm"
+    ["vllm", "dynamo", "smg", "ascend"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : null
   );
   // PD KV transfer connector (pd_cluster.yaml `connectors`); null = the default.
   const [pdConnector, setPdConnector] = useState(() => {
@@ -1010,9 +1026,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // empty command can't disagree.
   const kvOffloadOptions = taxonomy.kv_offload || {};
   const kvOffloadAllowedByStrategy = strategyAllowsKvOffload(strategies[activeServingStrategy]);
-  // Intel XPU: no KV-offload layer is validated on this backend, so gate every
-  // option off (and force the effective selection to Off further down).
-  const kvOffloadDisabledByHw = hwProfile?.generation === "xpu";
+  // Hardware-wide recipe opt-outs and Intel XPU disable the whole KV layer.
+  const kvOffloadDisabledByRecipe = !recipeAllowsKvOffload(recipe, hwId);
+  const kvOffloadDisabledByHw = hwProfile?.generation === "xpu" || kvOffloadDisabledByRecipe;
   const kvOptAllowed = (key) =>
     !kvOffloadDisabledByHw
     && isKvOffloadAllowedForStrategy(kvOffloadOptions[key], activeServingStrategy, strategies[activeServingStrategy])
@@ -1023,6 +1039,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const kvDisabledReason = (key) => {
     const opt = kvOffloadOptions[key];
     const name = opt?.display_name || key;
+    if (kvOffloadDisabledByRecipe) {
+      return `Only Off is supported for this recipe on ${hwProfile.display_name || hwId}.`;
+    }
     if (kvOffloadDisabledByHw) {
       return `${name} isn't validated on Intel XPU — serve directly with the Docker image.`;
     }
@@ -1051,7 +1070,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     keys.sort((a, b) => (kvOffloadOptions[a].order ?? 99) - (kvOffloadOptions[b].order ?? 99));
   }
   // Force the effective selection to Off when the hardware disables KV offload
-  // (Intel XPU) regardless of a persisted pick from other hardware — keeps the
+  // regardless of a persisted pick from other hardware — keeps the
   // generated command a plain single-instance serve.
   const activeKvOffload =
     kvOffloadDisabledByHw
@@ -1082,12 +1101,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // cleans it in selectHardware, and wiping it here would destroy a pick
   // saved on supported hardware the moment an unsupported render occurs.
   useEffect(() => {
-    if (compatibleKvStoreStrategies.includes(kvOffload) && activeKvOffload !== kvOffload) {
+    if (kvOffload && (kvOffloadDisabledByRecipe || compatibleKvStoreStrategies.includes(kvOffload)) && activeKvOffload !== kvOffload) {
       setKvOffload("");
       syncUrl({ kv_offload: "" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKvOffload, kvOffload]);
+  }, [activeKvOffload, kvOffload, kvOffloadDisabledByRecipe]);
 
   // Reconcile the node count with the active strategy's `strategy_min_gpus`
   // bar on THIS hardware, both directions:
@@ -1158,16 +1177,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
 
   // Pools scale to MAX_NODES, so every mode reachable on this hardware stays
   // offered; picking one grows the pool to its floor (setPdPar).
-  const pdAvailableModes = useMemo(
-    () => pdModes.filter((m) => isStrategyReachable(recipe, m, "multi_node", perNode, hwId)),
-    [pdModes, recipe, perNode, hwId]
-  );
-  const effPdPrefillPar = pdAvailableModes.includes(pdPrefillPar) ? pdPrefillPar : (pdAvailableModes[0] || "tp");
-  const effPdDecodePar = pdAvailableModes.includes(pdDecodePar) ? pdDecodePar : (pdAvailableModes[0] || "tp");
+  const pdAvailableModes = useMemo(() => Object.fromEntries(["prefill", "decode"].map((role) => [role,
+    pdModesByRole[role].filter((m) => pdRoleNodesPerInstance(pdRecipe, role, hwProfile, hwId)
+      || isStrategyReachable(recipe, m, "multi_node", perNode, hwId)),
+  ])), [pdModesByRole, pdRecipe, hwProfile, recipe, perNode, hwId]);
+  const effPdPrefillPar = pdAvailableModes.prefill.includes(pdPrefillPar) ? pdPrefillPar : (pdAvailableModes.prefill[0] || "tp");
+  const effPdDecodePar = pdAvailableModes.decode.includes(pdDecodePar) ? pdDecodePar : (pdAvailableModes.decode[0] || "tp");
   // Floor the sizes too, not just clicks — a pool whose DEFAULT mode carries a
   // floor (K3's decode is dep) would otherwise render below it.
-  const effPdPrefillNodes = Math.max(pdPrefillNodes, nodesNeededFor(effPdPrefillPar));
-  const effPdDecodeNodes = Math.max(pdDecodeNodes, nodesNeededFor(effPdDecodePar));
+  const effPdPrefillNodes = normalizePdRoleNodes(pdRecipe, "prefill", hwProfile, hwId, Math.max(pdPrefillNodes, nodesNeededFor(effPdPrefillPar)));
+  const effPdDecodeNodes = normalizePdRoleNodes(pdRecipe, "decode", hwProfile, hwId, Math.max(pdDecodeNodes, nodesNeededFor(effPdDecodePar)));
+  const pdInstanceNodes = Object.fromEntries(["prefill", "decode"].map((role) => [role, pdRoleNodesPerInstance(pdRecipe, role, hwProfile, hwId)]));
+  const pdConnectorAllowlist = pdConnectorsFor(pdRecipe, hwProfile, hwId);
 
   const result = useMemo(
     () => {
@@ -1252,6 +1273,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
 
   // ── Handlers ──
   const selectFrontend = (value) => {
+    if (result.frontendRequired && value !== result.frontendRequired) return;
     const next = resolveFrontend(recipe, value, taxonomy);
     setFrontend(next);
     syncUrl({ frontend: next });
@@ -1473,7 +1495,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   };
 
   const setPdNodes = (role, n) => {
-    const clamped = Math.max(1, Math.min(16, parseInt(n, 10) || 1));
+    const clamped = normalizePdRoleNodes(pdRecipe, role, hwProfile, hwId, n);
     if (role === "prefill") {
       setPdPrefillNodes(clamped);
       setPdPrefillRank(0);
@@ -1489,6 +1511,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
         decode_rank: "",
       });
     }
+    return clamped;
   };
 
   const setPdRank = (role, r) => {
@@ -1506,33 +1529,47 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // (DEP start-rank vs TP node-rank), so reset that pool's rank to 0.
   // Dynamo is brand-gated (strategy YAML `dynamo.brands`); on other hardware
   // the row shows vLLM Router active and synthesis ignores the pick.
-  const dynamoOk = isDynamoSupportedOnHardware(strategies.pd_cluster?.dynamo, hwProfile);
-  const smgReason = smgUnsupportedReason(recipe, strategies.pd_cluster, {
+  const isAscendProxy = result.orchestrator === "ascend-proxy";
+  const pdConnectors = strategies.pd_cluster?.connectors || {};
+  const ascendReason = !isDynamoSupportedOnHardware(strategies.pd_cluster?.ascend, hwProfile)
+    ? `Ascend Router needs ${(strategies.pd_cluster?.ascend?.brands || ["Huawei"]).join(" / ")} hardware.`
+    : pdConnectorUnavailableReason(pdConnectors.mooncakev2, hwProfile, "ascend", pdRecipe, hwId, "mooncakev2");
+  const nativeRouterReason = isAscendProxy ? "The selected Mooncake V2 connector uses Ascend Router." : null;
+  const dynamoOk = !isAscendProxy && isDynamoSupportedOnHardware(strategies.pd_cluster?.dynamo, hwProfile);
+  const smgReason = isAscendProxy ? "This PD connector uses the Ascend Router." : smgUnsupportedReason(recipe, strategies.pd_cluster, {
     prefill: { parallelism: effPdPrefillPar }, decode: { parallelism: effPdDecodePar },
   }, activeKvOffload);
-  const effPdRouter = result.orchestrator === "smg" ? "smg" : result.orchestrator === "dynamo" ? "dynamo" : "vllm";
+  const effPdRouter = result.pdRouter || (isAscendProxy ? "ascend" : result.orchestrator === "smg" ? "smg" : result.orchestrator === "dynamo" ? "dynamo" : "vllm");
   const isSmgGrpc = result.orchestrator === "smg" && result.transport === "grpc";
   const selectPdRouter = (value) => {
+    if (isAscendProxy && value !== "ascend") return;
+    if (value === "ascend") {
+      if (ascendReason) return;
+      setPdRouter(value);
+      setPdConnector("mooncakev2");
+      syncUrl({ pd_router: value, pd_connector: "mooncakev2" });
+      return;
+    }
     setPdRouter(value);
     syncUrl({ pd_router: value === "vllm" ? "" : value });
   };
   // PD Connector row: the connector synthesis actually rendered (a pick this
   // hardware or router can't run falls back to the default).
-  const pdConnectors = strategies.pd_cluster?.connectors || {};
   const effPdConnector = result.kvConnector?.selected ?? null;
-  const pdConnectorReason = (key) => pdConnectorUnavailableReason(pdConnectors[key], hwProfile, effPdRouter);
+  const pdConnectorReason = (key) => pdConnectorUnavailableReason(pdConnectors[key], hwProfile, effPdRouter, pdRecipe, hwId, key);
   const selectPdConnector = (key) => {
-    const isDefault = pdConnectors[key]?.default;
+    if (pdConnectorReason(key)) return;
+    const isDefault = pdConnectorAllowlist ? pdConnectorAllowlist[0] === key : pdConnectors[key]?.default;
     setPdConnector(isDefault ? null : key);
     syncUrl({ pd_connector: isDefault ? "" : key });
   };
 
   const setPdPar = (role, mode) => {
-    if (!pdModes.includes(mode)) return;
+    if (!pdAvailableModes[role].includes(mode)) return;
     const isPrefill = role === "prefill";
     const cur = isPrefill ? pdPrefillNodes : pdDecodeNodes;
     // Grow this pool to the mode's GPU floor (DEP≥16) so the pick is valid.
-    const nodes = Math.max(cur, nodesNeededFor(mode));
+    const nodes = normalizePdRoleNodes(pdRecipe, role, hwProfile, hwId, Math.max(cur, nodesNeededFor(mode)));
     (isPrefill ? setPdPrefillPar : setPdDecodePar)(mode);
     (isPrefill ? setPdPrefillRank : setPdDecodeRank)(0);
     if (nodes !== cur) (isPrefill ? setPdPrefillNodes : setPdDecodeNodes)(nodes);
@@ -1764,7 +1801,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const modelId = recipe.variants?.[variant]?.model_id || recipe.model?.model_id || "model";
 
   // PD / KV-store clients hit the router; everyone else hits `vllm serve` on 8000.
-  const clientPort = isPd ? 30000 : kvHasRouter ? (result.router?.port || 30080) : 8000;
+  const clientPort = isPd ? (result.router?.port || 30000) : kvHasRouter ? (result.router?.port || 30080) : 8000;
 
   // curl/bench target. PD / routed KV-store → router host:port; everyone else
   // (incl. single-instance Mooncake) → the vllm-serve node (head node for
@@ -1799,12 +1836,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // every placeholder still pending a value.
   const placeholdersInUse = useMemo(() => {
     const texts = [];
+    const isAscendSequence = result.orchestrator === "ascend-proxy" && result.ascendScripts && result.startServer;
     if (result.command) texts.push(result.command);
     for (const c of result.companions || []) texts.push(c.command);
     if (result.headCommand) texts.push(result.headCommand);
     if (result.workerCommand) texts.push(result.workerCommand);
-    if (result.prefill?.command) texts.push(result.prefill.command);
-    if (result.decode?.command) texts.push(result.decode.command);
+    if (!isAscendSequence && result.prefill?.command) texts.push(result.prefill.command);
+    if (!isAscendSequence && result.decode?.command) texts.push(result.decode.command);
+    if (result.startServer?.command) texts.push(result.startServer.command.replace(/\$([A-Z_][A-Z0-9_]*)/g,
+      (token, name) => ASCEND_PD_ENDPOINT.test(name) ? token : ""));
     if (result.router?.command) texts.push(result.router.command);
     if (result.infra?.command) texts.push(result.infra.command);
     if (result.registration?.command) texts.push(result.registration.command);
@@ -1823,11 +1863,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       if (result.mooncake.store?.config) texts.push(JSON.stringify(result.mooncake.store.config));
       texts.push(JSON.stringify(result.mooncake.config));
     }
-    for (const e of [result.env, result.prefill?.env, result.decode?.env, result.vllm?.env, result.router?.env]) {
+    for (const e of [result.env, ...(!isAscendSequence ? [result.prefill?.env, result.decode?.env] : []), result.vllm?.env, result.router?.env]) {
       if (!e) continue;
       for (const v of Object.values(e)) if (typeof v === "string") texts.push(v);
     }
-    return detectPlaceholdersAll(...texts);
+    const placeholders = detectPlaceholdersAll(...texts);
+    return isAscendSequence ? placeholders.filter((placeholder) => ASCEND_PD_ENDPOINT.test(placeholder.name)) : placeholders;
   }, [result]);
 
   // Merge in sensible defaults for the curl/bench/router target so the
@@ -1839,7 +1880,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const defaults = {};
     if (result.deployType === "pd_cluster") {
       defaults.ROUTER_HOST = "localhost";
-      defaults.ROUTER_PORT = "30000";
+      defaults.ROUTER_PORT = String(result.router?.port || 30000);
     } else if (result.deployType === "kv_store_lb") {
       if (result.router) {
         defaults.ROUTER_HOST = "localhost";
@@ -1860,6 +1901,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
 
   const displayedResult = useMemo(() => {
     const sub = (s) => substitute(s, effectiveEndpoints);
+    const ascendEndpoints = Object.fromEntries(Object.entries(effectiveEndpoints).filter(([name]) => ASCEND_PD_ENDPOINT.test(name)));
     if (result.deployType === "pd_cluster") {
       return {
         ...result,
@@ -1868,6 +1910,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
         router:  { ...result.router,  command: sub(result.router.command), ...(result.router.dockerCommand ? { dockerCommand: sub(result.router.dockerCommand) } : {}), ...(result.router.env ? { env: substituteEnv(result.router.env, effectiveEndpoints) } : {}) },
         ...(result.infra ? { infra: { ...result.infra, command: sub(result.infra.command) } } : {}),
         ...(result.registration ? { registration: { ...result.registration, command: sub(result.registration.command) } } : {}),
+        ...(result.startServer ? { startServer: {
+          ...result.startServer,
+          command: substitute(result.startServer.command, ascendEndpoints),
+          commands: result.startServer.commands?.map((entry) => ({ ...entry, command: substitute(entry.command, ascendEndpoints) })),
+        } } : {}),
         ...(result.mooncake ? {
           mooncake: {
             ...result.mooncake,
@@ -2370,12 +2417,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                         disabled={!compatible}
                         onClick={() => compatible && selectVariant(key)}
                         title={compatible
-                          ? [v.description, "Min " + v.vram_minimum_gb + " GB to load."].filter(Boolean).join("\n\n")
+                          ? [v.description, v.vram_minimum_gb > 0 ? "Min " + v.vram_minimum_gb + " GB to load." : "Loading memory has not been specified."].filter(Boolean).join("\n\n")
                           : "Unavailable on the selected hardware."
                         }
                       >
                         <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
-                        <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
+                        {v.vram_minimum_gb > 0 && <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>}
                       </Pill>
                     );
                   })}
@@ -2437,6 +2484,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               isPd={isPd}
               isKvStore={kvHasRouter}
               isMultiNode={isMultiNode}
+              routerPort={result.router?.port}
               placeholders={placeholdersInUse}
               endpoints={endpoints}
               onChange={updateEndpoint}
@@ -2631,11 +2679,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                           ? [
                               v.description,
                               `Selecting this variant also switches Hardware to ${fallbackHw?.display_name || fallbackHwId}.`,
-                              `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
+                              v.vram_minimum_gb > 0 ? `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.` : "Loading memory has not been specified.",
                             ].filter(Boolean).join("\n\n")
                         : [
                             v.description,
-                            `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
+                            v.vram_minimum_gb > 0 ? `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.` : "Loading memory has not been specified.",
                           ].filter(Boolean).join("\n\n")
                     }
                   >
@@ -2645,7 +2693,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                         shift when Hardware changes. The offload budget stays in
                         the fit/gating path (fitsSingleNode) and in hardware_notes. */}
                     <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
-                    <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
+                    {v.vram_minimum_gb > 0 && <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>}
                   </Pill>
                 );
               })}
@@ -2827,14 +2875,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           {/* PD Router — which orchestrator fronts the prefill/decode pools.
               Nested under Strategy: it only exists for pd_cluster and never
               changes the pools, just the launcher + front door. */}
-          {activeServingStrategy === "pd_cluster" && (strategies.pd_cluster?.dynamo || strategies.pd_cluster?.smg) && (
+          {activeServingStrategy === "pd_cluster" && (strategies.pd_cluster?.dynamo || strategies.pd_cluster?.smg || strategies.pd_cluster?.ascend) && (
             <ConfigRow label="PD Router" nested>
               <PillGroup>
                 <Pill
                   active={effPdRouter === "vllm"}
                   pressed={effPdRouter === "vllm"}
-                  onClick={() => selectPdRouter("vllm")}
-                  title="Native vllm-router in PD mode — prefill/decode workers are plain `vllm serve` processes on fixed HTTP ports."
+                  disabled={!!nativeRouterReason}
+                  onClick={() => !nativeRouterReason && selectPdRouter("vllm")}
+                  title={nativeRouterReason || "Native vllm-router in PD mode — prefill/decode workers are plain `vllm serve` processes on fixed HTTP ports."}
                 >
                   <span className="font-semibold">vLLM Router</span>
                 </Pill>
@@ -2858,9 +2907,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 >
                   <span className="font-semibold">SMG</span>
                 </Pill>}
+                {strategies.pd_cluster.ascend && <Pill
+                  active={effPdRouter === "ascend"}
+                  pressed={effPdRouter === "ascend"}
+                  disabled={!!ascendReason}
+                  onClick={() => !ascendReason && selectPdRouter("ascend")}
+                  title={ascendReason || strategies.pd_cluster.ascend.description}
+                >
+                  <span className="font-semibold">{strategies.pd_cluster.ascend.display_name || "Ascend Router"}</span>
+                </Pill>}
               </PillGroup>
               <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
-                {effPdRouter === "dynamo"
+                {effPdRouter === "ascend" ? strategies.pd_cluster.ascend?.description
+                  : effPdRouter === "dynamo"
                   ? strategies.pd_cluster.dynamo.description
                   : effPdRouter === "smg" ? (isSmgGrpc ? "SMG gRPC router with NIXL prefill/decode workers. Supports TP/TEP pools without KV offload." : strategies.pd_cluster.smg.description)
                   : "vllm-router with --vllm-pd-disaggregation fronts the pools; each role is a `vllm serve` on its own HTTP port."}
@@ -2879,7 +2938,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 )}
               </p>
               {result.routerUnavailableReason && (
-                <p className="text-[11px] text-amber-600 mt-2">{result.routerUnavailableReason} Showing vLLM Router commands.</p>
+                <p className="text-[11px] text-amber-600 mt-2">{result.routerUnavailableReason} Showing {result.routerLabel || "vLLM Router"} commands.</p>
               )}
             </ConfigRow>
           )}
@@ -3012,10 +3071,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   // extra store process).
                   const supported = compatibleKvStoreStrategies.filter((s) => isKvStoreSupported(s));
                   const brandOk = isKvStoreBrandSupported(hwProfile);
-                  const selectable = !isXpuHardware && hwScalable && brandOk
+                  const selectable = !kvOffloadDisabledByHw && hwScalable && brandOk
                     && kvOffloadAllowedByStrategy && supported.length > 0;
                   const defaultId = supported[0];
-                  const disabledTitle = isXpuHardware
+                  const disabledTitle = kvOffloadDisabledByRecipe
+                    ? `Only Off is supported for this recipe on ${hwProfile.display_name || hwId}.`
+                    : isXpuHardware
                     ? "Mooncake isn't validated on Intel XPU — serve directly with the Docker image."
                     : !kvOffloadAllowedByStrategy
                     ? `${strategies[activeServingStrategy]?.display_name || activeServingStrategy} already fronts its ranks with its own router, which a Mooncake deployment would replace. Pick another strategy to layer Mooncake on.`
@@ -3171,7 +3232,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           {activeStrategy === "pd_cluster" ? (
             <ConfigRow
               label="Nodes"
-              hint={pdModes.length > 1
+              hint={Object.values(pdInstanceNodes).some(Boolean)
+                ? "Each pool scales by complete deployment groups. Prefill and decode group counts are independent; each group keeps the recipe's TP/PP/DP topology."
+                : pdModes.length > 1
                 ? "Each pool (prefill / decode) sizes and shards independently — pick its parallelism (TP / TEP / DEP) and node count. Total cluster = prefill_nodes + decode_nodes."
                 : "Each pool (prefill / decode) sizes independently. Total cluster = prefill_nodes + decode_nodes."}
             >
@@ -3180,8 +3243,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   label="Prefill"
                   value={effPdPrefillNodes}
                   gpuPerNode={hwProfile.gpu_count || 8}
+                  nodesPerInstance={pdInstanceNodes.prefill}
+                  topology={result.prefill}
+                  deviceLabel={hwProfile.generation === "npu" ? "NPU" : "GPU"}
                   onChange={(n) => setPdNodes("prefill", n)}
-                  modes={pdAvailableModes}
+                  modes={pdAvailableModes.prefill}
                   parallelism={effPdPrefillPar}
                   onParChange={(m) => setPdPar("prefill", m)}
                 />
@@ -3189,8 +3255,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   label="Decode"
                   value={effPdDecodeNodes}
                   gpuPerNode={hwProfile.gpu_count || 8}
+                  nodesPerInstance={pdInstanceNodes.decode}
+                  topology={result.decode}
+                  deviceLabel={hwProfile.generation === "npu" ? "NPU" : "GPU"}
                   onChange={(n) => setPdNodes("decode", n)}
-                  modes={pdAvailableModes}
+                  modes={pdAvailableModes.decode}
                   parallelism={effPdDecodePar}
                   onParChange={(m) => setPdPar("decode", m)}
                 />
@@ -3201,7 +3270,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   </div>
                 )}
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  total {(effPdPrefillNodes + effPdDecodeNodes) * (hwProfile.gpu_count || 8)} GPUs
+                  total {(effPdPrefillNodes + effPdDecodeNodes) * (hwProfile.gpu_count || 8)} {hwProfile.generation === "npu" ? "NPUs" : "GPUs"}
                   · {effPdPrefillNodes + effPdDecodeNodes} node{effPdPrefillNodes + effPdDecodeNodes === 1 ? "" : "s"}
                 </span>
               </div>
@@ -3284,8 +3353,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               {Object.entries(taxonomy.frontends || {}).map(([id, fe]) => {
                 const supported = isFrontendSupported(recipe, id);
                 // SMG gRPC always runs the Python servicer, so pin the pill to it.
-                const active = isSmgGrpc ? id === "python" : frontend === id;
-                const disabled = !supported || (isSmgGrpc && id !== "python");
+                const requiredFrontend = result.frontendRequired || (isSmgGrpc ? "python" : null);
+                const active = requiredFrontend ? id === requiredFrontend : frontend === id;
+                const disabled = !supported || (!!requiredFrontend && id !== requiredFrontend);
                 return (
                   <Pill
                     key={id}
@@ -3294,7 +3364,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                     disabled={disabled}
                     title={!supported
                       ? `The ${fe.label} frontend doesn't support this model yet`
-                      : disabled ? "SMG gRPC uses the Python servicer." : undefined}
+                      : disabled ? (isAscendProxy ? "MooncakeConnectorV2 PD uses the Python frontend." : "SMG gRPC uses the Python servicer.") : undefined}
                     onClick={() => selectFrontend(id)}
                   >
                     {id === "rust" && <Zap size={11} className="inline-block mr-1 -mt-0.5" fill="currentColor" aria-hidden="true" />}
@@ -3304,7 +3374,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               })}
             </PillGroup>
             <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
-              {isSmgGrpc ? (
+              {isAscendProxy ? (
+                "MooncakeConnectorV2 PD uses the Python frontend with the Ascend Router."
+              ) : isSmgGrpc ? (
                 "The SMG-compatible gRPC servicer runs through vllm serve --grpc."
               ) : isFrontendSupported(recipe, "rust") ? (
                 <>
@@ -3521,8 +3593,19 @@ const PD_PAR_TIPS = {
   dep: "Data + expert parallel — one vllm serve per node, DP across nodes with EP (MoE throughput).",
 };
 
-function PdNodeInput({ label, value, gpuPerNode, onChange, modes, parallelism, onParChange }) {
+function PdNodeInput({ label, value, gpuPerNode, nodesPerInstance, topology, deviceLabel = "GPU", onChange, modes, parallelism, onParChange }) {
   const showPills = Array.isArray(modes) && modes.length > 1 && typeof onParChange === "function";
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const commitDraft = () => {
+    const normalized = onChange(draft);
+    setDraft(String(normalized ?? value));
+  };
+  const topologyLabel = nodesPerInstance && topology ? [
+    `DP${topology.dpSize || 1}`, `TP${topology.tp || gpuPerNode}`,
+    ...(topology.pp > 1 ? [`PP${topology.pp}`] : []),
+    ...(topology.argv?.includes("--enable-expert-parallel") ? [`EP${(topology.dpSize || 1) * (topology.tp || gpuPerNode)}`] : []),
+  ].join(" / ") : null;
   return (
     <div className="inline-flex flex-wrap items-center gap-2">
       <span className="text-xs font-medium text-muted-foreground w-12 shrink-0">{label}</span>
@@ -3545,18 +3628,26 @@ function PdNodeInput({ label, value, gpuPerNode, onChange, modes, parallelism, o
           ))}
         </span>
       )}
+      {!showPills && nodesPerInstance > 0 && <span className="text-[11px] font-mono">{topologyLabel || PD_PAR_LABELS[parallelism] || parallelism.toUpperCase()}</span>}
       <input
         type="number"
-        min={1}
+        min={nodesPerInstance || 1}
         max={16}
+        step={nodesPerInstance || 1}
         aria-label={`${label} node count`}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+        value={nodesPerInstance ? draft : value}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          if (!nodesPerInstance) onChange(e.target.value);
+        }}
+        onBlur={() => { if (nodesPerInstance) commitDraft(); }}
+        onKeyDown={(e) => { if (nodesPerInstance && e.key === "Enter") commitDraft(); }}
         className="w-14 px-2 py-1 text-sm font-mono tabular-nums rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-vllm-blue/40"
       />
       <span className="text-xs text-muted-foreground tabular-nums">
-        × {gpuPerNode} = {value * gpuPerNode}
+        × {gpuPerNode} = {value * gpuPerNode} {deviceLabel}
       </span>
+      {nodesPerInstance > 0 && <span className="text-[11px] text-muted-foreground">{value / nodesPerInstance} group{value === nodesPerInstance ? "" : "s"} · {nodesPerInstance} nodes × {gpuPerNode} {deviceLabel} per group</span>}
     </div>
   );
 }
@@ -4269,9 +4360,12 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   // `dpSize`, `poolGpus` meta — rendered above the command so the reader
   // knows whether the block is a single engine or a rank-0 template that
   // needs to be duplicated for the rest of the DP ranks.
-  const [tab, setTab] = useState("prefill");
+  const [tab, setTab] = useState(() => result.orchestrator === "ascend-proxy" && result.ascendScripts && result.startServer ? "ascend_scripts" : "prefill");
   const isDynamo = result.orchestrator === "dynamo";
   const isSmg = result.orchestrator === "smg";
+  const isAscendSequence = result.orchestrator === "ascend-proxy" && !!result.ascendScripts && !!result.startServer;
+  const deviceLabel = dockerMeta.isNpu ? "NPU" : "GPU";
+  const connectorLabel = { mooncakev2: "MooncakeConnectorV2", mooncake: "Mooncake", moriio: "MoRI-IO", nixl: "NIXL" }[result.kvConnector?.selected] || "NIXL";
   // Dynamo workers launch via `python3 -m dynamo.vllm`, which the
   // vllm-openai image's `vllm serve` entrypoint can't wrap — render them
   // pip-style (install hint above) regardless of install mode.
@@ -4291,10 +4385,26 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   // prefill/decode node reads them via $MOONCAKE_CONFIG_PATH — then
   // master/(store) tabs follow in launch order. Same conventions as
   // KvStoreLbBlock.
-  const mc = result.mooncake;
+  const mc = isAscendSequence ? null : result.mooncake;
   // With Mooncake composed in, the tabs become a real launch sequence
   // (config → master → (store) → pools → router), so they get step numbers.
   // Plain PD keeps unnumbered tabs — prefill/decode have no strict order.
+  // Ascend's grouped launch stages the shared scripts, writes each role's
+  // template, starts the selected nodes, then starts the proxy.
+  const roleTab = (role, label) => {
+    const pool = result[role];
+    const template = isAscendSequence && pool.templateCommand;
+    return {
+      id: role, label,
+      command: template || wrap(pool.command, pool.env),
+      env: template ? (pool.templateEnv || {}) : pool.env,
+      meta: pool,
+      ...(template ? {
+        description: pool.templateDescription || `Run only on ${label} nodes, beside launch_online_dp.py. Replace <NIC_NAME> and <LOCAL_IP> with this node's interface and IP. This writes ./run_dp_template.sh for Start_Server; each node needs only its own role's template.`,
+        isTemplate: true,
+      } : {}),
+    };
+  };
   const tabs = [
     ...(mc ? [{
       id: "mc_config", label: "Mooncake Config",
@@ -4305,20 +4415,33 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
     ...(mc?.store ? [{ id: "mc_store", label: "Mooncake Store", command: mc.store.command, env: {}, description: mc.store.description }] : []),
     // Dynamo: the etcd control plane comes first in the sequence.
     ...(isDynamo && result.infra ? [{ id: "dyn_infra", label: result.infra.label, command: result.infra.command, env: {}, description: result.infra.description }] : []),
-    { id: "prefill", label: "Prefill", command: wrap(result.prefill.command, result.prefill.env), env: result.prefill.env, meta: result.prefill },
-    { id: "decode", label: "Decode", command: wrap(result.decode.command, result.decode.env), env: result.decode.env, meta: result.decode },
-    { id: "router", label: result.router.label || "Router", command: routerDocker || result.router.command, env: result.router.env || {}, install: routerDocker ? null : result.router.install, isRouter: true },
-    ...(result.registration ? [{ id: "registration", ...result.registration, env: {}, isRouter: true }] : []),
-  ].map((t, i) => (mc || isDynamo || isSmg ? { ...t, step: i + 1 } : t));
+    ...(isAscendSequence ? [{
+      id: "ascend_scripts", label: "Scripts",
+      command: result.ascendScripts.command,
+      env: {},
+      description: result.ascendScripts.description,
+      links: result.ascendScripts.links || result.ascendScripts.files?.map((file) => ({ label: file.name, url: file.url })),
+    }] : []),
+    roleTab("prefill", "Prefill"),
+    roleTab("decode", "Decode"),
+    ...(isAscendSequence ? [{
+      id: "ascend_server", label: "Start_Server", command: result.startServer.command, env: {},
+      commands: result.startServer.commands,
+      description: result.startServer.description, links: result.startServer.links,
+    }] : []),
+    { id: "router", label: isAscendSequence ? "Start_Proxy" : result.router.label || "Router", command: isAscendSequence ? result.router.command : routerDocker || result.router.command, env: result.router.env || {}, install: isAscendSequence || routerDocker ? null : result.router.install, isRouter: true, links: result.router.links, ...(isAscendSequence ? { description: result.router.description } : {}) },
+    ...(!isAscendSequence && result.registration ? [{ id: "registration", ...result.registration, env: {}, isRouter: true }] : []),
+  ].map((t, i) => (mc || isDynamo || isSmg || isAscendSequence ? { ...t, step: i + 1 } : t));
   // When Mooncake is toggled on/off, jump to the leftmost tab so the launch
   // sequence reads left to right (same behavior as SingleCommandBlock's
   // companion tabs).
   const hasMc = !!mc;
   useEffect(() => {
-    setTab(hasMc ? "mc_config" : isDynamo && result.infra ? "dyn_infra" : "prefill");
+    setTab(hasMc ? "mc_config" : isDynamo && result.infra ? "dyn_infra" : isAscendSequence ? "ascend_scripts" : "prefill");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMc, isDynamo, isSmg]);
+  }, [hasMc, isDynamo, isSmg, isAscendSequence]);
   const active = tabs.find((t) => t.id === tab) || tabs[0];
+  const clientTabLabel = isAscendSequence ? "Start_Proxy" : result.router.label || "Router";
   // Docker mode folds env into `-e` flags inside `docker run` for prefill /
   // decode, so no prelude there. Router (and pip mode) keep the export-style
   // env lines (the SMG container command needs no environment prelude).
@@ -4336,9 +4459,9 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
       <div className="flex flex-wrap items-center justify-between px-4 pt-2 gap-x-3 gap-y-2">
         <CommandTabs tabs={tabs} current={active.id} onSelect={setTab} />
         <div className="flex items-center gap-1.5 shrink-0">
-          <CopyButton text={fullScript} />
-          <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={!active.isRouter} disabledNote={`Clients connect via the ${result.router.label || "Router"} tab — cURL & Bench live there.`} />
-          <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={!active.isRouter} disabledNote={`Clients connect via the ${result.router.label || "Router"} tab — cURL & Bench live there.`} />
+          {!active.commands && <CopyButton text={fullScript} />}
+          <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={!active.isRouter} disabledNote={`Clients connect via the ${clientTabLabel} tab — cURL & Bench live there.`} />
+          <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={!active.isRouter} disabledNote={`Clients connect via the ${clientTabLabel} tab — cURL & Bench live there.`} />
           {endpointsControls}
         </div>
       </div>
@@ -4362,13 +4485,42 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           # {active.description}
         </div>
       )}
+      {active.links?.length > 0 && (
+        <div className="px-4 pt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-mono leading-snug">
+          {active.links.map((link) => (
+            <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-vllm-blue hover:underline">
+              {link.label || link.url} <ExternalLink size={9} />
+            </a>
+          ))}
+        </div>
+      )}
+      {isAscendSequence && active.id === "ascend_server" && onRankChange && (
+        <div className="px-4 pt-3 flex flex-wrap gap-4 text-[11px] text-[var(--command-fg)]/70">
+          {["prefill", "decode"].map((role) => (
+            <label key={role} className="inline-flex items-center gap-2">
+              <span className="capitalize">{role} node</span>
+              <input type="number" min={1} max={result[role].nodes}
+                aria-label={`${role === "prefill" ? "Prefill" : "Decode"} node whose server command is shown`}
+                value={(result[role].currentNode ?? 0) + 1}
+                onChange={(e) => {
+                  const n = parseInt(e.target.value, 10);
+                  if (Number.isFinite(n)) onRankChange(role, n - 1);
+                }}
+                className="w-14 px-2 py-0.5 text-xs font-mono tabular-nums rounded border border-[var(--command-fg)]/20 bg-transparent text-[var(--command-fg)] focus:outline-none focus:border-vllm-blue/60" />
+              <span className="text-[var(--command-fg)]/40">of 1..{result[role].nodes}</span>
+            </label>
+          ))}
+        </div>
+      )}
       {!active.isRouter && active.meta && (
         <div className="px-4 pt-3 text-[11px] text-[var(--command-fg)]/55 font-mono leading-snug">
           # {active.meta.nodes === 0
             ? `Co-located half-node · ${active.meta.poolGpus} GPU · ${active.meta.parallelism.toUpperCase()}`
-            : `${active.meta.nodes} node${active.meta.nodes === 1 ? "" : "s"} × ${(active.meta.poolGpus / Math.max(1, active.meta.nodes))} GPU = ${active.meta.poolGpus} GPU · ${active.meta.parallelism.toUpperCase()}`}
+            : `${active.meta.nodes} node${active.meta.nodes === 1 ? "" : "s"} × ${(active.meta.poolGpus / Math.max(1, active.meta.nodes))} ${deviceLabel} = ${active.meta.poolGpus} ${deviceLabel} · ${active.meta.parallelism.toUpperCase()}`}
+          {active.meta.grouped && <> · {active.meta.instances} independent group{active.meta.instances === 1 ? "" : "s"} of {active.meta.nodesPerInstance} nodes</>}
           {active.meta.parallelism === "dep" && active.meta.nodes > 1 && (
-            <> {" · DP="}{active.meta.dpSize}{" (dp_local="}{active.meta.dpLocal}{", one vllm serve per node)"}</>
+            <> {" · DP="}{active.meta.dpSize}{active.meta.grouped ? " per group" : ""}{" (dp_local="}{active.meta.dpLocal}{", one vllm serve per node)"}</>
           )}
         </div>
       )}
@@ -4393,20 +4545,21 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           {active.meta.parallelism === "dep" ? (
             <>
               <span className="text-[var(--command-fg)]/40">
-                of 1..{active.meta.nodes} · start_rank = {active.meta.startRank}
+                of 1..{active.meta.nodes} · {active.meta.grouped ? "group DP rank" : "start_rank"} = {active.meta.grouped ? active.meta.instanceNodeRank : active.meta.startRank}
               </span>
               <span className="text-[var(--command-fg)]/40 ml-auto">vLLM spawns {active.meta.dpLocal} local DP ranks per node</span>
             </>
           ) : (
             <>
               <span className="text-[var(--command-fg)]/40">
-                of 1..{active.meta.nodes} · --node-rank = {active.meta.currentNode ?? 0}
+                of 1..{active.meta.nodes} · --node-rank = {active.meta.instanceNodeRank ?? active.meta.currentNode ?? 0}
               </span>
               <span className="text-[var(--command-fg)]/40 ml-auto">
-                {(active.meta.currentNode ?? 0) === 0 ? `head node — serves ${result.transport === "grpc" ? "gRPC" : "HTTP"} + NIXL` : "follower — runs --headless"}
+                {(active.meta.instanceNodeRank ?? active.meta.currentNode ?? 0) === 0 ? `${active.meta.grouped ? "group head" : "head node"} — serves ${result.transport === "grpc" ? "gRPC" : "HTTP"} + ${connectorLabel}` : result.orchestrator === "ascend-proxy" ? "Prefill node — PD separation" : "follower — runs --headless"}
               </span>
             </>
           )}
+          {active.meta.grouped && <span className="text-[var(--command-fg)]/40">group {(active.meta.currentInstance ?? 0) + 1} of {active.meta.instances}</span>}
         </div>
       )}
       {!active.isRouter && <CommandNote note={commandNote} />}
@@ -4415,7 +4568,15 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           {prelude}
         </pre>
       )}
-      <CommandBody command={active.command} />
+      {active.commands ? active.commands.map((entry) => (
+        <div key={entry.role} className="mt-3 border-t border-[var(--command-fg)]/10">
+          <div className="px-4 pt-3 flex items-center justify-between">
+            <span className="text-xs font-semibold text-[var(--command-fg)]/80">{entry.label}</span>
+            <CopyButton text={entry.command} />
+          </div>
+          <CommandBody command={entry.command} />
+        </div>
+      )) : <CommandBody command={active.command} />}
     </div>
   );
 }
