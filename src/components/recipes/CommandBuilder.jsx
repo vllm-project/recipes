@@ -2,8 +2,6 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import Markdown from "react-markdown";
-import { guideRehypePluginsFor, guideRemarkPlugins } from "@/lib/guide-markdown";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
@@ -2413,14 +2411,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             to run inside the container. */}
         {modeDependencies.length > 0 && (
           <DependenciesBlock deps={modeDependencies} />
-        )}
-
-        {currentVariant.guide && (
-          <div className="guide-content rounded-xl border border-border px-4 py-3 text-sm">
-            <Markdown remarkPlugins={guideRemarkPlugins} rehypePlugins={guideRehypePluginsFor("variant-")}>
-              {currentVariant.guide}
-            </Markdown>
-          </div>
         )}
 
         {/* ── VRAM shortfall warning (single-node only) ── */}

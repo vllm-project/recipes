@@ -53,6 +53,7 @@ channels:
       scope: { brands: [Huawei] }
     vllm-metal:
       repo: vllm-project/vllm-metal
+      # Preview vllm-metal#1222; refresh the lock after it merges.
       ref: main
       path: recipes
       role: overlay

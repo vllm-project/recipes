@@ -103,7 +103,6 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     install,
     supported_features: strings,
     supported_frontends: { type: "array", items: { enum: frontends } },
-    guide: { type: "string" },
     extra_args: strings,
     extra_env: envMap,
     docker_image: { type: "string" },
