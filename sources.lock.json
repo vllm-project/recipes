@@ -28,9 +28,9 @@
       "repo": "vllm-project/vllm-metal",
       "ref": "main",
       "path": "recipes",
-      "sha": "f0022132044b4588a78ff5802cf3a0dadc3d9367",
-      "tree_sha": "686b2282bcf942778f135638f79107a196cd008b",
-      "resolved_at": "2026-10-29T22:41:42.184Z"
+      "sha": "e2ec2698803c2c6c5e7a7defbde0e1628d2c1e52",
+      "tree_sha": "7ba0e57c09f19ccffb181a83c8339dea6027df83",
+      "resolved_at": "2026-10-29T23:10:57.969Z"
     }
   }
 }
