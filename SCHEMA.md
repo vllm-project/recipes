@@ -419,6 +419,108 @@ Top-level keys, in this order:
 - `troubleshooting` (optional) — `[{ title, when?, body }]`: known issues, rendered in the **Troubleshooting** tab (beside Guide and Presets): entries whose `when` matches (or that have none) first, the rest folded under "Other configurations"; the tab gets a dot when a conditional entry matches. `title` is the symptom (an error message, "warmup too slow"), and becomes the anchor `#issue-<slug>`. The build rejects `when.variants` / `when.features` naming a variant or feature the recipe doesn't have. Helpers: `src/lib/recipe-context.js`.
 - `guide` — markdown string (`|`-block), rendered with `react-markdown` + `remark-gfm` + `rehype-slug`.
 
+## Fixed documented deployments
+
+`deployment_scripts.<exact_hardware_id>.<script_name>` stores a nonempty literal
+script string (`|`/`|-` in YAML). Names match `[a-z][a-z0-9_]*`; they are not file
+paths or URLs. Script text is maintained once, outside `guide`. Because it is part
+of the recipe YAML, normal source sync, assembly, overlay split/merge, schema
+validation and the client recipe loader carry it without a separate asset fetch
+or machine-local path. Hardware ownership is enforced by `OVERLAY_RULES`.
+
+`container_setup.<exact_hardware_id>: { script: docker, container_script?: setup,
+description?: "…" }` references scripts in that hardware's `deployment_scripts`.
+The upper builder shows the complete host Docker command and optional container
+environment command with copy buttons, then emits the service command without
+another Docker wrapper or generic pip install. The older `"#guide-anchor"` value
+is still accepted; only that legacy form requires Docker preparation in the Guide.
+Hardware without `container_setup` is unchanged.
+
+`scripted_strategies.<strategy_id>.<exact_hardware_id>` exposes a fixed, documented
+deployment alongside the tunable strategies. It is independent of the generic strategy's
+hardware gate (for example, Mooncake PD rather than generic NIXL PD). Required fields are
+`label`, `description`, `model_id`, `guide_href` (local anchor), and nonempty `steps`.
+Optional `variant` identifies the matching recipe variant when switching strategies;
+`env` supplies common environment variables. Each step has `label` and a `script`
+name; optional `launch_script` names its separate launch command. Both resolve
+against `deployment_scripts` for the selected hardware. Optional `filename`
+(.sh/.py basename) saves the script in a quoted heredoc before its launch command.
+Missing names fail the build, never falling back to Guide content. Legacy steps
+using `section` + zero-based fenced-code `block` (and optional `launch_block`)
+remain readable, but cannot mix named references with positional references in
+the same step. New configurations should use names; Guide edits then cannot
+change command generation. These deployments keep fixed
+topology/checkpoint/feature settings; tunable feature and node-count controls do not apply.
+The JSON API publishes resolved commands under `scripted_deployments` rather than presenting
+them as generic synthesized alternatives. Container references become resolved
+`container_setup` command objects in the API (legacy strings remain strings).
+The API omits the raw `deployment_scripts` registry after resolving references.
+GPU recipes without these fields are unaffected.
+
+```yaml
+deployment_scripts:
+  ascend_910c:
+    docker: |-
+      docker run --net=host example-image bash
+    node_0: |-
+      echo "documented node command"
+container_setup:
+  ascend_910c: { script: docker }
+scripted_strategies:
+  multi_node_tp_dp:
+    ascend_910c:
+      label: "Documented topology"
+      description: "Fixed topology; replace local values before launching."
+      model_id: "org/checkpoint"
+      guide_href: "#deployment-notes"
+      steps:
+        - { label: "Node 0", script: node_0 }
+```
+
+## Ascend PD workflow
+
+A fixed `scripted_strategies.pd_cluster.<exact_hardware>` entry can opt into the
+Ascend command adapter with `router: { id: ascend_proxy, port: 8000 }`. This is a
+separate Python proxy, not a label for the GPU vLLM/SMG/Dynamo routers. Only an
+explicitly configured NPU profile and the entry's `variant` can use this adapter.
+It ignores tunable pool sizes and features rather than manufacturing new layouts.
+
+Such an entry also requires `source: { revision: <40-character SHA>, url: <tutorial> }`,
+`hardware_label` (display name), `constraints` (the fixed checkpoint/topology scope),
+an absolute shell-safe `workdir`, and `preparation: { docker: { script: docker },
+launcher: { script: launcher } }`. These reference the selected hardware's named
+script registry (legacy `{ section, block }` references remain supported).
+The public preparation area defaults open above
+the role tabs: Docker on the host, then the full copyable Python launcher to save
+as `<workdir>/launch_online_dp.py`. The launcher is maintained once in `deployment_scripts`
+and reused by the page and API as `preparation.launcherSource`; it is not downloaded
+or extracted from a tutorial at runtime. Use the pinned tutorial's interface rather
+than assuming a repository script of the same name is compatible. A3 only uses this
+launcher on Decode nodes; Prefill runs the Bash template directly. 950DT uses its
+own seven-argument launcher for all four nodes. The adapter derives the displayed
+launcher/direct node lists from `launch_type`; the component does not assume A3
+roles or topology. Docker and proxy commands come from each hardware's named scripts,
+including that hardware's device maps, mounts, backend ports and conflict notices.
+There is no shared container-environment step. Each template declares its own
+IP, NIC and model path; only required cross-node addresses appear in that node's
+template or launch command. `substituteAscendPd` replaces literal `<P0_IP>` /
+`<D0_IP>` / NIC / model-path markers with Cluster endpoints. Empty fields retain
+explicit, editable values instead of requiring exported cluster variables.
+The proxy step includes its pinned script download and working-directory setup,
+so only the proxy node prepares that script.
+
+Steps identify `role: prefill | decode | proxy`, with consecutive zero-based
+`node` indices on engine roles. Engine steps require `launch_script` (or legacy `launch_block`) and
+`launch_type: direct | launcher`; optional `visible_devices` pins a whole-node
+device list. Launch method belongs to each node, not to the hardware or role.
+This leaves future hardware free to use a launcher for both roles.
+
+The adapter returns ordinary PD role metadata plus separate `template`,
+`saveCommand` (`command` is its copyable save heredoc) and `launchCommand` fields.
+Never write `launchCommand` into `run_dp_template.sh`. The UI reuses PD role/node
+selection, showing template saving first and a separate launch block below it.
+`preparation` and `source` are also published in `scripted_deployments` JSON.
+
 ## VRAM formula
 
 `vram_minimum_gb = ceil(params × bytes_per_param × 1.2)` — uses **total**

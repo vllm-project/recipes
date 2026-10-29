@@ -17,12 +17,12 @@
       "resolved_at": "2026-10-29T16:11:33.044Z"
     },
     "vllm-ascend": {
-      "repo": "vllm-project/vllm-ascend",
-      "ref": "main",
+      "repo": "Wyz-134/vllm-ascend",
+      "ref": "codex/glm51-ascend-recipe-overlay",
       "path": "recipes",
-      "sha": "02ac27a19cb7676304a9ca6985ba56ce29664536",
-      "tree_sha": "aa2c7503f1b45c8a57a0ae01e40c65ddf8e81283",
-      "resolved_at": "2026-10-28T02:06:32.523Z"
+      "sha": "bae6632b198f492e3e3d194486381d411b018e1d",
+      "tree_sha": "ef8f72c375e3d2a0ec3645b62ed831a63bc241c8",
+      "resolved_at": "2026-10-28T02:40:24.000Z"
     }
   }
 }

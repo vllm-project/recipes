@@ -21,6 +21,8 @@ import fs from "fs";
 import path from "path";
 import yaml from "js-yaml";
 import Ajv from "ajv";
+import { resolveScriptedStrategy, resolveContainerSetup } from "../src/lib/scripted-strategies.js";
+import { resolveAscendPd } from "../src/lib/ascend-pd.js";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import { BASELINE, effectivePreset, presetImage, presetPoints, presetSelect, resolvePresetKey, validatePresets, withPreset } from "../src/lib/recipe-presets.js";
 import { validateContextEntries } from "../src/lib/recipe-context.js";
@@ -998,6 +1000,21 @@ for (const file of findYamlFiles(modelsDir)) {
   validateFeatureModes(r, file);
   validateFrontends(r, file, taxonomy);
   validateHardwareKeys(r, file, taxonomy, strategies);
+  const containerPreparation = Object.fromEntries(Object.keys(r.container_setup || {}).map(hw => [
+    hw, typeof r.container_setup[hw] === "string" ? r.container_setup[hw] : resolveContainerSetup(r, hw),
+  ]));
+  if (r.scripted_strategies) {
+    for (const hardware of Object.values(r.scripted_strategies)) {
+      for (const [hw, preset] of Object.entries(hardware)) {
+        if (preset.variant && !r.variants[preset.variant]) throw new Error(`Unknown scripted variant: ${preset.variant}`);
+        if (preset.router?.id === "ascend_proxy" && taxonomy.hardware_profiles[hw]?.generation !== "npu") throw new Error(`Ascend Proxy cannot run on ${hw}`);
+      }
+    }
+    r.scripted_deployments = Object.fromEntries(Object.entries(r.scripted_strategies).map(([strategy, hardware]) => [
+      strategy, Object.fromEntries(Object.keys(hardware).map(hw => [hw, hardware[hw].router?.id === "ascend_proxy"
+        ? resolveAscendPd(r, hardware[hw].variant, hw) : resolveScriptedStrategy(r, strategy, hw)])),
+    ]));
+  }
   const presetErrors = validatePresets(r, taxonomy, effectiveCompatibleStrategies(r), kvStoreIds, strategies.pd_cluster?.connectors);
   if (presetErrors.length) throw new Error(`Invalid presets in ${sourceRel(file)}:\n  - ${presetErrors.join("\n  - ")}`);
   const contextErrors = validateContextEntries(r);
@@ -1075,6 +1092,9 @@ for (const file of findYamlFiles(modelsDir)) {
   // renderings (parent + promoted) have run — buildVariantRendering reads
   // them. The YAML on GitHub is the source of truth for anyone re-synthesizing.
   delete r.strategy_overrides;
+  delete r.scripted_strategies;
+  delete r.deployment_scripts;
+  if (r.container_setup) r.container_setup = containerPreparation;
   delete r.compatible_strategies;
   delete r.default_strategy;
   // Which repo owns this recipe (and which overlays merged into it), so agents

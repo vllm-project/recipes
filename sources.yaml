@@ -46,8 +46,10 @@ channels:
     # Ascend content of the vLLM recipes, merged into them (add-only, Huawei
     # hardware keys only), plus recipes that run only on Ascend.
     vllm-ascend:
-      repo: vllm-project/vllm-ascend
-      ref: main
+      # PREVIEW ONLY: companion overlay PR vllm-project/vllm-ascend#20034.
+      # Restore the official source and lock before merging this renderer PR.
+      repo: Wyz-134/vllm-ascend
+      ref: codex/glm51-ascend-recipe-overlay
       path: recipes
       role: overlay
       scope: { brands: [Huawei] }
