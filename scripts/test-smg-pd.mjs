@@ -175,9 +175,61 @@ test("Dynamo parser mapping does not consume a following flag as a value", () =>
     const argv = result[role].argv;
     assert.equal(flag(argv, "--max-num-seqs"), "4");
     assert.equal(flag(argv, "--max-model-len"), "16384");
+    assert.ok(!argv.includes("--tool-call-parser"));
+    assert.ok(!argv.includes("--reasoning-parser"));
     assert.ok(!argv.includes("--dyn-tool-call-parser"));
     assert.ok(!argv.includes("--dyn-reasoning-parser"));
   }
+});
+
+test("Dynamo maps parser names without changing the vLLM reasoning name", () => {
+  for (const [tool, reasoning, expectedTool, expectedReasoning] of [
+    ["deepseek_v31", "deepseek_r1", "deepseek_v3_1", "deepseek_r1"],
+    ["deepseek_v32", "kimi_k2", "deepseek_v3_2", "kimi"],
+    ["glm45", "glm47", "glm47", "glm45"],
+    ["muse", "muse_glimmer", "muse", "muse_glimmer"],
+  ]) {
+    const model = structuredClone(read("models/moonshotai/Kimi-K3.yaml"));
+    model.features.tool_calling.args = ["--enable-auto-tool-choice", "--tool-call-parser", tool];
+    model.features.reasoning.args = ["--reasoning-parser", reasoning];
+    const result = resolve({ model, router: "dynamo" });
+    for (const role of ["prefill", "decode"]) {
+      const argv = result[role].argv;
+      assert.equal(flag(argv, "--dyn-tool-call-parser"), expectedTool);
+      assert.equal(flag(argv, "--dyn-reasoning-parser"), expectedReasoning);
+      assert.equal(flag(argv, "--reasoning-parser"), reasoning);
+    }
+    assert.equal(result.parserWarnings, undefined);
+  }
+});
+
+test("Dynamo omits unknown frontend parsers and reports unavailable features", () => {
+  for (const parser of ["deepseek_v41", "mimo", "step3p5", "step5", "__proto__"]) {
+    const model = structuredClone(read("models/moonshotai/Kimi-K3.yaml"));
+    model.features.tool_calling.args = ["--tool-call-parser", parser];
+    model.features.reasoning.args = ["--reasoning-parser", parser];
+    const result = resolve({ model, router: "dynamo" });
+    for (const role of ["prefill", "decode"]) {
+      assert.ok(!result[role].argv.includes("--dyn-tool-call-parser"));
+      assert.ok(!result[role].argv.includes("--dyn-reasoning-parser"));
+      assert.equal(flag(result[role].argv, "--reasoning-parser"), parser);
+    }
+    assert.equal(result.parserWarnings.length, 2);
+    assert.ok(result.parserWarnings.every((warning) => warning.includes(parser) && warning.includes("1.5.0")));
+    assert.equal(resolve({ model, router: "vllm" }).parserWarnings, undefined);
+  }
+});
+
+test("Dynamo preserves explicit frontend parser overrides", () => {
+  const model = structuredClone(read("models/moonshotai/Kimi-K3.yaml"));
+  model.features.tool_calling.args = ["--tool-call-parser", "unknown", "--dyn-tool-call-parser", "hermes"];
+  model.features.reasoning.args = ["--reasoning-parser", "unknown", "--dyn-reasoning-parser", "basic"];
+  const result = resolve({ model, router: "dynamo" });
+  for (const role of ["prefill", "decode"]) {
+    assert.equal(flag(result[role].argv, "--dyn-tool-call-parser"), "hermes");
+    assert.equal(flag(result[role].argv, "--dyn-reasoning-parser"), "basic");
+  }
+  assert.equal(result.parserWarnings, undefined);
 });
 
 const grpcModels = [

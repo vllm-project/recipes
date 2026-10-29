@@ -15,6 +15,8 @@
 #   scope  — what the source may contribute, granted here (not self-declared):
 #              { tasks: [omni] }        owner: every recipe must carry the task
 #              { exclude_tasks: [omni] } core/owner: no recipe may carry the task
+#              { exclude_brands: [Huawei] } core/owner: no content for these
+#                                       brands' hardware (it comes from their overlay)
 #              { brands: [Huawei] }     overlay: only hardware keys of these brands
 #   defers_to — another source in the channel, or a list of them: where both
 #              ship a recipe, that source's copy wins and this one's is skipped
@@ -41,6 +43,14 @@ channels:
       path: recipes
       role: owner
       scope: { tasks: [omni] }
+    # Ascend content of the vLLM recipes, merged into them (add-only, Huawei
+    # hardware keys only), plus recipes that run only on Ascend.
+    vllm-ascend:
+      repo: vllm-project/vllm-ascend
+      ref: main
+      path: recipes
+      role: overlay
+      scope: { brands: [Huawei] }
     # models/ keeps copies of the vLLM and vLLM-Omni recipes until they are
     # synced upstream and removed: the upstream version renders; a recipe
     # merged here that upstream doesn't have yet renders from here.

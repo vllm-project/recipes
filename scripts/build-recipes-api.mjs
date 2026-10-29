@@ -142,7 +142,7 @@ function synthesizeInstall(recipe) {
       ? `uv venv\nsource .venv/bin/activate\nuv pip install -U vllm --pre \\\n  --extra-index-url https://wheels.vllm.ai/nightly/${baseCuda} \\\n  --extra-index-url https://download.pytorch.org/whl/${baseCuda} \\\n  --index-strategy unsafe-best-match`
       : `uv venv\nsource .venv/bin/activate\nuv pip install -U vllm --torch-backend auto`;
     const defaultPipNote = nightlyRequired
-      ? `vLLM ${v} isn't released yet — nightly required.`
+      ? `vLLM ${v} isn't released yet — nightly required. Nightly wheels are CUDA 13 (cu130) only; the host needs an r580+ NVIDIA driver.`
       : undefined;
     const command = (pipCfg && pipCfg.command) || defaultPipCmd;
     const note = (pipCfg && pipCfg.note) || defaultPipNote;
@@ -375,13 +375,16 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
 
 // Wrap a rendered (command, argv) pair in `docker run`. Returns
 // { docker_command, docker_argv } so each form has its docker counterpart.
-function dockerize(command, argv, env, dockerMeta, port = null) {
+// `docker` is a PD KV connector's container needs ({ host_network, flags }).
+function dockerize(command, argv, env, dockerMeta, port = null, docker = null) {
+  const hostNetwork = !!docker?.host_network;
+  const extraFlags = docker?.flags || [];
   return {
     docker_command: buildDockerRun({
       command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, port,
-      isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix,
+      isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix, hostNetwork, extraFlags,
     }),
-    docker_argv: buildDockerArgv({ argv, env, meta: dockerMeta, port }),
+    docker_argv: buildDockerArgv({ argv, env, meta: dockerMeta, port, hostNetwork, extraFlags }),
   };
 }
 
@@ -443,7 +446,7 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
     result = resolveCommand(
       recipe, variantKey, strategy, hwId, feats, strategies, taxonomy, [], nodeCount, pdNodes,
       modes, kvOffload ?? selKv, null, sel.frontend, sel.pd_router ?? null, "http", sel.dcp ?? null,
-      presetPick, pointPick
+      presetPick, pointPick, sel.pd_connector ?? null
     );
   } catch (e) {
     // A preset is authored config with nothing to fall back to: fail the build
@@ -453,6 +456,10 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
     return null;
   }
   if (!result) return null;
+  // A preset that names its KV transfer connector must get it.
+  if (strict && sel.pd_connector && result.kvConnector?.unavailableReason) {
+    throw new Error(`Invalid preset ${presetPick}${pointPick ? ` at point ${pointPick}` : ""} in ${recipe.hf_id} (${hwId} / ${strategy}): ${result.kvConnector.unavailableReason}`);
+  }
 
   const baseVariant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
@@ -509,18 +516,21 @@ function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, 
     // emitted by command-synthesis).
     const prefill = { ...result.prefill };
     const decode = { ...result.decode };
+    const docker = result.kvConnector?.docker;
     if (prefill.command && prefill.argv) {
-      Object.assign(prefill, dockerize(prefill.command, prefill.argv, prefill.env, dockerMeta, 8001));
+      Object.assign(prefill, dockerize(prefill.command, prefill.argv, prefill.env, dockerMeta, 8001, docker));
     }
     if (decode.command && decode.argv) {
-      Object.assign(decode, dockerize(decode.command, decode.argv, decode.env, dockerMeta, 8002));
+      Object.assign(decode, dockerize(decode.command, decode.argv, decode.env, dockerMeta, 8002, docker));
     }
     return {
       ...base,
+      pd_connector: result.kvConnector?.selected ?? null,
       prefill,
       decode,
       router: result.router,
       router_config: result.routerConfig,
+      ...(result.parserWarnings?.length ? { parser_warnings: result.parserWarnings } : {}),
     };
   }
   if (result.deployType === "kv_store_lb") {
@@ -989,7 +999,7 @@ for (const file of findYamlFiles(modelsDir)) {
   validateFeatureModes(r, file);
   validateFrontends(r, file, taxonomy);
   validateHardwareKeys(r, file, taxonomy, strategies);
-  const presetErrors = validatePresets(r, taxonomy, effectiveCompatibleStrategies(r), kvStoreIds);
+  const presetErrors = validatePresets(r, taxonomy, effectiveCompatibleStrategies(r), kvStoreIds, strategies.pd_cluster?.connectors);
   if (presetErrors.length) throw new Error(`Invalid presets in ${sourceRel(file)}:\n  - ${presetErrors.join("\n  - ")}`);
   const contextErrors = validateContextEntries(r);
   if (contextErrors.length) throw new Error(`Invalid notes/troubleshooting in ${sourceRel(file)}:\n  - ${contextErrors.join("\n  - ")}`);

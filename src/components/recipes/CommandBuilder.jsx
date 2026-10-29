@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import { publishSelection, onPresetRequest } from "@/lib/selection-store";
@@ -652,6 +652,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const [pdRouter, setPdRouter] = useState(() =>
     ["dynamo", "smg"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : "vllm"
   );
+  // PD KV transfer connector (pd_cluster.yaml `connectors`); null = the default.
+  const [pdConnector, setPdConnector] = useState(() => {
+    const v = searchParams.get("pd_connector");
+    return v && strategies.pd_cluster?.connectors?.[v] ? v : null;
+  });
   const [pdTransport, setPdTransport] = useState(() =>
     recipe.model?.smg_grpc && searchParams.get("pd_transport") === "grpc" ? "grpc" : "http"
   );
@@ -1033,7 +1038,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       return `${name} isn't offered under ${strategies[activeServingStrategy]?.display_name || activeServingStrategy}, which manages its own KV layout across the DP ranks.`;
     }
     return activeServingStrategy === "pd_cluster"
-      ? `${name} can't compose with PD cluster, which owns --kv-transfer-config. (Mooncake composes with PD instead.)`
+      ? `${name} can't compose with Prefill/Decode, which owns --kv-transfer-config. Simple (on prefill) and Mooncake Store compose with its KV transfer connector instead.`
       : `${name} works with: ${(opt?.strategies || []).map((s) => strategies[s]?.display_name || s).join(", ")}.`;
   };
   // Options sharing a `group` collapse into one pill + member sub-row.
@@ -1173,9 +1178,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
         }
         : null;
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick);
+      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick, pdConnector);
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick, pdConnector]
   );
 
   // Publish the selection for the sections below the builder (This
@@ -1202,7 +1207,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     || "")
     + (omniTask ? `|task:${omniTask}` : "")
     + `|frontend:${frontend}`
-    + `|pd_router:${pdRouter}|pd_transport:${pdTransport}`
+    + `|pd_router:${pdRouter}|pd_transport:${pdTransport}|pd_connector:${pdConnector ?? ""}`
     + `|preset:${result.preset?.selected ?? ""}`;
   const [changed, setChanged] = useState(false);
   useEffect(() => {
@@ -1511,6 +1516,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     setPdRouter(value);
     syncUrl({ pd_router: value === "vllm" ? "" : value });
   };
+  // PD Connector row: the connector synthesis actually rendered (a pick this
+  // hardware or router can't run falls back to the default).
+  const pdConnectors = strategies.pd_cluster?.connectors || {};
+  const effPdConnector = result.kvConnector?.selected ?? null;
+  const pdConnectorReason = (key) => pdConnectorUnavailableReason(pdConnectors[key], hwProfile, effPdRouter);
+  const selectPdConnector = (key) => {
+    const isDefault = pdConnectors[key]?.default;
+    setPdConnector(isDefault ? null : key);
+    syncUrl({ pd_connector: isDefault ? "" : key });
+  };
 
   const setPdPar = (role, mode) => {
     if (!pdModes.includes(mode)) return;
@@ -1693,6 +1708,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     if (activeSelect.pd_router && !linked("pd_router")) {
       setPdRouter(activeSelect.pd_router);
       updates.pd_router = activeSelect.pd_router === "vllm" ? "" : activeSelect.pd_router;
+    }
+    if (activeSelect.pd_connector && !linked("pd_connector")) {
+      setPdConnector(activeSelect.pd_connector);
+      updates.pd_connector = activeSelect.pd_connector;
     }
     if (activeSelect.features && !linked("features")) {
       let next = [...features];
@@ -1953,13 +1972,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
         deps.push({ ...step, install_modes: ["pip", "docker"] });
       }
     }
+    // The PD KV transfer connector's runtime (the vLLM images ship it).
+    for (const step of result.kvConnector?.install || []) {
+      deps.push({ ...step, install_modes: ["pip"] });
+    }
     if (result.orchestrator === "smg") {
       if (result.workerInstall) deps.push({ command: result.workerInstall, note: "gRPC servicer — install on every prefill/decode node", install_modes: ["pip"] });
       deps.push({ command: result.router.install, note: "SMG — install on the router host", install_modes: ["pip"] });
       deps.push({ command: result.router.dockerInstall, note: "SMG — pull on the router host", install_modes: ["docker"] });
     }
     return deps;
-  }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall, result.router?.install, result.router?.dockerInstall, result.workerInstall]);
+  }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall, result.router?.install, result.router?.dockerInstall, result.workerInstall, result.kvConnector?.install]);
 
   // Status caption for the command block header.
   // Only `verified` is a positive signal worth surfacing; anything else
@@ -2013,12 +2036,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           ? ` · Mooncake (${(strategies[activeKvOffload]?.label || "").split(" ")[0] || "KV Store"})`
           : "");
 
-  // Upstream `vllm/vllm-openai:latest` (and recent pinned tags) ship CUDA 13
-  // as the base; CUDA 12.9 is the legacy alternate published as a `-cu129`
-  // suffix. The recipe's `min_vllm_version` doesn't change which tag the user
-  // pulls — `:latest` is always today's base regardless — so the alt suffix
-  // is a constant.
+  // Upstream images ship CUDA 13 as the base; CUDA 12.9 is the legacy
+  // alternate, published as a `-cu129` tag only up to v0.32.0 (nightly and
+  // 0.33.0+ are cu130-only — `cu129DockerImage` knows which tags have one).
   const altCudaSuffix = "cu129";
+  const installMinVersion = maxVersion(recipe.model?.min_vllm_version, currentVariant.min_vllm_version);
 
   // A preset's engine image pins this GPU's docker command (an exact
   // variant × GPU image, which computeDockerMeta already prefers).
@@ -2044,20 +2066,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       return { ...meta, image: picked || meta.image };
     }
 
-    // Legacy string tag — append the suffix when user picks the alt variant.
-    // Nightly tags follow the inverse convention: `:nightly` → `:cu129-nightly`
-    // (CUDA prefix, not suffix). Detect the upstream `:nightly` tag and swap
-    // accordingly; pinned `:nightly`-bearing tags (e.g. `:myrelease-nightly`)
-    // fall back to the suffix path.
-    if (dockerCudaVariant === altCudaSuffix) {
-      const isUpstreamNightly = /^vllm\/vllm-(openai|openai-rocm|tpu):nightly$/.test(meta.image);
-      const next = isUpstreamNightly
-        ? meta.image.replace(/:nightly$/, `:${altCudaSuffix}-nightly`)
-        : `${meta.image}-${altCudaSuffix}`;
-      return { ...meta, image: next };
+    // Plain tag — swap in its CUDA 12.9 counterpart when the user picks the
+    // alt variant and one is published.
+    const cu129Image = cu129DockerImage(meta.image, installMinVersion);
+    if (dockerCudaVariant === altCudaSuffix && cu129Image) {
+      return { ...meta, image: cu129Image, cu129Image };
     }
-    return meta;
-  }, [recipe, imageVariant, hwProfile, hwId, dockerCudaVariant, altCudaSuffix]);
+    return { ...meta, cu129Image };
+  }, [recipe, imageVariant, hwProfile, hwId, dockerCudaVariant, altCudaSuffix, installMinVersion]);
 
   // `installMode` carries the user's tab choice; `effectiveInstallMode` folds
   // in constraints that would hide a tab entirely (pip: recipe opt-out or TPU
@@ -2780,7 +2796,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             );
           })()}
           {result?.preset?.point && result.preset.point.options.length > 1 && (() => {
-            // Points are usually one per client concurrency; name the row after
+            // Points are usually one per benchmark concurrency; name the row after
             // it when every point declares one, else keep the generic name
             // (e.g. eval vs throughput arms).
             const byConcurrency = result.preset.point.options.every((pt) => Number.isInteger(pt.concurrency));
@@ -2789,7 +2805,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               label={byConcurrency ? "Concurrency" : "Point"}
               nested
               hint={byConcurrency
-                ? "Client concurrency the preset was qualified at. Each renders its own settings."
+                ? "Concurrency the preset was qualified at: concurrent sessions for agentic lanes, concurrent requests otherwise. Each renders its own settings."
                 : "The preset's qualified operating points. Each renders its own settings."}
             >
               <PillGroup>
@@ -2865,6 +2881,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               {result.routerUnavailableReason && (
                 <p className="text-[11px] text-amber-600 mt-2">{result.routerUnavailableReason} Showing vLLM Router commands.</p>
               )}
+              {result.parserWarnings?.map((warning) => (
+                <p key={warning} className="text-[11px] text-amber-600 mt-2">{warning}</p>
+              ))}
             </ConfigRow>
           )}
 
@@ -2886,6 +2905,44 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   ? "SMG handles tokenization, tools and reasoning. Text Only is optional. Docker workers install the gRPC servicer at startup. Clients still use the HTTP API on SMG."
                   : "HTTP workers handle tokenization, tools and reasoning."}
               </p>
+            </ConfigRow>
+          )}
+
+          {/* PD Connector — the connector that moves KV from the prefill to the
+              decode pool. Nested under Strategy beside PD Router: it changes
+              each role's --kv-transfer-config and the router's KV mode, never
+              the pools. A connector this hardware or router can't run is
+              disabled with the reason. */}
+          {activeServingStrategy === "pd_cluster" && Object.keys(pdConnectors).length > 1 && (
+            <ConfigRow label="PD Connector" nested hint="Connector that moves each request's KV cache from the prefill pool to the decode pool. KV Offload tiers below compose with it.">
+              <PillGroup>
+                {Object.entries(pdConnectors).map(([key, c]) => {
+                  const reason = pdConnectorReason(key);
+                  return (
+                    <Pill key={key} active={effPdConnector === key} pressed={effPdConnector === key} disabled={!!reason}
+                      onClick={() => !reason && selectPdConnector(key)} title={reason || c.description}>
+                      <span className="font-semibold">{c.display_name || key}</span>
+                    </Pill>
+                  );
+                })}
+              </PillGroup>
+              <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                {pdConnectors[effPdConnector]?.description}
+                {pdConnectors[effPdConnector]?.docs && (
+                  <>
+                    {" "}
+                    <a href={pdConnectors[effPdConnector].docs} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-0.5 text-vllm-blue hover:underline">
+                      Docs <ExternalLink size={9} />
+                    </a>
+                  </>
+                )}
+              </p>
+              {result.kvConnector?.unavailableReason && (
+                <p className="text-[11px] text-amber-600 mt-2">
+                  {result.kvConnector.unavailableReason} Showing {pdConnectors[effPdConnector]?.display_name || effPdConnector} commands.
+                </p>
+              )}
             </ConfigRow>
           )}
 
@@ -2984,7 +3041,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                           ? "Mooncake — distributed KV cache: vLLM instances share prefix KV through a coordinated CPU-DRAM pool. Composes with the selected strategy — each instance runs it."
                           : disabledTitle}
                       >
-                        <span className="font-semibold">Mooncake</span>
+                        <span className="font-semibold">Mooncake Store</span>
                       </Pill>
                     ),
                   });
@@ -3004,9 +3061,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 || kvOffloadOptions[activeKvOffload];
               const text = opt?.description || (isKvStoreActive ? MOONCAKE_BACKGROUND : null);
               const docs = opt?.docs_url || (isKvStoreActive ? MOONCAKE_DOCS_URL : null);
+              const pdRoles = activeServingStrategy === "pd_cluster" ? kvOffloadOptions[activeKvOffload]?.pd?.roles : null;
               return text ? (
                 <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
                   {text}
+                  {pdRoles && ` Under Prefill/Decode it joins the ${pdRoles.join(" and ")} role's KV transfer connector in a MultiConnector.`}
                   {docs && (
                     <>
                       {" "}
@@ -3889,7 +3948,7 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   const pipHidden = pipCfg === false;
   const dockerHidden = dockerCfg === false;
   const [open, setOpen] = useState(false);
-  const { isAmd, isTpu, isXpu, isIntel, isNpu, image: dockerImage, brandKey, cudaMap } = dockerMeta;
+  const { isAmd, isTpu, isXpu, isIntel, isNpu, image: dockerImage, brandKey, cudaMap, cu129Image } = dockerMeta;
   // Intel CPU is a first-class backend in computeDockerMeta. Keep XPU
   // distinct even though it is also Intel hardware.
   const isCpu = isIntel && !isXpu;
@@ -3913,15 +3972,13 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   const nightlyRequired = recipe.model?.nightly_required === true || variant?.nightly_required === true;
   // A CUDA map narrows the toggle to the builds the recipe actually declares.
   // A single-key map (e.g. K3's cu130-only preview image) has nothing to
-  // toggle: hide the selector and pin both the docker tag and the pip wheel
-  // index to the one published build.
+  // toggle: hide the selector and pin the docker tag to the one published build.
   const cudaMapKeys = cudaMap ? ["cu130", "cu129"].filter((k) => k in cudaMap) : null;
   const singleCudaBuild = cudaMapKeys && cudaMapKeys.length === 1 ? cudaMapKeys[0] : null;
   const singleCudaLabel = singleCudaBuild === "cu129" ? "CUDA 12.9 (cu129)" : "CUDA 13 (cu130)";
-  // Resolve the CUDA tag for pip's nightly wheel index from the same toggle
-  // that drives the Docker tag suffix. "default" → cu130 (today's upstream
-  // baseline); explicit picks pass through.
-  const pipCudaTag = singleCudaBuild || (dockerCudaVariant === "default" ? "cu130" : dockerCudaVariant);
+  // Nightly wheels are cu130-only: `/nightly/cu129` stopped at the 0.32.0
+  // cycle, so there is no CUDA choice to offer for the pip nightly index.
+  const pipCudaTag = "cu130";
   const defaultPipCmd = isAmd
     ? `uv venv --python 3.12
 source .venv/bin/activate
@@ -3936,8 +3993,8 @@ uv pip install vllm \\
   --torch-backend cpu`
         : `uv venv --python 3.12 --seed --managed-python
 source .venv/bin/activate
-export VLLM_VERSION=$(curl -s https://api.github.com/repos/vllm-project/vllm/releases/latest | jq -r .tag_name | sed 's/^v//')
-uv pip install https://github.com/vllm-project/vllm/releases/download/v$VLLM_VERSION/vllm-$VLLM_VERSION+cpu-cp38-abi3-manylinux_2_34_x86_64.whl \\
+export VLLM_VERSION=$(curl -sI https://github.com/vllm-project/vllm/releases/latest | sed -n 's|^[Ll]ocation: .*/tag/v||p' | tr -d '\\r')
+uv pip install https://github.com/vllm-project/vllm/releases/download/v$VLLM_VERSION/vllm-$VLLM_VERSION+cpu-cp38-abi3-manylinux_2_39_x86_64.whl \\
   --torch-backend cpu`
       : nightlyRequired
         ? `uv venv
@@ -3955,11 +4012,9 @@ uv pip install -U vllm --torch-backend auto`;
     (isCpu
       ? nightlyRequired
         ? "Intel/AMD x86 CPU nightly wheels use the dedicated /nightly/cpu index and PyTorch CPU backend."
-        : "Intel/AMD x86 CPU release wheels are published separately from CUDA wheels; the command follows the official vLLM CPU pre-built-wheel flow."
+        : "Intel/AMD x86 CPU release wheels are published separately from CUDA wheels; the command follows the official vLLM CPU pre-built-wheel flow. Since v0.30.0 they are manylinux_2_39 builds, which need glibc 2.39+ (e.g. Ubuntu 24.04+); on older distros use the Docker tab."
       : nightlyRequired && !isAmd
-        ? singleCudaBuild
-          ? `vLLM ${minV} isn't released yet — nightly required. This recipe publishes ${singleCudaLabel} builds only.`
-          : `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
+        ? `vLLM ${minV} isn't released yet — nightly required. Nightly wheels are CUDA 13 (cu130) only; the host needs an r580+ NVIDIA driver.`
         : undefined);
 
   // Docker install step is just the image pull; the `docker run` that actually
@@ -3983,28 +4038,26 @@ uv pip install -U vllm --torch-backend auto`;
         ? singleCudaBuild
           ? `This tag is published as a ${singleCudaLabel} build only${singleCudaBuild === "cu130" ? " — the host needs an r580+ NVIDIA driver" : ""}.`
           : "This recipe ships paired CUDA-tagged images. Pick `cu129` for CUDA 12.9 hosts or `cu130` for CUDA 13."
-        : nightlyRequired
-          ? "Nightly image ships CUDA 13. Switch to cu129 for the `cu129-nightly` variant if your host is on CUDA 12.9."
-          : "Default tag ships CUDA 13. Switch to cu129 for the -cu129 variant if your host is on CUDA 12.9.";
+        : !dockerImage?.startsWith("vllm/vllm-openai:")
+          ? undefined
+          : cu129Image
+            ? `Default tag ships CUDA 13 (r580+ NVIDIA driver). On a CUDA 12.9 host, switch to cu129 for \`${cu129Image.split(":")[1]}\`.`
+            : `This tag ships CUDA 13 only — the host needs an r580+ NVIDIA driver. vLLM publishes no CUDA 12.9 build after v${LAST_CU129_RELEASE}.`;
   const dockerNote = dockerCfg?.note || defaultDockerNote;
-  // Show the CUDA selector when we're on NVIDIA and the user isn't supplying
-  // a full override command (which already bakes in a specific tag). Visible
-  // on the docker tab always, and on the pip tab when the command actually
-  // varies by CUDA — i.e. nightly recipes whose wheel index URL is explicit.
-  // Stable pip uses `--torch-backend auto`, which detects the host CUDA, so
-  // a toggle would be inert there. A single-build CUDA map has nothing to
-  // toggle either — the note explains the one published build instead.
+  // Show the CUDA selector on the docker tab when we're on NVIDIA, the user
+  // isn't supplying a full override command (which already bakes in a
+  // specific tag), and a CUDA 12.9 build actually exists: a two-key CUDA map,
+  // or an upstream tag with a published `-cu129` sibling (releases up to
+  // v0.32.0 — never nightly). Pip never shows it: stable uses
+  // `--torch-backend auto`, which detects the host CUDA, and the nightly
+  // index is cu130-only.
   const showCudaSelector =
     brandKey === "nvidia" &&
     !isNpu &&
     !singleCudaBuild &&
     !dockerCfg?.command &&
-    // Only upstream publishes paired `-cu129` / `cu129-nightly` tags. On a
-    // third-party image the toggle would synthesize a tag that doesn't exist
-    // (`eugr/spark-vllm-b12x:latest-cu129`), so offer it for `vllm/` images
-    // alone. The pip branch is unaffected: wheels come from wheels.vllm.ai.
-    ((installMode === "docker" && dockerImage?.startsWith("vllm/")) ||
-      (installMode === "pip" && nightlyRequired && !pipCfg?.command));
+    installMode === "docker" &&
+    (cudaMap ? dockerImage?.startsWith("vllm/") : !!cu129Image);
 
   // TPU has no pip wheel — force-hide the pip tab regardless of recipe overrides.
   // Intel XPU is validated via the official `vllm-openai-xpu` Docker image;
@@ -4231,7 +4284,10 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   const routerDocker = isDocker && result.router.dockerCommand;
   const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix, setupCommand: result.workerDockerSetup, hostNetwork: result.transport === "grpc" })
+      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix, setupCommand: result.workerDockerSetup,
+        // RDMA connectors (Mooncake, MoRI-IO) need host networking and locked memory.
+        hostNetwork: result.transport === "grpc" || !!result.kvConnector?.docker?.host_network,
+        extraFlags: result.kvConnector?.docker?.flags || [] })
       : cmd;
   // Mooncake composed into PD (result.mooncake): a "Mooncake Config" tab
   // (launch step 0) writes the shared config file(s) once — every
