@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import { publishSelection, onPresetRequest } from "@/lib/selection-store";
@@ -2036,12 +2036,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           ? ` · Mooncake (${(strategies[activeKvOffload]?.label || "").split(" ")[0] || "KV Store"})`
           : "");
 
-  // Upstream `vllm/vllm-openai:latest` (and recent pinned tags) ship CUDA 13
-  // as the base; CUDA 12.9 is the legacy alternate published as a `-cu129`
-  // suffix. The recipe's `min_vllm_version` doesn't change which tag the user
-  // pulls — `:latest` is always today's base regardless — so the alt suffix
-  // is a constant.
+  // Upstream images ship CUDA 13 as the base; CUDA 12.9 is the legacy
+  // alternate, published as a `-cu129` tag only up to v0.32.0 (nightly and
+  // 0.33.0+ are cu130-only — `cu129DockerImage` knows which tags have one).
   const altCudaSuffix = "cu129";
+  const installMinVersion = maxVersion(recipe.model?.min_vllm_version, currentVariant.min_vllm_version);
 
   // A preset's engine image pins this GPU's docker command (an exact
   // variant × GPU image, which computeDockerMeta already prefers).
@@ -2067,20 +2066,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       return { ...meta, image: picked || meta.image };
     }
 
-    // Legacy string tag — append the suffix when user picks the alt variant.
-    // Nightly tags follow the inverse convention: `:nightly` → `:cu129-nightly`
-    // (CUDA prefix, not suffix). Detect the upstream `:nightly` tag and swap
-    // accordingly; pinned `:nightly`-bearing tags (e.g. `:myrelease-nightly`)
-    // fall back to the suffix path.
-    if (dockerCudaVariant === altCudaSuffix) {
-      const isUpstreamNightly = /^vllm\/vllm-(openai|openai-rocm|tpu):nightly$/.test(meta.image);
-      const next = isUpstreamNightly
-        ? meta.image.replace(/:nightly$/, `:${altCudaSuffix}-nightly`)
-        : `${meta.image}-${altCudaSuffix}`;
-      return { ...meta, image: next };
+    // Plain tag — swap in its CUDA 12.9 counterpart when the user picks the
+    // alt variant and one is published.
+    const cu129Image = cu129DockerImage(meta.image, installMinVersion);
+    if (dockerCudaVariant === altCudaSuffix && cu129Image) {
+      return { ...meta, image: cu129Image, cu129Image };
     }
-    return meta;
-  }, [recipe, imageVariant, hwProfile, hwId, dockerCudaVariant, altCudaSuffix]);
+    return { ...meta, cu129Image };
+  }, [recipe, imageVariant, hwProfile, hwId, dockerCudaVariant, altCudaSuffix, installMinVersion]);
 
   // `installMode` carries the user's tab choice; `effectiveInstallMode` folds
   // in constraints that would hide a tab entirely (pip: recipe opt-out or TPU
@@ -3952,7 +3945,7 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   const pipHidden = pipCfg === false;
   const dockerHidden = dockerCfg === false;
   const [open, setOpen] = useState(false);
-  const { isAmd, isTpu, isXpu, isIntel, isNpu, image: dockerImage, brandKey, cudaMap } = dockerMeta;
+  const { isAmd, isTpu, isXpu, isIntel, isNpu, image: dockerImage, brandKey, cudaMap, cu129Image } = dockerMeta;
   // Intel CPU is a first-class backend in computeDockerMeta. Keep XPU
   // distinct even though it is also Intel hardware.
   const isCpu = isIntel && !isXpu;
@@ -3976,15 +3969,13 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   const nightlyRequired = recipe.model?.nightly_required === true || variant?.nightly_required === true;
   // A CUDA map narrows the toggle to the builds the recipe actually declares.
   // A single-key map (e.g. K3's cu130-only preview image) has nothing to
-  // toggle: hide the selector and pin both the docker tag and the pip wheel
-  // index to the one published build.
+  // toggle: hide the selector and pin the docker tag to the one published build.
   const cudaMapKeys = cudaMap ? ["cu130", "cu129"].filter((k) => k in cudaMap) : null;
   const singleCudaBuild = cudaMapKeys && cudaMapKeys.length === 1 ? cudaMapKeys[0] : null;
   const singleCudaLabel = singleCudaBuild === "cu129" ? "CUDA 12.9 (cu129)" : "CUDA 13 (cu130)";
-  // Resolve the CUDA tag for pip's nightly wheel index from the same toggle
-  // that drives the Docker tag suffix. "default" → cu130 (today's upstream
-  // baseline); explicit picks pass through.
-  const pipCudaTag = singleCudaBuild || (dockerCudaVariant === "default" ? "cu130" : dockerCudaVariant);
+  // Nightly wheels are cu130-only: `/nightly/cu129` stopped at the 0.32.0
+  // cycle, so there is no CUDA choice to offer for the pip nightly index.
+  const pipCudaTag = "cu130";
   const defaultPipCmd = isAmd
     ? `uv venv --python 3.12
 source .venv/bin/activate
@@ -4020,9 +4011,7 @@ uv pip install -U vllm --torch-backend auto`;
         ? "Intel/AMD x86 CPU nightly wheels use the dedicated /nightly/cpu index and PyTorch CPU backend."
         : "Intel/AMD x86 CPU release wheels are published separately from CUDA wheels; the command follows the official vLLM CPU pre-built-wheel flow. Since v0.30.0 they are manylinux_2_39 builds, which need glibc 2.39+ (e.g. Ubuntu 24.04+); on older distros use the Docker tab."
       : nightlyRequired && !isAmd
-        ? singleCudaBuild
-          ? `vLLM ${minV} isn't released yet — nightly required. This recipe publishes ${singleCudaLabel} builds only.`
-          : `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
+        ? `vLLM ${minV} isn't released yet — nightly required. Nightly wheels are CUDA 13 (cu130) only; the host needs an r580+ NVIDIA driver.`
         : undefined);
 
   // Docker install step is just the image pull; the `docker run` that actually
@@ -4046,28 +4035,26 @@ uv pip install -U vllm --torch-backend auto`;
         ? singleCudaBuild
           ? `This tag is published as a ${singleCudaLabel} build only${singleCudaBuild === "cu130" ? " — the host needs an r580+ NVIDIA driver" : ""}.`
           : "This recipe ships paired CUDA-tagged images. Pick `cu129` for CUDA 12.9 hosts or `cu130` for CUDA 13."
-        : nightlyRequired
-          ? "Nightly image ships CUDA 13. Switch to cu129 for the `cu129-nightly` variant if your host is on CUDA 12.9."
-          : "Default tag ships CUDA 13. Switch to cu129 for the -cu129 variant if your host is on CUDA 12.9.";
+        : !dockerImage?.startsWith("vllm/vllm-openai:")
+          ? undefined
+          : cu129Image
+            ? `Default tag ships CUDA 13 (r580+ NVIDIA driver). On a CUDA 12.9 host, switch to cu129 for \`${cu129Image.split(":")[1]}\`.`
+            : `This tag ships CUDA 13 only — the host needs an r580+ NVIDIA driver. vLLM publishes no CUDA 12.9 build after v${LAST_CU129_RELEASE}.`;
   const dockerNote = dockerCfg?.note || defaultDockerNote;
-  // Show the CUDA selector when we're on NVIDIA and the user isn't supplying
-  // a full override command (which already bakes in a specific tag). Visible
-  // on the docker tab always, and on the pip tab when the command actually
-  // varies by CUDA — i.e. nightly recipes whose wheel index URL is explicit.
-  // Stable pip uses `--torch-backend auto`, which detects the host CUDA, so
-  // a toggle would be inert there. A single-build CUDA map has nothing to
-  // toggle either — the note explains the one published build instead.
+  // Show the CUDA selector on the docker tab when we're on NVIDIA, the user
+  // isn't supplying a full override command (which already bakes in a
+  // specific tag), and a CUDA 12.9 build actually exists: a two-key CUDA map,
+  // or an upstream tag with a published `-cu129` sibling (releases up to
+  // v0.32.0 — never nightly). Pip never shows it: stable uses
+  // `--torch-backend auto`, which detects the host CUDA, and the nightly
+  // index is cu130-only.
   const showCudaSelector =
     brandKey === "nvidia" &&
     !isNpu &&
     !singleCudaBuild &&
     !dockerCfg?.command &&
-    // Only upstream publishes paired `-cu129` / `cu129-nightly` tags. On a
-    // third-party image the toggle would synthesize a tag that doesn't exist
-    // (`eugr/spark-vllm-b12x:latest-cu129`), so offer it for `vllm/` images
-    // alone. The pip branch is unaffected: wheels come from wheels.vllm.ai.
-    ((installMode === "docker" && dockerImage?.startsWith("vllm/")) ||
-      (installMode === "pip" && nightlyRequired && !pipCfg?.command));
+    installMode === "docker" &&
+    (cudaMap ? dockerImage?.startsWith("vllm/") : !!cu129Image);
 
   // TPU has no pip wheel — force-hide the pip tab regardless of recipe overrides.
   // Intel XPU is validated via the official `vllm-openai-xpu` Docker image;
