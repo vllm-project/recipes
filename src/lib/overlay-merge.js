@@ -78,7 +78,12 @@ export const OVERLAY_RULES = [
   ["strategy_hardware", "*", "@hw"],
   ["strategy_min_gpus", "@hw"],
   ["kv_cache_strategy_hardware", "*", "@hw"],
+  ["kv_offload_hardware", "@hw"],
   ["strategy_overrides", "*", "hardware_overrides", "@hw"],
+  ["strategy_overrides", "pd_cluster", "connectors", "@hw"],
+  ...["prefill", "decode"].flatMap((role) =>
+    ["nodes", "nodes_per_instance", "parallelism", "tp", "pp", "hardware_overrides"]
+      .map((key) => ["strategy_overrides", "pd_cluster", role, key, "@hw"])),
   ["features", "*", "hardware_overrides", "@hw"],
   ["features", "*", "modes", "*", "hardware_overrides", "@hw"],
   ["features", "*", "modes", "*", "hardware", "@hw"],

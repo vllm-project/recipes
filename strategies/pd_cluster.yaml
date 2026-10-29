@@ -5,10 +5,10 @@ short_label: "PD"                  # compact name for tight spots (Preset pills)
 orientation: production
 description: >
   Disaggregated prefill/decode cluster. Splits inference into separate
-  prefill and decode workers communicating via NIXL KV cache transfer.
+  prefill and decode workers communicating via the selected KV transfer connector.
   Optimal for high-concurrency, low-latency production deployments.
   Each role can be a single-node or multi-node DP/TP/EP pool, with its
-  own HTTP port, NIXL side-channel port, and DP coordinator.
+  own HTTP port, transfer configuration, and parallelism coordinator.
 
 hardware_match:
   min_gpus: 8
@@ -90,6 +90,23 @@ connectors:
       - note: "Mooncake transfer engine on every prefill / decode node (CUDA 12: mooncake-transfer-engine)"
         command: "uv pip install mooncake-transfer-engine-cuda13"
     docker: { host_network: true, flags: ["--ulimit", "memlock=-1"] }
+  mooncakev2:
+    display_name: "Mooncake V2 (Ascend)"
+    description: "Ascend KV transfer using MooncakeConnectorV2 with independently replicated prefill and decode groups, fronted by the vLLM Ascend load balancing proxy."
+    docs: "https://docs.vllm.ai/projects/ascend/en/latest/tutorials/features/pd_disaggregation_mooncake_multi_node.html"
+    brands: [Huawei]
+    routers: [ascend]
+    prefill:
+      config: { kv_connector: MooncakeConnectorV2, kv_role: kv_producer, kv_port: "36000" }
+    decode:
+      config: { kv_connector: MooncakeConnectorV2, kv_role: kv_consumer, kv_port: "36100" }
+    router:
+      type: ascend-proxy
+      launcher_url: "https://raw.githubusercontent.com/vllm-project/vllm-ascend/v0.23.0/examples/external_online_dp/launch_online_dp.py"
+      launcher_source: "https://github.com/vllm-project/vllm-ascend/blob/v0.23.0/examples/external_online_dp/launch_online_dp.py"
+      script: "/vllm-workspace/vllm-ascend/examples/disaggregated_prefill_v1/load_balance_proxy_server_example.py"
+      port: 8000
+    docker: { host_network: true }
   moriio:
     display_name: "MoRI-IO"
     description: "ROCm MoRI-IO transfer over RDMA. Workers register with the router (proxy_ip / proxy_ping_port), which discovers them instead of listing endpoints; WRITE mode by default, READ with read_mode."
@@ -119,6 +136,12 @@ parallel_flag: "--tensor-parallel-size"
 
 router:
   policy: round_robin
+
+ascend:
+  display_name: "Ascend Router"
+  description: "vLLM Ascend load-balancing proxy for MooncakeConnectorV2. Routes requests to prefill group heads and every decode node."
+  brands: [Huawei]
+  docs: "https://docs.vllm.ai/projects/ascend/en/latest/tutorials/features/pd_disaggregation_mooncake_multi_node.html"
 
 # HTTP PD keeps native vLLM workers; registration supplies NIXL metadata.
 smg:
