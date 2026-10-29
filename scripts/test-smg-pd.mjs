@@ -185,7 +185,7 @@ test("Dynamo parser mapping does not consume a following flag as a value", () =>
 test("Dynamo maps parser names without changing the vLLM reasoning name", () => {
   for (const [tool, reasoning, expectedTool, expectedReasoning] of [
     ["deepseek_v31", "deepseek_r1", "deepseek_v3_1", "deepseek_r1"],
-    ["deepseek_v32", "kimi_k2", "deepseek_v3_2", "kimi"],
+    ["deepseek_v32", "kimi_k2", "deepseek_v3_2", "kimi_k25"],
     ["glm45", "glm47", "glm47", "glm45"],
     ["muse", "muse_glimmer", "muse", "muse_glimmer"],
   ]) {
@@ -217,6 +217,63 @@ test("Dynamo omits unknown frontend parsers and reports unavailable features", (
     assert.equal(result.parserWarnings.length, 2);
     assert.ok(result.parserWarnings.every((warning) => warning.includes(parser) && warning.includes("1.5.0")));
     assert.equal(resolve({ model, router: "vllm" }).parserWarnings, undefined);
+  }
+});
+
+test("Dynamo K2-family recipes use the think-tag reasoning parser", () => {
+  for (const name of ["Kimi-K2-Thinking", "Kimi-K2.5", "Kimi-K2.6", "Kimi-K2.7-Code"]) {
+    const result = resolve({ model: read(`models/moonshotai/${name}.yaml`), router: "dynamo" });
+    for (const role of ["prefill", "decode"]) {
+      assert.equal(flag(result[role].argv, "--reasoning-parser"), "kimi_k2", name);
+      assert.equal(flag(result[role].argv, "--dyn-reasoning-parser"), "kimi_k25", name);
+    }
+  }
+});
+
+test("Dynamo maps only the surviving parser argument", () => {
+  for (const [first, last, expected] of [
+    ["deepseek_r1", "unknown", null],
+    ["unknown", "deepseek_r1", "deepseek_r1"],
+    ["basic", "deepseek_r1", "deepseek_r1"],
+  ]) {
+    const model = structuredClone(read("models/moonshotai/Kimi-K3.yaml"));
+    model.features.reasoning.args = ["--reasoning-parser", first, "--reasoning-parser", last];
+    const result = resolve({ model, router: "dynamo", features: ["reasoning"] });
+    for (const role of ["prefill", "decode"]) {
+      assert.equal(flag(result[role].argv, "--reasoning-parser"), last);
+      if (expected) assert.equal(flag(result[role].argv, "--dyn-reasoning-parser"), expected);
+      else assert.ok(!result[role].argv.includes("--dyn-reasoning-parser"));
+    }
+    if (expected) assert.equal(result.parserWarnings, undefined);
+    else assert.equal(result.parserWarnings.length, 1);
+  }
+});
+
+test("strict Dynamo presets reject unmapped parsers before publishing", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-parser-preset-"));
+  try {
+    const input = path.join(dir, "content");
+    fs.mkdirSync(path.join(input, "models/moonshotai"), { recursive: true });
+    for (const name of ["taxonomy.yaml", "platforms.yaml", "strategies", "kv_store"]) {
+      fs.cpSync(path.join(contentDir(), name), path.join(input, name), { recursive: true });
+    }
+    const model = structuredClone(read("models/moonshotai/Kimi-K3.yaml"));
+    model.features.reasoning.args = ["--reasoning-parser", "unknown"];
+    model.presets = { bad_parser: {
+      label: "Unmapped parser", hardware: "gb300", strategy: "pd_cluster",
+      select: { pd_router: "dynamo", features: { reasoning: true } },
+    } };
+    fs.writeFileSync(path.join(input, "models/moonshotai/Kimi-K3.yaml"), yaml.dump(model));
+    assert.throws(() => execFileSync(process.execPath, ["scripts/build-recipes-api.mjs"], {
+      env: { ...process.env, RECIPES_CONTENT_DIR: input, RECIPES_PUBLIC_DIR: path.join(dir, "public") },
+      stdio: "pipe",
+    }), (error) => {
+      assert.match(error.stderr.toString(), /Invalid preset bad_parser/);
+      assert.match(error.stderr.toString(), /no mapped reasoning parser for "unknown"/);
+      return true;
+    });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 

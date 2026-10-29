@@ -1940,7 +1940,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const port = String(servedPort(out));
       out = out.map((t) => (typeof t === "string" ? t.replaceAll("{port}", port) : t));
     }
-    return dynamo ? dynamoParserArgs(out, dynamo, parserWarnings) : out;
+    return dynamo ? dynamoParserArgs(dedupeArgs(out), dynamo, parserWarnings) : out;
   }
 
   // Helper to merge env

@@ -228,7 +228,7 @@ dynamo:
       nemotron_v3: nemotron_v3
       qwen3: qwen3
       step3: step3
-      kimi_k2: kimi
+      kimi_k2: kimi_k25
       glm47: glm45
   install:
     - note: "NVIDIA Dynamo runtime — on every prefill / decode node and the frontend host"
