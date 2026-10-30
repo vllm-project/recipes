@@ -36,6 +36,7 @@ function configLine(recipe, resolved, strategies) {
   if (selection.task) parts.push(`task \`${selection.task}\``);
   if (selection.features?.length) parts.push(`features ${selection.features.map((f) => `\`${f}\``).join(", ")}`);
   if (selection.kv_offload) parts.push(`KV offload \`${selection.kv_offload}\``);
+  if (selection.pd_router && selection.pd_router !== "vllm") parts.push(`PD router \`${selection.pd_router}\``);
   if (selection.preset) parts.push(`preset \`${selection.preset}\`${selection.point ? ` at point \`${selection.point}\`` : ""}`);
   if (selection.frontend && selection.frontend !== "python") parts.push(`frontend \`${selection.frontend}\``);
   return parts.join(" · ");
@@ -142,10 +143,104 @@ function demoteHeadings(md) {
   }).join("\n");
 }
 
+// Page-only anchors are dead links here: `#preset-<key>` (another preset's
+// card) points to that preset's Markdown, `#issue-<slug>` to the page. Other
+// anchors name headings this document carries too.
+function pageLinks(md, recipe, origin) {
+  return md.replace(/\]\(#((preset|issue)-[^)\s]+)\)/g, (_, id, kind) => {
+    const key = kind === "preset" ? id.slice(7) : null;
+    return recipe.presets?.[key]
+      ? `](${origin}/${recipe.hf_id}.md?${presetQuery(key, recipe.presets[key])})`
+      : `](${origin}/${recipe.hf_id}#${id})`;
+  });
+}
+
+// The query that selects a preset, as the Presets tab's "Use this preset"
+// link builds it: a variant-scoped preset needs its variant too.
+function presetQuery(key, p) {
+  const q = [`hardware=${p.hardware}`];
+  if (p.variants?.[0] && p.variants[0] !== "default") q.push(`variant=${p.variants[0]}`);
+  if (p.strategy) q.push(`strategy=${p.strategy}`);
+  q.push(`preset=${key}`);
+  return q.join("&");
+}
+
+const selectText = (sel) => Object.entries(sel || {}).flatMap(([k, v]) =>
+  k === "features" && v && typeof v === "object"
+    ? Object.entries(v).map(([f, on]) => `\`${f}\` ${on === false ? "off" : on === true ? "on" : `on (\`${on}\` mode)`}`)
+    : [`\`${k}=${v === false ? "off" : v}\``]);
+
+function imageLines(image) {
+  if (!image) return [];
+  const img = typeof image === "string" ? { vllm: image } : image;
+  return [
+    img.vllm && `- vLLM image: \`${img.vllm}\` (the Docker command above uses it)`,
+    img.dynamo && `- Dynamo: \`${img.dynamo}\``,
+    ...(img.pip || []).map((p) => `- pip: \`${p}\``),
+    img.model_revision && `- Model revision: \`${img.model_revision}\``,
+  ].filter(Boolean);
+}
+
+// The active tuned preset, as its card in the Presets tab shows it: what it
+// is, its evidence, what it pins and implies, its points, and the runbook.
+// Every tuned preset with the query that selects it — across all hardware, so
+// a lane on another GPU is discoverable from any configuration.
+function presetOptions(recipe, strategies) {
+  const presets = Object.entries(recipe.presets || {});
+  if (!presets.length) return [];
+  return [
+    "- `preset`: a tuned, evidence-backed configuration (`baseline` opts out of a default one). Each sets its own hardware and strategy:",
+    ...presets.map(([k, p]) => `  - \`${k}\` — ${p.label || k} (${[p.hardware, p.strategy && (strategies[p.strategy]?.short_label || p.strategy), p.workload, p.default ? "default" : "opt-in"].filter(Boolean).join(" · ")}): \`${presetQuery(k, p)}\``),
+  ];
+}
+
+function presetSection(recipe, rendering, strategies, origin) {
+  const key = rendering?.preset;
+  const p = key && recipe.presets?.[key];
+  if (!p) return [];
+  const out = [`## Tuned preset: ${p.label || key}`, ""];
+  if (p.description) out.push(p.description.trim(), "");
+  const scope = [`hardware \`${p.hardware}\``];
+  if (p.strategy) scope.push(`strategy \`${p.strategy}\` (${strategies[p.strategy]?.display_name || p.strategy})`);
+  if (p.variants?.length) scope.push(`variants ${p.variants.map((v) => `\`${v}\``).join(", ")}`);
+  out.push(
+    `- Key: \`${key}\` · ${p.default ? "applied by default on this hardware and strategy (\`preset=baseline\` drops it)" : "opt-in"}`,
+    `- Qualified on: ${scope.join(" · ")}`,
+  );
+  if (p.workload) out.push(`- Workload: ${p.workload}`);
+  if (p.source) {
+    const extra = [p.source.key && `lane \`${p.source.key}\``, p.source.revision && `revision \`${String(p.source.revision).slice(0, 12)}\``].filter(Boolean);
+    out.push(`- Source: ${p.source.href ? `[${p.source.label || p.source.href}](${p.source.href})` : p.source.label}${extra.length ? ` (${extra.join(", ")})` : ""}`);
+  }
+  out.push(...imageLines(p.image));
+  const implied = selectText(p.select);
+  if (implied.length) out.push(`- Builder choices it implies (already in the command above): ${implied.join(", ")}`);
+  out.push(`- Every point rendered as JSON: ${origin}/${recipe.hf_id}/presets/${key}.json`, "");
+
+  const points = Object.entries(p.points || {});
+  if (points.length) {
+    const byConcurrency = points.every(([, pt]) => pt.concurrency != null);
+    const active = rendering.preset_point;
+    out.push(`### ${byConcurrency ? "Concurrency points" : "Points"}`, "",
+      `Each point is a delta on the preset; select one with \`point=<key>\`.`, "",
+      `| Point | ${byConcurrency ? "Concurrency | " : ""}Select |`,
+      `|---|${byConcurrency ? "---|" : ""}---|`);
+    const defaultPoint = (points.find(([, pt]) => pt.default) || points[0])[0];
+    for (const [pk, pt] of points) {
+      const mark = [pk === active && "**in use**", pk === defaultPoint && "default"].filter(Boolean).join(", ");
+      out.push(`| ${pt.label || pk}${mark ? ` (${mark})` : ""}${pt.description ? ` — ${pt.description.replace(/\s+/g, " ").trim()}` : ""} | ${byConcurrency ? `${pt.concurrency} | ` : ""}\`point=${pk}\` |`);
+    }
+    out.push("");
+  }
+  if (p.runbook?.trim()) out.push("### Runbook", "", pageLinks(demoteHeadings(demoteHeadings(p.runbook.trim())), recipe, origin), "");
+  return out;
+}
+
 // resolved: resolveSelection's result; urls: { page, md, json } (absolute).
 export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls }) {
   const { rendering, options, selection } = resolved;
   const hardwareProfiles = taxonomy.hardware_profiles || {};
+  const origin = new URL(urls.page).origin;
   const defaultFeatures = defaultFeaturesFor(recipe, selection.hardware, selection.variant);
   const lines = [
     `# ${recipe.hf_id} — vLLM serving recipe`,
@@ -172,7 +267,7 @@ export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls
     options.strategies.length ? `- \`strategy\`: ${options.strategies.map((s) => `\`${s}\``).join(", ")} (multi-node strategies also need \`nodes=<n>\`)` : null,
     options.tasks?.length ? `- \`task\`: ${options.tasks.map((t) => `\`${t}\``).join(", ")}` : null,
     options.features.length ? `- \`features\`: comma-separated list of ${options.features.map((f) => `\`${f}\``).join(", ")} (default: ${defaultFeatures.map((f) => `\`${f}\``).join(", ") || "none"})` : null,
-    options.presets.length ? `- \`preset\`: ${options.presets.map((p) => `\`${p}\``).join(", ")}, or \`baseline\` (tuned configurations for this hardware)` : null,
+    ...presetOptions(recipe, strategies),
     "",
     "## Install",
     "",
@@ -188,20 +283,21 @@ export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls
   } else {
     lines.push(...serveSection(rendering), "");
   }
+  lines.push(...presetSection(recipe, rendering, strategies, origin));
 
   const notes = contextEntries(recipe, resolved, "notes", hardwareProfiles);
   if (notes.length) {
     lines.push("## Notes for this configuration", "");
     for (const n of notes) {
       if (n.title) lines.push(`### ${n.title}`, "");
-      lines.push(n.body.trim(), "");
+      lines.push(pageLinks(n.body.trim(), recipe, origin), "");
     }
   }
 
   const matching = contextEntries(recipe, resolved, "troubleshooting", hardwareProfiles);
   if (matching.length) {
     lines.push("## Known issues", "");
-    for (const t of matching) lines.push(`### ${t.title}`, "", t.body.trim(), "");
+    for (const t of matching) lines.push(`### ${t.title}`, "", pageLinks(t.body.trim(), recipe, origin), "");
   }
 
   if (recipe.guide?.trim()) {
@@ -210,7 +306,7 @@ export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls
       "",
       "> Background reference. Commands in it are examples and may target another configuration — use the Serve section above.",
       "",
-      demoteHeadings(recipe.guide.trim()),
+      pageLinks(demoteHeadings(recipe.guide.trim()), recipe, origin),
       "",
     );
   }

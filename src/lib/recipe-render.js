@@ -179,9 +179,10 @@ export function pickPdNodes(hwProfile, variant, baseRecipe, strategies, hwId, pr
 //
 // `opts` carries the rest of a builder selection (resolveSelection reads it
 // from a page URL): { modes, advancedArgs, kvInstances, frontend, pdRouter,
-// pdTransport, dcp, pdConnector, linked }. The preset's `select` fills these
-// in, except for the params in `linked` — the ones the URL set explicitly,
-// which stay as linked, as the builder treats them on first render.
+// pdTransport, dcp, pdConnector, linked, out }. The preset's `select` fills
+// these in, except for the params in `linked` — the ones the URL set
+// explicitly, which stay as linked, as the builder treats them on first
+// render. `out` receives the choices the rendering ended up with.
 export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, features, strategies, taxonomy, pdNodes = null, kvOffload = null, presetPick = undefined, pointPick = undefined, strict = false, opts = {}) {
   // The preset in effect (the default here unless one is picked) implies
   // builder choices — frontend, PD router, features, DCP, KV offload — which
@@ -204,14 +205,20 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   const selKv = !linked.has("kv_offload") && sel.kv_offload && sel.kv_offload !== "off" ? sel.kv_offload : null;
   // A multi-node preset's node count, as the builder applies it.
   if (Number.isInteger(sel.nodes) && !linked.has("nodes") && strategies[strategy]?.deploy_type === "multi_node") nodeCount = sel.nodes;
+  const applied = {
+    features: feats, modes, kvOffload: kvOffload ?? selKv, nodeCount,
+    frontend: pick("frontend", sel.frontend, opts.frontend),
+    pdRouter: pick("pd_router", sel.pd_router, opts.pdRouter) ?? null,
+    dcp: pick("dcp", sel.dcp, opts.dcp) ?? null,
+    pdConnector: pick("pd_connector", sel.pd_connector, opts.pdConnector) ?? null,
+  };
+  if (opts.out) Object.assign(opts.out, applied);
   let result;
   try {
     result = resolveCommand(
       recipe, variantKey, strategy, hwId, feats, strategies, taxonomy, opts.advancedArgs || [], nodeCount, pdNodes,
-      modes, kvOffload ?? selKv, opts.kvInstances ?? null, pick("frontend", sel.frontend, opts.frontend),
-      pick("pd_router", sel.pd_router, opts.pdRouter) ?? null, opts.pdTransport ?? "http",
-      pick("dcp", sel.dcp, opts.dcp) ?? null, presetPick, pointPick,
-      pick("pd_connector", sel.pd_connector, opts.pdConnector) ?? null
+      modes, applied.kvOffload, opts.kvInstances ?? null, applied.frontend,
+      applied.pdRouter, opts.pdTransport ?? "http", applied.dcp, presetPick, pointPick, applied.pdConnector
     );
   } catch (e) {
     // A preset is authored config with nothing to fall back to: fail the build
@@ -665,7 +672,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
       const reqNodes = parseIntParam(get(`${r}_nodes`));
       const nodes0 = reqNodes > 0 ? reqNodes : (pdRoleNodes(pdRecipe, r, hwProfile, hwId) ?? minNodes);
       const rank = parseIntParam(get(`${r}_rank`));
-      return { nodes: Math.max(nodes0, nodesForStrategy(recipe, parallelism, perNode, hwId)), rank: rank >= 0 ? rank : 0, parallelism };
+      return { nodes: Math.max(nodes0, nodesForStrategy(recipe, parallelism, perNode, hwId)), rank: rank != null && rank >= 0 ? rank : 0, parallelism };
     };
     pdNodes = { prefill: role("prefill"), decode: role("decode") };
   }
@@ -693,6 +700,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
   if (strategies[strategy]?.deploy_type === "multi_node") note("nodes", get("nodes"), nodeCount, "not a node count this hardware offers");
   note("kv_offload", kvReq || null, kvOffload || "off", "not available for this hardware and strategy");
 
+  const applied = {};
   const rendering = renderCommand(
     recipe, variantKey, strategy, hwId, nodeCount, features, strategies, taxonomy, pdNodes,
     kvOffload || null, presetPick, pointPick, false,
@@ -706,13 +714,17 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
       dcp: dcp >= 1 ? dcp : null,
       pdConnector,
       linked,
+      out: applied,
     },
   );
   return {
     omni: false,
     selection: {
-      hardware: hwId, variant: variantKey, strategy, nodes: nodeCount, features, modes,
-      advanced, frontend, kv_offload: kvOffload || null, pd: pdNodes,
+      // As rendered: a preset's `select` may have changed what the URL asked.
+      hardware: hwId, variant: variantKey, strategy, nodes: applied.nodeCount ?? nodeCount,
+      features: applied.features ?? features, modes: applied.modes ?? modes, advanced,
+      frontend: applied.frontend ?? frontend, kv_offload: applied.kvOffload || null, pd: pdNodes,
+      pd_router: strategy === "pd_cluster" ? applied.pdRouter ?? pdRouter : undefined,
       preset: rendering?.preset ?? null, point: rendering?.preset_point ?? null,
       adjusted,
     },
