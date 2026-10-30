@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "27B-parameter dense hybrid-attention model with linear attention on 48 of 64 layers, a vision tower, a built-in MTP draft head, 262K native context window and extensible to 1M context"
   date_added: 2026-08-14
-  date_updated: 2026-10-15
+  date_updated: 2026-10-29
   difficulty: beginner
   tasks:
     - multimodal
@@ -34,6 +34,9 @@ meta:
     # single 950PR at TP1 with the in-checkpoint MTP head and FULL_DECODE_ONLY
     # ACLGraph and answered a long-form prompt correctly.
     ascend_950pr: verified
+    # Atlas 800 A3 / Ascend 910C, verified 2026-10-29 on vLLM Ascend 0.23.0 A3 wheel:
+    # Eco-Tech W8A8 at TP=2 + --enforce-eager; /v1/models and chat HTTP 200.
+    ascend_910c: verified
     arc_pro_b60: verified
     arc_pro_b70: verified
 
@@ -284,7 +287,7 @@ variants:
     # 32,128,768,176 B across 10 shards = 32.1 GB. ModelSlim keeps the vision tower in BF16
     # and stores FP32 per-channel scales, so this is not a uniform 8-bit build.
     vram_minimum_gb: 39
-    supported_hardware: [ascend_950pr]
+    supported_hardware: [ascend_950pr, ascend_910c]
     default_modes:
       spec_decoding: qwen3_5_mtp
     # `--quantization ascend` is what selects the ModelSlim scheme; without it the loader
@@ -309,7 +312,29 @@ variants:
     hardware_overrides:
       ascend_950pr:
         docker_image: "quay.io/ascend/vllm-ascend:qwen3.8-a5"
-    description: "ModelSlim INT8 W8A8 for Ascend NPU — 32.1 GB: 1 NPU. Requires --quantization ascend."
+      # Atlas A3 smoke path (2× Ascend910 dies): TP=2 + enforce-eager. Full-node
+      # tutorial may raise max-model-len / enable FULL_DECODE_ONLY when graph is healthy.
+      ascend_910c:
+        docker_image: "quay.io/ascend/vllm-ascend:qwen3.8-a3"
+        tp: 2
+        extra_args:
+          - "--tensor-parallel-size"
+          - "2"
+          - "--quantization"
+          - "ascend"
+          - "--served-model-name"
+          - "qwen3.8"
+          - "--max-num-seqs"
+          - "4"
+          - "--max-model-len"
+          - "8192"
+          - "--max-num-batched-tokens"
+          - "2048"
+          - "--trust-remote-code"
+          - "--gpu-memory-utilization"
+          - "0.65"
+          - "--enforce-eager"
+    description: "ModelSlim INT8 W8A8 for Ascend NPU — 32.1 GB. 950PR TP1 or Atlas A3 (910C) TP=2. Requires --quantization ascend."
 
 # Dense model: no routed experts, so none of the expert-parallel or PD strategies apply.
 #
@@ -457,6 +482,36 @@ guide: |
   Validated on 4x Intel Arc Pro B60 / B70 (B60 24 GB, B70 32 GB per card) with the
   official vLLM XPU image `vllm/vllm-openai-xpu:latest`. `--enforce-eager` is required on this
   backend. Select Arc Pro B60/B70 in the hardware picker above for the exact command.
+
+  ### Huawei Ascend 910C / Atlas 800 A3-w8a8 (vLLM Ascend)
+
+  Verified 2026-10-29 on Atlas A3 (2× Ascend910 dies), TP=2, vLLM / vLLM Ascend
+  0.23.0 A3 wheel with `Eco-Tech/Qwen3.8-27B-w8a8`, `--quantization ascend`, and
+  `--enforce-eager`. `/v1/models` and `/v1/chat/completions` returned HTTP 200
+  (cold-path chat ~45 s; thinking model final answer “Hello!”). Weights ~14.1 GiB
+  per die; free HBM ~61 GiB/die at startup.
+
+  On this 0.23.0 A3 stack, ACLGraph `FULL_DECODE_ONLY` was unreliable; keep
+  `--enforce-eager` for smoke. Do not put `nnal/asdsip/lib` ahead of ATB
+  `cxx_abi_1/lib` on `LD_LIBRARY_PATH` (ABI mismatch on `libmki.so`).
+
+  ```bash
+  export HCCL_BUFFSIZE=512
+  export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+
+  vllm serve Eco-Tech/Qwen3.8-27B-w8a8 \
+    --host 0.0.0.0 --port 8000 \
+    --data-parallel-size 1 \
+    --tensor-parallel-size 2 \
+    --quantization ascend \
+    --served-model-name qwen3.8 \
+    --max-num-seqs 4 \
+    --max-model-len 8192 \
+    --max-num-batched-tokens 2048 \
+    --trust-remote-code \
+    --gpu-memory-utilization 0.65 \
+    --enforce-eager
+  ```
 
   ### Huawei Ascend 950PR-w8a8 (vLLM Ascend)
 
