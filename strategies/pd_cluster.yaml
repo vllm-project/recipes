@@ -157,6 +157,79 @@ dynamo:
   # Pinned to the latest Dynamo release (1.5.0). Rendered in the extra-install
   # block while Dynamo is picked; `optional: true` entries are dimmed and left out of Copy-all.
   version: "1.5.0"
+  # Explicit vLLM -> Dynamo names for ai-dynamo 1.5.0 (dynamo-parsers 8.1.0).
+  # Unknown names are omitted with a warning; update this map with the pin.
+  parser_map:
+    tool_calling:
+      muse: muse
+      muse_glimmer: muse_glimmer
+      deepseek-v4: deepseek-v4
+      deepseek_v3: deepseek_v3
+      deepseek_v3_1: deepseek_v3_1
+      deepseek_v3_2: deepseek_v3_2
+      deepseek_v4: deepseek_v4
+      deepseekv4: deepseekv4
+      default: default
+      gemma-4: gemma-4
+      gemma4: gemma4
+      glm47: glm47
+      harmony: harmony
+      hermes: hermes
+      inkling: inkling
+      jamba: jamba
+      kimi-k3: kimi-k3
+      kimi_k2: kimi_k2
+      kimi_k3: kimi_k3
+      llama3_json: llama3_json
+      minimax-m3: minimax-m3
+      minimax-m3-nom: minimax-m3-nom
+      minimax_m2: minimax_m2
+      minimax_m3: minimax_m3
+      minimax_m3_nom: minimax_m3_nom
+      mistral: mistral
+      nemotron_deci: nemotron_deci
+      nemotron_nano: nemotron_nano
+      phi4: phi4
+      pythonic: pythonic
+      qwen25: qwen25
+      qwen3_coder: qwen3_coder
+      deepseek_v31: deepseek_v3_1
+      deepseek_v32: deepseek_v3_2
+      glm45: glm47
+    reasoning:
+      muse: muse
+      muse_glimmer: muse_glimmer
+      basic: basic
+      deepseek-v4: deepseek-v4
+      deepseek_r1: deepseek_r1
+      deepseek_v3: deepseek_v3
+      deepseek_v3_1: deepseek_v3_1
+      deepseek_v3_2: deepseek_v3_2
+      deepseek_v4: deepseek_v4
+      deepseekv4: deepseekv4
+      gemma-4: gemma-4
+      gemma4: gemma4
+      glm45: glm45
+      gpt_oss: gpt_oss
+      granite: granite
+      inkling: inkling
+      kimi: kimi
+      kimi-k3: kimi-k3
+      kimi_k25: kimi_k25
+      kimi_k3: kimi_k3
+      minimax-m3: minimax-m3
+      minimax_append_think: minimax_append_think
+      minimax_m2: minimax_m2
+      minimax_m3: minimax_m3
+      mistral: mistral
+      nemotron3: nemotron3
+      nemotron_deci: nemotron_deci
+      nemotron_nano: nemotron_nano
+      nemotron_v3: nemotron_v3
+      qwen3: qwen3
+      step3: step3
+      kimi_k2: kimi_k25
+      glm47: glm45
   install:
     - note: "NVIDIA Dynamo runtime — on every prefill / decode node and the frontend host"
       command: >-

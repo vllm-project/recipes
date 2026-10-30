@@ -1179,6 +1179,39 @@ function stripArgs(args, flags) {
   return out;
 }
 
+// Dynamo's worker launcher accepts vLLM engine arguments, but chat parser
+// options live in Dynamo's own CLI. Keep the engine reasoning parser too.
+function dynamoParserArgs(args, config, warnings) {
+  const explicit = {
+    tool_calling: args.includes("--dyn-tool-call-parser"),
+    reasoning: args.includes("--dyn-reasoning-parser"),
+  };
+  const out = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--enable-auto-tool-choice") continue;
+    if (arg === "--tool-call-parser" || arg === "--reasoning-parser") {
+      const parser = args[i + 1];
+      if (parser === undefined || (typeof parser === "string" && parser.startsWith("-"))) continue;
+      const kind = arg === "--tool-call-parser" ? "tool_calling" : "reasoning";
+      // vLLM still needs its engine-side reasoning parser, with its own name.
+      if (kind === "reasoning") out.push(arg, parser);
+      if (!explicit[kind]) {
+        const names = config.parser_map?.[kind] || {};
+        if (Object.hasOwn(names, parser)) {
+          out.push(kind === "tool_calling" ? "--dyn-tool-call-parser" : "--dyn-reasoning-parser", names[parser]);
+        } else {
+          warnings.add(`Dynamo ${config.version} has no mapped ${kind === "tool_calling" ? "tool-call" : "reasoning"} parser for "${parser}". The corresponding --dyn-* flag is omitted; that feature is unavailable through the frontend.`);
+        }
+      }
+      i++;
+      continue;
+    }
+    out.push(arg);
+  }
+  return out;
+}
+
 // Wrap values containing shell-special chars in single quotes so the rendered
 // command is paste-safe. Without this, JSON values like
 // `{"cudagraph_mode":"FULL_AND_PIECEWISE"}` trigger brace expansion and get
@@ -1444,6 +1477,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       && isDynamoSupportedOnHardware(strategy.dynamo, hwProfile)
     ? strategy.dynamo
     : null;
+  const parserWarnings = new Set();
   let routerUnavailableReason = strategy.deploy_type === "pd_cluster" && pdRouter === "smg"
     ? smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, pdTransport, hwProfile, hwProfileId) : null;
   let smg = strategy.deploy_type === "pd_cluster" && pdRouter === "smg" && !routerUnavailableReason
@@ -1906,7 +1940,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const port = String(servedPort(out));
       out = out.map((t) => (typeof t === "string" ? t.replaceAll("{port}", port) : t));
     }
-    return out;
+    return dynamo ? dynamoParserArgs(dedupeArgs(out), dynamo, parserWarnings) : out;
   }
 
   // Helper to merge env
@@ -2330,6 +2364,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         workerDockerSetup: `python3 -m pip install --no-cache-dir ${smg.grpc.packages}`,
       } : {}),
       ...(routerUnavailableReason ? { routerUnavailableReason } : {}),
+      ...(parserWarnings.size ? { parserWarnings: [...parserWarnings] } : {}),
       ...(registration ? { registration } : {}),
       router: dynamo
         ? {
