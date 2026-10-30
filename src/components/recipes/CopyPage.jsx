@@ -3,13 +3,14 @@
 // "Copy page" for AI assistants: the recipe as Markdown, rendered for the
 // configuration the builder has selected (the `/<hf_id>.md?<query>` route,
 // the same text an agent fetching that URL reads), plus links to view it (or
-// its JSON) and hand it to Claude / ChatGPT, and to the API docs.
+// its JSON), a prompt to hand a coding agent, and the API docs. No assistant
+// is named: vLLM is vendor-neutral, and the prompt works in any of them —
+// including a model the reader serves with vLLM.
 
 import { useEffect, useRef, useState } from "react";
 import { track } from "@vercel/analytics";
-import { Braces, Check, ChevronDown, Copy, ExternalLink, FileText } from "lucide-react";
+import { Bot, Braces, Check, ChevronDown, Copy, ExternalLink, FileText } from "lucide-react";
 import { useSelection } from "@/lib/selection-store";
-import { ClaudeIcon, OpenAIIcon } from "@/components/icons/AssistantLogos";
 
 const COPIED_MS = 2000;
 
@@ -17,6 +18,7 @@ export function CopyPage({ hfId, labels }) {
   const sel = useSelection(hfId);
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState(null); // null | "copied" | "failed"
+  const [promptCopied, setPromptCopied] = useState(false);
   const root = useRef(null);
 
   // Before the builder mounts (or without JS) the recipe default renders.
@@ -64,20 +66,32 @@ export function CopyPage({ hfId, labels }) {
     }
   }
 
-  const absolute = () => `${window.location.origin}${mdPath}`;
-  const prompt = () =>
-    `Read ${absolute()} — a vLLM serving recipe for ${hfId}, rendered for my configuration — and help me deploy it.`;
-  const openIn = (where, url) => {
-    track("copy_page", { action: where, hfId });
-    window.open(url, "_blank", "noopener,noreferrer");
-    setOpen(false);
-  };
-
   const summary = sel && [
     labels.hardware[sel.hwId] || sel.hwId,
     labels.strategies[sel.strategy] || sel.strategy,
     labels.variants[sel.variant] || sel.variant,
   ].filter(Boolean).join(" · ");
+
+  // An instruction for a coding agent on the GPU host: it fetches the
+  // Markdown itself, so the prompt stays short and the recipe stays current.
+  async function copyPrompt() {
+    track("copy_page", { action: "copy_prompt", hfId });
+    // The URL sits on its own line, so no punctuation is read as part of it.
+    const prompt = [
+      `Deploy ${hfId} with vLLM on this machine, following this recipe${summary ? ` (rendered for ${summary})` : ""}:`,
+      `${window.location.origin}${mdPath}`,
+      "",
+      "Fetch it, check that the GPUs here match that configuration, then run the commands under \"Install\" and \"Serve\". "
+        + "If the hardware differs, change the URL's query string (the recipe lists the options under \"Other configurations\") and fetch it again.",
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setPromptCopied(true);
+      setTimeout(() => { setPromptCopied(false); setOpen(false); }, 1200);
+    } catch {
+      setOpen(false);
+    }
+  }
 
   const item = "flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted/60 focus-visible:bg-muted/60 outline-none";
 
@@ -123,16 +137,10 @@ export function CopyPage({ hfId, labels }) {
             <Braces size={14} className="text-muted-foreground" /> View as JSON
             <ExternalLink size={11} className="ml-auto opacity-50" />
           </a>
-          <div className="my-1 border-t border-border" />
-          <button role="menuitem" type="button" className={item}
-            onClick={() => openIn("claude", `https://claude.ai/new?q=${encodeURIComponent(prompt())}`)}>
-            <ClaudeIcon /> Open in Claude
-            <ExternalLink size={11} className="ml-auto opacity-50" />
-          </button>
-          <button role="menuitem" type="button" className={item}
-            onClick={() => openIn("chatgpt", `https://chatgpt.com/?q=${encodeURIComponent(prompt())}`)}>
-            <OpenAIIcon /> Open in ChatGPT
-            <ExternalLink size={11} className="ml-auto opacity-50" />
+          <button role="menuitem" type="button" className={item} onClick={copyPrompt}
+            title="A deployment instruction with this configuration's Markdown link, for any coding agent">
+            {promptCopied ? <Check size={14} className="text-green-600 dark:text-green-400" /> : <Bot size={14} className="text-muted-foreground" />}
+            {promptCopied ? "Prompt copied" : "Copy prompt for agents"}
           </button>
           <a role="menuitem" href="/api" className="mt-1 block border-t border-border px-3 pt-2 pb-1.5 text-xs text-muted-foreground hover:text-foreground">
             API docs →
