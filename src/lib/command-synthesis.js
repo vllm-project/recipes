@@ -820,14 +820,52 @@ function ascendDockerArgv(deviceCount) {
   return argv;
 }
 
+// vLLM's last CUDA 12.9 build is v0.32.0: from the 0.33.0 cycle on, release
+// images, nightly images (`cu129-nightly` stopped updating) and the nightly
+// wheel index (`/nightly/cu129`) are CUDA 13 (cu130) only.
+export const LAST_CU129_RELEASE = "0.32.0";
+
+function versionBelow(v, floor) {
+  const pa = String(v).split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = String(floor).split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d < 0;
+  }
+  return false;
+}
+
+// The CUDA 12.9 counterpart of an upstream `vllm/vllm-openai` tag, or null
+// when none is published, so the Install block's cu129 toggle never
+// synthesizes a tag that doesn't exist. `minVllmVersion` is the version the
+// selected configuration needs: a model-specific tag (`gemma4-unified`) is
+// cut from a tree of that age, so it has a `-cu129` sibling only below 0.33.0.
+//   :latest       → :v0.32.0-cu129 (the last cu129 release; `latest-cu129`
+//                   stops moving at 0.32.0), when the recipe runs on it
+//   :vX.Y.Z       → :vX.Y.Z-cu129 for X.Y.Z < 0.33.0
+//   nightly tags  → none
+//   CUDA/OS-suffixed tags (`-cu130`, `-ubuntu2404`) → none
+export function cu129DockerImage(image, minVllmVersion = null) {
+  const m = /^vllm\/vllm-openai:(.+)$/.exec(image || "");
+  if (!m) return null;
+  const tag = m[1];
+  const cutoff = "0.33.0";
+  if (/nightly/.test(tag) || /(^|-)(cu\d|ubuntu)/.test(tag)) return null;
+  const release = /^v(\d+\.\d+\.\d+)$/.exec(tag);
+  if (release) return versionBelow(release[1], cutoff) ? `${image}-cu129` : null;
+  if (minVllmVersion && !versionBelow(minVllmVersion, cutoff)) return null;
+  if (tag === "latest") return `vllm/vllm-openai:v${LAST_CU129_RELEASE}-cu129`;
+  return `${image}-cu129`;
+}
+
 // When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
-// the user's `dockerCudaVariant` toggle instead of appending `-cu129`/`-cu130`.
+// the user's `dockerCudaVariant` toggle instead of appending `-cu129`.
 export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   // When `model.nightly_required: true` and no explicit `docker_image` pin,
   // swap the brand defaults to nightly tags so the Install block matches the
   // nightly pip wheel that's also being rendered. vLLM publishes `:nightly`
-  // for all three brand repos. NVIDIA also publishes `cu129-nightly` /
-  // `cu130-nightly` — the CUDA suffix logic in the caller handles those.
+  // for all three brand repos; NVIDIA's is CUDA 13 only (see
+  // `cu129DockerImage`).
   const nightlyRequired = recipe.model?.nightly_required === true;
   const DEFAULT_IMAGE = nightlyRequired
     ? {

@@ -94,7 +94,7 @@ export function synthesizeInstall(recipe) {
       ? `uv venv\nsource .venv/bin/activate\nuv pip install -U vllm --pre \\\n  --extra-index-url https://wheels.vllm.ai/nightly/${baseCuda} \\\n  --extra-index-url https://download.pytorch.org/whl/${baseCuda} \\\n  --index-strategy unsafe-best-match`
       : `uv venv\nsource .venv/bin/activate\nuv pip install -U vllm --torch-backend auto`;
     const defaultPipNote = nightlyRequired
-      ? `vLLM ${v} isn't released yet — nightly required.`
+      ? `vLLM ${v} isn't released yet — nightly required. Nightly wheels are CUDA 13 (cu130) only; the host needs an r580+ NVIDIA driver.`
       : undefined;
     const command = (pipCfg && pipCfg.command) || defaultPipCmd;
     const note = (pipCfg && pipCfg.note) || defaultPipNote;

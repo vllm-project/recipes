@@ -17,6 +17,8 @@ import { ReferenceTabs } from "@/components/recipes/ConfigSections";
 import { whenLabels } from "@/lib/recipe-context";
 import { DeployDialog } from "@/components/recipes/DeployDialog";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
+import ShellCode from "@/components/recipes/ShellCode";
+import { SHELL_LANGS } from "@/lib/shell-highlight";
 import Markdown from "react-markdown";
 import { guideRehypePluginsFor, guideRemarkPlugins } from "@/lib/guide-markdown";
 import { Badge } from "@/components/ui/badge";
@@ -358,6 +360,14 @@ const guideComponents = {
   // A wide table scrolls inside its own box instead of widening the page on a phone.
   table: function GuideTable({ children }) {
     return <div className="guide-table"><table>{children}</table></div>;
+  },
+  // Shell fences get the same restrained highlighting as the command builder,
+  // minus the accent on JSON "model" values that every request example repeats;
+  // other languages and inline code render as before.
+  code: function GuideCode({ node: _node, className, children, ...rest }) {
+    const lang = className?.match(/language-(\w+)/)?.[1];
+    if (!lang || !SHELL_LANGS.has(lang)) return <code className={className} {...rest}>{children}</code>;
+    return <code className={className}><ShellCode jsonModel={false}>{children}</ShellCode></code>;
   },
 };
 
