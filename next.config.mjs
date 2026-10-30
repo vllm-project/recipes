@@ -1,4 +1,5 @@
 import fs from "fs";
+import { SELECTION_PARAMS } from "./src/lib/selection-params.js";
 
 // Preview branches of source-repo PRs (scripts/preview-prs.mjs) carry
 // public/preview.json; PreviewBanner shows which PR commit the site renders.
@@ -21,6 +22,21 @@ const nextConfig = {
   },
   outputFileTracingExcludes: {
     "/**/*": ["./.content/.tmp-*/**", "./.content/.old-*/**", "./.content/validate/**"],
+  },
+  // A recipe page URL's agent-readable twins, rendered on demand for the same
+  // query string: `/<org>/<repo>.md?…`, and `/<org>/<repo>.json?…` when the
+  // query selects a configuration (a bare `.json` stays the static
+  // whole-recipe file in public/, so those rules run before the filesystem).
+  async rewrites() {
+    const render = (format) => `/api/render/${format}/:org/:repo`;
+    return {
+      beforeFiles: SELECTION_PARAMS.map((key) => ({
+        source: "/:org/:repo.json",
+        has: [{ type: "query", key }],
+        destination: render("json"),
+      })),
+      afterFiles: [{ source: "/:org/:repo.md", destination: render("md") }],
+    };
   },
 };
 
