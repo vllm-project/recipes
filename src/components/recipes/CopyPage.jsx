@@ -2,12 +2,12 @@
 
 // "Copy page" for AI assistants: the recipe as Markdown, rendered for the
 // configuration the builder has selected (the `/<hf_id>.md?<query>` route,
-// the same text an agent fetching that URL reads), plus links to view it or
-// hand it to Claude / ChatGPT.
+// the same text an agent fetching that URL reads), plus links to view it (or
+// its JSON) and hand it to Claude / ChatGPT, and to the API docs.
 
 import { useEffect, useRef, useState } from "react";
 import { track } from "@vercel/analytics";
-import { Check, ChevronDown, Copy, ExternalLink, FileText } from "lucide-react";
+import { Braces, Check, ChevronDown, Copy, ExternalLink, FileText } from "lucide-react";
 import { useSelection } from "@/lib/selection-store";
 import { ClaudeIcon, OpenAIIcon } from "@/components/icons/AssistantLogos";
 
@@ -22,6 +22,7 @@ export function CopyPage({ hfId, labels }) {
   // Before the builder mounts (or without JS) the recipe default renders.
   const query = sel?.query ? `?${sel.query}` : "";
   const mdPath = `/${hfId}.md${query}`;
+  const jsonPath = `/${hfId}.json${query}`;
 
   useEffect(() => {
     if (!open) return;
@@ -117,6 +118,12 @@ export function CopyPage({ hfId, labels }) {
             <FileText size={14} className="text-muted-foreground" /> View as Markdown
             <ExternalLink size={11} className="ml-auto opacity-50" />
           </a>
+          <a role="menuitem" href={jsonPath} target="_blank" rel="noopener" className={item}
+            onClick={() => { track("copy_page", { action: "view_json", hfId }); setOpen(false); }}>
+            <Braces size={14} className="text-muted-foreground" /> View as JSON
+            <ExternalLink size={11} className="ml-auto opacity-50" />
+          </a>
+          <div className="my-1 border-t border-border" />
           <button role="menuitem" type="button" className={item}
             onClick={() => openIn("claude", `https://claude.ai/new?q=${encodeURIComponent(prompt())}`)}>
             <ClaudeIcon /> Open in Claude
@@ -127,6 +134,9 @@ export function CopyPage({ hfId, labels }) {
             <OpenAIIcon /> Open in ChatGPT
             <ExternalLink size={11} className="ml-auto opacity-50" />
           </button>
+          <a role="menuitem" href="/api" className="mt-1 block border-t border-border px-3 pt-2 pb-1.5 text-xs text-muted-foreground hover:text-foreground">
+            API docs →
+          </a>
         </div>
       )}
     </div>

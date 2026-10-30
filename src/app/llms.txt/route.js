@@ -1,6 +1,7 @@
 // /llms.txt — curated hierarchical index of every recipe + supporting page,
-// formatted per the emerging spec at https://llmstxt.org. Links use canonical
-// recipe URLs so every advertised resource is available independently.
+// formatted per the emerging spec at https://llmstxt.org. Recipes link their
+// Markdown form (`/<hf_id>.md`, the default configuration), which an
+// assistant reads more reliably than the client-rendered page.
 //
 // This file is what AI assistants (Claude, ChatGPT, Perplexity, Gemini)
 // retrieve when they want to know "what does recipes.vllm.ai cover and
@@ -29,16 +30,27 @@ export async function GET() {
     groups.get(recipe.hf_org).push(recipe);
   }
 
+  const example = (recipes.find((r) => r.hf_id === "deepseek-ai/DeepSeek-R1") || recipes[0])?.hf_id;
   const corePages = [
     ["Homepage", siteUrl, "Recipe catalogue: pick a model, get a working `vllm serve` command."],
     [`Browse all recipes`, `${siteUrl}/browse`, "Flat alphabetical list of every recipe."],
-    [`JSON API`, `${siteUrl}/models.json`, "Machine-readable list of every recipe and its metadata."],
+    [`API`, `${siteUrl}/api`, "How to fetch any recipe configuration as JSON or Markdown, and the static JSON files."],
+    [`All recipes (JSON)`, `${siteUrl}/models.json`, "Machine-readable list of every recipe and its metadata."],
   ];
 
   const lines = [
     "# vLLM Recipes",
     "",
     "> Per-model serving recipes for vLLM: hardware-tuned `vllm serve` commands, flag explanations, and known pitfalls.",
+    "",
+    "## Agent access",
+    "",
+    "Every recipe page URL has a Markdown and a JSON form: add `.md` or `.json` to the path and keep the query string, which carries the configuration (hardware, strategy, variant, features, preset, …).",
+    "",
+    `- ${siteUrl}/${example}.md?hardware=b200 — the command for that configuration, its notes and known issues, and the guide.`,
+    `- ${siteUrl}/${example}.json?hardware=b200 — the same configuration as JSON (\`command\` / \`argv\`, or one command per node).`,
+    "",
+    "The recipe links below point to the Markdown form of each recipe's default configuration.",
     "",
     "## Core pages",
     "",
@@ -59,7 +71,7 @@ export async function GET() {
     lines.push(`### ${escapeMarkdownLinkText(providerName)}`);
     lines.push("");
     for (const r of recipesForOrg) {
-      const url = `${siteUrl}/${r.hf_org}/${r.hf_repo}`;
+      const url = `${siteUrl}/${r.hf_org}/${r.hf_repo}.md`;
       const summary = r.meta?.description
         ? r.meta.description.replace(/\s+/g, " ").trim()
         : `${r.hf_id} serving recipe.`;

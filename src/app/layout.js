@@ -157,7 +157,7 @@ export default async function RootLayout({ children }) {
             <a href="https://docs.vllm.ai" className="hover:text-foreground transition-colors">Documentation</a>
             <a href="https://vllm.ai/#compatibility" className="hover:text-foreground transition-colors">Supported Models & Hardware</a>
             <a href="https://vllm.ai/#quick-start" className="hover:text-foreground transition-colors">Install vLLM</a>
-            <a href="/models.json" className="hover:text-foreground transition-colors">JSON API</a>
+            <a href="/api" className="hover:text-foreground transition-colors">JSON API</a>
           </div>
         </footer>
         <Analytics />
