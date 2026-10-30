@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { track } from "@vercel/analytics";
 import { Check, ChevronDown, Copy, ExternalLink, FileText } from "lucide-react";
 import { useSelection } from "@/lib/selection-store";
+import { ClaudeIcon, OpenAIIcon } from "@/components/icons/AssistantLogos";
 
 const COPIED_MS = 2000;
 
@@ -118,12 +119,12 @@ export function CopyPage({ hfId, labels }) {
           </a>
           <button role="menuitem" type="button" className={item}
             onClick={() => openIn("claude", `https://claude.ai/new?q=${encodeURIComponent(prompt())}`)}>
-            <span className="w-3.5 text-center text-muted-foreground">✳</span> Open in Claude
+            <ClaudeIcon /> Open in Claude
             <ExternalLink size={11} className="ml-auto opacity-50" />
           </button>
           <button role="menuitem" type="button" className={item}
             onClick={() => openIn("chatgpt", `https://chatgpt.com/?q=${encodeURIComponent(prompt())}`)}>
-            <span className="w-3.5 text-center text-muted-foreground">◎</span> Open in ChatGPT
+            <OpenAIIcon /> Open in ChatGPT
             <ExternalLink size={11} className="ml-auto opacity-50" />
           </button>
         </div>
