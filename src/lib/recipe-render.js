@@ -298,10 +298,18 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     return {
       ...base,
       pd_connector: result.kvConnector?.selected ?? null,
+      // Launch steps around the pools, in order: a composed Mooncake store
+      // (config, master, store), the orchestrator's control plane (Dynamo's
+      // etcd) and installs, then the pools, the router, worker registration.
+      ...(result.mooncake ? { mooncake: result.mooncake } : {}),
+      ...(result.infra ? { infra: result.infra } : {}),
+      ...(result.dynamoInstall?.length ? { orchestrator_install: result.dynamoInstall } : {}),
+      ...(result.workerInstall ? { worker_install: result.workerInstall } : {}),
       prefill,
       decode,
       router: result.router,
       router_config: result.routerConfig,
+      ...(result.registration ? { registration: result.registration } : {}),
     };
   }
   if (result.deployType === "kv_store_lb") {

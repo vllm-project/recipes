@@ -10,6 +10,7 @@ import { resolveRecipePlatforms } from "@/lib/platforms";
 import { getProviderLogo, getProviderLogoClass } from "@/lib/providers";
 import { CommandBuilder } from "@/components/recipes/CommandBuilder";
 import { CommandFallback } from "@/components/recipes/CommandFallback";
+import { CopyPage } from "@/components/recipes/CopyPage";
 import { resolveSelection } from "@/lib/recipe-render";
 import { GuideLinks } from "@/components/recipes/GuideLinks";
 import { ReferenceTabs } from "@/components/recipes/ConfigSections";
@@ -150,6 +151,11 @@ export default async function RecipePage({ params, searchParams }) {
     };
   });
   const sectionProps = { hfId: recipe.hf_id, hardware: hardwareSlim, strategyLabels, presets, troubleshooting };
+  const copyPageLabels = {
+    hardware: Object.fromEntries(Object.entries(hardwareSlim).map(([id, h]) => [id, h.display_name || id])),
+    strategies: strategyLabels,
+    variants: Object.fromEntries(Object.entries(recipe.variants || {}).map(([k, v]) => [k, v.label || v.precision?.toUpperCase() || k])),
+  };
   // What the builder opens on with no query, for the static HTML.
   const fallback = resolveSelection(recipe, new URLSearchParams(), strategies, taxonomy);
   const fallbackHw = taxonomy.hardware_profiles?.[fallback.selection.hardware] || {};
@@ -225,6 +231,7 @@ export default async function RecipePage({ params, searchParams }) {
               </a>
             </div>
           </div>
+          <CopyPage hfId={recipe.hf_id} labels={copyPageLabels} />
         </div>
 
         {/* Tags — single row, no duplication */}

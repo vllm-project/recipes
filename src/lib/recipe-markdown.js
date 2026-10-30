@@ -54,7 +54,24 @@ function serveSection(r) {
     return out;
   }
   if (r.deploy_type === "pd_cluster") {
-    out.push(`Disaggregated prefill/decode${r.pd_connector ? ` (KV transfer: \`${r.pd_connector}\`)` : ""}. Start both pools, then the router.`);
+    const mc = r.mooncake;
+    out.push(`Disaggregated prefill/decode${r.pd_connector ? ` (KV transfer: \`${r.pd_connector}\`)` : ""}. ${mc || r.infra ? "Start in this order" : "Start both pools, then the router"}.`);
+    const step = (title, description, command) => {
+      out.push("", `### ${title}`, "");
+      if (description) out.push(description, "");
+      out.push(fence(command));
+    };
+    if (mc) {
+      if (mc.install) out.push("", "Mooncake on every prefill/decode node:", "", fence(mc.install));
+      step("Mooncake config (on every prefill/decode node)", mc.configNote,
+        [`cat > $MOONCAKE_CONFIG_PATH <<EOF\n${JSON.stringify(mc.config, null, 2)}\nEOF`,
+          mc.store?.config && `cat > $MOONCAKE_STORE_CONFIG_PATH <<EOF\n${JSON.stringify(mc.store.config, null, 2)}\nEOF`].filter(Boolean).join("\n\n"));
+      step("Mooncake master", mc.master.description, mc.master.command);
+      if (mc.store) step("Mooncake store", mc.store.description, mc.store.command);
+    }
+    if (r.infra) step(r.infra.label || "Control plane", r.infra.description, r.infra.command);
+    for (const i of r.orchestrator_install || []) out.push("", i.note ? `${i.note}:` : "Install:", "", fence(i.command));
+    if (r.worker_install) out.push("", "On every prefill/decode node:", "", fence(r.worker_install));
     for (const role of ["prefill", "decode"]) {
       const p = r[role];
       if (!p?.command) continue;
@@ -66,9 +83,10 @@ function serveSection(r) {
     }
     if (r.router?.command) {
       out.push("", `### ${r.router.label || "Router"}`, "");
-      if (r.router.install) out.push(fence(r.router.install), "");
+      if (r.router.install && !(r.orchestrator_install || []).some((i) => i.command === r.router.install)) out.push(fence(r.router.install), "");
       out.push(fence(withEnv(r.router.env, r.router.command)));
     }
+    if (r.registration) step(r.registration.label || "Register workers", r.registration.description, r.registration.command);
     return out;
   }
   if (r.deploy_type === "kv_store_lb") {
