@@ -2,6 +2,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
 import { Analytics } from "@vercel/analytics/next";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { THEME_SCRIPT } from "@/lib/theme";
 import { SearchBox } from "@/components/recipes/SearchBox";
 import { PreviewBanner } from "@/components/PreviewBanner";
 import { getAllRecipes } from "@/lib/recipes";
@@ -94,8 +95,14 @@ export default async function RootLayout({ children }) {
   };
 
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
+    // The theme script adds `dark` before React hydrates, hence the warning
+    // suppression on <html>.
+    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
       <head>
+        <script
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }}
+        />
         <script
           type="application/ld+json"
           // eslint-disable-next-line react/no-danger
