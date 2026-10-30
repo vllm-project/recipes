@@ -12,6 +12,7 @@ import ShellCode from "@/components/recipes/ShellCode";
 import { publishSelection, onPresetRequest } from "@/lib/selection-store";
 import { holdInPlace } from "@/lib/hold-in-place";
 import { whenMatches } from "@/lib/recipe-context";
+import { ADVANCED_OPTIONS } from "@/lib/advanced-options";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
@@ -33,54 +34,6 @@ const FEATURE_MODE_NOTES = {
 // `gatedBy(recipe, activeStrategy)` hides an option when the recipe or current
 // strategy can't support it. This keeps casual users from selecting invalid
 // combos (e.g. EP on a dense model) while still exposing parallelism knobs.
-const ADVANCED_OPTIONS = [
-  {
-    id: "max_batched_8k",
-    label: "max-num-batched-tokens = 8192",
-    description: "Tunable batch budget; 8192 is a common sweet spot",
-    args: ["--max-num-batched-tokens", "8192"],
-  },
-  {
-    id: "max_num_seqs_256",
-    label: "max-num-seqs = 256",
-    description: "Max concurrent sequences per batch; lower for latency, higher for throughput",
-    args: ["--max-num-seqs", "256"],
-  },
-  {
-    id: "gpu_mem_095",
-    label: "gpu-memory-utilization = 0.95",
-    description: "Push KV cache further; use with caution on shared GPUs",
-    args: ["--gpu-memory-utilization", "0.95"],
-  },
-  {
-    id: "max_model_len_auto",
-    label: "max-model-len = auto",
-    description: "Auto-size context window to what KV cache can hold on your hardware",
-    args: ["--max-model-len", "auto"],
-  },
-  {
-    id: "dcp_8",
-    label: "decode-context-parallel-size = 8",
-    description:
-      "Shard the KV cache at decode time across TP ranks. MLA-attention models only (DeepSeek, Kimi-K2). Max DCP = tensor-parallel-size ÷ num_kv_heads.",
-    args: ["--decode-context-parallel-size", "8"],
-    gatedBy: (recipe) => recipe?.model?.supports_dcp === true,
-  },
-  {
-    id: "no_flashinfer_autotune",
-    label: "no-enable-flashinfer-autotune",
-    description: "Skip FlashInfer autotuning at startup (faster startup, may lose autotuned perf)",
-    args: ["--no-enable-flashinfer-autotune"],
-    gatedBy: (recipe) => recipe?.model?.flashinfer_autotune === true,
-  },
-  {
-    id: "ep_weight_filter",
-    label: "enable-ep-weight-filter",
-    description: "Skip loading expert weights that don't belong to this EP rank — speeds up weight loading for large MoE models",
-    args: ["--enable-ep-weight-filter"],
-    gatedBy: (_recipe, activeStrategy) => /(?:^|_)(?:tep|dep)$/.test(activeStrategy || ""),
-  },
-];
 import { loadPreferences, savePreference, loadRecipeState, saveRecipeState } from "@/lib/preferences";
 
 function CopyButton({ text, className = "" }) {
@@ -1193,9 +1146,48 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     ? lastIntFlag(result.argv, "--data-parallel-size", hwGpuCount)
     : hwGpuCount;
   const showDepUsageHint = depWidth < hwGpuCount;
+  // The whole selection as an explicit page query, for the `.md` / `.json`
+  // forms (Copy page). The address bar can't stand in for it: syncUrl omits
+  // defaults, and choices restored from storage never reach the URL.
+  const selectedPoint = result?.preset?.point?.selected ?? null;
+  const shareQuery = useMemo(() => {
+    const q = new URLSearchParams({ hardware: hwId, variant });
+    if ((recipe.meta?.tasks || []).includes("omni")) {
+      if (omniTask) q.set("task", omniTask);
+      return q.toString();
+    }
+    q.set("strategy", activeStrategy);
+    q.set("features", features.join(","));
+    const fmode = Object.entries(featureModes).filter(([k, m]) => m && recipe.features?.[k]?.modes).map(([k, m]) => `${k}:${m}`);
+    if (fmode.length) q.set("fmode", fmode.join(","));
+    if (advanced.length) q.set("advanced", advanced.join(","));
+    q.set("frontend", frontend);
+    if (selectedPreset) q.set("preset", selectedPreset);
+    if (selectedPoint) q.set("point", selectedPoint);
+    if (activeKvOffload) {
+      q.set("kv_offload", activeKvOffload);
+      if (kvInstances != null) q.set("kv_instances", String(kvInstances));
+      if (kvInstanceIdx > 0) q.set("kv_instance", String(kvInstanceIdx));
+    }
+    if (dcpSize != null) q.set("dcp", String(dcpSize));
+    if (activeStrategy === "pd_cluster") {
+      q.set("prefill_nodes", String(effPdPrefillNodes));
+      q.set("decode_nodes", String(effPdDecodeNodes));
+      q.set("prefill_mode", effPdPrefillPar);
+      q.set("decode_mode", effPdDecodePar);
+      if (pdPrefillRank > 0) q.set("prefill_rank", String(pdPrefillRank));
+      if (pdDecodeRank > 0) q.set("decode_rank", String(pdDecodeRank));
+      q.set("pd_router", pdRouter);
+      if (pdConnector) q.set("pd_connector", pdConnector);
+      if (pdTransport !== "http") q.set("pd_transport", pdTransport);
+    } else {
+      q.set("nodes", String(nodeCount));
+    }
+    return q.toString();
+  }, [recipe, hwId, variant, omniTask, activeStrategy, features, featureModes, advanced, frontend, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, pdRouter, pdConnector, pdTransport, nodeCount]);
   useEffect(() => {
-    publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features, preset: selectedPreset });
-  }, [recipe.hf_id, hwId, activeStrategy, variant, features, selectedPreset]);
+    publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features, preset: selectedPreset, query: shareQuery });
+  }, [recipe.hf_id, hwId, activeStrategy, variant, features, selectedPreset, shareQuery]);
 
   // Visual feedback when any rendered command changes. Covers single-node
   // (result.command), multi-node (headCommand), pd_cluster (prefill.command),
