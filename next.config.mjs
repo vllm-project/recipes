@@ -27,14 +27,19 @@ const nextConfig = {
   // query string: `/<org>/<repo>.md?…`, and `/<org>/<repo>.json?…` when the
   // query selects a configuration (a bare `.json` stays the static
   // whole-recipe file in public/, so those rules run before the filesystem).
+  // Appending the extension to the whole URL (`…?hardware=b200.md`) works
+  // too: it lands on a param value, which the route strips.
   async rewrites() {
     const render = (format) => `/api/render/${format}/:org/:repo`;
     return {
-      beforeFiles: SELECTION_PARAMS.map((key) => ({
-        source: "/:org/:repo.json",
-        has: [{ type: "query", key }],
-        destination: render("json"),
-      })),
+      beforeFiles: SELECTION_PARAMS.flatMap((key) => [
+        { source: "/:org/:repo.json", has: [{ type: "query", key }], destination: render("json") },
+        ...["md", "json"].map((format) => ({
+          source: "/:org/:repo",
+          has: [{ type: "query", key, value: `.*\\.${format}` }],
+          destination: render(format),
+        })),
+      ]),
       afterFiles: [{ source: "/:org/:repo.md", destination: render("md") }],
     };
   },

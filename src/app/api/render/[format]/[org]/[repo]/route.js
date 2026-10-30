@@ -18,6 +18,10 @@ export async function GET(request, { params }) {
   if (format !== "md" && format !== "json") return new Response("Not found", { status: 404 });
   const url = new URL(request.url);
   const query = new URLSearchParams(url.searchParams);
+  // `<page URL>.md` puts the extension on the last param's value.
+  for (const [k, v] of [...query]) {
+    if (v.endsWith(`.${format}`)) query.set(k, v.slice(0, -format.length - 1));
+  }
   let recipe = getRecipeByHfId(org, repo);
   if (!recipe) {
     // A variant's own checkpoint id renders its parent recipe at that variant.

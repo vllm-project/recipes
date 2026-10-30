@@ -27,9 +27,9 @@ export function CommandFallback({ hfId, summary, rendering }) {
         </pre>
       )}
       <p className="px-4 pb-3 text-xs text-muted-foreground">
-        The interactive builder loads with JavaScript. Every configuration&apos;s command is also available as
-        Markdown at <a className="underline" href={`/${hfId}.md`}>/{hfId}.md</a> — keep the page&apos;s
-        query string (e.g. <code className="font-mono">?hardware=b200</code>) to render that configuration.
+        The interactive builder loads with JavaScript. Append <code className="font-mono">.md</code> to this
+        page&apos;s URL, query string included, for any configuration&apos;s command as Markdown — e.g.{" "}
+        <a className="underline" href={`/${hfId}.md`}>/{hfId}.md</a>.
       </p>
     </div>
   );
