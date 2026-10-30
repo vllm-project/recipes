@@ -8,6 +8,7 @@ import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
+import ShellCode from "@/components/recipes/ShellCode";
 import { publishSelection, onPresetRequest } from "@/lib/selection-store";
 import { holdInPlace } from "@/lib/hold-in-place";
 import { whenMatches } from "@/lib/recipe-context";
@@ -177,7 +178,7 @@ function PopoverButton({ label, code, icon: Icon, disabled, disabledNote }) {
           </button>
         </div>
         <pre className="px-3 py-2.5 text-xs font-mono leading-relaxed whitespace-pre overflow-x-auto bg-[var(--code-block-bg)] text-[var(--code-block-fg)]">
-          {code}
+          <ShellCode>{code}</ShellCode>
         </pre>
       </div>
     </>,
@@ -3741,7 +3742,7 @@ function CommandBody({ command }) {
         </div>
       )}
       <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-        {body}
+        <ShellCode>{body}</ShellCode>
       </pre>
     </>
   );
@@ -3907,7 +3908,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
       {!activeCompanion && <CommandNote note={commandNote} />}
       {activePrelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-          {activePrelude}
+          <ShellCode>{activePrelude}</ShellCode>
         </pre>
       )}
       <CommandBody command={rawActive} />
@@ -4157,7 +4158,7 @@ uv pip install -U vllm --torch-backend auto`;
             </div>
           )}
           <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-            {active.code}
+            <ShellCode>{active.code}</ShellCode>
           </pre>
         </div>
       )}
@@ -4196,7 +4197,7 @@ function DependenciesBlock({ deps }) {
                 <span># {d.note}</span>
               </div>
             )}
-            <div className="text-[var(--command-fg)] whitespace-pre">{d.command}</div>
+            <div className="text-[var(--command-fg)] whitespace-pre"><ShellCode>{d.command}</ShellCode></div>
           </div>
         ))}
       </div>
@@ -4251,7 +4252,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
       <CommandNote note={commandNote} />
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-          {prelude}
+          <ShellCode>{prelude}</ShellCode>
         </pre>
       )}
       <CommandBody command={active.command} />
@@ -4412,7 +4413,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
       {!active.isRouter && <CommandNote note={commandNote} />}
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-          {prelude}
+          <ShellCode>{prelude}</ShellCode>
         </pre>
       )}
       <CommandBody command={active.command} />
@@ -4538,7 +4539,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
       {active.isVllm && <CommandNote note={commandNote} />}
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-          {prelude}
+          <ShellCode>{prelude}</ShellCode>
         </pre>
       )}
       <CommandBody command={active.command} />
