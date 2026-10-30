@@ -335,12 +335,13 @@ const guideComponents = {
   table: function GuideTable({ children }) {
     return <div className="guide-table"><table>{children}</table></div>;
   },
-  // Shell fences get the same restrained highlighting as the command builder;
+  // Shell fences get the same restrained highlighting as the command builder,
+  // minus the accent on JSON "model" values that every request example repeats;
   // other languages and inline code render as before.
   code: function GuideCode({ node: _node, className, children, ...rest }) {
     const lang = className?.match(/language-(\w+)/)?.[1];
     if (!lang || !SHELL_LANGS.has(lang)) return <code className={className} {...rest}>{children}</code>;
-    return <code className={className}><ShellCode>{children}</ShellCode></code>;
+    return <code className={className}><ShellCode jsonModel={false}>{children}</ShellCode></code>;
   },
 };
 

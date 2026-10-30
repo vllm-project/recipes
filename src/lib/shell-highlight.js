@@ -63,7 +63,8 @@ function lex(src) {
 
 // Split a word's text into string / var / plain pieces; `base` colors the
 // unquoted, non-variable parts. Inside strings, a JSON `"model": "<id>"` value
-// (curl payloads, --speculative-config) is lifted to the model accent.
+// (curl payloads, --speculative-config) is marked `json-model`, which
+// highlightShell resolves per its `jsonModel` option.
 function splitWord(text, base, out) {
   const re = /'[^']*'?|"(?:[^"\\]|\\.)*"?|\$\{[^}]*\}|\$\w+/g;
   let last = 0;
@@ -85,7 +86,7 @@ function splitString(piece, out) {
   while ((m = re.exec(piece))) {
     const valueStart = m.index + m[1].length;
     out.push({ text: piece.slice(last, valueStart), kind: "string" });
-    out.push({ text: m[2], kind: "model" });
+    out.push({ text: m[2], kind: "json-model" });
     last = valueStart + m[2].length;
   }
   out.push({ text: piece.slice(last), kind: "string" });
@@ -95,7 +96,9 @@ function stripQuotes(s) {
   return s.replace(/^(['"])(.*)\1$/, "$2");
 }
 
-export function highlightShell(src) {
+// `jsonModel: false` leaves JSON `"model"` values as plain string text — the
+// guide repeats them in every request example, where the accent is noise.
+export function highlightShell(src, { jsonModel = true } = {}) {
   const out = [];
   // Per simple-command state: `pos` counts words since the command started.
   let cmd = null;
@@ -213,6 +216,9 @@ export function highlightShell(src) {
     }
     expect = null;
     splitWord(w, "plain", out);
+  }
+  for (const seg of out) {
+    if (seg.kind === "json-model") seg.kind = jsonModel ? "model" : "string";
   }
   return out;
 }
