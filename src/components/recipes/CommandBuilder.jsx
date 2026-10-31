@@ -2666,7 +2666,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 )}
                 {variantModelId && (
                   <a
-                    href={`https://huggingface.co/${variantModelId}`}
+                    href={currentVariant.extra_env?.VLLM_USE_MODELSCOPE === "True" ? `https://www.modelscope.cn/models/${variantModelId}` : `https://huggingface.co/${variantModelId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground hover:text-vllm-blue transition-colors"
