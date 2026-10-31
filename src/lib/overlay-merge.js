@@ -61,6 +61,11 @@ export function presetInScope(preset, ctx) {
   return typeof preset?.hardware === "string" && ctx.isHwKey(preset.hardware);
 }
 
+function noteInScope(note, ctx) {
+  const hw = note?.when?.hardware;
+  return Array.isArray(hw) && hw.length > 0 && hw.every((key) => ctx.isHwKey(key));
+}
+
 // ── Rule table ──
 //
 // Path segments: a literal key, "*" (any key), "@hw" (an in-scope hardware
@@ -74,6 +79,7 @@ export const OVERLAY_RULES = [
   ["meta", "hardware", "@hw"],
   ["hardware_overrides", "@hw"],
   ["hardware_notes", "@hw"],
+  { path: ["notes"], append: noteInScope },
   ["hardware_opt_in_features", "@hw"],
   ["strategy_hardware", "*", "@hw"],
   ["strategy_min_gpus", "@hw"],
@@ -172,6 +178,18 @@ function mergeNode(parent, key, ov, p, rules, ctx, err, seg = null) {
   // the array with in-scope ids).
   const done = live.find((r) => r.path.length === depth + 1);
   if (done) {
+    if (done.append) {
+      if (!Array.isArray(ov) || !ov.every((item) => done.append(item, ctx))) {
+        return err(p, "may only append notes with non-empty, in-scope when.hardware");
+      }
+      if (coreVal !== undefined && !Array.isArray(coreVal)) return err(p, "core value is not a list");
+      const items = structuredClone(coreVal || []);
+      for (const item of ov) {
+        if (!items.some((existing) => isDeepStrictEqual(existing, item))) items.push(structuredClone(item));
+      }
+      parent[key] = items;
+      return;
+    }
     if (done.union) {
       if (!Array.isArray(ov) || !ov.every((k) => ctx.isHwKey(k))) return err(p, "may only append in-scope hardware ids");
       if (coreVal !== undefined && !Array.isArray(coreVal)) return err(p, "core value is not a list");
@@ -330,7 +348,16 @@ function extract(node, rule, depth, p, ctx, put) {
     if (seg === "@hw" ? !ctx.isHwKey(key) : seg !== "*" && seg !== "[task]" && seg !== key) continue;
     const child = coreChild(node, key, seg);
     if (last) {
-      if (rule.union) {
+      if (rule.append) {
+        if (!Array.isArray(child)) continue;
+        const moved = child.filter((item) => rule.append(item, ctx));
+        if (moved.length) {
+          put([...p, key], moved);
+          const kept = child.filter((item) => !rule.append(item, ctx));
+          if (kept.length) node[key] = kept;
+          else delete node[key];
+        }
+      } else if (rule.union) {
         if (!Array.isArray(child)) continue;
         const moved = child.filter((k) => ctx.isHwKey(k));
         // A list of only in-scope ids is an in-scope variant (moved whole).

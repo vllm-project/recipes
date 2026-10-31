@@ -23,6 +23,14 @@
       "sha": "02ac27a19cb7676304a9ca6985ba56ce29664536",
       "tree_sha": "aa2c7503f1b45c8a57a0ae01e40c65ddf8e81283",
       "resolved_at": "2026-10-28T02:06:32.523Z"
+    },
+    "vllm-metal": {
+      "repo": "vllm-project/vllm-metal",
+      "ref": "main",
+      "path": "recipes",
+      "sha": "e2ec2698803c2c6c5e7a7defbde0e1628d2c1e52",
+      "tree_sha": "7ba0e57c09f19ccffb181a83c8339dea6027df83",
+      "resolved_at": "2026-10-29T23:10:57.969Z"
     }
   }
 }

@@ -562,19 +562,6 @@ for (const file of findYamlFiles(modelsDir)) {
     hfRepo = parts[parts.length - 1].replace(/\.(yaml|yml)$/, "");
     r.hf_id = `${hfOrg}/${hfRepo}`;
   }
-  // Replace the raw `model.install` config with the synthesized commands so
-  // JSON consumers see the rendered one-liners (pip + docker) plus any
-  // `extras` from `dependencies`. The raw toggle config is internal-only.
-  // `dependencies` is the YAML-authored source — drop it from the public JSON
-  // since `model.install.extras` already carries the same data verbatim.
-  const install = synthesizeInstall(r);
-  if (r.model) {
-    const { install: _drop, ...rest } = r.model;
-    r.model = install ? { ...rest, install } : rest;
-  } else if (install) {
-    r.model = { install };
-  }
-  delete r.dependencies;
   // Pre-render the canonical deploy command (default variant) so agents don't
   // have to reimplement command-synthesis. Mirrors the website's default
   // selections.
@@ -607,7 +594,10 @@ for (const file of findYamlFiles(modelsDir)) {
     }
     const variantRecommended = renderAndWriteVariant(r, variantKey, variantModelId, strategies, taxonomy);
     if (!variantRecommended) continue;
-    promotedRenderings.push({ variantKey, variantModelId, recommended: variantRecommended });
+    promotedRenderings.push({
+      variantKey, variantModelId, recommended: variantRecommended,
+      install: variantCfg.install ? synthesizeInstall(r, variantCfg) : undefined,
+    });
   }
 
   // Annotate parent variants with `json:` pointers so consumers can navigate.
@@ -616,6 +606,21 @@ for (const file of findYamlFiles(modelsDir)) {
       r.variants[variantKey] = { ...r.variants[variantKey], json: `/${variantModelId}.json` };
     }
   }
+
+  // All renderings need the raw install toggles; serialize them only afterward.
+  // Replace `model.install` with the synthesized commands so
+  // JSON consumers see the rendered one-liners (pip + docker) plus any
+  // `extras` from `dependencies`. The raw toggle config is internal-only.
+  // `dependencies` is the YAML-authored source — drop it from the public JSON
+  // since `model.install.extras` already carries the same data verbatim.
+  const install = synthesizeInstall(r);
+  if (r.model) {
+    const { install: _drop, ...rest } = r.model;
+    r.model = install ? { ...rest, install } : rest;
+  } else if (install) {
+    r.model = { install };
+  }
+  delete r.dependencies;
 
   // strategy_overrides, compatible_strategies, default_strategy are synthesis
   // inputs whose effects are already baked into recommended_command + the
@@ -638,14 +643,18 @@ for (const file of findYamlFiles(modelsDir)) {
   // the variant's config (model_id stripped — it's at top-level now). The
   // sibling-variant info is lost on purpose; consumers can follow
   // `meta.derived_from` back to the parent for the full family view.
-  for (const { variantKey, variantModelId, recommended } of promotedRenderings) {
+  for (const { variantKey, variantModelId, recommended, install } of promotedRenderings) {
     const variantCfg = r.variants?.[variantKey] || {};
     const { model_id: _vMid, json: _vJson, ...variantCore } = variantCfg;
     const promoted = {
       ...r,  // share meta/features/guide/etc. with the parent
       hf_id: variantModelId,
       meta: { ...r.meta, derived_from: parentHfId, variant: variantKey },
-      model: { ...r.model, model_id: variantModelId },
+      model: {
+        ...r.model,
+        model_id: variantModelId,
+        ...(install && { install }),
+      },
       variants: { default: variantCore },
       recommended_command: recommended,
     };
