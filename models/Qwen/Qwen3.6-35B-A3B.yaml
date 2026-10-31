@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Smaller Qwen3.6 multimodal MoE model (35B total / 3B active) with BF16, FP8, and NVIDIA NVFP4 variants"
   date_added: 2026-04-16
-  date_updated: 2026-09-14
+  date_updated: 2026-09-22
   difficulty: beginner
   tasks:
     - multimodal
@@ -310,9 +310,21 @@ guide: |
   4-token MTP draft on `flashinfer_cutlass`. The RTX 5090's 32 GB caps context
   at 64K.
 
-  Datacenter Blackwell (B200/GB200/B300/GB300) intentionally carries no
-  overrides — it runs vLLM's own NVFP4 defaults, which select the native FP4
-  path rather than the Marlin W4A16 kernel the workstation parts need.
+  Datacenter Blackwell (B200/GB200/B300/GB300) carries no overrides and runs
+  vLLM's own defaults. The checkpoint labels its expert and shared-expert
+  layers `W4A16_NVFP4` (FP4 weights, BF16 activations), although it also ships
+  calibrated activation scales. vLLM follows the label, and its native FP4 MoE
+  backends (TRT-LLM, CuteDSL, CUTLASS) require FP4 activations, so the MoE path
+  falls back to Marlin here as well.
+
+  ### FP8 or NVFP4 on B200
+
+  On vLLM 0.29.0, prefer the FP8 variant on B200. Measured on 2026-09-22 on
+  one B200 at TP1, using the default command for each variant, FP8 matched or
+  beat NVFP4 on every workload: 12.6% more output tok/s on 8K-token prompts
+  (432 vs 384 at concurrency 4), within 3% on decode-heavy and chat traffic,
+  and 12–43% lower median TTFT throughout. NVFP4's advantage on B200 is memory
+  (22 GB of weights vs 35 GB for FP8), not speed.
 
   ### Measured on DGX Spark (GB10)
 
