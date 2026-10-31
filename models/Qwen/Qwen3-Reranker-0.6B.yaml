@@ -1,0 +1,183 @@
+# yaml-language-server: $schema=https://recipes.vllm.ai/recipe.schema.json
+#
+# Qwen3-Reranker — Ascend NPU (Atlas 800 A3 / Ascend 910C) rerank serving.
+# Migrated from the vLLM Ascend tutorial:
+#   https://docs.vllm.ai/projects/ascend/en/v0.23.0/tutorials/models/Qwen3-Reranker.html
+# Submitted for the recipes repo at models/Qwen/Qwen3-Reranker-0.6B.yaml; the
+# same body also applies as vllm-project/vllm recipes/models/Qwen/Qwen3-Reranker-0.6B.yaml
+# (the owning repo per CONTRIBUTING.md → "Where a recipe lives").
+
+meta:
+  title: "Qwen3-Reranker"
+  slug: "qwen3-reranker"
+  provider: "Qwen"
+  description: "Qwen3 Reranker family (0.6B/4B/8B) for retrieval reranking, served through vLLM's pooling runner and the /v1/rerank relevance API; this recipe covers the Ascend NPU path."
+  date_added: 2026-10-29
+  date_updated: 2026-10-29
+  tasks:
+    - embedding
+  performance_headline: "Rerank API on Atlas 800 A3 (16× Ascend 910C) via the vLLM Ascend v0.23.0 image line"
+  related_recipes: []
+  # `supported`, not `verified`: this recipe is a static migration of the
+  # official tutorial and has not been re-run end-to-end by the author.
+  # ascend_910c is a `restricted` taxonomy profile, so it must be declared here
+  # to appear in the picker.
+  hardware:
+    ascend_910c: supported
+  # Open on the Ascend profile: the guide, image pin and args below are the
+  # Ascend path (the GPU path is the stock pooling command).
+  default_hardware: ascend_910c
+
+model:
+  model_id: "Qwen/Qwen3-Reranker-0.6B"
+  architecture: dense
+  parameter_count: "0.6B"
+  active_parameters: "0.6B"
+  context_length: 40960
+  # Both flags are required by every checkpoint of the family: the pooling
+  # runner selects the embed/rerank API path, and the override builds the
+  # Qwen3 reranker classification head from the no/yes classifier tokens.
+  base_args:
+    - "--runner"
+    - "pooling"
+    - "--hf_overrides"
+    - '{"architectures": ["Qwen3VLForSequenceClassification"],"classifier_from_token": ["no", "yes"],"is_original_qwen3_reranker": true}'
+  base_env: {}
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  # This recipe ships the Ascend path: `default` is the Atlas 800 A3 (Ascend
+  # 910C) serving of the 0.6B checkpoint. The exact-GPU-id hardware_overrides
+  # keyspace is additive only for non-restricted GPUs, so the NPU delta is
+  # expressed on the variant that is actually rendered for that profile.
+  default:
+    precision: bf16
+    vram_minimum_gb: 2
+    description: "BF16 weights of Qwen3-Reranker-0.6B on one Atlas 800 A3 node (Ascend 910C), vLLM Ascend v0.23.0 image line."
+    supported_hardware: [ascend_910c]
+    # A 16-NPU A3 node would otherwise emit --tensor-parallel-size 16; the 0.6B
+    # checkpoint is served on a single NPU.
+    tp:
+      ascend_910c: 1
+    extra_args:
+      - "--max-model-len"
+      - "1024"
+    hardware_overrides:
+      ascend_910c:
+        # The newest vLLM Ascend release line that still ships Qwen3-Reranker
+        # support: the model is discontinued from v0.30.0 on.
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a3"
+        # Ascend has no official wheel, so only the Docker path is offered.
+        install:
+          pip: false
+  reranker_4b:
+    model_id: "Qwen/Qwen3-Reranker-4B"
+    label: "BF16 4B (Ascend A3)"
+    precision: bf16
+    vram_minimum_gb: 10
+    description: "Qwen3-Reranker-4B on Atlas 800 A3; same flags, larger checkpoint."
+    supported_hardware: [ascend_910c]
+    tp:
+      ascend_910c: 1
+    extra_args:
+      - "--max-model-len"
+      - "1024"
+    hardware_overrides:
+      ascend_910c:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a3"
+        install:
+          pip: false
+  reranker_8b:
+    model_id: "Qwen/Qwen3-Reranker-8B"
+    label: "BF16 8B (Ascend A3)"
+    precision: bf16
+    vram_minimum_gb: 20
+    description: "Qwen3-Reranker-8B on Atlas 800 A3; same flags, largest checkpoint."
+    supported_hardware: [ascend_910c]
+    tp:
+      ascend_910c: 1
+    extra_args:
+      - "--max-model-len"
+      - "1024"
+    hardware_overrides:
+      ascend_910c:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a3"
+        install:
+          pip: false
+
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+troubleshooting:
+  - title: "OOM at startup on Atlas 300I DUO"
+    when: { hardware: [npu] }
+    body: |
+      A large auto-parsed context length allocates an O(max_model_len^2) attention mask.
+      Pass an explicit conservative `--max-model-len` (for example 1024).
+
+  - title: "/v1/chat/completions returns 404"
+    body: |
+      Qwen3-Reranker is a pooling model. With `--runner pooling` the server exposes
+      `/v1/rerank`, `/v1/score` and `/v1/embeddings` instead of the chat API.
+
+guide: |
+  ## Overview
+
+  Qwen3-Reranker is the proprietary reranking family of Qwen, built on the dense
+  Qwen3 base models and published in 0.6B, 4B and 8B sizes. It scores a query
+  against candidate documents and returns a `relevance_score` per document,
+  which is the reranking stage of a retrieval pipeline.
+
+  On Ascend NPUs the checkpoint is served by vLLM Ascend with the pooling runner
+  and a Qwen3 reranker head override, then queried through `/v1/rerank`. This
+  recipe mirrors the official vLLM Ascend tutorial for the model; the same
+  command shape applies to the A2 series (plain `v0.23.0` image) and to
+  Atlas 300I DUO (the `-310p` image with a restricted graph-capture config and
+  `--dtype float16`).
+
+  ## Prerequisites
+
+  - Hardware: one Atlas 800 A3 node (Ascend 910C); a single NPU is enough for
+    the 0.6B checkpoint.
+  - Software: vLLM Ascend v0.23.0 image line. Support starts at vLLM Ascend
+    0.9.2rc1, and the model is **discontinued from vLLM Ascend v0.30.0** — do
+    not upgrade the image past the v0.23.0 line.
+  - Weights: `Qwen/Qwen3-Reranker-0.6B` (or the 4B/8B variant) from ModelScope or
+    HuggingFace.
+
+  ## Client usage
+
+  ```bash
+  curl http://localhost:8000/v1/rerank \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "Qwen/Qwen3-Reranker-0.6B",
+      "query": "What is the capital of China?",
+      "documents": [
+        "The capital of China is Beijing.",
+        "Gravity is a force that attracts two bodies towards each other."
+      ]
+    }'
+  ```
+
+  The response carries `results[].relevance_score`. For best quality, wrap the
+  query and documents in the chat-style templates from the tutorial (the
+  `<Instruct>/<Query>/<Document>` prefixes plus the Qwen3 `<think>` suffix)
+  before sending them; the model was trained on that format.
+
+  Expected: HTTP 200 with a JSON body containing one `relevance_score` per
+  document.
+
+  ## References
+
+  - [vLLM Ascend tutorial (v0.23.0)](https://docs.vllm.ai/projects/ascend/en/v0.23.0/tutorials/models/Qwen3-Reranker.html)
+  - [vLLM Ascend tutorial (latest — discontinuation notice)](https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/Qwen3-Reranker.html)
+  - [Model card](https://huggingface.co/Qwen/Qwen3-Reranker-0.6B)
+  - [vLLM benchmark CLI](https://docs.vllm.ai/en/latest/benchmarking/cli/)
