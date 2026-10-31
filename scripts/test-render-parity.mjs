@@ -15,6 +15,7 @@ import { getAllRecipes } from "../src/lib/recipes.js";
 import { loadStrategies } from "../src/lib/strategies.js";
 import { loadTaxonomy } from "../src/lib/taxonomy.js";
 import { resolveSelection } from "../src/lib/recipe-render.js";
+import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
 import { isStrategySupportedOnHardware, needsMultiNode } from "../src/lib/command-synthesis.js";
 
 const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES_PUBLIC_DIR) : path.join(process.cwd(), "public");
@@ -122,4 +123,66 @@ test("resolveSelection renders every preset point identically from ?preset=&poin
   }
   assert.ok(checked > 50, `only ${checked} preset points checked`);
   assert.deepEqual(mismatches, [], `${mismatches.length}/${checked} preset points differ:\n  ${mismatches.slice(0, 20).join("\n  ")}`);
+});
+
+
+const localRecipe = {
+  hf_id: "example/model",
+  model: { model_id: "example/model", base_args: ["--trust-remote-code"] },
+  compatible_strategies: ["single_node_tp"],
+  features: {
+    tool_calling: { args: ["--enable-auto-tool-choice"] },
+    reasoning: { args: ["--reasoning-parser", "example"] },
+    unsupported: { args: ["--unsupported"] },
+  },
+  variants: {
+    local: {
+      precision: "int4", vram_minimum_gb: 4, supported_hardware: ["local"],
+      base_args: ["--host", "127.0.0.1"],
+      supported_frontends: ["python"], supported_features: ["tool_calling", "reasoning"],
+      install: { pip: { command: "install-example-runtime" }, docker: false },
+    },
+  },
+  notes: [{ when: { hardware: ["local"], variants: ["local"] }, body: "Local memory guidance." }],
+};
+const localTaxonomy = {
+  ...taxonomy,
+  hardware_profiles: {
+    local: { brand: "Example", generation: "example", gpu_count: 1, vram_gb: 16, scalable: false, requires_kv_offload_opt_in: true },
+  },
+};
+
+test("variant configuration is preserved in JSON and Markdown selections", () => {
+  for (const features of [[], ["tool_calling"], ["reasoning"], ["tool_calling", "reasoning"]]) {
+    const q = new URLSearchParams({ hardware: "local", variant: "local", frontend: "rust", features: features.join(",") });
+    const resolved = resolveSelection(localRecipe, q, strategies, localTaxonomy);
+    const r = resolved.rendering;
+    assert.deepEqual(resolved.selection.features, features);
+    assert.deepEqual(resolved.options.features, ["tool_calling", "reasoning"]);
+    assert.equal(resolved.selection.frontend, "python");
+    assert.equal(r.argv.includes("--enable-auto-tool-choice"), features.includes("tool_calling"));
+    assert.equal(r.argv.includes("--reasoning-parser"), features.includes("reasoning"));
+    assert.equal(r.argv.includes("--trust-remote-code"), false);
+    assert.equal(r.argv.includes("--unsupported"), false);
+    assert.equal(r.install.pip.command, "install-example-runtime");
+    assert.equal(r.install.docker, undefined);
+    assert.equal(r.docker_image, null);
+    assert.equal(r.docker_command, undefined);
+    const md = selectionMarkdown(localRecipe, resolved, {
+      strategies, taxonomy: localTaxonomy,
+      urls: { page: "https://example.org/example/model", json: "https://example.org/example/model.json" },
+    });
+    assert.ok(md.includes("install-example-runtime"));
+    assert.ok(md.includes("Local memory guidance."));
+    assert.ok(!md.includes("Docker image:"));
+  }
+});
+
+test("KV offload follows profile opt-in without depending on the backend name", () => {
+  const q = new URLSearchParams({ hardware: "local", variant: "local", kv_offload: "simple" });
+  const render = (t) => resolveSelection(localRecipe, q, strategies, t).rendering;
+  assert.equal(render(localTaxonomy).argv.includes("--kv-transfer-config"), false);
+  const allowed = structuredClone(localTaxonomy);
+  allowed.kv_offload.simple.brands = ["Example"];
+  assert.equal(render(allowed).argv.includes("--kv-transfer-config"), true);
 });

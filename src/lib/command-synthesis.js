@@ -575,10 +575,10 @@ export function isKvOffloadSupportedForRecipe(option, optionKey, recipe) {
   return option.requires_opt_in ? support === "verified" : true;
 }
 
-/** Hardware gate: Metal presets require an explicit entry in `brands`. */
+/** Hardware profiles may require an explicit entry in the option's `brands`. */
 export function isKvOffloadBrandSupported(option, hwProfile) {
   const allow = option?.brands;
-  if (!Array.isArray(allow) || allow.length === 0) return hwProfile?.generation !== "metal";
+  if (!Array.isArray(allow) || allow.length === 0) return !hwProfile?.requires_kv_offload_opt_in;
   return allow.includes(hwProfile?.brand);
 }
 
@@ -896,12 +896,12 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const isXpu = hwProfile?.generation === "xpu";
   const isIntel = hwProfile?.generation === "cpu" || isXpu || hwProfile?.brand === "Intel";
   const isNpu = hwProfile?.generation === "npu";
-  const isMetal = hwProfile?.generation === "metal";
+  const dockerEnabled = resolveInstall(recipe, variant).docker !== false;
   const npuDeviceCount = isNpu ? hwProfile?.gpu_count ?? 1 : 0;
   // Ascend deliberately has no `brandKey` of its own: vLLM publishes no NPU
   // image, so every Ascend recipe pins one through `hardware_overrides`, which
   // `exactHardwareOverride` resolves before the brand defaults are consulted.
-  const brandKey = isMetal ? "apple" : isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
+  const brandKey = !dockerEnabled ? null : isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
   // Exact variant+hardware image overrides win over variant-wide and
   // model-wide images (for example, an MI355X-only ROCm nightly).
   const exactHardwareOverride = hwId
@@ -951,10 +951,10 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   // CUDA map, `image` defaults to the cu130 (upstream baseline) pick so
   // toggle-unaware callers (the JSON API's renderings) still get a real tag;
   // the client's CUDA selector re-picks from `cudaMap` on top of this.
-  const image = isMetal ? null : isXpu && !pinned
+  const image = !dockerEnabled ? null : isXpu && !pinned
     ? "vllm/vllm-openai-xpu:latest"
     : pinned || (cudaMap ? cudaMap.cu130 || cudaMap.cu129 : null) || DEFAULT_IMAGE[brandKey];
-  const gpuFlags = isMetal ? "" : isTpu
+  const gpuFlags = !dockerEnabled ? "" : isTpu
     ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
     : isAmd
       ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
@@ -974,7 +974,6 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
     isXpu,
     isIntel,
     isNpu,
-    isMetal,
     npuDeviceCount,
     pinned,
     cudaMap,

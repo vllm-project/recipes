@@ -421,7 +421,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
         strategies[rs.strategy]?.deploy_type !== "kv_store_lb") {
       setStrategyOverride(rs.strategy);
     }
-    if (!searchParams.get("features") && Array.isArray(rs.features)) {
+    if (!searchParams.has("features") && Array.isArray(rs.features)) {
       const recipeFeatures = Object.keys(recipe.features || {});
       setFeatures(rs.features.filter((f) => recipeFeatures.includes(f)));
     }
@@ -656,8 +656,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       // A variant that declares a preferred mode for a feature (`default_modes`)
       // wants that feature on — un-opt-in it for this variant. E.g. selecting
       // the fused DSpark checkpoint auto-enables spec_decoding (default: dspark).
-      const forced = new Set(Object.keys(recipe.variants?.[variantKey]?.default_modes || {}));
-      return Object.keys(recipe.features || {}).filter((f) => forced.has(f) || !optIn.has(f));
+      const v = recipe.variants?.[variantKey] || {};
+      const forced = new Set(Object.keys(v.default_modes || {}));
+      return Object.keys(recipe.features || {}).filter((f) =>
+        isFeatureAllowedForVariant(v, f) && (forced.has(f) || !optIn.has(f)));
     },
     [recipe]
   );
@@ -668,16 +670,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const featuresToUrl = useCallback(
     (arr, hw, variantKey) => {
       const want = new Set(defaultFeaturesFor(hw, variantKey));
-      const got = new Set(arr);
+      const selected = arr.filter((f) => recipe.features?.[f] && isFeatureAllowedForVariant(recipe.variants?.[variantKey], f));
+      const got = new Set(selected);
       const same = want.size === got.size && [...want].every((f) => got.has(f));
-      return same ? "" : arr.join(",");
+      return same ? "" : selected.join(",") || "none";
     },
-    [defaultFeaturesFor]
+    [recipe, defaultFeaturesFor]
   );
 
   const [features, setFeatures] = useState(() => {
     const fp = searchParams.get("features");
-    if (fp) return fp.split(",").filter(Boolean);
+    if (fp !== null) return fp.split(",").filter((f) => recipe.features?.[f]);
     const urlHw = searchParams.get("hardware") || defaultHw;
     const urlVariant = searchParams.get("variant") || "default";
     return defaultFeaturesFor(urlHw, urlVariant);
@@ -815,6 +818,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // ── Derived ──
   const currentVariant = recipe.variants?.[variant] || recipe.variants?.default || {};
   const effectiveFrontend = resolveFrontend(recipe, frontend, taxonomy, currentVariant);
+  const effectiveFeatures = useMemo(
+    () => features.filter((f) => recipe.features?.[f] && isFeatureAllowedForVariant(currentVariant, f)),
+    [recipe, currentVariant, features]
+  );
   const availableFeatures = Object.entries(recipe.features || {}).filter(([key]) =>
     isFeatureAllowedForVariant(currentVariant, key)
   );
@@ -990,7 +997,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
         : `${name} is not enabled for this recipe yet. It stays off until the recipe records a verified run under kv_offload_support.`;
     }
     if (!isKvOffloadBrandSupported(opt, hwProfile)) {
-      return `${name} needs a CUDA, ROCm or XPU device — not available on ${hwProfile.brand ? `${hwProfile.brand} ` : ""}${hwProfile.display_name || hwId} backends.`;
+      return `${name} is unavailable for ${hwProfile.display_name || hwId}.`;
     }
     if (!kvOffloadAllowedByStrategy) {
       return `${name} isn't offered under ${strategies[activeServingStrategy]?.display_name || activeServingStrategy}, which manages its own KV layout across the DP ranks.`;
@@ -1161,11 +1168,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       return q.toString();
     }
     q.set("strategy", activeStrategy);
-    q.set("features", features.join(","));
-    const fmode = Object.entries(featureModes).filter(([k, m]) => m && recipe.features?.[k]?.modes).map(([k, m]) => `${k}:${m}`);
+    q.set("features", effectiveFeatures.join(",") || "none");
+    const fmode = Object.entries(featureModes).filter(([k, m]) => m && isFeatureAllowedForVariant(currentVariant, k) && recipe.features?.[k]?.modes).map(([k, m]) => `${k}:${m}`);
     if (fmode.length) q.set("fmode", fmode.join(","));
     if (advanced.length) q.set("advanced", advanced.join(","));
-    q.set("frontend", frontend);
+    q.set("frontend", effectiveFrontend);
     if (selectedPreset) q.set("preset", selectedPreset);
     if (selectedPoint) q.set("point", selectedPoint);
     if (activeKvOffload) {
@@ -1188,10 +1195,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       q.set("nodes", String(nodeCount));
     }
     return q.toString();
-  }, [recipe, hwId, variant, omniTask, activeStrategy, features, featureModes, advanced, frontend, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, pdRouter, pdConnector, pdTransport, nodeCount]);
+  }, [recipe, hwId, variant, currentVariant, omniTask, activeStrategy, effectiveFeatures, featureModes, advanced, effectiveFrontend, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, pdRouter, pdConnector, pdTransport, nodeCount]);
   useEffect(() => {
-    publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features, preset: selectedPreset, query: shareQuery });
-  }, [recipe.hf_id, hwId, activeStrategy, variant, features, selectedPreset, shareQuery]);
+    publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features: effectiveFeatures, preset: selectedPreset, query: shareQuery });
+  }, [recipe.hf_id, hwId, activeStrategy, variant, effectiveFeatures, selectedPreset, shareQuery]);
 
   // Visual feedback when any rendered command changes. Covers single-node
   // (result.command), multi-node (headCommand), pd_cluster (prefill.command),
@@ -2103,12 +2110,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // `when` matches this selection (server-rendered Markdown, from the page).
   // Matching troubleshooting is flagged on the Troubleshooting tab instead.
   const commandNote = useMemo(() => {
-    const sel = { hwId, strategy: activeStrategy, variant, features };
+    const sel = { hwId, strategy: activeStrategy, variant, features: effectiveFeatures };
     const hw = taxonomy.hardware_profiles || {};
     const notes = contextNotes.filter((n) => whenMatches(n.when, sel, hw));
     const hardware = recipe.hardware_notes?.[hwId] || null;
     return hardware || notes.length ? { hardware, notes } : null;
-  }, [recipe, hwId, activeStrategy, variant, features, taxonomy, contextNotes]);
+  }, [recipe, hwId, activeStrategy, variant, effectiveFeatures, taxonomy, contextNotes]);
 
   // The extra-install block is pip-scoped by default: nearly every recipe's
   // dependencies are pip installs the Docker image already bundles, so repeating
@@ -2274,7 +2281,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                           >
                             <HwStatusDot status={status} />
                             <span className="font-semibold">{p.display_name}</span>
-                            {p.generation !== "metal" && p.vram_gb > 0 && p.gpu_count > 0 && (
+                            {!p.unified_memory && p.vram_gb > 0 && p.gpu_count > 0 && (
                               <span className="text-muted-foreground ml-1.5 font-mono">
                                 {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : "GPU"}
                               </span>
@@ -2560,7 +2567,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                         >
                           <HwStatusDot status={status} />
                           <span className="font-semibold">{p.display_name}</span>
-                          {p.generation !== "metal" && p.vram_gb > 0 && p.gpu_count > 0 && (
+                          {!p.unified_memory && p.vram_gb > 0 && p.gpu_count > 0 && (
                             <span className="text-muted-foreground ml-1.5 font-mono">
                               {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : "GPU"}
                             </span>
@@ -2597,8 +2604,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           {/* Variant */}
           <ConfigRow
             label="Variant"
-            hint={hwProfile.generation === "metal"
-              ? "Estimated memory to load the weights, not a serving budget. Unified memory is shared with macOS; context length and batch size determine the additional memory needed."
+            hint={hwProfile.unified_memory
+              ? "Estimated memory to load the weights, not a serving budget. Unified memory is shared with the operating system and other apps; context length and batch size determine the additional memory needed."
               : "VRAM shown is the minimum to LOAD the model (weights + CUDA/vLLM runtime overhead, ≈ params × bytes × 1.2). It's not a serving budget — long context or large batch typically needs 1.5–2× more for KV cache."}
           >
             <PillGroup>
@@ -2631,11 +2638,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                           ? [
                               v.description,
                               `Selecting this variant also switches Hardware to ${fallbackHw?.display_name || fallbackHwId}.`,
-                              `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving.${fallbackHw?.generation === "metal" ? "" : " Scale out via multi-node if needed."}`,
+                              `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving.${isHardwareScalable(fallbackHw) ? " Scale out via multi-node if needed." : ""}`,
                             ].filter(Boolean).join("\n\n")
                         : [
                             v.description,
-                            `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving.${hwProfile.generation === "metal" ? "" : " Scale out via multi-node if needed."}`,
+                            `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving.${isHardwareScalable(hwProfile) ? " Scale out via multi-node if needed." : ""}`,
                           ].filter(Boolean).join("\n\n")
                     }
                   >
@@ -3260,7 +3267,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                             : n === 1
                               ? kvInstancesActive
                                 ? `Each vLLM instance runs on a single node${(result.instances || 1) > 1 ? ` — ${result.instances} instances = ${result.instances} nodes total (plus master${result.store ? "/store" : ""})` : ""}.`
-                                : hwProfile.generation === "metal" ? "Serve on one Mac." : "Single-node deployment (one HGX box)"
+                                : "Single-node deployment."
                               : kvInstancesActive
                                 ? `Each instance spans ${n} nodes × ${hwProfile.gpu_count || 8} GPUs${(result.instances || 1) > 1 ? ` — ${result.instances} instances = ${(result.instances || 1) * n * (hwProfile.gpu_count || 8)} GPUs total` : ` = ${n * (hwProfile.gpu_count || 8)} GPUs`}.`
                                 : `${n} nodes × ${hwProfile.gpu_count || 8} GPUs = ${n * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
@@ -3945,7 +3952,7 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   const pipHidden = pipCfg === false;
   const dockerHidden = dockerCfg === false;
   const [open, setOpen] = useState(false);
-  const { isAmd, isTpu, isXpu, isIntel, isNpu, isMetal, image: dockerImage, brandKey, cudaMap, cu129Image } = dockerMeta;
+  const { isAmd, isTpu, isXpu, isIntel, isNpu, image: dockerImage, brandKey, cudaMap, cu129Image } = dockerMeta;
   // Intel CPU is a first-class backend in computeDockerMeta. Keep XPU
   // distinct even though it is also Intel hardware.
   const isCpu = isIntel && !isXpu;
@@ -4064,7 +4071,7 @@ uv pip install -U vllm --torch-backend auto`;
   const tabs = [
     !effectivePipHidden && {
       id: "pip",
-      label: isMetal ? "macOS" : isAmd ? "pip / uv (ROCm)" : isCpu ? "pip / uv (CPU)" : "pip / uv",
+      label: isAmd ? "pip / uv (ROCm)" : isCpu ? "pip / uv (CPU)" : "pip / uv",
       code: pipCmd,
       note: pipNote,
     },
@@ -4077,7 +4084,7 @@ uv pip install -U vllm --torch-backend auto`;
   ].filter(Boolean);
   if (tabs.length === 0) return null;
   const active = tabs.find((t) => t.id === installMode) || tabs[0];
-  const summary = tabs.map((t) => (t.id === "pip" ? (isMetal ? "macOS" : "pip") : "Docker")).join(" / ");
+  const summary = tabs.map((t) => (t.id === "pip" ? "pip" : "Docker")).join(" / ");
 
   return (
     <div className="rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border">
@@ -4088,7 +4095,7 @@ uv pip install -U vllm --torch-backend auto`;
         <Package size={12} className="text-[var(--command-fg)]/50 shrink-0" />
         <span className="text-[11px] font-semibold text-[var(--command-fg)]/70 uppercase tracking-widest">Install</span>
         <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
-          vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · {isMetal ? "Metal" : isTpu ? "TPU" : isXpu ? "XPU" : isNpu ? "Ascend" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}
+          vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""}{brandKey && ` · ${isTpu ? "TPU" : isXpu ? "XPU" : isNpu ? "Ascend" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}`}
         </span>
         {nightlyRequired && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">

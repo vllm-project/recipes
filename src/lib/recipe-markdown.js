@@ -4,6 +4,7 @@
 // hand-written examples may target another configuration.
 
 import { whenMatches } from "./recipe-context.js";
+import { resolveInstall } from "./command-synthesis.js";
 import { SELECTION_PARAMS, defaultFeaturesFor, synthesizeInstall } from "./recipe-render.js";
 
 const fence = (code, lang = "bash") => {
@@ -117,12 +118,14 @@ function serveSection(r) {
 }
 
 function installSection(recipe, resolved) {
-  const { hwProfile, rendering } = resolved;
+  const { hwProfile, rendering, selection } = resolved;
+  const variant = recipe.variants?.[selection.variant] || {};
   const out = [];
-  const min = recipe.model?.min_vllm_version;
-  if (min) out.push(`Requires vLLM >= ${min}${recipe.model?.nightly_required ? " (not released yet — nightly wheel)" : ""}.`, "");
-  const install = synthesizeInstall(recipe);
-  if (hwProfile.brand === "NVIDIA" && install?.pip) {
+  const min = variant.min_vllm_version || recipe.model?.min_vllm_version;
+  const nightly = variant.nightly_required || recipe.model?.nightly_required;
+  if (min) out.push(`Requires vLLM >= ${min}${nightly ? " (not released yet — nightly wheel)" : ""}.`, "");
+  const install = synthesizeInstall(recipe, variant);
+  if ((hwProfile.brand === "NVIDIA" || resolveInstall(recipe, variant).pip?.command) && install?.pip) {
     if (install.pip.note) out.push(install.pip.note, "");
     out.push(fence(install.pip.command), "");
   }

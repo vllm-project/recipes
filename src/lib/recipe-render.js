@@ -22,6 +22,7 @@ import {
   resolveModeKey,
   resolveFrontend,
   resolveInstall,
+  isFeatureAllowedForVariant,
   resolveOmniCommand,
   isKvOffloadAllowedForStrategy,
   isKvOffloadSupportedForRecipe,
@@ -123,15 +124,17 @@ export function synthesizeInstall(recipe, variant = {}) {
 export function defaultFeaturesFor(recipe, hwId, variantKey = "default") {
   const optIn = new Set(recipe.opt_in_features || []);
   for (const f of recipe.hardware_opt_in_features?.[hwId] || []) optIn.add(f);
-  const forced = new Set(Object.keys(recipe.variants?.[variantKey]?.default_modes || {}));
-  return Object.keys(recipe.features || {}).filter((f) => forced.has(f) || !optIn.has(f));
+  const variant = recipe.variants?.[variantKey] || {};
+  const forced = new Set(Object.keys(variant.default_modes || {}));
+  return Object.keys(recipe.features || {}).filter((f) =>
+    isFeatureAllowedForVariant(variant, f) && (forced.has(f) || !optIn.has(f)));
 }
 
 // Wrap a rendered (command, argv) pair in `docker run`. Returns
 // { docker_command, docker_argv } so each form has its docker counterpart.
 // `docker` is a PD KV connector's container needs ({ host_network, flags }).
 export function dockerize(command, argv, env, dockerMeta, port = null, docker = null) {
-  if (dockerMeta.isMetal) return {};
+  if (!dockerMeta.image) return {};
   const hostNetwork = !!docker?.host_network;
   const extraFlags = docker?.flags || [];
   return {
@@ -189,6 +192,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   // The preset in effect (the default here unless one is picked) implies
   // builder choices — frontend, PD router, features, DCP, KV offload — which
   // the rendering applies the way the builder does.
+  const baseVariant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const sel = presetSelect(recipe, resolvePresetKey(recipe, hwId, strategy, presetPick, variantKey), pointPick) || {};
   const linked = opts.linked || new Set();
   const pick = (param, selValue, optValue) => (linked.has(param) ? optValue : (selValue ?? optValue));
@@ -207,9 +211,10 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   const selKv = !linked.has("kv_offload") && sel.kv_offload && sel.kv_offload !== "off" ? sel.kv_offload : null;
   // A multi-node preset's node count, as the builder applies it.
   if (Number.isInteger(sel.nodes) && !linked.has("nodes") && strategies[strategy]?.deploy_type === "multi_node") nodeCount = sel.nodes;
+  feats = feats.filter((f) => isFeatureAllowedForVariant(baseVariant, f));
   const applied = {
     features: feats, modes, kvOffload: kvOffload ?? selKv, nodeCount,
-    frontend: pick("frontend", sel.frontend, opts.frontend),
+    frontend: resolveFrontend(recipe, pick("frontend", sel.frontend, opts.frontend), taxonomy, baseVariant),
     pdRouter: pick("pd_router", sel.pd_router, opts.pdRouter) ?? null,
     dcp: pick("dcp", sel.dcp, opts.dcp) ?? null,
     pdConnector: pick("pd_connector", sel.pd_connector, opts.pdConnector) ?? null,
@@ -235,7 +240,6 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     throw new Error(`Invalid preset ${presetPick}${pointPick ? ` at point ${pointPick}` : ""} in ${recipe.hf_id} (${hwId} / ${strategy}): ${result.kvConnector.unavailableReason}`);
   }
 
-  const baseVariant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
   // A preset's engine image pins this GPU's docker command.
   const pinned = result.preset?.image?.vllm;
@@ -278,12 +282,12 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
       head_argv: result.headArgv,
       worker_argv: result.workerArgv,
       worker_argvs: workerArgvs,
-      head_docker_command: head.docker_command,
-      worker_docker_command: worker.docker_command,
-      worker_docker_commands: workerDockers.map((w) => w.docker_command),
-      head_docker_argv: head.docker_argv,
-      worker_docker_argv: worker.docker_argv,
-      worker_docker_argvs: workerDockers.map((w) => w.docker_argv),
+      head_docker_command: head.docker_command ?? null,
+      worker_docker_command: worker.docker_command ?? null,
+      worker_docker_commands: workerDockers.map((w) => w.docker_command ?? null),
+      head_docker_argv: head.docker_argv ?? null,
+      worker_docker_argv: worker.docker_argv ?? null,
+      worker_docker_argvs: workerDockers.map((w) => w.docker_argv ?? null),
     };
   }
   if (result.deployType === "pd_cluster") {
@@ -361,8 +365,8 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
       // Extra pip dep for the instances (MooncakeStoreConnector imports the
       // mooncake package) — same field the UI's "Requires:" hint consumes.
       vllm_install: result.vllm?.install || null,
-      vllm_docker_command: vllmDocker.docker_command,
-      vllm_docker_argv: vllmDocker.docker_argv,
+      vllm_docker_command: vllmDocker.docker_command ?? null,
+      vllm_docker_argv: vllmDocker.docker_argv ?? null,
       master: result.master,
       store: result.store || null,
       router: result.router,
@@ -575,21 +579,21 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     hardware: listCompatibleHardware(profiles, variant, recipe).filter((id) => !profiles[id]?.restricted || id in declaredHw),
     variants: Object.keys(recipe.variants || {}),
     strategies: effectiveCompatibleStrategies(recipe),
-    features: Object.keys(recipe.features || {}),
+    features: Object.keys(recipe.features || {}).filter((f) => isFeatureAllowedForVariant(variant, f)),
     presets: Object.entries(recipe.presets || {}).filter(([, p]) => p.hardware === hwId).map(([k]) => k),
   };
 
-  const featureModeKeys = Object.keys(recipe.features || {}).filter((k) => recipe.features[k]?.modes);
+  const featureModeKeys = options.features.filter((k) => recipe.features[k]?.modes);
   const modes = {};
   for (const k of featureModeKeys) modes[k] = resolveModeKey(recipe.features[k], k, variant, variantKey, hwProfile, hwId, undefined);
   for (const pair of (get("fmode") || "").split(",")) {
     const [k, m] = pair.split(":");
-    if (k && m && recipe.features?.[k]?.modes?.[m]) modes[k] = m;
+    if (options.features.includes(k) && m && recipe.features?.[k]?.modes?.[m]) modes[k] = m;
   }
-  const features = get("features")
-    ? get("features").split(",").filter((f) => recipe.features?.[f])
+  const features = linked.has("features")
+    ? get("features").split(",").filter((f) => options.features.includes(f))
     : defaultFeaturesFor(recipe, hwId, variantKey);
-  const frontend = resolveFrontend(recipe, get("frontend") || undefined, taxonomy);
+  const frontend = resolveFrontend(recipe, get("frontend") || undefined, taxonomy, variant);
 
   if ((recipe.meta?.tasks || []).includes("omni")) {
     const tasks = resolveOmniTasks(recipe);
