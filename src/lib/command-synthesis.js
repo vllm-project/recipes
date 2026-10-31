@@ -1107,7 +1107,7 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = null, isN
   // Ascend uses host networking and an explicit shm size; `-p` is a no-op
   // under `--net=host` and hid the required `--shm-size` on 950PR.
   const runtimeFlags = isNpu
-    ? "--privileged=true --net=host --shm-size=16g"
+    ? "--privileged --net=host --shm-size=16g"
     : `--privileged --ipc=host ${hostNetwork ? "--network host" : `-p ${pubPort}:${pubPort}`}`;
   const base = `${prereq}docker run ${gpuFlags} \\
   ${runtimeFlags} \\${extraFlags.length ? `\n  ${extraFlags.join(" ")} \\` : ""}
@@ -1137,7 +1137,7 @@ export function buildDockerArgv({ argv, env, meta, port = null, hostNetwork = fa
     mountFlags.push("-v", m);
   }
   const runtimeFlags = meta.isNpu
-    ? ["--privileged=true", "--net=host", "--shm-size", "16g"]
+    ? ["--privileged", "--net=host", "--shm-size", "16g"]
     : ["--privileged", "--ipc=host", ...(hostNetwork ? ["--network", "host"] : ["-p", `${pubPort}:${pubPort}`])];
   const base = [
     "docker", "run",
