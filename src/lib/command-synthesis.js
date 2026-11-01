@@ -24,18 +24,29 @@ const NVL4_HW_IDS = new Set(["gb200", "gb300", "vr200"]);
 // `model.<frontend>_frontend: unsupported` (e.g. `rust_frontend`).
 export const FALLBACK_FRONTEND = "python";
 
-export function isFrontendSupported(recipe, frontend) {
-  return frontend === FALLBACK_FRONTEND || recipe.model?.[`${frontend}_frontend`] !== "unsupported";
+export function isFrontendSupported(recipe, frontend, variant = {}) {
+  return frontend === FALLBACK_FRONTEND || (
+    recipe.model?.[`${frontend}_frontend`] !== "unsupported"
+    && (!variant.supported_frontends || variant.supported_frontends.includes(frontend))
+  );
 }
 
 // Resolve the frontend a command is rendered for: the requested one (URL,
 // saved state, pill click), else the recipe's `default_frontend`, falling back
 // to Python when that frontend is unknown to the taxonomy or unsupported by the
 // recipe — so a stale `?frontend=rust` link can never emit a broken command.
-export function resolveFrontend(recipe, frontend, taxonomy) {
+export function resolveFrontend(recipe, frontend, taxonomy, variant = {}) {
   const wanted = frontend || recipe.model?.default_frontend;
   if (!wanted || !taxonomy?.frontends?.[wanted]) return FALLBACK_FRONTEND;
-  return isFrontendSupported(recipe, wanted) ? wanted : FALLBACK_FRONTEND;
+  return isFrontendSupported(recipe, wanted, variant) ? wanted : FALLBACK_FRONTEND;
+}
+
+export function resolveInstall(recipe, variant = {}) {
+  return { ...recipe.model?.install, ...variant.install };
+}
+
+export function isFeatureAllowedForVariant(variant, featureKey) {
+  return !variant?.supported_features || variant.supported_features.includes(featureKey);
 }
 
 /**
@@ -472,13 +483,14 @@ export function isHardwareSupported(recipe, hwId) {
 
 /**
  * Variant-level hardware selectors. Entries may be exact profile ids or
- * `arch:<compute_arch>`. Missing/empty inherits normal precision compatibility.
+ * `arch:<compute_arch>`. Profiles with `requires_variant_opt_in` need an explicit
+ * match; otherwise a missing/empty list inherits normal precision compatibility.
  * Architecture selectors admit future profiles with the same GPU ISA without
  * confusing data-center Blackwell (SM100/SM103) with workstation SM120/SM121.
  */
 export function isVariantHardwareSupported(variant, hwId, profile = null) {
   const supported = variant?.supported_hardware;
-  if (!Array.isArray(supported) || supported.length === 0) return true;
+  if (!Array.isArray(supported) || supported.length === 0) return !profile?.requires_variant_opt_in;
   return supported.some((entry) => {
     if (entry === hwId) return true;
     if (!profile) return false;
@@ -599,6 +611,7 @@ export function isKvOffloadSupportedForRecipe(option, optionKey, recipe) {
  */
 export function isKvOffloadBrandSupported(option, hwProfile, hwProfileId = null) {
   const allow = option?.brands;
+  if ((!Array.isArray(allow) || allow.length === 0) && hwProfile?.requires_kv_offload_opt_in) return false;
   if (Array.isArray(allow) && allow.length > 0 && !allow.includes(hwProfile?.brand)) return false;
   return hardwareKeyedValue(option?.hardware, hwProfile, hwProfileId) !== "unsupported";
 }
@@ -642,7 +655,7 @@ export function kvOffloadInstallSteps(option) {
 export function isPipInstallAvailable(recipe, variant, hwProfile, hwProfileId) {
   const hwInstall = hardwareInstall(recipe, variant, hwProfile, hwProfileId);
   if (hwPipOverride(hwInstall)) return true;
-  return !(recipe?.model?.install?.pip === false
+  return !(resolveInstall(recipe, variant).pip === false
     || hwInstall?.pip === false
     || hwProfile?.generation === "tpu"
     || hwProfile?.generation === "xpu");
@@ -997,8 +1010,8 @@ export function hwPipOverride(hwInstall) {
   return hwInstall?.pip?.command ? hwInstall.pip : null;
 }
 
-function isDockerEnabled(recipe) {
-  return recipe.model?.install?.docker !== false;
+function isDockerEnabled(recipe, variant) {
+  return resolveInstall(recipe, variant).docker !== false;
 }
 
 // When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
@@ -1038,7 +1051,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const exactHardwareOverride = hwId
     ? variant?.hardware_overrides?.[hwId]?.docker_image
     : null;
-  const dockerEnabled = isDockerEnabled(recipe)
+  const dockerEnabled = isDockerEnabled(recipe, variant)
     // A per-hardware install statement can declare that no published image
     // runs this recipe on this hardware (e.g. support not yet in any image):
     // skip the docker wrap so the command renders as bare `vllm serve`.
@@ -1587,6 +1600,7 @@ export function resolveCommand(...params) {
 // recipe's own default, 1 forces DCP off, N > 1 selects that size.
 function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null, pdTransport = "http", dcpSize = null, pdConnectorPick = null) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
+  enabledFeatures = (enabledFeatures || []).filter((key) => isFeatureAllowedForVariant(variant, key));
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
   const gen = normalizeGeneration(hwProfile.generation || hwProfile.gpu_generation);
@@ -1744,7 +1758,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     // 7. features          (tool_calling, reasoning, mtp — last for readability)
 
     // 1. base_args
-    if (recipe.model?.base_args) args.push(...recipe.model.base_args);
+    args.push(...(variant.base_args ?? recipe.model?.base_args ?? []));
 
     // 2. Variant extra args
     if (variant.extra_args) args.push(...variant.extra_args);
@@ -2272,7 +2286,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       // The SMG-compatible gRPC servicer only runs on the Python frontend.
       env.VLLM_USE_RUST_FRONTEND = "0";
     } else {
-      Object.assign(env, taxonomy.frontends?.[resolveFrontend(recipe, frontend, taxonomy)]?.env);
+      Object.assign(env, taxonomy.frontends?.[resolveFrontend(recipe, frontend, taxonomy, variant)]?.env);
     }
     return env;
   }
@@ -2545,7 +2559,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
             label: "SMG",
             command: `${smgReplicaComments}smg launch \\\n    ${smgRouterArgs}`,
             install: smg.install,
-            ...(isDockerEnabled(recipe) && {
+            ...(isDockerEnabled(recipe, variant) && {
               dockerCommand: `${smgReplicaComments}docker run --rm --network host \\\n    ${smgGrpc ? "-v ~/.cache/huggingface:/root/.cache/huggingface \\\n    " : ""}${smg.docker_image} \\\n    ${smgRouterArgs}`,
               dockerInstall: `docker pull ${smg.docker_image}`,
             }),
