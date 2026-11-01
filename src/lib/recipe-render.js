@@ -104,7 +104,7 @@ export function synthesizeInstall(recipe, variant = {}) {
   }
 
   if (dockerCfg !== false) {
-    const defaultDockerCmd = `docker pull ${variant.docker_image || resolveDockerImage(recipe, baseCuda)}`;
+    const defaultDockerCmd = `docker pull ${resolveDockerImage(recipe, baseCuda)}`;
     const command = (dockerCfg && dockerCfg.command) || defaultDockerCmd;
     const note = dockerCfg && dockerCfg.note;
     out.docker = note ? { command, note } : { command };

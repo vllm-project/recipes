@@ -2607,7 +2607,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           <ConfigRow
             label="Variant"
             hint={hwProfile.unified_memory
-              ? "Estimated memory to load the weights, not a serving budget. Unified memory is shared with the operating system and other apps; context length and batch size determine the additional memory needed."
+              ? "Estimated memory to load weights. Leave shared memory for serving, the OS, and other apps."
               : "VRAM shown is the minimum to LOAD the model (weights + CUDA/vLLM runtime overhead, ≈ params × bytes × 1.2). It's not a serving budget — long context or large batch typically needs 1.5–2× more for KV cache."}
           >
             <PillGroup>
