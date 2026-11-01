@@ -358,6 +358,50 @@ hardware_profiles:
     multi_node: false
     restricted: true
 
+  # ── Apple Silicon ──
+  # Unified RAM is shared with macOS. Only explicitly declared recipes appear.
+  apple_16gb:
+    brand: Apple
+    generation: metal
+    display_name: "16 GB Mac"
+    description: "Apple Silicon Mac with 16 GB unified memory, shared with macOS and other apps"
+    gpu_count: 1
+    vram_gb: 16
+    multi_node: false
+    scalable: false
+    restricted: true
+    requires_variant_opt_in: true
+    unified_memory: true
+    requires_kv_offload_opt_in: true
+
+  apple_32gb:
+    brand: Apple
+    generation: metal
+    display_name: "32 GB Mac"
+    description: "Apple Silicon Mac with 32 GB unified memory, shared with macOS and other apps"
+    gpu_count: 1
+    vram_gb: 32
+    multi_node: false
+    scalable: false
+    restricted: true
+    requires_variant_opt_in: true
+    unified_memory: true
+    requires_kv_offload_opt_in: true
+
+  apple_64gb:
+    brand: Apple
+    generation: metal
+    display_name: "64 GB Mac"
+    description: "Apple Silicon Mac with 64 GB unified memory, shared with macOS and other apps"
+    gpu_count: 1
+    vram_gb: 64
+    multi_node: false
+    scalable: false
+    restricted: true
+    requires_variant_opt_in: true
+    unified_memory: true
+    requires_kv_offload_opt_in: true
+
   # ── Huawei Ascend NPU ──
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
   # lists it in `meta.hardware` — Ascend support ships in vllm-ascend and is

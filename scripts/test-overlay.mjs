@@ -102,6 +102,36 @@ test("new variants and dependencies must be in scope", () => {
   assert.equal(applyOverlay(core0, { dependencies: [dep, dep] }, { ctx, source }).recipe.dependencies.filter((d) => d.command === dep.command).length, 1);
 });
 
+test("overlay notes require hardware entirely within the source scope", () => {
+  for (const when of [{}, { variants: ["default"] }, { hardware: [] }, { hardware: ["h200"] }, { hardware: ["ascend_910c", "h200"] }]) {
+    assert.equal(errs({ notes: [{ when, body: "x" }] }).length, 1);
+  }
+  assert.equal(errs({ notes: "x" }).length, 1);
+});
+
+test("overlay notes append without changing or duplicating existing notes", () => {
+  const existing = { when: { hardware: ["h200"] }, body: "Core note" };
+  const note = { when: { hardware: ["ascend_910c"] }, body: "Ascend note" };
+  const core = { ...core0, notes: [existing] };
+  const once = applyOverlay(core, { notes: [note, note] }, { ctx, source });
+  assert.deepEqual(once.errors, []);
+  assert.deepEqual(once.recipe.notes, [existing, note]);
+  assert.deepEqual(core.notes, [existing]);
+  const again = applyOverlay(once.recipe, { notes: [note] }, { ctx, source });
+  assert.deepEqual(again.errors, []);
+  assert.deepEqual(again.recipe.notes, once.recipe.notes);
+});
+
+test("split moves only in-scope notes and merges them back", () => {
+  const shared = { when: { variants: ["default"] }, body: "Shared note" };
+  const scoped = { when: { hardware: ["ascend_910c"] }, body: "Ascend note" };
+  const original = { ...core0, notes: [shared, scoped] };
+  const { core, overlay } = splitOverlay(original, { ctx, source });
+  assert.deepEqual(core.notes, [shared]);
+  assert.deepEqual(overlay.notes, [scoped]);
+  assert.deepEqual(applyOverlay(core, overlay, { ctx, source }).recipe, original);
+});
+
 test("an overlay source needs a granted scope", () => {
   const none = resolveScope({}, taxonomy);
   assert.equal(applyOverlay(core0, { meta: { hardware: { ascend_910c: "verified" } } }, { ctx: none, source }).errors.length, 1);
