@@ -884,11 +884,12 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const isXpu = hwProfile?.generation === "xpu";
   const isIntel = hwProfile?.generation === "cpu" || isXpu || hwProfile?.brand === "Intel";
   const isNpu = hwProfile?.generation === "npu";
+  const dockerEnabled = recipe.model?.install?.docker !== false;
   const npuDeviceCount = isNpu ? hwProfile?.gpu_count ?? 1 : 0;
   // Ascend deliberately has no `brandKey` of its own: vLLM publishes no NPU
   // image, so every Ascend recipe pins one through `hardware_overrides`, which
   // `exactHardwareOverride` resolves before the brand defaults are consulted.
-  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
+  const brandKey = !dockerEnabled ? null : isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
   // Exact variant+hardware image overrides win over variant-wide and
   // model-wide images (for example, an MI355X-only ROCm nightly).
   const exactHardwareOverride = hwId
@@ -938,10 +939,10 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   // CUDA map, `image` defaults to the cu130 (upstream baseline) pick so
   // toggle-unaware callers (the JSON API's renderings) still get a real tag;
   // the client's CUDA selector re-picks from `cudaMap` on top of this.
-  const image = isXpu && !pinned
+  const image = !dockerEnabled ? null : isXpu && !pinned
     ? "vllm/vllm-openai-xpu:latest"
     : pinned || (cudaMap ? cudaMap.cu130 || cudaMap.cu129 : null) || DEFAULT_IMAGE[brandKey];
-  const gpuFlags = isTpu
+  const gpuFlags = !dockerEnabled ? "" : isTpu
     ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
     : isAmd
       ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"

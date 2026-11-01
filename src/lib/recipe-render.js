@@ -130,6 +130,7 @@ export function defaultFeaturesFor(recipe, hwId, variantKey = "default") {
 // { docker_command, docker_argv } so each form has its docker counterpart.
 // `docker` is a PD KV connector's container needs ({ host_network, flags }).
 export function dockerize(command, argv, env, dockerMeta, port = null, docker = null) {
+  if (!dockerMeta.image) return { docker_command: null, docker_argv: null };
   const hostNetwork = !!docker?.host_network;
   const extraFlags = docker?.flags || [];
   return {
@@ -275,12 +276,12 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
       head_argv: result.headArgv,
       worker_argv: result.workerArgv,
       worker_argvs: workerArgvs,
-      head_docker_command: head.docker_command,
-      worker_docker_command: worker.docker_command,
-      worker_docker_commands: workerDockers.map((w) => w.docker_command),
-      head_docker_argv: head.docker_argv,
-      worker_docker_argv: worker.docker_argv,
-      worker_docker_argvs: workerDockers.map((w) => w.docker_argv),
+      head_docker_command: head.docker_command ?? null,
+      worker_docker_command: worker.docker_command ?? null,
+      worker_docker_commands: workerDockers.map((w) => w.docker_command ?? null),
+      head_docker_argv: head.docker_argv ?? null,
+      worker_docker_argv: worker.docker_argv ?? null,
+      worker_docker_argvs: workerDockers.map((w) => w.docker_argv ?? null),
     };
   }
   if (result.deployType === "pd_cluster") {
@@ -358,8 +359,8 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
       // Extra pip dep for the instances (MooncakeStoreConnector imports the
       // mooncake package) — same field the UI's "Requires:" hint consumes.
       vllm_install: result.vllm?.install || null,
-      vllm_docker_command: vllmDocker.docker_command,
-      vllm_docker_argv: vllmDocker.docker_argv,
+      vllm_docker_command: vllmDocker.docker_command ?? null,
+      vllm_docker_argv: vllmDocker.docker_argv ?? null,
       master: result.master,
       store: result.store || null,
       router: result.router,

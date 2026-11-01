@@ -39,6 +39,34 @@ test("explicit empty feature selections stay off", () => {
   }
 });
 
+test("docker-disabled recipes omit containers across deployment layouts", () => {
+  const recipe = {
+    hf_id: "example/model",
+    model: { model_id: "example/model", install: { docker: false } },
+    variants: { default: { precision: "bf16", vram_minimum_gb: 1 } },
+    compatible_strategies: ["single_node_tp", "multi_node_tp", "pd_cluster"],
+  };
+  for (const query of [
+    "hardware=h200&strategy=single_node_tp",
+    "hardware=h200&strategy=multi_node_tp&nodes=2",
+    "hardware=h200&strategy=single_node_tp&kv_offload=kv_store_distributed_mooncake",
+    "hardware=h200&strategy=pd_cluster&prefill_nodes=1&decode_nodes=1",
+  ]) {
+    const result = resolveSelection(recipe, new URLSearchParams(query), strategies, taxonomy).rendering;
+    assert.equal(result.docker_image, null);
+    const containers = result.deploy_type === "pd_cluster" ? [result.prefill, result.decode] : [result];
+    for (const container of containers) {
+      const commands = Object.keys(container).filter((key) => key.endsWith("docker_command"));
+      assert.ok(commands.length > 0);
+      for (const key of commands) {
+        assert.equal(container[key], null);
+        assert.equal(container[key.replace(/_command$/, "_argv")], null);
+      }
+    }
+    assert.deepEqual(JSON.parse(JSON.stringify(result)), result);
+  }
+});
+
 // Build-only annotations the static files add around a rendering.
 const strip = ({ strategy_spec, hardware_profile, alternatives, by_hardware, ...rest }) => rest;
 
