@@ -583,7 +583,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     const [k, m] = pair.split(":");
     if (k && m && recipe.features?.[k]?.modes?.[m]) modes[k] = m;
   }
-  const features = get("features")
+  const features = linked.has("features")
     ? get("features").split(",").filter((f) => recipe.features?.[f])
     : defaultFeaturesFor(recipe, hwId, variantKey);
   const frontend = resolveFrontend(recipe, get("frontend") || undefined, taxonomy);

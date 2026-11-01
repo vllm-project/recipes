@@ -22,6 +22,23 @@ const strategies = loadStrategies();
 const taxonomy = loadTaxonomy();
 const readJson = (rel) => JSON.parse(fs.readFileSync(path.join(PUBLIC, rel), "utf8"));
 
+test("explicit empty feature selections stay off", () => {
+  const recipe = {
+    hf_id: "example/model",
+    model: { model_id: "example/model" },
+    variants: { default: { precision: "bf16", vram_minimum_gb: 1 } },
+    compatible_strategies: ["single_node_tp"],
+    features: { reasoning: { args: ["--reasoning-parser", "example"] } },
+  };
+  const resolve = (q) => resolveSelection(recipe, new URLSearchParams(q), strategies, taxonomy);
+  assert.deepEqual(resolve("hardware=h200").selection.features, ["reasoning"]);
+  for (const features of ["", "none"]) {
+    const result = resolve(`hardware=h200&features=${features}`);
+    assert.deepEqual(result.selection.features, []);
+    assert.equal(result.rendering.argv.includes("--reasoning-parser"), false);
+  }
+});
+
 // Build-only annotations the static files add around a rendering.
 const strip = ({ strategy_spec, hardware_profile, alternatives, by_hardware, ...rest }) => rest;
 
