@@ -402,7 +402,6 @@ hardware_profiles:
     description: "Apple Silicon Mac with 16 GB unified memory, shared with macOS and other apps"
     gpu_count: 1
     vram_gb: 16
-    multi_node: false
     scalable: false
     restricted: true
     requires_variant_opt_in: true
@@ -416,7 +415,6 @@ hardware_profiles:
     description: "Apple Silicon Mac with 32 GB unified memory, shared with macOS and other apps"
     gpu_count: 1
     vram_gb: 32
-    multi_node: false
     scalable: false
     restricted: true
     requires_variant_opt_in: true
@@ -430,7 +428,6 @@ hardware_profiles:
     description: "Apple Silicon Mac with 64 GB unified memory, shared with macOS and other apps"
     gpu_count: 1
     vram_gb: 64
-    multi_node: false
     scalable: false
     restricted: true
     requires_variant_opt_in: true
