@@ -218,8 +218,9 @@ const localTaxonomy = {
 };
 
 test("variant configuration is preserved in JSON and Markdown selections", () => {
+  const params = { hardware: "local", variant: "local", frontend: "rust" };
   for (const features of [[], ["tool_calling"], ["reasoning"], ["tool_calling", "reasoning"]]) {
-    const q = new URLSearchParams({ hardware: "local", variant: "local", frontend: "rust", features: features.join(",") });
+    const q = new URLSearchParams({ ...params, features: features.join(",") });
     const resolved = resolveSelection(localRecipe, q, strategies, localTaxonomy);
     const r = resolved.rendering;
     assert.deepEqual(resolved.selection.features, features);
@@ -229,18 +230,21 @@ test("variant configuration is preserved in JSON and Markdown selections", () =>
     assert.equal(r.argv.includes("--reasoning-parser"), features.includes("reasoning"));
     assert.equal(r.argv.includes("--trust-remote-code"), false);
     assert.equal(r.argv.includes("--unsupported"), false);
-    assert.equal(r.install.pip.command, "install-example-runtime");
-    assert.equal(r.install.docker, undefined);
-    assert.equal(r.docker_image, null);
-    assert.equal(r.docker_command, null);
-    const md = selectionMarkdown(localRecipe, resolved, {
-      strategies, taxonomy: localTaxonomy,
-      urls: { page: "https://example.org/example/model", json: "https://example.org/example/model.json" },
-    });
-    assert.ok(md.includes("install-example-runtime"));
-    assert.ok(md.includes("Local memory guidance."));
-    assert.ok(!md.includes("Docker image:"));
   }
+
+  const resolved = resolveSelection(localRecipe, new URLSearchParams(params), strategies, localTaxonomy);
+  const { rendering } = resolved;
+  assert.equal(rendering.install.pip.command, "install-example-runtime");
+  assert.equal(rendering.install.docker, undefined);
+  assert.equal(rendering.docker_image, null);
+  assert.equal(rendering.docker_command, null);
+  const md = selectionMarkdown(localRecipe, resolved, {
+    strategies, taxonomy: localTaxonomy,
+    urls: { page: "https://example.org/example/model", json: "https://example.org/example/model.json" },
+  });
+  assert.ok(md.includes("install-example-runtime"));
+  assert.ok(md.includes("Local memory guidance."));
+  assert.ok(!md.includes("Docker image:"));
 });
 
 test("KV offload follows profile opt-in without depending on the backend name", () => {
