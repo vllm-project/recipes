@@ -17,12 +17,13 @@ const envMap = {
 };
 const date = { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" };
 
-function obj(properties, { required, extra = false, description } = {}) {
+function obj(properties, { required, extra = false, description, allOf } = {}) {
   return {
     type: "object",
     ...(description ? { description } : {}),
     properties,
     ...(required ? { required } : {}),
+    ...(allOf ? { allOf } : {}),
     additionalProperties: extra,
   };
 }
@@ -46,6 +47,11 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
   const serving = all.filter((s) => s.deploy_type !== "kv_store_lb").map((s) => s.name);
 
   const gpuId = { enum: profileIds };
+  const scriptId = { type: "string", pattern: "^[a-z][a-z0-9_]*$" };
+  const scriptRef = { oneOf: [
+    obj({ script: scriptId }, { required: ["script"] }),
+    obj({ section: { type: "string" }, block: { type: "integer", minimum: 0 } }, { required: ["section", "block"] }),
+  ] };
   // Hardware-keyed maps accept an exact profile id, a generation, a lowercase
   // brand, `default`, or an `arch:<compute_arch>` selector.
   const hwKey = {
@@ -246,6 +252,48 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
       // looked up by exact profile id
       hardware_notes: keyed(gpuId, obj({ title: { type: "string" }, body: { type: "string" }, link: obj({ href: { type: "string" }, label: { type: "string" } }) }, { required: ["body"] })),
       strategy_overrides: keyed(strategyId, strategyOverride),
+      deployment_scripts: keyed(gpuId, keyed(scriptId, { type: "string", minLength: 1 })),
+      container_setup: keyed(gpuId, { oneOf: [
+        { type: "string", pattern: "^#" },
+        obj({ script: scriptId, container_script: scriptId, description: { type: "string" } }, { required: ["script"] }),
+      ] }),
+      scripted_strategies: keyed(strategyId, keyed(gpuId, obj({
+        label: { type: "string" },
+        description: { type: "string" },
+        model_id: { type: "string" },
+        variant: { type: "string" },
+        hardware_label: { type: "string", minLength: 1 },
+        constraints: { type: "string", minLength: 1 },
+        source: obj({ revision: { type: "string", pattern: "^[a-f0-9]{40}$" }, url: { type: "string", pattern: "^https://" } }, { required: ["revision", "url"] }),
+        router: obj({ id: { const: "ascend_proxy" }, port: { type: "integer", minimum: 1, maximum: 65535 } }, { required: ["id", "port"] }),
+        workdir: { type: "string", pattern: "^/[A-Za-z0-9_/-]+$" },
+        preparation: obj({
+          docker: scriptRef,
+          launcher: scriptRef,
+        }, { required: ["docker", "launcher"] }),
+        guide_href: { type: "string", pattern: "^#" },
+        env: envMap,
+        steps: { type: "array", minItems: 1, items: obj({
+          label: { type: "string" },
+          role: { enum: ["prefill", "decode", "proxy"] },
+          node: { type: "integer", minimum: 0 },
+          launch_type: { enum: ["direct", "launcher"] },
+          visible_devices: { type: "string", pattern: "^[0-9]+(,[0-9]+)*$" },
+          script: scriptId,
+          launch_script: scriptId,
+          section: { type: "string" },
+          block: { type: "integer", minimum: 0 },
+          launch_block: { type: "integer", minimum: 0 },
+          filename: { type: "string", pattern: "^[A-Za-z0-9_-]+\\.(sh|py)$" },
+        }, { required: ["label"], allOf: [
+          { oneOf: [
+            { required: ["script"], not: { anyOf: [{ required: ["section"] }, { required: ["block"] }, { required: ["launch_block"] }] } },
+            { required: ["section", "block"], not: { anyOf: [{ required: ["script"] }, { required: ["launch_script"] }] } },
+          ] },
+        ] }) },
+      }, { required: ["label", "description", "model_id", "guide_href", "steps"],
+        allOf: [{ if: { required: ["router"] }, then: { required: ["variant", "source", "workdir", "preparation", "hardware_label", "constraints"] } }],
+      }))),
       // Tuned presets (recipe-presets.js): a named delta for one exact GPU,
       // optionally one strategy. Keys are lowercase ids; `baseline` is reserved.
       presets: (() => {

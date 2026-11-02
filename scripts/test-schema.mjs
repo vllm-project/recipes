@@ -62,3 +62,19 @@ test("vocabulary and status values are checked", () => {
   assert.ok(errorsFor((r) => { r.hardware_overrides.dgx_spark_gb10 = "verified"; }).length);
   assert.deepEqual(errorsFor((r) => { r.meta.hardware.dgx_spark_gb10 = "supported"; }), []);
 });
+
+test("named deployment scripts and references have an unambiguous shape", () => {
+  const configure = r => {
+    r.deployment_scripts = { ascend_910c: { docker: "docker run image", launch: "echo serve" } };
+    r.container_setup = { ascend_910c: { script: "docker" } };
+    r.scripted_strategies = { multi_node_tp_dp: { ascend_910c: {
+      label: "Fixed", description: "Fixed topology", model_id: "org/model", guide_href: "#setup",
+      steps: [{ label: "Node 0", script: "launch" }],
+    } } };
+  };
+  assert.deepEqual(errorsFor(configure), []);
+  assert.ok(errorsFor(r => { configure(r); r.deployment_scripts.unknown_gpu = { launch: "echo invalid" }; }).length);
+  assert.ok(errorsFor(r => { configure(r); r.deployment_scripts.ascend_910c["../local.sh"] = "echo invalid"; }).length);
+  assert.ok(errorsFor(r => { configure(r); r.container_setup.ascend_910c.script_path = "local.sh"; }).length);
+  assert.ok(errorsFor(r => { configure(r); r.scripted_strategies.multi_node_tp_dp.ascend_910c.steps[0].block = 0; }).length);
+});
