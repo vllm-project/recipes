@@ -383,6 +383,16 @@ hardware_profiles:
     multi_node: false
     restricted: true
 
+  ascend_910b:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 910B"
+    description: "Huawei Ascend 910B · 8× NPU · 64 GB HBM each · Atlas 800I A2 · vLLM Ascend backend"
+    gpu_count: 8
+    vram_gb: 512
+    multi_node: false
+    restricted: true
+
   ascend_910c:
     brand: Huawei
     generation: npu
