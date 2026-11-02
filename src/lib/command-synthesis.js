@@ -563,11 +563,102 @@ export function isKvOffloadSupportedForRecipe(option, optionKey, recipe) {
   return option.requires_opt_in ? support === "verified" : true;
 }
 
-/** Hardware gate: option `brands` allowlist; absent = every brand. */
-export function isKvOffloadBrandSupported(option, hwProfile) {
+/**
+ * Hardware gate: option `brands` allowlist (absent = every brand), then an
+ * optional `hardware` map in the variant-`tp` keyspace (exact id > generation
+ * > brand > `default`) where `unsupported` opts specific hardware out — e.g.
+ * an option that needs an x86 Xeon host excluding Grace-based NVIDIA nodes.
+ */
+export function isKvOffloadBrandSupported(option, hwProfile, hwProfileId = null) {
   const allow = option?.brands;
-  if (!Array.isArray(allow) || allow.length === 0) return true;
-  return allow.includes(hwProfile?.brand);
+  if (Array.isArray(allow) && allow.length > 0 && !allow.includes(hwProfile?.brand)) return false;
+  return hardwareKeyedValue(option?.hardware, hwProfile, hwProfileId) !== "unsupported";
+}
+
+/**
+ * The option as it applies to one hardware: `hardware_overrides` (variant-`tp`
+ * keyspace — exact id > generation > brand > `default`) replaces any top-level
+ * key (`install`, `args`, `description`, `setup`, `docs_url`, …) and merges
+ * into `env`. Lets one option carry per-platform builds (e.g. IAXL's CPU vs
+ * CUDA extension) on one pill.
+ */
+export function resolveKvOffloadOption(option, hwProfile, hwProfileId = null) {
+  const ov = option && hardwareKeyedValue(option.hardware_overrides, hwProfile, hwProfileId);
+  if (!ov) return option;
+  const { env, ...rest } = ov;
+  return { ...option, ...rest, ...(env ? { env: { ...(option.env || {}), ...env } } : {}) };
+}
+
+/**
+ * An option's `install` as extra-install steps `[{ note?, command, optional? }]`
+ * — the shape of a recipe's `dependencies`. Accepts a bare command string
+ * (one unnoted step) or a list of strings / step objects; empty = none.
+ */
+export function kvOffloadInstallSteps(option) {
+  const raw = option?.install;
+  if (!raw) return [];
+  return (Array.isArray(raw) ? raw : [raw])
+    .map((s) => (typeof s === "string" ? { command: s } : { ...s }))
+    .filter((s) => s.command)
+    .map((s) => ({ ...s, command: String(s.command).trimEnd() }));
+}
+
+/**
+ * Whether the pip install path exists for this recipe on this hardware:
+ * recipe-wide `model.install.pip: false`, a per-GPU `install.pip: false`
+ * (variant or recipe `hardware_overrides`), or a backend with no pip wheel
+ * (TPU, XPU) hide it. Shared by the builder's install tabs and the KV Offload
+ * gate below.
+ */
+export function isPipInstallAvailable(recipe, variant, hwProfile, hwProfileId) {
+  const hwInstall = hardwareInstall(recipe, variant, hwProfile, hwProfileId);
+  return !(recipe?.model?.install?.pip === false
+    || hwInstall?.pip === false
+    || hwProfile?.generation === "tpu"
+    || hwProfile?.generation === "xpu");
+}
+
+/**
+ * Install-path gate: an option no published image carries (`docker: false`)
+ * runs only from a pip install, so it is unavailable where pip isn't — e.g. a
+ * Docker-only recipe would otherwise get `docker run` on a stock image with
+ * the connector flags and none of the option's setup or install steps.
+ */
+export function isKvOffloadInstallable(option, recipe, variant, hwProfile, hwProfileId) {
+  return option?.docker !== false || isPipInstallAvailable(recipe, variant, hwProfile, hwProfileId);
+}
+
+/**
+ * Taxonomy check for the keys only single-node rendering honours: `setup`
+ * and `{tp_size}` (in `env`) are applied on the single-node path alone, so an
+ * option using them anywhere (top level or a `hardware_overrides` entry) must
+ * list only single-node `strategies` and carry no `pd` block — otherwise a
+ * multi-node or PD command would lose its setup and export a literal
+ * `{tp_size}`. A `setup` must also end in a command, not a comment: synthesis
+ * chains its last line to `vllm serve` with `&&`. Returns error strings.
+ */
+export function kvOffloadOptionErrors(taxonomy, strategies) {
+  const errors = [];
+  for (const [key, opt] of Object.entries(taxonomy?.kv_offload || {})) {
+    const layers = [opt, ...Object.values(opt?.hardware_overrides || {})];
+    const usesSetup = layers.some((o) => o?.setup);
+    const usesTp = layers.some((o) => Object.values(o?.env || {}).some((v) => String(v).includes("{tp_size}")));
+    if (!usesSetup && !usesTp) continue;
+    const what = [usesSetup && "`setup`", usesTp && "`{tp_size}`"].filter(Boolean).join(" and ");
+    const allowed = opt.strategies;
+    if (!Array.isArray(allowed) || allowed.length === 0
+        || allowed.some((s) => strategies?.[s]?.deploy_type !== "single_node")) {
+      errors.push(`kv_offload.${key}: ${what} only render on single-node strategies; list only single-node strategies under \`strategies\``);
+    }
+    if (opt.pd) errors.push(`kv_offload.${key}: ${what} don't render under pd_cluster; drop the \`pd\` block`);
+    for (const o of layers) {
+      const last = String(o?.setup || "").trimEnd().split("\n").pop()?.trim() || "";
+      if (o?.setup && (last === "" || last.startsWith("#"))) {
+        errors.push(`kv_offload.${key}: \`setup\` must end with a command (its last line is chained to vllm serve with &&)`);
+      }
+    }
+  }
+  return errors;
 }
 
 /**
@@ -1486,14 +1577,17 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   const pdTransferConfig = (role) => (dynamo ? kvOptionConfig(dynamo[role] && { args: dynamo[role].vllm_args }) : null)
     ?? pdConnector?.[role]?.config ?? null;
 
-  // The composing option, resolved once behind all three gates (strategy,
-  // recipe opt-in, brand) and shared by args/env/companion emission.
-  const kvOptRaw = taxonomy?.kv_offload?.[kvOffload];
-  const kvOpt = kvOptRaw
-    && isKvOffloadAllowedForStrategy(kvOptRaw, strategyName, strategy)
-    && isKvOffloadSupportedForRecipe(kvOptRaw, kvOffload, recipe)
-    && isKvOffloadBrandSupported(kvOptRaw, hwProfile)
-    ? kvOptRaw
+  // The composing option, resolved for this hardware first (as the builder
+  // does) so a `hardware_overrides` entry that touches a gating key gates the
+  // same way in both, then behind all four gates (strategy, recipe opt-in,
+  // brand, install path) and shared by args/env/companion emission.
+  const kvOptHw = resolveKvOffloadOption(taxonomy?.kv_offload?.[kvOffload], hwProfile, hwProfileId);
+  const kvOpt = kvOptHw
+    && isKvOffloadAllowedForStrategy(kvOptHw, strategyName, strategy)
+    && isKvOffloadSupportedForRecipe(kvOptHw, kvOffload, recipe)
+    && isKvOffloadBrandSupported(kvOptHw, hwProfile, hwProfileId)
+    && isKvOffloadInstallable(kvOptHw, recipe, variant, hwProfile, hwProfileId)
+    ? kvOptHw
     : null;
 
   // kv composition only: instance count + which instance's command is being
@@ -2525,12 +2619,13 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     }];
   });
   if (kvOpt?.companion?.command) {
+    const requires = kvOffloadInstallSteps(kvOpt).map((s) => s.command).join(" && ");
     companions.push({
       feature: `kv_offload:${kvOffload}`,
       label: kvOpt.companion.label || kvOffload,
       description: [
         kvOpt.companion.description || "",
-        kvOpt.install ? `Requires: ${kvOpt.install}` : "",
+        requires ? `Requires: ${requires}` : "",
       ].filter(Boolean).join(" "),
       command: String(kvOpt.companion.command).trimEnd(),
     });
@@ -2553,11 +2648,30 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         .trimEnd(),
     });
   }
+  // The composing option's `env` values and `setup` lines may name the TP size
+  // the engine actually runs with (`{tp_size}`), e.g. a host-side launcher that
+  // sizes per-rank resources before `vllm serve` starts.
+  const env = buildEnv(null);
+  const tpSize = lastFlagValue(singleArgs, "--tensor-parallel-size")
+    || lastFlagValue(singleArgs, "-tp") || 1;
+  const fillKv = (s) => String(s).replace(/\{tp_size\}/g, String(tpSize));
+  for (const k of Object.keys(kvOpt?.env || {})) {
+    if (typeof env[k] === "string") env[k] = fillKv(env[k]);
+  }
+  // The option's install steps and Docker availability ride on the result so
+  // renderers outside the builder (JSON API, `.md` / `.json` pages) match it.
+  const kvInstall = kvOffloadInstallSteps(kvOpt);
   return {
     deployType,
     command: formatCommand(singleArgs),
     argv: formatArgv(singleArgs),
-    env: buildEnv(null),
+    env,
+    // Its last line ends with `&&`, so `<setup>` + newline + `<command>` stops
+    // before vllm serve when the setup fails (e.g. setvars.sh finds fewer QAT
+    // devices than TP_SIZE). kvOffloadOptionErrors keeps that line a command.
+    ...(kvOpt?.setup ? { setup: `${fillKv(kvOpt.setup).trimEnd()} &&` } : {}),
+    ...(kvInstall.length ? { kvOffloadInstall: kvInstall } : {}),
+    ...(kvOpt?.docker === false ? { dockerUnavailable: true } : {}),
     ...(companions.length ? { companions } : {}),
   };
 }
