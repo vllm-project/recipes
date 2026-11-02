@@ -8,6 +8,7 @@ meta:
   tasks:
     - multimodal
   performance_headline: "Single-card pooling serving on Ascend 910B/910C with vLLM Ascend"
+  default_hardware: ascend_910c
   hardware:
     ascend_910b: supported
     ascend_910c: verified
