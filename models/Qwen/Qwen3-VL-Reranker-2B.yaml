@@ -6,6 +6,7 @@ meta:
   date_added: 2026-10-14
   date_updated: 2026-11-02
   tasks:
+    - embedding
     - multimodal
   performance_headline: "Single-card pooling serving on Ascend 910B/910C with vLLM Ascend"
   default_hardware: ascend_910c
@@ -15,11 +16,11 @@ meta:
 
 model:
   model_id: "Qwen/Qwen3-VL-Reranker-2B"
-  min_vllm_version: "0.9.2"
+  min_vllm_version: "0.11.0"
   architecture: dense
   parameter_count: "2B"
   active_parameters: "2B"
-  context_length: 262144
+  context_length: 32768
   base_args:
     - "--runner"
     - "pooling"
@@ -84,6 +85,10 @@ guide: |
   79.70 and 76.28 ms. These are reproducibility measurements, not official performance
   baselines. Full MTEB accuracy, multimodal, long-context, and other hardware scenarios
   remain unverified.
+
+  The `--chat-template` path above points at the official vLLM Ascend image layout. If vLLM
+  is installed differently, copy `examples/pooling/score/template/qwen3_vl_reranker.jinja`
+  from the vLLM source tree and pass its absolute path instead.
 
   ## References
 
