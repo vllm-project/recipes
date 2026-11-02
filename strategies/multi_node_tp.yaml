@@ -1,6 +1,7 @@
 name: multi_node_tp
 deploy_type: multi_node
 display_name: "Multi-Node Tensor Parallel"
+short_label: "Multi-node TP"                  # compact name for tight spots (Preset pills)
 orientation: latency
 description: >
   Multi-node TP. Splits the model across GPUs spanning multiple nodes.

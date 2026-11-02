@@ -1,6 +1,7 @@
 name: multi_node_tp_pp
 deploy_type: multi_node
 display_name: "Multi-Node TP + Pipeline Parallel"
+short_label: "TP+PP"                  # compact name for tight spots (Preset pills)
 orientation: throughput
 description: >
   Tensor parallel within each node, pipeline parallel across nodes.

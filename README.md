@@ -127,9 +127,9 @@ Each recipe is a structured YAML file at `models/<hf_org>/<hf_repo>.yaml`, kept 
 ```mermaid
 flowchart LR
   vllm["vllm-project/vllm<br/>recipes/models/"] --> sync
-  omni["vllm-omni<br/>(omni recipes)"] -.-> sync
+  omni["vllm-project/vllm-omni<br/>recipes/models/"] --> sync
   ascend["vllm-ascend<br/>overlays/"] -.-> sync
-  self["this repo<br/>models/ (omni, interim)<br/>taxonomy · strategies · kv_store"] --> assemble
+  self["this repo<br/>taxonomy · strategies · kv_store"] --> assemble
   sync["sync-sources.mjs<br/>pinned by sources.lock.json"] --> assemble["assemble-content.mjs<br/>→ .content/&lt;channel&gt;/"]
   assemble --> build["build-recipes-api.mjs + next build"] --> site["recipes.vllm.ai<br/>+ JSON API"]
 ```
@@ -137,7 +137,7 @@ flowchart LR
 | Content | Where it lives | Status |
 | --- | --- | --- |
 | Model recipes served by vLLM | [`vllm-project/vllm` → `recipes/models/`](https://github.com/vllm-project/vllm/tree/main/recipes) | Owned by vLLM; a merge there reaches recipes.vllm.ai in about 30 minutes. Copies stay in this repo's `models/` until they are synced to vLLM and removed; they aren't rendered |
-| Omni recipes (image, video, audio generation) | This repo's `models/` | Interim; moving to vllm-omni |
+| Omni recipes (image, video, audio generation) | [`vllm-project/vllm-omni` → `recipes/models/`](https://github.com/vllm-project/vllm-omni/tree/main/recipes/models) | Owned by vLLM-Omni, reaching recipes.vllm.ai the same way. Copies stay in this repo's `models/` until they are removed; they aren't rendered |
 | Ascend NPU content | Inline in the vLLM recipes | Moving to `overlays/` in vllm-ascend |
 | Schema, hardware profiles, serving strategies, KV-store deployments, platforms | This repo (`taxonomy.yaml`, `strategies/`, `kv_store/`, `platforms.yaml`) | Owned here |
 | Command synthesis, site, JSON API | This repo (`src/`, `scripts/`) | Owned here |
@@ -165,6 +165,7 @@ To preview a recipe change from a local checkout of a source repository, create 
 ```yaml
 overrides:
   vllm: ~/vllm/recipes
+  vllm-omni: ~/vllm-omni/recipes
 ```
 
 Quick loop:

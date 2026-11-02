@@ -54,7 +54,7 @@ export function ModelSidebar({ recipesByOrg }) {
   return (
     <TooltipProvider>
     <nav className="w-64 shrink-0 hidden lg:block">
-      <div data-sidebar-scroll className="sticky top-16 pt-4 space-y-0.5 max-h-[calc(100vh-5rem)] overflow-y-auto scrollbar-thin">
+      <div data-sidebar-scroll className="sticky top-[calc(4rem+var(--preview-h,0px))] pt-4 space-y-0.5 max-h-[calc(100vh-5rem-var(--preview-h,0px))] overflow-y-auto scrollbar-thin">
         <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground px-3 pb-2">
           Providers
         </div>

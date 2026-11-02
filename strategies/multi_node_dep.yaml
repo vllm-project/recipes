@@ -1,6 +1,7 @@
 name: multi_node_dep
 deploy_type: multi_node
 display_name: "Multi-Node Data + Expert Parallel"
+short_label: "Multi-node DEP"                  # compact name for tight spots (Preset pills)
 orientation: throughput
 description: >
   Multi-node DEP. Each node runs TEP over its local GPUs, with DP across nodes.

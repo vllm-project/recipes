@@ -1,6 +1,7 @@
 name: single_node_dep
 deploy_type: single_node
 display_name: "Data + Expert Parallel"
+short_label: "DEP"                  # compact name for tight spots (Preset pills)
 orientation: throughput
 description: >
   Single-node DEP. Expert layers are shared across all GPUs via EP,

@@ -1,6 +1,7 @@
 name: multi_node_tep
 deploy_type: multi_node
 display_name: "Multi-Node Tensor + Expert Parallel"
+short_label: "Multi-node TEP"                  # compact name for tight spots (Preset pills)
 orientation: balanced
 description: >
   Multi-node TEP. Combines cross-node tensor parallel with expert parallel

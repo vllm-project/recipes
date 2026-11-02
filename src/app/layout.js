@@ -2,7 +2,9 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
 import { Analytics } from "@vercel/analytics/next";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { THEME_SCRIPT } from "@/lib/theme";
 import { SearchBox } from "@/components/recipes/SearchBox";
+import { PreviewBanner } from "@/components/PreviewBanner";
 import { getAllRecipes } from "@/lib/recipes";
 import { siteUrl } from "@/lib/site-url";
 import {
@@ -93,8 +95,14 @@ export default async function RootLayout({ children }) {
   };
 
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
+    // The theme script adds `dark` before React hydrates, hence the warning
+    // suppression on <html>.
+    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
       <head>
+        <script
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }}
+        />
         <script
           type="application/ld+json"
           // eslint-disable-next-line react/no-danger
@@ -104,7 +112,7 @@ export default async function RootLayout({ children }) {
       <body className="antialiased bg-background text-foreground min-h-screen flex flex-col">
         {/* Global header */}
         <header className="border-b border-border bg-background/95 backdrop-blur-sm sticky top-0 z-30">
-          <div className="max-w-[1480px] mx-auto px-4 sm:px-6 h-16 flex items-center gap-4">
+          <div className="max-w-[1480px] mx-auto px-4 sm:px-6 h-16 flex items-center gap-3 sm:gap-4">
             <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity group shrink-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -138,6 +146,9 @@ export default async function RootLayout({ children }) {
               <ThemeToggle />
             </nav>
           </div>
+          {/* Inside the sticky header so it stays in view; it publishes its
+              height as --preview-h for what is positioned under the header. */}
+          <PreviewBanner />
         </header>
 
         {/* Content */}
@@ -153,7 +164,7 @@ export default async function RootLayout({ children }) {
             <a href="https://docs.vllm.ai" className="hover:text-foreground transition-colors">Documentation</a>
             <a href="https://vllm.ai/#compatibility" className="hover:text-foreground transition-colors">Supported Models & Hardware</a>
             <a href="https://vllm.ai/#quick-start" className="hover:text-foreground transition-colors">Install vLLM</a>
-            <a href="/models.json" className="hover:text-foreground transition-colors">JSON API</a>
+            <a href="/api" className="hover:text-foreground transition-colors">JSON API</a>
           </div>
         </footer>
         <Analytics />

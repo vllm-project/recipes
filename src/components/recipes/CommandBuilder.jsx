@@ -5,8 +5,14 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, computeDockerMeta, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason } from "@/lib/command-synthesis";
+import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
+import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
+import ShellCode from "@/components/recipes/ShellCode";
+import { publishSelection, onPresetRequest } from "@/lib/selection-store";
+import { holdInPlace } from "@/lib/hold-in-place";
+import { whenMatches } from "@/lib/recipe-context";
+import { ADVANCED_OPTIONS } from "@/lib/advanced-options";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
@@ -28,54 +34,6 @@ const FEATURE_MODE_NOTES = {
 // `gatedBy(recipe, activeStrategy)` hides an option when the recipe or current
 // strategy can't support it. This keeps casual users from selecting invalid
 // combos (e.g. EP on a dense model) while still exposing parallelism knobs.
-const ADVANCED_OPTIONS = [
-  {
-    id: "max_batched_8k",
-    label: "max-num-batched-tokens = 8192",
-    description: "Tunable batch budget; 8192 is a common sweet spot",
-    args: ["--max-num-batched-tokens", "8192"],
-  },
-  {
-    id: "max_num_seqs_256",
-    label: "max-num-seqs = 256",
-    description: "Max concurrent sequences per batch; lower for latency, higher for throughput",
-    args: ["--max-num-seqs", "256"],
-  },
-  {
-    id: "gpu_mem_095",
-    label: "gpu-memory-utilization = 0.95",
-    description: "Push KV cache further; use with caution on shared GPUs",
-    args: ["--gpu-memory-utilization", "0.95"],
-  },
-  {
-    id: "max_model_len_auto",
-    label: "max-model-len = auto",
-    description: "Auto-size context window to what KV cache can hold on your hardware",
-    args: ["--max-model-len", "auto"],
-  },
-  {
-    id: "dcp_8",
-    label: "decode-context-parallel-size = 8",
-    description:
-      "Shard the KV cache at decode time across TP ranks. MLA-attention models only (DeepSeek, Kimi-K2). Max DCP = tensor-parallel-size ÷ num_kv_heads.",
-    args: ["--decode-context-parallel-size", "8"],
-    gatedBy: (recipe) => recipe?.model?.supports_dcp === true,
-  },
-  {
-    id: "no_flashinfer_autotune",
-    label: "no-enable-flashinfer-autotune",
-    description: "Skip FlashInfer autotuning at startup (faster startup, may lose autotuned perf)",
-    args: ["--no-enable-flashinfer-autotune"],
-    gatedBy: (recipe) => recipe?.model?.flashinfer_autotune === true,
-  },
-  {
-    id: "ep_weight_filter",
-    label: "enable-ep-weight-filter",
-    description: "Skip loading expert weights that don't belong to this EP rank — speeds up weight loading for large MoE models",
-    args: ["--enable-ep-weight-filter"],
-    gatedBy: (_recipe, activeStrategy) => /(?:^|_)(?:tep|dep)$/.test(activeStrategy || ""),
-  },
-];
 import { loadPreferences, savePreference, loadRecipeState, saveRecipeState } from "@/lib/preferences";
 
 function CopyButton({ text, className = "" }) {
@@ -173,7 +131,7 @@ function PopoverButton({ label, code, icon: Icon, disabled, disabledNote }) {
           </button>
         </div>
         <pre className="px-3 py-2.5 text-xs font-mono leading-relaxed whitespace-pre overflow-x-auto bg-[var(--code-block-bg)] text-[var(--code-block-fg)]">
-          {code}
+          <ShellCode>{code}</ShellCode>
         </pre>
       </div>
     </>,
@@ -367,7 +325,7 @@ function hardwareSelectorLabel(selector, profiles) {
   return profiles?.[selector]?.display_name || selector;
 }
 
-export function CommandBuilder({ recipe, strategies, taxonomy }) {
+export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = [] }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -417,6 +375,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     && isHardwareSupported(recipe, requestedHwId)
     && isVariantHardwareSupported(requestedVariant, requestedHwId, requestedHwProfile);
   const [hwId, setHwId] = useState(requestedHwAllowed ? requestedHwId : defaultHw);
+  const hwIdRef = useRef(hwId);
+  hwIdRef.current = hwId;
 
   // After mount: restore preferences from localStorage in two scopes.
   // URL params always win (explicit > stored).
@@ -541,7 +501,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       const n = parseInt(urlN, 10);
       if (n === 1 && multi) return 2;
       if (n > 1 && initialHw && multiNodeUnavailable(recipe, strategies, initialHw, v, initialHwId)) return 1;
-      return [1, 2].includes(n) ? n : 1;
+      // Any count up to MAX_NODES: a preset can select one beyond 2 (a lane at
+      // four trays), and the reconcile effect below snaps a count that isn't
+      // among this hardware's options back.
+      return Number.isInteger(n) && n >= 1 && n <= MAX_NODES ? n : 1;
     }
     return multi ? 2 : 1;
   });
@@ -553,6 +516,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // `nodes` accepts two shapes: a bare integer (same default for every hw)
   // or a hardware-keyed map `{ default, <hwId>… }` for per-hw defaults (e.g.
   // GB200 = 2, GB300 = 1). Unmatched hw falls through to the VRAM fit.
+  // Tuned-preset pick (recipe-presets.js): null follows the recipe default
+  // for this hardware + strategy, "baseline" opts out, a key selects it.
+  const [presetPick, setPresetPick] = useState(() => searchParams.get("preset") || null);
+  // Point pick within the active preset (`?point=`); null follows its default point.
+  const [pointPick, setPointPick] = useState(() => searchParams.get("point") || null);
+  // PD pool defaults read the recipe with the pd_cluster preset in effect
+  // mounted, since a preset may own the pools' nodes and parallelism.
+  const pdRecipe = useMemo(
+    () => withPreset(recipe, resolvePresetKey(recipe, hwId, "pd_cluster", presetPick, variant), hwId, "pd_cluster", { variantKey: variant, point: pointPick }),
+    [recipe, hwId, presetPick, pointPick, variant],
+  );
   const pdDefaults = useMemo(() => {
     // Each PD role holds a full model copy on its own pool of nodes. If a
     // single node can't fit the model, the role must span >= ceil(model/node)
@@ -566,13 +540,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     const minNodesPerRole = (modelVram > 0 && nodeVram > 0)
       ? Math.max(1, Math.ceil(modelVram / nodeVram))
       : 1;
-    const pickNodes = (role, fallback) => pdRoleNodes(recipe, role, hw, hwId) ?? fallback;
+    const pickNodes = (role, fallback) => pdRoleNodes(pdRecipe, role, hw, hwId) ?? fallback;
     return {
       prefill: pickNodes("prefill", minNodesPerRole),
       decode: pickNodes("decode", minNodesPerRole),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recipe, hwId, variant]);
+  }, [recipe, pdRecipe, hwId, variant]);
   const [pdPrefillNodes, setPdPrefillNodes] = useState(() => {
     const n = parseInt(searchParams.get("prefill_nodes") || "", 10);
     return Number.isFinite(n) && n > 0 ? n : pdDefaults.prefill;
@@ -597,11 +571,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const pdDefaultPar = useMemo(() => {
     const hw = taxonomy.hardware_profiles?.[hwId];
     const pick = (role) => {
-      const d = pdRoleParallelism(recipe, strategies?.pd_cluster, role, hw, hwId);
+      const d = pdRoleParallelism(pdRecipe, strategies?.pd_cluster, role, hw, hwId);
       return pdModes.includes(d) ? d : pdModes[0];
     };
     return { prefill: pick("prefill"), decode: pick("decode") };
-  }, [recipe, strategies, taxonomy, pdModes, hwId]);
+  }, [pdRecipe, strategies, taxonomy, pdModes, hwId]);
   const [pdPrefillPar, setPdPrefillPar] = useState(() => {
     const p = searchParams.get("prefill_mode");
     return p && pdModes.includes(p) ? p : pdDefaultPar.prefill;
@@ -632,6 +606,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const [pdRouter, setPdRouter] = useState(() =>
     ["dynamo", "smg"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : "vllm"
   );
+  // PD KV transfer connector (pd_cluster.yaml `connectors`); null = the default.
+  const [pdConnector, setPdConnector] = useState(() => {
+    const v = searchParams.get("pd_connector");
+    return v && strategies.pd_cluster?.connectors?.[v] ? v : null;
+  });
   const [pdTransport, setPdTransport] = useState(() =>
     recipe.model?.smg_grpc && searchParams.get("pd_transport") === "grpc" ? "grpc" : "http"
   );
@@ -660,6 +639,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   const [kvInstanceIdx, setKvInstanceIdx] = useState(() => {
     const n = parseInt(searchParams.get("kv_instance") || "0", 10);
     return Number.isFinite(n) && n >= 0 ? n : 0;
+  });
+  // Decode Context Parallelism pick: null follows the recipe default, 1 = Off,
+  // N = that DCP size. Only read when the recipe declares decode_context_parallel.
+  const [dcpSize, setDcpSize] = useState(() => {
+    const n = parseInt(searchParams.get("dcp") || "", 10);
+    return Number.isFinite(n) && n >= 1 ? n : null;
   });
   // Default-on features = (all features) − (recipe.opt_in_features) − (recipe.hardware_opt_in_features[hwId]).
   // The per-hw override lets a recipe suppress a feature's default on specific
@@ -902,7 +887,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       0,
       ...effectiveCompatibleStrategies(recipe).map((s) => nodesForStrategy(recipe, s, perNode, hwId)),
     );
-    return needed > 2 && needed <= MAX_NODES ? [1, 2, needed] : [1, 2];
+    // Node counts this GPU's presets select (a lane at 4 nodes) are options
+    // too, or the reconcile effect below would snap them back.
+    const presetNodes = Object.values(recipe.presets || {})
+      .filter((p) => p.hardware === hwId)
+      .flatMap((p) => [p.select?.nodes, ...presetPoints(p).map((pt) => pt.select?.nodes)])
+      .filter((n) => Number.isInteger(n) && n > 2 && n <= MAX_NODES);
+    const base = needed > 2 && needed <= MAX_NODES ? [1, 2, needed] : [1, 2];
+    return [...new Set([...base, ...presetNodes])].sort((a, b) => a - b);
   }, [recipe, perNode, hwId]);
 
   const compatibleStrategies = useMemo(() => {
@@ -1000,7 +992,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       return `${name} isn't offered under ${strategies[activeServingStrategy]?.display_name || activeServingStrategy}, which manages its own KV layout across the DP ranks.`;
     }
     return activeServingStrategy === "pd_cluster"
-      ? `${name} can't compose with PD cluster, which owns --kv-transfer-config. (Mooncake composes with PD instead.)`
+      ? `${name} can't compose with Prefill/Decode, which owns --kv-transfer-config. Simple (on prefill) and Mooncake Store compose with its KV transfer connector instead.`
       : `${name} works with: ${(opt?.strategies || []).map((s) => strategies[s]?.display_name || s).join(", ")}.`;
   };
   // Options sharing a `group` collapse into one pill + member sub-row.
@@ -1089,9 +1081,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
   // variant TP number/map, a recipe-wide strategy override, or the auto-fit
   // from `variant.vram_minimum_gb` vs per-GPU VRAM.
   const hwGpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 1;
+  // The preset (at its point) may set the single-node TP size.
+  const presetTpRecipe = useMemo(
+    () => withPreset(recipe, resolvePresetKey(recipe, hwId, activeStrategy, presetPick, variant), hwId, activeStrategy, { variantKey: variant, point: pointPick }),
+    [recipe, hwId, activeStrategy, presetPick, variant, pointPick]
+  );
   const effectiveTp = resolveSingleNodeTp(
-    recipe,
-    currentVariant,
+    presetTpRecipe,
+    presetTpRecipe.variants?.[variant] || currentVariant,
     hwProfile,
     activeStrategy,
     hwId,
@@ -1135,10 +1132,62 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
         }
         : null;
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport);
+      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick, pdConnector);
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick, pdConnector]
   );
+
+  // Publish the selection for the sections below the builder (This
+  // configuration / Tuned presets / Troubleshooting filter on it).
+  const selectedPreset = result?.preset?.selected ?? null;
+  // A preset can run DEP on part of the node (`--data-parallel-size 2`);
+  // say so the way the TP hint does.
+  const depWidth = isSingleNode && activeStrategy === "single_node_dep" && Array.isArray(result?.argv)
+    ? lastIntFlag(result.argv, "--data-parallel-size", hwGpuCount)
+    : hwGpuCount;
+  const showDepUsageHint = depWidth < hwGpuCount;
+  // The whole selection as an explicit page query, for the `.md` / `.json`
+  // forms (Copy page). The address bar can't stand in for it: syncUrl omits
+  // defaults, and choices restored from storage never reach the URL.
+  const selectedPoint = result?.preset?.point?.selected ?? null;
+  const shareQuery = useMemo(() => {
+    const q = new URLSearchParams({ hardware: hwId, variant });
+    if ((recipe.meta?.tasks || []).includes("omni")) {
+      if (omniTask) q.set("task", omniTask);
+      return q.toString();
+    }
+    q.set("strategy", activeStrategy);
+    q.set("features", features.join(","));
+    const fmode = Object.entries(featureModes).filter(([k, m]) => m && recipe.features?.[k]?.modes).map(([k, m]) => `${k}:${m}`);
+    if (fmode.length) q.set("fmode", fmode.join(","));
+    if (advanced.length) q.set("advanced", advanced.join(","));
+    q.set("frontend", frontend);
+    if (selectedPreset) q.set("preset", selectedPreset);
+    if (selectedPoint) q.set("point", selectedPoint);
+    if (activeKvOffload) {
+      q.set("kv_offload", activeKvOffload);
+      if (kvInstances != null) q.set("kv_instances", String(kvInstances));
+      if (kvInstanceIdx > 0) q.set("kv_instance", String(kvInstanceIdx));
+    }
+    if (dcpSize != null) q.set("dcp", String(dcpSize));
+    if (activeStrategy === "pd_cluster") {
+      q.set("prefill_nodes", String(effPdPrefillNodes));
+      q.set("decode_nodes", String(effPdDecodeNodes));
+      q.set("prefill_mode", effPdPrefillPar);
+      q.set("decode_mode", effPdDecodePar);
+      if (pdPrefillRank > 0) q.set("prefill_rank", String(pdPrefillRank));
+      if (pdDecodeRank > 0) q.set("decode_rank", String(pdDecodeRank));
+      q.set("pd_router", pdRouter);
+      if (pdConnector) q.set("pd_connector", pdConnector);
+      if (pdTransport !== "http") q.set("pd_transport", pdTransport);
+    } else {
+      q.set("nodes", String(nodeCount));
+    }
+    return q.toString();
+  }, [recipe, hwId, variant, omniTask, activeStrategy, features, featureModes, advanced, frontend, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, pdRouter, pdConnector, pdTransport, nodeCount]);
+  useEffect(() => {
+    publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features, preset: selectedPreset, query: shareQuery });
+  }, [recipe.hf_id, hwId, activeStrategy, variant, features, selectedPreset, shareQuery]);
 
   // Visual feedback when any rendered command changes. Covers single-node
   // (result.command), multi-node (headCommand), pd_cluster (prefill.command),
@@ -1151,7 +1200,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     || "")
     + (omniTask ? `|task:${omniTask}` : "")
     + `|frontend:${frontend}`
-    + `|pd_router:${pdRouter}|pd_transport:${pdTransport}`;
+    + `|pd_router:${pdRouter}|pd_transport:${pdTransport}|pd_connector:${pdConnector ?? ""}`
+    + `|preset:${result.preset?.selected ?? ""}`;
   const [changed, setChanged] = useState(false);
   useEffect(() => {
     setChanged(true);
@@ -1162,14 +1212,32 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
 
   // ── URL sync ──
+  // router.replace is async, so `searchParams` stays stale until it commits.
+  // A click handler and the effects its state change triggers (e.g. the DCP
+  // reset on a hardware switch) each call syncUrl in one interaction; building
+  // every call on the previous call's pending query keeps them composing
+  // instead of the last one reverting the others.
+  const pendingQs = useRef(null);
+  useEffect(() => { pendingQs.current = null; }, [searchParams]);
+  const activeStrategyRef = useRef(activeStrategy);
+  activeStrategyRef.current = activeStrategy;
   const syncUrl = useCallback(
     (updates) => {
-      const sp = new URLSearchParams(searchParams.toString());
+      const sp = new URLSearchParams(pendingQs.current ?? searchParams.toString());
       for (const [k, v] of Object.entries(updates)) {
         if (v && v !== "default" && v !== recommended) sp.set(k, v);
         else sp.delete(k);
       }
+      // A preset belongs to one strategy, and the recommended strategy (which
+      // the URL otherwise omits) depends on the node count a preset may set:
+      // a link naming a preset names its strategy too, or reloading it can
+      // land on another strategy (and that strategy's default preset).
+      if (sp.get("preset") && !sp.get("strategy")) {
+        const s = updates.strategy || activeStrategyRef.current;
+        if (s) sp.set("strategy", s);
+      }
       const qs = sp.toString();
+      pendingQs.current = qs;
       router.replace(`${qs ? `?${qs}` : pathname}${window.location.hash}`, { scroll: false });
     },
     [searchParams, router, recommended, pathname]
@@ -1312,6 +1380,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     syncUrl({
       hardware: id,
       strategy: "",
+      preset: "",
+      point: "",
       nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
       features: featuresToUrl(next, id, variant),
       ...(nextModes !== featureModes ? { fmode: featureModesToUrl(nextModes, variant) } : {}),
@@ -1330,14 +1400,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     });
   };
 
-  const selectStrategy = (s) => {
+  // `preset` rides along when a Preset pill for another strategy triggers the
+  // switch (see selectPreset); otherwise the pick is cleared.
+  const selectStrategy = (s, { preset = "" } = {}) => {
     setStrategyOverride(s);
     // Grow the cluster to this strategy's GPU floor so the pick is immediately
     // valid instead of rendering below its own bar.
     const needed = nodesNeededFor(s);
     const grow = needed > nodeCount;
     if (grow) setNodeCount(needed);
-    syncUrl({ strategy: s, ...(grow && { nodes: String(needed) }) });
+    syncUrl({ strategy: s, preset, point: "", ...(grow && { nodes: String(needed) }) });
     // Persisted per-recipe (keyed by hf_id), so picking TP here doesn't
     // affect any other recipe's default. Spec-decoding auto-enable for
     // latency strategies is handled by an effect below so it also fires
@@ -1437,6 +1509,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     setPdRouter(value);
     syncUrl({ pd_router: value === "vllm" ? "" : value });
   };
+  // PD Connector row: the connector synthesis actually rendered (a pick this
+  // hardware or router can't run falls back to the default).
+  const pdConnectors = strategies.pd_cluster?.connectors || {};
+  const effPdConnector = result.kvConnector?.selected ?? null;
+  const pdConnectorReason = (key) => pdConnectorUnavailableReason(pdConnectors[key], hwProfile, effPdRouter);
+  const selectPdConnector = (key) => {
+    const isDefault = pdConnectors[key]?.default;
+    setPdConnector(isDefault ? null : key);
+    syncUrl({ pd_connector: isDefault ? "" : key });
+  };
 
   const setPdPar = (role, mode) => {
     if (!pdModes.includes(mode)) return;
@@ -1474,6 +1556,191 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
     syncUrl({ fmode: featureModesToUrl(next, variant) });
     saveRecipeState(recipe.hf_id, { featureModes: next });
   };
+
+  // A DCP pick belongs to one hardware/variant/strategy: Off or a size chosen
+  // on GB200 aggregated must not carry over to a PD topology with another
+  // default. Skip the mount run so a shared ?dcp= link keeps its pick.
+  const dcpScope = `${hwId}|${variant}|${activeStrategy}`;
+  const prevDcpScope = useRef(dcpScope);
+  useEffect(() => {
+    if (prevDcpScope.current === dcpScope) return;
+    prevDcpScope.current = dcpScope;
+    setDcpSize(null);
+    syncUrl({ dcp: "" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dcpScope]);
+
+  const selectDcp = (size) => {
+    setDcpSize(size);
+    syncUrl({ dcp: size == null ? "" : String(size) });
+  };
+
+  const hasDcp = !!result?.dcp && result.dcp.sizes.length > 0;
+  const dcpPills = hasDcp && (
+    <PillGroup>
+      {[1, ...result.dcp.sizes].map((n) => (
+        <Pill
+          key={n}
+          active={(n === 1 ? 0 : n) === result.dcp.selected}
+          onClick={() => selectDcp(n === 1 && result.dcp.baseline === 0 ? null : n)}
+          title={n === 1
+            ? "No decode context parallelism"
+            : `Shard the decode KV cache ${n} ways (divides TP ${[...new Set(result.dcp.tp)].join("/")})`}
+        >
+          {n === 1 ? "Off" : `DCP${n}`}
+        </Pill>
+      ))}
+    </PillGroup>
+  );
+
+  // A preset belongs to one hardware + strategy; a pick made elsewhere falls
+  // back to that pair's default, unless the switch came from picking a preset
+  // of the new strategy (pendingPreset). Skip the mount run so ?preset= links
+  // hold. State only: selectHardware / selectStrategy put `preset` into their
+  // own syncUrl call (a second call here would read stale searchParams and
+  // clobber theirs).
+  const presetScope = `${hwId}|${activeStrategy}|${variant}`;
+  const prevPresetScope = useRef(presetScope);
+  const pendingPreset = useRef(null);
+  useEffect(() => {
+    if (prevPresetScope.current === presetScope) return;
+    prevPresetScope.current = presetScope;
+    setPresetPick(pendingPreset.current);
+    setPointPick(null);
+    pendingPreset.current = null;
+  }, [presetScope]);
+
+  // Every preset for this hardware, in YAML order: the Preset row offers all
+  // of them, so presets on other strategies are discoverable. The order stays
+  // fixed across strategy switches so a clicked pill doesn't jump.
+  const hwPresets = useMemo(
+    () => Object.entries(recipe.presets || {}).filter(([, p]) => p.hardware === hwId).map(([key, p]) => ({ key, ...p })),
+    [recipe, hwId]
+  );
+
+  const selectPreset = (key) => {
+    const target = recipe.presets?.[key];
+    const otherVariant = target?.variants?.length && !target.variants.includes(variant) ? target.variants[0] : null;
+    const otherStrategy = target?.strategy && target.strategy !== activeStrategy ? target.strategy : null;
+    if (otherVariant || otherStrategy) {
+      // A preset of another variant and/or strategy: switch to it; the scope
+      // reset picks it up (pendingPreset). Its default needs no pick.
+      const pick = target.default ? null : key;
+      pendingPreset.current = pick;
+      if (otherVariant) selectVariant(otherVariant);
+      if (otherStrategy) selectStrategy(otherStrategy, { preset: pick ?? "" });
+      else syncUrl({ preset: pick ?? "", point: "" });
+      return;
+    }
+    const def = result?.preset?.options?.find((p) => p.default)?.key ?? "baseline";
+    const next = key === def ? null : key;
+    setPresetPick(next);
+    setPointPick(null);
+    syncUrl({ preset: next ?? "", point: "" });
+  };
+
+  const selectPoint = (key) => {
+    const points = result?.preset?.point?.options || [];
+    const def = (points.find((pt) => pt.default) || points[0])?.key;
+    const next = key === def ? null : key;
+    setPointPick(next);
+    syncUrl({ point: next ?? "" });
+  };
+
+  // A preset card (Presets tab) asks for a preset. Same hardware: pick it
+  // (selectPreset switches strategy if needed). Other hardware: switch first,
+  // and pick once the switch has rendered, so strategy floors, node counts
+  // and the preset's own default resolve against the new hardware. Declared
+  // after the preset-scope reset effect so that effect can't clear the pick.
+  const requestedPreset = useRef(null);
+  const selectPresetRef = useRef(selectPreset);
+  selectPresetRef.current = selectPreset;
+  const selectHardwareRef = useRef(selectHardware);
+  selectHardwareRef.current = selectHardware;
+  useEffect(() => onPresetRequest(({ hfId, key }) => {
+    const target = recipe.presets?.[key];
+    if (hfId !== recipe.hf_id || !target) return;
+    if (target.hardware === hwIdRef.current) selectPresetRef.current(key);
+    else {
+      requestedPreset.current = key;
+      selectHardwareRef.current(target.hardware);
+    }
+  }), [recipe]);
+  useEffect(() => {
+    const key = requestedPreset.current;
+    if (!key || recipe.presets?.[key]?.hardware !== hwId) return;
+    requestedPreset.current = null;
+    selectPreset(key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hwId]);
+
+  // The preset (at its point) in effect implies builder choices — PD router,
+  // frontend, features, DCP, KV offload (`select`). Apply them whenever it
+  // becomes active: a pick, a point change, or landing on the hardware +
+  // strategy of a default preset. On the first render, fields the URL set
+  // explicitly stay as linked. Declared after the DCP / preset scope resets
+  // so a switch's resets can't undo the preset's picks. Leaving the preset
+  // (Baseline) keeps these choices; the user changes them like any other.
+  const activeSelect = result?.preset?.select || null;
+  const selectKey = result?.preset ? `${result.preset.selected}|${result.preset.point?.selected ?? ""}` : "";
+  const appliedSelectKey = useRef(null);
+  const urlAtMount = useRef(null);
+  if (urlAtMount.current === null) urlAtMount.current = new URLSearchParams(searchParams.toString());
+  useEffect(() => {
+    if (appliedSelectKey.current === selectKey) return;
+    const first = appliedSelectKey.current === null;
+    appliedSelectKey.current = selectKey;
+    if (!activeSelect) return;
+    const linked = (param) => first && urlAtMount.current.get(param) != null;
+    const updates = {};
+    if (activeSelect.frontend && !linked("frontend")) {
+      const f = resolveFrontend(recipe, activeSelect.frontend, taxonomy);
+      setFrontend(f);
+      updates.frontend = f;
+    }
+    if (activeSelect.pd_router && !linked("pd_router")) {
+      setPdRouter(activeSelect.pd_router);
+      updates.pd_router = activeSelect.pd_router === "vllm" ? "" : activeSelect.pd_router;
+    }
+    if (activeSelect.pd_connector && !linked("pd_connector")) {
+      setPdConnector(activeSelect.pd_connector);
+      updates.pd_connector = activeSelect.pd_connector;
+    }
+    if (activeSelect.features && !linked("features")) {
+      let next = [...features];
+      const modes = { ...featureModes };
+      let modesChanged = false;
+      for (const [f, v] of Object.entries(activeSelect.features)) {
+        if (!recipe.features?.[f]) continue;
+        if (v === false) next = next.filter((x) => x !== f);
+        else {
+          if (!next.includes(f)) next.push(f);
+          if (typeof v === "string") { modes[f] = v; modesChanged = true; }
+        }
+      }
+      setFeatures(next);
+      updates.features = featuresToUrl(next, hwId, variant);
+      if (modesChanged && !linked("fmode")) {
+        setFeatureModes(modes);
+        updates.fmode = featureModesToUrl(modes, variant);
+      }
+    }
+    if (activeSelect.nodes !== undefined && !linked("nodes") && activeStrategy?.startsWith("multi_node_")) {
+      setNodeCount(activeSelect.nodes);
+      updates.nodes = String(activeSelect.nodes);
+    }
+    if (activeSelect.dcp !== undefined && !linked("dcp")) {
+      setDcpSize(activeSelect.dcp);
+      updates.dcp = String(activeSelect.dcp);
+    }
+    if (activeSelect.kv_offload !== undefined && !linked("kv_offload")) {
+      const kv = activeSelect.kv_offload === false || activeSelect.kv_offload === "off" ? "" : activeSelect.kv_offload;
+      setKvOffload(kv);
+      updates.kv_offload = kv;
+    }
+    if (Object.keys(updates).length) syncUrl(updates);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectKey]);
 
   const toggleAdvanced = (id) => {
     const next = advanced.includes(id) ? advanced.filter((x) => x !== id) : [...advanced, id];
@@ -1698,13 +1965,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
         deps.push({ ...step, install_modes: ["pip", "docker"] });
       }
     }
+    // The PD KV transfer connector's runtime (the vLLM images ship it).
+    for (const step of result.kvConnector?.install || []) {
+      deps.push({ ...step, install_modes: ["pip"] });
+    }
     if (result.orchestrator === "smg") {
       if (result.workerInstall) deps.push({ command: result.workerInstall, note: "gRPC servicer — install on every prefill/decode node", install_modes: ["pip"] });
       deps.push({ command: result.router.install, note: "SMG — install on the router host", install_modes: ["pip"] });
       deps.push({ command: result.router.dockerInstall, note: "SMG — pull on the router host", install_modes: ["docker"] });
     }
     return deps;
-  }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall, result.router?.install, result.router?.dockerInstall, result.workerInstall]);
+  }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall, result.router?.install, result.router?.dockerInstall, result.workerInstall, result.kvConnector?.install]);
 
   // Status caption for the command block header.
   // Only `verified` is a positive signal worth surfacing; anything else
@@ -1758,15 +2029,23 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
           ? ` · Mooncake (${(strategies[activeKvOffload]?.label || "").split(" ")[0] || "KV Store"})`
           : "");
 
-  // Upstream `vllm/vllm-openai:latest` (and recent pinned tags) ship CUDA 13
-  // as the base; CUDA 12.9 is the legacy alternate published as a `-cu129`
-  // suffix. The recipe's `min_vllm_version` doesn't change which tag the user
-  // pulls — `:latest` is always today's base regardless — so the alt suffix
-  // is a constant.
+  // Upstream images ship CUDA 13 as the base; CUDA 12.9 is the legacy
+  // alternate, published as a `-cu129` tag only up to v0.32.0 (nightly and
+  // 0.33.0+ are cu130-only — `cu129DockerImage` knows which tags have one).
   const altCudaSuffix = "cu129";
+  const installMinVersion = maxVersion(recipe.model?.min_vllm_version, currentVariant.min_vllm_version);
 
+  // A preset's engine image pins this GPU's docker command (an exact
+  // variant × GPU image, which computeDockerMeta already prefers).
+  const presetImage = result?.preset?.image?.vllm || null;
+  const imageVariant = useMemo(
+    () => (presetImage
+      ? { ...currentVariant, hardware_overrides: { ...(currentVariant.hardware_overrides || {}), [hwId]: { ...(currentVariant.hardware_overrides?.[hwId] || {}), docker_image: presetImage } } }
+      : currentVariant),
+    [currentVariant, presetImage, hwId]
+  );
   const dockerMeta = useMemo(() => {
-    const meta = computeDockerMeta(recipe, currentVariant, hwProfile, hwId);
+    const meta = computeDockerMeta(recipe, imageVariant, hwProfile, hwId);
     if (meta.brandKey !== "nvidia") return meta;
 
     // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
@@ -1780,20 +2059,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       return { ...meta, image: picked || meta.image };
     }
 
-    // Legacy string tag — append the suffix when user picks the alt variant.
-    // Nightly tags follow the inverse convention: `:nightly` → `:cu129-nightly`
-    // (CUDA prefix, not suffix). Detect the upstream `:nightly` tag and swap
-    // accordingly; pinned `:nightly`-bearing tags (e.g. `:myrelease-nightly`)
-    // fall back to the suffix path.
-    if (dockerCudaVariant === altCudaSuffix) {
-      const isUpstreamNightly = /^vllm\/vllm-(openai|openai-rocm|tpu):nightly$/.test(meta.image);
-      const next = isUpstreamNightly
-        ? meta.image.replace(/:nightly$/, `:${altCudaSuffix}-nightly`)
-        : `${meta.image}-${altCudaSuffix}`;
-      return { ...meta, image: next };
+    // Plain tag — swap in its CUDA 12.9 counterpart when the user picks the
+    // alt variant and one is published.
+    const cu129Image = cu129DockerImage(meta.image, installMinVersion);
+    if (dockerCudaVariant === altCudaSuffix && cu129Image) {
+      return { ...meta, image: cu129Image, cu129Image };
     }
-    return meta;
-  }, [recipe, currentVariant, hwProfile, hwId, dockerCudaVariant, altCudaSuffix]);
+    return { ...meta, cu129Image };
+  }, [recipe, imageVariant, hwProfile, hwId, dockerCudaVariant, altCudaSuffix, installMinVersion]);
 
   // `installMode` carries the user's tab choice; `effectiveInstallMode` folds
   // in constraints that would hide a tab entirely (pip: recipe opt-out or TPU
@@ -1821,7 +2094,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
       : installMode === "docker" && dockerEffectivelyHidden
         ? "pip"
         : installMode;
-  const commandNote = recipe.hardware_notes?.[hwId] || null;
+  // Shown with the command: the GPU's hardware note and the `notes` whose
+  // `when` matches this selection (server-rendered Markdown, from the page).
+  // Matching troubleshooting is flagged on the Troubleshooting tab instead.
+  const commandNote = useMemo(() => {
+    const sel = { hwId, strategy: activeStrategy, variant, features };
+    const hw = taxonomy.hardware_profiles || {};
+    const notes = contextNotes.filter((n) => whenMatches(n.when, sel, hw));
+    const hardware = recipe.hardware_notes?.[hwId] || null;
+    return hardware || notes.length ? { hardware, notes } : null;
+  }, [recipe, hwId, activeStrategy, variant, features, taxonomy, contextNotes]);
 
   // The extra-install block is pip-scoped by default: nearly every recipe's
   // dependencies are pip installs the Docker image already bundles, so repeating
@@ -1918,7 +2200,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
     return (
       <TooltipProvider>
-        <div className="space-y-4">
+        <div className="space-y-4" onClickCapture={keepClickedRowInPlace}>
           <InstallBlock
             recipe={recipe}
             variant={currentVariant}
@@ -2101,7 +2383,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
 
   return (
     <TooltipProvider>
-      <div className="space-y-4">
+      <div className="space-y-4" onClickCapture={keepClickedRowInPlace}>
         {/* ── Install (tabs: pip / docker — mirrors the command-card mode toggle
           so switching from either place keeps them in sync). */}
         <InstallBlock
@@ -2252,6 +2534,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                         : "";
                       const currentVariantRunsHere = precisionOk && variantHardwareOk;
                       const fittingVariantLabel = (fittingVariant?.label || fittingVariant?.precision || fittingVariantKey)?.toUpperCase();
+                      const presetsHere = Object.values(recipe.presets || {}).filter((x) => x.hardware === id);
+                      const presetNote = presetsHere.length && !disabled
+                        ? `\n\nTuned presets: ${presetsHere.map((x) => x.label).join(", ")}`
+                        : "";
                       const reason = isUnsupported
                           ? `Not yet supported on ${p.display_name} — this model doesn't run here today, may be enabled in a future release`
                         : !fittingVariantKey
@@ -2265,13 +2551,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                           active={hwId === id}
                           disabled={disabled}
                           onClick={() => !disabled && selectHardware(id)}
-                          title={reason}
+                          title={reason + presetNote}
                         >
                           <HwStatusDot status={status} />
                           <span className="font-semibold">{p.display_name}</span>
                           {p.vram_gb > 0 && p.gpu_count > 0 && (
                             <span className="text-muted-foreground ml-1.5 font-mono">
                               {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : "GPU"}
+                            </span>
+                          )}
+                          {presetsHere.length > 0 && !disabled && (
+                            <span className="ml-1.5 rounded bg-vllm-blue/12 px-1 py-px text-[10px] font-medium text-vllm-blue">
+                              {presetsHere.length === 1 ? "preset" : `${presetsHere.length} presets`}
                             </span>
                           )}
                         </Pill>
@@ -2287,6 +2578,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                     : `This recipe runs on ${effectiveTp} of ${hwGpuCount} GPUs on the selected node — add`}
                   <code className="font-mono mx-1 px-1 py-0.5 rounded bg-foreground/5 text-[10px]">--tensor-parallel-size N</code>
                   via Advanced to scale up.
+                </p>
+              )}
+              {showDepUsageHint && (
+                <p className="text-[11px] text-muted-foreground/80 pt-1.5">
+                  This command runs DP={depWidth} on {depWidth} of {hwGpuCount} GPUs on the selected node; give each
+                  server its own GPUs to run several per node.
                 </p>
               )}
             </div>
@@ -2433,6 +2730,93 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
             })()}
           </ConfigRow>
 
+          {/* Tuned presets — named, evidence-backed deltas for this exact GPU
+              (and strategy), e.g. an InferenceX lane. Baseline is the
+              recipe's generic command; the runbook lives under the guide. */}
+          {hwPresets.length > 0 && (() => {
+            const selected = result?.preset?.selected ?? "baseline";
+            const active = hwPresets.find((p) => p.key === selected);
+            const here = (p) => (!p.strategy || p.strategy === activeStrategy) && (!p.variants?.length || p.variants.includes(variant));
+            const hereHasDefault = hwPresets.some((p) => p.default && here(p));
+            const point = result?.preset?.point;
+            const img = result?.preset?.image;
+            return (
+              <ConfigRow label="Preset" nested hint="Tuned configurations qualified on this hardware. Picking one for another strategy switches the strategy. Baseline is the recipe's generic command.">
+                <PillGroup>
+                  {hwPresets.map((p) => {
+                    const elsewhere = p.strategy && p.strategy !== activeStrategy;
+                    const sName = strategies[p.strategy]?.display_name || p.strategy;
+                    const otherVariant = p.variants?.length && !p.variants.includes(variant) ? p.variants[0] : null;
+                    const vName = otherVariant && (recipe.variants?.[otherVariant]?.label || recipe.variants?.[otherVariant]?.precision?.toUpperCase() || otherVariant);
+                    const tags = [elsewhere && (strategies[p.strategy]?.short_label || sName), vName].filter(Boolean);
+                    return (
+                      <Pill key={p.key} active={selected === p.key} pressed={selected === p.key} onClick={() => selectPreset(p.key)}
+                        title={[p.description || p.label, elsewhere && `Switches the strategy to ${sName}.`, vName && `Switches the variant to ${vName}.`].filter(Boolean).join("\n\n")}>
+                        {p.label}
+                        {tags.length > 0 && <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">{tags.join(" · ")}</span>}
+                      </Pill>
+                    );
+                  })}
+                  <Pill active={selected === "baseline"} pressed={selected === "baseline"} onClick={() => selectPreset("baseline")}
+                    title="The recipe's generic command for this hardware and strategy, without a tuned preset">
+                    Baseline
+                  </Pill>
+                </PillGroup>
+                <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                  {active ? (
+                    <>
+                      {active.workload && <span className="font-medium text-foreground/80">{active.workload}. </span>}
+                      {active.description}
+                      {active.source?.href && (
+                        <> <a href={active.source.href} className="text-vllm-blue hover:underline" target="_blank" rel="noreferrer">{active.source.label || "Source"}</a></>
+                      )}
+                      {active.runbook && (
+                        <> · <a href={`#preset-${active.key}`} className="text-vllm-blue hover:underline">Runbook</a></>
+                      )}
+                      {img && (img.vllm || img.dynamo || img.pip?.length || img.model_revision) && (
+                        <span className="mt-1 block font-mono text-[10px] text-muted-foreground/80">
+                          {[img.vllm && `image ${img.vllm}`, img.dynamo && `dynamo ${img.dynamo}`, ...(img.pip || []).map((x) => `pip ${x}`), img.model_revision && `model rev ${img.model_revision}`].filter(Boolean).join(" · ")}
+                        </span>
+                      )}
+                    </>
+                  ) : hereHasDefault ? (
+                    "Generic command without the tuned preset's settings. Not the configuration that was qualified on this hardware."
+                  ) : (
+                    `No preset for ${strategies[activeStrategy]?.display_name || activeStrategy} here; the presets above switch to the strategy they were qualified on.`
+                  )}
+                </p>
+              </ConfigRow>
+            );
+          })()}
+          {result?.preset?.point && result.preset.point.options.length > 1 && (() => {
+            // Points are usually one per benchmark concurrency; name the row after
+            // it when every point declares one, else keep the generic name
+            // (e.g. eval vs throughput arms).
+            const byConcurrency = result.preset.point.options.every((pt) => Number.isInteger(pt.concurrency));
+            return (
+            <ConfigRow
+              label={byConcurrency ? "Concurrency" : "Point"}
+              nested
+              hint={byConcurrency
+                ? "Concurrency the preset was qualified at: concurrent sessions for agentic lanes, concurrent requests otherwise. Each renders its own settings."
+                : "The preset's qualified operating points. Each renders its own settings."}
+            >
+              <PillGroup>
+                {result.preset.point.options.map((pt) => (
+                  <Pill key={pt.key} active={result.preset.point.selected === pt.key} pressed={result.preset.point.selected === pt.key}
+                    onClick={() => selectPoint(pt.key)} title={pt.description || pt.label}>
+                    {pt.label}
+                  </Pill>
+                ))}
+              </PillGroup>
+              {(() => {
+                const pt = result.preset.point.options.find((x) => x.key === result.preset.point.selected);
+                return pt?.description ? <p className="text-[11px] text-muted-foreground mt-2 leading-snug">{pt.description}</p> : null;
+              })()}
+            </ConfigRow>
+            );
+          })()}
+
           {/* PD Router — which orchestrator fronts the prefill/decode pools.
               Nested under Strategy: it only exists for pd_cluster and never
               changes the pools, just the launcher + front door. */}
@@ -2511,6 +2895,44 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   ? "SMG handles tokenization, tools and reasoning. Text Only is optional. Docker workers install the gRPC servicer at startup. Clients still use the HTTP API on SMG."
                   : "HTTP workers handle tokenization, tools and reasoning."}
               </p>
+            </ConfigRow>
+          )}
+
+          {/* PD Connector — the connector that moves KV from the prefill to the
+              decode pool. Nested under Strategy beside PD Router: it changes
+              each role's --kv-transfer-config and the router's KV mode, never
+              the pools. A connector this hardware or router can't run is
+              disabled with the reason. */}
+          {activeServingStrategy === "pd_cluster" && Object.keys(pdConnectors).length > 1 && (
+            <ConfigRow label="PD Connector" nested hint="Connector that moves each request's KV cache from the prefill pool to the decode pool. KV Offload tiers below compose with it.">
+              <PillGroup>
+                {Object.entries(pdConnectors).map(([key, c]) => {
+                  const reason = pdConnectorReason(key);
+                  return (
+                    <Pill key={key} active={effPdConnector === key} pressed={effPdConnector === key} disabled={!!reason}
+                      onClick={() => !reason && selectPdConnector(key)} title={reason || c.description}>
+                      <span className="font-semibold">{c.display_name || key}</span>
+                    </Pill>
+                  );
+                })}
+              </PillGroup>
+              <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                {pdConnectors[effPdConnector]?.description}
+                {pdConnectors[effPdConnector]?.docs && (
+                  <>
+                    {" "}
+                    <a href={pdConnectors[effPdConnector].docs} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-0.5 text-vllm-blue hover:underline">
+                      Docs <ExternalLink size={9} />
+                    </a>
+                  </>
+                )}
+              </p>
+              {result.kvConnector?.unavailableReason && (
+                <p className="text-[11px] text-amber-600 mt-2">
+                  {result.kvConnector.unavailableReason} Showing {pdConnectors[effPdConnector]?.display_name || effPdConnector} commands.
+                </p>
+              )}
             </ConfigRow>
           )}
 
@@ -2609,7 +3031,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                           ? "Mooncake — distributed KV cache: vLLM instances share prefix KV through a coordinated CPU-DRAM pool. Composes with the selected strategy — each instance runs it."
                           : disabledTitle}
                       >
-                        <span className="font-semibold">Mooncake</span>
+                        <span className="font-semibold">Mooncake Store</span>
                       </Pill>
                     ),
                   });
@@ -2629,9 +3051,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                 || kvOffloadOptions[activeKvOffload];
               const text = opt?.description || (isKvStoreActive ? MOONCAKE_BACKGROUND : null);
               const docs = opt?.docs_url || (isKvStoreActive ? MOONCAKE_DOCS_URL : null);
+              const pdRoles = activeServingStrategy === "pd_cluster" ? kvOffloadOptions[activeKvOffload]?.pd?.roles : null;
               return text ? (
                 <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
                   {text}
+                  {pdRoles && ` Under Prefill/Decode it joins the ${pdRoles.join(" and ")} role's KV transfer connector in a MultiConnector.`}
                   {docs && (
                     <>
                       {" "}
@@ -2763,6 +3187,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
                   parallelism={effPdDecodePar}
                   onParChange={(m) => setPdPar("decode", m)}
                 />
+                {hasDcp && (
+                  <div className="flex items-center gap-2" title="--decode-context-parallel-size">
+                    <span className="w-12 shrink-0 text-xs font-medium text-muted-foreground">DCP</span>
+                    {dcpPills}
+                  </div>
+                )}
                 <span className="text-xs text-muted-foreground tabular-nums">
                   total {(effPdPrefillNodes + effPdDecodeNodes) * (hwProfile.gpu_count || 8)} GPUs
                   · {effPdPrefillNodes + effPdDecodeNodes} node{effPdPrefillNodes + effPdDecodeNodes === 1 ? "" : "s"}
@@ -2879,6 +3309,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy }) {
               )}
             </p>
           </ConfigRow>
+
+          {/* Decode Context Parallelism — sizes come from the recipe's qualified
+              list, narrowed to those dividing the TP of every role, so one pick
+              keeps all node tabs consistent. Hidden when nothing is offered.
+              Under PD it renders inside the Nodes row instead (dcpPills). */}
+          {hasDcp && activeStrategy !== "pd_cluster" && (
+            <ConfigRow label="Decode context parallel" hint="--decode-context-parallel-size">
+              {dcpPills}
+            </ConfigRow>
+          )}
 
           {/* Features */}
           {Object.keys(recipe.features || {}).length > 0 && (
@@ -3114,13 +3554,21 @@ function PdNodeInput({ label, value, gpuPerNode, onChange, modes, parallelism, o
   );
 }
 
+// A pick re-renders the command block above the rows; keep the clicked row
+// where it was on screen (see hold-in-place.js). Buttons only, so links inside
+// a row (Runbook, Source) still navigate.
+function keepClickedRowInPlace(e) {
+  if (!e.target.closest?.("button")) return;
+  holdInPlace(e.target.closest("[data-config-row]"));
+}
+
 function ConfigRow({ label, hint, nested, children }) {
   // `nested` marks a row that only exists as a child of the pick above it
   // (Store Topology / Instances under Mooncake, the spec-method row under
   // Features): a blue left rail + slight tint expresses the ownership that
   // the flat divide-y list otherwise hides.
   return (
-    <div className={`px-4 py-3 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 ${nested ? "border-l-2 border-vllm-blue/30 bg-muted/20" : ""}`}>
+    <div data-config-row className={`px-4 py-3 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 ${nested ? "border-l-2 border-vllm-blue/30 bg-muted/20" : ""}`}>
       <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest sm:w-28 sm:pt-1.5 shrink-0 inline-flex items-center gap-1">
         {label}
         {hint && (
@@ -3286,13 +3734,13 @@ function CommandBody({ command }) {
         </div>
       )}
       <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-        {body}
+        <ShellCode>{body}</ShellCode>
       </pre>
     </>
   );
 }
 
-function CommandNote({ note }) {
+function HardwareNote({ note }) {
   if (!note) return null;
   const cfg = typeof note === "string" ? { body: note } : (note || {});
   const title = cfg.title || "Hardware note";
@@ -3316,6 +3764,40 @@ function CommandNote({ note }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Everything with the command that follows the selection: the hardware
+// note, then `notes` (titles listed, bodies on demand).
+function CommandNote({ note }) {
+  if (!note) return null;
+  const { hardware, notes = [] } = note;
+  return (
+    <>
+      {hardware && <HardwareNote note={hardware} />}
+      {notes.length > 0 && (
+        <details className="group/notes mx-4 mt-3 rounded-lg border border-vllm-blue/25 bg-vllm-blue/10 text-[11px] leading-snug">
+          <summary className="flex cursor-pointer list-none items-start gap-2 px-3 py-2 [&::-webkit-details-marker]:hidden">
+            <Info size={13} className="mt-0.5 shrink-0 text-vllm-blue" />
+            <span className="min-w-0 flex-1">
+              <span className="font-semibold text-[var(--command-fg)]">
+                {notes.length === 1 ? "1 note" : `${notes.length} notes`} for this configuration
+              </span>
+              <span className="text-[var(--command-fg)]/55 group-open/notes:hidden"> · {notes.map((n) => n.title || "Note").join(" · ")}</span>
+            </span>
+            <ChevronDown size={13} className="mt-0.5 shrink-0 text-[var(--command-fg)]/50 transition-transform group-open/notes:rotate-180" />
+          </summary>
+          <div className="space-y-2.5 border-t border-vllm-blue/20 px-3 py-2.5 pl-8">
+            {notes.map((n, i) => (
+              <div key={i}>
+                {n.title && <p className="font-semibold text-[var(--command-fg)]">{n.title}</p>}
+                <div className="command-note-md">{n.body}</div>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </>
   );
 }
 
@@ -3387,7 +3869,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
               </span>
             )}
           </div>
-          <div className="flex items-center justify-between px-4 pt-2 gap-3">
+          <div className="flex flex-wrap items-center justify-between px-4 pt-2 gap-x-3 gap-y-2">
             <CommandTabs
               tabs={[
                 ...preCompanions.map((c) => ({ id: c.feature, label: c.label })),
@@ -3401,7 +3883,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
           </div>
         </>
       ) : (
-        <div className="flex items-center justify-between px-4 pt-3 gap-3">
+        <div className="flex flex-wrap items-center justify-between px-4 pt-3 gap-x-3 gap-y-2">
           {statusHeader || (
             <span className="text-[11px] text-[var(--command-fg)]/55 font-mono">
               {configSummary}
@@ -3418,7 +3900,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
       {!activeCompanion && <CommandNote note={commandNote} />}
       {activePrelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-          {activePrelude}
+          <ShellCode>{activePrelude}</ShellCode>
         </pre>
       )}
       <CommandBody command={rawActive} />
@@ -3456,7 +3938,7 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   const pipHidden = pipCfg === false;
   const dockerHidden = dockerCfg === false;
   const [open, setOpen] = useState(false);
-  const { isAmd, isTpu, isXpu, isIntel, isNpu, image: dockerImage, brandKey, cudaMap } = dockerMeta;
+  const { isAmd, isTpu, isXpu, isIntel, isNpu, image: dockerImage, brandKey, cudaMap, cu129Image } = dockerMeta;
   // Intel CPU is a first-class backend in computeDockerMeta. Keep XPU
   // distinct even though it is also Intel hardware.
   const isCpu = isIntel && !isXpu;
@@ -3480,15 +3962,13 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   const nightlyRequired = recipe.model?.nightly_required === true || variant?.nightly_required === true;
   // A CUDA map narrows the toggle to the builds the recipe actually declares.
   // A single-key map (e.g. K3's cu130-only preview image) has nothing to
-  // toggle: hide the selector and pin both the docker tag and the pip wheel
-  // index to the one published build.
+  // toggle: hide the selector and pin the docker tag to the one published build.
   const cudaMapKeys = cudaMap ? ["cu130", "cu129"].filter((k) => k in cudaMap) : null;
   const singleCudaBuild = cudaMapKeys && cudaMapKeys.length === 1 ? cudaMapKeys[0] : null;
   const singleCudaLabel = singleCudaBuild === "cu129" ? "CUDA 12.9 (cu129)" : "CUDA 13 (cu130)";
-  // Resolve the CUDA tag for pip's nightly wheel index from the same toggle
-  // that drives the Docker tag suffix. "default" → cu130 (today's upstream
-  // baseline); explicit picks pass through.
-  const pipCudaTag = singleCudaBuild || (dockerCudaVariant === "default" ? "cu130" : dockerCudaVariant);
+  // Nightly wheels are cu130-only: `/nightly/cu129` stopped at the 0.32.0
+  // cycle, so there is no CUDA choice to offer for the pip nightly index.
+  const pipCudaTag = "cu130";
   const defaultPipCmd = isAmd
     ? `uv venv --python 3.12
 source .venv/bin/activate
@@ -3503,8 +3983,8 @@ uv pip install vllm \\
   --torch-backend cpu`
         : `uv venv --python 3.12 --seed --managed-python
 source .venv/bin/activate
-export VLLM_VERSION=$(curl -s https://api.github.com/repos/vllm-project/vllm/releases/latest | jq -r .tag_name | sed 's/^v//')
-uv pip install https://github.com/vllm-project/vllm/releases/download/v$VLLM_VERSION/vllm-$VLLM_VERSION+cpu-cp38-abi3-manylinux_2_34_x86_64.whl \\
+export VLLM_VERSION=$(curl -sI https://github.com/vllm-project/vllm/releases/latest | sed -n 's|^[Ll]ocation: .*/tag/v||p' | tr -d '\\r')
+uv pip install https://github.com/vllm-project/vllm/releases/download/v$VLLM_VERSION/vllm-$VLLM_VERSION+cpu-cp38-abi3-manylinux_2_39_x86_64.whl \\
   --torch-backend cpu`
       : nightlyRequired
         ? `uv venv
@@ -3522,11 +4002,9 @@ uv pip install -U vllm --torch-backend auto`;
     (isCpu
       ? nightlyRequired
         ? "Intel/AMD x86 CPU nightly wheels use the dedicated /nightly/cpu index and PyTorch CPU backend."
-        : "Intel/AMD x86 CPU release wheels are published separately from CUDA wheels; the command follows the official vLLM CPU pre-built-wheel flow."
+        : "Intel/AMD x86 CPU release wheels are published separately from CUDA wheels; the command follows the official vLLM CPU pre-built-wheel flow. Since v0.30.0 they are manylinux_2_39 builds, which need glibc 2.39+ (e.g. Ubuntu 24.04+); on older distros use the Docker tab."
       : nightlyRequired && !isAmd
-        ? singleCudaBuild
-          ? `vLLM ${minV} isn't released yet — nightly required. This recipe publishes ${singleCudaLabel} builds only.`
-          : `vLLM ${minV} isn't released yet — nightly required. For CUDA 12.9, switch the toggle to cu129.`
+        ? `vLLM ${minV} isn't released yet — nightly required. Nightly wheels are CUDA 13 (cu130) only; the host needs an r580+ NVIDIA driver.`
         : undefined);
 
   // Docker install step is just the image pull; the `docker run` that actually
@@ -3550,28 +4028,26 @@ uv pip install -U vllm --torch-backend auto`;
         ? singleCudaBuild
           ? `This tag is published as a ${singleCudaLabel} build only${singleCudaBuild === "cu130" ? " — the host needs an r580+ NVIDIA driver" : ""}.`
           : "This recipe ships paired CUDA-tagged images. Pick `cu129` for CUDA 12.9 hosts or `cu130` for CUDA 13."
-        : nightlyRequired
-          ? "Nightly image ships CUDA 13. Switch to cu129 for the `cu129-nightly` variant if your host is on CUDA 12.9."
-          : "Default tag ships CUDA 13. Switch to cu129 for the -cu129 variant if your host is on CUDA 12.9.";
+        : !dockerImage?.startsWith("vllm/vllm-openai:")
+          ? undefined
+          : cu129Image
+            ? `Default tag ships CUDA 13 (r580+ NVIDIA driver). On a CUDA 12.9 host, switch to cu129 for \`${cu129Image.split(":")[1]}\`.`
+            : `This tag ships CUDA 13 only — the host needs an r580+ NVIDIA driver. vLLM publishes no CUDA 12.9 build after v${LAST_CU129_RELEASE}.`;
   const dockerNote = dockerCfg?.note || defaultDockerNote;
-  // Show the CUDA selector when we're on NVIDIA and the user isn't supplying
-  // a full override command (which already bakes in a specific tag). Visible
-  // on the docker tab always, and on the pip tab when the command actually
-  // varies by CUDA — i.e. nightly recipes whose wheel index URL is explicit.
-  // Stable pip uses `--torch-backend auto`, which detects the host CUDA, so
-  // a toggle would be inert there. A single-build CUDA map has nothing to
-  // toggle either — the note explains the one published build instead.
+  // Show the CUDA selector on the docker tab when we're on NVIDIA, the user
+  // isn't supplying a full override command (which already bakes in a
+  // specific tag), and a CUDA 12.9 build actually exists: a two-key CUDA map,
+  // or an upstream tag with a published `-cu129` sibling (releases up to
+  // v0.32.0 — never nightly). Pip never shows it: stable uses
+  // `--torch-backend auto`, which detects the host CUDA, and the nightly
+  // index is cu130-only.
   const showCudaSelector =
     brandKey === "nvidia" &&
     !isNpu &&
     !singleCudaBuild &&
     !dockerCfg?.command &&
-    // Only upstream publishes paired `-cu129` / `cu129-nightly` tags. On a
-    // third-party image the toggle would synthesize a tag that doesn't exist
-    // (`eugr/spark-vllm-b12x:latest-cu129`), so offer it for `vllm/` images
-    // alone. The pip branch is unaffected: wheels come from wheels.vllm.ai.
-    ((installMode === "docker" && dockerImage?.startsWith("vllm/")) ||
-      (installMode === "pip" && nightlyRequired && !pipCfg?.command));
+    installMode === "docker" &&
+    (cudaMap ? dockerImage?.startsWith("vllm/") : !!cu129Image);
 
   // TPU has no pip wheel — force-hide the pip tab regardless of recipe overrides.
   // Intel XPU is validated via the official `vllm-openai-xpu` Docker image;
@@ -3674,7 +4150,7 @@ uv pip install -U vllm --torch-backend auto`;
             </div>
           )}
           <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-            {active.code}
+            <ShellCode>{active.code}</ShellCode>
           </pre>
         </div>
       )}
@@ -3692,8 +4168,8 @@ function DependenciesBlock({ deps }) {
   const optionalCount = deps.length - requiredCount;
   return (
     <div className="rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border">
-      <div className="flex items-center justify-between px-4 pt-3">
-        <span className="text-[11px] text-[var(--command-fg)]/50 font-mono inline-flex items-center gap-1.5">
+      <div className="flex items-center justify-between px-4 pt-3 gap-3">
+        <span className="text-[11px] text-[var(--command-fg)]/50 font-mono flex flex-wrap items-center gap-x-1.5 whitespace-nowrap">
           <Package size={11} /> extra install
           {requiredCount > 0 && <span className="text-[var(--command-fg)]/40">· {requiredCount} required</span>}
           {optionalCount > 0 && <span className="text-[var(--command-fg)]/40">· {optionalCount} optional</span>}
@@ -3704,16 +4180,16 @@ function DependenciesBlock({ deps }) {
         {deps.map((d, i) => (
           <div key={i} className={d.optional ? "opacity-50" : undefined}>
             {d.note && (
-              <div className="text-[var(--command-fg)]/45 text-[11px] leading-snug mb-0.5 inline-flex items-center gap-1.5">
+              <div className="text-[var(--command-fg)]/45 text-[11px] leading-snug mb-0.5">
                 {d.optional && (
-                  <span className="inline-flex items-center rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wider bg-foreground/10 text-[var(--command-fg)]/60">
+                  <span className="inline-flex items-center rounded px-1 py-px mr-1.5 align-[1px] text-[9px] font-semibold uppercase tracking-wider bg-foreground/10 text-[var(--command-fg)]/60">
                     Optional
                   </span>
                 )}
                 <span># {d.note}</span>
               </div>
             )}
-            <div className="text-[var(--command-fg)] whitespace-pre">{d.command}</div>
+            <div className="text-[var(--command-fg)] whitespace-pre"><ShellCode>{d.command}</ShellCode></div>
           </div>
         ))}
       </div>
@@ -3756,9 +4232,9 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
           </span>
         )}
       </div>
-      <div className="flex items-center justify-between px-4 pt-2">
+      <div className="flex flex-wrap items-center justify-between px-4 pt-2 gap-x-3 gap-y-2">
         <CommandTabs tabs={tabs} current={active.id} onSelect={setTab} />
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           <CopyButton text={fullScript} />
           <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={active.id !== "head"} disabledNote="Clients connect to the head node — cURL & Bench live on the Head tab." />
           <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={active.id !== "head"} disabledNote="Clients connect to the head node — cURL & Bench live on the Head tab." />
@@ -3768,7 +4244,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
       <CommandNote note={commandNote} />
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-          {prelude}
+          <ShellCode>{prelude}</ShellCode>
         </pre>
       )}
       <CommandBody command={active.command} />
@@ -3798,7 +4274,10 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   const routerDocker = isDocker && result.router.dockerCommand;
   const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix, setupCommand: result.workerDockerSetup, hostNetwork: result.transport === "grpc" })
+      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix, setupCommand: result.workerDockerSetup,
+        // RDMA connectors (Mooncake, MoRI-IO) need host networking and locked memory.
+        hostNetwork: result.transport === "grpc" || !!result.kvConnector?.docker?.host_network,
+        extraFlags: result.kvConnector?.docker?.flags || [] })
       : cmd;
   // Mooncake composed into PD (result.mooncake): a "Mooncake Config" tab
   // (launch step 0) writes the shared config file(s) once — every
@@ -3847,7 +4326,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           </span>
         )}
       </div>
-      <div className="flex items-center justify-between px-4 pt-2 gap-3">
+      <div className="flex flex-wrap items-center justify-between px-4 pt-2 gap-x-3 gap-y-2">
         <CommandTabs tabs={tabs} current={active.id} onSelect={setTab} />
         <div className="flex items-center gap-1.5 shrink-0">
           <CopyButton text={fullScript} />
@@ -3926,7 +4405,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
       {!active.isRouter && <CommandNote note={commandNote} />}
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-          {prelude}
+          <ShellCode>{prelude}</ShellCode>
         </pre>
       )}
       <CommandBody command={active.command} />
@@ -4014,7 +4493,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
           </span>
         )}
       </div>
-      <div className="flex items-center justify-between px-4 pt-2 gap-3">
+      <div className="flex flex-wrap items-center justify-between px-4 pt-2 gap-x-3 gap-y-2">
         <CommandTabs tabs={tabs} current={active.id} onSelect={setTab} />
         <div className="flex items-center gap-1.5 shrink-0">
           <CopyButton text={fullScript} />
@@ -4052,7 +4531,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
       {active.isVllm && <CommandNote note={commandNote} />}
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-          {prelude}
+          <ShellCode>{prelude}</ShellCode>
         </pre>
       )}
       <CommandBody command={active.command} />

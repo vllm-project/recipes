@@ -61,20 +61,24 @@ hardware_overrides: {}
 
 strategy_overrides: {}
 
+# Known issues (SCHEMA.md → troubleshooting): the symptom as the title, and
+# `when` for the hardware / strategies / variants / features it applies to.
+# troubleshooting:
+#   - title: "TODO: the error message users see"
+#     when: { hardware: [hopper] }
+#     body: |
+#       TODO: the fix.
+
+# The guide is prose: no launch commands or env blocks (the builder renders
+# them from the fields above), no configuration-specific notes (`notes`).
 guide: |
   ## Overview
 
   TODO: what the model is, what this recipe was tested on, and its limits.
 
-  ## Launch
-
   ## Client usage
 
   TODO: a chat request (multimodal: one with image/video/audio input).
-
-  ## Benchmarking
-
-  ## Troubleshooting
 
   ## References
 

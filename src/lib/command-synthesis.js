@@ -1,3 +1,5 @@
+import { applyPresetArgOps, effectivePreset, toggleOwnedFlags, matchingPresets, presetImage, presetPoints, resolvePresetKey, withPreset } from "./recipe-presets.js";
+
 /**
  * Core command synthesis: Recipe + Variant + Strategy + Hardware + Features → vllm serve command.
  * Pure functions, no I/O.
@@ -340,6 +342,63 @@ export function pdRoleNodes(recipe, role, hwProfile, hwProfileId) {
 }
 
 /**
+ * The PD strategy's KV transfer connector key (strategies/pd_cluster.yaml
+ * `connectors`): the requested one when it exists, else the `default: true`
+ * entry, else the first. null when the strategy declares none.
+ */
+export function pdConnectorKey(strategy, requested) {
+  const connectors = strategy?.connectors || {};
+  if (requested && connectors[requested]) return requested;
+  const keys = Object.keys(connectors);
+  return keys.find((k) => connectors[k]?.default) ?? keys[0] ?? null;
+}
+
+/**
+ * Why a PD KV transfer connector can't run on this hardware behind this PD
+ * router, or null. `brands` gates hardware (MoRI-IO is ROCm only); `routers`
+ * lists the PD routers that speak it (absent = vLLM Router only).
+ */
+export function pdConnectorUnavailableReason(connector, hwProfile, router = "vllm") {
+  if (!connector) return "Unknown KV transfer connector.";
+  const name = connector.display_name || "This connector";
+  if (connector.brands?.length && !connector.brands.includes(hwProfile?.brand)) {
+    return `${name} needs ${connector.brands.join(" / ")} hardware.`;
+  }
+  const routers = connector.routers || ["vllm"];
+  if (!routers.includes(router)) {
+    const label = { vllm: "vLLM Router", dynamo: "Dynamo", smg: "SMG" };
+    return `${name} works behind ${routers.map((r) => label[r] || r).join(" or ")} only.`;
+  }
+  return null;
+}
+
+// A KV tier composed with the transfer connector, in the shape vLLM's
+// MultiConnector takes (the transfer connector first).
+function multiConnector(connectors) {
+  return { kv_connector: "MultiConnector", kv_role: "kv_both", kv_connector_extra_config: { connectors: connectors.filter(Boolean) } };
+}
+
+// The transfer connector a rendered role actually runs: its last
+// --kv-transfer-config, or that MultiConnector's first child.
+function transferConnectorOf(args) {
+  const i = args.lastIndexOf("--kv-transfer-config");
+  if (i < 0) return null;
+  try {
+    const cfg = JSON.parse(args[i + 1]);
+    return cfg.kv_connector === "MultiConnector" ? cfg.kv_connector_extra_config?.connectors?.[0]?.kv_connector ?? null : cfg.kv_connector;
+  } catch {
+    return null;
+  }
+}
+
+// A KV-offload option's --kv-transfer-config as an object, to compose it.
+function kvOptionConfig(option) {
+  const args = option?.args || [];
+  const i = args.lastIndexOf("--kv-transfer-config");
+  return i >= 0 ? JSON.parse(args[i + 1]) : null;
+}
+
+/**
  * Default parallelism of one PD pool: recipe override → strategy YAML → "tp".
  * Not snapped to pdPoolModes; callers do that.
  */
@@ -475,15 +534,19 @@ export function strategyAllowsKvOffload(strategy) {
 
 /**
  * Whether a composing KV-offload option (taxonomy.kv_offload.*) may run under
- * a strategy. Two layers: pd_cluster / kv_store_lb are excluded for EVERY
- * option (both own --kv-transfer-config; last-wins dedupe would corrupt it),
- * and an option may further restrict itself with a `strategies` allowlist
- * (e.g. LMCache's node-local MP server rules out multi-node engines).
+ * a strategy. Two layers: kv_store_lb is excluded for every option, and
+ * pd_cluster for every option without `pd.roles` (both own
+ * --kv-transfer-config; a plain option would overwrite it), and an option may
+ * further restrict itself with a `strategies` allowlist (e.g. LMCache's
+ * node-local MP server rules out multi-node engines).
  */
 export function isKvOffloadAllowedForStrategy(option, strategyName, strategy) {
   if (!option) return false;
   if (!strategyAllowsKvOffload(strategy)) return false;
-  if (strategy?.deploy_type === "pd_cluster" || strategy?.deploy_type === "kv_store_lb") return false;
+  // Under PD only an option that names the roles it joins (`pd.roles`) composes,
+  // as a tier beside each role's transfer connector.
+  if (strategy?.deploy_type === "pd_cluster") return !!option.pd?.roles?.length;
+  if (strategy?.deploy_type === "kv_store_lb") return false;
   const allow = option.strategies;
   return !Array.isArray(allow) || allow.length === 0 || allow.includes(strategyName);
 }
@@ -757,14 +820,52 @@ function ascendDockerArgv(deviceCount) {
   return argv;
 }
 
+// vLLM's last CUDA 12.9 build is v0.32.0: from the 0.33.0 cycle on, release
+// images, nightly images (`cu129-nightly` stopped updating) and the nightly
+// wheel index (`/nightly/cu129`) are CUDA 13 (cu130) only.
+export const LAST_CU129_RELEASE = "0.32.0";
+
+function versionBelow(v, floor) {
+  const pa = String(v).split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = String(floor).split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d < 0;
+  }
+  return false;
+}
+
+// The CUDA 12.9 counterpart of an upstream `vllm/vllm-openai` tag, or null
+// when none is published, so the Install block's cu129 toggle never
+// synthesizes a tag that doesn't exist. `minVllmVersion` is the version the
+// selected configuration needs: a model-specific tag (`gemma4-unified`) is
+// cut from a tree of that age, so it has a `-cu129` sibling only below 0.33.0.
+//   :latest       → :v0.32.0-cu129 (the last cu129 release; `latest-cu129`
+//                   stops moving at 0.32.0), when the recipe runs on it
+//   :vX.Y.Z       → :vX.Y.Z-cu129 for X.Y.Z < 0.33.0
+//   nightly tags  → none
+//   CUDA/OS-suffixed tags (`-cu130`, `-ubuntu2404`) → none
+export function cu129DockerImage(image, minVllmVersion = null) {
+  const m = /^vllm\/vllm-openai:(.+)$/.exec(image || "");
+  if (!m) return null;
+  const tag = m[1];
+  const cutoff = "0.33.0";
+  if (/nightly/.test(tag) || /(^|-)(cu\d|ubuntu)/.test(tag)) return null;
+  const release = /^v(\d+\.\d+\.\d+)$/.exec(tag);
+  if (release) return versionBelow(release[1], cutoff) ? `${image}-cu129` : null;
+  if (minVllmVersion && !versionBelow(minVllmVersion, cutoff)) return null;
+  if (tag === "latest") return `vllm/vllm-openai:v${LAST_CU129_RELEASE}-cu129`;
+  return `${image}-cu129`;
+}
+
 // When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
-// the user's `dockerCudaVariant` toggle instead of appending `-cu129`/`-cu130`.
+// the user's `dockerCudaVariant` toggle instead of appending `-cu129`.
 export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   // When `model.nightly_required: true` and no explicit `docker_image` pin,
   // swap the brand defaults to nightly tags so the Install block matches the
   // nightly pip wheel that's also being rendered. vLLM publishes `:nightly`
-  // for all three brand repos. NVIDIA also publishes `cu129-nightly` /
-  // `cu130-nightly` — the CUDA suffix logic in the caller handles those.
+  // for all three brand repos; NVIDIA's is CUDA 13 only (see
+  // `cu129DockerImage`).
   const nightlyRequired = recipe.model?.nightly_required === true;
   const DEFAULT_IMAGE = nightlyRequired
     ? {
@@ -915,13 +1016,13 @@ function localModelMount(modelId) {
     : [];
 }
 
-// Port to publish, read off the command's own `--port` so a strategy that
-// serves behind a router (on 8100) stays reachable from the host.
-function servedPort(tokens, fallback = 8000) {
+// The value a command actually runs with for an integer flag: the last
+// occurrence wins, as in dedupeArgs.
+export function lastIntFlag(tokens, flag, fallback) {
   for (let i = tokens.length - 1; i >= 0; i--) {
     const t = tokens[i];
     if (typeof t !== "string") continue;
-    const raw = t === "--port" ? tokens[i + 1] : t.startsWith("--port=") ? t.slice(7) : null;
+    const raw = t === flag ? tokens[i + 1] : t.startsWith(`${flag}=`) ? t.slice(flag.length + 1) : null;
     if (raw == null) continue;
     const v = Number(raw);
     if (Number.isInteger(v) && v > 0) return v;
@@ -929,11 +1030,19 @@ function servedPort(tokens, fallback = 8000) {
   return fallback;
 }
 
+// Port to publish, read off the command's own `--port` so a strategy that
+// serves behind a router (on 8100) stays reachable from the host.
+function servedPort(tokens, fallback = 8000) {
+  return lastIntFlag(tokens, "--port", fallback);
+}
+
 // Wrap a `vllm serve MODEL <args>` command in `docker run`. The vllm/vllm-openai
 // image's entrypoint is `vllm serve`, so we pass MODEL and the trailing args as
 // CMD. `cmdPrefix` (e.g. "vllm serve") is restated before MODEL for images whose
 // entrypoint is something else. Env vars become `-e KEY=VAL` inside the container.
-export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false }) {
+// `extraFlags` are runtime flags a component needs on top of the GPU ones
+// (a PD KV connector's RDMA device and locked-memory limit).
+export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [] }) {
   const pubPort = port ?? servedPort(command.split(/\s+/));
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
@@ -959,7 +1068,7 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = null, isN
     ? "--privileged --net=host --shm-size=16g"
     : `--privileged --ipc=host ${hostNetwork ? "--network host" : `-p ${pubPort}:${pubPort}`}`;
   const base = `${prereq}docker run ${gpuFlags} \\
-  ${runtimeFlags} \\
+  ${runtimeFlags} \\${extraFlags.length ? `\n  ${extraFlags.join(" ")} \\` : ""}
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
   const setup = setupCommand
     ? `--entrypoint /bin/sh ${image} -c ${shellQuote(`${setupCommand} && exec vllm serve "$@"`)} vllm-grpc ${modelId}`
@@ -972,7 +1081,7 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = null, isN
 // argv companion to buildDockerRun. `argv` here is the inner command's argv —
 // `["vllm", "serve", "<model>", ...flags]` from formatArgv. Returns the full
 // docker-run argv ready to spawn without a shell.
-export function buildDockerArgv({ argv, env, meta, port = null }) {
+export function buildDockerArgv({ argv, env, meta, port = null, hostNetwork = false, extraFlags = [] }) {
   const pubPort = port ?? servedPort(argv);
   const envFlags = [];
   for (const [k, v] of Object.entries(env || {})) {
@@ -987,11 +1096,12 @@ export function buildDockerArgv({ argv, env, meta, port = null }) {
   }
   const runtimeFlags = meta.isNpu
     ? ["--privileged", "--net=host", "--shm-size", "16g"]
-    : ["--privileged", "--ipc=host", "-p", `${pubPort}:${pubPort}`];
+    : ["--privileged", "--ipc=host", ...(hostNetwork ? ["--network", "host"] : ["-p", `${pubPort}:${pubPort}`])];
   const base = [
     "docker", "run",
     ...dockerGpuArgv(meta),
     ...runtimeFlags,
+    ...extraFlags,
     "-v", "~/.cache/huggingface:/root/.cache/huggingface",
     ...mountFlags,
     ...envFlags,
@@ -1073,12 +1183,21 @@ function stripArgs(args, flags) {
 // command is paste-safe. Without this, JSON values like
 // `{"cudagraph_mode":"FULL_AND_PIECEWISE"}` trigger brace expansion and get
 // their double quotes stripped by bash.
+// The renderer's own address placeholders. Inside a quoted value (a
+// connector's JSON naming the router or this node) they are spliced out of the
+// single quotes so bash still expands them; any other `$` stays literal.
+const ADDRESS_PLACEHOLDER = /(\$(?:ROUTER_HOST|ROUTER_PORT|HEAD_IP|(?:PREFILL|DECODE)_NODE_\d+)(?![A-Za-z0-9_]))/;
+
 function shellQuote(s) {
   if (typeof s !== "string" || s.length === 0) return s;
   // Bare $VAR references must stay unquoted so bash expands them at runtime.
   if (/^\$[A-Z_][A-Z0-9_]*$/.test(s)) return s;
   if (/^[A-Za-z0-9_./=:@,+%-]+$/.test(s)) return s;
-  return `'${s.replace(/'/g, "'\\''")}'`;
+  const quote = (x) => `'${x.replace(/'/g, "'\\''")}'`;
+  return s.split(ADDRESS_PLACEHOLDER)
+    .map((part, i) => (i % 2 ? `"${part}"` : quote(part)))
+    .filter((part) => part !== "''")
+    .join("");
 }
 
 /**
@@ -1204,7 +1323,77 @@ export function smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, trans
  * Returns: { command, env, deployType } for single_node/multi_node,
  *          { prefillCommand, decodeCommand, routerConfig, env, deployType } for pd_cluster.
  */
-export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null, pdTransport = "http") {
+/**
+ * Decode context parallelism (DCP). A recipe opts in with
+ * `decode_context_parallel.sizes` — a list, or a hardware-keyed map of lists
+ * (exact GPU id > generation > brand > `default`) — naming the DCP sizes that
+ * were qualified on that hardware. Returns the sorted sizes above 1.
+ */
+export function dcpSizesFor(recipe, hwProfile, hwProfileId) {
+  const raw = recipe?.decode_context_parallel?.sizes;
+  const list = Array.isArray(raw) ? raw : hardwareKeyedValue(raw, hwProfile, hwProfileId);
+  if (!Array.isArray(list)) return [];
+  return [...new Set(list.filter((n) => Number.isInteger(n) && n > 1))].sort((a, b) => a - b);
+}
+
+function lastFlagValue(args, flag) {
+  const i = args.lastIndexOf(flag);
+  return i >= 0 ? args[i + 1] : undefined;
+}
+
+/**
+ * Set (size > 0) or drop (size 0) `--decode-context-parallel-size` in an argv.
+ * An existing flag is rewritten in place so the argument order is stable; when
+ * it is absent the flag is appended with the recipe's `comm_backend`. Dropping
+ * also removes `--dcp-comm-backend`, which is meaningless without DCP.
+ */
+function applyDcpSize(args, size, commBackend) {
+  const SIZE = "--decode-context-parallel-size";
+  const BACKEND = "--dcp-comm-backend";
+  if (size === 0) return stripArgs(args, [SIZE, BACKEND]);
+  if (!args.includes(SIZE)) {
+    return [...args, SIZE, String(size), ...(commBackend && !args.includes(BACKEND) ? [BACKEND, commBackend] : [])];
+  }
+  return args.map((a, i) => (args[i - 1] === SIZE ? String(size) : a));
+}
+
+// The last two parameters are the user's tuned-preset pick and point pick (see
+// recipe-presets.js): an undefined preset follows the recipe's default for
+// this hardware + strategy + variant, "baseline" opts out, a key selects that
+// preset; an undefined point follows the preset's default point.
+//
+// `result.preset` = { selected, options, point: { selected, options } | null,
+// select, image } — `select` is the builder state the preset implies, which
+// the CALLER applies (the builder to its pills, the JSON API to the params it
+// passes): synthesis renders whatever frontend / router / features it is given.
+export function resolveCommand(...params) {
+  const dcpOut = {};
+  const [recipe, variantKey, strategyName, hwProfileId] = params;
+  const presetKey = resolvePresetKey(recipe, hwProfileId, strategyName, params[17], variantKey);
+  const raw = recipe?.presets?.[presetKey];
+  const eff = raw ? effectivePreset(raw, params[18]) : null;
+  params[0] = withPreset(recipe, presetKey, hwProfileId, strategyName, { variantKey, point: params[18] });
+  const result = resolveCommandImpl(dcpOut, ...params.slice(0, 17), params[19] ?? null);
+  if (result && typeof result === "object" && !Array.isArray(result)) {
+    result.dcp = dcpOut.get?.() ?? null;
+    const options = matchingPresets(recipe, hwProfileId, strategyName, variantKey);
+    const points = raw ? presetPoints(raw) : [];
+    result.preset = options.length
+      ? {
+        selected: presetKey,
+        options,
+        point: points.length ? { selected: eff?.point ?? null, options: points } : null,
+        select: eff?.select || null,
+        image: presetImage(eff?.image),
+      }
+      : null;
+  }
+  return result;
+}
+
+// `dcpSize` is the user's Decode Context Parallelism pick: null follows the
+// recipe's own default, 1 forces DCP off, N > 1 selects that size.
+function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null, pdTransport = "http", dcpSize = null, pdConnectorPick = null) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
@@ -1262,6 +1451,21 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
 
   let smgGrpc = !!smg && pdTransport === "grpc";
 
+  // PD KV transfer connector: the pick when this hardware and router can run
+  // it, else the default, with the reason surfaced as for the router.
+  let pdConnectorSel = strategy.deploy_type === "pd_cluster" ? pdConnectorKey(strategy, pdConnectorPick) : null;
+  let pdConnectorUnavailable = null;
+  if (pdConnectorSel && pdConnectorPick && pdConnectorSel === pdConnectorPick) {
+    pdConnectorUnavailable = pdConnectorUnavailableReason(strategy.connectors[pdConnectorSel], hwProfile,
+      dynamo ? "dynamo" : smg ? "smg" : "vllm");
+    if (pdConnectorUnavailable) pdConnectorSel = pdConnectorKey(strategy);
+  }
+  const pdConnector = pdConnectorSel ? strategy.connectors[pdConnectorSel] : null;
+  // The transfer config a composed KV tier wraps: Dynamo workers carry their
+  // own (kv_both) NIXL config, everyone else the selected connector's.
+  const pdTransferConfig = (role) => (dynamo ? kvOptionConfig(dynamo[role] && { args: dynamo[role].vllm_args }) : null)
+    ?? pdConnector?.[role]?.config ?? null;
+
   // The composing option, resolved once behind all three gates (strategy,
   // recipe opt-in, brand) and shared by args/env/companion emission.
   const kvOptRaw = taxonomy?.kv_offload?.[kvOffload];
@@ -1297,12 +1501,40 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     return raw || null;
   };
 
+  // DCP is validated against the topology's tensor-parallel size: a size is
+  // offered only when it divides the TP of EVERY role (equals it, with `match_tp`) (both PD pools, or the
+  // single aggregated engine), so one pick keeps all node tabs consistent. The
+  // default is whatever the layered recipe args already carry (the qualified
+  // lane value), dropped when the current topology can't run it.
+  let dcpState;
+  function getDcp() {
+    if (dcpState !== undefined) return dcpState;
+    const sizes = dcpSizesFor(recipe, hwProfile, hwProfileId);
+    if (!sizes.length) return (dcpState = null);
+    const pd = strategy.deploy_type === "pd_cluster";
+    const raws = (pd ? ["prefill", "decode"] : [null]).map((role) =>
+      buildArgsRaw(role, !pd && strategy.deploy_type === "multi_node" && nodeCount > 1 ? "head" : null));
+    const tps = raws.map((a) => Number(lastFlagValue(a, "--tensor-parallel-size")) || 1);
+    const matchTp = recipe.decode_context_parallel.match_tp === true;
+    const allowed = sizes.filter((n) => tps.every((tp) => (matchTp ? tp === n : tp % n === 0)));
+    const carried = raws.map((a) => Number(lastFlagValue(a, "--decode-context-parallel-size")) || 0);
+    const baseline = carried.every((n) => n === carried[0]) && allowed.includes(carried[0]) ? carried[0] : 0;
+    const selected = dcpSize === 1 ? 0 : allowed.includes(dcpSize) ? dcpSize : baseline;
+    return (dcpState = { sizes: allowed, baseline, selected, tp: tps });
+  }
+  dcpOut.get = getDcp;
+  function buildArgs(roleOverride, nodeRole, nodeRank = 1) {
+    const args = buildArgsRaw(roleOverride, nodeRole, nodeRank);
+    const dcp = getDcp();
+    return dcp ? applyDcpSize(args, dcp.selected, recipe.decode_context_parallel.comm_backend) : args;
+  }
+
   // Helper to merge args. `nodeRole` selects the multi-node shape ("head" =
   // rank 0 / "worker" = a follower); `nodeRank` is which follower — the
   // zero-based node index that feeds --node-rank (TP/TEP/PP) or the
   // --data-parallel-start-rank offset (DEP). Defaults to 1, the first follower,
   // so existing two-node callers are unchanged.
-  function buildArgs(roleOverride, nodeRole, nodeRank = 1) {
+  function buildArgsRaw(roleOverride, nodeRole, nodeRank = 1) {
     const mpRank = nodeRole === "worker" ? Math.max(1, nodeRank) : 0;
     const args = [];
 
@@ -1334,8 +1566,10 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     }
     if (strategy.deploy_type !== "pd_cluster") {
       if (strategy.vllm_args) args.push(...strategy.vllm_args);
-    } else if (roleOverride && strategy[roleOverride]?.vllm_args) {
-      args.push(...strategy[roleOverride].vllm_args);
+    } else if (roleOverride) {
+      if (strategy[roleOverride]?.vllm_args) args.push(...strategy[roleOverride].vllm_args);
+      const transfer = pdConnector?.[roleOverride]?.config;
+      if (transfer) args.push("--kv-transfer-config", JSON.stringify(transfer));
     }
     // Dynamo role args (--disaggregation-mode + its kv_both Nixl config)
     // follow the native ones so the connector swap wins the last-wins dedupe.
@@ -1626,7 +1860,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     // 8. Composing KV offload (taxonomy.kv_offload.<key>) — the option's
     //    --kv-transfer-config is appended last so it wins the last-wins
     //    dedupe over any earlier occurrence. `kvOpt` is pre-gated above.
-    if (kvOpt) {
+    if (kvOpt && strategy.deploy_type !== "pd_cluster") {
       args.push(...(kvOpt.args || []));
     }
     // Mooncake composes the same way on any non-PD serving strategy: the
@@ -1636,18 +1870,43 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     if (kvComposing) {
       args.push(...(kvStoreStrat.vllm?.vllm_args || []));
     }
-    // Mooncake × pd_cluster: each role's plain NixlConnector config is
-    // swapped (last-wins) for the kv_store YAML's `pd.<role>.args`
-    // MultiConnector — Nixl prefill↔decode path + shared MooncakeStoreConnector.
+    // Mooncake × pd_cluster: the kv_store YAML's `pd.<role>.tier`
+    // (MooncakeStoreConnector) joins the role's transfer connector in a
+    // MultiConnector, which replaces (last-wins) the plain transfer config.
     if (strategy.deploy_type === "pd_cluster" && roleOverride
-        && kvStoreStrat?.pd?.[roleOverride]?.args) {
-      args.push(...kvStoreStrat.pd[roleOverride].args);
+        && kvStoreStrat?.pd?.[roleOverride]?.tier) {
+      args.push("--kv-transfer-config", JSON.stringify(multiConnector([
+        pdTransferConfig(roleOverride),
+        kvStoreStrat.pd[roleOverride].tier,
+      ])));
+    }
+    // A composing KV-offload option that declares `pd.roles` (Simple CPU
+    // offload: prefill only) joins those roles' transfer connector the same way.
+    const pdTier = strategy.deploy_type === "pd_cluster" && roleOverride
+      && kvOpt?.pd?.roles?.includes(roleOverride) ? kvOptionConfig(kvOpt) : null;
+    if (pdTier) {
+      args.push("--kv-transfer-config", JSON.stringify(multiConnector([pdTransferConfig(roleOverride), pdTier])));
     }
 
     // Dynamo workers serve no HTTP of their own (the frontend does), so drop
     // flags like --port whichever layer emitted them.
-    if (dynamo?.remove_args?.length) return stripArgs(args, dynamo.remove_args);
-    return args;
+    let out = dynamo?.remove_args?.length ? stripArgs(args, dynamo.remove_args) : args;
+    // 9. The active preset's `remove_args` / `json_args` (recipe-presets.js),
+    //    after every layer so they also reach feature and KV-offload flags
+    //    (e.g. num_speculative_tokens inside --speculative-config).
+    const ops = recipe._presetOps;
+    if (ops) {
+      const editOnly = toggleOwnedFlags(recipe, taxonomy);
+      out = applyPresetArgOps(out, ops.all, editOnly);
+      if (roleOverride) out = applyPresetArgOps(out, ops.roles?.[roleOverride], editOnly);
+    }
+    // Connector configs name the worker's own HTTP port (MoRI-IO's
+    // `http_port`) as `{port}`: the port the role actually serves on.
+    if (out.some((t) => typeof t === "string" && t.includes("{port}"))) {
+      const port = String(servedPort(out));
+      out = out.map((t) => (typeof t === "string" ? t.replaceAll("{port}", port) : t));
+    }
+    return out;
   }
 
   // Helper to merge env
@@ -1666,12 +1925,14 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     // Strategy env
     if (strategy.deploy_type !== "pd_cluster") {
       Object.assign(env, strategy.env || {});
-    } else if (roleOverride && strategy[roleOverride]?.env) {
-      Object.assign(env, strategy[roleOverride].env);
+    } else if (roleOverride) {
+      Object.assign(env, strategy[roleOverride]?.env || {});
+      Object.assign(env, pdConnector?.[roleOverride]?.env || {});
     }
     if (dynamo && roleOverride) Object.assign(env, dynamo.env || {});
-    // Composing-option env, after the strategy's so the option wins.
-    if (kvOpt?.env) {
+    // Composing-option env, after the strategy's so the option wins (under
+    // PD only on the roles it joins).
+    if (kvOpt?.env && (strategy.deploy_type !== "pd_cluster" || kvOpt.pd?.roles?.includes(roleOverride))) {
       Object.assign(env, kvOpt.env);
     }
     // Mooncake composition: instances (any serving strategy) and PD roles
@@ -1857,6 +2118,24 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
   const deployType = strategy.deploy_type || "single_node";
 
   if (deployType === "pd_cluster") {
+    // A recipe or preset layer may write a role's whole --kv-transfer-config
+    // (MiniMax-M3.1-Flash on MI355X composes NIXL with CPU offload by hand).
+    // When that names another transfer connector than the one picked, the
+    // pick can't apply: render the default, with the reason, rather than a
+    // router whose KV mode disagrees with its workers.
+    if (pdConnectorPick && pdConnectorSel === pdConnectorPick && !dynamo) {
+      const clash = ["prefill", "decode"].find((role) =>
+        transferConnectorOf(dedupeArgs(buildArgs(role, null).filter(Boolean))) !== pdConnector[role]?.config?.kv_connector);
+      if (clash) {
+        const again = [...arguments];
+        again[18] = null;
+        const result = resolveCommandImpl(...again);
+        if (result?.kvConnector) {
+          result.kvConnector.unavailableReason = `This recipe's ${clash} command on ${hwProfile.display_name || hwProfileId} sets its own --kv-transfer-config, so ${pdConnector.display_name || pdConnectorPick} can't replace it.`;
+        }
+        return result;
+      }
+    }
     // Each pool (prefill / decode) exposes one HTTP endpoint per node, so the
     // router needs `--prefill` / `--decode` repeated to match the pool size.
     // `--intra-node-data-parallel-size` should match dp_local for DEP pools
@@ -1926,11 +2205,18 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
     // makes the router and clients agree. Unfilled, shell leaves the $VAR
     // literal — vllm-router won't accept that, so the user must either fill
     // the panel or `export ROUTER_HOST=…; export ROUTER_PORT=…` first.
+    // The connector sets the router's KV mode: NIXL (the default) takes the
+    // static endpoints, Mooncake adds each prefill's bootstrap port, and
+    // MoRI-IO workers register through discovery instead of being listed.
+    const rc = pdConnector?.router || {};
+    const bootstrap = rc.bootstrap_port ? ` ${rc.bootstrap_port}` : "";
     const routerLines = [
       `vllm-router --policy ${policy} \\`,
       `    --vllm-pd-disaggregation \\`,
-      ...prefillEndpoints,
-      ...decodeEndpoints,
+      ...(rc.kv_connector && rc.kv_connector !== "nixl" ? [`    --kv-connector ${rc.kv_connector} \\`] : []),
+      ...(rc.discovery_port
+        ? [`    --vllm-discovery-address 0.0.0.0:${rc.discovery_port} \\`]
+        : [...prefillEndpoints.map((l) => l.replace(/ \\$/, `${bootstrap} \\`)), ...decodeEndpoints]),
       `    --host $ROUTER_HOST \\`,
       `    --port $ROUTER_PORT \\`,
       `    --intra-node-data-parallel-size ${intraDp}`,
@@ -2074,6 +2360,12 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         },
       } : {}),
       ...(dynamo ? { dynamoInstall: dynamoInstallSteps(dynamo) } : {}),
+      kvConnector: pdConnectorSel ? {
+        selected: pdConnectorSel,
+        unavailableReason: pdConnectorUnavailable,
+        install: dynamoInstallSteps(pdConnector),
+        docker: pdConnector?.docker || null,
+      } : null,
       routerConfig: strategy.router || { policy: "round_robin" },
     };
   }
@@ -2221,8 +2513,9 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
       command: String(kvOpt.companion.command).trimEnd(),
     });
   }
-  // `{dp_size}` resolves against the same gpuCount the DP flag was emitted
-  // with, `{port}` against the port the engine actually serves on.
+  // `{dp_size}` and `{port}` resolve against what the engine actually runs
+  // with: a preset may narrow DEP below the node (`--data-parallel-size 2`),
+  // and a strategy may serve behind the router on another port.
   if (strategy.companion?.command && deployType === "single_node") {
     companions.push({
       feature: `strategy:${strategyName}`,
@@ -2233,7 +2526,7 @@ export function resolveCommand(recipe, variantKey, strategyName, hwProfileId, en
         strategy.companion.install ? `Requires: ${strategy.companion.install}` : "",
       ].filter(Boolean).join(" ").trim(),
       command: String(strategy.companion.command)
-        .replace(/\{dp_size\}/g, String(gpuCount))
+        .replace(/\{dp_size\}/g, String(lastIntFlag(singleArgs, "--data-parallel-size", gpuCount)))
         .replace(/\{port\}/g, String(servedPort(singleArgs)))
         .trimEnd(),
     });

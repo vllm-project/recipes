@@ -18,8 +18,8 @@ export function GuideLinks({ children }) {
       }
       const target = id && document.getElementById(id);
       if (!target || !root.current?.contains(target)) return;
-      const details = target.closest("details");
-      if (details) details.open = true;
+      // Open every enclosing <details> (a preset row sits inside its section).
+      for (let d = target.closest("details"); d; d = d.parentElement?.closest("details")) d.open = true;
       target.scrollIntoView({ block: "start" });
     }
     revealTarget();
