@@ -11,7 +11,7 @@ meta:
   default_hardware: ascend_910c
   hardware:
     ascend_910b: supported
-    ascend_910c: supported
+    ascend_910c: verified
 
 model:
   model_id: "Qwen/Qwen3-Embedding-0.6B"
