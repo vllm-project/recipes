@@ -138,7 +138,7 @@ flowchart LR
 | --- | --- | --- |
 | Model recipes served by vLLM | [`vllm-project/vllm` → `recipes/models/`](https://github.com/vllm-project/vllm/tree/main/recipes) | Owned by vLLM; a merge there reaches recipes.vllm.ai in about 30 minutes. Copies stay in this repo's `models/` until they are synced to vLLM and removed; they aren't rendered |
 | Omni recipes (image, video, audio generation) | [`vllm-project/vllm-omni` → `recipes/models/`](https://github.com/vllm-project/vllm-omni/tree/main/recipes/models) | Owned by vLLM-Omni, reaching recipes.vllm.ai the same way. Copies stay in this repo's `models/` until they are removed; they aren't rendered |
-| Ascend NPU content | Inline in the vLLM recipes | Moving to `overlays/` in vllm-ascend |
+| Ascend NPU content | [`vllm-project/vllm-ascend` → `recipes/overlays/`](https://github.com/vllm-project/vllm-ascend/tree/main/recipes/overlays) | Owned by vLLM Ascend; merged into the vLLM recipes, whose source rejects Huawei hardware |
 | Schema, hardware profiles, serving strategies, KV-store deployments, platforms | This repo (`taxonomy.yaml`, `strategies/`, `kv_store/`, `platforms.yaml`) | Owned here |
 | Command synthesis, site, JSON API | This repo (`src/`, `scripts/`) | Owned here |
 
