@@ -2046,7 +2046,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   );
   const dockerMeta = useMemo(() => {
     const meta = computeDockerMeta(recipe, imageVariant, hwProfile, hwId);
-    if (meta.brandKey !== "nvidia") return meta;
+    if (!meta.image || meta.brandKey !== "nvidia") return meta;
 
     // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
     // tag and skip auto-suffix. "default" resolves to cu130 (the upstream
@@ -2087,7 +2087,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     hwInstall?.pip === false ||
     hwProfile?.generation === "tpu" ||
     hwProfile?.generation === "xpu";
-  const dockerEffectivelyHidden = recipe.model?.install?.docker === false;
+  const dockerEffectivelyHidden = !dockerMeta.dockerEnabled;
   const effectiveInstallMode =
     installMode === "pip" && pipEffectivelyHidden
       ? "docker"

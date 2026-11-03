@@ -15,7 +15,7 @@ import { getAllRecipes } from "../src/lib/recipes.js";
 import { loadStrategies } from "../src/lib/strategies.js";
 import { loadTaxonomy } from "../src/lib/taxonomy.js";
 import { resolveSelection } from "../src/lib/recipe-render.js";
-import { isStrategySupportedOnHardware, needsMultiNode } from "../src/lib/command-synthesis.js";
+import { computeDockerMeta, isStrategySupportedOnHardware, needsMultiNode } from "../src/lib/command-synthesis.js";
 
 const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES_PUBLIC_DIR) : path.join(process.cwd(), "public");
 const strategies = loadStrategies();
@@ -46,6 +46,11 @@ test("docker-disabled recipes omit containers across deployment layouts", () => 
     variants: { default: { precision: "bf16", vram_minimum_gb: 1 } },
     compatible_strategies: ["single_node_tp", "multi_node_tp", "pd_cluster"],
   };
+  const amd = computeDockerMeta(recipe, recipe.variants.default, taxonomy.hardware_profiles.mi300x, "mi300x");
+  assert.equal(amd.brandKey, "amd");
+  assert.ok(amd.gpuFlags.includes("/dev/kfd"));
+  assert.equal(amd.image, null);
+
   for (const query of [
     "hardware=h200&strategy=single_node_tp",
     "hardware=h200&strategy=multi_node_tp&nodes=2",
