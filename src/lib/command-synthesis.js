@@ -8,7 +8,7 @@ import { applyPresetArgOps, effectivePreset, toggleOwnedFlags, matchingPresets, 
 // NVL4-only env vars: NCCL symmetric memory + cross-node NVLink kernels +
 // UCX device selection. Tuned for GB200/GB300 NVL4 trays (NVL72 rack with
 // NVLink between nodes); on plain HGX nodes they're either inert or harmful,
-// so they're filtered out unless the user picks a GB NVL4 profile.
+// so they're filtered out unless the user picks an NVL4 tray profile.
 const NVL4_ONLY_ENV_KEYS = new Set([
   "VLLM_USE_NCCL_SYMM_MEM",
   "NCCL_CUMEM_ENABLE",
@@ -16,7 +16,7 @@ const NVL4_ONLY_ENV_KEYS = new Set([
   "NCCL_NVLS_ENABLE",
   "UCX_NET_DEVICES",
 ]);
-const NVL4_HW_IDS = new Set(["gb200", "gb300"]);
+const NVL4_HW_IDS = new Set(["gb200", "gb300", "vr200"]);
 
 // Serving frontends are defined once in `taxonomy.frontends` (label + the env
 // each one sets). Python is the baseline every recipe can fall back to; any
@@ -409,14 +409,14 @@ export function pdRoleParallelism(recipe, strategy, role, hwProfile, hwProfileId
 
 /**
  * Precision → allowed hardware constraint.
- * NVFP4 is NVIDIA Blackwell-only (sm_100+) by default. A variant can override
- * this when its runtime provides a fallback (for example, on-the-fly BF16
- * dequantization on Hopper). FP4 generic is also Blackwell-only in practice.
+ * NVFP4 needs NVIDIA Blackwell or newer (sm_100+, so Rubin too) by default. A
+ * variant can override this when its runtime provides a fallback (for example,
+ * on-the-fly BF16 dequantization on Hopper). FP4 generic is the same in practice.
  * AWQ/GPTQ/INT quants run on most NVIDIA+AMD hardware.
  */
 const PRECISION_HARDWARE_CONSTRAINTS = {
-  nvfp4: { brand: "NVIDIA", generation: "blackwell" },
-  fp4: { brand: "NVIDIA", generation: "blackwell" },
+  nvfp4: { brand: "NVIDIA", generation: ["blackwell", "rubin"] },
+  fp4: { brand: "NVIDIA", generation: ["blackwell", "rubin"] },
 };
 
 function precisionHardwareConstraint(variant) {
@@ -428,8 +428,8 @@ function matchesConstraint(profile, constraint) {
   if (constraint.brand && profile.brand !== constraint.brand) return false;
   if (constraint.generation) {
     const profileGen = profile.generation || profile.gpu_generation;
-    const gens = Array.isArray(profileGen) ? profileGen : [profileGen];
-    if (!gens.includes(constraint.generation)) return false;
+    const gens = [profileGen].flat();
+    if (![constraint.generation].flat().some((g) => gens.includes(g))) return false;
   }
   return true;
 }
@@ -748,7 +748,7 @@ export function pickDefaultHardware(hwProfiles, variant, recipe) {
   const authored = recipe?.meta?.default_hardware;
   if (authored && compatible.some(([id]) => id === authored)) return authored;
 
-  if (constraint?.generation === "blackwell") {
+  if ([constraint?.generation].flat().includes("blackwell")) {
     if (compatible.some(([id]) => id === "b200")) return "b200";
     if (compatible.some(([id]) => id === "gb200")) return "gb200";
   }
@@ -767,8 +767,10 @@ export function pickDefaultHardware(hwProfiles, variant, recipe) {
 
 // Resolve the Docker image / GPU flags / brand key for the active hardware.
 // Shared by the install block (docker pull line) and the main command blocks
-// (docker run wrapping). Precedence: variant.docker_image → model.docker_image
-// → DEFAULT_IMAGE[brand].
+// (docker run wrapping). Precedence: exact variant+hardware override → the
+// hardware profile's `docker_image` → variant.docker_image → model.docker_image
+// → DEFAULT_IMAGE[brand]. A profile only sets one when nothing else runs on that
+// hardware (Rubin's nightly), which is why it outranks a recipe's general pin.
 //
 // `docker_image` shapes:
 //   "vllm/vllm-openai:x"               (NVIDIA-only)
@@ -858,6 +860,16 @@ export function cu129DockerImage(image, minVllmVersion = null) {
   return `${image}-cu129`;
 }
 
+// Install-path statement for this hardware (`{ pip: false, docker: { note } }`):
+// the exact variant / recipe override block, else the hardware profile's, which
+// covers hardware no wheel runs on regardless of the recipe.
+export function hardwareInstall(recipe, variant, hwProfile, hwId) {
+  return variant?.hardware_overrides?.[hwId]?.install
+    || recipe?.hardware_overrides?.[hwId]?.install
+    || hwProfile?.install
+    || null;
+}
+
 function isDockerEnabled(recipe) {
   return recipe.model?.install?.docker !== false;
 }
@@ -913,7 +925,9 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
     ? exactCmdPrefix.trim()
     : null;
 
-  let pinned = typeof exactHardwareOverride === "string" ? exactHardwareOverride : null;
+  let pinned = typeof exactHardwareOverride === "string"
+    ? exactHardwareOverride
+    : hwProfile?.docker_image || null;
   let cudaMap = null;
 
   function applyOverride(override) {
@@ -2046,7 +2060,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       if (featEnv) Object.assign(env, featEnv);
     }
 
-    // NVL4-only env vars are meaningful only on GB200/GB300 trays. Drop them
+    // NVL4-only env vars are meaningful only on GB200/GB300/VR200 trays. Drop them
     // for any other hardware regardless of where they came from (strategy YAML
     // or recipe-level pd_cluster override).
     if (strategy.deploy_type === "pd_cluster" && !NVL4_HW_IDS.has(hwProfileId)) {

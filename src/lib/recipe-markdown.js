@@ -3,6 +3,7 @@
 // marked authoritative; the guide comes last as background, since its
 // hand-written examples may target another configuration.
 
+import { hardwareInstall } from "./command-synthesis.js";
 import { whenMatches } from "./recipe-context.js";
 import { SELECTION_PARAMS, defaultFeaturesFor, synthesizeInstall } from "./recipe-render.js";
 
@@ -119,16 +120,20 @@ function serveSection(r) {
 }
 
 function installSection(recipe, resolved) {
-  const { hwProfile, rendering } = resolved;
+  const { hwProfile, rendering, selection } = resolved;
   const out = [];
   const min = recipe.model?.min_vllm_version;
-  if (min) out.push(`Requires vLLM >= ${min}${recipe.model?.nightly_required ? " (not released yet — nightly wheel)" : ""}.`, "");
+  const hwInstall = hardwareInstall(recipe, recipe.variants?.[selection?.variant], hwProfile, selection?.hardware);
+  if (min) out.push(`Requires vLLM >= ${min}${recipe.model?.nightly_required && hwInstall?.pip !== false ? " (not released yet — nightly wheel)" : ""}.`, "");
   const install = synthesizeInstall(recipe);
-  if (hwProfile.brand === "NVIDIA" && install?.pip) {
+  if (hwProfile.brand === "NVIDIA" && install?.pip && hwInstall?.pip !== false) {
     if (install.pip.note) out.push(install.pip.note, "");
     out.push(fence(install.pip.command), "");
   }
-  if (rendering?.docker_image) out.push(`Docker image: \`${rendering.docker_image}\``, "");
+  if (rendering?.docker_image) {
+    if (hwInstall?.docker?.note) out.push(hwInstall.docker.note, "");
+    out.push(`Docker image: \`${rendering.docker_image}\``, "");
+  }
   const deps = (recipe.dependencies || []).filter((d) => {
     if (!d.brand) return true;
     return (Array.isArray(d.brand) ? d.brand : [d.brand]).includes(hwProfile.brand);
