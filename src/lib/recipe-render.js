@@ -276,12 +276,12 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
       head_argv: result.headArgv,
       worker_argv: result.workerArgv,
       worker_argvs: workerArgvs,
-      head_docker_command: head.docker_command ?? null,
-      worker_docker_command: worker.docker_command ?? null,
-      worker_docker_commands: workerDockers.map((w) => w.docker_command ?? null),
-      head_docker_argv: head.docker_argv ?? null,
-      worker_docker_argv: worker.docker_argv ?? null,
-      worker_docker_argvs: workerDockers.map((w) => w.docker_argv ?? null),
+      head_docker_command: head.docker_command,
+      worker_docker_command: worker.docker_command,
+      worker_docker_commands: workerDockers.map((w) => w.docker_command),
+      head_docker_argv: head.docker_argv,
+      worker_docker_argv: worker.docker_argv,
+      worker_docker_argvs: workerDockers.map((w) => w.docker_argv),
     };
   }
   if (result.deployType === "pd_cluster") {
