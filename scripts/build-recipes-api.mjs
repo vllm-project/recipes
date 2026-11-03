@@ -594,7 +594,10 @@ for (const file of findYamlFiles(modelsDir)) {
     }
     const variantRecommended = renderAndWriteVariant(r, variantKey, variantModelId, strategies, taxonomy);
     if (!variantRecommended) continue;
-    promotedRenderings.push({ variantKey, variantModelId, recommended: variantRecommended });
+    promotedRenderings.push({
+      variantKey, variantModelId, recommended: variantRecommended,
+      install: variantCfg.install ? synthesizeInstall(r, variantCfg) : undefined,
+    });
   }
 
   // Annotate parent variants with `json:` pointers so consumers can navigate.
@@ -640,14 +643,18 @@ for (const file of findYamlFiles(modelsDir)) {
   // the variant's config (model_id stripped — it's at top-level now). The
   // sibling-variant info is lost on purpose; consumers can follow
   // `meta.derived_from` back to the parent for the full family view.
-  for (const { variantKey, variantModelId, recommended } of promotedRenderings) {
+  for (const { variantKey, variantModelId, recommended, install } of promotedRenderings) {
     const variantCfg = r.variants?.[variantKey] || {};
     const { model_id: _vMid, json: _vJson, ...variantCore } = variantCfg;
     const promoted = {
       ...r,  // share meta/features/guide/etc. with the parent
       hf_id: variantModelId,
       meta: { ...r.meta, derived_from: parentHfId, variant: variantKey },
-      model: { ...r.model, model_id: variantModelId },
+      model: {
+        ...r.model,
+        model_id: variantModelId,
+        ...(install && { install }),
+      },
       variants: { default: variantCore },
       recommended_command: recommended,
     };
