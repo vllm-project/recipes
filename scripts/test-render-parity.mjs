@@ -15,12 +15,78 @@ import { getAllRecipes } from "../src/lib/recipes.js";
 import { loadStrategies } from "../src/lib/strategies.js";
 import { loadTaxonomy } from "../src/lib/taxonomy.js";
 import { resolveSelection } from "../src/lib/recipe-render.js";
-import { isStrategySupportedOnHardware, needsMultiNode } from "../src/lib/command-synthesis.js";
+import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
+import { computeDockerMeta, isStrategySupportedOnHardware, needsMultiNode } from "../src/lib/command-synthesis.js";
 
 const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES_PUBLIC_DIR) : path.join(process.cwd(), "public");
 const strategies = loadStrategies();
 const taxonomy = loadTaxonomy();
 const readJson = (rel) => JSON.parse(fs.readFileSync(path.join(PUBLIC, rel), "utf8"));
+
+test("explicit empty feature selections stay off", () => {
+  const recipe = {
+    hf_id: "example/model",
+    model: { model_id: "example/model" },
+    variants: { default: { precision: "bf16", vram_minimum_gb: 1 } },
+    compatible_strategies: ["single_node_tp"],
+    features: { reasoning: { args: ["--reasoning-parser", "example"] } },
+  };
+  const resolve = (q) => resolveSelection(recipe, new URLSearchParams(q), strategies, taxonomy);
+  assert.deepEqual(resolve("hardware=h200").selection.features, ["reasoning"]);
+  for (const features of ["", "none"]) {
+    const result = resolve(`hardware=h200&features=${features}`);
+    assert.deepEqual(result.selection.features, []);
+    assert.equal(result.rendering.argv.includes("--reasoning-parser"), false);
+  }
+  const md = selectionMarkdown(recipe, resolve("hardware=h200&features=none"), {
+    strategies, taxonomy, urls: { page: "https://example.org/example/model", json: "https://example.org/example/model.json" },
+  });
+  assert.match(md, /^Configuration: .*features none/m);
+  assert.ok(md.includes("`features=none`"));
+});
+
+test("docker-disabled recipes omit containers across deployment layouts", () => {
+  const recipe = {
+    hf_id: "example/model",
+    model: { model_id: "example/model", install: { docker: false } },
+    variants: { default: { precision: "bf16", vram_minimum_gb: 1 } },
+    compatible_strategies: ["single_node_tp", "multi_node_tp", "pd_cluster"],
+  };
+  const amd = computeDockerMeta(recipe, recipe.variants.default, taxonomy.hardware_profiles.mi300x, "mi300x");
+  assert.equal(amd.brandKey, "amd");
+  assert.ok(amd.gpuFlags.includes("/dev/kfd"));
+  assert.equal(amd.image, null);
+
+  for (const query of [
+    "hardware=h200&strategy=single_node_tp",
+    "hardware=h200&strategy=multi_node_tp&nodes=2",
+    "hardware=h200&strategy=single_node_tp&kv_offload=kv_store_distributed_mooncake",
+    "hardware=h200&strategy=pd_cluster&prefill_nodes=1&decode_nodes=1",
+  ]) {
+    const result = resolveSelection(recipe, new URLSearchParams(query), strategies, taxonomy).rendering;
+    assert.equal(result.docker_image, null);
+    if (result.deploy_type === "multi_node") {
+      assert.deepEqual(result.worker_docker_commands, [null]);
+      assert.deepEqual(result.worker_docker_argvs, [null]);
+    }
+    const containers = result.deploy_type === "pd_cluster" ? [result.prefill, result.decode] : [result];
+    for (const container of containers) {
+      const commands = Object.keys(container).filter((key) => key.endsWith("docker_command"));
+      assert.ok(commands.length > 0);
+      for (const key of commands) {
+        assert.equal(container[key], null);
+        assert.equal(container[key.replace(/_command$/, "_argv")], null);
+      }
+    }
+    assert.deepEqual(JSON.parse(JSON.stringify(result)), result);
+  }
+
+  const query = new URLSearchParams("hardware=gb300&strategy=pd_cluster&pd_router=smg");
+  const { router } = resolveSelection(recipe, query, strategies, taxonomy).rendering;
+  assert.match(router.command, /smg launch/);
+  assert.ok(!Object.hasOwn(router, "dockerCommand"));
+  assert.ok(!Object.hasOwn(router, "dockerInstall"));
+});
 
 // Build-only annotations the static files add around a rendering.
 const strip = ({ strategy_spec, hardware_profile, alternatives, by_hardware, ...rest }) => rest;

@@ -34,7 +34,9 @@ function configLine(recipe, resolved, strategies) {
   }
   parts.push(`variant \`${selection.variant}\` (${labelVariant(recipe, selection.variant)})`);
   if (selection.task) parts.push(`task \`${selection.task}\``);
-  if (selection.features?.length) parts.push(`features ${selection.features.map((f) => `\`${f}\``).join(", ")}`);
+  if (selection.features && resolved.options.features.length) {
+    parts.push(`features ${selection.features.map((f) => `\`${f}\``).join(", ") || "none"}`);
+  }
   if (selection.kv_offload) parts.push(`KV offload \`${selection.kv_offload}\``);
   if (selection.pd_router && selection.pd_router !== "vllm") parts.push(`PD router \`${selection.pd_router}\``);
   if (selection.preset) parts.push(`preset \`${selection.preset}\`${selection.point ? ` at point \`${selection.point}\`` : ""}`);
@@ -284,7 +286,7 @@ export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls
     `- \`variant\`: ${options.variants.map((v) => `\`${v}\``).join(", ")}`,
     options.strategies.length ? `- \`strategy\`: ${options.strategies.map((s) => `\`${s}\``).join(", ")} (multi-node strategies also need \`nodes=<n>\`)` : null,
     options.tasks?.length ? `- \`task\`: ${options.tasks.map((t) => `\`${t}\``).join(", ")}` : null,
-    options.features.length ? `- \`features\`: comma-separated list of ${options.features.map((f) => `\`${f}\``).join(", ")} (default: ${defaultFeatures.map((f) => `\`${f}\``).join(", ") || "none"})` : null,
+    options.features.length ? `- \`features\`: comma-separated list of ${options.features.map((f) => `\`${f}\``).join(", ")} (default: ${defaultFeatures.map((f) => `\`${f}\``).join(", ") || "none"}). Use \`features=none\` to turn them all off.` : null,
     ...presetOptions(recipe, strategies),
     "",
     "## Install",

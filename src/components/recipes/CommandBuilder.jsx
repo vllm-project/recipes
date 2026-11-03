@@ -421,7 +421,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
         strategies[rs.strategy]?.deploy_type !== "kv_store_lb") {
       setStrategyOverride(rs.strategy);
     }
-    if (!searchParams.get("features") && Array.isArray(rs.features)) {
+    if (!searchParams.has("features") && Array.isArray(rs.features)) {
       const recipeFeatures = Object.keys(recipe.features || {});
       setFeatures(rs.features.filter((f) => recipeFeatures.includes(f)));
     }
@@ -670,14 +670,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       const want = new Set(defaultFeaturesFor(hw, variantKey));
       const got = new Set(arr);
       const same = want.size === got.size && [...want].every((f) => got.has(f));
-      return same ? "" : arr.join(",");
+      return same ? "" : arr.join(",") || "none";
     },
     [defaultFeaturesFor]
   );
 
   const [features, setFeatures] = useState(() => {
     const fp = searchParams.get("features");
-    if (fp) return fp.split(",").filter(Boolean);
+    if (fp !== null) return fp.split(",").filter((f) => recipe.features?.[f]);
     const urlHw = searchParams.get("hardware") || defaultHw;
     const urlVariant = searchParams.get("variant") || "default";
     return defaultFeaturesFor(urlHw, urlVariant);
@@ -1157,7 +1157,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       return q.toString();
     }
     q.set("strategy", activeStrategy);
-    q.set("features", features.join(","));
+    q.set("features", features.join(",") || "none");
     const fmode = Object.entries(featureModes).filter(([k, m]) => m && recipe.features?.[k]?.modes).map(([k, m]) => `${k}:${m}`);
     if (fmode.length) q.set("fmode", fmode.join(","));
     if (advanced.length) q.set("advanced", advanced.join(","));
@@ -1972,7 +1972,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     if (result.orchestrator === "smg") {
       if (result.workerInstall) deps.push({ command: result.workerInstall, note: "gRPC servicer — install on every prefill/decode node", install_modes: ["pip"] });
       deps.push({ command: result.router.install, note: "SMG — install on the router host", install_modes: ["pip"] });
-      deps.push({ command: result.router.dockerInstall, note: "SMG — pull on the router host", install_modes: ["docker"] });
+      if (result.router.dockerInstall) {
+        deps.push({ command: result.router.dockerInstall, note: "SMG — pull on the router host", install_modes: ["docker"] });
+      }
     }
     return deps;
   }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall, result.router?.install, result.router?.dockerInstall, result.workerInstall, result.kvConnector?.install]);
@@ -2046,7 +2048,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   );
   const dockerMeta = useMemo(() => {
     const meta = computeDockerMeta(recipe, imageVariant, hwProfile, hwId);
-    if (meta.brandKey !== "nvidia") return meta;
+    if (!meta.image || meta.brandKey !== "nvidia") return meta;
 
     // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
     // tag and skip auto-suffix. "default" resolves to cu130 (the upstream
@@ -2087,7 +2089,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     hwInstall?.pip === false ||
     hwProfile?.generation === "tpu" ||
     hwProfile?.generation === "xpu";
-  const dockerEffectivelyHidden = recipe.model?.install?.docker === false;
+  const dockerEffectivelyHidden = !dockerMeta.dockerEnabled;
   const effectiveInstallMode =
     installMode === "pip" && pipEffectivelyHidden
       ? "docker"

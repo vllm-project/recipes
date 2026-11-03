@@ -130,6 +130,7 @@ export function defaultFeaturesFor(recipe, hwId, variantKey = "default") {
 // { docker_command, docker_argv } so each form has its docker counterpart.
 // `docker` is a PD KV connector's container needs ({ host_network, flags }).
 export function dockerize(command, argv, env, dockerMeta, port = null, docker = null) {
+  if (dockerMeta.dockerEnabled === false) return { docker_command: null, docker_argv: null };
   const hostNetwork = !!docker?.host_network;
   const extraFlags = docker?.flags || [];
   return {
@@ -358,8 +359,8 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
       // Extra pip dep for the instances (MooncakeStoreConnector imports the
       // mooncake package) — same field the UI's "Requires:" hint consumes.
       vllm_install: result.vllm?.install || null,
-      vllm_docker_command: vllmDocker.docker_command,
-      vllm_docker_argv: vllmDocker.docker_argv,
+      vllm_docker_command: vllmDocker.docker_command ?? null,
+      vllm_docker_argv: vllmDocker.docker_argv ?? null,
       master: result.master,
       store: result.store || null,
       router: result.router,
@@ -583,7 +584,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     const [k, m] = pair.split(":");
     if (k && m && recipe.features?.[k]?.modes?.[m]) modes[k] = m;
   }
-  const features = get("features")
+  const features = linked.has("features")
     ? get("features").split(",").filter((f) => recipe.features?.[f])
     : defaultFeaturesFor(recipe, hwId, variantKey);
   const frontend = resolveFrontend(recipe, get("frontend") || undefined, taxonomy);
