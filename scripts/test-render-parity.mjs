@@ -59,6 +59,10 @@ test("docker-disabled recipes omit containers across deployment layouts", () => 
   ]) {
     const result = resolveSelection(recipe, new URLSearchParams(query), strategies, taxonomy).rendering;
     assert.equal(result.docker_image, null);
+    if (result.deploy_type === "multi_node") {
+      assert.deepEqual(result.worker_docker_commands, [null]);
+      assert.deepEqual(result.worker_docker_argvs, [null]);
+    }
     const containers = result.deploy_type === "pd_cluster" ? [result.prefill, result.decode] : [result];
     for (const container of containers) {
       const commands = Object.keys(container).filter((key) => key.endsWith("docker_command"));
@@ -70,6 +74,12 @@ test("docker-disabled recipes omit containers across deployment layouts", () => 
     }
     assert.deepEqual(JSON.parse(JSON.stringify(result)), result);
   }
+
+  const query = new URLSearchParams("hardware=gb300&strategy=pd_cluster&pd_router=smg");
+  const { router } = resolveSelection(recipe, query, strategies, taxonomy).rendering;
+  assert.match(router.command, /smg launch/);
+  assert.ok(!Object.hasOwn(router, "dockerCommand"));
+  assert.ok(!Object.hasOwn(router, "dockerInstall"));
 });
 
 // Build-only annotations the static files add around a rendering.

@@ -858,6 +858,10 @@ export function cu129DockerImage(image, minVllmVersion = null) {
   return `${image}-cu129`;
 }
 
+function isDockerEnabled(recipe) {
+  return recipe.model?.install?.docker !== false;
+}
+
 // When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
 // the user's `dockerCudaVariant` toggle instead of appending `-cu129`.
 export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
@@ -884,7 +888,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const isXpu = hwProfile?.generation === "xpu";
   const isIntel = hwProfile?.generation === "cpu" || isXpu || hwProfile?.brand === "Intel";
   const isNpu = hwProfile?.generation === "npu";
-  const dockerEnabled = recipe.model?.install?.docker !== false;
+  const dockerEnabled = isDockerEnabled(recipe);
   const npuDeviceCount = isNpu ? hwProfile?.gpu_count ?? 1 : 0;
   // Ascend deliberately has no `brandKey` of its own: vLLM publishes no NPU
   // image, so every Ascend recipe pins one through `hardware_overrides`, which
@@ -2347,9 +2351,11 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         : smg ? {
             label: "SMG",
             command: `${smgReplicaComments}smg launch \\\n    ${smgRouterArgs}`,
-            dockerCommand: `${smgReplicaComments}docker run --rm --network host \\\n    ${smgGrpc ? "-v ~/.cache/huggingface:/root/.cache/huggingface \\\n    " : ""}${smg.docker_image} \\\n    ${smgRouterArgs}`,
             install: smg.install,
-            dockerInstall: `docker pull ${smg.docker_image}`,
+            ...(isDockerEnabled(recipe) && {
+              dockerCommand: `${smgReplicaComments}docker run --rm --network host \\\n    ${smgGrpc ? "-v ~/.cache/huggingface:/root/.cache/huggingface \\\n    " : ""}${smg.docker_image} \\\n    ${smgRouterArgs}`,
+              dockerInstall: `docker pull ${smg.docker_image}`,
+            }),
           } : {
             command: routerCommand,
             install: "uv pip install vllm-router",
