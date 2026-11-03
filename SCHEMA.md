@@ -55,7 +55,7 @@ model:
                                                   #     amd:    "vllm/vllm-openai-rocm:gemma4"
                                                   #     tpu:    "vllm/vllm-tpu:gemma4"
                                                   # Missing keys fall back to `:latest` for that brand (vllm/vllm-openai, vllm/vllm-openai-rocm, vllm/vllm-tpu).
-  nightly_required: true                          # optional — set when `min_vllm_version` hasn't shipped yet. Swaps the default pip command to `uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly/cu130` and adds a "nightly" pill to the Install header. Users on CUDA 12.9 are pointed to the /cu129 index via the note.
+  nightly_required: true                          # optional — set when `min_vllm_version` hasn't shipped yet. Swaps the default pip command to `uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly/cu130` and adds a "nightly" pill to the Install header. Nightly is CUDA 13 only (vLLM's last CUDA 12.9 build is v0.32.0), so the note asks for an r580+ driver and the Install block offers no cu129 toggle.
   # Optional — control the Install block's pip/Docker tabs. Each key accepts
   # either `false` (hide the tab entirely) or an object with { command?, note? }.
   # Use `note` for a one-liner above the code block; use `command` to fully

@@ -1,14 +1,15 @@
-# Branch previews of recipe PRs in source repos (vllm-project/vllm's recipes/).
-# A source PR gets a branch `preview/<source>-pr-<N>` here that pins the source
-# to the PR head; Vercel deploys it at
-# https://vllm-recipes-git-preview-<source>-pr-<N>-inferact-inc.vercel.app,
+# Branch previews of recipe PRs in source repos (the remote sources in
+# sources.yaml, e.g. vllm-project/vllm's recipes/). A source PR gets a branch
+# `preview/<source>-pr-<N>` here that pins the source to the PR head; Vercel
+# deploys it at https://vllm-recipes-git-preview-<source>-pr-<N>-inferact-inc.vercel.app,
 # which the source repo links from the PR.
 #
-# vllm's recipes-preview.yml sends `preview-pr` (client_payload.pr) when a
-# recipe PR is opened, pushed, reopened or closed; this rebuilds or deletes
-# that PR's branch once the PR has been quiet for two minutes. The hourly run
-# is a fallback for missed dispatches, since GitHub runs scheduled workflows
-# hours late. Nothing from a PR is run; Vercel reads its recipes as data, the
+# Each source's recipes-preview.yml sends `preview-pr` (client_payload.pr, and
+# client_payload.source, absent from vllm) when a recipe PR is opened, pushed,
+# reopened or closed; this rebuilds or deletes that PR's branch once the PR has
+# been quiet for two minutes. The hourly run covers every source and is a
+# fallback for missed dispatches, since GitHub runs scheduled workflows hours
+# late. Nothing from a PR is run; Vercel reads its recipes as data, the
 # same way it reads them after a lock bump.
 name: Preview source PRs
 
@@ -19,15 +20,18 @@ on:
     - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
+      source:
+        description: "Source name in sources.yaml (vllm, vllm-ascend, …); empty = every remote source (vllm with pr)"
+        required: false
       pr:
         description: "Only these source PR numbers (comma-separated); empty = all labeled PRs"
         required: false
 
-# Per PR: a group keeps only one pending run, so a shared group would drop
-# dispatches for other PRs that arrive together. A new dispatch for the same PR
-# cancels the waiting one (debounce, see below).
+# Per source and PR: a group keeps only one pending run, so a shared group would
+# drop dispatches for other PRs that arrive together. A new dispatch for the
+# same PR cancels the waiting one (debounce, see below).
 concurrency:
-  group: preview-prs-${{ github.event.client_payload.pr || inputs.pr || 'all' }}
+  group: preview-prs-${{ github.event.client_payload.source || inputs.source || 'vllm' }}-${{ github.event.client_payload.pr || inputs.pr || 'all' }}
   cancel-in-progress: ${{ github.event_name == 'repository_dispatch' }}
 
 permissions:
@@ -60,12 +64,32 @@ jobs:
       - name: Update preview branches
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          SOURCE: ${{ github.event.client_payload.source || inputs.source }}
           PR: ${{ github.event.client_payload.pr || inputs.pr }}
         run: |
           if [ -n "$PR" ] && ! [[ "$PR" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
             echo "Invalid PR number(s): $PR"
             exit 1
           fi
+          # vllm's dispatches name no source. preview-prs.mjs rejects a name that
+          # isn't a remote source in sources.yaml.
+          if [ -n "$SOURCE" ]; then
+            [[ "$SOURCE" =~ ^[a-z0-9-]+$ ]] || { echo "Invalid source: $SOURCE"; exit 1; }
+            sources=$SOURCE
+          elif [ -n "$PR" ]; then
+            sources=vllm
+          else
+            sources=$(node --input-type=module -e '
+              import { loadSources } from "./scripts/lib/content-sources.mjs";
+              const { defaultChannel, channels } = loadSources();
+              const remote = Object.entries(channels[defaultChannel]).filter(([, s]) => s.repo && !s.local);
+              console.log(remote.map(([name]) => name).join(" "));')
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          node scripts/preview-prs.mjs --source vllm ${PR:+--pr "$PR"}
+          status=0
+          for source in $sources; do
+            echo "$source:"
+            node scripts/preview-prs.mjs --source "$source" ${PR:+--pr "$PR"} || status=1
+          done
+          exit $status
