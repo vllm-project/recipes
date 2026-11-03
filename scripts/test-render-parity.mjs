@@ -15,6 +15,7 @@ import { getAllRecipes } from "../src/lib/recipes.js";
 import { loadStrategies } from "../src/lib/strategies.js";
 import { loadTaxonomy } from "../src/lib/taxonomy.js";
 import { resolveSelection } from "../src/lib/recipe-render.js";
+import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
 import { computeDockerMeta, isStrategySupportedOnHardware, needsMultiNode } from "../src/lib/command-synthesis.js";
 
 const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES_PUBLIC_DIR) : path.join(process.cwd(), "public");
@@ -37,6 +38,11 @@ test("explicit empty feature selections stay off", () => {
     assert.deepEqual(result.selection.features, []);
     assert.equal(result.rendering.argv.includes("--reasoning-parser"), false);
   }
+  const md = selectionMarkdown(recipe, resolve("hardware=h200&features=none"), {
+    strategies, taxonomy, urls: { page: "https://example.org/example/model", json: "https://example.org/example/model.json" },
+  });
+  assert.match(md, /^Configuration: .*features none/m);
+  assert.ok(md.includes("`features=none`"));
 });
 
 test("docker-disabled recipes omit containers across deployment layouts", () => {
