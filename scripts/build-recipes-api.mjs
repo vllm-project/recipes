@@ -232,6 +232,16 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
   }
   const layered = new Set([...ids, ...generations, ...brands, "default"]);
 
+  // Hardware no wheel runs on (a profile's `install.pip: false`) is only reachable
+  // through the image, so a recipe declaring it can't also turn Docker off.
+  if (recipe.model?.install?.docker === false) {
+    for (const [id, state] of Object.entries(recipe.meta?.hardware || {})) {
+      if (state !== "unsupported" && profiles[id]?.install?.pip === false) {
+        errors.push(`meta.hardware.${id}: this hardware is Docker-only, but model.install.docker is false`);
+      }
+    }
+  }
+
   const exact = (loc, key) => {
     if (!ids.has(key)) errors.push(`${loc} references unknown hardware profile ${key}`);
   };

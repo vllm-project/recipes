@@ -71,6 +71,33 @@ hardware_profiles:
     vram_gb: 1152
     multi_node: false
 
+  # ── NVIDIA Rubin ──
+  # Its own generation, not `blackwell`: Blackwell-family kernels do run on
+  # sm107, but a recipe's `blackwell` block (e.g. deep_gemm_mega_moe) was tuned
+  # for Blackwell and hasn't been run here, so it doesn't carry over. Recipes
+  # add a `rubin` block for what they've qualified.
+  # 288 GB is NVIDIA's listed HBM4 per GPU; InferenceX has no usable-after-ECC
+  # figure for Rubin yet (see gpu-specs). Replace it when one is published.
+  # Preview support: `cu134-nightly` is the only build that runs on Rubin (no
+  # wheel, no release image), so `docker_image` / `install` apply to every recipe
+  # that declares this profile, and `restricted` keeps it to those recipes until
+  # support ships in a release.
+  vr200:
+    brand: NVIDIA
+    generation: rubin
+    compute_arch: sm107
+    display_name: "VR200 NVL4"
+    description: "NVIDIA Vera Rubin compute tray · 288 GB HBM4/GPU · 4 Rubin GPUs (NVL72 tray unit)"
+    gpu_count: 4
+    vram_gb: 1152
+    multi_node: false
+    restricted: true
+    docker_image: "vllm/vllm-openai:cu134-nightly"
+    install:
+      pip: false
+      docker:
+        note: "Rubin support is a preview: only this nightly image (CUDA 13.4, PyTorch 2.15) runs on it, and there is no pip wheel yet."
+
   # DGX Station — single-GPU Grace-Blackwell Ultra desktop workstation.
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
   # lists it in `meta.hardware` (same pattern as the TPU profiles).
