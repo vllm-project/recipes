@@ -443,6 +443,30 @@ hardware_profiles:
     multi_node: false
     restricted: true
 
+  # 310P inference products (Ascend 310P): single-node TP only, FP16-only
+  # execution path (dtype and Mamba SSM cache limited to float16).
+  atlas_300i_duo:
+    brand: Huawei
+    generation: npu
+    display_name: "Atlas 300I DUO"
+    description: "Huawei Atlas 300I DUO · 2× Ascend 310P (96 GB LPDDR4X total) · four cards cover 8 NPUs · vLLM Ascend backend"
+    gpu_count: 2
+    vram_gb: 96
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  atlas_200i_pro:
+    brand: Huawei
+    generation: npu
+    display_name: "Atlas 200I Pro"
+    description: "Huawei Atlas 200I Pro · 1× Ascend 310P (48 GB LPDDR4X) · single-NPU edge inference · vLLM Ascend backend"
+    gpu_count: 1
+    vram_gb: 48
+    multi_node: false
+    scalable: false
+    restricted: true
+
 tasks:
   - id: text
     display_name: "Text"

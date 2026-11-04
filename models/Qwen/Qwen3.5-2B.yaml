@@ -16,6 +16,10 @@ meta:
   hardware:
     arc_pro_b60: verified
     arc_pro_b70: verified
+    # Official vllm-ascend tutorial: Qwen3.5-Dense (2B/4B/9B) on Atlas 300I DUO
+    # and Atlas 200I Pro from vllm-ascend v0.23.0rc1 (FP16, TP=1/TP=2, MTP k=1).
+    atlas_300i_duo: verified
+    atlas_200i_pro: verified
 
 model:
   model_id: "Qwen/Qwen3.5-2B"
@@ -61,6 +65,35 @@ variants:
     vram_minimum_gb: 5
     description: "Full precision BF16 — fits on an 8 GB GPU or Intel Arc Pro B60/B70"
 
+  fp16_310p:
+    precision: bf16
+    label: "FP16 (310P)"
+    vram_minimum_gb: 5
+    description: "Atlas 300I DUO / Atlas 200I Pro (Ascend 310P) serving cast to FP16 — follows the official vllm-ascend Qwen3.5-Dense tutorial"
+    supported_hardware: [atlas_300i_duo, atlas_200i_pro]
+    min_vllm_version: "0.23.0rc1"
+    tp: { atlas_300i_duo: 1, atlas_200i_pro: 1 }
+    hardware_overrides:
+      atlas_300i_duo:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0rc1-310p"
+        install: { pip: false }
+      atlas_200i_pro:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0rc1-310p"
+        install: { pip: false }
+    extra_args:
+      - "--dtype"
+      - "float16"
+      - "--mamba-ssm-cache-dtype"
+      - "float16"
+      - "--speculative-config"
+      - '{"method": "qwen3_5_mtp", "num_speculative_tokens": 1}'
+      - "--compilation-config"
+      - '{"cudagraph_mode": "FULL_DECODE_ONLY", "cudagraph_capture_sizes": [2, 16]}'
+      - "--additional-config"
+      - '{"ascend_compilation_config": {"enable_npugraph_ex": false}}'
+    extra_env:
+      VLLM_USE_MODELSCOPE: "True"
+
 compatible_strategies:
   - single_node_tp
 
@@ -70,6 +103,20 @@ hardware_overrides:
       - "--enforce-eager"
 
 strategy_overrides: {}
+
+hardware_notes:
+  atlas_300i_duo:
+    title: "vLLM Ascend 310P image required"
+    body: "Single-node serving on Atlas 300I DUO with TP=1 or TP=2 (choose per available devices). Pin quay.io/ascend/vllm-ascend:v0.23.0rc1-310p — the NVIDIA pip wheel cannot run here. The 310P execution path supports FP16 only: --dtype float16 and --mamba-ssm-cache-dtype float16 are required, MTP uses the qwen3_5_mtp head with num_speculative_tokens 1, and enable_npugraph_ex must be disabled. Set --max-model-len / --max-num-seqs / --gpu-memory-utilization conservatively (tutorial baseline: 16384 / 32 / 0.9) — too high may cause OOM."
+    link:
+      label: "Qwen3.5-Dense tutorial"
+      href: "https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/Qwen3.5-Dense.html"
+  atlas_200i_pro:
+    title: "vLLM Ascend 310P image required"
+    body: "Single-node serving on one Atlas 200I Pro NPU with TP=1. Pin quay.io/ascend/vllm-ascend:v0.23.0rc1-310p (Ubuntu 24.04; on openEuler 24.03 use the matching v0.23.0rc1-310p-openeuler image). The 310P execution path supports FP16 only: --dtype float16 and --mamba-ssm-cache-dtype float16 are required, MTP uses the qwen3_5_mtp head with num_speculative_tokens 1, and enable_npugraph_ex must be disabled."
+    link:
+      label: "Qwen3.5-Dense tutorial"
+      href: "https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/Qwen3.5-Dense.html"
 
 guide: |
   ## Overview
@@ -82,7 +129,7 @@ guide: |
   ## Prerequisites
 
   - **vLLM version:** >= 0.17.0
-  - **Hardware:** single 8 GB GPU or Intel Arc Pro B60/B70
+  - **Hardware:** single 8 GB GPU or Intel Arc Pro B60/B70; Atlas 300I DUO / Atlas 200I Pro via vLLM Ascend (FP16)
 
   ### Install vLLM
 
