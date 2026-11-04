@@ -50,6 +50,7 @@ import {
   isStrategySupportedOnHardware,
   effectiveCompatibleStrategies,
   FALLBACK_FRONTEND,
+  kvOffloadOptionErrors,
 } from "../src/lib/command-synthesis.js";
 import { contentChannel, contentDir, loadProvenance } from "../src/lib/content-root.js";
 import { buildVariantRendering, defaultFeaturesFor, pickPdNodes, renderCommand, synthesizeInstall } from "../src/lib/recipe-render.js";
@@ -363,6 +364,10 @@ writeJson("kv_store.json", kvStoreDeployments);
 
 // ── Recipe schema ── generated from the taxonomy + strategies, published at
 // /recipe.schema.json for editors, and enforced on every recipe below.
+// KV Offload options may only use keys the renderer honours for their strategies.
+const kvOffloadErrors = kvOffloadOptionErrors(taxonomy, strategies);
+if (kvOffloadErrors.length) throw new Error(`Invalid kv_offload options in taxonomy.yaml:\n  - ${kvOffloadErrors.join("\n  - ")}`);
+
 const recipeSchema = buildRecipeSchema({ taxonomy, strategies });
 writeJson("recipe.schema.json", recipeSchema);
 const validateRecipe = new Ajv({ allErrors: true, strict: false }).compile(recipeSchema);

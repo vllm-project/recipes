@@ -109,7 +109,7 @@ function serveSection(r) {
     if (r.router?.command && (r.instances ?? 1) > 1) out.push("", `### ${step++}. Router`, "", fence(r.router.command));
     return out;
   }
-  out.push(fence(withEnv(r.env, r.command)));
+  out.push(fence([envExports(r.env), r.setup, r.command].filter(Boolean).join("\n")));
   for (const c of r.companions || []) {
     out.push("", `### ${c.label}${c.after ? " (start after vLLM)" : ""}`, "");
     if (c.description) out.push(c.description, "");
@@ -143,6 +143,11 @@ function installSection(recipe, resolved) {
     for (const d of deps) {
       out.push(`- ${d.note || "Dependency"}${d.optional ? " (optional)" : ""}`, "", fence(d.command), "");
     }
+  }
+  const kvInstall = rendering?.kv_offload_install || [];
+  if (kvInstall.length) {
+    out.push("Required by the selected KV Offload option:", "");
+    for (const s of kvInstall) out.push(`- ${s.note || "Install"}`, "", fence(s.command), "");
   }
   return out;
 }

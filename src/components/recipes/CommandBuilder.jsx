@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { hardwareInstall, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
+import { hardwareInstall, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import ShellCode from "@/components/recipes/ShellCode";
@@ -317,7 +317,7 @@ const MOONCAKE_DOCS_URL =
   "https://docs.vllm.ai/en/stable/features/mooncake_store_connector_usage";
 // Where the merged Mooncake pill sorts among taxonomy.kv_offload options
 // (their `order` fields are chosen around this): Off · Simple(1) ·
-// Offloading(2) · Mooncake(3) · LMCache(4).
+// Offloading(2) · Mooncake(3) · LMCache(4) · IAXL(5).
 const MOONCAKE_PILL_ORDER = 3;
 
 function hardwareSelectorLabel(selector, profiles) {
@@ -962,7 +962,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // and hardware-brand gates; Mooncake needs scalable hardware not opted out
   // by the recipe. Same helpers as synthesis, so a disabled pill and an
   // empty command can't disagree.
-  const kvOffloadOptions = taxonomy.kv_offload || {};
+  // Resolved for the selected hardware (`hardware_overrides`), so the install
+  // block, description and header all describe this platform's variant.
+  const kvOffloadOptions = useMemo(() => {
+    const profile = taxonomy.hardware_profiles?.[hwId] || {};
+    return Object.fromEntries(
+      Object.entries(taxonomy.kv_offload || {}).map(([k, o]) => [k, resolveKvOffloadOption(o, profile, hwId)])
+    );
+  }, [taxonomy.kv_offload, taxonomy.hardware_profiles, hwId]);
   const kvOffloadAllowedByStrategy = strategyAllowsKvOffload(strategies[activeServingStrategy]);
   // Intel XPU: no KV-offload layer is validated on this backend, so gate every
   // option off (and force the effective selection to Off further down).
@@ -971,9 +978,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     !kvOffloadDisabledByHw
     && isKvOffloadAllowedForStrategy(kvOffloadOptions[key], activeServingStrategy, strategies[activeServingStrategy])
     && isKvOffloadSupportedForRecipe(kvOffloadOptions[key], key, recipe)
-    && isKvOffloadBrandSupported(kvOffloadOptions[key], hwProfile);
+    && isKvOffloadBrandSupported(kvOffloadOptions[key], hwProfile, hwId)
+    && isKvOffloadInstallable(kvOffloadOptions[key], recipe, currentVariant, hwProfile, hwId);
   // Disabled reason, most-fixed-first (hardware, recipe, hardware-brand,
-  // strategy). Shared by the row pills and the group sub-row.
+  // install path, strategy). Shared by the row pills and the group sub-row.
   const kvDisabledReason = (key) => {
     const opt = kvOffloadOptions[key];
     const name = opt?.display_name || key;
@@ -985,8 +993,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
         ? `${name} is marked unsupported for this recipe.`
         : `${name} is not enabled for this recipe yet. It stays off until the recipe records a verified run under kv_offload_support.`;
     }
-    if (!isKvOffloadBrandSupported(opt, hwProfile)) {
-      return `${name} needs a CUDA, ROCm or XPU device — not available on ${hwProfile.brand ? `${hwProfile.brand} ` : ""}${hwProfile.display_name || hwId} backends.`;
+    if (!isKvOffloadBrandSupported(opt, hwProfile, hwId)) {
+      const hwName = `${hwProfile.brand ? `${hwProfile.brand} ` : ""}${hwProfile.display_name || hwId}`;
+      const brands = opt?.brands || [];
+      if (brands.length > 0 && !brands.includes(hwProfile?.brand)) {
+        return `${name} runs on ${brands.join(" / ")} hardware only — not available on ${hwName}.`;
+      }
+      return `${name} is not supported on ${hwName}.`;
+    }
+    if (!isKvOffloadInstallable(opt, recipe, currentVariant, hwProfile, hwId)) {
+      return `${name} installs with pip only (no published image includes it), and this recipe offers no pip install on ${hwProfile.display_name || hwId}.`;
     }
     if (!kvOffloadAllowedByStrategy) {
       return `${name} isn't offered under ${strategies[activeServingStrategy]?.display_name || activeServingStrategy}, which manages its own KV layout across the DP ranks.`;
@@ -1935,16 +1951,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       const allowed = Array.isArray(d.brand) ? d.brand : [d.brand];
       return allowed.includes(brand);
     });
-    // The active KV-offload option's runtime dep joins the same extra-install
+    // The active KV-offload option's runtime deps join the same extra-install
     // block — present only while selected, and required then (part of
-    // Copy-all). Mooncake's install is brand-keyed in the kv_store YAML
-    // (CUDA wheel on NVIDIA, non-CUDA build on AMD).
+    // Copy-all). A list-form `install` renders one entry per step, each with
+    // its own note, like a recipe's `dependencies`. Mooncake's install is
+    // brand-keyed in the kv_store YAML (CUDA wheel on NVIDIA, non-CUDA build
+    // on AMD).
     const kvOpt = kvOffloadOptions[activeKvOffload];
-    if (kvOpt?.install) {
-      deps.push({
-        note: `${kvOpt.display_name || activeKvOffload} — required by the selected KV Offload option`,
-        command: kvOpt.install,
-      });
+    const kvInstall = kvOffloadInstallSteps(kvOpt);
+    if (kvInstall.length) {
+      const fallbackNote = `${kvOpt.display_name || activeKvOffload} — required by the selected KV Offload option`;
+      for (const step of kvInstall) deps.push({ ...step, note: step.note || fallbackNote });
     } else if (isKvStoreActive) {
       const raw = strategies[activeKvOffload]?.vllm?.install;
       const cmd = raw && typeof raw === "object"
@@ -2081,12 +2098,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // would hand out a command that aborts on startup. Declared in the same
   // per-GPU override block that pins `docker_image`.
   const hwInstall = hardwareInstall(recipe, currentVariant, hwProfile, hwId);
-  const pipEffectivelyHidden =
-    recipe.model?.install?.pip === false ||
-    hwInstall?.pip === false ||
-    hwProfile?.generation === "tpu" ||
-    hwProfile?.generation === "xpu";
-  const dockerEffectivelyHidden = !dockerMeta.dockerEnabled;
+  const pipEffectivelyHidden = !isPipInstallAvailable(recipe, currentVariant, hwProfile, hwId);
+  // A KV Offload option that isn't in any published vLLM image (`docker:
+  // false`, e.g. IAXL's source build) pins the pip path while it's active.
+  const dockerEffectivelyHidden = !dockerMeta.dockerEnabled
+    || kvOffloadOptions[activeKvOffload]?.docker === false;
   const effectiveInstallMode =
     installMode === "pip" && pipEffectivelyHidden
       ? "docker"
@@ -2396,6 +2412,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           altCudaSuffix={altCudaSuffix}
           extraMinVersion={isKvStoreActive ? strategies[activeKvOffload]?.min_vllm_version : null}
           hwInstall={hwInstall}
+          dockerHidden={dockerEffectivelyHidden}
         />
 
         {/* ── Dependencies / extra install ──
@@ -2482,6 +2499,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             <SingleCommandBlock
               command={displayedResult.command}
               env={displayedResult.env}
+              setup={displayedResult.setup}
               companions={displayedResult.companions}
               verifyCmd={verifyCmd}
               benchCmd={benchCmd}
@@ -3800,7 +3818,7 @@ function CommandNote({ note }) {
   );
 }
 
-function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
+function SingleCommandBlock({ command, env, setup, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
   const [tab, setTab] = useState("vllm");
   // The `docker pull` for the image lives in the Install block above.
   const isXpu = !!dockerMeta?.isXpu;
@@ -3810,10 +3828,15 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
   // block tabs above). Pip mode: prelude = `export KEY=VAL` lines.
   const preludeBase = isDocker ? "" : envToExports(env);
   // XPU pip mode sources oneAPI on the host first; in docker mode the wrapper
-  // sources it inside the container, so no host prelude is needed.
-  const prelude = isXpu && !isDocker
-    ? ["source /opt/intel/oneapi/setvars.sh", preludeBase].filter(Boolean).join("\n")
-    : preludeBase;
+  // sources it inside the container, so no host prelude is needed. A KV
+  // Offload option's `setup` runs after the exports (so it sees them) and
+  // right before `vllm serve`; synthesis ends it with `&&`, so a failing
+  // setup stops the launch.
+  const prelude = [
+    isXpu && !isDocker ? "source /opt/intel/oneapi/setvars.sh" : "",
+    preludeBase,
+    !isDocker && setup ? setup : "",
+  ].filter(Boolean).join("\n");
   const displayCommand = isDocker
     ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix })
     : command;
@@ -3848,7 +3871,10 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
   // `hf download` prerequisite buildDockerRun prepends for a local-path
   // checkpoint. Copy still grabs comments + body.
   const rawActive = activeCompanion ? String(activeCompanion.command) : displayCommand;
-  const fullScript = activePrelude ? `${activePrelude}\n\n${rawActive}` : rawActive;
+  // A setup ending in `&&` chains straight into the command (no blank line).
+  const fullScript = activePrelude
+    ? `${activePrelude}${activePrelude.endsWith("&&") ? "\n" : "\n\n"}${rawActive}`
+    : rawActive;
   const actions = (
     <div className="flex items-center gap-1.5 shrink-0">
       <CopyButton text={fullScript} />
@@ -3922,7 +3948,7 @@ function maxVersion(a, b) {
   return a;
 }
 
-function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode, dockerCudaVariant, setDockerCudaVariant, altCudaSuffix, extraMinVersion = null, hwInstall = null }) {
+function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode, dockerCudaVariant, setDockerCudaVariant, altCudaSuffix, extraMinVersion = null, hwInstall = null, dockerHidden: dockerHiddenOverride = false }) {
   // Collapsible install reference. Shows the one-time setup step for the
   // active mode — `uv pip install vllm …` in pip mode, `docker pull <image>`
   // in docker mode. The active tab mirrors the command card's mode toggle
@@ -3935,7 +3961,7 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   const pipCfg = install.pip;
   const dockerCfg = install.docker;
   const pipHidden = pipCfg === false;
-  const dockerHidden = dockerCfg === false;
+  const dockerHidden = dockerCfg === false || dockerHiddenOverride;
   const [open, setOpen] = useState(false);
   const { isAmd, isTpu, isXpu, isIntel, isNpu, image: dockerImage, brandKey, cudaMap, cu129Image } = dockerMeta;
   // Intel CPU is a first-class backend in computeDockerMeta. Keep XPU
@@ -4001,7 +4027,7 @@ uv pip install -U vllm --torch-backend auto`;
     (isCpu
       ? nightlyRequired
         ? "Intel/AMD x86 CPU nightly wheels use the dedicated /nightly/cpu index and PyTorch CPU backend."
-        : "Intel/AMD x86 CPU release wheels are published separately from CUDA wheels; the command follows the official vLLM CPU pre-built-wheel flow. Since v0.30.0 they are manylinux_2_39 builds, which need glibc 2.39+ (e.g. Ubuntu 24.04+); on older distros use the Docker tab."
+        : `Intel/AMD x86 CPU release wheels are published separately from CUDA wheels; the command follows the official vLLM CPU pre-built-wheel flow. Since v0.30.0 they are manylinux_2_39 builds, which need glibc 2.39+ (e.g. Ubuntu 24.04+)${dockerHidden ? "." : "; on older distros use the Docker tab."}`
       : nightlyRequired && !isAmd
         ? `vLLM ${minV} isn't released yet — nightly required. Nightly wheels are CUDA 13 (cu130) only; the host needs an r580+ NVIDIA driver.`
         : undefined);

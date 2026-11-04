@@ -25,6 +25,8 @@ import {
   isKvOffloadAllowedForStrategy,
   isKvOffloadSupportedForRecipe,
   isKvOffloadBrandSupported,
+  isKvOffloadInstallable,
+  resolveKvOffloadOption,
   recommendStrategy,
   fitsSingleNode,
   variantVramMinimumGb,
@@ -372,7 +374,15 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     ...base,
     command: result.command,
     argv: result.argv,
-    ...dockerize(result.command, result.argv, env, dockerMeta),
+    // A KV Offload option's shell lines, run after the env exports and right
+    // before `vllm serve` (e.g. IAXL's `source setvars.sh`).
+    ...(result.setup ? { setup: result.setup } : {}),
+    ...(result.kvOffloadInstall ? { kv_offload_install: result.kvOffloadInstall } : {}),
+    // No published image carries the option (`docker: false`), so there is
+    // no docker equivalent to offer.
+    ...(result.dockerUnavailable
+      ? { docker_image: null, docker_command: null, docker_argv: null }
+      : dockerize(result.command, result.argv, env, dockerMeta)),
     // Companion processes (feature `companion:` or the active kv_offload
     // option's, e.g. LMCache's `lmcache server`) — run alongside `vllm serve`
     // on the same node, in their own terminal.
@@ -644,15 +654,18 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
   }
 
   // KV offload: a taxonomy option (Simple, LMCache) or a Mooncake kv_store id.
+  // An option is resolved for this hardware first and gated as synthesis gates
+  // it, so the selection never claims an option the command leaves out.
   const kvReq = get("kv_offload") || "";
-  const kvOpt = taxonomy.kv_offload?.[kvReq];
+  const kvOpt = resolveKvOffloadOption(taxonomy.kv_offload?.[kvReq], hwProfile, hwId);
   const kvAllowedByStrategy = strategyAllowsKvOffload(strategies[strategy]);
   let kvOffload = "";
   if (hwProfile.generation !== "xpu" && kvReq) {
     if (kvOpt) {
       if (isKvOffloadAllowedForStrategy(kvOpt, strategy, strategies[strategy])
         && isKvOffloadSupportedForRecipe(kvOpt, kvReq, recipe)
-        && isKvOffloadBrandSupported(kvOpt, hwProfile)) kvOffload = kvReq;
+        && isKvOffloadBrandSupported(kvOpt, hwProfile, hwId)
+        && isKvOffloadInstallable(kvOpt, recipe, variant, hwProfile, hwId)) kvOffload = kvReq;
     } else if (strategies[kvReq]?.deploy_type === "kv_store_lb" && scalable && kvAllowedByStrategy
       && isKvStoreBrandSupported(hwProfile) && recipe.kv_cache_strategy_hardware?.[kvReq]?.[hwId] !== "unsupported") {
       kvOffload = kvReq;
