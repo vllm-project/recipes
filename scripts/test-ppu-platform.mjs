@@ -22,6 +22,13 @@ test("PPU does not fall back to a NVIDIA container", () => {
   assert.equal(meta.image, null);
 });
 
+test("a PPU hardware profile can provide the container image", () => {
+  const profile = { brand: "Zhenwu", generation: "ppu", docker_image: "example/ppu:tag" };
+  const meta = computeDockerMeta({ model: {} }, {}, profile, "810e");
+  assert.equal(meta.dockerEnabled, true);
+  assert.equal(meta.image, "example/ppu:tag");
+});
+
 test("an explicitly pinned PPU image uses privileged mode and host networking", () => {
   const profile = { brand: "Zhenwu", generation: "ppu", gpu_count: 16, vram_gb: 1536 };
   const variant = { hardware_overrides: { "810e": { docker_image: "example/ppu:tag", docker_serve_command: "vllm serve" } } };

@@ -1002,7 +1002,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const exactHardwareOverride = hwId
     ? variant?.hardware_overrides?.[hwId]?.docker_image
     : null;
-  const dockerEnabled = isDockerEnabled(recipe) && (!isPpu || !!exactHardwareOverride);
+  const dockerEnabled = isDockerEnabled(recipe) && (!isPpu || !!exactHardwareOverride || !!hwProfile?.docker_image);
 
   const isCudaMap = (v) =>
     v && typeof v === "object" && ("cu129" in v || "cu130" in v);
