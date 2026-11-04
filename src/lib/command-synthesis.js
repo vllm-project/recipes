@@ -951,9 +951,10 @@ export function cu129DockerImage(image, minVllmVersion = null) {
   return `${image}-cu129`;
 }
 
-// Install-path statement for this hardware (`{ pip: false, docker: { note } }`):
-// the exact variant / recipe override block, else the hardware profile's, which
-// covers hardware no wheel runs on regardless of the recipe.
+// Install-path statement for this hardware (`{ pip: false }` to hide a tab,
+// or `{ pip: { command, note } }` to customize it): the exact variant / recipe
+// override block, else the hardware profile's, which covers hardware no wheel
+// runs on regardless of the recipe.
 export function hardwareInstall(recipe, variant, hwProfile, hwId) {
   return variant?.hardware_overrides?.[hwId]?.install
     || recipe?.hardware_overrides?.[hwId]?.install
@@ -967,7 +968,7 @@ function isDockerEnabled(recipe) {
 
 // When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
 // the user's `dockerCudaVariant` toggle instead of appending `-cu129`.
-export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
+export function computeDockerMeta(recipe, variant, hwProfile, hwId = null, npuDeviceCountOverride = null) {
   // When `model.nightly_required: true` and no explicit `docker_image` pin,
   // swap the brand defaults to nightly tags so the Install block matches the
   // nightly pip wheel that's also being rendered. vLLM publishes `:nightly`
@@ -992,7 +993,10 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const isIntel = hwProfile?.generation === "cpu" || isXpu || hwProfile?.brand === "Intel";
   const isNpu = hwProfile?.generation === "npu";
   const isPpu = hwProfile?.generation === "ppu";
-  const npuDeviceCount = isNpu ? hwProfile?.gpu_count ?? 1 : 0;
+  const requestedNpuDevices = Number.isInteger(npuDeviceCountOverride) && npuDeviceCountOverride > 0
+    ? npuDeviceCountOverride
+    : null;
+  const npuDeviceCount = isNpu ? requestedNpuDevices ?? hwProfile?.gpu_count ?? 1 : 0;
   // Ascend deliberately has no `brandKey` of its own: vLLM publishes no NPU
   // image, so every Ascend recipe pins one through `hardware_overrides`, which
   // `exactHardwareOverride` resolves before the brand defaults are consulted.
@@ -1142,6 +1146,19 @@ export function lastIntFlag(tokens, flag, fallback) {
     if (Number.isInteger(v) && v > 0) return v;
   }
   return fallback;
+}
+
+// Single-node NPU allocation follows the final command's world size. TP and
+// DP compose (TP2+DP8 needs 16 devices); EP reuses those ranks. Other
+// topologies keep the full per-node mapping until their role placement is
+// represented explicitly.
+export function npuDeviceCountForCommand(argv, strategyName, hwProfile) {
+  const fallback = hwProfile?.gpu_count ?? 1;
+  if (!Array.isArray(argv) || hwProfile?.generation !== "npu" || !strategyName?.startsWith("single_node_")) return fallback;
+  const tp = lastIntFlag(argv, "--tensor-parallel-size", 1);
+  const dp = lastIntFlag(argv, "--data-parallel-size", 1);
+  const dpLocal = lastIntFlag(argv, "--data-parallel-size-local", dp);
+  return tp * dpLocal;
 }
 
 // Port to publish, read off the command's own `--port` so a strategy that

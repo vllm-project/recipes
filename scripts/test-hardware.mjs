@@ -8,8 +8,10 @@ import yaml from "js-yaml";
 import Ajv from "ajv";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import {
+  npuDeviceCountForCommand,
   computeDockerMeta,
   hardwareInstall,
+  isPipInstallAvailable,
   isPrecisionCompatible,
   pickDefaultHardware,
   resolveCommand,
@@ -104,4 +106,73 @@ test("the schema accepts vr200 and rubin keys", () => {
   assert.equal(validate("hardware_overrides", { rubin: { extra_args: ["--x"] } }), true);
   assert.equal(validate("hardware_overrides", { rubinn: { extra_args: ["--x"] } }), false);
   assert.equal(validate("meta", { title: "t", slug: "s", provider: "p", description: "d", date_added: "2026-11-03", date_updated: "2026-11-03", tasks: ["text"], hardware: { vr200: "supported" } }), true);
+});
+
+test("the schema accepts exact-hardware install command overrides", () => {
+  const { properties } = buildRecipeSchema({ taxonomy, strategies });
+  const validate = new Ajv({ strict: false }).compile(properties.variants);
+  const variants = {
+    default: {
+      precision: "bf16",
+      vram_minimum_gb: 1,
+      hardware_overrides: {
+        ascend_910c: {
+          install: {
+            pip: { command: "uv pip install vllm-ascend", note: "WheelNext required" },
+            docker: { note: "Use the A3 image" },
+          },
+        },
+      },
+    },
+  };
+  assert.equal(validate(variants), true);
+});
+
+test("single-node NPU devices follow the final TP and DP values", () => {
+  const profile = profiles.ascend_910c;
+  const npuRecipe = (tp, dp) => recipe({
+    meta: { hardware: { ascend_910c: "supported" } },
+    variants: {
+      default: {
+        precision: "bf16",
+        vram_minimum_gb: 1,
+        tp,
+        extra_args: ["--data-parallel-size", String(dp)],
+      },
+    },
+  });
+  const argvFor = (tp, dp, advanced = []) => resolveCommand(
+    npuRecipe(tp, dp), "default", "single_node_tp", "ascend_910c", [], strategies, taxonomy, advanced, 1,
+  ).argv;
+  const count = (argv, strategy = "single_node_tp") => npuDeviceCountForCommand(argv, strategy, profile);
+
+  assert.equal(count(argvFor(1, 1)), 1);
+  assert.equal(count(argvFor(2, 1)), 2);
+  assert.equal(count(argvFor(2, 8)), 16);
+  assert.equal(count(argvFor(2, 1, ["--data-parallel-size", "2"])), 4);
+  assert.equal(count(argvFor(2, 1), "multi_node_tp"), 16);
+  assert.equal(count(undefined), 16);
+
+  const r = npuRecipe(2, 1);
+  const meta = computeDockerMeta(r, r.variants.default, profile, "ascend_910c", count(argvFor(2, 1)));
+  assert.equal(meta.npuDeviceCount, 2);
+  assert.match(meta.gpuFlags, /--device \/dev\/davinci0\b/);
+  assert.match(meta.gpuFlags, /--device \/dev\/davinci1\b/);
+  assert.doesNotMatch(meta.gpuFlags, /--device \/dev\/davinci2\b/);
+});
+
+test("an exact-hardware pip command keeps the install tab available", () => {
+  const r = recipe({
+    meta: { hardware: { ascend_910c: "supported" } },
+    variants: {
+      default: {
+        precision: "bf16",
+        vram_minimum_gb: 1,
+        hardware_overrides: {
+          ascend_910c: { install: { pip: { command: "uv pip install vllm-ascend" } } },
+        },
+      },
+    },
+  });
+  assert.equal(isPipInstallAvailable(r, r.variants.default, profiles.ascend_910c, "ascend_910c"), true);
 });

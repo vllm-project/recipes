@@ -90,6 +90,8 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     companion: obj({ label: { type: "string" }, description: { type: "string" }, command: { type: "string" } }, { required: ["label", "command"] }),
   }, { required: ["description"] });
 
+  const installTab = { anyOf: [{ type: "boolean" }, { type: "null" }, obj({ command: { type: "string" }, note: { type: "string" } })] };
+
   const variant = obj({
     precision: { type: "string", description: "bf16 | fp16 | fp8 | int8 | awq | gptq | int4 | nvfp4 | fp4 | mxfp4 | mxfp8 | …" },
     vram_minimum_gb: { type: "number", minimum: 0 },
@@ -106,16 +108,14 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     precision_hardware: obj({ brand: { enum: brands }, generation: { enum: generations } }),
     default_modes: { type: "object", additionalProperties: { type: "string" } },
     // Generation keys carry extra_args/extra_env; exact GPU ids may also pin an
-    // image, a GPU-resident VRAM budget, or hide the pip install.
+    // image, a GPU-resident VRAM budget, or customize an install tab.
     hardware_overrides: keyed(hwKey, extraArgsEnv({
       vram_minimum_gb: { type: "number", minimum: 0 },
       docker_image: { type: "string" },
       docker_serve_command: { type: "string" },
-      install: obj({ pip: { type: "boolean" }, docker: { type: "boolean" } }),
+      install: obj({ pip: installTab, docker: installTab }),
     })),
   }, { required: ["precision", "vram_minimum_gb"] });
-
-  const installTab = { anyOf: [{ type: "boolean" }, { type: "null" }, obj({ command: { type: "string" }, note: { type: "string" } })] };
 
   const pdMode = { enum: ["tp", "tep", "dep"] };
   const pdRole = obj({
