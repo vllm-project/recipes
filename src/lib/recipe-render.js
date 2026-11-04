@@ -38,6 +38,7 @@ import {
   pdRoleNodes,
   pdRoleParallelism,
   resolveCommand,
+  npuDeviceCountForCommand,
   computeDockerMeta,
   buildDockerRun,
   buildDockerArgv,
@@ -246,7 +247,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   const variant = pinned
     ? { ...baseVariant, hardware_overrides: { ...(baseVariant.hardware_overrides || {}), [hwId]: { ...(baseVariant.hardware_overrides?.[hwId] || {}), docker_image: pinned } } }
     : baseVariant;
-  const dockerMeta = computeDockerMeta(recipe, variant, hwProfile, hwId);
+  const dockerMeta = computeDockerMeta(recipe, variant, hwProfile, hwId, npuDeviceCountForCommand(result.argv, strategy, hwProfile));
   const env = result.env || {};
 
   const base = {
