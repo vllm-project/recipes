@@ -465,12 +465,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       const saved = parseInt(rs.nodes, 10);
       const v = recipe.variants?.[variant] || recipe.variants?.default || {};
       const multi = resolvedHw && needsMultiNode(recipe, strategies, resolvedHw, v, resolvedHwId);
+      // Never restore below the recommended strategy's strategy_min_gpus
+      // floor on this hardware (K3 on H100, K3.1 on TPU): a saved or generic
+      // 2-node pick is not a valid config there.
+      const floor = multi && resolvedHw
+        ? nodesForStrategy(recipe, recommendStrategy(recipe, resolvedHw, 2), resolvedHw.gpu_count || 8, resolvedHwId)
+        : 1;
+      const atFloor = (base) => Math.min(MAX_NODES, Math.max(base, floor));
       if ([1, 2].includes(saved)) {
         // A saved single-node pick can't stand where no single-node strategy is offered.
         const single = resolvedHw && multiNodeUnavailable(recipe, strategies, resolvedHw, v, resolvedHwId);
-        setNodeCount(saved === 1 && multi ? 2 : saved > 1 && single ? 1 : saved);
+        setNodeCount(atFloor(saved === 1 && multi ? 2 : saved > 1 && single ? 1 : saved));
       } else if (restoredFitsHw && multi) {
-        setNodeCount(2);
+        setNodeCount(atFloor(2));
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -506,7 +513,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       // among this hardware's options back.
       return Number.isInteger(n) && n >= 1 && n <= MAX_NODES ? n : 1;
     }
-    return multi ? 2 : 1;
+    if (multi) {
+      // Start at the recommended strategy's strategy_min_gpus floor on this
+      // hardware, not the generic 2: a floor above 2 (K3 on H100, K3.1 on
+      // TPU) otherwise SSRs a below-floor config until the reconcile effect
+      // snaps it up after hydration.
+      const rec = recommendStrategy(recipe, initialHw, 2);
+      const floor = nodesForStrategy(recipe, rec, initialHw.gpu_count || 8, initialHwId);
+      return Math.min(MAX_NODES, Math.max(2, floor));
+    }
+    return 1;
   });
   // PD-specific per-role node counts. Only surfaced when the active strategy
   // is `pd_cluster`; ignored otherwise. Defaults come from the recipe's
@@ -1414,17 +1430,22 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const recipeDefaultsSingleNode =
       typeof recipeDefault === "string" && recipeDefault.startsWith("single_node_");
     const shouldBumpNodes = nodeCount === 1 && supportsMultiNode && newScalable && !fitsNew && newProfile?.generation !== "xpu";
+    // Bump straight to the recommended strategy's strategy_min_gpus floor on
+    // the new hardware when it sits above 2 (K3 on H100, K3.1 on TPU).
+    const bumpedNodes = shouldBumpNodes
+      ? Math.min(MAX_NODES, Math.max(2, nodesForStrategy(recipe, recommendStrategy(recipe, newProfile, 2), newProfile?.gpu_count || 8, id)))
+      : 2;
     // Intel XPU is validated single-node only — always clamp back to 1 node.
     const shouldUnbumpNodes = nodeCount > 1 && (!newScalable || newProfile?.generation === "xpu" || (fitsNew && recipeDefaultsSingleNode)
       || multiNodeUnavailable(recipe, strategies, newProfile, activeVariant, id));
-    if (shouldBumpNodes) setNodeCount(2);
+    if (shouldBumpNodes) setNodeCount(bumpedNodes);
     if (shouldUnbumpNodes) setNodeCount(1);
     syncUrl({
       hardware: id,
       strategy: "",
       preset: "",
       point: "",
-      nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
+      nodes: shouldBumpNodes ? String(bumpedNodes) : shouldUnbumpNodes ? "" : undefined,
       features: featuresToUrl(next, id, variant),
       ...(nextModes !== featureModes ? { fmode: featureModesToUrl(nextModes, variant) } : {}),
       ...(variantUpdate ? { variant: variantUpdate } : {}),
@@ -1435,7 +1456,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     // doesn't leave stale strategy/nodes/features cached for this recipe.
     saveRecipeState(recipe.hf_id, {
       strategy: undefined,
-      nodes: shouldBumpNodes ? 2 : shouldUnbumpNodes ? 1 : nodeCount,
+      nodes: shouldBumpNodes ? bumpedNodes : shouldUnbumpNodes ? 1 : nodeCount,
       features: next,
       ...(nextModes !== featureModes ? { featureModes: nextModes } : {}),
       ...(kvOffloadOk ? {} : { kvOffload: undefined, kvInstances: undefined }),
