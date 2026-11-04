@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
+import { hardwareInstall, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import ShellCode from "@/components/recipes/ShellCode";
@@ -826,7 +826,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // All hardware profiles grouped by brand, sorted by architectural generation
   // within brand (oldest → newest; matches the semianalysis GPU timeline).
   const hwByBrand = useMemo(() => {
-    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "rtx_pro_5000", "rtx_pro_6000", "dgx_spark_gb10", "rtx_4090_2x", "rtx_5090_2x", "dgx_station_gb300"];
+    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "vr200", "rtx_pro_5000", "rtx_pro_6000", "dgx_spark_gb10", "rtx_4090_2x", "rtx_5090_2x", "dgx_station_gb300"];
     const AMD_ORDER = ["mi300x", "mi325x", "mi355x"];
     const rankIn = (list, id) => {
       const i = list.indexOf(id);
@@ -2082,10 +2082,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // official wheel cannot run the args this hardware generates and the pip tab
   // would hand out a command that aborts on startup. Declared in the same
   // per-GPU override block that pins `docker_image`.
-  const hwInstall =
-    currentVariant?.hardware_overrides?.[hwId]?.install ||
-    recipe.hardware_overrides?.[hwId]?.install ||
-    null;
+  const hwInstall = hardwareInstall(recipe, currentVariant, hwProfile, hwId);
   const pipEffectivelyHidden =
     recipe.model?.install?.pip === false ||
     hwInstall?.pip === false ||
@@ -2259,7 +2256,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                         const reason = !variantHardwareOk
                           ? `${currentVariant.precision?.toUpperCase()} is only supported on ${(currentVariant.supported_hardware || []).map((hw) => hardwareSelectorLabel(hw, taxonomy.hardware_profiles)).join(", ")}`
                           : !precisionOk
-                          ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
+                          ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell or newer`
                           : isUnsupported
                             ? `Not yet supported on ${p.display_name} — this model doesn't run here today, may be enabled in a future release`
                             : `${p.description}${verifiedNote}`;
@@ -4047,7 +4044,7 @@ uv pip install -U vllm --torch-backend auto`;
           : cu129Image
             ? `Default tag ships CUDA 13 (r580+ NVIDIA driver). On a CUDA 12.9 host, switch to cu129 for \`${cu129Image.split(":")[1]}\`.`
             : `This tag ships CUDA 13 only — the host needs an r580+ NVIDIA driver. vLLM publishes no CUDA 12.9 build after v${LAST_CU129_RELEASE}.`;
-  const dockerNote = dockerCfg?.note || defaultDockerNote;
+  const dockerNote = hwInstall?.docker?.note || dockerCfg?.note || defaultDockerNote;
   // Show the CUDA selector on the docker tab when we're on NVIDIA, the user
   // isn't supplying a full override command (which already bakes in a
   // specific tag), and a CUDA 12.9 build actually exists: a two-key CUDA map,
