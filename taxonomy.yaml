@@ -443,6 +443,28 @@ hardware_profiles:
     multi_node: false
     restricted: true
 
+  810e:
+    brand: Zhenwu
+    generation: ppu
+    display_name: "810E"
+    description: "Zhenwu 810E · 16× PPU · 96 GB per PPU"
+    gpu_count: 16
+    vram_gb: 1536
+    multi_node: true
+    restricted: true
+    install: { pip: false }
+
+  m890:
+    brand: Zhenwu
+    generation: ppu
+    display_name: "M890"
+    description: "Zhenwu M890 · 8× PPU · 144 GB per PPU"
+    gpu_count: 8
+    vram_gb: 1152
+    multi_node: true
+    restricted: true
+    install: { pip: false }
+
 tasks:
   - id: text
     display_name: "Text"

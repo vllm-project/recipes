@@ -991,17 +991,18 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const isXpu = hwProfile?.generation === "xpu";
   const isIntel = hwProfile?.generation === "cpu" || isXpu || hwProfile?.brand === "Intel";
   const isNpu = hwProfile?.generation === "npu";
-  const dockerEnabled = isDockerEnabled(recipe);
+  const isPpu = hwProfile?.generation === "ppu";
   const npuDeviceCount = isNpu ? hwProfile?.gpu_count ?? 1 : 0;
   // Ascend deliberately has no `brandKey` of its own: vLLM publishes no NPU
   // image, so every Ascend recipe pins one through `hardware_overrides`, which
   // `exactHardwareOverride` resolves before the brand defaults are consulted.
-  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
+  const brandKey = isPpu ? "ppu" : isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
   // Exact variant+hardware image overrides win over variant-wide and
   // model-wide images (for example, an MI355X-only ROCm nightly).
   const exactHardwareOverride = hwId
     ? variant?.hardware_overrides?.[hwId]?.docker_image
     : null;
+  const dockerEnabled = isDockerEnabled(recipe) && (!isPpu || !!exactHardwareOverride);
 
   const isCudaMap = (v) =>
     v && typeof v === "object" && ("cu129" in v || "cu130" in v);
@@ -1051,7 +1052,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const image = !dockerEnabled ? null : isXpu && !pinned
     ? "vllm/vllm-openai-xpu:latest"
     : pinned || (cudaMap ? cudaMap.cu130 || cudaMap.cu129 : null) || DEFAULT_IMAGE[brandKey];
-  const gpuFlags = isTpu
+  const gpuFlags = isPpu ? "" : isTpu
     ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
     : isAmd
       ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
@@ -1072,6 +1073,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
     isXpu,
     isIntel,
     isNpu,
+    isPpu,
     npuDeviceCount,
     pinned,
     cudaMap,
@@ -1084,6 +1086,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
 // the shell-string above token-for-token so docker_command and docker_argv
 // stay consistent.
 function dockerGpuArgv(meta) {
+  if (meta.isPpu) return [];
   if (meta.isTpu) return ["--privileged", "--network", "host", "-v", "/dev/shm:/dev/shm"];
   if (meta.isAmd) {
     return [
@@ -1153,7 +1156,7 @@ function servedPort(tokens, fallback = 8000) {
 // entrypoint is something else. Env vars become `-e KEY=VAL` inside the container.
 // `extraFlags` are runtime flags a component needs on top of the GPU ones
 // (a PD KV connector's RDMA device and locked-memory limit).
-export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [] }) {
+export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, isPpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [] }) {
   const pubPort = port ?? servedPort(command.split(/\s+/));
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
@@ -1175,11 +1178,13 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = null, isN
   const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
   // Ascend uses host networking and an explicit shm size; `-p` is a no-op
   // under `--net=host` and hid the required `--shm-size` on 950PR.
-  const runtimeFlags = isNpu
+  const runtimeFlags = isPpu
+    ? "--network host --ipc host --privileged --init --ulimit memlock=-1:-1 --security-opt seccomp=unconfined"
+    : isNpu
     ? "--privileged --net=host --shm-size=16g"
     : `--privileged --ipc=host ${hostNetwork ? "--network host" : `-p ${pubPort}:${pubPort}`}`;
-  const base = `${prereq}docker run ${gpuFlags} \\
-  ${runtimeFlags} \\${extraFlags.length ? `\n  ${extraFlags.join(" ")} \\` : ""}
+  const gpuPrefix = gpuFlags ? ` ${gpuFlags} \\\n  ` : " ";
+  const base = `${prereq}docker run${gpuPrefix}${runtimeFlags} \\${extraFlags.length ? `\n  ${extraFlags.join(" ")} \\` : ""}
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
   const setup = setupCommand
     ? `--entrypoint /bin/sh ${image} -c ${shellQuote(`${setupCommand} && exec vllm serve "$@"`)} vllm-grpc ${modelId}`
@@ -1205,7 +1210,9 @@ export function buildDockerArgv({ argv, env, meta, port = null, hostNetwork = fa
   for (const m of [...localModelMount(cmdArgs[0]), ...configPathMounts(env)]) {
     mountFlags.push("-v", m);
   }
-  const runtimeFlags = meta.isNpu
+  const runtimeFlags = meta.isPpu
+    ? ["--network", "host", "--ipc", "host", "--privileged", "--init", "--ulimit", "memlock=-1:-1", "--security-opt", "seccomp=unconfined"]
+    : meta.isNpu
     ? ["--privileged", "--net=host", "--shm-size", "16g"]
     : ["--privileged", "--ipc=host", ...(hostNetwork ? ["--network", "host"] : ["-p", `${pubPort}:${pubPort}`])];
   const base = [
