@@ -2891,6 +2891,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               {result.routerUnavailableReason && (
                 <p className="text-[11px] text-amber-600 mt-2">{result.routerUnavailableReason} Showing vLLM Router commands.</p>
               )}
+              {result.parserWarnings?.map((warning) => (
+                <p key={warning} className="text-[11px] text-amber-600 mt-2">{warning}</p>
+              ))}
             </ConfigRow>
           )}
 

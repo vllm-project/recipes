@@ -235,6 +235,9 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   if (strict && sel.pd_connector && result.kvConnector?.unavailableReason) {
     throw new Error(`Invalid preset ${presetPick}${pointPick ? ` at point ${pointPick}` : ""} in ${recipe.hf_id} (${hwId} / ${strategy}): ${result.kvConnector.unavailableReason}`);
   }
+  if (strict && result.parserWarnings?.length) {
+    throw new Error(`Invalid preset ${presetPick}${pointPick ? ` at point ${pointPick}` : ""} in ${recipe.hf_id} (${hwId} / ${strategy}): ${result.parserWarnings.join("; ")}`);
+  }
 
   const baseVariant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
@@ -312,6 +315,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
       decode,
       router: result.router,
       router_config: result.routerConfig,
+      ...(result.parserWarnings?.length ? { parser_warnings: result.parserWarnings } : {}),
       ...(result.registration ? { registration: result.registration } : {}),
     };
   }
