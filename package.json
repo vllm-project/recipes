@@ -21,7 +21,8 @@
     "test:presets": "node --test scripts/test-presets.mjs",
     "test:context": "node --test scripts/test-context.mjs",
     "test:hardware": "node --test scripts/test-hardware.mjs",
-    "test:render": "node --test scripts/test-render-parity.mjs"
+    "test:render": "node --test scripts/test-render-parity.mjs",
+    "test:shell-highlight": "node --test scripts/test-shell-highlight.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.2",
