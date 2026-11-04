@@ -253,6 +253,17 @@ test("a point's image fields layer over the preset's", () => {
   assert.deepEqual(effectivePreset(p, "b").image, { vllm: "img:2", dynamo: "d1" });
 });
 
+test("Docker-disabled recipes reject vLLM image pins on presets and points", () => {
+  const recipe = structuredClone(lane);
+  recipe.model.install = { docker: false };
+  recipe.presets.agg.points.c1.image = "example/vllm:2";
+  recipe.presets.agg.points.c8.image = { model_revision: "abc" };
+  assert.deepEqual(validatePresets(recipe, taxonomy, recipe.compatible_strategies), [
+    "presets.agg.image: cannot pin a vLLM image when model.install.docker is false",
+    "presets.agg.points.c1.image: cannot pin a vLLM image when model.install.docker is false",
+  ]);
+});
+
 test("select.kv_offload accepts only known options", () => {
   const kvIds = Object.values(strategies).filter((st) => st.deploy_type === "kv_store_lb").map((st) => st.name);
   assert.ok(kvIds.length > 0);

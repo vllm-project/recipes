@@ -36,7 +36,8 @@ channels:
       ref: main
       path: recipes
       role: core
-      scope: { exclude_tasks: [omni] }
+      # Ascend content comes only from the vllm-ascend overlays below.
+      scope: { exclude_tasks: [omni], exclude_brands: [Huawei] }
     vllm-omni:
       repo: vllm-project/vllm-omni
       ref: main

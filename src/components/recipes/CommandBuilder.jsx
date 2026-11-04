@@ -5,12 +5,14 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
+import { hardwareInstall, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
+import ShellCode from "@/components/recipes/ShellCode";
 import { publishSelection, onPresetRequest } from "@/lib/selection-store";
 import { holdInPlace } from "@/lib/hold-in-place";
 import { whenMatches } from "@/lib/recipe-context";
+import { ADVANCED_OPTIONS } from "@/lib/advanced-options";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
@@ -32,54 +34,6 @@ const FEATURE_MODE_NOTES = {
 // `gatedBy(recipe, activeStrategy)` hides an option when the recipe or current
 // strategy can't support it. This keeps casual users from selecting invalid
 // combos (e.g. EP on a dense model) while still exposing parallelism knobs.
-const ADVANCED_OPTIONS = [
-  {
-    id: "max_batched_8k",
-    label: "max-num-batched-tokens = 8192",
-    description: "Tunable batch budget; 8192 is a common sweet spot",
-    args: ["--max-num-batched-tokens", "8192"],
-  },
-  {
-    id: "max_num_seqs_256",
-    label: "max-num-seqs = 256",
-    description: "Max concurrent sequences per batch; lower for latency, higher for throughput",
-    args: ["--max-num-seqs", "256"],
-  },
-  {
-    id: "gpu_mem_095",
-    label: "gpu-memory-utilization = 0.95",
-    description: "Push KV cache further; use with caution on shared GPUs",
-    args: ["--gpu-memory-utilization", "0.95"],
-  },
-  {
-    id: "max_model_len_auto",
-    label: "max-model-len = auto",
-    description: "Auto-size context window to what KV cache can hold on your hardware",
-    args: ["--max-model-len", "auto"],
-  },
-  {
-    id: "dcp_8",
-    label: "decode-context-parallel-size = 8",
-    description:
-      "Shard the KV cache at decode time across TP ranks. MLA-attention models only (DeepSeek, Kimi-K2). Max DCP = tensor-parallel-size ÷ num_kv_heads.",
-    args: ["--decode-context-parallel-size", "8"],
-    gatedBy: (recipe) => recipe?.model?.supports_dcp === true,
-  },
-  {
-    id: "no_flashinfer_autotune",
-    label: "no-enable-flashinfer-autotune",
-    description: "Skip FlashInfer autotuning at startup (faster startup, may lose autotuned perf)",
-    args: ["--no-enable-flashinfer-autotune"],
-    gatedBy: (recipe) => recipe?.model?.flashinfer_autotune === true,
-  },
-  {
-    id: "ep_weight_filter",
-    label: "enable-ep-weight-filter",
-    description: "Skip loading expert weights that don't belong to this EP rank — speeds up weight loading for large MoE models",
-    args: ["--enable-ep-weight-filter"],
-    gatedBy: (_recipe, activeStrategy) => /(?:^|_)(?:tep|dep)$/.test(activeStrategy || ""),
-  },
-];
 import { loadPreferences, savePreference, loadRecipeState, saveRecipeState } from "@/lib/preferences";
 
 function CopyButton({ text, className = "" }) {
@@ -177,7 +131,7 @@ function PopoverButton({ label, code, icon: Icon, disabled, disabledNote }) {
           </button>
         </div>
         <pre className="px-3 py-2.5 text-xs font-mono leading-relaxed whitespace-pre overflow-x-auto bg-[var(--code-block-bg)] text-[var(--code-block-fg)]">
-          {code}
+          <ShellCode>{code}</ShellCode>
         </pre>
       </div>
     </>,
@@ -467,7 +421,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
         strategies[rs.strategy]?.deploy_type !== "kv_store_lb") {
       setStrategyOverride(rs.strategy);
     }
-    if (!searchParams.get("features") && Array.isArray(rs.features)) {
+    if (!searchParams.has("features") && Array.isArray(rs.features)) {
       const recipeFeatures = Object.keys(recipe.features || {});
       setFeatures(rs.features.filter((f) => recipeFeatures.includes(f)));
     }
@@ -716,14 +670,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       const want = new Set(defaultFeaturesFor(hw, variantKey));
       const got = new Set(arr);
       const same = want.size === got.size && [...want].every((f) => got.has(f));
-      return same ? "" : arr.join(",");
+      return same ? "" : arr.join(",") || "none";
     },
     [defaultFeaturesFor]
   );
 
   const [features, setFeatures] = useState(() => {
     const fp = searchParams.get("features");
-    if (fp) return fp.split(",").filter(Boolean);
+    if (fp !== null) return fp.split(",").filter((f) => recipe.features?.[f]);
     const urlHw = searchParams.get("hardware") || defaultHw;
     const urlVariant = searchParams.get("variant") || "default";
     return defaultFeaturesFor(urlHw, urlVariant);
@@ -871,7 +825,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // All hardware profiles grouped by brand, sorted by architectural generation
   // within brand (oldest → newest; matches the semianalysis GPU timeline).
   const hwByBrand = useMemo(() => {
-    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "rtx_pro_5000", "rtx_pro_6000", "dgx_spark_gb10", "rtx_4090_2x", "rtx_5090_2x", "dgx_station_gb300"];
+    const NVIDIA_ORDER = ["h100", "h200", "b200", "gb200", "b300", "gb300", "vr200", "rtx_pro_5000", "rtx_pro_6000", "dgx_spark_gb10", "rtx_4090_2x", "rtx_5090_2x", "dgx_station_gb300"];
     const AMD_ORDER = ["mi300x", "mi325x", "mi355x"];
     const rankIn = (list, id) => {
       const i = list.indexOf(id);
@@ -1192,9 +1146,48 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     ? lastIntFlag(result.argv, "--data-parallel-size", hwGpuCount)
     : hwGpuCount;
   const showDepUsageHint = depWidth < hwGpuCount;
+  // The whole selection as an explicit page query, for the `.md` / `.json`
+  // forms (Copy page). The address bar can't stand in for it: syncUrl omits
+  // defaults, and choices restored from storage never reach the URL.
+  const selectedPoint = result?.preset?.point?.selected ?? null;
+  const shareQuery = useMemo(() => {
+    const q = new URLSearchParams({ hardware: hwId, variant });
+    if ((recipe.meta?.tasks || []).includes("omni")) {
+      if (omniTask) q.set("task", omniTask);
+      return q.toString();
+    }
+    q.set("strategy", activeStrategy);
+    q.set("features", features.join(",") || "none");
+    const fmode = Object.entries(featureModes).filter(([k, m]) => m && recipe.features?.[k]?.modes).map(([k, m]) => `${k}:${m}`);
+    if (fmode.length) q.set("fmode", fmode.join(","));
+    if (advanced.length) q.set("advanced", advanced.join(","));
+    q.set("frontend", frontend);
+    if (selectedPreset) q.set("preset", selectedPreset);
+    if (selectedPoint) q.set("point", selectedPoint);
+    if (activeKvOffload) {
+      q.set("kv_offload", activeKvOffload);
+      if (kvInstances != null) q.set("kv_instances", String(kvInstances));
+      if (kvInstanceIdx > 0) q.set("kv_instance", String(kvInstanceIdx));
+    }
+    if (dcpSize != null) q.set("dcp", String(dcpSize));
+    if (activeStrategy === "pd_cluster") {
+      q.set("prefill_nodes", String(effPdPrefillNodes));
+      q.set("decode_nodes", String(effPdDecodeNodes));
+      q.set("prefill_mode", effPdPrefillPar);
+      q.set("decode_mode", effPdDecodePar);
+      if (pdPrefillRank > 0) q.set("prefill_rank", String(pdPrefillRank));
+      if (pdDecodeRank > 0) q.set("decode_rank", String(pdDecodeRank));
+      q.set("pd_router", pdRouter);
+      if (pdConnector) q.set("pd_connector", pdConnector);
+      if (pdTransport !== "http") q.set("pd_transport", pdTransport);
+    } else {
+      q.set("nodes", String(nodeCount));
+    }
+    return q.toString();
+  }, [recipe, hwId, variant, omniTask, activeStrategy, features, featureModes, advanced, frontend, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, pdRouter, pdConnector, pdTransport, nodeCount]);
   useEffect(() => {
-    publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features, preset: selectedPreset });
-  }, [recipe.hf_id, hwId, activeStrategy, variant, features, selectedPreset]);
+    publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features, preset: selectedPreset, query: shareQuery });
+  }, [recipe.hf_id, hwId, activeStrategy, variant, features, selectedPreset, shareQuery]);
 
   // Visual feedback when any rendered command changes. Covers single-node
   // (result.command), multi-node (headCommand), pd_cluster (prefill.command),
@@ -1979,7 +1972,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     if (result.orchestrator === "smg") {
       if (result.workerInstall) deps.push({ command: result.workerInstall, note: "gRPC servicer — install on every prefill/decode node", install_modes: ["pip"] });
       deps.push({ command: result.router.install, note: "SMG — install on the router host", install_modes: ["pip"] });
-      deps.push({ command: result.router.dockerInstall, note: "SMG — pull on the router host", install_modes: ["docker"] });
+      if (result.router.dockerInstall) {
+        deps.push({ command: result.router.dockerInstall, note: "SMG — pull on the router host", install_modes: ["docker"] });
+      }
     }
     return deps;
   }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall, result.router?.install, result.router?.dockerInstall, result.workerInstall, result.kvConnector?.install]);
@@ -2053,7 +2048,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   );
   const dockerMeta = useMemo(() => {
     const meta = computeDockerMeta(recipe, imageVariant, hwProfile, hwId);
-    if (meta.brandKey !== "nvidia") return meta;
+    if (!meta.image || meta.brandKey !== "nvidia") return meta;
 
     // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
     // tag and skip auto-suffix. "default" resolves to cu130 (the upstream
@@ -2085,16 +2080,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // official wheel cannot run the args this hardware generates and the pip tab
   // would hand out a command that aborts on startup. Declared in the same
   // per-GPU override block that pins `docker_image`.
-  const hwInstall =
-    currentVariant?.hardware_overrides?.[hwId]?.install ||
-    recipe.hardware_overrides?.[hwId]?.install ||
-    null;
+  const hwInstall = hardwareInstall(recipe, currentVariant, hwProfile, hwId);
   const pipEffectivelyHidden =
     recipe.model?.install?.pip === false ||
     hwInstall?.pip === false ||
     hwProfile?.generation === "tpu" ||
     hwProfile?.generation === "xpu";
-  const dockerEffectivelyHidden = recipe.model?.install?.docker === false;
+  const dockerEffectivelyHidden = !dockerMeta.dockerEnabled;
   const effectiveInstallMode =
     installMode === "pip" && pipEffectivelyHidden
       ? "docker"
@@ -2262,7 +2254,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                         const reason = !variantHardwareOk
                           ? `${currentVariant.precision?.toUpperCase()} is only supported on ${(currentVariant.supported_hardware || []).map((hw) => hardwareSelectorLabel(hw, taxonomy.hardware_profiles)).join(", ")}`
                           : !precisionOk
-                          ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell`
+                          ? `${currentVariant.precision?.toUpperCase()} requires NVIDIA Blackwell or newer`
                           : isUnsupported
                             ? `Not yet supported on ${p.display_name} — this model doesn't run here today, may be enabled in a future release`
                             : `${p.description}${verifiedNote}`;
@@ -3744,7 +3736,7 @@ function CommandBody({ command }) {
         </div>
       )}
       <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-        {body}
+        <ShellCode>{body}</ShellCode>
       </pre>
     </>
   );
@@ -3910,7 +3902,7 @@ function SingleCommandBlock({ command, env, companions, verifyCmd, benchCmd, sta
       {!activeCompanion && <CommandNote note={commandNote} />}
       {activePrelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-          {activePrelude}
+          <ShellCode>{activePrelude}</ShellCode>
         </pre>
       )}
       <CommandBody command={rawActive} />
@@ -4043,7 +4035,7 @@ uv pip install -U vllm --torch-backend auto`;
           : cu129Image
             ? `Default tag ships CUDA 13 (r580+ NVIDIA driver). On a CUDA 12.9 host, switch to cu129 for \`${cu129Image.split(":")[1]}\`.`
             : `This tag ships CUDA 13 only — the host needs an r580+ NVIDIA driver. vLLM publishes no CUDA 12.9 build after v${LAST_CU129_RELEASE}.`;
-  const dockerNote = dockerCfg?.note || defaultDockerNote;
+  const dockerNote = hwInstall?.docker?.note || dockerCfg?.note || defaultDockerNote;
   // Show the CUDA selector on the docker tab when we're on NVIDIA, the user
   // isn't supplying a full override command (which already bakes in a
   // specific tag), and a CUDA 12.9 build actually exists: a two-key CUDA map,
@@ -4160,7 +4152,7 @@ uv pip install -U vllm --torch-backend auto`;
             </div>
           )}
           <pre className="px-4 py-3 text-[13px] text-[var(--command-fg)] font-mono leading-relaxed whitespace-pre overflow-x-auto">
-            {active.code}
+            <ShellCode>{active.code}</ShellCode>
           </pre>
         </div>
       )}
@@ -4199,7 +4191,7 @@ function DependenciesBlock({ deps }) {
                 <span># {d.note}</span>
               </div>
             )}
-            <div className="text-[var(--command-fg)] whitespace-pre">{d.command}</div>
+            <div className="text-[var(--command-fg)] whitespace-pre"><ShellCode>{d.command}</ShellCode></div>
           </div>
         ))}
       </div>
@@ -4254,7 +4246,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
       <CommandNote note={commandNote} />
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-          {prelude}
+          <ShellCode>{prelude}</ShellCode>
         </pre>
       )}
       <CommandBody command={active.command} />
@@ -4415,7 +4407,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
       {!active.isRouter && <CommandNote note={commandNote} />}
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-          {prelude}
+          <ShellCode>{prelude}</ShellCode>
         </pre>
       )}
       <CommandBody command={active.command} />
@@ -4541,7 +4533,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
       {active.isVllm && <CommandNote note={commandNote} />}
       {prelude && (
         <pre className="px-4 pt-3 pb-1 text-[12px] text-[var(--command-fg)]/70 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-          {prelude}
+          <ShellCode>{prelude}</ShellCode>
         </pre>
       )}
       <CommandBody command={active.command} />

@@ -20,7 +20,7 @@ repo renders them (see "How recipes are maintained" in the
 | --- | --- |
 | Models served by vLLM | `vllm-project/vllm` → `recipes/models/<hf_org>/<hf_repo>.yaml` |
 | Omni models (`meta.tasks` includes `omni`) | `vllm-project/vllm-omni` → `recipes/models/<hf_org>/<hf_repo>.yaml` |
-| Ascend NPU content | Inline in the vLLM recipe for now; moving to `overlays/<hf_org>/<hf_repo>.yaml` in vllm-ascend |
+| Ascend NPU content | `recipes/overlays/<hf_org>/<hf_repo>.yaml` in vllm-ascend, merged into the vLLM recipe (the vLLM source rejects Huawei hardware) |
 
 This repo's `models/` still holds copies of the vLLM and vLLM-Omni recipes until they are synced upstream and removed. The site renders the upstream version, so open changes to those models against vLLM or vLLM-Omni, not the copies here. Pull requests already open against the copies can still merge; they reach the site once synced upstream.
 

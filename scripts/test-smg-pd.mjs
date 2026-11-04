@@ -124,7 +124,6 @@ test("unsupported SMG combinations fall back with an explicit reason", () => {
   for (const options of [
     { pools: { prefill: { nodes: 2, parallelism: "dep" }, decode: { nodes: 1 } } },
     { offload: "kv_store_distributed_mooncake" },
-    { model: read("models/moonshotai/Kimi-K3.yaml") },
   ]) {
     const result = resolve(options);
     assert.equal(result.orchestrator, "vllm-router");
@@ -311,7 +310,8 @@ for (const [id, reasoning, tools] of grpcModels) {
       assert.ok(!result[role].argv.includes("--reasoning-parser"));
       assert.ok(!result[role].argv.includes("--enable-auto-tool-choice"));
       assert.equal(JSON.parse(flag(result[role].argv, "--kv-transfer-config")).kv_role, kvRole);
-      if (model.features.text_only) assert.ok(!result[role].argv.includes("--language-model-only"));
+      // Kimi-K3 now pins language-model-only in its base PD worker args.
+      if (model.features.text_only && id !== "moonshotai/Kimi-K3") assert.ok(!result[role].argv.includes("--language-model-only"));
     }
     assert.match(result.router.command, /--prefill grpc:\/\/\$PREFILL_NODE_1:8001/);
     assert.match(result.router.command, /--decode grpc:\/\/\$DECODE_NODE_1:8002/);
@@ -402,7 +402,7 @@ test("gRPC preserves vision encoder settings while removing worker-only chat def
 });
 
 test("gRPC Text Only remains an opt-in feature on both pools", () => {
-  for (const id of ["moonshotai/Kimi-K3", "MiniMaxAI/MiniMax-M3", "deepseek-ai/DeepSeek-V4.1-Flash"]) {
+  for (const id of ["MiniMaxAI/MiniMax-M3", "deepseek-ai/DeepSeek-V4.1-Flash"]) {
     const model = read(`models/${id}.yaml`);
     for (const enabled of [false, true, false]) {
       const result = resolve({ model, transport: "grpc", pools: grpcPools,

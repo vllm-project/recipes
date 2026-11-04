@@ -346,6 +346,9 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = [], 
       else seenDefault.set(slot, key);
     }
     const checkDelta = (d, at) => {
+      if (recipe.model?.install?.docker === false && presetImage(d?.image)?.vllm) {
+        errors.push(`${at}.image: cannot pin a vLLM image when model.install.docker is false`);
+      }
       for (const f of d?.remove_args || []) {
         if (!String(f).startsWith("--")) errors.push(`${at}.remove_args: "${f}" is not a --flag`);
         if ((d.args || []).map(normFlag).includes(normFlag(f))) errors.push(`${at}: ${f} is both added and removed`);

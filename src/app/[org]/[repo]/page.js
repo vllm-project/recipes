@@ -9,11 +9,16 @@ import { loadTaxonomy } from "@/lib/taxonomy";
 import { resolveRecipePlatforms } from "@/lib/platforms";
 import { getProviderLogo, getProviderLogoClass } from "@/lib/providers";
 import { CommandBuilder } from "@/components/recipes/CommandBuilder";
+import { CommandFallback } from "@/components/recipes/CommandFallback";
+import { CopyPage } from "@/components/recipes/CopyPage";
+import { resolveSelection } from "@/lib/recipe-render";
 import { GuideLinks } from "@/components/recipes/GuideLinks";
 import { ReferenceTabs } from "@/components/recipes/ConfigSections";
 import { whenLabels } from "@/lib/recipe-context";
 import { DeployDialog } from "@/components/recipes/DeployDialog";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
+import ShellCode from "@/components/recipes/ShellCode";
+import { SHELL_LANGS } from "@/lib/shell-highlight";
 import Markdown from "react-markdown";
 import { guideRehypePluginsFor, guideRemarkPlugins } from "@/lib/guide-markdown";
 import { Badge } from "@/components/ui/badge";
@@ -83,7 +88,15 @@ export async function generateMetadata({ params }) {
       description,
       images: [ogUrl],
     },
-    alternates: { canonical: `/${org}/${repo}` },
+    alternates: {
+      canonical: `/${org}/${repo}`,
+      // Agent-readable forms: the selected configuration as Markdown (same
+      // query string as the page), and the static JSON API.
+      types: {
+        "text/markdown": `/${recipe.hf_id}.md`,
+        "application/json": `/${recipe.hf_id}.json`,
+      },
+    },
   };
 }
 
@@ -140,6 +153,20 @@ export default async function RecipePage({ params, searchParams }) {
     };
   });
   const sectionProps = { hfId: recipe.hf_id, hardware: hardwareSlim, strategyLabels, presets, troubleshooting };
+  const copyPageLabels = {
+    hardware: Object.fromEntries(Object.entries(hardwareSlim).map(([id, h]) => [id, h.display_name || id])),
+    strategies: strategyLabels,
+    variants: Object.fromEntries(Object.entries(recipe.variants || {}).map(([k, v]) => [k, v.label || v.precision?.toUpperCase() || k])),
+  };
+  // What the builder opens on with no query, for the static HTML.
+  const fallback = resolveSelection(recipe, new URLSearchParams(), strategies, taxonomy);
+  const fallbackHw = taxonomy.hardware_profiles?.[fallback.selection.hardware] || {};
+  const fallbackVariant = recipe.variants?.[fallback.selection.variant] || {};
+  const fallbackSummary = [
+    `${fallbackHw.gpu_count ? `${fallbackHw.gpu_count}× ` : ""}${fallbackHw.display_name || fallback.selection.hardware}`,
+    !fallback.omni && (strategies[fallback.selection.strategy]?.display_name || fallback.selection.strategy),
+    fallbackVariant.label || fallbackVariant.precision?.toUpperCase(),
+  ].filter(Boolean).join(" · ");
   const logo = getProviderLogo(recipe.hf_org);
 
   // Per-recipe platform opt-in. Each entry is either a bare id ("modal") or
@@ -206,6 +233,7 @@ export default async function RecipePage({ params, searchParams }) {
               </a>
             </div>
           </div>
+          <CopyPage hfId={recipe.hf_id} labels={copyPageLabels} />
         </div>
 
         {/* Tags — single row, no duplication */}
@@ -252,7 +280,7 @@ export default async function RecipePage({ params, searchParams }) {
 
       {/* ── Command Builder ── */}
       <section id="recipe-builder" className="mb-10 scroll-mt-20">
-        <Suspense fallback={<div className="h-40 rounded-2xl bg-muted animate-pulse" />}>
+        <Suspense fallback={<CommandFallback hfId={recipe.hf_id} summary={fallbackSummary} rendering={fallback.rendering} />}>
           <CommandBuilder recipe={recipe} strategies={strategies} taxonomy={taxonomy} contextNotes={notes} />
         </Suspense>
       </section>
@@ -332,6 +360,14 @@ const guideComponents = {
   // A wide table scrolls inside its own box instead of widening the page on a phone.
   table: function GuideTable({ children }) {
     return <div className="guide-table"><table>{children}</table></div>;
+  },
+  // Shell fences get the same restrained highlighting as the command builder,
+  // minus the accent on JSON "model" values that every request example repeats;
+  // other languages and inline code render as before.
+  code: function GuideCode({ node: _node, className, children, ...rest }) {
+    const lang = className?.match(/language-(\w+)/)?.[1];
+    if (!lang || !SHELL_LANGS.has(lang)) return <code className={className} {...rest}>{children}</code>;
+    return <code className={className}><ShellCode jsonModel={false}>{children}</ShellCode></code>;
   },
 };
 
