@@ -333,10 +333,18 @@ hardware_profiles:
   ironwood:
     brand: Google
     generation: tpu
-    display_name: "TPU v7 (Ironwood)"
-    description: "Google Cloud TPU v7 Ironwood · 192 GB HBM/chip · served via vLLM TPU"
-    gpu_count: 1
-    vram_gb: 192
+    # The picker shows the category name; the description keeps the generation.
+    display_name: "TPU7x"
+    description: "Google Cloud TPU v7 Ironwood · 206 GB HBM3e/chip (96 GiB per TensorCore) · served via vLLM TPU"
+    # One TPU v7x host: 4 dual-TensorCore chips = 8 devices, 824 GB HBM.
+    # TP sizing and node counts come out in hosts (a 2x2x4 slice = 4 nodes,
+    # 16 chips, 32 devices). chips_per_node drives the header's chip count
+    # ("16x TPU7x (4 nodes, 32 devices)"); slice_topology labels the Nodes
+    # pill (v7x pods scale the third axis: 4 hosts -> 2x2x4).
+    gpu_count: 8
+    vram_gb: 824
+    chips_per_node: 4
+    slice_topology: "2x2x{n}"
     multi_node: false
     restricted: true
 
