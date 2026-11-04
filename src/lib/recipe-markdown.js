@@ -3,6 +3,7 @@
 // marked authoritative; the guide comes last as background, since its
 // hand-written examples may target another configuration.
 
+import { clientModelFor, fillClientModel } from "./client-model.js";
 import { hardwareInstall } from "./command-synthesis.js";
 import { whenMatches } from "./recipe-context.js";
 import { SELECTION_PARAMS, defaultFeaturesFor, synthesizeInstall } from "./recipe-render.js";
@@ -331,7 +332,7 @@ export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls
       "",
       "> Background reference. Commands in it are examples and may target another configuration — use the Serve section above.",
       "",
-      pageLinks(demoteHeadings(recipe.guide.trim()), recipe, origin),
+      pageLinks(demoteHeadings(fillClientModel(recipe.guide.trim(), clientModelFor(recipe, resolved.selection.variant, resolved.rendering))), recipe, origin),
       "",
     );
   }
