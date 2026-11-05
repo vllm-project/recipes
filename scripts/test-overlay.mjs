@@ -83,6 +83,18 @@ test("overlay can't touch out-of-scope hardware or model config", () => {
   assert.equal(errs({ meta: { default_hardware: "ascend_910c" } }).length, 1);
 });
 
+test("feature hardware gates are scoped and round-trip", () => {
+  const ppu = resolveScope({ brands: ["Zhenwu"] }, taxonomy);
+  const recipe = { features: { feature: { hardware: { ppu: "unsupported", hopper: "supported" } } } };
+  const { core, overlay } = splitOverlay(recipe, { ctx: ppu, source: "vllm-sail" });
+  assert.equal(core.features.feature.hardware.ppu, undefined);
+  assert.equal(overlay.features.feature.hardware.ppu, "unsupported");
+  const result = applyOverlay(core, overlay, { ctx: ppu, source: "vllm-sail" });
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.recipe, recipe);
+  assert.equal(applyOverlay(core, { features: { feature: { hardware: { hopper: "unsupported" } } } }, { ctx: ppu, source: "vllm-sail" }).errors.length, 1);
+});
+
 test("overlay is add-only", () => {
   const once = applyOverlay(core0, { meta: { hardware: { ascend_910c: "verified" } } }, { ctx, source }).recipe;
   assert.equal(applyOverlay(once, { meta: { hardware: { ascend_910c: "unsupported" } } }, { ctx, source }).errors.length, 1);
@@ -105,6 +117,21 @@ test("new variants and dependencies must be in scope", () => {
 test("an overlay source needs a granted scope", () => {
   const none = resolveScope({}, taxonomy);
   assert.equal(applyOverlay(core0, { meta: { hardware: { ascend_910c: "verified" } } }, { ctx: none, source }).errors.length, 1);
+});
+
+test("source validation rejects unregistered overlays instead of silently skipping them", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-unknown-overlay-"));
+  try {
+    fs.mkdirSync(path.join(tmp, "overlays"));
+    fs.writeFileSync(path.join(tmp, "sources.yaml"), yaml.dump({ default_channel: "test", channels: { test: {} } }));
+    const result = spawnSync(process.execPath, [path.join(ROOT, "scripts/validate-source.mjs"), "--source", "unknown", "--dir", tmp], {
+      cwd: ROOT, encoding: "utf8", env: { ...process.env, RECIPES_SOURCES: path.join(tmp, "sources.yaml") },
+    });
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /overlay scope cannot be validated/);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 test("guide sections fill their marker, else append", () => {

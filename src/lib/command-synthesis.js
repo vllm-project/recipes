@@ -1,4 +1,5 @@
 import { applyPresetArgOps, effectivePreset, toggleOwnedFlags, matchingPresets, presetImage, presetPoints, resolvePresetKey, withPreset } from "./recipe-presets.js";
+import { isEnvPassthrough } from "./env-format.js";
 
 /**
  * Core command synthesis: Recipe + Variant + Strategy + Hardware + Features → vllm serve command.
@@ -1200,7 +1201,7 @@ function servedPort(tokens, fallback = 8000) {
 export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, isPpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [] }) {
   const pubPort = port ?? servedPort(command.split(/\s+/));
   const envFlags = Object.entries(env || {})
-    .map(([k, v]) => `-e ${k}=${v}`)
+    .map(([k, v]) => isEnvPassthrough(k, v) ? `-e ${k}` : `-e ${k}=${v}`)
     .join(" \\\n  ");
   const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
   const localMount = localModelMount(modelId);
@@ -1242,7 +1243,7 @@ export function buildDockerArgv({ argv, env, meta, port = null, hostNetwork = fa
   const pubPort = port ?? servedPort(argv);
   const envFlags = [];
   for (const [k, v] of Object.entries(env || {})) {
-    envFlags.push("-e", `${k}=${v}`);
+    envFlags.push("-e", isEnvPassthrough(k, v) ? k : `${k}=${v}`);
   }
   // `vllm serve <model> <...flags>` → CMD becomes `<model> <...flags>` since
   // the image's entrypoint is already `vllm serve`.
@@ -2273,6 +2274,16 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       env.VLLM_USE_RUST_FRONTEND = "0";
     } else {
       Object.assign(env, taxonomy.frontends?.[resolveFrontend(recipe, frontend, taxonomy)]?.env);
+    }
+    if (hwProfileId === "810e") {
+      const raw = roleOverride && pdNodes ? pdNodes[roleOverride] : undefined;
+      const roleNodes = typeof raw === "number" ? raw : raw?.nodes ?? (nodeCount > 1 ? 1 : 0);
+      const multiNode = strategy.deploy_type === "multi_node" && nodeCount > 1;
+      const multiNodeRole = strategy.deploy_type === "pd_cluster" && roleOverride && roleNodes > 1;
+      if (multiNode || multiNodeRole) {
+        env.NCCL_IB_HCA ??= "$NCCL_IB_HCA";
+        env.PCCL_NET_PLUGIN_ENABLE ??= "1";
+      }
     }
     return env;
   }

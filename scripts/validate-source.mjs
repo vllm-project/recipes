@@ -40,6 +40,10 @@ if (!fs.existsSync(path.join(dir, "models")) && !fs.existsSync(path.join(dir, "o
 
 const { defaultChannel, channels } = loadSources();
 const current = channels[defaultChannel];
+if (!current[source] && fs.existsSync(path.join(dir, "overlays"))) {
+  console.error(`"${source}" is not in sources.yaml — overlay scope cannot be validated`);
+  process.exit(2);
+}
 const CHANNEL = "validate";
 let sources;
 let lock = {};
