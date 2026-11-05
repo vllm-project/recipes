@@ -3,7 +3,7 @@
 // marked authoritative; the guide comes last as background, since its
 // hand-written examples may target another configuration.
 
-import { hardwareInstall } from "./command-synthesis.js";
+import { hardwareInstall, hwPipOverride, isFeatureSupportedOnHardware } from "./command-synthesis.js";
 import { whenMatches } from "./recipe-context.js";
 import { SELECTION_PARAMS, defaultFeaturesFor, synthesizeInstall } from "./recipe-render.js";
 
@@ -124,9 +124,14 @@ function installSection(recipe, resolved) {
   const out = [];
   const min = recipe.model?.min_vllm_version;
   const hwInstall = hardwareInstall(recipe, recipe.variants?.[selection?.variant], hwProfile, selection?.hardware);
-  if (min) out.push(`Requires vLLM >= ${min}${recipe.model?.nightly_required && hwInstall?.pip !== false ? " (not released yet — nightly wheel)" : ""}.`, "");
+  const hwPip = hwPipOverride(hwInstall);
+  if (hwPip) {
+    // This hardware's own install: the recipe's vLLM floor describes the stock one.
+    if (hwPip.note) out.push(hwPip.note, "");
+    out.push(fence(hwPip.command), "");
+  } else if (min) out.push(`Requires vLLM >= ${min}${recipe.model?.nightly_required && hwInstall?.pip !== false ? " (not released yet — nightly wheel)" : ""}.`, "");
   const install = synthesizeInstall(recipe);
-  if (hwProfile.brand === "NVIDIA" && install?.pip && hwInstall?.pip !== false) {
+  if (!hwPip && hwProfile.brand === "NVIDIA" && install?.pip && hwInstall?.pip !== false) {
     if (install.pip.note) out.push(install.pip.note, "");
     out.push(fence(install.pip.command), "");
   }
@@ -153,8 +158,10 @@ function installSection(recipe, resolved) {
 }
 
 function contextEntries(recipe, resolved, kind, hardwareProfiles) {
-  const { selection } = resolved;
-  const sel = { hwId: selection.hardware, strategy: selection.strategy, variant: selection.variant, features: selection.features };
+  const { selection, hwProfile } = resolved;
+  // A feature unsupported on this hardware emits nothing, so it isn't on here.
+  const features = selection.features?.filter((f) => isFeatureSupportedOnHardware(recipe.features?.[f], hwProfile, selection.hardware));
+  const sel = { hwId: selection.hardware, strategy: selection.strategy, variant: selection.variant, features };
   return (recipe[kind] || []).filter((e) => whenMatches(e.when, sel, hardwareProfiles));
 }
 
