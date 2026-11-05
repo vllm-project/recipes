@@ -42,6 +42,8 @@ import {
   computeDockerMeta,
   buildDockerRun,
   buildDockerArgv,
+  hardwareInstall,
+  hwPipOverride,
   nodesForStrategy,
   isStrategyReachable,
   isStrategySupportedOnHardware,
@@ -251,6 +253,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   const env = result.env || {};
   const clients = renderRecipeClients(recipe, variantKey, result);
 
+  const hwPip = hwPipOverride(hardwareInstall(recipe, recipe.variants?.[variantKey], taxonomy.hardware_profiles?.[hwId], hwId));
   const base = {
     hardware: hwId,
     strategy,
@@ -264,6 +267,9 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     env,
     docker_image: dockerMeta.image,
     ...(clients ? { clients } : {}),
+    // This hardware's own install step, when it has one (no stock wheel or
+    // image runs the recipe there). Without it, the recipe's `install` applies.
+    ...(hwPip ? { install: { pip: hwPip } } : {}),
   };
   if (result.deployType === "multi_node") {
     const head = dockerize(result.headCommand, result.headArgv, env, dockerMeta);

@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { hardwareInstall, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
+import { hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { renderRecipeClients, resolveClientTarget } from "@/lib/recipe-clients";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
@@ -466,11 +466,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       const saved = parseInt(rs.nodes, 10);
       const v = recipe.variants?.[variant] || recipe.variants?.default || {};
       const multi = resolvedHw && needsMultiNode(recipe, strategies, resolvedHw, v, resolvedHwId);
-      // Never restore below the recommended strategy's strategy_min_gpus
-      // floor on this hardware (K3 on H100, K3.1 on TPU): a saved or generic
-      // 2-node pick is not a valid config there.
+      // Never restore below the strategy_min_gpus floor of the strategy this
+      // mount settles on (K3 on H100, K3.1 on TPU): a saved or generic 2-node
+      // pick is not a valid config there, but is for a strategy with a lower bar.
       const floor = multi && resolvedHw
-        ? nodesForStrategy(recipe, recommendStrategy(recipe, resolvedHw, 2), resolvedHw.gpu_count || 8, resolvedHwId)
+        ? multiNodeFloor(recipe, strategies, resolvedHw, resolvedHwId, searchParams.get("strategy") || rs.strategy)
         : 1;
       const atFloor = (base) => Math.min(MAX_NODES, Math.max(base, floor));
       if ([1, 2].includes(saved)) {
@@ -515,13 +515,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       return Number.isInteger(n) && n >= 1 && n <= MAX_NODES ? n : 1;
     }
     if (multi) {
-      // Start at the recommended strategy's strategy_min_gpus floor on this
-      // hardware, not the generic 2: a floor above 2 (K3 on H100, K3.1 on
-      // TPU) otherwise SSRs a below-floor config until the reconcile effect
-      // snaps it up after hydration.
-      const rec = recommendStrategy(recipe, initialHw, 2);
-      const floor = nodesForStrategy(recipe, rec, initialHw.gpu_count || 8, initialHwId);
-      return Math.min(MAX_NODES, Math.max(2, floor));
+      // Start at the linked (else recommended) strategy's strategy_min_gpus
+      // floor on this hardware, not the generic 2: a floor above 2 (K3 on H100,
+      // K3.1 on TPU) otherwise SSRs a below-floor config until the reconcile
+      // effect snaps it up after hydration. resolveSelection lands on the same
+      // count, so a shared link and its .md twin agree.
+      return multiNodeFloor(recipe, strategies, initialHw, initialHwId, searchParams.get("strategy"));
     }
     return 1;
   });
@@ -883,6 +882,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   }, [taxonomy]);
 
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
+  // The features the command actually carries: a pick stays in `features` across
+  // a hardware switch (its pill is struck through and comes back on return), but
+  // notes, the method row and the troubleshooting match must treat it as off.
+  const activeFeatures = useMemo(
+    () => features.filter((f) => isFeatureSupportedOnHardware(recipe.features?.[f], hwProfile, hwId)),
+    [features, recipe.features, hwProfile, hwId],
+  );
   // Non-scalable hardware (single-GPU workstation, e.g. DGX Station) can't add
   // nodes, so multi-node is off and variants that don't fit are disabled.
   const hwScalable = isHardwareScalable(hwProfile);
@@ -1245,8 +1251,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     return q.toString();
   }, [recipe, hwId, variant, omniTask, activeStrategy, features, featureModes, advanced, frontend, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, pdRouter, pdConnector, pdTransport, nodeCount]);
   useEffect(() => {
-    publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features, preset: selectedPreset, query: shareQuery });
-  }, [recipe.hf_id, hwId, activeStrategy, variant, features, selectedPreset, shareQuery]);
+    publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features: activeFeatures, preset: selectedPreset, query: shareQuery });
+  }, [recipe.hf_id, hwId, activeStrategy, variant, activeFeatures, selectedPreset, shareQuery]);
 
   // Visual feedback when any rendered command changes. Covers single-node
   // (result.command), multi-node (headCommand), pd_cluster (prefill.command),
@@ -1431,10 +1437,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const recipeDefaultsSingleNode =
       typeof recipeDefault === "string" && recipeDefault.startsWith("single_node_");
     const shouldBumpNodes = nodeCount === 1 && supportsMultiNode && newScalable && !fitsNew && newProfile?.generation !== "xpu";
-    // Bump straight to the recommended strategy's strategy_min_gpus floor on
-    // the new hardware when it sits above 2 (K3 on H100, K3.1 on TPU).
+    // Bump straight to the picked (else recommended) strategy's strategy_min_gpus
+    // floor on the new hardware when it sits above 2 (K3 on H100, K3.1 on TPU).
     const bumpedNodes = shouldBumpNodes
-      ? Math.min(MAX_NODES, Math.max(2, nodesForStrategy(recipe, recommendStrategy(recipe, newProfile, 2), newProfile?.gpu_count || 8, id)))
+      ? multiNodeFloor(recipe, strategies, newProfile, id, strategyOverride)
       : 2;
     // Intel XPU is validated single-node only — always clamp back to 1 node.
     const shouldUnbumpNodes = nodeCount > 1 && (!newScalable || newProfile?.generation === "xpu" || (fitsNew && recipeDefaultsSingleNode)
@@ -2160,12 +2166,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // `when` matches this selection (server-rendered Markdown, from the page).
   // Matching troubleshooting is flagged on the Troubleshooting tab instead.
   const commandNote = useMemo(() => {
-    const sel = { hwId, strategy: activeStrategy, variant, features };
+    const sel = { hwId, strategy: activeStrategy, variant, features: activeFeatures };
     const hw = taxonomy.hardware_profiles || {};
     const notes = contextNotes.filter((n) => whenMatches(n.when, sel, hw));
     const hardware = recipe.hardware_notes?.[hwId] || null;
     return hardware || notes.length ? { hardware, notes } : null;
-  }, [recipe, hwId, activeStrategy, variant, features, taxonomy, contextNotes]);
+  }, [recipe, hwId, activeStrategy, variant, activeFeatures, taxonomy, contextNotes]);
 
   // The extra-install block is pip-scoped by default: nearly every recipe's
   // dependencies are pip installs the Docker image already bundles, so repeating
@@ -3456,7 +3462,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   note would have nowhere to live. */}
               {featuredModeKeys.map((key) => {
                 const notes = FEATURE_MODE_NOTES[key];
-                if (!notes || !features.includes(key)) return null;
+                if (!notes || !activeFeatures.includes(key)) return null;
                 const feat = recipe.features[key];
                 if (!isFeatureAllowedForStrategy(feat, activeStrategy)) return null;
                 const activeMode = resolveModeKey(feat, key, currentVariant, variant, hwProfile, hwId, featureModes[key]);
@@ -3474,7 +3480,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           {/* Sub-mode selector for single-select features (spec_decoding →
               MTP / DFlash / DSpark). Only shown while the parent feature is on. */}
           {featuredModeKeys.map((key) => {
-            if (!features.includes(key)) return null;
+            if (!activeFeatures.includes(key)) return null;
             const feat = recipe.features[key];
             // Only modes available on the current checkpoint (variant). If a
             // single method is available (e.g. FP8/NVFP4 → MTP only), the row is
@@ -4021,6 +4027,8 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   const pipCfg = install.pip;
   const dockerCfg = install.docker;
   const pipHidden = pipCfg === false;
+  // This hardware's own pip command outranks every recipe-wide install setting.
+  const hwPip = hwPipOverride(hwInstall);
   const dockerHidden = dockerCfg === false || dockerHiddenOverride;
   const [open, setOpen] = useState(false);
   const { isAmd, isTpu, isXpu, isIntel, isNpu, isPpu, image: dockerImage, brandKey, cudaMap, cu129Image } = dockerMeta;
@@ -4081,9 +4089,8 @@ uv pip install -U vllm --pre \\
         : `uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto`;
-  const pipCmd = pipCfg?.command || defaultPipCmd;
-  const pipNote =
-    pipCfg?.note ||
+  const pipCmd = hwPip?.command || pipCfg?.command || defaultPipCmd;
+  const pipNote = hwPip ? hwPip.note : pipCfg?.note ||
     (isCpu
       ? nightlyRequired
         ? "Intel/AMD x86 CPU nightly wheels use the dedicated /nightly/cpu index and PyTorch CPU backend."
@@ -4134,10 +4141,11 @@ uv pip install -U vllm --torch-backend auto`;
     installMode === "docker" &&
     (cudaMap ? dockerImage?.startsWith("vllm/") : !!cu129Image);
 
-  // TPU has no pip wheel — force-hide the pip tab regardless of recipe overrides.
+  // TPU has no pip wheel — hide the pip tab regardless of recipe-wide overrides.
   // Intel XPU is validated via the official `vllm-openai-xpu` Docker image;
-  // `hwInstall.pip: false` is the per-GPU form of the same statement.
-  const effectivePipHidden = pipHidden || isTpu || isXpu || hwInstall?.pip === false;
+  // `hwInstall.pip: false` is the per-GPU form of the same statement. Only this
+  // hardware's own pip command brings the tab back.
+  const effectivePipHidden = !hwPip && (pipHidden || isTpu || isXpu || hwInstall?.pip === false);
   const dockerLabel = isPpu ? "Docker (PPU)" : isTpu ? "Docker (TPU)" : isXpu ? "Docker (XPU)" : isNpu ? "Docker (Ascend)" : isAmd ? "Docker (ROCm)" : isCpu ? "Docker (CPU)" : "Docker";
   const tabs = [
     !effectivePipHidden && {
@@ -4156,6 +4164,9 @@ uv pip install -U vllm --torch-backend auto`;
   if (tabs.length === 0) return null;
   const active = tabs.find((t) => t.id === installMode) || tabs[0];
   const summary = tabs.map((t) => (t.id === "pip" ? "pip" : "Docker")).join(" / ");
+  // The recipe's vLLM floor and nightly state describe the stock install; a
+  // hardware's own command brings its own vLLM (a plugin may pin another).
+  const hwPipActive = hwPip && active.id === "pip";
 
   return (
     <div className="rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border">
@@ -4166,9 +4177,9 @@ uv pip install -U vllm --torch-backend auto`;
         <Package size={12} className="text-[var(--command-fg)]/50 shrink-0" />
         <span className="text-[11px] font-semibold text-[var(--command-fg)]/70 uppercase tracking-widest">Install</span>
         <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
-          vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · {isPpu ? "PPU" : isTpu ? "TPU" : isXpu ? "XPU" : isNpu ? "Ascend" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}
+          {!hwPipActive && <>vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · </>}{isPpu ? "PPU" : isTpu ? "TPU" : isXpu ? "XPU" : isNpu ? "Ascend" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}
         </span>
-        {nightlyRequired && (
+        {nightlyRequired && !hwPipActive && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
             nightly
           </span>
