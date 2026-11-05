@@ -1,0 +1,131 @@
+meta:
+  title: "Qwen2.5-VL-Mull"
+  slug: "qwen2.5-vl-mull"
+  provider: "Mull-Tokens"
+  description: "Qwen2.5-VL-7B fine-tuned to reason in modality-agnostic latent tokens that are pre-filled into the assistant turn, instead of writing chain-of-thought out as text."
+  date_added: 2026-08-24
+  date_updated: 2026-08-24
+  difficulty: beginner
+  tasks:
+    - multimodal
+    - text
+  performance_headline: "Reasons in 20 latent tokens — answers in ~9 output tokens where the same model writing text CoT takes ~100"
+  related_recipes:
+    - "Qwen/Qwen2.5-VL-7B-Instruct"
+
+model:
+  model_id: "array/Qwen2.5-VL-Mull"
+  min_vllm_version: "0.11.2"
+  architecture: dense
+  parameter_count: "7B"
+  active_parameters: "7B"
+  context_length: 128000
+  base_args: []
+  base_env: {}
+
+features:
+  eval_resolution:
+    description: "Match the paper's evaluation preprocessing. The checkpoint's own default caps images at 401408 pixels; the reported results use 12845056."
+    args:
+      - "--mm-processor-kwargs"
+      - '{"min_pixels": 3136, "max_pixels": 12845056}'
+  encoder_parallel:
+    description: "Run the vision encoder in data-parallel mode — avoids TP comm overhead on the small encoder."
+    args:
+      - "--mm-encoder-tp-mode"
+      - "data"
+
+opt_in_features:
+  - eval_resolution
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 20
+    description: "Full precision BF16 — fits on a single 24GB GPU"
+
+compatible_strategies:
+  - single_node_tp
+
+guide: |
+  ## Overview
+
+  Mull-Tokens ([paper](https://arxiv.org/abs/2512.10941)) fine-tunes
+  Qwen2.5-VL-7B to think in *latent* tokens rather than written-out text. The
+  assistant turn is pre-filled with `<think>` + 20 x `<|latent_pad|>` +
+  `</think>`, and the model does its reasoning in the hidden states at those
+  positions before emitting an answer.
+
+  Architecturally this is a stock Qwen2.5-VL: the latent tokens are ordinary
+  entries in an extended vocabulary (`vocab_size` 151669) with trained
+  embeddings, and the machinery that produced them lives only in the training
+  code. vLLM serves the checkpoint with its native Qwen2.5-VL implementation —
+  no custom model code, no `--trust-remote-code`.
+
+  ## Prerequisites
+
+  - **Hardware**: a single 24GB+ GPU (verified on one L40S 48GB)
+  - **vLLM**: >= 0.11.2
+
+  ## Launching the server
+
+  ```bash
+  vllm serve array/Qwen2.5-VL-Mull --max-model-len 32768
+  ```
+
+  The checkpoint's chat template pre-fills the latent block on
+  `add_generation_prompt`, so ordinary chat requests get it automatically:
+
+  ```python
+  from openai import OpenAI
+  client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+  client.chat.completions.create(
+      model="array/Qwen2.5-VL-Mull",
+      messages=[{"role": "user", "content": [
+          {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+          {"type": "text", "text": "If you stand at the X and turn left, is the table on your left or right? A. left B. right"},
+      ]}],
+      temperature=0, max_tokens=512,
+  )
+  ```
+
+  Vary the number of latent tokens per request, or disable them for an
+  ablation, with `chat_template_kwargs`:
+
+  ```python
+  extra_body={"chat_template_kwargs": {"num_latents": 32}}   # 0 = no latent block
+  ```
+
+  ## Verifying the latent path is active
+
+  The single most common misconfiguration is serving this checkpoint with a
+  stock Qwen2.5-VL chat template, which ends the prompt at
+  `<|im_start|>assistant\n` and delivers **zero** latent tokens. The model then
+  falls back to writing its reasoning out as text — it still answers, so the
+  mistake is easy to miss. Two signals:
+
+  - `len([t for t in output.prompt_token_ids if t == 151665])` should be 20.
+  - Answers should be terse (~9 output tokens). Verbose `THOUGHT:` chains mean
+    the latent block is missing; measured on 24 SAT items, the same checkpoint
+    averaged 8.9 output tokens with the latent block and 101.2 without.
+
+  If you pinned an older copy of the checkpoint (before the chat template
+  carried the latent block), pass the template explicitly:
+
+  ```bash
+  vllm serve array/Qwen2.5-VL-Mull --chat-template mull_chat_template.jinja
+  ```
+
+  ## Accuracy notes
+
+  Reported benchmark numbers use `max_pixels=12845056`; the checkpoint's
+  `preprocessor_config.json` defaults to 401408, so enable the
+  **eval_resolution** option to reproduce them. `generation_config.json` ships
+  `repetition_penalty: 1.05`, which vLLM picks up via its default
+  `--generation-config auto`.
+
+  ## References
+
+  - [Model card](https://huggingface.co/array/Qwen2.5-VL-Mull)
+  - [Paper](https://arxiv.org/abs/2512.10941)
+  - [Training and evaluation code](https://github.com/arijitray1993/mull)
