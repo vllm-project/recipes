@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason, pdRoleNodesPerInstance, normalizePdRoleNodes, pdRoleModes, pdConnectorsFor, recipeAllowsKvOffload } from "@/lib/command-synthesis";
+import { hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason, pdConnectorsFor } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import ShellCode from "@/components/recipes/ShellCode";
@@ -557,11 +557,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const minNodesPerRole = (modelVram > 0 && nodeVram > 0)
       ? Math.max(1, Math.ceil(modelVram / nodeVram))
       : 1;
-    const pickNodes = (role, fallback) => {
-      const explicit = pdRoleNodes(pdRecipe, role, hw, hwId);
-      const nodes = pdRoleNodesPerInstance(pdRecipe, role, hw, hwId) ? Math.max(explicit || 1, fallback) : (explicit ?? fallback);
-      return normalizePdRoleNodes(pdRecipe, role, hw, hwId, nodes);
-    };
+    const pickNodes = (role, fallback) => pdRoleNodes(pdRecipe, role, hw, hwId) ?? fallback;
     return {
       prefill: pickNodes("prefill", minNodesPerRole),
       decode: pickNodes("decode", minNodesPerRole),
@@ -570,56 +566,46 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   }, [recipe, pdRecipe, hwId, variant]);
   const [pdPrefillNodes, setPdPrefillNodes] = useState(() => {
     const n = parseInt(searchParams.get("prefill_nodes") || "", 10);
-    return normalizePdRoleNodes(pdRecipe, "prefill", taxonomy.hardware_profiles?.[hwId], hwId, Number.isFinite(n) && n > 0 ? n : pdDefaults.prefill);
+    return Number.isFinite(n) && n > 0 ? n : pdDefaults.prefill;
   });
   const [pdDecodeNodes, setPdDecodeNodes] = useState(() => {
     const n = parseInt(searchParams.get("decode_nodes") || "", 10);
-    return normalizePdRoleNodes(pdRecipe, "decode", taxonomy.hardware_profiles?.[hwId], hwId, Number.isFinite(n) && n > 0 ? n : pdDefaults.decode);
+    return Number.isFinite(n) && n > 0 ? n : pdDefaults.decode;
   });
   // Re-sync per-role node state with hw-specific defaults when hw changes,
   // unless the URL pins a value (shareable links must survive hw switches).
   useEffect(() => {
-    const hw = taxonomy.hardware_profiles?.[hwId];
-    for (const [role, setNodes] of [["prefill", setPdPrefillNodes], ["decode", setPdDecodeNodes]]) {
-      const pinned = parseInt(searchParams.get(`${role}_nodes`) || "", 10);
-      setNodes(normalizePdRoleNodes(pdRecipe, role, hw, hwId, pinned > 0 ? pinned : pdDefaults[role]));
-    }
+    if (!searchParams.get("prefill_nodes")) setPdPrefillNodes(pdDefaults.prefill);
+    if (!searchParams.get("decode_nodes")) setPdDecodeNodes(pdDefaults.decode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdDefaults]);
   // PD-pool parallelism modes offered for this recipe, derived from
   // compatible_strategies (TP / TEP / DEP). A single-mode list (e.g. dense
   // models with only TP) hides the per-pool pills entirely.
   const pdModes = useMemo(() => pdPoolModes(recipe), [recipe]);
-  const pdModesByRole = useMemo(() => {
-    const hw = taxonomy.hardware_profiles?.[hwId];
-    return Object.fromEntries(["prefill", "decode"].map((role) => [role, pdRoleModes(pdRecipe, role, hw, hwId)]));
-  }, [pdRecipe, taxonomy, hwId]);
   // Default per-role parallelism: recipe strategy_overrides (a mode or a
   // per-hw map, like `nodes`) → strategy YAML → "tp", clamped to an offered mode.
   const pdDefaultPar = useMemo(() => {
     const hw = taxonomy.hardware_profiles?.[hwId];
     const pick = (role) => {
       const d = pdRoleParallelism(pdRecipe, strategies?.pd_cluster, role, hw, hwId);
-      const modes = pdModesByRole[role];
-      return modes.includes(d) ? d : modes[0];
+      return pdModes.includes(d) ? d : pdModes[0];
     };
     return { prefill: pick("prefill"), decode: pick("decode") };
-  }, [pdRecipe, strategies, taxonomy, pdModesByRole, hwId]);
+  }, [pdRecipe, strategies, taxonomy, pdModes, hwId]);
   const [pdPrefillPar, setPdPrefillPar] = useState(() => {
     const p = searchParams.get("prefill_mode");
-    return p && pdModesByRole.prefill.includes(p) ? p : pdDefaultPar.prefill;
+    return p && pdModes.includes(p) ? p : pdDefaultPar.prefill;
   });
   const [pdDecodePar, setPdDecodePar] = useState(() => {
     const p = searchParams.get("decode_mode");
-    return p && pdModesByRole.decode.includes(p) ? p : pdDefaultPar.decode;
+    return p && pdModes.includes(p) ? p : pdDefaultPar.decode;
   });
   // Re-sync per-role parallelism with hw-specific defaults when hw changes,
   // unless the URL pins a mode (same rule as the node counts above).
   useEffect(() => {
-    for (const [role, setMode] of [["prefill", setPdPrefillPar], ["decode", setPdDecodePar]]) {
-      const pinned = searchParams.get(`${role}_mode`);
-      setMode(pdModesByRole[role].includes(pinned) ? pinned : pdDefaultPar[role]);
-    }
+    if (!searchParams.get("prefill_mode")) setPdPrefillPar(pdDefaultPar.prefill);
+    if (!searchParams.get("decode_mode")) setPdDecodePar(pdDefaultPar.decode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdDefaultPar]);
   // Which DP rank's command to render for each DEP pool. User can bump this
@@ -1010,9 +996,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     );
   }, [taxonomy.kv_offload, taxonomy.hardware_profiles, hwId]);
   const kvOffloadAllowedByStrategy = strategyAllowsKvOffload(strategies[activeServingStrategy]);
-  // Hardware-wide recipe opt-outs and Intel XPU disable the whole KV layer.
-  const kvOffloadDisabledByRecipe = !recipeAllowsKvOffload(recipe, hwId);
-  const kvOffloadDisabledByHw = hwProfile?.generation === "xpu" || kvOffloadDisabledByRecipe;
+  // Intel XPU: no KV-offload layer is validated on this backend, so gate every
+  // option off (and force the effective selection to Off further down).
+  const kvOffloadDisabledByHw = hwProfile?.generation === "xpu";
   const kvOptAllowed = (key) =>
     !kvOffloadDisabledByHw
     && isKvOffloadAllowedForStrategy(kvOffloadOptions[key], activeServingStrategy, strategies[activeServingStrategy])
@@ -1024,9 +1010,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const kvDisabledReason = (key) => {
     const opt = kvOffloadOptions[key];
     const name = opt?.display_name || key;
-    if (kvOffloadDisabledByRecipe) {
-      return `Only Off is supported for this recipe on ${hwProfile.display_name || hwId}.`;
-    }
     if (kvOffloadDisabledByHw) {
       return `${name} isn't validated on Intel XPU — serve directly with the Docker image.`;
     }
@@ -1063,7 +1046,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     keys.sort((a, b) => (kvOffloadOptions[a].order ?? 99) - (kvOffloadOptions[b].order ?? 99));
   }
   // Force the effective selection to Off when the hardware disables KV offload
-  // regardless of a persisted pick from other hardware — keeps the
+  // (Intel XPU) regardless of a persisted pick from other hardware — keeps the
   // generated command a plain single-instance serve.
   const activeKvOffload =
     kvOffloadDisabledByHw
@@ -1094,12 +1077,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // cleans it in selectHardware, and wiping it here would destroy a pick
   // saved on supported hardware the moment an unsupported render occurs.
   useEffect(() => {
-    if (kvOffload && (kvOffloadDisabledByRecipe || compatibleKvStoreStrategies.includes(kvOffload)) && activeKvOffload !== kvOffload) {
+    if (compatibleKvStoreStrategies.includes(kvOffload) && activeKvOffload !== kvOffload) {
       setKvOffload("");
       syncUrl({ kv_offload: "" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKvOffload, kvOffload, kvOffloadDisabledByRecipe]);
+  }, [activeKvOffload, kvOffload]);
 
   // Reconcile the node count with the active strategy's `strategy_min_gpus`
   // bar on THIS hardware, both directions:
@@ -1195,17 +1178,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
 
   // Pools scale to MAX_NODES, so every mode reachable on this hardware stays
   // offered; picking one grows the pool to its floor (setPdPar).
-  const pdAvailableModes = useMemo(() => Object.fromEntries(["prefill", "decode"].map((role) => [role,
-    pdModesByRole[role].filter((m) => pdRoleNodesPerInstance(pdRecipe, role, hwProfile, hwId)
-      || isStrategyReachable(recipe, m, "multi_node", perNode, hwId)),
-  ])), [pdModesByRole, pdRecipe, hwProfile, recipe, perNode, hwId]);
-  const effPdPrefillPar = pdAvailableModes.prefill.includes(pdPrefillPar) ? pdPrefillPar : (pdAvailableModes.prefill[0] || "tp");
-  const effPdDecodePar = pdAvailableModes.decode.includes(pdDecodePar) ? pdDecodePar : (pdAvailableModes.decode[0] || "tp");
+  const pdAvailableModes = useMemo(
+    () => pdModes.filter((m) => isStrategyReachable(recipe, m, "multi_node", perNode, hwId)),
+    [pdModes, recipe, perNode, hwId]
+  );
+  const effPdPrefillPar = pdAvailableModes.includes(pdPrefillPar) ? pdPrefillPar : (pdAvailableModes[0] || "tp");
+  const effPdDecodePar = pdAvailableModes.includes(pdDecodePar) ? pdDecodePar : (pdAvailableModes[0] || "tp");
   // Floor the sizes too, not just clicks — a pool whose DEFAULT mode carries a
   // floor (K3's decode is dep) would otherwise render below it.
-  const effPdPrefillNodes = normalizePdRoleNodes(pdRecipe, "prefill", hwProfile, hwId, Math.max(pdPrefillNodes, nodesNeededFor(effPdPrefillPar)));
-  const effPdDecodeNodes = normalizePdRoleNodes(pdRecipe, "decode", hwProfile, hwId, Math.max(pdDecodeNodes, nodesNeededFor(effPdDecodePar)));
-  const pdInstanceNodes = Object.fromEntries(["prefill", "decode"].map((role) => [role, pdRoleNodesPerInstance(pdRecipe, role, hwProfile, hwId)]));
+  const effPdPrefillNodes = Math.max(pdPrefillNodes, nodesNeededFor(effPdPrefillPar));
+  const effPdDecodeNodes = Math.max(pdDecodeNodes, nodesNeededFor(effPdDecodePar));
+
   const pdConnectorAllowlist = pdConnectorsFor(pdRecipe, hwProfile, hwId);
 
   const result = useMemo(
@@ -1557,7 +1540,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   };
 
   const setPdNodes = (role, n) => {
-    const clamped = normalizePdRoleNodes(pdRecipe, role, hwProfile, hwId, n);
+    const clamped = Math.max(1, Math.min(16, parseInt(n, 10) || 1));
     if (role === "prefill") {
       setPdPrefillNodes(clamped);
       setPdPrefillRank(0);
@@ -1573,7 +1556,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
         decode_rank: "",
       });
     }
-    return clamped;
   };
 
   const setPdRank = (role, r) => {
@@ -1627,11 +1609,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   };
 
   const setPdPar = (role, mode) => {
-    if (!pdAvailableModes[role].includes(mode)) return;
+    if (!pdModes.includes(mode)) return;
     const isPrefill = role === "prefill";
     const cur = isPrefill ? pdPrefillNodes : pdDecodeNodes;
     // Grow this pool to the mode's GPU floor (DEP≥16) so the pick is valid.
-    const nodes = normalizePdRoleNodes(pdRecipe, role, hwProfile, hwId, Math.max(cur, nodesNeededFor(mode)));
+    const nodes = Math.max(cur, nodesNeededFor(mode));
     (isPrefill ? setPdPrefillPar : setPdDecodePar)(mode);
     (isPrefill ? setPdPrefillRank : setPdDecodeRank)(0);
     if (nodes !== cur) (isPrefill ? setPdPrefillNodes : setPdDecodeNodes)(nodes);
@@ -3146,12 +3128,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   // extra store process).
                   const supported = compatibleKvStoreStrategies.filter((s) => isKvStoreSupported(s));
                   const brandOk = isKvStoreBrandSupported(hwProfile);
-                  const selectable = !kvOffloadDisabledByHw && hwScalable && brandOk
+                  const selectable = !isXpuHardware && hwScalable && brandOk
                     && kvOffloadAllowedByStrategy && supported.length > 0;
                   const defaultId = supported[0];
-                  const disabledTitle = kvOffloadDisabledByRecipe
-                    ? `Only Off is supported for this recipe on ${hwProfile.display_name || hwId}.`
-                    : isXpuHardware
+                  const disabledTitle = isXpuHardware
                     ? "Mooncake isn't validated on Intel XPU — serve directly with the Docker image."
                     : !kvOffloadAllowedByStrategy
                     ? `${strategies[activeServingStrategy]?.display_name || activeServingStrategy} already fronts its ranks with its own router, which a Mooncake deployment would replace. Pick another strategy to layer Mooncake on.`
@@ -3307,9 +3287,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           {activeStrategy === "pd_cluster" ? (
             <ConfigRow
               label="Nodes"
-              hint={Object.values(pdInstanceNodes).some(Boolean)
-                ? "Each pool scales by complete deployment groups. Prefill and decode group counts are independent; each group keeps the recipe's TP/PP/DP topology."
-                : pdModes.length > 1
+              hint={pdModes.length > 1
                 ? "Each pool (prefill / decode) sizes and shards independently — pick its parallelism (TP / TEP / DEP) and node count. Total cluster = prefill_nodes + decode_nodes."
                 : "Each pool (prefill / decode) sizes independently. Total cluster = prefill_nodes + decode_nodes."}
             >
@@ -3318,11 +3296,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   label="Prefill"
                   value={effPdPrefillNodes}
                   gpuPerNode={hwProfile.gpu_count || 8}
-                  nodesPerInstance={pdInstanceNodes.prefill}
-                  topology={result.prefill}
-                  deviceLabel={hwProfile.generation === "npu" ? "NPU" : "GPU"}
                   onChange={(n) => setPdNodes("prefill", n)}
-                  modes={pdAvailableModes.prefill}
+                  modes={pdAvailableModes}
                   parallelism={effPdPrefillPar}
                   onParChange={(m) => setPdPar("prefill", m)}
                 />
@@ -3330,11 +3305,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   label="Decode"
                   value={effPdDecodeNodes}
                   gpuPerNode={hwProfile.gpu_count || 8}
-                  nodesPerInstance={pdInstanceNodes.decode}
-                  topology={result.decode}
-                  deviceLabel={hwProfile.generation === "npu" ? "NPU" : "GPU"}
                   onChange={(n) => setPdNodes("decode", n)}
-                  modes={pdAvailableModes.decode}
+                  modes={pdAvailableModes}
                   parallelism={effPdDecodePar}
                   onParChange={(m) => setPdPar("decode", m)}
                 />
@@ -3345,7 +3317,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   </div>
                 )}
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  total {(effPdPrefillNodes + effPdDecodeNodes) * (hwProfile.gpu_count || 8)} {hwProfile.generation === "npu" ? "NPUs" : "GPUs"}
+                  total {(effPdPrefillNodes + effPdDecodeNodes) * (hwProfile.gpu_count || 8)} GPUs
                   · {effPdPrefillNodes + effPdDecodeNodes} node{effPdPrefillNodes + effPdDecodeNodes === 1 ? "" : "s"}
                 </span>
               </div>
@@ -3678,19 +3650,8 @@ const PD_PAR_TIPS = {
   dep: "Data + expert parallel — one vllm serve per node, DP across nodes with EP (MoE throughput).",
 };
 
-function PdNodeInput({ label, value, gpuPerNode, nodesPerInstance, topology, deviceLabel = "GPU", onChange, modes, parallelism, onParChange }) {
+function PdNodeInput({ label, value, gpuPerNode, onChange, modes, parallelism, onParChange }) {
   const showPills = Array.isArray(modes) && modes.length > 1 && typeof onParChange === "function";
-  const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
-  const commitDraft = () => {
-    const normalized = onChange(draft);
-    setDraft(String(normalized ?? value));
-  };
-  const topologyLabel = nodesPerInstance && topology ? [
-    `DP${topology.dpSize || 1}`, `TP${topology.tp || gpuPerNode}`,
-    ...(topology.pp > 1 ? [`PP${topology.pp}`] : []),
-    ...(topology.argv?.includes("--enable-expert-parallel") ? [`EP${(topology.dpSize || 1) * (topology.tp || gpuPerNode)}`] : []),
-  ].join(" / ") : null;
   return (
     <div className="inline-flex flex-wrap items-center gap-2">
       <span className="text-xs font-medium text-muted-foreground w-12 shrink-0">{label}</span>
@@ -3713,26 +3674,18 @@ function PdNodeInput({ label, value, gpuPerNode, nodesPerInstance, topology, dev
           ))}
         </span>
       )}
-      {!showPills && nodesPerInstance > 0 && <span className="text-[11px] font-mono">{topologyLabel || PD_PAR_LABELS[parallelism] || parallelism.toUpperCase()}</span>}
       <input
         type="number"
-        min={nodesPerInstance || 1}
+        min={1}
         max={16}
-        step={nodesPerInstance || 1}
         aria-label={`${label} node count`}
-        value={nodesPerInstance ? draft : value}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          if (!nodesPerInstance) onChange(e.target.value);
-        }}
-        onBlur={() => { if (nodesPerInstance) commitDraft(); }}
-        onKeyDown={(e) => { if (nodesPerInstance && e.key === "Enter") commitDraft(); }}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
         className="w-14 px-2 py-1 text-sm font-mono tabular-nums rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-vllm-blue/40"
       />
       <span className="text-xs text-muted-foreground tabular-nums">
-        × {gpuPerNode} = {value * gpuPerNode} {deviceLabel}
+        × {gpuPerNode} = {value * gpuPerNode}
       </span>
-      {nodesPerInstance > 0 && <span className="text-[11px] text-muted-foreground">{value / nodesPerInstance} group{value === nodesPerInstance ? "" : "s"} · {nodesPerInstance} nodes × {gpuPerNode} {deviceLabel} per group</span>}
     </div>
   );
 }
