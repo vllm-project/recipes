@@ -6,13 +6,14 @@
 import { hardwareInstall, hwPipOverride, isFeatureSupportedOnHardware } from "./command-synthesis.js";
 import { whenMatches } from "./recipe-context.js";
 import { SELECTION_PARAMS, defaultFeaturesFor, synthesizeInstall } from "./recipe-render.js";
+import { envToExports } from "./env-format.js";
 
 const fence = (code, lang = "bash") => {
   const ticks = /```/.test(code) ? "````" : "```";
   return `${ticks}${lang}\n${code.trimEnd()}\n${ticks}`;
 };
 
-const envExports = (env) => Object.entries(env || {}).map(([k, v]) => `export ${k}=${v}`).join("\n");
+const envExports = envToExports;
 
 const withEnv = (env, command) => [envExports(env), command].filter(Boolean).join("\n");
 
