@@ -1,0 +1,142 @@
+meta:
+  title: "Qwen3-VL-Dense"
+  slug: "qwen3-vl-dense"
+  provider: "Qwen"
+  description: "Qwen3-VL dense VLMs (8B/32B) on Ascend NPU via vLLM-Ascend — A3 BF16, 950DT W8A8"
+  date_added: 2026-10-19
+  date_updated: 2026-10-19
+  difficulty: intermediate
+  tasks:
+    - multimodal
+  related_recipes: []
+  hardware:
+    ascend_910c: verified
+    ascend_950dt: verified
+
+model:
+  model_id: "Qwen/Qwen3-VL-8B-Instruct"
+  min_vllm_version: "0.18.0"
+  architecture: dense
+  parameter_count: "8B"
+  active_parameters: "8B"
+  context_length: 256000
+  base_args:
+    - "--served-model-name"
+    - "qwen3vl"
+    - "--trust-remote-code"
+    - "--no-enable-prefix-caching"
+    - "--mm-processor-cache-gb"
+    - "0"
+    - "--dtype"
+    - "bfloat16"
+    - "--max-model-len"
+    - "8192"
+    - "--enforce-eager"
+  base_env:
+    HCCL_OP_EXPANSION_MODE: "AIV"
+    PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+    VLLM_USE_MODELSCOPE: "True"
+  docker_image:
+    ascend_910c: "quay.io/ascend/vllm-ascend:v0.23.0-a3"
+    ascend_950dt: "quay.io/ascend/vllm-ascend:v0.23.0-a5"
+  install:
+    pip: false
+    docker:
+      note: "Use hardware-matched Ascend images (A3 / a5 / 310p). Plain A2 wheels fail on A3."
+
+features: {}
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 20
+    description: "BF16 Qwen3-VL-8B-Instruct (1 card)"
+    supported_hardware: [ascend_910c]
+  vl_32b:
+    model_id: "Qwen/Qwen3-VL-32B-Instruct"
+    precision: bf16
+    vram_minimum_gb: 64
+    description: "BF16 Qwen3-VL-32B-Instruct (TP=2)"
+    supported_hardware: [ascend_910c]
+    extra_args:
+      - "--tensor-parallel-size"
+      - "2"
+      - "--max-model-len"
+      - "4096"
+  vl_8b_w8a8:
+    model_id: "vllm-ascend/Qwen3-VL-8B-Instruct-W8A8"
+    precision: int8
+    vram_minimum_gb: 16
+    description: "W8A8 Qwen3-VL-8B on 950DT (--quantization ascend)"
+    supported_hardware: [ascend_950dt]
+    extra_args:
+      - "--max-model-len"
+      - "4096"
+  vl_32b_w8a8:
+    model_id: "Eco-Tech/Qwen3-VL-32B-Instruct-w8a8-QuaRot"
+    precision: int8
+    vram_minimum_gb: 48
+    description: "W8A8 Qwen3-VL-32B QuaRot on 950DT"
+    supported_hardware: [ascend_950dt]
+    extra_args:
+      - "--max-model-len"
+      - "4096"
+
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides:
+  ascend_910c:
+    extra_args: []
+    extra_env: {}
+  ascend_950dt:
+    extra_args:
+      - "--quantization"
+      - "ascend"
+    extra_env: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  Dense Qwen3-VL Instruct models (8B / 32B) for image-text chat on Ascend NPUs.
+  Full EN/ZH Ascend recipes live in
+  [vllm-ascend-recipes](https://github.com/vllm-ascend/vllm-ascend-recipes)
+  (`models/en/Qwen/Qwen3-VL-Dense.yaml`).
+
+  ## Launch (A3, 8B BF16)
+
+  ```bash
+  export HCCL_OP_EXPANSION_MODE=AIV
+  export ASCEND_RT_VISIBLE_DEVICES=0
+  export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+  export VLLM_USE_MODELSCOPE=True
+
+  vllm serve Qwen/Qwen3-VL-8B-Instruct \
+    --host 0.0.0.0 --port 8000 \
+    --dtype bfloat16 \
+    --served-model-name qwen3vl \
+    --no-enable-prefix-caching \
+    --tensor-parallel-size 1 \
+    --trust-remote-code \
+    --max-model-len 8192 \
+    --enforce-eager \
+    --mm-processor-cache-gb 0
+  ```
+
+  ## Image smoke
+
+  ```bash
+  curl http://127.0.0.1:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{"model":"qwen3vl","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://modelscope.oss-cn-beijing.aliyuncs.com/resource/qwen.png"}},{"type":"text","text":"What is the text in the illustration?"}]}],"temperature":0}'
+  ```
+
+  Expect content mentioning `TONGYI Qwen`.
+
+  ## References
+
+  - [Tutorial](https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/Qwen-VL-Dense.html)
+  - [Ascend recipes PR target](https://github.com/vllm-ascend/vllm-ascend-recipes)
