@@ -196,10 +196,8 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
         ...obj({
           model_id: { type: "string", pattern: "^[^/\\s]+/[^/\\s]+$" },
           min_vllm_version: { type: "string" },
-          platform_builds: keyed(gpuId, obj({
-            base_version: { type: "string", pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
-            build_type: { enum: ["custom"] },
-          }, { required: ["base_version", "build_type"] })),
+          platform_builds: keyed({ enum: [...new Set([...profileIds, ...brands.map((b) => b.toLowerCase())])] },
+            { type: "string", pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$" }),
           architecture: { enum: ["dense", "moe"] },
           parameter_count: { type: "string" },
           active_parameters: { type: "string" },

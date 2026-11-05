@@ -64,8 +64,8 @@ test("vocabulary and status values are checked", () => {
 });
 
 test("platform builds require known hardware and an exact custom build version", () => {
-  assert.deepEqual(errorsFor((r) => { r.model.platform_builds = { "810e": { base_version: "0.32.0", build_type: "custom" } }; }), []);
-  assert.ok(errorsFor((r) => { r.model.platform_builds = { unknown: { base_version: "0.32.0", build_type: "custom" } }; }).length);
-  assert.ok(errorsFor((r) => { r.model.platform_builds = { "810e": { base_version: "0.32.0+", build_type: "custom" } }; }).length);
+  assert.deepEqual(errorsFor((r) => { r.model.platform_builds = { zhenwu: "0.32.0", "810e": "0.33.0" }; }), []);
+  assert.ok(errorsFor((r) => { r.model.platform_builds = { unknown: "0.32.0" }; }).length);
+  assert.ok(errorsFor((r) => { r.model.platform_builds = { zhenwu: "0.32.0+" }; }).length);
   assert.ok(errorsFor((r) => { r.model.platform_builds = { "810e": { base_version: "0.32.0" } }; }).length);
 });

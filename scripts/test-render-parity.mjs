@@ -16,7 +16,7 @@ import { loadStrategies } from "../src/lib/strategies.js";
 import { loadTaxonomy } from "../src/lib/taxonomy.js";
 import { resolveSelection } from "../src/lib/recipe-render.js";
 import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
-import { platformBuildLabels, selectedVersion } from "../src/lib/platform-builds.js";
+import { selectedVersion } from "../src/lib/platform-builds.js";
 import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode } from "../src/lib/command-synthesis.js";
 
 const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES_PUBLIC_DIR) : path.join(process.cwd(), "public");
@@ -24,7 +24,7 @@ const strategies = loadStrategies();
 const taxonomy = loadTaxonomy();
 const readJson = (rel) => JSON.parse(fs.readFileSync(path.join(PUBLIC, rel), "utf8"));
 
-test("platform builds group matching hardware without changing commands", () => {
+test("platform build versions honor hardware overrides without changing commands", () => {
   const base = {
     hf_id: "example/model",
     meta: { hardware: { "810e": "supported", m890: "supported" } },
@@ -34,18 +34,18 @@ test("platform builds group matching hardware without changing commands", () => 
   };
   const withBuilds = structuredClone(base);
   withBuilds.model.platform_builds = {
-    "810e": { base_version: "0.32.0", build_type: "custom" },
-    m890: { base_version: "0.32.0", build_type: "custom" },
-    h200: { base_version: "0.33.0", build_type: "custom" },
+    zhenwu: "0.32.0",
+    h200: "0.33.0",
   };
-  assert.deepEqual(platformBuildLabels(base.model, taxonomy.hardware_profiles), []);
-  assert.deepEqual(platformBuildLabels(withBuilds.model, taxonomy.hardware_profiles), [
-    "Zhenwu 810E / M890 · vLLM 0.32.0-based custom build",
-    "NVIDIA H200 · vLLM 0.33.0-based custom build",
-  ]);
+  assert.equal(selectedVersion(base.model, "810e", taxonomy.hardware_profiles).label, "vLLM 0.34.0+");
   assert.equal(selectedVersion(withBuilds.model, "810e", taxonomy.hardware_profiles).label, "vLLM 0.32.0+");
   assert.equal(selectedVersion(withBuilds.model, "m890", taxonomy.hardware_profiles).label, "vLLM 0.32.0+");
   assert.equal(selectedVersion(withBuilds.model, "b300", taxonomy.hardware_profiles).label, "vLLM 0.34.0+");
+  assert.equal(selectedVersion(withBuilds.model, "h200", taxonomy.hardware_profiles).label, "vLLM 0.33.0 · NVIDIA custom build");
+  const overridden = structuredClone(withBuilds.model);
+  overridden.platform_builds["810e"] = "0.33.0";
+  assert.equal(selectedVersion(overridden, "810e", taxonomy.hardware_profiles).label, "vLLM 0.33.0+");
+  assert.equal(selectedVersion(overridden, "m890", taxonomy.hardware_profiles).label, "vLLM 0.32.0+");
   for (const hw of ["810e", "m890"]) {
     const query = new URLSearchParams(`hardware=${hw}`);
     const original = resolveSelection(base, query, strategies, taxonomy);

@@ -49,10 +49,9 @@ meta:
 model:
   model_id: "deepseek-ai/DeepSeek-V3.2"           # MUST match the filename path
   min_vllm_version: "0.18.0"                      # earliest vLLM release that supports this model
-  # Optional exact platform builds; these do not change the upstream version floor.
+  # Optional custom build versions; these do not change the upstream version floor.
   platform_builds:
-    810e: { base_version: "0.32.0", build_type: custom }
-    m890: { base_version: "0.32.0", build_type: custom }
+    zhenwu: "0.32.0"
   docker_image: "vllm/vllm-openai:v0.18.0"        # optional — override the Docker image:tag shown in Install → Docker. String form pins NVIDIA only (AMD/TPU still use their brand defaults). For per-brand pins, use the object form:
                                                   #   docker_image:
                                                   #     nvidia: "vllm/vllm-openai:gemma4"
@@ -405,11 +404,10 @@ Docker renderings use `-e NCCL_IB_HCA`, so export it on the host when needed;
 if unset, it is not added to the container. Bare commands export it only when
 it is set. References to a different variable retain normal shell expansion.
 
-`model.platform_builds` is an optional map keyed by exact hardware id. Each entry
-contains `base_version` (an exact `X.Y.Z` version) and `build_type: custom`.
-It records the version underlying a platform-specific build, not an upstream
-minimum. The model header shows the upstream floor; the install section uses
-the selected platform build.
+`model.platform_builds` is an optional map from exact hardware id or lowercase
+platform brand to the custom build's exact `X.Y.Z` vLLM version. An exact id
+overrides the platform entry. These versions are not upstream minimums: the
+model header shows the upstream floor, while Install uses the selected build.
 
 Top-level keys, in this order:
 
