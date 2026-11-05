@@ -245,6 +245,23 @@ export function nodesForStrategy(recipe, key, gpusPerNode, gpuId) {
 }
 
 /**
+ * The node count a multi-node selection opens on: the `strategy_min_gpus` floor
+ * of the strategy it will actually run — `requested` (from the URL, saved state
+ * or the Strategy row) when it can run multi-node here, else the recommendation
+ * — and at least 2. PD pools size themselves, so they don't move this count.
+ */
+export function multiNodeFloor(recipe, strategies, hwProfile, hwId, requested = null) {
+  const deploy = (s) => strategies[s]?.deploy_type;
+  const usable = requested
+    && (deploy(requested) === "multi_node" || deploy(requested) === "pd_cluster")
+    && effectiveCompatibleStrategies(recipe).includes(requested)
+    && isStrategySupportedOnHardware(recipe, requested, hwProfile, hwId);
+  const key = usable ? requested : recommendStrategy(recipe, hwProfile, 2);
+  if (deploy(key) === "pd_cluster") return 2;
+  return Math.min(MAX_NODES, Math.max(2, nodesForStrategy(recipe, key, hwProfile?.gpu_count || 8, hwId)));
+}
+
+/**
  * Whether a strategy can ever clear its floor here: multi-node scales out to
  * MAX_NODES — as does pd_cluster, whose pools each size themselves node-wise —
  * everything else is stuck with one node's GPUs.
@@ -486,17 +503,18 @@ export function defaultModeFor(feature) {
 
 /**
  * Whether a single mode may run on a given hardware profile. A mode can gate
- * itself with a tri-state `hardware` map keyed by generation (hopper/blackwell/
- * amd) or gpu-id; a value of `unsupported` disables it (e.g. a DFlash draft
- * checkpoint that only ships for Blackwell). Absence = runs everywhere.
+ * itself with a `hardware` map in the schema's hardware keyspace; the most
+ * specific key wins (exact id > `arch:<compute_arch>` > generation > brand >
+ * `default`), and `unsupported` disables it (e.g. a DFlash draft checkpoint
+ * that only ships for Blackwell). Absence = runs everywhere.
  */
 export function isModeSupported(mode, hwProfile, hwId) {
   const hw = mode?.hardware;
   if (!hw || typeof hw !== "object") return true;
-  const gen = normalizeGeneration(hwProfile?.generation || hwProfile?.gpu_generation);
-  if (gen && hw[gen] === "unsupported") return false;
-  if (hwId && hw[hwId] === "unsupported") return false;
-  return true;
+  const state = (hwId != null ? hw[hwId] : undefined)
+    ?? (hwProfile?.compute_arch ? hw[`arch:${hwProfile.compute_arch}`] : undefined)
+    ?? hardwareKeyedValue(hw, hwProfile, hwId);
+  return state !== "unsupported";
 }
 
 /**
@@ -617,11 +635,13 @@ export function kvOffloadInstallSteps(option) {
  * Whether the pip install path exists for this recipe on this hardware:
  * recipe-wide `model.install.pip: false`, a per-GPU `install.pip: false`
  * (variant or recipe `hardware_overrides`), or a backend with no pip wheel
- * (TPU, XPU) hide it. Shared by the builder's install tabs and the KV Offload
- * gate below.
+ * (TPU, XPU) hide it, unless this hardware's install block names its own pip
+ * command, which is more specific than all of those. Shared by the builder's
+ * install tabs and the KV Offload gate below.
  */
 export function isPipInstallAvailable(recipe, variant, hwProfile, hwProfileId) {
   const hwInstall = hardwareInstall(recipe, variant, hwProfile, hwProfileId);
+  if (hwPipOverride(hwInstall)) return true;
   return !(recipe?.model?.install?.pip === false
     || hwInstall?.pip === false
     || hwProfile?.generation === "tpu"
@@ -969,6 +989,12 @@ export function hardwareInstall(recipe, variant, hwProfile, hwId) {
     || recipe?.hardware_overrides?.[hwId]?.install
     || hwProfile?.install
     || null;
+}
+
+// A hardware install block's own pip command, `{ command, note? }`, e.g. a
+// source build of the platform plugin that serves this recipe on that hardware.
+export function hwPipOverride(hwInstall) {
+  return hwInstall?.pip?.command ? hwInstall.pip : null;
 }
 
 function isDockerEnabled(recipe) {
@@ -2670,6 +2696,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     const feat = recipe.features?.[f];
     if (!feat?.companion?.command) return [];
     if (!isFeatureAllowedForStrategy(feat, strategyName)) return [];
+    if (!isFeatureSupportedOnHardware(feat, hwProfile, hwProfileId)) return [];
     return [{
       feature: f,
       label: feat.companion.label || f,
