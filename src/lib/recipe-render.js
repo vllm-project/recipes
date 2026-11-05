@@ -7,6 +7,7 @@ import { BASELINE, effectivePreset, presetPoints, presetSelect, resolvePresetKey
 import { ADVANCED_OPTIONS } from "./advanced-options.js";
 import { SELECTION_PARAMS } from "./selection-params.js";
 import { selectPdDecode } from "./pd-decode-selection.js";
+import { renderRecipeClients } from "./recipe-clients.js";
 
 export { SELECTION_PARAMS };
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "./omni-tasks.js";
@@ -292,6 +293,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     : baseVariant;
   const dockerMeta = computeDockerMeta(recipe, variant, hwProfile, hwId);
   const env = result.env || {};
+  const clients = renderRecipeClients(recipe, variantKey, result);
 
   const hwPip = hwPipOverride(hardwareInstall(recipe, recipe.variants?.[variantKey], taxonomy.hardware_profiles?.[hwId], hwId));
   const base = {
@@ -310,6 +312,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     // A hardware-specific installer takes precedence over the variant's.
     ...(hwPip ? { install: { pip: hwPip } }
       : variant.install ? { install: synthesizeInstall(recipe, variant, dockerMeta) } : {}),
+    ...(clients ? { clients } : {}),
   };
   if (result.deployType === "multi_node") {
     const head = dockerize(result.headCommand, result.headArgv, env, dockerMeta);
