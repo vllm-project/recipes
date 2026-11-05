@@ -20,13 +20,33 @@ after(() => {
 });
 
 before(() => {
-  // Existing PRs can still target this repo's recipe copies during the vLLM
-  // migration. Exercise those submitted files in an isolated source channel;
-  // the default channel deliberately defers to vLLM's not-yet-synced copies.
+  // Exercise the public API without depending on the order in which the
+  // owning repositories merge their model content.
+  const fixture = path.join(tmp, "source");
+  fs.cpSync(path.join(ROOT, "models"), path.join(fixture, "models"), { recursive: true });
+  const paddleFile = path.join(fixture, "models/PaddlePaddle/PaddleOCR-VL.yaml");
+  const paddle = yaml.load(fs.readFileSync(paddleFile, "utf8"));
+  paddle.meta.hardware = { ...paddle.meta.hardware, ascend_310p3: "supported", ascend_910b3: "supported" };
+  paddle.variants.default.supported_hardware = ["arch:sm90"];
+  for (const [hw, key, precision, dtype] of [
+    ["ascend_310p3", "ascend_fp16", "fp16", "float16"],
+    ["ascend_910b3", "ascend_bf16", "bf16", "bfloat16"],
+  ]) {
+    paddle.variants[key] = {
+      precision, vram_minimum_gb: 3, supported_hardware: [hw],
+      hardware_overrides: { [hw]: {
+        docker_image: hw === "ascend_310p3"
+          ? "quay.io/ascend/vllm-ascend:v0.30.0rc2-310p@sha256:930dcb52a6d80460d823367356b012e95b18327470cff2bc2b94063b49b5f175"
+          : "quay.io/ascend/vllm-ascend:v0.30.0rc2@sha256:6348403a0ebb19f52bc1b7497de1daeb6df0e4650f9051c169e47a011527a6c3",
+        extra_args: ["--dtype", dtype, "--served-model-name", "PaddlePaddle/PaddleOCR-VL", "PaddleOCR-VL-0.9B"],
+      } },
+    };
+  }
+  fs.writeFileSync(paddleFile, yaml.dump(paddle));
   const sources = path.join(tmp, "sources.yaml");
   fs.writeFileSync(sources, JSON.stringify({
     default_channel: channel,
-    channels: { [channel]: { recipes: { local: ROOT, role: "core" } } },
+    channels: { [channel]: { recipes: { local: fixture, role: "core" } } },
   }));
   execFileSync(process.execPath, ["scripts/build-recipes-api.mjs"], {
     cwd: ROOT,
@@ -61,6 +81,11 @@ test("canonical API serves an eligible precision variant on declared restricted 
   // Adding a restricted NPU must not expose it on unrelated GPU recipes.
   const unrelated = read("Qwen/Qwen3-8B.json");
   assert.ok(!unrelated.recommended_command.by_hardware.ascend_310p3);
+  const a2 = read(model.recommended_command.by_hardware.ascend_910b3.slice(1));
+  assert.equal(a2.variant, "ascend_bf16");
+  assert.ok(a2.argv.includes("bfloat16"));
+  assert.equal(a2.hardware_profile.gpu_count, 1);
+  assert.ok(!unrelated.recommended_command.by_hardware.ascend_910b3);
 });
 
 test("hardware-only page links select the runnable variant without overriding explicit checkpoints", () => {
