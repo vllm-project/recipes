@@ -4,6 +4,7 @@
 
 export const CLIENT_ENDPOINT_PATTERN = "^/(?!/)[A-Za-z0-9._~/-]*$";
 export const CLIENT_RESERVED_BENCHMARK_ARG_PATTERN = "^(?:--(?:model|host|port|endpoint|backend|base[-_]url|dataset(?:[-_]name)?)(?:[=\\s]|$)|-m)";
+const RESERVED_BENCHMARK_ARG_RE = new RegExp(CLIENT_RESERVED_BENCHMARK_ARG_PATTERN);
 
 /** Preserve the builder's existing client routing, including routerless KV. */
 export function resolveClientTarget(result, endpoints = {}) {
@@ -40,7 +41,7 @@ export function renderRecipeClients(recipe, variantKey, result, endpoints = {}) 
     throw new Error("client.request_body must not declare model; the selected variant supplies it");
   }
   const extraArgs = client.benchmark.args || [];
-  if (extraArgs.some((arg) => new RegExp(CLIENT_RESERVED_BENCHMARK_ARG_PATTERN).test(arg))) {
+  if (extraArgs.some((arg) => RESERVED_BENCHMARK_ARG_RE.test(arg))) {
     throw new Error("client.benchmark.args must not override the selected model, target, endpoint, backend or dataset");
   }
   const { host, port } = resolveClientTarget(result, endpoints);
