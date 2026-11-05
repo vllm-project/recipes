@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { hardwareInstall, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
+import { hardwareInstall, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import ShellCode from "@/components/recipes/ShellCode";
@@ -465,12 +465,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       const saved = parseInt(rs.nodes, 10);
       const v = recipe.variants?.[variant] || recipe.variants?.default || {};
       const multi = resolvedHw && needsMultiNode(recipe, strategies, resolvedHw, v, resolvedHwId);
+      // Never restore below the recommended strategy's strategy_min_gpus
+      // floor on this hardware (K3 on H100, K3.1 on TPU): a saved or generic
+      // 2-node pick is not a valid config there.
+      const floor = multi && resolvedHw
+        ? nodesForStrategy(recipe, recommendStrategy(recipe, resolvedHw, 2), resolvedHw.gpu_count || 8, resolvedHwId)
+        : 1;
+      const atFloor = (base) => Math.min(MAX_NODES, Math.max(base, floor));
       if ([1, 2].includes(saved)) {
         // A saved single-node pick can't stand where no single-node strategy is offered.
         const single = resolvedHw && multiNodeUnavailable(recipe, strategies, resolvedHw, v, resolvedHwId);
-        setNodeCount(saved === 1 && multi ? 2 : saved > 1 && single ? 1 : saved);
+        setNodeCount(atFloor(saved === 1 && multi ? 2 : saved > 1 && single ? 1 : saved));
       } else if (restoredFitsHw && multi) {
-        setNodeCount(2);
+        setNodeCount(atFloor(2));
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -506,7 +513,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       // among this hardware's options back.
       return Number.isInteger(n) && n >= 1 && n <= MAX_NODES ? n : 1;
     }
-    return multi ? 2 : 1;
+    if (multi) {
+      // Start at the recommended strategy's strategy_min_gpus floor on this
+      // hardware, not the generic 2: a floor above 2 (K3 on H100, K3.1 on
+      // TPU) otherwise SSRs a below-floor config until the reconcile effect
+      // snaps it up after hydration.
+      const rec = recommendStrategy(recipe, initialHw, 2);
+      const floor = nodesForStrategy(recipe, rec, initialHw.gpu_count || 8, initialHwId);
+      return Math.min(MAX_NODES, Math.max(2, floor));
+    }
+    return 1;
   });
   // PD-specific per-role node counts. Only surfaced when the active strategy
   // is `pd_cluster`; ignored otherwise. Defaults come from the recipe's
@@ -1120,6 +1136,31 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // the official Docker image. KV-offload layers (Simple / LMCache / Mooncake)
   // and multi-node clustering aren't validated on this backend, so gate them off.
   const isXpuHardware = hwProfile?.generation === "xpu";
+
+  // Node-pill viability, mirroring the row's per-pill predicates, so that a
+  // hardware with exactly one viable count (a TPU pod's one valid slice size)
+  // collapses to just that option instead of showing dead pills. A multi-node
+  // count only helps when an enabled multi-node strategy fits within it — a
+  // bigger strategy_min_gpus floor just bumps the count up on selection, so
+  // such counts are dead weight.
+  const shownNodeOptions = useMemo(() => {
+    const states = nodeOptions.map((n) => {
+      const noMultiNode = n > 1 && (!supportsMultiNode || !hwScalable || isXpuHardware);
+      const noMultiNodeStrategy = n > 1 && !noMultiNode &&
+        multiNodeUnavailable(recipe, strategies, hwProfile, currentVariant, hwId);
+      const singleNodeDoesntFit = n === 1 && !fitsSingleNode(hwProfile, currentVariant, hwId);
+      const singleNodeNoStrategy = n === 1 && !singleNodeDoesntFit &&
+        needsMultiNode(recipe, strategies, hwProfile, currentVariant, hwId);
+      const noStrategyAtThisCount = n > 1 && !noMultiNode && !noMultiNodeStrategy &&
+        !effectiveCompatibleStrategies(recipe).some((s) =>
+          strategies[s]?.deploy_type === "multi_node" &&
+          isStrategySupportedOnHardware(recipe, s, hwProfile, hwId) &&
+          nodesNeededFor(s) <= n);
+      return { n, disabled: noMultiNode || noMultiNodeStrategy || singleNodeDoesntFit || singleNodeNoStrategy || noStrategyAtThisCount };
+    });
+    const enabled = states.filter((o) => !o.disabled);
+    return enabled.length === 1 ? enabled : states;
+  }, [nodeOptions, supportsMultiNode, hwScalable, isXpuHardware, recipe, strategies, hwProfile, currentVariant, hwId, nodesNeededFor]);
   const needGb = variantVramMinimumGb(currentVariant, hwId);
   const availGb = hwProfile.vram_gb;
   const vramShortfall =
@@ -1389,17 +1430,22 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const recipeDefaultsSingleNode =
       typeof recipeDefault === "string" && recipeDefault.startsWith("single_node_");
     const shouldBumpNodes = nodeCount === 1 && supportsMultiNode && newScalable && !fitsNew && newProfile?.generation !== "xpu";
+    // Bump straight to the recommended strategy's strategy_min_gpus floor on
+    // the new hardware when it sits above 2 (K3 on H100, K3.1 on TPU).
+    const bumpedNodes = shouldBumpNodes
+      ? Math.min(MAX_NODES, Math.max(2, nodesForStrategy(recipe, recommendStrategy(recipe, newProfile, 2), newProfile?.gpu_count || 8, id)))
+      : 2;
     // Intel XPU is validated single-node only — always clamp back to 1 node.
     const shouldUnbumpNodes = nodeCount > 1 && (!newScalable || newProfile?.generation === "xpu" || (fitsNew && recipeDefaultsSingleNode)
       || multiNodeUnavailable(recipe, strategies, newProfile, activeVariant, id));
-    if (shouldBumpNodes) setNodeCount(2);
+    if (shouldBumpNodes) setNodeCount(bumpedNodes);
     if (shouldUnbumpNodes) setNodeCount(1);
     syncUrl({
       hardware: id,
       strategy: "",
       preset: "",
       point: "",
-      nodes: shouldBumpNodes ? "2" : shouldUnbumpNodes ? "" : undefined,
+      nodes: shouldBumpNodes ? String(bumpedNodes) : shouldUnbumpNodes ? "" : undefined,
       features: featuresToUrl(next, id, variant),
       ...(nextModes !== featureModes ? { fmode: featureModesToUrl(nextModes, variant) } : {}),
       ...(variantUpdate ? { variant: variantUpdate } : {}),
@@ -1410,7 +1456,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     // doesn't leave stale strategy/nodes/features cached for this recipe.
     saveRecipeState(recipe.hf_id, {
       strategy: undefined,
-      nodes: shouldBumpNodes ? 2 : shouldUnbumpNodes ? 1 : nodeCount,
+      nodes: shouldBumpNodes ? bumpedNodes : shouldUnbumpNodes ? 1 : nodeCount,
       features: next,
       ...(nextModes !== featureModes ? { featureModes: nextModes } : {}),
       ...(kvOffloadOk ? {} : { kvOffload: undefined, kvInstances: undefined }),
@@ -2025,9 +2071,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const kvTotalNodes = result.deployType === "kv_store_lb"
     ? (result.instances || 1) * (result.nodeCount || 1)
     : null;
-  const hwPart = kvTotalNodes
+  // TPU pods are sized in chips and devices (a v7x chip = 2 TensorCore
+  // devices), so a multi-host TPU header leads with the chip count:
+  // "16x TPU7x (4 nodes, 32 devices)".
+  const chipsPerNode = hwProfile?.chips_per_node;
+  const tpuHwPart = nodeCount > 1 && chipsPerNode
+    ? `${nodeCount * chipsPerNode}x ${hwDisplay} (${nodeCount} nodes, ${nodeCount * (hwProfile.gpu_count || 8)} devices)`
+    : null;
+  const hwPart = tpuHwPart || (kvTotalNodes
     ? (kvTotalNodes > 1 ? `${kvTotalNodes}× ${hwDisplay}` : hwDisplay)
-    : nodeCount > 1 ? `${nodeCount}× ${hwDisplay}` : hwDisplay;
+    : nodeCount > 1 ? `${nodeCount}× ${hwDisplay}` : hwDisplay);
   // The serving strategy always names the parallelism — under Mooncake the
   // instances still run it (composition), so it never disappears from the
   // summary; the KV layer rides along as a suffix.
@@ -2289,7 +2342,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                             <span className="font-semibold">{p.display_name}</span>
                             {p.vram_gb > 0 && p.gpu_count > 0 && (
                               <span className="text-muted-foreground ml-1.5 font-mono">
-                                {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : "GPU"}
+                                {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : p.generation === "tpu" ? "TPU" : "GPU"}
                               </span>
                             )}
                           </Pill>
@@ -2577,7 +2630,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                           <span className="font-semibold">{p.display_name}</span>
                           {p.vram_gb > 0 && p.gpu_count > 0 && (
                             <span className="text-muted-foreground ml-1.5 font-mono">
-                              {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : "GPU"}
+                              {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : p.generation === "tpu" ? "TPU" : "GPU"}
                             </span>
                           )}
                           {presetsHere.length > 0 && !disabled && (
@@ -3233,7 +3286,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 : undefined}
             >
               <PillGroup>
-                {nodeOptions.map((n) => {
+                {shownNodeOptions.map(({ n, disabled }) => {
                   // Multi-node pill is disabled when the recipe declares no
                   // multi_node_* (or pd_cluster) strategy (small dense models
                   // commonly omit these), or when the active hardware can't be
@@ -3253,7 +3306,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   const singleNodeNoStrategy =
                     n === 1 && !singleNodeDoesntFit &&
                     needsMultiNode(recipe, strategies, hwProfile, currentVariant, hwId);
-                  const disabled = noMultiNode || noMultiNodeStrategy || singleNodeDoesntFit || singleNodeNoStrategy;
+                  // TPU pods name their slice topology (v7x scales the third
+                  // axis: 4 hosts -> 2x2x4), shown in place of the count suffix.
+                  const topo = n > 1 && hwProfile?.slice_topology
+                    ? hwProfile.slice_topology.replace("{n}", String(n))
+                    : null;
                   return (
                     <Pill
                       key={n}
@@ -3282,10 +3339,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                                 : `${n} nodes × ${hwProfile.gpu_count || 8} GPUs = ${n * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
                       }
                     >
-                      <span className="font-semibold">{n === 1 ? "Single-node" : `Multi-node (example: ${n})`}</span>
-                      {n > 1 && !disabled && (
+                      <span className="font-semibold">{n === 1 ? "Single-node" : topo ? `Multi-node (${n}): ${topo} TPU` : `Multi-node (example: ${n})`}</span>
+                      {n > 1 && !disabled && !topo && (
                         <span className="text-muted-foreground ml-1.5 font-mono">
-                          {n * (hwProfile.gpu_count || 8)}×GPU
+                          {n * (hwProfile.gpu_count || 8)}×{hwProfile.generation === "tpu" ? "TPU" : hwProfile.generation === "cpu" ? "CPU" : "GPU"}
                         </span>
                       )}
                     </Pill>
@@ -3359,7 +3416,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   // their args too, so the pill disables to match.
                   const kvBlocked = kvInstancesActive && !!f?.companion?.command;
                   const grpcBlocked = isSmgGrpc && key === "thinking_always_on";
-                  const allowed = isFeatureAllowedForStrategy(f, activeStrategy) && !kvBlocked && !grpcBlocked;
+                  // Feature-level hardware gate (`hardware: { <gen_or_id>:
+                  // unsupported }`) — struck-through + disabled, same as the
+                  // strategy gate; synthesis skips its args either way.
+                  const hwBlocked = !isFeatureSupportedOnHardware(f, hwProfile, hwId);
+                  const allowed = isFeatureAllowedForStrategy(f, activeStrategy) && !kvBlocked && !grpcBlocked && !hwBlocked;
                   return (
                   <Pill
                     key={key}
@@ -3368,7 +3429,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                     onClick={() => allowed && toggleFeature(key)}
                     title={grpcBlocked ? "Set thinking_mode per request through chat_template_kwargs in gRPC mode."
                       : !allowed
-                      ? kvBlocked
+                      ? hwBlocked
+                        ? `Not available on ${hwProfile?.display_name || "this hardware"}`
+                        : kvBlocked
                         ? "Needs its companion process, which isn't rendered inside a Mooncake deployment — set KV Offload to Off to use it."
                         : "Not available with this strategy"
                       : f?.description}

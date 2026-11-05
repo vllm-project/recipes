@@ -500,6 +500,16 @@ export function isModeSupported(mode, hwProfile, hwId) {
 }
 
 /**
+ * Same tri-state gate for a whole feature (not just one mode): a feature may
+ * declare `hardware: { <gen_or_gpu_id>: unsupported }` when its path doesn't
+ * exist on that hardware (e.g. a CUDA-only fused decode path on TPU). Gates
+ * both the emitted args/env and the Features-row pill.
+ */
+export function isFeatureSupportedOnHardware(feat, hwProfile, hwId) {
+  return isModeSupported(feat, hwProfile, hwId);
+}
+
+/**
  * Whether a mode is available on a given variant. A mode may restrict itself to
  * specific checkpoints with `variants: [<variant_key>, ...]` — e.g. the dspark
  * method only exists on the fused DSpark checkpoint, so FP8/NVFP4 offer MTP
@@ -1002,7 +1012,12 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const exactHardwareOverride = hwId
     ? variant?.hardware_overrides?.[hwId]?.docker_image
     : null;
-  const dockerEnabled = isDockerEnabled(recipe) && (!isPpu || !!exactHardwareOverride || !!hwProfile?.docker_image);
+  const dockerEnabled = isDockerEnabled(recipe)
+    // A per-hardware install statement can declare that no published image
+    // runs this recipe on this hardware (e.g. support not yet in any image):
+    // skip the docker wrap so the command renders as bare `vllm serve`.
+    && hardwareInstall(recipe, variant, hwProfile, hwId)?.docker !== false
+    && (!isPpu || !!exactHardwareOverride || !!hwProfile?.docker_image);
 
   const isCudaMap = (v) =>
     v && typeof v === "object" && ("cu129" in v || "cu130" in v);
@@ -1988,6 +2003,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const feat = recipe.features?.[f];
       if (!feat) continue;
       if (!isFeatureAllowedForStrategy(feat, strategyName)) continue;
+      if (!isFeatureSupportedOnHardware(feat, hwProfile, hwProfileId)) continue;
       // A companion-backed feature can't render its helper inside the
       // Mooncake deployment shell (companion tabs are a single-node-block
       // concept), so its args are skipped too — args and companion always
@@ -2179,6 +2195,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const feat = recipe.features?.[f];
       if (!feat) continue;
       if (!isFeatureAllowedForStrategy(feat, strategyName)) continue;
+      if (!isFeatureSupportedOnHardware(feat, hwProfile, hwProfileId)) continue;
       if (kvComposing && feat.companion?.command) continue;
       if (feat.modes && typeof feat.modes === "object") {
         const modeKey = resolveModeKey(feat, f, variant, variantKey, hwProfile, hwProfileId, featureModes?.[f]);
