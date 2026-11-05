@@ -569,11 +569,13 @@ test("A5 server launch uses group-local ranks and distinct masters for replicate
 });
 
 test("the five-step payload stays within A5 disaggregated serving", () => {
+  // Test deployment boundaries independently of hardware-specific tuned presets.
+  const baseline = { ...kimiK3, presets: {} };
   const results = [
-    mixed("ascend_950dt", "ascend_mxfp4"),
-    resolveCommand(kimiK3, "ascend_w4a8", "pd_cluster", "ascend_910c", [], strategies, taxonomy, [], 1, pools),
+    mixed("ascend_950dt", "ascend_mxfp4", baseline),
+    resolveCommand(baseline, "ascend_w4a8", "pd_cluster", "ascend_910c", [], strategies, taxonomy, [], 1, pools),
     ...["h200", "gb300", "mi355x"].map((hw) =>
-      resolveCommand(kimiK3, "default", "pd_cluster", hw, [], strategies, taxonomy, [], 1, pools)),
+      resolveCommand(baseline, "default", "pd_cluster", hw, [], strategies, taxonomy, [], 1, pools)),
   ];
   for (const r of results) {
     assert.ok(!r.ascendScripts);

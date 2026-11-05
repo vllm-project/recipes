@@ -14,6 +14,27 @@ const taxonomy = yaml.load(fs.readFileSync(path.join(ROOT, "taxonomy.yaml"), "ut
 const ctx = resolveScope({ brands: ["Huawei"] }, taxonomy);
 const source = "vllm-ascend";
 
+test("PD hardware overlays retain scalar core topology as the default", () => {
+  const core = { strategy_overrides: { pd_cluster: { prefill: { parallelism: "tep", tp: 8, nodes: 2 } } } };
+  const before = structuredClone(core);
+  const overlay = { strategy_overrides: { pd_cluster: { prefill: {
+    parallelism: { ascend_950dt: "tp" }, tp: { ascend_950dt: 8 }, nodes: { ascend_950dt: 4 },
+  } } } };
+  const merged = applyOverlay(core, overlay, { ctx, source });
+  assert.deepEqual(merged.errors, []);
+  assert.deepEqual(core, before);
+  assert.deepEqual(merged.recipe.strategy_overrides.pd_cluster.prefill, {
+    parallelism: { default: "tep", ascend_950dt: "tp" },
+    tp: { default: 8, ascend_950dt: 8 }, nodes: { default: 2, ascend_950dt: 4 },
+  });
+  for (const hardware of ["default", "h200"]) {
+    const denied = applyOverlay(core, { strategy_overrides: { pd_cluster: { prefill: { tp: { [hardware]: 16 } } } } }, { ctx, source });
+    assert.ok(denied.errors.some((e) => /outside its hardware scope/.test(e)));
+  }
+  const conflict = applyOverlay(merged.recipe, { strategy_overrides: { pd_cluster: { prefill: { tp: { ascend_950dt: 16 } } } } }, { ctx, source });
+  assert.ok(conflict.errors.some((e) => /add-only/.test(e)));
+});
+
 function yamlFiles(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const full = path.join(dir, e.name);

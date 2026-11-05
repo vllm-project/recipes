@@ -209,6 +209,13 @@ function mergeNode(parent, key, ov, p, rules, ctx, err, seg = null) {
     // Promote a bare task id to its object form so it can carry overrides.
     node = { id: node };
     setChild(parent, key, node, seg);
+  } else if (p.length === 4 && p[0] === "strategy_overrides" && p[1] === "pd_cluster"
+    && ["prefill", "decode"].includes(p[2]) && ["nodes", "nodes_per_instance", "parallelism", "tp", "pp"].includes(key)
+    && ["string", "number"].includes(typeof node)) {
+    // These fields accept a scalar or a hardware map. Preserve the core's
+    // scalar as its default while adding only the overlay's scoped entries.
+    node = { default: node };
+    setChild(parent, key, node, seg);
   } else if (!isObj(node) && !(Array.isArray(node) && live.some((r) => r.path[depth + 1] === "[task]"))) {
     return err(p, "core value is not a map");
   }

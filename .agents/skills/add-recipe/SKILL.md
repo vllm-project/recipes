@@ -11,7 +11,7 @@ Recipes are YAML files at `models/<hf_org>/<hf_repo>.yaml`. The path mirrors Hug
 |---|---|
 | Models served by vLLM | `vllm-project/vllm` → `recipes/models/<hf_org>/<hf_repo>.yaml` |
 | Omni models (`meta.tasks` includes `omni`) | `vllm-project/vllm-omni` → `recipes/models/<hf_org>/<hf_repo>.yaml` |
-| Ascend NPU content | inline in the vLLM recipe for now (moving to `overlays/` in vllm-ascend) |
+| Ascend NPU content | `vllm-project/vllm-ascend` → `recipes/overlays/<hf_org>/<hf_repo>.yaml`, merged into the vLLM recipe (the vLLM source rejects Huawei hardware) |
 
 This repo's `models/` still holds copies of the vLLM and vLLM-Omni recipes until they are synced upstream and removed. The site renders the upstream version, so open changes to those models against vLLM or vLLM-Omni, not the copies here.
 
