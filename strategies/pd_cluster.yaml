@@ -91,8 +91,8 @@ connectors:
         command: "uv pip install mooncake-transfer-engine-cuda13"
     docker: { host_network: true, flags: ["--ulimit", "memlock=-1"] }
   mooncakev2:
-    display_name: "Mooncake V2 (Ascend)"
-    description: "Ascend KV transfer using MooncakeConnectorV2 with independently replicated prefill and decode groups, fronted by the vLLM Ascend load balancing proxy."
+    display_name: "Mooncake V2"
+    description: "KV transfer using MooncakeConnectorV2 between independently replicated prefill and decode groups."
     docs: "https://docs.vllm.ai/projects/ascend/en/latest/tutorials/features/pd_disaggregation_mooncake_multi_node.html"
     brands: [Huawei]
     routers: [ascend]

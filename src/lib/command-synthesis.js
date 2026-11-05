@@ -1833,7 +1833,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     } else {
       pdConnectorSel = "mooncakev2";
       if (pdConnectorPick && pdConnectorPick !== pdConnectorSel) {
-        pdConnectorUnavailable = "Ascend Router uses Mooncake V2 (Ascend).";
+        pdConnectorUnavailable = "Ascend Router uses Mooncake V2.";
       }
     }
   }

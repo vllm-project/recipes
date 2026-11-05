@@ -457,7 +457,7 @@ Top-level keys, in this order:
 - `troubleshooting` (optional) — `[{ title, when?, body }]`: known issues, rendered in the **Troubleshooting** tab (beside Guide and Presets): entries whose `when` matches (or that have none) first, the rest folded under "Other configurations"; the tab gets a dot when a conditional entry matches. `title` is the symptom (an error message, "warmup too slow"), and becomes the anchor `#issue-<slug>`. The build rejects `when.variants` / `when.features` naming a variant or feature the recipe doesn't have. Helpers: `src/lib/recipe-context.js`.
 - `guide` — markdown string (`|`-block), rendered with `react-markdown` + `remark-gfm` + `rehype-slug`.
 
-PD Router lists **vLLM Router**, **Dynamo**, **SMG**, and **Ascend Router** as separate options. Ascend Router uses `pd_router: ascend` and the `mooncakev2` connector. PD Connector retains NIXL, Mooncake, and MoRI-IO alongside Mooncake V2 (Ascend). Hardware, router, and recipe restrictions disable incompatible options with an explanation; they do not hide or rename existing options. The resolved JSON API publishes the effective `pd_router` and `pd_connector` keys.
+PD Router lists **vLLM Router**, **Dynamo**, **SMG**, and **Ascend Router** as separate options. Ascend Router uses `pd_router: ascend` and the `mooncakev2` connector. PD Connector retains NIXL, Mooncake, and MoRI-IO alongside Mooncake V2. Hardware, router, and recipe restrictions disable incompatible options with an explanation; they do not hide or rename existing options. The resolved JSON API publishes the effective `pd_router` and `pd_connector` keys.
 
 ## VRAM formula
 
