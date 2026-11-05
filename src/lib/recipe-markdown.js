@@ -5,6 +5,7 @@
 
 import { hardwareInstall, hwPipOverride, isFeatureSupportedOnHardware } from "./command-synthesis.js";
 import { whenMatches } from "./recipe-context.js";
+import { resolveModelReference } from "./model-reference.js";
 import { SELECTION_PARAMS, defaultFeaturesFor, synthesizeInstall } from "./recipe-render.js";
 
 const fence = (code, lang = "bash") => {
@@ -293,12 +294,14 @@ export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls
   const hardwareProfiles = taxonomy.hardware_profiles || {};
   const origin = new URL(urls.page).origin;
   const defaultFeatures = defaultFeaturesFor(recipe, selection.hardware, selection.variant);
+  const modelReference = resolveModelReference(recipe, selection.variant);
   const lines = [
     `# ${recipe.hf_id} — vLLM serving recipe`,
     "",
     recipe.meta?.description ? `> ${recipe.meta.description.replace(/\s+/g, " ").trim()}` : null,
     recipe.meta?.description ? "" : null,
     `Configuration: ${configLine(recipe, resolved, strategies)}`,
+    ...(modelReference ? [`Model weights: [${modelReference.model_id}](${modelReference.model_url}) (${modelReference.provider})`] : []),
     "",
     ...(selection.adjusted?.length ? [
       ...selection.adjusted.map((a) => `> **Note:** requested \`${a.param}=${a.requested}\` is ${a.reason}; rendered \`${a.used}\` instead.`),

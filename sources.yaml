@@ -48,8 +48,7 @@ channels:
     # hardware keys only), plus recipes that run only on Ascend.
     vllm-ascend:
       repo: vllm-project/vllm-ascend
-      # Preview the companion Ascend PD recipe until #19703 is merged.
-      ref: refs/pull/19703/head
+      ref: main
       path: recipes
       role: overlay
       scope: { brands: [Huawei] }

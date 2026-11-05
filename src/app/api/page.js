@@ -32,6 +32,8 @@ Adding the extension to the end of the whole URL (\`…&strategy=single_node_dep
 - **Markdown** leads with the rendered command (marked authoritative), then the notes and known issues that apply to this configuration, the tuned preset in effect, and the guide as background — the form to hand to an AI assistant.
 - **JSON** has the same shape as the static per-hardware renderings below, plus \`selection\` (what was rendered), \`page_url\` and \`markdown_url\`.
 
+Rendered JSON includes the selected checkpoint's \`model_id\` and resolved \`model_url\`; Markdown links the same weights. With no explicit \`variant\`, a recipe's hardware default applies. An incompatible explicit variant may change the selected hardware, recorded in \`selection.adjusted\`. Grouped PD node counts round up to complete instances in the selection and launch commands.
+
 \`\`\`bash
 # The serve command for DeepSeek-R1 on 8× B200, data + expert parallel
 curl -s "${page}.json${q}" | jq -r .command

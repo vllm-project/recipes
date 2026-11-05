@@ -8,6 +8,7 @@ import yaml from "js-yaml";
 import { buildDockerArgv, buildDockerRun, computeDockerMeta, normalizePdRoleNodes, pdConnectorKey, pdConnectorUnavailableReason, pdConnectorsFor, pdRoleModes, pdRoleNodesPerInstance, resolveCommand } from "../src/lib/command-synthesis.js";
 import { applyPresetArgOps, validatePresets } from "../src/lib/recipe-presets.js";
 import { contentDir } from "../src/lib/content-root.js";
+import { createAscendPdRecipe, createMixedRecipe } from "./fixtures/ascend-deployment.mjs";
 
 // Recipes live in their source repos; read the assembled tree (run
 // build-recipes-api or assemble-content first).
@@ -165,23 +166,10 @@ test("a role override that pins another connector keeps it, and the pick falls b
   assert.doesNotMatch(r.router.command, /moriio/);
 });
 
-// Four-node Kimi K3 groups are model instances, rather than one TP/DP group
+// Four-node Ascend groups are model instances, rather than one TP/DP group
 // spanning the whole pool. A pool of eight nodes therefore runs two complete
 // instances with separate rank-0/master endpoints.
-const ascendRecipe = {
-  ...read("models/moonshotai/Kimi-K3.yaml"),
-  strategy_overrides: { pd_cluster: {
-    connectors: { ascend_950dt: ["mooncakev2"] },
-    prefill: {
-      nodes: { ascend_950dt: 4 }, nodes_per_instance: { ascend_950dt: 4 },
-      parallelism: { ascend_950dt: "tp" }, tp: { ascend_950dt: 8 }, pp: { ascend_950dt: 4 },
-    },
-    decode: {
-      nodes: { ascend_950dt: 4 }, nodes_per_instance: { ascend_950dt: 4 },
-      parallelism: { ascend_950dt: "dep" }, tp: { ascend_950dt: 8 }, pp: { ascend_950dt: 1 },
-    },
-  } },
-};
+const ascendRecipe = createAscendPdRecipe();
 const a5 = taxonomy.hardware_profiles.ascend_950dt;
 const pickAscend = ({ model = ascendRecipe, features = [], pools = null, connector = null, router = null, frontend = undefined } = {}) =>
   resolveCommand(model, "ascend_mxfp4", "pd_cluster", "ascend_950dt", features, strategies, taxonomy, [], 1,
@@ -267,7 +255,7 @@ test("Ascend replicated groups restart ranks at zero and use each group's own ma
     assert.equal(flag(r.prefill.argv, "--nnodes"), "4");
     assert.equal(flag(r.prefill.argv, "--node-rank"), String(localRank));
     assert.equal(flag(r.prefill.argv, "--master-addr"), "$PREFILL_NODE_5");
-    assert.ok(!r.prefill.argv.includes("--headless"));
+    assert.equal(r.prefill.argv.includes("--headless"), localRank > 0);
     assert.equal(flag(r.decode.argv, "--data-parallel-size"), "4");
     assert.equal(flag(r.decode.argv, "--data-parallel-size-local"), "1");
     assert.equal(flag(r.decode.argv, "--data-parallel-rank"), String(localRank));
@@ -328,8 +316,8 @@ test("stale URL connector, router, frontend and pool-mode selections cannot esca
   }
 });
 
-test("the assembled Kimi K3 recipe supplies the A5 PD service settings and role-specific draft execution", () => {
-  const model = read("models/moonshotai/Kimi-K3.yaml");
+test("declared A5 PD service settings and role-specific draft execution are rendered", () => {
+  const model = createAscendPdRecipe();
   const r = pickAscend({ model, features: ["spec_decoding"] });
   assert.equal(r.orchestrator, "ascend-proxy");
   assert.equal(r.prefill.nodes, 4);
@@ -364,14 +352,12 @@ test("the assembled Kimi K3 recipe supplies the A5 PD service settings and role-
 
 // Mixed TP+DP serving has one public API on node 0. This differs from the
 // external-LB PD decode pool, whose per-rank HTTP endpoints all serve requests.
-const kimiK3 = read("models/moonshotai/Kimi-K3.yaml");
-const mixed = (hardware, variant = "default", model = kimiK3) => resolveCommand(model, variant, "multi_node_tp_dp", hardware,
+const pdFixture = createAscendPdRecipe();
+const mixed = (hardware, variant = "default", model = createMixedRecipe()) => resolveCommand(model, variant, "multi_node_tp_dp", hardware,
   [], strategies, taxonomy, [], 4);
 
 for (const [hardware, variant, tp] of [["ascend_950dt", "ascend_mxfp4", 8], ["ascend_910c", "ascend_w4a8", 16]]) {
   test(`${hardware} mixed TP+DP exposes the API only on the head node`, () => {
-    assert.deepEqual(kimiK3.strategy_overrides.multi_node_tp_dp.hardware_overrides[hardware].worker_args, ["--headless"],
-      "the owning recipe must declare its worker behavior");
     const r = mixed(hardware, variant);
     assert.equal(r.deployType, "multi_node");
     assert.equal(r.workerArgvs.length, 3);
@@ -389,7 +375,7 @@ for (const [hardware, variant, tp] of [["ascend_950dt", "ascend_mxfp4", 8], ["as
   });
 
   test(`${hardware} mixed worker behavior follows the source declaration`, () => {
-    const model = structuredClone(kimiK3);
+    const model = createMixedRecipe();
     delete model.strategy_overrides.multi_node_tp_dp.hardware_overrides[hardware].worker_args;
     const r = mixed(hardware, variant, model);
     assert.ok(!r.headArgv.includes("--headless"));
@@ -413,14 +399,14 @@ for (const hardware of ["h200", "gb300", "mi355x"]) {
   });
 }
 
-test("Ascend PD roles omit headless on every rank while mixed workers remain headless", () => {
-  const model = structuredClone(kimiK3);
+test("Ascend TP followers are headless while every external-DP decode rank serves HTTP", () => {
+  const model = structuredClone(pdFixture);
   // Even a declaration on a PD strategy is not a multi-node worker launch.
-  model.strategy_overrides.pd_cluster.hardware_overrides.ascend_950dt = { worker_args: ["--headless"] };
+  model.strategy_overrides.pd_cluster.hardware_overrides = { ascend_950dt: { worker_args: ["--headless"] } };
   for (const rank of [0, 1, 2, 3]) {
     const r = pickAscend({ model, pools: { prefill: { nodes: 4, rank }, decode: { nodes: 4, rank } } });
-    assert.ok(!r.prefill.argv.includes("--headless"), `prefill rank ${rank} must omit mixed-only worker behavior`);
-    assert.doesNotMatch(r.prefill.templateCommand, /headless|HEADLESS_ARGS/);
+    assert.equal(r.prefill.argv.includes("--headless"), rank > 0, `prefill rank ${rank}`);
+    assert.match(r.prefill.templateCommand, /HEADLESS_ARGS/);
     assert.doesNotMatch(r.decode.templateCommand, /headless|HEADLESS_ARGS/);
     assert.ok(!r.decode.argv.includes("--headless"), `decode rank ${rank} must serve its proxy endpoint`);
     assert.ok(!r.decode.argv.includes("--data-parallel-hybrid-lb"));
@@ -459,7 +445,7 @@ function withAscendLaunchFixture(run) {
 }
 
 test("A5 Scripts downloads only the launcher, with templates and proxy in their own steps", () => {
-  const r = pickAscend({ model: kimiK3 });
+  const r = pickAscend({ model: pdFixture });
   assert.match(r.ascendScripts.command, /examples\/external_online_dp\/launch_online_dp\.py/);
   assert.match(r.ascendScripts.command, /^curl --fail --location --output launch_online_dp\.py https:\/\/raw\.githubusercontent\.com\/vllm-project\/vllm-ascend\/v0\.23\.0\//);
   assert.doesNotMatch(r.ascendScripts.command, /docker|\bcp\b|mkdir|load_balance_proxy|run_dp_template|\n/);
@@ -485,9 +471,9 @@ test("A5 Scripts downloads only the launcher, with templates and proxy in their 
 });
 
 test("reusable A5 templates preserve PP ranks, external DP and enabled draft settings at runtime", () => {
-  // One PD template covers a group head and followers, without mixed-only
-  // worker flags on either role.
-  const r = pickAscend({ model: kimiK3, features: ["spec_decoding"], pools: {
+  // Reuse one template across the group: TP followers are headless and every
+  // external-DP decode rank exposes HTTP.
+  const r = pickAscend({ model: pdFixture, features: ["spec_decoding"], pools: {
     prefill: { nodes: 8, rank: 7 }, decode: { nodes: 8, rank: 7 },
   } });
   withAscendLaunchFixture(({ dir, shell }) => {
@@ -498,7 +484,7 @@ test("reusable A5 templates preserve PP ranks, external DP and enabled draft set
       const script = "run_dp_template.sh";
       assert.ok(fs.existsSync(path.join(dir, script)));
       shell('bash -n "$1"', [script]);
-      for (const rank of [0, 3]) {
+      for (const rank of [0, 1, 2, 3]) {
         const prefill = role === "prefill";
         const args = ["0,1,2,3,4,5,6,7", prefill ? "8171" : "8272", prefill ? "1" : "4",
           String(rank), prefill ? "192.0.2.15" : "192.0.2.25", prefill ? "41991" : "41992", "8"];
@@ -525,7 +511,7 @@ test("reusable A5 templates preserve PP ranks, external DP and enabled draft set
           assert.equal(flag(argv, "--node-rank"), String(rank));
           assert.equal(flag(argv, "--master-addr"), "192.0.2.15");
           assert.equal(flag(argv, "--master-port"), "41991");
-          assert.ok(!argv.includes("--headless"));
+          assert.equal(argv.includes("--headless"), rank > 0);
         } else {
           assert.equal(flag(argv, "--data-parallel-rank"), String(rank));
           assert.equal(flag(argv, "--data-parallel-address"), "192.0.2.25");
@@ -539,7 +525,7 @@ test("reusable A5 templates preserve PP ranks, external DP and enabled draft set
 });
 
 test("A5 server launch uses group-local ranks and distinct masters for replicated groups", () => {
-  const r = pickAscend({ model: kimiK3, pools: {
+  const r = pickAscend({ model: pdFixture, pools: {
     prefill: { nodes: 12, rank: 11 }, decode: { nodes: 8, rank: 7 },
   } });
   withAscendLaunchFixture(({ dir, env, shell }) => {
@@ -570,7 +556,7 @@ test("A5 server launch uses group-local ranks and distinct masters for replicate
 
 test("the five-step payload stays within A5 disaggregated serving", () => {
   // Test deployment boundaries independently of hardware-specific tuned presets.
-  const baseline = { ...kimiK3, presets: {} };
+  const baseline = { ...pdFixture, presets: {} };
   const results = [
     mixed("ascend_950dt", "ascend_mxfp4", baseline),
     resolveCommand(baseline, "ascend_w4a8", "pd_cluster", "ascend_910c", [], strategies, taxonomy, [], 1, pools),

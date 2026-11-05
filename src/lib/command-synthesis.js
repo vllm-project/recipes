@@ -67,7 +67,7 @@ function autoFitTp(vramMinGb, perGpuVram, gpuCount) {
  * > `default`. The first key present wins; undefined when none match. Shared
  * by variant `tp` maps and `strategy_hardware` gates.
  */
-function hardwareKeyedValue(map, hwProfile, hwProfileId) {
+export function hardwareKeyedValue(map, hwProfile, hwProfileId) {
   if (!map || typeof map !== "object") return undefined;
   const gen = normalizeGeneration(hwProfile?.generation || hwProfile?.gpu_generation);
   const brand = typeof hwProfile?.brand === "string" ? hwProfile.brand.toLowerCase() : null;
@@ -383,6 +383,38 @@ export function pdRoleModes(recipe, role, hwProfile, hwProfileId) {
   return pdPoolModes(recipe);
 }
 
+// One layout for controls, URL selection, and every generated pool command.
+export function resolvePdRoleLayout({ recipe, strategy, role, hwProfile = {}, hwProfileId, selection = null, nodeCount = 1 }) {
+  const selected = typeof selection === "number" ? { nodes: selection } : (selection || {});
+  const gpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 1;
+  const group = pdRoleNodesPerInstance(recipe, role, hwProfile, hwProfileId);
+  const nodes = group
+    ? normalizePdRoleNodes(recipe, role, hwProfile, hwProfileId, selected.nodes)
+    : Number.isFinite(selected.nodes) ? Math.max(0, Math.min(MAX_NODES, Math.ceil(selected.nodes))) : (nodeCount > 1 ? 1 : 0);
+  const nodesPerInstance = group || Math.max(1, nodes);
+  const allowedModes = pdRoleModes(recipe, role, hwProfile, hwProfileId);
+  const wanted = selected.parallelism || pdRoleParallelism(recipe, strategy, role, hwProfile, hwProfileId);
+  const parallelism = allowedModes.includes(wanted) ? wanted : allowedModes[0];
+  const rank = Number(selected.rank);
+  const currentNode = Math.max(0, Math.min(Math.max(1, nodes) - 1, Number.isFinite(rank) ? Math.floor(rank) : 0));
+  const currentInstance = Math.floor(currentNode / nodesPerInstance);
+  const instanceNodeRank = currentNode % nodesPerInstance;
+  const instanceStart = currentInstance * nodesPerInstance + 1;
+  const poolGpus = nodes === 0 ? Math.floor(gpuCount / 2) : nodes * gpuCount;
+  const instanceGpus = group ? group * gpuCount : poolGpus;
+  const tpDeclared = pdRoleValue(recipe, role, "tp", hwProfile, hwProfileId)
+    ?? declaredTpForHardware(strategy?.[role]?.tp, hwProfile, hwProfileId);
+  const tp = parallelism === "dep" ? (tpDeclared || 1) : (group ? (tpDeclared || gpuCount) : poolGpus);
+  const pp = pdRoleValue(recipe, role, "pp", hwProfile, hwProfileId)
+    ?? declaredTpForHardware(strategy?.[role]?.pp, hwProfile, hwProfileId) ?? 1;
+  const dpLocal = parallelism === "dep" ? Math.max(1, Math.floor(gpuCount / tp)) : 0;
+  const dpSize = parallelism === "dep" ? nodesPerInstance * dpLocal : 1;
+  return { nodes, nodesPerInstance, instances: group ? nodes / group : 1, currentInstance,
+    instanceNodeRank, instanceStart, currentNode, parallelism, tp, tpDeclared, pp,
+    dpLocal, dpSize, poolGpus, instanceGpus, grouped: !!group, allowedModes, nodeStep: group || 1,
+    startRank: (group ? instanceNodeRank : currentNode) * dpLocal };
+}
+
 /** Hardware-specific allowed transfer connectors; null preserves the defaults. */
 export function pdConnectorsFor(recipe, hwProfile, hwProfileId) {
   const list = hardwareKeyedValue(recipe?.strategy_overrides?.pd_cluster?.connectors, hwProfile, hwProfileId);
@@ -514,6 +546,7 @@ export function isHardwareSupported(recipe, hwId) {
  * confusing data-center Blackwell (SM100/SM103) with workstation SM120/SM121.
  */
 export function isVariantHardwareSupported(variant, hwId, profile = null) {
+  if (variant?.hardware?.[hwId] === "unsupported") return false;
   const supported = variant?.supported_hardware;
   if (!Array.isArray(supported) || supported.length === 0) return true;
   return supported.some((entry) => {
@@ -844,12 +877,21 @@ export function variantRunsOnHardware(hwProfile, variant, hwId = null) {
  * `meta.default_variant` (variant-`tp` keyspace) names the author's pick for a
  * hardware and wins whenever that variant runs there.
  */
+export function defaultVariantForHardware(recipe, hwProfile, hwId) {
+  const key = hardwareKeyedValue(recipe.meta?.default_variant, hwProfile, hwId);
+  const variant = key && recipe.variants?.[key];
+  return variant && variantRunsOnHardware(hwProfile, variant, hwId) ? key : null;
+}
+
+export function initialVariantKey(recipe, profiles, requestedHardware, requestedVariant) {
+  if (recipe.variants?.[requestedVariant]) return requestedVariant;
+  const profile = profiles[requestedHardware];
+  return (profile && defaultVariantForHardware(recipe, profile, requestedHardware)) || "default";
+}
+
 export function pickFittingVariant(recipe, hwProfile, hwId = null) {
-  const preferred = hardwareKeyedValue(recipe.meta?.default_variant, hwProfile, hwId);
-  const preferredVariant = preferred && recipe.variants?.[preferred];
-  if (preferredVariant && variantRunsOnHardware(hwProfile, preferredVariant, hwId)) {
-    return preferred;
-  }
+  const preferred = defaultVariantForHardware(recipe, hwProfile, hwId);
+  if (preferred) return preferred;
   const fitting = Object.entries(recipe.variants || {}).filter(
     ([, v]) => variantRunsOnHardware(hwProfile, v, hwId)
   );
@@ -1437,7 +1479,7 @@ function shellQuote(s) {
 // The official Ascend launcher passes seven positional arguments to a single
 // run_dp_template.sh on every node. Keep templates independent of the node
 // currently selected in the builder: the launcher supplies its group-local rank.
-function ascendRoleTemplate(role, args, env, modelId) {
+function ascendRoleTemplate(role, args, env, modelId, { headlessFollowers = false } = {}) {
   const bindings = role === "prefill"
     ? { "--port": "$2", "--data-parallel-size": "$3", "--node-rank": "$4", "--master-addr": "$5", "--master-port": "$6", "--tensor-parallel-size": "$7" }
     : { "--port": "$2", "--data-parallel-size": "$3", "--data-parallel-rank": "$4", "--data-parallel-address": "$5", "--data-parallel-rpc-port": "$6", "--tensor-parallel-size": "$7" };
@@ -1490,6 +1532,7 @@ function ascendRoleTemplate(role, args, env, modelId) {
       index++;
     } else argumentLines.push(valueQuote(flag));
   }
+  if (headlessFollowers) argumentLines.push('"${HEADLESS_ARGS[@]}"');
   const templateEnv = Object.fromEntries(Object.entries({ ...env, HCCL_IF_IP: "$local_ip", VLLM_HOST_IP: "$local_ip" })
     .map(([key, value]) => [key, String(value).replaceAll("$IFACE_NAME", "$nic_name")]));
   // Expand only the deployment inputs used by the recipe; preserve literal
@@ -1514,6 +1557,7 @@ function ascendRoleTemplate(role, args, env, modelId) {
     'local_ip="<LOCAL_IP>"',
     ...(draftModel ? [`DRAFT_MODEL_PATH=${shellQuote(draftModel)}`] : []),
     'if [ "$#" -ne 7 ]; then echo "Expected: devices port dp_size group_rank group_head rpc_port tp_size" >&2; exit 2; fi',
+    ...(headlessFollowers ? ["HEADLESS_ARGS=()", 'if [ "$4" -gt 0 ]; then', "  HEADLESS_ARGS=(--headless)", "fi"] : []),
     ...exports, "", launch,
   ].join("\n");
   const target = "./run_dp_template.sh";
@@ -1732,42 +1776,16 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       if (!pdRoleNodesPerInstance(recipe, role, hwProfile, hwProfileId)) continue;
       const raw = pdNodes?.[role];
       const selected = typeof raw === "number" ? { nodes: raw } : (raw || {});
+      const layout = resolvePdRoleLayout({ recipe, strategy, role, hwProfile, hwProfileId, selection: selected, nodeCount });
       pdNodes ||= {};
       pdNodes[role] = {
         ...selected,
-        nodes: normalizePdRoleNodes(recipe, role, hwProfile, hwProfileId, selected.nodes),
-        parallelism: pdRoleModes(recipe, role, hwProfile, hwProfileId)[0],
+        nodes: layout.nodes, parallelism: layout.parallelism, rank: layout.currentNode,
       };
     }
   }
 
-  function pdLayout(role) {
-    const raw = pdNodes?.[role];
-    const selected = typeof raw === "number" ? { nodes: raw } : (raw || {});
-    const nodes = typeof selected.nodes === "number" ? selected.nodes : (nodeCount > 1 ? 1 : 0);
-    const group = pdRoleNodesPerInstance(recipe, role, hwProfile, hwProfileId);
-    const nodesPerInstance = group || Math.max(1, nodes);
-    const modes = pdRoleModes(recipe, role, hwProfile, hwProfileId);
-    const wanted = selected.parallelism || pdRoleParallelism(recipe, strategy, role, hwProfile, hwProfileId);
-    const parallelism = modes.includes(wanted) ? wanted : modes[0];
-    const currentNode = Math.max(0, Math.min(Math.max(1, nodes) - 1, Math.floor(selected.rank || 0)));
-    const currentInstance = Math.floor(currentNode / nodesPerInstance);
-    const instanceNodeRank = currentNode % nodesPerInstance;
-    const instanceStart = currentInstance * nodesPerInstance + 1;
-    const poolGpus = nodes === 0 ? Math.floor(gpuCount / 2) : nodes * gpuCount;
-    const instanceGpus = group ? group * gpuCount : poolGpus;
-    const tpDeclared = pdRoleValue(recipe, role, "tp", hwProfile, hwProfileId)
-      ?? declaredTpForHardware(strategy[role]?.tp, hwProfile, hwProfileId);
-    const tp = parallelism === "dep" ? (tpDeclared || 1) : (group ? (tpDeclared || gpuCount) : poolGpus);
-    const pp = pdRoleValue(recipe, role, "pp", hwProfile, hwProfileId)
-      ?? declaredTpForHardware(strategy[role]?.pp, hwProfile, hwProfileId) ?? 1;
-    const dpLocal = parallelism === "dep" ? Math.max(1, Math.floor(gpuCount / tp)) : 0;
-    const dpSize = parallelism === "dep" ? nodesPerInstance * dpLocal : 1;
-    return { nodes, nodesPerInstance, instances: group ? nodes / group : 1, currentInstance,
-      instanceNodeRank, instanceStart, currentNode, parallelism, tp, tpDeclared, pp,
-      dpLocal, dpSize, poolGpus, instanceGpus, grouped: !!group,
-      startRank: (group ? instanceNodeRank : currentNode) * dpLocal };
-  }
+  const pdLayout = (role) => resolvePdRoleLayout({ recipe, strategy, role, hwProfile, hwProfileId, selection: pdNodes?.[role], nodeCount });
 
   // single_node_tp TP size precedence (see resolveSingleNodeTp):
   //   1. `variant.tp` (number or hardware-aware map)
@@ -2103,7 +2121,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
           args.push("--nnodes", String(grouped.nodesPerInstance));
           args.push("--node-rank", String(grouped.instanceNodeRank));
           args.push("--master-addr", `$${roleKey.toUpperCase()}_NODE_${grouped.instanceStart}`);
-          if (grouped.instanceNodeRank > 0 && !ascendProxy) args.push("--headless");
+          if (grouped.instanceNodeRank > 0) args.push("--headless");
         }
       } else if (parallelism === "dep") {
         // Data-parallel + expert-parallel pool (Kimi-K2.5 GB200 pattern).
@@ -2168,7 +2186,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
           // TP master = node 0 of pool = NODE_1 (same naming as router endpoints).
           args.push("--master-addr", `$${roleKey.toUpperCase()}_NODE_1`);
           // Followers are GPU workers only — no API server / NIXL side channel.
-          if (nodeIdx > 0 && !ascendProxy) args.push("--headless");
+          if (nodeIdx > 0) args.push("--headless");
         }
       }
     } else if (strategy.parallelism === "dpa_tp") {
@@ -2661,7 +2679,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const dPort = servedPort(dedupeArgs(decodeArgs));
       const proxyArgs = [
         pdConnector.router.script,
-        "--host", "0.0.0.0", "--port", String(pdConnector.router.port || 8000),
+        "--host", "0.0.0.0", "--port", "$ROUTER_PORT",
         "--prefiller-hosts", ...pHosts,
         "--prefiller-ports", ...pHosts.map(() => String(pPort)),
         "--decoder-hosts", ...dHosts,
@@ -2669,7 +2687,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       ];
       const proxyBody = [
         `${proxyArgs[0]} \\`,
-        `    --host 0.0.0.0 --port ${pdConnector.router.port || 8000} \\`,
+        "    --host 0.0.0.0 --port $ROUTER_PORT \\",
         `    --prefiller-hosts ${pHosts.join(" ")} \\`,
         `    --prefiller-ports ${pHosts.map(() => pPort).join(" ")} \\`,
         `    --decoder-hosts ${dHosts.join(" ")} \\`,
@@ -2693,7 +2711,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
           ],
         };
         for (const [role, args] of [["prefill", prefillArgs], ["decode", decodeArgs]]) {
-          ascendTemplates[role] = { templateCommand: ascendRoleTemplate(role, args, buildEnv(role), modelId), templateEnv: {} };
+          const meta = role === "prefill" ? pMeta : dMeta;
+          ascendTemplates[role] = { templateCommand: ascendRoleTemplate(role, args, buildEnv(role), modelId,
+            { headlessFollowers: meta.nodesPerInstance > 1 && meta.parallelism !== "dep" }), templateEnv: {} };
         }
         const launchRole = (role, meta, args, port) => {
           const rpcPort = lastFlagValue(dedupeArgs(args), role === "prefill" ? "--master-port" : "--data-parallel-rpc-port")

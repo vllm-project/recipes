@@ -96,6 +96,8 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     description: { type: "string" },
     label: { type: "string" },
     model_id: { type: "string", pattern: "^[^/\\s]+/[^/\\s]+$" },
+    model_url: { type: "string", pattern: "^https?://" },
+    hardware: keyed(gpuId, { const: "unsupported" }),
     extra_args: strings,
     extra_env: envMap,
     docker_image: { type: "string" },
@@ -202,6 +204,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
       model: {
         ...obj({
           model_id: { type: "string", pattern: "^[^/\\s]+/[^/\\s]+$" },
+          model_url: { type: "string", pattern: "^https?://" },
           min_vllm_version: { type: "string" },
           architecture: { enum: ["dense", "moe"] },
           parameter_count: { type: "string" },

@@ -6,6 +6,8 @@
 import { BASELINE, effectivePreset, presetPoints, presetSelect, resolvePresetKey, withPreset } from "./recipe-presets.js";
 import { ADVANCED_OPTIONS } from "./advanced-options.js";
 import { SELECTION_PARAMS } from "./selection-params.js";
+import { bindRouterPort } from "./cluster-endpoints.js";
+import { resolveModelReference } from "./model-reference.js";
 
 export { SELECTION_PARAMS };
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "./omni-tasks.js";
@@ -34,12 +36,14 @@ import {
   strategyAllowsKvOffload,
   recipeAllowsKvOffload,
   pickFittingVariant,
+  defaultVariantForHardware,
+  initialVariantKey,
   pdFitsSingleNode,
   pdRoleNodes,
   pdRoleNodesPerInstance,
-  normalizePdRoleNodes,
   pdRoleModes,
   pdRoleParallelism,
+  resolvePdRoleLayout,
   resolveCommand,
   computeDockerMeta,
   buildDockerRun,
@@ -174,7 +178,8 @@ export function pickPdNodes(hwProfile, variant, baseRecipe, strategies, hwId, pr
   const floored = (role) => {
     const par = pdRoleParallelism(recipe, strategies?.pd_cluster, role, hwProfile, hwId);
     const nodes = Math.max(nodesPerRole, pdRoleNodes(recipe, role, hwProfile, hwId) ?? 0);
-    return normalizePdRoleNodes(recipe, role, hwProfile, hwId, Math.max(nodes, nodesForStrategy(recipe, par, hwProfile.gpu_count, hwId)));
+    return resolvePdRoleLayout({ recipe, strategy: strategies?.pd_cluster, role, hwProfile, hwProfileId: hwId,
+      selection: { nodes: Math.max(nodes, nodesForStrategy(recipe, par, hwProfile.gpu_count, hwId)), parallelism: par } }).nodes;
   };
   return { prefill: floored("prefill"), decode: floored("decode") };
 }
@@ -256,7 +261,9 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   const env = result.env || {};
 
   const hwPip = hwPipOverride(hardwareInstall(recipe, recipe.variants?.[variantKey], taxonomy.hardware_profiles?.[hwId], hwId));
+  const modelReference = resolveModelReference(recipe, variantKey);
   const base = {
+    ...(modelReference ? { model_id: modelReference.model_id, model_url: modelReference.model_url } : {}),
     hardware: hwId,
     strategy,
     variant: variantKey,
@@ -329,7 +336,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
       ...(result.workerInstall ? { worker_install: result.workerInstall } : {}),
       prefill,
       decode,
-      router: result.router,
+      router: result.orchestrator === "ascend-proxy" ? bindRouterPort(result.router, opts.routerPort) : result.router,
       router_config: result.routerConfig,
       ...(result.ascendScripts ? { ascend_scripts: result.ascendScripts } : {}),
       ...(result.startServer ? { start_server: result.startServer } : {}),
@@ -419,17 +426,20 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
 // { recommended, alternatives: { <strategy>: <rendered> } } where the caller
 // writes each alternative to its own file and replaces it with a path link.
 // Null for omni recipes or unknown variants.
-export function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
+export function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy, { allowVariantFallback = true } = {}) {
   let variant = recipe.variants?.[variantKey];
   if (!variant) return null;
   if ((recipe.meta?.tasks || []).includes("omni")) return null;
 
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
+  if (!isHardwareSupported(recipe, hwId) || !isPrecisionCompatible(hwProfile, variant)
+    || !isVariantHardwareSupported(variant, hwId, hwProfile)) return null;
   const scalable = isHardwareScalable(hwProfile);
   // Non-scalable hardware (single-GPU workstation, e.g. DGX Station) can't
   // shard an oversized variant — substitute the largest variant that fits, and
   // skip multi-node strategies. Mirrors the command builder's UI behavior.
   if (!scalable && !fitsSingleNode(hwProfile, variant, hwId)) {
+    if (!allowVariantFallback) return null;
     const fitting = pickFittingVariant(recipe, hwProfile, hwId);
     if (!fitting) return null;
     variantKey = fitting;
@@ -582,7 +592,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
   const linked = new Set(SELECTION_PARAMS.filter((k) => get(k) != null));
   const profiles = taxonomy.hardware_profiles || {};
 
-  let variantKey = recipe.variants?.[get("variant")] ? get("variant") : "default";
+  let variantKey = initialVariantKey(recipe, profiles, get("hardware"), get("variant"));
   let variant = recipe.variants?.[variantKey] || {};
   const defaultHw = pickDefaultHardware(profiles, variant, recipe);
   const reqHw = get("hardware");
@@ -595,8 +605,9 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
   const hwId = hwAllowed ? reqHw : defaultHw;
   const hwProfile = profiles[hwId] || {};
   const scalable = isHardwareScalable(hwProfile);
-  if (!get("variant") && !scalable && !fitsSingleNode(hwProfile, variant, hwId)) {
-    const fitting = pickFittingVariant(recipe, hwProfile, hwId);
+  if (!get("variant")) {
+    const preferred = defaultVariantForHardware(recipe, hwProfile, hwId);
+    const fitting = preferred || (!scalable && !fitsSingleNode(hwProfile, variant, hwId) ? pickFittingVariant(recipe, hwProfile, hwId) : null);
     if (fitting) { variantKey = fitting; variant = recipe.variants[fitting]; }
   }
 
@@ -716,9 +727,10 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
       const parallelism = available.includes(par0) ? par0 : (available[0] || "tp");
       const reqNodes = parseIntParam(get(`${r}_nodes`));
       const nodes0 = reqNodes > 0 ? reqNodes : (pdRoleNodes(pdRecipe, r, hwProfile, hwId) ?? minNodes);
-      const nodes = normalizePdRoleNodes(pdRecipe, r, hwProfile, hwId, Math.max(nodes0, nodesForStrategy(recipe, parallelism, perNode, hwId), grouped ? minNodes : 1));
       const rank = parseIntParam(get(`${r}_rank`));
-      return { nodes, rank: Math.min(nodes - 1, rank != null && rank >= 0 ? rank : 0), parallelism };
+      const layout = resolvePdRoleLayout({ recipe: pdRecipe, strategy: strategies.pd_cluster, role: r, hwProfile, hwProfileId: hwId,
+        selection: { nodes: Math.max(nodes0, nodesForStrategy(recipe, parallelism, perNode, hwId), grouped ? minNodes : 1), rank, parallelism } });
+      return { nodes: layout.nodes, rank: layout.currentNode, parallelism: layout.parallelism };
     };
     pdNodes = { prefill: role("prefill"), decode: role("decode") };
   }
@@ -745,6 +757,11 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     : "not offered for this hardware and node count");
   if (strategies[strategy]?.deploy_type === "multi_node") note("nodes", get("nodes"), nodeCount, "not a node count this hardware offers");
   note("kv_offload", kvReq || null, kvOffload || "off", "not available for this hardware and strategy");
+  if (pdNodes) for (const role of ["prefill", "decode"]) {
+    note(`${role}_nodes`, get(`${role}_nodes`), pdNodes[role].nodes, "not a complete or reachable pool layout");
+    note(`${role}_mode`, get(`${role}_mode`), pdNodes[role].parallelism, "not an allowed mode for this role and hardware");
+    note(`${role}_rank`, get(`${role}_rank`), pdNodes[role].rank, "outside this pool's node range");
+  }
 
   const applied = {};
   const rendering = renderCommand(

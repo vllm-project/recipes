@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createAscendPdRecipe } from "./fixtures/ascend-deployment.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
@@ -308,10 +309,7 @@ test("tp sets the single-node TP size; points can change it", () => {
 });
 
 test("an Ascend PD preset accepts and renders separate router and connector keys", () => {
-  const model = read("models/moonshotai/Kimi-K3.yaml");
-  for (const field of ["date_added", "date_updated"]) {
-    if (model.meta[field] instanceof Date) model.meta[field] = model.meta[field].toISOString().slice(0, 10);
-  }
+  const model = createAscendPdRecipe();
   model.presets = { a5: {
     label: "A5 PD", hardware: "ascend_950dt", strategy: "pd_cluster",
     select: { pd_router: "ascend", pd_connector: "mooncakev2" },
