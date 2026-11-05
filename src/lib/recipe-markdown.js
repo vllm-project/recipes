@@ -3,6 +3,7 @@
 // marked authoritative; the guide comes last as background, since its
 // hand-written examples may target another configuration.
 
+import { hardwareInstall, hwPipOverride, isFeatureSupportedOnHardware } from "./command-synthesis.js";
 import { whenMatches } from "./recipe-context.js";
 import { SELECTION_PARAMS, defaultFeaturesFor, synthesizeInstall } from "./recipe-render.js";
 
@@ -34,7 +35,9 @@ function configLine(recipe, resolved, strategies) {
   }
   parts.push(`variant \`${selection.variant}\` (${labelVariant(recipe, selection.variant)})`);
   if (selection.task) parts.push(`task \`${selection.task}\``);
-  if (selection.features?.length) parts.push(`features ${selection.features.map((f) => `\`${f}\``).join(", ")}`);
+  if (selection.features && resolved.options.features.length) {
+    parts.push(`features ${selection.features.map((f) => `\`${f}\``).join(", ") || "none"}`);
+  }
   if (selection.kv_offload) parts.push(`KV offload \`${selection.kv_offload}\``);
   if (selection.pd_router && selection.pd_router !== "vllm") parts.push(`PD router \`${selection.pd_router}\``);
   if (selection.preset) parts.push(`preset \`${selection.preset}\`${selection.point ? ` at point \`${selection.point}\`` : ""}`);
@@ -106,7 +109,7 @@ function serveSection(r) {
     if (r.router?.command && (r.instances ?? 1) > 1) out.push("", `### ${step++}. Router`, "", fence(r.router.command));
     return out;
   }
-  out.push(fence(withEnv(r.env, r.command)));
+  out.push(fence([envExports(r.env), r.setup, r.command].filter(Boolean).join("\n")));
   for (const c of r.companions || []) {
     out.push("", `### ${c.label}${c.after ? " (start after vLLM)" : ""}`, "");
     if (c.description) out.push(c.description, "");
@@ -117,16 +120,25 @@ function serveSection(r) {
 }
 
 function installSection(recipe, resolved) {
-  const { hwProfile, rendering } = resolved;
+  const { hwProfile, rendering, selection } = resolved;
   const out = [];
   const min = recipe.model?.min_vllm_version;
-  if (min) out.push(`Requires vLLM >= ${min}${recipe.model?.nightly_required ? " (not released yet — nightly wheel)" : ""}.`, "");
+  const hwInstall = hardwareInstall(recipe, recipe.variants?.[selection?.variant], hwProfile, selection?.hardware);
+  const hwPip = hwPipOverride(hwInstall);
+  if (hwPip) {
+    // This hardware's own install: the recipe's vLLM floor describes the stock one.
+    if (hwPip.note) out.push(hwPip.note, "");
+    out.push(fence(hwPip.command), "");
+  } else if (min) out.push(`Requires vLLM >= ${min}${recipe.model?.nightly_required && hwInstall?.pip !== false ? " (not released yet — nightly wheel)" : ""}.`, "");
   const install = synthesizeInstall(recipe);
-  if (hwProfile.brand === "NVIDIA" && install?.pip) {
+  if (!hwPip && hwProfile.brand === "NVIDIA" && install?.pip && hwInstall?.pip !== false) {
     if (install.pip.note) out.push(install.pip.note, "");
     out.push(fence(install.pip.command), "");
   }
-  if (rendering?.docker_image) out.push(`Docker image: \`${rendering.docker_image}\``, "");
+  if (rendering?.docker_image) {
+    if (hwInstall?.docker?.note) out.push(hwInstall.docker.note, "");
+    out.push(`Docker image: \`${rendering.docker_image}\``, "");
+  }
   const deps = (recipe.dependencies || []).filter((d) => {
     if (!d.brand) return true;
     return (Array.isArray(d.brand) ? d.brand : [d.brand]).includes(hwProfile.brand);
@@ -137,12 +149,19 @@ function installSection(recipe, resolved) {
       out.push(`- ${d.note || "Dependency"}${d.optional ? " (optional)" : ""}`, "", fence(d.command), "");
     }
   }
+  const kvInstall = rendering?.kv_offload_install || [];
+  if (kvInstall.length) {
+    out.push("Required by the selected KV Offload option:", "");
+    for (const s of kvInstall) out.push(`- ${s.note || "Install"}`, "", fence(s.command), "");
+  }
   return out;
 }
 
 function contextEntries(recipe, resolved, kind, hardwareProfiles) {
-  const { selection } = resolved;
-  const sel = { hwId: selection.hardware, strategy: selection.strategy, variant: selection.variant, features: selection.features };
+  const { selection, hwProfile } = resolved;
+  // A feature unsupported on this hardware emits nothing, so it isn't on here.
+  const features = selection.features?.filter((f) => isFeatureSupportedOnHardware(recipe.features?.[f], hwProfile, selection.hardware));
+  const sel = { hwId: selection.hardware, strategy: selection.strategy, variant: selection.variant, features };
   return (recipe[kind] || []).filter((e) => whenMatches(e.when, sel, hardwareProfiles));
 }
 
@@ -284,7 +303,7 @@ export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls
     `- \`variant\`: ${options.variants.map((v) => `\`${v}\``).join(", ")}`,
     options.strategies.length ? `- \`strategy\`: ${options.strategies.map((s) => `\`${s}\``).join(", ")} (multi-node strategies also need \`nodes=<n>\`)` : null,
     options.tasks?.length ? `- \`task\`: ${options.tasks.map((t) => `\`${t}\``).join(", ")}` : null,
-    options.features.length ? `- \`features\`: comma-separated list of ${options.features.map((f) => `\`${f}\``).join(", ")} (default: ${defaultFeatures.map((f) => `\`${f}\``).join(", ") || "none"})` : null,
+    options.features.length ? `- \`features\`: comma-separated list of ${options.features.map((f) => `\`${f}\``).join(", ")} (default: ${defaultFeatures.map((f) => `\`${f}\``).join(", ") || "none"}). Use \`features=none\` to turn them all off.` : null,
     ...presetOptions(recipe, strategies),
     "",
     "## Install",

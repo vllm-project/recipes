@@ -50,6 +50,7 @@ import {
   isStrategySupportedOnHardware,
   effectiveCompatibleStrategies,
   FALLBACK_FRONTEND,
+  kvOffloadOptionErrors,
 } from "../src/lib/command-synthesis.js";
 import { contentChannel, contentDir, loadProvenance } from "../src/lib/content-root.js";
 import { buildVariantRendering, defaultFeaturesFor, pickPdNodes, renderCommand, synthesizeInstall } from "../src/lib/recipe-render.js";
@@ -232,6 +233,16 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
   }
   const layered = new Set([...ids, ...generations, ...brands, "default"]);
 
+  // Hardware no wheel runs on (a profile's `install.pip: false`) is only reachable
+  // through the image, so a recipe declaring it can't also turn Docker off.
+  if (recipe.model?.install?.docker === false) {
+    for (const [id, state] of Object.entries(recipe.meta?.hardware || {})) {
+      if (state !== "unsupported" && profiles[id]?.install?.pip === false) {
+        errors.push(`meta.hardware.${id}: this hardware is Docker-only, but model.install.docker is false`);
+      }
+    }
+  }
+
   const exact = (loc, key) => {
     if (!ids.has(key)) errors.push(`${loc} references unknown hardware profile ${key}`);
   };
@@ -353,6 +364,10 @@ writeJson("kv_store.json", kvStoreDeployments);
 
 // ── Recipe schema ── generated from the taxonomy + strategies, published at
 // /recipe.schema.json for editors, and enforced on every recipe below.
+// KV Offload options may only use keys the renderer honours for their strategies.
+const kvOffloadErrors = kvOffloadOptionErrors(taxonomy, strategies);
+if (kvOffloadErrors.length) throw new Error(`Invalid kv_offload options in taxonomy.yaml:\n  - ${kvOffloadErrors.join("\n  - ")}`);
+
 const recipeSchema = buildRecipeSchema({ taxonomy, strategies });
 writeJson("recipe.schema.json", recipeSchema);
 const validateRecipe = new Ajv({ allErrors: true, strict: false }).compile(recipeSchema);
@@ -570,19 +585,6 @@ for (const file of findYamlFiles(modelsDir)) {
     hfRepo = parts[parts.length - 1].replace(/\.(yaml|yml)$/, "");
     r.hf_id = `${hfOrg}/${hfRepo}`;
   }
-  // Replace the raw `model.install` config with the synthesized commands so
-  // JSON consumers see the rendered one-liners (pip + docker) plus any
-  // `extras` from `dependencies`. The raw toggle config is internal-only.
-  // `dependencies` is the YAML-authored source — drop it from the public JSON
-  // since `model.install.extras` already carries the same data verbatim.
-  const install = synthesizeInstall(r);
-  if (r.model) {
-    const { install: _drop, ...rest } = r.model;
-    r.model = install ? { ...rest, install } : rest;
-  } else if (install) {
-    r.model = { install };
-  }
-  delete r.dependencies;
   // Pre-render the canonical deploy command (default variant) so agents don't
   // have to reimplement command-synthesis. Mirrors the website's default
   // selections.
@@ -624,6 +626,21 @@ for (const file of findYamlFiles(modelsDir)) {
       r.variants[variantKey] = { ...r.variants[variantKey], json: `/${variantModelId}.json` };
     }
   }
+
+  // Preserve the raw install toggles until every rendering is complete.
+  // Replace the raw `model.install` config with the synthesized commands so
+  // JSON consumers see the rendered one-liners (pip + docker) plus any
+  // `extras` from `dependencies`. The raw toggle config is internal-only.
+  // `dependencies` is the YAML-authored source — drop it from the public JSON
+  // since `model.install.extras` already carries the same data verbatim.
+  const install = synthesizeInstall(r);
+  if (r.model) {
+    const { install: _drop, ...rest } = r.model;
+    r.model = install ? { ...rest, install } : rest;
+  } else if (install) {
+    r.model = { install };
+  }
+  delete r.dependencies;
 
   // strategy_overrides, compatible_strategies, default_strategy are synthesis
   // inputs whose effects are already baked into recommended_command + the

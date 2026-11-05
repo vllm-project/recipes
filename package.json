@@ -20,7 +20,9 @@
     "test:dcp": "node --test scripts/test-dcp-selector.mjs",
     "test:presets": "node --test scripts/test-presets.mjs",
     "test:context": "node --test scripts/test-context.mjs",
-    "test:render": "node --test scripts/test-render-parity.mjs"
+    "test:hardware": "node --test scripts/test-hardware.mjs",
+    "test:render": "node --test scripts/test-render-parity.mjs",
+    "test:kv-offload": "node --test scripts/test-kv-offload.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.2",

@@ -50,7 +50,7 @@ The same ones the page URL uses. Values the recipe can't run fall back to its de
 | \`variant\` | A variant key of the recipe (\`default\`, \`nvfp4\`, …) |
 | \`strategy\` | A serving strategy id ([strategies](${siteUrl}/strategies.json)); multi-node ones also need \`nodes\` |
 | \`nodes\` | Node count for a multi-node strategy (nodes per instance under Mooncake) |
-| \`features\` | Comma-separated feature keys to turn on (\`tool_calling,reasoning\`, …); absent = the recipe default |
+| \`features\` | Comma-separated feature keys to turn on (\`tool_calling,reasoning\`, …). Use \`features=none\` to turn them all off. Omit it to use the recipe defaults. |
 | \`preset\`, \`point\` | A tuned preset and its operating point; \`preset=baseline\` drops a default preset |
 | \`kv_offload\` | A KV offload option (\`simple\`, \`lmcache\`, … — \`kv_offload\` in the [taxonomy](${siteUrl}/taxonomy.json)) or a Mooncake topology (\`kv_store_distributed_mooncake\`, \`kv_store_centralized_mooncake\`) |
 | \`prefill_nodes\`, \`decode_nodes\`, \`prefill_mode\`, \`decode_mode\`, \`pd_router\`, \`pd_connector\` | Prefill/decode disaggregation (\`strategy=pd_cluster\`) |

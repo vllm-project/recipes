@@ -55,6 +55,7 @@ export const PROVIDERS = {
   "vllm-sr":         { display_name: "vLLM Semantic Router",     logo: "/providers/vllm-sr.png" },
   "black-forest-labs": { display_name: "Black Forest Labs",     logo: "/providers/black-forest-labs.png" },
   "reflection":      { display_name: "Reflection AI",            logo: "/providers/reflection.png" },
+  "ricursiveAI":     { display_name: "Ricursive Intelligence",   logo: "/providers/ricursiveAI.png" },
   "RecursiveSI":     { display_name: "RecursiveSI",              logo: "/providers/RecursiveSI.png", invertInLight: true },
   "ibm-granite":     { display_name: "IBM Granite",              logo: "/providers/ibm-granite.png" },
   "autotrust":       { display_name: "AutoTrust",                logo: "/providers/autotrust.jpeg" },

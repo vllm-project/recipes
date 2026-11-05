@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import yaml from "js-yaml";
+import { resolveSelection } from "../src/lib/recipe-render.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-hardware-variant-"));
@@ -61,6 +63,24 @@ test("canonical API serves an eligible precision variant on declared restricted 
   assert.ok(!unrelated.recommended_command.by_hardware.ascend_310p3);
 });
 
+test("hardware-only page links select the runnable variant without overriding explicit checkpoints", () => {
+  const recipe = read("PaddlePaddle/PaddleOCR-VL.json");
+  const taxonomy = read("taxonomy.json");
+  const strategies = Object.fromEntries(fs.readdirSync(path.join(ROOT, "strategies"))
+    .filter((f) => f.endsWith(".yaml"))
+    .map((f) => {
+      const spec = yaml.load(fs.readFileSync(path.join(ROOT, "strategies", f), "utf8"));
+      return [spec.name, spec];
+    }));
+  const selected = resolveSelection(recipe, new URLSearchParams({ hardware: "ascend_310p3" }), strategies, taxonomy);
+  assert.equal(selected.selection.hardware, "ascend_310p3");
+  assert.equal(selected.selection.variant, "ascend_fp16");
+  assert.ok(selected.rendering.argv.includes("float16"));
+  const explicit = resolveSelection(recipe, new URLSearchParams({ hardware: "ascend_310p3", variant: "default" }), strategies, taxonomy);
+  assert.equal(explicit.selection.variant, "default");
+  assert.notEqual(explicit.selection.hardware, "ascend_310p3");
+});
+
 test("promoted default checkpoint excludes sibling-only hardware while the parent retains it", () => {
   const parentId = "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16";
   const promotedId = "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4";
@@ -74,7 +94,7 @@ test("promoted default checkpoint excludes sibling-only hardware while the paren
   assert.ok(parentAmd, "the parent should still offer its BF16 sibling on AMD");
   assert.equal(read(parentAmd.slice(1)).argv[2], parentId);
   assert.ok(!promoted.recommended_command.by_hardware.mi300x);
-  assert.ok(!fs.existsSync(new URL(`../public/${promotedId}/hw/mi300x.json`, import.meta.url)),
+  assert.ok(!fs.existsSync(path.join(output, promotedId, "hw/mi300x.json")),
     "removed promoted hardware must not remain as a stale JSON endpoint");
 });
 
