@@ -1,0 +1,131 @@
+meta:
+  title: "Qwen3-Reranker-0.6B"
+  slug: "qwen3-reranker-0.6b"
+  provider: "Qwen"
+  description: "Qwen3 Reranker 0.6B for text ranking via vLLM pooling runner and the /v1/rerank API"
+  date_added: 2026-10-15
+  date_updated: 2026-10-15
+  difficulty: beginner
+  tasks:
+    - embedding
+  related_recipes: []
+  hardware:
+    ascend_910c: verified
+
+model:
+  model_id: "Qwen/Qwen3-Reranker-0.6B"
+  min_vllm_version: "0.9.2"
+  architecture: dense
+  parameter_count: "0.6B"
+  active_parameters: "0.6B"
+  context_length: 40960
+  base_args:
+    - "--runner"
+    - "pooling"
+    - "--hf_overrides"
+    - '{"architectures": ["Qwen3ForSequenceClassification"],"classifier_from_token": ["no", "yes"],"is_original_qwen3_reranker": true}'
+    - "--max-model-len"
+    - "1024"
+  base_env:
+    OMP_PROC_BIND: "false"
+    OMP_NUM_THREADS: "1"
+    PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+  docker_image:
+    ascend_910c: "quay.io/ascend/vllm-ascend:v0.23.0-a3"
+  install:
+    pip: false
+    docker:
+      note: "Use the Ascend A3 image (quay.io/ascend/vllm-ascend:v0.23.0-a3). Plain pip wheels default to A2 and fail device-type checks on A3."
+
+features: {}
+opt_in_features: []
+
+variants:
+  default:
+    precision: bf16
+    vram_minimum_gb: 2
+    description: "BF16 Qwen3-Reranker-0.6B"
+    supported_hardware: [ascend_910c]
+  reranker_4b:
+    model_id: "Qwen/Qwen3-Reranker-4B"
+    precision: bf16
+    vram_minimum_gb: 10
+    description: "BF16 Qwen3-Reranker-4B"
+    supported_hardware: [ascend_910c]
+  reranker_8b:
+    model_id: "Qwen/Qwen3-Reranker-8B"
+    precision: bf16
+    vram_minimum_gb: 18
+    description: "BF16 Qwen3-Reranker-8B"
+    supported_hardware: [ascend_910c]
+
+compatible_strategies:
+  - single_node_tp
+
+hardware_overrides:
+  ascend_910c:
+    # Image is model.docker_image.ascend_910c. base_args / base_env already
+    # carry pooling + hf_overrides, so leave extras empty.
+    extra_args: []
+    extra_env: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  [Qwen/Qwen3-Reranker-0.6B](https://huggingface.co/Qwen/Qwen3-Reranker-0.6B)
+  is a text reranker from the Qwen3 series. Serve it with the vLLM pooling runner
+  and call `/v1/rerank`. On Ascend A3, use the A3-tagged vLLM Ascend image or the
+  A3 variant wheel.
+
+  ## Prerequisites
+
+  - Hardware: Atlas 800 A3 / Ascend 910C (single NPU is enough for 0.6B)
+  - vLLM Ascend >= 0.9.2rc1 (verified with v0.23.0 A3 package)
+
+  ### Install (Ascend A3 Docker)
+
+  ```bash
+  export IMAGE=quay.io/ascend/vllm-ascend:v0.23.0-a3
+  docker run --rm --net=host --shm-size=1g --privileged \
+    --device /dev/davinci0 --device /dev/davinci_manager \
+    --device /dev/devmm_svm --device /dev/hisi_hdc \
+    -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
+    -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+    -v /root/.cache:/root/.cache \
+    -it $IMAGE bash
+  ```
+
+  ## Launch command
+
+  ```bash
+  vllm serve Qwen/Qwen3-Reranker-0.6B \
+    --served-model-name Qwen/Qwen3-Reranker-0.6B \
+    --runner pooling \
+    --hf_overrides '{"architectures": ["Qwen3ForSequenceClassification"],"classifier_from_token": ["no", "yes"],"is_original_qwen3_reranker": true}' \
+    --port 8000 \
+    --max-model-len 1024
+  ```
+
+  ## Rerank API
+
+  Format query/document with the official chat template for best scores, then:
+
+  ```bash
+  curl -X POST http://localhost:8000/v1/rerank \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "Qwen/Qwen3-Reranker-0.6B",
+      "query": "<templated query>",
+      "documents": ["<templated doc A>", "<templated doc B>"]
+    }'
+  ```
+
+  Expected: HTTP 200 with `relevance_score` per document.
+
+  ## References
+
+  - [Qwen3-Reranker-0.6B on Hugging Face](https://huggingface.co/Qwen/Qwen3-Reranker-0.6B)
+  - [vLLM Ascend Qwen3-Reranker tutorial](https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/Qwen3-Reranker.html)
+  - [vLLM Ascend recipes](https://vllm-ascend.github.io/vllm-ascend-recipes/)
