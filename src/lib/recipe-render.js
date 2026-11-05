@@ -254,6 +254,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   const hwPip = hwPipOverride(hardwareInstall(recipe, recipe.variants?.[variantKey], taxonomy.hardware_profiles?.[hwId], hwId));
   const base = {
     hardware: hwId,
+    ...(recipe.model?.platform_builds ? { platform_builds: recipe.model.platform_builds } : {}),
     strategy,
     variant: variantKey,
     node_count: nodeCount,
@@ -616,7 +617,8 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     return {
       omni: true,
       selection: { hardware: hwId, variant: variantKey, task: task?.key ?? null },
-      rendering: { hardware: hwId, variant: variantKey, task: task?.key ?? null, env, command },
+      rendering: { hardware: hwId, variant: variantKey, task: task?.key ?? null, env, command,
+        ...(recipe.model?.platform_builds ? { platform_builds: recipe.model.platform_builds } : {}) },
       hwProfile,
       options: { ...options, strategies: [], tasks: tasks.map((t) => t.key) },
     };

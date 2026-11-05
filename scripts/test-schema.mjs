@@ -62,3 +62,10 @@ test("vocabulary and status values are checked", () => {
   assert.ok(errorsFor((r) => { r.hardware_overrides.dgx_spark_gb10 = "verified"; }).length);
   assert.deepEqual(errorsFor((r) => { r.meta.hardware.dgx_spark_gb10 = "supported"; }), []);
 });
+
+test("platform builds require known hardware and an exact custom build version", () => {
+  assert.deepEqual(errorsFor((r) => { r.model.platform_builds = { "810e": { base_version: "0.32.0", build_type: "custom" } }; }), []);
+  assert.ok(errorsFor((r) => { r.model.platform_builds = { unknown: { base_version: "0.32.0", build_type: "custom" } }; }).length);
+  assert.ok(errorsFor((r) => { r.model.platform_builds = { "810e": { base_version: "0.32.0+", build_type: "custom" } }; }).length);
+  assert.ok(errorsFor((r) => { r.model.platform_builds = { "810e": { base_version: "0.32.0" } }; }).length);
+});

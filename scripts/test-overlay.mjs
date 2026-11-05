@@ -74,6 +74,16 @@ test("an overlay may repeat what the core recipe still has (cutover)", () => {
 const core0 = yaml.load(fs.readFileSync(path.join(ROOT, "templates/recipe.yaml"), "utf8"));
 const errs = (overlay) => applyOverlay(core0, overlay, { ctx, source }).errors;
 
+test("platform build metadata follows overlay hardware scope", () => {
+  const build = { base_version: "0.32.0", build_type: "custom" };
+  assert.deepEqual(errs({ model: { platform_builds: { ascend_910c: build } } }), []);
+  assert.equal(errs({ model: { platform_builds: { h200: build } } }).length, 1);
+  const full = structuredClone(core0);
+  full.model.platform_builds = { ascend_910c: build };
+  const { core, overlay } = splitOverlay(full, { ctx, source });
+  assert.deepEqual(applyOverlay(core, overlay, { ctx, source }).recipe, full);
+});
+
 test("overlay can't touch out-of-scope hardware or model config", () => {
   assert.equal(errs({ hardware_overrides: { blackwell: { extra_args: ["--x"] } } }).length, 1);
   assert.equal(errs({ meta: { hardware: { b200: "unsupported" } } }).length, 1);
