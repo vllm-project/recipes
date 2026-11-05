@@ -6,6 +6,7 @@
 import { BASELINE, effectivePreset, presetPoints, presetSelect, resolvePresetKey, withPreset } from "./recipe-presets.js";
 import { ADVANCED_OPTIONS } from "./advanced-options.js";
 import { SELECTION_PARAMS } from "./selection-params.js";
+import { renderRecipeClients } from "./recipe-clients.js";
 
 export { SELECTION_PARAMS };
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "./omni-tasks.js";
@@ -248,6 +249,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     : baseVariant;
   const dockerMeta = computeDockerMeta(recipe, variant, hwProfile, hwId);
   const env = result.env || {};
+  const clients = renderRecipeClients(recipe, variantKey, result);
 
   const base = {
     hardware: hwId,
@@ -261,6 +263,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     ...(result.preset?.point?.selected && result.preset.selected !== "baseline" ? { preset_point: result.preset.point.selected } : {}),
     env,
     docker_image: dockerMeta.image,
+    ...(clients ? { clients } : {}),
   };
   if (result.deployType === "multi_node") {
     const head = dockerize(result.headCommand, result.headArgv, env, dockerMeta);

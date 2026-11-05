@@ -312,6 +312,13 @@ export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls
     lines.push("vLLM-Omni recipe — the generation endpoints and request examples are in the guide below.", "", fence(withEnv(rendering.env, rendering.command)), "");
   } else {
     lines.push(...serveSection(rendering), "");
+    if (rendering.clients) {
+      lines.push(
+        "## Verify", "", fence(rendering.clients.verify_command), "",
+        "## Benchmark", "", fence(rendering.clients.benchmark_command), "",
+        "These clients use the default target for this deployment. Host and port saved in the interactive page's Endpoints controls are local to that browser and are not carried by shared Markdown/JSON links.", "",
+      );
+    }
   }
   lines.push(...presetSection(recipe, rendering, strategies, origin));
 

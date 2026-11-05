@@ -7,6 +7,7 @@ import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import { hardwareInstall, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
+import { renderRecipeClients, resolveClientTarget } from "@/lib/recipe-clients";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import ShellCode from "@/components/recipes/ShellCode";
 import { publishSelection, onPresetRequest } from "@/lib/selection-store";
@@ -1819,20 +1820,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const kvHasRouter = isKvStore && !!result.router;
   const modelId = recipe.variants?.[variant]?.model_id || recipe.model?.model_id || "model";
 
-  // PD / KV-store clients hit the router; everyone else hits `vllm serve` on 8000.
-  const clientPort = isPd ? 30000 : kvHasRouter ? (result.router?.port || 30080) : 8000;
+  const { host: clientHost, port: clientPortStr } = resolveClientTarget(result, endpoints);
+  const clients = renderRecipeClients(recipe, variant, result, endpoints);
 
-  // curl/bench target. PD / routed KV-store → router host:port; everyone else
-  // (incl. single-instance Mooncake) → the vllm-serve node (head node for
-  // multi-node TP). Defaults to localhost so the single-node demo case still
-  // works copy-paste; user can fill the Cluster endpoints panel to point at a
-  // real cluster.
-  const clientHostKey = (isPd || kvHasRouter) ? "ROUTER_HOST" : (isMultiNode ? "HEAD_IP" : "VLLM_HOST");
-  const clientPortKey = (isPd || kvHasRouter) ? "ROUTER_PORT" : "VLLM_PORT";
-  const clientHost = endpoints[clientHostKey] || "localhost";
-  const clientPortStr = endpoints[clientPortKey] || String(clientPort);
-
-  const verifyCmd = `curl http://${clientHost}:${clientPortStr}/v1/chat/completions \\
+  const verifyCmd = clients?.verify_command || `curl http://${clientHost}:${clientPortStr}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "${modelId}",
@@ -1840,7 +1831,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     "max_tokens": 32
   }'`;
 
-  const benchCmd = `vllm bench serve \\
+  const benchCmd = clients?.benchmark_command || `vllm bench serve \\
   --model ${modelId} \\
   --host ${clientHost} \\
   --port ${clientPortStr} \\
