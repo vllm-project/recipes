@@ -409,7 +409,7 @@ it is set. References to a different variable retain normal shell expansion.
 contains `base_version` (an exact `X.Y.Z` version) and `build_type: custom`.
 It records the version underlying a platform-specific build, not an upstream
 minimum. The model header shows the upstream floor; the install section uses
-the selected platform build. Hardware-scoped overlays may add entries for their own devices.
+the selected platform build.
 
 Top-level keys, in this order:
 
