@@ -11,7 +11,6 @@ import {
   npuDeviceCountForCommand,
   computeDockerMeta,
   hardwareInstall,
-  isPipInstallAvailable,
   isPrecisionCompatible,
   pickDefaultHardware,
   resolveCommand,
@@ -108,26 +107,6 @@ test("the schema accepts vr200 and rubin keys", () => {
   assert.equal(validate("meta", { title: "t", slug: "s", provider: "p", description: "d", date_added: "2026-11-03", date_updated: "2026-11-03", tasks: ["text"], hardware: { vr200: "supported" } }), true);
 });
 
-test("the schema accepts exact-hardware install command overrides", () => {
-  const { properties } = buildRecipeSchema({ taxonomy, strategies });
-  const validate = new Ajv({ strict: false }).compile(properties.variants);
-  const variants = {
-    default: {
-      precision: "bf16",
-      vram_minimum_gb: 1,
-      hardware_overrides: {
-        ascend_910c: {
-          install: {
-            pip: { command: "uv pip install vllm-ascend", note: "WheelNext required" },
-            docker: { note: "Use the A3 image" },
-          },
-        },
-      },
-    },
-  };
-  assert.equal(validate(variants), true);
-});
-
 test("single-node NPU devices follow the final TP and DP values", () => {
   const profile = profiles.ascend_910c;
   const npuRecipe = (tp, dp) => recipe({
@@ -159,20 +138,4 @@ test("single-node NPU devices follow the final TP and DP values", () => {
   assert.match(meta.gpuFlags, /--device \/dev\/davinci0\b/);
   assert.match(meta.gpuFlags, /--device \/dev\/davinci1\b/);
   assert.doesNotMatch(meta.gpuFlags, /--device \/dev\/davinci2\b/);
-});
-
-test("an exact-hardware pip command keeps the install tab available", () => {
-  const r = recipe({
-    meta: { hardware: { ascend_910c: "supported" } },
-    variants: {
-      default: {
-        precision: "bf16",
-        vram_minimum_gb: 1,
-        hardware_overrides: {
-          ascend_910c: { install: { pip: { command: "uv pip install vllm-ascend" } } },
-        },
-      },
-    },
-  });
-  assert.equal(isPipInstallAvailable(r, r.variants.default, profiles.ascend_910c, "ascend_910c"), true);
 });

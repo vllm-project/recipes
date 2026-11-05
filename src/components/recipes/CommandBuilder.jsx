@@ -3964,14 +3964,10 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   //   false              → hide that tab entirely
   //   { command, note }  → override the generated one-liner and/or show a note
   const install = recipe.model?.install || {};
-  const pipCfg = hwInstall?.pip && typeof hwInstall.pip === "object"
-    ? { ...(install.pip && typeof install.pip === "object" ? install.pip : {}), ...hwInstall.pip }
-    : install.pip;
-  const dockerCfg = hwInstall?.docker && typeof hwInstall.docker === "object"
-    ? { ...(install.docker && typeof install.docker === "object" ? install.docker : {}), ...hwInstall.docker }
-    : install.docker;
-  const pipHidden = install.pip === false || hwInstall?.pip === false;
-  const dockerHidden = install.docker === false || hwInstall?.docker === false || dockerHiddenOverride;
+  const pipCfg = install.pip;
+  const dockerCfg = install.docker;
+  const pipHidden = pipCfg === false;
+  const dockerHidden = dockerCfg === false || dockerHiddenOverride;
   const [open, setOpen] = useState(false);
   const { isAmd, isTpu, isXpu, isIntel, isNpu, isPpu, image: dockerImage, brandKey, cudaMap, cu129Image } = dockerMeta;
   // Intel CPU is a first-class backend in computeDockerMeta. Keep XPU

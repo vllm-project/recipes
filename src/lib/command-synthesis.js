@@ -951,10 +951,9 @@ export function cu129DockerImage(image, minVllmVersion = null) {
   return `${image}-cu129`;
 }
 
-// Install-path statement for this hardware (`{ pip: false }` to hide a tab,
-// or `{ pip: { command, note } }` to customize it): the exact variant / recipe
-// override block, else the hardware profile's, which covers hardware no wheel
-// runs on regardless of the recipe.
+// Install-path statement for this hardware (`{ pip: false, docker: { note } }`):
+// the exact variant / recipe override block, else the hardware profile's, which
+// covers hardware no wheel runs on regardless of the recipe.
 export function hardwareInstall(recipe, variant, hwProfile, hwId) {
   return variant?.hardware_overrides?.[hwId]?.install
     || recipe?.hardware_overrides?.[hwId]?.install
