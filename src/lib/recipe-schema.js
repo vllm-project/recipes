@@ -96,6 +96,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     description: { type: "string" },
     label: { type: "string" },
     model_id: { type: "string", pattern: "^[^/\\s]+/[^/\\s]+$" },
+    model_url: { type: "string", pattern: "^https://" },
     extra_args: strings,
     extra_env: envMap,
     docker_image: { type: "string" },

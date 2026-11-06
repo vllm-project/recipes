@@ -55,6 +55,11 @@ test("misspelled keys are rejected", () => {
   assert.ok(errorsFor((r) => { r.features.tool_calling.arg = ["--x"]; }).length);
 });
 
+test("variant checkpoint links must use HTTPS", () => {
+  assert.deepEqual(errorsFor((r) => { r.variants.default.model_url = "https://modelscope.cn/models/org/model"; }), []);
+  assert.ok(errorsFor((r) => { r.variants.default.model_url = "http://example.org/model"; }).length);
+});
+
 test("vocabulary and status values are checked", () => {
   assert.ok(errorsFor((r) => { r.meta.hardware.h999 = "verified"; }).length);
   assert.ok(errorsFor((r) => { r.meta.hardware.h200 = "unverified"; }).length);

@@ -4,7 +4,8 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
-import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
+import { HuggingFaceIcon, ModelScopeIcon } from "@/components/icons/PlatformLogos";
+import { checkpointLink } from "@/lib/checkpoint-link";
 import { hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
@@ -836,6 +837,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // literal "model" placeholder for command text; a URL needs a real repo or
   // nothing at all.
   const variantModelId = currentVariant.model_id || recipe.model?.model_id || null;
+  const variantLink = checkpointLink(recipe, currentVariant);
 
   // All hardware profiles grouped by brand, sorted by architectural generation
   // within brand (oldest → newest; matches the semianalysis GPU timeline).
@@ -2745,12 +2747,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 )}
                 {variantModelId && (
                   <a
-                    href={`https://huggingface.co/${variantModelId}`}
+                    href={variantLink.href}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground hover:text-vllm-blue transition-colors"
                   >
-                    <HuggingFaceIcon className="w-3 h-3" />
+                    {variantLink.provider === "Hugging Face"
+                      ? <HuggingFaceIcon className="w-3 h-3" />
+                      : variantLink.provider === "ModelScope"
+                        ? <ModelScopeIcon className="w-3 h-3" />
+                        : <Globe className="w-3 h-3" />}
+                    {variantLink.provider !== "Hugging Face" && `${variantLink.provider}: `}
                     {variantModelId}
                     <ExternalLink size={9} />
                   </a>
