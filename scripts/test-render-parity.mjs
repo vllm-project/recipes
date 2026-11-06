@@ -14,7 +14,7 @@ import { test } from "node:test";
 import { getAllRecipes } from "../src/lib/recipes.js";
 import { loadStrategies } from "../src/lib/strategies.js";
 import { loadTaxonomy } from "../src/lib/taxonomy.js";
-import { resolveSelection } from "../src/lib/recipe-render.js";
+import { buildVariantRendering, pickPdNodes, resolveSelection } from "../src/lib/recipe-render.js";
 import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
 import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode } from "../src/lib/command-synthesis.js";
 
@@ -22,6 +22,49 @@ const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES
 const strategies = loadStrategies();
 const taxonomy = loadTaxonomy();
 const readJson = (rel) => JSON.parse(fs.readFileSync(path.join(PUBLIC, rel), "utf8"));
+
+test("Ascend selections preserve grouped PD launch steps across JSON and Markdown", () => {
+  const recipe = {
+    hf_id: "example/ascend",
+    model: { model_id: "example/ascend", architecture: "moe" },
+    meta: { hardware: { ascend_950dt: "verified" } },
+    variants: { default: { precision: "bf16", vram_minimum_gb: 4, supported_hardware: ["ascend_950dt"] } },
+    compatible_strategies: ["pd_cluster"],
+    presets: { ascend: { label: "Ascend PD", hardware: "ascend_950dt", strategy: "pd_cluster", default: true,
+      select: { pd_router: "ascend" } } },
+    strategy_overrides: { pd_cluster: {
+      connectors: { ascend_950dt: ["mooncakev2"] },
+      prefill: { nodes: 4, nodes_per_instance: 4, parallelism: "tp", tp: 8, pp: 4 },
+      decode: { nodes: 4, nodes_per_instance: 4, parallelism: "dep", tp: 8, pp: 1 },
+    } },
+  };
+  const hw = taxonomy.hardware_profiles.ascend_950dt;
+  assert.deepEqual(pickPdNodes(hw, recipe.variants.default, recipe, strategies, "ascend_950dt"), { prefill: 4, decode: 4 });
+  const query = new URLSearchParams("hardware=ascend_950dt&strategy=pd_cluster&pd_router=ascend&frontend=rust&prefill_nodes=5&prefill_mode=dep&decode_nodes=3&decode_mode=tp");
+  const resolved = resolveSelection(recipe, query, strategies, taxonomy);
+  assert.equal(resolved.selection.pd.prefill.nodes, 8);
+  assert.equal(resolved.selection.pd.prefill.parallelism, "tp");
+  assert.equal(resolved.selection.pd.decode.nodes, 4);
+  assert.equal(resolved.selection.pd.decode.parallelism, "dep");
+  assert.equal(resolved.selection.frontend, "python");
+  assert.equal(resolved.selection.pd_router, "ascend");
+  assert.equal(resolved.selection.kv_offload, null);
+  const rendered = resolved.rendering;
+  assert.equal(rendered.orchestrator, "ascend-proxy");
+  assert.equal(rendered.pd_connector, "mooncakev2");
+  assert.ok(rendered.ascend_scripts.command && rendered.start_server.commands.length === 2);
+  const staticRendering = buildVariantRendering(recipe, "default", "ascend_950dt", strategies, taxonomy).recommended;
+  assert.equal(staticRendering.prefill.nodes, 4);
+  assert.equal(staticRendering.decode.nodes, 4);
+  assert.ok(staticRendering.ascend_scripts && staticRendering.start_server);
+  const md = selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls: { page: "https://example.org/example/ascend", json: "https://example.org/example/ascend.json" } });
+  for (const [i, title] of ["Scripts", "Prefill", "Decode", "Start_Server", "Start_Proxy"].entries()) {
+    assert.ok(md.includes(`### ${i + 1}. ${title}`), title);
+  }
+  assert.match(md, /run_dp_template\.sh/);
+  assert.doesNotMatch(md, /VLLM_USE_RUST_FRONTEND=1/);
+  assert.match(md, /VLLM_USE_RUST_FRONTEND=0/);
+});
 
 test("explicit empty feature selections stay off", () => {
   const recipe = {

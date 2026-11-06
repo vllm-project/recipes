@@ -122,14 +122,20 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
   const installTab = { anyOf: [{ type: "boolean" }, { type: "null" }, obj({ command: { type: "string" }, note: { type: "string" } })] };
 
   const pdMode = { enum: ["tp", "tep", "dep"] };
+  const pdInstanceNodes = { type: "integer", minimum: 1, maximum: 16 };
   const pdRole = obj({
     nodes: intOrHwMap,
+    nodes_per_instance: { anyOf: [pdInstanceNodes, keyed(hwKey, pdInstanceNodes)] },
     parallelism: { anyOf: [pdMode, keyed(hwKey, pdMode)] },
-    tp: { type: "integer", minimum: 1 },
+    tp: intOrHwMap,
+    pp: intOrHwMap,
     vllm_args: strings,
     env: envMap,
     parallel_flag: { type: "string" },
-    hardware_overrides: keyed(hwKey, extraArgsEnv()),
+    hardware_overrides: keyed(hwKey, extraArgsEnv({
+      remove_args: { type: "array", items: { type: "string", pattern: "^--" } },
+      feature_overrides: keyed({ type: "string" }, argsEnv),
+    })),
   });
 
   const strategyOverride = obj({
@@ -141,6 +147,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     hardware_overrides: keyed(hwKey, extraArgsEnv()),
     prefill: pdRole,
     decode: pdRole,
+    connectors: keyed(hwKey, { type: "array", minItems: 1, uniqueItems: true, items: { enum: Object.keys(strategies?.pd_cluster?.connectors || {}) } }),
     router: obj({ intra_node_data_parallel_size: { type: "integer", minimum: 1 } }),
     pool_modes: { type: "array", items: { enum: ["tp", "tep", "dep"] } },
   });
@@ -259,7 +266,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
         const roles = obj({ prefill: role, decode: role });
         const select = obj({
           nodes: { type: "integer", minimum: 1 },
-          pd_router: { enum: ["vllm", "dynamo", "smg"] },
+          pd_router: { enum: ["vllm", "dynamo", "smg", "ascend"] },
           pd_connector: { enum: Object.keys(strategies?.pd_cluster?.connectors || {}) },
           frontend: { enum: frontends },
           features: keyed({ type: "string" }, { anyOf: [{ type: "boolean" }, { type: "string" }] }, "true/false toggles a feature; a string picks that mode (and turns it on)"),

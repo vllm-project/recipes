@@ -72,6 +72,20 @@ export function substitute(text, endpoints) {
   return out;
 }
 
+export function bindRouterPort(router, requested) {
+  const port = Number(requested == null || requested === "" ? router.port : requested);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error("Router port must be an integer from 1 to 65535");
+  }
+  const values = { ROUTER_PORT: String(port) };
+  return {
+    ...router, port,
+    command: substitute(router.command, values),
+    ...(router.argv ? { argv: router.argv.map((arg) => substitute(arg, values)) } : {}),
+    ...(router.dockerCommand ? { dockerCommand: substitute(router.dockerCommand, values) } : {}),
+  };
+}
+
 /**
  * Same as substitute() but for an env map ({ KEY: value }). Values are
  * passed through substitute(), keys are left alone.

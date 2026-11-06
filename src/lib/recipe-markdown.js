@@ -57,6 +57,20 @@ function serveSection(r) {
     return out;
   }
   if (r.deploy_type === "pd_cluster") {
+    if (r.ascend_scripts && r.start_server) {
+      const step = (title, description, command) => {
+        out.push("", `### ${title}`, "");
+        if (description) out.push(description, "");
+        out.push(fence(command));
+      };
+      out.push("Ascend PD deployment. Start in this order on each role's nodes.");
+      step("1. Scripts", r.ascend_scripts.description, r.ascend_scripts.command);
+      step("2. Prefill", r.prefill.description, r.prefill.templateCommand);
+      step("3. Decode", r.decode.description, r.decode.templateCommand);
+      step("4. Start_Server", r.start_server.description, r.start_server.command);
+      step("5. Start_Proxy", r.router.description, r.router.command);
+      return out;
+    }
     const mc = r.mooncake;
     out.push(`Disaggregated prefill/decode${r.pd_connector ? ` (KV transfer: \`${r.pd_connector}\`)` : ""}. ${mc || r.infra ? "Start in this order" : "Start both pools, then the router"}.`);
     const step = (title, description, command) => {
@@ -314,7 +328,7 @@ export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls
   ].filter((l) => l !== null);
 
   if (!rendering) {
-    lines.push("This configuration couldn't be rendered. Try another `hardware` or `strategy`.", "");
+    lines.push(selection.error?.message || "This configuration couldn't be rendered. Try another `hardware` or `strategy`.", "");
   } else if (resolved.omni) {
     lines.push("vLLM-Omni recipe — the generation endpoints and request examples are in the guide below.", "", fence(withEnv(rendering.env, rendering.command)), "");
   } else {

@@ -4,14 +4,36 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 import { applyOverlay, resolveScope, splitOverlay } from "../src/lib/overlay-merge.js";
 import { contentDir } from "../src/lib/content-root.js";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const taxonomy = yaml.load(fs.readFileSync(path.join(ROOT, "taxonomy.yaml"), "utf8"));
 const ctx = resolveScope({ brands: ["Huawei"] }, taxonomy);
 const source = "vllm-ascend";
+
+test("PD hardware overlays retain scalar core topology as the default", () => {
+  const core = { strategy_overrides: { pd_cluster: { prefill: { parallelism: "tep", tp: 8, nodes: 2 } } } };
+  const before = structuredClone(core);
+  const overlay = { strategy_overrides: { pd_cluster: { prefill: {
+    parallelism: { ascend_950dt: "tp" }, tp: { ascend_950dt: 8 }, nodes: { ascend_950dt: 4 },
+  } } } };
+  const merged = applyOverlay(core, overlay, { ctx, source });
+  assert.deepEqual(merged.errors, []);
+  assert.deepEqual(core, before);
+  assert.deepEqual(merged.recipe.strategy_overrides.pd_cluster.prefill, {
+    parallelism: { default: "tep", ascend_950dt: "tp" },
+    tp: { default: 8, ascend_950dt: 8 }, nodes: { default: 2, ascend_950dt: 4 },
+  });
+  for (const hardware of ["default", "h200"]) {
+    const denied = applyOverlay(core, { strategy_overrides: { pd_cluster: { prefill: { tp: { [hardware]: 16 } } } } }, { ctx, source });
+    assert.ok(denied.errors.some((e) => /outside its hardware scope/.test(e)));
+  }
+  const conflict = applyOverlay(merged.recipe, { strategy_overrides: { pd_cluster: { prefill: { tp: { ascend_950dt: 16 } } } } }, { ctx, source });
+  assert.ok(conflict.errors.some((e) => /add-only/.test(e)));
+});
 
 function yamlFiles(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -81,6 +103,48 @@ test("overlay can't touch out-of-scope hardware or model config", () => {
   assert.equal(errs({ compatible_strategies: ["pd_cluster"] }).length, 1);
   assert.equal(errs({ strategy_hardware: { pd_cluster: { h200: "unsupported" } } }).length, 1);
   assert.equal(errs({ meta: { default_hardware: "ascend_910c" } }).length, 1);
+});
+
+const groupedPdOverlay = { strategy_overrides: { pd_cluster: {
+  connectors: { ascend_950dt: ["mooncakev2"] },
+  prefill: {
+    nodes: { ascend_950dt: 4 }, nodes_per_instance: { ascend_950dt: 4 },
+    parallelism: { ascend_950dt: "tp" }, tp: { ascend_950dt: 8 }, pp: { ascend_950dt: 4 },
+  },
+  decode: {
+    nodes: { ascend_950dt: 4 }, nodes_per_instance: { ascend_950dt: 4 },
+    parallelism: { ascend_950dt: "dep" }, tp: { ascend_950dt: 8 }, pp: { ascend_950dt: 1 },
+  },
+} } };
+
+test("PD connector and grouped-role fields are writable only for hardware in scope", () => {
+  const { recipe: merged, errors } = applyOverlay(core0, groupedPdOverlay, { ctx, source });
+  assert.deepEqual(errors, []);
+  assert.deepEqual(merged.strategy_overrides.pd_cluster, groupedPdOverlay.strategy_overrides.pd_cluster);
+  for (const field of ["nodes", "nodes_per_instance", "parallelism", "tp", "pp"]) {
+    const value = field === "parallelism" ? "tp" : 4;
+    assert.ok(errs({ strategy_overrides: { pd_cluster: { prefill: { [field]: { gb300: value } } } } }).length,
+      `out-of-scope ${field} must be rejected`);
+    assert.ok(errs({ strategy_overrides: { pd_cluster: { prefill: { [field]: value } } } }).length,
+      `unscoped ${field} must be rejected`);
+  }
+  assert.ok(errs({ strategy_overrides: { pd_cluster: { connectors: { gb300: ["mooncakev2"] } } } }).length);
+  assert.ok(errs({ strategy_overrides: { pd_cluster: { connectors: ["mooncakev2"] } } }).length);
+});
+
+test("grouped PD overlays are no-ops during cutover and survive split/merge", () => {
+  const { recipe: full, errors } = applyOverlay(core0, groupedPdOverlay, { ctx, source });
+  assert.deepEqual(errors, []);
+  const repeated = applyOverlay(full, groupedPdOverlay, { ctx, source });
+  assert.deepEqual(repeated.errors, []);
+  assert.deepEqual(repeated.recipe, full);
+  const { core, overlay } = splitOverlay(full, { ctx, source });
+  assert.deepEqual(overlay.strategy_overrides.pd_cluster, groupedPdOverlay.strategy_overrides.pd_cluster);
+  const serialized = yaml.load(yaml.dump(overlay));
+  const roundTrip = applyOverlay(core, serialized, { ctx, source });
+  assert.deepEqual(roundTrip.errors, []);
+  assert.deepEqual(canonical(roundTrip.recipe), canonical(full));
+  assert.equal(splitOverlay(core, { ctx, source }).overlay.strategy_overrides, undefined);
 });
 
 test("overlay is add-only", () => {
@@ -165,7 +229,7 @@ test("defers_to skips copies the other source ships; ownership and scope still h
     const prov = JSON.parse(fs.readFileSync(path.join(ROOT, ".content", channel, "provenance.json"), "utf8")).recipes;
     assert.deepEqual([prov["org/a"].source, prov["org/b"].source], ["core", "old"]);
     assert.match(assemble({}).stderr, /org\/a: shipped by both/);
-    assert.match(assemble({ defers_to: "core", scope: { tasks: ["omni"] } }).stderr, /org\/b\.yaml: source scope requires/);
+    assert.match(assemble({ defers_to: "core", scope: { tasks: ["omni"] } }).stderr, /org[/\\]b\.yaml: source scope requires/);
     assert.match(assemble({ defers_to: "nope" }).stderr, /defers_to must name other sources/);
     assert.match(assemble({ defers_to: ["core", "nope"] }).stderr, /defers_to must name other sources/);
     assert.equal(assemble({ defers_to: ["core"] }).status, 0);
