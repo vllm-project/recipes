@@ -4,9 +4,10 @@ display_name: "Multi-Node Data + Expert Parallel"
 short_label: "Multi-node DEP"                  # compact name for tight spots (Preset pills)
 orientation: throughput
 description: >
-  Multi-node DEP. Each node runs TEP over its local GPUs, with DP across nodes.
-  Best throughput for MoE models across multiple nodes. Pass -dp <total_workers>
-  at deploy time. Uses hybrid load balancing across DP workers.
+  Data and expert parallelism for MoE models across homogeneous nodes.
+  TP defaults to 1; each node's local DP ranks share its devices in TP groups.
+  Global DP equals local DP times the node count. Hybrid load balancing is
+  the default, with an HTTP endpoint on every node; global DP1 needs no hybrid mode.
 
 hardware_match:
   min_gpus: 2
@@ -17,6 +18,12 @@ vllm_args:
   - "--enable-expert-parallel"
   - "--data-parallel-hybrid-lb"
 
+# strategy_overrides.multi_node_dep.tp and scoped preset/point TP set the
+# TP width per DP rank. Default local DP = devices / TP; explicit DP sizes
+# may use fewer devices but must describe the same local size on every node.
+# Worker node N starts at rank N * local DP. PP must be 1. Each node runs
+# one vLLM command that supervises its local ranks, not an external launcher
+# invocation for each rank. Explicit external LB is limited to local DP1.
 parallel_flag: "--data-parallel-size"
 
 env:

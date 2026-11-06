@@ -46,7 +46,8 @@ export function createAscendPdRecipe() {
 export function createMixedRecipe() {
   const recipe = createAscendPdRecipe();
   recipe.strategy_overrides.multi_node_tp_dp = { hardware_overrides: {
-    ascend_910c: { worker_args: ["--headless"] }, ascend_950dt: { worker_args: ["--headless"] },
+    ascend_910c: { extra_args: ["--no-data-parallel-hybrid-lb"], worker_args: ["--headless"] },
+    ascend_950dt: { extra_args: ["--no-data-parallel-hybrid-lb"], worker_args: ["--headless"] },
   } };
   return recipe;
 }

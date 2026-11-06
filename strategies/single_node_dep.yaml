@@ -4,9 +4,10 @@ display_name: "Data + Expert Parallel"
 short_label: "DEP"                  # compact name for tight spots (Preset pills)
 orientation: throughput
 description: >
-  Single-node DEP. Expert layers are shared across all GPUs via EP,
-  dense layers run independently in DP groups. Best throughput for
-  MoE models on 8-GPU single nodes. For MoE models only.
+  Single-node data and expert parallelism for MoE models. Expert layers
+  are shared through EP; each DP rank runs the dense layers with its
+  configured TP width. TP defaults to 1, and local DP uses the available
+  devices divided by TP unless a smaller DP size is explicitly requested.
 
 hardware_match:
   min_gpus: 2
@@ -19,6 +20,10 @@ vllm_args:
   - "--port"
   - "8100"
 
+# strategy_overrides.single_node_dep.tp and scoped preset/point TP set the
+# TP width per DP rank. With PP1, TP * local DP must fit this node; global DP
+# equals local DP. One vLLM command supervises all local ranks, unlike the
+# external per-rank launch sequence used by grouped Ascend PD.
 parallel_flag: "--data-parallel-size"
 
 companion:

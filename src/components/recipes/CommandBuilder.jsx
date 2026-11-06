@@ -1227,6 +1227,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // say so the way the TP hint does.
   const depWidth = isSingleNode && activeStrategy === "single_node_dep" && Array.isArray(result?.argv)
     ? lastIntFlag(result.argv, "--data-parallel-size", hwGpuCount)
+      * lastIntFlag(result.argv, "--tensor-parallel-size", 1)
     : hwGpuCount;
   const showDepUsageHint = depWidth < hwGpuCount;
   // The whole selection as an explicit page query, for the `.md` / `.json`

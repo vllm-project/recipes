@@ -201,7 +201,8 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   // The preset in effect (the default here unless one is picked) implies
   // builder choices — frontend, PD router, features, DCP, KV offload — which
   // the rendering applies the way the builder does.
-  const sel = presetSelect(recipe, resolvePresetKey(recipe, hwId, strategy, presetPick, variantKey), pointPick) || {};
+  const presetKey = resolvePresetKey(recipe, hwId, strategy, presetPick, variantKey);
+  const sel = presetSelect(recipe, presetKey, pointPick) || {};
   const linked = opts.linked || new Set();
   const pick = (param, selValue, optValue) => (linked.has(param) ? optValue : (selValue ?? optValue));
   let feats = [...features];
@@ -242,10 +243,24 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     return null;
   }
   if (!result) return null;
-  // Invalid authored layouts must fail static generation, not disappear in
-  // the generic warn-and-skip catch above. Interactive selections report the
-  // reason without publishing a partially runnable deployment.
+  // Catalog baselines can preserve an unsupported ordinary DP selection as
+  // an error artifact. Authored presets (including defaults) and PD layouts
+  // still fail static generation. Interactive selections return null plus
+  // selection.error instead, without any partially runnable deployment.
   if (result.deploymentError) {
+    if (!strict && opts.emitBaselineDpError && presetKey === BASELINE
+      && result.deploymentError.code === "DP_INVALID_LAYOUT") {
+      const kvDeployment = strategies[applied.kvOffload]?.deploy_type === "kv_store_lb";
+      return {
+        hardware: hwId,
+        strategy: kvDeployment ? applied.kvOffload : strategy,
+        ...(kvDeployment ? { serving_strategy: strategy } : {}),
+        variant: variantKey,
+        node_count: nodeCount,
+        deploy_type: kvDeployment ? "kv_store_lb" : result.deployType,
+        error: result.deploymentError,
+      };
+    }
     if (strict || !opts.allowUnsupportedLayout) {
       throw new Error(`Invalid deployment in ${recipe.hf_id} (${hwId} / ${strategy}): ${result.deploymentError.message}`);
     }
@@ -524,12 +539,17 @@ export function buildVariantRendering(recipe, variantKey, hwId, strategies, taxo
 
   const recommended = renderCommand(
     recipe, variantKey, recommendedStrategy, hwId, recommendedNodeCount,
-    recommendedFeatures, strategies, taxonomy, recommendedPdNodes
+    recommendedFeatures, strategies, taxonomy, recommendedPdNodes,
+    null, undefined, undefined, false, { emitBaselineDpError: true }
   );
   if (!recommended) return null;
 
-  recommended.strategy_spec = strategies[recommendedStrategy];
-  recommended.hardware_profile = hwProfile;
+  // Keep error artifacts minimal: embedded specs can contain executable
+  // companion or install commands even when this selection cannot run.
+  if (!recommended.error) {
+    recommended.strategy_spec = strategies[recommendedStrategy];
+    recommended.hardware_profile = hwProfile;
+  }
 
   // Serving strategy for a Mooncake composition at a given nodes-per-instance
   // count: the recommendation for that node count, skipping PD (PD × Mooncake
@@ -585,7 +605,8 @@ export function buildVariantRendering(recipe, variantKey, hwId, strategies, taxo
       nc = nodesFor(s);
     }
     const feats = defaultFeaturesFor(recipe, hwId, variantKey);
-    const rendered = renderCommand(recipe, variantKey, servingStrategy, hwId, nc, feats, strategies, taxonomy, pdNodes, kvOffload);
+    const rendered = renderCommand(recipe, variantKey, servingStrategy, hwId, nc, feats, strategies, taxonomy,
+      pdNodes, kvOffload, undefined, undefined, false, { emitBaselineDpError: true });
     if (rendered) alternatives[s] = rendered;
   }
   return { recommended, alternatives };

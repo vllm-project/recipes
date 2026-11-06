@@ -1,4 +1,5 @@
 import { applyPresetArgOps, effectivePreset, toggleOwnedFlags, matchingPresets, presetImage, presetPoints, resolvePresetKey, withPreset } from "./recipe-presets.js";
+import { DP_STRATEGIES, DpLayoutError, normalizeDpArgs } from "./dp-topology.js";
 
 /**
  * Core command synthesis: Recipe + Variant + Strategy + Hardware + Features → vllm serve command.
@@ -1739,7 +1740,16 @@ export function resolveCommand(...params) {
   const raw = recipe?.presets?.[presetKey];
   const eff = raw ? effectivePreset(raw, params[18]) : null;
   params[0] = withPreset(recipe, presetKey, hwProfileId, strategyName, { variantKey, point: params[18] });
-  const result = resolveCommandImpl(dcpOut, ...params.slice(0, 17), params[19] ?? null);
+  let result;
+  try {
+    result = resolveCommandImpl(dcpOut, ...params.slice(0, 17), params[19] ?? null);
+  } catch (error) {
+    if (!(error instanceof DpLayoutError)) throw error;
+    result = {
+      deployType: params[5]?.[strategyName]?.deploy_type || "single_node",
+      deploymentError: { code: "DP_INVALID_LAYOUT", message: error.message },
+    };
+  }
   if (result && typeof result === "object" && !Array.isArray(result)) {
     result.dcp = result.deploymentError ? null : dcpOut.get?.() ?? null;
     const options = matchingPresets(recipe, hwProfileId, strategyName, variantKey);
@@ -1794,7 +1804,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   //   3. auto-fit from `variant.vram_minimum_gb` / per-GPU VRAM.
   //   4. gpuCount (legacy fan-out when the recipe has no VRAM hint).
   //
-  // TEP/DEP require full TP by topology; multi-node is explicit scale-out.
+  // Ordinary DP strategies resolve their final TP/local DP separately below.
   const singleNodeTp = resolveSingleNodeTp(
     recipe,
     variant,
@@ -1929,6 +1939,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   // default is whatever the layered recipe args already carry (the qualified
   // lane value), dropped when the current topology can't run it.
   let dcpState;
+  let dpHeadTopology;
   function getDcp() {
     if (dcpState !== undefined) return dcpState;
     const sizes = dcpSizesFor(recipe, hwProfile, hwProfileId);
@@ -2010,30 +2021,18 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       ? `$VLLM_INSTANCE_${kvCurrentInstance + 1}`
       : "$HEAD_IP";
 
-    if (isMulti && parallelFlag === "--data-parallel-size") {
-    // dp-local may be overridden by the recipe (hybrid TP+DP: TP within a node,
-    // DP across nodes → dp_local < gpuCount).
-    // The example worker is node 1, so its DP start rank = 1 × dp_local, not a
-    // full node's worth of GPUs.
-    const soDep = recipe.strategy_overrides?.[strategyName];
-    const soDepGenHo = soDep?.hardware_overrides?.[gen]
-      || (hwProfile?.brand === "NVIDIA" ? soDep?.hardware_overrides?.nvidia : null);
-    const soDepExactHo = soDep?.hardware_overrides?.[hwProfileId];
-    const depOv = [
-    ...(soDep?.vllm_args || []),
-    ...(soDep?.extra_args || []),
-    ...(soDepGenHo?.extra_args || []),
-    ...(soDepExactHo?.extra_args || []),
-      ];
-    const i = depOv.lastIndexOf("--data-parallel-size-local");
-    const dpLocal = i >= 0 ? Number(depOv[i + 1]) : gpuCount;
-    args.push("--data-parallel-size", String(totalGpus));
-    args.push("--data-parallel-size-local", String(gpuCount));
-    args.push("--data-parallel-address", mpMasterAddr);
-    if (nodeRole === "worker") {
-    args.push("--data-parallel-start-rank", String(mpRank * dpLocal));
-    }
-} else if (isMulti && strategy.parallelism === "tp_pp") {
+    if (DP_STRATEGIES.has(strategyName)) {
+      // A typed TP overrides base/variant args at the strategy layer. Later
+      // recipe/advanced/preset args retain their normal last-wins precedence.
+      // Do not emit DP defaults yet: they depend on the FINAL effective TP.
+      const rawTp = recipe.strategy_overrides?.[strategyName]?.tp;
+      const tp = typeof rawTp === "object" && rawTp !== null
+        ? hardwareKeyedValue(rawTp, hwProfile, hwProfileId) : rawTp;
+      if (tp != null && (!Number.isInteger(tp) || tp < 1)) {
+        throw new DpLayoutError(`${strategyName}: declared TP must be a positive integer (got ${tp}).`);
+      }
+      if (tp != null) args.push("--tensor-parallel-size", String(tp));
+    } else if (isMulti && strategy.parallelism === "tp_pp") {
       // TP inside each node, PP across nodes. Cross-node traffic flows through
       // the PP stage boundaries only — much less bandwidth than pure TP across
       // nodes. Suited for very large models on commodity inter-node links.
@@ -2043,18 +2042,6 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       args.push("--node-rank", String(mpRank));
       args.push("--master-addr", mpMasterAddr);
       if (mpRank > 0) args.push("--headless");
-    } else if (isMulti && strategy.parallelism === "tp_dp") {
-      // TP inside each node, DP across nodes — one full replica per node
-      // (dp_local = 1), so the inter-node link carries only DP coordination.
-      // Same DP rendezvous shape as the DEP branch: worker node N is DP
-      // rank N via --data-parallel-start-rank.
-      args.push("--tensor-parallel-size", String(gpuCount));
-      args.push("--data-parallel-size", String(nodeCount));
-      args.push("--data-parallel-size-local", "1");
-      args.push("--data-parallel-address", mpMasterAddr);
-      if (nodeRole === "worker") {
-        args.push("--data-parallel-start-rank", String(mpRank));
-      }
     } else if (isMulti) {
       // Multi-node TP/TEP via vLLM multiprocessing (mp) backend:
       // TP spans all GPUs in the cluster; every node runs the same command,
@@ -2196,7 +2183,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       args.push("--data-parallel-size", String(gpuCount));
       args.push("--tensor-parallel-size", "1");
     } else {
-      // Single-node TP / TEP / DEP. `singleNodeTp` equals `gpuCount` for
+      // Single-node TP / TEP. `singleNodeTp` equals `gpuCount` for
       // everything except single_node_tp with a recipe-declared
       // `strategy_overrides.single_node_tp.tp`. Always emit the flag — the
       // command builder's contract is "what you declare is what you see", so
@@ -2352,6 +2339,26 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const editOnly = toggleOwnedFlags(recipe, taxonomy);
       out = applyPresetArgOps(out, ops.all, editOnly);
       if (roleOverride) out = applyPresetArgOps(out, ops.roles?.[roleOverride], editOnly);
+    }
+    if (DP_STRATEGIES.has(strategyName)) {
+      out = normalizeDpArgs(out, {
+        strategyName, gpuCount, nodes: isMulti ? nodeCount : 1,
+        nodeRank: mpRank, address: mpMasterAddr, architecture: recipe.model?.architecture,
+        brand: hwProfile.brand, env: buildEnv(null),
+      });
+      // worker_args may tune a follower, but cannot change the shared cluster
+      // topology or rendezvous. Validate before any node's command is exported.
+      const topology = JSON.stringify([
+        ...["--tensor-parallel-size", "--data-parallel-size", "--data-parallel-size-local",
+          "--data-parallel-address", "--data-parallel-rpc-port", "--data-parallel-backend"]
+          .map((flag) => lastFlagValue(out, flag)
+            ?? ({ "--data-parallel-backend": "mp", "--data-parallel-rpc-port": "29550" })[flag]),
+        out.includes("--data-parallel-hybrid-lb"), out.includes("--data-parallel-external-lb"),
+      ]);
+      if (mpRank === 0) dpHeadTopology = topology;
+      else if (topology !== dpHeadTopology) {
+        throw new DpLayoutError(`${strategyName}: follower TP, DP sizes, load-balancing mode and rendezvous must match the head node.`);
+      }
     }
     // Connector configs name the worker's own HTTP port (MoRI-IO's
     // `http_port`) as `{port}`: the port the role actually serves on.

@@ -81,6 +81,8 @@ export const OVERLAY_RULES = [
   ["kv_cache_strategy_hardware", "*", "@hw"],
   ["kv_offload_hardware", "@hw"],
   ["strategy_overrides", "*", "hardware_overrides", "@hw"],
+  ...["multi_node_tp_dp", "single_node_dep", "multi_node_dep"]
+    .map((strategy) => ["strategy_overrides", strategy, "tp", "@hw"]),
   ["strategy_overrides", "pd_cluster", "connectors", "@hw"],
   ...["prefill", "decode"].flatMap((role) =>
     ["nodes", "nodes_per_instance", "parallelism", "tp", "pp", "hardware_overrides"]
@@ -211,8 +213,10 @@ function mergeNode(parent, key, ov, p, rules, ctx, err, seg = null) {
     // Promote a bare task id to its object form so it can carry overrides.
     node = { id: node };
     setChild(parent, key, node, seg);
-  } else if (p.length === 4 && p[0] === "strategy_overrides" && p[1] === "pd_cluster"
-    && ["prefill", "decode"].includes(p[2]) && ["nodes", "nodes_per_instance", "parallelism", "tp", "pp"].includes(key)
+  } else if (p[0] === "strategy_overrides" && (
+    (p.length === 4 && p[1] === "pd_cluster" && ["prefill", "decode"].includes(p[2])
+      && ["nodes", "nodes_per_instance", "parallelism", "tp", "pp"].includes(key))
+    || (p.length === 3 && ["multi_node_tp_dp", "single_node_dep", "multi_node_dep"].includes(p[1]) && key === "tp"))
     && ["string", "number"].includes(typeof node)) {
     // These fields accept a scalar or a hardware map. Preserve the core's
     // scalar as its default while adding only the overlay's scoped entries.

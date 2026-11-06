@@ -14,6 +14,7 @@
     "test:smg-pd": "node --test scripts/test-smg-pd.mjs",
     "test:pd-connectors": "node --test scripts/test-pd-connectors.mjs",
     "test:ascend-deployment": "node --test scripts/test-ascend-deployment.mjs",
+    "test:dp-topology": "node --test scripts/test-dp-topology.mjs",
     "validate": "node --experimental-vm-modules hooks/validate.mjs",
     "test:overlay": "node --test scripts/test-overlay.mjs",
     "test:schema": "node --test scripts/test-schema.mjs",

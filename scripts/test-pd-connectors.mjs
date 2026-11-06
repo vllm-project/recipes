@@ -374,17 +374,25 @@ for (const [hardware, variant, tp] of [["ascend_950dt", "ascend_mxfp4", 8], ["as
     }
   });
 
-  test(`${hardware} mixed worker behavior follows the source declaration`, () => {
+  test(`${hardware} internal TP+DP generates headless followers without worker_args`, () => {
     const model = createMixedRecipe();
     delete model.strategy_overrides.multi_node_tp_dp.hardware_overrides[hardware].worker_args;
     const r = mixed(hardware, variant, model);
     assert.ok(!r.headArgv.includes("--headless"));
-    for (const argv of r.workerArgvs) assert.ok(!argv.includes("--headless"), "hardware brand must not imply worker flags");
+    for (const argv of r.workerArgvs) assert.ok(argv.includes("--headless"), "internal LB requires headless followers on every brand");
+  });
+
+  test(`${hardware} mixed TP+DP rejects inherited hybrid LB plus headless followers`, () => {
+    const model = createMixedRecipe();
+    delete model.strategy_overrides.multi_node_tp_dp.hardware_overrides[hardware].extra_args;
+    const r = mixed(hardware, variant, model);
+    assert.equal(r.deploymentError?.code, "DP_INVALID_LAYOUT");
+    assert.equal(r.headArgv, undefined);
   });
 }
 
 for (const hardware of ["h200", "gb300", "mi355x"]) {
-  test(`${hardware} mixed TP+DP keeps its existing worker API behavior`, () => {
+  test(`${hardware} explicit hybrid TP+DP serves HTTP on every node`, () => {
     const r = mixed(hardware);
     assert.equal(r.workerArgvs.length, 3);
     for (const argv of [r.headArgv, ...r.workerArgvs]) {
