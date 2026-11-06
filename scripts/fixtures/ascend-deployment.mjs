@@ -32,10 +32,29 @@ export function createAscendPdRecipe({
       args: ["--speculative-config", JSON.stringify(specArgs)] } } } : {}),
     compatible_strategies: ["pd_cluster"],
     default_strategy: "pd_cluster",
+    presets: { ascend: { label: "Ascend PD", hardware, strategy: "pd_cluster", default: true,
+      select: { pd_router: "ascend" } } },
     strategy_overrides: { pd_cluster: {
       connectors: { [hardware]: ["mooncakev2"] }, prefill: role(prefill, true), decode: role(decode, false),
     } },
   };
+}
+
+// An authored transfer config uses the existing recipe layers; the launcher
+// must not require a catalog connector or inject Mooncake-specific metadata.
+export function createCustomConnectorRecipe() {
+  const recipe = createAscendPdRecipe({ modelId: "test/Custom-PD", speculation: null });
+  const cfg = recipe.strategy_overrides.pd_cluster;
+  delete cfg.connectors;
+  cfg.decode.tp.ascend_950dt = 4;
+  const transfer = (name, role, marker) => ({ kv_connector: name, kv_role: role,
+    kv_port: "42000", kv_connector_extra_config: { marker, nested: { enabled: true } } });
+  recipe.model.base_args.push("--kv-transfer-config", JSON.stringify(transfer("TestConnector", "kv_producer", "base")));
+  cfg.prefill.hardware_overrides.ascend_950dt.extra_env.TEST_TRANSFER_ROLE = "prefill";
+  cfg.decode.hardware_overrides.ascend_950dt.extra_args.push("--kv-transfer-config",
+    JSON.stringify(transfer("TestDecodeConnector", "kv_consumer", "hardware")));
+  cfg.decode.hardware_overrides.ascend_950dt.extra_env.TEST_TRANSFER_ROLE = "decode";
+  return recipe;
 }
 
 // Vary architecture, checkpoint selection, speculation, device count and

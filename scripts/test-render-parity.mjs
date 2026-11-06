@@ -30,6 +30,8 @@ test("Ascend selections preserve grouped PD launch steps across JSON and Markdow
     meta: { hardware: { ascend_950dt: "verified" } },
     variants: { default: { precision: "bf16", vram_minimum_gb: 4, supported_hardware: ["ascend_950dt"] } },
     compatible_strategies: ["pd_cluster"],
+    presets: { ascend: { label: "Ascend PD", hardware: "ascend_950dt", strategy: "pd_cluster", default: true,
+      select: { pd_router: "ascend" } } },
     strategy_overrides: { pd_cluster: {
       connectors: { ascend_950dt: ["mooncakev2"] },
       prefill: { nodes: 4, nodes_per_instance: 4, parallelism: "tp", tp: 8, pp: 4 },

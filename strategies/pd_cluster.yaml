@@ -100,12 +100,6 @@ connectors:
       config: { kv_connector: MooncakeConnectorV2, kv_role: kv_producer, kv_port: "36000" }
     decode:
       config: { kv_connector: MooncakeConnectorV2, kv_role: kv_consumer, kv_port: "36100" }
-    router:
-      type: ascend-proxy
-      launcher_url: "https://raw.githubusercontent.com/vllm-project/vllm-ascend/v0.23.0/examples/external_online_dp/launch_online_dp.py"
-      launcher_source: "https://github.com/vllm-project/vllm-ascend/blob/v0.23.0/examples/external_online_dp/launch_online_dp.py"
-      script: "/vllm-workspace/vllm-ascend/examples/disaggregated_prefill_v1/load_balance_proxy_server_example.py"
-      port: 8000
     docker: { host_network: true }
   moriio:
     display_name: "MoRI-IO"
@@ -139,9 +133,13 @@ router:
 
 ascend:
   display_name: "Ascend Router"
-  description: "vLLM Ascend load-balancing proxy for MooncakeConnectorV2. Routes to TP/TEP group heads and every external-DP process in either pool."
+  description: "vLLM Ascend load-balancing proxy for recipe-configured KV transfer. Routes to TP/TEP group heads and every external-DP process in either pool."
   brands: [Huawei]
   docs: "https://docs.vllm.ai/projects/ascend/en/latest/tutorials/features/pd_disaggregation_mooncake_multi_node.html"
+  launcher_url: "https://raw.githubusercontent.com/vllm-project/vllm-ascend/v0.23.0/examples/external_online_dp/launch_online_dp.py"
+  launcher_source: "https://github.com/vllm-project/vllm-ascend/blob/v0.23.0/examples/external_online_dp/launch_online_dp.py"
+  script: "/vllm-workspace/vllm-ascend/examples/disaggregated_prefill_v1/load_balance_proxy_server_example.py"
+  port: 8000
 
 # HTTP PD keeps native vLLM workers; registration supplies NIXL metadata.
 smg:

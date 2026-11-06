@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import yaml from "js-yaml";
 import Ajv from "ajv";
-import { createAscendPdRecipe, ascendPdCases } from "./fixtures/ascend-deployment.mjs";
+import { createAscendPdRecipe, createCustomConnectorRecipe, ascendPdCases } from "./fixtures/ascend-deployment.mjs";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import { resolvePdRoleLayout } from "../src/lib/command-synthesis.js";
 import { bindRouterPort } from "../src/lib/cluster-endpoints.js";
@@ -209,21 +209,56 @@ test("distinct dense and MoE PD layouts validate and export their selected check
   }
 });
 
-test("the real static API builder exports grouped PD and rejects an invalid authored layout", () => {
+test("custom recipe connectors export truthful metadata and preserve Docker/Markdown arguments", () => {
+  const recipe = createCustomConnectorRecipe();
+  const validate = new Ajv({ allErrors: true, strict: false }).compile(buildRecipeSchema({ taxonomy, strategies }));
+  assert.ok(validate(recipe), JSON.stringify(validate.errors));
+  assert.deepEqual(recipe.presets.ascend.select, { pd_router: "ascend" });
+  recipe.hf_id = recipe.model.model_id;
+  const resolved = select(recipe, { hardware: "ascend_950dt", strategy: "pd_cluster" });
+  assert.equal(resolved.selection.error, undefined);
+  const rendering = JSON.parse(JSON.stringify(resolved.rendering));
+  assert.equal(rendering.pd_connector, null);
+  assert.deepEqual(rendering.pd_connector_configured, { prefill: "TestConnector", decode: "TestDecodeConnector" });
+  assert.ok(rendering.ascend_scripts && rendering.start_server);
+  assert.equal(rendering.decode.processes.length, 2);
+  for (const role of ["prefill", "decode"]) {
+    const expected = JSON.parse(flag(role === "prefill" ? recipe.model.base_args
+      : recipe.strategy_overrides.pd_cluster.decode.hardware_overrides.ascend_950dt.extra_args, "--kv-transfer-config"));
+    for (const process of rendering[role].processes || [rendering[role]]) {
+      for (const argv of [process.argv, process.docker_argv]) {
+        assert.deepEqual(JSON.parse(flag(argv, "--kv-transfer-config")), expected);
+      }
+      assert.equal(process.env.TEST_TRANSFER_ROLE, role);
+      assert.ok(process.docker_argv.includes(`TEST_TRANSFER_ROLE=${role}`));
+      assert.match(process.docker_command, new RegExp(expected.kv_connector));
+    }
+  }
+  const markdown = selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls });
+  for (const name of ["TestConnector", "TestDecodeConnector"]) assert.ok(markdown.includes(name));
+  assert.match(markdown, /--dp-size 8 --tp-size 4 --dp-size-local 2/);
+  assert.doesNotMatch(markdown, /MooncakeConnectorV2|VLLM_NIXL_SIDE_CHANNEL/);
+  const disabled = select(recipe, { hardware: "ascend_950dt", strategy: "pd_cluster", pd_router: "vllm" });
+  assert.equal(disabled.rendering?.ascend_scripts, undefined, "an explicit URL router overrides the preset");
+});
+
+test("the real static API builder exports custom grouped PD and rejects an invalid authored layout", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-ascend-api-"));
   try {
     for (const file of ["taxonomy.yaml", "platforms.yaml", "strategies", "kv_store"]) fs.cpSync(path.join(root, file), path.join(dir, file), { recursive: true });
     fs.mkdirSync(path.join(dir, "models", "test"), { recursive: true });
-    const recipe = createAscendPdRecipe({ speculation: null });
-    const recipeFile = path.join(dir, "models/test/Moe-PD.yaml");
+    const recipe = createCustomConnectorRecipe();
+    const recipeFile = path.join(dir, "models/test/Custom-PD.yaml");
     fs.writeFileSync(recipeFile, yaml.dump(recipe));
     const out = path.join(dir, "api");
     const env = { ...process.env, RECIPES_CONTENT_DIR: dir, RECIPES_PUBLIC_DIR: out };
     execFileSync(process.execPath, ["scripts/build-recipes-api.mjs"], { cwd: root, env, stdio: "pipe", timeout: 60000 });
-    const exported = JSON.parse(fs.readFileSync(path.join(out, "test/Moe-PD/hw/ascend_950dt.json"), "utf8"));
+    const exported = JSON.parse(fs.readFileSync(path.join(out, "test/Custom-PD/hw/ascend_950dt.json"), "utf8"));
     assert.equal(exported.deploy_type, "pd_cluster");
     assert.ok(exported.ascend_scripts && exported.start_server);
-    assert.equal(exported.decode.processes.length, 1);
+    assert.equal(exported.decode.processes.length, 2);
+    assert.equal(exported.pd_connector, null);
+    assert.deepEqual(exported.pd_connector_configured, { prefill: "TestConnector", decode: "TestDecodeConnector" });
     recipe.strategy_overrides.pd_cluster.decode.pp.ascend_950dt = 2;
     fs.writeFileSync(recipeFile, yaml.dump(recipe));
     const invalid = spawnSync(process.execPath, ["scripts/build-recipes-api.mjs"], { cwd: root, env, encoding: "utf8", timeout: 60000 });

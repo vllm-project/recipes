@@ -1260,7 +1260,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       if (pdLayouts.prefill.currentNode > 0) q.set("prefill_rank", String(pdLayouts.prefill.currentNode));
       if (pdLayouts.decode.currentNode > 0) q.set("decode_rank", String(pdLayouts.decode.currentNode));
       q.set("pd_router", result.pdRouter || pdRouter || "vllm");
-      const connector = result.kvConnector?.selected || pdConnector;
+      const connector = result.kvConnector?.recipeConfigured ? null : result.kvConnector?.selected || pdConnector;
       if (connector) q.set("pd_connector", connector);
       if (pdTransport !== "http") q.set("pd_transport", pdTransport);
     } else {
@@ -1608,30 +1608,25 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const pdConnectors = strategies.pd_cluster?.connectors || {};
   const ascendReason = !isDynamoSupportedOnHardware(strategies.pd_cluster?.ascend, hwProfile)
     ? `Ascend Router needs ${(strategies.pd_cluster?.ascend?.brands || ["Huawei"]).join(" / ")} hardware.`
-    : pdConnectorUnavailableReason(pdConnectors.mooncakev2, hwProfile, "ascend", pdRecipe, hwId, "mooncakev2");
-  const nativeRouterReason = isAscendProxy ? "The selected Mooncake V2 connector uses Ascend Router." : null;
-  const dynamoOk = !isAscendProxy && isDynamoSupportedOnHardware(strategies.pd_cluster?.dynamo, hwProfile);
-  const smgReason = isAscendProxy ? "This PD connector uses the Ascend Router." : smgUnsupportedReason(recipe, strategies.pd_cluster, {
+    : null;
+  const dynamoOk = isDynamoSupportedOnHardware(strategies.pd_cluster?.dynamo, hwProfile);
+  const smgReason = smgUnsupportedReason(recipe, strategies.pd_cluster, {
     prefill: { parallelism: effPdPrefillPar }, decode: { parallelism: effPdDecodePar },
   }, activeKvOffload);
   const effPdRouter = result.pdRouter || (isAscendProxy ? "ascend" : result.orchestrator === "smg" ? "smg" : result.orchestrator === "dynamo" ? "dynamo" : "vllm");
   const isSmgGrpc = result.orchestrator === "smg" && result.transport === "grpc";
   const selectPdRouter = (value) => {
-    if (isAscendProxy && value !== "ascend") return;
-    if (value === "ascend") {
-      if (ascendReason) return;
-      setPdRouter(value);
-      setPdConnector("mooncakev2");
-      syncUrl({ pd_router: value, pd_connector: "mooncakev2" });
-      return;
-    }
+    if (value === "ascend" && ascendReason) return;
     setPdRouter(value);
-    syncUrl({ pd_router: value === "vllm" ? "" : value });
+    syncUrl({ pd_router: value });
   };
   // PD Connector row: the connector synthesis actually rendered (a pick this
   // hardware or router can't run falls back to the default).
   const effPdConnector = result.kvConnector?.selected ?? null;
-  const pdConnectorReason = (key) => pdConnectorUnavailableReason(pdConnectors[key], hwProfile, effPdRouter, pdRecipe, hwId, key);
+  const recipeConfiguredConnector = result.kvConnector?.recipeConfigured === true;
+  const recipeConnectorReason = "The recipe supplies --kv-transfer-config; edit the recipe or preset to change its connector.";
+  const pdConnectorReason = (key) => recipeConfiguredConnector ? recipeConnectorReason
+    : pdConnectorUnavailableReason(pdConnectors[key], hwProfile, effPdRouter, pdRecipe, hwId, key);
   const selectPdConnector = (key) => {
     if (pdConnectorReason(key)) return;
     const isDefault = pdConnectorAllowlist ? pdConnectorAllowlist[0] === key : pdConnectors[key]?.default;
@@ -2974,9 +2969,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 <Pill
                   active={effPdRouter === "vllm"}
                   pressed={effPdRouter === "vllm"}
-                  disabled={!!nativeRouterReason}
-                  onClick={() => !nativeRouterReason && selectPdRouter("vllm")}
-                  title={nativeRouterReason || "Native vllm-router in PD mode — prefill/decode workers are plain `vllm serve` processes on fixed HTTP ports."}
+                  onClick={() => selectPdRouter("vllm")}
+                  title="Native vllm-router in PD mode — prefill/decode workers are plain `vllm serve` processes on fixed HTTP ports."
                 >
                   <span className="font-semibold">vLLM Router</span>
                 </Pill>
@@ -3065,8 +3059,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               each role's --kv-transfer-config and the router's KV mode, never
               the pools. A connector this hardware or router can't run is
               disabled with the reason. */}
-          {activeServingStrategy === "pd_cluster" && Object.keys(pdConnectors).length > 1 && (
+          {activeServingStrategy === "pd_cluster" && (recipeConfiguredConnector || Object.keys(pdConnectors).length > 1) && (
             <ConfigRow label="PD Connector" nested hint="Connector that moves each request's KV cache from the prefill pool to the decode pool. KV Offload tiers below compose with it.">
+              {recipeConfiguredConnector && <p className="text-xs mb-2">
+                <span className="font-semibold">Configured by recipe</span>
+                {Object.entries(result.kvConnector.roles || {}).map(([role, name]) => (
+                  <span key={role} className="text-muted-foreground"> · {role === "prefill" ? "Prefill" : "Decode"}: {name}</span>
+                ))}
+              </p>}
               <PillGroup>
                 {Object.entries(pdConnectors).map(([key, c]) => {
                   const reason = pdConnectorReason(key);
@@ -3079,7 +3079,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 })}
               </PillGroup>
               <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
-                {pdConnectors[effPdConnector]?.description}
+                {recipeConfiguredConnector ? recipeConnectorReason : pdConnectors[effPdConnector]?.description}
                 {pdConnectors[effPdConnector]?.docs && (
                   <>
                     {" "}
@@ -3092,7 +3092,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               </p>
               {result.kvConnector?.unavailableReason && (
                 <p className="text-[11px] text-amber-600 mt-2">
-                  {result.kvConnector.unavailableReason} Showing {pdConnectors[effPdConnector]?.display_name || effPdConnector} commands.
+                  {result.kvConnector.unavailableReason}{!recipeConfiguredConnector && !result.deploymentError && <> Showing {pdConnectors[effPdConnector]?.display_name || effPdConnector} commands.</>}
                 </p>
               )}
             </ConfigRow>
@@ -3456,7 +3456,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                     disabled={disabled}
                     title={!supported
                       ? `The ${fe.label} frontend doesn't support this model yet`
-                      : disabled ? (isAscendProxy ? "MooncakeConnectorV2 PD uses the Python frontend." : "SMG gRPC uses the Python servicer.") : undefined}
+                      : disabled ? (isAscendProxy ? "Ascend PD uses the Python frontend." : "SMG gRPC uses the Python servicer.") : undefined}
                     onClick={() => selectFrontend(id)}
                   >
                     {id === "rust" && <Zap size={11} className="inline-block mr-1 -mt-0.5" fill="currentColor" aria-hidden="true" />}
@@ -3467,7 +3467,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             </PillGroup>
             <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
               {isAscendProxy ? (
-                "MooncakeConnectorV2 PD uses the Python frontend with the Ascend Router."
+                "Ascend PD uses the Python frontend with the Ascend Router."
               ) : isSmgGrpc ? (
                 "The SMG-compatible gRPC servicer runs through vllm serve --grpc."
               ) : isFrontendSupported(recipe, "rust") ? (
@@ -4661,7 +4661,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
                 of 1..{active.meta.nodes} · --node-rank = {active.meta.instanceNodeRank ?? active.meta.currentNode ?? 0}
               </span>
               <span className="text-[var(--command-fg)]/40 ml-auto">
-                {(active.meta.instanceNodeRank ?? active.meta.currentNode ?? 0) === 0 ? `${active.meta.grouped ? "group head" : "head node"} — serves ${result.transport === "grpc" ? "gRPC" : "HTTP"} + ${connectorLabel}` : "follower — runs --headless"}
+                {(active.meta.instanceNodeRank ?? active.meta.currentNode ?? 0) === 0 ? `${active.meta.grouped ? "group head" : "head node"} — serves ${result.transport === "grpc" ? "gRPC" : "HTTP"} + ${result.kvConnector?.recipeConfigured ? result.kvConnector.roles?.[active.id] || "recipe KV transfer" : connectorLabel}` : "follower — runs --headless"}
               </span>
             </>
           )}

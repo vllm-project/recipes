@@ -63,7 +63,7 @@ function serveSection(r) {
         if (description) out.push(description, "");
         out.push(fence(command));
       };
-      out.push("Disaggregated prefill/decode with Mooncake V2. Start in this order on each role's nodes.");
+      out.push("Ascend PD deployment. Start in this order on each role's nodes.");
       step("1. Scripts", r.ascend_scripts.description, r.ascend_scripts.command);
       step("2. Prefill", r.prefill.description, r.prefill.templateCommand);
       step("3. Decode", r.decode.description, r.decode.templateCommand);

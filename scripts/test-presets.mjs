@@ -308,15 +308,17 @@ test("tp sets the single-node TP size; points can change it", () => {
   assert.equal(tpOf("default", "a"), tpOf("default", "a", BASELINE));
 });
 
-test("an Ascend PD preset accepts and renders separate router and connector keys", () => {
+test("an Ascend PD preset needs only the router selection and accepts a compatible catalog connector", () => {
   const model = createAscendPdRecipe();
   model.presets = { a5: {
     label: "A5 PD", hardware: "ascend_950dt", strategy: "pd_cluster",
-    select: { pd_router: "ascend", pd_connector: "mooncakev2" },
+    select: { pd_router: "ascend" },
   } };
   const validate = new Ajv({ allErrors: true, strict: false }).compile(buildRecipeSchema({ taxonomy, strategies }));
   assert.ok(validate(model), JSON.stringify(validate.errors));
   const errors = () => validatePresets(model, taxonomy, Object.keys(strategies), [], strategies.pd_cluster.connectors);
+  assert.deepEqual(errors(), []);
+  model.presets.a5.select.pd_connector = "mooncakev2";
   assert.deepEqual(errors(), []);
   const result = resolveCommand(model, "default", "pd_cluster", "ascend_950dt", [], strategies, taxonomy,
     [], 1, null, {}, null, null, undefined, "ascend", "http", null, "a5", null, "mooncakev2");

@@ -8,7 +8,7 @@ import yaml from "js-yaml";
 import { buildDockerArgv, buildDockerRun, computeDockerMeta, normalizePdRoleNodes, pdConnectorKey, pdConnectorUnavailableReason, pdConnectorsFor, pdRoleModes, pdRoleNodesPerInstance, resolveCommand } from "../src/lib/command-synthesis.js";
 import { applyPresetArgOps, validatePresets } from "../src/lib/recipe-presets.js";
 import { contentDir } from "../src/lib/content-root.js";
-import { createAscendPdRecipe, ascendPdCases } from "./fixtures/ascend-deployment.mjs";
+import { createAscendPdRecipe, createCustomConnectorRecipe, ascendPdCases } from "./fixtures/ascend-deployment.mjs";
 
 // Recipes live in their source repos; read the assembled tree (run
 // build-recipes-api or assemble-content first).
@@ -171,9 +171,9 @@ test("a role override that pins another connector keeps it, and the pick falls b
 // instances with separate rank-0/master endpoints.
 const ascendRecipe = createAscendPdRecipe();
 const a5 = taxonomy.hardware_profiles.ascend_950dt;
-const pickAscend = ({ model = ascendRecipe, features = [], pools = null, connector = null, router = null, frontend = undefined } = {}) =>
-  resolveCommand(model, "default", "pd_cluster", "ascend_950dt", features, strategies, taxonomy, [], 1,
-    pools, {}, null, null, frontend, router, "http", null, undefined, undefined, connector);
+const pickAscend = ({ model = ascendRecipe, features = [], pools = null, connector = null, router = "ascend", frontend = undefined, strats = strategies, kv = null } = {}) =>
+  resolveCommand(model, "default", "pd_cluster", "ascend_950dt", features, strats, taxonomy, [], 1,
+    pools, {}, kv, null, frontend, router, "http", null, undefined, undefined, connector);
 
 test("Ascend group constraints apply only to the specified hardware and role", () => {
   assert.equal(pdRoleNodesPerInstance(ascendRecipe, "prefill", a5, "ascend_950dt"), 4);
@@ -208,8 +208,8 @@ test("Ascend defaults produce a four-node prefill group and a four-node decode g
   assert.ok(!r.decode.argv.includes("--data-parallel-hybrid-lb"));
 });
 
-test("Ascend Router is a distinct selection paired with Mooncake V2", () => {
-  for (const connector of [null, "mooncakev2", "nixl"]) {
+test("explicit Ascend Router accepts the compatible Mooncake V2 catalog option", () => {
+  for (const connector of [null, "mooncakev2"]) {
     const r = pickAscend({ router: "ascend", connector });
     assert.equal(r.pdRouter, "ascend");
     assert.equal(r.orchestrator, "ascend-proxy");
@@ -243,8 +243,13 @@ test("the full connector catalog explains incompatible Ascend combinations", () 
   assert.equal(pdConnectorUnavailableReason(connectors.mooncakev2, a5, "ascend", ascendRecipe, "ascend_950dt", "mooncakev2"), null);
   assert.match(pdConnectorUnavailableReason(connectors.mooncakev2, a5, "vllm"), /Ascend Router/);
   for (const key of ["nixl", "mooncake", "moriio"]) {
-    assert.match(pdConnectorUnavailableReason(connectors[key], a5, "ascend", ascendRecipe, "ascend_950dt", key), /requires mooncakev2/);
+    assert.ok(pdConnectorUnavailableReason(connectors[key], a5, "ascend"), key);
   }
+  const model = structuredClone(ascendRecipe);
+  model.strategy_overrides.pd_cluster.connectors.ascend_950dt = ["nixl"];
+  const incompatible = pickAscend({ model, connector: "nixl" });
+  assert.equal(incompatible.deploymentError?.code, "PD_CONNECTOR_UNAVAILABLE");
+  assert.equal(incompatible.ascendScripts, undefined);
 });
 
 test("Ascend replicated groups restart ranks at zero and use each group's own master", () => {
@@ -300,19 +305,28 @@ test("Ascend proxy registers every decode endpoint and only prefill group leader
   assert.doesNotMatch(r.router.command, /bootstrap|--kv-connector|vllm-router|smg launch|dynamo\.frontend/);
 });
 
-test("stale URL connector, router, frontend and pool-mode selections cannot escape Ascend constraints", () => {
-  for (const router of ["smg", "dynamo", "vllm"]) {
-    const r = pickAscend({ router, connector: "nixl", frontend: "rust", pools: {
-      prefill: { nodes: 5, parallelism: "dep" }, decode: { nodes: 3, parallelism: "tp" },
-    } });
-    assert.equal(r.orchestrator, "ascend-proxy");
-    assert.equal(r.frontendRequired, "python");
-    assert.equal(r.kvConnector.selected, "mooncakev2");
-    assert.equal(r.prefill.nodes, 8);
-    assert.equal(r.decode.nodes, 4);
-    assert.equal(flag(r.prefill.argv, "--pipeline-parallel-size"), "4");
-    assert.equal(flag(r.decode.argv, "--data-parallel-size"), "4");
-    for (const role of ["prefill", "decode"]) assert.notEqual(r[role].env.VLLM_USE_RUST_FRONTEND, "1");
+test("explicit Ascend Router retains declared pool modes and its Python frontend", () => {
+  const r = pickAscend({ frontend: "rust", pools: {
+    prefill: { nodes: 5, parallelism: "dep" }, decode: { nodes: 3, parallelism: "tp" },
+  } });
+  assert.equal(r.orchestrator, "ascend-proxy");
+  assert.equal(r.frontendRequired, "python");
+  assert.equal(r.kvConnector.selected, "mooncakev2");
+  assert.equal(r.prefill.nodes, 8);
+  assert.equal(r.decode.nodes, 4);
+  assert.equal(flag(r.prefill.argv, "--pipeline-parallel-size"), "4");
+  assert.equal(flag(r.decode.argv, "--data-parallel-size"), "4");
+  for (const role of ["prefill", "decode"]) assert.notEqual(r[role].env.VLLM_USE_RUST_FRONTEND, "1");
+});
+
+test("a Mooncake V2 connector never implicitly selects the Ascend template", () => {
+  for (const router of [null, "vllm", "smg", "dynamo"]) {
+    const r = pickAscend({ router, connector: "mooncakev2" });
+    assert.notEqual(r.pdRouter, "ascend");
+    assert.notEqual(r.orchestrator, "ascend-proxy");
+    assert.equal(r.ascendScripts, undefined);
+    assert.equal(r.startServer, undefined);
+    for (const role of ["prefill", "decode"]) assert.equal(r[role]?.templateCommand, undefined);
   }
 });
 
@@ -341,7 +355,7 @@ function withAscendLaunchFixture(run) {
   const env = { ...process.env, DECODE_DP_RPC_PORT: "41992" };
   const bin = path.join(dir, "mock-bin");
   fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(bin, "vllm"), "#!/usr/bin/env bash\nprintf '%s\\n' \"$HCCL_IF_IP\" \"$HCCL_SOCKET_IFNAME\" \"$GLOO_SOCKET_IFNAME\" \"$VLLM_HOST_IP\" > model-env.txt\nprintf '%s' \"$ASCEND_RT_VISIBLE_DEVICES\" > model-devices.txt\nprintf '%s\\0' \"$@\"\n", { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, "vllm"), "#!/usr/bin/env bash\nprintf '%s\\n' \"$HCCL_IF_IP\" \"$HCCL_SOCKET_IFNAME\" \"$GLOO_SOCKET_IFNAME\" \"$VLLM_HOST_IP\" > model-env.txt\nprintf '%s' \"$ASCEND_RT_VISIBLE_DEVICES\" > model-devices.txt\nprintf '%s' \"$TEST_TRANSFER_ROLE\" > transfer-env.txt\nprintf '%s\\0' \"$@\"\n", { mode: 0o755 });
   fs.writeFileSync(path.join(bin, "python"), "#!/usr/bin/env bash\nprintf '__CALL__\\0%s\\0' \"$PWD\"\nprintf '%s\\0' \"$@\"\n", { mode: 0o755 });
   const shell = (command, args = []) => {
     const r = spawnSync(bash, ["-c", 'export PATH="$PWD/mock-bin:$PATH"\n' + command, "test", ...args],
@@ -361,10 +375,109 @@ function withAscendLaunchFixture(run) {
   }
 }
 
+test("Ascend launcher settings belong to the router, independently of the catalog connector", () => {
+  const model = createAscendPdRecipe({ speculation: null });
+  model.strategy_overrides.pd_cluster.connectors.ascend_950dt = ["synthetic"];
+  const connector = { brands: ["Huawei"], routers: ["ascend"],
+    prefill: { config: { kv_connector: "SyntheticTransfer", kv_role: "kv_producer" }, env: { TEST_CATALOG_ENV: "prefill" } },
+    decode: { config: { kv_connector: "SyntheticTransfer", kv_role: "kv_consumer" } } };
+  const ascend = { ...strategies.pd_cluster.ascend,
+    launcher_url: "https://example.test/launcher.py", launcher_source: "https://example.test/source/launcher.py",
+    script: "/example/proxy.py", port: 18080 };
+  const strats = { ...strategies, pd_cluster: { ...strategies.pd_cluster, ascend,
+    connectors: { ...strategies.pd_cluster.connectors, synthetic: connector } } };
+  const r = pickAscend({ model, strats, connector: "synthetic" });
+  assert.equal(r.deploymentError, undefined);
+  assert.equal(r.kvConnector.selected, "synthetic");
+  assert.equal(r.kvConnector.recipeConfigured, undefined);
+  assert.equal(r.pdRouter, "ascend");
+  assert.equal(r.router.port, 18080);
+  assert.ok(r.router.argv.includes(ascend.script));
+  assert.ok(r.ascendScripts.command.endsWith(ascend.launcher_url));
+  assert.equal(r.ascendScripts.files[0].url, ascend.launcher_source);
+  assert.equal(r.prefill.env.TEST_CATALOG_ENV, "prefill");
+  for (const role of ["prefill", "decode"]) {
+    assert.deepEqual(kvCfg(r, role), connector[role].config);
+    assert.doesNotMatch(r[role].templateCommand, /MooncakeConnectorV2|"tp_size"|KV_PORT/);
+  }
+});
+
+test("recipe-authored KV configs retain base, role, hardware and preset JSON layers", () => {
+  for (const layer of ["base", "role", "hardware", "preset", "equals", "underscore"]) {
+    const model = createCustomConnectorRecipe();
+    const cfg = model.strategy_overrides.pd_cluster;
+    let expected = JSON.parse(flag(model.model.base_args, "--kv-transfer-config"));
+    if (layer === "role" || layer === "hardware") {
+      expected = { kv_connector: `${layer}Connector`, kv_role: "kv_producer", kv_connector_extra_config: { layer } };
+      const target = layer === "role" ? cfg.prefill : cfg.prefill.hardware_overrides.ascend_950dt;
+      const argsKey = layer === "role" ? "vllm_args" : "extra_args";
+      target[argsKey] = [...(target[argsKey] || []), "--kv-transfer-config", JSON.stringify(expected)];
+    } else if (layer === "preset") {
+      model.presets.ascend.roles = { prefill: { json_args: { "--kv-transfer-config": {
+        kv_connector: "PresetConnector", kv_connector_extra_config: { marker: "preset" },
+      } } } };
+      expected.kv_connector = "PresetConnector";
+      expected.kv_connector_extra_config.marker = "preset";
+    } else if (layer === "equals") {
+      model.model.base_args.splice(-2, 2, `--kv-transfer-config=${JSON.stringify(expected)}`);
+    } else if (layer === "underscore") {
+      model.model.base_args[model.model.base_args.length - 2] = "--kv_transfer_config";
+    }
+    const r = pickAscend({ model });
+    assert.equal(r.deploymentError, undefined, r.deploymentError?.message);
+    assert.deepEqual(kvCfg(r, "prefill"), expected, layer);
+    assert.deepEqual(r.kvConnector.roles, { prefill: expected.kv_connector, decode: "TestDecodeConnector" });
+    assert.equal(r.kvConnector.recipeConfigured, true);
+    assert.equal(r.kvConnector.selected, null);
+    assert.equal(r.prefill.env.VLLM_NIXL_SIDE_CHANNEL_PORT, undefined);
+    assert.doesNotMatch(r.prefill.templateCommand, /MooncakeConnectorV2|"tp_size"|KV_PORT/);
+  }
+});
+
+test("custom recipe KV configs and environment survive the actual local-DP shell templates", () => {
+  const model = createCustomConnectorRecipe();
+  const r = pickAscend({ model });
+  assert.equal(r.deploymentError, undefined, r.deploymentError?.message);
+  assert.equal(r.decode.processes.length, 2);
+  withAscendLaunchFixture(({ dir, shell }) => {
+    for (const role of ["prefill", "decode"]) {
+      const pool = r[role];
+      const expected = JSON.parse(flag(role === "prefill" ? model.model.base_args
+        : model.strategy_overrides.pd_cluster.decode.hardware_overrides.ascend_950dt.extra_args, "--kv-transfer-config"));
+      assert.doesNotMatch(pool.templateCommand, /MooncakeConnectorV2|"tp_size"|KV_PORT/);
+      shell(pool.templateCommand.replaceAll("<NIC_NAME>", "eth0").replaceAll("<LOCAL_IP>", "192.0.2.99"));
+      for (const process of pool.processes || [pool]) {
+        assert.deepEqual(JSON.parse(flag(process.argv, "--kv-transfer-config")), expected);
+        const args = [process.env.ASCEND_RT_VISIBLE_DEVICES, flag(process.argv, "--port"), String(pool.dpSize),
+          role === "decode" ? String(process.dpRank) : "0", "192.0.2.1", "41991", String(pool.tp)];
+        const argv = shell('bash run_dp_template.sh "$1" "$2" "$3" "$4" "$5" "$6" "$7"', args).split("\0").filter(Boolean);
+        assert.deepEqual(JSON.parse(flag(argv, "--kv-transfer-config")), expected);
+        assert.equal(flag(argv, "--tensor-parallel-size"), String(pool.tp));
+        assert.equal(fs.readFileSync(path.join(dir, "transfer-env.txt"), "utf8"), role);
+        assert.equal(fs.readFileSync(path.join(dir, "model-devices.txt"), "utf8"), process.env.ASCEND_RT_VISIBLE_DEVICES);
+      }
+    }
+  });
+});
+
+test("composing CPU offload preserves the custom recipe transfer config", () => {
+  const model = createCustomConnectorRecipe();
+  const r = pickAscend({ model, kv: "simple" });
+  assert.equal(r.deploymentError, undefined, r.deploymentError?.message);
+  const expected = JSON.parse(flag(model.model.base_args, "--kv-transfer-config"));
+  const prefill = kvCfg(r, "prefill");
+  assert.equal(prefill.kv_connector, "MultiConnector");
+  assert.deepEqual(prefill.kv_connector_extra_config.connectors[0], expected);
+  assert.equal(prefill.kv_connector_extra_config.connectors[1].kv_connector, "SimpleCPUOffloadConnector");
+  for (const process of r.decode.processes) {
+    assert.equal(JSON.parse(flag(process.argv, "--kv-transfer-config")).kv_connector, "TestDecodeConnector");
+  }
+});
+
 test("A5 Scripts downloads only the launcher, with templates and proxy in their own steps", () => {
   const r = pickAscend({ model: pdFixture });
   assert.match(r.ascendScripts.command, /examples\/external_online_dp\/launch_online_dp\.py/);
-  assert.match(r.ascendScripts.command, /^curl --fail --location --output launch_online_dp\.py https:\/\/raw\.githubusercontent\.com\/vllm-project\/vllm-ascend\/v0\.23\.0\//);
+  assert.ok(r.ascendScripts.command.endsWith(strategies.pd_cluster.ascend.launcher_url));
   assert.doesNotMatch(r.ascendScripts.command, /docker|\bcp\b|mkdir|load_balance_proxy|run_dp_template|\n/);
   assert.equal(r.ascendScripts.containerCommand, undefined);
   assert.equal(r.ascendScripts.files.length, 1);
@@ -685,7 +798,7 @@ test("MTP templates without an external draft model execute without an unset dra
   });
 });
 
-test("the five-step payload requires a declared Ascend grouped connector", () => {
+test("the five-step payload requires an explicit Ascend Router selection on Huawei", () => {
   // Test deployment boundaries independently of hardware-specific tuned presets.
   const baseline = { ...pdFixture, presets: {} };
   const results = [
@@ -720,7 +833,8 @@ for (const [index, entry] of ascendPdCases().entries()) {
       }
     }
     const result = resolveCommand(model, variant, "pd_cluster", hardware, expected.spec ? ["spec_decoding"] : [], strategies, taxonomy,
-      [], 1, { prefill: { nodes: expected.p.nodes, rank: expected.p.nodes - 1 }, decode: { nodes: expected.d.nodes, rank: expected.d.nodes - 1 } });
+      [], 1, { prefill: { nodes: expected.p.nodes, rank: expected.p.nodes - 1 }, decode: { nodes: expected.d.nodes, rank: expected.d.nodes - 1 } },
+      {}, null, null, undefined, "ascend");
     assert.equal(result.deploymentError, undefined, result.deploymentError?.message);
     const modelId = model.variants[variant].model_id || model.model.model_id;
     withAscendLaunchFixture(({ shell }) => {

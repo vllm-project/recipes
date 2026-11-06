@@ -336,6 +336,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     return {
       ...base,
       pd_connector: result.kvConnector?.selected ?? null,
+      ...(result.kvConnector?.recipeConfigured ? { pd_connector_configured: result.kvConnector.roles } : {}),
       pd_router: result.pdRouter,
       ...(result.orchestrator ? { orchestrator: result.orchestrator } : {}),
       ...(result.frontendRequired ? { frontend: result.frontendRequired } : {}),

@@ -464,6 +464,17 @@ function multiConnector(connectors) {
   return { kv_connector: "MultiConnector", kv_role: "kv_both", kv_connector_extra_config: { connectors: connectors.filter(Boolean) } };
 }
 
+// Canonicalize only the recipe-owned transfer flag, including vLLM's
+// underscore and --flag=value spellings, before layering or composing it.
+function normalizeTransferArgs(args) {
+  return args.flatMap((arg) => {
+    const equals = arg.indexOf("=");
+    const flag = (equals < 0 ? arg : arg.slice(0, equals)).replaceAll("_", "-");
+    return flag === "--kv-transfer-config"
+      ? (equals < 0 ? [flag] : [flag, arg.slice(equals + 1)]) : [arg];
+  });
+}
+
 // The transfer connector a rendered role actually runs: its last
 // --kv-transfer-config, or that MultiConnector's first child.
 function transferConnectorOf(args) {
@@ -1824,43 +1835,40 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
 
   // PD KV transfer connector: the pick when this hardware and router can run
   // it, else the default, with the reason surfaced as for the router.
+  const ascendProxy = strategy.deploy_type === "pd_cluster" && pdRouter === "ascend"
+    && isDynamoSupportedOnHardware(strategy.ascend, hwProfile);
+  if (strategy.deploy_type === "pd_cluster" && pdRouter === "ascend" && !ascendProxy) {
+    routerUnavailableReason = `Ascend Router needs ${(strategy.ascend?.brands || ["Huawei"]).join(" / ")} hardware.`;
+  }
+  const effectivePdRouter = ascendProxy ? "ascend" : dynamo ? "dynamo" : smg ? "smg" : "vllm";
   let pdConnectorSel = strategy.deploy_type === "pd_cluster" ? pdConnectorKey(strategy, pdConnectorPick, recipe, hwProfile, hwProfileId) : null;
   let pdConnectorUnavailable = null;
   const allowedConnectors = pdConnectorsFor(recipe, hwProfile, hwProfileId);
-  if (strategy.deploy_type === "pd_cluster" && pdRouter === "ascend") {
-    const reason = pdConnectorUnavailableReason(strategy.connectors?.mooncakev2, hwProfile,
-      "ascend", recipe, hwProfileId, "mooncakev2");
-    if (!isDynamoSupportedOnHardware(strategy.ascend, hwProfile) || reason) {
-      routerUnavailableReason = reason || `Ascend Router needs ${(strategy.ascend?.brands || ["Huawei"]).join(" / ")} hardware.`;
-    } else {
-      pdConnectorSel = "mooncakev2";
-      if (pdConnectorPick && pdConnectorPick !== pdConnectorSel) {
-        pdConnectorUnavailable = "Ascend Router uses Mooncake V2.";
-      }
-    }
-  }
   if (pdConnectorPick && allowedConnectors && !allowedConnectors.includes(pdConnectorPick)) {
     pdConnectorUnavailable = `This recipe requires ${allowedConnectors.join(" / ")} on ${hwProfile.display_name || hwProfileId}.`;
   }
-  if (pdConnectorSel && pdConnectorPick && pdConnectorSel === pdConnectorPick) {
-    pdConnectorUnavailable = pdConnectorUnavailableReason(strategy.connectors[pdConnectorSel], hwProfile,
-      strategy.connectors[pdConnectorSel].router?.type === "ascend-proxy" ? "ascend" : dynamo ? "dynamo" : smg ? "smg" : "vllm");
-    if (pdConnectorUnavailable) pdConnectorSel = pdConnectorKey(strategy, null, recipe, hwProfile, hwProfileId);
+  // Router selection never rewrites the connector. Keep the existing catalog
+  // fallback for other routers; Ascend may use a complete recipe-authored
+  // transfer config, which is checked after all argument layers are applied.
+  if (!ascendProxy && pdConnectorSel) {
+    const reason = pdConnectorUnavailableReason(strategy.connectors[pdConnectorSel], hwProfile,
+      effectivePdRouter, recipe, hwProfileId, pdConnectorSel);
+    if (reason) {
+      pdConnectorUnavailable = reason;
+      const candidates = allowedConnectors || Object.keys(strategy.connectors);
+      const fallback = candidates.find((key) => !pdConnectorUnavailableReason(strategy.connectors[key], hwProfile,
+        effectivePdRouter, recipe, hwProfileId, key));
+      if (fallback) pdConnectorSel = fallback;
+    }
   }
   const pdConnector = pdConnectorSel ? strategy.connectors[pdConnectorSel] : null;
-  const ascendProxy = pdConnector?.router?.type === "ascend-proxy";
-  if (ascendProxy) {
-    if (pdRouter && pdRouter !== "ascend") routerUnavailableReason = "Mooncake V2 uses Ascend Router.";
-    dynamo = null;
-    smg = null;
-    smgGrpc = false;
-  }
+  const recipeConnectorRoles = new Set();
   // The transfer config a composed KV tier wraps: Dynamo workers carry their
   // own (kv_both) NIXL config, everyone else the selected connector's.
   const pdTransferConfig = (role) => {
     const config = (dynamo ? kvOptionConfig(dynamo[role] && { args: dynamo[role].vllm_args }) : null)
       ?? pdConnector?.[role]?.config ?? null;
-    if (!ascendProxy || !config) return config;
+    if (!ascendProxy || config?.kv_connector !== "MooncakeConnectorV2") return config;
     const topology = Object.fromEntries(["prefill", "decode"].map((name) => {
       const meta = pdLayout(name);
       return [name, { dp_size: meta.dpSize, tp_size: meta.tp, ...(meta.pp > 1 ? { pp_size: meta.pp } : {}) }];
@@ -1942,6 +1950,12 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   function buildArgsRaw(roleOverride, nodeRole, nodeRank = 1) {
     const mpRank = nodeRole === "worker" ? Math.max(1, nodeRank) : 0;
     const args = [];
+    // Ascend's catalog entry is a default, before every authored argument
+    // layer. A recipe can supply its own transfer connector without a new
+    // catalog key or having its config overwritten by the router.
+    const ascendTransfer = ascendProxy && roleOverride ? pdTransferConfig(roleOverride) : null;
+    const ascendTransferJson = ascendTransfer ? JSON.stringify(ascendTransfer) : undefined;
+    if (ascendTransferJson) args.push("--kv-transfer-config", ascendTransferJson);
 
     // Order:
     // 1. base_args         (trust-remote-code, required flags)
@@ -1973,7 +1987,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       if (strategy.vllm_args) args.push(...strategy.vllm_args);
     } else if (roleOverride) {
       if (strategy[roleOverride]?.vllm_args) args.push(...strategy[roleOverride].vllm_args);
-      const transfer = pdTransferConfig(roleOverride);
+      const transfer = !ascendProxy && pdTransferConfig(roleOverride);
       if (transfer) args.push("--kv-transfer-config", JSON.stringify(transfer));
     }
     // Dynamo role args (--disaggregation-mode + its kv_both Nixl config)
@@ -2304,13 +2318,26 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     if (kvComposing) {
       args.push(...(kvStoreStrat.vllm?.vllm_args || []));
     }
+    // Preserve the recipe's effective transfer when adding an offload tier.
+    if (ascendProxy && roleOverride) {
+      const normalized = normalizeTransferArgs(args);
+      args.length = 0;
+      args.push(...normalized);
+      const transfer = lastFlagValue(args, "--kv-transfer-config");
+      if (transfer !== ascendTransferJson || args.filter((arg) => arg === "--kv-transfer-config").length > 1) {
+        recipeConnectorRoles.add(roleOverride);
+      }
+    }
+    const composedTransfer = () => ascendProxy
+      ? JSON.parse(lastFlagValue(args, "--kv-transfer-config") || "null")
+      : pdTransferConfig(roleOverride);
     // Mooncake × pd_cluster: the kv_store YAML's `pd.<role>.tier`
     // (MooncakeStoreConnector) joins the role's transfer connector in a
     // MultiConnector, which replaces (last-wins) the plain transfer config.
     if (strategy.deploy_type === "pd_cluster" && roleOverride
         && kvStoreStrat?.pd?.[roleOverride]?.tier) {
       args.push("--kv-transfer-config", JSON.stringify(multiConnector([
-        pdTransferConfig(roleOverride),
+        composedTransfer(),
         kvStoreStrat.pd[roleOverride].tier,
       ])));
     }
@@ -2319,7 +2346,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     const pdTier = strategy.deploy_type === "pd_cluster" && roleOverride
       && kvOpt?.pd?.roles?.includes(roleOverride) ? kvOptionConfig(kvOpt) : null;
     if (pdTier) {
-      args.push("--kv-transfer-config", JSON.stringify(multiConnector([pdTransferConfig(roleOverride), pdTier])));
+      args.push("--kv-transfer-config", JSON.stringify(multiConnector([composedTransfer(), pdTier])));
     }
 
     // Dynamo workers serve no HTTP of their own (the frontend does), so drop
@@ -2329,10 +2356,15 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     //    after every layer so they also reach feature and KV-offload flags
     //    (e.g. num_speculative_tokens inside --speculative-config).
     const ops = recipe._presetOps;
+    const transferBeforePreset = ascendProxy ? lastFlagValue(out, "--kv-transfer-config") : undefined;
     if (ops) {
       const editOnly = toggleOwnedFlags(recipe, taxonomy);
       out = applyPresetArgOps(out, ops.all, editOnly);
       if (roleOverride) out = applyPresetArgOps(out, ops.roles?.[roleOverride], editOnly);
+    }
+    if (ascendProxy) out = normalizeTransferArgs(out);
+    if (ascendProxy && roleOverride && lastFlagValue(out, "--kv-transfer-config") !== transferBeforePreset) {
+      recipeConnectorRoles.add(roleOverride);
     }
     // Connector configs name the worker's own HTTP port (MoRI-IO's
     // `http_port`) as `{port}`: the port the role actually serves on.
@@ -2361,7 +2393,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       Object.assign(env, strategy.env || {});
     } else if (roleOverride) {
       Object.assign(env, strategy[roleOverride]?.env || {});
-      Object.assign(env, pdConnector?.[roleOverride]?.env || {});
+      if (!recipeConnectorRoles.has(roleOverride)) Object.assign(env, pdConnector?.[roleOverride]?.env || {});
     }
     if (dynamo && roleOverride) Object.assign(env, dynamo.env || {});
     // Composing-option env, after the strategy's so the option wins (under
@@ -2507,10 +2539,10 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     }
 
     if (ascendProxy && roleOverride) {
-      // CUDA/NIXL defaults belong to the generic PD strategy, never to an
+      // CUDA/NCCL defaults belong to the generic PD strategy, never to an
       // Ascend worker. Every replicated group's node has its own NPU address.
       for (const key of Object.keys(env)) {
-        if (/^(CUDA_|NCCL_|UCX_|VLLM_NIXL_)/.test(key)) delete env[key];
+        if (/^(CUDA_|NCCL_|UCX_)/.test(key)) delete env[key];
       }
       const localIp = `$${roleOverride.toUpperCase()}_NODE_${pdLayout(roleOverride).currentNode + 1}`;
       env.HCCL_IF_IP = localIp;
@@ -2574,7 +2606,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     const invalidAscendLayout = (role, reason) => ({
       deployType, nodeCount, prefill: pMeta, decode: dMeta,
       orchestrator: "ascend-proxy", pdRouter: "ascend", frontendRequired: "python",
-      routerLabel: "Ascend Router", router: { port: pdConnector.router.port || 8000 },
+      routerLabel: "Ascend Router", router: { port: strategy.ascend.port || 8000 },
       kvConnector: { selected: pdConnectorSel },
       deploymentError: { code: "ASCEND_PD_INVALID_LAYOUT", role,
         message: `Ascend PD${role ? ` ${role}` : ""}: ${reason}` },
@@ -2613,7 +2645,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     // When that names another transfer connector than the one picked, the
     // pick can't apply: render the default, with the reason, rather than a
     // router whose KV mode disagrees with its workers.
-    if (pdConnectorPick && pdConnectorSel === pdConnectorPick && !dynamo) {
+    if (pdConnectorPick && pdConnectorSel === pdConnectorPick && !dynamo && !ascendProxy) {
       const clash = ["prefill", "decode"].find((role) =>
         transferConnectorOf(dedupeArgs(buildArgs(role, null).filter(Boolean))) !== pdConnector[role]?.config?.kv_connector);
       if (clash) {
@@ -2765,6 +2797,22 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         }
       }
     }
+    const connectorRoles = Object.fromEntries([["prefill", prefillArgs], ["decode", decodeArgs]]
+      .map(([role, args]) => [role, transferConnectorOf(dedupeArgs(args))]));
+    for (const role of ["prefill", "decode"]) {
+      const reason = ascendProxy && recipeConnectorRoles.has(role)
+        ? (typeof connectorRoles[role] !== "string" || !connectorRoles[role].trim()
+          ? "the recipe must provide --kv-transfer-config with a non-empty kv_connector name." : null)
+        : pdConnectorSel && pdConnectorUnavailableReason(pdConnector, hwProfile, effectivePdRouter, recipe, hwProfileId, pdConnectorSel);
+      if (reason) return {
+        deployType, nodeCount, prefill: pMeta, decode: dMeta,
+        orchestrator: ascendProxy ? "ascend-proxy" : dynamo ? "dynamo" : smg ? "smg" : "vllm-router",
+        pdRouter: effectivePdRouter, router: { port: ascendProxy ? strategy.ascend.port || 8000 : 30000 },
+        kvConnector: { selected: pdConnectorSel, unavailableReason: reason },
+        deploymentError: { code: "PD_CONNECTOR_UNAVAILABLE", role, message: `PD ${role}: ${reason}` },
+      };
+    }
+    const recipeConfigured = ascendProxy && recipeConnectorRoles.size > 0;
     let ascendProxyRouter = null;
     let ascendScripts = null;
     let startServer = null;
@@ -2791,7 +2839,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const pPorts = pEndpoints.map(({ port }) => String(port));
       const dPorts = dEndpoints.map(({ port }) => String(port));
       const proxyArgs = [
-        pdConnector.router.script,
+        strategy.ascend.script,
         "--host", "0.0.0.0", "--port", "$ROUTER_PORT",
         "--prefiller-hosts", ...pHosts,
         "--prefiller-ports", ...pPorts,
@@ -2812,14 +2860,14 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         command: `python ${proxyBody}`,
         argv: ["python", ...proxyArgs],
         dockerCommand: `docker run --rm --network host \\\n    --entrypoint python ${shellQuote(dockerMeta.image)} \\\n    ${proxyBody}`,
-        port: pdConnector.router.port || 8000,
+        port: strategy.ascend.port || 8000,
       };
       ascendProxyRouter.description = "Run the proxy from the matching vLLM Ascend installation after every Prefill and Decode engine is ready. The proxy is independent of launch_online_dp.py.";
       ascendScripts = {
-        command: `curl --fail --location --output launch_online_dp.py ${shellQuote(pdConnector.router.launcher_url)}`,
+        command: `curl --fail --location --output launch_online_dp.py ${shellQuote(strategy.ascend.launcher_url)}`,
         description: "Download launch_online_dp.py into the current directory on every engine node. Run the following template and server steps in that directory, inside the vLLM Ascend environment.",
         files: [
-          { name: "launch_online_dp.py", url: pdConnector.router.launcher_source },
+          { name: "launch_online_dp.py", url: strategy.ascend.launcher_source },
         ],
       };
       for (const [role, args] of [["prefill", prefillArgs], ["decode", decodeArgs]]) {
@@ -3027,11 +3075,14 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         },
       } : {}),
       ...(dynamo ? { dynamoInstall: dynamoInstallSteps(dynamo) } : {}),
-      kvConnector: pdConnectorSel ? {
+      kvConnector: recipeConfigured ? {
+        selected: null, recipeConfigured: true, roles: connectorRoles,
+        install: [], docker: { host_network: true },
+      } : pdConnectorSel ? {
         selected: pdConnectorSel,
         unavailableReason: pdConnectorUnavailable,
         install: dynamoInstallSteps(pdConnector),
-        docker: pdConnector?.docker || null,
+        docker: ascendProxy ? { ...pdConnector?.docker, host_network: true } : pdConnector?.docker || null,
       } : null,
       routerConfig: strategy.router || { policy: "round_robin" },
     };
