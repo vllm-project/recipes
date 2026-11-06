@@ -4,7 +4,7 @@ meta:
   provider: "Moonshot AI"
   description: "Open-source native multimodal agentic MoE model with vision-language understanding, tool calling, and thinking modes"
   date_added: 2026-04-20
-  date_updated: 2026-07-29
+  date_updated: 2026-11-04
   difficulty: intermediate
   tasks:
     - multimodal
@@ -18,6 +18,11 @@ meta:
     mi300x: verified
     mi325x: verified
     mi355x: verified
+    # Ascend NPU: first-party verification on 1x Atlas 800 A3 (16 die)
+    # completed 2026-10-28 (64/64 requests, 200 tok/s output).
+    # CI wiring: companion PR vllm-ascend/vllm-ascend-recipes#100 registers the
+    # Eco-Tech/Kimi-K2.6-W4A8 weights in the runner _cache_paths table.
+    ascend_910c: supported
 
 model:
   model_id: "moonshotai/Kimi-K2.6"
@@ -49,10 +54,22 @@ features:
       - "--reasoning-parser"
       - "kimi_k2"
   spec_decoding:
-    description: "Eagle3 speculative decoding for accelerated inference"
-    args:
-      - "--speculative-config"
-      - '{"model":"lightseekorg/kimi-k2.6-eagle3-mla","method":"eagle3","num_speculative_tokens":3}'
+    description: "Speculative decoding — pick a drafting method."
+    default_mode: eagle3
+    modes:
+      eagle3:
+        label: "Eagle3"
+        description: "Eagle3 speculative decoding for accelerated inference (NVIDIA/AMD variants)."
+        args:
+          - "--speculative-config"
+          - '{"model":"lightseekorg/kimi-k2.6-eagle3-mla","method":"eagle3","num_speculative_tokens":3}'
+      dflash:
+        label: "DFlash"
+        description: "Block-diffusion parallel drafting from z-lab/Kimi-K2.5-DFlash — the drafting path used by the Ascend W4A8 variant."
+        variants: [ascend_w4a8]
+        args:
+          - "--speculative-config"
+          - '{"method": "dflash","model": "z-lab/Kimi-K2.5-DFlash", "num_speculative_tokens": 15}'
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -101,6 +118,57 @@ variants:
     label: "NVFP4 (RedHat)"
     vram_minimum_gb: 600
     description: "RedHatAI NVFP4 quantization"
+
+  ascend_w4a8:
+    model_id: "Eco-Tech/Kimi-K2.6-W4A8"
+    precision: int4
+    label: "W4A8 (Ascend)"
+    vram_minimum_gb: 600
+    supported_hardware: [ascend_910c]
+    tp: 4
+    default_modes:
+      spec_decoding: dflash
+    extra_args:
+      - "--quantization"
+      - "ascend"
+      - "--data-parallel-size"
+      - "4"
+      - "--no-enable-prefix-caching"
+      - "--enable-expert-parallel"
+      - "--max-num-seqs"
+      - "4"
+      - "--max-model-len"
+      - "34816"
+      - "--max-num-batched-tokens"
+      - "16384"
+      - "--gpu-memory-utilization"
+      - "0.87"
+      - "--served-model-name"
+      - "kimi_k26"
+      - "--seed"
+      - "42"
+      - "--async-scheduling"
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+      - "--mm-encoder-tp-mode"
+      - "data"
+      - "--additional-config"
+      - '{"enable_balance_scheduling": true}'
+    extra_env:
+      HCCL_OP_EXPANSION_MODE: "AIV"
+      PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+      HCCL_BUFFSIZE: "600"
+      VLLM_ASCEND_ENABLE_MLAPO: "1"
+      VLLM_ASCEND_ENABLE_FLASHCOMM1: "1"
+      VLLM_ASCEND_BALANCE_SCHEDULING: "0"
+    hardware_overrides:
+      ascend_910c:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.30.0rc1-a3"
+        docker_serve_command: "vllm serve"
+        install:
+          pip: false
+          docker: true
+    description: "ModelSlim W4A8 (weights on ModelScope: Eco-Tech/Kimi-K2.6-W4A8) — 1 Atlas 800 A3 (64G x 16), TP4xDP4 + DFlash; first-party verified 2026-10-28 on a nightly build (release-tag re-verify pending). System-level tuning (cpufreq governor, sysctl) from the companion Ascend recipe is host-side and skipped in unprivileged environments."
 
 compatible_strategies:
   - single_node_tp
