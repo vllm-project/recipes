@@ -408,6 +408,17 @@ hardware_profiles:
     scalable: false
     restricted: true
 
+  ascend_910b4:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 910B4 (A2)"
+    description: "One logical Ascend 910B4 NPU · 32 GB HBM · vLLM-Ascend backend"
+    gpu_count: 1
+    vram_gb: 32
+    multi_node: false
+    scalable: false
+    restricted: true
+
   ascend_310p3:
     brand: Huawei
     generation: npu

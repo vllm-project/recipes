@@ -26,7 +26,7 @@ before(() => {
   fs.cpSync(path.join(ROOT, "models"), path.join(fixture, "models"), { recursive: true });
   const paddleFile = path.join(fixture, "models/PaddlePaddle/PaddleOCR-VL.yaml");
   const paddle = yaml.load(fs.readFileSync(paddleFile, "utf8"));
-  paddle.meta.hardware = { ...paddle.meta.hardware, ascend_310p3: "supported", ascend_910b3: "supported" };
+  paddle.meta.hardware = { ...paddle.meta.hardware, ascend_310p3: "supported", ascend_910b3: "supported", ascend_910b4: "supported" };
   paddle.variants.default.supported_hardware = ["arch:sm90"];
   for (const [hw, key, precision, dtype] of [
     ["ascend_310p3", "ascend_fp16", "fp16", "float16"],
@@ -42,6 +42,11 @@ before(() => {
       } },
     };
   }
+  paddle.variants.ascend_bf16.supported_hardware.push("ascend_910b4");
+  paddle.variants.ascend_bf16.hardware_overrides.ascend_910b4 = {
+    ...paddle.variants.ascend_bf16.hardware_overrides.ascend_910b3,
+    docker_image: "quay.io/ascend/vllm-ascend:nightly-main@sha256:4b537a90f25f7d282927b49f474f9d8ecf61fd0bf556c28e9ec1ac54d48371c3",
+  };
   fs.writeFileSync(paddleFile, yaml.dump(paddle));
   const sources = path.join(tmp, "sources.yaml");
   fs.writeFileSync(sources, JSON.stringify({
@@ -88,6 +93,26 @@ test("canonical API serves an eligible precision variant on declared restricted 
   assert.ok(!unrelated.recommended_command.by_hardware.ascend_910b3);
 });
 
+test("the 32 GB A2 profile renders one NPU without leaking onto unrelated recipes", () => {
+  const model = read("PaddlePaddle/PaddleOCR-VL.json");
+  const command = read(model.recommended_command.by_hardware.ascend_910b4.slice(1));
+  assert.equal(command.variant, "ascend_bf16");
+  assert.equal(command.hardware_profile.vram_gb, 32);
+  assert.equal(command.hardware_profile.gpu_count, 1);
+  assert.equal(command.hardware_profile.restricted, true);
+  assert.equal(command.hardware_profile.scalable, false);
+  const dtype = command.argv.indexOf("--dtype");
+  assert.ok(dtype !== -1);
+  assert.equal(command.argv[dtype + 1], "bfloat16");
+  const tp = command.argv.indexOf("--tensor-parallel-size");
+  assert.ok(tp !== -1);
+  assert.equal(command.argv[tp + 1], "1");
+  assert.ok(command.argv.includes("PaddlePaddle/PaddleOCR-VL"));
+  assert.ok(command.argv.includes("PaddleOCR-VL-0.9B"));
+  assert.match(command.docker_command, /nightly-main@sha256:/);
+  assert.ok(!read("Qwen/Qwen3-8B.json").recommended_command.by_hardware.ascend_910b4);
+});
+
 test("hardware-only page links select the runnable variant without overriding explicit checkpoints", () => {
   const recipe = read("PaddlePaddle/PaddleOCR-VL.json");
   const taxonomy = read("taxonomy.json");
@@ -101,6 +126,10 @@ test("hardware-only page links select the runnable variant without overriding ex
   assert.equal(selected.selection.hardware, "ascend_310p3");
   assert.equal(selected.selection.variant, "ascend_fp16");
   assert.ok(selected.rendering.argv.includes("float16"));
+  const a2 = resolveSelection(recipe, new URLSearchParams({ hardware: "ascend_910b4" }), strategies, taxonomy);
+  assert.equal(a2.selection.hardware, "ascend_910b4");
+  assert.equal(a2.selection.variant, "ascend_bf16");
+  assert.ok(a2.rendering.argv.includes("bfloat16"));
   const explicit = resolveSelection(recipe, new URLSearchParams({ hardware: "ascend_310p3", variant: "default" }), strategies, taxonomy);
   assert.equal(explicit.selection.variant, "default");
   assert.notEqual(explicit.selection.hardware, "ascend_310p3");
