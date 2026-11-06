@@ -5,6 +5,7 @@
 
 import { hardwareInstall, hwPipOverride, isFeatureSupportedOnHardware } from "./command-synthesis.js";
 import { whenMatches } from "./recipe-context.js";
+import { resolveModelReference } from "./model-reference.js";
 import { SELECTION_PARAMS, defaultFeaturesFor, synthesizeInstall } from "./recipe-render.js";
 
 const fence = (code, lang = "bash") => {
@@ -57,6 +58,20 @@ function serveSection(r) {
     return out;
   }
   if (r.deploy_type === "pd_cluster") {
+    if (r.ascend_scripts && r.start_server) {
+      const step = (title, description, command) => {
+        out.push("", `### ${title}`, "");
+        if (description) out.push(description, "");
+        out.push(fence(command));
+      };
+      out.push("Disaggregated prefill/decode with Mooncake V2. Start in this order on each role's nodes.");
+      step("1. Scripts", r.ascend_scripts.description, r.ascend_scripts.command);
+      step("2. Prefill", r.prefill.description, r.prefill.templateCommand);
+      step("3. Decode", r.decode.description, r.decode.templateCommand);
+      step("4. Start_Server", r.start_server.description, r.start_server.command);
+      step("5. Start_Proxy", r.router.description, r.router.command);
+      return out;
+    }
     const mc = r.mooncake;
     out.push(`Disaggregated prefill/decode${r.pd_connector ? ` (KV transfer: \`${r.pd_connector}\`)` : ""}. ${mc || r.infra ? "Start in this order" : "Start both pools, then the router"}.`);
     const step = (title, description, command) => {
@@ -279,12 +294,14 @@ export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls
   const hardwareProfiles = taxonomy.hardware_profiles || {};
   const origin = new URL(urls.page).origin;
   const defaultFeatures = defaultFeaturesFor(recipe, selection.hardware, selection.variant);
+  const modelReference = resolveModelReference(recipe, selection.variant);
   const lines = [
     `# ${recipe.hf_id} — vLLM serving recipe`,
     "",
     recipe.meta?.description ? `> ${recipe.meta.description.replace(/\s+/g, " ").trim()}` : null,
     recipe.meta?.description ? "" : null,
     `Configuration: ${configLine(recipe, resolved, strategies)}`,
+    ...(modelReference ? [`Model weights: [${modelReference.model_id}](${modelReference.model_url}) (${modelReference.provider})`] : []),
     "",
     ...(selection.adjusted?.length ? [
       ...selection.adjusted.map((a) => `> **Note:** requested \`${a.param}=${a.requested}\` is ${a.reason}; rendered \`${a.used}\` instead.`),
