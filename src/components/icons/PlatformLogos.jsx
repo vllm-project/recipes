@@ -1,5 +1,6 @@
 // Brand marks served from public/platform-logos/ as static SVG files.
-// Sources: HuggingFace from Iconify (logos:hugging-face-icon), Modal from
+// Sources: HuggingFace from Iconify (logos:hugging-face-icon), ModelScope from
+// LobeHub Icons (MIT), Modal from
 // modal.com's official favicon, AWS from devicon. SageMaker reuses the AWS
 // mark since no SageMaker-specific brand glyph exists; the wordmark color is
 // theme-swapped because the original navy ink vanishes on dark backgrounds.
@@ -7,6 +8,11 @@
 export function HuggingFaceIcon({ className = "" }) {
   // eslint-disable-next-line @next/next/no-img-element
   return <img src="/platform-logos/huggingface.svg" alt="" aria-hidden="true" className={className} />;
+}
+
+export function ModelScopeIcon({ className = "" }) {
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src="/platform-logos/modelscope.svg" alt="" aria-hidden="true" className={className} />;
 }
 
 function ModalIcon({ className = "" }) {
