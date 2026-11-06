@@ -1,4 +1,5 @@
 import { applyPresetArgOps, effectivePreset, toggleOwnedFlags, matchingPresets, presetImage, presetPoints, resolvePresetKey, withPreset } from "./recipe-presets.js";
+import { isEnvPassthrough } from "./env-format.js";
 
 /**
  * Core command synthesis: Recipe + Variant + Strategy + Hardware + Features → vllm serve command.
@@ -894,10 +895,10 @@ export function pickDefaultHardware(hwProfiles, variant, recipe) {
 // hardware (Rubin's nightly), which is why it outranks a recipe's general pin.
 //
 // `docker_image` shapes:
-//   "vllm/vllm-openai:x"               (NVIDIA-only)
-//   { nvidia, amd, tpu }               (brand-keyed; each value is a string)
-//   { cu129, cu130 }                   (NVIDIA CUDA-keyed — explicit paired tags,
-//                                        auto-suffix is skipped in favor of these)
+//   "vllm/vllm-openai:x"                    (NVIDIA-only)
+//   { nvidia, amd, tpu, intel, ppu }        (brand-keyed; each value is a string)
+//   { cu129, cu130 }                        (NVIDIA CUDA-keyed — explicit paired tags,
+//                                            auto-suffix is skipped in favor of these)
 //   { nvidia: { cu129, cu130 }, amd, tpu }  (mixed: NVIDIA value may be a CUDA map)
 // Exact variant+hardware overrides may also set
 //   variants.<key>.hardware_overrides.<hw_id>.docker_image
@@ -987,6 +988,7 @@ export function cu129DockerImage(image, minVllmVersion = null) {
 export function hardwareInstall(recipe, variant, hwProfile, hwId) {
   return variant?.hardware_overrides?.[hwId]?.install
     || recipe?.hardware_overrides?.[hwId]?.install
+    || variant?.hardware_overrides?.[hwProfile?.generation]?.install
     || hwProfile?.install
     || null;
 }
@@ -1003,7 +1005,7 @@ function isDockerEnabled(recipe) {
 
 // When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
 // the user's `dockerCudaVariant` toggle instead of appending `-cu129`.
-export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
+export function computeDockerMeta(recipe, variant, hwProfile, hwId = null, presetImage = null) {
   // When `model.nightly_required: true` and no explicit `docker_image` pin,
   // swap the brand defaults to nightly tags so the Install block matches the
   // nightly pip wheel that's also being rendered. vLLM publishes `:nightly`
@@ -1035,15 +1037,9 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const brandKey = isPpu ? "ppu" : isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
   // Exact variant+hardware image overrides win over variant-wide and
   // model-wide images (for example, an MI355X-only ROCm nightly).
-  const exactHardwareOverride = hwId
-    ? variant?.hardware_overrides?.[hwId]?.docker_image
-    : null;
-  const dockerEnabled = isDockerEnabled(recipe)
-    // A per-hardware install statement can declare that no published image
-    // runs this recipe on this hardware (e.g. support not yet in any image):
-    // skip the docker wrap so the command renders as bare `vllm serve`.
-    && hardwareInstall(recipe, variant, hwProfile, hwId)?.docker !== false
-    && (!isPpu || !!exactHardwareOverride || !!hwProfile?.docker_image);
+  const exact = variant?.hardware_overrides?.[hwId];
+  const generation = variant?.hardware_overrides?.[hwProfile?.generation];
+  const imageOwner = [exact, hwProfile, generation].find((entry) => entry?.docker_image);
 
   const isCudaMap = (v) =>
     v && typeof v === "object" && ("cu129" in v || "cu130" in v);
@@ -1051,16 +1047,12 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   // Images whose entrypoint is not `vllm serve` (NVIDIA-base community builds
   // run nvidia_entrypoint.sh, which execs the first CMD token) need the serve
   // command restated in CMD, or the model id is executed as a path.
-  const exactCmdPrefix = hwId
-    ? variant?.hardware_overrides?.[hwId]?.docker_serve_command
-    : null;
+  const exactCmdPrefix = exact?.docker_serve_command ?? generation?.docker_serve_command;
   const cmdPrefix = typeof exactCmdPrefix === "string" && exactCmdPrefix.trim()
     ? exactCmdPrefix.trim()
     : null;
 
-  let pinned = typeof exactHardwareOverride === "string"
-    ? exactHardwareOverride
-    : hwProfile?.docker_image || null;
+  let pinned = presetImage || imageOwner?.docker_image || null;
   let cudaMap = null;
 
   function applyOverride(override) {
@@ -1070,7 +1062,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
       return;
     }
     if (typeof override === "object") {
-      const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override || "intel" in override;
+      const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override || "intel" in override || "ppu" in override;
       if (isBrandKeyed) {
         const brandValue = override[brandKey];
         if (typeof brandValue === "string") pinned = brandValue;
@@ -1085,6 +1077,10 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   // A partial variant override falls back to the model image for brands it
   // does not cover instead of skipping directly to the global default.
   applyOverride(recipe.model?.docker_image);
+
+  const dockerEnabled = isDockerEnabled(recipe)
+    && hardwareInstall(recipe, variant, hwProfile, hwId)?.docker !== false
+    && (!isPpu || !!pinned);
 
   // Intel XPU ships in a dedicated image, not the CPU one. Otherwise, with a
   // CUDA map, `image` defaults to the cu130 (upstream baseline) pick so
@@ -1106,6 +1102,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
       : "--gpus all";
   return {
     image,
+    vllmVersion: image && image === imageOwner?.docker_image ? imageOwner.install?.docker?.vllm_version : undefined,
     dockerEnabled,
     gpuFlags,
     brandKey,
@@ -1200,7 +1197,7 @@ function servedPort(tokens, fallback = 8000) {
 export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, isPpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [] }) {
   const pubPort = port ?? servedPort(command.split(/\s+/));
   const envFlags = Object.entries(env || {})
-    .map(([k, v]) => `-e ${k}=${v}`)
+    .map(([k, v]) => isEnvPassthrough(k, v) ? `-e ${k}` : `-e ${k}=${v}`)
     .join(" \\\n  ");
   const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
   const localMount = localModelMount(modelId);
@@ -1242,7 +1239,7 @@ export function buildDockerArgv({ argv, env, meta, port = null, hostNetwork = fa
   const pubPort = port ?? servedPort(argv);
   const envFlags = [];
   for (const [k, v] of Object.entries(env || {})) {
-    envFlags.push("-e", `${k}=${v}`);
+    envFlags.push("-e", isEnvPassthrough(k, v) ? k : `${k}=${v}`);
   }
   // `vllm serve <model> <...flags>` → CMD becomes `<model> <...flags>` since
   // the image's entrypoint is already `vllm serve`.
@@ -1593,6 +1590,14 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   const gpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 1;
   const totalGpus = gpuCount * Math.max(1, nodeCount);
 
+  // UI selection → preset-mounted recipe → legacy whole/half-node layout.
+  function poolConfig(role) {
+    const raw = pdNodes?.[role];
+    const picked = typeof raw === "number" ? { nodes: raw } : raw;
+    const nodes = picked?.nodes ?? pdRoleNodes(recipe, role, hwProfile, hwProfileId) ?? (nodeCount > 1 ? 1 : 0);
+    return { ...picked, nodes };
+  }
+
   // single_node_tp TP size precedence (see resolveSingleNodeTp):
   //   1. `variant.tp` (number or hardware-aware map)
   //   2. `strategy_overrides.single_node_tp.tp` (recipe-wide override)
@@ -1774,7 +1779,6 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     }
     const parallelFlag = strategy.parallel_flag || "--tensor-parallel-size";
     const isMulti = strategy.deploy_type === "multi_node" && nodeCount > 1;
-    const isPdMulti = strategy.deploy_type === "pd_cluster" && nodeCount > 1;
     // Multi-node rendezvous host. When Mooncake composes with a multi-node
     // strategy, each instance's head is the same host the router lists as
     // $VLLM_INSTANCE_N — reuse that name so one Endpoints value feeds both.
@@ -1850,7 +1854,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       //     tp:          <int>                  (default: 1 for dep, poolGpus for tp)
       //     parallel_flag: "--…"                (last-resort override)
       //
-      // Legacy fallback (pdNodes null):
+      // Legacy fallback (no selection or recipe pool size):
       //   - nodeCount===1 → both roles on one node, TP=gpuCount/2 each (50/50)
       //   - nodeCount===2 → one full node per role, TP=gpuCount each
       const roleKey = roleOverride;                           // "prefill" | "decode"
@@ -1858,14 +1862,8 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const soRoleCfg = recipe.strategy_overrides?.[strategyName]?.[roleKey] || {};
       // pdNodes accepts two shapes per role — a bare integer (just nodes) or
       // { nodes, rank } when the UI wants to surface a specific DP rank.
-      const pdRoleRaw = pdNodes ? pdNodes[roleKey] : undefined;
-      const pdRole =
-        typeof pdRoleRaw === "number" ? { nodes: pdRoleRaw }
-        : (pdRoleRaw && typeof pdRoleRaw === "object") ? pdRoleRaw
-        : {};
-      const legacyNodes = isPdMulti ? 1 : 0;                  // 0 = co-located half-node
-      const rolePoolNodes =
-        typeof pdRole.nodes === "number" ? pdRole.nodes : legacyNodes;
+      const pdRole = poolConfig(roleKey);
+      const rolePoolNodes = pdRole.nodes;
       const poolGpus = rolePoolNodes === 0
         ? Math.floor(gpuCount / 2)
         : rolePoolNodes * gpuCount;
@@ -2108,7 +2106,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
 
   // Helper to merge env
   function buildEnv(roleOverride) {
-    const env = {};
+    const pool = roleOverride && strategy.deploy_type === "pd_cluster" ? poolConfig(roleOverride) : null;
+    const spansNodes = pool ? pool.nodes > 1 : strategy.deploy_type === "multi_node" && nodeCount > 1;
+    const env = spansNodes ? { ...hwProfile.multi_node_env } : {};
 
     // Base env
     Object.assign(env, recipe.model?.base_env || {});
@@ -2146,15 +2146,8 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     // With per-role `nodes` (new model):
     //   nodes >= 1 → this role owns whole node(s), list all local GPUs
     //   nodes === 0 (legacy co-located half) → split 0..N/2-1 / N/2..N-1
-    if (strategy.deploy_type === "pd_cluster" && roleOverride) {
-      const raw = pdNodes ? pdNodes[roleOverride] : undefined;
-      const pdRoleObj =
-        typeof raw === "number" ? { nodes: raw }
-        : (raw && typeof raw === "object") ? raw
-        : {};
-      const legacyNodes = nodeCount > 1 ? 1 : 0;
-      const rolePoolNodes =
-        typeof pdRoleObj.nodes === "number" ? pdRoleObj.nodes : legacyNodes;
+    if (pool) {
+      const rolePoolNodes = pool.nodes;
       if (rolePoolNodes >= 1) {
         // Dedicated node(s) — each node owns all its local GPUs. Same value
         // is correct whether the pool is DEP (vllm spawns local ranks) or TP.
@@ -2251,14 +2244,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     // `vllm serve` per node), so for a non-zero DEP rank point those values at
     // NODE_{rank+1} to match that physical node. TP followers run --headless
     // with no side channel, so their host stays pinned to the head (NODE_1).
-    if (strategy.deploy_type === "pd_cluster" && roleOverride) {
-      const raw = pdNodes ? pdNodes[roleOverride] : undefined;
-      const pdRoleObj =
-        typeof raw === "number" ? { nodes: raw }
-        : (raw && typeof raw === "object") ? raw
-        : {};
-      const rank = pdRoleObj.rank || 0;
-      const rwParallelism = pdRoleObj.parallelism || pdRoleParallelism(recipe, strategy, roleOverride, hwProfile, hwProfileId);
+    if (pool) {
+      const rank = pool.rank || 0;
+      const rwParallelism = pool.parallelism || pdRoleParallelism(recipe, strategy, roleOverride, hwProfile, hwProfileId);
       if (rank > 0 && rwParallelism === "dep") {
         const oldVar = `$${roleOverride.toUpperCase()}_NODE_1`;
         const newVar = `$${roleOverride.toUpperCase()}_NODE_${rank + 1}`;
@@ -2346,13 +2334,8 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     const roleMeta = (role) => {
       const soRoleCfg = recipe.strategy_overrides?.[strategyName]?.[role] || {};
       const roleCfg = strategy[role] || {};
-      const legacyNodes = nodeCount > 1 ? 1 : 0;
-      const raw = pdNodes ? pdNodes[role] : undefined;
-      const pdRole =
-        typeof raw === "number" ? { nodes: raw }
-        : (raw && typeof raw === "object") ? raw
-        : {};
-      const nodes = typeof pdRole.nodes === "number" ? pdRole.nodes : legacyNodes;
+      const pdRole = poolConfig(role);
+      const nodes = pdRole.nodes;
       let parallelism = pdRole.parallelism || pdRoleParallelism(recipe, strategy, role, hwProfile, hwProfileId);
       // Same pool_modes snap as buildArgs, so the router / endpoints agree
       // with the pool commands (e.g. pool_modes: [dep] → intra-node DP > 1).

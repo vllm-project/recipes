@@ -6,13 +6,14 @@
 import { hardwareInstall, hwPipOverride, isFeatureSupportedOnHardware } from "./command-synthesis.js";
 import { whenMatches } from "./recipe-context.js";
 import { SELECTION_PARAMS, defaultFeaturesFor, synthesizeInstall } from "./recipe-render.js";
+import { envToExports } from "./env-format.js";
 
 const fence = (code, lang = "bash") => {
   const ticks = /```/.test(code) ? "````" : "```";
   return `${ticks}${lang}\n${code.trimEnd()}\n${ticks}`;
 };
 
-const envExports = (env) => Object.entries(env || {}).map(([k, v]) => `export ${k}=${v}`).join("\n");
+const envExports = envToExports;
 
 const withEnv = (env, command) => [envExports(env), command].filter(Boolean).join("\n");
 
@@ -129,7 +130,8 @@ function installSection(recipe, resolved) {
     // This hardware's own install: the recipe's vLLM floor describes the stock one.
     if (hwPip.note) out.push(hwPip.note, "");
     out.push(fence(hwPip.command), "");
-  } else if (min) out.push(`Requires vLLM >= ${min}${recipe.model?.nightly_required && hwInstall?.pip !== false ? " (not released yet — nightly wheel)" : ""}.`, "");
+  } else if (rendering?.vllm_version) out.push(`Docker build: vLLM ${rendering.vllm_version}.`, "");
+  else if (min) out.push(`Requires vLLM >= ${min}${recipe.model?.nightly_required && hwInstall?.pip !== false ? " (not released yet — nightly wheel)" : ""}.`, "");
   const install = synthesizeInstall(recipe);
   if (!hwPip && hwProfile.brand === "NVIDIA" && install?.pip && hwInstall?.pip !== false) {
     if (install.pip.note) out.push(install.pip.note, "");

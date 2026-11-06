@@ -5,6 +5,8 @@
 // left to copy. This shows the recipe's default configuration and says where
 // any other configuration's command can be read.
 
+import { envToExports } from "@/lib/env-format";
+
 function primaryCommand(r) {
   if (!r) return null;
   if (r.deploy_type === "multi_node") return r.head_command;
@@ -15,7 +17,7 @@ function primaryCommand(r) {
 
 export function CommandFallback({ hfId, summary, rendering }) {
   const command = primaryCommand(rendering);
-  const env = Object.entries(rendering?.env || {}).map(([k, v]) => `export ${k}=${v}`).join("\n");
+  const env = envToExports(rendering?.prefill?.env ?? rendering?.env);
   return (
     <div className="rounded-2xl border border-border overflow-hidden bg-[var(--command-bg)]">
       <div className="px-4 pt-3 text-xs text-muted-foreground">

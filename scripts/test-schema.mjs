@@ -62,3 +62,12 @@ test("vocabulary and status values are checked", () => {
   assert.ok(errorsFor((r) => { r.hardware_overrides.dgx_spark_gb10 = "verified"; }).length);
   assert.deepEqual(errorsFor((r) => { r.meta.hardware.dgx_spark_gb10 = "supported"; }), []);
 });
+
+test("platform images and exact Docker versions", () => {
+  const set = (r, version) => {
+    r.variants.default.docker_image = { ppu: "example/ppu:tag" };
+    r.variants.default.hardware_overrides = { ppu: { install: { docker: { vllm_version: version } } } };
+  };
+  assert.deepEqual(errorsFor((r) => set(r, "0.32.0")), []);
+  assert.ok(errorsFor((r) => set(r, "0.32.0+")).length);
+});
