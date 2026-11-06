@@ -7,7 +7,6 @@ import { BASELINE, effectivePreset, presetPoints, presetSelect, resolvePresetKey
 import { ADVANCED_OPTIONS } from "./advanced-options.js";
 import { SELECTION_PARAMS } from "./selection-params.js";
 import { bindRouterPort } from "./cluster-endpoints.js";
-import { resolveModelReference } from "./model-reference.js";
 
 export { SELECTION_PARAMS };
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "./omni-tasks.js";
@@ -34,10 +33,7 @@ import {
   isHardwareScalable,
   isKvStoreBrandSupported,
   strategyAllowsKvOffload,
-  recipeAllowsKvOffload,
   pickFittingVariant,
-  defaultVariantForHardware,
-  initialVariantKey,
   pdFitsSingleNode,
   pdRoleNodes,
   pdRoleNodesPerInstance,
@@ -201,8 +197,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   // The preset in effect (the default here unless one is picked) implies
   // builder choices — frontend, PD router, features, DCP, KV offload — which
   // the rendering applies the way the builder does.
-  const presetKey = resolvePresetKey(recipe, hwId, strategy, presetPick, variantKey);
-  const sel = presetSelect(recipe, presetKey, pointPick) || {};
+  const sel = presetSelect(recipe, resolvePresetKey(recipe, hwId, strategy, presetPick, variantKey), pointPick) || {};
   const linked = opts.linked || new Set();
   const pick = (param, selValue, optValue) => (linked.has(param) ? optValue : (selValue ?? optValue));
   let feats = [...features];
@@ -221,7 +216,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   // A multi-node preset's node count, as the builder applies it.
   if (Number.isInteger(sel.nodes) && !linked.has("nodes") && strategies[strategy]?.deploy_type === "multi_node") nodeCount = sel.nodes;
   const applied = {
-    features: feats, modes, kvOffload: recipeAllowsKvOffload(recipe, hwId) ? kvOffload ?? selKv : null, nodeCount,
+    features: feats, modes, kvOffload: kvOffload ?? selKv, nodeCount,
     frontend: pick("frontend", sel.frontend, opts.frontend),
     pdRouter: pick("pd_router", sel.pd_router, opts.pdRouter) ?? null,
     dcp: pick("dcp", sel.dcp, opts.dcp) ?? null,
@@ -243,24 +238,10 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     return null;
   }
   if (!result) return null;
-  // Catalog baselines can preserve an unsupported ordinary DP selection as
-  // an error artifact. Authored presets (including defaults) and PD layouts
-  // still fail static generation. Interactive selections return null plus
-  // selection.error instead, without any partially runnable deployment.
+  // Invalid authored layouts must fail static generation, not disappear in
+  // the generic warn-and-skip catch above. Interactive selections report the
+  // reason without publishing a partially runnable deployment.
   if (result.deploymentError) {
-    if (!strict && opts.emitBaselineDpError && presetKey === BASELINE
-      && result.deploymentError.code === "DP_INVALID_LAYOUT") {
-      const kvDeployment = strategies[applied.kvOffload]?.deploy_type === "kv_store_lb";
-      return {
-        hardware: hwId,
-        strategy: kvDeployment ? applied.kvOffload : strategy,
-        ...(kvDeployment ? { serving_strategy: strategy } : {}),
-        variant: variantKey,
-        node_count: nodeCount,
-        deploy_type: kvDeployment ? "kv_store_lb" : result.deployType,
-        error: result.deploymentError,
-      };
-    }
     if (strict || !opts.allowUnsupportedLayout) {
       throw new Error(`Invalid deployment in ${recipe.hf_id} (${hwId} / ${strategy}): ${result.deploymentError.message}`);
     }
@@ -286,9 +267,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   const env = result.env || {};
 
   const hwPip = hwPipOverride(hardwareInstall(recipe, recipe.variants?.[variantKey], taxonomy.hardware_profiles?.[hwId], hwId));
-  const modelReference = resolveModelReference(recipe, variantKey);
   const base = {
-    ...(modelReference ? { model_id: modelReference.model_id, model_url: modelReference.model_url } : {}),
     hardware: hwId,
     strategy,
     variant: variantKey,
@@ -459,20 +438,17 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
 // { recommended, alternatives: { <strategy>: <rendered> } } where the caller
 // writes each alternative to its own file and replaces it with a path link.
 // Null for omni recipes or unknown variants.
-export function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy, { allowVariantFallback = true } = {}) {
+export function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
   let variant = recipe.variants?.[variantKey];
   if (!variant) return null;
   if ((recipe.meta?.tasks || []).includes("omni")) return null;
 
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
-  if (!isHardwareSupported(recipe, hwId) || !isPrecisionCompatible(hwProfile, variant)
-    || !isVariantHardwareSupported(variant, hwId, hwProfile)) return null;
   const scalable = isHardwareScalable(hwProfile);
   // Non-scalable hardware (single-GPU workstation, e.g. DGX Station) can't
   // shard an oversized variant — substitute the largest variant that fits, and
   // skip multi-node strategies. Mirrors the command builder's UI behavior.
   if (!scalable && !fitsSingleNode(hwProfile, variant, hwId)) {
-    if (!allowVariantFallback) return null;
     const fitting = pickFittingVariant(recipe, hwProfile, hwId);
     if (!fitting) return null;
     variantKey = fitting;
@@ -500,7 +476,7 @@ export function buildVariantRendering(recipe, variantKey, hwId, strategies, taxo
     // the recipe opts that GPU out (`unsupported`) under
     // kv_cache_strategy_hardware.
     if (strategies[s]?.deploy_type === "kv_store_lb") {
-      return scalable && recipeAllowsKvOffload(recipe, hwId) && isKvStoreBrandSupported(hwProfile)
+      return scalable && isKvStoreBrandSupported(hwProfile)
         && recipe.kv_cache_strategy_hardware?.[s]?.[hwId] !== "unsupported";
     }
     // Serving-strategy per-GPU gate: compatible_strategies membership is the
@@ -539,17 +515,12 @@ export function buildVariantRendering(recipe, variantKey, hwId, strategies, taxo
 
   const recommended = renderCommand(
     recipe, variantKey, recommendedStrategy, hwId, recommendedNodeCount,
-    recommendedFeatures, strategies, taxonomy, recommendedPdNodes,
-    null, undefined, undefined, false, { emitBaselineDpError: true }
+    recommendedFeatures, strategies, taxonomy, recommendedPdNodes
   );
   if (!recommended) return null;
 
-  // Keep error artifacts minimal: embedded specs can contain executable
-  // companion or install commands even when this selection cannot run.
-  if (!recommended.error) {
-    recommended.strategy_spec = strategies[recommendedStrategy];
-    recommended.hardware_profile = hwProfile;
-  }
+  recommended.strategy_spec = strategies[recommendedStrategy];
+  recommended.hardware_profile = hwProfile;
 
   // Serving strategy for a Mooncake composition at a given nodes-per-instance
   // count: the recommendation for that node count, skipping PD (PD × Mooncake
@@ -605,8 +576,7 @@ export function buildVariantRendering(recipe, variantKey, hwId, strategies, taxo
       nc = nodesFor(s);
     }
     const feats = defaultFeaturesFor(recipe, hwId, variantKey);
-    const rendered = renderCommand(recipe, variantKey, servingStrategy, hwId, nc, feats, strategies, taxonomy,
-      pdNodes, kvOffload, undefined, undefined, false, { emitBaselineDpError: true });
+    const rendered = renderCommand(recipe, variantKey, servingStrategy, hwId, nc, feats, strategies, taxonomy, pdNodes, kvOffload);
     if (rendered) alternatives[s] = rendered;
   }
   return { recommended, alternatives };
@@ -631,7 +601,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
   const linked = new Set(SELECTION_PARAMS.filter((k) => get(k) != null));
   const profiles = taxonomy.hardware_profiles || {};
 
-  let variantKey = initialVariantKey(recipe, profiles, get("hardware"), get("variant"));
+  let variantKey = recipe.variants?.[get("variant")] ? get("variant") : "default";
   let variant = recipe.variants?.[variantKey] || {};
   const defaultHw = pickDefaultHardware(profiles, variant, recipe);
   const reqHw = get("hardware");
@@ -644,9 +614,8 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
   const hwId = hwAllowed ? reqHw : defaultHw;
   const hwProfile = profiles[hwId] || {};
   const scalable = isHardwareScalable(hwProfile);
-  if (!get("variant")) {
-    const preferred = defaultVariantForHardware(recipe, hwProfile, hwId);
-    const fitting = preferred || (!scalable && !fitsSingleNode(hwProfile, variant, hwId) ? pickFittingVariant(recipe, hwProfile, hwId) : null);
+  if (!get("variant") && !scalable && !fitsSingleNode(hwProfile, variant, hwId)) {
+    const fitting = pickFittingVariant(recipe, hwProfile, hwId);
     if (fitting) { variantKey = fitting; variant = recipe.variants[fitting]; }
   }
 
@@ -732,7 +701,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
   const kvOpt = resolveKvOffloadOption(taxonomy.kv_offload?.[kvReq], hwProfile, hwId);
   const kvAllowedByStrategy = strategyAllowsKvOffload(strategies[strategy]);
   let kvOffload = "";
-  if (hwProfile.generation !== "xpu" && recipeAllowsKvOffload(recipe, hwId) && kvReq) {
+  if (hwProfile.generation !== "xpu" && kvReq) {
     if (kvOpt) {
       if (isKvOffloadAllowedForStrategy(kvOpt, strategy, strategies[strategy])
         && isKvOffloadSupportedForRecipe(kvOpt, kvReq, recipe)

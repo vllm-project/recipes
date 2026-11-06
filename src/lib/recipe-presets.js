@@ -13,7 +13,7 @@
 //       default: true              # applied unless the user picks Baseline
 //       source: { label, href, key, revision }
 //       image: "vllm/vllm-openai:…"  # or { vllm, dynamo, pip: [], model_revision }
-//       tp: 4                      # single_node_tp or DP: TP size on this GPU
+//       tp: 4                      # single_node_tp only: TP size on this GPU
 //       select:                    # builder choices the preset implies
 //         nodes: 2                 # multi_node_* only: node count
 //         pd_router: dynamo
@@ -51,7 +51,6 @@
 
 export const BASELINE = "baseline";
 const ROLES = ["prefill", "decode"];
-const DP_TP_STRATEGIES = new Set(["multi_node_tp_dp", "single_node_dep", "multi_node_dep"]);
 
 const presetApplies = (p, hwId, strategyName, variantKey) =>
   p?.hardware === hwId
@@ -177,11 +176,6 @@ export function withPreset(recipe, key, hwId, strategyName, opts = {}) {
   if (!raw || !presetApplies(raw, hwId, strategyName, opts.variantKey)) return recipe;
   const p = effectivePreset(raw, opts.point);
   const so = { ...(recipe.strategy_overrides?.[strategyName] || {}) };
-  // DP strategies derive local/global DP from the selected strategy's TP.
-  // Keep variant.tp's existing single-node TP meaning unchanged.
-  if (DP_TP_STRATEGIES.has(strategyName) && Number.isInteger(p.tp)) {
-    so.tp = mountKeyed(so.tp, hwId, p.tp);
-  }
   so.hardware_overrides = { ...(so.hardware_overrides || {}) };
   so.hardware_overrides[hwId] = mountLayer(so.hardware_overrides[hwId], p);
   const ops = { all: argOps(p), roles: {} };
@@ -392,16 +386,8 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = [], 
     const gpus = taxonomy?.hardware_profiles?.[p.hardware]?.gpu_count;
     const checkTopology = (d, at) => {
       if (d?.tp !== undefined) {
-        const dp = DP_TP_STRATEGIES.has(p.strategy);
-        if (p.strategy !== "single_node_tp" && !dp) {
-          errors.push(`${at}.tp: only single_node_tp, multi_node_tp_dp, single_node_dep or multi_node_dep presets set tp`);
-        } else if (!Number.isInteger(d.tp) || d.tp < 1) {
-          errors.push(`${at}.tp: must be a positive integer`);
-        } else if (gpus && d.tp > gpus) {
-          errors.push(`${at}.tp: ${d.tp} exceeds ${p.hardware}'s ${gpus} GPUs`);
-        } else if (dp && Number.isInteger(gpus) && gpus % d.tp !== 0) {
-          errors.push(`${at}.tp: ${d.tp} must divide ${p.hardware}'s ${gpus} GPUs`);
-        }
+        if (p.strategy !== "single_node_tp") errors.push(`${at}.tp: only a single_node_tp preset sets tp`);
+        else if (gpus && d.tp > gpus) errors.push(`${at}.tp: ${d.tp} exceeds ${p.hardware}'s ${gpus} GPUs`);
       }
       if (d?.select?.nodes !== undefined && !String(p.strategy || "").startsWith("multi_node_")) {
         errors.push(`${at}.select.nodes: only a multi_node_* preset sets the node count`);

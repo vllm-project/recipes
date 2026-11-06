@@ -96,8 +96,6 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     description: { type: "string" },
     label: { type: "string" },
     model_id: { type: "string", pattern: "^[^/\\s]+/[^/\\s]+$" },
-    model_url: { type: "string", pattern: "^https?://" },
-    hardware: keyed(gpuId, { const: "unsupported" }),
     extra_args: strings,
     extra_env: envMap,
     docker_image: { type: "string" },
@@ -119,7 +117,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
         docker: { type: "boolean" },
       }),
     })),
-  }, { required: ["precision"] });
+  }, { required: ["precision", "vram_minimum_gb"] });
 
   const installTab = { anyOf: [{ type: "boolean" }, { type: "null" }, obj({ command: { type: "string" }, note: { type: "string" } })] };
 
@@ -146,7 +144,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     extra_env: envMap,
     env: envMap,
     vllm_args: strings,
-    hardware_overrides: keyed(hwKey, extraArgsEnv({ worker_args: strings })),
+    hardware_overrides: keyed(hwKey, extraArgsEnv()),
     prefill: pdRole,
     decode: pdRole,
     connectors: keyed(hwKey, { type: "array", minItems: 1, uniqueItems: true, items: { enum: Object.keys(strategies?.pd_cluster?.connectors || {}) } }),
@@ -204,7 +202,6 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
       model: {
         ...obj({
           model_id: { type: "string", pattern: "^[^/\\s]+/[^/\\s]+$" },
-          model_url: { type: "string", pattern: "^https?://" },
           min_vllm_version: { type: "string" },
           architecture: { enum: ["dense", "moe"] },
           parameter_count: { type: "string" },
@@ -255,7 +252,6 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
       },
       kv_cache_strategy_hardware: keyed({ enum: kvStores }, keyed(gpuId, { const: "unsupported" })),
       kv_offload_support: keyed({ enum: kvOffload }, status),
-      kv_offload_hardware: keyed(gpuId, { const: "unsupported" }),
       strategy_hardware: keyed(strategyId, keyed(hwKey, { enum: ["supported", "unsupported"] })),
       hardware_overrides: keyed(hwKey, extraArgsEnv({ install_note: { type: "string" } })),
       // looked up by exact profile id

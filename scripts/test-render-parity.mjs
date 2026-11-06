@@ -14,7 +14,7 @@ import { test } from "node:test";
 import { getAllRecipes } from "../src/lib/recipes.js";
 import { loadStrategies } from "../src/lib/strategies.js";
 import { loadTaxonomy } from "../src/lib/taxonomy.js";
-import { buildVariantRendering, pickPdNodes, renderCommand, resolveSelection } from "../src/lib/recipe-render.js";
+import { buildVariantRendering, pickPdNodes, resolveSelection } from "../src/lib/recipe-render.js";
 import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
 import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode } from "../src/lib/command-synthesis.js";
 
@@ -26,11 +26,10 @@ const readJson = (rel) => JSON.parse(fs.readFileSync(path.join(PUBLIC, rel), "ut
 test("Ascend selections preserve grouped PD launch steps across JSON and Markdown", () => {
   const recipe = {
     hf_id: "example/ascend",
-    model: { model_id: "example/ascend" },
+    model: { model_id: "example/ascend", architecture: "moe" },
     meta: { hardware: { ascend_950dt: "verified" } },
-    variants: { default: { precision: "mxfp4", vram_minimum_gb: 1711, supported_hardware: ["ascend_950dt"] } },
+    variants: { default: { precision: "bf16", vram_minimum_gb: 4, supported_hardware: ["ascend_950dt"] } },
     compatible_strategies: ["pd_cluster"],
-    kv_offload_hardware: { ascend_950dt: "unsupported" },
     strategy_overrides: { pd_cluster: {
       connectors: { ascend_950dt: ["mooncakev2"] },
       prefill: { nodes: 4, nodes_per_instance: 4, parallelism: "tp", tp: 8, pp: 4 },
@@ -38,9 +37,8 @@ test("Ascend selections preserve grouped PD launch steps across JSON and Markdow
     } },
   };
   const hw = taxonomy.hardware_profiles.ascend_950dt;
-  const noEstimate = { ...recipe.variants.default, vram_minimum_gb: undefined };
-  assert.deepEqual(pickPdNodes(hw, noEstimate, recipe, strategies, "ascend_950dt"), { prefill: 4, decode: 4 });
-  const query = new URLSearchParams("hardware=ascend_950dt&strategy=pd_cluster&pd_router=ascend&frontend=rust&kv_offload=simple&prefill_nodes=5&prefill_mode=dep&decode_nodes=3&decode_mode=tp");
+  assert.deepEqual(pickPdNodes(hw, recipe.variants.default, recipe, strategies, "ascend_950dt"), { prefill: 4, decode: 4 });
+  const query = new URLSearchParams("hardware=ascend_950dt&strategy=pd_cluster&pd_router=ascend&frontend=rust&prefill_nodes=5&prefill_mode=dep&decode_nodes=3&decode_mode=tp");
   const resolved = resolveSelection(recipe, query, strategies, taxonomy);
   assert.equal(resolved.selection.pd.prefill.nodes, 8);
   assert.equal(resolved.selection.pd.prefill.parallelism, "tp");
@@ -164,85 +162,6 @@ function queryFor(r) {
   return q;
 }
 
-function assertErrorArtifact(recipe, artifact) {
-  assert.equal(artifact.error?.code, "DP_INVALID_LAYOUT");
-  const noRunnableFields = (value) => {
-    for (const [key, child] of Object.entries(value || {})) {
-      assert.doesNotMatch(key, /command|argv|docker|install|setup|env/i, `error artifact contains ${key}`);
-      if (child && typeof child === "object") noRunnableFields(child);
-    }
-  };
-  noRunnableFields(artifact);
-  const resolved = resolveSelection(recipe, queryFor(artifact), strategies, taxonomy);
-  assert.equal(resolved.rendering, null);
-  assert.deepEqual(resolved.selection.error, artifact.error);
-}
-
-const invalidDpRecipe = (strategy, defaultStrategy = strategy) => ({
-  hf_id: "example/invalid-dp",
-  model: { model_id: "example/invalid-dp", architecture: "moe" },
-  variants: { default: { precision: "bf16", vram_minimum_gb: 1 } },
-  default_strategy: defaultStrategy,
-  compatible_strategies: ["single_node_tp", "multi_node_tp", strategy],
-  strategy_overrides: { [strategy]: { tp: 3 } },
-});
-
-test("static DP baseline errors retain recommended and alternative selections without runnable fields", () => {
-  const recommendedRecipe = invalidDpRecipe("single_node_dep");
-  const built = buildVariantRendering(recommendedRecipe, "default", "h200", strategies, taxonomy);
-  assertErrorArtifact(recommendedRecipe, built.recommended);
-  assert.ok(built.alternatives.single_node_tp.argv.length > 0);
-  assert.ok(built.alternatives.multi_node_tp.head_argv.length > 0);
-  // A KV deployment still identifies its underlying invalid serving strategy,
-  // so its usual static path resolves to the same dynamic error selection.
-  for (const key of ["kv_store_distributed_mooncake", "kv_store_centralized_mooncake"]) {
-    assert.equal(built.alternatives[key].strategy, key);
-    assert.equal(built.alternatives[key].serving_strategy, "single_node_dep");
-    assertErrorArtifact(recommendedRecipe, built.alternatives[key]);
-  }
-
-  const alternativeRecipe = invalidDpRecipe("multi_node_dep", "single_node_tp");
-  const alternativeBuilt = buildVariantRendering(alternativeRecipe, "default", "h200", strategies, taxonomy);
-  assert.ok(alternativeBuilt.recommended.argv.length > 0);
-  assertErrorArtifact(alternativeRecipe, alternativeBuilt.alternatives.multi_node_dep);
-});
-
-test("DP error artifacts do not relax direct rendering or strict and default preset failures", () => {
-  const recipe = invalidDpRecipe("multi_node_dep");
-  const args = [recipe, "default", "multi_node_dep", "h200", 2, [], strategies, taxonomy];
-  assert.throws(() => renderCommand(...args), /Invalid deployment/);
-  assert.throws(() => renderCommand(...args, null, null, "baseline", undefined, true,
-    { emitBaselineDpError: true }), /Invalid deployment/);
-
-  const presetRecipe = {
-    ...recipe,
-    strategy_overrides: {},
-    presets: { invalid: { label: "Invalid", hardware: "h200", strategy: "multi_node_dep", default: true, tp: 3 } },
-  };
-  assert.throws(() => buildVariantRendering(presetRecipe, "default", "h200", strategies, taxonomy), /Invalid deployment/);
-  assert.throws(() => renderCommand(presetRecipe, ...args.slice(1), null, null, "invalid", undefined, true,
-    { emitBaselineDpError: true }), /Invalid deployment/);
-  presetRecipe.presets.invalid.tp = 4;
-  presetRecipe.presets.invalid.points = { invalid: { tp: 3 } };
-  assert.throws(() => buildVariantRendering(presetRecipe, "default", "h200", strategies, taxonomy), /Invalid deployment/);
-});
-
-test("ordinary DP baseline error handling leaves grouped Ascend PD failures strict", () => {
-  const recipe = {
-    hf_id: "example/invalid-pd",
-    model: { model_id: "example/invalid-pd", architecture: "moe" },
-    meta: { hardware: { ascend_950dt: "supported" } },
-    variants: { default: { precision: "bf16", vram_minimum_gb: 1 } },
-    compatible_strategies: ["pd_cluster"],
-    strategy_overrides: { pd_cluster: {
-      connectors: { ascend_950dt: ["mooncakev2"] },
-      prefill: { nodes: 4, nodes_per_instance: 4, parallelism: "tp", tp: 8, pp: 4 },
-      decode: { nodes: 4, nodes_per_instance: 4, parallelism: "dep", tp: 3, pp: 1 },
-    } },
-  };
-  assert.throws(() => buildVariantRendering(recipe, "default", "ascend_950dt", strategies, taxonomy), /Invalid deployment/);
-});
-
 test("resolveSelection renders every static per-hardware rendering identically", () => {
   const mismatches = [];
   let checked = 0;
@@ -259,13 +178,10 @@ test("resolveSelection renders every static per-hardware rendering identically",
         if (expected.deploy_type === "pd_cluster") continue;
         if (!builderReachable(recipe, expected)) { unreachable++; continue; }
         const q = queryFor(expected);
+        const got = resolveSelection(recipe, q, strategies, taxonomy).rendering;
         checked++;
         try {
-          if (expected.error) assertErrorArtifact(recipe, expected);
-          else {
-            const got = resolveSelection(recipe, q, strategies, taxonomy).rendering;
-            assert.deepEqual(strip(got || {}), strip(expected));
-          }
+          assert.deepEqual(strip(got || {}), strip(expected));
         } catch {
           mismatches.push(`/${recipe.hf_id}.json?${q}`);
         }

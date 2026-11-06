@@ -56,7 +56,7 @@ connectors:
   nixl:
     display_name: "NIXL"
     default: true
-    description: "NIXL pull transfer: decode reads each request's KV from prefill. Works with every PD router."
+    description: "NIXL pull transfer: decode reads each request's KV from prefill. Works with vLLM Router, Dynamo, and SMG."
     docs: "https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html"
     routers: [vllm, dynamo, smg]
     prefill:
@@ -139,7 +139,7 @@ router:
 
 ascend:
   display_name: "Ascend Router"
-  description: "vLLM Ascend load-balancing proxy for MooncakeConnectorV2. Routes requests to prefill group heads and every decode node."
+  description: "vLLM Ascend load-balancing proxy for MooncakeConnectorV2. Routes to TP/TEP group heads and every external-DP process in either pool."
   brands: [Huawei]
   docs: "https://docs.vllm.ai/projects/ascend/en/latest/tutorials/features/pd_disaggregation_mooncake_multi_node.html"
 

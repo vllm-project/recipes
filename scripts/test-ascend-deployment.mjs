@@ -7,13 +7,11 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import yaml from "js-yaml";
 import Ajv from "ajv";
-import { createAscendPdRecipe } from "./fixtures/ascend-deployment.mjs";
-import { resolvePdRoleLayout, initialVariantKey, isVariantHardwareSupported } from "../src/lib/command-synthesis.js";
-import { bindRouterPort } from "../src/lib/cluster-endpoints.js";
-import { resolveModelReference, validateModelReferences } from "../src/lib/model-reference.js";
+import { createAscendPdRecipe, ascendPdCases } from "./fixtures/ascend-deployment.mjs";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
-import { resolveScope, applyOverlay, splitOverlay } from "../src/lib/overlay-merge.js";
-import { buildVariantRendering, renderCommand, resolveSelection } from "../src/lib/recipe-render.js";
+import { resolvePdRoleLayout } from "../src/lib/command-synthesis.js";
+import { bindRouterPort } from "../src/lib/cluster-endpoints.js";
+import { renderCommand, resolveSelection } from "../src/lib/recipe-render.js";
 import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -30,7 +28,7 @@ test("shared layouts and selection round five nodes to eight, with group-local r
   const recipe = createAscendPdRecipe();
   recipe.hf_id = "test/Ascend-PD";
   const resolved = select(recipe, pageQuery);
-  assert.equal(resolved.selection.variant, "ascend_mxfp4");
+  assert.equal(resolved.selection.variant, "default");
   for (const role of ["prefill", "decode"]) {
     const layout = resolvePdRoleLayout({ recipe, strategy: strategies.pd_cluster, role,
       hwProfile: taxonomy.hardware_profiles.ascend_950dt, hwProfileId: "ascend_950dt",
@@ -52,7 +50,6 @@ test("shared layouts and selection round five nodes to eight, with group-local r
   const markdown = selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls });
   assert.match(markdown, /--dp-rank-start 3/);
   assert.match(markdown, /\$PREFILL_NODE_5/);
-  assert.match(markdown, /Model weights:.*modelscope\.cn/);
 });
 
 test("ordinary GPU colocated pools retain zero-node half-GPU semantics", () => {
@@ -75,7 +72,7 @@ test("Ascend proxy port binding agrees in command, argv, Docker and public rende
   assert.match(bound.command, /--port 18000/);
   assert.equal(flag(bound.argv, "--port"), "18000");
   assert.match(bound.dockerCommand, /--port 18000/);
-  const render = (routerPort) => renderCommand(recipe, "ascend_mxfp4", "pd_cluster", "ascend_950dt", 1, [], strategies, taxonomy,
+  const render = (routerPort) => renderCommand(recipe, "default", "pd_cluster", "ascend_950dt", 1, [], strategies, taxonomy,
     null, null, undefined, undefined, true, { routerPort });
   for (const [requested, expected] of [[undefined, 8000], [18000, 18000]]) {
     const router = render(requested).router;
@@ -85,104 +82,6 @@ test("Ascend proxy port binding agrees in command, argv, Docker and public rende
   }
   for (const port of [0, -1, 65536, 1.2, "invalid", Infinity]) assert.throws(() => bindRouterPort(bound, port), /1 to 65535/);
 });
-
-test("hardware defaults apply before compatibility, while explicit variants report a hardware fallback", () => {
-  const recipe = createAscendPdRecipe();
-  assert.equal(initialVariantKey(recipe, taxonomy.hardware_profiles, "ascend_950dt"), "ascend_mxfp4");
-  assert.equal(select(recipe, { hardware: "ascend_950dt" }).selection.variant, "ascend_mxfp4");
-  assert.equal(initialVariantKey(recipe, taxonomy.hardware_profiles, "ascend_950dt", "fp8"), "fp8");
-  assert.equal(isVariantHardwareSupported(recipe.variants.fp8, "ascend_950dt"), false);
-  assert.equal(buildVariantRendering(recipe, "fp8", "ascend_950dt", strategies, taxonomy), null);
-  const explicit = select(recipe, { hardware: "ascend_950dt", variant: "fp8" });
-  assert.equal(explicit.selection.variant, "fp8");
-  assert.notEqual(explicit.selection.hardware, "ascend_950dt");
-  assert.ok(explicit.selection.adjusted.some((a) => a.param === "hardware"));
-});
-
-test("variant exclusions and defaults stay hardware-scoped and survive overlay round trips", () => {
-  const ctx = resolveScope({ brands: ["Huawei"] }, taxonomy);
-  const core = createAscendPdRecipe();
-  delete core.meta.default_variant;
-  delete core.variants.default.hardware;
-  const overlay = { meta: { default_variant: { ascend_950dt: "ascend_mxfp4" } }, variants: { default: { hardware: { ascend_950dt: "unsupported" } } } };
-  const merged = applyOverlay(core, overlay, { ctx, source: "ascend" });
-  assert.deepEqual(merged.errors, []);
-  for (const malicious of [{ meta: { default_variant: { h200: "default" } } }, { variants: { default: { hardware: { h200: "unsupported" } } } },
-    { variants: { default: { model_url: "https://example.test/foreign" } } }]) {
-    assert.ok(applyOverlay(core, malicious, { ctx, source: "ascend" }).errors.length);
-  }
-  const split = splitOverlay(merged.recipe, { ctx, source: "ascend" });
-  assert.deepEqual(applyOverlay(split.core, split.overlay, { ctx, source: "ascend" }).recipe, merged.recipe);
-  const validate = new Ajv({ allErrors: true, strict: false }).compile(buildRecipeSchema({ taxonomy, strategies }));
-  assert.ok(validate(merged.recipe), JSON.stringify(validate.errors));
-  merged.recipe.variants.default.hardware = { nvidia: "unsupported" };
-  assert.equal(validate(merged.recipe), false, "variant exclusions only accept exact hardware ids");
-});
-
-test("model references inherit only for the same checkpoint, and reject unsafe or malformed URLs", () => {
-  const recipe = createAscendPdRecipe();
-  recipe.model.model_url = "https://modelscope.cn/models/test/Base";
-  assert.equal(resolveModelReference(recipe, "default").model_url, recipe.model.model_url);
-  assert.equal(resolveModelReference(recipe, "fp8").model_url, "https://huggingface.co/test/Ascend-PD-FP8");
-  assert.equal(resolveModelReference(recipe, "ascend_mxfp4").provider, "ModelScope");
-  recipe.variants.fp8.model_url = "https://weights.example.test/checkpoint";
-  assert.equal(resolveModelReference(recipe, "fp8").provider, "weights.example.test");
-  for (const value of ["javascript:alert(1)", "/relative", "https://", "ftp://example.test/model"]) {
-    recipe.variants.fp8.model_url = value;
-    assert.throws(() => resolveModelReference(recipe, "fp8"));
-    assert.ok(validateModelReferences(recipe).some((e) => e.includes("variants.fp8.model_url")));
-  }
-});
-
-test("the real static API builder uses hardware defaults and preserves promoted checkpoint URLs", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-ascend-api-"));
-  try {
-    for (const file of ["taxonomy.yaml", "platforms.yaml", "strategies", "kv_store"]) fs.cpSync(path.join(root, file), path.join(dir, file), { recursive: true });
-    fs.mkdirSync(path.join(dir, "models", "test"), { recursive: true });
-    const recipe = createAscendPdRecipe();
-    recipe.model.model_url = "https://modelscope.cn/models/test/Base";
-    recipe.meta.default_variant.nvidia = "fp8";
-    recipe.variants.fp8.supported_hardware = ["h200"];
-    const recipeFile = path.join(dir, "models/test/Ascend-PD.yaml");
-    fs.writeFileSync(recipeFile, yaml.dump(recipe));
-    const out = path.join(dir, "api");
-    const env = { ...process.env, RECIPES_CONTENT_DIR: dir, RECIPES_PUBLIC_DIR: out };
-    execFileSync(process.execPath, ["scripts/build-recipes-api.mjs"], { cwd: root, env, stdio: "pipe", timeout: 60000 });
-    const api = (file) => JSON.parse(fs.readFileSync(path.join(out, file), "utf8"));
-    assert.equal(api("test/Ascend-PD/hw/ascend_950dt.json").variant, "ascend_mxfp4");
-    assert.equal(api("test/Ascend-PD/hw/h200.json").variant, "fp8");
-    assert.equal(api("test/Ascend-PD/hw/b200.json").variant, "default", "a broad preference is ignored on incompatible profiles");
-    const promoted = api("test/Ascend-PD-MXFP4.json");
-    assert.equal(promoted.model.model_id, recipe.variants.ascend_mxfp4.model_id);
-    assert.equal(promoted.model.model_url, recipe.variants.ascend_mxfp4.model_url);
-    assert.equal(api("test/Ascend-PD-FP8.json").model.model_url, "https://huggingface.co/test/Ascend-PD-FP8");
-    assert.equal(fs.existsSync(path.join(out, "test/Ascend-PD-FP8/hw/ascend_950dt.json")), false);
-    recipe.meta.default_variant.ascend_950dt = "fp8";
-    fs.writeFileSync(recipeFile, yaml.dump(recipe));
-    const invalidDefault = spawnSync(process.execPath, ["scripts/build-recipes-api.mjs"], { cwd: root, env, encoding: "utf8", timeout: 60000 });
-    assert.notEqual(invalidDefault.status, 0);
-    assert.match(invalidDefault.stdout + invalidDefault.stderr, /meta\.default_variant\.ascend_950dt/);
-    recipe.meta.default_variant.ascend_950dt = "ascend_mxfp4";
-    recipe.variants.fp8.model_url = "https://";
-    fs.writeFileSync(recipeFile, yaml.dump(recipe));
-    const invalid = spawnSync(process.execPath, ["scripts/build-recipes-api.mjs"], { cwd: root, env, encoding: "utf8", timeout: 60000 });
-    assert.notEqual(invalid.status, 0);
-    assert.match(invalid.stdout + invalid.stderr, /variants\.fp8\.model_url/);
-    delete recipe.variants.fp8.model_url;
-    recipe.strategy_overrides.pd_cluster.decode.tp.ascend_950dt = 4;
-    recipe.strategy_overrides.pd_cluster.decode.pp.ascend_950dt = 2;
-    fs.writeFileSync(recipeFile, yaml.dump(recipe));
-    const invalidLayout = spawnSync(process.execPath, ["scripts/build-recipes-api.mjs"], { cwd: root, env, encoding: "utf8", timeout: 60000 });
-    assert.notEqual(invalidLayout.status, 0, "an invalid authored layout must fail the build, not silently omit its rendering");
-    assert.match(invalidLayout.stdout + invalidLayout.stderr, /decode/i);
-    assert.match(invalidLayout.stdout + invalidLayout.stderr, /PP|pipeline/i);
-  } finally {
-    assert.equal(path.dirname(dir), path.resolve(os.tmpdir()));
-    assert.ok(path.basename(dir).startsWith("recipes-ascend-api-"));
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
 
 test("local DP exports every external process and keeps Markdown launcher steps", () => {
   const recipe = createAscendPdRecipe();
@@ -270,7 +169,7 @@ test("invalid layouts fail static rendering and return actionable selection erro
   cfg.tp.ascend_950dt = 4;
   cfg.hardware_overrides.ascend_950dt.extra_args.push("--pipeline-parallel-size", "2");
   for (const strict of [false, true]) {
-    assert.throws(() => renderCommand(recipe, "ascend_mxfp4", "pd_cluster", "ascend_950dt", 1,
+    assert.throws(() => renderCommand(recipe, "default", "pd_cluster", "ascend_950dt", 1,
       ["spec_decoding"], strategies, taxonomy, null, null, undefined, undefined, strict), /PP|pipeline/i);
   }
   const resolved = select(recipe, pageQuery);
@@ -281,4 +180,59 @@ test("invalid layouts fail static rendering and return actionable selection erro
   const markdown = selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls });
   assert.ok(markdown.includes(resolved.selection.error.message));
   assert.doesNotMatch(markdown, /launch_online_dp\.py|run_dp_template\.sh|```bash\nvllm serve/);
+});
+
+test("distinct dense and MoE PD layouts validate and export their selected checkpoint", () => {
+  const validate = new Ajv({ allErrors: true, strict: false }).compile(buildRecipeSchema({ taxonomy, strategies }));
+  for (const { recipe, hardware, variant } of ascendPdCases()) {
+    assert.ok(validate(recipe), JSON.stringify(validate.errors));
+    recipe.hf_id = recipe.model.model_id;
+    const resolved = select(recipe, { hardware, variant, strategy: "pd_cluster" });
+    assert.equal(resolved.selection.variant, variant);
+    assert.equal(resolved.selection.hardware, hardware);
+    const rendering = JSON.parse(JSON.stringify(resolved.rendering));
+    assert.ok(rendering.ascend_scripts && rendering.start_server);
+    const modelId = recipe.variants[variant].model_id || recipe.model.model_id;
+    for (const role of ["prefill", "decode"]) {
+      const pool = rendering[role];
+      for (const process of pool.processes || [pool]) {
+        assert.equal(process.argv[process.argv.indexOf("serve") + 1], modelId);
+        assert.ok(process.docker_argv.includes(modelId));
+      }
+      assert.match(pool.templateCommand, new RegExp(modelId));
+    }
+    const markdown = selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls });
+    assert.ok(markdown.includes(modelId));
+    for (const [index, title] of ["Scripts", "Prefill", "Decode", "Start_Server", "Start_Proxy"].entries()) {
+      assert.ok(markdown.includes(`### ${index + 1}. ${title}`));
+    }
+  }
+});
+
+test("the real static API builder exports grouped PD and rejects an invalid authored layout", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-ascend-api-"));
+  try {
+    for (const file of ["taxonomy.yaml", "platforms.yaml", "strategies", "kv_store"]) fs.cpSync(path.join(root, file), path.join(dir, file), { recursive: true });
+    fs.mkdirSync(path.join(dir, "models", "test"), { recursive: true });
+    const recipe = createAscendPdRecipe({ speculation: null });
+    const recipeFile = path.join(dir, "models/test/Moe-PD.yaml");
+    fs.writeFileSync(recipeFile, yaml.dump(recipe));
+    const out = path.join(dir, "api");
+    const env = { ...process.env, RECIPES_CONTENT_DIR: dir, RECIPES_PUBLIC_DIR: out };
+    execFileSync(process.execPath, ["scripts/build-recipes-api.mjs"], { cwd: root, env, stdio: "pipe", timeout: 60000 });
+    const exported = JSON.parse(fs.readFileSync(path.join(out, "test/Moe-PD/hw/ascend_950dt.json"), "utf8"));
+    assert.equal(exported.deploy_type, "pd_cluster");
+    assert.ok(exported.ascend_scripts && exported.start_server);
+    assert.equal(exported.decode.processes.length, 1);
+    recipe.strategy_overrides.pd_cluster.decode.pp.ascend_950dt = 2;
+    fs.writeFileSync(recipeFile, yaml.dump(recipe));
+    const invalid = spawnSync(process.execPath, ["scripts/build-recipes-api.mjs"], { cwd: root, env, encoding: "utf8", timeout: 60000 });
+    assert.notEqual(invalid.status, 0, "invalid PD topology must fail the build");
+    assert.match(invalid.stdout + invalid.stderr, /decode/i);
+    assert.match(invalid.stdout + invalid.stderr, /PP|pipeline/i);
+  } finally {
+    assert.equal(path.dirname(dir), path.resolve(os.tmpdir()));
+    assert.ok(path.basename(dir).startsWith("recipes-ascend-api-"));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

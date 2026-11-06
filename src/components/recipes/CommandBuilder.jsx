@@ -11,8 +11,7 @@ import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets
 import ShellCode from "@/components/recipes/ShellCode";
 import { publishSelection, onPresetRequest } from "@/lib/selection-store";
 import { holdInPlace } from "@/lib/hold-in-place";
-import { defaultVariantForHardware, initialVariantKey, pdRoleModes, pdRoleNodesPerInstance, resolvePdRoleLayout } from "@/lib/command-synthesis";
-import { resolveModelReference } from "@/lib/model-reference";
+import { pdRoleModes, pdRoleNodesPerInstance, resolvePdRoleLayout } from "@/lib/command-synthesis";
 import { bindRouterPort } from "@/lib/cluster-endpoints";
 import { whenMatches } from "@/lib/recipe-context";
 import { ADVANCED_OPTIONS } from "@/lib/advanced-options";
@@ -340,7 +339,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const omniTasks = useMemo(() => resolveOmniTasks(recipe), [recipe]);
 
   // ── State ──
-  const [variant, setVariant] = useState(() => initialVariantKey(recipe, taxonomy.hardware_profiles || {}, searchParams.get("hardware"), searchParams.get("variant")));
+  const [variant, setVariant] = useState(searchParams.get("variant") || "default");
   const [frontend, setFrontend] = useState(() =>
     resolveFrontend(recipe, searchParams.get("frontend") || undefined, taxonomy)
   );
@@ -364,14 +363,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // Smart default hardware: picks a profile compatible with the URL's variant
   // (respecting both VRAM and precision constraints — e.g., NVFP4 → B200).
   const defaultHw = useMemo(() => {
-    const urlVariant = initialVariantKey(recipe, taxonomy.hardware_profiles || {}, searchParams.get("hardware"), searchParams.get("variant"));
+    const urlVariant = searchParams.get("variant") || "default";
     const v = recipe.variants?.[urlVariant] || recipe.variants?.default || {};
     return pickDefaultHardware(taxonomy.hardware_profiles, v, recipe);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recipe, taxonomy]);
 
   const requestedHwId = searchParams.get("hardware");
-  const requestedVariant = recipe.variants?.[initialVariantKey(recipe, taxonomy.hardware_profiles || {}, requestedHwId, searchParams.get("variant"))] || {};
+  const requestedVariant = recipe.variants?.[searchParams.get("variant") || "default"] || recipe.variants?.default || {};
   const requestedHwProfile = taxonomy.hardware_profiles?.[requestedHwId] || {};
   const requestedHwAllowed = requestedHwId
     && taxonomy.hardware_profiles?.[requestedHwId]
@@ -456,11 +455,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     // (e.g. ?hardware=dgx_station_gb300, or a restored DGX preference) with a
     // variant that doesn't fit, fall to the largest variant that does. URL
     // ?variant= still wins.
-    if (!searchParams.get("variant") && resolvedHw) {
+    if (!searchParams.get("variant") && resolvedHw && !resolvedScalable) {
       const v = recipe.variants?.[variant] || recipe.variants?.default || {};
-      const preferred = defaultVariantForHardware(recipe, resolvedHw, resolvedHwId);
-      const fitting = preferred || (!resolvedScalable && !fitsSingleNode(resolvedHw, v, resolvedHwId) ? pickFittingVariant(recipe, resolvedHw, resolvedHwId) : null);
-      if (fitting && fitting !== variant) setVariant(fitting);
+      if (!fitsSingleNode(resolvedHw, v, resolvedHwId)) {
+        const fitting = pickFittingVariant(recipe, resolvedHw, resolvedHwId);
+        if (fitting && fitting !== variant) setVariant(fitting);
+      }
     }
     // Nodes: prefer the saved value; otherwise auto-bump if the resolved
     // hardware can't fit single-node (mirrors `setHw`'s bump). Non-scalable
@@ -845,8 +845,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // recipe's base model. Distinct from `modelId` below, which falls back to the
   // literal "model" placeholder for command text; a URL needs a real repo or
   // nothing at all.
-  const modelReference = resolveModelReference(recipe, variant);
-  const variantModelId = modelReference?.model_id;
+  const variantModelId = currentVariant.model_id || recipe.model?.model_id || null;
 
   // All hardware profiles grouped by brand, sorted by architectural generation
   // within brand (oldest → newest; matches the semianalysis GPU timeline).
@@ -1227,7 +1226,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // say so the way the TP hint does.
   const depWidth = isSingleNode && activeStrategy === "single_node_dep" && Array.isArray(result?.argv)
     ? lastIntFlag(result.argv, "--data-parallel-size", hwGpuCount)
-      * lastIntFlag(result.argv, "--tensor-parallel-size", 1)
     : hwGpuCount;
   const showDepUsageHint = depWidth < hwGpuCount;
   // The whole selection as an explicit page query, for the `.md` / `.json`
@@ -2506,12 +2504,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                         disabled={!compatible}
                         onClick={() => compatible && selectVariant(key)}
                         title={compatible
-                          ? [v.description, v.vram_minimum_gb > 0 ? "Min " + v.vram_minimum_gb + " GB to load." : "Loading memory has not been specified."].filter(Boolean).join("\n\n")
+                          ? [v.description, "Min " + v.vram_minimum_gb + " GB to load."].filter(Boolean).join("\n\n")
                           : "Unavailable on the selected hardware."
                         }
                       >
                         <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
-                        {v.vram_minimum_gb > 0 && <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>}
+                        <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
                       </Pill>
                     );
                   })}
@@ -2774,11 +2772,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                           ? [
                               v.description,
                               `Selecting this variant also switches Hardware to ${fallbackHw?.display_name || fallbackHwId}.`,
-                              v.vram_minimum_gb > 0 ? `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.` : "Loading memory has not been specified.",
+                              `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
                             ].filter(Boolean).join("\n\n")
                         : [
                             v.description,
-                            v.vram_minimum_gb > 0 ? `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.` : "Loading memory has not been specified.",
+                            `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
                           ].filter(Boolean).join("\n\n")
                     }
                   >
@@ -2788,7 +2786,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                         shift when Hardware changes. The offload budget stays in
                         the fit/gating path (fitsSingleNode) and in hardware_notes. */}
                     <span className="font-mono font-semibold">{(v.label || v.precision)?.toUpperCase()}</span>
-                    {v.vram_minimum_gb > 0 && <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>}
+                    <span className="text-muted-foreground ml-1.5 font-mono">{v.vram_minimum_gb} GB</span>
                   </Pill>
                 );
               })}
@@ -2816,13 +2814,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 )}
                 {variantModelId && (
                   <a
-                    href={modelReference.model_url}
-                    title={`Open model weights on ${modelReference.provider}`}
+                    href={`https://huggingface.co/${variantModelId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground hover:text-vllm-blue transition-colors"
                   >
-                    {modelReference.provider === "Hugging Face" ? <HuggingFaceIcon className="w-3 h-3" /> : <Globe className="w-3 h-3" aria-hidden="true" />}
+                    <HuggingFaceIcon className="w-3 h-3" />
                     {variantModelId}
                     <ExternalLink size={9} />
                   </a>
@@ -4503,7 +4500,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
       env: template ? (pool.templateEnv || {}) : pool.env,
       meta: pool,
       ...(template ? {
-        description: pool.templateDescription || `Run only on ${label} nodes, beside launch_online_dp.py. Replace <NIC_NAME> and <LOCAL_IP> with this node's interface and IP. This writes ./run_dp_template.sh for Start_Server; each node needs only its own role's template.`,
+        description: pool.templateDescription || `Reuse this template on every ${label} node, beside launch_online_dp.py. Replace <NIC_NAME> and <LOCAL_IP> with each node's interface and IP. This writes ./run_dp_template.sh; select the node to launch in Start_Server.`,
         isTemplate: true,
       } : {}),
     };
@@ -4611,7 +4608,12 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
                   if (Number.isFinite(n)) onRankChange(role, n - 1);
                 }}
                 className="w-14 px-2 py-0.5 text-xs font-mono tabular-nums rounded border border-[var(--command-fg)]/20 bg-transparent text-[var(--command-fg)] focus:outline-none focus:border-vllm-blue/60" />
-              <span className="text-[var(--command-fg)]/40">of 1..{result[role].nodes}</span>
+              <span className="text-[var(--command-fg)]/40">
+                of 1..{result[role].nodes} · group {(result[role].currentInstance ?? 0) + 1} of {result[role].instances}
+                {result[role].parallelism === "dep"
+                  ? ` · DP rank${result[role].dpLocal > 1 ? "s" : ""} ${result[role].startRank}${result[role].dpLocal > 1 ? `–${result[role].startRank + result[role].dpLocal - 1}` : ""}`
+                  : ` · node rank ${result[role].instanceNodeRank}`}
+              </span>
             </label>
           ))}
         </div>
@@ -4623,11 +4625,12 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
             : `${active.meta.nodes} node${active.meta.nodes === 1 ? "" : "s"} × ${(active.meta.poolGpus / Math.max(1, active.meta.nodes))} ${deviceLabel} = ${active.meta.poolGpus} ${deviceLabel} · ${active.meta.parallelism.toUpperCase()}`}
           {active.meta.grouped && <> · {active.meta.instances} independent group{active.meta.instances === 1 ? "" : "s"} of {active.meta.nodesPerInstance} nodes</>}
           {active.meta.parallelism === "dep" && active.meta.nodes > 1 && (
-            <> {" · DP="}{active.meta.dpSize}{active.meta.grouped ? " per group" : ""}{" (dp_local="}{active.meta.dpLocal}{", one vllm serve per node)"}</>
+            <> {" · DP="}{active.meta.dpSize}{active.meta.grouped ? " per group" : ""}{" (dp_local="}{active.meta.dpLocal}
+              {isAscendSequence ? `, launcher starts ${active.meta.dpLocal} vLLM process${active.meta.dpLocal === 1 ? "" : "es"} per node)` : ", one vllm serve per node)"}</>
           )}
         </div>
       )}
-      {!active.isRouter && active.meta?.nodes > 1 && onRankChange && (
+      {!active.isRouter && !active.isTemplate && active.meta?.nodes > 1 && onRankChange && (
         <div className="px-4 pt-2 pb-0 flex items-center gap-2 text-[11px] text-[var(--command-fg)]/70 flex-wrap">
           <span className="font-mono uppercase tracking-wider text-[var(--command-fg)]/50">node</span>
           {/* Display node index is 1-based; the emitted rank flag stays 0-based
@@ -4648,7 +4651,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           {active.meta.parallelism === "dep" ? (
             <>
               <span className="text-[var(--command-fg)]/40">
-                of 1..{active.meta.nodes} · {active.meta.grouped ? "group DP rank" : "start_rank"} = {active.meta.grouped ? active.meta.instanceNodeRank : active.meta.startRank}
+                of 1..{active.meta.nodes} · {active.meta.grouped ? "group DP start rank" : "start_rank"} = {active.meta.startRank}
               </span>
               <span className="text-[var(--command-fg)]/40 ml-auto">vLLM spawns {active.meta.dpLocal} local DP ranks per node</span>
             </>
@@ -4658,7 +4661,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
                 of 1..{active.meta.nodes} · --node-rank = {active.meta.instanceNodeRank ?? active.meta.currentNode ?? 0}
               </span>
               <span className="text-[var(--command-fg)]/40 ml-auto">
-                {(active.meta.instanceNodeRank ?? active.meta.currentNode ?? 0) === 0 ? `${active.meta.grouped ? "group head" : "head node"} — serves ${result.transport === "grpc" ? "gRPC" : "HTTP"} + ${connectorLabel}` : result.orchestrator === "ascend-proxy" ? "Prefill node — PD separation" : "follower — runs --headless"}
+                {(active.meta.instanceNodeRank ?? active.meta.currentNode ?? 0) === 0 ? `${active.meta.grouped ? "group head" : "head node"} — serves ${result.transport === "grpc" ? "gRPC" : "HTTP"} + ${connectorLabel}` : "follower — runs --headless"}
               </span>
             </>
           )}

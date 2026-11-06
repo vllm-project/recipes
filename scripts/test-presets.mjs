@@ -318,7 +318,7 @@ test("an Ascend PD preset accepts and renders separate router and connector keys
   assert.ok(validate(model), JSON.stringify(validate.errors));
   const errors = () => validatePresets(model, taxonomy, Object.keys(strategies), [], strategies.pd_cluster.connectors);
   assert.deepEqual(errors(), []);
-  const result = resolveCommand(model, "ascend_mxfp4", "pd_cluster", "ascend_950dt", [], strategies, taxonomy,
+  const result = resolveCommand(model, "default", "pd_cluster", "ascend_950dt", [], strategies, taxonomy,
     [], 1, null, {}, null, null, undefined, "ascend", "http", null, "a5", null, "mooncakev2");
   assert.equal(result.pdRouter, "ascend");
   assert.equal(result.kvConnector.selected, "mooncakev2");
@@ -361,60 +361,10 @@ test("preset validation: points, select, arg ops and variants", () => {
   assert.ok(one({ json_args: { "--x": "1" } }).some((e) => /must be an object/.test(e)));
   assert.ok(one({ points: { a: { label: "a", default: true }, b: { label: "b", default: true } } }).some((e) => /more than one default point/.test(e)));
   assert.ok(one({ points: { a: { label: "a", roles: { decode: {} } } } }).some((e) => /only a pd_cluster preset has roles/.test(e)));
-  assert.ok(errs({ a: { label: "a", hardware: "b200", strategy: "pd_cluster", tp: 4 } }).some((e) => /only single_node_tp, multi_node_tp_dp, single_node_dep or multi_node_dep presets set tp/.test(e)));
+  assert.ok(errs({ a: { label: "a", hardware: "b200", strategy: "pd_cluster", tp: 4 } }).some((e) => /only a single_node_tp preset sets tp/.test(e)));
   assert.ok(one({ tp: 99 }).some((e) => /exceeds/.test(e)));
   assert.ok(one({ select: { nodes: 2 } }).some((e) => /only a multi_node_\* preset sets the node count/.test(e)));
   assert.ok(one({ points: { a: { label: "a", tp: 99 } } }).some((e) => /exceeds/.test(e)));
-});
-
-test("DP preset and point TP stay strategy- and variant-scoped without changing single-node TP", () => {
-  for (const strategy of ["multi_node_tp_dp", "single_node_dep", "multi_node_dep"]) {
-    for (const baselineTp of [1, { default: 1, h200: 4, ascend_910c: 16 }]) {
-      const model = {
-        variants: { default: { precision: "bf16", tp: 2 }, w8a8: { precision: "int8", tp: 4 } },
-        strategy_overrides: { [strategy]: { tp: baselineTp }, single_node_tp: { tp: 2 } },
-        presets: { dp: {
-          label: "A3 W8A8", hardware: "ascend_910c", strategy, variants: ["w8a8"], tp: 8,
-          points: { base: { label: "TP8", default: true }, smaller: { label: "TP4", tp: 4 } },
-        } },
-      };
-      const before = structuredClone(model);
-      const mounted = withPreset(model, "dp", "ascend_910c", strategy, { variantKey: "w8a8" });
-      assert.equal(mounted.strategy_overrides[strategy].tp.ascend_910c, 8, strategy);
-      assert.equal(mounted.strategy_overrides[strategy].tp.default, 1, "the core scalar/default remains intact");
-      if (typeof baselineTp === "object") assert.equal(mounted.strategy_overrides[strategy].tp.h200, 4);
-      const point = withPreset(model, "dp", "ascend_910c", strategy, { variantKey: "w8a8", point: "smaller" });
-      assert.equal(point.strategy_overrides[strategy].tp.ascend_910c, 4, "point TP overrides preset TP");
-      assert.deepEqual(mounted.variants, before.variants, "DP TP must not change the variant's single-node TP");
-      assert.deepEqual(mounted.strategy_overrides.single_node_tp, before.strategy_overrides.single_node_tp);
-      assert.equal(withPreset(model, "dp", "ascend_910c", strategy, { variantKey: "default" }), model);
-      assert.equal(withPreset(model, "dp", "h200", strategy, { variantKey: "w8a8" }), model);
-      assert.equal(withPreset(model, "dp", "ascend_910c", "single_node_tp", { variantKey: "w8a8" }), model);
-      assert.equal(withPreset(model, BASELINE, "ascend_910c", strategy, { variantKey: "w8a8" }), model);
-      assert.deepEqual(model, before, "mounting a lane must not mutate the baseline");
-    }
-  }
-});
-
-test("DP preset and point TP require a positive device divisor", () => {
-  const dpStrategies = ["multi_node_tp_dp", "single_node_dep", "multi_node_dep"];
-  const hwId = "ascend_910c";
-  const gpus = taxonomy.hardware_profiles[hwId].gpu_count;
-  const errors = (preset) => validatePresets({ variants: { default: {} }, presets: { dp: preset } },
-    taxonomy, [...dpStrategies, "single_node_tp"]);
-  for (const strategy of dpStrategies) {
-    const base = { label: "DP", hardware: hwId, strategy, tp: gpus / 2 };
-    assert.deepEqual(errors(base), [], strategy);
-    assert.deepEqual(errors({ ...base, points: { tp4: { label: "TP4", tp: gpus / 4 } } }), []);
-    for (const [tp, reason] of [[0, /positive integer/], [-1, /positive integer/], [1.5, /positive integer/],
-      ["4", /positive integer/], [gpus + 1, /exceeds/], [3, /must divide/]]) {
-      assert.ok(errors({ ...base, tp }).some((e) => e.startsWith("presets.dp.tp:") && reason.test(e)), `${strategy} preset TP ${tp}`);
-      assert.ok(errors({ ...base, points: { bad: { label: "bad", tp } } })
-        .some((e) => e.startsWith("presets.dp.points.bad.tp:") && reason.test(e)), `${strategy} point TP ${tp}`);
-    }
-  }
-  assert.deepEqual(errors({ label: "Single TP", hardware: hwId, strategy: "single_node_tp", tp: 3 }), [],
-    "single-node TP does not require consuming every device");
 });
 
 test("an overlay adds only presets for its own hardware, and split moves them back", () => {

@@ -28,7 +28,6 @@ import Ajv from "ajv";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import { BASELINE, effectivePreset, presetImage, presetPoints, presetSelect, resolvePresetKey, validatePresets, withPreset } from "../src/lib/recipe-presets.js";
 import { validateContextEntries } from "../src/lib/recipe-context.js";
-import { resolveModelReference, validateModelReferences } from "../src/lib/model-reference.js";
 import {
   pickDefaultHardware,
   listCompatibleHardware,
@@ -39,12 +38,6 @@ import {
   isKvStoreBrandSupported,
   strategyAllowsKvOffload,
   pickFittingVariant,
-  defaultVariantForHardware,
-  isHardwareSupported,
-  isPrecisionCompatible,
-  isVariantHardwareSupported,
-  variantRunsOnHardware,
-  hardwareKeyedValue,
   pdFitsSingleNode,
   pdRoleNodes,
   pdRoleParallelism,
@@ -260,20 +253,6 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
 
   if (recipe?.meta?.default_hardware) exact("meta.default_hardware", recipe.meta.default_hardware);
   for (const k of keysOf(recipe?.meta?.hardware)) exact("meta.hardware", k);
-  for (const [key, target] of Object.entries(recipe?.meta?.default_variant || {})) {
-    keyed("meta.default_variant", key);
-    if (!recipe.variants?.[target]) errors.push(`meta.default_variant.${key}: unknown variant ${target}`);
-    else {
-      const matches = Object.entries(profiles).filter(([id, profile]) => hardwareKeyedValue({ [key]: target }, profile, id) === target);
-      // A brand/generation default is a preference for the profiles that can
-      // run it (e.g. an MI355X-only checkpoint under amd), not an eligibility
-      // declaration for older devices. Exact-profile defaults must run there.
-      if (matches.length && !matches.some(([id, profile]) => variantRunsOnHardware(profile, recipe.variants[target], id))) {
-        errors.push(`meta.default_variant.${key}: variant ${target} cannot run on matching hardware`);
-      }
-    }
-  }
-  errors.push(...validateModelReferences(recipe));
 
   for (const [kvId, map] of Object.entries(recipe?.kv_cache_strategy_hardware || {})) {
     for (const k of keysOf(map)) exact(`kv_cache_strategy_hardware.${kvId}`, k);
@@ -293,7 +272,6 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
 
   for (const [variantKey, variant] of Object.entries(recipe?.variants || {})) {
     const at = `variants.${variantKey}`;
-    for (const id of keysOf(variant?.hardware)) exact(`${at}.hardware`, id);
     for (const k of variant?.supported_hardware || []) {
       if (k.startsWith("arch:")) {
         if (!computeArchs.has(k.slice(5))) errors.push(`${at}.supported_hardware references unknown compute architecture ${k}`);
@@ -466,7 +444,7 @@ function writeRecipeJson(hfId, payload) {
 // The default-hw entry in `by_hardware` re-uses the legacy `/strategies/`
 // paths to avoid duplicating identical files; non-default hw entries each get
 // their own `/hw/<hw>/strategies/` subtree.
-function renderAndWriteVariant(recipe, variantKey, altBaseHfId, strategies, taxonomy, { useHardwareDefaults = false } = {}) {
+function renderAndWriteVariant(recipe, variantKey, altBaseHfId, strategies, taxonomy) {
   const variant = recipe.variants?.[variantKey];
   if (!variant) return null;
   if ((recipe.meta?.tasks || []).includes("omni")) return null;
@@ -477,24 +455,20 @@ function renderAndWriteVariant(recipe, variantKey, altBaseHfId, strategies, taxo
   fs.rmSync(path.join(PUBLIC, altBaseHfId), { recursive: true, force: true });
 
   const hwProfiles = taxonomy.hardware_profiles || {};
-  const variantForHardware = (id) => useHardwareDefaults ? defaultVariantForHardware(recipe, hwProfiles[id], id) || variantKey : variantKey;
   const defaultHw = pickDefaultHardware(hwProfiles, variant, recipe);
   // Mirror the UI rule: `restricted` profiles (TPU, etc.) only surface for
   // recipes that explicitly opt in via `meta.hardware.<id>`. Otherwise we'd
   // emit speculative TPU commands for every NVIDIA recipe.
   const declaredHw = recipe.meta?.hardware || {};
-  const compatibleHw = Object.entries(hwProfiles).filter(([id, hw]) => {
-    const selected = recipe.variants[variantForHardware(id)];
-    return (!hw.restricted || id in declaredHw) && isHardwareSupported(recipe, id)
-      && isPrecisionCompatible(hw, selected) && isVariantHardwareSupported(selected, id, hw);
-  }).map(([id]) => id);
+  const compatibleHw = listCompatibleHardware(hwProfiles, variant, recipe)
+    .filter((id) => !hwProfiles[id]?.restricted || id in declaredHw);
   // Ensure default is first; de-dupe.
   const hwIds = Array.from(new Set([defaultHw, ...compatibleHw]));
 
   // Render every (variant × hardware) combo up front.
   const renderedByHw = {};
   for (const hwId of hwIds) {
-    const built = buildVariantRendering(recipe, variantForHardware(hwId), hwId, strategies, taxonomy, { allowVariantFallback: useHardwareDefaults });
+    const built = buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy);
     if (built) renderedByHw[hwId] = built;
   }
   if (!renderedByHw[defaultHw]) return null;
@@ -607,7 +581,7 @@ for (const file of findYamlFiles(modelsDir)) {
   // have to reimplement command-synthesis. Mirrors the website's default
   // selections.
   const parentHfId = `${hfOrg}/${hfRepo}`;
-  const defaultRecommended = renderAndWriteVariant(r, "default", parentHfId, strategies, taxonomy, { useHardwareDefaults: true });
+  const defaultRecommended = renderAndWriteVariant(r, "default", parentHfId, strategies, taxonomy);
   if (defaultRecommended) r.recommended_command = defaultRecommended;
   // Each preset at each point, written into the subtree rebuilt above, with a
   // `json:` pointer on the recipe's own preset entry.
@@ -683,13 +657,12 @@ for (const file of findYamlFiles(modelsDir)) {
   // `meta.derived_from` back to the parent for the full family view.
   for (const { variantKey, variantModelId, recommended } of promotedRenderings) {
     const variantCfg = r.variants?.[variantKey] || {};
-    const { model_id: _vMid, model_url: _vUrl, json: _vJson, ...variantCore } = variantCfg;
-    const modelReference = resolveModelReference(r, variantKey);
+    const { model_id: _vMid, json: _vJson, ...variantCore } = variantCfg;
     const promoted = {
       ...r,  // share meta/features/guide/etc. with the parent
       hf_id: variantModelId,
       meta: { ...r.meta, derived_from: parentHfId, variant: variantKey },
-      model: { ...r.model, model_id: variantModelId, model_url: modelReference.model_url },
+      model: { ...r.model, model_id: variantModelId },
       variants: { default: variantCore },
       recommended_command: recommended,
     };

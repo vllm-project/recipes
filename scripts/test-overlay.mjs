@@ -147,56 +147,6 @@ test("grouped PD overlays are no-ops during cutover and survive split/merge", ()
   assert.equal(splitOverlay(core, { ctx, source }).overlay.strategy_overrides, undefined);
 });
 
-test("mixed worker flags stay hardware scoped and survive source cutover", () => {
-  const fragment = { strategy_overrides: { multi_node_tp_dp: { hardware_overrides: {
-    ascend_950dt: { worker_args: ["--headless"] }, ascend_910c: { worker_args: ["--headless"] },
-  } } } };
-  const { recipe: full, errors } = applyOverlay(core0, fragment, { ctx, source });
-  assert.deepEqual(errors, []);
-  const repeated = applyOverlay(full, fragment, { ctx, source });
-  assert.deepEqual(repeated.errors, []);
-  assert.deepEqual(repeated.recipe, full);
-  const { core, overlay } = splitOverlay(full, { ctx, source });
-  assert.deepEqual(overlay.strategy_overrides.multi_node_tp_dp, fragment.strategy_overrides.multi_node_tp_dp);
-  const roundTrip = applyOverlay(core, yaml.load(yaml.dump(overlay)), { ctx, source });
-  assert.deepEqual(roundTrip.errors, []);
-  assert.deepEqual(roundTrip.recipe, full);
-  assert.ok(errs({ strategy_overrides: { multi_node_tp_dp: { hardware_overrides: {
-    gb300: { worker_args: ["--headless"] },
-  } } } }).length, "an Ascend overlay cannot change NVIDIA worker behavior");
-});
-
-test("DP strategy TP overlays preserve core defaults, enforce scope and round-trip", () => {
-  for (const strategy of ["multi_node_tp_dp", "single_node_dep", "multi_node_dep"]) {
-    const core = { strategy_overrides: { [strategy]: { tp: 8 } } };
-    const before = structuredClone(core);
-    const fragment = { strategy_overrides: { [strategy]: { tp: { ascend_910c: 4, ascend_950dt: 2 } } } };
-    const full = applyOverlay(core, fragment, { ctx, source });
-    assert.deepEqual(full.errors, [], strategy);
-    assert.deepEqual(full.recipe.strategy_overrides[strategy].tp, { default: 8, ascend_910c: 4, ascend_950dt: 2 });
-    assert.deepEqual(core, before);
-    const repeated = applyOverlay(full.recipe, fragment, { ctx, source });
-    assert.deepEqual(repeated.errors, [], "an identical cutover overlay is a no-op");
-    assert.deepEqual(repeated.recipe, full.recipe);
-    const split = splitOverlay(full.recipe, { ctx, source });
-    assert.deepEqual(split.overlay, fragment);
-    assert.deepEqual(split.core.strategy_overrides[strategy].tp, { default: 8 });
-    const restored = applyOverlay(split.core, yaml.load(yaml.dump(split.overlay)), { ctx, source });
-    assert.deepEqual(restored.errors, []);
-    assert.deepEqual(restored.recipe, full.recipe);
-
-    const overlay = (tp) => ({ strategy_overrides: { [strategy]: { tp } } });
-    for (const denied of [8, 4, { default: 4 }, { h200: 4 }, { nvidia: 4 }]) {
-      assert.ok(applyOverlay(core, overlay(denied), { ctx, source }).errors.length,
-        `${strategy} cannot modify a shared default, scalar or other brand`);
-    }
-    assert.ok(applyOverlay(full.recipe, overlay({ ascend_910c: 8 }), { ctx, source })
-      .errors.some((e) => /add-only/.test(e)), "existing hardware TP is immutable");
-  }
-  assert.ok(errs({ strategy_overrides: { multi_node_tp: { tp: { ascend_910c: 4 } } } }).length,
-    "the new rule does not grant arbitrary strategy topology writes");
-});
-
 test("overlay is add-only", () => {
   const once = applyOverlay(core0, { meta: { hardware: { ascend_910c: "verified" } } }, { ctx, source }).recipe;
   assert.equal(applyOverlay(once, { meta: { hardware: { ascend_910c: "unsupported" } } }, { ctx, source }).errors.length, 1);
