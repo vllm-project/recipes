@@ -1479,16 +1479,19 @@ function shellQuote(s) {
 // The official Ascend launcher passes seven positional arguments to a single
 // run_dp_template.sh on every node. Keep templates independent of the node
 // currently selected in the builder: the launcher supplies its group-local rank.
-function ascendRoleTemplate(role, args, env, modelId, { headlessFollowers = false } = {}) {
-  const bindings = role === "prefill"
-    ? { "--port": "$2", "--data-parallel-size": "$3", "--node-rank": "$4", "--master-addr": "$5", "--master-port": "$6", "--tensor-parallel-size": "$7" }
-    : { "--port": "$2", "--data-parallel-size": "$3", "--data-parallel-rank": "$4", "--data-parallel-address": "$5", "--data-parallel-rpc-port": "$6", "--tensor-parallel-size": "$7" };
-  const templateArgs = dedupeArgs(stripArgs(args.filter(Boolean), ["--headless"]));
+function ascendRoleTemplate(role, args, env, modelId, { parallelism = "tp", headlessFollowers = false } = {}) {
+  const externalDp = parallelism === "dep";
+  const bindings = externalDp
+    ? { "--port": "$2", "--data-parallel-size": "$3", "--data-parallel-rank": "$4", "--data-parallel-address": "$5", "--data-parallel-rpc-port": "$6", "--tensor-parallel-size": "$7", "--data-parallel-size-local": "1" }
+    : { "--port": "$2", "--data-parallel-size": "$3", "--node-rank": "$4", "--master-addr": "$5", "--master-port": "$6", "--tensor-parallel-size": "$7" };
+  const templateArgs = dedupeArgs(stripArgs(args.filter(Boolean), ["--headless", ...(externalDp
+    ? ["--data-parallel-hybrid-lb", "--data-parallel-start-rank", "--nnodes", "--node-rank", "--master-addr", "--master-port"] : [])]));
   for (const [flag, value] of Object.entries(bindings)) {
     const index = templateArgs.indexOf(flag);
     if (index >= 0) templateArgs[index + 1] = value;
     else templateArgs.push(flag, value);
   }
+  if (externalDp && !templateArgs.includes("--data-parallel-external-lb")) templateArgs.push("--data-parallel-external-lb");
   let kvPort;
   let draftModel;
   const valueQuote = (value, flag) => {
@@ -1503,9 +1506,7 @@ function ascendRoleTemplate(role, args, env, modelId, { headlessFollowers = fals
             kvPort = connector.kv_port;
             connector.kv_port = "__ASCEND_KV_PORT__";
           }
-          for (const pool of ["prefill", "decode"]) {
-            if (extra?.[pool]) extra[pool].tp_size = "__ASCEND_TP__";
-          }
+          if (extra?.[role]) extra[role].tp_size = "__ASCEND_TP__";
         } else if (connector.kv_connector === "MultiConnector") {
           for (const child of extra?.connectors || []) bindTransfer(child);
         }
@@ -1513,7 +1514,7 @@ function ascendRoleTemplate(role, args, env, modelId, { headlessFollowers = fals
       bindTransfer(config);
     } else {
       draftModel = config.model;
-      config.model = "__ASCEND_DRAFT__";
+      if (draftModel) config.model = "__ASCEND_DRAFT__";
       config.draft_tensor_parallel_size = "__ASCEND_TP__";
     }
     // Keep numeric TP values unquoted in JSON while expanding only the
@@ -1740,7 +1741,7 @@ export function resolveCommand(...params) {
   params[0] = withPreset(recipe, presetKey, hwProfileId, strategyName, { variantKey, point: params[18] });
   const result = resolveCommandImpl(dcpOut, ...params.slice(0, 17), params[19] ?? null);
   if (result && typeof result === "object" && !Array.isArray(result)) {
-    result.dcp = dcpOut.get?.() ?? null;
+    result.dcp = result.deploymentError ? null : dcpOut.get?.() ?? null;
     const options = matchingPresets(recipe, hwProfileId, strategyName, variantKey);
     const points = raw ? presetPoints(raw) : [];
     result.preset = options.length
@@ -2584,6 +2585,47 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   const deployType = strategy.deploy_type || "single_node";
 
   if (deployType === "pd_cluster") {
+    const roleMeta = (role) => {
+      const { tpDeclared, ...meta } = pdLayout(role);
+      return meta;
+    };
+    const pMeta = roleMeta("prefill");
+    const dMeta = roleMeta("decode");
+    const groupedAscend = ascendProxy && pMeta.grouped && dMeta.grouped;
+    const invalidAscendLayout = (role, reason) => ({
+      deployType, nodeCount, prefill: pMeta, decode: dMeta,
+      orchestrator: "ascend-proxy", pdRouter: "ascend", frontendRequired: "python",
+      routerLabel: "Ascend Router", router: { port: pdConnector.router.port || 8000 },
+      kvConnector: { selected: pdConnectorSel },
+      deploymentError: { code: "ASCEND_PD_INVALID_LAYOUT", role,
+        message: `Ascend PD${role ? ` ${role}` : ""}: ${reason}` },
+    });
+    if (ascendProxy && pMeta.grouped !== dMeta.grouped) {
+      return invalidAscendLayout(null, "declare nodes_per_instance for both pools or neither pool.");
+    }
+    if (groupedAscend) {
+      for (const [role, meta] of [["prefill", pMeta], ["decode", dMeta]]) {
+        const tp = pdLayout(role).tpDeclared ?? meta.tp;
+        if (!Number.isInteger(tp) || tp < 1 || tp > gpuCount || gpuCount % tp !== 0) {
+          return invalidAscendLayout(role, `TP must be a positive integer that divides the ${gpuCount} devices per node (got ${tp}).`);
+        }
+        if (!Number.isInteger(meta.pp) || meta.pp < 1 || (meta.parallelism === "dep" && meta.pp !== 1)) {
+          return invalidAscendLayout(role, "PP must be a positive integer; external DEP requires PP1.");
+        }
+        if (meta.nodes < 1 || meta.nodesPerInstance > MAX_NODES) {
+          return invalidAscendLayout(role, `each instance must use between 1 and ${MAX_NODES} separate physical nodes.`);
+        }
+        if (meta.parallelism !== "dep") {
+          const localWorld = tp * meta.pp / meta.nodesPerInstance;
+          if (!Number.isInteger(localWorld) || localWorld < 1 || localWorld > tp) {
+            return invalidAscendLayout(role, "TP × PP must divide evenly across the instance's nodes and fit the TP devices exposed by each launcher.");
+          }
+        }
+        if (meta.parallelism === "dep" && meta.dpSize <= 1) {
+          return invalidAscendLayout(role, "external DEP requires a global DP size greater than 1; use TP for a single engine.");
+        }
+      }
+    }
     // A recipe or preset layer may write a role's whole --kv-transfer-config
     // (MiniMax-M3.1-Flash on MI355X composes NIXL with CPU offload by hand).
     // When that names another transfer connector than the one picked, the
@@ -2608,16 +2650,6 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     // (one local rank per GPU) so routing picks the right DP rank.
     const policy = strategy.router?.policy || "round_robin";
 
-    // Resolve per-role node counts + parallelism mode for the return payload
-    // so the UI can render "1 node" vs "4 nodes — duplicate for ranks 1..N-1"
-    // notices without rederiving the logic.
-    const roleMeta = (role) => {
-      const { tpDeclared, ...meta } = pdLayout(role);
-      return meta;
-    };
-
-    const pMeta = roleMeta("prefill");
-    const dMeta = roleMeta("decode");
     // Router endpoints: one per node (each node binds its own HTTP --port).
     // Shell-variable form ($PREFILL_NODE_N / $DECODE_NODE_N) so the same name
     // the prefill/decode commands consume is also what the router lists —
@@ -2666,32 +2698,120 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
 
     let prefillArgs = buildArgs("prefill", null);
     let decodeArgs = buildArgs("decode", null);
+    if (groupedAscend) {
+      // Normalize the spelling of launcher-owned flags before checking the
+      // final layered argv. Otherwise --port=65535 (or an underscore alias)
+      // could evade validation and disagree with the generated launcher.
+      const ownedFlags = new Set([
+        "--port", "--tensor-parallel-size", "--pipeline-parallel-size", "--prefill-context-parallel-size",
+        "--data-parallel-size", "--data-parallel-size-local", "--data-parallel-rank",
+        "--data-parallel-start-rank", "--data-parallel-address", "--data-parallel-rpc-port",
+        "--data-parallel-hybrid-lb", "--data-parallel-external-lb", "--headless",
+        "--nnodes", "--node-rank", "--master-addr", "--master-port", "--speculative-config",
+      ]);
+      const aliases = {
+        "-tp": "--tensor-parallel-size", "-pp": "--pipeline-parallel-size", "-pcp": "--prefill-context-parallel-size",
+        "-dp": "--data-parallel-size", "-dpn": "--data-parallel-rank", "-dpr": "--data-parallel-start-rank",
+        "-dpl": "--data-parallel-size-local", "-dpa": "--data-parallel-address", "-dpp": "--data-parallel-rpc-port",
+        "-dph": "--data-parallel-hybrid-lb", "-dpe": "--data-parallel-external-lb",
+        "-n": "--nnodes", "-r": "--node-rank", "-sc": "--speculative-config",
+      };
+      for (const [role, args] of [["prefill", prefillArgs], ["decode", decodeArgs]]) {
+        for (const arg of args) {
+          const spelling = arg.split("=", 1)[0].replaceAll("_", "-");
+          if (spelling === "--speculative-config.draft-tensor-parallel-size") {
+            return invalidAscendLayout(role, "set draft TP through the role's tp field, not a speculative-config dot-key override.");
+          }
+          if (spelling.startsWith("--") && !ownedFlags.has(spelling)
+              && [...ownedFlags].some((flag) => flag.startsWith(spelling))) {
+            return invalidAscendLayout(role, `use the full option name instead of ${spelling} for launcher-controlled arguments.`);
+          }
+        }
+      }
+      const normalize = (args) => dedupeArgs(args.filter(Boolean).flatMap((arg) => {
+        const attached = arg.match(/^(-n|-r)(-?\d+)$/);
+        if (attached) return [aliases[attached[1]], attached[2]];
+        const equals = arg.indexOf("=");
+        const spelling = (equals < 0 ? arg : arg.slice(0, equals)).replaceAll("_", "-");
+        const flag = aliases[spelling] || spelling;
+        return ownedFlags.has(flag) ? (equals < 0 ? [flag] : [flag, arg.slice(equals + 1)]) : [arg];
+      }));
+      prefillArgs = normalize(prefillArgs);
+      decodeArgs = normalize(decodeArgs);
+      for (const [role, meta, args] of [["prefill", pMeta, prefillArgs], ["decode", dMeta, decodeArgs]]) {
+        const value = (flag, fallback) => Number(lastFlagValue(args, flag) ?? fallback);
+        for (const [flag, expected] of [["--tensor-parallel-size", meta.tp], ["--pipeline-parallel-size", meta.pp], ["--data-parallel-size", meta.dpSize]]) {
+          if (value(flag, flag === "--tensor-parallel-size" ? meta.tp : 1) !== expected) {
+            return invalidAscendLayout(role, `${flag} must match the declared role layout (${expected}); set topology in the role fields.`);
+          }
+        }
+        const groupHead = `$${role.toUpperCase()}_NODE_${meta.instanceStart}`;
+        const bindings = meta.parallelism === "dep"
+          ? [["--data-parallel-address", groupHead], ["--data-parallel-rank", String(meta.startRank)]]
+          : [["--nnodes", String(meta.nodesPerInstance)], ["--node-rank", String(meta.instanceNodeRank)], ["--master-addr", groupHead]];
+        for (const [flag, expected] of bindings) {
+          const actual = lastFlagValue(args, flag);
+          if (actual !== undefined && String(actual) !== expected) {
+            return invalidAscendLayout(role, `${flag} must match this node's group layout (${expected}); configure addresses through the endpoint placeholders.`);
+          }
+        }
+        if (value("--prefill-context-parallel-size", 1) !== 1) {
+          return invalidAscendLayout(role, "the external launcher requires prefill-context-parallel-size 1.");
+        }
+        const port = value("--port", role === "prefill" ? 8001 : 8002);
+        const localCount = meta.parallelism === "dep" ? meta.dpLocal : 1;
+        if (!Number.isInteger(port) || port < 1 || port + localCount - 1 > 65535) {
+          return invalidAscendLayout(role, `HTTP ports must stay within 1..65535 for all ${localCount} local processes (base port ${port}).`);
+        }
+        // The seven-argument template binds the draft TP to this role's TP.
+        // Keep direct commands, process argv and Docker exports identical.
+        const specIndex = args.indexOf("--speculative-config");
+        if (specIndex >= 0) {
+          const spec = JSON.parse(args[specIndex + 1]);
+          args[specIndex + 1] = JSON.stringify({ ...spec, draft_tensor_parallel_size: meta.tp });
+        }
+      }
+    }
     let ascendProxyRouter = null;
     let ascendScripts = null;
     let startServer = null;
     const ascendTemplates = {};
     if (ascendProxy) {
-      const hosts = (role, meta) => Array.from({ length: meta.parallelism === "dep" ? Math.max(1, meta.nodes) : meta.instances },
-        (_, index) => `$${role.toUpperCase()}_NODE_${meta.parallelism === "dep" ? index + 1 : index * meta.nodesPerInstance + 1}`);
-      const pHosts = hosts("prefill", pMeta);
-      const dHosts = hosts("decode", dMeta);
       const pPort = servedPort(dedupeArgs(prefillArgs));
       const dPort = servedPort(dedupeArgs(decodeArgs));
+      const endpoints = (role, meta, basePort) => {
+        if (meta.parallelism !== "dep") {
+          return Array.from({ length: meta.instances }, (_, instance) => ({
+            host: `$${role.toUpperCase()}_NODE_${instance * meta.nodesPerInstance + 1}`, port: basePort,
+          }));
+        }
+        const localCount = groupedAscend ? meta.dpLocal : 1;
+        return Array.from({ length: Math.max(1, meta.nodes) }, (_, node) =>
+          Array.from({ length: localCount }, (_, localRank) => ({
+            host: `$${role.toUpperCase()}_NODE_${node + 1}`, port: basePort + localRank,
+          }))).flat();
+      };
+      const pEndpoints = endpoints("prefill", pMeta, pPort);
+      const dEndpoints = endpoints("decode", dMeta, dPort);
+      const pHosts = pEndpoints.map(({ host }) => host);
+      const dHosts = dEndpoints.map(({ host }) => host);
+      const pPorts = pEndpoints.map(({ port }) => String(port));
+      const dPorts = dEndpoints.map(({ port }) => String(port));
       const proxyArgs = [
         pdConnector.router.script,
         "--host", "0.0.0.0", "--port", "$ROUTER_PORT",
         "--prefiller-hosts", ...pHosts,
-        "--prefiller-ports", ...pHosts.map(() => String(pPort)),
+        "--prefiller-ports", ...pPorts,
         "--decoder-hosts", ...dHosts,
-        "--decoder-ports", ...dHosts.map(() => String(dPort)),
+        "--decoder-ports", ...dPorts,
       ];
       const proxyBody = [
         `${proxyArgs[0]} \\`,
         "    --host 0.0.0.0 --port $ROUTER_PORT \\",
         `    --prefiller-hosts ${pHosts.join(" ")} \\`,
-        `    --prefiller-ports ${pHosts.map(() => pPort).join(" ")} \\`,
+        `    --prefiller-ports ${pPorts.join(" ")} \\`,
         `    --decoder-hosts ${dHosts.join(" ")} \\`,
-        `    --decoder-ports ${dHosts.map(() => dPort).join(" ")}`,
+        `    --decoder-ports ${dPorts.join(" ")}`,
       ].join("\n");
       const dockerMeta = computeDockerMeta(recipe, variant, hwProfile, hwProfileId);
       ascendProxyRouter = {
@@ -2701,7 +2821,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         dockerCommand: `docker run --rm --network host \\\n    --entrypoint python ${shellQuote(dockerMeta.image)} \\\n    ${proxyBody}`,
         port: pdConnector.router.port || 8000,
       };
-      if (pMeta.grouped && dMeta.grouped) {
+      if (groupedAscend) {
         ascendProxyRouter.description = "Run the proxy from the matching vLLM Ascend installation after every Prefill and Decode engine is ready. The proxy is independent of launch_online_dp.py.";
         ascendScripts = {
           command: `curl --fail --location --output launch_online_dp.py ${shellQuote(pdConnector.router.launcher_url)}`,
@@ -2713,16 +2833,17 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         for (const [role, args] of [["prefill", prefillArgs], ["decode", decodeArgs]]) {
           const meta = role === "prefill" ? pMeta : dMeta;
           ascendTemplates[role] = { templateCommand: ascendRoleTemplate(role, args, buildEnv(role), modelId,
-            { headlessFollowers: meta.nodesPerInstance > 1 && meta.parallelism !== "dep" }), templateEnv: {} };
+            { parallelism: meta.parallelism, headlessFollowers: meta.nodesPerInstance > 1 && meta.parallelism !== "dep" }), templateEnv: {} };
         }
         const launchRole = (role, meta, args, port) => {
-          const rpcPort = lastFlagValue(dedupeArgs(args), role === "prefill" ? "--master-port" : "--data-parallel-rpc-port")
+          const externalDp = meta.parallelism === "dep";
+          const rpcPort = lastFlagValue(dedupeArgs(args), externalDp ? "--data-parallel-rpc-port" : "--master-port")
             || `$${role.toUpperCase()}_DP_RPC_PORT`;
           return [
             `# Run on $${role.toUpperCase()}_NODE_${meta.currentNode + 1}, beside its ${role} run_dp_template.sh.`,
             "python launch_online_dp.py \\",
-            `    --dp-size ${meta.dpSize} --tp-size ${meta.tp} --dp-size-local 1 \\`,
-            `    --dp-rank-start ${meta.instanceNodeRank} \\`,
+            `    --dp-size ${meta.dpSize} --tp-size ${meta.tp} --dp-size-local ${externalDp ? meta.dpLocal : 1} \\`,
+            `    --dp-rank-start ${externalDp ? meta.startRank : meta.instanceNodeRank} \\`,
             `    --dp-address $${role.toUpperCase()}_NODE_${meta.instanceStart} \\`,
             `    --dp-rpc-port ${shellQuote(String(rpcPort))} --vllm-start-port ${port}`,
           ].join("\n");
@@ -2820,25 +2941,54 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
           install: resolveBrandInstall(kvStoreStrat.vllm?.install),
         }
       : null;
+    const buildRoleResult = (role, args, meta) => {
+      const env = buildEnv(role);
+      const common = { env, ...meta, ...ascendTemplates[role] };
+      if (!groupedAscend || meta.parallelism !== "dep") {
+        return { ...common, command: formatCommand(args), argv: formatArgv(args) };
+      }
+      // launch_online_dp.py starts one external-LB vLLM process per local DP
+      // rank. Each process owns only TP devices and exposes its own HTTP port.
+      const basePort = servedPort(dedupeArgs(args));
+      const processArgs = stripArgs(args.filter(Boolean), [
+        "--port", "--tensor-parallel-size", "--data-parallel-size", "--data-parallel-size-local",
+        "--data-parallel-rank", "--data-parallel-start-rank", "--data-parallel-hybrid-lb",
+        "--headless", "--nnodes", "--node-rank", "--master-addr", "--master-port",
+      ]);
+      const processes = Array.from({ length: meta.dpLocal }, (_, localRank) => {
+        const dpRank = meta.startRank + localRank;
+        const port = basePort + localRank;
+        const perProcessArgs = [
+          ...processArgs,
+          "--tensor-parallel-size", String(meta.tp),
+          "--data-parallel-size", String(meta.dpSize),
+          "--data-parallel-size-local", "1",
+          "--data-parallel-rank", String(dpRank),
+          "--data-parallel-external-lb",
+          "--port", String(port),
+        ];
+        return {
+          localRank, dpRank, port,
+          command: formatCommand(perProcessArgs),
+          argv: formatArgv(perProcessArgs),
+          env: { ...env, ASCEND_RT_VISIBLE_DEVICES: Array.from({ length: meta.tp }, (_, device) => localRank * meta.tp + device).join(",") },
+        };
+      });
+      // The singular fields remain a complete node launch only when it has
+      // one process. Multi-process consumers must launch every processes[] item.
+      if (processes.length === 1) {
+        const { command, argv, env: processEnv } = processes[0];
+        return { ...common, command, argv, env: processEnv, processes };
+      }
+      return { ...common, processes };
+    };
     return {
       deployType,
       nodeCount,
       ...(pdMooncake ? { mooncake: pdMooncake } : {}),
       ...(ascendScripts ? { ascendScripts, startServer } : {}),
-      prefill: {
-        command: formatCommand(prefillArgs),
-        argv: formatArgv(prefillArgs),
-        env: buildEnv("prefill"),
-        ...pMeta,
-        ...ascendTemplates.prefill,
-      },
-      decode: {
-        command: formatCommand(decodeArgs),
-        argv: formatArgv(decodeArgs),
-        env: buildEnv("decode"),
-        ...dMeta,
-        ...ascendTemplates.decode,
-      },
+      prefill: buildRoleResult("prefill", prefillArgs, pMeta),
+      decode: buildRoleResult("decode", decodeArgs, dMeta),
       orchestrator: ascendProxy ? "ascend-proxy" : dynamo ? "dynamo" : smg ? "smg" : "vllm-router",
       pdRouter: ascendProxy ? "ascend" : dynamo ? "dynamo" : smg ? "smg" : "vllm",
       ...(ascendProxy ? { routerLabel: "Ascend Router", frontendRequired: "python" } : {}),

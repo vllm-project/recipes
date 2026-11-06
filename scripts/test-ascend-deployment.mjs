@@ -168,9 +168,117 @@ test("the real static API builder uses hardware defaults and preserves promoted 
     const invalid = spawnSync(process.execPath, ["scripts/build-recipes-api.mjs"], { cwd: root, env, encoding: "utf8", timeout: 60000 });
     assert.notEqual(invalid.status, 0);
     assert.match(invalid.stdout + invalid.stderr, /variants\.fp8\.model_url/);
+    delete recipe.variants.fp8.model_url;
+    recipe.strategy_overrides.pd_cluster.decode.tp.ascend_950dt = 4;
+    recipe.strategy_overrides.pd_cluster.decode.pp.ascend_950dt = 2;
+    fs.writeFileSync(recipeFile, yaml.dump(recipe));
+    const invalidLayout = spawnSync(process.execPath, ["scripts/build-recipes-api.mjs"], { cwd: root, env, encoding: "utf8", timeout: 60000 });
+    assert.notEqual(invalidLayout.status, 0, "an invalid authored layout must fail the build, not silently omit its rendering");
+    assert.match(invalidLayout.stdout + invalidLayout.stderr, /decode/i);
+    assert.match(invalidLayout.stdout + invalidLayout.stderr, /PP|pipeline/i);
   } finally {
     assert.equal(path.dirname(dir), path.resolve(os.tmpdir()));
     assert.ok(path.basename(dir).startsWith("recipes-ascend-api-"));
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+
+test("local DP exports every external process and keeps Markdown launcher steps", () => {
+  const recipe = createAscendPdRecipe();
+  recipe.hf_id = "test/Ascend-PD";
+  recipe.strategy_overrides.pd_cluster.decode.tp.ascend_950dt = 4;
+  const resolved = select(recipe, pageQuery);
+  const { prefill, decode, router, start_server } = resolved.rendering;
+  assert.ok(prefill.command);
+  assert.equal(decode.command, undefined);
+  assert.equal(decode.argv, undefined);
+  assert.equal(decode.docker_command, undefined);
+  assert.equal(decode.processes.length, 2);
+  assert.equal(decode.dpLocal, 2);
+  assert.equal(decode.dpSize, 8);
+  for (const [i, process] of decode.processes.entries()) {
+    const devices = i === 0 ? "0,1,2,3" : "4,5,6,7";
+    assert.equal(process.localRank, i);
+    assert.equal(process.dpRank, 6 + i);
+    assert.equal(process.port, 8002 + i);
+    assert.equal(process.env.ASCEND_RT_VISIBLE_DEVICES, devices);
+    assert.equal(flag(process.argv, "--data-parallel-size-local"), "1");
+    assert.equal(flag(process.argv, "--data-parallel-rank"), String(6 + i));
+    assert.equal(flag(process.argv, "--data-parallel-address"), "$DECODE_NODE_5");
+    assert.equal(flag(process.argv, "--port"), String(8002 + i));
+    assert.equal(flag(process.docker_argv, "--data-parallel-rank"), String(6 + i));
+    assert.equal(flag(process.docker_argv, "--port"), String(8002 + i));
+    assert.ok(process.docker_argv.includes(`ASCEND_RT_VISIBLE_DEVICES=${devices}`));
+    assert.match(process.docker_command, new RegExp(`ASCEND_RT_VISIBLE_DEVICES=${devices}`));
+    for (const argv of [process.argv, process.docker_argv]) {
+      assert.equal(JSON.parse(flag(argv, "--speculative-config")).draft_tensor_parallel_size, 4);
+      const topology = JSON.parse(flag(argv, "--kv-transfer-config")).kv_connector_extra_config;
+      assert.equal(topology.prefill.tp_size, 8);
+      assert.equal(topology.decode.tp_size, 4);
+    }
+  }
+  assert.match(start_server.command, /--dp-size 8 --tp-size 4 --dp-size-local 2/);
+  assert.match(start_server.command, /--dp-rank-start 6/);
+  const markdown = selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls });
+  assert.match(markdown, /--dp-size 8 --tp-size 4 --dp-size-local 2/);
+  assert.match(markdown, /--decoder-ports (8002 8003 ){7}8002 8003/);
+  assert.match(router.command, /--decoder-hosts \$DECODE_NODE_1 \$DECODE_NODE_1/);
+  assert.deepEqual(JSON.parse(JSON.stringify(resolved.rendering)).decode.processes, decode.processes);
+});
+
+test("local DP1 keeps singular public commands identical to its sole process", () => {
+  const recipe = createAscendPdRecipe();
+  const resolved = select(recipe, pageQuery);
+  const decode = resolved.rendering.decode;
+  assert.equal(decode.dpLocal, 1);
+  assert.equal(decode.processes.length, 1);
+  for (const key of ["command", "argv", "env", "docker_command", "docker_argv"]) {
+    assert.deepEqual(decode[key], decode.processes[0][key], key);
+  }
+  assert.equal(flag(decode.argv, "--data-parallel-size-local"), "1");
+  assert.equal(flag(decode.argv, "--data-parallel-rank"), "3");
+  assert.equal(decode.env.ASCEND_RT_VISIBLE_DEVICES, "0,1,2,3,4,5,6,7");
+});
+
+test("local DP4 uses all device slices and accepts the last legal HTTP port", () => {
+  const recipe = createAscendPdRecipe();
+  const cfg = recipe.strategy_overrides.pd_cluster.decode;
+  cfg.tp.ascend_950dt = 2;
+  cfg.hardware_overrides.ascend_950dt.extra_args.push("--port", "65532");
+  const { decode, router, start_server } = select(recipe, pageQuery).rendering;
+  assert.equal(decode.dpLocal, 4);
+  assert.equal(decode.dpSize, 16);
+  assert.deepEqual(decode.processes.map((process) => process.dpRank), [12, 13, 14, 15]);
+  assert.deepEqual(decode.processes.map((process) => process.port), [65532, 65533, 65534, 65535]);
+  assert.deepEqual(decode.processes.map((process) => process.env.ASCEND_RT_VISIBLE_DEVICES), ["0,1", "2,3", "4,5", "6,7"]);
+  for (const process of decode.processes) {
+    for (const argv of [process.argv, process.docker_argv]) {
+      assert.equal(flag(argv, "--port"), String(process.port));
+      assert.equal(JSON.parse(flag(argv, "--speculative-config")).draft_tensor_parallel_size, 2);
+    }
+  }
+  assert.match(start_server.command, /--dp-size 16 --tp-size 2 --dp-size-local 4/);
+  assert.match(start_server.command, /--dp-rank-start 12/);
+  assert.match(router.command, /--decoder-ports (65532 65533 65534 65535 ){7}65532 65533 65534 65535/);
+});
+
+test("invalid layouts fail static rendering and return actionable selection errors", () => {
+  const recipe = createAscendPdRecipe();
+  recipe.hf_id = "test/Ascend-PD";
+  const cfg = recipe.strategy_overrides.pd_cluster.decode;
+  cfg.tp.ascend_950dt = 4;
+  cfg.hardware_overrides.ascend_950dt.extra_args.push("--pipeline-parallel-size", "2");
+  for (const strict of [false, true]) {
+    assert.throws(() => renderCommand(recipe, "ascend_mxfp4", "pd_cluster", "ascend_950dt", 1,
+      ["spec_decoding"], strategies, taxonomy, null, null, undefined, undefined, strict), /PP|pipeline/i);
+  }
+  const resolved = select(recipe, pageQuery);
+  assert.equal(resolved.rendering, null);
+  assert.equal(resolved.selection.error.code, "ASCEND_PD_INVALID_LAYOUT");
+  assert.match(resolved.selection.error.message, /decode/i);
+  assert.match(resolved.selection.error.message, /PP|pipeline/i);
+  const markdown = selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls });
+  assert.ok(markdown.includes(resolved.selection.error.message));
+  assert.doesNotMatch(markdown, /launch_online_dp\.py|run_dp_template\.sh|```bash\nvllm serve/);
 });

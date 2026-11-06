@@ -331,7 +331,7 @@ export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls
   ].filter((l) => l !== null);
 
   if (!rendering) {
-    lines.push("This configuration couldn't be rendered. Try another `hardware` or `strategy`.", "");
+    lines.push(selection.error?.message || "This configuration couldn't be rendered. Try another `hardware` or `strategy`.", "");
   } else if (resolved.omni) {
     lines.push("vLLM-Omni recipe — the generation endpoints and request examples are in the guide below.", "", fence(withEnv(rendering.env, rendering.command)), "");
   } else {

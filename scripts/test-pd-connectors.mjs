@@ -424,7 +424,7 @@ function withAscendLaunchFixture(run) {
   const env = { ...process.env, DECODE_DP_RPC_PORT: "41992" };
   const bin = path.join(dir, "mock-bin");
   fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(bin, "vllm"), "#!/usr/bin/env bash\nprintf '%s\\n' \"$HCCL_IF_IP\" \"$HCCL_SOCKET_IFNAME\" \"$GLOO_SOCKET_IFNAME\" \"$VLLM_HOST_IP\" > model-env.txt\nprintf '%s\\0' \"$@\"\n", { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, "vllm"), "#!/usr/bin/env bash\nprintf '%s\\n' \"$HCCL_IF_IP\" \"$HCCL_SOCKET_IFNAME\" \"$GLOO_SOCKET_IFNAME\" \"$VLLM_HOST_IP\" > model-env.txt\nprintf '%s' \"$ASCEND_RT_VISIBLE_DEVICES\" > model-devices.txt\nprintf '%s\\0' \"$@\"\n", { mode: 0o755 });
   fs.writeFileSync(path.join(bin, "python"), "#!/usr/bin/env bash\nprintf '__CALL__\\0%s\\0' \"$PWD\"\nprintf '%s\\0' \"$@\"\n", { mode: 0o755 });
   const shell = (command, args = []) => {
     const r = spawnSync(bash, ["-c", 'export PATH="$PWD/mock-bin:$PATH"\n' + command, "test", ...args],
@@ -550,6 +550,208 @@ test("A5 server launch uses group-local ranks and distinct masters for replicate
       assert.equal(flag(call, "--dp-rank-start"), "3");
       assert.equal(flag(call, "--dp-address"), prefill ? "192.0.2.9" : "198.51.100.5");
       assert.equal(flag(call, "--dp-rpc-port"), prefill ? "41000" : "41992");
+    }
+  });
+});
+
+for (const role of ["decode", "prefill"]) {
+  test(`Ascend ${role} local DP 2 preserves per-process ranks, devices, ports and peer TP`, () => {
+    const model = createAscendPdRecipe();
+    const cfg = model.strategy_overrides.pd_cluster;
+    cfg[role].tp.ascend_950dt = 4;
+    if (role === "prefill") {
+      cfg.prefill.parallelism.ascend_950dt = "dep";
+      cfg.prefill.pp.ascend_950dt = 1;
+      // The TP/PP fixture's forced DP 1 and PP layer split do not apply to DEP.
+      cfg.prefill.hardware_overrides = structuredClone(cfg.decode.hardware_overrides);
+    }
+    const r = pickAscend({ model, features: ["spec_decoding"], pools: {
+      prefill: { nodes: 8, rank: 7 }, decode: { nodes: 8, rank: 7 },
+    } });
+    const basePort = role === "prefill" ? 8001 : 8002;
+    const master = role === "prefill" ? "192.0.2.5" : "198.51.100.5";
+    const rpcPort = role === "prefill" ? "41991" : "41992";
+    const peerTp = role === "prefill" ? { prefill: 4, decode: 8 } : { prefill: 8, decode: 4 };
+    const expectedProcesses = [
+      { localRank: 0, dpRank: 6, port: basePort, devices: "0,1,2,3" },
+      { localRank: 1, dpRank: 7, port: basePort + 1, devices: "4,5,6,7" },
+    ];
+    assert.equal(r[role].command, undefined, "multiple processes cannot be represented by one direct command");
+    assert.equal(r[role].argv, undefined);
+    assert.equal(r[role].processes.length, 2);
+    const assertProcessArgv = (argv, expected) => {
+      assert.equal(flag(argv, "--tensor-parallel-size"), "4");
+      assert.equal(flag(argv, "--data-parallel-size"), "8");
+      assert.equal(flag(argv, "--data-parallel-size-local"), "1", "external LB runs one rank per vllm process");
+      assert.equal(flag(argv, "--data-parallel-rank"), String(expected.dpRank));
+      assert.equal(flag(argv, "--port"), String(expected.port));
+      assert.ok(argv.includes("--data-parallel-external-lb"));
+      for (const invalid of ["--headless", "--data-parallel-hybrid-lb", "--node-rank", "--master-addr", "--master-port"]) {
+        assert.ok(!argv.includes(invalid), `${role}: unexpected ${invalid}`);
+      }
+      const transfer = JSON.parse(flag(argv, "--kv-transfer-config"));
+      for (const peer of ["prefill", "decode"]) {
+        assert.equal(transfer.kv_connector_extra_config[peer].tp_size, peerTp[peer]);
+      }
+      const draft = JSON.parse(flag(argv, "--speculative-config"));
+      assert.equal(draft.draft_tensor_parallel_size, 4);
+      assert.equal(draft.model, "Inferact/Kimi-K3-DSpark-Block5");
+    };
+    for (const [index, expected] of expectedProcesses.entries()) {
+      const process = r[role].processes[index];
+      assert.deepEqual([process.localRank, process.dpRank, process.port], [expected.localRank, expected.dpRank, expected.port]);
+      assert.equal(process.env.ASCEND_RT_VISIBLE_DEVICES, expected.devices);
+      assert.equal(typeof process.command, "string");
+      assertProcessArgv(process.argv, expected);
+      assert.equal(flag(process.argv, "--data-parallel-address"), `$${role.toUpperCase()}_NODE_5`);
+    }
+    const list = (key) => {
+      const start = r.router.argv.indexOf(key);
+      assert.ok(start >= 0, key);
+      let end = start + 1;
+      while (end < r.router.argv.length && !r.router.argv[end].startsWith("--")) end++;
+      return r.router.argv.slice(start + 1, end);
+    };
+    const pool = role === "prefill" ? "prefiller" : "decoder";
+    assert.deepEqual(list(`--${pool}-hosts`), Array.from({ length: 8 }, (_, i) =>
+      [`$${role.toUpperCase()}_NODE_${i + 1}`, `$${role.toUpperCase()}_NODE_${i + 1}`]).flat());
+    assert.deepEqual(list(`--${pool}-ports`), Array.from({ length: 8 }, () => [String(basePort), String(basePort + 1)]).flat());
+    if (role === "decode") {
+      assert.deepEqual(list("--prefiller-hosts"), ["$PREFILL_NODE_1", "$PREFILL_NODE_5"]);
+      assert.deepEqual(list("--prefiller-ports"), ["8001", "8001"]);
+    }
+    withAscendLaunchFixture(({ dir, env, shell }) => {
+      env.PREFILL_NODE_5 = "192.0.2.5";
+      env.DECODE_NODE_5 = "198.51.100.5";
+      env.PREFILL_DP_RPC_PORT = "41991";
+      const calls = shell(r.startServer.commands.find((entry) => entry.role === role).command)
+        .split("__CALL__\0").filter(Boolean).map((call) => call.split("\0").filter(Boolean));
+      assert.equal(calls.length, 1);
+      const call = calls[0];
+      assert.equal(flag(call, "--dp-size"), "8");
+      assert.equal(flag(call, "--tp-size"), "4");
+      assert.equal(flag(call, "--dp-size-local"), "2");
+      assert.equal(flag(call, "--dp-rank-start"), "6");
+      assert.equal(flag(call, "--dp-address"), master);
+      assert.equal(flag(call, "--dp-rpc-port"), rpcPort);
+      assert.equal(flag(call, "--vllm-start-port"), String(basePort));
+      shell(r[role].templateCommand.replaceAll("<NIC_NAME>", "eth0").replaceAll("<LOCAL_IP>", "192.0.2.99"));
+      // v0.23.0's launcher slices TP devices and increments the rank and HTTP port.
+      for (const expected of expectedProcesses) {
+        const argv = shell('bash run_dp_template.sh "$1" "$2" "$3" "$4" "$5" "$6" "$7"',
+          [expected.devices, String(expected.port), "8", String(expected.dpRank), master, rpcPort, "4"])
+          .split("\0").filter(Boolean);
+        assertProcessArgv(argv, expected);
+        assert.equal(flag(argv, "--data-parallel-address"), master);
+        assert.equal(flag(argv, "--data-parallel-rpc-port"), rpcPort);
+        assert.equal(fs.readFileSync(path.join(dir, "model-devices.txt"), "utf8"), expected.devices);
+      }
+    });
+  });
+}
+
+const invalidAscendLayouts = [
+  ...[0, 3, 16, 1.5].map((tp) => [`TP ${tp}`, (cfg) => { cfg.decode.tp.ascend_950dt = tp; }]),
+  ["DEP PP2", (cfg) => { cfg.decode.pp.ascend_950dt = 2; }],
+  ["TP/PP cannot divide across nodes", (cfg) => { cfg.prefill.nodes_per_instance.ascend_950dt = 5; cfg.prefill.pp.ascend_950dt = 3; }],
+  ["TP/PP exceeds launcher-visible devices", (cfg) => { cfg.prefill.pp.ascend_950dt = 8; }],
+  ["PP2 in final arguments", (cfg) => { cfg.decode.hardware_overrides.ascend_950dt.extra_args.push("--pipeline-parallel-size", "2"); }],
+  ["PCP2 in final arguments", (cfg) => { cfg.decode.hardware_overrides.ascend_950dt.extra_args.push("--prefill-context-parallel-size", "2"); }],
+  ["HTTP port overflow", (cfg) => { cfg.decode.hardware_overrides.ascend_950dt.extra_args.push("--port", "65535"); }],
+  ["HTTP port zero", (cfg) => { cfg.decode.hardware_overrides.ascend_950dt.extra_args.push("--port", "0"); }],
+  ["HTTP equals port overflow", (cfg) => { cfg.decode.hardware_overrides.ascend_950dt.extra_args.push("--port=65535"); }],
+  ["only Decode grouped", (cfg) => { delete cfg.prefill.nodes_per_instance; }],
+  ["only Prefill grouped", (cfg) => { delete cfg.decode.nodes_per_instance; }],
+  ["global DP1", (cfg) => { cfg.decode.nodes_per_instance.ascend_950dt = 1; cfg.decode.nodes.ascend_950dt = 1; cfg.decode.tp.ascend_950dt = 8; }],
+  ["TP override disagrees with layout", (cfg) => { cfg.decode.hardware_overrides.ascend_950dt.extra_args.push("--tensor-parallel-size", "8"); }],
+  ["DP override disagrees with layout", (cfg) => { cfg.decode.hardware_overrides.ascend_950dt.extra_args.push("--data-parallel-size", "4"); }],
+  ["DP underscore override disagrees with layout", (cfg) => { cfg.decode.hardware_overrides.ascend_950dt.extra_args.push("--data_parallel_size=4"); }],
+  ["TP short alias disagrees with layout", (cfg) => { cfg.decode.hardware_overrides.ascend_950dt.extra_args.push("-tp=8"); }],
+  ["PP short alias disagrees with layout", (cfg) => { cfg.decode.hardware_overrides.ascend_950dt.extra_args.push("-pp", "2"); }],
+  ["DP short alias disagrees with layout", (cfg) => { cfg.decode.hardware_overrides.ascend_950dt.extra_args.push("-dp", "4"); }],
+  ["abbreviated TP override", (cfg) => { cfg.decode.hardware_overrides.ascend_950dt.extra_args.push("--tensor-parallel-s=8"); }],
+  ["draft TP dot-key override", (cfg) => { cfg.decode.hardware_overrides.ascend_950dt.extra_args.push("--speculative-config.draft_tensor_parallel_size=8"); }],
+  ["DP master override disagrees with group", (cfg) => { cfg.decode.hardware_overrides.ascend_950dt.extra_args.push("--data-parallel-address", "$DECODE_NODE_2"); }],
+  ["DP rank override disagrees with node", (cfg) => { cfg.decode.hardware_overrides.ascend_950dt.extra_args.push("--data-parallel-rank", "7"); }],
+  ["TP master override disagrees with group", (cfg) => { cfg.prefill.hardware_overrides.ascend_950dt.extra_args.push("--master-addr", "$PREFILL_NODE_2"); }],
+  ["TP rank override disagrees with node", (cfg) => { cfg.prefill.hardware_overrides.ascend_950dt.extra_args.push("--node-rank", "3"); }],
+  ["TP node count override disagrees with group", (cfg) => { cfg.prefill.hardware_overrides.ascend_950dt.extra_args.push("--nnodes", "2"); }],
+  ["attached node count override", (cfg) => { cfg.prefill.hardware_overrides.ascend_950dt.extra_args.push("-n2"); }],
+  ["attached node rank override", (cfg) => { cfg.prefill.hardware_overrides.ascend_950dt.extra_args.push("-r3"); }],
+];
+
+for (const [label, change] of invalidAscendLayouts) {
+  test(`Ascend invalid ${label} reports a layout error without executable output`, () => {
+    const model = createAscendPdRecipe();
+    const cfg = model.strategy_overrides.pd_cluster;
+    cfg.decode.tp.ascend_950dt = 4;
+    change(cfg);
+    const result = pickAscend({ model, features: ["spec_decoding"] });
+    assert.equal(result.deploymentError?.code, "ASCEND_PD_INVALID_LAYOUT");
+    assert.ok(result.deploymentError.message.length > 10);
+    assert.equal(result.ascendScripts, undefined);
+    assert.equal(result.startServer, undefined);
+    for (const part of [result, result.prefill, result.decode, result.router]) {
+      for (const key of ["command", "argv", "templateCommand", "processes", "dockerCommand"]) {
+        assert.equal(part?.[key], undefined, `${label}: ${key} must not be executable`);
+      }
+    }
+  });
+}
+
+test("asymmetric TP templates preserve both roles' metadata and match direct draft settings", () => {
+  const model = createAscendPdRecipe();
+  const cfg = model.strategy_overrides.pd_cluster;
+  cfg.prefill.parallelism.ascend_950dt = "dep";
+  cfg.prefill.pp.ascend_950dt = 1;
+  cfg.prefill.tp.ascend_950dt = 2;
+  cfg.prefill.hardware_overrides = structuredClone(cfg.decode.hardware_overrides);
+  cfg.decode.tp.ascend_950dt = 4;
+  const result = pickAscend({ model, features: ["spec_decoding"], pools: {
+    prefill: { nodes: 8, rank: 7 }, decode: { nodes: 8, rank: 7 },
+  } });
+  withAscendLaunchFixture(({ shell }) => {
+    for (const role of ["prefill", "decode"]) {
+      const pool = result[role];
+      shell(pool.templateCommand.replaceAll("<NIC_NAME>", "eth0").replaceAll("<LOCAL_IP>", "192.0.2.99"));
+      for (const process of pool.processes) {
+        const argv = shell('bash run_dp_template.sh "$1" "$2" "$3" "$4" "$5" "$6" "$7"',
+          [process.env.ASCEND_RT_VISIBLE_DEVICES, String(process.port), String(pool.dpSize), String(process.dpRank), "192.0.2.5", "41991", String(pool.tp)])
+          .split("\0").filter(Boolean);
+        for (const key of ["--kv-transfer-config", "--speculative-config"]) {
+          assert.deepEqual(JSON.parse(flag(argv, key)), JSON.parse(flag(process.argv, key)), `${role}: ${key}`);
+        }
+        const topology = JSON.parse(flag(argv, "--kv-transfer-config")).kv_connector_extra_config;
+        assert.equal(topology.prefill.tp_size, 2);
+        assert.equal(topology.decode.tp_size, 4);
+        assert.equal(JSON.parse(flag(argv, "--speculative-config")).draft_tensor_parallel_size, pool.tp);
+      }
+    }
+  });
+});
+
+test("MTP templates without an external draft model execute without an unset draft path", () => {
+  const model = createAscendPdRecipe();
+  model.strategy_overrides.pd_cluster.decode.tp.ascend_950dt = 4;
+  for (const role of ["prefill", "decode"]) {
+    model.strategy_overrides.pd_cluster[role].hardware_overrides.ascend_950dt.feature_overrides.spec_decoding.args =
+      ["--speculative-config", '{"method":"mtp","num_speculative_tokens":1}'];
+  }
+  const result = pickAscend({ model, features: ["spec_decoding"] });
+  withAscendLaunchFixture(({ env, shell }) => {
+    delete env.DRAFT_MODEL_PATH;
+    for (const role of ["prefill", "decode"]) {
+      const pool = result[role];
+      const direct = pool.processes?.[0] || pool;
+      shell(pool.templateCommand.replaceAll("<NIC_NAME>", "eth0").replaceAll("<LOCAL_IP>", "192.0.2.99"));
+      const argv = shell('bash run_dp_template.sh "$1" "$2" "$3" "$4" "$5" "$6" "$7"',
+        [role === "prefill" ? "0,1,2,3,4,5,6,7" : "0,1,2,3", role === "prefill" ? "8001" : "8002", String(pool.dpSize), "0", "192.0.2.1", "41991", String(pool.tp)])
+        .split("\0").filter(Boolean);
+      const spec = JSON.parse(flag(argv, "--speculative-config"));
+      assert.equal(spec.method, "mtp");
+      assert.equal(Object.hasOwn(spec, "model"), false);
+      assert.equal(spec.draft_tensor_parallel_size, pool.tp);
+      assert.deepEqual(spec, JSON.parse(flag(direct.argv, "--speculative-config")));
     }
   });
 });

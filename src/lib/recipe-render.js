@@ -242,6 +242,16 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     return null;
   }
   if (!result) return null;
+  // Invalid authored layouts must fail static generation, not disappear in
+  // the generic warn-and-skip catch above. Interactive selections report the
+  // reason without publishing a partially runnable deployment.
+  if (result.deploymentError) {
+    if (strict || !opts.allowUnsupportedLayout) {
+      throw new Error(`Invalid deployment in ${recipe.hf_id} (${hwId} / ${strategy}): ${result.deploymentError.message}`);
+    }
+    if (opts.out) opts.out.deploymentError = result.deploymentError;
+    return null;
+  }
   // A preset that names its KV transfer connector must get it.
   if (strict && sel.pd_connector && result.kvConnector?.unavailableReason) {
     throw new Error(`Invalid preset ${presetPick}${pointPick ? ` at point ${pointPick}` : ""} in ${recipe.hf_id} (${hwId} / ${strategy}): ${result.kvConnector.unavailableReason}`);
@@ -312,15 +322,23 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     if (opts.out) Object.assign(opts.out, applied);
     // Prefill exposes :8001, decode exposes :8002 (matches the router endpoints
     // emitted by command-synthesis).
-    const prefill = { ...result.prefill };
-    const decode = { ...result.decode };
     const docker = result.kvConnector?.docker;
-    if (prefill.command && prefill.argv) {
-      Object.assign(prefill, dockerize(prefill.command, prefill.argv, prefill.env, dockerMeta, 8001, docker));
-    }
-    if (decode.command && decode.argv) {
-      Object.assign(decode, dockerize(decode.command, decode.argv, decode.env, dockerMeta, 8002, docker));
-    }
+    const renderRole = (role, defaultPort) => {
+      const pool = { ...result[role] };
+      if (pool.command && pool.argv) {
+        Object.assign(pool, dockerize(pool.command, pool.argv, pool.env, dockerMeta,
+          pool.processes?.[0]?.port ?? defaultPort, docker));
+      }
+      if (pool.processes) {
+        pool.processes = pool.processes.map((process) => ({
+          ...process,
+          ...dockerize(process.command, process.argv, process.env, dockerMeta, process.port, docker),
+        }));
+      }
+      return pool;
+    };
+    const prefill = renderRole("prefill", 8001);
+    const decode = renderRole("decode", 8002);
     return {
       ...base,
       pd_connector: result.kvConnector?.selected ?? null,
@@ -777,6 +795,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
       dcp: dcp >= 1 ? dcp : null,
       pdConnector,
       linked,
+      allowUnsupportedLayout: true,
       out: applied,
     },
   );
@@ -790,6 +809,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
       pd_router: strategy === "pd_cluster" ? applied.pdRouter ?? pdRouter : undefined,
       preset: rendering?.preset ?? null, point: rendering?.preset_point ?? null,
       adjusted,
+      ...(applied.deploymentError ? { error: applied.deploymentError } : {}),
     },
     rendering,
     hwProfile,

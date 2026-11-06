@@ -1978,6 +1978,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   }, [result.deployType, result.router?.port, endpoints]);
 
   const displayedResult = useMemo(() => {
+    if (result.deploymentError) return result;
     const sub = (s) => substitute(s, effectiveEndpoints);
     const ascendEndpoints = Object.fromEntries(Object.entries(effectiveEndpoints).filter(([name]) => ASCEND_PD_ENDPOINT.test(name)));
     if (result.deployType === "pd_cluster") {
@@ -2584,7 +2585,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           className={`rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border transition-shadow ${changed ? "ring-2 ring-vllm-blue/30" : ""
             }`}
         >
-          {isPd ? (
+          {result.deploymentError ? (
+            <div role="alert" className="p-4 text-sm text-amber-600 dark:text-amber-400">
+              {result.deploymentError.message}
+            </div>
+          ) : isPd ? (
             <PdClusterBlock
               result={displayedResult}
               verifyCmd={verifyCmd}
