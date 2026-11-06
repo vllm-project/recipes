@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
+import { hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickLinkedVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import ShellCode from "@/components/recipes/ShellCode";
@@ -335,7 +335,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const omniTasks = useMemo(() => resolveOmniTasks(recipe), [recipe]);
 
   // ── State ──
-  const [variant, setVariant] = useState(searchParams.get("variant") || "default");
+  const [variant, setVariant] = useState(() => pickLinkedVariant(
+    recipe, searchParams.get("variant"), searchParams.get("hardware"), taxonomy.hardware_profiles
+  ));
   const [frontend, setFrontend] = useState(() =>
     resolveFrontend(recipe, searchParams.get("frontend") || undefined, taxonomy)
   );
@@ -366,7 +368,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   }, [recipe, taxonomy]);
 
   const requestedHwId = searchParams.get("hardware");
-  const requestedVariant = recipe.variants?.[searchParams.get("variant") || "default"] || recipe.variants?.default || {};
+  const requestedVariant = recipe.variants?.[variant] || recipe.variants?.default || {};
   const requestedHwProfile = taxonomy.hardware_profiles?.[requestedHwId] || {};
   const requestedHwAllowed = requestedHwId
     && taxonomy.hardware_profiles?.[requestedHwId]

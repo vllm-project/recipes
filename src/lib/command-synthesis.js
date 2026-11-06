@@ -819,6 +819,18 @@ export function pickFittingVariant(recipe, hwProfile, hwId = null) {
   return fitting[0][0];
 }
 
+// Hardware-only links follow a hardware-pill click. Explicit checkpoint
+// selections retain their constraints rather than silently selecting a sibling.
+export function pickLinkedVariant(recipe, requestedVariant, hwId, profiles) {
+  const key = recipe.variants?.[requestedVariant] ? requestedVariant : "default";
+  const profile = profiles?.[hwId];
+  if (requestedVariant || !profile
+    || (profile.restricted && !(hwId in (recipe.meta?.hardware || {})))
+    || !isHardwareSupported(recipe, hwId)) return key;
+  if (variantRunsOnHardware(profile, recipe.variants?.[key] || {}, hwId)) return key;
+  return pickFittingVariant(recipe, profile, hwId) || key;
+}
+
 /**
  * Single-node PD splits the node 50/50 between prefill and decode. Each half
  * holds a full model across its TP group, so the node must fit 2× the model's

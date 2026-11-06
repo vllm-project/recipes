@@ -460,7 +460,15 @@ function renderAndWriteVariant(recipe, variantKey, altBaseHfId, strategies, taxo
   // recipes that explicitly opt in via `meta.hardware.<id>`. Otherwise we'd
   // emit speculative TPU commands for every NVIDIA recipe.
   const declaredHw = recipe.meta?.hardware || {};
-  const compatibleHw = listCompatibleHardware(hwProfiles, variant, recipe)
+  // Only the parent family endpoint may offer a sibling precision. A promoted
+  // checkpoint can itself be named "default" but must keep that checkpoint.
+  const isParentEndpoint = altBaseHfId === recipe.hf_id;
+  const candidates = isParentEndpoint
+    ? Object.values(recipe.variants || {})
+    : [variant];
+  const compatibleHw = [...new Set(candidates.flatMap(
+    (candidate) => listCompatibleHardware(hwProfiles, candidate, recipe)
+  ))]
     .filter((id) => !hwProfiles[id]?.restricted || id in declaredHw);
   // Ensure default is first; de-dupe.
   const hwIds = Array.from(new Set([defaultHw, ...compatibleHw]));
@@ -468,7 +476,7 @@ function renderAndWriteVariant(recipe, variantKey, altBaseHfId, strategies, taxo
   // Render every (variant × hardware) combo up front.
   const renderedByHw = {};
   for (const hwId of hwIds) {
-    const built = buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy);
+    const built = buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy, isParentEndpoint);
     if (built) renderedByHw[hwId] = built;
   }
   if (!renderedByHw[defaultHw]) return null;
