@@ -4,7 +4,6 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
-import { selectedVersion } from "@/lib/platform-builds";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import { envToExports } from "@/lib/env-format";
 import { hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
@@ -2119,14 +2118,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // A preset's engine image pins this GPU's docker command (an exact
   // variant × GPU image, which computeDockerMeta already prefers).
   const presetImage = result?.preset?.image?.vllm || null;
-  const imageVariant = useMemo(
-    () => (presetImage
-      ? { ...currentVariant, hardware_overrides: { ...(currentVariant.hardware_overrides || {}), [hwId]: { ...(currentVariant.hardware_overrides?.[hwId] || {}), docker_image: presetImage } } }
-      : currentVariant),
-    [currentVariant, presetImage, hwId]
-  );
   const dockerMeta = useMemo(() => {
-    const meta = computeDockerMeta(recipe, imageVariant, hwProfile, hwId);
+    const meta = computeDockerMeta(recipe, currentVariant, hwProfile, hwId, presetImage);
     if (!meta.image || meta.brandKey !== "nvidia") return meta;
 
     // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
@@ -2144,10 +2137,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     // alt variant and one is published.
     const cu129Image = cu129DockerImage(meta.image, installMinVersion);
     if (dockerCudaVariant === altCudaSuffix && cu129Image) {
-      return { ...meta, image: cu129Image, cu129Image };
+      return { ...meta, image: cu129Image, vllmVersion: undefined, cu129Image };
     }
     return { ...meta, cu129Image };
-  }, [recipe, imageVariant, hwProfile, hwId, dockerCudaVariant, altCudaSuffix, installMinVersion]);
+  }, [recipe, currentVariant, presetImage, hwProfile, hwId, dockerCudaVariant, altCudaSuffix, installMinVersion]);
 
   // `installMode` carries the user's tab choice; `effectiveInstallMode` folds
   // in constraints that would hide a tab entirely (pip: recipe opt-out or TPU
@@ -2289,8 +2282,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             dockerCudaVariant={dockerCudaVariant}
             setDockerCudaVariant={setDockerCudaVariant}
             altCudaSuffix={altCudaSuffix}
-            hwId={hwId}
-            hwProfile={hwProfile}
             hwInstall={hwInstall}
           />
 
@@ -2477,8 +2468,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           setDockerCudaVariant={setDockerCudaVariant}
           altCudaSuffix={altCudaSuffix}
           extraMinVersion={isKvStoreActive ? strategies[activeKvOffload]?.min_vllm_version : null}
-          hwId={hwId}
-          hwProfile={hwProfile}
           hwInstall={hwInstall}
           dockerHidden={dockerEffectivelyHidden}
         />
@@ -4023,7 +4012,7 @@ function maxVersion(a, b) {
   return a;
 }
 
-function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode, dockerCudaVariant, setDockerCudaVariant, altCudaSuffix, extraMinVersion = null, hwInstall = null, hwId, hwProfile, dockerHidden: dockerHiddenOverride = false }) {
+function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode, dockerCudaVariant, setDockerCudaVariant, altCudaSuffix, extraMinVersion = null, hwInstall = null, dockerHidden: dockerHiddenOverride = false }) {
   // Collapsible install reference. Shows the one-time setup step for the
   // active mode — `uv pip install vllm …` in pip mode, `docker pull <image>`
   // in docker mode. The active tab mirrors the command card's mode toggle
@@ -4134,8 +4123,8 @@ uv pip install -U vllm --torch-backend auto`;
           : cu129Image
             ? `Default tag ships CUDA 13 (r580+ NVIDIA driver). On a CUDA 12.9 host, switch to cu129 for \`${cu129Image.split(":")[1]}\`.`
             : `This tag ships CUDA 13 only — the host needs an r580+ NVIDIA driver. vLLM publishes no CUDA 12.9 build after v${LAST_CU129_RELEASE}.`;
-  const platformVersion = selectedVersion(recipe.model, hwId, { [hwId]: hwProfile });
-  const dockerNote = hwInstall?.docker?.note || (platformVersion.custom ? undefined : (dockerCfg?.note || defaultDockerNote));
+  const buildVersion = dockerMeta.vllmVersion;
+  const dockerNote = hwInstall?.docker?.note || (buildVersion ? undefined : (dockerCfg?.note || defaultDockerNote));
   // Show the CUDA selector on the docker tab when we're on NVIDIA, the user
   // isn't supplying a full override command (which already bakes in a
   // specific tag), and a CUDA 12.9 build actually exists: a two-key CUDA map,
@@ -4177,7 +4166,7 @@ uv pip install -U vllm --torch-backend auto`;
   // The recipe's vLLM floor and nightly state describe the stock install; a
   // hardware's own command brings its own vLLM (a plugin may pin another).
   const hwPipActive = hwPip && active.id === "pip";
-  const customBuildActive = platformVersion.custom && active.id === "docker";
+  const customBuildActive = buildVersion && active.id === "docker";
 
   return (
     <div className="rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border">
@@ -4188,7 +4177,7 @@ uv pip install -U vllm --torch-backend auto`;
         <Package size={12} className="text-[var(--command-fg)]/50 shrink-0" />
         <span className="text-[11px] font-semibold text-[var(--command-fg)]/70 uppercase tracking-widest">Install</span>
         <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
-          {!hwPipActive && <>{customBuildActive ? platformVersion.label : `vLLM ${minV}+${isOmni ? " · vLLM-Omni nightly" : ""}`} · </>}{isPpu ? "SAIL" : isTpu ? "TPU" : isXpu ? "XPU" : isNpu ? "Ascend" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}
+          {!hwPipActive && <>{customBuildActive ? `vLLM ${buildVersion}` : `vLLM ${minV}+${isOmni ? " · vLLM-Omni nightly" : ""}`} · </>}{isPpu ? "SAIL" : isTpu ? "TPU" : isXpu ? "XPU" : isNpu ? "Ascend" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}
         </span>
         {nightlyRequired && !hwPipActive && !customBuildActive && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">

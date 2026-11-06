@@ -245,16 +245,13 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
   // A preset's engine image pins this GPU's docker command.
   const pinned = result.preset?.image?.vllm;
-  const variant = pinned
-    ? { ...baseVariant, hardware_overrides: { ...(baseVariant.hardware_overrides || {}), [hwId]: { ...(baseVariant.hardware_overrides?.[hwId] || {}), docker_image: pinned } } }
-    : baseVariant;
-  const dockerMeta = computeDockerMeta(recipe, variant, hwProfile, hwId);
+  const dockerMeta = computeDockerMeta(recipe, baseVariant, hwProfile, hwId, pinned);
   const env = result.env || {};
 
   const hwPip = hwPipOverride(hardwareInstall(recipe, recipe.variants?.[variantKey], taxonomy.hardware_profiles?.[hwId], hwId));
   const base = {
     hardware: hwId,
-    ...(recipe.model?.platform_builds ? { platform_builds: recipe.model.platform_builds } : {}),
+    ...(dockerMeta.vllmVersion && !result.dockerUnavailable ? { vllm_version: dockerMeta.vllmVersion } : {}),
     strategy,
     variant: variantKey,
     node_count: nodeCount,
@@ -617,8 +614,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     return {
       omni: true,
       selection: { hardware: hwId, variant: variantKey, task: task?.key ?? null },
-      rendering: { hardware: hwId, variant: variantKey, task: task?.key ?? null, env, command,
-        ...(recipe.model?.platform_builds ? { platform_builds: recipe.model.platform_builds } : {}) },
+      rendering: { hardware: hwId, variant: variantKey, task: task?.key ?? null, env, command },
       hwProfile,
       options: { ...options, strategies: [], tasks: tasks.map((t) => t.key) },
     };

@@ -7,7 +7,7 @@ export function isEnvPassthrough(key, value) {
 export function envToExports(env) {
   return Object.entries(env || {}).map(([key, value]) =>
     isEnvPassthrough(key, value)
-      ? `if [ "\${${key}+x}" = x ]; then export ${key}; fi`
+      ? `export ${key}`
       : `export ${key}=${value}`
   ).join("\n");
 }

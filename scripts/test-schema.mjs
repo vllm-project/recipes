@@ -63,9 +63,11 @@ test("vocabulary and status values are checked", () => {
   assert.deepEqual(errorsFor((r) => { r.meta.hardware.dgx_spark_gb10 = "supported"; }), []);
 });
 
-test("platform builds require known hardware and an exact custom build version", () => {
-  assert.deepEqual(errorsFor((r) => { r.model.platform_builds = { zhenwu: "0.32.0", "810e": "0.33.0" }; }), []);
-  assert.ok(errorsFor((r) => { r.model.platform_builds = { unknown: "0.32.0" }; }).length);
-  assert.ok(errorsFor((r) => { r.model.platform_builds = { zhenwu: "0.32.0+" }; }).length);
-  assert.ok(errorsFor((r) => { r.model.platform_builds = { "810e": { base_version: "0.32.0" } }; }).length);
+test("platform images and exact Docker versions", () => {
+  const set = (r, version) => {
+    r.variants.default.docker_image = { ppu: "example/ppu:tag" };
+    r.variants.default.hardware_overrides = { ppu: { install: { docker: { vllm_version: version } } } };
+  };
+  assert.deepEqual(errorsFor((r) => set(r, "0.32.0")), []);
+  assert.ok(errorsFor((r) => set(r, "0.32.0+")).length);
 });

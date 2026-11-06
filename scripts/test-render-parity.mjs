@@ -16,7 +16,6 @@ import { loadStrategies } from "../src/lib/strategies.js";
 import { loadTaxonomy } from "../src/lib/taxonomy.js";
 import { resolveSelection } from "../src/lib/recipe-render.js";
 import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
-import { selectedVersion } from "../src/lib/platform-builds.js";
 import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode } from "../src/lib/command-synthesis.js";
 
 const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES_PUBLIC_DIR) : path.join(process.cwd(), "public");
@@ -24,40 +23,26 @@ const strategies = loadStrategies();
 const taxonomy = loadTaxonomy();
 const readJson = (rel) => JSON.parse(fs.readFileSync(path.join(PUBLIC, rel), "utf8"));
 
-test("platform build versions honor hardware overrides without changing commands", () => {
-  const base = {
+test("one PPU image supplies the resolved Docker version on both cards", () => {
+  const recipe = {
     hf_id: "example/model",
     meta: { hardware: { "810e": "supported", m890: "supported" } },
-    model: { model_id: "example/model", min_vllm_version: "0.34.0" },
-    variants: { default: { precision: "bf16", vram_minimum_gb: 1 } },
+    model: { model_id: "example/model", min_vllm_version: "0.34.0", nightly_required: true },
+    variants: { default: { precision: "bf16", vram_minimum_gb: 1, hardware_overrides: {
+      ppu: { docker_image: "example/ppu:tag", docker_serve_command: "vllm serve",
+        install: { pip: false, docker: { vllm_version: "0.32.0" } } },
+    } } },
     compatible_strategies: ["single_node_tp"],
   };
-  const withBuilds = structuredClone(base);
-  withBuilds.model.platform_builds = {
-    zhenwu: "0.32.0",
-    h200: "0.33.0",
-  };
-  assert.equal(selectedVersion(base.model, "810e", taxonomy.hardware_profiles).label, "vLLM 0.34.0+");
-  assert.equal(selectedVersion(withBuilds.model, "810e", taxonomy.hardware_profiles).label, "vLLM 0.32.0+");
-  assert.equal(selectedVersion(withBuilds.model, "m890", taxonomy.hardware_profiles).label, "vLLM 0.32.0+");
-  assert.equal(selectedVersion(withBuilds.model, "b300", taxonomy.hardware_profiles).label, "vLLM 0.34.0+");
-  assert.equal(selectedVersion(withBuilds.model, "h200", taxonomy.hardware_profiles).label, "vLLM 0.33.0 · NVIDIA custom build");
-  const overridden = structuredClone(withBuilds.model);
-  overridden.platform_builds["810e"] = "0.33.0";
-  assert.equal(selectedVersion(overridden, "810e", taxonomy.hardware_profiles).label, "vLLM 0.33.0+");
-  assert.equal(selectedVersion(overridden, "m890", taxonomy.hardware_profiles).label, "vLLM 0.32.0+");
-  for (const hw of ["810e", "m890"]) {
-    const query = new URLSearchParams(`hardware=${hw}`);
-    const original = resolveSelection(base, query, strategies, taxonomy);
-    const result = resolveSelection(withBuilds, query, strategies, taxonomy);
-    const { platform_builds, ...rendering } = result.rendering;
-    assert.deepEqual(platform_builds, withBuilds.model.platform_builds);
-    assert.deepEqual(rendering, original.rendering);
-    const md = selectionMarkdown(withBuilds, result, {
+  for (const hw of ["810e", "m890", "h200"]) {
+    const result = resolveSelection(recipe, new URLSearchParams(`hardware=${hw}`), strategies, taxonomy);
+    const isPpu = hw !== "h200";
+    assert.equal(result.rendering.vllm_version, isPpu ? "0.32.0" : undefined);
+    assert.equal(result.rendering.docker_image, isPpu ? "example/ppu:tag" : "vllm/vllm-openai:nightly");
+    const md = selectionMarkdown(recipe, result, {
       strategies, taxonomy, urls: { page: "https://example.org/example/model", json: "https://example.org/example/model.json" },
     });
-    assert.match(md, /Platform build: vLLM 0\.32\.0\+/);
-    assert.match(md, /Requires vLLM 0\.32\.0\+/);
+    assert.equal(md.includes("Docker build: vLLM 0.32.0."), isPpu);
   }
 });
 

@@ -56,3 +56,25 @@ test("810E multi-node roles pass through HCA without overriding explicit values"
   const explicit = { ...recipe, model: { ...recipe.model, base_env: { PCCL_NET_PLUGIN_ENABLE: "0" } } };
   assert.equal(resolveCommand(explicit, "default", "multi_node_tep", "810e", [], strategies, taxonomy, [], 2).env.PCCL_NET_PLUGIN_ENABLE, "0");
 });
+
+test("PD env follows the recipe or preset pool size unless explicitly selected", () => {
+  const recipe = {
+    model: { model_id: "org/model" },
+    variants: { default: { precision: "bf16" } },
+    strategy_overrides: { pd_cluster: { prefill: { nodes: { "810e": 2 } }, decode: { nodes: 1 } } },
+  };
+  const resolve = (r, pools) => resolveCommand(r, "default", "pd_cluster", "810e", [],
+    loadStrategies(), loadTaxonomy(), [], 1, pools);
+  const check = (pool, nodes) => {
+    assert.equal(pool.nodes, nodes);
+    assert.equal(pool.env.PCCL_NET_PLUGIN_ENABLE, nodes > 1 ? "1" : undefined);
+  };
+  check(resolve(recipe).prefill, 2);
+  check(resolve(recipe).decode, 1);
+  const tuned = { ...recipe, presets: { lane: { hardware: "810e", strategy: "pd_cluster",
+    default: true, roles: { decode: { nodes: 3 } } } } };
+  check(resolve(tuned).decode, 3);
+  const picked = resolve(tuned, { prefill: 1, decode: { nodes: 0 } });
+  check(picked.prefill, 1);
+  check(picked.decode, 0);
+});

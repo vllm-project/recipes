@@ -7,7 +7,6 @@ import { hardwareInstall, hwPipOverride, isFeatureSupportedOnHardware } from "./
 import { whenMatches } from "./recipe-context.js";
 import { SELECTION_PARAMS, defaultFeaturesFor, synthesizeInstall } from "./recipe-render.js";
 import { envToExports } from "./env-format.js";
-import { selectedVersion } from "./platform-builds.js";
 
 const fence = (code, lang = "bash") => {
   const ticks = /```/.test(code) ? "````" : "```";
@@ -125,14 +124,13 @@ function installSection(recipe, resolved) {
   const { hwProfile, rendering, selection } = resolved;
   const out = [];
   const min = recipe.model?.min_vllm_version;
-  const platformVersion = selectedVersion(recipe.model, selection?.hardware, { [selection?.hardware]: hwProfile });
   const hwInstall = hardwareInstall(recipe, recipe.variants?.[selection?.variant], hwProfile, selection?.hardware);
   const hwPip = hwPipOverride(hwInstall);
   if (hwPip) {
     // This hardware's own install: the recipe's vLLM floor describes the stock one.
     if (hwPip.note) out.push(hwPip.note, "");
     out.push(fence(hwPip.command), "");
-  } else if (platformVersion.custom && hwInstall?.pip === false) out.push(`Requires ${platformVersion.label}.`, "");
+  } else if (rendering?.vllm_version) out.push(`Docker build: vLLM ${rendering.vllm_version}.`, "");
   else if (min) out.push(`Requires vLLM >= ${min}${recipe.model?.nightly_required && hwInstall?.pip !== false ? " (not released yet — nightly wheel)" : ""}.`, "");
   const install = synthesizeInstall(recipe);
   if (!hwPip && hwProfile.brand === "NVIDIA" && install?.pip && hwInstall?.pip !== false) {
@@ -281,7 +279,6 @@ function presetSection(recipe, rendering, strategies, origin) {
 export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls }) {
   const { rendering, options, selection } = resolved;
   const hardwareProfiles = taxonomy.hardware_profiles || {};
-  const version = selectedVersion(recipe.model, selection.hardware, hardwareProfiles);
   const origin = new URL(urls.page).origin;
   const defaultFeatures = defaultFeaturesFor(recipe, selection.hardware, selection.variant);
   const lines = [
@@ -291,7 +288,6 @@ export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls
     recipe.meta?.description ? "" : null,
     `Configuration: ${configLine(recipe, resolved, strategies)}`,
     "",
-    ...(version.custom ? [`- Platform build: ${version.label}`, ""] : []),
     ...(selection.adjusted?.length ? [
       ...selection.adjusted.map((a) => `> **Note:** requested \`${a.param}=${a.requested}\` is ${a.reason}; rendered \`${a.used}\` instead.`),
       "",
