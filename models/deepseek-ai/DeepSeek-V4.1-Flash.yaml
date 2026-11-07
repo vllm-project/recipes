@@ -5,7 +5,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4.1 Flash vision-language MoE (552B backbone; 8B active per prompt token, 16B per output token) combining sliding-window plus compressed sparse attention with a two-level indexer, engram n-gram memory, hyper-connections, and a DSpark multi-token draft head."
   date_added: 2026-09-09
-  date_updated: 2026-10-17
+  date_updated: 2026-10-28
   difficulty: advanced
   tasks:
     - text
@@ -16,6 +16,7 @@ meta:
     - "deepseek-ai/DeepSeek-V4-Pro"
   default_hardware: gb200
   hardware:
+    ascend_910c: verified
     h100: verified
     h200: verified
     b200: verified
@@ -188,6 +189,73 @@ variants:
     description: "Launch checkpoint (2026-09-09), superseded by 1017 — kept for reproducing earlier results. Same mixed MXFP4/MXFP8 format."
     hardware_overrides: *v41_flash_hw_overrides
 
+  ascend_w8a8:
+    model_id: "deepseek-ai/DeepSeek-V4.1-Flash"
+    label: "W8A8 (A3)"
+    precision: int8
+    vram_minimum_gb: 916
+    description: "W8A8 quantized serving on A3 (PD separation, 40 NPUs). Requires --quantization ascend."
+    supported_hardware: [ascend_910c]
+    tp:
+      ascend_910c: 4
+    extra_args:
+      - "--data-parallel-size"
+      - "4"
+      - "--tensor-parallel-size"
+      - "4"
+      - "--enable-expert-parallel"
+      - "--max-model-len"
+      - "286720"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--max-num-seqs"
+      - "32"
+      - "--enable-prefix-caching"
+      - "--model-loader-extra-config"
+      - "{enable_multithread_load:true,num_threads:128}"
+      - "--safetensors-load-strategy"
+      - "lazy"
+      - "--speculative-config"
+      - "{\"num_speculative_tokens\": 5, \"method\":\"dspark\"}"
+      - "--trust-remote-code"
+      - "--block-size"
+      - "128"
+      - "--tokenizer-mode"
+      - "deepseek_v41"
+      - "--tool-call-parser"
+      - "deepseek_v41"
+      - "--enable-auto-tool-choice"
+      - "--reasoning-parser"
+      - "deepseek_v41"
+      - "--gpu-memory-utilization"
+      - "0.9"
+      - "--quantization"
+      - "ascend"
+      - "--enforce-eager"
+      - "--engram-config"
+      - "{\"cpu_offload\":true,\"dp_shared_memory\":true}"
+      - "--additional-config"
+      - "{ \"enable_cpu_binding\":true, \"enable_fused_mc2\":1, \"enable_dsa_cp\":true, \"enable_flashcomm1\":true, \"enable_shared_expert_dp\":true }"
+      - "--kv-transfer-config"
+      - "{\"kv_connector\": \"MooncakeHybridConnector\", \"kv_role\": \"kv_producer\", \"kv_port\": \"30000\", \"engine_id\": \"0\", \"kv_connector_extra_config\": { \"prefill\": { \"dp_size\": 4, \"tp_size\": 4 }, \"decode\": { \"dp_size\": 8, \"tp_size\": 2 } } }"
+    extra_env:
+      HCCL_SOCKET_IFNAME: "$IFACE_NAME"
+      VLLM_USE_V2_MODEL_RUNNER: "0"
+      HCCL_CONNECT_TIMEOUT: "1200"
+      LD_PRELOAD: "/usr/lib64/libjemalloc.so.2:/usr/lib64/libjemalloc.so.2:$LD_PRELOAD"
+      HCCL_BUFFSIZE: "1024"
+      VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS: "30000"
+      HCCL_EXEC_TIMEOUT: "204"
+      HCCL_OP_EXPANSION_MODE: "AIV"
+      VLLM_ENGINE_READY_TIMEOUT_S: "36000"
+      TASK_QUEUE_ENABLE: "1"
+      OMP_NUM_THREADS: "1"
+      VLLM_RPC_TIMEOUT: "3600000"
+    hardware_overrides:
+      ascend_910c:
+        docker_image: "quay.io/ascend/vllm-ascend:nightly-main-a3-openeuler"
+        install:
+          pip: false
 compatible_strategies:
   - single_node_tp
   - single_node_tep
