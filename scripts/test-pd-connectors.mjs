@@ -162,3 +162,20 @@ test("a role override that pins another connector keeps it, and the pick falls b
   assert.match(r.kvConnector.unavailableReason, /prefill command .* sets its own --kv-transfer-config/);
   assert.doesNotMatch(r.router.command, /moriio/);
 });
+
+test("a pool's tp takes a hardware-keyed map, read by the commands and the router alike", () => {
+  const keyedTp = { ...recipe, compatible_strategies: [...recipe.compatible_strategies, "multi_node_dep", "pd_cluster"], strategy_overrides: { ...recipe.strategy_overrides, pd_cluster: {
+    decode: { parallelism: "dep", tp: { default: 1, b200: 4 } } } } };
+  const depPools = { prefill: { nodes: 1 }, decode: { nodes: 2, parallelism: "dep" } };
+  const on = (hw) => resolveCommand(keyedTp, "default", "pd_cluster", hw, [], strategies, taxonomy, [], 1, depPools, {});
+  const b200 = on("b200");
+  assert.equal(flag(b200.decode.argv, "--tensor-parallel-size"), "4");
+  assert.equal(flag(b200.decode.argv, "--data-parallel-size"), "4");
+  assert.equal(flag(b200.decode.argv, "--data-parallel-size-local"), "2");
+  const b300 = on("b300");
+  assert.equal(flag(b300.decode.argv, "--tensor-parallel-size"), "1");
+  assert.equal(flag(b300.decode.argv, "--data-parallel-size"), "16");
+  assert.equal(flag(b300.decode.argv, "--data-parallel-size-local"), "8");
+  assert.match(b200.router.command, /--intra-node-data-parallel-size 2/);
+  assert.match(b300.router.command, /--intra-node-data-parallel-size 8/);
+});
