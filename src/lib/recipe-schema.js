@@ -8,6 +8,8 @@
 // Cross-field rules (mode references, hardware semantics, frontends) stay in
 // the build script's validators. SCHEMA.md documents every field.
 
+import { CLIENT_ENDPOINT_PATTERN, CLIENT_RESERVED_BENCHMARK_ARG_PATTERN } from "./recipe-clients.js";
+
 const strings = { type: "array", items: { type: "string" } };
 const envValue = { type: ["string", "number", "boolean"] };
 const envMap = {
@@ -174,6 +176,9 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     type: "object",
     required: ["meta", "model", "variants", "compatible_strategies", "guide"],
     additionalProperties: false,
+    // Omni already owns its task-specific request/benchmark declarations.
+    if: { properties: { meta: { properties: { tasks: { contains: { const: "omni" } } } } } },
+    then: { not: { required: ["client"] } },
     properties: {
       meta: obj({
         title: { type: "string" },
@@ -214,6 +219,21 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
         // `<frontend>_frontend: unsupported` opts a non-default frontend out.
         patternProperties: { [`^(${frontends.join("|")})_frontend$`]: { const: "unsupported" } },
       },
+
+      client: obj({
+        endpoint: { type: "string", pattern: CLIENT_ENDPOINT_PATTERN },
+        request_body: {
+          type: "object",
+          minProperties: 1,
+          propertyNames: { not: { const: "model" } },
+          additionalProperties: true,
+        },
+        benchmark: obj({
+          backend: { type: "string", minLength: 1 },
+          dataset_name: { type: "string", minLength: 1 },
+          args: { type: "array", items: { type: "string", not: { pattern: CLIENT_RESERVED_BENCHMARK_ARG_PATTERN } } },
+        }, { required: ["backend", "dataset_name"] }),
+      }, { required: ["endpoint", "request_body", "benchmark"] }),
 
       dependencies: {
         type: "array",

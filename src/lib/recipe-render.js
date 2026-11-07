@@ -6,6 +6,7 @@
 import { BASELINE, effectivePreset, presetPoints, presetSelect, resolvePresetKey, withPreset } from "./recipe-presets.js";
 import { ADVANCED_OPTIONS } from "./advanced-options.js";
 import { SELECTION_PARAMS } from "./selection-params.js";
+import { renderRecipeClients } from "./recipe-clients.js";
 
 export { SELECTION_PARAMS };
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "./omni-tasks.js";
@@ -250,6 +251,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     : baseVariant;
   const dockerMeta = computeDockerMeta(recipe, variant, hwProfile, hwId);
   const env = result.env || {};
+  const clients = renderRecipeClients(recipe, variantKey, result);
 
   const hwPip = hwPipOverride(hardwareInstall(recipe, recipe.variants?.[variantKey], taxonomy.hardware_profiles?.[hwId], hwId));
   const base = {
@@ -264,6 +266,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     ...(result.preset?.point?.selected && result.preset.selected !== "baseline" ? { preset_point: result.preset.point.selected } : {}),
     env,
     docker_image: dockerMeta.image,
+    ...(clients ? { clients } : {}),
     // This hardware's own install step, when it has one (no stock wheel or
     // image runs the recipe there). Without it, the recipe's `install` applies.
     ...(hwPip ? { install: { pip: hwPip } } : {}),
