@@ -72,19 +72,26 @@ export function presetInScope(preset, ctx) {
 // When the schema gains a new hardware-keyed field, add it here.
 export const OVERLAY_RULES = [
   ["meta", "hardware", "@hw"],
+  ["meta", "default_variant", "@hw"],
   ["hardware_overrides", "@hw"],
   ["hardware_notes", "@hw"],
   ["hardware_opt_in_features", "@hw"],
   ["strategy_hardware", "*", "@hw"],
   ["strategy_min_gpus", "@hw"],
   ["kv_cache_strategy_hardware", "*", "@hw"],
+  ["kv_offload_hardware", "@hw"],
   ["strategy_overrides", "*", "hardware_overrides", "@hw"],
+  ["strategy_overrides", "pd_cluster", "connectors", "@hw"],
+  ...["prefill", "decode"].flatMap((role) =>
+    ["nodes", "nodes_per_instance", "parallelism", "tp", "pp", "hardware_overrides"]
+      .map((key) => ["strategy_overrides", "pd_cluster", role, key, "@hw"])),
   ["features", "*", "hardware_overrides", "@hw"],
   ["features", "*", "modes", "*", "hardware_overrides", "@hw"],
   ["features", "*", "modes", "*", "hardware", "@hw"],
   ["variants", "@variant"],
   ["presets", "@preset"],
   ["variants", "*", "hardware_overrides", "@hw"],
+  ["variants", "*", "hardware", "@hw"],
   ["variants", "*", "tp", "@hw"],
   { path: ["variants", "*", "supported_hardware"], union: true },
   ["omni", "tasks", "[task]", "hardware_overrides", "@hw"],
@@ -203,6 +210,13 @@ function mergeNode(parent, key, ov, p, rules, ctx, err, seg = null) {
   } else if (seg === "[task]" && typeof node === "string") {
     // Promote a bare task id to its object form so it can carry overrides.
     node = { id: node };
+    setChild(parent, key, node, seg);
+  } else if (p.length === 4 && p[0] === "strategy_overrides" && p[1] === "pd_cluster"
+    && ["prefill", "decode"].includes(p[2]) && ["nodes", "nodes_per_instance", "parallelism", "tp", "pp"].includes(key)
+    && ["string", "number"].includes(typeof node)) {
+    // These fields accept a scalar or a hardware map. Preserve the core's
+    // scalar as its default while adding only the overlay's scoped entries.
+    node = { default: node };
     setChild(parent, key, node, seg);
   } else if (!isObj(node) && !(Array.isArray(node) && live.some((r) => r.path[depth + 1] === "[task]"))) {
     return err(p, "core value is not a map");
