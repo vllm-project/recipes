@@ -451,6 +451,32 @@ hardware_profiles:
     multi_node: false
     restricted: true
 
+  # Atlas 300I DUO / Atlas 200I Pro (310P series). Measured SKU on this task
+  # reported ~21 GB HBM per chip (not 44/48). Restricted: only recipes that
+  # list it in meta.hardware show the pill.
+  ascend_310p:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 310P"
+    description: "Huawei Ascend 310P · Atlas 300I DUO / Atlas 200I Pro · 1× NPU · ~21 GB HBM on measured 310P3 SKUs · vLLM Ascend *-310p image"
+    gpu_count: 1
+    vram_gb: 21
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # Two visible 310P chips (DUO / remapped pair) for TP=2 lanes.
+  ascend_310p_2x:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 310P 2x"
+    description: "Huawei Ascend 310P · 2× NPU · ~21 GB HBM each on measured 310P3 · TP2 · vLLM Ascend *-310p image"
+    gpu_count: 2
+    vram_gb: 42
+    multi_node: false
+    scalable: false
+    restricted: true
+
   810e:
     brand: Zhenwu
     generation: ppu
