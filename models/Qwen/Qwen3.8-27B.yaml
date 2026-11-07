@@ -34,6 +34,9 @@ meta:
     # single 950PR at TP1 with the in-checkpoint MTP head and FULL_DECODE_ONLY
     # ACLGraph and answered a long-form prompt correctly.
     ascend_950pr: verified
+    # Atlas 800 A3: W8A8 + TP2 + MTP validated on vLLM Ascend 0.23.0.
+    # ModelSlim loading, speculative decoding and HTTP 200 chat completion passed.
+    ascend_910c: verified
     arc_pro_b60: verified
     arc_pro_b70: verified
 
@@ -284,7 +287,10 @@ variants:
     # 32,128,768,176 B across 10 shards = 32.1 GB. ModelSlim keeps the vision tower in BF16
     # and stores FP32 per-channel scales, so this is not a uniform 8-bit build.
     vram_minimum_gb: 39
-    supported_hardware: [ascend_950pr]
+    supported_hardware: [ascend_950pr, ascend_910c]
+    tp:
+      ascend_950pr: 1
+      ascend_910c: 2
     default_modes:
       spec_decoding: qwen3_5_mtp
     # `--quantization ascend` is what selects the ModelSlim scheme; without it the loader
@@ -309,6 +315,21 @@ variants:
     hardware_overrides:
       ascend_950pr:
         docker_image: "quay.io/ascend/vllm-ascend:qwen3.8-a5"
+
+      ascend_910c:
+        # Validated on Atlas 800 A3 with W8A8, TP2 and MTP.
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a3"
+        extra_args:
+          - "--served-model-name"
+          - "qwen3.8"
+          - "--enable-prefix-caching"
+          - "--max-model-len"
+          - "131072"
+          - "--max-num-seqs"
+          - "32"
+          - "--gpu-memory-utilization"
+          - "0.85"
+
     description: "ModelSlim INT8 W8A8 for Ascend NPU — 32.1 GB: 1 NPU. Requires --quantization ascend."
 
 # Dense model: no routed experts, so none of the expert-parallel or PD strategies apply.
