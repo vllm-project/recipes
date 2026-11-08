@@ -336,6 +336,69 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
   }
 }
 
+// Validate the reference fields that name another object — a feature, a
+// variant, a platform, a strategy. Each one is a plain lookup that misses
+// silently, and each miss changes the rendered page with nothing to notice:
+//
+//   meta.platforms                → no Deploy option at all: resolveRecipePlatforms
+//                                   drops an entry the catalog has no id for
+//   opt_in_features               → the feature stays ON, the opposite of what
+//                                   the author asked
+//   hardware_opt_in_features.<hw> → same, for one GPU
+//   meta.default_variant.<hw>     → pickFittingVariant ignores the pick and
+//                                   substitutes the largest-footprint fit
+//   default_strategy              → recommendStrategy ignores it and opens on
+//                                   the TP-first heuristic
+//
+// None of these are schema errors (the value is a well-formed string) and none
+// reach a renderer as an error, so the build has to say so.
+function validateReferences(recipe, sourceFile, taxonomy, platformIds) {
+  const errors = [];
+  const features = new Set(Object.keys(recipe?.features || {}));
+  const variants = new Set(Object.keys(recipe?.variants || {}));
+  const offered = new Set(effectiveCompatibleStrategies(recipe));
+
+  for (const entry of recipe?.meta?.platforms || []) {
+    const id = typeof entry === "string" ? entry : entry?.id;
+    if (!platformIds.has(id)) {
+      errors.push(`meta.platforms: unknown platform "${id}" (known: ${[...platformIds].join(", ")})`);
+    }
+  }
+
+  for (const f of recipe?.opt_in_features || []) {
+    if (!features.has(f)) errors.push(`opt_in_features: no feature "${f}" (known: ${[...features].join(", ")})`);
+  }
+
+  // Keys are an exact GPU id, already enforced by the schema; the feature names
+  // inside them are not.
+  for (const [hwId, list] of Object.entries(recipe?.hardware_opt_in_features || {})) {
+    for (const f of list || []) {
+      if (!features.has(f)) errors.push(`hardware_opt_in_features.${hwId}: no feature "${f}" (known: ${[...features].join(", ")})`);
+    }
+  }
+
+  // `meta.default_variant` is a hardware-keyed map: a *value* that names no
+  // variant is silently replaced by the largest fit, which is exactly the
+  // choice the author wrote the key to override.
+  for (const [hwKey, v] of Object.entries(recipe?.meta?.default_variant || {})) {
+    if (!variants.has(v)) errors.push(`meta.default_variant.${hwKey}: no variant "${v}" (known: ${[...variants].join(", ")})`);
+  }
+
+  // `default_strategy` only takes effect on a strategy the recipe offers; on any
+  // other it is ignored and the recipe opens on the TP-first heuristic instead.
+  // A `single_node_*` pick is still honored at >1 node through its multi_node
+  // sibling, so the check is that the strategy is offered at all.
+  const ds = recipe?.default_strategy;
+  if (ds && !offered.has(ds)) {
+    errors.push(`default_strategy: "${ds}" is not offered by this recipe (offered: ${[...offered].join(", ") || "none"})`);
+  }
+
+  if (errors.length) {
+    const rel = sourceRel(sourceFile);
+    throw new Error(`Unresolvable references in ${rel}:\n  - ${errors.join("\n  - ")}`);
+  }
+}
+
 
 // Recursively find all .yaml files under a directory
 function findYamlFiles(dir) {
@@ -357,11 +420,15 @@ writeJson("taxonomy.json", taxonomy);
 
 // ── Platforms ── (third-party self-host targets; flat catalog)
 const platformsFile = path.join(CONTENT, "platforms.yaml");
+// Catalog ids, for the recipe-level `meta.platforms` check below: an entry that
+// isn't here resolves to nothing and renders no Deploy option.
+const platformIds = new Set();
 let platformsCount = 0;
 if (fs.existsSync(platformsFile)) {
   const platforms = normalizeDates(readYaml(platformsFile));
   writeJson("platforms.json", platforms);
-  platformsCount = Array.isArray(platforms?.platforms) ? platforms.platforms.length : 0;
+  for (const p of Array.isArray(platforms?.platforms) ? platforms.platforms : []) platformIds.add(p.id);
+  platformsCount = platformIds.size;
 }
 
 // ── Strategies ──
@@ -606,6 +673,7 @@ for (const file of findYamlFiles(modelsDir)) {
   validateFeatureModes(r, file);
   validateFrontends(r, file, taxonomy);
   validateHardwareKeys(r, file, taxonomy, strategies);
+  validateReferences(r, file, taxonomy, platformIds);
   const presetErrors = validatePresets(r, taxonomy, effectiveCompatibleStrategies(r), kvStoreIds, strategies.pd_cluster?.connectors);
   if (presetErrors.length) throw new Error(`Invalid presets in ${sourceRel(file)}:\n  - ${presetErrors.join("\n  - ")}`);
   const contextErrors = validateContextEntries(r);
