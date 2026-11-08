@@ -25,6 +25,8 @@ import {
   isKvOffloadAllowedForStrategy,
   isKvOffloadSupportedForRecipe,
   isKvOffloadBrandSupported,
+  isKvOffloadInstallable,
+  resolveKvOffloadOption,
   recommendStrategy,
   fitsSingleNode,
   variantVramMinimumGb,
@@ -39,6 +41,8 @@ import {
   computeDockerMeta,
   buildDockerRun,
   buildDockerArgv,
+  hardwareInstall,
+  hwPipOverride,
   nodesForStrategy,
   isStrategyReachable,
   isStrategySupportedOnHardware,
@@ -136,7 +140,7 @@ export function dockerize(command, argv, env, dockerMeta, port = null, docker = 
   return {
     docker_command: buildDockerRun({
       command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, port,
-      isNpu: dockerMeta.isNpu, cmdPrefix: dockerMeta.cmdPrefix, hostNetwork, extraFlags,
+      isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, cmdPrefix: dockerMeta.cmdPrefix, hostNetwork, extraFlags,
     }),
     docker_argv: buildDockerArgv({ argv, env, meta: dockerMeta, port, hostNetwork, extraFlags }),
   };
@@ -233,6 +237,9 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   if (strict && sel.pd_connector && result.kvConnector?.unavailableReason) {
     throw new Error(`Invalid preset ${presetPick}${pointPick ? ` at point ${pointPick}` : ""} in ${recipe.hf_id} (${hwId} / ${strategy}): ${result.kvConnector.unavailableReason}`);
   }
+  if (strict && result.parserWarnings?.length) {
+    throw new Error(`Invalid preset ${presetPick}${pointPick ? ` at point ${pointPick}` : ""} in ${recipe.hf_id} (${hwId} / ${strategy}): ${result.parserWarnings.join("; ")}`);
+  }
 
   const baseVariant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
@@ -244,6 +251,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   const dockerMeta = computeDockerMeta(recipe, variant, hwProfile, hwId);
   const env = result.env || {};
 
+  const hwPip = hwPipOverride(hardwareInstall(recipe, recipe.variants?.[variantKey], taxonomy.hardware_profiles?.[hwId], hwId));
   const base = {
     hardware: hwId,
     strategy,
@@ -256,6 +264,9 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     ...(result.preset?.point?.selected && result.preset.selected !== "baseline" ? { preset_point: result.preset.point.selected } : {}),
     env,
     docker_image: dockerMeta.image,
+    // This hardware's own install step, when it has one (no stock wheel or
+    // image runs the recipe there). Without it, the recipe's `install` applies.
+    ...(hwPip ? { install: { pip: hwPip } } : {}),
   };
   if (result.deployType === "multi_node") {
     const head = dockerize(result.headCommand, result.headArgv, env, dockerMeta);
@@ -310,6 +321,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
       decode,
       router: result.router,
       router_config: result.routerConfig,
+      ...(result.parserWarnings?.length ? { parser_warnings: result.parserWarnings } : {}),
       ...(result.registration ? { registration: result.registration } : {}),
     };
   }
@@ -372,7 +384,15 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     ...base,
     command: result.command,
     argv: result.argv,
-    ...dockerize(result.command, result.argv, env, dockerMeta),
+    // A KV Offload option's shell lines, run after the env exports and right
+    // before `vllm serve` (e.g. IAXL's `source setvars.sh`).
+    ...(result.setup ? { setup: result.setup } : {}),
+    ...(result.kvOffloadInstall ? { kv_offload_install: result.kvOffloadInstall } : {}),
+    // No published image carries the option (`docker: false`), so there is
+    // no docker equivalent to offer.
+    ...(result.dockerUnavailable
+      ? { docker_image: null, docker_command: null, docker_argv: null }
+      : dockerize(result.command, result.argv, env, dockerMeta)),
     // Companion processes (feature `companion:` or the active kv_offload
     // option's, e.g. LMCache's `lmcache server`) — run alongside `vllm serve`
     // on the same node, in their own terminal.
@@ -644,15 +664,18 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
   }
 
   // KV offload: a taxonomy option (Simple, LMCache) or a Mooncake kv_store id.
+  // An option is resolved for this hardware first and gated as synthesis gates
+  // it, so the selection never claims an option the command leaves out.
   const kvReq = get("kv_offload") || "";
-  const kvOpt = taxonomy.kv_offload?.[kvReq];
+  const kvOpt = resolveKvOffloadOption(taxonomy.kv_offload?.[kvReq], hwProfile, hwId);
   const kvAllowedByStrategy = strategyAllowsKvOffload(strategies[strategy]);
   let kvOffload = "";
   if (hwProfile.generation !== "xpu" && kvReq) {
     if (kvOpt) {
       if (isKvOffloadAllowedForStrategy(kvOpt, strategy, strategies[strategy])
         && isKvOffloadSupportedForRecipe(kvOpt, kvReq, recipe)
-        && isKvOffloadBrandSupported(kvOpt, hwProfile)) kvOffload = kvReq;
+        && isKvOffloadBrandSupported(kvOpt, hwProfile, hwId)
+        && isKvOffloadInstallable(kvOpt, recipe, variant, hwProfile, hwId)) kvOffload = kvReq;
     } else if (strategies[kvReq]?.deploy_type === "kv_store_lb" && scalable && kvAllowedByStrategy
       && isKvStoreBrandSupported(hwProfile) && recipe.kv_cache_strategy_hardware?.[kvReq]?.[hwId] !== "unsupported") {
       kvOffload = kvReq;

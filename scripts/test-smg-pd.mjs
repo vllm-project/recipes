@@ -124,7 +124,6 @@ test("unsupported SMG combinations fall back with an explicit reason", () => {
   for (const options of [
     { pools: { prefill: { nodes: 2, parallelism: "dep" }, decode: { nodes: 1 } } },
     { offload: "kv_store_distributed_mooncake" },
-    { model: read("models/moonshotai/Kimi-K3.yaml") },
   ]) {
     const result = resolve(options);
     assert.equal(result.orchestrator, "vllm-router");
@@ -144,6 +143,149 @@ test("native and Dynamo selections retain their existing behavior", () => {
   assert.ok(!dynamo.prefill.argv.includes("--port"));
   assert.equal(JSON.parse(flag(dynamo.prefill.argv, "--kv-transfer-config")).kv_role, "kv_both");
   assert.equal(resolve({ strategy: "single_node_tp" }).registration, undefined);
+});
+
+test("Dynamo workers use Dynamo parser flags for tool calling and reasoning", () => {
+  const model = read("models/moonshotai/Kimi-K3.yaml");
+  const dynamo = resolve({ model, router: "dynamo" });
+  const native = resolve({ model, router: "vllm" });
+  for (const role of ["prefill", "decode"]) {
+    const argv = dynamo[role].argv;
+    assert.equal(flag(argv, "--dyn-tool-call-parser"), "kimi_k3");
+    assert.equal(flag(argv, "--reasoning-parser"), "kimi_k3");
+    assert.equal(flag(argv, "--dyn-reasoning-parser"), "kimi_k3");
+    assert.ok(!argv.includes("--enable-auto-tool-choice"));
+    assert.ok(!argv.includes("--tool-call-parser"));
+    assert.ok(native[role].argv.includes("--enable-auto-tool-choice"));
+    assert.equal(flag(native[role].argv, "--tool-call-parser"), "kimi_k3");
+    assert.ok(!native[role].argv.includes("--dyn-tool-call-parser"));
+  }
+  const withoutFeatures = resolve({ model, router: "dynamo", features: [] });
+  assert.ok(!withoutFeatures.prefill.argv.includes("--dyn-tool-call-parser"));
+  assert.ok(!withoutFeatures.prefill.argv.includes("--dyn-reasoning-parser"));
+});
+
+test("Dynamo parser mapping does not consume a following flag as a value", () => {
+  const model = structuredClone(read("models/moonshotai/Kimi-K3.yaml"));
+  model.features.tool_calling.args = ["--tool-call-parser", "--max-num-seqs", "4"];
+  model.features.reasoning.args = ["--reasoning-parser", "--max-model-len", "16384"];
+  const result = resolve({ model, router: "dynamo" });
+  for (const role of ["prefill", "decode"]) {
+    const argv = result[role].argv;
+    assert.equal(flag(argv, "--max-num-seqs"), "4");
+    assert.equal(flag(argv, "--max-model-len"), "16384");
+    assert.ok(!argv.includes("--tool-call-parser"));
+    assert.ok(!argv.includes("--reasoning-parser"));
+    assert.ok(!argv.includes("--dyn-tool-call-parser"));
+    assert.ok(!argv.includes("--dyn-reasoning-parser"));
+  }
+});
+
+test("Dynamo maps parser names without changing the vLLM reasoning name", () => {
+  for (const [tool, reasoning, expectedTool, expectedReasoning] of [
+    ["deepseek_v31", "deepseek_r1", "deepseek_v3_1", "deepseek_r1"],
+    ["deepseek_v32", "kimi_k2", "deepseek_v3_2", "kimi_k25"],
+    ["glm45", "glm47", "glm47", "glm45"],
+    ["muse", "muse_glimmer", "muse", "muse_glimmer"],
+  ]) {
+    const model = structuredClone(read("models/moonshotai/Kimi-K3.yaml"));
+    model.features.tool_calling.args = ["--enable-auto-tool-choice", "--tool-call-parser", tool];
+    model.features.reasoning.args = ["--reasoning-parser", reasoning];
+    const result = resolve({ model, router: "dynamo" });
+    for (const role of ["prefill", "decode"]) {
+      const argv = result[role].argv;
+      assert.equal(flag(argv, "--dyn-tool-call-parser"), expectedTool);
+      assert.equal(flag(argv, "--dyn-reasoning-parser"), expectedReasoning);
+      assert.equal(flag(argv, "--reasoning-parser"), reasoning);
+    }
+    assert.equal(result.parserWarnings, undefined);
+  }
+});
+
+test("Dynamo omits unknown frontend parsers and reports unavailable features", () => {
+  for (const parser of ["deepseek_v41", "mimo", "step3p5", "step5", "__proto__"]) {
+    const model = structuredClone(read("models/moonshotai/Kimi-K3.yaml"));
+    model.features.tool_calling.args = ["--tool-call-parser", parser];
+    model.features.reasoning.args = ["--reasoning-parser", parser];
+    const result = resolve({ model, router: "dynamo" });
+    for (const role of ["prefill", "decode"]) {
+      assert.ok(!result[role].argv.includes("--dyn-tool-call-parser"));
+      assert.ok(!result[role].argv.includes("--dyn-reasoning-parser"));
+      assert.equal(flag(result[role].argv, "--reasoning-parser"), parser);
+    }
+    assert.equal(result.parserWarnings.length, 2);
+    assert.ok(result.parserWarnings.every((warning) => warning.includes(parser) && warning.includes("1.5.0")));
+    assert.equal(resolve({ model, router: "vllm" }).parserWarnings, undefined);
+  }
+});
+
+test("Dynamo K2-family recipes use the think-tag reasoning parser", () => {
+  for (const name of ["Kimi-K2-Thinking", "Kimi-K2.5", "Kimi-K2.6", "Kimi-K2.7-Code"]) {
+    const result = resolve({ model: read(`models/moonshotai/${name}.yaml`), router: "dynamo" });
+    for (const role of ["prefill", "decode"]) {
+      assert.equal(flag(result[role].argv, "--reasoning-parser"), "kimi_k2", name);
+      assert.equal(flag(result[role].argv, "--dyn-reasoning-parser"), "kimi_k25", name);
+    }
+  }
+});
+
+test("Dynamo maps only the surviving parser argument", () => {
+  for (const [first, last, expected] of [
+    ["deepseek_r1", "unknown", null],
+    ["unknown", "deepseek_r1", "deepseek_r1"],
+    ["basic", "deepseek_r1", "deepseek_r1"],
+  ]) {
+    const model = structuredClone(read("models/moonshotai/Kimi-K3.yaml"));
+    model.features.reasoning.args = ["--reasoning-parser", first, "--reasoning-parser", last];
+    const result = resolve({ model, router: "dynamo", features: ["reasoning"] });
+    for (const role of ["prefill", "decode"]) {
+      assert.equal(flag(result[role].argv, "--reasoning-parser"), last);
+      if (expected) assert.equal(flag(result[role].argv, "--dyn-reasoning-parser"), expected);
+      else assert.ok(!result[role].argv.includes("--dyn-reasoning-parser"));
+    }
+    if (expected) assert.equal(result.parserWarnings, undefined);
+    else assert.equal(result.parserWarnings.length, 1);
+  }
+});
+
+test("strict Dynamo presets reject unmapped parsers before publishing", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-parser-preset-"));
+  try {
+    const input = path.join(dir, "content");
+    fs.mkdirSync(path.join(input, "models/moonshotai"), { recursive: true });
+    for (const name of ["taxonomy.yaml", "platforms.yaml", "strategies", "kv_store"]) {
+      fs.cpSync(path.join(contentDir(), name), path.join(input, name), { recursive: true });
+    }
+    const model = structuredClone(read("models/moonshotai/Kimi-K3.yaml"));
+    model.features.reasoning.args = ["--reasoning-parser", "unknown"];
+    model.presets = { bad_parser: {
+      label: "Unmapped parser", hardware: "gb300", strategy: "pd_cluster",
+      select: { pd_router: "dynamo", features: { reasoning: true } },
+    } };
+    fs.writeFileSync(path.join(input, "models/moonshotai/Kimi-K3.yaml"), yaml.dump(model));
+    assert.throws(() => execFileSync(process.execPath, ["scripts/build-recipes-api.mjs"], {
+      env: { ...process.env, RECIPES_CONTENT_DIR: input, RECIPES_PUBLIC_DIR: path.join(dir, "public") },
+      stdio: "pipe",
+    }), (error) => {
+      assert.match(error.stderr.toString(), /Invalid preset bad_parser/);
+      assert.match(error.stderr.toString(), /no mapped reasoning parser for "unknown"/);
+      return true;
+    });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Dynamo preserves explicit frontend parser overrides", () => {
+  const model = structuredClone(read("models/moonshotai/Kimi-K3.yaml"));
+  model.features.tool_calling.args = ["--tool-call-parser", "unknown", "--dyn-tool-call-parser", "hermes"];
+  model.features.reasoning.args = ["--reasoning-parser", "unknown", "--dyn-reasoning-parser", "basic"];
+  const result = resolve({ model, router: "dynamo" });
+  for (const role of ["prefill", "decode"]) {
+    assert.equal(flag(result[role].argv, "--dyn-tool-call-parser"), "hermes");
+    assert.equal(flag(result[role].argv, "--dyn-reasoning-parser"), "basic");
+  }
+  assert.equal(result.parserWarnings, undefined);
 });
 
 const grpcModels = [
@@ -168,7 +310,8 @@ for (const [id, reasoning, tools] of grpcModels) {
       assert.ok(!result[role].argv.includes("--reasoning-parser"));
       assert.ok(!result[role].argv.includes("--enable-auto-tool-choice"));
       assert.equal(JSON.parse(flag(result[role].argv, "--kv-transfer-config")).kv_role, kvRole);
-      if (model.features.text_only) assert.ok(!result[role].argv.includes("--language-model-only"));
+      // Kimi-K3 now pins language-model-only in its base PD worker args.
+      if (model.features.text_only && id !== "moonshotai/Kimi-K3") assert.ok(!result[role].argv.includes("--language-model-only"));
     }
     assert.match(result.router.command, /--prefill grpc:\/\/\$PREFILL_NODE_1:8001/);
     assert.match(result.router.command, /--decode grpc:\/\/\$DECODE_NODE_1:8002/);
@@ -259,7 +402,7 @@ test("gRPC preserves vision encoder settings while removing worker-only chat def
 });
 
 test("gRPC Text Only remains an opt-in feature on both pools", () => {
-  for (const id of ["moonshotai/Kimi-K3", "MiniMaxAI/MiniMax-M3", "deepseek-ai/DeepSeek-V4.1-Flash"]) {
+  for (const id of ["MiniMaxAI/MiniMax-M3", "deepseek-ai/DeepSeek-V4.1-Flash"]) {
     const model = read(`models/${id}.yaml`);
     for (const enabled of [false, true, false]) {
       const result = resolve({ model, transport: "grpc", pools: grpcPools,

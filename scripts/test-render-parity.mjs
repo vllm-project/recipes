@@ -16,7 +16,7 @@ import { loadStrategies } from "../src/lib/strategies.js";
 import { loadTaxonomy } from "../src/lib/taxonomy.js";
 import { resolveSelection } from "../src/lib/recipe-render.js";
 import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
-import { computeDockerMeta, isStrategySupportedOnHardware, needsMultiNode } from "../src/lib/command-synthesis.js";
+import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode } from "../src/lib/command-synthesis.js";
 
 const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES_PUBLIC_DIR) : path.join(process.cwd(), "public");
 const strategies = loadStrategies();
@@ -150,6 +150,39 @@ test("resolveSelection renders every static per-hardware rendering identically",
   console.log(`  ${checked} renderings checked, ${unreachable} not selectable in the builder skipped`);
   assert.ok(checked > 1000, `only ${checked} renderings checked`);
   assert.deepEqual(mismatches, [], `${mismatches.length}/${checked} renderings differ:\n  ${mismatches.slice(0, 20).join("\n  ")}`);
+});
+
+test("the builder's multi-node start matches resolveSelection, so a shared link and its .md agree", () => {
+  const mismatches = [];
+  let checked = 0;
+  for (const recipe of getAllRecipes()) {
+    if (recipe.meta?.tasks?.includes("omni")) continue;
+    // A recipe with no multi-node strategy stays on one node, whatever fits.
+    const offered = effectiveCompatibleStrategies(recipe);
+    if (!offered.some((s) => ["multi_node", "pd_cluster"].includes(strategies[s]?.deploy_type))) continue;
+    for (const [hwId, hw] of Object.entries(taxonomy.hardware_profiles)) {
+      // A preset's `select.nodes` moves the count on its own GPU, in both.
+      if (Object.values(recipe.presets || {}).some((p) => p.hardware === hwId)) continue;
+      if (hw.restricted && !recipe.meta?.hardware?.[hwId]) continue;
+      if (recipe.meta?.hardware?.[hwId] === "unsupported" || !isHardwareScalable(hw)) continue;
+      for (const [variantKey, variant] of Object.entries(recipe.variants || {})) {
+        if (variantKey !== "default" || !needsMultiNode(recipe, strategies, hw, variant, hwId)) continue;
+        for (const requested of [null, ...offered.filter((s) => strategies[s]?.deploy_type === "multi_node")]) {
+          if (requested && !isStrategySupportedOnHardware(recipe, requested, hw, hwId)) continue;
+          const q = new URLSearchParams({ hardware: hwId, ...(requested ? { strategy: requested } : {}) });
+          const { selection } = resolveSelection(recipe, q, strategies, taxonomy);
+          if (selection.hardware !== hwId) continue;
+          checked++;
+          const start = multiNodeFloor(recipe, strategies, hw, hwId, requested);
+          if (selection.strategy !== "pd_cluster" && selection.nodes !== start) {
+            mismatches.push(`/${recipe.hf_id}?${q}: builder ${start}, resolveSelection ${selection.nodes}`);
+          }
+        }
+      }
+    }
+  }
+  assert.ok(checked > 100, `only ${checked} selections checked`);
+  assert.deepEqual(mismatches, [], `${mismatches.length}/${checked} differ:\n  ${mismatches.slice(0, 20).join("\n  ")}`);
 });
 
 test("resolveSelection renders every preset point identically from ?preset=&point=", () => {
