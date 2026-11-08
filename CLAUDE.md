@@ -24,7 +24,7 @@ pnpm content:watch                      # Re-assemble when files are added/remov
 pnpm content:update                     # Re-resolve every source ref and rewrite sources.lock.json
 node scripts/validate-source.mjs --source <name> --dir <path>  # Validate a source repo's recipe dir (what its PR check runs)
 pnpm test:overlay                       # Overlay merge/split round-trip over every recipe + scope violations
-pnpm test:schema                        # Recipes + templates match the schema; misspelled keys are rejected
+pnpm test:schema                        # Recipes + templates match the schema; misspelled keys are rejected, hardware claims no variant can honour are reported
 pnpm test:guide-html                    # Guide Markdown renders no raw HTML or unsafe URLs (source-PR previews render guides unreviewed)
 pnpm test:presets                      # Tuned presets: migrating exact-GPU blocks renders identically, baseline opt-out, validation, overlay scope
 pnpm test:context                       # notes / troubleshooting: `when` matching, labels, validation, schema
