@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAllRecipes, getAllRoutablePairs, findVariantRedirect, getRecipeByHfId } from "@/lib/recipes";
-import { recipeHref, toBuilderRecipe } from "@/lib/recipe-utils";
+import { recipeHref, resolveRelatedRecipes, toBuilderRecipe } from "@/lib/recipe-utils";
 import { siteUrl } from "@/lib/site-url";
 import { loadStrategies } from "@/lib/strategies";
 import { loadTaxonomy } from "@/lib/taxonomy";
@@ -175,10 +175,10 @@ export default async function RecipePage({ params, searchParams }) {
   const enabledPlatforms = resolveRecipePlatforms(recipe.meta?.platforms);
 
   const allRecipes = getAllRecipes();
-  // related_recipes can be either "org/repo" HF id or the old slug format
-  const related = (recipe.meta.related_recipes || [])
-    .map((s) => allRecipes.find((r) => r.hf_id === s || r.meta.slug === s))
-    .filter(Boolean);
+  // related_recipes can be either "org/repo" HF id or the old slug format;
+  // the id match is case-insensitive (the HF org is lowercase, the directory
+  // name that derives hf_id is not).
+  const related = resolveRelatedRecipes(recipe, allRecipes);
 
   // JSON-LD @graph: TechArticle is the spec'd primary type (PROD-8), but
   // SoftwareApplication carries useful schema (softwareRequirements, sameAs

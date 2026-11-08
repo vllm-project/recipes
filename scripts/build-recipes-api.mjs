@@ -485,9 +485,12 @@ const modelsDir = path.join(CONTENT, "models");
 // as its own recipe, so a sibling recipe must not also promote a "Ring-1T-FP8"
 // variant).
 const allRecipeHfIds = new Set();
+const allRecipeSlugs = new Set();
+const relatedFailures = [];
 const schemaFailures = [];
 for (const file of findYamlFiles(modelsDir)) {
-  if (!validateRecipe(normalizeDates(readYaml(file)))) {
+  const raw = normalizeDates(readYaml(file));
+  if (!validateRecipe(raw)) {
     schemaFailures.push(`${sourceRel(file)}:\n    - ${schemaErrors(validateRecipe.errors).join("\n    - ")}`);
   }
   const rel = path.relative(modelsDir, file);
@@ -496,10 +499,25 @@ for (const file of findYamlFiles(modelsDir)) {
     const org = parts[0];
     const repo = parts[parts.length - 1].replace(/\.(yaml|yml)$/, "");
     allRecipeHfIds.add(`${org}/${repo}`);
+    if (raw.meta?.slug) allRecipeSlugs.add(raw.meta.slug);
   }
+  // `related_recipes` points at another page and renders only when it
+  // resolves, so an entry naming a model that isn't in the catalog produces no
+  // row and no message — the author sees their link simply vanish. Collected
+  // here and resolved below, since an entry may point at a recipe listed later.
+  for (const entry of raw.meta?.related_recipes || []) relatedFailures.push({ file, entry: String(entry) });
 }
 if (schemaFailures.length) {
   throw new Error(`Recipes don't match the schema (SCHEMA.md, /recipe.schema.json):\n  ${schemaFailures.join("\n  ")}`);
+}
+// Matched the way the page matches it — case-insensitive hf_id (the HF org is
+// lowercase, the directory name that derives hf_id is not) or an exact slug.
+const lowerHfIds = new Set([...allRecipeHfIds].map((id) => id.toLowerCase()));
+const relatedErrors = relatedFailures
+  .filter(({ entry }) => !lowerHfIds.has(entry.toLowerCase()) && !allRecipeSlugs.has(entry))
+  .map(({ file, entry }) => `${sourceRel(file)}: meta.related_recipes names "${entry}", which is no recipe's hf_id or slug`);
+if (relatedErrors.length) {
+  throw new Error(`Unresolvable related_recipes:\n  - ${relatedErrors.join("\n  - ")}`);
 }
 
 // The promoted checkpoint is the only variant in this file, under the key `default`.

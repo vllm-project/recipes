@@ -81,6 +81,36 @@ export function toBuilderRecipe(r) {
   return rest;
 }
 
+/**
+ * Resolve `meta.related_recipes` against the catalog.
+ *
+ * Entries are either an HF id (`"google/gemma-4-31B-it"`, the form SCHEMA.md
+ * documents) or a legacy slug. HF ids are matched case-insensitively, because
+ * the org half is the HuggingFace org — always lowercase — while the directory
+ * name that derives `hf_id` keeps the author's casing (`models/Google/…`).
+ * Case-sensitive matching dropped 14 of the 289 references in the catalog
+ * silently: the page just rendered no "Related" row, with nothing to notice.
+ *
+ * `getRecipeByHfId` already matches this way; this is the same rule for a
+ * field that can't use it, since a slug and an id share one list.
+ */
+export function resolveRelatedRecipes(recipe, recipes) {
+  const byHfId = new Map(recipes.map((r) => [r.hf_id.toLowerCase(), r]));
+  const bySlug = new Map(recipes.filter((r) => r.meta?.slug).map((r) => [r.meta.slug, r]));
+  const self = recipe?.hf_id?.toLowerCase();
+  const seen = new Set();
+  const out = [];
+  for (const entry of recipe?.meta?.related_recipes || []) {
+    const found = byHfId.get(String(entry).toLowerCase()) || bySlug.get(entry);
+    // A self-reference would render as a link back to the page it is on, and a
+    // repeated entry as the same link twice.
+    if (!found || found.hf_id?.toLowerCase() === self || seen.has(found.hf_id)) continue;
+    seen.add(found.hf_id);
+    out.push(found);
+  }
+  return out;
+}
+
 function dateTimestamp(value) {
   const timestamp = Date.parse(value || "");
   return Number.isFinite(timestamp) ? timestamp : 0;
