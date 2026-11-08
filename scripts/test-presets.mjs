@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import yaml from "js-yaml";
@@ -338,6 +340,100 @@ test("preset validation: points, select, arg ops and variants", () => {
   assert.ok(one({ tp: 99 }).some((e) => /exceeds/.test(e)));
   assert.ok(one({ select: { nodes: 2 } }).some((e) => /only a multi_node_\* preset sets the node count/.test(e)));
   assert.ok(one({ points: { a: { label: "a", tp: 99 } } }).some((e) => /exceeds/.test(e)));
+});
+
+// A preset is evidence that someone ran that configuration on that GPU, so a
+// variant it names has to be a variant that runs there. The pair can't be
+// checked in `validatePresets` (compatibility is synthesized from precision +
+// `supported_hardware` + single-node fit, not read off the YAML), so these go
+// through the real build: a validator that exists only in a test copy proves
+// nothing about what ships.
+const recipeFixture = (preset, defaultVariant = "{ precision: bf16, vram_minimum_gb: 20 }") => `meta:
+  title: "Preset Fixture"
+  slug: "preset-fixture"
+  provider: "Example"
+  description: "Fixture for the preset variant check."
+  date_added: 2026-01-01
+  date_updated: 2026-01-01
+  tasks: [text]
+model:
+  model_id: "example/preset-fixture"
+  min_vllm_version: "0.30.0"
+  architecture: dense
+  parameter_count: "8B"
+  active_parameters: "8B"
+  context_length: 8192
+variants:
+  default: ${defaultVariant}
+  nvfp4: { precision: nvfp4, vram_minimum_gb: 10 }
+  gb300_only: { precision: fp8, vram_minimum_gb: 10, supported_hardware: [gb300] }
+compatible_strategies: [single_node_tp]
+presets:
+  lane:
+    label: "Lane"
+    hardware: h200
+${preset}
+guide: |
+  ## Overview
+  Fixture.
+`;
+
+// Build one fixture recipe in an isolated content tree (the real taxonomy and
+// strategies, so the compatibility rules under test are the shipping ones).
+function buildFixture(preset, defaultVariant) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-preset-variants-"));
+  const content = path.join(dir, "content");
+  fs.mkdirSync(path.join(content, "models/example"), { recursive: true });
+  for (const name of ["taxonomy.yaml", "platforms.yaml", "strategies", "kv_store"]) {
+    fs.cpSync(path.join(contentDir(), name), path.join(content, name), { recursive: true });
+  }
+  fs.writeFileSync(path.join(content, "models/example/preset-fixture.yaml"), recipeFixture(preset, defaultVariant));
+  const run = spawnSync(process.execPath, ["scripts/build-recipes-api.mjs"], {
+    cwd: path.resolve(import.meta.dirname, ".."),
+    env: { ...process.env, RECIPES_CONTENT_DIR: content, RECIPES_PUBLIC_DIR: path.join(dir, "public") },
+    encoding: "utf8",
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(run.error, undefined);
+  return { status: run.status, stdout: run.stdout, stderr: run.stderr };
+}
+
+test("a preset naming a variant that cannot run on its hardware fails the build", () => {
+  // `nvfp4` is a checkpoint format the precision gate keeps off Hopper, and
+  // `gb300_only` is the author's own `supported_hardware`. Each names the rule
+  // it broke, because the fix differs: one is "pick the FP8 lane", the other
+  // is "widen supported_hardware".
+  for (const [variant, reason] of [
+    ["nvfp4", /nvfp4 is not supported on h200/],
+    ["gb300_only", /supported_hardware is gb300/],
+  ]) {
+    const { status, stderr } = buildFixture(`    variants: [${variant}]`);
+    assert.equal(status, 1, `build should fail for ${variant}`);
+    assert.match(stderr, /Invalid preset variants/);
+    assert.match(stderr, new RegExp(`presets\\.lane\\.variants: "${variant}" cannot run on h200`));
+    assert.match(stderr, reason);
+  }
+});
+
+test("a preset that leaves the variant to the fallback warns when default cannot run there", () => {
+  // Legitimate shape — the lane was run on a variant it should have named — but
+  // silently serving the recipe's `default` checkpoint on a GPU the recipe
+  // excludes is how a published command ends up wrong. Warn, naming the likely
+  // intent; do not fail, since a recipe may have no better variant and the
+  // builder still reconciles by picking one that fits.
+  const { status, stdout, stderr } = buildFixture("", "{ precision: nvfp4, vram_minimum_gb: 10 }");
+  assert.equal(status, 0, stderr);
+  assert.match(stderr, /presets\.lane: omits variants, but "default" cannot run on h200/);
+  assert.match(stderr, /nvfp4 is not supported on h200/);
+  assert.match(stdout, /✓ JSON API: 1 models/);
+});
+
+test("a preset whose variant does run on its hardware builds clean", () => {
+  for (const preset of ["    variants: [default]", ""]) {
+    const { status, stderr } = buildFixture(preset);
+    assert.equal(status, 0, stderr);
+    assert.doesNotMatch(stderr, /presets\.lane/);
+  }
 });
 
 test("an overlay adds only presets for its own hardware, and split moves them back", () => {

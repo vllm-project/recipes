@@ -38,6 +38,8 @@ import {
   isKvStoreBrandSupported,
   strategyAllowsKvOffload,
   pickFittingVariant,
+  variantRunsOnHardware,
+  isPrecisionCompatible,
   pdFitsSingleNode,
   pdRoleNodes,
   pdRoleParallelism,
@@ -206,6 +208,61 @@ function validateFrontends(recipe, sourceFile, taxonomy) {
     const rel = sourceRel(sourceFile);
     throw new Error(`Invalid frontend config in ${rel}:\n  - ${errors.join("\n  - ")}`);
   }
+}
+
+// A preset exists because someone ran that configuration on that GPU, so a
+// variant it names has to be a variant that runs there. `validatePresets`
+// checks the name exists; it cannot check the pair, because compatibility is
+// synthesized from precision + `supported_hardware` + single-node fit rather
+// than read off the YAML. Here the answer already exists (`variantRunsOnHardware`,
+// the same predicate the builder and the build's variant fallback use).
+//
+// Two forms, two severities:
+//   - `variants: [x]` — the author asserted x was served there. If it can't
+//     run there, the published file would serve a checkpoint the recipe's own
+//     rules exclude, so fail the build.
+//   - no `variants` — the implicit fallback is `default`, and a `default` that
+//     doesn't run there is a legitimate shape (an H200 lane on a recipe whose
+//     default is an NVFP4 checkpoint the recipe excludes from H200 has to name
+//     its own). Warn, naming the variant the lane most likely serves: without
+//     the name the question is settled somewhere downstream, out of the
+//     author's sight.
+function validatePresetVariants(recipe, sourceFile, taxonomy) {
+  const errors = [];
+  const warnings = [];
+  const profiles = taxonomy?.hardware_profiles || {};
+  for (const [key, p] of Object.entries(recipe?.presets || {})) {
+    const profile = profiles[p?.hardware];
+    if (!profile) continue;  // unknown hardware is validatePresets' error
+    const where = `presets.${key}`;
+    // Say which rule rules it out: a precision gate is fixed by the checkpoint
+    // format, a `supported_hardware` list by the author's own declaration, and
+    // a single-node-fit failure only by adding nodes.
+    const why = (v) => {
+      if (!variantRunsOnHardware(profile, v, p.hardware)) {
+        if (!isPrecisionCompatible(profile, v)) return `${v.precision} is not supported on ${p.hardware}`;
+        if (v.supported_hardware?.length) return `supported_hardware is ${v.supported_hardware.join("/")}`;
+        return `the weights do not fit single-node on ${p.hardware}`;
+      }
+    };
+    if (p.variants?.length) {
+      for (const v of p.variants) {
+        const variant = recipe.variants?.[v];
+        if (!variant) continue;  // missing variant is validatePresets' error
+        const reason = why(variant);
+        if (reason) errors.push(`${where}.variants: "${v}" cannot run on ${p.hardware} (${reason})`);
+      }
+      continue;
+    }
+    const fallback = recipe.variants?.default;
+    if (fallback && !variantRunsOnHardware(profile, fallback, p.hardware)) {
+      const fitting = pickFittingVariant(recipe, profile, p.hardware);
+      warnings.push(`${where}: omits variants, but "default" cannot run on ${p.hardware} (${why(fallback)}); name the variant this lane serves${fitting ? ` (e.g. "${fitting}")` : ""}`);
+    }
+  }
+  const rel = sourceRel(sourceFile);
+  if (errors.length) throw new Error(`Invalid preset variants in ${rel}:\n  - ${errors.join("\n  - ")}`);
+  return warnings.map((w) => `${rel}: ${w}`);
 }
 
 // Validate every hardware-keyed map against the taxonomy vocabulary. Hardware
@@ -554,6 +611,7 @@ const kvStoreIds = Object.keys(strategies).filter((id) => strategies[id]?.deploy
 
 const recipes = [];
 const promotedIndexEntries = [];
+const presetWarnings = [];
 let promotedCount = 0;
 let collisionCount = 0;
 
@@ -562,6 +620,7 @@ for (const file of findYamlFiles(modelsDir)) {
   validateFeatureModes(r, file);
   validateFrontends(r, file, taxonomy);
   validateHardwareKeys(r, file, taxonomy, strategies);
+  presetWarnings.push(...validatePresetVariants(r, file, taxonomy));
   const presetErrors = validatePresets(r, taxonomy, effectiveCompatibleStrategies(r), kvStoreIds, strategies.pd_cluster?.connectors);
   if (presetErrors.length) throw new Error(`Invalid presets in ${sourceRel(file)}:\n  - ${presetErrors.join("\n  - ")}`);
   const contextErrors = validateContextEntries(r);
@@ -721,6 +780,7 @@ console.log(
   `✓ JSON API: ${recipes.length} models (${rcCount} with recommended_command, ${altCount} default-hw alternatives, ${hwIndexedCount} per-hw renderings), ${promotedCount} promoted variants, ${servingStrategyCount} strategies, ${Object.keys(kvStoreDeployments).length} kv-store deployments, ${platformsCount} platforms` +
   (collisionCount ? ` (${collisionCount} variant collision${collisionCount > 1 ? "s" : ""} skipped)` : "")
 );
+for (const warning of presetWarnings) console.warn(`  ⚠ ${warning}`);
 console.log(`  /models.json`);
 console.log(`  /{hf_id}.json                                (e.g. /moonshotai/Kimi-K2.5.json)`);
 console.log(`  /{hf_id}/strategies/{strategy}.json          (default-hw alternatives)`);
