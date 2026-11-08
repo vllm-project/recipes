@@ -4,7 +4,7 @@
 // hand-written examples may target another configuration.
 
 import { clientModelFor, fillClientModel } from "./client-model.js";
-import { hardwareInstall } from "./command-synthesis.js";
+import { hardwareInstall, hwPipOverride, isFeatureSupportedOnHardware } from "./command-synthesis.js";
 import { whenMatches } from "./recipe-context.js";
 import { SELECTION_PARAMS, defaultFeaturesFor, synthesizeInstall } from "./recipe-render.js";
 
@@ -110,7 +110,7 @@ function serveSection(r) {
     if (r.router?.command && (r.instances ?? 1) > 1) out.push("", `### ${step++}. Router`, "", fence(r.router.command));
     return out;
   }
-  out.push(fence(withEnv(r.env, r.command)));
+  out.push(fence([envExports(r.env), r.setup, r.command].filter(Boolean).join("\n")));
   for (const c of r.companions || []) {
     out.push("", `### ${c.label}${c.after ? " (start after vLLM)" : ""}`, "");
     if (c.description) out.push(c.description, "");
@@ -125,9 +125,14 @@ function installSection(recipe, resolved) {
   const out = [];
   const min = recipe.model?.min_vllm_version;
   const hwInstall = hardwareInstall(recipe, recipe.variants?.[selection?.variant], hwProfile, selection?.hardware);
-  if (min) out.push(`Requires vLLM >= ${min}${recipe.model?.nightly_required && hwInstall?.pip !== false ? " (not released yet — nightly wheel)" : ""}.`, "");
+  const hwPip = hwPipOverride(hwInstall);
+  if (hwPip) {
+    // This hardware's own install: the recipe's vLLM floor describes the stock one.
+    if (hwPip.note) out.push(hwPip.note, "");
+    out.push(fence(hwPip.command), "");
+  } else if (min) out.push(`Requires vLLM >= ${min}${recipe.model?.nightly_required && hwInstall?.pip !== false ? " (not released yet — nightly wheel)" : ""}.`, "");
   const install = synthesizeInstall(recipe);
-  if (hwProfile.brand === "NVIDIA" && install?.pip && hwInstall?.pip !== false) {
+  if (!hwPip && hwProfile.brand === "NVIDIA" && install?.pip && hwInstall?.pip !== false) {
     if (install.pip.note) out.push(install.pip.note, "");
     out.push(fence(install.pip.command), "");
   }
@@ -145,12 +150,19 @@ function installSection(recipe, resolved) {
       out.push(`- ${d.note || "Dependency"}${d.optional ? " (optional)" : ""}`, "", fence(d.command), "");
     }
   }
+  const kvInstall = rendering?.kv_offload_install || [];
+  if (kvInstall.length) {
+    out.push("Required by the selected KV Offload option:", "");
+    for (const s of kvInstall) out.push(`- ${s.note || "Install"}`, "", fence(s.command), "");
+  }
   return out;
 }
 
 function contextEntries(recipe, resolved, kind, hardwareProfiles) {
-  const { selection } = resolved;
-  const sel = { hwId: selection.hardware, strategy: selection.strategy, variant: selection.variant, features: selection.features };
+  const { selection, hwProfile } = resolved;
+  // A feature unsupported on this hardware emits nothing, so it isn't on here.
+  const features = selection.features?.filter((f) => isFeatureSupportedOnHardware(recipe.features?.[f], hwProfile, selection.hardware));
+  const sel = { hwId: selection.hardware, strategy: selection.strategy, variant: selection.variant, features };
   return (recipe[kind] || []).filter((e) => whenMatches(e.when, sel, hardwareProfiles));
 }
 

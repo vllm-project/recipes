@@ -108,13 +108,17 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     precision_hardware: obj({ brand: { enum: brands }, generation: { enum: generations } }),
     default_modes: { type: "object", additionalProperties: { type: "string" } },
     // Generation keys carry extra_args/extra_env; exact GPU ids may also pin an
-    // image, a GPU-resident VRAM budget, or hide the pip install.
+    // image, a GPU-resident VRAM budget, or state the install paths: hide pip or
+    // Docker, or give this GPU its own pip command.
     hardware_overrides: keyed(hwKey, extraArgsEnv({
       support: { enum: ["supported", "unsupported"] },
       vram_minimum_gb: { type: "number", minimum: 0 },
       docker_image: { type: "string" },
       docker_serve_command: { type: "string" },
-      install: obj({ pip: installTab, docker: installTab }),
+      install: obj({
+        pip: { anyOf: [{ type: "boolean" }, obj({ command: { type: "string" }, note: { type: "string" } }, { required: ["command"] })] },
+        docker: installTab,
+      }),
     })),
   }, { required: ["precision", "vram_minimum_gb"] });
 
