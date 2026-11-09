@@ -407,20 +407,25 @@ guide: |
 // strategies, so the compatibility rules under test are the shipping ones).
 function buildFixture(preset, defaultVariant) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-preset-variants-"));
-  const content = path.join(dir, "content");
-  fs.mkdirSync(path.join(content, "models/example"), { recursive: true });
-  for (const name of ["taxonomy.yaml", "platforms.yaml", "strategies", "kv_store"]) {
-    fs.cpSync(path.join(contentDir(), name), path.join(content, name), { recursive: true });
+  try {
+    const content = path.join(dir, "content");
+    fs.mkdirSync(path.join(content, "models/example"), { recursive: true });
+    for (const name of ["taxonomy.yaml", "platforms.yaml", "strategies", "kv_store"]) {
+      fs.cpSync(path.join(contentDir(), name), path.join(content, name), { recursive: true });
+    }
+    fs.writeFileSync(path.join(content, "models/example/preset-fixture.yaml"), recipeFixture(preset, defaultVariant));
+    const run = spawnSync(process.execPath, ["scripts/build-recipes-api.mjs"], {
+      cwd: path.resolve(import.meta.dirname, ".."),
+      env: { ...process.env, RECIPES_CONTENT_DIR: content, RECIPES_PUBLIC_DIR: path.join(dir, "public") },
+      encoding: "utf8",
+    });
+    assert.equal(run.error, undefined);
+    return { status: run.status, stdout: run.stdout, stderr: run.stderr };
+  } finally {
+    // A failed `cpSync` or `spawnSync` would otherwise leave the tree behind for
+    // every run, and the fixture is only ever wanted for the build above.
+    fs.rmSync(dir, { recursive: true, force: true });
   }
-  fs.writeFileSync(path.join(content, "models/example/preset-fixture.yaml"), recipeFixture(preset, defaultVariant));
-  const run = spawnSync(process.execPath, ["scripts/build-recipes-api.mjs"], {
-    cwd: path.resolve(import.meta.dirname, ".."),
-    env: { ...process.env, RECIPES_CONTENT_DIR: content, RECIPES_PUBLIC_DIR: path.join(dir, "public") },
-    encoding: "utf8",
-  });
-  fs.rmSync(dir, { recursive: true, force: true });
-  assert.equal(run.error, undefined);
-  return { status: run.status, stdout: run.stdout, stderr: run.stderr };
 }
 
 test("a preset naming a variant that cannot run on its hardware fails the build", () => {
