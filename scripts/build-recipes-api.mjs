@@ -427,7 +427,13 @@ let platformsCount = 0;
 if (fs.existsSync(platformsFile)) {
   const platforms = normalizeDates(readYaml(platformsFile));
   writeJson("platforms.json", platforms);
-  for (const p of Array.isArray(platforms?.platforms) ? platforms.platforms : []) platformIds.add(p.id);
+  // `platforms.yaml` is authored content, not schema-validated: an entry that is
+  // present but null (`- null`, an empty list item) would otherwise take the
+  // whole build down on `.id`. Such an entry names no platform, so it adds none.
+  const platformList = Array.isArray(platforms?.platforms) ? platforms.platforms : [];
+  for (const p of platformList) {
+    if (p?.id) platformIds.add(p.id);
+  }
   platformsCount = platformIds.size;
 }
 

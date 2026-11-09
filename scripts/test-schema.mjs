@@ -110,8 +110,8 @@ test("build rejects inconsistent variant feature and frontend references", () =>
 // differs from what the author wrote. Run the real build — a validator that
 // only exists in the test proves nothing.
 test("the build rejects a reference that names nothing", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-refs-"));
-  const content = path.join(dir, "content");
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-refs-"));
+  const content = path.join(tmpDir, "content");
   fs.mkdirSync(path.join(content, "models/example"), { recursive: true });
   for (const name of ["taxonomy.yaml", "platforms.yaml", "strategies", "kv_store"]) {
     fs.cpSync(path.join(contentDir(), name), path.join(content, name), { recursive: true });
@@ -150,7 +150,7 @@ guide: |
     fs.writeFileSync(file, recipe(meta, top));
     return spawnSync(process.execPath, ["scripts/build-recipes-api.mjs"], {
       cwd: path.resolve(import.meta.dirname, ".."),
-      env: { ...process.env, RECIPES_CONTENT_DIR: content, RECIPES_PUBLIC_DIR: path.join(dir, "public") },
+      env: { ...process.env, RECIPES_CONTENT_DIR: content, RECIPES_PUBLIC_DIR: path.join(tmpDir, "public") },
       encoding: "utf8",
     });
   };
@@ -185,7 +185,22 @@ guide: |
       "opt_in_features: [tool_calling]\ndefault_strategy: single_node_tp",
     );
     assert.equal(ok.status, 0, ok.stderr);
+
+    // `platforms.yaml` carries no schema of its own, so a blank list item
+    // (`- null`) reaches the id collection as null. It names no platform, so it
+    // contributes none — but it must not take the build down on `.id`.
+    const platformsFile = path.join(content, "platforms.yaml");
+    const original = fs.readFileSync(platformsFile, "utf8");
+    fs.writeFileSync(platformsFile, `${original}\n  - null\n`);
+    try {
+      const blank = build();
+      assert.equal(blank.status, 0, blank.stderr);
+      // Two real platforms remain; the blank entry is not counted as a third.
+      assert.match(blank.stdout, /2 platforms/);
+    } finally {
+      fs.writeFileSync(platformsFile, original);
+    }
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
