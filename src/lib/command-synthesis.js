@@ -961,7 +961,7 @@ function ascendDockerArgv(deviceCount) {
 // wheel index (`/nightly/cu129`) are CUDA 13 (cu130) only.
 export const LAST_CU129_RELEASE = "0.32.0";
 
-function versionBelow(v, floor) {
+export function versionBelow(v, floor) {
   const pa = String(v).split(".").map((n) => parseInt(n, 10) || 0);
   const pb = String(floor).split(".").map((n) => parseInt(n, 10) || 0);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {

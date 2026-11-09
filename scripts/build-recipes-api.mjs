@@ -27,7 +27,7 @@ import yaml from "js-yaml";
 import Ajv from "ajv";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import { BASELINE, effectivePreset, presetImage, presetPoints, presetSelect, resolvePresetKey, validatePresets, withPreset } from "../src/lib/recipe-presets.js";
-import { validateContextEntries } from "../src/lib/recipe-context.js";
+import { CONTEXT_KINDS, validateContextEntries } from "../src/lib/recipe-context.js";
 import {
   pickDefaultHardware,
   listCompatibleHardware,
@@ -49,6 +49,10 @@ import {
   isStrategyReachable,
   isStrategySupportedOnHardware,
   effectiveCompatibleStrategies,
+  isFeatureAllowedForVariant,
+  isFrontendSupported,
+  resolveFrontend,
+  versionBelow,
   FALLBACK_FRONTEND,
   kvOffloadOptionErrors,
 } from "../src/lib/command-synthesis.js";
@@ -418,6 +422,23 @@ if (schemaFailures.length) {
   throw new Error(`Recipes don't match the schema (SCHEMA.md, /recipe.schema.json):\n  ${schemaFailures.join("\n  ")}`);
 }
 
+// The promoted checkpoint is the only variant in this file, under the key `default`.
+function contextForPromotedVariant(entries, variantKey, allowsFeature) {
+  return entries.flatMap((entry) => {
+    if (!entry.when) return [entry];
+    const when = { ...entry.when };
+    if (when.variants?.length) {
+      if (!when.variants.includes(variantKey)) return [];
+      when.variants = ["default"];
+    }
+    if (when.features?.length) {
+      when.features = when.features.filter(allowsFeature);
+      if (!when.features.length) return [];
+    }
+    return [{ ...entry, when }];
+  });
+}
+
 // Write the public recipe JSON (parent or promoted) with HEAD_KEYS ordering.
 function writeRecipeJson(hfId, payload) {
   const HEAD_KEYS = ["hf_id", "meta", "recommended_command"];
@@ -665,17 +686,41 @@ for (const file of findYamlFiles(modelsDir)) {
     const variantCfg = r.variants?.[variantKey] || {};
     const { model_id: _vMid, json: _vJson, ...variantCore } = variantCfg;
     const promoted = {
-      ...r,  // share meta/features/guide/etc. with the parent
+      ...r,
       hf_id: variantModelId,
       meta: { ...r.meta, derived_from: parentHfId, variant: variantKey },
       model: {
         ...r.model,
         model_id: variantModelId,
+        base_args: variantCfg.base_args ?? r.model?.base_args,
         ...(install && { install }),
       },
       variants: { default: variantCore },
       recommended_command: recommended,
     };
+    const model = promoted.model;
+    const floor = variantCfg.min_vllm_version;
+    if (floor && (!model.min_vllm_version || versionBelow(model.min_vllm_version, floor))) {
+      model.min_vllm_version = floor;
+    }
+    if (variantCfg.supported_frontends) {
+      model.default_frontend = resolveFrontend(r, undefined, taxonomy, variantCfg);
+      for (const id of Object.keys(taxonomy.frontends)) {
+        if (!isFrontendSupported(r, id, variantCfg)) model[`${id}_frontend`] = "unsupported";
+      }
+    }
+    const allowsFeature = (key) => isFeatureAllowedForVariant(variantCfg, key);
+    if (variantCfg.supported_features) {
+      promoted.features = Object.fromEntries(Object.entries(r.features || {}).filter(([key]) => allowsFeature(key)));
+      if (r.opt_in_features) promoted.opt_in_features = r.opt_in_features.filter(allowsFeature);
+      if (r.hardware_opt_in_features) {
+        promoted.hardware_opt_in_features = Object.fromEntries(Object.entries(r.hardware_opt_in_features)
+          .map(([hw, keys]) => [hw, keys.filter(allowsFeature)]));
+      }
+    }
+    for (const kind of CONTEXT_KINDS) {
+      if (r[kind]) promoted[kind] = contextForPromotedVariant(r[kind], variantKey, allowsFeature);
+    }
     writeRecipeJson(variantModelId, promoted);
     promotedIndexEntries.push({
       hf_id: variantModelId,

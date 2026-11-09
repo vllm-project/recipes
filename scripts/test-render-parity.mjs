@@ -16,7 +16,8 @@ import { loadStrategies } from "../src/lib/strategies.js";
 import { loadTaxonomy } from "../src/lib/taxonomy.js";
 import { resolveSelection, synthesizeInstall } from "../src/lib/recipe-render.js";
 import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
-import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode } from "../src/lib/command-synthesis.js";
+import { validateContextEntries } from "../src/lib/recipe-context.js";
+import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode, isFrontendSupported, resolveFrontend, versionBelow } from "../src/lib/command-synthesis.js";
 
 const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES_PUBLIC_DIR) : path.join(process.cwd(), "public");
 const strategies = loadStrategies();
@@ -120,6 +121,30 @@ function queryFor(r) {
   }
   return q;
 }
+
+test("promoted JSON describes the checkpoint at its own URL", () => {
+  for (const { json, derived_from } of readJson("models.json")) {
+    if (!derived_from) continue;
+    const checkpoint = readJson(json.slice(1));
+    const variant = checkpoint.variants.default;
+    const parent = readJson(`${derived_from}.json`);
+    if (variant.base_args) assert.deepEqual(checkpoint.model.base_args, variant.base_args, json);
+    if (variant.min_vllm_version) {
+      assert.ok(!versionBelow(checkpoint.model.min_vllm_version, variant.min_vllm_version), json);
+    }
+    if (variant.supported_frontends) {
+      assert.equal(checkpoint.model.default_frontend, resolveFrontend(parent, undefined, taxonomy, variant), json);
+      for (const id of Object.keys(taxonomy.frontends)) {
+        assert.equal(isFrontendSupported(checkpoint, id), isFrontendSupported(parent, id, variant), json);
+      }
+    }
+    if (variant.supported_features) {
+      const expected = Object.keys(parent.features || {}).filter((f) => variant.supported_features.includes(f));
+      assert.deepEqual(Object.keys(checkpoint.features || {}), expected, json);
+    }
+    assert.deepEqual(validateContextEntries(checkpoint), [], json);
+  }
+});
 
 test("resolveSelection renders every static per-hardware rendering identically", () => {
   const mismatches = [];
