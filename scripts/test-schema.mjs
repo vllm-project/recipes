@@ -55,9 +55,10 @@ test("misspelled keys are rejected", () => {
   assert.ok(errorsFor((r) => { r.features.tool_calling.arg = ["--x"]; }).length);
 });
 
-test("variant checkpoint links must use HTTPS", () => {
-  assert.deepEqual(errorsFor((r) => { r.variants.default.model_url = "https://modelscope.cn/models/org/model"; }), []);
-  assert.ok(errorsFor((r) => { r.variants.default.model_url = "http://example.org/model"; }).length);
+test("hub is a known variant-level value", () => {
+  assert.deepEqual(errorsFor((r) => { r.variants.default.hub = "modelscope"; }), []);
+  assert.ok(errorsFor((r) => { r.variants.default.hub = "unknown"; }).length);
+  assert.ok(errorsFor((r) => { r.model.hub = "modelscope"; }).length);
 });
 
 test("vocabulary and status values are checked", () => {

@@ -6,6 +6,19 @@
 # NVIDIA: https://developer.nvidia.com/cuda/gpus
 # AMD: https://rocm.docs.amd.com/en/docs-7.2.4/how-to/rocm-for-ai/inference-optimization/workload.html
 
+model_hubs:
+  huggingface:
+    label: Hugging Face
+    url: "https://huggingface.co/{model_id}"
+    cache: "~/.cache/huggingface:/root/.cache/huggingface"
+    env: { VLLM_USE_MODELSCOPE: "False" }
+  modelscope:
+    label: ModelScope
+    url: "https://modelscope.cn/models/{model_id}"
+    env: { VLLM_USE_MODELSCOPE: "True" }
+    cache: "~/.cache/modelscope:/root/.cache/modelscope"
+    install: "uv pip install 'modelscope>=1.18.1'"
+
 hardware_profiles:
   # ── NVIDIA Hopper ──
   h100:

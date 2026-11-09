@@ -140,7 +140,7 @@ export function dockerize(command, argv, env, dockerMeta, port = null, docker = 
   return {
     docker_command: buildDockerRun({
       command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, port,
-      isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, cmdPrefix: dockerMeta.cmdPrefix, hostNetwork, extraFlags,
+      isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, cmdPrefix: dockerMeta.cmdPrefix, cacheMount: dockerMeta.cacheMount, hostNetwork, extraFlags,
     }),
     docker_argv: buildDockerArgv({ argv, env, meta: dockerMeta, port, hostNetwork, extraFlags }),
   };
@@ -248,7 +248,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   const variant = pinned
     ? { ...baseVariant, hardware_overrides: { ...(baseVariant.hardware_overrides || {}), [hwId]: { ...(baseVariant.hardware_overrides?.[hwId] || {}), docker_image: pinned } } }
     : baseVariant;
-  const dockerMeta = computeDockerMeta(recipe, variant, hwProfile, hwId);
+  const dockerMeta = computeDockerMeta(recipe, variant, hwProfile, hwId, taxonomy);
   const env = result.env || {};
 
   const hwPip = hwPipOverride(hardwareInstall(recipe, recipe.variants?.[variantKey], taxonomy.hardware_profiles?.[hwId], hwId));
@@ -256,6 +256,8 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     hardware: hwId,
     strategy,
     variant: variantKey,
+    hub: baseVariant.hub || "huggingface",
+    checkpoint_url: taxonomy.model_hubs?.[baseVariant.hub || "huggingface"]?.url?.replace("{model_id}", baseVariant.model_id || recipe.model?.model_id),
     node_count: nodeCount,
     deploy_type: result.deployType,
     // The tuned preset baked into this rendering (its default for this
@@ -321,6 +323,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
       decode,
       router: result.router,
       router_config: result.routerConfig,
+      ...(result.routerUnavailableReason ? { router_unavailable_reason: result.routerUnavailableReason } : {}),
       ...(result.parserWarnings?.length ? { parser_warnings: result.parserWarnings } : {}),
       ...(result.registration ? { registration: result.registration } : {}),
     };
