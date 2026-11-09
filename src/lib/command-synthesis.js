@@ -1774,7 +1774,6 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     }
     const parallelFlag = strategy.parallel_flag || "--tensor-parallel-size";
     const isMulti = strategy.deploy_type === "multi_node" && nodeCount > 1;
-    const isNodeLocalDp = isMulti && (parallelFlag === "--data-parallel-size" || strategy.parallelism === "tp_dp");
     const isPdMulti = strategy.deploy_type === "pd_cluster" && nodeCount > 1;
     // Multi-node rendezvous host. When Mooncake composes with a multi-node
     // strategy, each instance's head is the same host the router lists as
@@ -1785,13 +1784,30 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       ? `$VLLM_INSTANCE_${kvCurrentInstance + 1}`
       : "$HEAD_IP";
 
-    if (isNodeLocalDp) {
-      // DP counts replicas, not devices. Defer its defaults until every
-      // argument layer has supplied its effective TP and explicit DP sizes.
-      const tp = declaredTpForHardware(recipe.strategy_overrides?.[strategyName]?.tp, hwProfile, hwProfileId);
-      if (tp != null) args.push("--tensor-parallel-size", String(tp));
-      args.push("--data-parallel-address", mpMasterAddr);
-    } else if (isMulti && strategy.parallelism === "tp_pp") {
+    if (isMulti && parallelFlag === "--data-parallel-size") {
+    // dp-local may be overridden by the recipe (hybrid TP+DP: TP within a node,
+    // DP across nodes → dp_local < gpuCount).
+    // The example worker is node 1, so its DP start rank = 1 × dp_local, not a
+    // full node's worth of GPUs.
+    const soDep = recipe.strategy_overrides?.[strategyName];
+    const soDepGenHo = soDep?.hardware_overrides?.[gen]
+      || (hwProfile?.brand === "NVIDIA" ? soDep?.hardware_overrides?.nvidia : null);
+    const soDepExactHo = soDep?.hardware_overrides?.[hwProfileId];
+    const depOv = [
+    ...(soDep?.vllm_args || []),
+    ...(soDep?.extra_args || []),
+    ...(soDepGenHo?.extra_args || []),
+    ...(soDepExactHo?.extra_args || []),
+      ];
+    const i = depOv.lastIndexOf("--data-parallel-size-local");
+    const dpLocal = i >= 0 ? Number(depOv[i + 1]) : gpuCount;
+    args.push("--data-parallel-size", String(totalGpus));
+    args.push("--data-parallel-size-local", String(gpuCount));
+    args.push("--data-parallel-address", mpMasterAddr);
+    if (nodeRole === "worker") {
+    args.push("--data-parallel-start-rank", String(mpRank * dpLocal));
+    }
+} else if (isMulti && strategy.parallelism === "tp_pp") {
       // TP inside each node, PP across nodes. Cross-node traffic flows through
       // the PP stage boundaries only — much less bandwidth than pure TP across
       // nodes. Suited for very large models on commodity inter-node links.
@@ -1801,6 +1817,12 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       args.push("--node-rank", String(mpRank));
       args.push("--master-addr", mpMasterAddr);
       if (mpRank > 0) args.push("--headless");
+    } else if (isMulti && strategy.parallelism === "tp_dp") {
+      // Default to full-node TP and one local replica. Derive global DP
+      // and follower ranks after recipe/hardware/preset overrides below.
+      args.push("--tensor-parallel-size", String(gpuCount));
+      args.push("--data-parallel-size-local", "1");
+      args.push("--data-parallel-address", mpMasterAddr);
     } else if (isMulti) {
       // Multi-node TP/TEP via vLLM multiprocessing (mp) backend:
       // TP spans all GPUs in the cluster; every node runs the same command,
@@ -2069,46 +2091,18 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       out = applyPresetArgOps(out, ops.all, editOnly);
       if (roleOverride) out = applyPresetArgOps(out, ops.roles?.[roleOverride], editOnly);
     }
-    if (isNodeLocalDp) {
-      const tpFlag = "--tensor-parallel-size";
-      const localFlag = "--data-parallel-size-local";
-      const globalFlag = "--data-parallel-size";
-      // Preserve last-wins semantics for vLLM's short flags and =value forms
-      // before adding defaults that would otherwise override those spellings.
-      const topologyFlags = new Map([
-        ["-tp", tpFlag], [tpFlag, tpFlag],
-        ["-dpl", localFlag], [localFlag, localFlag],
-        ["-dp", globalFlag], [globalFlag, globalFlag],
-        ["-dpr", "--data-parallel-start-rank"], ["--data-parallel-start-rank", "--data-parallel-start-rank"],
-      ]);
-      out = out.flatMap((token) => {
-        if (typeof token !== "string") return [token];
-        const equal = token.indexOf("=");
-        const name = (equal < 0 ? token : token.slice(0, equal)).replaceAll("_", "-");
-        const canonical = topologyFlags.get(name);
-        return canonical ? (equal < 0 ? [canonical] : [canonical, token.slice(equal + 1)]) : [token];
-      });
-      const tpDefault = strategy.parallelism === "tp_dp" ? gpuCount : 1;
-      const localDefault = gpuCount / tpDefault;
-      const tpArg = lastFlagValue(out, tpFlag);
-      const localArg = lastFlagValue(out, localFlag);
-      const globalArg = lastFlagValue(out, globalFlag);
-      const tp = Number(tpArg ?? tpDefault);
-      const capacity = Number.isInteger(tp) && tp > 0 && tp <= gpuCount
-        ? Math.floor(gpuCount / tp) : localDefault;
-      const globalPerNode = Number(globalArg) / nodeCount;
-      const inferredLocal = globalArg !== undefined && Number.isInteger(globalPerNode) && globalPerNode > 0
-        ? globalPerNode : capacity;
-      const local = Number(localArg ?? inferredLocal);
-      // Keep authored sizes (including partial-node deployments). Invalid
-      // authored values remain subject to vLLM's existing validation.
-      const localForDefaults = Number.isInteger(local) && local > 0 ? local : localDefault;
-      if (tpArg === undefined && strategy.parallelism === "tp_dp") out.push(tpFlag, String(tpDefault));
-      if (localArg === undefined) out.push(localFlag, String(inferredLocal));
-      if (globalArg === undefined) out.push(globalFlag, String(nodeCount * localForDefaults));
+    if (isMulti && strategy.parallelism === "tp_dp") {
+      // Read final DP values without changing their spelling or precedence.
+      // Keep explicit global DP; only its default follows the local replicas.
+      const localIndex = out.findLastIndex((arg) =>
+        /^(--data[-_]parallel[-_]size[-_]local|-dpl)(=|$)/.test(arg));
+      const localDp = localIndex < 0 ? 1
+        : Number(out[localIndex].split("=")[1] ?? out[localIndex + 1]);
+      if (!out.some((arg) => /^(--data[-_]parallel[-_]size|-dp)(=|$)/.test(arg))) {
+        out.push("--data-parallel-size", String(nodeCount * localDp));
+      }
       if (nodeRole === "worker") {
-        out = stripArgs(out, ["--data-parallel-start-rank"]);
-        out.push("--data-parallel-start-rank", String(mpRank * localForDefaults));
+        out.push("--data-parallel-start-rank", String(mpRank * localDp));
       }
     }
     // Connector configs name the worker's own HTTP port (MoRI-IO's
