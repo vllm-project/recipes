@@ -184,6 +184,20 @@ guide: |
     assert.equal(big.status, 0, big.stderr);
     assert.match(big.stderr, /meta\.hardware\.rtx_pro_6000: declared supported, but no variant runs there/);
     assert.match(big.stderr, /do not fit single-node/);
+
+    // The budget the message quotes must be the one the fit check used. An
+    // exact-GPU `hardware_overrides.<gpu>.vram_minimum_gb` replaces the
+    // variant's top-level value, so quoting the latter names a number that was
+    // never compared against the node.
+    const overridden = build(
+      "{ rtx_pro_6000: supported }",
+      "    precision: bf16\n    vram_minimum_gb: 20\n    hardware_overrides:\n      rtx_pro_6000:\n        vram_minimum_gb: 500",
+    );
+    assert.equal(overridden.status, 0, overridden.stderr);
+    assert.match(overridden.stderr, /meta\.hardware\.rtx_pro_6000: declared supported, but no variant runs there/);
+    assert.match(overridden.stderr, /do not fit single-node on rtx_pro_6000 \(500 GB\)/);
+    // …and the top-level 20 GB, which does fit, must not be what is reported.
+    assert.doesNotMatch(overridden.stderr, /\(20 GB\)/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

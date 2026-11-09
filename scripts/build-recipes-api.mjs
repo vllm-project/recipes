@@ -371,7 +371,10 @@ function validateHardwareClaims(recipe, sourceFile, taxonomy) {
   const why = (profile, variant, hwId) => {
     if (!isPrecisionCompatible(profile, variant)) return `${variant.precision || "?"} is not supported on ${hwId}`;
     if (variant.supported_hardware?.length) return `supported_hardware is ${variant.supported_hardware.join("/")}`;
-    return `the weights do not fit single-node on ${hwId} (${variant.vram_minimum_gb || "?"} GB)`;
+    // Same budget `fitsSingleNode` compared against — an exact-GPU
+    // `hardware_overrides.<hwId>.vram_minimum_gb` replaces the top-level value,
+    // so quoting the latter would name a number that was never checked.
+    return `the weights do not fit single-node on ${hwId} (${variantVramMinimumGb(variant, hwId) || "?"} GB)`;
   };
 
   for (const [hwId, state] of Object.entries(declared)) {
