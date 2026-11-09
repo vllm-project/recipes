@@ -15,8 +15,8 @@ hardware_match:
   min_gpus: 2
   multi_node: true
 
-# "tp_dp" defaults to full-node TP and local DP1. Recipes can override these
-# via extra_args. Global DP defaults to node_count × final local DP, and
+# "tp_dp" defaults to full-node TP; local DP1 is added only if not configured.
+# Global DP defaults to node_count × final local DP, and
 # worker node N starts at DP rank N × final local DP; explicit global DP is kept.
 # Example: TP4/local DP2 on four 8-device nodes → DP8, follower ranks 2/4/6.
 parallelism: tp_dp
