@@ -19,7 +19,7 @@ import { renderCommand, resolveSelection, synthesizeInstall } from "../src/lib/r
 import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
 import { validateContextEntries } from "../src/lib/recipe-context.js";
 import { presetSelect, resolvePresetKey } from "../src/lib/recipe-presets.js";
-import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode, isFrontendSupported, resolveFrontend, resolveOmniCommand, restoreVariantDefaults, variantRunsOnHardware, versionBelow } from "../src/lib/command-synthesis.js";
+import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode, isFrontendSupported, isPrecisionCompatible, resolveFrontend, resolveOmniCommand, restoreVariantDefaults, variantRunsOnHardware, versionBelow } from "../src/lib/command-synthesis.js";
 import { ascendPdPools, ascendPdRecipe } from "./fixtures/ascend-pd.mjs";
 
 const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES_PUBLIC_DIR) : path.join(process.cwd(), "public");
@@ -542,28 +542,31 @@ test("KV offload follows profile opt-in without depending on the backend name", 
   assert.equal(render(allowed).argv.includes("--kv-transfer-config"), true);
 });
 
-test("a preset never publishes the variant its own recipe excludes from that hardware", () => {
+test("a published preset serves exactly the variant that runs on its hardware", () => {
   const wrong = [];
   let checked = 0;
   for (const recipe of getAllRecipes()) {
-    for (const [key, p] of Object.entries(recipe.presets || {})) {
-      // Only presets that leave the variant to the builder: an author who names
-      // one has said which checkpoint the numbers were taken on.
-      if (p.variants?.length) continue;
-      const profile = taxonomy.hardware_profiles?.[p.hardware];
-      const variant = recipe.variants?.default;
-      if (!profile || !variant) continue;
+    for (const [key] of Object.entries(recipe.presets || {})) {
+      const rel = `${recipe.hf_id}/presets/${key}.json`;
+      // A preset is skipped for several reasons upstream (no variant runs on
+      // its hardware, every point was unreachable), so absence is not an error
+      // — but only what IS published is held to the rule below.
+      if (!fs.existsSync(path.join(PUBLIC, rel))) continue;
+      const published = readJson(rel);
+      const profile = taxonomy.hardware_profiles?.[published.hardware];
+      const variant = recipe.variants?.[published.variant];
+      if (!profile) continue;
       checked++;
-      // A preset file may only serve the `default` checkpoint on hardware the
-      // recipe says it runs on. Publishing it anyway points readers at a
-      // command the recipe's own `supported_hardware` / precision rule rules
-      // out — the bug the build's `pickFittingVariant` fallback fixes.
-      if (variantRunsOnHardware(profile, variant, p.hardware)) continue;
-      const published = readJson(`${recipe.hf_id}/presets/${key}.json`);
-      if (published.variant === "default") wrong.push(`/${recipe.hf_id}/presets/${key}.json serves default on ${p.hardware}, where the recipe excludes it`);
+      // Independent of how the build picked the variant: whatever it published
+      // must run on the hardware the file names. Serving a checkpoint the
+      // recipe's own `supported_hardware` / precision rule excludes points
+      // readers at a command that cannot start.
+      const runs = variant && (!variant.supported_hardware?.length || variant.supported_hardware.includes(published.hardware))
+        && isPrecisionCompatible(profile, variant);
+      if (!runs) wrong.push(`/${rel} serves ${published.variant} on ${published.hardware}, where the recipe does not run it`);
     }
   }
-  assert.ok(checked > 0, "no variant-less presets checked");
+  assert.ok(checked > 0, "no published presets checked");
   assert.deepEqual(wrong, [], wrong.join("\n  "));
 });
 

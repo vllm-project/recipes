@@ -867,6 +867,30 @@ export function pickFittingVariant(recipe, hwProfile, hwId = null) {
 }
 
 /**
+ * Which variant a preset renders under when it doesn't name one itself.
+ * `presets.<key>.variants` is empty for most presets: the author qualified the
+ * numbers on this hardware, not on a checkpoint, so the builder resolves the
+ * variant the same way opening that hardware without `?variant=` does.
+ *
+ * Returns a key, or null when the recipe has no variants at all — the caller
+ * skips the preset rather than publishing a command for a checkpoint the
+ * recipe may not even contain.
+ */
+export function presetVariantKey(recipe, p, hwProfile, hwId) {
+  if (p?.variants?.length) return p.variants[0];
+  // The `defaultVariant &&` guard is load-bearing: `variantRunsOnHardware`
+  // answers `true` for an absent variant on scalable hardware (nothing about
+  // it can be violated), which would select "default", miss in
+  // `recipe.variants`, and silently drop the preset instead of falling
+  // through to one that does run there. The schema requires
+  // `variants.default`, so no current recipe reaches this — but the fallback
+  // shouldn't rest on an invariant this function can't check.
+  const defaultVariant = recipe?.variants?.default;
+  if (defaultVariant && variantRunsOnHardware(hwProfile, defaultVariant, hwId)) return "default";
+  return pickFittingVariant(recipe, hwProfile, hwId);
+}
+
+/**
  * Single-node PD splits the node 50/50 between prefill and decode. Each half
  * holds a full model across its TP group, so the node must fit 2× the model's
  * VRAM. Also requires at least 2 GPUs to split.
