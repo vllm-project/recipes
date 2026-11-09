@@ -37,8 +37,7 @@ import {
   isHardwareScalable,
   isKvStoreBrandSupported,
   strategyAllowsKvOffload,
-  pickFittingVariant,
-  variantRunsOnHardware,
+  presetVariantKey,
   pdFitsSingleNode,
   pdRoleNodes,
   pdRoleParallelism,
@@ -559,8 +558,7 @@ function writePresetRenderings(recipe, hfId, strategies, taxonomy) {
     // reader opens this hardware without a `?variant=`. Sources that omit
     // `variants:` used to get `default` unconditionally, which wrote commands
     // serving, e.g., an NVFP4 checkpoint on an H200 the recipe excludes it from.
-    const variantKey = p.variants?.[0]
-      || (variantRunsOnHardware(hwProfile, recipe.variants?.default, hwId) ? "default" : pickFittingVariant(recipe, hwProfile, hwId) || "default");
+    const variantKey = presetVariantKey(recipe, p, hwProfile, hwId);
     const variant = recipe.variants?.[variantKey];
     if (!variant) continue;
     const strategy = p.strategy || recommendStrategy(recipe, hwProfile, fitsSingleNode(hwProfile, variant, hwId) ? 1 : 2);
