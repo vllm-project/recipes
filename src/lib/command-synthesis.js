@@ -1818,10 +1818,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       args.push("--master-addr", mpMasterAddr);
       if (mpRank > 0) args.push("--headless");
     } else if (isMulti && strategy.parallelism === "tp_dp") {
-      // Default to full-node TP and one local replica. Derive global DP
-      // and follower ranks after recipe/hardware/preset overrides below.
+      // Default to full-node TP. Fill missing DP sizes and derive follower
+      // ranks after recipe/hardware/preset overrides below.
       args.push("--tensor-parallel-size", String(gpuCount));
-      args.push("--data-parallel-size-local", "1");
       args.push("--data-parallel-address", mpMasterAddr);
     } else if (isMulti) {
       // Multi-node TP/TEP via vLLM multiprocessing (mp) backend:
@@ -2098,6 +2097,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         /^(--data[-_]parallel[-_]size[-_]local|-dpl)(=|$)/.test(arg));
       const localDp = localIndex < 0 ? 1
         : Number(out[localIndex].split("=")[1] ?? out[localIndex + 1]);
+      if (localIndex < 0) out.push("--data-parallel-size-local", "1");
       if (!out.some((arg) => /^(--data[-_]parallel[-_]size|-dp)(=|$)/.test(arg))) {
         out.push("--data-parallel-size", String(nodeCount * localDp));
       }
