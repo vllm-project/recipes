@@ -69,6 +69,20 @@ function launchArgv(rendering) {
   return rendering.argv || rendering.head_argv || rendering.prefill?.argv || [];
 }
 
+// Every command a multi-node rendering launches: the head plus each follower
+// rank. Rank-dependent flags (`--data-parallel-start-rank`, `--node-rank`)
+// live only on the workers, so a check reading `head_argv` alone cannot see
+// them.
+function launchArgvs(rendering) {
+  const workers = rendering.worker_argvs?.length
+    ? rendering.worker_argvs
+    : rendering.worker_argv ? [rendering.worker_argv] : [];
+  return [
+    { role: "head", argv: launchArgv(rendering) },
+    ...workers.map((argv, i) => ({ role: `worker ${i + 1}`, argv })),
+  ].filter(({ argv }) => argv?.length);
+}
+
 // The checkpoint a rendering serves. `vllm serve <id>` and Dynamo's
 // `python -m dynamo.vllm --model <id>` are the two launch forms published here.
 function servedCheckpoint(rendering) {
@@ -85,10 +99,15 @@ test("every published rendering runs the variant it declares, on the hardware it
     for (const { rel, rendering } of publishedRenderings(recipe)) {
       const { hardware, variant } = rendering;
       const profile = profiles[hardware];
+      if (!profile) continue;
       const cfg = recipe.variants?.[variant];
-      if (!profile || !cfg) continue;
       checked++;
-      if (!variantRunsOnHardware(profile, cfg, hardware)) {
+      // A published file naming a variant the recipe doesn't define is worse
+      // than one naming an incompatible variant: there is no checkpoint, no
+      // vram budget and no precision to check it against. Don't fall back to
+      // the `default` config — that would test a variant nobody published.
+      if (!cfg) wrong.push(`${rel}: declares variant "${variant}", which ${recipe.hf_id} does not define`);
+      else if (!variantRunsOnHardware(profile, cfg, hardware)) {
         wrong.push(`${rel}: variant "${variant}" does not run on ${hardware} by the recipe's own rules`);
       }
     }
@@ -114,22 +133,65 @@ test("a published rendering serves the checkpoint its variant names", () => {
   assert.deepEqual(wrong, [], `${wrong.length}/${checked} serve a different checkpoint than they declare:\n  ${wrong.slice(0, 15).join("\n  ")}`);
 });
 
-test("a multi-node rendering never asks for more ranks than its nodes hold", () => {
+// Multi-node parallelism comes in three dimensions, and a strategy picks
+// which ones it uses: TP alone (`multi_node_tp`/`_tep`), TP+PP
+// (`multi_node_tp_pp`, TP per node, PP across), TP+DP (`multi_node_tp_dp`),
+// and DEP (`multi_node_dep`, DP across nodes, TP inside). Checking only
+// `--tensor-parallel-size` leaves the other two unread — a DEP rendering could
+// ask for 32 DP ranks on 4-GPU nodes and pass.
+//
+// Each dimension is bounded by the layer it is spread over, not by their
+// product: in vLLM mp a TP group may cross nodes, PP stages map to nodes, and
+// `--data-parallel-size` counts DP replicas while `--data-parallel-size-local`
+// says how many land per node — so the published flags do not fix a single
+// rank count to multiply. Comparing each against its own bound is what the
+// flags do determine, and each catches its own class of mistake: PP wider than
+// the cluster, DP ranks that no node runs, a TP group larger than the whole
+// fabric.
+const DIMENSION_BOUNDS = [
+  // [flag, bound description, how many units the flag may span]
+  ["--pipeline-parallel-size", "PP stages", (gpus, nodes) => nodes],
+  ["--data-parallel-size", "DP ranks, at --data-parallel-size-local per node", (gpus, nodes, dpLocal) => nodes * (dpLocal || gpus)],
+  ["--data-parallel-size-local", "DP ranks on one node", (gpus) => gpus],
+  ["--tensor-parallel-size", "TP ranks across the cluster", (gpus, nodes) => gpus * nodes],
+];
+
+test("a multi-node rendering never asks for a parallel dimension its fabric cannot hold", () => {
   const wrong = [];
-  let checked = 0;
+  const checked = new Set();
   for (const recipe of recipes) {
     for (const { rel, rendering } of publishedRenderings(recipe)) {
       if (rendering.deploy_type !== "multi_node") continue;
-      const tp = parseInt(flagValue(launchArgv(rendering), "--tensor-parallel-size"), 10);
       const gpus = profiles[rendering.hardware]?.gpu_count;
       const nodes = rendering.node_count || 1;
-      if (!Number.isFinite(tp) || !gpus) continue;
-      checked++;
-      if (tp > gpus * nodes) wrong.push(`${rel}: --tensor-parallel-size ${tp} exceeds ${gpus} GPU x ${nodes} node(s)`);
+      if (!gpus) continue;
+      for (const { role, argv } of launchArgvs(rendering)) {
+        const at = `${rel} (${role})`;
+        const dpLocal = parseInt(flagValue(argv, "--data-parallel-size-local"), 10);
+        for (const [flag, what, bound] of DIMENSION_BOUNDS) {
+          const value = parseInt(flagValue(argv, flag), 10);
+          // Absent or non-numeric: the strategy doesn't use this dimension here.
+          if (!Number.isFinite(value)) continue;
+          checked.add(flag);
+          const limit = bound(gpus, nodes, Number.isFinite(dpLocal) ? dpLocal : null);
+          if (value > limit) wrong.push(`${at}: ${flag} ${value} exceeds ${limit} (${what})`);
+        }
+        // --data-parallel-start-rank places a worker's first DP rank; one past
+        // the last rank means it would run nothing.
+        const startRank = parseInt(flagValue(argv, "--data-parallel-start-rank"), 10);
+        const dp = parseInt(flagValue(argv, "--data-parallel-size"), 10);
+        if (Number.isFinite(startRank) && Number.isFinite(dp)) {
+          checked.add("--data-parallel-start-rank");
+          if (startRank >= dp) wrong.push(`${at}: --data-parallel-start-rank ${startRank} is past the last of ${dp} DP ranks`);
+        }
+      }
     }
   }
-  assert.ok(checked > 100, `only ${checked} multi-node renderings checked`);
-  assert.deepEqual(wrong, [], `${wrong.length}/${checked} over-subscribe their nodes:\n  ${wrong.slice(0, 15).join("\n  ")}`);
+  // Every dimension the catalog actually uses must have been exercised, or a
+  // typo in a flag name above would silently pass.
+  assert.ok(checked.has("--tensor-parallel-size") && checked.has("--data-parallel-size") && checked.has("--pipeline-parallel-size"),
+    `dimensions not all exercised: saw ${[...checked].join(", ")}`);
+  assert.deepEqual(wrong, [], `${wrong.length} over-subscribed dimensions:\n  ${wrong.slice(0, 15).join("\n  ")}`);
 });
 
 test("each preset file's declared variant matches the checkpoint in its own commands", () => {
