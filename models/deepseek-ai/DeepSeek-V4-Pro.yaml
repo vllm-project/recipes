@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek V4 flagship MoE (1.6T total / 49B active) with hybrid CSA+HCA attention, manifold-constrained hyper-connections, Muon-trained on 32T+ tokens, and three-tier reasoning."
   date_added: 2026-04-24
-  date_updated: 2026-10-13
+  date_updated: 2026-11-04
   difficulty: hard
   tasks:
     - text
@@ -19,6 +19,12 @@ meta:
     mi300x: unsupported
     mi325x: unsupported
     mi355x: verified
+    # Ascend NPU: first-party verification on 2x Atlas 800 A3 (64G x 8)
+    # completed 2026-10-28 (64/64 requests, 390 tok/s output, TPOT 90.5ms;
+    # multi-node DP2xTP16 + MTP). CI wiring: companion PR
+    # vllm-ascend/vllm-ascend-recipes#130 registers the
+    # Eco-Tech/DeepSeek-V4-Pro-w4a8-mtp weights in the runner _cache_paths table.
+    ascend_910c: supported
 
 model:
   model_id: "deepseek-ai/DeepSeek-V4-Pro"
@@ -71,6 +77,13 @@ features:
         args:
           - "--speculative-config"
           - '{"method":"mtp","num_speculative_tokens":2}'
+      ascend_mtp:
+        label: "MTP (Ascend)"
+        description: "1-token MTP draft from the Eco-Tech W4A8-MTP checkpoint in eager mode — the tuned path for the Ascend W4A8 variant."
+        variants: [ascend_w4a8]
+        args:
+          - "--speculative-config"
+          - '{"num_speculative_tokens": 1,"method": "mtp","enforce_eager": true}'
       dspark:
         label: "DSpark"
         description: "DSpark drafting, 7 draft tokens, probabilistic. Requires the 0813 or DSpark checkpoint (Variant row)."
@@ -156,6 +169,61 @@ variants:
     label: "NVFP4+FP8 (RedHat)"
     vram_minimum_gb: 1000
     description: "RedHatAI NVFP4+FP8 mixed-precision checkpoint"
+
+  ascend_w4a8:
+    model_id: "Eco-Tech/DeepSeek-V4-Pro-w4a8-mtp"
+    precision: int4
+    label: "W4A8-MTP (Ascend)"
+    vram_minimum_gb: 790
+    supported_hardware: [ascend_910c]
+    tp: 16
+    default_modes:
+      spec_decoding: ascend_mtp
+    extra_args:
+      - "--quantization"
+      - "ascend"
+      - "--kv-cache-dtype"
+      - "auto"
+      - "--enable-expert-parallel"
+      - "--served-model-name"
+      - "dsv4"
+      - "--max-model-len"
+      - "135000"
+      - "--max-num-batched-tokens"
+      - "4096"
+      - "--max-num-seqs"
+      - "32"
+      - "--gpu-memory-utilization"
+      - "0.9"
+      - "--block-size"
+      - "128"
+      - "--tokenizer-mode"
+      - "deepseek_v4"
+      - "--tool-call-parser"
+      - "deepseek_v4"
+      - "--enable-auto-tool-choice"
+      - "--reasoning-parser"
+      - "deepseek_v4"
+      - "--model-loader-extra-config"
+      - '{"enable_multithread_load": true, "num_threads": 128}'
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+      - "--additional-config"
+      - '{"ascend_compilation_config":{"enable_npugraph_ex":true,"enable_static_kernel":false},"enable_cpu_binding": true,"enable_flashcomm1": true,"multistream_overlap_shared_expert":true}'
+    extra_env:
+      HCCL_OP_EXPANSION_MODE: "AIV"
+      HCCL_BUFFSIZE: "2048"
+      PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+      VLLM_ENGINE_READY_TIMEOUT_S: "7200"
+    hardware_overrides:
+      ascend_910c:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0rc1-a3"
+        docker_serve_command: "vllm serve"
+        install:
+          pip: false
+          docker: true
+    description: "ModelSlim W4A8+MTP (weights on ModelScope: Eco-Tech/DeepSeek-V4-Pro-w4a8-mtp) — 2x Atlas 800 A3 multi-node DP2xTP16 + MTP (first-party verified 2026-10-28, 390 tok/s; also fits 2x A3 128G / 4x A2 per the upstream tutorial). Node orchestration args (--data-parallel-address / --data-parallel-rpc-port / --data-parallel-start-rank) are per-node; see the companion Ascend recipe."
+
 kv_offload_support:
   offloading_cpu: verified
   offloading_fs: verified
