@@ -4,9 +4,10 @@ display_name: "Multi-Node Data + Expert Parallel"
 short_label: "Multi-node DEP"                  # compact name for tight spots (Preset pills)
 orientation: throughput
 description: >
-  Multi-node DEP. Each node runs TEP over its local GPUs, with DP across nodes.
-  Best throughput for MoE models across multiple nodes. Pass -dp <total_workers>
-  at deploy time. Uses hybrid load balancing across DP workers.
+  Multi-node data and expert parallelism for MoE models, with hybrid load balancing.
+  Local DP defaults to the number of devices per node. For mixed TP+DEP, configure
+  TP and local DP explicitly. Global DP defaults to node count × local DP, and
+  worker node N starts at rank N × local DP. Explicit global DP is preserved.
 
 hardware_match:
   min_gpus: 2
