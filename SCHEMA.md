@@ -208,8 +208,20 @@ strategy_overrides:
   #                                            # UI shows "using N of M GPUs"
   #                                            # under the Hardware pill when
   #                                            # effective TP < gpu_count.
-  #                                            # Only read for single_node_tp —
-  #                                            # TEP/DEP and multi-node ignore.
+  # Ordinary multi-node TP+DP or DEP may also declare a per-replica TP:
+  # multi_node_tp_dp:
+  #   tp: { h200: 4, ascend_950dt: 4 }           # 8 devices/node → local DP2
+  #   extra_args: ["--data-parallel-size-local", "2"]
+  # With four nodes this gives global DP8 and follower start ranks 2, 4, 6.
+
+# Ordinary multi_node_tp_dp/multi_node_dep derive missing DP sizes after recipe,
+# hardware, advanced and preset arguments. Default local DP is floor(devices/TP);
+# default global DP is nodes × local DP. An explicit global DP evenly divisible
+# by nodes supplies the local default; explicit local/global values are retained.
+# Nodes are homogeneous. Configure TP × local DP within each node's device budget;
+# a smaller explicit local DP may intentionally leave devices unused. Presets use
+# existing args/points.args with CLI arguments; preset.tp remains
+# single_node_tp-only. This does not change PD role or external-process launchers.
 
 # Optional — tuned presets: named configurations qualified on one GPU (and
 # optionally one strategy and some variants), e.g. a benchmark lane. Each is a
