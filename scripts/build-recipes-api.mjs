@@ -505,7 +505,14 @@ for (const file of findYamlFiles(modelsDir)) {
   // resolves, so an entry naming a model that isn't in the catalog produces no
   // row and no message — the author sees their link simply vanish. Collected
   // here and resolved below, since an entry may point at a recipe listed later.
-  for (const entry of raw.meta?.related_recipes || []) relatedFailures.push({ file, entry: String(entry) });
+  //
+  // The `Array.isArray` guard is not defensive: this loop runs before the
+  // schema failures above are thrown, so spreading a non-array here would
+  // replace "meta.related_recipes must be array" with "number 42 is not
+  // iterable" and a stack trace. A malformed value is the schema's to report.
+  if (Array.isArray(raw.meta?.related_recipes)) {
+    for (const entry of raw.meta.related_recipes) relatedFailures.push({ file, entry: String(entry) });
+  }
 }
 if (schemaFailures.length) {
   throw new Error(`Recipes don't match the schema (SCHEMA.md, /recipe.schema.json):\n  ${schemaFailures.join("\n  ")}`);

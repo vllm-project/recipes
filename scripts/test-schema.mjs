@@ -127,6 +127,32 @@ test("related_recipes resolves every entry case-insensitively", () => {
   const self = { hf_id: "Google/gemma-4-31B-it", meta: { related_recipes: ["google/gemma-4-31B-it", "gemma-4-31b-it"] } };
   assert.deepEqual(resolveRelatedRecipes(self, recipes), []);
   assert.deepEqual(one(["gemma-4-12b-it", "google/gemma-4-12B-it"]).map((r) => r.hf_id), ["google/gemma-4-12B-it"]);
+
+  // A non-array value is a schema error, but this also runs in the page against
+  // whatever the loader returned — it must render no row, not throw in render.
+  assert.deepEqual(one(42), []);
+  assert.deepEqual(one("google/gemma-4-31B-it"), []);
+
+  // `hf_id` is derived from the file path, so a recipe outside
+  // `models/<org>/<repo>.yaml` has none. Indexing must skip it rather than
+  // throw, and an entry matching only slugs must still resolve.
+  const withHfIdLess = [...recipes, { meta: { slug: "no-id" } }];
+  assert.deepEqual(
+    resolveRelatedRecipes({ hf_id: "other/model", meta: { related_recipes: ["gemma-4-12b-it", "no-id"] } }, withHfIdLess)
+      .map((r) => r.meta.slug),
+    ["gemma-4-12b-it", "no-id"],
+  );
+  // A page with no `hf_id` of its own must not treat every id-less match as a
+  // self-reference and drop it.
+  assert.deepEqual(
+    resolveRelatedRecipes({ meta: { related_recipes: ["no-id"] } }, withHfIdLess).map((r) => r.meta.slug),
+    ["no-id"],
+  );
+  // ... while a repeated id-less entry is still deduped.
+  assert.deepEqual(
+    resolveRelatedRecipes({ meta: { related_recipes: ["no-id", "no-id"] } }, withHfIdLess).map((r) => r.meta.slug),
+    ["no-id"],
+  );
 });
 
 // The build rejects an unresolvable entry so it can't vanish silently. Run the
@@ -181,6 +207,16 @@ guide: |
     assert.equal(run.status, 1);
     assert.match(run.stderr, /Unresolvable related_recipes/);
     assert.match(run.stderr, /names "example\/nope"/);
+
+    // The collection loop runs before schema failures are thrown, so a
+    // non-array `related_recipes` must reach the schema report rather than
+    // crash the pre-scan with "not iterable" — that error names neither the
+    // file nor the field the author has to fix.
+    fs.writeFileSync(alpha, recipe("Alpha", "alpha", "").replace("related_recipes: []", "related_recipes: 42"));
+    const malformed = build();
+    assert.equal(malformed.status, 1);
+    assert.doesNotMatch(malformed.stderr, /is not iterable/);
+    assert.match(malformed.stderr, /meta\/related_recipes must be array/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
