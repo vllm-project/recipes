@@ -23,13 +23,13 @@ test("PPU does not fall back to a NVIDIA container", () => {
 });
 
 test("PPU image selection honors explicit pins without leaking versions", () => {
-  const profile = loadTaxonomy().hardware_profiles.m890;
-  const recipe = { model: { docker_image: { ppu: "model:ppu" } } };
-  const variant = { docker_image: { ppu: "variant:ppu" } };
+  const profile = { ...loadTaxonomy().hardware_profiles.m890, docker_image: "profile:ppu" };
+  const recipe = { model: {} };
+  const variant = {};
   const resolve = (v, preset) => computeDockerMeta(recipe, v, profile, "m890", preset);
-  assert.equal(resolve({}).image, "model:ppu");
-  assert.equal(resolve(variant).image, "variant:ppu");
+  assert.equal(resolve({}).image, "profile:ppu");
   variant.hardware_overrides = { ppu: { docker_image: "shared:ppu", install: { docker: { vllm_version: "0.32.0" } } } };
+  assert.equal(resolve(variant).image, "shared:ppu");
   assert.equal(resolve(variant).vllmVersion, "0.32.0");
   variant.hardware_overrides.m890 = { docker_image: "exact:ppu" };
   assert.equal(resolve(variant).image, "exact:ppu");

@@ -896,7 +896,7 @@ export function pickDefaultHardware(hwProfiles, variant, recipe) {
 //
 // `docker_image` shapes:
 //   "vllm/vllm-openai:x"                    (NVIDIA-only)
-//   { nvidia, amd, tpu, intel, ppu }        (brand-keyed; each value is a string)
+//   { nvidia, amd, tpu, intel }             (brand-keyed; each value is a string)
 //   { cu129, cu130 }                        (NVIDIA CUDA-keyed — explicit paired tags,
 //                                            auto-suffix is skipped in favor of these)
 //   { nvidia: { cu129, cu130 }, amd, tpu }  (mixed: NVIDIA value may be a CUDA map)
@@ -1039,7 +1039,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null, prese
   // model-wide images (for example, an MI355X-only ROCm nightly).
   const exact = variant?.hardware_overrides?.[hwId];
   const generation = variant?.hardware_overrides?.[hwProfile?.generation];
-  const imageOwner = [exact, hwProfile, generation].find((entry) => entry?.docker_image);
+  const imageOwner = [exact, generation, hwProfile].find((entry) => entry?.docker_image);
 
   const isCudaMap = (v) =>
     v && typeof v === "object" && ("cu129" in v || "cu130" in v);
@@ -1056,13 +1056,13 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null, prese
   let cudaMap = null;
 
   function applyOverride(override) {
-    if (!override || pinned || cudaMap) return;
+    if (isPpu || !override || pinned || cudaMap) return;
     if (typeof override === "string") {
       if (brandKey === "nvidia") pinned = override;
       return;
     }
     if (typeof override === "object") {
-      const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override || "intel" in override || "ppu" in override;
+      const isBrandKeyed = "nvidia" in override || "amd" in override || "tpu" in override || "intel" in override;
       if (isBrandKeyed) {
         const brandValue = override[brandKey];
         if (typeof brandValue === "string") pinned = brandValue;
@@ -1590,11 +1590,11 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   const gpuCount = typeof hwProfile.gpu_count === "number" ? hwProfile.gpu_count : 1;
   const totalGpus = gpuCount * Math.max(1, nodeCount);
 
-  // UI selection → preset-mounted recipe → legacy whole/half-node layout.
+  // Without a selection, preserve the legacy whole/half-node layout.
   function poolConfig(role) {
     const raw = pdNodes?.[role];
     const picked = typeof raw === "number" ? { nodes: raw } : raw;
-    const nodes = picked?.nodes ?? pdRoleNodes(recipe, role, hwProfile, hwProfileId) ?? (nodeCount > 1 ? 1 : 0);
+    const nodes = picked?.nodes ?? (nodeCount > 1 ? 1 : 0);
     return { ...picked, nodes };
   }
 
@@ -1854,7 +1854,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       //     tp:          <int>                  (default: 1 for dep, poolGpus for tp)
       //     parallel_flag: "--…"                (last-resort override)
       //
-      // Legacy fallback (no selection or recipe pool size):
+      // Legacy fallback (no selection):
       //   - nodeCount===1 → both roles on one node, TP=gpuCount/2 each (50/50)
       //   - nodeCount===2 → one full node per role, TP=gpuCount each
       const roleKey = roleOverride;                           // "prefill" | "decode"

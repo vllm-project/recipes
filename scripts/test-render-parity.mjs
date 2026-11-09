@@ -37,7 +37,7 @@ test("one PPU image supplies the resolved Docker version on both cards", () => {
   for (const hw of ["810e", "m890", "h200"]) {
     const result = resolveSelection(recipe, new URLSearchParams(`hardware=${hw}`), strategies, taxonomy);
     const isPpu = hw !== "h200";
-    assert.equal(result.rendering.vllm_version, isPpu ? "0.32.0" : undefined);
+    assert.equal(result.rendering.docker_vllm_version, isPpu ? "0.32.0" : undefined);
     assert.equal(result.rendering.docker_image, isPpu ? "example/ppu:tag" : "vllm/vllm-openai:nightly");
     const md = selectionMarkdown(recipe, result, {
       strategies, taxonomy, urls: { page: "https://example.org/example/model", json: "https://example.org/example/model.json" },

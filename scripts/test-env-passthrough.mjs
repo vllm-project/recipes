@@ -57,7 +57,7 @@ test("810E multi-node roles pass through HCA without overriding explicit values"
   assert.equal(resolveCommand(explicit, "default", "multi_node_tep", "810e", [], strategies, taxonomy, [], 2).env.PCCL_NET_PLUGIN_ENABLE, "0");
 });
 
-test("PD env follows the recipe or preset pool size unless explicitly selected", () => {
+test("PD env follows the selected pool size and legacy topology when omitted", () => {
   const recipe = {
     model: { model_id: "org/model" },
     variants: { default: { precision: "bf16" } },
@@ -69,12 +69,30 @@ test("PD env follows the recipe or preset pool size unless explicitly selected",
     assert.equal(pool.nodes, nodes);
     assert.equal(pool.env.PCCL_NET_PLUGIN_ENABLE, nodes > 1 ? "1" : undefined);
   };
-  check(resolve(recipe).prefill, 2);
-  check(resolve(recipe).decode, 1);
+  check(resolve(recipe).prefill, 0);
+  check(resolve(recipe).decode, 0);
+  assert.equal(resolve(recipe).prefill.tp, 8);
+  assert.equal(resolve(recipe).decode.tp, 8);
   const tuned = { ...recipe, presets: { lane: { hardware: "810e", strategy: "pd_cluster",
     default: true, roles: { decode: { nodes: 3 } } } } };
-  check(resolve(tuned).decode, 3);
+  check(resolve(tuned).decode, 0);
+  check(resolve(tuned, { prefill: 2, decode: 3 }).decode, 3);
   const picked = resolve(tuned, { prefill: 1, decode: { nodes: 0 } });
   check(picked.prefill, 1);
   check(picked.decode, 0);
+});
+
+test("omitted P/D selection keeps a single eight-GPU node split in half", () => {
+  const recipe = {
+    model: { model_id: "org/model" },
+    variants: { default: { precision: "bf16", vram_minimum_gb: 1 } },
+    strategy_overrides: { pd_cluster: { prefill: { nodes: 2 }, decode: { nodes: 2 } } },
+  };
+  const result = resolveCommand(recipe, "default", "pd_cluster", "b200", [],
+    loadStrategies(), loadTaxonomy(), [], 1, null);
+  for (const role of [result.prefill, result.decode]) {
+    assert.equal(role.nodes, 0);
+    assert.equal(role.tp, 4);
+    assert.equal(role.poolGpus, 4);
+  }
 });

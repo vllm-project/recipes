@@ -90,7 +90,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     companion: obj({ label: { type: "string" }, description: { type: "string" }, command: { type: "string" } }, { required: ["label", "command"] }),
   }, { required: ["description"] });
 
-  const dockerImage = { anyOf: [{ type: "string" }, { type: "object", additionalProperties: { type: "string" } }] };
+  const dockerImage = { anyOf: [{ type: "string" }, { type: "object", additionalProperties: { type: "string" }, not: { required: ["ppu"] } }] };
   const variant = obj({
     precision: { type: "string", description: "bf16 | fp16 | fp8 | int8 | awq | gptq | int4 | nvfp4 | fp4 | mxfp4 | mxfp8 | …" },
     vram_minimum_gb: { type: "number", minimum: 0 },
@@ -99,7 +99,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     model_id: { type: "string", pattern: "^[^/\\s]+/[^/\\s]+$" },
     extra_args: strings,
     extra_env: envMap,
-    docker_image: dockerImage,
+    docker_image: { type: "string" },
     min_vllm_version: { type: "string" },
     nightly_required: { type: "boolean" },
     tp: intOrHwMap,

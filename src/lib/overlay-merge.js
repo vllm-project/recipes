@@ -72,8 +72,6 @@ export function presetInScope(preset, ctx) {
 // When the schema gains a new hardware-keyed field, add it here.
 export const OVERLAY_RULES = [
   ["meta", "hardware", "@hw"],
-  ["model", "docker_image", "@hw"],
-  ["variants", "*", "docker_image", "@hw"],
   ["hardware_overrides", "@hw"],
   ["hardware_notes", "@hw"],
   ["hardware_opt_in_features", "@hw"],

@@ -57,6 +57,8 @@ Recipe YAMLs are moving out of this repo into the repos that own them — vllm (
 
 ### Data pipeline
 
+Hardware profiles in `taxonomy.yaml` may set `multi_node_env` defaults for engines spanning multiple nodes. For P/D these apply separately to each multi-node pool.
+
 ```
 .content/<channel>/models/<org>/<repo>.yaml  ──┐   (assembled from sources.yaml)
 strategies/*.yaml          ─┼──► src/lib/*.js  ─► Next.js pages + JSON API in public/

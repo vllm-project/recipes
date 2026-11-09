@@ -251,7 +251,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   const hwPip = hwPipOverride(hardwareInstall(recipe, recipe.variants?.[variantKey], taxonomy.hardware_profiles?.[hwId], hwId));
   const base = {
     hardware: hwId,
-    ...(dockerMeta.vllmVersion && !result.dockerUnavailable ? { vllm_version: dockerMeta.vllmVersion } : {}),
+    ...(dockerMeta.vllmVersion && !result.dockerUnavailable ? { docker_vllm_version: dockerMeta.vllmVersion } : {}),
     strategy,
     variant: variantKey,
     node_count: nodeCount,

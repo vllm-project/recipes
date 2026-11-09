@@ -130,7 +130,7 @@ function installSection(recipe, resolved) {
     // This hardware's own install: the recipe's vLLM floor describes the stock one.
     if (hwPip.note) out.push(hwPip.note, "");
     out.push(fence(hwPip.command), "");
-  } else if (rendering?.vllm_version) out.push(`Docker build: vLLM ${rendering.vllm_version}.`, "");
+  } else if (rendering?.docker_vllm_version) out.push(`Docker build: vLLM ${rendering.docker_vllm_version}.`, "");
   else if (min) out.push(`Requires vLLM >= ${min}${recipe.model?.nightly_required && hwInstall?.pip !== false ? " (not released yet — nightly wheel)" : ""}.`, "");
   const install = synthesizeInstall(recipe);
   if (!hwPip && hwProfile.brand === "NVIDIA" && install?.pip && hwInstall?.pip !== false) {
