@@ -609,9 +609,12 @@ for (const file of findYamlFiles(modelsDir)) {
     }
     const variantRecommended = renderAndWriteVariant(r, variantKey, variantModelId, strategies, taxonomy);
     if (!variantRecommended) continue;
+    const hwId = variantRecommended.hardware;
+    const dockerMeta = computeDockerMeta(r, variantCfg, taxonomy.hardware_profiles[hwId], hwId);
     promotedRenderings.push({
       variantKey, variantModelId, recommended: variantRecommended,
-      install: variantCfg.install ? synthesizeInstall(r, variantCfg) : undefined,
+      install: variantCfg.install || !dockerMeta.dockerEnabled
+        ? synthesizeInstall(r, variantCfg, dockerMeta) : undefined,
     });
   }
 

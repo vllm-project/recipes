@@ -1010,8 +1010,8 @@ export function hwPipOverride(hwInstall) {
   return hwInstall?.pip?.command ? hwInstall.pip : null;
 }
 
-function isDockerEnabled(recipe, variant) {
-  return resolveInstall(recipe, variant).docker !== false;
+function isDockerEnabled(recipe, variant, hwProfile) {
+  return hwProfile?.brand !== "Apple" && resolveInstall(recipe, variant).docker !== false;
 }
 
 // When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
@@ -1041,17 +1041,18 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const isIntel = hwProfile?.generation === "cpu" || isXpu || hwProfile?.brand === "Intel";
   const isNpu = hwProfile?.generation === "npu";
   const isPpu = hwProfile?.generation === "ppu";
+  const isApple = hwProfile?.brand === "Apple";
   const npuDeviceCount = isNpu ? hwProfile?.gpu_count ?? 1 : 0;
   // Ascend deliberately has no `brandKey` of its own: vLLM publishes no NPU
   // image, so every Ascend recipe pins one through `hardware_overrides`, which
   // `exactHardwareOverride` resolves before the brand defaults are consulted.
-  const brandKey = isPpu ? "ppu" : isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
+  const brandKey = isApple ? "apple" : isPpu ? "ppu" : isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
   // Exact variant+hardware image overrides win over variant-wide and
   // model-wide images (for example, an MI355X-only ROCm nightly).
   const exactHardwareOverride = hwId
     ? variant?.hardware_overrides?.[hwId]?.docker_image
     : null;
-  const dockerEnabled = isDockerEnabled(recipe, variant)
+  const dockerEnabled = isDockerEnabled(recipe, variant, hwProfile)
     // A per-hardware install statement can declare that no published image
     // runs this recipe on this hardware (e.g. support not yet in any image):
     // skip the docker wrap so the command renders as bare `vllm serve`.
@@ -1106,7 +1107,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const image = !dockerEnabled ? null : isXpu && !pinned
     ? "vllm/vllm-openai-xpu:latest"
     : pinned || (cudaMap ? cudaMap.cu130 || cudaMap.cu129 : null) || DEFAULT_IMAGE[brandKey];
-  const gpuFlags = isPpu ? "" : isTpu
+  const gpuFlags = isApple || isPpu ? "" : isTpu
     ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
     : isAmd
       ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
@@ -1140,7 +1141,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
 // the shell-string above token-for-token so docker_command and docker_argv
 // stay consistent.
 function dockerGpuArgv(meta) {
-  if (meta.isPpu) return [];
+  if (meta.isPpu || meta.brandKey === "apple") return [];
   if (meta.isTpu) return ["--privileged", "--network", "host", "-v", "/dev/shm:/dev/shm"];
   if (meta.isAmd) {
     return [
@@ -2559,7 +2560,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
             label: "SMG",
             command: `${smgReplicaComments}smg launch \\\n    ${smgRouterArgs}`,
             install: smg.install,
-            ...(isDockerEnabled(recipe, variant) && {
+            ...(isDockerEnabled(recipe, variant, hwProfile) && {
               dockerCommand: `${smgReplicaComments}docker run --rm --network host \\\n    ${smgGrpc ? "-v ~/.cache/huggingface:/root/.cache/huggingface \\\n    " : ""}${smg.docker_image} \\\n    ${smgRouterArgs}`,
               dockerInstall: `docker pull ${smg.docker_image}`,
             }),

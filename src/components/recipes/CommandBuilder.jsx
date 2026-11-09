@@ -4051,7 +4051,7 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   const pipHidden = pipCfg === false;
   // This hardware's own pip command outranks every recipe-wide install setting.
   const hwPip = hwPipOverride(hwInstall);
-  const dockerHidden = dockerCfg === false || dockerHiddenOverride;
+  const dockerHidden = !dockerMeta.dockerEnabled || dockerHiddenOverride;
   const [open, setOpen] = useState(false);
   const { isAmd, isTpu, isXpu, isIntel, isNpu, isPpu, image: dockerImage, brandKey, cudaMap, cu129Image } = dockerMeta;
   // Intel CPU is a first-class backend in computeDockerMeta. Keep XPU
@@ -4199,7 +4199,7 @@ uv pip install -U vllm --torch-backend auto`;
         <Package size={12} className="text-[var(--command-fg)]/50 shrink-0" />
         <span className="text-[11px] font-semibold text-[var(--command-fg)]/70 uppercase tracking-widest">Install</span>
         <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
-          {!hwPipActive && <>vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · </>}{isPpu ? "PPU" : isTpu ? "TPU" : isXpu ? "XPU" : isNpu ? "Ascend" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}
+          {!hwPipActive && <>vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · </>}{brandKey === "apple" ? "Metal" : isPpu ? "PPU" : isTpu ? "TPU" : isXpu ? "XPU" : isNpu ? "Ascend" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}
         </span>
         {nightlyRequired && !hwPipActive && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">

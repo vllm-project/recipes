@@ -84,7 +84,7 @@ export function resolveDockerImage(recipe, baseCuda) {
 //   pip: { command?, note?} → use overrides; missing fields fall back to defaults
 //   (same for docker)
 // `extras` carries the recipe's `dependencies` array verbatim.
-export function synthesizeInstall(recipe, variant = {}) {
+export function synthesizeInstall(recipe, variant = {}, dockerMeta) {
   const installCfg = resolveInstall(recipe, variant);
   const pipCfg = installCfg.pip;
   const dockerCfg = installCfg.docker;
@@ -107,7 +107,7 @@ export function synthesizeInstall(recipe, variant = {}) {
     out.pip = note ? { command, note } : { command };
   }
 
-  if (dockerCfg !== false) {
+  if (dockerCfg !== false && dockerMeta?.dockerEnabled !== false) {
     const defaultDockerCmd = `docker pull ${resolveDockerImage(recipe, baseCuda)}`;
     const command = (dockerCfg && dockerCfg.command) || defaultDockerCmd;
     const note = dockerCfg && dockerCfg.note;
@@ -271,7 +271,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     docker_image: dockerMeta.image,
     // A hardware-specific installer takes precedence over the variant's.
     ...(hwPip ? { install: { pip: hwPip } }
-      : variant.install ? { install: synthesizeInstall(recipe, variant) } : {}),
+      : variant.install ? { install: synthesizeInstall(recipe, variant, dockerMeta) } : {}),
   };
   if (result.deployType === "multi_node") {
     const head = dockerize(result.headCommand, result.headArgv, env, dockerMeta);

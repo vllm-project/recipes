@@ -14,7 +14,7 @@ import { test } from "node:test";
 import { getAllRecipes } from "../src/lib/recipes.js";
 import { loadStrategies } from "../src/lib/strategies.js";
 import { loadTaxonomy } from "../src/lib/taxonomy.js";
-import { resolveSelection } from "../src/lib/recipe-render.js";
+import { resolveSelection, synthesizeInstall } from "../src/lib/recipe-render.js";
 import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
 import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode } from "../src/lib/command-synthesis.js";
 
@@ -278,6 +278,16 @@ test("variant configuration is preserved in JSON and Markdown selections", () =>
   assert.ok(md.includes("install-example-runtime"));
   assert.ok(md.includes("Local memory guidance."));
   assert.ok(!md.includes("Docker image:"));
+});
+
+test("Apple hardware disables Docker even without a recipe opt-out", () => {
+  const variant = { install: { pip: { command: "install-mlx" } } };
+  const meta = computeDockerMeta({}, variant, taxonomy.hardware_profiles.apple_16gb, "apple_16gb");
+  assert.equal(meta.brandKey, "apple");
+  assert.equal(meta.dockerEnabled, false);
+  assert.equal(meta.image, null);
+  assert.equal(meta.gpuFlags, "");
+  assert.deepEqual(synthesizeInstall({}, variant, meta), { pip: { command: "install-mlx" } });
 });
 
 test("KV offload follows profile opt-in without depending on the backend name", () => {
