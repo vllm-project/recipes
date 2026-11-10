@@ -4466,9 +4466,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   // Dynamo workers launch via `python3 -m dynamo.vllm`, which the
   // vllm-openai image's `vllm serve` entrypoint can't wrap — render them
   // pip-style (install hint above) regardless of install mode.
-  // Ascend's five-step flow runs inside the installed environment. Keep its
-  // role commands as exports + vllm serve, including when Docker was installed.
-  const isDocker = installMode === "docker" && !isDynamo && !isAscendSequence;
+  const isDocker = installMode === "docker" && !isDynamo;
   // Prefill/decode use the vLLM image. SMG has its own CPU-only router
   // image; vllm-router keeps its pip command and install hint.
   const routerDocker = isDocker && result.router.dockerCommand;

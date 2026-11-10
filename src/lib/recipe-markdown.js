@@ -67,7 +67,9 @@ function serveSection(r) {
       out.push("Disaggregated prefill/decode with Mooncake V2. Run Prefill and Decode directly, or use the optional Start_Server launcher with templates downloaded from the recipe page. Start the proxy after both pools are ready.");
       step("1. Scripts", r.ascend_scripts.description, r.ascend_scripts.command);
       step("2. Prefill", r.prefill.commandDescription, withEnv(r.prefill.env, r.prefill.command));
+      out.push(...dockerNote(r.prefill.docker_command));
       step("3. Decode", r.decode.commandDescription, withEnv(r.decode.env, r.decode.command));
+      out.push(...dockerNote(r.decode.docker_command));
       step("4. Start_Server", r.start_server.description, r.start_server.command);
       step("5. Start_Proxy", r.router.description, r.router.command);
       return out;

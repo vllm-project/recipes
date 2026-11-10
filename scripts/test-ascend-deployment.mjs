@@ -66,9 +66,13 @@ test("ordinary GPU colocated pools retain zero-node half-GPU semantics", () => {
   assert.equal(layout.nodeStep, 1);
 });
 
-test("Ascend Prefill and Decode exports show direct per-node commands instead of shell templates", () => {
+test("Ascend Prefill and Decode exports include direct and Docker commands instead of shell templates", () => {
   const recipe = createAscendPdRecipe();
   recipe.hf_id = "test/Ascend-PD";
+  const image = "quay.io/ascend/vllm-ascend:v0.30.0-a5";
+  recipe.variants.ascend_mxfp4.hardware_overrides = {
+    ascend_950dt: { docker_image: image, docker_serve_command: "vllm serve" },
+  };
   for (const rank of [0, 3, 4, 7]) {
     const resolved = select(recipe, { ...pageQuery, prefill_rank: String(rank), decode_rank: String(rank) });
     const markdown = selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls });
@@ -77,6 +81,17 @@ test("Ascend Prefill and Decode exports show direct per-node commands instead of
       assert.match(section, /export VLLM_USE_MODELSCOPE=true/);
       assert.ok(section.includes(`export HCCL_IF_IP=$${role.toUpperCase()}_NODE_${rank + 1}`));
       assert.ok(section.includes(resolved.rendering[role].command), "export the same selected-node command as JSON");
+      assert.ok(section.includes(resolved.rendering[role].docker_command), "include the selected node's Docker equivalent");
+      assert.match(section, /docker run --device \/dev\/davinci0/);
+      assert.match(section, /-e VLLM_USE_MODELSCOPE=true/);
+      assert.ok(section.includes(`-e HCCL_IF_IP=$${role.toUpperCase()}_NODE_${rank + 1}`));
+      const dockerArgv = resolved.rendering[role].docker_argv;
+      assert.deepEqual(dockerArgv.slice(0, 2), ["docker", "run"]);
+      for (let device = 0; device < 8; device++) assert.ok(dockerArgv.includes(`/dev/davinci${device}`));
+      assert.ok(dockerArgv.includes("--net=host"));
+      assert.equal(flag(dockerArgv, "--shm-size"), "16g");
+      assert.deepEqual(dockerArgv.slice(dockerArgv.indexOf(image) + 1), resolved.rendering[role].argv,
+        "the container starts the same per-node vllm serve command");
       assert.match(section, /vllm serve test\/Ascend-PD-MXFP4/);
       assert.match(section, new RegExp(`${role === "prefill" ? "--node-rank" : "--data-parallel-rank"} ${rank % 4}\\b`));
       assert.equal(section.includes("--headless"), role === "prefill" && rank % 4 > 0);
