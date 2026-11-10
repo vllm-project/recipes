@@ -18,6 +18,9 @@ meta:
     mi300x: verified
     mi325x: verified
     mi355x: verified
+    # Atlas 800 A3: W4A8 + TP4 + DP4 + DFlash validated on vLLM Ascend 0.23.0.
+    # ModelSlim loading, DFlash speculative decoding and HTTP 200 chat completion passed.
+    ascend_910c: verified
 
 model:
   model_id: "moonshotai/Kimi-K2.6"
@@ -53,6 +56,14 @@ features:
     args:
       - "--speculative-config"
       - '{"model":"lightseekorg/kimi-k2.6-eagle3-mla","method":"eagle3","num_speculative_tokens":3}'
+    modes:
+      dflash:
+        label: "DFlash"
+        description: "DFlash block-diffusion draft model — requires external z-lab/Kimi-K2.5-DFlash checkpoint"
+        args:
+          - "--speculative-config"
+          - '{"method":"dflash","model":"z-lab/Kimi-K2.5-DFlash","num_speculative_tokens":15}'
+        variants: [ascend_w4a8]
   text_only:
     description: "Skip loading the vision encoder for text-only workloads — frees VRAM for KV cache. Mutually exclusive with encoder_parallel."
     args:
@@ -101,6 +112,62 @@ variants:
     label: "NVFP4 (RedHat)"
     vram_minimum_gb: 600
     description: "RedHatAI NVFP4 quantization"
+
+  ascend_w4a8:
+    model_id: "Eco-Tech/Kimi-K2.6-W4A8"
+    precision: int4
+    label: "W4A8 (Ascend)"
+    vram_minimum_gb: 600
+    supported_hardware: [ascend_910c]
+    tp: 4
+    default_modes:
+      spec_decoding: dflash
+    # Hybrid TP4 + DP4 = 16 die on a single Atlas 800 A3. --data-parallel-size
+    # is spelled out in extra_args because single_node_tp only emits
+    # --tensor-parallel-size; the DEP strategy would add a vLLM Router companion
+    # and force --data-parallel-size=16, neither of which the tutorial uses.
+    extra_args:
+      - "--quantization"
+      - "ascend"
+      - "--data-parallel-size"
+      - "4"
+      - "--enable-expert-parallel"
+      - "--no-enable-prefix-caching"
+      - "--max-num-seqs"
+      - "4"
+      - "--max-model-len"
+      - "34816"
+      - "--max-num-batched-tokens"
+      - "16384"
+      - "--gpu-memory-utilization"
+      - "0.87"
+      - "--async-scheduling"
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+      - "--mm-processor-cache-gb"
+      - "0"
+      - "--mm-encoder-tp-mode"
+      - "data"
+      - "--additional-config"
+      - '{"enable_balance_scheduling": true}'
+      - "--served-model-name"
+      - "kimi_k26"
+      - "--seed"
+      - "42"
+    extra_env:
+      HCCL_OP_EXPANSION_MODE: "AIV"
+      PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+      OMP_PROC_BIND: "false"
+      OMP_NUM_THREADS: "1"
+      TASK_QUEUE_ENABLE: "1"
+      VLLM_ASCEND_ENABLE_MLAPO: "1"
+      HCCL_BUFFSIZE: "600"
+      VLLM_ASCEND_ENABLE_FLASHCOMM1: "1"
+      VLLM_ASCEND_BALANCE_SCHEDULING: "0"
+    hardware_overrides:
+      ascend_910c:
+        docker_image: "quay.io/ascend/vllm-ascend:v0.23.0-a3"
+    description: "ModelSlim W4A8 for Ascend NPU — 600 GB: 1 Atlas 800 A3 (16 die)."
 
 compatible_strategies:
   - single_node_tp
