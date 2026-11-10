@@ -305,6 +305,25 @@ test("variant configuration is preserved in JSON and Markdown selections", () =>
   assert.ok(!md.includes("Docker image:"));
 });
 
+test("variant fallbacks are reported in JSON and Markdown", () => {
+  const resolve = (params) => resolveSelection(localRecipe,
+    new URLSearchParams({ hardware: "local", variant: "local", ...params }), strategies, localTaxonomy);
+  const result = resolve({ frontend: "rust", features: "reasoning,unsupported" });
+  assert.deepEqual(result.selection.adjusted.map(({ param, requested, used }) => ({ param, requested, used })), [
+    { param: "frontend", requested: "rust", used: "python" },
+    { param: "features", requested: "reasoning,unsupported", used: "reasoning" },
+  ]);
+  const md = selectionMarkdown(localRecipe, result, {
+    strategies, taxonomy: localTaxonomy,
+    urls: { page: "https://example.org/example/model", json: "https://example.org/example/model.json" },
+  });
+  assert.ok(md.includes("requested `frontend=rust`"));
+  assert.ok(md.includes("requested `features=reasoning,unsupported`"));
+  for (const features of ["", "none", "reasoning"]) {
+    assert.deepEqual(resolve({ frontend: "python", features }).selection.adjusted, []);
+  }
+});
+
 test("Apple hardware disables Docker even without a recipe opt-out", () => {
   const variant = { install: { pip: { command: "install-mlx" } } };
   const meta = computeDockerMeta({}, variant, taxonomy.hardware_profiles.apple_16gb, "apple_16gb");

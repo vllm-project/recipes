@@ -754,6 +754,8 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
       out: applied,
     },
   );
+  note("frontend", get("frontend"), applied.frontend ?? frontend, "not supported by this recipe or variant");
+  note("features", get("features"), (applied.features ?? features).join(",") || "none", "not fully supported by this recipe or variant");
   return {
     omni: false,
     selection: {
