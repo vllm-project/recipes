@@ -31,6 +31,12 @@ function canonical(v) {
   return v;
 }
 
+// Overlay notes append after core notes; keep the order within each group.
+function notesByScope(notes = []) {
+  const inScope = (n) => n.when?.hardware?.length && n.when.hardware.every((key) => ctx.isHwKey(key));
+  return [notes.filter((n) => !inScope(n)), notes.filter(inScope)];
+}
+
 // The assembled tree (every source), so the round-trip covers recipes owned by
 // other repos too. Run build-recipes-api / assemble-content first.
 const recipes = yamlFiles(path.join(contentDir(), "models")).map((file) => ({
@@ -51,7 +57,7 @@ test("split → merge reproduces every recipe (Huawei scope)", () => {
     // an in-scope dep sitting between core deps moves to the front; compare
     // the in-scope and out-of-scope sequences separately.
     const byScope = (deps = []) => [deps.filter((d) => !ctx.brands.has(String(d.brand).toLowerCase())), deps.filter((d) => ctx.brands.has(String(d.brand).toLowerCase()))];
-    const norm = (r) => canonical({ ...r, dependencies: byScope(r.dependencies) });
+    const norm = (r) => canonical({ ...r, dependencies: byScope(r.dependencies), notes: notesByScope(r.notes) });
     assert.deepEqual(norm(merged), norm(recipe), `${file}: round-trip mismatch`);
     // Core keeps nothing in scope except prose and per-variant references.
     assert.equal(splitOverlay(core, { ctx, source, guideHeading: /ascend/i }).overlay.meta, undefined, file);
@@ -125,11 +131,13 @@ test("overlay notes append without changing or duplicating existing notes", () =
 test("split moves only in-scope notes and merges them back", () => {
   const shared = { when: { variants: ["default"] }, body: "Shared note" };
   const scoped = { when: { hardware: ["ascend_910c"] }, body: "Ascend note" };
-  const original = { ...core0, notes: [shared, scoped] };
+  const original = { ...core0, notes: [scoped, shared] };
   const { core, overlay } = splitOverlay(original, { ctx, source });
   assert.deepEqual(core.notes, [shared]);
   assert.deepEqual(overlay.notes, [scoped]);
-  assert.deepEqual(applyOverlay(core, overlay, { ctx, source }).recipe, original);
+  const merged = applyOverlay(core, overlay, { ctx, source }).recipe;
+  assert.deepEqual(merged, { ...original, notes: [shared, scoped] });
+  assert.deepEqual(notesByScope(merged.notes), notesByScope(original.notes));
 });
 
 test("an overlay source needs a granted scope", () => {

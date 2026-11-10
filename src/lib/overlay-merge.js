@@ -278,6 +278,7 @@ export function stripGuideMarkers(guide) {
 // Pull every in-scope key out of `recipe` → { core, overlay }. Guide sections
 // whose heading matches `guideHeading` (a RegExp) move into
 // `guide_sections`, leaving a marker in the core guide.
+// Notes keep their order within core/overlay, but merging appends overlay notes last.
 export function splitOverlay(recipe, { ctx, source, guideHeading = null }) {
   const core = structuredClone(recipe);
   const overlay = {};
