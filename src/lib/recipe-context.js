@@ -8,6 +8,8 @@
 //     lowercase brand, or `arch:<compute_arch>`.
 //   - features matches while one of those features is on.
 
+import { isFeatureAllowedForVariant } from "./command-synthesis.js";
+
 export const CONTEXT_KINDS = ["notes", "troubleshooting"];
 const WHEN_KEYS = ["hardware", "strategies", "variants", "features"];
 
@@ -65,6 +67,12 @@ export function validateContextEntries(recipe) {
       }
       for (const f of entry.when?.features || []) {
         if (!recipe.features?.[f]) errors.push(`${at}.when.features: no feature "${f}"`);
+      }
+      const variants = entry.when?.variants || Object.keys(recipe.variants || {});
+      const features = entry.when?.features || [];
+      if (features.length && variants.length && !variants.some((v) =>
+        features.some((f) => isFeatureAllowedForVariant(recipe.variants?.[v], f)))) {
+        errors.push(`${at}.when.features: no listed feature is supported by the selected variants`);
       }
     });
   }

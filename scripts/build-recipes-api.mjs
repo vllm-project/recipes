@@ -147,6 +147,7 @@ function validateFeatureModes(recipe, sourceFile) {
     }
 
     for (const variantKey of Object.keys(variants)) {
+      if (!isFeatureAllowedForVariant(variants[variantKey], featureKey)) continue;
       const available = modeKeys.some((modeKey) => {
         const allow = modes[modeKey]?.variants;
         return !Array.isArray(allow) || allow.length === 0 || allow.includes(variantKey);
@@ -158,6 +159,11 @@ function validateFeatureModes(recipe, sourceFile) {
   }
 
   for (const [variantKey, variant] of Object.entries(variants)) {
+    for (const featureKey of variant.supported_features || []) {
+      if (!Object.hasOwn(features, featureKey)) {
+        errors.push(`variants.${variantKey}.supported_features: unknown feature "${featureKey}"`);
+      }
+    }
     for (const [featureKey, modeKey] of Object.entries(variant?.default_modes || {})) {
       const feature = features[featureKey];
       const mode = feature?.modes?.[modeKey];
@@ -169,6 +175,8 @@ function validateFeatureModes(recipe, sourceFile) {
         errors.push(`variants.${variantKey}.default_modes.${featureKey} references unknown mode ${modeKey}`);
       } else if (Array.isArray(mode.variants) && mode.variants.length > 0 && !mode.variants.includes(variantKey)) {
         errors.push(`variants.${variantKey}.default_modes.${featureKey} selects mode ${modeKey}, which is unavailable for that variant`);
+      } else if (!isFeatureAllowedForVariant(variant, featureKey)) {
+        errors.push(`variants.${variantKey}.default_modes.${featureKey}: feature is excluded by supported_features`);
       }
     }
   }
@@ -204,6 +212,13 @@ function validateFrontends(recipe, sourceFile, taxonomy) {
       errors.push(`model.${key} must be "unsupported" (omit the key when the frontend works)`);
     } else if (def === id) {
       errors.push(`model.default_frontend is "${id}", but model.${key} marks it unsupported`);
+    }
+  }
+  for (const [key, variant] of Object.entries(recipe.variants || {})) {
+    for (const id of variant.supported_frontends || []) {
+      if (!isFrontendSupported(recipe, id)) {
+        errors.push(`variants.${key}.supported_frontends: "${id}" is unsupported by this recipe`);
+      }
     }
   }
   if (errors.length) {
