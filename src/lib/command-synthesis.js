@@ -984,6 +984,21 @@ export function versionBelow(v, floor) {
   return false;
 }
 
+// Higher of two "X.Y.Z" version strings (missing/blank loses). Used to bump the
+// displayed min vLLM version when the active variant needs a newer release than
+// the recipe baseline (e.g. the DSpark checkpoint requires 0.25.0).
+export function maxVersion(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const pa = String(a).split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d > 0 ? a : b;
+  }
+  return a;
+}
+
 // The CUDA 12.9 counterpart of an upstream `vllm/vllm-openai` tag, or null
 // when none is published, so the Install block's cu129 toggle never
 // synthesizes a tag that doesn't exist. `minVllmVersion` is the version the

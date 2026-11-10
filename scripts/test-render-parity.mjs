@@ -42,6 +42,27 @@ test("Omni variants inherit, replace or clear model base args", () => {
   }
 });
 
+test("installation exports use the higher model or variant minimum", () => {
+  for (const [modelMin, variantMin, expected] of [
+    ["0.40.0", "0.31.0", "0.40.0"], ["0.9.0", "0.10.0", "0.10.0"],
+    [undefined, "0.31.0", "0.31.0"], ["0.31.0", undefined, "0.31.0"],
+    ["0.31.0", "0.31.0", "0.31.0"],
+  ]) {
+    const recipe = {
+      hf_id: "example/model",
+      model: { model_id: "example/model", min_vllm_version: modelMin, nightly_required: true },
+      variants: { default: { precision: "bf16", vram_minimum_gb: 1, min_vllm_version: variantMin } },
+      compatible_strategies: ["single_node_tp"],
+    };
+    const resolved = resolveSelection(recipe, new URLSearchParams("hardware=h200"), strategies, taxonomy);
+    const md = selectionMarkdown(recipe, resolved, {
+      strategies, taxonomy, urls: { page: "https://example.org/example/model", json: "https://example.org/example/model.json" },
+    });
+    assert.ok(md.includes(`Requires vLLM >= ${expected}`));
+    assert.ok(synthesizeInstall(recipe, recipe.variants.default).pip.note.startsWith(`vLLM ${expected} `));
+  }
+});
+
 test("explicit empty feature selections stay off", () => {
   const recipe = {
     hf_id: "example/model",

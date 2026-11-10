@@ -22,6 +22,7 @@ import {
   resolveModeKey,
   resolveFrontend,
   resolveInstall,
+  maxVersion,
   isFeatureAllowedForVariant,
   resolveOmniCommand,
   isKvOffloadAllowedForStrategy,
@@ -89,7 +90,7 @@ export function synthesizeInstall(recipe, variant = {}, dockerMeta) {
   const pipCfg = installCfg.pip;
   const dockerCfg = installCfg.docker;
 
-  const v = variant.min_vllm_version || recipe.model?.min_vllm_version || "";
+  const v = maxVersion(recipe.model?.min_vllm_version, variant.min_vllm_version) || "";
   const nightlyRequired = variant.nightly_required === true || recipe.model?.nightly_required === true;
   const baseCuda = "cu130";
 

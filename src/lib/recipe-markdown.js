@@ -3,7 +3,7 @@
 // marked authoritative; the guide comes last as background, since its
 // hand-written examples may target another configuration.
 
-import { hardwareInstall, hwPipOverride, isFeatureSupportedOnHardware, resolveInstall } from "./command-synthesis.js";
+import { maxVersion, hardwareInstall, hwPipOverride, isFeatureSupportedOnHardware, resolveInstall } from "./command-synthesis.js";
 import { whenMatches } from "./recipe-context.js";
 import { SELECTION_PARAMS, defaultFeaturesFor, synthesizeInstall } from "./recipe-render.js";
 
@@ -123,7 +123,7 @@ function installSection(recipe, resolved) {
   const { hwProfile, rendering, selection } = resolved;
   const variant = recipe.variants?.[selection?.variant] || {};
   const out = [];
-  const min = variant.min_vllm_version || recipe.model?.min_vllm_version;
+  const min = maxVersion(recipe.model?.min_vllm_version, variant.min_vllm_version);
   const nightly = variant.nightly_required || recipe.model?.nightly_required;
   const hwInstall = hardwareInstall(recipe, variant, hwProfile, selection?.hardware);
   const hwPip = hwPipOverride(hwInstall);
