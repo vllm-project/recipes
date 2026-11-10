@@ -49,6 +49,12 @@ function normalizeGeneration(gen) {
   return gen;
 }
 
+function sharedHardwareOverride(override) {
+  // A worker-only block must not replace args/env shared by all nodes.
+  return override && Object.hasOwn(override, "worker_args") && Object.keys(override).length === 1
+    ? null : override;
+}
+
 /**
  * Auto-fit TP for single_node_tp: binary — TP=1 when the weights fit on a
  * single GPU, otherwise fan out to the full node (TP=gpu_count). Skips
@@ -1774,6 +1780,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     }
     const parallelFlag = strategy.parallel_flag || "--tensor-parallel-size";
     const isMulti = strategy.deploy_type === "multi_node" && nodeCount > 1;
+    const isWorker = isMulti && nodeRole === "worker";
     const isPdMulti = strategy.deploy_type === "pd_cluster" && nodeCount > 1;
     // Multi-node rendezvous host. When Mooncake composes with a multi-node
     // strategy, each instance's head is the same host the router lists as
@@ -1969,6 +1976,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       } else {
         if (so.extra_args) args.push(...so.extra_args);
         if (so.vllm_args)  args.push(...so.vllm_args);
+        if (isWorker && so.worker_args) args.push(...so.worker_args);
       }
     }
 
@@ -1997,7 +2005,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     const isNvidia = hwProfile?.brand === "NVIDIA";
     const strategyHo = so?.hardware_overrides?.[gen]
       || (isNvidia ? so?.hardware_overrides?.nvidia : null);
-    if (strategyHo) {
+    if (sharedHardwareOverride(strategyHo)) {
       if (strategyHo.extra_args) args.push(...strategyHo.extra_args);
     } else {
       const recipeHo = recipe.hardware_overrides?.[gen]
@@ -2007,10 +2015,13 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         || (isNvidia ? variant?.hardware_overrides?.nvidia : null);
       if (variantGenHo?.extra_args) args.push(...variantGenHo.extra_args);
     }
+    if (isWorker && strategyHo?.worker_args) args.push(...strategyHo.worker_args);
     // Exact-GPU strategy and role tweaks are a final, additive layer. They
     // handle exceptions within one generation without replacing its baseline.
     const strategyExactHo = so?.hardware_overrides?.[hwProfileId];
     if (strategyExactHo?.extra_args) args.push(...strategyExactHo.extra_args);
+    // Worker-only launch flags must never disable the head's API server.
+    if (isWorker && strategyExactHo?.worker_args) args.push(...strategyExactHo.worker_args);
     const roleExactHo = roleOverride
       ? so?.[roleOverride]?.hardware_overrides?.[hwProfileId]
       : null;
@@ -2194,7 +2205,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     const envIsNvidia = hwProfile?.brand === "NVIDIA";
     const envStrategyHo = so?.hardware_overrides?.[gen]
       || (envIsNvidia ? so?.hardware_overrides?.nvidia : null);
-    if (envStrategyHo) {
+    if (sharedHardwareOverride(envStrategyHo)) {
       if (envStrategyHo.extra_env) Object.assign(env, envStrategyHo.extra_env);
     } else {
       const envRecipeHo = recipe.hardware_overrides?.[gen]

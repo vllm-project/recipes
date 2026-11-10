@@ -135,10 +135,11 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
   const strategyOverride = obj({
     tp: intOrHwMap,
     extra_args: strings,
+    worker_args: strings,
     extra_env: envMap,
     env: envMap,
     vllm_args: strings,
-    hardware_overrides: keyed(hwKey, extraArgsEnv()),
+    hardware_overrides: keyed(hwKey, extraArgsEnv({ worker_args: strings })),
     prefill: pdRole,
     decode: pdRole,
     router: obj({ intra_node_data_parallel_size: { type: "integer", minimum: 1 } }),

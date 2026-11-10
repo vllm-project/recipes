@@ -429,6 +429,30 @@ Top-level keys, in this order:
 - `troubleshooting` (optional) — `[{ title, when?, body }]`: known issues, rendered in the **Troubleshooting** tab (beside Guide and Presets): entries whose `when` matches (or that have none) first, the rest folded under "Other configurations"; the tab gets a dot when a conditional entry matches. `title` is the symptom (an error message, "warmup too slow"), and becomes the anchor `#issue-<slug>`. The build rejects `when.variants` / `when.features` naming a variant or feature the recipe doesn't have. Helpers: `src/lib/recipe-context.js`.
 - `guide` — markdown string (`|`-block), rendered with `react-markdown` + `remark-gfm` + `rehype-slug`.
 
+### Multi-node worker arguments
+
+`strategy_overrides.<strategy>.worker_args` adds an argument list only to
+follower nodes of a `multi_node` strategy. The same field is accepted under
+that strategy's `hardware_overrides.<generation|gpu_id>` (and its existing
+`nvidia` fallback), with the usual generation then exact-GPU layering.
+It has no effect on the Head, single-node commands, or PD pools. A hardware
+block containing only `worker_args` preserves the shared recipe/variant args
+and environment.
+
+For example, an Ascend overlay can keep node 0 serving HTTP while making
+every follower headless:
+
+```yaml
+strategy_overrides:
+  multi_node_tp_dp:
+    hardware_overrides:
+      ascend_950dt:
+        worker_args: ["--headless"]
+```
+
+The generated per-node rank arguments are preserved. The worker arguments
+flow through the page, plain and Docker commands, JSON, and Markdown.
+
 ## VRAM formula
 
 `vram_minimum_gb = ceil(params × bytes_per_param × 1.2)` — uses **total**
