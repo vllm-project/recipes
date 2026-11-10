@@ -49,6 +49,19 @@ export function isFeatureAllowedForVariant(variant, featureKey) {
   return !variant?.supported_features || variant.supported_features.includes(featureKey);
 }
 
+// Enabling one of these features disables the other.
+export const FEATURE_MUTEX = { text_only: "encoder_parallel", encoder_parallel: "text_only" };
+
+// Restore defaults the previous variant could not offer, preserving explicit choices.
+export function restoreVariantDefaults(features, previousVariant, defaults, presetFeatures = {}) {
+  const next = [...features];
+  for (const key of defaults) {
+    if (!isFeatureAllowedForVariant(previousVariant, key) && presetFeatures[key] !== false
+        && !next.includes(key) && !next.includes(FEATURE_MUTEX[key])) next.push(key);
+  }
+  return next;
+}
+
 /**
  * Normalize gpu_generation to a single string for hardware_overrides lookup.
  */

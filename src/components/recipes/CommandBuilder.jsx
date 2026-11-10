@@ -5,9 +5,9 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { resolveInstall, isFeatureAllowedForVariant, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
+import { resolveInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
-import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
+import { presetPoints, presetSelect, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import ShellCode from "@/components/recipes/ShellCode";
 import { publishSelection, onPresetRequest } from "@/lib/selection-store";
 import { holdInPlace } from "@/lib/hold-in-place";
@@ -679,12 +679,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     [recipe]
   );
 
-  // Encode a features array for the URL: returns "" (which syncUrl deletes)
-  // when the set matches the YAML default for `hw`+`variantKey`, so links stay
-  // clean unless the user actually deviated.
+  // Omit features from the URL when they match the defaults for this
+  // hardware, variant and (when supplied) preset.
   const featuresToUrl = useCallback(
-    (arr, hw, variantKey) => {
+    (arr, hw, variantKey, presetFeatures = {}) => {
       const want = new Set(defaultFeaturesFor(hw, variantKey));
+      for (const [f, value] of Object.entries(presetFeatures)) {
+        if (value === false) want.delete(f);
+        else if (recipe.features?.[f] && isFeatureAllowedForVariant(recipe.variants?.[variantKey], f)) want.add(f);
+      }
       const selected = arr.filter((f) => recipe.features?.[f] && isFeatureAllowedForVariant(recipe.variants?.[variantKey], f));
       const got = new Set(selected);
       const same = want.size === got.size && [...want].every((f) => got.has(f));
@@ -1334,7 +1337,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     syncUrl({ task: key === defaultKey ? "" : key });
   };
 
-  const selectVariant = (key) => {
+  const selectVariant = (key, presetKey) => {
     setVariant(key);
     // Swap hardware when precision or an explicit variant allowlist requires
     // it. VRAM alone is not a blocker because scalable profiles can add nodes.
@@ -1364,11 +1367,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const baseDefault = new Set(defaultFeaturesFor(updates.hardware || hwId, key));
     let nextFeatures = features.filter((f) => !oldForced.has(f) || newForced.includes(f) || baseDefault.has(f));
     for (const f of newForced) if (recipe.features?.[f] && !nextFeatures.includes(f)) nextFeatures.push(f);
+    // Same-hardware switches may keep a preset active, so its opt-outs still apply.
+    // A hardware switch activates a different preset through the existing effect.
+    const keepPreset = key === variant && !updates.hardware;
+    const nextPreset = presetKey ?? (!updates.hardware
+      ? resolvePresetKey(recipe, hwId, activeStrategy, keepPreset ? presetPick : null, key) : null);
+    const presetFeatures = presetSelect(recipe, nextPreset, keepPreset ? pointPick : null)?.features;
+    nextFeatures = restoreVariantDefaults(nextFeatures, currentVariant, baseDefault, presetFeatures);
     if (nextFeatures.length !== features.length || nextFeatures.some((f, i) => f !== features[i])) {
       setFeatures(nextFeatures);
-      updates.features = featuresToUrl(nextFeatures, updates.hardware || hwId, key);
       saveRecipeState(recipe.hf_id, { features: nextFeatures });
     }
+    updates.features = featuresToUrl(nextFeatures, updates.hardware || hwId, key, presetFeatures);
     // One syncUrl call — two sequential calls each read the same stale
     // searchParams from this closure, so the second would clobber the first
     // (dropping variant= when selecting a Blackwell-only variant off Hopper).
@@ -1382,11 +1392,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const oldHwOptIn = new Set(recipe.hardware_opt_in_features?.[hwId] || []);
     const newHwOptIn = new Set(recipe.hardware_opt_in_features?.[id] || []);
     const baseOptIn = new Set(recipe.opt_in_features || []);
-    const next = features.filter((f) => !newHwOptIn.has(f));
+    let next = features.filter((f) => !newHwOptIn.has(f));
     for (const f of oldHwOptIn) {
       if (!newHwOptIn.has(f) && !baseOptIn.has(f) && !next.includes(f)) next.push(f);
     }
-    setFeatures(next);
     setHwId(id);
     setStrategyOverride("");
     const newProfile = taxonomy.hardware_profiles?.[id] || {};
@@ -1457,13 +1466,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       || multiNodeUnavailable(recipe, strategies, newProfile, activeVariant, id));
     if (shouldBumpNodes) setNodeCount(bumpedNodes);
     if (shouldUnbumpNodes) setNodeCount(1);
+    const nextPreset = id === hwId ? resolvePresetKey(recipe, id, activeStrategy, null, variantUpdate || variant) : null;
+    const presetFeatures = presetSelect(recipe, nextPreset)?.features;
+    next = restoreVariantDefaults(next, currentVariant, defaultFeaturesFor(id, variantUpdate || variant), presetFeatures);
+    setFeatures(next);
     syncUrl({
       hardware: id,
       strategy: "",
       preset: "",
       point: "",
       nodes: shouldBumpNodes ? String(bumpedNodes) : shouldUnbumpNodes ? "" : undefined,
-      features: featuresToUrl(next, id, variant),
+      features: featuresToUrl(next, id, variantUpdate || variant, presetFeatures),
       ...(nextModes !== featureModes ? { fmode: featureModesToUrl(nextModes, variant) } : {}),
       ...(variantUpdate ? { variant: variantUpdate } : {}),
       ...(kvOffloadOk ? {} : { kv_offload: "", kv_instances: "", kv_instance: "" }),
@@ -1619,10 +1632,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const toggleFeature = (f) => {
     // text_only (skip vision encoder) and encoder_parallel (DP the encoder)
     // are mutually exclusive — enabling one clears the other.
-    const mutex = { text_only: "encoder_parallel", encoder_parallel: "text_only" };
     const on = !features.includes(f);
     const next = on
-      ? [...features.filter((x) => x !== mutex[f]), f]
+      ? [...features.filter((x) => x !== FEATURE_MUTEX[f]), f]
       : features.filter((x) => x !== f);
     setFeatures(next);
     syncUrl({ features: featuresToUrl(next, hwId, variant) });
@@ -1707,7 +1719,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       // reset picks it up (pendingPreset). Its default needs no pick.
       const pick = target.default ? null : key;
       pendingPreset.current = pick;
-      if (otherVariant) selectVariant(otherVariant);
+      if (otherVariant) selectVariant(otherVariant, key);
       if (otherStrategy) selectStrategy(otherStrategy, { preset: pick ?? "" });
       else syncUrl({ preset: pick ?? "", point: "" });
       return;

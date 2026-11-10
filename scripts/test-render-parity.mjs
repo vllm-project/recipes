@@ -17,7 +17,8 @@ import { loadTaxonomy } from "../src/lib/taxonomy.js";
 import { resolveSelection, synthesizeInstall } from "../src/lib/recipe-render.js";
 import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
 import { validateContextEntries } from "../src/lib/recipe-context.js";
-import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode, isFrontendSupported, resolveFrontend, versionBelow } from "../src/lib/command-synthesis.js";
+import { presetSelect, resolvePresetKey } from "../src/lib/recipe-presets.js";
+import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode, isFrontendSupported, resolveFrontend, restoreVariantDefaults, versionBelow } from "../src/lib/command-synthesis.js";
 
 const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES_PUBLIC_DIR) : path.join(process.cwd(), "public");
 const strategies = loadStrategies();
@@ -303,6 +304,34 @@ test("variant configuration is preserved in JSON and Markdown selections", () =>
   assert.ok(md.includes("install-example-runtime"));
   assert.ok(md.includes("Local memory guidance."));
   assert.ok(!md.includes("Docker image:"));
+});
+
+test("variant switches restore newly available defaults and preserve shared choices", () => {
+  const previous = { supported_features: ["tool_calling", "reasoning"] };
+  const defaults = new Set(["tool_calling", "reasoning", "encoder_parallel"]);
+  const next = restoreVariantDefaults(["reasoning"], previous, defaults);
+  assert.deepEqual(next, ["reasoning", "encoder_parallel"]);
+  assert.deepEqual(restoreVariantDefaults(next, previous, defaults), next);
+  assert.deepEqual(restoreVariantDefaults([], {}, defaults), []);
+  const textOnly = ["reasoning", "text_only"];
+  assert.deepEqual(restoreVariantDefaults(textOnly, previous, defaults), textOnly);
+});
+
+test("variant defaults respect preset and point opt-outs", () => {
+  const previous = { supported_features: ["reasoning"] };
+  const defaults = ["reasoning", "encoder_parallel"];
+  const recipe = { presets: { tuned: {
+    hardware: "h200", default: true, select: { features: { encoder_parallel: true } },
+    points: { off: { default: true, select: { features: { encoder_parallel: false } } }, on: {} },
+  } } };
+  for (const [hw, pick, point, expected] of [
+    ["h200", null, null, []], ["h200", null, "on", ["encoder_parallel"]],
+    ["h200", "baseline", null, ["encoder_parallel"]], ["mi300x", null, null, ["encoder_parallel"]],
+  ]) {
+    const select = presetSelect(recipe, resolvePresetKey(recipe, hw, "single_node_tp", pick, "default"), point);
+    assert.deepEqual(restoreVariantDefaults([], previous, defaults, select?.features), expected);
+  }
+  assert.deepEqual(restoreVariantDefaults(["encoder_parallel"], previous, defaults, { encoder_parallel: false }), ["encoder_parallel"]);
 });
 
 test("variant fallbacks are reported in JSON and Markdown", () => {
