@@ -9,6 +9,7 @@ import { hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recomme
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import ShellCode from "@/components/recipes/ShellCode";
+import { clientModelFor } from "@/lib/client-model";
 import { publishSelection, onPresetRequest } from "@/lib/selection-store";
 import { holdInPlace } from "@/lib/hold-in-place";
 import { whenMatches } from "@/lib/recipe-context";
@@ -1249,9 +1250,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     }
     return q.toString();
   }, [recipe, hwId, variant, omniTask, activeStrategy, features, featureModes, advanced, frontend, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, pdRouter, pdConnector, pdTransport, nodeCount]);
+  const clientModel = clientModelFor(recipe, variant, result);
   useEffect(() => {
-    publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features: activeFeatures, preset: selectedPreset, query: shareQuery });
-  }, [recipe.hf_id, hwId, activeStrategy, variant, activeFeatures, selectedPreset, shareQuery]);
+    publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features: activeFeatures, preset: selectedPreset, query: shareQuery, clientModel });
+  }, [recipe.hf_id, hwId, activeStrategy, variant, activeFeatures, selectedPreset, shareQuery, clientModel]);
 
   // Visual feedback when any rendered command changes. Covers single-node
   // (result.command), multi-node (headCommand), pd_cluster (prefill.command),
@@ -2685,7 +2687,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                     isHardwareSupported(recipe, candidateId)
                     && variantRunsOnHardware(candidateProfile, v, candidateId)
                 );
-                const disabled = !hasRunnableHardware;
+                const explicitlyBlocked = v.hardware_overrides?.[hwId]?.support === "unsupported";
+                const disabled = explicitlyBlocked || !hasRunnableHardware;
                 const fallbackHwId = currentHardwareOk
                   ? hwId
                   : pickDefaultHardware(taxonomy.hardware_profiles, v, recipe);
@@ -2697,7 +2700,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                     disabled={disabled}
                     onClick={() => !disabled && selectVariant(key)}
                     title={
-                      disabled
+                      explicitlyBlocked
+                        ? `This variant is not adapted for ${hwProfile.display_name || hwId}.`
+                        : disabled
                         ? `No currently supported hardware can run ${(v.label || v.precision)?.toUpperCase()}`
                         : !currentHardwareOk
                           ? [
@@ -2745,7 +2750,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 )}
                 {variantModelId && (
                   <a
-                    href={`https://huggingface.co/${variantModelId}`}
+                    href={String(currentVariant.extra_env?.VLLM_USE_MODELSCOPE).toLowerCase() === "true" ? `https://www.modelscope.cn/models/${variantModelId}` : `https://huggingface.co/${variantModelId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground hover:text-vllm-blue transition-colors"
@@ -4033,8 +4038,8 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   //   false              → hide that tab entirely
   //   { command, note }  → override the generated one-liner and/or show a note
   const install = recipe.model?.install || {};
-  const pipCfg = install.pip;
-  const dockerCfg = install.docker;
+  const pipCfg = hwInstall?.pip ?? install.pip;
+  const dockerCfg = hwInstall?.docker ?? install.docker;
   const pipHidden = pipCfg === false;
   // This hardware's own pip command outranks every recipe-wide install setting.
   const hwPip = hwPipOverride(hwInstall);
@@ -4071,7 +4076,12 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   // Nightly wheels are cu130-only: `/nightly/cu129` stopped at the 0.32.0
   // cycle, so there is no CUDA choice to offer for the pip nightly index.
   const pipCudaTag = "cu130";
-  const defaultPipCmd = isAmd
+  const defaultPipCmd = isNpu
+    ? `# Install vLLM-Ascend and its matching Ascend dependencies.
+# Follow the release-specific wheel or source installation instructions:
+# https://docs.vllm.ai/projects/ascend/en/latest/getting_started/installation.html
+# The generic vLLM pip command alone does not install the Ascend stack.`
+    : isAmd
     ? `uv venv --python 3.12
 source .venv/bin/activate
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm`
@@ -4100,7 +4110,9 @@ source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto`;
   const pipCmd = hwPip?.command || pipCfg?.command || defaultPipCmd;
   const pipNote = hwPip ? hwPip.note : pipCfg?.note ||
-    (isCpu
+    (isNpu
+      ? "Use the official Ascend installation instructions for your hardware and release. Docker uses the selected hardware image; compatible host drivers and firmware are required."
+      : isCpu
       ? nightlyRequired
         ? "Intel/AMD x86 CPU nightly wheels use the dedicated /nightly/cpu index and PyTorch CPU backend."
         : `Intel/AMD x86 CPU release wheels are published separately from CUDA wheels; the command follows the official vLLM CPU pre-built-wheel flow. Since v0.30.0 they are manylinux_2_39 builds, which need glibc 2.39+ (e.g. Ubuntu 24.04+)${dockerHidden ? "." : "; on older distros use the Docker tab."}`
@@ -4159,7 +4171,7 @@ uv pip install -U vllm --torch-backend auto`;
   const tabs = [
     !effectivePipHidden && {
       id: "pip",
-      label: isAmd ? "pip / uv (ROCm)" : isCpu ? "pip / uv (CPU)" : "pip / uv",
+      label: isNpu ? "Wheel / source (Ascend)" : isAmd ? "pip / uv (ROCm)" : isCpu ? "pip / uv (CPU)" : "pip / uv",
       code: pipCmd,
       note: pipNote,
     },
@@ -4186,7 +4198,7 @@ uv pip install -U vllm --torch-backend auto`;
         <Package size={12} className="text-[var(--command-fg)]/50 shrink-0" />
         <span className="text-[11px] font-semibold text-[var(--command-fg)]/70 uppercase tracking-widest">Install</span>
         <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
-          {!hwPipActive && <>vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · </>}{isPpu ? "PPU" : isTpu ? "TPU" : isXpu ? "XPU" : isNpu ? "Ascend" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}
+          {!hwPipActive && <>vLLM {minV}+{isNpu ? " · vLLM-Ascend" : ""}{isOmni ? " · vLLM-Omni nightly" : ""} · </>}{isPpu ? "PPU" : isTpu ? "TPU" : isXpu ? "XPU" : isNpu ? "Ascend" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}
         </span>
         {nightlyRequired && !hwPipActive && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
@@ -4249,6 +4261,11 @@ uv pip install -U vllm --torch-backend auto`;
               <CopyButton text={active.code} />
             </div>
           </div>
+          {isNpu && (
+            <a href="https://docs.vllm.ai/projects/ascend/en/latest/getting_started/installation.html" target="_blank" rel="noopener noreferrer" className="block text-xs text-blue-400 underline px-4 py-2">
+              Official vLLM-Ascend installation instructions
+            </a>
+          )}
           {active.note && (
             <div className="px-4 pt-2 text-[11px] text-[var(--command-fg)]/55 leading-snug">
               # {active.note}

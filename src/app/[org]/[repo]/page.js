@@ -17,6 +17,7 @@ import { ReferenceTabs } from "@/components/recipes/ConfigSections";
 import { whenLabels } from "@/lib/recipe-context";
 import { DeployDialog } from "@/components/recipes/DeployDialog";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
+import ClientExampleCode from "@/components/recipes/ClientExampleCode";
 import ShellCode from "@/components/recipes/ShellCode";
 import { SHELL_LANGS } from "@/lib/shell-highlight";
 import Markdown from "react-markdown";
@@ -289,7 +290,7 @@ export default async function RecipePage({ params, searchParams }) {
       <section className="space-y-3">
         <GuideLinks>
           <div className="space-y-3">
-            <ReferenceTabs {...sectionProps} guide={guide ? <GuideMarkdown>{guide}</GuideMarkdown> : null} />
+            <ReferenceTabs {...sectionProps} guide={guide ? <GuideMarkdown hfId={recipe.hf_id} defaultModel={recipe.model?.model_id || recipe.hf_id}>{guide}</GuideMarkdown> : null} />
           </div>
         </GuideLinks>
       </section>
@@ -371,9 +372,18 @@ const guideComponents = {
   },
 };
 
-function GuideMarkdown({ children, prefix = "" }) {
+function GuideMarkdown({ children, prefix = "", hfId, defaultModel }) {
+  const components = {
+    ...guideComponents,
+    code(props) {
+      if (hfId && String(props.children).includes("{{client_model}}")) {
+        return <ClientExampleCode hfId={hfId} defaultModel={defaultModel} className={props.className}>{String(props.children)}</ClientExampleCode>;
+      }
+      return guideComponents.code(props);
+    },
+  };
   return (
-    <Markdown remarkPlugins={guideRemarkPlugins} rehypePlugins={guideRehypePluginsFor(prefix)} components={guideComponents}>
+    <Markdown remarkPlugins={guideRemarkPlugins} rehypePlugins={guideRehypePluginsFor(prefix)} components={components}>
       {children}
     </Markdown>
   );

@@ -477,6 +477,7 @@ export function isHardwareSupported(recipe, hwId) {
  * confusing data-center Blackwell (SM100/SM103) with workstation SM120/SM121.
  */
 export function isVariantHardwareSupported(variant, hwId, profile = null) {
+  if (variant?.hardware_overrides?.[hwId]?.support === "unsupported") return false;
   const supported = variant?.supported_hardware;
   if (!Array.isArray(supported) || supported.length === 0) return true;
   return supported.some((entry) => {
