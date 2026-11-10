@@ -18,12 +18,29 @@ import { resolveSelection, synthesizeInstall } from "../src/lib/recipe-render.js
 import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
 import { validateContextEntries } from "../src/lib/recipe-context.js";
 import { presetSelect, resolvePresetKey } from "../src/lib/recipe-presets.js";
-import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode, isFrontendSupported, resolveFrontend, restoreVariantDefaults, versionBelow } from "../src/lib/command-synthesis.js";
+import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode, isFrontendSupported, resolveFrontend, resolveOmniCommand, restoreVariantDefaults, versionBelow } from "../src/lib/command-synthesis.js";
 
 const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES_PUBLIC_DIR) : path.join(process.cwd(), "public");
 const strategies = loadStrategies();
 const taxonomy = loadTaxonomy();
 const readJson = (rel) => JSON.parse(fs.readFileSync(path.join(PUBLIC, rel), "utf8"));
+
+test("Omni variants inherit, replace or clear model base args", () => {
+  for (const key of ["default", "alternate"]) {
+    const recipe = {
+      model: { model_id: "example/model", base_args: ["--max-model-len", "1024"] },
+      variants: { [key]: {} },
+    };
+    const command = () => resolveOmniCommand(recipe, key, { extraArgs: ["--port", "9000"] }, taxonomy.hardware_profiles.h200, "h200").command;
+    assert.match(command(), /--max-model-len 1024/);
+    recipe.variants[key].base_args = ["--max-model-len", "2048"];
+    assert.match(command(), /--max-model-len 2048/);
+    recipe.variants[key].base_args = [];
+    assert.doesNotMatch(command(), /--max-model-len/);
+    assert.match(command(), /--port 9000/);
+    assert.match(command(), /--omni/);
+  }
+});
 
 test("explicit empty feature selections stay off", () => {
   const recipe = {

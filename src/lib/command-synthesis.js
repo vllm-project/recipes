@@ -1459,7 +1459,7 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfil
   if (variantExactHo?.extra_env) Object.assign(env, variantExactHo.extra_env);
 
   const args = [];
-  if (recipe.model?.base_args) args.push(...recipe.model.base_args);
+  args.push(...(variant.base_args ?? recipe.model?.base_args ?? []));
   if (variantKey !== "default" && variant.extra_args) args.push(...variant.extra_args);
   if (task?.extraArgs?.length) args.push(...task.extraArgs);
   if (ho?.extra_args) args.push(...ho.extra_args);
