@@ -55,6 +55,12 @@ test("misspelled keys are rejected", () => {
   assert.ok(errorsFor((r) => { r.features.tool_calling.arg = ["--x"]; }).length);
 });
 
+test("hub is a known variant-level value", () => {
+  assert.deepEqual(errorsFor((r) => { r.variants.default.hub = "modelscope"; }), []);
+  assert.ok(errorsFor((r) => { r.variants.default.hub = "unknown"; }).length);
+  assert.ok(errorsFor((r) => { r.model.hub = "modelscope"; }).length);
+});
+
 test("vocabulary and status values are checked", () => {
   assert.ok(errorsFor((r) => { r.meta.hardware.h999 = "verified"; }).length);
   assert.ok(errorsFor((r) => { r.meta.hardware.h200 = "unverified"; }).length);

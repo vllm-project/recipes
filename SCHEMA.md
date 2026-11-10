@@ -119,9 +119,13 @@ variants:
     description: "…"
   nvfp4:                                          # optional additional variants
     model_id: "nvidia/*-NVFP4"                    # only if the quantized checkpoint is a different HF repo
+    # hub: modelscope                             # default: huggingface
     precision: nvfp4
     vram_minimum_gb: 403
     extra_args: ["--kv-cache-dtype", "fp8", "--moe-backend", "flashinfer_cutlass"]
+
+# A variant's hub selects its download source and checkpoint link.
+# ModelScope uses a process-wide vLLM setting, including for external drafts.
 
 compatible_strategies:                            # subset of the 8 strategy ids in strategies/*.yaml
   - single_node_tp                                # always include as baseline

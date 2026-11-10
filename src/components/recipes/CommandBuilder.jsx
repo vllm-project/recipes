@@ -4,7 +4,8 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
-import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
+import { HuggingFaceIcon, ModelScopeIcon } from "@/components/icons/PlatformLogos";
+import { checkpointLink } from "@/lib/checkpoint-link";
 import { hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
@@ -836,6 +837,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // literal "model" placeholder for command text; a URL needs a real repo or
   // nothing at all.
   const variantModelId = currentVariant.model_id || recipe.model?.model_id || null;
+  const variantLink = checkpointLink(recipe, currentVariant, taxonomy);
 
   // All hardware profiles grouped by brand, sorted by architectural generation
   // within brand (oldest → newest; matches the semianalysis GPU timeline).
@@ -1568,10 +1570,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // (DEP start-rank vs TP node-rank), so reset that pool's rank to 0.
   // Dynamo is brand-gated (strategy YAML `dynamo.brands`); on other hardware
   // the row shows vLLM Router active and synthesis ignores the pick.
-  const dynamoOk = isDynamoSupportedOnHardware(strategies.pd_cluster?.dynamo, hwProfile);
+  const dynamoOk = isDynamoSupportedOnHardware(strategies.pd_cluster?.dynamo, hwProfile, currentVariant);
   const smgReason = smgUnsupportedReason(recipe, strategies.pd_cluster, {
     prefill: { parallelism: effPdPrefillPar }, decode: { parallelism: effPdDecodePar },
-  }, activeKvOffload);
+  }, activeKvOffload, pdTransport, hwProfile, hwId, currentVariant);
   const effPdRouter = result.orchestrator === "smg" ? "smg" : result.orchestrator === "dynamo" ? "dynamo" : "vllm";
   const isSmgGrpc = result.orchestrator === "smg" && result.transport === "grpc";
   const selectPdRouter = (value) => {
@@ -1846,7 +1848,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     "max_tokens": 32
   }'`;
 
-  const benchCmd = `vllm bench serve \\
+  const benchCmd = `${currentVariant?.hub === "modelscope" ? "VLLM_USE_MODELSCOPE=True " : ""}vllm bench serve \\
   --model ${modelId} \\
   --host ${clientHost} \\
   --port ${clientPortStr} \\
@@ -2046,8 +2048,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
         deps.push({ command: result.router.dockerInstall, note: "SMG — pull on the router host", install_modes: ["docker"] });
       }
     }
+    const hubInstall = taxonomy.model_hubs?.[currentVariant?.hub]?.install;
+    if (hubInstall) deps.push({ command: hubInstall, note: "ModelScope client", install_modes: ["pip"] });
     return deps;
-  }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall, result.router?.install, result.router?.dockerInstall, result.workerInstall, result.kvConnector?.install]);
+  }, [recipe.dependencies, hwProfile?.brand, kvOffloadOptions, activeKvOffload, isKvStoreActive, strategies, result.orchestrator, result.dynamoInstall, result.router?.install, result.router?.dockerInstall, result.workerInstall, result.kvConnector?.install, currentVariant?.hub, taxonomy.model_hubs]);
 
   // Status caption for the command block header.
   // Only `verified` is a positive signal worth surfacing; anything else
@@ -2124,7 +2128,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     [currentVariant, presetImage, hwId]
   );
   const dockerMeta = useMemo(() => {
-    const meta = computeDockerMeta(recipe, imageVariant, hwProfile, hwId);
+    const meta = computeDockerMeta(recipe, imageVariant, hwProfile, hwId, taxonomy);
     if (!meta.image || meta.brandKey !== "nvidia") return meta;
 
     // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
@@ -2145,7 +2149,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       return { ...meta, image: cu129Image, cu129Image };
     }
     return { ...meta, cu129Image };
-  }, [recipe, imageVariant, hwProfile, hwId, dockerCudaVariant, altCudaSuffix, installMinVersion]);
+  }, [recipe, imageVariant, hwProfile, hwId, taxonomy, dockerCudaVariant, altCudaSuffix, installMinVersion]);
 
   // `installMode` carries the user's tab choice; `effectiveInstallMode` folds
   // in constraints that would hide a tab entirely (pip: recipe opt-out or TPU
@@ -2745,15 +2749,25 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 )}
                 {variantModelId && (
                   <a
-                    href={`https://huggingface.co/${variantModelId}`}
+                    href={variantLink.href}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground hover:text-vllm-blue transition-colors"
                   >
-                    <HuggingFaceIcon className="w-3 h-3" />
+                    {variantLink.provider === "Hugging Face"
+                      ? <HuggingFaceIcon className="w-3 h-3" />
+                      : variantLink.provider === "ModelScope"
+                        ? <ModelScopeIcon className="w-3 h-3" />
+                        : <Globe className="w-3 h-3" />}
+                    {variantLink.provider !== "Hugging Face" && `${variantLink.provider}: `}
                     {variantModelId}
                     <ExternalLink size={9} />
                   </a>
+                )}
+                {currentVariant?.hub === "modelscope" && (
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    ModelScope is process-wide and also applies to external draft models and tokenizers.
+                  </p>
                 )}
               </div>
             )}
@@ -2917,7 +2931,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   onClick={() => dynamoOk && selectPdRouter("dynamo")}
                   title={dynamoOk
                     ? strategies.pd_cluster.dynamo.description
-                    : `Dynamo isn't available on ${hwProfile.display_name || hwId} — it needs ${(strategies.pd_cluster.dynamo.brands || []).join(" / ")} hardware.`}
+                    : currentVariant?.hub === "modelscope" ? "Dynamo tokenizer loading from ModelScope has not been verified."
+                      : `Dynamo isn't available on ${hwProfile.display_name || hwId} — it needs ${(strategies.pd_cluster.dynamo.brands || []).join(" / ")} hardware.`}
                 >
                   <span className="font-semibold">{strategies.pd_cluster.dynamo.display_name || "Dynamo"}</span>
                 </Pill>}
@@ -3913,7 +3928,7 @@ function SingleCommandBlock({ command, env, setup, companions, verifyCmd, benchC
     !isDocker && setup ? setup : "",
   ].filter(Boolean).join("\n");
   const displayCommand = isDocker
-    ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, cmdPrefix: dockerMeta.cmdPrefix })
+    ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, cmdPrefix: dockerMeta.cmdPrefix, cacheMount: dockerMeta.cacheMount })
     : command;
   // A companion process may ride along (`companions[]` from resolveCommand —
   // a feature's `companion:` or the active kv_offload option's, e.g.
@@ -4307,7 +4322,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
   const isDocker = installMode === "docker";
   const wrap = (cmd) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env: result.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, cmdPrefix: dockerMeta.cmdPrefix })
+      ? buildDockerRun({ command: cmd, env: result.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, cmdPrefix: dockerMeta.cmdPrefix, cacheMount: dockerMeta.cacheMount })
       : cmd;
   // One tab per node: Head (rank 0) then every follower rank, each with its own
   // --node-rank / --data-parallel-start-rank. `workerCommands` carries them all;
@@ -4379,7 +4394,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   const routerDocker = isDocker && result.router.dockerCommand;
   const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, cmdPrefix: dockerMeta.cmdPrefix, setupCommand: result.workerDockerSetup,
+      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, cmdPrefix: dockerMeta.cmdPrefix, cacheMount: dockerMeta.cacheMount, setupCommand: result.workerDockerSetup,
         // RDMA connectors (Mooncake, MoRI-IO) need host networking and locked memory.
         hostNetwork: result.transport === "grpc" || !!result.kvConnector?.docker?.host_network,
         extraFlags: result.kvConnector?.docker?.flags || [] })
@@ -4529,7 +4544,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
   const isDocker = installMode === "docker";
   const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, cmdPrefix: dockerMeta.cmdPrefix })
+      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, cmdPrefix: dockerMeta.cmdPrefix, cacheMount: dockerMeta.cacheMount })
       : cmd;
 
   const instances = result.instances || 2;

@@ -119,22 +119,26 @@ function serveSection(r) {
   return out;
 }
 
-function installSection(recipe, resolved) {
+function installSection(recipe, resolved, taxonomy) {
   const { hwProfile, rendering, selection } = resolved;
   const out = [];
   const min = recipe.model?.min_vllm_version;
   const hwInstall = hardwareInstall(recipe, recipe.variants?.[selection?.variant], hwProfile, selection?.hardware);
   const hwPip = hwPipOverride(hwInstall);
+  if (rendering?.checkpoint_url) out.push(`Checkpoint: [${rendering.hub}](${rendering.checkpoint_url}).`, "");
+  if (rendering?.hub === "modelscope") out.push("ModelScope selection applies process-wide, including external draft models and tokenizers.", "");
   if (hwPip) {
     // This hardware's own install: the recipe's vLLM floor describes the stock one.
     if (hwPip.note) out.push(hwPip.note, "");
     out.push(fence(hwPip.command), "");
   } else if (min) out.push(`Requires vLLM >= ${min}${recipe.model?.nightly_required && hwInstall?.pip !== false ? " (not released yet — nightly wheel)" : ""}.`, "");
   const install = synthesizeInstall(recipe);
+  const hubInstall = taxonomy?.model_hubs?.[recipe.variants?.[selection?.variant]?.hub]?.install;
   if (!hwPip && hwProfile.brand === "NVIDIA" && install?.pip && hwInstall?.pip !== false) {
     if (install.pip.note) out.push(install.pip.note, "");
     out.push(fence(install.pip.command), "");
   }
+  if (hubInstall && hwInstall?.pip !== false && recipe.model?.install?.pip !== false) out.push("ModelScope client (pip):", "", fence(hubInstall), "");
   if (rendering?.docker_image) {
     if (hwInstall?.docker?.note) out.push(hwInstall.docker.note, "");
     out.push(`Docker image: \`${rendering.docker_image}\``, "");
@@ -308,7 +312,7 @@ export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls
     "",
     "## Install",
     "",
-    ...installSection(recipe, resolved),
+    ...installSection(recipe, resolved, taxonomy),
     "## Serve",
     "",
   ].filter((l) => l !== null);

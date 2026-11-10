@@ -1003,7 +1003,7 @@ function isDockerEnabled(recipe) {
 
 // When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
 // the user's `dockerCudaVariant` toggle instead of appending `-cu129`.
-export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
+export function computeDockerMeta(recipe, variant, hwProfile, hwId = null, taxonomy = null) {
   // When `model.nightly_required: true` and no explicit `docker_image` pin,
   // swap the brand defaults to nightly tags so the Install block matches the
   // nightly pip wheel that's also being rendered. vLLM publishes `:nightly`
@@ -1106,6 +1106,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
       : "--gpus all";
   return {
     image,
+    cacheMount: taxonomy?.model_hubs?.[variant?.hub]?.cache,
     dockerEnabled,
     gpuFlags,
     brandKey,
@@ -1197,7 +1198,7 @@ function servedPort(tokens, fallback = 8000) {
 // entrypoint is something else. Env vars become `-e KEY=VAL` inside the container.
 // `extraFlags` are runtime flags a component needs on top of the GPU ones
 // (a PD KV connector's RDMA device and locked-memory limit).
-export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, isPpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [] }) {
+export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, isPpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [], cacheMount = "~/.cache/huggingface:/root/.cache/huggingface" }) {
   const pubPort = port ?? servedPort(command.split(/\s+/));
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
@@ -1226,7 +1227,7 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = null, isN
     : `--privileged --ipc=host ${hostNetwork ? "--network host" : `-p ${pubPort}:${pubPort}`}`;
   const gpuPrefix = gpuFlags ? ` ${gpuFlags} \\\n  ` : " ";
   const base = `${prereq}docker run${gpuPrefix}${runtimeFlags} \\${extraFlags.length ? `\n  ${extraFlags.join(" ")} \\` : ""}
-  -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
+  -v ${cacheMount} \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
   const setup = setupCommand
     ? `--entrypoint /bin/sh ${image} -c ${shellQuote(`${setupCommand} && exec vllm serve "$@"`)} vllm-grpc ${modelId}`
     : null;
@@ -1261,7 +1262,7 @@ export function buildDockerArgv({ argv, env, meta, port = null, hostNetwork = fa
     ...dockerGpuArgv(meta),
     ...runtimeFlags,
     ...extraFlags,
-    "-v", "~/.cache/huggingface:/root/.cache/huggingface",
+    "-v", meta.cacheMount || "~/.cache/huggingface:/root/.cache/huggingface",
     ...mountFlags,
     ...envFlags,
   ];
@@ -1474,8 +1475,8 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfil
  * its optional `brands` allowlist (absent = any brand). Shared by the builder
  * (pill disabled) and synthesis (falls back to the native router).
  */
-export function isDynamoSupportedOnHardware(dynamoCfg, hwProfile) {
-  if (!dynamoCfg) return false;
+export function isDynamoSupportedOnHardware(dynamoCfg, hwProfile, variant = null) {
+  if (!dynamoCfg || variant?.hub === "modelscope") return false;
   const brands = dynamoCfg.brands;
   return !Array.isArray(brands) || brands.includes(hwProfile?.brand);
 }
@@ -1493,7 +1494,8 @@ export function dynamoInstallSteps(dynamoCfg) {
 
 // The first SMG recipe path uses connector-aware HTTP registration. DEP rank
 // routing and composed KV connectors need separate validation before opting in.
-export function smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, transport = "http", hwProfile = null, hwProfileId = null) {
+export function smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, transport = "http", hwProfile = null, hwProfileId = null, variant = null) {
+  if (variant?.hub === "modelscope") return "SMG tokenizer loading from ModelScope has not been verified.";
   if (!strategy?.smg) return "SMG is not configured for this strategy.";
   if (transport === "grpc" && (!recipe.model?.smg_grpc || !strategy.smg.grpc)) {
     return "SMG gRPC is only enabled for Kimi K3, MiniMax M3, GLM-5.3 and DeepSeek-V4.1-Flash.";
@@ -1633,12 +1635,14 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   // `python3 -m dynamo.vllm --disaggregation-mode <role>` and dynamo.frontend
   // fronts them. Any other value (or a strategy without the block) = native.
   const dynamo = strategy.deploy_type === "pd_cluster" && pdRouter === "dynamo"
-      && isDynamoSupportedOnHardware(strategy.dynamo, hwProfile)
+      && isDynamoSupportedOnHardware(strategy.dynamo, hwProfile, variant)
     ? strategy.dynamo
     : null;
   const parserWarnings = new Set();
   let routerUnavailableReason = strategy.deploy_type === "pd_cluster" && pdRouter === "smg"
-    ? smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, pdTransport, hwProfile, hwProfileId) : null;
+    ? smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, pdTransport, hwProfile, hwProfileId, variant)
+    : strategy.deploy_type === "pd_cluster" && pdRouter === "dynamo" && variant.hub === "modelscope"
+      ? "Dynamo tokenizer loading from ModelScope has not been verified." : null;
   let smg = strategy.deploy_type === "pd_cluster" && pdRouter === "smg" && !routerUnavailableReason
     ? strategy.smg : null;
 
@@ -2274,6 +2278,8 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     } else {
       Object.assign(env, taxonomy.frontends?.[resolveFrontend(recipe, frontend, taxonomy)]?.env);
     }
+    // An explicit hub is authoritative even if an older recipe sets the env.
+    if (variant.hub) Object.assign(env, taxonomy.model_hubs?.[variant.hub]?.env || {});
     return env;
   }
 
