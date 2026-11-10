@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import yaml from "js-yaml";
 import Ajv from "ajv";
@@ -33,7 +34,7 @@ function yamlFiles(d) {
 const recipes = yamlFiles(path.join(dir, "models")).map((f) => ({ f, r: normalize(load(f)) }));
 // Mutations start from a fixed fixture (the starter template), not a catalog
 // recipe that a source update could rename or remove.
-const fixture = normalize(load(new URL("../templates/recipe.yaml", import.meta.url).pathname));
+const fixture = normalize(load(fileURLToPath(new URL("../templates/recipe.yaml", import.meta.url))));
 const errorsFor = (mutate) => {
   const r = structuredClone(fixture);
   mutate(r);
@@ -45,7 +46,7 @@ test("every recipe matches the schema", () => {
 });
 
 test("templates match the schema", () => {
-  const tdir = new URL("../templates", import.meta.url).pathname;
+  const tdir = fileURLToPath(new URL("../templates", import.meta.url));
   for (const f of yamlFiles(tdir)) assert.ok(validate(normalize(load(f))), `${f}: ${JSON.stringify(validate.errors?.slice(0, 3))}`);
 });
 

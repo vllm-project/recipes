@@ -208,7 +208,7 @@ function ModelRow({ recipe }) {
             className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono"
           >
             <span className="font-semibold">{v.precision?.toUpperCase()}</span>
-            <span className="text-muted-foreground">{v.vram_minimum_gb}G</span>
+            {v.vram_minimum_gb > 0 && <span className="text-muted-foreground">{v.vram_minimum_gb}G</span>}
           </span>
         ))}
       </div>
