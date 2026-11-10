@@ -459,6 +459,9 @@ hardware_profiles:
     gpu_count: 16
     vram_gb: 1536
     multi_node: true
+    multi_node_env:
+      PCCL_NET_PLUGIN_ENABLE: "1"
+      NCCL_IB_HCA: "$NCCL_IB_HCA"
     restricted: true
     install: { pip: false }
 

@@ -245,15 +245,13 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
   // A preset's engine image pins this GPU's docker command.
   const pinned = result.preset?.image?.vllm;
-  const variant = pinned
-    ? { ...baseVariant, hardware_overrides: { ...(baseVariant.hardware_overrides || {}), [hwId]: { ...(baseVariant.hardware_overrides?.[hwId] || {}), docker_image: pinned } } }
-    : baseVariant;
-  const dockerMeta = computeDockerMeta(recipe, variant, hwProfile, hwId);
+  const dockerMeta = computeDockerMeta(recipe, baseVariant, hwProfile, hwId, pinned);
   const env = result.env || {};
 
   const hwPip = hwPipOverride(hardwareInstall(recipe, recipe.variants?.[variantKey], taxonomy.hardware_profiles?.[hwId], hwId));
   const base = {
     hardware: hwId,
+    ...(dockerMeta.vllmVersion && !result.dockerUnavailable ? { docker_vllm_version: dockerMeta.vllmVersion } : {}),
     strategy,
     variant: variantKey,
     node_count: nodeCount,

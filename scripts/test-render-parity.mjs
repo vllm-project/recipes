@@ -23,6 +23,29 @@ const strategies = loadStrategies();
 const taxonomy = loadTaxonomy();
 const readJson = (rel) => JSON.parse(fs.readFileSync(path.join(PUBLIC, rel), "utf8"));
 
+test("one PPU image supplies the resolved Docker version on both cards", () => {
+  const recipe = {
+    hf_id: "example/model",
+    meta: { hardware: { "810e": "supported", m890: "supported" } },
+    model: { model_id: "example/model", min_vllm_version: "0.34.0", nightly_required: true },
+    variants: { default: { precision: "bf16", vram_minimum_gb: 1, hardware_overrides: {
+      ppu: { docker_image: "example/ppu:tag", docker_serve_command: "vllm serve",
+        install: { pip: false, docker: { vllm_version: "0.32.0" } } },
+    } } },
+    compatible_strategies: ["single_node_tp"],
+  };
+  for (const hw of ["810e", "m890", "h200"]) {
+    const result = resolveSelection(recipe, new URLSearchParams(`hardware=${hw}`), strategies, taxonomy);
+    const isPpu = hw !== "h200";
+    assert.equal(result.rendering.docker_vllm_version, isPpu ? "0.32.0" : undefined);
+    assert.equal(result.rendering.docker_image, isPpu ? "example/ppu:tag" : "vllm/vllm-openai:nightly");
+    const md = selectionMarkdown(recipe, result, {
+      strategies, taxonomy, urls: { page: "https://example.org/example/model", json: "https://example.org/example/model.json" },
+    });
+    assert.equal(md.includes("Docker build: vLLM 0.32.0."), isPpu);
+  }
+});
+
 test("explicit empty feature selections stay off", () => {
   const recipe = {
     hf_id: "example/model",
