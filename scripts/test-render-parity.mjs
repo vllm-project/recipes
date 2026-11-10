@@ -63,6 +63,31 @@ test("installation exports use the higher model or variant minimum", () => {
   }
 });
 
+test("Markdown respects pip availability and hardware-specific installers", () => {
+  const recipe = {
+    hf_id: "example/model", meta: { hardware: { ironwood: "supported", arc_pro_b60: "supported" } },
+    model: { model_id: "example/model", install: { pip: { command: "recipe-pip-install" } } },
+    variants: { default: { precision: "bf16", vram_minimum_gb: 1 } },
+    compatible_strategies: ["single_node_tp"],
+  };
+  const markdown = (hardware) => {
+    const resolved = resolveSelection(recipe, new URLSearchParams({ hardware }), strategies, taxonomy);
+    assert.equal(resolved.selection.hardware, hardware);
+    return selectionMarkdown(recipe, resolved, {
+      strategies, taxonomy, urls: { page: "https://example.org/example/model", json: "https://example.org/example/model.json" },
+    });
+  };
+  assert.ok(markdown("h200").includes("recipe-pip-install"));
+  for (const hardware of ["ironwood", "arc_pro_b60"]) assert.ok(!markdown(hardware).includes("recipe-pip-install"));
+  recipe.variants.default.hardware_overrides = { h200: { install: { pip: false } } };
+  assert.ok(!markdown("h200").includes("recipe-pip-install"));
+  recipe.model.install.pip = false;
+  for (const hardware of ["h200", "ironwood", "arc_pro_b60"]) {
+    recipe.variants.default.hardware_overrides = { [hardware]: { install: { pip: { command: "hardware-pip-install" } } } };
+    assert.ok(markdown(hardware).includes("hardware-pip-install"));
+  }
+});
+
 test("explicit empty feature selections stay off", () => {
   const recipe = {
     hf_id: "example/model",

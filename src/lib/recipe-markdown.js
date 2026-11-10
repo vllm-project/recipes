@@ -3,7 +3,7 @@
 // marked authoritative; the guide comes last as background, since its
 // hand-written examples may target another configuration.
 
-import { maxVersion, hardwareInstall, hwPipOverride, isFeatureSupportedOnHardware, resolveInstall } from "./command-synthesis.js";
+import { maxVersion, hardwareInstall, hwPipOverride, isFeatureSupportedOnHardware, isPipInstallAvailable, resolveInstall } from "./command-synthesis.js";
 import { whenMatches } from "./recipe-context.js";
 import { SELECTION_PARAMS, defaultFeaturesFor, synthesizeInstall } from "./recipe-render.js";
 
@@ -133,7 +133,7 @@ function installSection(recipe, resolved) {
     out.push(fence(hwPip.command), "");
   } else if (min) out.push(`Requires vLLM >= ${min}${nightly && hwInstall?.pip !== false ? " (not released yet — nightly wheel)" : ""}.`, "");
   const install = synthesizeInstall(recipe, variant);
-  if (!hwPip && (hwProfile.brand === "NVIDIA" || resolveInstall(recipe, variant).pip?.command) && install?.pip && hwInstall?.pip !== false) {
+  if (!hwPip && (hwProfile.brand === "NVIDIA" || resolveInstall(recipe, variant).pip?.command) && install?.pip && isPipInstallAvailable(recipe, variant, hwProfile, selection?.hardware)) {
     if (install.pip.note) out.push(install.pip.note, "");
     out.push(fence(install.pip.command), "");
   }
