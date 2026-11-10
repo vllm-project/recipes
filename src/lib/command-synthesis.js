@@ -1562,7 +1562,10 @@ function ascendRoleTemplate(role, args, env, modelId, { headlessFollowers = fals
   ].join("\n");
   const target = "./run_dp_template.sh";
   const delimiter = `VLLM_ASCEND_${role.toUpperCase()}_TEMPLATE`;
-  return `cat > ${target} <<'${delimiter}'\n${script}\n${delimiter}\nchmod +x ${target}`;
+  return {
+    templateCommand: `cat > ${target} <<'${delimiter}'\n${script}\n${delimiter}\nchmod +x ${target}`,
+    templateScript: `${script}\n`,
+  };
 }
 
 /**
@@ -2705,15 +2708,19 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         ascendProxyRouter.description = "Run the proxy from the matching vLLM Ascend installation after every Prefill and Decode engine is ready. The proxy is independent of launch_online_dp.py.";
         ascendScripts = {
           command: `curl --fail --location --output launch_online_dp.py ${shellQuote(pdConnector.router.launcher_url)}`,
-          description: "Download launch_online_dp.py into the current directory on every engine node. Run the following template and server steps in that directory, inside the vLLM Ascend environment.",
+          description: "Download launch_online_dp.py on every engine node if using the optional Start_Server launcher. Prefill and Decode commands can also run directly inside the vLLM Ascend environment.",
           files: [
             { name: "launch_online_dp.py", url: pdConnector.router.launcher_source },
           ],
         };
         for (const [role, args] of [["prefill", prefillArgs], ["decode", decodeArgs]]) {
           const meta = role === "prefill" ? pMeta : dMeta;
-          ascendTemplates[role] = { templateCommand: ascendRoleTemplate(role, args, buildEnv(role), modelId,
-            { headlessFollowers: meta.nodesPerInstance > 1 && meta.parallelism !== "dep" }), templateEnv: {} };
+          ascendTemplates[role] = {
+            ...ascendRoleTemplate(role, args, buildEnv(role), modelId,
+              { headlessFollowers: meta.nodesPerInstance > 1 && meta.parallelism !== "dep" }),
+            templateEnv: {},
+            commandDescription: `Run these exports and the vllm serve command directly on the selected ${role} node inside the vLLM Ascend environment. Set its node IP and communication interface in Env. Repeat for every node, starting each group's rank 0 first. Skip Start_Server when launching directly.`,
+          };
         }
         const launchRole = (role, meta, args, port) => {
           const rpcPort = lastFlagValue(dedupeArgs(args), role === "prefill" ? "--master-port" : "--data-parallel-rpc-port")
@@ -2734,7 +2741,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         startServer = {
           commands,
           command: commands.map(({ label, command }) => `# ${label}\n${command}`).join("\n\n"),
-          description: "Run the Prefill command on prefill nodes and the Decode command on decode nodes, beside that node's run_dp_template.sh. Manually replace nic_name and local_ip in the template first. Start each group's rank 0 before its other nodes. The launcher stays in the foreground; start the proxy in another shell.",
+          description: "Optional alternative to running Prefill and Decode directly; skip this step if those engines are already running. Download the matching role's run_dp_template.sh from the Start_Server tab on the recipe page, place it beside launch_online_dp.py on that role's nodes, and replace the NIC_NAME and LOCAL_IP placeholders in the file. Run only the matching launcher command on each node, starting each group's rank 0 first. The launcher stays in the foreground; start the proxy in another shell.",
         };
       }
     }

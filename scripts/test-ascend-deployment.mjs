@@ -66,6 +66,28 @@ test("ordinary GPU colocated pools retain zero-node half-GPU semantics", () => {
   assert.equal(layout.nodeStep, 1);
 });
 
+test("Ascend Prefill and Decode exports show direct per-node commands instead of shell templates", () => {
+  const recipe = createAscendPdRecipe();
+  recipe.hf_id = "test/Ascend-PD";
+  for (const rank of [0, 3, 4, 7]) {
+    const resolved = select(recipe, { ...pageQuery, prefill_rank: String(rank), decode_rank: String(rank) });
+    const markdown = selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls });
+    for (const [step, role, label] of [[2, "prefill", "Prefill"], [3, "decode", "Decode"]]) {
+      const section = markdown.split(`### ${step}. ${label}\n`)[1].split(`### ${step + 1}.`)[0];
+      assert.match(section, /export VLLM_USE_MODELSCOPE=true/);
+      assert.ok(section.includes(`export HCCL_IF_IP=$${role.toUpperCase()}_NODE_${rank + 1}`));
+      assert.ok(section.includes(resolved.rendering[role].command), "export the same selected-node command as JSON");
+      assert.match(section, /vllm serve test\/Ascend-PD-MXFP4/);
+      assert.match(section, new RegExp(`${role === "prefill" ? "--node-rank" : "--data-parallel-rank"} ${rank % 4}\\b`));
+      assert.equal(section.includes("--headless"), role === "prefill" && rank % 4 > 0);
+      assert.doesNotMatch(section, /cat >|#!\/|set -euo pipefail|VLLM_ASCEND_.*_TEMPLATE|\$[1-7]|HEADLESS_ARGS/);
+      assert.match(resolved.rendering[role].templateScript, /^#!\/usr\/bin\/env bash\n/,
+        "the optional launcher still has a downloadable script");
+    }
+    assert.match(resolved.rendering.start_server.description, /skip this step if those engines are already running/i);
+  }
+});
+
 test("Ascend proxy port binding agrees in command, argv, Docker and public renderings", () => {
   const recipe = createAscendPdRecipe();
   const resolved = select(recipe, pageQuery);

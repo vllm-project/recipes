@@ -1919,8 +1919,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     for (const c of result.companions || []) texts.push(c.command);
     if (result.headCommand) texts.push(result.headCommand);
     if (result.workerCommand) texts.push(result.workerCommand);
-    if (!isAscendSequence && result.prefill?.command) texts.push(result.prefill.command);
-    if (!isAscendSequence && result.decode?.command) texts.push(result.decode.command);
+    if (result.prefill?.command) texts.push(result.prefill.command);
+    if (result.decode?.command) texts.push(result.decode.command);
     if (result.startServer?.command) texts.push(result.startServer.command.replace(/\$([A-Z_][A-Z0-9_]*)/g,
       (token, name) => ASCEND_PD_ENDPOINT.test(name) ? token : ""));
     if (result.router?.command) texts.push(result.router.command);
@@ -1941,7 +1941,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       if (result.mooncake.store?.config) texts.push(JSON.stringify(result.mooncake.store.config));
       texts.push(JSON.stringify(result.mooncake.config));
     }
-    for (const e of [result.env, ...(!isAscendSequence ? [result.prefill?.env, result.decode?.env] : []), result.vllm?.env, result.router?.env]) {
+    for (const e of [result.env, result.prefill?.env, result.decode?.env, result.vllm?.env, result.router?.env]) {
       if (!e) continue;
       for (const v of Object.values(e)) if (typeof v === "string") texts.push(v);
     }
@@ -4466,7 +4466,9 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   // Dynamo workers launch via `python3 -m dynamo.vllm`, which the
   // vllm-openai image's `vllm serve` entrypoint can't wrap — render them
   // pip-style (install hint above) regardless of install mode.
-  const isDocker = installMode === "docker" && !isDynamo;
+  // Ascend's five-step flow runs inside the installed environment. Keep its
+  // role commands as exports + vllm serve, including when Docker was installed.
+  const isDocker = installMode === "docker" && !isDynamo && !isAscendSequence;
   // Prefill/decode use the vLLM image. SMG has its own CPU-only router
   // image; vllm-router keeps its pip command and install hint.
   const routerDocker = isDocker && result.router.dockerCommand;
@@ -4486,20 +4488,16 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   // With Mooncake composed in, the tabs become a real launch sequence
   // (config → master → (store) → pools → router), so they get step numbers.
   // Plain PD keeps unnumbered tabs — prefill/decode have no strict order.
-  // Ascend's grouped launch stages the shared scripts, writes each role's
-  // template, starts the selected nodes, then starts the proxy.
+  // Ascend shows direct role commands; Start_Server retains the optional
+  // template-based launcher with downloadable files.
   const roleTab = (role, label) => {
     const pool = result[role];
-    const template = isAscendSequence && pool.templateCommand;
     return {
       id: role, label,
-      command: template || wrap(pool.command, pool.env),
-      env: template ? (pool.templateEnv || {}) : pool.env,
+      command: wrap(pool.command, pool.env),
+      env: pool.env,
       meta: pool,
-      ...(template ? {
-        description: pool.templateDescription || `Run only on ${label} nodes, beside launch_online_dp.py. Replace <NIC_NAME> and <LOCAL_IP> with this node's interface and IP. This writes ./run_dp_template.sh for Start_Server; each node needs only its own role's template.`,
-        isTemplate: true,
-      } : {}),
+      ...(isAscendSequence ? { description: pool.commandDescription } : {}),
     };
   };
   const tabs = [
@@ -4652,7 +4650,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
                 of 1..{active.meta.nodes} · --node-rank = {active.meta.instanceNodeRank ?? active.meta.currentNode ?? 0}
               </span>
               <span className="text-[var(--command-fg)]/40 ml-auto">
-                {(active.meta.instanceNodeRank ?? active.meta.currentNode ?? 0) === 0 ? `${active.meta.grouped ? "group head" : "head node"} — serves ${result.transport === "grpc" ? "gRPC" : "HTTP"} + ${connectorLabel}` : result.orchestrator === "ascend-proxy" ? "Prefill node — PD separation" : "follower — runs --headless"}
+                {(active.meta.instanceNodeRank ?? active.meta.currentNode ?? 0) === 0 ? `${active.meta.grouped ? "group head" : "head node"} — serves ${result.transport === "grpc" ? "gRPC" : "HTTP"} + ${connectorLabel}` : "follower — runs --headless"}
               </span>
             </>
           )}
@@ -4669,7 +4667,17 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
         <div key={entry.role} className="mt-3 border-t border-[var(--command-fg)]/10">
           <div className="px-4 pt-3 flex items-center justify-between">
             <span className="text-xs font-semibold text-[var(--command-fg)]/80">{entry.label}</span>
-            <CopyButton text={entry.command} />
+            <div className="flex items-center gap-3">
+              {isAscendSequence && result[entry.role]?.templateScript && (
+                <a href={`data:text/x-shellscript;charset=utf-8,${encodeURIComponent(result[entry.role].templateScript)}`}
+                  download="run_dp_template.sh"
+                  aria-label={`Download ${entry.label} run_dp_template.sh`}
+                  className="text-xs text-vllm-blue hover:underline">
+                  Download template
+                </a>
+              )}
+              <CopyButton text={entry.command} />
+            </div>
           </div>
           <CommandBody command={entry.command} />
         </div>

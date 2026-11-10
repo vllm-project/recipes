@@ -470,6 +470,34 @@ test("A5 Scripts downloads only the launcher, with templates and proxy in their 
   });
 });
 
+test("A5 direct role commands execute for selected nodes without launcher arguments", () => {
+  withAscendLaunchFixture(({ dir, env, shell }) => {
+    env.IFACE_NAME = "eth0";
+    for (const role of ["PREFILL", "DECODE"]) {
+      for (let node = 1; node <= 8; node++) env[`${role}_NODE_${node}`] = `${role === "PREFILL" ? "192.0.2." : "198.51.100."}${node}`;
+    }
+    for (const rank of [0, 3, 4, 7]) {
+      const r = pickAscend({ model: pdFixture, features: ["spec_decoding"], pools: {
+        prefill: { nodes: 8, rank }, decode: { nodes: 8, rank },
+      } });
+      for (const role of ["prefill", "decode"]) {
+        const pool = r[role];
+        const exports = Object.entries(pool.env).map(([key, value]) => `export ${key}=${value}`).join("\n");
+        const argv = shell(`${exports}\n${pool.command}`).split("\0").filter(Boolean);
+        assert.equal(argv[0], "serve");
+        assert.equal(flag(argv, role === "prefill" ? "--node-rank" : "--data-parallel-rank"), String(rank % 4));
+        assert.equal(flag(argv, role === "prefill" ? "--master-addr" : "--data-parallel-address"), env[`${role.toUpperCase()}_NODE_${rank < 4 ? 1 : 5}`]);
+        assert.equal(argv.includes("--headless"), role === "prefill" && rank % 4 > 0);
+        assert.equal(JSON.parse(flag(argv, "--kv-transfer-config")).kv_connector, "MooncakeConnectorV2");
+        assert.equal(JSON.parse(flag(argv, "--speculative-config")).model, "Inferact/Kimi-K3-DSpark-Block5");
+        const localIp = env[`${role.toUpperCase()}_NODE_${rank + 1}`];
+        assert.deepEqual(fs.readFileSync(path.join(dir, "model-env.txt"), "utf8").trim().split(/\r?\n/),
+          [localIp, "eth0", "eth0", localIp]);
+      }
+    }
+  });
+});
+
 test("reusable A5 templates preserve PP ranks, external DP and enabled draft settings at runtime", () => {
   // Reuse one template across the group: TP followers are headless and every
   // external-DP decode rank exposes HTTP.
@@ -479,9 +507,10 @@ test("reusable A5 templates preserve PP ranks, external DP and enabled draft set
   withAscendLaunchFixture(({ dir, shell }) => {
     for (const role of ["prefill", "decode"]) {
       const kvPort = role === "prefill" ? "37001" : "37101";
-      shell(r[role].templateCommand.replaceAll("<NIC_NAME>", "eth0").replaceAll("<LOCAL_IP>", "192.0.2.99")
-        .replace(/^KV_PORT=.*$/m, `KV_PORT=${kvPort}`));
       const script = "run_dp_template.sh";
+      fs.writeFileSync(path.join(dir, script), r[role].templateScript
+        .replaceAll("<NIC_NAME>", "eth0").replaceAll("<LOCAL_IP>", "192.0.2.99")
+        .replace(/^KV_PORT=.*$/m, `KV_PORT=${kvPort}`));
       assert.ok(fs.existsSync(path.join(dir, script)));
       shell('bash -n "$1"', [script]);
       for (const rank of [0, 1, 2, 3]) {
