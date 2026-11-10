@@ -5,9 +5,9 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
+import { maxVersion, resolveInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
-import { presetPoints, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
+import { presetPoints, presetSelect, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import ShellCode from "@/components/recipes/ShellCode";
 import { publishSelection, onPresetRequest } from "@/lib/selection-store";
 import { holdInPlace } from "@/lib/hold-in-place";
@@ -671,23 +671,29 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       // A variant that declares a preferred mode for a feature (`default_modes`)
       // wants that feature on — un-opt-in it for this variant. E.g. selecting
       // the fused DSpark checkpoint auto-enables spec_decoding (default: dspark).
-      const forced = new Set(Object.keys(recipe.variants?.[variantKey]?.default_modes || {}));
-      return Object.keys(recipe.features || {}).filter((f) => forced.has(f) || !optIn.has(f));
+      const v = recipe.variants?.[variantKey] || {};
+      const forced = new Set(Object.keys(v.default_modes || {}));
+      return Object.keys(recipe.features || {}).filter((f) =>
+        isFeatureAllowedForVariant(v, f) && (forced.has(f) || !optIn.has(f)));
     },
     [recipe]
   );
 
-  // Encode a features array for the URL: returns "" (which syncUrl deletes)
-  // when the set matches the YAML default for `hw`+`variantKey`, so links stay
-  // clean unless the user actually deviated.
+  // Omit features from the URL when they match the defaults for this
+  // hardware, variant and (when supplied) preset.
   const featuresToUrl = useCallback(
-    (arr, hw, variantKey) => {
+    (arr, hw, variantKey, presetFeatures = {}) => {
       const want = new Set(defaultFeaturesFor(hw, variantKey));
-      const got = new Set(arr);
+      for (const [f, value] of Object.entries(presetFeatures)) {
+        if (value === false) want.delete(f);
+        else if (recipe.features?.[f] && isFeatureAllowedForVariant(recipe.variants?.[variantKey], f)) want.add(f);
+      }
+      const selected = arr.filter((f) => recipe.features?.[f] && isFeatureAllowedForVariant(recipe.variants?.[variantKey], f));
+      const got = new Set(selected);
       const same = want.size === got.size && [...want].every((f) => got.has(f));
-      return same ? "" : arr.join(",") || "none";
+      return same ? "" : selected.join(",") || "none";
     },
-    [defaultFeaturesFor]
+    [recipe, defaultFeaturesFor]
   );
 
   const [features, setFeatures] = useState(() => {
@@ -829,6 +835,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
 
   // ── Derived ──
   const currentVariant = recipe.variants?.[variant] || recipe.variants?.default || {};
+  const effectiveFrontend = resolveFrontend(recipe, frontend, taxonomy, currentVariant);
+  const effectiveFeatures = useMemo(
+    () => features.filter((f) => recipe.features?.[f] && isFeatureAllowedForVariant(currentVariant, f)),
+    [recipe, currentVariant, features]
+  );
+  const availableFeatures = Object.entries(recipe.features || {}).filter(([key]) =>
+    isFeatureAllowedForVariant(currentVariant, key)
+  );
 
   // The HF repo this variant serves — the variant's own checkpoint when it
   // overrides `model_id` (nvidia/*-NVFP4, deepseek-ai/*-0813), otherwise the
@@ -885,8 +899,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // a hardware switch (its pill is struck through and comes back on return), but
   // notes, the method row and the troubleshooting match must treat it as off.
   const activeFeatures = useMemo(
-    () => features.filter((f) => isFeatureSupportedOnHardware(recipe.features?.[f], hwProfile, hwId)),
-    [features, recipe.features, hwProfile, hwId],
+    () => effectiveFeatures.filter((f) => isFeatureSupportedOnHardware(recipe.features?.[f], hwProfile, hwId)),
+    [effectiveFeatures, recipe.features, hwProfile, hwId],
   );
   // Non-scalable hardware (single-GPU workstation, e.g. DGX Station) can't add
   // nodes, so multi-node is off and variants that don't fit are disabled.
@@ -1221,11 +1235,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       return q.toString();
     }
     q.set("strategy", activeStrategy);
-    q.set("features", features.join(",") || "none");
-    const fmode = Object.entries(featureModes).filter(([k, m]) => m && recipe.features?.[k]?.modes).map(([k, m]) => `${k}:${m}`);
+    q.set("features", effectiveFeatures.join(",") || "none");
+    const fmode = Object.entries(featureModes).filter(([k, m]) => m && isFeatureAllowedForVariant(currentVariant, k) && recipe.features?.[k]?.modes).map(([k, m]) => `${k}:${m}`);
     if (fmode.length) q.set("fmode", fmode.join(","));
     if (advanced.length) q.set("advanced", advanced.join(","));
-    q.set("frontend", frontend);
+    q.set("frontend", effectiveFrontend);
     if (selectedPreset) q.set("preset", selectedPreset);
     if (selectedPoint) q.set("point", selectedPoint);
     if (activeKvOffload) {
@@ -1248,7 +1262,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       q.set("nodes", String(nodeCount));
     }
     return q.toString();
-  }, [recipe, hwId, variant, omniTask, activeStrategy, features, featureModes, advanced, frontend, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, pdRouter, pdConnector, pdTransport, nodeCount]);
+  }, [recipe, hwId, variant, currentVariant, omniTask, activeStrategy, effectiveFeatures, featureModes, advanced, effectiveFrontend, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, pdRouter, pdConnector, pdTransport, nodeCount]);
   useEffect(() => {
     publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features: activeFeatures, preset: selectedPreset, query: shareQuery });
   }, [recipe.hf_id, hwId, activeStrategy, variant, activeFeatures, selectedPreset, shareQuery]);
@@ -1309,7 +1323,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
 
   // ── Handlers ──
   const selectFrontend = (value) => {
-    const next = resolveFrontend(recipe, value, taxonomy);
+    const next = resolveFrontend(recipe, value, taxonomy, currentVariant);
     setFrontend(next);
     syncUrl({ frontend: next });
     saveRecipeState(recipe.hf_id, { frontend: next });
@@ -1323,7 +1337,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     syncUrl({ task: key === defaultKey ? "" : key });
   };
 
-  const selectVariant = (key) => {
+  const selectVariant = (key, presetKey) => {
     setVariant(key);
     // Swap hardware when precision or an explicit variant allowlist requires
     // it. VRAM alone is not a blocker because scalable profiles can add nodes.
@@ -1353,11 +1367,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const baseDefault = new Set(defaultFeaturesFor(updates.hardware || hwId, key));
     let nextFeatures = features.filter((f) => !oldForced.has(f) || newForced.includes(f) || baseDefault.has(f));
     for (const f of newForced) if (recipe.features?.[f] && !nextFeatures.includes(f)) nextFeatures.push(f);
+    // Same-hardware switches may keep a preset active, so its opt-outs still apply.
+    // A hardware switch activates a different preset through the existing effect.
+    const keepPreset = key === variant && !updates.hardware;
+    const nextPreset = presetKey ?? (!updates.hardware
+      ? resolvePresetKey(recipe, hwId, activeStrategy, keepPreset ? presetPick : null, key) : null);
+    const presetFeatures = presetSelect(recipe, nextPreset, keepPreset ? pointPick : null)?.features;
+    nextFeatures = restoreVariantDefaults(nextFeatures, currentVariant, baseDefault, presetFeatures);
     if (nextFeatures.length !== features.length || nextFeatures.some((f, i) => f !== features[i])) {
       setFeatures(nextFeatures);
-      updates.features = featuresToUrl(nextFeatures, updates.hardware || hwId, key);
       saveRecipeState(recipe.hf_id, { features: nextFeatures });
     }
+    updates.features = featuresToUrl(nextFeatures, updates.hardware || hwId, key, presetFeatures);
     // One syncUrl call — two sequential calls each read the same stale
     // searchParams from this closure, so the second would clobber the first
     // (dropping variant= when selecting a Blackwell-only variant off Hopper).
@@ -1371,11 +1392,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const oldHwOptIn = new Set(recipe.hardware_opt_in_features?.[hwId] || []);
     const newHwOptIn = new Set(recipe.hardware_opt_in_features?.[id] || []);
     const baseOptIn = new Set(recipe.opt_in_features || []);
-    const next = features.filter((f) => !newHwOptIn.has(f));
+    let next = features.filter((f) => !newHwOptIn.has(f));
     for (const f of oldHwOptIn) {
       if (!newHwOptIn.has(f) && !baseOptIn.has(f) && !next.includes(f)) next.push(f);
     }
-    setFeatures(next);
     setHwId(id);
     setStrategyOverride("");
     const newProfile = taxonomy.hardware_profiles?.[id] || {};
@@ -1446,13 +1466,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       || multiNodeUnavailable(recipe, strategies, newProfile, activeVariant, id));
     if (shouldBumpNodes) setNodeCount(bumpedNodes);
     if (shouldUnbumpNodes) setNodeCount(1);
+    const nextPreset = id === hwId ? resolvePresetKey(recipe, id, activeStrategy, null, variantUpdate || variant) : null;
+    const presetFeatures = presetSelect(recipe, nextPreset)?.features;
+    next = restoreVariantDefaults(next, currentVariant, defaultFeaturesFor(id, variantUpdate || variant), presetFeatures);
+    setFeatures(next);
     syncUrl({
       hardware: id,
       strategy: "",
       preset: "",
       point: "",
       nodes: shouldBumpNodes ? String(bumpedNodes) : shouldUnbumpNodes ? "" : undefined,
-      features: featuresToUrl(next, id, variant),
+      features: featuresToUrl(next, id, variantUpdate || variant, presetFeatures),
       ...(nextModes !== featureModes ? { fmode: featureModesToUrl(nextModes, variant) } : {}),
       ...(variantUpdate ? { variant: variantUpdate } : {}),
       ...(kvOffloadOk ? {} : { kv_offload: "", kv_instances: "", kv_instance: "" }),
@@ -1608,10 +1632,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const toggleFeature = (f) => {
     // text_only (skip vision encoder) and encoder_parallel (DP the encoder)
     // are mutually exclusive — enabling one clears the other.
-    const mutex = { text_only: "encoder_parallel", encoder_parallel: "text_only" };
     const on = !features.includes(f);
     const next = on
-      ? [...features.filter((x) => x !== mutex[f]), f]
+      ? [...features.filter((x) => x !== FEATURE_MUTEX[f]), f]
       : features.filter((x) => x !== f);
     setFeatures(next);
     syncUrl({ features: featuresToUrl(next, hwId, variant) });
@@ -1696,7 +1719,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       // reset picks it up (pendingPreset). Its default needs no pick.
       const pick = target.default ? null : key;
       pendingPreset.current = pick;
-      if (otherVariant) selectVariant(otherVariant);
+      if (otherVariant) selectVariant(otherVariant, key);
       if (otherStrategy) selectStrategy(otherStrategy, { preset: pick ?? "" });
       else syncUrl({ preset: pick ?? "", point: "" });
       return;
@@ -2346,7 +2369,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                           >
                             <HwStatusDot status={status} />
                             <span className="font-semibold">{p.display_name}</span>
-                            {p.vram_gb > 0 && p.gpu_count > 0 && (
+                            {!p.unified_memory && p.vram_gb > 0 && p.gpu_count > 0 && (
                               <span className="text-muted-foreground ml-1.5 font-mono">
                                 {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : p.generation === "tpu" ? "TPU" : "GPU"}
                               </span>
@@ -2634,7 +2657,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                         >
                           <HwStatusDot status={status} />
                           <span className="font-semibold">{p.display_name}</span>
-                          {p.vram_gb > 0 && p.gpu_count > 0 && (
+                          {!p.unified_memory && p.vram_gb > 0 && p.gpu_count > 0 && (
                             <span className="text-muted-foreground ml-1.5 font-mono">
                               {Math.round(p.vram_gb / p.gpu_count)}G/{p.generation === "cpu" ? "CPU" : p.generation === "tpu" ? "TPU" : "GPU"}
                             </span>
@@ -2671,7 +2694,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           {/* Variant */}
           <ConfigRow
             label="Variant"
-            hint="VRAM shown is the minimum to LOAD the model (weights + CUDA/vLLM runtime overhead, ≈ params × bytes × 1.2). It's not a serving budget — long context or large batch typically needs 1.5–2× more for KV cache."
+            hint={hwProfile.unified_memory
+              ? "Estimated memory to load weights. Leave shared memory for serving, the OS, and other apps."
+              : "VRAM shown is the minimum to LOAD the model (weights + CUDA/vLLM runtime overhead, ≈ params × bytes × 1.2). It's not a serving budget — long context or large batch typically needs 1.5–2× more for KV cache."}
           >
             <PillGroup>
               {Object.entries(recipe.variants || {}).map(([key, v]) => {
@@ -2703,11 +2728,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                           ? [
                               v.description,
                               `Selecting this variant also switches Hardware to ${fallbackHw?.display_name || fallbackHwId}.`,
-                              `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
+                              `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving.${isHardwareScalable(fallbackHw) ? " Scale out via multi-node if needed." : ""}`,
                             ].filter(Boolean).join("\n\n")
                         : [
                             v.description,
-                            `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving. Scale out via multi-node if needed.`,
+                            `Min ${v.vram_minimum_gb} GB to load — add KV cache for serving.${isHardwareScalable(hwProfile) ? " Scale out via multi-node if needed." : ""}`,
                           ].filter(Boolean).join("\n\n")
                     }
                   >
@@ -3339,7 +3364,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                             : n === 1
                               ? kvInstancesActive
                                 ? `Each vLLM instance runs on a single node${(result.instances || 1) > 1 ? ` — ${result.instances} instances = ${result.instances} nodes total (plus master${result.store ? "/store" : ""})` : ""}.`
-                                : "Single-node deployment (one HGX box)"
+                                : "Single-node deployment."
                               : kvInstancesActive
                                 ? `Each instance spans ${n} nodes × ${hwProfile.gpu_count || 8} GPUs${(result.instances || 1) > 1 ? ` — ${result.instances} instances = ${(result.instances || 1) * n * (hwProfile.gpu_count || 8)} GPUs total` : ` = ${n * (hwProfile.gpu_count || 8)} GPUs`}.`
                                 : `${n} nodes × ${hwProfile.gpu_count || 8} GPUs = ${n * (hwProfile.gpu_count || 8)} GPUs total. Scale further by replicating the worker command with higher --node-rank / --data-parallel-start-rank.`
@@ -3361,9 +3386,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           <ConfigRow label="Frontend">
             <PillGroup>
               {Object.entries(taxonomy.frontends || {}).map(([id, fe]) => {
-                const supported = isFrontendSupported(recipe, id);
+                const supported = isFrontendSupported(recipe, id, currentVariant);
                 // SMG gRPC always runs the Python servicer, so pin the pill to it.
-                const active = isSmgGrpc ? id === "python" : frontend === id;
+                const active = isSmgGrpc ? id === "python" : effectiveFrontend === id;
                 const disabled = !supported || (isSmgGrpc && id !== "python");
                 return (
                   <Pill
@@ -3372,7 +3397,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                     pressed={active}
                     disabled={disabled}
                     title={!supported
-                      ? `The ${fe.label} frontend doesn't support this model yet`
+                      ? `The ${fe.label} frontend is unavailable for this configuration`
                       : disabled ? "SMG gRPC uses the Python servicer." : undefined}
                     onClick={() => selectFrontend(id)}
                   >
@@ -3385,13 +3410,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
               {isSmgGrpc ? (
                 "The SMG-compatible gRPC servicer runs through vllm serve --grpc."
-              ) : isFrontendSupported(recipe, "rust") ? (
+              ) : isFrontendSupported(recipe, "rust", currentVariant) ? (
                 <>
                   The experimental Rust frontend can improve throughput and latency, especially under high concurrency.
                   {" "}Switch to Python if you encounter unsupported features or compatibility issues.
                 </>
               ) : (
-                "The Rust frontend doesn't support this model yet, so commands use the Python frontend."
+                "The Rust frontend is unavailable for this configuration, so commands use the Python frontend."
               )}
             </p>
           </ConfigRow>
@@ -3407,10 +3432,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           )}
 
           {/* Features */}
-          {Object.keys(recipe.features || {}).length > 0 && (
+          {availableFeatures.length > 0 && (
             <ConfigRow label="Features">
               <PillGroup>
-                {Object.entries(recipe.features || {}).map(([key, f]) => {
+                {availableFeatures.map(([key, f]) => {
                   // Strategy-gated feature (feature declares `strategies: [...]`):
                   // struck-through + disabled on excluded strategies, same
                   // treatment as unsupported hardware pills. The toggle state is
@@ -4008,21 +4033,6 @@ function SingleCommandBlock({ command, env, setup, companions, verifyCmd, benchC
   );
 }
 
-// Higher of two "X.Y.Z" version strings (missing/blank loses). Used to bump the
-// displayed min vLLM version when the active variant needs a newer release than
-// the recipe baseline (e.g. the DSpark checkpoint requires 0.25.0).
-function maxVersion(a, b) {
-  if (!a) return b;
-  if (!b) return a;
-  const pa = String(a).split(".").map((n) => parseInt(n, 10) || 0);
-  const pb = String(b).split(".").map((n) => parseInt(n, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pa[i] || 0) - (pb[i] || 0);
-    if (d !== 0) return d > 0 ? a : b;
-  }
-  return a;
-}
-
 function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode, dockerCudaVariant, setDockerCudaVariant, altCudaSuffix, extraMinVersion = null, hwInstall = null, dockerHidden: dockerHiddenOverride = false }) {
   // Collapsible install reference. Shows the one-time setup step for the
   // active mode — `uv pip install vllm …` in pip mode, `docker pull <image>`
@@ -4032,13 +4042,13 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   // Per-recipe overrides via `model.install.{pip,docker}`:
   //   false              → hide that tab entirely
   //   { command, note }  → override the generated one-liner and/or show a note
-  const install = recipe.model?.install || {};
+  const install = resolveInstall(recipe, variant);
   const pipCfg = install.pip;
   const dockerCfg = install.docker;
   const pipHidden = pipCfg === false;
   // This hardware's own pip command outranks every recipe-wide install setting.
   const hwPip = hwPipOverride(hwInstall);
-  const dockerHidden = dockerCfg === false || dockerHiddenOverride;
+  const dockerHidden = !dockerMeta.dockerEnabled || dockerHiddenOverride;
   const [open, setOpen] = useState(false);
   const { isAmd, isTpu, isXpu, isIntel, isNpu, isPpu, image: dockerImage, brandKey, cudaMap, cu129Image } = dockerMeta;
   // Intel CPU is a first-class backend in computeDockerMeta. Keep XPU
@@ -4186,7 +4196,7 @@ uv pip install -U vllm --torch-backend auto`;
         <Package size={12} className="text-[var(--command-fg)]/50 shrink-0" />
         <span className="text-[11px] font-semibold text-[var(--command-fg)]/70 uppercase tracking-widest">Install</span>
         <span className="text-[11px] text-[var(--command-fg)]/40 font-mono">
-          {!hwPipActive && <>vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · </>}{isPpu ? "PPU" : isTpu ? "TPU" : isXpu ? "XPU" : isNpu ? "Ascend" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}
+          {!hwPipActive && <>vLLM {minV}+{isOmni ? " · vLLM-Omni nightly" : ""} · </>}{brandKey === "apple" ? "Metal" : isPpu ? "PPU" : isTpu ? "TPU" : isXpu ? "XPU" : isNpu ? "Ascend" : isAmd ? "ROCm" : isCpu ? "CPU" : "CUDA"}
         </span>
         {nightlyRequired && !hwPipActive && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">

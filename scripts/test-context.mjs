@@ -67,6 +67,23 @@ test("validateContextEntries rejects unknown variants and features", () => {
   ]);
 });
 
+test("feature conditions must be usable by at least one selected variant", () => {
+  const recipe = {
+    variants: { default: {}, local: { supported_features: [] } },
+    features: { reasoning: {} },
+    notes: [{ when: { variants: ["local"], features: ["reasoning"] }, body: "x" }],
+  };
+  assert.deepEqual(validateContextEntries(recipe), [
+    "notes[0].when.features: no listed feature is supported by the selected variants",
+  ]);
+  recipe.notes[0].when.variants.push("default");
+  assert.deepEqual(validateContextEntries(recipe), []);
+  delete recipe.notes[0].when.variants;
+  assert.deepEqual(validateContextEntries(recipe), []);
+  recipe.variants.default.supported_features = [];
+  assert.equal(validateContextEntries(recipe).length, 1);
+});
+
 test("schema: notes need a when, troubleshooting a title; ids are checked", () => {
   const validate = new Ajv({ allErrors: true, strict: false }).compile(buildRecipeSchema({ taxonomy, strategies }));
   const base = load(new URL("../templates/recipe.yaml", import.meta.url).pathname);

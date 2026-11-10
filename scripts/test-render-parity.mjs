@@ -14,14 +14,79 @@ import { test } from "node:test";
 import { getAllRecipes } from "../src/lib/recipes.js";
 import { loadStrategies } from "../src/lib/strategies.js";
 import { loadTaxonomy } from "../src/lib/taxonomy.js";
-import { resolveSelection } from "../src/lib/recipe-render.js";
+import { resolveSelection, synthesizeInstall } from "../src/lib/recipe-render.js";
 import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
-import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode } from "../src/lib/command-synthesis.js";
+import { validateContextEntries } from "../src/lib/recipe-context.js";
+import { presetSelect, resolvePresetKey } from "../src/lib/recipe-presets.js";
+import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode, isFrontendSupported, resolveFrontend, resolveOmniCommand, restoreVariantDefaults, versionBelow } from "../src/lib/command-synthesis.js";
 
 const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES_PUBLIC_DIR) : path.join(process.cwd(), "public");
 const strategies = loadStrategies();
 const taxonomy = loadTaxonomy();
 const readJson = (rel) => JSON.parse(fs.readFileSync(path.join(PUBLIC, rel), "utf8"));
+
+test("Omni variants inherit, replace or clear model base args", () => {
+  for (const key of ["default", "alternate"]) {
+    const recipe = {
+      model: { model_id: "example/model", base_args: ["--max-model-len", "1024"] },
+      variants: { [key]: {} },
+    };
+    const command = () => resolveOmniCommand(recipe, key, { extraArgs: ["--port", "9000"] }, taxonomy.hardware_profiles.h200, "h200").command;
+    assert.match(command(), /--max-model-len 1024/);
+    recipe.variants[key].base_args = ["--max-model-len", "2048"];
+    assert.match(command(), /--max-model-len 2048/);
+    recipe.variants[key].base_args = [];
+    assert.doesNotMatch(command(), /--max-model-len/);
+    assert.match(command(), /--port 9000/);
+    assert.match(command(), /--omni/);
+  }
+});
+
+test("installation exports use the higher model or variant minimum", () => {
+  for (const [modelMin, variantMin, expected] of [
+    ["0.40.0", "0.31.0", "0.40.0"], ["0.9.0", "0.10.0", "0.10.0"],
+    [undefined, "0.31.0", "0.31.0"], ["0.31.0", undefined, "0.31.0"],
+    ["0.31.0", "0.31.0", "0.31.0"],
+  ]) {
+    const recipe = {
+      hf_id: "example/model",
+      model: { model_id: "example/model", min_vllm_version: modelMin, nightly_required: true },
+      variants: { default: { precision: "bf16", vram_minimum_gb: 1, min_vllm_version: variantMin } },
+      compatible_strategies: ["single_node_tp"],
+    };
+    const resolved = resolveSelection(recipe, new URLSearchParams("hardware=h200"), strategies, taxonomy);
+    const md = selectionMarkdown(recipe, resolved, {
+      strategies, taxonomy, urls: { page: "https://example.org/example/model", json: "https://example.org/example/model.json" },
+    });
+    assert.ok(md.includes(`Requires vLLM >= ${expected}`));
+    assert.ok(synthesizeInstall(recipe, recipe.variants.default).pip.note.startsWith(`vLLM ${expected} `));
+  }
+});
+
+test("Markdown respects pip availability and hardware-specific installers", () => {
+  const recipe = {
+    hf_id: "example/model", meta: { hardware: { ironwood: "supported", arc_pro_b60: "supported" } },
+    model: { model_id: "example/model", install: { pip: { command: "recipe-pip-install" } } },
+    variants: { default: { precision: "bf16", vram_minimum_gb: 1 } },
+    compatible_strategies: ["single_node_tp"],
+  };
+  const markdown = (hardware) => {
+    const resolved = resolveSelection(recipe, new URLSearchParams({ hardware }), strategies, taxonomy);
+    assert.equal(resolved.selection.hardware, hardware);
+    return selectionMarkdown(recipe, resolved, {
+      strategies, taxonomy, urls: { page: "https://example.org/example/model", json: "https://example.org/example/model.json" },
+    });
+  };
+  assert.ok(markdown("h200").includes("recipe-pip-install"));
+  for (const hardware of ["ironwood", "arc_pro_b60"]) assert.ok(!markdown(hardware).includes("recipe-pip-install"));
+  recipe.variants.default.hardware_overrides = { h200: { install: { pip: false } } };
+  assert.ok(!markdown("h200").includes("recipe-pip-install"));
+  recipe.model.install.pip = false;
+  for (const hardware of ["h200", "ironwood", "arc_pro_b60"]) {
+    recipe.variants.default.hardware_overrides = { [hardware]: { install: { pip: { command: "hardware-pip-install" } } } };
+    assert.ok(markdown(hardware).includes("hardware-pip-install"));
+  }
+});
 
 test("explicit empty feature selections stay off", () => {
   const recipe = {
@@ -120,6 +185,30 @@ function queryFor(r) {
   }
   return q;
 }
+
+test("promoted JSON describes the checkpoint at its own URL", () => {
+  for (const { json, derived_from } of readJson("models.json")) {
+    if (!derived_from) continue;
+    const checkpoint = readJson(json.slice(1));
+    const variant = checkpoint.variants.default;
+    const parent = readJson(`${derived_from}.json`);
+    if (variant.base_args) assert.deepEqual(checkpoint.model.base_args, variant.base_args, json);
+    if (variant.min_vllm_version) {
+      assert.ok(!versionBelow(checkpoint.model.min_vllm_version, variant.min_vllm_version), json);
+    }
+    if (variant.supported_frontends) {
+      assert.equal(checkpoint.model.default_frontend, resolveFrontend(parent, undefined, taxonomy, variant), json);
+      for (const id of Object.keys(taxonomy.frontends)) {
+        assert.equal(isFrontendSupported(checkpoint, id), isFrontendSupported(parent, id, variant), json);
+      }
+    }
+    if (variant.supported_features) {
+      const expected = Object.keys(parent.features || {}).filter((f) => variant.supported_features.includes(f));
+      assert.deepEqual(Object.keys(checkpoint.features || {}), expected, json);
+    }
+    assert.deepEqual(validateContextEntries(checkpoint), [], json);
+  }
+});
 
 test("resolveSelection renders every static per-hardware rendering identically", () => {
   const mismatches = [];
@@ -221,4 +310,127 @@ test("resolveSelection renders every preset point identically from ?preset=&poin
   }
   assert.ok(checked > 50, `only ${checked} preset points checked`);
   assert.deepEqual(mismatches, [], `${mismatches.length}/${checked} preset points differ:\n  ${mismatches.slice(0, 20).join("\n  ")}`);
+});
+
+
+const localRecipe = {
+  hf_id: "example/model",
+  model: { model_id: "example/model", base_args: ["--trust-remote-code"] },
+  compatible_strategies: ["single_node_tp"],
+  features: {
+    tool_calling: { args: ["--enable-auto-tool-choice"] },
+    reasoning: { args: ["--reasoning-parser", "example"] },
+    unsupported: { args: ["--unsupported"] },
+  },
+  variants: {
+    local: {
+      precision: "int4", vram_minimum_gb: 4, supported_hardware: ["local"],
+      base_args: ["--host", "127.0.0.1"],
+      supported_frontends: ["python"], supported_features: ["tool_calling", "reasoning"],
+      install: { pip: { command: "install-example-runtime" }, docker: false },
+    },
+  },
+  notes: [{ when: { hardware: ["local"], variants: ["local"] }, body: "Local memory guidance." }],
+};
+const localTaxonomy = {
+  ...taxonomy,
+  hardware_profiles: {
+    local: { brand: "Example", generation: "example", gpu_count: 1, vram_gb: 16, scalable: false, requires_kv_offload_opt_in: true },
+  },
+};
+
+test("variant configuration is preserved in JSON and Markdown selections", () => {
+  const params = { hardware: "local", variant: "local", frontend: "rust" };
+  for (const features of [[], ["tool_calling"], ["reasoning"], ["tool_calling", "reasoning"]]) {
+    const q = new URLSearchParams({ ...params, features: features.join(",") });
+    const resolved = resolveSelection(localRecipe, q, strategies, localTaxonomy);
+    const r = resolved.rendering;
+    assert.deepEqual(resolved.selection.features, features);
+    assert.deepEqual(resolved.options.features, ["tool_calling", "reasoning"]);
+    assert.equal(resolved.selection.frontend, "python");
+    assert.equal(r.argv.includes("--enable-auto-tool-choice"), features.includes("tool_calling"));
+    assert.equal(r.argv.includes("--reasoning-parser"), features.includes("reasoning"));
+    assert.equal(r.argv.includes("--trust-remote-code"), false);
+    assert.equal(r.argv.includes("--unsupported"), false);
+  }
+
+  const resolved = resolveSelection(localRecipe, new URLSearchParams(params), strategies, localTaxonomy);
+  const { rendering } = resolved;
+  assert.equal(rendering.install.pip.command, "install-example-runtime");
+  assert.equal(rendering.install.docker, undefined);
+  assert.equal(rendering.docker_image, null);
+  assert.equal(rendering.docker_command, null);
+  const md = selectionMarkdown(localRecipe, resolved, {
+    strategies, taxonomy: localTaxonomy,
+    urls: { page: "https://example.org/example/model", json: "https://example.org/example/model.json" },
+  });
+  assert.ok(md.includes("install-example-runtime"));
+  assert.ok(md.includes("Local memory guidance."));
+  assert.ok(!md.includes("Docker image:"));
+});
+
+test("variant switches restore newly available defaults and preserve shared choices", () => {
+  const previous = { supported_features: ["tool_calling", "reasoning"] };
+  const defaults = new Set(["tool_calling", "reasoning", "encoder_parallel"]);
+  const next = restoreVariantDefaults(["reasoning"], previous, defaults);
+  assert.deepEqual(next, ["reasoning", "encoder_parallel"]);
+  assert.deepEqual(restoreVariantDefaults(next, previous, defaults), next);
+  assert.deepEqual(restoreVariantDefaults([], {}, defaults), []);
+  const textOnly = ["reasoning", "text_only"];
+  assert.deepEqual(restoreVariantDefaults(textOnly, previous, defaults), textOnly);
+});
+
+test("variant defaults respect preset and point opt-outs", () => {
+  const previous = { supported_features: ["reasoning"] };
+  const defaults = ["reasoning", "encoder_parallel"];
+  const recipe = { presets: { tuned: {
+    hardware: "h200", default: true, select: { features: { encoder_parallel: true } },
+    points: { off: { default: true, select: { features: { encoder_parallel: false } } }, on: {} },
+  } } };
+  for (const [hw, pick, point, expected] of [
+    ["h200", null, null, []], ["h200", null, "on", ["encoder_parallel"]],
+    ["h200", "baseline", null, ["encoder_parallel"]], ["mi300x", null, null, ["encoder_parallel"]],
+  ]) {
+    const select = presetSelect(recipe, resolvePresetKey(recipe, hw, "single_node_tp", pick, "default"), point);
+    assert.deepEqual(restoreVariantDefaults([], previous, defaults, select?.features), expected);
+  }
+  assert.deepEqual(restoreVariantDefaults(["encoder_parallel"], previous, defaults, { encoder_parallel: false }), ["encoder_parallel"]);
+});
+
+test("variant fallbacks are reported in JSON and Markdown", () => {
+  const resolve = (params) => resolveSelection(localRecipe,
+    new URLSearchParams({ hardware: "local", variant: "local", ...params }), strategies, localTaxonomy);
+  const result = resolve({ frontend: "rust", features: "reasoning,unsupported" });
+  assert.deepEqual(result.selection.adjusted.map(({ param, requested, used }) => ({ param, requested, used })), [
+    { param: "frontend", requested: "rust", used: "python" },
+    { param: "features", requested: "reasoning,unsupported", used: "reasoning" },
+  ]);
+  const md = selectionMarkdown(localRecipe, result, {
+    strategies, taxonomy: localTaxonomy,
+    urls: { page: "https://example.org/example/model", json: "https://example.org/example/model.json" },
+  });
+  assert.ok(md.includes("requested `frontend=rust`"));
+  assert.ok(md.includes("requested `features=reasoning,unsupported`"));
+  for (const features of ["", "none", "reasoning"]) {
+    assert.deepEqual(resolve({ frontend: "python", features }).selection.adjusted, []);
+  }
+});
+
+test("Apple hardware disables Docker even without a recipe opt-out", () => {
+  const variant = { install: { pip: { command: "install-mlx" } } };
+  const meta = computeDockerMeta({}, variant, taxonomy.hardware_profiles.apple_16gb, "apple_16gb");
+  assert.equal(meta.brandKey, "apple");
+  assert.equal(meta.dockerEnabled, false);
+  assert.equal(meta.image, null);
+  assert.equal(meta.gpuFlags, "");
+  assert.deepEqual(synthesizeInstall({}, variant, meta), { pip: { command: "install-mlx" } });
+});
+
+test("KV offload follows profile opt-in without depending on the backend name", () => {
+  const q = new URLSearchParams({ hardware: "local", variant: "local", kv_offload: "simple" });
+  const render = (t) => resolveSelection(localRecipe, q, strategies, t).rendering;
+  assert.equal(render(localTaxonomy).argv.includes("--kv-transfer-config"), false);
+  const allowed = structuredClone(localTaxonomy);
+  allowed.kv_offload.simple.brands = ["Example"];
+  assert.equal(render(allowed).argv.includes("--kv-transfer-config"), true);
 });
