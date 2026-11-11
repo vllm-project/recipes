@@ -278,6 +278,31 @@ test("PD topology placeholders, role edits and connector selection share the fin
   assert.equal(JSON.parse(flag(r.decode.argv, "--speculative-config")).num_speculative_tokens, 3);
   for (const role of ["prefill", "decode"]) assert.ok(!ascend(fixture)[role].argv.includes("--speculative-config"));
 
+  // One Ascend Mooncake pick covers the recipe's runtime implementation.
+  // Whole role args and preset JSON edits both retain their existing precedence.
+  for (const name of ["MooncakeConnectorV1", "MooncakeConnectorV2", "MooncakeHybridConnector"]) {
+    const family = ascendPdRecipe();
+    for (const role of ["prefill", "decode"]) {
+      const delta = family.presets.ascend_pd.roles[role];
+      if (name === "MooncakeConnectorV1") {
+        delta.args = ["--kv-transfer-config", JSON.stringify({ kv_connector: name, kv_role: "kv_both" })];
+      } else {
+        delta.json_args = { "--kv-transfer-config": { kv_connector: name, kv_port: "37000" } };
+      }
+    }
+    const rendered = ascend(family);
+    assert.equal(rendered.kvConnector.selected, "mooncakev2");
+    assert.equal(rendered.kvConnector.unavailableReason, null);
+    for (const role of ["prefill", "decode"]) {
+      assert.equal(kvCfg(rendered, role).kv_connector, name);
+      if (name === "MooncakeConnectorV1") assert.deepEqual(kvCfg(rendered, role), { kv_connector: name, kv_role: "kv_both" });
+      else assert.equal(kvCfg(rendered, role).kv_port, "37000");
+    }
+  }
+  const unrelated = ascendPdRecipe();
+  unrelated.presets.ascend_pd.roles.decode.json_args = { "--kv-transfer-config": { kv_connector: "OtherConnector" } };
+  assert.match(ascend(unrelated).kvConnector.unavailableReason, /sets its own --kv-transfer-config/);
+
   const custom = structuredClone(strategies);
   custom.pd_cluster.connectors.other = {
     brands: ["Huawei"], routers: ["ascend"],

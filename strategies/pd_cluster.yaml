@@ -46,6 +46,7 @@ decode:
 #   default: true  — rendered when nothing selects another
 #   brands         — hardware brands that run it (absent = all)
 #   routers        — PD routers that speak it (absent = vLLM Router only)
+#   connector_names — compatible runtime implementations a recipe may select
 #   router         — vllm-router's mode: kv_connector (--kv-connector, nixl
 #                    is its default), bootstrap_port (listed after each
 #                    prefill endpoint), discovery_port (workers register via
@@ -93,7 +94,8 @@ connectors:
     docker: { host_network: true, flags: ["--ulimit", "memlock=-1"] }
   mooncakev2:
     display_name: "Mooncake (Ascend)"
-    description: "Ascend KV transfer between independently sized prefill and decode pools."
+    description: "Ascend Mooncake KV transfer: the recipe selects V1, V2 or Hybrid; V2 is the default."
+    connector_names: [MooncakeConnectorV1, MooncakeConnectorV2, MooncakeHybridConnector]
     docs: "https://docs.vllm.ai/projects/ascend/en/latest/tutorials/features/pd_disaggregation_mooncake_multi_node.html"
     brands: [Huawei]
     routers: [ascend]

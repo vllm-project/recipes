@@ -2412,12 +2412,15 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   if (deployType === "pd_cluster") {
     // A recipe or preset layer may write a role's whole --kv-transfer-config
     // (MiniMax-M3.1-Flash on MI355X composes NIXL with CPU offload by hand).
-    // When that names another transfer connector than the one picked, the
+    // Catalog entries may group compatible runtime implementations under one
+    // pick. When a role names a transfer connector outside that entry, the
     // pick can't apply: render the default, with the reason, rather than a
     // router whose KV mode disagrees with its workers.
     if (pdConnectorPick && pdConnectorSel === pdConnectorPick && !dynamo) {
-      const clash = ["prefill", "decode"].find((role) =>
-        transferConnectorOf(dedupeArgs(buildArgs(role, null).filter(Boolean))) !== pdConnector[role]?.config?.kv_connector);
+      const clash = ["prefill", "decode"].find((role) => {
+        const names = pdConnector.connector_names || [pdConnector[role]?.config?.kv_connector];
+        return !names.includes(transferConnectorOf(dedupeArgs(buildArgs(role, null).filter(Boolean))));
+      });
       if (clash) {
         const again = [...arguments];
         again[18] = null;

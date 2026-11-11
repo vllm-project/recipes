@@ -482,6 +482,14 @@ connector. Keep child HTTP ports clear of the supervisor health port (9256 by
 default), and use the Ascend proxy script from the matching runtime. This example
 is not an NPU validation claim.
 
+The single **Mooncake (Ascend)** option covers `MooncakeConnectorV1`,
+`MooncakeConnectorV2` and `MooncakeHybridConnector`. The existing `mooncakev2`
+selection key is retained for compatibility; V2 is only the catalog default.
+Use preset `roles.<role>.args` to supply the complete `--kv-transfer-config`,
+or `roles.<role>.json_args` to edit its `kv_connector` and implementation-specific
+fields for both roles. Existing JSON edits can delete unused defaults with
+`null`; the recipe must provide settings supported by its runtime and model.
+
 Connector catalog configs can use `{prefill_dp_size}`, `{prefill_tp_size}`,
 `{prefill_pp_size}` and the corresponding `{decode_*_size}` placeholders. Whole
 placeholder values resolve to numbers before JSON serialization; the existing
