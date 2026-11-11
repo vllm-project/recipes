@@ -28,6 +28,44 @@ strategies.pd_cluster = yaml.load(fs.readFileSync(new URL("../strategies/pd_clus
 const taxonomy = loadTaxonomy();
 const readJson = (rel) => JSON.parse(fs.readFileSync(path.join(PUBLIC, rel), "utf8"));
 
+test("Ascend PD URL overrides cannot bypass preset declarations or misreport the fallback", () => {
+  for (const [name, edit, params, router = "vllm"] of [
+    ["no declaration", (r) => { r.presets = {}; }, {}],
+    ["Baseline", () => {}, { preset: "baseline" }],
+    ["another variant", (r) => {
+      r.variants.other = { ...r.variants.default };
+      r.presets.ascend_pd.variants = ["default"];
+    }, { variant: "other" }],
+    ["unconfigured point", (r) => {
+      delete r.presets.ascend_pd.select.pd_connector;
+      r.presets.ascend_pd.points = {
+        qualified: { default: true, select: { pd_connector: "mooncake_ascend" } },
+        unconfigured: {},
+      };
+    }, { point: "unconfigured" }, "ascend"],
+  ]) {
+    const recipe = ascendPdRecipe();
+    edit(recipe);
+    const query = new URLSearchParams({ hardware: "ascend_950dt", strategy: "pd_cluster", preset: "ascend_pd",
+      features: "none", pd_router: "ascend", pd_connector: "mooncake_ascend", ...params });
+    const resolved = resolveSelection(recipe, query, strategies, taxonomy);
+    assert.equal(resolved.rendering.pd_router, router, name);
+    assert.equal(resolved.rendering.pd_connector, "nixl", name);
+    assert.equal(resolved.selection.pd_router, router, name);
+    for (const [param, requested, used] of [["pd_router", "ascend", router], ["pd_connector", "mooncake_ascend", "nixl"]]) {
+      assert.equal(resolved.selection.adjusted.some((a) => a.param === param && a.requested === requested && a.used === used), requested !== used, `${name}: ${param}`);
+    }
+  }
+  const routerOnly = ascendPdRecipe();
+  delete routerOnly.presets.ascend_pd.select.pd_connector;
+  assert.equal(renderCommand(routerOnly, "default", "pd_cluster", "ascend_950dt", 1, [], strategies, taxonomy,
+    ascendPdPools(), null, "ascend_pd", undefined, true).pd_router, "ascend");
+  const connectorOnly = ascendPdRecipe();
+  delete connectorOnly.presets.ascend_pd.select.pd_router;
+  assert.throws(() => renderCommand(connectorOnly, "default", "pd_cluster", "ascend_950dt", 1, [], strategies, taxonomy,
+    ascendPdPools(), null, "ascend_pd", undefined, true), /Invalid preset .*ascend_pd/);
+});
+
 test("PD JSON and Markdown contain every node independently of the selected rank", () => {
   const recipe = ascendPdRecipe();
   for (const role of ["prefill", "decode"]) recipe.presets.ascend_pd.roles[role].nodes = 8;

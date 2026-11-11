@@ -18,7 +18,8 @@ hardware_match:
 # CUDA_VISIBLE_DEVICES is set per-rank when running one `vllm serve` per GPU
 # (data parallel); omit it if your launcher already pins GPUs.
 # The KV transfer wiring (--kv-transfer-config and its env) comes from the
-# selected entry of `connectors` below, emitted after each role's vllm_args.
+# selected entry of `connectors` below, or the model recipe when that entry
+# leaves its runtime config unspecified.
 prefill:
   vllm_args:
     - "--port"
@@ -46,7 +47,6 @@ decode:
 #   default: true  — rendered when nothing selects another
 #   brands         — hardware brands that run it (absent = all)
 #   routers        — PD routers that speak it (absent = vLLM Router only)
-#   connector_names — compatible runtime implementations a recipe may select
 #   router         — vllm-router's mode: kv_connector (--kv-connector, nixl
 #                    is its default), bootstrap_port (listed after each
 #                    prefill endpoint), discovery_port (workers register via
@@ -92,29 +92,13 @@ connectors:
       - note: "Mooncake transfer engine on every prefill / decode node (CUDA 12: mooncake-transfer-engine)"
         command: "uv pip install mooncake-transfer-engine-cuda13"
     docker: { host_network: true, flags: ["--ulimit", "memlock=-1"] }
-  mooncakev2:
+  mooncake_ascend:
     display_name: "Mooncake (Ascend)"
-    description: "Ascend Mooncake KV transfer: the recipe selects V1, V2 or Hybrid; V2 is the default."
-    connector_names: [MooncakeConnectorV1, MooncakeConnectorV2, MooncakeHybridConnector]
+    description: "Ascend Mooncake KV transfer, with the connector implementation and settings supplied by the model recipe."
     docs: "https://docs.vllm.ai/projects/ascend/en/latest/tutorials/features/pd_disaggregation_mooncake_multi_node.html"
     brands: [Huawei]
     routers: [ascend]
-    prefill:
-      config:
-        kv_connector: MooncakeConnectorV2
-        kv_role: kv_producer
-        kv_port: "36000"
-        kv_connector_extra_config:
-          prefill: { dp_size: "{prefill_dp_size}", tp_size: "{prefill_tp_size}", pp_size: "{prefill_pp_size}" }
-          decode: { dp_size: "{decode_dp_size}", tp_size: "{decode_tp_size}", pp_size: "{decode_pp_size}" }
-    decode:
-      config:
-        kv_connector: MooncakeConnectorV2
-        kv_role: kv_consumer
-        kv_port: "36100"
-        kv_connector_extra_config:
-          prefill: { dp_size: "{prefill_dp_size}", tp_size: "{prefill_tp_size}", pp_size: "{prefill_pp_size}" }
-          decode: { dp_size: "{decode_dp_size}", tp_size: "{decode_tp_size}", pp_size: "{decode_pp_size}" }
+    # No runtime defaults: the model recipe owns each role's --kv-transfer-config.
     docker: { host_network: true }
   moriio:
     display_name: "MoRI-IO"

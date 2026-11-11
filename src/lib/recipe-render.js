@@ -252,7 +252,13 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   }
   if (!result) return null;
   if (result.frontendRequired) applied.frontend = result.frontendRequired;
+  // A URL cannot opt into Ascend PD without the active recipe declaration.
+  if (applied.pdRouter === "ascend") applied.pdRouter = result.pdRouter ?? "vllm";
+  if (applied.pdConnector === "mooncake_ascend") applied.pdConnector = result.kvConnector?.selected ?? null;
   if (opts.out) Object.assign(opts.out, applied);
+  if (strict && sel.pd_router === "ascend" && result.routerUnavailableReason) {
+    throw new Error(`Invalid preset ${presetPick}${pointPick ? ` at point ${pointPick}` : ""} in ${recipe.hf_id} (${hwId} / ${strategy}): ${result.routerUnavailableReason}`);
+  }
   // A preset that names its KV transfer connector must get it.
   if (strict && sel.pd_connector && result.kvConnector?.unavailableReason) {
     throw new Error(`Invalid preset ${presetPick}${pointPick ? ` at point ${pointPick}` : ""} in ${recipe.hf_id} (${hwId} / ${strategy}): ${result.kvConnector.unavailableReason}`);
@@ -788,6 +794,8 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     },
   );
   note("frontend", get("frontend"), applied.frontend ?? frontend, "not supported by this recipe or variant");
+  if (get("pd_router") === "ascend") note("pd_router", "ascend", applied.pdRouter, "requires an active Ascend PD preset for this hardware and variant");
+  if (get("pd_connector") === "mooncake_ascend") note("pd_connector", "mooncake_ascend", applied.pdConnector, "requires an active Ascend PD preset and compatible router");
   note("features", get("features"), (applied.features ?? features).join(",") || "none", "not fully supported by this recipe or variant");
   return {
     omni: false,

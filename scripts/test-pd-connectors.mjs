@@ -183,9 +183,52 @@ test("a pool's tp takes a hardware-keyed map, read by the commands and the route
   assert.match(b300.router.command, /--intra-node-data-parallel-size 8/);
 });
 
-const ascend = (r, rank = 0, connector = "mooncakev2", strats = strategies, features = [], pools = ascendPdPools(rank)) =>
+const ascend = (r, rank = 0, connector = "mooncake_ascend", strats = strategies, features = [], pools = ascendPdPools(rank), kv = null) =>
   resolveCommand(r, "default", "pd_cluster", "ascend_950dt", features, strats, taxonomy, [], 1,
-    pools, {}, null, null, "python", "ascend", "http", null, "ascend_pd", undefined, connector);
+    pools, {}, kv, null, "python", "ascend", "http", null, "ascend_pd", undefined, connector);
+
+test("Ascend PD requires each selection's declaration in the active hardware and variant preset", () => {
+  const cases = [
+    { name: "no preset", edit: (r) => { r.presets = {}; } },
+    { name: "no select", edit: (r) => { delete r.presets.ascend_pd.select; } },
+    { name: "no router declaration", edit: (r) => { delete r.presets.ascend_pd.select.pd_router; } },
+    { name: "no connector declaration", router: "ascend", edit: (r) => { delete r.presets.ascend_pd.select.pd_connector; } },
+    { name: "Baseline", preset: "baseline" },
+    { name: "another Huawei profile", hw: "ascend_910c" },
+    { name: "declarations on non-Huawei hardware", hw: "h200", edit: (r) => { r.presets.ascend_pd.hardware = "h200"; } },
+    { name: "another variant", variant: "other", edit: (r) => {
+      r.variants.other = { ...r.variants.default };
+      r.presets.ascend_pd.variants = ["default"];
+    } },
+  ];
+  for (const { name, edit, hw = "ascend_950dt", variant = "default", preset = "ascend_pd", router = "vllm" } of cases) {
+    const fixture = ascendPdRecipe();
+    edit?.(fixture);
+    const r = resolveCommand(fixture, variant, "pd_cluster", hw, [], strategies, taxonomy, [], 1,
+      ascendPdPools(), {}, null, null, "python", "ascend", "http", null, preset, undefined, "mooncake_ascend");
+    assert.equal(r.pdRouter, router, name);
+    assert.equal(r.kvConnector.selected, "nixl", name);
+    assert.equal(!!r.routerUnavailableReason, router !== "ascend", name);
+    assert.ok(r.kvConnector.unavailableReason, name);
+  }
+});
+
+test("Ascend PD uses the current point's inherited declarations, not another point's", () => {
+  const fixture = ascendPdRecipe();
+  delete fixture.presets.ascend_pd.select.pd_connector;
+  fixture.presets.ascend_pd.points = {
+    qualified: { default: true, select: { pd_connector: "mooncake_ascend" } },
+    unconfigured: {},
+    overridden: { select: { pd_router: "vllm", pd_connector: "mooncake_ascend" } },
+  };
+  for (const [point, router, connector] of [[undefined, "ascend", "mooncake_ascend"], ["qualified", "ascend", "mooncake_ascend"],
+    ["unconfigured", "ascend", "nixl"], ["overridden", "vllm", "nixl"]]) {
+    const r = resolveCommand(fixture, "default", "pd_cluster", "ascend_950dt", [], strategies, taxonomy, [], 1,
+      ascendPdPools(), {}, null, null, "python", "ascend", "http", null, "ascend_pd", point, "mooncake_ascend");
+    assert.equal(r.pdRouter, router, point);
+    assert.equal(r.kvConnector.selected, connector, point);
+  }
+});
 
 test("TP/TEP derives its width from the whole pool as PD grows from four to eight nodes", () => {
   const fixture = ascendPdRecipe();
@@ -195,7 +238,7 @@ test("TP/TEP derives its width from the whole pool as PD grows from four to eigh
   for (const parallelism of ["tp", "tep"]) {
     for (const nodes of [4, 8]) {
       const pools = { prefill: { nodes, rank: nodes - 1, parallelism }, decode: { nodes, rank: nodes - 1, parallelism: "dep" } };
-      const r = ascend(fixture, nodes - 1, "mooncakev2", strategies, [], pools);
+      const r = ascend(fixture, nodes - 1, "mooncake_ascend", strategies, [], pools);
       assert.equal(r.prefill.tp, nodes * 2);
       assert.equal(r.prefill.tp * r.prefill.pp, r.prefill.poolGpus);
       assert.equal(flag(r.prefill.argv, "--tensor-parallel-size"), String(nodes * 2));
@@ -222,7 +265,7 @@ test("Ascend DEP uses native external DP modes with every rank and endpoint", ()
     for (let rank = 0; rank < nodes; rank++) {
       const pools = ascendPdPools(rank);
       pools.decode.nodes = nodes;
-      const r = ascend(fixture, rank, "mooncakev2", strategies, [], pools);
+      const r = ascend(fixture, rank, "mooncake_ascend", strategies, [], pools);
       const argv = r.decode.argv;
       assert.equal(flag(argv, "--tensor-parallel-size"), String(tp));
       assert.equal(flag(argv, "--data-parallel-size-local"), String(local));
@@ -237,7 +280,7 @@ test("Ascend DEP uses native external DP modes with every rank and endpoint", ()
         assert.ok(argv.includes("--enable-expert-parallel"));
         const inconsistent = structuredClone(fixture);
         inconsistent.presets.ascend_pd.roles.decode.args = ["--data-parallel-external-lb"];
-        assert.throws(() => ascend(inconsistent, rank, "mooncakev2", strategies, [], pools), RangeError);
+        assert.throws(() => ascend(inconsistent, rank, "mooncake_ascend", strategies, [], pools), RangeError);
       }
       assert.ok(!argv.includes(local > 1 ? "--data-parallel-rank" : "--data-parallel-start-rank"));
       assert.equal(flag(argv, "--data-parallel-address"), "$DECODE_NODE_1");
@@ -265,7 +308,7 @@ test("Ascend DEP uses native external DP modes with every rank and endpoint", ()
 
 test("PD topology placeholders, role edits and connector selection share the final pool layout", () => {
   const fixture = ascendPdRecipe();
-  const r = ascend(fixture, 0, "mooncakev2", strategies, ["spec_decoding"]);
+  const r = ascend(fixture, 0, "mooncake_ascend", strategies, ["spec_decoding"]);
   for (const role of ["prefill", "decode"]) {
     assert.deepEqual(kvCfg(r, role).kv_connector_extra_config, {
       prefill: { dp_size: 1, tp_size: 8, pp_size: 4 },
@@ -277,31 +320,32 @@ test("PD topology placeholders, role edits and connector selection share the fin
   assert.equal(flag(r.decode.argv, "--max-model-len"), "1024");
   assert.equal(JSON.parse(flag(r.decode.argv, "--speculative-config")).num_speculative_tokens, 3);
   for (const role of ["prefill", "decode"]) assert.ok(!ascend(fixture)[role].argv.includes("--speculative-config"));
+  const stored = ascend(fixture, 0, "mooncake_ascend", strategies, [], ascendPdPools(), "simple");
+  assert.deepEqual(kvCfg(stored, "prefill").kv_connector_extra_config.connectors.map((c) => c.kv_connector),
+    ["DownstreamMooncakeConnector", "SimpleCPUOffloadConnector"]);
+  assert.equal(kvCfg(stored, "decode").kv_connector, "DownstreamMooncakeConnector");
 
-  // One Ascend Mooncake pick covers the recipe's runtime implementation.
-  // Whole role args and preset JSON edits both retain their existing precedence.
-  for (const name of ["MooncakeConnectorV1", "MooncakeConnectorV2", "MooncakeHybridConnector"]) {
+  // The recipe owns the runtime implementation and complete configuration.
+  // Both authoring forms work without a catalog implementation allowlist.
+  for (const field of ["args", "json_args"]) {
     const family = ascendPdRecipe();
+    const config = { kv_connector: `Downstream${field}Connector`, kv_role: "kv_both", kv_port: "37000" };
     for (const role of ["prefill", "decode"]) {
       const delta = family.presets.ascend_pd.roles[role];
-      if (name === "MooncakeConnectorV1") {
-        delta.args = ["--kv-transfer-config", JSON.stringify({ kv_connector: name, kv_role: "kv_both" })];
-      } else {
-        delta.json_args = { "--kv-transfer-config": { kv_connector: name, kv_port: "37000" } };
-      }
+      delete delta.json_args["--kv-transfer-config"];
+      if (field === "args") delta.args = ["--kv-transfer-config", JSON.stringify(config)];
+      else delta.json_args["--kv-transfer-config"] = config;
     }
     const rendered = ascend(family);
-    assert.equal(rendered.kvConnector.selected, "mooncakev2");
+    assert.equal(rendered.kvConnector.selected, "mooncake_ascend");
     assert.equal(rendered.kvConnector.unavailableReason, null);
-    for (const role of ["prefill", "decode"]) {
-      assert.equal(kvCfg(rendered, role).kv_connector, name);
-      if (name === "MooncakeConnectorV1") assert.deepEqual(kvCfg(rendered, role), { kv_connector: name, kv_role: "kv_both" });
-      else assert.equal(kvCfg(rendered, role).kv_port, "37000");
-    }
+    for (const role of ["prefill", "decode"]) assert.deepEqual(kvCfg(rendered, role), config);
   }
   const unrelated = ascendPdRecipe();
   unrelated.presets.ascend_pd.roles.decode.json_args = { "--kv-transfer-config": { kv_connector: "OtherConnector" } };
-  assert.match(ascend(unrelated).kvConnector.unavailableReason, /sets its own --kv-transfer-config/);
+  const arbitrary = ascend(unrelated);
+  assert.equal(arbitrary.kvConnector.unavailableReason, null);
+  assert.equal(kvCfg(arbitrary, "decode").kv_connector, "OtherConnector");
 
   const custom = structuredClone(strategies);
   custom.pd_cluster.connectors.other = {
@@ -309,7 +353,9 @@ test("PD topology placeholders, role edits and connector selection share the fin
     prefill: { config: { kv_connector: "OtherConnector", kv_role: "kv_producer", kv_connector_extra_config: { tp: "{prefill_tp_size}" } } },
     decode: { config: { kv_connector: "OtherConnector", kv_role: "kv_consumer" } },
   };
-  const other = ascend(fixture, 0, "other", custom);
+  const catalogFixture = ascendPdRecipe();
+  for (const role of ["prefill", "decode"]) delete catalogFixture.presets.ascend_pd.roles[role].json_args["--kv-transfer-config"];
+  const other = ascend(catalogFixture, 0, "other", custom);
   assert.equal(other.kvConnector.selected, "other");
   assert.deepEqual(kvCfg(other, "prefill"), { kv_connector: "OtherConnector", kv_role: "kv_producer", kv_connector_extra_config: { tp: 8 } });
   assert.equal(kvCfg(other, "decode").kv_connector, "OtherConnector");

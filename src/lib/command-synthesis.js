@@ -403,6 +403,18 @@ export function pdConnectorKey(strategy, requested) {
   return keys.find((k) => connectors[k]?.default) ?? keys[0] ?? null;
 }
 
+/** Ascend PD is opt-in through the active, hardware/variant-scoped preset. */
+export function ascendPdUnavailableReason(strategy, hwProfile, select, field) {
+  if (strategy?.deploy_type !== "pd_cluster" || !isDynamoSupportedOnHardware(strategy.ascend, hwProfile)) {
+    return "Ascend PD requires Ascend hardware and PD disaggregation.";
+  }
+  const key = field === "pd_router" ? "ascend" : "mooncake_ascend";
+  if (select?.[field] !== key) {
+    return `Select a model preset that explicitly configures ${field === "pd_router" ? "Ascend Router" : "Mooncake (Ascend)"} for this hardware and variant.`;
+  }
+  return null;
+}
+
 /**
  * Why a PD KV transfer connector can't run on this hardware behind this PD
  * router, or null. `brands` gates hardware (MoRI-IO is ROCm only); `routers`
@@ -1616,7 +1628,7 @@ export function resolveCommand(...params) {
   const raw = recipe?.presets?.[presetKey];
   const eff = raw ? effectivePreset(raw, params[18]) : null;
   params[0] = withPreset(recipe, presetKey, hwProfileId, strategyName, { variantKey, point: params[18] });
-  const result = resolveCommandImpl(dcpOut, ...params.slice(0, 17), params[19] ?? null);
+  const result = resolveCommandImpl(dcpOut, ...params.slice(0, 17), params[19] ?? null, eff?.select);
   if (result && typeof result === "object" && !Array.isArray(result)) {
     result.dcp = dcpOut.get?.() ?? null;
     const options = matchingPresets(recipe, hwProfileId, strategyName, variantKey);
@@ -1636,7 +1648,7 @@ export function resolveCommand(...params) {
 
 // `dcpSize` is the user's Decode Context Parallelism pick: null follows the
 // recipe's own default, 1 forces DCP off, N > 1 selects that size.
-function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null, pdTransport = "http", dcpSize = null, pdConnectorPick = null) {
+function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null, pdTransport = "http", dcpSize = null, pdConnectorPick = null, presetSelect = null) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   enabledFeatures = (enabledFeatures || []).filter((key) => isFeatureAllowedForVariant(variant, key));
   const strategy = strategies[strategyName] || {};
@@ -1695,11 +1707,11 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     ? strategy.smg : null;
 
   let smgGrpc = !!smg && pdTransport === "grpc";
-  const ascend = strategy.deploy_type === "pd_cluster" && pdRouter === "ascend"
-    && isDynamoSupportedOnHardware(strategy.ascend, hwProfile) ? strategy.ascend : null;
+  const ascendReason = ascendPdUnavailableReason(strategy, hwProfile, presetSelect, "pd_router");
+  const ascend = pdRouter === "ascend" && !ascendReason ? strategy.ascend : null;
   const routerKey = dynamo ? "dynamo" : smg ? "smg" : ascend ? "ascend" : "vllm";
   const externalDp = strategy[routerKey]?.data_parallel_lb === "external";
-  if (pdRouter === "ascend" && !ascend) routerUnavailableReason = "Ascend Router requires Huawei hardware.";
+  if (pdRouter === "ascend" && !ascend) routerUnavailableReason = ascendReason;
 
   // One pool topology drives the node command, router endpoints and connector
   // metadata. Presets mount their role TP/PP here, before any of those consume it.
@@ -1735,14 +1747,10 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   let pdConnectorSel = strategy.deploy_type === "pd_cluster" ? pdConnectorKey(strategy, pdConnectorPick) : null;
   let pdConnectorUnavailable = null;
   if (pdConnectorSel && pdConnectorPick && pdConnectorSel === pdConnectorPick) {
-    pdConnectorUnavailable = pdConnectorUnavailableReason(strategy.connectors[pdConnectorSel], hwProfile,
-      routerKey);
+    pdConnectorUnavailable = (pdConnectorSel === "mooncake_ascend"
+      && ascendPdUnavailableReason(strategy, hwProfile, presetSelect, "pd_connector"))
+      || pdConnectorUnavailableReason(strategy.connectors[pdConnectorSel], hwProfile, routerKey);
     if (pdConnectorUnavailable) pdConnectorSel = pdConnectorKey(strategy);
-  }
-  if (ascend && pdConnectorUnavailableReason(strategy.connectors?.[pdConnectorSel], hwProfile, routerKey)) {
-    pdConnectorSel = Object.keys(strategy.connectors || {}).find((key) =>
-      !pdConnectorUnavailableReason(strategy.connectors[key], hwProfile, routerKey)) || null;
-    if (!pdConnectorSel) throw new RangeError("No compatible PD connector for Ascend Router.");
   }
   const pdConnector = pdConnectorSel ? strategy.connectors[pdConnectorSel] : null;
   // The transfer config a composed KV tier wraps: Dynamo workers carry their
@@ -2108,7 +2116,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     // Mooncake × pd_cluster: the kv_store YAML's `pd.<role>.tier`
     // (MooncakeStoreConnector) joins the role's transfer connector in a
     // MultiConnector, which replaces (last-wins) the plain transfer config.
-    if (strategy.deploy_type === "pd_cluster" && roleOverride
+    const recipeTransfer = strategy.deploy_type === "pd_cluster" && roleOverride && pdConnector
+      && !pdConnector[roleOverride]?.config;
+    if (!recipeTransfer && strategy.deploy_type === "pd_cluster" && roleOverride
         && kvStoreStrat?.pd?.[roleOverride]?.tier) {
       args.push("--kv-transfer-config", JSON.stringify(multiConnector([
         pdTransferConfig(roleOverride),
@@ -2119,7 +2129,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     // offload: prefill only) joins those roles' transfer connector the same way.
     const pdTier = strategy.deploy_type === "pd_cluster" && roleOverride
       && kvOpt?.pd?.roles?.includes(roleOverride) ? kvOptionConfig(kvOpt) : null;
-    if (pdTier) {
+    if (pdTier && !recipeTransfer) {
       args.push("--kv-transfer-config", JSON.stringify(multiConnector([pdTransferConfig(roleOverride), pdTier])));
     }
 
@@ -2132,8 +2142,16 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     const ops = recipe._presetOps;
     if (ops) {
       const editOnly = toggleOwnedFlags(recipe, taxonomy);
+      // PD transfer exists independently of the KV-offload toggle; a recipe
+      // may supply its entire config through json_args without catalog defaults.
+      if (recipeTransfer) editOnly.delete("--kv-transfer-config");
       out = applyPresetArgOps(out, ops.all, editOnly);
       if (roleOverride) out = applyPresetArgOps(out, ops.roles?.[roleOverride], editOnly);
+    }
+    if (recipeTransfer) {
+      // Compose only after the recipe has supplied the implementation/settings.
+      const tiers = [kvStoreStrat?.pd?.[roleOverride]?.tier, pdTier].filter(Boolean);
+      if (tiers.length) out = [...out, "--kv-transfer-config", JSON.stringify(multiConnector([kvOptionConfig({ args: out }), ...tiers]))];
     }
     if (roleOverride && strategy.deploy_type === "pd_cluster"
         && (externalDp || pdRoleValue(recipe, roleOverride, "pp", hwProfile, hwProfileId) != null)) {
@@ -2412,14 +2430,13 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   if (deployType === "pd_cluster") {
     // A recipe or preset layer may write a role's whole --kv-transfer-config
     // (MiniMax-M3.1-Flash on MI355X composes NIXL with CPU offload by hand).
-    // Catalog entries may group compatible runtime implementations under one
-    // pick. When a role names a transfer connector outside that entry, the
-    // pick can't apply: render the default, with the reason, rather than a
+    // When the catalog pins a different transfer connector, the pick can't
+    // apply: render the default, with the reason, rather than a
     // router whose KV mode disagrees with its workers.
     if (pdConnectorPick && pdConnectorSel === pdConnectorPick && !dynamo) {
       const clash = ["prefill", "decode"].find((role) => {
-        const names = pdConnector.connector_names || [pdConnector[role]?.config?.kv_connector];
-        return !names.includes(transferConnectorOf(dedupeArgs(buildArgs(role, null).filter(Boolean))));
+        const name = pdConnector[role]?.config?.kv_connector;
+        return name && transferConnectorOf(dedupeArgs(buildArgs(role, null).filter(Boolean))) !== name;
       });
       if (clash) {
         const again = [...arguments];

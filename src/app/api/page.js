@@ -59,11 +59,11 @@ The same ones the page URL uses. Values the recipe can't run fall back to its de
 Each recipe's Markdown lists the values it accepts under **Other configurations**.
 
 Select the PD router and KV connector independently, subject to catalog compatibility.
-For Ascend, \`pd_router=ascend\` selects Ascend Router; \`pd_connector=mooncakev2\`
-selects Mooncake (Ascend). The recipe chooses MooncakeConnectorV1,
-MooncakeConnectorV2 or MooncakeHybridConnector through its existing role args
-or preset JSON edits; V2 is the catalog default. The selection key is retained
-for compatibility and does not restrict the runtime implementation.
+For Ascend, \`pd_router=ascend\` selects Ascend Router; \`pd_connector=mooncake_ascend\`
+selects Mooncake (Ascend). Each choice requires Ascend hardware, PD disaggregation
+and an active model preset that explicitly declares it in \`select\`.
+The recipe supplies the connector name and configuration through its role args
+or preset JSON edits; the renderer imposes no implementation default or name allowlist.
 
 PD renderings include \`prefill.node_commands[]\` and \`decode.node_commands[]\`, with every node's
 \`node_rank\`, \`command\`, \`argv\`, \`env\`, and Docker equivalents. Run each on its named node;
