@@ -1956,12 +1956,15 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         args.push("--data-parallel-size-local", String(meta.dpLocal));
         // Native external-LB supervises one HTTP server per local rank. With
         // local DP1, the rank flag selects that server; start-rank implies hybrid.
-        args.push(externalDp && meta.dpLocal === 1 ? "--data-parallel-rank" : "--data-parallel-start-rank", String(meta.startRank));
+        // A global DP1 pool is an ordinary TP/EP service, without an LB rank.
+        if (!externalDp || meta.dpSize > 1) {
+          args.push(externalDp && meta.dpLocal === 1 ? "--data-parallel-rank" : "--data-parallel-start-rank", String(meta.startRank));
+        }
         args.push("--data-parallel-address", "$" + roleKey.toUpperCase() + "_NODE_1");
         args.push("--data-parallel-rpc-port", "$" + roleKey.toUpperCase() + "_DP_RPC_PORT");
-        if (externalDp) {
+        if (externalDp && meta.dpSize > 1) {
           args.push(meta.dpLocal > 1 ? "--data-parallel-multi-port-external-lb" : "--data-parallel-external-lb");
-        } else if (meta.nodes > 1) {
+        } else if (!externalDp && meta.nodes > 1) {
           args.push("--data-parallel-hybrid-lb");
         }
         args.push("--enable-expert-parallel");
@@ -2146,16 +2149,20 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const expected = { "--tensor-parallel-size": meta.tp, "--pipeline-parallel-size": meta.pp };
       if (meta.parallelism === "dep") Object.assign(expected, {
         "--data-parallel-size": meta.dpSize, "--data-parallel-size-local": meta.dpLocal,
-        [externalDp && meta.dpLocal === 1 ? "--data-parallel-rank" : "--data-parallel-start-rank"]: meta.startRank,
+        ...(externalDp && meta.dpSize === 1 ? {} : {
+          [externalDp && meta.dpLocal === 1 ? "--data-parallel-rank" : "--data-parallel-start-rank"]: meta.startRank,
+        }),
       });
       for (const [flag, size] of Object.entries(expected)) {
         const fallback = flag === "--pipeline-parallel-size" || flag === "--tensor-parallel-size" ? 1 : NaN;
         if (Number(flags.get(flag) ?? fallback) !== size) throw new RangeError(`PD ${roleOverride}: ${flag} conflicts with the role topology; use role nodes/pp (and tp for DEP) instead.`);
       }
       if (externalDp && meta.parallelism === "dep") {
-        const selected = meta.dpLocal > 1 ? "--data-parallel-multi-port-external-lb" : "--data-parallel-external-lb";
+        const selected = meta.dpSize === 1 ? null
+          : meta.dpLocal > 1 ? "--data-parallel-multi-port-external-lb" : "--data-parallel-external-lb";
         const modes = ["--data-parallel-hybrid-lb", "--data-parallel-multi-port-external-lb", "--data-parallel-external-lb"];
-        if (!flags.has(selected) || modes.some((flag) => flag !== selected && flags.has(flag))) {
+        const conflictingRank = meta.dpSize === 1 && ["--data-parallel-rank", "--data-parallel-start-rank"].some((flag) => flags.has(flag));
+        if ((selected && !flags.has(selected)) || modes.some((flag) => flag !== selected && flags.has(flag)) || conflictingRank) {
           throw new RangeError(`PD ${roleOverride}: external DP load-balancing flags conflict with the router.`);
         }
       }
@@ -2600,7 +2607,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       },
       orchestrator: dynamo ? "dynamo" : smg ? "smg" : ascend ? "ascend-proxy" : "vllm-router",
       pdRouter: dynamo ? "dynamo" : smg ? "smg" : ascend ? "ascend" : "vllm",
-      ...(ascend ? { routerLabel: ascend.display_name, frontendRequired: "python", frontend: "python" } : {}),
+      ...(ascend ? { frontendRequired: "python" } : {}),
       ...(smg ? { transport: smgGrpc ? "grpc" : "http" } : {}),
       ...(smgGrpc ? {
         workerInstall: `uv pip install ${smg.grpc.packages}`,

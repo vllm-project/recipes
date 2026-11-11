@@ -215,21 +215,30 @@ test("TP/TEP derives its width from the whole pool as PD grows from four to eigh
 });
 
 test("Ascend DEP uses native external DP modes with every rank and endpoint", () => {
-  for (const tp of [8, 4, 2]) {
+  for (const [nodes, tp] of [[1, 8], [1, 4], [1, 2], [4, 8], [4, 4], [4, 2]]) {
     const fixture = ascendPdRecipe();
     fixture.presets.ascend_pd.roles.decode.tp = tp;
     const local = 8 / tp;
-    for (let rank = 0; rank < 4; rank++) {
-      const r = ascend(fixture, rank);
+    for (let rank = 0; rank < nodes; rank++) {
+      const pools = ascendPdPools(rank);
+      pools.decode.nodes = nodes;
+      const r = ascend(fixture, rank, "mooncakev2", strategies, [], pools);
       const argv = r.decode.argv;
       assert.equal(flag(argv, "--tensor-parallel-size"), String(tp));
       assert.equal(flag(argv, "--data-parallel-size-local"), String(local));
-      assert.equal(flag(argv, "--data-parallel-size"), String(4 * local));
+      assert.equal(flag(argv, "--data-parallel-size"), String(nodes * local));
       assert.ok(!argv.includes("--data-parallel-hybrid-lb"));
       assert.equal(argv.includes("--data-parallel-multi-port-external-lb"), local > 1);
-      assert.equal(argv.includes("--data-parallel-external-lb"), local === 1);
+      assert.equal(argv.includes("--data-parallel-external-lb"), local === 1 && nodes > 1);
       const rankFlag = local > 1 ? "--data-parallel-start-rank" : "--data-parallel-rank";
-      assert.equal(flag(argv, rankFlag), String(rank * local));
+      if (nodes * local > 1) assert.equal(flag(argv, rankFlag), String(rank * local));
+      else {
+        assert.ok(!argv.includes("--data-parallel-rank") && !argv.includes("--data-parallel-start-rank"));
+        assert.ok(argv.includes("--enable-expert-parallel"));
+        const inconsistent = structuredClone(fixture);
+        inconsistent.presets.ascend_pd.roles.decode.args = ["--data-parallel-external-lb"];
+        assert.throws(() => ascend(inconsistent, rank, "mooncakev2", strategies, [], pools), RangeError);
+      }
       assert.ok(!argv.includes(local > 1 ? "--data-parallel-rank" : "--data-parallel-start-rank"));
       assert.equal(flag(argv, "--data-parallel-address"), "$DECODE_NODE_1");
       assert.equal(r.decode.env.HCCL_IF_IP, `$DECODE_NODE_${rank + 1}`);
@@ -243,11 +252,12 @@ test("Ascend DEP uses native external DP modes with every rank and endpoint", ()
       // Only the TP/PP serving head is an HTTP backend; every external DP
       // rank is one, including those sharing a physical decode node.
       assert.equal(r.router.argv.filter((arg) => arg === "$PREFILL_NODE_1").length, 1);
-      for (let node = 1; node <= 4; node++) {
+      for (let node = 1; node <= nodes; node++) {
         assert.equal(r.router.argv.filter((arg) => arg === `$DECODE_NODE_${node}`).length, local);
       }
       const ports = r.router.argv.slice(r.router.argv.indexOf("--decoder-ports") + 1);
-      assert.deepEqual(ports, Array.from({ length: 4 }, () => Array.from({ length: local }, (_, i) => String(8002 + i))).flat());
+      assert.deepEqual(ports, Array.from({ length: nodes }, () => Array.from({ length: local }, (_, i) => String(8002 + i))).flat());
+      assert.equal(kvCfg(r, "decode").kv_connector_extra_config.decode.dp_size, nodes * local);
       assert.doesNotMatch(r.router.command, /launch_online_dp|run_dp_template/);
     }
   }

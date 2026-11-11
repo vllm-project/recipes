@@ -470,8 +470,10 @@ changes; a speculative-config edit remains inactive when that feature is off.
 Overlays may add in-scope hardware keys to role `tp`/`pp` maps. If the owner
 uses a scalar there, use a preset; overlays do not convert scalars into maps.
 
-The Ascend router requires external DP endpoints. With local DP1, the node runs
-`--data-parallel-external-lb` with its rank. With local DP > 1, it runs one native
+With global DP1, the role runs a single TP/EP service without DP rank or
+load-balancing flags, and the Ascend router lists one endpoint. With global
+DP > 1 and local DP1, each node runs `--data-parallel-external-lb` with its rank.
+With local DP > 1, it runs one native
 `--data-parallel-multi-port-external-lb` command: vLLM assigns each local rank its
 TP device slice and HTTP port `base_port + local_rank`, and the router lists all
 of those endpoints. Use dedicated Prefill and Decode hosts, with an image whose
