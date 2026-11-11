@@ -116,7 +116,7 @@ function mergeDelta(a = {}, b = {}) {
   if (env) out.env = env;
   if (remove) out.remove_args = remove;
   if (json) out.json_args = json;
-  for (const k of ["nodes", "parallelism", "tp"]) if (b[k] !== undefined) out[k] = b[k];
+  for (const k of ["nodes", "parallelism", "tp", "pp"]) if (b[k] !== undefined) out[k] = b[k];
   return out;
 }
 
@@ -183,7 +183,7 @@ export function withPreset(recipe, key, hwId, strategyName, opts = {}) {
     const r = { ...(so[role] || {}) };
     r.hardware_overrides = { ...(r.hardware_overrides || {}) };
     r.hardware_overrides[hwId] = mountLayer(r.hardware_overrides[hwId], delta);
-    for (const k of ["nodes", "parallelism"]) {
+    for (const k of ["nodes", "parallelism", "tp", "pp"]) {
       const v = mountKeyed(r[k], hwId, delta?.[k]);
       if (v !== undefined) r[k] = v;
     }

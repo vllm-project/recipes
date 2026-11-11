@@ -9,6 +9,7 @@ import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import { contentDir } from "../src/lib/content-root.js";
 import { applyOverlay, resolveScope, splitOverlay } from "../src/lib/overlay-merge.js";
 import { BASELINE, applyPresetArgOps, effectivePreset, presetSelect, resolvePresetKey, validatePresets, withPreset } from "../src/lib/recipe-presets.js";
+import { ascendPdRecipe } from "./fixtures/ascend-pd.mjs";
 
 const read = (file) => yaml.load(fs.readFileSync(path.join(contentDir(), file), "utf8"));
 const taxonomy = read("taxonomy.yaml");
@@ -16,6 +17,7 @@ const taxonomy = read("taxonomy.yaml");
 const strategies = Object.fromEntries(["strategies", "kv_store"].flatMap((dir) => fs.readdirSync(path.join(contentDir(), dir))
   .filter((file) => file.endsWith(".yaml"))
   .map((file) => { const s = read(`${dir}/${file}`); return [s.name, s]; })));
+strategies.pd_cluster = yaml.load(fs.readFileSync(new URL("../strategies/pd_cluster.yaml", import.meta.url), "utf8"));
 
 function yamlFiles(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -245,6 +247,25 @@ test("pd_cluster points change role args, topology and role JSON edits", () => {
   assert.equal(flagValue(r.decode.argv, "--max-num-seqs"), "64");
   assert.equal(JSON.parse(flagValue(r.decode.argv, "--compilation-config")).mode, 3);
   assert.equal(r.prefill.argv.includes("--max-num-seqs"), false);
+
+  // Ascend topology uses the existing hardware-scoped preset mechanism,
+  // including point overrides, without extending the overlay merge rules.
+  const fixture = ascendPdRecipe();
+  fixture.presets.ascend_pd.points = { small: { label: "Small", roles: { prefill: { tp: 4, pp: 8 }, decode: { tp: 8 } } } };
+  const mounted = withPreset(fixture, "ascend_pd", "ascend_950dt", "pd_cluster", { point: "small" });
+  assert.equal(mounted.strategy_overrides.pd_cluster.prefill.tp.ascend_950dt, 4);
+  assert.equal(mounted.strategy_overrides.pd_cluster.prefill.pp.ascend_950dt, 8);
+  assert.equal(mounted.strategy_overrides.pd_cluster.decode.tp.ascend_950dt, 8);
+  const ctx = resolveScope({ brands: ["Huawei"] }, taxonomy);
+  const core = { ...fixture, presets: {} };
+  const merged = applyOverlay(core, { presets: fixture.presets }, { ctx, source: "vllm-ascend" });
+  assert.deepEqual(merged.errors, []);
+  assert.deepEqual(splitOverlay(merged.recipe, { ctx, source: "vllm-ascend" }).overlay.presets, fixture.presets);
+  const validate = new Ajv({ allErrors: true, strict: false }).compile(buildRecipeSchema({ taxonomy, strategies }));
+  const { hf_id: _hfId, ...authored } = fixture;
+  assert.ok(validate(authored), JSON.stringify(validate.errors));
+  fixture.presets.ascend_pd.roles.prefill.pp = 0;
+  assert.equal(validate(authored), false);
 });
 
 test("a point's image fields layer over the preset's", () => {
@@ -352,4 +373,15 @@ test("an overlay adds only presets for its own hardware, and split moves them ba
   const { core, overlay } = splitOverlay(merged.recipe, opts);
   assert.deepEqual(overlay.presets, ascend.presets);
   assert.deepEqual(core.presets, recipe.presets);
+  const topology = (tp, pp) => ({ strategy_overrides: { pd_cluster: { decode: { tp, pp } } } });
+  const owner = topology({ default: 1 }, { default: 1 });
+  const addition = topology({ ascend_950dt: 4 }, { ascend_950dt: 1 });
+  const extended = applyOverlay(owner, addition, opts);
+  assert.deepEqual(extended.errors, []);
+  const split = splitOverlay(extended.recipe, opts);
+  assert.deepEqual(split.core, owner);
+  assert.deepEqual(split.overlay.strategy_overrides, addition.strategy_overrides);
+  assert.deepEqual(applyOverlay(split.core, split.overlay, opts).recipe, extended.recipe);
+  assert.ok(applyOverlay(owner, topology({ h200: 4 }, { h200: 1 }), opts).errors.length);
+  assert.ok(applyOverlay(topology(1, 1), addition, opts).errors.length, "overlays must not promote owner scalars to maps");
 });

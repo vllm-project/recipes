@@ -78,11 +78,13 @@ function serveSection(r) {
     for (const role of ["prefill", "decode"]) {
       const p = r[role];
       if (!p?.command) continue;
-      const nodes = p.nodes ?? 1;
-      const scope = nodes > 1
-        ? ` — pool spans ${nodes} nodes; this is node ${p.currentNode ?? 0}'s command (add \`${role}_rank=<n>\` to the query for another)`
-        : "";
-      out.push("", `### ${role === "prefill" ? "Prefill" : "Decode"}${scope}`, "", fence(withEnv(p.env, p.command)));
+      const nodes = p.node_commands || [{ ...p, node_rank: p.currentNode ?? 0 }];
+      out.push("", `### ${role === "prefill" ? "Prefill" : "Decode"}`, "",
+        "Run each command on its named node. Ranks differ; do not repeat one command on every node.");
+      for (const node of nodes) {
+        out.push("", `#### $${role.toUpperCase()}_NODE_${node.node_rank + 1} (node rank ${node.node_rank})`, "",
+          fence(withEnv(node.env, node.command)), ...dockerNote(node.docker_command));
+      }
     }
     if (r.router?.command) {
       out.push("", `### ${r.router.label || "Router"}`, "");

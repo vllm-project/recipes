@@ -619,7 +619,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   });
   // PD router selection is only used under pd_cluster.
   const [pdRouter, setPdRouter] = useState(() =>
-    ["dynamo", "smg"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : "vllm"
+    ["dynamo", "smg", "ascend"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : "vllm"
   );
   // PD KV transfer connector (pd_cluster.yaml `connectors`); null = the default.
   const [pdConnector, setPdConnector] = useState(() => {
@@ -1210,7 +1210,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
         }
         : null;
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick, pdConnector);
+      try {
+        return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick, pdConnector);
+      } catch (error) {
+        if (!(error instanceof RangeError) || !error.message.startsWith("PD ")) throw error;
+        return { deployType: "pd_cluster", nodeCount, prefill: {}, decode: {}, router: {},
+          pdRouter, orchestrator: pdRouter === "ascend" ? "ascend-proxy" : pdRouter,
+          deploymentError: error.message };
+      }
     },
     [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick, pdConnector]
   );
@@ -1239,7 +1246,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const fmode = Object.entries(featureModes).filter(([k, m]) => m && isFeatureAllowedForVariant(currentVariant, k) && recipe.features?.[k]?.modes).map(([k, m]) => `${k}:${m}`);
     if (fmode.length) q.set("fmode", fmode.join(","));
     if (advanced.length) q.set("advanced", advanced.join(","));
-    q.set("frontend", effectiveFrontend);
+    q.set("frontend", result.frontendRequired || effectiveFrontend);
     if (selectedPreset) q.set("preset", selectedPreset);
     if (selectedPoint) q.set("point", selectedPoint);
     if (activeKvOffload) {
@@ -1262,7 +1269,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       q.set("nodes", String(nodeCount));
     }
     return q.toString();
-  }, [recipe, hwId, variant, currentVariant, omniTask, activeStrategy, effectiveFeatures, featureModes, advanced, effectiveFrontend, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, pdRouter, pdConnector, pdTransport, nodeCount]);
+  }, [recipe, hwId, variant, currentVariant, omniTask, activeStrategy, effectiveFeatures, featureModes, advanced, effectiveFrontend, result.frontendRequired, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, pdRouter, pdConnector, pdTransport, nodeCount]);
   useEffect(() => {
     publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features: activeFeatures, preset: selectedPreset, query: shareQuery });
   }, [recipe.hf_id, hwId, activeStrategy, variant, activeFeatures, selectedPreset, shareQuery]);
@@ -1593,10 +1600,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // Dynamo is brand-gated (strategy YAML `dynamo.brands`); on other hardware
   // the row shows vLLM Router active and synthesis ignores the pick.
   const dynamoOk = isDynamoSupportedOnHardware(strategies.pd_cluster?.dynamo, hwProfile);
+  const ascendOk = isDynamoSupportedOnHardware(strategies.pd_cluster?.ascend, hwProfile);
   const smgReason = smgUnsupportedReason(recipe, strategies.pd_cluster, {
     prefill: { parallelism: effPdPrefillPar }, decode: { parallelism: effPdDecodePar },
   }, activeKvOffload);
-  const effPdRouter = result.orchestrator === "smg" ? "smg" : result.orchestrator === "dynamo" ? "dynamo" : "vllm";
+  const effPdRouter = result.pdRouter || (result.orchestrator === "smg" ? "smg" : result.orchestrator === "dynamo" ? "dynamo" : "vllm");
   const isSmgGrpc = result.orchestrator === "smg" && result.transport === "grpc";
   const selectPdRouter = (value) => {
     setPdRouter(value);
@@ -2082,7 +2090,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const hwFullName = hwProfile?.brand
     ? `${hwProfile.brand} ${hwProfile.display_name || hwId}`
     : (hwProfile?.display_name || hwId);
-  const statusHeader = hwStatus === "verified" && !activeKvOffload && !["dynamo", "smg"].includes(result.orchestrator) ? (
+  const statusHeader = hwStatus === "verified" && !activeKvOffload && !["dynamo", "smg", "ascend-proxy"].includes(result.orchestrator) ? (
     <span className="text-[11px] font-medium text-green-500 inline-flex items-center gap-1.5">
       <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />
       Verified on {hwFullName}
@@ -2542,7 +2550,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           className={`rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border transition-shadow ${changed ? "ring-2 ring-vllm-blue/30" : ""
             }`}
         >
-          {isPd ? (
+          {result.deploymentError ? (
+            <p role="alert" className="px-4 py-5 text-sm text-amber-600">{result.deploymentError}</p>
+          ) : isPd ? (
             <PdClusterBlock
               result={displayedResult}
               verifyCmd={verifyCmd}
@@ -2924,7 +2934,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           {/* PD Router — which orchestrator fronts the prefill/decode pools.
               Nested under Strategy: it only exists for pd_cluster and never
               changes the pools, just the launcher + front door. */}
-          {activeServingStrategy === "pd_cluster" && (strategies.pd_cluster?.dynamo || strategies.pd_cluster?.smg) && (
+          {activeServingStrategy === "pd_cluster" && (strategies.pd_cluster?.dynamo || strategies.pd_cluster?.smg || strategies.pd_cluster?.ascend) && (
             <ConfigRow label="PD Router" nested>
               <PillGroup>
                 <Pill
@@ -2955,11 +2965,22 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 >
                   <span className="font-semibold">SMG</span>
                 </Pill>}
+                {strategies.pd_cluster.ascend && <Pill
+                  active={effPdRouter === "ascend"}
+                  pressed={effPdRouter === "ascend"}
+                  disabled={!ascendOk}
+                  onClick={() => ascendOk && selectPdRouter("ascend")}
+                  title={ascendOk ? strategies.pd_cluster.ascend.description
+                    : `Ascend Router needs ${(strategies.pd_cluster.ascend.brands || []).join(" / ")} hardware.`}
+                >
+                  <span className="font-semibold">{strategies.pd_cluster.ascend.display_name || "Ascend Router"}</span>
+                </Pill>}
               </PillGroup>
               <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
                 {effPdRouter === "dynamo"
                   ? strategies.pd_cluster.dynamo.description
                   : effPdRouter === "smg" ? (isSmgGrpc ? "SMG gRPC router with NIXL prefill/decode workers. Supports TP/TEP pools without KV offload." : strategies.pd_cluster.smg.description)
+                  : effPdRouter === "ascend" ? strategies.pd_cluster.ascend.description
                   : "vllm-router with --vllm-pd-disaggregation fronts the pools; each role is a `vllm serve` on its own HTTP port."}
                 {strategies.pd_cluster[effPdRouter]?.docs && (
                   <>
@@ -3387,9 +3408,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             <PillGroup>
               {Object.entries(taxonomy.frontends || {}).map(([id, fe]) => {
                 const supported = isFrontendSupported(recipe, id, currentVariant);
-                // SMG gRPC always runs the Python servicer, so pin the pill to it.
-                const active = isSmgGrpc ? id === "python" : effectiveFrontend === id;
-                const disabled = !supported || (isSmgGrpc && id !== "python");
+                const required = result.frontendRequired || (isSmgGrpc ? "python" : null);
+                const active = required ? id === required : effectiveFrontend === id;
+                const disabled = !supported || (!!required && id !== required);
                 return (
                   <Pill
                     key={id}
@@ -3398,7 +3419,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                     disabled={disabled}
                     title={!supported
                       ? `The ${fe.label} frontend is unavailable for this configuration`
-                      : disabled ? "SMG gRPC uses the Python servicer." : undefined}
+                      : disabled ? "This PD router uses the Python frontend." : undefined}
                     onClick={() => selectFrontend(id)}
                   >
                     {id === "rust" && <Zap size={11} className="inline-block mr-1 -mt-0.5" fill="currentColor" aria-hidden="true" />}
@@ -3408,7 +3429,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               })}
             </PillGroup>
             <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
-              {isSmgGrpc ? (
+              {result.frontendRequired ? (
+                "The selected PD router uses native Python vLLM workers."
+              ) : isSmgGrpc ? (
                 "The SMG-compatible gRPC servicer runs through vllm serve --grpc."
               ) : isFrontendSupported(recipe, "rust", currentVariant) ? (
                 <>
@@ -4375,8 +4398,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   // Tabs: Prefill · Decode · Router.
   // Each pool (prefill/decode) now carries its own `nodes`, `parallelism`,
   // `dpSize`, `poolGpus` meta — rendered above the command so the reader
-  // knows whether the block is a single engine or a rank-0 template that
-  // needs to be duplicated for the rest of the DP ranks.
+  // knows the pool's topology and which node's distinct command is selected.
   const [tab, setTab] = useState("prefill");
   const isDynamo = result.orchestrator === "dynamo";
   const isSmg = result.orchestrator === "smg";
@@ -4475,6 +4497,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           # {active.meta.nodes === 0
             ? `Co-located half-node · ${active.meta.poolGpus} GPU · ${active.meta.parallelism.toUpperCase()}`
             : `${active.meta.nodes} node${active.meta.nodes === 1 ? "" : "s"} × ${(active.meta.poolGpus / Math.max(1, active.meta.nodes))} GPU = ${active.meta.poolGpus} GPU · ${active.meta.parallelism.toUpperCase()}`}
+          {` · TP=${active.meta.tp}${active.meta.pp > 1 ? ` · PP=${active.meta.pp}` : ""}`}
           {active.meta.parallelism === "dep" && active.meta.nodes > 1 && (
             <> {" · DP="}{active.meta.dpSize}{" (dp_local="}{active.meta.dpLocal}{", one vllm serve per node)"}</>
           )}
@@ -4511,7 +4534,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
                 of 1..{active.meta.nodes} · --node-rank = {active.meta.currentNode ?? 0}
               </span>
               <span className="text-[var(--command-fg)]/40 ml-auto">
-                {(active.meta.currentNode ?? 0) === 0 ? `head node — serves ${result.transport === "grpc" ? "gRPC" : "HTTP"} + NIXL` : "follower — runs --headless"}
+                {(active.meta.currentNode ?? 0) === 0 ? `head node — serves ${result.transport === "grpc" ? "gRPC" : "HTTP"}` : "follower — runs --headless"}
               </span>
             </>
           )}

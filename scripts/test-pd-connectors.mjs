@@ -6,6 +6,7 @@ import yaml from "js-yaml";
 import { buildDockerArgv, buildDockerRun, computeDockerMeta, pdConnectorKey, resolveCommand } from "../src/lib/command-synthesis.js";
 import { applyPresetArgOps, validatePresets } from "../src/lib/recipe-presets.js";
 import { contentDir } from "../src/lib/content-root.js";
+import { ascendPdPools, ascendPdRecipe } from "./fixtures/ascend-pd.mjs";
 
 // Recipes live in their source repos; read the assembled tree (run
 // build-recipes-api or assemble-content first).
@@ -15,6 +16,8 @@ const taxonomy = read("taxonomy.yaml");
 const strategies = Object.fromEntries(["strategies", "kv_store"].flatMap((dir) => fs.readdirSync(path.join(contentDir(), dir))
   .filter((file) => file.endsWith(".yaml"))
   .map((file) => { const s = read(`${dir}/${file}`); return [s.name, s]; })));
+// The connector catalog belongs to this renderer, not a remote content source.
+strategies.pd_cluster = yaml.load(fs.readFileSync(new URL("../strategies/pd_cluster.yaml", import.meta.url), "utf8"));
 const flag = (argv, key) => argv[argv.lastIndexOf(key) + 1];
 const pools = { prefill: { nodes: 1 }, decode: { nodes: 1 } };
 const resolve = (strats, kvOffload = null) =>
@@ -178,4 +181,83 @@ test("a pool's tp takes a hardware-keyed map, read by the commands and the route
   assert.equal(flag(b300.decode.argv, "--data-parallel-size-local"), "8");
   assert.match(b200.router.command, /--intra-node-data-parallel-size 2/);
   assert.match(b300.router.command, /--intra-node-data-parallel-size 8/);
+});
+
+const ascend = (r, rank = 0, connector = "mooncakev2", strats = strategies, features = []) =>
+  resolveCommand(r, "default", "pd_cluster", "ascend_950dt", features, strats, taxonomy, [], 1,
+    ascendPdPools(rank), {}, null, null, "python", "ascend", "http", null, "ascend_pd", undefined, connector);
+
+test("Ascend DEP uses native external DP modes with every rank and endpoint", () => {
+  for (const tp of [8, 4, 2]) {
+    const fixture = ascendPdRecipe();
+    fixture.presets.ascend_pd.roles.decode.tp = tp;
+    const local = 8 / tp;
+    for (let rank = 0; rank < 4; rank++) {
+      const r = ascend(fixture, rank);
+      const argv = r.decode.argv;
+      assert.equal(flag(argv, "--tensor-parallel-size"), String(tp));
+      assert.equal(flag(argv, "--data-parallel-size-local"), String(local));
+      assert.equal(flag(argv, "--data-parallel-size"), String(4 * local));
+      assert.ok(!argv.includes("--data-parallel-hybrid-lb"));
+      assert.equal(argv.includes("--data-parallel-multi-port-external-lb"), local > 1);
+      assert.equal(argv.includes("--data-parallel-external-lb"), local === 1);
+      const rankFlag = local > 1 ? "--data-parallel-start-rank" : "--data-parallel-rank";
+      assert.equal(flag(argv, rankFlag), String(rank * local));
+      assert.ok(!argv.includes(local > 1 ? "--data-parallel-rank" : "--data-parallel-start-rank"));
+      assert.equal(flag(argv, "--data-parallel-address"), "$DECODE_NODE_1");
+      assert.equal(r.decode.env.HCCL_IF_IP, `$DECODE_NODE_${rank + 1}`);
+      assert.equal(flag(r.prefill.argv, "--tensor-parallel-size"), "8");
+      assert.equal(flag(r.prefill.argv, "--pipeline-parallel-size"), "4");
+      assert.equal(flag(r.prefill.argv, "--nnodes"), "4");
+      assert.equal(flag(r.prefill.argv, "--node-rank"), String(rank));
+      assert.equal(flag(r.prefill.argv, "--master-addr"), "$PREFILL_NODE_1");
+      assert.equal(r.prefill.argv.includes("--headless"), rank > 0);
+      assert.equal(r.prefill.env.VLLM_HOST_IP, `$PREFILL_NODE_${rank + 1}`);
+      // Only the TP/PP serving head is an HTTP backend; every external DP
+      // rank is one, including those sharing a physical decode node.
+      assert.equal(r.router.argv.filter((arg) => arg === "$PREFILL_NODE_1").length, 1);
+      for (let node = 1; node <= 4; node++) {
+        assert.equal(r.router.argv.filter((arg) => arg === `$DECODE_NODE_${node}`).length, local);
+      }
+      const ports = r.router.argv.slice(r.router.argv.indexOf("--decoder-ports") + 1);
+      assert.deepEqual(ports, Array.from({ length: 4 }, () => Array.from({ length: local }, (_, i) => String(8002 + i))).flat());
+      assert.doesNotMatch(r.router.command, /launch_online_dp|run_dp_template/);
+    }
+  }
+});
+
+test("PD topology placeholders, role edits and connector selection share the final pool layout", () => {
+  const fixture = ascendPdRecipe();
+  const r = ascend(fixture, 0, "mooncakev2", strategies, ["spec_decoding"]);
+  for (const role of ["prefill", "decode"]) {
+    assert.deepEqual(kvCfg(r, role).kv_connector_extra_config, {
+      prefill: { dp_size: 1, tp_size: 8, pp_size: 4 },
+      decode: { dp_size: 8, tp_size: 4, pp_size: 1 },
+    });
+    assert.equal(r[role].argv[2], "test/Ascend-PD-W8A8");
+  }
+  assert.ok(!r.prefill.argv.includes("--max-model-len"));
+  assert.equal(flag(r.decode.argv, "--max-model-len"), "1024");
+  assert.equal(JSON.parse(flag(r.decode.argv, "--speculative-config")).num_speculative_tokens, 3);
+  for (const role of ["prefill", "decode"]) assert.ok(!ascend(fixture)[role].argv.includes("--speculative-config"));
+
+  const custom = structuredClone(strategies);
+  custom.pd_cluster.connectors.other = {
+    brands: ["Huawei"], routers: ["ascend"],
+    prefill: { config: { kv_connector: "OtherConnector", kv_role: "kv_producer", kv_connector_extra_config: { tp: "{prefill_tp_size}" } } },
+    decode: { config: { kv_connector: "OtherConnector", kv_role: "kv_consumer" } },
+  };
+  const other = ascend(fixture, 0, "other", custom);
+  assert.equal(other.kvConnector.selected, "other");
+  assert.deepEqual(kvCfg(other, "prefill"), { kv_connector: "OtherConnector", kv_role: "kv_producer", kv_connector_extra_config: { tp: 8 } });
+  assert.equal(kvCfg(other, "decode").kv_connector, "OtherConnector");
+
+  for (const [tp, pp] of [[8, 5], [undefined, 3]]) {
+    fixture.presets.ascend_pd.roles.prefill.tp = tp;
+    fixture.presets.ascend_pd.roles.prefill.pp = pp;
+    assert.throws(() => ascend(fixture), RangeError, "invalid TP/PP capacity must not produce commands");
+  }
+  const inconsistent = ascendPdRecipe();
+  inconsistent.presets.ascend_pd.roles.decode.args = ["--tensor-parallel-size", "2"];
+  assert.throws(() => ascend(inconsistent), RangeError, "late flags must not disagree with the router and connector topology");
 });

@@ -58,6 +58,7 @@ connectors:
     default: true
     description: "NIXL pull transfer: decode reads each request's KV from prefill. Works with every PD router."
     docs: "https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html"
+    brands: [NVIDIA, AMD]
     routers: [vllm, dynamo, smg]
     prefill:
       config: { kv_connector: NixlConnector, kv_role: kv_producer, kv_load_failure_policy: fail }
@@ -90,6 +91,29 @@ connectors:
       - note: "Mooncake transfer engine on every prefill / decode node (CUDA 12: mooncake-transfer-engine)"
         command: "uv pip install mooncake-transfer-engine-cuda13"
     docker: { host_network: true, flags: ["--ulimit", "memlock=-1"] }
+  mooncakev2:
+    display_name: "Mooncake V2"
+    description: "Ascend KV transfer between independently sized prefill and decode pools."
+    docs: "https://docs.vllm.ai/projects/ascend/en/latest/tutorials/features/pd_disaggregation_mooncake_multi_node.html"
+    brands: [Huawei]
+    routers: [ascend]
+    prefill:
+      config:
+        kv_connector: MooncakeConnectorV2
+        kv_role: kv_producer
+        kv_port: "36000"
+        kv_connector_extra_config:
+          prefill: { dp_size: "{prefill_dp_size}", tp_size: "{prefill_tp_size}", pp_size: "{prefill_pp_size}" }
+          decode: { dp_size: "{decode_dp_size}", tp_size: "{decode_tp_size}", pp_size: "{decode_pp_size}" }
+    decode:
+      config:
+        kv_connector: MooncakeConnectorV2
+        kv_role: kv_consumer
+        kv_port: "36100"
+        kv_connector_extra_config:
+          prefill: { dp_size: "{prefill_dp_size}", tp_size: "{prefill_tp_size}", pp_size: "{prefill_pp_size}" }
+          decode: { dp_size: "{decode_dp_size}", tp_size: "{decode_tp_size}", pp_size: "{decode_pp_size}" }
+    docker: { host_network: true }
   moriio:
     display_name: "MoRI-IO"
     description: "ROCm MoRI-IO transfer over RDMA. Workers register with the router (proxy_ip / proxy_ping_port), which discovers them instead of listing endpoints; WRITE mode by default, READ with read_mode."
@@ -119,6 +143,15 @@ parallel_flag: "--tensor-parallel-size"
 
 router:
   policy: round_robin
+
+ascend:
+  display_name: "Ascend Router"
+  description: "Ascend proxy with a TP/PP head endpoint or one external-DP endpoint per rank."
+  brands: [Huawei]
+  docs: "https://docs.vllm.ai/projects/ascend/en/latest/tutorials/features/pd_disaggregation_mooncake_multi_node.html"
+  data_parallel_lb: external
+  docker: { host_network: true }
+  script: "/vllm-workspace/vllm-ascend/examples/disaggregated_prefill_v1/load_balance_proxy_server_example.py"
 
 # HTTP PD keeps native vLLM workers; registration supplies NIXL metadata.
 smg:

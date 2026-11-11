@@ -57,6 +57,10 @@ The same ones the page URL uses. Values the recipe can't run fall back to its de
 
 Each recipe's Markdown lists the values it accepts under **Other configurations**.
 
+PD renderings include \`prefill.node_commands[]\` and \`decode.node_commands[]\`, with every node's
+\`node_rank\`, \`command\`, \`argv\`, \`env\`, and Docker equivalents. Run each on its named node;
+the singular role \`command\` remains the node selected by \`prefill_rank\` / \`decode_rank\`.
+
 ## Static files
 
 Built with the site; cheap to fetch in bulk.
