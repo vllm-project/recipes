@@ -1713,12 +1713,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     const value = (key) => pdRoleValue(recipe, role, key, hwProfile, hwProfileId)
       ?? declaredTpForHardware(strategy[role]?.[key], hwProfile, hwProfileId);
     const poolGpus = nodes === 0 ? Math.floor(gpuCount / 2) : nodes * gpuCount;
-    const declaredPp = value("pp");
-    const pp = declaredPp ?? 1;
-    // Existing role TP is a DEP hint, including when the picker switches that
-    // pool to TP/TEP. An explicit PP declaration opts into a TP×PP layout.
-    const tp = parallelism === "dep" ? value("tp") ?? 1
-      : declaredPp != null ? value("tp") ?? poolGpus / pp : poolGpus;
+    const pp = value("pp") ?? 1;
+    // TP/TEP spans the whole pool; role TP only sizes individual DEP ranks.
+    const tp = parallelism === "dep" ? value("tp") ?? 1 : poolGpus / pp;
     const fail = (message) => { throw new RangeError(`PD ${role}: ${message}`); };
     if (!Number.isInteger(nodes) || nodes < 0 || !Number.isInteger(tp) || tp < 1 || !Number.isInteger(pp) || pp < 1) {
       fail("nodes, TP and PP must form a positive integer layout (nodes=0 denotes a shared node).");
@@ -1726,8 +1723,6 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     if (parallelism === "dep") {
       if (pp !== 1 || tp > gpuCount || gpuCount % tp) fail("DEP requires PP1 and TP that divides the devices per node.");
       if (externalDp && (nodes < 1 || recipe.model?.architecture === "dense")) fail("external DEP requires a MoE model and dedicated role nodes.");
-    } else if (tp * pp > poolGpus || (tp * pp) % Math.max(1, nodes)) {
-      fail("TP × PP must fit the pool and divide evenly across its nodes.");
     }
     const dpLocal = parallelism === "dep" ? gpuCount / tp : 0;
     const dpSize = parallelism === "dep" ? Math.max(1, nodes) * dpLocal : 1;
@@ -2155,7 +2150,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       });
       for (const [flag, size] of Object.entries(expected)) {
         const fallback = flag === "--pipeline-parallel-size" || flag === "--tensor-parallel-size" ? 1 : NaN;
-        if (Number(flags.get(flag) ?? fallback) !== size) throw new RangeError(`PD ${roleOverride}: ${flag} conflicts with the role topology; use role tp/pp/nodes instead.`);
+        if (Number(flags.get(flag) ?? fallback) !== size) throw new RangeError(`PD ${roleOverride}: ${flag} conflicts with the role topology; use role nodes/pp (and tp for DEP) instead.`);
       }
       if (externalDp && meta.parallelism === "dep") {
         const selected = meta.dpLocal > 1 ? "--data-parallel-multi-port-external-lb" : "--data-parallel-external-lb";

@@ -17,7 +17,7 @@ export function ascendPdRecipe() {
         label: "Ascend PD", hardware: "ascend_950dt", strategy: "pd_cluster",
         image: "example/ascend:fixture", select: { pd_router: "ascend", pd_connector: "mooncakev2", frontend: "python" },
         roles: {
-          prefill: { nodes: 4, parallelism: "tp", tp: 8, pp: 4, remove_args: ["--max-model-len"], env: { HCCL_IF_IP: "$PREFILL_NODE_1", VLLM_HOST_IP: "$PREFILL_NODE_1" } },
+          prefill: { nodes: 4, parallelism: "tp", pp: 4, remove_args: ["--max-model-len"], env: { HCCL_IF_IP: "$PREFILL_NODE_1", VLLM_HOST_IP: "$PREFILL_NODE_1" } },
           decode: { nodes: 4, parallelism: "dep", tp: 4, pp: 1, json_args: { "--speculative-config": { num_speculative_tokens: 3 } }, env: { HCCL_IF_IP: "$DECODE_NODE_1", VLLM_HOST_IP: "$DECODE_NODE_1" } },
         },
       },

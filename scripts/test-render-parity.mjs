@@ -30,26 +30,30 @@ const readJson = (rel) => JSON.parse(fs.readFileSync(path.join(PUBLIC, rel), "ut
 
 test("PD JSON and Markdown contain every node independently of the selected rank", () => {
   const recipe = ascendPdRecipe();
+  for (const role of ["prefill", "decode"]) recipe.presets.ascend_pd.roles[role].nodes = 8;
+  const pools = (rank) => Object.fromEntries(Object.entries(ascendPdPools(rank)).map(([role, pool]) => [role, { ...pool, nodes: 8 }]));
   const flag = (argv, key) => argv[argv.lastIndexOf(key) + 1];
   const allowed = new Set(["command", "argv", "env", "nodes", "parallelism", "tp", "pp", "dpLocal", "dpSize", "poolGpus", "currentNode", "startRank", "docker_command", "docker_argv", "node_commands"]);
   const staticAt = (rank) => renderCommand(recipe, "default", "pd_cluster", "ascend_950dt", 1, [], strategies, taxonomy,
-    ascendPdPools(rank), null, "ascend_pd", undefined, true);
+    pools(rank), null, "ascend_pd", undefined, true);
   const first = staticAt(0);
-  for (const rank of [0, 3]) {
+  for (const rank of [0, 7]) {
     const query = new URLSearchParams({ hardware: "ascend_950dt", strategy: "pd_cluster", preset: "ascend_pd", features: "none", prefill_rank: String(rank), decode_rank: String(rank) });
     const resolved = resolveSelection(recipe, query, strategies, taxonomy);
     const r = resolved.rendering;
     assert.ok(r);
     assert.equal(r.pd_router, "ascend");
     assert.equal(r.orchestrator, undefined);
+    assert.equal(r.prefill.tp, 16);
+    assert.equal(r.decode.tp, 4);
     const md = selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls: { page: "https://example.org/test/Ascend-PD", json: "https://example.org/test/Ascend-PD.json" } });
     for (const role of ["prefill", "decode"]) {
       const p = r[role];
-      assert.equal(p.nodes, 4);
+      assert.equal(p.nodes, 8);
       assert.ok(Object.keys(p).every((key) => allowed.has(key)), Object.keys(p).join(", "));
       assert.deepEqual(p.node_commands, first[role].node_commands, "the full pool must not depend on the selected rank");
       assert.deepEqual(p.node_commands, staticAt(rank)[role].node_commands, "static and query exports share every launch");
-      assert.deepEqual(p.node_commands.map((node) => node.node_rank), [0, 1, 2, 3]);
+      assert.deepEqual(p.node_commands.map((node) => node.node_rank), [0, 1, 2, 3, 4, 5, 6, 7]);
       assert.deepEqual(p.argv, p.node_commands[rank].argv);
       for (const node of p.node_commands) {
         assert.ok(md.includes(node.command), `${role} node ${node.node_rank} missing from Markdown`);
@@ -59,6 +63,8 @@ test("PD JSON and Markdown contain every node independently of the selected rank
       }
     }
     assert.doesNotMatch(md, /Start_Server|run_dp_template|launch_online_dp/);
+    assert.ok(md.includes("- `prefill_rank`, `decode_rank`"));
+    assert.ok(md.includes("- `pd_connector`"));
   }
   // The same export contract serves ordinary GPU pools, with their existing
   // hybrid DEP commands and without leaking UI layout state into JSON.

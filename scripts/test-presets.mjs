@@ -9,7 +9,7 @@ import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import { contentDir } from "../src/lib/content-root.js";
 import { applyOverlay, resolveScope, splitOverlay } from "../src/lib/overlay-merge.js";
 import { BASELINE, applyPresetArgOps, effectivePreset, presetSelect, resolvePresetKey, validatePresets, withPreset } from "../src/lib/recipe-presets.js";
-import { ascendPdRecipe } from "./fixtures/ascend-pd.mjs";
+import { ascendPdPools, ascendPdRecipe } from "./fixtures/ascend-pd.mjs";
 
 const read = (file) => yaml.load(fs.readFileSync(path.join(contentDir(), file), "utf8"));
 const taxonomy = read("taxonomy.yaml");
@@ -251,11 +251,15 @@ test("pd_cluster points change role args, topology and role JSON edits", () => {
   // Ascend topology uses the existing hardware-scoped preset mechanism,
   // including point overrides, without extending the overlay merge rules.
   const fixture = ascendPdRecipe();
-  fixture.presets.ascend_pd.points = { small: { label: "Small", roles: { prefill: { tp: 4, pp: 8 }, decode: { tp: 8 } } } };
+  fixture.presets.ascend_pd.points = { small: { label: "Small", roles: { prefill: { pp: 8 }, decode: { tp: 8 } } } };
   const mounted = withPreset(fixture, "ascend_pd", "ascend_950dt", "pd_cluster", { point: "small" });
-  assert.equal(mounted.strategy_overrides.pd_cluster.prefill.tp.ascend_950dt, 4);
   assert.equal(mounted.strategy_overrides.pd_cluster.prefill.pp.ascend_950dt, 8);
   assert.equal(mounted.strategy_overrides.pd_cluster.decode.tp.ascend_950dt, 8);
+  const rendered = resolveCommand(fixture, "default", "pd_cluster", "ascend_950dt", [], strategies, taxonomy,
+    [], 1, ascendPdPools(), {}, null, null, "python", "ascend", "http", null, "ascend_pd", "small");
+  assert.equal(flagValue(rendered.prefill.argv, "--tensor-parallel-size"), "4");
+  assert.equal(rendered.decode.tp, 8);
+  assert.equal(rendered.decode.dpLocal, 1);
   const ctx = resolveScope({ brands: ["Huawei"] }, taxonomy);
   const core = { ...fixture, presets: {} };
   const merged = applyOverlay(core, { presets: fixture.presets }, { ctx, source: "vllm-ascend" });

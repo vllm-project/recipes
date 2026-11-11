@@ -183,9 +183,36 @@ test("a pool's tp takes a hardware-keyed map, read by the commands and the route
   assert.match(b300.router.command, /--intra-node-data-parallel-size 8/);
 });
 
-const ascend = (r, rank = 0, connector = "mooncakev2", strats = strategies, features = []) =>
+const ascend = (r, rank = 0, connector = "mooncakev2", strats = strategies, features = [], pools = ascendPdPools(rank)) =>
   resolveCommand(r, "default", "pd_cluster", "ascend_950dt", features, strats, taxonomy, [], 1,
-    ascendPdPools(rank), {}, null, null, "python", "ascend", "http", null, "ascend_pd", undefined, connector);
+    pools, {}, null, null, "python", "ascend", "http", null, "ascend_pd", undefined, connector);
+
+test("TP/TEP derives its width from the whole pool as PD grows from four to eight nodes", () => {
+  const fixture = ascendPdRecipe();
+  fixture.compatible_strategies.push("single_node_tep");
+  // A TP hint retained from DEP must not pin a TP/TEP pool's width.
+  fixture.presets.ascend_pd.roles.prefill.tp = 8;
+  for (const parallelism of ["tp", "tep"]) {
+    for (const nodes of [4, 8]) {
+      const pools = { prefill: { nodes, rank: nodes - 1, parallelism }, decode: { nodes, rank: nodes - 1, parallelism: "dep" } };
+      const r = ascend(fixture, nodes - 1, "mooncakev2", strategies, [], pools);
+      assert.equal(r.prefill.tp, nodes * 2);
+      assert.equal(r.prefill.tp * r.prefill.pp, r.prefill.poolGpus);
+      assert.equal(flag(r.prefill.argv, "--tensor-parallel-size"), String(nodes * 2));
+      assert.equal(flag(r.prefill.argv, "--node-rank"), String(nodes - 1));
+      assert.equal(r.prefill.argv.includes("--enable-expert-parallel"), parallelism === "tep");
+      assert.equal(r.decode.tp, 4);
+      assert.equal(r.decode.dpLocal, 2);
+      assert.equal(r.decode.dpSize, nodes * 2);
+      assert.equal(flag(r.decode.argv, "--data-parallel-start-rank"), String((nodes - 1) * 2));
+      assert.deepEqual(kvCfg(r, "decode").kv_connector_extra_config, {
+        prefill: { dp_size: 1, tp_size: nodes * 2, pp_size: 4 },
+        decode: { dp_size: nodes * 2, tp_size: 4, pp_size: 1 },
+      });
+      assert.equal(r.router.argv.slice(r.router.argv.indexOf("--decoder-ports") + 1).length, nodes * 2);
+    }
+  }
+});
 
 test("Ascend DEP uses native external DP modes with every rank and endpoint", () => {
   for (const tp of [8, 4, 2]) {
@@ -252,8 +279,7 @@ test("PD topology placeholders, role edits and connector selection share the fin
   assert.deepEqual(kvCfg(other, "prefill"), { kv_connector: "OtherConnector", kv_role: "kv_producer", kv_connector_extra_config: { tp: 8 } });
   assert.equal(kvCfg(other, "decode").kv_connector, "OtherConnector");
 
-  for (const [tp, pp] of [[8, 5], [undefined, 3]]) {
-    fixture.presets.ascend_pd.roles.prefill.tp = tp;
+  for (const pp of [5, 3]) {
     fixture.presets.ascend_pd.roles.prefill.pp = pp;
     assert.throws(() => ascend(fixture), RangeError, "invalid TP/PP capacity must not produce commands");
   }
