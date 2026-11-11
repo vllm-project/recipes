@@ -737,27 +737,26 @@ kv_offload:
       - "--no-enable-prefix-caching"
     hardware_overrides:
       # vLLM CPU inference on the Xeon itself. A DEVICE=cpu build has no DSA
-      # or GDRCopy path. The pool is sized explicitly: IAXL's default (80% of
-      # host RAM across ranks, up to 80% of a NUMA node per rank, held once
-      # used since setvars.sh sets TCMALLOC_RELEASE_RATE=0) would double-book
-      # the memory vLLM's CPU engine already reserves for its own KV cache
-      # (--gpu-memory-utilization of its NUMA node).
+      # or GDRCopy path. IAXL_RECIPE=vllm-cpu applies IAXL's own CPU recipe
+      # (examples/recipes/vllm-cpu) in setvars.sh: DEVICE=cpu, disjoint vLLM
+      # and IAXL CPUs per rank, a fixed vLLM KV cache (VLLM_CPU_KVCACHE_SPACE)
+      # and an IAXL pool sized to IAXL's default budget minus that cache, so
+      # the two don't double-book the NUMA node's memory.
       cpu:
-        description: "intel-accel-for-llm's KVShrinkConnector offloads KV cache to a compressed DRAM store on this Xeon, beside vLLM CPU inference (a DEVICE=cpu build has no DSA path). Intel QAT compresses and decompresses the KV blocks by default, so setvars.sh needs at least TP_SIZE QAT devices (in-tree QAT driver with qatlib, and POLICY=0 in /etc/sysconfig/qat so the process sees every device it assigns) and stops the launch without them. To compress on IAA instead, export IAXL_QAT_ZIP_ENABLE=0 IAXL_IAA_ZIP_ENABLE=1 before the serve block; to spread fewer QAT devices over the ranks, export KVSHRINK_QAT_DEVICES yourself (comma-separated device indices per rank, | between ranks). Each TP rank keeps a 16 GB compressed pool (IAXL_DDR_POOL_SIZE_GB), well below IAXL's default because vLLM's CPU engine already reserves most of its NUMA node's memory for its own KV cache; raise it if RAM allows. Prefix caching is turned off so prefix hits come from KVShrink. setvars.sh binds vLLM and IAXL to the same CPUs by default; for best performance export disjoint per-rank CPU lists on one NUMA node (VLLM_CPU_OMP_THREADS_BIND / KVSHRINK_CPU_OMP_THREADS_BIND) before the serve block — see the CPU inference guide."
+        description: "intel-accel-for-llm's KVShrinkConnector offloads KV cache to a compressed DRAM store on this Xeon, beside vLLM CPU inference (a DEVICE=cpu build has no DSA path). setvars.sh applies IAXL's vllm-cpu recipe (IAXL_RECIPE=vllm-cpu). Intel QAT compresses and decompresses the KV blocks, so setvars.sh needs at least TP_SIZE QAT devices (in-tree QAT driver with qatlib, and POLICY=0 in /etc/sysconfig/qat so the process sees every device it assigns) and stops the launch without them. Each rank's last 2 CPUs (RECIPE_IAXL_CPUS_PER_RANK) go to IAXL and the rest to vLLM; vLLM's own KV cache is VLLM_CPU_KVCACHE_SPACE (40 GiB per rank, in place of --gpu-memory-utilization), and each rank's compressed pool gets IAXL's default budget (80% of host RAM across ranks, up to 80% of a NUMA node per rank) minus that. Export any of these before the serve block to change them. To compress on IAA instead, export IAXL_QAT_ZIP_ENABLE=0 IAXL_IAA_ZIP_ENABLE=1; to spread fewer QAT devices over the ranks, export KVSHRINK_QAT_DEVICES yourself (comma-separated device indices per rank, | between ranks). The recipe splits the physical cores evenly across ranks; where a host has more NUMA nodes than ranks (e.g. sub-NUMA clustering), export VLLM_CPU_OMP_THREADS_BIND and KVSHRINK_CPU_OMP_THREADS_BIND with each rank on one NUMA node — see the CPU inference guide. Prefix caching is turned off so prefix hits come from KVShrink."
         docs_url: "https://github.com/intel/intel-accel-for-llm/blob/main/doc/usage/vllm-cpu-inference.en.md"
         install:
           - note: "IAXL build prerequisites (Debian/Ubuntu, as in IAXL's docker/Dockerfile.dev): the native extension builds QPL and qatlib from source"
             command: "sudo apt-get install -y build-essential cmake pkg-config autoconf automake autoconf-archive libtool nasm yasm libboost-all-dev libudev-dev liblz4-dev libsqlite3-dev zlib1g-dev uuid-dev libjson-c-dev libssl-dev libnuma-dev libtcmalloc-minimal4 iproute2"
           - note: "IAXL source checkout, pinned to the commit this option was tested with (no PyPI wheel or published vLLM image includes IAXL yet); the serve command sources setvars.sh from here"
-            command: 'git clone https://github.com/intel/intel-accel-for-llm.git "$HOME/intel-accel-for-llm" && git -C "$HOME/intel-accel-for-llm" checkout -q 28f2d3e1a15721763912d0dd7ec5d4b1f76bc959'
+            command: 'git clone https://github.com/intel/intel-accel-for-llm.git "$HOME/intel-accel-for-llm" && git -C "$HOME/intel-accel-for-llm" checkout -q bff83ae2e76a1966e67f5273509118329d36d5cf'
           - note: "IAXL CPU build (DEVICE=cpu) against the installed torch, with qatlib for the in-tree QAT driver; requirements.txt adds the build tools and intel-openmp (libiomp5). It also installs IAXL's kvshrink vLLM plugin, which loads in every vLLM process in this environment but only acts when KVShrinkConnector is configured."
             command: |-
               cd "$HOME/intel-accel-for-llm"
               uv pip install -r requirements.txt
               IAXL_VERSION=$(sed -n 's/^export IAXL_VERSION=${IAXL_VERSION:-\(.*\)}$/\1/p' setvars.sh) DEVICE=cpu IAXL_QATLIB=intree uv pip install --no-build-isolation -e .
         env:
-          DEVICE: "cpu"
-          IAXL_DDR_POOL_SIZE_GB: "16"
+          IAXL_RECIPE: "vllm-cpu"
       # NVIDIA GPU inference; IAXL runs on the server's Xeon host, whose RAM is
       # otherwise mostly idle, so the pool keeps IAXL's default size. The
       # DEVICE=cuda build needs the CUDA toolkit, links GDRCopy's gdrapi even
@@ -789,7 +788,7 @@ kv_offload:
               meson setup build -Ducx_path=/usr/local/ucx -Dinstall_headers=true -Denable_plugins=UCX -Ddisable_gds_backend=true -Dbuild_docs=false --prefix=/usr/local
               ninja -C build && sudo "$(command -v ninja)" -C build install && sudo ldconfig
           - note: "IAXL source checkout, pinned to the commit this option was tested with (no PyPI wheel or published vLLM image includes IAXL yet); the serve command sources setvars.sh from here"
-            command: 'git clone https://github.com/intel/intel-accel-for-llm.git "$HOME/intel-accel-for-llm" && git -C "$HOME/intel-accel-for-llm" checkout -q 28f2d3e1a15721763912d0dd7ec5d4b1f76bc959'
+            command: 'git clone https://github.com/intel/intel-accel-for-llm.git "$HOME/intel-accel-for-llm" && git -C "$HOME/intel-accel-for-llm" checkout -q bff83ae2e76a1966e67f5273509118329d36d5cf'
           - note: "IAXL CUDA build (DEVICE=cuda) against the installed torch, with qatlib for the in-tree QAT driver; requirements.txt adds the build tools and intel-openmp (libiomp5). It also installs IAXL's kvshrink vLLM plugin, which loads in every vLLM process in this environment but only acts when KVShrinkConnector is configured."
             command: |-
               cd "$HOME/intel-accel-for-llm"
