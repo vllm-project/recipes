@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import yaml from "js-yaml";
 import Ajv from "ajv";
@@ -56,9 +58,48 @@ test("misspelled keys are rejected", () => {
 });
 
 test("vocabulary and status values are checked", () => {
+  assert.ok(errorsFor((r) => { r.variants.default.supported_frontends = ["go"]; }).length);
   assert.ok(errorsFor((r) => { r.meta.hardware.h999 = "verified"; }).length);
   assert.ok(errorsFor((r) => { r.meta.hardware.h200 = "unverified"; }).length);
   assert.ok(errorsFor((r) => { r.compatible_strategies = ["single_node_tpp"]; }).length);
   assert.ok(errorsFor((r) => { r.hardware_overrides.dgx_spark_gb10 = "verified"; }).length);
   assert.deepEqual(errorsFor((r) => { r.meta.hardware.dgx_spark_gb10 = "supported"; }), []);
+});
+
+test("build rejects inconsistent variant feature and frontend references", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-variant-validation-"));
+  try {
+    const input = path.join(tmp, "content");
+    fs.mkdirSync(path.join(input, "models/TODO-org"), { recursive: true });
+    for (const name of ["taxonomy.yaml", "platforms.yaml", "strategies", "kv_store"]) {
+      fs.cpSync(path.join(dir, name), path.join(input, name), { recursive: true });
+    }
+    const build = (extra, modeVariants) => {
+      const r = structuredClone(fixture);
+      r.model.default_frontend = "python";
+      r.model.rust_frontend = "unsupported";
+      r.features = { reasoning: { description: "Reasoning", modes: { on: { args: ["--reasoning-parser", "example"], variants: modeVariants } } } };
+      r.variants.local = { ...r.variants.default, supported_features: [], supported_frontends: ["python"], ...extra };
+      fs.writeFileSync(path.join(input, "models/TODO-org/TODO-repo.yaml"), yaml.dump(r));
+      return spawnSync(process.execPath, ["scripts/build-recipes-api.mjs"], {
+        env: { ...process.env, RECIPES_CONTENT_DIR: input, RECIPES_PUBLIC_DIR: path.join(tmp, "public") },
+        encoding: "utf8",
+      });
+    };
+    for (const [extra, field] of [
+      [{ supported_features: ["reasonin"] }, "supported_features"],
+      [{ supported_frontends: ["rust"] }, "supported_frontends"],
+      [{ default_modes: { reasoning: "on" } }, "default_modes.reasoning"],
+    ]) {
+      const result = build(extra);
+      assert.notEqual(result.status, 0);
+      assert.ok(result.stderr.includes(`variants.local.${field}`), result.stderr);
+    }
+    for (const [extra, modes] of [[{}, ["default"]], [{ supported_features: undefined }, undefined]]) {
+      const result = build(extra, modes);
+      assert.equal(result.status, 0, result.stderr);
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
