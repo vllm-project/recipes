@@ -5,7 +5,6 @@ import { highlightShell, SHELL_LANGS } from "../src/lib/shell-highlight.js";
 // The module's one hard promise: the segment texts concatenate back to the
 // input byte-for-byte, so copy/paste off a highlighted block is unaffected.
 const concat = (segs) => segs.map((s) => s.text).join("");
-const kinds = (segs) => segs.map((s) => s.kind);
 const textOf = (segs, kind) => segs.filter((s) => s.kind === kind).map((s) => s.text);
 
 // Representative commands spanning every lexer and highlighter path: plain
