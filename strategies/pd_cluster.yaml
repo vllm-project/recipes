@@ -92,7 +92,7 @@ connectors:
         command: "uv pip install mooncake-transfer-engine-cuda13"
     docker: { host_network: true, flags: ["--ulimit", "memlock=-1"] }
   mooncakev2:
-    display_name: "Mooncake V2"
+    display_name: "Mooncake (Ascend)"
     description: "Ascend KV transfer between independently sized prefill and decode pools."
     docs: "https://docs.vllm.ai/projects/ascend/en/latest/tutorials/features/pd_disaggregation_mooncake_multi_node.html"
     brands: [Huawei]

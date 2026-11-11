@@ -60,7 +60,7 @@ Each recipe's Markdown lists the values it accepts under **Other configurations*
 
 Select the PD router and KV connector independently, subject to catalog compatibility.
 For Ascend, \`pd_router=ascend\` selects Ascend Router; \`pd_connector=mooncakev2\`
-selects Mooncake V2 for KV transfer.
+selects Mooncake (Ascend), using MooncakeConnectorV2 for KV transfer.
 
 PD renderings include \`prefill.node_commands[]\` and \`decode.node_commands[]\`, with every node's
 \`node_rank\`, \`command\`, \`argv\`, \`env\`, and Docker equivalents. Run each on its named node;
