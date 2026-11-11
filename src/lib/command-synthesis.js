@@ -24,18 +24,42 @@ const NVL4_HW_IDS = new Set(["gb200", "gb300", "vr200"]);
 // `model.<frontend>_frontend: unsupported` (e.g. `rust_frontend`).
 export const FALLBACK_FRONTEND = "python";
 
-export function isFrontendSupported(recipe, frontend) {
-  return frontend === FALLBACK_FRONTEND || recipe.model?.[`${frontend}_frontend`] !== "unsupported";
+export function isFrontendSupported(recipe, frontend, variant = {}) {
+  return frontend === FALLBACK_FRONTEND || (
+    recipe.model?.[`${frontend}_frontend`] !== "unsupported"
+    && (!variant.supported_frontends || variant.supported_frontends.includes(frontend))
+  );
 }
 
 // Resolve the frontend a command is rendered for: the requested one (URL,
 // saved state, pill click), else the recipe's `default_frontend`, falling back
 // to Python when that frontend is unknown to the taxonomy or unsupported by the
 // recipe — so a stale `?frontend=rust` link can never emit a broken command.
-export function resolveFrontend(recipe, frontend, taxonomy) {
+export function resolveFrontend(recipe, frontend, taxonomy, variant = {}) {
   const wanted = frontend || recipe.model?.default_frontend;
   if (!wanted || !taxonomy?.frontends?.[wanted]) return FALLBACK_FRONTEND;
-  return isFrontendSupported(recipe, wanted) ? wanted : FALLBACK_FRONTEND;
+  return isFrontendSupported(recipe, wanted, variant) ? wanted : FALLBACK_FRONTEND;
+}
+
+export function resolveInstall(recipe, variant = {}) {
+  return { ...recipe.model?.install, ...variant.install };
+}
+
+export function isFeatureAllowedForVariant(variant, featureKey) {
+  return !variant?.supported_features || variant.supported_features.includes(featureKey);
+}
+
+// Enabling one of these features disables the other.
+export const FEATURE_MUTEX = { text_only: "encoder_parallel", encoder_parallel: "text_only" };
+
+// Restore defaults the previous variant could not offer, preserving explicit choices.
+export function restoreVariantDefaults(features, previousVariant, defaults, presetFeatures = {}) {
+  const next = [...features];
+  for (const key of defaults) {
+    if (!isFeatureAllowedForVariant(previousVariant, key) && presetFeatures[key] !== false
+        && !next.includes(key) && !next.includes(FEATURE_MUTEX[key])) next.push(key);
+  }
+  return next;
 }
 
 /**
@@ -242,6 +266,23 @@ export function minGpusForStrategy(recipe, key, gpuId) {
 /** Nodes needed to clear that floor at `gpusPerNode` GPUs per node. */
 export function nodesForStrategy(recipe, key, gpusPerNode, gpuId) {
   return Math.ceil(minGpusForStrategy(recipe, key, gpuId) / (gpusPerNode || 8)) || 1;
+}
+
+/**
+ * The node count a multi-node selection opens on: the `strategy_min_gpus` floor
+ * of the strategy it will actually run — `requested` (from the URL, saved state
+ * or the Strategy row) when it can run multi-node here, else the recommendation
+ * — and at least 2. PD pools size themselves, so they don't move this count.
+ */
+export function multiNodeFloor(recipe, strategies, hwProfile, hwId, requested = null) {
+  const deploy = (s) => strategies[s]?.deploy_type;
+  const usable = requested
+    && (deploy(requested) === "multi_node" || deploy(requested) === "pd_cluster")
+    && effectiveCompatibleStrategies(recipe).includes(requested)
+    && isStrategySupportedOnHardware(recipe, requested, hwProfile, hwId);
+  const key = usable ? requested : recommendStrategy(recipe, hwProfile, 2);
+  if (deploy(key) === "pd_cluster") return 2;
+  return Math.min(MAX_NODES, Math.max(2, nodesForStrategy(recipe, key, hwProfile?.gpu_count || 8, hwId)));
 }
 
 /**
@@ -455,13 +496,14 @@ export function isHardwareSupported(recipe, hwId) {
 
 /**
  * Variant-level hardware selectors. Entries may be exact profile ids or
- * `arch:<compute_arch>`. Missing/empty inherits normal precision compatibility.
+ * `arch:<compute_arch>`. Profiles with `requires_variant_opt_in` need an explicit
+ * match; otherwise a missing/empty list inherits normal precision compatibility.
  * Architecture selectors admit future profiles with the same GPU ISA without
  * confusing data-center Blackwell (SM100/SM103) with workstation SM120/SM121.
  */
 export function isVariantHardwareSupported(variant, hwId, profile = null) {
   const supported = variant?.supported_hardware;
-  if (!Array.isArray(supported) || supported.length === 0) return true;
+  if (!Array.isArray(supported) || supported.length === 0) return !profile?.requires_variant_opt_in;
   return supported.some((entry) => {
     if (entry === hwId) return true;
     if (!profile) return false;
@@ -486,17 +528,28 @@ export function defaultModeFor(feature) {
 
 /**
  * Whether a single mode may run on a given hardware profile. A mode can gate
- * itself with a tri-state `hardware` map keyed by generation (hopper/blackwell/
- * amd) or gpu-id; a value of `unsupported` disables it (e.g. a DFlash draft
- * checkpoint that only ships for Blackwell). Absence = runs everywhere.
+ * itself with a `hardware` map in the schema's hardware keyspace; the most
+ * specific key wins (exact id > `arch:<compute_arch>` > generation > brand >
+ * `default`), and `unsupported` disables it (e.g. a DFlash draft checkpoint
+ * that only ships for Blackwell). Absence = runs everywhere.
  */
 export function isModeSupported(mode, hwProfile, hwId) {
   const hw = mode?.hardware;
   if (!hw || typeof hw !== "object") return true;
-  const gen = normalizeGeneration(hwProfile?.generation || hwProfile?.gpu_generation);
-  if (gen && hw[gen] === "unsupported") return false;
-  if (hwId && hw[hwId] === "unsupported") return false;
-  return true;
+  const state = (hwId != null ? hw[hwId] : undefined)
+    ?? (hwProfile?.compute_arch ? hw[`arch:${hwProfile.compute_arch}`] : undefined)
+    ?? hardwareKeyedValue(hw, hwProfile, hwId);
+  return state !== "unsupported";
+}
+
+/**
+ * Same tri-state gate for a whole feature (not just one mode): a feature may
+ * declare `hardware: { <gen_or_gpu_id>: unsupported }` when its path doesn't
+ * exist on that hardware (e.g. a CUDA-only fused decode path on TPU). Gates
+ * both the emitted args/env and the Features-row pill.
+ */
+export function isFeatureSupportedOnHardware(feat, hwProfile, hwId) {
+  return isModeSupported(feat, hwProfile, hwId);
 }
 
 /**
@@ -563,11 +616,105 @@ export function isKvOffloadSupportedForRecipe(option, optionKey, recipe) {
   return option.requires_opt_in ? support === "verified" : true;
 }
 
-/** Hardware gate: option `brands` allowlist; absent = every brand. */
-export function isKvOffloadBrandSupported(option, hwProfile) {
+/**
+ * Hardware gate: option `brands` allowlist (absent = every brand), then an
+ * optional `hardware` map in the variant-`tp` keyspace (exact id > generation
+ * > brand > `default`) where `unsupported` opts specific hardware out — e.g.
+ * an option that needs an x86 Xeon host excluding Grace-based NVIDIA nodes.
+ */
+export function isKvOffloadBrandSupported(option, hwProfile, hwProfileId = null) {
   const allow = option?.brands;
-  if (!Array.isArray(allow) || allow.length === 0) return true;
-  return allow.includes(hwProfile?.brand);
+  if ((!Array.isArray(allow) || allow.length === 0) && hwProfile?.requires_kv_offload_opt_in) return false;
+  if (Array.isArray(allow) && allow.length > 0 && !allow.includes(hwProfile?.brand)) return false;
+  return hardwareKeyedValue(option?.hardware, hwProfile, hwProfileId) !== "unsupported";
+}
+
+/**
+ * The option as it applies to one hardware: `hardware_overrides` (variant-`tp`
+ * keyspace — exact id > generation > brand > `default`) replaces any top-level
+ * key (`install`, `args`, `description`, `setup`, `docs_url`, …) and merges
+ * into `env`. Lets one option carry per-platform builds (e.g. IAXL's CPU vs
+ * CUDA extension) on one pill.
+ */
+export function resolveKvOffloadOption(option, hwProfile, hwProfileId = null) {
+  const ov = option && hardwareKeyedValue(option.hardware_overrides, hwProfile, hwProfileId);
+  if (!ov) return option;
+  const { env, ...rest } = ov;
+  return { ...option, ...rest, ...(env ? { env: { ...(option.env || {}), ...env } } : {}) };
+}
+
+/**
+ * An option's `install` as extra-install steps `[{ note?, command, optional? }]`
+ * — the shape of a recipe's `dependencies`. Accepts a bare command string
+ * (one unnoted step) or a list of strings / step objects; empty = none.
+ */
+export function kvOffloadInstallSteps(option) {
+  const raw = option?.install;
+  if (!raw) return [];
+  return (Array.isArray(raw) ? raw : [raw])
+    .map((s) => (typeof s === "string" ? { command: s } : { ...s }))
+    .filter((s) => s.command)
+    .map((s) => ({ ...s, command: String(s.command).trimEnd() }));
+}
+
+/**
+ * Whether the pip install path exists for this recipe on this hardware:
+ * recipe-wide `model.install.pip: false`, a per-GPU `install.pip: false`
+ * (variant or recipe `hardware_overrides`), or a backend with no pip wheel
+ * (TPU, XPU) hide it, unless this hardware's install block names its own pip
+ * command, which is more specific than all of those. Shared by the builder's
+ * install tabs and the KV Offload gate below.
+ */
+export function isPipInstallAvailable(recipe, variant, hwProfile, hwProfileId) {
+  const hwInstall = hardwareInstall(recipe, variant, hwProfile, hwProfileId);
+  if (hwPipOverride(hwInstall)) return true;
+  return !(resolveInstall(recipe, variant).pip === false
+    || hwInstall?.pip === false
+    || hwProfile?.generation === "tpu"
+    || hwProfile?.generation === "xpu");
+}
+
+/**
+ * Install-path gate: an option no published image carries (`docker: false`)
+ * runs only from a pip install, so it is unavailable where pip isn't — e.g. a
+ * Docker-only recipe would otherwise get `docker run` on a stock image with
+ * the connector flags and none of the option's setup or install steps.
+ */
+export function isKvOffloadInstallable(option, recipe, variant, hwProfile, hwProfileId) {
+  return option?.docker !== false || isPipInstallAvailable(recipe, variant, hwProfile, hwProfileId);
+}
+
+/**
+ * Taxonomy check for the keys only single-node rendering honours: `setup`
+ * and `{tp_size}` (in `env`) are applied on the single-node path alone, so an
+ * option using them anywhere (top level or a `hardware_overrides` entry) must
+ * list only single-node `strategies` and carry no `pd` block — otherwise a
+ * multi-node or PD command would lose its setup and export a literal
+ * `{tp_size}`. A `setup` must also end in a command, not a comment: synthesis
+ * chains its last line to `vllm serve` with `&&`. Returns error strings.
+ */
+export function kvOffloadOptionErrors(taxonomy, strategies) {
+  const errors = [];
+  for (const [key, opt] of Object.entries(taxonomy?.kv_offload || {})) {
+    const layers = [opt, ...Object.values(opt?.hardware_overrides || {})];
+    const usesSetup = layers.some((o) => o?.setup);
+    const usesTp = layers.some((o) => Object.values(o?.env || {}).some((v) => String(v).includes("{tp_size}")));
+    if (!usesSetup && !usesTp) continue;
+    const what = [usesSetup && "`setup`", usesTp && "`{tp_size}`"].filter(Boolean).join(" and ");
+    const allowed = opt.strategies;
+    if (!Array.isArray(allowed) || allowed.length === 0
+        || allowed.some((s) => strategies?.[s]?.deploy_type !== "single_node")) {
+      errors.push(`kv_offload.${key}: ${what} only render on single-node strategies; list only single-node strategies under \`strategies\``);
+    }
+    if (opt.pd) errors.push(`kv_offload.${key}: ${what} don't render under pd_cluster; drop the \`pd\` block`);
+    for (const o of layers) {
+      const last = String(o?.setup || "").trimEnd().split("\n").pop()?.trim() || "";
+      if (o?.setup && (last === "" || last.startsWith("#"))) {
+        errors.push(`kv_offload.${key}: \`setup\` must end with a command (its last line is chained to vllm serve with &&)`);
+      }
+    }
+  }
+  return errors;
 }
 
 /**
@@ -827,7 +974,7 @@ function ascendDockerArgv(deviceCount) {
 // wheel index (`/nightly/cu129`) are CUDA 13 (cu130) only.
 export const LAST_CU129_RELEASE = "0.32.0";
 
-function versionBelow(v, floor) {
+export function versionBelow(v, floor) {
   const pa = String(v).split(".").map((n) => parseInt(n, 10) || 0);
   const pb = String(floor).split(".").map((n) => parseInt(n, 10) || 0);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
@@ -835,6 +982,21 @@ function versionBelow(v, floor) {
     if (d !== 0) return d < 0;
   }
   return false;
+}
+
+// Higher of two "X.Y.Z" version strings (missing/blank loses). Used to bump the
+// displayed min vLLM version when the active variant needs a newer release than
+// the recipe baseline (e.g. the DSpark checkpoint requires 0.25.0).
+export function maxVersion(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const pa = String(a).split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d > 0 ? a : b;
+  }
+  return a;
 }
 
 // The CUDA 12.9 counterpart of an upstream `vllm/vllm-openai` tag, or null
@@ -870,8 +1032,14 @@ export function hardwareInstall(recipe, variant, hwProfile, hwId) {
     || null;
 }
 
-function isDockerEnabled(recipe) {
-  return recipe.model?.install?.docker !== false;
+// A hardware install block's own pip command, `{ command, note? }`, e.g. a
+// source build of the platform plugin that serves this recipe on that hardware.
+export function hwPipOverride(hwInstall) {
+  return hwInstall?.pip?.command ? hwInstall.pip : null;
+}
+
+function isDockerEnabled(recipe, variant, hwProfile) {
+  return hwProfile?.brand !== "Apple" && resolveInstall(recipe, variant).docker !== false;
 }
 
 // When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
@@ -900,17 +1068,24 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const isXpu = hwProfile?.generation === "xpu";
   const isIntel = hwProfile?.generation === "cpu" || isXpu || hwProfile?.brand === "Intel";
   const isNpu = hwProfile?.generation === "npu";
-  const dockerEnabled = isDockerEnabled(recipe);
+  const isPpu = hwProfile?.generation === "ppu";
+  const isApple = hwProfile?.brand === "Apple";
   const npuDeviceCount = isNpu ? hwProfile?.gpu_count ?? 1 : 0;
   // Ascend deliberately has no `brandKey` of its own: vLLM publishes no NPU
   // image, so every Ascend recipe pins one through `hardware_overrides`, which
   // `exactHardwareOverride` resolves before the brand defaults are consulted.
-  const brandKey = isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
+  const brandKey = isApple ? "apple" : isPpu ? "ppu" : isTpu ? "tpu" : isAmd ? "amd" : isIntel ? "intel" : "nvidia";
   // Exact variant+hardware image overrides win over variant-wide and
   // model-wide images (for example, an MI355X-only ROCm nightly).
   const exactHardwareOverride = hwId
     ? variant?.hardware_overrides?.[hwId]?.docker_image
     : null;
+  const dockerEnabled = isDockerEnabled(recipe, variant, hwProfile)
+    // A per-hardware install statement can declare that no published image
+    // runs this recipe on this hardware (e.g. support not yet in any image):
+    // skip the docker wrap so the command renders as bare `vllm serve`.
+    && hardwareInstall(recipe, variant, hwProfile, hwId)?.docker !== false
+    && (!isPpu || !!exactHardwareOverride || !!hwProfile?.docker_image);
 
   const isCudaMap = (v) =>
     v && typeof v === "object" && ("cu129" in v || "cu130" in v);
@@ -960,7 +1135,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const image = !dockerEnabled ? null : isXpu && !pinned
     ? "vllm/vllm-openai-xpu:latest"
     : pinned || (cudaMap ? cudaMap.cu130 || cudaMap.cu129 : null) || DEFAULT_IMAGE[brandKey];
-  const gpuFlags = isTpu
+  const gpuFlags = isApple || isPpu ? "" : isTpu
     ? "--privileged --network host \\\n  -v /dev/shm:/dev/shm"
     : isAmd
       ? "--device=/dev/kfd --device=/dev/dri \\\n  --security-opt seccomp=unconfined --group-add video"
@@ -981,6 +1156,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
     isXpu,
     isIntel,
     isNpu,
+    isPpu,
     npuDeviceCount,
     pinned,
     cudaMap,
@@ -993,6 +1169,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
 // the shell-string above token-for-token so docker_command and docker_argv
 // stay consistent.
 function dockerGpuArgv(meta) {
+  if (meta.isPpu || meta.brandKey === "apple") return [];
   if (meta.isTpu) return ["--privileged", "--network", "host", "-v", "/dev/shm:/dev/shm"];
   if (meta.isAmd) {
     return [
@@ -1062,7 +1239,7 @@ function servedPort(tokens, fallback = 8000) {
 // entrypoint is something else. Env vars become `-e KEY=VAL` inside the container.
 // `extraFlags` are runtime flags a component needs on top of the GPU ones
 // (a PD KV connector's RDMA device and locked-memory limit).
-export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [] }) {
+export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, isPpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [] }) {
   const pubPort = port ?? servedPort(command.split(/\s+/));
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
@@ -1084,11 +1261,13 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = null, isN
   const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
   // Ascend uses host networking and an explicit shm size; `-p` is a no-op
   // under `--net=host` and hid the required `--shm-size` on 950PR.
-  const runtimeFlags = isNpu
+  const runtimeFlags = isPpu
+    ? "--network host --ipc host --privileged --init --ulimit memlock=-1:-1 --security-opt seccomp=unconfined"
+    : isNpu
     ? "--privileged --net=host --shm-size=16g"
     : `--privileged --ipc=host ${hostNetwork ? "--network host" : `-p ${pubPort}:${pubPort}`}`;
-  const base = `${prereq}docker run ${gpuFlags} \\
-  ${runtimeFlags} \\${extraFlags.length ? `\n  ${extraFlags.join(" ")} \\` : ""}
+  const gpuPrefix = gpuFlags ? ` ${gpuFlags} \\\n  ` : " ";
+  const base = `${prereq}docker run${gpuPrefix}${runtimeFlags} \\${extraFlags.length ? `\n  ${extraFlags.join(" ")} \\` : ""}
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
   const setup = setupCommand
     ? `--entrypoint /bin/sh ${image} -c ${shellQuote(`${setupCommand} && exec vllm serve "$@"`)} vllm-grpc ${modelId}`
@@ -1114,7 +1293,9 @@ export function buildDockerArgv({ argv, env, meta, port = null, hostNetwork = fa
   for (const m of [...localModelMount(cmdArgs[0]), ...configPathMounts(env)]) {
     mountFlags.push("-v", m);
   }
-  const runtimeFlags = meta.isNpu
+  const runtimeFlags = meta.isPpu
+    ? ["--network", "host", "--ipc", "host", "--privileged", "--init", "--ulimit", "memlock=-1:-1", "--security-opt", "seccomp=unconfined"]
+    : meta.isNpu
     ? ["--privileged", "--net=host", "--shm-size", "16g"]
     : ["--privileged", "--ipc=host", ...(hostNetwork ? ["--network", "host"] : ["-p", `${pubPort}:${pubPort}`])];
   const base = [
@@ -1199,6 +1380,39 @@ function stripArgs(args, flags) {
   return out;
 }
 
+// Dynamo's worker launcher accepts vLLM engine arguments, but chat parser
+// options live in Dynamo's own CLI. Keep the engine reasoning parser too.
+function dynamoParserArgs(args, config, warnings) {
+  const explicit = {
+    tool_calling: args.includes("--dyn-tool-call-parser"),
+    reasoning: args.includes("--dyn-reasoning-parser"),
+  };
+  const out = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--enable-auto-tool-choice") continue;
+    if (arg === "--tool-call-parser" || arg === "--reasoning-parser") {
+      const parser = args[i + 1];
+      if (parser === undefined || (typeof parser === "string" && parser.startsWith("-"))) continue;
+      const kind = arg === "--tool-call-parser" ? "tool_calling" : "reasoning";
+      // vLLM still needs its engine-side reasoning parser, with its own name.
+      if (kind === "reasoning") out.push(arg, parser);
+      if (!explicit[kind]) {
+        const names = config.parser_map?.[kind] || {};
+        if (Object.hasOwn(names, parser)) {
+          out.push(kind === "tool_calling" ? "--dyn-tool-call-parser" : "--dyn-reasoning-parser", names[parser]);
+        } else {
+          warnings.add(`Dynamo ${config.version} has no mapped ${kind === "tool_calling" ? "tool-call" : "reasoning"} parser for "${parser}". The corresponding --dyn-* flag is omitted; that feature is unavailable through the frontend.`);
+        }
+      }
+      i++;
+      continue;
+    }
+    out.push(arg);
+  }
+  return out;
+}
+
 // Wrap values containing shell-special chars in single quotes so the rendered
 // command is paste-safe. Without this, JSON values like
 // `{"cudagraph_mode":"FULL_AND_PIECEWISE"}` trigger brace expansion and get
@@ -1260,7 +1474,7 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfil
   if (variantExactHo?.extra_env) Object.assign(env, variantExactHo.extra_env);
 
   const args = [];
-  if (recipe.model?.base_args) args.push(...recipe.model.base_args);
+  args.push(...(variant.base_args ?? recipe.model?.base_args ?? []));
   if (variantKey !== "default" && variant.extra_args) args.push(...variant.extra_args);
   if (task?.extraArgs?.length) args.push(...task.extraArgs);
   if (ho?.extra_args) args.push(...ho.extra_args);
@@ -1415,6 +1629,7 @@ export function resolveCommand(...params) {
 // recipe's own default, 1 forces DCP off, N > 1 selects that size.
 function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null, pdTransport = "http", dcpSize = null, pdConnectorPick = null) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
+  enabledFeatures = (enabledFeatures || []).filter((key) => isFeatureAllowedForVariant(variant, key));
   const strategy = strategies[strategyName] || {};
   const hwProfile = taxonomy.hardware_profiles?.[hwProfileId] || {};
   const gen = normalizeGeneration(hwProfile.generation || hwProfile.gpu_generation);
@@ -1464,6 +1679,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       && isDynamoSupportedOnHardware(strategy.dynamo, hwProfile)
     ? strategy.dynamo
     : null;
+  const parserWarnings = new Set();
   let routerUnavailableReason = strategy.deploy_type === "pd_cluster" && pdRouter === "smg"
     ? smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, pdTransport, hwProfile, hwProfileId) : null;
   let smg = strategy.deploy_type === "pd_cluster" && pdRouter === "smg" && !routerUnavailableReason
@@ -1486,14 +1702,17 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   const pdTransferConfig = (role) => (dynamo ? kvOptionConfig(dynamo[role] && { args: dynamo[role].vllm_args }) : null)
     ?? pdConnector?.[role]?.config ?? null;
 
-  // The composing option, resolved once behind all three gates (strategy,
-  // recipe opt-in, brand) and shared by args/env/companion emission.
-  const kvOptRaw = taxonomy?.kv_offload?.[kvOffload];
-  const kvOpt = kvOptRaw
-    && isKvOffloadAllowedForStrategy(kvOptRaw, strategyName, strategy)
-    && isKvOffloadSupportedForRecipe(kvOptRaw, kvOffload, recipe)
-    && isKvOffloadBrandSupported(kvOptRaw, hwProfile)
-    ? kvOptRaw
+  // The composing option, resolved for this hardware first (as the builder
+  // does) so a `hardware_overrides` entry that touches a gating key gates the
+  // same way in both, then behind all four gates (strategy, recipe opt-in,
+  // brand, install path) and shared by args/env/companion emission.
+  const kvOptHw = resolveKvOffloadOption(taxonomy?.kv_offload?.[kvOffload], hwProfile, hwProfileId);
+  const kvOpt = kvOptHw
+    && isKvOffloadAllowedForStrategy(kvOptHw, strategyName, strategy)
+    && isKvOffloadSupportedForRecipe(kvOptHw, kvOffload, recipe)
+    && isKvOffloadBrandSupported(kvOptHw, hwProfile, hwProfileId)
+    && isKvOffloadInstallable(kvOptHw, recipe, variant, hwProfile, hwProfileId)
+    ? kvOptHw
     : null;
 
   // kv composition only: instance count + which instance's command is being
@@ -1568,7 +1787,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     // 7. features          (tool_calling, reasoning, mtp — last for readability)
 
     // 1. base_args
-    if (recipe.model?.base_args) args.push(...recipe.model.base_args);
+    args.push(...(variant.base_args ?? recipe.model?.base_args ?? []));
 
     // 2. Variant extra args
     if (variant.extra_args) args.push(...variant.extra_args);
@@ -1853,6 +2072,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const feat = recipe.features?.[f];
       if (!feat) continue;
       if (!isFeatureAllowedForStrategy(feat, strategyName)) continue;
+      if (!isFeatureSupportedOnHardware(feat, hwProfile, hwProfileId)) continue;
       // A companion-backed feature can't render its helper inside the
       // Mooncake deployment shell (companion tabs are a single-node-block
       // concept), so its args are skipped too — args and companion always
@@ -1926,7 +2146,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const port = String(servedPort(out));
       out = out.map((t) => (typeof t === "string" ? t.replaceAll("{port}", port) : t));
     }
-    return out;
+    return dynamo ? dynamoParserArgs(dedupeArgs(out), dynamo, parserWarnings) : out;
   }
 
   // Helper to merge env
@@ -2044,6 +2264,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const feat = recipe.features?.[f];
       if (!feat) continue;
       if (!isFeatureAllowedForStrategy(feat, strategyName)) continue;
+      if (!isFeatureSupportedOnHardware(feat, hwProfile, hwProfileId)) continue;
       if (kvComposing && feat.companion?.command) continue;
       if (feat.modes && typeof feat.modes === "object") {
         const modeKey = resolveModeKey(feat, f, variant, variantKey, hwProfile, hwProfileId, featureModes?.[f]);
@@ -2094,7 +2315,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       // The SMG-compatible gRPC servicer only runs on the Python frontend.
       env.VLLM_USE_RUST_FRONTEND = "0";
     } else {
-      Object.assign(env, taxonomy.frontends?.[resolveFrontend(recipe, frontend, taxonomy)]?.env);
+      Object.assign(env, taxonomy.frontends?.[resolveFrontend(recipe, frontend, taxonomy, variant)]?.env);
     }
     return env;
   }
@@ -2350,6 +2571,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         workerDockerSetup: `python3 -m pip install --no-cache-dir ${smg.grpc.packages}`,
       } : {}),
       ...(routerUnavailableReason ? { routerUnavailableReason } : {}),
+      ...(parserWarnings.size ? { parserWarnings: [...parserWarnings] } : {}),
       ...(registration ? { registration } : {}),
       router: dynamo
         ? {
@@ -2366,7 +2588,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
             label: "SMG",
             command: `${smgReplicaComments}smg launch \\\n    ${smgRouterArgs}`,
             install: smg.install,
-            ...(isDockerEnabled(recipe) && {
+            ...(isDockerEnabled(recipe, variant, hwProfile) && {
               dockerCommand: `${smgReplicaComments}docker run --rm --network host \\\n    ${smgGrpc ? "-v ~/.cache/huggingface:/root/.cache/huggingface \\\n    " : ""}${smg.docker_image} \\\n    ${smgRouterArgs}`,
               dockerInstall: `docker pull ${smg.docker_image}`,
             }),
@@ -2517,6 +2739,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     const feat = recipe.features?.[f];
     if (!feat?.companion?.command) return [];
     if (!isFeatureAllowedForStrategy(feat, strategyName)) return [];
+    if (!isFeatureSupportedOnHardware(feat, hwProfile, hwProfileId)) return [];
     return [{
       feature: f,
       label: feat.companion.label || f,
@@ -2525,12 +2748,13 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     }];
   });
   if (kvOpt?.companion?.command) {
+    const requires = kvOffloadInstallSteps(kvOpt).map((s) => s.command).join(" && ");
     companions.push({
       feature: `kv_offload:${kvOffload}`,
       label: kvOpt.companion.label || kvOffload,
       description: [
         kvOpt.companion.description || "",
-        kvOpt.install ? `Requires: ${kvOpt.install}` : "",
+        requires ? `Requires: ${requires}` : "",
       ].filter(Boolean).join(" "),
       command: String(kvOpt.companion.command).trimEnd(),
     });
@@ -2553,11 +2777,30 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         .trimEnd(),
     });
   }
+  // The composing option's `env` values and `setup` lines may name the TP size
+  // the engine actually runs with (`{tp_size}`), e.g. a host-side launcher that
+  // sizes per-rank resources before `vllm serve` starts.
+  const env = buildEnv(null);
+  const tpSize = lastFlagValue(singleArgs, "--tensor-parallel-size")
+    || lastFlagValue(singleArgs, "-tp") || 1;
+  const fillKv = (s) => String(s).replace(/\{tp_size\}/g, String(tpSize));
+  for (const k of Object.keys(kvOpt?.env || {})) {
+    if (typeof env[k] === "string") env[k] = fillKv(env[k]);
+  }
+  // The option's install steps and Docker availability ride on the result so
+  // renderers outside the builder (JSON API, `.md` / `.json` pages) match it.
+  const kvInstall = kvOffloadInstallSteps(kvOpt);
   return {
     deployType,
     command: formatCommand(singleArgs),
     argv: formatArgv(singleArgs),
-    env: buildEnv(null),
+    env,
+    // Its last line ends with `&&`, so `<setup>` + newline + `<command>` stops
+    // before vllm serve when the setup fails (e.g. setvars.sh finds fewer QAT
+    // devices than TP_SIZE). kvOffloadOptionErrors keeps that line a command.
+    ...(kvOpt?.setup ? { setup: `${fillKv(kvOpt.setup).trimEnd()} &&` } : {}),
+    ...(kvInstall.length ? { kvOffloadInstall: kvInstall } : {}),
+    ...(kvOpt?.docker === false ? { dockerUnavailable: true } : {}),
     ...(companions.length ? { companions } : {}),
   };
 }

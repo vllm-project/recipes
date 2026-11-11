@@ -27,7 +27,7 @@ import yaml from "js-yaml";
 import Ajv from "ajv";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import { BASELINE, effectivePreset, presetImage, presetPoints, presetSelect, resolvePresetKey, validatePresets, withPreset } from "../src/lib/recipe-presets.js";
-import { validateContextEntries } from "../src/lib/recipe-context.js";
+import { CONTEXT_KINDS, validateContextEntries } from "../src/lib/recipe-context.js";
 import {
   pickDefaultHardware,
   listCompatibleHardware,
@@ -49,7 +49,12 @@ import {
   isStrategyReachable,
   isStrategySupportedOnHardware,
   effectiveCompatibleStrategies,
+  isFeatureAllowedForVariant,
+  isFrontendSupported,
+  resolveFrontend,
+  versionBelow,
   FALLBACK_FRONTEND,
+  kvOffloadOptionErrors,
 } from "../src/lib/command-synthesis.js";
 import { contentChannel, contentDir, loadProvenance } from "../src/lib/content-root.js";
 import { buildVariantRendering, defaultFeaturesFor, pickPdNodes, renderCommand, synthesizeInstall } from "../src/lib/recipe-render.js";
@@ -142,6 +147,7 @@ function validateFeatureModes(recipe, sourceFile) {
     }
 
     for (const variantKey of Object.keys(variants)) {
+      if (!isFeatureAllowedForVariant(variants[variantKey], featureKey)) continue;
       const available = modeKeys.some((modeKey) => {
         const allow = modes[modeKey]?.variants;
         return !Array.isArray(allow) || allow.length === 0 || allow.includes(variantKey);
@@ -153,6 +159,11 @@ function validateFeatureModes(recipe, sourceFile) {
   }
 
   for (const [variantKey, variant] of Object.entries(variants)) {
+    for (const featureKey of variant.supported_features || []) {
+      if (!Object.hasOwn(features, featureKey)) {
+        errors.push(`variants.${variantKey}.supported_features: unknown feature "${featureKey}"`);
+      }
+    }
     for (const [featureKey, modeKey] of Object.entries(variant?.default_modes || {})) {
       const feature = features[featureKey];
       const mode = feature?.modes?.[modeKey];
@@ -164,6 +175,8 @@ function validateFeatureModes(recipe, sourceFile) {
         errors.push(`variants.${variantKey}.default_modes.${featureKey} references unknown mode ${modeKey}`);
       } else if (Array.isArray(mode.variants) && mode.variants.length > 0 && !mode.variants.includes(variantKey)) {
         errors.push(`variants.${variantKey}.default_modes.${featureKey} selects mode ${modeKey}, which is unavailable for that variant`);
+      } else if (!isFeatureAllowedForVariant(variant, featureKey)) {
+        errors.push(`variants.${variantKey}.default_modes.${featureKey}: feature is excluded by supported_features`);
       }
     }
   }
@@ -199,6 +212,13 @@ function validateFrontends(recipe, sourceFile, taxonomy) {
       errors.push(`model.${key} must be "unsupported" (omit the key when the frontend works)`);
     } else if (def === id) {
       errors.push(`model.default_frontend is "${id}", but model.${key} marks it unsupported`);
+    }
+  }
+  for (const [key, variant] of Object.entries(recipe.variants || {})) {
+    for (const id of variant.supported_frontends || []) {
+      if (!isFrontendSupported(recipe, id)) {
+        errors.push(`variants.${key}.supported_frontends: "${id}" is unsupported by this recipe`);
+      }
     }
   }
   if (errors.length) {
@@ -363,6 +383,10 @@ writeJson("kv_store.json", kvStoreDeployments);
 
 // ── Recipe schema ── generated from the taxonomy + strategies, published at
 // /recipe.schema.json for editors, and enforced on every recipe below.
+// KV Offload options may only use keys the renderer honours for their strategies.
+const kvOffloadErrors = kvOffloadOptionErrors(taxonomy, strategies);
+if (kvOffloadErrors.length) throw new Error(`Invalid kv_offload options in taxonomy.yaml:\n  - ${kvOffloadErrors.join("\n  - ")}`);
+
 const recipeSchema = buildRecipeSchema({ taxonomy, strategies });
 writeJson("recipe.schema.json", recipeSchema);
 const validateRecipe = new Ajv({ allErrors: true, strict: false }).compile(recipeSchema);
@@ -411,6 +435,23 @@ for (const file of findYamlFiles(modelsDir)) {
 }
 if (schemaFailures.length) {
   throw new Error(`Recipes don't match the schema (SCHEMA.md, /recipe.schema.json):\n  ${schemaFailures.join("\n  ")}`);
+}
+
+// The promoted checkpoint is the only variant in this file, under the key `default`.
+function contextForPromotedVariant(entries, variantKey, allowsFeature) {
+  return entries.flatMap((entry) => {
+    if (!entry.when) return [entry];
+    const when = { ...entry.when };
+    if (when.variants?.length) {
+      if (!when.variants.includes(variantKey)) return [];
+      when.variants = ["default"];
+    }
+    if (when.features?.length) {
+      when.features = when.features.filter(allowsFeature);
+      if (!when.features.length) return [];
+    }
+    return [{ ...entry, when }];
+  });
 }
 
 // Write the public recipe JSON (parent or promoted) with HEAD_KEYS ordering.
@@ -604,7 +645,13 @@ for (const file of findYamlFiles(modelsDir)) {
     }
     const variantRecommended = renderAndWriteVariant(r, variantKey, variantModelId, strategies, taxonomy);
     if (!variantRecommended) continue;
-    promotedRenderings.push({ variantKey, variantModelId, recommended: variantRecommended });
+    const hwId = variantRecommended.hardware;
+    const dockerMeta = computeDockerMeta(r, variantCfg, taxonomy.hardware_profiles[hwId], hwId);
+    promotedRenderings.push({
+      variantKey, variantModelId, recommended: variantRecommended,
+      install: variantCfg.install || !dockerMeta.dockerEnabled
+        ? synthesizeInstall(r, variantCfg, dockerMeta) : undefined,
+    });
   }
 
   // Annotate parent variants with `json:` pointers so consumers can navigate.
@@ -650,17 +697,45 @@ for (const file of findYamlFiles(modelsDir)) {
   // the variant's config (model_id stripped — it's at top-level now). The
   // sibling-variant info is lost on purpose; consumers can follow
   // `meta.derived_from` back to the parent for the full family view.
-  for (const { variantKey, variantModelId, recommended } of promotedRenderings) {
+  for (const { variantKey, variantModelId, recommended, install } of promotedRenderings) {
     const variantCfg = r.variants?.[variantKey] || {};
     const { model_id: _vMid, json: _vJson, ...variantCore } = variantCfg;
     const promoted = {
-      ...r,  // share meta/features/guide/etc. with the parent
+      ...r,
       hf_id: variantModelId,
       meta: { ...r.meta, derived_from: parentHfId, variant: variantKey },
-      model: { ...r.model, model_id: variantModelId },
+      model: {
+        ...r.model,
+        model_id: variantModelId,
+        base_args: variantCfg.base_args ?? r.model?.base_args,
+        ...(install && { install }),
+      },
       variants: { default: variantCore },
       recommended_command: recommended,
     };
+    const model = promoted.model;
+    const floor = variantCfg.min_vllm_version;
+    if (floor && (!model.min_vllm_version || versionBelow(model.min_vllm_version, floor))) {
+      model.min_vllm_version = floor;
+    }
+    if (variantCfg.supported_frontends) {
+      model.default_frontend = resolveFrontend(r, undefined, taxonomy, variantCfg);
+      for (const id of Object.keys(taxonomy.frontends)) {
+        if (!isFrontendSupported(r, id, variantCfg)) model[`${id}_frontend`] = "unsupported";
+      }
+    }
+    const allowsFeature = (key) => isFeatureAllowedForVariant(variantCfg, key);
+    if (variantCfg.supported_features) {
+      promoted.features = Object.fromEntries(Object.entries(r.features || {}).filter(([key]) => allowsFeature(key)));
+      if (r.opt_in_features) promoted.opt_in_features = r.opt_in_features.filter(allowsFeature);
+      if (r.hardware_opt_in_features) {
+        promoted.hardware_opt_in_features = Object.fromEntries(Object.entries(r.hardware_opt_in_features)
+          .map(([hw, keys]) => [hw, keys.filter(allowsFeature)]));
+      }
+    }
+    for (const kind of CONTEXT_KINDS) {
+      if (r[kind]) promoted[kind] = contextForPromotedVariant(r[kind], variantKey, allowsFeature);
+    }
     writeRecipeJson(variantModelId, promoted);
     promotedIndexEntries.push({
       hf_id: variantModelId,

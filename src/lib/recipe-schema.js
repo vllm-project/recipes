@@ -90,12 +90,19 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     companion: obj({ label: { type: "string" }, description: { type: "string" }, command: { type: "string" } }, { required: ["label", "command"] }),
   }, { required: ["description"] });
 
+  const installTab = { anyOf: [{ type: "boolean" }, { type: "null" }, obj({ command: { type: "string" }, note: { type: "string" } })] };
+  const install = obj({ pip: installTab, docker: installTab });
+
   const variant = obj({
     precision: { type: "string", description: "bf16 | fp16 | fp8 | int8 | awq | gptq | int4 | nvfp4 | fp4 | mxfp4 | mxfp8 | …" },
     vram_minimum_gb: { type: "number", minimum: 0 },
     description: { type: "string" },
     label: { type: "string" },
     model_id: { type: "string", pattern: "^[^/\\s]+/[^/\\s]+$" },
+    base_args: strings,
+    install,
+    supported_features: strings,
+    supported_frontends: { type: "array", items: { enum: frontends } },
     extra_args: strings,
     extra_env: envMap,
     docker_image: { type: "string" },
@@ -106,16 +113,18 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     precision_hardware: obj({ brand: { enum: brands }, generation: { enum: generations } }),
     default_modes: { type: "object", additionalProperties: { type: "string" } },
     // Generation keys carry extra_args/extra_env; exact GPU ids may also pin an
-    // image, a GPU-resident VRAM budget, or hide the pip install.
+    // image, a GPU-resident VRAM budget, or state the install paths: hide pip or
+    // Docker, or give this GPU its own pip command.
     hardware_overrides: keyed(hwKey, extraArgsEnv({
       vram_minimum_gb: { type: "number", minimum: 0 },
       docker_image: { type: "string" },
       docker_serve_command: { type: "string" },
-      install: obj({ pip: { type: "boolean" }, docker: { type: "boolean" } }),
+      install: obj({
+        pip: { anyOf: [{ type: "boolean" }, obj({ command: { type: "string" }, note: { type: "string" } }, { required: ["command"] })] },
+        docker: { type: "boolean" },
+      }),
     })),
   }, { required: ["precision", "vram_minimum_gb"] });
-
-  const installTab = { anyOf: [{ type: "boolean" }, { type: "null" }, obj({ command: { type: "string" }, note: { type: "string" } })] };
 
   const pdMode = { enum: ["tp", "tep", "dep"] };
   const pdRole = obj({
@@ -201,7 +210,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
           default_frontend: { enum: frontends },
           docker_image: { anyOf: [{ type: "string" }, { type: "object", additionalProperties: { type: "string" } }] },
           docker_source: obj({ mount_path: { type: "string" } }),
-          install: obj({ pip: installTab, docker: installTab }),
+          install,
           nightly_required: { type: "boolean" },
           flashinfer_autotune: { type: "boolean" },
           smg_grpc: obj({ reasoning_parser: { type: "string" }, tool_call_parser: { type: "string" } }),

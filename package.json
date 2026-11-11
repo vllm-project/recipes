@@ -22,6 +22,7 @@
     "test:context": "node --test scripts/test-context.mjs",
     "test:hardware": "node --test scripts/test-hardware.mjs",
     "test:render": "node --test scripts/test-render-parity.mjs",
+    "test:kv-offload": "node --test scripts/test-kv-offload.mjs",
     "test:shell-highlight": "node --test scripts/test-shell-highlight.mjs"
   },
   "dependencies": {
