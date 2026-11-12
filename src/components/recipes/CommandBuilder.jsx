@@ -673,6 +673,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       // the fused DSpark checkpoint auto-enables spec_decoding (default: dspark).
       const v = recipe.variants?.[variantKey] || {};
       const forced = new Set(Object.keys(v.default_modes || {}));
+      // A feature with a default mode on this GPU (`hardware_default_modes`)
+      // is on by default there too.
+      for (const [f, feat] of Object.entries(recipe.features || {})) if (feat?.hardware_default_modes?.[hw]) forced.add(f);
       return Object.keys(recipe.features || {}).filter((f) =>
         isFeatureAllowedForVariant(v, f) && (forced.has(f) || !optIn.has(f)));
     },
@@ -1396,6 +1399,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     for (const f of oldHwOptIn) {
       if (!newHwOptIn.has(f) && !baseOptIn.has(f) && !next.includes(f)) next.push(f);
     }
+    // Features defaulted on by the hardware (`hardware_default_modes`): turn
+    // them on for the new GPU, off when leaving a GPU that forced them.
+    const hwForced = (hw) => Object.keys(recipe.features || {}).filter((f) => recipe.features[f]?.hardware_default_modes?.[hw]);
+    const newForced = hwForced(id);
+    const newDefault = new Set(defaultFeaturesFor(id, variant));
+    next = next.filter((f) => !hwForced(hwId).includes(f) || newDefault.has(f));
+    for (const f of newForced) if (!next.includes(f)) next.push(f);
     setHwId(id);
     setStrategyOverride("");
     const newProfile = taxonomy.hardware_profiles?.[id] || {};
@@ -3963,14 +3973,23 @@ function SingleCommandBlock({ command, env, setup, companions, verifyCmd, benchC
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companionIds]);
   // Companions are host-side helper binaries (not `vllm serve`), so they get
-  // neither the docker-run wrapper nor the env prelude.
-  const activePrelude = activeCompanion ? "" : prelude;
+  // neither the docker-run wrapper nor the env prelude — except an `engine`
+  // companion (another TP replica), a full `vllm serve` with its own env,
+  // which renders exactly like the main command.
+  const activeEngine = activeCompanion?.engine ? activeCompanion : null;
+  const activePrelude = activeEngine
+    ? (isDocker ? "" : envToExports(activeEngine.env))
+    : activeCompanion ? "" : prelude;
   // Leading # lines render in the dimmed comment area (same treatment as a
   // companion's description line); the bright pre keeps only the executable
   // body. Applies to both sources: a companion's own comments and the
   // `hf download` prerequisite buildDockerRun prepends for a local-path
   // checkpoint. Copy still grabs comments + body.
-  const rawActive = activeCompanion ? String(activeCompanion.command) : displayCommand;
+  const rawActive = activeEngine
+    ? (isDocker
+      ? buildDockerRun({ command: activeEngine.command, env: activeEngine.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, cmdPrefix: dockerMeta.cmdPrefix })
+      : String(activeEngine.command))
+    : activeCompanion ? String(activeCompanion.command) : displayCommand;
   // A setup ending in `&&` chains straight into the command (no blank line).
   const fullScript = activePrelude
     ? `${activePrelude}${activePrelude.endsWith("&&") ? "\n" : "\n\n"}${rawActive}`

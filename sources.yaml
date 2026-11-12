@@ -32,8 +32,11 @@ default_channel: latest
 channels:
   latest:
     vllm:
-      repo: vllm-project/vllm
-      ref: main
+      # PREVIEW ONLY, drop before merge: the Muse Spark MI350P recipe change,
+      # so this PR's preview renders the mi350p profile and the TP replicas
+      # strategy on a recipe that uses them.
+      repo: mpashkovskii/vllm
+      ref: recipes/muse-spark-mi350p
       path: recipes
       role: core
       # Ascend content comes only from the vllm-ascend overlays below.

@@ -331,6 +331,21 @@ hardware_profiles:
     vram_gb: 2304
     multi_node: false
 
+  # MI350P — PCIe card: half the HBM of the OAM parts and no xGMI between
+  # GPUs, so `amd` defaults sized for 288 GB OAM nodes need not fit or run.
+  # `restricted: true` keeps it out of the picker unless a recipe lists it in
+  # `meta.hardware` after validating it there.
+  mi350p:
+    brand: AMD
+    generation: amd
+    compute_arch: gfx950
+    display_name: "MI350P"
+    description: "AMD Instinct MI350P 144 GB HBM3e · 8-GPU PCIe node (CDNA 4)"
+    gpu_count: 8
+    vram_gb: 1152
+    multi_node: false
+    restricted: true
+
   # ── Google Cloud TPU ──
   # `restricted: true` hides these from the hardware picker unless the recipe
   # explicitly lists them in `meta.hardware` — TPU support requires a separate

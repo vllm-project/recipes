@@ -131,6 +131,7 @@ export function defaultFeaturesFor(recipe, hwId, variantKey = "default") {
   for (const f of recipe.hardware_opt_in_features?.[hwId] || []) optIn.add(f);
   const variant = recipe.variants?.[variantKey] || {};
   const forced = new Set(Object.keys(variant.default_modes || {}));
+  for (const [f, feat] of Object.entries(recipe.features || {})) if (feat?.hardware_default_modes?.[hwId]) forced.add(f);
   return Object.keys(recipe.features || {}).filter((f) =>
     isFeatureAllowedForVariant(variant, f) && (forced.has(f) || !optIn.has(f)));
 }
@@ -402,7 +403,15 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     // Companion processes (feature `companion:` or the active kv_offload
     // option's, e.g. LMCache's `lmcache server`) — run alongside `vllm serve`
     // on the same node, in their own terminal.
-    ...(result.companions ? { companions: result.companions } : {}),
+    // An `engine` companion (another TP replica) is a full `vllm serve` with
+    // its own env, so it gets the same docker equivalent as the main command.
+    ...(result.companions
+      ? {
+        companions: result.companions.map((c) => (c.engine && !result.dockerUnavailable
+          ? { ...c, ...dockerize(c.command, c.argv, c.env, dockerMeta) }
+          : c)),
+      }
+      : {}),
   };
 }
 
