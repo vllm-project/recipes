@@ -218,7 +218,7 @@ hardware_profiles:
     scalable: false
     restricted: true
   
-  # RTX 5090 — single-GPU RTX 5090 system.
+  # RTX 4090 — single-GPU RTX 4090 system.
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
   # lists it in `meta.hardware`
   rtx_4090:
@@ -233,6 +233,9 @@ hardware_profiles:
     scalable: false
     restricted: true
 
+  # RTX 5090 — single-GPU RTX 5090 system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware`
   rtx_5090:
     brand: NVIDIA
     generation: blackwell
