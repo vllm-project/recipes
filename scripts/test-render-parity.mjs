@@ -64,6 +64,10 @@ test("Ascend PD URL overrides cannot bypass preset declarations or misreport the
   delete connectorOnly.presets.ascend_pd.select.pd_router;
   assert.throws(() => renderCommand(connectorOnly, "default", "pd_cluster", "ascend_950dt", 1, [], strategies, taxonomy,
     ascendPdPools(), null, "ascend_pd", undefined, true), /Invalid preset .*ascend_pd/);
+  const missingTransfer = ascendPdRecipe();
+  delete missingTransfer.presets.ascend_pd.roles.decode.json_args["--kv-transfer-config"];
+  assert.throws(() => renderCommand(missingTransfer, "default", "pd_cluster", "ascend_950dt", 1, [], strategies, taxonomy,
+    ascendPdPools(), null, "ascend_pd", undefined, true), /PD decode:.*--kv-transfer-config/);
 });
 
 test("PD JSON and Markdown contain every node independently of the selected rank", () => {

@@ -187,6 +187,71 @@ const ascend = (r, rank = 0, connector = "mooncake_ascend", strats = strategies,
   resolveCommand(r, "default", "pd_cluster", "ascend_950dt", features, strats, taxonomy, [], 1,
     pools, {}, kv, null, "python", "ascend", "http", null, "ascend_pd", undefined, connector);
 
+test("recipe-owned PD transfer configs must be JSON objects with a nonempty connector name", () => {
+  for (const value of [undefined, "not-json", "null", "[]", "42", "{}", '{"kv_connector":""}', '{"kv_connector":"  "}', '{"kv_connector":3}']) {
+    const fixture = ascendPdRecipe();
+    const role = fixture.presets.ascend_pd.roles.prefill;
+    delete role.json_args["--kv-transfer-config"];
+    if (value !== undefined) role.args = ["--kv-transfer-config", value];
+    for (const kv of [null, "simple"]) {
+      assert.throws(() => ascend(fixture, 0, "mooncake_ascend", strategies, [], ascendPdPools(), kv),
+        (error) => error instanceof RangeError && /^PD prefill:.*--kv-transfer-config/.test(error.message), String(value));
+    }
+  }
+  const custom = ascendPdRecipe();
+  custom.presets.ascend_pd.roles.prefill.json_args["--kv-transfer-config"].kv_connector = "vendor.custom_v2";
+  assert.equal(kvCfg(ascend(custom), "prefill").kv_connector, "vendor.custom_v2");
+});
+
+test("recipe-owned PD transfer composes tiers before their named preset edits", () => {
+  for (const source of ["args", "json_args"]) {
+    const fixture = ascendPdRecipe();
+    const role = fixture.presets.ascend_pd.roles.prefill;
+    const config = role.json_args["--kv-transfer-config"];
+    if (source === "args") {
+      role.args = ["--kv_transfer_config", JSON.stringify(config)];
+      role.json_args["--kv-transfer-config"] = {};
+    }
+    role.json_args["--kv-transfer-config"].SimpleCPUOffloadConnector = {
+      kv_connector_extra_config: { cpu_bytes_to_use_per_rank: null, cpu_bytes_to_use: 9 },
+    };
+    const rendered = ascend(fixture, 0, "mooncake_ascend", strategies, [], ascendPdPools(), "simple");
+    const [transfer, cpu] = kvCfg(rendered, "prefill").kv_connector_extra_config.connectors;
+    assert.equal(transfer.kv_connector, "DownstreamMooncakeConnector", source);
+    assert.deepEqual(cpu.kv_connector_extra_config, { lazy_offload: false, cpu_bytes_to_use: 9 }, source);
+    assert.equal(rendered.prefill.argv.filter((arg) => arg.replaceAll("_", "-") === "--kv-transfer-config").length, 1);
+    assert.equal(kvCfg(rendered, "decode").kv_connector, "DownstreamMooncakeConnector");
+  }
+
+  // Give both roles a tier to exercise common preset edits before role edits.
+  const bothRoles = structuredClone(taxonomy);
+  bothRoles.kv_offload.simple.pd.roles = ["prefill", "decode"];
+  const fixture = ascendPdRecipe();
+  const preset = fixture.presets.ascend_pd;
+  for (const role of Object.values(preset.roles)) {
+    role.args = ["--kv-transfer-config", JSON.stringify(role.json_args["--kv-transfer-config"])];
+  }
+  preset.json_args = { "--kv-transfer-config": {
+    DownstreamMooncakeConnector: { kv_connector_extra_config: { order: "all" } },
+    SimpleCPUOffloadConnector: { kv_connector_extra_config: { cpu_bytes_to_use: 9, lazy_offload: true } },
+  } };
+  const prefill = preset.roles.prefill;
+  prefill.json_args["--kv-transfer-config"].kv_connector_extra_config.order = "role";
+  prefill.json_args["--kv-transfer-config"].SimpleCPUOffloadConnector = { kv_connector_extra_config: { lazy_offload: false } };
+  const render = () => resolveCommand(fixture, "default", "pd_cluster", "ascend_950dt", [], strategies, bothRoles, [], 1,
+    ascendPdPools(), {}, "simple", null, "python", "ascend", "http", null, "ascend_pd", undefined, "mooncake_ascend");
+  const children = () => kvCfg(render(), "prefill").kv_connector_extra_config.connectors;
+  let [transfer, cpu] = children();
+  assert.equal(transfer.kv_connector_extra_config.order, "role");
+  assert.equal(cpu.kv_connector_extra_config.cpu_bytes_to_use, 9);
+  assert.equal(cpu.kv_connector_extra_config.lazy_offload, false);
+  prefill.remove_args.push("--kv_transfer_config");
+  [transfer, cpu] = children();
+  assert.equal(transfer.kv_connector_extra_config.order, "role");
+  assert.equal(cpu.kv_connector_extra_config.cpu_bytes_to_use, undefined, "remove_args discards earlier tier edits");
+  assert.equal(cpu.kv_connector_extra_config.lazy_offload, false);
+});
+
 test("Ascend PD requires each selection's declaration in the active hardware and variant preset", () => {
   const cases = [
     { name: "no preset", edit: (r) => { r.presets = {}; } },

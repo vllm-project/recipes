@@ -505,6 +505,11 @@ role's full `--kv-transfer-config` through its existing args or preset
 `roles.<role>.json_args`, including the connector name and implementation-specific
 settings. Replace `YourMooncakeConnector` and complete both configs above with
 the model's qualified configuration. The renderer does not choose V1, V2 or Hybrid.
+Each role must supply a JSON object with a non-empty `kv_connector`; missing or
+invalid configs fail rendering, without restricting implementation names. When
+KV offload is enabled, named edits to its connector (for example,
+`SimpleCPUOffloadConnector`) apply after composition. Transfer config edits keep
+the normal preset-to-role precedence.
 
 PD connector configs, including recipe-supplied configs, can use `{prefill_dp_size}`, `{prefill_tp_size}`,
 `{prefill_pp_size}` and the corresponding `{decode_*_size}` placeholders. Whole

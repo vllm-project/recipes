@@ -2140,18 +2140,52 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     //    after every layer so they also reach feature and KV-offload flags
     //    (e.g. num_speculative_tokens inside --speculative-config).
     const ops = recipe._presetOps;
+    const tiers = recipeTransfer ? [kvStoreStrat?.pd?.[roleOverride]?.tier, pdTier].filter(Boolean) : [];
+    const tierEdits = [];
+    const isTransferFlag = (flag) => typeof flag === "string" && flag.replaceAll("_", "-") === "--kv-transfer-config";
     if (ops) {
       const editOnly = toggleOwnedFlags(recipe, taxonomy);
       // PD transfer exists independently of the KV-offload toggle; a recipe
       // may supply its entire config through json_args without catalog defaults.
       if (recipeTransfer) editOnly.delete("--kv-transfer-config");
-      out = applyPresetArgOps(out, ops.all, editOnly);
-      if (roleOverride) out = applyPresetArgOps(out, ops.roles?.[roleOverride], editOnly);
+      for (const delta of [ops.all, ops.roles?.[roleOverride]]) {
+        let immediate = delta;
+        if (tiers.length && delta) {
+          // Only tier-specific edits need the composed config. Keep transfer
+          // edits in all -> role order, and never apply removals/edits twice.
+          if (delta.remove_args?.some(isTransferFlag)) tierEdits.length = 0;
+          immediate = { ...delta, json_args: Object.fromEntries(Object.entries(delta.json_args || {}).map(([flag, edit]) => {
+            if (!isTransferFlag(flag)) return [flag, edit];
+            const deferred = {}, transfer = {};
+            for (const [key, value] of Object.entries(edit)) {
+              (tiers.some((tier) => tier.kv_connector === key) ? deferred : transfer)[key] = value;
+            }
+            if (Object.keys(deferred).length) tierEdits.push({ json_args: { [flag]: deferred } });
+            return [flag, transfer];
+          })) };
+        }
+        try {
+          out = applyPresetArgOps(out, immediate, editOnly);
+        } catch (error) {
+          if (recipeTransfer && /^json_args: --kv[-_]transfer[-_]config\b/.test(error.message)) {
+            throw new RangeError(`PD ${roleOverride}: ${error.message}`);
+          }
+          throw error;
+        }
+      }
     }
     if (recipeTransfer) {
-      // Compose only after the recipe has supplied the implementation/settings.
-      const tiers = [kvStoreStrat?.pd?.[roleOverride]?.tier, pdTier].filter(Boolean);
-      if (tiers.length) out = [...out, "--kv-transfer-config", JSON.stringify(multiConnector([kvOptionConfig({ args: out }), ...tiers]))];
+      out = out.map((arg) => isTransferFlag(arg) ? "--kv-transfer-config" : arg);
+      let transfer;
+      try { transfer = kvOptionConfig({ args: out }); } catch { /* Report invalid JSON with the role below. */ }
+      if (!transfer || typeof transfer !== "object" || Array.isArray(transfer)
+          || typeof transfer.kv_connector !== "string" || !transfer.kv_connector.trim()) {
+        throw new RangeError(`PD ${roleOverride}: the recipe must supply --kv-transfer-config as a JSON object with a non-empty kv_connector.`);
+      }
+      if (tiers.length) {
+        out = [...out, "--kv-transfer-config", JSON.stringify(multiConnector([transfer, ...tiers]))];
+        for (const edit of tierEdits) out = applyPresetArgOps(out, edit);
+      }
     }
     if (roleOverride && strategy.deploy_type === "pd_cluster"
         && (externalDp || pdRoleValue(recipe, roleOverride, "pp", hwProfile, hwProfileId) != null)) {
