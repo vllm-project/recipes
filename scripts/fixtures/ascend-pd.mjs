@@ -1,13 +1,5 @@
 // Synthetic, public-checkpoint-independent coverage of a single pool per role.
 export function ascendPdRecipe() {
-  const transfer = (role) => ({
-    kv_connector: "DownstreamMooncakeConnector", kv_role: role === "prefill" ? "kv_producer" : "kv_consumer",
-    kv_port: role === "prefill" ? "36000" : "36100",
-    kv_connector_extra_config: {
-      prefill: { dp_size: "{prefill_dp_size}", tp_size: "{prefill_tp_size}", pp_size: "{prefill_pp_size}" },
-      decode: { dp_size: "{decode_dp_size}", tp_size: "{decode_tp_size}", pp_size: "{decode_pp_size}" },
-    },
-  });
   return {
     hf_id: "test/Ascend-PD",
     meta: {
@@ -25,8 +17,8 @@ export function ascendPdRecipe() {
         label: "Ascend PD", hardware: "ascend_950dt", strategy: "pd_cluster",
         image: "example/ascend:fixture", select: { pd_router: "ascend", pd_connector: "mooncake_ascend", frontend: "python" },
         roles: {
-          prefill: { nodes: 4, parallelism: "tp", pp: 4, remove_args: ["--max-model-len"], json_args: { "--kv-transfer-config": transfer("prefill") }, env: { HCCL_IF_IP: "$PREFILL_NODE_1", VLLM_HOST_IP: "$PREFILL_NODE_1" } },
-          decode: { nodes: 4, parallelism: "dep", tp: 4, pp: 1, json_args: { "--speculative-config": { num_speculative_tokens: 3 }, "--kv-transfer-config": transfer("decode") }, env: { HCCL_IF_IP: "$DECODE_NODE_1", VLLM_HOST_IP: "$DECODE_NODE_1" } },
+          prefill: { nodes: 4, parallelism: "tp", pp: 4, remove_args: ["--max-model-len"], json_args: {}, env: { HCCL_IF_IP: "$PREFILL_NODE_1", VLLM_HOST_IP: "$PREFILL_NODE_1" } },
+          decode: { nodes: 4, parallelism: "dep", tp: 4, pp: 1, json_args: { "--speculative-config": { num_speculative_tokens: 3 } }, env: { HCCL_IF_IP: "$DECODE_NODE_1", VLLM_HOST_IP: "$DECODE_NODE_1" } },
         },
       },
     },

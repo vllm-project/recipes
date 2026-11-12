@@ -62,8 +62,9 @@ Select the PD router and KV connector independently, subject to catalog compatib
 For Ascend, \`pd_router=ascend\` selects Ascend Router; \`pd_connector=mooncake_ascend\`
 selects Mooncake (Ascend). Each choice requires Ascend hardware, PD disaggregation
 and an active model preset that explicitly declares it in \`select\`.
-The recipe supplies the connector name and configuration through its role args
-or preset JSON edits; the renderer imposes no implementation default or name allowlist.
+The catalog defaults to \`MooncakeConnectorV2\` with pool-size placeholders.
+Recipes can override the implementation and settings through existing named preset
+\`json_args\` edits, including when KV offload is composed; there is no name allowlist.
 
 PD renderings include \`prefill.node_commands[]\` and \`decode.node_commands[]\`, with every node's
 \`node_rank\`, \`command\`, \`argv\`, \`env\`, and Docker equivalents. Run each on its named node;

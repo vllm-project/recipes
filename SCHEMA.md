@@ -464,15 +464,11 @@ presets:
         nodes: 4
         parallelism: tp
         pp: 4
-        json_args:
-          --kv-transfer-config: { kv_connector: YourMooncakeConnector, kv_role: kv_producer }
       decode:
         nodes: 4
         parallelism: dep
         tp: 4
         pp: 1
-        json_args:
-          --kv-transfer-config: { kv_connector: YourMooncakeConnector, kv_role: kv_consumer }
 ```
 
 This uses one TP8/PP4 prefill pool and one DP8/TP4 decode pool: each decode node
@@ -499,17 +495,32 @@ connector. Keep child HTTP ports clear of the supervisor health port (9256 by
 default), and use the Ascend proxy script from the matching runtime. This example
 is not an NPU validation claim.
 
-The single **Mooncake (Ascend)** option (`mooncake_ascend`) has no default runtime
-implementation or connector-name allowlist. The downstream recipe supplies each
-role's full `--kv-transfer-config` through its existing args or preset
-`roles.<role>.json_args`, including the connector name and implementation-specific
-settings. Replace `YourMooncakeConnector` and complete both configs above with
-the model's qualified configuration. The renderer does not choose V1, V2 or Hybrid.
-Each role must supply a JSON object with a non-empty `kv_connector`; missing or
-invalid configs fail rendering, without restricting implementation names. When
-KV offload is enabled, named edits to its connector (for example,
-`SimpleCPUOffloadConnector`) apply after composition. Transfer config edits keep
-the normal preset-to-role precedence.
+The single **Mooncake (Ascend)** option (`mooncake_ascend`) supplies catalog
+configurations for both roles, defaulting to `MooncakeConnectorV2` with producer /
+consumer roles, KV ports 36000 / 36100, and both pools' DP/TP/PP metadata. The
+example above inherits these defaults. There is no connector-name allowlist:
+use the existing preset `roles.<role>.json_args` to select V1, V2, Hybrid or
+another implementation supported by the model's runtime, and to adjust or
+remove implementation-specific settings. For example, apply this edit to each
+role that needs Hybrid (complete its settings from the model's verified source):
+
+```yaml
+json_args:
+  --kv-transfer-config:
+    MooncakeConnectorV2:
+      kv_connector: MooncakeHybridConnector
+      # Other keys override the catalog defaults; null deletes a key.
+```
+
+The named edit addresses the default transfer connector both on its own and
+inside `MultiConnector` when KV offload is enabled. Edit offload settings by
+its connector name in the same `json_args` object. Do not change the root
+`kv_connector` when editing a composed config, since that root is
+`MultiConnector`. Normal preset-to-role precedence applies: apply shared settings
+first and rename the connector in the final role edit. A whole
+config supplied via raw args follows normal override/composition ordering;
+prefer named edits to preserve enabled offload tiers. Final Ascend transfer
+configs must be JSON objects with a non-empty connector name.
 
 PD connector configs, including recipe-supplied configs, can use `{prefill_dp_size}`, `{prefill_tp_size}`,
 `{prefill_pp_size}` and the corresponding `{decode_*_size}` placeholders. Whole
