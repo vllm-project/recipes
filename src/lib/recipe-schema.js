@@ -86,6 +86,8 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     hardware: keyed(hwKey, { enum: ["unsupported", "supported"] }),
     hardware_overrides: keyed(hwKey, argsEnv),
     default_mode: { type: "string" },
+    // Per exact GPU id: the feature defaults ON there, with this mode.
+    hardware_default_modes: keyed(gpuId, { type: "string" }),
     modes: { type: "object", additionalProperties: mode },
     companion: obj({ label: { type: "string" }, description: { type: "string" }, command: { type: "string" } }, { required: ["label", "command"] }),
   }, { required: ["description"] });

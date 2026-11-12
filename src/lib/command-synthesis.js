@@ -735,7 +735,8 @@ export function kvOffloadOptionErrors(taxonomy, strategies) {
  * The effective mode key for a (feature, variant, hardware, user-selection)
  * tuple — the single source of truth shared by the command emitter and the UI.
  * Only considers modes allowed on this variant + hardware, then prefers, in
- * order: the user's explicit pick, the variant's `default_modes[featureKey]`,
+ * order: the user's explicit pick, the feature's `hardware_default_modes[hwId]`,
+ * the variant's `default_modes[featureKey]`,
  * the feature's `default_mode`, else the first allowed mode. Returns undefined
  * when the feature has no modes or none are allowed here.
  */
@@ -746,7 +747,8 @@ export function resolveModeKey(feature, featureKey, variantObj, variantKey, hwPr
       && isModeSupported(feature.modes[k], hwProfile, hwId)
   );
   if (allowed.length === 0) return undefined;
-  for (const c of [selectedMode, variantObj?.default_modes?.[featureKey], feature.default_mode]) {
+  const hwDefault = hwId != null ? feature.hardware_default_modes?.[hwId] : undefined;
+  for (const c of [selectedMode, hwDefault, variantObj?.default_modes?.[featureKey], feature.default_mode]) {
     if (c && allowed.includes(c)) return c;
   }
   return allowed[0];
@@ -1351,15 +1353,17 @@ function dedupeArgs(args) {
       units.push({ positional: cur });
     }
   }
-  // Last-wins: walk backward, mark first sighting of each flag as keep.
+  // Last-wins: walk backward, mark first sighting of each flag as keep. A
+  // valueless `--no-X` and `--X` are the two sides of one boolean flag.
+  const key = (u) => (u.value === undefined ? u.flag.replace(/^--no-/, "--") : u.flag);
   const seen = new Set();
   const keep = new Array(units.length).fill(false);
   for (let i = units.length - 1; i >= 0; i--) {
     const u = units[i];
     if (u.positional !== undefined) {
       keep[i] = true;
-    } else if (!seen.has(u.flag)) {
-      seen.add(u.flag);
+    } else if (!seen.has(key(u))) {
+      seen.add(key(u));
       keep[i] = true;
     }
   }

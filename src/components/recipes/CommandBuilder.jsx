@@ -673,6 +673,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       // the fused DSpark checkpoint auto-enables spec_decoding (default: dspark).
       const v = recipe.variants?.[variantKey] || {};
       const forced = new Set(Object.keys(v.default_modes || {}));
+      // A feature with a default mode on this GPU (`hardware_default_modes`)
+      // is on by default there too.
+      for (const [f, feat] of Object.entries(recipe.features || {})) if (feat?.hardware_default_modes?.[hw]) forced.add(f);
       return Object.keys(recipe.features || {}).filter((f) =>
         isFeatureAllowedForVariant(v, f) && (forced.has(f) || !optIn.has(f)));
     },
@@ -1396,6 +1399,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     for (const f of oldHwOptIn) {
       if (!newHwOptIn.has(f) && !baseOptIn.has(f) && !next.includes(f)) next.push(f);
     }
+    // Features defaulted on by the hardware (`hardware_default_modes`): turn
+    // them on for the new GPU, off when leaving a GPU that forced them.
+    const hwForced = (hw) => Object.keys(recipe.features || {}).filter((f) => recipe.features[f]?.hardware_default_modes?.[hw]);
+    const newForced = hwForced(id);
+    const newDefault = new Set(defaultFeaturesFor(id, variant));
+    next = next.filter((f) => !hwForced(hwId).includes(f) || newDefault.has(f));
+    for (const f of newForced) if (!next.includes(f)) next.push(f);
     setHwId(id);
     setStrategyOverride("");
     const newProfile = taxonomy.hardware_profiles?.[id] || {};

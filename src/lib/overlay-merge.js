@@ -86,6 +86,7 @@ export const OVERLAY_RULES = [
   ["kv_cache_strategy_hardware", "*", "@hw"],
   ["strategy_overrides", "*", "hardware_overrides", "@hw"],
   ["features", "*", "hardware_overrides", "@hw"],
+  ["features", "*", "hardware_default_modes", "@hw"],
   ["features", "*", "modes", "*", "hardware_overrides", "@hw"],
   ["features", "*", "modes", "*", "hardware", "@hw"],
   ["variants", "@variant"],

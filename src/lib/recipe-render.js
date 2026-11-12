@@ -131,6 +131,7 @@ export function defaultFeaturesFor(recipe, hwId, variantKey = "default") {
   for (const f of recipe.hardware_opt_in_features?.[hwId] || []) optIn.add(f);
   const variant = recipe.variants?.[variantKey] || {};
   const forced = new Set(Object.keys(variant.default_modes || {}));
+  for (const [f, feat] of Object.entries(recipe.features || {})) if (feat?.hardware_default_modes?.[hwId]) forced.add(f);
   return Object.keys(recipe.features || {}).filter((f) =>
     isFeatureAllowedForVariant(variant, f) && (forced.has(f) || !optIn.has(f)));
 }

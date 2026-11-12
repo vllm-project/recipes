@@ -130,6 +130,13 @@ function validateFeatureModes(recipe, sourceFile) {
     if (feature.default_mode && !modeKeys.includes(feature.default_mode)) {
       errors.push(`features.${featureKey}.default_mode references unknown mode ${feature.default_mode}`);
     }
+    for (const [hwId, modeKey] of Object.entries(feature.hardware_default_modes || {})) {
+      if (!modeKeys.includes(modeKey)) {
+        errors.push(`features.${featureKey}.hardware_default_modes.${hwId} references unknown mode ${modeKey}`);
+      } else if ((modes[modeKey]?.hardware?.[hwId] ?? modes[modeKey]?.hardware?.default) === "unsupported") {
+        errors.push(`features.${featureKey}.hardware_default_modes.${hwId} selects mode ${modeKey}, which is unsupported on ${hwId}`);
+      }
+    }
 
     for (const [modeKey, mode] of Object.entries(modes)) {
       if (!Array.isArray(mode?.args)) {
