@@ -1,12 +1,12 @@
 {
   "latest": {
     "vllm": {
-      "repo": "vllm-project/vllm",
-      "ref": "main",
+      "repo": "mpashkovskii/vllm",
+      "ref": "recipes/muse-spark-mi350p",
       "path": "recipes",
-      "sha": "778f0fe600242a17229611011d51cf7c7ca63661",
-      "tree_sha": "b3a7073c9250189b9ebd150eaf99331b8b6b0123",
-      "resolved_at": "2026-11-12T16:47:06.409Z"
+      "sha": "6c77739ae517a6af5dbfa6636763fd96b8f13140",
+      "tree_sha": "6ea450a62ea4554172d177dbc8d57d4607b1fa89",
+      "resolved_at": "2026-11-12T18:46:56.000Z"
     },
     "vllm-omni": {
       "repo": "vllm-project/vllm-omni",
