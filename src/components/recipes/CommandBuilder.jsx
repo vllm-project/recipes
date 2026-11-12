@@ -3963,14 +3963,23 @@ function SingleCommandBlock({ command, env, setup, companions, verifyCmd, benchC
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companionIds]);
   // Companions are host-side helper binaries (not `vllm serve`), so they get
-  // neither the docker-run wrapper nor the env prelude.
-  const activePrelude = activeCompanion ? "" : prelude;
+  // neither the docker-run wrapper nor the env prelude — except an `engine`
+  // companion (another TP replica), a full `vllm serve` with its own env,
+  // which renders exactly like the main command.
+  const activeEngine = activeCompanion?.engine ? activeCompanion : null;
+  const activePrelude = activeEngine
+    ? (isDocker ? "" : envToExports(activeEngine.env))
+    : activeCompanion ? "" : prelude;
   // Leading # lines render in the dimmed comment area (same treatment as a
   // companion's description line); the bright pre keeps only the executable
   // body. Applies to both sources: a companion's own comments and the
   // `hf download` prerequisite buildDockerRun prepends for a local-path
   // checkpoint. Copy still grabs comments + body.
-  const rawActive = activeCompanion ? String(activeCompanion.command) : displayCommand;
+  const rawActive = activeEngine
+    ? (isDocker
+      ? buildDockerRun({ command: activeEngine.command, env: activeEngine.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, cmdPrefix: dockerMeta.cmdPrefix })
+      : String(activeEngine.command))
+    : activeCompanion ? String(activeCompanion.command) : displayCommand;
   // A setup ending in `&&` chains straight into the command (no blank line).
   const fullScript = activePrelude
     ? `${activePrelude}${activePrelude.endsWith("&&") ? "\n" : "\n\n"}${rawActive}`

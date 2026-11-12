@@ -150,6 +150,11 @@ export function effectiveCompatibleStrategies(recipe) {
     : all;
 }
 
+// Single-node strategies whose TP size comes from the variant / recipe `tp`
+// (or the VRAM auto-fit) instead of filling the node: plain TP, and TP
+// replicas, which run gpu_count / TP engines side by side.
+const TP_SIZED_STRATEGIES = new Set(["single_node_tp", "single_node_tp_replicas"]);
+
 /**
  * Single-node TP size for a recipe/variant/hardware triple. Exported so
  * the UI ("using N of M GPUs" hint) uses the same rule as the generated
@@ -164,7 +169,7 @@ export function resolveSingleNodeTp(
 ) {
   const gpuCount = typeof hwProfile?.gpu_count === "number" ? hwProfile.gpu_count : 1;
   const isCpu = hwProfile?.generation === "cpu";
-  if (strategyName !== "single_node_tp") return gpuCount;
+  if (!TP_SIZED_STRATEGIES.has(strategyName)) return gpuCount;
   // Variant-level override beats recipe-level. Used when a non-default variant
   // (typically an FP8-block-quantized sibling) needs a smaller TP than the
   // bf16 default — e.g. moe_intermediate_size=1536 demands TP ≤ 4 under FP8
@@ -2766,6 +2771,43 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       command: String(kvOpt.companion.command).trimEnd(),
     });
   }
+  // TP replicas (`strategy.replicas`): the node runs gpu_count / TP engines,
+  // replica i on GPUs [i * TP, (i + 1) * TP) through the brand's visibility
+  // variable and on base_port + i. Replica 1 is the main command; the others
+  // are `engine` companions — full `vllm serve` commands with their own env,
+  // which renderers wrap like the main one (docker run, env prelude) — and
+  // the strategy's router companion lists every replica (`{worker_urls}`).
+  let workerUrls = null;
+  let replicaMask = null;
+  if (strategy.replicas && deployType === "single_node") {
+    const tp = Number(lastFlagValue(singleArgs, "--tensor-parallel-size")) || singleNodeTp || 1;
+    const count = Math.max(1, Math.floor(gpuCount / tp));
+    const basePort = Number(strategy.replicas.base_port) || servedPort(singleArgs);
+    const maskVar = strategy.replicas.device_env?.[String(hwProfile?.brand || "").toLowerCase()] || null;
+    const devices = (i) => Array.from({ length: tp }, (_, k) => i * tp + k).join(",");
+    const onPort = (port) => {
+      const a = [...singleArgs];
+      const at = a.lastIndexOf("--port");
+      if (at >= 0 && at + 1 < a.length) a[at + 1] = String(port);
+      else a.push("--port", String(port));
+      return a;
+    };
+    workerUrls = Array.from({ length: count }, (_, i) => `http://localhost:${basePort + i}`).join(" ");
+    if (maskVar) replicaMask = { [maskVar]: devices(0) };
+    for (let i = 1; i < count; i++) {
+      const args = onPort(basePort + i);
+      companions.push({
+        feature: `replica:${i + 1}`,
+        label: `Replica ${i + 1}`,
+        after: true,
+        engine: true,
+        description: `vLLM replica ${i + 1} of ${count}: GPUs ${devices(i)}, port ${basePort + i}.`,
+        env: { ...buildEnv(null), ...(maskVar ? { [maskVar]: devices(i) } : {}) },
+        command: formatCommand(args),
+        argv: formatArgv(args),
+      });
+    }
+  }
   // `{dp_size}` and `{port}` resolve against what the engine actually runs
   // with: a preset may narrow DEP below the node (`--data-parallel-size 2`),
   // and a strategy may serve behind the router on another port.
@@ -2781,6 +2823,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       command: String(strategy.companion.command)
         .replace(/\{dp_size\}/g, String(lastIntFlag(singleArgs, "--data-parallel-size", gpuCount)))
         .replace(/\{port\}/g, String(servedPort(singleArgs)))
+        .replace(/\{worker_urls\}/g, workerUrls || `http://localhost:${servedPort(singleArgs)}`)
         .trimEnd(),
     });
   }
@@ -2788,6 +2831,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   // the engine actually runs with (`{tp_size}`), e.g. a host-side launcher that
   // sizes per-rank resources before `vllm serve` starts.
   const env = buildEnv(null);
+  if (replicaMask) Object.assign(env, replicaMask);
   const tpSize = lastFlagValue(singleArgs, "--tensor-parallel-size")
     || lastFlagValue(singleArgs, "-tp") || 1;
   const fillKv = (s) => String(s).replace(/\{tp_size\}/g, String(tpSize));

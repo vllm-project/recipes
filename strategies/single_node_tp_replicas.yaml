@@ -1,0 +1,51 @@
+name: single_node_tp_replicas
+deploy_type: single_node
+display_name: "TP Replicas + Router"
+short_label: "TP×N"                 # compact name for tight spots (Preset pills)
+orientation: throughput
+description: >
+  Several independent tensor-parallel engines on one node, each on its own
+  slice of the GPUs, behind a vllm-router. The TP size comes from the
+  variant's `tp` (or the VRAM auto-fit); the node runs gpu_count / TP
+  replicas. Each replica keeps its own KV cache and serves on its own
+  port; cache_aware routing sends a conversation back to the replica that
+  already holds its prefix. For models whose best layout spans part of a
+  node, or GPUs without a fast fabric between all of them (PCIe).
+
+hardware_match:
+  min_gpus: 2
+  max_gpus: 8
+  multi_node: false
+
+vllm_args:
+  - "--port"
+  - "8100"
+
+parallel_flag: "--tensor-parallel-size"
+
+kv_offload: false
+
+# Replica i (0-based) runs on GPUs [i * TP, (i + 1) * TP) through the
+# brand's device-visibility variable and serves on base_port + i. Replica 1
+# is the main vLLM Serve command; the others render as companion tabs.
+replicas:
+  base_port: 8100
+  device_env:
+    amd: HIP_VISIBLE_DEVICES
+    nvidia: CUDA_VISIBLE_DEVICES
+
+companion:
+  label: "vLLM Router"
+  description: >-
+    Spreads requests across the replicas. cache_aware keeps a conversation
+    on the replica whose prefix cache already holds it. Start it after the
+    replicas report ready.
+  install: "uv pip install vllm-router"
+  start: after
+  command: |
+    vllm-router \
+      --host 0.0.0.0 \
+      --port 8000 \
+      --policy cache_aware \
+      --worker-urls {worker_urls} \
+      --worker-startup-timeout-secs 1800

@@ -113,7 +113,8 @@ function serveSection(r) {
   for (const c of r.companions || []) {
     out.push("", `### ${c.label}${c.after ? " (start after vLLM)" : ""}`, "");
     if (c.description) out.push(c.description, "");
-    out.push(fence(c.command));
+    out.push(fence(c.engine ? withEnv(c.env, c.command) : c.command));
+    if (c.engine) out.push(...dockerNote(c.docker_command));
   }
   out.push(...dockerNote(r.docker_command));
   return out;

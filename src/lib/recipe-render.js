@@ -402,7 +402,15 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     // Companion processes (feature `companion:` or the active kv_offload
     // option's, e.g. LMCache's `lmcache server`) — run alongside `vllm serve`
     // on the same node, in their own terminal.
-    ...(result.companions ? { companions: result.companions } : {}),
+    // An `engine` companion (another TP replica) is a full `vllm serve` with
+    // its own env, so it gets the same docker equivalent as the main command.
+    ...(result.companions
+      ? {
+        companions: result.companions.map((c) => (c.engine && !result.dockerUnavailable
+          ? { ...c, ...dockerize(c.command, c.argv, c.env, dockerMeta) }
+          : c)),
+      }
+      : {}),
   };
 }
 
