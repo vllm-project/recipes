@@ -18,7 +18,9 @@ import {
   multiNodeFloor,
   pickDefaultHardware,
   resolveCommand,
+  variantRunsOnHardware,
 } from "../src/lib/command-synthesis.js";
+import { resolveSelection } from "../src/lib/recipe-render.js";
 
 const taxonomy = yaml.load(fs.readFileSync("taxonomy.yaml", "utf8"));
 const profiles = taxonomy.hardware_profiles;
@@ -27,6 +29,37 @@ const strategies = Object.fromEntries(
   fs.readdirSync("strategies").map((f) => [path.basename(f, ".yaml"), yaml.load(fs.readFileSync(`strategies/${f}`, "utf8"))]),
 );
 const IMAGE = "vllm/vllm-openai:cu134-nightly";
+
+test("single RTX 4090 is opt-in and selects an offloaded variant that fits", () => {
+  const hw = profiles.rtx_4090;
+  assert.equal(hw.gpu_count, 1);
+  assert.equal(hw.vram_gb, 24);
+  assert.equal(hw.compute_arch, "sm89");
+  assert.equal(hw.restricted, true);
+  assert.equal(hw.scalable, false);
+
+  const r = {
+    meta: { tasks: ["omni"], hardware: {} },
+    model: { model_id: "org/image", base_args: [] },
+    omni: { tasks: ["t2i"] },
+    variants: {
+      default: { precision: "bf16", vram_minimum_gb: 153 },
+      dlo: { precision: "bf16", vram_minimum_gb: 16 },
+    },
+  };
+  const query = new URLSearchParams("hardware=rtx_4090");
+  const undeclared = resolveSelection(r, query, strategies, taxonomy);
+  assert.notEqual(undeclared.selection.hardware, "rtx_4090");
+  assert.ok(!undeclared.options.hardware.includes("rtx_4090"));
+
+  r.meta.hardware.rtx_4090 = "supported";
+  const selected = resolveSelection(r, query, strategies, taxonomy);
+  assert.equal(selected.selection.hardware, "rtx_4090");
+  assert.equal(selected.selection.variant, "dlo");
+  assert.ok(selected.options.hardware.includes("rtx_4090"));
+  assert.equal(variantRunsOnHardware(hw, r.variants.default, "rtx_4090"), false);
+  assert.equal(variantRunsOnHardware(hw, r.variants.dlo, "rtx_4090"), true);
+});
 
 const recipe = (extra = {}) => ({
   meta: { hardware: { vr200: "supported" } },

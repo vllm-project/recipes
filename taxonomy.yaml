@@ -218,6 +218,21 @@ hardware_profiles:
     scalable: false
     restricted: true
   
+  # RTX 4090 — single-GPU RTX 4090 system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware`
+  rtx_4090:
+    brand: NVIDIA
+    generation: ada
+    compute_arch: sm89
+    display_name: "RTX 4090"
+    description: "NVIDIA RTX 4090 · 1× RTX 4090 GPU · 24 GB VRAM"
+    gpu_count: 1
+    vram_gb: 24
+    multi_node: false
+    scalable: false
+    restricted: true
+
   # RTX 5090 — single-GPU RTX 5090 system.
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
   # lists it in `meta.hardware`
