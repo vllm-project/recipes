@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Qwen3.6 dense multimodal model (27B) with gated delta networks hybrid attention, MTP, and 262K context"
   date_added: 2026-04-22
-  date_updated: 2026-10-12
+  date_updated: 2026-10-14
   difficulty: beginner
   tasks:
     - multimodal
@@ -575,6 +575,42 @@ guide: |
   68 with `ROCM_AITER_FA` and 161 with MTP added. GSM8K (first 250 test
   questions, greedy, thinking off) is unchanged: 0.952 image defaults, 0.952
   `ROCM_AITER_FA`, 0.964 `ROCM_AITER_UNIFIED_ATTN`, 0.964 `ROCM_AITER_FA` + MTP.
+
+  **MTP under load (MI300X).** All rows use the AMD command above (AITER +
+  `ROCM_AITER_FA`), measured 2026-10-13 on one MI300X with
+  `vllm/vllm-openai-rocm:v0.31.0`, prefix caching on. Chat traffic: 1k-token
+  prompts, 512 output tokens, concurrency 1-64. "At SLO" is the best output
+  throughput with p50 TPOT <= 50 ms and p50 TTFT <= 2 s.
+
+  | Speculative decoding | 1 user, output tok/s | at SLO, output tok/s per GPU | draft acceptance |
+  |---|---|---|---|
+  | none | 68 | 655 (16 users) | - |
+  | MTP, 1 token | 108 | 1,727 (64 users) | 95% |
+  | MTP, 2 tokens | 142 | 1,920 (64 users) | 90% |
+  | MTP, 3 tokens | 153 | 1,900 (64 users) | 84% |
+  | n-gram (k=4) | 70 | 898 (64 users) | 69% |
+
+  For coding-agent traffic (concurrent multi-turn sessions replayed from
+  SWE-bench trajectories, 10-30k-token contexts, 256 output tokens per turn,
+  2 s tool gaps), MTP helps up to about 32 sessions per GPU. Beyond that, the
+  prefix-cache hit rate collapses with MTP on (see vllm-project/vllm#54360):
+
+  | Concurrent sessions | no spec: output tok/s (cache hits) | MTP-3: output tok/s (cache hits) |
+  |---|---|---|
+  | 16 | 346 (89%) | 436 (82%) |
+  | 32 | 500 (88%) | 548 (82%) |
+  | 64 | 621 (88%) | 265 (42%) |
+
+  Summary for MI300X:
+  - Use MTP with 2-3 draft tokens for chat-style traffic at any concurrency up
+    to 64.
+  - For agent workloads with many concurrent long sessions per GPU, use MTP
+    only up to about 32 sessions; above that, serve without speculative
+    decoding until #54360 is fixed.
+  - n-gram speculation is slower than MTP for this model.
+  - Accuracy with MTP-3: GSM8K 0.964. A cross-config logprob check against the
+    no-spec config (40 agent and math prompts, each sent twice to exercise
+    prefix-cache hits) found no divergence (NLL ratio 1.004).
 
   ### Docker (Intel XPU B60 / B70)
 
