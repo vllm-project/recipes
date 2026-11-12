@@ -130,7 +130,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
   const pdRole = obj({
     nodes: intOrHwMap,
     parallelism: { anyOf: [pdMode, keyed(hwKey, pdMode)] },
-    tp: { type: "integer", minimum: 1 },
+    tp: intOrHwMap,
     vllm_args: strings,
     env: envMap,
     parallel_flag: { type: "string" },

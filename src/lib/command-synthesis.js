@@ -376,6 +376,15 @@ function pdRoleValue(recipe, role, key, hwProfile, hwProfileId) {
   return raw && typeof raw === "object" ? hardwareKeyedValue(raw, hwProfile, hwProfileId) : raw;
 }
 
+/**
+ * TP width per DP rank of one PD pool (used when parallelism=dep): the
+ * recipe's `strategy_overrides.pd_cluster.<role>.tp` (a number or a
+ * hardware-keyed map) > the strategy YAML's role `tp`, or undefined.
+ */
+export function pdRoleTp(recipe, strategy, role, hwProfile, hwProfileId) {
+  return pdRoleValue(recipe, role, "tp", hwProfile, hwProfileId) ?? strategy?.[role]?.tp;
+}
+
 /** Default node count of one PD pool, or undefined when the recipe sets none. */
 export function pdRoleNodes(recipe, role, hwProfile, hwProfileId) {
   const n = pdRoleValue(recipe, role, "nodes", hwProfile, hwProfileId);
@@ -1933,7 +1942,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         // `tp` is only rendered when the recipe sets it explicitly (vLLM's
         // own default is 1, so emitting "--tensor-parallel-size 1" would be
         // pure noise). Internal math still uses 1 as the effective value.
-        const tpExplicit = soRoleCfg.tp ?? roleCfg.tp;
+        const tpExplicit = pdRoleTp(recipe, strategy, roleKey, hwProfile, hwProfileId);
         const roleTp = tpExplicit ?? 1;
         const dpLocal = Math.max(1, Math.floor(gpuCount / roleTp));
         const dpSize = nodesInPool * dpLocal;
@@ -2387,8 +2396,6 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     // so the UI can render "1 node" vs "4 nodes — duplicate for ranks 1..N-1"
     // notices without rederiving the logic.
     const roleMeta = (role) => {
-      const soRoleCfg = recipe.strategy_overrides?.[strategyName]?.[role] || {};
-      const roleCfg = strategy[role] || {};
       const legacyNodes = nodeCount > 1 ? 1 : 0;
       const raw = pdNodes ? pdNodes[role] : undefined;
       const pdRole =
@@ -2403,7 +2410,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       if (!allowedPoolModes.includes(parallelism)) parallelism = allowedPoolModes[0];
       const poolGpus = nodes === 0 ? Math.floor(gpuCount / 2) : nodes * gpuCount;
       const tp = parallelism === "dep"
-        ? (soRoleCfg.tp || roleCfg.tp || 1)
+        ? (pdRoleTp(recipe, strategy, role, hwProfile, hwProfileId) || 1)
         : poolGpus;
       const dpLocal = parallelism === "dep" ? Math.max(1, Math.floor(gpuCount / tp)) : 0;
       const dpSize = parallelism === "dep" ? Math.max(1, nodes) * dpLocal : 1;
