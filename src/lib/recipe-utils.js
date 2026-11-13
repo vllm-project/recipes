@@ -2,6 +2,14 @@
  * Shared utilities — safe to import from client components (no fs/path/yaml).
  */
 
+// Prefer specialized capabilities over text, regardless of YAML tag order.
+const PRIMARY_TASK_PRIORITY = ["omni", "embedding", "multimodal", "text"];
+
+export function primaryRecipeTask(recipe) {
+  const tasks = recipe.meta?.tasks || [];
+  return PRIMARY_TASK_PRIORITY.find((task) => tasks.includes(task)) || tasks[0] || "other";
+}
+
 /**
  * URL for a recipe — matches HuggingFace org/repo path.
  * e.g. /deepseek-ai/DeepSeek-V3.2 (swap huggingface.co → recipes.vllm.ai)
@@ -13,4 +21,20 @@ export function recipeHref(recipe) {
   // Fallback for recipes that somehow lack hf_id derivation
   const org = recipe.meta.provider.toLowerCase().replace(/\s+/g, "-");
   return `/${org}/${recipe.meta.title}`;
+}
+
+function dateTimestamp(value) {
+  const timestamp = Date.parse(value || "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+/**
+ * Newest catalog additions first. `date_updated` is only a compatibility
+ * fallback for recipes authored before `date_added` became part of the schema.
+ */
+export function compareRecipesByDateAdded(a, b) {
+  const aAdded = dateTimestamp(a.meta?.date_added || a.meta?.date_updated);
+  const bAdded = dateTimestamp(b.meta?.date_added || b.meta?.date_updated);
+  if (aAdded !== bAdded) return bAdded - aAdded;
+  return (a.hf_id || "").localeCompare(b.hf_id || "");
 }

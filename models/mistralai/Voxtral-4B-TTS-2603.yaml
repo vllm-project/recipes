@@ -3,6 +3,7 @@ meta:
   slug: "voxtral-4b-tts-2603"
   provider: "Mistral AI"
   description: "Mistral's 4B text-to-speech model served via vLLM-Omni with built-in voice presets, exposed through the OpenAI /v1/audio/speech API (24 kHz mono)."
+  date_added: 2026-06-17
   date_updated: 2026-06-15
   difficulty: beginner
   tasks:

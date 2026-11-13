@@ -10,15 +10,47 @@ One recipe = one YAML file at `models/<hf_org>/<hf_repo>.yaml`. The path
 mirrors HuggingFace so the site URL `/<hf_org>/<hf_repo>` matches
 `huggingface.co/<hf_org>/<hf_repo>` exactly.
 
+## Where a recipe lives
+
+Recipes are kept in the repository of the project that serves the model; this
+repo renders them (see "How recipes are maintained" in the
+[README](README.md)). Open your change against the owning repo:
+
+| Recipe | Repository and directory |
+| --- | --- |
+| Models served by vLLM | `vllm-project/vllm` → `recipes/models/<hf_org>/<hf_repo>.yaml` |
+| Apple Silicon variants served by vLLM Metal | `vllm-project/vllm-metal` → `recipes/overlays/<hf_org>/<hf_repo>.yaml` |
+| Omni models (`meta.tasks` includes `omni`) | `vllm-project/vllm-omni` → `recipes/models/<hf_org>/<hf_repo>.yaml` |
+| Ascend NPU content | `recipes/overlays/<hf_org>/<hf_repo>.yaml` in vllm-ascend, merged into the vLLM recipe (the vLLM source rejects Huawei hardware) |
+
+This repo's `models/` still holds copies of the vLLM and vLLM-Omni recipes until they are synced upstream and removed. The site renders the upstream version, so open changes to those models against vLLM or vLLM-Omni, not the copies here. Pull requests already open against the copies can still merge; they reach the site once synced upstream.
+
+The schema ([SCHEMA.md](SCHEMA.md)) is the same everywhere. Changes to the schema, hardware
+profiles (`taxonomy.yaml`), strategies, provider logos, or the site itself go
+to this repo.
+
 ## Quick start
 
-1. Fork + clone the repo.
-2. Create `models/<hf_org>/<hf_repo>.yaml` using the schema below.
-3. Validate: `node scripts/build-recipes-api.mjs` — must print
-   `✓ JSON API: N models, 8 strategies` with no errors.
-4. Preview locally: `pnpm install && pnpm dev` → open
+1. Fork + clone the owning repo (above) and this repo.
+2. Create `models/<hf_org>/<hf_repo>.yaml` in the owning repo, starting from
+   [`templates/recipe.yaml`](templates/recipe.yaml) and following
+   [SCHEMA.md](SCHEMA.md). The template's first line points YAML-aware editors at
+   the published schema for completion and inline errors.
+3. Point this repo at your checkout with a gitignored `sources.local.yaml`
+:
+
+   ```yaml
+   overrides:
+     vllm: ~/vllm/recipes            # or, for an omni recipe:
+     vllm-omni: ~/vllm-omni/recipes
+   ```
+
+4. Validate from this repo: `node scripts/build-recipes-api.mjs` — must print
+   `✓ JSON API: N models, …` with no errors.
+5. Preview locally: `pnpm install && pnpm dev` → open
    `http://localhost:3000/<hf_org>/<hf_repo>`.
-5. Open a PR.
+6. Open a PR against the owning repo. Once it merges, the site picks it up
+   automatically (the `bump-sources` workflow checks every 20 minutes).
 
 ## Fetching HuggingFace metadata
 
@@ -39,252 +71,12 @@ This dumps `config.json` / `params.json`. Look at:
 - **`torch_dtype` / `quantization_config`** → `precision` on the default
   variant (bf16, fp16, fp8, nvfp4, int4, etc.).
 
-## YAML schema (authoritative)
+## YAML schema
 
-Top-level keys, in this order:
-
-```yaml
-meta:
-  title: "DeepSeek-V3.2"                          # display name
-  slug: "deepseek-v3.2"                           # kebab-case; keep consistent with title
-  provider: "DeepSeek"                            # human-readable label
-  description: "…"                                # one-sentence summary
-  date_updated: 2026-04-20                        # today's date (or last touch)
-  difficulty: intermediate                        # beginner | intermediate | advanced
-  tasks:
-    - text                                        # one or more of: text, multimodal, omni, embedding
-  performance_headline: "…"                       # optional pithy line for cards
-  related_recipes: ["deepseek-ai/DeepSeek-V3.1"]  # optional list of "<org>/<repo>" ids
-  # Optional — only add GPUs you've ACTUALLY tested end-to-end.
-  # Missing GPUs are assumed to work silently (we don't flag "untested").
-  hardware:
-    h200: verified
-    mi355x: verified
-
-model:
-  model_id: "deepseek-ai/DeepSeek-V3.2"           # MUST match the filename path
-  min_vllm_version: "0.18.0"                      # earliest vLLM release that supports this model
-  docker_image: "vllm/vllm-openai:v0.18.0"        # optional — override the Docker image:tag shown in Install → Docker. String form pins NVIDIA only (AMD/TPU still use their brand defaults). For per-brand pins, use the object form:
-                                                  #   docker_image:
-                                                  #     nvidia: "vllm/vllm-openai:gemma4"
-                                                  #     amd:    "vllm/vllm-openai-rocm:gemma4"
-                                                  #     tpu:    "vllm/vllm-tpu:gemma4"
-                                                  # Missing keys fall back to `:latest` for that brand (vllm/vllm-openai, vllm/vllm-openai-rocm, vllm/vllm-tpu).
-  nightly_required: true                          # optional — set when `min_vllm_version` hasn't shipped yet. Swaps the default pip command to `uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly/cu130` and adds a "nightly" pill to the Install header. Users on CUDA 12.9 are pointed to the /cu129 index via the note.
-  # Optional — control the Install block's pip/Docker tabs. Each key accepts
-  # either `false` (hide the tab entirely) or an object with { command?, note? }.
-  # Use `note` for a one-liner above the code block; use `command` to fully
-  # replace the generated install script (e.g. nightly wheel, pinned version).
-  #
-  # Tab ORDER follows the YAML key order. Put `docker` before `pip` to make
-  # Docker the first tab and the default when the block opens (useful when the
-  # recipe is easier via Docker — e.g. a pinned image vs. a multi-step pip).
-  install:
-    docker:                                       # listed first → Docker is the default tab
-      note: "Recommended: the pinned image ships all dependencies"
-    pip:
-      command: "uv pip install vllm --pre --index-url https://wheels.vllm.ai/nightly"
-      note: "nightly wheel required — stable release does not yet support this model"
-  architecture: moe                               # dense | moe
-  parameter_count: "671B"                         # total params with B/T suffix
-  active_parameters: "37B"                        # same as parameter_count for dense models
-  context_length: 163840                          # integer (tokens)
-  supports_dcp: true                              # optional — MLA-attention models (DeepSeek, Kimi-K2 family)
-  base_args:                                      # flags always needed
-    - "--trust-remote-code"
-  base_env:                                       # env vars always needed
-    VLLM_USE_FLASHINFER_MOE_FP8: "1"
-
-# Optional — extra install steps beyond `uv pip install -U vllm`.
-# Rendered as a code block above the vllm serve command.
-dependencies:
-  - note: "DeepGEMM required for FP8 MoE kernels"
-    command: "uv pip install git+https://github.com/deepseek-ai/DeepGEMM.git@v2.1.1.post3 --no-build-isolation"
-  - note: "Set VLLM_USE_DEEP_GEMM=0 to skip DeepGEMM (recommended on H20)"
-    command: "export VLLM_USE_DEEP_GEMM=0"
-    optional: true
-
-features:
-  tool_calling:                                   # names are conventions, not required keys
-    description: "Enable …"
-    args: ["--enable-auto-tool-choice", "--tool-call-parser", "<name>"]
-  reasoning:
-    description: "…"
-    args: ["--reasoning-parser", "<name>"]
-  spec_decoding:                                  # USE spec_decoding, NOT mtp — unified key for MTP / Eagle3 / ERNIE-MTP
-    description: "…"
-    args: ["--speculative-config", '{"method":"mtp","num_speculative_tokens":1}']
-
-opt_in_features:                                  # features that default OFF (users tick them on)
-  - spec_decoding                                 # spec decoding is opt-in unless docs insist
-
-variants:
-  default:                                        # ALWAYS include a `default` variant
-    precision: fp8                                # bf16|fp8|nvfp4|fp4|int4|int8|awq|gptq|mxfp4
-    vram_minimum_gb: 805                          # params × bytes × 1.2 (see formula below)
-    description: "…"
-  nvfp4:                                          # optional additional variants
-    model_id: "nvidia/*-NVFP4"                    # only if the quantized checkpoint is a different HF repo
-    precision: nvfp4
-    vram_minimum_gb: 403
-    extra_args: ["--kv-cache-dtype", "fp8"]
-    extra_env: { VLLM_USE_FLASHINFER_MOE_FP4: "1" }
-
-compatible_strategies:                            # subset of the 8 strategy ids in strategies/*.yaml
-  - single_node_tp                                # always include as baseline
-  - single_node_tep                               # for MoE
-  - single_node_dep                               # for MoE
-  - multi_node_tp
-  - multi_node_tp_pp                              # TP within node + PP across — vLLM's recommended multi-node default
-  - multi_node_dep                                # for MoE
-  - multi_node_tep                                # for MoE
-  - pd_cluster                                    # only if the recipe documents PD
-
-# Optional per-generation tweaks.
-# Key by `hopper` / `blackwell` / `amd` for per-family overrides, OR use
-# `nvidia` as a brand-wide fallback that applies to every NVIDIA GPU when
-# no generation-specific block is present.
-hardware_overrides:
-  blackwell:
-    extra_args: []
-    extra_env: {}
-  amd:
-    extra_args: []
-    extra_env:
-      VLLM_ROCM_USE_AITER: "1"
-
-# Optional per-strategy tweaks. Rare. PD recipes use this to shape each pool.
-#
-# For `pd_cluster`, each role (prefill / decode) accepts:
-#   nodes        — how many dedicated nodes the pool uses (default 1)
-#   parallelism  — "tp" (tensor-parallel pool) | "dep" (data-parallel + expert-parallel)
-#                  default "tp"
-#   tp           — TP width per DP rank when parallelism=dep (default 1);
-#                  unused for parallelism=tp (the whole pool is one TP group)
-#   vllm_args    — extra flags appended to this role's `vllm serve`
-#   env          — extra env vars for this role
-#   parallel_flag — (rare) override the auto-selected flag for parallelism=tp
-#
-# The Nodes row in the UI exposes `nodes` as per-pool inputs; the values here
-# set the defaults. Kimi-K2.5 on GB200 illustrates the DEP-PD pattern:
-strategy_overrides:
-  pd_cluster:
-    prefill:
-      nodes: 1
-      parallelism: dep
-      tp: 1                                     # DP = nodes × gpus_per_node / tp = 4
-      vllm_args: ["--enforce-eager"]
-      env: {}
-    decode:
-      nodes: 4
-      parallelism: dep
-      tp: 1                                     # DP = 16 on 4x GB200
-      vllm_args: ["--compilation-config", '{"cudagraph_mode":"FULL_DECODE_ONLY"}']
-      env: {}
-  # Default TP-per-role PD (simpler pattern, one engine per pool):
-  # pd_cluster:
-  #   prefill: { nodes: 1, parallelism: tp }   # TP = gpus_per_node
-  #   decode:  { nodes: 1, parallelism: tp }
-  #
-  # Cap TP below the node's gpu_count for small models that fit on fewer GPUs
-  # (Gemma 4 runs on 1 GPU even on an 8-GPU node):
-  # single_node_tp:
-  #   tp: 1                                    # clamped to [1, gpu_count];
-  #                                            # UI shows "using N of M GPUs"
-  #                                            # under the Hardware pill when
-  #                                            # effective TP < gpu_count.
-  #                                            # Only read for single_node_tp —
-  #                                            # TEP/DEP and multi-node ignore.
-
-# Markdown guide. Rendered on the recipe page under the command builder.
-# Covers Overview, Prerequisites, Launch, Benchmarking, Troubleshooting, References.
-guide: |
-  ## Overview
-  ...
-
-  ## Prerequisites
-  - **Hardware**: 8x H200
-  - **vLLM**: >= 0.18.0
-
-  ## Launching the Server
-  ```bash
-  vllm serve deepseek-ai/DeepSeek-V3.2 --tensor-parallel-size 8 ...
-  ```
-
-  ## References
-  - [Model card](https://huggingface.co/deepseek-ai/DeepSeek-V3.2)
-```
-
-### Multiple speculative-decoding methods
-
-Keep the flat `features.spec_decoding.args` form when a recipe has one method.
-When the same served checkpoint can use multiple mutually exclusive methods,
-replace `args` with a `modes` map:
-
-```yaml
-features:
-  spec_decoding:
-    description: "Speculative decoding — pick a drafting method."
-    default_mode: mtp
-    modes:
-      mtp:
-        label: "MTP"
-        description: "Native multi-token prediction head."
-        args: ["--speculative-config", '{"method":"mtp","num_speculative_tokens":2}']
-      eagle3:
-        label: "EAGLE3"
-        description: "Community-trained external draft model."
-        args: ["--speculative-config", '{"method":"eagle3","model":"community/model-eagle3","num_speculative_tokens":5}']
-
-opt_in_features: [spec_decoding]
-```
-
-`default_mode` is the recommended selection when the feature is enabled. A
-mode can use `variants: [default, fp8]` to limit it to particular served
-checkpoints and `hardware: { hopper: unsupported }` to disable it on a GPU
-family. Per-mode `hardware_overrides.<generation>.args` can replace its config
-for one hardware generation.
-
-The served checkpoint and speculative method are separate axes: only a
-variant's `model_id` changes `vllm serve <checkpoint>`; a mode contributes only
-the speculative arguments. If a draft is baked into a separately served
-checkpoint, model it as a variant and couple its recommended method with
-`default_modes`:
-
-```yaml
-variants:
-  fused_eagle3:
-    model_id: "community/model-with-eagle3"
-    label: "EAGLE3"
-    precision: fp8
-    vram_minimum_gb: 128
-    default_modes:
-      spec_decoding: eagle3
-```
-
-Declaring `default_modes` also enables that feature by default for the variant,
-even when it appears in `opt_in_features`. The build validator rejects mixed
-`args` + `modes`, unknown mode/variant references, and variants with no usable
-mode.
-
-## VRAM formula
-
-`vram_minimum_gb = ceil(params × bytes_per_param × 1.2)` — uses **total**
-params (MoE counts inactive experts; they still live in VRAM).
-
-| Precision | Bytes per param |
-|-----------|-----------------|
-| bf16, fp16 | 2 |
-| fp8, int8, awq, gptq | 1 |
-| int4, nvfp4, fp4, mxfp4 | 0.5 |
-
-Examples:
-- 70B BF16 → `70 × 2 × 1.2 = 168 GB`
-- 671B FP8 → `671 × 1 × 1.2 = 805 GB`
-- 235B NVFP4 → `235 × 0.5 × 1.2 = 141 GB`
-
-If a `model_id`-override variant points to a different base (e.g., a distilled
-FP4 checkpoint), use **that** model's parameter count, not the base.
+The schema — an annotated example of every field, the field reference, and
+the VRAM formula — is in **[SCHEMA.md](SCHEMA.md)**, the single authoritative
+copy (versioned with the renderer, so it is the same for every repository
+that hosts recipes).
 
 ## Naming conventions
 
@@ -302,7 +94,8 @@ FP4 checkpoint), use **that** model's parameter count, not the base.
 
 ## Provider logo (new organizations only)
 
-If `<hf_org>` isn't already in `src/lib/providers.js`, add an entry:
+If `<hf_org>` isn't already in `src/lib/providers.js`, add an entry (in this
+repo, even when the recipe itself lives in another repo):
 
 ```js
 "my-new-org": { display_name: "My New Org", logo: "/providers/my-new-org.png" },
@@ -328,11 +121,19 @@ speculative guesses.
 
 ## Testing your recipe
 
-After saving the YAML, run:
+After saving the YAML (with `sources.local.yaml` pointing at your checkout if
+the recipe lives in another repo), run from this repo:
 
 ```bash
-# Fast validation: all YAMLs parse + JSON API builds
+# Fetch the pinned commits of every remote source (first run / after a lock bump)
+node scripts/sync-sources.mjs
+
+# Fast validation: assembles every source, all YAMLs parse + JSON API builds
 node scripts/build-recipes-api.mjs
+
+# Or validate a source checkout exactly as its pull-request check does
+# (strict assemble + JSON API build), without touching sources.local.yaml:
+node scripts/validate-source.mjs --source vllm --dir ~/vllm/recipes   # or --source vllm-omni --dir ~/vllm-omni/recipes
 
 # Full preview
 pnpm install
@@ -342,21 +143,26 @@ pnpm dev
 
 Click through Hardware / Variant / Strategy / Nodes pills and confirm the
 generated `vllm serve` command matches what you'd expect. The Verify / Bench
-popovers should open without clipping.
+popovers should open without clipping. While `pnpm dev` runs,
+`pnpm content:watch` re-assembles when you add or remove files in a local
+source.
 
 ## Commit style
 
-Stage **only** the new recipe YAML (and `providers.js` if you added an org):
+In the owning repo, stage **only** the new recipe YAML, and sign off the
+commit (vllm-project repos enforce DCO):
 
 ```bash
-git add models/<hf_org>/<hf_repo>.yaml
-# plus src/lib/providers.js if you added a new provider
-git commit -m "Add <hf_org>/<hf_repo> recipe"
+git add recipes/models/<hf_org>/<hf_repo>.yaml   # in vllm or vllm-omni
+git commit -s -m "Add <hf_org>/<hf_repo> recipe"
 ```
+
+A new provider entry in `src/lib/providers.js` is a separate PR to this repo.
 
 Do not stage:
 
-- `public/` — generated at build time
+- `public/`, `.content/`, `.sources/` — generated at build time
+- `sources.local.yaml` — your local overrides
 - `node_modules/`
 - `site/` — the legacy MkDocs output
 

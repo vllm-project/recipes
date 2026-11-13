@@ -3,6 +3,7 @@ meta:
   slug: "ernie-4.5"
   provider: "Ernie (Baidu)"
   description: "Baidu ERNIE 4.5 MoE text models (21B-A3B, 300B-A47B) with BF16 and FP8 support plus ERNIE-MTP speculative decoding"
+  date_added: 2025-09-03
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
@@ -54,6 +55,10 @@ compatible_strategies:
   - multi_node_tp
   - multi_node_tep
   - multi_node_dep
+
+kv_offload_support:
+  offloading_cpu: verified
+  offloading_fs: verified
 
 hardware_overrides:
   amd:

@@ -3,6 +3,7 @@ meta:
   slug: "lfm2.5-1.2b-jp"
   provider: "LiquidAI"
   description: "Liquid AI's 1.2B Japanese-specialized chat model on the LFM2 hybrid conv+attention backbone, with a 32K context window on a single small GPU."
+  date_added: 2026-06-25
   date_updated: 2026-06-24
   difficulty: beginner
   tasks:

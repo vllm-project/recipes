@@ -1,0 +1,44 @@
+# Source-PR previews render recipe guides unreviewed, so the guide renderer
+# must keep raw HTML and unsafe URLs out (scripts/test-guide-html.mjs). Runs
+# when the renderer or its dependencies change.
+name: Guide HTML test
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "scripts/test-guide-html.mjs"
+      - ".github/workflows/test-guide-html.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "scripts/test-guide-html.mjs"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # The lockfile may come from a PR: don't run its dependencies' install scripts.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - run: pnpm test:guide-html

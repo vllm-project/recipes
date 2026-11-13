@@ -1,0 +1,214 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { test } from "node:test";
+import yaml from "js-yaml";
+import { applyOverlay, resolveScope, splitOverlay } from "../src/lib/overlay-merge.js";
+import { contentDir } from "../src/lib/content-root.js";
+
+const ROOT = new URL("..", import.meta.url).pathname;
+const taxonomy = yaml.load(fs.readFileSync(path.join(ROOT, "taxonomy.yaml"), "utf8"));
+const ctx = resolveScope({ brands: ["Huawei"] }, taxonomy);
+const source = "vllm-ascend";
+
+function yamlFiles(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const full = path.join(dir, e.name);
+    return e.isDirectory() ? yamlFiles(full) : /\.ya?ml$/.test(e.name) ? [full] : [];
+  });
+}
+
+// Deep equality that ignores map key order (merge appends overlay keys) but
+// keeps array order.
+function canonical(v) {
+  if (v instanceof Date) return v.toISOString();
+  if (Array.isArray(v)) return v.map(canonical);
+  if (v && typeof v === "object") {
+    return Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical(v[k])]));
+  }
+  return v;
+}
+
+// Overlay notes append after core notes; keep the order within each group.
+function notesByScope(notes = []) {
+  const inScope = (n) => n.when?.hardware?.length && n.when.hardware.every((key) => ctx.isHwKey(key));
+  return [notes.filter((n) => !inScope(n)), notes.filter(inScope)];
+}
+
+// The assembled tree (every source), so the round-trip covers recipes owned by
+// other repos too. Run build-recipes-api / assemble-content first.
+const recipes = yamlFiles(path.join(contentDir(), "models")).map((file) => ({
+  file: path.relative(ROOT, file),
+  recipe: yaml.load(fs.readFileSync(file, "utf8")),
+}));
+
+// Holds for any catalog — including one whose Ascend content already lives in
+// vllm-ascend overlays, where every split is empty.
+test("split → merge reproduces every recipe (Huawei scope)", () => {
+  for (const { file, recipe } of recipes) {
+    const { core, overlay } = splitOverlay(recipe, { ctx, source, guideHeading: /ascend/i });
+    // The overlay must survive a YAML round-trip, as it will on disk.
+    const ov = yaml.load(yaml.dump(overlay, { lineWidth: -1 })) || {};
+    const { recipe: merged, errors } = applyOverlay(core, ov, { ctx, source });
+    assert.deepEqual(errors, [], `${file}: ${errors.join("; ")}`);
+    // Overlay deps land before core deps (or after, with `position: end`), so
+    // an in-scope dep sitting between core deps moves to the front; compare
+    // the in-scope and out-of-scope sequences separately.
+    const byScope = (deps = []) => [deps.filter((d) => !ctx.brands.has(String(d.brand).toLowerCase())), deps.filter((d) => ctx.brands.has(String(d.brand).toLowerCase()))];
+    const norm = (r) => canonical({ ...r, dependencies: byScope(r.dependencies), notes: notesByScope(r.notes) });
+    assert.deepEqual(norm(merged), norm(recipe), `${file}: round-trip mismatch`);
+    // Core keeps nothing in scope except prose and per-variant references.
+    assert.equal(splitOverlay(core, { ctx, source, guideHeading: /ascend/i }).overlay.meta, undefined, file);
+  }
+});
+
+test("an overlay may repeat what the core recipe still has (cutover)", () => {
+  // Shipping the overlay before the core drops its copy changes nothing.
+  for (const { file, recipe } of recipes) {
+    const { overlay } = splitOverlay(recipe, { ctx, source, guideHeading: /ascend/i });
+    const ov = yaml.load(yaml.dump(overlay, { lineWidth: -1 })) || {};
+    const { recipe: merged, errors } = applyOverlay(recipe, ov, { ctx, source });
+    assert.deepEqual(errors, [], `${file}: ${errors.join("; ")}`);
+    assert.deepEqual(canonical(merged), canonical(recipe), `${file}: repeated overlay changed the recipe`);
+  }
+});
+
+// A fixed fixture (the starter template), so a catalog change can't break the
+// scope tests — bump-sources.yml runs this file to validate new content.
+const core0 = yaml.load(fs.readFileSync(path.join(ROOT, "templates/recipe.yaml"), "utf8"));
+const errs = (overlay) => applyOverlay(core0, overlay, { ctx, source }).errors;
+
+test("overlay can't touch out-of-scope hardware or model config", () => {
+  assert.equal(errs({ hardware_overrides: { blackwell: { extra_args: ["--x"] } } }).length, 1);
+  assert.equal(errs({ meta: { hardware: { b200: "unsupported" } } }).length, 1);
+  assert.equal(errs({ model: { base_args: ["--x"] } }).length, 1);
+  assert.equal(errs({ compatible_strategies: ["pd_cluster"] }).length, 1);
+  assert.equal(errs({ strategy_hardware: { pd_cluster: { h200: "unsupported" } } }).length, 1);
+  assert.equal(errs({ meta: { default_hardware: "ascend_910c" } }).length, 1);
+});
+
+test("overlay is add-only", () => {
+  const once = applyOverlay(core0, { meta: { hardware: { ascend_910c: "verified" } } }, { ctx, source }).recipe;
+  assert.equal(applyOverlay(once, { meta: { hardware: { ascend_910c: "unsupported" } } }, { ctx, source }).errors.length, 1);
+  // An existing variant can't be replaced wholesale, only extended per hardware.
+  assert.equal(errs({ variants: { default: { precision: "int4" } } }).length, 1);
+  assert.deepEqual(errs({ variants: { default: { hardware_overrides: { ascend_910c: { docker_image: "x" } } } } }), []);
+});
+
+test("new variants and dependencies must be in scope", () => {
+  assert.equal(errs({ variants: { foo: { precision: "fp8", supported_hardware: ["h200"] } } }).length, 1);
+  assert.equal(errs({ variants: { foo: { precision: "fp8" } } }).length, 1);
+  assert.deepEqual(errs({ variants: { foo: { precision: "fp8", supported_hardware: ["ascend_910c"] } } }), []);
+  assert.equal(errs({ dependencies: [{ command: "pip install x" }] }).length, 1);
+  assert.deepEqual(errs({ dependencies: [{ command: "pip install x", brand: "Huawei" }] }), []);
+  // An entry repeated within one overlay lands once.
+  const dep = { command: "pip install x", brand: "Huawei" };
+  assert.equal(applyOverlay(core0, { dependencies: [dep, dep] }, { ctx, source }).recipe.dependencies.filter((d) => d.command === dep.command).length, 1);
+});
+
+test("overlay notes require hardware entirely within the source scope", () => {
+  for (const when of [{}, { variants: ["default"] }, { hardware: [] }, { hardware: ["h200"] }, { hardware: ["ascend_910c", "h200"] }]) {
+    assert.equal(errs({ notes: [{ when, body: "x" }] }).length, 1);
+  }
+  assert.equal(errs({ notes: "x" }).length, 1);
+});
+
+test("overlay notes append without changing or duplicating existing notes", () => {
+  const existing = { when: { hardware: ["h200"] }, body: "Core note" };
+  const note = { when: { hardware: ["ascend_910c"] }, body: "Ascend note" };
+  const core = { ...core0, notes: [existing] };
+  const once = applyOverlay(core, { notes: [note, note] }, { ctx, source });
+  assert.deepEqual(once.errors, []);
+  assert.deepEqual(once.recipe.notes, [existing, note]);
+  assert.deepEqual(core.notes, [existing]);
+  const again = applyOverlay(once.recipe, { notes: [note] }, { ctx, source });
+  assert.deepEqual(again.errors, []);
+  assert.deepEqual(again.recipe.notes, once.recipe.notes);
+});
+
+test("split moves only in-scope notes and merges them back", () => {
+  const shared = { when: { variants: ["default"] }, body: "Shared note" };
+  const scoped = { when: { hardware: ["ascend_910c"] }, body: "Ascend note" };
+  const original = { ...core0, notes: [scoped, shared] };
+  const { core, overlay } = splitOverlay(original, { ctx, source });
+  assert.deepEqual(core.notes, [shared]);
+  assert.deepEqual(overlay.notes, [scoped]);
+  const merged = applyOverlay(core, overlay, { ctx, source }).recipe;
+  assert.deepEqual(merged, { ...original, notes: [shared, scoped] });
+  assert.deepEqual(notesByScope(merged.notes), notesByScope(original.notes));
+});
+
+test("an overlay source needs a granted scope", () => {
+  const none = resolveScope({}, taxonomy);
+  assert.equal(applyOverlay(core0, { meta: { hardware: { ascend_910c: "verified" } } }, { ctx: none, source }).errors.length, 1);
+});
+
+test("guide sections fill their marker, else append", () => {
+  const core = { meta: {}, guide: "## A\n\n<!-- overlay:vllm-ascend:npu -->\n## B\n" };
+  const { recipe } = applyOverlay(core, { guide_sections: { npu: "## NPU\nx\n\n", tail: "## Tail\n" } }, { ctx, source });
+  assert.equal(recipe.guide, "## A\n\n## NPU\nx\n\n## B\n\n## Tail\n");
+  // A section that ends the guide splits off and merges back unchanged.
+  const tail = { meta: {}, guide: "## A\n\n## Ascend\nx\n" };
+  const split = splitOverlay(tail, { ctx, source, guideHeading: /ascend/i });
+  assert.equal(applyOverlay(split.core, split.overlay, { ctx, source }).recipe.guide, tail.guide);
+});
+
+test("exclude_brands keeps a brand's hardware out of a core source", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-exclude-"));
+  const recipe = (hardware) => yaml.dump({ meta: { title: "x", tasks: ["text"], hardware } });
+  fs.mkdirSync(path.join(tmp, "core/models/org"), { recursive: true });
+  const channel = "test-exclude";
+  fs.writeFileSync(path.join(tmp, "sources.yaml"), yaml.dump({ channels: { [channel]: {
+    core: { local: path.join(tmp, "core"), role: "core", scope: { exclude_brands: ["Huawei"] } },
+  } } }));
+  const assemble = () => spawnSync(process.execPath, [path.join(ROOT, "scripts/assemble-content.mjs")], {
+    cwd: ROOT, encoding: "utf8", env: { ...process.env, RECIPES_SOURCES: path.join(tmp, "sources.yaml"), RECIPES_CHANNEL: channel },
+  });
+  try {
+    fs.writeFileSync(path.join(tmp, "core/models/org/a.yaml"), recipe({ h200: "verified" }));
+    assert.equal(assemble().status, 0);
+    fs.writeFileSync(path.join(tmp, "core/models/org/a.yaml"), recipe({ h200: "verified", ascend_910c: "verified" }));
+    assert.match(assemble().stderr, /excludes Huawei hardware, which belongs in its overlay: meta\.hardware\.ascend_910c/);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(path.join(ROOT, ".content", channel), { recursive: true, force: true });
+  }
+});
+
+test("defers_to skips copies the other source ships; ownership and scope still hold", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-defers-"));
+  const recipe = (tasks) => yaml.dump({ meta: { title: "x", tasks } });
+  const put = (rel, body) => {
+    fs.mkdirSync(path.dirname(path.join(tmp, rel)), { recursive: true });
+    fs.writeFileSync(path.join(tmp, rel), body);
+  };
+  put("core/models/org/a.yaml", recipe(["text"]));
+  put("old/models/org/a.yaml", "stale: [copy");                  // skipped unparsed
+  put("old/models/org/b.yaml", recipe(["text"]));                // not in core yet: renders from old
+  const channel = "test-defers";
+  const assemble = (old) => {
+    put("sources.yaml", yaml.dump({ channels: { [channel]: {
+      core: { local: path.join(tmp, "core"), role: "core" },
+      old: { local: path.join(tmp, "old"), role: "owner", ...old },
+    } } }));
+    return spawnSync(process.execPath, [path.join(ROOT, "scripts/assemble-content.mjs")], {
+      cwd: ROOT, encoding: "utf8", env: { ...process.env, RECIPES_SOURCES: path.join(tmp, "sources.yaml"), RECIPES_CHANNEL: channel },
+    });
+  };
+  try {
+    const ok = assemble({ defers_to: "core" });
+    assert.equal(ok.status, 0, ok.stderr);
+    const prov = JSON.parse(fs.readFileSync(path.join(ROOT, ".content", channel, "provenance.json"), "utf8")).recipes;
+    assert.deepEqual([prov["org/a"].source, prov["org/b"].source], ["core", "old"]);
+    assert.match(assemble({}).stderr, /org\/a: shipped by both/);
+    assert.match(assemble({ defers_to: "core", scope: { tasks: ["omni"] } }).stderr, /org\/b\.yaml: source scope requires/);
+    assert.match(assemble({ defers_to: "nope" }).stderr, /defers_to must name other sources/);
+    assert.match(assemble({ defers_to: ["core", "nope"] }).stderr, /defers_to must name other sources/);
+    assert.equal(assemble({ defers_to: ["core"] }).status, 0);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(path.join(ROOT, ".content", channel), { recursive: true, force: true });
+  }
+});

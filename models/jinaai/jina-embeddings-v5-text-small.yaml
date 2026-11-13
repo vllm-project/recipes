@@ -3,6 +3,7 @@ meta:
   slug: "jina-embeddings-v5-text-small"
   provider: "Jina AI"
   description: "Jina AI's fifth-gen multilingual text embedding model (677M, Qwen3-0.6B-Base) with task-specific LoRA adapters for retrieval, text-matching, classification, and clustering."
+  date_added: 2026-05-09
   date_updated: 2026-05-09
   difficulty: beginner
   tasks:

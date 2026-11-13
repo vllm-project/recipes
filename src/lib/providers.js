@@ -27,6 +27,7 @@ export const PROVIDERS = {
   "fishaudio":       { display_name: "Fish Audio",              logo: "/providers/fishaudio.png" },
   "bosonai":         { display_name: "Boson AI",                logo: "/providers/bosonai.png" },
   "OpenMOSS-Team":   { display_name: "OpenMOSS",                logo: "/providers/OpenMOSS-Team.png" },
+  "IndexTeam":       { display_name: "IndexTeam",               logo: "/providers/IndexTeam.png" },
   "OpenGVLab":       { display_name: "InternVL (OpenGVLab)",    logo: "/providers/OpenGVLab.jpeg" },
   "internlm":        { display_name: "InternLM",                logo: "/providers/internlm.png" },
   "jinaai":          { display_name: "Jina AI",                 logo: "/providers/jinaai.png" },
@@ -43,18 +44,35 @@ export const PROVIDERS = {
   "JetBrains":       { display_name: "JetBrains",                 logo: "/providers/JetBrains.png" },
   "openbmb":         { display_name: "MiniCPM (OpenBMB)",          logo: "/providers/openbmb.png" },
   "LiquidAI":        { display_name: "Liquid AI",                  logo: "/providers/LiquidAI.png" },
+  "Lightricks":      { display_name: "Lightricks",                 logo: "/providers/Lightricks.webp" },
   "thinkingmachines":{ display_name: "Thinking Machines Lab",         logo: "/providers/thinkingmachines.png" },
   "RedHatAI":        { display_name: "Red Hat AI",                    logo: "/providers/RedHatAI.png" },
+  "mindlab-research":{ display_name: "MindLab Research",               logo: "/providers/mindlab-research.png" },
+  "dots-studio":     { display_name: "Dots",                           logo: "/providers/dots-studio.png" },
+  "meta-models":     { display_name: "Muse (Meta)",                     logo: "/providers/meta-models.png" },
+  "IFM":             { display_name: "IFM",                     logo: "/providers/IFM.png" },
+  "bharatgenai":     { display_name: "BharatGen",                logo: "/providers/bharatgenai.jpeg" },
+  "vllm-sr":         { display_name: "vLLM Semantic Router",     logo: "/providers/vllm-sr.png" },
+  "black-forest-labs": { display_name: "Black Forest Labs",     logo: "/providers/black-forest-labs.png" },
+  "reflection":      { display_name: "Reflection AI",            logo: "/providers/reflection.png" },
+  "ricursiveAI":     { display_name: "Ricursive Intelligence",   logo: "/providers/ricursiveAI.png" },
+  "RecursiveSI":     { display_name: "RecursiveSI",              logo: "/providers/RecursiveSI.png", invertInLight: true },
+  "ibm-granite":     { display_name: "IBM Granite",              logo: "/providers/ibm-granite.png" },
+  "autotrust":       { display_name: "AutoTrust",                logo: "/providers/autotrust.jpeg" },
 };
 
 export function getProviderLogo(hfOrg) {
   return PROVIDERS[hfOrg]?.logo || null;
 }
 
-// Monochrome logos (e.g. OpenAI's pure-black mark) disappear on dark backgrounds.
-// Flip them to white via `dark:invert` for those providers.
+// Monochrome logos disappear on one theme's background: OpenAI's pure-black
+// mark on dark (`invertInDark`), RecursiveSI's white-on-transparent mark on
+// light (`invertInLight`). Flip them with `invert` for that theme.
 export function getProviderLogoClass(hfOrg) {
-  return PROVIDERS[hfOrg]?.invertInDark ? "dark:invert" : "";
+  const p = PROVIDERS[hfOrg];
+  if (p?.invertInDark) return "dark:invert";
+  if (p?.invertInLight) return "invert dark:invert-0";
+  return "";
 }
 
 export function getProviderDisplayName(hfOrg) {

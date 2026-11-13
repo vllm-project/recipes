@@ -3,6 +3,7 @@ meta:
   slug: "fish-speech-s2-pro"
   provider: "Fish Audio"
   description: "Fish Audio's dual-AR text-to-speech model served via vLLM-Omni, producing 44.1 kHz mono audio with optional voice cloning, through the OpenAI /v1/audio/speech API."
+  date_added: 2026-06-17
   date_updated: 2026-06-15
   difficulty: intermediate
   tasks:

@@ -3,6 +3,7 @@ meta:
   slug: "minicpm-v-4-6"
   provider: "MiniCPM (OpenBMB)"
   description: "MiniCPM-V 4.6 (1.3B) — pocket-sized multimodal LLM for ultra-efficient single-image, multi-image, and video understanding, built on SigLIP2-400M + a Qwen3.5-0.8B hybrid-attention backbone"
+  date_added: 2026-06-02
   date_updated: 2026-06-02
   difficulty: beginner
   tasks:

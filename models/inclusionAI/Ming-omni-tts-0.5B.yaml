@@ -3,6 +3,7 @@ meta:
   slug: "ming-omni-tts-0.5b"
   provider: "inclusionAI"
   description: "inclusionAI's dense 0.5B-LM text-to-speech model served via vLLM-Omni with style, dialect, voice-cloning and multi-speaker controls, through the OpenAI /v1/audio/speech API (44.1 kHz mono)."
+  date_added: 2026-06-17
   date_updated: 2026-06-15
   difficulty: intermediate
   tasks:

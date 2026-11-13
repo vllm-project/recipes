@@ -3,6 +3,7 @@ meta:
   slug: "higgs-audio-v3-tts-4b"
   provider: "Boson AI"
   description: "Boson AI's ~4B Qwen3-backbone text-to-speech model served via vLLM-Omni — 24 kHz speech, 100+ languages, zero-shot voice cloning with inline emotion/style/prosody control tokens — through the OpenAI /v1/audio/speech API."
+  date_added: 2026-06-17
   date_updated: 2026-06-15
   difficulty: intermediate
   tasks:

@@ -40,6 +40,7 @@ export default function sitemap() {
       changeFrequency: "daily",
       priority: 1.0,
     },
+    { url: `${siteUrl}/api`, changeFrequency: "monthly", priority: 0.5 },
     ...orgEntries,
     ...recipeEntries,
   ];

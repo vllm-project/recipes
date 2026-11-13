@@ -1,0 +1,261 @@
+---
+name: add-recipe
+description: Use when the user asks to add, update, validate, or publish a vLLM model recipe — in vllm-project/vllm's recipes/ directory, another source repo, or vllm-project/recipes. Covers canonical Hugging Face identity, source/image requirements, checkpoint staging, hardware evidence, YAML-to-UI relationships, tuned configurations such as InferenceX lanes (presets), configuration notes and troubleshooting, command validation, JSON generation, and staging the reviewed files.
+---
+
+# Author and validate a vLLM recipe
+
+Recipes are YAML files at `models/<hf_org>/<hf_repo>.yaml`. The path mirrors HuggingFace (`huggingface.co/<hf_org>/<hf_repo>`). Each recipe lives in the repository that owns it; [vllm-project/recipes](https://github.com/vllm-project/recipes) renders them all into the site and JSON API, together with its own `taxonomy.yaml` + `strategies/*.yaml`.
+
+| Recipe | Write the YAML in |
+|---|---|
+| Models served by vLLM | `vllm-project/vllm` → `recipes/models/<hf_org>/<hf_repo>.yaml` |
+| Omni models (`meta.tasks` includes `omni`) | `vllm-project/vllm-omni` → `recipes/models/<hf_org>/<hf_repo>.yaml` |
+| Ascend NPU content | `vllm-project/vllm-ascend` → `recipes/overlays/<hf_org>/<hf_repo>.yaml`, merged into the vLLM recipe (the vLLM source rejects Huawei hardware) |
+
+This repo's `models/` still holds copies of the vLLM and vLLM-Omni recipes until they are synced upstream and removed. The site renders the upstream version, so open changes to those models against vLLM or vLLM-Omni, not the copies here.
+
+Fields are defined once in [SCHEMA.md](https://github.com/vllm-project/recipes/blob/main/SCHEMA.md). Run the validation and preview
+commands below from a checkout of vllm-project/recipes, pointed at your checkout of
+the owning repo (step 11).
+
+## Component contract: evidence → YAML → rendered surface
+
+Do not author the YAML as isolated documentation. Each input controls a different
+consumer, and a plausible guide does not prove that the command builder shows the same
+thing.
+
+```text
+HF repo + config.json ───────────────► model identity, architecture, context, variants
+runtime source ref + distribution ──► Install block and reproducible prerequisites
+hardware profile + strategy YAML ───► selectable topology and generated parallel flags
+real serving evidence ──────────────► meta.hardware verified + tested guide section
+recipe YAML ─► loader ─► command-synthesis ─► CommandBuilder / Verify / Bench
+            └────────────────────────► static JSON API
+guide markdown ──────────────────────► Guide tab: recipe-wide prose and reference links
+notes[] (with `when`) ───────────────► callout in the command block, for matching selections
+troubleshooting[] ───────────────────► Troubleshooting tab, matching entries first
+presets (tuned/benchmark configs) ───► Preset + Concurrency/Point rows, Presets tab, /<org>/<repo>/presets/*.json
+```
+
+The builder renders the command. Nothing that it can render belongs in the guide: no
+`vllm serve` launch commands, no environment blocks, no "select X in the builder"
+steps. Those drift from the generated command the moment either side changes.
+
+| Component | Put it in | What consumes or displays it | Evidence required |
+|---|---|---|---|
+| Canonical recipe identity | file path + `model.model_id` | route, page title, header HF link, JSON path | exact HF repo; preserve org/repo case |
+| Quantized or alternate checkpoint | `variants.<key>.model_id`, including `variants.default.model_id` when the preferred default differs from the family route | Variant pill, generated Serve/Verify/Bench model id, variant redirect | exact accessible checkpoint and its config |
+| Alternate-checkpoint reference | `guide` Overview, serving section, and References | clickable Guide links | link the exact tested repo; the header HF link still points to the canonical recipe path |
+| Runtime distribution | `model.install` and `model.docker_image` | Install tabs and Docker-wrapped command | only show an image/wheel that actually exists and contains support |
+| Extra prerequisite | `dependencies[]` | Extra install block after Install and before Serve | additive only; it does not replace the Install tabs |
+| Base runtime behavior | `model.base_args/base_env` | every generated command | required for every variant/hardware/strategy |
+| Variant behavior | `variants.*.extra_args/extra_env` | selected variant command | required only for that checkpoint/precision |
+| Hardware status | `meta.hardware` | recipe-wide verified caption or disabled hardware pill | `verified` only after an end-to-end run representative of the recipe; `unsupported` only after a confirmed current blocker; absent means no badge |
+| Hardware-specific behavior | `hardware_overrides` | command/env after selecting that GPU generation | tested or documented runtime requirement; status and override are independent |
+| Strategy availability | `compatible_strategies` | Strategy pills | architecture/topology support, not model popularity |
+| Strategy customization | `strategy_overrides` | TP sizing or role-specific generated command | explicit topology requirement every user of that strategy needs — not a benchmark lane (use `presets`) |
+| Tuned or benchmark configuration (e.g. an InferenceX lane) | `presets.<key>`: `args`/`env`/`roles`, `points`, `select`, `image`, `source`, `runbook` | Preset row (+ Point row) for its GPU, Presets tab, `/<org>/<repo>/presets/<key>.json` | a cited source (`source.href`, lane key and revision); see [Tuned configurations](#tuned-configurations-and-benchmark-lanes-presets) |
+| Configuration-specific guidance | `notes[]` with `when` (hardware / strategies / variants / features) | callout in the command block while the selection matches | only what a reader of that command needs; recipe-wide prose stays in `guide` |
+| Known issue | `troubleshooting[]`: `title` = the symptom (error text), optional `when` | Troubleshooting tab, matching entries first | an observed error and its fix |
+| Feature | `features` + `opt_in_features` | Feature pills and final command args | do not imply a feature was tested merely because base chat passed |
+| Capacity hint | `variants.*.vram_minimum_gb` + taxonomy | VRAM warning and auto-fit TP hint | total-parameter sizing formula; not a hardware support gate |
+| Narrative and claims | `guide` | Guide tab only | separate tested facts from advertised/model-card capabilities; no launch commands |
+| Agent/API output | generated `public/<org>/<repo>.json` | static consumers | generated by validation; never stage `public/` |
+
+### Rendering consequences that are easy to miss
+
+- The header's **View on HuggingFace** link is derived from the recipe file path, not
+  the selected variant. If FP8/NVFP4/etc. is a different repo, link it explicitly in
+  the Overview, its serving section, and References.
+- `meta.hardware` is not variant-specific. A family recipe may keep the base HF path
+  while `variants.default.model_id` selects a separately published preferred checkpoint;
+  identify the tested variant explicitly in the guide so the recipe-wide badge is not
+  mistaken for evidence about untested variants.
+- `variants.<key>.model_id` changes the generated serve command and the Verify/Bench
+  model id. A guide-only FP8 command does not update the interactive builder.
+- `dependencies[]` is additive. For unreleased source support, place the complete
+  build command in `model.install.pip.command`; if no image exists, set
+  `model.install.docker: false`. Do not leave a generic Docker or nightly-wheel tab
+  visible when it cannot run the model.
+- `nightly_required: true` changes the default pip text and shows a nightly badge. It
+  does not prove the nightly contains the needed model registry entry.
+- `meta.hardware.<id>: verified` is a claim about the selected recipe path, variant,
+  and working serving flow. Record the tested variant/context in the guide.
+- The initial builder state should reproduce the successful baseline: `default` variant,
+  default-on features, `strategy_overrides.single_node_tp.tp`, and `base_args` all affect
+  it. Move untested features to `opt_in_features` and encode the tested TP/context rather
+  than relying on auto-sizing or model-card limits.
+- `guide` commands are not synthesized or checked against the builder, and they drift.
+  Put flags, env, topology and install method in fields the builder renders; keep the
+  guide to prose, client usage and references. A configuration the builder cannot
+  express yet (extra services such as etcd/NATS/Dynamo frontend, several engines per
+  node, site-specific placement) goes in a preset's `runbook`, not the guide.
+- `strategy_overrides.<s>.hardware_overrides.<gpu>` applies to EVERY user who picks that
+  GPU and strategy. A benchmark lane written there silently becomes everyone's default;
+  write it as a preset instead, opt-in unless it is what that GPU should serve with.
+
+## End-to-end steps
+
+1. **Resolve current sources before writing claims.** Fetch the runtime repo and record
+   the exact commit that contains model registration and required kernel/quantization
+   fixes. Branch names move and similarly named branches may not contain the same code.
+   Recheck the remote ref immediately before the final build. If support is unreleased,
+   build from source rather than selecting an image that has not been published.
+2. **Confirm every HF id.** Preserve the exact `<org>/<repo>` string. Resolve the
+   canonical recipe repo and every alternate checkpoint independently. Verify access
+   using the configured credential through the normal HF client; do not substitute a
+   similarly named cached model or invent an alias.
+3. **Fetch model metadata.** Run `bash scripts/hf-info.sh <org>/<repo>` (in the recipes checkout) or inspect the
+   staged checkpoint's `config.json` / `params.json`. Extract:
+   - `architecture`: `moe` if `num_experts`, `num_local_experts`, `moe.num_experts`, or a `*MoE*` architecture name is present. Otherwise `dense`.
+   - the exact `architectures[]` / `model_type`; confirm the runtime resolves that
+     architecture without a custom alias.
+   - `parameter_count`: total params (e.g. `"671B"`, `"70B"`). Use HF model card or the sum of shard sizes.
+   - `active_parameters`: for MoE, the activated-per-token count (e.g. `"37B"` on DeepSeek-V3.2). For dense, equal to `parameter_count`.
+   - `context_length`: `max_position_embeddings` from `config.json` (for VL models, from `text_config.max_position_embeddings`).
+   - `min_vllm_version`: earliest stable support if known. For a source-only preview,
+     also record the tested commit/version; a future target version alone is not enough.
+4. **Read the README — don't skip this.** Run `curl -sL "https://huggingface.co/<org>/<repo>/resolve/main/README.md"` and scan the install / serve / usage sections in full. Configs are not enough; model authors put load-bearing requirements in prose. Mine the README for:
+   - **`min_vllm_version` / `nightly_required`** — phrases like "install vllm nightly", "requires nightly wheels", or an install snippet using `--extra-index-url https://wheels.vllm.ai/nightly` mean `min_vllm_version: "nightly"` + `nightly_required: true`. A specific tag like "vLLM >= 0.12.0" sets that version. Don't default to `0.11.0` when the README says otherwise.
+   - **`dependencies:`** — any pip line beyond `vllm` itself: version pins (`mistral_common >= 1.11.1`, `transformers >= 5.4.0`), extras (`vllm[audio]`), source installs (`pip install git+...`), DeepGEMM pins, etc. Pin them even when the README says "auto-installed" — users on stale wheel caches need an explicit upgrade path. Each entry needs a one-line `note` saying *why*.
+   - **Parser flags for `features:`** — `--tool-call-parser <name>`, `--reasoning-parser <name>`, `--enable-auto-tool-choice`. Use the exact parser name the README specifies.
+   - **Companion / draft repos** — EAGLE / MTP / Eagle3 heads, NVFP4 quants, instruct vs base. Wire as `spec_decoding` feature (draft pointer in `--speculative-config`) or a sibling variant with `model_id:` override. Copy the recommended `--speculative-config` JSON verbatim from the README.
+   - **Recommended serve flags** — `--tensor-parallel-size`, `--gpu-memory-utilization`, `--max-num-batched-tokens`, `--max-num-seqs` go into the fields the builder renders: `model.base_args`, variant `extra_args` when they're variant-specific, `hardware_overrides` when they're hardware-specific, or a preset when they are one tuned configuration for one GPU. Not into a guide launch command.
+   - **Hardware guidance / sampling defaults** — "recommended on 8xH200" lines inform variant `description` + `vram_minimum_gb`; recommended `temperature` / `top_p` / `reasoning_effort` go in the guide's Client Usage block.
+5. **Cross-check upstream vLLM support.** The README is a snapshot — if it was written at a moment when only nightly worked, that claim rots once stable ships. **Never copy the README's "vLLM nightly" claim verbatim without checking.** Run these in parallel:
+   - `gh search issues --repo vllm-project/vllm "<model-name>" --state all --limit 20` — bug reports tell you which versions users are actually running on (e.g. an issue body saying "vLLM 0.18.0 + this model crashes" is positive proof the model loads on 0.18.0).
+   - `gh search prs --repo vllm-project/vllm "<model-name>" --merged --limit 10` — locate the support PR; `gh pr view <num> --json mergedAt` gives the date, cross-reference against `gh release list --repo vllm-project/vllm` to find the minimum release.
+   - **`curl` the registry and supported-models docs at the candidate tag** — this is the most authoritative check:
+     ```bash
+     curl -sL "https://raw.githubusercontent.com/vllm-project/vllm/<tag>/vllm/model_executor/models/registry.py" | grep -i "<arch>"
+     curl -sL "https://raw.githubusercontent.com/vllm-project/vllm/<tag>/docs/models/supported_models.md" | grep -B2 -A4 "<arch>"
+     ```
+     `supported_models.md` often documents **required flags that the model card omits** — e.g. Voxtral Realtime needs `--tokenizer-mode mistral` per vLLM docs, but the HF README doesn't mention it. Always read this file for the recipe's target tag.
+   - `gh release view <tag> --repo vllm-project/vllm --json body` + grep for the model name — release-note mentions confirm support officially landed.
+   - For newer architectures, also search the model author's repo (e.g. `PaddlePaddle/PaddleOCR`, `deepseek-ai/DeepSeek-VL2`) for "vllm" discussions — authors often post the canonical launch command and known issues there.
+
+   What to extract:
+   - **`min_vllm_version`** — set to the **lowest stable tag where the model actually works**, not what the README claims. Walk forward from the support-PR's release tag, but bump up if there are known parser/tokenizer/quant bugs fixed in a later release (the v0.20.0-style "Mistral Grammar factory" / "tool parser HF-tokenizer fix" entries are signals to bump). Only use `min_vllm_version: "nightly"` + `nightly_required: true` when the registry at the latest stable tag genuinely lacks the architecture — and double-check by curling `registry.py` at that tag. If support is still an open issue (no PR merged), flag this to the user before authoring. For derivative releases (e.g. PaddleOCR-VL-1.5 vs 1.0) with identical `architectures` / `model_type` / `auto_map`, the existing handler usually loads them via `--trust-remote-code` even before a dedicated PR — note this assumption in your reply.
+   - **Required serve flags hidden in upstream docs** — copy any `must be served with <flag>` lines from `supported_models.md` straight into `model.base_args` (the builder renders them; explain why in guide prose if it isn't obvious). These are not optional and the README often doesn't mention them.
+   - **Troubleshooting** — recurring errors and fixes from issue comments (e.g. "needs `--enforce-eager` on 0.11.x", "transformers>=5 required", "`--mm-processor-cache-gb 0` to avoid OOM"). Write each as a `troubleshooting:` entry whose `title` is the symptom (the error text a user would search for), with `when:` naming the hardware / strategies / variants / features it applies to, so the page lists it first for matching configurations. A fix the builder can apply itself belongs in the fields instead (e.g. `--enforce-eager` in `hardware_overrides`).
+   - **Links to put in `guide`'s References** — the model card, vLLM support PR (not the recipe-request issue — see below), and any author-side deployment doc. These give users a path forward if their setup breaks.
+
+   **What NOT to put in References**: the recipe-request issue in `vllm-project/recipes` (e.g. `#459`) is a tracking ticket, not a user-facing reference. It belongs in the PR description body (`Closes #459`), never in the YAML's `## References` section.
+
+6. **Stage and verify the exact checkpoint.** Pin the HF revision, download the exact
+   repo, and verify all shards/bytes. Record checkpoint id, revision, shard count, and
+   total size when useful. A completed download is not proof of integrity.
+7. **Run on the target hardware.** Capture device name, GPU count/topology, source
+   fingerprint, Transformers dependency, full serve arguments, resolved architecture,
+   weight-load completion, and meaningful warnings. Keep advertised maximum context
+   separate from the smaller context used for a smoke test.
+8. **Prove inference, not merely startup.** Require all of:
+   - `/health` succeeds;
+   - `/v1/models` returns the canonical selected model id;
+   - `/v1/chat/completions` produces content and `finish_reason: stop`;
+   - the response fingerprint matches the intended source build.
+   Test multimodal, tool calling, reasoning parsing, speculative decoding, offload, long
+   context, and other optional paths separately before calling those paths verified.
+9. **Translate evidence into YAML.** Write `models/<hf_org>/<hf_repo>.yaml` in the owning
+   repo (table above), starting from `templates/recipe.yaml` in vllm-project/recipes, following the component contract and [SCHEMA.md](https://github.com/vllm-project/recipes/blob/main/SCHEMA.md).
+   Every build checks the file against `https://recipes.vllm.ai/recipe.schema.json`;
+   an unknown or misspelled key is an error. The tested command belongs in the builder
+   fields; the guide records exact evidence, limitations, and explicit checkpoint links.
+10. **Register the provider (if new).** If `<hf_org>` isn't already in
+   vllm-project/recipes' `src/lib/providers.js`, add `display_name` and
+   `/providers/<hf_org>.png` (or `.jpeg`) — a separate PR there when the recipe lives
+   in another repo.
+11. **Validate data and rendering.** In the recipes checkout, point the owning repo's
+   source at your checkout with a gitignored `sources.local.yaml`
+   (`overrides: { vllm: ~/vllm/recipes }`, or `vllm-omni: ~/vllm-omni/recipes` for an
+   omni recipe). Run the JSON generator, inspect the generated model JSON, then preview
+   the page with `pnpm dev` (YAML edits show on refresh; run `pnpm content:watch` to pick
+   up added or removed files). Exercise every relevant
+   Hardware / Variant / Strategy / Feature selection and compare the generated command
+   to the tested command. The Guide alone is not a builder preview.
+12. **Stage only intended source files.** In the owning repo, stage the recipe (and, in
+    the recipes repo, the provider entry if needed);
+    never stage generated `public/`, `node_modules/`, or unrelated operational artifacts.
+    Commit only when the user asked for a commit, using the repository's DCO convention.
+
+## Schema and VRAM sizing
+
+Every field, its precedence rules, an annotated example, and the VRAM formula
+(including the mixed-precision NVFP4 exception) are in [SCHEMA.md](https://github.com/vllm-project/recipes/blob/main/SCHEMA.md) —
+the single authoritative copy, versioned with the renderer. Keep the top-level
+key order it lists.
+
+## Naming and conventions
+
+- **Feature keys**: prefer `tool_calling`, `reasoning`, `spec_decoding`. Don't use `mtp` — it's been renamed across the repo.
+- **Strategy list**: MoE recipes usually support every serving strategy; dense recipes are limited to `single_node_tp` and `multi_node_tp` (TEP/DEP require MoE). KV offload is a separate axis and is NOT listed here — Off / Simple / both Mooncake modes are implicit on every non-omni recipe and COMPOSE with whatever serving strategy is selected (each Mooncake instance runs the strategy's exact command; parallelism never comes from the KV layer).
+- **KV Offload gating**: fail-open. Only add `kv_cache_strategy_hardware` when a Mooncake mode is known NOT to work on a specific GPU — mark that strategy × GPU pair `unsupported`. Absence = assumed to work, same convention as `meta.hardware`.
+- **Variants**: quantized variants reuse the base name (`fp8`, `nvfp4`, `int4`). If the quantized checkpoint is authored by someone else (e.g. `nvidia/*-NVFP4`), set `model_id:` inside the variant.
+- **Tasks**: `omni` means served via vLLM-Omni (`vllm serve <model> --omni`). Add a top-level `omni:` block listing the task ids the recipe supports — bare strings for catalog defaults (`tasks: [t2i]`) or `{ id, model_id?, vram_minimum_gb?, description?, extra_args?, curl?, benchmark? }` overrides when a task swaps the checkpoint (Wan2.2), needs per-task flags, or targets a non-LLM benchmark endpoint. `benchmark` is a static command override when the default `vllm bench serve` command is not applicable. Leave `omni.serve_binary` unset — `vllm serve <model> --omni` is correct for every recipe on vLLM 0.20.0+, where the `vllm` console-script delegates to vllm-omni on the `--omni` flag. No recipe currently overrides it; only a recipe pinned below 0.20.0 would need to. The catalog is `src/lib/omni-tasks.js`; do not add `--omni` to `model.base_args` (auto-injected).
+
+## Tuned configurations and benchmark lanes (presets)
+
+A tuned configuration — an InferenceX lane, a vendor's qualified setup — is a **preset**: a
+named, cited delta on the baseline command for one GPU (and optionally one strategy and
+some variants). Field reference: the `presets` entry in SCHEMA.md.
+
+- **One preset per lane**, `hardware` + `strategy` (+ `variants` when only some
+  checkpoints were qualified). Never write a lane into
+  `strategy_overrides.<s>.hardware_overrides.<gpu>`: that applies to everyone.
+- **`source`** is required: `href` (the benchmark PR or config), `key` (the lane's
+  config name), `revision` (the commit it was run at).
+- **`default: true`** only when this is the configuration the GPU should serve with by
+  default. Lanes with benchmark-only settings (synthetic acceptance, a fixed
+  concurrency, one workload) stay opt-in.
+- **Shared flags on the preset, per-point values in `points`.** One point per measured
+  operating point (benchmark concurrency, or arms such as eval vs throughput), keyed by an
+  id (`c16`, `c24_1p2d`, `eval`) because concurrency values repeat; label it `16`
+  (plus what else changes in parentheses, `8 (TP4)`), not "16 clients"; `concurrency` is
+  informational. Write explicit values — no formulas (`2 × C`), no ranges. A point
+  may change the single-node TP size (`tp`) or, under multi_node_*, the node count
+  (`select.nodes`); a different strategy or variant is a different preset.
+- **Builder choices go in `select`** (PD router, PD KV transfer connector, frontend,
+  features and their modes, DCP, KV offload), never in prose ("pick Dynamo, untick Tool
+  calling"). A PD lane on MoRI-IO or Mooncake sets `pd_connector`; tune one connector of
+  a composed config with `json_args` keyed by its name (`MoRIIOConnector: {…}`).
+- **Change inherited config precisely:** `remove_args` drops a flag a base layer or
+  feature emitted; `json_args` changes keys inside a JSON flag (`num_speculative_tokens`
+  in `--speculative-config`, capture sizes in `--compilation-config`, sizes in
+  `--kv-transfer-config`; `null` deletes a key). Don't restate a whole JSON value or add
+  "undo" flags. An edit to a feature's or KV Offload option's flag applies only while
+  that toggle is on, so pair it with `select` when the lane needs the toggle.
+- **`image`** pins what the lane ran: the vLLM image (with digest), Dynamo commit, extra
+  pip packages, model revision.
+- **`runbook`** is prose: evidence (measured numbers, golden acceptance lengths),
+  reproduction steps, limitations. Commands only for processes the builder doesn't
+  render (etcd, NATS, Mooncake master, Dynamo frontend, several engines per node) —
+  never the engine command or env block the preset already produces.
+- **Updating a lane** (a sync PR): edit the preset or point, bump `source.revision`, and
+  put the before/after of `public/<org>/<repo>/presets/<key>.json` (and any
+  `hw/<gpu>/strategies/<s>.json` a default preset changes) in the PR description.
+
+## Validation checklist
+
+Before committing:
+
+1. From the recipes checkout, `node scripts/validate-source.mjs --source vllm --dir ~/vllm/recipes` (or `--source vllm-omni --dir ~/vllm-omni/recipes`) passes — the same strict assemble + JSON API build the owning repo's PR check runs (or `node scripts/build-recipes-api.mjs` with `sources.local.yaml` pointing at your checkout) — and the new recipe appears in the line count.
+2. `node -e "const d = require('./public/<hf_org>/<hf_repo>.json'); console.log(d.model.parameter_count, d.variants.default.vram_minimum_gb)"` prints sensible values.
+3. In the owning repo, inspect `git diff --check` and confirm the YAML top-level key order matches SCHEMA.md.
+4. If the recipe marks any KV-store mode `unsupported` under `kv_cache_strategy_hardware`, spot-check `public/<hf_org>/<hf_repo>/hw/<gpu>/strategies/`: no `kv_store_*` file may exist for an opted-out GPU (they are emitted for all other scalable hardware by default).
+5. Preview the recipe route and select each authored hardware, variant, strategy, and feature. Verify the Install tabs, serve command, Verify model id, Bench model id, verified badge, and Guide links.
+6. Compare the displayed command with the exact successful runtime command. Clearly label any advertised-but-untested context length or optional feature.
+7. The guide has no launch commands or env blocks for anything the builder renders (`grep -n "vllm serve\|dynamo.vllm\|^  export " <recipe>`), and no "select … in the builder" steps.
+8. For each preset: open `public/<hf_org>/<hf_repo>/presets/<key>.json` and check every point's command; in the preview, pick the preset and each point and confirm `select` set the router / frontend / features you expect and the docker command uses the pinned image.
+9. For `notes` / `troubleshooting` with `when`: select a matching and a non-matching configuration and confirm each entry shows (or folds away) where expected.
+
+## Commit
+
+Commit in the owning repo and stage **only** the new recipe; vllm-project repos enforce DCO, so sign off:
+
+```bash
+git add recipes/models/<hf_org>/<hf_repo>.yaml   # in vllm or vllm-omni
+git commit -s -m "Add <hf_org>/<hf_repo> recipe"
+```
+
+A new `src/lib/providers.js` entry is a separate PR to vllm-project/recipes. Never stage `public/`, `.content/`, `.sources/`, or `sources.local.yaml`. In vllm, follow its PR conventions (the `pr-checklist` skill, PR template). A vllm PR that touches `recipes/` is validated against the renderer's main branch and gets a preview deployment at `https://vllm-recipes-git-preview-vllm-pr-<N>-inferact-inc.vercel.app`, rebuilt on every push (an hourly fallback covers PRs labeled `recipe`) — check the rendered page there before review. Once merged, the recipes site picks the change up automatically.

@@ -9,13 +9,27 @@ import { loadTaxonomy } from "@/lib/taxonomy";
 import { resolveRecipePlatforms } from "@/lib/platforms";
 import { getProviderLogo, getProviderLogoClass } from "@/lib/providers";
 import { CommandBuilder } from "@/components/recipes/CommandBuilder";
+import { CommandFallback } from "@/components/recipes/CommandFallback";
+import { CopyPage } from "@/components/recipes/CopyPage";
+import { resolveSelection } from "@/lib/recipe-render";
+import { GuideLinks } from "@/components/recipes/GuideLinks";
+import { ReferenceTabs } from "@/components/recipes/ConfigSections";
+import { whenLabels } from "@/lib/recipe-context";
 import { DeployDialog } from "@/components/recipes/DeployDialog";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
+import ShellCode from "@/components/recipes/ShellCode";
+import { SHELL_LANGS } from "@/lib/shell-highlight";
 import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeSlug from "rehype-slug";
+import { guideRehypePluginsFor, guideRemarkPlugins } from "@/lib/guide-markdown";
 import { Badge } from "@/components/ui/badge";
-import { Cpu, Layers, Pencil, Bug, ExternalLink } from "lucide-react";
+import { Cpu, Layers, Pencil, Bug, ExternalLink, Link2 } from "lucide-react";
+import {
+  buildBreadcrumbLd,
+  buildSoftwareApplicationLd,
+  buildTechArticleLd,
+  hardwareLabel,
+  jsonLdScript,
+} from "@/lib/jsonld";
 
 export async function generateStaticParams() {
   return getAllRoutablePairs();
@@ -26,8 +40,10 @@ export async function generateMetadata({ params }) {
   const recipe = getRecipeByHfId(org, repo);
   if (!recipe) return {};
   const { meta, model } = recipe;
+  // Page <title> uses the canonical hf_id (e.g. "deepseek-ai/DeepSeek-V3.2")
+  // — that's what people search for. The layout template appends " | vLLM
+  // Recipes" so the final tab reads "deepseek-ai/DeepSeek-V3.2 | vLLM Recipes".
   const title = `${org}/${repo}`;
-  const description = meta.description || meta.title;
   const paramStr = model.parameter_count
     ? model.active_parameters && model.active_parameters !== model.parameter_count
       ? `${model.parameter_count} / ${model.active_parameters} active`
@@ -38,17 +54,24 @@ export async function generateMetadata({ params }) {
     .filter(Boolean)
     .join(" · ");
   const versionStr = model.min_vllm_version ? `vLLM ${model.min_vllm_version}+` : "";
-  // Provider subtitle is redundant with the "org/" prefix in the title, so
-  // the recipe OG uses: title + meta (spec strip) + version pill.
+  // og:title follows the umbrella spec (PROD-5):
+  //   "<Model Name> on vLLM — Serve command for <hardware list>"
+  // The og:site_name already provides "vLLM Recipes" branding, so the on-vLLM
+  // suffix here is purely a SERP-snippet signal. Falls back to the model meta
+  // line when no verified hardware is listed.
+  const hwList = hardwareLabel(recipe);
+  const ogTitle = hwList
+    ? `${repo} on vLLM — Serve command for ${hwList}`
+    : metaLine
+    ? `${title} — ${metaLine}`
+    : title;
+  // <meta name="description"> follows the umbrella spec template too. Prefer
+  // the recipe's own description, then fall back to the templated form.
+  const templateDescription = `Recommended vllm serve command, hardware matrix, and flag explanations for serving ${recipe.hf_id} with vLLM${hwList ? ` on ${hwList}` : ""}.`;
+  const description = meta.description || templateDescription;
   const ogUrl = `/og?title=${encodeURIComponent(title)}&meta=${encodeURIComponent(
     metaLine
   )}&version=${encodeURIComponent(versionStr)}&path=${encodeURIComponent(`/${org}/${repo}`)}`;
-  // og:title — aim for 50–60 chars for optimal preview width. Skip the
-  // " on vLLM" suffix since og:site_name already provides it.
-  const ogTitle = metaLine ? `${title} — ${metaLine}` : title;
-  // Page <title> uses the canonical hf_id (e.g. "deepseek-ai/DeepSeek-V3.2")
-  // — that's what people search for. The layout template appends " | vLLM
-  // Recipes" so the final tab reads "deepseek-ai/DeepSeek-V3.2 | vLLM Recipes".
   return {
     title,
     description,
@@ -65,7 +88,15 @@ export async function generateMetadata({ params }) {
       description,
       images: [ogUrl],
     },
-    alternates: { canonical: `/${org}/${repo}` },
+    alternates: {
+      canonical: `/${org}/${repo}`,
+      // Agent-readable forms: the selected configuration as Markdown (same
+      // query string as the page), and the static JSON API.
+      types: {
+        "text/markdown": `/${recipe.hf_id}.md`,
+        "application/json": `/${recipe.hf_id}.json`,
+      },
+    },
   };
 }
 
@@ -74,7 +105,12 @@ export default async function RecipePage({ params, searchParams }) {
   const recipe = getRecipeByHfId(org, repo);
   if (!recipe) {
     const v = findVariantRedirect(org, repo);
-    if (v) redirect(`/${v.parent.hf_org}/${v.parent.hf_repo}?variant=${encodeURIComponent(v.variantKey)}`);
+    // `?variant=default` is redundant — the builder already opens on the
+    // default variant, so a default-variant checkpoint lands on a clean URL.
+    if (v) {
+      const qs = v.variantKey === "default" ? "" : `?variant=${encodeURIComponent(v.variantKey)}`;
+      redirect(`/${v.parent.hf_org}/${v.parent.hf_repo}${qs}`);
+    }
     notFound();
   }
   if (org !== recipe.hf_org || repo !== recipe.hf_repo) {
@@ -85,6 +121,52 @@ export default async function RecipePage({ params, searchParams }) {
   const strategies = loadStrategies();
   const taxonomy = loadTaxonomy();
   const guide = recipe.guide || "";
+  // The builder (notes under the command) and the reference tabs below it
+  // (ConfigSections) filter these on its selection; the
+  // Markdown is rendered here, on the server, and handed over as nodes.
+  const hardwareSlim = Object.fromEntries(Object.entries(taxonomy.hardware_profiles || {}).map(
+    ([id, h]) => [id, { display_name: h.display_name, generation: h.generation, brand: h.brand, compute_arch: h.compute_arch }]
+  ));
+  const strategyLabels = Object.fromEntries(Object.entries(strategies).map(([id, s]) => [id, s.display_name || id]));
+  const presets = Object.entries(recipe.presets || {}).map(([key, p]) => ({
+    key, label: p.label, hardware: p.hardware, strategy: p.strategy || null, workload: p.workload || null,
+    description: p.description || null, default: !!p.default, source: p.source || null,
+    variants: (p.variants || []).map((v) => recipe.variants?.[v]?.label || recipe.variants?.[v]?.precision?.toUpperCase() || v),
+    variantKeys: p.variants || [],
+    points: Object.entries(p.points || {}).map(([k, pt]) => ({ key: k, label: pt.label, concurrency: pt.concurrency ?? null })),
+    image: typeof p.image === "string" ? { vllm: p.image } : (p.image || null),
+    runbook: p.runbook ? <GuideMarkdown prefix={`preset-${key}-`}>{p.runbook}</GuideMarkdown> : null,
+    toc: p.runbook ? markdownToc(p.runbook, `preset-${key}-`) : [],
+  }));
+  const whenCtx = { hardwareProfiles: taxonomy.hardware_profiles || {}, strategies, recipe };
+  const notes = (recipe.notes || []).map((n) => ({
+    title: n.title || null, when: n.when || null, body: <GuideMarkdown>{n.body}</GuideMarkdown>,
+  }));
+  const issueIds = new Map();
+  const troubleshooting = (recipe.troubleshooting || []).map((t) => {
+    const base = `issue-${slugify(t.title)}`;
+    const n = issueIds.get(base) || 0;
+    issueIds.set(base, n + 1);
+    return {
+      id: n ? `${base}-${n}` : base, title: t.title, when: t.when || null, labels: whenLabels(t.when, whenCtx),
+      body: <GuideMarkdown prefix={`${n ? `${base}-${n}` : base}-`}>{t.body}</GuideMarkdown>,
+    };
+  });
+  const sectionProps = { hfId: recipe.hf_id, hardware: hardwareSlim, strategyLabels, presets, troubleshooting };
+  const copyPageLabels = {
+    hardware: Object.fromEntries(Object.entries(hardwareSlim).map(([id, h]) => [id, h.display_name || id])),
+    strategies: strategyLabels,
+    variants: Object.fromEntries(Object.entries(recipe.variants || {}).map(([k, v]) => [k, v.label || v.precision?.toUpperCase() || k])),
+  };
+  // What the builder opens on with no query, for the static HTML.
+  const fallback = resolveSelection(recipe, new URLSearchParams(), strategies, taxonomy);
+  const fallbackHw = taxonomy.hardware_profiles?.[fallback.selection.hardware] || {};
+  const fallbackVariant = recipe.variants?.[fallback.selection.variant] || {};
+  const fallbackSummary = [
+    `${fallbackHw.gpu_count ? `${fallbackHw.gpu_count}× ` : ""}${fallbackHw.display_name || fallback.selection.hardware}`,
+    !fallback.omni && (strategies[fallback.selection.strategy]?.display_name || fallback.selection.strategy),
+    fallbackVariant.label || fallbackVariant.precision?.toUpperCase(),
+  ].filter(Boolean).join(" · ");
   const logo = getProviderLogo(recipe.hf_org);
 
   // Per-recipe platform opt-in. Each entry is either a bare id ("modal") or
@@ -98,40 +180,29 @@ export default async function RecipePage({ params, searchParams }) {
     .map((s) => allRecipes.find((r) => r.hf_id === s || r.meta.slug === s))
     .filter(Boolean);
 
-  const recipeUrl = `${siteUrl}/${recipe.hf_org}/${recipe.hf_repo}`;
-  const jsonLd = [
-    {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      name: recipe.hf_id,
-      alternateName: recipe.meta.title,
-      description: recipe.meta.description || recipe.meta.title,
-      applicationCategory: "DeveloperApplication",
-      operatingSystem: "Linux",
-      url: recipeUrl,
-      softwareRequirements: recipe.model.min_vllm_version
-        ? `vLLM ${recipe.model.min_vllm_version}+`
-        : "vLLM",
-      creator: { "@type": "Organization", name: recipe.meta.provider, url: `https://huggingface.co/${recipe.hf_org}` },
-      sameAs: [`https://huggingface.co/${recipe.hf_id}`],
-    },
-    {
-      "@context": "https://schema.org",
-      "@type": "BreadcrumbList",
-      itemListElement: [
-        { "@type": "ListItem", position: 1, name: "vLLM Recipes", item: siteUrl },
-        { "@type": "ListItem", position: 2, name: recipe.meta.provider, item: `${siteUrl}/${recipe.hf_org}` },
-        { "@type": "ListItem", position: 3, name: recipe.hf_repo, item: recipeUrl },
-      ],
-    },
-  ];
+  // JSON-LD @graph: TechArticle is the spec'd primary type (PROD-8), but
+  // SoftwareApplication carries useful schema (softwareRequirements, sameAs
+  // to HuggingFace) Google honours separately, so we keep both alongside the
+  // BreadcrumbList that mirrors the URL hierarchy.
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      buildTechArticleLd(recipe),
+      buildSoftwareApplicationLd(recipe),
+      buildBreadcrumbLd([
+        { name: "vLLM Recipes", url: "/" },
+        { name: recipe.meta.provider, url: `/${recipe.hf_org}` },
+        { name: recipe.hf_repo, url: `/${recipe.hf_org}/${recipe.hf_repo}` },
+      ]),
+    ],
+  };
 
   return (
     <main className="py-6 w-full min-w-0">
       <script
         type="application/ld+json"
         // eslint-disable-next-line react/no-danger
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={jsonLdScript(jsonLd)}
       />
       {/* ── Model header ── */}
       <header className="mb-8">
@@ -162,6 +233,7 @@ export default async function RecipePage({ params, searchParams }) {
               </a>
             </div>
           </div>
+          <CopyPage hfId={recipe.hf_id} labels={copyPageLabels} />
         </div>
 
         {/* Tags — single row, no duplication */}
@@ -207,38 +279,47 @@ export default async function RecipePage({ params, searchParams }) {
       </header>
 
       {/* ── Command Builder ── */}
-      <section className="mb-10">
-        <Suspense fallback={<div className="h-40 rounded-2xl bg-muted animate-pulse" />}>
-          <CommandBuilder recipe={recipe} strategies={strategies} taxonomy={taxonomy} />
+      <section id="recipe-builder" className="mb-10 scroll-mt-20">
+        <Suspense fallback={<CommandFallback hfId={recipe.hf_id} summary={fallbackSummary} rendering={fallback.rendering} />}>
+          <CommandBuilder recipe={recipe} strategies={strategies} taxonomy={taxonomy} contextNotes={notes} />
         </Suspense>
       </section>
 
       {/* ── Reference sections ── */}
-      <section className="space-y-2">
-        {guide && (
-          <Accordion title="Guide" defaultOpen>
-            <div className="guide-content">
-              <Markdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeSlug]}
-              >
-                {guide}
-              </Markdown>
-            </div>
-          </Accordion>
-        )}
-
+      <section className="space-y-3">
+        <GuideLinks>
+          <div className="space-y-3">
+            <ReferenceTabs {...sectionProps} guide={guide ? <GuideMarkdown>{guide}</GuideMarkdown> : null} />
+          </div>
+        </GuideLinks>
       </section>
 
       {/* ── Footer ── */}
       <footer className="mt-10 pt-4 border-t border-border text-sm text-muted-foreground flex flex-wrap gap-x-4 gap-y-2">
         <span>Updated {recipe.meta.date_updated}</span>
         <a
-          href={`https://github.com/vllm-project/recipes/edit/main/models/${recipe.hf_org}/${recipe.hf_repo}.yaml`}
+          href={recipe.source?.edit_url || `https://github.com/vllm-project/recipes/edit/main/models/${recipe.hf_org}/${recipe.hf_repo}.yaml`}
           className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
         >
           <Pencil size={12} /> Edit recipe
         </a>
+        {recipe.source?.overlays?.map((o) => o.edit_url && (
+          <a
+            key={o.path}
+            href={o.edit_url}
+            className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+          >
+            <Pencil size={12} /> Edit {o.source} overlay
+          </a>
+        ))}
+        {recipe.source?.sha && (
+          <a
+            href={`https://github.com/${recipe.source.repo}/blob/${recipe.source.sha}/${recipe.source.path}`}
+            className="font-mono hover:text-foreground transition-colors"
+          >
+            {recipe.source.repo}@{recipe.source.sha.slice(0, 7)}
+          </a>
+        )}
         <a
           href="https://github.com/vllm-project/recipes/issues"
           className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
@@ -262,31 +343,61 @@ export default async function RecipePage({ params, searchParams }) {
   );
 }
 
-function Accordion({ title, children, defaultOpen = false }) {
-  // Stronger border than bare `--border` (10% in dark mode) so the outline is
-  // visible on both themes. `foreground/15` stays subtle but catches enough
-  // contrast to define the card.
+function HeadingLink({ id }) {
   return (
-    <details
-      className="group rounded-xl border border-foreground/15 bg-card/40 overflow-hidden"
-      open={defaultOpen || undefined}
-    >
-      <summary className="px-5 py-3 cursor-pointer text-sm font-semibold select-none hover:bg-foreground/[0.04] transition-colors flex items-center justify-between">
-        {title}
-        <ChevronIcon />
-      </summary>
-      <div className="px-5 pb-5 border-t border-foreground/10 pt-4">{children}</div>
-    </details>
+    <a href={`#${id}`} data-guide-link className="guide-heading-link" aria-label="Copy link to this section" title="Copy link to this section">
+      <Link2 size={16} aria-hidden="true" />
+    </a>
   );
 }
 
-function ChevronIcon() {
+const guideComponents = {
+  ...Object.fromEntries(
+    ["h1", "h2", "h3", "h4", "h5", "h6"].map((Tag) => [Tag, function GuideHeading({ id, children }) {
+      return <Tag id={id}>{children}{id && <HeadingLink id={id} />}</Tag>;
+    }])
+  ),
+  // A wide table scrolls inside its own box instead of widening the page on a phone.
+  table: function GuideTable({ children }) {
+    return <div className="guide-table"><table>{children}</table></div>;
+  },
+  // Shell fences get the same restrained highlighting as the command builder,
+  // minus the accent on JSON "model" values that every request example repeats;
+  // other languages and inline code render as before.
+  code: function GuideCode({ node: _node, className, children, ...rest }) {
+    const lang = className?.match(/language-(\w+)/)?.[1];
+    if (!lang || !SHELL_LANGS.has(lang)) return <code className={className} {...rest}>{children}</code>;
+    return <code className={className}><ShellCode jsonModel={false}>{children}</ShellCode></code>;
+  },
+};
+
+function GuideMarkdown({ children, prefix = "" }) {
   return (
-    <svg
-      className="w-4 h-4 text-muted-foreground transition-transform duration-200 group-open:rotate-180"
-      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-    >
-      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-    </svg>
+    <Markdown remarkPlugins={guideRemarkPlugins} rehypePlugins={guideRehypePluginsFor(prefix)} components={guideComponents}>
+      {children}
+    </Markdown>
   );
+}
+
+// github-slugger's rule (what rehype-slug uses) for plain heading text.
+function slugify(text) {
+  return text.toLowerCase().replace(/[`*~]/g, "").replace(/[^\p{L}\p{N}\s-]/gu, "").trim().replace(/\s/g, "-");
+}
+
+// The ## – #### headings of a Markdown string, with the ids rehype-slug gives them.
+function markdownToc(md, prefix = "") {
+  const seen = new Map();
+  let fence = false;
+  const out = [];
+  for (const line of md.split("\n")) {
+    if (/^\s*```/.test(line)) fence = !fence;
+    const m = !fence && line.match(/^#{2,4}\s+(.+?)\s*$/);
+    if (!m) continue;
+    const text = m[1].replace(/[`*]/g, "");
+    const base = slugify(text);
+    const n = seen.get(base) || 0;
+    seen.set(base, n + 1);
+    out.push({ text, id: `${prefix}${n ? `${base}-${n}` : base}` });
+  }
+  return out;
 }
