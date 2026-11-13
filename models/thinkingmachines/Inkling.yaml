@@ -104,7 +104,7 @@ strategy_hardware:
     h200: unsupported
 
 hardware_overrides: {}
- 
+
 strategy_overrides:
   multi_node_dep:
     # TP+DP+EP
@@ -131,8 +131,8 @@ strategy_overrides:
       parallelism: dep
     decode:
       parallelism: dep
-          
-          
+
+
 guide: |
   ## Overview
 

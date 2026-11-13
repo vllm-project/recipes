@@ -217,7 +217,7 @@ guide: |
       --disable_chunked_mm_input \
       --host 0.0.0.0 --port 8000
   ```
-  
+
   ### Intel Xeon 6 Deployment via Docker
 
   Launch the x86 CPU vLLM Docker container for `google/gemma-4-E4B-it`:

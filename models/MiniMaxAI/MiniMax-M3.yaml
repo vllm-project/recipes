@@ -19,9 +19,9 @@ meta:
 model:
   model_id: "MiniMaxAI/MiniMax-M3"
   min_vllm_version: "0.24.0"
-  docker_image: 
+  docker_image:
     nvidia: "vllm/vllm-openai:minimax-m3"
-    amd: "vllm/vllm-openai-rocm:minimax-m3" 
+    amd: "vllm/vllm-openai-rocm:minimax-m3"
   # Docker-only: MiniMax-M3 support hasn't shipped in a stable wheel, and the
   # dedicated image is the supported path — hide the pip tab.
   architecture: moe
@@ -101,7 +101,7 @@ variants:
     precision: bf16
     # 427B × 2 bytes (BF16) + 46M × 4 (F32 norms), × 1.2 headroom ≈ 1025 GB.
     # 8x H200/H20 (1128 GB) is a tight fit; multi-node TP recommended for
-    # KV-cache headroom at long context. 
+    # KV-cache headroom at long context.
     # On AMD, 8x MI350X/MI355X fits comfortably.
     vram_minimum_gb: 1025
     description: "Native BF16 checkpoint — multi-node TP recommended for long-context headroom"
@@ -426,7 +426,7 @@ guide: |
 
   M3 reasoning is controlled by the `thinking_mode`, there are three values:
 
-  - **`enabled`** — the model thinks before every response, including after tool results. 
+  - **`enabled`** — the model thinks before every response, including after tool results.
     Use for complex reasoning and agents.
   - **`disabled`** — no thinking; the model answers directly. Use for
     latency-sensitive turns.
@@ -440,7 +440,7 @@ guide: |
   ```python
 
   # Start the MiniMax-M3 model by referring to the command above first.
-  
+
   from openai import OpenAI
 
   client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
@@ -714,7 +714,7 @@ guide: |
     multimodal processor cache (`--mm-processor-cache-type shm`). For **text-only** workloads enable *Text only*
     (`--language-model-only`) to skip loading the encoder and free VRAM — it is
     mutually exclusive with Encoder Parallel.
- 
+
 
   ## References
 

@@ -310,29 +310,29 @@ guide: |
 
   ```shell
   ============ Serving Benchmark Result ============
-  Successful requests:                     160       
-  Failed requests:                         0         
-  Maximum request concurrency:             32        
-  Benchmark duration (s):                  280.58    
-  Total input tokens:                      1310720   
-  Total generated tokens:                  163840    
-  Request throughput (req/s):              0.57      
-  Output token throughput (tok/s):         583.93    
-  Peak output token throughput (tok/s):    1024.00   
-  Peak concurrent requests:                36.00     
-  Total token throughput (tok/s):          5255.36   
+  Successful requests:                     160
+  Failed requests:                         0
+  Maximum request concurrency:             32
+  Benchmark duration (s):                  280.58
+  Total input tokens:                      1310720
+  Total generated tokens:                  163840
+  Request throughput (req/s):              0.57
+  Output token throughput (tok/s):         583.93
+  Peak output token throughput (tok/s):    1024.00
+  Peak concurrent requests:                36.00
+  Total token throughput (tok/s):          5255.36
   ---------------Time to First Token----------------
-  Mean TTFT (ms):                          4542.41   
-  Median TTFT (ms):                        2762.17   
-  P99 TTFT (ms):                           21062.96  
+  Mean TTFT (ms):                          4542.41
+  Median TTFT (ms):                        2762.17
+  P99 TTFT (ms):                           21062.96
   -----Time per Output Token (excl. 1st token)------
-  Mean TPOT (ms):                          50.34     
-  Median TPOT (ms):                        51.77     
-  P99 TPOT (ms):                           54.07     
+  Mean TPOT (ms):                          50.34
+  Median TPOT (ms):                        51.77
+  P99 TPOT (ms):                           54.07
   ---------------Inter-token Latency----------------
-  Mean ITL (ms):                           50.34     
-  Median ITL (ms):                         34.32     
-  P99 ITL (ms):                            689.10    
+  Mean ITL (ms):                           50.34
+  Median ITL (ms):                         34.32
+  P99 ITL (ms):                            689.10
   ==================================================
   ```
   ## References
