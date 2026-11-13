@@ -5,7 +5,8 @@ short_label: "TP+DP"                  # compact name for tight spots (Preset pil
 orientation: balanced
 description: >
   Tensor parallel within each node, data parallel across nodes — one
-  full model replica per node. TP stays inside the high-bandwidth
+  full model replica per node by default. Recipes may explicitly configure
+  smaller TP groups and multiple local DP replicas. TP stays inside the high-bandwidth
   intra-node NVLink domain; the inter-node link carries only DP
   coordination, no tensor traffic. E.g. 2× H200 nodes → TP8·DP2,
   4× GB200/GB300 NVL4 trays → TP4·DP4.
@@ -14,10 +15,10 @@ hardware_match:
   min_gpus: 2
   multi_node: true
 
-# Read by command-synthesis: "tp_dp" → emit
-#   --tensor-parallel-size <gpu_count>  --data-parallel-size <node_count>
-#   --data-parallel-size-local 1
-# with one DP rank (replica) per node; worker node N is DP rank N.
+# "tp_dp" defaults to full-node TP; local DP1 is added only if not configured.
+# Global DP defaults to node_count × final local DP, and
+# worker node N starts at DP rank N × final local DP; explicit global DP is kept.
+# Example: TP4/local DP2 on four 8-device nodes → DP8, follower ranks 2/4/6.
 parallelism: tp_dp
 
 vllm_args: []

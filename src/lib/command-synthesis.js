@@ -1837,29 +1837,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       : "$HEAD_IP";
 
     if (isMulti && parallelFlag === "--data-parallel-size") {
-    // dp-local may be overridden by the recipe (hybrid TP+DP: TP within a node,
-    // DP across nodes → dp_local < gpuCount).
-    // The example worker is node 1, so its DP start rank = 1 × dp_local, not a
-    // full node's worth of GPUs.
-    const soDep = recipe.strategy_overrides?.[strategyName];
-    const soDepGenHo = soDep?.hardware_overrides?.[gen]
-      || (hwProfile?.brand === "NVIDIA" ? soDep?.hardware_overrides?.nvidia : null);
-    const soDepExactHo = soDep?.hardware_overrides?.[hwProfileId];
-    const depOv = [
-    ...(soDep?.vllm_args || []),
-    ...(soDep?.extra_args || []),
-    ...(soDepGenHo?.extra_args || []),
-    ...(soDepExactHo?.extra_args || []),
-      ];
-    const i = depOv.lastIndexOf("--data-parallel-size-local");
-    const dpLocal = i >= 0 ? Number(depOv[i + 1]) : gpuCount;
-    args.push("--data-parallel-size", String(totalGpus));
-    args.push("--data-parallel-size-local", String(gpuCount));
-    args.push("--data-parallel-address", mpMasterAddr);
-    if (nodeRole === "worker") {
-    args.push("--data-parallel-start-rank", String(mpRank * dpLocal));
-    }
-} else if (isMulti && strategy.parallelism === "tp_pp") {
+      // Fill DP sizes and ranks after all recipe/hardware/preset overrides.
+      args.push("--data-parallel-address", mpMasterAddr);
+    } else if (isMulti && strategy.parallelism === "tp_pp") {
       // TP inside each node, PP across nodes. Cross-node traffic flows through
       // the PP stage boundaries only — much less bandwidth than pure TP across
       // nodes. Suited for very large models on commodity inter-node links.
@@ -1870,17 +1850,10 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       args.push("--master-addr", mpMasterAddr);
       if (mpRank > 0) args.push("--headless");
     } else if (isMulti && strategy.parallelism === "tp_dp") {
-      // TP inside each node, DP across nodes — one full replica per node
-      // (dp_local = 1), so the inter-node link carries only DP coordination.
-      // Same DP rendezvous shape as the DEP branch: worker node N is DP
-      // rank N via --data-parallel-start-rank.
+      // Default to full-node TP. Fill missing DP sizes and derive follower
+      // ranks after recipe/hardware/preset overrides below.
       args.push("--tensor-parallel-size", String(gpuCount));
-      args.push("--data-parallel-size", String(nodeCount));
-      args.push("--data-parallel-size-local", "1");
       args.push("--data-parallel-address", mpMasterAddr);
-      if (nodeRole === "worker") {
-        args.push("--data-parallel-start-rank", String(mpRank));
-      }
     } else if (isMulti) {
       // Multi-node TP/TEP via vLLM multiprocessing (mp) backend:
       // TP spans all GPUs in the cluster; every node runs the same command,
@@ -2148,6 +2121,21 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const editOnly = toggleOwnedFlags(recipe, taxonomy);
       out = applyPresetArgOps(out, ops.all, editOnly);
       if (roleOverride) out = applyPresetArgOps(out, ops.roles?.[roleOverride], editOnly);
+    }
+    if (isMulti && (strategy.parallelism === "tp_dp" || parallelFlag === "--data-parallel-size")) {
+      // Read final DP values without changing their spelling or precedence.
+      // Keep explicit global DP; only its default follows the local replicas.
+      const localIndex = out.findLastIndex((arg) =>
+        /^(--data[-_]parallel[-_]size[-_]local|-dpl)(=|$)/.test(arg));
+      const localDp = localIndex < 0 ? (strategy.parallelism === "tp_dp" ? 1 : gpuCount)
+        : Number(out[localIndex].split("=")[1] ?? out[localIndex + 1]);
+      if (localIndex < 0) out.push("--data-parallel-size-local", String(localDp));
+      if (!out.some((arg) => /^(--data[-_]parallel[-_]size|-dp)(=|$)/.test(arg))) {
+        out.push("--data-parallel-size", String(nodeCount * localDp));
+      }
+      if (nodeRole === "worker") {
+        out.push("--data-parallel-start-rank", String(mpRank * localDp));
+      }
     }
     // Connector configs name the worker's own HTTP port (MoRI-IO's
     // `http_port`) as `{port}`: the port the role actually serves on.
