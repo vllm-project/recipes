@@ -58,7 +58,6 @@ connectors:
     default: true
     description: "NIXL pull transfer: decode reads each request's KV from prefill. Works with every PD router."
     docs: "https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html"
-    brands: [NVIDIA, AMD]
     routers: [vllm, dynamo, smg]
     prefill:
       config: { kv_connector: NixlConnector, kv_role: kv_producer, kv_load_failure_policy: fail }

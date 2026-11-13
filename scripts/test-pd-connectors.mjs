@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import yaml from "js-yaml";
-import { buildDockerArgv, buildDockerRun, computeDockerMeta, pdConnectorKey, resolveCommand } from "../src/lib/command-synthesis.js";
+import { buildDockerArgv, buildDockerRun, computeDockerMeta, pdConnectorKey, pdConnectorUnavailableReason, resolveCommand } from "../src/lib/command-synthesis.js";
 import { applyPresetArgOps, validatePresets } from "../src/lib/recipe-presets.js";
 import { contentDir } from "../src/lib/content-root.js";
 import { ascendPdPools, ascendPdRecipe } from "./fixtures/ascend-pd.mjs";
@@ -34,6 +34,13 @@ test("the default connector is the one marked default, else the first", () => {
   assert.equal(pdConnectorKey({ connectors: { a: {}, b: {} } }), "a");
   assert.equal(pdConnectorKey({ connectors: { a: {}, b: { default: true } } }), "b");
   assert.equal(pdConnectorKey({}), null);
+  for (const hw of ["ascend_950dt", "ascend_910c"]) {
+    const r = pick({ hw });
+    assert.equal(r.pdRouter, "vllm", hw);
+    assert.equal(r.kvConnector.selected, "nixl", hw);
+    assert.equal(pdConnectorUnavailableReason(pd.connectors[r.kvConnector.selected],
+      taxonomy.hardware_profiles[hw], r.pdRouter), null, hw);
+  }
 });
 
 test("each role renders its connector's config and env", () => {
