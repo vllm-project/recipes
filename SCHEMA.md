@@ -172,12 +172,13 @@ hardware_overrides:
 #
 # For `pd_cluster`, each role (prefill / decode) accepts:
 #   nodes        — how many dedicated nodes the pool uses (default 1)
-#   parallelism  — "tp" (tensor-parallel pool) | "dep" (data-parallel + expert-parallel)
+#   parallelism  — "tp" | "tep" (tensor + expert parallel) | "dep" (data + expert parallel)
 #                  default "tp"; `nodes` and `parallelism` also take a
 #                  hardware-keyed map (e.g. { default: tp, gb300: dep })
-#   tp           — TP width per DP rank when parallelism=dep (default 1);
-#                  unused for parallelism=tp (the whole pool is one TP group);
-#                  also takes a hardware-keyed map (e.g. { default: 1, b200: 4 })
+#   tp           — TP width per DEP rank (default 1); ignored by TP/TEP pools
+#   pp           — pipeline stages (default 1; DEP requires pp=1);
+#                  TP/TEP derives TP as pool_devices / pp, which must be integral
+#                  `tp` and `pp` also accept hardware-keyed maps
 #   vllm_args    — extra flags appended to this role's `vllm serve`
 #   env          — extra env vars for this role
 #   parallel_flag — (rare) override the auto-selected flag for parallelism=tp
@@ -233,8 +234,8 @@ presets:
     tp: 4                                         # single_node_tp only: TP size on this GPU
     select:                                       # builder choices the preset implies
       nodes: 2                                    # multi_node_* only: node count
-      pd_router: dynamo                           # vllm | dynamo | smg (pd_cluster only)
-      pd_connector: moriio                        # nixl | mooncake | moriio: KV transfer (pd_cluster only)
+      pd_router: dynamo                           # vllm | dynamo | smg | ascend (pd_cluster only)
+      pd_connector: moriio                        # nixl | mooncake | mooncake_ascend | moriio: KV transfer
       frontend: rust
       features: { tool_calling: false, spec_decoding: false }   # true/false, or a mode key
       dcp: 16
@@ -427,14 +428,111 @@ Top-level keys, in this order:
 - `strategy_hardware` (optional) — per-serving-strategy hardware overrides, `{ <strategy_id>: { <hw_key>: unsupported | supported } }`, layered on the membership default from `compatible_strategies` (listed = supported everywhere, unlisted = nowhere). Each per-strategy map takes the variant-`tp` keyspace — **exact GPU id > generation > brand (lowercase) > `default`**, first key present wins, an explicit `default:` beating the membership baseline — so both directions are one line per hardware key: `unsupported` opts a listed strategy out of a GPU/generation/brand; `supported` opts an unlisted strategy in, which also adds it to the offered set (no `compatible_strategies` entry needed — e.g. Kimi-K3 offers `multi_node_tp_dp` only via `{ h200: supported, gb200: supported, gb300: supported }`). `unsupported` renders the Strategy pill disabled with a tooltip, keeps it out of the recommended/active fallback, and makes the JSON API skip that strategy on that GPU. Use `unsupported` when a listed strategy is genuinely unusable on specific hardware (e.g. multi-node pure-TP on Hopper, which has no cross-node NVLink) — not for "untested". Helpers: `isStrategySupportedOnHardware` + `effectiveCompatibleStrategies` in `command-synthesis.js` (shared by the builder and the JSON API).
 - `hardware_overrides` — optional per-generation tweaks keyed by `hopper`, `blackwell`, `rubin`, `amd`, or the brand-wide `nvidia`. Generation-specific blocks take precedence over the NVIDIA fallback. A `blackwell` block does not apply on Rubin (`vr200`): add a `rubin` block for what the recipe has qualified there. Each supplies `{ extra_args[], extra_env{} }`.
 - `decode_context_parallel` (optional) — `{ sizes, comm_backend?, match_tp? }` adds a **Decode Context Parallelism** control to the command builder: its own row for aggregated strategies, and a `DCP` line inside the **Nodes** row (beside the Prefill/Decode TP/TEP/DEP controls) under `pd_cluster`, where one shared pick covers both roles. `sizes` lists the DCP sizes qualified for the recipe, either a bare list or a hardware-keyed map of lists (exact GPU id > generation > brand > `default`), so a size is never offered on hardware it was not run on. The row offers **Off** plus each size that divides the tensor-parallel size of *every* role in the current topology (both pools under `pd_cluster`, the single engine otherwise), so one pick keeps every node tab consistent; a size that does not divide TP is never rendered. `match_tp: true` narrows that to sizes *equal* to TP, for recipes qualified only at DCP = TP. That is a statement about what the recipe has been run at, not a vLLM constraint, and it also hides the row when prefill and decode have different TP; leave it off for recipes qualified at other divisors. The default pick is the `--decode-context-parallel-size` the layered recipe args already carry (the qualified lane value) when the topology can run it, else Off. A pick rewrites that flag in every role's command (and adds it, with `comm_backend` as `--dcp-comm-backend`, when absent); **Off** drops both flags. Hardware with no `sizes` entry shows no row and is left untouched. The pick syncs to the URL as `?dcp=<size>` (`1` = Off) and is exposed on the resolved command as `dcp: { sizes, baseline, selected, tp }`.
-- `strategy_overrides` — optional per-strategy tweaks (rare). For `pd_cluster` specifically: `prefill`/`decode` sub-objects set each pool's `nodes`, `parallelism` (`tp`|`tep`|`dep`, or a hardware-keyed map of them like `nodes`), and `tp` (the TP width per DP rank of a `dep` pool; a number or a hardware-keyed map, so a pool can shard its replicated non-expert weights on GPUs too small to hold them at TP1); `router.intra_node_data_parallel_size` pins the router flag that otherwise derives from the pools' `max(dp_local)`; plus optional `pool_modes: [<mode>, …]` — narrows the PD-pool parallelism pills INDEPENDENTLY of the Strategy row. PD-pool modes are otherwise derived from `compatible_strategies[]` suffixes (via `pdPoolModes`), so `pool_modes` is how you offer TP/TEP as standalone serving strategies while locking disaggregated PD to a subset (e.g. `pool_modes: [dep]` → both pools DEP-only, single mode hides the pills; synthesis snaps any resolved mode not in the set to the first allowed one, so the JSON API stays consistent too).
-- `presets` (optional) — tuned presets, `{ <key>: { label, hardware, strategy?, variants?, workload?, description?, default?, source?, image?, select?, args?, env?, remove_args?, json_args?, roles?, points?, runbook? } }`: a named configuration qualified on one exact GPU — and, with `strategy` / `variants`, one serving strategy and some checkpoints — such as a benchmark lane. It is a **delta on the baseline command**, applied after every other override layer: `args`/`env` reach every node (both roles under PD); `roles.<prefill|decode>` adds per-role `args`/`env` (and `remove_args`/`json_args`) and sets that pool's `nodes` / `parallelism` on this GPU, so the lane's topology travels with its flags. Synthesis mounts the active preset into the exact-GPU layers (`strategy_overrides.<s>.hardware_overrides.<gpu>`, `strategy_overrides.pd_cluster.<role>.hardware_overrides.<gpu>` and the role's `nodes`/`parallelism` maps), so moving such a block into a `default: true` preset leaves every rendered command unchanged. **`remove_args`** drops a flag (and its value) whichever layer emitted it, base args and features included — for flags with no `--no-` form. **`json_args`** edits keys inside a JSON-valued flag (`--speculative-config`, `--compilation-config`, `--attention-config`, `--kv-transfer-config`, …): the edit deep-merges into the flag's last occurrence, whose value must be a JSON object; an absent flag is added, except one a toggle owns (any feature's or KV Offload option's flag, e.g. `--speculative-config`), which is only edited while its toggle is on, so switching spec decoding off never leaves a half-built config; `null` deletes a key, and `_`/`-` spellings match alike — so a lane changes `num_speculative_tokens` without restating the feature's whole JSON, or sizes the Simple offload through its `--kv-transfer-config`; a KV connector's name as a key (`MoRIIOConnector: {…}`, `SimpleCPUOffloadConnector: {…}`) edits that connector, the value itself or the matching child of a MultiConnector, so a PD lane tunes one connector of the composed config (an unknown name is an error). **`points`** are named operating points (one per benchmark concurrency, or arms such as eval vs throughput), keyed by id because concurrency values can repeat: each has a `label`, optional `concurrency` / `description` / `default` (the builder titles the row **Concurrency** when every point sets `concurrency`, else **Point**, so give each concurrency point its own integer rather than a range; label a concurrency point with the bare number, plus what else it changes in parentheses, e.g. `8` or `8 (TP4)`, since the row title already says concurrency), and the preset's own delta fields (`args`, `env`, `remove_args`, `json_args`, `tp`, `roles` incl. `nodes`/`parallelism`, `select`, `image`), layered on the preset; a point can't change the hardware, strategy or variants (that is another preset). **`tp`** (single_node_tp presets) sets the single-node TP size on this GPU, for the variants the preset covers — e.g. a lane that runs TP4 on an 8-GPU node, or points at TP8/TP4/TP2. **`select`** names the builder choices the preset implies — `nodes` (multi_node_* presets: the node count, e.g. TP16 over four 4-GPU trays), `pd_router`, `pd_connector` (the PD KV transfer connector, a `strategies/pd_cluster.yaml` `connectors` key: `nixl` default, `mooncake`, `moriio`; validated against the preset's hardware brand and `pd_router`), `frontend`, `features` (`true`/`false`, or a mode key, which also turns the feature on), `dcp`, `kv_offload` — and is applied when the preset (or point) becomes active, except for what a shared URL sets explicitly; the JSON API renders with them too. **`image`** (a string, or `{ vllm, dynamo?, pip?, model_revision? }`) pins the docker command on this GPU for the variants the preset covers; the rest is shown with the preset and published. When the selected hardware has presets, its pill says so ("preset" / "N presets") and the builder shows a Preset row (nested under Strategy) listing all of them — presets of another strategy or variant are tagged and switch it when picked — plus **Baseline**; the selection syncs to `?preset=<key>` and `?point=<key>` (`baseline` opts out). A `default: true` preset is selected on its GPU + strategy until the user picks Baseline, and the JSON API's renderings bake it in and name it as `preset` / `preset_point`; every preset is also rendered at each point under `/<hf_id>/presets/<key>.json`, and a preset or point that fails to render fails the build (and the source repo's PR check). At most one default per GPU + strategy + variants; `baseline` is a reserved key; `roles` needs `strategy: pd_cluster`. Mark a preset `default: true` only when it is the configuration this GPU should serve with by default — a benchmark lane with benchmark-only settings stays opt-in. Put what the builder can't express — services, multi-engine placement, site specifics, benchmark parameters, evidence — in `runbook` (markdown), rendered server-side on its card in the Presets tab (anchor `#preset-<key>`), never launch commands or builder instructions. Use a preset for an evidence-backed configuration with a `source`, not for general hardware support: kernels or flags every workload on that GPU needs stay in `hardware_overrides`. An overlay source may add presets whose `hardware` is in its scope. Helpers: `src/lib/recipe-presets.js`.
+- `strategy_overrides` — optional per-strategy tweaks (rare). For `pd_cluster` specifically: `prefill`/`decode` sub-objects set each pool's `nodes`, `parallelism` (`tp`|`tep`|`dep`, or a hardware-keyed map of them like `nodes`), and `tp` / `pp` (positive integers or hardware-keyed maps). TP/TEP derives TP as `pool_devices / pp` (PP defaults to 1 and must divide the pool device count); the role `tp` field is ignored in those modes. DEP uses role `tp` (default 1), requires PP1 and a TP that divides the devices per node, and derives local DP as `devices_per_node / tp`. Each role may have a different TP. Increasing TP/TEP nodes increases TP at fixed PP; increasing DEP nodes increases global DP at fixed TP/local DP. `router.intra_node_data_parallel_size` pins the router flag that otherwise derives from the pools' `max(dp_local)`; plus optional `pool_modes: [<mode>, …]` — narrows the PD-pool parallelism pills INDEPENDENTLY of the Strategy row. PD-pool modes are otherwise derived from `compatible_strategies[]` suffixes (via `pdPoolModes`), so `pool_modes` is how you offer TP/TEP as standalone serving strategies while locking disaggregated PD to a subset (e.g. `pool_modes: [dep]` → both pools DEP-only, single mode hides the pills; synthesis snaps any resolved mode not in the set to the first allowed one, so the JSON API stays consistent too).
+- `presets` (optional) — tuned presets, `{ <key>: { label, hardware, strategy?, variants?, workload?, description?, default?, source?, image?, select?, args?, env?, remove_args?, json_args?, roles?, points?, runbook? } }`: a named configuration qualified on one exact GPU — and, with `strategy` / `variants`, one serving strategy and some checkpoints — such as a benchmark lane. It is a **delta on the baseline command**, applied after every other override layer: `args`/`env` reach every node (both roles under PD); `roles.<prefill|decode>` adds per-role `args`/`env` (and `remove_args`/`json_args`) and sets that pool's `nodes` / `parallelism` / `tp` / `pp` on this GPU, so the lane's topology travels with its flags. Synthesis mounts the active preset into the exact-GPU layers (`strategy_overrides.<s>.hardware_overrides.<gpu>`, `strategy_overrides.pd_cluster.<role>.hardware_overrides.<gpu>` and the role's `nodes`/`parallelism`/`tp`/`pp` maps), so moving such a block into a `default: true` preset leaves every rendered command unchanged. **`remove_args`** drops a flag (and its value) whichever layer emitted it, base args and features included — for flags with no `--no-` form. **`json_args`** edits keys inside a JSON-valued flag (`--speculative-config`, `--compilation-config`, `--attention-config`, `--kv-transfer-config`, …): the edit deep-merges into the flag's last occurrence, whose value must be a JSON object; an absent flag is added, except one a toggle owns (any feature's or KV Offload option's flag, e.g. `--speculative-config`), which is only edited while its toggle is on, so switching spec decoding off never leaves a half-built config; `null` deletes a key, and `_`/`-` spellings match alike — so a lane changes `num_speculative_tokens` without restating the feature's whole JSON, or sizes the Simple offload through its `--kv-transfer-config`; a KV connector's name as a key (`MoRIIOConnector: {…}`, `SimpleCPUOffloadConnector: {…}`) edits that connector, the value itself or the matching child of a MultiConnector, so a PD lane tunes one connector of the composed config (an unknown name is an error). **`points`** are named operating points (one per benchmark concurrency, or arms such as eval vs throughput), keyed by id because concurrency values can repeat: each has a `label`, optional `concurrency` / `description` / `default` (the builder titles the row **Concurrency** when every point sets `concurrency`, else **Point**, so give each concurrency point its own integer rather than a range; label a concurrency point with the bare number, plus what else it changes in parentheses, e.g. `8` or `8 (TP4)`, since the row title already says concurrency), and the preset's own delta fields (`args`, `env`, `remove_args`, `json_args`, `tp`, `roles` incl. `nodes`/`parallelism`/`tp`/`pp`, `select`, `image`), layered on the preset; a point can't change the hardware, strategy or variants (that is another preset). **`tp`** (single_node_tp presets) sets the single-node TP size on this GPU, for the variants the preset covers — e.g. a lane that runs TP4 on an 8-GPU node, or points at TP8/TP4/TP2. **`select`** names the builder choices the preset implies — `nodes` (multi_node_* presets: the node count, e.g. TP16 over four 4-GPU trays), `pd_router`, `pd_connector` (the PD KV transfer connector, a `strategies/pd_cluster.yaml` `connectors` key: `nixl` default, `mooncake`, `mooncake_ascend`, `moriio`; validated against the preset's hardware brand and `pd_router`), `frontend`, `features` (`true`/`false`, or a mode key, which also turns the feature on), `dcp`, `kv_offload` — and is applied when the preset (or point) becomes active, except for what a shared URL sets explicitly; the JSON API renders with them too. **`image`** (a string, or `{ vllm, dynamo?, pip?, model_revision? }`) pins the docker command on this GPU for the variants the preset covers; the rest is shown with the preset and published. When the selected hardware has presets, its pill says so ("preset" / "N presets") and the builder shows a Preset row (nested under Strategy) listing all of them — presets of another strategy or variant are tagged and switch it when picked — plus **Baseline**; the selection syncs to `?preset=<key>` and `?point=<key>` (`baseline` opts out). A `default: true` preset is selected on its GPU + strategy until the user picks Baseline, and the JSON API's renderings bake it in and name it as `preset` / `preset_point`; every preset is also rendered at each point under `/<hf_id>/presets/<key>.json`, and a preset or point that fails to render fails the build (and the source repo's PR check). At most one default per GPU + strategy + variants; `baseline` is a reserved key; `roles` needs `strategy: pd_cluster`. Mark a preset `default: true` only when it is the configuration this GPU should serve with by default — a benchmark lane with benchmark-only settings stays opt-in. Put what the builder can't express — services, multi-engine placement, site specifics, benchmark parameters, evidence — in `runbook` (markdown), rendered server-side on its card in the Presets tab (anchor `#preset-<key>`), never launch commands or builder instructions. Use a preset for an evidence-backed configuration with a `source`, not for general hardware support: kernels or flags every workload on that GPU needs stay in `hardware_overrides`. An overlay source may add presets whose `hardware` is in its scope. Helpers: `src/lib/recipe-presets.js`.
   **Dynamo-only parser overrides** (`--dyn-tool-call-parser` / `--dyn-reasoning-parser`) belong in a preset with `select.pd_router: dynamo`. Do not put them in general feature or model args: those also reach native `vllm serve`, which does not accept these flags. Strict preset rendering fails if a parser has no Dynamo mapping.
 - `omni` (optional) — vllm-omni online-serving config. Required when `meta.tasks` includes `omni`. Shape: `{ serve_binary?, port?, task_label?, task_hint?, tasks: [...] }`. `tasks` accepts bare ids from the catalog (`t2i`, `i2i`, `t2v`, `i2v`, `ti2v`, `t2a`) or `{ id, key?, model_id?, vram_minimum_gb?, description?, extra_args?, curl?, benchmark? }` overrides — Wan2.2 uses overrides to swap the served checkpoint per task. `benchmark` is a static command override for diffusion or other non-LLM endpoints that cannot use the default `vllm bench serve` command. `serve_binary: "vllm-omni serve"` swaps the binary; currently unused, and needed only for recipes pinned below vLLM 0.20.0, where the `vllm` console-script does not yet delegate to vllm-omni on `--omni`. Catalog lives at `src/lib/omni-tasks.js`.
   `key` is the unique selector and URL identity when multiple request presets share one catalog `id`; absent `key` falls back to `id`. `task_label` and `task_hint` customize that selector row.
 - `notes` (optional) — `[{ title?, when, body }]`: configuration-specific guidance, shown in the command block (beside the hardware note, titles listed and bodies expandable) only while `when` matches the builder's selection. `when` is `{ hardware?, strategies?, variants?, features? }`, each a non-empty list: keys AND together, values within a key OR together; `hardware` takes the hardware-map keyspace (exact GPU id, generation, lowercase brand, `arch:<compute_arch>`), `features` matches while one of those features is on. `when` is required — a note that applies to every configuration belongs in `guide`. Use it for what a reader of *this* command needs (an env to add on MNNVL, why a flag is set on Blackwell), not for flags the builder should emit itself. Overlays may append notes only when `when.hardware` is non-empty and every selector is in the source's hardware scope. Identical notes are not duplicated.
 - `troubleshooting` (optional) — `[{ title, when?, body }]`: known issues, rendered in the **Troubleshooting** tab (beside Guide and Presets): entries whose `when` matches (or that have none) first, the rest folded under "Other configurations"; the tab gets a dot when a conditional entry matches. `title` is the symptom (an error message, "warmup too slow"), and becomes the anchor `#issue-<slug>`. The build rejects `when.variants` / `when.features` naming a variant or feature the recipe doesn't have. Helpers: `src/lib/recipe-context.js`.
 - `guide` — markdown string (`|`-block), rendered with `react-markdown` + `remark-gfm` + `rehype-slug`.
+
+### Ascend PD presets
+
+Ascend uses the same Prefill/Decode pools and node commands as other PD routers.
+**Ascend Router** and **Mooncake (Ascend)** appear only on Ascend hardware under
+PD disaggregation. Each remains disabled unless the active model preset (including
+its selected point) explicitly declares the corresponding choice:
+`select.pd_router: ascend` or `select.pd_connector: mooncake_ascend`.
+The preset must match the hardware and variant;
+Baseline or an unrelated preset does not opt in, and URL/API parameters cannot
+bypass this requirement. Select the matching preset in the Presets tab to apply
+its configuration. An overlay can add an opt-in preset such as this
+illustrative MoE topology on eight-device nodes (supply the qualified variant,
+runtime image and verification source for the actual model):
+
+```yaml
+presets:
+  ascend_pd:
+    label: Ascend PD
+    hardware: ascend_950dt
+    strategy: pd_cluster
+    default: false
+    select: { pd_router: ascend, pd_connector: mooncake_ascend, frontend: python }
+    roles:
+      prefill:
+        nodes: 4
+        parallelism: tp
+        pp: 4
+      decode:
+        nodes: 4
+        parallelism: dep
+        tp: 4
+        pp: 1
+```
+
+This uses one TP8/PP4 prefill pool and one DP8/TP4 decode pool: each decode node
+has local DP2 and its starting rank is 0, 2, 4 or 6. Expanding Prefill from four
+to eight nodes with PP4 changes TP8 to TP16; expanding Decode to eight nodes
+keeps TP4/local DP2 and raises global DP8 to DP16. Independent replica groups
+are not represented. Set role `pp` and DEP `tp` through these topology fields,
+not raw arguments, so commands, connector metadata and router endpoints agree.
+Use the existing preset role
+`remove_args` and `json_args` for role-specific flag and speculative-config
+changes; a speculative-config edit remains inactive when that feature is off.
+Overlays may add in-scope hardware keys to role `tp`/`pp` maps. If the owner
+uses a scalar there, use a preset; overlays do not convert scalars into maps.
+
+With global DP1, the role runs a single TP/EP service without DP rank or
+load-balancing flags, and the Ascend router lists one endpoint. With global
+DP > 1 and local DP1, each node runs `--data-parallel-external-lb` with its rank.
+With local DP > 1, it runs one native
+`--data-parallel-multi-port-external-lb` command: vLLM assigns each local rank its
+TP device slice and HTTP port `base_port + local_rank`, and the router lists all
+of those endpoints. Use dedicated Prefill and Decode hosts, with an image whose
+`vllm serve --help` includes the multi-port flag and which supports the selected
+connector. Keep child HTTP ports clear of the supervisor health port (9256 by
+default), and use the Ascend proxy script from the matching runtime. This example
+is not an NPU validation claim.
+
+The single **Mooncake (Ascend)** option (`mooncake_ascend`) supplies catalog
+configurations for both roles, defaulting to `MooncakeConnectorV2` with producer /
+consumer roles, KV ports 36000 / 36100, and both pools' DP/TP/PP metadata. The
+example above inherits these defaults. There is no connector-name allowlist:
+use the existing preset `roles.<role>.json_args` to select V1, V2, Hybrid or
+another implementation supported by the model's runtime, and to adjust or
+remove implementation-specific settings. For example, apply this edit to each
+role that needs Hybrid (complete its settings from the model's verified source):
+
+```yaml
+json_args:
+  --kv-transfer-config:
+    MooncakeConnectorV2:
+      kv_connector: MooncakeHybridConnector
+      # Other keys override the catalog defaults; null deletes a key.
+```
+
+The named edit addresses the default transfer connector both on its own and
+inside `MultiConnector` when KV offload is enabled. Edit offload settings by
+its connector name in the same `json_args` object. Do not change the root
+`kv_connector` when editing a composed config, since that root is
+`MultiConnector`. Normal preset-to-role precedence applies: apply shared settings
+first and rename the connector in the final role edit. A whole
+config supplied via raw args follows normal override/composition ordering;
+prefer named edits to preserve enabled offload tiers. Final Ascend transfer
+configs must be JSON objects with a non-empty connector name.
+
+PD connector configs, including recipe-supplied configs, can use `{prefill_dp_size}`, `{prefill_tp_size}`,
+`{prefill_pp_size}` and the corresponding `{decode_*_size}` placeholders. Whole
+placeholder values resolve to numbers before JSON serialization; the existing
+`{port}` substitution remains available. Role env values such as
+`HCCL_IF_IP: "$PREFILL_NODE_1"` or `VLLM_HOST_IP: "$DECODE_NODE_1"` follow the
+node being rendered; DP/master addresses still point to the pool's first node.
+
+Every PD JSON role includes `node_commands[]` for all of its nodes, with
+`node_rank`, command, argv, env and available Docker forms. Markdown lists the
+same complete commands. The singular role command still follows the selected
+node; it is not a command to repeat unchanged on every node.
 
 ## VRAM formula
 

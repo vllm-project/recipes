@@ -54,8 +54,21 @@ The same ones the page URL uses. Values the recipe can't run fall back to its de
 | \`preset\`, \`point\` | A tuned preset and its operating point; \`preset=baseline\` drops a default preset |
 | \`kv_offload\` | A KV offload option (\`simple\`, \`lmcache\`, … — \`kv_offload\` in the [taxonomy](${siteUrl}/taxonomy.json)) or a Mooncake topology (\`kv_store_distributed_mooncake\`, \`kv_store_centralized_mooncake\`) |
 | \`prefill_nodes\`, \`decode_nodes\`, \`prefill_mode\`, \`decode_mode\`, \`pd_router\`, \`pd_connector\` | Prefill/decode disaggregation (\`strategy=pd_cluster\`) |
+| \`prefill_rank\`, \`decode_rank\` | Zero-based node index within the corresponding PD pool; selects the singular role command |
 
 Each recipe's Markdown lists the values it accepts under **Other configurations**.
+
+Select the PD router and KV connector independently, subject to catalog compatibility.
+For Ascend, \`pd_router=ascend\` selects Ascend Router; \`pd_connector=mooncake_ascend\`
+selects Mooncake (Ascend). Each choice requires Ascend hardware, PD disaggregation
+and an active model preset that explicitly declares it in \`select\`.
+The catalog defaults to \`MooncakeConnectorV2\` with pool-size placeholders.
+Recipes can override the implementation and settings through existing named preset
+\`json_args\` edits, including when KV offload is composed; there is no name allowlist.
+
+PD renderings include \`prefill.node_commands[]\` and \`decode.node_commands[]\`, with every node's
+\`node_rank\`, \`command\`, \`argv\`, \`env\`, and Docker equivalents. Run each on its named node;
+the singular role \`command\` remains the node selected by \`prefill_rank\` / \`decode_rank\`.
 
 ## Static files
 

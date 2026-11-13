@@ -3,7 +3,7 @@
 // marked authoritative; the guide comes last as background, since its
 // hand-written examples may target another configuration.
 
-import { maxVersion, hardwareInstall, hwPipOverride, isFeatureSupportedOnHardware, isPipInstallAvailable, resolveInstall } from "./command-synthesis.js";
+import { maxVersion, hardwareInstall, hwPipOverride, isFeatureSupportedOnHardware, isPipInstallAvailable, pdPoolModes, resolveInstall } from "./command-synthesis.js";
 import { whenMatches } from "./recipe-context.js";
 import { SELECTION_PARAMS, defaultFeaturesFor, synthesizeInstall } from "./recipe-render.js";
 
@@ -78,11 +78,13 @@ function serveSection(r) {
     for (const role of ["prefill", "decode"]) {
       const p = r[role];
       if (!p?.command) continue;
-      const nodes = p.nodes ?? 1;
-      const scope = nodes > 1
-        ? ` — pool spans ${nodes} nodes; this is node ${p.currentNode ?? 0}'s command (add \`${role}_rank=<n>\` to the query for another)`
-        : "";
-      out.push("", `### ${role === "prefill" ? "Prefill" : "Decode"}${scope}`, "", fence(withEnv(p.env, p.command)));
+      const nodes = p.node_commands || [{ ...p, node_rank: p.currentNode ?? 0 }];
+      out.push("", `### ${role === "prefill" ? "Prefill" : "Decode"}`, "",
+        "Run each command on its named node. Ranks differ; do not repeat one command on every node.");
+      for (const node of nodes) {
+        out.push("", `#### $${role.toUpperCase()}_NODE_${node.node_rank + 1} (node rank ${node.node_rank})`, "",
+          fence(withEnv(node.env, node.command)), ...dockerNote(node.docker_command));
+      }
     }
     if (r.router?.command) {
       out.push("", `### ${r.router.label || "Router"}`, "");
@@ -233,6 +235,20 @@ function presetOptions(recipe, strategies) {
   ];
 }
 
+function pdOptions(recipe, resolved, strategies) {
+  if (!resolved.options.strategies.includes("pd_cluster")) return [];
+  const pd = strategies.pd_cluster;
+  const routers = ["vllm", ...["dynamo", "smg", "ascend"].filter((key) => pd?.[key])];
+  const values = (keys) => keys.map((key) => `\`${key}\``).join(", ");
+  return [
+    "- `prefill_nodes`, `decode_nodes`: dedicated node counts for each pool under `strategy=pd_cluster`.",
+    `- \`prefill_mode\`, \`decode_mode\`: ${values(pdPoolModes(recipe))}.`,
+    "- `prefill_rank`, `decode_rank`: zero-based node indices (`0` to the pool's node count minus one). These select the singular command; `node_commands[]` always includes every node.",
+    `- \`pd_router\`: ${values(routers)}. Hardware and pool compatibility applies.`,
+    `- \`pd_connector\`: ${values(Object.keys(pd?.connectors || {}))}. Select independently of the router; catalog hardware/router compatibility still applies.`,
+  ];
+}
+
 function presetSection(recipe, rendering, strategies, origin) {
   const key = rendering?.preset;
   const p = key && recipe.presets?.[key];
@@ -306,6 +322,7 @@ export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls
     options.strategies.length ? `- \`strategy\`: ${options.strategies.map((s) => `\`${s}\``).join(", ")} (multi-node strategies also need \`nodes=<n>\`)` : null,
     options.tasks?.length ? `- \`task\`: ${options.tasks.map((t) => `\`${t}\``).join(", ")}` : null,
     options.features.length ? `- \`features\`: comma-separated list of ${options.features.map((f) => `\`${f}\``).join(", ")} (default: ${defaultFeatures.map((f) => `\`${f}\``).join(", ") || "none"}). Use \`features=none\` to turn them all off.` : null,
+    ...pdOptions(recipe, resolved, strategies),
     ...presetOptions(recipe, strategies),
     "",
     "## Install",

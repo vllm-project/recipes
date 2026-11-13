@@ -131,6 +131,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     nodes: intOrHwMap,
     parallelism: { anyOf: [pdMode, keyed(hwKey, pdMode)] },
     tp: intOrHwMap,
+    pp: intOrHwMap,
     vllm_args: strings,
     env: envMap,
     parallel_flag: { type: "string" },
@@ -260,11 +261,12 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
       presets: (() => {
         const jsonArgs = keyed({ pattern: "^--" }, { type: "object" }, "edits to JSON-valued flags: keys to set, null deletes");
         const delta = { args: strings, env: envMap, remove_args: { type: "array", items: { type: "string", pattern: "^--" } }, json_args: jsonArgs };
-        const role = obj({ ...delta, nodes: { type: "integer", minimum: 1 }, parallelism: pdMode });
+        const role = obj({ ...delta, nodes: { type: "integer", minimum: 1 }, parallelism: pdMode,
+          tp: { type: "integer", minimum: 1 }, pp: { type: "integer", minimum: 1 } });
         const roles = obj({ prefill: role, decode: role });
         const select = obj({
           nodes: { type: "integer", minimum: 1 },
-          pd_router: { enum: ["vllm", "dynamo", "smg"] },
+          pd_router: { enum: ["vllm", "dynamo", "smg", "ascend"] },
           pd_connector: { enum: Object.keys(strategies?.pd_cluster?.connectors || {}) },
           frontend: { enum: frontends },
           features: keyed({ type: "string" }, { anyOf: [{ type: "boolean" }, { type: "string" }] }, "true/false toggles a feature; a string picks that mode (and turns it on)"),
