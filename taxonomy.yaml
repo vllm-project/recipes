@@ -1,11 +1,17 @@
 # taxonomy.yaml — Controlled vocabulary for vLLM recipes
 # All hardware_profiles, tasks, and strategies referenced in recipes must be defined here.
+# `compute_arch` names the GPU ISA (CUDA compute capability or ROCm gfx target).
+# Recipe `arch:<name>` selectors match this field; assigning it to a new profile
+# makes same-ISA recipe paths eligible without editing each recipe.
+# NVIDIA: https://developer.nvidia.com/cuda/gpus
+# AMD: https://rocm.docs.amd.com/en/docs-7.2.4/how-to/rocm-for-ai/inference-optimization/workload.html
 
 hardware_profiles:
   # ── NVIDIA Hopper ──
   h100:
     brand: NVIDIA
     generation: hopper
+    compute_arch: sm90
     display_name: "H100"
     description: "NVIDIA H100 80GB NVLink (8-GPU node)"
     gpu_count: 8
@@ -15,6 +21,7 @@ hardware_profiles:
   h200:
     brand: NVIDIA
     generation: hopper
+    compute_arch: sm90
     display_name: "H200"
     description: "NVIDIA H200 SXM 141 GB HBM3e · 8-GPU HGX node"
     gpu_count: 8
@@ -26,6 +33,7 @@ hardware_profiles:
   b200:
     brand: NVIDIA
     generation: blackwell
+    compute_arch: sm100
     display_name: "B200"
     description: "NVIDIA B200 SXM 180 GB HBM3e · 8-GPU HGX B200 node"
     gpu_count: 8
@@ -35,6 +43,7 @@ hardware_profiles:
   gb200:
     brand: NVIDIA
     generation: blackwell
+    compute_arch: sm100
     display_name: "GB200 NVL4"
     description: "NVIDIA GB200 Grace-Blackwell compute tray · 192 GB HBM3e/GPU · 4 Blackwell GPUs (NVL72 tray unit)"
     gpu_count: 4
@@ -45,6 +54,7 @@ hardware_profiles:
   b300:
     brand: NVIDIA
     generation: blackwell
+    compute_arch: sm103
     display_name: "B300"
     description: "NVIDIA B300 SXM 268 GB HBM3e · 8-GPU HGX B300 node (Blackwell Ultra)"
     gpu_count: 8
@@ -54,11 +64,39 @@ hardware_profiles:
   gb300:
     brand: NVIDIA
     generation: blackwell
+    compute_arch: sm103
     display_name: "GB300 NVL4"
     description: "NVIDIA GB300 Grace-Blackwell Ultra compute tray · 288 GB HBM3e/GPU · 4 GPUs (NVL72 tray unit)"
     gpu_count: 4
     vram_gb: 1152
     multi_node: false
+
+  # ── NVIDIA Rubin ──
+  # Its own generation, not `blackwell`: Blackwell-family kernels do run on
+  # sm107, but a recipe's `blackwell` block (e.g. deep_gemm_mega_moe) was tuned
+  # for Blackwell and hasn't been run here, so it doesn't carry over. Recipes
+  # add a `rubin` block for what they've qualified.
+  # 288 GB is NVIDIA's listed HBM4 per GPU; InferenceX has no usable-after-ECC
+  # figure for Rubin yet (see gpu-specs). Replace it when one is published.
+  # Preview support: `cu134-nightly` is the only build that runs on Rubin (no
+  # wheel, no release image), so `docker_image` / `install` apply to every recipe
+  # that declares this profile, and `restricted` keeps it to those recipes until
+  # support ships in a release.
+  vr200:
+    brand: NVIDIA
+    generation: rubin
+    compute_arch: sm107
+    display_name: "VR200 NVL4"
+    description: "NVIDIA Vera Rubin compute tray · 288 GB HBM4/GPU · 4 Rubin GPUs (NVL72 tray unit)"
+    gpu_count: 4
+    vram_gb: 1152
+    multi_node: false
+    restricted: true
+    docker_image: "vllm/vllm-openai:cu134-nightly"
+    install:
+      pip: false
+      docker:
+        note: "Rubin support is a preview: only this nightly image (CUDA 13.4, PyTorch 2.15) runs on it, and there is no pip wheel yet."
 
   # DGX Station — single-GPU Grace-Blackwell Ultra desktop workstation.
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
@@ -69,6 +107,7 @@ hardware_profiles:
   dgx_station_gb300:
     brand: NVIDIA
     generation: blackwell
+    compute_arch: sm103
     display_name: "DGX Station (GB300)"
     description: "NVIDIA DGX Station · 1× GB300 Grace-Blackwell Ultra Superchip · 252 GB HBM3e (desktop workstation)"
     gpu_count: 1
@@ -83,6 +122,7 @@ hardware_profiles:
   dgx_spark_gb10:
     brand: NVIDIA
     generation: blackwell
+    compute_arch: sm121
     display_name: "DGX Spark (GB10)"
     description: "NVIDIA DGX Spark · 1× GB10 Grace Blackwell Superchip · 128 GB unified memory"
     gpu_count: 1
@@ -96,10 +136,156 @@ hardware_profiles:
   rtx_pro_6000:
     brand: NVIDIA
     generation: blackwell
+    compute_arch: sm120
     display_name: "RTX Pro 6000"
-    description: "NVIDIA RTX Pro 6000· 1× RTX Pro 6000 GPU· 96 GB unified memory"
+    description: "NVIDIA RTX Pro 6000 · 1× RTX Pro 6000 GPU · 96 GB VRAM"
     gpu_count: 1
     vram_gb: 96
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # RTX Pro 6000 2x — 2x RTX Pro 6000 GPUs system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` (same pattern as the TPU profiles).
+  rtx_pro_6000_2x:
+    brand: NVIDIA
+    generation: blackwell
+    compute_arch: sm120
+    display_name: "RTX Pro 6000 2x"
+    description: "NVIDIA RTX Pro 6000 · 2× RTX Pro 6000 GPU · 192 GB VRAM"
+    gpu_count: 2
+    vram_gb: 192
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # RTX Pro 6000 4x — 4x RTX Pro 6000 GPUs system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` (same pattern as the TPU profiles).
+  rtx_pro_6000_4x:
+    brand: NVIDIA
+    generation: blackwell
+    compute_arch: sm120
+    display_name: "RTX Pro 6000 4x"
+    description: "NVIDIA RTX Pro 6000 · 4× RTX Pro 6000 GPU · 384 GB VRAM"
+    gpu_count: 4
+    vram_gb: 384
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # RTX PRO 5000 Blackwell — single-GPU workstation profile.
+  # Restricted so it only appears for recipes that explicitly support it.
+  rtx_pro_5000:
+    brand: NVIDIA
+    generation: blackwell
+    compute_arch: sm120
+    display_name: "RTX PRO 5000"
+    description: "NVIDIA RTX PRO 5000 Blackwell · 72 GB VRAM"
+    gpu_count: 1
+    vram_gb: 72
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # RTX PRO 5000 Blackwell — validated four-card PCIe profile.
+  # Restricted so it only appears for recipes with target-hardware evidence.
+  rtx_pro_5000_4x:
+    brand: NVIDIA
+    generation: blackwell
+    compute_arch: sm120
+    display_name: "RTX PRO 5000 Blackwell 4x"
+    description: "NVIDIA RTX PRO 5000 Blackwell · 4× 72 GB VRAM · PCIe, no NVLink"
+    gpu_count: 4
+    vram_gb: 288
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # RTX Pro 6000 8x — 8x RTX Pro 6000 GPUs system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` (same pattern as the TPU profiles).
+  rtx_pro_6000_8x:
+    brand: NVIDIA
+    generation: blackwell
+    compute_arch: sm120
+    display_name: "RTX Pro 6000 8x"
+    description: "NVIDIA RTX Pro 6000 · 8× RTX Pro 6000 GPU · 768 GB VRAM"
+    gpu_count: 8
+    vram_gb: 768
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # RTX 4090 — single-GPU RTX 4090 system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware`
+  rtx_4090:
+    brand: NVIDIA
+    generation: ada
+    compute_arch: sm89
+    display_name: "RTX 4090"
+    description: "NVIDIA RTX 4090 · 1× RTX 4090 GPU · 24 GB VRAM"
+    gpu_count: 1
+    vram_gb: 24
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # RTX 5090 — single-GPU RTX 5090 system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware`
+  rtx_5090:
+    brand: NVIDIA
+    generation: blackwell
+    compute_arch: sm120
+    display_name: "RTX 5090"
+    description: "NVIDIA RTX 5090 · 1× RTX 5090 GPU · 32 GB VRAM"
+    gpu_count: 1
+    vram_gb: 32
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # Exact two-card consumer profiles. Kept restricted so they only appear for
+  # recipes with an end-to-end validated multi-GPU deployment.
+  rtx_4090_2x:
+    brand: NVIDIA
+    generation: ada
+    compute_arch: sm89
+    display_name: "RTX 4090"
+    description: "NVIDIA RTX 4090 · 2× RTX 4090 GPU · 24 GB VRAM/GPU"
+    gpu_count: 2
+    vram_gb: 48
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  rtx_5090_2x:
+    brand: NVIDIA
+    generation: blackwell
+    compute_arch: sm120
+    display_name: "RTX 5090"
+    description: "NVIDIA RTX 5090 · 2× RTX 5090 GPU · 32 GB VRAM/GPU"
+    gpu_count: 2
+    vram_gb: 64
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  # L40S — single-GPU Ada datacenter inference card (PCIe, no NVLink).
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware`; `scalable: false` marks it non-clusterable, so
+  # 48 GB is a hard limit and variants that don't fit one card are disabled.
+  l40s:
+    brand: NVIDIA
+    generation: ada
+    compute_arch: sm89
+    display_name: "L40S"
+    description: "NVIDIA L40S · 1× L40S GPU · 48 GB GDDR6 ECC (PCIe, no NVLink)"
+    gpu_count: 1
+    vram_gb: 48
     multi_node: false
     scalable: false
     restricted: true
@@ -108,6 +294,7 @@ hardware_profiles:
   mi300x:
     brand: AMD
     generation: amd
+    compute_arch: gfx942
     display_name: "MI300X"
     description: "AMD Instinct MI300X 192 GB HBM3 · 8-GPU OAM node (CDNA 3)"
     gpu_count: 8
@@ -117,15 +304,27 @@ hardware_profiles:
   mi325x:
     brand: AMD
     generation: amd
+    compute_arch: gfx942
     display_name: "MI325X"
     description: "AMD Instinct MI325X 256 GB HBM3e · 8-GPU OAM node (CDNA 3)"
     gpu_count: 8
     vram_gb: 2048
     multi_node: false
 
+  mi350x:
+    brand: AMD
+    generation: amd
+    compute_arch: gfx950
+    display_name: "MI350X"
+    description: "AMD Instinct MI350X 288 GB HBM3e · 8-GPU OAM node (CDNA 4)"
+    gpu_count: 8
+    vram_gb: 2304
+    multi_node: false
+
   mi355x:
     brand: AMD
     generation: amd
+    compute_arch: gfx950
     display_name: "MI355X"
     description: "AMD Instinct MI355X 288 GB HBM3e · 8-GPU OAM node (CDNA 4)"
     gpu_count: 8
@@ -149,10 +348,18 @@ hardware_profiles:
   ironwood:
     brand: Google
     generation: tpu
-    display_name: "TPU v7 (Ironwood)"
-    description: "Google Cloud TPU v7 Ironwood · 192 GB HBM/chip · served via vLLM TPU"
-    gpu_count: 1
-    vram_gb: 192
+    # The picker shows the category name; the description keeps the generation.
+    display_name: "TPU7x"
+    description: "Google Cloud TPU v7 Ironwood · 206 GB HBM3e/chip (96 GiB per TensorCore) · served via vLLM TPU"
+    # One TPU v7x host: 4 dual-TensorCore chips = 8 devices, 824 GB HBM.
+    # TP sizing and node counts come out in hosts (a 2x2x4 slice = 4 nodes,
+    # 16 chips, 32 devices). chips_per_node drives the header's chip count
+    # ("16x TPU7x (4 nodes, 32 devices)"); slice_topology labels the Nodes
+    # pill (v7x pods scale the third axis: 4 hosts -> 2x2x4).
+    gpu_count: 8
+    vram_gb: 824
+    chips_per_node: 4
+    slice_topology: "2x2x{n}"
     multi_node: false
     restricted: true
 
@@ -177,6 +384,161 @@ hardware_profiles:
     multi_node: false
     restricted: true
 
+  # ── Intel Arc Pro XPU ──
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` — XPU support ships in the separate
+  # `vllm/vllm-openai-xpu` image and is only declared on validated recipes.
+  arc_pro_b60:
+    brand: Intel
+    generation: xpu
+    display_name: "Arc Pro B60"
+    description: "Intel Arc Pro B60 24 GB · 4-card node · vLLM XPU backend"
+    gpu_count: 4
+    vram_gb: 96
+    multi_node: false
+    restricted: true
+
+  arc_pro_b70:
+    brand: Intel
+    generation: xpu
+    display_name: "Arc Pro B70"
+    description: "Intel Arc Pro B70 32 GB · 4-card node · vLLM XPU backend"
+    gpu_count: 4
+    vram_gb: 128
+    multi_node: false
+    restricted: true
+
+  # ── Apple Silicon ──
+  # Unified RAM is shared with macOS. Only explicitly declared recipes appear.
+  apple_16gb:
+    brand: Apple
+    generation: metal
+    display_name: "16 GB Mac"
+    description: "Apple Silicon Mac with 16 GB unified memory, shared with macOS and other apps"
+    gpu_count: 1
+    vram_gb: 16
+    scalable: false
+    restricted: true
+    requires_variant_opt_in: true
+    unified_memory: true
+    requires_kv_offload_opt_in: true
+
+  apple_32gb:
+    brand: Apple
+    generation: metal
+    display_name: "32 GB Mac"
+    description: "Apple Silicon Mac with 32 GB unified memory, shared with macOS and other apps"
+    gpu_count: 1
+    vram_gb: 32
+    scalable: false
+    restricted: true
+    requires_variant_opt_in: true
+    unified_memory: true
+    requires_kv_offload_opt_in: true
+
+  apple_64gb:
+    brand: Apple
+    generation: metal
+    display_name: "64 GB Mac"
+    description: "Apple Silicon Mac with 64 GB unified memory, shared with macOS and other apps"
+    gpu_count: 1
+    vram_gb: 64
+    scalable: false
+    restricted: true
+    requires_variant_opt_in: true
+    unified_memory: true
+    requires_kv_offload_opt_in: true
+
+  # ── Huawei Ascend NPU ──
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware` — Ascend support ships in vllm-ascend and is
+  # only declared on validated recipes.
+  ascend_950pr:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 950PR"
+    description: "Huawei Ascend 950PR · 1× NPU · 128 GB HiBL 1.0 HBM · vLLM Ascend backend"
+    gpu_count: 1
+    vram_gb: 128
+    multi_node: false
+    scalable: false
+    restricted: true
+
+  ascend_950dt:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 950DT"
+    description: "Huawei Ascend 950DT · 8× NPU node · 96 GB HBM each · vLLM Ascend backend"
+    gpu_count: 8
+    vram_gb: 768
+    multi_node: false
+    restricted: true
+
+  ascend_910c:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 910C"
+    description: "Huawei Ascend 910C · 16× NPU · 64 GB HBM each · Atlas 800 A3 · vLLM Ascend backend"
+    gpu_count: 16
+    vram_gb: 1024
+    multi_node: false
+    restricted: true
+
+  ascend_910b:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 910B"
+    description: "Huawei Ascend 910B4 · 8× NPU · 64 GB HBM each · Atlas 800I A2 · vLLM Ascend backend"
+    gpu_count: 8
+    vram_gb: 512
+    multi_node: false
+    restricted: true
+
+  # 8-card Atlas A5 nodes. Distinct from `ascend_950pr` (1×128 GB, MiniMax-H3).
+  # Restricted: only recipes that list them in `meta.hardware` show the pills.
+  # Ids / display_name follow the RTX Pro 6000 8x pattern: `<sku>_8x` / `"<name> 8x"`.
+  ascend_950dt_8x:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 950DT 8x"
+    description: "Huawei Ascend 950DT · 8× NPU · 96 GB HBM each · Atlas A5 · vLLM Ascend backend"
+    gpu_count: 8
+    vram_gb: 768
+    multi_node: false
+    restricted: true
+
+  ascend_950pr_8x:
+    brand: Huawei
+    generation: npu
+    display_name: "Ascend 950PR 8x"
+    description: "Huawei Ascend 950PR · 8× NPU · 128 GB HiBL 1.0 HBM each · Atlas A5 · vLLM Ascend backend"
+    gpu_count: 8
+    vram_gb: 1024
+    multi_node: false
+    restricted: true
+
+  810e:
+    brand: Zhenwu
+    generation: ppu
+    display_name: "810E"
+    description: "Zhenwu 810E · 16× PPU · 96 GB per PPU"
+    gpu_count: 16
+    vram_gb: 1536
+    multi_node: true
+    restricted: true
+    install: { pip: false }
+
+  m890:
+    brand: Zhenwu
+    generation: ppu
+    display_name: "M890"
+    description: "Zhenwu M890 · 8× PPU · 144 GB per PPU"
+    gpu_count: 8
+    vram_gb: 1152
+    multi_node: true
+    restricted: true
+    install: { pip: false }
+
 tasks:
   - id: text
     display_name: "Text"
@@ -199,7 +561,22 @@ strategies:
   - multi_node_tep
   - multi_node_dep
   - multi_node_tp_pp
+  - multi_node_tp_dp
   - pd_cluster
+
+# Frontends — options for the command builder's "Frontend" row (pill order =
+# key order). Each is `{ label, env? }`: synthesis merges the selected
+# frontend's `env` into every rendered command (head, workers, PD roles, Docker
+# `-e`). `python` is the baseline: it is what a recipe gets when it sets no
+# `model.default_frontend`, and what synthesis falls back to when a recipe opts
+# a frontend out with `model.<id>_frontend: unsupported` (e.g. `rust_frontend`).
+frontends:
+  rust:
+    label: "Rust"
+    env:
+      VLLM_USE_RUST_FRONTEND: "1"
+  python:
+    label: "Python"
 
 # KV Offload — options for the command builder's "KV Offload" row that compose
 # with (rather than replace) the serving strategy. `simple` appends its args to
@@ -207,22 +584,92 @@ strategies:
 # kv_store_lb strategies, which own --kv-transfer-config themselves. Optional
 # per-option keys: `strategies` (allowlist — absent = every serving strategy),
 # `companion` ({ label, description?, command } — helper process rendered as
-# an extra command tab while the option is active), `install` (extra pip dep,
-# shown on the companion tab).
+# an extra command tab while the option is active), `install` (extra pip dep —
+# a command string, or a list of `{ note, command }` steps like a recipe's
+# `dependencies` — shown in the extra-install block above vllm serve and, when
+# present, on the companion tab), `brands` (hardware-brand allowlist),
+# `hardware` (map in the variant-`tp` keyspace — exact id > generation > brand
+# — where `unsupported` opts specific hardware out within an allowed brand),
+# `hardware_overrides` (same keyspace; replaces any top-level key and merges
+# env for that hardware), `setup` (shell lines run after the env exports and
+# right before vllm serve; synthesis ends the last line with `&&`, so a
+# failing setup stops the launch, and that line must be a command, not a
+# comment), `docker: false` (no published image carries the option, so the
+# Docker path is hidden while it's active, and the option is unavailable where
+# the recipe offers no pip install on that hardware), `env` (extra serve env
+# while active; `env` values and `setup` may use `{tp_size}`), `docs_url`, and
+# `requires_opt_in` (true = fail-CLOSED: disabled until the recipe lists the
+# option as `verified` under `kv_offload_support`). `setup` and `{tp_size}`
+# render on single-node strategies only: the build rejects an option that uses
+# them unless its `strategies` lists only single-node strategies and it has no
+# `pd` block.
+
+# Options sharing a `group` collapse into one pill with a nested member
+# sub-row (Mooncake's Store Topology idiom); `description` renders under the
+# main row, member descriptions under the sub-row.
+kv_offload_groups:
+  offloading:
+    display_name: "Offloading Connector"
+    label: "Offloading"
+    order: 2
+    sub_row_label: "Offload Tiers"
+    docs_url: "https://docs.vllm.ai/en/stable/features/kv_offloading_usage"
+    tooltip: "Offloading Connector — vLLM's built-in KV offload path: extends the prefix cache into host DRAM, optionally backed by further tiers. Composes with the selected strategy."
+    description: "vLLM's built-in OffloadingConnector extends the prefix cache beyond GPU memory: completed KV blocks are copied out by DMA alongside compute and promoted back on a hit. A CPU DRAM tier is always present and is the only tier with GPU access; optional secondary tiers sit behind it and stage their transfers through it. Pick the tiers below."
 kv_offload:
   simple:
     display_name: "Simple (CPU offload)"
     label: "Simple"
-    # Pill position on the KV Offload row; the merged Mooncake pill sits at 2.
+    # Pill position on the KV Offload row; the merged Mooncake pill sits at 3.
     order: 1
     description: "Offload KV cache to CPU DRAM on each serving node via SimpleCPUOffloadConnector — one flag, no extra infrastructure. ~220 GiB of host RAM used per GPU rank."
     args:
       - "--kv-transfer-config"
-      - '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both","kv_connector_extra_config":{"cpu_bytes_to_use_per_rank":236223201280,"lazy_offload":"false"}}'
+      - '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both","kv_connector_extra_config":{"cpu_bytes_to_use_per_rank":236223201280,"lazy_offload":false}}'
+    # vLLM-TorchTPU has no implementation of this connector.
+    hardware:
+      tpu: unsupported
+    # Under Prefill/Decode it joins the prefill role's KV transfer connector
+    # in a MultiConnector (a host KV tier behind prefill, as the AgentX PD
+    # lanes run); decode keeps the plain transfer connector.
+    pd:
+      roles: [prefill]
+  offloading_cpu:
+    display_name: "CPU DRAM only"
+    label: "CPU"
+    group: offloading
+    order: 1
+    # Fail-closed: offered only where a recipe records a verified run.
+    requires_opt_in: true
+    # CUDA/ROCm/XPU only; the Intel profiles are Xeon CPUs, Google's TPUs.
+    brands:
+      - NVIDIA
+      - AMD
+    description: "Single CPU DRAM tier, under LRU eviction. cpu_bytes_to_use is the total across all workers — not per rank, as Simple's knob is — and should exceed the aggregate GPU KV cache, or the CPU tier just mirrors what the GPU already holds."
+    args:
+      - "--kv-transfer-config"
+      - '{"kv_connector":"OffloadingConnector","kv_role":"kv_both","kv_connector_extra_config":{"cpu_bytes_to_use":549755813888,"blocks_per_chunk":4}}'
+  offloading_fs:
+    display_name: "CPU DRAM + filesystem"
+    label: "CPU + Filesystem"
+    group: offloading
+    order: 2
+    requires_opt_in: true
+    brands:
+      - NVIDIA
+      - AMD
+    description: "Adds a filesystem tier behind the CPU tier, so cached prefixes outlive DRAM capacity and survive a restart. The CPU tier becomes a smaller staging tier; the filesystem carries the capacity. Point root_dir at fast local NVMe, or at a shared mount to pool one cache across instances. Object-store (obj) and RDMA-peer (p2p) tiers configure the same way in secondary_tiers."
+    # Pin PYTHONHASHSEED or NONE_HASH reseeds per process and stored block
+    # filenames change every restart, so the on-disk cache never hits.
+    env:
+      PYTHONHASHSEED: "0"
+    args:
+      - "--kv-transfer-config"
+      - '{"kv_connector":"OffloadingConnector","kv_role":"kv_both","kv_connector_extra_config":{"spec_name":"TieringOffloadingSpec","cpu_bytes_to_use":34359738368,"blocks_per_chunk":4,"eviction_policy":"lru","secondary_tiers":[{"type":"fs","root_dir":"/mnt/kv_cache","n_read_threads":32,"n_write_threads":16}]}}'
   lmcache:
     display_name: "LMCache"
-    # Pill position on the KV Offload row (after the Mooncake pill at 2).
-    order: 3
+    # Pill position on the KV Offload row (after the Mooncake pill at 3).
+    order: 4
     description: "Offload KV cache to a shared CPU-DRAM pool via LMCacheMPConnector — prefix caching beyond GPU KV capacity, one pool per node (not per-rank segments). Adds an LMCache Server tab; run it in a separate terminal before vllm serve."
     # Single-node only: the companion MP server is node-local, so multi-node
     # engines are out (pd_cluster / kv_store_lb are already excluded for every
@@ -261,3 +708,164 @@ kv_offload:
           --eviction-ratio 0.10 \
           --eviction-policy LRU \
           --supported-transfer-mode lmcache_driven
+  # IAXL KVShrink always runs on the Intel Xeon host: the Xeon serving vLLM on
+  # CPU, or the host CPU of a GPU server. The selected hardware picks the
+  # platform build via `hardware_overrides` (cpu generation = Xeon CPU
+  # inference, nvidia brand = NVIDIA GPU inference). Grace- and Vera-based NVIDIA
+  # nodes (Arm hosts without QAT/DSA) and Intel XPU (no IAXL build for it here) are
+  # opted out. single_node_tp only: setvars.sh pins per-rank resources on one
+  # node. Fail-closed like the Offloading tiers: a recipe offers it only after
+  # an end-to-end run, recorded as `kv_offload_support: { iaxl: verified }`;
+  # the GPU model alone doesn't say whether the host is a Xeon with QAT.
+  # No PyPI wheel or published vLLM image includes IAXL yet, so the install
+  # steps (one extra-install entry each) are the build packages from IAXL's
+  # docker/Dockerfile.dev, a checkout pinned to the commit this option was
+  # tested with, and an editable --no-build-isolation build (setup.py needs
+  # IAXL_VERSION, read from the pinned setvars.sh); the NVIDIA build adds
+  # GDRCopy's gdrapi, UCX and NIXL at the versions Dockerfile.dev uses. The
+  # Docker path is turned off. `env` + `setup` render as: export
+  # DEVICE/TP_SIZE/switches → source setvars.sh → LD_PRELOAD → vllm serve,
+  # and synthesis chains setup to vllm serve with &&, so a setvars.sh failure
+  # (e.g. fewer QAT devices than TP_SIZE) stops the launch. IAXL_LD_PRELOAD is
+  # pre-set because setvars.sh's default points at the dev image's libiomp5;
+  # intel-openmp from requirements.txt puts it in the Python env's lib/.
+  iaxl:
+    display_name: "IAXL KVShrink"
+    label: "IAXL"
+    order: 5
+    # Fail-closed: offered only where a recipe records a verified run.
+    requires_opt_in: true
+    brands:
+      - Intel
+      - NVIDIA
+    hardware:
+      xpu: unsupported
+      gb200: unsupported
+      gb300: unsupported
+      dgx_station_gb300: unsupported
+      dgx_spark_gb10: unsupported
+      vr200: unsupported
+    strategies:
+      - single_node_tp
+    docker: false
+    description: "intel-accel-for-llm's KVShrinkConnector offloads KV cache to a compressed host-DRAM store on the Intel Xeon host. Intel QAT compresses and decompresses the KV blocks by default, so setvars.sh needs at least TP_SIZE QAT devices (in-tree QAT driver with qatlib, and POLICY=0 in /etc/sysconfig/qat so the process sees every device it assigns) and stops the launch without them. To compress on IAA instead, export IAXL_QAT_ZIP_ENABLE=0 IAXL_IAA_ZIP_ENABLE=1 before the serve block; to spread fewer QAT devices over the ranks, export KVSHRINK_QAT_DEVICES yourself (comma-separated device indices per rank, | between ranks). Prefix caching is turned off so prefix hits come from KVShrink."
+    docs_url: "https://github.com/intel/intel-accel-for-llm#kvshrink-vllm-example"
+    env:
+      TP_SIZE: "{tp_size}"
+    setup: |
+      # setvars.sh sizes QAT/IAA/DSA and CPU per rank for TP_SIZE; vLLM wants libtcmalloc + libiomp5 preloaded
+      export IAXL_LD_PRELOAD="/usr/lib/x86_64-linux-gnu/libtcmalloc_minimal.so.4:$(python3 -c 'import sys; print(sys.prefix)')/lib/libiomp5.so"
+      cd "$HOME/intel-accel-for-llm" && source setvars.sh && export LD_PRELOAD="$IAXL_LD_PRELOAD${LD_PRELOAD:+:$LD_PRELOAD}"
+    args:
+      - "--kv-transfer-config"
+      - '{"kv_connector":"KVShrinkConnector","kv_connector_module_path":"kvshrink.kvshrink_connector","kv_role":"kv_both"}'
+      - "--no-enable-prefix-caching"
+    hardware_overrides:
+      # vLLM CPU inference on the Xeon itself. A DEVICE=cpu build has no DSA
+      # or GDRCopy path. The pool is sized explicitly: IAXL's default (80% of
+      # host RAM across ranks, up to 80% of a NUMA node per rank, held once
+      # used since setvars.sh sets TCMALLOC_RELEASE_RATE=0) would double-book
+      # the memory vLLM's CPU engine already reserves for its own KV cache
+      # (--gpu-memory-utilization of its NUMA node).
+      cpu:
+        description: "intel-accel-for-llm's KVShrinkConnector offloads KV cache to a compressed DRAM store on this Xeon, beside vLLM CPU inference (a DEVICE=cpu build has no DSA path). Intel QAT compresses and decompresses the KV blocks by default, so setvars.sh needs at least TP_SIZE QAT devices (in-tree QAT driver with qatlib, and POLICY=0 in /etc/sysconfig/qat so the process sees every device it assigns) and stops the launch without them. To compress on IAA instead, export IAXL_QAT_ZIP_ENABLE=0 IAXL_IAA_ZIP_ENABLE=1 before the serve block; to spread fewer QAT devices over the ranks, export KVSHRINK_QAT_DEVICES yourself (comma-separated device indices per rank, | between ranks). Each TP rank keeps a 16 GB compressed pool (IAXL_DDR_POOL_SIZE_GB), well below IAXL's default because vLLM's CPU engine already reserves most of its NUMA node's memory for its own KV cache; raise it if RAM allows. Prefix caching is turned off so prefix hits come from KVShrink. setvars.sh binds vLLM and IAXL to the same CPUs by default; for best performance export disjoint per-rank CPU lists on one NUMA node (VLLM_CPU_OMP_THREADS_BIND / KVSHRINK_CPU_OMP_THREADS_BIND) before the serve block — see the CPU inference guide."
+        docs_url: "https://github.com/intel/intel-accel-for-llm/blob/main/doc/usage/vllm-cpu-inference.en.md"
+        install:
+          - note: "IAXL build prerequisites (Debian/Ubuntu, as in IAXL's docker/Dockerfile.dev): the native extension builds QPL and qatlib from source"
+            command: "sudo apt-get install -y build-essential cmake pkg-config autoconf automake autoconf-archive libtool nasm yasm libboost-all-dev libudev-dev liblz4-dev libsqlite3-dev zlib1g-dev uuid-dev libjson-c-dev libssl-dev libnuma-dev libtcmalloc-minimal4 iproute2"
+          - note: "IAXL source checkout, pinned to the commit this option was tested with (no PyPI wheel or published vLLM image includes IAXL yet); the serve command sources setvars.sh from here"
+            command: 'git clone https://github.com/intel/intel-accel-for-llm.git "$HOME/intel-accel-for-llm" && git -C "$HOME/intel-accel-for-llm" checkout -q 28f2d3e1a15721763912d0dd7ec5d4b1f76bc959'
+          - note: "IAXL CPU build (DEVICE=cpu) against the installed torch, with qatlib for the in-tree QAT driver; requirements.txt adds the build tools and intel-openmp (libiomp5). It also installs IAXL's kvshrink vLLM plugin, which loads in every vLLM process in this environment but only acts when KVShrinkConnector is configured."
+            command: |-
+              cd "$HOME/intel-accel-for-llm"
+              uv pip install -r requirements.txt
+              IAXL_VERSION=$(sed -n 's/^export IAXL_VERSION=${IAXL_VERSION:-\(.*\)}$/\1/p' setvars.sh) DEVICE=cpu IAXL_QATLIB=intree uv pip install --no-build-isolation -e .
+        env:
+          DEVICE: "cpu"
+          IAXL_DDR_POOL_SIZE_GB: "16"
+      # NVIDIA GPU inference; IAXL runs on the server's Xeon host, whose RAM is
+      # otherwise mostly idle, so the pool keeps IAXL's default size. The
+      # DEVICE=cuda build needs the CUDA toolkit, links GDRCopy's gdrapi even
+      # with DSA off, and needs NIXL (built on UCX) for its RDMA remote pool.
+      # DSA + GDRCopy transfers stay off by default: whether the host has DSA
+      # work queues and the GPU supports P2P DMA can't be told from the GPU
+      # model, and setvars.sh fails its DSA auto-detection without them.
+      nvidia:
+        description: "intel-accel-for-llm's KVShrinkConnector offloads KV cache to a compressed host-DRAM store on the GPU server's Intel Xeon host (4th Gen Xeon Scalable or later) — not Grace- or Vera-based or other non-Xeon hosts. Intel QAT compresses and decompresses the KV blocks by default, so setvars.sh needs at least TP_SIZE QAT devices (in-tree QAT driver with qatlib, and POLICY=0 in /etc/sysconfig/qat so the process sees every device it assigns) and stops the launch without them. To compress on IAA instead, export IAXL_QAT_ZIP_ENABLE=0 IAXL_IAA_ZIP_ENABLE=1 before the serve block; to spread fewer QAT devices over the ranks, export KVSHRINK_QAT_DEVICES yourself (comma-separated device indices per rank, | between ranks). Each rank's pool keeps IAXL's default budget: 80% of host RAM divided across ranks, up to 80% of a NUMA node per rank. To also move KV fragments between GPU memory and host DRAM with Intel DSA through GDRCopy (no GPU SMs or CPU cores used), install the GDRCopy driver (tools/install_gdr_driver.sh), configure DSA work queues and set IAXL_DSA_GD_ENABLE=1 — on GPUs with P2P DMA support only. Prefix caching is turned off so prefix hits come from KVShrink. The build needs the CUDA toolkit installed at /usr/local/cuda."
+        install:
+          - note: "IAXL build prerequisites (Ubuntu 22.04/24.04, as in IAXL's docker/Dockerfile.dev; GDRCopy publishes its library for those releases only): the native extension builds QPL and qatlib from source; UCX needs the RDMA libraries. Needs the CUDA toolkit at /usr/local/cuda."
+            command: "sudo apt-get install -y build-essential cmake pkg-config autoconf automake autoconf-archive libtool nasm yasm libboost-all-dev libudev-dev liblz4-dev libsqlite3-dev zlib1g-dev uuid-dev libjson-c-dev libssl-dev libnuma-dev libtcmalloc-minimal4 iproute2 rdma-core libibverbs-dev librdmacm-dev"
+          - note: "GDRCopy 2.6-1 user-space library (gdrapi.h + libgdrapi), which the DEVICE=cuda build links even with DSA off; the gdrdrv kernel driver is only needed to enable DSA"
+            command: |-
+              GDR_UBUNTU=$(. /etc/os-release && echo "${VERSION_ID/./_}")
+              curl -fLo /tmp/libgdrapi.deb "https://developer.download.nvidia.com/compute/redist/gdrcopy/CUDA%2013.3/ubuntu${GDR_UBUNTU}/x64/libgdrapi_2.6-1_amd64.Ubuntu${GDR_UBUNTU}.deb"
+              sudo apt-get install -y /tmp/libgdrapi.deb
+          - note: "UCX v1.21.0 in its own prefix, for NIXL (as IAXL's docker/Dockerfile.dev builds it)"
+            command: |-
+              git clone --depth 1 --branch v1.21.0 https://github.com/openucx/ucx.git "$HOME/ucx" && cd "$HOME/ucx"
+              ./autogen.sh
+              ./contrib/configure-release-mt --prefix=/usr/local/ucx --enable-shared --disable-static --disable-doxygen-doc --enable-optimizations --enable-cma --enable-devel-headers --with-cuda=/usr/local/cuda --with-verbs --with-dm
+              make -j"$(nproc)" && sudo make install-strip
+              echo /usr/local/ucx/lib | sudo tee /etc/ld.so.conf.d/ucx.conf >/dev/null && sudo ldconfig
+          - note: "NIXL v1.2.0 on that UCX, into /usr/local where IAXL's CMake looks for it (as IAXL's docker/Dockerfile.dev builds it); meson, ninja and pybind11 (for NIXL's Python bindings) come from pip"
+            command: |-
+              uv pip install meson ninja pybind11
+              git clone --depth 1 --branch v1.2.0 https://github.com/ai-dynamo/nixl.git "$HOME/nixl" && cd "$HOME/nixl"
+              meson setup build -Ducx_path=/usr/local/ucx -Dinstall_headers=true -Denable_plugins=UCX -Ddisable_gds_backend=true -Dbuild_docs=false --prefix=/usr/local
+              ninja -C build && sudo "$(command -v ninja)" -C build install && sudo ldconfig
+          - note: "IAXL source checkout, pinned to the commit this option was tested with (no PyPI wheel or published vLLM image includes IAXL yet); the serve command sources setvars.sh from here"
+            command: 'git clone https://github.com/intel/intel-accel-for-llm.git "$HOME/intel-accel-for-llm" && git -C "$HOME/intel-accel-for-llm" checkout -q 28f2d3e1a15721763912d0dd7ec5d4b1f76bc959'
+          - note: "IAXL CUDA build (DEVICE=cuda) against the installed torch, with qatlib for the in-tree QAT driver; requirements.txt adds the build tools and intel-openmp (libiomp5). It also installs IAXL's kvshrink vLLM plugin, which loads in every vLLM process in this environment but only acts when KVShrinkConnector is configured."
+            command: |-
+              cd "$HOME/intel-accel-for-llm"
+              uv pip install -r requirements.txt
+              IAXL_VERSION=$(sed -n 's/^export IAXL_VERSION=${IAXL_VERSION:-\(.*\)}$/\1/p' setvars.sh) DEVICE=cuda IAXL_QATLIB=intree uv pip install --no-build-isolation -e .
+        env:
+          DEVICE: "cuda"
+          IAXL_DSA_GD_ENABLE: "0"
+  # UMBP (MORI's unified memory buffer pool) in standalone mode: a node-local
+  # umbp_standalone_server owns one host-DRAM pool that every engine and rank on
+  # the host attaches to; the server moves KV between GPU memory and the pool
+  # itself, through HIP IPC handles the workers register, so it must see every
+  # GPU its clients use. AMD only: UMBPStoreConnector needs MORI built with UMBP
+  # (BUILD_UMBP=ON), which the vLLM ROCm images ship. single_node_* only: the
+  # companion server is node-local. Fail-closed like the Offloading tiers: a
+  # recipe offers it only after an end-to-end run, recorded as
+  # `kv_offload_support: { umbp: verified }`. The sockets live under /dev/shm,
+  # which a pip install and the builder's ROCm container (--ipc=host) share, so
+  # the server and the engine find each other whichever way each is started.
+  umbp:
+    display_name: "UMBP (MORI)"
+    label: "UMBP"
+    order: 6
+    requires_opt_in: true
+    brands:
+      - AMD
+    strategies:
+      - single_node_tp
+      - single_node_tep
+      - single_node_dep
+    description: "Offload KV cache to a node-local host-DRAM pool owned by MORI's UMBP standalone server, through UMBPStoreConnector. Prefixes that leave GPU memory are restored from the pool instead of recomputed; every engine and DP rank on the host shares the pool, and KV that is identical on every TP rank (e.g. MLA latents) is stored once. Adds a UMBP Server tab; start it before vllm serve and keep it running. With kv_load_failure_policy recompute, a block evicted between lookup and load is recomputed instead of failing the request."
+    docs_url: "https://github.com/vllm-project/vllm/blob/main/docs/features/umbp_store_connector_usage.md"
+    args:
+      - "--kv-transfer-config"
+      - '{"kv_connector":"UMBPStoreConnector","kv_role":"kv_both","kv_load_failure_policy":"recompute","kv_connector_extra_config":{"mode":"standalone","endpoint":"unix:///dev/shm/umbp/standalone.grpc.sock"}}'
+    # The operational notes ride inside the command as leading # lines, as
+    # LMCache's do, so they render on the tab and survive copy-paste.
+    companion:
+      label: "UMBP Server"
+      description: "Run on the same node, before vllm serve, from the same vLLM ROCm image or environment (MORI built with UMBP). It owns the host-DRAM KV pool; keep it running while the engine serves."
+      command: |
+        # The address must match "endpoint" in --kv-transfer-config; the fd socket
+        # goes next to it. In a container, give the server the engine's GPU access
+        # (--device=/dev/kfd --device=/dev/dri) and --ipc=host, and do not narrow
+        # HIP_VISIBLE_DEVICES: it must see every GPU its clients use.
+        # Size UMBP_DRAM_CAPACITY (bytes) to the host DRAM you can dedicate; the
+        # pool is faulted in before the socket opens, which takes minutes for
+        # hundreds of GB on 4 KiB pages.
+        MORI_DIR=$(python3 -c 'import mori, os; print(os.path.dirname(mori.__file__))')
+        LD_LIBRARY_PATH="$MORI_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+          UMBP_STANDALONE_ADDRESS=unix:///dev/shm/umbp/standalone.grpc.sock \
+          UMBP_DRAM_CAPACITY=$((512 * 1024**3)) \
+          UMBP_DRAM_USE_HUGEPAGES=0 \
+          "$MORI_DIR/umbp_standalone_server" unix:///dev/shm/umbp/standalone.grpc.sock

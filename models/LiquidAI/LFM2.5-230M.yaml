@@ -3,6 +3,7 @@ meta:
   slug: "lfm2.5-230m"
   provider: "LiquidAI"
   description: "Liquid AI's most compact LFM2.5 chat model (230M) on the LFM2 hybrid conv+attention backbone — distilled from LFM2.5-350M, tool calling and 32K context, built for edge / on-device serving."
+  date_added: 2026-06-25
   date_updated: 2026-06-25
   difficulty: beginner
   tasks:

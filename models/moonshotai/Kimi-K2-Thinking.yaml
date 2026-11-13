@@ -3,6 +3,7 @@ meta:
   slug: "kimi-k2-thinking"
   provider: "Moonshot AI"
   description: "Kimi-K2-Thinking is an advanced reasoning MoE model with native INT4 QAT weights, designed for long-horizon agent workflows interleaving chain-of-thought reasoning with tool calls."
+  date_added: 2025-11-06
   date_updated: 2026-04-17
   difficulty: advanced
   tasks:
@@ -13,6 +14,9 @@ meta:
     - "moonshotai/Kimi-K2.5"
   hardware:
     h200: verified
+    mi300x: verified
+    mi325x: verified
+    mi355x: verified
 
 model:
   model_id: "moonshotai/Kimi-K2-Thinking"
@@ -54,8 +58,15 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+
+  fp8:
+    model_id: "RedHatAI/Kimi-K2-Thinking-FP8-Block"
+    precision: fp8
+    vram_minimum_gb: 1200
+    description: "RedHatAI FP8 block quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
 
 compatible_strategies:
   - single_node_tp
@@ -67,7 +78,12 @@ compatible_strategies:
   - multi_node_tep
   - pd_cluster
 
-hardware_overrides: {}
+hardware_overrides:
+  amd:
+    extra_args:
+      - "--no-enable-prefix-caching"
+    extra_env:
+      SAFETENSORS_FAST_GPU: "1"
 
 strategy_overrides: {}
 
@@ -97,6 +113,17 @@ guide: |
   uv pip install -U vllm --torch-backend auto
   ```
 
+  ### AMD ROCm
+
+  The ROCm wheel requires Python 3.12, ROCm 7.0+, and glibc >= 2.35. Use the
+  ROCm Docker image when your host environment does not meet those requirements.
+
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+  ```
+
   ## Launching Kimi-K2-Thinking with vLLM
 
   ### Low-Latency Scenarios (TP8)
@@ -112,6 +139,18 @@ guide: |
 
   The `--reasoning-parser` flag specifies the parser used to extract reasoning content
   from the model output.
+
+  ### ROCm on 8x MI300X / MI325X / MI355X
+
+  ```bash
+  export SAFETENSORS_FAST_GPU=1
+  vllm serve moonshotai/Kimi-K2-Thinking \
+    --tensor-parallel-size 8 \
+    --enable-auto-tool-choice \
+    --tool-call-parser kimi_k2 \
+    --reasoning-parser kimi_k2 \
+    --trust-remote-code
+  ```
 
   ### High-Throughput Scenarios (TP8+DCP8)
 

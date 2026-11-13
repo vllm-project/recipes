@@ -3,6 +3,7 @@ meta:
   slug: "translategemma-27b-it"
   provider: "Google"
   description: "Lightweight open translation model from Google (based on Gemma 3) supporting 55 languages. Served via the vLLM-optimized Infomaniak-AI checkpoint."
+  date_added: 2026-03-06
   date_updated: 2026-04-17
   difficulty: beginner
   tasks:

@@ -44,6 +44,14 @@
   --code-block-fg: oklch(0.2 0.04 265);
   --command-bg: oklch(0.965 0.005 265);
   --command-fg: oklch(0.18 0.04 265);
+  /* Shell token tints (.sh-*): quiet hues near the foreground's lightness, so
+     only the model (blue) and container image (violet) accents stand out;
+     the two differ in hue because `docker run` prints them side by side. */
+  --sh-flag: oklch(0.45 0.07 262);
+  --sh-string: oklch(0.47 0.09 160);
+  --sh-var: oklch(0.5 0.1 65);
+  --sh-accent: oklch(0.52 0.17 250);
+  --sh-image: oklch(0.5 0.16 300);
   --background: oklch(1 0 0);
   --foreground: oklch(0.129 0.042 264.695);
   --card: oklch(1 0 0);
@@ -76,6 +84,11 @@
   --code-block-fg: oklch(0.93 0.008 245);
   --command-bg: oklch(0.175 0.018 258);
   --command-fg: oklch(0.95 0.008 245);
+  --sh-flag: oklch(0.76 0.05 255);
+  --sh-string: oklch(0.8 0.08 160);
+  --sh-var: oklch(0.83 0.09 75);
+  --sh-accent: oklch(0.76 0.14 245);
+  --sh-image: oklch(0.78 0.11 300);
   --background: oklch(0.129 0.042 264.695);
   --foreground: oklch(0.984 0.003 247.858);
   --card: oklch(0.208 0.042 265.755);
@@ -144,7 +157,46 @@ html.dark .shiki span {
   text-decoration: var(--shiki-dark-text-decoration);
 }
 
+/* Restrained shell highlighting (src/lib/shell-highlight.js). */
+.sh-flag { color: var(--sh-flag); }
+.sh-string { color: var(--sh-string); }
+.sh-var { color: var(--sh-var); }
+.sh-comment, .sh-punct { opacity: 0.5; }
+.sh-command { font-weight: 600; }
+.sh-model,
+.sh-image {
+  color: var(--sh-accent);
+  font-weight: 600;
+}
+.sh-image { color: var(--sh-image); }
+
 /* ── Guide / Markdown typography ── */
+#recipe-guide,
+.guide-content :is(h1, h2, h3, h4, h5, h6) {
+  scroll-margin-top: 6rem;
+}
+
+.guide-heading-link {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 0.5rem;
+  padding: 0.25rem;
+  color: var(--muted-foreground);
+  opacity: 0.5;
+  border-radius: 0.25rem;
+}
+
+.guide-heading-link:hover,
+.guide-heading-link:focus-visible,
+.guide-content :is(h1, h2, h3, h4, h5, h6):hover .guide-heading-link {
+  opacity: 1;
+}
+
+.guide-heading-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
 .guide-content {
   font-size: 0.9375rem;
   line-height: 1.75;
@@ -189,6 +241,9 @@ html.dark .shiki span {
 .guide-content a {
   color: var(--color-vllm-blue);
   text-decoration: none;
+  /* Long URLs / image tags have no break points; without this one token
+     widens the whole page on a phone. */
+  overflow-wrap: anywhere;
 }
 .guide-content a:hover {
   text-decoration: underline;
@@ -198,6 +253,26 @@ html.dark .shiki span {
   font-weight: 600;
 }
 
+/* Markdown bodies of `notes` inside the command block (CommandNote). */
+.command-note-md {
+  color: color-mix(in srgb, var(--command-fg) 70%, transparent);
+}
+.command-note-md > * + * { margin-top: 0.35rem; }
+.command-note-md code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  background: color-mix(in srgb, var(--command-fg) 10%, transparent);
+  color: var(--command-fg);
+  padding: 0.05em 0.3em;
+  border-radius: 3px;
+  overflow-wrap: anywhere;
+}
+.command-note-md a { color: var(--color-vllm-blue); }
+.command-note-md a:hover { text-decoration: underline; }
+.command-note-md ul { list-style: disc; padding-left: 1.1rem; }
+.command-note-md pre { overflow-x: auto; padding: 0.4rem 0.5rem; border-radius: 4px; background: color-mix(in srgb, var(--command-fg) 8%, transparent); }
+.command-note-md pre code { background: none; padding: 0; }
+
 .guide-content code {
   font-family: var(--font-mono);
   font-size: 0.825em;
@@ -205,6 +280,7 @@ html.dark .shiki span {
   color: var(--code-fg);
   padding: 0.15em 0.4em;
   border-radius: 4px;
+  overflow-wrap: anywhere;
 }
 
 .guide-content pre {
@@ -219,6 +295,7 @@ html.dark .shiki span {
 }
 
 .guide-content pre code {
+  overflow-wrap: normal;
   background: none;
   color: inherit;
   padding: 0;
@@ -233,11 +310,15 @@ html.dark .shiki span {
   margin-bottom: 0.75rem;
 }
 
+.guide-content .guide-table {
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+
 .guide-content table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.875rem;
-  margin-bottom: 1rem;
 }
 
 .guide-content th {
@@ -257,4 +338,10 @@ html.dark .shiki span {
   border: none;
   border-top: 1px solid var(--border);
   margin: 1.5rem 0;
+}
+
+/* Anchor scrolls clear the preview banner in the sticky header (0 outside
+   preview deploys); each target's own scroll-mt clears the header itself. */
+html {
+  scroll-padding-top: var(--preview-h, 0px);
 }

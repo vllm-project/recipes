@@ -3,6 +3,7 @@ meta:
   slug: "lfm2.5-vl-1.6b"
   provider: "LiquidAI"
   description: "Liquid AI's 1.6B vision-language model — LFM2 hybrid LM backbone plus a SigLIP2 vision tower for image+text chat on a single small GPU."
+  date_added: 2026-06-25
   date_updated: 2026-06-24
   difficulty: beginner
   tasks:

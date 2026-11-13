@@ -3,6 +3,7 @@ meta:
   slug: "deepseek-ocr-2"
   provider: "DeepSeek"
   description: "Next-generation DeepSeek OCR model with improved document-to-markdown grounding and optical context compression."
+  date_added: 2026-03-28
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
@@ -13,7 +14,7 @@ meta:
 
 model:
   model_id: "deepseek-ai/DeepSeek-OCR-2"
-  min_vllm_version: "0.12.0"
+  min_vllm_version: "0.16.0"
   architecture: dense
   parameter_count: "3B"
   active_parameters: "3B"

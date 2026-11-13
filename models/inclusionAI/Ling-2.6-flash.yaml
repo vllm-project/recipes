@@ -3,6 +3,7 @@ meta:
   slug: "ling-2.6-flash"
   provider: "inclusionAI"
   description: "Ling-2.6-flash (BailingMoeV2_5) instruct model with 104B total / 7.4B active params, hybrid linear + MLA attention, 128K context, optimized for agent workloads"
+  date_added: 2026-04-28
   date_updated: 2026-05-13
   difficulty: intermediate
   tasks:
@@ -77,7 +78,7 @@ guide: |
     --device=/dev/dri \
     --group-add video \
     -e VLLM_ROCM_USE_AITER=1 \
-    vllm/vllm-openai-rocm:v0.20.2 \
+    vllm/vllm-openai-rocm:v0.28.0 \
       inclusionAI/Ling-2.6-flash \
       --tensor-parallel-size 2 \
       --trust-remote-code

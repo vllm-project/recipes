@@ -3,7 +3,8 @@ meta:
   slug: "qwen3-next-80b-a3b-instruct"
   provider: "Qwen"
   description: "Advanced Qwen3-Next MoE model (80B total / 3B active) with hybrid attention, highly sparse experts, and multi-token prediction."
-  date_updated: 2026-04-17
+  date_added: 2025-09-11
+  date_updated: 2026-09-10
   difficulty: intermediate
   tasks:
     - text
@@ -17,7 +18,7 @@ meta:
 
 model:
   model_id: "Qwen/Qwen3-Next-80B-A3B-Instruct"
-  min_vllm_version: "0.10.0"
+  min_vllm_version: "0.17.0"
   architecture: moe
   parameter_count: "80B"
   active_parameters: "3B"
@@ -38,9 +39,19 @@ features:
       - "--speculative-config"
       - '{"method":"qwen3_next_mtp","num_speculative_tokens":2}'
       - "--no-enable-chunked-prefill"
+  long_context:
+    description: "YaRN RoPE scaling to the model card's validated 1M-token context (factor 4.0 over the native 262,144). Static YaRN holds the scaling factor constant regardless of input length, so leave this off unless you actually serve long prompts."
+    args:
+      - "--hf-overrides"
+      - '{"rope_parameters":{"rope_type":"yarn","rope_theta":10000000,"partial_rotary_factor":0.25,"factor":4.0,"original_max_position_embeddings":262144}}'
+      - "--max-model-len"
+      - "1010000"
+    env:
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
 
 opt_in_features:
   - spec_decoding
+  - long_context
 
 variants:
   default:
@@ -60,8 +71,43 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+
+  redhat_fp8:
+    model_id: "RedHatAI/Qwen3-Next-80B-A3B-Instruct-FP8-dynamic"
+    precision: fp8
+    label: "FP8 Dynamic (RedHat)"
+    vram_minimum_gb: 96
+    description: "RedHatAI FP8 (E4M3) with dynamic per-token activation quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_fp8_plain:
+    model_id: "RedHatAI/Qwen3-Next-80B-A3B-Instruct-FP8"
+    precision: fp8
+    label: "FP8 (RedHat)"
+    vram_minimum_gb: 96
+    description: "RedHatAI FP8 quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_fp8_block:
+    model_id: "RedHatAI/Qwen3-Next-80B-A3B-Instruct-FP8-block"
+    precision: fp8
+    label: "FP8 Block (RedHat)"
+    vram_minimum_gb: 96
+    description: "RedHatAI FP8 block quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
+  redhat_nvfp4:
+    model_id: "RedHatAI/Qwen3-Next-80B-A3B-Instruct-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 48
+    description: "RedHatAI NVFP4 quantization"
 
 compatible_strategies:
   - single_node_tp
@@ -74,13 +120,13 @@ compatible_strategies:
 
 hardware_overrides:
   blackwell:
-    extra_args: []
+    extra_args:
+      - "--moe-backend"
+      - "flashinfer_trtllm"
+      - "--attention-backend"
+      - "FLASH_ATTN"
     extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP8: "1"
-      VLLM_FLASHINFER_MOE_BACKEND: "latency"
       VLLM_USE_DEEP_GEMM: "0"
-      VLLM_USE_TRTLLM_ATTENTION: "0"
-      VLLM_ATTENTION_BACKEND: "FLASH_ATTN"
 
 strategy_overrides: {}
 
@@ -122,15 +168,13 @@ guide: |
     --enable-prefix-caching
   ```
 
-  On SM100, accelerate with the FP8 FlashInfer TRTLLM MoE kernel:
+  On SM100, accelerate with the FlashInfer TRTLLM MoE kernel:
   ```bash
-  VLLM_USE_FLASHINFER_MOE_FP8=1 \
-  VLLM_FLASHINFER_MOE_BACKEND=latency \
   VLLM_USE_DEEP_GEMM=0 \
-  VLLM_USE_TRTLLM_ATTENTION=0 \
-  VLLM_ATTENTION_BACKEND=FLASH_ATTN \
   vllm serve Qwen/Qwen3-Next-80B-A3B-Instruct-FP8 \
-    --tensor-parallel-size 4
+    --tensor-parallel-size 4 \
+    --moe-backend flashinfer_trtllm \
+    --attention-backend FLASH_ATTN
   ```
 
   ### MTP (Multi-Token Prediction)

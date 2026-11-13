@@ -3,6 +3,7 @@ meta:
   slug: "trinity-large-thinking"
   provider: "Arcee AI"
   description: "Arcee AI's reasoning-focused sparse MoE (AfmoeForCausalLM) with structured <think> traces and agentic tool use"
+  date_added: 2026-04-10
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:
@@ -49,8 +50,13 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
-    extra_env:
-      VLLM_USE_FLASHINFER_MOE_FP4: "1"
+
+  redhat_nvfp4:
+    model_id: "RedHatAI/Trinity-Large-Thinking-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 254
+    description: "RedHatAI NVFP4 quantization"
 
 compatible_strategies:
   - single_node_tp
@@ -135,7 +141,7 @@ guide: |
   )
 
   msg = response.choices[0].message
-  reasoning = getattr(msg, "reasoning", None) or getattr(msg, "reasoning_content", None)
+  reasoning = msg.reasoning
   print("reasoning:", reasoning)
   print("content:", msg.content)
   print("tool_calls:", msg.tool_calls)
@@ -159,7 +165,7 @@ guide: |
   ```
 
   Rules:
-  - Pass reasoning back as `reasoning` (even if your client exposes it as `reasoning_content`).
+  - Pass reasoning back as `reasoning`.
   - Keep `content` as an empty string (not `null`) on tool-only turns.
   - Append the assistant message before tool-result messages.
   - Use `/v1/chat/completions` for structured reasoning output.

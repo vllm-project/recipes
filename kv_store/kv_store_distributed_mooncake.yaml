@@ -40,14 +40,12 @@ vllm:
 # swapping --kv-transfer-config for a MultiConnector (emitted after the role
 # args, so last-wins dedupe replaces the plain NixlConnector config).
 pd:
+  # Joins each role's transfer connector (strategies/pd_cluster.yaml
+  # `connectors`) in a MultiConnector, so the store composes with any of them.
   prefill:
-    args:
-      - "--kv-transfer-config"
-      - '{"kv_connector":"MultiConnector","kv_role":"kv_both","kv_connector_extra_config":{"connectors":[{"kv_connector":"NixlConnector","kv_role":"kv_producer","kv_load_failure_policy":"fail"},{"kv_connector":"MooncakeStoreConnector","kv_role":"kv_both","kv_connector_extra_config":{"load_async":true,"lookup_async":true}}]}}'
+    tier: { kv_connector: MooncakeStoreConnector, kv_role: kv_both, kv_connector_extra_config: { load_async: true, lookup_async: true } }
   decode:
-    args:
-      - "--kv-transfer-config"
-      - '{"kv_connector":"MultiConnector","kv_role":"kv_both","kv_connector_extra_config":{"connectors":[{"kv_connector":"NixlConnector","kv_role":"kv_consumer","kv_load_failure_policy":"fail"},{"kv_connector":"MooncakeStoreConnector","kv_role":"kv_both","kv_connector_extra_config":{"load_async":true,"lookup_async":true}}]}}'
+    tier: { kv_connector: MooncakeStoreConnector, kv_role: kv_both, kv_connector_extra_config: { load_async: true, lookup_async: true } }
 
 mooncake_master:
   command: |-

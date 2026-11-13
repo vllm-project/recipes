@@ -3,6 +3,7 @@ meta:
   slug: "ling-2.6-1t"
   provider: "inclusionAI"
   description: "Ling-2.6-1T (BailingMoeV2_5) FP8 instruct model with 1T total / 50B active params, hybrid linear + MLA attention, 262K context"
+  date_added: 2026-04-29
   date_updated: 2026-05-13
   difficulty: advanced
   tasks:
@@ -78,7 +79,7 @@ guide: |
     --device=/dev/dri \
     --group-add video \
     -e VLLM_ROCM_USE_AITER=1 \
-    vllm/vllm-openai-rocm:v0.20.2 \
+    vllm/vllm-openai-rocm:v0.28.0 \
       inclusionAI/Ling-2.6-1T \
       --tensor-parallel-size 8 \
       --trust-remote-code

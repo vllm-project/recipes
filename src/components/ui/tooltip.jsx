@@ -41,12 +41,14 @@ const TooltipContent = React.forwardRef(function TooltipContent(
 function InfoTip({ content, children, side, align, sideOffset, asChild = true }) {
   if (!content) return children;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild={asChild}>{children}</TooltipTrigger>
-      <TooltipContent side={side} align={align} sideOffset={sideOffset}>
-        {content}
-      </TooltipContent>
-    </Tooltip>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild={asChild}>{children}</TooltipTrigger>
+        <TooltipContent side={side} align={align} sideOffset={sideOffset}>
+          {content}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 

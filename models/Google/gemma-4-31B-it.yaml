@@ -3,7 +3,8 @@ meta:
   slug: "gemma-4-31b-it"
   provider: "Google"
   description: "Google's unified multimodal Gemma 4 dense model (31B) with native text, image, and audio, plus thinking mode and tool-use protocol."
-  date_updated: 2026-05-11
+  date_added: 2026-04-02
+  date_updated: 2026-09-09
   difficulty: intermediate
   tasks:
     - multimodal
@@ -17,6 +18,8 @@ meta:
     mi355x: verified
     trillium: verified
     ironwood: verified
+    arc_pro_b60: verified
+    arc_pro_b70: verified
 
 model:
   model_id: "google/gemma-4-31B-it"
@@ -53,10 +56,38 @@ features:
       - "--language-model-only"
   spec_decoding:
     description: "MTP speculative decoding for accelerated inference"
-    args:
-      - "--speculative-config"
-      - '{"model":"google/gemma-4-31B-it-assistant","num_speculative_tokens":4}'
-
+    default_mode: mtp
+    modes:
+      mtp:
+        label: "MTP"
+        description: "Built-in Multi-Token Prediction, 4 draft tokens."
+        args:
+          - "--speculative-config"
+          - '{"model":"google/gemma-4-31B-it-assistant","num_speculative_tokens":4}'
+      dflash:
+        label: "DFlash"
+        description: "DFlash speculative decoding with an externally trained draft model; the served checkpoint is unchanged."
+        variants:
+          - default
+        args:
+          - "--speculative-config"
+          - '{"model": "RedHatAI/gemma-4-31B-it-speculator.dflash", "num_speculative_tokens": 7, "method": "dflash"}'
+      dspark:
+        label: "DSpark"
+        description: "DSpark drafting with an externally trained draft model; the served checkpoint is unchanged."
+        variants:
+          - default
+        args:
+          - "--speculative-config"
+          - '{"model": "RedHatAI/gemma-4-31B-it-speculator.dspark", "num_speculative_tokens": 7, "method": "dspark"}'
+      eagle3:
+        label: "Eagle3"
+        description: "Eagle3 speculative decoding with externally trained draft model; the served checkpoint is unchanged."
+        variants:
+          - default
+        args:
+          - "--speculative-config"
+          - '{"model": "RedHatAI/gemma-4-31B-it-speculator.eagle3", "num_speculative_tokens": 3, "method": "eagle3"}'
 opt_in_features:
   - text_only
   - spec_decoding
@@ -82,17 +113,51 @@ variants:
     extra_args:
       - "--kv-cache-dtype"
       - "fp8"
+  redhat_nvfp4:
+    model_id: "RedHatAI/gemma-4-31B-it-NVFP4"
+    precision: nvfp4
+    label: "NVFP4 (RedHat)"
+    vram_minimum_gb: 19
+    description: "RedHatAI compressed-tensors NVFP4 quantization for Blackwell GPUs"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
   w4a16:
     model_id: "google/gemma-4-31B-it-qat-w4a16-ct"
     precision: int4
     vram_minimum_gb: 20
     description: "W4A16 QAT (4-bit weights, 16-bit activations, group_size=32) via compressed-tensors — runs on any GPU"
 
+  redhat_fp8:
+    model_id: "RedHatAI/gemma-4-31B-it-FP8-block"
+    precision: fp8
+    label: "FP8 Block (RedHat)"
+    vram_minimum_gb: 38
+    description: "RedHatAI FP8 block quantization"
+    extra_args:
+      - "--kv-cache-dtype"
+      - "fp8"
+
 compatible_strategies:
   - single_node_tp
   - multi_node_tp
 
-hardware_overrides: {}
+hardware_overrides:
+  xpu:
+    extra_args:
+      - "--enforce-eager"
+      - "--attention-backend"
+      - "flash_attn"
+      - "--trust-remote-code"
+      - "--gpu-memory-utilization"
+      - "0.9"
+      - "--no-enable-prefix-caching"
+      - "--max-num-batched-tokens"
+      - "8192"
+      - "--max-model-len"
+      - "5120"
+      - "--tensor-parallel-size"
+      - "4"
 
 strategy_overrides:
   single_node_tp:
@@ -149,6 +214,7 @@ guide: |
   docker pull vllm/vllm-openai:gemma4-0505-cu129  # NVIDIA Hopper (H100/H200, CUDA 12.9)
   docker pull vllm/vllm-openai:gemma4-0505-cu130  # NVIDIA Blackwell (B200/B300, CUDA 13.0)
   docker pull vllm/vllm-openai-rocm:latest   # AMD
+  docker pull vllm/vllm-openai-xpu:latest # Intel XPU (B60 / B70)
   ```
   TPU images are published separately by [vllm-project/tpu-inference](https://github.com/vllm-project/tpu-inference); see the Trillium / Ironwood tpu-recipes below for the pinned tag.
 
@@ -217,6 +283,35 @@ guide: |
     vllm/vllm-openai-rocm:latest \
       --model google/gemma-4-31B-it \
       --host 0.0.0.0 --port 8000
+  ```
+
+  ### Docker (Intel XPU B60 / B70, TP=4, Full-Featured)
+
+  Validated on 4× Intel Arc Pro B60 / B70 with the official vLLM XPU image.
+
+  ```bash
+  docker run --device /dev/dri \
+    -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
+    --privileged --ipc=host -p 8000:8000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    vllm/vllm-openai-xpu:latest \
+    google/gemma-4-31B-it \
+    --enforce-eager \
+    --attention-backend flash_attn \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --trust-remote-code \
+    --enable-auto-tool-choice \
+    --reasoning-parser gemma4 \
+    --tool-call-parser gemma4 \
+    --chat-template examples/tool_chat_template_gemma4.jinja \
+    --limit-mm-per-prompt '{"image": 4, "audio": 1}' \
+    --async-scheduling \
+    --gpu-memory-utilization 0.9 \
+    --no-enable-prefix-caching \
+    --max-num-batched-tokens 8192 \
+    --max-model-len 5120 \
+    --tensor-parallel-size 4
   ```
 
   ### Docker (Cloud TPU — Trillium / Ironwood)

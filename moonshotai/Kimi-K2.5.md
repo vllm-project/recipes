@@ -154,7 +154,7 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 -tp 4 \
 
 **Disaggregated** prefill/decode runs **separate** vLLM engines for prefill and decode, with KV cache moved between them using a **KV connector** (for example **NixlConnector**). Each engine is started with **`vllm serve`** and a **`--kv-transfer-config`** JSON payload. See the vLLM **[NixlConnector usage guide](https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html)** for installation (NIXL / UCX), side-channel ports, multi-host layout, and proxy routing between prefiller and decoder HTTP ports.
 
-The snippets below are **illustrative**: add Kimi-specific flags from the NVFP4 sections above (tooling parsers, compilation, attention/MoE tuning) and align batch limits with your workload. A common pattern on GB200 is **`--enforce-eager`** on **prefill** and **`--compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}'`** on **decode** (decode-only CUDA graphs).
+The snippets below are **illustrative**: add Kimi-specific flags from the NVFP4 sections above (tooling parsers, compilation, attention/MoE tuning) and align batch limits with your workload.
 
 #### Environment on a prefill worker
 
@@ -199,7 +199,6 @@ vllm serve nvidia/Kimi-K2.5-NVFP4 \
   --data-parallel-address <prefill_dp_leader_ip> \
   --data-parallel-rpc-port <prefill_dp_rpc_port> \
   --enable-expert-parallel \
-  --enforce-eager \
   --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_producer","kv_load_failure_policy":"fail"}' \
   --trust-remote-code
 ```

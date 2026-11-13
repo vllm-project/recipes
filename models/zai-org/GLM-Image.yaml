@@ -3,6 +3,7 @@ meta:
   slug: "glm-image"
   provider: "GLM (Z-AI)"
   description: "Hybrid autoregressive + diffusion image generation model — text-to-image and image-to-image with strong text rendering and knowledge-intensive generation"
+  date_added: 2026-01-26
   date_updated: 2026-04-17
   difficulty: intermediate
   tasks:

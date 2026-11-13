@@ -4,10 +4,16 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { Type, Eye, Sparkles, Hash, Layers, Cpu } from "lucide-react";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
+import { compareRecipesByDateAdded } from "@/lib/recipe-utils";
 
 const TASK_ICON = { text: Type, multimodal: Eye, omni: Sparkles, embedding: Hash };
 
 const LATEST_COUNT = 8;
+// At most 2 per provider: one org landing several recipes on the same day
+// shouldn't take the whole row, but a cap of 1 hid genuinely new recipes behind
+// a sibling that landed a day later, and back-filled the row with much older
+// ones from other orgs.
+const LATEST_PER_ORG = 2;
 
 export function RecipeCardGrid({ recipes }) {
   const byOrg = useMemo(() => {
@@ -23,25 +29,16 @@ export function RecipeCardGrid({ recipes }) {
   }, [recipes]);
 
   const latest = useMemo(() => {
-    // Sort by HF release date — newest models first. Tiebreak on recipe
-    // date_updated, then id. Then dedupe by provider so "Latest recipes"
-    // surfaces breadth across orgs instead of e.g. eight Qwen rows when
-    // one org ships a big collection.
-    const sorted = [...recipes].sort((a, b) => {
-      const ra = a.hf_released ? new Date(a.hf_released).getTime() : 0;
-      const rb = b.hf_released ? new Date(b.hf_released).getTime() : 0;
-      if (ra !== rb) return rb - ra;
-      const da = a.meta?.date_updated ? new Date(a.meta.date_updated).getTime() : 0;
-      const db = b.meta?.date_updated ? new Date(b.meta.date_updated).getTime() : 0;
-      if (da !== db) return db - da;
-      return (a.hf_id || "").localeCompare(b.hf_id || "");
-    });
-    const seen = new Set();
+    // "Latest recipes" means newly added to this catalog, not the HF repo's
+    // createdAt (a model repo may exist privately long before launch).
+    const sorted = [...recipes].sort(compareRecipesByDateAdded);
+    const perOrg = new Map();
     const out = [];
     for (const r of sorted) {
       const org = r.hf_org || "unknown";
-      if (seen.has(org)) continue;
-      seen.add(org);
+      const taken = perOrg.get(org) || 0;
+      if (taken >= LATEST_PER_ORG) continue;
+      perOrg.set(org, taken + 1);
       out.push(r);
       if (out.length >= LATEST_COUNT) break;
     }
