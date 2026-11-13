@@ -85,6 +85,8 @@ export const OVERLAY_RULES = [
   ["strategy_min_gpus", "@hw"],
   ["kv_cache_strategy_hardware", "*", "@hw"],
   ["strategy_overrides", "*", "hardware_overrides", "@hw"],
+  ["strategy_overrides", "pd_cluster", "*", "tp", "@hw"],
+  ["strategy_overrides", "pd_cluster", "*", "pp", "@hw"],
   ["features", "*", "hardware_overrides", "@hw"],
   ["features", "*", "modes", "*", "hardware_overrides", "@hw"],
   ["features", "*", "modes", "*", "hardware", "@hw"],

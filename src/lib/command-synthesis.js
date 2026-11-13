@@ -371,7 +371,7 @@ export function pdPoolModes(recipe) {
  * A PD pool's declared `strategy_overrides.pd_cluster.<role>.<key>`: a bare
  * value or a hardware-keyed map (e.g. `{ default: tp, gb300: dep }`).
  */
-function pdRoleValue(recipe, role, key, hwProfile, hwProfileId) {
+export function pdRoleValue(recipe, role, key, hwProfile, hwProfileId) {
   const raw = recipe?.strategy_overrides?.pd_cluster?.[role]?.[key];
   return raw && typeof raw === "object" ? hardwareKeyedValue(raw, hwProfile, hwProfileId) : raw;
 }
@@ -403,6 +403,18 @@ export function pdConnectorKey(strategy, requested) {
   return keys.find((k) => connectors[k]?.default) ?? keys[0] ?? null;
 }
 
+/** Ascend PD is opt-in through the active, hardware/variant-scoped preset. */
+export function ascendPdUnavailableReason(strategy, hwProfile, select, field) {
+  if (strategy?.deploy_type !== "pd_cluster" || !isDynamoSupportedOnHardware(strategy.ascend, hwProfile)) {
+    return "Ascend PD requires Ascend hardware and PD disaggregation.";
+  }
+  const key = field === "pd_router" ? "ascend" : "mooncake_ascend";
+  if (select?.[field] !== key) {
+    return `Select a model preset that explicitly configures ${field === "pd_router" ? "Ascend Router" : "Mooncake (Ascend)"} for this hardware and variant.`;
+  }
+  return null;
+}
+
 /**
  * Why a PD KV transfer connector can't run on this hardware behind this PD
  * router, or null. `brands` gates hardware (MoRI-IO is ROCm only); `routers`
@@ -416,7 +428,7 @@ export function pdConnectorUnavailableReason(connector, hwProfile, router = "vll
   }
   const routers = connector.routers || ["vllm"];
   if (!routers.includes(router)) {
-    const label = { vllm: "vLLM Router", dynamo: "Dynamo", smg: "SMG" };
+    const label = { vllm: "vLLM Router", dynamo: "Dynamo", smg: "SMG", ascend: "Ascend Router" };
     return `${name} works behind ${routers.map((r) => label[r] || r).join(" or ")} only.`;
   }
   return null;
@@ -1616,7 +1628,7 @@ export function resolveCommand(...params) {
   const raw = recipe?.presets?.[presetKey];
   const eff = raw ? effectivePreset(raw, params[18]) : null;
   params[0] = withPreset(recipe, presetKey, hwProfileId, strategyName, { variantKey, point: params[18] });
-  const result = resolveCommandImpl(dcpOut, ...params.slice(0, 17), params[19] ?? null);
+  const result = resolveCommandImpl(dcpOut, ...params.slice(0, 17), params[19] ?? null, eff?.select);
   if (result && typeof result === "object" && !Array.isArray(result)) {
     result.dcp = dcpOut.get?.() ?? null;
     const options = matchingPresets(recipe, hwProfileId, strategyName, variantKey);
@@ -1636,7 +1648,7 @@ export function resolveCommand(...params) {
 
 // `dcpSize` is the user's Decode Context Parallelism pick: null follows the
 // recipe's own default, 1 forces DCP off, N > 1 selects that size.
-function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null, pdTransport = "http", dcpSize = null, pdConnectorPick = null) {
+function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null, pdTransport = "http", dcpSize = null, pdConnectorPick = null, presetSelect = null) {
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   enabledFeatures = (enabledFeatures || []).filter((key) => isFeatureAllowedForVariant(variant, key));
   const strategy = strategies[strategyName] || {};
@@ -1695,14 +1707,49 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     ? strategy.smg : null;
 
   let smgGrpc = !!smg && pdTransport === "grpc";
+  const ascendReason = ascendPdUnavailableReason(strategy, hwProfile, presetSelect, "pd_router");
+  const ascend = pdRouter === "ascend" && !ascendReason ? strategy.ascend : null;
+  const routerKey = dynamo ? "dynamo" : smg ? "smg" : ascend ? "ascend" : "vllm";
+  const externalDp = strategy[routerKey]?.data_parallel_lb === "external";
+  if (pdRouter === "ascend" && !ascend) routerUnavailableReason = ascendReason;
+
+  // One pool topology drives the node command, router endpoints and connector
+  // metadata. Presets mount their role TP/PP here, before any of those consume it.
+  const roleMeta = (role) => {
+    const raw = pdNodes?.[role];
+    const selected = typeof raw === "number" ? { nodes: raw } : raw || {};
+    const nodes = selected.nodes ?? (nodeCount > 1 ? 1 : 0);
+    const allowed = pdPoolModes(recipe);
+    const requested = selected.parallelism || pdRoleParallelism(recipe, strategy, role, hwProfile, hwProfileId);
+    const parallelism = allowed.includes(requested) ? requested : allowed[0];
+    const value = (key) => pdRoleValue(recipe, role, key, hwProfile, hwProfileId)
+      ?? declaredTpForHardware(strategy[role]?.[key], hwProfile, hwProfileId);
+    const poolGpus = nodes === 0 ? Math.floor(gpuCount / 2) : nodes * gpuCount;
+    const pp = value("pp") ?? 1;
+    // TP/TEP spans the whole pool; role TP only sizes individual DEP ranks.
+    const tp = parallelism === "dep" ? value("tp") ?? 1 : poolGpus / pp;
+    const fail = (message) => { throw new RangeError(`PD ${role}: ${message}`); };
+    if (!Number.isInteger(nodes) || nodes < 0 || !Number.isInteger(tp) || tp < 1 || !Number.isInteger(pp) || pp < 1) {
+      fail("nodes, TP and PP must form a positive integer layout (nodes=0 denotes a shared node).");
+    }
+    if (parallelism === "dep") {
+      if (pp !== 1 || tp > gpuCount || gpuCount % tp) fail("DEP requires PP1 and TP that divides the devices per node.");
+      if (externalDp && (nodes < 1 || recipe.model?.architecture === "dense")) fail("external DEP requires a MoE model and dedicated role nodes.");
+    }
+    const dpLocal = parallelism === "dep" ? gpuCount / tp : 0;
+    const dpSize = parallelism === "dep" ? Math.max(1, nodes) * dpLocal : 1;
+    const currentNode = Math.max(0, Math.min(Math.max(1, nodes) - 1, selected.rank ?? 0));
+    return { nodes, parallelism, tp, pp, dpLocal, dpSize, poolGpus, currentNode, startRank: currentNode * dpLocal };
+  };
 
   // PD KV transfer connector: the pick when this hardware and router can run
   // it, else the default, with the reason surfaced as for the router.
   let pdConnectorSel = strategy.deploy_type === "pd_cluster" ? pdConnectorKey(strategy, pdConnectorPick) : null;
   let pdConnectorUnavailable = null;
   if (pdConnectorSel && pdConnectorPick && pdConnectorSel === pdConnectorPick) {
-    pdConnectorUnavailable = pdConnectorUnavailableReason(strategy.connectors[pdConnectorSel], hwProfile,
-      dynamo ? "dynamo" : smg ? "smg" : "vllm");
+    pdConnectorUnavailable = (pdConnectorSel === "mooncake_ascend"
+      && ascendPdUnavailableReason(strategy, hwProfile, presetSelect, "pd_connector"))
+      || pdConnectorUnavailableReason(strategy.connectors[pdConnectorSel], hwProfile, routerKey);
     if (pdConnectorUnavailable) pdConnectorSel = pdConnectorKey(strategy);
   }
   const pdConnector = pdConnectorSel ? strategy.connectors[pdConnectorSel] : null;
@@ -1905,93 +1952,40 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       // Legacy fallback (pdNodes null):
       //   - nodeCount===1 → both roles on one node, TP=gpuCount/2 each (50/50)
       //   - nodeCount===2 → one full node per role, TP=gpuCount each
-      const roleKey = roleOverride;                           // "prefill" | "decode"
+      const roleKey = roleOverride;
+      const meta = roleMeta(roleKey);
       const roleCfg = strategy[roleKey] || {};
       const soRoleCfg = recipe.strategy_overrides?.[strategyName]?.[roleKey] || {};
-      // pdNodes accepts two shapes per role — a bare integer (just nodes) or
-      // { nodes, rank } when the UI wants to surface a specific DP rank.
-      const pdRoleRaw = pdNodes ? pdNodes[roleKey] : undefined;
-      const pdRole =
-        typeof pdRoleRaw === "number" ? { nodes: pdRoleRaw }
-        : (pdRoleRaw && typeof pdRoleRaw === "object") ? pdRoleRaw
-        : {};
-      const legacyNodes = isPdMulti ? 1 : 0;                  // 0 = co-located half-node
-      const rolePoolNodes =
-        typeof pdRole.nodes === "number" ? pdRole.nodes : legacyNodes;
-      const poolGpus = rolePoolNodes === 0
-        ? Math.floor(gpuCount / 2)
-        : rolePoolNodes * gpuCount;
-      let parallelism = pdRole.parallelism || pdRoleParallelism(recipe, strategy, roleKey, hwProfile, hwProfileId);
-      // Honor a per-recipe PD-pool restriction (strategy_overrides.pd_cluster.
-      // pool_modes). If the resolved mode isn't offered — e.g. the UI/JSON-API
-      // fell back to "tp" but the recipe locks pools to DEP — snap to the first
-      // allowed mode so callers that don't pre-clamp stay consistent.
-      const allowedPoolModes = pdPoolModes(recipe);
-      if (!allowedPoolModes.includes(parallelism)) parallelism = allowedPoolModes[0];
-
-      if (parallelism === "dep") {
-        // Data-parallel + expert-parallel pool (Kimi-K2.5 GB200 pattern).
-        // One `vllm serve` per NODE. vLLM spawns `--data-parallel-size-local`
-        // ranks internally per node; the leader node starts at rank 0 and
-        // each follower offsets by `--data-parallel-start-rank = nodeIndex × dp_local`.
-        //
-        // Example (nodes=4, gpus_per_node=4, tp=1):
-        //   dp_local = 4, dp_total = 16
-        //   Node 0 → start_rank 0; Node 1 → 4; Node 2 → 8; Node 3 → 12
-        const nodesInPool = Math.max(1, rolePoolNodes);
-        // `tp` is only rendered when the recipe sets it explicitly (vLLM's
-        // own default is 1, so emitting "--tensor-parallel-size 1" would be
-        // pure noise). Internal math still uses 1 as the effective value.
-        const tpExplicit = pdRoleTp(recipe, strategy, roleKey, hwProfile, hwProfileId);
-        const roleTp = tpExplicit ?? 1;
-        const dpLocal = Math.max(1, Math.floor(gpuCount / roleTp));
-        const dpSize = nodesInPool * dpLocal;
-        const nodeIdx = Math.max(0, Math.min(nodesInPool - 1, pdRole.rank ?? 0));
-        if (tpExplicit !== undefined) {
-          args.push("--tensor-parallel-size", String(roleTp));
+      if (meta.parallelism === "dep") {
+        if (pdRoleValue(recipe, roleKey, "tp", hwProfile, hwProfileId) !== undefined || roleCfg.tp !== undefined) {
+          args.push("--tensor-parallel-size", String(meta.tp));
         }
-        args.push("--data-parallel-size", String(dpSize));
-        args.push("--data-parallel-size-local", String(dpLocal));
-        // Always emit start-rank (even 0 for node 0) so every node's command
-        // has the same shape; only the value differs per node.
-        args.push("--data-parallel-start-rank", String(nodeIdx * dpLocal));
-        // DP leader is always node 0 of the pool — rendered as NODE_1 (1-indexed,
-        // same naming as the router's --prefill/--decode endpoints) so the user
-        // only fills one IP per node, not separate LEADER/HOST/HEAD aliases.
-        args.push("--data-parallel-address", `$${roleKey.toUpperCase()}_NODE_1`);
-        args.push("--data-parallel-rpc-port", `$${roleKey.toUpperCase()}_DP_RPC_PORT`);
-        // Multi-node DEP needs hybrid load balancing — without this flag the
-        // router distributes requests round-robin across DP ranks, which
-        // defeats local batching inside each node.
-        if (nodesInPool > 1) {
+        args.push("--data-parallel-size", String(meta.dpSize));
+        args.push("--data-parallel-size-local", String(meta.dpLocal));
+        // Native external-LB supervises one HTTP server per local rank. With
+        // local DP1, the rank flag selects that server; start-rank implies hybrid.
+        // A global DP1 pool is an ordinary TP/EP service, without an LB rank.
+        if (!externalDp || meta.dpSize > 1) {
+          args.push(externalDp && meta.dpLocal === 1 ? "--data-parallel-rank" : "--data-parallel-start-rank", String(meta.startRank));
+        }
+        args.push("--data-parallel-address", "$" + roleKey.toUpperCase() + "_NODE_1");
+        args.push("--data-parallel-rpc-port", "$" + roleKey.toUpperCase() + "_DP_RPC_PORT");
+        if (externalDp && meta.dpSize > 1) {
+          args.push(meta.dpLocal > 1 ? "--data-parallel-multi-port-external-lb" : "--data-parallel-external-lb");
+        } else if (!externalDp && meta.nodes > 1) {
           args.push("--data-parallel-hybrid-lb");
         }
         args.push("--enable-expert-parallel");
       } else {
-        // TP / TEP pool. A single engine spanning the pool's nodes via vLLM's
-        // mp multi-node backend: every node runs the same command, varying only
-        // --node-rank; rank > 0 adds --headless (no HTTP server). The UI's node
-        // selector picks which rank to render via pdRole.rank, mirroring the
-        // DEP pool's per-node command rendering. TEP = the same TP layout plus
-        // expert parallel (mirrors single_node_tep / multi_node_tep strategies).
-        const roleParallelFlag =
-          soRoleCfg.parallel_flag ||
-          roleCfg.parallel_flag ||
-          strategy.parallel_flag ||
-          "--tensor-parallel-size";
-        args.push(roleParallelFlag, String(Math.max(1, poolGpus)));
-        if (parallelism === "tep") {
-          args.push("--enable-expert-parallel");
-          // Cross-node TEP perf tweak from multi_node_tep; single-node TEP omits it.
-        }
-        if (rolePoolNodes > 1) {
-          const nodeIdx = Math.max(0, Math.min(rolePoolNodes - 1, pdRole.rank ?? 0));
-          args.push("--nnodes", String(rolePoolNodes));
-          args.push("--node-rank", String(nodeIdx));
-          // TP master = node 0 of pool = NODE_1 (same naming as router endpoints).
-          args.push("--master-addr", `$${roleKey.toUpperCase()}_NODE_1`);
-          // Followers are GPU workers only — no API server / NIXL side channel.
-          if (nodeIdx > 0) args.push("--headless");
+        const roleParallelFlag = soRoleCfg.parallel_flag || roleCfg.parallel_flag || strategy.parallel_flag || "--tensor-parallel-size";
+        args.push(roleParallelFlag, String(meta.tp));
+        if (meta.pp > 1) args.push("--pipeline-parallel-size", String(meta.pp));
+        if (meta.parallelism === "tep") args.push("--enable-expert-parallel");
+        if (meta.nodes > 1) {
+          args.push("--nnodes", String(meta.nodes));
+          args.push("--node-rank", String(meta.currentNode));
+          args.push("--master-addr", "$" + roleKey.toUpperCase() + "_NODE_1");
+          if (meta.currentNode > 0) args.push("--headless");
         }
       }
     } else if (strategy.parallelism === "dpa_tp") {
@@ -2146,11 +2140,74 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     const ops = recipe._presetOps;
     if (ops) {
       const editOnly = toggleOwnedFlags(recipe, taxonomy);
-      out = applyPresetArgOps(out, ops.all, editOnly);
-      if (roleOverride) out = applyPresetArgOps(out, ops.roles?.[roleOverride], editOnly);
+      try {
+        out = applyPresetArgOps(out, ops.all, editOnly);
+        out = applyPresetArgOps(out, ops.roles?.[roleOverride], editOnly);
+      } catch (error) {
+        if (ascend && roleOverride && /^json_args: --kv[-_]transfer[-_]config\b/.test(error.message)) {
+          throw new RangeError(`PD ${roleOverride}: ${error.message}`);
+        }
+        throw error;
+      }
     }
-    // Connector configs name the worker's own HTTP port (MoRI-IO's
-    // `http_port`) as `{port}`: the port the role actually serves on.
+    // Check the final Ascend transfer config after normal catalog composition
+    // and preset edits, without restricting the implementation name.
+    if (ascend && roleOverride) {
+      out = out.map((arg) => typeof arg === "string" && arg.replaceAll("_", "-") === "--kv-transfer-config" ? "--kv-transfer-config" : arg);
+      let transfer;
+      try { transfer = kvOptionConfig({ args: out }); } catch { /* Report invalid JSON with the role below. */ }
+      if (transfer?.kv_connector === "MultiConnector") transfer = transfer.kv_connector_extra_config?.connectors?.[0];
+      if (!transfer || typeof transfer !== "object" || Array.isArray(transfer)
+          || typeof transfer.kv_connector !== "string" || !transfer.kv_connector.trim()) {
+        throw new RangeError(`PD ${roleOverride}: --kv-transfer-config must contain a JSON object with a non-empty transfer kv_connector.`);
+      }
+    }
+    if (roleOverride && strategy.deploy_type === "pd_cluster"
+        && (externalDp || pdRoleValue(recipe, roleOverride, "pp", hwProfile, hwProfileId) != null)) {
+      // A late CLI override must not invalidate the topology advertised to
+      // the connector/router. Set topology through role fields, not raw args.
+      const aliases = { "-tp": "--tensor-parallel-size", "-pp": "--pipeline-parallel-size", "-dp": "--data-parallel-size" };
+      const flags = new Map(out.flatMap((token, i) => {
+        if (typeof token !== "string" || !/^--?\w/.test(token)) return [];
+        const [flag, ...value] = token.split("=");
+        return [[aliases[flag] || flag.replaceAll("_", "-"), value.length ? value.join("=") : out[i + 1]]];
+      }));
+      const meta = roleMeta(roleOverride);
+      const expected = { "--tensor-parallel-size": meta.tp, "--pipeline-parallel-size": meta.pp };
+      if (meta.parallelism === "dep") Object.assign(expected, {
+        "--data-parallel-size": meta.dpSize, "--data-parallel-size-local": meta.dpLocal,
+        ...(externalDp && meta.dpSize === 1 ? {} : {
+          [externalDp && meta.dpLocal === 1 ? "--data-parallel-rank" : "--data-parallel-start-rank"]: meta.startRank,
+        }),
+      });
+      for (const [flag, size] of Object.entries(expected)) {
+        const fallback = flag === "--pipeline-parallel-size" || flag === "--tensor-parallel-size" ? 1 : NaN;
+        if (Number(flags.get(flag) ?? fallback) !== size) throw new RangeError(`PD ${roleOverride}: ${flag} conflicts with the role topology; use role nodes/pp (and tp for DEP) instead.`);
+      }
+      if (externalDp && meta.parallelism === "dep") {
+        const selected = meta.dpSize === 1 ? null
+          : meta.dpLocal > 1 ? "--data-parallel-multi-port-external-lb" : "--data-parallel-external-lb";
+        const modes = ["--data-parallel-hybrid-lb", "--data-parallel-multi-port-external-lb", "--data-parallel-external-lb"];
+        const conflictingRank = meta.dpSize === 1 && ["--data-parallel-rank", "--data-parallel-start-rank"].some((flag) => flags.has(flag));
+        if ((selected && !flags.has(selected)) || modes.some((flag) => flag !== selected && flags.has(flag)) || conflictingRank) {
+          throw new RangeError(`PD ${roleOverride}: external DP load-balancing flags conflict with the router.`);
+        }
+      }
+    }
+    // Catalog connector placeholders use the same pool topology as the launch
+    // commands. Replace whole JSON values before serializing to keep sizes numeric.
+    if (roleOverride && strategy.deploy_type === "pd_cluster") {
+      const sizes = Object.fromEntries(["prefill", "decode"].flatMap((role) => {
+        const meta = roleMeta(role);
+        return [[`{${role}_dp_size}`, meta.dpSize], [`{${role}_tp_size}`, meta.tp], [`{${role}_pp_size}`, meta.pp]];
+      }));
+      const expand = (value) => typeof value === "string" ? sizes[value] ?? value
+        : Array.isArray(value) ? value.map(expand)
+        : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, val]) => [key, expand(val)])) : value;
+      out = out.map((token, i) => out[i - 1] === "--kv-transfer-config" && /\{(?:prefill|decode)_(?:dp|tp|pp)_size\}/.test(token)
+        ? JSON.stringify(expand(JSON.parse(token))) : token);
+    }
+    // The existing {port} substitution stays string-valued (e.g. MoRI-IO).
     if (out.some((t) => typeof t === "string" && t.includes("{port}"))) {
       const port = String(servedPort(out));
       out = out.map((t) => (typeof t === "string" ? t.replaceAll("{port}", port) : t));
@@ -2210,7 +2267,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       if (rolePoolNodes >= 1) {
         // Dedicated node(s) — each node owns all its local GPUs. Same value
         // is correct whether the pool is DEP (vllm spawns local ranks) or TP.
-        env.CUDA_VISIBLE_DEVICES = Array.from({ length: gpuCount }, (_, i) => i).join(",");
+        const visible = Array.from({ length: gpuCount }, (_, i) => i).join(",");
+        if (hwProfile.brand === "Huawei") env.ASCEND_RT_VISIBLE_DEVICES ??= visible;
+        else env.CUDA_VISIBLE_DEVICES = visible;
         // Cross-node NCCL/GLOO for this role only kicks in when the role
         // spans 2+ nodes. Single-node roles use NIXL for cross-role transfer
         // and don't need socket-iface hints.
@@ -2225,7 +2284,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
           const ids = roleOverride === "prefill"
             ? Array.from({ length: half }, (_, i) => i)
             : Array.from({ length: gpuCount - half }, (_, i) => half + i);
-          env.CUDA_VISIBLE_DEVICES = ids.join(",");
+          env[hwProfile.brand === "Huawei" ? "ASCEND_RT_VISIBLE_DEVICES" : "CUDA_VISIBLE_DEVICES"] = ids.join(",");
         }
       }
     }
@@ -2296,6 +2355,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     if (strategy.deploy_type === "pd_cluster" && !NVL4_HW_IDS.has(hwProfileId)) {
       for (const key of NVL4_ONLY_ENV_KEYS) delete env[key];
     }
+    if (strategy.deploy_type === "pd_cluster" && hwProfile.brand === "Huawei") {
+      for (const key of Object.keys(env)) if (/^(CUDA_|NCCL_|UCX_)/.test(key)) delete env[key];
+    }
 
     // Per-rank node rewrite: strategy YAML carries `$PREFILL_NODE_1` /
     // `$DECODE_NODE_1` as the rank-0 default for per-node bind hosts (NIXL
@@ -2309,7 +2371,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         typeof raw === "number" ? { nodes: raw }
         : (raw && typeof raw === "object") ? raw
         : {};
-      const rank = pdRoleObj.rank || 0;
+      const rank = roleMeta(roleOverride).currentNode;
       const rwParallelism = pdRoleObj.parallelism || pdRoleParallelism(recipe, strategy, roleOverride, hwProfile, hwProfileId);
       if (rank > 0 && rwParallelism === "dep") {
         const oldVar = `$${roleOverride.toUpperCase()}_NODE_1`;
@@ -2318,9 +2380,16 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
           if (env[k] === oldVar) env[k] = newVar;
         }
       }
+      // NIC bind IPs belong to each physical node even for headless TP/PP
+      // followers. Do not rewrite rendezvous/master addresses to the follower.
+      if (rank > 0) {
+        for (const key of ["HCCL_IF_IP", "VLLM_HOST_IP"]) {
+          if (env[key] === `$${roleOverride.toUpperCase()}_NODE_1`) env[key] = `$${roleOverride.toUpperCase()}_NODE_${rank + 1}`;
+        }
+      }
     }
 
-    if (smgGrpc) {
+    if (smgGrpc || ascend) {
       // The SMG-compatible gRPC servicer only runs on the Python frontend.
       env.VLLM_USE_RUST_FRONTEND = "0";
     } else {
@@ -2370,12 +2439,15 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   if (deployType === "pd_cluster") {
     // A recipe or preset layer may write a role's whole --kv-transfer-config
     // (MiniMax-M3.1-Flash on MI355X composes NIXL with CPU offload by hand).
-    // When that names another transfer connector than the one picked, the
-    // pick can't apply: render the default, with the reason, rather than a
+    // Ascend routes HTTP endpoints independently of the connector implementation.
+    // Other routers pin a transfer protocol: a different connector pick can't
+    // apply: render the default, with the reason, rather than a
     // router whose KV mode disagrees with its workers.
-    if (pdConnectorPick && pdConnectorSel === pdConnectorPick && !dynamo) {
-      const clash = ["prefill", "decode"].find((role) =>
-        transferConnectorOf(dedupeArgs(buildArgs(role, null).filter(Boolean))) !== pdConnector[role]?.config?.kv_connector);
+    if (pdConnectorPick && pdConnectorSel === pdConnectorPick && !dynamo && !ascend) {
+      const clash = ["prefill", "decode"].find((role) => {
+        const name = pdConnector[role]?.config?.kv_connector;
+        return name && transferConnectorOf(dedupeArgs(buildArgs(role, null).filter(Boolean))) !== name;
+      });
       if (clash) {
         const again = [...arguments];
         again[18] = null;
@@ -2391,37 +2463,6 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     // `--intra-node-data-parallel-size` should match dp_local for DEP pools
     // (one local rank per GPU) so routing picks the right DP rank.
     const policy = strategy.router?.policy || "round_robin";
-
-    // Resolve per-role node counts + parallelism mode for the return payload
-    // so the UI can render "1 node" vs "4 nodes — duplicate for ranks 1..N-1"
-    // notices without rederiving the logic.
-    const roleMeta = (role) => {
-      const legacyNodes = nodeCount > 1 ? 1 : 0;
-      const raw = pdNodes ? pdNodes[role] : undefined;
-      const pdRole =
-        typeof raw === "number" ? { nodes: raw }
-        : (raw && typeof raw === "object") ? raw
-        : {};
-      const nodes = typeof pdRole.nodes === "number" ? pdRole.nodes : legacyNodes;
-      let parallelism = pdRole.parallelism || pdRoleParallelism(recipe, strategy, role, hwProfile, hwProfileId);
-      // Same pool_modes snap as buildArgs, so the router / endpoints agree
-      // with the pool commands (e.g. pool_modes: [dep] → intra-node DP > 1).
-      const allowedPoolModes = pdPoolModes(recipe);
-      if (!allowedPoolModes.includes(parallelism)) parallelism = allowedPoolModes[0];
-      const poolGpus = nodes === 0 ? Math.floor(gpuCount / 2) : nodes * gpuCount;
-      const tp = parallelism === "dep"
-        ? (pdRoleTp(recipe, strategy, role, hwProfile, hwProfileId) || 1)
-        : poolGpus;
-      const dpLocal = parallelism === "dep" ? Math.max(1, Math.floor(gpuCount / tp)) : 0;
-      const dpSize = parallelism === "dep" ? Math.max(1, nodes) * dpLocal : 1;
-      // `currentNode` = which node of the DEP pool this command is for
-      // (0..nodes-1). Stored in pdRole.rank for backward-compat with the
-      // earlier rank-selector UI; now semantically a node index.
-      const nodesInPool = Math.max(1, nodes);
-      const currentNode = Math.max(0, Math.min(nodesInPool - 1, pdRole.rank ?? 0));
-      const startRank = currentNode * dpLocal;
-      return { nodes, parallelism, tp, dpLocal, dpSize, poolGpus, currentNode, startRank };
-    };
 
     const pMeta = roleMeta("prefill");
     const dMeta = roleMeta("decode");
@@ -2555,6 +2596,29 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
           install: resolveBrandInstall(kvStoreStrat.vllm?.install),
         }
       : null;
+    let ascendRouter;
+    if (ascend) {
+      const endpoints = (role, meta, args) => {
+        const port = Number(lastFlagValue(dedupeArgs(args), "--port") ?? 8000);
+        const local = externalDp && meta.parallelism === "dep" ? meta.dpLocal : 1;
+        if (!Number.isInteger(port) || port < 1 || port + local - 1 > 65535) {
+          throw new RangeError(`PD ${role}: HTTP ports must fit in 1..65535.`);
+        }
+        return Array.from({ length: meta.parallelism === "dep" ? Math.max(1, meta.nodes) : 1 }, (_, node) =>
+          Array.from({ length: local }, (_, rank) => ({ host: `$${role.toUpperCase()}_NODE_${node + 1}`, port: port + rank }))).flat();
+      };
+      const pEndpoints = endpoints("prefill", pMeta, prefillArgs);
+      const dEndpoints = endpoints("decode", dMeta, decodeArgs);
+      const argv = ["python", ascend.script, "--host", "0.0.0.0", "--port", "$ROUTER_PORT",
+        "--prefiller-hosts", ...pEndpoints.map((ep) => ep.host), "--prefiller-ports", ...pEndpoints.map((ep) => String(ep.port)),
+        "--decoder-hosts", ...dEndpoints.map((ep) => ep.host), "--decoder-ports", ...dEndpoints.map((ep) => String(ep.port))];
+      const proxyArgs = argv.slice(1).map(shellQuote).join(" ");
+      const image = computeDockerMeta(recipe, variant, hwProfile, hwProfileId).image;
+      ascendRouter = { label: ascend.display_name, command: `python ${proxyArgs}`, argv,
+        ...(isDockerEnabled(recipe, variant, hwProfile) && {
+          dockerCommand: `docker run --rm --network host --entrypoint python ${shellQuote(image)} ${proxyArgs}`,
+        }) };
+    }
     return {
       deployType,
       nodeCount,
@@ -2571,7 +2635,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         env: buildEnv("decode"),
         ...dMeta,
       },
-      orchestrator: dynamo ? "dynamo" : smg ? "smg" : "vllm-router",
+      orchestrator: dynamo ? "dynamo" : smg ? "smg" : ascend ? "ascend-proxy" : "vllm-router",
+      pdRouter: dynamo ? "dynamo" : smg ? "smg" : ascend ? "ascend" : "vllm",
+      ...(ascend ? { frontendRequired: "python" } : {}),
       ...(smg ? { transport: smgGrpc ? "grpc" : "http" } : {}),
       ...(smgGrpc ? {
         workerInstall: `uv pip install ${smg.grpc.packages}`,
@@ -2599,7 +2665,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
               dockerCommand: `${smgReplicaComments}docker run --rm --network host \\\n    ${smgGrpc ? "-v ~/.cache/huggingface:/root/.cache/huggingface \\\n    " : ""}${smg.docker_image} \\\n    ${smgRouterArgs}`,
               dockerInstall: `docker pull ${smg.docker_image}`,
             }),
-          } : {
+          } : ascendRouter || {
             command: routerCommand,
             install: "uv pip install vllm-router",
           },
@@ -2615,7 +2681,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         selected: pdConnectorSel,
         unavailableReason: pdConnectorUnavailable,
         install: dynamoInstallSteps(pdConnector),
-        docker: pdConnector?.docker || null,
+        docker: ascend ? { ...pdConnector?.docker, ...ascend.docker } : pdConnector?.docker || null,
       } : null,
       routerConfig: strategy.router || { policy: "round_robin" },
     };

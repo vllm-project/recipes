@@ -17,12 +17,12 @@
       "resolved_at": "2026-11-13T09:35:03.405Z"
     },
     "vllm-ascend": {
-      "repo": "vllm-project/vllm-ascend",
-      "ref": "main",
+      "repo": "SOMEONEUNSEEN/vllm-ascend",
+      "ref": "preview/ascend-pd-1226",
       "path": "recipes",
-      "sha": "02ac27a19cb7676304a9ca6985ba56ce29664536",
-      "tree_sha": "aa2c7503f1b45c8a57a0ae01e40c65ddf8e81283",
-      "resolved_at": "2026-10-28T02:06:32.523Z"
+      "sha": "fbc902457babf8e344e233c67d3db2a4460fe0dc",
+      "tree_sha": "6caf4ff540fdf08a2712a7e5bf9429c1b7fd94c6",
+      "resolved_at": "2026-11-12T03:41:28.787Z"
     },
     "vllm-metal": {
       "repo": "vllm-project/vllm-metal",
