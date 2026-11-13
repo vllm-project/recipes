@@ -276,7 +276,7 @@ hardware_overrides:
       VLLM_ENGINE_READY_TIMEOUT_S: "3600"
       VLLM_USE_V2_MODEL_RUNNER: "1"
       PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
-      
+
   blackwell:
     extra_args:
       - "--load-format"
@@ -443,7 +443,7 @@ strategy_overrides:
 guide: |
   ## Overview
 
-  Kimi K3 is a 2.8-trillion-parameter Mixture-of-Experts model (16 of 896 experts active per token) built on the Kimi Delta Attention (KDA) and Attention Residuals (AttnRes), with a 1M-token context window and native vision. 
+  Kimi K3 is a 2.8-trillion-parameter Mixture-of-Experts model (16 of 896 experts active per token) built on the Kimi Delta Attention (KDA) and Attention Residuals (AttnRes), with a 1M-token context window and native vision.
 
   ## Prerequisites
 

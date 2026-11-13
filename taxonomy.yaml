@@ -217,7 +217,7 @@ hardware_profiles:
     multi_node: false
     scalable: false
     restricted: true
-  
+
   # RTX 4090 — single-GPU RTX 4090 system.
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
   # lists it in `meta.hardware`
@@ -320,7 +320,7 @@ hardware_profiles:
     gpu_count: 8
     vram_gb: 2304
     multi_node: false
-    
+
   mi355x:
     brand: AMD
     generation: amd

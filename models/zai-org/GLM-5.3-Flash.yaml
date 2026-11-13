@@ -431,7 +431,7 @@ guide: |
       "max_tokens": 512
     }'
   ```
-  
+
   ## Running on AMD Instinct
 
   Use the official `vllm/vllm-openai-rocm:nightly` image. GLM-5.3-Flash support
@@ -463,7 +463,7 @@ guide: |
 
   ### Long-context indexer top-k (gfx950)
 
-  If your traffic is mostly long context (>=64k tokens) and using gfx950 
+  If your traffic is mostly long context (>=64k tokens) and using gfx950
   (MI350X/MI355X), using the topk indexer backend from AITER is recommended:
 
   ```bash

@@ -399,7 +399,7 @@ guide: |
 
   ## Processing Ultra-Long Texts
   The model has 262k native context length and it can be extended to 1M with --max-model-len
-  flag. The best value can be picked based on the use case and GPU ram usage tradeoff. 
+  flag. The best value can be picked based on the use case and GPU ram usage tradeoff.
 
   For example, to enable full 1M context length on this model:
 

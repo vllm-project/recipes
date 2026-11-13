@@ -208,7 +208,7 @@ strategy_hardware:
     hopper: unsupported
 
 hardware_overrides: {}
- 
+
 strategy_overrides:
   # TP+DP+EP: the tp_dp emitter renders TP<gpus/node> × DP<nodes> (dp-local 1)
   # from the node count; EP + hybrid LB and the H20-validated context/batch
@@ -233,8 +233,8 @@ strategy_overrides:
       parallelism: dep
     decode:
       parallelism: dep
-          
-          
+
+
 guide: |
   ## Overview
 

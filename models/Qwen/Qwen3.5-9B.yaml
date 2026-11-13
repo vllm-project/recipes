@@ -139,7 +139,7 @@ guide: |
 
   Validated on 1× Intel Arc Pro B60 / B70 (B60 24 GB, B70 32 GB per card) with the
   official vLLM XPU image `vllm/vllm-openai-xpu:latest`.
-  
+
   ```bash
   docker run --device /dev/dri \
     -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \

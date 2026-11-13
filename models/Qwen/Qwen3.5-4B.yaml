@@ -117,7 +117,7 @@ guide: |
   ### pip (Intel Xeon 6 CPUs)
   For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.
 
-  ### Docker 
+  ### Docker
   ```bash
   docker pull vllm/vllm-openai-xpu:latest  # Intel XPU (B60 / B70)
   ```

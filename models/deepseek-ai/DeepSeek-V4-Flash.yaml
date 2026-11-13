@@ -1008,7 +1008,7 @@ guide: |
   --reasoning-config '{"reasoning_parser":"deepseek_v4","reasoning_start_str":"","reasoning_end_str":""}' \
   --speculative-config '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"probabilistic"}'
   ```
-  
+
   ### MI300X (8×192GB)
 
   Verified single-node serving on MI300X (8×192 GB, CDNA 3) with the same AMD

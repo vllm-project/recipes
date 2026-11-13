@@ -247,7 +247,7 @@ guide: |
       --reasoning-parser mistral \
       --language-model-only
   ```
-  
+
   For `lm_eval` against a text-only server, pass `fix_mistral_regex=True` in
   `--model_args` (Mistral 3.5 tokenizer quirk).
 

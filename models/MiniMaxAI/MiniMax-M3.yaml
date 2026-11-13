@@ -129,7 +129,7 @@ variants:
     precision: bf16
     # 427B × 2 bytes (BF16) + 46M × 4 (F32 norms), × 1.2 headroom ≈ 1025 GB.
     # 8x H200/H20 (1128 GB) is a tight fit; multi-node TP recommended for
-    # KV-cache headroom at long context. 
+    # KV-cache headroom at long context.
     # On AMD, 8x MI350X/MI355X fits comfortably.
     vram_minimum_gb: 1025
     description: "Native BF16 checkpoint — multi-node TP recommended for long-context headroom"
@@ -411,14 +411,14 @@ guide: |
 
   Online **per-channel FP8 (PTPC)** quantization of the BF16 checkpoint halves the
   weight footprint (≈100 → **≈50 GiB/GPU**, ~1.75× more KV cache) and lifts
-  batched throughput with **gsm8k unchanged from BF16** (lossless); 
+  batched throughput with **gsm8k unchanged from BF16** (lossless);
   These env vars and the flag are for the **BF16 checkpoint only**.
 
   ```bash
   export VLLM_USE_BREAKABLE_CUDAGRAPH=0
   export VLLM_ROCM_USE_AITER=1
   export VLLM_ROCM_USE_AITER_MOE=0
-  
+
   vllm serve MiniMaxAI/MiniMax-M3 \
     --tensor-parallel-size 8 \
     --block-size 128 \
@@ -537,7 +537,7 @@ guide: |
 
   M3 reasoning is controlled by the `thinking_mode`, there are three values:
 
-  - **`enabled`** — the model thinks before every response, including after tool results. 
+  - **`enabled`** — the model thinks before every response, including after tool results.
     Use for complex reasoning and agents.
   - **`disabled`** — no thinking; the model answers directly. Use for
     latency-sensitive turns.
@@ -551,7 +551,7 @@ guide: |
   ```python
 
   # Start the MiniMax-M3 model by referring to the command above first.
-  
+
   from openai import OpenAI
 
   client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
@@ -942,7 +942,7 @@ guide: |
     multimodal processor cache (`--mm-processor-cache-type shm`). For **text-only** workloads enable *Text only*
     (`--language-model-only`) to skip loading the encoder and free VRAM — it is
     mutually exclusive with Encoder Parallel.
- 
+
 
   ## EAGLE3 Speculative Decoding
 
