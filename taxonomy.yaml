@@ -823,3 +823,49 @@ kv_offload:
         env:
           DEVICE: "cuda"
           IAXL_DSA_GD_ENABLE: "0"
+  # UMBP (MORI's unified memory buffer pool) in standalone mode: a node-local
+  # umbp_standalone_server owns one host-DRAM pool that every engine and rank on
+  # the host attaches to; the server moves KV between GPU memory and the pool
+  # itself, through HIP IPC handles the workers register, so it must see every
+  # GPU its clients use. AMD only: UMBPStoreConnector needs MORI built with UMBP
+  # (BUILD_UMBP=ON), which the vLLM ROCm images ship. single_node_* only: the
+  # companion server is node-local. Fail-closed like the Offloading tiers: a
+  # recipe offers it only after an end-to-end run, recorded as
+  # `kv_offload_support: { umbp: verified }`. The sockets live under /dev/shm,
+  # which a pip install and the builder's ROCm container (--ipc=host) share, so
+  # the server and the engine find each other whichever way each is started.
+  umbp:
+    display_name: "UMBP (MORI)"
+    label: "UMBP"
+    order: 6
+    requires_opt_in: true
+    brands:
+      - AMD
+    strategies:
+      - single_node_tp
+      - single_node_tep
+      - single_node_dep
+    description: "Offload KV cache to a node-local host-DRAM pool owned by MORI's UMBP standalone server, through UMBPStoreConnector. Prefixes that leave GPU memory are restored from the pool instead of recomputed; every engine and DP rank on the host shares the pool, and KV that is identical on every TP rank (e.g. MLA latents) is stored once. Adds a UMBP Server tab; start it before vllm serve and keep it running. With kv_load_failure_policy recompute, a block evicted between lookup and load is recomputed instead of failing the request."
+    docs_url: "https://github.com/vllm-project/vllm/blob/main/docs/features/umbp_store_connector_usage.md"
+    args:
+      - "--kv-transfer-config"
+      - '{"kv_connector":"UMBPStoreConnector","kv_role":"kv_both","kv_load_failure_policy":"recompute","kv_connector_extra_config":{"mode":"standalone","endpoint":"unix:///dev/shm/umbp/standalone.grpc.sock"}}'
+    # The operational notes ride inside the command as leading # lines, as
+    # LMCache's do, so they render on the tab and survive copy-paste.
+    companion:
+      label: "UMBP Server"
+      description: "Run on the same node, before vllm serve, from the same vLLM ROCm image or environment (MORI built with UMBP). It owns the host-DRAM KV pool; keep it running while the engine serves."
+      command: |
+        # The address must match "endpoint" in --kv-transfer-config; the fd socket
+        # goes next to it. In a container, give the server the engine's GPU access
+        # (--device=/dev/kfd --device=/dev/dri) and --ipc=host, and do not narrow
+        # HIP_VISIBLE_DEVICES: it must see every GPU its clients use.
+        # Size UMBP_DRAM_CAPACITY (bytes) to the host DRAM you can dedicate; the
+        # pool is faulted in before the socket opens, which takes minutes for
+        # hundreds of GB on 4 KiB pages.
+        MORI_DIR=$(python3 -c 'import mori, os; print(os.path.dirname(mori.__file__))')
+        LD_LIBRARY_PATH="$MORI_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+          UMBP_STANDALONE_ADDRESS=unix:///dev/shm/umbp/standalone.grpc.sock \
+          UMBP_DRAM_CAPACITY=$((512 * 1024**3)) \
+          UMBP_DRAM_USE_HUGEPAGES=0 \
+          "$MORI_DIR/umbp_standalone_server" unix:///dev/shm/umbp/standalone.grpc.sock
