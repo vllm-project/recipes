@@ -380,6 +380,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const hwIdRef = useRef(hwId);
   hwIdRef.current = hwId;
 
+  // The query the mount's restore settles on, written by the effect after the
+  // pendingQs reset below (effects run in declaration order on mount).
+  const restoredQs = useRef(null);
+
   // After mount: restore preferences from localStorage in two scopes.
   // URL params always win (explicit > stored).
   //   1. Global (hardware): tracks the user's physical setup, shared across
@@ -392,13 +396,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   useEffect(() => {
     const prefs = loadPreferences();
     let restoredFitsHw = null;
+    // Everything this mount changes away from what the URL says goes back into
+    // the URL in one replace at the end, so the address bar reproduces the
+    // page: a link copied from it (and its `.md` twin an agent reads) renders
+    // the command the reader sees. Restored choices are written the way their
+    // pill handlers write them; values derived from them (a variant that fits,
+    // an auto-bumped node count) follow from the URL alone and stay out.
+    const sp = new URLSearchParams(searchParams.toString());
+    const setParam = (key, value) => (value ? sp.set(key, value) : sp.delete(key));
     // Variant restrictions beat an incompatible hardware query parameter.
-    // Normalize the URL immediately so copied links match the rendered state.
-    if (requestedHwId && requestedHwId !== hwId) {
-      const sp = new URLSearchParams(searchParams.toString());
-      sp.set("hardware", hwId);
-      router.replace(`?${sp.toString()}${window.location.hash}`, { scroll: false });
-    }
+    if (requestedHwId && requestedHwId !== hwId) setParam("hardware", hwId);
     if (!searchParams.get("hardware") && prefs.hardware) {
       const v = recipe.variants?.[variant] || recipe.variants?.default || {};
       const prefProfile = taxonomy.hardware_profiles?.[prefs.hardware];
@@ -410,26 +417,33 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       const restrictedElsewhere = prefProfile?.restricted && !declaredHere;
       if (prefProfile?.brand === "NVIDIA" && !restrictedElsewhere && isPrecisionCompatible(prefProfile, v) && isHardwareSupported(recipe, prefs.hardware) && isVariantHardwareSupported(v, prefs.hardware, prefProfile)) {
         setHwId(prefs.hardware);
+        setParam("hardware", prefs.hardware);
         restoredFitsHw = prefProfile;
       }
     }
+    // The hardware this mount settles on (URL > restored pref > default).
+    const resolvedHwId = restoredFitsHw ? prefs.hardware : hwId;
 
     const rs = loadRecipeState(recipe.hf_id);
     if (!searchParams.get("frontend") && rs.frontend && taxonomy.frontends?.[rs.frontend]) {
-      setFrontend(resolveFrontend(recipe, rs.frontend, taxonomy));
+      const f = resolveFrontend(recipe, rs.frontend, taxonomy);
+      setFrontend(f);
+      if (f !== resolveFrontend(recipe, null, taxonomy)) setParam("frontend", f);
     }
     if (!searchParams.get("strategy") && rs.strategy &&
         effectiveCompatibleStrategies(recipe).includes(rs.strategy) &&
         strategies[rs.strategy]?.deploy_type !== "kv_store_lb") {
       setStrategyOverride(rs.strategy);
+      setParam("strategy", rs.strategy);
     }
     if (!searchParams.has("features") && Array.isArray(rs.features)) {
       const recipeFeatures = Object.keys(recipe.features || {});
-      setFeatures(rs.features.filter((f) => recipeFeatures.includes(f)));
+      const restored = rs.features.filter((f) => recipeFeatures.includes(f));
+      setFeatures(restored);
+      // Empty when they match this hardware's defaults, like the pills write it.
+      setParam("features", featuresToUrl(restored, resolvedHwId, variant));
     }
-    // Resolve the hardware this mount actually settles on (URL > restored pref
-    // > default) so the non-scalable fixups below see the right profile.
-    const resolvedHwId = restoredFitsHw ? prefs.hardware : hwId;
+    // The non-scalable fixups below see the hardware this mount settles on.
     const resolvedHw = taxonomy.hardware_profiles?.[resolvedHwId];
     const resolvedScalable = isHardwareScalable(resolvedHw);
     // KV offload restores separately from the serving strategy: "simple" is
@@ -442,11 +456,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           (strategies[rs.kvOffload]?.deploy_type === "kv_store_lb" &&
             resolvedScalable && isKvStoreBrandSupported(resolvedHw) && isKvStoreSupported(rs.kvOffload, resolvedHwId)))) {
       setKvOffload(rs.kvOffload);
+      setParam("kv_offload", rs.kvOffload);
     }
     if (!searchParams.get("kv_instances")) {
       const savedInstances = parseInt(rs.kvInstances, 10);
       if (Number.isFinite(savedInstances) && savedInstances >= 1 && savedInstances <= 16) {
         setKvInstances(savedInstances);
+        // Only a Mooncake topology reads the count; its default stays out.
+        const topo = sp.get("kv_offload");
+        if (strategies[topo]?.deploy_type === "kv_store_lb") {
+          setParam("kv_instances", savedInstances === (strategies[topo].default_instances || 2) ? "" : String(savedInstances));
+        }
       }
     }
     // Non-scalable hardware can't shard an oversized variant. If we land on one
@@ -477,11 +497,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       if ([1, 2].includes(saved)) {
         // A saved single-node pick can't stand where no single-node strategy is offered.
         const single = resolvedHw && multiNodeUnavailable(recipe, strategies, resolvedHw, v, resolvedHwId);
-        setNodeCount(atFloor(saved === 1 && multi ? 2 : saved > 1 && single ? 1 : saved));
+        const n = atFloor(saved === 1 && multi ? 2 : saved > 1 && single ? 1 : saved);
+        setNodeCount(n);
+        setParam("nodes", n === 1 ? "" : String(n));
       } else if (restoredFitsHw && multi) {
         setNodeCount(atFloor(2));
       }
     }
+    const qs = sp.toString();
+    if (qs !== searchParams.toString()) restoredQs.current = qs;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1251,8 +1275,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     : hwGpuCount;
   const showDepUsageHint = depWidth < hwGpuCount;
   // The whole selection as an explicit page query, for the `.md` / `.json`
-  // forms (Copy page). The address bar can't stand in for it: syncUrl omits
-  // defaults, and choices restored from storage never reach the URL.
+  // forms (Copy page). The address bar reproduces the page too (restored
+  // choices are written to it on mount), but syncUrl omits defaults.
   const selectedPoint = result?.preset?.point?.selected ?? null;
   const shareQuery = useMemo(() => {
     const q = new URLSearchParams({ hardware: hwId, variant });
@@ -1323,6 +1347,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // instead of the last one reverting the others.
   const pendingQs = useRef(null);
   useEffect(() => { pendingQs.current = null; }, [searchParams]);
+  // Write what the mount restored (see restoredQs). Declared after the reset
+  // above so it isn't cleared, and through pendingQs so a syncUrl in the same
+  // tick (a preset's `select`, a reset effect) builds on it rather than on
+  // the stale searchParams.
+  useEffect(() => {
+    const qs = restoredQs.current;
+    if (qs == null) return;
+    restoredQs.current = null;
+    pendingQs.current = qs;
+    router.replace(`${qs ? `?${qs}` : pathname}${window.location.hash}`, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const activeStrategyRef = useRef(activeStrategy);
   activeStrategyRef.current = activeStrategy;
   const syncUrl = useCallback(

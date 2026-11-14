@@ -27,7 +27,7 @@ ${page}.md${q}      ← that configuration as Markdown
 ${page}.json${q}    ← that configuration as JSON
 \`\`\`
 
-Adding the extension to the end of the whole URL (\`…&strategy=single_node_dep.md\`) works too. The **Copy page** menu on every recipe page links both forms for the current selection.
+Adding the extension to the end of the whole URL (\`…&strategy=single_node_dep.md\`) works too. The **Copy page** menu on every recipe page links both forms for the current selection. An assistant fetching a recipe page URL for its user (ChatGPT-User, Claude-User, Perplexity-User, MistralAI-User), or any request sending \`Accept: text/markdown\`, gets the Markdown form for that URL's query directly.
 
 - **Markdown** leads with the rendered command (marked authoritative), then the notes and known issues that apply to this configuration, the tuned preset in effect, and the guide as background — the form to hand to an AI assistant.
 - **JSON** has the same shape as the static per-hardware renderings below, plus \`selection\` (what was rendered), \`page_url\` and \`markdown_url\`.
