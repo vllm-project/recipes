@@ -5,6 +5,7 @@ import { test } from "node:test";
 import yaml from "js-yaml";
 import { buildDockerArgv, buildDockerRun, computeDockerMeta, pdConnectorKey, pdConnectorUnavailableReason, resolveCommand } from "../src/lib/command-synthesis.js";
 import { applyPresetArgOps, validatePresets } from "../src/lib/recipe-presets.js";
+import { renderCommand } from "../src/lib/recipe-render.js";
 import { contentDir } from "../src/lib/content-root.js";
 import { ascendPdPools, ascendPdRecipe } from "./fixtures/ascend-pd.mjs";
 
@@ -142,6 +143,55 @@ test("json_args addresses a MultiConnector child by connector name", () => {
     { json_args: { "--kv-transfer-config": { NixlConnector: { kv_connector_extra_config: { num_threads: 4 } } } } });
   assert.equal(JSON.parse(plain).kv_connector_extra_config.num_threads, 4);
   assert.throws(() => applyPresetArgOps(["--kv-transfer-config", multi], { json_args: { "--kv-transfer-config": { MooncakeConnector: { x: 1 } } } }), /has no MooncakeConnector/);
+});
+
+test("a connector edit is skipped and recorded when a collector is passed", () => {
+  const nixl = '{"kv_connector":"NixlConnector","kv_role":"kv_producer"}';
+  const edit = { "--kv-transfer-config": { MooncakeStoreConnector: { x: 1 }, NixlConnector: { kv_load_failure_policy: "recompute" } } };
+  const missing = new Set();
+  const [, out] = applyPresetArgOps(["--kv-transfer-config", nixl], { json_args: edit }, undefined, missing);
+  // The connector that is there still takes its edit.
+  assert.deepEqual(JSON.parse(out), { kv_connector: "NixlConnector", kv_role: "kv_producer", kv_load_failure_policy: "recompute" });
+  assert.deepEqual([...missing], ["json_args: --kv-transfer-config has no MooncakeStoreConnector"]);
+  // No collector: still an error.
+  assert.throws(() => applyPresetArgOps(["--kv-transfer-config", nixl], { json_args: edit }), /has no MooncakeStoreConnector/);
+  // An absent flag isn't added just to hold skipped connector edits.
+  const absent = new Set();
+  assert.deepEqual(applyPresetArgOps(["--port", "8000"], { json_args: { "--kv-transfer-config": { MooncakeStoreConnector: { x: 1 } } } }, undefined, absent), ["--port", "8000"]);
+  assert.equal(absent.size, 1);
+});
+
+test("a preset's Mooncake-store edit waits for its KV Offload pick instead of breaking the command", () => {
+  // Kimi-K3.1-Pro's GB300 PD lanes: select.kv_offload turns the store on, and
+  // json_args tunes its MooncakeStoreConnector. The builder renders the preset
+  // before it applies `select`, and the reader may switch KV Offload off.
+  const lane = { ...recipe, presets: { lane: {
+    label: "lane", hardware: "gb300", strategy: "pd_cluster",
+    select: { kv_offload: "kv_store_distributed_mooncake" },
+    json_args: { "--kv-transfer-config": { MooncakeStoreConnector: { kv_load_failure_policy: "recompute" } } },
+  } } };
+  const run = (kv) => resolveCommand(lane, "default", "pd_cluster", "gb300", [], strategies, taxonomy, [], 1, pools, {}, kv,
+    null, undefined, null, "http", null, "lane", undefined, null);
+
+  const off = run(null);
+  assert.equal(off.preset.selected, "lane");
+  assert.deepEqual(off.preset.select, { kv_offload: "kv_store_distributed_mooncake" });
+  assert.deepEqual(off.presetWarnings, ["json_args: --kv-transfer-config has no MooncakeStoreConnector"]);
+  for (const role of ["prefill", "decode"]) assert.equal(kvCfg(off, role).kv_connector, "NixlConnector");
+
+  const on = run("kv_store_distributed_mooncake");
+  assert.equal(on.presetWarnings, undefined);
+  for (const role of ["prefill", "decode"]) {
+    const store = kvCfg(on, role).kv_connector_extra_config.connectors.find((c) => c.kv_connector === "MooncakeStoreConnector");
+    assert.equal(store.kv_load_failure_policy, "recompute", role);
+  }
+
+  // The build renders presets with their own `select`; a lane whose `select`
+  // doesn't add the connector it edits still fails there.
+  assert.doesNotThrow(() => renderCommand(lane, "default", "pd_cluster", "gb300", 1, [], strategies, taxonomy, pools, null, "lane", undefined, true));
+  const noSelect = { ...lane, presets: { lane: { ...lane.presets.lane, select: undefined } } };
+  assert.throws(() => renderCommand(noSelect, "default", "pd_cluster", "gb300", 1, [], strategies, taxonomy, pools, null, "lane", undefined, true),
+    /Invalid preset lane .*has no MooncakeStoreConnector/);
 });
 
 test("select.pd_connector is validated against the connector's hardware and router", () => {

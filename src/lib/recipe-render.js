@@ -266,6 +266,13 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   if (strict && result.parserWarnings?.length) {
     throw new Error(`Invalid preset ${presetPick}${pointPick ? ` at point ${pointPick}` : ""} in ${recipe.hf_id} (${hwId} / ${strategy}): ${result.parserWarnings.join("; ")}`);
   }
+  // Synthesis skips a json_args edit to a connector the config doesn't have
+  // (the builder renders that state on its way to the preset's `select`). With
+  // the preset's own `select` applied, as here, it means a misspelled connector
+  // or a `select` that doesn't turn its KV option on.
+  if (strict && result.presetWarnings?.length) {
+    throw new Error(`Invalid preset ${presetPick}${pointPick ? ` at point ${pointPick}` : ""} in ${recipe.hf_id} (${hwId} / ${strategy}): ${result.presetWarnings.join("; ")}`);
+  }
 
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
   // A preset's engine image pins this GPU's docker command.
