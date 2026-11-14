@@ -59,6 +59,7 @@ export const PROVIDERS = {
   "RecursiveSI":     { display_name: "RecursiveSI",              logo: "/providers/RecursiveSI.png", invertInLight: true },
   "ibm-granite":     { display_name: "IBM Granite",              logo: "/providers/ibm-granite.png" },
   "autotrust":       { display_name: "AutoTrust",                logo: "/providers/autotrust.jpeg" },
+  "adventists-ai":   { display_name: "Adventists AI",            logo: "/providers/adventists-ai.jpeg" },
 };
 
 export function getProviderLogo(hfOrg) {

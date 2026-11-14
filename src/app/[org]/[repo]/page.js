@@ -12,6 +12,7 @@ import { CommandBuilder } from "@/components/recipes/CommandBuilder";
 import { CommandFallback } from "@/components/recipes/CommandFallback";
 import { CopyPage } from "@/components/recipes/CopyPage";
 import { resolveSelection } from "@/lib/recipe-render";
+import { vllmVersionLink } from "@/lib/command-synthesis";
 import { GuideLinks } from "@/components/recipes/GuideLinks";
 import { ReferenceTabs } from "@/components/recipes/ConfigSections";
 import { whenLabels } from "@/lib/recipe-context";
@@ -118,6 +119,7 @@ export default async function RecipePage({ params, searchParams }) {
     redirect(`/${recipe.hf_org}/${recipe.hf_repo}${qs ? `?${qs}` : ""}`);
   }
 
+  const versionLink = vllmVersionLink(recipe.model);
   const strategies = loadStrategies();
   const taxonomy = loadTaxonomy();
   const guide = recipe.guide || "";
@@ -249,16 +251,17 @@ export default async function RecipePage({ params, searchParams }) {
               : ""}
           </Badge>
           <Badge variant="outline" className="text-xs">{(recipe.model.context_length || 0).toLocaleString()} ctx</Badge>
-          <a
-            href="https://vllm.ai/#quick-start"
+          {versionLink && <a
+            href={versionLink.href}
             target="_blank"
             rel="noopener noreferrer"
-            title="Install vLLM"
+            title={versionLink.title}
             className="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap transition-colors hover:border-vllm-blue/50 hover:text-vllm-blue"
           >
-            vLLM {recipe.model.min_vllm_version}+
+            vLLM{/^\d/.test(String(recipe.model.min_vllm_version ?? "")) ? ` ${recipe.model.min_vllm_version}+` : ""}
+            {versionLink.nightly && <span className="ml-1 text-vllm-yellow">nightly</span>}
             <ExternalLink size={10} className="ml-1 opacity-50" />
-          </a>
+          </a>}
           {recipe.meta.tasks?.includes("omni") && (
             <a
               href="https://github.com/vllm-project/vllm-omni"
