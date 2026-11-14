@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { track } from "@vercel/analytics";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
@@ -36,13 +37,14 @@ const FEATURE_MODE_NOTES = {
 // combos (e.g. EP on a dense model) while still exposing parallelism knobs.
 import { loadPreferences, savePreference, loadRecipeState, saveRecipeState } from "@/lib/preferences";
 
-function CopyButton({ text, className = "" }) {
+function CopyButton({ text, className = "", onCopy }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(text);
+    onCopy?.();
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, [text]);
+  }, [text, onCopy]);
   return (
     <button
       onClick={handleCopy}
@@ -1225,6 +1227,23 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // Publish the selection for the sections below the builder (This
   // configuration / Tuned presets / Troubleshooting filter on it).
   const selectedPreset = result?.preset?.selected ?? null;
+
+  // Vercel Analytics: a Pro custom event carries at most two properties, and
+  // the page path already names the recipe. `setup` packs the rest into one
+  // groupable string: strategy | preset@point (or "baseline" when this
+  // hardware has presets and none is in use) | kv:<option>.
+  const trackCommandCopy = () => {
+    const omni = (recipe.meta?.tasks || []).includes("omni");
+    const point = result?.preset?.point?.selected;
+    const setup = omni
+      ? ["omni", omniTask].filter(Boolean).join(":")
+      : [
+        activeStrategy,
+        result?.preset ? (selectedPreset ? `${selectedPreset}${point ? `@${point}` : ""}` : "baseline") : null,
+        activeKvOffload ? `kv:${activeKvOffload}` : null,
+      ].filter(Boolean).join("|");
+    track("copy_command", { hw: hwId, setup });
+  };
   // A preset can run DEP on part of the node (`--data-parallel-size 2`);
   // say so the way the TP hint does.
   const depWidth = isSingleNode && activeStrategy === "single_node_dep" && Array.isArray(result?.argv)
@@ -1737,7 +1756,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     [recipe, hwId]
   );
 
-  const selectPreset = (key) => {
+  // `via`: "row" (Preset row), "card" (Presets tab), for analytics.
+  const selectPreset = (key, via = "row") => {
+    track("select_preset", { preset: key, via });
     const target = recipe.presets?.[key];
     const otherVariant = target?.variants?.length && !target.variants.includes(variant) ? target.variants[0] : null;
     const otherStrategy = target?.strategy && target.strategy !== activeStrategy ? target.strategy : null;
@@ -1759,6 +1780,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   };
 
   const selectPoint = (key) => {
+    track("select_preset", { preset: `${result?.preset?.selected ?? "baseline"}@${key}`, via: "point" });
     const points = result?.preset?.point?.options || [];
     const def = (points.find((pt) => pt.default) || points[0])?.key;
     const next = key === def ? null : key;
@@ -1779,7 +1801,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   useEffect(() => onPresetRequest(({ hfId, key }) => {
     const target = recipe.presets?.[key];
     if (hfId !== recipe.hf_id || !target) return;
-    if (target.hardware === hwIdRef.current) selectPresetRef.current(key);
+    if (target.hardware === hwIdRef.current) selectPresetRef.current(key, "card");
     else {
       requestedPreset.current = key;
       selectHardwareRef.current(target.hardware);
@@ -1789,7 +1811,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const key = requestedPreset.current;
     if (!key || recipe.presets?.[key]?.hardware !== hwId) return;
     requestedPreset.current = null;
-    selectPreset(key);
+    selectPreset(key, "card");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hwId]);
 
@@ -2358,6 +2380,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               configSummary={omniConfigSummary}
               endpointsControls={omniEndpointsControls}
               commandNote={commandNote}
+              onCopy={trackCommandCopy}
             />
           </div>
 
@@ -2583,6 +2606,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               configSummary={configSummary}
               endpointsControls={endpointsControls}
               commandNote={commandNote}
+              onCopy={trackCommandCopy}
             />
           ) : isKvStore ? (
             <KvStoreLbBlock
@@ -2596,6 +2620,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               configSummary={configSummary}
               endpointsControls={endpointsControls}
               commandNote={commandNote}
+              onCopy={trackCommandCopy}
             />
           ) : isMultiNode ? (
             <MultiNodeBlock
@@ -2608,6 +2633,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               configSummary={configSummary}
               endpointsControls={endpointsControls}
               commandNote={commandNote}
+              onCopy={trackCommandCopy}
             />
           ) : (
             <SingleCommandBlock
@@ -2623,6 +2649,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               configSummary={configSummary}
               endpointsControls={endpointsControls}
               commandNote={commandNote}
+              onCopy={trackCommandCopy}
             />
           )}
         </div>
@@ -3590,7 +3617,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           })}
 
           {/* Advanced (collapsed by default) */}
-          <details className="group">
+          <details className="group" onToggle={(e) => { if (e.currentTarget.open) track("open_advanced", { hw: hwId }); }}>
             <summary className="px-4 py-3 cursor-pointer text-[10px] font-semibold text-muted-foreground uppercase tracking-widest hover:bg-muted/30 transition-colors flex items-center gap-2 select-none list-none">
               <span>Advanced</span>
               <span className="text-muted-foreground/50 normal-case tracking-normal font-normal">
@@ -3959,7 +3986,7 @@ function CommandNote({ note }) {
   );
 }
 
-function SingleCommandBlock({ command, env, setup, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
+function SingleCommandBlock({ command, env, setup, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote, onCopy }) {
   const [tab, setTab] = useState("vllm");
   // The `docker pull` for the image lives in the Install block above.
   const isXpu = !!dockerMeta?.isXpu;
@@ -4018,7 +4045,7 @@ function SingleCommandBlock({ command, env, setup, companions, verifyCmd, benchC
     : rawActive;
   const actions = (
     <div className="flex items-center gap-1.5 shrink-0">
-      <CopyButton text={fullScript} />
+      <CopyButton text={fullScript} onCopy={onCopy} />
       <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={!!activeCompanion} disabledNote="Clients talk to the vLLM server — cURL & Bench live on the vLLM Serve tab." />
       <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={!!activeCompanion} disabledNote="Clients talk to the vLLM server — cURL & Bench live on the vLLM Serve tab." />
       {endpointsControls}
@@ -4353,7 +4380,7 @@ function DependenciesBlock({ deps }) {
   );
 }
 
-function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
+function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote, onCopy }) {
   const [tab, setTab] = useState("head");
   const isDocker = installMode === "docker";
   const wrap = (cmd) =>
@@ -4391,7 +4418,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
       <div className="flex flex-wrap items-center justify-between px-4 pt-2 gap-x-3 gap-y-2">
         <CommandTabs tabs={tabs} current={active.id} onSelect={setTab} />
         <div className="flex items-center gap-1.5 shrink-0">
-          <CopyButton text={fullScript} />
+          <CopyButton text={fullScript} onCopy={onCopy} />
           <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={active.id !== "head"} disabledNote="Clients connect to the head node — cURL & Bench live on the Head tab." />
           <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={active.id !== "head"} disabledNote="Clients connect to the head node — cURL & Bench live on the Head tab." />
           {endpointsControls}
@@ -4412,7 +4439,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
   );
 }
 
-function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChange, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
+function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChange, installMode, dockerMeta, configSummary, endpointsControls, commandNote, onCopy }) {
   // Tabs: Prefill · Decode · Router.
   // Each pool (prefill/decode) now carries its own `nodes`, `parallelism`,
   // `dpSize`, `poolGpus` meta — rendered above the command so the reader
@@ -4484,7 +4511,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
       <div className="flex flex-wrap items-center justify-between px-4 pt-2 gap-x-3 gap-y-2">
         <CommandTabs tabs={tabs} current={active.id} onSelect={setTab} />
         <div className="flex items-center gap-1.5 shrink-0">
-          <CopyButton text={fullScript} />
+          <CopyButton text={fullScript} onCopy={onCopy} />
           <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={!active.isRouter} disabledNote={`Clients connect via the ${result.router.label || "Router"} tab — cURL & Bench live there.`} />
           <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={!active.isRouter} disabledNote={`Clients connect via the ${result.router.label || "Router"} tab — cURL & Bench live there.`} />
           {endpointsControls}
@@ -4569,7 +4596,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   );
 }
 
-function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceChange, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
+function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceChange, installMode, dockerMeta, configSummary, endpointsControls, commandNote, onCopy }) {
   // Tabs in launch order — Mooncake Master · (centralized only) Mooncake
   // Store · vLLM Serve (config heredoc + env + serve — one paste-runnable
   // script per instance node; a Worker tab appears when instances span >1
@@ -4652,7 +4679,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
       <div className="flex flex-wrap items-center justify-between px-4 pt-2 gap-x-3 gap-y-2">
         <CommandTabs tabs={tabs} current={active.id} onSelect={setTab} />
         <div className="flex items-center gap-1.5 shrink-0">
-          <CopyButton text={fullScript} />
+          <CopyButton text={fullScript} onCopy={onCopy} />
           <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={!isClientTab} disabledNote={`Clients connect via the ${clientTabLabel} tab — cURL & Bench live there.`} />
           <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={!isClientTab} disabledNote={`Clients connect via the ${clientTabLabel} tab — cURL & Bench live there.`} />
           {endpointsControls}
