@@ -228,8 +228,15 @@ const takesValue = (next) => next !== undefined && !(typeof next === "string" &&
 // key of a --kv-transfer-config edit addresses that connector: the value itself
 // when it is that connector, else the matching child of a MultiConnector, so a
 // lane can tune one connector without restating the composed list.
+//
+// A connector that isn't in the config is an error, unless the caller passes
+// `missing` (a Set): then the edit to that connector is skipped and recorded
+// there. The builder needs that — a preset's `select.kv_offload` reaches the
+// pills only after the first render with the preset on, and the reader may
+// switch the KV Offload option off again — so a connector edit behaves like a
+// toggle-owned flag's. Strict renderings turn recorded skips back into errors.
 const CONNECTOR_KEY = /^[A-Z][A-Za-z0-9]*Connector[A-Za-z0-9]*$/;
-function mergeEdit(base, edit, flag) {
+function mergeEdit(base, edit, flag, missing) {
   if (!isObj(edit)) return deepMerge(base, edit);
   let out = base;
   const rest = {};
@@ -238,7 +245,12 @@ function mergeEdit(base, edit, flag) {
     if (out?.kv_connector === k) { out = deepMerge(out, v); continue; }
     const children = out?.kv_connector_extra_config?.connectors;
     const i = Array.isArray(children) ? children.findIndex((c) => c?.kv_connector === k) : -1;
-    if (i < 0) throw new Error(`json_args: ${flag} has no ${k}`);
+    if (i < 0) {
+      const message = `json_args: ${flag} has no ${k}`;
+      if (!missing) throw new Error(message);
+      missing.add(message);
+      continue;
+    }
     const next = [...children];
     next[i] = deepMerge(children[i], v);
     out = { ...out, kv_connector_extra_config: { ...out.kv_connector_extra_config, connectors: next } };
@@ -246,7 +258,7 @@ function mergeEdit(base, edit, flag) {
   return deepMerge(out, rest);
 }
 
-function applyJsonEdit(value, edit, flag) {
+function applyJsonEdit(value, edit, flag, missing) {
   let base = {};
   if (value !== undefined) {
     try {
@@ -264,7 +276,7 @@ function applyJsonEdit(value, edit, flag) {
     for (const [k, v] of Object.entries(o)) if (v !== null) out[k] = prune(v);
     return out;
   };
-  return JSON.stringify(prune(mergeEdit(base, edit, flag)));
+  return JSON.stringify(prune(mergeEdit(base, edit, flag, missing)));
 }
 
 /**
@@ -292,9 +304,11 @@ export function toggleOwnedFlags(recipe, taxonomy) {
  * flag (the one last-wins dedupe keeps); a flag that isn't there yet is added
  * with the edit as its value, unless it is in `editOnly` (toggleOwnedFlags):
  * spec decoding switched off must not leave a `--speculative-config` holding
- * only the preset's tweak.
+ * only the preset's tweak. `missing` (optional Set) collects connector edits
+ * skipped because that connector isn't in the config (see mergeEdit); without
+ * it they throw.
  */
-export function applyPresetArgOps(args, ops, editOnly) {
+export function applyPresetArgOps(args, ops, editOnly, missing) {
   if (!ops) return args;
   let out = args;
   if (ops.remove_args?.length) {
@@ -312,9 +326,14 @@ export function applyPresetArgOps(args, ops, editOnly) {
     for (let i = 0; i < out.length; i++) if (normFlag(out[i]) === want && takesValue(out[i + 1])) at = i;
     if (at >= 0) {
       out = [...out];
-      out[at + 1] = applyJsonEdit(out[at + 1], edit, flag);
+      out[at + 1] = applyJsonEdit(out[at + 1], edit, flag, missing);
     } else if (!editOnly?.has(want)) {
-      out = [...out, flag, applyJsonEdit(undefined, edit, flag)];
+      // A flag added only to hold skipped connector edits would be `{}`.
+      const skipped = missing ? new Set() : undefined;
+      const value = applyJsonEdit(undefined, edit, flag, skipped);
+      skipped?.forEach((m) => missing.add(m));
+      if (skipped?.size && value === "{}") continue;
+      out = [...out, flag, value];
     }
   }
   return out;

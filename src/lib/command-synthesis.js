@@ -1701,6 +1701,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     ? strategy.dynamo
     : null;
   const parserWarnings = new Set();
+  const presetWarnings = new Set();
   let routerUnavailableReason = strategy.deploy_type === "pd_cluster" && pdRouter === "smg"
     ? smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, pdTransport, hwProfile, hwProfileId) : null;
   let smg = strategy.deploy_type === "pd_cluster" && pdRouter === "smg" && !routerUnavailableReason
@@ -2140,9 +2141,15 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     const ops = recipe._presetOps;
     if (ops) {
       const editOnly = toggleOwnedFlags(recipe, taxonomy);
+      // An edit to a connector this configuration doesn't compose (the
+      // preset's Mooncake tier while KV Offload is off) is skipped and
+      // reported, not fatal: the builder renders that state before it applies
+      // the preset's `select`. Ascend keeps the error, which it surfaces as a
+      // deployment error below.
+      const missing = ascend ? undefined : presetWarnings;
       try {
-        out = applyPresetArgOps(out, ops.all, editOnly);
-        out = applyPresetArgOps(out, ops.roles?.[roleOverride], editOnly);
+        out = applyPresetArgOps(out, ops.all, editOnly, missing);
+        out = applyPresetArgOps(out, ops.roles?.[roleOverride], editOnly, missing);
       } catch (error) {
         if (ascend && roleOverride && /^json_args: --kv[-_]transfer[-_]config\b/.test(error.message)) {
           throw new RangeError(`PD ${roleOverride}: ${error.message}`);
@@ -2645,6 +2652,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       } : {}),
       ...(routerUnavailableReason ? { routerUnavailableReason } : {}),
       ...(parserWarnings.size ? { parserWarnings: [...parserWarnings] } : {}),
+      ...(presetWarnings.size ? { presetWarnings: [...presetWarnings] } : {}),
       ...(registration ? { registration } : {}),
       router: dynamo
         ? {
@@ -2775,6 +2783,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       mooncakeConfig: mooncakeVllmConfig,
       // Sizing/NIC guidance rendered as # lines above the config heredoc.
       mooncakeConfigNote: kvStoreStrat.mooncake_vllm_config?.note || "",
+      ...(presetWarnings.size ? { presetWarnings: [...presetWarnings] } : {}),
     };
   }
 
@@ -2797,6 +2806,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       workerArgv: formatArgv(workerArgsByRank[0]),
       workerArgvs: workerArgsByRank.map(formatArgv),
       env: buildEnv(null),
+      ...(presetWarnings.size ? { presetWarnings: [...presetWarnings] } : {}),
     };
   }
 
@@ -2875,5 +2885,6 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     ...(kvInstall.length ? { kvOffloadInstall: kvInstall } : {}),
     ...(kvOpt?.docker === false ? { dockerUnavailable: true } : {}),
     ...(companions.length ? { companions } : {}),
+    ...(presetWarnings.size ? { presetWarnings: [...presetWarnings] } : {}),
   };
 }
