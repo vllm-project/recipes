@@ -5,12 +5,14 @@ import Link from "next/link";
 import { Layers, Cpu } from "lucide-react";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
 import { compareRecipesByDateAdded, primaryRecipeTask } from "@/lib/recipe-utils";
-import { TASK_ICON, TASK_LABEL, OUTPUT_ICON, OUTPUT_LABEL } from "@/components/recipes/task-icons";
+import { TASK_ICON, TASK_LABEL, OUTPUT_ICON, OUTPUT_LABEL, kindTooltip } from "@/components/recipes/task-icons";
+import { InfoTip } from "@/components/ui/tooltip";
 
-// The kind chip on a card. Text is the common case (about half the catalog)
-// and gets none, so the chip itself says "not a plain LLM". Colors match the
-// /browse Task filter; omni's color is the vLLM-Omni ring it carries.
+// The kind chip on a card. Text, the common case (about half the catalog),
+// is a neutral outline so the colored kinds stand out; the others match the
+// /browse Task filter, and omni's color is the vLLM-Omni ring it carries.
 const KIND_CHIP = {
+  text:       "border-border text-muted-foreground",
   multimodal: "border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-300",
   embedding:  "border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
   omni:       "border-border bg-muted/40 text-foreground/80",
@@ -119,7 +121,7 @@ function RecipeCard({ recipe }) {
             {recipe.hf_org}
           </div>
         </div>
-        <KindChip kind={kind} />
+        <KindChip kind={kind} tasks={recipe.meta?.tasks} outputs={recipe.omni_outputs} />
       </div>
 
       {/* Spec row */}
@@ -159,19 +161,29 @@ function RecipeCard({ recipe }) {
   );
 }
 
-function KindChip({ kind }) {
+function KindChip({ kind, tasks, outputs }) {
   const chip = KIND_CHIP[kind];
   if (!chip) return null;
   const Icon = TASK_ICON[kind];
   const label = TASK_LABEL[kind] || kind;
+  const tip = kindTooltip(kind, { tasks, omniOutputs: outputs });
   return (
-    <span
-      title={kind === "omni" ? "Served by vLLM-Omni" : label}
-      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap shrink-0 ${chip}`}
+    <InfoTip
+      side="top"
+      content={tip && (
+        <span className="block">
+          <span className="block font-semibold mb-0.5">{tip.title}</span>
+          {tip.body}
+        </span>
+      )}
     >
-      {Icon && <Icon size={kind === "omni" ? 11 : 10} />}
-      {label}
-    </span>
+      <span
+        className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap shrink-0 cursor-help ${chip}`}
+      >
+        {Icon && <Icon size={kind === "omni" ? 11 : 10} />}
+        {label}
+      </span>
+    </InfoTip>
   );
 }
 
