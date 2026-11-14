@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import yaml from "js-yaml";
 import Ajv from "ajv";
@@ -101,5 +101,106 @@ test("build rejects inconsistent variant feature and frontend references", () =>
     }
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// Reference fields name another object in the recipe (a feature, a variant, a
+// platform, a strategy) and every one of them is a lookup that misses
+// silently: no schema violation, no renderer error, just a page that quietly
+// differs from what the author wrote. Run the real build — a validator that
+// only exists in the test proves nothing.
+test("the build rejects a reference that names nothing", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-refs-"));
+  const content = path.join(tmpDir, "content");
+  fs.mkdirSync(path.join(content, "models/example"), { recursive: true });
+  for (const name of ["taxonomy.yaml", "platforms.yaml", "strategies", "kv_store"]) {
+    fs.cpSync(path.join(contentDir(), name), path.join(content, name), { recursive: true });
+  }
+  // `meta` holds the meta-scoped references, `top` the recipe-level ones.
+  const recipe = (meta = "", top = "") => `meta:
+  title: "Probe"
+  slug: "probe"
+  provider: "Example"
+  description: "Fixture."
+  date_added: 2026-01-01
+  date_updated: 2026-01-01
+  tasks: [text]
+${meta}
+model:
+  model_id: "example/probe"
+  min_vllm_version: "0.30.0"
+  architecture: dense
+  parameter_count: "8B"
+  active_parameters: "8B"
+  context_length: 8192
+${top}
+features:
+  tool_calling:
+    description: "Tool calling."
+    args: ["--enable-auto-tool-choice"]
+variants:
+  default: { precision: bf16, vram_minimum_gb: 20 }
+compatible_strategies: [single_node_tp]
+guide: |
+  ## Overview
+  Fixture.
+`;
+  const file = path.join(content, "models/example/Probe.yaml");
+  const build = (meta, top) => {
+    fs.writeFileSync(file, recipe(meta, top));
+    return spawnSync(process.execPath, ["scripts/build-recipes-api.mjs"], {
+      cwd: path.resolve(import.meta.dirname, ".."),
+      env: { ...process.env, RECIPES_CONTENT_DIR: content, RECIPES_PUBLIC_DIR: path.join(tmpDir, "public") },
+      encoding: "utf8",
+    });
+  };
+  try {
+    // The bare fixture is valid, so every failure below is the mutation's.
+    const clean = build();
+    assert.equal(clean.status, 0, clean.stderr);
+    assert.match(clean.stdout, /✓ JSON API: 1 models/);
+
+    // [field, meta-level addition, recipe-level addition, the message to expect]
+    const cases = [
+      ["meta.platforms", "  platforms: [modall]", "", /meta\.platforms: unknown platform "modall"/],
+      // An object entry names its platform through `id`; a typo there is the
+      // same silent drop as one in a bare string.
+      ["meta.platforms.id", '  platforms: [{ id: sagemakerr, blurb: "x" }]', "", /meta\.platforms: unknown platform "sagemakerr"/],
+      ["opt_in_features", "", "opt_in_features: [tool_callingg]", /opt_in_features: no feature "tool_callingg"/],
+      ["hardware_opt_in_features", "", "hardware_opt_in_features: { h200: [no_such_feature] }", /hardware_opt_in_features\.h200: no feature "no_such_feature"/],
+      ["meta.default_variant", "  default_variant: { h200: typo_variant }", "", /meta\.default_variant\.h200: no variant "typo_variant"/],
+      ["default_strategy", "", "default_strategy: multi_node_dep", /default_strategy: "multi_node_dep" is not offered/],
+    ];
+    for (const [field, meta, top, message] of cases) {
+      const run = build(meta, top);
+      assert.equal(run.status, 1, `${field}: expected a build failure`);
+      assert.match(run.stderr, /Unresolvable references/, `${field}: wrong error class`);
+      assert.match(run.stderr, message, `${field}: wrong message`);
+    }
+
+    // A reference that does resolve stays green: a catalog platform id, a
+    // feature and variant that exist, and a strategy the recipe offers.
+    const ok = build(
+      '  platforms: [modal]\n  default_variant: { h200: default }',
+      "opt_in_features: [tool_calling]\ndefault_strategy: single_node_tp",
+    );
+    assert.equal(ok.status, 0, ok.stderr);
+
+    // `platforms.yaml` carries no schema of its own, so a blank list item
+    // (`- null`) reaches the id collection as null. It names no platform, so it
+    // contributes none — but it must not take the build down on `.id`.
+    const platformsFile = path.join(content, "platforms.yaml");
+    const original = fs.readFileSync(platformsFile, "utf8");
+    fs.writeFileSync(platformsFile, `${original}\n  - null\n`);
+    try {
+      const blank = build();
+      assert.equal(blank.status, 0, blank.stderr);
+      // Two real platforms remain; the blank entry is not counted as a third.
+      assert.match(blank.stdout, /2 platforms/);
+    } finally {
+      fs.writeFileSync(platformsFile, original);
+    }
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
