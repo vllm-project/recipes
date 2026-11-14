@@ -46,11 +46,11 @@ test("IAXL hardware gate: Xeon CPUs and NVIDIA, minus Grace/Vera-based nodes and
 
 test("IAXL on Xeon CPU renders the CPU build, its env and the setvars.sh setup", () => {
   const r = run(recipe(), "xeon6", "iaxl");
-  assert.equal(r.env.DEVICE, "cpu");
+  assert.equal(r.env.IAXL_RECIPE, "vllm-cpu");
   assert.equal(r.env.TP_SIZE, flag(r.argv, "--tensor-parallel-size"));
   assert.equal(r.env.IAXL_DSA_GD_ENABLE, undefined);
-  // CPU sizes the pool explicitly; vLLM's CPU engine shares the host RAM.
-  assert.equal(r.env.IAXL_DDR_POOL_SIZE_GB, "16");
+  // IAXL's vllm-cpu recipe sizes the pool around vLLM's CPU KV cache.
+  assert.equal(r.env.IAXL_DDR_POOL_SIZE_GB, undefined);
   assert.match(r.setup, /source setvars\.sh/);
   assert.match(r.setup, /export LD_PRELOAD="\$IAXL_LD_PRELOAD/);
   // Chained to vllm serve, so a failing setvars.sh stops the launch.
@@ -65,6 +65,7 @@ test("IAXL on NVIDIA fills {tp_size} from the engine's TP and keeps DSA off by d
   assert.equal(r.env.TP_SIZE, "8");
   assert.equal(r.env.DEVICE, "cuda");
   assert.equal(r.env.IAXL_DSA_GD_ENABLE, "0");
+  assert.equal(r.env.IAXL_RECIPE, undefined);
   // GPU servers keep IAXL's own pool default (80% of host RAM across ranks).
   assert.equal(r.env.IAXL_DDR_POOL_SIZE_GB, undefined);
 });
@@ -136,7 +137,7 @@ test("agent renderings carry IAXL's setup and install steps, and no docker comma
 
   const urls = { page: "https://x.test/test/kv-offload", md: "https://x.test/test/kv-offload.md", json: "https://x.test/test/kv-offload.json" };
   const md = selectionMarkdown(r, page("hardware=xeon6&strategy=single_node_tp&kv_offload=iaxl"), { strategies, taxonomy, urls });
-  const exp = md.indexOf("export DEVICE=cpu"), src = md.indexOf("source setvars.sh"), serve = md.indexOf("vllm serve");
+  const exp = md.indexOf("export IAXL_RECIPE=vllm-cpu"), src = md.indexOf("source setvars.sh"), serve = md.indexOf("vllm serve");
   assert.ok(exp >= 0 && exp < src && src < serve, "exports, then setvars.sh, then vllm serve");
   assert.match(md, /&&\nvllm serve /, "setup chained straight into vllm serve");
   assert.ok(md.includes("IAXL_QATLIB=intree uv pip install --no-build-isolation -e ."));
