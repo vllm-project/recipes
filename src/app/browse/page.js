@@ -3,6 +3,7 @@ import { getAllRecipes } from "@/lib/recipes";
 import { loadTaxonomy } from "@/lib/taxonomy";
 import { isHardwareSupported, variantRunsOnHardware } from "@/lib/command-synthesis";
 import { BrowseList } from "@/components/recipes/BrowseList";
+import { omniOutputs } from "@/lib/recipe-utils";
 
 export const metadata = {
   title: "Browse all recipes",
@@ -50,6 +51,7 @@ export default function BrowsePage() {
         active_parameters: r.model?.active_parameters || null,
         context_length: r.model?.context_length || 0,
       },
+      omni_outputs: omniOutputs(r),
       variant: {
         precision: v.precision || null,
         vram_minimum_gb: v.vram_minimum_gb || null,

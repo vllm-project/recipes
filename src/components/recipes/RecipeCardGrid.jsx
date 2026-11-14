@@ -2,11 +2,19 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { Type, Eye, Sparkles, Hash, Layers, Cpu } from "lucide-react";
+import { Layers, Cpu } from "lucide-react";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
-import { compareRecipesByDateAdded } from "@/lib/recipe-utils";
+import { compareRecipesByDateAdded, primaryRecipeTask } from "@/lib/recipe-utils";
+import { TASK_ICON, TASK_LABEL, kindLabel } from "@/components/recipes/task-icons";
 
-const TASK_ICON = { text: Type, multimodal: Eye, omni: Sparkles, embedding: Hash };
+// The kind chip on a card. Text is the common case (about half the catalog)
+// and gets none, so the chip itself says "not a plain LLM". Colors match the
+// /browse Task filter; omni's color is the vLLM-Omni ring it carries.
+const KIND_CHIP = {
+  multimodal: "border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-300",
+  embedding:  "border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
+  omni:       "border-border bg-muted/40 text-foreground/80",
+};
 
 const LATEST_COUNT = 8;
 // At most 2 per provider: one org landing several recipes on the same day
@@ -79,7 +87,8 @@ export function RecipeCardGrid({ recipes }) {
 
 function RecipeCard({ recipe }) {
   const v = recipe.variants?.default || {};
-  const tasks = recipe.meta?.tasks || [];
+  const kind = primaryRecipeTask(recipe);
+  const isOmni = kind === "omni";
   const logo = getProviderLogo(recipe.hf_org);
   const isMoe = recipe.model?.architecture === "moe";
   const ctx = recipe.model?.context_length || 0;
@@ -110,6 +119,7 @@ function RecipeCard({ recipe }) {
             {recipe.hf_org}
           </div>
         </div>
+        <KindChip kind={kind} outputs={recipe.omni_outputs} />
       </div>
 
       {/* Spec row */}
@@ -123,20 +133,12 @@ function RecipeCard({ recipe }) {
             <span className="font-mono uppercase">{v.precision}</span>
           </Badge>
         )}
-        {ctx > 0 && (
+        {/* Context length means nothing for image / video / audio generation. */}
+        {ctx > 0 && !isOmni && (
           <Badge>
             <span className="font-mono">{ctxLabel} ctx</span>
           </Badge>
         )}
-        {tasks.map((t) => {
-          const Icon = TASK_ICON[t] || Hash;
-          return (
-            <Badge key={t} subtle>
-              <Icon size={9} />
-              <span className="capitalize">{t}</span>
-            </Badge>
-          );
-        })}
       </div>
 
       {/* Footer: hint or description */}
@@ -147,13 +149,25 @@ function RecipeCard({ recipe }) {
   );
 }
 
-function Badge({ children, subtle }) {
+function KindChip({ kind, outputs }) {
+  const chip = KIND_CHIP[kind];
+  if (!chip) return null;
+  const Icon = TASK_ICON[kind];
+  const label = kindLabel(kind, outputs);
   return (
-    <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 ${
-      subtle
-        ? "border-border/60 text-muted-foreground/70"
-        : "border-border text-muted-foreground"
-    }`}>
+    <span
+      title={kind === "omni" ? `Served by vLLM-Omni: ${label}` : TASK_LABEL[kind]}
+      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap shrink-0 ${chip}`}
+    >
+      {Icon && <Icon size={kind === "omni" ? 11 : 10} />}
+      {label}
+    </span>
+  );
+}
+
+function Badge({ children }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-muted-foreground">
       {children}
     </span>
   );

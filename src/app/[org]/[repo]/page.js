@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAllRecipes, getAllRoutablePairs, findVariantRedirect, getRecipeByHfId } from "@/lib/recipes";
-import { recipeHref, toBuilderRecipe } from "@/lib/recipe-utils";
+import { omniOutputs, recipeHref, toBuilderRecipe } from "@/lib/recipe-utils";
 import { siteUrl } from "@/lib/site-url";
 import { loadStrategies } from "@/lib/strategies";
 import { loadTaxonomy } from "@/lib/taxonomy";
@@ -18,6 +18,8 @@ import { ReferenceTabs } from "@/components/recipes/ConfigSections";
 import { whenLabels } from "@/lib/recipe-context";
 import { DeployDialog } from "@/components/recipes/DeployDialog";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
+import { OmniMark } from "@/components/icons/OmniMark";
+import { kindLabel } from "@/components/recipes/task-icons";
 import ShellCode from "@/components/recipes/ShellCode";
 import { SHELL_LANGS } from "@/lib/shell-highlight";
 import Markdown from "react-markdown";
@@ -250,7 +252,10 @@ export default async function RecipePage({ params, searchParams }) {
               ? ` / ${recipe.model.active_parameters}`
               : ""}
           </Badge>
-          <Badge variant="outline" className="text-xs">{(recipe.model.context_length || 0).toLocaleString()} ctx</Badge>
+          {/* Context length means nothing for image / video / audio generation. */}
+          {recipe.model.context_length > 0 && !recipe.meta.tasks?.includes("omni") && (
+            <Badge variant="outline" className="text-xs">{recipe.model.context_length.toLocaleString()} ctx</Badge>
+          )}
           {versionLink && <a
             href={versionLink.href}
             target="_blank"
@@ -270,13 +275,16 @@ export default async function RecipePage({ params, searchParams }) {
               title="vLLM-Omni serves the generation (omni) path — nightly wheels"
               className="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap transition-colors hover:border-vllm-blue/50 hover:text-vllm-blue"
             >
+              <OmniMark size={12} className="mr-1" />
               vLLM-Omni
               <span className="ml-1 text-vllm-yellow">nightly</span>
               <ExternalLink size={10} className="ml-1 opacity-50" />
             </a>
           )}
           {recipe.meta.tasks?.map((t) => (
-            <Badge key={t} variant="secondary" className="text-xs capitalize">{t}</Badge>
+            <Badge key={t} variant="secondary" className="text-xs capitalize">
+              {t === "omni" ? kindLabel("omni", omniOutputs(recipe)) : t}
+            </Badge>
           ))}
         </div>
       </header>
