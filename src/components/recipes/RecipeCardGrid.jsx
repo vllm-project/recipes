@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Layers, Cpu } from "lucide-react";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
 import { compareRecipesByDateAdded, primaryRecipeTask } from "@/lib/recipe-utils";
-import { TASK_ICON, TASK_LABEL, kindLabel } from "@/components/recipes/task-icons";
+import { TASK_ICON, TASK_LABEL, OUTPUT_ICON, OUTPUT_LABEL } from "@/components/recipes/task-icons";
 
 // The kind chip on a card. Text is the common case (about half the catalog)
 // and gets none, so the chip itself says "not a plain LLM". Colors match the
@@ -119,7 +119,7 @@ function RecipeCard({ recipe }) {
             {recipe.hf_org}
           </div>
         </div>
-        <KindChip kind={kind} outputs={recipe.omni_outputs} />
+        <KindChip kind={kind} />
       </div>
 
       {/* Spec row */}
@@ -133,6 +133,16 @@ function RecipeCard({ recipe }) {
             <span className="font-mono uppercase">{v.precision}</span>
           </Badge>
         )}
+        {/* What an omni model generates, where an LLM shows its context length. */}
+        {isOmni && (recipe.omni_outputs || []).map((o) => {
+          const Icon = OUTPUT_ICON[o];
+          return (
+            <Badge key={o}>
+              {Icon && <Icon size={9} />}
+              <span>{OUTPUT_LABEL[o] || o}</span>
+            </Badge>
+          );
+        })}
         {/* Context length means nothing for image / video / audio generation. */}
         {ctx > 0 && !isOmni && (
           <Badge>
@@ -149,14 +159,14 @@ function RecipeCard({ recipe }) {
   );
 }
 
-function KindChip({ kind, outputs }) {
+function KindChip({ kind }) {
   const chip = KIND_CHIP[kind];
   if (!chip) return null;
   const Icon = TASK_ICON[kind];
-  const label = kindLabel(kind, outputs);
+  const label = TASK_LABEL[kind] || kind;
   return (
     <span
-      title={kind === "omni" ? `Served by vLLM-Omni: ${label}` : TASK_LABEL[kind]}
+      title={kind === "omni" ? "Served by vLLM-Omni" : label}
       className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap shrink-0 ${chip}`}
     >
       {Icon && <Icon size={kind === "omni" ? 11 : 10} />}

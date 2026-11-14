@@ -19,7 +19,7 @@ import { whenLabels } from "@/lib/recipe-context";
 import { DeployDialog } from "@/components/recipes/DeployDialog";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import { OmniMark } from "@/components/icons/OmniMark";
-import { kindLabel } from "@/components/recipes/task-icons";
+import { outputsLabel } from "@/components/recipes/task-icons";
 import ShellCode from "@/components/recipes/ShellCode";
 import { SHELL_LANGS } from "@/lib/shell-highlight";
 import Markdown from "react-markdown";
@@ -283,7 +283,7 @@ export default async function RecipePage({ params, searchParams }) {
           )}
           {recipe.meta.tasks?.map((t) => (
             <Badge key={t} variant="secondary" className="text-xs capitalize">
-              {t === "omni" ? kindLabel("omni", omniOutputs(recipe)) : t}
+              {t === "omni" ? outputsLabel(omniOutputs(recipe)) || t : t}
             </Badge>
           ))}
         </div>
