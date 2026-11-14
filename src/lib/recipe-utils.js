@@ -70,6 +70,17 @@ export function toCardEntry(r) {
   };
 }
 
+/**
+ * What `CommandBuilder` reads: the whole recipe except `guide`. The guide is
+ * rendered server-side below the builder (and by the `.md` route from the
+ * source), so its Markdown would only ride along in the payload.
+ */
+export function toBuilderRecipe(r) {
+  // eslint-disable-next-line no-unused-vars
+  const { guide, ...rest } = r;
+  return rest;
+}
+
 function dateTimestamp(value) {
   const timestamp = Date.parse(value || "");
   return Number.isFinite(timestamp) ? timestamp : 0;

@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAllRecipes, getAllRoutablePairs, findVariantRedirect, getRecipeByHfId } from "@/lib/recipes";
-import { recipeHref } from "@/lib/recipe-utils";
+import { recipeHref, toBuilderRecipe } from "@/lib/recipe-utils";
 import { siteUrl } from "@/lib/site-url";
 import { loadStrategies } from "@/lib/strategies";
 import { loadTaxonomy } from "@/lib/taxonomy";
@@ -281,7 +281,7 @@ export default async function RecipePage({ params, searchParams }) {
       {/* ── Command Builder ── */}
       <section id="recipe-builder" className="mb-10 scroll-mt-20">
         <Suspense fallback={<CommandFallback hfId={recipe.hf_id} summary={fallbackSummary} rendering={fallback.rendering} />}>
-          <CommandBuilder recipe={recipe} strategies={strategies} taxonomy={taxonomy} contextNotes={notes} />
+          <CommandBuilder recipe={toBuilderRecipe(recipe)} strategies={strategies} taxonomy={taxonomy} contextNotes={notes} />
         </Suspense>
       </section>
 
