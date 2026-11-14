@@ -31,6 +31,7 @@ pnpm test:context                       # notes / troubleshooting: `when` matchi
 pnpm test:hardware                      # Hardware profile rules: Rubin's image and Docker-only install, precision, generation overrides
 pnpm test:pd-connectors                 # PD KV transfer connectors: config/env/router per connector, fallbacks, tiers, json_args addressing
 pnpm test:render                        # Page-query renderer (`.md` / `.json?…`) matches every static JSON rendering + preset point (run after build-recipes-api)
+pnpm test:api                           # Every published JSON file is self-consistent: variant runs there, serves its declared checkpoint, TP fits (run after build-recipes-api)
 node scripts/fetch-provider-logos.mjs   # Re-download HF org avatars to public/providers/
 node scripts/fetch-hf-dates.mjs         # Refresh public/hf-dates.json (HF createdAt per model)
 bash scripts/hf-info.sh <org>/<repo>    # Pull config.json / params.json for a model (used when authoring recipes)
