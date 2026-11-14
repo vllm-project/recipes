@@ -1005,6 +1005,29 @@ export function versionBelow(v, floor) {
   return false;
 }
 
+// Where the recipe header's "vLLM X.Y.Z+" badge points. A released floor links
+// its GitHub release notes (when that release brought the model in). An
+// unreleased floor (`nightly_required`) or a value that isn't a vLLM release
+// number (a stray "nightly") has no notes page, so it links the docs' install-
+// from-latest-code section instead. `nightly_required` is the "not released"
+// signal: no network lookup at build time. null when the recipe states no
+// floor at all (nothing to show).
+const VLLM_RELEASE_RE = /^\d+\.\d+\.\d+(rc\d+)?$/;
+const VLLM_NIGHTLY_DOCS =
+  "https://docs.vllm.ai/en/latest/getting_started/installation/gpu.html#install-the-latest-code";
+export function vllmVersionLink(model = {}) {
+  const v = String(model.min_vllm_version ?? "").trim();
+  if (!v && model.nightly_required !== true) return null;
+  if (model.nightly_required === true || !VLLM_RELEASE_RE.test(v)) {
+    return { href: VLLM_NIGHTLY_DOCS, title: "Install vLLM from the latest code (nightly)", nightly: true };
+  }
+  return {
+    href: `https://github.com/vllm-project/vllm/releases/tag/v${v}`,
+    title: `vLLM ${v} release notes`,
+    nightly: false,
+  };
+}
+
 // Higher of two "X.Y.Z" version strings (missing/blank loses). Used to bump the
 // displayed min vLLM version when the active variant needs a newer release than
 // the recipe baseline (e.g. the DSpark checkpoint requires 0.25.0).

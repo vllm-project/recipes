@@ -10,6 +10,17 @@ export function primaryRecipeTask(recipe) {
   return PRIMARY_TASK_PRIORITY.find((task) => tasks.includes(task)) || tasks[0] || "other";
 }
 
+// Omni catalog task ids (src/lib/omni-tasks.js) → what the model generates.
+const OMNI_OUTPUT = { t2i: "image", i2i: "image", t2v: "video", i2v: "video", ti2v: "video", t2a: "audio", a2a: "audio" };
+const OMNI_OUTPUT_ORDER = ["image", "video", "audio"];
+
+/** Output modalities of an omni recipe, from `omni.tasks`: e.g. ["image", "video"]. */
+export function omniOutputs(recipe) {
+  const ids = (recipe.omni?.tasks || []).map((t) => (typeof t === "string" ? t : t?.id));
+  const found = new Set(ids.map((id) => OMNI_OUTPUT[id]).filter(Boolean));
+  return OMNI_OUTPUT_ORDER.filter((o) => found.has(o));
+}
+
 /**
  * URL for a recipe — matches HuggingFace org/repo path.
  * e.g. /deepseek-ai/DeepSeek-V3.2 (swap huggingface.co → recipes.vllm.ai)
@@ -67,6 +78,7 @@ export function toCardEntry(r) {
       context_length: r.model?.context_length,
     },
     variants: { default: { precision: r.variants?.default?.precision } },
+    omni_outputs: omniOutputs(r),
   };
 }
 

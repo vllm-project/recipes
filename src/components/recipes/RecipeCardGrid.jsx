@@ -2,11 +2,22 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { Type, Eye, Sparkles, Hash, Layers, Cpu } from "lucide-react";
+import { Layers, Cpu } from "lucide-react";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
-import { compareRecipesByDateAdded } from "@/lib/recipe-utils";
+import { compareRecipesByDateAdded, primaryRecipeTask } from "@/lib/recipe-utils";
+import { TASK_ICON, TASK_LABEL, OUTPUT_ICON, OUTPUT_LABEL, kindTooltip } from "@/components/recipes/task-icons";
+import { InfoTip } from "@/components/ui/tooltip";
 
-const TASK_ICON = { text: Type, multimodal: Eye, omni: Sparkles, embedding: Hash };
+// The kind label on a card: an icon + muted text, no fill or border, so it
+// reads as metadata beside the title rather than competing with it. Only the
+// icon carries color (the /browse Task filter's hues; omni's vLLM-Omni ring
+// brings its own), enough to tell kinds apart at a glance.
+const KIND_ICON_CLASS = {
+  text:       "text-muted-foreground/70",
+  multimodal: "text-violet-500 dark:text-violet-400",
+  embedding:  "text-cyan-600 dark:text-cyan-400",
+  omni:       "",
+};
 
 const LATEST_COUNT = 8;
 // At most 2 per provider: one org landing several recipes on the same day
@@ -79,7 +90,8 @@ export function RecipeCardGrid({ recipes }) {
 
 function RecipeCard({ recipe }) {
   const v = recipe.variants?.default || {};
-  const tasks = recipe.meta?.tasks || [];
+  const kind = primaryRecipeTask(recipe);
+  const isOmni = kind === "omni";
   const logo = getProviderLogo(recipe.hf_org);
   const isMoe = recipe.model?.architecture === "moe";
   const ctx = recipe.model?.context_length || 0;
@@ -110,6 +122,7 @@ function RecipeCard({ recipe }) {
             {recipe.hf_org}
           </div>
         </div>
+        <KindChip kind={kind} tasks={recipe.meta?.tasks} outputs={recipe.omni_outputs} />
       </div>
 
       {/* Spec row */}
@@ -123,20 +136,22 @@ function RecipeCard({ recipe }) {
             <span className="font-mono uppercase">{v.precision}</span>
           </Badge>
         )}
-        {ctx > 0 && (
+        {/* What an omni model generates, where an LLM shows its context length. */}
+        {isOmni && (recipe.omni_outputs || []).map((o) => {
+          const Icon = OUTPUT_ICON[o];
+          return (
+            <Badge key={o}>
+              {Icon && <Icon size={9} />}
+              <span>{OUTPUT_LABEL[o] || o}</span>
+            </Badge>
+          );
+        })}
+        {/* Context length means nothing for image / video / audio generation. */}
+        {ctx > 0 && !isOmni && (
           <Badge>
             <span className="font-mono">{ctxLabel} ctx</span>
           </Badge>
         )}
-        {tasks.map((t) => {
-          const Icon = TASK_ICON[t] || Hash;
-          return (
-            <Badge key={t} subtle>
-              <Icon size={9} />
-              <span className="capitalize">{t}</span>
-            </Badge>
-          );
-        })}
       </div>
 
       {/* Footer: hint or description */}
@@ -147,13 +162,34 @@ function RecipeCard({ recipe }) {
   );
 }
 
-function Badge({ children, subtle }) {
+function KindChip({ kind, tasks, outputs }) {
+  if (!(kind in KIND_ICON_CLASS)) return null;
+  const Icon = TASK_ICON[kind];
+  const label = TASK_LABEL[kind] || kind;
+  const tip = kindTooltip(kind, { tasks, omniOutputs: outputs });
   return (
-    <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 ${
-      subtle
-        ? "border-border/60 text-muted-foreground/70"
-        : "border-border text-muted-foreground"
-    }`}>
+    <InfoTip
+      side="top"
+      content={tip && (
+        <span className="block">
+          <span className="block font-semibold mb-0.5">{tip.title}</span>
+          {tip.body}
+        </span>
+      )}
+    >
+      <span
+        className="inline-flex items-center gap-1 mt-0.5 text-[10px] text-muted-foreground whitespace-nowrap shrink-0 cursor-help"
+      >
+        {Icon && <Icon size={kind === "omni" ? 11 : 10} className={KIND_ICON_CLASS[kind]} />}
+        {label}
+      </span>
+    </InfoTip>
+  );
+}
+
+function Badge({ children }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-muted-foreground">
       {children}
     </span>
   );
