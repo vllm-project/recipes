@@ -8,14 +8,15 @@ import { compareRecipesByDateAdded, primaryRecipeTask } from "@/lib/recipe-utils
 import { TASK_ICON, TASK_LABEL, OUTPUT_ICON, OUTPUT_LABEL, kindTooltip } from "@/components/recipes/task-icons";
 import { InfoTip } from "@/components/ui/tooltip";
 
-// The kind chip on a card. Text, the common case (about half the catalog),
-// is a neutral outline so the colored kinds stand out; the others match the
-// /browse Task filter, and omni's color is the vLLM-Omni ring it carries.
-const KIND_CHIP = {
-  text:       "border-border text-muted-foreground",
-  multimodal: "border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-300",
-  embedding:  "border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
-  omni:       "border-border bg-muted/40 text-foreground/80",
+// The kind label on a card: an icon + muted text, no fill or border, so it
+// reads as metadata beside the title rather than competing with it. Only the
+// icon carries color (the /browse Task filter's hues; omni's vLLM-Omni ring
+// brings its own), enough to tell kinds apart at a glance.
+const KIND_ICON_CLASS = {
+  text:       "text-muted-foreground/70",
+  multimodal: "text-violet-500 dark:text-violet-400",
+  embedding:  "text-cyan-600 dark:text-cyan-400",
+  omni:       "",
 };
 
 const LATEST_COUNT = 8;
@@ -162,8 +163,7 @@ function RecipeCard({ recipe }) {
 }
 
 function KindChip({ kind, tasks, outputs }) {
-  const chip = KIND_CHIP[kind];
-  if (!chip) return null;
+  if (!(kind in KIND_ICON_CLASS)) return null;
   const Icon = TASK_ICON[kind];
   const label = TASK_LABEL[kind] || kind;
   const tip = kindTooltip(kind, { tasks, omniOutputs: outputs });
@@ -178,9 +178,9 @@ function KindChip({ kind, tasks, outputs }) {
       )}
     >
       <span
-        className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap shrink-0 cursor-help ${chip}`}
+        className="inline-flex items-center gap-1 mt-0.5 text-[10px] text-muted-foreground whitespace-nowrap shrink-0 cursor-help"
       >
-        {Icon && <Icon size={kind === "omni" ? 11 : 10} />}
+        {Icon && <Icon size={kind === "omni" ? 11 : 10} className={KIND_ICON_CLASS[kind]} />}
         {label}
       </span>
     </InfoTip>
