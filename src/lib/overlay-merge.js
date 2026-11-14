@@ -77,6 +77,7 @@ function noteInScope(note, ctx) {
 // When the schema gains a new hardware-keyed field, add it here.
 export const OVERLAY_RULES = [
   ["meta", "hardware", "@hw"],
+  ["meta", "default_variant", "@hw"],
   ["hardware_overrides", "@hw"],
   ["hardware_notes", "@hw"],
   { path: ["notes"], append: noteInScope },

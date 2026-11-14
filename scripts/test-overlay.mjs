@@ -7,6 +7,7 @@ import { test } from "node:test";
 import yaml from "js-yaml";
 import { applyOverlay, resolveScope, splitOverlay } from "../src/lib/overlay-merge.js";
 import { contentDir } from "../src/lib/content-root.js";
+import { pickFittingVariant } from "../src/lib/command-synthesis.js";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const taxonomy = yaml.load(fs.readFileSync(path.join(ROOT, "taxonomy.yaml"), "utf8"));
@@ -87,6 +88,39 @@ test("overlay can't touch out-of-scope hardware or model config", () => {
   assert.equal(errs({ compatible_strategies: ["pd_cluster"] }).length, 1);
   assert.equal(errs({ strategy_hardware: { pd_cluster: { h200: "unsupported" } } }).length, 1);
   assert.equal(errs({ meta: { default_hardware: "ascend_910c" } }).length, 1);
+  for (const hw of ["default", "h200", "blackwell", "nvidia", "amd"]) {
+    assert.equal(errs({ meta: { default_variant: { [hw]: "ascend_int8" } } }).length, 1, hw);
+  }
+});
+
+test("overlay hardware defaults select a variant and survive split → merge", () => {
+  const core = {
+    meta: { default_variant: { default: "gpu", nvidia: "gpu" } },
+    variants: { gpu: { precision: "bf16", supported_hardware: ["h200"] } },
+  };
+  const overlay = {
+    meta: { default_variant: { ascend_910c: "ascend_int8", npu: "ascend_int8", huawei: "ascend_int8" } },
+    variants: {
+      ascend_bf16: { precision: "bf16", vram_minimum_gb: 100, supported_hardware: ["ascend_910c"] },
+      ascend_int8: { precision: "int8", vram_minimum_gb: 50, supported_hardware: ["ascend_910c"] },
+    },
+  };
+  const { recipe, errors } = applyOverlay(core, overlay, { ctx, source });
+  assert.deepEqual(errors, []);
+  assert.deepEqual(recipe.meta.default_variant, { ...core.meta.default_variant, ...overlay.meta.default_variant });
+  // The author's pick wins over the larger-footprint fallback.
+  assert.equal(pickFittingVariant(recipe, taxonomy.hardware_profiles.ascend_910c, "ascend_910c"), "ascend_int8");
+
+  const split = splitOverlay(recipe, { ctx, source });
+  assert.deepEqual(split.core, core);
+  assert.deepEqual(split.overlay, overlay);
+  assert.deepEqual(applyOverlay(split.core, split.overlay, { ctx, source }), { recipe, errors: [] });
+  // Repeating the same defaults during a source cutover is a no-op.
+  assert.deepEqual(applyOverlay(recipe, overlay, { ctx, source }), { recipe, errors: [] });
+  const conflict = applyOverlay(recipe, { meta: { default_variant: { ascend_910c: "ascend_bf16" } } }, { ctx, source });
+  assert.equal(conflict.errors.length, 1);
+  assert.match(conflict.errors[0], /meta\.default_variant\.ascend_910c/);
+  assert.deepEqual(conflict.recipe, recipe);
 });
 
 test("overlay is add-only", () => {
