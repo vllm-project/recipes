@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import yaml from "js-yaml";
 import Ajv from "ajv";
@@ -101,5 +101,104 @@ test("build rejects inconsistent variant feature and frontend references", () =>
     }
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// `meta.hardware.<gpu>` is a claim about a GPU; whether a rendering exists for
+// that GPU is computed from precision + the variant allowlist + single-node
+// fit. Nothing compares the two, so a claim no variant backs keeps its ✓ badge,
+// stays in the picker and on the browse facets, and then disables every
+// variant — the page says the model runs there and gives no way to run it.
+// Same for a variant override keyed on a GPU its own allowlist excludes: dead
+// config, never read. Warnings, not failures — the YAML belongs upstream.
+test("the build reports hardware declarations no variant can honour", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-claims-"));
+  const content = path.join(dir, "content");
+  fs.mkdirSync(path.join(content, "models/example"), { recursive: true });
+  for (const name of ["taxonomy.yaml", "platforms.yaml", "strategies", "kv_store"]) {
+    fs.cpSync(path.join(contentDir(), name), path.join(content, name), { recursive: true });
+  }
+  // `hardware` is the meta-level map, `variant` the variant body.
+  const recipe = (hardware, variant = "    precision: bf16\n    vram_minimum_gb: 20") => `meta:
+  title: "Probe"
+  slug: "probe"
+  provider: "Example"
+  description: "Fixture."
+  date_added: 2026-01-01
+  date_updated: 2026-01-01
+  tasks: [text]
+  hardware: ${hardware}
+model:
+  model_id: "example/probe"
+  min_vllm_version: "0.30.0"
+  architecture: dense
+  parameter_count: "8B"
+  active_parameters: "8B"
+  context_length: 8192
+variants:
+  default:
+${variant}
+compatible_strategies: [single_node_tp]
+guide: |
+  ## Overview
+  Fixture.
+`;
+  const file = path.join(content, "models/example/Probe.yaml");
+  const build = (hardware, variant) => {
+    fs.writeFileSync(file, recipe(hardware, variant));
+    return spawnSync(process.execPath, ["scripts/build-recipes-api.mjs"], {
+      cwd: path.resolve(import.meta.dirname, ".."),
+      env: { ...process.env, RECIPES_CONTENT_DIR: content, RECIPES_PUBLIC_DIR: path.join(dir, "public") },
+      encoding: "utf8",
+    });
+  };
+  try {
+    // A claim the only variant backs: no warning, and the build is green.
+    const clean = build("{ h200: verified }");
+    assert.equal(clean.status, 0, clean.stderr);
+    assert.match(clean.stdout, /✓ JSON API: 1 models/);
+    assert.doesNotMatch(clean.stderr, /no variant runs there|never read/);
+
+    // `gb200` claimed verified while the only variant's allowlist excludes it.
+    // The build still succeeds — the stale claim is upstream content.
+    const orphan = build("{ h200: verified, gb200: verified }", "    precision: bf16\n    vram_minimum_gb: 20\n    supported_hardware: [h200]");
+    assert.equal(orphan.status, 0, orphan.stderr);
+    assert.match(orphan.stderr, /meta\.hardware\.gb200: declared verified, but no variant runs there/);
+    // The message names the rule, so the reader knows whether to widen the
+    // allowlist or drop the claim.
+    assert.match(orphan.stderr, /supported_hardware is h200/);
+    // h200 itself is backed, so it stays quiet: the check is per pair.
+    assert.doesNotMatch(orphan.stderr, /meta\.hardware\.h200/);
+
+    // A variant override keyed on a GPU the variant excludes is never read.
+    const dead = build(
+      "{ h200: verified }",
+      "    precision: bf16\n    vram_minimum_gb: 20\n    supported_hardware: [h200]\n    hardware_overrides:\n      gb200:\n        extra_args: [\"--max-num-seqs\", \"1\"]",
+    );
+    assert.equal(dead.status, 0, dead.stderr);
+    assert.match(dead.stderr, /variants\.default\.hardware_overrides\.gb200: never read/);
+
+    // Vram that can't fit a non-scalable profile is the third way a claim goes
+    // unbacked; say so by name rather than repeating the allowlist message.
+    const big = build("{ rtx_pro_6000: supported }", "    precision: bf16\n    vram_minimum_gb: 500");
+    assert.equal(big.status, 0, big.stderr);
+    assert.match(big.stderr, /meta\.hardware\.rtx_pro_6000: declared supported, but no variant runs there/);
+    assert.match(big.stderr, /do not fit single-node/);
+
+    // The budget the message quotes must be the one the fit check used. An
+    // exact-GPU `hardware_overrides.<gpu>.vram_minimum_gb` replaces the
+    // variant's top-level value, so quoting the latter names a number that was
+    // never compared against the node.
+    const overridden = build(
+      "{ rtx_pro_6000: supported }",
+      "    precision: bf16\n    vram_minimum_gb: 20\n    hardware_overrides:\n      rtx_pro_6000:\n        vram_minimum_gb: 500",
+    );
+    assert.equal(overridden.status, 0, overridden.stderr);
+    assert.match(overridden.stderr, /meta\.hardware\.rtx_pro_6000: declared supported, but no variant runs there/);
+    assert.match(overridden.stderr, /do not fit single-node on rtx_pro_6000 \(500 GB\)/);
+    // …and the top-level 20 GB, which does fit, must not be what is reported.
+    assert.doesNotMatch(overridden.stderr, /\(20 GB\)/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
