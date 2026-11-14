@@ -8,18 +8,40 @@ import yaml from "js-yaml";
 import { resolveCommand, buildDockerRun, computeDockerMeta } from "../src/lib/command-synthesis.js";
 import { substitute } from "../src/lib/cluster-endpoints.js";
 import { contentDir } from "../src/lib/content-root.js";
+import { loadStrategies } from "../src/lib/strategies.js";
+import { presetSelect, resolvePresetKey } from "../src/lib/recipe-presets.js";
 
 // Recipes live in their source repos; read the assembled tree (run
 // build-recipes-api or assemble-content first).
 const read = (file) => yaml.load(fs.readFileSync(path.join(contentDir(), file), "utf8"));
 const recipe = read("models/XiaomiMiMo/MiMo-V2.6-Flash-RL.yaml");
 const taxonomy = read("taxonomy.yaml");
-const strategies = Object.fromEntries(fs.readdirSync(new URL("../strategies", import.meta.url))
-  .filter((file) => file.endsWith(".yaml"))
-  .map((file) => { const strategy = read(`strategies/${file}`); return [strategy.name, strategy]; }));
+// The same map the site and the build use: `strategies/*.yaml` plus the
+// kv_store deployments, which a preset's `select.kv_offload` names. Reading
+// only the strategies directory leaves those ids unknown, so a preset that
+// composes a Mooncake tier renders the bare connector its `json_args` then
+// cannot address.
+const strategies = loadStrategies();
 const flag = (argv, key) => argv[argv.indexOf(key) + 1];
-const resolve = ({ router = "smg", hardware = "gb300", pools = { prefill: { nodes: 1 }, decode: { nodes: 1 } }, offload = null, model = recipe, strategy = "pd_cluster", transport = "http", features = ["tool_calling", "reasoning"], variant = "default", frontend = undefined } = {}) =>
-  resolveCommand(model, variant, strategy, hardware, features, strategies, taxonomy, [], 1, pools, {}, offload, null, frontend, router, transport);
+// A recipe's default preset reaches synthesis through two channels, and both
+// belong to the lane it names: `json_args` (applied by withPreset, so they
+// always land) and `select`. A caller that asks for a different PD router has
+// left that lane — SMG rejects KV offload outright, and the preset's connector
+// edits address a MultiConnector no other router builds — so it renders the
+// baseline instead, the way the builder's Preset row's Baseline does.
+const presetFor = (model, hardware, strategy, variant, router) => {
+  const key = resolvePresetKey(model, hardware, strategy, undefined, variant);
+  const sel = presetSelect(model, key, undefined) || {};
+  return sel.pd_router && sel.pd_router !== router ? "baseline" : key;
+};
+const presetKvOffload = (model, key) => {
+  const sel = key === "baseline" ? {} : presetSelect(model, key, undefined) || {};
+  return sel.kv_offload && sel.kv_offload !== "off" ? sel.kv_offload : null;
+};
+const resolve = ({ router = "smg", hardware = "gb300", pools = { prefill: { nodes: 1 }, decode: { nodes: 1 } }, offload = null, model = recipe, strategy = "pd_cluster", transport = "http", features = ["tool_calling", "reasoning"], variant = "default", frontend = undefined } = {}) => {
+  const preset = presetFor(model, hardware, strategy, variant, router);
+  return resolveCommand(model, variant, strategy, hardware, features, strategies, taxonomy, [], 1, pools, {}, offload ?? presetKvOffload(model, preset), null, frontend, router, transport, null, preset);
+};
 
 test("SMG preserves MiMo TP4 HTTP workers and producer/consumer connectors", () => {
   const result = resolve();
