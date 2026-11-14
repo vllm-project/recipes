@@ -289,7 +289,7 @@ export default async function RecipePage({ params, searchParams }) {
       <section className="space-y-3">
         <GuideLinks>
           <div className="space-y-3">
-            <ReferenceTabs {...sectionProps} guide={guide ? <GuideMarkdown>{guide}</GuideMarkdown> : null} />
+            <ReferenceTabs {...sectionProps} defaultHardware={fallback.selection.hardware} guide={guide ? <GuideMarkdown>{guide}</GuideMarkdown> : null} />
           </div>
         </GuideLinks>
       </section>

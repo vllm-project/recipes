@@ -9,7 +9,7 @@
 // a selection everything renders unfiltered, and every tab panel stays in the
 // DOM, so no content is lost to search or to find-in-page.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, Link2 } from "lucide-react";
 import { requestPreset, useSelection } from "@/lib/selection-store";
 import { holdInPlace } from "@/lib/hold-in-place";
@@ -69,7 +69,7 @@ function Runbook({ preset }) {
   );
 }
 
-function PresetCard({ hfId, p, hardware, strategyLabels, active }) {
+function PresetCard({ hfId, p, hardware, strategyLabels, active, showHardware = true }) {
   const id = `preset-${p.key}`;
   // The no-JS / new-tab path: a variant-scoped preset needs its variant in the
   // link, or the builder opens on `default` and rejects the preset.
@@ -104,7 +104,7 @@ function PresetCard({ hfId, p, hardware, strategyLabels, active }) {
       className={`rounded-lg border px-4 py-3 transition-colors ${active ? "border-vllm-blue/50 bg-vllm-blue/[0.04]" : "cursor-pointer border-foreground/10 hover:border-vllm-blue/40 hover:bg-vllm-blue/[0.02]"}`}
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="rounded-md border border-foreground/15 px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{hardware[p.hardware]?.display_name || p.hardware}</span>
+        {showHardware && <span className="rounded-md border border-foreground/15 px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{hardware[p.hardware]?.display_name || p.hardware}</span>}
         <span id={id} className="scroll-mt-24 font-semibold">{p.label}</span>
         {!p.default && (
           <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium" title="Not applied automatically: pick it in the builder's Preset row">Opt-in</span>
@@ -128,6 +128,72 @@ function PresetCard({ hfId, p, hardware, strategyLabels, active }) {
         <SourceLink source={p.source} />
       </div>
       {p.runbook && <Runbook preset={p} />}
+    </div>
+  );
+}
+
+// Presets grouped by hardware: groups in the Hardware row's order (taxonomy),
+// cards in YAML order inside. Only which group is open follows the builder's
+// hardware; the order never does, because a card on another GPU switches the
+// builder's hardware, and moving that group to the top would carry the card
+// the reader just clicked away. A group the reader opened or closed stays
+// that way; the builder's group opens on its own (on the server, the recipe's
+// default hardware, which is also the first client render). One hardware: no
+// groups.
+function PresetGroups({ hfId, presets, hardware, strategyLabels, sel, defaultHardware }) {
+  const groups = useMemo(() => {
+    const order = Object.keys(hardware);
+    const rank = (hw) => (order.includes(hw) ? order.indexOf(hw) : order.length);
+    const byHw = new Map();
+    for (const p of presets) {
+      if (!byHw.has(p.hardware)) byHw.set(p.hardware, []);
+      byHw.get(p.hardware).push(p);
+    }
+    return [...byHw.entries()].sort((a, b) => rank(a[0]) - rank(b[0]));
+  }, [presets, hardware]);
+  const current = sel?.hwId ?? defaultHardware;
+  const [manual, setManual] = useState({});
+  // A hardware switch opens the new group even if the reader closed it before.
+  useEffect(() => {
+    setManual((m) => {
+      if (!(current in m)) return m;
+      const next = { ...m };
+      delete next[current];
+      return next;
+    });
+  }, [current]);
+  const isOpen = (hw) => (hw in manual ? manual[hw] : hw === current);
+  // Record only the reader's toggles (and reveal() opening a group for a
+  // #preset- link), not the `open` changes this component renders itself.
+  const onToggle = (hw) => (e) => {
+    const open = e.currentTarget.open;
+    setManual((m) => (!(hw in m) && open === (hw === current) ? m : { ...m, [hw]: open }));
+  };
+
+  const card = (p, showHardware) => (
+    <PresetCard key={p.key} hfId={hfId} p={p} hardware={hardware} strategyLabels={strategyLabels}
+      active={sel?.preset === p.key} showHardware={showHardware} />
+  );
+  if (groups.length < 2) return <div className="space-y-2">{presets.map((p) => card(p, true))}</div>;
+  return (
+    <div className="space-y-2">
+      {groups.map(([hw, list]) => {
+        const name = hardware[hw]?.display_name || hw;
+        const inUse = list.some((p) => sel?.preset === p.key);
+        return (
+          <details key={hw} open={isOpen(hw)} onToggle={onToggle(hw)} className="group/hw rounded-lg border border-foreground/10">
+            <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 rounded-lg px-3 py-2 hover:bg-muted/40 [&::-webkit-details-marker]:hidden">
+              <Chevron className="w-3.5 h-3.5 -rotate-90 group-open/hw:rotate-0 text-muted-foreground" />
+              <span className="font-mono text-sm font-semibold">{name}</span>
+              {hw === sel?.hwId && <span className="rounded-md bg-vllm-blue/15 px-1.5 py-0.5 text-[11px] font-medium text-vllm-blue">Selected in the builder</span>}
+              <span className="text-xs text-muted-foreground">{list.length} preset{list.length > 1 ? "s" : ""}</span>
+              {inUse && <span className="text-[11px] font-medium text-vllm-blue group-open/hw:hidden">· one in use</span>}
+              <span className="min-w-0 basis-full truncate pl-5 text-xs text-muted-foreground group-open/hw:hidden">{list.map((p) => p.label).join(" · ")}</span>
+            </summary>
+            <div className="space-y-2 px-3 pb-3">{list.map((p) => card(p, false))}</div>
+          </details>
+        );
+      })}
     </div>
   );
 }
@@ -198,7 +264,7 @@ function useRevealHashOnSelection(ready, within) {
 // single tab left there is no tab bar. Inactive panels use
 // hidden="until-found", so find-in-page still reaches them and switches the
 // tab (beforematch). A #hash inside a panel selects its tab first.
-export function ReferenceTabs({ hfId, hardware, strategyLabels, presets, troubleshooting, guide }) {
+export function ReferenceTabs({ hfId, hardware, strategyLabels, presets, troubleshooting, guide, defaultHardware }) {
   const sel = useSelection(hfId);
   const mine = sel ? troubleshooting.filter((t) => whenMatches(t.when, sel, hardware)) : troubleshooting;
   const other = sel ? troubleshooting.filter((t) => !whenMatches(t.when, sel, hardware)) : [];
@@ -313,12 +379,8 @@ export function ReferenceTabs({ hfId, hardware, strategyLabels, presets, trouble
           <p className="mb-3 text-sm text-muted-foreground">
             Configurations qualified on specific hardware, layered on the baseline command. Unless marked Opt-in, a preset applies automatically on its hardware and strategy; pick Baseline in the builder to drop it.
           </p>
-          <div className="space-y-2">
-            {/* YAML order, fixed: a card the reader clicks stays where it is. */}
-            {presets.map((p) => (
-              <PresetCard key={p.key} hfId={hfId} p={p} hardware={hardware} strategyLabels={strategyLabels} active={sel?.preset === p.key} />
-            ))}
-          </div>
+          {/* Fixed order (see PresetGroups): a card the reader clicks stays where it is. */}
+          <PresetGroups hfId={hfId} presets={presets} hardware={hardware} strategyLabels={strategyLabels} sel={sel} defaultHardware={defaultHardware} />
         </div></div>
       )}
 
