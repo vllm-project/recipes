@@ -113,6 +113,7 @@ test("MoRI-IO: workers register with the router, which discovers them; addresses
   assert.match(r.router.command, /--kv-connector moriio \\\n\s+--vllm-discovery-address 0\.0\.0\.0:36367/);
   assert.doesNotMatch(r.router.command, /--prefill|--decode/);
   assert.equal(r.kvConnector.docker.host_network, true);
+  assert.deepEqual(r.kvConnector.install.map((s) => s.command), ["uv pip install amd_mori"]);
 });
 
 test("a connector the hardware or router can't run falls back to NIXL with the reason", () => {

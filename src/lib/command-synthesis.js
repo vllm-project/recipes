@@ -1811,7 +1811,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   // fall-through to the CUDA build (they're gated out upstream by
   // isKvStoreBrandSupported, this is defense in depth).
   const resolveBrandInstall = (raw) => {
-    if (raw && typeof raw === "object") {
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
       const key = hwProfile?.brand === "AMD" ? "amd"
         : hwProfile?.brand === "NVIDIA" ? "nvidia"
         : null;
