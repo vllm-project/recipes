@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { getAllRecipes } from "@/lib/recipes";
 import { RecipeCardGrid } from "@/components/recipes/RecipeCardGrid";
+import { toCardEntry } from "@/lib/recipe-utils";
 
 export const metadata = {
   // `absolute` bypasses the layout's `%s | vLLM Recipes` template — without it
@@ -10,7 +11,7 @@ export const metadata = {
 };
 
 export default async function HomePage() {
-  const recipes = getAllRecipes();
+  const recipes = getAllRecipes().map(toCardEntry);
 
   return (
     <main className="max-w-[1480px] mx-auto px-4 sm:px-6 py-8">

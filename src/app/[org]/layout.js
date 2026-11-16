@@ -1,5 +1,6 @@
 import { getAllRecipes } from "@/lib/recipes";
 import { ModelSidebar } from "@/components/recipes/ModelSidebar";
+import { toSidebarEntry } from "@/lib/recipe-utils";
 
 export default async function OrgLayout({ children }) {
   const recipes = getAllRecipes();
@@ -27,7 +28,9 @@ export default async function OrgLayout({ children }) {
 
   return (
     <div className="max-w-[1480px] mx-auto px-4 sm:px-6 flex gap-6">
-      <ModelSidebar recipesByOrg={sorted} />
+      <ModelSidebar
+        recipesByOrg={sorted.map(([org, models]) => [org, models.map(toSidebarEntry)])}
+      />
       <div className="flex-1 min-w-0">
         {children}
       </div>

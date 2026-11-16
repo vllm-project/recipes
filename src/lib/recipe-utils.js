@@ -10,6 +10,17 @@ export function primaryRecipeTask(recipe) {
   return PRIMARY_TASK_PRIORITY.find((task) => tasks.includes(task)) || tasks[0] || "other";
 }
 
+// Omni catalog task ids (src/lib/omni-tasks.js) → what the model generates.
+const OMNI_OUTPUT = { t2i: "image", i2i: "image", t2v: "video", i2v: "video", ti2v: "video", t2a: "audio", a2a: "audio" };
+const OMNI_OUTPUT_ORDER = ["image", "video", "audio"];
+
+/** Output modalities of an omni recipe, from `omni.tasks`: e.g. ["image", "video"]. */
+export function omniOutputs(recipe) {
+  const ids = (recipe.omni?.tasks || []).map((t) => (typeof t === "string" ? t : t?.id));
+  const found = new Set(ids.map((id) => OMNI_OUTPUT[id]).filter(Boolean));
+  return OMNI_OUTPUT_ORDER.filter((o) => found.has(o));
+}
+
 /**
  * URL for a recipe — matches HuggingFace org/repo path.
  * e.g. /deepseek-ai/DeepSeek-V3.2 (swap huggingface.co → recipes.vllm.ai)
@@ -21,6 +32,65 @@ export function recipeHref(recipe) {
   // Fallback for recipes that somehow lack hf_id derivation
   const org = recipe.meta.provider.toLowerCase().replace(/\s+/g, "-");
   return `/${org}/${recipe.meta.title}`;
+}
+
+/*
+ * Client-component projections of a recipe.
+ *
+ * Every prop a server component hands a client component is serialized into
+ * the page's RSC payload, which ships inline in the HTML *and* again in every
+ * `<Link>` prefetch of a page sharing that layout. Passing whole recipes (guide,
+ * variants, presets, …) to the sidebar and the homepage grid made each page
+ * ~2.7 MB raw / ~500 KB compressed. Pass these projections instead, and add a
+ * field here when a client component starts reading it — a field left out
+ * reads as `undefined` without any error.
+ */
+
+/** What `ModelSidebar` reads: link target, label, task icon. */
+export function toSidebarEntry(r) {
+  return {
+    hf_id: r.hf_id,
+    hf_org: r.hf_org,
+    hf_repo: r.hf_repo,
+    meta: { title: r.meta.title, provider: r.meta.provider, tasks: r.meta.tasks },
+  };
+}
+
+/** What `RecipeCardGrid` reads: card text, badges and "latest" ordering. */
+export function toCardEntry(r) {
+  return {
+    hf_id: r.hf_id,
+    hf_org: r.hf_org,
+    hf_repo: r.hf_repo,
+    meta: {
+      title: r.meta.title,
+      provider: r.meta.provider,
+      description: r.meta.description,
+      performance_headline: r.meta.performance_headline,
+      date_added: r.meta.date_added,
+      date_updated: r.meta.date_updated,
+      tasks: r.meta.tasks,
+    },
+    model: {
+      architecture: r.model?.architecture,
+      parameter_count: r.model?.parameter_count,
+      active_parameters: r.model?.active_parameters,
+      context_length: r.model?.context_length,
+    },
+    variants: { default: { precision: r.variants?.default?.precision } },
+    omni_outputs: omniOutputs(r),
+  };
+}
+
+/**
+ * What `CommandBuilder` reads: the whole recipe except `guide`. The guide is
+ * rendered server-side below the builder (and by the `.md` route from the
+ * source), so its Markdown would only ride along in the payload.
+ */
+export function toBuilderRecipe(r) {
+  // eslint-disable-next-line no-unused-vars
+  const { guide, ...rest } = r;
+  return rest;
 }
 
 function dateTimestamp(value) {

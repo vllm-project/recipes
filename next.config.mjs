@@ -31,15 +31,32 @@ const nextConfig = {
   // too: it lands on a param value, which the route strips.
   async rewrites() {
     const render = (format) => `/api/render/${format}/:org/:repo`;
+    // A recipe page path; static files beside it (`/<hf_id>.json`, logos)
+    // carry an extension and keep being served as files.
+    const recipePage = "/:org/:repo((?!.*\\.(?:json|md|txt|xml|png|jpe?g|svg|webp|ico)$)[^/]+)";
     return {
-      beforeFiles: SELECTION_PARAMS.flatMap((key) => [
-        { source: "/:org/:repo.json", has: [{ type: "query", key }], destination: render("json") },
-        ...["md", "json"].map((format) => ({
-          source: "/:org/:repo",
-          has: [{ type: "query", key, value: `.*\\.${format}` }],
-          destination: render(format),
-        })),
-      ]),
+      beforeFiles: [
+        ...SELECTION_PARAMS.flatMap((key) => [
+          { source: "/:org/:repo.json", has: [{ type: "query", key }], destination: render("json") },
+          ...["md", "json"].map((format) => ({
+            source: "/:org/:repo",
+            has: [{ type: "query", key, value: `.*\\.${format}` }],
+            destination: render(format),
+          })),
+        ]),
+        // An assistant fetching a recipe page for a user gets its Markdown
+        // twin, for the page's own query string. The static HTML can't follow
+        // the query (it shows the default configuration until the builder
+        // runs), so a shared link read as HTML would hand the agent the wrong
+        // command. User-triggered fetchers only (not crawlers), plus anything
+        // that asks for Markdown outright.
+        {
+          source: recipePage,
+          has: [{ type: "header", key: "user-agent", value: ".*(?:ChatGPT-User|Claude-User|Perplexity-User|MistralAI-User).*" }],
+          destination: render("md"),
+        },
+        { source: recipePage, has: [{ type: "header", key: "accept", value: ".*text/markdown.*" }], destination: render("md") },
+      ],
       afterFiles: [{ source: "/:org/:repo.md", destination: render("md") }],
     };
   },

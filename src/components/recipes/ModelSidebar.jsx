@@ -5,15 +5,9 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
 import { primaryRecipeTask, recipeHref } from "@/lib/recipe-utils";
-import { ChevronRight, Type, Eye, Sparkles, Hash, Cpu } from "lucide-react";
+import { ChevronRight, Cpu } from "lucide-react";
+import { TASK_ICON, TASK_LABEL } from "@/components/recipes/task-icons";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
-
-const TASK_ICON = {
-  text:       Type,
-  multimodal: Eye,
-  omni:       Sparkles,
-  embedding:  Hash,
-};
 
 export function ModelSidebar({ recipesByOrg }) {
   const pathname = usePathname();
@@ -111,7 +105,7 @@ export function ModelSidebar({ recipesByOrg }) {
                     const primaryTask = primaryRecipeTask(m);
                     const Icon = TASK_ICON[primaryTask] || Cpu;
                     return (
-                      <InfoTip key={m.hf_id} content={primaryTask}>
+                      <InfoTip key={m.hf_id} content={TASK_LABEL[primaryTask] || primaryTask}>
                         <Link
                           ref={isActive ? activeRef : null}
                           href={recipeHref(m)}
@@ -121,7 +115,7 @@ export function ModelSidebar({ recipesByOrg }) {
                               : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
                           }`}
                         >
-                          <Icon size={10} className="shrink-0 opacity-60" />
+                          <Icon size={10} className={`shrink-0 ${primaryTask === "omni" ? "" : "opacity-60"}`} />
                           <span className="truncate">{m.hf_repo || m.meta.title}</span>
                         </Link>
                       </InfoTip>

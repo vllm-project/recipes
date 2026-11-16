@@ -11,19 +11,126 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import yaml from "js-yaml";
 import { getAllRecipes } from "../src/lib/recipes.js";
 import { loadStrategies } from "../src/lib/strategies.js";
 import { loadTaxonomy } from "../src/lib/taxonomy.js";
-import { resolveSelection, synthesizeInstall } from "../src/lib/recipe-render.js";
+import { renderCommand, resolveSelection, synthesizeInstall } from "../src/lib/recipe-render.js";
 import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
 import { validateContextEntries } from "../src/lib/recipe-context.js";
 import { presetSelect, resolvePresetKey } from "../src/lib/recipe-presets.js";
 import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode, isFrontendSupported, resolveFrontend, resolveOmniCommand, restoreVariantDefaults, versionBelow } from "../src/lib/command-synthesis.js";
+import { ascendPdPools, ascendPdRecipe } from "./fixtures/ascend-pd.mjs";
 
 const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES_PUBLIC_DIR) : path.join(process.cwd(), "public");
 const strategies = loadStrategies();
+strategies.pd_cluster = yaml.load(fs.readFileSync(new URL("../strategies/pd_cluster.yaml", import.meta.url), "utf8"));
 const taxonomy = loadTaxonomy();
 const readJson = (rel) => JSON.parse(fs.readFileSync(path.join(PUBLIC, rel), "utf8"));
+
+test("Ascend PD URL overrides cannot bypass preset declarations or misreport the fallback", () => {
+  for (const [name, edit, params, router = "vllm"] of [
+    ["no declaration", (r) => { r.presets = {}; }, {}],
+    ["Baseline", () => {}, { preset: "baseline" }],
+    ["another variant", (r) => {
+      r.variants.other = { ...r.variants.default };
+      r.presets.ascend_pd.variants = ["default"];
+    }, { variant: "other" }],
+    ["unconfigured point", (r) => {
+      delete r.presets.ascend_pd.select.pd_connector;
+      r.presets.ascend_pd.points = {
+        qualified: { default: true, select: { pd_connector: "mooncake_ascend" } },
+        unconfigured: {},
+      };
+    }, { point: "unconfigured" }, "ascend"],
+  ]) {
+    const recipe = ascendPdRecipe();
+    edit(recipe);
+    const query = new URLSearchParams({ hardware: "ascend_950dt", strategy: "pd_cluster", preset: "ascend_pd",
+      features: "none", pd_router: "ascend", pd_connector: "mooncake_ascend", ...params });
+    const resolved = resolveSelection(recipe, query, strategies, taxonomy);
+    assert.equal(resolved.rendering.pd_router, router, name);
+    assert.equal(resolved.rendering.pd_connector, "nixl", name);
+    assert.equal(resolved.selection.pd_router, router, name);
+    for (const [param, requested, used] of [["pd_router", "ascend", router], ["pd_connector", "mooncake_ascend", "nixl"]]) {
+      assert.equal(resolved.selection.adjusted.some((a) => a.param === param && a.requested === requested && a.used === used), requested !== used, `${name}: ${param}`);
+    }
+  }
+  const routerOnly = ascendPdRecipe();
+  delete routerOnly.presets.ascend_pd.select.pd_connector;
+  assert.equal(renderCommand(routerOnly, "default", "pd_cluster", "ascend_950dt", 1, [], strategies, taxonomy,
+    ascendPdPools(), null, "ascend_pd", undefined, true).pd_router, "ascend");
+  const connectorOnly = ascendPdRecipe();
+  delete connectorOnly.presets.ascend_pd.select.pd_router;
+  assert.throws(() => renderCommand(connectorOnly, "default", "pd_cluster", "ascend_950dt", 1, [], strategies, taxonomy,
+    ascendPdPools(), null, "ascend_pd", undefined, true), /Invalid preset .*ascend_pd/);
+  const invalidTransfer = ascendPdRecipe();
+  invalidTransfer.presets.ascend_pd.roles.decode.json_args["--kv-transfer-config"] = { MooncakeConnectorV2: { kv_connector: null } };
+  assert.throws(() => renderCommand(invalidTransfer, "default", "pd_cluster", "ascend_950dt", 1, [], strategies, taxonomy,
+    ascendPdPools(), null, "ascend_pd", undefined, true), /PD decode:.*--kv-transfer-config/);
+});
+
+test("PD JSON and Markdown contain every node independently of the selected rank", () => {
+  const recipe = ascendPdRecipe();
+  for (const role of ["prefill", "decode"]) recipe.presets.ascend_pd.roles[role].nodes = 8;
+  const pools = (rank) => Object.fromEntries(Object.entries(ascendPdPools(rank)).map(([role, pool]) => [role, { ...pool, nodes: 8 }]));
+  const flag = (argv, key) => argv[argv.lastIndexOf(key) + 1];
+  const allowed = new Set(["command", "argv", "env", "nodes", "parallelism", "tp", "pp", "dpLocal", "dpSize", "poolGpus", "currentNode", "startRank", "docker_command", "docker_argv", "node_commands"]);
+  const staticAt = (rank) => renderCommand(recipe, "default", "pd_cluster", "ascend_950dt", 1, [], strategies, taxonomy,
+    pools(rank), null, "ascend_pd", undefined, true);
+  const first = staticAt(0);
+  for (const rank of [0, 7]) {
+    const query = new URLSearchParams({ hardware: "ascend_950dt", strategy: "pd_cluster", preset: "ascend_pd", features: "none", prefill_rank: String(rank), decode_rank: String(rank) });
+    const resolved = resolveSelection(recipe, query, strategies, taxonomy);
+    const r = resolved.rendering;
+    assert.ok(r);
+    assert.equal(r.pd_router, "ascend");
+    assert.equal(r.orchestrator, undefined);
+    assert.equal(r.prefill.tp, 16);
+    assert.equal(r.decode.tp, 4);
+    const md = selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls: { page: "https://example.org/test/Ascend-PD", json: "https://example.org/test/Ascend-PD.json" } });
+    for (const role of ["prefill", "decode"]) {
+      const p = r[role];
+      assert.equal(p.nodes, 8);
+      assert.ok(Object.keys(p).every((key) => allowed.has(key)), Object.keys(p).join(", "));
+      assert.deepEqual(p.node_commands, first[role].node_commands, "the full pool must not depend on the selected rank");
+      assert.deepEqual(p.node_commands, staticAt(rank)[role].node_commands, "static and query exports share every launch");
+      assert.deepEqual(p.node_commands.map((node) => node.node_rank), [0, 1, 2, 3, 4, 5, 6, 7]);
+      assert.deepEqual(p.argv, p.node_commands[rank].argv);
+      for (const node of p.node_commands) {
+        assert.ok(md.includes(node.command), `${role} node ${node.node_rank} missing from Markdown`);
+        assert.ok(node.docker_command && node.docker_argv.includes("example/ascend:fixture"));
+        assert.equal(node.env.HCCL_IF_IP, `$${role.toUpperCase()}_NODE_${node.node_rank + 1}`);
+        assert.equal(flag(node.argv, role === "prefill" ? "--node-rank" : "--data-parallel-start-rank"), String(node.node_rank * (role === "decode" ? 2 : 1)));
+      }
+    }
+    assert.doesNotMatch(md, /Start_Server|run_dp_template|launch_online_dp/);
+    assert.ok(md.includes("- `prefill_rank`, `decode_rank`"));
+    assert.ok(md.includes("- `pd_connector`"));
+  }
+  // The same export contract serves ordinary GPU pools, with their existing
+  // hybrid DEP commands and without leaking UI layout state into JSON.
+  const gpu = {
+    hf_id: "test/GPU-PD", model: { model_id: "test/GPU-PD", architecture: "moe" },
+    variants: { default: { precision: "bf16", vram_minimum_gb: 1 } },
+    compatible_strategies: ["single_node_tp", "multi_node_dep", "pd_cluster"],
+  };
+  for (const hw of ["h200", "mi300x"]) {
+    const r = renderCommand(gpu, "default", "pd_cluster", hw, 1, [], strategies, taxonomy,
+      { prefill: { nodes: 2, parallelism: "tp" }, decode: { nodes: 2, parallelism: "dep" } });
+    assert.equal(r.pd_router, "vllm");
+    for (const role of ["prefill", "decode"]) {
+      assert.ok(Object.keys(r[role]).every((key) => allowed.has(key)));
+      assert.equal(r[role].node_commands.length, 2);
+      assert.deepEqual(r[role].argv, r[role].node_commands[0].argv);
+    }
+    assert.equal(flag(r.prefill.argv, "--tensor-parallel-size"), "16");
+    assert.equal(flag(r.decode.argv, "--data-parallel-size"), "16");
+    assert.equal(flag(r.decode.node_commands[1].argv, "--data-parallel-start-rank"), "8");
+    assert.ok(r.decode.argv.includes("--data-parallel-hybrid-lb"));
+    assert.ok(!r.decode.argv.includes("--data-parallel-multi-port-external-lb"));
+  }
+});
 
 test("Omni variants inherit, replace or clear model base args", () => {
   for (const key of ["default", "alternate"]) {

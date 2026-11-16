@@ -116,6 +116,7 @@ test("SMG registration follows worker ports and rejects incompatible connector o
   model.strategy_overrides.pd_cluster.decode.vllm_args.push("--kv-transfer-config", '{"kv_connector":"MultiConnector","kv_role":"kv_both"}');
   const unsupported = resolve({ model });
   assert.equal(unsupported.orchestrator, "vllm-router");
+  assert.equal(unsupported.pdRouter, "vllm");
   assert.match(unsupported.routerUnavailableReason, /NixlConnector/);
   assert.equal(unsupported.registration, undefined);
 });

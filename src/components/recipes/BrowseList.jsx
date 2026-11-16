@@ -3,18 +3,21 @@
 import { useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Layers, Cpu, X, ArrowDownUp, Type, Eye, Sparkles, Hash, SlidersHorizontal, ChevronDown } from "lucide-react";
+import { Layers, Cpu, X, ArrowDownUp, SlidersHorizontal, ChevronDown } from "lucide-react";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
 import { searchRecipes } from "@/lib/search";
+import { primaryRecipeTask } from "@/lib/recipe-utils";
+import { TASK_ICON, kindLabel } from "@/components/recipes/task-icons";
 
 // Per-row decorations: icon (tasks/arch) or colored dot (precision/hardware).
 // Color is family-grouped — precision tiers, GPU brands — so the eye can
 // scan a row by hue without reading every label.
+// Omni has no iconClass: the vLLM-Omni ring brings its own colors.
 const TASK_META = {
-  text:       { icon: Type,     iconClass: "text-sky-500 dark:text-sky-400" },
-  multimodal: { icon: Eye,      iconClass: "text-violet-500 dark:text-violet-400" },
-  omni:       { icon: Sparkles, iconClass: "text-amber-500 dark:text-amber-400" },
-  embedding:  { icon: Hash,     iconClass: "text-cyan-500 dark:text-cyan-400" },
+  text:       { icon: TASK_ICON.text,       iconClass: "text-sky-500 dark:text-sky-400" },
+  multimodal: { icon: TASK_ICON.multimodal, iconClass: "text-violet-500 dark:text-violet-400" },
+  omni:       { icon: TASK_ICON.omni },
+  embedding:  { icon: TASK_ICON.embedding,  iconClass: "text-cyan-500 dark:text-cyan-400" },
 };
 const ARCH_META = {
   moe:   { icon: Layers, iconClass: "text-violet-500 dark:text-violet-400", label: "MoE" },
@@ -570,7 +573,8 @@ function Chip({ active, count, onClick, icon: Icon, iconClass, dot, logo, mono, 
       aria-pressed={active}
       className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] transition-all ${style}`}
     >
-      {Icon && <Icon size={13} className={leadIconColor} aria-hidden />}
+      {/* grayscale: an icon with its own colors (the vLLM-Omni ring) ignores text color */}
+      {Icon && <Icon size={13} className={`${leadIconColor} ${disabled ? "grayscale opacity-40" : ""}`} aria-hidden />}
       {dot && <span className={`inline-block rounded-full shrink-0 ${dotClass}`} aria-hidden />}
       {logo && (
         // eslint-disable-next-line @next/next/no-img-element
@@ -615,7 +619,8 @@ function Row({ recipe, hardware, precision, hardwareById }) {
   const verified = Object.entries(r.meta.hardware || {})
     .filter(([, s]) => s === "verified")
     .map(([h]) => h);
-  const tasks = r.meta.tasks || [];
+  const kind = primaryRecipeTask(r);
+  const KindIcon = kind === "omni" ? TASK_META.omni.icon : null;
 
   return (
     <li>
@@ -639,7 +644,11 @@ function Row({ recipe, hardware, precision, hardwareById }) {
             </div>
             <div className="font-mono text-[10px] text-muted-foreground truncate">
               {r.hf_org}
-              {tasks.length > 0 && <span className="ml-2">· {tasks.join(" · ")}</span>}
+              {(r.meta.tasks || []).length > 0 && (
+                <span className="ml-2 inline-flex items-center gap-1 align-middle">
+                  · {KindIcon && <KindIcon size={10} />}{kindLabel(kind, r.omni_outputs)}
+                </span>
+              )}
             </div>
           </div>
         </div>

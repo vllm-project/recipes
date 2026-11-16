@@ -5,7 +5,8 @@ import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@
 import { primaryRecipeTask, recipeHref } from "@/lib/recipe-utils";
 import { siteUrl } from "@/lib/site-url";
 import { Badge } from "@/components/ui/badge";
-import { ExternalLink, Type, Eye, Sparkles, Cpu, Hash } from "lucide-react";
+import { ExternalLink, Cpu } from "lucide-react";
+import { TASK_ICON, TASK_LABEL } from "@/components/recipes/task-icons";
 import { buildBreadcrumbLd, jsonLdScript } from "@/lib/jsonld";
 
 export async function generateStaticParams() {
@@ -46,12 +47,9 @@ export async function generateMetadata({ params }) {
 }
 
 // Task → icon + display label
-const TASK_META = {
-  text:       { icon: Type,     label: "Text" },
-  multimodal: { icon: Eye,      label: "Multimodal" },
-  omni:       { icon: Sparkles, label: "Omni" },
-  embedding:  { icon: Hash,     label: "Embedding" },
-};
+const TASK_META = Object.fromEntries(
+  Object.keys(TASK_ICON).map((t) => [t, { icon: TASK_ICON[t], label: TASK_LABEL[t] }]),
+);
 const TASK_ORDER = ["multimodal", "text", "omni", "embedding"];
 
 export default async function OrgPage({ params }) {

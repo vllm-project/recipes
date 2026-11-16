@@ -2,10 +2,11 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { track } from "@vercel/analytics";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { maxVersion, resolveInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickLinkedVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason } from "@/lib/command-synthesis";
+import { maxVersion, resolveInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickLinkedVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason, ascendPdUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, presetSelect, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import ShellCode from "@/components/recipes/ShellCode";
@@ -36,13 +37,14 @@ const FEATURE_MODE_NOTES = {
 // combos (e.g. EP on a dense model) while still exposing parallelism knobs.
 import { loadPreferences, savePreference, loadRecipeState, saveRecipeState } from "@/lib/preferences";
 
-function CopyButton({ text, className = "" }) {
+function CopyButton({ text, className = "", onCopy }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(text);
+    onCopy?.();
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, [text]);
+  }, [text, onCopy]);
   return (
     <button
       onClick={handleCopy}
@@ -380,6 +382,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const hwIdRef = useRef(hwId);
   hwIdRef.current = hwId;
 
+  // The query the mount's restore settles on, written by the effect after the
+  // pendingQs reset below (effects run in declaration order on mount).
+  const restoredQs = useRef(null);
+
   // After mount: restore preferences from localStorage in two scopes.
   // URL params always win (explicit > stored).
   //   1. Global (hardware): tracks the user's physical setup, shared across
@@ -392,13 +398,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   useEffect(() => {
     const prefs = loadPreferences();
     let restoredFitsHw = null;
+    // Everything this mount changes away from what the URL says goes back into
+    // the URL in one replace at the end, so the address bar reproduces the
+    // page: a link copied from it (and its `.md` twin an agent reads) renders
+    // the command the reader sees. Restored choices are written the way their
+    // pill handlers write them; values derived from them (a variant that fits,
+    // an auto-bumped node count) follow from the URL alone and stay out.
+    const sp = new URLSearchParams(searchParams.toString());
+    const setParam = (key, value) => (value ? sp.set(key, value) : sp.delete(key));
     // Variant restrictions beat an incompatible hardware query parameter.
-    // Normalize the URL immediately so copied links match the rendered state.
-    if (requestedHwId && requestedHwId !== hwId) {
-      const sp = new URLSearchParams(searchParams.toString());
-      sp.set("hardware", hwId);
-      router.replace(`?${sp.toString()}${window.location.hash}`, { scroll: false });
-    }
+    if (requestedHwId && requestedHwId !== hwId) setParam("hardware", hwId);
     if (!searchParams.get("hardware") && prefs.hardware) {
       const v = recipe.variants?.[variant] || recipe.variants?.default || {};
       const prefProfile = taxonomy.hardware_profiles?.[prefs.hardware];
@@ -410,26 +419,33 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       const restrictedElsewhere = prefProfile?.restricted && !declaredHere;
       if (prefProfile?.brand === "NVIDIA" && !restrictedElsewhere && isPrecisionCompatible(prefProfile, v) && isHardwareSupported(recipe, prefs.hardware) && isVariantHardwareSupported(v, prefs.hardware, prefProfile)) {
         setHwId(prefs.hardware);
+        setParam("hardware", prefs.hardware);
         restoredFitsHw = prefProfile;
       }
     }
+    // The hardware this mount settles on (URL > restored pref > default).
+    const resolvedHwId = restoredFitsHw ? prefs.hardware : hwId;
 
     const rs = loadRecipeState(recipe.hf_id);
     if (!searchParams.get("frontend") && rs.frontend && taxonomy.frontends?.[rs.frontend]) {
-      setFrontend(resolveFrontend(recipe, rs.frontend, taxonomy));
+      const f = resolveFrontend(recipe, rs.frontend, taxonomy);
+      setFrontend(f);
+      if (f !== resolveFrontend(recipe, null, taxonomy)) setParam("frontend", f);
     }
     if (!searchParams.get("strategy") && rs.strategy &&
         effectiveCompatibleStrategies(recipe).includes(rs.strategy) &&
         strategies[rs.strategy]?.deploy_type !== "kv_store_lb") {
       setStrategyOverride(rs.strategy);
+      setParam("strategy", rs.strategy);
     }
     if (!searchParams.has("features") && Array.isArray(rs.features)) {
       const recipeFeatures = Object.keys(recipe.features || {});
-      setFeatures(rs.features.filter((f) => recipeFeatures.includes(f)));
+      const restored = rs.features.filter((f) => recipeFeatures.includes(f));
+      setFeatures(restored);
+      // Empty when they match this hardware's defaults, like the pills write it.
+      setParam("features", featuresToUrl(restored, resolvedHwId, variant));
     }
-    // Resolve the hardware this mount actually settles on (URL > restored pref
-    // > default) so the non-scalable fixups below see the right profile.
-    const resolvedHwId = restoredFitsHw ? prefs.hardware : hwId;
+    // The non-scalable fixups below see the hardware this mount settles on.
     const resolvedHw = taxonomy.hardware_profiles?.[resolvedHwId];
     const resolvedScalable = isHardwareScalable(resolvedHw);
     // KV offload restores separately from the serving strategy: "simple" is
@@ -442,11 +458,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           (strategies[rs.kvOffload]?.deploy_type === "kv_store_lb" &&
             resolvedScalable && isKvStoreBrandSupported(resolvedHw) && isKvStoreSupported(rs.kvOffload, resolvedHwId)))) {
       setKvOffload(rs.kvOffload);
+      setParam("kv_offload", rs.kvOffload);
     }
     if (!searchParams.get("kv_instances")) {
       const savedInstances = parseInt(rs.kvInstances, 10);
       if (Number.isFinite(savedInstances) && savedInstances >= 1 && savedInstances <= 16) {
         setKvInstances(savedInstances);
+        // Only a Mooncake topology reads the count; its default stays out.
+        const topo = sp.get("kv_offload");
+        if (strategies[topo]?.deploy_type === "kv_store_lb") {
+          setParam("kv_instances", savedInstances === (strategies[topo].default_instances || 2) ? "" : String(savedInstances));
+        }
       }
     }
     // Non-scalable hardware can't shard an oversized variant. If we land on one
@@ -477,11 +499,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       if ([1, 2].includes(saved)) {
         // A saved single-node pick can't stand where no single-node strategy is offered.
         const single = resolvedHw && multiNodeUnavailable(recipe, strategies, resolvedHw, v, resolvedHwId);
-        setNodeCount(atFloor(saved === 1 && multi ? 2 : saved > 1 && single ? 1 : saved));
+        const n = atFloor(saved === 1 && multi ? 2 : saved > 1 && single ? 1 : saved);
+        setNodeCount(n);
+        setParam("nodes", n === 1 ? "" : String(n));
       } else if (restoredFitsHw && multi) {
         setNodeCount(atFloor(2));
       }
     }
+    const qs = sp.toString();
+    if (qs !== searchParams.toString()) restoredQs.current = qs;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -621,7 +647,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   });
   // PD router selection is only used under pd_cluster.
   const [pdRouter, setPdRouter] = useState(() =>
-    ["dynamo", "smg"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : "vllm"
+    ["dynamo", "smg", "ascend"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : "vllm"
   );
   // PD KV transfer connector (pd_cluster.yaml `connectors`); null = the default.
   const [pdConnector, setPdConnector] = useState(() => {
@@ -1212,7 +1238,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
         }
         : null;
-      return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick, pdConnector);
+      try {
+        return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick, pdConnector);
+      } catch (error) {
+        if (!(error instanceof RangeError) || !error.message.startsWith("PD ")) throw error;
+        return { deployType: "pd_cluster", nodeCount, prefill: {}, decode: {}, router: {},
+          pdRouter, orchestrator: pdRouter === "ascend" ? "ascend-proxy" : pdRouter,
+          deploymentError: error.message };
+      }
     },
     [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick, pdConnector]
   );
@@ -1220,6 +1253,23 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // Publish the selection for the sections below the builder (This
   // configuration / Tuned presets / Troubleshooting filter on it).
   const selectedPreset = result?.preset?.selected ?? null;
+
+  // Vercel Analytics: a Pro custom event carries at most two properties, and
+  // the page path already names the recipe. `setup` packs the rest into one
+  // groupable string: strategy | preset@point (or "baseline" when this
+  // hardware has presets and none is in use) | kv:<option>.
+  const trackCommandCopy = () => {
+    const omni = (recipe.meta?.tasks || []).includes("omni");
+    const point = result?.preset?.point?.selected;
+    const setup = omni
+      ? ["omni", omniTask].filter(Boolean).join(":")
+      : [
+        activeStrategy,
+        result?.preset ? (selectedPreset ? `${selectedPreset}${point ? `@${point}` : ""}` : "baseline") : null,
+        activeKvOffload ? `kv:${activeKvOffload}` : null,
+      ].filter(Boolean).join("|");
+    track("copy_command", { hw: hwId, setup });
+  };
   // A preset can run DEP on part of the node (`--data-parallel-size 2`);
   // say so the way the TP hint does.
   const depWidth = isSingleNode && activeStrategy === "single_node_dep" && Array.isArray(result?.argv)
@@ -1227,8 +1277,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     : hwGpuCount;
   const showDepUsageHint = depWidth < hwGpuCount;
   // The whole selection as an explicit page query, for the `.md` / `.json`
-  // forms (Copy page). The address bar can't stand in for it: syncUrl omits
-  // defaults, and choices restored from storage never reach the URL.
+  // forms (Copy page). The address bar reproduces the page too (restored
+  // choices are written to it on mount), but syncUrl omits defaults.
   const selectedPoint = result?.preset?.point?.selected ?? null;
   const shareQuery = useMemo(() => {
     const q = new URLSearchParams({ hardware: hwId, variant });
@@ -1241,7 +1291,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const fmode = Object.entries(featureModes).filter(([k, m]) => m && isFeatureAllowedForVariant(currentVariant, k) && recipe.features?.[k]?.modes).map(([k, m]) => `${k}:${m}`);
     if (fmode.length) q.set("fmode", fmode.join(","));
     if (advanced.length) q.set("advanced", advanced.join(","));
-    q.set("frontend", effectiveFrontend);
+    q.set("frontend", result.frontendRequired || effectiveFrontend);
     if (selectedPreset) q.set("preset", selectedPreset);
     if (selectedPoint) q.set("point", selectedPoint);
     if (activeKvOffload) {
@@ -1257,14 +1307,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       q.set("decode_mode", effPdDecodePar);
       if (pdPrefillRank > 0) q.set("prefill_rank", String(pdPrefillRank));
       if (pdDecodeRank > 0) q.set("decode_rank", String(pdDecodeRank));
-      q.set("pd_router", pdRouter);
-      if (pdConnector) q.set("pd_connector", pdConnector);
+      q.set("pd_router", pdRouter === "ascend" ? result.pdRouter || "vllm" : pdRouter);
+      if (pdConnector) q.set("pd_connector", pdConnector === "mooncake_ascend" ? result.kvConnector?.selected || "" : pdConnector);
       if (pdTransport !== "http") q.set("pd_transport", pdTransport);
     } else {
       q.set("nodes", String(nodeCount));
     }
     return q.toString();
-  }, [recipe, hwId, variant, currentVariant, omniTask, activeStrategy, effectiveFeatures, featureModes, advanced, effectiveFrontend, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, pdRouter, pdConnector, pdTransport, nodeCount]);
+  }, [recipe, hwId, variant, currentVariant, omniTask, activeStrategy, effectiveFeatures, featureModes, advanced, effectiveFrontend, result.frontendRequired, result.pdRouter, result.kvConnector?.selected, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, pdRouter, pdConnector, pdTransport, nodeCount]);
   useEffect(() => {
     publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features: activeFeatures, preset: selectedPreset, query: shareQuery });
   }, [recipe.hf_id, hwId, activeStrategy, variant, activeFeatures, selectedPreset, shareQuery]);
@@ -1299,6 +1349,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // instead of the last one reverting the others.
   const pendingQs = useRef(null);
   useEffect(() => { pendingQs.current = null; }, [searchParams]);
+  // Write what the mount restored (see restoredQs). Declared after the reset
+  // above so it isn't cleared, and through pendingQs so a syncUrl in the same
+  // tick (a preset's `select`, a reset effect) builds on it rather than on
+  // the stale searchParams.
+  useEffect(() => {
+    const qs = restoredQs.current;
+    if (qs == null) return;
+    restoredQs.current = null;
+    pendingQs.current = qs;
+    router.replace(`${qs ? `?${qs}` : pathname}${window.location.hash}`, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const activeStrategyRef = useRef(activeStrategy);
   activeStrategyRef.current = activeStrategy;
   const syncUrl = useCallback(
@@ -1595,10 +1657,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // Dynamo is brand-gated (strategy YAML `dynamo.brands`); on other hardware
   // the row shows vLLM Router active and synthesis ignores the pick.
   const dynamoOk = isDynamoSupportedOnHardware(strategies.pd_cluster?.dynamo, hwProfile);
+  const ascendVisible = hwProfile.brand === "Huawei";
+  const pdSelect = presetSelect(recipe, resolvePresetKey(recipe, hwId, activeServingStrategy, presetPick, variant), pointPick);
+  const ascendReason = ascendPdUnavailableReason(strategies[activeServingStrategy], hwProfile, pdSelect, "pd_router");
+  const ascendConnectorReason = ascendPdUnavailableReason(strategies[activeServingStrategy], hwProfile, pdSelect, "pd_connector");
   const smgReason = smgUnsupportedReason(recipe, strategies.pd_cluster, {
     prefill: { parallelism: effPdPrefillPar }, decode: { parallelism: effPdDecodePar },
   }, activeKvOffload);
-  const effPdRouter = result.orchestrator === "smg" ? "smg" : result.orchestrator === "dynamo" ? "dynamo" : "vllm";
+  const effPdRouter = result.pdRouter || (result.orchestrator === "smg" ? "smg" : result.orchestrator === "dynamo" ? "dynamo" : "vllm");
   const isSmgGrpc = result.orchestrator === "smg" && result.transport === "grpc";
   const selectPdRouter = (value) => {
     setPdRouter(value);
@@ -1608,12 +1674,28 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // hardware or router can't run falls back to the default).
   const pdConnectors = strategies.pd_cluster?.connectors || {};
   const effPdConnector = result.kvConnector?.selected ?? null;
-  const pdConnectorReason = (key) => pdConnectorUnavailableReason(pdConnectors[key], hwProfile, effPdRouter);
+  const pdConnectorReason = (key) => (key === "mooncake_ascend" && ascendConnectorReason)
+    || pdConnectorUnavailableReason(pdConnectors[key], hwProfile, effPdRouter);
   const selectPdConnector = (key) => {
     const isDefault = pdConnectors[key]?.default;
     setPdConnector(isDefault ? null : key);
     syncUrl({ pd_connector: isDefault ? "" : key });
   };
+
+  // Leaving the declared preset also leaves its Ascend-only choices. Synthesis
+  // enforces this synchronously; clear stale state and URLs after the render.
+  useEffect(() => {
+    const updates = {};
+    if (ascendReason && pdRouter === "ascend") {
+      setPdRouter("vllm");
+      updates.pd_router = "";
+    }
+    if (ascendConnectorReason && pdConnector === "mooncake_ascend") {
+      setPdConnector(null);
+      updates.pd_connector = "";
+    }
+    if (Object.keys(updates).length) syncUrl(updates);
+  }, [ascendReason, ascendConnectorReason, pdRouter, pdConnector, syncUrl]);
 
   const setPdPar = (role, mode) => {
     if (!pdModes.includes(mode)) return;
@@ -1712,7 +1794,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     [recipe, hwId]
   );
 
-  const selectPreset = (key) => {
+  // `via`: "row" (Preset row), "card" (Presets tab), for analytics.
+  const selectPreset = (key, via = "row") => {
+    track("select_preset", { preset: key, via });
     const target = recipe.presets?.[key];
     const otherVariant = target?.variants?.length && !target.variants.includes(variant) ? target.variants[0] : null;
     const otherStrategy = target?.strategy && target.strategy !== activeStrategy ? target.strategy : null;
@@ -1734,6 +1818,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   };
 
   const selectPoint = (key) => {
+    track("select_preset", { preset: `${result?.preset?.selected ?? "baseline"}@${key}`, via: "point" });
     const points = result?.preset?.point?.options || [];
     const def = (points.find((pt) => pt.default) || points[0])?.key;
     const next = key === def ? null : key;
@@ -1754,7 +1839,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   useEffect(() => onPresetRequest(({ hfId, key }) => {
     const target = recipe.presets?.[key];
     if (hfId !== recipe.hf_id || !target) return;
-    if (target.hardware === hwIdRef.current) selectPresetRef.current(key);
+    if (target.hardware === hwIdRef.current) selectPresetRef.current(key, "card");
     else {
       requestedPreset.current = key;
       selectHardwareRef.current(target.hardware);
@@ -1764,7 +1849,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const key = requestedPreset.current;
     if (!key || recipe.presets?.[key]?.hardware !== hwId) return;
     requestedPreset.current = null;
-    selectPreset(key);
+    selectPreset(key, "card");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hwId]);
 
@@ -1774,7 +1859,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // strategy of a default preset. On the first render, fields the URL set
   // explicitly stay as linked. Declared after the DCP / preset scope resets
   // so a switch's resets can't undo the preset's picks. Leaving the preset
-  // (Baseline) keeps these choices; the user changes them like any other.
+  // (Baseline) keeps ordinary choices; Ascend PD requires the active declaration.
   const activeSelect = result?.preset?.select || null;
   const selectKey = result?.preset ? `${result.preset.selected}|${result.preset.point?.selected ?? ""}` : "";
   const appliedSelectKey = useRef(null);
@@ -2084,7 +2169,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const hwFullName = hwProfile?.brand
     ? `${hwProfile.brand} ${hwProfile.display_name || hwId}`
     : (hwProfile?.display_name || hwId);
-  const statusHeader = hwStatus === "verified" && !activeKvOffload && !["dynamo", "smg"].includes(result.orchestrator) ? (
+  const statusHeader = hwStatus === "verified" && !activeKvOffload && !["dynamo", "smg", "ascend-proxy"].includes(result.orchestrator) ? (
     <span className="text-[11px] font-medium text-green-500 inline-flex items-center gap-1.5">
       <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />
       Verified on {hwFullName}
@@ -2333,6 +2418,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               configSummary={omniConfigSummary}
               endpointsControls={omniEndpointsControls}
               commandNote={commandNote}
+              onCopy={trackCommandCopy}
             />
           </div>
 
@@ -2544,7 +2630,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           className={`rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border transition-shadow ${changed ? "ring-2 ring-vllm-blue/30" : ""
             }`}
         >
-          {isPd ? (
+          {result.deploymentError ? (
+            <p role="alert" className="px-4 py-5 text-sm text-amber-600">{result.deploymentError}</p>
+          ) : isPd ? (
             <PdClusterBlock
               result={displayedResult}
               verifyCmd={verifyCmd}
@@ -2556,6 +2644,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               configSummary={configSummary}
               endpointsControls={endpointsControls}
               commandNote={commandNote}
+              onCopy={trackCommandCopy}
             />
           ) : isKvStore ? (
             <KvStoreLbBlock
@@ -2569,6 +2658,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               configSummary={configSummary}
               endpointsControls={endpointsControls}
               commandNote={commandNote}
+              onCopy={trackCommandCopy}
             />
           ) : isMultiNode ? (
             <MultiNodeBlock
@@ -2581,6 +2671,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               configSummary={configSummary}
               endpointsControls={endpointsControls}
               commandNote={commandNote}
+              onCopy={trackCommandCopy}
             />
           ) : (
             <SingleCommandBlock
@@ -2596,6 +2687,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               configSummary={configSummary}
               endpointsControls={endpointsControls}
               commandNote={commandNote}
+              onCopy={trackCommandCopy}
             />
           )}
         </div>
@@ -2926,7 +3018,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           {/* PD Router — which orchestrator fronts the prefill/decode pools.
               Nested under Strategy: it only exists for pd_cluster and never
               changes the pools, just the launcher + front door. */}
-          {activeServingStrategy === "pd_cluster" && (strategies.pd_cluster?.dynamo || strategies.pd_cluster?.smg) && (
+          {activeServingStrategy === "pd_cluster" && (strategies.pd_cluster?.dynamo || strategies.pd_cluster?.smg || strategies.pd_cluster?.ascend) && (
             <ConfigRow label="PD Router" nested>
               <PillGroup>
                 <Pill
@@ -2957,11 +3049,21 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 >
                   <span className="font-semibold">SMG</span>
                 </Pill>}
+                {ascendVisible && strategies.pd_cluster.ascend && <Pill
+                  active={effPdRouter === "ascend"}
+                  pressed={effPdRouter === "ascend"}
+                  disabled={!!ascendReason}
+                  onClick={() => !ascendReason && selectPdRouter("ascend")}
+                  title={ascendReason || strategies.pd_cluster.ascend.description}
+                >
+                  <span className="font-semibold">{strategies.pd_cluster.ascend.display_name || "Ascend Router"}</span>
+                </Pill>}
               </PillGroup>
               <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
                 {effPdRouter === "dynamo"
                   ? strategies.pd_cluster.dynamo.description
                   : effPdRouter === "smg" ? (isSmgGrpc ? "SMG gRPC router with NIXL prefill/decode workers. Supports TP/TEP pools without KV offload." : strategies.pd_cluster.smg.description)
+                  : effPdRouter === "ascend" ? strategies.pd_cluster.ascend.description
                   : "vllm-router with --vllm-pd-disaggregation fronts the pools; each role is a `vllm serve` on its own HTTP port."}
                 {strategies.pd_cluster[effPdRouter]?.docs && (
                   <>
@@ -3015,7 +3117,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           {activeServingStrategy === "pd_cluster" && Object.keys(pdConnectors).length > 1 && (
             <ConfigRow label="PD Connector" nested hint="Connector that moves each request's KV cache from the prefill pool to the decode pool. KV Offload tiers below compose with it.">
               <PillGroup>
-                {Object.entries(pdConnectors).map(([key, c]) => {
+                {Object.entries(pdConnectors).filter(([key]) => key !== "mooncake_ascend" || ascendVisible).map(([key, c]) => {
                   const reason = pdConnectorReason(key);
                   return (
                     <Pill key={key} active={effPdConnector === key} pressed={effPdConnector === key} disabled={!!reason}
@@ -3389,9 +3491,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             <PillGroup>
               {Object.entries(taxonomy.frontends || {}).map(([id, fe]) => {
                 const supported = isFrontendSupported(recipe, id, currentVariant);
-                // SMG gRPC always runs the Python servicer, so pin the pill to it.
-                const active = isSmgGrpc ? id === "python" : effectiveFrontend === id;
-                const disabled = !supported || (isSmgGrpc && id !== "python");
+                const required = result.frontendRequired || (isSmgGrpc ? "python" : null);
+                const active = required ? id === required : effectiveFrontend === id;
+                const disabled = !supported || (!!required && id !== required);
                 return (
                   <Pill
                     key={id}
@@ -3400,7 +3502,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                     disabled={disabled}
                     title={!supported
                       ? `The ${fe.label} frontend is unavailable for this configuration`
-                      : disabled ? "SMG gRPC uses the Python servicer." : undefined}
+                      : disabled ? "This PD router uses the Python frontend." : undefined}
                     onClick={() => selectFrontend(id)}
                   >
                     {id === "rust" && <Zap size={11} className="inline-block mr-1 -mt-0.5" fill="currentColor" aria-hidden="true" />}
@@ -3410,7 +3512,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               })}
             </PillGroup>
             <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
-              {isSmgGrpc ? (
+              {result.frontendRequired ? (
+                "The selected PD router uses native Python vLLM workers."
+              ) : isSmgGrpc ? (
                 "The SMG-compatible gRPC servicer runs through vllm serve --grpc."
               ) : isFrontendSupported(recipe, "rust", currentVariant) ? (
                 <>
@@ -3551,7 +3655,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           })}
 
           {/* Advanced (collapsed by default) */}
-          <details className="group">
+          <details className="group" onToggle={(e) => { if (e.currentTarget.open) track("open_advanced", { hw: hwId }); }}>
             <summary className="px-4 py-3 cursor-pointer text-[10px] font-semibold text-muted-foreground uppercase tracking-widest hover:bg-muted/30 transition-colors flex items-center gap-2 select-none list-none">
               <span>Advanced</span>
               <span className="text-muted-foreground/50 normal-case tracking-normal font-normal">
@@ -3920,7 +4024,7 @@ function CommandNote({ note }) {
   );
 }
 
-function SingleCommandBlock({ command, env, setup, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
+function SingleCommandBlock({ command, env, setup, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote, onCopy }) {
   const [tab, setTab] = useState("vllm");
   // The `docker pull` for the image lives in the Install block above.
   const isXpu = !!dockerMeta?.isXpu;
@@ -3979,7 +4083,7 @@ function SingleCommandBlock({ command, env, setup, companions, verifyCmd, benchC
     : rawActive;
   const actions = (
     <div className="flex items-center gap-1.5 shrink-0">
-      <CopyButton text={fullScript} />
+      <CopyButton text={fullScript} onCopy={onCopy} />
       <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={!!activeCompanion} disabledNote="Clients talk to the vLLM server — cURL & Bench live on the vLLM Serve tab." />
       <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={!!activeCompanion} disabledNote="Clients talk to the vLLM server — cURL & Bench live on the vLLM Serve tab." />
       {endpointsControls}
@@ -4314,7 +4418,7 @@ function DependenciesBlock({ deps }) {
   );
 }
 
-function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
+function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote, onCopy }) {
   const [tab, setTab] = useState("head");
   const isDocker = installMode === "docker";
   const wrap = (cmd) =>
@@ -4352,7 +4456,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
       <div className="flex flex-wrap items-center justify-between px-4 pt-2 gap-x-3 gap-y-2">
         <CommandTabs tabs={tabs} current={active.id} onSelect={setTab} />
         <div className="flex items-center gap-1.5 shrink-0">
-          <CopyButton text={fullScript} />
+          <CopyButton text={fullScript} onCopy={onCopy} />
           <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={active.id !== "head"} disabledNote="Clients connect to the head node — cURL & Bench live on the Head tab." />
           <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={active.id !== "head"} disabledNote="Clients connect to the head node — cURL & Bench live on the Head tab." />
           {endpointsControls}
@@ -4373,12 +4477,11 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
   );
 }
 
-function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChange, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
+function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChange, installMode, dockerMeta, configSummary, endpointsControls, commandNote, onCopy }) {
   // Tabs: Prefill · Decode · Router.
   // Each pool (prefill/decode) now carries its own `nodes`, `parallelism`,
   // `dpSize`, `poolGpus` meta — rendered above the command so the reader
-  // knows whether the block is a single engine or a rank-0 template that
-  // needs to be duplicated for the rest of the DP ranks.
+  // knows the pool's topology and which node's distinct command is selected.
   const [tab, setTab] = useState("prefill");
   const isDynamo = result.orchestrator === "dynamo";
   const isSmg = result.orchestrator === "smg";
@@ -4446,7 +4549,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
       <div className="flex flex-wrap items-center justify-between px-4 pt-2 gap-x-3 gap-y-2">
         <CommandTabs tabs={tabs} current={active.id} onSelect={setTab} />
         <div className="flex items-center gap-1.5 shrink-0">
-          <CopyButton text={fullScript} />
+          <CopyButton text={fullScript} onCopy={onCopy} />
           <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={!active.isRouter} disabledNote={`Clients connect via the ${result.router.label || "Router"} tab — cURL & Bench live there.`} />
           <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={!active.isRouter} disabledNote={`Clients connect via the ${result.router.label || "Router"} tab — cURL & Bench live there.`} />
           {endpointsControls}
@@ -4477,6 +4580,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
           # {active.meta.nodes === 0
             ? `Co-located half-node · ${active.meta.poolGpus} GPU · ${active.meta.parallelism.toUpperCase()}`
             : `${active.meta.nodes} node${active.meta.nodes === 1 ? "" : "s"} × ${(active.meta.poolGpus / Math.max(1, active.meta.nodes))} GPU = ${active.meta.poolGpus} GPU · ${active.meta.parallelism.toUpperCase()}`}
+          {` · TP=${active.meta.tp}${active.meta.pp > 1 ? ` · PP=${active.meta.pp}` : ""}`}
           {active.meta.parallelism === "dep" && active.meta.nodes > 1 && (
             <> {" · DP="}{active.meta.dpSize}{" (dp_local="}{active.meta.dpLocal}{", one vllm serve per node)"}</>
           )}
@@ -4513,7 +4617,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
                 of 1..{active.meta.nodes} · --node-rank = {active.meta.currentNode ?? 0}
               </span>
               <span className="text-[var(--command-fg)]/40 ml-auto">
-                {(active.meta.currentNode ?? 0) === 0 ? `head node — serves ${result.transport === "grpc" ? "gRPC" : "HTTP"} + NIXL` : "follower — runs --headless"}
+                {(active.meta.currentNode ?? 0) === 0 ? `head node — serves ${result.transport === "grpc" ? "gRPC" : "HTTP"}` : "follower — runs --headless"}
               </span>
             </>
           )}
@@ -4530,7 +4634,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   );
 }
 
-function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceChange, installMode, dockerMeta, configSummary, endpointsControls, commandNote }) {
+function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceChange, installMode, dockerMeta, configSummary, endpointsControls, commandNote, onCopy }) {
   // Tabs in launch order — Mooncake Master · (centralized only) Mooncake
   // Store · vLLM Serve (config heredoc + env + serve — one paste-runnable
   // script per instance node; a Worker tab appears when instances span >1
@@ -4613,7 +4717,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
       <div className="flex flex-wrap items-center justify-between px-4 pt-2 gap-x-3 gap-y-2">
         <CommandTabs tabs={tabs} current={active.id} onSelect={setTab} />
         <div className="flex items-center gap-1.5 shrink-0">
-          <CopyButton text={fullScript} />
+          <CopyButton text={fullScript} onCopy={onCopy} />
           <PopoverButton label="cURL" code={verifyCmd} icon={Terminal} disabled={!isClientTab} disabledNote={`Clients connect via the ${clientTabLabel} tab — cURL & Bench live there.`} />
           <PopoverButton label="Bench" code={benchCmd} icon={Gauge} disabled={!isClientTab} disabledNote={`Clients connect via the ${clientTabLabel} tab — cURL & Bench live there.`} />
           {endpointsControls}

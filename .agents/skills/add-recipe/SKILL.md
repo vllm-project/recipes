@@ -117,7 +117,7 @@ steps. Those drift from the generated command the moment either side changes.
    - `min_vllm_version`: earliest stable support if known. For a source-only preview,
      also record the tested commit/version; a future target version alone is not enough.
 4. **Read the README — don't skip this.** Run `curl -sL "https://huggingface.co/<org>/<repo>/resolve/main/README.md"` and scan the install / serve / usage sections in full. Configs are not enough; model authors put load-bearing requirements in prose. Mine the README for:
-   - **`min_vllm_version` / `nightly_required`** — phrases like "install vllm nightly", "requires nightly wheels", or an install snippet using `--extra-index-url https://wheels.vllm.ai/nightly` mean `min_vllm_version: "nightly"` + `nightly_required: true`. A specific tag like "vLLM >= 0.12.0" sets that version. Don't default to `0.11.0` when the README says otherwise.
+   - **`min_vllm_version` / `nightly_required`** — phrases like "install vllm nightly", "requires nightly wheels", or an install snippet using `--extra-index-url https://wheels.vllm.ai/nightly` mean `nightly_required: true` plus, as `min_vllm_version`, the **first release that will contain the support PR** (step 5) — never the word `"nightly"` (see the rule below). A specific tag like "vLLM >= 0.12.0" sets that version. Don't default to `0.11.0` when the README says otherwise.
    - **`dependencies:`** — any pip line beyond `vllm` itself: version pins (`mistral_common >= 1.11.1`, `transformers >= 5.4.0`), extras (`vllm[audio]`), source installs (`pip install git+...`), DeepGEMM pins, etc. Pin them even when the README says "auto-installed" — users on stale wheel caches need an explicit upgrade path. Each entry needs a one-line `note` saying *why*.
    - **Parser flags for `features:`** — `--tool-call-parser <name>`, `--reasoning-parser <name>`, `--enable-auto-tool-choice`. Use the exact parser name the README specifies.
    - **Companion / draft repos** — EAGLE / MTP / Eagle3 heads, NVFP4 quants, instruct vs base. Wire as `spec_decoding` feature (draft pointer in `--speculative-config`) or a sibling variant with `model_id:` override. Copy the recommended `--speculative-config` JSON verbatim from the README.
@@ -136,7 +136,8 @@ steps. Those drift from the generated command the moment either side changes.
    - For newer architectures, also search the model author's repo (e.g. `PaddlePaddle/PaddleOCR`, `deepseek-ai/DeepSeek-VL2`) for "vllm" discussions — authors often post the canonical launch command and known issues there.
 
    What to extract:
-   - **`min_vllm_version`** — set to the **lowest stable tag where the model actually works**, not what the README claims. Walk forward from the support-PR's release tag, but bump up if there are known parser/tokenizer/quant bugs fixed in a later release (the v0.20.0-style "Mistral Grammar factory" / "tool parser HF-tokenizer fix" entries are signals to bump). Only use `min_vllm_version: "nightly"` + `nightly_required: true` when the registry at the latest stable tag genuinely lacks the architecture — and double-check by curling `registry.py` at that tag. If support is still an open issue (no PR merged), flag this to the user before authoring. For derivative releases (e.g. PaddleOCR-VL-1.5 vs 1.0) with identical `architectures` / `model_type` / `auto_map`, the existing handler usually loads them via `--trust-remote-code` even before a dedicated PR — note this assumption in your reply.
+   - **`min_vllm_version`** — set to the **lowest stable tag where the model actually works**, not what the README claims. Walk forward from the support-PR's release tag, but bump up if there are known parser/tokenizer/quant bugs fixed in a later release (the v0.20.0-style "Mistral Grammar factory" / "tool parser HF-tokenizer fix" entries are signals to bump). Only set `nightly_required: true` when the registry at the latest stable tag genuinely lacks the architecture — and double-check by curling `registry.py` at that tag. If support is still an open issue (no PR merged), flag this to the user before authoring. For derivative releases (e.g. PaddleOCR-VL-1.5 vs 1.0) with identical `architectures` / `model_type` / `auto_map`, the existing handler usually loads them via `--trust-remote-code` even before a dedicated PR — note this assumption in your reply.
+   - **`min_vllm_version` is always a release number (`"0.34.0"`), never `"nightly"`.** "Nightly" is an install channel, which `nightly_required: true` already expresses; the version is the floor. For unreleased support, write the release the support PR will ship in: the next minor after the latest stable on PyPI, or the release branch the merge commit is already on (`gh api repos/vllm-project/vllm/compare/<tag>...<merge_sha> -q .status` → `behind` or `identical` means the tag contains it). Why the word breaks things: the renderer compares versions numerically, and `"nightly"` parses as `0`. So it loses every comparison: a variant or Mooncake floor silently replaces it, and the Install header understates or reads "vLLM nightly+". It also never expires. Once the release ships, the recipe should drop `nightly_required` and keep the number, but `"nightly"` gives no signal that this is due. The Decision 3.0 recipes said "nightly" two weeks after 0.33.0 shipped with their support. When a release containing the support reaches PyPI, remove `nightly_required` (and any nightly `install` override) in the same change.
    - **Required serve flags hidden in upstream docs** — copy any `must be served with <flag>` lines from `supported_models.md` straight into `model.base_args` (the builder renders them; explain why in guide prose if it isn't obvious). These are not optional and the README often doesn't mention them.
    - **Troubleshooting** — recurring errors and fixes from issue comments (e.g. "needs `--enforce-eager` on 0.11.x", "transformers>=5 required", "`--mm-processor-cache-gb 0` to avoid OOM"). Write each as a `troubleshooting:` entry whose `title` is the symptom (the error text a user would search for), with `when:` naming the hardware / strategies / variants / features it applies to, so the page lists it first for matching configurations. A fix the builder can apply itself belongs in the fields instead (e.g. `--enforce-eager` in `hardware_overrides`).
    - **Links to put in `guide`'s References** — the model card, vLLM support PR (not the recipe-request issue — see below), and any author-side deployment doc. These give users a path forward if their setup breaks.
@@ -162,10 +163,18 @@ steps. Those drift from the generated command the moment either side changes.
    Every build checks the file against `https://recipes.vllm.ai/recipe.schema.json`;
    an unknown or misspelled key is an error. The tested command belongs in the builder
    fields; the guide records exact evidence, limitations, and explicit checkpoint links.
-10. **Register the provider (if new).** If `<hf_org>` isn't already in
-   vllm-project/recipes' `src/lib/providers.js`, add `display_name` and
-   `/providers/<hf_org>.png` (or `.jpeg`) — a separate PR there when the recipe lives
-   in another repo.
+10. **Register the provider and its logo (if new).** If `<hf_org>` isn't already in
+   vllm-project/recipes' `src/lib/providers.js`, add an entry — a separate PR there when
+   the recipe lives in another repo. Without it the homepage, org page and sidebar show
+   the raw org id with no logo. The entry needs:
+   - `display_name` — match the recipe's `meta.provider`;
+   - `logo: "/providers/<hf_org>.<ext>"` — the extension must be the one HF serves for
+     the org avatar (`.png`, `.jpeg`, `.webp`), so check it rather than assuming `.png`:
+     `curl -s https://huggingface.co/api/organizations/<hf_org>/overview | jq -r .avatarUrl`.
+   Don't commit the image: `public/providers/` is gitignored and
+   `scripts/fetch-provider-logos.mjs` downloads it from HF at build time. Run that script
+   locally and check the logo renders (add `invertInDark` / `invertInLight` for a
+   monochrome mark that vanishes on one theme).
 11. **Validate data and rendering.** In the recipes checkout, point the owning repo's
    source at your checkout with a gitignored `sources.local.yaml`
    (`overrides: { vllm: ~/vllm/recipes }`, or `vllm-omni: ~/vllm-omni/recipes` for an
