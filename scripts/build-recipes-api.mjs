@@ -27,6 +27,7 @@ import yaml from "js-yaml";
 import Ajv from "ajv";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import { BASELINE, effectivePreset, presetImage, presetPoints, presetSelect, resolvePresetKey, validatePresets, withPreset } from "../src/lib/recipe-presets.js";
+import { hasExternalModelReference, hasManualModelScopeEnv } from "../src/lib/checkpoint-link.js";
 import { CONTEXT_KINDS, validateContextEntries } from "../src/lib/recipe-context.js";
 import {
   pickDefaultHardware,
@@ -603,6 +604,12 @@ let collisionCount = 0;
 
 for (const file of findYamlFiles(modelsDir)) {
   const r = normalizeDates(readYaml(file));
+  if (hasManualModelScopeEnv(r)) {
+    console.warn(`  ⚠ ${sourceRel(file)}: migrate VLLM_USE_MODELSCOPE to the variant's hub field`);
+  }
+  if (Object.values(r.variants || {}).some((variant) => variant.hub === "modelscope") && hasExternalModelReference(r)) {
+    console.warn(`  ⚠ ${sourceRel(file)}: ModelScope is process-wide; verify external draft/tokenizer availability`);
+  }
   validateFeatureModes(r, file);
   validateFrontends(r, file, taxonomy);
   validateHardwareKeys(r, file, taxonomy, strategies);

@@ -3,6 +3,7 @@
 // on-demand `/<hf_id>.md` / `.json?<query>` routes, so a rendering means the
 // same thing wherever it is read.
 
+import { checkpointLink } from "./checkpoint-link.js";
 import { BASELINE, effectivePreset, presetPoints, presetSelect, resolvePresetKey, withPreset } from "./recipe-presets.js";
 import { ADVANCED_OPTIONS } from "./advanced-options.js";
 import { SELECTION_PARAMS } from "./selection-params.js";
@@ -21,6 +22,7 @@ import {
   pdPoolModes,
   resolveModeKey,
   resolveFrontend,
+  hubPipInstall,
   resolveInstall,
   maxVersion,
   isFeatureAllowedForVariant,
@@ -146,7 +148,7 @@ export function dockerize(command, argv, env, dockerMeta, port = null, docker = 
   return {
     docker_command: buildDockerRun({
       command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, port,
-      isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, cmdPrefix: dockerMeta.cmdPrefix, hostNetwork, extraFlags,
+      isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, cmdPrefix: dockerMeta.cmdPrefix, cacheMount: dockerMeta.cacheMount, hostNetwork, extraFlags,
     }),
     docker_argv: buildDockerArgv({ argv, env, meta: dockerMeta, port, hostNetwork, extraFlags }),
   };
@@ -252,8 +254,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   }
   if (!result) return null;
   if (result.frontendRequired) applied.frontend = result.frontendRequired;
-  // A URL cannot opt into Ascend PD without the active recipe declaration.
-  if (applied.pdRouter === "ascend") applied.pdRouter = result.pdRouter ?? "vllm";
+  if (result.pdRouter) applied.pdRouter = result.pdRouter;
   if (applied.pdConnector === "mooncake_ascend") applied.pdConnector = result.kvConnector?.selected ?? null;
   if (opts.out) Object.assign(opts.out, applied);
   if (strict && sel.pd_router === "ascend" && result.routerUnavailableReason) {
@@ -280,14 +281,19 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   const variant = pinned
     ? { ...baseVariant, hardware_overrides: { ...(baseVariant.hardware_overrides || {}), [hwId]: { ...(baseVariant.hardware_overrides?.[hwId] || {}), docker_image: pinned } } }
     : baseVariant;
-  const dockerMeta = computeDockerMeta(recipe, variant, hwProfile, hwId);
+  const dockerMeta = computeDockerMeta(recipe, variant, hwProfile, hwId, taxonomy);
   const env = result.env || {};
 
   const hwPip = hwPipOverride(hardwareInstall(recipe, recipe.variants?.[variantKey], taxonomy.hardware_profiles?.[hwId], hwId));
+  const link = checkpointLink(recipe, baseVariant, taxonomy);
+  const hubInstall = hubPipInstall(recipe, variant, hwProfile, hwId, taxonomy);
   const base = {
     hardware: hwId,
     strategy,
     variant: variantKey,
+    hub: baseVariant.hub || "huggingface",
+    checkpoint_url: link?.href,
+    ...(hubInstall ? { hub_install: hubInstall } : {}),
     node_count: nodeCount,
     deploy_type: result.deployType,
     // The tuned preset baked into this rendering (its default for this
@@ -372,6 +378,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
       decode,
       router: result.router,
       router_config: result.routerConfig,
+      ...(result.routerUnavailableReason ? { router_unavailable_reason: result.routerUnavailableReason } : {}),
       ...(result.parserWarnings?.length ? { parser_warnings: result.parserWarnings } : {}),
       ...(result.registration ? { registration: result.registration } : {}),
     };
@@ -801,7 +808,8 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     },
   );
   note("frontend", get("frontend"), applied.frontend ?? frontend, "not supported by this recipe or variant");
-  if (get("pd_router") === "ascend") note("pd_router", "ascend", applied.pdRouter, "requires an active Ascend PD preset for this hardware and variant");
+  if (strategy === "pd_cluster" && rendering) note("pd_router", get("pd_router"), applied.pdRouter,
+    rendering.router_unavailable_reason || "not available for this hardware or configuration");
   if (get("pd_connector") === "mooncake_ascend") note("pd_connector", "mooncake_ascend", applied.pdConnector, "requires an active Ascend PD preset and compatible router");
   note("features", get("features"), (applied.features ?? features).join(",") || "none", "not fully supported by this recipe or variant");
   return {

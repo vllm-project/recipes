@@ -121,7 +121,7 @@ function serveSection(r) {
   return out;
 }
 
-function installSection(recipe, resolved) {
+function installSection(recipe, resolved, taxonomy) {
   const { hwProfile, rendering, selection } = resolved;
   const variant = recipe.variants?.[selection?.variant] || {};
   const out = [];
@@ -129,6 +129,11 @@ function installSection(recipe, resolved) {
   const nightly = variant.nightly_required || recipe.model?.nightly_required;
   const hwInstall = hardwareInstall(recipe, variant, hwProfile, selection?.hardware);
   const hwPip = hwPipOverride(hwInstall);
+  const hub = taxonomy?.model_hubs?.[rendering?.hub];
+  if (hub && rendering.hub !== "huggingface" && rendering.checkpoint_url) {
+    out.push(`Checkpoint: [${hub.label}](${rendering.checkpoint_url}).`, "");
+    if (hub.note) out.push(hub.note, "");
+  }
   if (hwPip) {
     // This hardware's own install: the recipe's vLLM floor describes the stock one.
     if (hwPip.note) out.push(hwPip.note, "");
@@ -139,6 +144,7 @@ function installSection(recipe, resolved) {
     if (install.pip.note) out.push(install.pip.note, "");
     out.push(fence(install.pip.command), "");
   }
+  if (rendering?.hub_install) out.push(`${rendering.hub_install.note} (pip):`, "", fence(rendering.hub_install.command), "");
   if (rendering?.docker_image) {
     if (hwInstall?.docker?.note) out.push(hwInstall.docker.note, "");
     out.push(`Docker image: \`${rendering.docker_image}\``, "");
@@ -327,7 +333,7 @@ export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls
     "",
     "## Install",
     "",
-    ...installSection(recipe, resolved),
+    ...installSection(recipe, resolved, taxonomy),
     "## Serve",
     "",
   ].filter((l) => l !== null);
