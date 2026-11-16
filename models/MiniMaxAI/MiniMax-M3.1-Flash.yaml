@@ -1,0 +1,159 @@
+# yaml-language-server: $schema=https://recipes.vllm.ai/recipe.schema.json
+meta:
+  title: "MiniMax-M3.1-Flash"
+  slug: "minimax-m3-1-flash"
+  provider: "MiniMax"
+  description: "MiniMax M3.1 Flash hybrid-attention MoE with a block-sparse MSA indexer, 1M context, and a KV cache that can be served in FP8 or 4-bit NVFP4 on Blackwell SM120"
+  date_added: 2026-11-16
+  date_updated: 2026-11-16
+  tasks:
+    - text
+  performance_headline: "NVFP4 KV reader on 4x RTX PRO 6000 (SM120): +38% KV pool, C16 +6.8% tokens/s, TTFT 8k -34% vs FP8 on the same hardware"
+  related_recipes: []
+  hardware:
+    rtx_pro_6000: verified
+
+model:
+  model_id: "MiniMaxAI/MiniMax-M3.1-Flash"
+  min_vllm_version: "0.33.0"
+  docker_image: "vllm/vllm-openai:minimax-m31-flash"
+  architecture: moe
+  parameter_count: "220B"
+  active_parameters: "11B"
+  context_length: 1048576
+  base_args:
+    - "--trust-remote-code"
+  base_env:
+    VLLM_ATTENTION_BACKEND: "TRITON_ATTN"
+
+features:
+  tool_calling:
+    description: "MiniMax M3 tool call parser with automatic tool choice"
+    args:
+      - "--tool-call-parser"
+      - "minimax_m3"
+      - "--enable-auto-tool-choice"
+  reasoning:
+    description: "MiniMax M3 reasoning parser for chain-of-thought extraction"
+    args:
+      - "--reasoning-parser"
+      - "minimax_m3"
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: fp8
+    vram_minimum_gb: 250
+    description: "Native FP8 checkpoint served with an FP8 KV cache"
+  nvfp4_kv:
+    precision: fp8
+    label: "NVFP4 KV cache"
+    vram_minimum_gb: 250
+    description: "Same checkpoint, KV cache stored as NVFP4 (72 B/token pages, kernel-dequantized on load). Needs the SM120 Triton reader PR."
+    extra_args:
+      - "--kv-cache-dtype"
+      - "nvfp4"
+      - "--attention-config"
+      - '{indexer_kv_dtype: fp8}'
+
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+
+kv_offload_support:
+  lmcache: verified
+
+hardware_overrides:
+  blackwell:
+    extra_args:
+      - "--compilation-config"
+      - '{"cudagraph_mode":"FULL_AND_PIECEWISE"}'
+      - "--block-size"
+      - "128"
+      - "--max-num-batched-tokens"
+      - "32768"
+      - "--speculative-config"
+      - '{"method":"dspark","num_speculative_tokens":7,"attention_backend":"TRITON_ATTN","kv_cache_dtype":"fp8"}'
+    extra_env:
+      VLLM_FLOAT32_MATMUL_PRECISION: "high"
+
+strategy_overrides:
+  single_node_tp:
+    tp: 4
+
+notes:
+  - title: "4-bit KV cache on SM120"
+    when:
+      hardware: [rtx_pro_6000]
+      features: []
+    body: |
+      The NVFP4 KV reader rides a Triton kernel with a native `cvt.rn.f16x2.e2m1x2`
+      SIMD path: the KV page shrinks from 256 B/token to 144 B/token, which raises
+      the pool from 803,712 to 1,110,528 tokens on 4 GPUs (+38%) and accelerates
+      long-context prefill (TTFT 128k 22.1 s vs 24.8 s in FP8). Requires the
+      SM120 Triton reader (vllm PR #67518). LMCache offload requires the two fixes
+      documented in LMCache issue #6617 (or a connector build including them) plus
+      `kv_load_failure_policy: "recompute"`.
+
+presets:
+  nvfp4_ab_rtx_pro_6000:
+    label: "NVFP4 vs FP8 A/B (4x RTX PRO 6000)"
+    hardware: rtx_pro_6000
+    variants: [nvfp4_kv]
+    workload: "Throughput / latency A/B"
+    description: "Serving lane measured on 4x RTX PRO 6000 Blackwell SE (96 GB), TP=4/EP=4, LMCache off, vllm bench serve random dataset. mean ± std over 3 warm passes."
+    tp: 4
+    points:
+      c16:
+        label: "16"
+        concurrency: 16
+        default: true
+      c8:
+        label: "8"
+        concurrency: 8
+    runbook: |
+      Measured on the NVFP4 KV reader (same pod, only --kv-cache-dtype changes for
+      the FP8 leg). LMCache disabled on both legs for symmetry; one cold pass
+      (excluded) followed by 3 warm passes per point.
+
+      NVFP4 leg (TP=4/EP=4, block 128, full_and_piecewise graphs, DSpark 7):
+      - C16 (512 in / 128 out): 556.3 ± 41.8 tok/s output — TTFT 530.6 ± 2.1 ms
+      - C8 (2k in / 64 out):    294.2 ± 3.7 tok/s output
+      - 128k prefill TTFT: 22.0 s (single-shot, no cache reuse; the 0.79 s
+        readings seen on repeat passes are prefix-cache hits and are NOT the
+        cold latency)
+
+      FP8 leg same pod (one pass each): C16 344.0 tok/s, TTFT 128k 24.8 s.
+
+      Per-point variance on warm passes is < 8% for C16 and < 1.3% for 8k, which
+      fits the repo measurement rule ecb463f ("warm-up mandatory, same pod").
+      Sources: vllm PR #67518 (kernel + wiring), LMCache issue #6617 (connector
+      fixes) and repo Vincent-PRO-AI/vllm-minimax-sm120-nvfp4 (harness + PATCH.diff).
+
+guide: |
+  ## Overview
+
+  [MiniMax-M3.1-Flash](https://huggingface.co/MiniMaxAI/MiniMax-M3.1-Flash) is a
+  hybrid-attention MoE from the M3 line (sparse attention with a learned indexer,
+  DSpark speculative decoding) at 1M context. On Blackwell SM120 (RTX PRO 6000),
+  the KV cache can be stored in 4-bit NVFP4 and read back through a pure
+  Python/Triton kernel with native SIMD dequantization — no CUDA C++ needed.
+
+  What the 4-bit KV cache buys at equal GPUs (TP4/EP4, measured):
+  - KV pool 803,712 -> 1,110,528 tokens (+38%), i.e. 2.12x concurrency at 512k
+  - C16 +6.8% tokens/s, 8k +13.2% tokens/s, TTFT 8k -34.1%, TTFT 128k -11.0%
+  - TP8 (2,900,992 tokens = 2.77 concurrent 1M requests) needs the backend
+    selector change in the same PR series
+
+  ## Production note
+
+  If you offload KV with LMCache, apply the two connector fixes from
+  [LMCache issue #6617](https://github.com/LMCache/LMCache/issues/6617) and set
+  `"kv_load_failure_policy": "recompute"` in --kv-transfer-config.
+
+  ## References
+
+  - [Model card](https://huggingface.co/MiniMaxAI/MiniMax-M3.1-Flash)
+  - [SM120 NVFP4 reader kernels + harness](https://github.com/Vincent-PRO-AI/vllm-minimax-sm120-nvfp4)
+  - [vLLM PR #67518](https://github.com/vllm-project/vllm/pull/67518)
