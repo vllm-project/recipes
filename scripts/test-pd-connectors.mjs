@@ -86,7 +86,16 @@ test("Mooncake: producer/consumer workers, bootstrap port on prefill, mooncake r
   assert.match(r.router.command, /--kv-connector mooncake/);
   assert.match(r.router.command, /--prefill http:\/\/\$PREFILL_NODE_1:8001 8998 \\/);
   assert.match(r.router.command, /--decode http:\/\/\$DECODE_NODE_1:8002 \\/);
-  assert.ok(r.kvConnector.install.some((s) => /mooncake-transfer-engine/.test(s.command)));
+  assert.deepEqual(r.kvConnector.install.map((s) => s.command), ["uv pip install mooncake-transfer-engine-cuda13"]);
+});
+
+test("Mooncake on ROCm: same workers and router, the ROCm transfer engine wheel", () => {
+  const r = pick({ hw: "mi355x", connector: "mooncake" });
+  assert.equal(r.kvConnector.selected, "mooncake");
+  assert.equal(r.kvConnector.unavailableReason, null);
+  assert.equal(r.prefill.env.VLLM_MOONCAKE_BOOTSTRAP_PORT, "8998");
+  assert.match(r.router.command, /--kv-connector mooncake/);
+  assert.deepEqual(r.kvConnector.install.map((s) => s.command), ["uv pip install mooncake-transfer-engine-rocm"]);
 });
 
 test("MoRI-IO: workers register with the router, which discovers them; addresses stay shell-expandable", () => {

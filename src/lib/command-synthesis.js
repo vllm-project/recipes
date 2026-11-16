@@ -2711,7 +2711,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       kvConnector: pdConnectorSel ? {
         selected: pdConnectorSel,
         unavailableReason: pdConnectorUnavailable,
-        install: dynamoInstallSteps(pdConnector),
+        install: dynamoInstallSteps({ install: resolveBrandInstall(pdConnector?.install) }),
         docker: ascend ? { ...pdConnector?.docker, ...ascend.docker } : pdConnector?.docker || null,
       } : null,
       routerConfig: strategy.router || { policy: "round_robin" },

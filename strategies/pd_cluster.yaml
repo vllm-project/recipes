@@ -50,7 +50,8 @@ decode:
 #                    is its default), bootstrap_port (listed after each
 #                    prefill endpoint), discovery_port (workers register via
 #                    --vllm-discovery-address instead of being listed)
-#   install        — extra pip steps (the vLLM images ship them)
+#   install        — extra pip steps (the vLLM images ship them); a
+#                    { nvidia, amd } map when the brands need different wheels
 #   docker         — host_network / extra runtime flags for the workers
 connectors:
   nixl:
@@ -78,7 +79,7 @@ connectors:
     display_name: "Mooncake"
     description: "Mooncake push transfer over RDMA: prefill writes KV into decode. The router queries each prefill's bootstrap server for its engines. Set WITH_NVIDIA_PEERMEM=0 on hosts without the nvidia-peermem module (GB200)."
     docs: "https://docs.vllm.ai/en/latest/features/mooncake_connector_usage.html"
-    brands: [NVIDIA]
+    brands: [NVIDIA, AMD]
     prefill:
       config: { kv_connector: MooncakeConnector, kv_role: kv_producer, kv_load_failure_policy: fail }
       env:
@@ -87,8 +88,12 @@ connectors:
       config: { kv_connector: MooncakeConnector, kv_role: kv_consumer, kv_load_failure_policy: fail }
     router: { kv_connector: mooncake, bootstrap_port: 8998 }
     install:
-      - note: "Mooncake transfer engine on every prefill / decode node (CUDA 12: mooncake-transfer-engine)"
-        command: "uv pip install mooncake-transfer-engine-cuda13"
+      nvidia:
+        - note: "Mooncake transfer engine on every prefill / decode node (CUDA 12: mooncake-transfer-engine)"
+          command: "uv pip install mooncake-transfer-engine-cuda13"
+      amd:
+        - note: "Mooncake transfer engine on every prefill / decode node (the ROCm image ships it)"
+          command: "uv pip install mooncake-transfer-engine-rocm"
     docker: { host_network: true, flags: ["--ulimit", "memlock=-1"] }
   mooncake_ascend:
     display_name: "Mooncake (Ascend)"
