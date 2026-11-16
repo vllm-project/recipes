@@ -17,7 +17,9 @@ hardware_match:
 
 # "tp_dp" defaults to full-node TP; local DP1 is added only if not configured.
 # Global DP defaults to node_count × final local DP, and
-# worker node N starts at DP rank N × final local DP; explicit global DP is kept.
+# worker node N starts at DP rank N × final local DP. Global DP overrides
+# base/variant args; later strategy, hardware, and preset overrides still win.
+# Preset remove_args remains final.
 # Example: TP4/local DP2 on four 8-device nodes → DP8, follower ranks 2/4/6.
 parallelism: tp_dp
 

@@ -1897,6 +1897,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     }
     const parallelFlag = strategy.parallel_flag || "--tensor-parallel-size";
     const isMulti = strategy.deploy_type === "multi_node" && nodeCount > 1;
+    const localDpFlag = /^(--data[-_]parallel[-_]size[-_]local|-dpl)(=|$)/;
     const isPdMulti = strategy.deploy_type === "pd_cluster" && nodeCount > 1;
     // Multi-node rendezvous host. When Mooncake composes with a multi-node
     // strategy, each instance's head is the same host the router lists as
@@ -1908,8 +1909,12 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       : "$HEAD_IP";
 
     if (isMulti && parallelFlag === "--data-parallel-size") {
-      // Fill DP sizes and ranks after all recipe/hardware/preset overrides.
+      // Keep strategy precedence and argument order; fill the derived values
+      // from the final local DP after all overrides and preset edits below.
+      args.push("--data-parallel-size", "{dp_size}");
+      if (!args.some((arg) => localDpFlag.test(arg))) args.push("--data-parallel-size-local", String(gpuCount));
       args.push("--data-parallel-address", mpMasterAddr);
+      if (nodeRole === "worker") args.push("--data-parallel-start-rank", "{dp_start_rank}");
     } else if (isMulti && strategy.parallelism === "tp_pp") {
       // TP inside each node, PP across nodes. Cross-node traffic flows through
       // the PP stage boundaries only — much less bandwidth than pure TP across
@@ -1921,10 +1926,13 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       args.push("--master-addr", mpMasterAddr);
       if (mpRank > 0) args.push("--headless");
     } else if (isMulti && strategy.parallelism === "tp_dp") {
-      // Default to full-node TP. Fill missing DP sizes and derive follower
-      // ranks after recipe/hardware/preset overrides below.
+      // Default to full-node TP and one local replica, without shadowing an
+      // explicit local DP from base/variant args. Later overrides still win.
       args.push("--tensor-parallel-size", String(gpuCount));
+      args.push("--data-parallel-size", "{dp_size}");
+      if (!args.some((arg) => localDpFlag.test(arg))) args.push("--data-parallel-size-local", "1");
       args.push("--data-parallel-address", mpMasterAddr);
+      if (nodeRole === "worker") args.push("--data-parallel-start-rank", "{dp_start_rank}");
     } else if (isMulti) {
       // Multi-node TP/TEP via vLLM multiprocessing (mp) backend:
       // TP spans all GPUs in the cluster; every node runs the same command,
@@ -2154,19 +2162,13 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       }
     }
     if (isMulti && (strategy.parallelism === "tp_dp" || parallelFlag === "--data-parallel-size")) {
-      // Read final DP values without changing their spelling or precedence.
-      // Keep explicit global DP; only its default follows the local replicas.
-      const localIndex = out.findLastIndex((arg) =>
-        /^(--data[-_]parallel[-_]size[-_]local|-dpl)(=|$)/.test(arg));
-      const localDp = localIndex < 0 ? (strategy.parallelism === "tp_dp" ? 1 : gpuCount)
-        : Number(out[localIndex].split("=")[1] ?? out[localIndex + 1]);
-      if (localIndex < 0) out.push("--data-parallel-size-local", String(localDp));
-      if (!out.some((arg) => /^(--data[-_]parallel[-_]size|-dp)(=|$)/.test(arg))) {
-        out.push("--data-parallel-size", String(nodeCount * localDp));
-      }
-      if (nodeRole === "worker") {
-        out.push("--data-parallel-start-rank", String(mpRank * localDp));
-      }
+      // Only fill surviving strategy placeholders: never restore a flag
+      // removed by a preset or override a later explicit global DP/rank.
+      const localIndex = out.findLastIndex((arg) => localDpFlag.test(arg));
+      const raw = localIndex < 0 ? NaN : Number(out[localIndex].split("=")[1] ?? out[localIndex + 1]);
+      const localDp = Number.isInteger(raw) && raw > 0 ? raw : (strategy.parallelism === "tp_dp" ? 1 : gpuCount);
+      out = out.map((arg) => arg === "{dp_size}" ? String(nodeCount * localDp)
+        : arg === "{dp_start_rank}" ? String(mpRank * localDp) : arg);
     }
     // Check the final Ascend transfer config after normal catalog composition
     // and preset edits, without restricting the implementation name.
