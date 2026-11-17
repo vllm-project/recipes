@@ -695,6 +695,12 @@ export function isPipInstallAvailable(recipe, variant, hwProfile, hwProfileId) {
     || hwProfile?.generation === "xpu");
 }
 
+export function hubPipInstall(recipe, variant, hwProfile, hwId, taxonomy) {
+  const hub = taxonomy.model_hubs?.[variant?.hub];
+  return hub?.install && isPipInstallAvailable(recipe, variant, hwProfile, hwId)
+    ? { command: hub.install, note: `${hub.label} client` } : null;
+}
+
 /**
  * Install-path gate: an option no published image carries (`docker: false`)
  * runs only from a pip install, so it is unavailable where pip isn't — e.g. a
@@ -1088,7 +1094,7 @@ function isDockerEnabled(recipe, variant, hwProfile) {
 
 // When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
 // the user's `dockerCudaVariant` toggle instead of appending `-cu129`.
-export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
+export function computeDockerMeta(recipe, variant, hwProfile, hwId = null, taxonomy = null) {
   // When `model.nightly_required: true` and no explicit `docker_image` pin,
   // swap the brand defaults to nightly tags so the Install block matches the
   // nightly pip wheel that's also being rendered. vLLM publishes `:nightly`
@@ -1192,6 +1198,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
       : "--gpus all";
   return {
     image,
+    cacheMount: taxonomy?.model_hubs?.[variant?.hub]?.cache,
     dockerEnabled,
     gpuFlags,
     brandKey,
@@ -1283,7 +1290,7 @@ function servedPort(tokens, fallback = 8000) {
 // entrypoint is something else. Env vars become `-e KEY=VAL` inside the container.
 // `extraFlags` are runtime flags a component needs on top of the GPU ones
 // (a PD KV connector's RDMA device and locked-memory limit).
-export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, isPpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [] }) {
+export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, isPpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [], cacheMount = "~/.cache/huggingface:/root/.cache/huggingface" }) {
   const pubPort = port ?? servedPort(command.split(/\s+/));
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
@@ -1312,7 +1319,7 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = null, isN
     : `--privileged --ipc=host ${hostNetwork ? "--network host" : `-p ${pubPort}:${pubPort}`}`;
   const gpuPrefix = gpuFlags ? ` ${gpuFlags} \\\n  ` : " ";
   const base = `${prereq}docker run${gpuPrefix}${runtimeFlags} \\${extraFlags.length ? `\n  ${extraFlags.join(" ")} \\` : ""}
-  -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
+  -v ${cacheMount} \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
   const setup = setupCommand
     ? `--entrypoint /bin/sh ${image} -c ${shellQuote(`${setupCommand} && exec vllm serve "$@"`)} vllm-grpc ${modelId}`
     : null;
@@ -1347,7 +1354,7 @@ export function buildDockerArgv({ argv, env, meta, port = null, hostNetwork = fa
     ...dockerGpuArgv(meta),
     ...runtimeFlags,
     ...extraFlags,
-    "-v", "~/.cache/huggingface:/root/.cache/huggingface",
+    "-v", meta.cacheMount || "~/.cache/huggingface:/root/.cache/huggingface",
     ...mountFlags,
     ...envFlags,
   ];
@@ -1719,19 +1726,23 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   // `dynamo` block — same pools/parallelism, but each role launches through
   // `python3 -m dynamo.vllm --disaggregation-mode <role>` and dynamo.frontend
   // fronts them. Any other value (or a strategy without the block) = native.
+  const hub = taxonomy.model_hubs?.[variant.hub];
+  const hubRouterReason = hub?.unsupported_routers?.[pdRouter];
   const dynamo = strategy.deploy_type === "pd_cluster" && pdRouter === "dynamo"
-      && isDynamoSupportedOnHardware(strategy.dynamo, hwProfile)
+      && !hubRouterReason && isDynamoSupportedOnHardware(strategy.dynamo, hwProfile)
     ? strategy.dynamo
     : null;
   const parserWarnings = new Set();
   const presetWarnings = new Set();
-  let routerUnavailableReason = strategy.deploy_type === "pd_cluster" && pdRouter === "smg"
-    ? smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, pdTransport, hwProfile, hwProfileId) : null;
+  let routerUnavailableReason = strategy.deploy_type === "pd_cluster"
+    ? hubRouterReason || (pdRouter === "smg"
+      ? smgUnsupportedReason(recipe, strategy, pdNodes, kvOffload, pdTransport, hwProfile, hwProfileId) : null)
+    : null;
   let smg = strategy.deploy_type === "pd_cluster" && pdRouter === "smg" && !routerUnavailableReason
     ? strategy.smg : null;
 
   let smgGrpc = !!smg && pdTransport === "grpc";
-  const ascendReason = ascendPdUnavailableReason(strategy, hwProfile, presetSelect, "pd_router");
+  const ascendReason = hub?.unsupported_routers?.ascend || ascendPdUnavailableReason(strategy, hwProfile, presetSelect, "pd_router");
   const ascend = pdRouter === "ascend" && !ascendReason ? strategy.ascend : null;
   const routerKey = dynamo ? "dynamo" : smg ? "smg" : ascend ? "ascend" : "vllm";
   const externalDp = strategy[routerKey]?.data_parallel_lb === "external";
@@ -2425,6 +2436,8 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     } else {
       Object.assign(env, taxonomy.frontends?.[resolveFrontend(recipe, frontend, taxonomy, variant)]?.env);
     }
+    // An explicit hub is authoritative even if an older recipe sets the env.
+    Object.assign(env, hub?.env);
     return env;
   }
 

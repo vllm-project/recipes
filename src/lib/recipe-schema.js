@@ -99,6 +99,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     description: { type: "string" },
     label: { type: "string" },
     model_id: { type: "string", pattern: "^[^/\\s]+/[^/\\s]+$" },
+    hub: { enum: Object.keys(taxonomy?.model_hubs || {}) },
     base_args: strings,
     install,
     supported_features: strings,
