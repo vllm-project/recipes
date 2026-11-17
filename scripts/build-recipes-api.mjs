@@ -283,10 +283,10 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
 
   for (const k of keysOf(recipe?.hardware_overrides)) keyed("hardware_overrides", k);
 
-  // PD pools: `nodes` / `parallelism` / `tp` / `data_parallel_lb` take a hardware-keyed map too.
+  // PD pools: `nodes` / `parallelism` / `tp` take a hardware-keyed map too.
   for (const role of ["prefill", "decode"]) {
     const cfg = recipe?.strategy_overrides?.pd_cluster?.[role];
-    for (const field of ["nodes", "parallelism", "tp", "data_parallel_lb"]) {
+    for (const field of ["nodes", "parallelism", "tp"]) {
       for (const k of keysOf(cfg?.[field])) keyed(`strategy_overrides.pd_cluster.${role}.${field}`, k);
     }
   }

@@ -412,22 +412,10 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = [], 
         errors.push(`${at}.select.nodes: only a multi_node_* preset sets the node count`);
       }
     };
-    const checkDpLb = (d, at, router) => {
-      if (d?.data_parallel_lb === undefined) return;
-      if (!isPd) errors.push(`${at}.data_parallel_lb: only a pd_cluster role sets DP load balancing`);
-      if (!["internal", "external"].includes(d.data_parallel_lb)) errors.push(`${at}.data_parallel_lb: must be "internal" or "external"`);
-      if (router !== "ascend") errors.push(`${at}.data_parallel_lb: requires select.pd_router: ascend`);
-      if (d.data_parallel_lb === "internal" && d.nodes !== undefined && d.nodes !== 1) {
-        errors.push(`${at}.data_parallel_lb: internal requires nodes: 1`);
-      }
-    };
     checkDelta(p, where);
     checkTopology(p, where);
     checkSelect(p.select, `${where}.select`);
-    for (const [role, d] of Object.entries(p.roles || {})) {
-      checkDelta(d, `${where}.roles.${role}`);
-      checkDpLb(d, `${where}.roles.${role}`, p.select?.pd_router);
-    }
+    for (const [role, d] of Object.entries(p.roles || {})) checkDelta(d, `${where}.roles.${role}`);
     const points = presetPoints(p);
     if (points.filter((pt) => pt.default).length > 1) errors.push(`${where}.points: more than one default point`);
     for (const pt of points) {
@@ -436,10 +424,7 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = [], 
       checkDelta(pt, at);
       checkTopology(pt, at);
       checkSelect(pt.select, `${at}.select`);
-      for (const [role, d] of Object.entries(pt.roles || {})) {
-        checkDelta(d, `${at}.roles.${role}`);
-        checkDpLb(d, `${at}.roles.${role}`, pt.select?.pd_router ?? p.select?.pd_router);
-      }
+      for (const [role, d] of Object.entries(pt.roles || {})) checkDelta(d, `${at}.roles.${role}`);
     }
   }
   return errors;

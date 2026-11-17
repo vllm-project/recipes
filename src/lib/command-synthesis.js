@@ -1734,10 +1734,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   const ascendReason = ascendPdUnavailableReason(strategy, hwProfile, presetSelect, "pd_router");
   const ascend = pdRouter === "ascend" && !ascendReason ? strategy.ascend : null;
   const routerKey = dynamo ? "dynamo" : smg ? "smg" : ascend ? "ascend" : "vllm";
-  // The router catalog supplies the default DP load-balancing mode (Ascend:
-  // external). A role may override it through recipe role config or a preset /
-  // point, which withPreset has already mounted onto that role's hardware key.
-  const catalogDpLb = strategy[routerKey]?.data_parallel_lb;
+  const externalDp = strategy[routerKey]?.data_parallel_lb === "external";
   if (pdRouter === "ascend" && !ascend) routerUnavailableReason = ascendReason;
 
   // One pool topology drives the node command, router endpoints and connector
@@ -1759,31 +1756,18 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     if (!Number.isInteger(nodes) || nodes < 0 || !Number.isInteger(tp) || tp < 1 || !Number.isInteger(pp) || pp < 1) {
       fail("nodes, TP and PP must form a positive integer layout (nodes=0 denotes a shared node).");
     }
-    // Explicit DP load balancing is an Ascend DEP feature: internal keeps one
-    // HTTP entry on a single node, external preserves the per-rank endpoints.
-    const declaredLb = pdRoleValue(recipe, role, "data_parallel_lb", hwProfile, hwProfileId);
-    if (declaredLb != null && declaredLb !== "internal" && declaredLb !== "external") {
-      fail('data_parallel_lb must be "internal" or "external".');
-    }
-    // The field only takes effect behind the Ascend Router. Elsewhere it is
-    // inert, because the builder renders a preset before applying the router
-    // its `select` implies; an invalid preset is rejected by validatePresets.
-    const dpLbActive = routerKey === "ascend" ? declaredLb : null;
-    if (dpLbActive != null) {
-      if (parallelism !== "dep") fail("data_parallel_lb requires DEP parallelism.");
-      if (recipe.model?.architecture === "dense") fail("DP load balancing requires a MoE model.");
-      if (dpLbActive === "internal" && nodes !== 1) fail("internal DP load balancing requires exactly one dedicated node (nodes: 1).");
-      if (dpLbActive === "external" && nodes < 1) fail("external DEP requires dedicated role nodes.");
-    }
-    const dataParallelLb = dpLbActive ?? catalogDpLb ?? null;
     if (parallelism === "dep") {
       if (pp !== 1 || tp > gpuCount || gpuCount % tp) fail("DEP requires PP1 and TP that divides the devices per node.");
-      if (dataParallelLb === "external" && (nodes < 1 || recipe.model?.architecture === "dense")) fail("external DEP requires a MoE model and dedicated role nodes.");
+      if (externalDp && (nodes < 1 || recipe.model?.architecture === "dense")) fail("external DEP requires a MoE model and dedicated role nodes.");
     }
     const dpLocal = parallelism === "dep" ? gpuCount / tp : 0;
     const dpSize = parallelism === "dep" ? Math.max(1, nodes) * dpLocal : 1;
     const currentNode = Math.max(0, Math.min(Math.max(1, nodes) - 1, selected.rank ?? 0));
-    return { nodes, parallelism, tp, pp, dpLocal, dpSize, poolGpus, currentNode, startRank: currentNode * dpLocal, dataParallelLb };
+    // Ascend DEP may opt into vLLM's internal DP load balancing: one HTTP entry
+    // per node instead of one per local rank. Elsewhere the field is inert.
+    const internalDp = routerKey === "ascend"
+      && pdRoleValue(recipe, role, "data_parallel_lb", hwProfile, hwProfileId) === "internal";
+    return { nodes, parallelism, tp, pp, dpLocal, dpSize, poolGpus, currentNode, startRank: currentNode * dpLocal, internalDp };
   };
 
   // PD KV transfer connector: the pick when this hardware and router can run
@@ -2001,8 +1985,6 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const roleCfg = strategy[roleKey] || {};
       const soRoleCfg = recipe.strategy_overrides?.[strategyName]?.[roleKey] || {};
       if (meta.parallelism === "dep") {
-        const externalDp = meta.dataParallelLb === "external";
-        const internalDp = meta.dataParallelLb === "internal";
         if (pdRoleValue(recipe, roleKey, "tp", hwProfile, hwProfileId) !== undefined || roleCfg.tp !== undefined) {
           args.push("--tensor-parallel-size", String(meta.tp));
         }
@@ -2011,16 +1993,15 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         // Native external-LB supervises one HTTP server per local rank. With
         // local DP1, the rank flag selects that server; start-rank implies hybrid.
         // A global DP1 pool is an ordinary TP/EP service, without an LB rank.
-        // Internal LB lets vLLM distribute requests behind ONE HTTP endpoint:
-        // any rank flag (even start-rank 0) would switch that mode back on.
-        if (!internalDp && (!externalDp || meta.dpSize > 1)) {
+        // Internal LB keeps one HTTP entry, so no rank/LB-mode flag is emitted.
+        if (!meta.internalDp && (!externalDp || meta.dpSize > 1)) {
           args.push(externalDp && meta.dpLocal === 1 ? "--data-parallel-rank" : "--data-parallel-start-rank", String(meta.startRank));
         }
         args.push("--data-parallel-address", "$" + roleKey.toUpperCase() + "_NODE_1");
         args.push("--data-parallel-rpc-port", "$" + roleKey.toUpperCase() + "_DP_RPC_PORT");
-        if (externalDp && meta.dpSize > 1) {
+        if (!meta.internalDp && externalDp && meta.dpSize > 1) {
           args.push(meta.dpLocal > 1 ? "--data-parallel-multi-port-external-lb" : "--data-parallel-external-lb");
-        } else if (!externalDp && !internalDp && meta.nodes > 1) {
+        } else if (!externalDp && !meta.internalDp && meta.nodes > 1) {
           args.push("--data-parallel-hybrid-lb");
         }
         args.push("--enable-expert-parallel");
@@ -2216,10 +2197,8 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         throw new RangeError(`PD ${roleOverride}: --kv-transfer-config must contain a JSON object with a non-empty transfer kv_connector.`);
       }
     }
-    const pdLbMeta = roleOverride && strategy.deploy_type === "pd_cluster" ? roleMeta(roleOverride) : null;
-    const externalDp = pdLbMeta?.dataParallelLb === "external";
-    const internalDp = pdLbMeta?.dataParallelLb === "internal";
-    if (pdLbMeta && (externalDp || internalDp || pdRoleValue(recipe, roleOverride, "pp", hwProfile, hwProfileId) != null)) {
+    if (roleOverride && strategy.deploy_type === "pd_cluster"
+        && (externalDp || pdRoleValue(recipe, roleOverride, "pp", hwProfile, hwProfileId) != null)) {
       // A late CLI override must not invalidate the topology advertised to
       // the connector/router. Set topology through role fields, not raw args.
       const aliases = { "-tp": "--tensor-parallel-size", "-pp": "--pipeline-parallel-size", "-dp": "--data-parallel-size" };
@@ -2232,7 +2211,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const expected = { "--tensor-parallel-size": meta.tp, "--pipeline-parallel-size": meta.pp };
       if (meta.parallelism === "dep") Object.assign(expected, {
         "--data-parallel-size": meta.dpSize, "--data-parallel-size-local": meta.dpLocal,
-        ...(!internalDp && (!externalDp || meta.dpSize > 1) ? {
+        ...(!meta.internalDp && (externalDp ? meta.dpSize > 1 : true) ? {
           [externalDp && meta.dpLocal === 1 ? "--data-parallel-rank" : "--data-parallel-start-rank"]: meta.startRank,
         } : {}),
       });
@@ -2240,25 +2219,13 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         const fallback = flag === "--pipeline-parallel-size" || flag === "--tensor-parallel-size" ? 1 : NaN;
         if (Number(flags.get(flag) ?? fallback) !== size) throw new RangeError(`PD ${roleOverride}: ${flag} conflicts with the role topology; use role nodes/pp (and tp for DEP) instead.`);
       }
-      if (externalDp && meta.parallelism === "dep") {
+      if (externalDp && !meta.internalDp && meta.parallelism === "dep") {
         const selected = meta.dpSize === 1 ? null
           : meta.dpLocal > 1 ? "--data-parallel-multi-port-external-lb" : "--data-parallel-external-lb";
         const modes = ["--data-parallel-hybrid-lb", "--data-parallel-multi-port-external-lb", "--data-parallel-external-lb"];
         const conflictingRank = meta.dpSize === 1 && ["--data-parallel-rank", "--data-parallel-start-rank"].some((flag) => flags.has(flag));
         if ((selected && !flags.has(selected)) || modes.some((flag) => flag !== selected && flags.has(flag)) || conflictingRank) {
           throw new RangeError(`PD ${roleOverride}: external DP load-balancing flags conflict with the router.`);
-        }
-      }
-      if (internalDp) {
-        // One HTTP entry serves every local rank, so a rank/LB mode flag or a
-        // headless / API-less worker would leave the router without a backend.
-        const forbidden = ["--data-parallel-rank", "--data-parallel-start-rank", "--data-parallel-external-lb",
-          "--data-parallel-multi-port-external-lb", "--data-parallel-hybrid-lb", "--headless"];
-        if (forbidden.some((flag) => flags.has(flag))) {
-          throw new RangeError(`PD ${roleOverride}: internal DP load balancing cannot combine rank, headless or external/hybrid LB flags.`);
-        }
-        if (Number(flags.get("--api-server-count")) === 0) {
-          throw new RangeError(`PD ${roleOverride}: internal DP load balancing needs an HTTP entry, so --api-server-count must stay above 0.`);
         }
       }
     }
@@ -2668,9 +2635,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     if (ascend) {
       const endpoints = (role, meta, args) => {
         const port = Number(lastFlagValue(dedupeArgs(args), "--port") ?? 8000);
-        // external exposes one backend per local DP rank; internal (and every
-        // non-DEP layout) exposes a single HTTP entry per node.
-        const local = meta.dataParallelLb === "external" && meta.parallelism === "dep" ? meta.dpLocal : 1;
+        const local = !meta.internalDp && externalDp && meta.parallelism === "dep" ? meta.dpLocal : 1;
         if (!Number.isInteger(port) || port < 1 || port + local - 1 > 65535) {
           throw new RangeError(`PD ${role}: HTTP ports must fit in 1..65535.`);
         }
