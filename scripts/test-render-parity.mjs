@@ -132,6 +132,45 @@ test("PD JSON and Markdown contain every node independently of the selected rank
   }
 });
 
+test("internal DP exports one decode endpoint across JSON, Markdown and Docker", () => {
+  const recipe = ascendPdRecipe();
+  Object.assign(recipe.presets.ascend_pd.roles.decode, { nodes: 1, parallelism: "dep", tp: 4 });
+  recipe.presets.ascend_pd.points = {
+    internal: { label: "Single entry", roles: { decode: { data_parallel_lb: "internal" } } },
+    external: { label: "Per-rank entries", roles: { decode: { data_parallel_lb: "external" } } },
+  };
+  const pools = { prefill: { nodes: 4, parallelism: "tp" }, decode: { nodes: 1, parallelism: "dep" } };
+  const render = (point) => renderCommand(recipe, "default", "pd_cluster", "ascend_950dt", 1, [], strategies, taxonomy,
+    pools, null, "ascend_pd", point, true);
+  const internal = render("internal");
+  const external = render("external");
+  assert.deepEqual(internal.router.argv.slice(internal.router.argv.indexOf("--decoder-ports") + 1), ["8002"]);
+  assert.deepEqual(external.router.argv.slice(external.router.argv.indexOf("--decoder-ports") + 1), ["8002", "8003"]);
+  assert.equal(internal.decode.node_commands.length, 1);
+  for (const f of ["--data-parallel-rank", "--data-parallel-start-rank", "--data-parallel-external-lb",
+    "--data-parallel-multi-port-external-lb", "--data-parallel-hybrid-lb"]) {
+    assert.equal(internal.decode.argv.includes(f), false, f);
+  }
+  assert.equal(internal.decode.dataParallelLb, undefined, "the LB mode stays internal generator state");
+  for (const role of ["prefill", "decode"]) {
+    assert.equal(JSON.parse(internal[role].argv[internal[role].argv.lastIndexOf("--kv-transfer-config") + 1])
+      .kv_connector_extra_config.decode.dp_size, 2, role);
+    assert.ok(internal[role].docker_command.includes("--kv-transfer-config"), `${role} docker command`);
+  }
+
+  for (const point of ["internal", "external"]) {
+    const resolved = resolveSelection(recipe, new URLSearchParams({
+      hardware: "ascend_950dt", strategy: "pd_cluster", preset: "ascend_pd", point,
+      features: "none", prefill_nodes: "4", decode_nodes: "1", decode_mode: "dep",
+    }), strategies, taxonomy);
+    assert.deepEqual(resolved.rendering, render(point), `dynamic JSON matches the strict ${point} rendering`);
+    const md = selectionMarkdown(recipe, resolved, { strategies, taxonomy,
+      urls: { page: "https://example.org/test/Ascend-PD", json: "https://example.org/test/Ascend-PD.json" } });
+    assert.ok(md.includes(resolved.rendering.decode.command), `${point} Markdown carries the decode command`);
+    assert.ok(md.includes(resolved.rendering.router.command), `${point} Markdown carries the router command`);
+  }
+});
+
 test("Omni variants inherit, replace or clear model base args", () => {
   for (const key of ["default", "alternate"]) {
     const recipe = {

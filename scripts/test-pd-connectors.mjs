@@ -339,6 +339,106 @@ test("Ascend PD uses the current point's inherited declarations, not another poi
   }
 });
 
+const internalFixture = (edit) => {
+  const fixture = ascendPdRecipe();
+  // One dedicated decode node, TP4 over 8 devices → local DP2 / global DP2.
+  Object.assign(fixture.presets.ascend_pd.roles.decode, { nodes: 1, parallelism: "dep", tp: 4 });
+  edit?.(fixture);
+  return fixture;
+};
+const decoderPorts = (r) => r.router.argv.slice(r.router.argv.indexOf("--decoder-ports") + 1);
+const dpFlags = ["--data-parallel-rank", "--data-parallel-start-rank", "--data-parallel-external-lb",
+  "--data-parallel-multi-port-external-lb", "--data-parallel-hybrid-lb"];
+// The builder's pdNodes wins over preset role defaults, so drive the same
+// topology the fixture declares (this is what the preset's own select renders).
+const poolsFor = (r) => Object.fromEntries(["prefill", "decode"].map((role) => {
+  const cfg = r.presets.ascend_pd.roles[role];
+  return [role, { nodes: cfg.nodes, parallelism: cfg.parallelism, rank: 0 }];
+}));
+const ascendInternal = (fixture) => ascend(fixture, 0, "mooncake_ascend", strategies, [], poolsFor(fixture));
+
+test("internal DP keeps one decode HTTP entry and drops rank/LB mode flags", () => {
+  const fixture = internalFixture((r) => { r.presets.ascend_pd.roles.decode.data_parallel_lb = "internal"; });
+  const rendered = ascendInternal(fixture);
+  const argv = rendered.decode.argv;
+  assert.equal(flag(argv, "--data-parallel-size"), "2");
+  assert.equal(flag(argv, "--data-parallel-size-local"), "2");
+  assert.equal(flag(argv, "--tensor-parallel-size"), "4");
+  assert.equal(flag(argv, "--port"), "8002");
+  for (const f of dpFlags) assert.equal(argv.includes(f), false, f);
+  assert.equal(flag(argv, "--data-parallel-address"), "$DECODE_NODE_1");
+  assert.ok(argv.includes("--data-parallel-rpc-port"));
+  assert.ok(argv.includes("--enable-expert-parallel"));
+  assert.deepEqual(decoderPorts(rendered), ["8002"]);
+  assert.equal(rendered.router.argv.filter((a) => a === "$DECODE_NODE_1").length, 1);
+  for (const role of ["prefill", "decode"]) {
+    assert.equal(kvCfg(rendered, role).kv_connector_extra_config.decode.dp_size, 2, role);
+  }
+  // Prefill keeps its external TP/PP layout and endpoints.
+  assert.equal(flag(rendered.prefill.argv, "--pipeline-parallel-size"), "4");
+  assert.equal(rendered.prefill.nodes, 4);
+});
+
+test("default and explicit external keep per-rank endpoints and identical output", () => {
+  const plain = ascendInternal(internalFixture());
+  const explicit = ascendInternal(internalFixture((r) => { r.presets.ascend_pd.roles.decode.data_parallel_lb = "external"; }));
+  for (const rendered of [plain, explicit]) {
+    assert.equal(flag(rendered.decode.argv, "--data-parallel-start-rank"), "0");
+    assert.ok(rendered.decode.argv.includes("--data-parallel-multi-port-external-lb"));
+    assert.deepEqual(decoderPorts(rendered), ["8002", "8003"]);
+    assert.equal(kvCfg(rendered, "decode").kv_connector_extra_config.decode.dp_size, 2);
+  }
+  assert.deepEqual(explicit.decode.argv, plain.decode.argv);
+  assert.deepEqual(explicit.prefill.argv, plain.prefill.argv);
+  assert.deepEqual(explicit.router.argv, plain.router.argv);
+});
+
+test("external DEP prefill composes with an internal DEP decode pool", () => {
+  const fixture = internalFixture((r) => {
+    Object.assign(r.presets.ascend_pd.roles.prefill, { nodes: 2, parallelism: "dep", tp: 4, pp: 1 });
+    r.presets.ascend_pd.roles.decode.data_parallel_lb = "internal";
+  });
+  const rendered = ascendInternal(fixture);
+  assert.ok(rendered.prefill.argv.includes("--data-parallel-multi-port-external-lb"));
+  assert.equal(rendered.prefill.dpLocal, 2);
+  const pPorts = rendered.router.argv.slice(rendered.router.argv.indexOf("--prefiller-ports") + 1,
+    rendered.router.argv.indexOf("--decoder-hosts"));
+  assert.deepEqual(pPorts, ["8001", "8002", "8001", "8002"]);
+  assert.deepEqual(decoderPorts(rendered), ["8002"]);
+});
+
+test("internal DP rejects invalid topology and conflicting final args", () => {
+  for (const [name, edit, pattern] of [
+    ["multi-node", (r) => { r.presets.ascend_pd.roles.decode.nodes = 2; }, /nodes: 1/],
+    ["shared node", (r) => { r.presets.ascend_pd.roles.decode.nodes = 0; }, /nodes: 1/],
+    ["TP pool", (r) => { r.presets.ascend_pd.roles.decode.parallelism = "tp"; }, /DEP parallelism/],
+    ["bad value", (r) => { r.presets.ascend_pd.roles.decode.data_parallel_lb = "hybrid"; }, /internal.*external/],
+    ["dense model", (r) => { r.model.architecture = "dense"; }, /MoE/],
+    ["rank flag", (r) => { r.presets.ascend_pd.roles.decode.args = ["--data-parallel-start-rank", "0"]; }, /rank, headless or external\/hybrid/],
+    ["external flag", (r) => { r.presets.ascend_pd.roles.decode.args = ["--data-parallel-external-lb"]; }, /rank, headless or external\/hybrid/],
+    ["headless", (r) => { r.presets.ascend_pd.roles.decode.args = ["--headless"]; }, /rank, headless or external\/hybrid/],
+    ["no API server", (r) => { r.presets.ascend_pd.roles.decode.args = ["--api-server-count", "0"]; }, /api-server-count/],
+    ["TP conflict", (r) => { r.presets.ascend_pd.roles.decode.args = ["--tensor-parallel-size", "2"]; }, /--tensor-parallel-size conflicts/],
+  ]) {
+    const fixture = internalFixture((r) => {
+      if (name !== "bad value") r.presets.ascend_pd.roles.decode.data_parallel_lb = "internal";
+      edit(r);
+    });
+    assert.throws(() => ascendInternal(fixture), (error) => error instanceof RangeError && pattern.test(error.message), name);
+  }
+});
+
+test("the LB field stays inert behind a non-Ascend router", () => {
+  const fixture = internalFixture((r) => { r.presets.ascend_pd.roles.decode.data_parallel_lb = "internal"; });
+  const rendered = resolveCommand(fixture, "default", "pd_cluster", "ascend_950dt", [], strategies, taxonomy, [], 1,
+    { prefill: { nodes: 4, parallelism: "tp" }, decode: { nodes: 1, parallelism: "dep" } }, {}, null, null, "python",
+    "vllm", "http", null, "ascend_pd", undefined, "nixl");
+  assert.equal(rendered.pdRouter, "vllm");
+  assert.equal(rendered.decode.dataParallelLb, null);
+  assert.equal(rendered.decode.argv.includes("--data-parallel-multi-port-external-lb"), false);
+  assert.ok(rendered.decode.argv.includes("--data-parallel-start-rank"));
+});
+
 test("TP/TEP derives its width from the whole pool as PD grows from four to eight nodes", () => {
   const fixture = ascendPdRecipe();
   fixture.compatible_strategies.push("single_node_tep");

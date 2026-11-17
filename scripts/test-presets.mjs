@@ -272,6 +272,39 @@ test("pd_cluster points change role args, topology and role JSON edits", () => {
   assert.equal(validate(authored), false);
 });
 
+test("data_parallel_lb mounts per hardware and inherits through points", () => {
+  const fixture = ascendPdRecipe();
+  fixture.presets.ascend_pd.roles.decode.data_parallel_lb = "external";
+  fixture.presets.ascend_pd.points = {
+    internal: { label: "Single entry", roles: { decode: { nodes: 1, tp: 4, data_parallel_lb: "internal" } } },
+    inherited: { label: "Inherited", roles: { decode: { nodes: 1, tp: 4 } } },
+  };
+  const internal = withPreset(fixture, "ascend_pd", "ascend_950dt", "pd_cluster", { point: "internal" });
+  const decodeLb = internal.strategy_overrides.pd_cluster.decode.data_parallel_lb;
+  assert.equal(decodeLb.ascend_950dt, "internal");
+  const inherited = withPreset(fixture, "ascend_pd", "ascend_950dt", "pd_cluster", { point: "inherited" });
+  assert.equal(inherited.strategy_overrides.pd_cluster.decode.data_parallel_lb.ascend_950dt, "external");
+
+  const errs = (preset) => validatePresets({ ...fixture, presets: { lane: preset } }, taxonomy,
+    ["pd_cluster"], [], strategies.pd_cluster.connectors);
+  const base = { label: "lane", hardware: "ascend_950dt", strategy: "pd_cluster", select: { pd_router: "ascend" } };
+  assert.deepEqual(errs({ ...base, roles: { decode: { nodes: 1, data_parallel_lb: "internal" } } }), []);
+  assert.ok(errs({ ...base, select: { pd_router: "vllm" }, roles: { decode: { nodes: 1, data_parallel_lb: "internal" } } })
+    .some((e) => /requires select.pd_router: ascend/.test(e)));
+  assert.ok(errs({ ...base, roles: { decode: { nodes: 1, data_parallel_lb: "hybrid" } } })
+    .some((e) => /must be "internal" or "external"/.test(e)));
+  assert.ok(errs({ ...base, roles: { decode: { nodes: 2, data_parallel_lb: "internal" } } })
+    .some((e) => /internal requires nodes: 1/.test(e)));
+  assert.ok(errs({ ...base, strategy: "single_node_tp", roles: { decode: { data_parallel_lb: "internal" } } })
+    .some((e) => /only a pd_cluster role/.test(e)));
+
+  const validate = new Ajv({ allErrors: true, strict: false }).compile(buildRecipeSchema({ taxonomy, strategies }));
+  const { hf_id: _hfId, ...authored } = fixture;
+  assert.ok(validate(authored), JSON.stringify(validate.errors));
+  fixture.presets.ascend_pd.roles.decode.data_parallel_lb = "hybrid";
+  assert.equal(validate(authored), false);
+});
+
 test("a point's image fields layer over the preset's", () => {
   const p = { image: { vllm: "img:1", dynamo: "d1" }, points: { a: { label: "a", image: { dynamo: "d2" } }, b: { label: "b", image: "img:2" } } };
   assert.deepEqual(effectivePreset(p, "a").image, { vllm: "img:1", dynamo: "d2" });

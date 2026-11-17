@@ -108,6 +108,20 @@ test("new variants and dependencies must be in scope", () => {
   assert.equal(applyOverlay(core0, { dependencies: [dep, dep] }, { ctx, source }).recipe.dependencies.filter((d) => d.command === dep.command).length, 1);
 });
 
+test("PD role data_parallel_lb accepts only in-scope hardware keys and round-trips", () => {
+  const lb = (hardware) => ({ strategy_overrides: { pd_cluster: { decode: { data_parallel_lb: hardware } } } });
+  assert.deepEqual(errs(lb({ ascend_910c: "internal" })), []);
+  assert.equal(errs(lb({ h200: "internal" })).length, 1);
+  assert.equal(errs(lb("internal")).length, 1, "an overlay cannot replace the core's scalar");
+  const original = lb({ default: "external", ascend_910c: "internal" });
+  const { core, overlay } = splitOverlay(original, { ctx, source });
+  assert.deepEqual(core.strategy_overrides.pd_cluster.decode.data_parallel_lb, { default: "external" });
+  assert.deepEqual(overlay.strategy_overrides.pd_cluster.decode.data_parallel_lb, { ascend_910c: "internal" });
+  const merged = applyOverlay(core, overlay, { ctx, source });
+  assert.deepEqual(merged.errors, []);
+  assert.deepEqual(merged.recipe, original);
+});
+
 test("overlay notes require hardware entirely within the source scope", () => {
   for (const when of [{}, { variants: ["default"] }, { hardware: [] }, { hardware: ["h200"] }, { hardware: ["ascend_910c", "h200"] }]) {
     assert.equal(errs({ notes: [{ when, body: "x" }] }).length, 1);
