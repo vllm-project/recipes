@@ -261,7 +261,7 @@ guide: |
     --attention-backend ROCM_AITER_FA
   ```
 
-  > The above configuration runs efficiently at high concurrencies (up to 512) for context lengths up to 8k. If TPOT is not satisfactory, lower `--max-num-batched-tokens`. For longer contexts, `--max-num-seqs` and `--max-num-batched-tokens` may need retuning. 
+  > The above configuration runs efficiently at high concurrencies (up to 512) for context lengths up to 8k. If TPOT is not satisfactory, lower `--max-num-batched-tokens`. For longer contexts, `--max-num-seqs` and `--max-num-batched-tokens` may need retuning.
 
   ### MI300X / MI355X (FP8, EAGLE3 Speculative Decoding)
 

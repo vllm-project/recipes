@@ -194,8 +194,8 @@ guide: |
   ## Overview
 
   [Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-Flash-Next) is a
-  multimodal, ultra-sparse Mixture-of-Experts model. It has 125B parameters, 
-  including an additional 51B N-gram embedding table, while activating 6B 
+  multimodal, ultra-sparse Mixture-of-Experts model. It has 125B parameters,
+  including an additional 51B N-gram embedding table, while activating 6B
   parameters per token.
 
   The architecture combines four main ideas:
@@ -407,7 +407,7 @@ guide: |
   - **DEP startup failure:** DEP requires PLE CPU offload (on by default); DEP
     without it is not supported.
   - **MTP memory pressure:** reduce `num_speculative_tokens` below 3.
-  - **PLE:** a network layer that injects N-gram Embeddings into the main model. 
+  - **PLE:** a network layer that injects N-gram Embeddings into the main model.
 
   ## KV cache offloading
 

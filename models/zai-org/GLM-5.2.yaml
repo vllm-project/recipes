@@ -145,7 +145,7 @@ kv_offload_support:
 
 hardware_overrides:
   hopper:
-    # H100/H200 use plain fp8 KV cache; Blackwell keeps base_args' fp8_e4m3,H20 do not use kvcache fp8 
+    # H100/H200 use plain fp8 KV cache; Blackwell keeps base_args' fp8_e4m3,H20 do not use kvcache fp8
     # The synthesizer's last-wins dedupe lets this shadow --kv-cache-dtype.
     extra_args:
       - "--kv-cache-dtype"
