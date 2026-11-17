@@ -2,7 +2,8 @@
 
 import { useMemo, useCallback } from "react";
 import Link from "next/link";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { replaceQuery } from "@/lib/url-state";
 import { Layers, Cpu, X, ArrowDownUp, SlidersHorizontal, ChevronDown } from "lucide-react";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName } from "@/lib/providers";
 import { searchRecipes } from "@/lib/search";
@@ -96,7 +97,6 @@ function matchingVariant(recipe, precision, hardware) {
 
 export function BrowseList({ recipes, hardwareOptions }) {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const hardwareById = useMemo(
     () => Object.fromEntries(hardwareOptions.map((option) => [option.id, option])),
     [hardwareOptions],
@@ -152,9 +152,9 @@ export function BrowseList({ recipes, hardwareOptions }) {
         }
       }
       const qs = sp.toString();
-      router.replace(qs ? `?${qs}` : window.location.pathname, { scroll: false });
+      replaceQuery(qs);
     },
-    [router, searchParams]
+    [searchParams]
   );
 
   const toggle = useCallback(
@@ -292,7 +292,7 @@ export function BrowseList({ recipes, hardwareOptions }) {
     if (sort !== "released") sp.set("sort", sort);
     if (open) sp.set("panel", "open");
     const qs = sp.toString();
-    router.replace(qs ? `?${qs}` : window.location.pathname, { scroll: false });
+    replaceQuery(qs);
   };
 
   return (
@@ -446,7 +446,7 @@ export function BrowseList({ recipes, hardwareOptions }) {
                 <span className="inline-flex items-center gap-2 w-28 shrink-0">
                   {brand.logo && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={brand.logo} alt="" width={20} height={20} className="rounded shrink-0" aria-hidden />
+                    <img src={brand.logo} alt="" width={20} height={20} loading="lazy" decoding="async" className="rounded shrink-0" aria-hidden />
                   )}
                   <span className="text-[12px] font-semibold uppercase tracking-wider text-foreground/80">
                     {brand.name}
@@ -632,7 +632,7 @@ function Row({ recipe, hardware, precision, hardwareById }) {
         <div className="flex items-start gap-2.5 min-w-0">
           {logo ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={logo} alt="" width={24} height={24} className={`rounded shrink-0 mt-0.5 ${getProviderLogoClass(r.hf_org)}`} />
+            <img src={logo} alt="" width={24} height={24} loading="lazy" decoding="async" className={`rounded shrink-0 mt-0.5 ${getProviderLogoClass(r.hf_org)}`} />
           ) : (
             <div className="w-6 h-6 rounded bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground shrink-0">
               {r.hf_org.charAt(0)}

@@ -5,7 +5,6 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { THEME_SCRIPT } from "@/lib/theme";
 import { SearchBox } from "@/components/recipes/SearchBox";
 import { PreviewBanner } from "@/components/PreviewBanner";
-import { getAllRecipes } from "@/lib/recipes";
 import { siteUrl } from "@/lib/site-url";
 import {
   buildOrganizationLd,
@@ -59,33 +58,6 @@ export const metadata = {
 };
 
 export default async function RootLayout({ children }) {
-  // Recipes are small (~50 KB) — fine to load into every page for the
-  // global search box. Server-rendered, cached across requests.
-  const recipes = getAllRecipes();
-  // Drop the heavy `guide` field before sending to the client
-  const searchRecipes = recipes.map((r) => ({
-    hf_org: r.hf_org,
-    hf_repo: r.hf_repo,
-    hf_id: r.hf_id,
-    hf_released: r.hf_released,
-    meta: {
-      title: r.meta.title,
-      provider: r.meta.provider,
-      description: r.meta.description,
-      date_added: r.meta.date_added,
-      date_updated: r.meta.date_updated,
-      tasks: r.meta.tasks,
-      hardware: r.meta.hardware || {},
-    },
-    model: {
-      architecture: r.model.architecture,
-      parameter_count: r.model.parameter_count,
-    },
-    precisions: [...new Set(
-      Object.values(r.variants || {}).map((v) => v?.precision).filter(Boolean)
-    )],
-  }));
-
   // Sitewide JSON-LD graph. Per-page schemas reference these by @id so search
   // engines and AI assistants can stitch the three vLLM properties (vllm.ai,
   // docs.vllm.ai, recipes.vllm.ai) into one Organization-rooted graph.
@@ -136,7 +108,7 @@ export default async function RootLayout({ children }) {
 
             {/* Search — flex-1 so it expands to fill available space */}
             <div className="flex-1 flex justify-center max-w-xl mx-auto">
-              <SearchBox recipes={searchRecipes} />
+              <SearchBox />
             </div>
 
             <nav className="flex items-center gap-4 text-sm text-muted-foreground shrink-0">

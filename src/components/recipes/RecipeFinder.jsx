@@ -1,11 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { replaceQuery } from "@/lib/url-state";
 
 export function RecipeFinder({ recipes, taxonomy }) {
   const searchParams = useSearchParams();
-  const router = useRouter();
 
   const taskFilter = searchParams.get("task") || "";
   const providerFilter = searchParams.get("provider") || "";
@@ -16,7 +16,7 @@ export function RecipeFinder({ recipes, taxonomy }) {
     if (value) sp.set(key, value);
     else sp.delete(key);
     const qs = sp.toString();
-    router.replace(qs ? `?${qs}` : window.location.pathname, { scroll: false });
+    replaceQuery(qs);
   };
 
   const toggleTask = (t) => setFilter("task", taskFilter === t ? "" : t);
@@ -82,7 +82,7 @@ export function RecipeFinder({ recipes, taxonomy }) {
 
         {hasFilters && (
           <button
-            onClick={() => router.replace(window.location.pathname, { scroll: false })}
+            onClick={() => replaceQuery("")}
             className="text-xs text-muted-foreground hover:text-foreground transition-colors ml-1"
           >
             Clear
