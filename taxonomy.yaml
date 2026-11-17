@@ -250,6 +250,18 @@ hardware_profiles:
 
   # Exact two-card consumer profiles. Kept restricted so they only appear for
   # recipes with an end-to-end validated multi-GPU deployment.
+  rtx_3090_2x:
+    brand: NVIDIA
+    generation: ampere
+    compute_arch: sm86
+    display_name: "RTX 3090"
+    description: "NVIDIA RTX 3090 · 2× RTX 3090 GPU · 24 GB VRAM/GPU · PCIe, no NVLink"
+    gpu_count: 2
+    vram_gb: 48
+    multi_node: false
+    scalable: false
+    restricted: true
+
   rtx_4090_2x:
     brand: NVIDIA
     generation: ada
@@ -453,28 +465,6 @@ hardware_profiles:
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
   # lists it in `meta.hardware` — Ascend support ships in vllm-ascend and is
   # only declared on validated recipes.
-  ascend_910b3:
-    brand: Huawei
-    generation: npu
-    display_name: "Ascend 910B3 (A2)"
-    description: "Atlas 800I A2 · one logical Ascend 910B3 NPU · 64 GB HBM · vLLM-Ascend backend"
-    gpu_count: 1
-    vram_gb: 64
-    multi_node: false
-    scalable: false
-    restricted: true
-
-  ascend_910b4:
-    brand: Huawei
-    generation: npu
-    display_name: "Ascend 910B4 (A2)"
-    description: "One logical Ascend 910B4 NPU · 32 GB HBM · vLLM-Ascend backend"
-    gpu_count: 1
-    vram_gb: 32
-    multi_node: false
-    scalable: false
-    restricted: true
-
   ascend_310p3:
     brand: Huawei
     generation: npu
