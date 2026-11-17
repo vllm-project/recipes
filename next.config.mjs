@@ -23,6 +23,19 @@ const nextConfig = {
   outputFileTracingExcludes: {
     "/**/*": ["./.content/.tmp-*/**", "./.content/.old-*/**", "./.content/validate/**"],
   },
+  // Provider logos are refreshed only by fetch-provider-logos at build time,
+  // but as public/ files they default to `max-age=0, must-revalidate`: every
+  // page view revalidated each of the dozens of logos in the sidebar, the
+  // provider tiles and the cards. A day's cache (then served stale while it
+  // revalidates) drops those requests for returning visitors.
+  async headers() {
+    return [
+      {
+        source: "/providers/:file*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }],
+      },
+    ];
+  },
   // A recipe page URL's agent-readable twins, rendered on demand for the same
   // query string: `/<org>/<repo>.md?…`, and `/<org>/<repo>.json?…` when the
   // query selects a configuration (a bare `.json` stays the static

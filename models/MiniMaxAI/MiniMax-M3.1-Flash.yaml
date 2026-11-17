@@ -55,7 +55,7 @@ variants:
       - "--kv-cache-dtype"
       - "nvfp4"
       - "--attention-config"
-      - '{indexer_kv_dtype: fp8}'
+      - '{"indexer_kv_dtype": "fp8"}'
 
 compatible_strategies:
   - single_node_tp
@@ -86,7 +86,6 @@ notes:
   - title: "4-bit KV cache on SM120"
     when:
       hardware: [rtx_pro_6000]
-      features: []
     body: |
       The NVFP4 KV reader rides a Triton kernel with a native `cvt.rn.f16x2.e2m1x2`
       SIMD path: the KV page shrinks from 256 B/token to 144 B/token, which raises
