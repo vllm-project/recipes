@@ -3,10 +3,11 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { track } from "@vercel/analytics";
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { replaceQuery } from "@/lib/url-state";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { maxVersion, resolveInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickLinkedVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason, ascendPdUnavailableReason } from "@/lib/command-synthesis";
+import { maxVersion, resolveInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason, ascendPdUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, presetSelect, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import ShellCode from "@/components/recipes/ShellCode";
@@ -329,17 +330,13 @@ function hardwareSelectorLabel(selector, profiles) {
 
 export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = [] }) {
   const searchParams = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
 
   // ── Omni tasks ── resolved from the recipe (catalog lookup); declared up here
   // because both the omni and non-omni return paths reference these hooks.
   const omniTasks = useMemo(() => resolveOmniTasks(recipe), [recipe]);
 
   // ── State ──
-  const [variant, setVariant] = useState(() => pickLinkedVariant(
-    recipe, searchParams.get("variant"), searchParams.get("hardware"), taxonomy.hardware_profiles
-  ));
+  const [variant, setVariant] = useState(searchParams.get("variant") || "default");
   const [frontend, setFrontend] = useState(() =>
     resolveFrontend(recipe, searchParams.get("frontend") || undefined, taxonomy)
   );
@@ -370,7 +367,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   }, [recipe, taxonomy]);
 
   const requestedHwId = searchParams.get("hardware");
-  const requestedVariant = recipe.variants?.[variant] || recipe.variants?.default || {};
+  const requestedVariant = recipe.variants?.[searchParams.get("variant") || "default"] || recipe.variants?.default || {};
   const requestedHwProfile = taxonomy.hardware_profiles?.[requestedHwId] || {};
   const requestedHwAllowed = requestedHwId
     && taxonomy.hardware_profiles?.[requestedHwId]
@@ -1342,11 +1339,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
 
 
   // ── URL sync ──
-  // router.replace is async, so `searchParams` stays stale until it commits.
-  // A click handler and the effects its state change triggers (e.g. the DCP
-  // reset on a hardware switch) each call syncUrl in one interaction; building
-  // every call on the previous call's pending query keeps them composing
-  // instead of the last one reverting the others.
+  // `searchParams` stays stale until the next render, so a click handler and
+  // the effects its state change triggers (e.g. the DCP reset on a hardware
+  // switch) each call syncUrl in one interaction; building every call on the
+  // previous call's pending query keeps them composing instead of the last
+  // one reverting the others. replaceQuery writes the address bar without
+  // the RSC round trip router.replace makes on every call.
   const pendingQs = useRef(null);
   useEffect(() => { pendingQs.current = null; }, [searchParams]);
   // Write what the mount restored (see restoredQs). Declared after the reset
@@ -1358,7 +1356,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     if (qs == null) return;
     restoredQs.current = null;
     pendingQs.current = qs;
-    router.replace(`${qs ? `?${qs}` : pathname}${window.location.hash}`, { scroll: false });
+    replaceQuery(qs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const activeStrategyRef = useRef(activeStrategy);
@@ -1380,9 +1378,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       }
       const qs = sp.toString();
       pendingQs.current = qs;
-      router.replace(`${qs ? `?${qs}` : pathname}${window.location.hash}`, { scroll: false });
+      replaceQuery(qs);
     },
-    [searchParams, router, recommended, pathname]
+    [searchParams, recommended]
   );
 
   // ── Handlers ──
