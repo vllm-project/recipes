@@ -83,6 +83,37 @@ export function toCardEntry(r) {
 }
 
 /**
+ * What the header `SearchBox` reads: matching (`searchRecipes`), the result
+ * row, and the "Latest" ordering. Published as the static
+ * `/search-index.json` (src/app/search-index.json/route.js) and fetched when
+ * the search box is first used, rather than inlined into every page.
+ */
+export function toSearchEntry(r) {
+  return {
+    hf_org: r.hf_org,
+    hf_repo: r.hf_repo,
+    hf_id: r.hf_id,
+    hf_released: r.hf_released,
+    meta: {
+      title: r.meta.title,
+      provider: r.meta.provider,
+      description: r.meta.description,
+      date_added: r.meta.date_added,
+      date_updated: r.meta.date_updated,
+      tasks: r.meta.tasks,
+      hardware: r.meta.hardware || {},
+    },
+    model: {
+      architecture: r.model.architecture,
+      parameter_count: r.model.parameter_count,
+    },
+    precisions: [...new Set(
+      Object.values(r.variants || {}).map((v) => v?.precision).filter(Boolean)
+    )],
+  };
+}
+
+/**
  * What `CommandBuilder` reads: the whole recipe except `guide`. The guide is
  * rendered server-side below the builder (and by the `.md` route from the
  * source), so its Markdown would only ride along in the payload.

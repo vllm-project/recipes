@@ -76,7 +76,7 @@ export function ModelSidebar({ recipesByOrg }) {
                 >
                   {logo ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={logo} alt="" width={18} height={18} className={`rounded shrink-0 ${getProviderLogoClass(org)}`} />
+                    <img src={logo} alt="" width={18} height={18} loading="lazy" decoding="async" className={`rounded shrink-0 ${getProviderLogoClass(org)}`} />
                   ) : (
                     <div className="w-[18px] h-[18px] rounded bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground shrink-0">
                       {displayName.charAt(0)}
