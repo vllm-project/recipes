@@ -467,9 +467,16 @@ export function buildVariantRendering(recipe, variantKey, hwId, strategies, taxo
 
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
   const scalable = isHardwareScalable(hwProfile);
-  // A parent endpoint mirrors the UI's fallback for incompatible precision or
-  // oversized weights on non-scalable hardware. A promoted checkpoint must
-  // stay on its requested variant, so omit hardware that cannot run it.
+  // Parent JSON hardware links behave like page links: choose an exact
+  // hardware-specific precision even if the generic default also fits.
+  // Promoted checkpoint endpoints must retain their explicit variant.
+  if (allowVariantFallback) {
+    const linkedVariant = pickLinkedVariant(recipe, null, hwId, taxonomy.hardware_profiles);
+    if (recipe.variants?.[linkedVariant]) {
+      variantKey = linkedVariant;
+      variant = recipe.variants[linkedVariant];
+    }
+  }
   if (!variantRunsOnHardware(hwProfile, variant, hwId)) {
     const fitting = allowVariantFallback ? pickFittingVariant(recipe, hwProfile, hwId) : null;
     if (!fitting) return null;
