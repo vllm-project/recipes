@@ -5,9 +5,9 @@ short_label: "TP+DP"                  # compact name for tight spots (Preset pil
 orientation: balanced
 description: >
   Tensor parallel within each node, data parallel across nodes — one
-  full model replica per node by default. Recipes may explicitly configure
-  smaller TP groups and multiple local DP replicas. TP stays inside the high-bandwidth
-  intra-node NVLink domain; the inter-node link carries only DP
+  full model replica per node by default. To run smaller TP groups, set TP and
+  local DP together in a strategy override, its hardware override, or a preset.
+  TP stays inside the high-bandwidth intra-node NVLink domain; the inter-node link carries only DP
   coordination, no tensor traffic. E.g. 2× H200 nodes → TP8·DP2,
   4× GB200/GB300 NVL4 trays → TP4·DP4.
 
@@ -15,7 +15,7 @@ hardware_match:
   min_gpus: 2
   multi_node: true
 
-# "tp_dp" defaults to full-node TP; local DP1 is added only if not configured.
+# Full-node TP and local DP1 override base/variant args.
 # Global DP defaults to node_count × final local DP, and
 # worker node N starts at DP rank N × final local DP. Global DP overrides
 # base/variant args; later strategy, hardware, and preset overrides still win.

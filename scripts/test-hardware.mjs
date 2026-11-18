@@ -227,23 +227,29 @@ const dpValue = (argv, flag) => {
   return i < 0 ? undefined : argv[i].split("=")[1] ?? argv[i + 1];
 };
 
-test("multi-node DP sizes and all follower ranks follow local DP from each argument layer", () => {
-  for (const strategy of dpStrategies) for (const layer of ["base", "variant", "strategy", "hardware", "preset"]) {
+test("multi-node DP sizes and all follower ranks follow strategy, hardware and preset layouts", () => {
+  for (const strategy of dpStrategies) for (const layer of ["strategy", "hardware", "preset"]) {
     const r = dpRecipe(strategy);
     const so = r.strategy_overrides[strategy];
-    // TP belongs after the strategy default, even when local DP is inherited.
-    so.extra_args = ["--tensor-parallel-size", "4"];
-    const local = ["--data-parallel-size-local", "2"];
-    if (layer === "base") r.model.base_args = local;
-    if (layer === "variant") r.variants.default.extra_args = local;
-    if (layer === "strategy") so.extra_args.push(...local);
-    if (layer === "hardware") so.hardware_overrides = { h200: { extra_args: local } };
-    if (layer === "preset") r.presets = { local: { hardware: "h200", strategy, default: true, args: local } };
+    const layout = ["--tensor-parallel-size", "4", "--data-parallel-size-local", "2"];
+    if (layer === "strategy") so.extra_args = layout;
+    if (layer === "hardware") so.hardware_overrides = { h200: { extra_args: layout } };
+    if (layer === "preset") r.presets = { local: { hardware: "h200", strategy, default: true, args: layout } };
     dpCommands(r, strategy).forEach((argv, node) => {
       assert.deepEqual(["--tensor-parallel-size", "--data-parallel-size", "--data-parallel-size-local", "--data-parallel-start-rank"].map((f) => dpValue(argv, f)),
         ["4", "8", "2", node ? String(node * 2) : undefined], `${strategy}/${layer}/node${node}`);
     });
   }
+});
+
+test("multi-node TP+DP overrides a variant's TP and local DP together", () => {
+  const strategy = "multi_node_tp_dp";
+  const r = dpRecipe(strategy);
+  r.variants.default.extra_args = ["--tensor-parallel-size", "4", "--data-parallel-size-local", "2"];
+  dpCommands(r, strategy, "h200", 4).forEach((argv, node) => {
+    assert.deepEqual(["--tensor-parallel-size", "--data-parallel-size-local", "--data-parallel-size", "--data-parallel-start-rank"].map((flag) => dpValue(argv, flag)),
+      ["8", "1", "4", node ? String(node) : undefined], `node${node}`);
+  });
 });
 
 test("multi-node DP defaults retain the complete command order", () => {
@@ -262,9 +268,10 @@ test("multi-node DP defaults retain the complete command order", () => {
   }
 });
 
-test("multi-node DEP overrides a variant's single-node DP but respects later overrides", () => {
+test("multi-node DEP overrides base local DP and variant global DP but respects later overrides", () => {
   const strategy = "multi_node_dep";
   const r = dpRecipe(strategy);
+  r.model.base_args = ["--data-parallel-size-local", "1"];
   // Qwen3.5 Ascend variants carry DP1 for their single-node path.
   r.variants.default.extra_args = ["--data-parallel-size", "1"];
   for (const global of [16, 32]) {
@@ -287,8 +294,7 @@ test("multi-node DP does not restore flags removed by a preset", () => {
 test("multi-node DP reads local aliases and never derives NaN from an invalid local value", () => {
   for (const strategy of dpStrategies) for (const local of [["-dpl", "2"], ["--data_parallel_size_local", "2"], ["--data-parallel-size-local=2"], ["--data-parallel-size-local", "invalid"]]) {
     const r = dpRecipe(strategy);
-    r.model.base_args = local;
-    r.strategy_overrides[strategy].extra_args = ["--tensor-parallel-size", "4"];
+    r.strategy_overrides[strategy].extra_args = ["--tensor-parallel-size", "4", ...local];
     const expected = local.includes("invalid") ? (strategy === "multi_node_dep" ? 8 : 1) : 2;
     dpCommands(r, strategy).forEach((argv, node) => {
       assert.equal(dpValue(argv, "--data-parallel-size"), String(4 * expected));

@@ -1912,7 +1912,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       // Keep strategy precedence and argument order; fill the derived values
       // from the final local DP after all overrides and preset edits below.
       args.push("--data-parallel-size", "{dp_size}");
-      if (!args.some((arg) => localDpFlag.test(arg))) args.push("--data-parallel-size-local", String(gpuCount));
+      args.push("--data-parallel-size-local", String(gpuCount));
       args.push("--data-parallel-address", mpMasterAddr);
       if (nodeRole === "worker") args.push("--data-parallel-start-rank", "{dp_start_rank}");
     } else if (isMulti && strategy.parallelism === "tp_pp") {
@@ -1926,11 +1926,10 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       args.push("--master-addr", mpMasterAddr);
       if (mpRank > 0) args.push("--headless");
     } else if (isMulti && strategy.parallelism === "tp_dp") {
-      // Default to full-node TP and one local replica, without shadowing an
-      // explicit local DP from base/variant args. Later overrides still win.
+      // Default to full-node TP and one local replica at the same priority.
       args.push("--tensor-parallel-size", String(gpuCount));
       args.push("--data-parallel-size", "{dp_size}");
-      if (!args.some((arg) => localDpFlag.test(arg))) args.push("--data-parallel-size-local", "1");
+      args.push("--data-parallel-size-local", "1");
       args.push("--data-parallel-address", mpMasterAddr);
       if (nodeRole === "worker") args.push("--data-parallel-start-rank", "{dp_start_rank}");
     } else if (isMulti) {

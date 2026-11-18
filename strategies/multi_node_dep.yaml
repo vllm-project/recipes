@@ -6,10 +6,10 @@ orientation: throughput
 description: >
   Multi-node data and expert parallelism for MoE models, with hybrid load balancing.
   Local DP defaults to the number of devices per node. For mixed TP+DEP, configure
-  TP and local DP explicitly. Global DP defaults to node count × local DP, and
-  worker node N starts at rank N × local DP.
+  TP and local DP together in a strategy override, its hardware override, or a preset.
+  Global DP defaults to node count × local DP, and worker node N starts at rank N × local DP.
 
-# Global DP overrides base/variant args at the strategy layer; later strategy,
+# The strategy overrides base/variant local and global DP. Later strategy,
 # hardware, and preset overrides still win. Preset remove_args remains final.
 
 hardware_match:
