@@ -1487,17 +1487,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       setKvInstances(null);
       setKvInstanceIdx(0);
     }
-    // If the active variant cannot run on the new hardware (explicit allowlist,
-    // precision, or a non-scalable VRAM shortfall), fall to the largest variant
-    // that can run there.
+    // On a hardware pill click, prefer its explicit variant over a generic
+    // default when the URL has not pinned a checkpoint. Also retain the
+    // existing fallback for genuinely incompatible hardware/VRAM.
     let activeVariant = currentVariant;
-    // Folded into the single syncUrl below rather than synced here — a separate
-    // syncUrl call would read stale searchParams and get clobbered (same footgun
-    // as selectVariant). Left undefined when the variant is unchanged so the
-    // existing variant= param is preserved, not deleted.
+    // Folded into the single syncUrl below to avoid losing other query params.
     let variantUpdate;
-    if (!variantRunsOnHardware(newProfile, currentVariant, id)) {
-      const fitting = pickFittingVariant(recipe, newProfile, id);
+    const linkedVariant = !searchParams.get("variant") && variant === "default"
+      ? pickLinkedVariant(recipe, null, id, taxonomy.hardware_profiles)
+      : null;
+    const needsFallback = !variantRunsOnHardware(newProfile, currentVariant, id);
+    if (needsFallback || (linkedVariant && linkedVariant !== variant)) {
+      const fitting = linkedVariant && linkedVariant !== variant
+        ? linkedVariant : pickFittingVariant(recipe, newProfile, id);
       if (fitting && fitting !== variant) {
         setVariant(fitting);
         variantUpdate = fitting;
