@@ -726,9 +726,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const [features, setFeatures] = useState(() => {
     const fp = searchParams.get("features");
     if (fp !== null) return fp.split(",").filter((f) => recipe.features?.[f]);
-    const urlHw = searchParams.get("hardware") || defaultHw;
-    const urlVariant = searchParams.get("variant") || "default";
-    return defaultFeaturesFor(urlHw, urlVariant);
+    return defaultFeaturesFor(hwId, variant);
   });
 
   // Features that are single-select ("pick one of N") rather than boolean —
@@ -769,7 +767,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     return out;
   }, [recipe]);
   const [featureModes, setFeatureModes] = useState(() => ({
-    ...variantDefaultModes(searchParams.get("variant") || "default"),
+    ...variantDefaultModes(variant),
     ...parseFmode(searchParams.get("fmode")),
   }));
   const featureModesToUrl = useCallback(
