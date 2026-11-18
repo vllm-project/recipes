@@ -866,15 +866,32 @@ export function pickFittingVariant(recipe, hwProfile, hwId = null) {
   return fitting[0][0];
 }
 
-// Hardware-only links follow a hardware-pill click. Explicit checkpoint
-// selections retain their constraints rather than silently selecting a sibling.
+// For hardware-only links, an explicitly hardware-scoped variant wins over
+// a generic default that happens to fit. An explicit checkpoint/variant URL
+// still retains its requested identity; restricted hardware requires opt-in.
 export function pickLinkedVariant(recipe, requestedVariant, hwId, profiles) {
   const key = recipe.variants?.[requestedVariant] ? requestedVariant : "default";
   const profile = profiles?.[hwId];
   if (requestedVariant || !profile
     || (profile.restricted && !(hwId in (recipe.meta?.hardware || {})))
     || !isHardwareSupported(recipe, hwId)) return key;
-  if (variantRunsOnHardware(profile, recipe.variants?.[key] || {}, hwId)) return key;
+
+  // Respect the recipe author's per-hardware recommendation when provided.
+  const preferred = hardwareKeyedValue(recipe.meta?.default_variant, profile, hwId);
+  if (preferred && recipe.variants?.[preferred]
+    && variantRunsOnHardware(profile, recipe.variants[preferred], hwId)) return preferred;
+
+  // An exact hardware allowlist is stronger than a broadly runnable generic
+  // checkpoint. Multiple exact variants (e.g. 310P graph/eager) retain the
+  // recipe's declared order unless the author chose a preferred one above.
+  const current = recipe.variants?.[key] || {};
+  if (!current.supported_hardware?.includes(hwId)) {
+    const exact = Object.entries(recipe.variants || {}).find(([, candidate]) =>
+      candidate.supported_hardware?.includes(hwId)
+      && variantRunsOnHardware(profile, candidate, hwId));
+    if (exact) return exact[0];
+  }
+  if (variantRunsOnHardware(profile, current, hwId)) return key;
   return pickFittingVariant(recipe, profile, hwId) || key;
 }
 
