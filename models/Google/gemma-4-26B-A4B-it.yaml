@@ -457,15 +457,6 @@ guide: |
 
   Validated on 4x Intel Arc Pro B60 / B70 with the official vLLM XPU image.
 
-  The XPU command runs with torch.compile and XPU graphs (`FULL_AND_PIECEWISE`)
-  instead of `--enforce-eager`. On 4x Arc Pro B60 (vLLM 0.33.0, BF16, TP=4,
-  `--max-model-len 8192`) single-request decode improved from 12.6 to 69.1 tok/s
-  (TPOT 78.1 ms → 13.1 ms, ISL/OSL 4096/1024) with GSM8K 5-shot within 1 point of
-  eager (strict 0.425 eager vs 0.424 / 0.421 graph over two runs). On 4x Arc Pro
-  B70 decode went from 14.4 to 76.2 tok/s (strict GSM8K 0.436 eager vs 0.438
-  graph). Breakable XPU graphs dropped GSM8K by 1.4–1.7 points on B70, so they are
-  not used.
-
   ```bash
   docker run --device /dev/dri \
     -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
