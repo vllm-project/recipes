@@ -77,7 +77,7 @@ connectors:
 
   mooncake:
     display_name: "Mooncake"
-    description: "Mooncake push transfer over RDMA: prefill writes KV into decode. The router queries each prefill's bootstrap server for its engines. Set WITH_NVIDIA_PEERMEM=0 on hosts without the nvidia-peermem module (GB200)."
+    description: "Mooncake push transfer over RDMA: prefill writes KV into decode. The router queries each prefill's bootstrap server for its engines. On NVIDIA hosts without the nvidia-peermem module (e.g. GB200), set WITH_NVIDIA_PEERMEM=0."
     docs: "https://docs.vllm.ai/en/latest/features/mooncake_connector_usage.html"
     brands: [NVIDIA, AMD]
     prefill:

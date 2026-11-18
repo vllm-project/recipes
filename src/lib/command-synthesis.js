@@ -1805,8 +1805,8 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     ? Math.floor(kvInstObj.count)
     : (kvStoreStrat?.default_instances || 2);
   const kvCurrentInstance = Math.max(0, Math.min(kvInstanceCount - 1, kvInstObj.current ?? 0));
-  // A kv_store `vllm.install` may be brand-keyed ({ nvidia, amd }) — Mooncake
-  // ships a CUDA wheel and a separate non-CUDA build for ROCm. Other brands
+  // KV-store and PD-connector installs may be brand-keyed ({ nvidia, amd }) — Mooncake
+  // ships a CUDA wheel and a separate ROCm build. Other brands
   // (Intel CPU, Google TPU) have no wheel at all → null, never a silent
   // fall-through to the CUDA build (they're gated out upstream by
   // isKvStoreBrandSupported, this is defense in depth).

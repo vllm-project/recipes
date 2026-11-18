@@ -98,6 +98,18 @@ test("Mooncake on ROCm: same workers and router, the ROCm transfer engine wheel"
   assert.deepEqual(r.kvConnector.install.map((s) => s.command), ["uv pip install mooncake-transfer-engine-rocm"]);
 });
 
+for (const topology of ["distributed", "centralized"]) {
+  test(`Mooncake PD and the ${topology} store use the same ROCm package`, () => {
+    const r = pick({ hw: "mi355x", connector: "mooncake", kv: `kv_store_${topology}_mooncake` });
+    assert.deepEqual(r.kvConnector.install.map((s) => s.command), ["uv pip install mooncake-transfer-engine-rocm"]);
+    assert.equal(r.mooncake.install, "uv pip install 'mooncake-transfer-engine-rocm>=0.3.10'");
+    for (const role of ["prefill", "decode"]) {
+      assert.deepEqual(kvCfg(r, role).kv_connector_extra_config.connectors.map((c) => c.kv_connector),
+        ["MooncakeConnector", "MooncakeStoreConnector"]);
+    }
+  });
+}
+
 test("MoRI-IO: workers register with the router, which discovers them; addresses stay shell-expandable", () => {
   const r = pick({ hw: "mi355x", connector: "moriio" });
   assert.equal(r.kvConnector.selected, "moriio");
