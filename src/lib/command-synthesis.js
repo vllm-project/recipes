@@ -1901,6 +1901,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     }
     const parallelFlag = strategy.parallel_flag || "--tensor-parallel-size";
     const isMulti = strategy.deploy_type === "multi_node" && nodeCount > 1;
+    const localDpFlag = /^(--data[-_]parallel[-_]size[-_]local|-dpl)(=|$)/;
     const isPdMulti = strategy.deploy_type === "pd_cluster" && nodeCount > 1;
     // Multi-node rendezvous host. When Mooncake composes with a multi-node
     // strategy, each instance's head is the same host the router lists as
@@ -1912,29 +1913,13 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       : "$HEAD_IP";
 
     if (isMulti && parallelFlag === "--data-parallel-size") {
-    // dp-local may be overridden by the recipe (hybrid TP+DP: TP within a node,
-    // DP across nodes → dp_local < gpuCount).
-    // The example worker is node 1, so its DP start rank = 1 × dp_local, not a
-    // full node's worth of GPUs.
-    const soDep = recipe.strategy_overrides?.[strategyName];
-    const soDepGenHo = soDep?.hardware_overrides?.[gen]
-      || (hwProfile?.brand === "NVIDIA" ? soDep?.hardware_overrides?.nvidia : null);
-    const soDepExactHo = soDep?.hardware_overrides?.[hwProfileId];
-    const depOv = [
-    ...(soDep?.vllm_args || []),
-    ...(soDep?.extra_args || []),
-    ...(soDepGenHo?.extra_args || []),
-    ...(soDepExactHo?.extra_args || []),
-      ];
-    const i = depOv.lastIndexOf("--data-parallel-size-local");
-    const dpLocal = i >= 0 ? Number(depOv[i + 1]) : gpuCount;
-    args.push("--data-parallel-size", String(totalGpus));
-    args.push("--data-parallel-size-local", String(gpuCount));
-    args.push("--data-parallel-address", mpMasterAddr);
-    if (nodeRole === "worker") {
-    args.push("--data-parallel-start-rank", String(mpRank * dpLocal));
-    }
-} else if (isMulti && strategy.parallelism === "tp_pp") {
+      // Keep strategy precedence and argument order; fill the derived values
+      // from the final local DP after all overrides and preset edits below.
+      args.push("--data-parallel-size", "{dp_size}");
+      args.push("--data-parallel-size-local", String(gpuCount));
+      args.push("--data-parallel-address", mpMasterAddr);
+      if (nodeRole === "worker") args.push("--data-parallel-start-rank", "{dp_start_rank}");
+    } else if (isMulti && strategy.parallelism === "tp_pp") {
       // TP inside each node, PP across nodes. Cross-node traffic flows through
       // the PP stage boundaries only — much less bandwidth than pure TP across
       // nodes. Suited for very large models on commodity inter-node links.
@@ -1945,17 +1930,12 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       args.push("--master-addr", mpMasterAddr);
       if (mpRank > 0) args.push("--headless");
     } else if (isMulti && strategy.parallelism === "tp_dp") {
-      // TP inside each node, DP across nodes — one full replica per node
-      // (dp_local = 1), so the inter-node link carries only DP coordination.
-      // Same DP rendezvous shape as the DEP branch: worker node N is DP
-      // rank N via --data-parallel-start-rank.
+      // Default to full-node TP and one local replica at the same priority.
       args.push("--tensor-parallel-size", String(gpuCount));
-      args.push("--data-parallel-size", String(nodeCount));
+      args.push("--data-parallel-size", "{dp_size}");
       args.push("--data-parallel-size-local", "1");
       args.push("--data-parallel-address", mpMasterAddr);
-      if (nodeRole === "worker") {
-        args.push("--data-parallel-start-rank", String(mpRank));
-      }
+      if (nodeRole === "worker") args.push("--data-parallel-start-rank", "{dp_start_rank}");
     } else if (isMulti) {
       // Multi-node TP/TEP via vLLM multiprocessing (mp) backend:
       // TP spans all GPUs in the cluster; every node runs the same command,
@@ -2183,6 +2163,15 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         }
         throw error;
       }
+    }
+    if (isMulti && (strategy.parallelism === "tp_dp" || parallelFlag === "--data-parallel-size")) {
+      // Only fill surviving strategy placeholders: never restore a flag
+      // removed by a preset or override a later explicit global DP/rank.
+      const localIndex = out.findLastIndex((arg) => localDpFlag.test(arg));
+      const raw = localIndex < 0 ? NaN : Number(out[localIndex].split("=")[1] ?? out[localIndex + 1]);
+      const localDp = Number.isInteger(raw) && raw > 0 ? raw : (strategy.parallelism === "tp_dp" ? 1 : gpuCount);
+      out = out.map((arg) => arg === "{dp_size}" ? String(nodeCount * localDp)
+        : arg === "{dp_start_rank}" ? String(mpRank * localDp) : arg);
     }
     // Check the final Ascend transfer config after normal catalog composition
     // and preset edits, without restricting the implementation name.
