@@ -209,30 +209,21 @@ guide: |
   ### Docker (Intel XPU B60 / B70)
 
   Validated on 4× Intel Arc Pro B60 / B70 (B60 24 GB, B70 32 GB per card) with the
-  official vLLM XPU image `vllm/vllm-openai-xpu:latest`.
-
-  The XPU command runs with breakable XPU graphs (`VLLM_USE_BREAKABLE_CUDAGRAPH=1`,
-  `FULL_AND_PIECEWISE`) instead of `--enforce-eager`. `--max-num-seqs 32` is
-  required: full graphs need at least `max_num_seqs` Mamba cache blocks, and the
-  KV memory left on 24 GB B60 cards holds only about 50 of them, so the default
-  256 fails at startup. On 4x Arc Pro B60 (vLLM 0.33.0, BF16, TP4,
-  `--max-model-len 8192`) single-request decode improved from 11.3 to 85.4 tok/s
-  (TPOT 87.7 ms → 11.4 ms, ISL/OSL 4096/1024) with no GSM8K 5-shot regression
-  (strict 0.831 eager vs 0.830 breakable). On 4x Arc Pro B70 decode went from
-  11.4 to 89.6 tok/s (strict GSM8K 0.836 eager vs 0.829 breakable).
+  official vLLM XPU image `vllm/vllm-openai-xpu:latest`. `--max-num-seqs 32` is only
+  needed on B60: XPU graphs need at least `max_num_seqs` Mamba cache blocks, and the
+  KV memory left on 24 GB cards holds only about 50, so the default 256 fails at
+  startup. B70 starts with the default.
 
   ```bash
   docker run --device /dev/dri \
     -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
     --privileged --ipc=host -p 8000:8000 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    -e VLLM_USE_BREAKABLE_CUDAGRAPH=1 \
     vllm/vllm-openai-xpu:latest \
     Qwen/Qwen3.5-35B-A3B \
     --reasoning-parser qwen3 \
     --tensor-parallel-size 4 \
-    --max-model-len 8192 \
-    --max-num-seqs 32
+    --max-model-len 8192
   ```
 
   ## Client Usage
