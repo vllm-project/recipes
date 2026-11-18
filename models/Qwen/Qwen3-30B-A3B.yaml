@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Qwen3 MoE model with 30.5B total and 3.3B active parameters, validated for BF16 serving on Intel Xeon 6 and Intel Arc Pro B70 and W8A8 serving on Ascend A3."
   date_added: 2026-08-14
-  date_updated: 2026-09-23
+  date_updated: 2026-11-18
   difficulty: intermediate
   tasks:
     - text
@@ -118,7 +118,6 @@ hardware_overrides:
     extra_args:
       - "--block-size"
       - "64"
-      - "--enforce-eager"
       - "--no-enable-prefix-caching"
       - "--disable-sliding-window"
       - "--max-model-len"
@@ -192,6 +191,14 @@ guide: |
   Validated on 4x Intel Arc Pro B70 (32 GB per card) with the official vLLM XPU
   image `vllm/vllm-openai-xpu:latest`, BF16, TP=4.
 
+  The XPU command runs with torch.compile and XPU graphs (`FULL_AND_PIECEWISE`)
+  instead of `--enforce-eager`. On 4x Arc Pro B60 (vLLM 0.33.0) this raised
+  single-request decode throughput from 12.4 to 89.7 tok/s (TPOT 79.5 ms →
+  10.0 ms, ISL/OSL 4096/1024) with unchanged GSM8K 5-shot accuracy (strict
+  0.892). Startup takes about 70 s longer for compilation and graph capture.
+  On 4x Arc Pro B70 decode went from 13.8 to 104.6 tok/s (strict GSM8K 0.898
+  eager vs 0.892 graph).
+
   ```bash
   docker run --device /dev/dri \
     -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
@@ -201,7 +208,6 @@ guide: |
     Qwen/Qwen3-30B-A3B \
     --tensor-parallel-size 4 \
     --block-size 64 \
-    --enforce-eager \
     --no-enable-prefix-caching \
     --disable-sliding-window \
     --max-model-len 9472 \

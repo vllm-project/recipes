@@ -4,7 +4,7 @@ meta:
   provider: "Qwen"
   description: "Qwen3.5 compact dense multimodal model (4B) — fits on 16 GB consumer GPUs with full 262K context or one Xeon 6 NUMA node or Intel Arc Pro B60/B70"
   date_added: 2026-04-22
-  date_updated: 2026-09-14
+  date_updated: 2026-11-18
   difficulty: beginner
   tasks:
     - multimodal
@@ -86,10 +86,7 @@ variants:
 compatible_strategies:
   - single_node_tp
 
-hardware_overrides:
-  xpu:
-    extra_args:
-      - "--enforce-eager"
+hardware_overrides: {}
 
 strategy_overrides: {}
 
@@ -151,6 +148,15 @@ guide: |
   Validated on 1× Intel Arc Pro B60 / B70 (B60 24 GB, B70 32 GB per card) with the
   official vLLM XPU image `vllm/vllm-openai-xpu:latest`.
 
+  The XPU command runs with torch.compile and XPU graphs (`FULL_AND_PIECEWISE`)
+  instead of `--enforce-eager`. On 1x Arc Pro B60 (vLLM 0.33.0, BF16,
+  `--max-model-len 8192`) single-request decode improved from 43.3 to 46.1 tok/s
+  (TPOT 22.8 ms → 21.4 ms, ISL/OSL 4096/1024) with unchanged GSM8K 5-shot
+  accuracy (strict 0.738 eager vs 0.740 / 0.738 graph over two runs); the FP8
+  variant also starts and matches eager on GSM8K. Startup takes about 50 s
+  longer for compilation and graph capture. On 1x Arc Pro B70 decode went from
+  46.8 to 61.0 tok/s (strict GSM8K 0.736 eager vs 0.742 graph).
+
   ```bash
   docker run --device /dev/dri \
     -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g \
@@ -158,8 +164,7 @@ guide: |
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     vllm/vllm-openai-xpu:latest \
     Qwen/Qwen3.5-4B \
-    --reasoning-parser qwen3 \
-    --enforce-eager
+    --reasoning-parser qwen3
   ```
 
 
