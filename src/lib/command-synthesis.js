@@ -2202,7 +2202,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       // the connector/router. Set topology through role fields, not raw args.
       const aliases = {
         "-tp": "--tensor-parallel-size", "-pp": "--pipeline-parallel-size", "-dp": "--data-parallel-size",
-        "-dpn": "--data-parallel-rank", "-dpr": "--data-parallel-start-rank",
+        "-dpl": "--data-parallel-size-local", "-dpn": "--data-parallel-rank", "-dpr": "--data-parallel-start-rank",
         "-dph": "--data-parallel-hybrid-lb", "-dpe": "--data-parallel-external-lb", "-dpm": "--data-parallel-multi-port-external-lb",
       };
       const flags = new Map(out.flatMap((token, i) => {

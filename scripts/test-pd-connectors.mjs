@@ -476,6 +476,11 @@ test("Ascend internal DEP rejects multiple nodes and conflicting final flags", (
     decode.args = args;
     assert.throws(run, { name: "RangeError", message: /^PD decode: .*flags conflict/ }, args.join(" "));
   }
+
+  decode.args = ["-dpl", "1"];
+  assert.throws(run, { name: "RangeError", message: /^PD decode: --data-parallel-size-local conflicts with the role topology/ });
+  decode.args = ["-dpl", "2"];
+  assert.doesNotThrow(run);
 });
 
 test("PD topology placeholders, role edits and connector selection share the final pool layout", () => {
