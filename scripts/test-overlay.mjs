@@ -89,6 +89,12 @@ test("overlay can't touch out-of-scope hardware or model config", () => {
   assert.equal(errs({ meta: { default_hardware: "ascend_910c" } }).length, 1);
 });
 
+test("overlay may set PD role load balancing for in-scope hardware", () => {
+  const overlay = (hardware) => ({ strategy_overrides: { pd_cluster: { decode: { data_parallel_lb: { [hardware]: "internal" } } } } });
+  assert.deepEqual(errs(overlay("ascend_950dt")), []);
+  assert.equal(errs(overlay("h200")).length, 1);
+});
+
 test("overlay is add-only", () => {
   const once = applyOverlay(core0, { meta: { hardware: { ascend_910c: "verified" } } }, { ctx, source }).recipe;
   assert.equal(applyOverlay(once, { meta: { hardware: { ascend_910c: "unsupported" } } }, { ctx, source }).errors.length, 1);

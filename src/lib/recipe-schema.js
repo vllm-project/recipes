@@ -128,9 +128,12 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
   }, { required: ["precision", "vram_minimum_gb"] });
 
   const pdMode = { enum: ["tp", "tep", "dep"] };
+  const pdDpLb = { enum: ["internal", "external"] };
   const pdRole = obj({
     nodes: intOrHwMap,
     parallelism: { anyOf: [pdMode, keyed(hwKey, pdMode)] },
+    // Ascend DEP only: one HTTP entry on one node, or one entry per local rank.
+    data_parallel_lb: { anyOf: [pdDpLb, keyed(hwKey, pdDpLb)] },
     tp: intOrHwMap,
     pp: intOrHwMap,
     vllm_args: strings,
@@ -263,6 +266,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
         const jsonArgs = keyed({ pattern: "^--" }, { type: "object" }, "edits to JSON-valued flags: keys to set, null deletes");
         const delta = { args: strings, env: envMap, remove_args: { type: "array", items: { type: "string", pattern: "^--" } }, json_args: jsonArgs };
         const role = obj({ ...delta, nodes: { type: "integer", minimum: 1 }, parallelism: pdMode,
+          data_parallel_lb: pdDpLb,
           tp: { type: "integer", minimum: 1 }, pp: { type: "integer", minimum: 1 } });
         const roles = obj({ prefill: role, decode: role });
         const select = obj({

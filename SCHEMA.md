@@ -480,8 +480,8 @@ not raw arguments, so commands, connector metadata and router endpoints agree.
 Use the existing preset role
 `remove_args` and `json_args` for role-specific flag and speculative-config
 changes; a speculative-config edit remains inactive when that feature is off.
-Overlays may add in-scope hardware keys to role `tp`/`pp` maps. If the owner
-uses a scalar there, use a preset; overlays do not convert scalars into maps.
+Overlays may add in-scope hardware keys to role `tp`, `pp`, and `data_parallel_lb`
+maps. If the owner uses a scalar for a field, set it through a preset.
 
 With global DP1, the role runs a single TP/EP service without DP rank or
 load-balancing flags, and the Ascend router lists one endpoint. With global
@@ -494,6 +494,21 @@ of those endpoints. Use dedicated Prefill and Decode hosts, with an image whose
 connector. Keep child HTTP ports clear of the supervisor health port (9256 by
 default), and use the Ascend proxy script from the matching runtime. This example
 is not an NPU validation claim.
+
+With the Ascend Router, a DEP role may set `data_parallel_lb: internal` only
+when its pool uses one dedicated node. All local DP ranks share one HTTP
+endpoint, so the command omits rank and load-balancing flags. DP sizes and KV
+metadata still describe the full pool. Use `external` for multi-node pools.
+The mode resolves from point → preset → role config → catalog default
+(`external`). Other routers ignore it.
+
+```yaml
+points:
+  local_dp2_internal:
+    label: "Single-node DP2 · one HTTP endpoint"
+    roles:
+      decode: { nodes: 1, parallelism: dep, tp: 4, data_parallel_lb: internal }
+```
 
 The single **Mooncake (Ascend)** option (`mooncake_ascend`) supplies catalog
 configurations for both roles, defaulting to `MooncakeConnectorV2` with producer /
