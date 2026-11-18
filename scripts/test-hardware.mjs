@@ -172,6 +172,17 @@ test("the schema takes a per-hardware pip command, and it must name the command"
   assert.equal(validate(variants({ pip: { command: "x", nope: "y" } })), false);
 });
 
+test("the schema accepts a per-hardware Docker shm size and rejects shell text", () => {
+  const { properties } = buildRecipeSchema({ taxonomy, strategies });
+  const validate = new Ajv({ strict: false }).compile(properties.variants);
+  const variants = (docker_shm_size) => ({
+    default: { precision: "fp8", vram_minimum_gb: 1, hardware_overrides: { ascend_910b: { docker_shm_size } } },
+  });
+  assert.equal(validate(variants("320g")), true);
+  assert.equal(validate(variants("0.5g")), true);
+  assert.equal(validate(variants("320g --ipc=host")), false);
+});
+
 test("a hardware gate reads the most specific key, in every key the schema accepts", () => {
   const off = (hardware, id) => !isFeatureSupportedOnHardware({ hardware }, profiles[id], id);
   assert.equal(off({ ironwood: "unsupported" }, "ironwood"), true);

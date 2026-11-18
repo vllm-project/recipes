@@ -118,6 +118,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     hardware_overrides: keyed(hwKey, extraArgsEnv({
       vram_minimum_gb: { type: "number", minimum: 0 },
       docker_image: { type: "string" },
+      docker_shm_size: { type: "string", pattern: "^[0-9]+(?:\\.[0-9]+)?[bkmgBKMG]?$" },
       docker_serve_command: { type: "string" },
       install: obj({
         pip: { anyOf: [{ type: "boolean" }, obj({ command: { type: "string" }, note: { type: "string" } }, { required: ["command"] })] },
