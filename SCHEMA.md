@@ -577,3 +577,16 @@ curl -sL "https://huggingface.co/<org>/<repo>/resolve/main/model.safetensors.ind
 ```
 
 So `vram_minimum_gb = ceil(real_checkpoint_GB × 1.2)` (Qwen3.6-27B-NVFP4 → `ceil(21.9 × 1.2) = 27`). The bytes-per-param table stays correct for *uniform* quants (plain int4/awq/gptq/fp8, and full-model FP4).
+
+### ATOMesh Mooncake PD
+
+`select.pd_router: atomesh` selects the catalog's ATOMesh container while keeping
+workers on native `vllm serve`. It selects Mooncake by default and supports a
+`SimpleCPUOffloadConnector` tier on prefill. The catalog's Mooncake hardware
+allowlist applies; other transfer protocols cannot route through this adapter.
+
+Both roles require equal TP, DP=1 and PP=1. The router command advertises the
+workers' effective HTTP and prefill bootstrap ports. Start it after every
+worker answers `/health`, keep prefill engine IDs stable, and use `X-Session-ID`
+for the configured `dp_sticky` policy. The router uses a pinned ATOM image in
+both install modes and requests no GPU devices.

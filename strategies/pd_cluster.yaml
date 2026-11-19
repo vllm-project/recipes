@@ -79,6 +79,7 @@ connectors:
     description: "Mooncake push transfer over RDMA: prefill writes KV into decode. The router queries each prefill's bootstrap server for its engines. Set WITH_NVIDIA_PEERMEM=0 on hosts without the nvidia-peermem module (GB200)."
     docs: "https://docs.vllm.ai/en/latest/features/mooncake_connector_usage.html"
     brands: [NVIDIA]
+    routers: [vllm, atomesh]
     prefill:
       config: { kv_connector: MooncakeConnector, kv_role: kv_producer, kv_load_failure_policy: fail }
       env:
@@ -151,6 +152,13 @@ ascend:
   data_parallel_lb: external
   docker: { host_network: true }
   script: "/vllm-workspace/vllm-ascend/examples/disaggregated_prefill_v1/load_balance_proxy_server_example.py"
+
+atomesh:
+  display_name: "ATOMesh"
+  description: "ATOMesh HTTP router with native vLLM Mooncake workers. Equal TP, DP=1 and one router. Start after worker health checks; send X-Session-ID for dp_sticky affinity."
+  docs: "https://github.com/ROCm/ATOM/blob/920a200a32d6a4f73768eeed9cb925d3de3874d0/recipes/mesh/multi-node-vllm.md"
+  docker_image: "rocm/atom-dev:nightly_202611110332@sha256:19712185deac1eca8db5f21bc25ff2f9a3f44758bfd7cec8cc1c7889fbea097d"
+  policy: dp_sticky
 
 # HTTP PD keeps native vLLM workers; registration supplies NIXL metadata.
 smg:

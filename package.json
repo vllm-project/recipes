@@ -11,6 +11,7 @@
     "content": "node scripts/sync-sources.mjs && node scripts/assemble-content.mjs",
     "content:watch": "node scripts/assemble-content.mjs --watch",
     "content:update": "node scripts/sync-sources.mjs --update",
+    "test:atomesh-pd": "node --test scripts/test-atomesh-pd.mjs",
     "test:smg-pd": "node --test scripts/test-smg-pd.mjs",
     "test:pd-connectors": "node --test scripts/test-pd-connectors.mjs",
     "validate": "node --experimental-vm-modules hooks/validate.mjs",

@@ -644,7 +644,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   });
   // PD router selection is only used under pd_cluster.
   const [pdRouter, setPdRouter] = useState(() =>
-    ["dynamo", "smg", "ascend"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : "vllm"
+    ["dynamo", "smg", "ascend", "atomesh"].includes(searchParams.get("pd_router")) ? searchParams.get("pd_router") : "vllm"
   );
   // PD KV transfer connector (pd_cluster.yaml `connectors`); null = the default.
   const [pdConnector, setPdConnector] = useState(() => {
@@ -2143,6 +2143,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
         deps.push({ ...step, install_modes: ["pip", "docker"] });
       }
     }
+    if (result.orchestrator === "atomesh") {
+      deps.push({ command: result.router.install, note: "ATOMesh container on the router host", install_modes: ["pip", "docker"] });
+    }
     // The PD KV transfer connector's runtime (the vLLM images ship it).
     for (const step of result.kvConnector?.install || []) {
       deps.push({ ...step, install_modes: ["pip"] });
@@ -3016,7 +3019,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           {/* PD Router — which orchestrator fronts the prefill/decode pools.
               Nested under Strategy: it only exists for pd_cluster and never
               changes the pools, just the launcher + front door. */}
-          {activeServingStrategy === "pd_cluster" && (strategies.pd_cluster?.dynamo || strategies.pd_cluster?.smg || strategies.pd_cluster?.ascend) && (
+          {activeServingStrategy === "pd_cluster" && (strategies.pd_cluster?.dynamo || strategies.pd_cluster?.smg || strategies.pd_cluster?.ascend || strategies.pd_cluster?.atomesh) && (
             <ConfigRow label="PD Router" nested>
               <PillGroup>
                 <Pill
@@ -3047,6 +3050,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 >
                   <span className="font-semibold">SMG</span>
                 </Pill>}
+                {strategies.pd_cluster.atomesh && <Pill
+                  active={effPdRouter === "atomesh"}
+                  pressed={effPdRouter === "atomesh"}
+                  disabled={!!pdConnectorUnavailableReason(strategies.pd_cluster.connectors?.mooncake, hwProfile, "atomesh")}
+                  onClick={() => selectPdRouter("atomesh")}
+                  title={pdConnectorUnavailableReason(strategies.pd_cluster.connectors?.mooncake, hwProfile, "atomesh") || strategies.pd_cluster.atomesh.description}
+                >
+                  <span className="font-semibold">ATOMesh</span>
+                </Pill>}
                 {ascendVisible && strategies.pd_cluster.ascend && <Pill
                   active={effPdRouter === "ascend"}
                   pressed={effPdRouter === "ascend"}
@@ -3061,6 +3073,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 {effPdRouter === "dynamo"
                   ? strategies.pd_cluster.dynamo.description
                   : effPdRouter === "smg" ? (isSmgGrpc ? "SMG gRPC router with NIXL prefill/decode workers. Supports TP/TEP pools without KV offload." : strategies.pd_cluster.smg.description)
+                  : effPdRouter === "atomesh" ? strategies.pd_cluster.atomesh.description
                   : effPdRouter === "ascend" ? strategies.pd_cluster.ascend.description
                   : "vllm-router with --vllm-pd-disaggregation fronts the pools; each role is a `vllm serve` on its own HTTP port."}
                 {strategies.pd_cluster[effPdRouter]?.docs && (

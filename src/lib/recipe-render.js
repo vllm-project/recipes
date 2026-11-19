@@ -253,10 +253,10 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   if (!result) return null;
   if (result.frontendRequired) applied.frontend = result.frontendRequired;
   // A URL cannot opt into Ascend PD without the active recipe declaration.
-  if (applied.pdRouter === "ascend") applied.pdRouter = result.pdRouter ?? "vllm";
+  if (["ascend", "atomesh"].includes(applied.pdRouter)) applied.pdRouter = result.pdRouter ?? "vllm";
   if (applied.pdConnector === "mooncake_ascend") applied.pdConnector = result.kvConnector?.selected ?? null;
   if (opts.out) Object.assign(opts.out, applied);
-  if (strict && sel.pd_router === "ascend" && result.routerUnavailableReason) {
+  if (strict && ["ascend", "atomesh"].includes(sel.pd_router) && result.routerUnavailableReason) {
     throw new Error(`Invalid preset ${presetPick}${pointPick ? ` at point ${pointPick}` : ""} in ${recipe.hf_id} (${hwId} / ${strategy}): ${result.routerUnavailableReason}`);
   }
   // A preset that names its KV transfer connector must get it.
@@ -762,7 +762,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
 
   const advancedById = Object.fromEntries([...ADVANCED_OPTIONS, ...(recipe.advanced_options || [])].map((o) => [o.id, o]));
   const advanced = (get("advanced") || "").split(",").filter((id) => advancedById[id]);
-  const pdRouter = ["dynamo", "smg", "ascend"].includes(get("pd_router")) ? get("pd_router") : "vllm";
+  const pdRouter = ["dynamo", "smg", "ascend", "atomesh"].includes(get("pd_router")) ? get("pd_router") : "vllm";
   const pdConnector = strategies.pd_cluster?.connectors?.[get("pd_connector")] ? get("pd_connector") : null;
   const dcp = parseIntParam(get("dcp"));
 

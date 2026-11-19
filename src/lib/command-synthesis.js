@@ -428,7 +428,7 @@ export function pdConnectorUnavailableReason(connector, hwProfile, router = "vll
   }
   const routers = connector.routers || ["vllm"];
   if (!routers.includes(router)) {
-    const label = { vllm: "vLLM Router", dynamo: "Dynamo", smg: "SMG", ascend: "Ascend Router" };
+    const label = { vllm: "vLLM Router", dynamo: "Dynamo", smg: "SMG", ascend: "Ascend Router", atomesh: "ATOMesh" };
     return `${name} works behind ${routers.map((r) => label[r] || r).join(" or ")} only.`;
   }
   return null;
@@ -1737,7 +1737,11 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   let smgGrpc = !!smg && pdTransport === "grpc";
   const ascendReason = ascendPdUnavailableReason(strategy, hwProfile, presetSelect, "pd_router");
   const ascend = pdRouter === "ascend" && !ascendReason ? strategy.ascend : null;
-  const routerKey = dynamo ? "dynamo" : smg ? "smg" : ascend ? "ascend" : "vllm";
+  const atomeshReason = pdConnectorUnavailableReason(strategy.connectors?.mooncake, hwProfile, "atomesh");
+  const atomesh = strategy.deploy_type === "pd_cluster" && pdRouter === "atomesh" && !atomeshReason
+    ? strategy.atomesh : null;
+  if (pdRouter === "atomesh" && !atomesh) routerUnavailableReason = atomeshReason || "ATOMesh is not configured for this strategy.";
+  const routerKey = dynamo ? "dynamo" : smg ? "smg" : ascend ? "ascend" : atomesh ? "atomesh" : "vllm";
   const externalDp = strategy[routerKey]?.data_parallel_lb === "external";
   if (pdRouter === "ascend" && !ascend) routerUnavailableReason = ascendReason;
 
@@ -1775,13 +1779,13 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
 
   // PD KV transfer connector: the pick when this hardware and router can run
   // it, else the default, with the reason surfaced as for the router.
-  let pdConnectorSel = strategy.deploy_type === "pd_cluster" ? pdConnectorKey(strategy, pdConnectorPick) : null;
+  let pdConnectorSel = strategy.deploy_type === "pd_cluster" ? pdConnectorKey(strategy, pdConnectorPick || (atomesh ? "mooncake" : null)) : null;
   let pdConnectorUnavailable = null;
   if (pdConnectorSel && pdConnectorPick && pdConnectorSel === pdConnectorPick) {
     pdConnectorUnavailable = (pdConnectorSel === "mooncake_ascend"
       && ascendPdUnavailableReason(strategy, hwProfile, presetSelect, "pd_connector"))
       || pdConnectorUnavailableReason(strategy.connectors[pdConnectorSel], hwProfile, routerKey);
-    if (pdConnectorUnavailable) pdConnectorSel = pdConnectorKey(strategy);
+    if (pdConnectorUnavailable) pdConnectorSel = atomesh ? "mooncake" : pdConnectorKey(strategy);
   }
   const pdConnector = pdConnectorSel ? strategy.connectors[pdConnectorSel] : null;
   // The transfer config a composed KV tier wraps: Dynamo workers carry their
@@ -2498,6 +2502,16 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
 
     const pMeta = roleMeta("prefill");
     const dMeta = roleMeta("decode");
+    if (atomesh) {
+      if (pMeta.dpSize !== 1 || dMeta.dpSize !== 1 || pMeta.tp !== dMeta.tp || pMeta.pp !== 1 || dMeta.pp !== 1) {
+        throw new RangeError("PD ATOMesh Mooncake requires equal TP, DP=1 and PP=1 on prefill and decode.");
+      }
+      for (const role of ["prefill", "decode"]) {
+        if (transferConnectorOf(dedupeArgs(buildArgs(role, null).filter(Boolean))) !== "MooncakeConnector") {
+          throw new RangeError(`PD ATOMesh ${role} requires MooncakeConnector, including inside MultiConnector.`);
+        }
+      }
+    }
     // Router endpoints: one per node (each node binds its own HTTP --port).
     // Shell-variable form ($PREFILL_NODE_N / $DECODE_NODE_N) so the same name
     // the prefill/decode commands consume is also what the router lists —
@@ -2543,6 +2557,22 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       `    --intra-node-data-parallel-size ${intraDp}`,
     ];
     const routerCommand = routerLines.join("\n");
+    const atomeshBootstrap = Number(buildEnv("prefill").VLLM_MOONCAKE_BOOTSTRAP_PORT);
+    if (atomesh && (!Number.isInteger(atomeshBootstrap) || atomeshBootstrap < 1 || atomeshBootstrap > 65535)) {
+      throw new RangeError("PD ATOMesh requires a valid prefill VLLM_MOONCAKE_BOOTSTRAP_PORT.");
+    }
+    const atomeshRouter = atomesh ? {
+      label: "ATOMesh",
+      command: [
+        "# Start after all workers answer /health; keep prefill engine IDs stable.",
+        `docker run --rm --network host --entrypoint atomesh ${atomesh.docker_image} launch \\`,
+        `    --backend vllm --pd-disaggregation --policy ${atomesh.policy} \\`,
+        `    --prefill http://$PREFILL_NODE_1:${lastIntFlag(buildArgs("prefill", null), "--port")} ${atomeshBootstrap} \\`,
+        `    --decode http://$DECODE_NODE_1:${lastIntFlag(buildArgs("decode", null), "--port")} \\`,
+        "    --host $ROUTER_HOST --port $ROUTER_PORT",
+      ].join("\n"),
+      install: `docker pull ${atomesh.docker_image}`,
+    } : null;
 
     let prefillArgs = buildArgs("prefill", null);
     let decodeArgs = buildArgs("decode", null);
@@ -2667,8 +2697,8 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         env: buildEnv("decode"),
         ...dMeta,
       },
-      orchestrator: dynamo ? "dynamo" : smg ? "smg" : ascend ? "ascend-proxy" : "vllm-router",
-      pdRouter: dynamo ? "dynamo" : smg ? "smg" : ascend ? "ascend" : "vllm",
+      orchestrator: dynamo ? "dynamo" : smg ? "smg" : ascend ? "ascend-proxy" : atomesh ? "atomesh" : "vllm-router",
+      pdRouter: routerKey,
       ...(ascend ? { frontendRequired: "python" } : {}),
       ...(smg ? { transport: smgGrpc ? "grpc" : "http" } : {}),
       ...(smgGrpc ? {
@@ -2698,7 +2728,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
               dockerCommand: `${smgReplicaComments}docker run --rm --network host \\\n    ${smgGrpc ? "-v ~/.cache/huggingface:/root/.cache/huggingface \\\n    " : ""}${smg.docker_image} \\\n    ${smgRouterArgs}`,
               dockerInstall: `docker pull ${smg.docker_image}`,
             }),
-          } : ascendRouter || {
+          } : ascendRouter || atomeshRouter || {
             command: routerCommand,
             install: "uv pip install vllm-router",
           },

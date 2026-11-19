@@ -271,7 +271,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
         const roles = obj({ prefill: role, decode: role });
         const select = obj({
           nodes: { type: "integer", minimum: 1 },
-          pd_router: { enum: ["vllm", "dynamo", "smg", "ascend"] },
+          pd_router: { enum: ["vllm", "dynamo", "smg", "ascend", "atomesh"] },
           pd_connector: { enum: Object.keys(strategies?.pd_cluster?.connectors || {}) },
           frontend: { enum: frontends },
           features: keyed({ type: "string" }, { anyOf: [{ type: "boolean" }, { type: "string" }] }, "true/false toggles a feature; a string picks that mode (and turns it on)"),
