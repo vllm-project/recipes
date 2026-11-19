@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { replaceQuery } from "@/lib/url-state";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { maxVersion, resolveInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason, ascendPdUnavailableReason } from "@/lib/command-synthesis";
+import { maxVersion, resolveInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdPcpDeployment, NATIVE_PD_PCP_KV_OFFLOAD_REASON, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason, ascendPdUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, presetSelect, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import ShellCode from "@/components/recipes/ShellCode";
@@ -1029,12 +1029,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       Object.entries(taxonomy.kv_offload || {}).map(([k, o]) => [k, resolveKvOffloadOption(o, profile, hwId)])
     );
   }, [taxonomy.kv_offload, taxonomy.hardware_profiles, hwId]);
-  const kvOffloadAllowedByStrategy = strategyAllowsKvOffload(strategies[activeServingStrategy]);
+  const pdSelect = presetSelect(recipe, resolvePresetKey(recipe, hwId, activeServingStrategy, presetPick, variant), pointPick);
+  const pcpDeployment = activeServingStrategy === "pd_cluster" ? pdPcpDeployment(pdRecipe, hwProfile, hwId, pdSelect) : null;
+  const workerRouter = pcpDeployment?.router ?? pdRouter;
+  const workerConnector = pcpDeployment?.connector ?? pdConnector;
+  const kvOffloadAllowedByStrategy = !pcpDeployment && strategyAllowsKvOffload(strategies[activeServingStrategy]);
   // Intel XPU: no KV-offload layer is validated on this backend, so gate every
   // option off (and force the effective selection to Off further down).
   const kvOffloadDisabledByHw = hwProfile?.generation === "xpu";
   const kvOptAllowed = (key) =>
-    !kvOffloadDisabledByHw
+    !pcpDeployment && !kvOffloadDisabledByHw
     && isKvOffloadAllowedForStrategy(kvOffloadOptions[key], activeServingStrategy, strategies[activeServingStrategy])
     && isKvOffloadSupportedForRecipe(kvOffloadOptions[key], key, recipe)
     && isKvOffloadBrandSupported(kvOffloadOptions[key], hwProfile, hwId)
@@ -1042,6 +1046,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // Disabled reason, most-fixed-first (hardware, recipe, hardware-brand,
   // install path, strategy). Shared by the row pills and the group sub-row.
   const kvDisabledReason = (key) => {
+    if (pcpDeployment) return NATIVE_PD_PCP_KV_OFFLOAD_REASON;
     const opt = kvOffloadOptions[key];
     const name = opt?.display_name || key;
     if (kvOffloadDisabledByHw) {
@@ -1233,15 +1238,18 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
         }
         : null;
       try {
-        return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick, pdConnector);
+        return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, workerRouter, pdTransport, dcpSize, presetPick, pointPick, workerConnector);
       } catch (error) {
+        if (error instanceof RangeError && error.message.startsWith("PCP ")) {
+          return { deployType: strategies[activeStrategy]?.deploy_type, nodeCount, deploymentError: error.message };
+        }
         if (!(error instanceof RangeError) || !error.message.startsWith("PD ")) throw error;
         return { deployType: "pd_cluster", nodeCount, prefill: {}, decode: {}, router: {},
-          pdRouter, orchestrator: pdRouter === "ascend" ? "ascend-proxy" : pdRouter,
+          pdRouter: workerRouter, orchestrator: workerRouter === "ascend" ? "ascend-proxy" : workerRouter,
           deploymentError: error.message };
       }
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, pdRouter, pdTransport, dcpSize, presetPick, pointPick, pdConnector]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, workerRouter, pdTransport, dcpSize, presetPick, pointPick, workerConnector]
   );
 
   // Publish the selection for the sections below the builder (This
@@ -1301,14 +1309,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       q.set("decode_mode", effPdDecodePar);
       if (pdPrefillRank > 0) q.set("prefill_rank", String(pdPrefillRank));
       if (pdDecodeRank > 0) q.set("decode_rank", String(pdDecodeRank));
-      q.set("pd_router", pdRouter === "ascend" ? result.pdRouter || "vllm" : pdRouter);
-      if (pdConnector) q.set("pd_connector", pdConnector === "mooncake_ascend" ? result.kvConnector?.selected || "" : pdConnector);
+      q.set("pd_router", workerRouter === "ascend" ? result.pdRouter || "vllm" : workerRouter);
+      if (workerConnector) q.set("pd_connector", workerConnector === "mooncake_ascend" ? result.kvConnector?.selected || "" : workerConnector);
       if (pdTransport !== "http") q.set("pd_transport", pdTransport);
     } else {
       q.set("nodes", String(nodeCount));
     }
     return q.toString();
-  }, [recipe, hwId, variant, currentVariant, omniTask, activeStrategy, effectiveFeatures, featureModes, advanced, effectiveFrontend, result.frontendRequired, result.pdRouter, result.kvConnector?.selected, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, pdRouter, pdConnector, pdTransport, nodeCount]);
+  }, [recipe, hwId, variant, currentVariant, omniTask, activeStrategy, effectiveFeatures, featureModes, advanced, effectiveFrontend, result.frontendRequired, result.pdRouter, result.kvConnector?.selected, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, workerRouter, workerConnector, pdTransport, nodeCount]);
   useEffect(() => {
     publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features: activeFeatures, preset: selectedPreset, query: shareQuery });
   }, [recipe.hf_id, hwId, activeStrategy, variant, activeFeatures, selectedPreset, shareQuery]);
@@ -1653,7 +1661,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // the row shows vLLM Router active and synthesis ignores the pick.
   const dynamoOk = isDynamoSupportedOnHardware(strategies.pd_cluster?.dynamo, hwProfile);
   const ascendVisible = hwProfile.brand === "Huawei";
-  const pdSelect = presetSelect(recipe, resolvePresetKey(recipe, hwId, activeServingStrategy, presetPick, variant), pointPick);
+  const pcpRouterReason = pcpDeployment && "The selected PCP layout uses vLLM Router.";
   const ascendReason = ascendPdUnavailableReason(strategies[activeServingStrategy], hwProfile, pdSelect, "pd_router");
   const ascendConnectorReason = ascendPdUnavailableReason(strategies[activeServingStrategy], hwProfile, pdSelect, "pd_connector");
   const smgReason = smgUnsupportedReason(recipe, strategies.pd_cluster, {
@@ -1669,7 +1677,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // hardware or router can't run falls back to the default).
   const pdConnectors = strategies.pd_cluster?.connectors || {};
   const effPdConnector = result.kvConnector?.selected ?? null;
-  const pdConnectorReason = (key) => (key === "mooncake_ascend" && ascendConnectorReason)
+  const pdConnectorReason = (key) => (pcpDeployment && key !== workerConnector && `The selected PCP layout uses ${pdConnectors[workerConnector]?.display_name || workerConnector}.`)
+    || (key === "mooncake_ascend" && ascendConnectorReason)
     || pdConnectorUnavailableReason(pdConnectors[key], hwProfile, effPdRouter);
   const selectPdConnector = (key) => {
     const isDefault = pdConnectors[key]?.default;
@@ -1746,9 +1755,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     syncUrl({ dcp: size == null ? "" : String(size) });
   };
 
-  const hasDcp = !!result?.dcp && result.dcp.sizes.length > 0;
+  const hasDcp = !!result?.dcp && (result.dcp.sizes.length > 0 || !!result.dcp.roleDefaults);
   const dcpPills = hasDcp && (
     <PillGroup>
+      {result.dcp.roleDefaults && (
+        <Pill active={result.dcp.selected === null} onClick={() => selectDcp(null)}
+          title="Use the DCP setting declared for each role">
+          Preset (P{result.dcp.roleDefaults.prefill || 1} / D{result.dcp.roleDefaults.decode || 1})
+        </Pill>
+      )}
       {[1, ...result.dcp.sizes].map((n) => (
         <Pill
           key={n}
@@ -1756,6 +1771,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           onClick={() => selectDcp(n === 1 && result.dcp.baseline === 0 ? null : n)}
           title={n === 1
             ? "No decode context parallelism"
+            : result.dcp.pcp ? `Shard the decode KV cache ${n} ways`
             : `Shard the decode KV cache ${n} ways (divides TP ${[...new Set(result.dcp.tp)].join("/")})`}
         >
           {n === 1 ? "Off" : `DCP${n}`}
@@ -2009,6 +2025,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   }, [clientPortKey, clientPort, isMultiNode, clientHostKey, endpoints]);
 
   const displayedResult = useMemo(() => {
+    if (result.deploymentError) return result;
     const sub = (s) => substitute(s, effectiveEndpoints);
     if (result.deployType === "pd_cluster") {
       return {
@@ -2180,6 +2197,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // summary; the KV layer rides along as a suffix.
   const strategyPart = result.deployType === "pd_cluster"
     ? "PD cluster"
+    : result.pcp > 1 ? `TP=${result.tp} · PCP=${result.pcp}`
     : result.deployType === "multi_node" || (result.deployType === "kv_store_lb" && nodeCount > 1)
       ? (strategies[activeStrategy]?.display_name || activeStrategy)
       : effectiveTp
@@ -2745,7 +2763,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   </PillGroup>
                 </div>
               ))}
-              {showTpUsageHint && (
+              {showTpUsageHint && !result.pcp && !result.deploymentError && (
                 <p className="text-[11px] text-muted-foreground/80 pt-1.5">
                   {hwProfile?.generation === "cpu"
                     ? `This recipe runs on ${effectiveTp} CPU NUMA ${effectiveTp === 1 ? "node" : "nodes"} on the selected node — add`
@@ -3003,36 +3021,36 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   active={effPdRouter === "vllm"}
                   pressed={effPdRouter === "vllm"}
                   onClick={() => selectPdRouter("vllm")}
-                  title="Native vllm-router in PD mode — prefill/decode workers are plain `vllm serve` processes on fixed HTTP ports."
+                  title={pcpRouterReason || "Native vllm-router in PD mode — prefill/decode workers are plain `vllm serve` processes on fixed HTTP ports."}
                 >
                   <span className="font-semibold">vLLM Router</span>
                 </Pill>
                 {strategies.pd_cluster.dynamo && <Pill
                   active={effPdRouter === "dynamo"}
                   pressed={effPdRouter === "dynamo"}
-                  disabled={!dynamoOk}
+                  disabled={!!pcpDeployment || !dynamoOk}
                   onClick={() => dynamoOk && selectPdRouter("dynamo")}
-                  title={dynamoOk
+                  title={pcpRouterReason || (dynamoOk
                     ? strategies.pd_cluster.dynamo.description
-                    : `Dynamo isn't available on ${hwProfile.display_name || hwId} — it needs ${(strategies.pd_cluster.dynamo.brands || []).join(" / ")} hardware.`}
+                    : `Dynamo isn't available on ${hwProfile.display_name || hwId} — it needs ${(strategies.pd_cluster.dynamo.brands || []).join(" / ")} hardware.`)}
                 >
                   <span className="font-semibold">{strategies.pd_cluster.dynamo.display_name || "Dynamo"}</span>
                 </Pill>}
                 {strategies.pd_cluster.smg && <Pill
                   active={effPdRouter === "smg"}
                   pressed={effPdRouter === "smg"}
-                  disabled={!!smgReason}
+                  disabled={!!pcpDeployment || !!smgReason}
                   onClick={() => !smgReason && selectPdRouter("smg")}
-                  title={smgReason || strategies.pd_cluster.smg.description}
+                  title={pcpRouterReason || smgReason || strategies.pd_cluster.smg.description}
                 >
                   <span className="font-semibold">SMG</span>
                 </Pill>}
                 {ascendVisible && strategies.pd_cluster.ascend && <Pill
                   active={effPdRouter === "ascend"}
                   pressed={effPdRouter === "ascend"}
-                  disabled={!!ascendReason}
+                  disabled={!!ascendReason || !!pcpDeployment}
                   onClick={() => !ascendReason && selectPdRouter("ascend")}
-                  title={ascendReason || strategies.pd_cluster.ascend.description}
+                  title={pcpRouterReason || ascendReason || strategies.pd_cluster.ascend.description}
                 >
                   <span className="font-semibold">{strategies.pd_cluster.ascend.display_name || "Ascend Router"}</span>
                 </Pill>}
@@ -3197,7 +3215,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   const selectable = !isXpuHardware && hwScalable && brandOk
                     && kvOffloadAllowedByStrategy && supported.length > 0;
                   const defaultId = supported[0];
-                  const disabledTitle = isXpuHardware
+                  const disabledTitle = pcpDeployment ? NATIVE_PD_PCP_KV_OFFLOAD_REASON : isXpuHardware
                     ? "Mooncake isn't validated on Intel XPU — serve directly with the Docker image."
                     : !kvOffloadAllowedByStrategy
                     ? `${strategies[activeServingStrategy]?.display_name || activeServingStrategy} already fronts its ranks with its own router, which a Mooncake deployment would replace. Pick another strategy to layer Mooncake on.`
@@ -3238,7 +3256,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               // renders under the sub-row.
               const opt = (activeKvGroup && kvOffloadGroups[activeKvGroup])
                 || kvOffloadOptions[activeKvOffload];
-              const text = opt?.description || (isKvStoreActive ? MOONCAKE_BACKGROUND : null);
+              const text = pcpDeployment ? NATIVE_PD_PCP_KV_OFFLOAD_REASON
+                : opt?.description || (isKvStoreActive ? MOONCAKE_BACKGROUND : null);
               const docs = opt?.docs_url || (isKvStoreActive ? MOONCAKE_DOCS_URL : null);
               const pdRoles = activeServingStrategy === "pd_cluster" ? kvOffloadOptions[activeKvOffload]?.pd?.roles : null;
               return text ? (
@@ -4559,7 +4578,8 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
             ? `Co-located half-node · ${active.meta.poolGpus} GPU · ${active.meta.parallelism.toUpperCase()}`
             : `${active.meta.nodes} node${active.meta.nodes === 1 ? "" : "s"} × ${(active.meta.poolGpus / Math.max(1, active.meta.nodes))} GPU = ${active.meta.poolGpus} GPU · ${active.meta.parallelism.toUpperCase()}`}
           {` · TP=${active.meta.tp}${active.meta.pp > 1 ? ` · PP=${active.meta.pp}` : ""}`}
-          {active.meta.parallelism === "dep" && active.meta.nodes > 1 && (
+          {result.prefill.pcp > 1 && ` · PCP=${active.meta.pcp}`}
+          {active.meta.parallelism === "dep" && (active.meta.nodes > 1 || result.prefill.pcp > 1) && (
             <> {" · DP="}{active.meta.dpSize}{" (dp_local="}{active.meta.dpLocal}{", one vllm serve per node)"}</>
           )}
         </div>

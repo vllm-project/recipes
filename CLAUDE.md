@@ -30,6 +30,7 @@ pnpm test:presets                      # Tuned presets: migrating exact-GPU bloc
 pnpm test:context                       # notes / troubleshooting: `when` matching, labels, validation, schema
 pnpm test:hardware                      # Hardware profile rules: Rubin's image and Docker-only install, precision, generation overrides
 pnpm test:pd-connectors                 # PD KV transfer connectors: config/env/router per connector, fallbacks, tiers, json_args addressing
+pnpm test:pcp                           # Native vLLM PCP layouts, NIXL PD, DCP choices and exported commands
 pnpm test:render                        # Page-query renderer (`.md` / `.json?…`) matches every static JSON rendering + preset point (run after build-recipes-api)
 node scripts/fetch-provider-logos.mjs   # Re-download HF org avatars to public/providers/
 node scripts/fetch-hf-dates.mjs         # Refresh public/hf-dates.json (HF createdAt per model)
