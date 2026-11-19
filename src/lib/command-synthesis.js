@@ -1770,11 +1770,19 @@ export function resolveCommand(...params) {
   const [recipe, variantKey, strategyName, hwProfileId, , strategies, taxonomy] = params;
   const presetKey = resolvePresetKey(recipe, hwProfileId, strategyName, params[17], variantKey);
   const raw = recipe?.presets?.[presetKey];
+  const hwProfile = taxonomy?.hardware_profiles?.[hwProfileId];
   const inheritedRoleMode = (role) => pdRoleParallelism(recipe, strategies?.[strategyName], role,
-    taxonomy?.hardware_profiles?.[hwProfileId], hwProfileId);
+    hwProfile, hwProfileId);
+  const inheritsStrategyTp = (role, mode, nodes) => {
+    const presetRole = raw?.roles?.[role];
+    const strategyNodes = pdRoleNodes(recipe, role, hwProfile, hwProfileId);
+    // A point that drops a preset's TP or changes mode starts a fresh layout.
+    return presetRole?.tp == null && (presetRole?.parallelism ?? mode) === mode
+      && inheritedRoleMode(role) === mode && (strategyNodes == null || strategyNodes === nodes);
+  };
   const eff = raw ? effectivePreset(raw, params[18], inheritedRoleMode) : null;
   params[0] = withPreset(recipe, presetKey, hwProfileId, strategyName, { variantKey, effectivePreset: eff });
-  const result = resolveCommandImpl(dcpOut, ...params.slice(0, 17), params[19] ?? null, eff);
+  const result = resolveCommandImpl(dcpOut, ...params.slice(0, 17), params[19] ?? null, eff, inheritsStrategyTp);
   if (result && typeof result === "object" && !Array.isArray(result)) {
     if (result.deployType === "pd_cluster" && result.router && eff?.router_port !== undefined) {
       result.router.port = eff.router_port;
@@ -1797,7 +1805,7 @@ export function resolveCommand(...params) {
 
 // `dcpSize` is the user's Decode Context Parallelism pick: null follows the
 // recipe's own default, 1 forces DCP off, N > 1 selects that size.
-function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null, pdTransport = "http", dcpSize = null, pdConnectorPick = null, preset = null) {
+function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileId, enabledFeatures, strategies, taxonomy, advancedArgs = [], nodeCount = 1, pdNodes = null, featureModes = {}, kvOffload = null, kvInstances = null, frontend = undefined, pdRouter = null, pdTransport = "http", dcpSize = null, pdConnectorPick = null, preset = null, inheritsStrategyTp) {
   const presetSelect = preset?.select;
   const variant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
   enabledFeatures = (enabledFeatures || []).filter((key) => isFeatureAllowedForVariant(variant, key));
@@ -1915,7 +1923,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       if (matchesPreset) roleTp = presetRole.tp;
     } else if (parallelism === "dep") {
       roleTp = value("tp");
-    } else if (parallelism === declaredMode && presetRole?.parallelism == null && declaredPcp != null) {
+    } else if (declaredPcp != null && parallelism === declaredMode && inheritsStrategyTp(role, parallelism, nodes)) {
       roleTp = value("tp");
     }
     const tp = roleTp ?? (parallelism === "dep" ? 1 : poolGpus / (pp * pcp));
