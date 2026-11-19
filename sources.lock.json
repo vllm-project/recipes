@@ -17,12 +17,12 @@
       "resolved_at": "2026-11-19T03:45:18.750Z"
     },
     "vllm-ascend": {
-      "repo": "vllm-project/vllm-ascend",
-      "ref": "main",
+      "repo": "pgzddxx/vllm-ascend",
+      "ref": "codex/recipe-deepseek-v41-ascend",
       "path": "recipes",
-      "sha": "467ea73313b2e89a148bb1b385aec45704d1014e",
-      "tree_sha": "e1fd3de3891b19741eeb01832c914f7d8a641954",
-      "resolved_at": "2026-11-18T04:27:04.639Z"
+      "sha": "2768fd1a9af6c293dc7873c9d1080f6da7fbb0a4",
+      "tree_sha": "58fb1c812fe61e86aa98828a413995fd688e9316",
+      "resolved_at": "2026-11-20T02:59:35.844Z"
     },
     "vllm-metal": {
       "repo": "vllm-project/vllm-metal",

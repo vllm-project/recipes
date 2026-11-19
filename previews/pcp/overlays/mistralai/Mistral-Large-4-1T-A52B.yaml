@@ -1,0 +1,61 @@
+presets:
+  preview_gb300_pcp8_dcp8:
+    label: Preview · TP1/PCP8/DCP8
+    hardware: gb300
+    strategy: multi_node_tp
+    description: Two four-GPU GB300 nodes share a text-only engine with eight context-parallel ranks.
+    tp: 1
+    pcp: 8
+    select:
+      nodes: 2
+      features: {text_only: true}
+    args:
+      - --decode-context-parallel-size
+      - '8'
+      - --enable-expert-parallel
+    source:
+      label: Upstream GB300 PCP8 preset
+      href: https://github.com/vllm-project/vllm/blob/601066c91ca20f07975c344af5b4e63bf7e4b026/recipes/models/mistralai/Mistral-Large-4-1T-A52B.yaml#L234
+      revision: 601066c91ca20f07975c344af5b4e63bf7e4b026
+
+  preview_gb300_pd_pcp4:
+    label: Preview · PCP4 Prefill / TP4 Decode
+    hardware: gb300
+    strategy: pd_cluster
+    variants: [default]
+    description: A TP1/PCP4/DCP4 Prefill node transfers KV to a TP4 Decode node using NIXL.
+    roles:
+      prefill:
+        nodes: 1
+        parallelism: tp
+        tp: 1
+        pcp: 4
+        args:
+          - --decode-context-parallel-size
+          - '4'
+          - --cp-kv-cache-interleave-size
+          - '64'
+          - --enable-expert-parallel
+          - --max-num-batched-tokens
+          - '32768'
+          - --kernel-config
+          - '{"moe_backend":"flashinfer_moe_ep_cutedsl"}'
+          - --language-model-only
+        json_args:
+          --kv-transfer-config:
+            NixlConnector:
+              kv_role: kv_producer
+              kv_load_failure_policy: null
+      decode:
+        nodes: 1
+        parallelism: tp
+        remove_args: [--compilation-config]
+        json_args:
+          --kv-transfer-config:
+            NixlConnector:
+              kv_role: kv_both
+              kv_load_failure_policy: null
+    source:
+      label: Upstream GB300 PCP4 PD preset
+      href: https://github.com/vllm-project/vllm/blob/601066c91ca20f07975c344af5b4e63bf7e4b026/recipes/models/mistralai/Mistral-Large-4-1T-A52B.yaml#L329
+      revision: 601066c91ca20f07975c344af5b4e63bf7e4b026

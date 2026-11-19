@@ -47,11 +47,18 @@ channels:
     # Ascend content of the vLLM recipes, merged into them (add-only, Huawei
     # hardware keys only), plus recipes that run only on Ascend.
     vllm-ascend:
-      repo: vllm-project/vllm-ascend
-      ref: main
+      repo: pgzddxx/vllm-ascend
+      ref: codex/recipe-deepseek-v41-ascend
       path: recipes
       role: overlay
       scope: { brands: [Huawei] }
+    pcp-preview:
+      repo: SOMEONEUNSEEN/recipes
+      ref: preview/pcp-1272
+      path: previews/pcp
+      local: previews/pcp
+      role: overlay
+      scope: { brands: [NVIDIA] }
     vllm-metal:
       repo: vllm-project/vllm-metal
       ref: main
