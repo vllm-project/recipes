@@ -4,7 +4,7 @@ meta:
   provider: "Hunyuan (Tencent)"
   description: "Tencent Hunyuan A13B instruct-tuned MoE language model with AITER-accelerated AMD ROCm deployment"
   date_added: 2026-04-11
-  date_updated: 2026-09-10
+  date_updated: 2026-11-18
   difficulty: beginner
   tasks:
     - text
@@ -119,6 +119,29 @@ guide: |
     --num-prompts 16 \
     --ignore-eos
   ```
+
+
+  ## Ascend Atlas 800 A3
+
+  Verified single-node TP=4 BF16 on Atlas 800 A3 (4 Ascend910 dies) with vLLM Ascend `v0.23.0-a3`. Static weight load logged `Loading model weights took 37.4562 GB` per NPU (tutorial KPI ~37.46 GB/NPU). Tutorial chat curl PASS. AISBench PERF gsm8k MaxConc=16 PASS (TTFT≈247.7ms, TPOT≈44.8ms).
+
+  ```bash
+  export HCCL_INTRA_ROCE_ENABLE=1
+  export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3
+  export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+  export HCCL_BUFFSIZE=512
+
+  vllm serve Tencent-Hunyuan/Hunyuan-A13B-Instruct \
+    --trust-remote-code \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --served-model-name Hunyuan \
+    --tensor-parallel-size 4 \
+    --max-model-len 32768 \
+    --gpu-memory-utilization 0.90
+  ```
+
+  See the Ascend recipes mirror: `models/en/Tencent/Hunyuan-A13B-Instruct.yaml`.
 
   ## Troubleshooting
 
