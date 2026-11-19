@@ -127,6 +127,7 @@ export function effectivePreset(preset, pointKey) {
   const pt = key ? preset.points[key] : null;
   if (!pt) return preset;
   const out = { ...mergeDelta(preset, pt), point: key };
+  if (pt.router_port !== undefined) out.router_port = pt.router_port;
   out.select = pt.select ? deepMerge(preset.select || {}, pt.select) : preset.select;
   // A point's image fields layer over the preset's (a point may pin only a
   // different Dynamo commit and keep the preset's vLLM image).
@@ -404,6 +405,7 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = [], 
     };
     const gpus = taxonomy?.hardware_profiles?.[p.hardware]?.gpu_count;
     const checkTopology = (d, at) => {
+      if (d?.router_port !== undefined && !isPd) errors.push(`${at}.router_port: only a pd_cluster preset sets the router port`);
       if (d?.tp !== undefined) {
         if (p.strategy !== "single_node_tp") errors.push(`${at}.tp: only a single_node_tp preset sets tp`);
         else if (gpus && d.tp > gpus) errors.push(`${at}.tp: ${d.tp} exceeds ${p.hardware}'s ${gpus} GPUs`);

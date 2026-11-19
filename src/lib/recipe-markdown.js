@@ -89,7 +89,9 @@ function serveSection(r) {
     if (r.router?.command) {
       out.push("", `### ${r.router.label || "Router"}`, "");
       if (r.router.install && !(r.orchestrator_install || []).some((i) => i.command === r.router.install)) out.push(fence(r.router.install), "");
-      out.push(fence(withEnv(r.router.env, r.router.command)));
+      const command = withEnv(r.router.env, r.router.command);
+      const defaultPort = r.router.port === undefined ? "" : 'export ROUTER_PORT="${ROUTER_PORT:-' + r.router.port + '}"\n';
+      out.push(fence(defaultPort + command));
     }
     if (r.registration) step(r.registration.label || "Register workers", r.registration.description, r.registration.command);
     return out;

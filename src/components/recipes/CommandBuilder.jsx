@@ -2009,7 +2009,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const defaults = {};
     if (result.deployType === "pd_cluster") {
       defaults.ROUTER_HOST = "localhost";
-      defaults.ROUTER_PORT = "30000";
+      defaults.ROUTER_PORT = String(result.router?.port ?? 30000);
     } else if (result.deployType === "kv_store_lb") {
       if (result.router) {
         defaults.ROUTER_HOST = "localhost";

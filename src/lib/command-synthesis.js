@@ -1657,6 +1657,9 @@ export function resolveCommand(...params) {
   params[0] = withPreset(recipe, presetKey, hwProfileId, strategyName, { variantKey, point: params[18] });
   const result = resolveCommandImpl(dcpOut, ...params.slice(0, 17), params[19] ?? null, eff?.select);
   if (result && typeof result === "object" && !Array.isArray(result)) {
+    if (result.deployType === "pd_cluster" && result.router && eff?.router_port !== undefined) {
+      result.router.port = eff.router_port;
+    }
     result.dcp = dcpOut.get?.() ?? null;
     const options = matchingPresets(recipe, hwProfileId, strategyName, variantKey);
     const points = raw ? presetPoints(raw) : [];

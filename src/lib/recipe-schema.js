@@ -282,7 +282,9 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
           { type: "string" },
           obj({ vllm: { type: "string" }, dynamo: { type: "string" }, pip: strings, model_revision: { type: "string" } }),
         ] };
+        const routerPort = { type: "integer", minimum: 1, maximum: 65535 };
         const point = obj({
+          router_port: routerPort,
           label: { type: "string" },
           concurrency: { type: "integer", minimum: 1 },
           description: { type: "string" },
@@ -297,6 +299,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
           label: { type: "string" },
           hardware: gpuId,
           strategy: strategyId,
+          router_port: routerPort,
           variants: { type: "array", minItems: 1, items: { type: "string" } },
           workload: { type: "string" },
           description: { type: "string" },
