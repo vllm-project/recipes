@@ -131,12 +131,13 @@ const nativeParallelFlags = {
 };
 const nativeLongFlags = new Set([...Object.values(nativeParallelFlags), "--dcp-comm-backend"]);
 const pcpRoleFlags = new Set(["--port", "--kv-transfer-config", "--decode-context-parallel-size", "--dcp-comm-backend"]);
+const ascendPcpRoleFlags = new Set([...pcpRoleFlags, "--data-parallel-rpc-port"]);
 function normalizePcpArgs(args, flags) {
   return args.flatMap((arg) => {
     if (typeof arg !== "string" || !arg.startsWith("-")) return [arg];
     const eq = arg.indexOf("=");
     const key = (eq < 0 ? arg : arg.slice(0, eq)).replaceAll("_", "-");
-    const flag = nativeParallelFlags[key] || key;
+    const flag = key === "-dpp" ? "--data-parallel-rpc-port" : nativeParallelFlags[key] || key;
     if (!flags.has(flag)) return [arg];
     return eq < 0 ? [flag] : [flag, arg.slice(eq + 1)];
   });
@@ -443,7 +444,10 @@ export function pdPcpDeployment(recipe, hwProfile, hwProfileId, select) {
   if (!(pdRoleValue(recipe, "prefill", "pcp", hwProfile, hwProfileId) > 1)) return null;
   const router = select?.pd_router || "vllm";
   const connector = select?.pd_connector || "nixl";
-  if (router === "vllm" && connector === "nixl") return { router, connector };
+  if (router === "vllm" && connector === "nixl") return { router, connector, offloadReason: NATIVE_PD_PCP_KV_OFFLOAD_REASON };
+  if (router === "ascend" && connector === "mooncake_ascend" && hwProfile?.brand === "Huawei") {
+    return { router, connector, prefillMode: "dep", offloadReason: "Ascend PCP requires direct Mooncake KV transfer." };
+  }
   return null;
 }
 
@@ -530,6 +534,33 @@ function transferConfigOf(args) {
 
 function transferConnectorOf(args) {
   return transferConfigOf(args)?.kv_connector ?? null;
+}
+
+// Check the actual transfer configs after all role/preset edits. Extra KV
+// tiers and unrelated implementations have not been qualified for this path.
+function validateAscendPcp(prefillArgs, decodeArgs, prefill, decode) {
+  const p = rawTransferConfigOf(prefillArgs);
+  const d = rawTransferConfigOf(decodeArgs);
+  const connector = p?.kv_connector;
+  const hybrid = connector === "MooncakeHybridConnector";
+  if ((!hybrid && connector !== "MooncakeConnectorV2") || d?.kv_connector !== connector) {
+    throw new RangeError("PD prefill: Ascend PCP requires matching direct MooncakeConnectorV2 or MooncakeHybridConnector workers.");
+  }
+  if (hybrid && prefill.tp < decode.tp) throw new RangeError(`PD prefill: ${connector} requires Prefill TP >= Decode TP.`);
+  for (const [role, args, config, kvRole] of [
+    ["prefill", prefillArgs, p, "kv_producer"], ["decode", decodeArgs, d, "kv_consumer"],
+  ]) {
+    if (config.kv_role !== kvRole) throw new RangeError(`PD ${role}: ${connector} requires kv_role=${kvRole} on this pool.`);
+    if (hybrid && Number(lastFlagValue(args, "--decode-context-parallel-size") ?? 1) !== 1) {
+      throw new RangeError(`PD ${role}: ${connector} requires DCP=1.`);
+    }
+    for (const [peer, meta] of [["prefill", prefill], ["decode", decode]]) {
+      const layout = config.kv_connector_extra_config?.[peer];
+      if (layout?.dp_size !== meta.dpSize || layout?.tp_size !== meta.tp || (layout.pp_size ?? 1) !== meta.pp) {
+        throw new RangeError(`PD ${role}: ${connector} ${peer} dp_size, tp_size and pp_size must match the role topology.`);
+      }
+    }
+  }
 }
 
 // The upstream NIXL connector exposes the producer's replicated PCP KV once,
@@ -1875,14 +1906,10 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   const externalDp = strategy[routerKey]?.data_parallel_lb === "external";
   const prefillPcp = pdRoleValue(recipe, "prefill", "pcp", hwProfile, hwProfileId)
     ?? parallelSizeForHardware(strategy.prefill?.pcp, hwProfile, hwProfileId) ?? 1;
-  const nativePdPcp = strategy.deploy_type === "pd_cluster" && prefillPcp > 1;
-  if (nativePdPcp && (!pdPcpDeployment(recipe, hwProfile, hwProfileId, presetSelect)
-      || routerKey !== "vllm" || (pdRouter && pdRouter !== "vllm") || (pdConnectorPick && pdConnectorPick !== "nixl"))) {
-    throw new RangeError("PD prefill: native PCP requires vLLM Router with the NIXL connector.");
-  }
-  if (nativePdPcp && kvOffload && kvOffload !== "off") {
-    throw new RangeError(NATIVE_PD_PCP_KV_OFFLOAD_REASON);
-  }
+  const pdHasPcp = strategy.deploy_type === "pd_cluster" && prefillPcp > 1;
+  const deployment = pdHasPcp && pdPcpDeployment(recipe, hwProfile, hwProfileId, presetSelect);
+  const ascendPdPcp = deployment?.router === "ascend";
+  const nativePdPcp = pdHasPcp && !ascendPdPcp;
   const depRankFlag = (meta) => {
     if (meta.internalDp || (nativePdPcp && meta.nodes === 1)) return null;
     if (!externalDp) return "--data-parallel-start-rank";
@@ -1930,6 +1957,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     if (pcp > 1 && role !== "prefill") fail("PCP is only supported on the Prefill pool.");
     const internalDp = routerKey === "ascend" && parallelism === "dep"
       && pdRoleValue(recipe, role, "data_parallel_lb", hwProfile, hwProfileId) === "internal";
+    if (ascendPdPcp && role === "prefill" && (parallelism !== "dep" || internalDp)) fail("Ascend PCP requires external DEP Prefill.");
     if (nativePdPcp && nodes < 1) fail("Native PCP requires dedicated role nodes.");
     if (parallelism !== "dep" && (roleTp != null || nativePdPcp)
         && (tp * pp * pcp > poolGpus || (tp * pp * pcp) % Math.max(1, nodes) !== 0)) {
@@ -1943,7 +1971,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     const dpLocal = parallelism === "dep" ? gpuCount / (tp * pcp) : 0;
     const dpSize = parallelism === "dep" ? Math.max(1, nodes) * dpLocal : 1;
     const currentNode = Math.max(0, Math.min(Math.max(1, nodes) - 1, selected.rank ?? 0));
-    if (nativePdPcp && !Number.isInteger(currentNode)) fail("PCP requires an integer node rank.");
+    if (pdHasPcp && !Number.isInteger(currentNode)) fail("PCP requires an integer node rank.");
     return { nodes, parallelism, tp, pcp, pp, dpLocal, dpSize, poolGpus, currentNode, startRank: currentNode * dpLocal, internalDp };
   };
 
@@ -1958,6 +1986,15 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     if (pdConnectorUnavailable) pdConnectorSel = pdConnectorKey(strategy);
   }
   const pdConnector = pdConnectorSel ? strategy.connectors[pdConnectorSel] : null;
+  if (pdHasPcp) {
+    if (!deployment || routerKey !== deployment.router || pdConnectorSel !== deployment.connector
+        || (pdRouter && pdRouter !== routerKey) || (pdConnectorPick && pdConnectorPick !== pdConnectorSel)
+        || (ascendPdPcp && !externalDp)) {
+      throw new RangeError(ascendPdPcp ? "PD prefill: Ascend PCP requires an external-DP Ascend Router and Mooncake preset."
+        : "PD prefill: native PCP requires vLLM Router with the NIXL connector.");
+    }
+    if (kvOffload && kvOffload !== "off") throw new RangeError(deployment.offloadReason);
+  }
   // The transfer config a composed KV tier wraps: Dynamo workers carry their
   // own (kv_both) NIXL config, everyone else the selected connector's.
   const pdTransferConfig = (role) => (dynamo ? kvOptionConfig(dynamo[role] && { args: dynamo[role].vllm_args }) : null)
@@ -2017,6 +2054,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     const hasPcp = pcps.some((n) => n > 1);
     function allowsDcp(size, i) {
       const tp = tps[i], pcp = pcps[i];
+      if (ascendPdPcp && raws.some((args) => transferConnectorOf(args) === "MooncakeHybridConnector")) return false;
       if (matchTp && size !== tp) return false;
       if (pcp === 1) return tp % size === 0;
       const backend = lastFlagValue(raws[i], "--dcp-comm-backend") ?? recipe.decode_context_parallel.comm_backend;
@@ -2377,7 +2415,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       }
       out = nativePcpArgs(out, nativePcpDeclaration, declaredTp, isMulti ? nodeCount : 1, mpRank, gpuCount);
     }
-    if (nativePdPcp && roleOverride) out = normalizePcpArgs(out, pcpRoleFlags);
+    if (pdHasPcp && roleOverride) out = normalizePcpArgs(out, ascendPdPcp ? ascendPcpRoleFlags : pcpRoleFlags);
     // Check the final Ascend transfer config after normal catalog composition
     // and preset edits, without restricting the implementation name.
     if (ascend && roleOverride) {
@@ -2409,7 +2447,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const meta = roleMeta(roleOverride);
       const rankFlag = meta.parallelism === "dep" ? depRankFlag(meta) : null;
       const expected = { "--tensor-parallel-size": meta.tp, "--pipeline-parallel-size": meta.pp };
-      if (nativePdPcp || pdRoleValue(recipe, roleOverride, "pcp", hwProfile, hwProfileId) != null) {
+      if (pdHasPcp || pdRoleValue(recipe, roleOverride, "pcp", hwProfile, hwProfileId) != null) {
         expected["--prefill-context-parallel-size"] = meta.pcp;
       }
       if (meta.parallelism === "dep") Object.assign(expected, {
@@ -2440,7 +2478,8 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         const selected = singleEndpoint ? null
           : meta.dpLocal > 1 ? "--data-parallel-multi-port-external-lb" : "--data-parallel-external-lb";
         const modes = ["--data-parallel-hybrid-lb", "--data-parallel-multi-port-external-lb", "--data-parallel-external-lb"];
-        const conflictingRank = singleEndpoint && ["--data-parallel-rank", "--data-parallel-start-rank"].some((flag) => flags.has(flag));
+        const conflictingRank = ["--data-parallel-rank", "--data-parallel-start-rank"]
+          .some((flag) => flags.has(flag) && (singleEndpoint || (ascendPdPcp && flag !== rankFlag)));
         if ((selected && !flags.has(selected)) || modes.some((flag) => flag !== selected && flags.has(flag)) || conflictingRank) {
           throw new RangeError(`PD ${roleOverride}: rank or load-balancing flags conflict with the selected DP mode.`);
         }
@@ -2520,8 +2559,11 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         // Dedicated node(s) — each node owns all its local GPUs. Same value
         // is correct whether the pool is DEP (vllm spawns local ranks) or TP.
         const visible = Array.from({ length: gpuCount }, (_, i) => i).join(",");
-        if (hwProfile.brand === "Huawei") env.ASCEND_RT_VISIBLE_DEVICES ??= visible;
-        else env.CUDA_VISIBLE_DEVICES = visible;
+        if (hwProfile.brand === "Huawei") {
+          // The supervisor indexes the host's ordered mask, or uses its
+          // own default if unset. A recipe can still supply an explicit mask.
+          if (!ascendPdPcp) env.ASCEND_RT_VISIBLE_DEVICES ??= visible;
+        } else env.CUDA_VISIBLE_DEVICES = visible;
         // Cross-node NCCL/GLOO for this role only kicks in when the role
         // spans 2+ nodes. Single-node roles use NIXL for cross-role transfer
         // and don't need socket-iface hints.
@@ -2691,9 +2733,6 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   if (deployType === "pd_cluster") {
     const pMeta = roleMeta("prefill");
     const dMeta = roleMeta("decode");
-    if (nativePdPcp && pdConnectorSel !== "nixl") {
-      throw new RangeError("PD prefill: native PCP requires vLLM Router with the NIXL connector.");
-    }
     // A recipe or preset layer may write a role's whole --kv-transfer-config
     // (MiniMax-M3.1-Flash on MI355X composes NIXL with CPU offload by hand).
     // Ascend routes HTTP endpoints independently of the connector implementation.
@@ -2733,6 +2772,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     let prefillArgs = buildArgs("prefill", null);
     let decodeArgs = buildArgs("decode", null);
     if (nativePdPcp) validateNixlPcp(prefillArgs, decodeArgs, pMeta, dMeta);
+    if (ascendPdPcp) validateAscendPcp(prefillArgs, decodeArgs, pMeta, dMeta);
     const nativePort = (role, args, fallback) => {
       if (!nativePdPcp) return fallback;
       const port = Number(lastFlagValue(args, "--port") ?? 8000);
@@ -2863,7 +2903,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     let ascendRouter;
     if (ascend) {
       const endpoints = (role, meta, args) => {
-        const port = Number(lastFlagValue(dedupeArgs(args), "--port") ?? 8000);
+        const final = dedupeArgs(args);
+        const fallback = ascendPdPcp && final.includes("--port") ? NaN : 8000;
+        const port = Number(lastFlagValue(final, "--port") ?? fallback);
         const local = !meta.internalDp && externalDp && meta.parallelism === "dep" ? meta.dpLocal : 1;
         if (!Number.isInteger(port) || port < 1 || port + local - 1 > 65535) {
           throw new RangeError(`PD ${role}: HTTP ports must fit in 1..65535.`);
@@ -2884,6 +2926,12 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         }) };
     }
     const workerDocker = ascend ? { ...pdConnector?.docker, ...ascend.docker } : pdConnector?.docker || null;
+    const externalPool = externalDp && [pMeta, dMeta].some((m) => m.parallelism === "dep" && !m.internalDp && m.dpSize > 1);
+    const hardwareFlags = externalPool && pdConnector?.external_dp_docker_flags?.[hwProfileId];
+    if (ascend && (hardwareFlags || ascendPdPcp)) workerDocker.flags = [
+      ...(workerDocker.flags || []), ...(hardwareFlags || []),
+      ...(ascendPdPcp ? ["--env=ASCEND_RT_VISIBLE_DEVICES"] : []),
+    ];
     return {
       deployType,
       nodeCount,
