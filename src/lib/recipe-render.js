@@ -145,7 +145,7 @@ export function dockerize(command, argv, env, dockerMeta, port = null, docker = 
   const hostNetwork = !!docker?.host_network;
   const extraFlags = docker?.flags || [];
   return {
-    docker_command: buildDockerRun({ ...dockerMeta, command, env, port, hostNetwork, extraFlags }),
+    docker_command: buildDockerRun({ ...dockerMeta, modelId: argv[0] === "vllm" && argv[1] === "serve" ? argv[2] : undefined, command, env, port, hostNetwork, extraFlags }),
     docker_argv: buildDockerArgv({ argv, env, meta: dockerMeta, port, hostNetwork, extraFlags }),
   };
 }

@@ -1,6 +1,7 @@
 // Hardware profile rules, shown on Rubin (`vr200`): its image and Docker-only
 // install, precision compatibility, and which override blocks apply.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
@@ -20,9 +21,11 @@ import {
   multiNodeFloor,
   pickDefaultHardware,
   resolveCommand,
+  resolveOmniCommand,
   variantRunsOnHardware,
 } from "../src/lib/command-synthesis.js";
-import { resolveSelection } from "../src/lib/recipe-render.js";
+import { renderCommand, resolveSelection } from "../src/lib/recipe-render.js";
+import { substitute } from "../src/lib/cluster-endpoints.js";
 
 const taxonomy = yaml.load(fs.readFileSync("taxonomy.yaml", "utf8"));
 const profiles = taxonomy.hardware_profiles;
@@ -31,6 +34,54 @@ const strategies = Object.fromEntries(
   fs.readdirSync("strategies").map((f) => [path.basename(f, ".yaml"), yaml.load(fs.readFileSync(`strategies/${f}`, "utf8"))]),
 );
 const IMAGE = "vllm/vllm-openai:cu134-nightly";
+
+test("local checkpoint paths reach the server and its Docker mount as single literal arguments", (t) => {
+  const bash = process.platform === "win32" ? path.join(process.env.ProgramFiles || "C:/Program Files", "Git/bin/bash.exe") : "bash";
+  if (spawnSync(bash, ["--version"]).status !== 0) return t.skip("Bash is unavailable");
+  const checkpoint = "/weights/O'Brien $ROUTER_HOST [v2] --port 9123 $(echo model)\nsecond line";
+  const r = recipe({ model: { model_id: checkpoint, base_args: ["--dtype", "auto"] } });
+  const run = (name, command) => {
+    const script = name + '() { printf "%s\\0" "$@"; }\n' + substitute(command, { ROUTER_HOST: "localhost" });
+    const { status, stdout, stderr } = spawnSync(bash, ["-c", script], {
+      encoding: "utf8", env: { ...process.env, HEAD_IP: "$HEAD_IP" },
+    });
+    assert.equal(status, 0, stderr);
+    return stdout.split("\0").slice(0, -1);
+  };
+  const meta = computeDockerMeta(r, r.variants.default, profiles.h200, "h200");
+  function check(command, argv, dockerCommand, dockerArgv, port = 8000) {
+    assert.deepEqual(run("vllm", command), argv.slice(1));
+    const args = run("docker", dockerCommand);
+    const image = args.indexOf(meta.image);
+    assert.ok(image >= 0);
+    assert.deepEqual(args.slice(image), dockerArgv.slice(dockerArgv.indexOf(meta.image)));
+    const mount = `${checkpoint}:${checkpoint}:ro`;
+    assert.ok(args.includes(mount));
+    assert.ok(dockerArgv.includes(mount));
+    assert.ok(args.includes(`${port}:${port}`), "a flag-like substring in the path must not publish a port");
+  }
+  const single = renderCommand(r, "default", "single_node_tp", "h200", 1, [], strategies, taxonomy);
+  check(single.command, single.argv, single.docker_command, single.docker_argv);
+  const multi = renderCommand(r, "default", "multi_node_tp", "h200", 2, [], strategies, taxonomy);
+  check(multi.head_command, multi.head_argv, multi.head_docker_command, multi.head_docker_argv);
+  check(multi.worker_command, multi.worker_argv, multi.worker_docker_command, multi.worker_docker_argv);
+  const pd = renderCommand(r, "default", "pd_cluster", "h200", 2, [], strategies, taxonomy,
+    { prefill: { nodes: 1 }, decode: { nodes: 1 } });
+  for (const [pool, port] of [[pd.prefill, 8001], [pd.decode, 8002]]) {
+    check(pool.command, pool.argv, pool.docker_command, pool.docker_argv, port);
+  }
+  const store = yaml.load(fs.readFileSync("kv_store/kv_store_distributed_mooncake.yaml", "utf8"));
+  const kv = renderCommand(r, "default", "multi_node_tp", "h200", 2, [],
+    { ...strategies, [store.name]: store }, taxonomy, null, store.name);
+  check(kv.vllm_command, kv.vllm_argv, kv.vllm_docker_command, kv.vllm_docker_argv);
+  check(kv.vllm_worker_command, kv.vllm_worker_argv, kv.vllm_worker_docker_command, kv.vllm_worker_docker_argv);
+
+  const omni = resolveOmniCommand(r, "default", { modelId: checkpoint }, profiles.h200, "h200");
+  const cmd = buildDockerRun({ command: omni.command, modelId: omni.modelId, ...meta });
+  const args = run("docker", cmd);
+  assert.deepEqual(args.slice(args.indexOf(meta.image) + 1), [checkpoint, "--dtype", "auto", "--omni"]);
+  assert.ok(args.includes(`${checkpoint}:${checkpoint}:ro`));
+});
 
 test("single RTX 4090 is opt-in and selects an offloaded variant that fits", () => {
   const hw = profiles.rtx_4090;

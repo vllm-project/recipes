@@ -1408,9 +1408,11 @@ export function buildDockerRun(options) {
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
-  const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
+  // The renderer already knows the raw checkpoint. Legacy command-only callers
+  // can still supply a simple unquoted model name.
+  const modelId = options.modelId ?? command.match(/^vllm serve (\S+)/)?.[1];
   const localMount = localModelMount(modelId);
-  const mountFlags = [...localMount, ...configPathMounts(env)]
+  const mountFlags = [...localMount.map(shellLiteral), ...configPathMounts(env)]
     .map((m) => `-v ${m}`)
     .join(" \\\n  ");
   // A missing host path makes the bind mount silently yield an empty directory,
@@ -1420,12 +1422,16 @@ export function buildDockerRun(options) {
   // tab shows it too), where it is copy-pastable rather than commented out.
   // Restating it here would mean guessing which dependency is the download.
   const prereq = localMount.length
-    ? `# ${modelId} must already exist on the host — bind-mounted read-only below.\n`
+    ? `# ${modelId.replaceAll("\n", "\n# ")} must already exist on the host — bind-mounted read-only below.\n`
     : "";
-  const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
+  // Retain the already formatted arguments, including the quoted model and
+  // any endpoint substitutions made by the command builder.
+  const serveArgs = command.replace(/^(?:vllm|vllm-omni) serve /, "");
+  const cmdArgs = serveArgs === command ? `MODEL \\\n  ${command}` : serveArgs;
+  const flags = modelId ? serveArgs.slice(shellLiteral(modelId).length) : serveArgs;
+  const pubPort = port ?? servedPort(flags.split(/\s+/));
   // Ascend uses host networking and an explicit shm size; `-p` is a no-op
   // under `--net=host` and hid the required `--shm-size` on 950PR.
-  const pubPort = port ?? servedPort(serveBody.split(/\s+/));
   const runtimeFlags = isPpu
     ? "--network host --ipc host --privileged --init --ulimit memlock=-1:-1 --security-opt seccomp=unconfined"
     : isNpu
@@ -1435,11 +1441,11 @@ export function buildDockerRun(options) {
   const base = `${prereq}docker run${gpuPrefix}${runtimeFlags} \\${extraFlags.length ? `\n  ${extraFlags.join(" ")} \\` : ""}
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
   const setup = setupCommand
-    ? `--entrypoint /bin/sh ${image} -c ${shellQuote(`${setupCommand} && exec vllm serve "$@"`)} vllm-grpc ${modelId}`
+    ? `--entrypoint /bin/sh ${image} -c ${shellQuote(`${setupCommand} && exec vllm serve "$@"`)} vllm-grpc`
     : null;
-  const cmdHead = setup || (cmdPrefix ? `${image} \\\n  ${cmdPrefix} ${modelId}` : `${image} ${modelId}`);
+  const cmdHead = setup || (cmdPrefix ? `${image} \\\n  ${cmdPrefix}` : image);
   return `${base}
-  ${cmdHead}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
+  ${cmdHead} ${cmdArgs}`;
 }
 
 // argv companion to buildDockerRun. `argv` here is the inner command's argv —
@@ -1587,6 +1593,13 @@ function dynamoParserArgs(args, config, warnings) {
 // single quotes so bash still expands them; any other `$` stays literal.
 const ADDRESS_PLACEHOLDER = /(\$(?:ROUTER_HOST|ROUTER_PORT|HEAD_IP|(?:PREFILL|DECODE)_NODE_\d+)(?![A-Za-z0-9_]))/;
 
+// The endpoint panel substitutes $NAME before the command reaches the shell.
+// Adjacent single-quoted strings keep a literal dollar separate from its name.
+export function shellLiteral(s) {
+  return /^[A-Za-z0-9_./=:@,+%-]+$/.test(s)
+    ? s : `'${s.replace(/'/g, "'\\''").replace(/\$(?=[A-Z_])/g, () => "$''")}'`;
+}
+
 function shellQuote(s) {
   if (typeof s !== "string" || s.length === 0) return s;
   // Bare $VAR references must stay unquoted so bash expands them at runtime.
@@ -1670,8 +1683,8 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfil
     }
   }
   const command = lines.length === 0
-    ? `${serveBinary} ${modelId}`
-    : `${serveBinary} ${modelId} \\\n  ${lines.join(" \\\n  ")}`;
+    ? `${serveBinary} ${shellLiteral(modelId)}`
+    : `${serveBinary} ${shellLiteral(modelId)} \\\n  ${lines.join(" \\\n  ")}`;
 
   return { command, env, modelId };
 }
@@ -2658,8 +2671,8 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   // Dynamo workers launch via `python3 -m dynamo.vllm --model <id>`; every
   // other path is `vllm serve <id>`.
   const serveHead = dynamo
-    ? `${dynamo.launcher || "python3 -m dynamo.vllm"} --model ${modelId}`
-    : `vllm serve ${modelId}`;
+    ? `${dynamo.launcher || "python3 -m dynamo.vllm"} --model ${shellLiteral(modelId)}`
+    : `vllm serve ${shellLiteral(modelId)}`;
   function formatCommand(args) {
     const filtered = dedupeArgs(args.filter(Boolean));
     if (filtered.length === 0) return serveHead;
@@ -2820,7 +2833,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       `--policy ${smg.policy || "round_robin"}`,
       ...(smgGrpc ? [
         ...smgWorkers.map(({ role, port }) => `--${role} grpc://$${role.toUpperCase()}_NODE_1:${port}`),
-        `--model-path ${shellQuote(modelId)}`,
+        `--model-path ${shellLiteral(modelId)}`,
         `--reasoning-parser ${enabledFeatures.includes("reasoning") ? grpcConfig.reasoning_parser : "passthrough"}`,
         `--tool-call-parser ${enabledFeatures.includes("tool_calling") ? grpcConfig.tool_call_parser : "passthrough"}`,
       ] : []),
