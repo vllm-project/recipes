@@ -762,7 +762,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
       const defPar = pdRoleParallelism(pdRecipe, strategies.pd_cluster, r, hwProfile, hwId);
       const reqPar = get(`${r}_mode`);
       const par0 = reqPar && poolModes.includes(reqPar) ? reqPar : (poolModes.includes(defPar) ? defPar : poolModes[0]);
-      const parallelism = available.includes(par0) ? par0 : (available[0] || "tp");
+      const parallelism = (r === "prefill" && pcpDeployment?.prefillMode) || (available.includes(par0) ? par0 : (available[0] || "tp"));
       const reqNodes = parseIntParam(get(`${r}_nodes`));
       const nodes0 = reqNodes > 0 ? reqNodes : (pdRoleNodes(pdRecipe, r, hwProfile, hwId) ?? minNodes);
       const rank = parseIntParam(get(`${r}_rank`));
@@ -817,7 +817,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     },
   );
   note("kv_offload", kvReq || applied.unavailableKvOffload, applied.kvOffload || "off", pcpDeployment
-    ? "not yet validated with native PCP and NIXL"
+    ? (pcpDeployment.router === "ascend" ? "not yet validated with Ascend PCP and direct Mooncake transfer" : "not yet validated with native PCP and NIXL")
     : "not available for this hardware and strategy");
   note("frontend", get("frontend"), applied.frontend ?? frontend, "not supported by this recipe or variant");
   if (pcpDeployment) {

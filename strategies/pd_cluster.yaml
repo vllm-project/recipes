@@ -118,6 +118,10 @@ connectors:
           prefill: { dp_size: "{prefill_dp_size}", tp_size: "{prefill_tp_size}", pp_size: "{prefill_pp_size}" }
           decode: { dp_size: "{decode_dp_size}", tp_size: "{decode_tp_size}", pp_size: "{decode_pp_size}" }
     docker: { host_network: true }
+    # Devices and host configuration for the dedicated external-DP worker containers.
+    external_dp_docker_flags:
+      ascend_910b: &ascend_mooncake_devices ["--device", "/dev/devmm_svm", "-v", "/etc/hccn.conf:/etc/hccn.conf:ro"]
+      ascend_910c: *ascend_mooncake_devices
   moriio:
     display_name: "MoRI-IO"
     description: "ROCm MoRI-IO transfer over RDMA. Workers register with the router (proxy_ip / proxy_ping_port), which discovers them instead of listing endpoints; WRITE mode by default, READ with read_mode."

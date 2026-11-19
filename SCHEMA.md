@@ -179,7 +179,7 @@ hardware_overrides:
 #                  for a role preset or a role with structured PCP
 #   pp           — pipeline stages (default 1; DEP requires pp=1);
 #                  automatic TP/TEP width is pool_devices / (pp × pcp)
-#   pcp          — Prefill context parallel width (default 1) for native NIXL PD
+#   pcp          — Prefill context parallel width (default 1) for native NIXL or Ascend Mooncake PD
 #                  `nodes`, `tp`, `pp` and `pcp` also accept hardware-keyed maps
 #   vllm_args    — extra flags appended to this role's `vllm serve`
 #   env          — extra env vars for this role
@@ -522,6 +522,11 @@ that selects a tier for this layout. Omit the selection or set it to `off`
 in published presets and points.
 
 ### Ascend PD presets
+
+A dedicated external-DP Prefill pool can declare `roles.prefill: { nodes: 1,
+parallelism: dep, tp: 1, pcp: 4 }` with Ascend Router and Mooncake (Ascend).
+Use an image with PCP-aware multi-port device allocation. The renderer emits
+one `vllm serve` per node, and the runtime assigns `tp × pcp` NPUs per rank.
 
 Ascend uses the same Prefill/Decode pools and node commands as other PD routers.
 **Ascend Router** and **Mooncake (Ascend)** appear only on Ascend hardware under
