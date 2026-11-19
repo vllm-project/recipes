@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { loadStrategies } from "../src/lib/strategies.js";
 import { loadTaxonomy } from "../src/lib/taxonomy.js";
 import { renderCommand, resolveSelection } from "../src/lib/recipe-render.js";
+import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
 
 const strategies = loadStrategies();
 const taxonomy = loadTaxonomy();
@@ -134,6 +135,59 @@ test("unqualified native PCP offload links keep the direct NIXL command and expl
     assert.equal(adjustment.used, "off");
     assert.match(adjustment.reason, /PCP/);
   }
+});
+
+test("a native PD PCP preset's own offload defaults fall back to direct NIXL in JSON and Markdown", () => {
+  const r = recipe();
+  const p = r.presets[key];
+  p.select = { kv_offload: "simple" };
+  p.points = {
+    inherited: { default: true },
+    store: { select: { kv_offload: "kv_store_distributed_mooncake" } },
+    off: { select: { kv_offload: false } },
+    ordinary: { roles: { prefill: { tp: 4, pcp: 1 } } },
+  };
+  const q = new URLSearchParams({ hardware: "gb300", strategy: "pd_cluster", preset: key });
+  for (const [point, link, requested] of [
+    ["inherited", null, "simple"],
+    ["store", null, "kv_store_distributed_mooncake"],
+    ["store", "simple", "simple"],
+    ["store", "off", null],
+    ["off", null, null],
+  ]) {
+    q.set("point", point);
+    if (link) q.set("kv_offload", link);
+    else q.delete("kv_offload");
+    const resolved = resolveSelection(r, q, strategies, taxonomy);
+    const { rendering, selection } = resolved;
+    assert.equal(selection.kv_offload, null);
+    assert.equal(rendering.prefill.pcp, 4);
+    const kv = JSON.parse(value(rendering.prefill.argv, "--kv-transfer-config"));
+    assert.equal(kv.kv_connector, "NixlConnector");
+    assert.equal(kv.kv_role, "kv_producer");
+    const markdown = selectionMarkdown(r, resolved, { strategies, taxonomy,
+      urls: { page: "https://example.org/test/native-pcp", json: "https://example.org/test/native-pcp.json" } });
+    assert.ok(markdown.includes(rendering.prefill.command));
+    const adjustment = selection.adjusted.find(({ param }) => param === "kv_offload");
+    if (requested) {
+      assert.equal(adjustment.requested, requested);
+      assert.equal(adjustment.used, "off");
+      assert.match(adjustment.reason, /PCP/);
+      assert.ok(markdown.includes(`> **Note:** requested \`kv_offload=${requested}\``));
+    } else {
+      assert.equal(adjustment, undefined);
+      assert.ok(!markdown.includes("> **Note:** requested `kv_offload="));
+    }
+  }
+
+  q.set("point", "ordinary");
+  const ordinary = resolveSelection(r, q, strategies, taxonomy);
+  assert.equal(ordinary.selection.kv_offload, "simple");
+  const transfer = JSON.parse(value(ordinary.rendering.prefill.argv, "--kv-transfer-config"));
+  assert.equal(transfer.kv_connector, "MultiConnector");
+  assert.deepEqual(transfer.kv_connector_extra_config.connectors.map(c => c.kv_connector),
+    ["NixlConnector", "SimpleCPUOffloadConnector"]);
+  assert.throws(() => render(r), /Invalid preset.*KV offload is unavailable for native PCP/);
 });
 
 test("a TP preset can set a width at PCP1 without inheriting widths from a different role mode", () => {
@@ -286,4 +340,34 @@ test("native PD rejects contradictory device, port, connector and DCP settings",
   dcp.presets[key].roles.decode.args = ["-dcp", "2"];
   assert.throws(() => render(dcp), /replicated PCP/);
   assert.throws(() => render(recipe(), { pdConnector: "mooncake" }), /NIXL/);
+});
+
+test("restating a structured PD role mode in a preset or point preserves its strategy TP", () => {
+  const r = recipe();
+  r.strategy_overrides = { pd_cluster: {
+    prefill: { nodes: 1, parallelism: { "arch:sm103": "tp", default: "tep" }, tp: 1, pcp: 2 },
+    decode: { nodes: 1, parallelism: "tp" },
+  } };
+  const preset = r.presets[key];
+  preset.roles = { prefill: { parallelism: "tp" } };
+  preset.points = {
+    base: { default: true },
+    same: { roles: { prefill: { parallelism: "tp" } } },
+    changed: { roles: { prefill: { parallelism: "tep" } } },
+  };
+  const query = new URLSearchParams({ hardware: "gb300", strategy: "pd_cluster", preset: "baseline" });
+  const prefill = () => resolveSelection(r, query, strategies, taxonomy).rendering.prefill;
+  const baseline = prefill();
+  assert.equal(value(baseline.argv, "--tensor-parallel-size"), "1");
+  query.set("preset", key);
+  assert.deepEqual(prefill().argv, baseline.argv);
+  query.set("point", "same");
+  assert.deepEqual(prefill().argv, baseline.argv);
+  delete preset.roles.prefill.parallelism;
+  assert.deepEqual(prefill().argv, baseline.argv);
+  query.set("prefill_nodes", "2");
+  assert.equal(value(prefill().argv, "--tensor-parallel-size"), "4");
+  query.delete("prefill_nodes");
+  query.set("point", "changed");
+  assert.equal(value(prefill().argv, "--tensor-parallel-size"), "2");
 });

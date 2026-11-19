@@ -1927,7 +1927,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       updates.dcp = String(activeSelect.dcp);
     }
     if (activeSelect.kv_offload !== undefined && !linked("kv_offload")) {
-      const kv = activeSelect.kv_offload === false || activeSelect.kv_offload === "off" ? "" : activeSelect.kv_offload;
+      const kv = pcpDeployment || activeSelect.kv_offload === false || activeSelect.kv_offload === "off" ? "" : activeSelect.kv_offload;
       setKvOffload(kv);
       updates.kv_offload = kv;
     }

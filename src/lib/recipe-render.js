@@ -207,7 +207,8 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   // builder choices — frontend, PD router, features, DCP, KV offload — which
   // the rendering applies the way the builder does.
   const baseVariant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
-  const sel = presetSelect(recipe, resolvePresetKey(recipe, hwId, strategy, presetPick, variantKey), pointPick) || {};
+  const presetKey = resolvePresetKey(recipe, hwId, strategy, presetPick, variantKey);
+  const sel = presetSelect(recipe, presetKey, pointPick) || {};
   const linked = opts.linked || new Set();
   const pick = (param, selValue, optValue) => (linked.has(param) ? optValue : (selValue ?? optValue));
   let feats = [...features];
@@ -233,6 +234,15 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     dcp: pick("dcp", sel.dcp, opts.dcp) ?? null,
     pdConnector: pick("pd_connector", sel.pd_connector, opts.pdConnector) ?? null,
   };
+  // Preview the usable configuration after applying the preset's defaults.
+  // Strict builds still validate exactly what the author declared.
+  if (!strict && strategy === "pd_cluster" && applied.kvOffload) {
+    const pdRecipe = withPreset(recipe, presetKey, hwId, strategy, { variantKey, point: pointPick });
+    if (pdPcpDeployment(pdRecipe, taxonomy.hardware_profiles?.[hwId], hwId, sel)) {
+      applied.unavailableKvOffload = applied.kvOffload;
+      applied.kvOffload = null;
+    }
+  }
   if (opts.out) Object.assign(opts.out, applied);
   const synthesize = (pools = pdNodes) => resolveCommand(
     recipe, variantKey, strategy, hwId, feats, strategies, taxonomy, opts.advancedArgs || [], nodeCount, pools,
@@ -749,7 +759,6 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     const pdPresetKey = resolvePresetKey(recipe, hwId, strategy, presetPick ?? null, variantKey);
     const pdRecipe = withPreset(recipe, pdPresetKey, hwId, strategy, { variantKey, point: pointPick ?? null });
     pcpDeployment = pdPcpDeployment(pdRecipe, hwProfile, hwId, presetSelect(recipe, pdPresetKey, pointPick));
-    if (pcpDeployment) kvOffload = "";
     const nodeVram = hwProfile.vram_gb || 0;
     const modelVram = variantVramMinimumGb(variant, hwId);
     const minNodes = modelVram > 0 && nodeVram > 0 ? Math.max(1, Math.ceil(modelVram / nodeVram)) : 1;
@@ -789,9 +798,6 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     ? "multi-node — add `nodes=2` (or more)"
     : "not offered for this hardware and node count");
   if (strategies[strategy]?.deploy_type === "multi_node") note("nodes", get("nodes"), nodeCount, "not a node count this hardware offers");
-  note("kv_offload", kvReq || null, kvOffload || "off", pcpDeployment
-    ? "not yet validated with native PCP and NIXL"
-    : "not available for this hardware and strategy");
   if (pcpDeployment) {
     note("prefill_mode", get("prefill_mode"), pdNodes.prefill.parallelism, "not supported by the selected Prefill layout");
     for (const role of ["prefill", "decode"]) {
@@ -816,6 +822,9 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
       out: applied,
     },
   );
+  note("kv_offload", kvReq || applied.unavailableKvOffload, applied.kvOffload || "off", pcpDeployment
+    ? "not yet validated with native PCP and NIXL"
+    : "not available for this hardware and strategy");
   note("frontend", get("frontend"), applied.frontend ?? frontend, "not supported by this recipe or variant");
   if (pcpDeployment) {
     note("pd_router", get("pd_router"), applied.pdRouter, "incompatible with the selected PCP deployment");
