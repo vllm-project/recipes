@@ -145,6 +145,7 @@ export function dockerize(command, argv, env, dockerMeta, port = null, docker = 
   const extraFlags = docker?.flags || [];
   return {
     docker_command: buildDockerRun({
+      modelId: argv[0] === "vllm" && argv[1] === "serve" ? argv[2] : undefined,
       command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, port,
       isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, shmSize: dockerMeta.shmSize, cmdPrefix: dockerMeta.cmdPrefix, hostNetwork, extraFlags,
     }),
