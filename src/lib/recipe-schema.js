@@ -93,6 +93,12 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
   const installTab = { anyOf: [{ type: "boolean" }, { type: "null" }, obj({ command: { type: "string" }, note: { type: "string" } })] };
   const install = obj({ pip: installTab, docker: installTab });
 
+  // Docker IPC opt-in is read from an exact NPU profile of the selected variant.
+  const npuIpcOverrides = {
+    properties: Object.fromEntries(profileIds.filter((id) => profiles[id].generation === "npu").map((id) => [id, true])),
+    additionalProperties: { properties: { docker_ipc: false } },
+  };
+
   const variant = obj({
     precision: { type: "string", description: "bf16 | fp16 | fp8 | int8 | awq | gptq | int4 | nvfp4 | fp4 | mxfp4 | mxfp8 | …" },
     vram_minimum_gb: { type: "number", minimum: 0 },
@@ -115,16 +121,20 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     // Generation keys carry extra_args/extra_env; exact GPU ids may also pin an
     // image, a GPU-resident VRAM budget, or state the install paths: hide pip or
     // Docker, or give this GPU its own pip command.
-    hardware_overrides: keyed(hwKey, extraArgsEnv({
-      vram_minimum_gb: { type: "number", minimum: 0 },
-      docker_image: { type: "string" },
-      docker_shm_size: { type: "string", pattern: "^[0-9]+(?:\\.[0-9]+)?[bkmgBKMG]?$" },
-      docker_serve_command: { type: "string" },
-      install: obj({
-        pip: { anyOf: [{ type: "boolean" }, obj({ command: { type: "string" }, note: { type: "string" } }, { required: ["command"] })] },
-        docker: { type: "boolean" },
-      }),
-    })),
+    hardware_overrides: {
+      ...keyed(hwKey, extraArgsEnv({
+        vram_minimum_gb: { type: "number", minimum: 0 },
+        docker_image: { type: "string" },
+        docker_ipc: { const: "host" },
+        docker_shm_size: { type: "string", pattern: "^[0-9]+(?:\\.[0-9]+)?[bkmgBKMG]?$" },
+        docker_serve_command: { type: "string" },
+        install: obj({
+          pip: { anyOf: [{ type: "boolean" }, obj({ command: { type: "string" }, note: { type: "string" } }, { required: ["command"] })] },
+          docker: { type: "boolean" },
+        }),
+      })),
+      allOf: [npuIpcOverrides],
+    },
   }, { required: ["precision", "vram_minimum_gb"] });
 
   const pdMode = { enum: ["tp", "tep", "dep"] };
