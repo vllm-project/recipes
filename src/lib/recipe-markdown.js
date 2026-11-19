@@ -86,14 +86,14 @@ function serveSection(r) {
           fence(withEnv(node.env, node.command)), ...dockerNote(node.docker_command));
       }
     }
+    const defaultPort = r.router?.port === undefined ? "" : 'export ROUTER_PORT="${ROUTER_PORT:-' + r.router.port + '}"\n';
     if (r.router?.command) {
       out.push("", `### ${r.router.label || "Router"}`, "");
       if (r.router.install && !(r.orchestrator_install || []).some((i) => i.command === r.router.install)) out.push(fence(r.router.install), "");
       const command = withEnv(r.router.env, r.router.command);
-      const defaultPort = r.router.port === undefined ? "" : 'export ROUTER_PORT="${ROUTER_PORT:-' + r.router.port + '}"\n';
       out.push(fence(defaultPort + command));
     }
-    if (r.registration) step(r.registration.label || "Register workers", r.registration.description, r.registration.command);
+    if (r.registration) step(r.registration.label || "Register workers", r.registration.description, defaultPort + r.registration.command);
     return out;
   }
   if (r.deploy_type === "kv_store_lb") {

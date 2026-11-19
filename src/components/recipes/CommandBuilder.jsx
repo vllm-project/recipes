@@ -162,7 +162,7 @@ function PopoverButton({ label, code, icon: Icon, disabled, disabledNote }) {
 // is a form for editing $VAR / NODE_N substitutions. Lives on each command
 // block header next to cURL/Bench so the user finds it where they realize
 // "this curl is hitting localhost — I need to point it elsewhere."
-function EndpointsPopoverButton({ isPd, isKvStore, isMultiNode, placeholders, endpoints, onChange, onReset }) {
+function EndpointsPopoverButton({ clientHostKey, clientPortKey, clientPortHint, placeholders, endpoints, onChange, onReset }) {
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState(null);
   const btnRef = useRef(null);
@@ -186,10 +186,7 @@ function EndpointsPopoverButton({ isPd, isKvStore, isMultiNode, placeholders, en
     };
   }, [open]);
 
-  const clientHostKey = (isPd || isKvStore) ? "ROUTER_HOST" : (isMultiNode ? "HEAD_IP" : "VLLM_HOST");
-  const clientPortKey = (isPd || isKvStore) ? "ROUTER_PORT" : "VLLM_PORT";
   const clientHostHint = "localhost";
-  const clientPortHint = isPd ? "30000" : isKvStore ? "30080" : "8000";
 
   const extras = placeholders.filter(
     (p) => !(p.kind === "var" && (p.name === clientHostKey || p.name === clientPortKey)),
@@ -219,7 +216,7 @@ function EndpointsPopoverButton({ isPd, isKvStore, isMultiNode, placeholders, en
         </div>
         <div className="px-3 py-3 space-y-3 max-h-[60vh] overflow-y-auto">
           <div className="text-[11px] text-muted-foreground leading-snug">
-            Saved in your browser and substituted into the rendered command, env exports, curl, and bench. Empty fields stay as <code className="font-mono text-[10px] px-1 py-px rounded bg-foreground/5">$VAR</code>.
+            Saved in your browser and used in commands, env exports, cURL, and Bench. Leave the port empty to use {clientPortHint}.
           </div>
           <div>
             <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5">
@@ -1934,7 +1931,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const modelId = recipe.variants?.[variant]?.model_id || recipe.model?.model_id || "model";
 
   // PD / KV-store clients hit the router; everyone else hits `vllm serve` on 8000.
-  const clientPort = isPd ? 30000 : kvHasRouter ? (result.router?.port || 30080) : 8000;
+  const clientPort = String(result.router?.port ?? (isPd ? 30000 : kvHasRouter ? 30080 : 8000));
 
   // curl/bench target. PD / routed KV-store → router host:port; everyone else
   // (incl. single-instance Mooncake) → the vllm-serve node (head node for
@@ -1944,7 +1941,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const clientHostKey = (isPd || kvHasRouter) ? "ROUTER_HOST" : (isMultiNode ? "HEAD_IP" : "VLLM_HOST");
   const clientPortKey = (isPd || kvHasRouter) ? "ROUTER_PORT" : "VLLM_PORT";
   const clientHost = endpoints[clientHostKey] || "localhost";
-  const clientPortStr = endpoints[clientPortKey] || String(clientPort);
+  const clientPortStr = endpoints[clientPortKey] || clientPort;
 
   const verifyCmd = `curl http://${clientHost}:${clientPortStr}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
@@ -2006,27 +2003,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // IPs ($PREFILL_NODE_N, $HEAD_IP) intentionally have NO default — they're
   // not generally localhost and a wrong default would mislead the reader.
   const effectiveEndpoints = useMemo(() => {
-    const defaults = {};
-    if (result.deployType === "pd_cluster") {
-      defaults.ROUTER_HOST = "localhost";
-      defaults.ROUTER_PORT = String(result.router?.port ?? 30000);
-    } else if (result.deployType === "kv_store_lb") {
-      if (result.router) {
-        defaults.ROUTER_HOST = "localhost";
-        defaults.ROUTER_PORT = String(result.router.port || 30080);
-      } else {
-        // Single instance, no router — clients hit the engine directly.
-        defaults.VLLM_HOST = "localhost";
-        defaults.VLLM_PORT = "8000";
-      }
-    } else if (result.deployType === "multi_node") {
-      defaults.VLLM_PORT = "8000";
-    } else {
-      defaults.VLLM_HOST = "localhost";
-      defaults.VLLM_PORT = "8000";
-    }
+    const defaults = { [clientPortKey]: clientPort };
+    if (!isMultiNode) defaults[clientHostKey] = "localhost";
     return { ...defaults, ...endpoints };
-  }, [result.deployType, result.router?.port, endpoints]);
+  }, [clientPortKey, clientPort, isMultiNode, clientHostKey, endpoints]);
 
   const displayedResult = useMemo(() => {
     const sub = (s) => substitute(s, effectiveEndpoints);
@@ -2365,9 +2345,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
 
     const omniEndpointsControls = (
       <EndpointsPopoverButton
-        isPd={false}
-        isKvStore={false}
-        isMultiNode={false}
+        clientHostKey="VLLM_HOST"
+        clientPortKey="VLLM_PORT"
+        clientPortHint="8000"
         placeholders={omniPlaceholders}
         endpoints={endpoints}
         onChange={updateEndpoint}
@@ -2614,9 +2594,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
         {(() => {
           const endpointsControls = (
             <EndpointsPopoverButton
-              isPd={isPd}
-              isKvStore={kvHasRouter}
-              isMultiNode={isMultiNode}
+              clientHostKey={clientHostKey}
+              clientPortKey={clientPortKey}
+              clientPortHint={clientPort}
               placeholders={placeholdersInUse}
               endpoints={endpoints}
               onChange={updateEndpoint}

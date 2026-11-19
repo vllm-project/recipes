@@ -158,6 +158,15 @@ test("a PD preset and its points supply an editable router port", () => {
       urls: { page: "https://example.org/test/presets", json: "https://example.org/test/presets.json" } });
     assert.ok(md.includes('export ROUTER_PORT="${ROUTER_PORT:-' + port + '}"'));
   }
+  query.set("pd_router", "smg");
+  query.set("prefill_nodes", "1");
+  query.set("decode_nodes", "1");
+  const registered = resolve();
+  assert.equal(registered.rendering.pd_router, "smg");
+  assert.equal(registered.rendering.router.port, 3099);
+  const registrationMd = selectionMarkdown(r, registered, { strategies, taxonomy,
+    urls: { page: "https://example.org/test/presets", json: "https://example.org/test/presets.json" } });
+  assert.match(registrationMd, /### Register workers[\s\S]+?export ROUTER_PORT="\${ROUTER_PORT:-3099}"/);
   const validate = new Ajv({ strict: false }).compile(buildRecipeSchema({ taxonomy, strategies }).properties.presets);
   for (const port of [1, 65535, 0, 65536, 2.5, "2999"]) {
     preset.router_port = port;
