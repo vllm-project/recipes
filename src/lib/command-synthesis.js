@@ -1288,7 +1288,8 @@ function servedPort(tokens, fallback = 8000) {
 // entrypoint is something else. Env vars become `-e KEY=VAL` inside the container.
 // `extraFlags` are runtime flags a component needs on top of the GPU ones
 // (a PD KV connector's RDMA device and locked-memory limit).
-export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, isPpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [], shmSize = "16g", ipc }) {
+export function buildDockerRun(options) {
+  const { command, env, image, gpuFlags, port = null, isNpu = false, isPpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [], shmSize = "16g" } = options;
   const pubPort = port ?? servedPort(command.split(/\s+/));
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
@@ -1309,11 +1310,11 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = null, isN
     : "";
   const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
   // Ascend uses host networking and an explicit shm size; `-p` is a no-op
-  // under `--net=host` and hid the required `--shm-size` on 950PR.
+  // under `--net=host`. An exact NPU override may request host IPC instead.
   const runtimeFlags = isPpu
     ? "--network host --ipc host --privileged --init --ulimit memlock=-1:-1 --security-opt seccomp=unconfined"
     : isNpu
-    ? `--privileged --net=host ${ipc === "host" ? "--ipc=host" : `--shm-size=${shmSize || "16g"}`}`
+    ? `--privileged --net=host ${options.ipc === "host" ? "--ipc=host" : `--shm-size=${shmSize || "16g"}`}`
     : `--privileged --ipc=host ${hostNetwork ? "--network host" : `-p ${pubPort}:${pubPort}`}`;
   const gpuPrefix = gpuFlags ? ` ${gpuFlags} \\\n  ` : " ";
   const base = `${prereq}docker run${gpuPrefix}${runtimeFlags} \\${extraFlags.length ? `\n  ${extraFlags.join(" ")} \\` : ""}

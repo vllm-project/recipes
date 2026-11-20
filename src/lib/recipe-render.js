@@ -144,10 +144,7 @@ export function dockerize(command, argv, env, dockerMeta, port = null, docker = 
   const hostNetwork = !!docker?.host_network;
   const extraFlags = docker?.flags || [];
   return {
-    docker_command: buildDockerRun({
-      command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, port,
-      isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, shmSize: dockerMeta.shmSize, ipc: dockerMeta.ipc, cmdPrefix: dockerMeta.cmdPrefix, hostNetwork, extraFlags,
-    }),
+    docker_command: buildDockerRun({ ...dockerMeta, command, env, port, hostNetwork, extraFlags }),
     docker_argv: buildDockerArgv({ argv, env, meta: dockerMeta, port, hostNetwork, extraFlags }),
   };
 }
