@@ -405,7 +405,6 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = [], 
     };
     const gpus = taxonomy?.hardware_profiles?.[p.hardware]?.gpu_count;
     const checkTopology = (d, at) => {
-      if (d?.router_port !== undefined && !isPd) errors.push(`${at}.router_port: only a pd_cluster preset sets the router port`);
       if (d?.tp !== undefined) {
         if (p.strategy !== "single_node_tp") errors.push(`${at}.tp: only a single_node_tp preset sets tp`);
         else if (gpus && d.tp > gpus) errors.push(`${at}.tp: ${d.tp} exceeds ${p.hardware}'s ${gpus} GPUs`);
@@ -413,6 +412,7 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = [], 
       if (d?.select?.nodes !== undefined && !String(p.strategy || "").startsWith("multi_node_")) {
         errors.push(`${at}.select.nodes: only a multi_node_* preset sets the node count`);
       }
+      if (d?.router_port !== undefined && !isPd) errors.push(`${at}.router_port: only a pd_cluster preset sets the router port`);
     };
     checkDelta(p, where);
     checkTopology(p, where);
