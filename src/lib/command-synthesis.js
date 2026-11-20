@@ -1,4 +1,7 @@
+import { shellLiteral } from "./cluster-endpoints.js";
 import { applyPresetArgOps, effectivePreset, toggleOwnedFlags, matchingPresets, presetImage, presetPoints, resolvePresetKey, withPreset } from "./recipe-presets.js";
+
+export { shellLiteral };
 
 /**
  * Core command synthesis: Recipe + Variant + Strategy + Hardware + Features → vllm serve command.
@@ -1287,13 +1290,14 @@ function servedPort(tokens, fallback = 8000) {
 // entrypoint is something else. Env vars become `-e KEY=VAL` inside the container.
 // `extraFlags` are runtime flags a component needs on top of the GPU ones
 // (a PD KV connector's RDMA device and locked-memory limit).
-export function buildDockerRun({ command, modelId, env, image, gpuFlags, port = null, isNpu = false, isPpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [], shmSize = "16g" }) {
+export function buildDockerRun(options) {
+  const { command, env, image, gpuFlags, port = null, isNpu = false, isPpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [], shmSize = "16g" } = options;
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
   // The renderer already knows the raw checkpoint. Legacy command-only callers
   // can still supply a simple unquoted model name.
-  modelId ??= command.match(/^vllm serve (\S+)/)?.[1];
+  const modelId = options.modelId ?? command.match(/^vllm serve (\S+)/)?.[1];
   const localMount = localModelMount(modelId);
   const mountFlags = [...localMount.map(shellLiteral), ...configPathMounts(env)]
     .map((m) => `-v ${m}`)
@@ -1311,10 +1315,10 @@ export function buildDockerRun({ command, modelId, env, image, gpuFlags, port = 
   // any endpoint substitutions made by the command builder.
   const serveArgs = command.replace(/^(?:vllm|vllm-omni) serve /, "");
   const cmdArgs = serveArgs === command ? `MODEL \\\n  ${command}` : serveArgs;
-  const flags = modelId ? serveArgs.slice(shellLiteral(modelId).length) : serveArgs;
-  const pubPort = port ?? servedPort(flags.split(/\s+/));
+  const serveBody = modelId ? serveArgs.slice(shellLiteral(modelId).length) : serveArgs;
   // Ascend uses host networking and an explicit shm size; `-p` is a no-op
   // under `--net=host` and hid the required `--shm-size` on 950PR.
+  const pubPort = port ?? servedPort(serveBody.split(/\s+/));
   const runtimeFlags = isPpu
     ? "--network host --ipc host --privileged --init --ulimit memlock=-1:-1 --security-opt seccomp=unconfined"
     : isNpu
@@ -1475,13 +1479,6 @@ function dynamoParserArgs(args, config, warnings) {
 // connector's JSON naming the router or this node) they are spliced out of the
 // single quotes so bash still expands them; any other `$` stays literal.
 const ADDRESS_PLACEHOLDER = /(\$(?:ROUTER_HOST|ROUTER_PORT|HEAD_IP|(?:PREFILL|DECODE)_NODE_\d+)(?![A-Za-z0-9_]))/;
-
-// The endpoint panel substitutes $NAME before the command reaches the shell.
-// Adjacent single-quoted strings keep a literal dollar separate from its name.
-export function shellLiteral(s) {
-  return /^[A-Za-z0-9_./=:@,+%-]+$/.test(s)
-    ? s : `'${s.replace(/'/g, "'\\''").replace(/\$(?=[A-Z_])/g, () => "$''")}'`;
-}
 
 function shellQuote(s) {
   if (typeof s !== "string" || s.length === 0) return s;
