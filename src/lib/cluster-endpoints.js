@@ -67,7 +67,7 @@ export function substitute(text, endpoints) {
     if (v === undefined || v === null || v === "") continue;
     // Word-boundary aware: $FOO must not chew into $FOOBAR.
     const re = new RegExp(`\\$${escapeRe(k)}(?![A-Z0-9_])`, "g");
-    out = out.replace(re, v);
+    out = out.replace(re, () => v);
   }
   return out;
 }
