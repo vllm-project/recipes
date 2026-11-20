@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { replaceQuery } from "@/lib/url-state";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { maxVersion, resolveInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, shellLiteral, resolveOmniCommand, pdPoolModes, pdPcpDeployment, NATIVE_PD_PCP_KV_OFFLOAD_REASON, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason, ascendPdUnavailableReason } from "@/lib/command-synthesis";
+import { maxVersion, resolveInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdPcpDeployment, NATIVE_PD_PCP_KV_OFFLOAD_REASON, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason, ascendPdUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, presetSelect, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import ShellCode from "@/components/recipes/ShellCode";
@@ -16,7 +16,7 @@ import { holdInPlace } from "@/lib/hold-in-place";
 import { whenMatches } from "@/lib/recipe-context";
 import { ADVANCED_OPTIONS } from "@/lib/advanced-options";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
-import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
+import { detectPlaceholdersAll, shellLiteral, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
 // Tuning guidance for a feature's sub-mode, shown under the Features row while
 // that mode is the active one. Keyed [feature][mode] and kept here rather than
@@ -2230,7 +2230,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     [currentVariant, presetImage, hwId]
   );
   const dockerMeta = useMemo(() => {
-    const meta = computeDockerMeta(recipe, imageVariant, hwProfile, hwId);
+    const meta = {
+      ...computeDockerMeta(recipe, imageVariant, hwProfile, hwId),
+      modelId: imageVariant.model_id || recipe.model?.model_id,
+    };
     if (!meta.image || meta.brandKey !== "nvidia") return meta;
 
     // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
@@ -2405,13 +2408,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           >
             <SingleCommandBlock
               command={omniSubbedCommand}
-              modelId={omniRendered.modelId}
               env={omniSubbedEnv}
               verifyCmd={omniCurl}
               benchCmd={omniBench}
               statusHeader={statusHeader}
               installMode={effectiveInstallMode}
-              dockerMeta={dockerMeta}
+              dockerMeta={{ ...dockerMeta, modelId: omniRendered.modelId }}
               configSummary={omniConfigSummary}
               endpointsControls={omniEndpointsControls}
               commandNote={commandNote}
@@ -2673,7 +2675,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           ) : (
             <SingleCommandBlock
               command={displayedResult.command}
-              modelId={displayedResult.argv?.[2]}
               env={displayedResult.env}
               setup={displayedResult.setup}
               companions={displayedResult.companions}
@@ -4023,7 +4024,7 @@ function CommandNote({ note }) {
   );
 }
 
-function SingleCommandBlock({ command, modelId, env, setup, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote, onCopy }) {
+function SingleCommandBlock({ command, env, setup, companions, verifyCmd, benchCmd, statusHeader, installMode, dockerMeta, configSummary, endpointsControls, commandNote, onCopy }) {
   const [tab, setTab] = useState("vllm");
   // The `docker pull` for the image lives in the Install block above.
   const isXpu = !!dockerMeta?.isXpu;
@@ -4043,7 +4044,7 @@ function SingleCommandBlock({ command, modelId, env, setup, companions, verifyCm
     !isDocker && setup ? setup : "",
   ].filter(Boolean).join("\n");
   const displayCommand = isDocker
-    ? buildDockerRun({ ...dockerMeta, command, modelId, env })
+    ? buildDockerRun({ ...dockerMeta, command, env })
     : command;
   // A companion process may ride along (`companions[]` from resolveCommand —
   // a feature's `companion:` or the active kv_offload option's, e.g.
@@ -4422,7 +4423,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
   const isDocker = installMode === "docker";
   const wrap = (cmd) =>
     isDocker
-      ? buildDockerRun({ ...dockerMeta, command: cmd, modelId: result.headArgv?.[2], env: result.env })
+      ? buildDockerRun({ ...dockerMeta, command: cmd, env: result.env })
       : cmd;
   // One tab per node: Head (rank 0) then every follower rank, each with its own
   // --node-rank / --data-parallel-start-rank. `workerCommands` carries them all;
@@ -4491,13 +4492,13 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   // Prefill/decode use the vLLM image. SMG has its own CPU-only router
   // image; vllm-router keeps its pip command and install hint.
   const routerDocker = isDocker && result.router.dockerCommand;
-  const wrap = ({ command, argv, env }) =>
+  const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ ...dockerMeta, command, modelId: argv?.[2], env, setupCommand: result.workerDockerSetup,
+      ? buildDockerRun({ ...dockerMeta, command: cmd, env, setupCommand: result.workerDockerSetup,
         // RDMA connectors (Mooncake, MoRI-IO) need host networking and locked memory.
         hostNetwork: result.transport === "grpc" || !!result.kvConnector?.docker?.host_network,
         extraFlags: result.kvConnector?.docker?.flags || [] })
-      : command;
+      : cmd;
   // Mooncake composed into PD (result.mooncake): a "Mooncake Config" tab
   // (launch step 0) writes the shared config file(s) once — every
   // prefill/decode node reads them via $MOONCAKE_CONFIG_PATH — then
@@ -4517,8 +4518,8 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
     ...(mc?.store ? [{ id: "mc_store", label: "Mooncake Store", command: mc.store.command, env: {}, description: mc.store.description }] : []),
     // Dynamo: the etcd control plane comes first in the sequence.
     ...(isDynamo && result.infra ? [{ id: "dyn_infra", label: result.infra.label, command: result.infra.command, env: {}, description: result.infra.description }] : []),
-    { id: "prefill", label: "Prefill", command: wrap(result.prefill), env: result.prefill.env, meta: result.prefill },
-    { id: "decode", label: "Decode", command: wrap(result.decode), env: result.decode.env, meta: result.decode },
+    { id: "prefill", label: "Prefill", command: wrap(result.prefill.command, result.prefill.env), env: result.prefill.env, meta: result.prefill },
+    { id: "decode", label: "Decode", command: wrap(result.decode.command, result.decode.env), env: result.decode.env, meta: result.decode },
     { id: "router", label: result.router.label || "Router", command: routerDocker || result.router.command, env: result.router.env || {}, install: routerDocker ? null : result.router.install, isRouter: true },
     ...(result.registration ? [{ id: "registration", ...result.registration, env: {}, isRouter: true }] : []),
   ].map((t, i) => (mc || isDynamo || isSmg ? { ...t, step: i + 1 } : t));
@@ -4645,7 +4646,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
   const isDocker = installMode === "docker";
   const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ ...dockerMeta, command: cmd, modelId: result.vllm.argv?.[2], env })
+      ? buildDockerRun({ ...dockerMeta, command: cmd, env })
       : cmd;
 
   const instances = result.instances || 2;

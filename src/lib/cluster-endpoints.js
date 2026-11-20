@@ -11,6 +11,13 @@
 
 const STORAGE_KEY = "vllm-recipes:cluster-endpoints";
 
+// The endpoint panel substitutes $NAME before the command reaches the shell.
+// Adjacent single-quoted strings keep a literal dollar separate from its name.
+export function shellLiteral(s) {
+  return /^[A-Za-z0-9_./=:@,+%-]+$/.test(s)
+    ? s : `'${s.replace(/'/g, "'\\''").replace(/\$(?=[A-Z_])/g, () => "$''")}'`;
+}
+
 /**
  * Detect $VAR placeholders in a piece of rendered text. Returns a deduped
  * list of { kind: "var", name, label } — `name` is the bare identifier the

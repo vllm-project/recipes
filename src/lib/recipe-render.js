@@ -140,12 +140,14 @@ export function defaultFeaturesFor(recipe, hwId, variantKey = "default") {
 // Wrap a rendered (command, argv) pair in `docker run`. Returns
 // { docker_command, docker_argv } so each form has its docker counterpart.
 // `docker` is a PD KV connector's container needs ({ host_network, flags }).
-export function dockerize(command, argv, env, dockerMeta, port = null, docker = null) {
-  if (dockerMeta.dockerEnabled === false) return { docker_command: null, docker_argv: null };
+export function dockerize(command, argv, env, meta, port = null, docker = null) {
+  if (meta.dockerEnabled === false) return { docker_command: null, docker_argv: null };
+  const modelId = argv[0] === "vllm" && argv[1] === "serve" ? argv[2] : undefined;
+  const dockerMeta = { ...meta, modelId };
   const hostNetwork = !!docker?.host_network;
   const extraFlags = docker?.flags || [];
   return {
-    docker_command: buildDockerRun({ ...dockerMeta, modelId: argv[0] === "vllm" && argv[1] === "serve" ? argv[2] : undefined, command, env, port, hostNetwork, extraFlags }),
+    docker_command: buildDockerRun({ ...dockerMeta, command, env, port, hostNetwork, extraFlags }),
     docker_argv: buildDockerArgv({ argv, env, meta: dockerMeta, port, hostNetwork, extraFlags }),
   };
 }
