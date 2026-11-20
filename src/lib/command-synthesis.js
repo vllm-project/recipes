@@ -1290,7 +1290,6 @@ function servedPort(tokens, fallback = 8000) {
 // (a PD KV connector's RDMA device and locked-memory limit).
 export function buildDockerRun(options) {
   const { command, env, image, gpuFlags, port = null, isNpu = false, isPpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [], shmSize = "16g" } = options;
-  const pubPort = port ?? servedPort(command.split(/\s+/));
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
@@ -1310,7 +1309,8 @@ export function buildDockerRun(options) {
     : "";
   const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
   // Ascend uses host networking and an explicit shm size; `-p` is a no-op
-  // under `--net=host`. An exact NPU override may request host IPC instead.
+  // under `--net=host` and hid the required `--shm-size` on 950PR.
+  const pubPort = port ?? servedPort(serveBody.split(/\s+/));
   const runtimeFlags = isPpu
     ? "--network host --ipc host --privileged --init --ulimit memlock=-1:-1 --security-opt seccomp=unconfined"
     : isNpu
