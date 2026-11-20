@@ -258,11 +258,16 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   };
   let result;
   try {
-    result = synthesize();
+    result = synthesize(!strict && opts.previewDecodeNodes != null
+      ? { ...pdNodes, previewDecodeNodes: opts.previewDecodeNodes } : pdNodes);
   } catch (e) {
     return failed(e);
   }
   if (!result) return null;
+  if (result.decodeModes && result.decode.parallelism !== pdNodes.decode.parallelism) {
+    pdNodes = { ...pdNodes, decode: { ...pdNodes.decode, parallelism: result.decode.parallelism, nodes: result.decode.nodes } };
+    if (opts.out) opts.out.pdNodes = pdNodes;
+  }
   if (result.frontendRequired) applied.frontend = result.frontendRequired;
   // A URL cannot opt into Ascend PD without the active recipe declaration.
   if (applied.pdRouter === "ascend") applied.pdRouter = result.pdRouter ?? "vllm";
@@ -755,6 +760,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
   // with the pd_cluster preset in effect mounted.
   let pdNodes = null;
   let pcpDeployment = null;
+  let previewDecodeNodes;
   if (strategy === "pd_cluster") {
     const pdPresetKey = resolvePresetKey(recipe, hwId, strategy, presetPick ?? null, variantKey);
     const pdRecipe = withPreset(recipe, pdPresetKey, hwId, strategy, { variantKey, point: pointPick ?? null });
@@ -771,6 +777,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
       const parallelism = (r === "prefill" && pcpDeployment?.prefillMode) || (available.includes(par0) ? par0 : (available[0] || "tp"));
       const reqNodes = parseIntParam(get(`${r}_nodes`));
       const nodes0 = reqNodes > 0 ? reqNodes : (pdRoleNodes(pdRecipe, r, hwProfile, hwId) ?? minNodes);
+      if (r === "decode" && pcpDeployment?.router === "ascend") previewDecodeNodes = nodes0;
       const rank = parseIntParam(get(`${r}_rank`));
       return { nodes: Math.max(nodes0, nodesForStrategy(recipe, parallelism, perNode, hwId)), rank: rank != null && rank >= 0 ? rank : 0, parallelism };
     };
@@ -798,13 +805,6 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     ? "multi-node — add `nodes=2` (or more)"
     : "not offered for this hardware and node count");
   if (strategies[strategy]?.deploy_type === "multi_node") note("nodes", get("nodes"), nodeCount, "not a node count this hardware offers");
-  if (pcpDeployment) {
-    note("prefill_mode", get("prefill_mode"), pdNodes.prefill.parallelism, "not supported by the selected Prefill layout");
-    for (const role of ["prefill", "decode"]) {
-      note(`${role}_nodes`, get(`${role}_nodes`), pdNodes[role].nodes, "outside the dedicated pool layout");
-    }
-  }
-
   const applied = {};
   const rendering = renderCommand(
     recipe, variantKey, strategy, hwId, nodeCount, features, strategies, taxonomy, pdNodes,
@@ -818,10 +818,21 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
       pdTransport: recipe.model?.smg_grpc && get("pd_transport") === "grpc" ? "grpc" : "http",
       dcp: dcp >= 1 ? dcp : null,
       pdConnector: pcpDeployment?.connector ?? pdConnector,
+      previewDecodeNodes,
       linked,
       out: applied,
     },
   );
+  if (applied.pdNodes) {
+    pdNodes = applied.pdNodes;
+    note("decode_mode", get("decode_mode"), pdNodes.decode.parallelism, "MooncakeHybridConnector requires Prefill TP >= Decode TP");
+  }
+  if (pcpDeployment) {
+    note("prefill_mode", get("prefill_mode"), pdNodes.prefill.parallelism, "not supported by the selected Prefill layout");
+    for (const role of ["prefill", "decode"]) {
+      note(`${role}_nodes`, get(`${role}_nodes`), pdNodes[role].nodes, "outside the dedicated pool layout");
+    }
+  }
   note("kv_offload", kvReq || applied.unavailableKvOffload, applied.kvOffload || "off", pcpDeployment
     ? (pcpDeployment.router === "ascend" ? "not yet validated with Ascend PCP and direct Mooncake transfer" : "not yet validated with native PCP and NIXL")
     : "not available for this hardware and strategy");

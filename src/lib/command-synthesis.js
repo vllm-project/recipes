@@ -1920,8 +1920,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
 
   // One pool topology drives the node command, router endpoints and connector
   // metadata. Presets mount their role TP/PP here, before any of those consume it.
-  const roleMeta = (role) => {
-    const raw = pdNodes?.[role];
+  const roleMeta = (role, raw = pdNodes?.[role]) => {
     const selected = typeof raw === "number" ? { nodes: raw } : raw || {};
     const nodes = selected.nodes ?? (nodeCount > 1 ? 1 : 0);
     const allowed = pdPoolModes(recipe);
@@ -2771,6 +2770,33 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     //         serves HTTP (followers are --headless), so list exactly one.
     let prefillArgs = buildArgs("prefill", null);
     let decodeArgs = buildArgs("decode", null);
+    const previewDecodeNodes = pdNodes?.previewDecodeNodes;
+    let decodeModes;
+    if (ascendPdPcp && previewDecodeNodes != null && [prefillArgs, decodeArgs].every(
+      (args) => rawTransferConfigOf(args)?.kv_connector === "MooncakeHybridConnector")) {
+      // Probe the same pool widths used by synthesis, including each mode's node floor.
+      const pool = (parallelism) => ({
+        ...pdNodes.decode, parallelism,
+        nodes: Math.max(previewDecodeNodes, nodesForStrategy(recipe, parallelism, gpuCount, hwProfileId)),
+      });
+      decodeModes = pdPoolModes(recipe).filter((mode) => {
+        if (!isStrategyReachable(recipe, mode, "multi_node", gpuCount, hwProfileId)) return false;
+        try {
+          return roleMeta("decode", pool(mode)).tp <= pMeta.tp;
+        } catch (error) {
+          if (!(error instanceof RangeError)) throw error;
+          return false;
+        }
+      });
+      if (dMeta.tp > pMeta.tp && decodeModes.length) {
+        const declared = pdRoleParallelism(recipe, strategy, "decode", hwProfile, hwProfileId);
+        const fallback = decodeModes.includes(declared) ? declared : decodeModes[0];
+        // Render every dependent field (including the peer config and router) with the corrected pool.
+        const again = [...arguments];
+        again[10] = { prefill: pdNodes.prefill, decode: pool(fallback) };
+        return { ...resolveCommandImpl(...again), decodeModes };
+      }
+    }
     if (nativePdPcp) validateNixlPcp(prefillArgs, decodeArgs, pMeta, dMeta);
     if (ascendPdPcp) validateAscendPcp(prefillArgs, decodeArgs, pMeta, dMeta);
     const nativePort = (role, args, fallback) => {
@@ -2935,6 +2961,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     return {
       deployType,
       nodeCount,
+      ...(decodeModes && { decodeModes }),
       ...(pdMooncake ? { mooncake: pdMooncake } : {}),
       prefill: {
         command: formatCommand(prefillArgs),

@@ -112,6 +112,43 @@ test("the single-endpoint A2 internal-DP layout keeps its worker Docker configur
   }
 });
 
+test("Ascend PCP links keep Decode modes compatible with the final connector and pool width", () => {
+  const r = fixture("ascend_910c");
+  r.compatible_strategies.push("multi_node_tep");
+  const preset = r.presets.ascend_pd;
+  const query = new URLSearchParams({ hardware: preset.hardware, strategy: "pd_cluster", preset: "ascend_pd" });
+  const select = (mode) => {
+    query.set("decode_mode", mode);
+    return resolveSelection(r, query, strategies, taxonomy);
+  };
+  const baseline = select("dep");
+  assert.ok(select("unknown").selection.adjusted.every(({ reason }) => !reason.includes("MooncakeHybridConnector")));
+  for (const mode of ["tp", "tep"]) {
+    const { rendering, selection } = select(mode);
+    assert.deepEqual(rendering, baseline.rendering);
+    assert.equal(selection.pd.decode.parallelism, "dep");
+    assert.deepEqual(selection.adjusted.map(({ param, requested, used }) => [param, requested, used]),
+      [["decode_mode", mode, "dep"]]);
+  }
+  // A narrow explicit TP remains usable at its declared node count.
+  preset.roles.decode.parallelism = "tp";
+  assert.equal(select("tp").rendering.decode.tp, 1);
+  assert.equal(select("tep").selection.pd.decode.parallelism, "tp");
+  query.set("decode_nodes", "2");
+  assert.equal(select("tp").rendering.decode.parallelism, "dep");
+  // Unlike Hybrid, V2 permits the wider Decode pool.
+  preset.json_args["--kv-transfer-config"].kv_connector = "MooncakeConnectorV2";
+  for (const mode of ["tp", "tep"]) {
+    const { rendering, selection } = select(mode);
+    assert.equal(rendering.decode.parallelism, mode);
+    assert.equal(rendering.decode.tp, 32);
+    assert.deepEqual(selection.adjusted, []);
+  }
+  preset.json_args["--kv-transfer-config"].kv_connector = "MooncakeHybridConnector";
+  delete preset.roles.decode.tp;
+  assert.throws(() => render(r), /Prefill TP >= Decode TP/);
+});
+
 test("Ascend PCP validates the final connector and addresses after preset edits", () => {
   const recipe = fixture("ascend_910c");
   const preset = recipe.presets.ascend_pd;

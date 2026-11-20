@@ -1227,11 +1227,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   );
   const prefillModes = pcpDeployment?.prefillMode ? [pcpDeployment.prefillMode] : pdAvailableModes;
   const effPdPrefillPar = prefillModes.includes(pdPrefillPar) ? pdPrefillPar : (prefillModes[0] || "tp");
-  const effPdDecodePar = pdAvailableModes.includes(pdDecodePar) ? pdDecodePar : (pdAvailableModes[0] || "tp");
+  const requestedDecodePar = pdAvailableModes.includes(pdDecodePar) ? pdDecodePar : (pdAvailableModes[0] || "tp");
   // Floor the sizes too, not just clicks — a pool whose DEFAULT mode carries a
   // floor (K3's decode is dep) would otherwise render below it.
   const effPdPrefillNodes = Math.max(pdPrefillNodes, nodesNeededFor(effPdPrefillPar));
-  const effPdDecodeNodes = Math.max(pdDecodeNodes, nodesNeededFor(effPdDecodePar));
+  const requestedDecodeNodes = Math.max(pdDecodeNodes, nodesNeededFor(requestedDecodePar));
 
   const result = useMemo(
     () => {
@@ -1239,7 +1239,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       const pdNodes = activeStrategy === "pd_cluster"
         ? {
           prefill: { nodes: effPdPrefillNodes, rank: pdPrefillRank, parallelism: effPdPrefillPar },
-          decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
+          decode: { nodes: requestedDecodeNodes, rank: pdDecodeRank, parallelism: requestedDecodePar },
+          previewDecodeNodes: pdDecodeNodes,
         }
         : null;
       try {
@@ -1254,8 +1255,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           deploymentError: error.message };
       }
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, workerRouter, pdTransport, dcpSize, presetPick, pointPick, workerConnector]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, requestedDecodeNodes, pdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, requestedDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, workerRouter, pdTransport, dcpSize, presetPick, pointPick, workerConnector]
   );
+  const effPdDecodePar = result.decodeModes ? result.decode.parallelism : requestedDecodePar;
+  const effPdDecodeNodes = result.decodeModes ? result.decode.nodes : requestedDecodeNodes;
 
   // Publish the selection for the sections below the builder (This
   // configuration / Tuned presets / Troubleshooting filter on it).
@@ -3414,7 +3417,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   value={effPdDecodeNodes}
                   gpuPerNode={hwProfile.gpu_count || 8}
                   onChange={(n) => setPdNodes("decode", n)}
-                  modes={pdAvailableModes}
+                  modes={result.decodeModes ?? pdAvailableModes}
+                  showSingleMode={result.decodeModes?.length < pdAvailableModes.length}
                   parallelism={effPdDecodePar}
                   onParChange={(m) => setPdPar("decode", m)}
                 />
@@ -3757,8 +3761,8 @@ const PD_PAR_TIPS = {
   dep: "Data + expert parallel — one vllm serve per node, DP across nodes with EP (MoE throughput).",
 };
 
-function PdNodeInput({ label, value, gpuPerNode, onChange, modes, parallelism, onParChange }) {
-  const showPills = Array.isArray(modes) && modes.length > 1 && typeof onParChange === "function";
+function PdNodeInput({ label, value, gpuPerNode, onChange, modes, parallelism, onParChange, showSingleMode }) {
+  const showPills = Array.isArray(modes) && (modes.length > 1 || showSingleMode) && typeof onParChange === "function";
   return (
     <div className="inline-flex flex-wrap items-center gap-2">
       <span className="text-xs font-medium text-muted-foreground w-12 shrink-0">{label}</span>
