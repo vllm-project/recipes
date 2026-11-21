@@ -16,7 +16,7 @@ import { holdInPlace } from "@/lib/hold-in-place";
 import { whenMatches } from "@/lib/recipe-context";
 import { ADVANCED_OPTIONS } from "@/lib/advanced-options";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
-import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
+import { detectPlaceholdersAll, shellLiteral, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
 // Tuning guidance for a feature's sub-mode, shown under the Features row while
 // that mode is the active one. Keyed [feature][mode] and kept here rather than
@@ -2232,7 +2232,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     [currentVariant, presetImage, hwId]
   );
   const dockerMeta = useMemo(() => {
-    const meta = computeDockerMeta(recipe, imageVariant, hwProfile, hwId);
+    const meta = {
+      ...computeDockerMeta(recipe, imageVariant, hwProfile, hwId),
+      modelId: imageVariant.model_id || recipe.model?.model_id,
+    };
     if (!meta.image || meta.brandKey !== "nvidia") return meta;
 
     // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
@@ -2333,7 +2336,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const omniRendered = activeTask
       ? resolveOmniCommand(recipe, variant, activeTask, hwProfile, hwId)
       : {
-          command: `${recipe.omni?.serve_binary || "vllm serve"} ${currentVariant.model_id || recipe.model?.model_id || "model"} --omni`,
+          command: `${recipe.omni?.serve_binary || "vllm serve"} ${shellLiteral(currentVariant.model_id || recipe.model?.model_id || "model")} --omni`,
           env: {},
           modelId: currentVariant.model_id || recipe.model?.model_id || "model",
         };
@@ -2412,7 +2415,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               benchCmd={omniBench}
               statusHeader={statusHeader}
               installMode={effectiveInstallMode}
-              dockerMeta={dockerMeta}
+              dockerMeta={{ ...dockerMeta, modelId: omniRendered.modelId }}
               configSummary={omniConfigSummary}
               endpointsControls={omniEndpointsControls}
               commandNote={commandNote}
@@ -4042,7 +4045,7 @@ function SingleCommandBlock({ command, env, setup, companions, verifyCmd, benchC
     !isDocker && setup ? setup : "",
   ].filter(Boolean).join("\n");
   const displayCommand = isDocker
-    ? buildDockerRun({ command, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, shmSize: dockerMeta.shmSize, cmdPrefix: dockerMeta.cmdPrefix })
+    ? buildDockerRun({ ...dockerMeta, command, env })
     : command;
   // A companion process may ride along (`companions[]` from resolveCommand —
   // a feature's `companion:` or the active kv_offload option's, e.g.
@@ -4421,7 +4424,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
   const isDocker = installMode === "docker";
   const wrap = (cmd) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env: result.env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, shmSize: dockerMeta.shmSize, cmdPrefix: dockerMeta.cmdPrefix })
+      ? buildDockerRun({ ...dockerMeta, command: cmd, env: result.env })
       : cmd;
   // One tab per node: Head (rank 0) then every follower rank, each with its own
   // --node-rank / --data-parallel-start-rank. `workerCommands` carries them all;
@@ -4492,7 +4495,7 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   const routerDocker = isDocker && result.router.dockerCommand;
   const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, shmSize: dockerMeta.shmSize, cmdPrefix: dockerMeta.cmdPrefix, setupCommand: result.workerDockerSetup,
+      ? buildDockerRun({ ...dockerMeta, command: cmd, env, setupCommand: result.workerDockerSetup,
         // RDMA connectors (Mooncake, MoRI-IO) need host networking and locked memory.
         hostNetwork: result.transport === "grpc" || !!result.kvConnector?.docker?.host_network,
         extraFlags: result.kvConnector?.docker?.flags || [] })
@@ -4643,7 +4646,7 @@ function KvStoreLbBlock({ result, verifyCmd, benchCmd, statusHeader, onInstanceC
   const isDocker = installMode === "docker";
   const wrap = (cmd, env) =>
     isDocker
-      ? buildDockerRun({ command: cmd, env, image: dockerMeta.image, gpuFlags: dockerMeta.gpuFlags, isXpu: dockerMeta.isXpu, isNpu: dockerMeta.isNpu, isPpu: dockerMeta.isPpu, shmSize: dockerMeta.shmSize, cmdPrefix: dockerMeta.cmdPrefix })
+      ? buildDockerRun({ ...dockerMeta, command: cmd, env })
       : cmd;
 
   const instances = result.instances || 2;
