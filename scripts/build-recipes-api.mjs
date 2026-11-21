@@ -37,7 +37,7 @@ import {
   isHardwareScalable,
   isKvStoreBrandSupported,
   strategyAllowsKvOffload,
-  pickFittingVariant,
+  presetVariantKey,
   pdFitsSingleNode,
   pdRoleNodes,
   pdRoleParallelism,
@@ -545,14 +545,20 @@ function renderAndWriteVariant(recipe, variantKey, altBaseHfId, strategies, taxo
 // Every tuned preset rendered at each of its points, so agents can read the
 // exact commands of a non-default preset or point without the builder:
 //   /<hf_id>/presets/<key>.json = { preset meta, points: { <point|default>: rendering } }
-// Variant: the preset's first listed one, else `default`. Strategy: the
-// preset's, else the recommendation for that GPU.
+// Variant: the preset's first listed one, else the fitting variant for that
+// GPU (`default` when it runs there). Strategy: the preset's, else the
+// recommendation for that GPU.
 function writePresetRenderings(recipe, hfId, strategies, taxonomy) {
   const written = {};
   for (const [key, p] of Object.entries(recipe.presets || {})) {
     const hwId = p.hardware;
     const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
-    const variantKey = p.variants?.[0] || "default";
+    // A preset that names its own hardware can't publish a variant the recipe
+    // says doesn't run there: fall back exactly as the builder does when the
+    // reader opens this hardware without a `?variant=`. Sources that omit
+    // `variants:` used to get `default` unconditionally, which wrote commands
+    // serving, e.g., an NVFP4 checkpoint on an H200 the recipe excludes it from.
+    const variantKey = presetVariantKey(recipe, p, hwProfile, hwId);
     const variant = recipe.variants?.[variantKey];
     if (!variant) continue;
     const strategy = p.strategy || recommendStrategy(recipe, hwProfile, fitsSingleNode(hwProfile, variant, hwId) ? 1 : 2);

@@ -4,7 +4,7 @@ import path from "node:path";
 import { test } from "node:test";
 import yaml from "js-yaml";
 import Ajv from "ajv";
-import { pdRoleNodes, pdRoleParallelism, resolveCommand } from "../src/lib/command-synthesis.js";
+import { pdRoleNodes, pdRoleParallelism, presetVariantKey, resolveCommand } from "../src/lib/command-synthesis.js";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import { contentDir } from "../src/lib/content-root.js";
 import { applyOverlay, resolveScope, splitOverlay } from "../src/lib/overlay-merge.js";
@@ -270,6 +270,27 @@ test("pd_cluster points change role args, topology and role JSON edits", () => {
   assert.ok(validate(authored), JSON.stringify(validate.errors));
   fixture.presets.ascend_pd.roles.prefill.pp = 0;
   assert.equal(validate(authored), false);
+});
+
+test("a variant-less preset renders under the variant that runs on its hardware", () => {
+  const b200 = taxonomy.hardware_profiles.b200;
+  const preset = { hardware: "b200" };
+  // A named variant is the author's pick and is never second-guessed.
+  assert.equal(presetVariantKey(lane, { ...preset, variants: ["nvfp4"] }, b200, "b200"), "nvfp4");
+  // Otherwise: `default` when it runs there …
+  assert.equal(presetVariantKey(lane, preset, b200, "b200"), "default");
+  // … and the one that does when it doesn't, exactly as opening the hardware
+  // without `?variant=` resolves it: `default` excluded by its allowlist on
+  // B200, so the NVFP4 checkpoint is what the preset publishes.
+  const excluded = structuredClone(lane);
+  excluded.variants.default.supported_hardware = ["h200"];
+  assert.equal(presetVariantKey(excluded, preset, b200, "b200"), "nvfp4");
+  // No variants at all: say so rather than inventing "default" for a
+  // checkpoint the recipe doesn't contain. (The schema rejects this shape;
+  // the build must not silently drop the preset if one ever leaks in.)
+  const empty = structuredClone(lane);
+  delete empty.variants;
+  assert.equal(presetVariantKey(empty, preset, b200, "b200"), null);
 });
 
 test("a point's image fields layer over the preset's", () => {
