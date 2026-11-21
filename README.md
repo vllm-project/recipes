@@ -1,5 +1,7 @@
 # [vLLM Recipes](https://recipes.vllm.ai/)
 
+[ English | [简体中文](https://github.com/vllm-project/recipes/blob/main/README.zh.md) ]
+
 This repo intends to host community maintained common recipes to run vLLM answering the question:
 **How do I run model X on hardware Y for task Z?**
 
