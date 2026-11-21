@@ -86,8 +86,29 @@ test("Mooncake: producer/consumer workers, bootstrap port on prefill, mooncake r
   assert.match(r.router.command, /--kv-connector mooncake/);
   assert.match(r.router.command, /--prefill http:\/\/\$PREFILL_NODE_1:8001 8998 \\/);
   assert.match(r.router.command, /--decode http:\/\/\$DECODE_NODE_1:8002 \\/);
-  assert.ok(r.kvConnector.install.some((s) => /mooncake-transfer-engine/.test(s.command)));
+  assert.deepEqual(r.kvConnector.install.map((s) => s.command), ["uv pip install mooncake-transfer-engine-cuda13"]);
 });
+
+test("Mooncake on ROCm: same workers and router, the ROCm transfer engine wheel", () => {
+  const r = pick({ hw: "mi355x", connector: "mooncake" });
+  assert.equal(r.kvConnector.selected, "mooncake");
+  assert.equal(r.kvConnector.unavailableReason, null);
+  assert.equal(r.prefill.env.VLLM_MOONCAKE_BOOTSTRAP_PORT, "8998");
+  assert.match(r.router.command, /--kv-connector mooncake/);
+  assert.deepEqual(r.kvConnector.install.map((s) => s.command), ["uv pip install mooncake-transfer-engine-rocm"]);
+});
+
+for (const topology of ["distributed", "centralized"]) {
+  test(`Mooncake PD and the ${topology} store use the same ROCm package`, () => {
+    const r = pick({ hw: "mi355x", connector: "mooncake", kv: `kv_store_${topology}_mooncake` });
+    assert.deepEqual(r.kvConnector.install.map((s) => s.command), ["uv pip install mooncake-transfer-engine-rocm"]);
+    assert.equal(r.mooncake.install, "uv pip install 'mooncake-transfer-engine-rocm>=0.3.10'");
+    for (const role of ["prefill", "decode"]) {
+      assert.deepEqual(kvCfg(r, role).kv_connector_extra_config.connectors.map((c) => c.kv_connector),
+        ["MooncakeConnector", "MooncakeStoreConnector"]);
+    }
+  });
+}
 
 test("MoRI-IO: workers register with the router, which discovers them; addresses stay shell-expandable", () => {
   const r = pick({ hw: "mi355x", connector: "moriio" });
@@ -104,6 +125,7 @@ test("MoRI-IO: workers register with the router, which discovers them; addresses
   assert.match(r.router.command, /--kv-connector moriio \\\n\s+--vllm-discovery-address 0\.0\.0\.0:36367/);
   assert.doesNotMatch(r.router.command, /--prefill|--decode/);
   assert.equal(r.kvConnector.docker.host_network, true);
+  assert.deepEqual(r.kvConnector.install.map((s) => s.command), ["uv pip install amd_mori"]);
 });
 
 test("a connector the hardware or router can't run falls back to NIXL with the reason", () => {
