@@ -6,6 +6,8 @@ import yaml from "js-yaml";
 import Ajv from "ajv";
 import { pdRoleNodes, pdRoleParallelism, resolveCommand } from "../src/lib/command-synthesis.js";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
+import { resolveSelection } from "../src/lib/recipe-render.js";
+import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
 import { contentDir } from "../src/lib/content-root.js";
 import { applyOverlay, resolveScope, splitOverlay } from "../src/lib/overlay-merge.js";
 import { BASELINE, applyPresetArgOps, effectivePreset, presetSelect, resolvePresetKey, validatePresets, withPreset } from "../src/lib/recipe-presets.js";
@@ -133,6 +135,48 @@ test("a pd_cluster preset reaches only the role it names", () => {
   const r = render(recipe, "pd_cluster", "gb200", "pd");
   assert.match(r.decode.command, /--max-num-batched-tokens 512/);
   assert.doesNotMatch(r.prefill.command, /--max-num-batched-tokens 512/);
+});
+
+test("a PD preset and its points supply an editable router port", () => {
+  const r = structuredClone(recipe);
+  const preset = r.presets.pd;
+  const query = new URLSearchParams({ hardware: "gb200", strategy: "pd_cluster", preset: "pd" });
+  const resolve = () => resolveSelection(r, query, strategies, taxonomy);
+  const original = resolve().rendering;
+  assert.ok(original.router);
+  assert.equal(original.router.port, undefined);
+  preset.router_port = 2999;
+  preset.points = { inherit: { label: "Inherit", default: true }, alternate: { label: "Alternate", router_port: 3099 } };
+  for (const [point, port] of [[null, 2999], ["alternate", 3099]]) {
+    if (point) query.set("point", point);
+    const selected = resolve();
+    assert.equal(selected.rendering.router.port, port);
+    assert.deepEqual(selected.rendering.prefill, original.prefill);
+    assert.deepEqual(selected.rendering.decode, original.decode);
+    assert.match(selected.rendering.router.command, /--port \$ROUTER_PORT/);
+    const md = selectionMarkdown(r, selected, { strategies, taxonomy,
+      urls: { page: "https://example.org/test/presets", json: "https://example.org/test/presets.json" } });
+    assert.ok(md.includes('export ROUTER_PORT="${ROUTER_PORT:-' + port + '}"'));
+  }
+  query.set("pd_router", "smg");
+  query.set("prefill_nodes", "1");
+  query.set("decode_nodes", "1");
+  const registered = resolve();
+  assert.equal(registered.rendering.pd_router, "smg");
+  assert.equal(registered.rendering.router.port, 3099);
+  const registrationMd = selectionMarkdown(r, registered, { strategies, taxonomy,
+    urls: { page: "https://example.org/test/presets", json: "https://example.org/test/presets.json" } });
+  assert.match(registrationMd, /### Register workers[\s\S]+?export ROUTER_PORT="\${ROUTER_PORT:-3099}"/);
+  const validate = new Ajv({ strict: false }).compile(buildRecipeSchema({ taxonomy, strategies }).properties.presets);
+  for (const port of [1, 65535, 0, 65536, 2.5, "2999"]) {
+    preset.router_port = port;
+    preset.points.alternate.router_port = port;
+    assert.equal(validate(r.presets), port === 1 || port === 65535);
+  }
+  preset.strategy = "single_node_tp";
+  const errors = validatePresets(r, taxonomy, r.compatible_strategies);
+  assert.ok(errors.some((e) => e.includes("pd.router_port")));
+  assert.ok(errors.some((e) => e.includes("pd.points.alternate.router_port")));
 });
 
 test("preset validation", () => {
