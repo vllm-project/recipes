@@ -22,7 +22,8 @@
     "test:context": "node --test scripts/test-context.mjs",
     "test:hardware": "node --test scripts/test-hardware.mjs",
     "test:render": "node --test scripts/test-render-parity.mjs",
-    "test:kv-offload": "node --test scripts/test-kv-offload.mjs"
+    "test:kv-offload": "node --test scripts/test-kv-offload.mjs",
+    "test:api": "node --test scripts/test-api-invariants.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.2",
