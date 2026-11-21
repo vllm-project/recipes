@@ -136,6 +136,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
     data_parallel_lb: { anyOf: [pdDpLb, keyed(hwKey, pdDpLb)] },
     tp: intOrHwMap,
     pp: intOrHwMap,
+    pcp: intOrHwMap,
     vllm_args: strings,
     env: envMap,
     parallel_flag: { type: "string" },
@@ -259,7 +260,12 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
       hardware_overrides: keyed(hwKey, extraArgsEnv({ install_note: { type: "string" } })),
       // looked up by exact profile id
       hardware_notes: keyed(gpuId, obj({ title: { type: "string" }, body: { type: "string" }, link: obj({ href: { type: "string" }, label: { type: "string" } }) }, { required: ["body"] })),
-      strategy_overrides: keyed(strategyId, strategyOverride),
+      strategy_overrides: {
+        ...keyed(strategyId, strategyOverride),
+        properties: Object.fromEntries(["single_node_tp", "multi_node_tp"].map((id) => [
+          id, obj({ ...strategyOverride.properties, pcp: intOrHwMap }),
+        ])),
+      },
       // Tuned presets (recipe-presets.js): a named delta for one exact GPU,
       // optionally one strategy. Keys are lowercase ids; `baseline` is reserved.
       presets: (() => {
@@ -267,7 +273,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
         const delta = { args: strings, env: envMap, remove_args: { type: "array", items: { type: "string", pattern: "^--" } }, json_args: jsonArgs };
         const role = obj({ ...delta, nodes: { type: "integer", minimum: 1 }, parallelism: pdMode,
           data_parallel_lb: pdDpLb,
-          tp: { type: "integer", minimum: 1 }, pp: { type: "integer", minimum: 1 } });
+          tp: { type: "integer", minimum: 1 }, pp: { type: "integer", minimum: 1 }, pcp: { type: "integer", minimum: 1 } });
         const roles = obj({ prefill: role, decode: role });
         const select = obj({
           nodes: { type: "integer", minimum: 1 },
@@ -289,6 +295,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
           default: { type: "boolean" },
           ...delta,
           tp: { type: "integer", minimum: 1 },
+          pcp: { type: "integer", minimum: 1 },
           roles,
           select,
           image,
@@ -303,6 +310,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
           default: { type: "boolean" },
           ...delta,
           tp: { type: "integer", minimum: 1 },
+          pcp: { type: "integer", minimum: 1 },
           roles,
           select,
           image,

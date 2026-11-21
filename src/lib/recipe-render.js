@@ -19,6 +19,7 @@ import {
   needsMultiNode,
   multiNodeUnavailable,
   pdPoolModes,
+  pdPcpDeployment,
   resolveModeKey,
   resolveFrontend,
   resolveInstall,
@@ -164,19 +165,20 @@ export function pickPdNodes(hwProfile, variant, baseRecipe, strategies, hwId, pr
   // The pd_cluster preset this rendering bakes in may own the pools' topology.
   const presetKey = resolvePresetKey(baseRecipe, hwId, "pd_cluster", presetPick, variantKey);
   const recipe = withPreset(baseRecipe, presetKey, hwId, "pd_cluster", { variantKey, point: pointPick });
-  // Preserve legacy VRAM-based pool sizing. An explicit TP×PP layout opts
-  // into authored node counts, resolved for this hardware only.
+  // Authored node counts are part of the topology for a PCP deployment and
+  // for roles with explicit PP. Other pools retain VRAM-based sizing.
   const roles = ["prefill", "decode"];
+  const usesPcp = pdRoleValue(recipe, "prefill", "pcp", hwProfile, hwId) > 1;
   const declared = Object.fromEntries(roles.map((r) => [r,
-    pdRoleValue(recipe, r, "pp", hwProfile, hwId) != null ? pdRoleNodes(recipe, r, hwProfile, hwId) : undefined,
+    usesPcp || pdRoleValue(recipe, r, "pp", hwProfile, hwId) != null ? pdRoleNodes(recipe, r, hwProfile, hwId) : undefined,
   ]));
   const eff = presetKey !== BASELINE && baseRecipe.presets?.[presetKey] ? effectivePreset(baseRecipe.presets[presetKey], pointPick) : null;
   const presetSizesPools = roles.some((r) => eff?.roles?.[r]?.nodes != null);
   const sizesPools = roles.some((r) => declared[r] != null);
-  if (!sizesPools && !presetSizesPools && pdFitsSingleNode(hwProfile, variant, hwId)) return null;
+  if (!usesPcp && !sizesPools && !presetSizesPools && pdFitsSingleNode(hwProfile, variant, hwId)) return null;
   const nodeVram = typeof hwProfile?.vram_gb === "number" ? hwProfile.vram_gb : 0;
   const modelVram = variantVramMinimumGb(variant, hwId);
-  if (!sizesPools && (nodeVram <= 0 || modelVram <= 0)) return null;
+  if (!usesPcp && !sizesPools && (nodeVram <= 0 || modelVram <= 0)) return null;
   const nodesPerRole = nodeVram > 0 && modelVram > 0 ? Math.ceil(modelVram / nodeVram) : 1;
   if (nodesPerRole > 4 && roles.some((r) => declared[r] == null)) return "skip";
   const floored = (role) => {
@@ -205,7 +207,8 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   // builder choices — frontend, PD router, features, DCP, KV offload — which
   // the rendering applies the way the builder does.
   const baseVariant = recipe.variants?.[variantKey] || recipe.variants?.default || {};
-  const sel = presetSelect(recipe, resolvePresetKey(recipe, hwId, strategy, presetPick, variantKey), pointPick) || {};
+  const presetKey = resolvePresetKey(recipe, hwId, strategy, presetPick, variantKey);
+  const sel = presetSelect(recipe, presetKey, pointPick) || {};
   const linked = opts.linked || new Set();
   const pick = (param, selValue, optValue) => (linked.has(param) ? optValue : (selValue ?? optValue));
   let feats = [...features];
@@ -231,6 +234,15 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     dcp: pick("dcp", sel.dcp, opts.dcp) ?? null,
     pdConnector: pick("pd_connector", sel.pd_connector, opts.pdConnector) ?? null,
   };
+  // Preview the usable configuration after applying the preset's defaults.
+  // Strict builds still validate exactly what the author declared.
+  if (!strict && strategy === "pd_cluster" && applied.kvOffload) {
+    const pdRecipe = withPreset(recipe, presetKey, hwId, strategy, { variantKey, point: pointPick });
+    if (pdPcpDeployment(pdRecipe, taxonomy.hardware_profiles?.[hwId], hwId, sel)) {
+      applied.unavailableKvOffload = applied.kvOffload;
+      applied.kvOffload = null;
+    }
+  }
   if (opts.out) Object.assign(opts.out, applied);
   const synthesize = (pools = pdNodes) => resolveCommand(
     recipe, variantKey, strategy, hwId, feats, strategies, taxonomy, opts.advancedArgs || [], nodeCount, pools,
@@ -246,11 +258,16 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   };
   let result;
   try {
-    result = synthesize();
+    result = synthesize(!strict && opts.previewDecodeNodes != null
+      ? { ...pdNodes, previewDecodeNodes: opts.previewDecodeNodes } : pdNodes);
   } catch (e) {
     return failed(e);
   }
   if (!result) return null;
+  if (result.decodeModes && result.decode.parallelism !== pdNodes.decode.parallelism) {
+    pdNodes = { ...pdNodes, decode: { ...pdNodes.decode, parallelism: result.decode.parallelism, nodes: result.decode.nodes } };
+    if (opts.out) opts.out.pdNodes = pdNodes;
+  }
   if (result.frontendRequired) applied.frontend = result.frontendRequired;
   // A URL cannot opt into Ascend PD without the active recipe declaration.
   if (applied.pdRouter === "ascend") applied.pdRouter = result.pdRouter ?? "vllm";
@@ -288,6 +305,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     hardware: hwId,
     strategy,
     variant: variantKey,
+    ...(result.pcp > 1 && { tp: result.tp, pcp: result.pcp }),
     node_count: nodeCount,
     deploy_type: result.deployType,
     // The tuned preset baked into this rendering (its default for this
@@ -338,6 +356,7 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
       const current = result[role];
       // Layout/control state stays internal; this is the published contract.
       const fields = ["nodes", "parallelism", "tp", "pp", "dpLocal", "dpSize", "poolGpus", "currentNode", "startRank"];
+      if (result.prefill.pcp > 1) fields.push("pcp");
       const meta = Object.fromEntries(fields.filter((k) => current[k] !== undefined).map((k) => [k, current[k]]));
       const raw = pdNodes?.[role];
       const selection = typeof raw === "number" ? { nodes: raw } : (raw || {});
@@ -740,8 +759,12 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
   // PD pools: per-role nodes and parallelism, defaults read off the recipe
   // with the pd_cluster preset in effect mounted.
   let pdNodes = null;
+  let pcpDeployment = null;
+  let previewDecodeNodes;
   if (strategy === "pd_cluster") {
-    const pdRecipe = withPreset(recipe, resolvePresetKey(recipe, hwId, "pd_cluster", presetPick ?? null, variantKey), hwId, "pd_cluster", { variantKey, point: pointPick ?? null });
+    const pdPresetKey = resolvePresetKey(recipe, hwId, strategy, presetPick ?? null, variantKey);
+    const pdRecipe = withPreset(recipe, pdPresetKey, hwId, strategy, { variantKey, point: pointPick ?? null });
+    pcpDeployment = pdPcpDeployment(pdRecipe, hwProfile, hwId, presetSelect(recipe, pdPresetKey, pointPick));
     const nodeVram = hwProfile.vram_gb || 0;
     const modelVram = variantVramMinimumGb(variant, hwId);
     const minNodes = modelVram > 0 && nodeVram > 0 ? Math.max(1, Math.ceil(modelVram / nodeVram)) : 1;
@@ -751,9 +774,10 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
       const defPar = pdRoleParallelism(pdRecipe, strategies.pd_cluster, r, hwProfile, hwId);
       const reqPar = get(`${r}_mode`);
       const par0 = reqPar && poolModes.includes(reqPar) ? reqPar : (poolModes.includes(defPar) ? defPar : poolModes[0]);
-      const parallelism = available.includes(par0) ? par0 : (available[0] || "tp");
+      const parallelism = (r === "prefill" && pcpDeployment?.prefillMode) || (available.includes(par0) ? par0 : (available[0] || "tp"));
       const reqNodes = parseIntParam(get(`${r}_nodes`));
       const nodes0 = reqNodes > 0 ? reqNodes : (pdRoleNodes(pdRecipe, r, hwProfile, hwId) ?? minNodes);
+      if (r === "decode" && pcpDeployment?.router === "ascend") previewDecodeNodes = nodes0;
       const rank = parseIntParam(get(`${r}_rank`));
       return { nodes: Math.max(nodes0, nodesForStrategy(recipe, parallelism, perNode, hwId)), rank: rank != null && rank >= 0 ? rank : 0, parallelism };
     };
@@ -781,8 +805,6 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     ? "multi-node — add `nodes=2` (or more)"
     : "not offered for this hardware and node count");
   if (strategies[strategy]?.deploy_type === "multi_node") note("nodes", get("nodes"), nodeCount, "not a node count this hardware offers");
-  note("kv_offload", kvReq || null, kvOffload || "off", "not available for this hardware and strategy");
-
   const applied = {};
   const rendering = renderCommand(
     recipe, variantKey, strategy, hwId, nodeCount, features, strategies, taxonomy, pdNodes,
@@ -792,17 +814,36 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
       advancedArgs: advanced.flatMap((id) => advancedById[id].args || []),
       kvInstances: { count: kvInstances >= 1 && kvInstances <= 16 ? kvInstances : undefined, current: Math.max(0, parseIntParam(get("kv_instance")) ?? 0) },
       frontend,
-      pdRouter,
+      pdRouter: pcpDeployment?.router ?? pdRouter,
       pdTransport: recipe.model?.smg_grpc && get("pd_transport") === "grpc" ? "grpc" : "http",
       dcp: dcp >= 1 ? dcp : null,
-      pdConnector,
+      pdConnector: pcpDeployment?.connector ?? pdConnector,
+      previewDecodeNodes,
       linked,
       out: applied,
     },
   );
+  if (applied.pdNodes) {
+    pdNodes = applied.pdNodes;
+    note("decode_mode", get("decode_mode"), pdNodes.decode.parallelism, "MooncakeHybridConnector requires Prefill TP >= Decode TP");
+  }
+  if (pcpDeployment) {
+    note("prefill_mode", get("prefill_mode"), pdNodes.prefill.parallelism, "not supported by the selected Prefill layout");
+    for (const role of ["prefill", "decode"]) {
+      note(`${role}_nodes`, get(`${role}_nodes`), pdNodes[role].nodes, "outside the dedicated pool layout");
+    }
+  }
+  note("kv_offload", kvReq || applied.unavailableKvOffload, applied.kvOffload || "off", pcpDeployment
+    ? (pcpDeployment.router === "ascend" ? "not yet validated with Ascend PCP and direct Mooncake transfer" : "not yet validated with native PCP and NIXL")
+    : "not available for this hardware and strategy");
   note("frontend", get("frontend"), applied.frontend ?? frontend, "not supported by this recipe or variant");
-  if (get("pd_router") === "ascend") note("pd_router", "ascend", applied.pdRouter, "requires an active Ascend PD preset for this hardware and variant");
-  if (get("pd_connector") === "mooncake_ascend") note("pd_connector", "mooncake_ascend", applied.pdConnector, "requires an active Ascend PD preset and compatible router");
+  if (pcpDeployment) {
+    note("pd_router", get("pd_router"), applied.pdRouter, "incompatible with the selected PCP deployment");
+    note("pd_connector", get("pd_connector"), applied.pdConnector, "incompatible with the selected PCP deployment");
+  } else {
+    if (get("pd_router") === "ascend") note("pd_router", "ascend", applied.pdRouter, "requires an active Ascend PD preset for this hardware and variant");
+    if (get("pd_connector") === "mooncake_ascend") note("pd_connector", "mooncake_ascend", applied.pdConnector, "requires an active Ascend PD preset and compatible router");
+  }
   note("features", get("features"), (applied.features ?? features).join(",") || "none", "not fully supported by this recipe or variant");
   return {
     omni: false,
