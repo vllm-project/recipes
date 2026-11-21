@@ -36,6 +36,8 @@ import {
   variantVramMinimumGb,
   isHardwareScalable,
   isKvStoreBrandSupported,
+  isPrecisionCompatible,
+  isVariantHardwareSupported,
   strategyAllowsKvOffload,
   pickFittingVariant,
   pdFitsSingleNode,
@@ -336,6 +338,76 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
   }
 }
 
+// `meta.hardware.<gpu>` is the author's claim about one GPU: `verified` means
+// "ran end-to-end there", `supported` means "declared so this restricted
+// profile appears in the picker", `unsupported` means "known blocker".
+// Whether a rendering can actually be built for that GPU is computed from
+// precision, the variant `supported_hardware` allowlist and single-node fit —
+// never read off that map — so the claim and the eligibility can disagree.
+//
+// When they do, nothing downstream notices. The browse page keeps the GPU as a
+// filter facet, the recipe page prints the green ✓ badge and still offers the
+// profile in the picker (declaring it is exactly what admits a restricted
+// profile), and then every variant is disabled. The reader is told the model
+// runs there and shown no way to run it; `?hardware=<gpu>` quietly falls back
+// to a different GPU with an `adjusted` note.
+//
+// Same shape one level down: a variant's `hardware_overrides.<gpu>` whose own
+// `supported_hardware` allowlist excludes that GPU is dead config — no
+// rendering is ever built for the pair, so the override is never read.
+//
+// Reported, not failed: the fix belongs in the recipe YAML, which for synced
+// content lives upstream (CONTRIBUTING.md), so the build names file and pair
+// and keeps going.
+function validateHardwareClaims(recipe, sourceFile, taxonomy) {
+  // Omni recipes render through `resolveOmniCommand`, which never consults
+  // variants or fit — any declared GPU produces a command, so there is nothing
+  // to contradict.
+  if ((recipe?.meta?.tasks || []).includes("omni")) return [];
+  const profiles = taxonomy?.hardware_profiles || {};
+  const declared = recipe?.meta?.hardware || {};
+  const variants = Object.entries(recipe?.variants || {});
+  const warnings = [];
+
+  const runsOn = (profile, variant, hwId) => {
+    if (!isPrecisionCompatible(profile, variant)) return false;
+    if (!isVariantHardwareSupported(variant, hwId, profile)) return false;
+    return isHardwareScalable(profile) || fitsSingleNode(profile, variant, hwId);
+  };
+  // Name the rule that rules it out — a precision gate is fixed by the
+  // checkpoint format, the allowlist by adding the id, fit only by more VRAM.
+  const why = (profile, variant, hwId) => {
+    if (!isPrecisionCompatible(profile, variant)) return `${variant.precision || "?"} is not supported on ${hwId}`;
+    if (variant.supported_hardware?.length) return `supported_hardware is ${variant.supported_hardware.join("/")}`;
+    // Same budget `fitsSingleNode` compared against — an exact-GPU
+    // `hardware_overrides.<hwId>.vram_minimum_gb` replaces the top-level value,
+    // so quoting the latter would name a number that was never checked.
+    return `the weights do not fit single-node on ${hwId} (${variantVramMinimumGb(variant, hwId) || "?"} GB)`;
+  };
+
+  for (const [hwId, state] of Object.entries(declared)) {
+    if (state === "unsupported") continue;
+    const profile = profiles[hwId];
+    if (!profile) continue;  // unknown profile is validateHardwareKeys' error
+    if (variants.some(([, v]) => runsOn(profile, v, hwId))) continue;
+    const detail = variants.map(([k, v]) => `${k} (${why(profile, v, hwId)})`).join(", ") || "no variants";
+    warnings.push(`meta.hardware.${hwId}: declared ${state}, but no variant runs there — ${detail}`);
+  }
+
+  for (const [variantKey, variant] of variants) {
+    const allow = variant?.supported_hardware;
+    if (!Array.isArray(allow) || !allow.length) continue;  // no allowlist = every GPU, nothing to contradict
+    for (const hwId of Object.keys(variant?.hardware_overrides || {})) {
+      if (!profiles[hwId]) continue;  // generation/brand/default keys are layered, not exact ids
+      if (isVariantHardwareSupported(variant, hwId, profiles[hwId])) continue;
+      warnings.push(`variants.${variantKey}.hardware_overrides.${hwId}: never read — supported_hardware is ${allow.join("/")}`);
+    }
+  }
+
+  const rel = sourceRel(sourceFile);
+  return warnings.map((w) => `${rel}: ${w}`);
+}
+
 
 // Recursively find all .yaml files under a directory
 function findYamlFiles(dir) {
@@ -598,6 +670,7 @@ const kvStoreIds = Object.keys(strategies).filter((id) => strategies[id]?.deploy
 
 const recipes = [];
 const promotedIndexEntries = [];
+const claimWarnings = [];
 let promotedCount = 0;
 let collisionCount = 0;
 
@@ -606,6 +679,7 @@ for (const file of findYamlFiles(modelsDir)) {
   validateFeatureModes(r, file);
   validateFrontends(r, file, taxonomy);
   validateHardwareKeys(r, file, taxonomy, strategies);
+  claimWarnings.push(...validateHardwareClaims(r, file, taxonomy));
   const presetErrors = validatePresets(r, taxonomy, effectiveCompatibleStrategies(r), kvStoreIds, strategies.pd_cluster?.connectors);
   if (presetErrors.length) throw new Error(`Invalid presets in ${sourceRel(file)}:\n  - ${presetErrors.join("\n  - ")}`);
   const contextErrors = validateContextEntries(r);
@@ -799,6 +873,7 @@ console.log(
   `✓ JSON API: ${recipes.length} models (${rcCount} with recommended_command, ${altCount} default-hw alternatives, ${hwIndexedCount} per-hw renderings), ${promotedCount} promoted variants, ${servingStrategyCount} strategies, ${Object.keys(kvStoreDeployments).length} kv-store deployments, ${platformsCount} platforms` +
   (collisionCount ? ` (${collisionCount} variant collision${collisionCount > 1 ? "s" : ""} skipped)` : "")
 );
+for (const warning of claimWarnings) console.warn(`  ⚠ ${warning}`);
 console.log(`  /models.json`);
 console.log(`  /{hf_id}.json                                (e.g. /moonshotai/Kimi-K2.5.json)`);
 console.log(`  /{hf_id}/strategies/{strategy}.json          (default-hw alternatives)`);
