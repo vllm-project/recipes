@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import yaml from "js-yaml";
 import Ajv from "ajv";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import { contentDir } from "../src/lib/content-root.js";
+import { resolveRelatedRecipes } from "../src/lib/recipe-utils.js";
 
 // Reads the assembled tree (every source): run build-recipes-api first.
 const dir = contentDir();
@@ -101,5 +102,122 @@ test("build rejects inconsistent variant feature and frontend references", () =>
     }
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("related_recipes resolves every entry case-insensitively", () => {
+  // The page matches `related_recipes` against `hf_id` and `meta.slug`, and
+  // silently drops what it can't find. The org half of an HF id is lowercase
+  // while the directory that derives `hf_id` keeps the author's casing
+  // (`models/Google/…`), so a case-sensitive match lost 14 of 289 entries in
+  // the catalog with nothing rendered to show for it.
+  const recipes = [
+    { hf_id: "Google/gemma-4-31B-it", meta: { slug: "gemma-4-31b-it" } },
+    { hf_id: "google/gemma-4-12B-it", meta: { slug: "gemma-4-12b-it" } },
+  ];
+  const one = (related) => resolveRelatedRecipes({ hf_id: "other/model", meta: { related_recipes: related } }, recipes);
+
+  assert.deepEqual(one(["google/gemma-4-31B-it"]).map((r) => r.hf_id), ["Google/gemma-4-31B-it"]);
+  assert.deepEqual(one(["Google/gemma-4-31B-it"]).map((r) => r.hf_id), ["Google/gemma-4-31B-it"]);
+  assert.deepEqual(one(["gemma-4-12b-it"]).map((r) => r.hf_id), ["google/gemma-4-12B-it"]);
+  assert.deepEqual(one(["google/nope"]), []);
+  assert.deepEqual(one(undefined), []);
+  // An entry naming the page itself, or repeated, would render a link back to
+  // itself or the same link twice.
+  const self = { hf_id: "Google/gemma-4-31B-it", meta: { related_recipes: ["google/gemma-4-31B-it", "gemma-4-31b-it"] } };
+  assert.deepEqual(resolveRelatedRecipes(self, recipes), []);
+  assert.deepEqual(one(["gemma-4-12b-it", "google/gemma-4-12B-it"]).map((r) => r.hf_id), ["google/gemma-4-12B-it"]);
+
+  // A non-array value is a schema error, but this also runs in the page against
+  // whatever the loader returned — it must render no row, not throw in render.
+  assert.deepEqual(one(42), []);
+  assert.deepEqual(one("google/gemma-4-31B-it"), []);
+
+  // `hf_id` is derived from the file path, so a recipe outside
+  // `models/<org>/<repo>.yaml` has none. Indexing must skip it rather than
+  // throw, and an entry matching only slugs must still resolve.
+  const withHfIdLess = [...recipes, { meta: { slug: "no-id" } }];
+  assert.deepEqual(
+    resolveRelatedRecipes({ hf_id: "other/model", meta: { related_recipes: ["gemma-4-12b-it", "no-id"] } }, withHfIdLess)
+      .map((r) => r.meta.slug),
+    ["gemma-4-12b-it", "no-id"],
+  );
+  // A page with no `hf_id` of its own must not treat every id-less match as a
+  // self-reference and drop it.
+  assert.deepEqual(
+    resolveRelatedRecipes({ meta: { related_recipes: ["no-id"] } }, withHfIdLess).map((r) => r.meta.slug),
+    ["no-id"],
+  );
+  // ... while a repeated id-less entry is still deduped.
+  assert.deepEqual(
+    resolveRelatedRecipes({ meta: { related_recipes: ["no-id", "no-id"] } }, withHfIdLess).map((r) => r.meta.slug),
+    ["no-id"],
+  );
+});
+
+// The build rejects an unresolvable entry so it can't vanish silently. Run the
+// real script: a validator that only exists in the test proves nothing.
+test("the build rejects a related_recipes entry that resolves to nothing", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "recipes-related-"));
+  const content = path.join(dir, "content");
+  fs.mkdirSync(path.join(content, "models/example"), { recursive: true });
+  for (const name of ["taxonomy.yaml", "platforms.yaml", "strategies", "kv_store"]) {
+    fs.cpSync(path.join(contentDir(), name), path.join(content, name), { recursive: true });
+  }
+  const recipe = (title, slug, related) => `meta:
+  title: "${title}"
+  slug: "${slug}"
+  provider: "Example"
+  description: "Fixture."
+  date_added: 2026-01-01
+  date_updated: 2026-01-01
+  tasks: [text]
+  related_recipes: [${related}]
+model:
+  model_id: "example/${slug}"
+  min_vllm_version: "0.30.0"
+  architecture: dense
+  parameter_count: "8B"
+  active_parameters: "8B"
+  context_length: 8192
+variants:
+  default: { precision: bf16, vram_minimum_gb: 20 }
+compatible_strategies: [single_node_tp]
+guide: |
+  ## Overview
+  Fixture.
+`;
+  const alpha = path.join(content, "models/example/Alpha.yaml");
+  fs.writeFileSync(path.join(content, "models/example/Beta.yaml"), recipe("Beta", "beta", ""));
+  const build = () => spawnSync(process.execPath, ["scripts/build-recipes-api.mjs"], {
+    cwd: path.resolve(import.meta.dirname, ".."),
+    env: { ...process.env, RECIPES_CONTENT_DIR: content, RECIPES_PUBLIC_DIR: path.join(dir, "public") },
+    encoding: "utf8",
+  });
+  try {
+    // Lowercase id (the HF org form), a legacy slug, and the directory casing
+    // all resolve; a typo does not.
+    for (const ok of ['"example/beta"', '"beta"', '"Example/Beta"']) {
+      fs.writeFileSync(alpha, recipe("Alpha", "alpha", ok));
+      const run = build();
+      assert.equal(run.status, 0, `${ok}: ${run.stderr}`);
+    }
+    fs.writeFileSync(alpha, recipe("Alpha", "alpha", '"example/nope"'));
+    const run = build();
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /Unresolvable related_recipes/);
+    assert.match(run.stderr, /names "example\/nope"/);
+
+    // The collection loop runs before schema failures are thrown, so a
+    // non-array `related_recipes` must reach the schema report rather than
+    // crash the pre-scan with "not iterable" — that error names neither the
+    // file nor the field the author has to fix.
+    fs.writeFileSync(alpha, recipe("Alpha", "alpha", "").replace("related_recipes: []", "related_recipes: 42"));
+    const malformed = build();
+    assert.equal(malformed.status, 1);
+    assert.doesNotMatch(malformed.stderr, /is not iterable/);
+    assert.match(malformed.stderr, /meta\/related_recipes must be array/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

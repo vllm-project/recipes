@@ -38,6 +38,8 @@ import {
   isKvStoreBrandSupported,
   strategyAllowsKvOffload,
   pickFittingVariant,
+  variantRunsOnHardware,
+  isPrecisionCompatible,
   pdFitsSingleNode,
   pdRoleNodes,
   pdRoleParallelism,
@@ -225,6 +227,61 @@ function validateFrontends(recipe, sourceFile, taxonomy) {
     const rel = sourceRel(sourceFile);
     throw new Error(`Invalid frontend config in ${rel}:\n  - ${errors.join("\n  - ")}`);
   }
+}
+
+// A preset exists because someone ran that configuration on that GPU, so a
+// variant it names has to be a variant that runs there. `validatePresets`
+// checks the name exists; it cannot check the pair, because compatibility is
+// synthesized from precision + `supported_hardware` + single-node fit rather
+// than read off the YAML. Here the answer already exists (`variantRunsOnHardware`,
+// the same predicate the builder and the build's variant fallback use).
+//
+// Two forms, two severities:
+//   - `variants: [x]` — the author asserted x was served there. If it can't
+//     run there, the published file would serve a checkpoint the recipe's own
+//     rules exclude, so fail the build.
+//   - no `variants` — the implicit fallback is `default`, and a `default` that
+//     doesn't run there is a legitimate shape (an H200 lane on a recipe whose
+//     default is an NVFP4 checkpoint the recipe excludes from H200 has to name
+//     its own). Warn, naming the variant the lane most likely serves: without
+//     the name the question is settled somewhere downstream, out of the
+//     author's sight.
+function validatePresetVariants(recipe, sourceFile, taxonomy) {
+  const errors = [];
+  const warnings = [];
+  const profiles = taxonomy?.hardware_profiles || {};
+  for (const [key, p] of Object.entries(recipe?.presets || {})) {
+    const profile = profiles[p?.hardware];
+    if (!profile) continue;  // unknown hardware is validatePresets' error
+    const where = `presets.${key}`;
+    // Say which rule rules it out: a precision gate is fixed by the checkpoint
+    // format, a `supported_hardware` list by the author's own declaration, and
+    // a single-node-fit failure only by adding nodes.
+    const why = (v) => {
+      if (!variantRunsOnHardware(profile, v, p.hardware)) {
+        if (!isPrecisionCompatible(profile, v)) return `${v.precision} is not supported on ${p.hardware}`;
+        if (v.supported_hardware?.length) return `supported_hardware is ${v.supported_hardware.join("/")}`;
+        return `the weights do not fit single-node on ${p.hardware}`;
+      }
+    };
+    if (p.variants?.length) {
+      for (const v of p.variants) {
+        const variant = recipe.variants?.[v];
+        if (!variant) continue;  // missing variant is validatePresets' error
+        const reason = why(variant);
+        if (reason) errors.push(`${where}.variants: "${v}" cannot run on ${p.hardware} (${reason})`);
+      }
+      continue;
+    }
+    const fallback = recipe.variants?.default;
+    if (fallback && !variantRunsOnHardware(profile, fallback, p.hardware)) {
+      const fitting = pickFittingVariant(recipe, profile, p.hardware);
+      warnings.push(`${where}: omits variants, but "default" cannot run on ${p.hardware} (${why(fallback)}); name the variant this lane serves${fitting ? ` (e.g. "${fitting}")` : ""}`);
+    }
+  }
+  const rel = sourceRel(sourceFile);
+  if (errors.length) throw new Error(`Invalid preset variants in ${rel}:\n  - ${errors.join("\n  - ")}`);
+  return warnings.map((w) => `${rel}: ${w}`);
 }
 
 // Validate every hardware-keyed map against the taxonomy vocabulary. Hardware
@@ -428,9 +485,12 @@ const modelsDir = path.join(CONTENT, "models");
 // as its own recipe, so a sibling recipe must not also promote a "Ring-1T-FP8"
 // variant).
 const allRecipeHfIds = new Set();
+const allRecipeSlugs = new Set();
+const relatedFailures = [];
 const schemaFailures = [];
 for (const file of findYamlFiles(modelsDir)) {
-  if (!validateRecipe(normalizeDates(readYaml(file)))) {
+  const raw = normalizeDates(readYaml(file));
+  if (!validateRecipe(raw)) {
     schemaFailures.push(`${sourceRel(file)}:\n    - ${schemaErrors(validateRecipe.errors).join("\n    - ")}`);
   }
   const rel = path.relative(modelsDir, file);
@@ -439,10 +499,32 @@ for (const file of findYamlFiles(modelsDir)) {
     const org = parts[0];
     const repo = parts[parts.length - 1].replace(/\.(yaml|yml)$/, "");
     allRecipeHfIds.add(`${org}/${repo}`);
+    if (raw.meta?.slug) allRecipeSlugs.add(raw.meta.slug);
+  }
+  // `related_recipes` points at another page and renders only when it
+  // resolves, so an entry naming a model that isn't in the catalog produces no
+  // row and no message — the author sees their link simply vanish. Collected
+  // here and resolved below, since an entry may point at a recipe listed later.
+  //
+  // The `Array.isArray` guard is not defensive: this loop runs before the
+  // schema failures above are thrown, so spreading a non-array here would
+  // replace "meta.related_recipes must be array" with "number 42 is not
+  // iterable" and a stack trace. A malformed value is the schema's to report.
+  if (Array.isArray(raw.meta?.related_recipes)) {
+    for (const entry of raw.meta.related_recipes) relatedFailures.push({ file, entry: String(entry) });
   }
 }
 if (schemaFailures.length) {
   throw new Error(`Recipes don't match the schema (SCHEMA.md, /recipe.schema.json):\n  ${schemaFailures.join("\n  ")}`);
+}
+// Matched the way the page matches it — case-insensitive hf_id (the HF org is
+// lowercase, the directory name that derives hf_id is not) or an exact slug.
+const lowerHfIds = new Set([...allRecipeHfIds].map((id) => id.toLowerCase()));
+const relatedErrors = relatedFailures
+  .filter(({ entry }) => !lowerHfIds.has(entry.toLowerCase()) && !allRecipeSlugs.has(entry))
+  .map(({ file, entry }) => `${sourceRel(file)}: meta.related_recipes names "${entry}", which is no recipe's hf_id or slug`);
+if (relatedErrors.length) {
+  throw new Error(`Unresolvable related_recipes:\n  - ${relatedErrors.join("\n  - ")}`);
 }
 
 // The promoted checkpoint is the only variant in this file, under the key `default`.
@@ -598,6 +680,7 @@ const kvStoreIds = Object.keys(strategies).filter((id) => strategies[id]?.deploy
 
 const recipes = [];
 const promotedIndexEntries = [];
+const presetWarnings = [];
 let promotedCount = 0;
 let collisionCount = 0;
 
@@ -606,6 +689,7 @@ for (const file of findYamlFiles(modelsDir)) {
   validateFeatureModes(r, file);
   validateFrontends(r, file, taxonomy);
   validateHardwareKeys(r, file, taxonomy, strategies);
+  presetWarnings.push(...validatePresetVariants(r, file, taxonomy));
   const presetErrors = validatePresets(r, taxonomy, effectiveCompatibleStrategies(r), kvStoreIds, strategies.pd_cluster?.connectors);
   if (presetErrors.length) throw new Error(`Invalid presets in ${sourceRel(file)}:\n  - ${presetErrors.join("\n  - ")}`);
   const contextErrors = validateContextEntries(r);
@@ -799,6 +883,7 @@ console.log(
   `✓ JSON API: ${recipes.length} models (${rcCount} with recommended_command, ${altCount} default-hw alternatives, ${hwIndexedCount} per-hw renderings), ${promotedCount} promoted variants, ${servingStrategyCount} strategies, ${Object.keys(kvStoreDeployments).length} kv-store deployments, ${platformsCount} platforms` +
   (collisionCount ? ` (${collisionCount} variant collision${collisionCount > 1 ? "s" : ""} skipped)` : "")
 );
+for (const warning of presetWarnings) console.warn(`  ⚠ ${warning}`);
 console.log(`  /models.json`);
 console.log(`  /{hf_id}.json                                (e.g. /moonshotai/Kimi-K2.5.json)`);
 console.log(`  /{hf_id}/strategies/{strategy}.json          (default-hw alternatives)`);
