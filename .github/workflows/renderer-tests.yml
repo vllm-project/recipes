@@ -1,0 +1,81 @@
+# The renderer's own suites, on every renderer change. Only test-guide-html
+# had a workflow; every other `pnpm test:*` script was reachable only by hand,
+# so a change to command synthesis, preset resolution or the JSON API could
+# merge green and be caught later by hand.
+#
+# test:render is the one that has actually caught something: a preset that
+# omitted `variants:` was published serving a checkpoint its own recipe
+# excludes from that hardware (misreads as one wrong rendering out of 257).
+# It needs the assembled content tree and a built API, so this workflow runs
+# sync-sources -> build-recipes-api first, exactly as pnpm build does.
+name: Renderer tests
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "scripts/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "taxonomy.yaml"
+      - "platforms.yaml"
+      - "strategies/**"
+      - "kv_store/**"
+      - ".github/workflows/renderer-tests.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "scripts/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "taxonomy.yaml"
+      - "platforms.yaml"
+      - "strategies/**"
+      - "kv_store/**"
+      - ".github/workflows/renderer-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # The lockfile may come from a PR: don't run its dependencies' install scripts.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # Every suite reads through contentDir(), so the sources pinned in
+      # sources.lock.json have to be fetched before anything can render.
+      - name: Fetch recipe sources
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/sync-sources.mjs --channel latest
+
+      # Writes public/, which test:render compares against resolveSelection().
+      - name: Build the JSON API
+        run: node scripts/build-recipes-api.mjs
+
+      - name: Renderer suites
+        run: |
+          set -o pipefail
+          failed=0
+          for script in scripts/test-*.mjs; do
+            [ "$script" = scripts/test-guide-html.mjs ] && continue  # its own workflow
+            echo "::group::$script"
+            node --test "$script" || failed=1
+            echo "::endgroup::"
+          done
+          exit $failed
