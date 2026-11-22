@@ -248,6 +248,21 @@ hardware_profiles:
     scalable: false
     restricted: true
 
+  # RTX 3090 — single-GPU RTX 3090 system.
+  # `restricted: true` keeps it out of the picker unless a recipe explicitly
+  # lists it in `meta.hardware`
+  rtx_3090:
+    brand: NVIDIA
+    generation: ampere
+    compute_arch: sm86
+    display_name: "RTX 3090"
+    description: "NVIDIA RTX 3090 · 1× RTX 3090 GPU · 24 GB VRAM"
+    gpu_count: 1
+    vram_gb: 24
+    multi_node: false
+    scalable: false
+    restricted: true
+
   # Exact two-card consumer profiles. Kept restricted so they only appear for
   # recipes with an end-to-end validated multi-GPU deployment.
   rtx_3090_2x:
