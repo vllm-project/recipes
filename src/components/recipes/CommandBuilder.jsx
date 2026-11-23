@@ -17,6 +17,7 @@ import { whenMatches } from "@/lib/recipe-context";
 import { ADVANCED_OPTIONS } from "@/lib/advanced-options";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
 import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
+import { resolveClientCommands } from "@/lib/client-commands";
 
 // Tuning guidance for a feature's sub-mode, shown under the Features row while
 // that mode is the active one. Keyed [feature][mode] and kept here rather than
@@ -99,19 +100,20 @@ function PopoverButton({ label, code, icon: Icon, disabled, disabledNote }) {
   // instead of watching them vanish; the tooltip names the right tab.
   // (After the hooks above — `disabled` flips as the user switches tabs, and
   // an earlier return would change the hook order between renders.)
-  if (disabled) {
+  if (disabled || !code) {
+    const note = disabled ? disabledNote : `No ${label} example is available for this configuration.`;
     const chip = (
       <span
         tabIndex={0}
         aria-disabled
-        aria-label={disabledNote || label}
+        aria-label={note || label}
         className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-foreground/5 text-[var(--command-fg)]/25 cursor-not-allowed select-none"
       >
         <Icon size={11} />
         {label}
       </span>
     );
-    return disabledNote ? <InfoTip content={disabledNote}>{chip}</InfoTip> : chip;
+    return note ? <InfoTip content={note}>{chip}</InfoTip> : chip;
   }
 
   const popover = open && rect && typeof document !== "undefined" ? createPortal(
@@ -1959,23 +1961,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const clientHost = endpoints[clientHostKey] || "localhost";
   const clientPortStr = endpoints[clientPortKey] || clientPort;
 
-  const verifyCmd = `curl http://${clientHost}:${clientPortStr}/v1/chat/completions \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "model": "${modelId}",
-    "messages": [{"role": "user", "content": "Hello"}],
-    "max_tokens": 32
-  }'`;
-
-  const benchCmd = `vllm bench serve \\
-  --model ${modelId} \\
-  --host ${clientHost} \\
-  --port ${clientPortStr} \\
-  --dataset-name random \\
-  --random-input-len 1024 \\
-  --random-output-len 1024 \\
-  --num-prompts 100 \\
-  --max-concurrency 32`;
+  const { verifyCmd, benchCmd } = resolveClientCommands({
+    argv: result.argv ?? result.headArgv ?? result.decode?.argv ?? result.vllm?.argv,
+    tasks: recipe.meta?.tasks,
+    modelId,
+    host: clientHost,
+    port: clientPortStr,
+  });
 
   // Apply cluster-endpoint substitution to all rendered command/env strings.
   // Detection runs on the *un*substituted commands so the panel can list
