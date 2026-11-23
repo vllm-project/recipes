@@ -192,8 +192,8 @@ guide: |
   ### Intel XPU (B60 / B70, BF16)
 
   Validated on 4x Intel Arc Pro B60 / B70 (B60 24 GB, B70 32 GB per card)
-  with the official vLLM XPU image `vllm/vllm-openai-xpu:latest`. `--enforce-eager`
-  and `--attention-backend TRITON_ATTN` are required on this backend. Select Arc Pro
+  with the official vLLM XPU image `vllm/vllm-openai-xpu:latest`.
+  `--attention-backend TRITON_ATTN` is required on this backend. Select Arc Pro
   B60/B70 in the hardware picker above for the exact command.
 
   ### Full-Featured Server (text + image + thinking + tools)

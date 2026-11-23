@@ -114,12 +114,6 @@ hardware_overrides:
     extra_env:
       # Allow cold weight downloads and CPU compilation to finish before startup times out.
       VLLM_ENGINE_READY_TIMEOUT_S: "1800"
-  xpu:
-    extra_args:
-      - "--max-num-seqs"
-      - "32"
-    extra_env:
-      VLLM_USE_BREAKABLE_CUDAGRAPH: "1"
 
 strategy_overrides: {}
 
