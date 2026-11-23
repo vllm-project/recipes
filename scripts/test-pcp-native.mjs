@@ -73,7 +73,9 @@ test("upstream CUDA and ROCm GSM8K layouts use ordinary vllm serve", () => {
 
 test("native multi-node PCP spans nodes and keeps the head and each follower consistent", () => {
   const r = run(recipe, "gb300", "multi_node_tp", 2, "gb300");
-  assert.throws(() => run(recipe, "gb300", "multi_node_tp", 1, "gb300"), /nodes|node count/i);
+  assert.throws(() => run(recipe, "gb300", "multi_node_tp", 1, "gb300"), {
+    name: "RangeError", message: /^PCP .*at least two nodes/,
+  });
   assert.deepEqual([r.tp, r.pcp], [1, 8]);
   for (const [rank, argv] of [r.headArgv, ...r.workerArgvs].entries()) {
     assert.equal(flag(argv, "--tensor-parallel-size"), "1");

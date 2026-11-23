@@ -1817,7 +1817,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   const nativePcpDeclaration = nativeParallelSize(recipe, strategyName, "pcp", hwProfile, hwProfileId);
   const nativePcp = nativePcpDeclaration ?? 1;
   if (strategyName === "multi_node_tp" && nativePcp > 1 && nodeCount < 2) {
-    throw new RangeError("Multi-node PCP requires at least two nodes.");
+    throw new RangeError("PCP on multi_node_tp requires at least two nodes.");
   }
   const strategyTp = nativeParallelSize(recipe, strategyName, "tp", hwProfile, hwProfileId);
   const nativeTopology = (args) => nativePcp > 1
@@ -1886,7 +1886,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     throw new RangeError("PD prefill: native PCP requires vLLM Router with the NIXL connector.");
   }
   if (nativePdPcp && kvOffload && kvOffload !== "off") {
-    throw new RangeError(NATIVE_PD_PCP_KV_OFFLOAD_REASON);
+    throw new RangeError(`PD prefill: ${NATIVE_PD_PCP_KV_OFFLOAD_REASON}`);
   }
   const depRankFlag = (meta) => {
     if (meta.internalDp || (nativePdPcp && meta.nodes === 1)) return null;

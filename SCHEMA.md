@@ -259,6 +259,14 @@ presets:
         roles: { decode: { args: ["--max-num-seqs", "64"] } }
     runbook: |                                    # prose only: evidence, reproduction, limits
       Services, frontend, per-concurrency tuning the builder can't express…
+  gb300_tp4_pcp2:
+    label: "TP4 × PCP2"
+    hardware: gb300
+    strategy: multi_node_tp
+    tp: 4                                         # total tensor-parallel width across both nodes
+    pcp: 2                                        # prefill context-parallel width
+    select:
+      nodes: 2                                    # two four-GPU GB300 trays for TP4 × PCP2
 
 # Optional — configuration-scoped notes and known issues. Rendered below the
 # builder and filtered by its selection: `when` keys AND together, values OR

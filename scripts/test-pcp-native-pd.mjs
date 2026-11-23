@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { resolveCommand } from "../src/lib/command-synthesis.js";
 import { loadStrategies } from "../src/lib/strategies.js";
 import { loadTaxonomy } from "../src/lib/taxonomy.js";
 import { renderCommand, resolveSelection } from "../src/lib/recipe-render.js";
@@ -135,6 +136,15 @@ test("unqualified native PCP offload links keep the direct NIXL command and expl
     assert.equal(adjustment.used, "off");
     assert.match(adjustment.reason, /PCP/);
   }
+});
+
+test("native PCP synthesis reports incompatible KV offload as a PD error", () => {
+  const r = recipe();
+  assert.throws(
+    () => resolveCommand(r, "default", "pd_cluster", "gb300", [], strategies, taxonomy,
+      [], 2, null, {}, "simple", null, undefined, "vllm", "http", null, key, null, "nixl"),
+    { name: "RangeError", message: /^PD prefill: KV offload/ },
+  );
 });
 
 test("a native PD PCP preset's own offload defaults fall back to direct NIXL in JSON and Markdown", () => {
