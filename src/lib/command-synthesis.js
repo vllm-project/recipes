@@ -1143,6 +1143,9 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const cmdPrefix = typeof exactCmdPrefix === "string" && exactCmdPrefix.trim()
     ? exactCmdPrefix.trim()
     : null;
+  const shmSize = hwId
+    ? variant?.hardware_overrides?.[hwId]?.docker_shm_size || null
+    : null;
 
   let pinned = typeof exactHardwareOverride === "string"
     ? exactHardwareOverride
@@ -1206,6 +1209,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
     cudaMap,
     nightlyRequired,
     cmdPrefix,
+    shmSize,
   };
 }
 
@@ -1283,7 +1287,7 @@ function servedPort(tokens, fallback = 8000) {
 // entrypoint is something else. Env vars become `-e KEY=VAL` inside the container.
 // `extraFlags` are runtime flags a component needs on top of the GPU ones
 // (a PD KV connector's RDMA device and locked-memory limit).
-export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, isPpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [] }) {
+export function buildDockerRun({ command, env, image, gpuFlags, port = null, isNpu = false, isPpu = false, cmdPrefix = null, setupCommand = null, hostNetwork = false, extraFlags = [], shmSize = "16g" }) {
   const pubPort = port ?? servedPort(command.split(/\s+/));
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
@@ -1308,7 +1312,7 @@ export function buildDockerRun({ command, env, image, gpuFlags, port = null, isN
   const runtimeFlags = isPpu
     ? "--network host --ipc host --privileged --init --ulimit memlock=-1:-1 --security-opt seccomp=unconfined"
     : isNpu
-    ? "--privileged --net=host --shm-size=16g"
+    ? `--privileged --net=host --shm-size=${shmSize || "16g"}`
     : `--privileged --ipc=host ${hostNetwork ? "--network host" : `-p ${pubPort}:${pubPort}`}`;
   const gpuPrefix = gpuFlags ? ` ${gpuFlags} \\\n  ` : " ";
   const base = `${prereq}docker run${gpuPrefix}${runtimeFlags} \\${extraFlags.length ? `\n  ${extraFlags.join(" ")} \\` : ""}
@@ -1340,7 +1344,7 @@ export function buildDockerArgv({ argv, env, meta, port = null, hostNetwork = fa
   const runtimeFlags = meta.isPpu
     ? ["--network", "host", "--ipc", "host", "--privileged", "--init", "--ulimit", "memlock=-1:-1", "--security-opt", "seccomp=unconfined"]
     : meta.isNpu
-    ? ["--privileged", "--net=host", "--shm-size", "16g"]
+    ? ["--privileged", "--net=host", "--shm-size", meta.shmSize || "16g"]
     : ["--privileged", "--ipc=host", ...(hostNetwork ? ["--network", "host"] : ["-p", `${pubPort}:${pubPort}`])];
   const base = [
     "docker", "run",
@@ -1756,6 +1760,9 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     if (!Number.isInteger(nodes) || nodes < 0 || !Number.isInteger(tp) || tp < 1 || !Number.isInteger(pp) || pp < 1) {
       fail("nodes, TP and PP must form a positive integer layout (nodes=0 denotes a shared node).");
     }
+    const internalDp = routerKey === "ascend" && parallelism === "dep"
+      && pdRoleValue(recipe, role, "data_parallel_lb", hwProfile, hwProfileId) === "internal";
+    if (internalDp && nodes !== 1) fail("data_parallel_lb: internal requires one dedicated node. Use external for multiple nodes.");
     if (parallelism === "dep") {
       if (pp !== 1 || tp > gpuCount || gpuCount % tp) fail("DEP requires PP1 and TP that divides the devices per node.");
       if (externalDp && (nodes < 1 || recipe.model?.architecture === "dense")) fail("external DEP requires a MoE model and dedicated role nodes.");
@@ -1763,7 +1770,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     const dpLocal = parallelism === "dep" ? gpuCount / tp : 0;
     const dpSize = parallelism === "dep" ? Math.max(1, nodes) * dpLocal : 1;
     const currentNode = Math.max(0, Math.min(Math.max(1, nodes) - 1, selected.rank ?? 0));
-    return { nodes, parallelism, tp, pp, dpLocal, dpSize, poolGpus, currentNode, startRank: currentNode * dpLocal };
+    return { nodes, parallelism, tp, pp, dpLocal, dpSize, poolGpus, currentNode, startRank: currentNode * dpLocal, internalDp };
   };
 
   // PD KV transfer connector: the pick when this hardware and router can run
@@ -1897,6 +1904,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     }
     const parallelFlag = strategy.parallel_flag || "--tensor-parallel-size";
     const isMulti = strategy.deploy_type === "multi_node" && nodeCount > 1;
+    const localDpFlag = /^(--data[-_]parallel[-_]size[-_]local|-dpl)(=|$)/;
     const isPdMulti = strategy.deploy_type === "pd_cluster" && nodeCount > 1;
     // Multi-node rendezvous host. When Mooncake composes with a multi-node
     // strategy, each instance's head is the same host the router lists as
@@ -1908,29 +1916,13 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       : "$HEAD_IP";
 
     if (isMulti && parallelFlag === "--data-parallel-size") {
-    // dp-local may be overridden by the recipe (hybrid TP+DP: TP within a node,
-    // DP across nodes → dp_local < gpuCount).
-    // The example worker is node 1, so its DP start rank = 1 × dp_local, not a
-    // full node's worth of GPUs.
-    const soDep = recipe.strategy_overrides?.[strategyName];
-    const soDepGenHo = soDep?.hardware_overrides?.[gen]
-      || (hwProfile?.brand === "NVIDIA" ? soDep?.hardware_overrides?.nvidia : null);
-    const soDepExactHo = soDep?.hardware_overrides?.[hwProfileId];
-    const depOv = [
-    ...(soDep?.vllm_args || []),
-    ...(soDep?.extra_args || []),
-    ...(soDepGenHo?.extra_args || []),
-    ...(soDepExactHo?.extra_args || []),
-      ];
-    const i = depOv.lastIndexOf("--data-parallel-size-local");
-    const dpLocal = i >= 0 ? Number(depOv[i + 1]) : gpuCount;
-    args.push("--data-parallel-size", String(totalGpus));
-    args.push("--data-parallel-size-local", String(gpuCount));
-    args.push("--data-parallel-address", mpMasterAddr);
-    if (nodeRole === "worker") {
-    args.push("--data-parallel-start-rank", String(mpRank * dpLocal));
-    }
-} else if (isMulti && strategy.parallelism === "tp_pp") {
+      // Keep strategy precedence and argument order; fill the derived values
+      // from the final local DP after all overrides and preset edits below.
+      args.push("--data-parallel-size", "{dp_size}");
+      args.push("--data-parallel-size-local", String(gpuCount));
+      args.push("--data-parallel-address", mpMasterAddr);
+      if (nodeRole === "worker") args.push("--data-parallel-start-rank", "{dp_start_rank}");
+    } else if (isMulti && strategy.parallelism === "tp_pp") {
       // TP inside each node, PP across nodes. Cross-node traffic flows through
       // the PP stage boundaries only — much less bandwidth than pure TP across
       // nodes. Suited for very large models on commodity inter-node links.
@@ -1941,17 +1933,12 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       args.push("--master-addr", mpMasterAddr);
       if (mpRank > 0) args.push("--headless");
     } else if (isMulti && strategy.parallelism === "tp_dp") {
-      // TP inside each node, DP across nodes — one full replica per node
-      // (dp_local = 1), so the inter-node link carries only DP coordination.
-      // Same DP rendezvous shape as the DEP branch: worker node N is DP
-      // rank N via --data-parallel-start-rank.
+      // Default to full-node TP and one local replica at the same priority.
       args.push("--tensor-parallel-size", String(gpuCount));
-      args.push("--data-parallel-size", String(nodeCount));
+      args.push("--data-parallel-size", "{dp_size}");
       args.push("--data-parallel-size-local", "1");
       args.push("--data-parallel-address", mpMasterAddr);
-      if (nodeRole === "worker") {
-        args.push("--data-parallel-start-rank", String(mpRank));
-      }
+      if (nodeRole === "worker") args.push("--data-parallel-start-rank", "{dp_start_rank}");
     } else if (isMulti) {
       // Multi-node TP/TEP via vLLM multiprocessing (mp) backend:
       // TP spans all GPUs in the cluster; every node runs the same command,
@@ -1989,14 +1976,15 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         // Native external-LB supervises one HTTP server per local rank. With
         // local DP1, the rank flag selects that server; start-rank implies hybrid.
         // A global DP1 pool is an ordinary TP/EP service, without an LB rank.
-        if (!externalDp || meta.dpSize > 1) {
+        // Internal LB keeps one HTTP entry, so no rank/LB-mode flag is emitted.
+        if (!meta.internalDp && (!externalDp || meta.dpSize > 1)) {
           args.push(externalDp && meta.dpLocal === 1 ? "--data-parallel-rank" : "--data-parallel-start-rank", String(meta.startRank));
         }
         args.push("--data-parallel-address", "$" + roleKey.toUpperCase() + "_NODE_1");
         args.push("--data-parallel-rpc-port", "$" + roleKey.toUpperCase() + "_DP_RPC_PORT");
-        if (externalDp && meta.dpSize > 1) {
+        if (!meta.internalDp && externalDp && meta.dpSize > 1) {
           args.push(meta.dpLocal > 1 ? "--data-parallel-multi-port-external-lb" : "--data-parallel-external-lb");
-        } else if (!externalDp && meta.nodes > 1) {
+        } else if (!externalDp && !meta.internalDp && meta.nodes > 1) {
           args.push("--data-parallel-hybrid-lb");
         }
         args.push("--enable-expert-parallel");
@@ -2180,6 +2168,15 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         throw error;
       }
     }
+    if (isMulti && (strategy.parallelism === "tp_dp" || parallelFlag === "--data-parallel-size")) {
+      // Only fill surviving strategy placeholders: never restore a flag
+      // removed by a preset or override a later explicit global DP/rank.
+      const localIndex = out.findLastIndex((arg) => localDpFlag.test(arg));
+      const raw = localIndex < 0 ? NaN : Number(out[localIndex].split("=")[1] ?? out[localIndex + 1]);
+      const localDp = Number.isInteger(raw) && raw > 0 ? raw : (strategy.parallelism === "tp_dp" ? 1 : gpuCount);
+      out = out.map((arg) => arg === "{dp_size}" ? String(nodeCount * localDp)
+        : arg === "{dp_start_rank}" ? String(mpRank * localDp) : arg);
+    }
     // Check the final Ascend transfer config after normal catalog composition
     // and preset edits, without restricting the implementation name.
     if (ascend && roleOverride) {
@@ -2196,7 +2193,11 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         && (externalDp || pdRoleValue(recipe, roleOverride, "pp", hwProfile, hwProfileId) != null)) {
       // A late CLI override must not invalidate the topology advertised to
       // the connector/router. Set topology through role fields, not raw args.
-      const aliases = { "-tp": "--tensor-parallel-size", "-pp": "--pipeline-parallel-size", "-dp": "--data-parallel-size" };
+      const aliases = {
+        "-tp": "--tensor-parallel-size", "-pp": "--pipeline-parallel-size", "-dp": "--data-parallel-size",
+        "-dpl": "--data-parallel-size-local", "-dpn": "--data-parallel-rank", "-dpr": "--data-parallel-start-rank",
+        "-dph": "--data-parallel-hybrid-lb", "-dpe": "--data-parallel-external-lb", "-dpm": "--data-parallel-multi-port-external-lb",
+      };
       const flags = new Map(out.flatMap((token, i) => {
         if (typeof token !== "string" || !/^--?\w/.test(token)) return [];
         const [flag, ...value] = token.split("=");
@@ -2206,21 +2207,22 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       const expected = { "--tensor-parallel-size": meta.tp, "--pipeline-parallel-size": meta.pp };
       if (meta.parallelism === "dep") Object.assign(expected, {
         "--data-parallel-size": meta.dpSize, "--data-parallel-size-local": meta.dpLocal,
-        ...(externalDp && meta.dpSize === 1 ? {} : {
+        ...(!meta.internalDp && (!externalDp || meta.dpSize > 1) ? {
           [externalDp && meta.dpLocal === 1 ? "--data-parallel-rank" : "--data-parallel-start-rank"]: meta.startRank,
-        }),
+        } : {}),
       });
       for (const [flag, size] of Object.entries(expected)) {
         const fallback = flag === "--pipeline-parallel-size" || flag === "--tensor-parallel-size" ? 1 : NaN;
         if (Number(flags.get(flag) ?? fallback) !== size) throw new RangeError(`PD ${roleOverride}: ${flag} conflicts with the role topology; use role nodes/pp (and tp for DEP) instead.`);
       }
       if (externalDp && meta.parallelism === "dep") {
-        const selected = meta.dpSize === 1 ? null
+        const singleEndpoint = meta.dpSize === 1 || meta.internalDp;
+        const selected = singleEndpoint ? null
           : meta.dpLocal > 1 ? "--data-parallel-multi-port-external-lb" : "--data-parallel-external-lb";
         const modes = ["--data-parallel-hybrid-lb", "--data-parallel-multi-port-external-lb", "--data-parallel-external-lb"];
-        const conflictingRank = meta.dpSize === 1 && ["--data-parallel-rank", "--data-parallel-start-rank"].some((flag) => flags.has(flag));
+        const conflictingRank = singleEndpoint && ["--data-parallel-rank", "--data-parallel-start-rank"].some((flag) => flags.has(flag));
         if ((selected && !flags.has(selected)) || modes.some((flag) => flag !== selected && flags.has(flag)) || conflictingRank) {
-          throw new RangeError(`PD ${roleOverride}: external DP load-balancing flags conflict with the router.`);
+          throw new RangeError(`PD ${roleOverride}: rank or load-balancing flags conflict with the selected DP mode.`);
         }
       }
     }
@@ -2630,7 +2632,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     if (ascend) {
       const endpoints = (role, meta, args) => {
         const port = Number(lastFlagValue(dedupeArgs(args), "--port") ?? 8000);
-        const local = externalDp && meta.parallelism === "dep" ? meta.dpLocal : 1;
+        const local = !meta.internalDp && externalDp && meta.parallelism === "dep" ? meta.dpLocal : 1;
         if (!Number.isInteger(port) || port < 1 || port + local - 1 > 65535) {
           throw new RangeError(`PD ${role}: HTTP ports must fit in 1..65535.`);
         }

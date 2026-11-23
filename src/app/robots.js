@@ -1,8 +1,17 @@
 import { siteUrl } from "@/lib/site-url";
 
-// Internal-only paths we never want indexed. Keep framework assets crawlable:
-// search engines need CSS and JavaScript to render and assess pages correctly.
-const COMMON_DISALLOW = ["/og", "/api/"];
+// Internal-only paths we never want indexed, plus every URL with a query
+// string. A recipe page's query is builder state (hardware, strategy, preset,
+// …): each combination is the same static page, whose canonical URL and
+// `.md` twin carry the content, but the combinations are unbounded, so a
+// crawler following them fetches the same ~700 KB page without end.
+// Assistants fetching a link for a user (`ChatGPT-User`, `Claude-User`, …)
+// don't consult robots.txt, so shared configuration links still work.
+const COMMON_DISALLOW = ["/og", "/api/", "/*?"];
+// Framework assets stay crawlable — search engines need CSS and JavaScript to
+// render and assess pages — and they carry a `?dpl=` query (Skew Protection),
+// so they need an explicit Allow that outranks `/*?` (longest match wins).
+const COMMON_ALLOW = ["/", "/_next/"];
 
 // Default policy is "allow everything to all crawlers" via `User-Agent: *`.
 // We still list the major AI crawlers explicitly so:
@@ -45,10 +54,10 @@ const AI_USER_AGENTS = [
 export default function robots() {
   return {
     rules: [
-      { userAgent: "*", allow: "/", disallow: COMMON_DISALLOW },
+      { userAgent: "*", allow: COMMON_ALLOW, disallow: COMMON_DISALLOW },
       ...AI_USER_AGENTS.map((userAgent) => ({
         userAgent,
-        allow: "/",
+        allow: COMMON_ALLOW,
         disallow: COMMON_DISALLOW,
       })),
     ],

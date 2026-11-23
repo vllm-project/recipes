@@ -7,16 +7,40 @@ import { compareRecipesByDateAdded, recipeHref } from "@/lib/recipe-utils";
 import { getProviderLogo, getProviderLogoClass, getProviderDisplayName, PROVIDERS } from "@/lib/providers";
 import { searchRecipes, searchProviders } from "@/lib/search";
 
-export function SearchBox({ recipes }) {
+// The index is fetched once per page load, the first time the box is hovered,
+// focused or opened with ⌘K, and shared by every mount.
+let indexPromise = null;
+function loadSearchIndex() {
+  indexPromise ??= fetch("/search-index.json")
+    .then((res) => {
+      if (!res.ok) throw new Error(`search index: HTTP ${res.status}`);
+      return res.json();
+    })
+    .catch((err) => {
+      indexPromise = null; // let the next focus retry
+      throw err;
+    });
+  return indexPromise;
+}
+
+export function SearchBox() {
+  const [recipes, setRecipes] = useState(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef(null);
   const router = useRouter();
 
+  const ensureIndex = () => {
+    if (recipes) return;
+    setLoadFailed(false);
+    loadSearchIndex().then(setRecipes, () => setLoadFailed(true));
+  };
+
   // Build a unified results list: first matching providers, then matching recipes
   const results = useMemo(() => {
-    if (!query.trim()) return [];
+    if (!recipes || !query.trim()) return [];
 
     // Count recipes per org (for display on provider entry)
     const orgCount = {};
@@ -63,7 +87,7 @@ export function SearchBox({ recipes }) {
   // Top 5 recipes most recently added to the catalog so ⌘K is immediately
   // useful for "what just landed?", plus the same Browse all footer.
   const defaultResults = useMemo(() => {
-    if (query.trim()) return [];
+    if (!recipes || query.trim()) return [];
     const sorted = [...recipes].sort(compareRecipesByDateAdded);
     return [
       ...sorted.slice(0, 5).map((r) => ({ type: "recipe", recipe: r, href: recipeHref(r) })),
@@ -115,7 +139,8 @@ export function SearchBox({ recipes }) {
     }
   };
 
-  const showDropdown = focused && list.length > 0;
+  // Before the index arrives the dropdown holds one status row.
+  const showDropdown = focused && (!recipes || list.length > 0);
 
   return (
     <div className="relative w-full max-w-md">
@@ -126,7 +151,8 @@ export function SearchBox({ recipes }) {
           type="text"
           value={query}
           onChange={(e) => { setQuery(e.target.value); setSelectedIndex(0); }}
-          onFocus={() => setFocused(true)}
+          onFocus={() => { setFocused(true); ensureIndex(); }}
+          onPointerEnter={ensureIndex}
           onBlur={() => setTimeout(() => setFocused(false), 200)}
           onKeyDown={handleKeyDown}
           aria-label="Search models or providers"
@@ -149,7 +175,12 @@ export function SearchBox({ recipes }) {
         // On a phone the input is a narrow slot in the header, so the results
         // span the screen just below the (sticky) header instead of the input.
         <div className="fixed inset-x-4 top-[calc(4.25rem+var(--preview-h,0px))] max-h-[calc(100dvh-5rem-var(--preview-h,0px))] overflow-y-auto sm:absolute sm:inset-x-0 sm:top-full sm:mt-1 sm:max-h-none sm:overflow-hidden bg-card border border-border rounded-lg shadow-lg z-50">
-          {!query.trim() && (
+          {!recipes && (
+            <div className="px-3 py-2.5 text-sm text-muted-foreground" role="status">
+              {loadFailed ? "Search is unavailable right now. Try again." : "Loading recipes…"}
+            </div>
+          )}
+          {recipes && !query.trim() && (
             <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground bg-muted/30 border-b border-border">
               Latest
             </div>
