@@ -127,6 +127,7 @@ export function effectivePreset(preset, pointKey) {
   const pt = key ? preset.points[key] : null;
   if (!pt) return preset;
   const out = { ...mergeDelta(preset, pt), point: key };
+  if (pt.router_port !== undefined) out.router_port = pt.router_port;
   out.select = pt.select ? deepMerge(preset.select || {}, pt.select) : preset.select;
   // A point's image fields layer over the preset's (a point may pin only a
   // different Dynamo commit and keep the preset's vLLM image).
@@ -411,6 +412,7 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = [], 
       if (d?.select?.nodes !== undefined && !String(p.strategy || "").startsWith("multi_node_")) {
         errors.push(`${at}.select.nodes: only a multi_node_* preset sets the node count`);
       }
+      if (d?.router_port !== undefined && !isPd) errors.push(`${at}.router_port: only a pd_cluster preset sets the router port`);
     };
     checkDelta(p, where);
     checkTopology(p, where);

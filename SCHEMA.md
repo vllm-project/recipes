@@ -550,6 +550,16 @@ Every PD JSON role includes `node_commands[]` for all of its nodes, with
 same complete commands. The singular role command still follows the selected
 node; it is not a command to repeat unchanged on every node.
 
+### Router ports in PD presets
+
+Set `router_port` on a `pd_cluster` preset to choose its client-facing port
+(1–65535). A point inherits the preset's port unless it supplies its own.
+The router, cURL and Bench use this port. Readers can override it in the
+Cluster env panel. Configure the Prefill and Decode HTTP ports separately.
+
+JSON exposes the configured port as `router.port` and uses `$ROUTER_PORT` in
+command templates. Markdown sets the default in router and registration commands.
+
 ## VRAM formula
 
 `vram_minimum_gb = ceil(params × bytes_per_param × 1.2)` — uses **total**
