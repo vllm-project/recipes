@@ -1,0 +1,192 @@
+meta:
+  title: "Ling-3.2-air"
+  slug: "ling-3-2-air"
+  provider: "inclusionAI"
+  description: "Ling-3.2-air vision-language MoE with block-FP8 weights and optional 1M-token YaRN"
+  date_added: 2026-11-23
+  date_updated: 2026-11-23
+  tasks:
+    - text
+    - multimodal
+  related_recipes:
+    - inclusionAI/Ling-3.1-flash
+    - inclusionAI/Ling-3.0-flash-VL
+
+model:
+  model_id: "inclusionAI/Ling-3.2-air"
+  # The next release target; use the pinned source build until support ships.
+  min_vllm_version: "0.35.0"
+  nightly_required: true
+  install:
+    pip:
+      note: "Build the audited official vLLM revision with the GPU toolchain installed; v0.34.0 rejects Bailing multimodal YaRN."
+      command: |
+        uv venv --python 3.12
+        source .venv/bin/activate
+        git clone https://github.com/vllm-project/vllm.git vllm-ling32-air
+        cd vllm-ling32-air
+        git checkout 9e46474a7f5cde978bf012fca845aa757f8d084f
+        uv pip install -r requirements/build.txt --torch-backend auto
+        uv pip install --no-build-isolation -e . --torch-backend auto
+    docker: false
+  architecture: moe
+  parameter_count: "~125B (config estimate)"
+  context_length: 262080
+  base_args:
+    - "--trust-remote-code"
+    - "--dtype"
+    - "bfloat16"
+    - "--gpu-memory-utilization"
+    - "0.9"
+    - "--enable-chunked-prefill"
+    - "--max-num-batched-tokens"
+    - "8192"
+    - "--max-num-seqs"
+    - "1"
+    - "--max-model-len"
+    - "262080"
+
+features:
+  tool_calling:
+    description: "Enable the Ling 3 automatic tool-call parser; validate against the checkpoint's chat template."
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "ling3"
+  reasoning:
+    description: "Split Ling 3 thinking traces with the ling3 parser; validate against the checkpoint's chat template."
+    args:
+      - "--reasoning-parser"
+      - "ling3"
+  long_context:
+    label: "YaRN 1M"
+    description: "Use factor 4 over an original 262,144-token window for a 1,048,576-token context; long-context accuracy is not yet validated."
+    args:
+      - "--hf-overrides"
+      - '{"text_config":{"max_position_embeddings":1048576,"rope_parameters":{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":262144,"partial_rotary_factor":0.5,"rope_theta":6000000,"mrope_section":[8,12,12],"mscale":1.0,"mscale_all_dim":0.0}}}'
+      - "--max-model-len"
+      - "1048576"
+
+opt_in_features:
+  - tool_calling
+  - reasoning
+  - long_context
+
+variants:
+  default:
+    precision: fp8
+    # Approximate loading allowance: 125B parameters x 1 byte x 1.2.
+    # Mixed BF16 modules and a 1M KV cache require separate capacity validation.
+    vram_minimum_gb: 150
+    tp: 8
+    description: "Block-FP8 E4M3 weights with 128x128 scales, dynamic activations, and BF16 compute; TP8 starting configuration."
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+
+default_strategy: single_node_tp
+
+notes:
+  - title: "1M YaRN configuration"
+    when:
+      features: [long_context]
+    body: |
+      The extension uses the supplied 262,144-token original window and a
+      factor of 4. Both `max_position_embeddings` and `rope_parameters` are
+      overridden inside `text_config`; a top-level `rope_scaling` override
+      does not configure this model's text decoder. The override retains
+      the `[8, 12, 12]` multimodal split and the 6,000,000 RoPE base.
+
+      The text config is raised to the requested context, so no
+      `VLLM_ALLOW_LONG_MAX_MODEL_LEN` bypass is needed. Keep prompt and
+      generated tokens within 1,048,576 tokens. This is a configured limit,
+      not a measured capacity or long-context accuracy result. Static YaRN
+      also changes short-context behavior; it is optional.
+
+guide: |
+  ## Overview
+
+  `inclusionAI/Ling-3.2-air` declares
+  `BailingMoeV3VLForConditionalGeneration`, combining a hybrid MLA/KDA text
+  decoder with a vision encoder. The supplied configuration has 42 text
+  layers, hidden size 2560, 512 routed experts with 8 selected per token,
+  and one shared expert. Every sixth decoder layer uses full attention.
+  The vision tower has 27 layers and hidden size 1152.
+
+  The checkpoint declares dynamic block-FP8 E4M3 quantization with 128x128
+  scaling blocks. The vision tower, projector and other excluded modules
+  remain unquantized; computation uses BF16. Approximately 125B total
+  parameters is a configuration estimate, not a published checkpoint count:
+  the 40 routed MoE layers alone contain
+  `40 * 512 * 3 * 2560 * 768 = 120,795,955,200` expert parameters, with
+  embeddings, attention, shared experts, vision and auxiliary weights in
+  addition. The 150 GB VRAM hint is a rough loading estimate and does not
+  establish sufficient capacity for 1M-token inference.
+
+  ## Runtime and Validation Status
+
+  This recipe is based on the supplied checkpoint configuration and source
+  inspection of official vLLM commit
+  `9e46474a7f5cde978bf012fca845aa757f8d084f`. The architecture is registered
+  there, and its Bailing RoPE factory accepts multimodal YaRN. Release
+  v0.34.0 still rejects `rope_type="yarn"` on this path. The version floor
+  names the next release target; the pinned source installation is the
+  reproducible prerequisite until that support is released.
+
+  The checkpoint is not yet publicly released at the time of authoring.
+  This recipe uses the maintainer-supplied configuration; the final model
+  card, checkpoint revision, exact weight size and chat template remain to
+  be verified upon release. Access to the checkpoint is required. GPU
+  startup, image/video inference, parser behavior and
+  long-context accuracy have not been validated for this recipe; no
+  hardware is marked verified. The presence of an MTP head in the config
+  is not treated as validation of speculative decoding for this VL model.
+
+  ## YaRN Context Extension
+
+  The supplied config has a 262,080-token context. The optional extension
+  uses `original_max_position_embeddings=262144` and `factor=4.0` for a
+  1,048,576-token window. The original window is the supplied deployment
+  setting, distinct from the checkpoint's 262,080-token serving limit.
+
+  Overrides target `text_config.rope_parameters`. Bailing MLA uses the
+  explicit `qk_rope_head_dim=64`; vLLM removes `partial_rotary_factor` in
+  this path so the rotary width is not halved again. No SGLang-specific
+  `video_rope` flag is required in the vLLM override.
+
+  Default `mscale=1` and `mscale_all_dim=0` match the intended YaRN
+  magnitude formula. This does not claim bitwise equality with SGLang's
+  CUDA text/VideoRoPE implementation. The starting concurrency is one
+  request; tune it only after checking KV-cache capacity on the actual GPUs.
+
+  ## Image Requests
+
+  ```python
+  import base64
+  from pathlib import Path
+  from openai import OpenAI
+
+  client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+  image = base64.b64encode(Path("image.png").read_bytes()).decode("ascii")
+  response = client.chat.completions.create(
+      model="inclusionAI/Ling-3.2-air",
+      messages=[{
+          "role": "user",
+          "content": [
+              {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image}"}},
+              {"type": "text", "text": "Describe the image."},
+          ],
+      }],
+      temperature=0.0,
+      max_tokens=1024,
+  )
+  print(response.choices[0].message.content)
+  ```
+
+  ## References
+
+  - [Ling-3.2-air checkpoint](https://huggingface.co/inclusionAI/Ling-3.2-air)
+  - [Official Ling VL video and YaRN support](https://github.com/vllm-project/vllm/pull/65848)
+  - [Audited Bailing RoPE construction](https://github.com/vllm-project/vllm/blob/9e46474a7f5cde978bf012fca845aa757f8d084f/vllm/model_executor/models/bailing_moe_v3.py#L168-L210)
+  - [vLLM GPU source installation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/)
