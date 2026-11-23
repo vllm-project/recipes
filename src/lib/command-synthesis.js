@@ -556,6 +556,8 @@ function transferConnectorOf(args) {
   return transferConfigOf(args)?.kv_connector ?? null;
 }
 
+export class IncompatibleDecodeTp extends RangeError {}
+
 // Check the actual transfer configs after all role/preset edits. Extra KV
 // tiers and unrelated implementations have not been qualified for this path.
 function validateAscendPcp(prefillArgs, decodeArgs, prefill, decode) {
@@ -566,7 +568,7 @@ function validateAscendPcp(prefillArgs, decodeArgs, prefill, decode) {
   if ((!hybrid && connector !== "MooncakeConnectorV2") || d?.kv_connector !== connector) {
     throw new RangeError("PD prefill: Ascend PCP requires matching direct MooncakeConnectorV2 or MooncakeHybridConnector workers.");
   }
-  if (hybrid && prefill.tp < decode.tp) throw new RangeError(`PD prefill: ${connector} requires Prefill TP >= Decode TP.`);
+  if (hybrid && prefill.tp < decode.tp) throw new IncompatibleDecodeTp(`PD prefill: ${connector} requires Prefill TP >= Decode TP.`);
   for (const [role, args, config, kvRole] of [
     ["prefill", prefillArgs, p, "kv_producer"], ["decode", decodeArgs, d, "kv_consumer"],
   ]) {
@@ -2585,8 +2587,8 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         // is correct whether the pool is DEP (vllm spawns local ranks) or TP.
         const visible = Array.from({ length: gpuCount }, (_, i) => i).join(",");
         if (hwProfile.brand === "Huawei") {
-          // The supervisor indexes the host's ordered mask, or uses its
-          // own default if unset. A recipe can still supply an explicit mask.
+          // The runtime's multi-port supervisor honors the host's ordered mask
+          // or uses its own default. A recipe can still supply an explicit mask.
           if (!ascendPdPcp) env.ASCEND_RT_VISIBLE_DEVICES ??= visible;
         } else env.CUDA_VISIBLE_DEVICES = visible;
         // Cross-node NCCL/GLOO for this role only kicks in when the role

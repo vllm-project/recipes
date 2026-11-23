@@ -525,8 +525,18 @@ in published presets and points.
 
 A dedicated external-DP Prefill pool can declare `roles.prefill: { nodes: 1,
 parallelism: dep, tp: 1, pcp: 4 }` with Ascend Router and Mooncake (Ascend).
-Use an image with PCP-aware multi-port device allocation. The renderer emits
-one `vllm serve` per node, and the runtime assigns `tp × pcp` NPUs per rank.
+The renderer emits one `vllm serve` per node. The runtime's multi-port
+supervisor must assign `tp × pcp` NPUs to each local Prefill rank (DEP uses PP1).
+For example, TP1/PCP4 needs four NPUs per rank.
+
+The released A3 image `quay.io/ascend/vllm-ascend:v0.32.0rc1-a3` pins vLLM
+v0.32.0, whose allocator assigns only one NPU per rank in that example.
+As of that release, a working public A3 image for this layout has yet to be
+verified. Pin the exact image tag or digest tested for the layout in
+`presets.<key>.image` and identify the release or allocator patch in its `runbook`.
+[A3 release Dockerfile](https://github.com/vllm-project/vllm-ascend/blob/v0.32.0rc1/Dockerfile.a3#L53-L60) ·
+[v0.32.0 allocator](https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/entrypoints/launchers/dp_supervisor.py#L137-L149) ·
+[Upstream allocator change](https://github.com/vllm-project/vllm/pull/49246)
 
 Ascend uses the same Prefill/Decode pools and node commands as other PD routers.
 **Ascend Router** and **Mooncake (Ascend)** appear only on Ascend hardware under
@@ -599,14 +609,22 @@ points:
       decode: { nodes: 1, parallelism: dep, tp: 4, data_parallel_lb: internal }
 ```
 
+The connector's `external_dp_docker_flags` in `strategies/pd_cluster.yaml`
+adds hardware-specific flags to the worker containers when either pool uses
+external DP with more than one rank. For 910B/910C this mounts `/dev/devmm_svm`
+and the host's `hccn.conf`, including on layouts with PCP1.
+
 The single **Mooncake (Ascend)** option (`mooncake_ascend`) supplies catalog
 configurations for both roles, defaulting to `MooncakeConnectorV2` with producer /
 consumer roles, KV ports 36000 / 36100, and both pools' DP/TP/PP metadata. The
-example above inherits these defaults. There is no connector-name allowlist:
-use the existing preset `roles.<role>.json_args` to select V1, V2, Hybrid or
-another implementation supported by the model's runtime, and to adjust or
-remove implementation-specific settings. For example, apply this edit to each
-role that needs Hybrid (complete its settings from the model's verified source):
+example above inherits these defaults. With PCP1, use the existing preset
+`roles.<role>.json_args` to select V1, V2, Hybrid or another implementation
+supported by the model's runtime. External-DP Prefill with PCP > 1 supports
+direct `MooncakeConnectorV2` and `MooncakeHybridConnector`. These are the two
+implementations whose producer/consumer roles and DP/TP/PP metadata the
+renderer validates for PCP.
+Hybrid also requires DCP1 and Prefill TP ≥ Decode TP. Apply this edit to each
+role that needs Hybrid and complete its settings from the model's verified source.
 
 ```yaml
 json_args:

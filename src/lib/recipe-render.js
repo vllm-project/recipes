@@ -6,6 +6,7 @@
 import { BASELINE, effectivePreset, presetPoints, presetSelect, resolvePresetKey, withPreset } from "./recipe-presets.js";
 import { ADVANCED_OPTIONS } from "./advanced-options.js";
 import { SELECTION_PARAMS } from "./selection-params.js";
+import { selectPdDecode } from "./pd-decode-selection.js";
 
 export { SELECTION_PARAMS };
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "./omni-tasks.js";
@@ -252,7 +253,10 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
   };
   let result;
   try {
-    result = synthesize();
+    const selected = selectPdDecode(pdNodes, !strict && opts.decodeOptions, synthesize);
+    result = selected.result;
+    pdNodes = selected.pools;
+    if (selected.reason) Object.assign(applied, { pdNodes, decodeModeReason: selected.reason });
   } catch (e) {
     return failed(e);
   }
@@ -749,6 +753,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
   // with the pd_cluster preset in effect mounted.
   let pdNodes = null;
   let pcpDeployment = null;
+  let decodeOptions;
   if (strategy === "pd_cluster") {
     const pdPresetKey = resolvePresetKey(recipe, hwId, strategy, presetPick ?? null, variantKey);
     const pdRecipe = withPreset(recipe, pdPresetKey, hwId, strategy, { variantKey, point: pointPick ?? null });
@@ -765,8 +770,12 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
       const parallelism = (r === "prefill" && pcpDeployment?.prefillMode) || (available.includes(par0) ? par0 : (available[0] || "tp"));
       const reqNodes = parseIntParam(get(`${r}_nodes`));
       const nodes0 = reqNodes > 0 ? reqNodes : (pdRoleNodes(pdRecipe, r, hwProfile, hwId) ?? minNodes);
+      const nodesFor = (mode) => Math.max(nodes0, nodesForStrategy(recipe, mode, perNode, hwId));
+      if (r === "decode" && pcpDeployment?.router === "ascend") {
+        decodeOptions = { modes: available, defaultMode: defPar, nodesFor };
+      }
       const rank = parseIntParam(get(`${r}_rank`));
-      return { nodes: Math.max(nodes0, nodesForStrategy(recipe, parallelism, perNode, hwId)), rank: rank != null && rank >= 0 ? rank : 0, parallelism };
+      return { nodes: nodesFor(parallelism), rank: rank != null && rank >= 0 ? rank : 0, parallelism };
     };
     pdNodes = { prefill: role("prefill"), decode: role("decode") };
   }
@@ -792,13 +801,6 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     ? "multi-node — add `nodes=2` (or more)"
     : "not offered for this hardware and node count");
   if (strategies[strategy]?.deploy_type === "multi_node") note("nodes", get("nodes"), nodeCount, "not a node count this hardware offers");
-  if (pcpDeployment) {
-    note("prefill_mode", get("prefill_mode"), pdNodes.prefill.parallelism, "not supported by the selected Prefill layout");
-    for (const role of ["prefill", "decode"]) {
-      note(`${role}_nodes`, get(`${role}_nodes`), pdNodes[role].nodes, "outside the dedicated pool layout");
-    }
-  }
-
   const applied = {};
   const rendering = renderCommand(
     recipe, variantKey, strategy, hwId, nodeCount, features, strategies, taxonomy, pdNodes,
@@ -812,10 +814,21 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
       pdTransport: recipe.model?.smg_grpc && get("pd_transport") === "grpc" ? "grpc" : "http",
       dcp: dcp >= 1 ? dcp : null,
       pdConnector: pcpDeployment?.connector ?? pdConnector,
+      decodeOptions,
       linked,
       out: applied,
     },
   );
+  if (applied.pdNodes) {
+    pdNodes = applied.pdNodes;
+    note("decode_mode", get("decode_mode"), pdNodes.decode.parallelism, applied.decodeModeReason);
+  }
+  if (pcpDeployment) {
+    note("prefill_mode", get("prefill_mode"), pdNodes.prefill.parallelism, "not supported by the selected Prefill layout");
+    for (const role of ["prefill", "decode"]) {
+      note(`${role}_nodes`, get(`${role}_nodes`), pdNodes[role].nodes, "outside the dedicated pool layout");
+    }
+  }
   note("kv_offload", kvReq || applied.unavailableKvOffload, applied.kvOffload || "off", pcpDeployment
     ? (pcpDeployment.router === "ascend" ? "not yet validated with Ascend PCP and direct Mooncake transfer" : "not yet validated with native PCP and NIXL")
     : "not available for this hardware and strategy");

@@ -10,6 +10,7 @@ import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import { maxVersion, resolveInstall, nvidiaNightlyPipInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdPcpDeployment, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason, ascendPdUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, presetSelect, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
+import { selectPdDecode } from "@/lib/pd-decode-selection";
 import ShellCode from "@/components/recipes/ShellCode";
 import { publishSelection, onPresetRequest } from "@/lib/selection-store";
 import { holdInPlace } from "@/lib/hold-in-place";
@@ -1226,35 +1227,43 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   );
   const prefillModes = pcpDeployment?.prefillMode ? [pcpDeployment.prefillMode] : pdAvailableModes;
   const effPdPrefillPar = prefillModes.includes(pdPrefillPar) ? pdPrefillPar : (prefillModes[0] || "tp");
-  const effPdDecodePar = pdAvailableModes.includes(pdDecodePar) ? pdDecodePar : (pdAvailableModes[0] || "tp");
+  const requestedDecodeMode = pdAvailableModes.includes(pdDecodePar) ? pdDecodePar : (pdAvailableModes[0] || "tp");
   // Floor the sizes too, not just clicks — a pool whose DEFAULT mode carries a
   // floor (K3's decode is dep) would otherwise render below it.
   const effPdPrefillNodes = Math.max(pdPrefillNodes, nodesNeededFor(effPdPrefillPar));
-  const effPdDecodeNodes = Math.max(pdDecodeNodes, nodesNeededFor(effPdDecodePar));
+  const requestedDecodeNodes = Math.max(pdDecodeNodes, nodesNeededFor(requestedDecodeMode));
 
-  const result = useMemo(
+  const selection = useMemo(
     () => {
       const advArgs = advanced.flatMap((id) => advancedById[id]?.args || []);
       const pdNodes = activeStrategy === "pd_cluster"
         ? {
           prefill: { nodes: effPdPrefillNodes, rank: pdPrefillRank, parallelism: effPdPrefillPar },
-          decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
+          decode: { nodes: requestedDecodeNodes, rank: pdDecodeRank, parallelism: requestedDecodeMode },
         }
         : null;
       try {
-        return resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pdNodes, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, workerRouter, pdTransport, dcpSize, presetPick, pointPick, workerConnector);
+        const options = pdNodes && pcpDeployment?.router === "ascend" ? {
+          modes: pdAvailableModes, defaultMode: pdDefaultPar.decode, listModes: true,
+          nodesFor: (mode) => Math.max(pdDecodeNodes, nodesNeededFor(mode)),
+        } : null;
+        return selectPdDecode(pdNodes, options, (pools) =>
+          resolveCommand(recipe, variant, activeStrategy, hwId, features, strategies, taxonomy, advArgs, nodeCount, pools, featureModes, activeKvOffload || null, { count: kvInstances ?? undefined, current: kvInstanceIdx }, frontend, workerRouter, pdTransport, dcpSize, presetPick, pointPick, workerConnector));
       } catch (error) {
         if (error instanceof RangeError && error.message.startsWith("PCP ")) {
-          return { deployType: strategies[activeStrategy]?.deploy_type, nodeCount, deploymentError: error.message };
+          return { result: { deployType: strategies[activeStrategy]?.deploy_type, nodeCount, deploymentError: error.message } };
         }
         if (!(error instanceof RangeError) || !error.message.startsWith("PD ")) throw error;
-        return { deployType: "pd_cluster", nodeCount, prefill: {}, decode: {}, router: {},
+        return { result: { deployType: "pd_cluster", nodeCount, prefill: {}, decode: {}, router: {},
           pdRouter: workerRouter, orchestrator: workerRouter === "ascend" ? "ascend-proxy" : workerRouter,
-          deploymentError: error.message };
+          deploymentError: error.message } };
       }
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, workerRouter, pdTransport, dcpSize, presetPick, pointPick, workerConnector]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, requestedDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, requestedDecodeMode, activeKvOffload, kvInstances, kvInstanceIdx, frontend, workerRouter, pdTransport, dcpSize, presetPick, pointPick, workerConnector, pcpDeployment?.router, pdAvailableModes, pdDefaultPar.decode, pdDecodeNodes, nodesNeededFor]
   );
+  const { result } = selection;
+  const effPdDecodePar = selection.pools?.decode.parallelism ?? requestedDecodeMode;
+  const effPdDecodeNodes = selection.pools?.decode.nodes ?? requestedDecodeNodes;
 
   // Publish the selection for the sections below the builder (This
   // configuration / Tuned presets / Troubleshooting filter on it).
@@ -3386,7 +3395,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   value={effPdDecodeNodes}
                   gpuPerNode={hwProfile.gpu_count || 8}
                   onChange={(n) => setPdNodes("decode", n)}
-                  modes={pdAvailableModes}
+                  modes={selection.modes ?? pdAvailableModes}
+                  showSingleMode={selection.modes?.length === 1 && pdAvailableModes.length > 1}
                   parallelism={effPdDecodePar}
                   onParChange={(m) => setPdPar("decode", m)}
                 />
@@ -3729,8 +3739,8 @@ const PD_PAR_TIPS = {
   dep: "Data + expert parallel — one vllm serve per node, DP across nodes with EP (MoE throughput).",
 };
 
-function PdNodeInput({ label, value, gpuPerNode, onChange, modes, parallelism, onParChange }) {
-  const showPills = Array.isArray(modes) && modes.length > 1 && typeof onParChange === "function";
+function PdNodeInput({ label, value, gpuPerNode, onChange, modes, parallelism, onParChange, showSingleMode }) {
+  const showPills = Array.isArray(modes) && (modes.length > 1 || showSingleMode) && typeof onParChange === "function";
   return (
     <div className="inline-flex flex-wrap items-center gap-2">
       <span className="text-xs font-medium text-muted-foreground w-12 shrink-0">{label}</span>
