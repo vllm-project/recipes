@@ -30,10 +30,10 @@ vllm:
     PYTHONHASHSEED: 0
   # Brand-keyed pip dep, resolved against the selected hardware and injected
   # into the extra-install block while Mooncake is active: CUDA wheel on
-  # NVIDIA, the non-CUDA build on AMD.
+  # NVIDIA, the ROCm build on AMD.
   install:
     nvidia: "uv pip install 'mooncake-transfer-engine>=0.3.10'"
-    amd: "uv pip install 'mooncake-transfer-engine-non-cuda>=0.3.10'"
+    amd: "uv pip install 'mooncake-transfer-engine-rocm>=0.3.10'"
   port: 8000
 
 # Composing with pd_cluster: Mooncake does NOT replace the PD deployment —
