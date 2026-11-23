@@ -246,7 +246,13 @@ presets:
     json_args:                                    # edit keys inside a JSON-valued flag; null deletes
       --speculative-config: { num_speculative_tokens: 4 }
     roles:                                        # pd_cluster only
+      prefill: { nodes: 1, devices: [0, 1, 2, 3], parallelism: tp }
       decode: { nodes: 4, parallelism: tp, args: ["--max-num-batched-tokens", "1024"] }
+      # devices — optional local device ids used by this role on each node;
+      #           the device count is devices.length. Default: every device.
+      #           URL: prefill_devices=0-3 / decode_devices=4-7 (comma lists
+      #           such as 0,2,4,6 are also accepted). For single-host PD, use
+      #           disjoint role ids and the same host for both role endpoints.
     points:                                       # optional named operating points
       c16:
         label: "16"                               # the bare concurrency; extras in parentheses: "16 (TP4)"
@@ -506,8 +512,9 @@ its TP width. For example, a four-GPU Prefill role with `parallelism: tp`,
 `tp: 1` and `pcp: 2` keeps TP1 when a preset repeats `parallelism: tp`.
 When switching modes, a preset or point can specify a width for the new
 mode. A TP/TEP width declared with `nodes` is tied to that node count.
-Selecting a different node count derives TP from the new allocation unless
-the preset or point supplies a width for that allocation.
+Changing the node count or the number of selected devices per node derives TP
+from the new allocation unless the preset or point supplies a width for it.
+Selecting different device IDs with the same count preserves the width.
 DEP keeps the TP width of each replica as nodes are added. For compatibility,
 existing strategy-level role `tp` in recipes without a structured `pcp`
 continues to size DEP replicas. Their TP/TEP pools use the derived width

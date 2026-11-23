@@ -40,8 +40,11 @@ import {
   pickFittingVariant,
   pdFitsSingleNode,
   pdRoleNodes,
+  pdRoleDevices,
   pdRoleValue,
   pdRoleParallelism,
+  parseDeviceIds,
+  formatDeviceIds,
   resolveCommand,
   computeDockerMeta,
   buildDockerRun,
@@ -166,22 +169,24 @@ export function pickPdNodes(hwProfile, variant, baseRecipe, strategies, hwId, pr
   // for roles with explicit PP. Other pools retain VRAM-based sizing.
   const roles = ["prefill", "decode"];
   const usesPcp = pdRoleValue(recipe, "prefill", "pcp", hwProfile, hwId) > 1;
+  const needsDedicatedPools = usesPcp || roles.some((r) => pdRoleDevices(recipe, r, hwProfile, hwId));
   const declared = Object.fromEntries(roles.map((r) => [r,
     usesPcp || pdRoleValue(recipe, r, "pp", hwProfile, hwId) != null ? pdRoleNodes(recipe, r, hwProfile, hwId) : undefined,
   ]));
   const eff = presetKey !== BASELINE && baseRecipe.presets?.[presetKey] ? effectivePreset(baseRecipe.presets[presetKey], pointPick) : null;
   const presetSizesPools = roles.some((r) => eff?.roles?.[r]?.nodes != null);
   const sizesPools = roles.some((r) => declared[r] != null);
-  if (!usesPcp && !sizesPools && !presetSizesPools && pdFitsSingleNode(hwProfile, variant, hwId)) return null;
+  if (!needsDedicatedPools && !sizesPools && !presetSizesPools && pdFitsSingleNode(hwProfile, variant, hwId)) return null;
   const nodeVram = typeof hwProfile?.vram_gb === "number" ? hwProfile.vram_gb : 0;
   const modelVram = variantVramMinimumGb(variant, hwId);
-  if (!usesPcp && !sizesPools && (nodeVram <= 0 || modelVram <= 0)) return null;
+  if (!needsDedicatedPools && !sizesPools && (nodeVram <= 0 || modelVram <= 0)) return null;
   const nodesPerRole = nodeVram > 0 && modelVram > 0 ? Math.ceil(modelVram / nodeVram) : 1;
   if (nodesPerRole > 4 && roles.some((r) => declared[r] == null)) return "skip";
   const floored = (role) => {
     const par = pdRoleParallelism(recipe, strategies?.pd_cluster, role, hwProfile, hwId);
     const nodes = declared[role] ?? Math.max(nodesPerRole, pdRoleNodes(recipe, role, hwProfile, hwId) ?? 0);
-    return Math.max(nodes, nodesForStrategy(recipe, par, hwProfile.gpu_count, hwId));
+    const devicesPerNode = pdRoleDevices(recipe, role, hwProfile, hwId)?.length ?? hwProfile.gpu_count;
+    return Math.max(nodes, nodesForStrategy(recipe, par, devicesPerNode, hwId));
   };
   return { prefill: floored("prefill"), decode: floored("decode") };
 }
@@ -342,12 +347,14 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     const renderNode = (role, node) => {
       const { command, argv, env } = node;
       const port = role === "prefill" ? 8001 : 8002;
-      return { command, argv, env, ...dockerize(command, argv, env, dockerMeta, port, docker) };
+      const roleDockerMeta = node.devices
+        ? computeDockerMeta(recipe, variant, hwProfile, hwId, node.devices) : dockerMeta;
+      return { command, argv, env, ...dockerize(command, argv, env, roleDockerMeta, port, docker) };
     };
     const renderRole = (role) => {
       const current = result[role];
       // Layout/control state stays internal; this is the published contract.
-      const fields = ["nodes", "parallelism", "tp", "pp", "dpLocal", "dpSize", "poolGpus", "currentNode", "startRank"];
+      const fields = ["nodes", "parallelism", "devices", "tp", "pp", "dpLocal", "dpSize", "poolGpus", "currentNode", "startRank"];
       if (result.prefill.pcp > 1) fields.push("pcp");
       const meta = Object.fromEntries(fields.filter((k) => current[k] !== undefined).map((k) => [k, current[k]]));
       const raw = pdNodes?.[role];
@@ -769,7 +776,15 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
       const reqNodes = parseIntParam(get(`${r}_nodes`));
       const nodes0 = reqNodes > 0 ? reqNodes : (pdRoleNodes(pdRecipe, r, hwProfile, hwId) ?? minNodes);
       const rank = parseIntParam(get(`${r}_rank`));
-      return { nodes: Math.max(nodes0, nodesForStrategy(recipe, parallelism, perNode, hwId)), rank: rank != null && rank >= 0 ? rank : 0, parallelism };
+      const devices = parseDeviceIds(get(`${r}_devices`), perNode)
+        ?? pdRoleDevices(pdRecipe, r, hwProfile, hwId);
+      const devicesPerNode = devices?.length ?? perNode;
+      return {
+        nodes: Math.max(nodes0, nodesForStrategy(recipe, parallelism, devicesPerNode, hwId)),
+        rank: rank != null && rank >= 0 ? rank : 0,
+        parallelism,
+        ...(devices ? { devices } : {}),
+      };
     };
     pdNodes = { prefill: role("prefill"), decode: role("decode") };
   }
@@ -795,6 +810,17 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     ? "multi-node — add `nodes=2` (or more)"
     : "not offered for this hardware and node count");
   if (strategies[strategy]?.deploy_type === "multi_node") note("nodes", get("nodes"), nodeCount, "not a node count this hardware offers");
+  if (strategy === "pd_cluster") {
+    for (const role of ["prefill", "decode"]) {
+      const param = `${role}_devices`;
+      const requested = get(param);
+      if (requested != null && !parseDeviceIds(requested, perNode)) {
+        const used = pdNodes?.[role]?.devices
+          ?? Array.from({ length: perNode }, (_, i) => i);
+        adjusted.push({ param, requested, used: formatDeviceIds(used), reason: "invalid device list; using the preset or whole-node default" });
+      }
+    }
+  }
   if (pcpDeployment) {
     note("prefill_mode", get("prefill_mode"), pdNodes.prefill.parallelism, "not supported by the selected Prefill layout");
     for (const role of ["prefill", "decode"]) {

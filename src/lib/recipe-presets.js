@@ -117,12 +117,12 @@ function mergeDelta(a = {}, b = {}) {
   if (env) out.env = env;
   if (remove) out.remove_args = remove;
   if (json) out.json_args = json;
-  for (const k of ["nodes", "parallelism", "tp", "pp", "pcp", "data_parallel_lb"]) if (b[k] !== undefined) out[k] = b[k];
+  for (const k of ["nodes", "parallelism", "tp", "pp", "pcp", "data_parallel_lb", "devices"]) if (b[k] !== undefined) out[k] = b[k];
   return out;
 }
 
 /** The preset with point `pointKey` (or its default point) layered on. */
-export function effectivePreset(preset, pointKey, inheritedRoleMode) {
+export function effectivePreset(preset, pointKey, inheritedRoleMode, defaultDevicesPerNode) {
   if (!preset) return null;
   const key = resolvePointKey(preset, pointKey);
   const pt = key ? preset.points[key] : null;
@@ -143,8 +143,10 @@ export function effectivePreset(preset, pointKey, inheritedRoleMode) {
         // TP/TEP widths qualify a particular pool; DEP widths apply per rank.
         const mode = baseRole.parallelism ?? inheritedRoleMode?.(role);
         const changesMode = mode && pointRole.parallelism && pointRole.parallelism !== mode;
-        const resizesPool = (mode === "tp" || mode === "tep") && baseRole.nodes != null
-          && pointRole.nodes != null && pointRole.nodes !== baseRole.nodes;
+        const changesNodes = baseRole.nodes != null && pointRole.nodes != null && pointRole.nodes !== baseRole.nodes;
+        const devicesPerNode = baseRole.devices?.length ?? defaultDevicesPerNode;
+        const changesDevices = devicesPerNode != null && pointRole.devices != null && pointRole.devices.length !== devicesPerNode;
+        const resizesPool = (mode === "tp" || mode === "tep") && (changesNodes || changesDevices);
         if (changesMode || resizesPool) {
           delete merged.tp;
           merged.parallelism ??= mode;
@@ -165,7 +167,7 @@ export function presetImage(image) {
 // Add an exact-GPU entry to a value that may be a scalar or a hardware-keyed map.
 function mountKeyed(raw, hwId, value) {
   if (value === undefined) return raw;
-  const map = raw && typeof raw === "object" ? { ...raw } : raw === undefined ? {} : { default: raw };
+  const map = raw && typeof raw === "object" && !Array.isArray(raw) ? { ...raw } : raw === undefined ? {} : { default: raw };
   map[hwId] = value;
   return map;
 }
@@ -202,7 +204,7 @@ export function withPreset(recipe, key, hwId, strategyName, opts = {}) {
     const r = { ...(so[role] || {}) };
     r.hardware_overrides = { ...(r.hardware_overrides || {}) };
     r.hardware_overrides[hwId] = mountLayer(r.hardware_overrides[hwId], delta);
-    for (const k of ["nodes", "parallelism", "tp", "pp", "pcp", "data_parallel_lb"]) {
+    for (const k of ["nodes", "parallelism", "tp", "pp", "pcp", "data_parallel_lb", "devices"]) {
       const v = mountKeyed(r[k], hwId, delta?.[k]);
       if (v !== undefined) r[k] = v;
     }
@@ -436,13 +438,17 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = [], 
       }
       if (d?.router_port !== undefined && !isPd) errors.push(`${at}.router_port: only a pd_cluster preset sets the router port`);
     };
+    const checkRole = (d, at, role) => {
+      checkDelta(d, at);
+      if (gpus && Array.isArray(d?.devices) && d.devices.some((id) => id >= gpus)) {
+        errors.push(`${at}.devices: device ids must be below ${p.hardware}'s ${gpus} GPUs`);
+      }
+      if (d?.pcp > 1 && role !== "prefill") errors.push(`${at}.pcp: only the prefill pool sets pcp`);
+    };
     checkDelta(p, where);
     checkTopology(p, where);
     checkSelect(p.select, `${where}.select`);
-    for (const [role, d] of Object.entries(p.roles || {})) {
-      checkDelta(d, `${where}.roles.${role}`);
-      if (d?.pcp > 1 && role !== "prefill") errors.push(`${where}.roles.${role}.pcp: only the prefill pool sets pcp`);
-    }
+    for (const [role, d] of Object.entries(p.roles || {})) checkRole(d, `${where}.roles.${role}`, role);
     const points = presetPoints(p);
     if (points.filter((pt) => pt.default).length > 1) errors.push(`${where}.points: more than one default point`);
     for (const pt of points) {
@@ -451,10 +457,7 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = [], 
       checkDelta(pt, at);
       checkTopology(pt, at);
       checkSelect(pt.select, `${at}.select`);
-      for (const [role, d] of Object.entries(pt.roles || {})) {
-        checkDelta(d, `${at}.roles.${role}`);
-        if (d?.pcp > 1 && role !== "prefill") errors.push(`${at}.roles.${role}.pcp: only the prefill pool sets pcp`);
-      }
+      for (const [role, d] of Object.entries(pt.roles || {})) checkRole(d, `${at}.roles.${role}`, role);
     }
   }
   return errors;

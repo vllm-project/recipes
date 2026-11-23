@@ -254,6 +254,28 @@ test("resizing a PCP pool rederives TP when its preset inherits the strategy mod
   assert.equal(prefill.pcp, 4);
 });
 
+test("a PCP preset keeps TP for a device remap and rederives it when the pool grows", () => {
+  const r = recipe();
+  const preset = r.presets[key];
+  preset.hardware = "h200";
+  preset.roles.prefill = { nodes: 1, parallelism: "tp", devices: [0, 2, 4, 6], tp: 1, pcp: 2 };
+  preset.points = {
+    sparse: { default: true },
+    full: { roles: { prefill: { devices: [0, 1, 2, 3, 4, 5, 6, 7] } } },
+  };
+  const query = new URLSearchParams({ hardware: "h200", strategy: "pd_cluster", preset: key });
+  const prefill = () => resolveSelection(r, query, strategies, taxonomy).rendering.prefill;
+  query.set("prefill_devices", "1,3,5,7");
+  const remapped = prefill();
+  assert.equal(remapped.tp, 1);
+  assert.equal(remapped.env.CUDA_VISIBLE_DEVICES, "1,3,5,7");
+  query.set("prefill_devices", "0-7");
+  assert.equal(value(prefill().argv, "--tensor-parallel-size"), "4");
+  query.delete("prefill_devices");
+  query.set("point", "full");
+  assert.equal(prefill().tp, 4);
+});
+
 test("points only inherit a PD role TP at its authored mode and TP/TEP pool size", () => {
   const r = recipe();
   const p = r.presets[key];
@@ -319,6 +341,12 @@ test("native DEP sizes internal DP from TP × PCP without an Ascend rank launche
   assert.equal(value(next, "--data-parallel-size"), "4");
   assert.ok(next.includes("--data-parallel-hybrid-lb"));
   assert.match(cluster.router.command, /PREFILL_NODE_2:8001/);
+
+  r.presets[key].roles.prefill.devices = [1, 3];
+  const subset = render(r).prefill;
+  assert.equal(subset.dpLocal, 1);
+  assert.equal(subset.dpSize, 2);
+  assert.equal(value(subset.node_commands[1].argv, "--data-parallel-start-rank"), "1");
 });
 
 test("native PD rejects contradictory device, port, connector and DCP settings", () => {

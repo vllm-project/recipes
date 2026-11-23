@@ -249,6 +249,7 @@ function pdOptions(recipe, resolved, strategies) {
   const values = (keys) => keys.map((key) => `\`${key}\``).join(", ");
   return [
     "- `prefill_nodes`, `decode_nodes`: dedicated node counts for each pool under `strategy=pd_cluster`.",
+    "- `prefill_devices`, `decode_devices`: local device ids for each pool, as ranges (`0-7`) or comma lists (`0,2,4,6`). The card count is the list length; defaults to the active preset or the whole node.",
     `- \`prefill_mode\`, \`decode_mode\`: ${values(pdPoolModes(recipe))}.`,
     "- `prefill_rank`, `decode_rank`: zero-based node indices (`0` to the pool's node count minus one). These select the singular command; `node_commands[]` always includes every node.",
     `- \`pd_router\`: ${values(routers)}. Hardware and pool compatibility applies.`,

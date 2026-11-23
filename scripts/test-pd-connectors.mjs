@@ -3,9 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import yaml from "js-yaml";
+import Ajv from "ajv";
+import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import { buildDockerArgv, buildDockerRun, computeDockerMeta, pdConnectorKey, pdConnectorUnavailableReason, resolveCommand } from "../src/lib/command-synthesis.js";
 import { applyPresetArgOps, validatePresets } from "../src/lib/recipe-presets.js";
-import { pickPdNodes, renderCommand } from "../src/lib/recipe-render.js";
+import { pickPdNodes, renderCommand, resolveSelection } from "../src/lib/recipe-render.js";
 import { contentDir } from "../src/lib/content-root.js";
 import { ascendPdPools, ascendPdRecipe } from "./fixtures/ascend-pd.mjs";
 
@@ -544,4 +546,72 @@ test("PD topology placeholders, role edits and connector selection share the fin
   const inconsistent = ascendPdRecipe();
   inconsistent.presets.ascend_pd.roles.decode.args = ["--tensor-parallel-size", "2"];
   assert.throws(() => ascend(inconsistent), RangeError, "late flags must not disagree with the router and connector topology");
+});
+
+test("PD role devices support single-host 0-7 / 8-15 pools across synthesis, URL and Docker", () => {
+  const fixture = ascendPdRecipe();
+  fixture.meta.hardware = { ascend_910c: "supported" };
+  fixture.variants.default.supported_hardware = ["ascend_910c"];
+  const validate = new Ajv({ allErrors: true, strict: false }).compile(buildRecipeSchema({ taxonomy, strategies }));
+  const schemaValid = () => {
+    const r = structuredClone(fixture);
+    delete r.hf_id;
+    return validate(r);
+  };
+  const preset = fixture.presets.ascend_pd;
+  preset.hardware = "ascend_910c";
+  preset.roles.prefill = { nodes: 1, parallelism: "tp", pp: 4, devices: Array.from({ length: 8 }, (_, i) => i) };
+  preset.roles.decode = { nodes: 1, parallelism: "dep", tp: 2, devices: Array.from({ length: 8 }, (_, i) => i + 8) };
+  assert.ok(schemaValid(), JSON.stringify(validate.errors));
+  const pools = { prefill: { nodes: 1, parallelism: "tp" }, decode: { nodes: 1, parallelism: "dep" } };
+  const r = resolveCommand(fixture, "default", "pd_cluster", "ascend_910c", [], strategies, taxonomy,
+    [], 1, pools, {}, null, null, "python", "ascend", "http", null, "ascend_pd", undefined, "mooncake_ascend");
+  assert.equal(r.prefill.poolGpus, 8);
+  assert.equal(r.prefill.tp, 2);
+  assert.equal(r.prefill.pp, 4);
+  assert.equal(r.decode.poolGpus, 8);
+  assert.equal(r.decode.tp, 2);
+  assert.equal(r.decode.dpLocal, 4);
+  assert.equal(r.decode.dpSize, 4);
+  assert.equal(r.prefill.env.ASCEND_RT_VISIBLE_DEVICES, "0,1,2,3,4,5,6,7");
+  assert.equal(r.decode.env.ASCEND_RT_VISIBLE_DEVICES, "8,9,10,11,12,13,14,15");
+  assert.deepEqual(kvCfg(r, "decode").kv_connector_extra_config, {
+    prefill: { dp_size: 1, tp_size: 2, pp_size: 4 },
+    decode: { dp_size: 4, tp_size: 2, pp_size: 1 },
+  });
+  assert.deepEqual(r.router.argv.slice(r.router.argv.indexOf("--decoder-ports") + 1), ["8002", "8003", "8004", "8005"]);
+
+  const rendered = renderCommand(fixture, "default", "pd_cluster", "ascend_910c", 1, [], strategies, taxonomy,
+    pools, null, "ascend_pd", undefined, true);
+  assert.deepEqual(rendered.prefill.devices, Array.from({ length: 8 }, (_, i) => i));
+  assert.deepEqual(rendered.decode.devices, Array.from({ length: 8 }, (_, i) => i + 8));
+  for (const id of [0, 7]) assert.ok(rendered.prefill.docker_argv.includes(`/dev/davinci${id}`));
+  for (const id of [8, 15]) assert.ok(rendered.decode.docker_argv.includes(`/dev/davinci${id}`));
+  assert.ok(!rendered.prefill.docker_argv.includes("/dev/davinci8"));
+  assert.ok(!rendered.decode.docker_argv.includes("/dev/davinci0"));
+
+  const devicesOnly = structuredClone(fixture);
+  delete devicesOnly.presets.ascend_pd.roles.prefill.nodes;
+  delete devicesOnly.presets.ascend_pd.roles.decode.nodes;
+  assert.deepEqual(pickPdNodes(taxonomy.hardware_profiles.ascend_910c, devicesOnly.variants.default,
+    devicesOnly, strategies, "ascend_910c", "ascend_pd", undefined, "default"), { prefill: 1, decode: 1 });
+
+  const query = new URLSearchParams({
+    hardware: "ascend_910c", variant: "default", strategy: "pd_cluster", preset: "ascend_pd",
+    pd_router: "ascend", pd_connector: "mooncake_ascend", prefill_nodes: "1", decode_nodes: "1",
+    prefill_devices: "0-7", decode_devices: "8-15",
+  });
+  const selected = resolveSelection(fixture, query, strategies, taxonomy);
+  assert.deepEqual(selected.selection.pd.prefill.devices, Array.from({ length: 8 }, (_, i) => i));
+  assert.deepEqual(selected.selection.pd.decode.devices, Array.from({ length: 8 }, (_, i) => i + 8));
+  assert.equal(selected.rendering.decode.dpLocal, 4);
+  query.set("decode_devices", "8,8");
+  const adjusted = resolveSelection(fixture, query, strategies, taxonomy);
+  assert.ok(adjusted.selection.adjusted.some((entry) => entry.param === "decode_devices"));
+
+  preset.roles.decode.devices = [8, 8];
+  assert.ok(!schemaValid(), "duplicate device ids must be rejected by the JSON Schema");
+  preset.roles.decode.devices = [8, 16];
+  const errors = validatePresets(fixture, taxonomy, fixture.compatible_strategies, [], strategies.pd_cluster.connectors);
+  assert.ok(errors.some((entry) => entry.includes("roles.decode.devices")));
 });
