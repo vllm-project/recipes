@@ -68,3 +68,54 @@ test("hardware without a sizes entry is untouched", () => {
   assert.equal(r.dcp, null);
   assert.equal(flag(r.headArgv, "--decode-context-parallel-size"), undefined);
 });
+
+test("native TP2 × PCP4 offers DCP4 and DCP8 on an eight-device node", () => {
+  const pcpRecipe = {
+    ...recipe,
+    strategy_overrides: { single_node_tp: { tp: 2, pcp: 4 } },
+    decode_context_parallel: { sizes: [2, 4, 8], comm_backend: "ag_rs" },
+  };
+  const render = (size) => resolveCommand(pcpRecipe, "default", "single_node_tp", "h100",
+    [], strategies, taxonomy, [], 1, null, {}, null, null, undefined, null, "http", size);
+  assert.deepEqual(render(2).dcp.sizes, [4, 8]);
+  assert.equal(flag(render(2).argv, "--decode-context-parallel-size"), undefined);
+  for (const size of [4, 8]) {
+    const result = render(size);
+    assert.equal(flag(result.argv, "--decode-context-parallel-size"), String(size));
+    assert.equal(flag(result.argv, "--dcp-comm-backend"), "ag_rs");
+  }
+  pcpRecipe.decode_context_parallel.match_tp = true;
+  assert.deepEqual(render(4).dcp.sizes, []);
+  pcpRecipe.decode_context_parallel.match_tp = false;
+  pcpRecipe.decode_context_parallel.comm_backend = "a2a";
+  assert.deepEqual(render(4).dcp.sizes, []);
+});
+
+test("NIXL PCP preserves distinct role DCP defaults and accepts a shared override", () => {
+  const prefill = { nodes: 1, parallelism: "tp", tp: 1, pcp: 4,
+    hardware_overrides: { gb200: { extra_args: ["--decode-context-parallel-size", "4"] } } };
+  const pcpRecipe = {
+    ...recipe,
+    strategy_overrides: { pd_cluster: { prefill, decode: { nodes: 1, parallelism: "tp", tp: 4 } } },
+    decode_context_parallel: { sizes: [2, 4], comm_backend: "ag_rs" },
+  };
+  const render = (size) => resolveCommand(pcpRecipe, "default", "pd_cluster", "gb200",
+    [], strategies, taxonomy, [], 2, null, {}, null, null, undefined, null, "http", size);
+  const dcpArg = (r, role) => flag(r[role].argv, "--decode-context-parallel-size");
+  for (const size of [null, 2]) {
+    const result = render(size);
+    assert.deepEqual(result.dcp, { sizes: [4], baseline: null, selected: null,
+      tp: [1, 4], pcp: [4, 1], roleDefaults: { prefill: 4, decode: 0 } });
+    assert.equal(dcpArg(result, "prefill"), "4");
+    assert.equal(dcpArg(result, "decode"), undefined);
+  }
+  for (const size of [1, 4]) {
+    const result = render(size);
+    for (const role of ["prefill", "decode"]) {
+      assert.equal(dcpArg(result, role), size === 1 ? undefined : "4");
+    }
+  }
+  // NIXL accepts PCP+DCP on the producer only when TP=1 and DCP=PCP.
+  Object.assign(prefill, { tp: 2, pcp: 2, hardware_overrides: {} });
+  assert.deepEqual(render(2).dcp.sizes, []);
+});

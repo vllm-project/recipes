@@ -5,7 +5,7 @@ import { test } from "node:test";
 import yaml from "js-yaml";
 import { buildDockerArgv, buildDockerRun, computeDockerMeta, pdConnectorKey, pdConnectorUnavailableReason, resolveCommand } from "../src/lib/command-synthesis.js";
 import { applyPresetArgOps, validatePresets } from "../src/lib/recipe-presets.js";
-import { renderCommand } from "../src/lib/recipe-render.js";
+import { pickPdNodes, renderCommand } from "../src/lib/recipe-render.js";
 import { contentDir } from "../src/lib/content-root.js";
 import { ascendPdPools, ascendPdRecipe } from "./fixtures/ascend-pd.mjs";
 
@@ -86,8 +86,29 @@ test("Mooncake: producer/consumer workers, bootstrap port on prefill, mooncake r
   assert.match(r.router.command, /--kv-connector mooncake/);
   assert.match(r.router.command, /--prefill http:\/\/\$PREFILL_NODE_1:8001 8998 \\/);
   assert.match(r.router.command, /--decode http:\/\/\$DECODE_NODE_1:8002 \\/);
-  assert.ok(r.kvConnector.install.some((s) => /mooncake-transfer-engine/.test(s.command)));
+  assert.deepEqual(r.kvConnector.install.map((s) => s.command), ["uv pip install mooncake-transfer-engine-cuda13"]);
 });
+
+test("Mooncake on ROCm: same workers and router, the ROCm transfer engine wheel", () => {
+  const r = pick({ hw: "mi355x", connector: "mooncake" });
+  assert.equal(r.kvConnector.selected, "mooncake");
+  assert.equal(r.kvConnector.unavailableReason, null);
+  assert.equal(r.prefill.env.VLLM_MOONCAKE_BOOTSTRAP_PORT, "8998");
+  assert.match(r.router.command, /--kv-connector mooncake/);
+  assert.deepEqual(r.kvConnector.install.map((s) => s.command), ["uv pip install mooncake-transfer-engine-rocm"]);
+});
+
+for (const topology of ["distributed", "centralized"]) {
+  test(`Mooncake PD and the ${topology} store use the same ROCm package`, () => {
+    const r = pick({ hw: "mi355x", connector: "mooncake", kv: `kv_store_${topology}_mooncake` });
+    assert.deepEqual(r.kvConnector.install.map((s) => s.command), ["uv pip install mooncake-transfer-engine-rocm"]);
+    assert.equal(r.mooncake.install, "uv pip install 'mooncake-transfer-engine-rocm>=0.3.10'");
+    for (const role of ["prefill", "decode"]) {
+      assert.deepEqual(kvCfg(r, role).kv_connector_extra_config.connectors.map((c) => c.kv_connector),
+        ["MooncakeConnector", "MooncakeStoreConnector"]);
+    }
+  });
+}
 
 test("MoRI-IO: workers register with the router, which discovers them; addresses stay shell-expandable", () => {
   const r = pick({ hw: "mi355x", connector: "moriio" });
@@ -104,6 +125,7 @@ test("MoRI-IO: workers register with the router, which discovers them; addresses
   assert.match(r.router.command, /--kv-connector moriio \\\n\s+--vllm-discovery-address 0\.0\.0\.0:36367/);
   assert.doesNotMatch(r.router.command, /--prefill|--decode/);
   assert.equal(r.kvConnector.docker.host_network, true);
+  assert.deepEqual(r.kvConnector.install.map((s) => s.command), ["uv pip install amd_mori"]);
 });
 
 test("a connector the hardware or router can't run falls back to NIXL with the reason", () => {
@@ -413,6 +435,74 @@ test("Ascend DEP uses native external DP modes with every rank and endpoint", ()
       assert.doesNotMatch(r.router.command, /launch_online_dp|run_dp_template/);
     }
   }
+});
+
+// Render the preset's own node counts and point, as the JSON API build does.
+function renderAscendPreset(fixture, point) {
+  const hw = "ascend_950dt";
+  const nodes = pickPdNodes(taxonomy.hardware_profiles[hw], fixture.variants.default, fixture, strategies, hw, "ascend_pd", point, "default");
+  return renderCommand(fixture, "default", "pd_cluster", hw, 1, [], strategies, taxonomy, nodes, null, "ascend_pd", point, true);
+}
+
+test("Ascend internal DEP serves two local decode ranks at one endpoint", () => {
+  const fixture = ascendPdRecipe();
+  const preset = fixture.presets.ascend_pd;
+  preset.roles.decode.nodes = 1;
+  const external = renderAscendPreset(fixture);
+  preset.roles.decode.data_parallel_lb = "external";
+  assert.deepEqual(renderAscendPreset(fixture), external);
+
+  preset.roles.decode.data_parallel_lb = "internal";
+  const internal = renderAscendPreset(fixture);
+  assert.doesNotMatch(internal.decode.command, /--data-parallel-(?:rank|start-rank|[\w-]+-lb)\b/);
+  assert.equal(flag(internal.decode.argv, "--data-parallel-size"), "2");
+  assert.equal(flag(internal.decode.argv, "--data-parallel-size-local"), "2");
+  assert.equal(kvCfg(internal, "decode").kv_connector_extra_config.decode.dp_size, 2);
+  assert.deepEqual(internal.router.argv.slice(internal.router.argv.indexOf("--decoder-hosts")),
+    ["--decoder-hosts", "$DECODE_NODE_1", "--decoder-ports", "8002"]);
+
+  preset.roles.prefill.data_parallel_lb = "internal"; // The prefill pool uses TP across four nodes.
+  assert.deepEqual(renderAscendPreset(fixture), internal);
+  preset.points = { external: { label: "External DP", roles: { decode: { data_parallel_lb: "external" } } } };
+  assert.deepEqual(renderAscendPreset(fixture, "external"), { ...external, preset_point: "external" });
+});
+
+test("the vLLM router ignores a role's data_parallel_lb", () => {
+  const fixture = ascendPdRecipe();
+  const preset = fixture.presets.ascend_pd;
+  Object.assign(preset.select, { pd_router: "vllm", pd_connector: "nixl" });
+  const baseline = renderAscendPreset(fixture);
+  assert.equal(baseline.pd_router, "vllm");
+  preset.roles.decode.data_parallel_lb = "internal";
+  assert.deepEqual(renderAscendPreset(fixture), baseline);
+});
+
+test("Ascend internal DEP rejects multiple nodes and conflicting final flags", () => {
+  const fixture = ascendPdRecipe();
+  const decode = fixture.presets.ascend_pd.roles.decode;
+  decode.data_parallel_lb = "internal";
+  assert.throws(() => renderAscendPreset(fixture), /Invalid preset ascend_pd .*PD decode: .*one dedicated node/);
+
+  decode.nodes = 1;
+  const pools = ascendPdPools();
+  pools.decode.nodes = 2; // A reader raises the node count after choosing the preset.
+  const run = () => ascend(fixture, 0, "mooncake_ascend", strategies, [], pools);
+  assert.throws(run, { name: "RangeError", message: /^PD decode: .*one dedicated node/ });
+
+  pools.decode.nodes = 1;
+  for (const args of [
+    ["--data-parallel-hybrid-lb"], ["-dph"], ["--data-parallel-multi-port-external-lb"], ["-dpm"],
+    ["--data-parallel-external-lb"], ["-dpe"], ["--data-parallel-rank", "0"], ["-dpn", "0"],
+    ["--data-parallel-start-rank", "0"], ["-dpr", "0"],
+  ]) {
+    decode.args = args;
+    assert.throws(run, { name: "RangeError", message: /^PD decode: .*flags conflict/ }, args.join(" "));
+  }
+
+  decode.args = ["-dpl", "1"];
+  assert.throws(run, { name: "RangeError", message: /^PD decode: --data-parallel-size-local conflicts with the role topology/ });
+  decode.args = ["-dpl", "2"];
+  assert.doesNotThrow(run);
 });
 
 test("PD topology placeholders, role edits and connector selection share the final pool layout", () => {
