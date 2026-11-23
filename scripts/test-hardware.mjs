@@ -8,6 +8,8 @@ import yaml from "js-yaml";
 import Ajv from "ajv";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import {
+  buildDockerArgv,
+  buildDockerRun,
   computeDockerMeta,
   hardwareInstall,
   hwPipOverride,
@@ -181,6 +183,30 @@ test("the schema accepts a per-hardware Docker shm size and rejects shell text",
   assert.equal(validate(variants("320g")), true);
   assert.equal(validate(variants("0.5g")), true);
   assert.equal(validate(variants("320g --ipc=host")), false);
+});
+
+test("an Ascend variant can opt into host IPC for shared Engram tables", () => {
+  const hardware_overrides = { ascend_910c: { docker_ipc: "host", docker_shm_size: "320g" } };
+  const variant = { precision: "int4", vram_minimum_gb: 64, hardware_overrides };
+  const validate = new Ajv({ strict: false }).compile(buildRecipeSchema({ taxonomy, strategies }).properties.variants);
+  assert.ok(validate({ default: variant }));
+  const argv = ["vllm", "serve", "org/model"];
+  for (const hwId of ["ascend_910c", "ascend_910b"]) {
+    const meta = computeDockerMeta(recipe(), variant, profiles[hwId], hwId);
+    const shell = buildDockerRun({ command: argv.join(" "), ...meta });
+    const docker = buildDockerArgv({ argv, meta });
+    const hostIpc = hwId === "ascend_910c";
+    assert.equal(shell.includes("--ipc=host"), hostIpc);
+    assert.equal(docker.includes("--ipc=host"), hostIpc);
+    assert.equal(shell.includes("--shm-size=16g"), !hostIpc);
+    assert.equal(docker.includes("--shm-size"), !hostIpc);
+  }
+  for (const key of ["gb200", "npu", "huawei", "default"]) {
+    const scoped = { ...variant, hardware_overrides: { [key]: { docker_ipc: "host" } } };
+    assert.equal(validate({ default: scoped }), false, key);
+  }
+  hardware_overrides.ascend_910c.docker_ipc = "container:other";
+  assert.equal(validate({ default: variant }), false);
 });
 
 test("a hardware gate reads the most specific key, in every key the schema accepts", () => {
