@@ -95,8 +95,8 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
 
   // Docker IPC opt-in is read from an exact NPU profile of the selected variant.
   const npuIpcOverrides = {
-    properties: Object.fromEntries(profileIds.filter((id) => profiles[id].generation === "npu").map((id) => [id, true])),
-    additionalProperties: { properties: { docker_ipc: false } },
+    properties: Object.fromEntries(profileIds.filter((id) => profiles[id].generation === "npu").map((id) => [id, { properties: { docker_npu_device_count: { maximum: profiles[id].gpu_count || 1 } } }])),
+    additionalProperties: { properties: { docker_ipc: false, docker_npu_device_count: false } },
   };
 
   const variant = obj({
@@ -126,6 +126,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
         vram_minimum_gb: { type: "number", minimum: 0 },
         docker_image: { type: "string" },
         docker_ipc: { const: "host" },
+        docker_npu_device_count: { type: "integer", minimum: 1 },
         docker_shm_size: { type: "string", pattern: "^[0-9]+(?:\\.[0-9]+)?[bkmgBKMG]?$" },
         docker_serve_command: { type: "string" },
         install: obj({

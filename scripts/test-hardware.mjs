@@ -340,3 +340,27 @@ test("multi-node DP reads local aliases and never derives NaN from an invalid lo
     });
   }
 });
+
+test("NPU Docker device count is scoped to exact profiles and shared by shell and argv", () => {
+  const validate = new Ajv({ strict: false }).compile(buildRecipeSchema({ taxonomy, strategies }).properties.variants);
+  const variant = { precision: "bf16", vram_minimum_gb: 3, hardware_overrides: { ascend_910b: { docker_npu_device_count: 1 } } };
+  assert.equal(validate({ default: variant }), true);
+  for (const count of [0, -1, 1.5, "1", 9]) {
+    assert.equal(validate({ default: { ...variant, hardware_overrides: { ascend_910b: { docker_npu_device_count: count } } } }), false);
+  }
+  for (const key of ["gb200", "npu", "huawei", "default"]) {
+    assert.equal(validate({ default: { ...variant, hardware_overrides: { [key]: { docker_npu_device_count: 1 } } } }), false);
+  }
+  const argv = ["vllm", "serve", "org/model"];
+  for (const [selected, count] of [[variant, 1], [{ precision: "bf16", vram_minimum_gb: 3 }, 8]]) {
+    const meta = computeDockerMeta(recipe(), selected, profiles.ascend_910b, "ascend_910b");
+    const shell = buildDockerRun({ command: argv.join(" "), ...meta });
+    const docker = buildDockerArgv({ argv, meta });
+    for (let index = 0; index < 8; index++) {
+      assert.equal(shell.includes('/dev/davinci' + index), index < count);
+      assert.equal(docker.includes('/dev/davinci' + index), index < count);
+    }
+  }
+  const gpuMeta = computeDockerMeta(recipe(), variant, profiles.gb200, "gb200");
+  assert.equal(gpuMeta.npuDeviceCount, 0);
+});

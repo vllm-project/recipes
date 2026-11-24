@@ -671,3 +671,5 @@ curl -sL "https://huggingface.co/<org>/<repo>/resolve/main/model.safetensors.ind
 ```
 
 So `vram_minimum_gb = ceil(real_checkpoint_GB × 1.2)` (Qwen3.6-27B-NVFP4 → `ceil(21.9 × 1.2) = 27`). The bytes-per-param table stays correct for *uniform* quants (plain int4/awq/gptq/fp8, and full-model FP4).
+
+Exact NPU variant hardware overrides may set `docker_npu_device_count` to a positive integer. Docker maps that many NPU devices, beginning at device 0. The default is the hardware profile device count. This setting does not change tensor parallelism or hardware capacity.
