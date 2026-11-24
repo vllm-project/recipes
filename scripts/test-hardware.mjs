@@ -361,6 +361,8 @@ test("NPU Docker device count is scoped to exact profiles and shared by shell an
       assert.equal(docker.includes('/dev/davinci' + index), index < count);
     }
   }
+  const nullKeyVariant = { ...variant, hardware_overrides: { null: { docker_npu_device_count: 1 } } };
+  assert.equal(computeDockerMeta(recipe(), nullKeyVariant, profiles.ascend_910b, null).npuDeviceCount, 8);
   const gpuMeta = computeDockerMeta(recipe(), variant, profiles.gb200, "gb200");
   assert.equal(gpuMeta.npuDeviceCount, 0);
 });

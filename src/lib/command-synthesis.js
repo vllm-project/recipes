@@ -1230,7 +1230,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const isPpu = hwProfile?.generation === "ppu";
   const isApple = hwProfile?.brand === "Apple";
   const npuDeviceCount = isNpu
-    ? variant?.hardware_overrides?.[hwId]?.docker_npu_device_count ?? hwProfile?.gpu_count ?? 1
+    ? (hwId ? variant?.hardware_overrides?.[hwId]?.docker_npu_device_count : undefined) ?? hwProfile?.gpu_count ?? 1
     : 0;
   // Ascend deliberately has no `brandKey` of its own: vLLM publishes no NPU
   // image, so every Ascend recipe pins one through `hardware_overrides`, which
