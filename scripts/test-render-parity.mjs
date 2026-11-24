@@ -306,6 +306,31 @@ test("an exact-GPU shm override reaches JSON and Markdown Docker exports", () =>
   assert.equal(shmSize(fallback.docker_argv), "16g");
 });
 
+test("host IPC reaches every Ascend PD worker in JSON and Markdown", () => {
+  const recipe = ascendPdRecipe();
+  const query = new URLSearchParams({ hardware: "ascend_950dt", strategy: "pd_cluster", preset: "ascend_pd" });
+  const baseline = resolveSelection(recipe, query, strategies, taxonomy).rendering;
+  recipe.variants.default.hardware_overrides = { ascend_950dt: { docker_ipc: "host", docker_shm_size: "512g" } };
+  const resolved = resolveSelection(recipe, query, strategies, taxonomy);
+  const { rendering } = resolved;
+  const markdown = selectionMarkdown(recipe, resolved, {
+    strategies, taxonomy,
+    urls: { page: "https://example.org/test/Ascend-PD", json: "https://example.org/test/Ascend-PD.json" },
+  });
+  assert.equal(rendering.pd_router, "ascend");
+  assert.deepEqual(rendering.router, baseline.router);
+  for (const pool of [rendering.prefill, rendering.decode]) {
+    for (const node of [pool, ...pool.node_commands]) {
+      const ipcIndex = node.docker_argv.indexOf("--ipc=host");
+      assert.ok(ipcIndex > 0 && ipcIndex < node.docker_argv.indexOf(rendering.docker_image));
+      assert.ok(!node.docker_argv.includes("--shm-size"));
+      assert.match(node.docker_command, /--ipc=host\b/);
+      assert.doesNotMatch(node.docker_command, /--shm-size/);
+      assert.ok(markdown.includes(node.docker_command));
+    }
+  }
+});
+
 // Build-only annotations the static files add around a rendering.
 const strip = ({ strategy_spec, hardware_profile, alternatives, by_hardware, ...rest }) => rest;
 

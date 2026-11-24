@@ -13,7 +13,8 @@
 //       default: true              # applied unless the user picks Baseline
 //       source: { label, href, key, revision }
 //       image: "vllm/vllm-openai:…"  # or { vllm, dynamo, pip: [], model_revision }
-//       tp: 4                      # single_node_tp only: TP size on this GPU
+//       tp: 4                      # TP width for a native TP strategy
+//       pcp: 2                     # split prefill sequences across two ranks
 //       select:                    # builder choices the preset implies
 //         nodes: 2                 # multi_node_* only: node count
 //         pd_router: dynamo
@@ -116,17 +117,18 @@ function mergeDelta(a = {}, b = {}) {
   if (env) out.env = env;
   if (remove) out.remove_args = remove;
   if (json) out.json_args = json;
-  for (const k of ["nodes", "parallelism", "tp", "pp"]) if (b[k] !== undefined) out[k] = b[k];
+  for (const k of ["nodes", "parallelism", "tp", "pp", "pcp", "data_parallel_lb"]) if (b[k] !== undefined) out[k] = b[k];
   return out;
 }
 
 /** The preset with point `pointKey` (or its default point) layered on. */
-export function effectivePreset(preset, pointKey) {
+export function effectivePreset(preset, pointKey, inheritedRoleMode) {
   if (!preset) return null;
   const key = resolvePointKey(preset, pointKey);
   const pt = key ? preset.points[key] : null;
   if (!pt) return preset;
   const out = { ...mergeDelta(preset, pt), point: key };
+  if (pt.router_port !== undefined) out.router_port = pt.router_port;
   out.select = pt.select ? deepMerge(preset.select || {}, pt.select) : preset.select;
   // A point's image fields layer over the preset's (a point may pin only a
   // different Dynamo commit and keep the preset's vLLM image).
@@ -134,7 +136,20 @@ export function effectivePreset(preset, pointKey) {
   if (preset.roles || pt.roles) {
     out.roles = {};
     for (const role of ROLES) {
-      const merged = mergeDelta(preset.roles?.[role], pt.roles?.[role]);
+      const baseRole = preset.roles?.[role];
+      const pointRole = pt.roles?.[role];
+      const merged = mergeDelta(baseRole, pointRole);
+      if (baseRole?.tp != null && pointRole && pointRole.tp === undefined) {
+        // TP/TEP widths qualify a particular pool; DEP widths apply per rank.
+        const mode = baseRole.parallelism ?? inheritedRoleMode?.(role);
+        const changesMode = mode && pointRole.parallelism && pointRole.parallelism !== mode;
+        const resizesPool = (mode === "tp" || mode === "tep") && baseRole.nodes != null
+          && pointRole.nodes != null && pointRole.nodes !== baseRole.nodes;
+        if (changesMode || resizesPool) {
+          delete merged.tp;
+          merged.parallelism ??= mode;
+        }
+      }
       if (Object.keys(merged).length) out.roles[role] = merged;
     }
   }
@@ -174,8 +189,12 @@ const argOps = (d) => (d?.remove_args?.length || d?.json_args ? { remove_args: d
 export function withPreset(recipe, key, hwId, strategyName, opts = {}) {
   const raw = key && key !== BASELINE ? recipe?.presets?.[key] : null;
   if (!raw || !presetApplies(raw, hwId, strategyName, opts.variantKey)) return recipe;
-  const p = effectivePreset(raw, opts.point);
+  const p = opts.effectivePreset ?? effectivePreset(raw, opts.point);
   const so = { ...(recipe.strategy_overrides?.[strategyName] || {}) };
+  if (p.pcp !== undefined && (strategyName === "single_node_tp" || strategyName === "multi_node_tp")) {
+    so.pcp = mountKeyed(so.pcp, hwId, p.pcp);
+  }
+  if (p.tp !== undefined && strategyName === "multi_node_tp") so.tp = mountKeyed(so.tp, hwId, p.tp);
   so.hardware_overrides = { ...(so.hardware_overrides || {}) };
   so.hardware_overrides[hwId] = mountLayer(so.hardware_overrides[hwId], p);
   const ops = { all: argOps(p), roles: {} };
@@ -183,7 +202,7 @@ export function withPreset(recipe, key, hwId, strategyName, opts = {}) {
     const r = { ...(so[role] || {}) };
     r.hardware_overrides = { ...(r.hardware_overrides || {}) };
     r.hardware_overrides[hwId] = mountLayer(r.hardware_overrides[hwId], delta);
-    for (const k of ["nodes", "parallelism", "tp", "pp"]) {
+    for (const k of ["nodes", "parallelism", "tp", "pp", "pcp", "data_parallel_lb"]) {
       const v = mountKeyed(r[k], hwId, delta?.[k]);
       if (v !== undefined) r[k] = v;
     }
@@ -404,18 +423,26 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = [], 
     };
     const gpus = taxonomy?.hardware_profiles?.[p.hardware]?.gpu_count;
     const checkTopology = (d, at) => {
-      if (d?.tp !== undefined) {
-        if (p.strategy !== "single_node_tp") errors.push(`${at}.tp: only a single_node_tp preset sets tp`);
-        else if (gpus && d.tp > gpus) errors.push(`${at}.tp: ${d.tp} exceeds ${p.hardware}'s ${gpus} GPUs`);
+      for (const field of ["tp", "pcp"]) {
+        if (d?.[field] === undefined) continue;
+        if (p.strategy !== "single_node_tp" && p.strategy !== "multi_node_tp") {
+          errors.push(`${at}.${field}: only a single_node_tp or multi_node_tp preset sets ${field}`);
+        } else if (p.strategy === "single_node_tp" && gpus && d[field] > gpus) {
+          errors.push(`${at}.${field}: ${d[field]} exceeds ${p.hardware}'s ${gpus} GPUs`);
+        }
       }
       if (d?.select?.nodes !== undefined && !String(p.strategy || "").startsWith("multi_node_")) {
         errors.push(`${at}.select.nodes: only a multi_node_* preset sets the node count`);
       }
+      if (d?.router_port !== undefined && !isPd) errors.push(`${at}.router_port: only a pd_cluster preset sets the router port`);
     };
     checkDelta(p, where);
     checkTopology(p, where);
     checkSelect(p.select, `${where}.select`);
-    for (const [role, d] of Object.entries(p.roles || {})) checkDelta(d, `${where}.roles.${role}`);
+    for (const [role, d] of Object.entries(p.roles || {})) {
+      checkDelta(d, `${where}.roles.${role}`);
+      if (d?.pcp > 1 && role !== "prefill") errors.push(`${where}.roles.${role}.pcp: only the prefill pool sets pcp`);
+    }
     const points = presetPoints(p);
     if (points.filter((pt) => pt.default).length > 1) errors.push(`${where}.points: more than one default point`);
     for (const pt of points) {
@@ -424,7 +451,10 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = [], 
       checkDelta(pt, at);
       checkTopology(pt, at);
       checkSelect(pt.select, `${at}.select`);
-      for (const [role, d] of Object.entries(pt.roles || {})) checkDelta(d, `${at}.roles.${role}`);
+      for (const [role, d] of Object.entries(pt.roles || {})) {
+        checkDelta(d, `${at}.roles.${role}`);
+        if (d?.pcp > 1 && role !== "prefill") errors.push(`${at}.roles.${role}.pcp: only the prefill pool sets pcp`);
+      }
     }
   }
   return errors;
