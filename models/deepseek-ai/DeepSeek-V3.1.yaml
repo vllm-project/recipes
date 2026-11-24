@@ -4,7 +4,7 @@ meta:
   provider: "DeepSeek"
   description: "DeepSeek-V3.1 is a hybrid MoE model that supports dynamic switching between thinking and non-thinking modes, with tool calling and function execution."
   date_added: 2025-08-21
-  date_updated: 2026-10-23
+  date_updated: 2026-11-24
   difficulty: intermediate
   tasks:
     - text
@@ -17,11 +17,10 @@ meta:
     mi300x: verified
     mi325x: verified
     mi355x: verified
-    # Ascend NPU: declared per the official-runner CI wiring in companion PR
-    # vllm-ascend/vllm-ascend-recipes#102 (head 856393f2); the recipe-verify run
-    # currently skips cleanly until the quantized weights are baked into the
-    # runner image (see that PR's models/_cache_paths.yaml). End-to-end
-    # verification on real hardware is planned once the image ships the weights.
+    # Ascend NPU: companion PR #102 verified the base W8A8 single-node API
+    # check on Atlas 800 A3 with v0.23.0-a3 (run 44553896977, head 31a7d0c).
+    # CI disabled MTP. This public recipe pins v0.30.0rc1-a3; that image and
+    # the MTP path have not yet been verified end-to-end for this variant.
     ascend_910c: supported
 
 model:
@@ -53,17 +52,6 @@ features:
       - "--reasoning-parser"
       - "deepseek_v3"
 
-  spec_decoding:
-    description: "MTP speculative decoding — the W8A8 MTP QuaRot build ships an embedded MTP head; enabled by default on the Ascend variant below."
-    modes:
-      mtp:
-        label: "MTP · W8A8 QuaRot (Ascend)"
-        description: "3-token MTP from the W8A8 MTP QuaRot build on one Atlas 800 A3."
-        args:
-          - "--speculative-config"
-          - '{"num_speculative_tokens": 3, "method": "mtp"}'
-        variants: [ascend_w8a8]
-
 opt_in_features: []
 
 variants:
@@ -89,13 +77,13 @@ variants:
     tp: 4
     # DP4 is spelled out in extra_args because single_node_tp only emits
     # --tensor-parallel-size (same approach as #1161).
-    default_modes:
-      spec_decoding: mtp
     extra_args:
       - "--data-parallel-size"
       - "4"
       - "--quantization"
       - "ascend"
+      - "--speculative-config"
+      - '{"num_speculative_tokens": 3, "method": "mtp"}'
       - "--no-enable-prefix-caching"
       - "--max-num-seqs"
       - "16"
@@ -109,10 +97,12 @@ variants:
       - "deepseek_v3"
       - "--seed"
       - "1024"
+      - "--additional-config"
+      - '{"scheduler_config":{"enable_balance_scheduling":true}}'
     extra_env:
       HCCL_OP_EXPANSION_MODE: "AIV"
-      VLLM_ASCEND_BALANCE_SCHEDULING: "1"
       PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+      VLLM_ENGINE_READY_TIMEOUT_S: "7200"
     hardware_overrides:
       ascend_910c:
         docker_image: "quay.io/ascend/vllm-ascend:v0.30.0rc1-a3"
@@ -120,7 +110,7 @@ variants:
         install:
           pip: false
           docker: true
-    description: "ModelSlim W8A8 MTP QuaRot (weights on ModelScope: Eco-Tech/DeepSeek-V3.1-w8a8-mtp-QuaRot) — 1 Atlas 800 A3 (16 die), TP4×DP4 + MTP."
+    description: "ModelSlim W8A8 MTP QuaRot (weights on ModelScope: Eco-Tech/DeepSeek-V3.1-w8a8-mtp-QuaRot) — 1 Atlas 800 A3 (16 die), TP4×DP4 + MTP. Base W8A8 serving passed the single-node API check on v0.23.0-a3; MTP and the pinned v0.30.0rc1-a3 image remain unverified."
 
 compatible_strategies:
   - single_node_tp
@@ -191,6 +181,17 @@ guide: |
     --tensor-parallel-size 8 \
     --enable-expert-parallel
   ```
+
+  ### Ascend 910C (Atlas 800 A3)
+
+  The `ascend_w8a8` variant uses `Eco-Tech/DeepSeek-V3.1-w8a8-mtp-QuaRot`
+  with TP4×DP4 on one Atlas 800 A3. Companion PR
+  [vllm-ascend/vllm-ascend-recipes#102](https://github.com/vllm-ascend/vllm-ascend-recipes/pull/102)
+  verified the base W8A8 single-node API path on `v0.23.0-a3`; its CI runner
+  disabled MTP. The generated command includes `--speculative-config`
+  and pins `v0.30.0rc1-a3`, so neither MTP nor that image has been verified
+  end-to-end for this variant. Remove `--speculative-config` to reproduce the
+  base-model verification path.
 
   ### Function calling
 
