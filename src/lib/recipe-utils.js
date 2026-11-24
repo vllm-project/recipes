@@ -119,6 +119,8 @@ export function toSearchEntry(r) {
  * source), so its Markdown would only ride along in the payload.
  */
 export function toBuilderRecipe(r) {
+  // A pooled page exports the complete Markdown locally, including its guide.
+  if (Object.values(r.presets || {}).some((p) => p.deployment)) return r;
   // eslint-disable-next-line no-unused-vars
   const { guide, ...rest } = r;
   return rest;

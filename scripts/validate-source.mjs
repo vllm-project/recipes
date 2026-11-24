@@ -33,13 +33,14 @@ if (!args.source || !args.dir) {
 }
 const source = String(args.source);
 const dir = path.resolve(String(args.dir).replace(/^~(?=\/)/, os.homedir()));
-if (!fs.existsSync(path.join(dir, "models")) && !fs.existsSync(path.join(dir, "overlays"))) {
-  console.error(`${dir} has neither models/ nor overlays/`);
+const { defaultChannel, channels } = loadSources();
+const current = channels[defaultChannel];
+const directories = ["models", "overlays", ...(current[source]?.extra_artifacts || [])];
+if (!directories.some((entry) => fs.existsSync(path.join(dir, entry)))) {
+  console.error(`${dir} is missing recipe source directories (expected one of ${directories.join(", ")})`);
   process.exit(2);
 }
 
-const { defaultChannel, channels } = loadSources();
-const current = channels[defaultChannel];
 const CHANNEL = "validate";
 let sources;
 let lock = {};

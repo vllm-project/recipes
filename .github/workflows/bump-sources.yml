@@ -89,7 +89,7 @@ jobs:
         run: |
           set -o pipefail
           node scripts/build-recipes-api.mjs 2>&1 | tee "$RUNNER_TEMP/validate.log"
-          node --test scripts/test-overlay.mjs 2>&1 | tee -a "$RUNNER_TEMP/validate.log"
+          node --test scripts/test-overlay.mjs scripts/test-pool-*.mjs 2>&1 | tee -a "$RUNNER_TEMP/validate.log"
 
       - name: Commit lock
         if: steps.sync.outputs.changed == 'true'

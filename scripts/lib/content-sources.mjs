@@ -33,6 +33,10 @@ export function loadSources() {
       if (!spec.local && !(spec.repo && spec.ref)) {
         throw new Error(`sources.yaml: ${channel}.${name} needs repo + ref (or local)`);
       }
+      if (spec.extra_artifacts !== undefined && !(Array.isArray(spec.extra_artifacts)
+        && spec.extra_artifacts.every((artifact) => artifact === "pool_profiles"))) {
+        throw new Error(`sources.yaml: ${channel}.${name}.extra_artifacts must be a list of known artifact directories (pool_profiles)`);
+      }
       if (spec.defers_to !== undefined && !(defersTo(spec).length && defersTo(spec).every((other) =>
         other !== name && sources[other] && !sources[other].defers_to))) {
         throw new Error(`sources.yaml: ${channel}.${name}.defers_to must name other sources of ${channel} that don't defer themselves`);

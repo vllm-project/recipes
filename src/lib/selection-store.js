@@ -16,6 +16,11 @@ export function publishSelection(next) {
   for (const l of listeners) l();
 }
 
+// Session-only site inputs and prepared downloads end with their recipe page.
+export function clearSelection(hfId) {
+  if (selection?.hfId === hfId) publishSelection(null);
+}
+
 function subscribe(listener) {
   listeners.add(listener);
   return () => listeners.delete(listener);

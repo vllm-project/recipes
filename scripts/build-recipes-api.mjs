@@ -25,8 +25,8 @@ import fs from "fs";
 import path from "path";
 import yaml from "js-yaml";
 import Ajv from "ajv";
-import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
-import { BASELINE, effectivePreset, presetImage, presetPoints, presetSelect, resolvePresetKey, validatePresets, withPreset } from "../src/lib/recipe-presets.js";
+import { buildPoolProfileSchema, buildRecipeSchema } from "../src/lib/recipe-schema.js";
+import { BASELINE, effectivePreset, presetImage, presetPoints, presetSelect, qualifiedPoolPreset, resolvePresetKey, validatePresets, withPreset } from "../src/lib/recipe-presets.js";
 import { CONTEXT_KINDS, validateContextEntries } from "../src/lib/recipe-context.js";
 import {
   pickDefaultHardware,
@@ -56,7 +56,7 @@ import {
   FALLBACK_FRONTEND,
   kvOffloadOptionErrors,
 } from "../src/lib/command-synthesis.js";
-import { contentChannel, contentDir, loadProvenance } from "../src/lib/content-root.js";
+import { attachPoolProfiles, contentChannel, contentDir, loadPoolProfiles, loadProvenance } from "../src/lib/content-root.js";
 import { buildVariantRendering, defaultFeaturesFor, pickPdNodes, renderCommand, synthesizeInstall } from "../src/lib/recipe-render.js";
 import { assembleChannel } from "./assemble-content.mjs";
 import { loadOverrides } from "./lib/content-sources.mjs";
@@ -75,6 +75,7 @@ if (!process.env.RECIPES_CONTENT_DIR) {
 }
 const CONTENT = contentDir();
 const provenance = loadProvenance();
+const poolProfiles = loadPoolProfiles(CONTENT);
 
 // Report a recipe by the path in its source repo, not its .content/ alias.
 function sourceRel(file) {
@@ -395,8 +396,9 @@ writeJson("kv_store.json", kvStoreDeployments);
 const kvOffloadErrors = kvOffloadOptionErrors(taxonomy, strategies);
 if (kvOffloadErrors.length) throw new Error(`Invalid kv_offload options in taxonomy.yaml:\n  - ${kvOffloadErrors.join("\n  - ")}`);
 
-const recipeSchema = buildRecipeSchema({ taxonomy, strategies });
+const recipeSchema = buildRecipeSchema({ taxonomy, strategies, poolProfileIds: Object.keys(poolProfiles) });
 writeJson("recipe.schema.json", recipeSchema);
+writeJson("pool-profile.schema.json", buildPoolProfileSchema());
 const validateRecipe = new Ajv({ allErrors: true, strict: false }).compile(recipeSchema);
 
 // One line per problem. anyOf branches report every alternative they tried;
@@ -563,13 +565,20 @@ function writePresetRenderings(recipe, hfId, strategies, taxonomy) {
     for (const pt of points.length ? points : [null]) {
       let nc = 1;
       let pdNodes = null;
-      if (deploy === "pd_cluster") {
+      const pooled = qualifiedPoolPreset(recipe, key, hwId, variantKey, pt?.key);
+      if (pooled) {
+        const { placements, containers } = pooled.deployment;
+        pdNodes = Object.fromEntries(["prefill", "decode"].map((role) => [
+          role, new Set(placements.filter((p) => p.role === role).map((p) => containers[p.container].host)).size,
+        ]));
+      } else if (deploy === "pd_cluster") {
         pdNodes = pickPdNodes(hwProfile, variant, recipe, strategies, hwId, key, pt?.key, variantKey);
         if (pdNodes === "skip") continue;
       } else if (deploy === "multi_node") {
         nc = Math.max(2, nodesForStrategy(recipe, strategy, hwProfile.gpu_count, hwId));
       }
       const rendered = renderCommand(recipe, variantKey, strategy, hwId, nc, feats, strategies, taxonomy, pdNodes, null, key, pt?.key, true);
+      if (pooled && !rendered?.pool_deployment) throw new Error(`${hfId} preset ${key}: missing pooled deployment rendering`);
       if (!rendered) continue;
       out[pt?.key || "default"] = { ...(pt ? { label: pt.label, ...(pt.concurrency ? { concurrency: pt.concurrency } : {}) } : {}), ...rendered };
     }
@@ -603,6 +612,7 @@ let collisionCount = 0;
 
 for (const file of findYamlFiles(modelsDir)) {
   const r = normalizeDates(readYaml(file));
+  attachPoolProfiles(r, poolProfiles);
   validateFeatureModes(r, file);
   validateFrontends(r, file, taxonomy);
   validateHardwareKeys(r, file, taxonomy, strategies);
@@ -691,6 +701,7 @@ for (const file of findYamlFiles(modelsDir)) {
   // renderings (parent + promoted) have run — buildVariantRendering reads
   // them. The YAML on GitHub is the source of truth for anyone re-synthesizing.
   delete r.strategy_overrides;
+  delete r._poolProfiles;
   delete r.compatible_strategies;
   delete r.default_strategy;
   // Which repo owns this recipe (and which overlays merged into it), so agents

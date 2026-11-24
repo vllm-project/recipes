@@ -1,5 +1,7 @@
 "use client";
 
+import { PoolDeployment } from "./PoolDeployment";
+
 // The reference tabs below the command builder (Guide · Presets ·
 // Troubleshooting), following its selection: the active preset is marked,
 // and troubleshooting entries matching the selection come first.
@@ -272,6 +274,7 @@ export function ReferenceTabs({ hfId, hardware, strategyLabels, presets, trouble
 
   const tabs = [
     guide && { id: "recipe-guide", label: "Guide" },
+    sel?.poolPlan && { id: "deployment", label: "Deployment" },
     presets.length && { id: "presets", label: "Presets", count: presets.length },
     troubleshooting.length && { id: "troubleshooting", label: "Troubleshooting", count: sel ? mine.length : troubleshooting.length, dot: flagged },
   ].filter(Boolean);
@@ -279,6 +282,7 @@ export function ReferenceTabs({ hfId, hardware, strategyLabels, presets, trouble
   const active = tabs.some((t) => t.id === current) ? current : tabs[0]?.id;
   const root = useRef(null);
   const tabRefs = useRef({});
+  const hasDeployment = Boolean(sel?.poolPlan);
   useRevealHashOnSelection(!!sel, root);
 
   const select = useCallback((id, { focus = false, updateHash = false } = {}) => {
@@ -323,7 +327,7 @@ export function ReferenceTabs({ hfId, hardware, strategyLabels, presets, trouble
       node.removeEventListener("beforematch", onMatch, true);
       window.removeEventListener("hashchange", onHash);
     };
-  }, []);
+  }, [hasDeployment]);
 
   if (!tabs.length) return null;
 
@@ -373,6 +377,9 @@ export function ReferenceTabs({ hfId, hardware, strategyLabels, presets, trouble
       )}
 
       {guide && <div {...panelProps("recipe-guide")}><div className="guide-content px-5 pt-4 pb-5 [&>:first-child]:!mt-0">{guide}</div></div>}
+      {sel?.poolPlan && <div {...panelProps("deployment")}>
+        <PoolDeployment key={`${sel.preset}|${sel.poolPlan.mode || ""}`} selection={sel} />
+      </div>}
 
       {presets.length > 0 && (
         <div {...panelProps("presets")}><div className="px-5 pt-4 pb-5">

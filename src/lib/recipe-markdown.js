@@ -45,6 +45,58 @@ function configLine(recipe, resolved, strategies) {
   return parts.join(" · ");
 }
 
+export function poolPlacementLabel(placement) {
+  const role = { master: "Mooncake Master", meta: "MetaService", prefill: "Prefill", decode: "Decode", proxy: "Proxy" }[placement.role] || placement.role;
+  const details = [];
+  if (placement.rank != null) details.push(`rank ${placement.rank}`);
+  if (placement.devices?.length) details.push(`devices ${placement.devices.join(", ")}`);
+  if (placement.mode) details.push(placement.mode === "new" ? "new pool only" : "existing pool only");
+  return details.length ? `${role} (${details.join(" · ")})` : role;
+}
+
+// Host-filtered copies retain the original numbering and cross-host dependencies.
+// Copy page and both public exports always use the full ordered list.
+export function poolDeploymentMarkdown(plan, host = "") {
+  const lines = [`## Deployment · ${plan.label}`, "",
+    `Pool mode: ${plan.mode || "template (choose new or reuse)"}`, "",
+    `Hosts: ${host || plan.hosts.join(", ")}`, ""];
+  if (plan.ascend_version) lines.push(`vLLM-Ascend ${plan.ascend_version}`, "");
+  if (/^https?:\/\//i.test(plan.tutorial || "")) lines.push(`[Model tutorial](${plan.tutorial})`, "");
+  for (const [id, container] of Object.entries(plan.containers)) {
+    if (host && container.host !== host) continue;
+    lines.push(`- Container \`${id}\` on \`${container.host}\``);
+  }
+  for (const placement of plan.placements) {
+    if (host && placement.host !== host) continue;
+    lines.push(`- ${poolPlacementLabel(placement)} on \`${placement.host}\` / \`${placement.container}\``);
+  }
+  const budgets = (plan.capacity || []).filter((row) => !host || row.host === host);
+  if (budgets.length) {
+    lines.push("", "### Capacity by host", "");
+    for (const b of budgets) lines.push(`- ${b.host} · ${b.label}: ${b.total} ${b.unit} (${b.count} × ${b.per_instance} ${b.unit})`);
+  }
+  lines.push("", "### Site inputs", "");
+  for (const field of plan.inputs) {
+    if (host && field.host && field.host !== host) continue;
+    lines.push(`- ${field.label} (\`${field.key}\`)${field.mode ? ` [${field.mode}]` : ""}: ${field.error || (field.missing ? "required" : field.value ?? "")}`);
+  }
+  if (plan.errors?.length) lines.push("", "Input errors:", ...plan.errors.map((error) => `- ${error}`));
+  if (host) lines.push("", `Showing steps for \`${host}\`. Dependencies can run on other hosts.`);
+  const numbering = new Map(plan.steps.map((step, i) => [step.id, i + 1]));
+  for (const step of plan.steps) {
+    if (host && step.host !== host) continue;
+    lines.push("", `### ${numbering.get(step.id)}. ${step.title}`, "",
+      [step.host, step.container, step.role, step.mode].filter(Boolean).join(" · "));
+    if (step.depends_on?.length) lines.push("", `After steps: ${step.depends_on.map((id) => numbering.get(id) ?? id).join(", ")}`);
+    if (step.missing?.length) lines.push("", `Template — fill: ${step.missing.join(", ")}`);
+    for (const error of step.errors || []) lines.push("", error);
+    if (step.command) lines.push("", fence(step.command));
+    if (step.check) lines.push("", `Check: ${step.check}`);
+  }
+  if (plan.source) lines.push("", `Profile source: ${plan.source.repo} @ ${plan.source.sha || plan.source.ref || "local"} · ${plan.source.path}`);
+  return lines.join("\n");
+}
+
 function serveSection(r) {
   const out = [];
   if (r.pcp > 1) out.push(`Tensor parallel size ${r.tp} · Prefill context parallel size ${r.pcp}.`, "");
@@ -332,10 +384,10 @@ export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls
     ...pdOptions(recipe, resolved, strategies),
     ...presetOptions(recipe, strategies),
     "",
-    "## Install",
+    rendering?.pool_deployment ? null : "## Install",
     "",
-    ...installSection(recipe, resolved),
-    "## Serve",
+    ...(rendering?.pool_deployment ? [] : installSection(recipe, resolved)),
+    rendering?.pool_deployment ? null : "## Serve",
     "",
   ].filter((l) => l !== null);
 
@@ -343,6 +395,8 @@ export function selectionMarkdown(recipe, resolved, { strategies, taxonomy, urls
     lines.push("This configuration couldn't be rendered. Try another `hardware` or `strategy`.", "");
   } else if (resolved.omni) {
     lines.push("vLLM-Omni recipe — the generation endpoints and request examples are in the guide below.", "", fence(withEnv(rendering.env, rendering.command)), "");
+  } else if (rendering.pool_deployment) {
+    lines.push(poolDeploymentMarkdown(rendering.pool_deployment), "");
   } else {
     lines.push(...serveSection(rendering), "");
   }

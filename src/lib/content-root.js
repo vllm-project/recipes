@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import yaml from "js-yaml";
+import { poolProfileRefs } from "./pool-profile-refs.js";
 
 // Where recipe content is read from. Recipe YAMLs live in their owning repos
 // (vllm, vllm-omni, vllm-ascend, …) and are pinned by `sources.yaml` +
@@ -54,6 +55,22 @@ export function contentDir(channel = contentChannel()) {
 }
 
 const provenanceCache = new Map();
+
+// Older channels and unassembled checkouts have no contributed profiles.
+export function loadPoolProfiles(dir = contentDir()) {
+  const file = path.join(dir, "pool_profiles.json");
+  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
+}
+
+export function attachPoolProfiles(recipe, profiles) {
+  const refs = poolProfileRefs(recipe);
+  if (refs.length) {
+    recipe._poolProfiles = Object.fromEntries(refs
+      .filter(({ id }) => Object.hasOwn(profiles, id))
+      .map(({ id }) => [id, profiles[id]]));
+  }
+  return recipe;
+}
 
 // hf_id → { source, repo, ref, sha, path, edit_url, overlays[] }. Empty when
 // reading the un-assembled repo root.

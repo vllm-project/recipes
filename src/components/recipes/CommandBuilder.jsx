@@ -9,9 +9,11 @@ import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
 import { maxVersion, resolveInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdPcpDeployment, NATIVE_PD_PCP_KV_OFFLOAD_REASON, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason, ascendPdUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
-import { presetPoints, presetSelect, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
+import { matchingPresets, presetPoints, presetSelect, qualifiedPoolPreset, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
+import { resolveSelection } from "@/lib/recipe-render";
+import { selectionMarkdown, selectionUrls } from "@/lib/recipe-markdown";
 import ShellCode from "@/components/recipes/ShellCode";
-import { publishSelection, onPresetRequest } from "@/lib/selection-store";
+import { clearSelection, publishSelection, onPresetRequest } from "@/lib/selection-store";
 import { holdInPlace } from "@/lib/hold-in-place";
 import { whenMatches } from "@/lib/recipe-context";
 import { ADVANCED_OPTIONS } from "@/lib/advanced-options";
@@ -426,7 +428,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       setFrontend(f);
       if (f !== resolveFrontend(recipe, null, taxonomy)) setParam("frontend", f);
     }
-    if (!searchParams.get("strategy") && rs.strategy &&
+    if (!searchParams.get("strategy") && !recipe.presets?.[searchParams.get("preset")]?.deployment && rs.strategy &&
         effectiveCompatibleStrategies(recipe).includes(rs.strategy) &&
         strategies[rs.strategy]?.deploy_type !== "kv_store_lb") {
       setStrategyOverride(rs.strategy);
@@ -555,7 +557,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // GB200 = 2, GB300 = 1). Unmatched hw falls through to the VRAM fit.
   // Tuned-preset pick (recipe-presets.js): null follows the recipe default
   // for this hardware + strategy, "baseline" opts out, a key selects it.
-  const [presetPick, setPresetPick] = useState(() => searchParams.get("preset") || null);
+  const [presetPick, setPresetPick] = useState(() => {
+    const key = searchParams.get("preset");
+    const requested = searchParams.get("kv_offload");
+    const p = recipe.presets?.[key];
+    return p?.deployment && requested != null && requested !== p.select?.kv_offload ? "baseline" : key;
+  });
   // Point pick within the active preset (`?point=`); null follows its default point.
   const [pointPick, setPointPick] = useState(() => searchParams.get("point") || null);
   // PD pool defaults read the recipe with the pd_cluster preset in effect
@@ -654,7 +661,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const [strategyOverride, setStrategyOverride] = useState(() => {
     // A kv_store id in ?strategy= must never become the serving strategy —
     // Mooncake selection travels in ?kv_offload= instead.
-    const s = searchParams.get("strategy") || "";
+    const linkedPool = qualifiedPoolPreset(recipe, presetPick, hwId, variant);
+    const s = searchParams.get("strategy") || (linkedPool ? "pd_cluster" : "");
     return strategies[s]?.deploy_type === "kv_store_lb" ? "" : s;
   });
   // KV offload: "" = off, a taxonomy option key ("simple"/"lmcache") whose
@@ -662,6 +670,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // strategy id (Mooncake) that COMPOSES with it — each instance runs the
   // selected strategy's command wrapped in the router/master deployment shell.
   const [kvOffload, setKvOffload] = useState(searchParams.get("kv_offload") || "");
+  const [poolMode, setPoolMode] = useState(() => {
+    const mode = searchParams.get("pool_mode");
+    return ["new", "reuse"].includes(mode) ? mode : null;
+  });
+  const [poolDraft, setPoolDraft] = useState(null);
   // Mooncake instance count — independent vLLM engines sharing the KV pool.
   // Orthogonal to nodeCount (which stays "nodes per instance"). null = follow
   // the active topology's default_instances (distributed: 1, centralized: 2);
@@ -956,8 +969,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     return [...new Set([...base, ...presetNodes])].sort((a, b) => a - b);
   }, [recipe, perNode, hwId]);
 
+  const scopedPd = useMemo(() => qualifiedPoolPreset(recipe, presetPick, hwId, variant), [recipe, presetPick, hwId, variant]);
   const compatibleStrategies = useMemo(() => {
-    return effectiveCompatibleStrategies(recipe).filter((s) => {
+    const strategiesForSelection = new Set(effectiveCompatibleStrategies(recipe));
+    if (scopedPd) strategiesForSelection.add("pd_cluster");
+    return [...strategiesForSelection].filter((s) => {
+      if (scopedPd && s === "pd_cluster") return true;
       const strat = strategies[s];
       if (!strat) return false;
       // kv_store_lb deployments live on the KV Offload row, not here.
@@ -968,7 +985,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       // picking it grows the count (selectStrategy).
       return isStrategyReachable(recipe, s, strat.deploy_type, perNode, hwId);
     });
-  }, [recipe, strategies, nodeCount, perNode, hwId]);
+  }, [recipe, strategies, nodeCount, perNode, hwId, scopedPd]);
 
   // Mooncake KV-store deployments (deploy_type: kv_store_lb) — offered on
   // every recipe by default (omni recipes never reach this row), no
@@ -1000,10 +1017,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // generation > brand > `default`). An unsupported pill renders disabled
   // with a tooltip and the active/recommended resolution skips it.
   const isStrategySupported = useCallback(
-    (s, hardwareId = hwId) => isStrategySupportedOnHardware(
+    (s, hardwareId = hwId) => (s === "pd_cluster" && scopedPd && hardwareId === hwId) || isStrategySupportedOnHardware(
       recipe, s, taxonomy.hardware_profiles?.[hardwareId], hardwareId
     ),
-    [recipe, taxonomy, hwId]
+    [recipe, taxonomy, hwId, scopedPd]
   );
 
   // PD now sizes each pool independently, so the "2× model VRAM on one node"
@@ -1029,10 +1046,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       Object.entries(taxonomy.kv_offload || {}).map(([k, o]) => [k, resolveKvOffloadOption(o, profile, hwId)])
     );
   }, [taxonomy.kv_offload, taxonomy.hardware_profiles, hwId]);
-  const pdSelect = presetSelect(recipe, resolvePresetKey(recipe, hwId, activeServingStrategy, presetPick, variant), pointPick);
+  const qualifiedPresetKey = resolvePresetKey(recipe, hwId, activeServingStrategy, presetPick, variant);
+  const pdSelect = presetSelect(recipe, qualifiedPresetKey, pointPick);
+  const declaredPool = recipe.presets?.[qualifiedPresetKey]?.deployment && recipe._poolProfiles?.[pdSelect?.kv_offload]
+    ? pdSelect.kv_offload : null;
+  const poolCandidates = matchingPresets(recipe, hwId, "pd_cluster", variant)
+    .filter((p) => p.deployment && recipe._poolProfiles?.[p.select?.kv_offload]);
   const pcpDeployment = activeServingStrategy === "pd_cluster" ? pdPcpDeployment(pdRecipe, hwProfile, hwId, pdSelect) : null;
-  const workerRouter = pcpDeployment?.router ?? pdRouter;
-  const workerConnector = pcpDeployment?.connector ?? pdConnector;
+  const workerRouter = declaredPool ? pdSelect.pd_router : pcpDeployment?.router ?? pdRouter;
+  const workerConnector = declaredPool ? pdSelect.pd_connector : pcpDeployment?.connector ?? pdConnector;
   const kvOffloadAllowedByStrategy = !pcpDeployment && strategyAllowsKvOffload(strategies[activeServingStrategy]);
   // Intel XPU: no KV-offload layer is validated on this backend, so gate every
   // option off (and force the effective selection to Off further down).
@@ -1088,7 +1110,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // (Intel XPU) regardless of a persisted pick from other hardware — keeps the
   // generated command a plain single-instance serve.
   const activeKvOffload =
-    kvOffloadDisabledByHw
+    declaredPool || (kvOffloadDisabledByHw
       ? ""
       : kvOffloadOptions[kvOffload]
       ? (kvOptAllowed(kvOffload) ? kvOffload : "")
@@ -1096,7 +1118,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           && kvOffloadAllowedByStrategy
           && isKvStoreBrandSupported(hwProfile) && isKvStoreSupported(kvOffload)
         ? kvOffload
-        : "";
+        : "");
   const activeKvGroup = kvOffloadOptions[activeKvOffload]?.group || null;
   const isKvStoreActive = compatibleKvStoreStrategies.includes(activeKvOffload);
   // Mooncake COMPOSES with the serving strategy — parallelism (TP/TEP/DEP,
@@ -1282,6 +1304,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // forms (Copy page). The address bar reproduces the page too (restored
   // choices are written to it on mount), but syncUrl omits defaults.
   const selectedPoint = result?.preset?.point?.selected ?? null;
+  const poolScope = declaredPool ? [recipe.hf_id, hwId, variant, qualifiedPresetKey, poolMode].join("|") : "";
+  const poolInputs = poolDraft?.scope === poolScope ? poolDraft.values : undefined;
+  useEffect(() => {
+    setPoolDraft((draft) => draft?.scope === poolScope ? draft : null);
+  }, [poolScope]);
+  useEffect(() => () => clearSelection(recipe.hf_id), [recipe.hf_id]);
   const shareQuery = useMemo(() => {
     const q = new URLSearchParams({ hardware: hwId, variant });
     if ((recipe.meta?.tasks || []).includes("omni")) {
@@ -1289,6 +1317,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       return q.toString();
     }
     q.set("strategy", activeStrategy);
+    if (declaredPool) {
+      q.set("preset", qualifiedPresetKey);
+      q.set("kv_offload", declaredPool);
+      if (poolMode) q.set("pool_mode", poolMode);
+      return q.toString();
+    }
     q.set("features", effectiveFeatures.join(",") || "none");
     const fmode = Object.entries(featureModes).filter(([k, m]) => m && isFeatureAllowedForVariant(currentVariant, k) && recipe.features?.[k]?.modes).map(([k, m]) => `${k}:${m}`);
     if (fmode.length) q.set("fmode", fmode.join(","));
@@ -1316,10 +1350,34 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       q.set("nodes", String(nodeCount));
     }
     return q.toString();
-  }, [recipe, hwId, variant, currentVariant, omniTask, activeStrategy, effectiveFeatures, featureModes, advanced, effectiveFrontend, result.frontendRequired, result.pdRouter, result.kvConnector?.selected, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, workerRouter, workerConnector, pdTransport, nodeCount]);
+  }, [recipe, hwId, variant, currentVariant, omniTask, activeStrategy, effectiveFeatures, featureModes, advanced, effectiveFrontend, result.frontendRequired, result.pdRouter, result.kvConnector?.selected, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, workerRouter, workerConnector, pdTransport, nodeCount, declaredPool, qualifiedPresetKey, poolMode]);
+  const poolSelection = useMemo(() => declaredPool
+    ? resolveSelection(recipe, new URLSearchParams(shareQuery), strategies, taxonomy, { poolInputs }) : null,
+    [declaredPool, recipe, shareQuery, strategies, taxonomy, poolInputs]);
+  const poolPlan = poolSelection?.rendering?.pool_deployment;
+  const changePoolMode = useCallback((mode) => {
+    setPoolMode(mode);
+    const query = new URLSearchParams(pendingQs.current ?? window.location.search);
+    query.set("pool_mode", mode);
+    pendingQs.current = query.toString();
+    replaceQuery(query.toString());
+  }, []);
+  const changePoolInput = useCallback((key, value) => {
+    setPoolDraft((draft) => ({
+      scope: poolScope,
+      values: { ...(draft?.scope === poolScope ? draft.values : {}), [key]: value },
+    }));
+  }, [poolScope]);
+  const poolExport = useCallback((format) => {
+    const urls = selectionUrls(window.location.origin, recipe.hf_id, new URLSearchParams(shareQuery), hwId);
+    if (format === "md") return selectionMarkdown(recipe, poolSelection, { strategies, taxonomy, urls });
+    return JSON.stringify({ hf_id: recipe.hf_id, ...poolSelection.rendering, selection: poolSelection.selection,
+      page_url: urls.page, markdown_url: urls.md }, null, 2);
+  }, [recipe, poolSelection, shareQuery, hwId, strategies, taxonomy]);
   useEffect(() => {
-    publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features: activeFeatures, preset: selectedPreset, query: shareQuery });
-  }, [recipe.hf_id, hwId, activeStrategy, variant, activeFeatures, selectedPreset, shareQuery]);
+    publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features: activeFeatures, preset: selectedPreset, query: shareQuery,
+      ...(poolPlan && { poolPlan, poolImage: poolSelection.rendering.docker_image, poolInputs, changePoolMode, changePoolInput, poolExport }) });
+  }, [recipe.hf_id, hwId, activeStrategy, variant, activeFeatures, selectedPreset, shareQuery, poolPlan, poolSelection, poolInputs, changePoolMode, changePoolInput, poolExport]);
 
   // Visual feedback when any rendered command changes. Covers single-node
   // (result.command), multi-node (headCommand), pd_cluster (prefill.command),
@@ -1583,6 +1641,11 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   // the Nodes row keeps meaning "nodes per instance"; how many instances sit
   // behind the router is the separate Instances input below.
   const selectKvOffload = (v) => {
+    if (declaredPool && v !== declaredPool) {
+      setPresetPick("baseline");
+      setPointPick(null);
+      setPoolMode(null);
+    }
     setKvOffload(v);
     // Off resets the Mooncake sub-state (instances count + rendered instance)
     // so the next enable starts from the topology's defaults instead of
@@ -1592,7 +1655,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       setKvInstances(null);
       setKvInstanceIdx(0);
     }
-    syncUrl({ kv_offload: v, ...(v ? {} : { kv_instances: "", kv_instance: "" }) });
+    syncUrl({ kv_offload: v, ...(declaredPool && v !== declaredPool && { preset: "baseline", point: "", pool_mode: "" }),
+      ...(v ? {} : { kv_instances: "", kv_instance: "" }) });
     saveRecipeState(recipe.hf_id, { kvOffload: v || undefined, ...(v ? {} : { kvInstances: undefined }) });
   };
 
@@ -1809,6 +1873,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const selectPreset = (key, via = "row") => {
     track("select_preset", { preset: key, via });
     const target = recipe.presets?.[key];
+    if (key !== qualifiedPresetKey) setPoolMode(null);
     const otherVariant = target?.variants?.length && !target.variants.includes(variant) ? target.variants[0] : null;
     const otherStrategy = target?.strategy && target.strategy !== activeStrategy ? target.strategy : null;
     if (otherVariant || otherStrategy) {
@@ -1816,6 +1881,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       // reset picks it up (pendingPreset). Its default needs no pick.
       const pick = target.default ? null : key;
       pendingPreset.current = pick;
+      if (target.deployment) setPresetPick(pick);
       if (otherVariant) selectVariant(otherVariant, key);
       if (otherStrategy) selectStrategy(otherStrategy, { preset: pick ?? "" });
       else syncUrl({ preset: pick ?? "", point: "" });
@@ -1880,7 +1946,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     if (appliedSelectKey.current === selectKey) return;
     const first = appliedSelectKey.current === null;
     appliedSelectKey.current = selectKey;
-    if (!activeSelect) return;
+    if (!activeSelect || declaredPool) return;
     const linked = (param) => first && urlAtMount.current.get(param) != null;
     const updates = {};
     if (activeSelect.frontend && !linked("frontend")) {
@@ -1931,6 +1997,24 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     if (Object.keys(updates).length) syncUrl(updates);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectKey]);
+
+  // Sharing always uses the public template. Clear the previous pool's mode
+  // and backend when hardware, variant or strategy takes the user out of it.
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (declaredPool) {
+      if (query.toString() !== shareQuery) {
+        pendingQs.current = shareQuery;
+        replaceQuery(shareQuery);
+      }
+    } else if (query.has("pool_mode") || recipe._poolProfiles?.[query.get("kv_offload")]) {
+      setPoolMode(null);
+      query.delete("pool_mode");
+      if (recipe._poolProfiles?.[query.get("kv_offload")]) query.delete("kv_offload");
+      pendingQs.current = query.toString();
+      replaceQuery(query.toString());
+    }
+  }, [declaredPool, recipe, shareQuery]);
 
   const toggleAdvanced = (id) => {
     const next = advanced.includes(id) ? advanced.filter((x) => x !== id) : [...advanced, id];
@@ -2570,7 +2654,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       <div className="space-y-4" onClickCapture={keepClickedRowInPlace}>
         {/* ── Install (tabs: pip / docker — mirrors the command-card mode toggle
           so switching from either place keeps them in sync). */}
-        <InstallBlock
+        {!declaredPool && <InstallBlock
           recipe={recipe}
             variant={currentVariant}
           dockerMeta={dockerMeta}
@@ -2582,19 +2666,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           extraMinVersion={isKvStoreActive ? strategies[activeKvOffload]?.min_vllm_version : null}
           hwInstall={hwInstall}
           dockerHidden={dockerEffectivelyHidden}
-        />
+        />}
 
         {/* ── Dependencies / extra install ──
             Hidden in docker mode: today every entry is a host-level
             `pip install` / `bash install_*.sh`, which doesn't apply when
             vLLM ships as a container image. Revisit if a dep ever needs
             to run inside the container. */}
-        {modeDependencies.length > 0 && (
+        {!declaredPool && modeDependencies.length > 0 && (
           <DependenciesBlock deps={modeDependencies} />
         )}
 
         {/* ── VRAM shortfall warning (single-node only) ── */}
-        {vramShortfall && (
+        {!declaredPool && vramShortfall && (
           <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] leading-snug flex items-start gap-2">
             <span aria-hidden="true" className="text-amber-500 mt-px">⚠</span>
             <div className="text-foreground/90">
@@ -2626,7 +2710,17 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           className={`rounded-2xl overflow-hidden bg-[var(--command-bg)] border border-border transition-shadow ${changed ? "ring-2 ring-vllm-blue/30" : ""
             }`}
         >
-          {result.deploymentError ? (
+          {declaredPool ? (
+            <div className="space-y-3 px-4 py-4">
+              <a className="font-semibold text-vllm-blue underline" href="#deployment">View pool deployment steps</a>
+              <p className="text-sm text-muted-foreground">This preset fixes the role layout, transfer connector and launch settings. Prepare the pool before starting the role processes.</p>
+              {poolPlan?.mode && <div className="flex flex-wrap gap-3 text-sm">
+                {poolPlan.steps.filter((step) => step.role && step.command).map((step) =>
+                  <a key={step.id} href={`#pool-step-${step.id}`} className="text-vllm-blue underline">{step.title} · {step.host}</a>)}
+              </div>}
+              {!poolPlan && <p role="alert">The selected pool deployment could not be rendered.</p>}
+            </div>
+          ) : result.deploymentError ? (
             <p role="alert" className="px-4 py-5 text-sm text-amber-600">{result.deploymentError}</p>
           ) : isPd ? (
             <PdClusterBlock
@@ -3011,6 +3105,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             );
           })()}
 
+          {!declaredPool && <>
           {/* PD Router — which orchestrator fronts the prefill/decode pools.
               Nested under Strategy: it only exists for pd_cluster and never
               changes the pools, just the launcher + front door. */}
@@ -3143,6 +3238,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             </ConfigRow>
           )}
 
+          </>}
           {/* KV Offload — every option COMPOSES with the serving strategy
               above (the KV layer is orthogonal to parallelism). Simple/LMCache
               append a connector to the current command; Mooncake additionally
@@ -3158,7 +3254,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               >
                 <span className="font-semibold">Off</span>
               </Pill>
-              {(() => {
+              {hwProfile?.brand === "Huawei" && Object.entries(recipe._poolProfiles || {}).map(([id, profile]) => {
+                const candidates = poolCandidates.filter((p) => p.select.kv_offload === id);
+                return <Pill key={id} active={declaredPool === id} disabled={!candidates.length}
+                  title={candidates.length ? candidates.map((p) => p.label).join(" · ") : "Choose a qualified hardware, variant and PD preset."}
+                  onClick={() => {
+                    if (candidates.length === 1) selectPreset(candidates[0].key, "pool");
+                    else if (candidates.length) window.location.hash = "pool-presets";
+                  }}>{profile.label || id}</Pill>;
+              })}
+              {!declaredPool && (() => {
                 // Gating helpers are shared with synthesis. Grouped options
                 // collapse into one pill at the group's `order`; the row
                 // reads Off · Simple · Offloading · Mooncake · LMCache.
@@ -3277,6 +3382,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             })()}
           </ConfigRow>
 
+          {poolCandidates.length > 0 && !declaredPool && (
+            <ConfigRow label="Pool presets" nested>
+              <div id="pool-presets" className="flex flex-wrap gap-2">
+                {poolCandidates.map((p) => <Pill key={p.key} onClick={() => selectPreset(p.key, "pool")}>{p.label}</Pill>)}
+              </div>
+            </ConfigRow>
+          )}
+          {!declaredPool && <>
           {/* Members of the active merged pill — same idiom as Store
               Topology below; kv_offload points at a concrete member id. */}
           {activeKvGroup && (kvGroupMembers[activeKvGroup] || []).length > 1 && (
@@ -3685,6 +3798,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               </div>
             </div>
           </details>
+          </>}
         </div>
       </div>
     </TooltipProvider>

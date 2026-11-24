@@ -1,4 +1,6 @@
 import { applyPresetArgOps, effectivePreset, toggleOwnedFlags, matchingPresets, presetImage, presetPoints, resolvePresetKey, withPreset } from "./recipe-presets.js";
+import { multiConnector } from "./kv-connector.js";
+import { poolCommand, resolvePoolDeployment } from "./pool-deployment.js";
 
 /**
  * Core command synthesis: Recipe + Variant + Strategy + Hardware + Features → vllm serve command.
@@ -503,12 +505,6 @@ export function pdConnectorUnavailableReason(connector, hwProfile, router = "vll
     return `${name} works behind ${routers.map((r) => label[r] || r).join(" or ")} only.`;
   }
   return null;
-}
-
-// A KV tier composed with the transfer connector, in the shape vLLM's
-// MultiConnector takes (the transfer connector first).
-function multiConnector(connectors) {
-  return { kv_connector: "MultiConnector", kv_role: "kv_both", kv_connector_extra_config: { connectors: connectors.filter(Boolean) } };
 }
 
 function rawTransferConfigOf(args) {
@@ -1782,7 +1778,14 @@ export function resolveCommand(...params) {
   };
   const eff = raw ? effectivePreset(raw, params[18], inheritedRoleMode) : null;
   params[0] = withPreset(recipe, presetKey, hwProfileId, strategyName, { variantKey, effectivePreset: eff });
-  const result = resolveCommandImpl(dcpOut, ...params.slice(0, 17), params[19] ?? null, eff, inheritsStrategyTp);
+  // A fixed deployment declares physical placement and the role launchers.
+  // Generic PD splits devices into logical nodes and cannot infer colocated
+  // P/D, independent rank processes, or the backend's local IPC identities.
+  const activePool = eff?.deployment && strategyName === "pd_cluster"
+    && raw.select?.kv_offload === params[11] && params[14] === "ascend" && params[19] === "mooncake_ascend";
+  const plan = activePool ? resolvePoolDeployment({ recipe, presetKey }) : null;
+  const result = plan ? poolCommand(plan, params[9])
+    : resolveCommandImpl(dcpOut, ...params.slice(0, 17), params[19] ?? null, eff, inheritsStrategyTp);
   if (result && typeof result === "object" && !Array.isArray(result)) {
     if (result.deployType === "pd_cluster" && result.router && eff?.router_port !== undefined) {
       result.router.port = eff.router_port;

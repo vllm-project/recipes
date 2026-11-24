@@ -46,7 +46,7 @@ export function CopyPage({ hfId, labels }) {
 
   async function copyPage() {
     track("copy_page", { action: "copy", hfId });
-    const text = fetch(mdPath).then((r) => {
+    const text = sel?.poolExport ? Promise.resolve().then(() => sel.poolExport("md")) : fetch(mdPath).then((r) => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.text();
     });
@@ -66,6 +66,18 @@ export function CopyPage({ hfId, labels }) {
     }
   }
 
+  function download(format) {
+    const text = sel.poolExport(format);
+    const type = format === "md" ? "text/markdown" : "application/json";
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${hfId.split("/").pop()}-${sel.preset}.${format}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setOpen(false);
+  }
+
   const summary = sel && [
     labels.hardware[sel.hwId] || sel.hwId,
     labels.strategies[sel.strategy] || sel.strategy,
@@ -81,7 +93,9 @@ export function CopyPage({ hfId, labels }) {
       `Deploy ${hfId} with vLLM on this machine, following this recipe${summary ? ` (rendered for ${summary})` : ""}:`,
       `${window.location.origin}${mdPath}`,
       "",
-      "Fetch it, check that the GPUs here match that configuration, then run the commands under \"Install\" and \"Serve\". "
+      (sel?.poolPlan
+        ? "Fetch the template, check the physical layout and fill in this site's values under Deployment before starting the roles. "
+        : "Fetch it, check that the GPUs here match that configuration, then run the commands under \"Install\" and \"Serve\". ")
         + "If the hardware differs, change the URL's query string (the recipe lists the options under \"Other configurations\") and fetch it again.",
     ].join("\n");
     try {
@@ -127,14 +141,18 @@ export function CopyPage({ hfId, labels }) {
               For the selected configuration: <span className="text-foreground">{summary}</span>
             </div>
           )}
+          {sel?.poolExport && <>
+            <button type="button" role="menuitem" className={item} onClick={() => download("md")}><FileText size={14} />Download current Markdown</button>
+            <button type="button" role="menuitem" className={item} onClick={() => download("json")}><Braces size={14} />Download current JSON</button>
+          </>}
           <a role="menuitem" href={mdPath} target="_blank" rel="noopener" className={item}
             onClick={() => { track("copy_page", { action: "view_markdown", hfId }); setOpen(false); }}>
-            <FileText size={14} className="text-muted-foreground" /> View as Markdown
+            <FileText size={14} className="text-muted-foreground" /> {sel?.poolPlan ? "View Markdown template" : "View as Markdown"}
             <ExternalLink size={11} className="ml-auto opacity-50" />
           </a>
           <a role="menuitem" href={jsonPath} target="_blank" rel="noopener" className={item}
             onClick={() => { track("copy_page", { action: "view_json", hfId }); setOpen(false); }}>
-            <Braces size={14} className="text-muted-foreground" /> View as JSON
+            <Braces size={14} className="text-muted-foreground" /> {sel?.poolPlan ? "View JSON template" : "View as JSON"}
             <ExternalLink size={11} className="ml-auto opacity-50" />
           </a>
           <button role="menuitem" type="button" className={item} onClick={copyPrompt}
