@@ -6,7 +6,7 @@ import yaml from "js-yaml";
 import Ajv from "ajv";
 import { pdRoleNodes, pdRoleParallelism, resolveCommand } from "../src/lib/command-synthesis.js";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
-import { resolveSelection } from "../src/lib/recipe-render.js";
+import { renderCommand, resolveSelection } from "../src/lib/recipe-render.js";
 import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
 import { contentDir } from "../src/lib/content-root.js";
 import { applyOverlay, resolveScope, splitOverlay } from "../src/lib/overlay-merge.js";
@@ -135,6 +135,71 @@ test("a pd_cluster preset reaches only the role it names", () => {
   const r = render(recipe, "pd_cluster", "gb200", "pd");
   assert.match(r.decode.command, /--max-num-batched-tokens 512/);
   assert.doesNotMatch(r.prefill.command, /--max-num-batched-tokens 512/);
+});
+
+test("multi-node preset head and worker args reach the corresponding shell and Docker commands", () => {
+  const strategy = "multi_node_tp_dp";
+  const preset = {
+    label: "TP + DP", hardware: "ascend_910b", strategy, variants: ["default"],
+    args: ["--data-parallel-rpc-port", "13389"],
+    head_args: ["--api-server-count", "2"], worker_args: ["--headless"],
+    points: { standard: { label: "Standard" } },
+  };
+  const r = {
+    ...recipe, meta: { hardware: { ascend_910b: "supported" } },
+    variants: { ...recipe.variants, other: { ...recipe.variants.default } },
+    compatible_strategies: [strategy], presets: { mp: preset },
+  };
+  const renderNodes = (nodes, pick = "mp", hw = preset.hardware, variant = "default") =>
+    renderCommand(r, variant, strategy, hw, nodes, [], strategies, taxonomy, null, null, pick);
+  for (const nodes of [2, 4]) {
+    const result = renderNodes(nodes);
+    for (const argv of [result.head_argv, result.head_docker_argv]) {
+      assert.equal(flagValue(argv, "--api-server-count"), "2");
+      assert.equal(flagValue(argv, "--data-parallel-rpc-port"), "13389");
+      assert.ok(!argv.includes("--headless"));
+    }
+    assert.match(result.head_command, /--api-server-count 2/);
+    assert.match(result.head_docker_command, /--api-server-count 2/);
+    assert.equal(result.worker_argvs.length, nodes - 1);
+    assert.deepEqual(result.worker_argv, result.worker_argvs[0]);
+    for (const [i, argv] of result.worker_argvs.entries()) {
+      for (const worker of [argv, result.worker_docker_argvs[i]]) {
+        assert.ok(worker.includes("--headless"));
+        assert.ok(!worker.includes("--api-server-count"));
+        assert.equal(flagValue(worker, "--data-parallel-start-rank"), String(i + 1));
+        assert.equal(flagValue(worker, "--data-parallel-rpc-port"), "13389");
+      }
+      assert.match(result.worker_commands[i], /--headless/);
+      assert.match(result.worker_docker_commands[i], /--headless/);
+    }
+  }
+  for (const result of [renderNodes(2, BASELINE), renderNodes(2, "mp", "h200"), renderNodes(2, "mp", preset.hardware, "other")]) {
+    assert.ok(!result.head_argv.includes("--api-server-count"));
+    assert.ok(!result.worker_argv.includes("--headless"));
+  }
+  const query = new URLSearchParams({ strategy, hardware: preset.hardware, nodes: "2", preset: "mp" });
+  const selected = resolveSelection(r, query, strategies, taxonomy);
+  const markdown = selectionMarkdown(r, selected, { strategies, taxonomy,
+    urls: { page: "https://example.org/test/presets", json: "https://example.org/test/presets.json" } });
+  const { head_command, worker_command } = renderNodes(2);
+  assert.ok(markdown.indexOf(head_command) >= 0);
+  assert.ok(markdown.indexOf(worker_command) > markdown.indexOf(head_command));
+});
+
+test("node-specific arguments require a multi-node preset and a list of strings", () => {
+  const validate = new Ajv({ strict: false }).compile(buildRecipeSchema({ taxonomy, strategies }).properties.presets);
+  for (const field of ["head_args", "worker_args"]) {
+    const preset = { label: "TP + DP", hardware: "ascend_910b", strategy: "multi_node_tp_dp", [field]: ["--api-server-count", "2"] };
+    const errors = (p) => validatePresets({ ...recipe, presets: { mp: p } }, taxonomy, Object.keys(strategies));
+    assert.deepEqual(errors(preset), []);
+    assert.ok(validate({ mp: preset }));
+    assert.equal(validate({ mp: { ...preset, [field]: ["--api-server-count", 2] } }), false);
+    assert.equal(validate({ mp: { ...preset, points: { tune: { label: "Tune", [field]: [] } } } }), false);
+    for (const strategy of [undefined, "single_node_tp", "pd_cluster"]) {
+      assert.ok(errors({ ...preset, strategy }).some((e) => e.includes(`mp.${field}`)));
+    }
+  }
 });
 
 test("a PD preset and its points supply an editable router port", () => {

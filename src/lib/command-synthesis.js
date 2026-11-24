@@ -2271,6 +2271,10 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       ? so?.[roleOverride]?.hardware_overrides?.[hwProfileId]
       : null;
     if (roleExactHo?.extra_args) args.push(...roleExactHo.extra_args);
+    if (isMulti && preset?.strategy === strategyName) {
+      const nodeArgs = nodeRole === "head" ? preset.head_args : preset.worker_args;
+      if (nodeArgs) args.push(...nodeArgs);
+    }
 
     // 6. Advanced tuning args (from UI's Advanced panel)
     if (advancedArgs && advancedArgs.length) args.push(...advancedArgs);

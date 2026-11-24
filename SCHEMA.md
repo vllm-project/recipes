@@ -446,6 +446,28 @@ Top-level keys, in this order:
 - `troubleshooting` (optional) — `[{ title, when?, body }]`: known issues, rendered in the **Troubleshooting** tab (beside Guide and Presets): entries whose `when` matches (or that have none) first, the rest folded under "Other configurations"; the tab gets a dot when a conditional entry matches. `title` is the symptom (an error message, "warmup too slow"), and becomes the anchor `#issue-<slug>`. The build rejects `when.variants` / `when.features` naming a variant or feature the recipe doesn't have. Helpers: `src/lib/recipe-context.js`.
 - `guide` — markdown string (`|`-block), rendered with `react-markdown` + `remark-gfm` + `rehype-slug`.
 
+### Head and worker arguments in multi-node presets
+
+A preset that names a `multi_node_*` strategy can set `head_args` for rank 0
+and `worker_args` for each follower. Put the flags shared by all nodes in
+`args`. Each list contains individual CLI tokens, with numeric values quoted
+as strings. The renderer adds the node-specific arguments after the shared
+preset arguments, then applies advanced tuning, features and final preset edits.
+
+```yaml
+presets:
+  a2_tp_dp:
+    label: Two-node TP + DP
+    hardware: ascend_910b
+    strategy: multi_node_tp_dp
+    select: { nodes: 2 }
+    head_args: ["--api-server-count", "2"]
+    worker_args: ["--headless"]
+```
+
+Declare these lists on the preset itself. Its points inherit both lists.
+The worker list applies to every follower at the selected node count.
+
 ### Native prefill context parallelism (PCP)
 
 Use `tp` and `pcp` in a preset or point for `single_node_tp` or `multi_node_tp`.
