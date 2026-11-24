@@ -1,0 +1,132 @@
+meta:
+  title: "Ling-3.2-air"
+  slug: "ling-3-2-air"
+  provider: "inclusionAI"
+  description: "Ling-3.2-air vision-language MoE with block-FP8 weights and optional 1M-token YaRN"
+  date_added: 2026-11-23
+  date_updated: 2026-11-24
+  tasks:
+    - text
+    - multimodal
+  related_recipes:
+    - inclusionAI/Ling-3.1-flash
+    - inclusionAI/Ling-3.0-flash-VL
+
+model:
+  model_id: "inclusionAI/Ling-3.2-air"
+  min_vllm_version: "0.35.0"
+  nightly_required: true
+  docker_image:
+    nvidia: "vllm/vllm-openai:nightly"
+    amd: "vllm/vllm-openai-rocm:nightly"
+  architecture: moe
+  parameter_count: "~125B"
+  context_length: 262080
+  base_args:
+    - "--trust-remote-code"
+    - "--dtype"
+    - "bfloat16"
+    - "--gpu-memory-utilization"
+    - "0.9"
+    - "--enable-chunked-prefill"
+    - "--enable-prefix-caching"
+    - "--compilation-config"
+    - '{"cudagraph_mode":"FULL_AND_PIECEWISE"}'
+
+features:
+  tool_calling:
+    description: "Enable Ling 3 automatic tool calling"
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "ling3"
+  reasoning:
+    description: "Split Ling 3 thinking traces into reasoning"
+    args:
+      - "--reasoning-parser"
+      - "ling3"
+  long_context:
+    label: "YaRN 1M"
+    description: "Extend to 1,048,576 tokens with 4x YaRN over a 262,144-token original window"
+    args:
+      - "--hf-overrides"
+      - '{"text_config":{"max_position_embeddings":1048576,"rope_parameters":{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":262144,"partial_rotary_factor":0.5,"rope_theta":6000000,"mrope_section":[8,12,12],"mscale":1.0,"mscale_all_dim":0.0}}}'
+      - "--max-model-len"
+      - "1048576"
+
+opt_in_features:
+  - tool_calling
+  - reasoning
+  - long_context
+
+variants:
+  default:
+    precision: fp8
+    # Estimated weight footprint plus runtime allowance; KV capacity varies.
+    vram_minimum_gb: 150
+    tp: 8
+    description: "Block-FP8 E4M3 weights, 128x128 block scaling, with BF16 compute."
+
+compatible_strategies:
+  - single_node_tp
+  - single_node_tep
+
+default_strategy: single_node_tep
+
+guide: |
+  ## Overview
+
+  `inclusionAI/Ling-3.2-air` uses the
+  `BailingMoeV3VLForConditionalGeneration` architecture with a hybrid
+  MLA/KDA text backbone, 42 layers, 512 routed experts (8 active per token),
+  and a vision encoder. Weights use block-FP8 E4M3 with 128x128 scaling
+  and dynamic activation quantization; excluded modules remain BF16.
+
+  ## Prerequisites
+
+  - **vLLM:** latest nightly with Bailing multimodal YaRN support; v0.34.0 lacks this path
+  - **Deployment:** a single node with 8 GPUs, defaulting to TP8 + EP8; TP8 is also available
+  - **Precision:** block FP8 weights with BF16 compute
+  - **Context length:** 262,080 tokens; optional 1,048,576-token YaRN
+  - **Memory:** about 150 GB aggregate VRAM as a loading estimate; allow additional KV-cache capacity
+
+  The parameter count is estimated from the supplied configuration.
+  This recipe has not yet been validated on GPU.
+
+  ## YaRN Context Extension
+
+  The optional YaRN configuration uses `factor=4.0` and an original window
+  of 262,144 tokens. Overrides target `text_config.rope_parameters`, retain
+  `mrope_section=[8,12,12]`, and set the context limit to 1,048,576 tokens.
+  YaRN stays opt-in because it changes short-context behavior and increases
+  KV-cache requirements.
+
+  ## Image Requests
+
+  ```python
+  import base64
+  from pathlib import Path
+  from openai import OpenAI
+
+  client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+  image = base64.b64encode(Path("image.png").read_bytes()).decode("ascii")
+  response = client.chat.completions.create(
+      model="inclusionAI/Ling-3.2-air",
+      messages=[{
+          "role": "user",
+          "content": [
+              {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image}"}},
+              {"type": "text", "text": "Describe the image."},
+          ],
+      }],
+      temperature=0.0,
+      max_tokens=1024,
+  )
+  print(response.choices[0].message.content)
+  ```
+
+  ## References
+
+  - [Ling-3.2-air checkpoint](https://huggingface.co/inclusionAI/Ling-3.2-air)
+  - [Official Ling VL video and YaRN support](https://github.com/vllm-project/vllm/pull/65848)
+  - [vLLM nightly installation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/#install-the-latest-code)
