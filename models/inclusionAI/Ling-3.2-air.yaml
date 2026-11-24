@@ -4,7 +4,7 @@ meta:
   provider: "inclusionAI"
   description: "Ling-3.2-air vision-language MoE with block-FP8 weights and optional 1M-token YaRN"
   date_added: 2026-11-23
-  date_updated: 2026-11-23
+  date_updated: 2026-11-24
   tasks:
     - text
     - multimodal
@@ -29,12 +29,9 @@ model:
     - "--gpu-memory-utilization"
     - "0.9"
     - "--enable-chunked-prefill"
-    - "--max-num-batched-tokens"
-    - "8192"
-    - "--max-num-seqs"
-    - "1"
-    - "--max-model-len"
-    - "262080"
+    - "--enable-prefix-caching"
+    - "--compilation-config"
+    - '{"cudagraph_mode":"FULL_AND_PIECEWISE"}'
 
 features:
   tool_calling:
@@ -74,7 +71,7 @@ compatible_strategies:
   - single_node_tp
   - single_node_tep
 
-default_strategy: single_node_tp
+default_strategy: single_node_tep
 
 guide: |
   ## Overview
@@ -88,7 +85,7 @@ guide: |
   ## Prerequisites
 
   - **vLLM:** latest nightly with Bailing multimodal YaRN support; v0.34.0 lacks this path
-  - **Deployment:** a single node with 8 GPUs, using TP8 or TP8 + EP8
+  - **Deployment:** a single node with 8 GPUs, defaulting to TP8 + EP8; TP8 is also available
   - **Precision:** block FP8 weights with BF16 compute
   - **Context length:** 262,080 tokens; optional 1,048,576-token YaRN
   - **Memory:** about 150 GB aggregate VRAM as a loading estimate; allow additional KV-cache capacity
