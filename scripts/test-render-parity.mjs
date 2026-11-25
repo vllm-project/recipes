@@ -612,3 +612,27 @@ test("KV offload follows profile opt-in without depending on the backend name", 
   allowed.kv_offload.simple.brands = ["Example"];
   assert.equal(render(allowed).argv.includes("--kv-transfer-config"), true);
 });
+
+test("multi-node Markdown includes Docker equivalents for head and every worker node", () => {
+  const recipe = {
+    hf_id: "example/multi-node",
+    model: { model_id: "example/multi-node" },
+    compatible_strategies: ["single_node_tp", "multi_node_tp"],
+    variants: { default: { precision: "bf16", vram_minimum_gb: 2000 } },
+  };
+  const q = new URLSearchParams({ hardware: "h200", strategy: "multi_node_tp", nodes: "2" });
+  const resolved = resolveSelection(recipe, q, strategies, taxonomy);
+  const r = resolved.rendering;
+  assert.equal(r.deploy_type, "multi_node");
+  assert.ok(r.head_docker_command);
+  assert.equal(r.worker_docker_commands.length, 1);
+  const md = selectionMarkdown(recipe, resolved, {
+    strategies, taxonomy,
+    urls: { page: "https://example.org/example/multi-node", json: "https://example.org/example/multi-node.json" },
+  });
+  assert.ok(md.includes(r.head_docker_command), "head Docker command missing from Markdown");
+  for (const [i, cmd] of r.worker_docker_commands.entries()) {
+    assert.ok(md.includes(cmd), `worker ${i + 1} Docker command missing from Markdown`);
+  }
+  assert.ok(!md.includes("# Head\n"), "head Docker command should sit under Head section, not a separate # Head block");
+});
