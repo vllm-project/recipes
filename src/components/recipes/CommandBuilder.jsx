@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { replaceQuery } from "@/lib/url-state";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { maxVersion, resolveInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdPcpDeployment, NATIVE_PD_PCP_KV_OFFLOAD_REASON, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason, ascendPdUnavailableReason } from "@/lib/command-synthesis";
+import { maxVersion, resolveInstall, nvidiaNightlyPipInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdPcpDeployment, NATIVE_PD_PCP_KV_OFFLOAD_REASON, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason, ascendPdUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, presetSelect, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import ShellCode from "@/components/recipes/ShellCode";
@@ -4175,15 +4175,13 @@ function InstallBlock({ recipe, variant, dockerMeta, installMode, setInstallMode
   // pill in the Install header. Manual `install.pip.command` overrides still
   // win — this flag only affects the default.
   const nightlyRequired = recipe.model?.nightly_required === true || variant?.nightly_required === true;
+  const nightlyPip = nightlyRequired ? nvidiaNightlyPipInstall(minV) : null;
   // A CUDA map narrows the toggle to the builds the recipe actually declares.
   // A single-key map (e.g. K3's cu130-only preview image) has nothing to
   // toggle: hide the selector and pin the docker tag to the one published build.
   const cudaMapKeys = cudaMap ? ["cu130", "cu129"].filter((k) => k in cudaMap) : null;
   const singleCudaBuild = cudaMapKeys && cudaMapKeys.length === 1 ? cudaMapKeys[0] : null;
   const singleCudaLabel = singleCudaBuild === "cu129" ? "CUDA 12.9 (cu129)" : "CUDA 13 (cu130)";
-  // Nightly wheels are cu130-only: `/nightly/cu129` stopped at the 0.32.0
-  // cycle, so there is no CUDA choice to offer for the pip nightly index.
-  const pipCudaTag = "cu130";
   const defaultPipCmd = isAmd
     ? `uv venv --python 3.12
 source .venv/bin/activate
@@ -4201,14 +4199,7 @@ source .venv/bin/activate
 export VLLM_VERSION=$(curl -sI https://github.com/vllm-project/vllm/releases/latest | sed -n 's|^[Ll]ocation: .*/tag/v||p' | tr -d '\\r')
 uv pip install https://github.com/vllm-project/vllm/releases/download/v$VLLM_VERSION/vllm-$VLLM_VERSION+cpu-cp38-abi3-manylinux_2_39_x86_64.whl \\
   --torch-backend cpu`
-      : nightlyRequired
-        ? `uv venv
-source .venv/bin/activate
-uv pip install -U vllm --pre \\
-  --extra-index-url https://wheels.vllm.ai/nightly/${pipCudaTag} \\
-  --extra-index-url https://download.pytorch.org/whl/${pipCudaTag} \\
-  --index-strategy unsafe-best-match`
-        : `uv venv
+      : nightlyPip?.command ?? `uv venv
 source .venv/bin/activate
 uv pip install -U vllm --torch-backend auto`;
   const pipCmd = hwPip?.command || pipCfg?.command || defaultPipCmd;
@@ -4217,9 +4208,7 @@ uv pip install -U vllm --torch-backend auto`;
       ? nightlyRequired
         ? "Intel/AMD x86 CPU nightly wheels use the dedicated /nightly/cpu index and PyTorch CPU backend."
         : `Intel/AMD x86 CPU release wheels are published separately from CUDA wheels; the command follows the official vLLM CPU pre-built-wheel flow. Since v0.30.0 they are manylinux_2_39 builds, which need glibc 2.39+ (e.g. Ubuntu 24.04+)${dockerHidden ? "." : "; on older distros use the Docker tab."}`
-      : nightlyRequired && !isAmd
-        ? `vLLM ${minV} isn't released yet — nightly required. Nightly wheels are CUDA 13 (cu130) only; the host needs an r580+ NVIDIA driver.`
-        : undefined);
+      : isAmd ? undefined : nightlyPip?.note);
 
   // Docker install step is just the image pull; the `docker run` that actually
   // serves the model is rendered in the main command block below. A YAML

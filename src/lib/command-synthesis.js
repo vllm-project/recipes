@@ -45,6 +45,16 @@ export function resolveInstall(recipe, variant = {}) {
   return { ...recipe.model?.install, ...variant.install };
 }
 
+export function nvidiaNightlyPipInstall(minVersion) {
+  return {
+    command: `uv venv
+source .venv/bin/activate
+uv pip install -U vllm --pre --torch-backend=auto \\
+  --extra-index-url https://wheels.vllm.ai/nightly`,
+    note: `vLLM ${minVersion} isn't released yet — nightly required. Use an NVIDIA driver compatible with the default nightly CUDA build.`,
+  };
+}
+
 export function isFeatureAllowedForVariant(variant, featureKey) {
   return !variant?.supported_features || variant.supported_features.includes(featureKey);
 }
