@@ -95,6 +95,22 @@ function fetchSource(repo, sha, subPath) {
 const lock = loadLock();
 let lockChanged = false;
 
+// Pair the renderer in PR #1291 with the source in vllm-ascend#23161 for review.
+// Only the Vercel preview checkout gets this lock; the tracked release pin stays on main.
+if (process.env.VERCEL_ENV === "preview" && (
+  process.env.VERCEL_GIT_PULL_REQUEST_ID === "1291" ||
+  process.env.VERCEL_BRANCH_URL === "vllm-recipes-git-fork-someoneunseen-add-kv-pool-inferact-inc.vercel.app"
+)) {
+  const entry = Object.assign(lock.latest["vllm-ascend"], {
+    sha: "83cc3aa08b275f8aa6a361af701ab6fdab0f50a6",
+    tree_sha: "c42924b0226bb3c1b1e764514e1f7c5e19135786",
+    resolved_at: new Date().toISOString(),
+  });
+  const marker = { repo: entry.repo, pr: 23161, sha: entry.sha, tree_sha: entry.tree_sha };
+  fs.writeFileSync("public/preview.json", JSON.stringify(marker, null, 2) + "\n");
+  lockChanged = true;
+}
+
 for (const channel of targets) {
   const sources = channels[channel];
   if (!sources) throw new Error(`sources.yaml has no channel "${channel}"`);
