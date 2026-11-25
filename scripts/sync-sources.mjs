@@ -102,8 +102,8 @@ if (process.env.VERCEL_ENV === "preview" && (
   process.env.VERCEL_BRANCH_URL === "vllm-recipes-git-fork-someoneunseen-add-kv-pool-inferact-inc.vercel.app"
 )) {
   const entry = Object.assign(lock.latest["vllm-ascend"], {
-    sha: "e0ebc61a83e24c74f778fb0126024c3ba984536d",
-    tree_sha: "95d4d26b209b2fd35187a089e7d724042a2592fd",
+    sha: "97e7ef19ab766debeb95c9110d6fad07093d07bb",
+    tree_sha: "2ddb7ec45add9956855f1df7d795d9560b2214db",
     resolved_at: new Date().toISOString(),
   });
   const marker = { repo: entry.repo, pr: 23161, sha: entry.sha, tree_sha: entry.tree_sha };

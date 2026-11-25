@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { track } from "@vercel/analytics";
 import { useSearchParams } from "next/navigation";
+import { PoolCommands, PoolConfiguration } from "./PoolDeployment";
 import { replaceQuery } from "@/lib/url-state";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
@@ -1355,6 +1356,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     ? resolveSelection(recipe, new URLSearchParams(shareQuery), strategies, taxonomy, { poolInputs }) : null,
     [declaredPool, recipe, shareQuery, strategies, taxonomy, poolInputs]);
   const poolPlan = poolSelection?.rendering?.pool_deployment;
+  // Shared pool links can arrive before the client-side builder has mounted.
+  useEffect(() => {
+    if (!declaredPool) return;
+    const hash = window.location.hash;
+    if (hash !== "#deployment" && hash !== "#pool-commands") return;
+    const frame = requestAnimationFrame(() => document.getElementById(hash.slice(1))?.scrollIntoView());
+    return () => cancelAnimationFrame(frame);
+  }, [declaredPool]);
   const changePoolMode = useCallback((mode) => {
     setPoolMode(mode);
     const query = new URLSearchParams(pendingQs.current ?? window.location.search);
@@ -1376,8 +1385,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   }, [recipe, poolSelection, shareQuery, hwId, strategies, taxonomy]);
   useEffect(() => {
     publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features: activeFeatures, preset: selectedPreset, query: shareQuery,
-      ...(poolPlan && { poolPlan, poolImage: poolSelection.rendering.docker_image, poolInputs, changePoolMode, changePoolInput, poolExport }) });
-  }, [recipe.hf_id, hwId, activeStrategy, variant, activeFeatures, selectedPreset, shareQuery, poolPlan, poolSelection, poolInputs, changePoolMode, changePoolInput, poolExport]);
+      ...(poolPlan && { poolPlan, poolExport }) });
+  }, [recipe.hf_id, hwId, activeStrategy, variant, activeFeatures, selectedPreset, shareQuery, poolPlan, poolExport]);
 
   // Visual feedback when any rendered command changes. Covers single-node
   // (result.command), multi-node (headCommand), pd_cluster (prefill.command),
@@ -2711,15 +2720,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             }`}
         >
           {declaredPool ? (
-            <div className="space-y-3 px-4 py-4">
-              <a className="font-semibold text-vllm-blue underline" href="#deployment">View pool deployment steps</a>
-              <p className="text-sm text-muted-foreground">This preset fixes the role layout, transfer connector and launch settings. Prepare the pool before starting the role processes.</p>
-              {poolPlan?.mode && <div className="flex flex-wrap gap-3 text-sm">
-                {poolPlan.steps.filter((step) => step.role && step.command).map((step) =>
-                  <a key={step.id} href={`#pool-step-${step.id}`} className="text-vllm-blue underline">{step.title} · {step.host}</a>)}
-              </div>}
-              {!poolPlan && <p role="alert">The selected pool deployment could not be rendered.</p>}
-            </div>
+            <PoolCommands key={poolScope} plan={poolPlan} />
           ) : result.deploymentError ? (
             <p role="alert" className="px-4 py-5 text-sm text-amber-600">{result.deploymentError}</p>
           ) : isPd ? (
@@ -3245,7 +3246,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               wraps it in a router-fronted instance deployment (kv_store_lb).
               Both Mooncake topologies share one pill here; the Store Topology
               row below picks between them. */}
-          <ConfigRow label="KV Offload">
+          <ConfigRow id={declaredPool ? "deployment" : undefined} label="KV Offload">
             <PillGroup>
               <Pill
                 active={activeKvOffload === ""}
@@ -3382,6 +3383,12 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
             })()}
           </ConfigRow>
 
+          {poolPlan && (
+            <ConfigRow label="Pool setup" nested>
+              <PoolConfiguration key={qualifiedPresetKey} plan={poolPlan} image={poolSelection.rendering.docker_image}
+                poolInputs={poolInputs} changePoolInput={changePoolInput} changePoolMode={changePoolMode} />
+            </ConfigRow>
+          )}
           {poolCandidates.length > 0 && !declaredPool && (
             <ConfigRow label="Pool presets" nested>
               <div id="pool-presets" className="flex flex-wrap gap-2">
@@ -3896,13 +3903,13 @@ function keepClickedRowInPlace(e) {
   holdInPlace(e.target.closest("[data-config-row]"));
 }
 
-function ConfigRow({ label, hint, nested, children }) {
+function ConfigRow({ id, label, hint, nested, children }) {
   // `nested` marks a row that only exists as a child of the pick above it
   // (Store Topology / Instances under Mooncake, the spec-method row under
   // Features): a blue left rail + slight tint expresses the ownership that
   // the flat divide-y list otherwise hides.
   return (
-    <div data-config-row className={`px-4 py-3 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 ${nested ? "border-l-2 border-vllm-blue/30 bg-muted/20" : ""}`}>
+    <div id={id} data-config-row className={`scroll-mt-24 px-4 py-3 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 ${nested ? "border-l-2 border-vllm-blue/30 bg-muted/20" : ""}`}>
       <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest sm:w-28 sm:pt-1.5 shrink-0 inline-flex items-center gap-1">
         {label}
         {hint && (
