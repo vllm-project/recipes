@@ -48,6 +48,13 @@ export function resolveInstall(recipe, variant = {}) {
 // The command vLLM's install guide gives for nightly wheels. No `--pre`: uv
 // reads the nightly index first, where every vllm build is a pre-release, so it
 // is selected anyway, and `--pre` would also pull pre-release dependencies.
+//
+// Never point at a CUDA-tagged nightly subdirectory. vLLM moved its default
+// CUDA build from 13.0 to 13.2 on 2026-11-10 (vllm-project/vllm#55387), and
+// `/nightly/cu130` has been frozen since (last build 0.34.0rc1.dev156), like
+// `/nightly/cu129` before it. A frozen index resolves to the PyPI release
+// instead of a nightly (#1290). When the default CUDA version moves again,
+// update the version named in the note below.
 export function nvidiaNightlyPipInstall(minVersion) {
   return {
     command: `uv venv
