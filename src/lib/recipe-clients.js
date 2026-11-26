@@ -14,7 +14,7 @@ export function resolveClientTarget(result, endpoints = {}) {
   const routed = isPd || hasKvRouter;
   const hostKey = routed ? "ROUTER_HOST" : deployType === "multi_node" ? "HEAD_IP" : "VLLM_HOST";
   const portKey = routed ? "ROUTER_PORT" : "VLLM_PORT";
-  const defaultPort = isPd ? 30000 : hasKvRouter ? (result.router.port || 30080) : 8000;
+  const defaultPort = result?.router?.port ?? (isPd ? 30000 : hasKvRouter ? 30080 : 8000);
   return {
     hostKey,
     portKey,
@@ -36,6 +36,13 @@ function shellQuote(value) {
 export function renderRecipeClients(recipe, variantKey, result, endpoints = {}) {
   const client = recipe.client;
   if (!client || (recipe.meta?.tasks || []).includes("omni")) return null;
+  const target = resolveClientTarget(result, endpoints);
+  const modelId = recipe.variants?.[variantKey]?.model_id || recipe.model?.model_id || "model";
+  return renderJsonClient({ client, modelId, ...target });
+}
+
+/** Format a declared client using the selected checkpoint and deployment target. */
+export function renderJsonClient({ client, modelId, host, port }) {
   // Also enforce the selected-target invariants for programmatic callers.
   if (Object.prototype.hasOwnProperty.call(client.request_body, "model")) {
     throw new Error("client.request_body must not declare model; the selected variant supplies it");
@@ -44,8 +51,6 @@ export function renderRecipeClients(recipe, variantKey, result, endpoints = {}) 
   if (extraArgs.some((arg) => RESERVED_BENCHMARK_ARG_RE.test(arg))) {
     throw new Error("client.benchmark.args must not override the selected model, target, endpoint, backend or dataset");
   }
-  const { host, port } = resolveClientTarget(result, endpoints);
-  const modelId = recipe.variants?.[variantKey]?.model_id || recipe.model?.model_id || "model";
   const body = JSON.stringify({ model: modelId, ...client.request_body }, null, 2);
   // Keep the join at runtime: Next 15's minifier folds a literal array into
   // a template whose backslash-newlines become JavaScript line continuations.

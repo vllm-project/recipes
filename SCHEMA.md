@@ -82,8 +82,8 @@ model:
   default_frontend: rust                          # optional — python (default) | rust; preselects the Frontend pill
   rust_frontend: unsupported                      # optional — only when Rust is confirmed to fail (e.g. a parser it hasn't registered); explain why in the guide
 
-# Optional JSON POST clients for a non-chat model. Omit for the default chat
-# clients; Omni uses its own task-specific declarations. See JSON POST clients.
+# Optional JSON POST clients with literal request data. Omit for automatic
+# endpoint detection; Omni uses its own task-specific declarations. See JSON POST clients.
 # client:
 #   endpoint: /v1/rerank
 #   request_body:
@@ -667,10 +667,12 @@ command templates. Markdown sets the default in router and registration commands
 
 ## JSON POST clients
 
-`client` optionally replaces the non-Omni builder's cURL and Bench examples.
-Use it when the model serves a JSON POST endpoint such as reranking, rather
-than chat completions. Omission preserves the existing chat clients. Omni
-recipes use `omni.tasks` and cannot also declare `client`.
+`client` supplies the non-Omni builder's cURL and Bench examples, including
+checkpoint-specific instruction text or a custom JSON POST endpoint.
+The builder uses the declaration first. When it is omitted, serving arguments
+and the selected model identify chat, embeddings or reranking examples.
+Unidentified pooling tasks leave the example buttons disabled. Omni recipes
+use `omni.tasks` and cannot also declare `client`.
 
 The object has exactly three required fields:
 

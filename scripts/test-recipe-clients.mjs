@@ -7,6 +7,7 @@ import { test } from "node:test";
 import yaml from "js-yaml";
 import Ajv from "ajv";
 import { renderRecipeClients, resolveClientTarget } from "../src/lib/recipe-clients.js";
+import { resolveClientCommands } from "../src/lib/client-commands.js";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import { buildVariantRendering, renderCommand, resolveSelection } from "../src/lib/recipe-render.js";
 import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
@@ -108,6 +109,7 @@ test("targets preserve single, multi, PD and routed/routerless KV behavior", () 
     [{ deployType: "single_node" }, "VLLM_HOST", "VLLM_PORT", "8000"],
     [{ deployType: "multi_node" }, "HEAD_IP", "VLLM_PORT", "8000"],
     [{ deployType: "pd_cluster" }, "ROUTER_HOST", "ROUTER_PORT", "30000"],
+    [{ deployType: "pd_cluster", router: { port: 31600 } }, "ROUTER_HOST", "ROUTER_PORT", "31600"],
     [{ deployType: "kv_store_lb", router: { port: 31080 } }, "ROUTER_HOST", "ROUTER_PORT", "31080"],
     [{ deployType: "kv_store_lb", router: {} }, "ROUTER_HOST", "ROUTER_PORT", "30080"],
     [{ deployType: "kv_store_lb", router: null }, "VLLM_HOST", "VLLM_PORT", "8000"],
@@ -171,7 +173,16 @@ test("UI helper, static variants, query JSON and Markdown generate the same clie
         const resolved = resolveSelection(fixture, query, strategies, taxonomy);
         assert.deepEqual(resolved.rendering.clients, expected.clients);
         const uiResult = resolveCommand(fixture, variant, strategy, hardware, [], strategies, taxonomy, [], expected.node_count);
+        const target = resolveClientTarget(uiResult);
         assert.deepEqual(renderRecipeClients(fixture, variant, uiResult), expected.clients);
+        assert.deepEqual(resolveClientCommands({
+          client: fixture.client, modelId: expected.clients.model_id,
+          argv: uiResult.argv ?? uiResult.headArgv, tasks: fixture.meta.tasks,
+          host: target.host, port: target.port,
+        }), {
+          verifyCmd: expected.clients.verify_command,
+          benchCmd: expected.clients.benchmark_command,
+        });
         const md = selectionMarkdown(fixture, resolved, {
           strategies, taxonomy, urls: { page: "https://example.org/Qwen/Qwen3-Reranker-0.6B", json: "https://example.org/Qwen/Qwen3-Reranker-0.6B.json" },
         });
@@ -179,7 +190,6 @@ test("UI helper, static variants, query JSON and Markdown generate the same clie
         assert.ok(md.includes(expected.clients.verify_command));
         assert.ok(md.includes(expected.clients.benchmark_command));
         assert.ok(md.includes("local to that browser"));
-        const target = resolveClientTarget(uiResult);
         const custom = renderRecipeClients(fixture, variant, uiResult, { [target.hostKey]: "custom.example", [target.portKey]: "9002" });
         assert.equal(custom.host, "custom.example");
         assert.equal(resolved.rendering.clients.host, "localhost");
@@ -248,4 +258,30 @@ test("legacy text renderings and Omni task clients remain opt-out", () => {
   assert.equal(task.benchmark, "existing image benchmark");
   assert.equal(renderRecipeClients(omni, "default", {}), null);
   assert.equal(resolveSelection(omni, new URLSearchParams("hardware=h200"), strategies, taxonomy).rendering.clients, undefined);
+});
+
+
+test("declared clients follow a PD preset router port and browser-local overrides", () => {
+  const recipe = fresh();
+  recipe.presets = {
+    custom_router: { hardware: "h200", strategy: "pd_cluster", router_port: 31600 },
+  };
+  const resolved = resolveSelection(recipe, new URLSearchParams(
+    "hardware=h200&variant=alternate&strategy=pd_cluster&preset=custom_router"
+  ), strategies, taxonomy);
+  const rendering = resolved.rendering;
+  assert.equal(rendering.router.port, 31600);
+  assert.equal(rendering.clients.port, "31600");
+  const target = resolveClientTarget(rendering, { ROUTER_HOST: "router.example", ROUTER_PORT: "32000" });
+  const commands = resolveClientCommands({
+    client: recipe.client, modelId: rendering.clients.model_id,
+    host: target.host, port: target.port,
+  });
+  const custom = renderRecipeClients(recipe, "alternate", rendering, {
+    ROUTER_HOST: "router.example", ROUTER_PORT: "32000",
+  });
+  assert.equal(commands.verifyCmd, custom.verify_command);
+  assert.equal(commands.benchCmd, custom.benchmark_command);
+  assert.equal(rendering.clients.host, "localhost");
+  assert.equal(rendering.clients.port, "31600");
 });
