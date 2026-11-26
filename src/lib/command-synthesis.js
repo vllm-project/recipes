@@ -1,4 +1,7 @@
+import { shellLiteral } from "./cluster-endpoints.js";
 import { applyPresetArgOps, effectivePreset, toggleOwnedFlags, matchingPresets, presetImage, presetPoints, resolvePresetKey, withPreset } from "./recipe-presets.js";
+
+export { shellLiteral };
 
 /**
  * Core command synthesis: Recipe + Variant + Strategy + Hardware + Features → vllm serve command.
@@ -1408,9 +1411,11 @@ export function buildDockerRun(options) {
   const envFlags = Object.entries(env || {})
     .map(([k, v]) => `-e ${k}=${v}`)
     .join(" \\\n  ");
-  const modelId = command.match(/^vllm serve (\S+)/)?.[1] || "MODEL";
+  // The renderer already knows the raw checkpoint. Legacy command-only callers
+  // can still supply a simple unquoted model name.
+  const modelId = options.modelId ?? command.match(/^vllm serve (\S+)/)?.[1];
   const localMount = localModelMount(modelId);
-  const mountFlags = [...localMount, ...configPathMounts(env)]
+  const mountFlags = [...localMount.map(shellLiteral), ...configPathMounts(env)]
     .map((m) => `-v ${m}`)
     .join(" \\\n  ");
   // A missing host path makes the bind mount silently yield an empty directory,
@@ -1420,9 +1425,13 @@ export function buildDockerRun(options) {
   // tab shows it too), where it is copy-pastable rather than commented out.
   // Restating it here would mean guessing which dependency is the download.
   const prereq = localMount.length
-    ? `# ${modelId} must already exist on the host — bind-mounted read-only below.\n`
+    ? `# ${modelId.replaceAll("\n", "\n# ")} must already exist on the host — bind-mounted read-only below.\n`
     : "";
-  const serveBody = command.replace(/^vllm serve \S+\s*\\?\n?\s*/, "");
+  // Retain the already formatted arguments, including the quoted model and
+  // any endpoint substitutions made by the command builder.
+  const serveArgs = command.replace(/^(?:vllm|vllm-omni) serve /, "");
+  const cmdArgs = serveArgs === command ? `MODEL \\\n  ${command}` : serveArgs;
+  const serveBody = modelId ? serveArgs.slice(shellLiteral(modelId).length) : serveArgs;
   // Ascend uses host networking and an explicit shm size; `-p` is a no-op
   // under `--net=host` and hid the required `--shm-size` on 950PR.
   const pubPort = port ?? servedPort(serveBody.split(/\s+/));
@@ -1435,11 +1444,11 @@ export function buildDockerRun(options) {
   const base = `${prereq}docker run${gpuPrefix}${runtimeFlags} \\${extraFlags.length ? `\n  ${extraFlags.join(" ")} \\` : ""}
   -v ~/.cache/huggingface:/root/.cache/huggingface \\${mountFlags ? `\n  ${mountFlags} \\` : ""}${envFlags ? `\n  ${envFlags} \\` : ""}`;
   const setup = setupCommand
-    ? `--entrypoint /bin/sh ${image} -c ${shellQuote(`${setupCommand} && exec vllm serve "$@"`)} vllm-grpc ${modelId}`
+    ? `--entrypoint /bin/sh ${image} -c ${shellQuote(`${setupCommand} && exec vllm serve "$@"`)} vllm-grpc`
     : null;
-  const cmdHead = setup || (cmdPrefix ? `${image} \\\n  ${cmdPrefix} ${modelId}` : `${image} ${modelId}`);
+  const cmdHead = setup || (cmdPrefix ? `${image} \\\n  ${cmdPrefix}` : image);
   return `${base}
-  ${cmdHead}${serveBody ? ` \\\n  ${serveBody}` : ""}`;
+  ${cmdHead} ${cmdArgs}`;
 }
 
 // argv companion to buildDockerRun. `argv` here is the inner command's argv —
@@ -1670,8 +1679,8 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfil
     }
   }
   const command = lines.length === 0
-    ? `${serveBinary} ${modelId}`
-    : `${serveBinary} ${modelId} \\\n  ${lines.join(" \\\n  ")}`;
+    ? `${serveBinary} ${shellLiteral(modelId)}`
+    : `${serveBinary} ${shellLiteral(modelId)} \\\n  ${lines.join(" \\\n  ")}`;
 
   return { command, env, modelId };
 }
@@ -2658,8 +2667,8 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
   // Dynamo workers launch via `python3 -m dynamo.vllm --model <id>`; every
   // other path is `vllm serve <id>`.
   const serveHead = dynamo
-    ? `${dynamo.launcher || "python3 -m dynamo.vllm"} --model ${modelId}`
-    : `vllm serve ${modelId}`;
+    ? `${dynamo.launcher || "python3 -m dynamo.vllm"} --model ${shellLiteral(modelId)}`
+    : `vllm serve ${shellLiteral(modelId)}`;
   function formatCommand(args) {
     const filtered = dedupeArgs(args.filter(Boolean));
     if (filtered.length === 0) return serveHead;
@@ -2820,7 +2829,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
       `--policy ${smg.policy || "round_robin"}`,
       ...(smgGrpc ? [
         ...smgWorkers.map(({ role, port }) => `--${role} grpc://$${role.toUpperCase()}_NODE_1:${port}`),
-        `--model-path ${shellQuote(modelId)}`,
+        `--model-path ${shellLiteral(modelId)}`,
         `--reasoning-parser ${enabledFeatures.includes("reasoning") ? grpcConfig.reasoning_parser : "passthrough"}`,
         `--tool-call-parser ${enabledFeatures.includes("tool_calling") ? grpcConfig.tool_call_parser : "passthrough"}`,
       ] : []),

@@ -16,7 +16,7 @@ import { holdInPlace } from "@/lib/hold-in-place";
 import { whenMatches } from "@/lib/recipe-context";
 import { ADVANCED_OPTIONS } from "@/lib/advanced-options";
 import { TooltipProvider, InfoTip } from "@/components/ui/tooltip";
-import { detectPlaceholdersAll, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
+import { detectPlaceholdersAll, shellLiteral, substitute, substituteEnv, loadEndpoints, saveEndpoint, clearEndpoints } from "@/lib/cluster-endpoints";
 
 // Tuning guidance for a feature's sub-mode, shown under the Features row while
 // that mode is the active one. Keyed [feature][mode] and kept here rather than
@@ -2230,7 +2230,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     [currentVariant, presetImage, hwId]
   );
   const dockerMeta = useMemo(() => {
-    const meta = computeDockerMeta(recipe, imageVariant, hwProfile, hwId);
+    const meta = {
+      ...computeDockerMeta(recipe, imageVariant, hwProfile, hwId),
+      modelId: imageVariant.model_id || recipe.model?.model_id,
+    };
     if (!meta.image || meta.brandKey !== "nvidia") return meta;
 
     // Explicit CUDA map (e.g. `{cu129: ..., cu130: ...}`) — pick the matching
@@ -2331,7 +2334,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const omniRendered = activeTask
       ? resolveOmniCommand(recipe, variant, activeTask, hwProfile, hwId)
       : {
-          command: `${recipe.omni?.serve_binary || "vllm serve"} ${currentVariant.model_id || recipe.model?.model_id || "model"} --omni`,
+          command: `${recipe.omni?.serve_binary || "vllm serve"} ${shellLiteral(currentVariant.model_id || recipe.model?.model_id || "model")} --omni`,
           env: {},
           modelId: currentVariant.model_id || recipe.model?.model_id || "model",
         };
@@ -2410,7 +2413,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               benchCmd={omniBench}
               statusHeader={statusHeader}
               installMode={effectiveInstallMode}
-              dockerMeta={dockerMeta}
+              dockerMeta={{ ...dockerMeta, modelId: omniRendered.modelId }}
               configSummary={omniConfigSummary}
               endpointsControls={omniEndpointsControls}
               commandNote={commandNote}
