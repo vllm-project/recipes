@@ -47,6 +47,7 @@ function configLine(recipe, resolved, strategies) {
 
 function serveSection(r) {
   const out = [];
+  if (r.pcp > 1) out.push(`Tensor parallel size ${r.tp} · Prefill context parallel size ${r.pcp}.`, "");
   const dockerNote = (cmd) => cmd ? ["", "Docker equivalent:", "", fence(cmd)] : [];
   if (r.deploy_type === "multi_node") {
     const workers = r.worker_commands || [r.worker_command];
@@ -81,17 +82,23 @@ function serveSection(r) {
       const nodes = p.node_commands || [{ ...p, node_rank: p.currentNode ?? 0 }];
       out.push("", `### ${role === "prefill" ? "Prefill" : "Decode"}`, "",
         "Run each command on its named node. Ranks differ; do not repeat one command on every node.");
+      if (r.prefill.pcp > 1) {
+        const ranks = p.parallelism === "dep" ? ` (${p.dpLocal} local ranks per node)` : "";
+        out.push("", `TP ${p.tp} · PCP ${p.pcp} · DP ${p.dpSize}${ranks}.`);
+      }
       for (const node of nodes) {
         out.push("", `#### $${role.toUpperCase()}_NODE_${node.node_rank + 1} (node rank ${node.node_rank})`, "",
           fence(withEnv(node.env, node.command)), ...dockerNote(node.docker_command));
       }
     }
+    const defaultPort = r.router?.port === undefined ? "" : 'export ROUTER_PORT="${ROUTER_PORT:-' + r.router.port + '}"\n';
     if (r.router?.command) {
       out.push("", `### ${r.router.label || "Router"}`, "");
       if (r.router.install && !(r.orchestrator_install || []).some((i) => i.command === r.router.install)) out.push(fence(r.router.install), "");
-      out.push(fence(withEnv(r.router.env, r.router.command)));
+      const command = withEnv(r.router.env, r.router.command);
+      out.push(fence(defaultPort + command));
     }
-    if (r.registration) step(r.registration.label || "Register workers", r.registration.description, r.registration.command);
+    if (r.registration) step(r.registration.label || "Register workers", r.registration.description, defaultPort + r.registration.command);
     return out;
   }
   if (r.deploy_type === "kv_store_lb") {

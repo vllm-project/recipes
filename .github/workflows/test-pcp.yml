@@ -1,0 +1,45 @@
+name: Native PCP tests
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "strategies/**"
+      - "kv_store/**"
+      - "taxonomy.yaml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "scripts/test-pcp-*.mjs"
+      - "scripts/test-dcp-selector.mjs"
+      - ".github/workflows/test-pcp.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "strategies/**"
+      - "kv_store/**"
+      - "taxonomy.yaml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "scripts/test-pcp-*.mjs"
+      - "scripts/test-dcp-selector.mjs"
+      - ".github/workflows/test-pcp.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  native-pcp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm test:pcp

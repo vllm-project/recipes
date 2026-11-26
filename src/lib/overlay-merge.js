@@ -77,6 +77,7 @@ function noteInScope(note, ctx) {
 // When the schema gains a new hardware-keyed field, add it here.
 export const OVERLAY_RULES = [
   ["meta", "hardware", "@hw"],
+  ["meta", "default_variant", "@hw"],
   ["hardware_overrides", "@hw"],
   ["hardware_notes", "@hw"],
   { path: ["notes"], append: noteInScope },
@@ -85,8 +86,13 @@ export const OVERLAY_RULES = [
   ["strategy_min_gpus", "@hw"],
   ["kv_cache_strategy_hardware", "*", "@hw"],
   ["strategy_overrides", "*", "hardware_overrides", "@hw"],
+  ["strategy_overrides", "single_node_tp", "pcp", "@hw"],
+  ["strategy_overrides", "multi_node_tp", "pcp", "@hw"],
+  ["strategy_overrides", "multi_node_tp", "tp", "@hw"],
   ["strategy_overrides", "pd_cluster", "*", "tp", "@hw"],
   ["strategy_overrides", "pd_cluster", "*", "pp", "@hw"],
+  ["strategy_overrides", "pd_cluster", "*", "data_parallel_lb", "@hw"],
+  ["strategy_overrides", "pd_cluster", "*", "pcp", "@hw"],
   ["features", "*", "hardware_overrides", "@hw"],
   ["features", "*", "modes", "*", "hardware_overrides", "@hw"],
   ["features", "*", "modes", "*", "hardware", "@hw"],

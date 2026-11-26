@@ -8,6 +8,8 @@ import yaml from "js-yaml";
 import Ajv from "ajv";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
 import {
+  buildDockerArgv,
+  buildDockerRun,
   computeDockerMeta,
   hardwareInstall,
   hwPipOverride,
@@ -172,6 +174,41 @@ test("the schema takes a per-hardware pip command, and it must name the command"
   assert.equal(validate(variants({ pip: { command: "x", nope: "y" } })), false);
 });
 
+test("the schema accepts a per-hardware Docker shm size and rejects shell text", () => {
+  const { properties } = buildRecipeSchema({ taxonomy, strategies });
+  const validate = new Ajv({ strict: false }).compile(properties.variants);
+  const variants = (docker_shm_size) => ({
+    default: { precision: "fp8", vram_minimum_gb: 1, hardware_overrides: { ascend_910b: { docker_shm_size } } },
+  });
+  assert.equal(validate(variants("320g")), true);
+  assert.equal(validate(variants("0.5g")), true);
+  assert.equal(validate(variants("320g --ipc=host")), false);
+});
+
+test("an Ascend variant can opt into host IPC for shared Engram tables", () => {
+  const hardware_overrides = { ascend_910c: { docker_ipc: "host", docker_shm_size: "320g" } };
+  const variant = { precision: "int4", vram_minimum_gb: 64, hardware_overrides };
+  const validate = new Ajv({ strict: false }).compile(buildRecipeSchema({ taxonomy, strategies }).properties.variants);
+  assert.ok(validate({ default: variant }));
+  const argv = ["vllm", "serve", "org/model"];
+  for (const hwId of ["ascend_910c", "ascend_910b"]) {
+    const meta = computeDockerMeta(recipe(), variant, profiles[hwId], hwId);
+    const shell = buildDockerRun({ command: argv.join(" "), ...meta });
+    const docker = buildDockerArgv({ argv, meta });
+    const hostIpc = hwId === "ascend_910c";
+    assert.equal(shell.includes("--ipc=host"), hostIpc);
+    assert.equal(docker.includes("--ipc=host"), hostIpc);
+    assert.equal(shell.includes("--shm-size=16g"), !hostIpc);
+    assert.equal(docker.includes("--shm-size"), !hostIpc);
+  }
+  for (const key of ["gb200", "npu", "huawei", "default"]) {
+    const scoped = { ...variant, hardware_overrides: { [key]: { docker_ipc: "host" } } };
+    assert.equal(validate({ default: scoped }), false, key);
+  }
+  hardware_overrides.ascend_910c.docker_ipc = "container:other";
+  assert.equal(validate({ default: variant }), false);
+});
+
 test("a hardware gate reads the most specific key, in every key the schema accepts", () => {
   const off = (hardware, id) => !isFeatureSupportedOnHardware({ hardware }, profiles[id], id);
   assert.equal(off({ ironwood: "unsupported" }, "ironwood"), true);
@@ -207,4 +244,99 @@ test("multi-node selections open on the floor of the strategy they will run", ()
   // A strategy this selection can't run falls back to the recommendation's floor.
   assert.equal(floor("single_node_tp"), floor(null));
   assert.equal(floor("nonsense"), floor(null));
+});
+
+const dpStrategies = ["multi_node_tp_dp", "multi_node_dep"];
+const dpRecipe = (strategy) => ({
+  model: { model_id: "org/model", architecture: "moe", base_args: [] },
+  variants: { default: { precision: "bf16", vram_minimum_gb: 1 } },
+  compatible_strategies: [strategy],
+  strategy_overrides: { [strategy]: { extra_args: [] } },
+});
+const dpCommands = (r, strategy, hw = "h200", nodes = 4, features = []) => {
+  const out = resolveCommand(r, "default", strategy, hw, features, strategies, taxonomy, [], nodes);
+  assert.equal(out.workerArgvs.length, nodes - 1);
+  return [out.headArgv, ...out.workerArgvs];
+};
+const dpValue = (argv, flag) => {
+  const aliases = { "-dpl": "--data-parallel-size-local", "-dp": "--data-parallel-size" };
+  const i = argv.findLastIndex((t) => (aliases[t.split("=")[0]] || t.split("=")[0].replaceAll("_", "-")) === flag);
+  return i < 0 ? undefined : argv[i].split("=")[1] ?? argv[i + 1];
+};
+
+test("multi-node DP sizes and all follower ranks follow strategy, hardware and preset layouts", () => {
+  for (const strategy of dpStrategies) for (const layer of ["strategy", "hardware", "preset"]) {
+    const r = dpRecipe(strategy);
+    const so = r.strategy_overrides[strategy];
+    const layout = ["--tensor-parallel-size", "4", "--data-parallel-size-local", "2"];
+    if (layer === "strategy") so.extra_args = layout;
+    if (layer === "hardware") so.hardware_overrides = { h200: { extra_args: layout } };
+    if (layer === "preset") r.presets = { local: { hardware: "h200", strategy, default: true, args: layout } };
+    dpCommands(r, strategy).forEach((argv, node) => {
+      assert.deepEqual(["--tensor-parallel-size", "--data-parallel-size", "--data-parallel-size-local", "--data-parallel-start-rank"].map((f) => dpValue(argv, f)),
+        ["4", "8", "2", node ? String(node * 2) : undefined], `${strategy}/${layer}/node${node}`);
+    });
+  }
+});
+
+test("multi-node TP+DP overrides a variant's TP and local DP together", () => {
+  const strategy = "multi_node_tp_dp";
+  const r = dpRecipe(strategy);
+  r.variants.default.extra_args = ["--tensor-parallel-size", "4", "--data-parallel-size-local", "2"];
+  dpCommands(r, strategy, "h200", 4).forEach((argv, node) => {
+    assert.deepEqual(["--tensor-parallel-size", "--data-parallel-size-local", "--data-parallel-size", "--data-parallel-start-rank"].map((flag) => dpValue(argv, flag)),
+      ["8", "1", "4", node ? String(node) : undefined], `node${node}`);
+  });
+});
+
+test("multi-node DP defaults retain the complete command order", () => {
+  for (const strategy of dpStrategies) {
+    const r = dpRecipe(strategy);
+    r.model.base_args = ["--max-model-len", "4096"];
+    r.features = { tools: { args: ["--tool-call-parser", "hermes"] } };
+    const local = strategy === "multi_node_dep" ? 8 : 1;
+    dpCommands(r, strategy, "h200", 4, ["tools"]).forEach((argv, node) => {
+      assert.deepEqual(argv, ["vllm", "serve", "org/model", "--max-model-len", "4096",
+        ...(strategy === "multi_node_dep" ? ["--enable-expert-parallel", "--data-parallel-hybrid-lb"] : ["--tensor-parallel-size", "8"]),
+        "--data-parallel-size", String(4 * local), "--data-parallel-size-local", String(local),
+        "--data-parallel-address", "$HEAD_IP", ...(node ? ["--data-parallel-start-rank", String(node * local)] : []),
+        "--tool-call-parser", "hermes"]);
+    });
+  }
+});
+
+test("multi-node DEP overrides base local DP and variant global DP but respects later overrides", () => {
+  const strategy = "multi_node_dep";
+  const r = dpRecipe(strategy);
+  r.model.base_args = ["--data-parallel-size-local", "1"];
+  // Qwen3.5 Ascend variants carry DP1 for their single-node path.
+  r.variants.default.extra_args = ["--data-parallel-size", "1"];
+  for (const global of [16, 32]) {
+    if (global === 32) r.strategy_overrides[strategy].extra_args = ["--data-parallel-size", "32", "--data-parallel-start-rank", "16"];
+    dpCommands(r, strategy, "ascend_950dt", 2).forEach((argv, node) => {
+      assert.deepEqual(["--data-parallel-size", "--data-parallel-size-local", "--data-parallel-start-rank"].map((f) => dpValue(argv, f)),
+        [String(global), "8", global === 32 ? "16" : node ? "8" : undefined]);
+    });
+  }
+});
+
+test("multi-node DP does not restore flags removed by a preset", () => {
+  for (const strategy of dpStrategies) for (const flag of ["--data-parallel-size-local", "--data-parallel-size", "--data-parallel-start-rank"]) {
+    const r = dpRecipe(strategy);
+    r.presets = { remove: { hardware: "h200", strategy, default: true, remove_args: [flag] } };
+    for (const argv of dpCommands(r, strategy)) assert.equal(dpValue(argv, flag), undefined, `${strategy}/${flag}`);
+  }
+});
+
+test("multi-node DP reads local aliases and never derives NaN from an invalid local value", () => {
+  for (const strategy of dpStrategies) for (const local of [["-dpl", "2"], ["--data_parallel_size_local", "2"], ["--data-parallel-size-local=2"], ["--data-parallel-size-local", "invalid"]]) {
+    const r = dpRecipe(strategy);
+    r.strategy_overrides[strategy].extra_args = ["--tensor-parallel-size", "4", ...local];
+    const expected = local.includes("invalid") ? (strategy === "multi_node_dep" ? 8 : 1) : 2;
+    dpCommands(r, strategy).forEach((argv, node) => {
+      assert.equal(dpValue(argv, "--data-parallel-size"), String(4 * expected));
+      assert.equal(dpValue(argv, "--data-parallel-start-rank"), node ? String(node * expected) : undefined);
+      assert.equal(dpValue(argv, "--data-parallel-size-local"), local.includes("invalid") ? "invalid" : "2");
+    });
+  }
 });
