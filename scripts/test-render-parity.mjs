@@ -170,6 +170,20 @@ test("installation exports use the higher model or variant minimum", () => {
   }
 });
 
+test("default nightly pip instructions follow the vLLM wheel index", () => {
+  for (const [model, variant] of [
+    [{ nightly_required: true }, {}],
+    [{}, { nightly_required: true }],
+  ]) {
+    const { pip } = synthesizeInstall({ model }, variant);
+    assert.match(pip.command, /uv pip install -U vllm --torch-backend=auto/);
+    assert.match(pip.command, /--extra-index-url https:\/\/wheels\.vllm\.ai\/nightly$/);
+    // `--pre` would apply to every dependency, not just vllm.
+    assert.doesNotMatch(pip.command, /--pre\b|download\.pytorch\.org|unsafe-best-match/);
+    assert.match(pip.note, /CUDA 13\.2/);
+  }
+});
+
 test("Markdown respects pip availability and hardware-specific installers", () => {
   const recipe = {
     hf_id: "example/model", meta: { hardware: { ironwood: "supported", arc_pro_b60: "supported" } },
