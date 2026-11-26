@@ -176,9 +176,11 @@ test("default nightly pip instructions follow the vLLM wheel index", () => {
     [{}, { nightly_required: true }],
   ]) {
     const { pip } = synthesizeInstall({ model }, variant);
-    assert.match(pip.command, /uv pip install -U vllm --pre --torch-backend=auto/);
+    assert.match(pip.command, /uv pip install -U vllm --torch-backend=auto/);
     assert.match(pip.command, /--extra-index-url https:\/\/wheels\.vllm\.ai\/nightly$/);
-    assert.doesNotMatch(pip.command, /download\.pytorch\.org|unsafe-best-match/);
+    // `--pre` would apply to every dependency, not just vllm.
+    assert.doesNotMatch(pip.command, /--pre\b|download\.pytorch\.org|unsafe-best-match/);
+    assert.match(pip.note, /CUDA 13\.2/);
   }
 });
 

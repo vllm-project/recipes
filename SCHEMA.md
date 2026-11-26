@@ -55,7 +55,7 @@ model:
                                                   #     amd:    "vllm/vllm-openai-rocm:gemma4"
                                                   #     tpu:    "vllm/vllm-tpu:gemma4"
                                                   # Missing keys fall back to `:latest` for that brand (vllm/vllm-openai, vllm/vllm-openai-rocm, vllm/vllm-tpu).
-  nightly_required: true                          # optional — set when `min_vllm_version` hasn't shipped yet. The Install header shows a "nightly" pill. The default NVIDIA pip command uses `uv pip install -U vllm --pre --torch-backend=auto --extra-index-url https://wheels.vllm.ai/nightly`. Use a driver compatible with the default nightly CUDA build.
+  nightly_required: true                          # optional — set when `min_vllm_version` hasn't shipped yet. The Install header shows a "nightly" pill. The default NVIDIA pip command is the one from vLLM's install guide, `uv pip install -U vllm --torch-backend=auto --extra-index-url https://wheels.vllm.ai/nightly` (no `--pre`, which would also pull pre-release dependencies). Nightly wheels are built for CUDA 13.2, so the note asks for a driver that supports it.
   # Optional — control the Install block's pip/Docker tabs. Each key accepts
   # either `false` (hide the tab entirely) or an object with { command?, note? }.
   # Use `note` for a one-liner above the code block; use `command` to fully

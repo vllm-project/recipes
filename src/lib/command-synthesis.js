@@ -45,13 +45,16 @@ export function resolveInstall(recipe, variant = {}) {
   return { ...recipe.model?.install, ...variant.install };
 }
 
+// The command vLLM's install guide gives for nightly wheels. No `--pre`: uv
+// reads the nightly index first, where every vllm build is a pre-release, so it
+// is selected anyway, and `--pre` would also pull pre-release dependencies.
 export function nvidiaNightlyPipInstall(minVersion) {
   return {
     command: `uv venv
 source .venv/bin/activate
-uv pip install -U vllm --pre --torch-backend=auto \\
+uv pip install -U vllm --torch-backend=auto \\
   --extra-index-url https://wheels.vllm.ai/nightly`,
-    note: `vLLM ${minVersion} isn't released yet — nightly required. Use an NVIDIA driver compatible with the default nightly CUDA build.`,
+    note: `vLLM ${minVersion} isn't released yet — nightly required. Nightly wheels are built for CUDA 13.2 (cu132) and need an NVIDIA driver that supports it.`,
   };
 }
 
