@@ -283,6 +283,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
         const delta = { args: strings, env: envMap, remove_args: { type: "array", items: { type: "string", pattern: "^--" } }, json_args: jsonArgs };
         const role = obj({ ...delta, nodes: { type: "integer", minimum: 1 }, parallelism: pdMode,
           data_parallel_lb: pdDpLb,
+          devices: { type: "array", minItems: 1, uniqueItems: true, items: { type: "integer", minimum: 0 } },
           tp: { type: "integer", minimum: 1 }, pp: { type: "integer", minimum: 1 }, pcp: { type: "integer", minimum: 1 } });
         const roles = obj({ prefill: role, decode: role });
         const select = obj({

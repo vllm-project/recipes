@@ -54,6 +54,7 @@ The same ones the page URL uses. Values the recipe can't run fall back to its de
 | \`preset\`, \`point\` | A tuned preset and its operating point; \`preset=baseline\` drops a default preset |
 | \`kv_offload\` | A KV offload option (\`simple\`, \`lmcache\`, … — \`kv_offload\` in the [taxonomy](${siteUrl}/taxonomy.json)) or a Mooncake topology (\`kv_store_distributed_mooncake\`, \`kv_store_centralized_mooncake\`) |
 | \`prefill_nodes\`, \`decode_nodes\`, \`prefill_mode\`, \`decode_mode\`, \`pd_router\`, \`pd_connector\` | Prefill/decode disaggregation (\`strategy=pd_cluster\`) |
+| \`prefill_devices\`, \`decode_devices\` | Local device ids for each PD pool, as ranges (\`0-7\`) or comma lists; defaults to the preset or whole node |
 | \`prefill_rank\`, \`decode_rank\` | Zero-based node index within the corresponding PD pool; selects the singular role command |
 
 Each recipe's Markdown lists the values it accepts under **Other configurations**.

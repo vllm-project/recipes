@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { replaceQuery } from "@/lib/url-state";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { maxVersion, resolveInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdPcpDeployment, NATIVE_PD_PCP_KV_OFFLOAD_REASON, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason, ascendPdUnavailableReason } from "@/lib/command-synthesis";
+import { maxVersion, resolveInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdPcpDeployment, NATIVE_PD_PCP_KV_OFFLOAD_REASON, pdRoleNodes, pdRoleDevices, parseDeviceIds, formatDeviceIds, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason, ascendPdUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, presetSelect, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import ShellCode from "@/components/recipes/ShellCode";
@@ -578,9 +578,13 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       ? Math.max(1, Math.ceil(modelVram / nodeVram))
       : 1;
     const pickNodes = (role, fallback) => pdRoleNodes(pdRecipe, role, hw, hwId) ?? fallback;
+    const allDevices = Array.from({ length: hw?.gpu_count || 1 }, (_, i) => i);
+    const pickDevices = (role) => formatDeviceIds(pdRoleDevices(pdRecipe, role, hw, hwId) ?? allDevices);
     return {
       prefill: pickNodes("prefill", minNodesPerRole),
       decode: pickNodes("decode", minNodesPerRole),
+      prefillDevices: pickDevices("prefill"),
+      decodeDevices: pickDevices("decode"),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recipe, pdRecipe, hwId, variant]);
@@ -592,11 +596,20 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const n = parseInt(searchParams.get("decode_nodes") || "", 10);
     return Number.isFinite(n) && n > 0 ? n : pdDefaults.decode;
   });
+  const pdDeviceParam = (role) => {
+    const raw = searchParams.get(`${role}_devices`);
+    const hw = taxonomy.hardware_profiles?.[hwId];
+    return raw && parseDeviceIds(raw, hw?.gpu_count || 1) ? raw : pdDefaults[`${role}Devices`];
+  };
+  const [pdPrefillDevices, setPdPrefillDevices] = useState(() => pdDeviceParam("prefill"));
+  const [pdDecodeDevices, setPdDecodeDevices] = useState(() => pdDeviceParam("decode"));
   // Re-sync per-role node state with hw-specific defaults when hw changes,
   // unless the URL pins a value (shareable links must survive hw switches).
   useEffect(() => {
     if (!searchParams.get("prefill_nodes")) setPdPrefillNodes(pdDefaults.prefill);
     if (!searchParams.get("decode_nodes")) setPdDecodeNodes(pdDefaults.decode);
+    setPdPrefillDevices(pdDeviceParam("prefill"));
+    setPdDecodeDevices(pdDeviceParam("decode"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdDefaults]);
   // PD-pool parallelism modes offered for this recipe, derived from
@@ -1223,18 +1236,30 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   );
   const effPdPrefillPar = pdAvailableModes.includes(pdPrefillPar) ? pdPrefillPar : (pdAvailableModes[0] || "tp");
   const effPdDecodePar = pdAvailableModes.includes(pdDecodePar) ? pdDecodePar : (pdAvailableModes[0] || "tp");
+  const pdPrefillDeviceIds = parseDeviceIds(pdPrefillDevices, perNode);
+  const pdDecodeDeviceIds = parseDeviceIds(pdDecodeDevices, perNode);
+  const pdPrefillDeviceCount = pdPrefillDeviceIds?.length ?? perNode;
+  const pdDecodeDeviceCount = pdDecodeDeviceIds?.length ?? perNode;
+  const pdPrefillDevicesExplicit = !!parseDeviceIds(searchParams.get("prefill_devices"), perNode) || pdPrefillDevices !== pdDefaults.prefillDevices;
+  const pdDecodeDevicesExplicit = !!parseDeviceIds(searchParams.get("decode_devices"), perNode) || pdDecodeDevices !== pdDefaults.decodeDevices;
   // Floor the sizes too, not just clicks — a pool whose DEFAULT mode carries a
   // floor (K3's decode is dep) would otherwise render below it.
-  const effPdPrefillNodes = Math.max(pdPrefillNodes, nodesNeededFor(effPdPrefillPar));
-  const effPdDecodeNodes = Math.max(pdDecodeNodes, nodesNeededFor(effPdDecodePar));
+  const effPdPrefillNodes = Math.max(pdPrefillNodes, nodesForStrategy(recipe, effPdPrefillPar, pdPrefillDeviceCount, hwId));
+  const effPdDecodeNodes = Math.max(pdDecodeNodes, nodesForStrategy(recipe, effPdDecodePar, pdDecodeDeviceCount, hwId));
 
   const result = useMemo(
     () => {
       const advArgs = advanced.flatMap((id) => advancedById[id]?.args || []);
       const pdNodes = activeStrategy === "pd_cluster"
         ? {
-          prefill: { nodes: effPdPrefillNodes, rank: pdPrefillRank, parallelism: effPdPrefillPar },
-          decode: { nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar },
+          prefill: {
+            nodes: effPdPrefillNodes, rank: pdPrefillRank, parallelism: effPdPrefillPar,
+            ...(pdPrefillDevicesExplicit ? { devices: pdPrefillDeviceIds ?? pdPrefillDevices } : {}),
+          },
+          decode: {
+            nodes: effPdDecodeNodes, rank: pdDecodeRank, parallelism: effPdDecodePar,
+            ...(pdDecodeDevicesExplicit ? { devices: pdDecodeDeviceIds ?? pdDecodeDevices } : {}),
+          },
         }
         : null;
       try {
@@ -1249,7 +1274,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           deploymentError: error.message };
       }
     },
-    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, workerRouter, pdTransport, dcpSize, presetPick, pointPick, workerConnector]
+    [recipe, variant, activeStrategy, hwId, features, featureModes, advanced, advancedById, strategies, taxonomy, nodeCount, effPdPrefillNodes, effPdDecodeNodes, pdDefaults, pdPrefillDevices, pdDecodeDevices, pdPrefillDevicesExplicit, pdDecodeDevicesExplicit, pdPrefillRank, pdDecodeRank, effPdPrefillPar, effPdDecodePar, activeKvOffload, kvInstances, kvInstanceIdx, frontend, workerRouter, pdTransport, dcpSize, presetPick, pointPick, workerConnector]
   );
 
   // Publish the selection for the sections below the builder (This
@@ -1305,6 +1330,10 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     if (activeStrategy === "pd_cluster") {
       q.set("prefill_nodes", String(effPdPrefillNodes));
       q.set("decode_nodes", String(effPdDecodeNodes));
+      if (result.prefill?.devices) q.set("prefill_devices", formatDeviceIds(result.prefill.devices));
+      else if (pdPrefillDevicesExplicit) q.set("prefill_devices", pdPrefillDevices);
+      if (result.decode?.devices) q.set("decode_devices", formatDeviceIds(result.decode.devices));
+      else if (pdDecodeDevicesExplicit) q.set("decode_devices", pdDecodeDevices);
       q.set("prefill_mode", effPdPrefillPar);
       q.set("decode_mode", effPdDecodePar);
       if (pdPrefillRank > 0) q.set("prefill_rank", String(pdPrefillRank));
@@ -1316,7 +1345,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       q.set("nodes", String(nodeCount));
     }
     return q.toString();
-  }, [recipe, hwId, variant, currentVariant, omniTask, activeStrategy, effectiveFeatures, featureModes, advanced, effectiveFrontend, result.frontendRequired, result.pdRouter, result.kvConnector?.selected, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, workerRouter, workerConnector, pdTransport, nodeCount]);
+  }, [recipe, hwId, variant, currentVariant, omniTask, activeStrategy, effectiveFeatures, featureModes, advanced, effectiveFrontend, result.frontendRequired, result.pdRouter, result.kvConnector?.selected, selectedPreset, selectedPoint, activeKvOffload, kvInstances, kvInstanceIdx, dcpSize, effPdPrefillNodes, effPdDecodeNodes, pdDefaults, pdPrefillDevices, pdDecodeDevices, pdPrefillDevicesExplicit, pdDecodeDevicesExplicit, result.prefill?.devices, result.decode?.devices, effPdPrefillPar, effPdDecodePar, pdPrefillRank, pdDecodeRank, workerRouter, workerConnector, pdTransport, nodeCount]);
   useEffect(() => {
     publishSelection({ hfId: recipe.hf_id, hwId, strategy: activeStrategy, variant, features: activeFeatures, preset: selectedPreset, query: shareQuery });
   }, [recipe.hf_id, hwId, activeStrategy, variant, activeFeatures, selectedPreset, shareQuery]);
@@ -1644,6 +1673,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     }
   };
 
+  const setPdDevices = (role, value) => {
+    if (role === "prefill") {
+      setPdPrefillDevices(value);
+      syncUrl({ prefill_devices: value === pdDefaults.prefillDevices ? "" : value });
+    } else {
+      setPdDecodeDevices(value);
+      syncUrl({ decode_devices: value === pdDefaults.decodeDevices ? "" : value });
+    }
+  };
+
   const setPdRank = (role, r) => {
     const clamped = Math.max(0, parseInt(r, 10) || 0);
     if (role === "prefill") {
@@ -1706,7 +1745,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const isPrefill = role === "prefill";
     const cur = isPrefill ? pdPrefillNodes : pdDecodeNodes;
     // Grow this pool to the mode's GPU floor (DEP≥16) so the pick is valid.
-    const nodes = Math.max(cur, nodesNeededFor(mode));
+    const devicesPerNode = isPrefill ? pdPrefillDeviceCount : pdDecodeDeviceCount;
+    const nodes = Math.max(cur, nodesForStrategy(recipe, mode, devicesPerNode, hwId));
     (isPrefill ? setPdPrefillPar : setPdDecodePar)(mode);
     (isPrefill ? setPdPrefillRank : setPdDecodeRank)(0);
     if (nodes !== cur) (isPrefill ? setPdPrefillNodes : setPdDecodeNodes)(nodes);
@@ -2252,6 +2292,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     }
     return { ...meta, cu129Image };
   }, [recipe, imageVariant, hwProfile, hwId, dockerCudaVariant, altCudaSuffix, installMinVersion]);
+  const dockerMetaForDevices = (devices) => devices && dockerMeta.isNpu
+    ? computeDockerMeta(recipe, imageVariant, hwProfile, hwId, devices) : dockerMeta;
 
   // `installMode` carries the user's tab choice; `effectiveInstallMode` folds
   // in constraints that would hide a tab entirely (pip: recipe opt-out or TPU
@@ -2636,7 +2678,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
               statusHeader={statusHeader}
               onRankChange={setPdRank}
               installMode={effectiveInstallMode}
-              dockerMeta={dockerMeta}
+              dockerMetaForDevices={dockerMetaForDevices}
               configSummary={configSummary}
               endpointsControls={endpointsControls}
               commandNote={commandNote}
@@ -3372,15 +3414,15 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
           {activeStrategy === "pd_cluster" ? (
             <ConfigRow
               label="Nodes"
-              hint={pdModes.length > 1
-                ? "Each pool (prefill / decode) sizes and shards independently — pick its parallelism (TP / TEP / DEP) and node count. Total cluster = prefill_nodes + decode_nodes."
-                : "Each pool (prefill / decode) sizes independently. Total cluster = prefill_nodes + decode_nodes."}
+              hint="Each pool sizes independently. Device ids are local to each role node; for single-host PD, use disjoint ids and the same Prefill/Decode endpoint host."
             >
               <div className="flex flex-col gap-2 text-sm">
                 <PdNodeInput
                   label="Prefill"
                   value={effPdPrefillNodes}
-                  gpuPerNode={hwProfile.gpu_count || 8}
+                  devices={pdPrefillDevices}
+                  deviceCount={pdPrefillDeviceCount}
+                  onDevicesChange={(value) => setPdDevices("prefill", value)}
                   onChange={(n) => setPdNodes("prefill", n)}
                   modes={pdAvailableModes}
                   parallelism={effPdPrefillPar}
@@ -3389,7 +3431,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                 <PdNodeInput
                   label="Decode"
                   value={effPdDecodeNodes}
-                  gpuPerNode={hwProfile.gpu_count || 8}
+                  devices={pdDecodeDevices}
+                  deviceCount={pdDecodeDeviceCount}
+                  onDevicesChange={(value) => setPdDevices("decode", value)}
                   onChange={(n) => setPdNodes("decode", n)}
                   modes={pdAvailableModes}
                   parallelism={effPdDecodePar}
@@ -3402,8 +3446,8 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
                   </div>
                 )}
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  total {(effPdPrefillNodes + effPdDecodeNodes) * (hwProfile.gpu_count || 8)} GPUs
-                  · {effPdPrefillNodes + effPdDecodeNodes} node{effPdPrefillNodes + effPdDecodeNodes === 1 ? "" : "s"}
+                  total {effPdPrefillNodes * pdPrefillDeviceCount + effPdDecodeNodes * pdDecodeDeviceCount} GPUs
+                  · {effPdPrefillNodes + effPdDecodeNodes} role nodes
                 </span>
               </div>
             </ConfigRow>
@@ -3734,7 +3778,7 @@ const PD_PAR_TIPS = {
   dep: "Data + expert parallel — one vllm serve per node, DP across nodes with EP (MoE throughput).",
 };
 
-function PdNodeInput({ label, value, gpuPerNode, onChange, modes, parallelism, onParChange }) {
+function PdNodeInput({ label, value, devices, deviceCount, onDevicesChange, onChange, modes, parallelism, onParChange }) {
   const showPills = Array.isArray(modes) && modes.length > 1 && typeof onParChange === "function";
   return (
     <div className="inline-flex flex-wrap items-center gap-2">
@@ -3767,8 +3811,16 @@ function PdNodeInput({ label, value, gpuPerNode, onChange, modes, parallelism, o
         onChange={(e) => onChange(e.target.value)}
         className="w-14 px-2 py-1 text-sm font-mono tabular-nums rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-vllm-blue/40"
       />
+      <input
+        type="text"
+        aria-label={`${label} device ids`}
+        value={devices}
+        onChange={(e) => onDevicesChange(e.target.value)}
+        spellCheck={false}
+        className="w-32 px-2 py-1 text-sm font-mono tabular-nums rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-vllm-blue/40"
+      />
       <span className="text-xs text-muted-foreground tabular-nums">
-        × {gpuPerNode} = {value * gpuPerNode}
+        × {deviceCount} = {value * deviceCount} GPUs
       </span>
     </div>
   );
@@ -4474,7 +4526,7 @@ function MultiNodeBlock({ result, verifyCmd, benchCmd, statusHeader, installMode
   );
 }
 
-function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChange, installMode, dockerMeta, configSummary, endpointsControls, commandNote, onCopy }) {
+function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChange, installMode, dockerMetaForDevices, configSummary, endpointsControls, commandNote, onCopy }) {
   // Tabs: Prefill · Decode · Router.
   // Each pool (prefill/decode) now carries its own `nodes`, `parallelism`,
   // `dpSize`, `poolGpus` meta — rendered above the command so the reader
@@ -4489,9 +4541,9 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
   // Prefill/decode use the vLLM image. SMG has its own CPU-only router
   // image; vllm-router keeps its pip command and install hint.
   const routerDocker = isDocker && result.router.dockerCommand;
-  const wrap = (cmd, env) =>
+  const wrap = (cmd, env, devices) =>
     isDocker
-      ? buildDockerRun({ ...dockerMeta, command: cmd, env, setupCommand: result.workerDockerSetup,
+      ? buildDockerRun({ ...dockerMetaForDevices(devices), command: cmd, env, setupCommand: result.workerDockerSetup,
         // RDMA connectors (Mooncake, MoRI-IO) need host networking and locked memory.
         hostNetwork: result.transport === "grpc" || !!result.kvConnector?.docker?.host_network,
         extraFlags: result.kvConnector?.docker?.flags || [] })
@@ -4515,8 +4567,8 @@ function PdClusterBlock({ result, verifyCmd, benchCmd, statusHeader, onRankChang
     ...(mc?.store ? [{ id: "mc_store", label: "Mooncake Store", command: mc.store.command, env: {}, description: mc.store.description }] : []),
     // Dynamo: the etcd control plane comes first in the sequence.
     ...(isDynamo && result.infra ? [{ id: "dyn_infra", label: result.infra.label, command: result.infra.command, env: {}, description: result.infra.description }] : []),
-    { id: "prefill", label: "Prefill", command: wrap(result.prefill.command, result.prefill.env), env: result.prefill.env, meta: result.prefill },
-    { id: "decode", label: "Decode", command: wrap(result.decode.command, result.decode.env), env: result.decode.env, meta: result.decode },
+    { id: "prefill", label: "Prefill", command: wrap(result.prefill.command, result.prefill.env, result.prefill.devices), env: result.prefill.env, meta: result.prefill },
+    { id: "decode", label: "Decode", command: wrap(result.decode.command, result.decode.env, result.decode.devices), env: result.decode.env, meta: result.decode },
     { id: "router", label: result.router.label || "Router", command: routerDocker || result.router.command, env: result.router.env || {}, install: routerDocker ? null : result.router.install, isRouter: true },
     ...(result.registration ? [{ id: "registration", ...result.registration, env: {}, isRouter: true }] : []),
   ].map((t, i) => (mc || isDynamo || isSmg ? { ...t, step: i + 1 } : t));

@@ -462,6 +462,47 @@ export function pdRoleNodes(recipe, role, hwProfile, hwProfileId) {
   return typeof n === "number" ? n : undefined;
 }
 
+/** Custom device ids of one PD pool, or undefined for the whole-node default. */
+export function pdRoleDevices(recipe, role, hwProfile, hwProfileId) {
+  const devices = pdRoleValue(recipe, role, "devices", hwProfile, hwProfileId);
+  return Array.isArray(devices) ? devices : undefined;
+}
+
+/** Parse `0-3,8-15` (or an already parsed array) into unique local device ids. */
+export function parseDeviceIds(value, gpuCount) {
+  const limit = Number.isInteger(gpuCount) && gpuCount > 0 ? gpuCount : Infinity;
+  let devices;
+  if (Array.isArray(value)) devices = [...value];
+  else if (typeof value === "string" && value.trim()) {
+    devices = [];
+    for (const part of value.split(",")) {
+      const match = /^(\d+)(?:-(\d+))?$/.exec(part.trim());
+      if (!match) return null;
+      const start = Number(match[1]);
+      const end = match[2] === undefined ? start : Number(match[2]);
+      if (end < start || start >= limit || end >= limit) return null;
+      for (let id = start; id <= end; id++) devices.push(id);
+    }
+  } else return null;
+  if (!devices.length || devices.some((id) => !Number.isInteger(id) || id < 0 || id >= limit)) return null;
+  return new Set(devices).size === devices.length ? devices : null;
+}
+
+/** Format ids without reordering them; consecutive runs use compact ranges. */
+export function formatDeviceIds(devices) {
+  if (!Array.isArray(devices) || !devices.length) return "";
+  const parts = [];
+  for (let i = 0; i < devices.length;) {
+    const start = devices[i];
+    let end = start;
+    let next = i + 1;
+    while (next < devices.length && devices[next] === end + 1) end = devices[next++];
+    parts.push(end > start ? `${start}-${end}` : String(start));
+    i = next;
+  }
+  return parts.join(",");
+}
+
 /**
  * The PD strategy's KV transfer connector key (strategies/pd_cluster.yaml
  * `connectors`): the requested one when it exists, else the `default: true`
@@ -1079,17 +1120,20 @@ const ASCEND_HOST_MOUNTS = [
 // Ascend has no `--gpus`-style flag: each NPU is its own `/dev/davinci<N>`
 // node, and `davinci_manager` plus `hisi_hdc` carry device management and the
 // host-device channel.
-function ascendDeviceNodes(deviceCount) {
+function ascendDeviceNodes(deviceCountOrIds) {
+  const ids = Array.isArray(deviceCountOrIds)
+    ? deviceCountOrIds
+    : Array.from({ length: deviceCountOrIds }, (_, i) => i);
   return [
-    ...Array.from({ length: deviceCount }, (_, i) => `/dev/davinci${i}`),
+    ...ids.map((id) => `/dev/davinci${id}`),
     "/dev/davinci_manager",
     "/dev/hisi_hdc",
   ];
 }
 
 // Four devices per line keeps a 16-NPU node readable without wrapping.
-function ascendDockerFlags(deviceCount) {
-  const devices = ascendDeviceNodes(deviceCount).map((node) => `--device ${node}`);
+function ascendDockerFlags(deviceCountOrIds) {
+  const devices = ascendDeviceNodes(deviceCountOrIds).map((node) => `--device ${node}`);
   const lines = [];
   for (let i = 0; i < devices.length; i += 4) {
     lines.push(devices.slice(i, i + 4).join(" "));
@@ -1098,9 +1142,9 @@ function ascendDockerFlags(deviceCount) {
   return lines.join(" \\\n  ");
 }
 
-function ascendDockerArgv(deviceCount) {
+function ascendDockerArgv(deviceCountOrIds) {
   const argv = [];
-  for (const node of ascendDeviceNodes(deviceCount)) argv.push("--device", node);
+  for (const node of ascendDeviceNodes(deviceCountOrIds)) argv.push("--device", node);
   for (const mount of ASCEND_HOST_MOUNTS) argv.push("-v", mount);
   return argv;
 }
@@ -1203,7 +1247,7 @@ function isDockerEnabled(recipe, variant, hwProfile) {
 
 // When a CUDA map is in play, `cudaMap` is returned so the caller can pick by
 // the user's `dockerCudaVariant` toggle instead of appending `-cu129`.
-export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
+export function computeDockerMeta(recipe, variant, hwProfile, hwId = null, deviceIds = null) {
   // When `model.nightly_required: true` and no explicit `docker_image` pin,
   // swap the brand defaults to nightly tags so the Install block matches the
   // nightly pip wheel that's also being rendered. vLLM publishes `:nightly`
@@ -1230,6 +1274,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
   const isPpu = hwProfile?.generation === "ppu";
   const isApple = hwProfile?.brand === "Apple";
   const npuDeviceCount = isNpu ? hwProfile?.gpu_count ?? 1 : 0;
+  const npuDeviceIds = isNpu && Array.isArray(deviceIds) ? deviceIds : null;
   // Ascend deliberately has no `brandKey` of its own: vLLM publishes no NPU
   // image, so every Ascend recipe pins one through `hardware_overrides`, which
   // `exactHardwareOverride` resolves before the brand defaults are consulted.
@@ -1304,7 +1349,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
     : isXpu
       ? "--device /dev/dri \\\n  -v /dev/dri/by-path:/dev/dri/by-path --shm-size=16g"
     : isNpu
-      ? ascendDockerFlags(npuDeviceCount)
+      ? ascendDockerFlags(npuDeviceIds ?? npuDeviceCount)
     : isIntel
       ? "--shm-size=16g"	
       : "--gpus all";
@@ -1320,6 +1365,7 @@ export function computeDockerMeta(recipe, variant, hwProfile, hwId = null) {
     isNpu,
     isPpu,
     npuDeviceCount,
+    npuDeviceIds,
     pinned,
     cudaMap,
     nightlyRequired,
@@ -1346,7 +1392,7 @@ function dockerGpuArgv(meta) {
     return ["--device", "/dev/dri", "-v", "/dev/dri/by-path:/dev/dri/by-path", "--shm-size", "16g"];
   }
   if (meta.isNpu) {
-    return ascendDockerArgv(meta.npuDeviceCount);
+    return ascendDockerArgv(meta.npuDeviceIds ?? meta.npuDeviceCount);
   }
   if (meta.isIntel) {
     return ["--shm-size", "16g"];
@@ -1773,14 +1819,16 @@ export function resolveCommand(...params) {
   const hwProfile = taxonomy?.hardware_profiles?.[hwProfileId];
   const inheritedRoleMode = (role) => pdRoleParallelism(recipe, strategies?.[strategyName], role,
     hwProfile, hwProfileId);
-  const inheritsStrategyTp = (role, mode, nodes) => {
+  const inheritsStrategyTp = (role, mode, nodes, devicesPerNode) => {
     const presetRole = raw?.roles?.[role];
     const strategyNodes = pdRoleNodes(recipe, role, hwProfile, hwProfileId);
+    const strategyDevices = pdRoleDevices(recipe, role, hwProfile, hwProfileId);
     // A point that drops a preset's TP or changes mode starts a fresh layout.
     return presetRole?.tp == null && (presetRole?.parallelism ?? mode) === mode
-      && inheritedRoleMode(role) === mode && (strategyNodes == null || strategyNodes === nodes);
+      && inheritedRoleMode(role) === mode && (strategyNodes == null || strategyNodes === nodes)
+      && devicesPerNode === (strategyDevices?.length ?? hwProfile?.gpu_count ?? 1);
   };
-  const eff = raw ? effectivePreset(raw, params[18], inheritedRoleMode) : null;
+  const eff = raw ? effectivePreset(raw, params[18], inheritedRoleMode, hwProfile?.gpu_count) : null;
   params[0] = withPreset(recipe, presetKey, hwProfileId, strategyName, { variantKey, effectivePreset: eff });
   const result = resolveCommandImpl(dcpOut, ...params.slice(0, 17), params[19] ?? null, eff, inheritsStrategyTp);
   if (result && typeof result === "object" && !Array.isArray(result)) {
@@ -1908,7 +1956,13 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     const parallelism = allowed.includes(requested) ? requested : allowed[0];
     const value = (key) => pdRoleValue(recipe, role, key, hwProfile, hwProfileId)
       ?? parallelSizeForHardware(strategy[role]?.[key], hwProfile, hwProfileId);
-    const poolGpus = nodes === 0 ? Math.floor(gpuCount / 2) : nodes * gpuCount;
+    const fail = (message) => { throw new RangeError(`PD ${role}: ${message}`); };
+    const declaredDevices = selected.devices ?? pdRoleDevices(recipe, role, hwProfile, hwProfileId);
+    const devices = declaredDevices === undefined ? null : parseDeviceIds(declaredDevices, gpuCount);
+    if (declaredDevices !== undefined && !devices) fail("devices must be unique, in-range integer ids.");
+    if (devices && nodes < 1) fail("devices requires dedicated role nodes (nodes >= 1).");
+    const devicesPerNode = devices?.length ?? gpuCount;
+    const poolGpus = nodes === 0 ? Math.floor(gpuCount / 2) : nodes * devicesPerNode;
     const pp = value("pp") ?? 1;
     const declaredPcp = value("pcp");
     const pcp = declaredPcp ?? 1;
@@ -1918,16 +1972,16 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     // unless the author declares a new structured context-parallel layout.
     let roleTp;
     const matchesPreset = parallelism === declaredMode
-      && (parallelism === "dep" || presetRole?.nodes == null || presetRole.nodes === nodes);
+      && (parallelism === "dep" || ((presetRole?.nodes == null || presetRole.nodes === nodes)
+        && devicesPerNode === (presetRole?.devices?.length ?? gpuCount)));
     if (presetRole?.tp != null) {
       if (matchesPreset) roleTp = presetRole.tp;
     } else if (parallelism === "dep") {
       roleTp = value("tp");
-    } else if (declaredPcp != null && parallelism === declaredMode && inheritsStrategyTp(role, parallelism, nodes)) {
+    } else if (declaredPcp != null && parallelism === declaredMode && inheritsStrategyTp(role, parallelism, nodes, devicesPerNode)) {
       roleTp = value("tp");
     }
     const tp = roleTp ?? (parallelism === "dep" ? 1 : poolGpus / (pp * pcp));
-    const fail = (message) => { throw new RangeError(`PD ${role}: ${message}`); };
     if (!Number.isInteger(nodes) || nodes < 0 || !Number.isInteger(tp) || tp < 1 || !Number.isInteger(pp) || pp < 1
         || !Number.isInteger(pcp) || pcp < 1) {
       fail("nodes, TP, PP and PCP must form a positive integer layout (nodes=0 denotes a shared node).");
@@ -1942,14 +1996,14 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     }
     if (internalDp && nodes !== 1) fail("data_parallel_lb: internal requires one dedicated node. Use external for multiple nodes.");
     if (parallelism === "dep") {
-      if (pp !== 1 || tp * pcp > gpuCount || gpuCount % (tp * pcp)) fail("DEP requires PP1 and TP × PCP that divides the devices per node.");
+      if (pp !== 1 || tp * pcp > devicesPerNode || devicesPerNode % (tp * pcp)) fail("DEP requires PP1 and TP × PCP that divides the devices per node.");
       if (externalDp && (nodes < 1 || recipe.model?.architecture === "dense")) fail("external DEP requires a MoE model and dedicated role nodes.");
     }
-    const dpLocal = parallelism === "dep" ? gpuCount / (tp * pcp) : 0;
+    const dpLocal = parallelism === "dep" ? devicesPerNode / (tp * pcp) : 0;
     const dpSize = parallelism === "dep" ? Math.max(1, nodes) * dpLocal : 1;
     const currentNode = Math.max(0, Math.min(Math.max(1, nodes) - 1, selected.rank ?? 0));
     if (nativePdPcp && !Number.isInteger(currentNode)) fail("PCP requires an integer node rank.");
-    return { nodes, parallelism, tp, pcp, pp, dpLocal, dpSize, poolGpus, currentNode, startRank: currentNode * dpLocal, internalDp };
+    return { nodes, parallelism, tp, pcp, pp, dpLocal, dpSize, poolGpus, currentNode, startRank: currentNode * dpLocal, internalDp, ...(devices ? { devices } : {}) };
   };
 
   // PD KV transfer connector: the pick when this hardware and router can run
@@ -2652,6 +2706,10 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
     } else {
       Object.assign(env, taxonomy.frontends?.[resolveFrontend(recipe, frontend, taxonomy, variant)]?.env);
     }
+    // An explicit device selection wins over every recipe/preset env layer.
+    const devices = strategy.deploy_type === "pd_cluster" && roleOverride
+      ? roleMeta(roleOverride).devices : null;
+    if (devices) env[hwProfile.brand === "Huawei" ? "ASCEND_RT_VISIBLE_DEVICES" : "CUDA_VISIBLE_DEVICES"] = devices.join(",");
     return env;
   }
 
