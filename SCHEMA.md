@@ -179,7 +179,7 @@ hardware_overrides:
 #                  for a role preset or a role with structured PCP
 #   pp           — pipeline stages (default 1; DEP requires pp=1);
 #                  automatic TP/TEP width is pool_devices / (pp × pcp)
-#   pcp          — Prefill context parallel width (default 1) for native NIXL PD
+#   pcp          — Prefill context parallel width (default 1) for native NIXL or Ascend Mooncake PD
 #                  `nodes`, `tp`, `pp` and `pcp` also accept hardware-keyed maps
 #   vllm_args    — extra flags appended to this role's `vllm serve`
 #   env          — extra env vars for this role
@@ -523,6 +523,12 @@ in published presets and points.
 
 ### Ascend PD presets
 
+A dedicated external-DP Prefill pool can declare `roles.prefill: { nodes: 1,
+parallelism: dep, tp: 1, pcp: 4 }` with Ascend Router and Mooncake (Ascend).
+The renderer emits one `vllm serve` per node. The runtime's multi-port
+supervisor must assign `tp × pcp` NPUs to each local Prefill rank (DEP uses PP1).
+Pin the exact image tag or digest tested with that layout in `presets.<key>.image`.
+
 Ascend uses the same Prefill/Decode pools and node commands as other PD routers.
 **Ascend Router** and **Mooncake (Ascend)** appear only on Ascend hardware under
 PD disaggregation. Each remains disabled unless the active model preset (including
@@ -597,11 +603,14 @@ points:
 The single **Mooncake (Ascend)** option (`mooncake_ascend`) supplies catalog
 configurations for both roles, defaulting to `MooncakeConnectorV2` with producer /
 consumer roles, KV ports 36000 / 36100, and both pools' DP/TP/PP metadata. The
-example above inherits these defaults. There is no connector-name allowlist:
-use the existing preset `roles.<role>.json_args` to select V1, V2, Hybrid or
-another implementation supported by the model's runtime, and to adjust or
-remove implementation-specific settings. For example, apply this edit to each
-role that needs Hybrid (complete its settings from the model's verified source):
+example above inherits these defaults. With PCP1, use the existing preset
+`roles.<role>.json_args` to select V1, V2, Hybrid or another implementation
+supported by the model's runtime. External-DP Prefill with PCP > 1 supports
+direct `MooncakeConnectorV2` and `MooncakeHybridConnector`. These are the two
+implementations whose producer/consumer roles and DP/TP/PP metadata the
+renderer validates for PCP.
+Hybrid also requires DCP1 and Prefill TP ≥ Decode TP. Apply this edit to each
+role that needs Hybrid and complete its settings from the model's verified source.
 
 ```yaml
 json_args:
