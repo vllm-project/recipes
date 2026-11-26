@@ -27,5 +27,9 @@ export function selectPdDecode(pools, options, render) {
   }
   // The requested mode was tried first. If no alternative worked, preserve its error.
   if (!selected) throw widthError;
-  return { ...selected, modes: modes.filter((mode) => available.has(mode)), reason: widthError?.message };
+  return {
+    ...selected,
+    modes: modes.filter((mode) => available.has(mode)),
+    reason: widthError && "incompatible with MooncakeHybridConnector because Decode TP exceeds Prefill TP",
+  };
 }

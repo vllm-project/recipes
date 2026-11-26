@@ -2953,12 +2953,7 @@ function resolveCommandImpl(dcpOut, recipe, variantKey, strategyName, hwProfileI
         }) };
     }
     const workerDocker = ascend ? { ...pdConnector?.docker, ...ascend.docker } : pdConnector?.docker || null;
-    const externalPool = externalDp && [pMeta, dMeta].some((m) => m.parallelism === "dep" && !m.internalDp && m.dpSize > 1);
-    const hardwareFlags = externalPool && pdConnector?.external_dp_docker_flags?.[hwProfileId];
-    if (ascend && (hardwareFlags || ascendPdPcp)) workerDocker.flags = [
-      ...(workerDocker.flags || []), ...(hardwareFlags || []),
-      ...(ascendPdPcp ? ["--env=ASCEND_RT_VISIBLE_DEVICES"] : []),
-    ];
+    if (ascendPdPcp) workerDocker.flags = [...(workerDocker.flags || []), "--env=ASCEND_RT_VISIBLE_DEVICES"];
     return {
       deployType,
       nodeCount,

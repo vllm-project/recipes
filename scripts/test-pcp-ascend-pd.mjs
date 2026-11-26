@@ -59,7 +59,6 @@ test("Ascend PCP emits one standard multi-port launch per node and advertises th
         assert.equal(node.env.ASCEND_RT_VISIBLE_DEVICES, undefined);
         assert.ok(node.docker_argv.includes("--env=ASCEND_RT_VISIBLE_DEVICES"));
         assert.ok(node.docker_command.includes("--env=ASCEND_RT_VISIBLE_DEVICES"));
-        assert.ok(node.docker_argv.includes("/dev/devmm_svm"));
         const config = JSON.parse(option(argv, "--kv-transfer-config"));
         assert.equal(config.kv_connector, "MooncakeHybridConnector");
         assert.equal(config.kv_role, kvRole);
@@ -101,7 +100,7 @@ test("the selected PCP preset keeps its frontend, router and transfer path in sh
   assert.match(fallback.selection.adjusted.find((a) => a.param === "kv_offload").reason, /direct Mooncake/);
 });
 
-test("the single-endpoint A2 internal-DP layout keeps its worker Docker configuration", () => {
+test("the single-endpoint A2 internal-DP layout keeps its explicit device mask", () => {
   const recipe = fixture("ascend_910b");
   const { prefill, decode } = recipe.presets.ascend_pd.roles;
   delete prefill.pcp;
@@ -109,7 +108,7 @@ test("the single-endpoint A2 internal-DP layout keeps its worker Docker configur
   const rendered = render(recipe);
   for (const worker of [rendered.prefill, rendered.decode]) {
     assert.equal(worker.env.ASCEND_RT_VISIBLE_DEVICES, "0,1,2,3,4,5,6,7");
-    assert.doesNotMatch(worker.docker_command, /devmm_svm|hccn\.conf|--env=ASCEND_RT_VISIBLE_DEVICES/);
+    assert.doesNotMatch(worker.docker_command, /--env=ASCEND_RT_VISIBLE_DEVICES/);
   }
 });
 
@@ -125,11 +124,15 @@ test("Ascend PCP links keep Decode modes compatible with the final connector and
   const baseline = select("dep");
   assert.ok(select("unknown").selection.adjusted.every(({ reason }) => !reason.includes("MooncakeHybridConnector")));
   for (const mode of ["tp", "tep"]) {
-    const { rendering, selection } = select(mode);
+    const resolved = select(mode);
+    const { rendering, selection } = resolved;
     assert.deepEqual(rendering, baseline.rendering);
     assert.equal(selection.pd.decode.parallelism, "dep");
-    assert.deepEqual(selection.adjusted.map(({ param, requested, used }) => [param, requested, used]),
-      [["decode_mode", mode, "dep"]]);
+    const reason = "incompatible with MooncakeHybridConnector because Decode TP exceeds Prefill TP";
+    assert.deepEqual(selection.adjusted, [{ param: "decode_mode", requested: mode, used: "dep", reason }]);
+    const page = "https://recipes.vllm.ai/test/Ascend-PD";
+    const markdown = selectionMarkdown(r, resolved, { strategies, taxonomy, urls: { page, json: page + ".json" } });
+    assert.ok(markdown.includes(`requested \`decode_mode=${mode}\` is ${reason}; rendered \`dep\` instead.`));
     const pools = { prefill: preset.roles.prefill, decode: { nodes: 1, parallelism: mode } };
     assert.throws(
       () => resolveCommand(r, "default", "pd_cluster", preset.hardware, [], strategies, taxonomy,
